@@ -1,0 +1,163 @@
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+// OASIS DATABASE SCHEMA — SQLite local-first
+// The single source of truth for missions, memory, and agent state
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MISSION — The atomic unit of work
+// SCORE = (actualSeconds / 60) × VALOR × PRIORITY
+// PRIORITY = (urgency × easiness × impact) / 125
+// ═══════════════════════════════════════════════════════════════════════════
+
+model Mission {
+  id             Int       @id @default(autoincrement())
+  name           String
+  description    String?
+  status         String    @default("todo") // todo | wip | done | archived
+  queuePosition  Int?      // null = unqueued, 1-based for active queue
+
+  // Priority Triangle
+  urgency        Float     @default(5) // 1-10
+  easiness       Float     @default(5) // 1-10
+  impact         Float     @default(5) // 1-10
+  priority       Float     @default(1) // (U×E×I)/125
+
+  // Scoring
+  valor          Float?    // 0.0-2.0 self-assessment of focus/quality
+  score          Float?    // final: (mins × valor × priority)
+
+  // Time Tracking
+  startedAt      DateTime?
+  endedAt        DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  horizon        String?   // 'fixed' | 'open' | null
+  targetSeconds  Int?      // budget for fixed horizon
+  isPaused       Boolean   @default(false)
+  pausedAt       DateTime?
+  totalPausedMs  Int       @default(0)
+  actualSeconds  Int?      // real work time
+  isIRL          Boolean   @default(false) // offline/physical work
+
+  // Maturation (curator pipeline)
+  maturityLevel  Int       @default(0) // 0=raw, 1=specced, 2=reviewed, 3=ready
+  assignedTo     String?   // 'player1' | 'parzival' | null
+
+  // Specs (curator-enriched)
+  carbonDescription   String? // human-language description
+  siliconDescription  String? // technical spec for coder
+  acceptanceCriteria  String? // what "done" means
+
+  // History Thread — JSON array of HistoryEntry objects
+  // { timestamp, actor, action, message, fromLevel?, toLevel?, elapsed?, valor?, score? }
+  notes          String?
+
+  // Dharma (noble 8fold path integration)
+  dharmaPath     String?   // view|intention|speech|action|livelihood|effort|mindfulness|concentration
+  questName      String?   // parent quest/yatra name
+
+  @@index([status])
+  @@index([queuePosition])
+  @@index([maturityLevel])
+  @@index([assignedTo])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MEMORY — Structured key-value knowledge persistence
+// ═══════════════════════════════════════════════════════════════════════════
+
+model Memory {
+  id        Int      @id @default(autoincrement())
+  category  String   // preference | habit | goal | fact | pattern
+  key       String
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([category, key])
+  @@index([category])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WORLD — 3D world with full state as JSON
+// ═══════════════════════════════════════════════════════════════════════════
+
+model World {
+  id              String    @id @default(cuid())
+  userId          String    @default("local-user")
+  name            String    @default("The Forge")
+  icon            String    @default("🌍")
+  visibility      String    @default("private") // private | public | unlisted | public_edit
+
+  data            String?   // JSON: full WorldState (catalog objects, crafted scenes, conjured assets, sky, ground)
+  creatorName     String?
+  creatorAvatar   String?
+
+  visitCount      Int       @default(0)
+  objectCount     Int       @default(0)
+  thumbnailUrl    String?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  snapshots       WorldSnapshot[]
+
+  @@index([userId])
+  @@index([visibility])
+}
+
+model WorldSnapshot {
+  id              String    @id @default(cuid())
+  worldId         String
+  world           World     @relation(fields: [worldId], references: [id], onDelete: Cascade)
+
+  data            String?   // JSON: full WorldState
+  objectCount     Int       @default(0)
+  source          String    @default("auto") // auto | manual
+
+  createdAt       DateTime  @default(now())
+
+  @@index([worldId, createdAt])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// JOURNAL — Sacred timestamped reflections
+// ═══════════════════════════════════════════════════════════════════════════
+
+model Journal {
+  id        Int      @id @default(autoincrement())
+  content   String
+  tags      String?  // JSON: string[]
+  mood      String?
+  createdAt DateTime @default(now())
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CARBON MODEL — Training pairs for Player 1 prediction
+// ═══════════════════════════════════════════════════════════════════════════
+
+model CarbonModelEntry {
+  id                Int      @id @default(autoincrement())
+  missionId         Int?
+  missionName       String?
+  context           String   // what prompted this prediction
+  predictedResponse String   // what the model thought Player 1 would say
+  actualResponse    String?  // what Player 1 actually said (null = pending)
+  accepted          Boolean?
+  rating            Int?     // 0-10
+  confidence        Float?   // 0.0-1.0
+  decision          String?  // bump | refine | other
+  createdAt         DateTime @default(now())
+
+  @@index([missionId])
+}

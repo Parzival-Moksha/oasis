@@ -1,0 +1,876 @@
+{
+  "version": 1,
+  "terrain": null,
+  "groundPresetId": "none",
+  "groundTiles": {
+    "-6,-2": "grass",
+    "-6,-1": "grass",
+    "-6,0": "grass",
+    "-6,1": "grass",
+    "-6,2": "grass",
+    "-5,-4": "grass",
+    "-5,-3": "grass",
+    "-5,-2": "grass",
+    "-5,-1": "grass",
+    "-5,0": "grass",
+    "-5,1": "grass",
+    "-5,2": "grass",
+    "-5,3": "grass",
+    "-5,4": "grass",
+    "-4,-5": "grass",
+    "-4,-4": "grass",
+    "-4,-3": "grass",
+    "-4,-2": "grass",
+    "-4,-1": "grass",
+    "-4,0": "grass",
+    "-4,1": "grass",
+    "-4,2": "grass",
+    "-4,3": "grass",
+    "-4,4": "grass",
+    "-4,5": "grass",
+    "-3,-5": "grass",
+    "-3,-4": "grass",
+    "-3,-3": "grass",
+    "-3,-2": "grass",
+    "-3,-1": "stone",
+    "-3,0": "stone",
+    "-3,1": "stone",
+    "-3,2": "grass",
+    "-3,3": "grass",
+    "-3,4": "grass",
+    "-3,5": "grass",
+    "-2,-6": "grass",
+    "-2,-5": "grass",
+    "-2,-4": "grass",
+    "-2,-3": "grass",
+    "-2,-2": "stone",
+    "-2,-1": "stone",
+    "-2,0": "stone",
+    "-2,1": "stone",
+    "-2,2": "stone",
+    "-2,3": "grass",
+    "-2,4": "grass",
+    "-2,5": "grass",
+    "-2,6": "grass",
+    "-1,-6": "grass",
+    "-1,-5": "grass",
+    "-1,-4": "grass",
+    "-1,-3": "stone",
+    "-1,-2": "stone",
+    "-1,-1": "stone",
+    "-1,0": "stone",
+    "-1,1": "stone",
+    "-1,2": "stone",
+    "-1,3": "stone",
+    "-1,4": "grass",
+    "-1,5": "grass",
+    "-1,6": "grass",
+    "0,-6": "grass",
+    "0,-5": "grass",
+    "0,-4": "grass",
+    "0,-3": "stone",
+    "0,-2": "stone",
+    "0,-1": "stone",
+    "0,0": "stone",
+    "0,1": "stone",
+    "0,2": "stone",
+    "0,3": "stone",
+    "0,4": "grass",
+    "0,5": "grass",
+    "0,6": "grass",
+    "1,-6": "grass",
+    "1,-5": "grass",
+    "1,-4": "grass",
+    "1,-3": "stone",
+    "1,-2": "stone",
+    "1,-1": "stone",
+    "1,0": "stone",
+    "1,1": "stone",
+    "1,2": "stone",
+    "1,3": "stone",
+    "1,4": "grass",
+    "1,5": "grass",
+    "1,6": "grass",
+    "2,-6": "grass",
+    "2,-5": "grass",
+    "2,-4": "grass",
+    "2,-3": "grass",
+    "2,-2": "stone",
+    "2,-1": "stone",
+    "2,0": "stone",
+    "2,1": "stone",
+    "2,2": "stone",
+    "2,3": "grass",
+    "2,4": "grass",
+    "2,5": "grass",
+    "2,6": "grass",
+    "3,-5": "grass",
+    "3,-4": "grass",
+    "3,-3": "grass",
+    "3,-2": "grass",
+    "3,-1": "stone",
+    "3,0": "stone",
+    "3,1": "stone",
+    "3,2": "grass",
+    "3,3": "grass",
+    "3,4": "grass",
+    "3,5": "grass",
+    "4,-5": "grass",
+    "4,-4": "grass",
+    "4,-3": "grass",
+    "4,-2": "grass",
+    "4,-1": "grass",
+    "4,0": "grass",
+    "4,1": "grass",
+    "4,2": "grass",
+    "4,3": "grass",
+    "4,4": "grass",
+    "4,5": "grass",
+    "5,-4": "grass",
+    "5,-3": "grass",
+    "5,-2": "grass",
+    "5,-1": "grass",
+    "5,0": "grass",
+    "5,1": "grass",
+    "5,2": "grass",
+    "5,3": "grass",
+    "5,4": "grass",
+    "6,-2": "grass",
+    "6,-1": "grass",
+    "6,0": "grass",
+    "6,1": "grass",
+    "6,2": "grass",
+    "0,7": "stone",
+    "0,8": "stone",
+    "1,7": "stone",
+    "-1,7": "stone",
+    "0,9": "stone",
+    "0,10": "stone"
+  },
+  "craftedScenes": [
+    {
+      "id": "craft_mm7tmxf6fbsk",
+      "name": "House with Bench",
+      "prompt": "a house wit a bench outside",
+      "objects": [
+        {
+          "type": "box",
+          "position": [
+            0,
+            2,
+            0
+          ],
+          "scale": [
+            8,
+            4,
+            6
+          ],
+          "color": "#C4A882",
+          "roughness": 0.85
+        },
+        {
+          "type": "box",
+          "position": [
+            0,
+            4.6,
+            0
+          ],
+          "scale": [
+            8.4,
+            0.2,
+            6.4
+          ],
+          "color": "#8B3A3A",
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "roughness": 0.9
+        },
+        {
+          "type": "box",
+          "position": [
+            0,
+            5.5,
+            0
+          ],
+          "scale": [
+            8.6,
+            0.25,
+            7.2
+          ],
+          "color": "#8B3A3A",
+          "rotation": [
+            0.42,
+            0,
+            0
+          ],
+          "roughness": 0.9
+        },
+        {
+          "type": "box",
+          "position": [
+            0,
+            6.4,
+            0
+          ],
+          "scale": [
+            8.6,
+            0.25,
+            5
+          ],
+          "color": "#8B3A3A",
+          "rotation": [
+            0.84,
+            0,
+            0
+          ],
+          "roughness": 0.9
+        },
+        {
+          "type": "box",
+          "position": [
+            0,
+            7,
+            0
+          ],
+          "scale": [
+            8.6,
+            0.25,
+            2.5
+          ],
+          "color": "#8B3A3A",
+          "rotation": [
+            1.2,
+            0,
+            0
+          ],
+          "roughness": 0.9
+        },
+        {
+          "type": "box",
+          "position": [
+            1.5,
+            1.5,
+            3.01
+          ],
+          "scale": [
+            1.2,
+            2.2,
+            0.1
+          ],
+          "color": "#5C3D1E",
+          "roughness": 0.7
+        },
+        {
+          "type": "box",
+          "position": [
+            1.5,
+            1.5,
+            3.06
+          ],
+          "scale": [
+            0.08,
+            2.2,
+            0.08
+          ],
+          "color": "#C0A060",
+          "metalness": 0.3,
+          "roughness": 0.4
+        },
+        {
+          "type": "box",
+          "position": [
+            -1.5,
+            1.8,
+            3.01
+          ],
+          "scale": [
+            1.4,
+            1.6,
+            0.1
+          ],
+          "color": "#88CCFF",
+          "roughness": 0.1,
+          "opacity": 0.35
+        },
+        {
+          "type": "box",
+          "position": [
+            -1.5,
+            1.8,
+            3.06
+          ],
+          "scale": [
+            0.06,
+            1.6,
+            0.06
+          ],
+          "color": "#FFFFFF",
+          "roughness": 0.5
+        },
+        {
+          "type": "box",
+          "position": [
+            -1.5,
+            1.8,
+            3.06
+          ],
+          "scale": [
+            1.4,
+            0.06,
+            0.06
+          ],
+          "color": "#FFFFFF",
+          "roughness": 0.5
+        },
+        {
+          "type": "box",
+          "position": [
+            -2.5,
+            1,
+            3.01
+          ],
+          "scale": [
+            1,
+            0.12,
+            0.12
+          ],
+          "color": "#C4A882",
+          "roughness": 0.85
+        },
+        {
+          "type": "box",
+          "position": [
+            5.5,
+            0.45,
+            1
+          ],
+          "scale": [
+            2.2,
+            0.1,
+            0.6
+          ],
+          "color": "#8B5E3C",
+          "roughness": 0.75
+        },
+        {
+          "type": "box",
+          "position": [
+            5.5,
+            0.9,
+            1
+          ],
+          "scale": [
+            2.2,
+            0.1,
+            0.12
+          ],
+          "color": "#8B5E3C",
+          "roughness": 0.75
+        },
+        {
+          "type": "box",
+          "position": [
+            4.5,
+            0.22,
+            0.75
+          ],
+          "scale": [
+            0.12,
+            0.44,
+            0.12
+          ],
+          "color": "#6B3F1E",
+          "roughness": 0.8
+        },
+        {
+          "type": "box",
+          "position": [
+            6.5,
+            0.22,
+            0.75
+          ],
+          "scale": [
+            0.12,
+            0.44,
+            0.12
+          ],
+          "color": "#6B3F1E",
+          "roughness": 0.8
+        },
+        {
+          "type": "box",
+          "position": [
+            4.5,
+            0.22,
+            1.25
+          ],
+          "scale": [
+            0.12,
+            0.44,
+            0.12
+          ],
+          "color": "#6B3F1E",
+          "roughness": 0.8
+        },
+        {
+          "type": "box",
+          "position": [
+            6.5,
+            0.22,
+            1.25
+          ],
+          "scale": [
+            0.12,
+            0.44,
+            0.12
+          ],
+          "color": "#6B3F1E",
+          "roughness": 0.8
+        },
+        {
+          "type": "sphere",
+          "position": [
+            -6,
+            2.5,
+            -2
+          ],
+          "scale": [
+            2.5,
+            2.5,
+            2.5
+          ],
+          "color": "#228B22",
+          "roughness": 0.9
+        },
+        {
+          "type": "sphere",
+          "position": [
+            -5.5,
+            3.5,
+            -1.5
+          ],
+          "scale": [
+            1.8,
+            1.8,
+            1.8
+          ],
+          "color": "#2E8B2E",
+          "roughness": 0.9
+        },
+        {
+          "type": "cylinder",
+          "position": [
+            -6,
+            0.8,
+            -2
+          ],
+          "scale": [
+            0.3,
+            1.6,
+            0.3
+          ],
+          "color": "#4A3728",
+          "roughness": 0.9
+        },
+        {
+          "type": "cylinder",
+          "position": [
+            7,
+            0.8,
+            -2
+          ],
+          "scale": [
+            0.2,
+            1.6,
+            0.2
+          ],
+          "color": "#4A3728",
+          "roughness": 0.9
+        },
+        {
+          "type": "sphere",
+          "position": [
+            7,
+            2.2,
+            -2
+          ],
+          "scale": [
+            1.4,
+            1.4,
+            1.4
+          ],
+          "color": "#006400",
+          "roughness": 0.9
+        },
+        {
+          "type": "cylinder",
+          "position": [
+            1.5,
+            2,
+            3.05
+          ],
+          "scale": [
+            0.08,
+            0.25,
+            0.08
+          ],
+          "color": "#C0A060",
+          "metalness": 0.5,
+          "roughness": 0.3
+        }
+      ],
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "createdAt": "2026-03-01T14:04:23.346Z",
+      "thumbnailUrl": "/crafted-thumbs/craft_mm7tmxf6fbsk.jpg"
+    }
+  ],
+  "conjuredAssetIds": [
+    "conj_mm75g1uj21th",
+    "conj_mm6nig1zk5eo",
+    "conj_mm3uhazzrh34",
+    "conj_mlzd9ce4787a"
+  ],
+  "catalogPlacements": [
+    {
+      "id": "catalog-light_street1-welcome-001",
+      "catalogId": "light_street1",
+      "name": "Street Light 1",
+      "glbPath": "/models/cyberpunk/Cyberpunk Game Kit - Quaternius/Platforms/Light_Street_1.gltf",
+      "position": [
+        5,
+        0,
+        0
+      ],
+      "scale": 2
+    },
+    {
+      "id": "catalog-light_street2-welcome-002",
+      "catalogId": "light_street2",
+      "name": "Street Light 2",
+      "glbPath": "/models/cyberpunk/Cyberpunk Game Kit - Quaternius/Platforms/Light_Street_2.gltf",
+      "position": [
+        -5,
+        0,
+        0
+      ],
+      "scale": 2
+    },
+    {
+      "id": "catalog-conjured-1772375016931-3x2m-1772375016931",
+      "catalogId": "conjured-1772375016931-3x2m",
+      "name": "image to 3D",
+      "glbPath": "/conjured/conj_mm7498l9y7nh.glb",
+      "position": [
+        2.191635016774055,
+        0,
+        -3.839613936764506
+      ],
+      "scale": 1
+    },
+    {
+      "id": "catalog-conjured-1772505089459-mwdd-1772505089460",
+      "catalogId": "conjured-1772505089459-mwdd",
+      "name": "Moana Boat",
+      "glbPath": "/conjured/conj_mlvfxxqw9lsh.glb",
+      "position": [
+        7.108345009465995,
+        0,
+        7.4202658935305585
+      ],
+      "scale": 1
+    }
+  ],
+  "transforms": {
+    "conj_mm75g1uj21th": {
+      "position": [
+        0.4478886993469775,
+        3.788624395740582,
+        11.708645653616603
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        3,
+        3,
+        3
+      ]
+    },
+    "conj_mm6nig1zk5eo": {
+      "position": [
+        0.4074951068430197,
+        0,
+        1.2925057080948283
+      ],
+      "rotation": [
+        0,
+        5.973901356089352,
+        0
+      ],
+      "scale": [
+        1.2,
+        1.2,
+        1.2
+      ]
+    },
+    "conj_mm3uhazzrh34": {
+      "position": [
+        0,
+        6.439387644761593,
+        -8.154041259496438
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        6.548500112852974,
+        6.548500112852974,
+        6.548500112852974
+      ]
+    },
+    "conj_mlzd9ce4787a": {
+      "position": [
+        -4,
+        0.9656793387442901,
+        3
+      ],
+      "rotation": [
+        0,
+        0.6,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "conj_mm6qylwy5enh": {
+      "position": [
+        0,
+        1.0317080761165935,
+        8
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        2,
+        2,
+        2
+      ]
+    },
+    "conj_mlvfxxqw9lsh": {
+      "position": [
+        5,
+        0,
+        -4
+      ],
+      "rotation": [
+        0,
+        -0.8,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "catalog-light_street1-welcome-001": {
+      "position": [
+        5,
+        0,
+        0
+      ],
+      "scale": [
+        2,
+        2,
+        2
+      ]
+    },
+    "catalog-light_street2-welcome-002": {
+      "position": [
+        -5,
+        0,
+        0
+      ],
+      "scale": [
+        2,
+        2,
+        2
+      ]
+    },
+    "craft_mm7tmxf6fbsk": {
+      "position": [
+        30.694754506821248,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "catalog-conjured-1772375016931-3x2m-1772375016931": {
+      "position": [
+        -0.0327844250482443,
+        15.348722202925263,
+        -3.839613936764506
+      ],
+      "rotation": [
+        0,
+        2.32337000000626,
+        0
+      ],
+      "scale": [
+        2.7282232802561923,
+        2.7282232802561923,
+        2.7282232802561923
+      ]
+    },
+    "craft_mm7ugtmji5hl": {
+      "position": [
+        -19.601270396373526,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "catalog-conjured-1772505089459-mwdd-1772505089460": {
+      "position": [
+        39.8916412054876,
+        3.48360986381533,
+        30.32342363085727
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        5.474469253974451,
+        5.474469253974451,
+        5.474469253974451
+      ]
+    }
+  },
+  "behaviors": {
+    "conj_mm6nig1zk5eo": {
+      "movement": {
+        "type": "static"
+      },
+      "visible": true,
+      "moveSpeed": 3
+    },
+    "catalog-conjured-1772375016931-3x2m-1772375016931": {
+      "movement": {
+        "type": "spin",
+        "axis": "y",
+        "speed": 0.1
+      },
+      "visible": true
+    },
+    "catalog-conjured-1772505089459-mwdd-1772505089460": {
+      "movement": {
+        "type": "patrol",
+        "radius": 6,
+        "speed": 0.5
+      },
+      "visible": true
+    }
+  },
+  "lights": [
+    {
+      "id": "light-point-welcome",
+      "type": "point",
+      "color": "#FFFFFF",
+      "intensity": 332.5,
+      "position": [
+        0,
+        8,
+        0
+      ],
+      "castShadow": true,
+      "visible": true
+    },
+    {
+      "id": "light-spot-1772373609873",
+      "type": "spot",
+      "color": "#FFF5E6",
+      "intensity": 1563,
+      "position": [
+        0.5443111012814587,
+        7.699449584155367,
+        19.637501152336608
+      ],
+      "angle": 30,
+      "target": [
+        -0.031629685625136454,
+        -0.42261826174069944,
+        -0.9057556888204041
+      ],
+      "visible": true
+    },
+    {
+      "id": "light-spot-1772375071405",
+      "type": "spot",
+      "color": "#FFF5E6",
+      "intensity": 455,
+      "position": [
+        0,
+        12.688358015797313,
+        0
+      ],
+      "angle": 38,
+      "target": [
+        9.100899318238092e-17,
+        0.6691306063588582,
+        -0.7431448254773942
+      ],
+      "visible": true
+    },
+    {
+      "id": "light-environment-1772375533510",
+      "type": "environment",
+      "color": "#ffffff",
+      "intensity": 0.6,
+      "position": [
+        0,
+        5,
+        0
+      ],
+      "visible": true
+    }
+  ],
+  "skyBackgroundId": "sunset",
+  "savedAt": "2026-03-03T02:32:25.440Z"
+}

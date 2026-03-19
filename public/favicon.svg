@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Palm tree silhouette - Oasis favicon -->
+  <!-- Trunk -->
+  <path d="M30 58 Q32 35 34 28 Q33 25 31 28 Q29 35 30 58 Z" fill="#8B6914"/>
+  <!-- Slight trunk curve -->
+  <path d="M31 58 Q33 40 35 30 Q34 28 32 30 Q30 40 31 58 Z" fill="#A07818" opacity="0.6"/>
+  <!-- Left fronds -->
+  <path d="M32 28 Q20 18 8 22 Q18 16 28 20 Q30 22 32 28 Z" fill="#2D8B46"/>
+  <path d="M32 26 Q22 14 12 14 Q20 10 28 16 Q30 20 32 26 Z" fill="#34A853"/>
+  <path d="M31 24 Q24 10 18 6 Q24 6 29 14 Q30 18 31 24 Z" fill="#2D8B46"/>
+  <!-- Right fronds -->
+  <path d="M33 28 Q44 18 56 22 Q46 16 36 20 Q34 22 33 28 Z" fill="#2D8B46"/>
+  <path d="M33 26 Q42 14 52 14 Q44 10 36 16 Q34 20 33 26 Z" fill="#34A853"/>
+  <path d="M34 24 Q40 10 46 6 Q40 6 35 14 Q34 18 34 24 Z" fill="#2D8B46"/>
+  <!-- Top frond -->
+  <path d="M32 24 Q30 12 32 4 Q34 12 32 24 Z" fill="#34A853"/>
+  <!-- Water/oasis base -->
+  <ellipse cx="32" cy="58" rx="18" ry="4" fill="#1A73E8" opacity="0.5"/>
+  <!-- Sand highlight -->
+  <ellipse cx="32" cy="59" rx="14" ry="2.5" fill="#E8C547" opacity="0.4"/>
+</svg>

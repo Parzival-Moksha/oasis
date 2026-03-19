@@ -1,0 +1,94 @@
+/* ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ */
+/* 04515 — Global Styles                                              */
+/* The void of cyberspace                                                */
+/* ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --prefrontal: #8B5CF6;
+  --coder: #F97316;
+  --reviewer: #3B82F6;
+  --tester: #22C55E;
+  --hacker: #EF4444;
+  --void: #000000;
+  --glow: #A855F7;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--void);
+  color: white;
+  font-family: 'Courier New', monospace;
+}
+
+/* Canvas takes full screen */
+#uploader-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* UI overlays */
+.ui-overlay {
+  position: fixed;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.ui-overlay > * {
+  pointer-events: auto;
+}
+
+/* Tooltip styles */
+.tooltip {
+  background: rgba(0, 0, 0, 0.9);
+  border: 1px solid var(--glow);
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 12px;
+  max-width: 200px;
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.3);
+}
+
+/* Glow effect for text */
+.text-glow {
+  text-shadow: 0 0 10px var(--glow), 0 0 20px var(--glow);
+}
+
+/* ░▒▓ Custom scrollbars — sleek dark theme matching UI panels ▓▒░ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(20, 20, 20, 0.3);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) rgba(20, 20, 20, 0.3);
+}
+
+/* ॐ 04515 ॐ */

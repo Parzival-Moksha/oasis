@@ -1,0 +1,2 @@
+# Extract GLTF models from ../devfiles/3d/ here
+# Use useGLTF hook from @react-three/drei to load

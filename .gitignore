@@ -1,0 +1,96 @@
+# ═══════════════════════════════════════════════════════════════
+# OASIS .gitignore
+# ═══════════════════════════════════════════════════════════════
+
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+*.tsbuildinfo
+
+# Environment secrets
+.env
+.env.local
+.env.production.local
+
+# Runtime-generated GLBs (user conjurations)
+public/conjured/*
+# Showcase assets — whitelisted
+!public/conjured/conj_mm6nig1zk5eo.glb
+!public/conjured/conj_mm6nig1zk5eo_thumb.jpg
+!public/conjured/conj_mm3uhazzrh34.glb
+!public/conjured/conj_mm3uhazzrh34_thumb.jpg
+# Runtime-generated images (user text-to-image creations)
+public/generated-images/
+
+# SQLite database (local, per-instance)
+data/*.db
+data/*.db-journal
+data/*.db-wal
+
+# Avatar gallery VRMs (downloaded per-instance, large files)
+public/avatars/gallery/
+
+# User-uploaded avatars (runtime-generated)
+public/avatars/*.glb
+public/avatars/*.jpg
+public/avatars/*.png
+public/avatars/*.webp
+public/avatars/*.gif
+
+# Runtime-generated thumbnails
+public/crafted-thumbs/*
+!public/crafted-thumbs/.gitkeep
+public/thumbs/
+
+# Bulk source archives (blend/gltf zips — only extracted textures needed)
+*.blend.zip
+*.gltf.zip
+
+# HDRI sky backgrounds (large, 69MB+ total — download per-instance)
+public/hdri/
+
+# Animation libraries (large GLBs — not wired into catalog yet)
+public/models/animations/
+
+# Quaternius asset packs (large GLTF+textures, 200MB+)
+public/models/quaternius-scifi/
+public/models/quaternius-fantasy/
+public/models/quaternius-medieval-village/
+
+# Runtime data (per-instance, diverges between local dev and prod)
+data/conjured-registry.json
+data/scene-library.json
+data/worlds/*.json
+!data/worlds/forge-default.json
+
+# Backup / working copies of data files
+data/*-full.json
+data/*-showcase.json
+
+# Server deploy script (lives on VPS only)
+deploy.sh
+
+# PM2 / logs
+logs/
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+
+# Dev specs (carbondir)
+carbondir/
+
+# Dev session artifacts
+CLAUDE*.md
+feb*.txt
+public/screenshots/
+
+/src/generated/prisma

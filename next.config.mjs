@@ -1,0 +1,46 @@
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+// OASIS - Next.js Configuration
+// The 3D engine where words become matter
+// ─═̷─═̷─🔥─═̷─═̷─ Standalone mode — no longer nested in Parzival monorepo ─═̷─═̷─🔥─═̷─═̷─
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  // Transpile Three.js packages
+  transpilePackages: ['three'],
+
+  // Allow loading models from external sources if needed
+  images: {
+    unoptimized: true,
+  },
+
+  // Expose empty basePath to client code — root-served, no /oasis prefix
+  env: {
+    NEXT_PUBLIC_BASE_PATH: '',
+  },
+
+  // Disable HMR in dev mode (use DISABLE_HMR=1 pnpm dev)
+  ...(process.env.DISABLE_HMR === '1' && {
+    webpack: (config, { dev }) => {
+      if (dev) {
+        config.watchOptions = { ignored: /.*/ }
+      }
+      return config
+    },
+  }),
+
+  // ─═̷─═̷─🔒─═̷─═̷─ Security headers ─═̷─═̷─🔒─═̷─═̷─
+  async headers() {
+    return [{
+      source: '/:path*',
+      headers: [
+        { key: 'X-Frame-Options', value: 'DENY' },
+        { key: 'X-Content-Type-Options', value: 'nosniff' },
+        { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+        { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+      ],
+    }]
+  },
+}
+
+export default nextConfig
