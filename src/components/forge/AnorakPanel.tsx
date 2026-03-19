@@ -310,33 +310,56 @@ function ToolCallCard({
 // ═══════════════════════════════════════════════════════════════════════════
 
 function renderInline(text: string): React.ReactNode {
+  // Single-pass tokenizer: find the EARLIEST marker in the string and process it
   const parts: React.ReactNode[] = []
   let remaining = text
   let key = 0
 
   while (remaining.length > 0) {
-    // Code span: `code`
-    const codeMatch = remaining.match(/^(.*?)`([^`]+)`(.*)$/)
-    if (codeMatch) {
-      if (codeMatch[1]) parts.push(<span key={key++}>{codeMatch[1]}</span>)
+    // Find earliest marker position
+    const codeIdx = remaining.indexOf('`')
+    const boldIdx = remaining.indexOf('**')
+
+    // No markers left — emit rest as plain text
+    if (codeIdx === -1 && boldIdx === -1) {
+      parts.push(<span key={key++}>{remaining}</span>)
+      break
+    }
+
+    // Determine which comes first (treating -1 as infinity)
+    const codeFirst = codeIdx !== -1 && (boldIdx === -1 || codeIdx < boldIdx)
+    const boldFirst = boldIdx !== -1 && (codeIdx === -1 || boldIdx < codeIdx)
+
+    if (codeFirst) {
+      // Find closing backtick
+      const closeIdx = remaining.indexOf('`', codeIdx + 1)
+      if (closeIdx === -1) {
+        // No closing backtick — emit rest as plain text
+        parts.push(<span key={key++}>{remaining}</span>)
+        break
+      }
+      // Emit text before, then code span
+      if (codeIdx > 0) parts.push(<span key={key++}>{remaining.slice(0, codeIdx)}</span>)
       parts.push(
         <code key={key++} className="px-1 py-0.5 rounded text-sky-300" style={{ background: 'rgba(56,189,248,0.1)' }}>
-          {codeMatch[2]}
+          {remaining.slice(codeIdx + 1, closeIdx)}
         </code>
       )
-      remaining = codeMatch[3]
-      continue
+      remaining = remaining.slice(closeIdx + 1)
+    } else if (boldFirst) {
+      // Find closing **
+      const closeIdx = remaining.indexOf('**', boldIdx + 2)
+      if (closeIdx === -1) {
+        parts.push(<span key={key++}>{remaining}</span>)
+        break
+      }
+      if (boldIdx > 0) parts.push(<span key={key++}>{remaining.slice(0, boldIdx)}</span>)
+      parts.push(<strong key={key++} className="text-white font-semibold">{remaining.slice(boldIdx + 2, closeIdx)}</strong>)
+      remaining = remaining.slice(closeIdx + 2)
+    } else {
+      parts.push(<span key={key++}>{remaining}</span>)
+      break
     }
-    // Bold: **text**
-    const boldMatch = remaining.match(/^(.*?)\*\*([^*]+)\*\*(.*)$/)
-    if (boldMatch) {
-      if (boldMatch[1]) parts.push(<span key={key++}>{boldMatch[1]}</span>)
-      parts.push(<strong key={key++} className="text-white font-semibold">{boldMatch[2]}</strong>)
-      remaining = boldMatch[3]
-      continue
-    }
-    parts.push(<span key={key++}>{remaining}</span>)
-    break
   }
 
   return <>{parts}</>
