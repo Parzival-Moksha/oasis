@@ -700,7 +700,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
   }, [showTabLabels, size.width])
 
   // ─═̷─ Wizard state ─═̷─
-  const [mode, setMode] = useState<'conjure' | 'craft' | 'world' | 'assets' | 'placed' | 'imagine' | 'settings'>('conjure')
+  const [mode, setMode] = useState<'conjure' | 'craft' | 'world' | 'assets' | 'placed' | 'agents' | 'imagine' | 'settings'>('conjure')
   const [provider, setProvider] = useState<ProviderName>('meshy')
   const [tier, setTier] = useState(PROVIDERS[0].tiers[1]?.id || PROVIDERS[0].tiers[0].id)  // Default: textured (refine)
   const [prompt, setPrompt] = useState('')
@@ -824,6 +824,9 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
   const placedCatalogAssets = useOasisStore(s => s.placedCatalogAssets)
   const placeCatalogAsset = useOasisStore(s => s.placeCatalogAsset)
   const removeCatalogAsset = useOasisStore(s => s.removeCatalogAsset)
+  const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
+  const removeAgentWindow = useOasisStore(s => s.removeAgentWindow)
+  const focusAgentWindow = useOasisStore(s => s.focusAgentWindow)
   const generatedImages = useOasisStore(s => s.generatedImages)
   const [assetCategory, setAssetCategory] = useState<string>('all')
   const [assetSubTab, setAssetSubTab] = useState<'catalog' | 'conjured' | 'crafted' | 'images'>('catalog')
@@ -1286,6 +1289,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
               { key: 'world', label: 'World', icon: '🌍', color: 'emerald', title: 'Sky, ground, terrain' },
               { key: 'assets', label: 'Assets', icon: '📦', color: 'yellow', title: 'Pre-made 3D asset catalog' },
               { key: 'placed', label: 'Placed', icon: '📍', color: 'cyan', title: 'All objects placed in this world' },
+              { key: 'agents', label: 'Agents', icon: '💻', color: 'purple', title: '3D agent windows in this world' },
               { key: 'imagine', label: 'Imagine', icon: '🎨', color: 'pink', title: 'Text-to-image (Gemini)' },
             ] as const).map(tab => (
               <button
@@ -1298,9 +1302,9 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                 }`}
                 title={tab.title}
                 style={mode === tab.key ? {
-                  backgroundColor: `rgba(${tab.color === 'orange' ? '249,115,22' : tab.color === 'blue' ? '59,130,246' : tab.color === 'emerald' ? '16,185,129' : tab.color === 'yellow' ? '234,179,8' : tab.color === 'cyan' ? '6,182,212' : '236,72,153'}, 0.2)`,
-                  color: `rgb(${tab.color === 'orange' ? '251,146,60' : tab.color === 'blue' ? '96,165,250' : tab.color === 'emerald' ? '52,211,153' : tab.color === 'yellow' ? '250,204,21' : tab.color === 'cyan' ? '34,211,238' : '244,114,182'})`,
-                  borderColor: `rgba(${tab.color === 'orange' ? '249,115,22' : tab.color === 'blue' ? '59,130,246' : tab.color === 'emerald' ? '16,185,129' : tab.color === 'yellow' ? '234,179,8' : tab.color === 'cyan' ? '6,182,212' : '236,72,153'}, 0.5)`,
+                  backgroundColor: `rgba(${tab.color === 'orange' ? '249,115,22' : tab.color === 'blue' ? '59,130,246' : tab.color === 'emerald' ? '16,185,129' : tab.color === 'yellow' ? '234,179,8' : tab.color === 'cyan' ? '6,182,212' : tab.color === 'purple' ? '168,85,247' : '236,72,153'}, 0.2)`,
+                  color: `rgb(${tab.color === 'orange' ? '251,146,60' : tab.color === 'blue' ? '96,165,250' : tab.color === 'emerald' ? '52,211,153' : tab.color === 'yellow' ? '250,204,21' : tab.color === 'cyan' ? '34,211,238' : tab.color === 'purple' ? '192,132,252' : '244,114,182'})`,
+                  borderColor: `rgba(${tab.color === 'orange' ? '249,115,22' : tab.color === 'blue' ? '59,130,246' : tab.color === 'emerald' ? '16,185,129' : tab.color === 'yellow' ? '234,179,8' : tab.color === 'cyan' ? '6,182,212' : tab.color === 'purple' ? '168,85,247' : '236,72,153'}, 0.5)`,
                 } : undefined}
               >
                 <span>{tab.icon}</span>{showTabLabels && <span className="ml-1">{tab.label}</span>}
@@ -2527,11 +2531,11 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                 ── Placed Objects ──
               </span>
               <span className="text-[10px] text-cyan-500/60 font-mono">
-                {worldConjuredAssetIds.length + placedCatalogAssets.length + craftedScenes.length + worldLights.length} total
+                {worldConjuredAssetIds.length + placedCatalogAssets.length + craftedScenes.length + worldLights.length + placedAgentWindows.length} total
               </span>
             </div>
 
-            {worldConjuredAssetIds.length === 0 && placedCatalogAssets.length === 0 && craftedScenes.length === 0 && worldLights.length === 0 ? (
+            {worldConjuredAssetIds.length === 0 && placedCatalogAssets.length === 0 && craftedScenes.length === 0 && worldLights.length === 0 && placedAgentWindows.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-gray-400">
                 <div className="text-3xl mb-2">&#128203;</div>
                 <div className="text-xs">No objects placed yet</div>
@@ -2678,9 +2682,64 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                     </LightTooltipWrap>
                   )
                 })}
+
+                {/* Agent windows in world */}
+                {placedAgentWindows.map(win => {
+                  const isSelected = selectedObjectId === win.id
+                  const agentIcon = win.agentType === 'anorak' ? '💻' : win.agentType === 'merlin' ? '🧙' : '⚡'
+                  const agentColor = win.agentType === 'anorak' ? 'text-sky-400' : win.agentType === 'merlin' ? 'text-purple-400' : 'text-green-400'
+                  const pos = transforms[win.id]?.position || win.position
+                  return (
+                    <div
+                      key={win.id}
+                      className={`rounded-lg border p-2 flex items-center justify-between cursor-pointer transition-all duration-200 ${
+                        isSelected ? 'border-blue-500/50 bg-blue-500/10' : 'border-gray-700/20 hover:border-purple-500/30'
+                      }`}
+                      style={{ background: isSelected ? undefined : 'rgba(15, 15, 15, 0.8)' }}
+                      onClick={() => {
+                        if (isSelected) { selectObject(null); setInspectedObject(null) }
+                        else {
+                          selectObject(win.id); setInspectedObject(win.id)
+                          if (pos) setCameraLookAt(pos)
+                        }
+                      }}
+                    >
+                      <div>
+                        <span className={`text-[10px] font-mono mr-1 ${agentColor}`}>{agentIcon}</span>
+                        <span className="text-[11px] text-gray-200">{win.label || win.agentType}</span>
+                        <span className="text-[9px] text-gray-400 ml-1.5">agent</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); selectObject(win.id); focusAgentWindow(win.id) }}
+                          className="text-[9px] text-purple-400 hover:text-purple-300 font-mono transition-colors"
+                          title="Focus this window"
+                        >
+                          focus
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); removeAgentWindow(win.id) }}
+                          className="text-gray-500 hover:text-red-400 text-xs"
+                        >
+                          &#10005;
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </>
+
+        ) : mode === 'agents' ? (
+          <AgentsTabContent
+            enterPlacementMode={enterPlacementMode}
+            selectObject={selectObject}
+            setInspectedObject={setInspectedObject}
+            setCameraLookAt={setCameraLookAt}
+            selectedObjectId={selectedObjectId}
+            transforms={transforms}
+          />
 
         ) : mode === 'settings' ? (
           <>
@@ -3056,6 +3115,125 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
       />
     </div>,
     document.body
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AGENTS TAB — 3D agent windows management + placement
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const AGENT_TYPES = [
+  { type: 'anorak' as const, label: 'Anorak', icon: '💻', color: '#38bdf8', desc: 'Claude Code agent — full multi-turn sessions' },
+  { type: 'merlin' as const, label: 'Merlin', icon: '🧙', color: '#a855f7', desc: 'World-builder agent — place objects, set sky' },
+  { type: 'devcraft' as const, label: 'DevCraft', icon: '⚡', color: '#22c55e', desc: 'Mission management + gamification' },
+] as const
+
+function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject, setCameraLookAt, selectedObjectId, transforms }: {
+  enterPlacementMode: (pending: import('../../store/oasisStore').PlacementPending) => void
+  selectObject: (id: string | null) => void
+  setInspectedObject: (id: string | null) => void
+  setCameraLookAt: (pos: [number, number, number]) => void
+  selectedObjectId: string | null
+  transforms: Record<string, { position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number }>
+}) {
+  const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
+  const removeAgentWindow = useOasisStore(s => s.removeAgentWindow)
+  const focusAgentWindow = useOasisStore(s => s.focusAgentWindow)
+
+  return (
+    <>
+      {/* ░▒▓ DEPLOY NEW AGENT ▓▒░ */}
+      <div className="mb-3">
+        <span className="text-[10px] text-gray-300 uppercase tracking-widest font-mono">
+          ── Deploy Agent ──
+        </span>
+        <div className="grid grid-cols-3 gap-1.5 mt-2">
+          {AGENT_TYPES.map(agent => (
+            <button
+              key={agent.type}
+              onClick={() => enterPlacementMode({ type: 'agent', name: agent.label, agentType: agent.type })}
+              className="rounded-lg border border-gray-700/30 bg-black/40 hover:border-gray-600/50 p-2 text-left transition-all duration-200 group"
+            >
+              <div className="flex items-center gap-1.5">
+                <span className="text-lg group-hover:scale-110 transition-transform">{agent.icon}</span>
+                <span className="text-[10px] font-bold" style={{ color: agent.color }}>{agent.label}</span>
+              </div>
+              <div className="text-[8px] text-gray-500 mt-1 leading-tight">{agent.desc}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ░▒▓ PLACED AGENTS ▓▒░ */}
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] text-gray-300 uppercase tracking-widest font-mono">
+          ── Deployed ({placedAgentWindows.length}) ──
+        </span>
+      </div>
+
+      {placedAgentWindows.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-8 text-gray-400">
+          <div className="text-3xl mb-2">💻</div>
+          <div className="text-xs">No agents deployed</div>
+          <div className="text-[10px] mt-1 text-gray-500">Click an agent above, then click the ground to place</div>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {placedAgentWindows.map(win => {
+            const isSelected = selectedObjectId === win.id
+            const agent = AGENT_TYPES.find(a => a.type === win.agentType) || AGENT_TYPES[0]
+            const pos = transforms[win.id]?.position || win.position
+            return (
+              <div
+                key={win.id}
+                className={`rounded-lg border p-2 cursor-pointer transition-all duration-200 ${
+                  isSelected ? 'border-blue-500/50 bg-blue-500/10' : 'border-gray-700/20 hover:border-purple-500/30'
+                }`}
+                style={{ background: isSelected ? undefined : 'rgba(15, 15, 15, 0.8)' }}
+                onClick={() => {
+                  if (isSelected) { selectObject(null); setInspectedObject(null) }
+                  else {
+                    selectObject(win.id); setInspectedObject(win.id)
+                    if (pos) setCameraLookAt(pos)
+                  }
+                }}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">{agent.icon}</span>
+                    <div>
+                      <span className="text-[11px] font-bold" style={{ color: agent.color }}>{win.label || agent.label}</span>
+                      {win.sessionId && <span className="text-[8px] text-gray-600 font-mono ml-1.5">{win.sessionId.slice(0, 8)}</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); selectObject(win.id); focusAgentWindow(win.id) }}
+                      className="text-[9px] px-1.5 py-0.5 rounded font-mono border transition-colors hover:bg-purple-500/20"
+                      style={{ color: agent.color, borderColor: `${agent.color}33` }}
+                      title="Focus — fly camera to this window"
+                    >
+                      focus
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); removeAgentWindow(win.id) }}
+                      className="text-gray-500 hover:text-red-400 text-xs transition-colors"
+                      title="Remove from world"
+                    >
+                      &#10005;
+                    </button>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-1 text-[8px] text-gray-500 font-mono">
+                  <span>pos: [{pos.map(v => v.toFixed(1)).join(', ')}]</span>
+                  <span>scale: {(() => { const s = transforms[win.id]?.scale; return typeof s === 'number' ? s.toFixed(2) : Array.isArray(s) ? s[0].toFixed(2) : win.scale.toFixed(2) })()}</span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </>
   )
 }
 

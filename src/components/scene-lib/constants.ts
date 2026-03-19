@@ -21,10 +21,10 @@ export const defaultSettings: OasisSettings = {
   fpsCounterFontSize: 14,
   // WINDOW OPACITY
   streamOpacity: 0.9,
-  // QUAKE FPS CONTROLS
-  controlMode: 'fps',         // FPS mode — gamers gonna game
-  mouseSensitivity: 1.0,      // FPS mouse sensitivity (0.1-2.0)
-  moveSpeed: 10,              // FPS movement speed (1-20)
+  // CAMERA MODES
+  controlMode: 'noclip',      // Noclip — fly mode, no gravity, no collision
+  mouseSensitivity: 1.0,
+  moveSpeed: 10,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

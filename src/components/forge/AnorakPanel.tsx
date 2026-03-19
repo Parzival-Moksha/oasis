@@ -20,7 +20,7 @@ import { SettingsContext } from '../scene-lib'
 import { useOasisStore } from '../../store/oasisStore'
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TYPES — Ariel SSE event shapes
+// TYPES — Anorak SSE event shapes
 // ═══════════════════════════════════════════════════════════════════════════
 
 interface AnorakSessionEvent { type: 'session'; sessionId: string }
@@ -59,7 +59,7 @@ interface StreamBlock {
   isExpanded?: boolean
 }
 
-// A single turn (user prompt + ariel response)
+// A single turn (user prompt + Anorak response)
 interface Turn {
   id: string
   userPrompt: string

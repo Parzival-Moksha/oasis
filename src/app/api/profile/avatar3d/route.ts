@@ -5,8 +5,7 @@
 // httpURL → store the URL directly
 
 import { NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
-import { getServerSupabase } from '@/lib/supabase'
+import { getLocalUserId } from '@/lib/local-auth'
 import path from 'path'
 import fs from 'fs/promises'
 
@@ -14,21 +13,14 @@ const MAX_GLB_SIZE = 10 * 1024 * 1024 // 10MB
 
 export async function POST(request: Request) {
   try {
-    const session = await auth()
-    const _uid = session?.user?.id || process.env.ADMIN_USER_ID || 'local-user'; if (false) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const _uid = await getLocalUserId()
 
     const body = await request.json()
     const { url, urlType } = body
 
     // Remove avatar — set to null
     if (urlType === 'remove') {
-      await getServerSupabase()
-        .from('profiles')
-        .update({ avatar_3d_url: null, updated_at: new Date().toISOString() })
-        .eq('id', _uid)
-      console.log(`[Avatar3D] Removed avatar for user ${_uid}`)
+      console.log(`[Avatar3D] Removed avatar`)
       return NextResponse.json({ avatar_3d_url: null })
     }
 
@@ -69,11 +61,6 @@ export async function POST(request: Request) {
     } else {
       return NextResponse.json({ error: 'Invalid avatar URL type' }, { status: 400 })
     }
-
-    await getServerSupabase()
-      .from('profiles')
-      .update({ avatar_3d_url: avatar3dUrl, updated_at: new Date().toISOString() })
-      .eq('id', _uid)
 
     return NextResponse.json({ avatar_3d_url: avatar3dUrl })
   } catch (err) {

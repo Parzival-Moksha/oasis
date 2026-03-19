@@ -27,7 +27,7 @@ import { loadAnimationClip, retargetClipForVRM } from '../../lib/forge/animation
 
 interface PlayerAvatarProps {
   url: string
-  controlMode: 'orbit' | 'fps' | 'third-person'
+  controlMode: 'orbit' | 'noclip' | 'third-person'
   moveSpeed?: number
   mouseSensitivity?: number
 }
@@ -155,7 +155,7 @@ export function PlayerAvatar({
   // ═══════════════════════════════════════════════════════════════════
   // POINTER LOCK — manual management for third-person mode
   // Click canvas to lock, Esc/right-click to unlock
-  // (FPS mode uses PointerLockControls from drei — separate system)
+  // (Noclip mode uses PointerLockControls from drei — separate system)
   // ═══════════════════════════════════════════════════════════════════
 
   const onCanvasClick = useCallback(() => {

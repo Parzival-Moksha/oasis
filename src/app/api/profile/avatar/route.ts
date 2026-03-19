@@ -1,11 +1,9 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-// 04515 — Avatar Upload API
-// POST /api/profile/avatar — save profile pic to disk, update DB
+// Avatar Upload — save profile pic to disk (local-first, no DB)
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
-import { getServerSupabase } from '@/lib/supabase'
+import { getLocalUserId } from '@/lib/local-auth'
 import path from 'path'
 import fs from 'fs/promises'
 
@@ -14,10 +12,7 @@ const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 
 export async function POST(request: Request) {
   try {
-    const session = await auth()
-    const _uid = session?.user?.id || process.env.ADMIN_USER_ID || 'local-user'; if (false) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const _uid = await getLocalUserId()
 
     const formData = await request.formData()
     const file = formData.get('avatar') as File | null
@@ -67,14 +62,8 @@ export async function POST(request: Request) {
     // Write file to disk
     await fs.writeFile(path.join(avatarDir, filename), buffer)
 
-    // Update DB
     const avatarUrl = `/avatars/${filename}`
-    await getServerSupabase()
-      .from('profiles')
-      .update({ avatar_url: avatarUrl, updated_at: new Date().toISOString() })
-      .eq('id', _uid)
-
-    console.log(`[Avatar] Saved ${filename} for user ${_uid}`)
+    console.log(`[Avatar] Saved ${filename}`)
     return NextResponse.json({ avatar_url: avatarUrl })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

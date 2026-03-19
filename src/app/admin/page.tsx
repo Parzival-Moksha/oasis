@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState, type ReactNode } from 'react'
-import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -195,7 +194,6 @@ const scrollbarStyles = `
 // ═══════════════════════════════════════════════════════════════════════════
 
 export default function AdminPage() {
-  const { data: session, status } = useSession()
   const router = useRouter()
   const [pricing, setPricing] = useState<Record<string, number>>({})
   const [defaults, setDefaults] = useState<Record<string, number>>({})
@@ -219,43 +217,40 @@ export default function AdminPage() {
   const [dwMessage, setDwMessage] = useState('')
 
   useEffect(() => {
-    if (status === 'unauthenticated') router.push('/login')
-    if (status === 'authenticated') {
-      Promise.all([
-        fetch('/api/admin/pricing').then(r => r.ok ? r.json() : Promise.reject('Forbidden')),
-        fetch('/api/admin/xp').then(r => r.ok ? r.json() : Promise.reject('Forbidden')),
-        fetch('/api/admin/default-worlds').then(r => r.ok ? r.json() : Promise.reject('Forbidden')),
-      ])
-        .then(([priceData, xpData, dwData]) => {
-          setPricing(priceData.pricing)
-          setDefaults(priceData.defaults)
-          const edits: Record<string, string> = {}
-          for (const key of Object.keys(priceData.pricing)) {
-            edits[key] = String(priceData.pricing[key])
-          }
-          setEditing(edits)
+    Promise.all([
+      fetch('/api/admin/pricing').then(r => r.ok ? r.json() : Promise.reject('Forbidden')),
+      fetch('/api/admin/xp').then(r => r.ok ? r.json() : Promise.reject('Forbidden')),
+      fetch('/api/admin/default-worlds').then(r => r.ok ? r.json() : Promise.reject('Forbidden')),
+    ])
+      .then(([priceData, xpData, dwData]) => {
+        setPricing(priceData.pricing)
+        setDefaults(priceData.defaults)
+        const edits: Record<string, string> = {}
+        for (const key of Object.keys(priceData.pricing)) {
+          edits[key] = String(priceData.pricing[key])
+        }
+        setEditing(edits)
 
-          setXpAwards(xpData.xpAwards)
-          setXpDefaults(xpData.defaults)
-          const xpEdits: Record<string, string> = {}
-          for (const key of Object.keys(xpData.xpAwards)) {
-            xpEdits[key] = String(xpData.xpAwards[key])
-          }
-          setXpEditing(xpEdits)
+        setXpAwards(xpData.xpAwards)
+        setXpDefaults(xpData.defaults)
+        const xpEdits: Record<string, string> = {}
+        for (const key of Object.keys(xpData.xpAwards)) {
+          xpEdits[key] = String(xpData.xpAwards[key])
+        }
+        setXpEditing(xpEdits)
 
-          const dw = dwData.defaultWorlds || {}
-          setDwAnon(dw.anon || '')
-          setDwNewUser(dw.new_user || '')
-          setDwSavedAnon(dw.anon || '')
-          setDwSavedNewUser(dw.new_user || '')
-          setLoading(false)
-        })
-        .catch(() => {
-          setMessage('Access denied — admin only')
-          setLoading(false)
-        })
-    }
-  }, [status, router])
+        const dw = dwData.defaultWorlds || {}
+        setDwAnon(dw.anon || '')
+        setDwNewUser(dw.new_user || '')
+        setDwSavedAnon(dw.anon || '')
+        setDwSavedNewUser(dw.new_user || '')
+        setLoading(false)
+      })
+      .catch(() => {
+        setMessage('Access denied — admin only')
+        setLoading(false)
+      })
+  }, [router])
 
   const handleSave = async () => {
     setSaving(true)
@@ -383,7 +378,7 @@ export default function AdminPage() {
             </div>
             <div className="flex items-center gap-4">
               <span className="text-[10px] text-gray-600">
-                {session?.user?.email}
+                Local Admin
               </span>
               <button
                 onClick={() => router.push('/')}

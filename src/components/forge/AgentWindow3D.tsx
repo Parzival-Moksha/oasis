@@ -5,7 +5,7 @@
 // ─═̷─═̷─ॐ─═̷─═̷─ Full DOM rendered via <Html transform> in true 3D ─═̷─═̷─ॐ─═̷─═̷─
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { useRef, useMemo } from 'react'
+import { useRef, useMemo, memo } from 'react'
 import * as THREE from 'three'
 import { Html } from '@react-three/drei'
 import { useOasisStore } from '../../store/oasisStore'
@@ -44,22 +44,23 @@ function FocusPrompt({ visible }: { visible: boolean }) {
 // AGENT WINDOW 3D — the R3F component
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Scale factor: how many Three.js units per pixel of HTML content
-// At scale=1, 800px = 4 world units wide → 0.005 units/px
+// Scale: maps HTML pixels to world units for the hitbox plane
+// distanceFactor on <Html> handles the visual size separately
 const PX_TO_WORLD = 0.005
 
-export function AgentWindow3D({ window: win }: { window: AgentWindow }) {
+export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { window: AgentWindow }) {
   const groupRef = useRef<THREE.Group>(null!)
   const selectedObjectId = useOasisStore(s => s.selectedObjectId)
   const focusedAgentWindowId = useOasisStore(s => s.focusedAgentWindowId)
   const isSelected = selectedObjectId === win.id
   const isFocused = focusedAgentWindowId === win.id
 
-  // World-space dimensions of the invisible hitbox plane
+  // World-space dimensions of the hitbox plane
   const worldWidth = win.width * PX_TO_WORLD * win.scale
   const worldHeight = win.height * PX_TO_WORLD * win.scale
 
   // Determine content based on agent type
+  // isFocused is NOT in deps — AnorakWindowContent reads it as a prop, no need to remount
   const content = useMemo(() => {
     switch (win.agentType) {
       case 'anorak':
@@ -84,15 +85,17 @@ export function AgentWindow3D({ window: win }: { window: AgentWindow }) {
 
   return (
     <group ref={groupRef}>
-      {/* Interactive HTML content in 3D space */}
+      {/* Interactive HTML content in 3D space
+          distanceFactor controls perceived size: at distance=distanceFactor, HTML renders 1:1 pixels.
+          Closer = bigger, further = smaller. 8 gives good readability at typical viewing distance. */}
       <Html
         transform
         distanceFactor={8}
-        pointerEvents={isFocused ? 'auto' : 'auto'}
+        pointerEvents="auto"
+        zIndexRange={[0, 0]}
         style={{
           width: `${win.width}px`,
           height: `${win.height}px`,
-          // When not focused, add a subtle glass effect border
           borderRadius: '12px',
           overflow: 'hidden',
         }}
@@ -101,7 +104,7 @@ export function AgentWindow3D({ window: win }: { window: AgentWindow }) {
         {content}
       </Html>
 
-      {/* Invisible hitbox plane for raycasting / selection — must NOT use visible={false} or raycast won't hit */}
+      {/* Invisible hitbox plane for raycasting — Html transform doesn't participate in R3F raycasts */}
       <mesh>
         <planeGeometry args={[worldWidth, worldHeight]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
@@ -127,4 +130,4 @@ export function AgentWindow3D({ window: win }: { window: AgentWindow }) {
       <FocusPrompt visible={isSelected && !isFocused} />
     </group>
   )
-}
+})

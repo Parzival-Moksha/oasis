@@ -6,7 +6,6 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextRequest } from 'next/server'
-import { auth } from '@/lib/auth'
 
 const ALLOWED_MODELS = [
   'anthropic/claude-sonnet-4-6',
@@ -85,15 +84,6 @@ RULES:
 export async function POST(request: NextRequest) {
   console.log('[Anorak] Vibecode POST hit')
   try {
-    const session = await auth()
-    console.log('[Anorak] Auth result:', session?.user?.id ? 'authenticated' : 'no session')
-    const _uid = session?.user?.id || process.env.ADMIN_USER_ID || 'local-user'; if (false) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    }
-
     const body = await request.json()
     const { messages, model: requestedModel } = body
 

@@ -1052,10 +1052,10 @@ export function TransformKeyHandler() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Skip when typing in any form element (inputs, textareas, selects, contenteditable)
+      // Skip when typing in any form element — EXCEPT Escape (always needs to unfocus agent windows)
       const tag = (e.target as HTMLElement).tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-      if ((e.target as HTMLElement).isContentEditable) return
+      const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as HTMLElement).isContentEditable
+      if (isTyping && e.key !== 'Escape') return
 
       // Block ALL edit shortcuts in read-only view mode (anonymous or non-editable)
       const { isViewMode: vm, isViewModeEditable: vme } = useOasisStore.getState()

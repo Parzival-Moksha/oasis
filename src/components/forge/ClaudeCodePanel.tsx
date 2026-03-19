@@ -1,17 +1,12 @@
 'use client'
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-// ARIEL PANEL — The Spirit's Consciousness Stream
-// ─═̷─═̷─ॐ─═̷─═̷─ Prospero speaks → Ariel executes → Oasis transforms ─═̷─═̷─ॐ─═̷─═̷─
+// CLAUDE CODE PANEL — 2D overlay for full Claude Code sessions
+// ─═̷─═̷─ॐ─═̷─═̷─ Player 1 speaks → Claude Code executes → Oasis transforms ─═̷─═̷─ॐ─═̷─═̷─
 //
 // Full Claude Code session rendered as a rich streaming UI.
 // Multi-turn via --resume. Session survives page refresh.
 // Tool calls, thinking blocks, diffs, cost tracking — everything visible.
-//
-// "All hail, great master! Grave sir, hail! I come
-//  To answer thy best pleasure; be't to fly,
-//  To swim, to dive into the fire, to ride
-//  On the curl'd clouds." — The Tempest, Act I, Scene 2
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { useState, useRef, useEffect, useCallback, useContext } from 'react'
@@ -19,29 +14,29 @@ import { createPortal } from 'react-dom'
 import { SettingsContext } from '../scene-lib'
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TYPES — Ariel SSE event shapes
+// TYPES — Claude Code SSE event shapes
 // ═══════════════════════════════════════════════════════════════════════════
 
-interface ArielSessionEvent { type: 'session'; sessionId: string }
-interface ArielStatusEvent { type: 'status'; content: string }
-interface ArielTextEvent { type: 'text'; content: string }
-interface ArielThinkingEvent { type: 'thinking'; content: string }
-interface ArielThinkingStartEvent { type: 'thinking_start' }
-interface ArielToolStartEvent { type: 'tool_start'; name: string; icon: string; id: string }
-interface ArielToolEvent { type: 'tool'; name: string; icon: string; id: string; input: Record<string, unknown>; display: string }
-interface ArielToolResultEvent { type: 'tool_result'; name: string; preview: string; isError: boolean; length: number; fullResult?: string; toolUseId?: string }
-interface ArielProgressEvent { type: 'progress'; inputTokens: number; outputTokens: number; stopReason?: string }
-interface ArielResultEvent { type: 'result'; costUsd: number; durationMs: number; sessionId: string }
-interface ArielErrorEvent { type: 'error'; content: string }
-interface ArielStderrEvent { type: 'stderr'; content: string }
-interface ArielDoneEvent { type: 'done'; success: boolean; sessionId: string; costUsd?: number; inputTokens?: number; outputTokens?: number }
+interface CCSessionEvent { type: 'session'; sessionId: string }
+interface CCStatusEvent { type: 'status'; content: string }
+interface CCTextEvent { type: 'text'; content: string }
+interface CCThinkingEvent { type: 'thinking'; content: string }
+interface CCThinkingStartEvent { type: 'thinking_start' }
+interface CCToolStartEvent { type: 'tool_start'; name: string; icon: string; id: string }
+interface CCToolEvent { type: 'tool'; name: string; icon: string; id: string; input: Record<string, unknown>; display: string }
+interface CCToolResultEvent { type: 'tool_result'; name: string; preview: string; isError: boolean; length: number; fullResult?: string; toolUseId?: string }
+interface CCProgressEvent { type: 'progress'; inputTokens: number; outputTokens: number; stopReason?: string }
+interface CCResultEvent { type: 'result'; costUsd: number; durationMs: number; sessionId: string }
+interface CCErrorEvent { type: 'error'; content: string }
+interface CCStderrEvent { type: 'stderr'; content: string }
+interface CCDoneEvent { type: 'done'; success: boolean; sessionId: string; costUsd?: number; inputTokens?: number; outputTokens?: number }
 
-type ArielEvent =
-  | ArielSessionEvent | ArielStatusEvent | ArielTextEvent
-  | ArielThinkingEvent | ArielThinkingStartEvent
-  | ArielToolStartEvent | ArielToolEvent | ArielToolResultEvent
-  | ArielProgressEvent | ArielResultEvent
-  | ArielErrorEvent | ArielStderrEvent | ArielDoneEvent
+type CCEvent =
+  | CCSessionEvent | CCStatusEvent | CCTextEvent
+  | CCThinkingEvent | CCThinkingStartEvent
+  | CCToolStartEvent | CCToolEvent | CCToolResultEvent
+  | CCProgressEvent | CCResultEvent
+  | CCErrorEvent | CCStderrEvent | CCDoneEvent
 
 // A single block in the conversation stream
 interface StreamBlock {
@@ -58,7 +53,7 @@ interface StreamBlock {
   isExpanded?: boolean
 }
 
-// A single turn (user prompt + ariel response)
+// A single turn (user prompt + Claude Code response)
 interface Turn {
   id: string
   userPrompt: string
@@ -74,7 +69,7 @@ interface Turn {
 // SSE PARSER — generic async generator
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function* parseArielSSE(response: Response): AsyncGenerator<ArielEvent> {
+async function* parseCCSSE(response: Response): AsyncGenerator<CCEvent> {
   const reader = response.body!.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
@@ -92,7 +87,7 @@ async function* parseArielSSE(response: Response): AsyncGenerator<ArielEvent> {
       if (trimmed === 'data: [DONE]') return
       if (!trimmed.startsWith('data: ')) continue
       try {
-        yield JSON.parse(trimmed.slice(6)) as ArielEvent
+        yield JSON.parse(trimmed.slice(6)) as CCEvent
       } catch { /* skip malformed */ }
     }
   }
@@ -396,7 +391,7 @@ export function ClaudeCodePanel({ isOpen, onClose }: { isOpen: boolean; onClose:
     let currentTextBlock: StreamBlock | null = null
     let currentThinkingBlock: StreamBlock | null = null
     // Map tool IDs to their block + result
-    const toolBlocks = new Map<string, { block: StreamBlock; result?: ArielToolResultEvent }>()
+    const toolBlocks = new Map<string, { block: StreamBlock; result?: CCToolResultEvent }>()
     let turnCost = 0
     let turnInputTokens = 0
     let turnOutputTokens = 0
@@ -433,7 +428,7 @@ export function ClaudeCodePanel({ isOpen, onClose }: { isOpen: boolean; onClose:
         return
       }
 
-      for await (const event of parseArielSSE(res)) {
+      for await (const event of parseCCSSE(res)) {
         if (abort.signal.aborted) break
 
         switch (event.type) {
@@ -596,7 +591,7 @@ export function ClaudeCodePanel({ isOpen, onClose }: { isOpen: boolean; onClose:
   // ─═̷─═̷─ RENDER ─═̷─═̷─
   return createPortal(
     <div
-      data-menu-portal="ariel-panel"
+      data-menu-portal="claude-code-panel"
       className="fixed z-[9999] rounded-xl flex flex-col overflow-hidden"
       style={{
         left: position.x,
@@ -696,7 +691,7 @@ export function ClaudeCodePanel({ isOpen, onClose }: { isOpen: boolean; onClose:
         {/* Empty state */}
         {turns.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-gray-500">
-            <span className="text-4xl mb-3" style={{ animation: 'arielFloat 3s ease-in-out infinite' }}>💻</span>
+            <span className="text-4xl mb-3" style={{ animation: 'ccFloat 3s ease-in-out infinite' }}>💻</span>
             <p className="text-sm mb-1 text-sky-400/80">Claude Code</p>
             <p className="text-[11px] text-gray-500 text-center px-6 leading-relaxed">
               Full Claude Code agent inside the Oasis.<br />
@@ -807,7 +802,7 @@ export function ClaudeCodePanel({ isOpen, onClose }: { isOpen: boolean; onClose:
               {turn.isStreaming && (
                 <div className="flex items-center gap-2 text-[10px] text-sky-400/60 font-mono py-1">
                   <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
-                  ariel is working...
+                  working...
                 </div>
               )}
 
@@ -840,7 +835,7 @@ export function ClaudeCodePanel({ isOpen, onClose }: { isOpen: boolean; onClose:
                 invoke()
               }
             }}
-            placeholder={isStreaming ? 'Ariel is working...' : 'Command Ariel...'}
+            placeholder={isStreaming ? 'Working...' : 'Command Claude Code...'}
             rows={1}
             className="flex-1 px-3 py-2 rounded-lg text-white text-xs outline-none placeholder-gray-600 resize-none font-mono"
             style={{
@@ -879,7 +874,7 @@ export function ClaudeCodePanel({ isOpen, onClose }: { isOpen: boolean; onClose:
 
       {/* ═══ ANIMATIONS ═══ */}
       <style>{`
-        @keyframes arielFloat {
+        @keyframes ccFloat {
           0%, 100% { transform: translateY(0) rotate(0deg); }
           25% { transform: translateY(-5px) rotate(2deg); }
           75% { transform: translateY(-3px) rotate(-2deg); }

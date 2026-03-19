@@ -7,7 +7,6 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextRequest } from 'next/server'
-import { auth } from '@/lib/auth'
 import { spawn } from 'child_process'
 import path from 'path'
 import fs from 'fs'

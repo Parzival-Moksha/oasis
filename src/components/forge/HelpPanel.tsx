@@ -7,7 +7,6 @@
 
 import { useState, useRef, useEffect, useCallback, useContext } from 'react'
 import { createPortal } from 'react-dom'
-import { useSession } from 'next-auth/react'
 import { SettingsContext } from '../scene-lib'
 import { QUESTS, QUEST_IDS, getQuestProgress, completedQuestCount, allQuestsComplete } from '@/lib/quests'
 import type { QuestId } from '@/lib/quests'
@@ -34,8 +33,8 @@ const SHORTCUTS: ShortcutRow[] = [
   { keys: ['Scroll'], action: 'Zoom in / out', category: 'mouse' },
 
   // Camera
-  { keys: ['WASD'], action: 'Move (FPS mode)', category: 'camera' },
-  { keys: ['Q', 'E'], action: 'Up / Down (FPS)', category: 'camera' },
+  { keys: ['WASD'], action: 'Move (Noclip mode)', category: 'camera' },
+  { keys: ['Q', 'E'], action: 'Up / Down (Noclip)', category: 'camera' },
   { keys: ['Shift'], action: 'Sprint — 4× speed', category: 'camera' },
   { keys: ['Ctrl', 'C'], action: 'Slow — 0.25× speed', category: 'camera' },
   { keys: ['Ctrl', 'Alt', 'C'], action: 'Toggle Orbit ↔ FPS', category: 'camera' },
@@ -322,12 +321,10 @@ function GlossaryTab() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function HelpPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  const { data: session } = useSession()
   const { settings } = useContext(SettingsContext)
 
-  // Default tab: anon → Controls, logged-in with incomplete quests → Guide
+  // Default tab: show guide if quests incomplete, otherwise controls
   const [tab, setTab] = useState<Tab>(() => {
-    if (!session) return 'controls'
     return allQuestsComplete() ? 'controls' : 'guide'
   })
 

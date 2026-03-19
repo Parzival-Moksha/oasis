@@ -9,7 +9,6 @@
 
 import { useState, useRef, useEffect, useCallback, useContext } from 'react'
 import { createPortal } from 'react-dom'
-import { useSession } from 'next-auth/react'
 import { SettingsContext } from '../scene-lib'
 import { awardXp } from '@/hooks/useXp'
 import { useAnorakAgent } from '@/hooks/useAnorakAgent'
@@ -77,8 +76,7 @@ function extractCarbonSilicon(body: string | null): { carbon: string; silicon: s
 }
 
 export function FeedbackPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  const { data: session } = useSession()
-  const isAdmin = session?.user?.id === ADMIN_ID
+  const isAdmin = true // local-first: always admin
   const { settings } = useContext(SettingsContext)
   const [tab, setTab] = useState<Tab>('list')
   const [items, setItems] = useState<FeedbackItem[]>([])

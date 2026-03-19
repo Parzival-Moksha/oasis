@@ -30,7 +30,7 @@ import { MeshyClient } from '@/lib/conjure/meshy'
 import { TripoClient } from '@/lib/conjure/tripo'
 import { POST_PROCESS_COSTS } from '@/lib/conjure/types'
 import type { ConjuredAsset, ProcessRequest, ConjureStatus, ProviderName } from '@/lib/conjure/types'
-import { auth } from '@/lib/auth'
+import { getLocalUserId } from '@/lib/local-auth'
 import { getServerSupabase } from '@/lib/supabase'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -415,10 +415,7 @@ export async function POST(
     }
 
     // ░▒▓ CREDIT CHECK — post-processing also costs credits ▓▒░
-    const session = await auth()
-    const _uid = session?.user?.id || process.env.ADMIN_USER_ID || 'local-user'; if (false) {
-      return NextResponse.json({ error: 'Sign in to process assets' }, { status: 401 })
-    }
+    const _uid = await getLocalUserId()
 
     // Free Meshy animations (walk/run bundled with rig) cost nothing
     const isFreeAnim = body.action === 'animate' && body.options?.animationPresetId?.startsWith('free:')

@@ -6,7 +6,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { getLocalUserId } from '@/lib/local-auth'
 import { getServerSupabase } from '@/lib/supabase'
 
 const MAX_TITLE_LENGTH = 500
@@ -44,10 +44,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const session = await auth()
-    const _uid = session?.user?.id || process.env.ADMIN_USER_ID || 'local-user'; if (false) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const _uid = await getLocalUserId()
 
     const body = await request.json()
     const { type, title, body: feedbackBody } = body
@@ -101,9 +98,6 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const session = await auth()
-    // Local mode: always admin
-
     const body = await request.json()
     const { id, status } = body
 

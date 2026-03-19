@@ -13,6 +13,7 @@
 import type { CraftedScene, CatalogPlacement, ObjectBehavior, WorldLight } from '../conjure/types'
 import type { GroundPreset } from './ground-textures'
 import type { TerrainParams } from './terrain-generator'
+import type { AgentWindow } from '../../store/oasisStore'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // WORLD STATE — the serializable snapshot of everything in a single Forge world
@@ -44,6 +45,8 @@ export interface WorldState {
   skyBackgroundId?: string
   /** User-generated ground presets (custom textures from Imagine) */
   customGroundPresets?: GroundPreset[]
+  /** 3D agent windows placed in the world (Claude Code / Merlin / DevCraft panels) */
+  agentWindows?: AgentWindow[]
   savedAt: string
 }
 

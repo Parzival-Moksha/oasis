@@ -11,7 +11,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { getLocalUserId } from '@/lib/local-auth'
 import {
   loadWorld, saveWorld, savePublicEditWorld, deleteWorld, getRegistry, updateObjectCount,
   type WorldState,
@@ -25,10 +25,7 @@ type RouteContext = { params: Promise<{ id: string }> }
 
 export async function GET(_request: Request, context: RouteContext) {
   try {
-    const session = await auth()
-    const _userId = session?.user?.id || process.env.ADMIN_USER_ID || 'local-user'; if (false) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const _userId = await getLocalUserId()
 
     const { id } = await context.params
     const world = await loadWorld(id, _userId)
@@ -50,10 +47,7 @@ export async function GET(_request: Request, context: RouteContext) {
 
 export async function PUT(request: Request, context: RouteContext) {
   try {
-    const session = await auth()
-    const _userId = session?.user?.id || process.env.ADMIN_USER_ID || 'local-user'; if (false) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const _userId = await getLocalUserId()
 
     const { id } = await context.params
     const body = await request.json()
@@ -83,10 +77,7 @@ export async function PUT(request: Request, context: RouteContext) {
 
 export async function PATCH(request: Request, context: RouteContext) {
   try {
-    const session = await auth()
-    const _userId = session?.user?.id || process.env.ADMIN_USER_ID || 'local-user'; if (false) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const _userId = await getLocalUserId()
 
     const { id } = await context.params
     const body = await request.json() as { name?: string; icon?: string }
@@ -119,10 +110,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
 export async function DELETE(_request: Request, context: RouteContext) {
   try {
-    const session = await auth()
-    const _userId = session?.user?.id || process.env.ADMIN_USER_ID || 'local-user'; if (false) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const _userId = await getLocalUserId()
 
     const { id } = await context.params
 

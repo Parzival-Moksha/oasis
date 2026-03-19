@@ -15,18 +15,13 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
 import { saveWorld } from '@/lib/forge/world-server'
 import type { WorldState } from '@/lib/forge/world-persistence'
 import type { CatalogPlacement, CraftedScene, WorldLight } from '@/lib/conjure/types'
 import { ASSET_CATALOG } from '@/components/scene-lib/constants'
 
 // ─═̷─═̷─🔒 ADMIN GUARD ─═̷─═̷─🔒
-const ADMIN_USER_ID = process.env.ADMIN_USER_ID || ''
-async function isAdmin() {
-  const session = await auth()
-  return session?.user?.id === ADMIN_USER_ID && !!ADMIN_USER_ID
-}
+// Local mode: always admin. No auth needed.
 
 const MERLIN_MODEL = 'anthropic/claude-sonnet-4-6'
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'

@@ -6,6 +6,58 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { useState, useRef, useEffect, useCallback } from 'react'
+import Markdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { useOasisStore } from '../../store/oasisStore'
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MARKDOWN COMPONENTS — styled for dark 3D window context
+// ═══════════════════════════════════════════════════════════════════════════
+
+const mdComponents = {
+  p: ({ children }: { children?: React.ReactNode }) => <p className="mb-1 last:mb-0">{children}</p>,
+  strong: ({ children }: { children?: React.ReactNode }) => <strong className="text-white font-bold">{children}</strong>,
+  code: ({ children, className }: { children?: React.ReactNode; className?: string }) => {
+    const isBlock = className?.startsWith('language-')
+    if (isBlock) {
+      return (
+        <code className="text-emerald-300/90 text-[10px]">{children}</code>
+      )
+    }
+    return (
+      <code className="px-1 rounded text-[10px] text-amber-300/90" style={{ background: 'rgba(0,0,0,0.3)' }}>
+        {children}
+      </code>
+    )
+  },
+  pre: ({ children }: { children?: React.ReactNode }) => (
+    <pre className="rounded px-2 py-1.5 my-1 overflow-x-auto text-[10px] leading-tight" style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      {children}
+    </pre>
+  ),
+  a: ({ children }: { children?: React.ReactNode }) => <span className="text-sky-400 underline">{children}</span>,
+  ul: ({ children }: { children?: React.ReactNode }) => <ul className="list-disc list-inside ml-1 space-y-0.5">{children}</ul>,
+  ol: ({ children }: { children?: React.ReactNode }) => <ol className="list-decimal list-inside ml-1 space-y-0.5">{children}</ol>,
+  li: ({ children }: { children?: React.ReactNode }) => <li className="text-gray-300">{children}</li>,
+  h1: ({ children }: { children?: React.ReactNode }) => <h1 className="text-white font-bold text-[13px] mt-2 mb-1">{children}</h1>,
+  h2: ({ children }: { children?: React.ReactNode }) => <h2 className="text-white font-bold text-[12px] mt-1.5 mb-0.5">{children}</h2>,
+  h3: ({ children }: { children?: React.ReactNode }) => <h3 className="text-white font-bold text-[11px] mt-1 mb-0.5">{children}</h3>,
+  blockquote: ({ children }: { children?: React.ReactNode }) => (
+    <blockquote className="border-l-2 border-sky-500/40 pl-2 my-1 text-gray-400 italic">{children}</blockquote>
+  ),
+  hr: () => <hr className="border-white/10 my-2" />,
+  em: ({ children }: { children?: React.ReactNode }) => <em className="text-gray-200 italic">{children}</em>,
+  del: ({ children }: { children?: React.ReactNode }) => <del className="text-gray-500 line-through">{children}</del>,
+  table: ({ children }: { children?: React.ReactNode }) => (
+    <table className="text-[10px] border-collapse my-1 w-full" style={{ border: '1px solid rgba(56,189,248,0.2)' }}>{children}</table>
+  ),
+  thead: ({ children }: { children?: React.ReactNode }) => <thead style={{ background: 'rgba(56,189,248,0.1)' }}>{children}</thead>,
+  th: ({ children }: { children?: React.ReactNode }) => <th className="px-2 py-0.5 text-left text-sky-300 font-bold" style={{ border: '1px solid rgba(56,189,248,0.15)' }}>{children}</th>,
+  td: ({ children }: { children?: React.ReactNode }) => <td className="px-2 py-0.5 text-gray-300" style={{ border: '1px solid rgba(255,255,255,0.05)' }}>{children}</td>,
+  input: ({ checked, ...props }: React.InputHTMLAttributes<HTMLInputElement>) => (
+    <input type="checkbox" checked={checked} readOnly className="mr-1 accent-sky-400" {...props} />
+  ),
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES — Anorak SSE event shapes (shared with AnorakPanel)
@@ -97,7 +149,7 @@ function ToolCard({ name, icon, display, result }: {
         <span className="font-bold" style={{
           color: result ? (result.isError ? '#ef4444' : '#22c55e') : '#38bdf8',
         }}>{name}</span>
-        <span className="text-gray-500 truncate flex-1">{display.replace(`${name}: `, '')}</span>
+        <span className="text-gray-500 flex-1 overflow-hidden whitespace-nowrap" style={{ textOverflow: 'ellipsis' }}>{display.replace(`${name}: `, '')}</span>
         {result && !result.isError && <span className="text-green-500">✓</span>}
         {result && result.isError && <span className="text-red-400">✗</span>}
         {!result && <span className="w-2.5 h-2.5 rounded-full border-2 border-sky-400 border-t-transparent animate-spin" />}
@@ -120,20 +172,51 @@ export function AnorakWindowContent({ windowId, initialSessionId }: {
   windowId: string
   initialSessionId?: string
 }) {
+  // Read focus state directly from store — avoids parent rememo on focus change
+  const isFocused = useOasisStore(s => s.focusedAgentWindowId === windowId)
   const [turns, setTurns] = useState<Turn[]>([])
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [sessionId, setSessionId] = useState(initialSessionId || '')
   const [model, setModel] = useState('opus')
   const [totalCost, setTotalCost] = useState(0)
+  const [autoScroll, setAutoScroll] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
-  // Auto-scroll on new content
+  // Detect duplicate session — warn if another window shares our session ID
+  const isDuplicateSession = useOasisStore(s => {
+    if (!sessionId) return false
+    return s.placedAgentWindows.some(w => w.id !== windowId && w.sessionId === sessionId)
+  })
+
+  // Auto-scroll on new content (only when enabled)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [turns])
+    if (autoScroll) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [turns, autoScroll])
+
+  // Detect manual scroll-up → pause autoscroll
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    const onScroll = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+      setAutoScroll(atBottom)
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [])
+
+  // Auto-focus textarea when window becomes focused (Enter key or click)
+  useEffect(() => {
+    if (isFocused) {
+      // Delay slightly to let camera animation start before stealing focus
+      const t = setTimeout(() => inputRef.current?.focus(), 300)
+      return () => clearTimeout(t)
+    }
+  }, [isFocused])
 
   // ─═̷─═̷─ INVOKE ─═̷─═̷─
   const invoke = useCallback(async () => {
@@ -288,7 +371,21 @@ export function AnorakWindowContent({ windowId, initialSessionId }: {
           : '0 8px 40px rgba(0,0,0,0.8)',
       }}
       onPointerDown={e => e.stopPropagation()}
-      onClick={e => e.stopPropagation()}
+      onPointerUp={e => e.stopPropagation()}
+      onClick={e => {
+        e.stopPropagation()
+        // Select this window in the store (DOM click bypasses R3F raycaster)
+        const store = useOasisStore.getState()
+        if (store.selectedObjectId !== windowId) {
+          store.selectObject(windowId)
+          store.setInspectedObject(windowId)
+        }
+        // If click wasn't on an interactive element, focus the textarea
+        const tag = (e.target as HTMLElement).tagName
+        if (tag !== 'TEXTAREA' && tag !== 'INPUT' && tag !== 'BUTTON' && tag !== 'SELECT') {
+          inputRef.current?.focus()
+        }
+      }}
     >
       {/* ═══ HEADER ═══ */}
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/10 select-none"
@@ -317,8 +414,18 @@ export function AnorakWindowContent({ windowId, initialSessionId }: {
         </div>
       </div>
 
+      {/* ░▒▓ DUPLICATE SESSION WARNING ▓▒░ */}
+      {isDuplicateSession && (
+        <div className="px-3 py-1.5 text-[9px] font-mono text-amber-300 flex items-center gap-1.5"
+          style={{ background: 'rgba(245,158,11,0.1)', borderBottom: '1px solid rgba(245,158,11,0.2)' }}>
+          <span>⚠️</span>
+          <span>Another window shares this session — concurrent use may corrupt context</span>
+        </div>
+      )}
+
       {/* ═══ STREAM ═══ */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-3 min-h-0"
+      <div className="relative flex-1 overflow-y-auto px-3 py-2 space-y-3 min-h-0"
+        ref={scrollContainerRef}
         style={{ scrollbarWidth: 'thin', scrollbarColor: '#1e293b transparent' }}
       >
         {turns.length === 0 && (
@@ -347,7 +454,7 @@ export function AnorakWindowContent({ windowId, initialSessionId }: {
               {turn.blocks.map(block => {
                 switch (block.kind) {
                   case 'text':
-                    return <div key={block.id} className="text-[11px] text-gray-300 whitespace-pre-wrap leading-relaxed font-mono">{block.content}</div>
+                    return <div key={block.id} className="text-[11px] text-gray-300 leading-relaxed font-mono anorak-md"><Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>{block.content}</Markdown></div>
                   case 'thinking':
                     return (
                       <div key={block.id} className="text-[9px] text-purple-400/60 font-mono italic truncate" title={block.content}>
@@ -361,7 +468,7 @@ export function AnorakWindowContent({ windowId, initialSessionId }: {
                       (b.toolUseId && block.toolUseId ? b.toolUseId === block.toolUseId : !turn.blocks.slice(toolIdx + 1, i).some(x => x.kind === 'tool'))
                     )
                     return <ToolCard key={block.id} name={block.toolName || 'tool'} icon={block.toolIcon || '🔧'} display={block.toolDisplay || block.content}
-                      result={resultBlock ? { preview: resultBlock.content.substring(0, 300), isError: !!resultBlock.isError } : undefined} />
+                      result={resultBlock ? { preview: resultBlock.content, isError: !!resultBlock.isError } : undefined} />
                   }
                   case 'tool_result': return null
                   case 'error':
@@ -389,6 +496,22 @@ export function AnorakWindowContent({ windowId, initialSessionId }: {
           </div>
         ))}
         <div ref={messagesEndRef} />
+
+        {/* ░▒▓ AUTOSCROLL RESUME — appears when user scrolls up ▓▒░ */}
+        {!autoScroll && turns.length > 0 && (
+          <button
+            onClick={() => { setAutoScroll(true); messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }}
+            className="sticky bottom-1 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-full text-[9px] font-mono font-bold cursor-pointer z-10 transition-all hover:scale-105"
+            style={{
+              background: 'rgba(56,189,248,0.2)',
+              border: '1px solid rgba(56,189,248,0.4)',
+              color: '#38bdf8',
+              backdropFilter: 'blur(8px)',
+            }}
+          >
+            ↓ auto-scroll
+          </button>
+        )}
       </div>
 
       {/* ═══ INPUT ═══ */}
@@ -399,6 +522,8 @@ export function AnorakWindowContent({ windowId, initialSessionId }: {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => {
+              // Let Escape bubble to the global handler (unfocus window + return camera)
+              if (e.key === 'Escape') return
               e.stopPropagation()
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); invoke() }
             }}

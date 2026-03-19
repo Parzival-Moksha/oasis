@@ -6,7 +6,6 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextRequest } from 'next/server'
-import { auth } from '../../../../lib/auth'
 
 const ALLOWED_MODELS = [
   'anthropic/claude-sonnet-4-6',

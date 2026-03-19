@@ -17,7 +17,6 @@ export const dynamic = 'force-dynamic'
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextRequest } from 'next/server'
-import { auth } from '@/lib/auth'
 import { spawn } from 'child_process'
 
 const ADMIN_USER_ID = process.env.ADMIN_USER_ID || ''

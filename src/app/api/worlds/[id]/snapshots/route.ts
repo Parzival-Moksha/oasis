@@ -10,7 +10,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { getLocalUserId } from '@/lib/local-auth'
 import { listSnapshots, restoreSnapshot, loadWorld } from '@/lib/forge/world-server'
 
 type RouteContext = { params: Promise<{ id: string }> }
@@ -21,10 +21,7 @@ type RouteContext = { params: Promise<{ id: string }> }
 
 export async function GET(_request: Request, context: RouteContext) {
   try {
-    const session = await auth()
-    const _userId = session?.user?.id || process.env.ADMIN_USER_ID || 'local-user'; if (false) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const _userId = await getLocalUserId()
 
     const { id } = await context.params
     const snapshots = await listSnapshots(id, _userId)
@@ -43,10 +40,7 @@ export async function GET(_request: Request, context: RouteContext) {
 
 export async function POST(request: Request, context: RouteContext) {
   try {
-    const session = await auth()
-    const _userId = session?.user?.id || process.env.ADMIN_USER_ID || 'local-user'; if (false) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const _userId = await getLocalUserId()
 
     const { id } = await context.params
     const { snapshotId } = await request.json() as { snapshotId: string }
@@ -74,10 +68,7 @@ export async function POST(request: Request, context: RouteContext) {
 
 export async function PUT(_request: Request, context: RouteContext) {
   try {
-    const session = await auth()
-    const _userId = session?.user?.id || process.env.ADMIN_USER_ID || 'local-user'; if (false) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const _userId = await getLocalUserId()
 
     const { id } = await context.params
 

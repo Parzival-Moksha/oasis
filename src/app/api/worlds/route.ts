@@ -9,7 +9,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { getLocalUserId } from '@/lib/local-auth'
 import {
   getRegistry, createWorld, saveWorld,
   type WorldState,
@@ -21,9 +21,7 @@ import {
 
 export async function GET() {
   try {
-    const session = await auth()
-    // Local mode: fallback to admin user ID if no session
-    const userId = session?.user?.id || process.env.ADMIN_USER_ID || 'local-user'
+    const userId = await getLocalUserId()
 
     const registry = await getRegistry(userId)
     return NextResponse.json(registry)
@@ -43,9 +41,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const session = await auth()
-    // Local mode: fallback to admin user ID if no session
-    const userId = session?.user?.id || process.env.ADMIN_USER_ID || 'local-user'
+    const userId = await getLocalUserId()
     const body = await request.json()
 
     // ░▒▓ Import path ▓▒░

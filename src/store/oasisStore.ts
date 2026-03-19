@@ -881,9 +881,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
         worldLights: lights,
         worldSkyBackground: world.skyBackgroundId || 'night007',
         customGroundPresets: mergedCustom,
-        placedAgentWindows: ((world as unknown as Record<string, unknown>).agentWindows as AgentWindow[]) || [],
+        placedAgentWindows: world.agentWindows || [],
       })
-      console.log('[World] Loaded:', world.savedAt, '| objects:', loadedObjCount, '| preset:', world.groundPresetId || 'none', '| tiles:', Object.keys(world.groundTiles || {}).length, '| catalog:', world.catalogPlacements?.length || 0, '| lights:', lights.length, '| sky:', world.skyBackgroundId || 'night007')
+      console.log('[World] Loaded:', world.savedAt, '| objects:', loadedObjCount, '| preset:', world.groundPresetId || 'none', '| tiles:', Object.keys(world.groundTiles || {}).length, '| catalog:', world.catalogPlacements?.length || 0, '| lights:', lights.length, '| sky:', world.skyBackgroundId || 'night007', '| agents:', (world.agentWindows || []).length)
     })
 
     // ░▒▓ REALTIME — subscribe to Merlin/remote updates for the active world ▓▒░
@@ -951,7 +951,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     // Only include customGroundPresets in save if any tiles reference them
     const usedCustomIds = new Set(Object.values(groundTiles).filter(id => id.startsWith('custom_')))
     const relevantCustom = customGroundPresets.filter(p => usedCustomIds.has(p.id))
-    const worldState = { terrain: terrainParams, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, ...(relevantCustom.length > 0 && { customGroundPresets: relevantCustom }), ...(placedAgentWindows.length > 0 && { agentWindows: placedAgentWindows }) }
+    const worldState = { terrain: terrainParams, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, ...(relevantCustom.length > 0 && { customGroundPresets: relevantCustom }), agentWindows: placedAgentWindows }
     // If editing a public_edit world, save to THAT world (not user's own)
     if (get().isViewModeEditable && viewingWorldId) {
       saveWorld(worldState, viewingWorldId) // direct save to viewed world
@@ -1179,6 +1179,10 @@ export const useOasisStore = create<OasisState>((set, get) => {
   },
   focusAgentWindow: (id) => {
     if (id) {
+      // Release pointer lock so cursor can interact with the HTML panel
+      if (typeof document !== 'undefined' && document.pointerLockElement) {
+        document.exitPointerLock()
+      }
       set({ focusedAgentWindowId: id })
     } else {
       set({ focusedAgentWindowId: null })

@@ -7,7 +7,6 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import type { TerrainParams } from '../../../lib/forge/terrain-generator'
-import { auth } from '../../../lib/auth'
 
 const ALLOWED_MODELS = [
   'anthropic/claude-sonnet-4-6',
@@ -123,11 +122,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Prompt too long (2000 char max)' }, { status: 400 })
     }
 
-    // ░▒▓ AUTH + CREDIT CHECK ▓▒░
-    const session = await auth()
-    const _uid = session?.user?.id || process.env.ADMIN_USER_ID || 'local-user'; if (false) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
     // Local mode — no credits. Bring your own API keys.
 
     const apiKey = process.env.OPENROUTER_API_KEY

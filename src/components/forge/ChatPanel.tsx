@@ -8,7 +8,6 @@
 
 import { useState, useRef, useEffect, useCallback, useContext } from 'react'
 import { createPortal } from 'react-dom'
-import { useSession } from 'next-auth/react'
 import { useOasisStore } from '@/store/oasisStore'
 import { SettingsContext } from '../scene-lib'
 
@@ -24,8 +23,9 @@ interface ChatMessage {
 const POLL_INTERVAL = 5000
 const DEFAULT_POS = { x: 16, y: 220 }
 
+const LOCAL_USER_ID = 'local-admin'
+
 export function ChatPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  const { data: session } = useSession()
   const { settings } = useContext(SettingsContext)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
@@ -184,7 +184,7 @@ export function ChatPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
           </p>
         )}
         {messages.map(msg => {
-          const isOwn = msg.user_id === session?.user?.id
+          const isOwn = msg.user_id === LOCAL_USER_ID
           return (
             <div key={msg.id} className={`flex gap-2 ${isOwn ? 'flex-row-reverse' : ''}`}>
               {/* Avatar */}

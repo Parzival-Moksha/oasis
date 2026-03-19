@@ -29,7 +29,6 @@ import { MeshyClient } from '@/lib/conjure/meshy'
 import { TripoClient } from '@/lib/conjure/tripo'
 import { PROVIDERS } from '@/lib/conjure/types'
 import type { ConjureRequest, ConjuredAsset, ProviderName, ConjureStatus, RigResult } from '@/lib/conjure/types'
-import { auth } from '@/lib/auth'
 import { getServerSupabase } from '@/lib/supabase'
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -10,7 +10,6 @@ import { OrbitControls, PointerLockControls, KeyboardControls, useKeyboardContro
 import { EffectComposer, Bloom, Vignette, ChromaticAberration } from '@react-three/postprocessing'
 import { BlendFunction } from 'postprocessing'
 import { Suspense, useState, useRef, useContext, useEffect, useCallback, useTransition } from 'react'
-import { useSession } from 'next-auth/react'
 import * as THREE from 'three'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -365,11 +364,11 @@ function SettingsContent() {
         <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-2">Camera Controls</div>
         <select
           value={settings.controlMode}
-          onChange={(e) => updateSetting('controlMode', e.target.value as 'orbit' | 'fps' | 'third-person')}
+          onChange={(e) => updateSetting('controlMode', e.target.value as 'orbit' | 'noclip' | 'third-person')}
           className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-300 hover:border-purple-500 focus:border-purple-500 focus:outline-none transition-colors mb-2"
         >
           <option value="orbit">Orbit (Classic)</option>
-          <option value="fps">FPS (Quake-style)</option>
+          <option value="noclip">Noclip (fly)</option>
           <option value="third-person">Third Person (Avatar)</option>
         </select>
 
@@ -385,7 +384,7 @@ function SettingsContent() {
           </label>
         )}
 
-        {(settings.controlMode === 'fps' || settings.controlMode === 'third-person') && (
+        {(settings.controlMode === 'noclip' || settings.controlMode === 'third-person') && (
           <>
             <div className="py-1.5">
               <div className="flex items-center justify-between mb-2">
@@ -420,7 +419,7 @@ function SettingsContent() {
             </div>
 
             <div className="text-[10px] text-gray-500 mt-2">
-              {settings.controlMode === 'fps'
+              {settings.controlMode === 'noclip'
                 ? 'Click canvas to lock pointer · WASD to move · Q/E up/down · ESC to unlock'
                 : 'Click canvas to lock pointer · WASD to move avatar · Mouse to orbit camera · ESC to unlock'}
             </div>
@@ -601,6 +600,11 @@ function AgentWindowFocus() {
       startTimeRef.current = performance.now() / 1000
 
       if (focusedId) {
+        // ░▒▓ Release pointer lock so browser cursor can interact with Html content ▓▒░
+        if (typeof document !== 'undefined' && document.pointerLockElement) {
+          document.exitPointerLock()
+        }
+
         // Save current camera state for ESC return
         savedCamPosRef.current = camera.position.clone()
         savedCamTargetRef.current = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).add(camera.position)
@@ -617,17 +621,18 @@ function AgentWindowFocus() {
         const euler = new THREE.Euler(rot[0], rot[1], rot[2])
         windowNormal.applyEuler(euler)
 
-        // Distance to fill 90% of viewport — based on window world size and camera FOV
-        const PX_TO_WORLD = 0.005
-        const worldW = win.width * PX_TO_WORLD * (typeof t?.scale === 'number' ? t.scale : win.scale)
-        const worldH = win.height * PX_TO_WORLD * (typeof t?.scale === 'number' ? t.scale : win.scale)
-        const aspect = state.viewport.aspect
+        // Distance to fill ~90% of viewport with the Html content
+        // Html uses distanceFactor={8}: at distance=8, HTML renders 1:1 pixels.
+        // We want the window to fill the viewport, so we compute the distance
+        // where the HTML's projected size matches ~90% of the screen.
+        const DIST_FACTOR = 8
+        const groupScale = typeof t?.scale === 'number' ? t.scale : Array.isArray(t?.scale) ? t.scale[0] : win.scale
         const fovRad = (camera.fov * Math.PI) / 180
-        // Distance needed to fit height
-        const distH = (worldH / 0.9) / (2 * Math.tan(fovRad / 2))
-        // Distance needed to fit width
-        const distW = (worldW / 0.9) / (2 * Math.tan(fovRad / 2) * aspect)
-        const dist = Math.max(distH, distW)
+        const aspect = state.viewport.aspect
+        // With distanceFactor=8, at d=8 the HTML is 1:1 pixels.
+        // For the window to fill ~90% of viewport, we need more distance.
+        // Empirical: 1.8× distanceFactor gives the right framing.
+        const dist = DIST_FACTOR * groupScale * 1.8
 
         const windowCenter = new THREE.Vector3(pos[0], pos[1], pos[2])
         const cameraGoal = windowCenter.clone().add(windowNormal.clone().multiplyScalar(dist))
@@ -952,9 +957,7 @@ function DevcraftMiniBar({ onExpand }: { onExpand: () => void }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function Scene() {
-  const { data: session } = useSession()
   // Local mode: always admin, never anonymous. Auth is optional.
-  const isAnonymous = false
   const isAdmin = true
   const [isDragging, setIsDragging] = useState(false)
 
@@ -989,6 +992,7 @@ export default function Scene() {
   const inspectedObjectId = useOasisStore(s => s.inspectedObjectId)
   const setInspectedObject = useOasisStore(s => s.setInspectedObject)
   const worldSkyBackground = useOasisStore(s => s.worldSkyBackground)
+  const focusedAgentWindowId = useOasisStore(s => s.focusedAgentWindowId)
 
   // ─═̷─═̷─🌍─═̷─═̷─{ WORLD LOADER — ensures conjured assets + world state loaded }─═̷─═̷─🌍─═̷─═̷─
   useWorldLoader()
@@ -997,13 +1001,12 @@ export default function Scene() {
   const isViewModeEditable = useOasisStore(s => s.isViewModeEditable)
   // Hide editing tools when viewing read-only worlds (but show for public_edit)
   // Anonymous users NEVER get edit tools, even on public_edit worlds
-  const hideEditTools = isAnonymous || (isViewMode && !isViewModeEditable)
+  const hideEditTools = isViewMode && !isViewModeEditable
 
   // ─═̷─═̷─✨─═̷─═̷─{ WIZARD CONSOLE + ASSET EXPLORER STATE }─═̷─═̷─✨─═̷─═̷─
   const [wizardOpen, setWizardOpen] = useState(true)
   // Asset Explorer removed — merged into WizardConsole
   const [actionLogOpen, setActionLogOpen] = useState(false)
-  const [chatOpen, setChatOpen] = useState(false)
   const [merlinOpen, setMerlinOpen] = useState(false)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -1022,7 +1025,7 @@ export default function Scene() {
 
   // ─═̷─═̷─🎮─═̷─═̷─{ CAMERA MODE HOTKEY: Ctrl+Alt+C cycles orbit→fps→third-person }─═̷─═̷─🎮─═̷─═̷─
   useEffect(() => {
-    const MODES: Array<'orbit' | 'fps' | 'third-person'> = ['orbit', 'fps', 'third-person']
+    const MODES: Array<'orbit' | 'noclip' | 'third-person'> = ['orbit', 'noclip', 'third-person']
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.altKey && e.code === 'KeyC') {
         e.preventDefault()
@@ -1075,7 +1078,7 @@ export default function Scene() {
       camera={{ position: [12, 10, 12], fov: 50, near: 0.1, far: 500 }}
       gl={{ antialias: true }}
       onPointerMissed={() => {
-        if (document.pointerLockElement) return  // FPS mode — click locks pointer, not deselects
+        if (document.pointerLockElement) return  // Noclip/TPS mode — click locks pointer, not deselects
         selectObject(null)
       }}
     >
@@ -1100,12 +1103,15 @@ export default function Scene() {
             <CameraLerp controlsRef={orbitControlsRef} />
           </>
         )}
-        {settings.controlMode === 'fps' && (
+        {settings.controlMode === 'noclip' && (
           <>
-            <PointerLockControls
-              selector="#uploader-canvas"
-              pointerSpeed={settings.mouseSensitivity}
-            />
+            {/* ░▒▓ Suppress pointer lock when agent window is focused — need free cursor ▓▒░ */}
+            {!focusedAgentWindowId && (
+              <PointerLockControls
+                selector="#uploader-canvas"
+                pointerSpeed={settings.mouseSensitivity}
+              />
+            )}
             <FPSMovement speed={settings.moveSpeed} />
             <SprintParticles />
           </>
@@ -1152,8 +1158,8 @@ export default function Scene() {
       {/* ─═̷─═̷─⚡ FPS DISPLAY ─═̷─═̷─⚡ */}
       <FPSDisplay enabled={settings.fpsCounterEnabled} fontSize={settings.fpsCounterFontSize} />
 
-      {/* ─═̷─═̷─🎯 CROSSHAIR — FPS mode only ─═̷─═̷─🎯 */}
-      {settings.controlMode === 'fps' && pointerLocked && (
+      {/* ─═̷─═̷─🎯 CROSSHAIR — Noclip mode only ─═̷─═̷─🎯 */}
+      {settings.controlMode === 'noclip' && pointerLocked && (
         <div className="fixed inset-0 pointer-events-none z-[99] flex items-center justify-center">
           <div className="relative w-5 h-5">
             <div className="absolute top-1/2 left-0 w-full h-px bg-white/40" />
@@ -1165,7 +1171,7 @@ export default function Scene() {
 
       {/* ─═̷─═̷─🔮─═̷─═̷─ TOP-LEFT BUTTON BAR — Profile, Settings, Wizard, Action Log ─═̷─═̷─🔮─═̷─═̷─ */}
       <div className="fixed top-4 left-4 z-[200] flex items-start gap-2">
-        {!isAnonymous && <ProfileButton />}
+        <ProfileButton />
         <SettingsGear>
           <SettingsContent />
         </SettingsGear>
@@ -1194,21 +1200,6 @@ export default function Scene() {
             onClick={() => setActionLogOpen(prev => !prev)}
             isOpen={actionLogOpen}
           />
-        )}
-        {!isAnonymous && (
-          <button
-            onClick={() => setChatOpen(prev => !prev)}
-            className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
-            style={{
-              background: chatOpen ? 'rgba(56,189,248,0.3)' : 'rgba(0,0,0,0.6)',
-              border: `1px solid ${chatOpen ? 'rgba(56,189,248,0.6)' : 'rgba(255,255,255,0.15)'}`,
-              color: chatOpen ? '#38BDF8' : '#aaa',
-              boxShadow: chatOpen ? '0 0 12px rgba(56,189,248,0.3)' : 'none',
-            }}
-            title="World Chat"
-          >
-            💬
-          </button>
         )}
         {!hideEditTools && (
           <button
@@ -1253,21 +1244,19 @@ export default function Scene() {
         >
           ⚡
         </button>
-        {!isAnonymous && (
-          <button
-            onClick={() => setFeedbackOpen(prev => !prev)}
-            className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
-            style={{
-              background: feedbackOpen ? 'rgba(249,115,22,0.3)' : 'rgba(0,0,0,0.6)',
-              border: `1px solid ${feedbackOpen ? 'rgba(249,115,22,0.6)' : 'rgba(255,255,255,0.15)'}`,
-              color: feedbackOpen ? '#F97316' : '#aaa',
-              boxShadow: feedbackOpen ? '0 0 12px rgba(249,115,22,0.3)' : 'none',
-            }}
-            title="Anorak — Bug Reports & Feature Requests"
-          >
-            🔮
-          </button>
-        )}
+        <button
+          onClick={() => setFeedbackOpen(prev => !prev)}
+          className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
+          style={{
+            background: feedbackOpen ? 'rgba(249,115,22,0.3)' : 'rgba(0,0,0,0.6)',
+            border: `1px solid ${feedbackOpen ? 'rgba(249,115,22,0.6)' : 'rgba(255,255,255,0.15)'}`,
+            color: feedbackOpen ? '#F97316' : '#aaa',
+            boxShadow: feedbackOpen ? '0 0 12px rgba(249,115,22,0.3)' : 'none',
+          }}
+          title="Anorak — Bug Reports & Feature Requests"
+        >
+          🔮
+        </button>
         <button
           onClick={() => setHelpOpen(prev => !prev)}
           className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
@@ -1305,7 +1294,6 @@ export default function Scene() {
         onClose={() => setActionLogOpen(false)}
       />
 
-      {/* 💬 World Chat — disabled in local mode (legacy from b7_oasis SaaS) */}
 
       {/* 🧙 Merlin — AI World Builder — hidden in view mode */}
       {!hideEditTools && (
@@ -1355,10 +1343,9 @@ export default function Scene() {
       <OasisLoader />
 
       {/* ░▒▓ ONBOARDING — first-login identity setup (requires auth) ▓▒░ */}
-      {!isAnonymous && <OnboardingModal />}
+      <OnboardingModal />
 
       {/* ░▒▓ ANONYMOUS CTA — conversion hook ▓▒░ */}
-      {isAnonymous && isViewMode && <AnonymousCTA />}
     </DragContext.Provider>
     </SettingsContext.Provider>
   )

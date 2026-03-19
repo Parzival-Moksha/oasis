@@ -7,10 +7,8 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { useState, useRef, useEffect } from 'react'
-import { useSession } from 'next-auth/react'
 
 export function OnboardingModal() {
-  const { data: session } = useSession()
   const [show, setShow] = useState(false)
   const [checked, setChecked] = useState(false)
   const [name, setName] = useState('')
@@ -23,18 +21,17 @@ export function OnboardingModal() {
 
   // Check if user needs onboarding
   useEffect(() => {
-    if (!session?.user || checked) return
+    if (checked) return
     fetch('/api/profile')
       .then(r => r.json())
       .then(data => {
         setChecked(true)
         if (data.needsOnboarding) {
           setShow(true)
-          setAvatarPreview(session.user?.image || null)
         }
       })
       .catch(() => setChecked(true))
-  }, [session?.user, checked])
+  }, [checked])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -91,7 +88,7 @@ export function OnboardingModal() {
 
   if (!show) return null
 
-  const initial = (session?.user?.name?.[0] || '?').toUpperCase()
+  const initial = '?'
 
   return (
     <div

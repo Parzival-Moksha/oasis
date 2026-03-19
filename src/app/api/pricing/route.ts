@@ -1,7 +1,11 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-// 04515 — NextAuth API Route
+// PRICING — Stub for local-first mode (no credit gating)
+// Silences the 404 from usePricing.ts on every page load.
+// In SaaS mode this would return real provider costs.
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { handlers } from '@/lib/auth'
+import { NextResponse } from 'next/server'
 
-export const { GET, POST } = handlers
+export async function GET() {
+  return NextResponse.json({ pricing: {} })
+}

@@ -112,19 +112,9 @@ export function RealmSelector() {
     if (next === current) return
     // Optimistic update
     setVisibilityMap(prev => ({ ...prev, [worldId]: next }))
-    try {
-      await fetch(`/api/worlds/${worldId}/visibility`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ visibility: next }),
-      })
-      // Quest: share world (any public visibility counts)
-      if (next === 'public' || next === 'public_edit' || next === 'unlisted') {
-        completeQuest('share-world')
-      }
-    } catch {
-      // Revert on failure
-      setVisibilityMap(prev => ({ ...prev, [worldId]: current }))
+    // Visibility is local-only for now (no server sync needed)
+    if (next === 'public' || next === 'public_edit' || next === 'unlisted') {
+      completeQuest('share-world')
     }
   }, [visibilityMap])
 

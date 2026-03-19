@@ -7,10 +7,9 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { useState, useRef, useEffect, useContext, useCallback } from 'react'
-import { useSession, signOut } from 'next-auth/react'
 import { SettingsContext } from '../scene-lib'
 import { useOasisStore } from '@/store/oasisStore'
-import { FREE_CREDITS, CREDIT_PACKS } from '@/lib/conjure/types'
+import { FREE_CREDITS } from '@/lib/conjure/types'
 import { XP_AWARDS } from '@/lib/xp'
 import { AvatarGallery } from './AvatarGallery'
 
@@ -44,13 +43,10 @@ const XP_ACTION_LABELS = [
 ]
 
 export function ProfileButton() {
-  const { data: session } = useSession()
   const [isOpen, setIsOpen] = useState(false)
   const [profile, setProfile] = useState<ProfileData>({ credits: FREE_CREDITS, xp: 0, level: 1, aura: 0, wallet_address: null, levelTitle: 'Apprentice', levelBadge: '░', levelProgress: 0, xpToNext: 100, needsOnboarding: true, displayName: 'Wanderer', bio: null, avatar_url: null, avatar_3d_url: null, lastLoginDate: null })
   const [showAvatarGallery, setShowAvatarGallery] = useState(false)
-  const [showPacks, setShowPacks] = useState(false)
   const [showXpInfo, setShowXpInfo] = useState(false)
-  const [buying, setBuying] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState('')
   const [editBio, setEditBio] = useState('')
@@ -102,33 +98,14 @@ export function ProfileButton() {
 
   // Eager fetch on mount to get displayName for avatar button
   useEffect(() => {
-    if (session?.user) fetchProfile()
-  }, [session?.user, fetchProfile])
-
-  const buyCredits = useCallback(async (packId: string) => {
-    setBuying(true)
-    try {
-      const res = await fetch('/api/stripe/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ packId }),
-      })
-      const data = await res.json()
-      if (data.url) {
-        window.location.href = data.url
-      }
-    } catch (err) {
-      console.error('[Profile] Checkout failed:', err)
-    } finally {
-      setBuying(false)
-    }
-  }, [])
+    fetchProfile()
+  }, [fetchProfile])
 
   // Refresh profile data when dropdown opens
   useEffect(() => {
-    if (!isOpen || !session?.user) return
+    if (!isOpen) return
     fetchProfile()
-  }, [isOpen, session?.user, fetchProfile])
+  }, [isOpen, fetchProfile])
 
   // Auto-open and refresh after Stripe checkout return
   useEffect(() => {
@@ -156,10 +133,7 @@ export function ProfileButton() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  if (!session?.user) return null
-
-  const user = session.user
-  const displayName = profile.displayName || user.name || 'Wanderer'
+  const displayName = profile.displayName || 'Wanderer'
   const avatarSrc = profile.avatar_url || null
   const initial = (displayName[0] || '?').toUpperCase()
 
@@ -373,44 +347,6 @@ export function ProfileButton() {
             )}
           </div>
 
-          {/* Buy Credits */}
-          <div className="px-4 py-3 border-b border-white/10">
-            {!showPacks ? (
-              <button
-                onClick={() => setShowPacks(true)}
-                className="w-full py-2 rounded-md text-sm font-medium bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white transition-all cursor-pointer"
-              >
-                Buy Credits
-              </button>
-            ) : (
-              <div className="space-y-1.5">
-                <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Select a pack</p>
-                {CREDIT_PACKS.map(pack => (
-                  <button
-                    key={pack.id}
-                    disabled={buying}
-                    onClick={() => buyCredits(pack.id)}
-                    className={`w-full text-left px-3 py-2 rounded-md text-xs transition-all cursor-pointer ${
-                      pack.popular
-                        ? 'bg-purple-600/20 border border-purple-500/40 text-purple-300 hover:bg-purple-600/30'
-                        : 'bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10'
-                    } ${buying ? 'opacity-50 cursor-wait' : ''}`}
-                  >
-                    <span className="font-medium">{pack.credits} credits</span>
-                    <span className="float-right text-green-400">${(pack.priceUsd / 100).toFixed(0)}</span>
-                    {pack.popular && <span className="block text-[9px] text-purple-400 mt-0.5">Most popular</span>}
-                  </button>
-                ))}
-                <button
-                  onClick={() => setShowPacks(false)}
-                  className="w-full text-center text-[10px] text-gray-600 hover:text-gray-400 mt-1 cursor-pointer"
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
-          </div>
-
           {/* Menu items */}
           <div className="p-2">
             <button
@@ -434,12 +370,6 @@ export function ProfileButton() {
               className="w-full text-left px-3 py-2 rounded text-sm text-gray-500 cursor-not-allowed"
             >
               Wallet (coming soon)
-            </button>
-            <button
-              onClick={() => { signOut({ callbackUrl: '/login' }); setIsOpen(false) }}
-              className="w-full text-left px-3 py-2 rounded text-sm text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
-            >
-              Sign Out
             </button>
           </div>
         </div>
