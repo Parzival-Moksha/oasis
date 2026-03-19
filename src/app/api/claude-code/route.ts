@@ -135,7 +135,6 @@ export async function POST(request: NextRequest) {
       }
 
       const keepAliveInterval = setInterval(sendKeepAlive, 15000)
-      sendEvent('status', { content: `Starting Claude Code (${agentModel})${isResume ? ' — resuming session' : ''}...` })
 
       // ── SPAWN CLAUDE CODE ───────────────────────────────
       const child = spawn(claudePath, args, {
@@ -156,10 +155,9 @@ export async function POST(request: NextRequest) {
       let lastSeenContentLength = 0
       let lastSeenTextContent = ''
       let lastTextBlockIndex = -1
+      const emittedToolInputs = new Set<string>() // track which tool_use IDs we've emitted with populated input
       // Track tool_use_id → tool name for linking results
       const toolUseIdToName = new Map<string, string>()
-
-      sendEvent('status', { content: 'Claude Code process started. Streaming...' })
 
       // ── STDOUT: NDJSON stream-json events ─────────────
       child.stdout.on('data', (chunk: Buffer) => {
@@ -180,7 +178,6 @@ export async function POST(request: NextRequest) {
                 capturedSessionId = raw.session_id
                 sendEvent('session', { sessionId: capturedSessionId })
                 console.log(`[ClaudeCode] Session: ${capturedSessionId}`)
-                sendEvent('status', { content: `Model: ${raw.model || agentModel}` })
               }
               // Skip hooks and other system events
             }
@@ -208,7 +205,7 @@ export async function POST(request: NextRequest) {
               // 2. Last existing block grew (text/thinking streaming) → emit delta
               // 3. Text block at any position grew (text between tool calls) → emit delta
 
-              // First: check ALL existing blocks for text growth (fixes missing text between tool calls)
+              // First: check ALL existing blocks for growth (fixes missing text + late tool input)
               for (let i = 0; i < Math.min(lastSeenContentLength, content.length); i++) {
                 const block = content[i]
                 if (block.type === 'text' && block.text && block.text.length > lastSeenTextContent.length && i === lastTextBlockIndex) {
@@ -217,8 +214,22 @@ export async function POST(request: NextRequest) {
                   lastSeenTextContent = block.text
                 }
                 if (block.type === 'thinking' && block.thinking) {
-                  // Thinking always sends full content (frontend replaces)
                   sendEvent('thinking', { content: block.thinking })
+                }
+                // Re-emit tool_use if input was empty before but now populated
+                if (block.type === 'tool_use' && block.name && block.input && Object.keys(block.input).length > 0) {
+                  const toolId = block.id || ''
+                  if (toolId && !emittedToolInputs.has(toolId)) {
+                    emittedToolInputs.add(toolId)
+                    const icon = TOOL_ICONS[block.name] || '🔧'
+                    sendEvent('tool', {
+                      name: block.name,
+                      icon,
+                      id: toolId,
+                      input: block.input,
+                      display: formatToolMsg(block.name, block.input),
+                    })
+                  }
                 }
               }
 
@@ -236,6 +247,7 @@ export async function POST(request: NextRequest) {
                   const icon = TOOL_ICONS[toolName] || '🔧'
                   const display = formatToolMsg(toolName, toolInput)
                   toolUseIdToName.set(toolId, toolName)
+                  if (Object.keys(toolInput).length > 0) emittedToolInputs.add(toolId)
                   sendEvent('tool', {
                     name: toolName,
                     icon,

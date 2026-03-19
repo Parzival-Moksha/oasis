@@ -100,6 +100,26 @@ async function* parseAnorakSSE(response: Response): AsyncGenerator<AnorakEvent> 
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// TOOL ICONS — shared between live stream and session history
+// ═══════════════════════════════════════════════════════════════════════════
+
+const TOOL_ICONS_MAP: Record<string, string> = {
+  Read: '📖', Edit: '✏️', Write: '📝', Bash: '⚡',
+  Grep: '🔍', Glob: '📂', Agent: '🤖', TodoWrite: '📋',
+  WebFetch: '🌐', WebSearch: '🔎', Task: '📋', Skill: '🎯',
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOKEN FORMATTER — exact under 1K, rounded above
+// ═══════════════════════════════════════════════════════════════════════════
+
+function fmtTokens(n: number): string {
+  if (n < 1000) return String(n)
+  if (n < 10000) return `${(n / 1000).toFixed(1)}K`
+  return `${Math.round(n / 1000)}K`
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // COLLAPSIBLE BLOCK — for thinking + tool results
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -541,13 +561,25 @@ export function AnorakPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             }
             if (msg.tools) {
               for (const tool of msg.tools) {
+                const toolId = `hist-tool-${Math.random().toString(36).slice(2, 8)}`
+                const icon = TOOL_ICONS_MAP[tool.name] || '🔧'
                 currentTurn.blocks.push({
-                  id: `hist-tool-${Math.random().toString(36).slice(2, 8)}`,
+                  id: toolId,
                   kind: 'tool',
                   content: tool.name,
                   toolName: tool.name,
-                  toolIcon: tool.name === 'Read' ? '📖' : tool.name === 'Edit' ? '✏️' : tool.name === 'Bash' ? '💻' : tool.name === 'Write' ? '📝' : tool.name === 'Grep' ? '🔍' : tool.name === 'Glob' ? '📂' : '🔧',
+                  toolIcon: icon,
                   toolDisplay: `${tool.name}: ${tool.input || ''}`,
+                  toolUseId: toolId,
+                })
+                // Add synthetic tool_result so the card shows ✓ not spinner
+                currentTurn.blocks.push({
+                  id: `hist-result-${Math.random().toString(36).slice(2, 8)}`,
+                  kind: 'tool_result',
+                  content: '',
+                  toolName: tool.name,
+                  toolUseId: toolId,
+                  isError: false,
                 })
               }
             }
@@ -954,10 +986,10 @@ export function AnorakPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           {isStreaming && (liveTokens.input > 0 || liveTokens.output > 0) && (
             <div className="flex items-center gap-1 text-[9px] font-mono" style={{ fontVariantNumeric: 'tabular-nums' }}>
               <span className="text-sky-400/70">
-                {Math.round(liveTokens.input / 1000)}K↓
+                {fmtTokens(liveTokens.input)}↓
               </span>
               <span className="text-amber-400/70">
-                {Math.round(liveTokens.output / 1000)}K↑
+                {fmtTokens(liveTokens.output)}↑
               </span>
             </div>
           )}
@@ -1231,7 +1263,7 @@ export function AnorakPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                 <div className="flex items-center gap-3 text-[9px] text-gray-600 font-mono pt-1 border-t border-white/5">
                   {turn.costUsd !== undefined && turn.costUsd > 0 && <span>${turn.costUsd.toFixed(4)}</span>}
                   {turn.inputTokens !== undefined && turn.inputTokens > 0 && (
-                    <span>{Math.round(turn.inputTokens / 1000)}K in / {Math.round((turn.outputTokens || 0) / 1000)}K out</span>
+                    <span>{fmtTokens(turn.inputTokens || 0)} in / {fmtTokens(turn.outputTokens || 0)} out</span>
                   )}
                 </div>
               )}
