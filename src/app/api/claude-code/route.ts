@@ -155,6 +155,7 @@ export async function POST(request: NextRequest) {
       // Each assistant event is a COMPLETE snapshot — we diff against previous
       let lastSeenContentLength = 0
       let lastSeenTextContent = ''
+      let lastTextBlockIndex = -1
       // Track tool_use_id → tool name for linking results
       const toolUseIdToName = new Map<string, string>()
 
@@ -200,7 +201,28 @@ export async function POST(request: NextRequest) {
                 signature?: string
               }>
 
-              // Process only NEW content blocks (diff against last snapshot)
+              // ── DIFF LOGIC: detect new + grown blocks in the snapshot ──
+              // Claude Code sends COMPLETE snapshots. We track what we've seen
+              // and emit only deltas. Three cases:
+              // 1. New blocks (index >= lastSeenContentLength) → emit fully
+              // 2. Last existing block grew (text/thinking streaming) → emit delta
+              // 3. Text block at any position grew (text between tool calls) → emit delta
+
+              // First: check ALL existing blocks for text growth (fixes missing text between tool calls)
+              for (let i = 0; i < Math.min(lastSeenContentLength, content.length); i++) {
+                const block = content[i]
+                if (block.type === 'text' && block.text && block.text.length > lastSeenTextContent.length && i === lastTextBlockIndex) {
+                  const delta = block.text.slice(lastSeenTextContent.length)
+                  if (delta) sendEvent('text', { content: delta })
+                  lastSeenTextContent = block.text
+                }
+                if (block.type === 'thinking' && block.thinking) {
+                  // Thinking always sends full content (frontend replaces)
+                  sendEvent('thinking', { content: block.thinking })
+                }
+              }
+
+              // Then: process genuinely NEW blocks
               for (let i = lastSeenContentLength; i < content.length; i++) {
                 const block = content[i]
 
@@ -223,40 +245,30 @@ export async function POST(request: NextRequest) {
                   })
                 }
                 else if (block.type === 'text' && block.text) {
-                  // Text blocks may grow across multiple assistant events
-                  // Only send the NEW text delta
-                  const fullText = block.text
-                  if (i === lastSeenContentLength - 0 && fullText.startsWith(lastSeenTextContent)) {
-                    // Same text block, grew — send only the delta
-                    const delta = fullText.slice(lastSeenTextContent.length)
-                    if (delta) sendEvent('text', { content: delta })
-                  } else {
-                    // New text block
-                    sendEvent('text', { content: fullText })
-                  }
-                  lastSeenTextContent = fullText
+                  sendEvent('text', { content: block.text })
+                  lastSeenTextContent = block.text
+                  lastTextBlockIndex = i
                 }
               }
 
-              // But ALSO check if the LAST block grew (text streaming within a block)
-              if (content.length > 0 && content.length === lastSeenContentLength) {
-                const lastBlock = content[content.length - 1]
-                if (lastBlock.type === 'text' && lastBlock.text) {
-                  const delta = lastBlock.text.slice(lastSeenTextContent.length)
-                  if (delta) {
-                    sendEvent('text', { content: delta })
-                    lastSeenTextContent = lastBlock.text
-                  }
-                }
-                if (lastBlock.type === 'thinking' && lastBlock.thinking) {
-                  // Thinking may also stream incrementally
-                  // We already sent the full thinking above — but if it grew,
-                  // the frontend will handle dedup via block replacement
-                  sendEvent('thinking', { content: lastBlock.thinking })
+              // Track the index of the last text block we've seen (for delta detection)
+              for (let i = content.length - 1; i >= 0; i--) {
+                if (content[i].type === 'text') {
+                  lastTextBlockIndex = i
+                  if (content[i].text) lastSeenTextContent = content[i].text!
+                  break
                 }
               }
 
               lastSeenContentLength = content.length
+
+              // Extract token usage from assistant messages for live progress
+              if (msg.usage) {
+                sendEvent('progress', {
+                  inputTokens: msg.usage.input_tokens || 0,
+                  outputTokens: msg.usage.output_tokens || 0,
+                })
+              }
 
               // Capture session_id from assistant event too
               if (raw.session_id && !capturedSessionId) {
@@ -296,6 +308,7 @@ export async function POST(request: NextRequest) {
               // Reset content tracking — new assistant response will follow
               lastSeenContentLength = 0
               lastSeenTextContent = ''
+              lastTextBlockIndex = -1
             }
 
             // ── RESULT — final metadata ────────────────
@@ -355,6 +368,7 @@ export async function POST(request: NextRequest) {
         const text = chunk.toString().trim()
         if (text.length > 0 && text.length < 2000) {
           console.log(`[ClaudeCode:stderr] ${text.substring(0, 200)}`)
+          sendEvent('stderr', { content: text })
         }
       })
 

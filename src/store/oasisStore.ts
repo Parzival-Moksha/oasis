@@ -49,7 +49,7 @@ export type PlacementVfxType =
 const PLACEMENT_VFX_LIST: Exclude<PlacementVfxType, 'random'>[] = ['runeflash', 'sparkburst', 'portalring', 'sigilpulse', 'quantumcollapse', 'phoenixascension', 'dimensionalrift', 'crystalgenesis', 'meteorimpact', 'arcanebloom', 'voidanchor', 'stellarforge']
 
 export interface PlacementPending {
-  type: 'catalog' | 'conjured' | 'crafted' | 'library' | 'image'
+  type: 'catalog' | 'conjured' | 'crafted' | 'library' | 'image' | 'agent'
   catalogId?: string
   name: string
   path?: string
@@ -59,6 +59,10 @@ export interface PlacementPending {
   imageUrl?: string
   /** Frame style ID for image placements */
   imageFrameStyle?: string
+  /** For agent window placements */
+  agentType?: AgentWindowType
+  /** Carry over session ID from existing panel */
+  agentSessionId?: string
 }
 
 export interface ActivePlacementVfx {
@@ -67,6 +71,21 @@ export interface ActivePlacementVfx {
   type: PlacementVfxType
   startedAt: number
   duration: number
+}
+
+// ─═̷─═̷─💻 AGENT WINDOW — placeable interactive panels in 3D ─═̷─═̷─💻
+export type AgentWindowType = 'anorak' | 'merlin' | 'devcraft'
+
+export interface AgentWindow {
+  id: string                              // e.g. 'agent-anorak-1710859200000'
+  agentType: AgentWindowType
+  position: [number, number, number]
+  rotation: [number, number, number]      // euler angles
+  scale: number                           // uniform scale (default 1)
+  width: number                           // px width of HTML content (default 800)
+  height: number                          // px height of HTML content (default 600)
+  sessionId?: string                      // claude code session ID (anorak only)
+  label?: string                          // user-assignable name
 }
 
 // ─═̷─═̷─⏪ UNDO/REDO — Time travel for world edits ─═̷─═̷─⏪
@@ -271,6 +290,15 @@ interface OasisState {
   enterViewMode: (worldId: string, allowEdit?: boolean) => void   // load a public world (allowEdit=false for anonymous)
   exitViewMode: () => void                                       // return to user's own world
 
+  // ─═̷─═̷─💻 3D AGENT WINDOWS — placeable Claude Code / Merlin / DevCraft in-world ─═̷─═̷─💻
+  placedAgentWindows: AgentWindow[]
+  focusedAgentWindowId: string | null       // when set, camera locks to fill viewport with this window
+  _preFocusCameraState: { position: [number, number, number]; target: [number, number, number] } | null
+  addAgentWindow: (window: AgentWindow) => void
+  removeAgentWindow: (id: string) => void
+  updateAgentWindow: (id: string, partial: Partial<AgentWindow>) => void
+  focusAgentWindow: (id: string | null) => void
+
   // ─═̷─═̷─⏪ UNDO/REDO ─═̷─═̷─⏪
   undoStack: UndoCommand[]
   redoStack: UndoCommand[]
@@ -346,6 +374,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
   _loadedObjectCount: 0,  // ░▒▓ SANITY CHECK: set on load, checked on save — blocks catastrophic nukes ▓▒░
   _realtimeChannel: null,
   _isReceivingRemoteUpdate: false,
+
+  // ─═̷─═̷─💻 3D AGENT WINDOWS ─═̷─═̷─💻
+  placedAgentWindows: [],
+  focusedAgentWindowId: null,
+  _preFocusCameraState: null,
 
   // ─═̷─═̷─🧑 AVATAR ─═̷─═̷─🧑
   avatar3dUrl: '/avatars/gallery/CoolAlien.vrm', // Default avatar for local mode
@@ -821,7 +854,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     loadWorld().then(world => {
       if (get().isViewMode) return // check again after async — view mode may have been entered during fetch
       if (!world) {
-        set({ _worldReady: true, _loadedObjectCount: 0, terrainParams: null, groundPresetId: 'none', groundTiles: {}, craftedScenes: [], worldConjuredAssetIds: [], placedCatalogAssets: [], transforms: {}, behaviors: {}, worldLights: seedDefaultLights(), worldSkyBackground: 'night007' })
+        set({ _worldReady: true, _loadedObjectCount: 0, terrainParams: null, groundPresetId: 'none', groundTiles: {}, craftedScenes: [], worldConjuredAssetIds: [], placedCatalogAssets: [], transforms: {}, behaviors: {}, worldLights: seedDefaultLights(), worldSkyBackground: 'night007', placedAgentWindows: [] })
         console.log('[World] No data — initialized empty world')
         return
       }
@@ -848,6 +881,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         worldLights: lights,
         worldSkyBackground: world.skyBackgroundId || 'night007',
         customGroundPresets: mergedCustom,
+        placedAgentWindows: ((world as unknown as Record<string, unknown>).agentWindows as AgentWindow[]) || [],
       })
       console.log('[World] Loaded:', world.savedAt, '| objects:', loadedObjCount, '| preset:', world.groundPresetId || 'none', '| tiles:', Object.keys(world.groundTiles || {}).length, '| catalog:', world.catalogPlacements?.length || 0, '| lights:', lights.length, '| sky:', world.skyBackgroundId || 'night007')
     })
@@ -904,7 +938,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       console.warn('[World] ⚠️ Save blocked — world not loaded yet (preventing empty-state overwrite)')
       return
     }
-    const { terrainParams, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, transforms, behaviors, worldLights, worldSkyBackground, viewingWorldId, customGroundPresets, _loadedObjectCount } = get()
+    const { terrainParams, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, transforms, behaviors, worldLights, worldSkyBackground, viewingWorldId, customGroundPresets, placedAgentWindows, _loadedObjectCount } = get()
 
     // ░▒▓ SANITY CHECK: block saves that would catastrophically reduce object count ▓▒░
     // If we loaded 5+ objects and now have 0, something is wrong (stale tab, empty init, etc.)
@@ -917,7 +951,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     // Only include customGroundPresets in save if any tiles reference them
     const usedCustomIds = new Set(Object.values(groundTiles).filter(id => id.startsWith('custom_')))
     const relevantCustom = customGroundPresets.filter(p => usedCustomIds.has(p.id))
-    const worldState = { terrain: terrainParams, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, ...(relevantCustom.length > 0 && { customGroundPresets: relevantCustom }) }
+    const worldState = { terrain: terrainParams, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, ...(relevantCustom.length > 0 && { customGroundPresets: relevantCustom }), ...(placedAgentWindows.length > 0 && { agentWindows: placedAgentWindows }) }
     // If editing a public_edit world, save to THAT world (not user's own)
     if (get().isViewModeEditable && viewingWorldId) {
       saveWorld(worldState, viewingWorldId) // direct save to viewed world
@@ -1120,6 +1154,36 @@ export const useOasisStore = create<OasisState>((set, get) => {
   },
 
   setAvatar3dUrl: (url) => set({ avatar3dUrl: url }),
+
+  // ─═̷─═̷─💻 3D AGENT WINDOWS — place, focus, interact ─═̷─═̷─💻
+  addAgentWindow: (window) => {
+    set(state => ({
+      placedAgentWindows: [...state.placedAgentWindows, window],
+      placementPending: null,
+    }))
+    get().spawnPlacementVfx(window.position)
+    setTimeout(() => get().saveWorldState(), 100)
+  },
+  removeAgentWindow: (id) => {
+    set(state => ({
+      placedAgentWindows: state.placedAgentWindows.filter(w => w.id !== id),
+      focusedAgentWindowId: state.focusedAgentWindowId === id ? null : state.focusedAgentWindowId,
+    }))
+    setTimeout(() => get().saveWorldState(), 100)
+  },
+  updateAgentWindow: (id, partial) => {
+    set(state => ({
+      placedAgentWindows: state.placedAgentWindows.map(w => w.id === id ? { ...w, ...partial } : w),
+    }))
+    setTimeout(() => get().saveWorldState(), 100)
+  },
+  focusAgentWindow: (id) => {
+    if (id) {
+      set({ focusedAgentWindowId: id })
+    } else {
+      set({ focusedAgentWindowId: null })
+    }
+  },
 
   // ─═̷─═̷─👁️ VIEW MODE — peek into someone else's world (read-only) ─═̷─═̷─👁️
   enterViewMode: (worldId, allowEdit = true) => {

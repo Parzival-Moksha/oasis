@@ -41,12 +41,10 @@ import { ObjectInspector } from './forge/ObjectInspector'
 import { ActionLogButton, ActionLogPanel } from './forge/ActionLog'
 import { ProfileButton } from './forge/ProfileButton'
 import { OnboardingModal } from './forge/OnboardingModal'
-import { ChatPanel } from './forge/ChatPanel'
 import { MerlinPanel } from './forge/MerlinPanel'
-import { ClaudeCodePanel } from './forge/ClaudeCodePanel'
+import { AnorakPanel } from './forge/AnorakPanel'
 import dynamic from 'next/dynamic'
 const DevcraftPanel = dynamic(() => import('./forge/DevcraftPanel'), { ssr: false })
-import { FeedbackPanel } from './forge/FeedbackPanel'
 import { HelpPanel } from './forge/HelpPanel'
 import { useWorldLoader } from './forge/WorldObjects'
 import { completeQuest } from '@/lib/quests'
@@ -93,6 +91,12 @@ function FPSMovement({ speed }: { speed: number }) {
   const elapsedRef = useRef(0)
 
   useFrame((state, delta) => {
+    // ░▒▓ WASD BLOCKING — disable movement when typing in panels or focused on agent window ▓▒░
+    const activeEl = typeof document !== 'undefined' ? document.activeElement : null
+    const isTyping = activeEl?.tagName === 'INPUT' || activeEl?.tagName === 'TEXTAREA' || activeEl?.tagName === 'SELECT'
+      || (activeEl as HTMLElement)?.isContentEditable
+    if (isTyping || useOasisStore.getState().focusedAgentWindowId) return
+
     const { forward, backward, left, right, up, down, sprint, slow } = getKeys()
 
     // ── Speed multiplier ramp (~1s to full) ──────────────────────────
@@ -568,6 +572,111 @@ function CameraLerp({ controlsRef }: { controlsRef: React.RefObject<any> }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// AGENT WINDOW FOCUS — Camera flies to fill viewport with selected 3D window
+// ░▒▓ Enter = focus, ESC = unfocus. Camera position + lookAt both lerped. ▓▒░
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function AgentWindowFocus() {
+  const focusedId = useOasisStore(s => s.focusedAgentWindowId)
+  const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
+  const transforms = useOasisStore(s => s.transforms)
+
+  // Lerp state
+  const startPosRef = useRef<THREE.Vector3 | null>(null)
+  const startTargetRef = useRef<THREE.Vector3 | null>(null)
+  const goalPosRef = useRef<THREE.Vector3 | null>(null)
+  const goalTargetRef = useRef<THREE.Vector3 | null>(null)
+  const startTimeRef = useRef(0)
+  const prevFocusedRef = useRef<string | null>(null)
+  const savedCamPosRef = useRef<THREE.Vector3 | null>(null)
+  const savedCamTargetRef = useRef<THREE.Vector3 | null>(null)
+  const DURATION = 1.2 // seconds
+
+  useFrame((state) => {
+    const camera = state.camera as THREE.PerspectiveCamera
+
+    // Detect focus change
+    if (focusedId !== prevFocusedRef.current) {
+      prevFocusedRef.current = focusedId
+      startTimeRef.current = performance.now() / 1000
+
+      if (focusedId) {
+        // Save current camera state for ESC return
+        savedCamPosRef.current = camera.position.clone()
+        savedCamTargetRef.current = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).add(camera.position)
+
+        // Find the window
+        const win = placedAgentWindows.find(w => w.id === focusedId)
+        if (!win) return
+        const t = transforms[win.id]
+        const pos = t?.position || win.position
+        const rot = t?.rotation || win.rotation
+
+        // Calculate camera position: offset along window's local -Z (normal pointing toward viewer)
+        const windowNormal = new THREE.Vector3(0, 0, 1)
+        const euler = new THREE.Euler(rot[0], rot[1], rot[2])
+        windowNormal.applyEuler(euler)
+
+        // Distance to fill 90% of viewport — based on window world size and camera FOV
+        const PX_TO_WORLD = 0.005
+        const worldW = win.width * PX_TO_WORLD * (typeof t?.scale === 'number' ? t.scale : win.scale)
+        const worldH = win.height * PX_TO_WORLD * (typeof t?.scale === 'number' ? t.scale : win.scale)
+        const aspect = state.viewport.aspect
+        const fovRad = (camera.fov * Math.PI) / 180
+        // Distance needed to fit height
+        const distH = (worldH / 0.9) / (2 * Math.tan(fovRad / 2))
+        // Distance needed to fit width
+        const distW = (worldW / 0.9) / (2 * Math.tan(fovRad / 2) * aspect)
+        const dist = Math.max(distH, distW)
+
+        const windowCenter = new THREE.Vector3(pos[0], pos[1], pos[2])
+        const cameraGoal = windowCenter.clone().add(windowNormal.clone().multiplyScalar(dist))
+
+        startPosRef.current = camera.position.clone()
+        startTargetRef.current = savedCamTargetRef.current!.clone()
+        goalPosRef.current = cameraGoal
+        goalTargetRef.current = windowCenter
+      } else if (savedCamPosRef.current) {
+        // Unfocusing — return to saved position
+        startPosRef.current = camera.position.clone()
+        startTargetRef.current = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).add(camera.position)
+        goalPosRef.current = savedCamPosRef.current
+        goalTargetRef.current = savedCamTargetRef.current || new THREE.Vector3(0, 0, 0)
+        savedCamPosRef.current = null
+        savedCamTargetRef.current = null
+      }
+    }
+
+    // Animate
+    if (!goalPosRef.current || !startPosRef.current || !goalTargetRef.current || !startTargetRef.current) return
+    const now = performance.now() / 1000
+    const t = Math.min(1, (now - startTimeRef.current) / DURATION)
+    const ease = 1 - Math.pow(1 - t, 3) // ease-out cubic
+
+    camera.position.lerpVectors(startPosRef.current, goalPosRef.current, ease)
+    const lookTarget = new THREE.Vector3().lerpVectors(startTargetRef.current, goalTargetRef.current, ease)
+    camera.lookAt(lookTarget)
+
+    if (t >= 1) {
+      // Animation complete — clear lerp refs but keep focus state
+      startPosRef.current = null
+      startTargetRef.current = null
+      // Keep goalPosRef/goalTargetRef so camera stays locked
+      if (focusedId) {
+        // Keep camera locked on the window
+        camera.position.copy(goalPosRef.current)
+        camera.lookAt(goalTargetRef.current)
+      } else {
+        goalPosRef.current = null
+        goalTargetRef.current = null
+      }
+    }
+  })
+
+  return null
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // POST-PROCESSING EFFECTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1003,6 +1112,9 @@ export default function Scene() {
         )}
         {/* third-person: camera is driven by PlayerAvatar in ForgeRealm — no controls needed here */}
 
+        {/* ░▒▓ AGENT WINDOW FOCUS — camera flies to fill viewport with 3D agent panel ▓▒░ */}
+        <AgentWindowFocus />
+
         <Grid
           position={[0, 0, 0]}
           args={[50, 50]}
@@ -1193,13 +1305,7 @@ export default function Scene() {
         onClose={() => setActionLogOpen(false)}
       />
 
-      {/* 💬 World Chat — requires auth */}
-      {!isAnonymous && (
-        <ChatPanel
-          isOpen={chatOpen}
-          onClose={() => setChatOpen(false)}
-        />
-      )}
+      {/* 💬 World Chat — disabled in local mode (legacy from b7_oasis SaaS) */}
 
       {/* 🧙 Merlin — AI World Builder — hidden in view mode */}
       {!hideEditTools && (
@@ -1209,9 +1315,9 @@ export default function Scene() {
         />
       )}
 
-      {/* 💻 Claude Code — Claude Code Agent — admin only */}
+      {/* 💻 Anorak — Claude Code Agent — admin only */}
       {isAdmin && (
-        <ClaudeCodePanel
+        <AnorakPanel
           isOpen={claudeCodeOpen}
           onClose={() => setClaudeCodeOpen(false)}
         />
@@ -1237,13 +1343,7 @@ export default function Scene() {
         <DevcraftMiniBar onExpand={() => setDevcraftOpen(true)} />
       )}
 
-      {/* 🔮 Anorak — Feedback Portal — requires auth */}
-      {!isAnonymous && (
-        <FeedbackPanel
-          isOpen={feedbackOpen}
-          onClose={() => setFeedbackOpen(false)}
-        />
-      )}
+      {/* 🔮 Feedback — disabled in local mode (legacy from b7_oasis SaaS) */}
 
       {/* ❓ Help Panel — Controls, Guide, Glossary */}
       <HelpPanel

@@ -28,6 +28,7 @@ import { extractModelStats } from './ModelPreview'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
 import { loadAnimationClip, loadClipFromGLTF, retargetClipForVRM, LIB_PREFIX } from '../../lib/forge/animation-library'
+import { AgentWindow3D } from './AgentWindow3D'
 import type { PlacementPending } from '../../store/oasisStore'
 
 // ░▒▓ CLIPBOARD — module-level, survives across renders, no reactivity needed ▓▒░
@@ -1124,6 +1125,19 @@ export function TransformKeyHandler() {
         case 'r': setTransformMode('translate'); break
         case 't': setTransformMode('rotate'); break
         case 'y': setTransformMode('scale'); break
+        // ░▒▓ Enter — focus selected agent window (camera flies to fill viewport) ▓▒░
+        case 'enter': {
+          const state = useOasisStore.getState()
+          const id = state.selectedObjectId
+          if (!id) break
+          // Only focus agent windows
+          const isAgentWindow = state.placedAgentWindows.some(w => w.id === id)
+          if (isAgentWindow) {
+            state.focusAgentWindow(id)
+            e.preventDefault()
+          }
+          break
+        }
         // ░▒▓ Delete — remove selected object from world ▓▒░
         case 'delete': {
           const state = useOasisStore.getState()
@@ -1134,19 +1148,23 @@ export function TransformKeyHandler() {
           const isCrafted = state.craftedScenes.some(s => s.id === id)
           const isConjured = state.worldConjuredAssetIds.includes(id)
           const isLight = state.worldLights.some(l => l.id === id)
+          const isAgentWindow = state.placedAgentWindows.some(w => w.id === id)
           if (isCatalog) state.removeCatalogAsset(id)
           else if (isCrafted) state.removeCraftedScene(id)
           else if (isConjured) state.removeConjuredAssetFromWorld(id)
           else if (isLight) state.removeWorldLight(id)
+          else if (isAgentWindow) state.removeAgentWindow(id)
           else break
           selectObject(null)
           setInspectedObject(null)
           e.preventDefault()
           break
         }
-        case 'Escape':
-          // ESC priority chain: paint mode → placement mode → deselect + close inspector
-          if (useOasisStore.getState().paintMode) {
+        case 'escape':
+          // ESC priority chain: focused agent window → paint mode → placement mode → deselect + close inspector
+          if (useOasisStore.getState().focusedAgentWindowId) {
+            useOasisStore.getState().focusAgentWindow(null)
+          } else if (useOasisStore.getState().paintMode) {
             exitPaintMode()
           } else if (useOasisStore.getState().placementPending) {
             cancelPlacement()
@@ -1468,6 +1486,20 @@ function PlacementOverlay() {
       placeImageAt(placementPending.name, placementPending.imageUrl, pos, placementPending.imageFrameStyle)
     } else if (placementPending.type === 'library' && placementPending.sceneId) {
       placeLibrarySceneAt(placementPending.sceneId, pos)
+    } else if (placementPending.type === 'agent' && placementPending.agentType) {
+      // ░▒▓ Agent window placement — create 3D interactive panel ▓▒░
+      const agentWindow = {
+        id: `agent-${placementPending.agentType}-${Date.now()}`,
+        agentType: placementPending.agentType as import('../../store/oasisStore').AgentWindowType,
+        position: [pos[0], 2.5, pos[2]] as [number, number, number],  // elevated so window floats at eye level
+        rotation: [0, 0, 0] as [number, number, number],
+        scale: 1,
+        width: 800,
+        height: 600,
+        sessionId: placementPending.agentSessionId,
+        label: placementPending.name,
+      }
+      useOasisStore.getState().addAgentWindow(agentWindow)
     } else if (placementPending.type === 'crafted' && placementPending.sceneId) {
       // ░▒▓ Crafted multi-placement — clone the crafted scene at click position ▓▒░
       // Search per-world craftedScenes first, then global sceneLibrary as fallback
@@ -1951,6 +1983,14 @@ export function WorldObjectsRenderer() {
         )
       })}
 
+      {/* ░▒▓ Agent windows — 3D Claude Code / Merlin / DevCraft panels ▓▒░ */}
+      <AgentWindowsSection
+        selectedObjectId={selectedObjectId}
+        selectObject={selectObject}
+        transformMode={transformMode}
+        onTransformChange={handleTransformChange}
+      />
+
       {/* ░▒▓ World lights — user-placed light sources with visual orbs ▓▒░ */}
       <WorldLightsSection
         selectedObjectId={selectedObjectId}
@@ -2024,6 +2064,45 @@ function WorldLightsSection({ selectedObjectId, selectObject, transformMode }: {
           )}
         </group>
       ))}
+    </>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AGENT WINDOWS SECTION — renders 3D Claude Code / Merlin / DevCraft panels
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function AgentWindowsSection({ selectedObjectId, selectObject, transformMode, onTransformChange }: {
+  selectedObjectId: string | null
+  selectObject: (id: string | null) => void
+  transformMode: 'translate' | 'rotate' | 'scale'
+  onTransformChange: (id: string, position: [number, number, number], rotation: [number, number, number], scale: [number, number, number]) => void
+}) {
+  const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
+  const transforms = useOasisStore(s => s.transforms)
+
+  if (placedAgentWindows.length === 0) return null
+
+  return (
+    <>
+      {placedAgentWindows.map(win => {
+        const t = transforms[win.id]
+        return (
+          <SelectableWrapper
+            key={win.id}
+            id={win.id}
+            selected={selectedObjectId === win.id}
+            onSelect={selectObject}
+            transformMode={transformMode}
+            onTransformChange={onTransformChange}
+            initialPosition={t?.position || win.position}
+            initialRotation={t?.rotation || win.rotation}
+            initialScale={t?.scale || win.scale}
+          >
+            <AgentWindow3D window={win} />
+          </SelectableWrapper>
+        )
+      })}
     </>
   )
 }
