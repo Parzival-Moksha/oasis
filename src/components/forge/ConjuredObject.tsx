@@ -26,6 +26,7 @@ import { useOasisStore } from '../../store/oasisStore'
 import { extractModelStats } from './ModelPreview'
 import { isLibraryAnimation, getLibraryAnimId, loadAnimationClip, getCachedClip, LIB_PREFIX, retargetClip } from '../../lib/forge/animation-library'
 import { useInputManager } from '../../lib/input-manager'
+import { dispatch } from '../../lib/event-bus'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 
@@ -421,8 +422,8 @@ export function ConjuredObject({ asset }: ConjuredObjectProps) {
   // dynamically-discovered child assets (rig/animate). Direct store call is bulletproof.
   const handleProxyClick = useCallback((e: { stopPropagation: () => void }) => {
     e.stopPropagation()
-    useOasisStore.getState().selectObject(asset.id)
-    useOasisStore.getState().setInspectedObject(asset.id)
+    dispatch({ type: 'SELECT_OBJECT', payload: { id: asset.id } })
+    dispatch({ type: 'INSPECT_OBJECT', payload: { id: asset.id } })
   }, [asset.id])
 
   // ░▒▓ Display name: behavior label (user rename) > displayName > prompt ▓▒░

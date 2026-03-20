@@ -11,6 +11,7 @@ import { SettingsContext } from '../scene-lib'
 import { useOasisStore } from '../../store/oasisStore'
 import { MODELS, fmtTokens } from '../../lib/anorak-engine'
 import { AnorakContent } from './AnorakContent'
+import { dispatch } from '../../lib/event-bus'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PANEL LAYOUT CONSTANTS
@@ -228,12 +229,12 @@ export function AnorakPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           {/* Place in World */}
           <button
             onClick={() => {
-              useOasisStore.getState().enterPlacementMode({
+              dispatch({ type: 'ENTER_PLACEMENT', payload: { pending: {
                 type: 'agent',
                 name: 'Anorak',
                 agentType: 'anorak',
                 agentSessionId: sessionId || undefined,
-              })
+              } } })
               onClose()
             }}
             disabled={isStreaming}

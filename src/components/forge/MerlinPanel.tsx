@@ -15,6 +15,7 @@ import { useState, useRef, useEffect, useCallback, useContext } from 'react'
 import { createPortal } from 'react-dom'
 import { useOasisStore } from '@/store/oasisStore'
 import { SettingsContext } from '../scene-lib'
+import { dispatch } from '@/lib/event-bus'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES — Merlin SSE event shapes
@@ -326,14 +327,14 @@ export function MerlinPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           case 'result':
             toolEvents = [...toolEvents, event]
             // Reload world after each Merlin tool result (objects appear in real-time)
-            useOasisStore.getState().loadWorldState()
+            dispatch({ type: 'LOAD_WORLD' })
             break
           case 'error':
             textAccumulator += `\n⚠️ ${event.message}`
             break
           case 'done':
             // Reload world state from SQLite so Merlin's changes appear instantly
-            useOasisStore.getState().loadWorldState()
+            dispatch({ type: 'LOAD_WORLD' })
             break
         }
 

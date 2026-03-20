@@ -13,6 +13,7 @@ import { useConjure } from '../../hooks/useConjure'
 import { useOasisStore } from '../../store/oasisStore'
 import { PROVIDERS, REMESH_PRESETS, LIGHT_INTENSITY_MAX, LIGHT_INTENSITY_STEP, type ProviderName, type ConjuredAsset, type ConjureStatus, type CraftedScene, type CatalogPlacement, type RemeshQuality, type WorldLightType, type GeneratedImage } from '../../lib/conjure/types'
 import type { PlacementVfxType } from '../../store/oasisStore'
+import { dispatch } from '../../lib/event-bus'
 import { useContext } from 'react'
 import { GROUND_PRESETS, getTextureUrls } from '../../lib/forge/ground-textures'
 import { ASSET_CATALOG, SKY_BACKGROUNDS } from '../scene-lib/constants'
@@ -1086,7 +1087,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
 
       if (finalParsed.objects.length === 0) {
         // LLM returned garbage — remove the placeholder
-        useOasisStore.getState().removeCraftedScene(sceneId)
+        dispatch({ type: 'REMOVE_CRAFTED_SCENE', payload: { id: sceneId } })
         throw new Error('LLM returned no valid objects')
       }
 
@@ -1098,7 +1099,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
       if (currentWorldId !== originWorldId) {
         console.log(`[Forge:Craft:Stream] World changed during craft (${originWorldId} → ${currentWorldId}). Moving result to origin.`)
         // Remove from current world's store, save to origin via API
-        useOasisStore.getState().removeCraftedScene(sceneId)
+        dispatch({ type: 'REMOVE_CRAFTED_SCENE', payload: { id: sceneId } })
         try {
           const { loadWorld, saveWorld } = await import('../../lib/forge/world-persistence')
           const originState = await loadWorld(originWorldId)
@@ -1122,7 +1123,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
       // XP
       awardXp('CRAFT_SCENE', originWorldId)
       // Save world state
-      useOasisStore.getState().saveWorldState()
+      dispatch({ type: 'SAVE_WORLD' })
       // Track conversation for iterative mode
       setCraftHistory(prev => [
         ...prev,
@@ -1137,7 +1138,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
       // Clean up placeholder if it exists and has no objects
       const existing = useOasisStore.getState().craftedScenes.find(s => s.id === sceneId)
       if (existing && existing.objects.length === 0) {
-        useOasisStore.getState().removeCraftedScene(sceneId)
+        dispatch({ type: 'REMOVE_CRAFTED_SCENE', payload: { id: sceneId } })
       }
     } finally {
       setActiveCrafts(n => {

@@ -637,8 +637,8 @@ export function CatalogModelRenderer({ path, scale, objectId, displayName }: { p
         onClick={(e) => {
           e.stopPropagation()
           if (objectId) {
-            useOasisStore.getState().selectObject(objectId)
-            useOasisStore.getState().setInspectedObject(objectId)
+            dispatch({ type: 'SELECT_OBJECT', payload: { id: objectId } })
+            dispatch({ type: 'INSPECT_OBJECT', payload: { id: objectId } })
           }
         }}
         onPointerOver={(e) => { e.stopPropagation(); setHovered(true); if (!useInputManager.getState().pointerLocked) setShowLabel(true) }}
@@ -1000,8 +1000,8 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
         onClick={(e) => {
           e.stopPropagation()
           if (objectId) {
-            useOasisStore.getState().selectObject(objectId)
-            useOasisStore.getState().setInspectedObject(objectId)
+            dispatch({ type: 'SELECT_OBJECT', payload: { id: objectId } })
+            dispatch({ type: 'INSPECT_OBJECT', payload: { id: objectId } })
           }
         }}
         onPointerOver={(e) => { e.stopPropagation(); setHovered(true); if (!useInputManager.getState().pointerLocked) setShowLabel(true) }}
@@ -1132,7 +1132,7 @@ export function TransformKeyHandler() {
       if ((e.ctrlKey || e.metaKey) && key === 'v' && can.clipboardShortcuts) {
         if (!_clipboard) return
         e.preventDefault()
-        useOasisStore.getState().enterPlacementMode({ ..._clipboard })
+        dispatch({ type: 'ENTER_PLACEMENT', payload: { pending: { ..._clipboard } } })
         input.transition('placement')
         return
       }
@@ -1255,12 +1255,12 @@ export function useWorldLoader() {
                   for (let i = 0; i < newWorldIds.length; i++) {
                     const child = newChildren.find((a: { id: string }) => a.id === newWorldIds[i]) as { id: string; position?: [number, number, number] } | undefined
                     if (child?.position) {
-                      useOasisStore.getState().setObjectTransform(newWorldIds[i], {
+                      dispatch({ type: 'SET_OBJECT_TRANSFORM', payload: { id: newWorldIds[i], transform: {
                         position: [child.position[0] + (i + 1) * 2, child.position[1], child.position[2]],
-                      })
+                      } } })
                     }
                   }
-                  setTimeout(() => useOasisStore.getState().saveWorldState(), 200)
+                  setTimeout(() => dispatch({ type: 'SAVE_WORLD' }), 200)
                   console.log(`[Forge:Poller] Auto-placed ${newWorldIds.length} child(ren) in world`)
                 }
               }
@@ -1296,7 +1296,7 @@ export function useWorldLoader() {
             if (data.asset.status === 'ready' && data.asset.glbPath && asset.status !== 'ready') {
               console.log(`[Forge:Poller] ${asset.id} READY — glbPath: ${data.asset.glbPath}`)
             }
-            useOasisStore.getState().updateConjuredAsset(asset.id, safeUpdates)
+            dispatch({ type: 'UPDATE_CONJURED_ASSET', payload: { id: asset.id, updates: safeUpdates } })
           }
         } catch (err) {
           console.warn(`[Forge:Poller] fetch failed for ${asset.id}:`, err)
@@ -1493,7 +1493,7 @@ function PlacementOverlay() {
         sessionId: placementPending.agentSessionId,
         label: placementPending.name,
       }
-      useOasisStore.getState().addAgentWindow(agentWindow)
+      dispatch({ type: 'ADD_AGENT_WINDOW', payload: { agentType: agentWindow.agentType, position: agentWindow.position, sessionId: agentWindow.sessionId, label: agentWindow.label } })
     } else if (placementPending.type === 'crafted' && placementPending.sceneId) {
       // ░▒▓ Crafted multi-placement — clone the crafted scene at click position ▓▒░
       // Search per-world craftedScenes first, then global sceneLibrary as fallback
@@ -1508,8 +1508,8 @@ function PlacementOverlay() {
           craftedScenes: [...state.craftedScenes, clone],
           placementPending: null,
         }))
-        useOasisStore.getState().spawnPlacementVfx(pos)
-        setTimeout(() => useOasisStore.getState().saveWorldState(), 100)
+        dispatch({ type: 'SPAWN_VFX', payload: { position: pos } })
+        setTimeout(() => dispatch({ type: 'SAVE_WORLD' }), 100)
       } else {
         cancelPlacement()
       }

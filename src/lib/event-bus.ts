@@ -21,11 +21,12 @@ export type OasisCommand =
   | { type: 'SELECT_OBJECT'; payload: { id: string | null } }
   | { type: 'DELETE_OBJECT'; payload: { id: string } }
   | { type: 'INSPECT_OBJECT'; payload: { id: string | null } }
+  | { type: 'SET_OBJECT_TRANSFORM'; payload: { id: string; transform: { position?: [number, number, number]; rotation?: [number, number, number]; scale?: number | [number, number, number] } } }
 
   // Agent windows
   | { type: 'FOCUS_AGENT_WINDOW'; payload: { id: string } }
   | { type: 'UNFOCUS_AGENT_WINDOW' }
-  | { type: 'ADD_AGENT_WINDOW'; payload: { agentType: string; position: [number, number, number] } }
+  | { type: 'ADD_AGENT_WINDOW'; payload: { agentType: string; position: [number, number, number]; sessionId?: string; label?: string } }
   | { type: 'REMOVE_AGENT_WINDOW'; payload: { id: string } }
 
   // Camera
@@ -34,14 +35,24 @@ export type OasisCommand =
 
   // World
   | { type: 'SAVE_WORLD' }
+  | { type: 'LOAD_WORLD' }
   | { type: 'UNDO' }
   | { type: 'REDO' }
+
+  // Crafted scenes
+  | { type: 'REMOVE_CRAFTED_SCENE'; payload: { id: string } }
+
+  // Conjured assets
+  | { type: 'UPDATE_CONJURED_ASSET'; payload: { id: string; updates: Record<string, unknown> } }
 
   // Placement
   | { type: 'ENTER_PLACEMENT'; payload: { pending: unknown } }
   | { type: 'CANCEL_PLACEMENT' }
   | { type: 'ENTER_PAINT_MODE'; payload: { presetId: string } }
   | { type: 'EXIT_PAINT_MODE' }
+
+  // VFX
+  | { type: 'SPAWN_VFX'; payload: { position: [number, number, number] } }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SUBSCRIBER — anyone who wants to react to commands
@@ -212,10 +223,27 @@ export function registerStoreHandler(): () => void {
           scale: 1,
           width: 800,
           height: 600,
+          sessionId: cmd.payload.sessionId,
+          label: cmd.payload.label,
         })
         break
       case 'REMOVE_AGENT_WINDOW':
         store.removeAgentWindow(cmd.payload.id)
+        break
+      case 'SET_OBJECT_TRANSFORM':
+        store.setObjectTransform(cmd.payload.id, cmd.payload.transform)
+        break
+      case 'LOAD_WORLD':
+        store.loadWorldState()
+        break
+      case 'REMOVE_CRAFTED_SCENE':
+        store.removeCraftedScene(cmd.payload.id)
+        break
+      case 'UPDATE_CONJURED_ASSET':
+        store.updateConjuredAsset(cmd.payload.id, cmd.payload.updates)
+        break
+      case 'SPAWN_VFX':
+        store.spawnPlacementVfx(cmd.payload.position)
         break
     }
   })
