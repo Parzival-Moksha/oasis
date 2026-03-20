@@ -47,6 +47,7 @@ const DevcraftPanel = dynamic(() => import('./forge/DevcraftPanel'), { ssr: fals
 import { HelpPanel } from './forge/HelpPanel'
 import { useWorldLoader } from './forge/WorldObjects'
 import { completeQuest } from '@/lib/quests'
+import { useInputManager, getInputCapabilities } from '@/lib/input-manager'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ─═̷─═̷─🎮─═̷─═̷─{ QUAKE FPS CONTROLS - WASD + Q/E }─═̷─═̷─🎮─═̷─═̷─
@@ -91,7 +92,6 @@ function FPSMovement({ speed }: { speed: number }) {
 
   useFrame((state, delta) => {
     // ░▒▓ WASD BLOCKING — InputManager decides if movement is allowed ▓▒░
-    const { getInputCapabilities } = require('../lib/input-manager')
     if (!getInputCapabilities().movement) return
 
     const { forward, backward, left, right, up, down, sprint, slow } = getKeys()
@@ -991,6 +991,9 @@ export default function Scene() {
   const setInspectedObject = useOasisStore(s => s.setInspectedObject)
   const worldSkyBackground = useOasisStore(s => s.worldSkyBackground)
   const focusedAgentWindowId = useOasisStore(s => s.focusedAgentWindowId)
+  // InputManager is THE authority for what controls are active
+  const inputState = useInputManager(s => s.inputState)
+  const isAgentFocused = inputState === 'agent-focus'
 
   // ─═̷─═̷─🌍─═̷─═̷─{ WORLD LOADER — ensures conjured assets + world state loaded }─═̷─═̷─🌍─═̷─═̷─
   useWorldLoader()
@@ -1015,7 +1018,6 @@ export default function Scene() {
   const updateSetting = <K extends keyof OasisSettings>(key: K, value: OasisSettings[K]) => {
     // Sync InputManager when control mode changes
     if (key === 'controlMode') {
-      const { useInputManager } = require('../lib/input-manager')
       useInputManager.getState().syncFromControlMode(value as 'orbit' | 'noclip' | 'third-person')
     }
     setSettings(prev => ({ ...prev, [key]: value }))
@@ -1023,7 +1025,6 @@ export default function Scene() {
 
   // ─═̷─═̷─🎮─═̷─═̷─{ CAMERA MODE HOTKEY: Ctrl+Alt+C cycles orbit→noclip→third-person }─═̷─═̷─🎮─═̷─═̷─
   useEffect(() => {
-    const { useInputManager } = require('../lib/input-manager')
     const MODES: Array<'orbit' | 'noclip' | 'third-person'> = ['orbit', 'noclip', 'third-person']
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.altKey && e.code === 'KeyC') {
@@ -1085,11 +1086,12 @@ export default function Scene() {
 
         {/* ─═̷─═̷─🎮─═̷─═̷─ CAMERA CONTROLS ─═̷─═̷─🎮─═̷─═̷─ */}
         {/* orbit: OrbitControls. fps: PointerLock + WASD. third-person: PlayerAvatar handles camera */}
-        {settings.controlMode === 'orbit' && (
+        {/* ─═̷─═̷─🎮 CAMERA CONTROLS — InputManager is the authority ─═̷─═̷─🎮 */}
+        {/* Orbit mode: OrbitControls (disabled during agent focus) */}
+        {settings.controlMode === 'orbit' && !isAgentFocused && (
           <>
             <OrbitControls
               ref={orbitControlsRef}
-              enabled={!focusedAgentWindowId}
               enablePan={!isDragging}
               enableZoom={!isDragging}
               enableRotate={!isDragging}
@@ -1097,14 +1099,14 @@ export default function Scene() {
               minDistance={0.3}
               maxDistance={500}
             />
-            {settings.showOrbitTarget && !focusedAgentWindowId && <OrbitTargetSphere controlsRef={orbitControlsRef} />}
-            {!focusedAgentWindowId && <CameraLerp controlsRef={orbitControlsRef} />}
+            {settings.showOrbitTarget && <OrbitTargetSphere controlsRef={orbitControlsRef} />}
+            <CameraLerp controlsRef={orbitControlsRef} />
           </>
         )}
+        {/* Noclip mode: PointerLock + WASD (disabled during agent focus) */}
         {settings.controlMode === 'noclip' && (
           <>
-            {/* ░▒▓ Suppress pointer lock when agent window is focused — need free cursor ▓▒░ */}
-            {!focusedAgentWindowId && (
+            {!isAgentFocused && (
               <PointerLockControls
                 selector="#uploader-canvas"
                 pointerSpeed={settings.mouseSensitivity}

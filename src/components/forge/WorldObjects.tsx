@@ -30,6 +30,7 @@ import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
 import { loadAnimationClip, loadClipFromGLTF, retargetClipForVRM, LIB_PREFIX } from '../../lib/forge/animation-library'
 import { AgentWindow3D } from './AgentWindow3D'
 import type { PlacementPending } from '../../store/oasisStore'
+import { useInputManager } from '../../lib/input-manager'
 
 // ░▒▓ CLIPBOARD — module-level, survives across renders, no reactivity needed ▓▒░
 let _clipboard: PlacementPending | null = null
@@ -1052,7 +1053,6 @@ export function TransformKeyHandler() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      const { useInputManager } = require('../../lib/input-manager')
       const input = useInputManager.getState()
       const can = input.can()
 
