@@ -6,7 +6,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { Canvas, useFrame, ThreeEvent } from '@react-three/fiber'
-import { OrbitControls, PointerLockControls, KeyboardControls, useKeyboardControls, Stars, Grid, Html, Line, TransformControls, Environment, useProgress } from '@react-three/drei'
+import { KeyboardControls, Stars, Grid, Html, Line, TransformControls, Environment, useProgress } from '@react-three/drei'
 import { EffectComposer, Bloom, Vignette, ChromaticAberration } from '@react-three/postprocessing'
 import { BlendFunction } from 'postprocessing'
 import { Suspense, useState, useRef, useContext, useEffect, useCallback, useTransition } from 'react'
@@ -48,116 +48,13 @@ import { HelpPanel } from './forge/HelpPanel'
 import { useWorldLoader } from './forge/WorldObjects'
 import { completeQuest } from '@/lib/quests'
 import { useInputManager, getInputCapabilities, isPointerLocked } from '@/lib/input-manager'
+import { CameraController as CameraControllerComponent, sprintRef, FPSControls, FPS_KEYBOARD_MAP } from './CameraController'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ─═̷─═̷─🎮─═̷─═̷─{ QUAKE FPS CONTROLS - WASD + Q/E }─═̷─═̷─🎮─═̷─═̷─
 // ═══════════════════════════════════════════════════════════════════════════════
 
-enum FPSControls {
-  forward = 'forward',
-  backward = 'backward',
-  left = 'left',
-  right = 'right',
-  up = 'up',
-  down = 'down',
-  sprint = 'sprint',
-  slow = 'slow',
-}
-
-const FPS_KEYBOARD_MAP = [
-  { name: FPSControls.forward, keys: ['KeyW', 'ArrowUp'] },
-  { name: FPSControls.backward, keys: ['KeyS', 'ArrowDown'] },
-  { name: FPSControls.left, keys: ['KeyA', 'ArrowLeft'] },
-  { name: FPSControls.right, keys: ['KeyD', 'ArrowRight'] },
-  { name: FPSControls.up, keys: ['KeyQ', 'Space'] },
-  { name: FPSControls.down, keys: ['KeyE'] },
-  { name: FPSControls.sprint, keys: ['ShiftLeft', 'ShiftRight'] },
-  { name: FPSControls.slow, keys: ['ControlLeft', 'ControlRight', 'KeyC'] },
-]
-
-// ─═̷─═̷─🕹️─═̷─═̷─{ FPS MOVEMENT COMPONENT }─═̷─═̷─🕹️─═̷─═̷─
-// Smooth 1-second acceleration ramp via velocity lerp
-// Sprint (Shift) = 4x speed, Slow (Ctrl/C) = 0.25x speed, smooth ramp + VFX
-
-// Module-level ref: FPSMovement writes, PostProcessing + SprintParticles read
-// intensity: 0 = normal, 1 = full sprint, negative = slowing
-const sprintRef = { current: { intensity: 0, multiplier: 1 } }
-
-function FPSMovement({ speed }: { speed: number }) {
-  const [, getKeys] = useKeyboardControls<FPSControls>()
-  const velocityRef = useRef(new THREE.Vector3())
-  const multiplierRef = useRef(1)
-  const baseFovRef = useRef(0)
-  const elapsedRef = useRef(0)
-
-  useFrame((state, delta) => {
-    // ░▒▓ WASD BLOCKING — InputManager decides if movement is allowed ▓▒░
-    if (!getInputCapabilities().movement) return
-
-    const { forward, backward, left, right, up, down, sprint, slow } = getKeys()
-
-    // ── Speed multiplier ramp (~1s to full) ──────────────────────────
-    const targetMultiplier = sprint ? 4 : slow ? 0.25 : 1
-    const rampSpeed = 3 // 1 - e^(-3) ≈ 0.95 after 1s
-    const rampLerp = 1 - Math.exp(-rampSpeed * delta)
-    multiplierRef.current += (targetMultiplier - multiplierRef.current) * rampLerp
-
-    // Publish sprint state for PostProcessing + particles
-    const m = multiplierRef.current
-    sprintRef.current.multiplier = m
-    sprintRef.current.intensity = m > 1.05 ? (m - 1) / 3 : m < 0.95 ? (m - 1) / 0.75 : 0
-
-    // ── Movement direction ───────────────────────────────────────────
-    const direction = new THREE.Vector3()
-    const camera = state.camera
-
-    const cameraDir = new THREE.Vector3()
-    camera.getWorldDirection(cameraDir)
-    cameraDir.y = 0
-    cameraDir.normalize()
-
-    const cameraRight = new THREE.Vector3()
-    cameraRight.crossVectors(cameraDir, new THREE.Vector3(0, 1, 0)).normalize()
-
-    if (forward) direction.add(cameraDir)
-    if (backward) direction.sub(cameraDir)
-    if (right) direction.add(cameraRight)
-    if (left) direction.sub(cameraRight)
-    if (up) direction.y += 1
-    if (down) direction.y -= 1
-
-    direction.normalize()
-
-    const effectiveSpeed = speed * multiplierRef.current
-    const targetVelocity = direction.multiplyScalar(effectiveSpeed)
-
-    // Lerp velocity for smooth ramp (~0.2s to 80% speed)
-    const lerpFactor = 1 - Math.exp(-5 * delta)
-    velocityRef.current.lerp(targetVelocity, lerpFactor)
-
-    camera.position.add(velocityRef.current.clone().multiplyScalar(delta))
-
-    // ── FOV ramp (wider = speed feel) ────────────────────────────────
-    if (camera instanceof THREE.PerspectiveCamera) {
-      if (baseFovRef.current === 0) baseFovRef.current = camera.fov
-      const targetFov = baseFovRef.current + (multiplierRef.current - 1) * 5
-      camera.fov += (targetFov - camera.fov) * rampLerp
-      camera.updateProjectionMatrix()
-    }
-
-    // ── Camera shake (smooth sinusoidal, only during sprint) ─────────
-    const si = Math.max(0, sprintRef.current.intensity)
-    if (si > 0.05) {
-      elapsedRef.current += delta
-      const t = elapsedRef.current
-      const shakeAmt = si * 0.018
-      camera.position.x += Math.sin(t * 23.1) * Math.sin(t * 17.3) * shakeAmt
-      camera.position.y += Math.sin(t * 19.7) * Math.cos(t * 13.8) * shakeAmt
-    }
-  })
-
-  return null
-}
+// FPSControls, FPS_KEYBOARD_MAP, sprintRef — imported from CameraController
 
 // ─═̷─═̷─💨─═̷─═̷─{ SPRINT SPEED LINES }─═̷─═̷─💨─═̷─═̷─
 // Instanced thin streaks that fly past the camera during sprint
@@ -528,153 +425,7 @@ function OrbitTargetSphere({ controlsRef }: { controlsRef: React.RefObject<any> 
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CAMERA LERP — Smooth transition to a target position when selecting objects
-// ░▒▓ Set cameraLookAt in the store → camera glides there over 1500ms ▓▒░
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function CameraLerp({ controlsRef }: { controlsRef: React.RefObject<any> }) {
-  const cameraLookAt = useOasisStore(s => s.cameraLookAt)
-  const setCameraLookAt = useOasisStore(s => s.setCameraLookAt)
-  const targetRef = useRef<THREE.Vector3 | null>(null)
-  const startRef = useRef<THREE.Vector3 | null>(null)
-  const startTimeRef = useRef(0)
-  const DURATION = 1.5 // seconds
-
-  useEffect(() => {
-    if (!cameraLookAt || !controlsRef.current) return
-    const controls = controlsRef.current
-    startRef.current = controls.target.clone()
-    targetRef.current = new THREE.Vector3(...cameraLookAt)
-    startTimeRef.current = performance.now() / 1000
-    // Clear from store immediately so it's a one-shot trigger
-    setCameraLookAt(null)
-  }, [cameraLookAt, controlsRef, setCameraLookAt])
-
-  useFrame((state) => {
-    if (!targetRef.current || !startRef.current || !controlsRef.current) return
-    const elapsed = state.clock.elapsedTime - startTimeRef.current
-    // Fix: use wall clock delta since startTimeRef is wall time
-    const now = performance.now() / 1000
-    const t = Math.min(1, (now - startTimeRef.current) / DURATION)
-    // Smooth ease-out cubic
-    const ease = 1 - Math.pow(1 - t, 3)
-    controlsRef.current.target.lerpVectors(startRef.current, targetRef.current, ease)
-    if (t >= 1) {
-      targetRef.current = null
-      startRef.current = null
-    }
-  })
-
-  return null
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// AGENT WINDOW FOCUS — Camera flies to fill viewport with selected 3D window
-// ░▒▓ Enter = focus, ESC = unfocus. Camera position + lookAt both lerped. ▓▒░
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function AgentWindowFocus() {
-  const focusedId = useOasisStore(s => s.focusedAgentWindowId)
-  const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
-  const transforms = useOasisStore(s => s.transforms)
-
-  // Lerp state
-  const startPosRef = useRef<THREE.Vector3 | null>(null)
-  const startTargetRef = useRef<THREE.Vector3 | null>(null)
-  const goalPosRef = useRef<THREE.Vector3 | null>(null)
-  const goalTargetRef = useRef<THREE.Vector3 | null>(null)
-  const startTimeRef = useRef(0)
-  const prevFocusedRef = useRef<string | null>(null)
-  const savedCamPosRef = useRef<THREE.Vector3 | null>(null)
-  const savedCamTargetRef = useRef<THREE.Vector3 | null>(null)
-  const DURATION = 1.2 // seconds
-
-  useFrame((state) => {
-    const camera = state.camera as THREE.PerspectiveCamera
-
-    // Detect focus change
-    if (focusedId !== prevFocusedRef.current) {
-      prevFocusedRef.current = focusedId
-      startTimeRef.current = performance.now() / 1000
-
-      if (focusedId) {
-        // Pointer lock release is handled by InputManager.enterAgentFocus()
-
-        // Save current camera state for ESC return
-        savedCamPosRef.current = camera.position.clone()
-        savedCamTargetRef.current = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).add(camera.position)
-
-        // Find the window
-        const win = placedAgentWindows.find(w => w.id === focusedId)
-        if (!win) return
-        const t = transforms[win.id]
-        const pos = t?.position || win.position
-        const rot = t?.rotation || win.rotation
-
-        // Calculate camera position: offset along window's local -Z (normal pointing toward viewer)
-        const windowNormal = new THREE.Vector3(0, 0, 1)
-        const euler = new THREE.Euler(rot[0], rot[1], rot[2])
-        windowNormal.applyEuler(euler)
-
-        // Distance to fill ~90% of viewport with the Html content
-        // Html uses distanceFactor={8}: at distance=8, HTML renders 1:1 pixels.
-        // We want the window to fill the viewport, so we compute the distance
-        // where the HTML's projected size matches ~90% of the screen.
-        const DIST_FACTOR = 8
-        const groupScale = typeof t?.scale === 'number' ? t.scale : Array.isArray(t?.scale) ? t.scale[0] : win.scale
-        const fovRad = (camera.fov * Math.PI) / 180
-        const aspect = state.viewport.aspect
-        // With distanceFactor=8, at d=8 the HTML is 1:1 pixels.
-        // For the window to fill ~90% of viewport, we need more distance.
-        // Empirical: 1.8× distanceFactor gives the right framing.
-        const dist = DIST_FACTOR * groupScale * 1.8
-
-        const windowCenter = new THREE.Vector3(pos[0], pos[1], pos[2])
-        const cameraGoal = windowCenter.clone().add(windowNormal.clone().multiplyScalar(dist))
-
-        startPosRef.current = camera.position.clone()
-        startTargetRef.current = savedCamTargetRef.current!.clone()
-        goalPosRef.current = cameraGoal
-        goalTargetRef.current = windowCenter
-      } else if (savedCamPosRef.current) {
-        // Unfocusing — return to saved position
-        startPosRef.current = camera.position.clone()
-        startTargetRef.current = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).add(camera.position)
-        goalPosRef.current = savedCamPosRef.current
-        goalTargetRef.current = savedCamTargetRef.current || new THREE.Vector3(0, 0, 0)
-        savedCamPosRef.current = null
-        savedCamTargetRef.current = null
-      }
-    }
-
-    // Animate
-    if (!goalPosRef.current || !startPosRef.current || !goalTargetRef.current || !startTargetRef.current) return
-    const now = performance.now() / 1000
-    const t = Math.min(1, (now - startTimeRef.current) / DURATION)
-    const ease = 1 - Math.pow(1 - t, 3) // ease-out cubic
-
-    camera.position.lerpVectors(startPosRef.current, goalPosRef.current, ease)
-    const lookTarget = new THREE.Vector3().lerpVectors(startTargetRef.current, goalTargetRef.current, ease)
-    camera.lookAt(lookTarget)
-
-    if (t >= 1) {
-      // Animation complete — clear lerp refs but keep focus state
-      startPosRef.current = null
-      startTargetRef.current = null
-      // Keep goalPosRef/goalTargetRef so camera stays locked
-      if (focusedId) {
-        // Keep camera locked on the window
-        camera.position.copy(goalPosRef.current)
-        camera.lookAt(goalTargetRef.current)
-      } else {
-        goalPosRef.current = null
-        goalTargetRef.current = null
-      }
-    }
-  })
-
-  return null
-}
+// CameraLerp + AgentWindowFocus — REMOVED. Now in CameraController.tsx
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // POST-PROCESSING EFFECTS
@@ -1010,7 +761,6 @@ export default function Scene() {
   const [claudeCodeOpen, setClaudeCodeOpen] = useState(false)
   const [devcraftOpen, setDevcraftOpen] = useState(false)
 
-  const orbitControlsRef = useRef<any>(null)
 
   const updateSetting = <K extends keyof OasisSettings>(key: K, value: OasisSettings[K]) => {
     // Sync InputManager when control mode changes
@@ -1061,42 +811,9 @@ export default function Scene() {
 
         <SkyBackground backgroundId={worldSkyBackground} />
 
-        {/* ─═̷─═̷─🎮─═̷─═̷─ CAMERA CONTROLS ─═̷─═̷─🎮─═̷─═̷─ */}
-        {/* orbit: OrbitControls. fps: PointerLock + WASD. third-person: PlayerAvatar handles camera */}
-        {/* ─═̷─═̷─🎮 CAMERA CONTROLS — InputManager is the authority ─═̷─═̷─🎮 */}
-        {/* Orbit mode: OrbitControls (disabled during agent focus) */}
-        {settings.controlMode === 'orbit' && !isAgentFocused && (
-          <>
-            <OrbitControls
-              ref={orbitControlsRef}
-              enablePan={!isDragging}
-              enableZoom={!isDragging}
-              enableRotate={!isDragging}
-              enableDamping={false}
-              minDistance={0.3}
-              maxDistance={500}
-            />
-            {settings.showOrbitTarget && <OrbitTargetSphere controlsRef={orbitControlsRef} />}
-            <CameraLerp controlsRef={orbitControlsRef} />
-          </>
-        )}
-        {/* Noclip mode: PointerLock + WASD (disabled during agent focus) */}
-        {settings.controlMode === 'noclip' && (
-          <>
-            {!isAgentFocused && (
-              <PointerLockControls
-                selector="#uploader-canvas"
-                pointerSpeed={settings.mouseSensitivity}
-              />
-            )}
-            <FPSMovement speed={settings.moveSpeed} />
-            <SprintParticles />
-          </>
-        )}
-        {/* third-person: camera is driven by PlayerAvatar in ForgeRealm — no controls needed here */}
-
-        {/* ░▒▓ AGENT WINDOW FOCUS — camera flies to fill viewport with 3D agent panel ▓▒░ */}
-        <AgentWindowFocus />
+        {/* ─═̷─═̷─🎮 CAMERA CONTROLLER — ONE owner, ONE useFrame, ZERO fights ─═̷─═̷─🎮 */}
+        <CameraControllerComponent />
+        {settings.controlMode === 'noclip' && <SprintParticles />}
 
         <Grid
           position={[0, 0, 0]}
