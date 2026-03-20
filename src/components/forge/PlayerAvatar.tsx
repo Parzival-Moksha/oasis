@@ -13,14 +13,14 @@
 // NOT stored in world data — per-user, ephemeral, always present.
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { useRef, useEffect, useState, useCallback } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { useFrame, useLoader } from '@react-three/fiber'
 import { useKeyboardControls } from '@react-three/drei'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
-import { loadAnimationClip, retargetClipForVRM } from '../../lib/forge/animation-library'
 import { useInputManager } from '../../lib/input-manager'
+import { AnimationController } from '../../lib/animation-state-machine'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -67,12 +67,8 @@ export function PlayerAvatar({
   const facingAngle = useRef(0) // Y rotation avatar faces
   const isMovingRef = useRef(false)
 
-  // ── Animation state ────────────────────────────────────────────────
-  const mixerRef = useRef<THREE.AnimationMixer | null>(null)
-  const currentActionRef = useRef<THREE.AnimationAction | null>(null)
-  const activeAnimRef = useRef<'idle' | 'run' | 'none'>('none')
-  const [idleClip, setIdleClip] = useState<THREE.AnimationClip | null>(null)
-  const [runClip, setRunClip] = useState<THREE.AnimationClip | null>(null)
+  // ── Animation Controller (state machine) ──────────────────────────
+  const animControllerRef = useRef<AnimationController | null>(null)
 
   // ── IBL one-shot flag ──────────────────────────────────────────────
   const iblAppliedRef = useRef(false)
@@ -133,24 +129,18 @@ export function PlayerAvatar({
   }, [gltf, url])
 
   // ═══════════════════════════════════════════════════════════════════
-  // ANIMATION SETUP — idle + run from Mixamo library
+  // ANIMATION CONTROLLER — state machine for idle/walk/run transitions
   // ═══════════════════════════════════════════════════════════════════
 
   useEffect(() => {
     if (!vrm) return
-    const mixer = new THREE.AnimationMixer(vrm.scene)
-    mixerRef.current = mixer
-    return () => { mixer.stopAllAction(); mixerRef.current = null }
-  }, [vrm])
-
-  useEffect(() => {
-    if (!vrm) return
-    loadAnimationClip('idle').then(clip => {
-      if (clip) setIdleClip(retargetClipForVRM(clip, vrm, 'player-idle'))
+    const controller = new AnimationController(vrm, {
+      crossfadeDuration: 0.3,
+      walkSpeedThreshold: 0.5,
+      runSpeedThreshold: 3.0,
     })
-    loadAnimationClip('run').then(clip => {
-      if (clip) setRunClip(retargetClipForVRM(clip, vrm, 'player-run'))
-    })
+    animControllerRef.current = controller
+    return () => { controller.dispose(); animControllerRef.current = null }
   }, [vrm])
 
   // ═══════════════════════════════════════════════════════════════════
@@ -235,7 +225,7 @@ export function PlayerAvatar({
 
     // ── VRM systems (spring bones, expressions) ──────────────────
     v.update(delta)
-    mixerRef.current?.update(delta)
+    animControllerRef.current?.update(delta)
 
     // ── Blink + subtle smile ─────────────────────────────────────
     const t = state.clock.elapsedTime
@@ -306,18 +296,10 @@ export function PlayerAvatar({
     group.position.copy(positionRef.current)
     group.rotation.y = facingAngle.current
 
-    // ── Animation FSM (runs every frame, acts only on state change) ──
-    const targetAnim = isMovingRef.current && runClip ? 'run' : idleClip ? 'idle' : 'none'
-    if (targetAnim !== activeAnimRef.current && mixerRef.current) {
-      if (currentActionRef.current) currentActionRef.current.fadeOut(0.3)
-      const clip = targetAnim === 'run' ? runClip : idleClip
-      if (clip) {
-        const action = mixerRef.current.clipAction(clip)
-        action.setLoop(THREE.LoopRepeat, Infinity)
-        action.reset().fadeIn(0.3).play()
-        currentActionRef.current = action
-      }
-      activeAnimRef.current = targetAnim
+    // ── Animation state machine — auto-transitions based on velocity ──
+    if (animControllerRef.current) {
+      const speed = velocityRef.current.length()
+      animControllerRef.current.updateFromVelocity(speed)
     }
   })
 
