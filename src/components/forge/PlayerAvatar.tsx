@@ -223,9 +223,9 @@ export function PlayerAvatar({
       iblAppliedRef.current = true
     }
 
-    // ── VRM systems (spring bones, expressions) ──────────────────
-    v.update(delta)
+    // ── Animation mixer first, THEN VRM (spring bones react to new pose) ──
     animControllerRef.current?.update(delta)
+    v.update(delta)
 
     // ── Blink + subtle smile ─────────────────────────────────────
     const t = state.clock.elapsedTime

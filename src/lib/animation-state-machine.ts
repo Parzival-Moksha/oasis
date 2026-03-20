@@ -54,6 +54,8 @@ export class AnimationController {
   private currentState: AnimState = 'idle'
   private currentAction: THREE.AnimationAction | null = null
   private customAnimId: string | null = null
+  private disposed = false
+  private transitionGeneration = 0  // increments on each transition, prevents stale async callbacks
 
   // Ready flag — true when at least idle clip is loaded
   public ready = false
@@ -122,29 +124,34 @@ export class AnimationController {
 
   /** Transition to a new animation state with crossfade */
   transitionTo(state: AnimState, customAnimId?: string): void {
+    if (this.disposed) return
+
     // Determine the clip ID
     let clipId: string
     if (state === 'custom' && customAnimId) {
       clipId = customAnimId
-      this.customAnimId = customAnimId
     } else {
       clipId = state
-      this.customAnimId = null
     }
 
     // Get the clip
     const clip = this.clips.get(clipId)
     if (!clip) {
-      // Clip not loaded yet — try loading it
+      // Clip not loaded — async load with generation guard (prevents stale callback)
+      const gen = ++this.transitionGeneration
       if (state === 'custom' && customAnimId) {
         this.loadClip(customAnimId).then(loaded => {
-          if (loaded) this.transitionTo(state, customAnimId)
+          if (loaded && !this.disposed && this.transitionGeneration === gen) {
+            this.transitionTo(state, customAnimId)
+          }
         })
       }
-      // Fallback: if walk not loaded, try idle
-      if (state === 'walk' && !clip) {
-        const idleClip = this.clips.get('idle')
-        if (idleClip) { this.transitionTo('idle'); return }
+      // Fallback chain: walk→idle, run→walk→idle, custom→idle
+      if (state === 'walk') {
+        if (this.clips.has('idle')) { this.transitionTo('idle'); return }
+      } else if (state === 'run') {
+        if (this.clips.has('walk')) { this.transitionTo('walk'); return }
+        if (this.clips.has('idle')) { this.transitionTo('idle'); return }
       }
       return
     }
@@ -153,6 +160,10 @@ export class AnimationController {
     if (this.currentState === state && (state !== 'custom' || this.customAnimId === customAnimId)) {
       return
     }
+
+    // Update state BEFORE crossfade
+    this.customAnimId = state === 'custom' ? (customAnimId || null) : null
+    this.transitionGeneration++
 
     // Crossfade
     const newAction = this.mixer.clipAction(clip)
@@ -210,7 +221,13 @@ export class AnimationController {
 
   /** Stop all animations and clean up. Call on unmount. */
   dispose(): void {
+    this.disposed = true
     this.mixer.stopAllAction()
+    // Uncache from Three.js internal arrays to allow GC
+    for (const clip of this.clips.values()) {
+      this.mixer.uncacheClip(clip)
+    }
+    this.mixer.uncacheRoot(this.vrm.scene)
     this.clips.clear()
     this.currentAction = null
     this.currentState = 'idle'

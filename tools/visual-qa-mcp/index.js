@@ -17,10 +17,16 @@ async function getClient() {
   const target = targets.find(t => t.type === "page") || targets[0];
   if (!target) throw new Error("No Chrome tabs found on port 9222");
   client = await CDP({ target: target.id, host: "localhost", port: 9222 });
-  await client.Page.enable();
-  await client.Runtime.enable();
-  await client.Input.enable();
+  await enableDomains(client);
+  // Auto-reconnect on disconnect
+  client.on('disconnect', () => { client = null; });
   return client;
+}
+
+async function enableDomains(c) {
+  await c.Page.enable();
+  await c.Runtime.enable();
+  await c.Input.enable();
 }
 
 const server = new McpServer({
@@ -92,8 +98,8 @@ server.tool("switch_tab",
   async ({ targetId }) => {
     if (client) { await client.close(); client = null; }
     client = await CDP({ target: targetId, host: "localhost", port: 9222 });
-    await client.Page.enable();
-    await client.Runtime.enable();
+    await enableDomains(client);
+    client.on('disconnect', () => { client = null; });
     return { content: [{ type: "text", text: `Switched to tab ${targetId}` }] };
   }
 );
