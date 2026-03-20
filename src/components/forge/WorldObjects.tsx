@@ -640,7 +640,7 @@ export function CatalogModelRenderer({ path, scale, objectId, displayName }: { p
             useOasisStore.getState().setInspectedObject(objectId)
           }
         }}
-        onPointerOver={(e) => { e.stopPropagation(); setHovered(true); if (!document.pointerLockElement) setShowLabel(true) }}
+        onPointerOver={(e) => { e.stopPropagation(); setHovered(true); if (!useInputManager.getState().pointerLocked) setShowLabel(true) }}
         onPointerOut={(e) => { e.stopPropagation(); setHovered(false); setShowLabel(false) }}
       >
         <boxGeometry args={[bounds.size.x * scale, bounds.size.y * scale, bounds.size.z * scale]} />
@@ -1003,7 +1003,7 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
             useOasisStore.getState().setInspectedObject(objectId)
           }
         }}
-        onPointerOver={(e) => { e.stopPropagation(); setHovered(true); if (!document.pointerLockElement) setShowLabel(true) }}
+        onPointerOver={(e) => { e.stopPropagation(); setHovered(true); if (!useInputManager.getState().pointerLocked) setShowLabel(true) }}
         onPointerOut={(e) => { e.stopPropagation(); setHovered(false); setShowLabel(false) }}
       >
         <boxGeometry args={[bounds.size.x * scale, bounds.size.y * scale, bounds.size.z * scale]} />
@@ -1544,7 +1544,7 @@ function PlacementOverlay() {
     // ░▒▓ FPS CAMERA FIX — skip R3F pointer events during pointer lock ▓▒░
     // R3F raycaster events corrupt PointerLockControls' delta tracking,
     // causing sudden 20-90° camera snaps. Guard against this.
-    if (document.pointerLockElement) return
+    if (useInputManager.getState().pointerLocked) return
     const point = e.point as THREE.Vector3
     setHoverPos([point.x, 0, point.z])
   }, [])

@@ -47,7 +47,7 @@ const DevcraftPanel = dynamic(() => import('./forge/DevcraftPanel'), { ssr: fals
 import { HelpPanel } from './forge/HelpPanel'
 import { useWorldLoader } from './forge/WorldObjects'
 import { completeQuest } from '@/lib/quests'
-import { useInputManager, getInputCapabilities } from '@/lib/input-manager'
+import { useInputManager, getInputCapabilities, isPointerLocked } from '@/lib/input-manager'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ─═̷─═̷─🎮─═̷─═̷─{ QUAKE FPS CONTROLS - WASD + Q/E }─═̷─═̷─🎮─═̷─═̷─
@@ -598,10 +598,7 @@ function AgentWindowFocus() {
       startTimeRef.current = performance.now() / 1000
 
       if (focusedId) {
-        // ░▒▓ Release pointer lock so browser cursor can interact with Html content ▓▒░
-        if (typeof document !== 'undefined' && document.pointerLockElement) {
-          document.exitPointerLock()
-        }
+        // Pointer lock release is handled by InputManager.enterAgentFocus()
 
         // Save current camera state for ESC return
         savedCamPosRef.current = camera.position.clone()
@@ -1042,31 +1039,11 @@ export default function Scene() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  // ─═̷─═̷─🎯─═̷─═̷─{ FPS POINTER LOCK STATE + RIGHT-CLICK UNLOCK }─═̷─═̷─🎯─═̷─═̷─
-  const [pointerLocked, setPointerLocked] = useState(false)
+  // ─═̷─═̷─🎯─═̷─═̷─{ POINTER LOCK — owned by InputManager }─═̷─═̷─🎯─═̷─═̷─
+  const pointerLocked = useInputManager(s => s.pointerLocked)
 
   useEffect(() => {
-    const onPointerLockChange = () => setPointerLocked(!!document.pointerLockElement)
-    const onMouseDown = (e: MouseEvent) => {
-      if (e.button === 2 && document.pointerLockElement) {
-        e.preventDefault()
-        document.exitPointerLock()
-      }
-    }
-    const onContextMenu = (e: MouseEvent) => {
-      const target = e.target as HTMLElement
-      if (target?.closest('#uploader-canvas') || target?.tagName === 'CANVAS') {
-        e.preventDefault()
-      }
-    }
-    document.addEventListener('pointerlockchange', onPointerLockChange)
-    document.addEventListener('mousedown', onMouseDown)
-    document.addEventListener('contextmenu', onContextMenu)
-    return () => {
-      document.removeEventListener('pointerlockchange', onPointerLockChange)
-      document.removeEventListener('mousedown', onMouseDown)
-      document.removeEventListener('contextmenu', onContextMenu)
-    }
+    return useInputManager.getState().initGlobalListeners()
   }, [])
 
   // ─═̷─═̷─🎮─═̷─═̷─{ CANVAS }─═̷─═̷─🎮─═̷─═̷─
@@ -1076,7 +1053,7 @@ export default function Scene() {
       camera={{ position: [12, 10, 12], fov: 50, near: 0.1, far: 500 }}
       gl={{ antialias: true }}
       onPointerMissed={() => {
-        if (document.pointerLockElement) return  // Noclip/TPS mode — click locks pointer, not deselects
+        if (isPointerLocked()) return  // Noclip/TPS mode — click locks pointer, not deselects
         selectObject(null)
       }}
     >

@@ -25,6 +25,7 @@ import type { ConjuredAsset } from '../../lib/conjure/types'
 import { useOasisStore } from '../../store/oasisStore'
 import { extractModelStats } from './ModelPreview'
 import { isLibraryAnimation, getLibraryAnimId, loadAnimationClip, getCachedClip, LIB_PREFIX, retargetClip } from '../../lib/forge/animation-library'
+import { useInputManager } from '../../lib/input-manager'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 
@@ -470,7 +471,7 @@ export function ConjuredObject({ asset }: ConjuredObjectProps) {
         ref={proxyRef}
         position={[bounds.center.x, bounds.center.y, bounds.center.z]}
         onClick={handleProxyClick}
-        onPointerOver={(e) => { e.stopPropagation(); setHovered(true); if (!document.pointerLockElement) setShowLabel(true) }}
+        onPointerOver={(e) => { e.stopPropagation(); setHovered(true); if (!useInputManager.getState().pointerLocked) setShowLabel(true) }}
         onPointerOut={(e) => { e.stopPropagation(); setHovered(false); setShowLabel(false) }}
       >
         <boxGeometry args={[bounds.size.x, bounds.size.y, bounds.size.z]} />

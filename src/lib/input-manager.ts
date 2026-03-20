@@ -2,198 +2,129 @@
 // INPUT STATE MACHINE — One source of truth for "what owns input right now"
 // ─═̷─═̷─ॐ─═̷─═̷─ The tree, not the haystack ─═̷─═̷─ॐ─═̷─═̷─
 //
-// Every keypress, mouseclick, and pointer lock request goes through here.
-// The state machine decides what happens. No scattered guards. No fights.
-//
-// States form an exclusive hierarchy — exactly ONE is active at any time.
-// Transitions are explicit. No state can be entered without leaving the previous.
+// Owns: input state, pointer lock lifecycle, capability queries.
+// Everyone reads from here. Nobody checks document.pointerLockElement directly.
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
+import { create } from 'zustand'
+
 // ═══════════════════════════════════════════════════════════════════════════
-// INPUT STATES — the exclusive modes of the input system
+// INPUT STATES
 // ═══════════════════════════════════════════════════════════════════════════
 
 export type InputState =
-  | 'orbit'          // Orbit camera. Mouse = orbit/zoom. Click = select object.
-  | 'noclip'         // Fly mode. Pointer locked. WASD = move. Mouse = look.
-  | 'third-person'   // Avatar mode. Pointer locked. WASD = move avatar. Mouse = camera orbit.
-  | 'agent-focus'    // Camera locked to agent window. Mouse = DOM (2D). Type = textarea.
-  | 'placement'      // Placing an object. Click = confirm. Escape = cancel.
-  | 'paint'          // Painting ground tiles. Click = paint. Escape = exit.
-  | 'ui-focused'     // Typing in a panel/textarea. Keys go to DOM. Only Escape exits.
+  | 'orbit'          // Orbit camera. Mouse free. Click = select.
+  | 'noclip'         // Fly mode. WASD moves. Mouse look when pointer locked.
+  | 'third-person'   // Avatar mode. WASD moves avatar. Mouse look when pointer locked.
+  | 'agent-focus'    // Camera locked to agent window. Mouse = DOM. Type = textarea.
+  | 'placement'      // Placing object. Click = confirm. Escape = cancel.
+  | 'paint'          // Painting tiles. Click = paint. Escape = exit.
+  | 'ui-focused'     // Typing in panel. Keys → DOM. Escape exits.
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CAPABILITIES — what each state allows
 // ═══════════════════════════════════════════════════════════════════════════
 
-interface StateCapabilities {
-  /** WASD/QE movement allowed */
+export interface StateCapabilities {
   movement: boolean
-  /** Mouse look (pointer lock) active */
   mouseLook: boolean
-  /** Clicking objects selects them */
   objectSelection: boolean
-  /** R/T/Y transform mode switching */
   transformShortcuts: boolean
-  /** Ctrl+C/V copy/paste */
   clipboardShortcuts: boolean
-  /** Delete key removes objects */
   deleteShortcut: boolean
-  /** Enter key focuses agent windows */
   enterFocuses: boolean
+  /** Whether pointer lock CAN be requested in this state */
+  canLockPointer: boolean
+  /** Whether hover labels should show on objects */
+  showHoverLabels: boolean
 }
 
 const STATE_CAPABILITIES: Record<InputState, StateCapabilities> = {
-  'orbit': {
-    movement: false,
-    mouseLook: false,
-    objectSelection: true,
-    transformShortcuts: true,
-    clipboardShortcuts: true,
-    deleteShortcut: true,
-    enterFocuses: true,
-  },
-  'noclip': {
-    movement: true,
-    mouseLook: true,
-    objectSelection: true,  // click selects when not pointer-locked
-    transformShortcuts: true,
-    clipboardShortcuts: true,
-    deleteShortcut: true,
-    enterFocuses: true,
-  },
-  'third-person': {
-    movement: true,
-    mouseLook: true,
-    objectSelection: true,
-    transformShortcuts: true,
-    clipboardShortcuts: true,
-    deleteShortcut: true,
-    enterFocuses: true,
-  },
-  'agent-focus': {
-    movement: false,
-    mouseLook: false,
-    objectSelection: false,
-    transformShortcuts: false,
-    clipboardShortcuts: false,
-    deleteShortcut: false,
-    enterFocuses: false,  // already focused
-  },
-  'placement': {
-    movement: true,  // can move while placing in noclip
-    mouseLook: true,
-    objectSelection: false,  // click = place, not select
-    transformShortcuts: false,
-    clipboardShortcuts: false,
-    deleteShortcut: false,
-    enterFocuses: false,
-  },
-  'paint': {
-    movement: true,
-    mouseLook: true,
-    objectSelection: false,  // click = paint, not select
-    transformShortcuts: false,
-    clipboardShortcuts: false,
-    deleteShortcut: false,
-    enterFocuses: false,
-  },
-  'ui-focused': {
-    movement: false,
-    mouseLook: false,
-    objectSelection: false,
-    transformShortcuts: false,
-    clipboardShortcuts: false,
-    deleteShortcut: false,
-    enterFocuses: false,
-  },
+  'orbit':        { movement: false, mouseLook: false, objectSelection: true,  transformShortcuts: true,  clipboardShortcuts: true,  deleteShortcut: true,  enterFocuses: true,  canLockPointer: false, showHoverLabels: true  },
+  'noclip':       { movement: true,  mouseLook: true,  objectSelection: true,  transformShortcuts: true,  clipboardShortcuts: true,  deleteShortcut: true,  enterFocuses: true,  canLockPointer: true,  showHoverLabels: false },
+  'third-person': { movement: true,  mouseLook: true,  objectSelection: true,  transformShortcuts: true,  clipboardShortcuts: true,  deleteShortcut: true,  enterFocuses: true,  canLockPointer: true,  showHoverLabels: false },
+  'agent-focus':  { movement: false, mouseLook: false, objectSelection: false, transformShortcuts: false, clipboardShortcuts: false, deleteShortcut: false, enterFocuses: false, canLockPointer: false, showHoverLabels: false },
+  'placement':    { movement: true,  mouseLook: true,  objectSelection: false, transformShortcuts: false, clipboardShortcuts: false, deleteShortcut: false, enterFocuses: false, canLockPointer: true,  showHoverLabels: false },
+  'paint':        { movement: true,  mouseLook: true,  objectSelection: false, transformShortcuts: false, clipboardShortcuts: false, deleteShortcut: false, enterFocuses: false, canLockPointer: true,  showHoverLabels: false },
+  'ui-focused':   { movement: false, mouseLook: false, objectSelection: false, transformShortcuts: false, clipboardShortcuts: false, deleteShortcut: false, enterFocuses: false, canLockPointer: false, showHoverLabels: false },
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TRANSITION TABLE — valid state transitions
-// Every transition has a name for debugging and an optional side effect.
+// ESCAPE TRANSITIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
-type TransitionResult = { to: InputState; sideEffect?: () => void } | null
-
-/** Determine the next state when Escape is pressed */
-function escapeTransition(current: InputState): TransitionResult {
+function escapeTransition(current: InputState): InputState | null {
   switch (current) {
-    case 'agent-focus':   return { to: 'orbit' }  // will be overridden to restore previous camera state
-    case 'ui-focused':    return { to: 'orbit' }  // will be overridden to restore previous state
-    case 'paint':         return { to: 'orbit' }
-    case 'placement':     return { to: 'orbit' }
-    default:              return null  // orbit/noclip/third-person: deselect (handled by consumer)
+    case 'agent-focus': return 'orbit'  // overridden by _previousCameraState
+    case 'ui-focused':  return 'orbit'
+    case 'paint':       return 'orbit'
+    case 'placement':   return 'orbit'
+    default:            return null     // base camera states: not consumed
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ZUSTAND SLICE — the actual state + actions
-// This is designed to be merged into oasisStore, but starts standalone
-// for clean separation during migration.
+// STORE
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { create } from 'zustand'
-
 interface InputManagerState {
-  /** Current input state */
   inputState: InputState
-  /** The camera mode before entering a temporary state (agent-focus, ui-focused) */
+  pointerLocked: boolean
   _previousCameraState: InputState | null
 
-  /** Get capabilities for current state */
+  // Queries
   can: () => StateCapabilities
-  /** Transition to a new state */
+  isPointerLocked: () => boolean
+
+  // State transitions
   transition: (to: InputState) => void
-  /** Handle Escape key — returns true if consumed */
-  handleEscape: () => boolean
-  /** Enter agent focus mode (saves current state for return) */
   enterAgentFocus: () => void
-  /** Enter UI focus mode (saves current state for return) */
   enterUIFocus: () => void
-  /** Return to the saved camera state */
   returnToPrevious: () => void
-  /** Sync from settings.controlMode (bridge during migration) */
+  handleEscape: () => boolean
   syncFromControlMode: (mode: 'orbit' | 'noclip' | 'third-person') => void
+
+  // Pointer lock lifecycle
+  requestPointerLock: () => void
+  releasePointerLock: () => void
+  /** Called by the global pointerlockchange listener — do NOT call manually */
+  _syncPointerLockState: () => void
+
+  // Global event setup (call once on mount)
+  initGlobalListeners: () => (() => void)
 }
 
 export const useInputManager = create<InputManagerState>((set, get) => ({
-  inputState: 'noclip',  // default matches constants.ts
+  inputState: 'noclip',
+  pointerLocked: false,
   _previousCameraState: null,
 
   can: () => STATE_CAPABILITIES[get().inputState],
+  isPointerLocked: () => get().pointerLocked,
+
+  // ── STATE TRANSITIONS ──────────────────────────────────────────
 
   transition: (to) => {
     const current = get().inputState
     if (current === to) return
-
-    // Release pointer lock when transitioning to a non-mouseLook state
-    if (STATE_CAPABILITIES[current].mouseLook && !STATE_CAPABILITIES[to].mouseLook) {
-      if (typeof document !== 'undefined' && document.pointerLockElement) {
-        document.exitPointerLock()
-      }
+    // Release pointer lock when transitioning to a state that doesn't use it
+    if (get().pointerLocked && !STATE_CAPABILITIES[to].canLockPointer) {
+      document.exitPointerLock()
     }
-
     set({ inputState: to })
   },
 
   enterAgentFocus: () => {
     const current = get().inputState
-    // Save current camera state so Escape can return to it
     const cameraState = (current === 'agent-focus' || current === 'ui-focused')
-      ? get()._previousCameraState
-      : current
-    set({ inputState: 'agent-focus', _previousCameraState: cameraState })
-
+      ? get()._previousCameraState : current
     // Release pointer lock for DOM interaction
-    if (typeof document !== 'undefined' && document.pointerLockElement) {
-      document.exitPointerLock()
-    }
+    if (get().pointerLocked) document.exitPointerLock()
+    set({ inputState: 'agent-focus', _previousCameraState: cameraState })
   },
 
   enterUIFocus: () => {
     const current = get().inputState
-    // Don't override previous if we're already in a temporary state
     if (current !== 'ui-focused' && current !== 'agent-focus') {
       set({ inputState: 'ui-focused', _previousCameraState: current })
     } else {
@@ -204,7 +135,7 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
   returnToPrevious: () => {
     const prev = get()._previousCameraState || 'orbit'
     set({ inputState: prev, _previousCameraState: null })
-    // Release DOM focus so keyboard events go back to the game (WASD etc.)
+    // Blur DOM so keyboard goes back to game
     if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
       document.activeElement.blur()
     }
@@ -212,39 +143,93 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
 
   handleEscape: () => {
     const current = get().inputState
-    const result = escapeTransition(current)
-    if (!result) return false  // not consumed — let consumer handle (deselect etc.)
-
-    // Return to saved state instead of hardcoded 'orbit'
-    const prev = get()._previousCameraState || result.to
+    const fallback = escapeTransition(current)
+    if (!fallback) return false
+    const prev = get()._previousCameraState || fallback
     set({ inputState: prev, _previousCameraState: null })
-    // Release DOM focus so keyboard events go back to the game
     if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
       document.activeElement.blur()
     }
-    result.sideEffect?.()
-    return true  // consumed
+    return true
   },
 
   syncFromControlMode: (mode) => {
     const current = get().inputState
-    // Only sync if we're in a camera state (not in agent-focus, ui-focused, etc.)
     if (current === 'orbit' || current === 'noclip' || current === 'third-person') {
+      // Release pointer lock when switching to orbit
+      if (mode === 'orbit' && get().pointerLocked) {
+        document.exitPointerLock()
+      }
       set({ inputState: mode })
+    }
+  },
+
+  // ── POINTER LOCK LIFECYCLE ─────────────────────────────────────
+
+  requestPointerLock: () => {
+    if (!STATE_CAPABILITIES[get().inputState].canLockPointer) return
+    if (get().pointerLocked) return
+    const canvas = document.querySelector('#uploader-canvas') as HTMLCanvasElement
+    if (canvas) canvas.requestPointerLock()
+  },
+
+  releasePointerLock: () => {
+    if (typeof document !== 'undefined' && document.pointerLockElement) {
+      document.exitPointerLock()
+    }
+  },
+
+  _syncPointerLockState: () => {
+    set({ pointerLocked: !!document.pointerLockElement })
+  },
+
+  // ── GLOBAL LISTENERS (call once from Scene.tsx mount) ──────────
+
+  initGlobalListeners: () => {
+    const onPointerLockChange = () => {
+      get()._syncPointerLockState()
+    }
+
+    const onRightClick = (e: MouseEvent) => {
+      // Right-click releases pointer lock (noclip/TPS convention)
+      if (e.button === 2 && get().pointerLocked) {
+        e.preventDefault()
+        document.exitPointerLock()
+      }
+    }
+
+    const onContextMenu = (e: MouseEvent) => {
+      // Suppress context menu on canvas
+      const target = e.target as HTMLElement
+      if (target?.closest('#uploader-canvas') || target?.tagName === 'CANVAS') {
+        e.preventDefault()
+      }
+    }
+
+    document.addEventListener('pointerlockchange', onPointerLockChange)
+    document.addEventListener('mousedown', onRightClick)
+    document.addEventListener('contextmenu', onContextMenu)
+
+    return () => {
+      document.removeEventListener('pointerlockchange', onPointerLockChange)
+      document.removeEventListener('mousedown', onRightClick)
+      document.removeEventListener('contextmenu', onContextMenu)
     }
   },
 }))
 
 // ═══════════════════════════════════════════════════════════════════════════
-// CONVENIENCE — non-hook access for event handlers
+// CONVENIENCE — non-hook access for event handlers + R3F useFrame
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Get current capabilities without React hook (for event handlers) */
 export function getInputCapabilities(): StateCapabilities {
   return STATE_CAPABILITIES[useInputManager.getState().inputState]
 }
 
-/** Get current input state without React hook */
 export function getInputState(): InputState {
   return useInputManager.getState().inputState
+}
+
+export function isPointerLocked(): boolean {
+  return useInputManager.getState().pointerLocked
 }

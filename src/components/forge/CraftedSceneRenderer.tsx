@@ -13,6 +13,7 @@ import * as THREE from 'three'
 import type { CraftedScene, CraftedPrimitive } from '../../lib/conjure/types'
 import { useOasisStore } from '../../store/oasisStore'
 import { extractModelStats } from './ModelPreview'
+import { useInputManager } from '../../lib/input-manager'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PRIMITIVE GEOMETRY — maps type string to Three.js geometry
@@ -234,7 +235,7 @@ export function CraftedSceneRenderer({ scene, onDelete }: CraftedSceneRendererPr
       onPointerOver={(e) => {
         e.stopPropagation()
         if (hoverTimeout.current) { clearTimeout(hoverTimeout.current); hoverTimeout.current = null }
-        setHovered(true); if (!document.pointerLockElement) setShowLabel(true)
+        setHovered(true); if (!useInputManager.getState().pointerLocked) setShowLabel(true)
       }}
       onPointerOut={(e) => {
         e.stopPropagation()

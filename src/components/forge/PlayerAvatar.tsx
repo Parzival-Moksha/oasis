@@ -20,6 +20,7 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
 import { loadAnimationClip, retargetClipForVRM } from '../../lib/forge/animation-library'
+import { useInputManager } from '../../lib/input-manager'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -153,24 +154,18 @@ export function PlayerAvatar({
   }, [vrm])
 
   // ═══════════════════════════════════════════════════════════════════
-  // POINTER LOCK — manual management for third-person mode
-  // Click canvas to lock, Esc/right-click to unlock
-  // (Noclip mode uses PointerLockControls from drei — separate system)
+  // POINTER LOCK — managed by InputManager
+  // Click canvas → InputManager.requestPointerLock() (checks state)
   // ═══════════════════════════════════════════════════════════════════
 
-  const onCanvasClick = useCallback(() => {
-    if (controlMode !== 'third-person') return
-    if (document.pointerLockElement) return
-    const canvas = document.querySelector('#uploader-canvas') as HTMLCanvasElement
-    if (canvas) canvas.requestPointerLock()
-  }, [controlMode])
-
   useEffect(() => {
+    if (controlMode !== 'third-person') return
     const canvas = document.querySelector('#uploader-canvas') as HTMLCanvasElement
     if (!canvas) return
-    canvas.addEventListener('click', onCanvasClick)
-    return () => canvas.removeEventListener('click', onCanvasClick)
-  }, [onCanvasClick])
+    const onClick = () => useInputManager.getState().requestPointerLock()
+    canvas.addEventListener('click', onClick)
+    return () => canvas.removeEventListener('click', onClick)
+  }, [controlMode])
 
   // ═══════════════════════════════════════════════════════════════════
   // MOUSE LOOK — raw mousemove for camera azimuth/elevation
@@ -178,7 +173,7 @@ export function PlayerAvatar({
 
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
-      if (!document.pointerLockElement) return
+      if (!useInputManager.getState().pointerLocked) return
       if (controlMode !== 'third-person') return
       const sens = mouseSensitivity * 0.003
       cameraAzimuth.current -= e.movementX * sens
