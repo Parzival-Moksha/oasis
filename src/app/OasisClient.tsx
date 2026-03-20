@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { RealmSelector } from '@/components/realms/RealmSelector'
 import { useOasisStore } from '@/store/oasisStore'
+import { registerStoreHandler } from '@/lib/event-bus'
 
 const Scene = dynamic(() => import('@/components/Scene'), {
   ssr: false,
@@ -24,12 +25,16 @@ export default function OasisClient() {
     if (initDone.current) return
     initDone.current = true
 
+    // Register EventBus → oasisStore bridge (processes commands into store mutations)
+    const unregister = registerStoreHandler()
+
     // Strip any stale URL params (leftover from SaaS-era redirects)
     if (window.location.search) {
       window.history.replaceState({}, '', window.location.pathname)
     }
 
     setReady(true)
+    return unregister
   }, [])
 
   if (!ready) {

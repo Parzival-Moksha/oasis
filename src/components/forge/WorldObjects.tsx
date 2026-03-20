@@ -31,6 +31,7 @@ import { loadAnimationClip, loadClipFromGLTF, retargetClipForVRM, LIB_PREFIX } f
 import { AgentWindow3D } from './AgentWindow3D'
 import type { PlacementPending } from '../../store/oasisStore'
 import { useInputManager } from '../../lib/input-manager'
+import { dispatch } from '../../lib/event-bus'
 
 // ░▒▓ CLIPBOARD — module-level, survives across renders, no reactivity needed ▓▒░
 let _clipboard: PlacementPending | null = null
@@ -1058,26 +1059,24 @@ export function TransformKeyHandler() {
 
       // ░▒▓ ESCAPE — always processed, regardless of state ▓▒░
       if (e.key === 'Escape') {
-        // First: let InputManager try to handle it (exits agent-focus, ui-focused, paint, placement)
         const consumed = input.handleEscape()
         if (consumed) {
-          // Sync oasis store with state machine transition
+          // Sync oasis store — dispatch through EventBus for clean logging
           const newState = useInputManager.getState().inputState
           if (newState !== 'agent-focus') {
-            useOasisStore.getState().focusAgentWindow(null)
+            dispatch({ type: 'UNFOCUS_AGENT_WINDOW' })
           }
-          if (newState !== 'paint') {
-            // exitPaintMode only if we were in paint
-            if (useOasisStore.getState().paintMode) exitPaintMode()
+          if (newState !== 'paint' && useOasisStore.getState().paintMode) {
+            dispatch({ type: 'EXIT_PAINT_MODE' })
           }
-          if (newState !== 'placement') {
-            if (useOasisStore.getState().placementPending) cancelPlacement()
+          if (newState !== 'placement' && useOasisStore.getState().placementPending) {
+            dispatch({ type: 'CANCEL_PLACEMENT' })
           }
           return
         }
-        // Not consumed by state machine → deselect (we're in orbit/noclip/third-person)
-        selectObject(null)
-        setInspectedObject(null)
+        // Not consumed → deselect
+        dispatch({ type: 'SELECT_OBJECT', payload: { id: null } })
+        dispatch({ type: 'INSPECT_OBJECT', payload: { id: null } })
         return
       }
 
@@ -1152,40 +1151,24 @@ export function TransformKeyHandler() {
         case 't': if (can.transformShortcuts) setTransformMode('rotate'); break
         case 'y': if (can.transformShortcuts) setTransformMode('scale'); break
 
-        // ░▒▓ Enter — focus agent window (requires enterFocuses) ▓▒░
+        // ░▒▓ Enter — focus agent window via EventBus ▓▒░
         case 'enter': {
           if (!can.enterFocuses) break
-          const state = useOasisStore.getState()
-          const id = state.selectedObjectId
+          const id = useOasisStore.getState().selectedObjectId
           if (!id) break
-          const isAgentWindow = state.placedAgentWindows.some(w => w.id === id)
-          if (isAgentWindow) {
-            input.enterAgentFocus()
-            state.focusAgentWindow(id)
+          if (useOasisStore.getState().placedAgentWindows.some(w => w.id === id)) {
+            dispatch({ type: 'FOCUS_AGENT_WINDOW', payload: { id } })
             e.preventDefault()
           }
           break
         }
 
-        // ░▒▓ Delete — remove object (requires deleteShortcut) ▓▒░
+        // ░▒▓ Delete — remove object via EventBus ▓▒░
         case 'delete': {
           if (!can.deleteShortcut) break
-          const state = useOasisStore.getState()
-          const id = state.selectedObjectId
+          const id = useOasisStore.getState().selectedObjectId
           if (!id) break
-          const isCatalog = state.placedCatalogAssets.some(a => a.id === id)
-          const isCrafted = state.craftedScenes.some(s => s.id === id)
-          const isConjured = state.worldConjuredAssetIds.includes(id)
-          const isLight = state.worldLights.some(l => l.id === id)
-          const isAgentWindow = state.placedAgentWindows.some(w => w.id === id)
-          if (isCatalog) state.removeCatalogAsset(id)
-          else if (isCrafted) state.removeCraftedScene(id)
-          else if (isConjured) state.removeConjuredAssetFromWorld(id)
-          else if (isLight) state.removeWorldLight(id)
-          else if (isAgentWindow) state.removeAgentWindow(id)
-          else break
-          selectObject(null)
-          setInspectedObject(null)
+          dispatch({ type: 'DELETE_OBJECT', payload: { id } })
           e.preventDefault()
           break
         }
