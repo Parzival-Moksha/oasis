@@ -5,11 +5,11 @@
 // The canvas upon which worlds are built
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { Canvas, useFrame, ThreeEvent } from '@react-three/fiber'
-import { KeyboardControls, Stars, Grid, Html, Line, TransformControls, Environment, useProgress } from '@react-three/drei'
+import { Canvas, useFrame } from '@react-three/fiber'
+import { KeyboardControls, Stars, Grid, Html, TransformControls, Environment, useProgress } from '@react-three/drei'
 import { EffectComposer, Bloom, Vignette, ChromaticAberration } from '@react-three/postprocessing'
 import { BlendFunction } from 'postprocessing'
-import { Suspense, useState, useRef, useContext, useEffect, useCallback, useTransition } from 'react'
+import { Suspense, useState, useRef, useContext, useEffect, useTransition } from 'react'
 import * as THREE from 'three'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -374,58 +374,7 @@ function SkyBackground({ backgroundId }: { backgroundId: string }) {
 // ORBIT TARGET GIZMO — metallic armillary sphere pivot point
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function makeRingPoints(radius: number, segments: number, plane: 'xz' | 'xy' | 'yz'): [number, number, number][] {
-  const pts: [number, number, number][] = []
-  for (let i = 0; i <= segments; i++) {
-    const theta = (i / segments) * Math.PI * 2
-    const c = Math.cos(theta) * radius
-    const s = Math.sin(theta) * radius
-    if (plane === 'xz') pts.push([c, 0, s])
-    else if (plane === 'xy') pts.push([c, s, 0])
-    else pts.push([0, c, s])
-  }
-  return pts
-}
-
-const RING_XZ = makeRingPoints(0.18, 48, 'xz')
-const RING_XY = makeRingPoints(0.18, 48, 'xy')
-const RING_YZ = makeRingPoints(0.18, 48, 'yz')
-const AXIS_LEN = 0.25
-
-function OrbitTargetSphere({ controlsRef }: { controlsRef: React.RefObject<any> }) {
-  const groupRef = useRef<THREE.Group>(null)
-
-  useFrame(() => {
-    if (!groupRef.current || !controlsRef.current) return
-    const t = controlsRef.current.target
-    groupRef.current.position.set(t.x, t.y, t.z)
-  })
-
-  return (
-    <group ref={groupRef}>
-      <mesh renderOrder={999}>
-        <sphereGeometry args={[0.03, 16, 16]} />
-        <meshStandardMaterial
-          color="#d0d0e0"
-          metalness={1.0}
-          roughness={0.05}
-          depthTest={false}
-        />
-      </mesh>
-
-      <Line points={RING_XZ} color="#c0c0d0" lineWidth={1.5} transparent opacity={0.5} />
-      <Line points={RING_XY} color="#c0c0d0" lineWidth={1.0} transparent opacity={0.3} />
-      <Line points={RING_YZ} color="#c0c0d0" lineWidth={1.0} transparent opacity={0.3} />
-
-      <Line points={[[-AXIS_LEN, 0, 0], [AXIS_LEN, 0, 0]]} color="#ef4444" lineWidth={1.0} transparent opacity={0.45} />
-      <Line points={[[0, -AXIS_LEN, 0], [0, AXIS_LEN, 0]]} color="#22c55e" lineWidth={1.0} transparent opacity={0.45} />
-      <Line points={[[0, 0, -AXIS_LEN], [0, 0, AXIS_LEN]]} color="#3b82f6" lineWidth={1.0} transparent opacity={0.45} />
-    </group>
-  )
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// CameraLerp + AgentWindowFocus — REMOVED. Now in CameraController.tsx
+// OrbitTargetSphere + CameraLerp + AgentWindowFocus + FPSMovement — all in CameraController.tsx
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // POST-PROCESSING EFFECTS

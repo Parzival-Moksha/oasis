@@ -14,7 +14,7 @@
 // ONE useFrame runs the active mode. No fights. No races.
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { useRef, useContext } from 'react'
+import { useRef, useContext, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { OrbitControls, useKeyboardControls } from '@react-three/drei'
 import * as THREE from 'three'
@@ -64,10 +64,14 @@ function useNoclipUpdate() {
   const multiplierRef = useRef(1)
   const baseFovRef = useRef(0)
   const elapsedRef = useRef(0)
+  // Pre-allocated vectors — zero GC pressure in the game loop
+  const directionRef = useRef(new THREE.Vector3())
+  const cameraDirRef = useRef(new THREE.Vector3())
+  const cameraRightRef = useRef(new THREE.Vector3())
+  const upVec = useRef(new THREE.Vector3(0, 1, 0))
 
   return (camera: THREE.PerspectiveCamera, delta: number, speed: number) => {
     if (!getInputCapabilities().movement) {
-      // Decay velocity to zero when movement is blocked
       velocityRef.current.multiplyScalar(0.9)
       return
     }
@@ -84,13 +88,13 @@ function useNoclipUpdate() {
     sprintRef.current.multiplier = m
     sprintRef.current.intensity = m > 1.05 ? (m - 1) / 3 : m < 0.95 ? (m - 1) / 0.75 : 0
 
-    // Direction from camera orientation
-    const direction = new THREE.Vector3()
-    const cameraDir = new THREE.Vector3()
+    // Direction from camera orientation (pre-allocated, zero GC)
+    const direction = directionRef.current.set(0, 0, 0)
+    const cameraDir = cameraDirRef.current
     camera.getWorldDirection(cameraDir)
     cameraDir.y = 0
     cameraDir.normalize()
-    const cameraRight = new THREE.Vector3().crossVectors(cameraDir, new THREE.Vector3(0, 1, 0)).normalize()
+    const cameraRight = cameraRightRef.current.crossVectors(cameraDir, upVec.current).normalize()
 
     if (forward) direction.add(cameraDir)
     if (backward) direction.sub(cameraDir)
@@ -130,24 +134,25 @@ function useNoclipUpdate() {
 
 function useMouseLook(sensitivity: number) {
   const eulerRef = useRef(new THREE.Euler(0, 0, 0, 'YXZ'))
-  const initializedRef = useRef(false)
-
-  // Listen for raw mouse movement when pointer is locked
   const deltaRef = useRef({ x: 0, y: 0 })
+  const sensRef = useRef(sensitivity)
+  sensRef.current = sensitivity
 
-  if (typeof document !== 'undefined' && !initializedRef.current) {
-    initializedRef.current = true
-    document.addEventListener('mousemove', (e: MouseEvent) => {
+  // useEffect: proper lifecycle — cleanup removes listener on unmount/HMR
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
       if (!useInputManager.getState().pointerLocked) return
       deltaRef.current.x += e.movementX
       deltaRef.current.y += e.movementY
-    })
-  }
+    }
+    document.addEventListener('mousemove', onMouseMove)
+    return () => document.removeEventListener('mousemove', onMouseMove)
+  }, [])
 
   return (camera: THREE.PerspectiveCamera) => {
     if (deltaRef.current.x === 0 && deltaRef.current.y === 0) return
 
-    const sens = sensitivity * 0.002
+    const sens = sensRef.current * 0.002
     eulerRef.current.setFromQuaternion(camera.quaternion)
     eulerRef.current.y -= deltaRef.current.x * sens
     eulerRef.current.x -= deltaRef.current.y * sens
@@ -257,10 +262,10 @@ export function CameraController() {
   const updateMouseLook = useMouseLook(settings.mouseSensitivity)
   const updateAgentFocus = useAgentFocusUpdate()
 
-  // The ONE useFrame
-  useFrame((state) => {
+  // The ONE useFrame — delta from R3F, NOT state.clock.getDelta() (which double-consumes)
+  useFrame((state, frameDelta) => {
     const camera = state.camera as THREE.PerspectiveCamera
-    const delta = Math.min(state.clock.getDelta(), 0.1) // cap to prevent huge jumps
+    const delta = Math.min(frameDelta, 0.1)
 
     switch (inputState) {
       case 'orbit':
