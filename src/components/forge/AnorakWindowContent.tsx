@@ -371,7 +371,6 @@ export function AnorakWindowContent({ windowId, initialSessionId }: {
           : '0 8px 40px rgba(0,0,0,0.8)',
       }}
       onPointerDown={e => e.stopPropagation()}
-      onPointerUp={e => e.stopPropagation()}
       onClick={e => {
         e.stopPropagation()
         // Select this window in the store (DOM click bypasses R3F raycaster)

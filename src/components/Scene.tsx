@@ -90,11 +90,9 @@ function FPSMovement({ speed }: { speed: number }) {
   const elapsedRef = useRef(0)
 
   useFrame((state, delta) => {
-    // ░▒▓ WASD BLOCKING — disable movement when typing in panels or focused on agent window ▓▒░
-    const activeEl = typeof document !== 'undefined' ? document.activeElement : null
-    const isTyping = activeEl?.tagName === 'INPUT' || activeEl?.tagName === 'TEXTAREA' || activeEl?.tagName === 'SELECT'
-      || (activeEl as HTMLElement)?.isContentEditable
-    if (isTyping || useOasisStore.getState().focusedAgentWindowId) return
+    // ░▒▓ WASD BLOCKING — InputManager decides if movement is allowed ▓▒░
+    const { getInputCapabilities } = require('../lib/input-manager')
+    if (!getInputCapabilities().movement) return
 
     const { forward, backward, left, right, up, down, sprint, slow } = getKeys()
 
@@ -1008,7 +1006,6 @@ export default function Scene() {
   // Asset Explorer removed — merged into WizardConsole
   const [actionLogOpen, setActionLogOpen] = useState(false)
   const [merlinOpen, setMerlinOpen] = useState(false)
-  const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [claudeCodeOpen, setClaudeCodeOpen] = useState(false)
   const [devcraftOpen, setDevcraftOpen] = useState(false)
@@ -1016,15 +1013,17 @@ export default function Scene() {
   const orbitControlsRef = useRef<any>(null)
 
   const updateSetting = <K extends keyof OasisSettings>(key: K, value: OasisSettings[K]) => {
-    // Auto-exit pointer lock when switching to orbit mode (from fps or third-person)
-    if (key === 'controlMode' && value === 'orbit' && document.pointerLockElement) {
-      document.exitPointerLock()
+    // Sync InputManager when control mode changes
+    if (key === 'controlMode') {
+      const { useInputManager } = require('../lib/input-manager')
+      useInputManager.getState().syncFromControlMode(value as 'orbit' | 'noclip' | 'third-person')
     }
     setSettings(prev => ({ ...prev, [key]: value }))
   }
 
-  // ─═̷─═̷─🎮─═̷─═̷─{ CAMERA MODE HOTKEY: Ctrl+Alt+C cycles orbit→fps→third-person }─═̷─═̷─🎮─═̷─═̷─
+  // ─═̷─═̷─🎮─═̷─═̷─{ CAMERA MODE HOTKEY: Ctrl+Alt+C cycles orbit→noclip→third-person }─═̷─═̷─🎮─═̷─═̷─
   useEffect(() => {
+    const { useInputManager } = require('../lib/input-manager')
     const MODES: Array<'orbit' | 'noclip' | 'third-person'> = ['orbit', 'noclip', 'third-person']
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.altKey && e.code === 'KeyC') {
@@ -1032,10 +1031,8 @@ export default function Scene() {
         setSettings(prev => {
           const idx = MODES.indexOf(prev.controlMode)
           const next = MODES[(idx + 1) % MODES.length]
-          // Auto-exit pointer lock when switching away from fps/third-person
-          if (next === 'orbit' && document.pointerLockElement) {
-            document.exitPointerLock()
-          }
+          // Sync InputManager with new camera mode
+          useInputManager.getState().transition(next)
           return { ...prev, controlMode: next }
         })
       }
@@ -1092,6 +1089,7 @@ export default function Scene() {
           <>
             <OrbitControls
               ref={orbitControlsRef}
+              enabled={!focusedAgentWindowId}
               enablePan={!isDragging}
               enableZoom={!isDragging}
               enableRotate={!isDragging}
@@ -1099,8 +1097,8 @@ export default function Scene() {
               minDistance={0.3}
               maxDistance={500}
             />
-            {settings.showOrbitTarget && <OrbitTargetSphere controlsRef={orbitControlsRef} />}
-            <CameraLerp controlsRef={orbitControlsRef} />
+            {settings.showOrbitTarget && !focusedAgentWindowId && <OrbitTargetSphere controlsRef={orbitControlsRef} />}
+            {!focusedAgentWindowId && <CameraLerp controlsRef={orbitControlsRef} />}
           </>
         )}
         {settings.controlMode === 'noclip' && (
@@ -1243,19 +1241,6 @@ export default function Scene() {
           title="DevCraft — Productivity Terminal"
         >
           ⚡
-        </button>
-        <button
-          onClick={() => setFeedbackOpen(prev => !prev)}
-          className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
-          style={{
-            background: feedbackOpen ? 'rgba(249,115,22,0.3)' : 'rgba(0,0,0,0.6)',
-            border: `1px solid ${feedbackOpen ? 'rgba(249,115,22,0.6)' : 'rgba(255,255,255,0.15)'}`,
-            color: feedbackOpen ? '#F97316' : '#aaa',
-            boxShadow: feedbackOpen ? '0 0 12px rgba(249,115,22,0.3)' : 'none',
-          }}
-          title="Anorak — Bug Reports & Feature Requests"
-        >
-          🔮
         </button>
         <button
           onClick={() => setHelpOpen(prev => !prev)}

@@ -1179,12 +1179,16 @@ export const useOasisStore = create<OasisState>((set, get) => {
   },
   focusAgentWindow: (id) => {
     if (id) {
-      // Release pointer lock so cursor can interact with the HTML panel
-      if (typeof document !== 'undefined' && document.pointerLockElement) {
-        document.exitPointerLock()
-      }
+      // Sync InputManager → agent-focus state handles pointer lock release
+      try { require('../lib/input-manager').useInputManager.getState().enterAgentFocus() } catch {}
       set({ focusedAgentWindowId: id })
     } else {
+      // InputManager transition is handled by handleEscape() — don't double-call returnToPrevious
+      // Only sync InputManager if it wasn't already transitioned (e.g. called from non-Escape path)
+      try {
+        const im = require('../lib/input-manager').useInputManager.getState()
+        if (im.inputState === 'agent-focus') im.returnToPrevious()
+      } catch {}
       set({ focusedAgentWindowId: null })
     }
   },

@@ -1052,40 +1052,64 @@ export function TransformKeyHandler() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Skip when typing in any form element — EXCEPT Escape (always needs to unfocus agent windows)
+      const { useInputManager } = require('../../lib/input-manager')
+      const input = useInputManager.getState()
+      const can = input.can()
+
+      // ░▒▓ ESCAPE — always processed, regardless of state ▓▒░
+      if (e.key === 'Escape') {
+        // First: let InputManager try to handle it (exits agent-focus, ui-focused, paint, placement)
+        const consumed = input.handleEscape()
+        if (consumed) {
+          // Sync oasis store with state machine transition
+          const newState = useInputManager.getState().inputState
+          if (newState !== 'agent-focus') {
+            useOasisStore.getState().focusAgentWindow(null)
+          }
+          if (newState !== 'paint') {
+            // exitPaintMode only if we were in paint
+            if (useOasisStore.getState().paintMode) exitPaintMode()
+          }
+          if (newState !== 'placement') {
+            if (useOasisStore.getState().placementPending) cancelPlacement()
+          }
+          return
+        }
+        // Not consumed by state machine → deselect (we're in orbit/noclip/third-person)
+        selectObject(null)
+        setInspectedObject(null)
+        return
+      }
+
+      // ░▒▓ ALL OTHER KEYS — check if typing in form element ▓▒░
       const tag = (e.target as HTMLElement).tagName
       const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as HTMLElement).isContentEditable
-      if (isTyping && e.key !== 'Escape') return
+      if (isTyping) return  // keys go to the form, not to us
 
-      // Block ALL edit shortcuts in read-only view mode (anonymous or non-editable)
+      // Block ALL edit shortcuts in read-only view mode
       const { isViewMode: vm, isViewModeEditable: vme } = useOasisStore.getState()
       if (vm && !vme) return
 
       const key = e.key.toLowerCase()
 
-      // ░▒▓ Ctrl+Z / Ctrl+Shift+Z — Undo/Redo ▓▒░
+      // ░▒▓ Ctrl+Z / Ctrl+Shift+Z — Undo/Redo (always available) ▓▒░
       if ((e.ctrlKey || e.metaKey) && key === 'z') {
         e.preventDefault()
-        if (e.shiftKey) {
-          useOasisStore.getState().redo()
-        } else {
-          useOasisStore.getState().undo()
-        }
+        if (e.shiftKey) useOasisStore.getState().redo()
+        else useOasisStore.getState().undo()
         return
       }
-      // Ctrl+Y also redo (Windows convention)
       if ((e.ctrlKey || e.metaKey) && key === 'y') {
         e.preventDefault()
         useOasisStore.getState().redo()
         return
       }
 
-      // ░▒▓ Ctrl+C — copy selected object to clipboard + spawn 3D toast ▓▒░
-      if ((e.ctrlKey || e.metaKey) && key === 'c') {
+      // ░▒▓ Ctrl+C — copy (requires clipboardShortcuts capability) ▓▒░
+      if ((e.ctrlKey || e.metaKey) && key === 'c' && can.clipboardShortcuts) {
         const state = useOasisStore.getState()
         const id = state.selectedObjectId
-        if (!id) return  // let browser handle native copy when nothing selected
-        // Resolve position for VFX toast
+        if (!id) return
         const objPos = state.transforms[id]?.position || [0, 0, 0]
         const catalog = state.placedCatalogAssets.find(a => a.id === id)
         if (catalog) {
@@ -1108,42 +1132,47 @@ export function TransformKeyHandler() {
           e.preventDefault()
           return
         }
-        return  // lights or unknown — let browser handle
+        return
       }
-      // ░▒▓ Ctrl+V — paste clipboard → enter placement mode ▓▒░
-      if ((e.ctrlKey || e.metaKey) && key === 'v') {
+      // ░▒▓ Ctrl+V — paste (requires clipboardShortcuts capability) ▓▒░
+      if ((e.ctrlKey || e.metaKey) && key === 'v' && can.clipboardShortcuts) {
         if (!_clipboard) return
         e.preventDefault()
         useOasisStore.getState().enterPlacementMode({ ..._clipboard })
+        input.transition('placement')
         return
       }
 
-      // Skip all other shortcuts if a modifier is held (avoid hijacking browser combos)
+      // Skip all other shortcuts if a modifier is held
       if (e.ctrlKey || e.metaKey || e.altKey) return
 
       switch (key) {
-        case 'r': setTransformMode('translate'); break
-        case 't': setTransformMode('rotate'); break
-        case 'y': setTransformMode('scale'); break
-        // ░▒▓ Enter — focus selected agent window (camera flies to fill viewport) ▓▒░
+        // ░▒▓ Transform mode — R/T/Y (requires transformShortcuts) ▓▒░
+        case 'r': if (can.transformShortcuts) setTransformMode('translate'); break
+        case 't': if (can.transformShortcuts) setTransformMode('rotate'); break
+        case 'y': if (can.transformShortcuts) setTransformMode('scale'); break
+
+        // ░▒▓ Enter — focus agent window (requires enterFocuses) ▓▒░
         case 'enter': {
+          if (!can.enterFocuses) break
           const state = useOasisStore.getState()
           const id = state.selectedObjectId
           if (!id) break
-          // Only focus agent windows
           const isAgentWindow = state.placedAgentWindows.some(w => w.id === id)
           if (isAgentWindow) {
+            input.enterAgentFocus()
             state.focusAgentWindow(id)
             e.preventDefault()
           }
           break
         }
-        // ░▒▓ Delete — remove selected object from world ▓▒░
+
+        // ░▒▓ Delete — remove object (requires deleteShortcut) ▓▒░
         case 'delete': {
+          if (!can.deleteShortcut) break
           const state = useOasisStore.getState()
           const id = state.selectedObjectId
           if (!id) break
-          // Identify which collection owns this object
           const isCatalog = state.placedCatalogAssets.some(a => a.id === id)
           const isCrafted = state.craftedScenes.some(s => s.id === id)
           const isConjured = state.worldConjuredAssetIds.includes(id)
@@ -1160,19 +1189,6 @@ export function TransformKeyHandler() {
           e.preventDefault()
           break
         }
-        case 'escape':
-          // ESC priority chain: focused agent window → paint mode → placement mode → deselect + close inspector
-          if (useOasisStore.getState().focusedAgentWindowId) {
-            useOasisStore.getState().focusAgentWindow(null)
-          } else if (useOasisStore.getState().paintMode) {
-            exitPaintMode()
-          } else if (useOasisStore.getState().placementPending) {
-            cancelPlacement()
-          } else {
-            selectObject(null)
-            setInspectedObject(null)  // ░▒▓ Close inspector on ESC ▓▒░
-          }
-          break
       }
     }
     window.addEventListener('keydown', handler)
