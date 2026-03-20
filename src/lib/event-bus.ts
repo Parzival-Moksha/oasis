@@ -132,13 +132,16 @@ export function dispatch(cmd: OasisCommand): void {
 // As we migrate actions, add cases here and remove direct store calls.
 // ═══════════════════════════════════════════════════════════════════════════
 
-let storeHandlerRegistered = false
+let storeHandlerUnsub: (() => void) | null = null
 
 export function registerStoreHandler(): () => void {
-  if (storeHandlerRegistered) return () => {}
-  storeHandlerRegistered = true
+  // If already registered, clean up old one first (handles HMR + StrictMode)
+  if (storeHandlerUnsub) {
+    storeHandlerUnsub()
+    storeHandlerUnsub = null
+  }
 
-  return eventBus.subscribe((cmd) => {
+  const unsub = eventBus.subscribe((cmd) => {
     // Lazy import to avoid circular deps (same pattern as oasisStore → input-manager)
     const store = require('../store/oasisStore').useOasisStore.getState()
     const input = require('./input-manager').useInputManager.getState()
@@ -162,7 +165,7 @@ export function registerStoreHandler(): () => void {
         store.setInspectedObject(cmd.payload.id)
         break
       case 'FOCUS_AGENT_WINDOW':
-        input.enterAgentFocus()
+        // focusAgentWindow internally calls input.enterAgentFocus() — no double-call
         store.focusAgentWindow(cmd.payload.id)
         break
       case 'UNFOCUS_AGENT_WINDOW':
@@ -194,6 +197,32 @@ export function registerStoreHandler(): () => void {
       case 'EXIT_PAINT_MODE':
         store.exitPaintMode()
         break
+      case 'ENTER_PLACEMENT':
+        store.enterPlacementMode(cmd.payload.pending)
+        break
+      case 'ENTER_PAINT_MODE':
+        store.enterPaintMode(cmd.payload.presetId)
+        break
+      case 'ADD_AGENT_WINDOW':
+        store.addAgentWindow({
+          id: `agent-${cmd.payload.agentType}-${Date.now()}`,
+          agentType: cmd.payload.agentType,
+          position: cmd.payload.position,
+          rotation: [0, 0, 0],
+          scale: 1,
+          width: 800,
+          height: 600,
+        })
+        break
+      case 'REMOVE_AGENT_WINDOW':
+        store.removeAgentWindow(cmd.payload.id)
+        break
     }
   })
+
+  storeHandlerUnsub = unsub
+  return () => {
+    unsub()
+    storeHandlerUnsub = null
+  }
 }

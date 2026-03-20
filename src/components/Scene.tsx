@@ -1029,8 +1029,8 @@ export default function Scene() {
         setSettings(prev => {
           const idx = MODES.indexOf(prev.controlMode)
           const next = MODES[(idx + 1) % MODES.length]
-          // Sync InputManager with new camera mode
-          useInputManager.getState().transition(next)
+          // Sync InputManager — syncFromControlMode guards against overriding agent-focus/ui-focused
+          useInputManager.getState().syncFromControlMode(next)
           return { ...prev, controlMode: next }
         })
       }
@@ -1318,53 +1318,6 @@ export default function Scene() {
 // ═══════════════════════════════════════════════════════════════════════════════
 // ANONYMOUS CTA — "Sign up to build your own world" conversion banner
 // ═══════════════════════════════════════════════════════════════════════════════
-
-function AnonymousCTA() {
-  const [dismissed, setDismissed] = useState(false)
-  const viewingWorldMeta = useOasisStore(s => s.viewingWorldMeta)
-
-  if (dismissed) return null
-
-  return (
-    <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[300] animate-in slide-in-from-bottom-4 duration-700">
-      <div
-        className="flex items-center gap-4 px-6 py-3.5 rounded-2xl shadow-2xl"
-        style={{
-          background: 'rgba(8, 8, 20, 0.9)',
-          border: '1px solid rgba(168, 85, 247, 0.3)',
-          boxShadow: '0 0 40px rgba(0,0,0,0.5), 0 0 20px rgba(168, 85, 247, 0.15)',
-          backdropFilter: 'blur(16px)',
-        }}
-      >
-        <div className="flex flex-col">
-          <span className="text-sm text-gray-200 font-medium">
-            {viewingWorldMeta?.name ? `You're exploring "${viewingWorldMeta.name}"` : "You're exploring the Oasis"}
-          </span>
-          <span className="text-xs text-gray-500">
-            Sign up free to build your own 3D world
-          </span>
-        </div>
-        <a
-          href="/login"
-          className="px-5 py-2 rounded-xl text-sm font-bold text-white transition-all hover:scale-105 hover:shadow-lg flex-shrink-0"
-          style={{
-            background: 'linear-gradient(135deg, #7C3AED, #A855F7)',
-            boxShadow: '0 0 20px rgba(168, 85, 247, 0.4)',
-          }}
-        >
-          Start Building
-        </a>
-        <button
-          onClick={() => setDismissed(true)}
-          className="text-gray-600 hover:text-gray-400 transition-colors text-xs ml-1"
-          title="Dismiss"
-        >
-          ✕
-        </button>
-      </div>
-    </div>
-  )
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SETTINGS GEAR — replaces the old hamburger MenuSystem

@@ -125,6 +125,8 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
 
   enterUIFocus: () => {
     const current = get().inputState
+    // Release pointer lock so user can interact with UI
+    if (get().pointerLocked) document.exitPointerLock()
     if (current !== 'ui-focused' && current !== 'agent-focus') {
       set({ inputState: 'ui-focused', _previousCameraState: current })
     } else {

@@ -4,7 +4,7 @@
 // OASIS CLIENT — Local-first. No auth. No routing. Just mount.
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { RealmSelector } from '@/components/realms/RealmSelector'
 import { useOasisStore } from '@/store/oasisStore'
@@ -19,13 +19,10 @@ export default function OasisClient() {
   const worldReady = useOasisStore(s => s._worldReady)
   const viewingWorldMeta = useOasisStore(s => s.viewingWorldMeta)
   const [ready, setReady] = useState(false)
-  const initDone = useRef(false)
 
   useEffect(() => {
-    if (initDone.current) return
-    initDone.current = true
-
-    // Register EventBus → oasisStore bridge (processes commands into store mutations)
+    // Register EventBus → oasisStore bridge
+    // registerStoreHandler() handles its own dedup — safe to call on remount (HMR/StrictMode)
     const unregister = registerStoreHandler()
 
     // Strip any stale URL params (leftover from SaaS-era redirects)

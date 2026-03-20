@@ -1047,10 +1047,6 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
 
 export function TransformKeyHandler() {
   const setTransformMode = useOasisStore(s => s.setTransformMode)
-  const selectObject = useOasisStore(s => s.selectObject)
-  const cancelPlacement = useOasisStore(s => s.cancelPlacement)
-  const exitPaintMode = useOasisStore(s => s.exitPaintMode)
-  const setInspectedObject = useOasisStore(s => s.setInspectedObject)
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -1091,16 +1087,15 @@ export function TransformKeyHandler() {
 
       const key = e.key.toLowerCase()
 
-      // ░▒▓ Ctrl+Z / Ctrl+Shift+Z — Undo/Redo (always available) ▓▒░
+      // ░▒▓ Ctrl+Z / Ctrl+Shift+Z — Undo/Redo via EventBus ▓▒░
       if ((e.ctrlKey || e.metaKey) && key === 'z') {
         e.preventDefault()
-        if (e.shiftKey) useOasisStore.getState().redo()
-        else useOasisStore.getState().undo()
+        dispatch(e.shiftKey ? { type: 'REDO' } : { type: 'UNDO' })
         return
       }
       if ((e.ctrlKey || e.metaKey) && key === 'y') {
         e.preventDefault()
-        useOasisStore.getState().redo()
+        dispatch({ type: 'REDO' })
         return
       }
 
@@ -1176,7 +1171,7 @@ export function TransformKeyHandler() {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [setTransformMode, selectObject, cancelPlacement, exitPaintMode, setInspectedObject])
+  }, [setTransformMode])
 
   return null
 }
