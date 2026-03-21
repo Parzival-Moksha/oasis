@@ -9,6 +9,7 @@ import dynamic from 'next/dynamic'
 import { RealmSelector } from '@/components/realms/RealmSelector'
 import { useOasisStore } from '@/store/oasisStore'
 import { registerStoreHandler } from '@/lib/event-bus'
+import { registerAudioSubscriber } from '@/lib/audio-manager'
 
 const Scene = dynamic(() => import('@/components/Scene'), {
   ssr: false,
@@ -23,15 +24,16 @@ export default function OasisClient() {
   useEffect(() => {
     // Register EventBus → oasisStore bridge
     // registerStoreHandler() handles its own dedup — safe to call on remount (HMR/StrictMode)
-    const unregister = registerStoreHandler()
+    const unregisterStore = registerStoreHandler()
+    const unregisterAudio = registerAudioSubscriber()
 
-    // Strip any stale URL params (leftover from SaaS-era redirects)
+    // Strip any stale URL params
     if (window.location.search) {
       window.history.replaceState({}, '', window.location.pathname)
     }
 
     setReady(true)
-    return unregister
+    return () => { unregisterStore(); unregisterAudio() }
   }, [])
 
   if (!ready) {

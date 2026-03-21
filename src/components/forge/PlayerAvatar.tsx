@@ -21,6 +21,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
 import { useInputManager } from '../../lib/input-manager'
 import { AnimationController } from '../../lib/animation-state-machine'
+import { useAudioManager } from '../../lib/audio-manager'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -69,6 +70,7 @@ export function PlayerAvatar({
 
   // ── Animation Controller (state machine) ──────────────────────────
   const animControllerRef = useRef<AnimationController | null>(null)
+  const footstepTimerRef = useRef(0)
 
   // ── IBL one-shot flag ──────────────────────────────────────────────
   const iblAppliedRef = useRef(false)
@@ -300,6 +302,19 @@ export function PlayerAvatar({
     if (animControllerRef.current) {
       const speed = velocityRef.current.length()
       animControllerRef.current.updateFromVelocity(speed)
+
+      // Footstep sounds — play at intervals when walking/running
+      const animState = animControllerRef.current.state
+      if (animState === 'walk' || animState === 'run') {
+        footstepTimerRef.current += delta
+        const interval = animState === 'run' ? 0.3 : 0.5
+        if (footstepTimerRef.current >= interval) {
+          footstepTimerRef.current = 0
+          useAudioManager.getState().playFootstep()
+        }
+      } else {
+        footstepTimerRef.current = 0
+      }
     }
   })
 

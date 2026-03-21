@@ -49,6 +49,7 @@ import { useWorldLoader } from './forge/WorldObjects'
 import { completeQuest } from '@/lib/quests'
 import { useInputManager, getInputCapabilities, isPointerLocked } from '@/lib/input-manager'
 import { CameraController as CameraControllerComponent, sprintRef, FPSControls, FPS_KEYBOARD_MAP } from './CameraController'
+import { useAudioManager, SOUND_OPTIONS, type SoundEvent } from '@/lib/audio-manager'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ─═̷─═̷─🎮─═̷─═̷─{ QUAKE FPS CONTROLS - WASD + Q/E }─═̷─═̷─🎮─═̷─═̷─
@@ -321,6 +322,82 @@ function SettingsContent() {
           </>
         )}
       </div>
+
+      {/* ─═̷─═̷─🔊 SOUND SETTINGS ─═̷─═̷─🔊 */}
+      <SoundSettings />
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SOUND SETTINGS — per-event sound selection + volume
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function SoundSettings() {
+  const { volume, muted, selections, setVolume, toggleMute, selectSound, preview } = useAudioManager()
+  const [expanded, setExpanded] = useState(false)
+
+  const EVENT_LABELS: Record<string, string> = {
+    select: 'Select Object', deselect: 'Deselect', place: 'Place Object', delete: 'Delete Object',
+    panelOpen: 'Panel Open', panelClose: 'Panel Close', buttonClick: 'Button Click', buttonHover: 'Button Hover',
+    modeSwitch: 'Camera Mode', conjureStart: 'Conjure Start', conjureDone: 'Conjure Done',
+    anorakDone: 'Anorak Done', notification: 'Notification', undo: 'Undo', redo: 'Redo',
+    agentFocus: 'Agent Focus', agentUnfocus: 'Agent Unfocus', tilePaint: 'Tile Paint',
+    error: 'Error', footstep: 'Footstep',
+  }
+
+  return (
+    <div className="mt-3 border-t border-white/10 pt-3">
+      <div className="flex items-center justify-between mb-2">
+        <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer hover:text-white transition-colors">
+          <span>{expanded ? '▼' : '▸'}</span>
+          <span>🔊 Sounds</span>
+        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={toggleMute} className="text-xs cursor-pointer px-1.5 py-0.5 rounded" style={{ background: muted ? 'rgba(239,68,68,0.2)' : 'rgba(34,197,94,0.2)', color: muted ? '#ef4444' : '#22c55e' }}>
+            {muted ? '🔇 Muted' : '🔊 On'}
+          </button>
+        </div>
+      </div>
+
+      {/* Volume slider */}
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-[10px] text-gray-500">Vol</span>
+        <input type="range" min="0" max="100" value={Math.round(volume * 100)}
+          onChange={e => setVolume(parseInt(e.target.value) / 100)}
+          className="flex-1 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-sky-500"
+        />
+        <span className="text-[10px] text-gray-400 font-mono w-8 text-right">{Math.round(volume * 100)}%</span>
+      </div>
+
+      {/* Per-event sound selection */}
+      {expanded && (
+        <div className="space-y-1 max-h-[300px] overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#374151 transparent' }}>
+          {Object.entries(EVENT_LABELS).map(([event, label]) => {
+            const options = (SOUND_OPTIONS as Record<string, Array<{ id: string; label: string }>>)[event]
+            if (!options) return null
+            return (
+              <div key={event} className="flex items-center gap-1.5 text-[10px]">
+                <span className="text-gray-500 w-24 truncate flex-shrink-0">{label}</span>
+                <select
+                  value={(selections as Record<string, string>)[event] || options[0]?.id}
+                  onChange={e => {
+                    selectSound(event as SoundEvent, e.target.value)
+                    preview(event as SoundEvent, e.target.value)
+                  }}
+                  className="flex-1 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-300 cursor-pointer outline-none text-[10px]"
+                >
+                  {options.map((opt: { id: string; label: string }) => (
+                    <option key={opt.id} value={opt.id}>{opt.label}</option>
+                  ))}
+                </select>
+                <button onClick={() => preview(event as SoundEvent, (selections as Record<string, string>)[event])}
+                  className="text-gray-600 hover:text-sky-400 cursor-pointer text-[11px]" title="Preview">▶</button>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -710,6 +787,13 @@ export default function Scene() {
   const [claudeCodeOpen, setClaudeCodeOpen] = useState(false)
   const [devcraftOpen, setDevcraftOpen] = useState(false)
 
+  // Panel toggle with sound
+  const togglePanel = (setter: React.Dispatch<React.SetStateAction<boolean>>) => {
+    setter(prev => {
+      useAudioManager.getState().play(prev ? 'panelClose' : 'panelOpen')
+      return !prev
+    })
+  }
 
   const updateSetting = <K extends keyof OasisSettings>(key: K, value: OasisSettings[K]) => {
     // Sync InputManager when control mode changes
@@ -728,8 +812,8 @@ export default function Scene() {
         setSettings(prev => {
           const idx = MODES.indexOf(prev.controlMode)
           const next = MODES[(idx + 1) % MODES.length]
-          // Sync InputManager — syncFromControlMode guards against overriding agent-focus/ui-focused
           useInputManager.getState().syncFromControlMode(next)
+          useAudioManager.getState().play('modeSwitch')
           return { ...prev, controlMode: next }
         })
       }
@@ -846,7 +930,7 @@ export default function Scene() {
         )}
         {!hideEditTools && (
           <button
-            onClick={() => setMerlinOpen(prev => !prev)}
+            onClick={() => togglePanel(setMerlinOpen)}
             className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
             style={{
               background: merlinOpen ? 'rgba(168,85,247,0.3)' : 'rgba(0,0,0,0.6)',
@@ -861,7 +945,7 @@ export default function Scene() {
         )}
         {isAdmin && (
           <button
-            onClick={() => setClaudeCodeOpen(prev => !prev)}
+            onClick={() => togglePanel(setClaudeCodeOpen)}
             className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
             style={{
               background: claudeCodeOpen ? 'rgba(56,189,248,0.3)' : 'rgba(0,0,0,0.6)',
@@ -875,7 +959,7 @@ export default function Scene() {
           </button>
         )}
         <button
-          onClick={() => setDevcraftOpen(prev => !prev)}
+          onClick={() => togglePanel(setDevcraftOpen)}
           className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
           style={{
             background: devcraftOpen ? 'rgba(16,185,129,0.3)' : 'rgba(0,0,0,0.6)',
@@ -888,7 +972,7 @@ export default function Scene() {
           ⚡
         </button>
         <button
-          onClick={() => setHelpOpen(prev => !prev)}
+          onClick={() => togglePanel(setHelpOpen)}
           className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
           style={{
             background: helpOpen ? 'rgba(168,85,247,0.3)' : 'rgba(0,0,0,0.6)',
