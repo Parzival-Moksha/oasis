@@ -86,6 +86,7 @@ export interface AgentWindow {
   height: number                          // px height of HTML content (default 600)
   sessionId?: string                      // claude code session ID (anorak only)
   label?: string                          // user-assignable name
+  frameStyle?: string                     // picture frame style id (gilded, neon, hologram, etc.)
 }
 
 // ─═̷─═̷─⏪ UNDO/REDO — Time travel for world edits ─═̷─═̷─⏪

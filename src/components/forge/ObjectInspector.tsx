@@ -42,6 +42,7 @@ const TYPE_BADGE: Record<string, { bg: string; text: string; label: string }> = 
   crafted:  { bg: 'rgba(59, 130, 246, 0.2)', text: '#3B82F6', label: 'crafted' },
   conjured: { bg: 'rgba(249, 115, 22, 0.2)', text: '#F97316', label: 'conjured' },
   light:    { bg: 'rgba(250, 204, 21, 0.2)', text: '#FACC15', label: '💡 light' },
+  agent:    { bg: 'rgba(56, 189, 248, 0.2)', text: '#38BDF8', label: '💻 agent' },
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -366,6 +367,10 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
   const removeWorldLight = useOasisStore(s => s.removeWorldLight)
   const updateCatalogPlacement = useOasisStore(s => s.updateCatalogPlacement)
 
+  const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
+  const updateAgentWindow = useOasisStore(s => s.updateAgentWindow)
+  const removeAgentWindow = useOasisStore(s => s.removeAgentWindow)
+
   // ─═̷─ Resolve the inspected object: who are you? ─═̷─
   const resolved = useMemo(() => {
     if (!inspectedObjectId) return null
@@ -388,8 +393,12 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
     const light = worldLights.find(l => l.id === inspectedObjectId)
     if (light) return { type: 'light' as const, id: light.id, name: `${light.type} light`, data: light }
 
+    // 5. Agent window?
+    const agentWin = placedAgentWindows.find(w => w.id === inspectedObjectId)
+    if (agentWin) return { type: 'agent' as const, id: agentWin.id, name: agentWin.label || `${agentWin.agentType} window`, data: agentWin }
+
     return null
-  }, [inspectedObjectId, placedCatalogAssets, craftedScenes, conjuredAssets, worldConjuredAssetIds, worldLights])
+  }, [inspectedObjectId, placedCatalogAssets, craftedScenes, conjuredAssets, worldConjuredAssetIds, worldLights, placedAgentWindows])
 
   // ─═̷─ Current behavior (or defaults) ─═̷─
   const behavior: ObjectBehavior = useMemo(() => {
@@ -478,10 +487,11 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
     else if (resolved.type === 'crafted') removeCraftedScene(inspectedObjectId)
     else if (resolved.type === 'conjured') removeConjuredAssetFromWorld(inspectedObjectId)
     else if (resolved.type === 'light') removeWorldLight(inspectedObjectId)
+    else if (resolved.type === 'agent') removeAgentWindow(inspectedObjectId)
     selectObject(null)
     setInspectedObject(null)
     onClose()
-  }, [resolved, inspectedObjectId, removeCatalogAsset, removeCraftedScene, removeConjuredAssetFromWorld, removeWorldLight, selectObject, setInspectedObject, onClose])
+  }, [resolved, inspectedObjectId, removeCatalogAsset, removeCraftedScene, removeConjuredAssetFromWorld, removeWorldLight, removeAgentWindow, selectObject, setInspectedObject, onClose])
 
   // ═══════════════════════════════════════════════════════════════════════════
   // DRAG HANDLERS (same pattern as WizardConsole / AssetExplorerWindow)
@@ -1156,6 +1166,92 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                       <button
                         key={frame.id}
                         onClick={() => updateCatalogPlacement(inspectedObjectId!, { imageFrameStyle: frame.id })}
+                        className={`flex flex-col items-center gap-0.5 p-1.5 rounded transition-colors text-center ${
+                          isActive
+                            ? 'bg-fuchsia-500/20 border border-fuchsia-500/40'
+                            : 'border border-gray-700/30 hover:border-gray-500/50'
+                        }`}
+                        title={frame.desc}
+                      >
+                        <span className="text-sm">{frame.icon}</span>
+                        <span className={`text-[8px] font-mono ${isActive ? 'text-fuchsia-300' : 'text-gray-500'}`}>{frame.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </>
+          )
+        })()}
+
+        {/* ░▒▓ AGENT WINDOW INFO — session, model, cost, frame ▓▒░ */}
+        {resolved?.type === 'agent' && (() => {
+          const agentWin = resolved.data as import('../../store/oasisStore').AgentWindow
+          return (
+            <>
+              <SectionHeader>&#128187; Agent Window</SectionHeader>
+              <div className="rounded-lg border border-white/5 p-2 space-y-1.5" style={{ background: 'rgba(20, 20, 20, 0.6)' }}>
+                {/* Agent type */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-gray-500 font-mono w-16 shrink-0">type</span>
+                  <span className="text-[10px] text-sky-300 font-mono">{agentWin.agentType}</span>
+                </div>
+
+                {/* Session ID with copy button */}
+                {agentWin.sessionId && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-gray-500 font-mono w-16 shrink-0">session</span>
+                    <span className="text-[9px] text-gray-400 font-mono truncate flex-1" title={agentWin.sessionId}>
+                      {agentWin.sessionId}
+                    </span>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(agentWin.sessionId!)
+                      }}
+                      className="text-[9px] px-1.5 py-0.5 rounded border border-gray-700/30 text-gray-500 hover:text-sky-300 hover:border-sky-500/30 font-mono transition-colors shrink-0"
+                      title="Copy session ID"
+                    >
+                      copy
+                    </button>
+                  </div>
+                )}
+
+                {/* Dimensions */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-gray-500 font-mono w-16 shrink-0">size</span>
+                  <span className="text-[9px] text-gray-400 font-mono">{agentWin.width} x {agentWin.height}px</span>
+                </div>
+
+                {/* Scale */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-gray-500 font-mono w-16 shrink-0">scale</span>
+                  <span className="text-[9px] text-gray-400 font-mono">{agentWin.scale.toFixed(2)}</span>
+                </div>
+              </div>
+
+              {/* Frame style selector */}
+              <SectionHeader>&#128444;&#65039; Frame Style</SectionHeader>
+              <div className="rounded-lg border border-white/5 p-2" style={{ background: 'rgba(20, 20, 20, 0.6)' }}>
+                <div className="grid grid-cols-4 gap-1">
+                  {/* No frame option */}
+                  <button
+                    onClick={() => updateAgentWindow(inspectedObjectId!, { frameStyle: undefined })}
+                    className={`flex flex-col items-center gap-0.5 p-1.5 rounded transition-colors text-center ${
+                      !agentWin.frameStyle
+                        ? 'bg-fuchsia-500/20 border border-fuchsia-500/40'
+                        : 'border border-gray-700/30 hover:border-gray-500/50'
+                    }`}
+                  >
+                    <span className="text-sm">&#10005;</span>
+                    <span className={`text-[8px] font-mono ${!agentWin.frameStyle ? 'text-fuchsia-300' : 'text-gray-500'}`}>None</span>
+                  </button>
+                  {/* 8 frame styles */}
+                  {FRAME_STYLES.map(frame => {
+                    const isActive = agentWin.frameStyle === frame.id
+                    return (
+                      <button
+                        key={frame.id}
+                        onClick={() => updateAgentWindow(inspectedObjectId!, { frameStyle: frame.id })}
                         className={`flex flex-col items-center gap-0.5 p-1.5 rounded transition-colors text-center ${
                           isActive
                             ? 'bg-fuchsia-500/20 border border-fuchsia-500/40'

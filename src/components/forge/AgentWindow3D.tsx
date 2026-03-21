@@ -12,6 +12,7 @@ import { useOasisStore } from '../../store/oasisStore'
 import type { AgentWindow } from '../../store/oasisStore'
 import { AnorakWindowContent } from './AnorakWindowContent'
 import { ParzivalWindowContent } from './ParzivalWindowContent'
+import { FourBarFrame, NeonFrame, HologramFrame, VoidFrame } from './WorldObjects'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // FOCUS PROMPT — pulsing "HIT ENTER" bubble when window is selected
@@ -106,6 +107,45 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
       >
         {content}
       </Html>
+
+      {/* ═══ PICTURE FRAME — decorative 3D border around the window ═══ */}
+      {win.frameStyle && (() => {
+        // Frame dimensions match the Html content in world-space
+        const fw = worldWidth
+        const fh = worldHeight
+        const fs = win.scale  // scale factor for frame proportions
+        return (
+          <group position={[0, 0, -0.01]}>
+            {win.frameStyle === 'gilded' && (
+              <FourBarFrame w={fw} h={fh} border={0.04 * fs} depth={0.02 * fs} color="#8B6914" roughness={0.4} metalness={0.6} />
+            )}
+            {win.frameStyle === 'neon' && (
+              <NeonFrame w={fw} h={fh} scale={fs} />
+            )}
+            {win.frameStyle === 'thin' && (
+              <FourBarFrame w={fw} h={fh} border={0.006 * fs} depth={0.003 * fs} color="#1a1a1a" roughness={0.9} metalness={0.0} />
+            )}
+            {win.frameStyle === 'baroque' && (
+              <>
+                <FourBarFrame w={fw} h={fh} border={0.07 * fs} depth={0.035 * fs} color="#5C3A0E" roughness={0.3} metalness={0.7} />
+                <FourBarFrame w={fw + 0.01 * fs} h={fh + 0.01 * fs} border={0.015 * fs} depth={0.04 * fs} color="#DAA520" roughness={0.2} metalness={0.9} />
+              </>
+            )}
+            {win.frameStyle === 'hologram' && (
+              <HologramFrame w={fw} h={fh} scale={fs} />
+            )}
+            {win.frameStyle === 'rustic' && (
+              <FourBarFrame w={fw} h={fh} border={0.05 * fs} depth={0.025 * fs} color="#3E2723" roughness={0.95} metalness={0.0} />
+            )}
+            {win.frameStyle === 'ice' && (
+              <FourBarFrame w={fw} h={fh} border={0.04 * fs} depth={0.02 * fs} color="#B3E5FC" roughness={0.05} metalness={0.1} transparent opacity={0.6} emissive="#81D4FA" emissiveIntensity={0.3} />
+            )}
+            {win.frameStyle === 'void' && (
+              <VoidFrame w={fw} h={fh} scale={fs} />
+            )}
+          </group>
+        )
+      })()}
 
       {/* Invisible hitbox plane for raycasting — Html transform doesn't participate in R3F raycasts */}
       <mesh>

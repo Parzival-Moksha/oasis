@@ -5,10 +5,11 @@
 // ─═̷─═̷─ॐ─═̷─═̷─ Thin wrapper. Content lives in AnorakContent. ─═̷─═̷─ॐ─═̷─═̷─
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { useState } from 'react'
+import { useState, useContext } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
 import { MODELS } from '../../lib/anorak-engine'
 import { AnorakContent } from './AnorakContent'
+import { SettingsContext } from '../scene-lib'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ANORAK WINDOW CONTENT — the 3D wrapper
@@ -26,14 +27,19 @@ export function AnorakWindowContent({ windowId, initialSessionId }: {
   const [model, setModel] = useState('opus')
   const [totalCost, setTotalCost] = useState(0)
   const [sessionId, setSessionId] = useState(initialSessionId || '')
+  const [sessionPickerOpen, setSessionPickerOpen] = useState(false)
 
   const modelColor = MODELS.find(m => m.id === model)?.color || '#a855f7'
+
+  // Global UI opacity from settings
+  const { settings } = useContext(SettingsContext)
+  const bgAlpha = Math.max(0.3, Math.min(1, settings.uiOpacity))
 
   return (
     <div
       className="flex flex-col w-full h-full rounded-xl overflow-hidden"
       style={{
-        backgroundColor: 'rgba(8, 10, 15, 0.95)',
+        backgroundColor: `rgba(8, 10, 15, ${bgAlpha})`,
         border: `1px solid ${isStreaming ? 'rgba(56,189,248,0.6)' : 'rgba(56,189,248,0.2)'}`,
         boxShadow: isStreaming
           ? '0 0 40px rgba(56,189,248,0.2), inset 0 0 60px rgba(56,189,248,0.03)'
@@ -60,6 +66,31 @@ export function AnorakWindowContent({ windowId, initialSessionId }: {
           {isStreaming && <span className="text-[9px] text-sky-300 animate-pulse font-mono">● working</span>}
         </div>
         <div className="flex items-center gap-1.5">
+          {/* Session controls */}
+          <button
+            onClick={() => setSessionPickerOpen(!sessionPickerOpen)}
+            className={`text-[9px] font-mono px-1.5 py-0.5 rounded border transition-colors ${
+              sessionPickerOpen
+                ? 'bg-sky-500/20 border-sky-500/40 text-sky-300'
+                : 'border-white/10 text-gray-500 hover:text-gray-300 hover:border-white/20'
+            }`}
+            disabled={isStreaming}
+            title="Toggle session picker"
+          >
+            {sessionPickerOpen ? '▾' : '▸'} sessions
+          </button>
+          <button
+            onClick={() => {
+              // Clear session to start fresh — AnorakContent will create a new one
+              setSessionId('')
+              setSessionPickerOpen(false)
+            }}
+            className="text-[9px] font-mono px-1.5 py-0.5 rounded border border-white/10 text-sky-500/70 hover:text-sky-300 hover:border-sky-500/30 transition-colors disabled:opacity-50"
+            disabled={isStreaming}
+            title="Start new session"
+          >
+            +new
+          </button>
           <select value={model} onChange={e => setModel(e.target.value)} disabled={isStreaming}
             className="text-[9px] font-mono px-1 py-0.5 rounded bg-black/60 border border-white/10 cursor-pointer disabled:opacity-50 outline-none"
             style={{ color: modelColor }}
@@ -77,6 +108,8 @@ export function AnorakWindowContent({ windowId, initialSessionId }: {
         initialSessionId={initialSessionId}
         windowId={windowId}
         isFocused={isFocused}
+        sessionPickerOpen={sessionPickerOpen}
+        onSessionPickerChange={setSessionPickerOpen}
         onStreamingChange={setIsStreaming}
         onModelChange={setModel}
         onCostChange={setTotalCost}

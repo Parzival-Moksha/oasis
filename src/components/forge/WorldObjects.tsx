@@ -278,7 +278,7 @@ export const FRAME_STYLES: FrameStyleDef[] = [
 ]
 
 // ─═̷─ FOUR-BAR FRAME BUILDER — reusable for box-based frame geometry ─═̷─
-function FourBarFrame({ w, h, border, depth, color, roughness = 0.5, metalness = 0.3, emissive, emissiveIntensity = 0, opacity = 1, transparent = false }: {
+export function FourBarFrame({ w, h, border, depth, color, roughness = 0.5, metalness = 0.3, emissive, emissiveIntensity = 0, opacity = 1, transparent = false }: {
   w: number; h: number; border: number; depth: number
   color: string; roughness?: number; metalness?: number
   emissive?: string; emissiveIntensity?: number; opacity?: number; transparent?: boolean
@@ -308,7 +308,7 @@ function FourBarFrame({ w, h, border, depth, color, roughness = 0.5, metalness =
 
 // ─═̷─ ANIMATED FRAME WRAPPERS ─═̷─
 
-function NeonFrame({ w, h, scale }: { w: number; h: number; scale: number }) {
+export function NeonFrame({ w, h, scale }: { w: number; h: number; scale: number }) {
   const groupRef = useRef<THREE.Group>(null)
   useFrame((_, delta) => {
     if (!groupRef.current) return
@@ -329,7 +329,7 @@ function NeonFrame({ w, h, scale }: { w: number; h: number; scale: number }) {
   )
 }
 
-function HologramFrame({ w, h, scale }: { w: number; h: number; scale: number }) {
+export function HologramFrame({ w, h, scale }: { w: number; h: number; scale: number }) {
   const groupRef = useRef<THREE.Group>(null)
   useFrame(() => {
     if (!groupRef.current) return
@@ -378,7 +378,7 @@ function ScanlineBar({ w, h, scale }: { w: number; h: number; scale: number }) {
   )
 }
 
-function VoidFrame({ w, h, scale }: { w: number; h: number; scale: number }) {
+export function VoidFrame({ w, h, scale }: { w: number; h: number; scale: number }) {
   const groupRef = useRef<THREE.Group>(null)
   useFrame(() => {
     if (!groupRef.current) return

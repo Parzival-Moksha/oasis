@@ -1,11 +1,14 @@
 'use client'
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-// PARZIVAL PANEL — The Brain's Window into the Oasis
-// ─═̷─═̷─ॐ─═̷─═̷─ Mode • HP • Thoughts • Chat ─═̷─═̷─ॐ─═̷─═̷─
+// PARZIVAL PANEL — mini-Synapse inside the Oasis
+// ─═̷─═̷─ॐ─═̷─═̷─ Chat • Mindcraft • Console • CEHQ ─═̷─═̷─ॐ─═̷─═̷─
 //
-// 2D overlay panel following MerlinPanel pattern.
-// Streams thoughts from ae_parzival via SSE + proxied chat.
+// Tabs:
+//   💬 Chat     — talk to Parzival (coach mode, conversation continuity)
+//   ⚔️ Mindcraft — mission list, mature/bump/execute pipeline
+//   📡 Console  — live thought stream (SSE from ae_parzival)
+//   🧬 CEHQ     — context modules viewer/toggler
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { useState, useRef, useEffect, useCallback, useContext } from 'react'
@@ -22,7 +25,6 @@ interface BrainState {
   maxHp: number
   missions: Record<string, number>
   uptime: number
-  heartbeat: { running: boolean; beatCount: number }
 }
 
 interface ParzivalMessage {
@@ -30,9 +32,33 @@ interface ParzivalMessage {
   role: 'user' | 'parzival'
   content: string
   mode?: string
-  toolsCalled?: string[]
   timestamp: number
 }
+
+interface Mission {
+  id: number
+  name: string
+  description: string | null
+  status: string
+  maturityLevel: number
+  urgency: number
+  easiness: number
+  impact: number
+  priority: number | null
+  assignedTo: string | null
+  technicalSpec: string | null
+  history: string | null
+}
+
+interface ContextModule {
+  id: number
+  moduleName: string
+  modeName: string
+  enabled: boolean
+  content: string | null
+}
+
+type TabId = 'chat' | 'mindcraft' | 'console' | 'cehq'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -46,55 +72,34 @@ const MODE_META: Record<string, { icon: string; color: string; label: string }> 
   unknown: { icon: '💀', color: '#666',    label: 'Offline' },
 }
 
+const TABS: Array<{ id: TabId; icon: string; label: string }> = [
+  { id: 'chat', icon: '💬', label: 'Chat' },
+  { id: 'mindcraft', icon: '⚔️', label: 'Mindcraft' },
+  { id: 'console', icon: '📡', label: 'Console' },
+  { id: 'cehq', icon: '🧬', label: 'CEHQ' },
+]
+
+const MATURITY_LABELS = ['🟥 Raw', '🟧 Formulated', '🟨 Analyzed', '🟩 Ready']
+
 const DEFAULT_POS = { x: 80, y: 80 }
-const DEFAULT_SIZE = { w: 480, h: 600 }
+const DEFAULT_SIZE = { w: 520, h: 640 }
 const STORAGE_POS = 'oasis-parzival-pos'
 const STORAGE_SIZE = 'oasis-parzival-size'
 
-function loadPos() {
-  if (typeof window === 'undefined') return DEFAULT_POS
-  try { return JSON.parse(localStorage.getItem(STORAGE_POS) ?? 'null') ?? DEFAULT_POS } catch { return DEFAULT_POS }
-}
-function loadSize() {
-  if (typeof window === 'undefined') return DEFAULT_SIZE
-  try { return JSON.parse(localStorage.getItem(STORAGE_SIZE) ?? 'null') ?? DEFAULT_SIZE } catch { return DEFAULT_SIZE }
+function loadStored<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback
+  try { return JSON.parse(localStorage.getItem(key) ?? 'null') ?? fallback } catch { return fallback }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SSE THOUGHT STREAM — subscribes to ae_parzival:4517/api/thoughts/stream
+// PARZIVAL API HELPERS
 // ═══════════════════════════════════════════════════════════════════════════
 
-function useThoughtStream(active: boolean) {
-  const [thoughts, setThoughts] = useState<Array<{ type: string; data: Record<string, unknown>; ts: number }>>([])
-
-  useEffect(() => {
-    if (!active) return
-
-    const parzivalUrl = 'http://localhost:4517'
-    let evtSource: EventSource | null = null
-
-    try {
-      evtSource = new EventSource(`${parzivalUrl}/api/thoughts/stream`)
-
-      evtSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data)
-          if (data.type === 'heartbeat') return // Skip heartbeats
-          setThoughts(prev => [...prev.slice(-100), { type: data.type, data, ts: Date.now() }])
-        } catch { /* non-JSON event */ }
-      }
-
-      evtSource.onerror = () => {
-        // SSE will auto-reconnect
-      }
-    } catch {
-      // Parzival not running
-    }
-
-    return () => { evtSource?.close() }
-  }, [active])
-
-  return thoughts
+const parzivalFetch = async (path: string, options?: RequestInit) => {
+  const res = await fetch(`/api/parzival/proxy/${path}`, options)
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+  return data
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -104,28 +109,39 @@ function useThoughtStream(active: boolean) {
 export function ParzivalPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const { settings } = useContext(SettingsContext)
 
-  // State
-  const [messages, setMessages] = useState<ParzivalMessage[]>([])
-  const [input, setInput] = useState('')
-  const [isStreaming, setIsStreaming] = useState(false)
+  // Tab state
+  const [activeTab, setActiveTab] = useState<TabId>('chat')
+
+  // Brain state
   const [brain, setBrain] = useState<BrainState | null>(null)
-  const [selectedMode, setSelectedMode] = useState<string | null>(null)
   const [online, setOnline] = useState(false)
 
-  // Refs
+  // Chat state
+  const [messages, setMessages] = useState<ParzivalMessage[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [isStreaming, setIsStreaming] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
 
-  // Position & size (draggable + resizable)
-  const [pos, setPos] = useState(loadPos)
-  const [size, setSize] = useState(loadSize)
+  // Mindcraft state
+  const [missions, setMissions] = useState<Mission[]>([])
+  const [missionLoading, setMissionLoading] = useState<number | null>(null)
+
+  // Console state
+  const [thoughts, setThoughts] = useState<Array<{ type: string; data: string; ts: number }>>([])
+  const consoleEndRef = useRef<HTMLDivElement>(null)
+
+  // CEHQ state
+  const [contextModules, setContextModules] = useState<ContextModule[]>([])
+  const [expandedModule, setExpandedModule] = useState<string | null>(null)
+
+  // Position & size
+  const [pos, setPos] = useState(() => loadStored(STORAGE_POS, DEFAULT_POS))
+  const [size, setSize] = useState(() => loadStored(STORAGE_SIZE, DEFAULT_SIZE))
   const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null)
 
-  // Thought stream
-  const thoughts = useThoughtStream(isOpen)
-
-  // Poll brain state
+  // ─── Poll brain state ──────────────────────────────────────────────────
   useEffect(() => {
     if (!isOpen) return
 
@@ -134,11 +150,7 @@ export function ParzivalPanel({ isOpen, onClose }: { isOpen: boolean; onClose: (
         const res = await fetch('/api/parzival')
         if (res.ok) {
           const data = await res.json()
-          if (!data.error) {
-            setBrain(data)
-            setOnline(true)
-            return
-          }
+          if (!data.error) { setBrain(data); setOnline(true); return }
         }
         setOnline(false)
       } catch { setOnline(false) }
@@ -149,30 +161,61 @@ export function ParzivalPanel({ isOpen, onClose }: { isOpen: boolean; onClose: (
     return () => clearInterval(interval)
   }, [isOpen])
 
-  // Scroll to bottom on new messages
+  // ─── SSE Thought Stream ────────────────────────────────────────────────
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    if (!isOpen) return
 
-  // Focus input when panel opens
-  useEffect(() => {
-    if (isOpen) setTimeout(() => inputRef.current?.focus(), 100)
+    let evtSource: EventSource | null = null
+    try {
+      evtSource = new EventSource('http://localhost:4517/api/thoughts/stream')
+      evtSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data)
+          if (data.type === 'heartbeat') return
+          setThoughts(prev => [...prev.slice(-200), {
+            type: data.type,
+            data: JSON.stringify(data),
+            ts: Date.now(),
+          }])
+        } catch { /* skip */ }
+      }
+    } catch { /* not running */ }
+
+    return () => { evtSource?.close() }
   }, [isOpen])
 
-  // ─── Chat submit ───────────────────────────────────────────────────────
+  // ─── Load missions when Mindcraft tab activates ────────────────────────
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'mindcraft' || !online) return
+    parzivalFetch('missions').then(data => {
+      if (Array.isArray(data)) setMissions(data)
+    }).catch(() => {})
+  }, [isOpen, activeTab, online])
+
+  // ─── Load context modules when CEHQ tab activates ─────────────────────
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'cehq' || !online) return
+    parzivalFetch('context').then(data => {
+      if (Array.isArray(data)) setContextModules(data)
+    }).catch(() => {})
+  }, [isOpen, activeTab, online])
+
+  // ─── Auto-scroll ──────────────────────────────────────────────────────
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
+  useEffect(() => { consoleEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [thoughts])
+
+  // ─── Focus input ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (isOpen && activeTab === 'chat') setTimeout(() => inputRef.current?.focus(), 100)
+  }, [isOpen, activeTab])
+
+  // ─── Chat submit ──────────────────────────────────────────────────────
   const handleSubmit = useCallback(async () => {
-    const text = input.trim()
+    const text = chatInput.trim()
     if (!text || isStreaming) return
+    setChatInput('')
 
-    setInput('')
-    const userMsg: ParzivalMessage = {
-      id: `user-${Date.now()}`,
-      role: 'user',
-      content: text,
-      timestamp: Date.now(),
-    }
-    setMessages(prev => [...prev, userMsg])
-
+    setMessages(prev => [...prev, { id: `u-${Date.now()}`, role: 'user', content: text, timestamp: Date.now() }])
     setIsStreaming(true)
     const abort = new AbortController()
     abortRef.current = abort
@@ -181,87 +224,74 @@ export function ParzivalPanel({ isOpen, onClose }: { isOpen: boolean; onClose: (
       const res = await fetch('/api/parzival', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, mode: selectedMode }),
+        body: JSON.stringify({ message: text }),
         signal: abort.signal,
       })
-
       const data = await res.json()
-
-      const parzivalMsg: ParzivalMessage = {
-        id: `parzival-${Date.now()}`,
-        role: 'parzival',
+      setMessages(prev => [...prev, {
+        id: `p-${Date.now()}`, role: 'parzival',
         content: data.content ?? data.error ?? 'No response',
-        mode: data.mode,
-        toolsCalled: data.toolsCalled,
-        timestamp: Date.now(),
-      }
-      setMessages(prev => [...prev, parzivalMsg])
-
+        mode: data.mode, timestamp: Date.now(),
+      }])
     } catch (error) {
       if ((error as Error).name !== 'AbortError') {
         setMessages(prev => [...prev, {
-          id: `error-${Date.now()}`,
-          role: 'parzival',
-          content: `Connection error: ${(error as Error).message}`,
-          timestamp: Date.now(),
+          id: `e-${Date.now()}`, role: 'parzival',
+          content: `Error: ${(error as Error).message}`, timestamp: Date.now(),
         }])
       }
-    } finally {
-      setIsStreaming(false)
-      abortRef.current = null
-    }
-  }, [input, isStreaming, selectedMode])
+    } finally { setIsStreaming(false); abortRef.current = null }
+  }, [chatInput, isStreaming])
 
-  // ─── Drag handlers ────────────────────────────────────────────────────
+  // ─── Mission actions ──────────────────────────────────────────────────
+  const missionAction = useCallback(async (id: number, action: string, body?: object) => {
+    setMissionLoading(id)
+    try {
+      await parzivalFetch(`missions/${id}/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined,
+      })
+      // Refresh missions
+      const data = await parzivalFetch('missions')
+      if (Array.isArray(data)) setMissions(data)
+    } catch { /* swallow */ }
+    setMissionLoading(null)
+  }, [])
+
+  // ─── Context module toggle ────────────────────────────────────────────
+  const toggleModule = useCallback(async (id: number, enabled: boolean) => {
+    await parzivalFetch(`context/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    })
+    setContextModules(prev => prev.map(m => m.id === id ? { ...m, enabled } : m))
+  }, [])
+
+  // ─── Drag ─────────────────────────────────────────────────────────────
   const handleDragStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     dragRef.current = { startX: e.clientX, startY: e.clientY, origX: pos.x, origY: pos.y }
-
-    const handleMove = (ev: MouseEvent) => {
+    const move = (ev: MouseEvent) => {
       if (!dragRef.current) return
-      const newPos = {
-        x: Math.max(0, dragRef.current.origX + ev.clientX - dragRef.current.startX),
-        y: Math.max(0, dragRef.current.origY + ev.clientY - dragRef.current.startY),
-      }
-      setPos(newPos)
-      localStorage.setItem(STORAGE_POS, JSON.stringify(newPos))
+      const p = { x: Math.max(0, dragRef.current.origX + ev.clientX - dragRef.current.startX), y: Math.max(0, dragRef.current.origY + ev.clientY - dragRef.current.startY) }
+      setPos(p); localStorage.setItem(STORAGE_POS, JSON.stringify(p))
     }
-
-    const handleUp = () => {
-      dragRef.current = null
-      window.removeEventListener('mousemove', handleMove)
-      window.removeEventListener('mouseup', handleUp)
-    }
-
-    window.addEventListener('mousemove', handleMove)
-    window.addEventListener('mouseup', handleUp)
+    const up = () => { dragRef.current = null; window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up) }
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
   }, [pos])
 
-  // ─── Resize handlers ──────────────────────────────────────────────────
+  // ─── Resize ───────────────────────────────────────────────────────────
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    const startX = e.clientX
-    const startY = e.clientY
-    const origW = size.w
-    const origH = size.h
-
-    const handleMove = (ev: MouseEvent) => {
-      const newSize = {
-        w: Math.max(360, origW + ev.clientX - startX),
-        h: Math.max(400, origH + ev.clientY - startY),
-      }
-      setSize(newSize)
-      localStorage.setItem(STORAGE_SIZE, JSON.stringify(newSize))
+    e.preventDefault(); e.stopPropagation()
+    const sx = e.clientX, sy = e.clientY, ow = size.w, oh = size.h
+    const move = (ev: MouseEvent) => {
+      const s = { w: Math.max(400, ow + ev.clientX - sx), h: Math.max(480, oh + ev.clientY - sy) }
+      setSize(s); localStorage.setItem(STORAGE_SIZE, JSON.stringify(s))
     }
-
-    const handleUp = () => {
-      window.removeEventListener('mousemove', handleMove)
-      window.removeEventListener('mouseup', handleUp)
-    }
-
-    window.addEventListener('mousemove', handleMove)
-    window.addEventListener('mouseup', handleUp)
+    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up) }
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
   }, [size])
 
   if (!isOpen) return null
@@ -270,289 +300,242 @@ export function ParzivalPanel({ isOpen, onClose }: { isOpen: boolean; onClose: (
   const hpPercent = brain ? (brain.hp / brain.maxHp) * 100 : 0
   const hpColor = hpPercent > 70 ? '#22c55e' : hpPercent > 40 ? '#eab308' : '#ef4444'
   const uiOpacity = settings?.uiOpacity ?? 0.95
+  const panelColor = modeInfo.color
 
   return createPortal(
     <div
       style={{
-        position: 'fixed',
-        left: pos.x,
-        top: pos.y,
-        width: size.w,
-        height: size.h,
-        zIndex: 9999,
-        display: 'flex',
-        flexDirection: 'column',
-        borderRadius: 12,
-        overflow: 'hidden',
+        position: 'fixed', left: pos.x, top: pos.y, width: size.w, height: size.h,
+        zIndex: 9999, display: 'flex', flexDirection: 'column',
+        borderRadius: 12, overflow: 'hidden',
         background: `rgba(10, 10, 20, ${uiOpacity})`,
-        border: `1px solid ${online ? `${modeInfo.color}40` : 'rgba(255,255,255,0.1)'}`,
-        boxShadow: online
-          ? `0 0 30px ${modeInfo.color}20, 0 8px 32px rgba(0,0,0,0.6)`
-          : '0 8px 32px rgba(0,0,0,0.6)',
-        backdropFilter: 'blur(12px)',
-        fontFamily: 'monospace',
-        fontSize: 13,
+        border: `1px solid ${online ? panelColor + '40' : 'rgba(255,255,255,0.1)'}`,
+        boxShadow: online ? `0 0 30px ${panelColor}20, 0 8px 32px rgba(0,0,0,0.6)` : '0 8px 32px rgba(0,0,0,0.6)',
+        backdropFilter: 'blur(12px)', fontFamily: 'monospace', fontSize: 13,
       }}
       onMouseDown={e => e.stopPropagation()}
     >
-      {/* ─── Header ─────────────────────────────────────────────────── */}
+      {/* ─── HEADER ────────────────────────────────────────────────── */}
       <div
         onMouseDown={handleDragStart}
         style={{
-          padding: '8px 12px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          borderBottom: `1px solid ${modeInfo.color}30`,
-          cursor: 'grab',
-          userSelect: 'none',
-          background: `linear-gradient(135deg, ${modeInfo.color}15, transparent)`,
+          padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8,
+          borderBottom: `1px solid ${panelColor}30`, cursor: 'grab', userSelect: 'none',
+          background: `linear-gradient(135deg, ${panelColor}15, transparent)`,
         }}
       >
         <span style={{ fontSize: 18 }}>🧿</span>
-        <span style={{ color: modeInfo.color, fontWeight: 700, letterSpacing: 1 }}>
-          PARZIVAL
-        </span>
-
-        {/* Mode badge */}
-        <span style={{
-          padding: '2px 8px',
-          borderRadius: 6,
-          background: `${modeInfo.color}20`,
-          color: modeInfo.color,
-          fontSize: 11,
-        }}>
+        <span style={{ color: panelColor, fontWeight: 700, letterSpacing: 1 }}>PARZIVAL</span>
+        <span style={{ padding: '2px 8px', borderRadius: 6, background: `${panelColor}20`, color: panelColor, fontSize: 11 }}>
           {modeInfo.icon} {modeInfo.label}
         </span>
 
-        {/* HP bar */}
         {online && (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
-            <div style={{
-              flex: 1,
-              height: 6,
-              borderRadius: 3,
-              background: 'rgba(255,255,255,0.1)',
-              overflow: 'hidden',
-            }}>
-              <div style={{
-                width: `${hpPercent}%`,
-                height: '100%',
-                background: hpColor,
-                borderRadius: 3,
-                transition: 'width 0.5s ease',
-              }} />
+            <div style={{ flex: 1, height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.1)' }}>
+              <div style={{ width: `${hpPercent}%`, height: '100%', background: hpColor, borderRadius: 3, transition: 'width 0.5s' }} />
             </div>
             <span style={{ fontSize: 10, color: hpColor }}>{brain?.hp}/{brain?.maxHp}</span>
           </div>
         )}
 
-        {/* Status dot */}
-        <div style={{
-          width: 8, height: 8, borderRadius: '50%',
-          background: online ? '#22c55e' : '#ef4444',
-          boxShadow: online ? '0 0 6px #22c55e' : '0 0 6px #ef4444',
-        }} />
-
-        {/* Close button */}
-        <button
-          onClick={onClose}
-          style={{
-            background: 'none', border: 'none', color: '#666',
-            cursor: 'pointer', fontSize: 16, padding: '0 4px',
-          }}
-        >✕</button>
+        <div style={{ width: 8, height: 8, borderRadius: '50%', background: online ? '#22c55e' : '#ef4444', boxShadow: `0 0 6px ${online ? '#22c55e' : '#ef4444'}` }} />
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>✕</button>
       </div>
 
-      {/* ─── Mode Switcher ──────────────────────────────────────────── */}
-      <div style={{
-        display: 'flex', gap: 4, padding: '6px 12px',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
-      }}>
-        {(['coach', 'coder', 'curator', 'hacker'] as const).map(mode => {
-          const meta = MODE_META[mode]
-          const isActive = brain?.mode === mode
-          const isSelected = selectedMode === mode
-          return (
-            <button
-              key={mode}
-              onClick={() => setSelectedMode(isSelected ? null : mode)}
-              style={{
-                padding: '3px 10px',
-                borderRadius: 6,
-                border: `1px solid ${isActive ? meta.color + '60' : isSelected ? meta.color + '40' : 'rgba(255,255,255,0.08)'}`,
-                background: isActive ? meta.color + '20' : isSelected ? meta.color + '10' : 'transparent',
-                color: isActive ? meta.color : isSelected ? meta.color : '#888',
-                cursor: 'pointer',
-                fontSize: 11,
-                transition: 'all 0.2s',
-              }}
-            >
-              {meta.icon} {meta.label}
-            </button>
-          )
-        })}
-      </div>
-
-      {/* ─── Thought Stream (live events from SSE) ───────────────────── */}
-      {thoughts.length > 0 && (
-        <div style={{
-          maxHeight: 60,
-          overflow: 'hidden',
-          padding: '4px 12px',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
-          background: 'rgba(255,255,255,0.02)',
-        }}>
-          {thoughts.slice(-3).map((t, i) => (
-            <div key={i} style={{
-              fontSize: 10,
-              color: '#666',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}>
-              <span style={{ color: modeInfo.color }}>{t.type}</span>
-              {' '}
-              {JSON.stringify(t.data).substring(0, 80)}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* ─── Messages ────────────────────────────────────────────────── */}
-      <div style={{
-        flex: 1,
-        overflowY: 'auto',
-        padding: 12,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-      }}>
-        {messages.length === 0 && (
-          <div style={{
-            textAlign: 'center',
-            color: '#555',
-            padding: 40,
-          }}>
-            {online ? (
-              <>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>🧿</div>
-                <div>Talk to Parzival</div>
-                <div style={{ fontSize: 11, marginTop: 4 }}>
-                  Mode: {modeInfo.icon} {modeInfo.label} • HP: {brain?.hp}/{brain?.maxHp}
-                </div>
-              </>
-            ) : (
-              <>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>💀</div>
-                <div>Parzival is offline</div>
-                <div style={{ fontSize: 11, marginTop: 4, color: '#666' }}>
-                  cd c:/ae_parzival && pnpm dev
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {messages.map(msg => (
-          <div
-            key={msg.id}
+      {/* ─── TAB BAR ───────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        {TABS.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
             style={{
-              padding: '8px 12px',
-              borderRadius: 8,
-              background: msg.role === 'user'
-                ? 'rgba(255,255,255,0.05)'
-                : `${(MODE_META[msg.mode ?? 'coach']?.color ?? '#c084fc')}10`,
-              borderLeft: msg.role === 'parzival'
-                ? `3px solid ${MODE_META[msg.mode ?? 'coach']?.color ?? '#c084fc'}60`
-                : 'none',
+              flex: 1, padding: '6px 0', border: 'none', cursor: 'pointer',
+              background: activeTab === tab.id ? `${panelColor}15` : 'transparent',
+              borderBottom: activeTab === tab.id ? `2px solid ${panelColor}` : '2px solid transparent',
+              color: activeTab === tab.id ? panelColor : '#666',
+              fontSize: 12, fontFamily: 'monospace', transition: 'all 0.2s',
             }}
           >
-            <div style={{ fontSize: 10, color: '#666', marginBottom: 4 }}>
-              {msg.role === 'user' ? '👤 You' : `🧿 Parzival (${MODE_META[msg.mode ?? 'coach']?.label ?? 'Coach'})`}
-              {msg.toolsCalled?.length ? ` • ${msg.toolsCalled.length} tools` : ''}
-            </div>
-            <div style={{
-              color: '#ddd',
-              whiteSpace: 'pre-wrap',
-              lineHeight: 1.5,
-            }}>
-              {msg.content}
-            </div>
-          </div>
+            {tab.icon} {tab.label}
+          </button>
         ))}
+      </div>
 
-        {isStreaming && (
-          <div style={{ textAlign: 'center', color: modeInfo.color, padding: 8 }}>
-            <span className="animate-pulse">● thinking...</span>
+      {/* ─── TAB CONTENT ───────────────────────────────────────────── */}
+      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+
+        {/* ═══ CHAT TAB ═══ */}
+        {activeTab === 'chat' && (
+          <>
+            <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {messages.length === 0 && (
+                <div style={{ textAlign: 'center', color: '#555', padding: 40 }}>
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>{online ? '🧿' : '💀'}</div>
+                  <div>{online ? 'Talk to Parzival' : 'Parzival is offline'}</div>
+                  {!online && <div style={{ fontSize: 11, marginTop: 4, color: '#666' }}>cd c:/ae_parzival && pnpm dev</div>}
+                </div>
+              )}
+              {messages.map(msg => (
+                <div key={msg.id} style={{
+                  padding: '8px 12px', borderRadius: 8,
+                  background: msg.role === 'user' ? 'rgba(255,255,255,0.05)' : `${panelColor}10`,
+                  borderLeft: msg.role === 'parzival' ? `3px solid ${panelColor}60` : 'none',
+                }}>
+                  <div style={{ fontSize: 10, color: '#666', marginBottom: 4 }}>
+                    {msg.role === 'user' ? '👤 You' : `🧿 Parzival`}
+                  </div>
+                  <div style={{ color: '#ddd', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{msg.content}</div>
+                </div>
+              ))}
+              {isStreaming && <div style={{ textAlign: 'center', color: panelColor, padding: 8 }}><span className="animate-pulse">● thinking...</span></div>}
+              <div ref={messagesEndRef} />
+            </div>
+            <div style={{ padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', gap: 8 }}>
+              <textarea
+                ref={inputRef}
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() } }}
+                disabled={isStreaming || !online}
+                placeholder={online ? 'Talk to Parzival...' : 'Offline'}
+                rows={1}
+                style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '8px 12px', color: '#ddd', fontSize: 13, fontFamily: 'monospace', resize: 'none', outline: 'none' }}
+              />
+              <button
+                onClick={isStreaming ? () => abortRef.current?.abort() : handleSubmit}
+                disabled={!online && !isStreaming}
+                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: isStreaming ? '#ef444440' : `${panelColor}30`, color: isStreaming ? '#ef4444' : panelColor, cursor: 'pointer', fontFamily: 'monospace', fontWeight: 700 }}
+              >{isStreaming ? '■' : '→'}</button>
+            </div>
+          </>
+        )}
+
+        {/* ═══ MINDCRAFT TAB ═══ */}
+        {activeTab === 'mindcraft' && (
+          <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
+            {!online && <div style={{ textAlign: 'center', color: '#555', padding: 40 }}>💀 Offline</div>}
+            {online && missions.length === 0 && <div style={{ textAlign: 'center', color: '#555', padding: 40 }}>No missions yet</div>}
+            {missions.map(m => {
+              const isLoading = missionLoading === m.id
+              return (
+                <div key={m.id} style={{
+                  padding: '10px 12px', marginBottom: 8, borderRadius: 8,
+                  background: 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${m.status === 'wip' ? '#eab30840' : m.status === 'done' ? '#22c55e40' : 'rgba(255,255,255,0.06)'}`,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, color: '#888' }}>#{m.id}</span>
+                    <span style={{ color: '#ddd', fontWeight: 600, flex: 1 }}>{m.name}</span>
+                    <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: m.status === 'done' ? '#22c55e20' : m.status === 'wip' ? '#eab30820' : '#ffffff08', color: m.status === 'done' ? '#22c55e' : m.status === 'wip' ? '#eab308' : '#888' }}>
+                      {m.status}
+                    </span>
+                  </div>
+
+                  {m.description && <div style={{ fontSize: 11, color: '#999', marginBottom: 6, lineHeight: 1.4 }}>{m.description.substring(0, 150)}{m.description.length > 150 ? '...' : ''}</div>}
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10 }}>
+                    <span style={{ color: '#888' }}>{MATURITY_LABELS[m.maturityLevel] ?? '?'}</span>
+                    <span style={{ color: '#666' }}>U:{m.urgency} E:{m.easiness} I:{m.impact}</span>
+                    {m.assignedTo && <span style={{ color: '#666' }}>→ {m.assignedTo}</span>}
+                    <div style={{ flex: 1 }} />
+
+                    {m.status === 'todo' && m.maturityLevel < 3 && (
+                      <button onClick={() => missionAction(m.id, 'mature')} disabled={isLoading}
+                        style={{ padding: '2px 8px', borderRadius: 4, border: '1px solid #22d3ee30', background: '#22d3ee10', color: '#22d3ee', cursor: 'pointer', fontSize: 10, fontFamily: 'monospace' }}>
+                        {isLoading ? '...' : '📋 Mature'}
+                      </button>
+                    )}
+                    {m.status === 'todo' && (
+                      <button onClick={() => missionAction(m.id, 'feedback', { action: 'bump' })} disabled={isLoading}
+                        style={{ padding: '2px 8px', borderRadius: 4, border: '1px solid #22c55e30', background: '#22c55e10', color: '#22c55e', cursor: 'pointer', fontSize: 10, fontFamily: 'monospace' }}>
+                        ⬆ Bump
+                      </button>
+                    )}
+                    {m.status === 'todo' && m.maturityLevel >= 2 && (
+                      <button onClick={() => missionAction(m.id, 'execute')} disabled={isLoading}
+                        style={{ padding: '2px 8px', borderRadius: 4, border: '1px solid #fb923c30', background: '#fb923c10', color: '#fb923c', cursor: 'pointer', fontSize: 10, fontFamily: 'monospace' }}>
+                        🔥 Execute
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )}
 
-        <div ref={messagesEndRef} />
+        {/* ═══ CONSOLE TAB ═══ */}
+        {activeTab === 'console' && (
+          <div style={{ flex: 1, overflowY: 'auto', padding: '4px 8px', background: 'rgba(0,0,0,0.3)' }}>
+            {thoughts.length === 0 && <div style={{ textAlign: 'center', color: '#555', padding: 40 }}>📡 Waiting for events...</div>}
+            {thoughts.map((t, i) => (
+              <div key={i} style={{ padding: '2px 0', borderBottom: '1px solid rgba(255,255,255,0.03)', display: 'flex', gap: 6 }}>
+                <span style={{ color: '#555', fontSize: 9, minWidth: 50 }}>
+                  {new Date(t.ts).toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
+                <span style={{ color: panelColor, fontSize: 10, minWidth: 70 }}>{t.type}</span>
+                <span style={{ color: '#888', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.data.substring(0, 120)}</span>
+              </div>
+            ))}
+            <div ref={consoleEndRef} />
+          </div>
+        )}
+
+        {/* ═══ CEHQ TAB ═══ */}
+        {activeTab === 'cehq' && (
+          <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
+            {!online && <div style={{ textAlign: 'center', color: '#555', padding: 40 }}>💀 Offline</div>}
+            {contextModules.length === 0 && online && <div style={{ textAlign: 'center', color: '#555', padding: 40 }}>No context modules registered</div>}
+            {contextModules.map(mod => {
+              const isExpanded = expandedModule === `${mod.moduleName}-${mod.modeName}`
+              return (
+                <div key={`${mod.moduleName}-${mod.modeName}`} style={{
+                  marginBottom: 8, borderRadius: 8,
+                  background: 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${mod.enabled ? panelColor + '30' : 'rgba(255,255,255,0.06)'}`,
+                }}>
+                  <div
+                    style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
+                    onClick={() => setExpandedModule(isExpanded ? null : `${mod.moduleName}-${mod.modeName}`)}
+                  >
+                    <span style={{ fontSize: 14 }}>{isExpanded ? '▼' : '▶'}</span>
+                    <span style={{ color: '#ddd', fontWeight: 600, flex: 1 }}>{mod.moduleName}</span>
+                    <span style={{ fontSize: 10, color: '#888' }}>→ {mod.modeName}</span>
+                    {mod.id > 0 && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleModule(mod.id, !mod.enabled) }}
+                        style={{
+                          padding: '2px 8px', borderRadius: 4, border: 'none', cursor: 'pointer', fontSize: 10, fontFamily: 'monospace',
+                          background: mod.enabled ? '#22c55e20' : '#ef444420',
+                          color: mod.enabled ? '#22c55e' : '#ef4444',
+                        }}
+                      >
+                        {mod.enabled ? 'ON' : 'OFF'}
+                      </button>
+                    )}
+                    {mod.content && <span style={{ fontSize: 9, color: '#666' }}>{mod.content.length} chars</span>}
+                  </div>
+                  {isExpanded && mod.content && (
+                    <div style={{
+                      padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.06)',
+                      fontSize: 11, color: '#999', whiteSpace: 'pre-wrap', lineHeight: 1.4,
+                      maxHeight: 200, overflowY: 'auto',
+                    }}>
+                      {mod.content}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
-      {/* ─── Input ───────────────────────────────────────────────────── */}
-      <div style={{
-        padding: '8px 12px',
-        borderTop: '1px solid rgba(255,255,255,0.08)',
-        display: 'flex',
-        gap: 8,
-      }}>
-        <textarea
-          ref={inputRef}
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              handleSubmit()
-            }
-          }}
-          disabled={isStreaming || !online}
-          placeholder={online ? 'Talk to Parzival...' : 'Parzival is offline'}
-          rows={1}
-          style={{
-            flex: 1,
-            background: 'rgba(255,255,255,0.05)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: 8,
-            padding: '8px 12px',
-            color: '#ddd',
-            fontSize: 13,
-            fontFamily: 'monospace',
-            resize: 'none',
-            outline: 'none',
-          }}
-        />
-        <button
-          onClick={isStreaming ? () => abortRef.current?.abort() : handleSubmit}
-          disabled={!online && !isStreaming}
-          style={{
-            padding: '8px 16px',
-            borderRadius: 8,
-            border: 'none',
-            background: isStreaming ? '#ef444440' : `${modeInfo.color}30`,
-            color: isStreaming ? '#ef4444' : modeInfo.color,
-            cursor: 'pointer',
-            fontFamily: 'monospace',
-            fontWeight: 700,
-          }}
-        >
-          {isStreaming ? '■' : '→'}
-        </button>
-      </div>
-
-      {/* ─── Resize handle ───────────────────────────────────────────── */}
+      {/* ─── RESIZE HANDLE ─────────────────────────────────────────── */}
       <div
         onMouseDown={handleResizeStart}
-        style={{
-          position: 'absolute',
-          right: 0, bottom: 0,
-          width: 16, height: 16,
-          cursor: 'se-resize',
-          background: `linear-gradient(135deg, transparent 50%, ${modeInfo.color}30 50%)`,
-          borderRadius: '0 0 12px 0',
-        }}
+        style={{ position: 'absolute', right: 0, bottom: 0, width: 16, height: 16, cursor: 'se-resize', background: `linear-gradient(135deg, transparent 50%, ${panelColor}30 50%)`, borderRadius: '0 0 12px 0' }}
       />
     </div>,
     document.body

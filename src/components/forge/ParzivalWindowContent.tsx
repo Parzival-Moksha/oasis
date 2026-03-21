@@ -5,7 +5,8 @@
 // Follows AnorakWindowContent pattern: SSE stream, auto-scroll, compact UI
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useContext } from 'react'
+import { SettingsContext } from '../scene-lib'
 
 interface BrainState {
   mode: string
@@ -32,6 +33,10 @@ export function ParzivalWindowContent() {
   const [thoughts, setThoughts] = useState<Array<{ type: string; text: string }>>([])
   const [online, setOnline] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  // Global UI opacity from settings
+  const { settings } = useContext(SettingsContext)
+  const bgAlpha = Math.max(0.3, Math.min(1, settings.uiOpacity))
 
   // Poll brain state
   useEffect(() => {
@@ -91,7 +96,7 @@ export function ParzivalWindowContent() {
     <div style={{
       width: '100%',
       height: '100%',
-      background: 'rgba(5, 5, 15, 0.95)',
+      background: `rgba(5, 5, 15, ${bgAlpha})`,
       color: '#ccc',
       fontFamily: 'monospace',
       fontSize: 12,

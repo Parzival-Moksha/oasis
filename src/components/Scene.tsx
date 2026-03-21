@@ -1191,7 +1191,7 @@ function SettingsGear({ children }: { children: React.ReactNode }) {
 
       {isOpen && (
         <div
-          className="absolute top-0 left-12 backdrop-blur-sm border border-gray-800 rounded-xl shadow-2xl animate-in slide-in-from-left-2 duration-200"
+          className="absolute top-0 left-12 backdrop-blur-sm border border-gray-800 rounded-xl shadow-2xl animate-in slide-in-from-left-2 duration-200 z-[250]"
           style={{
             backgroundColor: 'rgba(0, 0, 0, 0.95)',
             boxShadow: '0 0 40px rgba(0,0,0,0.5), 0 0 20px rgba(168, 85, 247, 0.1)',
