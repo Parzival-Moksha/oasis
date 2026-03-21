@@ -178,6 +178,7 @@ export const useAudioManager = create<AudioManagerState>((set, get) => {
       const { muted, volume } = get()
       if (muted || volume === 0) return
 
+      // Cycle through ALL footstep sounds for variety (ignores dropdown — footsteps need variety)
       const steps = SOUND_OPTIONS.footstep
       const step = steps[footstepIndex % steps.length]
       footstepIndex++
@@ -241,14 +242,15 @@ export function registerAudioSubscriber(): () => void {
   audioSubscribed = true
 
   const unsub = eventBus.subscribe((cmd) => {
+    // Special: SELECT_OBJECT plays 'select' or 'deselect' based on payload
+    if (cmd.type === 'SELECT_OBJECT') {
+      useAudioManager.getState().play(cmd.payload.id ? 'select' : 'deselect')
+      return
+    }
+
     const soundEvent = COMMAND_TO_SOUND[cmd.type]
     if (soundEvent) {
       useAudioManager.getState().play(soundEvent)
-    }
-
-    // Special: deselect sound when SELECT_OBJECT with null
-    if (cmd.type === 'SELECT_OBJECT' && !cmd.payload.id) {
-      useAudioManager.getState().play('deselect')
     }
   })
 

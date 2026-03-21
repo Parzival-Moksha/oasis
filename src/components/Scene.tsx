@@ -343,7 +343,8 @@ function SoundSettings() {
     modeSwitch: 'Camera Mode', conjureStart: 'Conjure Start', conjureDone: 'Conjure Done',
     anorakDone: 'Anorak Done', notification: 'Notification', undo: 'Undo', redo: 'Redo',
     agentFocus: 'Agent Focus', agentUnfocus: 'Agent Unfocus', tilePaint: 'Tile Paint',
-    error: 'Error', footstep: 'Footstep',
+    error: 'Error',
+    // footstep excluded — always cycles through all footstep sounds for variety
   }
 
   return (
