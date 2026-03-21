@@ -2687,8 +2687,8 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                 {/* Agent windows in world */}
                 {placedAgentWindows.map(win => {
                   const isSelected = selectedObjectId === win.id
-                  const agentIcon = win.agentType === 'anorak' ? '💻' : win.agentType === 'merlin' ? '🧙' : '⚡'
-                  const agentColor = win.agentType === 'anorak' ? 'text-sky-400' : win.agentType === 'merlin' ? 'text-purple-400' : 'text-green-400'
+                  const agentIcon = win.agentType === 'anorak' ? '💻' : win.agentType === 'merlin' ? '🧙' : win.agentType === 'parzival' ? '🧿' : '⚡'
+                  const agentColor = win.agentType === 'anorak' ? 'text-sky-400' : win.agentType === 'merlin' ? 'text-purple-400' : win.agentType === 'parzival' ? 'text-violet-400' : 'text-green-400'
                   const pos = transforms[win.id]?.position || win.position
                   return (
                     <div
@@ -3127,6 +3127,7 @@ const AGENT_TYPES = [
   { type: 'anorak' as const, label: 'Anorak', icon: '💻', color: '#38bdf8', desc: 'Claude Code agent — full multi-turn sessions' },
   { type: 'merlin' as const, label: 'Merlin', icon: '🧙', color: '#a855f7', desc: 'World-builder agent — place objects, set sky' },
   { type: 'devcraft' as const, label: 'DevCraft', icon: '⚡', color: '#22c55e', desc: 'Mission management + gamification' },
+  { type: 'parzival' as const, label: 'Parzival', icon: '🧿', color: '#c084fc', desc: 'Autonomous brain — modes, missions, thought stream' },
 ] as const
 
 function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject, setCameraLookAt, selectedObjectId, transforms }: {

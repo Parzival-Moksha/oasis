@@ -11,6 +11,7 @@ import { Html } from '@react-three/drei'
 import { useOasisStore } from '../../store/oasisStore'
 import type { AgentWindow } from '../../store/oasisStore'
 import { AnorakWindowContent } from './AnorakWindowContent'
+import { ParzivalWindowContent } from './ParzivalWindowContent'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // FOCUS PROMPT — pulsing "HIT ENTER" bubble when window is selected
@@ -77,11 +78,13 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
             ⚡ DevCraft — coming soon
           </div>
         )
+      case 'parzival':
+        return <ParzivalWindowContent />
     }
   }, [win.id, win.agentType, win.sessionId])
 
   // Border glow colors
-  const agentColor = win.agentType === 'anorak' ? '#38bdf8' : win.agentType === 'merlin' ? '#a855f7' : '#22c55e'
+  const agentColor = win.agentType === 'anorak' ? '#38bdf8' : win.agentType === 'merlin' ? '#a855f7' : win.agentType === 'parzival' ? '#c084fc' : '#22c55e'
 
   return (
     <group ref={groupRef}>

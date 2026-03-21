@@ -262,6 +262,21 @@ export function CameraController() {
   const updateMouseLook = useMouseLook(settings.mouseSensitivity)
   const updateAgentFocus = useAgentFocusUpdate()
 
+  // Click-to-lock pointer in noclip mode (replaces PointerLockControls from drei)
+  useEffect(() => {
+    const canvas = document.querySelector('#uploader-canvas') as HTMLCanvasElement
+    if (!canvas) return
+    const onClick = () => {
+      const state = useInputManager.getState()
+      // Only lock in states that support pointer lock
+      if (state.can().canLockPointer && !state.pointerLocked) {
+        state.requestPointerLock()
+      }
+    }
+    canvas.addEventListener('click', onClick)
+    return () => canvas.removeEventListener('click', onClick)
+  }, [])
+
   // The ONE useFrame — delta from R3F, NOT state.clock.getDelta() (which double-consumes)
   useFrame((state, frameDelta) => {
     const camera = state.camera as THREE.PerspectiveCamera

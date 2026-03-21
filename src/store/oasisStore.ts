@@ -74,7 +74,7 @@ export interface ActivePlacementVfx {
 }
 
 // ─═̷─═̷─💻 AGENT WINDOW — placeable interactive panels in 3D ─═̷─═̷─💻
-export type AgentWindowType = 'anorak' | 'merlin' | 'devcraft'
+export type AgentWindowType = 'anorak' | 'merlin' | 'devcraft' | 'parzival'
 
 export interface AgentWindow {
   id: string                              // e.g. 'agent-anorak-1710859200000'
@@ -608,7 +608,6 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
   spawnPlacementVfx: (position) => {
     const { placementVfxType, placementVfxDuration } = get()
-    // ░▒▓ RANDOM — resolve to a concrete VFX type ▓▒░
     const resolvedType = placementVfxType === 'random'
       ? PLACEMENT_VFX_LIST[Math.floor(Math.random() * PLACEMENT_VFX_LIST.length)]
       : placementVfxType
@@ -620,6 +619,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
       duration: placementVfxDuration,
     }
     set(state => ({ activePlacementVfx: [...state.activePlacementVfx, vfx] }))
+    // Play placement sound
+    try { require('../lib/audio-manager').useAudioManager.getState().play('place') } catch {}
   },
 
   removePlacementVfx: (id) => {

@@ -42,6 +42,7 @@ import { ProfileButton } from './forge/ProfileButton'
 import { OnboardingModal } from './forge/OnboardingModal'
 import { MerlinPanel } from './forge/MerlinPanel'
 import { AnorakPanel } from './forge/AnorakPanel'
+import { ParzivalPanel } from './forge/ParzivalPanel'
 import dynamic from 'next/dynamic'
 const DevcraftPanel = dynamic(() => import('./forge/DevcraftPanel'), { ssr: false })
 import { HelpPanel } from './forge/HelpPanel'
@@ -787,6 +788,7 @@ export default function Scene() {
   const [helpOpen, setHelpOpen] = useState(false)
   const [claudeCodeOpen, setClaudeCodeOpen] = useState(false)
   const [devcraftOpen, setDevcraftOpen] = useState(false)
+  const [parzivalOpen, setParzivalOpen] = useState(false)
 
   // Panel toggle with sound
   const togglePanel = (setter: React.Dispatch<React.SetStateAction<boolean>>) => {
@@ -973,6 +975,19 @@ export default function Scene() {
           ⚡
         </button>
         <button
+          onClick={() => togglePanel(setParzivalOpen)}
+          className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
+          style={{
+            background: parzivalOpen ? 'rgba(192,132,252,0.3)' : 'rgba(0,0,0,0.6)',
+            border: `1px solid ${parzivalOpen ? 'rgba(192,132,252,0.6)' : 'rgba(255,255,255,0.15)'}`,
+            color: parzivalOpen ? '#C084FC' : '#aaa',
+            boxShadow: parzivalOpen ? '0 0 12px rgba(192,132,252,0.3)' : 'none',
+          }}
+          title="Parzival — Autonomous Brain"
+        >
+          🧿
+        </button>
+        <button
           onClick={() => togglePanel(setHelpOpen)}
           className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
           style={{
@@ -1025,6 +1040,12 @@ export default function Scene() {
           onClose={() => setClaudeCodeOpen(false)}
         />
       )}
+
+      {/* 🧿 Parzival — Autonomous Brain */}
+      <ParzivalPanel
+        isOpen={parzivalOpen}
+        onClose={() => setParzivalOpen(false)}
+      />
 
       {/* ⚡ DevCraft — Productivity Terminal */}
       {devcraftOpen ? (
