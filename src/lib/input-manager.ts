@@ -111,7 +111,15 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     if (get().pointerLocked && !STATE_CAPABILITIES[to].canLockPointer) {
       document.exitPointerLock()
     }
-    set({ inputState: to })
+    // Save previous camera state when entering temporary modes (paint/placement)
+    // so returnToPrevious() can restore the correct camera mode
+    const isTemporary = to === 'paint' || to === 'placement'
+    const isBaseCamera = current === 'orbit' || current === 'noclip' || current === 'third-person'
+    if (isTemporary && isBaseCamera) {
+      set({ inputState: to, _previousCameraState: current })
+    } else {
+      set({ inputState: to })
+    }
   },
 
   enterAgentFocus: () => {

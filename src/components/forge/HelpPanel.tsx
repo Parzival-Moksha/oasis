@@ -36,8 +36,8 @@ const SHORTCUTS: ShortcutRow[] = [
   { keys: ['WASD'], action: 'Move (Noclip mode)', category: 'camera' },
   { keys: ['Q', 'E'], action: 'Up / Down (Noclip)', category: 'camera' },
   { keys: ['Shift'], action: 'Sprint — 4× speed', category: 'camera' },
-  { keys: ['Ctrl', 'C'], action: 'Slow — 0.25× speed', category: 'camera' },
-  { keys: ['Ctrl', 'Alt', 'C'], action: 'Toggle Orbit ↔ FPS', category: 'camera' },
+  { keys: ['Space'], action: 'Slow — 0.25× speed', category: 'camera' },
+  { keys: ['Ctrl', 'Alt', 'C'], action: 'Cycle camera mode (Orbit → Noclip → TPS)', category: 'camera' },
 
   // Building
   { keys: ['R'], action: 'Translate mode (move)', category: 'building' },
