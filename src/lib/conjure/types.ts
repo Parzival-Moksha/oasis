@@ -85,25 +85,7 @@ export const POST_PROCESS_COSTS: Record<string, number> = {
 }
 
 // New users get this many free credits to try the Forge
-export const FREE_CREDITS = 3
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// CREDIT PACKS — Stripe checkout line items
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export interface CreditPack {
-  id: string
-  credits: number
-  priceUsd: number          // cents for Stripe (e.g. 500 = $5)
-  label: string
-  popular?: boolean
-}
-
-export const CREDIT_PACKS: CreditPack[] = [
-  { id: 'pack_5',   credits: 5,   priceUsd: 500,   label: '5 Credits — $5' },
-  { id: 'pack_25',  credits: 25,  priceUsd: 2000,  label: '25 Credits — $20', popular: true },
-  { id: 'pack_100', credits: 100, priceUsd: 7000,  label: '100 Credits — $70' },
-]
+export const FREE_CREDITS = 9999  // Local-first: unlimited credits
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONJURED ASSETS

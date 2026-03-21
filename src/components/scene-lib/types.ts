@@ -24,9 +24,11 @@ export interface OasisSettings {
   // ─═̷─═̷─🪟 WINDOW OPACITY ─═̷─═̷─🪟
   streamOpacity: number  // 0.1-1.0 — ThoughtStream (stashed for Merlin)
   // ─═̷─═̷─🎮 CAMERA MODES ─═̷─═̷─🎮
-  controlMode: 'orbit' | 'noclip' | 'third-person' // Camera control mode
-  mouseSensitivity: number    // Mouse sensitivity (0.1-2.0)
-  moveSpeed: number           // Movement speed (1-20)
+  controlMode: 'orbit' | 'noclip' | 'third-person'
+  mouseSensitivity: number
+  moveSpeed: number
+  // ─═̷─═̷─🔲 VISUAL ─═̷─═̷─🔲
+  showGrid: boolean           // Toggle the infinite helper grid
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

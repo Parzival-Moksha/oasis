@@ -22,9 +22,10 @@ export const defaultSettings: OasisSettings = {
   // WINDOW OPACITY
   streamOpacity: 0.9,
   // CAMERA MODES
-  controlMode: 'noclip',      // Noclip — fly mode, no gravity, no collision
+  controlMode: 'noclip',
   mouseSensitivity: 1.0,
   moveSpeed: 10,
+  showGrid: true,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

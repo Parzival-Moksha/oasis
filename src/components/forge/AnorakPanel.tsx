@@ -233,7 +233,8 @@ export function AnorakPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                 type: 'agent',
                 name: 'Anorak',
                 agentType: 'anorak',
-                agentSessionId: sessionId || undefined,
+                // Don't pass sessionId — each 3D window gets its own independent session
+                agentSessionId: undefined,
               } } })
               onClose()
             }}

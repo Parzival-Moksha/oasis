@@ -246,7 +246,7 @@ const GLOSSARY: GlossaryEntry[] = [
   // Social
   { term: 'Aura', definition: 'Reputation score earned when others visit your worlds. The more visitors, the more aura. Shows on your profile.', category: 'social' },
   { term: 'XP', definition: 'Experience points earned by building, conjuring, and engaging. Level up to unlock bragging rights.', category: 'social' },
-  { term: 'Credits', definition: 'Currency for AI conjuration. Earned at signup, purchasable via Stripe. Different tiers cost different amounts.', category: 'social' },
+  { term: 'Credits', definition: 'Currency for AI conjuration (unlimited in local mode). Different providers cost different amounts.', category: 'social' },
   { term: 'Visibility', definition: 'Controls who can see your world. Private (only you), Unlisted (link only), Public (everyone on Explore), Open Build (anyone can edit).', category: 'social' },
 
   // Objects

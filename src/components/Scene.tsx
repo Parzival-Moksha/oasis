@@ -152,6 +152,7 @@ function SettingsContent() {
     { key: 'vignetteEnabled' as const, label: 'Vignette', category: 'Post-FX' },
     { key: 'chromaticEnabled' as const, label: 'Chromatic Aberration', category: 'Post-FX' },
     { key: 'fpsCounterEnabled' as const, label: 'FPS Counter', category: 'UI' },
+    { key: 'showGrid' as const, label: 'Helper Grid', category: 'UI' },
   ]
 
   const categories = ['Post-FX', 'UI']
@@ -454,6 +455,60 @@ function SkyBackground({ backgroundId }: { backgroundId: string }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // OrbitTargetSphere + CameraLerp + AgentWindowFocus + FPSMovement — all in CameraController.tsx
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MODE SWITCH LABEL — shows mode name on Ctrl+Alt+C with fade-out
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const MODE_NAMES: Record<string, string> = {
+  orbit: 'ORBIT',
+  noclip: 'NOCLIP',
+  'third-person': 'THIRD PERSON',
+}
+
+function ModeSwitchLabel() {
+  const inputState = useInputManager(s => s.inputState)
+  const [visible, setVisible] = useState(false)
+  const [label, setLabel] = useState('')
+  const prevState = useRef(inputState)
+
+  useEffect(() => {
+    if (inputState !== prevState.current) {
+      prevState.current = inputState
+      const name = MODE_NAMES[inputState]
+      if (name) {
+        setLabel(name)
+        setVisible(true)
+        const t = setTimeout(() => setVisible(false), 1500)
+        return () => clearTimeout(t)
+      }
+    }
+  }, [inputState])
+
+  if (!visible) return null
+
+  return (
+    <div className="fixed inset-0 pointer-events-none z-[98] flex items-center justify-center">
+      <div
+        className="text-3xl font-black tracking-[0.3em] font-mono select-none"
+        style={{
+          color: 'rgba(255,255,255,0.7)',
+          textShadow: '0 0 40px rgba(56,189,248,0.5), 0 0 80px rgba(56,189,248,0.2)',
+          animation: 'modeFadeOut 1.5s ease-out forwards',
+        }}
+      >
+        {label}
+      </div>
+      <style>{`
+        @keyframes modeFadeOut {
+          0% { opacity: 1; transform: scale(1.1); }
+          30% { opacity: 1; transform: scale(1); }
+          100% { opacity: 0; transform: scale(0.95) translateY(-10px); }
+        }
+      `}</style>
+    </div>
+  )
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // POST-PROCESSING EFFECTS
@@ -851,19 +906,21 @@ export default function Scene() {
         <CameraControllerComponent />
         {settings.controlMode === 'noclip' && <SprintParticles />}
 
-        <Grid
-          position={[0, 0, 0]}
-          args={[50, 50]}
-          cellSize={1}
-          cellThickness={0.5}
-          cellColor="#1a1a2e"
-          sectionSize={5}
-          sectionThickness={1}
-          sectionColor="#2a2a4e"
-          fadeDistance={50}
-          fadeStrength={1}
-          infiniteGrid
-        />
+        {settings.showGrid && (
+          <Grid
+            position={[0, 0, 0]}
+            args={[50, 50]}
+            cellSize={1}
+            cellThickness={0.5}
+            cellColor="#1a1a2e"
+            sectionSize={5}
+            sectionThickness={1}
+            sectionColor="#2a2a4e"
+            fadeDistance={50}
+            fadeStrength={1}
+            infiniteGrid
+          />
+        )}
 
         {/* ─═̷─═̷─🌍─═̷─═̷─ THE FORGE ─═̷─═̷─🌍─═̷─═̷─ */}
         <Suspense fallback={null}>
@@ -888,8 +945,8 @@ export default function Scene() {
       {/* ─═̷─═̷─⚡ FPS DISPLAY ─═̷─═̷─⚡ */}
       <FPSDisplay enabled={settings.fpsCounterEnabled} fontSize={settings.fpsCounterFontSize} />
 
-      {/* ─═̷─═̷─🎯 CROSSHAIR — Noclip mode only ─═̷─═̷─🎯 */}
-      {settings.controlMode === 'noclip' && pointerLocked && (
+      {/* ─═̷─═̷─🎯 CROSSHAIR — Noclip + TPS when pointer locked ─═̷─═̷─🎯 */}
+      {(settings.controlMode === 'noclip' || settings.controlMode === 'third-person') && pointerLocked && (
         <div className="fixed inset-0 pointer-events-none z-[99] flex items-center justify-center">
           <div className="relative w-5 h-5">
             <div className="absolute top-1/2 left-0 w-full h-px bg-white/40" />
@@ -898,6 +955,9 @@ export default function Scene() {
           </div>
         </div>
       )}
+
+      {/* ─═̷─═̷─🎮 MODE SWITCH LABEL ─═̷─═̷─🎮 */}
+      <ModeSwitchLabel />
 
       {/* ─═̷─═̷─🔮─═̷─═̷─ TOP-LEFT BUTTON BAR — Profile, Settings, Wizard, Action Log ─═̷─═̷─🔮─═̷─═̷─ */}
       <div className="fixed top-4 left-4 z-[200] flex items-start gap-2">
@@ -972,7 +1032,7 @@ export default function Scene() {
           }}
           title="DevCraft — Productivity Terminal"
         >
-          ⚡
+          📅
         </button>
         <button
           onClick={() => togglePanel(setParzivalOpen)}

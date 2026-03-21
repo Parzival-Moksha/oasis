@@ -540,8 +540,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
       import('@react-three/drei').then(drei => drei.useGLTF.preload(pending.path!))
     }
     set({ placementPending: pending })
+    try { require('../lib/input-manager').useInputManager.getState().transition('placement') } catch {}
   },
-  cancelPlacement: () => set({ placementPending: null }),
+  cancelPlacement: () => {
+    set({ placementPending: null })
+    try { require('../lib/input-manager').useInputManager.getState().returnToPrevious() } catch {}
+  },
 
   placeCatalogAssetAt: (catalogId, name, path, defaultScale, position) => {
     withUndo(`Place ${name}`, '📦', () => {
@@ -662,9 +666,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
   // ─═̷─═̷─🎨 PAINT MODE — tile-by-tile ground painting ─═̷─═̷─🎨
   enterPaintMode: (presetId) => {
     set({ paintMode: true, paintBrushPresetId: presetId, placementPending: null })
+    try { require('../lib/input-manager').useInputManager.getState().transition('paint') } catch {}
   },
   exitPaintMode: () => {
     set({ paintMode: false, paintBrushPresetId: null })
+    try { require('../lib/input-manager').useInputManager.getState().returnToPrevious() } catch {}
   },
   setPaintBrushSize: (size) => {
     set({ paintBrushSize: Math.max(1, Math.min(5, size)) })

@@ -2544,7 +2544,10 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
               </div>
             ) : (
               <div className="space-y-1">
-                {/* Conjured assets in world */}
+                {/* ── CONJURED ── */}
+                {worldConjuredAssetIds.length > 0 && (
+                  <div className="text-[9px] text-purple-400/60 uppercase tracking-wider font-mono mt-1 mb-0.5">✨ Conjured ({worldConjuredAssetIds.length})</div>
+                )}
                 {worldConjuredAssetIds.map(id => {
                   const asset = conjuredAssets.find(a => a.id === id)
                   if (!asset || asset.status !== 'ready') return null
@@ -2580,7 +2583,10 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                   )
                 })}
 
-                {/* Catalog assets in world */}
+                {/* ── CATALOG ── */}
+                {placedCatalogAssets.length > 0 && (
+                  <div className="text-[9px] text-cyan-400/60 uppercase tracking-wider font-mono mt-2 mb-0.5">📦 Catalog ({placedCatalogAssets.length})</div>
+                )}
                 {placedCatalogAssets.map(ca => {
                   const isSelected = selectedObjectId === ca.id
                   return (
@@ -2614,7 +2620,10 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                   )
                 })}
 
-                {/* Crafted scenes in world */}
+                {/* ── CRAFTED ── */}
+                {craftedScenes.length > 0 && (
+                  <div className="text-[9px] text-amber-400/60 uppercase tracking-wider font-mono mt-2 mb-0.5">⚒️ Crafted ({craftedScenes.length})</div>
+                )}
                 {craftedScenes.map(scene => {
                   const isSelected = selectedObjectId === scene.id
                   return (
@@ -2648,7 +2657,10 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                   )
                 })}
 
-                {/* World lights */}
+                {/* ── LIGHTS ── */}
+                {worldLights.length > 0 && (
+                  <div className="text-[9px] text-yellow-400/60 uppercase tracking-wider font-mono mt-2 mb-0.5">💡 Lights ({worldLights.length})</div>
+                )}
                 {worldLights.map(light => {
                   const isSelected = selectedObjectId === light.id
                   const emoji = light.type === 'point' ? '💡' : light.type === 'spot' ? '🔦' : light.type === 'directional' ? '☀️' : light.type === 'hemisphere' ? '🌗' : light.type === 'ambient' ? '🌤️' : '🌐'
@@ -2684,7 +2696,10 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                   )
                 })}
 
-                {/* Agent windows in world */}
+                {/* ── AGENTS ── */}
+                {placedAgentWindows.length > 0 && (
+                  <div className="text-[9px] text-sky-400/60 uppercase tracking-wider font-mono mt-2 mb-0.5">💻 Agents ({placedAgentWindows.length})</div>
+                )}
                 {placedAgentWindows.map(win => {
                   const isSelected = selectedObjectId === win.id
                   const agentIcon = win.agentType === 'anorak' ? '💻' : win.agentType === 'merlin' ? '🧙' : win.agentType === 'parzival' ? '🧿' : '⚡'

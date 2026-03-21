@@ -66,7 +66,7 @@ export function ActionLogPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
   const hasHistory = undoStack.length > 0 || redoStack.length > 0
 
   return (
-    <div className="fixed top-14 right-4 w-64 max-h-[400px] rounded-xl border border-violet-500/20 bg-black/90 backdrop-blur-md shadow-2xl z-50 flex flex-col overflow-hidden">
+    <div className="fixed top-14 right-4 w-64 max-h-[400px] rounded-xl border border-violet-500/20 bg-black/90 backdrop-blur-md shadow-2xl z-[201] flex flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-violet-500/10">
         <div className="text-xs font-mono text-violet-300 flex items-center gap-1.5">

@@ -43,7 +43,9 @@ async function run() {
   console.log('\n═══ CATEGORY 1: Page Load + Scene ═══')
 
   await page.goto('http://localhost:4516', { waitUntil: 'networkidle', timeout: 30000 })
-  await page.waitForTimeout(8000)  // Dev server needs time for initial compile
+  // Dev server compiles on first request from a new browser — wait for it
+  await page.waitForSelector('canvas', { timeout: 20000 }).catch(() => {})
+  await page.waitForTimeout(3000)  // Extra settle time for R3F scene
   await screenshot(page, 'initial-load')
 
   // T1: Canvas exists

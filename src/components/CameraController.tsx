@@ -48,10 +48,10 @@ export const FPS_KEYBOARD_MAP = [
   { name: FPSControls.backward, keys: ['KeyS', 'ArrowDown'] },
   { name: FPSControls.left, keys: ['KeyA', 'ArrowLeft'] },
   { name: FPSControls.right, keys: ['KeyD', 'ArrowRight'] },
-  { name: FPSControls.up, keys: ['KeyQ', 'Space'] },
+  { name: FPSControls.up, keys: ['KeyQ'] },
   { name: FPSControls.down, keys: ['KeyE'] },
   { name: FPSControls.sprint, keys: ['ShiftLeft', 'ShiftRight'] },
-  { name: FPSControls.slow, keys: ['ControlLeft', 'ControlRight', 'KeyC'] },
+  { name: FPSControls.slow, keys: ['Space'] },
 ]
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -247,6 +247,27 @@ function useAgentFocusUpdate() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// ORBIT TARGET SPHERE — visual pivot point indicator
+// ═══════════════════════════════════════════════════════════════════════════
+
+function OrbitTargetSphere({ controlsRef }: { controlsRef: React.RefObject<any> }) {
+  const groupRef = useRef<THREE.Group>(null)
+  useFrame(() => {
+    if (!groupRef.current || !controlsRef.current) return
+    const t = controlsRef.current.target
+    groupRef.current.position.set(t.x, t.y, t.z)
+  })
+  return (
+    <group ref={groupRef}>
+      <mesh renderOrder={999}>
+        <sphereGeometry args={[0.03, 16, 16]} />
+        <meshStandardMaterial color="#d0d0e0" metalness={1.0} roughness={0.05} depthTest={false} />
+      </mesh>
+    </group>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // THE CAMERA CONTROLLER — ONE useFrame to rule them all
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -322,8 +343,6 @@ export function CameraController() {
 
   return (
     <>
-      {/* OrbitControls mounted ALWAYS — enabled/disabled via ref in useFrame.
-          No mount/unmount cycles. No cleanup races. No stale state. */}
       <OrbitControls
         ref={orbitControlsRef}
         enablePan={!isDragging}
@@ -333,6 +352,10 @@ export function CameraController() {
         minDistance={0.3}
         maxDistance={500}
       />
+      {/* Orbit target sphere — visual indicator of pivot point */}
+      {inputState === 'orbit' && settings.showOrbitTarget && (
+        <OrbitTargetSphere controlsRef={orbitControlsRef} />
+      )}
     </>
   )
 }
