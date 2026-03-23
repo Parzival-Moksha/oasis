@@ -163,7 +163,7 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
 
       {/* Focus glow when focused */}
       {isFocused && (
-        <mesh position={[0, 0, -0.01]}>
+        <mesh position={[0, 0, -0.05]}>
           <planeGeometry args={[worldWidth + 0.2, worldHeight + 0.2]} />
           <meshBasicMaterial color={agentColor} transparent opacity={0.08} />
         </mesh>

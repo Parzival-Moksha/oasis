@@ -67,10 +67,19 @@ function ForgeGround() {
 import type { WorldLight } from '../../lib/conjure/types'
 
 function EnvironmentIntensitySync({ lights }: { lights: WorldLight[] }) {
+  const prevIntensity = useRef<number | null>(null)
+  const framesSinceTraverse = useRef(0)
+
   useFrame(({ scene }) => {
     const env = lights.find(l => l.type === 'environment')
     const target = env?.intensity ?? 0
-    // Traverse every frame — cheap (just sets a number per material) and catches newly loaded meshes
+
+    // Only traverse when intensity changes OR periodically (every 60 frames) to catch newly loaded meshes
+    framesSinceTraverse.current++
+    if (target === prevIntensity.current && framesSinceTraverse.current < 60) return
+    prevIntensity.current = target
+    framesSinceTraverse.current = 0
+
     scene.traverse((obj) => {
       const mesh = obj as THREE.Mesh
       if (!mesh.isMesh) return

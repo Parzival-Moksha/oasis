@@ -165,17 +165,26 @@ Some routes use Prisma/SQLite (worlds, missions), others hit Supabase (profiles,
 
 ---
 
-## Carbon Tests — MANDATORY
-Every time you finish building something, output carbon tests:
-```
-░▒▓█ CARBON TESTS █▓▒░
+## Build → Review → Test (mandatory after every code change)
+After every coding unit, follow this loop AUTOMATICALLY.
+**STRICTLY SEQUENTIAL. NEVER run reviewer and tester in parallel.**
 
-▶ TEST 1: [action] (time estimate)
-  Do: [exact steps]
-  Expected: [what you should see]
-```
-You can't see the browser. Dev can't see diffs. Carbon tests are the bridge.
-**Run what you can yourself** (git status, build checks, grep verifications). Don't tell dev to run terminal commands — you ARE the terminal.
+1. **Build** — `pnpm build` must pass (or `npx tsc --noEmit` for ae_parzival)
+2. **Review** — invoke the **reviewer agent** as a SINGLE Agent call. Wait for results. Reviewer outputs 0-100 score + findings.
+3. **Fix** — fix everything the reviewer flags as HIGH/MEDIUM. If score < 90, re-invoke reviewer. Repeat until ≥ 90.
+4. **Test** — ONLY AFTER reviewer passes ≥ 90. Invoke the **tester agent** as a SEPARATE Agent call. Tester MUST:
+   - **WRITE NEW vitest tests** for every changed logic file. No exceptions. Test suite grows every session.
+   - Run ALL existing vitest tests (regression).
+   - Run Playwright visual regression for UI changes.
+   - Verify API endpoints for route changes.
+   - Output 0-100 pass% + valor (0-2). If pass < 100%, fix and re-test.
+5. **Report** — reviewer score, tester score, tester valor, how many new tests written, what shipped
+
+### Specialized Agents (`.claude/agents/`)
+- **`reviewer.md`** — Code review with Oasis-specific gotchas checklist. Severity: HIGH/MEDIUM/LOW. Verdict: ship or fix.
+- **`tester.md`** — 5-phase testing: analyze → unit tests (vitest) → visual regression (Playwright) → targeted visual (CDP) → API verification. Writes NEW tests for untested code — test suite grows organically.
+
+**Zero carbon tests.** The test suite (vitest + Playwright + CDP visual testing) handles verification. Never ask the user to manually test something you can test yourself. Only mention things requiring human senses (audio, subjective feel) in your report — not as formal test blocks.
 
 ---
 

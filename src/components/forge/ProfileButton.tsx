@@ -3,7 +3,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 // 04515 — Profile Button + Dropdown
 // First button in top-left bar. Shows avatar, opens profile panel.
-// Fetches credits/xp/level from Supabase via /api/profile.
+// Fetches xp/level from local /api/profile stub.
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { useState, useRef, useEffect, useContext, useCallback } from 'react'
@@ -107,21 +107,6 @@ export function ProfileButton() {
     fetchProfile()
   }, [isOpen, fetchProfile])
 
-  // Auto-open and refresh after Stripe checkout return
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('credits') === 'success') {
-      setIsOpen(true)
-      // Clean URL without reload
-      window.history.replaceState({}, '', window.location.pathname)
-      // Refetch profile to show new credit balance
-      fetch('/api/profile')
-        .then(r => r.json())
-        .then(data => setProfile(data))
-        .catch(() => {})
-    }
-  }, [])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {

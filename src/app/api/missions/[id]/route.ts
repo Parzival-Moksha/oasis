@@ -9,15 +9,36 @@ export async function PUT(
 ) {
   try {
     const { id } = await params
-    const body = await request.json()
+    const raw = await request.json()
+
+    // Whitelist — only allow known mutable fields
+    const ALLOWED = [
+      'name', 'status', 'urgency', 'easiness', 'impact', 'priority',
+      'valor', 'score', 'startedAt', 'endedAt', 'pausedAt',
+      'isPaused', 'totalPausedMs', 'actualSeconds', 'notes',
+      'horizon', 'targetSeconds', 'queuePosition', 'isIRL',
+      'description', 'assignedTo',
+    ] as const
+    const body: Record<string, unknown> = {}
+    for (const key of ALLOWED) {
+      if (raw[key] !== undefined) body[key] = raw[key]
+    }
+
+    // Coerce numeric fields
+    for (const field of ['urgency', 'easiness', 'impact', 'valor', 'score', 'actualSeconds', 'targetSeconds', 'totalPausedMs', 'queuePosition']) {
+      if (body[field] !== undefined && body[field] !== null) {
+        const n = Number(body[field])
+        if (!Number.isFinite(n)) { delete body[field] } else { body[field] = n }
+      }
+    }
 
     // Recalculate priority if scoring fields changed
     if (body.urgency !== undefined || body.easiness !== undefined || body.impact !== undefined) {
       const current = await prisma.mission.findUnique({ where: { id: parseInt(id) } })
       if (current) {
-        const u = body.urgency ?? current.urgency
-        const e = body.easiness ?? current.easiness
-        const i = body.impact ?? current.impact
+        const u = (body.urgency as number) ?? current.urgency
+        const e = (body.easiness as number) ?? current.easiness
+        const i = (body.impact as number) ?? current.impact
         body.priority = (u * e * i) / 125
       }
     }
@@ -25,7 +46,7 @@ export async function PUT(
     // Handle date fields (accept null or ISO string)
     for (const field of ['startedAt', 'endedAt', 'pausedAt']) {
       if (body[field] === null) continue
-      if (body[field]) body[field] = new Date(body[field])
+      if (body[field]) body[field] = new Date(body[field] as string)
     }
 
     const mission = await prisma.mission.update({

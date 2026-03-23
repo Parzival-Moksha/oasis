@@ -67,6 +67,12 @@ export function PlayerAvatar({
   const velocityRef = useRef(new THREE.Vector3())
   const facingAngle = useRef(0) // Y rotation avatar faces
   const isMovingRef = useRef(false)
+  // Pre-allocated temp vectors (avoid per-frame allocation)
+  const _camFwd = useRef(new THREE.Vector3())
+  const _camRt = useRef(new THREE.Vector3())
+  const _moveDir = useRef(new THREE.Vector3())
+  const _tempVec = useRef(new THREE.Vector3())
+  const _zeroVec = useRef(new THREE.Vector3())
 
   // ── Animation Controller (state machine) ──────────────────────────
   const animControllerRef = useRef<AnimationController | null>(null)
@@ -246,11 +252,11 @@ export function PlayerAvatar({
 
       // Camera forward direction (projected to XZ plane)
       const az = cameraAzimuth.current
-      const camForward = new THREE.Vector3(-Math.sin(az), 0, -Math.cos(az))
-      const camRight = new THREE.Vector3(-camForward.z, 0, camForward.x) // perpendicular right
+      const camForward = _camFwd.current.set(-Math.sin(az), 0, -Math.cos(az))
+      const camRight = _camRt.current.set(-camForward.z, 0, camForward.x) // perpendicular right
 
       // Movement direction relative to camera
-      const moveDir = new THREE.Vector3()
+      const moveDir = _moveDir.current.set(0, 0, 0)
       if (forward) moveDir.add(camForward)
       if (backward) moveDir.sub(camForward)
       if (right) moveDir.add(camRight)
@@ -259,7 +265,7 @@ export function PlayerAvatar({
       const wantsToMove = moveDir.lengthSq() > 0.001
       if (wantsToMove) {
         moveDir.normalize()
-        const targetVelocity = moveDir.clone().multiplyScalar(moveSpeed)
+        const targetVelocity = _tempVec.current.copy(moveDir).multiplyScalar(moveSpeed)
         velocityRef.current.lerp(targetVelocity, 1 - Math.exp(-8 * delta))
         isMovingRef.current = true
 
@@ -270,24 +276,24 @@ export function PlayerAvatar({
         while (angleDiff < -Math.PI) angleDiff += Math.PI * 2
         facingAngle.current += angleDiff * Math.min(10 * delta, 1)
       } else {
-        velocityRef.current.lerp(new THREE.Vector3(), 1 - Math.exp(-8 * delta))
+        velocityRef.current.lerp(_zeroVec.current.set(0, 0, 0), 1 - Math.exp(-8 * delta))
         if (velocityRef.current.lengthSq() < 0.001) velocityRef.current.set(0, 0, 0)
         isMovingRef.current = velocityRef.current.lengthSq() > 0.01
       }
 
       // Apply velocity to position
-      positionRef.current.add(velocityRef.current.clone().multiplyScalar(delta))
+      positionRef.current.add(_tempVec.current.copy(velocityRef.current).multiplyScalar(delta))
 
       // ── Position camera behind avatar using spherical coords ───
       const el = cameraElevation.current
       const dist = CAMERA_DISTANCE
-      const offset = new THREE.Vector3(
+      const offset = _tempVec.current.set(
         Math.sin(az) * Math.cos(el) * dist,
         Math.sin(el) * dist + CAMERA_HEIGHT_OFFSET,
         Math.cos(az) * Math.cos(el) * dist,
       )
 
-      const lookTarget = positionRef.current.clone()
+      const lookTarget = _camFwd.current.copy(positionRef.current)
       lookTarget.y += CAMERA_HEIGHT_OFFSET
 
       state.camera.position.copy(positionRef.current).add(offset)

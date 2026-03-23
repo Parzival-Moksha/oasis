@@ -11,9 +11,10 @@
 //   🧬 CEHQ     — context modules viewer/toggler
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { useState, useRef, useEffect, useCallback, useContext } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useContext } from 'react'
 import { createPortal } from 'react-dom'
 import { SettingsContext } from '../scene-lib'
+import { Mindcraft2 } from './Mindcraft2'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -45,9 +46,14 @@ interface Mission {
   easiness: number
   impact: number
   priority: number | null
+  score: number | null
+  valor: number
+  queuePosition: number | null
   assignedTo: string | null
   technicalSpec: string | null
   history: string | null
+  createdAt: string
+  endedAt: string | null
 }
 
 interface ContextModule {
@@ -58,7 +64,7 @@ interface ContextModule {
   content: string | null
 }
 
-type TabId = 'chat' | 'mindcraft' | 'console' | 'cehq'
+type TabId = 'chat' | 'mindcraft' | 'mindcraft2' | 'console' | 'cehq'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -75,6 +81,7 @@ const MODE_META: Record<string, { icon: string; color: string; label: string }> 
 const TABS: Array<{ id: TabId; icon: string; label: string }> = [
   { id: 'chat', icon: '💬', label: 'Chat' },
   { id: 'mindcraft', icon: '⚔️', label: 'Mindcraft' },
+  { id: 'mindcraft2', icon: '🎯', label: 'Mindcraft2' },
   { id: 'console', icon: '📡', label: 'Console' },
   { id: 'cehq', icon: '🧬', label: 'CEHQ' },
 ]
@@ -127,6 +134,9 @@ export function ParzivalPanel({ isOpen, onClose }: { isOpen: boolean; onClose: (
   // Mindcraft state
   const [missions, setMissions] = useState<Mission[]>([])
   const [missionLoading, setMissionLoading] = useState<number | null>(null)
+  const [sortKey, setSortKey] = useState<string>('queuePosition')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [expandedMission, setExpandedMission] = useState<number | null>(null)
 
   // Console state
   const [thoughts, setThoughts] = useState<Array<{ type: string; data: string; ts: number }>>([])
@@ -412,57 +422,196 @@ export function ParzivalPanel({ isOpen, onClose }: { isOpen: boolean; onClose: (
         )}
 
         {/* ═══ MINDCRAFT TAB ═══ */}
-        {activeTab === 'mindcraft' && (
-          <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
-            {!online && <div style={{ textAlign: 'center', color: '#555', padding: 40 }}>💀 Offline</div>}
-            {online && missions.length === 0 && <div style={{ textAlign: 'center', color: '#555', padding: 40 }}>No missions yet</div>}
-            {missions.map(m => {
-              const isLoading = missionLoading === m.id
-              return (
-                <div key={m.id} style={{
-                  padding: '10px 12px', marginBottom: 8, borderRadius: 8,
-                  background: 'rgba(255,255,255,0.03)',
-                  border: `1px solid ${m.status === 'wip' ? '#eab30840' : m.status === 'done' ? '#22c55e40' : 'rgba(255,255,255,0.06)'}`,
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <span style={{ fontSize: 11, color: '#888' }}>#{m.id}</span>
-                    <span style={{ color: '#ddd', fontWeight: 600, flex: 1 }}>{m.name}</span>
-                    <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: m.status === 'done' ? '#22c55e20' : m.status === 'wip' ? '#eab30820' : '#ffffff08', color: m.status === 'done' ? '#22c55e' : m.status === 'wip' ? '#eab308' : '#888' }}>
-                      {m.status}
-                    </span>
-                  </div>
+        {activeTab === 'mindcraft' && (() => {
+          // Sort missions
+          const sorted = [...missions].sort((a, b) => {
+            const av = (a as unknown as Record<string, unknown>)[sortKey]
+            const bv = (b as unknown as Record<string, unknown>)[sortKey]
+            let cmp = 0
+            if (av == null && bv == null) cmp = 0
+            else if (av == null) cmp = 1
+            else if (bv == null) cmp = -1
+            else if (sortKey === 'createdAt' || sortKey === 'endedAt') {
+              cmp = new Date(av as string).getTime() - new Date(bv as string).getTime()
+            } else if (typeof av === 'string' && typeof bv === 'string') {
+              cmp = av.localeCompare(bv)
+            } else {
+              cmp = (Number(av) || 0) - (Number(bv) || 0)
+            }
+            return sortDir === 'asc' ? cmp : -cmp
+          })
+          const wipMissions = sorted.filter(m => m.status === 'wip')
+          const todoMissions = sorted.filter(m => m.status === 'todo')
+          const doneMissions = sorted.filter(m => m.status === 'done' || m.status === 'failed')
 
-                  {m.description && <div style={{ fontSize: 11, color: '#999', marginBottom: 6, lineHeight: 1.4 }}>{m.description.substring(0, 150)}{m.description.length > 150 ? '...' : ''}</div>}
+          const toggleSort = (key: string) => {
+            if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+            else { setSortKey(key); setSortDir('asc') }
+          }
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10 }}>
-                    <span style={{ color: '#888' }}>{MATURITY_LABELS[m.maturityLevel] ?? '?'}</span>
-                    <span style={{ color: '#666' }}>U:{m.urgency} E:{m.easiness} I:{m.impact}</span>
-                    {m.assignedTo && <span style={{ color: '#666' }}>→ {m.assignedTo}</span>}
-                    <div style={{ flex: 1 }} />
+          const thStyle = (key?: string): React.CSSProperties => ({
+            padding: '4px 4px', fontSize: 10, color: sortKey === key ? panelColor : '#666',
+            cursor: key ? 'pointer' : 'default', whiteSpace: 'nowrap', userSelect: 'none',
+            borderBottom: '1px solid rgba(255,255,255,0.08)', fontWeight: sortKey === key ? 700 : 400,
+            textAlign: 'left',
+          })
+          const thR = (key?: string): React.CSSProperties => ({ ...thStyle(key), textAlign: 'right' })
 
-                    {m.status === 'todo' && m.maturityLevel < 3 && (
-                      <button onClick={() => missionAction(m.id, 'mature')} disabled={isLoading}
-                        style={{ padding: '2px 8px', borderRadius: 4, border: '1px solid #22d3ee30', background: '#22d3ee10', color: '#22d3ee', cursor: 'pointer', fontSize: 10, fontFamily: 'monospace' }}>
-                        {isLoading ? '...' : '📋 Mature'}
-                      </button>
-                    )}
-                    {m.status === 'todo' && (
-                      <button onClick={() => missionAction(m.id, 'feedback', { action: 'bump' })} disabled={isLoading}
-                        style={{ padding: '2px 8px', borderRadius: 4, border: '1px solid #22c55e30', background: '#22c55e10', color: '#22c55e', cursor: 'pointer', fontSize: 10, fontFamily: 'monospace' }}>
-                        ⬆ Bump
-                      </button>
-                    )}
-                    {m.status === 'todo' && m.maturityLevel >= 2 && (
-                      <button onClick={() => missionAction(m.id, 'execute')} disabled={isLoading}
-                        style={{ padding: '2px 8px', borderRadius: 4, border: '1px solid #fb923c30', background: '#fb923c10', color: '#fb923c', cursor: 'pointer', fontSize: 10, fontFamily: 'monospace' }}>
-                        🔥 Execute
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+          const arrow = (key: string) => sortKey === key ? (sortDir === 'asc' ? '▲' : '▼') : ''
+
+          const tdStyle: React.CSSProperties = { padding: '3px 4px', fontSize: 11, color: '#999', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+          const tdR: React.CSSProperties = { ...tdStyle, textAlign: 'right' }
+
+          const matColors = ['#666', '#818cf8', '#a855f7', '#f59e0b']
+          const matLabels = ['Raw', 'Form', 'Anlz', 'Rdy']
+
+          const fmtDate = (d: string | null) => {
+            if (!d) return '-'
+            const dt = new Date(d)
+            return `${dt.toLocaleDateString('en', { month: 'short', day: 'numeric' })}`
+          }
+
+          const renderSection = (title: string, titleColor: string, list: Mission[]) => {
+            if (list.length === 0) return null
+            return (
+              <>
+                <tr><td colSpan={13} style={{ padding: '4px 6px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: titleColor, background: 'rgba(255,255,255,0.02)', borderTop: '1px solid rgba(255,255,255,0.06)', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  {title} ({list.length})
+                </td></tr>
+                {list.map(m => {
+                  const isLoading = missionLoading === m.id
+                  const isExpanded = expandedMission === m.id
+                  const pri = m.priority != null ? m.priority.toFixed(1) : '-'
+                  const sc = m.score != null ? m.score.toFixed(1) : '-'
+                  const valorColor = m.valor >= 1.5 ? '#22c55e' : m.valor < 1.0 ? '#ef4444' : '#999'
+                  return (
+                    <React.Fragment key={m.id}>
+                      <tr
+                        onClick={() => setExpandedMission(isExpanded ? null : m.id)}
+                        style={{ cursor: 'pointer', borderTop: '1px solid rgba(255,255,255,0.03)', background: isExpanded ? 'rgba(255,255,255,0.03)' : m.status === 'wip' ? 'rgba(234,179,8,0.04)' : 'transparent' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = isExpanded ? 'rgba(255,255,255,0.03)' : m.status === 'wip' ? 'rgba(234,179,8,0.04)' : 'transparent')}
+                      >
+                        <td style={{ ...tdStyle, color: '#555' }}>{m.id}</td>
+                        <td style={{ ...tdStyle, color: '#888' }}>{m.queuePosition ?? '-'}</td>
+                        <td style={{ ...tdStyle, color: '#ddd', fontWeight: 600, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.name}</td>
+                        <td style={{ ...tdStyle, color: matColors[m.maturityLevel] ?? '#666' }}>{matLabels[m.maturityLevel] ?? '?'}</td>
+                        <td style={tdR}>{m.urgency}</td>
+                        <td style={tdR}>{m.easiness}</td>
+                        <td style={tdR}>{m.impact}</td>
+                        <td style={{ ...tdR, fontWeight: 500 }}>{pri}</td>
+                        <td style={{ ...tdR, color: valorColor }}>{m.valor.toFixed(1)}</td>
+                        <td style={{ ...tdR, color: '#22c55e' }}>{sc}</td>
+                        <td style={{ ...tdStyle, color: m.assignedTo === 'dev' ? '#60a5fa' : m.assignedTo === 'parzival' ? '#a855f7' : '#555' }}>
+                          {m.assignedTo === 'dev' ? '👤' : m.assignedTo === 'parzival' ? '🧿' : '-'}
+                        </td>
+                        <td style={{ ...tdStyle, color: '#555' }}>{fmtDate(m.createdAt)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>
+                          <div style={{ display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
+                            {m.status === 'todo' && m.maturityLevel < 3 && (
+                              <button onClick={e => { e.stopPropagation(); missionAction(m.id, 'mature') }} disabled={isLoading}
+                                style={{ padding: '1px 4px', borderRadius: 3, border: 'none', background: '#22d3ee15', color: '#22d3ee', cursor: 'pointer', fontSize: 9, fontFamily: 'monospace' }}>
+                                {isLoading ? '..' : '📋'}
+                              </button>
+                            )}
+                            {m.status === 'todo' && (
+                              <button onClick={e => { e.stopPropagation(); missionAction(m.id, 'feedback', { action: 'bump' }) }} disabled={isLoading}
+                                style={{ padding: '1px 4px', borderRadius: 3, border: 'none', background: '#22c55e15', color: '#22c55e', cursor: 'pointer', fontSize: 9, fontFamily: 'monospace' }}>
+                                ⬆
+                              </button>
+                            )}
+                            {m.status === 'todo' && m.maturityLevel >= 2 && (
+                              <button onClick={e => { e.stopPropagation(); missionAction(m.id, 'execute') }} disabled={isLoading}
+                                style={{ padding: '1px 4px', borderRadius: 3, border: 'none', background: '#fb923c15', color: '#fb923c', cursor: 'pointer', fontSize: 9, fontFamily: 'monospace' }}>
+                                🔥
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr style={{ background: 'rgba(255,255,255,0.02)' }}>
+                          <td colSpan={13} style={{ padding: '8px 12px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                              <div>
+                                <div style={{ fontSize: 10, color: panelColor, marginBottom: 4, fontWeight: 600 }}>📋 Description</div>
+                                <div style={{ fontSize: 11, color: '#999', whiteSpace: 'pre-wrap', lineHeight: 1.4, maxHeight: 150, overflowY: 'auto' }}>
+                                  {m.description || '(none)'}
+                                </div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 10, color: panelColor, marginBottom: 4, fontWeight: 600 }}>🔧 Tech Spec</div>
+                                <div style={{ fontSize: 11, color: '#999', whiteSpace: 'pre-wrap', lineHeight: 1.4, fontFamily: 'monospace', maxHeight: 150, overflowY: 'auto' }}>
+                                  {m.technicalSpec || '(none)'}
+                                </div>
+                              </div>
+                            </div>
+                            {m.history && (() => {
+                              try {
+                                const entries = JSON.parse(m.history) as Array<{ timestamp: string; actor: string; action: string; comment?: string }>
+                                if (!entries.length) return null
+                                return (
+                                  <div style={{ marginTop: 8, maxHeight: 120, overflowY: 'auto', padding: '6px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.02)' }}>
+                                    <div style={{ fontSize: 10, color: panelColor, marginBottom: 4, fontWeight: 600 }}>📜 History</div>
+                                    {entries.map((e, i) => (
+                                      <div key={i} style={{ fontSize: 10, color: '#777', padding: '2px 0', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                                        <span style={{ color: e.actor === 'dev' ? '#60a5fa' : '#a855f7' }}>{e.actor === 'dev' ? '👤' : '🧿'}</span>
+                                        {' '}<span style={{ color: '#888' }}>{e.action}</span>
+                                        {e.comment && <span style={{ color: '#999' }}> — {e.comment}</span>}
+                                        <span style={{ color: '#555', marginLeft: 6 }}>{new Date(e.timestamp).toLocaleDateString('en', { month: 'short', day: 'numeric' })}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )
+                              } catch { return null }
+                            })()}
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  )
+                })}
+              </>
+            )
+          }
+
+          return (
+            <div style={{ flex: 1, overflowY: 'auto', padding: 0 }}>
+              {!online && <div style={{ textAlign: 'center', color: '#555', padding: 40 }}>💀 Offline</div>}
+              {online && missions.length === 0 && <div style={{ textAlign: 'center', color: '#555', padding: 40 }}>No missions yet</div>}
+              {online && missions.length > 0 && (
+                <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ ...thStyle('id'), width: 28 }} onClick={() => toggleSort('id')}>ID{arrow('id')}</th>
+                      <th style={{ ...thStyle('queuePosition'), width: 24 }} onClick={() => toggleSort('queuePosition')}>#Q{arrow('queuePosition')}</th>
+                      <th style={{ ...thStyle('name'), width: 'auto' }}>Name</th>
+                      <th style={{ ...thStyle('maturityLevel'), width: 36 }} onClick={() => toggleSort('maturityLevel')}>Mat{arrow('maturityLevel')}</th>
+                      <th style={{ ...thR('urgency'), width: 24 }} onClick={() => toggleSort('urgency')}>U{arrow('urgency')}</th>
+                      <th style={{ ...thR('easiness'), width: 24 }} onClick={() => toggleSort('easiness')}>E{arrow('easiness')}</th>
+                      <th style={{ ...thR('impact'), width: 24 }} onClick={() => toggleSort('impact')}>I{arrow('impact')}</th>
+                      <th style={{ ...thR('priority'), width: 32 }} onClick={() => toggleSort('priority')}>Pri{arrow('priority')}</th>
+                      <th style={{ ...thR('valor'), width: 26 }} onClick={() => toggleSort('valor')}>V{arrow('valor')}</th>
+                      <th style={{ ...thR('score'), width: 32 }} onClick={() => toggleSort('score')}>Sc{arrow('score')}</th>
+                      <th style={{ ...thStyle('assignedTo'), width: 24 }} onClick={() => toggleSort('assignedTo')}>As{arrow('assignedTo')}</th>
+                      <th style={{ ...thR('createdAt'), width: 50 }} onClick={() => toggleSort('createdAt')}>Crtd{arrow('createdAt')}</th>
+                      <th style={{ ...thR(), width: 52 }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {renderSection('🔥 Work In Progress', '#eab308', wipMissions)}
+                    {renderSection('📋 Todo', '#60a5fa', todoMissions)}
+                    {renderSection('✅ Done', '#22c55e', doneMissions)}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )
+        })()}
+
+        {/* ═══ MINDCRAFT2 TAB ═══ */}
+        {activeTab === 'mindcraft2' && (
+          <Mindcraft2 online={online} panelColor={panelColor} />
         )}
 
         {/* ═══ CONSOLE TAB ═══ */}

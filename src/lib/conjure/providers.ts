@@ -66,11 +66,5 @@ export function getProvider(name: ProviderName): ConjureProviderClient {
   return client
 }
 
-/**
- * getAllProviderNames — list what the Forge can conjure through
- */
-export function getAllProviderNames(): ProviderName[] {
-  return ['meshy', 'tripo']
-}
 
 // ▓▓▓▓【F̸O̸R̸G̸E̸】▓▓▓▓ॐ▓▓▓▓【P̸R̸O̸V̸I̸D̸E̸R̸S̸】▓▓▓▓

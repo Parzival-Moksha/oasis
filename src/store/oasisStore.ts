@@ -789,18 +789,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
     set((state) => ({
       transforms: { ...state.transforms, [id]: transform },
     }))
-    debouncedSaveWorld({
-      terrain: get().terrainParams,
-      groundPresetId: get().groundPresetId,
-      groundTiles: get().groundTiles,
-      craftedScenes: get().craftedScenes,
-      conjuredAssetIds: get().worldConjuredAssetIds,
-      catalogPlacements: get().placedCatalogAssets,
-      transforms: get().transforms,
-      behaviors: get().behaviors,
-      lights: get().worldLights,
-      skyBackgroundId: get().worldSkyBackground,
-    })
+    // Use the canonical saveWorldState — never assemble payload manually
+    setTimeout(() => get().saveWorldState(), 100)
   },
   // ─═̷─═̷─🌅 SKY — per-world sky preset ─═̷─═̷─🌅
   setWorldSkyBackground: (id) => {
@@ -941,7 +931,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     if (get().isViewMode && !get().isViewModeEditable) return
     // Skip saves while applying a remote Realtime update — prevents echo loop
     if (get()._isReceivingRemoteUpdate) return
-    // ░▒▓ CRITICAL GUARD: never save until world has loaded from Supabase ▓▒░
+    // ░▒▓ CRITICAL GUARD: never save until world has loaded from server ▓▒░
     if (!get()._worldReady) {
       console.warn('[World] ⚠️ Save blocked — world not loaded yet (preventing empty-state overwrite)')
       return

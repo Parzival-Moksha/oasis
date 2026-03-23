@@ -31,7 +31,6 @@ import { TripoClient } from '@/lib/conjure/tripo'
 import { POST_PROCESS_COSTS } from '@/lib/conjure/types'
 import type { ConjuredAsset, ProcessRequest, ConjureStatus, ProviderName } from '@/lib/conjure/types'
 import { getLocalUserId } from '@/lib/local-auth'
-import { getServerSupabase } from '@/lib/supabase'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PROVIDER-AWARE CLIENT INTERFACE — Both Meshy + Tripo implement these
@@ -414,45 +413,8 @@ export async function POST(
       )
     }
 
-    // ░▒▓ CREDIT CHECK — post-processing also costs credits ▓▒░
-    const _uid = await getLocalUserId()
-
-    // Free Meshy animations (walk/run bundled with rig) cost nothing
-    const isFreeAnim = body.action === 'animate' && body.options?.animationPresetId?.startsWith('free:')
-    const creditCost = isFreeAnim ? 0 : (POST_PROCESS_COSTS[body.action] ?? 1)
-
-    if (creditCost > 0) {
-      const sb = getServerSupabase()
-      const { data: profile } = await sb
-        .from('profiles')
-        .select('credits')
-        .eq('id', _uid)
-        .single()
-
-      const currentCredits = profile?.credits ?? 0
-      if (currentCredits < creditCost) {
-        return NextResponse.json(
-          { error: 'Insufficient credits', credits: currentCredits, required: creditCost },
-          { status: 402 },
-        )
-      }
-
-      const newBalance = Math.round((currentCredits - creditCost) * 100) / 100
-      const { error: deductError } = await sb
-        .from('profiles')
-        .update({ credits: newBalance })
-        .eq('id', _uid)
-        .gte('credits', creditCost)
-
-      if (deductError) {
-        console.error('[Forge:Process] Credit deduction failed:', deductError.message)
-        return NextResponse.json({ error: 'Failed to deduct credits' }, { status: 500 })
-      }
-
-      console.log(`[Forge:Process] Deducted ${creditCost} credit(s) for ${body.action} from ${_uid} (${currentCredits} → ${newBalance})`)
-    } else {
-      console.log(`[Forge:Process] Free ${body.action} for ${_uid} (no credit cost)`)
-    }
+    // ░▒▓ LOCAL MODE — no credit system, all post-processing is free ▓▒░
+    console.log(`[Forge:Process] ${body.action} — local mode, no credit check`)
 
     // ░▒▓ Create the child asset ▓▒░
     const newId = generateAssetId()

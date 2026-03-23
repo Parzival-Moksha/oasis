@@ -501,7 +501,7 @@ export function CatalogModelRenderer({ path, scale, objectId, displayName }: { p
   useEffect(() => {
     const mixer = new THREE.AnimationMixer(clonedScene)
     mixerRef.current = mixer
-    return () => { mixer.stopAllAction() }
+    return () => { mixer.stopAllAction(); mixer.uncacheRoot(clonedScene) }
   }, [clonedScene])
 
   // ░▒▓ Animation system — plays clips based on ObjectBehavior config ▓▒░
@@ -696,6 +696,9 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
   const [showLabel, setShowLabel] = useState(false)
   const catalogProxyRef = useRef<THREE.Mesh>(null)
   const paintMode = useOasisStore(s => s.paintMode)
+  const iblMaterials = useRef<THREE.MeshStandardMaterial[]>([])
+  // Dispose IBL-swapped materials on unmount
+  useEffect(() => () => { iblMaterials.current.forEach(m => m.dispose()) }, [])
   // NOTE: RTS movement (useMovement) is handled by SelectableWrapper which wraps this component.
   // Do NOT call useMovement here — it would double-move a nested group causing drift.
 
@@ -894,6 +897,7 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
               alphaTest: m.alphaTest ?? 0,
             })
             std.needsUpdate = true
+            iblMaterials.current.push(std)
             mat.dispose()
             return std
           }
@@ -1076,10 +1080,10 @@ export function TransformKeyHandler() {
         return
       }
 
-      // ░▒▓ ALL OTHER KEYS — check if typing in form element ▓▒░
+      // ░▒▓ ALL KEYS — check if typing in form element ▓▒░
       const tag = (e.target as HTMLElement).tagName
       const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as HTMLElement).isContentEditable
-      if (isTyping) return  // keys go to the form, not to us
+      if (isTyping) return  // keys go to the form, not to us (including Ctrl+Z for native undo)
 
       // Block ALL edit shortcuts in read-only view mode
       const { isViewMode: vm, isViewModeEditable: vme } = useOasisStore.getState()
@@ -1355,14 +1359,13 @@ function GhostGLB({ path, scale }: { path: string; scale: number }) {
     return clone
   }, [scene])
 
-  // Dispose cloned mats on unmount
+  // Dispose cloned materials on unmount (NOT geometries — those are shared via useGLTF cache)
   useEffect(() => {
     return () => {
       ghostScene.traverse((child) => {
         if (child instanceof THREE.Mesh) {
           const mats = Array.isArray(child.material) ? child.material : [child.material]
           mats.forEach(m => m?.dispose())
-          child.geometry?.dispose()
         }
       })
     }

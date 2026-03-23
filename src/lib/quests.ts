@@ -104,10 +104,6 @@ export function getQuestProgress(): Partial<Record<QuestId, boolean>> {
   } catch { return {} }
 }
 
-export function isQuestComplete(id: QuestId): boolean {
-  return getQuestProgress()[id] || false
-}
-
 export function completedQuestCount(): number {
   const progress = getQuestProgress()
   return QUEST_IDS.filter(id => progress[id]).length

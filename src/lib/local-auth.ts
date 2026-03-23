@@ -12,7 +12,3 @@ export async function getLocalUserId(): Promise<string> {
   return process.env.ADMIN_USER_ID || 'local-user'
 }
 
-/** Always true. You are admin. */
-export async function isLocalAdmin(): Promise<boolean> {
-  return true
-}

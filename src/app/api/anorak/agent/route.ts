@@ -39,7 +39,7 @@ ${extraContext ? `## EXTRA CONTEXT FROM DEV\n${extraContext}\n` : ''}
 - Read the relevant files identified in the spec before making changes
 - Make minimal, focused changes — fix only what the spec describes
 - Run \`pnpm build\` after your changes to verify they compile
-- Do NOT modify: auth, stripe, middleware, .env, package.json
+- Do NOT modify: .env, package.json
 - Do NOT add new npm dependencies
 - Commit with message: "ॐ anorak: ${taskTitle}"
 - Be thorough but scoped. Right Effort.`

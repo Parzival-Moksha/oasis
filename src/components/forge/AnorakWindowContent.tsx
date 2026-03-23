@@ -28,6 +28,7 @@ export function AnorakWindowContent({ windowId, initialSessionId }: {
   const [totalCost, setTotalCost] = useState(0)
   const [sessionId, setSessionId] = useState(initialSessionId || '')
   const [sessionPickerOpen, setSessionPickerOpen] = useState(false)
+  const [resetKey, setResetKey] = useState(0)
 
   const modelColor = MODELS.find(m => m.id === model)?.color || '#a855f7'
 
@@ -81,9 +82,10 @@ export function AnorakWindowContent({ windowId, initialSessionId }: {
           </button>
           <button
             onClick={() => {
-              // Clear session to start fresh — AnorakContent will create a new one
               setSessionId('')
+              setTotalCost(0)
               setSessionPickerOpen(false)
+              setResetKey(k => k + 1)  // Force AnorakContent remount = fresh session
             }}
             className="text-[9px] font-mono px-1.5 py-0.5 rounded border border-white/10 text-sky-500/70 hover:text-sky-300 hover:border-sky-500/30 transition-colors disabled:opacity-50"
             disabled={isStreaming}
@@ -103,9 +105,10 @@ export function AnorakWindowContent({ windowId, initialSessionId }: {
 
       {/* ═══ CONTENT ═══ */}
       <AnorakContent
+        key={resetKey}
         compact
         model={model}
-        initialSessionId={initialSessionId}
+        initialSessionId={resetKey > 0 ? undefined : initialSessionId}
         windowId={windowId}
         isFocused={isFocused}
         sessionPickerOpen={sessionPickerOpen}

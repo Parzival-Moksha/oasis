@@ -5,7 +5,18 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { useState, useRef, useCallback } from 'react'
-import type { ThoughtStreamEvent } from '@/components/stashed/ThoughtStream'
+// ThoughtStreamEvent — inlined from deleted stashed/ThoughtStream.tsx
+interface ThoughtStreamEvent {
+  type: 'text' | 'tool_call' | 'tool_result' | 'error' | 'done'
+  content?: string
+  name?: string
+  ok?: boolean
+  message?: string
+  source?: 'llm' | 'stderr' | 'stdout'
+  lobe?: string
+  chunk?: string
+  timestamp?: number
+}
 
 export type AgentStatus = 'idle' | 'running' | 'done' | 'error'
 
@@ -46,6 +57,7 @@ export function useAnorakAgent() {
 
     function addEvent(source: 'llm' | 'stderr' | 'stdout', lobe: string, chunk: string) {
       setEvents(prev => [...prev, {
+        type: 'text' as const,
         source,
         lobe,
         chunk,

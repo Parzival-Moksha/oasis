@@ -7,7 +7,9 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { formatTime, formatTimestamp, formatTimeCompact, formatDateShort, isoToDatetimeLocal, datetimeLocalToIso } from '@/lib/devcraft/helpers'
-import { playNotification, playSound, sendBrowserNotification, requestNotificationPermission, getNotificationSettings, saveNotificationSettings, type SoundType } from '@/lib/devcraft/notifications'
+import { playNotification, sendBrowserNotification, requestNotificationPermission } from '@/lib/devcraft/notifications'
+import { useAudioManager, SOUND_OPTIONS } from '@/lib/audio-manager'
+import { ParzivalMissions } from './ParzivalMissions'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -73,7 +75,7 @@ function MatrixRain() {
     resize()
 
     const readableWords = [
-      'SC0R3', 'V4L0R', 'FL0W', 'F0CUS', 'GR1ND', 'SH1P', 'C0D3',
+      'PUNY4', 'V4L0R', 'FL0W', 'F0CUS', 'GR1ND', 'SH1P', 'C0D3',
       'BU1LD', 'CR34T3', 'D3PLOY', 'PUSH', 'M3RG3', 'SPR1NT', 'C0MM1T',
       'D3BUG', 'R3F4CT0R', 'STR34K', 'D3VCR4F7', 'V3L0C1TY', 'FR33D0M',
     ]
@@ -201,8 +203,9 @@ function IntegerSelector({ value, onChange, min = 1, max = 10, color }: {
         type="number"
         value={value}
         onChange={e => { const v = parseInt(e.target.value); if (!isNaN(v)) change(v) }}
-        className="w-10 text-center text-base font-mono font-bold bg-transparent border-b border-[#333] focus:border-current focus:outline-none"
-        style={{ color, MozAppearance: 'textfield' }}
+        onFocus={e => e.target.select()}
+        className="w-10 text-center text-base font-mono font-bold bg-transparent border-b border-[#333] focus:border-current focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        style={{ color }}
         min={min} max={max}
       />
       <button onClick={() => change(value + 1)}
@@ -237,7 +240,7 @@ function ScoreTooltip({ minutes, valor, priority, score, children }: {
       {show && (
         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-black border border-[#00ff41] px-3 py-2 whitespace-nowrap z-50 pointer-events-none"
           style={{ boxShadow: '0 0 15px #00ff4130' }}>
-          <div className="text-xs font-mono text-[#888] mb-1">SCORE FORMULA</div>
+          <div className="text-xs font-mono text-[#888] mb-1">☸ PUNYA FORMULA</div>
           <div className="text-sm font-mono text-[#00ff41]">
             {minutes.toFixed(1)} min × {valor.toFixed(1)} valor × {priority.toFixed(2)} priority
           </div>
@@ -258,8 +261,8 @@ function SettingsGear({ fontSize, onFontSizeChange, bgEnabled, onBgToggle, panel
   panelOpacity: number; onOpacityChange: (v: number) => void
 }) {
   const [open, setOpen] = useState(false)
-  const [notifSound, setNotifSound] = useState<SoundType>(() => getNotificationSettings().sound)
-  const [notifVolume, setNotifVolume] = useState(() => getNotificationSettings().volume)
+  const audioState = useAudioManager()
+  const notifOptions = SOUND_OPTIONS.notification
 
   return (
     <div className="relative">
@@ -297,21 +300,27 @@ function SettingsGear({ fontSize, onFontSizeChange, bgEnabled, onBgToggle, panel
             </div>
 
             <div className="border-t border-[#222] pt-2">
-              <div className="text-xs font-mono text-[#555] mb-1">Notification Sound</div>
-              <div className="flex gap-1 mb-2">
-                {(['alert', 'chime', 'alarm', 'ping'] as SoundType[]).map(s => (
-                  <button key={s} onClick={() => { setNotifSound(s); saveNotificationSettings(s, notifVolume); playSound(s, notifVolume) }}
-                    className={`flex-1 py-1 text-[10px] font-mono border ${notifSound === s ? 'border-[#00ff41] text-[#00ff41]' : 'border-[#333] text-[#555]'}`}>
-                    {s.toUpperCase()}
+              <div className="text-xs font-mono text-[#555] mb-1">Beep Sound</div>
+              <div className="flex flex-col gap-1 mb-2">
+                {notifOptions.map(opt => (
+                  <button key={opt.id} onClick={() => { audioState.selectSound('notification', opt.id); audioState.preview('notification', opt.id) }}
+                    className={`py-1 px-2 text-[10px] font-mono border text-left ${audioState.selections.notification === opt.id ? 'border-[#00ff41] text-[#00ff41]' : 'border-[#333] text-[#555] hover:border-[#555]'}`}>
+                    {opt.label}
                   </button>
                 ))}
               </div>
               <div className="text-xs font-mono text-[#555] mb-1">Volume</div>
-              <input type="range" min="0" max="100" value={notifVolume}
-                onChange={e => { setNotifVolume(Number(e.target.value)); saveNotificationSettings(notifSound, Number(e.target.value)) }}
-                className="w-full" />
+              <div className="flex items-center gap-2">
+                <input type="range" min="0" max="100" value={Math.round(audioState.volume * 100)}
+                  onChange={e => audioState.setVolume(Number(e.target.value) / 100)}
+                  className="flex-1" />
+                <button onClick={() => audioState.toggleMute()}
+                  className={`text-xs font-mono px-1.5 py-0.5 border ${audioState.muted ? 'border-[#ff0040] text-[#ff0040]' : 'border-[#333] text-[#555]'}`}>
+                  {audioState.muted ? 'MUTED' : '🔊'}
+                </button>
+              </div>
             </div>
-            <div className="text-[8px] font-mono text-[#1a1a1a] hover:text-[#333] transition-colors mt-3 text-center cursor-default select-none" title="scoremaxxing = thrivemaxxing">
+            <div className="text-[8px] font-mono text-[#1a1a1a] hover:text-[#333] transition-colors mt-3 text-center cursor-default select-none" title="punyamaxxing = thrivemaxxing">
               ॐ
             </div>
           </div>
@@ -381,8 +390,8 @@ function WeeklyChart({ data }: { data: DayData[] }) {
   }
 
   return (
-    <div className="bg-black/40 mb-2 relative">
-      <svg viewBox={`0 0 ${w} ${h}`} className="block w-full" style={{ maxHeight: 80 }}>
+    <div className="bg-black/40 mb-2 relative h-full">
+      <svg viewBox={`0 0 ${w} ${h}`} className="block w-full h-full">
         <path d={pathD} fill="none" stroke="#00ff41" strokeWidth="1.5" style={{ filter: 'drop-shadow(0 0 2px #00ff41)' }} />
         {points.map((p, i) => (
           <circle key={i} cx={p.x} cy={p.y} r={hoveredDay?.day === p.day ? 5 : 2.5}
@@ -399,7 +408,7 @@ function WeeklyChart({ data }: { data: DayData[] }) {
             boxShadow: '0 0 20px #00ff4130'
           }}>
           <div className="text-xs font-mono text-[#666] mb-1">{hoveredDay.day.date}</div>
-          <div className="text-sm font-mono text-[#00ff41] font-bold mb-2">Score: {hoveredDay.day.score.toFixed(1)}</div>
+          <div className="text-sm font-mono text-[#00ff41] font-bold mb-2">☸ {hoveredDay.day.score.toFixed(1)}</div>
           {hoveredDay.day.missions.length > 0 ? (
             <div className="space-y-1 max-h-40 overflow-y-auto">
               {hoveredDay.day.missions.map(m => (
@@ -573,7 +582,7 @@ function MissionPopup({ mission, onClose, onEngage, onUpdate, onDeleteNoteEntry,
 
             {isDone && (
               <div className="mb-3">
-                <div className="text-sm font-mono text-[#888] mb-1 cursor-help" title="Self-score: How focused and effective was your work? 1.0 = adequate, 2.0 = exceptional">VALOR</div>
+                <div className="text-sm font-mono text-[#888] mb-1 cursor-help" title="Valor: How focused and effective was your work? 1.0 = adequate, 2.0 = exceptional">VALOR</div>
                 <input type="number" min="0" max="2" step="0.1" value={mission.valor ?? 1}
                   onChange={e => onUpdate({ valor: parseFloat(e.target.value) || 1 })}
                   className="w-full bg-black border border-[#333] px-2 py-1.5 text-sm font-mono text-[#00ff41] focus:border-[#00ff41] focus:outline-none" />
@@ -619,7 +628,7 @@ function MissionPopup({ mission, onClose, onEngage, onUpdate, onDeleteNoteEntry,
                       )}
                     </div>
                     {entry.message && <div className="text-[#bbb]">{entry.message}</div>}
-                    {entry.score !== undefined && <div className="text-[#00ff41] text-xs mt-1">Score: {entry.score?.toFixed(1)}</div>}
+                    {entry.score !== undefined && <div className="text-[#00ff41] text-xs mt-1">☸ {entry.score?.toFixed(1)}</div>}
                   </div>
                 ))}
               </div>
@@ -653,7 +662,7 @@ function MissionPopup({ mission, onClose, onEngage, onUpdate, onDeleteNoteEntry,
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-mono text-[#666] cursor-help border-b border-dashed border-[#444]"
-                      title="Self-score: How focused and effective was your work? 1.0 = adequate, 2.0 = exceptional">VALOR</span>
+                      title="Valor: How focused and effective was your work? 1.0 = adequate, 2.0 = exceptional">VALOR</span>
                     <input type="range" min="0" max="2" step="0.1" value={irlValor} onChange={e => setIrlValor(parseFloat(e.target.value))}
                       className="w-20" />
                     <span className="text-sm font-mono text-[#00ff41] w-8">{irlValor.toFixed(1)}</span>
@@ -808,7 +817,7 @@ function ActiveMissionPanel({ mission, elapsed, onPause, onResume, valor, onValo
                       )}
                     </div>
                     {entry.message && <div className="text-[#bbb]">{entry.message}</div>}
-                    {entry.score !== undefined && <div className="text-[#00ff41] text-xs mt-1">Score: {entry.score?.toFixed(1)}</div>}
+                    {entry.score !== undefined && <div className="text-[#00ff41] text-xs mt-1">☸ {entry.score?.toFixed(1)}</div>}
                   </div>
                 ))}
               </div>
@@ -847,6 +856,13 @@ function ActiveMissionPanel({ mission, elapsed, onPause, onResume, valor, onValo
             </div>
             <button onClick={onKeepGoing} className="px-3 py-1.5 border border-[#00cccc] text-[#00cccc] font-mono text-xs hover:bg-[#00cccc]/10 transition-all hover:shadow-[0_0_8px_#00cccc40]">[KEEP GOING]</button>
             <div className="flex-1" />
+            {/* Valor slider */}
+            <div className="flex items-center gap-1">
+              <span className="text-xs font-mono text-[#666]">VALOR</span>
+              <input type="range" min="0" max="2" step="0.1" value={valor} onChange={e => onValorChange(parseFloat(e.target.value))}
+                className="w-16" />
+              <span className="text-sm font-mono text-[#00ff41] w-6">{valor.toFixed(1)}</span>
+            </div>
             <ScoreTooltip minutes={elapsed / 60} valor={valor} priority={mission.priority} score={projectedScore}>
               <span className="text-xl font-mono font-bold text-[#00ff41] cursor-help">{projectedScore.toFixed(1)}</span>
             </ScoreTooltip>
@@ -879,7 +895,7 @@ function ActiveMissionPanel({ mission, elapsed, onPause, onResume, valor, onValo
               <span className="text-sm font-mono text-[#666] cursor-help border-b border-dashed border-[#444]">VALOR</span>
               <div className="absolute bottom-full left-0 mb-2 bg-black border border-[#00ff41] px-3 py-2 w-56 z-50 pointer-events-none opacity-0 group-hover/valor:opacity-100 transition-opacity"
                 style={{ boxShadow: '0 0 15px #00ff4130' }}>
-                <div className="text-xs font-mono text-[#888] mb-1">SELF-SCORE (0.0 - 2.0)</div>
+                <div className="text-xs font-mono text-[#888] mb-1">VALOR (0.0 - 2.0)</div>
                 <div className="text-xs font-mono text-[#666] leading-relaxed">
                   How focused, effective, and useful was your work? Higher if you&apos;re proud of yourself. Lower if you could&apos;ve been better.
                 </div>
@@ -890,7 +906,7 @@ function ActiveMissionPanel({ mission, elapsed, onPause, onResume, valor, onValo
               <span className="text-base font-mono text-[#00ff41] w-8">{valor.toFixed(1)}</span>
             </div>
 
-            {/* Score with tooltip */}
+            {/* Punya with tooltip */}
             <ScoreTooltip minutes={elapsed / 60} valor={valor} priority={mission.priority} score={projectedScore}>
               <div className="flex items-center gap-2 cursor-help">
                 <span className="text-sm font-mono text-[#666]">☸ PUNYA</span>
@@ -960,10 +976,29 @@ function DevMissionList({ missions, activeMissionId, onMissionClick, onReorder, 
     if (saved) try { return JSON.parse(saved) } catch { /* */ }
     return [40, 45]
   })
+  const [dataColWidth, setDataColWidth] = useState(() => {
+    if (typeof window === 'undefined') return 120
+    return Number(localStorage.getItem('devcraft-datacol-width')) || 120
+  })
+  const [colResizing, setColResizing] = useState(false)
+  useEffect(() => { localStorage.setItem('devcraft-datacol-width', String(dataColWidth)) }, [dataColWidth])
+  useEffect(() => {
+    if (!colResizing) return
+    const move = (e: MouseEvent) => {
+      if (!containerRef.current) return
+      const containerRight = containerRef.current.getBoundingClientRect().right
+      const newWidth = Math.max(60, Math.min(250, containerRight - e.clientX))
+      setDataColWidth(newWidth)
+    }
+    const up = () => setColResizing(false)
+    document.addEventListener('mousemove', move)
+    document.addEventListener('mouseup', up)
+    return () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up) }
+  }, [colResizing])
   const [vResizing, setVResizing] = useState<0 | 1 | false>(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const [collapsed, setCollapsed] = useState<{ queue: boolean; todo: boolean; done: boolean }>(() => {
+  const [collapsed, setCollapsed] = useState<{ queue: boolean; todo: boolean; done: boolean; parzival?: boolean }>(() => {
     if (typeof window === 'undefined') return { queue: false, todo: false, done: false }
     const saved = localStorage.getItem('devcraft-collapsed')
     if (saved) try { return JSON.parse(saved) } catch { /* */ }
@@ -1086,17 +1121,22 @@ function DevMissionList({ missions, activeMissionId, onMissionClick, onReorder, 
             className={`flex-1 truncate hover:underline ${isActive ? 'text-[#00ff41]' : 'text-[#eee]'}`}>
             {m.name}
           </span>
-          <span className="text-[#555] shrink-0" style={{ width: fontSize * 2.5 }} title={`Priority: ${m.priority.toFixed(2)}`}>
-            {m.priority.toFixed(1)}
-          </span>
-          <span className={`shrink-0 text-right ${opts.showScore ? 'text-[#555]' : 'text-[#444]'}`} style={{ width: fontSize * 3 }}>
-            {opts.showScore ? formatTimeCompact(m.actualSeconds || 0) : (m.horizon === 'fixed' && m.targetSeconds ? formatTimeCompact(m.targetSeconds) : '-')}
-          </span>
-          {opts.showScore ? (
-            <span className="text-[#00ff41] shrink-0 text-right" style={{ width: fontSize * 2.5 }}>{m.score?.toFixed(0) || '-'}</span>
-          ) : (
-            <span className="text-[#333] shrink-0 text-right" style={{ width: fontSize * 2.5 }}>{formatDateShort(m.createdAt)}</span>
-          )}
+          {/* Draggable column border */}
+          <div className="w-px self-stretch cursor-col-resize shrink-0 bg-transparent hover:bg-[#00ff41]/40 active:bg-[#00ff41]"
+            onMouseDown={e => { e.preventDefault(); e.stopPropagation(); setColResizing(true) }} />
+          <div className="flex items-center shrink-0" style={{ width: dataColWidth }}>
+            <span className="text-[#555] shrink-0 flex-1 text-right" title={`Priority: ${m.priority.toFixed(2)}`}>
+              {m.priority.toFixed(1)}
+            </span>
+            <span className={`shrink-0 flex-1 text-right ${opts.showScore ? 'text-[#555]' : 'text-[#444]'}`}>
+              {opts.showScore ? formatTimeCompact(m.actualSeconds || 0) : (m.horizon === 'fixed' && m.targetSeconds ? formatTimeCompact(m.targetSeconds) : '-')}
+            </span>
+            {opts.showScore ? (
+              <span className="text-[#00ff41] shrink-0 flex-1 text-right">{m.score?.toFixed(0) || '-'}</span>
+            ) : (
+              <span className="text-[#333] shrink-0 flex-1 text-right">{formatDateShort(m.createdAt)}</span>
+            )}
+          </div>
           {opts.showRemove && (
             <button onClick={e => { e.stopPropagation(); onRemoveFromQueue(m.id) }}
               className="text-[#ff0040] opacity-0 group-hover:opacity-100 hover:text-[#ff4040] shrink-0">×</button>
@@ -1115,7 +1155,7 @@ function DevMissionList({ missions, activeMissionId, onMissionClick, onReorder, 
   )
 
   return (
-    <div ref={containerRef} className={`h-full flex flex-col overflow-hidden ${vResizing !== false ? 'cursor-row-resize select-none' : ''}`}>
+    <div ref={containerRef} className={`h-full flex flex-col overflow-hidden ${vResizing !== false ? 'cursor-row-resize select-none' : ''} ${colResizing ? 'cursor-col-resize select-none' : ''}`}>
       {/* CURRENT — active WIP mission */}
       {current.length > 0 && (
         <div className="shrink-0 border-b border-[#00ff41]/30">
@@ -1168,6 +1208,13 @@ function DevMissionList({ missions, activeMissionId, onMissionClick, onReorder, 
           <div className="flex-1 overflow-y-auto">{done.map(m => renderRow(m, { showScore: true }))}</div>
         )}
       </div>
+
+      {/* Parzival missions — curator-managed, from akasha.db */}
+      <ParzivalMissions
+        fontSize={fontSize}
+        collapsed={collapsed.parzival ?? false}
+        onToggleCollapse={() => setCollapsed(prev => ({ ...prev, parzival: !prev.parzival }))}
+      />
     </div>
   )
 }
@@ -1311,6 +1358,9 @@ export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
   const [showCreate, setShowCreate] = useState(false)
 
   const [activeMission, setActiveMission] = useState<Mission | null>(null)
+  const activeMissionRef = useRef<Mission | null>(null)
+  // Keep ref in sync with state (ref used in fetchMissions to avoid stale closure)
+  useEffect(() => { activeMissionRef.current = activeMission }, [activeMission])
   const [elapsed, setElapsed] = useState(0)
   const [valor, setValor] = useState(1.0)
   const [note, setNote] = useState('')
@@ -1320,7 +1370,6 @@ export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
   const [switchConfirm, setSwitchConfirm] = useState<{ current: Mission; next: Mission } | null>(null)
 
   const [timerExpired, setTimerExpired] = useState(false)
-  const hasNotifiedRef = useRef(false)
 
   const [leftPanelWidth, setLeftPanelWidth] = useState(260)
   const [resizing, setResizing] = useState(false)
@@ -1355,8 +1404,9 @@ export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
       const list = Array.isArray(data) ? data : (data.missions || [])
       setMissions(list)
 
+      // Re-pick WIP only if no active mission (read from ref to avoid stale closure)
       const wip = list.find((m: Mission) => m.status === 'wip')
-      if (wip && !activeMission) {
+      if (wip && !activeMissionRef.current) {
         setActiveMission(wip)
         setNote('')
         if (wip.startedAt) {
@@ -1366,7 +1416,7 @@ export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
         }
       }
     } catch (e) { console.error(e) }
-  }, [activeMission])
+  }, []) // stable — reads activeMission from ref
 
   const fetchStats = useCallback(async () => {
     try {
@@ -1400,34 +1450,34 @@ export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
   }, [activeMission, activeMission?.isPaused, activeMission?.startedAt, activeMission?.totalPausedMs, activeMission?.actualSeconds])
 
-  // Timer expiry — auto-pause + notification
+  // BEEP EVERY — recurring beep every targetSeconds, first one triggers TIME'S UP + pause
+  const lastBeepRef = useRef(0)
   useEffect(() => {
-    if (activeMission?.horizon === 'fixed' && activeMission.targetSeconds) {
-      const isExpired = elapsed >= activeMission.targetSeconds
-      if (isExpired && !timerExpired) {
-        setTimerExpired(true) // eslint-disable-line react-hooks/set-state-in-effect -- derived from elapsed
-        if (!hasNotifiedRef.current && !activeMission.isPaused) {
-          hasNotifiedRef.current = true
-          // Auto-pause
+    if (activeMission?.horizon === 'fixed' && activeMission.targetSeconds && !activeMission.isPaused) {
+      const interval = activeMission.targetSeconds
+      const currentBeepNumber = Math.floor(elapsed / interval)
+      if (currentBeepNumber > 0 && currentBeepNumber > lastBeepRef.current) {
+        lastBeepRef.current = currentBeepNumber
+        playNotification()
+        const totalMins = currentBeepNumber * Math.floor(interval / 60)
+        sendBrowserNotification(`D3VCR4F7 — ${totalMins}m`, activeMission.name)
+        // First beep = TIME'S UP → auto-pause
+        if (currentBeepNumber === 1) {
+          setTimerExpired(true) // eslint-disable-line react-hooks/set-state-in-effect -- derived from elapsed
           fetch(`/api/missions/${activeMission.id}`, {
             method: 'PUT', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ isPaused: true, pausedAt: new Date().toISOString() }),
           })
           setActiveMission(p => p ? { ...p, isPaused: true, pausedAt: new Date().toISOString() } : null)
-          // Notifications
-          playNotification()
-          sendBrowserNotification("D3VCR4F7 — Time's up!", activeMission.name)
         }
-      } else if (!isExpired) {
-        setTimerExpired(false)
       }
-    } else {
-      setTimerExpired(false)
     }
-  }, [elapsed, activeMission, timerExpired])
+  }, [elapsed, activeMission])
 
+  // Reset beep counter on mission switch or interval change
   // eslint-disable-next-line react-hooks/set-state-in-effect -- reset on mission switch
-  useEffect(() => { hasNotifiedRef.current = false; setTimerExpired(false) }, [activeMission?.id])
+  useEffect(() => { lastBeepRef.current = 0; setTimerExpired(false) }, [activeMission?.id, activeMission?.targetSeconds])
+
 
   // Resize
   useEffect(() => {
@@ -1479,63 +1529,57 @@ export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
       setActiveMission(mission)
       setElapsed(mission.actualSeconds || 0)
       setValor(1.0); setNote('')
-      hasNotifiedRef.current = false
+      lastBeepRef.current = 0
       fetchMissions()
     }
   }
 
   const handlePause = async () => {
     if (!activeMission) return
-    await fetch(`/api/missions/${activeMission.id}`, {
+    const res = await fetch(`/api/missions/${activeMission.id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ isPaused: true, pausedAt: new Date().toISOString() }),
     })
-    setActiveMission(p => p ? { ...p, isPaused: true, pausedAt: new Date().toISOString() } : null)
+    if (res.ok) setActiveMission(p => p ? { ...p, isPaused: true, pausedAt: new Date().toISOString() } : null)
   }
 
   const handleResume = async () => {
     if (!activeMission?.pausedAt) return
     const pauseDuration = Date.now() - new Date(activeMission.pausedAt).getTime()
     const newTotal = (activeMission.totalPausedMs || 0) + pauseDuration
-    await fetch(`/api/missions/${activeMission.id}`, {
+    const res = await fetch(`/api/missions/${activeMission.id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ isPaused: false, pausedAt: null, totalPausedMs: newTotal }),
     })
-    setActiveMission(p => p ? { ...p, isPaused: false, pausedAt: null, totalPausedMs: newTotal } : null)
+    if (res.ok) setActiveMission(p => p ? { ...p, isPaused: false, pausedAt: null, totalPausedMs: newTotal } : null)
   }
 
   const handleAdjustTime = async (deltaSecs: number) => {
     if (!activeMission) return
-    // Adjust actualSeconds (accumulated base) — works regardless of pause state
     const newActual = Math.max(0, (activeMission.actualSeconds || 0) + deltaSecs)
-    await fetch(`/api/missions/${activeMission.id}`, {
+    const res = await fetch(`/api/missions/${activeMission.id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ actualSeconds: newActual }),
     })
-    setActiveMission(p => p ? { ...p, actualSeconds: newActual } : null)
+    if (res.ok) setActiveMission(p => p ? { ...p, actualSeconds: newActual } : null)
   }
 
   const handleExtendTime = async (extraSeconds: number) => {
     if (!activeMission) return
     const newTarget = (activeMission.targetSeconds || 0) + extraSeconds
+    // Single atomic PUT — resume + extend in one call
+    const updates: Record<string, unknown> = { targetSeconds: newTarget, isPaused: false, pausedAt: null }
+    if (activeMission.pausedAt) {
+      updates.totalPausedMs = (activeMission.totalPausedMs || 0) + (Date.now() - new Date(activeMission.pausedAt).getTime())
+    }
     await fetch(`/api/missions/${activeMission.id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ targetSeconds: newTarget, isPaused: false, pausedAt: null }),
+      body: JSON.stringify(updates),
     })
-    // Resume after extending
-    if (activeMission.pausedAt) {
-      const pauseDuration = Date.now() - new Date(activeMission.pausedAt).getTime()
-      const newPausedTotal = (activeMission.totalPausedMs || 0) + pauseDuration
-      await fetch(`/api/missions/${activeMission.id}`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ totalPausedMs: newPausedTotal }),
-      })
-      setActiveMission(p => p ? { ...p, targetSeconds: newTarget, isPaused: false, pausedAt: null, totalPausedMs: newPausedTotal } : null)
-    } else {
-      setActiveMission(p => p ? { ...p, targetSeconds: newTarget } : null)
-    }
+    setActiveMission(p => p ? { ...p, ...updates } as Mission : null)
     setTimerExpired(false)
-    hasNotifiedRef.current = false
+    // Set to current beep number so we don't re-beep in deep overtime
+    lastBeepRef.current = Math.floor(elapsed / newTarget)
   }
 
   const handleKeepGoing = async () => {
@@ -1552,7 +1596,7 @@ export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
     })
     setActiveMission(p => p ? { ...p, ...updates } as Mission : null)
     setTimerExpired(false)
-    hasNotifiedRef.current = false
+    lastBeepRef.current = 0
   }
 
   const saveNoteEntry = async (missionId: number, entry: NoteEntry, currentNotes: string | null) => {
@@ -1611,7 +1655,7 @@ export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
       })
       if (!response.ok) { console.error('Failed to complete mission'); return }
       setActiveMission(null); setElapsed(0); setValor(1.0); setNote('')
-      setTimerExpired(false); hasNotifiedRef.current = false
+      setTimerExpired(false); lastBeepRef.current = 0
       fetchMissions(); fetchStats()
     } catch (error) { console.error('Network error:', error) }
   }
@@ -1765,7 +1809,7 @@ export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
                 bgEnabled={bgEnabled} onBgToggle={() => setBgEnabled(!bgEnabled)}
                 panelOpacity={panelOpacity} onOpacityChange={setPanelOpacity} />
             </div>
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 h-full">
               <WeeklyChart data={stats?.weeklyData || []} />
             </div>
           </div>

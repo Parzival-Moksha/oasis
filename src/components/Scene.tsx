@@ -65,6 +65,9 @@ const SPRINT_LINE_COUNT = 80
 function SprintParticles() {
   const meshRef = useRef<THREE.InstancedMesh>(null)
   const dummy = useRef(new THREE.Object3D())
+  const _camDir = useRef(new THREE.Vector3())
+  const _camRight = useRef(new THREE.Vector3())
+  const _camUp = useRef(new THREE.Vector3())
   const particles = useRef<{ x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number }[]>([])
 
   // Init particle pool
@@ -87,12 +90,13 @@ function SprintParticles() {
     mesh.visible = true
 
     const cam = state.camera
-    const camDir = new THREE.Vector3()
+    const camDir = _camDir.current
     cam.getWorldDirection(camDir)
 
-    const camRight = new THREE.Vector3()
-    camRight.crossVectors(camDir, new THREE.Vector3(0, 1, 0)).normalize()
-    const camUp = new THREE.Vector3()
+    const camRight = _camRight.current
+    camRight.set(0, 1, 0)
+    camRight.crossVectors(camDir, camRight).normalize()
+    const camUp = _camUp.current
     camUp.crossVectors(camRight, camDir).normalize()
 
     particles.current.forEach((p, i) => {
@@ -516,22 +520,26 @@ function ModeSwitchLabel() {
 
 function PostProcessing() {
   const { settings } = useContext(SettingsContext)
+  const sprintActiveRef = useRef(false)
   const [sprintActive, setSprintActive] = useState(false)
   const chromaticRef = useRef<any>(null)
   const vignetteRef = useRef<any>(null)
+  const _offsetVec = useRef(new THREE.Vector2())
 
   useFrame(() => {
     const si = Math.max(0, sprintRef.current.intensity)
     const isActive = si > 0.05
-    if (isActive !== sprintActive) setSprintActive(isActive)
+    if (isActive !== sprintActiveRef.current) {
+      sprintActiveRef.current = isActive
+      setSprintActive(isActive) // eslint-disable-line react-hooks/set-state-in-effect -- drives hasEffects conditional render
+    }
 
     // Imperatively update effect uniforms — no re-renders needed
     if (chromaticRef.current) {
       const base = settings.chromaticEnabled ? 0.003 : 0
       const boost = si * 0.012
       const val = base + boost
-      // Assign new Vector2 — offset may not be a Vector2 in all postprocessing versions
-      chromaticRef.current.offset = new THREE.Vector2(val, val)
+      chromaticRef.current.offset = _offsetVec.current.set(val, val)
     }
     if (vignetteRef.current) {
       const baseDarkness = settings.vignetteEnabled ? 0.7 : 0
@@ -721,7 +729,7 @@ function DevcraftMiniBar({ onExpand }: { onExpand: () => void }) {
     if (mission.isPaused) return // Don't tick when paused, but DO set the elapsed
     const interval = setInterval(tick, 1000)
     return () => clearInterval(interval)
-  }, [mission])
+  }, [mission?.startedAt, mission?.isPaused, mission?.pausedAt, mission?.totalPausedMs, mission?.actualSeconds])
 
   if (!mission) return null
 

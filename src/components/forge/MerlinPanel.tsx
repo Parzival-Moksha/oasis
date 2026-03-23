@@ -6,9 +6,9 @@
 //
 // Chat-style interface that invokes POST /api/merlin with SSE streaming.
 // Displays text thoughts, tool calls, results, and save confirmations.
-// World updates arrive automatically via Supabase Realtime subscription.
+// World updates arrive via polling after Merlin saves to Prisma/SQLite.
 //
-// Pattern: ChatPanel DNA + ThoughtStream VFX + craft/stream SSE parsing.
+// Pattern: Chat + SSE streaming + tool call display.
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { useState, useRef, useEffect, useCallback, useContext } from 'react'

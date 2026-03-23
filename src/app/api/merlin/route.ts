@@ -259,6 +259,32 @@ const MERLIN_TOOLS = [
 ]
 
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+// LLM ARG VALIDATORS — LLM output is untrusted, validate before use
+// ═══════════════════════════════════════════════════════════════════════════
+
+function validPosition(v: unknown): [number, number, number] | null {
+  if (!Array.isArray(v) || v.length < 3) return null
+  const [x, y, z] = v.map(Number)
+  if ([x, y, z].some(n => !Number.isFinite(n))) return null
+  return [x, y, z]
+}
+
+function validString(v: unknown, fallback: string): string {
+  return typeof v === 'string' && v.length > 0 ? v : fallback
+}
+
+function validNumber(v: unknown, fallback: number): number {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : fallback
+}
+
+const VALID_LIGHT_TYPES = ['point', 'spot', 'directional', 'ambient', 'hemisphere'] as const
+type ValidLightType = typeof VALID_LIGHT_TYPES[number]
+function validLightType(v: unknown): ValidLightType {
+  return VALID_LIGHT_TYPES.includes(v as ValidLightType) ? (v as ValidLightType) : 'point'
+}
+
 // TOOL EXECUTOR — applies each tool call to the mutable world state
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -269,19 +295,19 @@ function execTool(
 ): { ok: boolean; message: string } {
   switch (name) {
     case 'add_catalog_object': {
-      const catalogId = args.catalogId as string
+      const catalogId = validString(args.catalogId, '')
       const asset = resolveCatalogEntry(catalogId)
       if (!asset) return { ok: false, message: `Unknown catalogId: ${catalogId}` }
 
-      const position = (args.position as [number, number, number]) || [0, 0, 0]
-      const rotation = args.rotation ? (args.rotation as [number, number, number]) : undefined
+      const position = validPosition(args.position) || [0, 0, 0]
+      const rotation = validPosition(args.rotation) || undefined
       const scale = typeof args.scale === 'number' ? args.scale : (asset.defaultScale || 1)
 
       const id = `catalog-${catalogId}-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`
       const placement: CatalogPlacement = {
         id,
         catalogId,
-        name: (args.label as string) || asset.name,
+        name: validString(args.label, asset.name),
         glbPath: asset.path,
         position,
         rotation: rotation || [0, 0, 0],
@@ -312,8 +338,8 @@ function execTool(
 
     case 'add_crafted_scene': {
       const sceneId = `crafted-merlin-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`
-      const rawObjects = (args.objects as unknown[]) || []
-      const position = (args.position as [number, number, number]) || [0, 0, 0]
+      const rawObjects = Array.isArray(args.objects) ? args.objects : []
+      const position = validPosition(args.position) || [0, 0, 0]
 
       // Basic validation — keep only objects with required fields
       const objects = rawObjects.filter(o => {
@@ -326,7 +352,7 @@ function execTool(
 
       const scene: CraftedScene = {
         id: sceneId,
-        name: (args.name as string) || 'Merlin Scene',
+        name: validString(args.name, 'Merlin Scene'),
         prompt: 'merlin',
         objects,
         position: position,
@@ -344,15 +370,13 @@ function execTool(
 
     case 'add_light': {
       const lightId = `light-merlin-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`
-      const lightType = (args.type as WorldLight['type']) || 'point'
-      const lightPos = args.position
-        ? (args.position as [number, number, number])
-        : ([0, 5, 0] as [number, number, number])
+      const lightType = validLightType(args.type)
+      const lightPos = validPosition(args.position) || [0, 5, 0]
       const light: WorldLight = {
         id: lightId,
         type: lightType,
-        color: (args.color as string) || '#ffffff',
-        intensity: typeof args.intensity === 'number' ? args.intensity : 3,
+        color: validString(args.color, '#ffffff'),
+        intensity: validNumber(args.intensity, 3),
         position: lightPos,
         visible: true,
       }
@@ -361,21 +385,24 @@ function execTool(
     }
 
     case 'set_sky': {
-      const presetId = args.presetId as string
+      const presetId = validString(args.presetId, '')
+      if (!presetId) return { ok: false, message: 'Missing presetId for set_sky' }
       state.skyBackgroundId = presetId
       return { ok: true, message: `Sky set to ${presetId}` }
     }
 
     case 'set_ground': {
-      const presetId = args.presetId as string
+      const presetId = validString(args.presetId, '')
+      if (!presetId) return { ok: false, message: 'Missing presetId for set_ground' }
       state.groundPresetId = presetId
       return { ok: true, message: `Ground set to ${presetId}` }
     }
 
     case 'set_behavior': {
-      const objectId = args.objectId as string
+      const objectId = validString(args.objectId, '')
+      if (!objectId) return { ok: false, message: 'Missing objectId for set_behavior' }
       if (!state.behaviors) state.behaviors = {}
-      const movType = (args.movement as string) || 'static'
+      const movType = validString(args.movement, 'static')
       // Build a default MovementPreset based on the type string
       const movement: import('@/lib/conjure/types').MovementPreset =
         movType === 'spin' ? { type: 'spin', axis: 'y', speed: 1 } :
@@ -388,7 +415,7 @@ function execTool(
       state.behaviors[objectId] = {
         visible: existingBehavior?.visible ?? true,
         movement,
-        ...(args.label ? { label: args.label as string } : existingBehavior?.label ? { label: existingBehavior.label } : {}),
+        ...(args.label ? { label: validString(args.label, '') } : existingBehavior?.label ? { label: existingBehavior.label } : {}),
       }
       return { ok: true, message: `Set behavior on ${objectId}: movement=${movType}` }
     }
@@ -485,7 +512,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Save state to Supabase — triggers Realtime subscription in browser
+  // Save state to Prisma/SQLite — browser polls for updates
   async function persist() {
     await saveWorld(worldId, userId, {
       terrain: state.terrain,
@@ -603,7 +630,7 @@ export async function POST(request: NextRequest) {
           const result = execTool(toolName, toolArgs, state)
           send({ type: 'result', name: toolName, ok: result.ok, message: result.message })
 
-          // Save to Supabase after each successful tool call → triggers Realtime → browser updates live
+          // Save to Prisma/SQLite after each successful tool call
           if (result.ok) {
             await persist()
           }

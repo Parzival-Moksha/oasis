@@ -216,14 +216,42 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
       }
     }
 
+    // Auto-enter ui-focused when any text input gains focus, return on blur
+    const onFocusIn = (e: FocusEvent) => {
+      const el = e.target as HTMLElement
+      if (!el) return
+      const tag = el.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable) {
+        // Skip inputs inside the R3F canvas (e.g., color pickers in 3D)
+        if (el.closest('#uploader-canvas')) return
+        get().enterUIFocus()
+      }
+    }
+
+    const onFocusOut = (e: FocusEvent) => {
+      const el = e.target as HTMLElement
+      if (!el) return
+      const tag = el.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable) {
+        // Only return if we're actually in ui-focused (not agent-focus)
+        if (get().inputState === 'ui-focused') {
+          get().returnToPrevious()
+        }
+      }
+    }
+
     document.addEventListener('pointerlockchange', onPointerLockChange)
     document.addEventListener('mousedown', onRightClick)
     document.addEventListener('contextmenu', onContextMenu)
+    document.addEventListener('focusin', onFocusIn)
+    document.addEventListener('focusout', onFocusOut)
 
     return () => {
       document.removeEventListener('pointerlockchange', onPointerLockChange)
       document.removeEventListener('mousedown', onRightClick)
       document.removeEventListener('contextmenu', onContextMenu)
+      document.removeEventListener('focusin', onFocusIn)
+      document.removeEventListener('focusout', onFocusOut)
     }
   },
 }))

@@ -101,6 +101,7 @@ function BaseGround({ preset }: { preset: GroundPreset }) {
 
   useEffect(() => {
     let cancelled = false
+    let activeClone: THREE.Texture | null = null
 
     // BaseGround needs tiled repeat, so we clone + force GPU re-upload
     loadCachedTexture(urls.diffuse, THREE.SRGBColorSpace).then(tex => {
@@ -108,11 +109,12 @@ function BaseGround({ preset }: { preset: GroundPreset }) {
         const clone = tex.clone()
         clone.repeat.set(preset.tileRepeat, preset.tileRepeat)
         clone.needsUpdate = true
+        activeClone = clone
         setDiffuse(clone)
       }
     })
 
-    return () => { cancelled = true }
+    return () => { cancelled = true; activeClone?.dispose() }
   }, [urls, preset.tileRepeat])
 
   return (

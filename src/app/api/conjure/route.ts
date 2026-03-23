@@ -29,7 +29,6 @@ import { MeshyClient } from '@/lib/conjure/meshy'
 import { TripoClient } from '@/lib/conjure/tripo'
 import { PROVIDERS } from '@/lib/conjure/types'
 import type { ConjureRequest, ConjuredAsset, ProviderName, ConjureStatus, RigResult } from '@/lib/conjure/types'
-import { getServerSupabase } from '@/lib/supabase'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ID GENERATION — every conjured object gets a unique soul-stamp

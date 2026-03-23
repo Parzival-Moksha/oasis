@@ -177,10 +177,6 @@ export function markStaleAssets(): number {
   return reaped
 }
 
-// Force re-read from disk (for debugging)
-export function invalidateCache(): void {
-  setSharedCache(null)
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ORPHAN SCANNER — Resurrect GLBs that exist on disk but not in registry

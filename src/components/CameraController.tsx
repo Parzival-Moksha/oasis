@@ -107,7 +107,7 @@ function useNoclipUpdate() {
     const effectiveSpeed = speed * multiplierRef.current
     const targetVelocity = direction.multiplyScalar(effectiveSpeed)
     velocityRef.current.lerp(targetVelocity, 1 - Math.exp(-5 * delta))
-    camera.position.add(velocityRef.current.clone().multiplyScalar(delta))
+    camera.position.add(directionRef.current.copy(velocityRef.current).multiplyScalar(delta))
 
     // FOV ramp
     if (baseFovRef.current === 0) baseFovRef.current = camera.fov
