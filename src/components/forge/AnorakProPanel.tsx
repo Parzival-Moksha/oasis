@@ -24,6 +24,49 @@ const POS_KEY = 'oasis-anorak-pro-pos'
 const SIZE_KEY = 'oasis-anorak-pro-size'
 const TAB_KEY = 'oasis-anorak-pro-tab'
 const SETTINGS_KEY = 'oasis-anorak-pro-settings'
+const CONFIG_KEY = 'oasis-anorak-pro-config'
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ANORAK PRO CONFIG — persisted to localStorage, flows to API calls
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface AnorakProConfig {
+  models: { curator: string; coder: string; reviewer: string; tester: string }
+  reviewerThreshold: number
+  batchSize: number
+  recapLength: number
+  autoCurate: boolean
+  autoCode: boolean
+  contextModules: { rl: boolean; queued: boolean; allTodo: boolean }
+}
+
+const DEFAULT_CONFIG: AnorakProConfig = {
+  models: { curator: 'sonnet', coder: 'opus', reviewer: 'sonnet', tester: 'sonnet' },
+  reviewerThreshold: 90,
+  batchSize: 1,
+  recapLength: 100,
+  autoCurate: false,
+  autoCode: false,
+  contextModules: { rl: true, queued: true, allTodo: false },
+}
+
+function loadConfig(): AnorakProConfig {
+  if (typeof window === 'undefined') return DEFAULT_CONFIG
+  try {
+    const saved = JSON.parse(localStorage.getItem(CONFIG_KEY) || 'null')
+    if (!saved) return DEFAULT_CONFIG
+    return {
+      ...DEFAULT_CONFIG,
+      ...saved,
+      models: { ...DEFAULT_CONFIG.models, ...saved.models },
+      contextModules: { ...DEFAULT_CONFIG.contextModules, ...saved.contextModules },
+    }
+  } catch { return DEFAULT_CONFIG }
+}
+
+function saveConfig(c: AnorakProConfig) {
+  try { localStorage.setItem(CONFIG_KEY, JSON.stringify(c)) } catch {}
+}
 
 type Tab = 'stream' | 'mindcraft' | 'curator-log' | 'cehq'
 
@@ -108,7 +151,135 @@ interface MindcraftMission {
   priority: number | null; flawlessPercent: number | null
   reviewerScore: number | null; testerScore: number | null
   valor: number | null; assignedTo: string | null; dharmaPath: string | null
-  executionPhase: string | null
+  executionPhase: string | null; executionRound: number
+  carbonDescription: string | null; siliconDescription: string | null
+  description: string | null; history: string | null
+}
+
+// ── Feedback Popup ──────────────────────────────────────────
+function FeedbackPopup({ mission, onClose, onSubmit }: {
+  mission: MindcraftMission
+  onClose: () => void
+  onSubmit: (data: { missionId: number; mature: boolean; verdict: string; rating: number; carbondevMsg?: string }) => void
+}) {
+  const [verdict, setVerdict] = useState<'accept' | 'modify' | 'rewrite'>('accept')
+  const [rating, setRating] = useState(7)
+  const [msg, setMsg] = useState('')
+  const [startTime] = useState(Date.now())
+
+  const history = (() => { try { return JSON.parse(mission.history || '[]') } catch { return [] } })()
+  const lastCurator = [...history].reverse().find((e: Record<string, unknown>) => e.actor === 'curator')
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#111', border: '1px solid rgba(20,184,166,0.3)', borderRadius: 12, padding: 20, maxWidth: 500, width: '90%', maxHeight: '80vh', overflow: 'auto' }}>
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <span style={{ color: MATURITY_COLORS[mission.maturityLevel] }} className="text-xs">{MATURITY_LABELS[mission.maturityLevel]}</span>
+            <span className="text-white font-bold ml-2">#{mission.id} {mission.name}</span>
+          </div>
+          <button onClick={onClose} className="text-gray-500 hover:text-white text-lg cursor-pointer">×</button>
+        </div>
+
+        {/* Carbon description */}
+        {mission.carbonDescription && (
+          <div className="mb-3 p-2 rounded bg-black/40 border border-white/5 text-xs text-gray-300" style={{ fontStyle: 'italic' }}>
+            {mission.carbonDescription}
+          </div>
+        )}
+
+        {/* Curator message */}
+        {lastCurator && (
+          <div className="mb-3">
+            <div className="text-[10px] text-amber-400 uppercase tracking-widest mb-1">Curator says</div>
+            <div className="text-xs text-gray-400 p-2 rounded bg-amber-500/5 border border-amber-500/10">
+              {(lastCurator as Record<string, string>).curatorMsg || '(no message)'}
+            </div>
+            {(lastCurator as Record<string, string>).silicondevMsg && (
+              <div className="mt-1">
+                <div className="text-[10px] text-teal-400 uppercase tracking-widest mb-1">SiliconDev predicts</div>
+                <div className="text-xs text-gray-500 p-2 rounded bg-teal-500/5 border border-teal-500/10">
+                  {(lastCurator as Record<string, string>).silicondevMsg}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Flawless */}
+        {mission.flawlessPercent != null && (
+          <div className="text-xs text-gray-500 mb-3">Flawless: {mission.flawlessPercent}%</div>
+        )}
+
+        {/* Feedback form */}
+        <div className="space-y-3">
+          {/* Verdict */}
+          <div>
+            <div className="text-[10px] text-gray-500 uppercase mb-1">SiliconDev accuracy</div>
+            <div className="flex gap-2">
+              {(['accept', 'modify', 'rewrite'] as const).map(v => (
+                <button key={v} onClick={() => setVerdict(v)}
+                  className="text-[10px] px-3 py-1 rounded cursor-pointer transition-all"
+                  style={{
+                    background: verdict === v ? (v === 'accept' ? 'rgba(34,197,94,0.2)' : v === 'modify' ? 'rgba(245,158,11,0.2)' : 'rgba(239,68,68,0.2)') : 'rgba(255,255,255,0.05)',
+                    border: `1px solid ${verdict === v ? (v === 'accept' ? 'rgba(34,197,94,0.5)' : v === 'modify' ? 'rgba(245,158,11,0.5)' : 'rgba(239,68,68,0.5)') : 'rgba(255,255,255,0.1)'}`,
+                    color: verdict === v ? '#fff' : '#888',
+                  }}>
+                  {v.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Rating */}
+          <div>
+            <div className="text-[10px] text-gray-500 uppercase mb-1">Rating: {rating}/10</div>
+            <input type="range" min={0} max={10} value={rating} onChange={e => setRating(parseInt(e.target.value))}
+              className="w-full accent-teal-500" />
+          </div>
+
+          {/* Message */}
+          {verdict !== 'accept' && (
+            <div>
+              <div className="text-[10px] text-gray-500 uppercase mb-1">Your message</div>
+              <textarea value={msg} onChange={e => setMsg(e.target.value)} rows={3}
+                className="w-full bg-black/60 border border-white/10 rounded p-2 text-xs text-gray-300 outline-none resize-none"
+                placeholder="What should curator know for next round?" />
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-2 pt-2 border-t border-white/5">
+            <button onClick={async () => {
+              const carbonSeconds = Math.round((Date.now() - startTime) / 1000)
+              await fetch('/api/anorak/pro/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ missionId: mission.id, mature: true, verdict, rating, carbondevMsg: msg || undefined, carbonSeconds }),
+              }).catch(() => {})
+              onSubmit({ missionId: mission.id, mature: true, verdict, rating, carbondevMsg: msg || undefined })
+            }}
+              className="flex-1 text-xs py-1.5 rounded cursor-pointer bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 transition-all">
+              ⬆ BUMP
+            </button>
+            <button onClick={async () => {
+              const carbonSeconds = Math.round((Date.now() - startTime) / 1000)
+              await fetch('/api/anorak/pro/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ missionId: mission.id, mature: false, verdict, rating, carbondevMsg: msg || undefined, carbonSeconds }),
+              }).catch(() => {})
+              onSubmit({ missionId: mission.id, mature: false, verdict, rating, carbondevMsg: msg || undefined })
+            }}
+              className="flex-1 text-xs py-1.5 rounded cursor-pointer bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 transition-all">
+              ↻ REFINE
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function MindcraftTab({
@@ -122,6 +293,7 @@ function MindcraftTab({
 }) {
   const [missions, setMissions] = useState<MindcraftMission[]>([])
   const [loading, setLoading] = useState(true)
+  const [feedbackMission, setFeedbackMission] = useState<MindcraftMission | null>(null)
 
   const fetchMissions = useCallback(async () => {
     try {
@@ -147,26 +319,60 @@ function MindcraftTab({
   if (loading) return <div className="flex-1 flex items-center justify-center text-gray-600 text-sm">Loading...</div>
 
   const currentActivity = missions.filter(m => m.executionPhase != null)
+  const awaitingFeedback = missions.filter(m => m.assignedTo === 'carbondev' && m.maturityLevel < 3 && m.status !== 'done')
   const curatorQueue = missions.filter(m => m.maturityLevel < 3 && m.status !== 'done' && (m.assignedTo === 'anorak' || m.assignedTo === 'anorak-pro'))
   const curated = missions.filter(m => m.maturityLevel >= 3 && m.status !== 'done')
   const done = missions.filter(m => m.status === 'done')
 
   return (
     <div className="flex-1 overflow-y-auto p-2 space-y-3 text-xs font-mono">
-      {/* Section A: Current Activity */}
+      {/* Section A: Current Activity + Interrupted missions */}
       <div>
         <div className="text-[10px] text-teal-400 uppercase tracking-widest mb-1">Current Activity</div>
-        {currentActivity.length === 0 ? (
+        {currentActivity.length === 0 && !isAgentRunning ? (
           <div className="text-gray-600 text-[11px] py-1">No active agent</div>
         ) : currentActivity.map(m => (
           <div key={m.id} className="flex items-center gap-2 py-1 px-2 rounded" style={{ background: 'rgba(20,184,166,0.1)', border: '1px solid rgba(20,184,166,0.3)' }}>
-            <span className="animate-pulse text-teal-400">●</span>
+            {isAgentRunning ? (
+              <span className="animate-pulse text-teal-400">●</span>
+            ) : (
+              <span className="text-amber-400">⚠</span>
+            )}
             <span className="text-white">#{m.id}</span>
             <span className="text-gray-300 truncate flex-1">{m.name}</span>
-            <span className="text-teal-400/70">{m.executionPhase} (r{m.executionPhase ? '...' : ''})</span>
+            <span className="text-teal-400/70">{m.executionPhase} (r{m.executionRound})</span>
+            {!isAgentRunning && (
+              <>
+                <button onClick={() => onExecute(m.id)}
+                  className="text-[9px] px-2 py-0.5 rounded bg-teal-500/20 text-teal-400 hover:bg-teal-500/30 cursor-pointer">RESUME</button>
+                <button onClick={async () => {
+                  await fetch(`/api/missions/${m.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ executionPhase: null, status: 'todo' }) })
+                  fetchMissions()
+                }}
+                  className="text-[9px] px-2 py-0.5 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 cursor-pointer">ABORT</button>
+              </>
+            )}
           </div>
         ))}
       </div>
+
+      {/* Section A.5: Awaiting Your Feedback */}
+      {awaitingFeedback.length > 0 && (
+        <div>
+          <div className="text-[10px] text-blue-400 uppercase tracking-widest mb-1">Awaiting Your Feedback ({awaitingFeedback.length})</div>
+          {awaitingFeedback.map(m => (
+            <div key={m.id} className="flex items-center gap-2 py-1 px-2 rounded cursor-pointer hover:bg-blue-500/10 border border-blue-500/10"
+              onClick={() => setFeedbackMission(m)}>
+              <span className="text-gray-500 w-6">#{m.id}</span>
+              <span style={{ color: MATURITY_COLORS[m.maturityLevel] }} className="text-[10px] w-16">{MATURITY_LABELS[m.maturityLevel]}</span>
+              <span className="text-gray-300 truncate flex-1">{m.name}</span>
+              {m.flawlessPercent != null && <span className="text-gray-500">{m.flawlessPercent}%</span>}
+              <span className="text-[9px] text-blue-400">REVIEW →</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Section B: Curator Queue */}
       <div>
@@ -222,6 +428,15 @@ function MindcraftTab({
           </div>
         ))}
       </div>
+
+      {/* Feedback popup */}
+      {feedbackMission && (
+        <FeedbackPopup
+          mission={feedbackMission}
+          onClose={() => { setFeedbackMission(null); fetchMissions() }}
+          onSubmit={() => { setFeedbackMission(null); fetchMissions() }}
+        />
+      )}
     </div>
   )
 }
@@ -231,11 +446,18 @@ function MindcraftTab({
 // ═══════════════════════════════════════════════════════════════════════════
 
 function CuratorLogTab() {
-  const [logs, setLogs] = useState<Array<{ id: number; status: string; startedAt: string; durationMs: number | null; missionsProcessed: number; missionsEnriched: number }>>([])
+  const [logs, setLogs] = useState<Array<{ id: number; status: string; startedAt: string; durationMs: number | null; missionsProcessed: number; missionsEnriched: number; tokensIn: number; tokensOut: number; error: string | null }>>([])
 
   useEffect(() => {
-    // TODO: fetch from API when curator log endpoint exists
-    // For now, placeholder
+    const fetchLogs = async () => {
+      try {
+        const res = await fetch('/api/anorak/pro/curator-logs')
+        if (res.ok) setLogs(await res.json())
+      } catch { /* offline */ }
+    }
+    fetchLogs()
+    const interval = setInterval(fetchLogs, 15000)
+    return () => clearInterval(interval)
   }, [])
 
   return (
@@ -263,20 +485,24 @@ function CuratorLogTab() {
 // CEHQ TAB — Context Engineering HQ
 // ═══════════════════════════════════════════════════════════════════════════
 
-function CEHQTab() {
+function CEHQTab({ config, onUpdate }: { config: AnorakProConfig; onUpdate: (p: Partial<AnorakProConfig>) => void }) {
+  const inputCls = "w-14 text-center bg-black/60 border border-white/10 rounded px-1 py-0.5 text-gray-300 outline-none"
+  const selectCls = "text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/60 border border-white/10 text-gray-300 outline-none"
+
   return (
     <div className="flex-1 overflow-y-auto p-3 text-xs font-mono">
       <div className="text-teal-400 text-[10px] uppercase tracking-widest mb-3">Context Engineering HQ</div>
 
       <div className="space-y-3">
         {/* Per-lobe model selection */}
-        {['curator', 'coder', 'reviewer', 'tester'].map(lobe => (
+        {(['curator', 'coder', 'reviewer', 'tester'] as const).map(lobe => (
           <div key={lobe} className="border border-white/5 rounded p-2">
             <div className="flex items-center justify-between mb-1">
               <span style={{ color: LOBE_COLORS[lobe] }} className="font-bold capitalize">{lobe}</span>
               <select
-                defaultValue={lobe === 'coder' ? 'opus' : 'sonnet'}
-                className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/60 border border-white/10 text-gray-300 outline-none"
+                value={config.models[lobe]}
+                onChange={e => onUpdate({ models: { ...config.models, [lobe]: e.target.value } })}
+                className={selectCls}
               >
                 <option value="opus">Opus</option>
                 <option value="sonnet">Sonnet</option>
@@ -285,7 +511,7 @@ function CEHQTab() {
             </div>
             <div className="text-gray-600 text-[10px]">
               Lobeprompt: .claude/agents/{lobe}.md
-              <span className="text-gray-700 ml-2">(inline editing coming Phase 1.5)</span>
+              <span className="text-gray-700 ml-2">(inline editing coming soon)</span>
             </div>
           </div>
         ))}
@@ -295,13 +521,13 @@ function CEHQTab() {
           <div className="text-gray-400 font-bold text-[11px] mb-1">Context Modules</div>
           <div className="space-y-1 text-[10px]">
             <label className="flex items-center gap-2 text-gray-400 cursor-pointer">
-              <input type="checkbox" defaultChecked className="accent-teal-500" /> RL Signal (curator-rl.md)
+              <input type="checkbox" checked={config.contextModules.rl} onChange={e => onUpdate({ contextModules: { ...config.contextModules, rl: e.target.checked } })} className="accent-teal-500" /> RL Signal (curator-rl.md)
             </label>
             <label className="flex items-center gap-2 text-gray-400 cursor-pointer">
-              <input type="checkbox" defaultChecked className="accent-teal-500" /> Queued Missions
+              <input type="checkbox" checked={config.contextModules.queued} onChange={e => onUpdate({ contextModules: { ...config.contextModules, queued: e.target.checked } })} className="accent-teal-500" /> Queued Missions
             </label>
             <label className="flex items-center gap-2 text-gray-400 cursor-pointer">
-              <input type="checkbox" className="accent-teal-500" /> All TODO Missions
+              <input type="checkbox" checked={config.contextModules.allTodo} onChange={e => onUpdate({ contextModules: { ...config.contextModules, allTodo: e.target.checked } })} className="accent-teal-500" /> All TODO Missions
             </label>
           </div>
         </div>
@@ -312,23 +538,33 @@ function CEHQTab() {
           <div className="space-y-2 text-[10px]">
             <div className="flex items-center justify-between">
               <span className="text-gray-500">Reviewer threshold</span>
-              <input type="number" defaultValue={90} min={50} max={100} className="w-14 text-center bg-black/60 border border-white/10 rounded px-1 py-0.5 text-gray-300 outline-none" />
+              <input type="number" value={config.reviewerThreshold} min={50} max={100}
+                onChange={e => onUpdate({ reviewerThreshold: Math.min(100, Math.max(50, parseInt(e.target.value) || 90)) })}
+                className={inputCls} />
             </div>
             <div className="flex items-center justify-between">
               <span className="text-gray-500">Batch size</span>
-              <input type="number" defaultValue={1} min={1} max={5} className="w-14 text-center bg-black/60 border border-white/10 rounded px-1 py-0.5 text-gray-300 outline-none" />
+              <input type="number" value={config.batchSize} min={1} max={5}
+                onChange={e => onUpdate({ batchSize: Math.min(5, Math.max(1, parseInt(e.target.value) || 1)) })}
+                className={inputCls} />
             </div>
             <div className="flex items-center justify-between">
               <span className="text-gray-500">Recap length (tokens)</span>
-              <input type="number" defaultValue={100} min={50} max={500} step={50} className="w-14 text-center bg-black/60 border border-white/10 rounded px-1 py-0.5 text-gray-300 outline-none" />
+              <input type="number" value={config.recapLength} min={50} max={500} step={50}
+                onChange={e => onUpdate({ recapLength: Math.min(500, Math.max(50, parseInt(e.target.value) || 100)) })}
+                className={inputCls} />
             </div>
             <div className="flex items-center justify-between pt-1 border-t border-white/5">
               <span className="text-amber-400">Auto-curate</span>
-              <input type="checkbox" className="accent-amber-500" />
+              <input type="checkbox" checked={config.autoCurate}
+                onChange={e => onUpdate({ autoCurate: e.target.checked })}
+                className="accent-amber-500" />
             </div>
             <div className="flex items-center justify-between">
               <span className="text-red-400">Auto-code</span>
-              <input type="checkbox" className="accent-red-500" />
+              <input type="checkbox" checked={config.autoCode}
+                onChange={e => onUpdate({ autoCode: e.target.checked })}
+                className="accent-red-500" />
             </div>
           </div>
         </div>
@@ -396,6 +632,16 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
     try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null') || DEFAULT_SETTINGS } catch { return DEFAULT_SETTINGS }
   })
   const [showSettings, setShowSettings] = useState(false)
+
+  // Anorak Pro config (flows to API calls)
+  const [config, setConfig] = useState<AnorakProConfig>(loadConfig)
+  const updateConfig = useCallback((partial: Partial<AnorakProConfig>) => {
+    setConfig(prev => {
+      const next = { ...prev, ...partial }
+      saveConfig(next)
+      return next
+    })
+  }, [])
 
   // Stream entries
   const [streamEntries, setStreamEntries] = useState<StreamEntry[]>([])
@@ -515,13 +761,54 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
 
   const handleCurate = useCallback((missionId: number) => {
     setActiveTab('stream')
-    consumeSSE('/api/anorak/pro/curate', { missionIds: [missionId] })
-  }, [consumeSSE])
+    consumeSSE('/api/anorak/pro/curate', {
+      missionIds: [missionId],
+      model: config.models.curator,
+      batchSize: config.batchSize,
+    })
+  }, [consumeSSE, config.models.curator, config.batchSize])
 
   const handleExecute = useCallback((missionId: number) => {
     setActiveTab('stream')
-    consumeSSE('/api/anorak/pro/execute', { missionId })
-  }, [consumeSSE])
+    consumeSSE('/api/anorak/pro/execute', {
+      missionId,
+      coderModel: config.models.coder,
+      reviewerModel: config.models.reviewer,
+      testerModel: config.models.tester,
+      reviewerThreshold: config.reviewerThreshold,
+      recapLength: config.recapLength,
+    })
+  }, [consumeSSE, config])
+
+  // ─═̷─ Auto-curate: poll for immature anorak missions when toggle is ON ─═̷─
+  const autoCurateRef = useRef(false)
+  autoCurateRef.current = config.autoCurate
+  const isRunningRef = useRef(false)
+  isRunningRef.current = isAgentRunning
+
+  useEffect(() => {
+    if (!config.autoCurate) return
+
+    const checkAndCurate = async () => {
+      if (!autoCurateRef.current || isRunningRef.current) return
+      try {
+        const res = await fetch('/api/missions?assignedTo=anorak')
+        if (!res.ok) return
+        const missions = await res.json()
+        const immature = (Array.isArray(missions) ? missions : missions.data ?? [])
+          .filter((m: { maturityLevel: number; status: string }) => m.maturityLevel < 3 && m.status !== 'done')
+          .sort((a: { priority: number | null }, b: { priority: number | null }) => (b.priority ?? 0) - (a.priority ?? 0))
+        if (immature.length > 0 && autoCurateRef.current && !isRunningRef.current) {
+          handleCurate(immature[0].id)
+        }
+      } catch { /* offline */ }
+    }
+
+    // Check immediately + every 10s
+    checkAndCurate()
+    const interval = setInterval(checkAndCurate, 10000)
+    return () => clearInterval(interval)
+  }, [config.autoCurate, isAgentRunning, handleCurate])
 
   if (!isOpen || typeof document === 'undefined') return null
 
@@ -599,7 +886,7 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
       {activeTab === 'stream' && <StreamTab entries={streamEntries} />}
       {activeTab === 'mindcraft' && <MindcraftTab onCurate={handleCurate} onExecute={handleExecute} isAgentRunning={isAgentRunning} />}
       {activeTab === 'curator-log' && <CuratorLogTab />}
-      {activeTab === 'cehq' && <CEHQTab />}
+      {activeTab === 'cehq' && <CEHQTab config={config} onUpdate={updateConfig} />}
 
       {/* ═══ RESIZE HANDLE ═══ */}
       <div

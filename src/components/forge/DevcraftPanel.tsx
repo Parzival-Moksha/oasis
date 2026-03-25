@@ -1398,7 +1398,7 @@ export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
 
   const fetchMissions = useCallback(async () => {
     try {
-      const res = await fetch('/api/missions')
+      const res = await fetch('/api/missions?assignedTo=carbondev')
       if (!res.ok) return
       const data = await res.json()
       const list = Array.isArray(data) ? data : (data.missions || [])
