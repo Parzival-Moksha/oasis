@@ -95,7 +95,7 @@ const getDefaultWidths = (): Record<ColumnKey, number> => {
 }
 
 // Maturity progression colors (dark→light like moon phases)
-const MATURITY_COLORS = ['#666', '#818cf8', '#a855f7', '#f59e0b']
+const MATURITY_COLORS = ['#666', '#0ea5e9', '#14b8a6', '#f59e0b']
 const MATURITY_LABELS = ['🌑 para', '🌘 pashyanti', '🌗 madhyama', '🌕 vaikhari']
 const MATURITY_SHORT = ['para', 'pash', 'madh', 'vaik']
 

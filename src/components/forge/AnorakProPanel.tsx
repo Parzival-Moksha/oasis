@@ -143,7 +143,7 @@ function StreamTab({ entries }: { entries: StreamEntry[] }) {
 // MINDCRAFT TAB — mission list with 4 segments
 // ═══════════════════════════════════════════════════════════════════════════
 
-const MATURITY_COLORS = ['#666', '#818cf8', '#a855f7', '#f59e0b']
+const MATURITY_COLORS = ['#666', '#0ea5e9', '#14b8a6', '#f59e0b']
 const MATURITY_LABELS = ['\u{1F311} para', '\u{1F318} pashyanti', '\u{1F317} madhyama', '\u{1F315} vaikhari']
 
 interface MindcraftMission {

@@ -463,7 +463,7 @@ export function ParzivalPanel({ isOpen, onClose }: { isOpen: boolean; onClose: (
           const tdStyle: React.CSSProperties = { padding: '3px 4px', fontSize: 11, color: '#999', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
           const tdR: React.CSSProperties = { ...tdStyle, textAlign: 'right' }
 
-          const matColors = ['#666', '#818cf8', '#a855f7', '#f59e0b']
+          const matColors = ['#666', '#0ea5e9', '#14b8a6', '#f59e0b']
           const matLabels = ['Raw', 'Form', 'Anlz', 'Rdy']
 
           const fmtDate = (d: string | null) => {

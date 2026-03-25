@@ -17,6 +17,10 @@ const prisma = new PrismaClient({
   datasources: { db: { url: `file:${process.env.OASIS_DB_PATH || "c:/af_oasis/prisma/data/oasis.db"}` } },
 });
 
+// Enable WAL mode for concurrent access (MCP server + Next.js both hit the same .db)
+prisma.$executeRawUnsafe("PRAGMA journal_mode=WAL").catch(() => {});
+prisma.$executeRawUnsafe("PRAGMA busy_timeout=5000").catch(() => {});
+
 const server = new McpServer({
   name: "mission-mcp",
   version: "1.0.0",
@@ -291,3 +295,7 @@ server.tool(
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
+
+// Graceful shutdown — disconnect Prisma on process exit
+process.on("SIGTERM", () => { prisma.$disconnect().then(() => process.exit(0)); });
+process.on("SIGINT", () => { prisma.$disconnect().then(() => process.exit(0)); });

@@ -148,6 +148,12 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
         )
       case 'parzival':
         return <ParzivalWindowContent windowBlur={win.windowBlur ?? 0} />
+      case 'anorak-pro':
+        return (
+          <div className="flex items-center justify-center h-full text-teal-400 font-mono text-sm">
+            🔮 Anorak Pro — use 2D panel for full experience
+          </div>
+        )
     }
   }, [win.id, win.agentType, win.sessionId])
 

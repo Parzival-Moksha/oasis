@@ -156,7 +156,9 @@ function spawnAgent(
       resolve({ exitCode: code ?? 1, stdout: fullStdout })
     })
 
-    signal.addEventListener('abort', () => { child.kill('SIGTERM') })
+    const onAbort = () => { child.kill('SIGTERM') }
+    signal.addEventListener('abort', onAbort)
+    child.on('close', () => { signal.removeEventListener('abort', onAbort) })
   })
 }
 
@@ -243,6 +245,10 @@ export async function POST(request: NextRequest) {
           await prisma.mission.update({ where: { id: missionId }, data: { executionPhase: 'coding', executionRound: round } })
 
           const freshMission = await prisma.mission.findUnique({ where: { id: missionId } })
+          if (!freshMission) {
+            send('error', { content: `Mission #${missionId} was deleted mid-execution. Aborting.` })
+            break
+          }
           const coderPrompt = buildCoderPrompt(freshMission as MissionRow, reviewerFindings, testerFailures)
 
           const coderResult = await spawnAgent('coder', coderPrompt, coderModel, 'coder', send, request.signal)
@@ -300,7 +306,8 @@ export async function POST(request: NextRequest) {
           }
 
           // ── MISSION COMPLETE ───────────────────────────────
-          const finalScore = (mission.priority ?? 1) * (testerValor ?? 1)
+          const completedMission = await prisma.mission.findUnique({ where: { id: missionId } })
+          const finalScore = (completedMission?.priority ?? mission.priority ?? 1) * (testerValor ?? 1)
 
           await prisma.mission.update({
             where: { id: missionId },

@@ -42,6 +42,7 @@ export interface OasisTestHarness {
 
 export function installTestHarness() {
   if (typeof window === 'undefined') return
+  if (process.env.NODE_ENV === 'production') return
 
   const harness: OasisTestHarness = {
     ready: true,
