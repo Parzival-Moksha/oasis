@@ -30,6 +30,12 @@ const CONFIG_KEY = 'oasis-anorak-pro-config'
 // ANORAK PRO CONFIG — persisted to localStorage, flows to API calls
 // ═══════════════════════════════════════════════════════════════════════════
 
+export interface CustomContextModule {
+  name: string
+  content: string
+  enabled: boolean
+}
+
 export interface AnorakProConfig {
   models: { curator: string; coder: string; reviewer: string; tester: string }
   reviewerThreshold: number
@@ -38,6 +44,7 @@ export interface AnorakProConfig {
   autoCurate: boolean
   autoCode: boolean
   contextModules: { rl: boolean; queued: boolean; allTodo: boolean }
+  customModules: CustomContextModule[]
 }
 
 const DEFAULT_CONFIG: AnorakProConfig = {
@@ -48,6 +55,7 @@ const DEFAULT_CONFIG: AnorakProConfig = {
   autoCurate: false,
   autoCode: false,
   contextModules: { rl: true, queued: true, allTodo: false },
+  customModules: [],
 }
 
 function loadConfig(): AnorakProConfig {
@@ -146,6 +154,34 @@ const StreamTab = React.memo(function StreamTab({ entries }: { entries: StreamEn
 
 const MATURITY_COLORS = ['#666', '#0ea5e9', '#14b8a6', '#f59e0b']
 const MATURITY_LABELS = ['\u{1F311} para', '\u{1F318} pashyanti', '\u{1F317} madhyama', '\u{1F315} vaikhari']
+
+const DHARMA_ABBR: Record<string, { label: string; color: string }> = {
+  view: { label: 'VW', color: '#60a5fa' },
+  intention: { label: 'IN', color: '#f59e0b' },
+  speech: { label: 'SP', color: '#a78bfa' },
+  action: { label: 'AC', color: '#ef4444' },
+  livelihood: { label: 'LH', color: '#22c55e' },
+  effort: { label: 'EF', color: '#f97316' },
+  mindfulness: { label: 'MF', color: '#14b8a6' },
+  concentration: { label: 'CN', color: '#ec4899' },
+}
+
+function DharmaTags({ dharma }: { dharma: string | null }) {
+  if (!dharma) return null
+  const paths = dharma.split(',').map(s => s.trim()).filter(Boolean)
+  return (
+    <span className="inline-flex gap-0.5">
+      {paths.map(p => {
+        const d = DHARMA_ABBR[p]
+        return d ? (
+          <span key={p} style={{ color: d.color, fontSize: 8, border: `1px solid ${d.color}33`, borderRadius: 2, padding: '0 2px' }} title={`Right ${p.charAt(0).toUpperCase() + p.slice(1)}`}>
+            {d.label}
+          </span>
+        ) : null
+      })}
+    </span>
+  )
+}
 
 interface MindcraftMission {
   id: number; name: string; maturityLevel: number; status: string
@@ -386,6 +422,7 @@ function MindcraftTab({
             <span className="text-gray-500 w-6">#{m.id}</span>
             <span style={{ color: MATURITY_COLORS[m.maturityLevel] }} className="text-[10px] w-16">{MATURITY_LABELS[m.maturityLevel]}</span>
             <span className="text-gray-300 truncate flex-1">{m.name}</span>
+            <DharmaTags dharma={m.dharmaPath} />
             {m.flawlessPercent != null && <span className="text-gray-500">{m.flawlessPercent}%</span>}
             <button
               onClick={() => onCurate(m.id)}
@@ -426,6 +463,7 @@ function MindcraftTab({
           <div key={m.id} className="flex items-center gap-2 py-1 px-1 border-b border-white/5 text-gray-500">
             <span className="w-6">#{m.id}</span>
             <span className="truncate flex-1">{m.name}</span>
+            <DharmaTags dharma={m.dharmaPath} />
             {m.reviewerScore != null && <span className="text-blue-400/50">R{m.reviewerScore}</span>}
             {m.testerScore != null && <span className="text-green-400/50">T{m.testerScore}</span>}
             {m.valor != null && <span className="text-amber-400/50">V{m.valor}</span>}
@@ -492,6 +530,69 @@ function CuratorLogTab() {
 // CEHQ TAB — Context Engineering HQ
 // ═══════════════════════════════════════════════════════════════════════════
 
+function LobeEditor({ lobe }: { lobe: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const [content, setContent] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [dirty, setDirty] = useState(false)
+
+  useEffect(() => {
+    if (!expanded) return
+    const ac = new AbortController()
+    setLoading(true)
+    fetch(`/api/anorak/pro/lobeprompt?lobe=${lobe}`, { signal: ac.signal })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.content) { setContent(data.content); setDirty(false) } })
+      .catch(e => { if (e.name !== 'AbortError') { /* offline */ } })
+      .finally(() => setLoading(false))
+    return () => ac.abort()
+  }, [expanded, lobe])
+
+  const handleSave = async () => {
+    setSaved(false)
+    try {
+      const res = await fetch('/api/anorak/pro/lobeprompt', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lobe, content }),
+      })
+      if (res.ok) { setSaved(true); setDirty(false); setTimeout(() => setSaved(false), 2000) }
+    } catch { /* offline */ }
+  }
+
+  return (
+    <div className="mt-1">
+      <button onClick={() => setExpanded(!expanded)} className="text-[10px] text-gray-600 hover:text-gray-400 cursor-pointer">
+        {expanded ? '▼' : '▶'} .claude/agents/{lobe}.md {dirty && <span className="text-amber-400 ml-1">●</span>}
+      </button>
+      {expanded && (
+        <div className="mt-1">
+          {loading ? (
+            <div className="text-gray-600 text-[10px] py-2">Loading...</div>
+          ) : (
+            <>
+              <textarea
+                value={content}
+                onChange={e => { setContent(e.target.value); setDirty(true) }}
+                className="w-full h-40 bg-black/60 border border-white/10 rounded p-2 text-gray-300 text-[10px] leading-relaxed resize-y outline-none focus:border-teal-500/30"
+                spellCheck={false}
+              />
+              <div className="flex items-center gap-2 mt-1">
+                <button onClick={handleSave} disabled={!dirty}
+                  className="text-[9px] px-2 py-0.5 rounded bg-teal-500/20 text-teal-400 hover:bg-teal-500/30 disabled:opacity-30 cursor-pointer">
+                  Save
+                </button>
+                <span className="text-[9px] text-gray-600">{content.length} chars</span>
+                {saved && <span className="text-[9px] text-green-400">Saved ✓</span>}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function CEHQTab({ config, onUpdate }: { config: AnorakProConfig; onUpdate: (p: Partial<AnorakProConfig>) => void }) {
   const inputCls = "w-14 text-center bg-black/60 border border-white/10 rounded px-1 py-0.5 text-gray-300 outline-none"
   const selectCls = "text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/60 border border-white/10 text-gray-300 outline-none"
@@ -501,7 +602,7 @@ function CEHQTab({ config, onUpdate }: { config: AnorakProConfig; onUpdate: (p: 
       <div className="text-teal-400 text-[10px] uppercase tracking-widest mb-3">Context Engineering HQ</div>
 
       <div className="space-y-3">
-        {/* Per-lobe model selection */}
+        {/* Per-lobe model selection + lobeprompt editing */}
         {(['curator', 'coder', 'reviewer', 'tester'] as const).map(lobe => (
           <div key={lobe} className="border border-white/5 rounded p-2">
             <div className="flex items-center justify-between mb-1">
@@ -516,10 +617,7 @@ function CEHQTab({ config, onUpdate }: { config: AnorakProConfig; onUpdate: (p: 
                 <option value="haiku">Haiku</option>
               </select>
             </div>
-            <div className="text-gray-600 text-[10px]">
-              Lobeprompt: .claude/agents/{lobe}.md
-              <span className="text-gray-700 ml-2">(inline editing coming soon)</span>
-            </div>
+            <LobeEditor lobe={lobe} />
           </div>
         ))}
 
@@ -536,6 +634,57 @@ function CEHQTab({ config, onUpdate }: { config: AnorakProConfig; onUpdate: (p: 
             <label className="flex items-center gap-2 text-gray-400 cursor-pointer">
               <input type="checkbox" checked={config.contextModules.allTodo} onChange={e => onUpdate({ contextModules: { ...config.contextModules, allTodo: e.target.checked } })} className="accent-teal-500" /> All TODO Missions
             </label>
+          </div>
+        </div>
+
+        {/* Custom context modules */}
+        <div className="border border-white/5 rounded p-2">
+          <div className="flex items-center justify-between mb-1">
+            <div className="text-gray-400 font-bold text-[11px]">Custom Modules</div>
+            <button onClick={() => {
+              if ((config.customModules?.length ?? 0) >= 20) return
+              const name = `Module ${(config.customModules?.length ?? 0) + 1}`
+              onUpdate({ customModules: [...(config.customModules || []), { name, content: '', enabled: true }] })
+            }} disabled={(config.customModules?.length ?? 0) >= 20}
+              className="text-[9px] px-2 py-0.5 rounded bg-teal-500/20 text-teal-400 hover:bg-teal-500/30 disabled:opacity-30 cursor-pointer">+ Add</button>
+          </div>
+          <div className="space-y-2">
+            {(config.customModules || []).map((mod, i) => (
+              <div key={i} className="border border-white/5 rounded p-1.5">
+                <div className="flex items-center gap-2 mb-1">
+                  <input type="checkbox" checked={mod.enabled}
+                    onChange={e => {
+                      const updated = [...config.customModules]
+                      updated[i] = { ...updated[i], enabled: e.target.checked }
+                      onUpdate({ customModules: updated })
+                    }} className="accent-teal-500" />
+                  <input type="text" value={mod.name}
+                    onChange={e => {
+                      const updated = [...config.customModules]
+                      updated[i] = { ...updated[i], name: e.target.value }
+                      onUpdate({ customModules: updated })
+                    }}
+                    className="flex-1 bg-transparent border-b border-white/10 text-gray-300 text-[10px] outline-none focus:border-teal-500/30" />
+                  <button onClick={() => {
+                    const updated = config.customModules.filter((_, j) => j !== i)
+                    onUpdate({ customModules: updated })
+                  }} className="text-red-400/50 hover:text-red-400 text-[10px] cursor-pointer">✕</button>
+                </div>
+                <textarea value={mod.content}
+                  onChange={e => {
+                    const updated = [...config.customModules]
+                    updated[i] = { ...updated[i], content: e.target.value }
+                    onUpdate({ customModules: updated })
+                  }}
+                  placeholder="Free-text context injected into agent prompts..."
+                  maxLength={10000}
+                  className="w-full h-16 bg-black/40 border border-white/5 rounded p-1.5 text-gray-400 text-[10px] resize-y outline-none focus:border-teal-500/30"
+                  spellCheck={false} />
+              </div>
+            ))}
+            {(config.customModules || []).length === 0 && (
+              <div className="text-gray-600 text-[10px] py-1">No custom modules. Add one to inject context into agent prompts.</div>
+            )}
           </div>
         </div>
 
