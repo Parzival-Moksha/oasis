@@ -1247,8 +1247,9 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
   return createPortal(
     <div
       data-menu-portal="wizard-console"
-      className="fixed z-[9999] rounded-xl border overflow-hidden shadow-2xl flex flex-col"
+      className="fixed rounded-xl border overflow-hidden shadow-2xl flex flex-col"
       style={{
+        zIndex: useOasisStore.getState().getPanelZIndex('wizard', 9999),
         left: position.x,
         top: position.y,
         width: size.width,
@@ -1259,7 +1260,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
           ? `0 0 30px ${forgeColor}33, 0 0 60px ${forgeColor}11`
           : '0 0 20px rgba(0, 0, 0, 0.5)',
       }}
-      onMouseDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => { e.stopPropagation(); useOasisStore.getState().bringPanelToFront('wizard') }}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
@@ -2702,8 +2703,8 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                 )}
                 {placedAgentWindows.map(win => {
                   const isSelected = selectedObjectId === win.id
-                  const agentIcon = win.agentType === 'anorak' ? '💻' : win.agentType === 'merlin' ? '🧙' : win.agentType === 'parzival' ? '🧿' : '⚡'
-                  const agentColor = win.agentType === 'anorak' ? 'text-sky-400' : win.agentType === 'merlin' ? 'text-purple-400' : win.agentType === 'parzival' ? 'text-violet-400' : 'text-green-400'
+                  const agentIcon = win.agentType === 'anorak' ? '💻' : win.agentType === 'anorak-pro' ? '🔮' : win.agentType === 'merlin' ? '🧙' : win.agentType === 'parzival' ? '🧿' : '⚡'
+                  const agentColor = win.agentType === 'anorak' ? 'text-sky-400' : win.agentType === 'anorak-pro' ? 'text-teal-400' : win.agentType === 'merlin' ? 'text-purple-400' : win.agentType === 'parzival' ? 'text-violet-400' : 'text-green-400'
                   const pos = transforms[win.id]?.position || win.position
                   return (
                     <div
@@ -3140,6 +3141,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
 
 const AGENT_TYPES = [
   { type: 'anorak' as const, label: 'Anorak', icon: '💻', color: '#38bdf8', desc: 'Claude Code agent — full multi-turn sessions' },
+  { type: 'anorak-pro' as const, label: 'Anorak Pro', icon: '🔮', color: '#14b8a6', desc: 'Autonomous dev pipeline — curator, coder, reviewer, tester' },
   { type: 'merlin' as const, label: 'Merlin', icon: '🧙', color: '#a855f7', desc: 'World-builder agent — place objects, set sky' },
   { type: 'devcraft' as const, label: 'DevCraft', icon: '⚡', color: '#22c55e', desc: 'Mission management + gamification' },
   { type: 'parzival' as const, label: 'Parzival', icon: '🧿', color: '#c084fc', desc: 'Autonomous brain — modes, missions, thought stream' },

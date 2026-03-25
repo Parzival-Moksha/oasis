@@ -66,14 +66,14 @@ function parseHistory(raw: string | null): HistoryEntry[] {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function CuratorThread({ entries, fontSize }: { entries: HistoryEntry[]; fontSize: number }) {
-  const relevant = entries.filter(e => e.actor === 'curator' || e.actor === 'dev')
+  const relevant = entries.filter(e => e.actor === 'curator' || e.actor === 'carbondev')
   if (relevant.length === 0) return null
 
   return (
     <div style={{ maxHeight: 300, overflowY: 'auto', padding: '8px 0' }}>
       {relevant.map((entry, i) => {
         const isCurator = entry.actor === 'curator'
-        const isDev = entry.actor === 'dev'
+        const isDev = entry.actor === 'carbondev'
 
         if (isCurator) {
           return (
@@ -258,7 +258,7 @@ function MissionDetail({ mission, onClose, onRefetch, fontSize }: {
   fontSize: number
 }) {
   const entries = parseHistory(mission.history)
-  const isAssignedToDev = mission.assignedTo === 'dev'
+  const isAssignedToDev = mission.assignedTo === 'carbondev'
   const awaitingFeedback = isAssignedToDev && entries.some(e => e.actor === 'curator')
 
   return (
@@ -351,7 +351,7 @@ export function ParzivalMissions({ fontSize, collapsed, onToggleCollapse }: Parz
   const fetchMissions = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await fetch('/api/parzival/proxy/missions?assignedTo=dev')
+      const res = await fetch('/api/parzival/proxy/missions?assignedTo=carbondev')
       if (!res.ok) { setOnline(false); return }
       setOnline(true)
       const data = await res.json()
@@ -402,7 +402,7 @@ export function ParzivalMissions({ fontSize, collapsed, onToggleCollapse }: Parz
       {!collapsed && (
         <div className="overflow-y-auto" style={{ maxHeight: 200 }}>
           {[...wipMissions, ...todoMissions].map(m => {
-            const isAssignedToDev = m.assignedTo === 'dev'
+            const isAssignedToDev = m.assignedTo === 'carbondev'
             const matColor = MATURITY_COLORS[m.maturityLevel] ?? '#666'
 
             return (

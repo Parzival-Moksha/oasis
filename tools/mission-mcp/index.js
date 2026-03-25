@@ -1,0 +1,293 @@
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+// MISSION MCP — Anorak Pro's hands on oasis.db
+// Curator, reviewer, tester, and coder all use these tools to
+// read/write mission state. The orchestrator stays thin.
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
+import { createRequire } from "module";
+
+// Resolve Prisma client from the main oasis project (where prisma generate runs)
+const require = createRequire(import.meta.url);
+const { PrismaClient } = require("../../node_modules/.prisma/client/default.js");
+
+const prisma = new PrismaClient({
+  datasources: { db: { url: `file:${process.env.OASIS_DB_PATH || "c:/af_oasis/prisma/data/oasis.db"}` } },
+});
+
+const server = new McpServer({
+  name: "mission-mcp",
+  version: "1.0.0",
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GET MISSION — read full mission row
+// ═══════════════════════════════════════════════════════════════════════════
+
+server.tool(
+  "get_mission",
+  "Read a mission by ID. Returns full row including history, specs, scores.",
+  { id: z.number().describe("Mission ID") },
+  async ({ id }) => {
+    const mission = await prisma.mission.findUnique({ where: { id } });
+    if (!mission) return { content: [{ type: "text", text: `Mission ${id} not found` }] };
+    return { content: [{ type: "text", text: JSON.stringify(mission, null, 2) }] };
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GET MISSIONS QUEUE — curator's priority list
+// ═══════════════════════════════════════════════════════════════════════════
+
+server.tool(
+  "get_missions_queue",
+  "Read missions in the curator queue (immature + assigned to anorak). Sorted by curatorQueuePosition then priority.",
+  {
+    limit: z.number().optional().describe("Max missions to return (default 20)"),
+    status: z.string().optional().describe("Filter by status (todo, wip, done)"),
+  },
+  async ({ limit = 20, status }) => {
+    const where = {
+      maturityLevel: { lt: 3 },
+      assignedTo: { in: ["anorak", "anorak-pro"] },
+      ...(status ? { status } : {}),
+    };
+    const missions = await prisma.mission.findMany({
+      where,
+      orderBy: [
+        { curatorQueuePosition: "asc" },
+        { priority: "desc" },
+        { createdAt: "asc" },
+      ],
+      take: limit,
+    });
+    return { content: [{ type: "text", text: JSON.stringify(missions, null, 2) }] };
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MATURE MISSION — curator writes enrichment to DB
+// ═══════════════════════════════════════════════════════════════════════════
+
+server.tool(
+  "mature_mission",
+  "Write curator enrichment to a mission. Sets carbon/silicon descriptions, flawless%, history entry, dharma paths. Assigns to carbondev for feedback.",
+  {
+    id: z.number().describe("Mission ID"),
+    carbonDescription: z.string().describe("The war cry — emotional, vibes, analogies. Zero technical jargon."),
+    siliconDescription: z.string().describe("The coder's bible — exact files, functions, edge cases, blast radius, step-by-step approach."),
+    curatorMsg: z.string().describe("Curator's analysis — what was found in the code, risks, honest assessment."),
+    silicondevMsg: z.string().describe("SiliconDev prediction — speak AS carbondev, predict what they'd say."),
+    silicondevConfidence: z.number().describe("0.0-1.0 confidence in silicondev prediction"),
+    flawlessPercent: z.number().describe("0-100 confidence that coder will pass reviewer ≥90 and tester 100% on first try"),
+    dharmaPath: z.string().optional().describe("Comma-separated Noble Eightfold paths: view,intention,speech,action,livelihood,effort,mindfulness,concentration"),
+    urgency: z.number().optional().describe("1-10, only if deep dive reveals misestimation"),
+    easiness: z.number().optional().describe("1-10, only if deep dive reveals misestimation"),
+    impact: z.number().optional().describe("1-10, only if deep dive reveals misestimation"),
+  },
+  async ({ id, carbonDescription, siliconDescription, curatorMsg, silicondevMsg, silicondevConfidence, flawlessPercent, dharmaPath, urgency, easiness, impact }) => {
+    const mission = await prisma.mission.findUnique({ where: { id } });
+    if (!mission) return { content: [{ type: "text", text: `Mission ${id} not found` }] };
+
+    // Parse existing history
+    let history = [];
+    try { history = JSON.parse(mission.history || "[]"); } catch { history = []; }
+
+    // Append curator entry
+    history.push({
+      timestamp: new Date().toISOString(),
+      actor: "curator",
+      action: "mature",
+      curatorMsg,
+      silicondevMsg,
+      silicondevConfidence,
+      flawlessPercent,
+      fromLevel: mission.maturityLevel,
+      toLevel: mission.maturityLevel, // Not bumped — carbondev decides
+      dharma: dharmaPath || undefined,
+    });
+
+    // Build update data
+    const updateData = {
+      carbonDescription,
+      siliconDescription,
+      flawlessPercent,
+      history: JSON.stringify(history),
+      assignedTo: "carbondev",
+      ...(dharmaPath ? { dharmaPath } : {}),
+    };
+
+    // Only update UEI if curator provides new values
+    if (urgency !== undefined || easiness !== undefined || impact !== undefined) {
+      const u = urgency ?? mission.urgency;
+      const e = easiness ?? mission.easiness;
+      const i = impact ?? mission.impact;
+      Object.assign(updateData, {
+        urgency: u, easiness: e, impact: i,
+        priority: (u * e * i) / 125,
+      });
+    }
+
+    await prisma.mission.update({ where: { id }, data: updateData });
+
+    return { content: [{ type: "text", text: `Mission #${id} enriched. flawless: ${flawlessPercent}%. Assigned to carbondev.` }] };
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REPORT REVIEW — reviewer writes score + findings
+// ═══════════════════════════════════════════════════════════════════════════
+
+server.tool(
+  "report_review",
+  "Reviewer writes score and findings to mission. First-pass score is saved as RL signal.",
+  {
+    id: z.number().describe("Mission ID"),
+    score: z.number().describe("Reviewer score 0-100"),
+    findings: z.string().optional().describe("Summary of findings (HIGH/MEDIUM/LOW)"),
+    discoveredIssues: z.array(z.object({
+      name: z.string(),
+      description: z.string(),
+    })).optional().describe("Collateral bugs found — will be created as para missions"),
+  },
+  async ({ id, score, findings, discoveredIssues }) => {
+    const mission = await prisma.mission.findUnique({ where: { id } });
+    if (!mission) return { content: [{ type: "text", text: `Mission ${id} not found` }] };
+
+    let history = [];
+    try { history = JSON.parse(mission.history || "[]"); } catch { history = []; }
+
+    history.push({
+      timestamp: new Date().toISOString(),
+      actor: "reviewer",
+      action: "review",
+      reviewerScore: score,
+      comment: findings || undefined,
+      discoveredIssues: discoveredIssues || undefined,
+    });
+
+    // Save first-pass score only (RL signal)
+    const isFirstPass = mission.reviewerScore === null;
+
+    await prisma.mission.update({
+      where: { id },
+      data: {
+        history: JSON.stringify(history),
+        ...(isFirstPass ? { reviewerScore: score } : {}),
+      },
+    });
+
+    // Create para missions for discovered issues
+    if (discoveredIssues?.length) {
+      for (const issue of discoveredIssues) {
+        await prisma.mission.create({
+          data: {
+            name: issue.name,
+            description: issue.description,
+            maturityLevel: 0,
+            assignedTo: "anorak",
+          },
+        });
+      }
+    }
+
+    return { content: [{ type: "text", text: `Review recorded: ${score}/100. ${isFirstPass ? "(first pass — saved as RL signal)" : "(re-review)"}${discoveredIssues?.length ? ` Created ${discoveredIssues.length} para missions.` : ""}` }] };
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REPORT TEST — tester writes score + valor
+// ═══════════════════════════════════════════════════════════════════════════
+
+server.tool(
+  "report_test",
+  "Tester writes score, valor, and findings to mission. First-pass score is saved as RL signal.",
+  {
+    id: z.number().describe("Mission ID"),
+    score: z.number().describe("Tester score 0-100 (tests passed / total × 100)"),
+    valor: z.number().optional().describe("0.0-2.0 holistic quality assessment (only when score = 100)"),
+    findings: z.string().optional().describe("Test results summary"),
+    newTestsWritten: z.number().optional().describe("How many new test files/cases written"),
+    discoveredIssues: z.array(z.object({
+      name: z.string(),
+      description: z.string(),
+    })).optional().describe("Collateral bugs found — will be created as para missions"),
+  },
+  async ({ id, score, valor, findings, newTestsWritten, discoveredIssues }) => {
+    const mission = await prisma.mission.findUnique({ where: { id } });
+    if (!mission) return { content: [{ type: "text", text: `Mission ${id} not found` }] };
+
+    let history = [];
+    try { history = JSON.parse(mission.history || "[]"); } catch { history = []; }
+
+    history.push({
+      timestamp: new Date().toISOString(),
+      actor: "tester",
+      action: "test",
+      testerScore: score,
+      testerValor: valor || undefined,
+      comment: findings || undefined,
+      discoveredIssues: discoveredIssues || undefined,
+    });
+
+    const isFirstPass = mission.testerScore === null;
+
+    await prisma.mission.update({
+      where: { id },
+      data: {
+        history: JSON.stringify(history),
+        ...(isFirstPass ? { testerScore: score } : {}),
+        ...(valor !== undefined ? { valor } : {}),
+      },
+    });
+
+    // Create para missions for discovered issues
+    if (discoveredIssues?.length) {
+      for (const issue of discoveredIssues) {
+        await prisma.mission.create({
+          data: {
+            name: issue.name,
+            description: issue.description,
+            maturityLevel: 0,
+            assignedTo: "anorak",
+          },
+        });
+      }
+    }
+
+    return { content: [{ type: "text", text: `Test recorded: ${score}/100${valor !== undefined ? `, valor: ${valor}` : ""}. ${isFirstPass ? "(first pass — saved as RL signal)" : "(re-test)"}${newTestsWritten ? ` ${newTestsWritten} new tests written.` : ""}${discoveredIssues?.length ? ` Created ${discoveredIssues.length} para missions.` : ""}` }] };
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CREATE MISSION — any agent can spawn para missions
+// ═══════════════════════════════════════════════════════════════════════════
+
+server.tool(
+  "create_mission",
+  "Create a new mission (typically para/level 0). Used by reviewer/tester/curator to report discovered bugs and debt.",
+  {
+    name: z.string().describe("Short mission name"),
+    description: z.string().optional().describe("What needs doing"),
+    assignedTo: z.string().optional().describe("Who owns it (default: anorak)"),
+    urgency: z.number().optional().describe("1-10 (default 5)"),
+    easiness: z.number().optional().describe("1-10 (default 5)"),
+    impact: z.number().optional().describe("1-10 (default 5)"),
+  },
+  async ({ name, description, assignedTo = "anorak", urgency = 5, easiness = 5, impact = 5 }) => {
+    const priority = (urgency * easiness * impact) / 125;
+    const mission = await prisma.mission.create({
+      data: { name, description, assignedTo, urgency, easiness, impact, priority, maturityLevel: 0 },
+    });
+    return { content: [{ type: "text", text: `Created mission #${mission.id}: "${name}" (para 🌑, assigned to ${assignedTo})` }] };
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// START
+// ═══════════════════════════════════════════════════════════════════════════
+
+const transport = new StdioServerTransport();
+await server.connect(transport);

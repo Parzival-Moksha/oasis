@@ -121,13 +121,14 @@ export function AnorakPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 
   if (!isOpen || typeof document === 'undefined') return null
 
-  const modelColor = MODELS.find(m => m.id === model)?.color || '#a855f7'
+  const modelColor = MODELS.find(m => m.id === model)?.color || '#38bdf8'
 
   return createPortal(
     <div
       data-menu-portal="anorak-panel"
-      className="fixed z-[9999] rounded-xl flex flex-col overflow-hidden"
+      className="fixed rounded-xl flex flex-col overflow-hidden"
       style={{
+        zIndex: useOasisStore.getState().getPanelZIndex('anorak', 9999),
         left: position.x,
         top: position.y,
         width: size.w,
@@ -139,7 +140,7 @@ export function AnorakPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           : '0 8px 40px rgba(0,0,0,0.8)',
         transition: 'box-shadow 0.5s, border-color 0.5s',
       }}
-      onMouseDown={e => e.stopPropagation()}
+      onMouseDown={e => { e.stopPropagation(); useOasisStore.getState().bringPanelToFront('anorak') }}
       onPointerDown={e => e.stopPropagation()}
     >
       {/* ═══ HEADER ═══ */}

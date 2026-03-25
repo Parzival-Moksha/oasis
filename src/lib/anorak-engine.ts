@@ -128,7 +128,7 @@ export function fmtTokens(n: number): string {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export const MODELS = [
-  { id: 'opus', label: 'Opus', color: '#a855f7' },
+  { id: 'opus', label: 'Opus', color: '#f59e0b' },
   { id: 'sonnet', label: 'Sonnet', color: '#38bdf8' },
   { id: 'haiku', label: 'Haiku', color: '#22c55e' },
 ]

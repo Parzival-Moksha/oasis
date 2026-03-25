@@ -128,6 +128,7 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
   const { setIsDragging } = useContext(DragContext)
   const setInspectedObject = useOasisStore(s => s.setInspectedObject)
   const isReadOnly = useOasisStore(s => s.isViewMode && !s.isViewModeEditable)
+  const isAgentFocused = useInputManager(s => s.inputState === 'agent-focus')
 
   // ░▒▓ Movement system — reads behavior from store, applies every frame ▓▒░
   const behavior = useOasisStore(s => s.behaviors[id])
@@ -191,8 +192,8 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
           setInspectedObject(id)  // ░▒▓ One click = select + inspect (no double-click needed) ▓▒░
         }}
       >
-        {/* Selection highlight ring */}
-        {selected && (
+        {/* Selection highlight ring — hidden in agent-focus (AgentWindow3D has its own) */}
+        {selected && !isAgentFocused && (
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
             <ringGeometry args={[1.5, 1.8, 32]} />
             <meshBasicMaterial color="#3B82F6" transparent opacity={0.4} />
@@ -202,7 +203,8 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
       </group>
 
       {/* TransformControls — callback ref ensures listener attaches on mount */}
-      {selected && groupRef.current && !isReadOnly && (
+      {/* Hidden in agent-focus mode — gizmo would obstruct the zoomon view */}
+      {selected && groupRef.current && !isReadOnly && !isAgentFocused && (
         <TransformControls
           ref={controlsCallbackRef}
           object={groupRef.current}
@@ -258,144 +260,11 @@ class CatalogModelErrorBoundary extends React.Component<
 // ░▒▓ A single quad, double-sided, bearing the vision Gemini dreamed ▓▒░
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// ─═̷─ FRAME STYLE DEFINITIONS — 8 wildly different picture frames ─═̷─
-export interface FrameStyleDef {
-  id: string
-  label: string
-  icon: string
-  desc: string
-}
-
-export const FRAME_STYLES: FrameStyleDef[] = [
-  { id: 'gilded',    label: 'Gilded',     icon: '🖼️', desc: 'Classic gold museum frame' },
-  { id: 'neon',      label: 'Neon',       icon: '💜', desc: 'Glowing neon cyberpunk border' },
-  { id: 'thin',      label: 'Minimal',    icon: '▫️', desc: 'Hairline black wire frame' },
-  { id: 'baroque',   label: 'Baroque',    icon: '👑', desc: 'Thick ornate royal frame' },
-  { id: 'hologram',  label: 'Hologram',   icon: '🔮', desc: 'Floating holographic projection' },
-  { id: 'rustic',    label: 'Rustic',     icon: '🪵', desc: 'Weathered dark wood' },
-  { id: 'ice',       label: 'Frozen',     icon: '🧊', desc: 'Translucent ice crystal frame' },
-  { id: 'void',      label: 'Void',       icon: '🕳️', desc: 'Dark portal with swirling edge' },
-]
-
-// ─═̷─ FOUR-BAR FRAME BUILDER — reusable for box-based frame geometry ─═̷─
-export function FourBarFrame({ w, h, border, depth, color, roughness = 0.5, metalness = 0.3, emissive, emissiveIntensity = 0, opacity = 1, transparent = false }: {
-  w: number; h: number; border: number; depth: number
-  color: string; roughness?: number; metalness?: number
-  emissive?: string; emissiveIntensity?: number; opacity?: number; transparent?: boolean
-}) {
-  const matProps = { color, roughness, metalness, ...(emissive && { emissive, emissiveIntensity }), ...(transparent && { transparent, opacity }) }
-  return (
-    <group position={[0, 0, -depth / 2]}>
-      <mesh position={[0, (h + border) / 2, 0]}>
-        <boxGeometry args={[w + border * 2, border, depth]} />
-        <meshStandardMaterial {...matProps} />
-      </mesh>
-      <mesh position={[0, -(h + border) / 2, 0]}>
-        <boxGeometry args={[w + border * 2, border, depth]} />
-        <meshStandardMaterial {...matProps} />
-      </mesh>
-      <mesh position={[-(w + border) / 2, 0, 0]}>
-        <boxGeometry args={[border, h, depth]} />
-        <meshStandardMaterial {...matProps} />
-      </mesh>
-      <mesh position={[(w + border) / 2, 0, 0]}>
-        <boxGeometry args={[border, h, depth]} />
-        <meshStandardMaterial {...matProps} />
-      </mesh>
-    </group>
-  )
-}
-
-// ─═̷─ ANIMATED FRAME WRAPPERS ─═̷─
-
-export function NeonFrame({ w, h, scale }: { w: number; h: number; scale: number }) {
-  const groupRef = useRef<THREE.Group>(null)
-  useFrame((_, delta) => {
-    if (!groupRef.current) return
-    // Pulsing glow via scale oscillation
-    const t = Date.now() * 0.003
-    const pulse = 1 + Math.sin(t) * 0.015
-    groupRef.current.scale.set(pulse, pulse, 1)
-  })
-  const border = 0.015 * scale
-  const depth = 0.008 * scale
-  return (
-    <group ref={groupRef}>
-      {/* Inner bright edge */}
-      <FourBarFrame w={w} h={h} border={border} depth={depth} color="#A855F7" roughness={0.1} metalness={0.9} emissive="#A855F7" emissiveIntensity={3} />
-      {/* Outer softer glow */}
-      <FourBarFrame w={w + border * 2} h={h + border * 2} border={border * 0.6} depth={depth * 0.5} color="#7C3AED" roughness={0.2} metalness={0.5} emissive="#7C3AED" emissiveIntensity={1.5} transparent opacity={0.6} />
-    </group>
-  )
-}
-
-export function HologramFrame({ w, h, scale }: { w: number; h: number; scale: number }) {
-  const groupRef = useRef<THREE.Group>(null)
-  useFrame(() => {
-    if (!groupRef.current) return
-    const t = Date.now() * 0.001
-    // Gentle float + rotation wobble
-    groupRef.current.position.y = Math.sin(t * 1.5) * 0.02 * scale
-    groupRef.current.rotation.z = Math.sin(t * 0.7) * 0.005
-  })
-  const gap = 0.03 * scale
-  const cornerSize = 0.06 * scale
-  const thickness = 0.008 * scale
-  // Corner brackets instead of full frame
-  return (
-    <group ref={groupRef}>
-      {[[-1, 1], [1, 1], [-1, -1], [1, -1]].map(([sx, sy], i) => (
-        <group key={i} position={[sx * (w / 2 + gap), sy * (h / 2 + gap), 0]}>
-          <mesh position={[sx * cornerSize / 2, 0, 0]}>
-            <boxGeometry args={[cornerSize, thickness, thickness]} />
-            <meshStandardMaterial color="#22D3EE" emissive="#22D3EE" emissiveIntensity={2} transparent opacity={0.8} metalness={0.9} roughness={0.1} />
-          </mesh>
-          <mesh position={[0, sy * cornerSize / 2, 0]}>
-            <boxGeometry args={[thickness, cornerSize, thickness]} />
-            <meshStandardMaterial color="#22D3EE" emissive="#22D3EE" emissiveIntensity={2} transparent opacity={0.8} metalness={0.9} roughness={0.1} />
-          </mesh>
-        </group>
-      ))}
-      {/* Scanline effect — a thin bar that scrolls vertically */}
-      <ScanlineBar w={w + gap * 2} h={h + gap * 2} scale={scale} />
-    </group>
-  )
-}
-
-function ScanlineBar({ w, h, scale }: { w: number; h: number; scale: number }) {
-  const ref = useRef<THREE.Mesh>(null)
-  useFrame(() => {
-    if (!ref.current) return
-    const t = (Date.now() * 0.001) % 3 / 3 // 0→1 over 3 seconds
-    ref.current.position.y = (t - 0.5) * h
-    ;(ref.current.material as THREE.MeshStandardMaterial).opacity = 0.3 + Math.sin(t * Math.PI) * 0.3
-  })
-  return (
-    <mesh ref={ref}>
-      <planeGeometry args={[w, 0.005 * scale]} />
-      <meshStandardMaterial color="#22D3EE" emissive="#22D3EE" emissiveIntensity={1} transparent opacity={0.3} side={THREE.DoubleSide} />
-    </mesh>
-  )
-}
-
-export function VoidFrame({ w, h, scale }: { w: number; h: number; scale: number }) {
-  const groupRef = useRef<THREE.Group>(null)
-  useFrame(() => {
-    if (!groupRef.current) return
-    // Slow dark rotation
-    groupRef.current.rotation.z = Math.sin(Date.now() * 0.0005) * 0.02
-  })
-  const border = 0.05 * scale
-  const depth = 0.03 * scale
-  return (
-    <group ref={groupRef}>
-      {/* Outer dark ring */}
-      <FourBarFrame w={w} h={h} border={border} depth={depth} color="#0a0a0a" roughness={0.9} metalness={0.1} emissive="#4C1D95" emissiveIntensity={0.4} />
-      {/* Inner bright edge — the event horizon */}
-      <FourBarFrame w={w} h={h} border={0.005 * scale} depth={0.003 * scale} color="#8B5CF6" roughness={0.0} metalness={1.0} emissive="#8B5CF6" emissiveIntensity={2.5} />
-    </group>
-  )
-}
+// ─═̷─ FRAME STYLE DEFINITIONS — re-exported from FrameComponents.tsx ─═̷─
+import { FRAME_STYLES as _FRAME_STYLES, FourBarFrame, NeonFrame, HologramFrame, VoidFrame } from './FrameComponents'
+export { FourBarFrame, NeonFrame, HologramFrame, VoidFrame }
+export const FRAME_STYLES = _FRAME_STYLES
+export type { FrameStyleDef } from './FrameComponents'
 
 export function ImagePlaneRenderer({ imageUrl, scale, frameStyle }: { imageUrl: string; scale: number; frameStyle?: string }) {
   const texture = useLoader(THREE.TextureLoader, imageUrl)
@@ -1809,6 +1678,7 @@ export function WorldObjectsRenderer() {
   const transforms = useOasisStore(s => s.transforms)
   const catalogAssets = useOasisStore(s => s.placedCatalogAssets)
   const spawnPlacementVfx = useOasisStore(s => s.spawnPlacementVfx)
+  const hasAgentFocus = useOasisStore(s => !!s.focusedAgentWindowId)
 
   // Per-world filtering: only show conjured assets placed in THIS world
   const worldAssets = allConjuredAssets.filter(a => worldConjuredAssetIds.includes(a.id))
@@ -1995,8 +1865,8 @@ export function WorldObjectsRenderer() {
         transformMode={transformMode}
       />
 
-      {/* Transform mode HUD */}
-      {selectedObjectId && (
+      {/* Transform mode HUD — hidden in agent-focus (zoomon shows its own UI) */}
+      {selectedObjectId && !hasAgentFocus && (
         <Html position={[0, 0.5, 0]} center style={{ pointerEvents: 'none' }}>
           <div className="text-[10px] font-mono text-blue-400/60 bg-black/60 px-2 py-0.5 rounded whitespace-nowrap select-none">
             {transformMode.toUpperCase()} | R/T/Y switch | ESC deselect

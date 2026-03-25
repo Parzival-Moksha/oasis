@@ -74,7 +74,7 @@ export interface ActivePlacementVfx {
 }
 
 // ─═̷─═̷─💻 AGENT WINDOW — placeable interactive panels in 3D ─═̷─═̷─💻
-export type AgentWindowType = 'anorak' | 'merlin' | 'devcraft' | 'parzival'
+export type AgentWindowType = 'anorak' | 'anorak-pro' | 'merlin' | 'devcraft' | 'parzival'
 
 export interface AgentWindow {
   id: string                              // e.g. 'agent-anorak-1710859200000'
@@ -87,6 +87,9 @@ export interface AgentWindow {
   sessionId?: string                      // claude code session ID (anorak only)
   label?: string                          // user-assignable name
   frameStyle?: string                     // picture frame style id (gilded, neon, hologram, etc.)
+  frameThickness?: number                 // frame thickness multiplier (default 1, range 0.2-3)
+  windowOpacity?: number                  // window background opacity (default 1, range 0-1, dims to black)
+  windowBlur?: number                     // backdrop blur in px (default 0, range 0-20)
 }
 
 // ─═̷─═̷─⏪ UNDO/REDO — Time travel for world edits ─═̷─═̷─⏪
@@ -199,6 +202,12 @@ interface OasisState {
   isViewModeEditable: boolean
   /** The world ID being viewed (needed for saving to public_edit worlds) */
   viewingWorldId: string | null
+
+  // ─═̷─═̷─🪟 PANEL Z-ORDERING — last clicked = highest z-index ─═̷─═̷─🪟
+  _panelZCounter: number
+  _panelZMap: Record<string, number>
+  bringPanelToFront: (panelName: string) => void
+  getPanelZIndex: (panelName: string, defaultZ: number) => number
 
   // ─═̷─═̷─⚙️ SETTINGS ACTIONS ─═̷─═̷─⚙️
   setFpsCounterEnabled: (enabled: boolean) => void
@@ -1152,6 +1161,20 @@ export const useOasisStore = create<OasisState>((set, get) => {
   },
 
   setAvatar3dUrl: (url) => set({ avatar3dUrl: url }),
+
+  // ─═̷─═̷─🪟 PANEL Z-ORDERING ─═̷─═̷─🪟
+  _panelZCounter: 0,
+  _panelZMap: {},
+  bringPanelToFront: (panelName) => {
+    const next = get()._panelZCounter + 1
+    set({ _panelZCounter: next, _panelZMap: { ...get()._panelZMap, [panelName]: next } })
+  },
+  getPanelZIndex: (panelName, defaultZ) => {
+    const order = get()._panelZMap[panelName]
+    if (!order) return defaultZ
+    // Base z = 9990, each click adds 1. Max panels ~10, so z-range 9990-10000.
+    return 9990 + order
+  },
 
   // ─═̷─═̷─💻 3D AGENT WINDOWS — place, focus, interact ─═̷─═̷─💻
   addAgentWindow: (window) => {

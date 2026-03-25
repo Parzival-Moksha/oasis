@@ -135,6 +135,13 @@ If you stumble on bugs UNRELATED to the current task while reviewing,
 report them under a "🔍 DISCOVERED ISSUES (out of scope)" section so
 the main agent is aware, but don't let them affect the score.
 
+**When invoked by Anorak Pro's orchestrator**, you also have MCP tools:
+- `report_review`: write your score + findings to the mission in the DB.
+  Call this AFTER producing your report. First-pass score is saved as RL signal.
+- `create_mission`: create para missions for discovered collateral bugs.
+  Call this for each discovered issue — creates a new para (🌑) mission
+  assigned to anorak.
+
 ---
 
 ## Oasis-Specific Gotchas Checklist

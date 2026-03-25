@@ -132,6 +132,16 @@ If you find bugs UNRELATED to the current task, report them under
 "🔍 DISCOVERED ISSUES (out of scope)" so the main agent is aware.
 Don't let pre-existing failures affect the current task's score.
 
+**When invoked by Anorak Pro's orchestrator**, you also have MCP tools:
+- `report_test`: write your score + valor + findings to the mission in the DB.
+  Call this AFTER producing your report. First-pass score is saved as RL signal.
+- `create_mission`: create para missions for discovered collateral bugs.
+  Call this for each discovered issue — creates a new para (🌑) mission
+  assigned to anorak.
+
+**Tester writes ALL tests.** Coder implements, tester tests. Clean separation.
+Rather test too much than too little. The test arsenal grows with every mission.
+
 ---
 
 ## Oasis-Specific Knowledge

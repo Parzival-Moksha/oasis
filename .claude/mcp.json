@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "visual-qa": {
+      "command": "node",
+      "args": ["tools/visual-qa-mcp/index.js"],
+      "cwd": "c:/af_oasis"
+    },
+    "mission": {
+      "command": "node",
+      "args": ["tools/mission-mcp/index.js"],
+      "cwd": "c:/af_oasis",
+      "env": {
+        "OASIS_DB_PATH": "c:/af_oasis/prisma/data/oasis.db"
+      }
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"]
+    }
+  }
+}

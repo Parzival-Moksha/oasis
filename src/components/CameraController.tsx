@@ -201,9 +201,15 @@ function useAgentFocusUpdate() {
         const windowNormal = new THREE.Vector3(0, 0, 1)
         windowNormal.applyEuler(new THREE.Euler(rot[0], rot[1], rot[2]))
 
-        const DIST_FACTOR = 8
+        // The Html content spans 16×12 world units (800px × distanceFactor/400).
+        // Camera distance must show the full window with margin.
+        // FOV=50 → at distance D, horizontal view = 2*tan(25°)*D*aspect ≈ 1.45*D
+        // For 16-unit width to fill ~80%: D = 16 / (1.45 * 0.8) ≈ 13.8
+        // But distanceFactor also affects Html visual scale: closer = bigger text.
+        // At D=13.8, Html renders at distanceFactor/D = 8/13.8 = 0.58x pixel scale.
+        // Compromise: D ≈ 12 for readable text + full window visible.
         const groupScale = typeof t?.scale === 'number' ? t.scale : Array.isArray(t?.scale) ? t.scale[0] : win.scale
-        const dist = DIST_FACTOR * groupScale * 1.8
+        const dist = 14 * groupScale
 
         const windowCenter = new THREE.Vector3(pos[0], pos[1], pos[2])
         const cameraGoal = windowCenter.clone().add(windowNormal.clone().multiplyScalar(dist))
@@ -277,6 +283,7 @@ export function CameraController() {
   const inputState = useInputManager(s => s.inputState)
   const focusedAgentWindowId = useOasisStore(s => s.focusedAgentWindowId)
   const orbitControlsRef = useRef<any>(null)
+  const prevInputStateRef = useRef<string>(inputState)
 
   // Mode-specific update functions (hooks, called unconditionally)
   const updateNoclip = useNoclipUpdate()
@@ -302,6 +309,17 @@ export function CameraController() {
   useFrame((state, frameDelta) => {
     const camera = state.camera as THREE.PerspectiveCamera
     const delta = Math.min(frameDelta, 0.1)
+
+    // Sync OrbitControls target when re-entering orbit from another mode
+    // Without this, OrbitControls snaps to its stale internal target (the "camera snapping" bug)
+    if (inputState === 'orbit' && prevInputStateRef.current !== 'orbit' && orbitControlsRef.current) {
+      const dir = new THREE.Vector3()
+      camera.getWorldDirection(dir)
+      const dist = camera.position.distanceTo(orbitControlsRef.current.target)
+      orbitControlsRef.current.target.copy(camera.position).add(dir.multiplyScalar(Math.max(5, dist)))
+      orbitControlsRef.current.update()
+    }
+    prevInputStateRef.current = inputState
 
     switch (inputState) {
       case 'orbit':

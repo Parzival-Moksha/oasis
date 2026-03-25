@@ -204,7 +204,7 @@ function SankalpaExpansion({ mission, onRefetch, panelColor }: { mission: Missio
         <div style={s.threadContainer}>
           <div style={{ fontSize: 10, color: panelColor, marginBottom: 6, fontWeight: 600 }}>📜 Conversation</div>
           {historyEntries.map((entry, i) => {
-            const isDev = entry.actor === 'dev'
+            const isDev = entry.actor === 'carbondev'
             const text = entry.message || entry.comment || entry.action
             return (
               <div key={i} style={{
@@ -266,6 +266,60 @@ interface Filters {
   maturity: string
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// CREATE MISSION MODAL
+// ═══════════════════════════════════════════════════════════════════════════
+
+function CreateMissionModal({ onClose, onCreated, panelColor }: { onClose: () => void; onCreated: () => void; panelColor: string }) {
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [creating, setCreating] = useState(false)
+
+  const handleCreate = async () => {
+    if (!name.trim()) return
+    setCreating(true)
+    try {
+      await parzivalFetch('missions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), description: description.trim() || undefined }),
+      })
+      onCreated()
+      onClose()
+    } catch { /* swallow */ }
+    setCreating(false)
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}>
+      <div style={{ background: '#0a0a0a', border: `1px solid ${panelColor}40`, borderRadius: 8, padding: 16, width: 400, maxWidth: '90%' }} onClick={e => e.stopPropagation()}>
+        <div style={{ color: panelColor, fontWeight: 700, fontSize: 13, marginBottom: 10 }}>+ New Mission</div>
+        <input
+          value={name}
+          onChange={e => setName(e.target.value)}
+          placeholder="Mission name..."
+          autoFocus
+          onKeyDown={e => e.key === 'Enter' && handleCreate()}
+          style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: '8px 10px', color: '#ddd', fontSize: 12, fontFamily: 'monospace', outline: 'none', marginBottom: 8 }}
+        />
+        <textarea
+          value={description}
+          onChange={e => setDescription(e.target.value)}
+          placeholder="Description (optional)..."
+          rows={3}
+          style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: '8px 10px', color: '#ddd', fontSize: 12, fontFamily: 'monospace', outline: 'none', resize: 'vertical', marginBottom: 10 }}
+        />
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ padding: '6px 14px', borderRadius: 4, border: 'none', background: 'rgba(255,255,255,0.05)', color: '#888', cursor: 'pointer', fontFamily: 'monospace', fontSize: 11 }}>Cancel</button>
+          <button onClick={handleCreate} disabled={!name.trim() || creating} style={{ padding: '6px 14px', borderRadius: 4, border: 'none', background: `${panelColor}20`, color: panelColor, cursor: 'pointer', fontFamily: 'monospace', fontSize: 11, fontWeight: 600 }}>
+            {creating ? '...' : 'Create'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function Mindcraft2({ online, panelColor }: Mindcraft2Props) {
   // Mission state
   const [missions, setMissions] = useState<Mission[]>([])
@@ -290,6 +344,9 @@ export function Mindcraft2({ online, panelColor }: Mindcraft2Props) {
 
   // Done section lazy load
   const [doneLimit, setDoneLimit] = useState(20)
+
+  // Create modal
+  const [showCreate, setShowCreate] = useState(false)
 
   // ─── Fetch missions ──────────────────────────────────────────────────
   const fetchMissions = useCallback(async () => {
@@ -518,8 +575,8 @@ export function Mindcraft2({ online, panelColor }: Mindcraft2Props) {
           <td style={{ ...S.td(COLUMNS[4]), color: MATURITY_COLORS[m.maturityLevel] ?? '#666' }}>
             {MATURITY_SHORT[m.maturityLevel] ?? '?'}
           </td>
-          <td style={{ ...S.td(COLUMNS[5]), color: m.assignedTo === 'dev' ? '#60a5fa' : m.assignedTo === 'parzival' ? '#a855f7' : '#555' }}>
-            {m.assignedTo === 'dev' ? '👤' : m.assignedTo === 'parzival' ? '🧿' : '-'}
+          <td style={{ ...S.td(COLUMNS[5]), color: m.assignedTo === 'carbondev' ? '#60a5fa' : m.assignedTo === 'parzival' ? '#a855f7' : '#555' }}>
+            {m.assignedTo === 'carbondev' ? '👤' : m.assignedTo === 'parzival' ? '🧿' : '-'}
           </td>
           <td style={S.td(COLUMNS[6])}>{m.urgency}</td>
           <td style={S.td(COLUMNS[7])}>{m.easiness}</td>
@@ -579,8 +636,12 @@ export function Mindcraft2({ online, panelColor }: Mindcraft2Props) {
       <div style={{ padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <span style={{ fontSize: 14 }}>🎯</span>
         <span style={{ color: panelColor, fontWeight: 700, fontSize: 12 }}>Mindcraft</span>
-        <span style={{ color: '#555', fontSize: 10, marginLeft: 'auto' }}>
-          {filteredMissions.length}/{missions.length} shown
+        <button
+          onClick={() => setShowCreate(true)}
+          style={{ marginLeft: 'auto', padding: '1px 8px', borderRadius: 4, border: 'none', background: `${panelColor}15`, color: panelColor, cursor: 'pointer', fontSize: 11, fontFamily: 'monospace', fontWeight: 700 }}
+        >+ New</button>
+        <span style={{ color: '#555', fontSize: 10 }}>
+          {filteredMissions.length}/{missions.length}
         </span>
         {loading && <span style={{ color: panelColor, fontSize: 10 }}>⟳</span>}
       </div>
@@ -674,6 +735,14 @@ export function Mindcraft2({ online, panelColor }: Mindcraft2Props) {
           </table>
         )}
       </div>
+
+      {showCreate && (
+        <CreateMissionModal
+          onClose={() => setShowCreate(false)}
+          onCreated={fetchMissions}
+          panelColor={panelColor}
+        />
+      )}
     </div>
   )
 }

@@ -5,30 +5,42 @@
 // Follows AnorakWindowContent pattern: SSE stream, auto-scroll, compact UI
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { useState, useEffect, useRef, useContext } from 'react'
+import React, { useState, useEffect, useRef, useContext } from 'react'
 import { SettingsContext } from '../scene-lib'
 
 interface BrainState {
   mode: string
-  hp: number
-  maxHp: number
 }
 
 const MODE_COLORS: Record<string, string> = {
-  coach: '#c084fc',
+  coach: '#14b8a6',
   coder: '#fb923c',
   curator: '#22d3ee',
   hacker: '#f87171',
 }
 
-const MODE_ICONS: Record<string, string> = {
-  coach: '🧠',
-  coder: '🔥',
-  curator: '📋',
-  hacker: '💉',
+// Simple inline markdown: **bold**, *italic*, `code`, [link](url)
+function renderInlineMd(text: string): React.ReactNode {
+  const parts: React.ReactNode[] = []
+  // Split on markdown patterns
+  const regex = /(\*\*.*?\*\*|\*.*?\*|`[^`]+`|\[([^\]]+)\]\([^)]+\))/g
+  let last = 0
+  let match: RegExpExecArray | null
+  let key = 0
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > last) parts.push(text.slice(last, match.index))
+    const m = match[0]
+    if (m.startsWith('**')) parts.push(<strong key={key++} style={{ color: '#e2e8f0' }}>{m.slice(2, -2)}</strong>)
+    else if (m.startsWith('*')) parts.push(<em key={key++} style={{ color: '#cbd5e1' }}>{m.slice(1, -1)}</em>)
+    else if (m.startsWith('`')) parts.push(<code key={key++} style={{ background: 'rgba(255,255,255,0.08)', padding: '0 3px', borderRadius: 2, color: '#7dd3fc' }}>{m.slice(1, -1)}</code>)
+    else if (m.startsWith('[')) parts.push(<span key={key++} style={{ color: '#38bdf8', textDecoration: 'underline' }}>{match[2]}</span>)
+    last = match.index + m.length
+  }
+  if (last < text.length) parts.push(text.slice(last))
+  return parts.length === 0 ? text : <>{parts}</>
 }
 
-export function ParzivalWindowContent() {
+export function ParzivalWindowContent({ windowBlur = 0 }: { windowBlur?: number }) {
   const [brain, setBrain] = useState<BrainState | null>(null)
   const [thoughts, setThoughts] = useState<Array<{ type: string; text: string }>>([])
   const [online, setOnline] = useState(false)
@@ -71,9 +83,11 @@ export function ParzivalWindowContent() {
         try {
           const data = JSON.parse(event.data)
           if (data.type === 'heartbeat') return
+          // Extract meaningful text from thought events
+          const text = data.text || data.content || data.message || data.thought || data.summary || JSON.stringify(data)
           setThoughts(prev => [
             ...prev.slice(-50),
-            { type: data.type, text: JSON.stringify(data).substring(0, 120) },
+            { type: data.type, text: typeof text === 'string' ? text : JSON.stringify(text) },
           ])
         } catch { /* skip */ }
       }
@@ -88,15 +102,15 @@ export function ParzivalWindowContent() {
   }, [thoughts])
 
   const mode = brain?.mode ?? 'coach'
-  const color = MODE_COLORS[mode] ?? '#c084fc'
-  const hpPercent = brain ? (brain.hp / brain.maxHp) * 100 : 0
-  const hpColor = hpPercent > 70 ? '#22c55e' : hpPercent > 40 ? '#eab308' : '#ef4444'
+  const color = MODE_COLORS[mode] ?? '#14b8a6'
 
   return (
     <div style={{
       width: '100%',
       height: '100%',
-      background: `rgba(5, 5, 15, ${bgAlpha})`,
+      background: windowBlur > 0 ? `rgba(5, 5, 15, ${bgAlpha * 0.6})` : `rgba(5, 5, 15, ${bgAlpha})`,
+      backdropFilter: windowBlur > 0 ? `blur(${windowBlur}px)` : undefined,
+      WebkitBackdropFilter: windowBlur > 0 ? `blur(${windowBlur}px)` : undefined,
       color: '#ccc',
       fontFamily: 'monospace',
       fontSize: 12,
@@ -115,24 +129,8 @@ export function ParzivalWindowContent() {
       }}>
         <span style={{ fontSize: 14 }}>🧿</span>
         <span style={{ color, fontWeight: 700, fontSize: 12, letterSpacing: 1 }}>PARZIVAL</span>
-        <span style={{ color, fontSize: 10 }}>
-          {MODE_ICONS[mode]} {mode.toUpperCase()}
-        </span>
-
-        {/* HP mini bar */}
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
-          <div style={{
-            flex: 1, height: 4, borderRadius: 2,
-            background: 'rgba(255,255,255,0.1)',
-          }}>
-            <div style={{
-              width: `${hpPercent}%`, height: '100%',
-              background: hpColor, borderRadius: 2,
-            }} />
-          </div>
-          <span style={{ fontSize: 9, color: hpColor }}>{brain?.hp ?? '?'}</span>
-        </div>
-
+        <span style={{ color: '#666', fontSize: 10, textTransform: 'uppercase' }}>{mode}</span>
+        <div style={{ flex: 1 }} />
         {/* Status */}
         <div style={{
           width: 6, height: 6, borderRadius: '50%',
@@ -171,11 +169,10 @@ export function ParzivalWindowContent() {
             <span style={{
               color: '#999',
               fontSize: 10,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              lineHeight: 1.4,
+              wordBreak: 'break-word',
             }}>
-              {t.text}
+              {renderInlineMd(t.text)}
             </span>
           </div>
         ))}

@@ -50,26 +50,40 @@ model Mission {
   isIRL          Boolean   @default(false) // offline/physical work
 
   // Maturation (curator pipeline)
-  maturityLevel  Int       @default(0) // 0=raw, 1=specced, 2=reviewed, 3=ready
-  assignedTo     String?   // 'player1' | 'parzival' | null
+  maturityLevel  Int       @default(0) // 0=para, 1=pashyanti, 2=madhyama, 3=vaikhari
+  assignedTo     String?   // 'carbondev' | 'anorak' | 'parzival' | null
 
   // Specs (curator-enriched)
-  carbonDescription   String? // human-language description
-  siliconDescription  String? // technical spec for coder
-  acceptanceCriteria  String? // what "done" means
+  carbonDescription   String? // human-language war cry (vibes, emotions, analogies)
+  siliconDescription  String? // technical spec for coder (the bible)
+  acceptanceCriteria  String? // what "done" means (baked into siliconDescription too)
+
+  // Curator scoring (RL signal)
+  flawlessPercent     Float?  // 0-100 curator's execution confidence
+  reviewerScore       Float?  // 0-100 first-pass reviewer score
+  testerScore         Float?  // 0-100 first-pass tester score
+
+  // Curator queue (separate from devcraft queue)
+  curatorQueuePosition Int?   // null = not in curator queue
+
+  // Execution checkpoint (DB recovery after crash)
+  executionPhase      String? // 'coding' | 'reviewing' | 'testing' | null
+  executionRound      Int     @default(0) // which coder→reviewer round
 
   // History Thread — JSON array of HistoryEntry objects
-  // { timestamp, actor, action, message, fromLevel?, toLevel?, elapsed?, valor?, score? }
-  notes          String?
+  // { timestamp, actor, action, curatorMsg?, silicondevMsg?, verdict?, rating?, ... }
+  history        String?   // full lifecycle log (curator, carbondev, coder, reviewer, tester)
+  notes          String?   // legacy / free-text notes
 
-  // Dharma (noble 8fold path integration)
-  dharmaPath     String?   // view|intention|speech|action|livelihood|effort|mindfulness|concentration
+  // Dharma (Noble Eightfold Path of the Oasis)
+  dharmaPath     String?   // comma-separated: view,intention,speech,action,livelihood,effort,mindfulness,concentration
   questName      String?   // parent quest/yatra name
 
   @@index([status])
   @@index([queuePosition])
   @@index([maturityLevel])
   @@index([assignedTo])
+  @@index([curatorQueuePosition])
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -140,6 +154,35 @@ model Journal {
   tags      String?  // JSON: string[]
   mood      String?
   createdAt DateTime @default(now())
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CURATOR LOG — Per-invocation tracking for Anorak Pro's curator
+// "The garden tender's journal"
+// ═══════════════════════════════════════════════════════════════════════════
+
+model CuratorLog {
+  id                Int       @id @default(autoincrement())
+  status            String    @default("running") // running, completed, failed
+
+  startedAt         DateTime  @default(now())
+  endedAt           DateTime?
+  durationMs        Int?
+
+  // Cost
+  tokensIn          Int       @default(0)
+  tokensOut         Int       @default(0)
+
+  // Results
+  missionsProcessed Int       @default(0)
+  missionsEnriched  Int       @default(0)
+  missionResults    String?   // JSON: per-mission enrichment results
+
+  // Error
+  error             String?
+
+  @@index([status])
+  @@index([startedAt])
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

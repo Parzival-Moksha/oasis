@@ -26,7 +26,7 @@ import { FRAME_STYLES } from './WorldObjects'
 // CONSTANTS — The inspector's visual DNA
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const INSPECTOR_COLOR = '#E879F9'  // fuchsia-400 — the lens that sees into objects
+const INSPECTOR_COLOR = '#38bdf8'  // sky-400 — the lens that sees into objects
 const DEFAULT_POSITION = { x: 16, y: 80 }
 const DEFAULT_WIDTH = 320
 const MIN_WIDTH = 280
@@ -67,7 +67,7 @@ function ParamSlider({ label, value, min, max, step, onChange }: {
         step={step}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="flex-1 h-1 accent-fuchsia-500 cursor-pointer"
+        className="flex-1 h-1 accent-sky-500 cursor-pointer"
       />
       <span className="text-[10px] text-gray-400 font-mono w-10 text-right">{value.toFixed(step < 1 ? 1 : 0)}</span>
     </div>
@@ -93,7 +93,7 @@ function AxisPicker<T extends string>({ value, options, onChange }: {
             onClick={() => onChange(opt)}
             className={`text-[10px] px-2 py-0.5 rounded font-mono transition-colors ${
               value === opt
-                ? 'bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/40'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
                 : 'text-gray-500 border border-gray-700/30 hover:text-gray-300'
             }`}
           >
@@ -123,7 +123,7 @@ function PillSelector<T extends string>({ value, options, onChange, labels }: {
           onClick={() => onChange(opt)}
           className={`text-[10px] px-2 py-0.5 rounded font-mono transition-colors ${
             value === opt
-              ? 'bg-fuchsia-500/25 text-fuchsia-300 border border-fuchsia-500/40'
+              ? 'bg-sky-500/25 text-sky-300 border border-sky-500/40'
               : 'text-gray-300 bg-black/40 border border-gray-600/40 hover:text-white hover:border-gray-500/60'
           }`}
         >
@@ -194,7 +194,7 @@ function VRMExpressionSection({ expressions, onChange }: {
               type="range" min={0} max={1} step={0.05}
               value={current[key] || 0}
               onChange={(e) => update(key, parseFloat(e.target.value))}
-              className="flex-1 h-1 accent-fuchsia-500 cursor-pointer"
+              className="flex-1 h-1 accent-sky-500 cursor-pointer"
             />
             <span className="text-[9px] text-gray-500 font-mono w-8 text-right">
               {((current[key] || 0) * 100).toFixed(0)}%
@@ -211,7 +211,7 @@ function VRMExpressionSection({ expressions, onChange }: {
               type="range" min={0} max={1} step={0.05}
               value={current[key] || 0}
               onChange={(e) => update(key, parseFloat(e.target.value))}
-              className="flex-1 h-1 accent-fuchsia-500 cursor-pointer"
+              className="flex-1 h-1 accent-sky-500 cursor-pointer"
             />
             <span className="text-[9px] text-gray-500 font-mono w-8 text-right">
               {((current[key] || 0) * 100).toFixed(0)}%
@@ -273,7 +273,7 @@ function AnimationLibrarySection({ currentClipName, onSelectAnimation, onStopAni
                 onClick={() => setExpandedCat(expandedCat === cat.id ? null : cat.id)}
                 className={`text-[9px] px-1.5 py-0.5 rounded font-mono transition-colors ${
                   expandedCat === cat.id
-                    ? 'bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/40'
+                    ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
                     : 'text-gray-500 border border-gray-700/30 hover:text-gray-300'
                 }`}
               >
@@ -294,7 +294,7 @@ function AnimationLibrarySection({ currentClipName, onSelectAnimation, onStopAni
                   onClick={() => onSelectAnimation(anim.id)}
                   className={`text-[10px] px-2 py-1 rounded font-mono transition-colors text-left truncate ${
                     isActive
-                      ? 'bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/40'
+                      ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
                       : 'text-gray-400 border border-gray-700/20 hover:text-green-300 hover:border-green-500/30 hover:bg-green-500/5'
                   }`}
                   title={anim.label}
@@ -556,8 +556,9 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
   return createPortal(
     <div
       data-menu-portal="object-inspector"
-      className="fixed z-[9998] rounded-xl overflow-hidden shadow-2xl flex flex-col"
+      className="fixed rounded-xl overflow-hidden shadow-2xl flex flex-col"
       style={{
+        zIndex: useOasisStore.getState().getPanelZIndex('inspector', 9998),
         left: position.x,
         top: position.y,
         width: DEFAULT_WIDTH,
@@ -568,7 +569,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
         border: `1px solid rgba(255, 255, 255, 0.1)`,
         boxShadow: `0 0 30px ${INSPECTOR_COLOR}22, 0 0 60px rgba(0, 0, 0, 0.5)`,
       }}
-      onMouseDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => { e.stopPropagation(); useOasisStore.getState().bringPanelToFront('inspector') }}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
@@ -608,7 +609,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
 
         {/* File size badge */}
         {stats?.fileSize != null && (
-          <span className="text-[9px] px-1.5 py-0.5 rounded-full font-mono shrink-0 bg-fuchsia-500/15 text-fuchsia-400">
+          <span className="text-[9px] px-1.5 py-0.5 rounded-full font-mono shrink-0 bg-sky-500/15 text-sky-400">
             {formatBytes(stats.fileSize)}
           </span>
         )}
@@ -636,7 +637,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                 onClick={() => { selectObject(inspectedObjectId); setTransformMode(m) }}
                 className={`text-[10px] px-2 py-0.5 rounded font-mono transition-colors flex-1 ${
                   transformMode === m
-                    ? 'bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/40'
+                    ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
                     : 'text-gray-400 border border-gray-700/30 hover:text-gray-200 hover:border-gray-500/50'
                 }`}
               >
@@ -659,7 +660,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                 step={0.1}
                 value={fmt(pos[axis])}
                 onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) updateTransformAxis('position', axis, v) }}
-                className="bg-transparent border border-gray-700/40 rounded px-1 py-0.5 text-gray-300 text-center w-full focus:border-fuchsia-500/60 focus:outline-none hover:border-gray-500/60 transition-colors"
+                className="bg-transparent border border-gray-700/40 rounded px-1 py-0.5 text-gray-300 text-center w-full focus:border-sky-500/60 focus:outline-none hover:border-gray-500/60 transition-colors"
               />
             ))}
 
@@ -671,7 +672,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                 step={1}
                 value={rad2deg(rot[axis])}
                 onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) updateTransformAxis('rotation', axis, v * Math.PI / 180) }}
-                className="bg-transparent border border-gray-700/40 rounded px-1 py-0.5 text-gray-300 text-center w-full focus:border-fuchsia-500/60 focus:outline-none hover:border-gray-500/60 transition-colors"
+                className="bg-transparent border border-gray-700/40 rounded px-1 py-0.5 text-gray-300 text-center w-full focus:border-sky-500/60 focus:outline-none hover:border-gray-500/60 transition-colors"
               />
             ))}
 
@@ -684,13 +685,13 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                 min={0.01}
                 value={fmt(sclArr[axis])}
                 onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) updateTransformAxis('scale', axis, v) }}
-                className="bg-transparent border border-gray-700/40 rounded px-1 py-0.5 text-gray-300 text-center w-full focus:border-fuchsia-500/60 focus:outline-none hover:border-gray-500/60 transition-colors"
+                className="bg-transparent border border-gray-700/40 rounded px-1 py-0.5 text-gray-300 text-center w-full focus:border-sky-500/60 focus:outline-none hover:border-gray-500/60 transition-colors"
               />
             ))}
           </div>
           <button
             onClick={resetTransform}
-            className="text-[9px] text-gray-400 hover:text-fuchsia-400 font-mono border border-gray-700/30 rounded px-2 py-0.5 mt-1 transition-colors"
+            className="text-[9px] text-gray-400 hover:text-sky-400 font-mono border border-gray-700/30 rounded px-2 py-0.5 mt-1 transition-colors"
           >
             Reset transform
           </button>
@@ -704,36 +705,36 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
               <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[9px] text-gray-300 font-mono">{'\u25B3'} Triangles</span>
-                  <span className="text-[9px] font-mono font-medium text-fuchsia-400">{formatNumber(stats.triangles)}</span>
+                  <span className="text-[9px] font-mono font-medium text-sky-400">{formatNumber(stats.triangles)}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-[9px] text-gray-300 font-mono">{'\u25CF'} Vertices</span>
-                  <span className="text-[9px] font-mono font-medium text-fuchsia-400">{formatNumber(stats.vertices)}</span>
+                  <span className="text-[9px] font-mono font-medium text-sky-400">{formatNumber(stats.vertices)}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-[9px] text-gray-300 font-mono">{'\u25A6'} Meshes</span>
-                  <span className="text-[9px] font-mono font-medium text-fuchsia-400">{stats.meshCount}</span>
+                  <span className="text-[9px] font-mono font-medium text-sky-400">{stats.meshCount}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-[9px] text-gray-300 font-mono">{'\u{1F3A8}'} Materials</span>
-                  <span className="text-[9px] font-mono font-medium text-fuchsia-400">{stats.materialCount}</span>
+                  <span className="text-[9px] font-mono font-medium text-sky-400">{stats.materialCount}</span>
                 </div>
                 {stats.boneCount > 0 && (
                   <div className="flex items-center justify-between">
                     <span className="text-[9px] text-gray-300 font-mono">{'\u{1F9B4}'} Bones</span>
-                    <span className="text-[9px] font-mono font-medium text-fuchsia-400">{stats.boneCount}</span>
+                    <span className="text-[9px] font-mono font-medium text-sky-400">{stats.boneCount}</span>
                   </div>
                 )}
                 <div className="flex items-center justify-between">
                   <span className="text-[9px] text-gray-300 font-mono">{'\u{1F4D0}'} Bounds</span>
-                  <span className="text-[9px] font-mono font-medium text-fuchsia-400">
+                  <span className="text-[9px] font-mono font-medium text-sky-400">
                     {stats.dimensions.w} {'\u00D7'} {stats.dimensions.h} {'\u00D7'} {stats.dimensions.d}
                   </span>
                 </div>
                 {stats.fileSize != null && (
                   <div className="flex items-center justify-between">
                     <span className="text-[9px] text-gray-300 font-mono">{'\u{1F4BE}'} File</span>
-                    <span className="text-[9px] font-mono font-medium text-fuchsia-400">{formatBytes(stats.fileSize)}</span>
+                    <span className="text-[9px] font-mono font-medium text-sky-400">{formatBytes(stats.fileSize)}</span>
                   </div>
                 )}
               </div>
@@ -752,7 +753,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                           key={clip.name}
                           className={`flex items-center justify-between w-full px-1 py-0.5 rounded transition-colors text-left ${
                             isActive
-                              ? 'bg-fuchsia-500/20 border border-fuchsia-500/30'
+                              ? 'bg-sky-500/20 border border-sky-500/30'
                               : 'hover:bg-white/5 border border-transparent'
                           }`}
                           onClick={() => {
@@ -764,10 +765,10 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                           }}
                           title={isActive ? `Stop ${clip.name}` : `Play ${clip.name}`}
                         >
-                          <span className={`text-[9px] font-mono truncate mr-1 ${isActive ? 'text-fuchsia-300' : 'text-gray-500'}`}>
+                          <span className={`text-[9px] font-mono truncate mr-1 ${isActive ? 'text-sky-300' : 'text-gray-500'}`}>
                             {isActive ? '\u25B6 ' : ''}{clip.name.length > 12 ? clip.name.slice(0, 12) + '..' : clip.name}
                           </span>
-                          <span className="text-[9px] font-mono shrink-0 text-fuchsia-400">{clip.duration.toFixed(1)}s</span>
+                          <span className="text-[9px] font-mono shrink-0 text-sky-400">{clip.duration.toFixed(1)}s</span>
                         </button>
                       )
                     })}
@@ -1068,7 +1069,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                     })
                   }}
                   placeholder="clip name..."
-                  className="flex-1 text-[10px] bg-black/60 border border-gray-700/30 rounded px-2 py-1 text-gray-300 placeholder-gray-700 font-mono focus:border-fuchsia-500/40 focus:outline-none"
+                  className="flex-1 text-[10px] bg-black/60 border border-gray-700/30 rounded px-2 py-1 text-gray-300 placeholder-gray-700 font-mono focus:border-sky-500/40 focus:outline-none"
                 />
               </div>
 
@@ -1152,12 +1153,12 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                     onClick={() => updateCatalogPlacement(inspectedObjectId!, { imageFrameStyle: undefined })}
                     className={`flex flex-col items-center gap-0.5 p-1.5 rounded transition-colors text-center ${
                       !currentFrame
-                        ? 'bg-fuchsia-500/20 border border-fuchsia-500/40'
+                        ? 'bg-sky-500/20 border border-sky-500/40'
                         : 'border border-gray-700/30 hover:border-gray-500/50'
                     }`}
                   >
                     <span className="text-sm">✕</span>
-                    <span className={`text-[8px] font-mono ${!currentFrame ? 'text-fuchsia-300' : 'text-gray-500'}`}>None</span>
+                    <span className={`text-[8px] font-mono ${!currentFrame ? 'text-sky-300' : 'text-gray-500'}`}>None</span>
                   </button>
                   {/* 8 frame styles */}
                   {FRAME_STYLES.map(frame => {
@@ -1168,13 +1169,13 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                         onClick={() => updateCatalogPlacement(inspectedObjectId!, { imageFrameStyle: frame.id })}
                         className={`flex flex-col items-center gap-0.5 p-1.5 rounded transition-colors text-center ${
                           isActive
-                            ? 'bg-fuchsia-500/20 border border-fuchsia-500/40'
+                            ? 'bg-sky-500/20 border border-sky-500/40'
                             : 'border border-gray-700/30 hover:border-gray-500/50'
                         }`}
                         title={frame.desc}
                       >
                         <span className="text-sm">{frame.icon}</span>
-                        <span className={`text-[8px] font-mono ${isActive ? 'text-fuchsia-300' : 'text-gray-500'}`}>{frame.label}</span>
+                        <span className={`text-[8px] font-mono ${isActive ? 'text-sky-300' : 'text-gray-500'}`}>{frame.label}</span>
                       </button>
                     )
                   })}
@@ -1219,13 +1220,39 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                 {/* Dimensions */}
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] text-gray-500 font-mono w-16 shrink-0">size</span>
-                  <span className="text-[9px] text-gray-400 font-mono">{agentWin.width} x {agentWin.height}px</span>
+                  <span className="text-[9px] text-gray-400 font-mono">{agentWin.width ?? 800} x {agentWin.height ?? 600}px</span>
                 </div>
 
                 {/* Scale */}
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] text-gray-500 font-mono w-16 shrink-0">scale</span>
-                  <span className="text-[9px] text-gray-400 font-mono">{agentWin.scale.toFixed(2)}</span>
+                  <span className="text-[9px] text-gray-400 font-mono">{(agentWin.scale ?? 1).toFixed(2)}</span>
+                </div>
+
+                {/* Per-window opacity (dim to black) */}
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[9px] text-gray-500 font-mono min-w-[50px]">Opacity</span>
+                  <input
+                    type="range" min={0.1} max={1} step={0.05}
+                    value={agentWin.windowOpacity ?? 1}
+                    onChange={e => updateAgentWindow(inspectedObjectId!, { windowOpacity: parseFloat(e.target.value) })}
+                    className="flex-1 h-1 appearance-none rounded bg-gray-700 accent-sky-500"
+                    style={{ cursor: 'pointer' }}
+                  />
+                  <span className="text-[9px] text-gray-500 font-mono w-6 text-right">{((agentWin.windowOpacity ?? 1) * 100).toFixed(0)}%</span>
+                </div>
+
+                {/* Per-window blur */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] text-gray-500 font-mono min-w-[50px]">Blur</span>
+                  <input
+                    type="range" min={0} max={20} step={1}
+                    value={agentWin.windowBlur ?? 0}
+                    onChange={e => updateAgentWindow(inspectedObjectId!, { windowBlur: parseFloat(e.target.value) })}
+                    className="flex-1 h-1 appearance-none rounded bg-gray-700 accent-sky-500"
+                    style={{ cursor: 'pointer' }}
+                  />
+                  <span className="text-[9px] text-gray-500 font-mono w-6 text-right">{agentWin.windowBlur ?? 0}px</span>
                 </div>
               </div>
 
@@ -1238,12 +1265,12 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                     onClick={() => updateAgentWindow(inspectedObjectId!, { frameStyle: undefined })}
                     className={`flex flex-col items-center gap-0.5 p-1.5 rounded transition-colors text-center ${
                       !agentWin.frameStyle
-                        ? 'bg-fuchsia-500/20 border border-fuchsia-500/40'
+                        ? 'bg-sky-500/20 border border-sky-500/40'
                         : 'border border-gray-700/30 hover:border-gray-500/50'
                     }`}
                   >
                     <span className="text-sm">&#10005;</span>
-                    <span className={`text-[8px] font-mono ${!agentWin.frameStyle ? 'text-fuchsia-300' : 'text-gray-500'}`}>None</span>
+                    <span className={`text-[8px] font-mono ${!agentWin.frameStyle ? 'text-sky-300' : 'text-gray-500'}`}>None</span>
                   </button>
                   {/* 8 frame styles */}
                   {FRAME_STYLES.map(frame => {
@@ -1254,17 +1281,35 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                         onClick={() => updateAgentWindow(inspectedObjectId!, { frameStyle: frame.id })}
                         className={`flex flex-col items-center gap-0.5 p-1.5 rounded transition-colors text-center ${
                           isActive
-                            ? 'bg-fuchsia-500/20 border border-fuchsia-500/40'
+                            ? 'bg-sky-500/20 border border-sky-500/40'
                             : 'border border-gray-700/30 hover:border-gray-500/50'
                         }`}
                         title={frame.desc}
                       >
                         <span className="text-sm">{frame.icon}</span>
-                        <span className={`text-[8px] font-mono ${isActive ? 'text-fuchsia-300' : 'text-gray-500'}`}>{frame.label}</span>
+                        <span className={`text-[8px] font-mono ${isActive ? 'text-sky-300' : 'text-gray-500'}`}>{frame.label}</span>
                       </button>
                     )
                   })}
                 </div>
+
+                {/* Frame thickness slider */}
+                {agentWin.frameStyle && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="text-[9px] text-gray-500 font-mono min-w-[50px]">Thickness</span>
+                    <input
+                      type="range"
+                      min={0.2}
+                      max={3}
+                      step={0.1}
+                      value={agentWin.frameThickness ?? 1}
+                      onChange={e => updateAgentWindow(inspectedObjectId!, { frameThickness: parseFloat(e.target.value) })}
+                      className="flex-1 h-1 appearance-none rounded bg-gray-700 accent-sky-500"
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <span className="text-[9px] text-gray-500 font-mono w-6 text-right">{(agentWin.frameThickness ?? 1).toFixed(1)}</span>
+                  </div>
+                )}
               </div>
             </>
           )

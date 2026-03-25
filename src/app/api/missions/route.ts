@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
         targetSeconds: rest.targetSeconds || null,
         isIRL: rest.isIRL || false,
         notes: rest.notes || null,
-        assignedTo: rest.assignedTo || 'player1',
+        assignedTo: rest.assignedTo || 'carbondev',
         description: rest.description || null,
         carbonDescription: rest.carbonDescription || null,
         siliconDescription: rest.siliconDescription || null,

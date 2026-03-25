@@ -42,6 +42,7 @@ import { ProfileButton } from './forge/ProfileButton'
 import { OnboardingModal } from './forge/OnboardingModal'
 import { MerlinPanel } from './forge/MerlinPanel'
 import { AnorakPanel } from './forge/AnorakPanel'
+import { AnorakProPanel } from './forge/AnorakProPanel'
 import { ParzivalPanel } from './forge/ParzivalPanel'
 import dynamic from 'next/dynamic'
 const DevcraftPanel = dynamic(() => import('./forge/DevcraftPanel'), { ssr: false })
@@ -51,6 +52,7 @@ import { completeQuest } from '@/lib/quests'
 import { useInputManager, getInputCapabilities, isPointerLocked } from '@/lib/input-manager'
 import { CameraController as CameraControllerComponent, sprintRef, FPSControls, FPS_KEYBOARD_MAP } from './CameraController'
 import { useAudioManager, SOUND_OPTIONS, type SoundEvent } from '@/lib/audio-manager'
+import { installTestHarness } from '@/lib/test-harness'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ─═̷─═̷─🎮─═̷─═̷─{ QUAKE FPS CONTROLS - WASD + Q/E }─═̷─═̷─🎮─═̷─═̷─
@@ -844,12 +846,13 @@ export default function Scene() {
   const hideEditTools = isViewMode && !isViewModeEditable
 
   // ─═̷─═̷─✨─═̷─═̷─{ WIZARD CONSOLE + ASSET EXPLORER STATE }─═̷─═̷─✨─═̷─═̷─
-  const [wizardOpen, setWizardOpen] = useState(true)
+  const [wizardOpen, setWizardOpen] = useState(false)
   // Asset Explorer removed — merged into WizardConsole
   const [actionLogOpen, setActionLogOpen] = useState(false)
   const [merlinOpen, setMerlinOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [claudeCodeOpen, setClaudeCodeOpen] = useState(false)
+  const [anorakProOpen, setAnorakProOpen] = useState(false)
   const [devcraftOpen, setDevcraftOpen] = useState(false)
   const [parzivalOpen, setParzivalOpen] = useState(false)
 
@@ -894,6 +897,9 @@ export default function Scene() {
   useEffect(() => {
     return useInputManager.getState().initGlobalListeners()
   }, [])
+
+  // ─═̷─═̷─🧪─═̷─═̷─{ TEST HARNESS — Parzival's Hands }─═̷─═̷─🧪─═̷─═̷─
+  useEffect(() => { installTestHarness() }, [])
 
   // ─═̷─═̷─🎮─═̷─═̷─{ CANVAS }─═̷─═̷─🎮─═̷─═̷─
   const CanvasContent = (
@@ -1029,6 +1035,21 @@ export default function Scene() {
             💻
           </button>
         )}
+        {isAdmin && (
+          <button
+            onClick={() => togglePanel(setAnorakProOpen)}
+            className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
+            style={{
+              background: anorakProOpen ? 'rgba(20,184,166,0.3)' : 'rgba(0,0,0,0.6)',
+              border: `1px solid ${anorakProOpen ? 'rgba(20,184,166,0.6)' : 'rgba(255,255,255,0.15)'}`,
+              color: anorakProOpen ? '#14b8a6' : '#aaa',
+              boxShadow: anorakProOpen ? '0 0 12px rgba(20,184,166,0.3)' : 'none',
+            }}
+            title="Anorak Pro"
+          >
+            🔮
+          </button>
+        )}
         <button
           onClick={() => togglePanel(setDevcraftOpen)}
           className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
@@ -1078,10 +1099,10 @@ export default function Scene() {
         />
       )}
 
-      {/* 🔍 Object Inspector — hidden in view mode */}
+      {/* 🔍 Object Inspector — hidden in view mode + during agent-focus (zoomon fills viewport) */}
       {!hideEditTools && (
         <ObjectInspector
-          isOpen={!!inspectedObjectId}
+          isOpen={!!inspectedObjectId && !isAgentFocused}
           onClose={() => setInspectedObject(null)}
         />
       )}
@@ -1106,6 +1127,13 @@ export default function Scene() {
         <AnorakPanel
           isOpen={claudeCodeOpen}
           onClose={() => setClaudeCodeOpen(false)}
+        />
+      )}
+      {/* 🔮 Anorak Pro — Autonomous dev pipeline — admin only */}
+      {isAdmin && (
+        <AnorakProPanel
+          isOpen={anorakProOpen}
+          onClose={() => setAnorakProOpen(false)}
         />
       )}
 

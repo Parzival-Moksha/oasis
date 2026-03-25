@@ -14,6 +14,7 @@
 import React, { useState, useRef, useEffect, useCallback, useContext } from 'react'
 import { createPortal } from 'react-dom'
 import { SettingsContext } from '../scene-lib'
+import { useOasisStore } from '../../store/oasisStore'
 import { Mindcraft2 } from './Mindcraft2'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -316,14 +317,14 @@ export function ParzivalPanel({ isOpen, onClose }: { isOpen: boolean; onClose: (
     <div
       style={{
         position: 'fixed', left: pos.x, top: pos.y, width: size.w, height: size.h,
-        zIndex: 9999, display: 'flex', flexDirection: 'column',
+        zIndex: useOasisStore.getState().getPanelZIndex('parzival', 9999), display: 'flex', flexDirection: 'column',
         borderRadius: 12, overflow: 'hidden',
         background: `rgba(10, 10, 20, ${uiOpacity})`,
         border: `1px solid ${online ? panelColor + '40' : 'rgba(255,255,255,0.1)'}`,
         boxShadow: online ? `0 0 30px ${panelColor}20, 0 8px 32px rgba(0,0,0,0.6)` : '0 8px 32px rgba(0,0,0,0.6)',
         backdropFilter: 'blur(12px)', fontFamily: 'monospace', fontSize: 13,
       }}
-      onMouseDown={e => e.stopPropagation()}
+      onMouseDown={e => { e.stopPropagation(); useOasisStore.getState().bringPanelToFront('parzival') }}
     >
       {/* ─── HEADER ────────────────────────────────────────────────── */}
       <div
@@ -502,8 +503,8 @@ export function ParzivalPanel({ isOpen, onClose }: { isOpen: boolean; onClose: (
                         <td style={{ ...tdR, fontWeight: 500 }}>{pri}</td>
                         <td style={{ ...tdR, color: valorColor }}>{m.valor.toFixed(1)}</td>
                         <td style={{ ...tdR, color: '#22c55e' }}>{sc}</td>
-                        <td style={{ ...tdStyle, color: m.assignedTo === 'dev' ? '#60a5fa' : m.assignedTo === 'parzival' ? '#a855f7' : '#555' }}>
-                          {m.assignedTo === 'dev' ? '👤' : m.assignedTo === 'parzival' ? '🧿' : '-'}
+                        <td style={{ ...tdStyle, color: m.assignedTo === 'carbondev' ? '#60a5fa' : m.assignedTo === 'parzival' ? '#a855f7' : '#555' }}>
+                          {m.assignedTo === 'carbondev' ? '👤' : m.assignedTo === 'parzival' ? '🧿' : '-'}
                         </td>
                         <td style={{ ...tdStyle, color: '#555' }}>{fmtDate(m.createdAt)}</td>
                         <td style={{ ...tdStyle, textAlign: 'right' }}>
@@ -555,7 +556,7 @@ export function ParzivalPanel({ isOpen, onClose }: { isOpen: boolean; onClose: (
                                     <div style={{ fontSize: 10, color: panelColor, marginBottom: 4, fontWeight: 600 }}>📜 History</div>
                                     {entries.map((e, i) => (
                                       <div key={i} style={{ fontSize: 10, color: '#777', padding: '2px 0', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                                        <span style={{ color: e.actor === 'dev' ? '#60a5fa' : '#a855f7' }}>{e.actor === 'dev' ? '👤' : '🧿'}</span>
+                                        <span style={{ color: e.actor === 'carbondev' ? '#60a5fa' : '#a855f7' }}>{e.actor === 'carbondev' ? '👤' : '🧿'}</span>
                                         {' '}<span style={{ color: '#888' }}>{e.action}</span>
                                         {e.comment && <span style={{ color: '#999' }}> — {e.comment}</span>}
                                         <span style={{ color: '#555', marginLeft: 6 }}>{new Date(e.timestamp).toLocaleDateString('en', { month: 'short', day: 'numeric' })}</span>

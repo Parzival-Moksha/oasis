@@ -30,17 +30,26 @@ export function AnorakWindowContent({ windowId, initialSessionId }: {
   const [sessionPickerOpen, setSessionPickerOpen] = useState(false)
   const [resetKey, setResetKey] = useState(0)
 
-  const modelColor = MODELS.find(m => m.id === model)?.color || '#a855f7'
+  const modelColor = MODELS.find(m => m.id === model)?.color || '#38bdf8'
 
   // Global UI opacity from settings
   const { settings } = useContext(SettingsContext)
   const bgAlpha = Math.max(0.3, Math.min(1, settings.uiOpacity))
 
+  // Per-window blur from AgentWindow store
+  // Shallow selector to avoid re-renders when unrelated agent windows change
+  const windowBlur = useOasisStore(s => {
+    const w = s.placedAgentWindows.find(w => w.id === windowId)
+    return w?.windowBlur ?? 0
+  })
+
   return (
     <div
       className="flex flex-col w-full h-full rounded-xl overflow-hidden"
       style={{
-        backgroundColor: `rgba(8, 10, 15, ${bgAlpha})`,
+        backgroundColor: windowBlur > 0 ? `rgba(8, 10, 15, ${bgAlpha * 0.6})` : `rgba(8, 10, 15, ${bgAlpha})`,
+        backdropFilter: windowBlur > 0 ? `blur(${windowBlur}px)` : undefined,
+        WebkitBackdropFilter: windowBlur > 0 ? `blur(${windowBlur}px)` : undefined,
         border: `1px solid ${isStreaming ? 'rgba(56,189,248,0.6)' : 'rgba(56,189,248,0.2)'}`,
         boxShadow: isStreaming
           ? '0 0 40px rgba(56,189,248,0.2), inset 0 0 60px rgba(56,189,248,0.03)'

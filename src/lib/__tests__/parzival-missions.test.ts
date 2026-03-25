@@ -85,7 +85,7 @@ describe('parseHistory', () => {
   it('parses a multi-entry history with mixed actors', () => {
     const entries: HistoryEntry[] = [
       { actor: 'curator', curatorMsg: 'first pass', flawlessPercent: 40 },
-      { actor: 'dev', verdict: 'accept', rating: 8, mature: true, carbonSeconds: 120 },
+      { actor: 'carbondev', verdict: 'accept', rating: 8, mature: true, carbonSeconds: 120 },
       { actor: 'curator', curatorMsg: 'second pass', silicondevMsg: 'looks good', silicondevConfidence: 0.85 },
     ]
     const result = parseHistory(JSON.stringify(entries))

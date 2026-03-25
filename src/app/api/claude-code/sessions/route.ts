@@ -80,7 +80,7 @@ async function listSessions(): Promise<NextResponse> {
                 const msg = obj.message
                 const text = extractText(msg)
                 if (text && !text.startsWith('You are Claude Code')) {
-                  label = text.substring(0, 100)
+                  label = text
                 }
               }
             }
@@ -215,7 +215,7 @@ function buildAssistantMessage(contentBlocks: unknown[]): ConversationMessage {
     } else if (b.type === 'tool_use') {
       tools.push({
         name: (b.name as string) || 'tool',
-        input: b.input ? JSON.stringify(b.input).substring(0, 200) : undefined,
+        input: b.input ? JSON.stringify(b.input) : undefined,
       })
     }
     // Skip thinking blocks for history view — too verbose

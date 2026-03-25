@@ -35,7 +35,7 @@ function buildMissionPrompt(mission: {
 }): string {
   const history = parseHistory(mission)
   const curatorThread = history
-    .filter((h: Record<string, unknown>) => h.actor === 'curator' || h.actor === 'dev')
+    .filter((h: Record<string, unknown>) => h.actor === 'curator' || h.actor === 'carbondev')
     .map((h: Record<string, unknown>) => {
       if (h.actor === 'curator') {
         return `📋 CURATOR: ${h.curatorMsg ?? h.comment ?? h.action}\n🤖 SILICONDEV: ${h.silicondevMsg ?? '(none)'} [flawless: ${h.flawlessPercent ?? '?'}%]`
@@ -196,7 +196,7 @@ describe('buildMissionPrompt', () => {
 
   it('renders dev entries from history', () => {
     const history = [
-      { actor: 'dev', carbondevMsg: 'Looks good', mature: true },
+      { actor: 'carbondev', carbondevMsg: 'Looks good', mature: true },
     ]
     const prompt = buildMissionPrompt({ ...baseMission, history: JSON.stringify(history) })
     expect(prompt).toContain('👤 DEV: Looks good [MATURE]')
@@ -204,7 +204,7 @@ describe('buildMissionPrompt', () => {
 
   it('renders REFINE for immature dev entries', () => {
     const history = [
-      { actor: 'dev', carbondevMsg: 'Needs work', mature: false },
+      { actor: 'carbondev', carbondevMsg: 'Needs work', mature: false },
     ]
     const prompt = buildMissionPrompt({ ...baseMission, history: JSON.stringify(history) })
     expect(prompt).toContain('[REFINE]')
