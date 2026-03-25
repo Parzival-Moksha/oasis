@@ -374,7 +374,7 @@ function WeeklyChart({ data }: { data: DayData[] }) {
   const h = 110, w = 400, pad = 4
 
   const points = data.map((day, i) => {
-    const x = pad + (i * (w - pad * 2) / (data.length - 1))
+    const x = pad + (i * (w - pad * 2) / Math.max(data.length - 1, 1))
     const y = h - pad - ((day.score / maxScore) * (h - pad * 2))
     return { x, y, day }
   })
@@ -1556,12 +1556,16 @@ export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
 
   const handleAdjustTime = async (deltaSecs: number) => {
     if (!activeMission) return
-    const newActual = Math.max(0, (activeMission.actualSeconds || 0) + deltaSecs)
+    // Adjust totalPausedMs instead of actualSeconds to avoid doubling.
+    // Adding time (positive deltaSecs) = subtract from totalPausedMs (makes elapsed appear longer).
+    // Removing time (negative deltaSecs) = add to totalPausedMs (makes elapsed appear shorter).
+    const deltaMs = deltaSecs * 1000
+    const newTotalPausedMs = Math.max(0, (activeMission.totalPausedMs || 0) - deltaMs)
     const res = await fetch(`/api/missions/${activeMission.id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ actualSeconds: newActual }),
+      body: JSON.stringify({ totalPausedMs: newTotalPausedMs }),
     })
-    if (res.ok) setActiveMission(p => p ? { ...p, actualSeconds: newActual } : null)
+    if (res.ok) setActiveMission(p => p ? { ...p, totalPausedMs: newTotalPausedMs } : null)
   }
 
   const handleExtendTime = async (extraSeconds: number) => {

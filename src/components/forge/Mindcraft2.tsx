@@ -146,7 +146,7 @@ function SankalpaExpansion({ mission, onRefetch, panelColor }: { mission: Missio
       })
       setReplyText('')
       onRefetch()
-    } catch { /* swallow */ }
+    } catch (err) { console.error('Mindcraft2 handleRefine failed:', err) }
     setSending(false)
   }
 
@@ -160,7 +160,7 @@ function SankalpaExpansion({ mission, onRefetch, panelColor }: { mission: Missio
       })
       setReplyText('')
       onRefetch()
-    } catch { /* swallow */ }
+    } catch (err) { console.error('Mindcraft2 handleBump failed:', err) }
     setSending(false)
   }
 
@@ -286,7 +286,7 @@ function CreateMissionModal({ onClose, onCreated, panelColor }: { onClose: () =>
       })
       onCreated()
       onClose()
-    } catch { /* swallow */ }
+    } catch (err) { console.error('Mindcraft2 createMission failed:', err) }
     setCreating(false)
   }
 
@@ -355,7 +355,7 @@ export function Mindcraft2({ online, panelColor }: Mindcraft2Props) {
     try {
       const data = await parzivalFetch('missions')
       if (Array.isArray(data)) setMissions(data)
-    } catch { /* offline */ }
+    } catch (err) { console.error('Mindcraft2 fetchMissions failed:', err) }
     setLoading(false)
   }, [online])
 
@@ -425,7 +425,7 @@ export function Mindcraft2({ online, panelColor }: Mindcraft2Props) {
         body: body ? JSON.stringify(body) : undefined,
       })
       await fetchMissions()
-    } catch { /* swallow */ }
+    } catch (err) { console.error('Mindcraft2 missionAction failed:', err) }
     setActionLoading(null)
   }, [fetchMissions])
 
@@ -651,15 +651,15 @@ export function Mindcraft2({ online, panelColor }: Mindcraft2Props) {
         <span style={{ color: '#555', fontSize: 10 }}>🔍</span>
 
         <span style={{ color: '#666', fontSize: 9 }}>As:</span>
-        <select value={filters.assigned} onChange={e => setFilters(p => ({ ...p, assigned: e.target.value }))} style={S.select}>
+        <select value={filters.assigned} onChange={e => { setFilters(p => ({ ...p, assigned: e.target.value })); setDoneLimit(20) }} style={S.select}>
           <option value="all">all</option>
-          <option value="dev">👤 dev</option>
+          <option value="carbondev">👤 dev</option>
           <option value="parzival">🧿 Z</option>
           <option value="none">∅</option>
         </select>
 
         <span style={{ color: '#666', fontSize: 9 }}>St:</span>
-        <select value={filters.status} onChange={e => setFilters(p => ({ ...p, status: e.target.value }))} style={S.select}>
+        <select value={filters.status} onChange={e => { setFilters(p => ({ ...p, status: e.target.value })); setDoneLimit(20) }} style={S.select}>
           <option value="all">all</option>
           <option value="todo">📋 todo</option>
           <option value="wip">🔥 wip</option>
@@ -667,7 +667,7 @@ export function Mindcraft2({ online, panelColor }: Mindcraft2Props) {
         </select>
 
         <span style={{ color: '#666', fontSize: 9 }}>Mat:</span>
-        <select value={filters.maturity} onChange={e => setFilters(p => ({ ...p, maturity: e.target.value }))} style={S.select}>
+        <select value={filters.maturity} onChange={e => { setFilters(p => ({ ...p, maturity: e.target.value })); setDoneLimit(20) }} style={S.select}>
           <option value="all">all</option>
           <option value="0">🌑 para</option>
           <option value="1">🌘 pash</option>
@@ -677,7 +677,7 @@ export function Mindcraft2({ online, panelColor }: Mindcraft2Props) {
 
         {(filters.assigned !== 'all' || filters.status !== 'all' || filters.maturity !== 'all') && (
           <button
-            onClick={() => setFilters({ assigned: 'all', status: 'all', maturity: 'all' })}
+            onClick={() => { setFilters({ assigned: 'all', status: 'all', maturity: 'all' }); setDoneLimit(20) }}
             style={{ ...S.actionBtn('#ef4444'), marginLeft: 4 }}
           >✕ Clear</button>
         )}

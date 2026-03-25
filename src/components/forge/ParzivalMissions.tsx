@@ -93,11 +93,11 @@ function CuratorThread({ entries, fontSize }: { entries: HistoryEntry[]; fontSiz
               {entry.silicondevMsg && (
                 <div style={{
                   padding: '6px 10px', borderRadius: 8, borderTopLeftRadius: 2,
-                  background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.15)',
+                  background: 'rgba(20,184,166,0.06)', border: '1px solid rgba(20,184,166,0.15)',
                   fontSize: fontSize - 1, color: '#bbb', lineHeight: 1.4, maxWidth: '90%',
                   marginTop: 4,
                 }}>
-                  <div style={{ fontSize: fontSize - 2, color: '#a855f7', marginBottom: 3, fontWeight: 600 }}>
+                  <div style={{ fontSize: fontSize - 2, color: '#14b8a6', marginBottom: 3, fontWeight: 600 }}>
                     {'🤖'} SILICONDEV {entry.silicondevConfidence != null && <span style={{ color: '#888', fontWeight: 400 }}>| conf: {(entry.silicondevConfidence * 100).toFixed(0)}%</span>}
                   </div>
                   {entry.silicondevMsg}
@@ -186,8 +186,8 @@ function SiliconDevFeedback({ missionId, onSubmit, fontSize }: {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
         <span style={{ fontSize: fontSize - 2, color: '#888' }}>SiliconDev rating:</span>
         <input type="range" min={0} max={10} value={rating} onChange={e => setRating(parseInt(e.target.value))}
-          style={{ flex: 1, accentColor: '#a855f7' }} />
-        <span style={{ fontSize: fontSize - 1, color: '#a855f7', fontWeight: 700, minWidth: 30, textAlign: 'right' }}>{rating}/10</span>
+          style={{ flex: 1, accentColor: '#14b8a6' }} />
+        <span style={{ fontSize: fontSize - 1, color: '#14b8a6', fontWeight: 700, minWidth: 30, textAlign: 'right' }}>{rating}/10</span>
       </div>
 
       {/* Verdict buttons */}
@@ -348,33 +348,41 @@ export function ParzivalMissions({ fontSize, collapsed, onToggleCollapse }: Parz
   const [selectedMission, setSelectedMission] = useState<ParzivalMission | null>(null)
   const [online, setOnline] = useState(false)
 
+  const abortRef = useRef<AbortController | null>(null)
+  const selectedMissionRef = useRef<ParzivalMission | null>(null)
+  selectedMissionRef.current = selectedMission
+
   const fetchMissions = useCallback(async () => {
+    abortRef.current?.abort()
+    abortRef.current = new AbortController()
     try {
       setLoading(true)
-      const res = await fetch('/api/parzival/proxy/missions?assignedTo=carbondev')
+      const res = await fetch('/api/parzival/proxy/missions?assignedTo=carbondev', { signal: abortRef.current.signal })
       if (!res.ok) { setOnline(false); return }
       setOnline(true)
       const data = await res.json()
       const list = Array.isArray(data) ? data : (data.data ?? [])
       setMissions(list)
-    } catch { setOnline(false) }
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') setOnline(false)
+    }
     setLoading(false)
   }, [])
 
   useEffect(() => {
     fetchMissions()
     const interval = setInterval(fetchMissions, 15000)
-    return () => clearInterval(interval)
+    return () => { abortRef.current?.abort(); clearInterval(interval) }
   }, [fetchMissions])
 
   // Sync selectedMission with fresh data when missions update
   useEffect(() => {
-    if (selectedMission) {
-      const fresh = missions.find(m => m.id === selectedMission.id)
+    if (selectedMissionRef.current) {
+      const fresh = missions.find(m => m.id === selectedMissionRef.current!.id)
       if (fresh) setSelectedMission(fresh)
       else setSelectedMission(null)
     }
-  }, [missions]) // eslint-disable-line react-hooks/exhaustive-deps — selectedMission is intentionally stale
+  }, [missions])
 
   const handleRefetch = () => {
     setSelectedMission(null)
@@ -391,7 +399,7 @@ export function ParzivalMissions({ fontSize, collapsed, onToggleCollapse }: Parz
       <div
         onClick={onToggleCollapse}
         className="px-2 py-1 font-mono flex items-center justify-between shrink-0 cursor-pointer hover:bg-[#111] select-none"
-        style={{ fontSize: fontSize - 1, color: '#a855f7', borderTop: '1px solid rgba(139,92,246,0.2)' }}>
+        style={{ fontSize: fontSize - 1, color: '#14b8a6', borderTop: '1px solid rgba(20,184,166,0.2)' }}>
         <span>
           {collapsed ? '▸' : '▾'} {'🧿'} PARZIVAL ({todoMissions.length + wipMissions.length})
           {loading && <span style={{ marginLeft: 6, color: '#555' }}>{'⟳'}</span>}
@@ -409,12 +417,12 @@ export function ParzivalMissions({ fontSize, collapsed, onToggleCollapse }: Parz
               <div
                 key={m.id}
                 onClick={() => setSelectedMission(m)}
-                className="px-2 py-1 font-mono cursor-pointer hover:bg-[rgba(139,92,246,0.05)] flex items-center gap-2"
+                className="px-2 py-1 font-mono cursor-pointer hover:bg-[rgba(20,184,166,0.05)] flex items-center gap-2"
                 style={{ fontSize: fontSize - 1, borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
                 {/* Maturity dot */}
                 <span style={{ color: matColor, fontSize: fontSize - 2 }}>{'●'}</span>
                 {/* Badge */}
-                <span style={{ color: '#a855f7', fontSize: fontSize - 3 }}>{'🧿'}</span>
+                <span style={{ color: '#14b8a6', fontSize: fontSize - 3 }}>{'🧿'}</span>
                 {/* Name */}
                 <span style={{ color: '#ccc', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {m.name}

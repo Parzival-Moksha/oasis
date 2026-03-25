@@ -148,7 +148,7 @@ describe('mission-mcp tool definitions', () => {
 
 describe('WizardConsole AGENT_TYPES', () => {
   it('includes anorak-pro agent type', () => {
-    const filePath = path.resolve(__dirname, '../../components/forge/WizardConsole.tsx')
+    const filePath = path.resolve(__dirname, '../../components/forge/wizard/AgentsTab.tsx')
     const content = fs.readFileSync(filePath, 'utf-8')
     expect(content).toContain("type: 'anorak-pro'")
     expect(content).toContain("label: 'Anorak Pro'")

@@ -84,18 +84,19 @@ server.tool(
     siliconDescription: z.string().describe("The coder's bible — exact files, functions, edge cases, blast radius, step-by-step approach."),
     curatorMsg: z.string().describe("Curator's analysis — what was found in the code, risks, honest assessment."),
     silicondevMsg: z.string().describe("SiliconDev prediction — speak AS carbondev, predict what they'd say."),
-    silicondevConfidence: z.number().describe("0.0-1.0 confidence in silicondev prediction"),
-    flawlessPercent: z.number().describe("0-100 confidence that coder will pass reviewer ≥90 and tester 100% on first try"),
+    silicondevConfidence: z.number().min(0).max(1).describe("0.0-1.0 confidence in silicondev prediction"),
+    flawlessPercent: z.number().min(0).max(100).describe("0-100 confidence that coder will pass reviewer ≥90 and tester 100% on first try"),
     dharmaPath: z.string().optional().describe("Comma-separated Noble Eightfold paths: view,intention,speech,action,livelihood,effort,mindfulness,concentration"),
-    urgency: z.number().optional().describe("1-10, only if deep dive reveals misestimation"),
-    easiness: z.number().optional().describe("1-10, only if deep dive reveals misestimation"),
-    impact: z.number().optional().describe("1-10, only if deep dive reveals misestimation"),
+    urgency: z.number().min(1).max(10).optional().describe("1-10, only if deep dive reveals misestimation"),
+    easiness: z.number().min(1).max(10).optional().describe("1-10, only if deep dive reveals misestimation"),
+    impact: z.number().min(1).max(10).optional().describe("1-10, only if deep dive reveals misestimation"),
   },
   async ({ id, carbonDescription, siliconDescription, curatorMsg, silicondevMsg, silicondevConfidence, flawlessPercent, dharmaPath, urgency, easiness, impact }) => {
     const mission = await prisma.mission.findUnique({ where: { id } });
     if (!mission) return { content: [{ type: "text", text: `Mission ${id} not found` }] };
 
     // Parse existing history
+    // TODO: history grows unboundedly — add size cap or rotation when this becomes a problem
     let history = [];
     try { history = JSON.parse(mission.history || "[]"); } catch { history = []; }
 
@@ -149,7 +150,7 @@ server.tool(
   "Reviewer writes score and findings to mission. First-pass score is saved as RL signal.",
   {
     id: z.number().describe("Mission ID"),
-    score: z.number().describe("Reviewer score 0-100"),
+    score: z.number().min(0).max(100).describe("Reviewer score 0-100"),
     findings: z.string().optional().describe("Summary of findings (HIGH/MEDIUM/LOW)"),
     discoveredIssues: z.array(z.object({
       name: z.string(),
@@ -172,30 +173,29 @@ server.tool(
       discoveredIssues: discoveredIssues || undefined,
     });
 
-    // Save first-pass score only (RL signal)
     const isFirstPass = mission.reviewerScore === null;
 
-    await prisma.mission.update({
-      where: { id },
-      data: {
-        history: JSON.stringify(history),
-        ...(isFirstPass ? { reviewerScore: score } : {}),
-      },
-    });
-
-    // Create para missions for discovered issues
-    if (discoveredIssues?.length) {
-      for (const issue of discoveredIssues) {
-        await prisma.mission.create({
+    // Transactional: main update + para mission creates
+    const txOps = [
+      prisma.mission.update({
+        where: { id },
+        data: {
+          history: JSON.stringify(history),
+          ...(isFirstPass ? { reviewerScore: score } : {}),
+        },
+      }),
+      ...(discoveredIssues || []).map(issue =>
+        prisma.mission.create({
           data: {
             name: issue.name,
             description: issue.description,
             maturityLevel: 0,
             assignedTo: "anorak",
           },
-        });
-      }
-    }
+        })
+      ),
+    ];
+    await prisma.$transaction(txOps);
 
     return { content: [{ type: "text", text: `Review recorded: ${score}/100. ${isFirstPass ? "(first pass — saved as RL signal)" : "(re-review)"}${discoveredIssues?.length ? ` Created ${discoveredIssues.length} para missions.` : ""}` }] };
   }
@@ -210,10 +210,10 @@ server.tool(
   "Tester writes score, valor, and findings to mission. First-pass score is saved as RL signal.",
   {
     id: z.number().describe("Mission ID"),
-    score: z.number().describe("Tester score 0-100 (tests passed / total × 100)"),
-    valor: z.number().optional().describe("0.0-2.0 holistic quality assessment (only when score = 100)"),
+    score: z.number().min(0).max(100).describe("Tester score 0-100 (tests passed / total × 100)"),
+    valor: z.number().min(0).max(2).optional().describe("0.0-2.0 holistic quality assessment (only when score = 100)"),
     findings: z.string().optional().describe("Test results summary"),
-    newTestsWritten: z.number().optional().describe("How many new test files/cases written"),
+    newTestsWritten: z.number().min(0).optional().describe("How many new test files/cases written"),
     discoveredIssues: z.array(z.object({
       name: z.string(),
       description: z.string(),
@@ -238,28 +238,28 @@ server.tool(
 
     const isFirstPass = mission.testerScore === null;
 
-    await prisma.mission.update({
-      where: { id },
-      data: {
-        history: JSON.stringify(history),
-        ...(isFirstPass ? { testerScore: score } : {}),
-        ...(valor !== undefined ? { valor } : {}),
-      },
-    });
-
-    // Create para missions for discovered issues
-    if (discoveredIssues?.length) {
-      for (const issue of discoveredIssues) {
-        await prisma.mission.create({
+    // Transactional: main update + para mission creates
+    const txOps = [
+      prisma.mission.update({
+        where: { id },
+        data: {
+          history: JSON.stringify(history),
+          ...(isFirstPass ? { testerScore: score } : {}),
+          ...(valor !== undefined ? { valor } : {}),
+        },
+      }),
+      ...(discoveredIssues || []).map(issue =>
+        prisma.mission.create({
           data: {
             name: issue.name,
             description: issue.description,
             maturityLevel: 0,
             assignedTo: "anorak",
           },
-        });
-      }
-    }
+        })
+      ),
+    ];
+    await prisma.$transaction(txOps);
 
     return { content: [{ type: "text", text: `Test recorded: ${score}/100${valor !== undefined ? `, valor: ${valor}` : ""}. ${isFirstPass ? "(first pass — saved as RL signal)" : "(re-test)"}${newTestsWritten ? ` ${newTestsWritten} new tests written.` : ""}${discoveredIssues?.length ? ` Created ${discoveredIssues.length} para missions.` : ""}` }] };
   }
@@ -276,9 +276,9 @@ server.tool(
     name: z.string().describe("Short mission name"),
     description: z.string().optional().describe("What needs doing"),
     assignedTo: z.string().optional().describe("Who owns it (default: anorak)"),
-    urgency: z.number().optional().describe("1-10 (default 5)"),
-    easiness: z.number().optional().describe("1-10 (default 5)"),
-    impact: z.number().optional().describe("1-10 (default 5)"),
+    urgency: z.number().min(1).max(10).optional().describe("1-10 (default 5)"),
+    easiness: z.number().min(1).max(10).optional().describe("1-10 (default 5)"),
+    impact: z.number().min(1).max(10).optional().describe("1-10 (default 5)"),
   },
   async ({ name, description, assignedTo = "anorak", urgency = 5, easiness = 5, impact = 5 }) => {
     const priority = (urgency * easiness * impact) / 125;

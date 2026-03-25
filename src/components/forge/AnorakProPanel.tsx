@@ -5,7 +5,7 @@
 // ─═̷─═̷─ॐ─═̷─═̷─ Curator, Coder, Reviewer, Tester in one view ─═̷─═̷─ॐ─═̷─═̷─
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { useState, useRef, useEffect, useCallback, useContext } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useContext } from 'react'
 import { createPortal } from 'react-dom'
 import { SettingsContext } from '../scene-lib'
 import { useOasisStore } from '../../store/oasisStore'
@@ -106,14 +106,15 @@ interface StreamEntry {
   timestamp: number
 }
 
-function StreamTab({ entries }: { entries: StreamEntry[] }) {
+const StreamTab = React.memo(function StreamTab({ entries }: { entries: StreamEntry[] }) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const visible = entries.slice(-200)
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [entries.length])
 
-  if (entries.length === 0) {
+  if (visible.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-gray-600 text-sm font-mono">
         No activity yet. Curate or execute a mission to see the stream.
@@ -123,7 +124,7 @@ function StreamTab({ entries }: { entries: StreamEntry[] }) {
 
   return (
     <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-1 font-mono text-xs">
-      {entries.map(e => (
+      {visible.map(e => (
         <div key={e.id} style={{ color: e.type === 'error' ? '#ef4444' : e.type === 'stderr' ? '#555' : (LOBE_COLORS[e.lobe] || '#888') }}>
           <span style={{ opacity: 0.5, marginRight: 6 }}>{e.lobe}</span>
           {e.type === 'tool' && <span style={{ color: '#888' }}>[{e.content}] </span>}
@@ -137,7 +138,7 @@ function StreamTab({ entries }: { entries: StreamEntry[] }) {
       ))}
     </div>
   )
-}
+})
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MINDCRAFT TAB — mission list with 4 segments
@@ -294,10 +295,13 @@ function MindcraftTab({
   const [missions, setMissions] = useState<MindcraftMission[]>([])
   const [loading, setLoading] = useState(true)
   const [feedbackMission, setFeedbackMission] = useState<MindcraftMission | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   const fetchMissions = useCallback(async () => {
+    abortRef.current?.abort()
+    abortRef.current = new AbortController()
     try {
-      const res = await fetch('/api/missions')
+      const res = await fetch('/api/missions', { signal: abortRef.current.signal })
       if (!res.ok) return
       const data = await res.json()
       const list = Array.isArray(data) ? data : (data.data ?? [])
@@ -306,14 +310,14 @@ function MindcraftTab({
         m.assignedTo === 'anorak' || m.assignedTo === 'anorak-pro' ||
         m.assignedTo === 'carbondev' // show carbondev missions that have anorak history too
       ))
-    } catch { /* offline */ }
+    } catch (err) { if ((err as Error).name !== 'AbortError') { /* offline */ } }
     setLoading(false)
   }, [])
 
   useEffect(() => { fetchMissions() }, [fetchMissions])
   useEffect(() => {
     const interval = setInterval(fetchMissions, 10000)
-    return () => clearInterval(interval)
+    return () => { abortRef.current?.abort(); clearInterval(interval) }
   }, [fetchMissions])
 
   if (loading) return <div className="flex-1 flex items-center justify-center text-gray-600 text-sm">Loading...</div>
@@ -447,17 +451,20 @@ function MindcraftTab({
 
 function CuratorLogTab() {
   const [logs, setLogs] = useState<Array<{ id: number; status: string; startedAt: string; durationMs: number | null; missionsProcessed: number; missionsEnriched: number; tokensIn: number; tokensOut: number; error: string | null }>>([])
+  const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     const fetchLogs = async () => {
+      abortRef.current?.abort()
+      abortRef.current = new AbortController()
       try {
-        const res = await fetch('/api/anorak/pro/curator-logs')
+        const res = await fetch('/api/anorak/pro/curator-logs', { signal: abortRef.current.signal })
         if (res.ok) setLogs(await res.json())
-      } catch { /* offline */ }
+      } catch (err) { if ((err as Error).name !== 'AbortError') { /* offline */ } }
     }
     fetchLogs()
     const interval = setInterval(fetchLogs, 15000)
-    return () => clearInterval(interval)
+    return () => { abortRef.current?.abort(); clearInterval(interval) }
   }, [])
 
   return (
@@ -621,6 +628,7 @@ function SettingsDropdown({ settings, onChange }: { settings: PanelSettings; onC
 
 export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const { settings: _sceneSettings } = useContext(SettingsContext)
+  const panelZIndex = useOasisStore(s => s.getPanelZIndex('anorak-pro', 9998))
 
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     if (typeof window === 'undefined') return 'stream'
@@ -713,13 +721,21 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
   useEffect(() => { localStorage.setItem(TAB_KEY, activeTab) }, [activeTab])
 
   // ─═̷─ SSE consumer for curate/execute streams ─═̷─
+  const abortRef = useRef<AbortController | null>(null)
+
   const consumeSSE = useCallback(async (url: string, body: Record<string, unknown>) => {
+    // Abort any in-flight SSE stream before starting a new one
+    if (abortRef.current) abortRef.current.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     setIsAgentRunning(true)
     try {
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: controller.signal,
       })
       if (!res.ok || !res.body) {
         setStreamEntries(prev => [...prev, { id: entryIdRef.current++, type: 'error', content: `HTTP ${res.status}`, lobe: 'system', timestamp: Date.now() }])
@@ -754,9 +770,13 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
         }
       }
     } catch (e) {
-      setStreamEntries(prev => [...prev, { id: entryIdRef.current++, type: 'error', content: `${e}`, lobe: 'system', timestamp: Date.now() }])
+      if (!controller.signal.aborted) {
+        setStreamEntries(prev => [...prev, { id: entryIdRef.current++, type: 'error', content: `${e}`, lobe: 'system', timestamp: Date.now() }])
+      }
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null
+      setIsAgentRunning(false)
     }
-    setIsAgentRunning(false)
   }, [])
 
   const handleCurate = useCallback((missionId: number) => {
@@ -823,7 +843,7 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
       data-menu-portal="anorak-pro-panel"
       className="fixed rounded-xl flex flex-col overflow-hidden"
       style={{
-        zIndex: useOasisStore.getState().getPanelZIndex('anorak-pro', 9998),
+        zIndex: panelZIndex,
         left: position.x, top: position.y,
         width: size.w, height: size.h,
         ...bgStyle,

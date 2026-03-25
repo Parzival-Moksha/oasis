@@ -116,6 +116,7 @@ const parzivalFetch = async (path: string, options?: RequestInit) => {
 
 export function ParzivalPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const { settings } = useContext(SettingsContext)
+  const panelZIndex = useOasisStore(s => s.getPanelZIndex('parzival', 9999))
 
   // Tab state
   const [activeTab, setActiveTab] = useState<TabId>('chat')
@@ -178,7 +179,7 @@ export function ParzivalPanel({ isOpen, onClose }: { isOpen: boolean; onClose: (
 
     let evtSource: EventSource | null = null
     try {
-      evtSource = new EventSource('http://localhost:4517/api/thoughts/stream')
+      evtSource = new EventSource('/api/parzival/proxy/thoughts/stream')
       evtSource.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data)
@@ -317,7 +318,7 @@ export function ParzivalPanel({ isOpen, onClose }: { isOpen: boolean; onClose: (
     <div
       style={{
         position: 'fixed', left: pos.x, top: pos.y, width: size.w, height: size.h,
-        zIndex: useOasisStore.getState().getPanelZIndex('parzival', 9999), display: 'flex', flexDirection: 'column',
+        zIndex: panelZIndex, display: 'flex', flexDirection: 'column',
         borderRadius: 12, overflow: 'hidden',
         background: `rgba(10, 10, 20, ${uiOpacity})`,
         border: `1px solid ${online ? panelColor + '40' : 'rgba(255,255,255,0.1)'}`,

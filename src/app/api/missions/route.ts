@@ -74,6 +74,7 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 })
+    if (isNaN(parseInt(id))) return NextResponse.json({ error: 'Invalid mission ID' }, { status: 400 })
 
     await prisma.mission.delete({ where: { id: parseInt(id) } })
     return NextResponse.json({ success: true })
