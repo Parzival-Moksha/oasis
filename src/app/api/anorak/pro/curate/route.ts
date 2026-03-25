@@ -9,17 +9,55 @@ import { spawn } from 'child_process'
 import { prisma } from '@/lib/db'
 const OASIS_ROOT = process.env.OASIS_ROOT || process.cwd()
 
-function buildCuratorPrompt(missions: { id: number; name: string; description: string | null; history: string | null; maturityLevel: number }[]): string {
+interface ContextModuleConfig {
+  rl?: boolean
+  queued?: boolean
+  allTodo?: boolean
+}
+
+interface CustomModule {
+  name: string
+  content: string
+  enabled?: boolean
+}
+
+function buildCuratorPrompt(
+  missions: { id: number; name: string; description: string | null; history: string | null; maturityLevel: number }[],
+  contextModules?: ContextModuleConfig,
+  customModules?: CustomModule[],
+): string {
   const missionBlock = missions.map(m => {
     const historyStr = m.history ? `\nHistory:\n${m.history}` : ''
     return `## Mission #${m.id}: "${m.name}" (level ${m.maturityLevel})
 Description: ${m.description || '(none)'}${historyStr}`
   }).join('\n\n---\n\n')
 
+  const contextInstructions: string[] = []
+
+  // Built-in context module toggles
+  if (contextModules?.rl !== false) {
+    contextInstructions.push('Read context/curator-rl.md for reinforcement learning signal (if it exists).')
+  } else {
+    contextInstructions.push('SKIP reading context/curator-rl.md — RL signal is disabled for this invocation.')
+  }
+  if (contextModules?.queued) {
+    contextInstructions.push('Use get_missions_queue MCP tool to see all queued missions for cross-cutting context.')
+  }
+  if (contextModules?.allTodo) {
+    contextInstructions.push('Use get_missions_queue MCP tool with status=todo to see all TODO missions.')
+  }
+
+  contextInstructions.push('Read CLAUDE.md for project context.')
+
+  // Custom context modules
+  const customBlock = (customModules || [])
+    .filter(m => m.enabled !== false && m.content?.trim())
+    .map(m => `## Context Module: ${m.name}\n${m.content}`)
+    .join('\n\n')
+
   return `You are the Curator agent. Mature the following mission(s).
 
-Read context/curator-rl.md for reinforcement learning signal (if it exists).
-Read CLAUDE.md for project context.
+${contextInstructions.join('\n')}
 
 For EACH mission:
 1. Deep-dive the codebase (12-step methodology from your agent definition)
@@ -27,7 +65,7 @@ For EACH mission:
 3. Estimate flawless%, tag dharma paths, generate silicondev voice
 4. Use the mature_mission MCP tool to write enrichment to the DB
 
-${missionBlock}`
+${missionBlock}${customBlock ? `\n\n---\n\n${customBlock}` : ''}`
 }
 
 export async function POST(request: NextRequest) {
@@ -35,6 +73,8 @@ export async function POST(request: NextRequest) {
     missionIds?: number[]
     batchSize?: number
     model?: string
+    contextModules?: ContextModuleConfig
+    customModules?: CustomModule[]
   }
 
   try {
@@ -46,8 +86,18 @@ export async function POST(request: NextRequest) {
   }
 
   const VALID_MODELS = ['opus', 'sonnet', 'haiku']
-  const { missionIds, batchSize = 1 } = body
+  const { missionIds, batchSize = 1, contextModules } = body
   const model = VALID_MODELS.includes(body.model || '') ? body.model! : 'sonnet'
+
+  // Server-side validation + sanitization of custom modules
+  const customModules = (Array.isArray(body.customModules) ? body.customModules : [])
+    .filter((m): m is CustomModule => m && typeof m.name === 'string' && typeof m.content === 'string')
+    .slice(0, 20) // cap at 20
+    .map(m => ({
+      name: m.name.replace(/[#\n\r]/g, '').slice(0, 100), // strip markdown headers + newlines, cap length
+      content: m.content.slice(0, 10000), // cap content
+      enabled: m.enabled,
+    }))
 
   // Resolve which missions to curate
   let missions
@@ -62,6 +112,7 @@ export async function POST(request: NextRequest) {
       where: {
         maturityLevel: { lt: 3 },
         assignedTo: { in: ['anorak', 'anorak-pro'] },
+        curatorQueuePosition: { not: null },
       },
       orderBy: [
         { curatorQueuePosition: 'asc' },
@@ -83,7 +134,7 @@ export async function POST(request: NextRequest) {
     data: { missionsProcessed: missions.length },
   })
 
-  const fullPrompt = buildCuratorPrompt(missions)
+  const fullPrompt = buildCuratorPrompt(missions, contextModules, customModules)
   const claudePath = process.platform === 'win32' ? 'claude.cmd' : 'claude'
 
   // SSE stream
@@ -121,6 +172,8 @@ export async function POST(request: NextRequest) {
 
       let buffer = ''
       const startTime = Date.now()
+      let tokensIn = 0
+      let tokensOut = 0
 
       child.stdout.on('data', (chunk: Buffer) => {
         const text = chunk.toString()
@@ -151,6 +204,9 @@ export async function POST(request: NextRequest) {
               const preview = (typeof result === 'string' ? result : JSON.stringify(result)).substring(0, 200)
               send('tool_result', { name, preview, lobe: 'curator' })
             } else if (eventType === 'result') {
+              // Claude CLI stream-json: result event has total_input_tokens / total_output_tokens
+              if (event.total_input_tokens) tokensIn = event.total_input_tokens
+              if (event.total_output_tokens) tokensOut = event.total_output_tokens
               send('result', { cost_usd: event.cost_usd ?? event.total_cost_usd, lobe: 'curator' })
             }
           } catch {
@@ -189,6 +245,8 @@ export async function POST(request: NextRequest) {
             status: code === 0 ? 'completed' : 'failed',
             endedAt: new Date(),
             durationMs,
+            tokensIn,
+            tokensOut,
             ...(code !== 0 ? { error: `Exit code ${code}` } : {}),
           },
         }).catch(() => {})

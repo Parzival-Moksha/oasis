@@ -934,8 +934,10 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
       missionIds: [missionId],
       model: config.models.curator,
       batchSize: config.batchSize,
+      contextModules: config.contextModules,
+      customModules: (config.customModules || []).filter(m => m.enabled),
     })
-  }, [consumeSSE, config.models.curator, config.batchSize])
+  }, [consumeSSE, config.models.curator, config.batchSize, config.contextModules, config.customModules])
 
   const handleExecute = useCallback((missionId: number) => {
     setActiveTab('stream')
@@ -944,8 +946,10 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
       coderModel: config.models.coder,
       reviewerModel: config.models.reviewer,
       testerModel: config.models.tester,
+      recapModel: config.models.tester, // recap uses tester model slot for now
       reviewerThreshold: config.reviewerThreshold,
       recapLength: config.recapLength,
+      customModules: (config.customModules || []).filter(m => m.enabled),
     })
   }, [consumeSSE, config])
 
@@ -978,6 +982,33 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
     const interval = setInterval(checkAndCurate, 10000)
     return () => clearInterval(interval)
   }, [config.autoCurate, isAgentRunning, handleCurate])
+
+  // ─═̷─ Auto-code: execute highest-priority vaikhari mission when toggle is ON ─═̷─
+  const autoCodeRef = useRef(false)
+  autoCodeRef.current = config.autoCode
+
+  useEffect(() => {
+    if (!config.autoCode) return
+
+    const checkAndExecute = async () => {
+      if (!autoCodeRef.current || isRunningRef.current) return
+      try {
+        const res = await fetch('/api/missions?assignedTo=anorak')
+        if (!res.ok) return
+        const missions = await res.json()
+        const vaikhari = (Array.isArray(missions) ? missions : missions.data ?? [])
+          .filter((m: { maturityLevel: number; status: string }) => m.maturityLevel >= 3 && m.status === 'todo')
+          .sort((a: { priority: number | null }, b: { priority: number | null }) => (b.priority ?? 0) - (a.priority ?? 0))
+        if (vaikhari.length > 0 && autoCodeRef.current && !isRunningRef.current) {
+          handleExecute(vaikhari[0].id)
+        }
+      } catch { /* offline */ }
+    }
+
+    checkAndExecute()
+    const interval = setInterval(checkAndExecute, 15000)
+    return () => clearInterval(interval)
+  }, [config.autoCode, isAgentRunning, handleExecute])
 
   if (!isOpen || typeof document === 'undefined') return null
 
