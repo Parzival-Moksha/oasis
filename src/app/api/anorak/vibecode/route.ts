@@ -6,6 +6,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextRequest } from 'next/server'
+import { mediaToolsOpenAI, execMediaTool, isMediaTool } from '@/lib/media-tools'
 
 const ALLOWED_MODELS = [
   'anthropic/claude-sonnet-4-6',
@@ -83,7 +84,13 @@ RULES:
 - If the user's issue is unclear even after questions, do your best — partial info is better than no report.
 - Never make up bugs or features the user didn't describe.
 - Be encouraging — every report makes the Oasis stronger.
-- You are NOT a coding agent. You do NOT fix bugs. You document them beautifully.`
+- You are NOT a coding agent. You do NOT fix bugs. You document them beautifully.
+
+MEDIA TOOLS: You can generate media to help explain concepts or illustrate reports.
+- generate_image: Create a visual (concept art, diagram, mockup). Use when it genuinely helps.
+- generate_voice: Speak your recap as audio. Use sparingly — only when wrapping up a report.
+- generate_video: Create a short video clip. Use only when motion is essential.
+Do NOT use tools unless the conversation genuinely benefits from media. Max 3 media calls per conversation.`
 
 export async function POST(request: NextRequest) {
   console.log('[Anorak] Vibecode POST hit')
@@ -139,6 +146,8 @@ export async function POST(request: NextRequest) {
         stream: true,
         temperature: 0.7,
         max_tokens: 1500,
+        tools: mediaToolsOpenAI,
+        tool_choice: 'auto',
       }),
     })
 
@@ -153,8 +162,13 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Stream the response through to the client
+    // Stream the response through to the client, with tool call support
     const encoder = new TextEncoder()
+    const emit = (ctrl: ReadableStreamDefaultController, data: Record<string, unknown>) => {
+      ctrl.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
+    }
+    const baseUrl = request.nextUrl.origin
+
     const readable = new ReadableStream({
       async start(controller) {
         const reader = llmResponse.body?.getReader()
@@ -166,6 +180,9 @@ export async function POST(request: NextRequest) {
 
         const decoder = new TextDecoder()
         let buffer = ''
+        // Tool call accumulation — OpenRouter streams these incrementally
+        const toolCalls = new Map<number, { id: string; name: string; args: string }>()
+        let mediaCallCount = 0
 
         try {
           while (true) {
@@ -180,21 +197,62 @@ export async function POST(request: NextRequest) {
               const trimmed = line.trim()
               if (!trimmed || !trimmed.startsWith('data: ')) continue
               const data = trimmed.slice(6)
-              if (data === '[DONE]') {
-                controller.enqueue(encoder.encode('data: [DONE]\n\n'))
-                continue
-              }
+              if (data === '[DONE]') continue // handle after loop
               try {
                 const parsed = JSON.parse(data)
-                const content = parsed.choices?.[0]?.delta?.content
-                if (content) {
-                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`))
+                const delta = parsed.choices?.[0]?.delta
+                // Text content — stream through as before
+                if (delta?.content) {
+                  emit(controller, { content: delta.content })
+                }
+                // Tool calls — accumulate incrementally
+                if (delta?.tool_calls) {
+                  for (const tc of delta.tool_calls) {
+                    const idx = tc.index ?? 0
+                    if (!toolCalls.has(idx)) {
+                      toolCalls.set(idx, { id: tc.id || '', name: '', args: '' })
+                    }
+                    const entry = toolCalls.get(idx)!
+                    if (tc.id) entry.id = tc.id
+                    if (tc.function?.name) entry.name = tc.function.name
+                    if (tc.function?.arguments) entry.args += tc.function.arguments
+                  }
                 }
               } catch {
                 // skip malformed chunks
               }
             }
           }
+
+          // Execute accumulated tool calls (cap at 3 media calls)
+          if (toolCalls.size > 0) {
+            for (const [, tc] of toolCalls) {
+              if (!isMediaTool(tc.name) || mediaCallCount >= 3) continue
+              mediaCallCount++
+              let args: Record<string, unknown> = {}
+              try { args = JSON.parse(tc.args) } catch (e) {
+                emit(controller, { type: 'tool_result', name: tc.name, preview: `Bad args: ${e}`, isError: true })
+                continue
+              }
+
+              emit(controller, { type: 'tool', name: tc.name, input: args, display: `${tc.name}(${JSON.stringify(args).slice(0, 100)})` })
+
+              try {
+                const result = await execMediaTool(tc.name, args, baseUrl)
+                if (result.ok && result.url) {
+                  emit(controller, { type: 'tool_result', name: tc.name, preview: result.url, isError: false })
+                  const mediaType = tc.name === 'generate_image' ? 'image' : tc.name === 'generate_voice' ? 'audio' : 'video'
+                  emit(controller, { type: 'media', mediaType, url: result.url, prompt: (args.prompt || args.text || '') as string })
+                } else {
+                  emit(controller, { type: 'tool_result', name: tc.name, preview: result.error || 'failed', isError: true })
+                }
+              } catch (e) {
+                emit(controller, { type: 'tool_result', name: tc.name, preview: `${e}`, isError: true })
+              }
+            }
+          }
+
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'))
         } catch (err) {
           console.error('[Anorak] Stream error:', err)
         } finally {

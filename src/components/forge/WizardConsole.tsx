@@ -18,6 +18,7 @@ import { useContext } from 'react'
 import { GROUND_PRESETS, getTextureUrls } from '../../lib/forge/ground-textures'
 import { ASSET_CATALOG, SKY_BACKGROUNDS } from '../scene-lib/constants'
 import { SettingsContext } from '../scene-lib/contexts'
+import { DeleteConfirmModal } from './DeleteConfirmModal'
 import type { AssetDefinition } from '../scene-lib/types'
 import { awardXp } from '../../hooks/useXp'
 import { ModelPreviewPanel, CraftedPreviewPanel } from './ModelPreview'
@@ -166,9 +167,10 @@ function LightTooltipWrap({ type, children, className }: { type: string; childre
 // GALLERY ITEM — Each conjured asset in the grid
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function GalleryItem({ asset, onDelete, isInWorld, onPlace, onRemove, onTexture, onRemesh, onRig, onRename, pricing }: {
+function GalleryItem({ asset, onDelete, onRequestDelete, isInWorld, onPlace, onRemove, onTexture, onRemesh, onRig, onRename, pricing }: {
   asset: ConjuredAsset
   onDelete: (id: string) => void
+  onRequestDelete?: (id: string, name: string) => void
   isInWorld: boolean
   onPlace: (id: string) => void
   onRemove: (id: string) => void
@@ -248,9 +250,8 @@ function GalleryItem({ asset, onDelete, isInWorld, onPlace, onRemove, onTexture,
           onClick={(e) => {
             e.stopPropagation()
             const name = asset.displayName || asset.prompt?.slice(0, 30) || asset.id
-            if (window.confirm(`Delete "${name}"? This removes the GLB file permanently.`)) {
-              onDelete(asset.id)
-            }
+            if (onRequestDelete) onRequestDelete(asset.id, name)
+            else onDelete(asset.id)
           }}
           className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 text-gray-400 hover:text-red-400 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
         >
@@ -658,11 +659,31 @@ interface MediaItem {
   name: string; url: string; type: 'image' | 'video' | 'audio'; size: number; createdAt: string
 }
 
+function MediaLightbox({ url, onClose }: { url: string; onClose: () => void }) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  return (
+    <div className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center cursor-pointer"
+      onClick={onClose}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={url} alt="fullscreen" className="max-w-[90vw] max-h-[90vh] rounded-lg shadow-2xl"
+        onClick={e => e.stopPropagation()} />
+      <button className="absolute top-4 right-4 text-white/60 hover:text-white text-3xl cursor-pointer"
+        onClick={onClose}>&times;</button>
+    </div>
+  )
+}
+
 function MediaTab() {
   const [subTab, setSubTab] = useState<'generate' | 'image' | 'video' | 'audio'>('generate')
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([])
   const [loading, setLoading] = useState(false)
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ url: string; name: string; placedCount: number } | null>(null)
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const enterPlacementMode = useOasisStore(s => s.enterPlacementMode)
   const placedCatalogAssets = useOasisStore(s => s.placedCatalogAssets)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -701,7 +722,7 @@ function MediaTab() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
     })
-    setDeleteConfirm(null)
+    setDeleteTarget(null)
     fetchMedia()
   }, [fetchMedia])
 
@@ -772,20 +793,22 @@ function MediaTab() {
           <div className="grid grid-cols-2 gap-2">
             {filtered.map(item => {
               const placedCount = countPlaced(item.url)
-              const isConfirming = deleteConfirm === item.url
+              // placedCount used by Delete button + Place button
               return (
                 <div key={item.url} className="group relative rounded-lg overflow-hidden border border-gray-700/30 bg-black/40">
-                  {/* Thumbnail / preview */}
+                  {/* Thumbnail / preview + playback */}
                   {item.type === 'image' && (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={item.url} alt={item.name} className="w-full aspect-square object-cover" loading="lazy" />
+                    <img src={item.url} alt={item.name} className="w-full aspect-square object-cover cursor-pointer" loading="lazy"
+                      onClick={() => setLightboxUrl(item.url)} />
                   )}
                   {item.type === 'video' && (
-                    <video src={item.url} className="w-full aspect-video object-cover" muted preload="metadata" />
+                    <video src={item.url} controls preload="metadata" playsInline className="w-full aspect-video object-cover" />
                   )}
                   {item.type === 'audio' && (
-                    <div className="w-full aspect-square flex items-center justify-center bg-gray-900">
-                      <div className="text-4xl">🎵</div>
+                    <div className="w-full p-2 flex flex-col items-center justify-center bg-gray-900 gap-2">
+                      <div className="text-3xl">🎵</div>
+                      <audio src={item.url} controls className="w-full h-8" />
                     </div>
                   )}
 
@@ -820,43 +843,36 @@ function MediaTab() {
                     )}
 
                     {/* Delete */}
-                    {!isConfirming ? (
-                      <button
-                        onClick={() => {
-                          if (placedCount > 0) setDeleteConfirm(item.url)
-                          else handleDelete(item.url)
-                        }}
-                        className="w-full text-[10px] px-2 py-1 rounded bg-red-500/10 text-red-400/60 border border-red-500/20 hover:bg-red-500/20 hover:text-red-300 transition-colors"
-                      >
-                        Delete
-                      </button>
-                    ) : (
-                      <div className="w-full space-y-1">
-                        <div className="text-[9px] text-yellow-400 text-center">
-                          {placedCount} instance{placedCount > 1 ? 's' : ''} in world. Delete?
-                        </div>
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => handleDelete(item.url)}
-                            className="flex-1 text-[10px] px-2 py-1 rounded bg-red-500/30 text-red-300 border border-red-500/40"
-                          >
-                            Yes, nuke it
-                          </button>
-                          <button
-                            onClick={() => setDeleteConfirm(null)}
-                            className="flex-1 text-[10px] px-2 py-1 rounded bg-gray-600/30 text-gray-300 border border-gray-500/40"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                    <button
+                      onClick={() => setDeleteTarget({ url: item.url, name: item.name, placedCount })}
+                      className="w-full text-[10px] px-2 py-1 rounded bg-red-500/10 text-red-400/60 border border-red-500/20 hover:bg-red-500/20 hover:text-red-300 transition-colors"
+                    >
+                      Delete
+                    </button>
                   </div>
                 </div>
               )
             })}
           </div>
         </>
+      )}
+
+      {/* Delete confirmation modal — portaled to escape overflow:hidden */}
+      {typeof document !== 'undefined' && createPortal(
+        <DeleteConfirmModal
+          isOpen={!!deleteTarget}
+          itemName={deleteTarget?.name || ''}
+          placedCount={deleteTarget?.placedCount}
+          onConfirm={() => deleteTarget && handleDelete(deleteTarget.url)}
+          onCancel={() => setDeleteTarget(null)}
+        />,
+        document.body
+      )}
+
+      {/* Image lightbox — portaled to escape overflow:hidden */}
+      {lightboxUrl && typeof document !== 'undefined' && createPortal(
+        <MediaLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />,
+        document.body
       )}
     </div>
   )
@@ -959,6 +975,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
 
   // ─═̷─ Conjuration engine ─═̷─
   const { conjuredAssets, startConjure, processAsset, deleteAsset, activeCount } = useConjure()
+  const [conjureDeleteTarget, setConjureDeleteTarget] = useState<{ id: string; name: string } | null>(null)
   const updateConjuredAsset = useOasisStore(s => s.updateConjuredAsset)
 
   // ░▒▓ Rename — PATCH to server + update local store ▓▒░
@@ -3195,6 +3212,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                     key={asset.id}
                     asset={asset}
                     onDelete={deleteAsset}
+                    onRequestDelete={(id, name) => setConjureDeleteTarget({ id, name })}
                     isInWorld={worldConjuredAssetIds.includes(asset.id)}
                     onPlace={(id) => {
                       const a = conjuredAssets.find(c => c.id === id)
@@ -3342,6 +3360,14 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
           background: `linear-gradient(135deg, transparent 50%, ${forgeColor}44 50%)`,
         }}
       />
+
+      {/* Conjured asset delete confirmation modal */}
+      <DeleteConfirmModal
+        isOpen={!!conjureDeleteTarget}
+        itemName={conjureDeleteTarget?.name || ''}
+        onConfirm={() => { if (conjureDeleteTarget) { deleteAsset(conjureDeleteTarget.id); setConjureDeleteTarget(null) } }}
+        onCancel={() => setConjureDeleteTarget(null)}
+      />
     </div>,
     document.body
   )
@@ -3464,6 +3490,7 @@ function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject
           })}
         </div>
       )}
+
     </>
   )
 }

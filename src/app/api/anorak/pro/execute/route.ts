@@ -310,7 +310,28 @@ export async function POST(request: NextRequest) {
 
           // ── RECAP ──────────────────────────────────────────
           const recapPrompt = buildRecapPrompt(mission as MissionRow, recapLength)
-          await spawnAgent('anorak-pro', recapPrompt, recapModel, 'anorak-pro', send, request.signal)
+          // Wrap send to capture recap text for voice generation
+          let recapText = ''
+          const recapSend = (type: string, data: Record<string, unknown>) => {
+            if (type === 'text' && typeof data.content === 'string') recapText += data.content
+            send(type, data)
+          }
+          await spawnAgent('anorak-pro', recapPrompt, recapModel, 'anorak-pro', recapSend, request.signal)
+
+          // ── VOICE RECAP (fire-and-forget) ──────────────────
+          if (recapText.trim().length > 10) {
+            try {
+              const voiceRes = await fetch('http://localhost:4516/api/media/voice', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: recapText.trim().slice(0, 5000), voice: 'rachel' }),
+              })
+              if (voiceRes.ok) {
+                const voiceData = await voiceRes.json() as { url?: string }
+                if (voiceData.url) send('text', { content: `\n\n${voiceData.url}\n`, lobe: 'anorak-pro' })
+              }
+            } catch { /* voice is best-effort — never blocks pipeline */ }
+          }
 
           send('done', { success: true, missionId, rounds: round, score: finalScore })
           break
