@@ -25,6 +25,8 @@ public/conjured/*
 !public/conjured/conj_mm3uhazzrh34_thumb.jpg
 # Runtime-generated images (user text-to-image creations)
 public/generated-images/
+public/generated-videos/
+public/generated-voices/
 
 # User-uploaded media (images, videos, audio via /api/media/upload)
 public/images/
