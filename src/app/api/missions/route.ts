@@ -40,6 +40,9 @@ export async function POST(request: NextRequest) {
 
     const priority = (urgency * easiness * impact) / 125
 
+    // If agent provides enrichment (carbonDescription/siliconDescription), auto-start as pashyanti
+    const hasAgentEnrichment = !!(rest.carbonDescription || rest.siliconDescription)
+
     const mission = await prisma.mission.create({
       data: {
         name,
@@ -58,6 +61,7 @@ export async function POST(request: NextRequest) {
         acceptanceCriteria: rest.acceptanceCriteria || null,
         dharmaPath: rest.dharmaPath || null,
         questName: rest.questName || null,
+        ...(hasAgentEnrichment && { maturityLevel: 1 }),
       },
     })
 

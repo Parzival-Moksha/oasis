@@ -228,8 +228,8 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting }:
             {e.type === 'text' && renderContent(e.content)}
             {e.type === 'error' && <span>ERROR: {e.content}</span>}
             {e.type === 'stderr' && <span style={{ opacity: 0.6 }}>{e.content}</span>}
-            {e.type === 'thinking' && <span style={{ opacity: 0.4, fontStyle: 'italic' }}>{e.content.substring(0, 200)}</span>}
-            {e.type === 'tool_result' && <span style={{ opacity: 0.5 }}>{renderContent(e.content.substring(0, 300))}</span>}
+            {e.type === 'thinking' && <span style={{ opacity: 0.6, fontStyle: 'italic' }}>{e.content}</span>}
+            {e.type === 'tool_result' && <span style={{ opacity: 0.7 }}>{renderContent(e.content)}</span>}
           </div>
         ))}
       </div>
@@ -354,6 +354,16 @@ function FeedbackPopup({ mission, onClose, onSubmit }: {
           </div>
         )}
 
+        {/* Silicon description */}
+        {mission.siliconDescription && (
+          <div className="mb-3">
+            <div className="text-[10px] text-red-400 uppercase tracking-widest mb-1">Silicon Description</div>
+            <div className="text-xs text-gray-300 p-2 rounded bg-red-500/5 border border-red-500/10 whitespace-pre-wrap max-h-48 overflow-y-auto">
+              {mission.siliconDescription}
+            </div>
+          </div>
+        )}
+
         {/* Curator message */}
         {lastCurator && (
           <div className="mb-3">
@@ -439,6 +449,19 @@ function FeedbackPopup({ mission, onClose, onSubmit }: {
             }}
               className="flex-1 text-xs py-1.5 rounded cursor-pointer bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 transition-all">
               ↻ REFINE
+            </button>
+            <button onClick={async () => {
+              const carbonSeconds = Math.round((Date.now() - startTime) / 1000)
+              await fetch(`/api/missions/${mission.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ maturityLevel: 3 }),
+              }).catch(() => {})
+              onSubmit({ missionId: mission.id, mature: true, verdict, rating, carbondevMsg: 'READY — skip to vaikhari' })
+            }}
+              className="text-xs py-1.5 px-3 rounded cursor-pointer bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30 transition-all"
+              title="Skip to vaikhari (maturity 3) — ready for execution">
+              ⚡ READY
             </button>
           </div>
         </div>

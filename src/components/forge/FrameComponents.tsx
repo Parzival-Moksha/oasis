@@ -30,7 +30,7 @@ export const FRAME_STYLES: FrameStyleDef[] = [
   { id: 'ice',       label: 'Frozen',     icon: '🧊', desc: 'Translucent ice crystal frame' },
   { id: 'void',      label: 'Void',       icon: '🕳️', desc: 'Dark portal with swirling edge' },
   { id: 'spaghetti', label: 'Spaghetti',  icon: '🍝', desc: 'Tangled glowing wire chaos' },
-  { id: 'triangle',  label: 'Prism',      icon: '🔺', desc: 'Triangular cross-section, tippy top at media edge' },
+  // 'triangle' (Prism) removed — extruded geometry was broken beyond quick repair
   { id: 'fire',      label: 'Inferno',    icon: '🔥', desc: 'Animated fire-colored pulsing border' },
   { id: 'matrix',    label: 'Matrix',     icon: '💚', desc: 'Green digital rain scanlines' },
   { id: 'plasma',    label: 'Plasma',     icon: '🌈', desc: 'Color-cycling plasma glow' },
@@ -268,13 +268,13 @@ export function InfernoFrame({ w, h, scale }: { w: number; h: number; scale: num
   })
   return (
     <group>
-      <group ref={innerRef} position={[0, 0, 0.002 * scale]}>
+      <group ref={innerRef} position={[0, 0, 0.008 * scale]}>
         <FourBarFrame w={w} h={h} border={0.01 * scale} depth={0.005 * scale} color="#ff4500" roughness={0.1} metalness={0.8} emissive="#ff4500" emissiveIntensity={2} />
       </group>
-      <group ref={outerRef} position={[0, 0, -0.003 * scale]}>
+      <group ref={outerRef} position={[0, 0, -0.01 * scale]}>
         <FourBarFrame w={w} h={h} border={0.035 * scale} depth={0.02 * scale} color="#8b0000" roughness={0.4} metalness={0.6} emissive="#ff6600" emissiveIntensity={1} />
       </group>
-      <group position={[0, 0, -0.008 * scale]}>
+      <group position={[0, 0, -0.035 * scale]}>
         <FourBarFrame w={w} h={h} border={0.05 * scale} depth={0.01 * scale} color="#1a0000" roughness={0.9} metalness={0.1} />
       </group>
     </group>
@@ -327,22 +327,24 @@ export function MatrixFrame({ w, h, scale }: { w: number; h: number; scale: numb
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function PlasmaFrame({ w, h, scale }: { w: number; h: number; scale: number }) {
-  const innerRef = useRef<THREE.Mesh>(null)
-  const outerRef = useRef<THREE.Mesh>(null)
+  const outerRefs = useRef<(THREE.Mesh | null)[]>([null, null, null, null])
+  const innerRefs = useRef<(THREE.Mesh | null)[]>([null, null, null, null])
   const colorA = useMemo(() => new THREE.Color(), [])
   const colorB = useMemo(() => new THREE.Color(), [])
   useFrame(() => {
     const t = Date.now() * 0.001
-    // Cycle through hues
+    // Cycle through hues — ALL bars pulse together
     colorA.setHSL((t * 0.1) % 1, 0.9, 0.5)
     colorB.setHSL((t * 0.1 + 0.33) % 1, 0.9, 0.5)
-    if (innerRef.current) {
-      const mat = innerRef.current.material as THREE.MeshStandardMaterial
+    for (const mesh of innerRefs.current) {
+      if (!mesh) continue
+      const mat = mesh.material as THREE.MeshStandardMaterial
       mat.emissive.copy(colorA)
       mat.color.copy(colorA)
     }
-    if (outerRef.current) {
-      const mat = outerRef.current.material as THREE.MeshStandardMaterial
+    for (const mesh of outerRefs.current) {
+      if (!mesh) continue
+      const mat = mesh.material as THREE.MeshStandardMaterial
       mat.emissive.copy(colorB)
       mat.color.copy(colorB)
     }
@@ -357,7 +359,7 @@ export function PlasmaFrame({ w, h, scale }: { w: number; h: number; scale: numb
         { pos: [-(w + border) / 2, 0, 0] as const, size: [border, h, 0.008 * scale] as const },
         { pos: [(w + border) / 2, 0, 0] as const, size: [border, h, 0.008 * scale] as const },
       ].map((bar, i) => (
-        <mesh key={i} ref={i === 0 ? outerRef : undefined} position={[bar.pos[0], bar.pos[1], bar.pos[2]]}>
+        <mesh key={i} ref={el => { outerRefs.current[i] = el }} position={[bar.pos[0], bar.pos[1], bar.pos[2]]}>
           <boxGeometry args={[bar.size[0], bar.size[1], bar.size[2]]} />
           <meshStandardMaterial color="#ff00ff" emissive="#ff00ff" emissiveIntensity={2} roughness={0.0} metalness={1.0} transparent opacity={0.8} />
         </mesh>
@@ -370,7 +372,7 @@ export function PlasmaFrame({ w, h, scale }: { w: number; h: number; scale: numb
           { pos: [-(w + 0.003 * scale) / 2, 0, 0] as const, size: [0.003 * scale, h, 0.003 * scale] as const },
           { pos: [(w + 0.003 * scale) / 2, 0, 0] as const, size: [0.003 * scale, h, 0.003 * scale] as const },
         ].map((bar, i) => (
-          <mesh key={i} ref={i === 0 ? innerRef : undefined} position={[bar.pos[0], bar.pos[1], bar.pos[2]]}>
+          <mesh key={i} ref={el => { innerRefs.current[i] = el }} position={[bar.pos[0], bar.pos[1], bar.pos[2]]}>
             <boxGeometry args={[bar.size[0], bar.size[1], bar.size[2]]} />
             <meshStandardMaterial color="#00ffff" emissive="#00ffff" emissiveIntensity={3} roughness={0.0} metalness={1.0} />
           </mesh>

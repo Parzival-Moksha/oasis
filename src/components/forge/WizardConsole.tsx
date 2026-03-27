@@ -1782,10 +1782,16 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
               style={{ backgroundImage: 'none' }}
               title="LLM model for crafting + terrain"
             >
-              <option value="moonshotai/kimi-k2.5">Kimi K2.5</option>
               <option value="anthropic/claude-sonnet-4-6">Sonnet 4.6</option>
               <option value="anthropic/claude-haiku-4-5">Haiku 4.5</option>
               <option value="z-ai/glm-5">GLM-5</option>
+              <option value="x-ai/grok-4.20-beta">Grok 4.20 Beta</option>
+              <option value="nvidia/nemotron-3-super-120b-a12b:free">Nemotron 3 Super 120B A12B</option>
+              <option value="qwen/qwen3.5-397b-a17b">Qwen 3.5 397B A17B</option>
+              <option value="liquid/lfm-2-24b-a2b">LFM 2 24B A2B</option>
+              <option value="openai/gpt-5.4">GPT-5.4</option>
+              <option value="google/gemini-3.1-pro-preview">Gemini 3.1 Pro Preview</option>
+              <option value="minimax/minimax-m2.7">Minimax M2.7</option>
             </select>
           </div>
         </div>
@@ -3113,7 +3119,13 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                     { id: 'anthropic/claude-sonnet-4-6', label: 'Sonnet 4.6', desc: 'Best balance of speed + quality', icon: '\u2728' },
                     { id: 'anthropic/claude-haiku-4-5', label: 'Haiku 4.5', desc: 'Fast + cheap, good for iteration', icon: '\u26A1' },
                     { id: 'z-ai/glm-5', label: 'GLM-5', desc: 'ZhipuAI frontier model', icon: '\u{1F30F}' },
-                    { id: 'moonshotai/kimi-k2.5', label: 'Kimi K2.5', desc: 'Moonshot\'s reasoning model', icon: '\u{1F319}' },
+                    { id: 'x-ai/grok-4.20-beta', label: 'Grok 4.20 Beta', desc: 'xAI reasoning beta', icon: '\u{1F916}' },
+                    { id: 'nvidia/nemotron-3-super-120b-a12b:free', label: 'Nemotron 3 Super 120B A12B', desc: 'NVIDIA MoE (free)', icon: '\u{1F7E2}' },
+                    { id: 'qwen/qwen3.5-397b-a17b', label: 'Qwen 3.5 397B A17B', desc: 'Alibaba MoE', icon: '\u{1F300}' },
+                    { id: 'liquid/lfm-2-24b-a2b', label: 'LFM 2 24B A2B', desc: 'Liquid Foundation', icon: '\u{1F4A7}' },
+                    { id: 'openai/gpt-5.4', label: 'GPT-5.4', desc: 'OpenAI frontier model', icon: '\u{1F9E0}' },
+                    { id: 'google/gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview', desc: 'Google multimodal', icon: '\u{1F48E}' },
+                    { id: 'minimax/minimax-m2.7', label: 'Minimax M2.7', desc: 'Minimax frontier model', icon: '\u{1F31F}' },
                   ] as const).map(m => (
                     <button
                       key={m.id}
@@ -3136,22 +3148,6 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                 </div>
               </div>
 
-              {/* ░▒▓█ VOICE MODEL — Merlin placeholder █▓▒░ */}
-              <div>
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Voice Model</div>
-                <div className="rounded-lg border border-gray-700/30 bg-black/40 p-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">{'\u{1F9D9}'}</span>
-                    <div>
-                      <div className="text-[11px] text-purple-300/80 font-medium">Merlin v1</div>
-                      <div className="text-[9px] text-gray-400">Voice-to-tool pipeline — coming soon</div>
-                    </div>
-                  </div>
-                  <div className="mt-2 text-[9px] text-gray-500 font-mono italic">
-                    &quot;Speak thy will and the forge shall obey&quot;
-                  </div>
-                </div>
-              </div>
 
             </div>
           </>
@@ -3247,9 +3243,9 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
             {craftedScenes.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-gray-400">
                 <div className="text-3xl mb-2">&#9881;</div>
-                <div className="text-xs">No scenes crafted yet</div>
-                <div className="text-[10px] mt-1 text-gray-500">Describe a scene and the LLM will build it from primitives</div>
-                <div className="text-[10px] mt-1 text-blue-500/40">Iterative: each new craft builds on the last</div>
+                <div className="text-xs">No crafted objects yet</div>
+                <div className="text-[10px] mt-1 text-gray-500">Describe what you want and the LLM will build it from procedural geometry</div>
+                <div className="text-[10px] mt-1 text-blue-500/40">Each new craft builds on top of the last</div>
               </div>
             ) : (
               <div className="space-y-2">

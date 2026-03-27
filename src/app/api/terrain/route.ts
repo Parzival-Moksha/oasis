@@ -12,9 +12,15 @@ const ALLOWED_MODELS = [
   'anthropic/claude-sonnet-4-6',
   'anthropic/claude-haiku-4-5',
   'z-ai/glm-5',
-  'moonshotai/kimi-k2.5',
+  'x-ai/grok-4.20-beta',
+  'nvidia/nemotron-3-super-120b-a12b:free',
+  'qwen/qwen3.5-397b-a17b',
+  'liquid/lfm-2-24b-a2b',
+  'openai/gpt-5.4',
+  'google/gemini-3.1-pro-preview',
+  'minimax/minimax-m2.7',
 ]
-const DEFAULT_MODEL = 'moonshotai/kimi-k2.5'
+const DEFAULT_MODEL = 'anthropic/claude-sonnet-4-6'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SYSTEM PROMPT — teach the model to think in terrain parameters

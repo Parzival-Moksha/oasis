@@ -237,16 +237,16 @@ interface GlossaryEntry {
 
 const GLOSSARY: GlossaryEntry[] = [
   // Core
-  { term: 'Conjure', definition: 'Generate a 3D model from a text prompt using AI (Meshy or Tripo). Costs credits. Takes 15-90 seconds depending on quality tier.', category: 'core' },
+  { term: 'Conjure', definition: 'Generate a 3D model from a text prompt using AI (Meshy or Tripo). Takes 15-90 seconds depending on quality tier.', category: 'core' },
   { term: 'Craft', definition: 'Generate a procedural scene from a text description using LLM. Creates multiple objects at once — buildings, landscapes, compositions.', category: 'core' },
-  { term: 'Catalog', definition: 'Library of 500+ free, pre-made 3D models. No credits needed. Kenney, Quaternius, and original assets.', category: 'core' },
+  { term: 'Catalog', definition: 'Library of 500+ free, pre-made 3D models. Kenney, Quaternius, and original assets.', category: 'core' },
   { term: 'Inspector', definition: 'The right-side panel that appears when you select an object. Configure transform, movement, animations, labels, and more.', category: 'core' },
   { term: 'Wizard Console', definition: 'The main creation panel (✨). Tabs: Conjure, Craft, Lights, Settings, Gallery.', category: 'core' },
 
   // Social
   { term: 'Aura', definition: 'Reputation score earned when others visit your worlds. The more visitors, the more aura. Shows on your profile.', category: 'social' },
   { term: 'XP', definition: 'Experience points earned by building, conjuring, and engaging. Level up to unlock bragging rights.', category: 'social' },
-  { term: 'Credits', definition: 'Currency for AI conjuration (unlimited in local mode). Different providers cost different amounts.', category: 'social' },
+  { term: 'Token Burn', definition: 'AI tokens consumed during conjuring, crafting, and agent conversations. Track daily/weekly usage.', category: 'social' },
   { term: 'Visibility', definition: 'Controls who can see your world. Private (only you), Unlisted (link only), Public (everyone on Explore), Open Build (anyone can edit).', category: 'social' },
 
   // Objects
@@ -397,6 +397,7 @@ export function HelpPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
         {/* ── Header (drag handle) ── */}
         <div
           className="flex items-center justify-between px-4 py-3 cursor-move"
+          onMouseDown={handleDragStart}
           style={{
             borderBottom: '1px solid rgba(255,255,255,0.08)',
             background: 'rgba(168,85,247,0.05)',

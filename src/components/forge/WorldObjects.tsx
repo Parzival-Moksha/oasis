@@ -288,12 +288,12 @@ export function ImagePlaneRenderer({ imageUrl, scale, frameStyle, frameThickness
       {(() => {
         const ft = frameThickness
         return <>
-          {/* 1. GILDED — gold museum frame with inner accent (z-offset prevents flicker) */}
+          {/* 1. GILDED — gold museum frame with inner accent (z-offset prevents z-fighting) */}
           {frameStyle === 'gilded' && (<>
-            <group position={[0, 0, -0.004 * scale]}>
+            <group position={[0, 0, -0.015 * scale]}>
               <FourBarFrame w={w} h={h} border={0.04 * scale * ft} depth={0.025 * scale * ft} color="#B8860B" roughness={0.25} metalness={0.85} />
             </group>
-            <group position={[0, 0, 0.004 * scale]}>
+            <group position={[0, 0, 0.005 * scale]}>
               <FourBarFrame w={w} h={h} border={0.008 * scale * ft} depth={0.005 * scale * ft} color="#FFD700" roughness={0.1} metalness={1.0} emissive="#DAA520" emissiveIntensity={0.3} />
             </group>
           </>)}
@@ -306,15 +306,15 @@ export function ImagePlaneRenderer({ imageUrl, scale, frameStyle, frameThickness
             <FourBarFrame w={w} h={h} border={0.006 * scale * ft} depth={0.003 * scale * ft} color="#1a1a1a" roughness={0.9} metalness={0.0} />
           )}
 
-          {/* 4. BAROQUE — triple-layer ornate royal frame (z-offset to prevent flicker) */}
+          {/* 4. BAROQUE — triple-layer ornate royal frame (z-offsets prevent z-fighting) */}
           {frameStyle === 'baroque' && (<>
-            <group position={[0, 0, -0.005 * scale]}>
+            <group position={[0, 0, -0.025 * scale]}>
               <FourBarFrame w={w} h={h} border={0.08 * scale * ft} depth={0.04 * scale * ft} color="#3E1C00" roughness={0.3} metalness={0.7} />
             </group>
-            <group position={[0, 0, 0.003 * scale]}>
+            <group position={[0, 0, 0.005 * scale]}>
               <FourBarFrame w={w} h={h} border={0.02 * scale * ft} depth={0.015 * scale * ft} color="#FFD700" roughness={0.15} metalness={0.95} emissive="#DAA520" emissiveIntensity={0.2} />
             </group>
-            <group position={[0, 0, 0.008 * scale]}>
+            <group position={[0, 0, 0.02 * scale]}>
               <FourBarFrame w={w + 0.12 * scale * ft} h={h + 0.12 * scale * ft} border={0.012 * scale * ft} depth={0.006 * scale * ft} color="#B8860B" roughness={0.2} metalness={0.9} emissive="#DAA520" emissiveIntensity={0.15} />
             </group>
           </>)}
@@ -575,10 +575,10 @@ export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, fram
       {frameStyle && (() => {
         const ft = frameThickness
         return <>
-          {frameStyle === 'gilded' && (<><group position={[0, 0, -0.004 * scale]}><FourBarFrame w={w} h={h} border={0.04 * scale * ft} depth={0.025 * scale * ft} color="#B8860B" roughness={0.25} metalness={0.85} /></group><group position={[0, 0, 0.004 * scale]}><FourBarFrame w={w} h={h} border={0.008 * scale * ft} depth={0.005 * scale * ft} color="#FFD700" roughness={0.1} metalness={1.0} emissive="#DAA520" emissiveIntensity={0.3} /></group></>)}
+          {frameStyle === 'gilded' && (<><group position={[0, 0, -0.015 * scale]}><FourBarFrame w={w} h={h} border={0.04 * scale * ft} depth={0.025 * scale * ft} color="#B8860B" roughness={0.25} metalness={0.85} /></group><group position={[0, 0, 0.005 * scale]}><FourBarFrame w={w} h={h} border={0.008 * scale * ft} depth={0.005 * scale * ft} color="#FFD700" roughness={0.1} metalness={1.0} emissive="#DAA520" emissiveIntensity={0.3} /></group></>)}
           {frameStyle === 'neon' && <NeonFrame w={w} h={h} scale={scale * ft} />}
           {frameStyle === 'thin' && <FourBarFrame w={w} h={h} border={0.006 * scale * ft} depth={0.003 * scale * ft} color="#1a1a1a" roughness={0.9} metalness={0.0} />}
-          {frameStyle === 'baroque' && (<><group position={[0, 0, -0.005 * scale]}><FourBarFrame w={w} h={h} border={0.08 * scale * ft} depth={0.04 * scale * ft} color="#3E1C00" roughness={0.3} metalness={0.7} /></group><group position={[0, 0, 0.003 * scale]}><FourBarFrame w={w} h={h} border={0.02 * scale * ft} depth={0.015 * scale * ft} color="#FFD700" roughness={0.15} metalness={0.95} emissive="#DAA520" emissiveIntensity={0.2} /></group></>)}
+          {frameStyle === 'baroque' && (<><group position={[0, 0, -0.025 * scale]}><FourBarFrame w={w} h={h} border={0.08 * scale * ft} depth={0.04 * scale * ft} color="#3E1C00" roughness={0.3} metalness={0.7} /></group><group position={[0, 0, 0.005 * scale]}><FourBarFrame w={w} h={h} border={0.02 * scale * ft} depth={0.015 * scale * ft} color="#FFD700" roughness={0.15} metalness={0.95} emissive="#DAA520" emissiveIntensity={0.2} /></group></>)}
           {frameStyle === 'hologram' && <HologramFrame w={w} h={h} scale={scale * ft} />}
           {frameStyle === 'rustic' && <FourBarFrame w={w} h={h} border={0.05 * scale * ft} depth={0.025 * scale * ft} color="#3E2723" roughness={0.95} metalness={0.0} />}
           {frameStyle === 'ice' && (<><FourBarFrame w={w} h={h} border={0.04 * scale * ft} depth={0.02 * scale * ft} color="#B3E5FC" roughness={0.05} metalness={0.1} transparent opacity={0.5} emissive="#81D4FA" emissiveIntensity={0.6} /></>)}

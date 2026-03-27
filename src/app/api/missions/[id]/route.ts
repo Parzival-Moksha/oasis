@@ -17,7 +17,10 @@ export async function PUT(
       'valor', 'score', 'startedAt', 'endedAt', 'pausedAt',
       'isPaused', 'totalPausedMs', 'actualSeconds', 'notes',
       'horizon', 'targetSeconds', 'queuePosition', 'isIRL',
-      'description', 'assignedTo',
+      'description', 'assignedTo', 'history', 'maturityLevel',
+      'carbonDescription', 'siliconDescription', 'acceptanceCriteria',
+      'dharmaPath', 'flawlessPercent', 'curatorQueuePosition',
+      'reviewerScore', 'testerScore', 'executionPhase', 'executionRound',
     ] as const
     const body: Record<string, unknown> = {}
     for (const key of ALLOWED) {

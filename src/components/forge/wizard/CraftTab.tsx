@@ -8,7 +8,6 @@ import { useState, useCallback } from 'react'
 import { useOasisStore } from '../../../store/oasisStore'
 import type { CraftedScene } from '../../../lib/conjure/types'
 import { dispatch } from '../../../lib/event-bus'
-import { usePricing } from '../../../hooks/usePricing'
 import { extractPartialCraftData } from '../../../lib/craft-stream'
 import { addToSceneLibrary, getSceneLibrary } from '../../../lib/forge/scene-library'
 import { generateSingleCraftedThumbnail } from '../../../hooks/useThumbnailGenerator'
@@ -32,10 +31,6 @@ export function CraftTabHeader({ setError }: CraftTabProps) {
   const [craftAnimated, setCraftAnimated] = useState(false)
   const [craftHistory, setCraftHistory] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([])
 
-  const { pricing } = usePricing()
-  const p = useCallback((key: string, fallback: number = 1) => {
-    return pricing[key] ?? fallback
-  }, [pricing])
 
   const handleCraft = useCallback(async () => {
     if (!craftPromptInput.trim()) return
@@ -204,10 +199,16 @@ export function CraftTabHeader({ setError }: CraftTabProps) {
             style={{ backgroundImage: 'none' }}
             title="LLM model for crafting + terrain"
           >
-            <option value="moonshotai/kimi-k2.5">Kimi K2.5</option>
             <option value="anthropic/claude-sonnet-4-6">Sonnet 4.6</option>
             <option value="anthropic/claude-haiku-4-5">Haiku 4.5</option>
             <option value="z-ai/glm-5">GLM-5</option>
+            <option value="x-ai/grok-4.20-beta">Grok 4.20 Beta</option>
+            <option value="nvidia/nemotron-3-super-120b-a12b:free">Nemotron 3 Super 120B A12B</option>
+            <option value="qwen/qwen3.5-397b-a17b">Qwen 3.5 397B A17B</option>
+            <option value="liquid/lfm-2-24b-a2b">LFM 2 24B A2B</option>
+            <option value="openai/gpt-5.4">GPT-5.4</option>
+            <option value="google/gemini-3.1-pro-preview">Gemini 3.1 Pro Preview</option>
+            <option value="minimax/minimax-m2.7">Minimax M2.7</option>
           </select>
         </div>
       </div>
@@ -227,9 +228,9 @@ export function CraftTabHeader({ setError }: CraftTabProps) {
           disabled={!craftPromptInput.trim()}
           className="px-3 py-2 rounded-lg text-sm font-bold transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed self-end"
           style={{ background: '#3B82F633', color: '#3B82F6', border: '1px solid #3B82F655' }}
-          title={`Costs ${p('craft', 0.05)} credits`}
+          title="Craft scene from description"
         >
-          {activeCrafts > 0 ? `Craft \u2699 (${activeCrafts})` : `Craft \u2699 ${p('craft', 0.05) > 0 ? `(${p('craft', 0.05)} cr)` : ''}`}
+          {activeCrafts > 0 ? `Craft \u2699 (${activeCrafts})` : 'Craft \u2699'}
         </button>
       </div>
     </>
@@ -257,9 +258,9 @@ export function CraftTabContent() {
       {craftedScenes.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-8 text-gray-400">
           <div className="text-3xl mb-2">&#9881;</div>
-          <div className="text-xs">No scenes crafted yet</div>
-          <div className="text-[10px] mt-1 text-gray-500">Describe a scene and the LLM will build it from primitives</div>
-          <div className="text-[10px] mt-1 text-blue-500/40">Iterative: each new craft builds on the last</div>
+          <div className="text-xs">No crafted objects yet</div>
+          <div className="text-[10px] mt-1 text-gray-500">Describe what you want and the LLM will build it from procedural geometry</div>
+          <div className="text-[10px] mt-1 text-blue-500/40">Each new craft builds on top of the last</div>
         </div>
       ) : (
         <div className="space-y-2">

@@ -229,7 +229,7 @@ export function ConjureTabHeader({ setError }: ConjureTabProps) {
               <button onClick={handleCast} disabled={!conjurePrompt.trim() || isCastingText}
                 className="px-3 py-2 rounded-lg text-sm font-bold transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed self-end"
                 style={{ background: `${forgeColor}33`, color: forgeColor, border: `1px solid ${forgeColor}55` }}
-                title={`Costs ${conjurePrice(provider, tier)}${autoRig ? ` + ${p('post_rig', 0.75)} rig` : ''} credits`}>
+                title={autoRig ? 'Cast with auto-rig' : 'Cast 3D model'}>
                 {isCastingText ? '...' : characterMode ? (autoRig ? '\uD83E\uDDCD\u2192\u2699' : 'Cast \uD83E\uDDCD') : 'Cast \u2728'}
               </button>
             </div>
@@ -332,7 +332,7 @@ export function ConjureTabHeader({ setError }: ConjureTabProps) {
               <button onClick={handleImageCast} disabled={!imageUrl.trim() || isCastingImage}
                 className="px-3 py-2 rounded-lg text-sm font-bold transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed self-end"
                 style={{ background: '#EC489933', color: '#EC4899', border: '1px solid #EC489955' }}
-                title={`Costs ${conjurePrice(imgProvider, imgTier)}${imgAutoRig ? ` + ${p('post_rig', 0.75)} rig` : ''} credits`}>
+                title={imgAutoRig ? 'Cast from image with auto-rig' : 'Cast from image'}>
                 {isCastingImage ? '...' : imgCharacterMode ? (imgAutoRig ? '\uD83D\uDCF7\u2192\u2699' : 'Cast \uD83D\uDCF7\uD83E\uDDCD') : 'Cast \uD83D\uDCF7'}
               </button>
             </div>
