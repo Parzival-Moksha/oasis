@@ -10,7 +10,7 @@ import { createPortal } from 'react-dom'
 import { SettingsContext } from '../scene-lib'
 import { useOasisStore } from '../../store/oasisStore'
 import { useUILayer } from '@/lib/input-manager'
-import { TOOL_ICONS_MAP } from '@/lib/anorak-engine'
+import { TOOL_ICONS_MAP, fmtTokens } from '@/lib/anorak-engine'
 import { ToolCallCard, renderMarkdown } from '@/lib/anorak-renderers'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -28,6 +28,7 @@ const SIZE_KEY = 'oasis-anorak-pro-size'
 const TAB_KEY = 'oasis-anorak-pro-tab'
 const SETTINGS_KEY = 'oasis-anorak-pro-settings'
 const CONFIG_KEY = 'oasis-anorak-pro-config'
+const LOBE_FILTER_KEY = 'oasis-anorak-pro-lobe-filters'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ANORAK PRO CONFIG — persisted to localStorage, flows to API calls
@@ -126,16 +127,76 @@ interface StreamEntry {
 
 const TRUSTED_MEDIA = /^(\/|https?:\/\/(localhost|127\.0\.0\.1|fal\.media|fal-cdn\.|oaidalleapiprodscus\.|replicate\.delivery)[^\s]*)/
 
-const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting }: {
+// ═══════════════════════════════════════════════════════════════════════════
+// SESSION MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SESSIONS_KEY = 'oasis-anorak-pro-sessions'
+const ACTIVE_SESSION_KEY = 'oasis-anorak-pro-active-session'
+
+interface TokenStats {
+  inputTokens: number
+  outputTokens: number
+  costUsd: number
+}
+
+const ZERO_TOKENS: TokenStats = { inputTokens: 0, outputTokens: 0, costUsd: 0 }
+
+interface AnorakProSession {
+  id: string
+  name: string
+  createdAt: string
+  entries: StreamEntry[]
+  tokens?: TokenStats
+}
+
+function formatSessionName(date: Date): string {
+  return date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
+function loadSessions(): AnorakProSession[] {
+  if (typeof window === 'undefined') return []
+  try { return JSON.parse(localStorage.getItem(SESSIONS_KEY) || '[]') } catch { return [] }
+}
+
+function saveSessions(sessions: AnorakProSession[]) {
+  try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions)) } catch { /* QuotaExceeded — silently drop */ }
+}
+
+function createSession(): AnorakProSession {
+  return { id: `s-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: formatSessionName(new Date()), createdAt: new Date().toISOString(), entries: [] }
+}
+
+const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, isStreaming, sessionTokens, sessions, activeSessionId, onNewSession, onSwitchSession }: {
   entries: StreamEntry[]
   onSend: (msg: string) => void
   isChatting: boolean
+  isStreaming: boolean
+  sessionTokens: TokenStats
+  sessions: AnorakProSession[]
+  activeSessionId: string
+  onNewSession: () => void
+  onSwitchSession: (id: string) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const visible = entries.slice(-200)
   const [fullscreen, setFullscreen] = useState<{ type: 'image' | 'video'; url: string } | null>(null)
   const [chatInput, setChatInput] = useState('')
+
+  // Lobe filter state — persisted to localStorage
+  const [visibleLobes, setVisibleLobes] = useState<Record<string, boolean>>(() => {
+    if (typeof window === 'undefined') return {}
+    try { const s = localStorage.getItem(LOBE_FILTER_KEY); return s ? JSON.parse(s) : {} } catch { return {} }
+  })
+  const toggleLobe = useCallback((lobe: string) => {
+    setVisibleLobes(prev => {
+      const next = { ...prev, [lobe]: prev[lobe] === false ? true : false }
+      try { localStorage.setItem(LOBE_FILTER_KEY, JSON.stringify(next)) } catch {}
+      return next
+    })
+  }, [])
+  const filtered = visible.filter(e => visibleLobes[e.lobe] !== false)
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
@@ -148,9 +209,25 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting }:
     onSend(msg)
   }, [chatInput, isChatting, onSend])
 
+  const sessionBar = (
+    <div className="flex items-center gap-1.5 px-2 py-1 border-b border-white/5 shrink-0">
+      <select value={activeSessionId} onChange={e => onSwitchSession(e.target.value)}
+        className="flex-1 bg-black/40 border border-white/10 rounded px-1.5 py-0.5 text-[10px] font-mono text-gray-300 outline-none focus:border-teal-500/50 truncate">
+        {sessions.map(s => (
+          <option key={s.id} value={s.id}>{s.name} ({s.entries.length})</option>
+        ))}
+      </select>
+      <button onClick={onNewSession}
+        className="shrink-0 px-2 py-0.5 rounded text-[9px] font-mono font-bold text-teal-300 bg-teal-500/20 border border-teal-500/30 hover:bg-teal-500/30 transition-colors">
+        +NEW
+      </button>
+    </div>
+  )
+
   if (visible.length === 0) {
     return (
       <div className="flex-1 flex flex-col">
+        {sessionBar}
         <div className="flex-1 flex items-center justify-center text-gray-600 text-sm font-mono">
           Chat with Anorak Pro or curate a mission to see the stream.
         </div>
@@ -226,10 +303,33 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting }:
     return content
   }
 
+  const lobeKeys = Object.keys(LOBE_COLORS)
+
   return (
     <>
+      {sessionBar}
+      {/* Lobe filter bar */}
+      <div className="flex items-center gap-2 px-2 py-1 border-b border-white/5 shrink-0 flex-wrap">
+        {lobeKeys.map(lobe => (
+          <label key={lobe} className="inline-flex items-center gap-1 cursor-pointer select-none">
+            <input type="checkbox" checked={visibleLobes[lobe] !== false} onChange={() => toggleLobe(lobe)}
+              className="w-2.5 h-2.5 accent-teal-500 cursor-pointer" />
+            <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: LOBE_COLORS[lobe] }} />
+            <span className="text-[9px] font-mono text-gray-400">{lobe}</span>
+          </label>
+        ))}
+        <span className="text-[9px] font-mono text-gray-600 ml-auto">{filtered.length}/{visible.length}</span>
+      </div>
+      {/* Token counter bar */}
+      {(sessionTokens.inputTokens > 0 || sessionTokens.outputTokens > 0) && (
+        <div className={`flex items-center gap-3 px-2 py-0.5 border-b border-white/5 shrink-0 text-[9px] font-mono ${isStreaming ? 'animate-pulse' : ''}`}>
+          <span style={{ color: '#38bdf8' }}>↓{fmtTokens(sessionTokens.inputTokens)}</span>
+          <span style={{ color: '#fbbf24' }}>↑{fmtTokens(sessionTokens.outputTokens)}</span>
+          {sessionTokens.costUsd > 0 && <span style={{ color: '#4ade80' }}>${sessionTokens.costUsd.toFixed(4)}</span>}
+        </div>
+      )}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-1 font-mono text-xs">
-        {visible.map(e => {
+        {filtered.map(e => {
           const lobeColor = LOBE_COLORS[e.lobe] || '#888'
           return (
             <div key={e.id} style={{
@@ -1078,8 +1178,86 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
     })
   }, [])
 
+  // Session management
+  const [sessions, setSessions] = useState<AnorakProSession[]>(() => loadSessions())
+  const [activeSessionId, setActiveSessionId] = useState<string>(() => {
+    if (typeof window === 'undefined') return ''
+    const stored = localStorage.getItem(ACTIVE_SESSION_KEY)
+    const allSessions = loadSessions()
+    if (stored && allSessions.find(s => s.id === stored)) return stored
+    if (allSessions.length > 0) return allSessions[0].id
+    const first = createSession()
+    saveSessions([first])
+    return first.id
+  })
+  const saveDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Derive entries from active session
+  const activeSession = sessions.find(s => s.id === activeSessionId)
+  const streamEntries = activeSession?.entries || []
+  const setStreamEntries = useCallback((updater: StreamEntry[] | ((prev: StreamEntry[]) => StreamEntry[])) => {
+    setSessions(prev => {
+      const next = prev.map(s => {
+        if (s.id !== activeSessionId) return s
+        const newEntries = typeof updater === 'function' ? updater(s.entries) : updater
+        return { ...s, entries: newEntries }
+      })
+      // Debounced save to localStorage
+      if (saveDebounce.current) clearTimeout(saveDebounce.current)
+      saveDebounce.current = setTimeout(() => saveSessions(next), 500)
+      return next
+    })
+  }, [activeSessionId])
+
+  // Ref for stable access from long-lived SSE streams (prevents stale closure on session switch)
+  const setStreamEntriesRef = useRef(setStreamEntries)
+  setStreamEntriesRef.current = setStreamEntries
+
+  // Token accumulation — adds to active session's token stats
+  const sessionTokens = activeSession?.tokens || ZERO_TOKENS
+  const addSessionTokens = useCallback((input: number, output: number, cost: number) => {
+    setSessions(prev => {
+      const next = prev.map(s => {
+        if (s.id !== activeSessionId) return s
+        const t = s.tokens || ZERO_TOKENS
+        return { ...s, tokens: { inputTokens: t.inputTokens + input, outputTokens: t.outputTokens + output, costUsd: t.costUsd + cost } }
+      })
+      if (saveDebounce.current) clearTimeout(saveDebounce.current)
+      saveDebounce.current = setTimeout(() => saveSessions(next), 500)
+      return next
+    })
+  }, [activeSessionId])
+  const addSessionTokensRef = useRef(addSessionTokens)
+  addSessionTokensRef.current = addSessionTokens
+
+  const handleNewSession = useCallback(() => {
+    const s = createSession()
+    setSessions(prev => {
+      const next = [s, ...prev]
+      saveSessions(next)
+      return next
+    })
+    setActiveSessionId(s.id)
+    localStorage.setItem(ACTIVE_SESSION_KEY, s.id)
+  }, [])
+
+  const handleSwitchSession = useCallback((id: string) => {
+    // Flush any pending debounced save before switching — prevents stale overwrite
+    if (saveDebounce.current) {
+      clearTimeout(saveDebounce.current)
+      saveDebounce.current = null
+      setSessions(prev => { saveSessions(prev); return prev })
+    }
+    setActiveSessionId(id)
+    localStorage.setItem(ACTIVE_SESSION_KEY, id)
+  }, [])
+
+  // Ensure at least one session exists
+  useEffect(() => {
+    if (sessions.length === 0) handleNewSession()
+  }, [sessions.length, handleNewSession])
+
   // Stream entries
-  const [streamEntries, setStreamEntries] = useState<StreamEntry[]>([])
   const entryIdRef = useRef(0)
   const [isAgentRunning, setIsAgentRunning] = useState(false)
   const [isChatting, setIsChatting] = useState(false)
@@ -1093,9 +1271,10 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
   const handleChat = useCallback(async (msg: string) => {
     if (isChatting) return
     setIsChatting(true)
+    const addEntry = setStreamEntriesRef.current
 
     // Add user message to stream
-    setStreamEntries(prev => [...prev, {
+    addEntry(prev => [...prev, {
       id: entryIdRef.current++, type: 'text', content: msg,
       lobe: 'carbondev', timestamp: Date.now(),
     }])
@@ -1116,7 +1295,7 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
       })
 
       if (!res.ok || !res.body) {
-        setStreamEntries(prev => [...prev, {
+        setStreamEntriesRef.current(prev => [...prev, {
           id: entryIdRef.current++, type: 'error',
           content: `HTTP ${res.status}`, lobe: 'anorak-pro', timestamp: Date.now(),
         }])
@@ -1150,7 +1329,7 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
             }
             // Text from assistant
             if (event.type === 'text') {
-              setStreamEntries(prev => {
+              setStreamEntriesRef.current(prev => {
                 const last = prev[prev.length - 1]
                 if (last && last.lobe === 'anorak-pro' && last.type === 'text') {
                   return [...prev.slice(0, -1), { ...last, content: last.content + (event.content || '') }]
@@ -1163,7 +1342,7 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
             }
             // Tool use
             if (event.type === 'tool' || event.type === 'tool_start') {
-              setStreamEntries(prev => [...prev, {
+              setStreamEntriesRef.current(prev => [...prev, {
                 id: entryIdRef.current++, type: event.type,
                 content: event.display || event.name || 'tool', lobe: 'anorak-pro', timestamp: Date.now(),
                 toolName: event.name,
@@ -1174,7 +1353,7 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
             }
             // Tool result
             if (event.type === 'tool_result') {
-              setStreamEntries(prev => [...prev, {
+              setStreamEntriesRef.current(prev => [...prev, {
                 id: entryIdRef.current++, type: 'tool_result',
                 content: event.preview || event.name || '', lobe: 'anorak-pro', timestamp: Date.now(),
                 toolName: event.name,
@@ -1188,21 +1367,27 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
             if (event.type === 'result') {
               const cost = event.cost_usd ? `$${Number(event.cost_usd).toFixed(4)}` : ''
               const tokens = event.total_input_tokens ? `↓${event.total_input_tokens} ↑${event.total_output_tokens}` : ''
-              setStreamEntries(prev => [...prev, {
+              setStreamEntriesRef.current(prev => [...prev, {
                 id: entryIdRef.current++, type: 'result',
                 content: [tokens, cost].filter(Boolean).join(' | ') || 'done', lobe: 'anorak-pro', timestamp: Date.now(),
               }])
+              // Accumulate session tokens
+              addSessionTokensRef.current(
+                Number(event.total_input_tokens) || 0,
+                Number(event.total_output_tokens) || 0,
+                Number(event.cost_usd) || 0,
+              )
             }
             // Thinking
             if (event.type === 'thinking') {
-              setStreamEntries(prev => [...prev, {
+              setStreamEntriesRef.current(prev => [...prev, {
                 id: entryIdRef.current++, type: 'thinking',
                 content: event.content || '', lobe: 'anorak-pro', timestamp: Date.now(),
               }])
             }
             // Errors
             if (event.type === 'error') {
-              setStreamEntries(prev => [...prev, {
+              setStreamEntriesRef.current(prev => [...prev, {
                 id: entryIdRef.current++, type: 'error',
                 content: event.content || event.error || '', lobe: 'anorak-pro', timestamp: Date.now(),
               }])
@@ -1212,7 +1397,7 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
       }
     } catch (e) {
       if (controller.signal.aborted) return
-      setStreamEntries(prev => [...prev, {
+      setStreamEntriesRef.current(prev => [...prev, {
         id: entryIdRef.current++, type: 'error',
         content: `${e}`, lobe: 'system', timestamp: Date.now(),
       }])
@@ -1304,7 +1489,7 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
         signal: controller.signal,
       })
       if (!res.ok || !res.body) {
-        setStreamEntries(prev => [...prev, { id: entryIdRef.current++, type: 'error', content: `HTTP ${res.status}`, lobe: 'system', timestamp: Date.now() }])
+        setStreamEntriesRef.current(prev => [...prev, { id: entryIdRef.current++, type: 'error', content: `HTTP ${res.status}`, lobe: 'system', timestamp: Date.now() }])
         return
       }
 
@@ -1335,6 +1520,14 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
               const tokens = event.total_input_tokens ? `↓${event.total_input_tokens} ↑${event.total_output_tokens}` : ''
               content = [tokens, cost].filter(Boolean).join(' | ') || 'done'
             }
+            // Accumulate session tokens on result events
+            if (type === 'result') {
+              addSessionTokensRef.current(
+                Number(event.total_input_tokens) || 0,
+                Number(event.total_output_tokens) || 0,
+                Number(event.cost_usd) || 0,
+              )
+            }
             if (content || type === 'tool' || type === 'tool_result') {
               const entry: StreamEntry = {
                 id: entryIdRef.current++, type, content, lobe, timestamp: Date.now(),
@@ -1346,14 +1539,14 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
                 isError: event.isError,
                 resultLength: event.length,
               }
-              setStreamEntries(prev => [...prev, entry])
+              setStreamEntriesRef.current(prev => [...prev, entry])
             }
           } catch { /* skip malformed */ }
         }
       }
     } catch (e) {
       if (!controller.signal.aborted) {
-        setStreamEntries(prev => [...prev, { id: entryIdRef.current++, type: 'error', content: `${e}`, lobe: 'system', timestamp: Date.now() }])
+        setStreamEntriesRef.current(prev => [...prev, { id: entryIdRef.current++, type: 'error', content: `${e}`, lobe: 'system', timestamp: Date.now() }])
       }
     } finally {
       if (abortRef.current === controller) abortRef.current = null
@@ -1516,7 +1709,7 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
       </div>
 
       {/* ═══ TAB CONTENT ═══ */}
-      {activeTab === 'stream' && <StreamTab entries={streamEntries} onSend={handleChat} isChatting={isChatting} />}
+      {activeTab === 'stream' && <StreamTab entries={streamEntries} onSend={handleChat} isChatting={isChatting} isStreaming={isChatting || isAgentRunning} sessionTokens={sessionTokens} sessions={sessions} activeSessionId={activeSessionId} onNewSession={handleNewSession} onSwitchSession={handleSwitchSession} />}
       {activeTab === 'mindcraft' && <MindcraftTab onCurate={handleCurate} onExecute={handleExecute} isAgentRunning={isAgentRunning} />}
       {activeTab === 'curator-log' && <CuratorLogTab />}
       {activeTab === 'cehq' && <CEHQTab config={config} onUpdate={updateConfig} />}

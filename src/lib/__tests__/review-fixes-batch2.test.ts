@@ -237,7 +237,7 @@ describe('AnorakProPanel — consumeSSE structure', () => {
   it('try-catch-finally has all three blocks', () => {
     // Verify the pattern: try { ... } catch { ... } finally { ... }
     const consumeIdx = source.indexOf('const consumeSSE = useCallback')
-    const consumeBlock = source.substring(consumeIdx, consumeIdx + 3000)
+    const consumeBlock = source.substring(consumeIdx, consumeIdx + 5000)
     expect(consumeBlock).toContain('try {')
     expect(consumeBlock).toContain('} catch (e) {')
     expect(consumeBlock).toContain('} finally {')
