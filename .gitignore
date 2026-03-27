@@ -7,6 +7,7 @@ node_modules/
 
 # Next.js build output
 .next/
+.next-staging/
 out/
 *.tsbuildinfo
 
@@ -25,10 +26,17 @@ public/conjured/*
 # Runtime-generated images (user text-to-image creations)
 public/generated-images/
 
+# User-uploaded media (images, videos, audio via /api/media/upload)
+public/images/
+
 # SQLite database (local, per-instance)
 data/*.db
 data/*.db-journal
 data/*.db-wal
+prisma/data/*.db
+prisma/data/*.db-journal
+prisma/data/*.db-wal
+prisma/data/*.db-shm
 
 # Avatar gallery VRMs (downloaded per-instance, large files)
 public/avatars/gallery/
@@ -92,5 +100,8 @@ carbondir/
 CLAUDE*.md
 feb*.txt
 public/screenshots/
+
+# Test screenshots (CDP/Playwright — regenerated every run)
+test-screenshots/
 
 /src/generated/prisma
