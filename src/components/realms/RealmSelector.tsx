@@ -10,6 +10,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
 import type { WorldVisibility } from '@/lib/xp'
 import { completeQuest } from '@/lib/quests'
+import { useUILayer } from '@/lib/input-manager'
 
 interface SnapshotMeta {
   id: string
@@ -32,6 +33,7 @@ const VISIBILITY_ICONS: Record<WorldVisibility, string> = Object.fromEntries(
 
 export function RealmSelector() {
   const [expanded, setExpanded] = useState(false)
+  useUILayer('realm-selector', expanded)
   const [mounted, setMounted] = useState(false)
   const [showNewWorld, setShowNewWorld] = useState(false)
   const [newName, setNewName] = useState('')
@@ -219,6 +221,7 @@ export function RealmSelector() {
       {/* ─═̷─ Dropdown ─═̷─ */}
       {expanded && (
         <div
+          data-ui-panel
           className="mt-1 rounded-lg overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
           style={{
             background: 'rgba(0,0,0,0.9)',

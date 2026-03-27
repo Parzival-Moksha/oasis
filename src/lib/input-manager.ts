@@ -7,6 +7,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { create } from 'zustand'
+import { useEffect } from 'react'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // INPUT STATES
@@ -71,10 +72,12 @@ interface InputManagerState {
   inputState: InputState
   pointerLocked: boolean
   _previousCameraState: InputState | null
+  _uiLayerStack: string[]
 
   // Queries
   can: () => StateCapabilities
   isPointerLocked: () => boolean
+  hasActiveUILayer: () => boolean
 
   // State transitions
   transition: (to: InputState) => void
@@ -83,6 +86,10 @@ interface InputManagerState {
   returnToPrevious: () => void
   handleEscape: () => boolean
   syncFromControlMode: (mode: 'orbit' | 'noclip' | 'third-person') => void
+
+  // UI Layer Stack
+  pushUILayer: (id: string) => void
+  popUILayer: (id: string) => void
 
   // Pointer lock lifecycle
   requestPointerLock: () => void
@@ -98,9 +105,11 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
   inputState: 'noclip',
   pointerLocked: false,
   _previousCameraState: null,
+  _uiLayerStack: [],
 
   can: () => STATE_CAPABILITIES[get().inputState],
   isPointerLocked: () => get().pointerLocked,
+  hasActiveUILayer: () => get()._uiLayerStack.length > 0,
 
   // ── STATE TRANSITIONS ──────────────────────────────────────────
 
@@ -143,6 +152,11 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
   },
 
   returnToPrevious: () => {
+    // If UI layers still active, stay in ui-focused
+    if (get()._uiLayerStack.length > 0) {
+      if (get().inputState !== 'ui-focused') set({ inputState: 'ui-focused' })
+      return
+    }
     const prev = get()._previousCameraState || 'orbit'
     set({ inputState: prev, _previousCameraState: null })
     // Blur DOM so keyboard goes back to game
@@ -182,9 +196,30 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     }
   },
 
+  // ── UI LAYER STACK ────────────────────────────────────────────
+
+  pushUILayer: (id) => {
+    const stack = get()._uiLayerStack
+    if (stack.includes(id)) return
+    set({ _uiLayerStack: [...stack, id] })
+    const current = get().inputState
+    if (current === 'orbit' || current === 'noclip' || current === 'third-person') {
+      get().enterUIFocus()
+    }
+  },
+
+  popUILayer: (id) => {
+    const next = get()._uiLayerStack.filter(x => x !== id)
+    set({ _uiLayerStack: next })
+    if (next.length === 0 && get().inputState === 'ui-focused') {
+      get().returnToPrevious()
+    }
+  },
+
   // ── POINTER LOCK LIFECYCLE ─────────────────────────────────────
 
   requestPointerLock: () => {
+    if (get()._uiLayerStack.length > 0) return
     if (!STATE_CAPABILITIES[get().inputState].canLockPointer) return
     if (get().pointerLocked) return
     const canvas = document.querySelector('#uploader-canvas') as HTMLCanvasElement
@@ -248,10 +283,13 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
       if (!el) return
       const tag = el.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable) {
-        // Only return if we're actually in ui-focused (not agent-focus)
-        if (get().inputState === 'ui-focused') {
-          get().returnToPrevious()
-        }
+        if (get().inputState !== 'ui-focused') return
+        // If UI panels are registered, NEVER auto-exit
+        if (get()._uiLayerStack.length > 0) return
+        // If focus moved to element inside a UI panel, stay
+        const related = e.relatedTarget as HTMLElement | null
+        if (related?.closest('[data-ui-panel]')) return
+        get().returnToPrevious()
       }
     }
 
@@ -277,6 +315,22 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
 
 export function getInputCapabilities(): StateCapabilities {
   return STATE_CAPABILITIES[useInputManager.getState().inputState]
+}
+
+export function hasActiveUILayer(): boolean {
+  return useInputManager.getState()._uiLayerStack.length > 0
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// useUILayer — register a panel as an active UI layer
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function useUILayer(id: string, active: boolean = true) {
+  useEffect(() => {
+    if (!active) return
+    useInputManager.getState().pushUILayer(id)
+    return () => useInputManager.getState().popUILayer(id)
+  }, [id, active])
 }
 
 export function getInputState(): InputState {

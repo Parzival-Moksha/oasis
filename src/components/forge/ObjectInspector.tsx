@@ -21,6 +21,7 @@ import type { MovementPreset, ObjectBehavior, AnimationConfig, ModelStats, VRMEx
 import { formatNumber, formatBytes } from './ModelPreview'
 import { ANIMATION_LIBRARY, ANIM_CATEGORIES, LIB_PREFIX, loadAnimationClip, type AnimCategory } from '../../lib/forge/animation-library'
 import { FRAME_STYLES, getAudioElement } from './WorldObjects'
+import { useUILayer } from '@/lib/input-manager'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS — The inspector's visual DNA
@@ -368,6 +369,7 @@ function AudioSeekSlider({ objectId }: { objectId: string }) {
 }
 
 export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
+  useUILayer('object-inspector', isOpen)
   // ─═̷─ Position & drag state — persisted to localStorage ─═̷─
   const [position, setPosition] = useState(() => {
     if (typeof window === 'undefined') return DEFAULT_POSITION
@@ -603,6 +605,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
   return createPortal(
     <div
       data-menu-portal="object-inspector"
+      data-ui-panel
       className="fixed rounded-xl overflow-hidden shadow-2xl flex flex-col"
       style={{
         zIndex: useOasisStore.getState().getPanelZIndex('inspector', 9998),

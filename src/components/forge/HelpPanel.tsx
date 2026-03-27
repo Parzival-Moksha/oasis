@@ -9,6 +9,7 @@ import { useState, useRef, useEffect, useCallback, useContext } from 'react'
 import { createPortal } from 'react-dom'
 import { SettingsContext } from '../scene-lib'
 import { QUESTS, QUEST_IDS, getQuestProgress, completedQuestCount, allQuestsComplete } from '@/lib/quests'
+import { useUILayer } from '@/lib/input-manager'
 import type { QuestId } from '@/lib/quests'
 
 type Tab = 'controls' | 'guide' | 'glossary'
@@ -321,6 +322,7 @@ function GlossaryTab() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function HelpPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  useUILayer('help', isOpen)
   const { settings } = useContext(SettingsContext)
 
   // Default tab: show guide if quests incomplete, otherwise controls

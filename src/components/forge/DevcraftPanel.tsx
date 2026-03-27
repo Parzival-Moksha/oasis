@@ -10,6 +10,7 @@ import { formatTime, formatTimestamp, formatTimeCompact, formatDateShort, isoToD
 import { playNotification, sendBrowserNotification, requestNotificationPermission } from '@/lib/devcraft/notifications'
 import { useAudioManager, SOUND_OPTIONS } from '@/lib/audio-manager'
 import { ParzivalMissions } from './ParzivalMissions'
+import { useUILayer } from '@/lib/input-manager'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -1351,6 +1352,7 @@ function CreateModal({ isOpen, onClose, onCreated, onStartImmediately }: { isOpe
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
+  useUILayer('devcraft')
   const [mounted, setMounted] = useState(false)
   const [missions, setMissions] = useState<Mission[]>([])
   const [stats, setStats] = useState<DevStats | null>(null)

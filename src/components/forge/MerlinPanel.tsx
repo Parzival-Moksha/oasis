@@ -16,6 +16,7 @@ import { createPortal } from 'react-dom'
 import { useOasisStore } from '@/store/oasisStore'
 import { SettingsContext } from '../scene-lib'
 import { dispatch } from '@/lib/event-bus'
+import { useUILayer } from '@/lib/input-manager'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES — Merlin SSE event shapes
@@ -165,6 +166,7 @@ const DEFAULT_WIDTH = 380
 const DEFAULT_HEIGHT = 520
 
 export function MerlinPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  useUILayer('merlin', isOpen)
   const { settings } = useContext(SettingsContext)
   const [messages, setMessages] = useState<MerlinMessage[]>([])
   const [input, setInput] = useState('')

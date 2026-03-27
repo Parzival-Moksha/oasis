@@ -1355,6 +1355,9 @@ export function TransformKeyHandler() {
         return
       }
 
+      // ░▒▓ UI LAYER GUARD — when panels are open, only Escape passes through ▓▒░
+      if (useInputManager.getState().hasActiveUILayer() && e.key !== 'Escape') return
+
       // ░▒▓ ALL KEYS — check if typing in form element ▓▒░
       const NON_TEXT_INPUTS = new Set(['range', 'color', 'checkbox', 'radio', 'file', 'button', 'image', 'reset', 'submit'])
       const tag = (e.target as HTMLElement).tagName

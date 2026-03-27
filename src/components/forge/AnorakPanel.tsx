@@ -12,6 +12,7 @@ import { useOasisStore } from '../../store/oasisStore'
 import { MODELS, fmtTokens } from '../../lib/anorak-engine'
 import { AnorakContent } from './AnorakContent'
 import { dispatch } from '../../lib/event-bus'
+import { useUILayer } from '@/lib/input-manager'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PANEL LAYOUT CONSTANTS
@@ -32,6 +33,7 @@ const SIZE_KEY = 'oasis-anorak-size'
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function AnorakPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  useUILayer('anorak', isOpen)
   const { settings } = useContext(SettingsContext)
 
   // State synced from AnorakContent via callbacks

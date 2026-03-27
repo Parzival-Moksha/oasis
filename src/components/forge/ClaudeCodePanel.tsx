@@ -12,6 +12,7 @@
 import { useState, useRef, useEffect, useCallback, useContext } from 'react'
 import { createPortal } from 'react-dom'
 import { SettingsContext } from '../scene-lib'
+import { useUILayer } from '@/lib/input-manager'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES — Claude Code SSE event shapes
@@ -267,6 +268,7 @@ const POS_KEY = 'oasis-claude-code-pos'
 const SIZE_KEY = 'oasis-claude-code-size'
 
 export function ClaudeCodePanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  useUILayer('claude-code', isOpen)
   const { settings } = useContext(SettingsContext)
   const [turns, setTurns] = useState<Turn[]>([])
   const [input, setInput] = useState('')

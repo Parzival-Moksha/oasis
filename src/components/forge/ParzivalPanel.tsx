@@ -16,6 +16,7 @@ import { createPortal } from 'react-dom'
 import { SettingsContext } from '../scene-lib'
 import { useOasisStore } from '../../store/oasisStore'
 import { Mindcraft2 } from './Mindcraft2'
+import { useUILayer } from '@/lib/input-manager'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -115,6 +116,7 @@ const parzivalFetch = async (path: string, options?: RequestInit) => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function ParzivalPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  useUILayer('parzival', isOpen)
   const { settings } = useContext(SettingsContext)
   const panelZIndex = useOasisStore(s => s.getPanelZIndex('parzival', 9999))
 

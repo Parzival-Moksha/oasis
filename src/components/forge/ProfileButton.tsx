@@ -12,6 +12,7 @@ import { useOasisStore } from '@/store/oasisStore'
 import { FREE_CREDITS } from '@/lib/conjure/types'
 import { XP_AWARDS } from '@/lib/xp'
 import { AvatarGallery } from './AvatarGallery'
+import { useUILayer } from '@/lib/input-manager'
 
 interface ProfileData {
   credits: number
@@ -44,6 +45,7 @@ const XP_ACTION_LABELS = [
 
 export function ProfileButton() {
   const [isOpen, setIsOpen] = useState(false)
+  useUILayer('profile', isOpen)
   const [profile, setProfile] = useState<ProfileData>({ credits: FREE_CREDITS, xp: 0, level: 1, aura: 0, wallet_address: null, levelTitle: 'Apprentice', levelBadge: '░', levelProgress: 0, xpToNext: 100, needsOnboarding: true, displayName: 'Wanderer', bio: null, avatar_url: null, avatar_3d_url: null, lastLoginDate: null })
   const [showAvatarGallery, setShowAvatarGallery] = useState(false)
   const [showXpInfo, setShowXpInfo] = useState(false)
@@ -183,7 +185,9 @@ export function ProfileButton() {
       {/* Dropdown panel */}
       {isOpen && (
         <div
+          data-ui-panel
           className="absolute top-12 left-0 w-64 rounded-lg overflow-hidden"
+          onMouseDown={(e) => e.stopPropagation()}
           style={{
             backgroundColor: `rgba(0, 0, 0, ${settings.uiOpacity})`,
             border: '1px solid rgba(168,85,247,0.3)',

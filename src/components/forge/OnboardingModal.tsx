@@ -7,9 +7,11 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { useState, useRef, useEffect } from 'react'
+import { useUILayer } from '@/lib/input-manager'
 
 export function OnboardingModal() {
   const [show, setShow] = useState(false)
+  useUILayer('onboarding', show)
   const [checked, setChecked] = useState(false)
   const [name, setName] = useState('')
   const [bio, setBio] = useState('')
@@ -92,6 +94,7 @@ export function OnboardingModal() {
 
   return (
     <div
+      data-ui-panel
       className="fixed inset-0 z-[10000] flex items-center justify-center"
       style={{ backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }}
     >

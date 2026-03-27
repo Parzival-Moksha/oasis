@@ -9,6 +9,7 @@ import React, { useState, useRef, useEffect, useCallback, useContext } from 'rea
 import { createPortal } from 'react-dom'
 import { SettingsContext } from '../scene-lib'
 import { useOasisStore } from '../../store/oasisStore'
+import { useUILayer } from '@/lib/input-manager'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -1015,6 +1016,7 @@ function SettingsDropdown({ settings, onChange }: { settings: PanelSettings; onC
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  useUILayer('anorak-pro', isOpen)
   const { settings: _sceneSettings } = useContext(SettingsContext)
   const panelZIndex = useOasisStore(s => s.getPanelZIndex('anorak-pro', 9998))
 

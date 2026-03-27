@@ -25,6 +25,7 @@ import { generateSingleCraftedThumbnail, useCraftedThumbnailGenerator, useCatalo
 import { usePricing, getConjurePriceKey } from '../../hooks/usePricing'
 import { extractPartialCraftData } from '../../lib/craft-stream'
 import { addToSceneLibrary, getSceneLibrary } from '../../lib/forge/scene-library'
+import { useUILayer } from '@/lib/input-manager'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 
@@ -871,6 +872,7 @@ interface WizardConsoleProps {
 }
 
 export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
+  useUILayer('wizard-console', isOpen)
   // ─═̷─ Position & size state — persisted to localStorage ─═̷─
   const [position, setPosition] = useState(() => {
     if (typeof window === 'undefined') return { x: 60, y: 80 }
@@ -1460,6 +1462,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
   return createPortal(
     <div
       data-menu-portal="wizard-console"
+      data-ui-panel
       className="fixed rounded-xl border overflow-hidden shadow-2xl flex flex-col"
       style={{
         zIndex: useOasisStore.getState().getPanelZIndex('wizard', 9999),
