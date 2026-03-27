@@ -9,7 +9,7 @@ import { Canvas, useFrame } from '@react-three/fiber'
 import { KeyboardControls, Stars, Grid, Html, TransformControls, Environment, useProgress } from '@react-three/drei'
 import { EffectComposer, Bloom, Vignette, ChromaticAberration } from '@react-three/postprocessing'
 import { BlendFunction } from 'postprocessing'
-import { Suspense, useState, useRef, useContext, useEffect, useTransition } from 'react'
+import { Suspense, useState, useRef, useContext, useEffect, useTransition, useCallback } from 'react'
 import * as THREE from 'three'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -53,6 +53,7 @@ import { useInputManager, getInputCapabilities, isPointerLocked } from '@/lib/in
 import { CameraController as CameraControllerComponent, sprintRef, FPSControls, FPS_KEYBOARD_MAP } from './CameraController'
 import { useAudioManager, SOUND_OPTIONS, type SoundEvent } from '@/lib/audio-manager'
 import { installTestHarness } from '@/lib/test-harness'
+import { AgentWindowPortals } from './forge/AgentWindowPortals'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ─═̷─═̷─🎮─═̷─═̷─{ QUAKE FPS CONTROLS - WASD + Q/E }─═̷─═̷─🎮─═̷─═̷─
@@ -1174,12 +1175,112 @@ export default function Scene() {
       {/* ░▒▓ LOADING OVERLAY ▓▒░ */}
       <OasisLoader />
 
+      {/* ░▒▓ AGENT WINDOW PORTALS — offscreen DOM for 3D window textures ▓▒░ */}
+      <AgentWindowPortals />
+
+      {/* ░▒▓ IMAGE DROP ZONE — drag & drop images into the world ▓▒░ */}
+      <ImageDropZone />
+
       {/* ░▒▓ ONBOARDING — first-login identity setup (requires auth) ▓▒░ */}
       <OnboardingModal />
 
       {/* ░▒▓ ANONYMOUS CTA — conversion hook ▓▒░ */}
     </DragContext.Provider>
     </SettingsContext.Provider>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// IMAGE DROP ZONE — drag & drop images into the Oasis world
+// ░▒▓ Covers full viewport, uploads via /api/media/upload, places at camera target ▓▒░
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function ImageDropZone() {
+  const [dropping, setDropping] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const dragCountRef = useRef(0)
+
+  useEffect(() => {
+    // Document-level drag listeners — NO intercepting divs that block clicks
+    const handleDragEnter = (e: DragEvent) => {
+      e.preventDefault()
+      dragCountRef.current++
+      if (e.dataTransfer?.types.includes('Files')) setDropping(true)
+    }
+    const handleDragLeave = (e: DragEvent) => {
+      e.preventDefault()
+      dragCountRef.current--
+      if (dragCountRef.current <= 0) { setDropping(false); dragCountRef.current = 0 }
+    }
+    const handleDragOver = (e: DragEvent) => { e.preventDefault() }
+    const handleDrop = async (e: DragEvent) => {
+      e.preventDefault()
+      setDropping(false)
+      dragCountRef.current = 0
+
+      const mediaFiles = Array.from(e.dataTransfer?.files || []).filter(f => f.type.startsWith('image/') || f.type.startsWith('video/'))
+      if (mediaFiles.length === 0) return
+
+      setUploading(true)
+      const store = useOasisStore.getState()
+
+      // Count existing media for offset calculation
+      const existingMedia = store.placedCatalogAssets.filter(a => a.imageUrl || a.videoUrl).length
+
+      for (let i = 0; i < mediaFiles.length; i++) {
+        try {
+          const formData = new FormData()
+          formData.append('file', mediaFiles[i])
+          const res = await fetch('/api/media/upload', { method: 'POST', body: formData })
+          if (!res.ok) { console.error('[Drop] Upload failed:', await res.text()); continue }
+          const { url, name, mediaType } = await res.json()
+
+          // Place media in a row, spaced 3 units apart on X axis
+          const xOffset = (existingMedia + i) * 3
+          if (mediaType === 'video') {
+            store.placeVideoAt(name || mediaFiles[i].name, url, [xOffset, 0, 0])
+          } else {
+            store.placeImageAt(name || mediaFiles[i].name, url, [xOffset, 0, 0])
+          }
+        } catch (err) {
+          console.error('[Drop] Error uploading:', err)
+        }
+      }
+      setUploading(false)
+    }
+
+    document.addEventListener('dragenter', handleDragEnter)
+    document.addEventListener('dragleave', handleDragLeave)
+    document.addEventListener('dragover', handleDragOver)
+    document.addEventListener('drop', handleDrop)
+    return () => {
+      document.removeEventListener('dragenter', handleDragEnter)
+      document.removeEventListener('dragleave', handleDragLeave)
+      document.removeEventListener('dragover', handleDragOver)
+      document.removeEventListener('drop', handleDrop)
+    }
+  }, [])
+
+  return (
+    <>
+      {/* Visual overlay when dragging — pointer-events:none so it doesn't intercept */}
+      {dropping && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm border-4 border-dashed border-sky-400/60 pointer-events-none">
+          <div className="text-center">
+            <div className="text-6xl mb-4">🖼️</div>
+            <div className="text-sky-400 text-2xl font-bold tracking-wide">Drop media into the Oasis</div>
+            <div className="text-white/50 text-sm mt-2">Images (PNG, JPG, WebP, GIF) + Videos (MP4, WebM) — up to 100MB</div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload progress */}
+      {uploading && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[10001] bg-black/80 border border-sky-400/40 rounded-lg px-6 py-3 text-sky-400 text-sm pointer-events-none">
+          Uploading images...
+        </div>
+      )}
+    </>
   )
 }
 

@@ -149,6 +149,10 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
       document.activeElement.blur()
     }
+    // Re-acquire pointer lock if returning to a mode that needs it
+    if (prev === 'noclip' || prev === 'third-person') {
+      setTimeout(() => get().requestPointerLock(), 100)
+    }
   },
 
   handleEscape: () => {
@@ -159,6 +163,10 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     set({ inputState: prev, _previousCameraState: null })
     if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
       document.activeElement.blur()
+    }
+    // Re-acquire pointer lock if returning to a mode that needs it
+    if (prev === 'noclip' || prev === 'third-person') {
+      setTimeout(() => get().requestPointerLock(), 100)
     }
     return true
   },

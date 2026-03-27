@@ -26,6 +26,12 @@ export type OasisCommand =
   // Agent windows
   | { type: 'FOCUS_AGENT_WINDOW'; payload: { id: string } }
   | { type: 'UNFOCUS_AGENT_WINDOW' }
+
+  // Presentation / slide navigation
+  | { type: 'FOCUS_IMAGE'; payload: { id: string } }
+  | { type: 'UNFOCUS_IMAGE' }
+  | { type: 'NEXT_SLIDE' }
+  | { type: 'PREV_SLIDE' }
   | { type: 'ADD_AGENT_WINDOW'; payload: { agentType: string; position: [number, number, number]; sessionId?: string; label?: string } }
   | { type: 'REMOVE_AGENT_WINDOW'; payload: { id: string } }
 
@@ -181,6 +187,18 @@ export function registerStoreHandler(): () => void {
         break
       case 'UNFOCUS_AGENT_WINDOW':
         store.focusAgentWindow(null)
+        break
+      case 'FOCUS_IMAGE':
+        store.focusImage(cmd.payload.id)
+        break
+      case 'UNFOCUS_IMAGE':
+        store.focusImage(null)
+        break
+      case 'NEXT_SLIDE':
+        store.navigateSlide(1)
+        break
+      case 'PREV_SLIDE':
+        store.navigateSlide(-1)
         break
       case 'CYCLE_CAMERA_MODE': {
         const modes: Array<'orbit' | 'noclip' | 'third-person'> = ['orbit', 'noclip', 'third-person']

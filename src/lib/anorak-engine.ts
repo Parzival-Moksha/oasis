@@ -80,7 +80,8 @@ export interface HistoryMessage {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export async function* parseAnorakSSE(response: Response): AsyncGenerator<AnorakEvent> {
-  const reader = response.body!.getReader()
+  if (!response.body) { yield { type: 'error', content: 'No response body' }; return }
+  const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
 

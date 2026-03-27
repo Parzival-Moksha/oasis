@@ -20,7 +20,7 @@ import { LIGHT_INTENSITY_MAX, LIGHT_INTENSITY_STEP } from '../../lib/conjure/typ
 import type { MovementPreset, ObjectBehavior, AnimationConfig, ModelStats, VRMExpressionConfig } from '../../lib/conjure/types'
 import { formatNumber, formatBytes } from './ModelPreview'
 import { ANIMATION_LIBRARY, ANIM_CATEGORIES, LIB_PREFIX, loadAnimationClip, type AnimCategory } from '../../lib/forge/animation-library'
-import { FRAME_STYLES } from './WorldObjects'
+import { FRAME_STYLES, getAudioElement } from './WorldObjects'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS — The inspector's visual DNA
@@ -318,6 +318,53 @@ function AnimationLibrarySection({ currentClipName, onSelectAnimation, onStopAni
 interface ObjectInspectorProps {
   isOpen: boolean
   onClose: () => void
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AUDIO SEEK SLIDER — polls HTMLAudioElement for progress, seeks on drag
+// ═══════════════════════════════════════════════════════════════════════════
+
+function AudioSeekSlider({ objectId }: { objectId: string }) {
+  const [progress, setProgress] = useState(0)
+  const [duration, setDuration] = useState(0)
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const el = getAudioElement(objectId)
+      if (!el) return
+      if (el.duration && isFinite(el.duration)) {
+        setDuration(el.duration)
+        setProgress(el.currentTime / el.duration)
+      }
+    }, 250) // 4fps polling
+    return () => clearInterval(interval)
+  }, [objectId])
+
+  const formatTime = (sec: number) => {
+    const m = Math.floor(sec / 60)
+    const s = Math.floor(sec % 60)
+    return `${m}:${s.toString().padStart(2, '0')}`
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[9px] text-gray-500 font-mono w-10">{formatTime(progress * duration)}</span>
+      <input
+        type="range" min="0" max="1" step="0.001"
+        value={progress}
+        onChange={e => {
+          const frac = parseFloat(e.target.value)
+          setProgress(frac)
+          const el = getAudioElement(objectId)
+          if (el && el.duration && isFinite(el.duration)) {
+            el.currentTime = frac * el.duration
+          }
+        }}
+        className="flex-1 h-1 accent-sky-500"
+      />
+      <span className="text-[9px] text-gray-500 font-mono w-10 text-right">{formatTime(duration)}</span>
+    </div>
+  )
 }
 
 export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
@@ -1140,7 +1187,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
         )}
 
         {/* ░▒▓ FRAME PICKER — 8 frame styles for image placements ▓▒░ */}
-        {resolved?.type === 'catalog' && (resolved.data as any).imageUrl && (() => {
+        {resolved?.type === 'catalog' && ((resolved.data as any).imageUrl || (resolved.data as any).videoUrl) && (() => {
           const placement = resolved.data as import('../../lib/conjure/types').CatalogPlacement
           const currentFrame = placement.imageFrameStyle
           return (
@@ -1180,6 +1227,165 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                     )
                   })}
                 </div>
+              </div>
+              {/* Frame thickness slider — only shown when a frame is selected */}
+              {currentFrame && (
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-[10px] text-gray-400 w-16">Thickness</span>
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="50"
+                    step="0.5"
+                    value={placement.imageFrameThickness ?? 1}
+                    onChange={e => updateCatalogPlacement(inspectedObjectId!, { imageFrameThickness: parseFloat(e.target.value) })}
+                    className="flex-1 h-1 accent-sky-500"
+                  />
+                  <span className="text-[9px] text-gray-500 font-mono w-6 text-right">{(placement.imageFrameThickness ?? 1).toFixed(1)}</span>
+                </div>
+              )}
+            </>
+          )
+        })()}
+
+        {/* ░▒▓ AUDIO CONTROLS — any object can become a loudspeaker ▓▒░ */}
+        {resolved && (() => {
+          const beh = behaviors[inspectedObjectId!] || {}
+          const placement = resolved.type === 'catalog' ? resolved.data as import('../../lib/conjure/types').CatalogPlacement : null
+          const hasAudio = !!(beh.audioUrl || placement?.videoUrl || placement?.audioUrl)
+          return (
+            <>
+              <SectionHeader>&#128266; Audio</SectionHeader>
+              <div className="rounded-lg border border-white/5 p-2 space-y-2" style={{ background: 'rgba(20, 20, 20, 0.6)' }}>
+                {!hasAudio ? (
+                  <>
+                    <div className="text-[10px] text-gray-500">Make this object a loudspeaker</div>
+                    <div className="flex gap-1">
+                      <input
+                        type="text"
+                        placeholder="/images/my-song.mp3"
+                        className="flex-1 bg-black/60 border border-sky-500/20 rounded px-2 py-1 text-[10px] text-white placeholder-gray-600 font-mono focus:outline-none focus:border-sky-500/40"
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            const url = (e.target as HTMLInputElement).value.trim()
+                            if (url) setObjectBehavior(inspectedObjectId!, { audioUrl: url })
+                          }
+                        }}
+                      />
+                      <label className="text-[10px] px-2 py-1 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 hover:bg-sky-500/30 transition-colors cursor-pointer">
+                        Upload
+                        <input type="file" accept="audio/*" className="hidden" onChange={async e => {
+                          const file = e.target.files?.[0]
+                          if (!file) return
+                          const formData = new FormData()
+                          formData.append('file', file)
+                          const res = await fetch('/api/media/upload', { method: 'POST', body: formData })
+                          if (res.ok) {
+                            const { url } = await res.json()
+                            setObjectBehavior(inspectedObjectId!, { audioUrl: url })
+                          }
+                        }} />
+                      </label>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Audio URL display */}
+                    {beh.audioUrl && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-[9px] text-gray-500 font-mono truncate flex-1">{beh.audioUrl}</span>
+                        <button
+                          onClick={() => setObjectBehavior(inspectedObjectId!, { audioUrl: undefined })}
+                          className="text-[9px] text-red-400 hover:text-red-300"
+                        >✕</button>
+                      </div>
+                    )}
+                    {/* Transport: play/pause/stop */}
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setObjectBehavior(inspectedObjectId!, { audioState: 'playing', audioMuted: false })}
+                        className={`text-xs px-2.5 py-1 rounded border transition-colors ${
+                          beh.audioState !== 'paused' && beh.audioState !== 'stopped'
+                            ? 'border-green-500/50 bg-green-500/30 text-green-300'
+                            : 'border-green-500/30 bg-green-500/10 text-green-400 hover:bg-green-500/20'
+                        }`}
+                        title="Play"
+                      >&#9654;</button>
+                      <button
+                        onClick={() => setObjectBehavior(inspectedObjectId!, { audioState: 'paused' })}
+                        className={`text-xs px-2 py-1 rounded border transition-colors ${
+                          beh.audioState === 'paused'
+                            ? 'border-yellow-500/50 bg-yellow-500/30 text-yellow-300'
+                            : 'border-yellow-500/30 bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20'
+                        }`}
+                        title="Pause"
+                      >&#10074;&#10074;</button>
+                      <button
+                        onClick={() => setObjectBehavior(inspectedObjectId!, { audioState: 'stopped' })}
+                        className={`text-xs px-2 py-1 rounded border transition-colors ${
+                          beh.audioState === 'stopped'
+                            ? 'border-red-500/50 bg-red-500/30 text-red-300'
+                            : 'border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20'
+                        }`}
+                        title="Stop (rewind to start)"
+                      >&#9632;</button>
+                      <span className={`ml-2 text-[9px] font-mono ${
+                        beh.audioState === 'paused' ? 'text-yellow-400' :
+                        beh.audioState === 'stopped' ? 'text-red-400' : 'text-green-400'
+                      }`}>
+                        {beh.audioState === 'paused' ? '⏸ paused' :
+                         beh.audioState === 'stopped' ? '⏹ stopped' : '🔊 playing'}
+                      </span>
+                    </div>
+                    {/* Seek / progress slider */}
+                    <AudioSeekSlider objectId={inspectedObjectId!} />
+                    {/* Mute toggle (independent of play state) */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setObjectBehavior(inspectedObjectId!, { audioMuted: !beh.audioMuted })}
+                        className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                          beh.audioMuted
+                            ? 'border-red-500/30 bg-red-500/10 text-red-400'
+                            : 'border-gray-600/30 bg-gray-600/10 text-gray-400'
+                        }`}
+                      >
+                        {beh.audioMuted ? '🔇 Muted' : '🔊 Unmuted'}
+                      </button>
+                      <button
+                        onClick={() => setObjectBehavior(inspectedObjectId!, { audioLoop: !(beh.audioLoop ?? true) })}
+                        className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                          (beh.audioLoop ?? true)
+                            ? 'border-sky-500/30 bg-sky-500/10 text-sky-400'
+                            : 'border-gray-600/30 bg-gray-600/10 text-gray-500'
+                        }`}
+                      >
+                        {(beh.audioLoop ?? true) ? '🔁 Loop' : '➡️ Once'}
+                      </button>
+                    </div>
+                    {/* Volume */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-gray-400 w-16">Volume</span>
+                      <input
+                        type="range" min="0" max="1" step="0.05"
+                        value={beh.audioVolume ?? 1}
+                        onChange={e => setObjectBehavior(inspectedObjectId!, { audioVolume: parseFloat(e.target.value) })}
+                        className="flex-1 h-1 accent-sky-500"
+                      />
+                      <span className="text-[9px] text-gray-500 font-mono w-8 text-right">{((beh.audioVolume ?? 1) * 100).toFixed(0)}%</span>
+                    </div>
+                    {/* Max distance */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-gray-400 w-16">Range</span>
+                      <input
+                        type="range" min="1" max="100" step="1"
+                        value={beh.audioMaxDistance ?? 15}
+                        onChange={e => setObjectBehavior(inspectedObjectId!, { audioMaxDistance: parseFloat(e.target.value) })}
+                        className="flex-1 h-1 accent-sky-500"
+                      />
+                      <span className="text-[9px] text-gray-500 font-mono w-8 text-right">{beh.audioMaxDistance ?? 15}m</span>
+                    </div>
+                  </>
+                )}
               </div>
             </>
           )

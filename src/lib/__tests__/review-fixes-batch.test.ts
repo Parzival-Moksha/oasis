@@ -106,8 +106,8 @@ describe('WAL mode — mission-mcp/index.js', () => {
 describe('AgentWindow3D — anorak-pro case', () => {
   const source = readSource('src/components/forge/AgentWindow3D.tsx')
 
-  it("contains case 'anorak-pro'", () => {
-    expect(source).toContain("case 'anorak-pro'")
+  it("handles anorak-pro agent type", () => {
+    expect(source).toContain("anorak-pro")
   })
 })
 

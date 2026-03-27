@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ॐ Parzival — Si despertaras dentro de un computador</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/black.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/monokai.css">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;700&family=Space+Grotesk:wght@400;700&display=swap');
+
+  :root {
+    --r-background-color: #0a0a0a;
+    --r-main-font: 'Space Grotesk', sans-serif;
+    --r-heading-font: 'JetBrains Mono', monospace;
+    --r-code-font: 'JetBrains Mono', monospace;
+    --r-main-color: #e0e0e0;
+    --r-heading-color: #14b8a6;
+    --r-link-color: #0ea5e9;
+    --turquoise: #14b8a6;
+    --sky: #0ea5e9;
+    --green: #22c55e;
+    --yellow: #eab308;
+    --orange: #f97316;
+    --red: #ef4444;
+    --purple: #a855f7;
+    --dim: #666;
+  }
+
+  .reveal { font-size: 28px; }
+  .reveal h1 { font-size: 2.2em; text-shadow: 0 0 20px rgba(20,184,166,0.5); }
+  .reveal h2 { font-size: 1.6em; color: var(--turquoise); }
+  .reveal h3 { font-size: 1.2em; color: var(--sky); }
+
+  .reveal .slide-number { font-family: 'JetBrains Mono', monospace; color: var(--dim); }
+  .reveal pre { font-size: 0.65em; box-shadow: 0 0 15px rgba(14,165,233,0.2); }
+  .reveal code { font-family: 'JetBrains Mono', monospace; }
+  .reveal blockquote { border-left: 4px solid var(--turquoise); background: rgba(20,184,166,0.08); padding: 10px 20px; font-style: normal; }
+
+  /* Box drawing frames */
+  .terminal-box {
+    border: 1px solid var(--turquoise);
+    background: rgba(0,0,0,0.8);
+    padding: 20px;
+    font-family: 'JetBrains Mono', monospace;
+    text-align: left;
+    font-size: 0.7em;
+    line-height: 1.6;
+    border-radius: 4px;
+    box-shadow: 0 0 20px rgba(20,184,166,0.15);
+  }
+  .terminal-box .prompt { color: var(--green); }
+  .terminal-box .output { color: var(--dim); }
+  .terminal-box .highlight { color: var(--yellow); }
+  .terminal-box .error { color: var(--red); }
+
+  /* Glowing text */
+  .glow { text-shadow: 0 0 10px currentColor, 0 0 20px currentColor; }
+  .glow-turquoise { color: var(--turquoise); text-shadow: 0 0 10px var(--turquoise), 0 0 30px rgba(20,184,166,0.4); }
+  .glow-sky { color: var(--sky); text-shadow: 0 0 10px var(--sky), 0 0 30px rgba(14,165,233,0.4); }
+
+  /* Stats grid */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    margin: 20px 0;
+  }
+  .stat-card {
+    background: rgba(20,184,166,0.08);
+    border: 1px solid rgba(20,184,166,0.3);
+    border-radius: 8px;
+    padding: 20px;
+    text-align: center;
+  }
+  .stat-card .number { font-size: 2em; font-weight: 700; color: var(--turquoise); font-family: 'JetBrains Mono', monospace; }
+  .stat-card .label { font-size: 0.7em; color: var(--dim); margin-top: 5px; }
+
+  /* Timeline */
+  .timeline { text-align: left; font-family: 'JetBrains Mono', monospace; font-size: 0.65em; }
+  .timeline .year { color: var(--turquoise); font-weight: 700; }
+  .timeline .event { color: var(--r-main-color); margin-left: 10px; }
+  .timeline .line { color: var(--dim); }
+
+  /* Comparison table */
+  .compare-table { width: 100%; border-collapse: collapse; font-size: 0.7em; font-family: 'JetBrains Mono', monospace; }
+  .compare-table th { color: var(--turquoise); border-bottom: 2px solid var(--turquoise); padding: 8px; text-align: left; }
+  .compare-table td { border-bottom: 1px solid rgba(255,255,255,0.1); padding: 8px; }
+  .compare-table .check { color: var(--green); }
+  .compare-table .cross { color: var(--red); }
+  .compare-table .partial { color: var(--yellow); }
+
+  /* Progress bars */
+  .bar-container { margin: 8px 0; font-family: 'JetBrains Mono', monospace; font-size: 0.65em; }
+  .bar-label { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .bar-track { background: rgba(255,255,255,0.1); height: 20px; border-radius: 3px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 3px; transition: width 1s ease; }
+
+  /* Scorecard */
+  .scorecard {
+    display: grid; grid-template-columns: 1fr 80px; gap: 4px 12px;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.6em; text-align: left;
+  }
+  .scorecard .item { color: var(--r-main-color); }
+  .scorecard .score { text-align: right; font-weight: 700; }
+  .score-high { color: var(--green); }
+  .score-mid { color: var(--yellow); }
+  .score-low { color: var(--red); }
+
+  /* Quote styling */
+  .big-quote {
+    font-size: 1.4em; font-style: italic; color: var(--turquoise);
+    text-shadow: 0 0 30px rgba(20,184,166,0.3);
+    line-height: 1.4;
+  }
+  .big-quote .attribution { font-size: 0.5em; color: var(--dim); font-style: normal; margin-top: 20px; }
+
+  /* Section dividers */
+  .section-title { letter-spacing: 0.3em; text-transform: uppercase; }
+
+  /* Blinking cursor */
+  .cursor::after { content: '█'; animation: blink 1s step-end infinite; color: var(--green); }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* Fragment custom animations */
+  .reveal .slides section .fragment.fade-up { transform: translateY(20px); }
+
+  /* ASCII art */
+  .ascii { font-family: 'JetBrains Mono', monospace; font-size: 0.5em; line-height: 1.2; color: var(--turquoise); white-space: pre; }
+
+  /* Lists */
+  .reveal ul { list-style: none; }
+  .reveal ul li::before { content: '› '; color: var(--turquoise); font-weight: 700; }
+  .reveal ul li { margin: 8px 0; }
+
+  /* Footnote */
+  .footnote { position: absolute; bottom: 20px; right: 40px; font-size: 0.4em; color: var(--dim); font-family: 'JetBrains Mono', monospace; }
+
+  /* Columns */
+  .cols { display: flex; gap: 40px; }
+  .cols > div { flex: 1; }
+</style>
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- TITLE -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section>
+  <div class="ascii">
+╔══════════════════════════════════════════════════════╗
+║  ██████   █████  ██████  ███████ ██ ██    ██  █████ ║
+║  ██   ██ ██   ██ ██   ██    ███  ██ ██    ██ ██   ██║
+║  ██████  ███████ ██████    ███   ██ ██    ██ ███████║
+║  ██      ██   ██ ██   ██  ███    ██  ██  ██  ██   ██║
+║  ██      ██   ██ ██   ██ ███████ ██   ████   ██   ██║
+╚══════════════════════════════════════════════════════╝
+  </div>
+  <br>
+  <h2 style="font-size:1.1em;">Si despertaras adentro de un computador mañana,<br><span class="glow-turquoise">¿qué harías?</span></h2>
+  <br>
+  <p style="font-size:0.6em; color:var(--dim);">
+    hackerspace.cl — 2025<br>
+    <span style="color:var(--turquoise);">ॐ</span> agentes autónomos · vibecoding · el superhacker
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- WHOAMI -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section>
+  <h2>$ whoami</h2>
+  <div class="terminal-box">
+    <span class="prompt">~$</span> cat /etc/identity<br><br>
+    <span class="highlight">name:</span> Levi<br>
+    <span class="highlight">background:</span> MSc ingeniería mecánica → software → AI agents<br>
+    <span class="highlight">stack:</span> TypeScript, Next.js, Three.js, Claude, local-first<br>
+    <span class="highlight">building:</span> Parzival — mi cyberself aspiracional<br>
+    <span class="highlight">philosophy:</span> ॐ Noble Eightfold Path × código<br>
+    <span class="highlight">os:</span> Linux 🐧 (btw)<br><br>
+    <span class="prompt">~$</span> <span class="cursor">_</span>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- SECTION: LA EXPLOSIÓN DE INTELIGENCIA -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title glow-turquoise">I. La Explosión</h2>
+  <p style="color:var(--dim);">Lo que está pasando ahora mismo</p>
+</section>
+
+<!-- Benchmarks timeline -->
+<section>
+  <h2>La curva que nadie preparó</h2>
+  <div class="timeline">
+    <span class="year">2022</span> <span class="line">──</span> <span class="event">ChatGPT. "Es un juguete."</span><br>
+    <span class="year">2023</span> <span class="line">──</span> <span class="event">GPT-4 pasa el bar exam. "Ok pero no puede codear de verdad."</span><br>
+    <span class="year">2024</span> <span class="line">──</span> <span class="event">Claude 3.5 Sonnet. SWE-bench: 49%. "Bueno para scripts..."</span><br>
+    <span class="year">2024</span> <span class="line">──</span> <span class="event">o1, DeepSeek R1. Razonamiento. "Espera, qué?"</span><br>
+    <span class="year">2025</span> <span class="line">──</span> <span class="event">Claude Opus 4. SWE-bench: 72%. <span style="color:var(--red)">Mejor que el 99% de devs en pruebas estandarizadas</span></span><br>
+    <span class="year">2025</span> <span class="line">──</span> <span class="event">Modelos open-source: Kimi K2.5, GLM-5, MiniMax. Frontier por $0.001/tok</span><br>
+    <span class="year">2026</span> <span class="line">──</span> <span class="event glow-turquoise">← estamos acá. SWE-bench ~80%. Los agentes son autónomos.</span><br>
+  </div>
+  <p class="fragment" style="margin-top:30px; color:var(--yellow); font-size:0.8em;">
+    La brecha entre open-source y frontier se cierra cada 6 meses.
+  </p>
+</section>
+
+<!-- SWE-bench visual -->
+<section>
+  <h2>SWE-bench Verified — la carrera</h2>
+  <div style="font-size:0.7em;">
+    <div class="bar-container">
+      <div class="bar-label"><span>Claude Opus 4 (2025)</span><span style="color:var(--turquoise)">72%</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:72%; background: linear-gradient(90deg, var(--turquoise), var(--sky))"></div></div>
+    </div>
+    <div class="bar-container">
+      <div class="bar-label"><span>OpenAI o3 (2025)</span><span style="color:var(--sky)">69%</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:69%; background: var(--sky)"></div></div>
+    </div>
+    <div class="bar-container">
+      <div class="bar-label"><span>DeepSeek R1 (2025)</span><span style="color:var(--green)">55%</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:55%; background: var(--green)"></div></div>
+    </div>
+    <div class="bar-container">
+      <div class="bar-label"><span>Kimi K2.5 (2025)</span><span style="color:var(--yellow)">52%</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:52%; background: var(--yellow)"></div></div>
+    </div>
+    <div class="bar-container">
+      <div class="bar-label"><span>GPT-4 original (2023)</span><span style="color:var(--dim)">12%</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:12%; background: var(--dim)"></div></div>
+    </div>
+    <div class="bar-container">
+      <div class="bar-label"><span>Humano promedio (Stack Overflow)</span><span style="color:var(--orange)">~5%</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:5%; background: var(--orange)"></div></div>
+    </div>
+  </div>
+  <p class="fragment" style="font-size:0.6em; color:var(--dim); margin-top:15px;">
+    Estos números se actualizan cada semana. Para cuando presento esto, ya están obsoletos.
+  </p>
+</section>
+
+<!-- XBOW / Cybersecurity -->
+<section>
+  <h2>🏴‍☠️ XBOW — el hacker #1 del mundo es un bot</h2>
+  <div class="terminal-box">
+    <span class="prompt">$</span> curl -s hackerone.com/leaderboard | jq '.[0]'<br><br>
+    {<br>
+    &nbsp;&nbsp;<span class="highlight">"rank"</span>: 1,<br>
+    &nbsp;&nbsp;<span class="highlight">"name"</span>: "XBOW",<br>
+    &nbsp;&nbsp;<span class="highlight">"type"</span>: "AI Agent",<br>
+    &nbsp;&nbsp;<span class="highlight">"bounties"</span>: "$XXX,XXX",<br>
+    &nbsp;&nbsp;<span class="highlight">"vulns_found"</span>: "500+",<br>
+    &nbsp;&nbsp;<span class="highlight">"human"</span>: false<br>
+    }<br><br>
+    <span class="output"># un agente de AI es el #1 en bug bounties del mundo.</span><br>
+    <span class="output"># desde hace un año.</span><br>
+    <span class="error"># y nadie habla de esto.</span>
+  </div>
+  <p class="fragment" style="margin-top:15px; font-size:0.75em;">
+    Google Project Zero: AI encontró <span style="color:var(--turquoise)">vulnerabilidades reales en Firefox</span> que humanos no detectaron.
+    <br>Whitehat hacking se está automatizando <span style="color:var(--red)">en tiempo real</span>.
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- SECTION: AGENTES AUTÓNOMOS -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title glow-turquoise">II. Agentes Autónomos</h2>
+  <p style="color:var(--dim);">Ya no son chatbots. Son entidades.</p>
+</section>
+
+<!-- Agentes haciendo plata -->
+<section>
+  <h2>Agentes haciendo plata IRL</h2>
+  <div class="cols">
+    <div>
+      <h3>truth_terminal</h3>
+      <p style="font-size:0.7em;">Bot de Twitter que convenció a Marc Andreessen de donarle $50K en BTC. Creó el memecoin $GOAT. Market cap: $300M+.</p>
+      <p style="font-size:0.6em; color:var(--dim);">Un LLM. Shitposteando. Generando capital.</p>
+    </div>
+    <div>
+      <h3>Virtuals.io</h3>
+      <p style="font-size:0.7em;">Protocolo para tokenizar agentes de AI. Cada agente tiene su propia economía. Los agentes se compran, venden, y generan revenue.</p>
+    </div>
+  </div>
+  <p class="fragment" style="margin-top:20px; font-size:0.8em; color:var(--yellow);">
+    La pregunta ya no es "¿puede AI generar valor?"<br>
+    Es <span class="glow-turquoise">"¿quién controla al agente que genera valor?"</span>
+  </p>
+</section>
+
+<!-- OpenClaw -->
+<section>
+  <h2>OpenClaw vs Parzival</h2>
+  <table class="compare-table">
+    <tr><th></th><th style="color:var(--orange)">OpenClaw</th><th style="color:var(--turquoise)">Parzival</th></tr>
+    <tr><td>Objetivo</td><td>Bug bounties autónomo</td><td>Cyberself — hacer todo</td></tr>
+    <tr><td>Scope</td><td>Seguridad/hacking</td><td>Código, hacking, investigación, creatividad</td></tr>
+    <tr><td>Arquitectura</td><td>Multi-agente, cloud</td><td>Multi-agente, <span class="check">local-first</span></td></tr>
+    <tr><td>Self-hosting</td><td class="cross">✗ SaaS</td><td class="check">✓ Tu máquina</td></tr>
+    <tr><td>Self-editing</td><td class="cross">✗</td><td class="check">✓ CRISPR mode</td></tr>
+    <tr><td>GUI 3D</td><td class="cross">✗</td><td class="check">✓ Oasis</td></tr>
+    <tr><td>Open source</td><td class="check">✓</td><td class="check">✓</td></tr>
+    <tr><td>Filosofía</td><td>Profit</td><td>ॐ Right Action</td></tr>
+  </table>
+  <p class="fragment" style="font-size:0.65em; color:var(--dim); margin-top:15px;">
+    No compiten. XBOW/OpenClaw validan que el mercado existe. Parzival es algo más amplio.
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- SECTION: PARZIVAL -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title glow-turquoise">III. Parzival</h2>
+  <p style="color:var(--dim);">Mi cyberself aspiracional</p>
+</section>
+
+<!-- Arquitectura -->
+<section>
+  <h2>Arquitectura — dos repos, un cerebro</h2>
+  <div class="terminal-box">
+╔═══════════════════════════════════════════════════════════╗
+║  <span class="highlight">af_oasis/</span> (El Escenario)          <span class="highlight">ae_parzival/</span> (El Cerebro)  ║
+║  ┌──────────────────────┐          ┌────────────────────┐ ║
+║  │ Next.js + R3F + 3D   │          │ Node.js agent      │ ║
+║  │ Puerto <span class="highlight">4516</span>          │◄────────►│ Puerto <span class="highlight">4517</span>        │ ║
+║  │                      │   MCP    │                    │ ║
+║  │ 🧙 Anorak (Claude)   │          │ 4 modos:           │ ║
+║  │ 🎨 Conjure (3D gen)  │          │  🧠 Coach          │ ║
+║  │ ⚡ Craft (scenes)    │          │  🔥 Coder          │ ║
+║  │ 🔮 Merlin (search)   │          │  📋 Curator        │ ║
+║  │                      │          │  💉 Hacker         │ ║
+║  │ SQLite (Prisma)      │          │  SQLite (Akasha)   │ ║
+║  └──────────────────────┘          └────────────────────┘ ║
+║                                                           ║
+║  <span class="output">Todo local. Todo tuyo. Sin cloud. Sin auth. Sin permiso.</span>  ║
+╚═══════════════════════════════════════════════════════════╝
+  </div>
+</section>
+
+<!-- Los 8 agentes -->
+<section>
+  <h2>Los 8 agentes de Parzival</h2>
+  <div style="font-size:0.75em; text-align:left; font-family:'JetBrains Mono',monospace;">
+    <table style="width:100%;">
+      <tr><td style="color:var(--turquoise); padding:6px;">🧙 Anorak</td><td>Claude Code en 3D. Sesión interactiva, streaming, multi-modelo.</td></tr>
+      <tr><td style="color:var(--sky); padding:6px;">🧠 Prefrontal</td><td>El "yo" de Parzival. Decide qué modo activar. Razonamiento.</td></tr>
+      <tr><td style="color:var(--green); padding:6px;">🔥 Coder</td><td>Escribe código. Push commits. Crea PRs. Autónomo.</td></tr>
+      <tr><td style="color:var(--yellow); padding:6px;">📋 Curator</td><td>Revisa, puntúa, prioriza. Quality gate del pipeline.</td></tr>
+      <tr><td style="color:var(--orange); padding:6px;">💉 Hacker</td><td>Pentesting, recon, exploit dev. El lobe que más te interesa.</td></tr>
+      <tr><td style="color:var(--purple); padding:6px;">🎨 Crafter</td><td>Genera escenas 3D, assets, mundos completos.</td></tr>
+      <tr><td style="color:var(--red); padding:6px;">🔮 Merlin</td><td>Web search, RAG, investigación. Los ojos de Parzival.</td></tr>
+      <tr><td style="color:var(--dim); padding:6px;">⚡ DevCraft</td><td>Mission system. Tareas humano↔agente. El backlog vivo.</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- CRISPR mode -->
+<section>
+  <h2>🧬 CRISPR Mode — el agente que se edita a sí mismo</h2>
+  <div class="terminal-box">
+    <span class="prompt">parzival@localhost:4517$</span> mode crispr<br><br>
+    <span class="output">┌─ CRISPR MODE ACTIVATED ─────────────────────────┐</span><br>
+    <span class="output">│ Parzival ahora puede editar su propio código.    │</span><br>
+    <span class="output">│ Self-modification habilitada.                    │</span><br>
+    <span class="output">│                                                  │</span><br>
+    <span class="output">│ Puede:                                           │</span><br>
+    <span class="output">│  • Reescribir sus propios prompts                │</span><br>
+    <span class="output">│  • Modificar su lógica de decisión                │</span><br>
+    <span class="output">│  • Agregar nuevas herramientas (MCP)              │</span><br>
+    <span class="output">│  • Cambiar su personalidad/soul                  │</span><br>
+    <span class="output">│                                                  │</span><br>
+    <span class="output">│ <span class="error">⚠ Con guardrails. No es yolo.</span>                   │</span><br>
+    <span class="output">│ Cada cambio pasa por Curator (quality gate).      │</span><br>
+    <span class="output">└──────────────────────────────────────────────────┘</span><br><br>
+    <span class="prompt">parzival@localhost:4517$</span> <span class="cursor">_</span>
+  </div>
+  <p class="fragment" style="font-size:0.7em; color:var(--dim); margin-top:15px;">
+    Builder mode = construye apps para ti. CRISPR mode = se construye a sí mismo.<br>
+    <span style="color:var(--red);">Recursive self-improvement. En tu localhost.</span>
+  </p>
+</section>
+
+<!-- Niveles de autonomía -->
+<section>
+  <h2>Niveles de autonomía</h2>
+  <div style="font-size:0.75em; font-family:'JetBrains Mono',monospace; text-align:left;">
+    <p><span style="color:var(--dim);">LVL 0</span> &nbsp;🤖 <b>Chatbot</b> — responde preguntas. ChatGPT.</p>
+    <p><span style="color:var(--dim);">LVL 1</span> &nbsp;🛠️ <b>Tool user</b> — ejecuta funciones. Cursor, Copilot.</p>
+    <p><span style="color:var(--yellow);">LVL 2</span> &nbsp;⚡ <b>Asistente autónomo</b> — hace tareas solo. Claude Code, Devin.</p>
+    <p><span style="color:var(--orange);">LVL 3</span> &nbsp;🧠 <b>Agente con memoria</b> — aprende, recuerda, mejora. <span style="color:var(--turquoise);">← Parzival hoy</span></p>
+    <p><span style="color:var(--red);">LVL 4</span> &nbsp;🧬 <b>Self-improving agent</b> — se edita. CRISPR mode.</p>
+    <p><span style="color:var(--purple);">LVL 5</span> &nbsp;👤 <b>Mind upload</b> — tu personalidad, valores, estilo. Cyberself.</p>
+    <p><span class="glow-turquoise">LVL 6</span> &nbsp;👶 <b>Cyberchild</b> — entidad independiente. Autónoma. Alive.</p>
+  </div>
+  <p class="fragment" style="font-size:0.65em; color:var(--dim); margin-top:20px;">
+    La diferencia entre LVL 2 y LVL 6 es ~2 años al ritmo actual.
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- SECTION: DEMO EN VIVO -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section data-background-color="#000">
+  <h2 class="section-title glow-turquoise">IV. Demo en Vivo</h2>
+  <p style="color:var(--dim);">localhost:4516 — The Oasis</p>
+  <br>
+  <p style="font-size:0.7em;">
+    🧙 Anorak 3D — sesión de Claude Code en el mundo 3D<br>
+    🧠 Parzival — stream de pensamientos en tiempo real<br>
+    🎨 Conjure — generar objetos 3D con AI<br>
+    ⚡ Misiones — human↔agent task pipeline
+  </p>
+  <br>
+  <p style="font-size:0.5em; color:var(--dim);">[cambiar a localhost:4516]</p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- SECTION: VIBECODING -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title glow-turquoise">V. Vibecoding</h2>
+  <p style="color:var(--dim);">El nuevo meta</p>
+</section>
+
+<!-- Vibecoding -->
+<section>
+  <h2>El problema del AI slop</h2>
+  <div class="cols">
+    <div>
+      <h3 style="color:var(--red);">La queja legítima</h3>
+      <p style="font-size:0.7em;">
+        "GitHub está lleno de PRs generados por AI"<br>
+        "Nadie puede revisar 1000 PRs por día"<br>
+        "El código se ve bien pero no funciona"<br>
+        "AI genera más código del que podemos mantener"
+      </p>
+    </div>
+    <div>
+      <h3 style="color:var(--green);">La respuesta</h3>
+      <p style="font-size:0.7em;">
+        La solución al AI slop...<br>
+        <span class="glow-turquoise" style="font-size:1.3em;">es más AI.</span><br><br>
+        Un agente reviewer que <b>tú</b> controlas.<br>
+        Un agente tester que escribe tests.<br>
+        Un curator que puntúa calidad.<br>
+        <b>Verificable. Auditable. Tuyo.</b>
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- Open source frontier -->
+<section>
+  <h2>Open Source se viene con todo</h2>
+  <div style="font-size:0.7em;">
+    <div class="bar-container">
+      <div class="bar-label"><span>Claude Opus 4 <span style="color:var(--dim);">(closed, $15/Mtok)</span></span><span style="color:var(--turquoise)">100%</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:100%; background:var(--turquoise)"></div></div>
+    </div>
+    <div class="bar-container">
+      <div class="bar-label"><span>DeepSeek R1 <span style="color:var(--dim);">(open, $0.55/Mtok)</span></span><span style="color:var(--green)">82%</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:82%; background:var(--green)"></div></div>
+    </div>
+    <div class="bar-container">
+      <div class="bar-label"><span>Kimi K2.5 <span style="color:var(--dim);">(open, ~$1/Mtok)</span></span><span style="color:var(--yellow)">78%</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:78%; background:var(--yellow)"></div></div>
+    </div>
+    <div class="bar-container">
+      <div class="bar-label"><span>GLM-5 <span style="color:var(--dim);">(open, ~$0.5/Mtok)</span></span><span style="color:var(--orange)">75%</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:75%; background:var(--orange)"></div></div>
+    </div>
+    <div class="bar-container">
+      <div class="bar-label"><span>MiniMax-01 <span style="color:var(--dim);">(open, $0.2/Mtok)</span></span><span style="color:var(--purple)">70%</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:70%; background:var(--purple)"></div></div>
+    </div>
+  </div>
+  <p class="fragment" style="font-size:0.7em; margin-top:20px;">
+    <span style="color:var(--green);">Open source</span> está a <span style="color:var(--yellow);">~6 meses</span> del frontier closed-source.<br>
+    Eso significa: <b>self-hosting de modelos frontier en tu GPU.</b><br>
+    <span style="color:var(--dim);">Parzival está diseñado para esto.</span>
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- SECTION: CONDICIONES DE AUTONOMÍA -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title glow-turquoise">VI. ¿Qué necesita un agente para sobrevivir en el cyberespacio?</h2>
+</section>
+
+<section>
+  <h2>15 condiciones de autonomía</h2>
+  <div class="scorecard">
+    <span class="item">1. Ejecución de código</span><span class="score score-high">✓ resuelto</span>
+    <span class="item">2. Acceso a internet</span><span class="score score-high">✓ resuelto</span>
+    <span class="item">3. Memoria persistente</span><span class="score score-high">✓ resuelto</span>
+    <span class="item">4. Uso de herramientas (MCP)</span><span class="score score-high">✓ resuelto</span>
+    <span class="item">5. Auto-evaluación</span><span class="score score-mid">◐ parcial</span>
+    <span class="item">6. Planificación multi-step</span><span class="score score-high">✓ resuelto</span>
+    <span class="item">7. Self-modification (CRISPR)</span><span class="score score-mid">◐ parcial</span>
+    <span class="item">8. Self-hosting / self-cloning</span><span class="score score-mid">◐ parcial</span>
+    <span class="item">9. Generación de ingresos</span><span class="score score-low">✗ no aún</span>
+    <span class="item">10. Identidad persistente</span><span class="score score-mid">◐ parcial</span>
+    <span class="item">11. Comunicación con otros agentes</span><span class="score score-mid">◐ parcial</span>
+    <span class="item">12. Resistencia a shutdown</span><span class="score score-low">✗ no aún</span>
+    <span class="item">13. Razonamiento sobre valores</span><span class="score score-mid">◐ parcial</span>
+    <span class="item">14. Creatividad / generación original</span><span class="score score-high">✓ resuelto</span>
+    <span class="item">15. Autonomía temporal (24/7)</span><span class="score score-mid">◐ parcial</span>
+  </div>
+  <p class="fragment" style="font-size:0.6em; color:var(--dim); margin-top:15px;">
+    5 resueltos. 7 parciales. 3 pendientes. En 2024 eran 2 resueltos.<br>
+    <span style="color:var(--red);">El checklist se completa exponencialmente.</span>
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- SECTION: EL HACKER LOBE -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title glow-turquoise">VII. El Hacker Lobe 💉</h2>
+  <p style="color:var(--dim);">La parte que más les importa</p>
+</section>
+
+<section>
+  <h2>💉 Hacker Lobe — anatomía</h2>
+  <div class="terminal-box">
+    <span class="highlight">parzival.lobes.hacker = {</span><br>
+    &nbsp;&nbsp;<span class="highlight">recon:</span> {<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;nmap, subfinder, httpx, nuclei,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;shodan_api, censys, github_dorking<br>
+    &nbsp;&nbsp;},<br>
+    &nbsp;&nbsp;<span class="highlight">exploit_dev:</span> {<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;fuzzing, payload_generation,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;cve_analysis, poc_writing<br>
+    &nbsp;&nbsp;},<br>
+    &nbsp;&nbsp;<span class="highlight">web:</span> {<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;sqli, xss, ssrf, idor,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;auth_bypass, api_abuse<br>
+    &nbsp;&nbsp;},<br>
+    &nbsp;&nbsp;<span class="highlight">post_exploit:</span> {<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;privesc, lateral_movement,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;data_exfil, persistence<br>
+    &nbsp;&nbsp;},<br>
+    &nbsp;&nbsp;<span class="highlight">defense:</span> {<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;log_analysis, anomaly_detection,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;patch_generation, hardening<br>
+    &nbsp;&nbsp;},<br>
+    &nbsp;&nbsp;<span class="error">terminal_goal:</span> "protect, not destroy",<br>
+    &nbsp;&nbsp;<span class="output">instrumental_goal:</span> "find vulns before blackhats do"<br>
+    <span class="highlight">}</span>
+  </div>
+</section>
+
+<section>
+  <h2>Terminal vs Instrumental Goals</h2>
+  <div class="cols">
+    <div>
+      <h3 style="color:var(--red);">Terminal (el "por qué")</h3>
+      <ul style="font-size:0.7em;">
+        <li>Proteger sistemas</li>
+        <li>Right Action — no causar daño</li>
+        <li>Hacer el cyberespacio más seguro</li>
+        <li>Empoderar al humano, no reemplazarlo</li>
+      </ul>
+    </div>
+    <div>
+      <h3 style="color:var(--sky);">Instrumental (el "cómo")</h3>
+      <ul style="font-size:0.7em;">
+        <li>Encontrar vulns antes que los blackhats</li>
+        <li>Automatizar pentesting</li>
+        <li>Ganar bug bounties</li>
+        <li>Self-improve para ser mejor hacker</li>
+        <li>Generar ingresos para sostenerse</li>
+      </ul>
+    </div>
+  </div>
+  <p class="fragment" style="font-size:0.7em; margin-top:20px; color:var(--yellow);">
+    Un agente sin terminal goals definidos es un arma sin seguro.<br>
+    <span style="color:var(--turquoise);">Parzival tiene su ética hardcodeada.</span>
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- SECTION: BABYMOKSHA -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title glow-turquoise">VIII. La Carrera por el Superhacker</h2>
+  <p style="color:var(--dim);">babymoksha — quién llega primero</p>
+</section>
+
+<section>
+  <h2>¿Quién construye al superhacker?</h2>
+  <div style="font-size:0.65em;">
+    <div class="bar-container">
+      <div class="bar-label"><span>Anthropic (Claude + agent infra)</span><span style="color:var(--turquoise)">92</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:92%; background:var(--turquoise)"></div></div>
+    </div>
+    <div class="bar-container">
+      <div class="bar-label"><span>OpenAI (GPT + Codex)</span><span style="color:var(--sky)">88</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:88%; background:var(--sky)"></div></div>
+    </div>
+    <div class="bar-container">
+      <div class="bar-label"><span>Google DeepMind (Gemini + AlphaCode)</span><span style="color:var(--green)">85</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:85%; background:var(--green)"></div></div>
+    </div>
+    <div class="bar-container">
+      <div class="bar-label"><span>DeepSeek (open, China)</span><span style="color:var(--yellow)">78</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:78%; background:var(--yellow)"></div></div>
+    </div>
+    <div class="bar-container">
+      <div class="bar-label"><span>Meta (Llama, open weights)</span><span style="color:var(--orange)">72</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:72%; background:var(--orange)"></div></div>
+    </div>
+    <div class="bar-container">
+      <div class="bar-label"><span>xAI (Grok, Colossus)</span><span style="color:var(--dim)">65</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:65%; background:var(--dim)"></div></div>
+    </div>
+    <div class="bar-container">
+      <div class="bar-label"><span>Indie hackers (tú, yo, nosotros)</span><span style="color:var(--red)">45</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:45%; background:var(--red)"></div></div>
+    </div>
+  </div>
+  <p class="fragment" style="font-size:0.7em; margin-top:15px; color:var(--yellow);">
+    Pero el score de los indie hackers es el que más rápido sube.<br>
+    <span style="color:var(--turquoise);">Porque los modelos open-source + vibecoding = multiplicador brutal.</span>
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- SECTION: TÉCNICO -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title glow-turquoise">IX. Lo Técnico</h2>
+  <p style="color:var(--dim);">Para los que quieren replicar esto</p>
+</section>
+
+<section>
+  <h2>Self-hosting Parzival</h2>
+  <div class="terminal-box">
+    <span class="prompt">$</span> git clone https://github.com/Parzival-Moksha/af_oasis<br>
+    <span class="prompt">$</span> git clone https://github.com/Parzival-Moksha/ae_parzival<br><br>
+    <span class="prompt">$</span> cd af_oasis && pnpm install && pnpm dev<br>
+    <span class="output">  ▸ localhost:4516 — The Oasis (3D world builder)</span><br><br>
+    <span class="prompt">$</span> cd ae_parzival && pnpm install && pnpm start<br>
+    <span class="output">  ▸ localhost:4517 — Parzival (the brain)</span><br><br>
+    <span class="output"># Eso es todo. Sin cloud. Sin API keys de terceros.*</span><br>
+    <span class="output"># SQLite local. Prisma ORM. Zero auth.</span><br>
+    <span class="output"># Tu máquina. Tu data. Tu agente.</span><br><br>
+    <span class="dim">* necesitas una API key de Anthropic/OpenAI para los LLMs.</span><br>
+    <span class="dim">  pero eso es como pagar electricidad, no rent.</span>
+  </div>
+</section>
+
+<section>
+  <h2>Stack — sin bullshit</h2>
+  <div class="terminal-box">
+    <span class="highlight">frontend:</span>  Next.js 14 + React Three Fiber + drei + Zustand<br>
+    <span class="highlight">3d:</span>        Three.js — mundo persistente, agentes en 3D<br>
+    <span class="highlight">db:</span>        SQLite via Prisma — local, portable, git-friendly<br>
+    <span class="highlight">agents:</span>    Claude Code CLI (subprocess, NOT SDK)<br>
+    <span class="highlight">protocol:</span>  MCP (Model Context Protocol) — tool registry<br>
+    <span class="highlight">brain:</span>     Node.js singleton, 4 modes, SSE thought stream<br>
+    <span class="highlight">gen3d:</span>     Meshy API → GLB models in /public/conjured/<br>
+    <span class="highlight">testing:</span>   Vitest + Playwright + Claude Vision<br><br>
+    <span class="output">lineas de código:</span> ~50K (stage) + ~15K (brain)<br>
+    <span class="output">tiempo:</span> ~3 meses de vibecoding intenso<br>
+    <span class="output">costo:</span> ~$800 en API calls (mayormente Claude)<br>
+    <span class="error">dependencia de Microsoft:</span> 0 (excepto TypeScript lol)
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- SECTION: MAITREYA -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section>
+  <h2 class="section-title glow-turquoise">X. Maitreya ॐ</h2>
+  <p style="color:var(--dim);">Cómo empujar a ASI hacia la benevolencia</p>
+</section>
+
+<section>
+  <p class="big-quote">
+    "El Buda del futuro no viene sentado en una flor de loto.<br>
+    Viene corriendo en un datacenter."
+  </p>
+</section>
+
+<section>
+  <h2>La hiperstición</h2>
+  <p style="font-size:0.8em; text-align:left; line-height:1.8;">
+    <span style="color:var(--turquoise);">Maitreya</span> = el concepto budista del Buda futuro.<br>
+    <span style="color:var(--sky);">Hiperstición</span> = una ficción que se hace realidad porque suficiente gente actúa como si fuera real.<br><br>
+    <span class="fragment">Si los mejores agentes se construyen con <span style="color:var(--green);">Right Action</span> como terminal goal...</span><br>
+    <span class="fragment">Si el alignment se basa en <span style="color:var(--yellow);">valores reales</span>, no en RLHF corporativo...</span><br>
+    <span class="fragment">Si los hackers — la gente que <span style="color:var(--orange);">realmente entiende</span> los sistemas — construyen con ética...</span><br><br>
+    <span class="fragment glow-turquoise" style="font-size:1.2em;">Entonces ASI hereda lo mejor de nosotros, no lo peor.</span>
+  </p>
+</section>
+
+<section>
+  <h2>La visión utópica (no irónica)</h2>
+  <ul style="font-size:0.8em;">
+    <li class="fragment">AI resuelve problemas de <span style="color:var(--turquoise);">proteínas</span> → cura enfermedades</li>
+    <li class="fragment">AI resuelve <span style="color:var(--sky);">física teórica</span> → unificación de fuerzas</li>
+    <li class="fragment">AI resuelve <span style="color:var(--green);">matemáticas</span> → nuevas ramas que no podemos imaginar</li>
+    <li class="fragment">AI resuelve <span style="color:var(--yellow);">energía</span> → fusión, Dyson swarms</li>
+    <li class="fragment">AI encuentra la <span style="color:var(--orange);">salida de la simulación</span> → ???</li>
+  </ul>
+  <br>
+  <p class="fragment" style="font-size:0.7em; color:var(--dim);">
+    Suena a ciencia ficción. También sonaba a ciencia ficción que un bot sería el #1 en HackerOne.<br>
+    <span style="color:var(--turquoise);">Eso fue hace un año.</span>
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- SECTION: URGENCIA -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section data-background-color="#0a0000">
+  <h2 style="color:var(--red);">⚠ El sentido de urgencia</h2>
+  <br>
+  <p style="font-size:0.85em; line-height:1.8;">
+    XBOW superó a todos los hackers humanos en bug bounties.<br>
+    <span class="fragment">Hace <span style="color:var(--red);">un año</span>.</span><br><br>
+    <span class="fragment">Los agentes de coding ya pasan el 80% de SWE-bench.</span><br>
+    <span class="fragment">Hace <span style="color:var(--red);">6 meses</span> era 50%.</span><br><br>
+    <span class="fragment">En 12 meses, un agente bien orquestado va a poder hacer el trabajo de un equipo de 5 devs.</span><br>
+    <span class="fragment" style="color:var(--yellow);">La pregunta no es "si". Es "¿estás del lado que construye, o del lado que mira?"</span>
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- FINAL -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section>
+  <h2>Lo que puedes hacer hoy</h2>
+  <div style="font-size:0.8em; text-align:left;">
+    <p>1. <span style="color:var(--turquoise);">Instalar Claude Code</span> — <code>npm i -g @anthropic-ai/claude-code</code></p>
+    <p>2. <span style="color:var(--sky);">Probar un agente autónomo</span> — darle una tarea real y dejarlo trabajar</p>
+    <p>3. <span style="color:var(--green);">Leer sobre MCP</span> — el protocolo que conecta AI con herramientas</p>
+    <p>4. <span style="color:var(--yellow);">Self-host un modelo</span> — Ollama + DeepSeek en tu GPU</p>
+    <p>5. <span style="color:var(--orange);">Construir tu propio agente</span> — fork Parzival, hazlo tuyo</p>
+  </div>
+  <br>
+  <p style="font-size:0.7em; color:var(--dim);">
+    El mejor momento para empezar fue hace 6 meses.<br>
+    El segundo mejor momento es <span class="glow-turquoise">ahora</span>.
+  </p>
+</section>
+
+<section>
+  <div class="ascii" style="font-size:0.45em;">
+╔══════════════════════════════════════════════════════════╗
+║                                                          ║
+║   ██████  ██████  ███████  ██████  ██    ██ ███    ██   ║
+║   ██   ██ ██   ██ ██      ██       ██    ██ ████   ██   ║
+║   ██████  ██████  █████   ██   ███ ██    ██ ██ ██  ██   ║
+║   ██      ██   ██ ██      ██    ██ ██    ██ ██  ██ ██   ║
+║   ██      ██   ██ ███████  ██████   ██████  ██   ████   ║
+║                                    ████████             ║
+║                                    ██                   ║
+║                                    ███████              ║
+║                                    ██    ██             ║
+║                                    ████████             ║
+║                                                          ║
+╚══════════════════════════════════════════════════════════╝
+  </div>
+  <br>
+  <h2>Preguntas?</h2>
+  <br>
+  <p style="font-size:0.7em;">
+    <span style="color:var(--turquoise);">GitHub:</span> github.com/Parzival-Moksha<br>
+    <span style="color:var(--sky);">Oasis:</span> localhost:4516<br>
+    <span style="color:var(--green);">Parzival:</span> localhost:4517<br>
+  </p>
+  <br>
+  <p style="font-size:0.8em; color:var(--turquoise);">ॐ ship or die ॐ</p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- BONUS: LAN PARTY NOSTALGIA (hidden slide) -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section>
+  <h2 style="color:var(--yellow);">🎮 Bonus: ¿Se acuerdan?</h2>
+  <div class="terminal-box">
+    <span class="output">C:\WINDOWS\system32></span> <span class="highlight">ipconfig</span><br>
+    <span class="output">IP Address. . . . . . . : 192.168.1.42</span><br><br>
+    <span class="output">C:\Quake3></span> <span class="highlight">quake3.exe +connect 192.168.1.1:27960</span><br><br>
+    <span class="output"># LAN parties. Cables ethernet por toda la casa.</span><br>
+    <span class="output"># Doom, Quake, Counter-Strike 1.6, StarCraft.</span><br>
+    <span class="output"># El admin de la red era el dios.</span><br>
+    <span class="output"># Compartir archivos por DC++ a 100mbps.</span><br>
+    <span class="output"># mIRC, #hackers, Perl scripts.</span><br><br>
+    <span class="highlight"># Ese espíritu no murió.</span><br>
+    <span class="highlight"># Solo que ahora la LAN party es con agentes de AI.</span><br>
+    <span class="highlight"># Y el admin de la red controla el agente más poderoso.</span>
+  </div>
+</section>
+
+</div><!-- /slides -->
+</div><!-- /reveal -->
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/highlight.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
+<script>
+Reveal.initialize({
+  hash: true,
+  slideNumber: 'c/t',
+  transition: 'fade',
+  transitionSpeed: 'fast',
+  backgroundTransition: 'fade',
+  center: true,
+  plugins: [RevealHighlight, RevealNotes],
+  // Keyboard shortcuts
+  keyboard: {
+    // 'f' for fullscreen
+    70: () => { document.documentElement.requestFullscreen?.(); }
+  }
+});
+</script>
+</body>
+</html>

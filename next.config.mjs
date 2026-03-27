@@ -6,6 +6,9 @@
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Blue-green builds: NEXT_DIST_DIR=.next-staging for dev:agent mode
+  ...(process.env.NEXT_DIST_DIR && { distDir: process.env.NEXT_DIST_DIR }),
+
   // Transpile Three.js packages
   transpilePackages: ['three'],
 
@@ -28,6 +31,16 @@ const nextConfig = {
       return config
     },
   }),
+
+  // Serve /presentation as static HTML (reveal.js slides)
+  async rewrites() {
+    return [
+      {
+        source: '/presentation',
+        destination: '/presentation/index.html',
+      },
+    ]
+  },
 
   // ─═̷─═̷─🔒─═̷─═̷─ Security headers ─═̷─═̷─🔒─═̷─═̷─
   async headers() {

@@ -290,6 +290,64 @@ server.tool(
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
+// MULTIMODAL — image, voice, video generation via Oasis API
+// ═══════════════════════════════════════════════════════════════════════════
+
+const OASIS_URL = process.env.OASIS_URL || "http://localhost:4516";
+
+server.tool("generate_image",
+  "Generate an image from a text prompt. Returns a URL. Models: gemini-flash, riverflow, seedream, flux-klein.",
+  { prompt: z.string(), model: z.string().optional() },
+  async ({ prompt, model }) => {
+    try {
+      const res = await fetch(`${OASIS_URL}/api/media/image`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, model }) });
+      const data = await res.json();
+      if (!res.ok) return { content: [{ type: "text", text: `Image gen failed: ${data.error || res.status}` }] };
+      const url = data.url?.startsWith('http') ? data.url : `${OASIS_URL}${data.url}`;
+      return { content: [{ type: "text", text: `Image generated: ${url}` }] };
+    } catch (e) { return { content: [{ type: "text", text: `Image gen error: ${e}` }] }; }
+  }
+);
+
+server.tool("generate_voice",
+  "Generate a voice note from text (ElevenLabs TTS). Voices: rachel, adam, sam, elli.",
+  { text: z.string(), voice: z.string().optional() },
+  async ({ text, voice }) => {
+    try {
+      const res = await fetch(`${OASIS_URL}/api/media/voice`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, voice }) });
+      const data = await res.json();
+      if (!res.ok) return { content: [{ type: "text", text: `Voice gen failed: ${data.error || res.status}` }] };
+      const url = data.url?.startsWith('http') ? data.url : `${OASIS_URL}${data.url}`;
+      return { content: [{ type: "text", text: `Voice note generated: ${url}` }] };
+    } catch (e) { return { content: [{ type: "text", text: `Voice gen error: ${e}` }] }; }
+  }
+);
+
+server.tool("generate_video",
+  "Generate a video from a text prompt (fal.ai LTX 2.3). Submits job, polls until done.",
+  { prompt: z.string(), duration: z.number().min(2).max(10).optional() },
+  async ({ prompt, duration }) => {
+    try {
+      const submitRes = await fetch(`${OASIS_URL}/api/media/video`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, duration }) });
+      const submitData = await submitRes.json();
+      if (!submitRes.ok) return { content: [{ type: "text", text: `Video submit failed: ${submitData.error}` }] };
+      if (submitData.status === "completed" && submitData.url) return { content: [{ type: "text", text: `Video generated: ${submitData.url}` }] };
+      if (submitData.requestId) {
+        for (let i = 0; i < 60; i++) {
+          await new Promise(r => setTimeout(r, 5000));
+          const pollRes = await fetch(`${OASIS_URL}/api/media/video?requestId=${submitData.requestId}`);
+          const pollData = await pollRes.json();
+          if (pollData.status === "completed" && pollData.url) return { content: [{ type: "text", text: `Video generated: ${pollData.url}` }] };
+          if (pollData.status === "failed") return { content: [{ type: "text", text: `Video failed: ${pollData.error}` }] };
+        }
+        return { content: [{ type: "text", text: "Video generation timed out" }] };
+      }
+      return { content: [{ type: "text", text: `Unexpected: ${JSON.stringify(submitData)}` }] };
+    } catch (e) { return { content: [{ type: "text", text: `Video gen error: ${e}` }] }; }
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
 // START
 // ═══════════════════════════════════════════════════════════════════════════
 

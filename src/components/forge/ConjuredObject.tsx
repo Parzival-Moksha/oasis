@@ -475,7 +475,7 @@ export function ConjuredObject({ asset }: ConjuredObjectProps) {
         onPointerOver={(e) => { e.stopPropagation(); setHovered(true); if (!useInputManager.getState().pointerLocked) setShowLabel(true) }}
         onPointerOut={(e) => { e.stopPropagation(); setHovered(false); setShowLabel(false) }}
       >
-        <boxGeometry args={[bounds.size.x, bounds.size.y, bounds.size.z]} />
+        <boxGeometry args={[Math.max(bounds.size.x, 1), Math.max(bounds.size.y, 1), Math.max(bounds.size.z, 1)]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 

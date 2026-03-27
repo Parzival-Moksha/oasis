@@ -5,6 +5,8 @@
   "description": "The Oasis — 3D world builder with AI text-to-3D conjuring",
   "scripts": {
     "dev": "next dev -p 4516",
+    "dev:loop": "node scripts/dev-loop.js",
+    "dev:agent": "node scripts/dev-agent.js",
     "build": "next build",
     "start": "next start -p 4516",
     "lint": "next lint"
@@ -16,6 +18,7 @@
     "@react-three/fiber": "^8.15.0",
     "@react-three/postprocessing": "^2.16.0",
     "@supabase/supabase-js": "^2.98.0",
+    "@zumer/snapdom": "^2.6.0",
     "next": "14.2.25",
     "next-auth": "5.0.0-beta.30",
     "prisma": "^6.19.2",

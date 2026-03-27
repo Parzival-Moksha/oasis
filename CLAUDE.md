@@ -31,7 +31,8 @@ When vibedev proposes a tangent:
 ## Commands
 ```bash
 pnpm dev              # Dev server → http://localhost:4516 (HMR enabled)
-pnpm dev:loop         # Auto-restart wrapper
+pnpm dev:loop         # Auto-restart wrapper (watches process exit)
+pnpm dev:agent        # Blue-green production server for autonomous Anorak sessions
 pnpm build            # Production build (type-checks!)
 npx prisma db push    # Apply schema changes to SQLite
 npx prisma generate   # Regenerate client after schema changes

@@ -649,6 +649,219 @@ function ImagineTab() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// MEDIA TAB — Upload, browse, manage all media (images, videos, audio)
+// ░▒▓ Sub-tabs: Generate (Imagine), Images, Videos, Audio ▓▒░
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface MediaItem {
+  name: string; url: string; type: 'image' | 'video' | 'audio'; size: number; createdAt: string
+}
+
+function MediaTab() {
+  const [subTab, setSubTab] = useState<'generate' | 'image' | 'video' | 'audio'>('generate')
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>([])
+  const [loading, setLoading] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const enterPlacementMode = useOasisStore(s => s.enterPlacementMode)
+  const placedCatalogAssets = useOasisStore(s => s.placedCatalogAssets)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Fetch media list
+  const fetchMedia = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/media/list')
+      if (res.ok) {
+        const { items } = await res.json()
+        setMediaItems(items)
+      }
+    } catch {}
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { fetchMedia() }, [fetchMedia])
+
+  // Upload handler
+  const handleUpload = useCallback(async (files: FileList | null) => {
+    if (!files) return
+    for (const file of Array.from(files)) {
+      const formData = new FormData()
+      formData.append('file', file)
+      await fetch('/api/media/upload', { method: 'POST', body: formData })
+    }
+    fetchMedia() // Refresh list
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }, [fetchMedia])
+
+  // Delete handler
+  const handleDelete = useCallback(async (url: string) => {
+    await fetch('/api/media/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    })
+    setDeleteConfirm(null)
+    fetchMedia()
+  }, [fetchMedia])
+
+  // Count placed instances
+  const countPlaced = useCallback((url: string) => {
+    return placedCatalogAssets.filter(a =>
+      a.imageUrl === url || a.videoUrl === url
+    ).length
+  }, [placedCatalogAssets])
+
+  const filtered = mediaItems.filter(m => subTab === 'generate' ? false : m.type === subTab)
+  const formatSize = (bytes: number) => bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)}MB` : `${(bytes / 1024).toFixed(0)}KB`
+
+  const subTabs = [
+    { key: 'generate' as const, label: 'Generate', icon: '🎨' },
+    { key: 'image' as const, label: 'Images', icon: '🖼️' },
+    { key: 'video' as const, label: 'Videos', icon: '🎬' },
+    { key: 'audio' as const, label: 'Audio', icon: '🎵' },
+  ]
+
+  return (
+    <div className="space-y-3">
+      {/* Sub-tab pills */}
+      <div className="flex gap-1 flex-wrap">
+        {subTabs.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setSubTab(t.key)}
+            className={`text-[10px] px-2 py-1 rounded transition-colors ${
+              subTab === t.key
+                ? 'bg-pink-500/20 text-pink-300 border border-pink-500/40'
+                : 'text-gray-400 border border-gray-700/30 hover:text-white hover:border-gray-500/50'
+            }`}
+          >
+            {t.icon} {t.label}
+          </button>
+        ))}
+        {/* Upload button */}
+        <label className="text-[10px] px-2 py-1 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30 hover:bg-sky-500/25 transition-colors cursor-pointer ml-auto">
+          + Upload
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,video/*,audio/*"
+            multiple
+            onChange={e => handleUpload(e.target.files)}
+            className="hidden"
+          />
+        </label>
+      </div>
+
+      {/* Generate sub-tab = ImagineTab */}
+      {subTab === 'generate' && <ImagineTab />}
+
+      {/* Media browser */}
+      {subTab !== 'generate' && (
+        <>
+          {loading && <div className="text-[10px] text-gray-500 text-center py-4">Loading...</div>}
+
+          {!loading && filtered.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-8 text-gray-400">
+              <div className="text-3xl mb-2">{subTabs.find(t => t.key === subTab)?.icon}</div>
+              <div className="text-xs">No {subTab} files uploaded</div>
+              <div className="text-[10px] mt-1 text-gray-500">Drag & drop or use Upload button</div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-2">
+            {filtered.map(item => {
+              const placedCount = countPlaced(item.url)
+              const isConfirming = deleteConfirm === item.url
+              return (
+                <div key={item.url} className="group relative rounded-lg overflow-hidden border border-gray-700/30 bg-black/40">
+                  {/* Thumbnail / preview */}
+                  {item.type === 'image' && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={item.url} alt={item.name} className="w-full aspect-square object-cover" loading="lazy" />
+                  )}
+                  {item.type === 'video' && (
+                    <video src={item.url} className="w-full aspect-video object-cover" muted preload="metadata" />
+                  )}
+                  {item.type === 'audio' && (
+                    <div className="w-full aspect-square flex items-center justify-center bg-gray-900">
+                      <div className="text-4xl">🎵</div>
+                    </div>
+                  )}
+
+                  {/* Info + actions overlay */}
+                  <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1.5 p-2">
+                    <div className="text-[9px] text-gray-300 font-mono text-center truncate w-full">{item.name}</div>
+                    <div className="text-[8px] text-gray-500 font-mono">{formatSize(item.size)}</div>
+
+                    {/* Place button */}
+                    <button
+                      onClick={() => {
+                        if (item.type === 'image') {
+                          enterPlacementMode({ type: 'image', name: item.name, imageUrl: item.url })
+                        } else if (item.type === 'video') {
+                          enterPlacementMode({ type: 'video', name: item.name, videoUrl: item.url })
+                        } else if (item.type === 'audio') {
+                          // Place the conjured loudspeaker model with audio pre-assigned
+                          enterPlacementMode({ type: 'conjured', name: 'Loudspeaker', path: '/conjured/conj_mn6ogn4ae05j.glb', defaultScale: 0.5 })
+                          // Audio URL will be assigned after placement via behaviors
+                          // Store it temporarily so we can wire it up
+                          ;(window as any).__pendingAudioUrl = item.url
+                        }
+                      }}
+                      className="w-full text-[10px] px-2 py-1 rounded bg-pink-500/20 text-pink-300 border border-pink-500/30 hover:bg-pink-500/30 transition-colors"
+                    >
+                      Place
+                    </button>
+
+                    {/* Placed count */}
+                    {placedCount > 0 && (
+                      <div className="text-[8px] text-sky-400 font-mono">{placedCount} placed</div>
+                    )}
+
+                    {/* Delete */}
+                    {!isConfirming ? (
+                      <button
+                        onClick={() => {
+                          if (placedCount > 0) setDeleteConfirm(item.url)
+                          else handleDelete(item.url)
+                        }}
+                        className="w-full text-[10px] px-2 py-1 rounded bg-red-500/10 text-red-400/60 border border-red-500/20 hover:bg-red-500/20 hover:text-red-300 transition-colors"
+                      >
+                        Delete
+                      </button>
+                    ) : (
+                      <div className="w-full space-y-1">
+                        <div className="text-[9px] text-yellow-400 text-center">
+                          {placedCount} instance{placedCount > 1 ? 's' : ''} in world. Delete?
+                        </div>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => handleDelete(item.url)}
+                            className="flex-1 text-[10px] px-2 py-1 rounded bg-red-500/30 text-red-300 border border-red-500/40"
+                          >
+                            Yes, nuke it
+                          </button>
+                          <button
+                            onClick={() => setDeleteConfirm(null)}
+                            className="flex-1 text-[10px] px-2 py-1 rounded bg-gray-600/30 text-gray-300 border border-gray-500/40"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // WIZARD CONSOLE — Main popup component
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -701,7 +914,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
   }, [showTabLabels, size.width])
 
   // ─═̷─ Wizard state ─═̷─
-  const [mode, setMode] = useState<'conjure' | 'craft' | 'world' | 'assets' | 'placed' | 'agents' | 'imagine' | 'settings'>('conjure')
+  const [mode, setMode] = useState<'conjure' | 'craft' | 'world' | 'assets' | 'placed' | 'agents' | 'media' | 'settings'>('conjure')
   const [provider, setProvider] = useState<ProviderName>('meshy')
   const [tier, setTier] = useState(PROVIDERS[0].tiers[1]?.id || PROVIDERS[0].tiers[0].id)  // Default: textured (refine)
   const [prompt, setPrompt] = useState('')
@@ -1292,7 +1505,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
               { key: 'assets', label: 'Assets', icon: '📦', color: 'yellow', title: 'Pre-made 3D asset catalog' },
               { key: 'placed', label: 'Placed', icon: '📍', color: 'cyan', title: 'All objects placed in this world' },
               { key: 'agents', label: 'Agents', icon: '💻', color: 'purple', title: '3D agent windows in this world' },
-              { key: 'imagine', label: 'Imagine', icon: '🎨', color: 'pink', title: 'Text-to-image (Gemini)' },
+              { key: 'media', label: 'Media', icon: '🎬', color: 'pink', title: 'Images, videos, audio — upload & manage' },
             ] as const).map(tab => (
               <button
                 key={tab.key}
@@ -2943,8 +3156,8 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
             </div>
           </>
 
-        ) : mode === 'imagine' ? (
-          <ImagineTab />
+        ) : mode === 'media' ? (
+          <MediaTab />
 
         ) : mode === 'conjure' ? (
           <>

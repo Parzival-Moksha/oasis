@@ -1,21 +1,30 @@
 'use client'
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-// AGENT WINDOW 3D — Interactive agent panels placed in the Oasis world
-// ─═̷─═̷─ॐ─═̷─═̷─ Full DOM rendered via <Html transform> in true 3D ─═̷─═̷─ॐ─═̷─═̷─
+// AGENT WINDOW 3D — Hybrid Focus/Texture rendering
+// ─═̷─═̷─ॐ─═̷─═̷─ Unfocused: textured mesh (html2canvas). Focused: visible DOM overlay. ─═̷─═̷─ॐ─═̷─═̷─
+// Content always lives in AgentWindowPortals (OffscreenPortal).
+// This component handles: 3D mesh, frames, selection, focus state, CSS 3D positioning.
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { useRef, useMemo, memo, useCallback, useState } from 'react'
+import { useRef, useEffect, memo, useState } from 'react'
 import * as THREE from 'three'
+import { useFrame, useThree } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import { useOasisStore } from '../../store/oasisStore'
 import type { AgentWindow } from '../../store/oasisStore'
-import { AnorakWindowContent } from './AnorakWindowContent'
-import { ParzivalWindowContent } from './ParzivalWindowContent'
-import { FourBarFrame, NeonFrame, HologramFrame, VoidFrame } from './FrameComponents'
+import {
+  FourBarFrame, NeonFrame, HologramFrame, VoidFrame,
+  SpaghettiFrame, TriangleFrame, InfernoFrame, MatrixFrame, PlasmaFrame, BrutalistFrame
+} from './FrameComponents'
+import { getOffscreenUIManager } from '../../lib/forge/offscreen-ui-manager'
+
+// drei <Html> maps CSS px to world units: PX_TO_WORLD = distanceFactor / 400
+const DISTANCE_FACTOR = 8
+const PX_TO_WORLD = DISTANCE_FACTOR / 400  // 0.02
 
 // ═══════════════════════════════════════════════════════════════════════════
-// FOCUS PROMPT — pulsing "HIT ENTER" bubble when window is selected
+// FOCUS PROMPT — pulsing "HIT ENTER" bubble
 // ═══════════════════════════════════════════════════════════════════════════
 
 function FocusPrompt({ visible }: { visible: boolean }) {
@@ -43,74 +52,46 @@ function FocusPrompt({ visible }: { visible: boolean }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// RESIZE HANDLE — bottom-right corner drag to resize window
+// CSS 3D TRANSFORM — project 3D window position to CSS matrix3d
 // ═══════════════════════════════════════════════════════════════════════════
 
-function ResizeHandle({ windowId, currentWidth, currentHeight }: {
-  windowId: string
-  currentWidth: number
-  currentHeight: number
-}) {
-  const updateAgentWindow = useOasisStore(s => s.updateAgentWindow)
-  const startRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null)
+function computeCSSTransform(
+  camera: THREE.Camera,
+  worldMatrix: THREE.Matrix4,
+  viewportWidth: number,
+  viewportHeight: number,
+  pixelWidth: number,
+  pixelHeight: number,
+): string {
+  // Camera projection × view × world = clip-space matrix
+  const mvp = new THREE.Matrix4()
+  mvp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+  mvp.multiply(worldMatrix)
 
-  const onMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    startRef.current = { x: e.clientX, y: e.clientY, w: currentWidth, h: currentHeight }
+  // Extract NDC position of the center point
+  const center = new THREE.Vector4(0, 0, 0, 1).applyMatrix4(mvp)
+  if (center.w <= 0) return 'scale(0)' // Behind camera
 
-    const onMouseMove = (ev: MouseEvent) => {
-      if (!startRef.current) return
-      const dx = ev.clientX - startRef.current.x
-      const dy = ev.clientY - startRef.current.y
-      const newW = Math.max(400, Math.min(1600, startRef.current.w + dx))
-      const newH = Math.max(300, Math.min(1200, startRef.current.h + dy))
-      updateAgentWindow(windowId, { width: Math.round(newW), height: Math.round(newH) })
-    }
-    const onMouseUp = () => {
-      startRef.current = null
-      document.removeEventListener('mousemove', onMouseMove)
-      document.removeEventListener('mouseup', onMouseUp)
-    }
-    document.addEventListener('mousemove', onMouseMove)
-    document.addEventListener('mouseup', onMouseUp)
-  }, [windowId, currentWidth, currentHeight, updateAgentWindow])
+  // Screen position (0,0 = center of viewport)
+  const sx = (center.x / center.w) * viewportWidth / 2
+  const sy = -(center.y / center.w) * viewportHeight / 2
 
-  return (
-    <div
-      onMouseDown={onMouseDown}
-      style={{
-        position: 'absolute',
-        bottom: 0,
-        right: 0,
-        width: 16,
-        height: 16,
-        cursor: 'nwse-resize',
-        zIndex: 10,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <svg width="8" height="8" viewBox="0 0 8 8" style={{ opacity: 0.3 }}>
-        <line x1="7" y1="1" x2="1" y2="7" stroke="#888" strokeWidth="1" />
-        <line x1="7" y1="4" x2="4" y2="7" stroke="#888" strokeWidth="1" />
-        <line x1="7" y1="7" x2="7" y2="7" stroke="#888" strokeWidth="1" />
-      </svg>
-    </div>
-  )
+  // Scale: how big the window appears based on distance
+  // At distanceFactor=8, 1 CSS px = 0.02 world units
+  // The projected scale = (1/w) * projectionScale
+  const worldScale = PX_TO_WORLD
+  const projScale = (camera.projectionMatrix.elements[0] * viewportWidth / 2) * worldScale / center.w
+
+  // Translate to screen center, then offset
+  const tx = viewportWidth / 2 + sx - (pixelWidth * projScale) / 2
+  const ty = viewportHeight / 2 + sy - (pixelHeight * projScale) / 2
+
+  return `translate(${tx}px, ${ty}px) scale(${projScale})`
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// AGENT WINDOW 3D — the R3F component
+// AGENT WINDOW 3D — main component
 // ═══════════════════════════════════════════════════════════════════════════
-
-// drei <Html transform distanceFactor={D}> maps CSS pixels to world units at ratio D/400.
-// Source: drei Html.js line 300 — used for its own occlusion mesh sizing.
-// Confirmed by matrix3d scale factor = 1/(D/400) = 400/D in transformInnerRef.
-// With D=8: PX_TO_WORLD = 8/400 = 0.02. So 800px → 16 world units, 600px → 12 world units.
-const DISTANCE_FACTOR = 8
-const PX_TO_WORLD = DISTANCE_FACTOR / 400  // 0.02
 
 export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { window: AgentWindow }) {
   const groupRef = useRef<THREE.Group>(null!)
@@ -118,124 +99,129 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
   const focusedAgentWindowId = useOasisStore(s => s.focusedAgentWindowId)
   const isSelected = selectedObjectId === win.id
   const isFocused = focusedAgentWindowId === win.id
+  const prevFocusedRef = useRef(false)
 
-  // Defaults for legacy windows saved before width/height/scale were added
   const winWidth = win.width || 800
   const winHeight = win.height || 600
   const winScale = win.scale || 1
-
-  // World-space dimensions of the hitbox plane
   const worldWidth = winWidth * PX_TO_WORLD * winScale
   const worldHeight = winHeight * PX_TO_WORLD * winScale
 
-  // Determine content based on agent type
-  // isFocused is NOT in deps — AnorakWindowContent reads it as a prop, no need to remount
-  const content = useMemo(() => {
-    switch (win.agentType) {
-      case 'anorak':
-        return <AnorakWindowContent windowId={win.id} initialSessionId={win.sessionId} />
-      case 'merlin':
-        return (
-          <div className="flex items-center justify-center h-full text-amber-400 font-mono text-sm">
-            🧙 Merlin — coming soon
-          </div>
-        )
-      case 'devcraft':
-        return (
-          <div className="flex items-center justify-center h-full text-green-400 font-mono text-sm">
-            ⚡ DevCraft — coming soon
-          </div>
-        )
-      case 'parzival':
-        return <ParzivalWindowContent windowBlur={win.windowBlur ?? 0} />
-      case 'anorak-pro':
-        return (
-          <div className="flex items-center justify-center h-full text-teal-400 font-mono text-sm">
-            🔮 Anorak Pro — use 2D panel for full experience
-          </div>
-        )
+  const agentColor = win.agentType === 'anorak' ? '#38bdf8'
+    : win.agentType === 'anorak-pro' ? '#14b8a6'
+    : win.agentType === 'merlin' ? '#f59e0b'
+    : win.agentType === 'parzival' ? '#14b8a6'
+    : '#22c55e'
+
+  // ═══ TEXTURE for unfocused mode ═══
+  const [texture, setTexture] = useState<THREE.CanvasTexture | null>(null)
+
+  useEffect(() => {
+    const mgr = getOffscreenUIManager()
+    if (!mgr) return
+    // Poll for texture availability (portal may mount slightly after us)
+    const interval = setInterval(() => {
+      const tex = mgr.getTexture(win.id)
+      if (tex) { setTexture(tex); clearInterval(interval) }
+    }, 100)
+    const tex = mgr.getTexture(win.id)
+    if (tex) { setTexture(tex); clearInterval(interval) }
+    return () => clearInterval(interval)
+  }, [win.id])
+
+  // ═══ FOCUS MODE transitions ═══
+  useEffect(() => {
+    const mgr = getOffscreenUIManager()
+    if (!mgr) return
+
+    if (isFocused && !prevFocusedRef.current) {
+      // Gaining focus: make container visible
+      mgr.setFocused(win.id, true)
+    } else if (!isFocused && prevFocusedRef.current) {
+      // Losing focus: hide container, resume capture
+      mgr.setFocused(win.id, false)
     }
-  }, [win.id, win.agentType, win.sessionId])
+    prevFocusedRef.current = isFocused
+  }, [isFocused, win.id])
 
-  // Border glow colors
-  const agentColor = win.agentType === 'anorak' ? '#38bdf8' : win.agentType === 'anorak-pro' ? '#14b8a6' : win.agentType === 'merlin' ? '#f59e0b' : win.agentType === 'parzival' ? '#14b8a6' : '#22c55e'
+  // ═══ CSS 3D POSITIONING — update container transform each frame when focused ═══
+  const { camera, gl } = useThree()
+  useFrame(() => {
+    if (!isFocused || !groupRef.current) return
+    const mgr = getOffscreenUIManager()
+    if (!mgr) return
 
-  // Memoize Html style to prevent drei transform recalculation on child re-renders.
-  // Without this, every streaming state update in AnorakContent propagates up,
-  // creating a new style object → drei recalculates CSS 3D matrix → visible flicker.
+    const rect = gl.domElement.getBoundingClientRect()
+    const cssTransform = computeCSSTransform(
+      camera,
+      groupRef.current.matrixWorld,
+      rect.width,
+      rect.height,
+      winWidth,
+      winHeight,
+    )
+    mgr.setCSSTransform(win.id, cssTransform)
+  })
+
+  // ═══ TEXTURE UPDATE for unfocused windows ═══
+  useFrame(() => {
+    if (isFocused || !texture) return
+    // Texture needsUpdate is set by OffscreenUIManager's capture loop
+  })
+
   const windowOpacity = win.windowOpacity ?? 1
-  const htmlStyle = useMemo(() => ({
-    width: `${winWidth}px`,
-    height: `${winHeight}px`,
-    borderRadius: '12px',
-    overflow: 'hidden' as const,
-    opacity: windowOpacity,
-  }), [winWidth, winHeight, windowOpacity])
 
   return (
     <group ref={groupRef}>
-      {/* Interactive HTML content in 3D space
-          distanceFactor controls perceived size: at distance=distanceFactor, HTML renders 1:1 pixels.
-          Closer = bigger, further = smaller. 8 gives good readability at typical viewing distance. */}
-      <Html
-        transform
-        distanceFactor={DISTANCE_FACTOR}
-        pointerEvents="auto"
-        occlude="blending"
-        style={htmlStyle}
-        className="agent-window-3d"
-      >
-        {content}
-        {isFocused && <ResizeHandle windowId={win.id} currentWidth={winWidth} currentHeight={winHeight} />}
-      </Html>
+      {/* ═══ TEXTURED PLANE — shown when NOT focused ═══ */}
+      {!isFocused && (
+        <mesh>
+          <planeGeometry args={[worldWidth, worldHeight]} />
+          {texture ? (
+            <meshBasicMaterial
+              map={texture}
+              transparent
+              opacity={windowOpacity}
+              side={THREE.DoubleSide}
+              toneMapped={false}
+            />
+          ) : (
+            <meshBasicMaterial color="#0a0a0f" transparent opacity={windowOpacity} side={THREE.DoubleSide} />
+          )}
+        </mesh>
+      )}
 
-      {/* ═══ PICTURE FRAME — decorative 3D border around the window ═══ */}
-      {win.frameStyle && (() => {
-        // Frame dimensions match the Html content in world-space
-        const fw = worldWidth
-        const fh = worldHeight
-        const fs = winScale  // scale factor for frame proportions
-        const ft = win.frameThickness ?? 1  // user-controllable thickness multiplier
-        return (
-          <group position={[0, 0, -0.01]}>
-            {win.frameStyle === 'gilded' && (
-              <FourBarFrame w={fw} h={fh} border={0.04 * fs * ft} depth={0.02 * fs * ft} color="#8B6914" roughness={0.4} metalness={0.6} />
-            )}
-            {win.frameStyle === 'neon' && (
-              <NeonFrame w={fw} h={fh} scale={fs * ft} />
-            )}
-            {win.frameStyle === 'thin' && (
-              <FourBarFrame w={fw} h={fh} border={0.006 * fs * ft} depth={0.003 * fs * ft} color="#1a1a1a" roughness={0.9} metalness={0.0} />
-            )}
-            {win.frameStyle === 'baroque' && (
-              <>
-                <FourBarFrame w={fw} h={fh} border={0.07 * fs * ft} depth={0.035 * fs * ft} color="#5C3A0E" roughness={0.3} metalness={0.7} />
-                <FourBarFrame w={fw + 0.01 * fs * ft} h={fh + 0.01 * fs * ft} border={0.015 * fs * ft} depth={0.04 * fs * ft} color="#DAA520" roughness={0.2} metalness={0.9} />
-              </>
-            )}
-            {win.frameStyle === 'hologram' && (
-              <HologramFrame w={fw} h={fh} scale={fs * ft} />
-            )}
-            {win.frameStyle === 'rustic' && (
-              <FourBarFrame w={fw} h={fh} border={0.05 * fs * ft} depth={0.025 * fs * ft} color="#3E2723" roughness={0.95} metalness={0.0} />
-            )}
-            {win.frameStyle === 'ice' && (
-              <FourBarFrame w={fw} h={fh} border={0.04 * fs * ft} depth={0.02 * fs * ft} color="#B3E5FC" roughness={0.05} metalness={0.1} transparent opacity={0.6} emissive="#81D4FA" emissiveIntensity={0.3} />
-            )}
-            {win.frameStyle === 'void' && (
-              <VoidFrame w={fw} h={fh} scale={fs * ft} />
-            )}
-          </group>
-        )
-      })()}
-
-      {/* Invisible hitbox plane for raycasting — Html transform doesn't participate in R3F raycasts */}
+      {/* ═══ HITBOX — always present for raycasting (selection) ═══ */}
       <mesh>
         <planeGeometry args={[worldWidth, worldHeight]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      {/* Selection glow ring on the ground below the window */}
+      {/* ═══ PICTURE FRAMES — all 14 styles ═══ */}
+      {win.frameStyle && (() => {
+        const fw = worldWidth, fh = worldHeight, fs = winScale
+        const ft = win.frameThickness ?? 1
+        return (
+          <group position={[0, 0, -0.01]}>
+            {win.frameStyle === 'gilded' && (<><group position={[0, 0, -0.004 * fs]}><FourBarFrame w={fw} h={fh} border={0.04 * fs * ft} depth={0.025 * fs * ft} color="#B8860B" roughness={0.25} metalness={0.85} /></group><group position={[0, 0, 0.004 * fs]}><FourBarFrame w={fw} h={fh} border={0.008 * fs * ft} depth={0.005 * fs * ft} color="#FFD700" roughness={0.1} metalness={1.0} emissive="#DAA520" emissiveIntensity={0.3} /></group></>)}
+            {win.frameStyle === 'neon' && <NeonFrame w={fw} h={fh} scale={fs * ft} />}
+            {win.frameStyle === 'thin' && <FourBarFrame w={fw} h={fh} border={0.006 * fs * ft} depth={0.003 * fs * ft} color="#1a1a1a" roughness={0.9} metalness={0.0} />}
+            {win.frameStyle === 'baroque' && (<><group position={[0, 0, -0.005 * fs]}><FourBarFrame w={fw} h={fh} border={0.08 * fs * ft} depth={0.04 * fs * ft} color="#3E1C00" roughness={0.3} metalness={0.7} /></group><group position={[0, 0, 0.003 * fs]}><FourBarFrame w={fw} h={fh} border={0.02 * fs * ft} depth={0.015 * fs * ft} color="#FFD700" roughness={0.15} metalness={0.95} emissive="#DAA520" emissiveIntensity={0.2} /></group></>)}
+            {win.frameStyle === 'hologram' && <HologramFrame w={fw} h={fh} scale={fs * ft} />}
+            {win.frameStyle === 'rustic' && <FourBarFrame w={fw} h={fh} border={0.05 * fs * ft} depth={0.025 * fs * ft} color="#3E2723" roughness={0.95} metalness={0.0} />}
+            {win.frameStyle === 'ice' && (<><FourBarFrame w={fw} h={fh} border={0.04 * fs * ft} depth={0.02 * fs * ft} color="#B3E5FC" roughness={0.05} metalness={0.1} transparent opacity={0.5} emissive="#81D4FA" emissiveIntensity={0.6} /></>)}
+            {win.frameStyle === 'void' && (<><group position={[0, 0, -0.005 * fs]}><FourBarFrame w={fw} h={fh} border={0.05 * fs * ft} depth={0.035 * fs * ft} color="#050505" roughness={0.95} metalness={0.05} /></group><group position={[0, 0, 0.002 * fs]}><FourBarFrame w={fw} h={fh} border={0.006 * fs * ft} depth={0.003 * fs * ft} color="#14b8a6" roughness={0.0} metalness={1.0} emissive="#14b8a6" emissiveIntensity={3} /></group></>)}
+            {win.frameStyle === 'spaghetti' && <SpaghettiFrame w={fw} h={fh} scale={fs * ft} />}
+            {win.frameStyle === 'triangle' && <TriangleFrame w={fw} h={fh} scale={fs * ft} />}
+            {win.frameStyle === 'fire' && <InfernoFrame w={fw} h={fh} scale={fs * ft} />}
+            {win.frameStyle === 'matrix' && <MatrixFrame w={fw} h={fh} scale={fs * ft} />}
+            {win.frameStyle === 'plasma' && <PlasmaFrame w={fw} h={fh} scale={fs * ft} />}
+            {win.frameStyle === 'brutalist' && <BrutalistFrame w={fw} h={fh} scale={fs * ft} />}
+          </group>
+        )
+      })()}
+
+      {/* Selection glow ring on ground */}
       {isSelected && !isFocused && (
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -win.position[1] + 0.05, 0]}>
           <ringGeometry args={[1.2 * winScale, 1.5 * winScale, 32]} />
@@ -243,7 +229,7 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
         </mesh>
       )}
 
-      {/* Focus glow when focused — sized to match the Html content */}
+      {/* Focus glow plane */}
       {isFocused && (
         <mesh position={[0, 0, -0.05]}>
           <planeGeometry args={[worldWidth + 0.4, worldHeight + 0.4]} />
@@ -251,7 +237,7 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
         </mesh>
       )}
 
-      {/* "HIT ENTER" prompt when selected but not focused */}
+      {/* "HIT ENTER" prompt */}
       <FocusPrompt visible={isSelected && !isFocused} />
     </group>
   )

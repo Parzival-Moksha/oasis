@@ -14,10 +14,16 @@
 // ONE useFrame runs the active mode. No fights. No races.
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { useRef, useContext, useEffect } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useRef, useContext, useEffect, createContext } from 'react'
+import { useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, useKeyboardControls } from '@react-three/drei'
 import * as THREE from 'three'
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AUDIO LISTENER — singleton attached to camera for 3D spatial audio
+// ═══════════════════════════════════════════════════════════════════════════
+let _audioListener: THREE.AudioListener | null = null
+export function getAudioListener(): THREE.AudioListener | null { return _audioListener }
 import { useOasisStore } from '../store/oasisStore'
 import { useInputManager, getInputCapabilities, type InputState } from '../lib/input-manager'
 import { SettingsContext, DragContext } from './scene-lib'
@@ -177,11 +183,13 @@ function useAgentFocusUpdate() {
   const prevFocusedRef = useRef<string | null>(null)
   const savedCamPosRef = useRef<THREE.Vector3 | null>(null)
   const savedCamTargetRef = useRef<THREE.Vector3 | null>(null)
+  const lockedPosRef = useRef<THREE.Vector3 | null>(null)
+  const lockedTargetRef = useRef<THREE.Vector3 | null>(null)
   const DURATION = 1.2
 
   return (camera: THREE.PerspectiveCamera, focusedId: string | null, viewport: { aspect: number }) => {
-    const placedAgentWindows = useOasisStore.getState().placedAgentWindows
-    const transforms = useOasisStore.getState().transforms
+    const store = useOasisStore.getState()
+    const { placedAgentWindows, placedCatalogAssets, transforms } = store
 
     // Detect focus change
     if (focusedId !== prevFocusedRef.current) {
@@ -192,26 +200,49 @@ function useAgentFocusUpdate() {
         savedCamPosRef.current = camera.position.clone()
         savedCamTargetRef.current = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).add(camera.position)
 
+        // Look up the focused object — could be an agent window or an image
         const win = placedAgentWindows.find(w => w.id === focusedId)
-        if (!win) return
-        const t = transforms[win.id]
-        const pos = t?.position || win.position
-        const rot = t?.rotation || win.rotation
+        const img = !win ? placedCatalogAssets.find(a => a.id === focusedId && (a.imageUrl || a.videoUrl)) : null
+        if (!win && !img) return
+
+        const t = transforms[focusedId]
+        const pos = t?.position || (win ? win.position : img!.position)
+        const rot = t?.rotation || (win ? win.rotation : img?.rotation || [0, 0, 0])
 
         const windowNormal = new THREE.Vector3(0, 0, 1)
         windowNormal.applyEuler(new THREE.Euler(rot[0], rot[1], rot[2]))
 
-        // The Html content spans 16×12 world units (800px × distanceFactor/400).
-        // Camera distance must show the full window with margin.
-        // FOV=50 → at distance D, horizontal view = 2*tan(25°)*D*aspect ≈ 1.45*D
-        // For 16-unit width to fill ~80%: D = 16 / (1.45 * 0.8) ≈ 13.8
-        // But distanceFactor also affects Html visual scale: closer = bigger text.
-        // At D=13.8, Html renders at distanceFactor/D = 8/13.8 = 0.58x pixel scale.
-        // Compromise: D ≈ 12 for readable text + full window visible.
-        const groupScale = typeof t?.scale === 'number' ? t.scale : Array.isArray(t?.scale) ? t.scale[0] : win.scale
-        const dist = 14 * groupScale
+        let dist: number
+        if (win) {
+          // Agent window: 16×12 world units, D ≈ 14 * scale
+          const groupScale = typeof t?.scale === 'number' ? t.scale : Array.isArray(t?.scale) ? t.scale[0] : win.scale
+          dist = 14 * groupScale
+        } else {
+          // Image/video: placement.scale = base height in world units.
+          // Transform override t?.scale = group scale multiplier from SelectableWrapper.
+          // Actual world height = placement.scale * groupScale.
+          const baseScale = img!.scale || 1  // CatalogPlacement.scale (1 for images, 2 for videos)
+          const groupScale = typeof t?.scale === 'number' ? t.scale : Array.isArray(t?.scale) ? t.scale[1] : 1
+          const worldHeight = baseScale * groupScale
+          const estAspect = img!.videoUrl ? 16 / 9 : 1
+          const worldWidth = worldHeight * estAspect
+
+          const fovRad = (camera.fov * Math.PI) / 180
+          const hFov = 2 * Math.atan(Math.tan(fovRad / 2) * viewport.aspect)
+          // Distance to fill 85% on the limiting axis
+          const distV = (worldHeight / 2) / Math.tan(fovRad / 2) / 0.85
+          const distH = (worldWidth / 2) / Math.tan(hFov / 2) / 0.85
+          dist = Math.max(distV, distH)
+        }
 
         const windowCenter = new THREE.Vector3(pos[0], pos[1], pos[2])
+        // Image/video group is elevated by h/2 (both renderers use position={[0, h/2, 0]})
+        // h = placement.scale * groupScale
+        if (img) {
+          const baseScale = img.scale || 1
+          const groupScale = typeof t?.scale === 'number' ? t.scale : Array.isArray(t?.scale) ? t.scale[1] : 1
+          windowCenter.y += (baseScale * groupScale) / 2
+        }
         const cameraGoal = windowCenter.clone().add(windowNormal.clone().multiplyScalar(dist))
 
         startPosRef.current = camera.position.clone()
@@ -225,11 +256,19 @@ function useAgentFocusUpdate() {
         goalTargetRef.current = savedCamTargetRef.current || new THREE.Vector3(0, 0, 0)
         savedCamPosRef.current = null
         savedCamTargetRef.current = null
+        lockedPosRef.current = null
+        lockedTargetRef.current = null
       }
     }
 
-    // Animate
-    if (!goalPosRef.current || !startPosRef.current || !goalTargetRef.current || !startTargetRef.current) return
+    // If no animation active, lock camera at last focused position (prevents drift)
+    if (!goalPosRef.current || !startPosRef.current || !goalTargetRef.current || !startTargetRef.current) {
+      if (focusedId && lockedPosRef.current && lockedTargetRef.current) {
+        camera.position.copy(lockedPosRef.current)
+        camera.lookAt(lockedTargetRef.current)
+      }
+      return
+    }
     const now = performance.now() / 1000
     const t = Math.min(1, (now - startTimeRef.current) / DURATION)
     const ease = 1 - Math.pow(1 - t, 3)
@@ -239,15 +278,16 @@ function useAgentFocusUpdate() {
     camera.lookAt(lookTarget)
 
     if (t >= 1) {
+      if (focusedId) {
+        // Animation done while focused — save final position for locking
+        lockedPosRef.current = goalPosRef.current.clone()
+        lockedTargetRef.current = goalTargetRef.current.clone()
+      }
+      // Clear animation state — allows fresh animation on next focus change
       startPosRef.current = null
       startTargetRef.current = null
-      if (focusedId) {
-        camera.position.copy(goalPosRef.current)
-        camera.lookAt(goalTargetRef.current)
-      } else {
-        goalPosRef.current = null
-        goalTargetRef.current = null
-      }
+      goalPosRef.current = null
+      goalTargetRef.current = null
     }
   }
 }
@@ -282,8 +322,22 @@ export function CameraController() {
   const { isDragging } = useContext(DragContext)
   const inputState = useInputManager(s => s.inputState)
   const focusedAgentWindowId = useOasisStore(s => s.focusedAgentWindowId)
+  const focusedImageId = useOasisStore(s => s.focusedImageId)
   const orbitControlsRef = useRef<any>(null)
   const prevInputStateRef = useRef<string>(inputState)
+  const { camera } = useThree()
+
+  // ░▒▓ AUDIO LISTENER — attach to camera for 3D spatial audio ▓▒░
+  useEffect(() => {
+    if (_audioListener) return // Already created (HMR safe)
+    const listener = new THREE.AudioListener()
+    camera.add(listener)
+    _audioListener = listener
+    return () => {
+      camera.remove(listener)
+      _audioListener = null
+    }
+  }, [camera])
 
   // Mode-specific update functions (hooks, called unconditionally)
   const updateNoclip = useNoclipUpdate()
@@ -319,6 +373,12 @@ export function CameraController() {
       orbitControlsRef.current.target.copy(camera.position).add(dir.multiplyScalar(Math.max(5, dist)))
       orbitControlsRef.current.update()
     }
+    // ░▒▓ CRITICAL FIX: Reset prevFocusedRef when LEAVING agent-focus ▓▒░
+    // Without this, prevFocusedRef stays stale and the 2nd focus attempt
+    // sees focusedId === prevFocusedRef → no animation trigger.
+    if (prevInputStateRef.current === 'agent-focus' && inputState !== 'agent-focus') {
+      updateAgentFocus(camera, null, state.viewport)
+    }
     prevInputStateRef.current = inputState
 
     switch (inputState) {
@@ -343,8 +403,8 @@ export function CameraController() {
       case 'agent-focus':
         // Disable OrbitControls
         if (orbitControlsRef.current) orbitControlsRef.current.enabled = false
-        // Camera lerp to agent window
-        updateAgentFocus(camera, focusedAgentWindowId, state.viewport)
+        // Camera lerp to agent window or image
+        updateAgentFocus(camera, focusedAgentWindowId || focusedImageId, state.viewport)
         break
 
       case 'third-person':

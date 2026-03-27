@@ -49,7 +49,7 @@ export type PlacementVfxType =
 const PLACEMENT_VFX_LIST: Exclude<PlacementVfxType, 'random'>[] = ['runeflash', 'sparkburst', 'portalring', 'sigilpulse', 'quantumcollapse', 'phoenixascension', 'dimensionalrift', 'crystalgenesis', 'meteorimpact', 'arcanebloom', 'voidanchor', 'stellarforge']
 
 export interface PlacementPending {
-  type: 'catalog' | 'conjured' | 'crafted' | 'library' | 'image' | 'agent'
+  type: 'catalog' | 'conjured' | 'crafted' | 'library' | 'image' | 'video' | 'agent'
   catalogId?: string
   name: string
   path?: string
@@ -57,7 +57,9 @@ export interface PlacementPending {
   sceneId?: string
   /** For image placements — URL to the generated image texture */
   imageUrl?: string
-  /** Frame style ID for image placements */
+  /** For video placements */
+  videoUrl?: string
+  /** Frame style ID for image/video placements */
   imageFrameStyle?: string
   /** For agent window placements */
   agentType?: AgentWindowType
@@ -236,6 +238,7 @@ interface OasisState {
   cancelPlacement: () => void
   placeCatalogAssetAt: (catalogId: string, name: string, path: string, defaultScale: number, position: [number, number, number]) => void
   placeImageAt: (name: string, imageUrl: string, position: [number, number, number], frameStyle?: string) => void
+  placeVideoAt: (name: string, videoUrl: string, position: [number, number, number]) => void
   updateCatalogPlacement: (id: string, updates: Partial<import('../lib/conjure/types').CatalogPlacement>) => void
   placeLibrarySceneAt: (sceneId: string, position: [number, number, number]) => void
   setPlacementVfxType: (type: PlacementVfxType) => void
@@ -303,11 +306,14 @@ interface OasisState {
   // ─═̷─═̷─💻 3D AGENT WINDOWS — placeable Claude Code / Merlin / DevCraft in-world ─═̷─═̷─💻
   placedAgentWindows: AgentWindow[]
   focusedAgentWindowId: string | null       // when set, camera locks to fill viewport with this window
+  focusedImageId: string | null             // when set, camera locks to fill viewport with this image
   _preFocusCameraState: { position: [number, number, number]; target: [number, number, number] } | null
   addAgentWindow: (window: AgentWindow) => void
   removeAgentWindow: (id: string) => void
   updateAgentWindow: (id: string, partial: Partial<AgentWindow>) => void
   focusAgentWindow: (id: string | null) => void
+  focusImage: (id: string | null) => void
+  navigateSlide: (direction: 1 | -1) => void
 
   // ─═̷─═̷─⏪ UNDO/REDO ─═̷─═̷─⏪
   undoStack: UndoCommand[]
@@ -321,6 +327,11 @@ interface OasisState {
 }
 
 export const useOasisStore = create<OasisState>((set, get) => {
+  // Expose store to CDP MCP for player tests
+  if (typeof window !== 'undefined') {
+    (window as unknown as Record<string, unknown>).__OASIS_STORE__ = { getState: () => get(), setState: set }
+  }
+
   // ░▒▓ withUndo — wraps any world-mutating action with undo snapshot capture ▓▒░
   const withUndo = (label: string, icon: string, fn: () => void) => {
     if (get()._isUndoRedoing) { fn(); return }
@@ -388,6 +399,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   // ─═̷─═̷─💻 3D AGENT WINDOWS ─═̷─═̷─💻
   placedAgentWindows: [],
   focusedAgentWindowId: null,
+  focusedImageId: null,
   _preFocusCameraState: null,
 
   // ─═̷─═̷─🧑 AVATAR ─═̷─═̷─🧑
@@ -575,6 +587,20 @@ export const useOasisStore = create<OasisState>((set, get) => {
     withUndo(`Place ${name}`, '🖼️', () => {
       const id = `image-${Date.now()}`
       const placement: CatalogPlacement = { id, catalogId: 'generated-image', name, glbPath: '', position, scale: 1, imageUrl, ...(frameStyle && { imageFrameStyle: frameStyle }) }
+      set(state => ({
+        placedCatalogAssets: [...state.placedCatalogAssets, placement],
+        placementPending: null,
+      }))
+    })
+    get().spawnPlacementVfx(position)
+    setTimeout(() => get().saveWorldState(), 100)
+    awardXp('PLACE_CATALOG_OBJECT', get().activeWorldId)
+  },
+
+  placeVideoAt: (name: string, videoUrl: string, position: [number, number, number]) => {
+    withUndo(`Place video ${name}`, '🎬', () => {
+      const id = `video-${Date.now()}`
+      const placement: CatalogPlacement = { id, catalogId: 'video', name, glbPath: '', position, scale: 2, videoUrl }
       set(state => ({
         placedCatalogAssets: [...state.placedCatalogAssets, placement],
         placementPending: null,
@@ -1200,18 +1226,66 @@ export const useOasisStore = create<OasisState>((set, get) => {
   },
   focusAgentWindow: (id) => {
     if (id) {
-      // Sync InputManager → agent-focus state handles pointer lock release
       try { require('../lib/input-manager').useInputManager.getState().enterAgentFocus() } catch {}
-      set({ focusedAgentWindowId: id })
+      set({ focusedAgentWindowId: id, focusedImageId: null })
     } else {
-      // InputManager transition is handled by handleEscape() — don't double-call returnToPrevious
-      // Only sync InputManager if it wasn't already transitioned (e.g. called from non-Escape path)
       try {
         const im = require('../lib/input-manager').useInputManager.getState()
         if (im.inputState === 'agent-focus') im.returnToPrevious()
       } catch {}
       set({ focusedAgentWindowId: null })
     }
+  },
+
+  // ─═̷─═̷─🖼️ IMAGE FOCUS — camera locks to fill viewport with image ─═̷─═̷─🖼️
+  focusImage: (id) => {
+    if (id) {
+      // Reuse agent-focus input state — same UX (ESC to exit, no orbit controls)
+      try { require('../lib/input-manager').useInputManager.getState().enterAgentFocus() } catch {}
+      set({ focusedImageId: id, focusedAgentWindowId: null })
+    } else {
+      try {
+        const im = require('../lib/input-manager').useInputManager.getState()
+        if (im.inputState === 'agent-focus') im.returnToPrevious()
+      } catch {}
+      set({ focusedImageId: null })
+    }
+  },
+
+  // ─═̷─═̷─📄 SLIDE NAVIGATION — PgUp/PgDown cycles through images by X position ─═̷─═̷─📄
+  navigateSlide: (direction) => {
+    const { placedCatalogAssets, transforms, focusedImageId } = get()
+    // Collect all image + video placements (anything that's a "slide")
+    const images = placedCatalogAssets.filter(a => a.imageUrl || a.videoUrl)
+    if (images.length === 0) return
+
+    // Sort by X position (left to right), break ties by Z
+    const sorted = [...images].sort((a, b) => {
+      const ax = transforms[a.id]?.position?.[0] ?? a.position[0]
+      const bx = transforms[b.id]?.position?.[0] ?? b.position[0]
+      if (Math.abs(ax - bx) > 0.5) return ax - bx
+      const az = transforms[a.id]?.position?.[2] ?? a.position[2]
+      const bz = transforms[b.id]?.position?.[2] ?? b.position[2]
+      return az - bz
+    })
+
+    // Find current index
+    const currentIdx = focusedImageId ? sorted.findIndex(img => img.id === focusedImageId) : -1
+
+    // Navigate
+    let nextIdx: number
+    if (currentIdx === -1) {
+      // Not focused on any image — go to first (PgDown) or last (PgUp)
+      nextIdx = direction === 1 ? 0 : sorted.length - 1
+    } else {
+      nextIdx = currentIdx + direction
+      // Wrap around
+      if (nextIdx < 0) nextIdx = sorted.length - 1
+      if (nextIdx >= sorted.length) nextIdx = 0
+    }
+
+    // Focus the target image
+    get().focusImage(sorted[nextIdx].id)
   },
 
   // ─═̷─═̷─👁️ VIEW MODE — peek into someone else's world (read-only) ─═̷─═̷─👁️

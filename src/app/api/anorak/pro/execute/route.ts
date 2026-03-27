@@ -89,8 +89,8 @@ function spawnAgent(
     const claudePath = process.platform === 'win32' ? 'claude.cmd' : 'claude'
 
     const args = agentType === 'anorak-pro'
-      ? ['--print', '--model', model, '--output-format', 'stream-json', '--dangerously-skip-permissions']
-      : ['--agent', agentType, '--print', '--model', model, '--output-format', 'stream-json', '--dangerously-skip-permissions']
+      ? ['--print', '--verbose', '--model', model, '--output-format', 'stream-json', '--dangerously-skip-permissions']
+      : ['--agent', agentType, '--print', '--verbose', '--model', model, '--output-format', 'stream-json', '--dangerously-skip-permissions']
 
     send('status', { content: `⚡ spawning ${lobe}...`, lobe })
 

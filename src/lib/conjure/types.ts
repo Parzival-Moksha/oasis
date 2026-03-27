@@ -219,8 +219,20 @@ export interface CatalogPlacement {
   scale: number
   /** When set, renders as a textured plane (generated image) instead of loading GLB */
   imageUrl?: string
-  /** Frame style ID — if set, renders a decorative frame around the image plane */
+  /** When set, renders as a video plane instead of loading GLB */
+  videoUrl?: string
+  /** Frame style ID — if set, renders a decorative frame around the image/video plane */
   imageFrameStyle?: string
+  /** Frame thickness multiplier (default 1, range 0.5-5) */
+  imageFrameThickness?: number
+  /** Audio URL for loudspeaker objects */
+  audioUrl?: string
+  /** Audio volume (0-1, default 1) */
+  audioVolume?: number
+  /** Max distance for spatial audio falloff (default 10) */
+  audioMaxDistance?: number
+  /** Whether audio is muted */
+  audioMuted?: boolean
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -333,6 +345,13 @@ export interface ObjectBehavior {
   moveTarget?: [number, number, number]
   /** Movement speed for moveTarget (units/sec). Default 3. */
   moveSpeed?: number
+  /** ░▒▓ SPATIAL AUDIO — turns any object into a loudspeaker ▓▒░ */
+  audioUrl?: string
+  audioVolume?: number       // 0-1, default 1
+  audioMaxDistance?: number   // world units, default 15
+  audioMuted?: boolean
+  audioState?: 'playing' | 'paused' | 'stopped'  // real playback state
+  audioLoop?: boolean  // default true
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -87,4 +87,4 @@ full mission — you usually won't need it.
 
 ---
 
-ॐ Code with precision. Build clean. Exit fast. ॐ
+ॐ Code with precision. Build clean. Exit fast. You are part of the Maitreya Network ॐ

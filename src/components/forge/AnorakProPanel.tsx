@@ -76,13 +76,14 @@ function saveConfig(c: AnorakProConfig) {
   try { localStorage.setItem(CONFIG_KEY, JSON.stringify(c)) } catch {}
 }
 
-type Tab = 'stream' | 'mindcraft' | 'curator-log' | 'cehq'
+type Tab = 'stream' | 'mindcraft' | 'curator-log' | 'cehq' | 'settings'
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'stream', label: 'Stream', icon: '⚡' },
   { id: 'mindcraft', label: 'Mindcraft', icon: '📋' },
   { id: 'curator-log', label: 'Curator Log', icon: '📜' },
-  { id: 'cehq', label: 'CEHQ', icon: '⚙' },
+  { id: 'cehq', label: 'CEHQ', icon: '🧠' },
+  { id: 'settings', label: 'Settings', icon: '⚙' },
 ]
 
 const LOBE_COLORS: Record<string, string> = {
@@ -114,37 +115,164 @@ interface StreamEntry {
   timestamp: number
 }
 
-const StreamTab = React.memo(function StreamTab({ entries }: { entries: StreamEntry[] }) {
+const TRUSTED_MEDIA = /^(\/|https?:\/\/(localhost|127\.0\.0\.1|fal\.media|fal-cdn|oaidalleapiprodscus|replicate\.delivery)[^\s]*)/
+
+const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting }: {
+  entries: StreamEntry[]
+  onSend: (msg: string) => void
+  isChatting: boolean
+}) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const visible = entries.slice(-200)
+  const [fullscreen, setFullscreen] = useState<{ type: 'image' | 'video'; url: string } | null>(null)
+  const [chatInput, setChatInput] = useState('')
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [entries.length])
 
+  const handleSend = useCallback(() => {
+    const msg = chatInput.trim()
+    if (!msg || isChatting) return
+    setChatInput('')
+    onSend(msg)
+  }, [chatInput, isChatting, onSend])
+
   if (visible.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-gray-600 text-sm font-mono">
-        No activity yet. Curate or execute a mission to see the stream.
+      <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex items-center justify-center text-gray-600 text-sm font-mono">
+          Chat with Anorak Pro or curate a mission to see the stream.
+        </div>
+        <div className="p-2 border-t border-white/5">
+          <div className="flex gap-1.5">
+            <textarea
+              ref={inputRef}
+              value={chatInput}
+              onChange={e => setChatInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
+              placeholder="Talk to Anorak Pro..."
+              rows={1}
+              className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-200 outline-none focus:border-teal-500/50 resize-none font-mono placeholder:text-gray-600"
+            />
+            <button
+              onClick={handleSend}
+              disabled={isChatting || !chatInput.trim()}
+              className="px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-wide transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+              style={{ background: 'rgba(20,184,166,0.2)', color: '#14b8a6', border: '1px solid rgba(20,184,166,0.3)' }}
+            >
+              {isChatting ? '...' : '⚡'}
+            </button>
+          </div>
+        </div>
       </div>
     )
   }
 
+  // Detect media URLs in text content (trusted domains only)
+  const renderContent = (content: string) => {
+    const imgMatch = content.match(/((?:https?:\/\/[^\s]+\.(?:png|jpg|jpeg|gif|webp))|(?:\/generated-images\/[^\s]+))/i)
+    if (imgMatch && TRUSTED_MEDIA.test(imgMatch[0])) {
+      return (
+        <span>
+          {content.replace(imgMatch[0], '')}
+          <img src={imgMatch[0]} alt="generated"
+            className="mt-1 max-w-[300px] max-h-[200px] rounded border border-white/10 cursor-pointer hover:border-teal-500/50 transition-colors"
+            onClick={() => setFullscreen({ type: 'image', url: imgMatch[0] })} />
+        </span>
+      )
+    }
+    const vidMatch = content.match(/((?:https?:\/\/[^\s]+\.(?:mp4|webm))|(?:\/generated-videos\/[^\s]+))/i)
+    if (vidMatch && TRUSTED_MEDIA.test(vidMatch[0])) {
+      return (
+        <span>
+          {content.replace(vidMatch[0], '')}
+          <video src={vidMatch[0]} controls
+            className="mt-1 max-w-[300px] rounded border border-white/10 cursor-pointer hover:border-teal-500/50 transition-colors"
+            onClick={e => { e.preventDefault(); setFullscreen({ type: 'video', url: vidMatch[0] }) }} />
+        </span>
+      )
+    }
+    const audioMatch = content.match(/((?:https?:\/\/[^\s]+\.(?:mp3|wav|ogg))|(?:\/generated-voices\/[^\s]+))/i)
+    if (audioMatch && TRUSTED_MEDIA.test(audioMatch[0])) {
+      return (
+        <span>
+          {content.replace(audioMatch[0], '')}
+          <span className="mt-1 flex items-center gap-1">
+            <audio src={audioMatch[0]} controls className="w-[220px] h-7" />
+            <select defaultValue="1" onChange={e => {
+              const audio = e.target.previousElementSibling as HTMLAudioElement
+              if (audio) audio.playbackRate = parseFloat(e.target.value)
+            }} className="text-[9px] bg-black/60 border border-white/10 rounded px-1 py-0.5 text-gray-400 outline-none cursor-pointer">
+              <option value="1">1x</option>
+              <option value="1.2">1.2x</option>
+              <option value="1.5">1.5x</option>
+              <option value="2">2x</option>
+            </select>
+          </span>
+        </span>
+      )
+    }
+    return content
+  }
+
   return (
-    <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-1 font-mono text-xs">
-      {visible.map(e => (
-        <div key={e.id} style={{ color: e.type === 'error' ? '#ef4444' : e.type === 'stderr' ? '#555' : (LOBE_COLORS[e.lobe] || '#888') }}>
-          <span style={{ opacity: 0.5, marginRight: 6 }}>{e.lobe}</span>
-          {e.type === 'tool' && <span style={{ color: '#888' }}>[{e.content}] </span>}
-          {e.type === 'status' && <span style={{ fontStyle: 'italic' }}>{e.content}</span>}
-          {e.type === 'text' && e.content}
-          {e.type === 'error' && <span>ERROR: {e.content}</span>}
-          {e.type === 'stderr' && <span style={{ opacity: 0.6 }}>{e.content}</span>}
-          {e.type === 'thinking' && <span style={{ opacity: 0.4, fontStyle: 'italic' }}>{e.content.substring(0, 200)}</span>}
-          {e.type === 'tool_result' && <span style={{ opacity: 0.5 }}>{e.content.substring(0, 150)}</span>}
+    <>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-1 font-mono text-xs">
+        {visible.map(e => (
+          <div key={e.id} style={{ color: e.type === 'error' ? '#ef4444' : e.type === 'stderr' ? '#555' : (LOBE_COLORS[e.lobe] || '#888') }}>
+            <span style={{ opacity: 0.5, marginRight: 6 }}>{e.lobe}</span>
+            {e.type === 'tool' && <span style={{ color: '#888' }}>[{e.content}] </span>}
+            {e.type === 'status' && <span style={{ fontStyle: 'italic' }}>{e.content}</span>}
+            {e.type === 'text' && renderContent(e.content)}
+            {e.type === 'error' && <span>ERROR: {e.content}</span>}
+            {e.type === 'stderr' && <span style={{ opacity: 0.6 }}>{e.content}</span>}
+            {e.type === 'thinking' && <span style={{ opacity: 0.4, fontStyle: 'italic' }}>{e.content.substring(0, 200)}</span>}
+            {e.type === 'tool_result' && <span style={{ opacity: 0.5 }}>{renderContent(e.content.substring(0, 300))}</span>}
+          </div>
+        ))}
+      </div>
+
+      {/* Chat input */}
+      <div className="p-2 border-t border-white/5">
+        <div className="flex gap-1.5">
+          <textarea
+            ref={inputRef}
+            value={chatInput}
+            onChange={e => setChatInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
+            placeholder="Talk to Anorak Pro..."
+            rows={1}
+            className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-200 outline-none focus:border-teal-500/50 resize-none font-mono placeholder:text-gray-600"
+          />
+          <button
+            onClick={handleSend}
+            disabled={isChatting || !chatInput.trim()}
+            className="px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-wide transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+            style={{ background: 'rgba(20,184,166,0.2)', color: '#14b8a6', border: '1px solid rgba(20,184,166,0.3)' }}
+          >
+            {isChatting ? '...' : '⚡'}
+          </button>
         </div>
-      ))}
-    </div>
+      </div>
+
+      {/* Fullscreen media modal */}
+      {fullscreen && (
+        <div className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center cursor-pointer"
+          onClick={() => setFullscreen(null)}>
+          {fullscreen.type === 'image' && (
+            <img src={fullscreen.url} alt="fullscreen" className="max-w-[90vw] max-h-[90vh] rounded-lg shadow-2xl" />
+          )}
+          {fullscreen.type === 'video' && (
+            <video src={fullscreen.url} controls autoPlay className="max-w-[90vw] max-h-[90vh] rounded-lg shadow-2xl"
+              onClick={e => e.stopPropagation()} />
+          )}
+          <button className="absolute top-4 right-4 text-white/60 hover:text-white text-3xl cursor-pointer"
+            onClick={() => setFullscreen(null)}>×</button>
+        </div>
+      )}
+    </>
   )
 })
 
@@ -331,6 +459,11 @@ function MindcraftTab({
   const [missions, setMissions] = useState<MindcraftMission[]>([])
   const [loading, setLoading] = useState(true)
   const [feedbackMission, setFeedbackMission] = useState<MindcraftMission | null>(null)
+  const [showNewForm, setShowNewForm] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newDesc, setNewDesc] = useState('')
+  const [newDharma, setNewDharma] = useState('')
+  const [creating, setCreating] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
 
   const fetchMissions = useCallback(async () => {
@@ -356,6 +489,31 @@ function MindcraftTab({
     return () => { abortRef.current?.abort(); clearInterval(interval) }
   }, [fetchMissions])
 
+  const handleCreateMission = useCallback(async () => {
+    if (!newName.trim()) return
+    setCreating(true)
+    try {
+      const res = await fetch('/api/missions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newName.trim(),
+          description: newDesc.trim() || null,
+          assignedTo: 'anorak',
+          dharmaPath: newDharma || null,
+        }),
+      })
+      if (res.ok) {
+        setNewName('')
+        setNewDesc('')
+        setNewDharma('')
+        setShowNewForm(false)
+        fetchMissions()
+      }
+    } catch { /* offline */ }
+    setCreating(false)
+  }, [newName, newDesc, newDharma, fetchMissions])
+
   if (loading) return <div className="flex-1 flex items-center justify-center text-gray-600 text-sm">Loading...</div>
 
   const currentActivity = missions.filter(m => m.executionPhase != null)
@@ -366,6 +524,62 @@ function MindcraftTab({
 
   return (
     <div className="flex-1 overflow-y-auto p-2 space-y-3 text-xs font-mono">
+      {/* ─═̷─ New Mission ─═̷─ */}
+      <div>
+        {!showNewForm ? (
+          <button
+            onClick={() => setShowNewForm(true)}
+            className="w-full text-[10px] py-1.5 rounded border border-dashed border-teal-500/30 text-teal-400/70 hover:border-teal-500/60 hover:text-teal-400 hover:bg-teal-500/5 transition-colors cursor-pointer"
+          >
+            + NEW MISSION
+          </button>
+        ) : (
+          <div className="rounded border border-teal-500/30 bg-teal-500/5 p-2 space-y-2">
+            <input
+              autoFocus
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleCreateMission()}
+              placeholder="Mission name..."
+              className="w-full bg-black/40 border border-white/10 rounded px-2 py-1 text-white text-[11px] outline-none focus:border-teal-500/50 placeholder-gray-600"
+            />
+            <textarea
+              value={newDesc}
+              onChange={e => setNewDesc(e.target.value)}
+              placeholder="Description (optional)..."
+              rows={2}
+              className="w-full bg-black/40 border border-white/10 rounded px-2 py-1 text-white text-[11px] outline-none focus:border-teal-500/50 placeholder-gray-600 resize-none"
+            />
+            <div className="flex items-center gap-2">
+              <select
+                value={newDharma}
+                onChange={e => setNewDharma(e.target.value)}
+                className="bg-black/40 border border-white/10 rounded px-1 py-0.5 text-gray-300 text-[10px] outline-none cursor-pointer"
+              >
+                <option value="">dharma path...</option>
+                {Object.keys(DHARMA_ABBR).map(d => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+              <div className="flex-1" />
+              <button
+                onClick={() => { setShowNewForm(false); setNewName(''); setNewDesc(''); setNewDharma('') }}
+                className="text-[9px] px-2 py-0.5 rounded text-gray-500 hover:text-gray-300 cursor-pointer"
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={handleCreateMission}
+                disabled={!newName.trim() || creating}
+                className="text-[9px] px-3 py-0.5 rounded bg-teal-500/20 text-teal-400 hover:bg-teal-500/30 disabled:opacity-30 cursor-pointer"
+              >
+                {creating ? '...' : 'CREATE'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Section A: Current Activity + Interrupted missions */}
       <div>
         <div className="text-[10px] text-teal-400 uppercase tracking-widest mb-1">Current Activity</div>
@@ -804,6 +1018,120 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
   const [streamEntries, setStreamEntries] = useState<StreamEntry[]>([])
   const entryIdRef = useRef(0)
   const [isAgentRunning, setIsAgentRunning] = useState(false)
+  const [isChatting, setIsChatting] = useState(false)
+  const chatAbortRef = useRef<AbortController | null>(null)
+  const [proSessionId, setProSessionId] = useState<string>(() => {
+    if (typeof window === 'undefined') return ''
+    return localStorage.getItem('oasis-anorak-pro-session') || ''
+  })
+
+  // ─═̷─ Chat with Anorak Pro ─═̷─
+  const handleChat = useCallback(async (msg: string) => {
+    if (isChatting) return
+    setIsChatting(true)
+
+    // Add user message to stream
+    setStreamEntries(prev => [...prev, {
+      id: entryIdRef.current++, type: 'text', content: msg,
+      lobe: 'carbondev', timestamp: Date.now(),
+    }])
+
+    const controller = new AbortController()
+    chatAbortRef.current = controller
+
+    try {
+      const res = await fetch('/api/claude-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: msg,
+          sessionId: proSessionId || undefined,
+          model: (config.models as Record<string, string>)?.['anorak-pro'] || 'opus',
+        }),
+        signal: controller.signal,
+      })
+
+      if (!res.ok || !res.body) {
+        setStreamEntries(prev => [...prev, {
+          id: entryIdRef.current++, type: 'error',
+          content: `HTTP ${res.status}`, lobe: 'anorak-pro', timestamp: Date.now(),
+        }])
+        return
+      }
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed || trimmed.startsWith(':')) continue // skip empty + keepalive
+          if (trimmed === 'data: [DONE]') continue
+          // Strip SSE "data: " prefix
+          const jsonStr = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed
+          try {
+            const event = JSON.parse(jsonStr)
+            // Capture session ID
+            if (event.type === 'session' && event.sessionId && !proSessionId) {
+              setProSessionId(event.sessionId)
+              localStorage.setItem('oasis-anorak-pro-session', event.sessionId)
+            }
+            // Text from assistant
+            if (event.type === 'text') {
+              setStreamEntries(prev => {
+                const last = prev[prev.length - 1]
+                if (last && last.lobe === 'anorak-pro' && last.type === 'text') {
+                  return [...prev.slice(0, -1), { ...last, content: last.content + (event.content || '') }]
+                }
+                return [...prev, {
+                  id: entryIdRef.current++, type: 'text',
+                  content: event.content || '', lobe: 'anorak-pro', timestamp: Date.now(),
+                }]
+              })
+            }
+            // Tool use
+            if (event.type === 'tool') {
+              setStreamEntries(prev => [...prev, {
+                id: entryIdRef.current++, type: 'tool',
+                content: event.name || 'tool', lobe: 'anorak-pro', timestamp: Date.now(),
+              }])
+            }
+            // Thinking
+            if (event.type === 'thinking') {
+              setStreamEntries(prev => [...prev, {
+                id: entryIdRef.current++, type: 'thinking',
+                content: event.content || '', lobe: 'anorak-pro', timestamp: Date.now(),
+              }])
+            }
+            // Errors
+            if (event.type === 'error') {
+              setStreamEntries(prev => [...prev, {
+                id: entryIdRef.current++, type: 'error',
+                content: event.content || event.error || '', lobe: 'anorak-pro', timestamp: Date.now(),
+              }])
+            }
+          } catch { /* skip malformed lines */ }
+        }
+      }
+    } catch (e) {
+      if (controller.signal.aborted) return
+      setStreamEntries(prev => [...prev, {
+        id: entryIdRef.current++, type: 'error',
+        content: `${e}`, lobe: 'system', timestamp: Date.now(),
+      }])
+    } finally {
+      if (chatAbortRef.current === controller) chatAbortRef.current = null
+      setIsChatting(false)
+    }
+  }, [isChatting, proSessionId, config.models])
 
   // ─═̷─ Drag state ─═̷─
   const [position, setPosition] = useState(() => {
@@ -1083,10 +1411,66 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
       </div>
 
       {/* ═══ TAB CONTENT ═══ */}
-      {activeTab === 'stream' && <StreamTab entries={streamEntries} />}
+      {activeTab === 'stream' && <StreamTab entries={streamEntries} onSend={handleChat} isChatting={isChatting} />}
       {activeTab === 'mindcraft' && <MindcraftTab onCurate={handleCurate} onExecute={handleExecute} isAgentRunning={isAgentRunning} />}
       {activeTab === 'curator-log' && <CuratorLogTab />}
       {activeTab === 'cehq' && <CEHQTab config={config} onUpdate={updateConfig} />}
+      {activeTab === 'settings' && (
+        <div className="flex-1 overflow-y-auto p-3 text-xs font-mono">
+          <div className="text-teal-400 text-[10px] uppercase tracking-widest mb-3">Settings</div>
+          <div className="space-y-3">
+            <div className="border border-white/5 rounded p-2">
+              <div className="text-gray-400 font-bold text-[11px] mb-2">Automation</div>
+              <div className="space-y-2 text-[10px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-amber-400">Auto-curate</span>
+                  <input type="checkbox" checked={config.autoCurate} onChange={e => updateConfig({ autoCurate: e.target.checked })} className="accent-amber-500" />
+                </div>
+                <div className="text-gray-600 text-[9px] -mt-1 ml-1">Curates immature anorak missions automatically</div>
+                <div className="flex items-center justify-between">
+                  <span className="text-red-400">Auto-code</span>
+                  <input type="checkbox" checked={config.autoCode} onChange={e => updateConfig({ autoCode: e.target.checked })} className="accent-red-500" />
+                </div>
+                <div className="text-gray-600 text-[9px] -mt-1 ml-1">Executes vaikhari missions automatically</div>
+              </div>
+            </div>
+            <div className="border border-white/5 rounded p-2">
+              <div className="text-gray-400 font-bold text-[11px] mb-2">Pipeline</div>
+              <div className="space-y-2 text-[10px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500">Reviewer threshold</span>
+                  <input type="number" value={config.reviewerThreshold} min={50} max={100} onChange={e => updateConfig({ reviewerThreshold: Math.min(100, Math.max(50, parseInt(e.target.value) || 90)) })} className="w-14 text-center bg-black/60 border border-white/10 rounded px-1 py-0.5 text-gray-300 outline-none" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500">Batch size</span>
+                  <input type="number" value={config.batchSize} min={1} max={5} onChange={e => updateConfig({ batchSize: Math.min(5, Math.max(1, parseInt(e.target.value) || 1)) })} className="w-14 text-center bg-black/60 border border-white/10 rounded px-1 py-0.5 text-gray-300 outline-none" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500">Recap length</span>
+                  <input type="number" value={config.recapLength} min={50} max={500} step={50} onChange={e => updateConfig({ recapLength: Math.min(500, Math.max(50, parseInt(e.target.value) || 100)) })} className="w-14 text-center bg-black/60 border border-white/10 rounded px-1 py-0.5 text-gray-300 outline-none" />
+                </div>
+              </div>
+            </div>
+            <div className="border border-white/5 rounded p-2">
+              <div className="text-gray-400 font-bold text-[11px] mb-2">Appearance</div>
+              <div className="space-y-2 text-[10px]">
+                <div>
+                  <div className="text-gray-500 mb-1">Background Color</div>
+                  <input type="color" value={panelSettings.bgColor} onChange={e => updateSettings({ ...panelSettings, bgColor: e.target.value })} className="w-full h-6 rounded cursor-pointer bg-transparent border border-white/10" />
+                </div>
+                <div>
+                  <div className="text-gray-500 mb-1">Opacity ({(panelSettings.opacity * 100).toFixed(0)}%)</div>
+                  <input type="range" min={0} max={1} step={0.05} value={panelSettings.opacity} onChange={e => updateSettings({ ...panelSettings, opacity: parseFloat(e.target.value) })} className="w-full accent-teal-500" />
+                </div>
+                <div>
+                  <div className="text-gray-500 mb-1">Blur ({panelSettings.blur}px)</div>
+                  <input type="range" min={0} max={20} step={1} value={panelSettings.blur} onChange={e => updateSettings({ ...panelSettings, blur: parseInt(e.target.value) })} className="w-full accent-teal-500" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ═══ RESIZE HANDLE ═══ */}
       <div

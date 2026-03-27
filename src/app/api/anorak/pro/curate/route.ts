@@ -156,6 +156,7 @@ export async function POST(request: NextRequest) {
       const args = [
         '--agent', 'curator',
         '--print',
+        '--verbose',
         '--model', model,
         '--output-format', 'stream-json',
         '--dangerously-skip-permissions',

@@ -165,9 +165,12 @@ describe('AnorakProPanel — AbortController + setIsAgentRunning', () => {
   })
 
   it('aborts previous controller before creating new one', () => {
-    // Pattern: abort existing → create new
-    const abortIdx = source.indexOf('if (abortRef.current) abortRef.current.abort()')
-    const newCtrlIdx = source.indexOf('const controller = new AbortController()')
+    // Scope to consumeSSE function (not the chat handler)
+    const consumeIdx = source.indexOf('const consumeSSE')
+    expect(consumeIdx).toBeGreaterThan(-1)
+    const consumeSource = source.substring(consumeIdx, consumeIdx + 3000)
+    const abortIdx = consumeSource.indexOf('if (abortRef.current) abortRef.current.abort()')
+    const newCtrlIdx = consumeSource.indexOf('const controller = new AbortController()')
     expect(abortIdx).toBeGreaterThan(-1)
     expect(newCtrlIdx).toBeGreaterThan(abortIdx)
   })
@@ -180,18 +183,22 @@ describe('AnorakProPanel — AbortController + setIsAgentRunning', () => {
   })
 
   it('sets isAgentRunning(false) in finally block, NOT in try/catch', () => {
-    // The finally block should contain setIsAgentRunning(false)
-    const finallyIdx = source.indexOf('} finally {')
+    // Find the consumeSSE function's finally block (not the chat handler's)
+    const consumeIdx = source.indexOf('const consumeSSE')
+    expect(consumeIdx).toBeGreaterThan(-1)
+    const consumeSource = source.substring(consumeIdx, consumeIdx + 3000)
+    const finallyIdx = consumeSource.indexOf('} finally {')
     expect(finallyIdx).toBeGreaterThan(-1)
-
-    // Find the setIsAgentRunning(false) that comes after 'finally'
-    const afterFinally = source.substring(finallyIdx, finallyIdx + 200)
+    const afterFinally = consumeSource.substring(finallyIdx, finallyIdx + 200)
     expect(afterFinally).toContain('setIsAgentRunning(false)')
   })
 
   it('cleans up abortRef in finally block', () => {
-    const finallyIdx = source.indexOf('} finally {')
-    const afterFinally = source.substring(finallyIdx, finallyIdx + 200)
+    const consumeIdx = source.indexOf('const consumeSSE')
+    expect(consumeIdx).toBeGreaterThan(-1)
+    const consumeSource = source.substring(consumeIdx, consumeIdx + 3000)
+    const finallyIdx = consumeSource.indexOf('} finally {')
+    const afterFinally = consumeSource.substring(finallyIdx, finallyIdx + 200)
     expect(afterFinally).toContain('if (abortRef.current === controller) abortRef.current = null')
   })
 

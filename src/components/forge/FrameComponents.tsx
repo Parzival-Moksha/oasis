@@ -5,7 +5,7 @@
 // ─═̷─═̷─ॐ─═̷─═̷─ Extracted to break circular import with WorldObjects ─═̷─═̷─ॐ─═̷─═̷─
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { useRef } from 'react'
+import { useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 
@@ -29,6 +29,12 @@ export const FRAME_STYLES: FrameStyleDef[] = [
   { id: 'rustic',    label: 'Rustic',     icon: '🪵', desc: 'Weathered dark wood' },
   { id: 'ice',       label: 'Frozen',     icon: '🧊', desc: 'Translucent ice crystal frame' },
   { id: 'void',      label: 'Void',       icon: '🕳️', desc: 'Dark portal with swirling edge' },
+  { id: 'spaghetti', label: 'Spaghetti',  icon: '🍝', desc: 'Tangled glowing wire chaos' },
+  { id: 'triangle',  label: 'Prism',      icon: '🔺', desc: 'Triangular cross-section, tippy top at media edge' },
+  { id: 'fire',      label: 'Inferno',    icon: '🔥', desc: 'Animated fire-colored pulsing border' },
+  { id: 'matrix',    label: 'Matrix',     icon: '💚', desc: 'Green digital rain scanlines' },
+  { id: 'plasma',    label: 'Plasma',     icon: '🌈', desc: 'Color-cycling plasma glow' },
+  { id: 'brutalist', label: 'Brutalist',  icon: '🏗️', desc: 'Thick concrete industrial slab' },
 ]
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -151,6 +157,248 @@ export function VoidFrame({ w, h, scale }: { w: number; h: number; scale: number
     <group ref={groupRef}>
       <FourBarFrame w={w} h={h} border={border} depth={depth} color="#0a0a0a" roughness={0.9} metalness={0.1} emissive="#0f766e" emissiveIntensity={0.4} />
       <FourBarFrame w={w} h={h} border={0.005 * scale} depth={0.003 * scale} color="#14b8a6" roughness={0.0} metalness={1.0} emissive="#14b8a6" emissiveIntensity={2.5} />
+    </group>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SPAGHETTI FRAME — tangled glowing tubes wrapping the image
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function SpaghettiFrame({ w, h, scale }: { w: number; h: number; scale: number }) {
+  const groupRef = useRef<THREE.Group>(null)
+  useFrame(() => {
+    if (!groupRef.current) return
+    groupRef.current.rotation.z = Math.sin(Date.now() * 0.0003) * 0.01
+  })
+  // Generate tube paths around the frame perimeter
+  const tubes = useMemo(() => {
+    const paths: Array<{ points: THREE.Vector3[]; color: string }> = []
+    const colors = ['#f43f5e', '#fb923c', '#facc15', '#34d399', '#38bdf8', '#a78bfa']
+    for (let i = 0; i < 12; i++) {
+      const color = colors[i % colors.length]
+      const pts: THREE.Vector3[] = []
+      const offset = (i - 6) * 0.008 * scale
+      const hw = w / 2 + 0.02 * scale + offset
+      const hh = h / 2 + 0.02 * scale + offset
+      const wobble = () => (Math.random() - 0.5) * 0.03 * scale
+      // Go around the frame with wobble
+      for (let t = 0; t <= 1; t += 0.05) {
+        const angle = t * Math.PI * 2
+        const x = Math.cos(angle) * hw + wobble()
+        const y = Math.sin(angle) * hh + wobble()
+        pts.push(new THREE.Vector3(x, y, wobble()))
+      }
+      paths.push({ points: pts, color })
+    }
+    return paths
+  }, [w, h, scale])
+  // Pre-compute curves — avoid allocation in render path
+  const curves = useMemo(() =>
+    tubes.map(tube => new THREE.CatmullRomCurve3(tube.points, true))
+  , [tubes])
+
+  return (
+    <group ref={groupRef}>
+      {tubes.map((tube, i) => (
+        <mesh key={i}>
+          <tubeGeometry args={[curves[i], 40, 0.004 * scale, 5, true]} />
+          <meshStandardMaterial color={tube.color} emissive={tube.color} emissiveIntensity={1.5} roughness={0.3} metalness={0.7} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TRIANGLE/PRISM FRAME — triangular cross-section, apex at media edge
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function TriangleFrame({ w, h, scale }: { w: number; h: number; scale: number }) {
+  // Extruded triangle profile — apex touches the image, base extends outward
+  const shape = useMemo(() => {
+    const s = new THREE.Shape()
+    const d = 0.06 * scale  // depth (base width)
+    const b = 0.04 * scale  // height (how far it sticks out from the image)
+    s.moveTo(0, 0)          // apex at image edge
+    s.lineTo(-d / 2, -b)    // bottom-left
+    s.lineTo(d / 2, -b)     // bottom-right
+    s.closePath()
+    return s
+  }, [scale])
+
+  const topPath = useMemo(() => new THREE.LineCurve3(new THREE.Vector3(-w / 2, h / 2, 0), new THREE.Vector3(w / 2, h / 2, 0)), [w, h])
+  const botPath = useMemo(() => new THREE.LineCurve3(new THREE.Vector3(-w / 2, -h / 2, 0), new THREE.Vector3(w / 2, -h / 2, 0)), [w, h])
+  const leftPath = useMemo(() => new THREE.LineCurve3(new THREE.Vector3(-w / 2, -h / 2, 0), new THREE.Vector3(-w / 2, h / 2, 0)), [w, h])
+  const rightPath = useMemo(() => new THREE.LineCurve3(new THREE.Vector3(w / 2, -h / 2, 0), new THREE.Vector3(w / 2, h / 2, 0)), [w, h])
+
+  const extrudeSettings = { steps: 1, bevelEnabled: false, extrudePath: undefined as unknown as THREE.Curve<THREE.Vector3> }
+
+  return (
+    <group>
+      {[topPath, botPath, leftPath, rightPath].map((path, i) => (
+        <mesh key={i} rotation={i < 2 ? [0, 0, i === 1 ? Math.PI : 0] : [0, 0, i === 2 ? -Math.PI / 2 : Math.PI / 2]}>
+          <extrudeGeometry args={[shape, { ...extrudeSettings, extrudePath: path }]} />
+          <meshStandardMaterial color="#2a2a2a" roughness={0.6} metalness={0.4} />
+        </mesh>
+      ))}
+      {/* Inner edge glow */}
+      <FourBarFrame w={w} h={h} border={0.003 * scale} depth={0.002 * scale} color="#e5e5e5" roughness={0.0} metalness={1.0} emissive="#e5e5e5" emissiveIntensity={0.5} />
+    </group>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INFERNO FRAME — animated fire-colored pulsing border
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function InfernoFrame({ w, h, scale }: { w: number; h: number; scale: number }) {
+  const innerRef = useRef<THREE.Group>(null)
+  const outerRef = useRef<THREE.Group>(null)
+  useFrame(() => {
+    const t = Date.now() * 0.003
+    if (innerRef.current) {
+      const mat = (innerRef.current.children[0] as THREE.Mesh)?.material as THREE.MeshStandardMaterial
+      if (mat?.emissiveIntensity !== undefined) mat.emissiveIntensity = 2 + Math.sin(t) * 1.5
+    }
+    if (outerRef.current) {
+      const mat = (outerRef.current.children[0] as THREE.Mesh)?.material as THREE.MeshStandardMaterial
+      if (mat?.emissiveIntensity !== undefined) mat.emissiveIntensity = 1 + Math.sin(t * 1.3 + 1) * 0.8
+    }
+  })
+  return (
+    <group>
+      <group ref={innerRef} position={[0, 0, 0.002 * scale]}>
+        <FourBarFrame w={w} h={h} border={0.01 * scale} depth={0.005 * scale} color="#ff4500" roughness={0.1} metalness={0.8} emissive="#ff4500" emissiveIntensity={2} />
+      </group>
+      <group ref={outerRef} position={[0, 0, -0.003 * scale]}>
+        <FourBarFrame w={w} h={h} border={0.035 * scale} depth={0.02 * scale} color="#8b0000" roughness={0.4} metalness={0.6} emissive="#ff6600" emissiveIntensity={1} />
+      </group>
+      <group position={[0, 0, -0.008 * scale]}>
+        <FourBarFrame w={w} h={h} border={0.05 * scale} depth={0.01 * scale} color="#1a0000" roughness={0.9} metalness={0.1} />
+      </group>
+    </group>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MATRIX FRAME — green digital rain scanlines
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function MatrixFrame({ w, h, scale }: { w: number; h: number; scale: number }) {
+  const groupRef = useRef<THREE.Group>(null)
+  // Multiple vertical scanlines descending the frame
+  const scanRefs = useRef<THREE.Mesh[]>([])
+  useFrame(() => {
+    for (let i = 0; i < scanRefs.current.length; i++) {
+      const mesh = scanRefs.current[i]
+      if (!mesh) continue
+      const speed = 0.5 + (i * 0.15)
+      const t = ((Date.now() * 0.001 * speed + i * 0.7) % 3) / 3
+      mesh.position.y = (0.5 - t) * h
+      ;(mesh.material as THREE.MeshStandardMaterial).opacity = 0.4 + Math.sin(t * Math.PI) * 0.4
+    }
+  })
+  return (
+    <group ref={groupRef}>
+      {/* Dark base frame */}
+      <FourBarFrame w={w} h={h} border={0.025 * scale} depth={0.015 * scale} color="#001a00" roughness={0.8} metalness={0.2} emissive="#003300" emissiveIntensity={0.3} />
+      {/* Inner green edge */}
+      <group position={[0, 0, 0.003 * scale]}>
+        <FourBarFrame w={w} h={h} border={0.004 * scale} depth={0.003 * scale} color="#00ff00" roughness={0.0} metalness={1.0} emissive="#00ff00" emissiveIntensity={2} />
+      </group>
+      {/* Vertical scanlines — 8 lines descending at different speeds */}
+      {Array.from({ length: 8 }, (_, i) => (
+        <mesh
+          key={i}
+          ref={el => { if (el) scanRefs.current[i] = el }}
+          position={[-w / 2 + (i + 0.5) * w / 8, 0, 0.005 * scale]}
+        >
+          <planeGeometry args={[0.003 * scale, 0.05 * scale]} />
+          <meshStandardMaterial color="#00ff00" emissive="#00ff00" emissiveIntensity={3} transparent opacity={0.5} side={THREE.DoubleSide} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PLASMA FRAME — color-cycling glow
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function PlasmaFrame({ w, h, scale }: { w: number; h: number; scale: number }) {
+  const innerRef = useRef<THREE.Mesh>(null)
+  const outerRef = useRef<THREE.Mesh>(null)
+  const colorA = useMemo(() => new THREE.Color(), [])
+  const colorB = useMemo(() => new THREE.Color(), [])
+  useFrame(() => {
+    const t = Date.now() * 0.001
+    // Cycle through hues
+    colorA.setHSL((t * 0.1) % 1, 0.9, 0.5)
+    colorB.setHSL((t * 0.1 + 0.33) % 1, 0.9, 0.5)
+    if (innerRef.current) {
+      const mat = innerRef.current.material as THREE.MeshStandardMaterial
+      mat.emissive.copy(colorA)
+      mat.color.copy(colorA)
+    }
+    if (outerRef.current) {
+      const mat = outerRef.current.material as THREE.MeshStandardMaterial
+      mat.emissive.copy(colorB)
+      mat.color.copy(colorB)
+    }
+  })
+  const border = 0.015 * scale
+  return (
+    <group>
+      {/* Outer glow ring */}
+      {[
+        { pos: [0, (h + border) / 2, 0] as const, size: [w + border * 2, border, 0.008 * scale] as const },
+        { pos: [0, -(h + border) / 2, 0] as const, size: [w + border * 2, border, 0.008 * scale] as const },
+        { pos: [-(w + border) / 2, 0, 0] as const, size: [border, h, 0.008 * scale] as const },
+        { pos: [(w + border) / 2, 0, 0] as const, size: [border, h, 0.008 * scale] as const },
+      ].map((bar, i) => (
+        <mesh key={i} ref={i === 0 ? outerRef : undefined} position={[bar.pos[0], bar.pos[1], bar.pos[2]]}>
+          <boxGeometry args={[bar.size[0], bar.size[1], bar.size[2]]} />
+          <meshStandardMaterial color="#ff00ff" emissive="#ff00ff" emissiveIntensity={2} roughness={0.0} metalness={1.0} transparent opacity={0.8} />
+        </mesh>
+      ))}
+      {/* Inner thin edge */}
+      <group position={[0, 0, 0.003 * scale]}>
+        {[
+          { pos: [0, (h + 0.003 * scale) / 2, 0] as const, size: [w + 0.006 * scale, 0.003 * scale, 0.003 * scale] as const },
+          { pos: [0, -(h + 0.003 * scale) / 2, 0] as const, size: [w + 0.006 * scale, 0.003 * scale, 0.003 * scale] as const },
+          { pos: [-(w + 0.003 * scale) / 2, 0, 0] as const, size: [0.003 * scale, h, 0.003 * scale] as const },
+          { pos: [(w + 0.003 * scale) / 2, 0, 0] as const, size: [0.003 * scale, h, 0.003 * scale] as const },
+        ].map((bar, i) => (
+          <mesh key={i} ref={i === 0 ? innerRef : undefined} position={[bar.pos[0], bar.pos[1], bar.pos[2]]}>
+            <boxGeometry args={[bar.size[0], bar.size[1], bar.size[2]]} />
+            <meshStandardMaterial color="#00ffff" emissive="#00ffff" emissiveIntensity={3} roughness={0.0} metalness={1.0} />
+          </mesh>
+        ))}
+      </group>
+    </group>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BRUTALIST FRAME — thick concrete industrial slab
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function BrutalistFrame({ w, h, scale }: { w: number; h: number; scale: number }) {
+  return (
+    <group>
+      <FourBarFrame w={w} h={h} border={0.08 * scale} depth={0.06 * scale} color="#555555" roughness={1.0} metalness={0.0} />
+      {/* Recessed inner lip */}
+      <group position={[0, 0, 0.02 * scale]}>
+        <FourBarFrame w={w} h={h} border={0.015 * scale} depth={0.025 * scale} color="#333333" roughness={1.0} metalness={0.0} />
+      </group>
+      {/* Exposed rebar accent — thin metal lines at corners */}
+      {[[-1, 1], [1, 1], [-1, -1], [1, -1]].map(([sx, sy], i) => (
+        <mesh key={i} position={[sx * (w / 2 + 0.04 * scale), sy * (h / 2 + 0.04 * scale), 0]}>
+          <cylinderGeometry args={[0.003 * scale, 0.003 * scale, 0.08 * scale, 6]} />
+          <meshStandardMaterial color="#b87333" roughness={0.3} metalness={0.8} />
+        </mesh>
+      ))}
     </group>
   )
 }

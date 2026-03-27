@@ -192,11 +192,11 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
           setInspectedObject(id)  // ░▒▓ One click = select + inspect (no double-click needed) ▓▒░
         }}
       >
-        {/* Selection highlight ring — hidden in agent-focus (AgentWindow3D has its own) */}
+        {/* Selection highlight ring — on the ground, hidden in agent-focus */}
         {selected && !isAgentFocused && (
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
             <ringGeometry args={[1.5, 1.8, 32]} />
-            <meshBasicMaterial color="#3B82F6" transparent opacity={0.4} />
+            <meshBasicMaterial color="#3B82F6" transparent opacity={0.4} depthWrite={false} />
           </mesh>
         )}
         {children}
@@ -261,12 +261,12 @@ class CatalogModelErrorBoundary extends React.Component<
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ─═̷─ FRAME STYLE DEFINITIONS — re-exported from FrameComponents.tsx ─═̷─
-import { FRAME_STYLES as _FRAME_STYLES, FourBarFrame, NeonFrame, HologramFrame, VoidFrame } from './FrameComponents'
-export { FourBarFrame, NeonFrame, HologramFrame, VoidFrame }
+import { FRAME_STYLES as _FRAME_STYLES, FourBarFrame, NeonFrame, HologramFrame, VoidFrame, SpaghettiFrame, TriangleFrame, InfernoFrame, MatrixFrame, PlasmaFrame, BrutalistFrame } from './FrameComponents'
+export { FourBarFrame, NeonFrame, HologramFrame, VoidFrame, SpaghettiFrame, TriangleFrame, InfernoFrame, MatrixFrame, PlasmaFrame, BrutalistFrame }
 export const FRAME_STYLES = _FRAME_STYLES
 export type { FrameStyleDef } from './FrameComponents'
 
-export function ImagePlaneRenderer({ imageUrl, scale, frameStyle }: { imageUrl: string; scale: number; frameStyle?: string }) {
+export function ImagePlaneRenderer({ imageUrl, scale, frameStyle, frameThickness = 1 }: { imageUrl: string; scale: number; frameStyle?: string; frameThickness?: number }) {
   const texture = useLoader(THREE.TextureLoader, imageUrl)
   texture.colorSpace = THREE.SRGBColorSpace
 
@@ -284,50 +284,447 @@ export function ImagePlaneRenderer({ imageUrl, scale, frameStyle }: { imageUrl: 
 
       {/* ░▒▓ FRAME STYLES — each one a different vibe ▓▒░ */}
 
-      {/* 1. GILDED — classic gold museum frame */}
-      {frameStyle === 'gilded' && (
-        <FourBarFrame w={w} h={h} border={0.04 * scale} depth={0.02 * scale} color="#8B6914" roughness={0.4} metalness={0.6} />
-      )}
+      {/* ░▒▓ ft = frame thickness multiplier (user-controlled via Joystick slider) ▓▒░ */}
+      {(() => {
+        const ft = frameThickness
+        return <>
+          {/* 1. GILDED — gold museum frame with inner accent (z-offset prevents flicker) */}
+          {frameStyle === 'gilded' && (<>
+            <group position={[0, 0, -0.004 * scale]}>
+              <FourBarFrame w={w} h={h} border={0.04 * scale * ft} depth={0.025 * scale * ft} color="#B8860B" roughness={0.25} metalness={0.85} />
+            </group>
+            <group position={[0, 0, 0.004 * scale]}>
+              <FourBarFrame w={w} h={h} border={0.008 * scale * ft} depth={0.005 * scale * ft} color="#FFD700" roughness={0.1} metalness={1.0} emissive="#DAA520" emissiveIntensity={0.3} />
+            </group>
+          </>)}
 
-      {/* 2. NEON — pulsing cyberpunk glow */}
-      {frameStyle === 'neon' && (
-        <NeonFrame w={w} h={h} scale={scale} />
-      )}
+          {/* 2. NEON — pulsing cyberpunk glow */}
+          {frameStyle === 'neon' && <NeonFrame w={w} h={h} scale={scale * ft} />}
 
-      {/* 3. MINIMAL — hairline black wire frame */}
-      {frameStyle === 'thin' && (
-        <FourBarFrame w={w} h={h} border={0.006 * scale} depth={0.003 * scale} color="#1a1a1a" roughness={0.9} metalness={0.0} />
-      )}
+          {/* 3. MINIMAL — hairline black wire frame */}
+          {frameStyle === 'thin' && (
+            <FourBarFrame w={w} h={h} border={0.006 * scale * ft} depth={0.003 * scale * ft} color="#1a1a1a" roughness={0.9} metalness={0.0} />
+          )}
 
-      {/* 4. BAROQUE — thick ornate royal frame, double border */}
-      {frameStyle === 'baroque' && (
-        <>
-          <FourBarFrame w={w} h={h} border={0.07 * scale} depth={0.035 * scale} color="#5C3A0E" roughness={0.3} metalness={0.7} />
-          <FourBarFrame w={w + 0.01 * scale} h={h + 0.01 * scale} border={0.015 * scale} depth={0.04 * scale} color="#DAA520" roughness={0.2} metalness={0.9} />
+          {/* 4. BAROQUE — triple-layer ornate royal frame (z-offset to prevent flicker) */}
+          {frameStyle === 'baroque' && (<>
+            <group position={[0, 0, -0.005 * scale]}>
+              <FourBarFrame w={w} h={h} border={0.08 * scale * ft} depth={0.04 * scale * ft} color="#3E1C00" roughness={0.3} metalness={0.7} />
+            </group>
+            <group position={[0, 0, 0.003 * scale]}>
+              <FourBarFrame w={w} h={h} border={0.02 * scale * ft} depth={0.015 * scale * ft} color="#FFD700" roughness={0.15} metalness={0.95} emissive="#DAA520" emissiveIntensity={0.2} />
+            </group>
+            <group position={[0, 0, 0.008 * scale]}>
+              <FourBarFrame w={w + 0.12 * scale * ft} h={h + 0.12 * scale * ft} border={0.012 * scale * ft} depth={0.006 * scale * ft} color="#B8860B" roughness={0.2} metalness={0.9} emissive="#DAA520" emissiveIntensity={0.15} />
+            </group>
+          </>)}
+
+          {/* 5. HOLOGRAM — floating corner brackets with scanline */}
+          {frameStyle === 'hologram' && <HologramFrame w={w} h={h} scale={scale * ft} />}
+
+          {/* 6. RUSTIC — weathered dark wood */}
+          {frameStyle === 'rustic' && (
+            <FourBarFrame w={w} h={h} border={0.05 * scale * ft} depth={0.025 * scale * ft} color="#3E2723" roughness={0.95} metalness={0.0} />
+          )}
+
+          {/* 7. FROZEN — translucent ice crystal with glow */}
+          {frameStyle === 'ice' && (<>
+            <FourBarFrame w={w} h={h} border={0.04 * scale * ft} depth={0.02 * scale * ft} color="#B3E5FC" roughness={0.05} metalness={0.1} transparent opacity={0.5} emissive="#81D4FA" emissiveIntensity={0.6} />
+            <FourBarFrame w={w} h={h} border={0.008 * scale * ft} depth={0.003 * scale * ft} color="#E1F5FE" roughness={0.0} metalness={0.0} emissive="#B3E5FC" emissiveIntensity={1.5} transparent opacity={0.3} />
+          </>)}
+
+          {/* 8. VOID — dark portal with glowing inner edge (z-offset to prevent flicker) */}
+          {frameStyle === 'void' && (<>
+            <group position={[0, 0, -0.005 * scale]}>
+              <FourBarFrame w={w} h={h} border={0.05 * scale * ft} depth={0.035 * scale * ft} color="#050505" roughness={0.95} metalness={0.05} />
+            </group>
+            <group position={[0, 0, 0.002 * scale]}>
+              <FourBarFrame w={w} h={h} border={0.006 * scale * ft} depth={0.003 * scale * ft} color="#14b8a6" roughness={0.0} metalness={1.0} emissive="#14b8a6" emissiveIntensity={3} />
+            </group>
+          </>)}
+
+          {/* 9. SPAGHETTI — tangled glowing tubes */}
+          {frameStyle === 'spaghetti' && <SpaghettiFrame w={w} h={h} scale={scale * ft} />}
+
+          {/* 10. PRISM — triangular cross-section */}
+          {frameStyle === 'triangle' && <TriangleFrame w={w} h={h} scale={scale * ft} />}
+
+          {/* 11. INFERNO — fire-colored pulsing */}
+          {frameStyle === 'fire' && <InfernoFrame w={w} h={h} scale={scale * ft} />}
+
+          {/* 12. MATRIX — green digital rain */}
+          {frameStyle === 'matrix' && <MatrixFrame w={w} h={h} scale={scale * ft} />}
+
+          {/* 13. PLASMA — color-cycling glow */}
+          {frameStyle === 'plasma' && <PlasmaFrame w={w} h={h} scale={scale * ft} />}
+
+          {/* 14. BRUTALIST — thick concrete slab */}
+          {frameStyle === 'brutalist' && <BrutalistFrame w={w} h={h} scale={scale * ft} />}
         </>
-      )}
+      })()}
+    </group>
+  )
+}
 
-      {/* 5. HOLOGRAM — floating corner brackets with scanline */}
-      {frameStyle === 'hologram' && (
-        <HologramFrame w={w} h={h} scale={scale} />
-      )}
+// ═══════════════════════════════════════════════════════════════════════════════
+// VIDEO PLANE RENDERER — Video texture on a 3D plane
+// ░▒▓ <video> element → CanvasTexture updated every frame ▓▒░
+// ═══════════════════════════════════════════════════════════════════════════════
 
-      {/* 6. RUSTIC — weathered dark wood */}
-      {frameStyle === 'rustic' && (
-        <FourBarFrame w={w} h={h} border={0.05 * scale} depth={0.025 * scale} color="#3E2723" roughness={0.95} metalness={0.0} />
-      )}
+export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, frameThickness = 1 }: {
+  objectId?: string; videoUrl: string; scale: number; frameStyle?: string; frameThickness?: number
+}) {
+  const [texture, setTexture] = useState<THREE.VideoTexture | null>(null)
+  const textureRef = useRef<THREE.VideoTexture | null>(null)
+  const [aspect, setAspect] = useState(16 / 9)
+  const [progress, setProgress] = useState(0)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const groupRef = useRef<THREE.Group>(null!)
 
-      {/* 7. FROZEN — translucent ice crystal */}
-      {frameStyle === 'ice' && (
-        <FourBarFrame w={w} h={h} border={0.04 * scale} depth={0.02 * scale} color="#B3E5FC" roughness={0.05} metalness={0.1} transparent opacity={0.6} emissive="#81D4FA" emissiveIntensity={0.3} />
-      )}
+  // Read audio state from behaviors store (Joystick controls these)
+  const audioState = useOasisStore(s => objectId ? s.behaviors[objectId]?.audioState : undefined) || 'playing'
+  const audioMuted = useOasisStore(s => objectId ? s.behaviors[objectId]?.audioMuted : undefined) || false
+  const audioVolume = useOasisStore(s => objectId ? s.behaviors[objectId]?.audioVolume : undefined) ?? 1
+  const audioMaxDistance = useOasisStore(s => objectId ? s.behaviors[objectId]?.audioMaxDistance : undefined) ?? 15
+  const audioLoop = useOasisStore(s => objectId ? s.behaviors[objectId]?.audioLoop : undefined) ?? true
 
-      {/* 8. VOID — dark portal with bright inner edge */}
-      {frameStyle === 'void' && (
-        <VoidFrame w={w} h={h} scale={scale} />
+  useEffect(() => {
+    const video = document.createElement('video')
+    // No crossOrigin — local-first, avoids CORS taint on CanvasTexture
+    video.src = videoUrl
+    video.loop = true
+    video.playsInline = true
+    video.autoplay = true
+    video.muted = true // Required for autoplay
+    video.preload = 'auto'
+    // Append to DOM (hidden) — some browsers won't decode frames for detached elements
+    video.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none'
+    document.body.appendChild(video)
+    videoRef.current = video
+
+    video.addEventListener('loadedmetadata', () => {
+      if (video.videoWidth && video.videoHeight) setAspect(video.videoWidth / video.videoHeight)
+    })
+
+    video.addEventListener('error', (e) => {
+      console.error('[VideoPlane] Load error:', videoUrl, (e.target as HTMLVideoElement)?.error)
+    })
+
+    // CRITICAL: Only create texture AFTER video has ACTUALLY decoded frames.
+    // White-rectangle bug: canplay fires before listener attached (cached videos),
+    // or readyState check passes but no frames are decoded yet.
+    // Fix: listen to MULTIPLE events + interval fallback + requestVideoFrameCallback.
+    let tex: THREE.VideoTexture | null = null
+    let disposed = false
+    let fallbackInterval: ReturnType<typeof setInterval> | null = null
+
+    const createTexture = (trigger: string) => {
+      if (tex || disposed) return
+      // Double-check: video must have nonzero dimensions (frames actually decoded)
+      if (!video.videoWidth || !video.videoHeight) {
+        console.warn(`[VideoPlane] ${trigger} fired but videoWidth=0, deferring:`, videoUrl)
+        return
+      }
+      console.log(`[VideoPlane] Texture created via "${trigger}" for:`, videoUrl,
+        `readyState=${video.readyState}, videoWidth=${video.videoWidth}`)
+      tex = new THREE.VideoTexture(video)
+      tex.colorSpace = THREE.SRGBColorSpace
+      tex.minFilter = THREE.LinearFilter
+      tex.magFilter = THREE.LinearFilter
+      setTexture(tex)
+      textureRef.current = tex
+      // Clear fallback interval once texture is created
+      if (fallbackInterval) { clearInterval(fallbackInterval); fallbackInterval = null }
+    }
+
+    // Listen to multiple events — whichever fires first with valid frames wins
+    const onCanPlay = () => createTexture('canplay')
+    const onLoadedData = () => createTexture('loadeddata')
+    const onPlaying = () => createTexture('playing')
+    video.addEventListener('canplay', onCanPlay)
+    video.addEventListener('loadeddata', onLoadedData)
+    video.addEventListener('playing', onPlaying)
+
+    // requestVideoFrameCallback: THE most reliable signal — actual frame decoded
+    if ('requestVideoFrameCallback' in video) {
+      (video as any).requestVideoFrameCallback(() => createTexture('requestVideoFrameCallback'))
+    }
+
+    // If already ready (cached), create immediately
+    if (video.readyState >= 2) createTexture('readyState-immediate')
+
+    // Fallback: poll readyState every 200ms for up to 5 seconds
+    // Catches edge cases where all events fire before listeners are attached
+    fallbackInterval = setInterval(() => {
+      if (tex || disposed) {
+        if (fallbackInterval) { clearInterval(fallbackInterval); fallbackInterval = null }
+        return
+      }
+      if (video.readyState >= 2 && video.videoWidth > 0) {
+        createTexture('fallback-interval')
+      }
+    }, 200)
+    // Safety: clear interval after 5s regardless
+    const fallbackTimeout = setTimeout(() => {
+      if (fallbackInterval) { clearInterval(fallbackInterval); fallbackInterval = null }
+      // Last resort: if still no texture and video has any data, force create
+      if (!tex && !disposed && video.readyState >= 1) {
+        console.warn('[VideoPlane] Last-resort texture creation at readyState', video.readyState, videoUrl)
+        if (video.videoWidth && video.videoHeight) createTexture('last-resort')
+      }
+    }, 5000)
+
+    video.play().catch(() => {
+      setTimeout(() => video.play().catch(() => {}), 500)
+    })
+
+    // Register in audio element map so Joystick can seek
+    if (objectId) _audioElements.set(objectId, video)
+
+    return () => {
+      disposed = true
+      video.removeEventListener('canplay', onCanPlay)
+      video.removeEventListener('loadeddata', onLoadedData)
+      video.removeEventListener('playing', onPlaying)
+      if (fallbackInterval) clearInterval(fallbackInterval)
+      clearTimeout(fallbackTimeout)
+      video.pause()
+      video.removeAttribute('src')
+      video.load()
+      try { document.body.removeChild(video) } catch {}
+      if (tex) tex.dispose()
+      videoRef.current = null
+      textureRef.current = null
+      setTexture(null)
+      if (objectId) _audioElements.delete(objectId)
+    }
+  }, [videoUrl, objectId])
+
+  // React to audioState changes from Joystick
+  useEffect(() => {
+    if (!videoRef.current) return
+    if (audioState === 'playing') {
+      videoRef.current.muted = false // User already interacted via Joystick
+      videoRef.current.play().catch(() => {})
+    } else if (audioState === 'paused') {
+      videoRef.current.pause()
+    } else if (audioState === 'stopped') {
+      videoRef.current.pause()
+      videoRef.current.currentTime = 0
+    }
+  }, [audioState])
+
+  // React to loop changes
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.loop = audioLoop
+  }, [audioLoop])
+
+  // Reusable vector — avoid GC pressure from per-frame allocation
+  const _worldPos = useRef(new THREE.Vector3())
+  const lastProgressUpdate = useRef(0)
+
+  // Spatial volume + progress tracking
+  useFrame(({ camera }) => {
+    if (!videoRef.current || !groupRef.current) return
+
+    // Progress tracking — throttled to 4fps (250ms) to avoid React re-render spam
+    const now = performance.now()
+    if (now - lastProgressUpdate.current > 250) {
+      lastProgressUpdate.current = now
+      if (videoRef.current.duration && isFinite(videoRef.current.duration)) {
+        setProgress(videoRef.current.currentTime / videoRef.current.duration)
+      }
+    }
+    if (textureRef.current) textureRef.current.needsUpdate = true
+
+    // Spatial volume: log falloff, hard zero at maxDist
+    if (audioMuted || audioState !== 'playing') { videoRef.current.volume = 0; return }
+    groupRef.current.getWorldPosition(_worldPos.current)
+    const dist = camera.position.distanceTo(_worldPos.current)
+
+    if (dist >= audioMaxDistance) { videoRef.current.volume = 0; return }
+    const refDist = 0.5
+    if (dist <= refDist) { videoRef.current.volume = Math.min(1, audioVolume); return }
+    const logRatio = Math.log(dist / refDist) / Math.log(audioMaxDistance / refDist)
+    videoRef.current.volume = Math.min(1, Math.max(0, audioVolume * (1 - logRatio)))
+  })
+
+  const seek = useCallback((frac: number) => {
+    if (!videoRef.current || !videoRef.current.duration) return
+    videoRef.current.currentTime = frac * videoRef.current.duration
+  }, [])
+
+  const w = scale * aspect
+  const h = scale
+  const barW = w * 0.9
+  const barH = 0.03 * scale
+
+  return (
+    <group ref={groupRef} position={[0, h / 2, 0]}>
+      {/* Video plane — NO onClick here, let SelectableWrapper handle selection */}
+      <mesh key={aspect}>
+        <planeGeometry args={[w, h]} />
+        {texture ? (
+          <meshBasicMaterial map={texture} side={THREE.DoubleSide} toneMapped={false} />
+        ) : (
+          <meshBasicMaterial color="#111" side={THREE.DoubleSide} />
+        )}
+      </mesh>
+
+      {/* ░▒▓ FRAMES — same styles as ImagePlaneRenderer ▓▒░ */}
+      {frameStyle && (() => {
+        const ft = frameThickness
+        return <>
+          {frameStyle === 'gilded' && (<><group position={[0, 0, -0.004 * scale]}><FourBarFrame w={w} h={h} border={0.04 * scale * ft} depth={0.025 * scale * ft} color="#B8860B" roughness={0.25} metalness={0.85} /></group><group position={[0, 0, 0.004 * scale]}><FourBarFrame w={w} h={h} border={0.008 * scale * ft} depth={0.005 * scale * ft} color="#FFD700" roughness={0.1} metalness={1.0} emissive="#DAA520" emissiveIntensity={0.3} /></group></>)}
+          {frameStyle === 'neon' && <NeonFrame w={w} h={h} scale={scale * ft} />}
+          {frameStyle === 'thin' && <FourBarFrame w={w} h={h} border={0.006 * scale * ft} depth={0.003 * scale * ft} color="#1a1a1a" roughness={0.9} metalness={0.0} />}
+          {frameStyle === 'baroque' && (<><group position={[0, 0, -0.005 * scale]}><FourBarFrame w={w} h={h} border={0.08 * scale * ft} depth={0.04 * scale * ft} color="#3E1C00" roughness={0.3} metalness={0.7} /></group><group position={[0, 0, 0.003 * scale]}><FourBarFrame w={w} h={h} border={0.02 * scale * ft} depth={0.015 * scale * ft} color="#FFD700" roughness={0.15} metalness={0.95} emissive="#DAA520" emissiveIntensity={0.2} /></group></>)}
+          {frameStyle === 'hologram' && <HologramFrame w={w} h={h} scale={scale * ft} />}
+          {frameStyle === 'rustic' && <FourBarFrame w={w} h={h} border={0.05 * scale * ft} depth={0.025 * scale * ft} color="#3E2723" roughness={0.95} metalness={0.0} />}
+          {frameStyle === 'ice' && (<><FourBarFrame w={w} h={h} border={0.04 * scale * ft} depth={0.02 * scale * ft} color="#B3E5FC" roughness={0.05} metalness={0.1} transparent opacity={0.5} emissive="#81D4FA" emissiveIntensity={0.6} /></>)}
+          {frameStyle === 'void' && (<><group position={[0, 0, -0.005 * scale]}><FourBarFrame w={w} h={h} border={0.05 * scale * ft} depth={0.035 * scale * ft} color="#050505" roughness={0.95} metalness={0.05} /></group><group position={[0, 0, 0.002 * scale]}><FourBarFrame w={w} h={h} border={0.006 * scale * ft} depth={0.003 * scale * ft} color="#14b8a6" roughness={0.0} metalness={1.0} emissive="#14b8a6" emissiveIntensity={3} /></group></>)}
+          {frameStyle === 'spaghetti' && <SpaghettiFrame w={w} h={h} scale={scale * ft} />}
+          {frameStyle === 'triangle' && <TriangleFrame w={w} h={h} scale={scale * ft} />}
+          {frameStyle === 'fire' && <InfernoFrame w={w} h={h} scale={scale * ft} />}
+          {frameStyle === 'matrix' && <MatrixFrame w={w} h={h} scale={scale * ft} />}
+          {frameStyle === 'plasma' && <PlasmaFrame w={w} h={h} scale={scale * ft} />}
+          {frameStyle === 'brutalist' && <BrutalistFrame w={w} h={h} scale={scale * ft} />}
+        </>
+      })()}
+
+      {/* Playback progress bar — bottom of video */}
+      <group position={[0, -h / 2 - barH * 2, 0.005]}>
+        {/* Background track */}
+        <mesh>
+          <planeGeometry args={[barW, barH]} />
+          <meshBasicMaterial color="#222" transparent opacity={0.8} />
+        </mesh>
+        {/* Progress fill */}
+        <mesh position={[-(barW * (1 - progress)) / 2, 0, 0.001]}>
+          <planeGeometry args={[barW * Math.max(0.001, progress), barH]} />
+          <meshBasicMaterial color="#38bdf8" />
+        </mesh>
+        {/* Seek hitbox — invisible wider bar for clicking */}
+        <mesh
+          position={[0, 0, 0.002]}
+          onClick={(e) => {
+            e.stopPropagation()
+            if (!e.uv) return
+            seek(e.uv.x) // UV x = 0 (left) to 1 (right)
+          }}
+        >
+          <planeGeometry args={[barW, barH * 4]} />
+          <meshBasicMaterial transparent opacity={0} />
+        </mesh>
+      </group>
+
+      {/* Pause/stop overlay icon — visual only, play controlled from Joystick */}
+      {audioState !== 'playing' && (
+        <mesh position={[0, 0, 0.01]}>
+          <circleGeometry args={[0.15 * scale, 32]} />
+          <meshBasicMaterial color="#000" transparent opacity={0.5} depthWrite={false} />
+        </mesh>
       )}
     </group>
   )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SPATIAL AUDIO ATTACHMENT — attach to ANY placed object to make it a loudspeaker
+// ░▒▓ Loads audio file + plays with 3D positional falloff ▓▒░
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export function SpatialAudioAttachment({ objectId, audioUrl, volume = 1, maxDistance = 15, muted = false, audioState = 'playing', loop = true }: {
+  objectId?: string; audioUrl: string; volume?: number; maxDistance?: number; muted?: boolean; audioState?: 'playing' | 'paused' | 'stopped'; loop?: boolean
+}) {
+  const groupRef = useRef<THREE.Group>(null!)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const propsRef = useRef({ volume, maxDistance, muted, audioState })
+  propsRef.current = { volume, maxDistance, muted, audioState }
+
+  // Create HTML5 Audio element — only on URL change
+  useEffect(() => {
+    const audio = new Audio(audioUrl)
+    audio.loop = loop
+    audio.volume = 0 // Will be set by useFrame based on distance
+    audioRef.current = audio
+    if (objectId) _audioElements.set(objectId, audio)
+    // Autoplay if state is 'playing'
+    if (audioState !== 'stopped' && audioState !== 'paused') {
+      audio.play().catch(() => {})
+    }
+    return () => {
+      audio.pause()
+      audio.src = ''
+      audioRef.current = null
+      if (objectId) _audioElements.delete(objectId)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audioUrl])
+
+  // Real play/pause/stop — reacts to audioState changes
+  useEffect(() => {
+    if (!audioRef.current) return
+    if (audioState === 'playing') {
+      audioRef.current.play().catch(() => {})
+    } else if (audioState === 'paused') {
+      audioRef.current.pause()
+    } else if (audioState === 'stopped') {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+    }
+  }, [audioState])
+
+  // Loop toggle
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.loop = loop
+  }, [loop])
+
+  // Reusable vector — avoid GC pressure
+  const _audioWorldPos = useRef(new THREE.Vector3())
+
+  // Spatial volume — log falloff, hard cutoff at maxDist
+  useFrame(({ camera }) => {
+    if (!audioRef.current || !groupRef.current) return
+    const { volume: vol, maxDistance: maxDist, muted: isMuted, audioState: state } = propsRef.current
+    if (isMuted || state === 'paused' || state === 'stopped') { audioRef.current.volume = 0; return }
+
+    groupRef.current.getWorldPosition(_audioWorldPos.current)
+    const dist = camera.position.distanceTo(_audioWorldPos.current)
+
+    if (dist >= maxDist) { audioRef.current.volume = 0; return }
+    const refDist = 0.5
+    if (dist <= refDist) { audioRef.current.volume = Math.min(1, vol); return }
+    const logRatio = Math.log(dist / refDist) / Math.log(maxDist / refDist)
+    audioRef.current.volume = Math.min(1, Math.max(0, vol * (1 - logRatio)))
+  })
+
+  return <group ref={groupRef} />
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AUDIO ELEMENT REGISTRY — allows Joystick to read/seek playback position
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const _audioElements = new Map<string, HTMLAudioElement>()
+export function getAudioElement(objectId: string): HTMLAudioElement | null {
+  return _audioElements.get(objectId) ?? null
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SPATIAL AUDIO FROM BEHAVIOR — reads audioUrl from object behaviors store
+// ░▒▓ Wraps SpatialAudioAttachment with Zustand subscription ▓▒░
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function SpatialAudioFromBehavior({ objectId }: { objectId: string }) {
+  const audioUrl = useOasisStore(s => s.behaviors[objectId]?.audioUrl)
+  const audioVolume = useOasisStore(s => s.behaviors[objectId]?.audioVolume)
+  const audioMaxDistance = useOasisStore(s => s.behaviors[objectId]?.audioMaxDistance)
+  const audioMuted = useOasisStore(s => s.behaviors[objectId]?.audioMuted)
+  const audioState = useOasisStore(s => s.behaviors[objectId]?.audioState)
+  const audioLoop = useOasisStore(s => s.behaviors[objectId]?.audioLoop)
+  if (!audioUrl) return null
+  return <SpatialAudioAttachment objectId={objectId} audioUrl={audioUrl} volume={audioVolume} maxDistance={audioMaxDistance} muted={audioMuted} audioState={audioState} loop={audioLoop} />
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -513,7 +910,11 @@ export function CatalogModelRenderer({ path, scale, objectId, displayName }: { p
         onPointerOver={(e) => { e.stopPropagation(); setHovered(true); if (!useInputManager.getState().pointerLocked) setShowLabel(true) }}
         onPointerOut={(e) => { e.stopPropagation(); setHovered(false); setShowLabel(false) }}
       >
-        <boxGeometry args={[bounds.size.x * scale, bounds.size.y * scale, bounds.size.z * scale]} />
+        <boxGeometry args={[
+          Math.max(bounds.size.x * scale, 1),
+          Math.max(bounds.size.y * scale, 1),
+          Math.max(bounds.size.z * scale, 1),
+        ]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
       <primitive object={clonedScene} scale={scale} />
@@ -934,6 +1335,7 @@ export function TransformKeyHandler() {
           const newState = useInputManager.getState().inputState
           if (newState !== 'agent-focus') {
             dispatch({ type: 'UNFOCUS_AGENT_WINDOW' })
+            dispatch({ type: 'UNFOCUS_IMAGE' })
           }
           if (newState !== 'paint' && useOasisStore.getState().paintMode) {
             dispatch({ type: 'EXIT_PAINT_MODE' })
@@ -1019,7 +1421,7 @@ export function TransformKeyHandler() {
         case 't': if (can.transformShortcuts) setTransformMode('rotate'); break
         case 'y': if (can.transformShortcuts) setTransformMode('scale'); break
 
-        // ░▒▓ Enter — focus agent window via EventBus ▓▒░
+        // ░▒▓ Enter — focus agent window OR image via EventBus ▓▒░
         case 'enter': {
           if (!can.enterFocuses) break
           const id = useOasisStore.getState().selectedObjectId
@@ -1027,7 +1429,22 @@ export function TransformKeyHandler() {
           if (useOasisStore.getState().placedAgentWindows.some(w => w.id === id)) {
             dispatch({ type: 'FOCUS_AGENT_WINDOW', payload: { id } })
             e.preventDefault()
+          } else if (useOasisStore.getState().placedCatalogAssets.some(a => a.id === id && (a.imageUrl || a.videoUrl))) {
+            dispatch({ type: 'FOCUS_IMAGE', payload: { id } })
+            e.preventDefault()
           }
+          break
+        }
+
+        // ░▒▓ PgDown/PgUp — slide navigation (cycles images by X position) ▓▒░
+        case 'pagedown': {
+          dispatch({ type: 'NEXT_SLIDE' })
+          e.preventDefault()
+          break
+        }
+        case 'pageup': {
+          dispatch({ type: 'PREV_SLIDE' })
+          e.preventDefault()
           break
         }
 
@@ -1332,6 +1749,7 @@ function PlacementOverlay() {
   const placementPending = useOasisStore(s => s.placementPending)
   const placeCatalogAssetAt = useOasisStore(s => s.placeCatalogAssetAt)
   const placeImageAt = useOasisStore(s => s.placeImageAt)
+  const placeVideoAt = useOasisStore(s => s.placeVideoAt)
   const placeLibrarySceneAt = useOasisStore(s => s.placeLibrarySceneAt)
   const cancelPlacement = useOasisStore(s => s.cancelPlacement)
   const [hoverPos, setHoverPos] = useState<[number, number, number] | null>(null)
@@ -1348,8 +1766,18 @@ function PlacementOverlay() {
       // ░▒▓ Conjured multi-placement — uses catalog placement system with conjured GLB path ▓▒░
       const conjId = `conjured-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
       placeCatalogAssetAt(conjId, placementPending.name, placementPending.path, placementPending.defaultScale || 1, pos)
+      // ░▒▓ Auto-assign audio if placed from Media tab with pending audio URL ▓▒░
+      const pendingAudio = (window as any).__pendingAudioUrl
+      if (pendingAudio) {
+        setTimeout(() => {
+          useOasisStore.getState().setObjectBehavior(conjId, { audioUrl: pendingAudio, audioState: 'playing' })
+        }, 200)
+        delete (window as any).__pendingAudioUrl
+      }
     } else if (placementPending.type === 'image' && placementPending.imageUrl) {
       placeImageAt(placementPending.name, placementPending.imageUrl, pos, placementPending.imageFrameStyle)
+    } else if (placementPending.type === 'video' && placementPending.videoUrl) {
+      placeVideoAt(placementPending.name, placementPending.videoUrl, pos)
     } else if (placementPending.type === 'library' && placementPending.sceneId) {
       placeLibrarySceneAt(placementPending.sceneId, pos)
     } else if (placementPending.type === 'agent' && placementPending.agentType) {
@@ -1388,7 +1816,7 @@ function PlacementOverlay() {
     } else {
       cancelPlacement()
     }
-  }, [placementPending, placeCatalogAssetAt, placeImageAt, placeLibrarySceneAt, cancelPlacement])
+  }, [placementPending, placeCatalogAssetAt, placeImageAt, placeVideoAt, placeLibrarySceneAt, cancelPlacement])
 
   const handlePointerMove = useCallback((e: any) => {
     // ░▒▓ FPS CAMERA FIX — skip R3F pointer events during pointer lock ▓▒░
@@ -1773,6 +2201,7 @@ export function WorldObjectsRenderer() {
           >
             <Suspense fallback={<PlaceholderBox />}>
               <ConjuredObjectSafe asset={asset} />
+              <SpatialAudioFromBehavior objectId={asset.id} />
             </Suspense>
           </SelectableWrapper>
         )
@@ -1838,12 +2267,16 @@ export function WorldObjectsRenderer() {
           >
             <CatalogModelErrorBoundary path={ca.imageUrl || ca.glbPath} name={ca.name}>
               <Suspense fallback={<PlaceholderBox />}>
-                {ca.imageUrl
-                  ? <ImagePlaneRenderer imageUrl={ca.imageUrl} scale={ca.scale} frameStyle={ca.imageFrameStyle} />
-                  : ca.glbPath.endsWith('.vrm')
-                    ? <VRMCatalogRenderer path={ca.glbPath} scale={ca.scale} objectId={ca.id} displayName={ca.name} />
-                    : <CatalogModelRenderer path={ca.glbPath} scale={ca.scale} objectId={ca.id} displayName={ca.name} />
+                {ca.videoUrl
+                  ? <VideoPlaneRenderer objectId={ca.id} videoUrl={ca.videoUrl} scale={ca.scale} frameStyle={ca.imageFrameStyle} frameThickness={ca.imageFrameThickness} />
+                  : ca.imageUrl
+                    ? <ImagePlaneRenderer imageUrl={ca.imageUrl} scale={ca.scale} frameStyle={ca.imageFrameStyle} frameThickness={ca.imageFrameThickness} />
+                    : ca.glbPath.endsWith('.vrm')
+                      ? <VRMCatalogRenderer path={ca.glbPath} scale={ca.scale} objectId={ca.id} displayName={ca.name} />
+                      : <CatalogModelRenderer path={ca.glbPath} scale={ca.scale} objectId={ca.id} displayName={ca.name} />
                 }
+                {/* ░▒▓ SPATIAL AUDIO — read from behaviors store ▓▒░ */}
+                <SpatialAudioFromBehavior objectId={ca.id} />
               </Suspense>
             </CatalogModelErrorBoundary>
           </SelectableWrapper>
