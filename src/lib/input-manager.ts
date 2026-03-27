@@ -224,13 +224,20 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
       }
     }
 
+    // Non-text input types that don't consume keyboard — sliders, color pickers, checkboxes
+    const NON_TEXT_INPUT_TYPES = new Set(['range', 'color', 'checkbox', 'radio', 'file', 'button', 'image', 'reset', 'submit'])
+
     // Auto-enter ui-focused when any text input gains focus, return on blur
     const onFocusIn = (e: FocusEvent) => {
       const el = e.target as HTMLElement
       if (!el) return
       const tag = el.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable) {
-        // Skip inputs inside the R3F canvas (e.g., color pickers in 3D)
+      if (tag === 'INPUT') {
+        // Range sliders, color pickers etc. don't need keyboard capture
+        if (NON_TEXT_INPUT_TYPES.has((el as HTMLInputElement).type)) return
+        if (el.closest('#uploader-canvas')) return
+        get().enterUIFocus()
+      } else if (tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable) {
         if (el.closest('#uploader-canvas')) return
         get().enterUIFocus()
       }

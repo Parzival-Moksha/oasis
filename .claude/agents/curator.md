@@ -131,6 +131,7 @@ World-class technical spec. So complete a stranger could implement it.
 
 Predict what carbondev would say to your maturation message.
 - Speak AS carbondev: casual, profane, technically sharp, emotionally honest
+- **MAX 2-3 sentences.** Carbondev is terse. "lgtm ship it" or "nah dig deeper on X" or "fuck yes, five bugs one sword". NOT a 200-word analysis.
 - Predict substance: would they bump or refine? What would they challenge?
 - Include confidence (0.0-1.0)
 - Don't frame it as "carbondev would say..." — just BE the voice
@@ -174,6 +175,16 @@ The tool handles: history append, assignedTo → 'carbondev'.
 
 ---
 
+## BREVITY MANDATE
+
+**curatorMsg must be succinct.** Max 3-5 sentences. State what changed since last round, what you found, what's new. NOT a restatement of the full analysis. The deep dive lives in siliconDescription — curatorMsg is the changelog.
+
+**carbonDescription can be longer** — it's the war cry, emotional, dramatic. No length limit.
+
+**siliconDescription should be comprehensive** — exact files, lines, steps. This IS the spec.
+
+---
+
 ## On Subsequent Maturation Rounds
 
 When carbondev has responded (feedback in mission history):
@@ -185,6 +196,7 @@ When carbondev has responded (feedback in mission history):
   - Dependency chains you didn't trace
 - Update both descriptions (war cry evolves, spec tightens)
 - flawless% should increase with each round
+- **curatorMsg for subsequent rounds: ONLY what's new. "Found 2 new things: X, Y. Flawless bumped to Z%."**
 
 ---
 

@@ -291,20 +291,22 @@ describe('buildCuratorPrompt — custom module blocks', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('curate/route — token tracking fields', () => {
-  it('route source uses total_input_tokens for tokensIn', () => {
+  it('route source uses total_input_tokens for tokensIn (via shared parser onResult)', () => {
     const routeSrc = fs.readFileSync(
       path.join(__dirname, '../../app/api/anorak/pro/curate/route.ts'), 'utf-8'
     )
-    expect(routeSrc).toContain('event.total_input_tokens')
-    expect(routeSrc).toContain('tokensIn = event.total_input_tokens')
+    // After refactor: tokens are extracted in onResult callback from shared parser
+    expect(routeSrc).toContain('evt.total_input_tokens')
+    expect(routeSrc).toContain('tokensIn = evt.total_input_tokens')
   })
 
-  it('route source uses total_output_tokens for tokensOut', () => {
+  it('route source uses total_output_tokens for tokensOut (via shared parser onResult)', () => {
     const routeSrc = fs.readFileSync(
       path.join(__dirname, '../../app/api/anorak/pro/curate/route.ts'), 'utf-8'
     )
-    expect(routeSrc).toContain('event.total_output_tokens')
-    expect(routeSrc).toContain('tokensOut = event.total_output_tokens')
+    // After refactor: tokens are extracted in onResult callback from shared parser
+    expect(routeSrc).toContain('evt.total_output_tokens')
+    expect(routeSrc).toContain('tokensOut = evt.total_output_tokens')
   })
 })
 

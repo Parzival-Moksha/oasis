@@ -7,6 +7,7 @@
 import { NextRequest } from 'next/server'
 import { spawn } from 'child_process'
 import { prisma } from '@/lib/db'
+import { createStreamParser } from '@/lib/anorak-stream-parser'
 const OASIS_ROOT = process.env.OASIS_ROOT || process.cwd()
 
 interface ContextModuleConfig {
@@ -171,51 +172,20 @@ export async function POST(request: NextRequest) {
       child.stdin.write(fullPrompt)
       child.stdin.end()
 
-      let buffer = ''
       const startTime = Date.now()
       let tokensIn = 0
       let tokensOut = 0
 
+      const parser = createStreamParser({
+        send,
+        onResult: (evt) => {
+          if (evt.total_input_tokens) tokensIn = evt.total_input_tokens as number
+          if (evt.total_output_tokens) tokensOut = evt.total_output_tokens as number
+        },
+      }, 'curator')
+
       child.stdout.on('data', (chunk: Buffer) => {
-        const text = chunk.toString()
-        buffer += text
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          if (!line.trim()) continue
-          try {
-            let event = JSON.parse(line)
-            if (event.type === 'stream_event' && event.event) event = event.event
-            const eventType = event.type || 'unknown'
-
-            if (eventType === 'content_block_delta') {
-              const delta = event.delta
-              if (delta?.type === 'text_delta' && delta?.text) {
-                send('text', { content: delta.text, lobe: 'curator' })
-              } else if (delta?.type === 'thinking_delta' && delta?.thinking) {
-                send('thinking', { content: delta.thinking, lobe: 'curator' })
-              }
-            } else if (eventType === 'tool_use') {
-              const name = event.tool?.name || event.name || 'tool'
-              send('tool', { name, lobe: 'curator' })
-            } else if (eventType === 'tool_result') {
-              const name = event.tool_name || event.name || 'tool'
-              const result = event.result || event.content || ''
-              const preview = (typeof result === 'string' ? result : JSON.stringify(result)).substring(0, 200)
-              send('tool_result', { name, preview, lobe: 'curator' })
-            } else if (eventType === 'result') {
-              // Claude CLI stream-json: result event has total_input_tokens / total_output_tokens
-              if (event.total_input_tokens) tokensIn = event.total_input_tokens
-              if (event.total_output_tokens) tokensOut = event.total_output_tokens
-              send('result', { cost_usd: event.cost_usd ?? event.total_cost_usd, lobe: 'curator' })
-            }
-          } catch {
-            if (line.trim().length > 0 && line.trim().length < 300) {
-              send('stderr', { content: line.trim(), lobe: 'curator' })
-            }
-          }
-        }
+        parser.feed(chunk.toString())
       })
 
       child.stderr.on('data', (chunk: Buffer) => {
@@ -238,6 +208,7 @@ export async function POST(request: NextRequest) {
       })
 
       child.on('close', (code) => {
+        parser.flush()
         clearInterval(keepAlive)
         const durationMs = Date.now() - startTime
         prisma.curatorLog.update({

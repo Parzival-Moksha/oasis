@@ -9,6 +9,7 @@ import { NextRequest } from 'next/server'
 import { spawn, ChildProcess } from 'child_process'
 import { prisma } from '@/lib/db'
 import { regenerateCuratorRL } from '../../../../../lib/anorak-curator-rl'
+import { createStreamParser } from '@/lib/anorak-stream-parser'
 const OASIS_ROOT = process.env.OASIS_ROOT || process.cwd()
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -103,42 +104,13 @@ function spawnAgent(
     child.stdin!.write(prompt)
     child.stdin!.end()
 
-    let buffer = ''
     let fullStdout = ''
+    const parser = createStreamParser({ send }, lobe)
 
     child.stdout!.on('data', (chunk: Buffer) => {
       const text = chunk.toString()
       fullStdout += text
-      buffer += text
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-
-      for (const line of lines) {
-        if (!line.trim()) continue
-        try {
-          let event = JSON.parse(line)
-          if (event.type === 'stream_event' && event.event) event = event.event
-          const et = event.type || 'unknown'
-
-          if (et === 'content_block_delta') {
-            const d = event.delta
-            if (d?.type === 'text_delta' && d?.text) send('text', { content: d.text, lobe })
-            else if (d?.type === 'thinking_delta' && d?.thinking) send('thinking', { content: d.thinking, lobe })
-          } else if (et === 'tool_use') {
-            send('tool', { name: event.tool?.name || event.name || 'tool', lobe })
-          } else if (et === 'tool_result') {
-            const result = event.result || event.content || ''
-            const preview = (typeof result === 'string' ? result : JSON.stringify(result)).substring(0, 200)
-            send('tool_result', { name: event.tool_name || event.name || 'tool', preview, lobe })
-          } else if (et === 'result') {
-            send('result', { cost_usd: event.cost_usd ?? event.total_cost_usd, lobe })
-          }
-        } catch {
-          if (line.trim().length > 0 && line.trim().length < 300) {
-            send('stderr', { content: line.trim(), lobe })
-          }
-        }
-      }
+      parser.feed(text)
     })
 
     child.stderr!.on('data', (chunk: Buffer) => {
@@ -152,6 +124,7 @@ function spawnAgent(
     })
 
     child.on('close', (code) => {
+      parser.flush()
       send('status', { content: `✓ ${lobe} exited (code ${code})`, lobe })
       resolve({ exitCode: code ?? 1, stdout: fullStdout })
     })

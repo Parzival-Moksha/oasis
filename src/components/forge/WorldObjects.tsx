@@ -188,6 +188,10 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
         onClick={(e) => {
           if (isReadOnly) return  // ░▒▓ Anonymous visitors can't select/modify objects ▓▒░
           e.stopPropagation()
+          // Force-blur any focused panel input — breaks the ui-focused trance
+          if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+            document.activeElement.blur()
+          }
           onSelect(id)
           setInspectedObject(id)  // ░▒▓ One click = select + inspect (no double-click needed) ▓▒░
         }}
@@ -1352,8 +1356,14 @@ export function TransformKeyHandler() {
       }
 
       // ░▒▓ ALL KEYS — check if typing in form element ▓▒░
+      const NON_TEXT_INPUTS = new Set(['range', 'color', 'checkbox', 'radio', 'file', 'button', 'image', 'reset', 'submit'])
       const tag = (e.target as HTMLElement).tagName
-      const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as HTMLElement).isContentEditable
+      const isTyping = (
+        (tag === 'INPUT' && !NON_TEXT_INPUTS.has((e.target as HTMLInputElement).type))
+        || tag === 'TEXTAREA'
+        || tag === 'SELECT'
+        || (e.target as HTMLElement).isContentEditable
+      )
       if (isTyping) return  // keys go to the form, not to us (including Ctrl+Z for native undo)
 
       // Block ALL edit shortcuts in read-only view mode

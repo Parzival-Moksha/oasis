@@ -109,7 +109,7 @@ const DEFAULT_SETTINGS: PanelSettings = { bgColor: '#080a0f', opacity: 0.92, blu
 
 interface StreamEntry {
   id: number
-  type: 'text' | 'status' | 'tool' | 'tool_result' | 'error' | 'stderr' | 'thinking'
+  type: 'text' | 'status' | 'tool' | 'tool_start' | 'tool_result' | 'error' | 'stderr' | 'thinking' | 'result'
   content: string
   lobe: string
   timestamp: number
@@ -223,13 +223,15 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting }:
         {visible.map(e => (
           <div key={e.id} style={{ color: e.type === 'error' ? '#ef4444' : e.type === 'stderr' ? '#555' : (LOBE_COLORS[e.lobe] || '#888') }}>
             <span style={{ opacity: 0.5, marginRight: 6 }}>{e.lobe}</span>
-            {e.type === 'tool' && <span style={{ color: '#888' }}>[{e.content}] </span>}
+            {e.type === 'tool_start' && <span style={{ color: '#888' }}>⚙ starting {e.content}...</span>}
+            {e.type === 'tool' && <span style={{ color: '#aaa', background: 'rgba(255,255,255,0.05)', padding: '1px 6px', borderRadius: 3, border: '1px solid rgba(255,255,255,0.1)' }}>🔧 {e.content}</span>}
             {e.type === 'status' && <span style={{ fontStyle: 'italic' }}>{e.content}</span>}
             {e.type === 'text' && renderContent(e.content)}
             {e.type === 'error' && <span>ERROR: {e.content}</span>}
             {e.type === 'stderr' && <span style={{ opacity: 0.6 }}>{e.content}</span>}
             {e.type === 'thinking' && <span style={{ opacity: 0.6, fontStyle: 'italic' }}>{e.content}</span>}
             {e.type === 'tool_result' && <span style={{ opacity: 0.7 }}>{renderContent(e.content)}</span>}
+            {e.type === 'result' && <span style={{ color: '#22c55e', fontStyle: 'italic' }}>✓ {e.content}</span>}
           </div>
         ))}
       </div>
@@ -1121,10 +1123,26 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
               })
             }
             // Tool use
-            if (event.type === 'tool') {
+            if (event.type === 'tool' || event.type === 'tool_start') {
               setStreamEntries(prev => [...prev, {
-                id: entryIdRef.current++, type: 'tool',
-                content: event.name || 'tool', lobe: 'anorak-pro', timestamp: Date.now(),
+                id: entryIdRef.current++, type: event.type,
+                content: event.display || event.name || 'tool', lobe: 'anorak-pro', timestamp: Date.now(),
+              }])
+            }
+            // Tool result
+            if (event.type === 'tool_result') {
+              setStreamEntries(prev => [...prev, {
+                id: entryIdRef.current++, type: 'tool_result',
+                content: event.preview || event.name || '', lobe: 'anorak-pro', timestamp: Date.now(),
+              }])
+            }
+            // Result (cost/tokens)
+            if (event.type === 'result') {
+              const cost = event.cost_usd ? `$${Number(event.cost_usd).toFixed(4)}` : ''
+              const tokens = event.total_input_tokens ? `↓${event.total_input_tokens} ↑${event.total_output_tokens}` : ''
+              setStreamEntries(prev => [...prev, {
+                id: entryIdRef.current++, type: 'result',
+                content: [tokens, cost].filter(Boolean).join(' | ') || 'done', lobe: 'anorak-pro', timestamp: Date.now(),
               }])
             }
             // Thinking
@@ -1261,8 +1279,14 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
             const event = JSON.parse(payload)
             const lobe = event.lobe || 'system'
             const type = event.type || 'text'
-            const content = event.content || event.preview || event.name || ''
+            let content = event.content || event.display || event.preview || event.name || ''
             if (type === 'done') continue
+            // Result events have cost/token data but no content field
+            if (type === 'result' && !content) {
+              const cost = event.cost_usd ? `$${Number(event.cost_usd).toFixed(4)}` : ''
+              const tokens = event.total_input_tokens ? `↓${event.total_input_tokens} ↑${event.total_output_tokens}` : ''
+              content = [tokens, cost].filter(Boolean).join(' | ') || 'done'
+            }
             if (content) {
               setStreamEntries(prev => [...prev, { id: entryIdRef.current++, type, content, lobe, timestamp: Date.now() }])
             }

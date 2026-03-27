@@ -10,6 +10,7 @@ import { NextRequest } from 'next/server'
 import { spawn } from 'child_process'
 import path from 'path'
 import fs from 'fs'
+import { createStreamParser } from '@/lib/anorak-stream-parser'
 
 const ADMIN_USER_ID = process.env.ADMIN_USER_ID || ''
 const OASIS_ROOT = process.env.OASIS_ROOT || process.cwd()
@@ -43,28 +44,6 @@ ${extraContext ? `## EXTRA CONTEXT FROM DEV\n${extraContext}\n` : ''}
 - Do NOT add new npm dependencies
 - Commit with message: "ॐ anorak: ${taskTitle}"
 - Be thorough but scoped. Right Effort.`
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// FORMAT TOOL EVENTS FOR SSE — recycled from Parzival's llm-client.ts
-// ═══════════════════════════════════════════════════════════════════════════
-
-function formatToolMsg(toolName: string, toolInput: Record<string, unknown>): string {
-  if (toolName === 'Read' && toolInput.file_path) return `Read: ${toolInput.file_path}`
-  if (toolName === 'Edit' && toolInput.file_path) return `Edit: ${toolInput.file_path}`
-  if (toolName === 'Write' && toolInput.file_path) return `Write: ${toolInput.file_path}`
-  if (toolName === 'Bash' && toolInput.command) {
-    const cmd = String(toolInput.command).substring(0, 100)
-    return `Bash: ${cmd}${String(toolInput.command).length > 100 ? '...' : ''}`
-  }
-  if (toolName === 'Grep' && toolInput.pattern) return `Grep: "${toolInput.pattern}" in ${toolInput.path || '.'}`
-  if (toolName === 'Glob' && toolInput.pattern) return `Glob: ${toolInput.pattern}`
-  if (toolName === 'TodoWrite') return `TodoWrite: updating tasks`
-  if (Object.keys(toolInput).length > 0) {
-    const preview = JSON.stringify(toolInput).substring(0, 80)
-    return `${toolName}: ${preview}${JSON.stringify(toolInput).length > 80 ? '...' : ''}`
-  }
-  return toolName
 }
 
 export async function POST(request: NextRequest) {
@@ -153,121 +132,18 @@ export async function POST(request: NextRequest) {
       child.stdin.write(fullPrompt)
       child.stdin.end()
 
-      let streamBuffer = ''
       let streamedContent = ''
-      let currentToolBlock: {
-        name: string
-        inputJson: string
-      } | null = null
 
       sendEvent('status', { content: 'Claude Code process started. Streaming thoughts...' })
 
+      const parser = createStreamParser({
+        send: sendEvent,
+        onText: (text) => { streamedContent += text },
+      })
+
       // ── STDOUT: NDJSON stream-json events ─────────────
       child.stdout.on('data', (chunk: Buffer) => {
-        const text = chunk.toString()
-        streamBuffer += text
-        const lines = streamBuffer.split('\n')
-        streamBuffer = lines.pop() || ''
-
-        for (const line of lines) {
-          if (!line.trim()) continue
-          try {
-            let event = JSON.parse(line)
-
-            // Unwrap stream_event envelope
-            if (event.type === 'stream_event' && event.event) {
-              event = event.event
-            }
-
-            const eventType = event.type || 'unknown'
-
-            // ── TEXT DELTA: LLM speaking ──────────────
-            if (eventType === 'content_block_delta') {
-              const delta = event.delta
-              if (delta?.type === 'text_delta' && delta?.text) {
-                streamedContent += delta.text
-                sendEvent('text', { content: delta.text })
-              }
-              else if (delta?.type === 'thinking_delta' && delta?.thinking) {
-                sendEvent('thinking', { content: delta.thinking })
-              }
-              else if (delta?.type === 'input_json_delta' && delta?.partial_json && currentToolBlock) {
-                currentToolBlock.inputJson += delta.partial_json
-              }
-            }
-
-            // ── CONTENT BLOCK START: tool beginning ───
-            else if (eventType === 'content_block_start') {
-              const blockType = event.content_block?.type
-              if (blockType === 'tool_use') {
-                const toolName = event.content_block?.name || 'tool'
-                currentToolBlock = { name: toolName, inputJson: '' }
-                sendEvent('tool_start', { name: toolName })
-              } else if (blockType === 'text') {
-                currentToolBlock = null
-              }
-            }
-
-            // ── CONTENT BLOCK STOP: tool call complete ─
-            else if (eventType === 'content_block_stop') {
-              if (currentToolBlock) {
-                let toolInput: Record<string, unknown> = {}
-                if (currentToolBlock.inputJson.trim()) {
-                  try { toolInput = JSON.parse(currentToolBlock.inputJson) } catch {}
-                }
-                const msg = formatToolMsg(currentToolBlock.name, toolInput)
-                sendEvent('tool', { name: currentToolBlock.name, input: toolInput, display: msg })
-                currentToolBlock = null
-              }
-            }
-
-            // ── TOOL USE (direct, non-streaming) ──────
-            else if (eventType === 'tool_use') {
-              const toolName = event.tool?.name || event.name || 'tool'
-              const toolInput = event.tool?.input || event.input || {}
-              const msg = formatToolMsg(toolName, toolInput as Record<string, unknown>)
-              sendEvent('tool', { name: toolName, input: toolInput, display: msg })
-            }
-
-            // ── TOOL RESULT ───────────────────────────
-            else if (eventType === 'tool_result') {
-              const toolName = event.tool_name || event.name || 'tool'
-              const result = event.result || event.content || event.output || ''
-              const resultStr = typeof result === 'string' ? result : JSON.stringify(result)
-              const preview = resultStr.substring(0, 200).replace(/\n/g, ' ')
-              const isError = event.is_error === true
-              sendEvent('tool_result', { name: toolName, preview, isError, length: resultStr.length })
-            }
-
-            // ── RESULT: final metadata ────────────────
-            else if (eventType === 'result') {
-              sendEvent('result', {
-                cost_usd: event.cost_usd ?? event.total_cost_usd,
-                duration_ms: event.duration_ms,
-                usage: event.usage,
-                result: event.result,
-              })
-            }
-
-            // ── ASSISTANT MESSAGE (complete, skip dup) ─
-            else if (eventType === 'assistant' || eventType === 'message') {
-              // Final text already streamed via deltas, skip to avoid duplication
-            }
-
-            // ── ERROR ─────────────────────────────────
-            else if (eventType === 'error') {
-              const errorMsg = event.error?.message || event.message || JSON.stringify(event)
-              sendEvent('error', { content: errorMsg })
-            }
-
-            // Skip noise: system, user, message_start/delta/stop, ping
-          } catch {
-            // Not JSON — might be raw text during startup
-            if (line.trim().length > 0 && line.trim().length < 300) {
-              sendEvent('stderr', { content: line.trim() })
-            }
-          }
-        }
+        parser.feed(chunk.toString())
       })
 
       // ── STDERR: tool activity + warnings ──────────────
@@ -290,6 +166,7 @@ export async function POST(request: NextRequest) {
 
       // ── PROCESS EXIT ──────────────────────────────────
       child.on('close', (code) => {
+        parser.flush()
         clearInterval(keepAliveInterval)
         console.log(`[Anorak Agent] Process exited with code ${code}`)
         console.log(`[Anorak Agent] Streamed ${streamedContent.length} chars of LLM text`)
