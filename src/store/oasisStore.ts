@@ -105,6 +105,7 @@ export interface WorldSnapshot {
   behaviors: Record<string, ObjectBehavior>
   groundTiles: Record<string, string>
   worldLights: WorldLight[]
+  terrainParams: TerrainParams | null
 }
 
 export interface UndoCommand {
@@ -117,7 +118,7 @@ export interface UndoCommand {
 
 const MAX_UNDO_STACK = 20
 
-function captureWorldSnapshot(state: { placedCatalogAssets: CatalogPlacement[]; worldConjuredAssetIds: string[]; craftedScenes: CraftedScene[]; transforms: Record<string, any>; behaviors: Record<string, ObjectBehavior>; groundTiles: Record<string, string>; worldLights: WorldLight[] }): WorldSnapshot {
+function captureWorldSnapshot(state: { placedCatalogAssets: CatalogPlacement[]; worldConjuredAssetIds: string[]; craftedScenes: CraftedScene[]; transforms: Record<string, any>; behaviors: Record<string, ObjectBehavior>; groundTiles: Record<string, string>; worldLights: WorldLight[]; terrainParams: TerrainParams | null }): WorldSnapshot {
   // structuredClone for deep copy — no shared references between snapshots
   return structuredClone({
     placedCatalogAssets: state.placedCatalogAssets,
@@ -127,6 +128,7 @@ function captureWorldSnapshot(state: { placedCatalogAssets: CatalogPlacement[]; 
     behaviors: state.behaviors,
     groundTiles: state.groundTiles,
     worldLights: state.worldLights,
+    terrainParams: state.terrainParams,
   })
 }
 
@@ -691,7 +693,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
   // ─═̷─═̷─🌍 TERRAIN + WORLD ACTIONS ─═̷─═̷─🌍
   setTerrainParams: (terrainParams) => {
-    set({ terrainParams })
+    withUndo('Terrain', '🏔️', () => set({ terrainParams }))
     setTimeout(() => get().saveWorldState(), 100)
   },
   setTerrainLoading: (terrainLoading) => set({ terrainLoading }),

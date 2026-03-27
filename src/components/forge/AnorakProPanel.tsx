@@ -10,6 +10,8 @@ import { createPortal } from 'react-dom'
 import { SettingsContext } from '../scene-lib'
 import { useOasisStore } from '../../store/oasisStore'
 import { useUILayer } from '@/lib/input-manager'
+import { TOOL_ICONS_MAP } from '@/lib/anorak-engine'
+import { ToolCallCard, renderMarkdown } from '@/lib/anorak-renderers'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -114,9 +116,15 @@ interface StreamEntry {
   content: string
   lobe: string
   timestamp: number
+  toolName?: string
+  toolIcon?: string
+  toolInput?: Record<string, unknown>
+  toolDisplay?: string
+  isError?: boolean
+  resultLength?: number
 }
 
-const TRUSTED_MEDIA = /^(\/|https?:\/\/(localhost|127\.0\.0\.1|fal\.media|fal-cdn|oaidalleapiprodscus|replicate\.delivery)[^\s]*)/
+const TRUSTED_MEDIA = /^(\/|https?:\/\/(localhost|127\.0\.0\.1|fal\.media|fal-cdn\.|oaidalleapiprodscus\.|replicate\.delivery)[^\s]*)/
 
 const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting }: {
   entries: StreamEntry[]
@@ -221,20 +229,49 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting }:
   return (
     <>
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-1 font-mono text-xs">
-        {visible.map(e => (
-          <div key={e.id} style={{ color: e.type === 'error' ? '#ef4444' : e.type === 'stderr' ? '#555' : (LOBE_COLORS[e.lobe] || '#888') }}>
-            <span style={{ opacity: 0.5, marginRight: 6 }}>{e.lobe}</span>
-            {e.type === 'tool_start' && <span style={{ color: '#888' }}>⚙ starting {e.content}...</span>}
-            {e.type === 'tool' && <span style={{ color: '#aaa', background: 'rgba(255,255,255,0.05)', padding: '1px 6px', borderRadius: 3, border: '1px solid rgba(255,255,255,0.1)' }}>🔧 {e.content}</span>}
-            {e.type === 'status' && <span style={{ fontStyle: 'italic' }}>{e.content}</span>}
-            {e.type === 'text' && renderContent(e.content)}
-            {e.type === 'error' && <span>ERROR: {e.content}</span>}
-            {e.type === 'stderr' && <span style={{ opacity: 0.6 }}>{e.content}</span>}
-            {e.type === 'thinking' && <span style={{ opacity: 0.6, fontStyle: 'italic' }}>{e.content}</span>}
-            {e.type === 'tool_result' && <span style={{ opacity: 0.7 }}>{renderContent(e.content)}</span>}
-            {e.type === 'result' && <span style={{ color: '#22c55e', fontStyle: 'italic' }}>✓ {e.content}</span>}
-          </div>
-        ))}
+        {visible.map(e => {
+          const lobeColor = LOBE_COLORS[e.lobe] || '#888'
+          return (
+            <div key={e.id} style={{
+              borderLeft: `3px solid ${lobeColor}`,
+              paddingLeft: 8,
+              background: `${lobeColor}08`,
+              borderRadius: 4,
+              marginBottom: 2,
+            }}>
+              <span className="text-[9px]" style={{ opacity: 0.4, marginRight: 6 }}>{e.lobe}</span>
+              {e.type === 'tool_start' && <span style={{ color: '#888' }}>⚙ starting {e.content}...</span>}
+              {e.type === 'tool' && (
+                <ToolCallCard
+                  name={e.toolName || e.content}
+                  icon={e.toolIcon || TOOL_ICONS_MAP[e.toolName || ''] || '🔧'}
+                  display={e.toolDisplay || e.content}
+                  input={e.toolInput}
+                  compact
+                />
+              )}
+              {e.type === 'status' && <span style={{ fontStyle: 'italic', color: lobeColor }}>{e.content}</span>}
+              {e.type === 'text' && <div style={{ color: lobeColor }}>{renderContent(e.content)}</div>}
+              {e.type === 'error' && <span style={{ color: '#ef4444' }}>ERROR: {e.content}</span>}
+              {e.type === 'stderr' && <span style={{ opacity: 0.6, color: '#555' }}>{e.content}</span>}
+              {e.type === 'thinking' && <div style={{ opacity: 0.5, fontStyle: 'italic', color: lobeColor }}>{renderMarkdown(e.content)}</div>}
+              {e.type === 'tool_result' && (
+                e.toolName ? (
+                  <ToolCallCard
+                    name={e.toolName}
+                    icon={e.toolIcon || TOOL_ICONS_MAP[e.toolName] || '🔧'}
+                    display={e.toolDisplay || e.toolName}
+                    result={{ preview: e.content, isError: !!e.isError, length: e.resultLength || e.content.length }}
+                    compact
+                  />
+                ) : (
+                  <span style={{ opacity: 0.7 }}>{renderContent(e.content)}</span>
+                )
+              )}
+              {e.type === 'result' && <span style={{ color: '#22c55e', fontStyle: 'italic' }}>✓ {e.content}</span>}
+            </div>
+          )
+        })}
       </div>
 
       {/* Chat input */}
@@ -1129,6 +1166,10 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
               setStreamEntries(prev => [...prev, {
                 id: entryIdRef.current++, type: event.type,
                 content: event.display || event.name || 'tool', lobe: 'anorak-pro', timestamp: Date.now(),
+                toolName: event.name,
+                toolIcon: (event.name && TOOL_ICONS_MAP[event.name]) || undefined,
+                toolInput: event.input,
+                toolDisplay: event.display,
               }])
             }
             // Tool result
@@ -1136,6 +1177,11 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
               setStreamEntries(prev => [...prev, {
                 id: entryIdRef.current++, type: 'tool_result',
                 content: event.preview || event.name || '', lobe: 'anorak-pro', timestamp: Date.now(),
+                toolName: event.name,
+                toolIcon: (event.name && TOOL_ICONS_MAP[event.name]) || undefined,
+                toolDisplay: event.display,
+                isError: event.isError,
+                resultLength: event.length,
               }])
             }
             // Result (cost/tokens)
@@ -1289,8 +1335,18 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
               const tokens = event.total_input_tokens ? `↓${event.total_input_tokens} ↑${event.total_output_tokens}` : ''
               content = [tokens, cost].filter(Boolean).join(' | ') || 'done'
             }
-            if (content) {
-              setStreamEntries(prev => [...prev, { id: entryIdRef.current++, type, content, lobe, timestamp: Date.now() }])
+            if (content || type === 'tool' || type === 'tool_result') {
+              const entry: StreamEntry = {
+                id: entryIdRef.current++, type, content, lobe, timestamp: Date.now(),
+                // Enriched tool fields from stream parser
+                toolName: event.name,
+                toolIcon: (event.name && TOOL_ICONS_MAP[event.name]) || undefined,
+                toolInput: event.input,
+                toolDisplay: event.display,
+                isError: event.isError,
+                resultLength: event.length,
+              }
+              setStreamEntries(prev => [...prev, entry])
             }
           } catch { /* skip malformed */ }
         }

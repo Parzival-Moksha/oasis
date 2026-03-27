@@ -20,6 +20,7 @@ export interface AnorakResultEvent { type: 'result'; costUsd: number; durationMs
 export interface AnorakErrorEvent { type: 'error'; content: string }
 export interface AnorakStderrEvent { type: 'stderr'; content: string }
 export interface AnorakDoneEvent { type: 'done'; success: boolean; sessionId: string; costUsd?: number; inputTokens?: number; outputTokens?: number }
+export interface AnorakMediaEvent { type: 'media'; mediaType: 'image' | 'audio' | 'video'; url: string; prompt?: string }
 
 export type AnorakEvent =
   | AnorakSessionEvent | AnorakStatusEvent | AnorakTextEvent
@@ -27,11 +28,12 @@ export type AnorakEvent =
   | AnorakToolStartEvent | AnorakToolEvent | AnorakToolResultEvent
   | AnorakProgressEvent | AnorakResultEvent
   | AnorakErrorEvent | AnorakStderrEvent | AnorakDoneEvent
+  | AnorakMediaEvent
 
 // A single block in the conversation stream
 export interface StreamBlock {
   id: string
-  kind: 'text' | 'thinking' | 'tool' | 'tool_result' | 'error' | 'status' | 'user'
+  kind: 'text' | 'thinking' | 'tool' | 'tool_result' | 'error' | 'status' | 'user' | 'media'
   content: string
   // Tool-specific
   toolName?: string
@@ -41,6 +43,10 @@ export interface StreamBlock {
   toolUseId?: string  // links tool calls to their results
   isError?: boolean
   isExpanded?: boolean
+  // Media-specific
+  mediaType?: 'image' | 'audio' | 'video'
+  mediaUrl?: string
+  mediaPrompt?: string
 }
 
 // A single turn (user prompt + Anorak response)

@@ -38,6 +38,47 @@ interface Mission {
   actualSeconds: number | null
   notes: string | null
   isIRL: boolean
+  // Curator fields
+  maturityLevel: number
+  carbonDescription: string | null
+  siliconDescription: string | null
+  history: string | null
+  flawlessPercent: number | null
+  dharmaPath: string | null
+  assignedTo: string | null
+  acceptanceCriteria: string | null
+  executionPhase: string | null
+  executionRound: number
+}
+
+interface HistoryEntry {
+  timestamp: string
+  actor: string
+  action: string
+  message?: string
+  comment?: string
+  curatorMsg?: string
+  silicondevMsg?: string
+  carbondevMsg?: string
+  verdict?: string
+  rating?: number
+  mature?: boolean
+}
+
+const MATURITY_LEVELS: { label: string; color: string }[] = [
+  { label: 'PARA', color: '#666' },
+  { label: 'PASHYANTI', color: '#f59e0b' },
+  { label: 'MADHYAMA', color: '#0ea5e9' },
+  { label: 'VAIKHARI', color: '#22c55e' },
+]
+
+function MaturityBadge({ level }: { level: number }) {
+  const m = MATURITY_LEVELS[level] || MATURITY_LEVELS[0]
+  return (
+    <span className="text-xs font-mono px-1.5 py-0.5 shrink-0" style={{ color: m.color, background: `${m.color}15`, border: `1px solid ${m.color}40` }}>
+      {m.label}
+    </span>
+  )
 }
 
 interface NoteEntry {
@@ -462,19 +503,46 @@ function SwitchConfirmPopup({ currentMission, newMission, onDone, onPause, onCan
 // Mission Popup — View/Edit any mission
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function MissionPopup({ mission, onClose, onEngage, onUpdate, onDeleteNoteEntry, onIRLComplete }: {
+function MissionPopup({ mission, onClose, onEngage, onUpdate, onDeleteNoteEntry, onIRLComplete, onRefetch }: {
   mission: Mission; onClose: () => void; onEngage: () => void
   onUpdate: (updates: Partial<Mission>) => void
   onDeleteNoteEntry: (idx: number) => void
   onIRLComplete: (minutes: number, valor: number) => void
+  onRefetch: () => void
 }) {
   const [noteText, setNoteText] = useState('')
   const [editingName, setEditingName] = useState(false)
   const [tempName, setTempName] = useState(mission.name)
   const [irlMinutes, setIrlMinutes] = useState(30)
   const [irlValor, setIrlValor] = useState(1.0)
+  const [rightTab, setRightTab] = useState<'notes' | 'curator'>('notes')
+  const [feedbackMsg, setFeedbackMsg] = useState('')
+  const [feedbackSending, setFeedbackSending] = useState(false)
+  const hasCuratorData = !!(mission.carbonDescription || mission.siliconDescription || (mission.maturityLevel > 0))
 
-  const notes: NoteEntry[] = mission.notes ? (typeof mission.notes === 'string' ? JSON.parse(mission.notes) : mission.notes) : []
+  const handleFeedback = async (bump: boolean) => {
+    setFeedbackSending(true)
+    try {
+      const res = await fetch('/api/anorak/pro/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          missionId: mission.id,
+          mature: bump,
+          verdict: bump ? 'accept' : 'modify',
+          rating: bump ? 8 : 5,
+          carbondevMsg: feedbackMsg.trim() || undefined,
+        }),
+      })
+      if (!res.ok) { console.error('Feedback failed:', res.status); return }
+      setFeedbackMsg('')
+      onRefetch()
+    } catch (err) { console.error('Feedback failed:', err) }
+    setFeedbackSending(false)
+  }
+
+  let notes: NoteEntry[] = []
+  try { notes = mission.notes ? (typeof mission.notes === 'string' ? JSON.parse(mission.notes) : mission.notes) : [] } catch { /* corrupted notes */ }
   const isDone = mission.status === 'done'
 
   const handleNameSave = () => {
@@ -484,7 +552,8 @@ function MissionPopup({ mission, onClose, onEngage, onUpdate, onDeleteNoteEntry,
 
   const handleAddNote = () => {
     if (!noteText.trim()) return
-    const existing: NoteEntry[] = mission.notes ? JSON.parse(mission.notes) : []
+    let existing: NoteEntry[] = []
+    try { existing = mission.notes ? JSON.parse(mission.notes) : [] } catch { /* skip */ }
     const newNotes = [...existing, { timestamp: new Date().toISOString(), message: noteText.trim(), type: 'note' as const }]
     onUpdate({ notes: JSON.stringify(newNotes) })
     setNoteText('')
@@ -509,6 +578,10 @@ function MissionPopup({ mission, onClose, onEngage, onUpdate, onDeleteNoteEntry,
             </h2>
           )}
           <span className="text-xs font-mono text-[#555]">#{mission.id}</span>
+          <MaturityBadge level={mission.maturityLevel} />
+          {mission.flawlessPercent !== null && (
+            <span className="text-xs font-mono text-[#0ea5e9]" title="Flawless %">{mission.flawlessPercent}%</span>
+          )}
           <span className={`text-xs font-mono px-2 py-0.5 ${
             mission.status === 'wip' ? 'bg-[#ffcc00]/20 text-[#ffcc00]' :
             mission.status === 'done' ? 'bg-[#00ff41]/20 text-[#00ff41]' :
@@ -607,43 +680,170 @@ function MissionPopup({ mission, onClose, onEngage, onUpdate, onDeleteNoteEntry,
             )}
           </div>
 
-          {/* Right — Notes Timeline */}
+          {/* Right — Tabbed: Notes | Curator */}
           <div className="flex-1 flex flex-col p-3 min-w-0">
-            <div className="flex-1 min-h-0 flex flex-col mb-3">
-              <div className="text-sm font-mono text-[#666] mb-2">NOTES ({notes.length})</div>
-              <div className="flex-1 overflow-y-auto bg-black/30 p-2 space-y-2">
-                {notes.length === 0 ? (
-                  <div className="text-[#444] text-sm font-mono text-center py-6">No notes yet</div>
-                ) : notes.map((entry, idx) => (
-                  <div key={idx} className={`text-sm font-mono p-2 rounded group relative ${
-                    entry.type === 'system' ? 'bg-[#222]' : 'bg-blue-900/30 border-l-2 border-blue-500'
-                  }`}>
-                    <div className="flex items-center gap-2 text-xs text-[#666] mb-1">
-                      <span className={entry.type === 'system' ? 'text-gray-500' : 'text-blue-400'}>
-                        {entry.type === 'system' ? '⚙' : '📝'}
-                      </span>
-                      <span className="ml-auto">{formatTimestamp(entry.timestamp)}</span>
-                      {entry.type === 'note' && (
-                        <button onClick={() => onDeleteNoteEntry(idx)}
-                          className="text-[#ff0040] opacity-0 group-hover:opacity-100 hover:text-[#ff4040] text-xs" title="Delete">🗑</button>
-                      )}
-                    </div>
-                    {entry.message && <div className="text-[#bbb]">{entry.message}</div>}
-                    {entry.score !== undefined && <div className="text-[#00ff41] text-xs mt-1">☸ {entry.score?.toFixed(1)}</div>}
-                  </div>
-                ))}
-              </div>
+            {/* Tab bar */}
+            <div className="flex gap-0 mb-2 shrink-0">
+              <button onClick={() => setRightTab('notes')}
+                className={`flex-1 py-1.5 text-xs font-mono border-b-2 transition-colors ${rightTab === 'notes' ? 'border-[#00ff41] text-[#00ff41]' : 'border-[#333] text-[#666] hover:text-[#999]'}`}>
+                NOTES ({notes.length})
+              </button>
+              <button onClick={() => setRightTab('curator')}
+                className={`flex-1 py-1.5 text-xs font-mono border-b-2 transition-colors ${rightTab === 'curator' ? 'border-[#0ea5e9] text-[#0ea5e9]' : 'border-[#333] text-[#666] hover:text-[#999]'}`}>
+                CURATOR {hasCuratorData ? '●' : ''}
+              </button>
             </div>
 
-            {!isDone && (
-              <div>
-                <AutoGrowTextarea value={noteText} onChange={setNoteText} onCtrlEnter={handleAddNote}
-                  placeholder="Add note... (Ctrl+Enter to save)"
-                  className="w-full bg-black border border-[#333] p-2 text-sm font-mono text-[#999] focus:border-[#00ff41] focus:outline-none mb-2" />
-                <button onClick={handleAddNote} disabled={!noteText.trim()}
-                  className="w-full py-2 border border-[#00ff41] text-[#00ff41] font-mono text-sm hover:bg-[#00ff41]/10 disabled:opacity-30">
-                  SAVE NOTE
-                </button>
+            {/* NOTES tab */}
+            {rightTab === 'notes' && (
+              <>
+                <div className="flex-1 min-h-0 flex flex-col mb-3">
+                  <div className="flex-1 overflow-y-auto bg-black/30 p-2 space-y-2">
+                    {notes.length === 0 ? (
+                      <div className="text-[#444] text-sm font-mono text-center py-6">No notes yet</div>
+                    ) : notes.map((entry, idx) => (
+                      <div key={idx} className={`text-sm font-mono p-2 rounded group relative ${
+                        entry.type === 'system' ? 'bg-[#222]' : 'bg-blue-900/30 border-l-2 border-blue-500'
+                      }`}>
+                        <div className="flex items-center gap-2 text-xs text-[#666] mb-1">
+                          <span className={entry.type === 'system' ? 'text-gray-500' : 'text-blue-400'}>
+                            {entry.type === 'system' ? '⚙' : '📝'}
+                          </span>
+                          <span className="ml-auto">{formatTimestamp(entry.timestamp)}</span>
+                          {entry.type === 'note' && (
+                            <button onClick={() => onDeleteNoteEntry(idx)}
+                              className="text-[#ff0040] opacity-0 group-hover:opacity-100 hover:text-[#ff4040] text-xs" title="Delete">🗑</button>
+                          )}
+                        </div>
+                        {entry.message && <div className="text-[#bbb]">{entry.message}</div>}
+                        {entry.score !== undefined && <div className="text-[#00ff41] text-xs mt-1">☸ {entry.score?.toFixed(1)}</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {!isDone && (
+                  <div>
+                    <AutoGrowTextarea value={noteText} onChange={setNoteText} onCtrlEnter={handleAddNote}
+                      placeholder="Add note... (Ctrl+Enter to save)"
+                      className="w-full bg-black border border-[#333] p-2 text-sm font-mono text-[#999] focus:border-[#00ff41] focus:outline-none mb-2" />
+                    <button onClick={handleAddNote} disabled={!noteText.trim()}
+                      className="w-full py-2 border border-[#00ff41] text-[#00ff41] font-mono text-sm hover:bg-[#00ff41]/10 disabled:opacity-30">
+                      SAVE NOTE
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* CURATOR tab */}
+            {rightTab === 'curator' && (
+              <div className="flex-1 min-h-0 overflow-y-auto space-y-3">
+                {!hasCuratorData ? (
+                  <div className="text-[#444] text-sm font-mono text-center py-6">Not yet curated</div>
+                ) : (
+                  <>
+                    {/* Maturity + Flawless */}
+                    <div className="flex items-center gap-3">
+                      <MaturityBadge level={mission.maturityLevel} />
+                      {mission.flawlessPercent !== null && (
+                        <span className="text-xs font-mono text-[#0ea5e9]">Flawless: {mission.flawlessPercent}%</span>
+                      )}
+                      {mission.assignedTo && (
+                        <span className="text-xs font-mono text-[#666]">Assigned: {mission.assignedTo}</span>
+                      )}
+                    </div>
+
+                    {/* Dharma Path */}
+                    {mission.dharmaPath && (
+                      <div className="flex flex-wrap gap-1">
+                        {mission.dharmaPath.split(',').map((path, i) => (
+                          <span key={i} className="text-xs font-mono px-1.5 py-0.5 bg-[#14b8a6]/15 text-[#14b8a6] border border-[#14b8a6]/30">
+                            {path.trim()}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Carbon Description */}
+                    {mission.carbonDescription && (
+                      <div>
+                        <div className="text-xs font-mono text-[#f59e0b] mb-1">WAR CRY</div>
+                        <div className="text-sm font-mono text-[#ccc] bg-[#f59e0b]/5 border-l-2 border-[#f59e0b] p-2 leading-relaxed">
+                          {mission.carbonDescription}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Silicon Description */}
+                    {mission.siliconDescription && (
+                      <div>
+                        <div className="text-xs font-mono text-[#0ea5e9] mb-1">TECH SPEC</div>
+                        <div className="text-xs font-mono text-[#999] bg-black/50 border border-[#333] p-2 overflow-y-auto whitespace-pre-wrap" style={{ maxHeight: 300 }}>
+                          {mission.siliconDescription}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Acceptance Criteria */}
+                    {mission.acceptanceCriteria && (
+                      <div>
+                        <div className="text-xs font-mono text-[#22c55e] mb-1">ACCEPTANCE</div>
+                        <div className="text-xs font-mono text-[#999] bg-[#22c55e]/5 border border-[#22c55e]/20 p-2 whitespace-pre-wrap">
+                          {mission.acceptanceCriteria}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* History Thread */}
+                    {(() => {
+                      let historyEntries: HistoryEntry[] = []
+                      try { historyEntries = JSON.parse(mission.history || '[]') } catch { /* skip */ }
+                      const curatorEntries = historyEntries.filter(e => e.actor === 'curator' || e.actor === 'carbondev')
+                      if (curatorEntries.length === 0) return null
+                      return (
+                        <div>
+                          <div className="text-xs font-mono text-[#a855f7] mb-1">THREAD ({curatorEntries.length})</div>
+                          <div className="space-y-1.5 overflow-y-auto" style={{ maxHeight: 300 }}>
+                            {curatorEntries.map((entry, i) => {
+                              const isDev = entry.actor === 'carbondev'
+                              const text = entry.curatorMsg || entry.silicondevMsg || entry.carbondevMsg || entry.message || entry.comment || entry.action
+                              return (
+                                <div key={i} className={`text-xs font-mono p-2 rounded ${isDev ? 'bg-blue-900/20 border-l-2 border-blue-500' : 'bg-purple-900/20 border-l-2 border-purple-500'}`}>
+                                  <div className="flex items-center gap-2 text-[#666] mb-0.5">
+                                    <span>{isDev ? '👤' : '🧿'} {entry.actor}</span>
+                                    <span className="text-[#555]">{entry.action}</span>
+                                    {entry.verdict && <span className="text-[#f59e0b]">[{entry.verdict}]</span>}
+                                    <span className="ml-auto text-[#444]">{entry.timestamp ? new Date(entry.timestamp).toLocaleDateString() : ''}</span>
+                                  </div>
+                                  <div className="text-[#bbb]">{text}</div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })()}
+
+                    {/* Bump / Refine Buttons */}
+                    {mission.maturityLevel < 3 && mission.status === 'todo' && (
+                      <div className="border-t border-[#333] pt-3 mt-2">
+                        <AutoGrowTextarea value={feedbackMsg} onChange={setFeedbackMsg} onCtrlEnter={() => feedbackMsg.trim() && handleFeedback(false)}
+                          placeholder="Feedback to curator... (optional)"
+                          className="w-full bg-black border border-[#333] p-2 text-sm font-mono text-[#999] focus:border-[#0ea5e9] focus:outline-none mb-2" />
+                        <div className="flex gap-2">
+                          <button onClick={() => handleFeedback(true)} disabled={feedbackSending}
+                            className="flex-1 py-2 border border-[#22c55e] text-[#22c55e] font-mono text-sm hover:bg-[#22c55e]/10 disabled:opacity-30">
+                            BUMP
+                          </button>
+                          <button onClick={() => handleFeedback(false)} disabled={feedbackSending || !feedbackMsg.trim()}
+                            className="flex-1 py-2 border border-[#f59e0b] text-[#f59e0b] font-mono text-sm hover:bg-[#f59e0b]/10 disabled:opacity-30">
+                            REFINE
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -724,7 +924,8 @@ function ActiveMissionPanel({ mission, elapsed, onPause, onResume, valor, onValo
   const isOvertime = !!(mission.horizon === 'fixed' && mission.targetSeconds && elapsed > mission.targetSeconds)
   const projectedScore = (elapsed / 60) * valor * mission.priority
 
-  const notes: NoteEntry[] = mission.notes ? (typeof mission.notes === 'string' ? JSON.parse(mission.notes) : mission.notes) : []
+  let notes: NoteEntry[] = []
+  try { notes = mission.notes ? (typeof mission.notes === 'string' ? JSON.parse(mission.notes) : mission.notes) : [] } catch { /* corrupted notes */ }
 
   const handleNameSave = () => {
     if (tempName.trim() && tempName !== mission.name) onUpdateMission({ name: tempName.trim() })
@@ -1118,6 +1319,7 @@ function DevMissionList({ missions, activeMissionId, onMissionClick, onReorder, 
               className="text-[#00ff41] opacity-0 group-hover:opacity-100 shrink-0">+Q</button>
           )}
           {m.isIRL && <span className="shrink-0 text-amber-400" title="IRL">🏠</span>}
+          {m.maturityLevel > 0 && <MaturityBadge level={m.maturityLevel} />}
           <span onClick={() => onMissionClick(m)}
             className={`flex-1 truncate hover:underline ${isActive ? 'text-[#00ff41]' : 'text-[#eee]'}`}>
             {m.name}
@@ -1606,7 +1808,8 @@ export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
   }
 
   const saveNoteEntry = async (missionId: number, entry: NoteEntry, currentNotes: string | null) => {
-    const existing: NoteEntry[] = currentNotes ? JSON.parse(currentNotes) : []
+    let existing: NoteEntry[] = []
+    try { existing = currentNotes ? JSON.parse(currentNotes) : [] } catch { /* skip */ }
     const newNotes = [...existing, entry]
     const res = await fetch(`/api/missions/${missionId}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -1618,7 +1821,8 @@ export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
 
   const deleteNoteEntry = async (missionId: number, entryIdx: number, currentNotes: string | null) => {
     if (!currentNotes) return currentNotes
-    const existing: NoteEntry[] = JSON.parse(currentNotes)
+    let existing: NoteEntry[] = []
+    try { existing = JSON.parse(currentNotes) } catch { return currentNotes }
     const newNotes = existing.filter((_, idx) => idx !== entryIdx)
     const res = await fetch(`/api/missions/${missionId}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -1645,7 +1849,8 @@ export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
   const handleComplete = async () => {
     if (!activeMission) return
     const score = (elapsed / 60) * valor * activeMission.priority
-    const existing: NoteEntry[] = activeMission.notes ? JSON.parse(activeMission.notes) : []
+    let existing: NoteEntry[] = []
+    try { existing = activeMission.notes ? JSON.parse(activeMission.notes) : [] } catch { /* skip */ }
     const newEntries: NoteEntry[] = []
     if (note.trim()) newEntries.push({ timestamp: new Date().toISOString(), message: note.trim(), type: 'note' })
     newEntries.push({ timestamp: new Date().toISOString(), message: 'Completed', type: 'system', elapsed, valor, score })
@@ -1682,7 +1887,8 @@ export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
       ? Math.floor((Date.now() - new Date(activeMission.startedAt).getTime() - (activeMission.totalPausedMs || 0)) / 1000) : 0
     const newActualSeconds = (activeMission.actualSeconds || 0) + sessionSeconds
     const entry: NoteEntry = { timestamp: new Date().toISOString(), message: `Shelved after ${Math.floor(sessionSeconds / 60)}m ${sessionSeconds % 60}s`, type: 'system', elapsed: sessionSeconds }
-    const existing: NoteEntry[] = activeMission.notes ? JSON.parse(activeMission.notes) : []
+    let existing: NoteEntry[] = []
+    try { existing = activeMission.notes ? JSON.parse(activeMission.notes) : [] } catch { /* skip */ }
     const newNotes = [...existing, entry]
     await fetch(`/api/missions/${activeMission.id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -1749,7 +1955,8 @@ export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
     const elapsedSecs = minutes * 60
     const score = minutes * valorInput * mission.priority
     const entry: NoteEntry = { timestamp: new Date().toISOString(), message: `IRL completed — ${minutes} min`, type: 'system', elapsed: elapsedSecs, valor: valorInput, score }
-    const existing: NoteEntry[] = mission.notes ? JSON.parse(mission.notes) : []
+    let existing: NoteEntry[] = []
+    try { existing = mission.notes ? JSON.parse(mission.notes) : [] } catch { /* skip */ }
     const newNotes = [...existing, entry]
     await fetch(`/api/missions/${mission.id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -1847,7 +2054,12 @@ export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
             onEngage={() => handleEngage(popupMission)}
             onUpdate={(updates) => handleUpdateMission(updates, popupMission)}
             onDeleteNoteEntry={(idx) => deleteNoteEntry(popupMission.id, idx, popupMission.notes)}
-            onIRLComplete={(mins, val) => handleIRLComplete(popupMission, mins, val)} />
+            onIRLComplete={(mins, val) => handleIRLComplete(popupMission, mins, val)}
+            onRefetch={async () => {
+              await fetchMissions()
+              const res = await fetch(`/api/missions/${popupMission.id}`)
+              if (res.ok) { const fresh = await res.json(); setPopupMission(fresh) }
+            }} />
         )}
 
         {switchConfirm && (

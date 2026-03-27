@@ -186,7 +186,7 @@ describe('AnorakProPanel — AbortController + setIsAgentRunning', () => {
     // Find the consumeSSE function's finally block (not the chat handler's)
     const consumeIdx = source.indexOf('const consumeSSE')
     expect(consumeIdx).toBeGreaterThan(-1)
-    const consumeSource = source.substring(consumeIdx, consumeIdx + 3000)
+    const consumeSource = source.substring(consumeIdx, consumeIdx + 4000)
     const finallyIdx = consumeSource.indexOf('} finally {')
     expect(finallyIdx).toBeGreaterThan(-1)
     const afterFinally = consumeSource.substring(finallyIdx, finallyIdx + 200)
@@ -196,7 +196,7 @@ describe('AnorakProPanel — AbortController + setIsAgentRunning', () => {
   it('cleans up abortRef in finally block', () => {
     const consumeIdx = source.indexOf('const consumeSSE')
     expect(consumeIdx).toBeGreaterThan(-1)
-    const consumeSource = source.substring(consumeIdx, consumeIdx + 3000)
+    const consumeSource = source.substring(consumeIdx, consumeIdx + 4000)
     const finallyIdx = consumeSource.indexOf('} finally {')
     const afterFinally = consumeSource.substring(finallyIdx, finallyIdx + 200)
     expect(afterFinally).toContain('if (abortRef.current === controller) abortRef.current = null')

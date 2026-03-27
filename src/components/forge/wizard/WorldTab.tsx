@@ -4,8 +4,9 @@
 
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useOasisStore } from '../../../store/oasisStore'
+import type { TerrainParams } from '../../../lib/forge/terrain-generator'
 import type { WorldLightType } from '../../../lib/conjure/types'
 import { LIGHT_INTENSITY_MAX, LIGHT_INTENSITY_STEP } from '../../../lib/conjure/types'
 import { GROUND_PRESETS, getTextureUrls } from '../../../lib/forge/ground-textures'
@@ -37,6 +38,43 @@ export function WorldTab({ setError }: WorldTabProps) {
   const addWorldLight = useOasisStore(s => s.addWorldLight)
   const updateWorldLight = useOasisStore(s => s.updateWorldLight)
   const removeWorldLight = useOasisStore(s => s.removeWorldLight)
+
+  // ─═̷─ Terrain ─═̷─
+  const terrainParams = useOasisStore(s => s.terrainParams)
+  const terrainLoading = useOasisStore(s => s.terrainLoading)
+  const setTerrainParams = useOasisStore(s => s.setTerrainParams)
+  const setTerrainLoading = useOasisStore(s => s.setTerrainLoading)
+  const [terrainPrompt, setTerrainPrompt] = useState('')
+  const [terrainError, setTerrainError] = useState<string | null>(null)
+  const sliderTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const [sliderLocal, setSliderLocal] = useState<Record<string, number>>({})
+
+  const handleTerrainGenerate = useCallback(async () => {
+    if (!terrainPrompt.trim()) return
+    setTerrainLoading(true)
+    setTerrainError(null)
+    try {
+      const res = await fetch('/api/terrain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: terrainPrompt.trim() }),
+      })
+      if (!res.ok) { const e = await res.json().catch(() => ({})); setTerrainError(e.error || `HTTP ${res.status}`); return }
+      const data = await res.json()
+      setTerrainParams(data.params as TerrainParams)
+      setTerrainPrompt('')
+    } catch (err) { setTerrainError(`Network error: ${err}`) }
+    finally { setTerrainLoading(false) }
+  }, [terrainPrompt, setTerrainParams, setTerrainLoading])
+
+  const debouncedTerrainSlider = useCallback((field: string, value: number) => {
+    setSliderLocal(prev => ({ ...prev, [field]: value }))
+    if (sliderTimers.current[field]) clearTimeout(sliderTimers.current[field])
+    sliderTimers.current[field] = setTimeout(() => {
+      const current = useOasisStore.getState().terrainParams
+      if (current) useOasisStore.getState().setTerrainParams({ ...current, [field]: value })
+    }, 200)
+  }, [])
 
   // ─═̷─ World management ─═̷─
   const exportCurrentWorld = useOasisStore(s => s.exportCurrentWorld)
@@ -248,6 +286,86 @@ export function WorldTab({ setError }: WorldTabProps) {
             </button>
           </div>
         )}
+        </>)}
+      </div>
+
+      {/* ░▒▓█ TERRAIN — Simplex noise heightmap terrain █▓▒░ */}
+      <div>
+        <button onClick={() => toggleSection('terrain')} className="w-full flex items-center justify-between px-2.5 py-1.5 -mx-0.5 rounded-md border border-teal-500/20 bg-teal-950/40 hover:bg-teal-900/30 hover:border-teal-400/30 transition-all duration-150 group cursor-pointer mb-1.5">
+          <span className="text-[11px] text-teal-300/90 uppercase tracking-wider font-mono font-medium flex items-center gap-1.5">
+            <span className={`text-xs text-teal-400/70 transition-transform duration-150 inline-block ${collapsedSections.has('terrain') ? '' : 'rotate-90'}`}>&#9654;</span>
+            Terrain
+          </span>
+          <span className="text-[10px] text-teal-400/50 font-mono">
+            {terrainParams ? terrainParams.name : 'none'}
+          </span>
+        </button>
+        {!collapsedSections.has('terrain') && (<>
+          {/* Generate from prompt */}
+          <div className="flex gap-1.5 mb-2">
+            <input type="text" value={terrainPrompt} onChange={e => setTerrainPrompt(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && !terrainLoading && handleTerrainGenerate()}
+              placeholder="volcanic island, coral reefs..."
+              className="flex-1 bg-black/40 border border-teal-500/20 rounded px-2 py-1 text-[10px] font-mono text-gray-300 placeholder:text-gray-600 focus:border-teal-400/50 focus:outline-none" />
+            <button onClick={handleTerrainGenerate} disabled={terrainLoading || !terrainPrompt.trim()}
+              className="px-2.5 py-1 rounded text-[10px] font-mono font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30 hover:bg-teal-500/30 disabled:opacity-30 transition-all shrink-0">
+              {terrainLoading ? '...' : 'Generate'}
+            </button>
+          </div>
+
+          {terrainError && (
+            <div className="text-[9px] text-red-400 font-mono mb-2 px-1">{terrainError}</div>
+          )}
+
+          {/* Active terrain controls */}
+          {terrainParams && (
+            <div className="space-y-2">
+              <div className="text-[10px] font-mono text-teal-300/70 px-1 flex items-center justify-between">
+                <span>{terrainParams.name}</span>
+                <span className="text-gray-500">seed: {terrainParams.seed}</span>
+              </div>
+
+              {/* Sliders */}
+              <div className="space-y-1.5 px-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] text-gray-400 font-mono w-16 shrink-0">Height</span>
+                  <input type="range" min="1" max="30" step="0.5"
+                    defaultValue={terrainParams.heightScale}
+                    onChange={e => debouncedTerrainSlider('heightScale', parseFloat(e.target.value))}
+                    className="flex-1 accent-teal-400 h-1" />
+                  <span className="text-[9px] text-teal-400/70 font-mono w-8 text-right">{sliderLocal.heightScale ?? terrainParams.heightScale}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] text-gray-400 font-mono w-16 shrink-0">Water</span>
+                  <input type="range" min="0" max="0.8" step="0.02"
+                    defaultValue={terrainParams.waterLevel}
+                    onChange={e => debouncedTerrainSlider('waterLevel', parseFloat(e.target.value))}
+                    className="flex-1 accent-sky-400 h-1" />
+                  <span className="text-[9px] text-sky-400/70 font-mono w-8 text-right">{(sliderLocal.waterLevel ?? terrainParams.waterLevel).toFixed(2)}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] text-gray-400 font-mono w-16 shrink-0">Detail</span>
+                  <input type="range" min="1" max="8" step="1"
+                    defaultValue={terrainParams.noiseOctaves}
+                    onChange={e => debouncedTerrainSlider('noiseOctaves', parseInt(e.target.value))}
+                    className="flex-1 accent-amber-400 h-1" />
+                  <span className="text-[9px] text-amber-400/70 font-mono w-8 text-right">{sliderLocal.noiseOctaves ?? terrainParams.noiseOctaves}</span>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex gap-1.5 px-1">
+                <button onClick={() => setTerrainParams({ ...terrainParams, seed: Math.floor(Math.random() * 999999) })}
+                  className="flex-1 text-[9px] font-mono text-teal-400/70 border border-teal-500/20 rounded px-1.5 py-1 hover:bg-teal-500/10 transition-colors">
+                  Reseed
+                </button>
+                <button onClick={() => setTerrainParams(null)}
+                  className="text-[9px] font-mono text-red-400/60 border border-red-500/20 rounded px-1.5 py-1 hover:bg-red-500/10 hover:text-red-300 transition-colors">
+                  Clear
+                </button>
+              </div>
+            </div>
+          )}
         </>)}
       </div>
 

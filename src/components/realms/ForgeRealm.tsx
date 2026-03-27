@@ -13,6 +13,7 @@ import { Html } from '@react-three/drei'
 import * as THREE from 'three'
 import { useOasisStore } from '../../store/oasisStore'
 import { GroundPlane } from '../forge/GroundPlane'
+import { TerrainMesh } from '../forge/TerrainMesh'
 import { WorldObjectsRenderer } from '../forge/WorldObjects'
 import { GROUND_PRESETS } from '../../lib/forge/ground-textures'
 import { useThumbnailGenerator } from '../../hooks/useThumbnailGenerator'
@@ -116,6 +117,7 @@ export function ForgeRealm() {
   const avatar3dUrl = useOasisStore(s => s.avatar3dUrl)
   const isViewMode = useOasisStore(s => s.isViewMode)
   const customGroundPresets = useOasisStore(s => s.customGroundPresets)
+  const terrainParams = useOasisStore(s => s.terrainParams)
   const { settings } = useContext(SettingsContext)
 
   // ░▒▓ Background thumbnail gen — renders missing thumbnails offscreen ▓▒░
@@ -142,6 +144,9 @@ export function ForgeRealm() {
 
       {/* GROUND — GroundPlane handles base ground + painted tiles + paint mode */}
       <GroundPlane preset={groundPreset} groundTiles={groundTiles} paintMode={paintMode} customGroundPresets={customGroundPresets} />
+
+      {/* TERRAIN — Simplex noise heightmap terrain */}
+      {terrainParams && <TerrainMesh params={terrainParams} />}
 
       {/* ░▒▓ WORLD OBJECTS — shared renderer for all placed assets ▓▒░ */}
       <WorldObjectsRenderer />
