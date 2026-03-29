@@ -237,6 +237,78 @@ export async function updateObjectCount(id: string, userId: string, count: numbe
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// ASSET USAGE — Count how many times an asset appears across ALL worlds
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface AssetUsageResult {
+  totalCount: number
+  worldCount: number
+  currentWorldCount: number
+}
+
+/**
+ * Count how many times an asset URL or conjured asset ID is used across all worlds.
+ * Searches catalogPlacements (imageUrl/videoUrl/audioUrl), behaviors (audioUrl),
+ * and customGroundPresets (customTextureUrl) for media.
+ * Searches conjuredAssetIds for conjured assets.
+ */
+export async function countAssetUsageAcrossWorlds(
+  userId: string,
+  assetUrl: string,
+  currentWorldId: string,
+  type: 'media' | 'conjured' = 'media'
+): Promise<AssetUsageResult> {
+  const worlds = await prisma.world.findMany({
+    where: { userId },
+    select: { id: true, data: true },
+  })
+
+  let totalCount = 0
+  let worldCount = 0
+  let currentWorldCount = 0
+
+  for (const world of worlds) {
+    if (!world.data) continue
+    try {
+      const state = JSON.parse(world.data) as WorldState
+      let count = 0
+
+      if (type === 'media') {
+        // 1. catalogPlacements — imageUrl, videoUrl, audioUrl
+        count += (state.catalogPlacements || []).filter(
+          p => p.imageUrl === assetUrl || p.videoUrl === assetUrl || p.audioUrl === assetUrl
+        ).length
+
+        // 2. behaviors — audioUrl on any object (loudspeakers via behavior system)
+        if (state.behaviors) {
+          for (const b of Object.values(state.behaviors)) {
+            if (b && b.audioUrl === assetUrl) count++
+          }
+        }
+
+        // 3. customGroundPresets — images used as ground tiles
+        if (state.customGroundPresets) {
+          count += state.customGroundPresets.filter(
+            p => p.customTextureUrl === assetUrl
+          ).length
+        }
+      } else {
+        // Count in conjuredAssetIds — match asset ID
+        count = (state.conjuredAssetIds || []).filter(id => id === assetUrl).length
+      }
+
+      if (count > 0) {
+        totalCount += count
+        worldCount++
+        if (world.id === currentWorldId) currentWorldCount = count
+      }
+    } catch { /* skip corrupt world data */ }
+  }
+
+  return { totalCount, worldCount, currentWorldCount }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // SNAPSHOTS — Auto-backup. Born from pain.
 // ═══════════════════════════════════════════════════════════════════════════
 

@@ -27,8 +27,13 @@ import { usePricing, getConjurePriceKey } from '../../hooks/usePricing'
 import { extractPartialCraftData } from '../../lib/craft-stream'
 import { addToSceneLibrary, getSceneLibrary } from '../../lib/forge/scene-library'
 import { useUILayer } from '@/lib/input-manager'
+import { AssetCard, RegenAllButton } from './AssetCard'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
+
+function readCols(key: string, fallback: number): number {
+  try { const v = parseInt(localStorage.getItem(`oasis-wizard-cols-${key}`) || ''); return v >= 1 && v <= 6 ? v : fallback } catch { return fallback }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // STATUS BADGE — Visual feedback for conjuration progress
@@ -417,7 +422,7 @@ interface InFlightImage {
   error?: string
 }
 
-function ImagineTab() {
+function ImagineTab({ cols, setLightboxUrl }: { cols: number; setLightboxUrl: (url: string | null) => void }) {
   const [prompt, setPrompt] = useState('')
   const [selectedModel, setSelectedModel] = useState<string>('gemini-flash')
   const [inFlight, setInFlight] = useState<InFlightImage[]>([])
@@ -429,6 +434,7 @@ function ImagineTab() {
   const customGroundPresets = useOasisStore(s => s.customGroundPresets)
   const enterPaintMode = useOasisStore(s => s.enterPaintMode)
   const enterPlacementMode = useOasisStore(s => s.enterPlacementMode)
+  const placedCatalogAssets = useOasisStore(s => s.placedCatalogAssets)
   const { pricing } = usePricing()
   const imagineCost = pricing['imagine'] ?? 0.05
 
@@ -468,14 +474,16 @@ function ImagineTab() {
     setInFlight(prev => prev.filter(f => f.id !== flightId))
   }, [prompt, selectedModel, addGeneratedImage])
 
-  const handleUseAsTile = useCallback((image: { id: string; prompt: string; tileUrl: string; url: string }) => {
+  const handleUseAsTile = useCallback((imageId: string) => {
+    const image = generatedImages.find(i => i.id === imageId)
+    if (!image) return
     const presetId = `custom_${image.id}`
     // Check if already registered
     if (!customGroundPresets.some(p => p.id === presetId)) {
       addCustomGroundPreset({
         id: presetId,
         name: image.prompt.slice(0, 20),
-        icon: '🎨',
+        icon: '\u{1F3A8}',
         color: '#888888',
         assetName: '',
         tileRepeat: 1,
@@ -483,7 +491,7 @@ function ImagineTab() {
       })
     }
     enterPaintMode(presetId)
-  }, [customGroundPresets, addCustomGroundPreset, enterPaintMode])
+  }, [generatedImages, customGroundPresets, addCustomGroundPreset, enterPaintMode])
 
   return (
     <>
@@ -540,13 +548,13 @@ function ImagineTab() {
             <div className="text-[10px] text-pink-400/60 uppercase tracking-widest font-mono mb-1.5">
               Generating ({inFlight.length})
             </div>
-            <div className="grid grid-cols-2 gap-2 mb-2">
+            <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
               {inFlight.map(f => (
                 <div key={f.id} className="relative rounded-lg overflow-hidden border border-pink-500/20 bg-black/40">
                   <div className="w-full aspect-square flex flex-col items-center justify-center p-2">
                     {f.error ? (
                       <>
-                        <div className="text-red-400 text-lg mb-1">✕</div>
+                        <div className="text-red-400 text-lg mb-1">{'\u2715'}</div>
                         <div className="text-[9px] text-red-400 font-mono text-center">{f.error}</div>
                         <button
                           onClick={() => setInFlight(prev => prev.filter(x => x.id !== f.id))}
@@ -555,7 +563,7 @@ function ImagineTab() {
                       </>
                     ) : (
                       <>
-                        <div className="text-2xl mb-2 animate-pulse">🎨</div>
+                        <div className="text-2xl mb-2 animate-pulse">{'\u{1F3A8}'}</div>
                         <div className="text-[9px] text-pink-300 font-mono text-center line-clamp-2">{f.prompt}</div>
                         <div className="text-[8px] text-gray-500 font-mono mt-1">
                           {IMAGINE_MODELS.find(m => m.key === f.model)?.label || f.model}
@@ -573,62 +581,47 @@ function ImagineTab() {
           </div>
         )}
 
-        {/* Gallery */}
+        {/* Gallery — unified AssetCard grid */}
         {generatedImages.length > 0 && (
           <div>
             <div className="text-[10px] text-gray-400 uppercase tracking-widest font-mono mb-1.5">
               Gallery ({generatedImages.length})
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              {[...generatedImages].reverse().map(img => (
-                <div key={img.id} className="group relative rounded-lg overflow-hidden border border-gray-700/30 bg-black/40">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={img.url}
-                    alt={img.prompt}
-                    className="w-full aspect-square object-cover"
-                    loading="lazy"
+            <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+              {[...generatedImages].reverse().map(img => {
+                const isPlaced = placedCatalogAssets.some(ca => ca.imageUrl === img.url)
+                return (
+                  <AssetCard
+                    key={img.id}
+                    id={img.id}
+                    name={img.prompt}
+                    type="media-image"
+                    thumbnailUrl={img.url}
+                    mediaUrl={img.url}
+                    isInWorld={isPlaced}
+                    accentColor="#EC4899"
+                    subtitle={new Date(img.createdAt).toLocaleDateString()}
+                    onClick={() => enterPlacementMode({ type: 'image', name: img.prompt.slice(0, 24), imageUrl: img.url })}
+                    onDelete={() => removeGeneratedImage(img.id)}
+                    onDownload={(_, url) => {
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = `${img.prompt.slice(0, 30).replace(/[^a-zA-Z0-9 ]/g, '').trim() || 'oasis-image'}.${url.split('.').pop() || 'png'}`
+                      a.click()
+                    }}
+                    onUseAsTile={() => handleUseAsTile(img.id)}
+                    onViewFullscreen={() => setLightboxUrl(img.url)}
+                    onPlaceWithFrame={() => enterPlacementMode({ type: 'image', name: img.prompt.slice(0, 24), imageUrl: img.url, imageFrameStyle: 'gilded' })}
                   />
-                  {/* Hover actions overlay */}
-                  <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1.5 p-2">
-                    <div className="text-[9px] text-gray-300 font-mono text-center line-clamp-2 mb-1">{img.prompt}</div>
-                    <div className="flex gap-1 w-full">
-                      <button
-                        onClick={() => enterPlacementMode({ type: 'image', name: img.prompt.slice(0, 24), imageUrl: img.url })}
-                        className="flex-1 text-[10px] px-2 py-1 rounded bg-pink-500/20 text-pink-300 border border-pink-500/30 hover:bg-pink-500/30 transition-colors font-mono"
-                      >
-                        Place
-                      </button>
-                      <button
-                        onClick={() => enterPlacementMode({ type: 'image', name: img.prompt.slice(0, 24), imageUrl: img.url, imageFrameStyle: 'gilded' })}
-                        className="text-[10px] px-2 py-1 rounded bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 hover:bg-yellow-500/30 transition-colors font-mono"
-                        title="Place with golden frame"
-                      >
-                        🖼️
-                      </button>
-                    </div>
-                    <button
-                      onClick={() => handleUseAsTile(img)}
-                      className="w-full text-[10px] px-2 py-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors font-mono"
-                    >
-                      Use as tile
-                    </button>
-                    <button
-                      onClick={() => removeGeneratedImage(img.id)}
-                      className="w-full text-[10px] px-2 py-1 rounded bg-red-500/10 text-red-400/60 border border-red-500/20 hover:bg-red-500/20 hover:text-red-300 transition-colors font-mono"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         )}
 
         {generatedImages.length === 0 && inFlight.length === 0 && (
           <div className="flex flex-col items-center justify-center py-8 text-gray-400">
-            <div className="text-3xl mb-2">🎨</div>
+            <div className="text-3xl mb-2">{'\u{1F3A8}'}</div>
             <div className="text-xs">No images generated yet</div>
             <div className="text-[10px] mt-1 text-gray-500">Type a prompt and hit Imagine</div>
           </div>
@@ -641,7 +634,7 @@ function ImagineTab() {
               Custom Tile Textures ({customGroundPresets.length})
             </div>
             <div className="text-[9px] text-gray-500 font-mono">
-              Available in World tab → Ground palette
+              Available in World tab {'\u2192'} Ground palette
             </div>
           </div>
         )}
@@ -678,14 +671,19 @@ function MediaLightbox({ url, onClose }: { url: string; onClose: () => void }) {
   )
 }
 
-function MediaTab() {
+function MediaTab({ cols }: { cols: number }) {
   const [subTab, setSubTab] = useState<'generate' | 'image' | 'video' | 'audio'>('generate')
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([])
   const [loading, setLoading] = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState<{ url: string; name: string; placedCount: number } | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ url: string; name: string; placedCount: number; worldCount: number } | null>(null)
+  const [loadingUsage, setLoadingUsage] = useState(false)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const enterPlacementMode = useOasisStore(s => s.enterPlacementMode)
   const placedCatalogAssets = useOasisStore(s => s.placedCatalogAssets)
+  const behaviors = useOasisStore(s => s.behaviors)
+  const addCustomGroundPreset = useOasisStore(s => s.addCustomGroundPreset)
+  const customGroundPresets = useOasisStore(s => s.customGroundPresets)
+  const enterPaintMode = useOasisStore(s => s.enterPaintMode)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Fetch media list
@@ -726,21 +724,44 @@ function MediaTab() {
     fetchMedia()
   }, [fetchMedia])
 
-  // Count placed instances
+  // Use-as-tile handler for uploaded images
+  const handleUseAsTile = useCallback((imageUrl: string) => {
+    const presetId = `custom_media_${imageUrl.replace(/[^a-zA-Z0-9]/g, '_').slice(-30)}`
+    if (!customGroundPresets.some(p => p.id === presetId)) {
+      const name = mediaItems.find(m => m.url === imageUrl)?.name || 'media tile'
+      addCustomGroundPreset({
+        id: presetId,
+        name: name.slice(0, 20),
+        icon: '\u{1F3A8}',
+        color: '#888888',
+        assetName: '',
+        tileRepeat: 1,
+        customTextureUrl: imageUrl,
+      })
+    }
+    enterPaintMode(presetId)
+  }, [mediaItems, customGroundPresets, addCustomGroundPreset, enterPaintMode])
+
+  // Count placed instances — check all media URL fields
   const countPlaced = useCallback((url: string) => {
-    return placedCatalogAssets.filter(a =>
-      a.imageUrl === url || a.videoUrl === url
+    let count = placedCatalogAssets.filter(a =>
+      a.imageUrl === url || a.videoUrl === url || a.audioUrl === url
     ).length
-  }, [placedCatalogAssets])
+    // Also check behaviors (audio attached via behavior system)
+    for (const b of Object.values(behaviors)) {
+      if (b && b.audioUrl === url) count++
+    }
+    return count
+  }, [placedCatalogAssets, behaviors])
 
   const filtered = mediaItems.filter(m => subTab === 'generate' ? false : m.type === subTab)
   const formatSize = (bytes: number) => bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)}MB` : `${(bytes / 1024).toFixed(0)}KB`
 
   const subTabs = [
-    { key: 'generate' as const, label: 'Generate', icon: '🎨' },
-    { key: 'image' as const, label: 'Images', icon: '🖼️' },
-    { key: 'video' as const, label: 'Videos', icon: '🎬' },
-    { key: 'audio' as const, label: 'Audio', icon: '🎵' },
+    { key: 'generate' as const, label: 'Generate', icon: '\u{1F3A8}' },
+    { key: 'image' as const, label: 'Images', icon: '\u{1F5BC}' },
+    { key: 'video' as const, label: 'Videos', icon: '\u{1F3AC}' },
+    { key: 'audio' as const, label: 'Audio', icon: '\u{1F3B5}' },
   ]
 
   return (
@@ -774,8 +795,8 @@ function MediaTab() {
         </label>
       </div>
 
-      {/* Generate sub-tab = ImagineTab */}
-      {subTab === 'generate' && <ImagineTab />}
+      {/* Generate sub-tab = ImagineTab (passes cols + lightbox) */}
+      {subTab === 'generate' && <ImagineTab cols={cols} setLightboxUrl={setLightboxUrl} />}
 
       {/* Media browser */}
       {subTab !== 'generate' && (
@@ -790,67 +811,61 @@ function MediaTab() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
             {filtered.map(item => {
               const placedCount = countPlaced(item.url)
-              // placedCount used by Delete button + Place button
+              const mediaType = item.type === 'image' ? 'media-image' as const
+                : item.type === 'video' ? 'media-video' as const
+                : 'media-audio' as const
               return (
-                <div key={item.url} className="group relative rounded-lg overflow-hidden border border-gray-700/30 bg-black/40">
-                  {/* Thumbnail / preview + playback */}
-                  {item.type === 'image' && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={item.url} alt={item.name} className="w-full aspect-square object-cover cursor-pointer" loading="lazy"
-                      onClick={() => setLightboxUrl(item.url)} />
-                  )}
-                  {item.type === 'video' && (
-                    <video src={item.url} controls preload="metadata" playsInline className="w-full aspect-video object-cover" />
-                  )}
-                  {item.type === 'audio' && (
-                    <div className="w-full p-2 flex flex-col items-center justify-center bg-gray-900 gap-2">
-                      <div className="text-3xl">🎵</div>
-                      <audio src={item.url} controls className="w-full h-8" />
-                    </div>
-                  )}
-
-                  {/* Info + actions overlay */}
-                  <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1.5 p-2">
-                    <div className="text-[9px] text-gray-300 font-mono text-center truncate w-full">{item.name}</div>
-                    <div className="text-[8px] text-gray-500 font-mono">{formatSize(item.size)}</div>
-
-                    {/* Place button */}
-                    <button
-                      onClick={() => {
-                        if (item.type === 'image') {
-                          enterPlacementMode({ type: 'image', name: item.name, imageUrl: item.url })
-                        } else if (item.type === 'video') {
-                          enterPlacementMode({ type: 'video', name: item.name, videoUrl: item.url })
-                        } else if (item.type === 'audio') {
-                          // Place the conjured loudspeaker model with audio pre-assigned
-                          enterPlacementMode({ type: 'conjured', name: 'Loudspeaker', path: '/conjured/conj_mn6ogn4ae05j.glb', defaultScale: 0.5 })
-                          // Audio URL will be assigned after placement via behaviors
-                          // Store it temporarily so we can wire it up
-                          ;(window as any).__pendingAudioUrl = item.url
-                        }
-                      }}
-                      className="w-full text-[10px] px-2 py-1 rounded bg-pink-500/20 text-pink-300 border border-pink-500/30 hover:bg-pink-500/30 transition-colors"
-                    >
-                      Place
-                    </button>
-
-                    {/* Placed count */}
-                    {placedCount > 0 && (
-                      <div className="text-[8px] text-sky-400 font-mono">{placedCount} placed</div>
-                    )}
-
-                    {/* Delete */}
-                    <button
-                      onClick={() => setDeleteTarget({ url: item.url, name: item.name, placedCount })}
-                      className="w-full text-[10px] px-2 py-1 rounded bg-red-500/10 text-red-400/60 border border-red-500/20 hover:bg-red-500/20 hover:text-red-300 transition-colors"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
+                <AssetCard
+                  key={item.url}
+                  id={item.url}
+                  name={item.name}
+                  type={mediaType}
+                  thumbnailUrl={item.type === 'image' ? item.url : undefined}
+                  mediaUrl={item.url}
+                  isInWorld={placedCount > 0}
+                  accentColor="#EC4899"
+                  subtitle={formatSize(item.size)}
+                  onClick={() => {
+                    if (item.type === 'image') {
+                      // Click = placement mode (NOT lightbox)
+                      enterPlacementMode({ type: 'image', name: item.name, imageUrl: item.url })
+                    } else if (item.type === 'video') {
+                      // Click on video = placement mode
+                      enterPlacementMode({ type: 'video', name: item.name, videoUrl: item.url })
+                    } else if (item.type === 'audio') {
+                      enterPlacementMode({ type: 'conjured', name: 'Loudspeaker', path: '/conjured/conj_mn6ogn4ae05j.glb', defaultScale: 0.5 })
+                      ;(window as any).__pendingAudioUrl = item.url
+                    }
+                  }}
+                  onDelete={() => {
+                    // Show modal immediately with local count, then fetch cross-world usage
+                    setDeleteTarget({ url: item.url, name: item.name, placedCount, worldCount: 0 })
+                    setLoadingUsage(true)
+                    const activeWorldId = useOasisStore.getState().activeWorldId
+                    fetch(`${OASIS_BASE}/api/worlds/asset-usage?url=${encodeURIComponent(item.url)}&currentWorldId=${encodeURIComponent(activeWorldId)}&type=media`)
+                      .then(r => r.json())
+                      .then((usage: { totalCount: number; worldCount: number }) => {
+                        setDeleteTarget(prev => prev ? { ...prev, placedCount: usage.totalCount, worldCount: usage.worldCount } : prev)
+                      })
+                      .catch(() => { /* keep local count on error */ })
+                      .finally(() => setLoadingUsage(false))
+                  }}
+                  onDownload={item.type === 'image' ? (_, url) => {
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = `${item.name}`
+                    a.click()
+                  } : undefined}
+                  onUseAsTile={item.type === 'image' ? () => handleUseAsTile(item.url) : undefined}
+                  onViewFullscreen={item.type === 'image' ? () => setLightboxUrl(item.url) : undefined}
+                  onPlaceWithFrame={item.type === 'image' ? () => enterPlacementMode({ type: 'image', name: item.name, imageUrl: item.url, imageFrameStyle: 'gilded' }) : undefined}
+                  badges={placedCount > 0 ? (
+                    <span className="text-[8px] text-sky-400 font-mono">{placedCount} placed</span>
+                  ) : undefined}
+                />
               )
             })}
           </div>
@@ -863,8 +878,10 @@ function MediaTab() {
           isOpen={!!deleteTarget}
           itemName={deleteTarget?.name || ''}
           placedCount={deleteTarget?.placedCount}
+          worldCount={deleteTarget?.worldCount}
+          loadingUsage={loadingUsage}
           onConfirm={() => deleteTarget && handleDelete(deleteTarget.url)}
-          onCancel={() => setDeleteTarget(null)}
+          onCancel={() => { setDeleteTarget(null); setLoadingUsage(false) }}
         />,
         document.body
       )}
@@ -961,6 +978,15 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
   // Same for image section
   const [imgAutoRig, setImgAutoRig] = useState(false)
 
+  // ░▒▓ Grid column counts — per-tab, localStorage-persisted ▓▒░
+  const [colsCatalog, setColsCatalog] = useState(() => readCols('catalog', 3))
+  const [colsCrafted, setColsCrafted] = useState(() => readCols('crafted', 3))
+  const [colsConjured, setColsConjured] = useState(() => readCols('conjured', 3))
+  const [colsMedia, setColsMedia] = useState(() => readCols('media', 3))
+  const updateCols = (key: string, v: number, setter: (v: number) => void) => {
+    setter(v); try { localStorage.setItem(`oasis-wizard-cols-${key}`, String(v)) } catch {}
+  }
+
   // ░▒▓ Convert dropped/selected image file to base64 data URI ▓▒░
   const handleImageFile = useCallback((file: File) => {
     if (!file.type.startsWith('image/')) return
@@ -975,7 +1001,8 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
 
   // ─═̷─ Conjuration engine ─═̷─
   const { conjuredAssets, startConjure, processAsset, deleteAsset, activeCount } = useConjure()
-  const [conjureDeleteTarget, setConjureDeleteTarget] = useState<{ id: string; name: string } | null>(null)
+  const [conjureDeleteTarget, setConjureDeleteTarget] = useState<{ id: string; name: string; placedCount?: number; worldCount?: number } | null>(null)
+  const [conjureLoadingUsage, setConjureLoadingUsage] = useState(false)
   const updateConjuredAsset = useOasisStore(s => s.updateConjuredAsset)
 
   // ░▒▓ Rename — PATCH to server + update local store ▓▒░
@@ -1061,11 +1088,14 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
   const removeAgentWindow = useOasisStore(s => s.removeAgentWindow)
   const focusAgentWindow = useOasisStore(s => s.focusAgentWindow)
   const generatedImages = useOasisStore(s => s.generatedImages)
+  const removeGeneratedImage = useOasisStore(s => s.removeGeneratedImage)
+  const addCustomGroundPreset = useOasisStore(s => s.addCustomGroundPreset)
   const [assetCategory, setAssetCategory] = useState<string>('all')
   const [assetSubTab, setAssetSubTab] = useState<'catalog' | 'conjured' | 'crafted' | 'images'>('catalog')
   const [previewAsset, setPreviewAsset] = useState<AssetDefinition | null>(null)
   const [previewConjured, setPreviewConjured] = useState<ConjuredAsset | null>(null)
   const [previewCrafted, setPreviewCrafted] = useState<CraftedScene | null>(null)
+  const [assetsLightboxUrl, setAssetsLightboxUrl] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const savedScrollTop = useRef(0)
 
@@ -2536,47 +2566,34 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                       {cat}
                     </button>
                   ))}
-                  <button
-                    onClick={() => catalogThumbGen.generate()}
-                    disabled={catalogThumbGen.running}
-                    className="ml-auto text-[9px] px-1.5 py-0.5 rounded font-mono text-yellow-500/50 border border-yellow-500/20 hover:text-yellow-400 hover:border-yellow-500/40 disabled:opacity-30 transition-colors"
-                    title="Render thumbnails for all catalog assets (takes ~1 min)"
-                  >
-                    {catalogThumbGen.running
-                      ? `${catalogThumbGen.done}/${catalogThumbGen.total}`
-                      : '\u{1F4F7}'}
-                  </button>
+                  <div className="ml-auto">
+                    <RegenAllButton
+                      onClick={() => catalogThumbGen.generate()}
+                      running={catalogThumbGen.running}
+                      done={catalogThumbGen.done}
+                      total={catalogThumbGen.total}
+                    />
+                  </div>
                 </div>
 
-                {/* Catalog grid — thumbnails with emoji fallback */}
-                <div className="grid grid-cols-3 gap-1.5">
+                {/* Catalog grid — unified AssetCard */}
+                <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${colsCatalog}, minmax(0, 1fr))` }}>
                   {ASSET_CATALOG
                     .filter(a => assetCategory === 'all' || a.category === assetCategory)
                     .map(asset => (
-                    <button
+                    <AssetCard
                       key={asset.id}
+                      id={asset.id}
+                      name={asset.name}
+                      type="catalog"
+                      thumbnailUrl={`/thumbs/${asset.id}.jpg`}
+                      modelUrl={asset.path}
+                      subtitle={asset.category}
                       onClick={() => {
                         if (scrollRef.current) savedScrollTop.current = scrollRef.current.scrollTop
                         setPreviewAsset(asset)
                       }}
-                      className="rounded-lg border p-1.5 transition-all duration-200 text-left hover:border-yellow-500/40 hover:bg-yellow-500/5 group"
-                      style={{
-                        background: 'rgba(15, 15, 15, 0.8)',
-                        borderColor: 'rgba(255, 255, 255, 0.06)',
-                      }}
-                      title={`${asset.name} (${asset.category}) — click to preview`}
-                    >
-                      <div className="w-full aspect-square rounded bg-black/40 flex items-center justify-center mb-1 overflow-hidden">
-                        <AssetThumb
-                          src={`${OASIS_BASE}/thumbs/${asset.id}.jpg`}
-                          fallback={asset.category === 'enemies' ? '\u{1F916}' : asset.category === 'guns' ? '\u{1F52B}' : asset.category === 'pickups' ? '\u{1F48E}' : asset.category === 'character' ? '\u{1F9D1}' : asset.category === 'nature' ? '\u{1F332}' : asset.category === 'props' ? '\u{1F4E6}' : asset.category === 'scifi' ? '\u{1F680}' : asset.category === 'fantasy' ? '\u{1F9D9}' : asset.category === 'village' ? '\u{1F3E0}' : asset.category === 'avatar' ? '\u{1F9D1}' : '\u{1F3D7}'}
-                          alt={asset.name}
-                        />
-                      </div>
-                      <div className="text-[9px] text-gray-400 group-hover:text-gray-200 truncate transition-colors">
-                        {asset.name}
-                      </div>
-                    </button>
+                    />
                   ))}
                 </div>
               </>
@@ -2592,48 +2609,23 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                     <div className="text-[10px] mt-1 text-gray-500">Use the Conjure tab to create 3D models from text</div>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-1.5">
+                  <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${colsConjured}, minmax(0, 1fr))` }}>
                     {[...conjuredAssets].filter(a => a.status === 'ready').sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(asset => (
-                      <button
+                      <AssetCard
                         key={asset.id}
+                        id={asset.id}
+                        name={asset.displayName || asset.prompt.slice(0, 30)}
+                        type="conjured"
+                        thumbnailUrl={asset.thumbnailUrl || undefined}
+                        modelUrl={asset.glbPath ? `${OASIS_BASE}${asset.glbPath}` : undefined}
+                        isInWorld={worldConjuredAssetIds.includes(asset.id)}
+                        accentColor="#F97316"
+                        subtitle={`${asset.provider} / ${asset.tier}`}
                         onClick={() => {
                           savedScrollTop.current = scrollRef.current?.scrollTop ?? 0
                           setPreviewConjured(asset)
                         }}
-                        className={`rounded-lg border p-1.5 transition-all duration-200 text-left group ${
-                          worldConjuredAssetIds.includes(asset.id)
-                            ? 'border-orange-500/30 bg-orange-500/5'
-                            : 'hover:border-orange-500/40 hover:bg-orange-500/5'
-                        }`}
-                        style={{
-                          background: worldConjuredAssetIds.includes(asset.id) ? undefined : 'rgba(15, 15, 15, 0.8)',
-                          borderColor: worldConjuredAssetIds.includes(asset.id) ? undefined : 'rgba(255, 255, 255, 0.06)',
-                        }}
-                        title={`${asset.displayName || asset.prompt} — click to preview`}
-                      >
-                        <div className="w-full aspect-square rounded bg-black/40 flex items-center justify-center mb-1 overflow-hidden">
-                          <AssetThumb
-                            src={asset.thumbnailUrl
-                              ? (asset.thumbnailUrl.startsWith('http') ? asset.thumbnailUrl : `${OASIS_BASE}${asset.thumbnailUrl}`)
-                              : ''}
-                            fallback={'\u{1F52E}'}
-                            alt={asset.displayName || asset.prompt}
-                          />
-                        </div>
-                        <div
-                          className="text-[9px] text-gray-400 group-hover:text-gray-200 truncate transition-colors cursor-text"
-                          onDoubleClick={(e) => {
-                            e.stopPropagation()
-                            e.preventDefault()
-                            const name = window.prompt('Rename asset:', asset.displayName || asset.prompt)
-                            if (name && name.trim()) renameAsset(asset.id, name.trim())
-                          }}
-                          title="Double-click to rename"
-                        >
-                          {asset.displayName || asset.prompt.slice(0, 30)}
-                        </div>
-                        <div className="text-[8px] text-gray-400 truncate flex items-center gap-1 flex-wrap">
-                          <span>{asset.provider} / {asset.tier}</span>
+                        badges={<>
                           {asset.action === 'rig' && (
                             <span className="px-1 py-px rounded text-[7px] font-mono bg-amber-500/20 text-amber-400 border border-amber-500/30">{'\u2699'} rigged</span>
                           )}
@@ -2643,11 +2635,8 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                           {asset.characterMode && !asset.action && (
                             <span className="px-1 py-px rounded text-[7px] font-mono bg-purple-500/15 text-purple-400/60">{'\uD83E\uDDCD'}</span>
                           )}
-                          {worldConjuredAssetIds.includes(asset.id) && (
-                            <span className="text-orange-400/60">placed</span>
-                          )}
-                        </div>
-                      </button>
+                        </>}
+                      />
                     ))}
                   </div>
                 )}
@@ -2664,46 +2653,25 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                     <div className="text-[10px] mt-1 text-gray-500">Use the Craft tab to build scenes from text</div>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-1.5">
+                  <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${colsCrafted}, minmax(0, 1fr))` }}>
                     {[...sceneLibrary].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(scene => {
                       const isInWorld = craftedScenes.some(s => s.id === scene.id)
                       return (
-                        <button
+                        <AssetCard
                           key={scene.id}
+                          id={scene.id}
+                          name={scene.name}
+                          type="crafted"
+                          thumbnailUrl={scene.thumbnailUrl || `/crafted-thumbs/${scene.id}.jpg`}
+                          isInWorld={isInWorld}
+                          accentColor="#3B82F6"
+                          subtitle={`${scene.objects.length} primitives`}
                           onClick={() => {
                             savedScrollTop.current = scrollRef.current?.scrollTop ?? 0
                             setPreviewCrafted(scene)
                           }}
-                          className={`rounded-lg border p-1.5 transition-all duration-200 text-left group ${
-                            isInWorld
-                              ? 'border-blue-500/30 bg-blue-500/5'
-                              : 'hover:border-blue-500/40 hover:bg-blue-500/5'
-                          }`}
-                          style={{
-                            background: isInWorld ? undefined : 'rgba(15, 15, 15, 0.8)',
-                            borderColor: isInWorld ? undefined : 'rgba(255, 255, 255, 0.06)',
-                          }}
-                          title={`${scene.name} — click to preview`}
-                        >
-                          <div className="w-full aspect-square rounded bg-black/40 flex items-center justify-center mb-1 overflow-hidden">
-                            <AssetThumb
-                              src={scene.thumbnailUrl
-                                ? (scene.thumbnailUrl.startsWith('http') ? scene.thumbnailUrl : `${OASIS_BASE}${scene.thumbnailUrl}`)
-                                : `${OASIS_BASE}/crafted-thumbs/${scene.id}.jpg`}
-                              fallback={'\u{1F3A8}'}
-                              alt={scene.name}
-                            />
-                          </div>
-                          <div className="text-[9px] text-gray-400 group-hover:text-gray-200 truncate transition-colors">
-                            {scene.name}
-                          </div>
-                          <div className="text-[8px] text-gray-400 truncate">
-                            {scene.objects.length} primitives
-                            {isInWorld && (
-                              <span className="ml-1 text-blue-400/60">placed</span>
-                            )}
-                          </div>
-                        </button>
+                          onDelete={() => deleteFromLibrary(scene.id)}
+                        />
                       )
                     })}
                   </div>
@@ -2716,46 +2684,51 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
               <>
                 {generatedImages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-8 text-gray-400">
-                    <div className="text-3xl mb-2">🎨</div>
+                    <div className="text-3xl mb-2">{'\u{1F3A8}'}</div>
                     <div className="text-xs">No generated images yet</div>
                     <div className="text-[10px] mt-1 text-gray-500">Use the Imagine tab to generate images</div>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-1.5">
+                  <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${colsMedia}, minmax(0, 1fr))` }}>
                     {[...generatedImages].reverse().map(img => {
                       const isPlaced = placedCatalogAssets.some(ca => ca.imageUrl === img.url)
                       return (
-                        <div
+                        <AssetCard
                           key={img.id}
-                          className={`rounded-lg border p-1.5 transition-all duration-200 text-left group cursor-pointer ${
-                            isPlaced ? 'border-pink-500/30 bg-pink-500/5' : 'hover:border-pink-500/40 hover:bg-pink-500/5'
-                          }`}
-                          style={{
-                            background: isPlaced ? undefined : 'rgba(15, 15, 15, 0.8)',
-                            borderColor: isPlaced ? undefined : 'rgba(255, 255, 255, 0.06)',
+                          id={img.id}
+                          name={img.prompt}
+                          type="media-image"
+                          thumbnailUrl={img.url}
+                          mediaUrl={img.url}
+                          isInWorld={isPlaced}
+                          accentColor="#EC4899"
+                          subtitle={new Date(img.createdAt).toLocaleDateString()}
+                          onClick={() => enterPlacementMode({ type: 'image', name: img.prompt.slice(0, 24), imageUrl: img.url })}
+                          onDelete={() => removeGeneratedImage(img.id)}
+                          onDownload={(_, url) => {
+                            const a = document.createElement('a')
+                            a.href = url
+                            a.download = `${img.prompt.slice(0, 30).replace(/[^a-zA-Z0-9 ]/g, '').trim() || 'oasis-image'}.${url.split('.').pop() || 'png'}`
+                            a.click()
                           }}
-                        >
-                          <div className="w-full aspect-square rounded bg-black/40 flex items-center justify-center mb-1 overflow-hidden relative">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={img.url} alt={img.prompt} className="w-full h-full object-cover" loading="lazy" />
-                            {/* Hover actions */}
-                            <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 p-2">
-                              <button
-                                onClick={() => enterPlacementMode({ type: 'image', name: img.prompt.slice(0, 24), imageUrl: img.url })}
-                                className="w-full text-[10px] px-2 py-1 rounded bg-pink-500/20 text-pink-300 border border-pink-500/30 hover:bg-pink-500/30 transition-colors font-mono"
-                              >
-                                Place in world
-                              </button>
-                            </div>
-                          </div>
-                          <div className="text-[9px] text-gray-400 group-hover:text-gray-200 truncate transition-colors">
-                            {img.prompt}
-                          </div>
-                          <div className="text-[8px] text-gray-400 truncate">
-                            {new Date(img.createdAt).toLocaleDateString()}
-                            {isPlaced && <span className="ml-1 text-pink-400/60">placed</span>}
-                          </div>
-                        </div>
+                          onUseAsTile={() => {
+                            const presetId = `custom_${img.id}`
+                            if (!customGroundPresets.some(p => p.id === presetId)) {
+                              addCustomGroundPreset({
+                                id: presetId,
+                                name: img.prompt.slice(0, 20),
+                                icon: '\u{1F3A8}',
+                                color: '#888888',
+                                assetName: '',
+                                tileRepeat: 1,
+                                customTextureUrl: img.tileUrl,
+                              })
+                            }
+                            enterPaintMode(presetId)
+                          }}
+                          onViewFullscreen={() => setAssetsLightboxUrl(img.url)}
+                          onPlaceWithFrame={() => enterPlacementMode({ type: 'image', name: img.prompt.slice(0, 24), imageUrl: img.url, imageFrameStyle: 'gilded' })}
+                        />
                       )
                     })}
                   </div>
@@ -2783,121 +2756,102 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                 <div className="text-[10px] mt-1 text-gray-500">Conjure, craft, or add from the Asset catalog</div>
               </div>
             ) : (
-              <div className="space-y-1">
+              <div className="space-y-2">
                 {/* ── CONJURED ── */}
                 {worldConjuredAssetIds.length > 0 && (
-                  <div className="text-[9px] text-purple-400/60 uppercase tracking-wider font-mono mt-1 mb-0.5">✨ Conjured ({worldConjuredAssetIds.length})</div>
-                )}
-                {worldConjuredAssetIds.map(id => {
-                  const asset = conjuredAssets.find(a => a.id === id)
-                  if (!asset || asset.status !== 'ready') return null
-                  const isSelected = selectedObjectId === id
-                  return (
-                    <div
-                      key={id}
-                      className={`rounded-lg border p-2 flex items-center justify-between cursor-pointer transition-all duration-200 ${
-                        isSelected ? 'border-blue-500/50 bg-blue-500/10' : 'border-gray-700/20 hover:border-cyan-500/30'
-                      }`}
-                      style={{ background: isSelected ? undefined : 'rgba(15, 15, 15, 0.8)' }}
-                      onClick={() => {
-                        if (isSelected) { selectObject(null); setInspectedObject(null) }
-                        else {
-                          selectObject(id); setInspectedObject(id)
-                          const pos = transforms[id]?.position || asset?.position
-                          if (pos) setCameraLookAt(pos)
-                        }
-                      }}
-                    >
-                      <div>
-                        <span className="text-[10px] text-orange-400 font-mono mr-1">&#10024;</span>
-                        <span className="text-[11px] text-gray-200">{(asset.displayName || asset.prompt).slice(0, 30)}{(asset.displayName || asset.prompt).length > 30 ? '...' : ''}</span>
-                        <span className="text-[9px] text-gray-400 ml-1.5">{asset.provider}</span>
-                      </div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); removeConjuredAssetFromWorld(id) }}
-                        className="text-gray-500 hover:text-red-400 text-xs"
-                      >
-                        &#10005;
-                      </button>
+                  <>
+                    <div className="text-[9px] text-purple-400/60 uppercase tracking-wider font-mono mt-1 mb-0.5">✨ Conjured ({worldConjuredAssetIds.length})</div>
+                    <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${colsConjured}, minmax(0, 1fr))` }}>
+                      {worldConjuredAssetIds.map(id => {
+                        const asset = conjuredAssets.find(a => a.id === id)
+                        if (!asset || asset.status !== 'ready') return null
+                        return (
+                          <AssetCard
+                            key={id}
+                            id={id}
+                            name={(asset.displayName || asset.prompt).slice(0, 30)}
+                            type="placed"
+                            thumbnailUrl={asset.thumbnailUrl || undefined}
+                            subtitle={asset.provider}
+                            accentColor={selectedObjectId === id ? '#3B82F6' : '#F97316'}
+                            isInWorld
+                            onClick={() => {
+                              if (selectedObjectId === id) { selectObject(null); setInspectedObject(null) }
+                              else {
+                                selectObject(id); setInspectedObject(id)
+                                const pos = transforms[id]?.position || asset?.position
+                                if (pos) setCameraLookAt(pos)
+                              }
+                            }}
+                            onDelete={() => removeConjuredAssetFromWorld(id)}
+                          />
+                        )
+                      })}
                     </div>
-                  )
-                })}
+                  </>
+                )}
 
                 {/* ── CATALOG ── */}
                 {placedCatalogAssets.length > 0 && (
-                  <div className="text-[9px] text-cyan-400/60 uppercase tracking-wider font-mono mt-2 mb-0.5">📦 Catalog ({placedCatalogAssets.length})</div>
-                )}
-                {placedCatalogAssets.map(ca => {
-                  const isSelected = selectedObjectId === ca.id
-                  return (
-                    <div
-                      key={ca.id}
-                      className={`rounded-lg border p-2 flex items-center justify-between cursor-pointer transition-all duration-200 ${
-                        isSelected ? 'border-blue-500/50 bg-blue-500/10' : 'border-gray-700/20 hover:border-cyan-500/30'
-                      }`}
-                      style={{ background: isSelected ? undefined : 'rgba(15, 15, 15, 0.8)' }}
-                      onClick={() => {
-                        if (isSelected) { selectObject(null); setInspectedObject(null) }
-                        else {
-                          selectObject(ca.id); setInspectedObject(ca.id)
-                          const pos = transforms[ca.id]?.position || ca.position
-                          if (pos) setCameraLookAt(pos)
-                        }
-                      }}
-                    >
-                      <div>
-                        <span className={`text-[10px] font-mono mr-1 ${ca.imageUrl ? 'text-pink-400' : 'text-yellow-400'}`}>{ca.imageUrl ? '🖼️' : '📦'}</span>
-                        <span className="text-[11px] text-gray-200">{ca.name}</span>
-                        <span className="text-[9px] text-gray-400 ml-1.5">{ca.imageUrl ? 'image' : 'catalog'}</span>
-                      </div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); removeCatalogAsset(ca.id) }}
-                        className="text-gray-500 hover:text-red-400 text-xs"
-                      >
-                        &#10005;
-                      </button>
+                  <>
+                    <div className="text-[9px] text-cyan-400/60 uppercase tracking-wider font-mono mt-2 mb-0.5">📦 Catalog ({placedCatalogAssets.length})</div>
+                    <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${colsCatalog}, minmax(0, 1fr))` }}>
+                      {placedCatalogAssets.map(ca => (
+                        <AssetCard
+                          key={ca.id}
+                          id={ca.id}
+                          name={ca.name}
+                          type="placed"
+                          thumbnailUrl={ca.imageUrl || (ca.catalogId ? `/thumbs/${ca.catalogId}.jpg` : undefined)}
+                          subtitle={ca.imageUrl ? 'image' : 'catalog'}
+                          accentColor={selectedObjectId === ca.id ? '#3B82F6' : '#06B6D4'}
+                          isInWorld
+                          onClick={() => {
+                            if (selectedObjectId === ca.id) { selectObject(null); setInspectedObject(null) }
+                            else {
+                              selectObject(ca.id); setInspectedObject(ca.id)
+                              const pos = transforms[ca.id]?.position || ca.position
+                              if (pos) setCameraLookAt(pos)
+                            }
+                          }}
+                          onDelete={() => removeCatalogAsset(ca.id)}
+                        />
+                      ))}
                     </div>
-                  )
-                })}
+                  </>
+                )}
 
                 {/* ── CRAFTED ── */}
                 {craftedScenes.length > 0 && (
-                  <div className="text-[9px] text-amber-400/60 uppercase tracking-wider font-mono mt-2 mb-0.5">⚒️ Crafted ({craftedScenes.length})</div>
-                )}
-                {craftedScenes.map(scene => {
-                  const isSelected = selectedObjectId === scene.id
-                  return (
-                    <div
-                      key={scene.id}
-                      className={`rounded-lg border p-2 flex items-center justify-between cursor-pointer transition-all duration-200 ${
-                        isSelected ? 'border-blue-500/50 bg-blue-500/10' : 'border-gray-700/20 hover:border-cyan-500/30'
-                      }`}
-                      style={{ background: isSelected ? undefined : 'rgba(15, 15, 15, 0.8)' }}
-                      onClick={() => {
-                        if (isSelected) { selectObject(null); setInspectedObject(null) }
-                        else {
-                          selectObject(scene.id); setInspectedObject(scene.id)
-                          const pos = transforms[scene.id]?.position || scene.position
-                          if (pos) setCameraLookAt(pos)
-                        }
-                      }}
-                    >
-                      <div>
-                        <span className="text-[10px] text-blue-400 font-mono mr-1">&#9881;</span>
-                        <span className="text-[11px] text-gray-200">{scene.name}</span>
-                        <span className="text-[9px] text-gray-400 ml-1.5">{scene.objects.length} prims</span>
-                      </div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); removeCraftedScene(scene.id) }}
-                        className="text-gray-500 hover:text-red-400 text-xs"
-                      >
-                        &#10005;
-                      </button>
+                  <>
+                    <div className="text-[9px] text-amber-400/60 uppercase tracking-wider font-mono mt-2 mb-0.5">⚒️ Crafted ({craftedScenes.length})</div>
+                    <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${colsCrafted}, minmax(0, 1fr))` }}>
+                      {craftedScenes.map(scene => (
+                        <AssetCard
+                          key={scene.id}
+                          id={scene.id}
+                          name={scene.name}
+                          type="placed"
+                          thumbnailUrl={scene.thumbnailUrl || `/crafted-thumbs/${scene.id}.jpg`}
+                          subtitle={`${scene.objects.length} prims`}
+                          accentColor={selectedObjectId === scene.id ? '#3B82F6' : '#3B82F6'}
+                          isInWorld
+                          onClick={() => {
+                            if (selectedObjectId === scene.id) { selectObject(null); setInspectedObject(null) }
+                            else {
+                              selectObject(scene.id); setInspectedObject(scene.id)
+                              const pos = transforms[scene.id]?.position || scene.position
+                              if (pos) setCameraLookAt(pos)
+                            }
+                          }}
+                          onDelete={() => removeCraftedScene(scene.id)}
+                        />
+                      ))}
                     </div>
-                  )
-                })}
+                  </>
+                )}
 
-                {/* ── LIGHTS ── */}
+                {/* ── LIGHTS — keep as list rows (no thumbnails for lights) ── */}
                 {worldLights.length > 0 && (
                   <div className="text-[9px] text-yellow-400/60 uppercase tracking-wider font-mono mt-2 mb-0.5">💡 Lights ({worldLights.length})</div>
                 )}
@@ -2936,7 +2890,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                   )
                 })}
 
-                {/* ── AGENTS ── */}
+                {/* ── AGENTS — keep as list rows (agent windows have no thumbnails) ── */}
                 {placedAgentWindows.length > 0 && (
                   <div className="text-[9px] text-sky-400/60 uppercase tracking-wider font-mono mt-2 mb-0.5">💻 Agents ({placedAgentWindows.length})</div>
                 )}
@@ -3095,6 +3049,33 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                 </div>
               </div>
 
+              {/* ░▒▓ Grid Columns — per-tab asset library density ▓▒░ */}
+              <div>
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Grid Columns</div>
+                <div className="space-y-1.5">
+                  {([
+                    { key: 'catalog' as const, label: 'Catalog', value: colsCatalog, set: setColsCatalog, accent: 'accent-yellow-500' },
+                    { key: 'crafted' as const, label: 'Crafted', value: colsCrafted, set: setColsCrafted, accent: 'accent-blue-500' },
+                    { key: 'conjured' as const, label: 'Conjured', value: colsConjured, set: setColsConjured, accent: 'accent-orange-500' },
+                    { key: 'media' as const, label: 'Media', value: colsMedia, set: setColsMedia, accent: 'accent-pink-500' },
+                  ] as const).map(col => (
+                    <div key={col.key} className="flex items-center gap-2">
+                      <span className="text-[10px] text-gray-400 font-mono w-16">{col.label}</span>
+                      <input
+                        type="range"
+                        min="1"
+                        max="6"
+                        step="1"
+                        value={col.value}
+                        onChange={(e) => updateCols(col.key, parseInt(e.target.value), col.set)}
+                        className={`flex-1 h-1 ${col.accent} cursor-pointer`}
+                      />
+                      <span className="text-[10px] text-gray-500 font-mono w-4 text-right">{col.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               {/* ░▒▓ Panel opacity — driven by system uiOpacity setting ▓▒░ */}
               <div>
                 <div className="flex items-center gap-2">
@@ -3173,7 +3154,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
           </>
 
         ) : mode === 'media' ? (
-          <MediaTab />
+          <MediaTab cols={colsMedia} />
 
         ) : mode === 'conjure' ? (
           <>
@@ -3190,7 +3171,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                 <div className="text-[10px] mt-1 text-gray-500">Type a spell above and cast it</div>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${colsConjured}, minmax(0, 1fr))` }}>
                 {[...conjuredAssets]
                 .filter(asset => {
                   // Hide parent assets when a ready child exists (lineage collapse)
@@ -3212,7 +3193,18 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                     key={asset.id}
                     asset={asset}
                     onDelete={deleteAsset}
-                    onRequestDelete={(id, name) => setConjureDeleteTarget({ id, name })}
+                    onRequestDelete={(id, name) => {
+                      setConjureDeleteTarget({ id, name })
+                      setConjureLoadingUsage(true)
+                      const activeWorldId = useOasisStore.getState().activeWorldId
+                      fetch(`${OASIS_BASE}/api/worlds/asset-usage?url=${encodeURIComponent(id)}&currentWorldId=${encodeURIComponent(activeWorldId)}&type=conjured`)
+                        .then(r => r.json())
+                        .then((usage: { totalCount: number; worldCount: number }) => {
+                          setConjureDeleteTarget(prev => prev ? { ...prev, placedCount: usage.totalCount, worldCount: usage.worldCount } : prev)
+                        })
+                        .catch(() => {})
+                        .finally(() => setConjureLoadingUsage(false))
+                    }}
                     isInWorld={worldConjuredAssetIds.includes(asset.id)}
                     onPlace={(id) => {
                       const a = conjuredAssets.find(c => c.id === id)
@@ -3365,9 +3357,17 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
       <DeleteConfirmModal
         isOpen={!!conjureDeleteTarget}
         itemName={conjureDeleteTarget?.name || ''}
+        placedCount={conjureDeleteTarget?.placedCount}
+        worldCount={conjureDeleteTarget?.worldCount}
+        loadingUsage={conjureLoadingUsage}
         onConfirm={() => { if (conjureDeleteTarget) { deleteAsset(conjureDeleteTarget.id); setConjureDeleteTarget(null) } }}
-        onCancel={() => setConjureDeleteTarget(null)}
+        onCancel={() => { setConjureDeleteTarget(null); setConjureLoadingUsage(false) }}
       />
+
+      {/* Assets tab image lightbox — portaled */}
+      {assetsLightboxUrl && (
+        <MediaLightbox url={assetsLightboxUrl} onClose={() => setAssetsLightboxUrl(null)} />
+      )}
     </div>,
     document.body
   )

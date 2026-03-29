@@ -4,6 +4,7 @@
 
 import { NextResponse } from 'next/server'
 import { getLocalUserId } from '@/lib/local-auth'
+import { prisma } from '@/lib/db'
 import path from 'path'
 import fs from 'fs/promises'
 
@@ -63,6 +64,18 @@ export async function POST(request: Request) {
     await fs.writeFile(path.join(avatarDir, filename), buffer)
 
     const avatarUrl = `/avatars/${filename}`
+
+    // Persist avatar URL in Profile
+    try {
+      await prisma.profile.upsert({
+        where: { userId: _uid },
+        create: { userId: _uid, avatarUrl },
+        update: { avatarUrl },
+      })
+    } catch (e) {
+      console.error('[Avatar] Profile update failed:', e)
+    }
+
     console.log(`[Avatar] Saved ${filename}`)
     return NextResponse.json({ avatar_url: avatarUrl })
   } catch (err) {

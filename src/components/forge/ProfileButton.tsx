@@ -9,10 +9,14 @@
 import { useState, useRef, useEffect, useContext, useCallback } from 'react'
 import { SettingsContext } from '../scene-lib'
 import { useOasisStore } from '@/store/oasisStore'
-import { FREE_CREDITS } from '@/lib/conjure/types'
-import { XP_AWARDS } from '@/lib/xp'
 import { AvatarGallery } from './AvatarGallery'
 import { useUILayer } from '@/lib/input-manager'
+import { fmtTokens } from '@/lib/anorak-engine'
+
+interface TokenBurnData {
+  inputTokens: number
+  outputTokens: number
+}
 
 interface ProfileData {
   credits: number
@@ -32,23 +36,11 @@ interface ProfileData {
   lastLoginDate: string | null
 }
 
-const XP_ACTION_LABELS = [
-  { label: 'Place object', xp: XP_AWARDS.PLACE_CATALOG_OBJECT },
-  { label: 'Conjure asset', xp: XP_AWARDS.CONJURE_ASSET },
-  { label: 'Craft scene', xp: XP_AWARDS.CRAFT_SCENE },
-  { label: 'Add light', xp: XP_AWARDS.ADD_LIGHT },
-  { label: 'Set world public', xp: XP_AWARDS.SET_WORLD_PUBLIC },
-  { label: 'World upvoted', xp: XP_AWARDS.WORLD_UPVOTED },
-  { label: 'Daily login', xp: XP_AWARDS.DAILY_LOGIN },
-  { label: 'Submit feedback', xp: XP_AWARDS.SUBMIT_FEEDBACK },
-]
-
 export function ProfileButton() {
   const [isOpen, setIsOpen] = useState(false)
   useUILayer('profile', isOpen)
-  const [profile, setProfile] = useState<ProfileData>({ credits: FREE_CREDITS, xp: 0, level: 1, aura: 0, wallet_address: null, levelTitle: 'Apprentice', levelBadge: '░', levelProgress: 0, xpToNext: 100, needsOnboarding: true, displayName: 'Wanderer', bio: null, avatar_url: null, avatar_3d_url: null, lastLoginDate: null })
+  const [profile, setProfile] = useState<ProfileData>({ credits: 0, xp: 0, level: 1, aura: 0, wallet_address: null, levelTitle: 'Apprentice', levelBadge: '░', levelProgress: 0, xpToNext: 100, needsOnboarding: true, displayName: 'Wanderer', bio: null, avatar_url: null, avatar_3d_url: null, lastLoginDate: null })
   const [showAvatarGallery, setShowAvatarGallery] = useState(false)
-  const [showXpInfo, setShowXpInfo] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState('')
   const [editBio, setEditBio] = useState('')
@@ -62,6 +54,28 @@ export function ProfileButton() {
   const setAvatar3dUrl = useOasisStore(s => s.setAvatar3dUrl)
   const [dailyBonusToast, setDailyBonusToast] = useState<string | null>(null)
   const dailyBonusTriedRef = useRef(false)
+  const [savedFlash, setSavedFlash] = useState(false)
+  const [tokenBurn, setTokenBurn] = useState<{ daily: TokenBurnData; weekly: TokenBurnData; alltime: TokenBurnData } | null>(null)
+
+  // Cost estimation: ~$3/MTok input, ~$15/MTok output (Sonnet-class average)
+  const estimateCost = (inp: number, out: number) => {
+    const cost = (inp * 3 + out * 15) / 1_000_000
+    return cost < 0.01 ? '<$0.01' : `$${cost.toFixed(2)}`
+  }
+
+  const fetchTokenBurn = useCallback(() => {
+    Promise.all([
+      fetch('/api/token-burn?range=daily').then(r => r.json()).catch(() => null),
+      fetch('/api/token-burn?range=weekly').then(r => r.json()).catch(() => null),
+      fetch('/api/token-burn?range=alltime').then(r => r.json()).catch(() => null),
+    ]).then(([daily, weekly, alltime]) => {
+      setTokenBurn({
+        daily: daily?.grand || { inputTokens: 0, outputTokens: 0 },
+        weekly: weekly?.grand || { inputTokens: 0, outputTokens: 0 },
+        alltime: alltime?.grand || { inputTokens: 0, outputTokens: 0 },
+      })
+    })
+  }, [])
 
   const fetchProfile = useCallback(() => {
     fetch('/api/profile')
@@ -103,11 +117,12 @@ export function ProfileButton() {
     fetchProfile()
   }, [fetchProfile])
 
-  // Refresh profile data when dropdown opens
+  // Refresh profile + token burn data when dropdown opens
   useEffect(() => {
     if (!isOpen) return
     fetchProfile()
-  }, [isOpen, fetchProfile])
+    fetchTokenBurn()
+  }, [isOpen, fetchProfile, fetchTokenBurn])
 
 
   useEffect(() => {
@@ -155,6 +170,8 @@ export function ProfileButton() {
       }
       setEditing(false)
       fetchProfile()
+      setSavedFlash(true)
+      setTimeout(() => setSavedFlash(false), 1500)
     } catch (err) {
       console.error('[Profile] Save failed:', err)
     } finally {
@@ -209,13 +226,17 @@ export function ProfileButton() {
                   <p className="text-sm font-medium text-white truncate">{displayName}</p>
                   {profile.bio && <p className="text-[10px] text-gray-500 truncate">{profile.bio}</p>}
                 </div>
-                <button
-                  onClick={startEditing}
-                  className="text-gray-500 hover:text-purple-400 transition-colors cursor-pointer text-xs"
-                  title="Edit Profile"
-                >
-                  ✏️
-                </button>
+                {savedFlash ? (
+                  <span className="text-green-400 text-xs font-bold animate-pulse">Saved!</span>
+                ) : (
+                  <button
+                    onClick={startEditing}
+                    className="text-gray-500 hover:text-purple-400 transition-colors cursor-pointer text-xs"
+                    title="Edit Profile"
+                  >
+                    ✏️
+                  </button>
+                )}
               </div>
             ) : (
               <div className="space-y-3">
@@ -299,42 +320,43 @@ export function ProfileButton() {
                 }}
               />
             </div>
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div>
-                <p className="text-lg font-bold text-green-400">{Number.isInteger(profile.credits) ? profile.credits : profile.credits.toFixed(2)}</p>
-                <p className="text-[10px] text-gray-500 uppercase tracking-wider">Credits</p>
-              </div>
+            <div className="grid grid-cols-2 gap-2 text-center">
               <div>
                 <p className="text-lg font-bold text-orange-400">{profile.level}</p>
                 <p className="text-[10px] text-gray-500 uppercase tracking-wider">Level</p>
               </div>
               <div>
-                <p className="text-lg font-bold text-pink-400">{profile.aura}</p>
-                <p className="text-[10px] text-gray-500 uppercase tracking-wider">Aura</p>
+                <p className="text-lg font-bold text-teal-400">{profile.xp}</p>
+                <p className="text-[10px] text-gray-500 uppercase tracking-wider">XP</p>
               </div>
             </div>
           </div>
 
-          {/* XP Actions — collapsible */}
-          <div className="px-4 py-2 border-b border-white/10">
-            <button
-              onClick={() => setShowXpInfo(!showXpInfo)}
-              className="w-full flex items-center justify-between text-[10px] text-gray-500 hover:text-gray-300 transition-colors cursor-pointer"
-            >
-              <span className="uppercase tracking-wider">XP Guide</span>
-              <span>{showXpInfo ? '▲' : '▼'}</span>
-            </button>
-            {showXpInfo && (
-              <div className="mt-2 space-y-0.5 text-[10px]">
-                {XP_ACTION_LABELS.map(({ label, xp }) => (
-                  <div key={label} className="flex justify-between">
-                    <span className="text-gray-500">{label}</span>
-                    <span className="text-purple-400 font-mono">+{xp}</span>
+          {/* Token Burn */}
+          {tokenBurn && (tokenBurn.alltime.inputTokens > 0 || tokenBurn.alltime.outputTokens > 0) && (
+            <div className="px-4 py-3 border-b border-white/10">
+              <p className="text-[10px] text-teal-400 uppercase tracking-wider mb-2 font-bold">Token Burn</p>
+              <div className="space-y-1.5 font-mono">
+                {[
+                  { label: 'Today', data: tokenBurn.daily },
+                  { label: 'Week', data: tokenBurn.weekly },
+                  { label: 'All Time', data: tokenBurn.alltime },
+                ].map(({ label, data }) => (
+                  <div key={label} className="flex items-center justify-between">
+                    <span className="text-teal-400 text-xs w-14">{label}</span>
+                    <span className="text-lg text-white font-bold">
+                      <span title="Input tokens">↓{fmtTokens(data.inputTokens)}</span>
+                      {' '}
+                      <span title="Output tokens">↑{fmtTokens(data.outputTokens)}</span>
+                    </span>
+                    <span className="text-white text-sm text-right w-16">
+                      {estimateCost(data.inputTokens, data.outputTokens)}
+                    </span>
                   </div>
                 ))}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Menu items */}
           <div className="p-2">
@@ -347,18 +369,6 @@ export function ProfileButton() {
               }}
             >
               {profile.avatar_3d_url ? '🧑 Change Avatar' : '✨ Choose Avatar'}
-            </button>
-            <button
-              onClick={() => { window.open('/explore', '_blank'); setIsOpen(false) }}
-              className="w-full text-left px-3 py-2 rounded text-sm text-purple-300 hover:bg-purple-500/10 transition-colors cursor-pointer"
-            >
-              🌐 Explore Worlds
-            </button>
-            <button
-              disabled
-              className="w-full text-left px-3 py-2 rounded text-sm text-gray-500 cursor-not-allowed"
-            >
-              Wallet (coming soon)
             </button>
           </div>
         </div>

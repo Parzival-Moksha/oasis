@@ -22,7 +22,7 @@ import { ConjureVFX } from './ConjureVFX'
 import { PlacementVFXRenderer } from './PlacementVFX'
 import { useMovement } from '../../hooks/useMovement'
 // drei useAnimations removed — manual AnimationMixer for proper SkeletonUtils support
-import { DragContext } from '../scene-lib'
+import { DragContext, SettingsContext } from '../scene-lib'
 import type { MovementPreset, AnimationConfig } from '../../lib/conjure/types'
 import { extractModelStats } from './ModelPreview'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
@@ -128,6 +128,8 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
   const { setIsDragging } = useContext(DragContext)
   const setInspectedObject = useOasisStore(s => s.setInspectedObject)
   const isReadOnly = useOasisStore(s => s.isViewMode && !s.isViewModeEditable)
+  const { settings: _sceneSettings } = useContext(SettingsContext)
+  const isRp1 = _sceneSettings.rp1Mode
   const isAgentFocused = useInputManager(s => s.inputState === 'agent-focus')
 
   // ░▒▓ Movement system — reads behavior from store, applies every frame ▓▒░
@@ -186,7 +188,7 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
         ref={groupRef}
         visible={isVisible}
         onClick={(e) => {
-          if (isReadOnly) return  // ░▒▓ Anonymous visitors can't select/modify objects ▓▒░
+          if (isReadOnly || isRp1) return  // ░▒▓ Read-only / RP1 — no selection ▓▒░
           e.stopPropagation()
           // Force-blur any focused panel input — breaks the ui-focused trance
           if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
@@ -208,7 +210,7 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
 
       {/* TransformControls — callback ref ensures listener attaches on mount */}
       {/* Hidden in agent-focus mode — gizmo would obstruct the zoomon view */}
-      {selected && groupRef.current && !isReadOnly && !isAgentFocused && (
+      {selected && groupRef.current && !isReadOnly && !isRp1 && !isAgentFocused && (
         <TransformControls
           ref={controlsCallbackRef}
           object={groupRef.current}
@@ -727,7 +729,10 @@ function SpatialAudioFromBehavior({ objectId }: { objectId: string }) {
   const audioMuted = useOasisStore(s => s.behaviors[objectId]?.audioMuted)
   const audioState = useOasisStore(s => s.behaviors[objectId]?.audioState)
   const audioLoop = useOasisStore(s => s.behaviors[objectId]?.audioLoop)
-  if (!audioUrl) return null
+  // ░▒▓ FIX: Don't mount audio during placement mode — prevents state corruption
+  // when loudspeaker auto-plays before placement is confirmed ▓▒░
+  const inputState = useInputManager(s => s.inputState)
+  if (!audioUrl || inputState === 'placement') return null
   return <SpatialAudioAttachment objectId={objectId} audioUrl={audioUrl} volume={audioVolume} maxDistance={audioMaxDistance} muted={audioMuted} audioState={audioState} loop={audioLoop} />
 }
 
@@ -1355,8 +1360,9 @@ export function TransformKeyHandler() {
         return
       }
 
-      // ░▒▓ UI LAYER GUARD — when panels are open, only Escape passes through ▓▒░
-      if (useInputManager.getState().hasActiveUILayer() && e.key !== 'Escape') return
+      // ░▒▓ UI LAYER GUARD — when panels are open, only Escape + Delete/Backspace pass through ▓▒░
+      // Delete/Backspace need to reach the delete handler (isTyping guard below catches text inputs)
+      if (useInputManager.getState().hasActiveUILayer() && !['Escape', 'Delete', 'Backspace'].includes(e.key)) return
 
       // ░▒▓ ALL KEYS — check if typing in form element ▓▒░
       const NON_TEXT_INPUTS = new Set(['range', 'color', 'checkbox', 'radio', 'file', 'button', 'image', 'reset', 'submit'])
@@ -1461,9 +1467,12 @@ export function TransformKeyHandler() {
           break
         }
 
-        // ░▒▓ Delete — remove object via EventBus ▓▒░
-        case 'delete': {
+        // ░▒▓ Delete/Backspace — remove selected object via EventBus ▓▒░
+        case 'delete':
+        case 'backspace': {
           if (!can.deleteShortcut) break
+          // Guard: block delete when user is typing in an input/textarea/contentEditable
+          if (isTyping) break
           const id = useOasisStore.getState().selectedObjectId
           if (!id) break
           dispatch({ type: 'DELETE_OBJECT', payload: { id } })
@@ -1778,12 +1787,17 @@ function PlacementOverlay() {
     } else if (placementPending.type === 'conjured' && placementPending.path) {
       // ░▒▓ Conjured multi-placement — uses catalog placement system with conjured GLB path ▓▒░
       const conjId = `conjured-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+      const prevCount = useOasisStore.getState().placedCatalogAssets.length
       placeCatalogAssetAt(conjId, placementPending.name, placementPending.path, placementPending.defaultScale || 1, pos)
       // ░▒▓ Auto-assign audio if placed from Media tab with pending audio URL ▓▒░
       const pendingAudio = (window as any).__pendingAudioUrl
       if (pendingAudio) {
+        // Resolve actual ID synchronously (store is already updated by placeCatalogAssetAt)
+        const assets = useOasisStore.getState().placedCatalogAssets
+        const actualId = assets.length > prevCount ? assets[assets.length - 1].id : conjId
+        // Defer behavior attachment so SpatialAudioFromBehavior has mounted
         setTimeout(() => {
-          useOasisStore.getState().setObjectBehavior(conjId, { audioUrl: pendingAudio, audioState: 'playing' })
+          useOasisStore.getState().setObjectBehavior(actualId, { audioUrl: pendingAudio, audioState: 'playing' })
         }, 200)
         delete (window as any).__pendingAudioUrl
       }

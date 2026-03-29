@@ -146,6 +146,100 @@ server.tool("press_key",
   }
 );
 
+// ── KEY DOWN / UP (for holding keys — WASD movement) ────────────────────
+
+server.tool("key_down",
+  "Press and HOLD a key (use key_up to release). For WASD movement, pointer lock camera, etc.",
+  { key: z.string().describe("Key to hold (e.g., 'w', 'a', 's', 'd', 'Shift')") },
+  async ({ key }) => {
+    const c = await getClient();
+    await c.Input.dispatchKeyEvent({ type: "keyDown", key });
+    return { content: [{ type: "text", text: `Key down: ${key}` }] };
+  }
+);
+
+server.tool("key_up",
+  "Release a held key.",
+  { key: z.string().describe("Key to release") },
+  async ({ key }) => {
+    const c = await getClient();
+    await c.Input.dispatchKeyEvent({ type: "keyUp", key });
+    return { content: [{ type: "text", text: `Key up: ${key}` }] };
+  }
+);
+
+// ── MOUSE DRAG (orbit camera, resize, drag objects) ─────────────────────
+
+server.tool("mouse_drag",
+  "Click and drag from one point to another. For orbit camera rotation, object dragging, panel resize.",
+  {
+    fromX: z.number().describe("Start X"),
+    fromY: z.number().describe("Start Y"),
+    toX: z.number().describe("End X"),
+    toY: z.number().describe("End Y"),
+    steps: z.number().optional().describe("Interpolation steps (default 20)"),
+    button: z.enum(["left", "right", "middle"]).optional().describe("Mouse button (default left)")
+  },
+  async ({ fromX, fromY, toX, toY, steps = 20, button = "left" }) => {
+    const c = await getClient();
+    await c.Input.dispatchMouseEvent({ type: "mousePressed", x: fromX, y: fromY, button, clickCount: 1 });
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const x = fromX + (toX - fromX) * t;
+      const y = fromY + (toY - fromY) * t;
+      await c.Input.dispatchMouseEvent({ type: "mouseMoved", x, y, button });
+    }
+    await c.Input.dispatchMouseEvent({ type: "mouseReleased", x: toX, y: toY, button, clickCount: 1 });
+    return { content: [{ type: "text", text: `Dragged from (${fromX},${fromY}) to (${toX},${toY}) in ${steps} steps` }] };
+  }
+);
+
+// ── MOUSE MOVE (hover, pointer lock camera look) ────────────────────────
+
+server.tool("mouse_move",
+  "Move the mouse to coordinates. Dispatches mouseMoved events — works for hover effects and pointer-lock camera.",
+  {
+    x: z.number().describe("Target X"),
+    y: z.number().describe("Target Y"),
+  },
+  async ({ x, y }) => {
+    const c = await getClient();
+    await c.Input.dispatchMouseEvent({ type: "mouseMoved", x, y });
+    return { content: [{ type: "text", text: `Mouse moved to (${x}, ${y})` }] };
+  }
+);
+
+// ── SCROLL (zoom in orbit mode) ─────────────────────────────────────────
+
+server.tool("scroll",
+  "Mouse wheel scroll at coordinates. Positive deltaY = scroll down / zoom out, negative = zoom in.",
+  {
+    x: z.number().describe("X coordinate"),
+    y: z.number().describe("Y coordinate"),
+    deltaY: z.number().describe("Scroll amount (negative=up/zoom-in, positive=down/zoom-out)")
+  },
+  async ({ x, y, deltaY }) => {
+    const c = await getClient();
+    await c.Input.dispatchMouseEvent({ type: "mouseWheel", x, y, deltaX: 0, deltaY });
+    return { content: [{ type: "text", text: `Scrolled ${deltaY > 0 ? 'down' : 'up'} at (${x}, ${y})` }] };
+  }
+);
+
+// ── TYPE TEXT (fill inputs, chat) ───────────────────────────────────────
+
+server.tool("type_text",
+  "Type a string of text character by character. For chat inputs, search fields, etc.",
+  { text: z.string().describe("Text to type") },
+  async ({ text }) => {
+    const c = await getClient();
+    for (const char of text) {
+      await c.Input.dispatchKeyEvent({ type: "keyDown", text: char, key: char });
+      await c.Input.dispatchKeyEvent({ type: "keyUp", key: char });
+    }
+    return { content: [{ type: "text", text: `Typed: "${text}"` }] };
+  }
+);
+
 // ── START ────────────────────────────────────────────────────────────────
 
 const transport = new StdioServerTransport();

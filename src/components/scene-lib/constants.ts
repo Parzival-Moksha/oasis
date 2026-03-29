@@ -25,7 +25,9 @@ export const defaultSettings: OasisSettings = {
   controlMode: 'noclip',
   mouseSensitivity: 1.0,
   moveSpeed: 10,
+  fov: 75,
   showGrid: true,
+  rp1Mode: false,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

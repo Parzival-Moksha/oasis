@@ -11,6 +11,8 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
 
+const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
+
 // Gallery entries — curated from opensourceavatars.com (CC0)
 const AVATAR_GALLERY = [
   { id: 'orion', file: 'Orion.vrm', name: 'Orion', color: '#60A5FA' },
@@ -77,11 +79,78 @@ interface AvatarGalleryProps {
   onClose: () => void
 }
 
+// ─═̷─═̷─ Offscreen VRM thumbnail renderer ─═̷─═̷─
+async function renderVrmThumbnail(vrmUrl: string): Promise<Blob> {
+  const SIZE = 256
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+  renderer.setSize(SIZE, SIZE)
+  renderer.setPixelRatio(1)
+  renderer.setClearColor(0x000000, 0)
+
+  const scene = new THREE.Scene()
+  const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100)
+
+  // Lighting
+  scene.add(new THREE.AmbientLight(0xffffff, 0.7))
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1)
+  dirLight.position.set(3, 5, 3)
+  scene.add(dirLight)
+
+  // Load VRM
+  const loader = new GLTFLoader()
+  loader.register((parser) => new VRMLoaderPlugin(parser))
+  const gltf = await loader.loadAsync(vrmUrl)
+  const vrm = gltf.userData.vrm as VRM | undefined
+  if (!vrm) throw new Error('No VRM data')
+  VRMUtils.rotateVRM0(vrm)
+
+  // Auto-fit
+  const box = new THREE.Box3().setFromObject(vrm.scene)
+  const size = box.getSize(new THREE.Vector3())
+  const center = box.getCenter(new THREE.Vector3())
+  const maxDim = Math.max(size.x, size.y, size.z)
+  const fitScale = maxDim > 0 ? 2.2 / maxDim : 1
+
+  const group = new THREE.Group()
+  group.scale.setScalar(fitScale)
+  group.position.set(-center.x * fitScale, -center.y * fitScale + 0.1, -center.z * fitScale)
+  group.add(vrm.scene)
+  scene.add(group)
+
+  camera.position.set(0, 1, 3)
+  camera.lookAt(0, 1, 0)
+
+  renderer.render(scene, camera)
+
+  // Capture
+  const canvas = renderer.domElement
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.85)
+  })
+
+  // Cleanup
+  renderer.dispose()
+  scene.clear()
+
+  return blob
+}
+
 export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGalleryProps) {
   const [previewAvatar, setPreviewAvatar] = useState<typeof AVATAR_GALLERY[0] | null>(null)
   const [saving, setSaving] = useState(false)
+  const [thumbIds, setThumbIds] = useState<Set<string>>(new Set())
+  const [batchGenerating, setBatchGenerating] = useState(false)
+  const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0 })
 
   const currentFile = currentAvatarUrl?.split('/').pop()
+
+  // Fetch existing thumbnails on mount
+  useEffect(() => {
+    fetch(`${OASIS_BASE}/api/avatar-thumbs`)
+      .then(r => r.json())
+      .then((ids: string[]) => setThumbIds(new Set(ids)))
+      .catch(() => {})
+  }, [])
 
   const handleSelect = useCallback(async (avatar: typeof AVATAR_GALLERY[0]) => {
     setSaving(true)
@@ -89,6 +158,33 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
     onSelect(url)
     setSaving(false)
   }, [onSelect])
+
+  // Batch thumbnail generation — render all avatars without thumbs
+  const handleBatchGenerate = useCallback(async () => {
+    const missing = AVATAR_GALLERY.filter(a => !thumbIds.has(a.id))
+    if (missing.length === 0) return
+    setBatchGenerating(true)
+    setBatchProgress({ done: 0, total: missing.length })
+
+    const newIds = new Set(thumbIds)
+    for (let i = 0; i < missing.length; i++) {
+      const avatar = missing[i]
+      try {
+        const blob = await renderVrmThumbnail(`/avatars/gallery/${avatar.file}`)
+        const form = new FormData()
+        form.append('id', avatar.id)
+        form.append('thumbnail', blob, `${avatar.id}.jpg`)
+        const res = await fetch(`${OASIS_BASE}/api/avatar-thumbs`, { method: 'PUT', body: form })
+        if (res.ok) newIds.add(avatar.id)
+      } catch (err) {
+        console.warn(`[AvatarGallery] Thumb gen failed for ${avatar.name}:`, err)
+      }
+      setBatchProgress({ done: i + 1, total: missing.length })
+    }
+
+    setThumbIds(newIds)
+    setBatchGenerating(false)
+  }, [thumbIds])
 
   return (
     <div
@@ -133,15 +229,38 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
               CC0 avatars from opensourceavatars.com
             </p>
           </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'none', border: 'none', color: '#666', fontSize: 20,
-              cursor: 'pointer', padding: '4px 8px',
-            }}
-          >
-            ✕
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              onClick={handleBatchGenerate}
+              disabled={batchGenerating}
+              style={{
+                background: batchGenerating ? 'rgba(20,184,166,0.15)' : 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(20,184,166,0.3)',
+                borderRadius: 6,
+                padding: '4px 10px',
+                color: batchGenerating ? '#14b8a6' : '#999',
+                fontSize: 11,
+                fontFamily: 'monospace',
+                cursor: batchGenerating ? 'default' : 'pointer',
+                transition: 'all 0.2s',
+                whiteSpace: 'nowrap',
+              }}
+              title="Generate thumbnails for all avatars"
+            >
+              {batchGenerating
+                ? `${batchProgress.done}/${batchProgress.total}`
+                : `\u{1F4F7} Generate All Thumbnails`}
+            </button>
+            <button
+              onClick={onClose}
+              style={{
+                background: 'none', border: 'none', color: '#666', fontSize: 20,
+                cursor: 'pointer', padding: '4px 8px',
+              }}
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
@@ -212,24 +331,33 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
                     transition: 'all 0.15s',
                   }}
                 >
-                  {/* Avatar icon placeholder */}
+                  {/* Avatar thumbnail or emoji fallback */}
                   <div style={{
                     width: 48, height: 48, borderRadius: '50%',
                     background: `linear-gradient(135deg, ${avatar.color}40, ${avatar.color}20)`,
                     border: `2px solid ${avatar.color}60`,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 20,
+                    overflow: 'hidden',
                   }}>
-                    {avatar.name.includes('Alien') ? '👽' :
-                     avatar.name.includes('Worm') ? '🪱' :
-                     avatar.name.includes('Slime') ? '🫠' :
-                     avatar.name.includes('Mushy') ? '🍄' :
-                     avatar.name.includes('Gingerbread') ? '🍪' :
-                     avatar.name.includes('Eye') ? '👁️' :
-                     avatar.name.includes('King') || avatar.name.includes('king') ? '👑' :
-                     avatar.name.includes('Hero') ? '⚔️' :
-                     avatar.name.includes('Magma') ? '🌋' :
-                     '🧑'}
+                    {thumbIds.has(avatar.id) ? (
+                      <img
+                        src={`/avatars/gallery/thumbs/${avatar.id}.jpg`}
+                        alt={avatar.name}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                    ) : (
+                      avatar.name.includes('Alien') ? '\u{1F47D}' :
+                      avatar.name.includes('Worm') ? '\u{1FAB1}' :
+                      avatar.name.includes('Slime') ? '\u{1FAE0}' :
+                      avatar.name.includes('Mushy') ? '\u{1F344}' :
+                      avatar.name.includes('Gingerbread') ? '\u{1F36A}' :
+                      avatar.name.includes('Eye') ? '\u{1F441}\uFE0F' :
+                      avatar.name.includes('King') || avatar.name.includes('king') ? '\u{1F451}' :
+                      avatar.name.includes('Hero') ? '\u2694\uFE0F' :
+                      avatar.name.includes('Magma') ? '\u{1F30B}' :
+                      '\u{1F9D1}'
+                    )}
                   </div>
                   <span style={{
                     fontSize: 9, color: isPreviewing ? '#A855F7' : '#999',

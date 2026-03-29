@@ -7,6 +7,21 @@ import { prisma } from '@/lib/db'
 // GET /api/missions — List all missions (optionally filter by status, assignedTo)
 export async function GET(request: NextRequest) {
   try {
+    // ░▒▓ GHOST MISSION CLEANUP — reset stale execution phases ▓▒░
+    // If a mission has executionPhase set but hasn't been updated in >10 minutes,
+    // it was likely left by a killed agent. Reset to prevent ghost activity.
+    const staleThreshold = new Date(Date.now() - 10 * 60 * 1000)
+    await prisma.mission.updateMany({
+      where: {
+        executionPhase: { not: null },
+        updatedAt: { lt: staleThreshold },
+      },
+      data: {
+        executionPhase: null,
+        executionRound: 0,
+      },
+    })
+
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')
     const assignedTo = searchParams.get('assignedTo')

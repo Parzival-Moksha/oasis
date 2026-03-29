@@ -204,3 +204,41 @@ model CarbonModelEntry {
 
   @@index([missionId])
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PROFILE — Local-first user profile (single row per userId)
+// ═══════════════════════════════════════════════════════════════════════════
+
+model Profile {
+  id            Int      @id @default(autoincrement())
+  userId        String   @unique @default("local-user")
+  displayName   String   @default("Player 1")
+  bio           String?
+  avatarUrl     String?
+  avatar3dUrl   String?
+  totalXp       Int      @default(0)
+  level         Int      @default(1)
+  aura          Int      @default(0)
+  lastLoginDate String?  // ISO date string 'YYYY-MM-DD'
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOKEN BURN — Per-source aggregated token usage tracking
+// Aggregated by source + time window (hourly buckets)
+// ═══════════════════════════════════════════════════════════════════════════
+
+model TokenBurn {
+  id           Int      @id @default(autoincrement())
+  source       String   // 'anorak' | 'anorak-pro-chat' | 'anorak-pro-curator' | etc.
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  window       String   // ISO hour bucket: '2026-03-28T14' (hourly aggregation key)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([source, window])
+  @@index([source])
+  @@index([window])
+}

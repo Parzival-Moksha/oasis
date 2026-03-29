@@ -64,7 +64,17 @@ export const SOUND_OPTIONS: Record<SoundEvent, SoundOption[]> = {
   conjureStart: [{ id: 'draw1', label: 'Draw Knife 1', path: `${RPG}/drawKnife1.ogg` }, { id: 'draw2', label: 'Draw Knife 2', path: `${RPG}/drawKnife2.ogg` }, { id: 'belt', label: 'Belt Handle', path: `${RPG}/beltHandle1.ogg` }],
   conjureDone:  [{ id: 'latch', label: 'Metal Latch', path: `${RPG}/metalLatch.ogg` }, { id: 'coins', label: 'Coins', path: `${RPG}/handleCoins.ogg` }],
   anorakDone:   [{ id: 'coins', label: 'Coins', path: `${RPG}/handleCoins.ogg` }, { id: 'latch', label: 'Metal Latch', path: `${RPG}/metalLatch.ogg` }, { id: 'book', label: 'Book Close', path: `${RPG}/bookClose.ogg` }],
-  notification: [{ id: 'metal', label: 'Metal Click', path: `${RPG}/metalClick.ogg` }, { id: 'coins2', label: 'Coins 2', path: `${RPG}/handleCoins2.ogg` }, { id: 'sw10', label: 'Switch 10', path: `${UI}/switch10.ogg` }],
+  notification: [
+    { id: 'metal', label: 'Metal Click', path: `${RPG}/metalClick.ogg` }, { id: 'coins2', label: 'Coins 2', path: `${RPG}/handleCoins2.ogg` },
+    { id: 'sw10', label: 'Switch 10', path: `${UI}/switch10.ogg` }, { id: 'sw15', label: 'Switch 15', path: `${UI}/switch15.ogg` },
+    { id: 'sw20', label: 'Switch 20', path: `${UI}/switch20.ogg` }, { id: 'sw25', label: 'Switch 25', path: `${UI}/switch25.ogg` },
+    { id: 'sw30', label: 'Switch 30', path: `${UI}/switch30.ogg` }, { id: 'sw35', label: 'Switch 35', path: `${UI}/switch35.ogg` },
+    { id: 'sw38', label: 'Switch 38', path: `${UI}/switch38.ogg` }, { id: 'latch', label: 'Metal Latch', path: `${RPG}/metalLatch.ogg` },
+    { id: 'pot1', label: 'Metal Pot 1', path: `${RPG}/metalPot1.ogg` }, { id: 'pot2', label: 'Metal Pot 2', path: `${RPG}/metalPot2.ogg` },
+    { id: 'pot3', label: 'Metal Pot 3', path: `${RPG}/metalPot3.ogg` }, { id: 'coins1', label: 'Coins 1', path: `${RPG}/handleCoins.ogg` },
+    { id: 'door1', label: 'Door Open', path: `${RPG}/doorOpen_1.ogg` }, { id: 'bookClose', label: 'Book Close', path: `${RPG}/bookClose.ogg` },
+    { id: 'click5', label: 'Click 5', path: `${UI}/click5.ogg` },
+  ],
   undo:         [{ id: 'sw11', label: 'Switch 11', path: `${UI}/switch11.ogg` }, { id: 'sw12', label: 'Switch 12', path: `${UI}/switch12.ogg` }],
   redo:         [{ id: 'sw13', label: 'Switch 13', path: `${UI}/switch13.ogg` }, { id: 'sw14', label: 'Switch 14', path: `${UI}/switch14.ogg` }],
   agentFocus:   [{ id: 'open1', label: 'Door Open', path: `${RPG}/doorOpen_1.ogg` }, { id: 'open2', label: 'Door Open 2', path: `${RPG}/doorOpen_2.ogg` }],
@@ -84,15 +94,45 @@ const DEFAULT_SELECTIONS: Record<SoundEvent, string> = Object.fromEntries(
 // ═══════════════════════════════════════════════════════════════════════════
 
 const audioCache = new Map<string, HTMLAudioElement>()
+const brokenPaths = new Set<string>()
 
 function getAudio(path: string): HTMLAudioElement {
   let audio = audioCache.get(path)
   if (!audio) {
     audio = new Audio(path)
     audio.preload = 'auto'
+    audio.addEventListener('error', () => brokenPaths.add(path))
     audioCache.set(path, audio)
   }
   return audio
+}
+
+/** Web Audio API oscillator — fallback beep when sound files are missing */
+let _fallbackCtx: AudioContext | null = null
+function getFallbackCtx(): AudioContext | null {
+  if (_fallbackCtx && _fallbackCtx.state !== 'closed') return _fallbackCtx
+  try {
+    const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+    if (!AC) return null
+    _fallbackCtx = new AC()
+    return _fallbackCtx
+  } catch { return null }
+}
+
+function playFallbackBeep(volume: number) {
+  const ctx = getFallbackCtx()
+  if (!ctx) return
+  try {
+    if (ctx.state === 'suspended') ctx.resume()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.frequency.value = 800
+    gain.gain.value = volume * 0.3
+    osc.start()
+    osc.stop(ctx.currentTime + 0.15)
+  } catch { /* AudioContext unavailable */ }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -168,10 +208,22 @@ export const useAudioManager = create<AudioManagerState>((set, get) => {
       const option = options.find(o => o.id === optionId) || options[0]
       if (!option) return
 
+      // If this sound file is known-broken, use oscillator fallback immediately
+      if (brokenPaths.has(option.path)) {
+        playFallbackBeep(volume)
+        return
+      }
+
       const audio = getAudio(option.path)
       audio.volume = volume
       audio.currentTime = 0
-      audio.play().catch(() => {})  // ignore autoplay policy errors
+      audio.play().catch(() => {
+        // File load error -> oscillator fallback (autoplay block -> silent, that's fine)
+        if (audio.error) {
+          brokenPaths.add(option.path)
+          playFallbackBeep(volume)
+        }
+      })
     },
 
     playFootstep: () => {
@@ -183,10 +235,13 @@ export const useAudioManager = create<AudioManagerState>((set, get) => {
       const step = steps[footstepIndex % steps.length]
       footstepIndex++
 
+      if (brokenPaths.has(step.path)) { playFallbackBeep(volume * 0.4); return }
       const audio = getAudio(step.path)
       audio.volume = volume * 0.4  // footsteps quieter than UI sounds
       audio.currentTime = 0
-      audio.play().catch(() => {})
+      audio.play().catch(() => {
+        if (audio.error) { brokenPaths.add(step.path); playFallbackBeep(volume * 0.4) }
+      })
     },
 
     setVolume: (v) => {
@@ -210,10 +265,13 @@ export const useAudioManager = create<AudioManagerState>((set, get) => {
       const options = SOUND_OPTIONS[event]
       const option = options.find(o => o.id === optionId)
       if (!option) return
+      if (brokenPaths.has(option.path)) { playFallbackBeep(get().volume); return }
       const audio = getAudio(option.path)
       audio.volume = get().volume
       audio.currentTime = 0
-      audio.play().catch(() => {})
+      audio.play().catch(() => {
+        if (audio.error) { brokenPaths.add(option.path); playFallbackBeep(get().volume) }
+      })
     },
   }
 })

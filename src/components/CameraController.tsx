@@ -76,7 +76,12 @@ function useNoclipUpdate() {
   const cameraRightRef = useRef(new THREE.Vector3())
   const upVec = useRef(new THREE.Vector3(0, 1, 0))
 
-  return (camera: THREE.PerspectiveCamera, delta: number, speed: number) => {
+  return (camera: THREE.PerspectiveCamera, delta: number, speed: number, settingsFov: number) => {
+    // Always keep baseFov synced with settings (user can change FOV mid-flight)
+    if (baseFovRef.current === 0 || Math.abs(baseFovRef.current - settingsFov) > 0.5) {
+      baseFovRef.current = settingsFov
+    }
+
     if (!getInputCapabilities().movement) {
       velocityRef.current.multiplyScalar(0.9)
       return
@@ -115,8 +120,7 @@ function useNoclipUpdate() {
     velocityRef.current.lerp(targetVelocity, 1 - Math.exp(-5 * delta))
     camera.position.add(directionRef.current.copy(velocityRef.current).multiplyScalar(delta))
 
-    // FOV ramp
-    if (baseFovRef.current === 0) baseFovRef.current = camera.fov
+    // FOV ramp — sprint widens FOV relative to settings base
     const targetFov = baseFovRef.current + (multiplierRef.current - 1) * 5
     camera.fov += (targetFov - camera.fov) * rampLerp
     camera.updateProjectionMatrix()
@@ -345,12 +349,37 @@ export function CameraController() {
   const updateAgentFocus = useAgentFocusUpdate()
 
   // Click-to-lock pointer in noclip mode (replaces PointerLockControls from drei)
+  // Also handles: clicking canvas while in ui-focused state to dismiss panels and re-lock
   useEffect(() => {
     const canvas = document.querySelector('#uploader-canvas') as HTMLCanvasElement
     if (!canvas) return
-    const onClick = () => {
+    const onClick = (e: MouseEvent) => {
       const state = useInputManager.getState()
-      // Only lock in states that support pointer lock
+
+      // ░▒▓ BUG FIX: Clicking canvas while ui-focused from noclip/TPS ▓▒░
+      // If ui-focused (panel was open) and the click landed on the canvas (not a panel),
+      // dismiss all UI layers and return to previous camera state.
+      // The returnToPrevious() call will re-request pointer lock if returning to noclip/TPS.
+      if (state.inputState === 'ui-focused') {
+        const target = e.target as HTMLElement
+        const isCanvas = target?.tagName === 'CANVAS' || target?.closest('#uploader-canvas')
+        const isPanel = target?.closest('[data-ui-panel]')
+        if (isCanvas && !isPanel) {
+          // Clear all UI layers so returnToPrevious doesn't short-circuit
+          const layers = [...state._uiLayerStack]
+          for (const id of layers) {
+            state.popUILayer(id)
+          }
+          // If popUILayer didn't already trigger returnToPrevious (empty stack case),
+          // force it now
+          if (useInputManager.getState().inputState === 'ui-focused') {
+            state.returnToPrevious()
+          }
+          return
+        }
+      }
+
+      // Standard path: lock pointer in states that support it
       if (state.can().canLockPointer && !state.pointerLocked) {
         state.requestPointerLock()
       }
@@ -387,6 +416,11 @@ export function CameraController() {
         if (orbitControlsRef.current) {
           orbitControlsRef.current.enabled = !isDragging
         }
+        // Apply settings FOV (orbit doesn't have sprint ramp)
+        if (Math.abs(camera.fov - settings.fov) > 0.1) {
+          camera.fov = settings.fov
+          camera.updateProjectionMatrix()
+        }
         break
 
       case 'noclip':
@@ -396,8 +430,8 @@ export function CameraController() {
         if (orbitControlsRef.current) orbitControlsRef.current.enabled = false
         // Mouse look (only when pointer locked)
         updateMouseLook(camera)
-        // WASD movement
-        updateNoclip(camera, delta, settings.moveSpeed)
+        // WASD movement (noclip manages FOV internally for sprint ramp)
+        updateNoclip(camera, delta, settings.moveSpeed, settings.fov)
         break
 
       case 'agent-focus':
@@ -410,6 +444,11 @@ export function CameraController() {
       case 'third-person':
         // PlayerAvatar owns the camera — we yield
         if (orbitControlsRef.current) orbitControlsRef.current.enabled = false
+        // Apply settings FOV
+        if (Math.abs(camera.fov - settings.fov) > 0.1) {
+          camera.fov = settings.fov
+          camera.updateProjectionMatrix()
+        }
         break
 
       case 'ui-focused':

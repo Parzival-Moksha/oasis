@@ -5,11 +5,11 @@
 // The canvas upon which worlds are built
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { Canvas, useFrame } from '@react-three/fiber'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { KeyboardControls, Stars, Grid, Html, TransformControls, Environment, useProgress } from '@react-three/drei'
 import { EffectComposer, Bloom, Vignette, ChromaticAberration } from '@react-three/postprocessing'
 import { BlendFunction } from 'postprocessing'
-import { Suspense, useState, useRef, useContext, useEffect, useTransition, useCallback } from 'react'
+import React, { Suspense, useState, useRef, useContext, useEffect, useTransition, useCallback } from 'react'
 import * as THREE from 'three'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -47,6 +47,7 @@ import { ParzivalPanel } from './forge/ParzivalPanel'
 import dynamic from 'next/dynamic'
 const DevcraftPanel = dynamic(() => import('./forge/DevcraftPanel'), { ssr: false })
 import { HelpPanel } from './forge/HelpPanel'
+import { ConsolePanel } from './forge/ConsolePanel'
 import { useWorldLoader } from './forge/WorldObjects'
 import { completeQuest } from '@/lib/quests'
 import { useInputManager, getInputCapabilities, isPointerLocked } from '@/lib/input-manager'
@@ -60,6 +61,39 @@ import { AgentWindowPortals } from './forge/AgentWindowPortals'
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // FPSControls, FPS_KEYBOARD_MAP, sprintRef — imported from CameraController
+
+// ─═̷─═̷─🎯─═̷─═̷─{ POINTER LOCK RAYCASTER OVERRIDE }─═̷─═̷─🎯─═̷─═̷─
+// When pointer is locked (noclip/TPS), R3F's internal raycaster uses the stale mouse
+// position from before lock was acquired. This forces raycasting from screen center (0,0)
+// so selection/highlighting aligns with the crosshair, not an arbitrary offset.
+
+function PointerLockRaycaster() {
+  const get = useThree(s => s.get)
+  const set = useThree(s => s.set)
+  useEffect(() => {
+    const currentEvents = get().events
+    set({
+      events: {
+        ...currentEvents,
+        compute: (event, state) => {
+          // When pointer is locked, force raycasting from screen center (crosshair)
+          if (document.pointerLockElement) {
+            state.pointer.set(0, 0)
+          } else {
+            // Default R3F behavior — compute NDC from event offset
+            state.pointer.set(
+              (event.offsetX / state.size.width) * 2 - 1,
+              -(event.offsetY / state.size.height) * 2 + 1
+            )
+          }
+          state.raycaster.setFromCamera(state.pointer, state.camera)
+        },
+      },
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Run once on mount — get/set are stable refs
+  return null
+}
 
 // ─═̷─═̷─💨─═̷─═̷─{ SPRINT SPEED LINES }─═̷─═̷─💨─═̷─═̷─
 // Instanced thin streaks that fly past the camera during sprint
@@ -226,6 +260,21 @@ function SettingsContent() {
                 />
               </div>
 
+              {/* Ready Player 1 Mode */}
+              <label className="flex items-center gap-3 py-1.5 cursor-pointer group hover:bg-white/5 rounded px-1 -mx-1 transition-colors">
+                <div
+                  onClick={() => updateSetting('rp1Mode', !settings.rp1Mode)}
+                  className={`w-10 h-5 rounded-full transition-all cursor-pointer relative flex-shrink-0 ${
+                    settings.rp1Mode ? 'bg-teal-600 shadow-lg shadow-teal-500/30' : 'bg-gray-700'
+                  }`}
+                >
+                  <div className={`w-4 h-4 rounded-full bg-white mt-0.5 transition-all ${
+                    settings.rp1Mode ? 'translate-x-5' : 'translate-x-0.5'
+                  }`} />
+                </div>
+                <span className="text-sm text-gray-300 group-hover:text-white transition-colors whitespace-nowrap">Ready Player 1</span>
+              </label>
+
               {/* Panel Opacity — custom div slider, native range unreliable in portals on Windows */}
               <div className="py-1.5">
                 <div className="flex items-center justify-between mb-2">
@@ -330,6 +379,23 @@ function SettingsContent() {
             </div>
           </>
         )}
+
+        {/* ─═̷─═̷─📐─═̷─═̷─ FIELD OF VIEW ─═̷─═̷─📐─═̷─═̷─ */}
+        <div className="py-1.5">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-gray-300">Field of View</span>
+            <span className="text-xs text-purple-400 font-mono">{settings.fov}°</span>
+          </div>
+          <input
+            type="range"
+            min="30"
+            max="120"
+            step="5"
+            value={settings.fov}
+            onChange={(e) => updateSetting('fov', parseInt(e.target.value))}
+            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-green-500"
+          />
+        </div>
       </div>
 
       {/* ─═̷─═̷─🔊 SOUND SETTINGS ─═̷─═̷─🔊 */}
@@ -420,6 +486,8 @@ function SkyBackgroundInner({ backgroundId }: { backgroundId: string }) {
   const skyConfig = SKY_BACKGROUNDS.find(s => s.id === backgroundId) || SKY_BACKGROUNDS[0]
 
   // drei built-in preset (CDN-hosted HDR) — sets both background AND environment (IBL)
+  // NOTE: CDN presets (forest, city, dawn, sunset) can fail if CDN is unreachable.
+  // ErrorBoundary in SkyBackground catches this — falls back to procedural stars.
   if ('preset' in skyConfig && skyConfig.preset) {
     return (
       <Environment
@@ -447,14 +515,28 @@ function SkyBackgroundInner({ backgroundId }: { backgroundId: string }) {
   )
 }
 
+// Error boundary for sky loading failures (CDN down, missing HDR, etc.)
+class SkyErrorBoundary extends React.Component<{ children: React.ReactNode; fallback: React.ReactNode }, { hasError: boolean }> {
+  state = { hasError: false }
+  static getDerivedStateFromError() { return { hasError: true } }
+  componentDidCatch(error: Error) { console.warn('[Sky] Failed to load sky background, falling back to stars:', error.message) }
+  render() { return this.state.hasError ? this.fallback : this.props.children }
+  get fallback() { return this.props.fallback }
+}
+
 // Wrapper: keeps old sky visible until new one loads (no black flash)
+// SkyErrorBoundary catches CDN/file failures → falls back to procedural stars
 function SkyBackground({ backgroundId }: { backgroundId: string }) {
   const [activeId, setActiveId] = useState(backgroundId)
   const [isPending, startTransition] = useTransition()
   useEffect(() => {
     startTransition(() => setActiveId(backgroundId))
   }, [backgroundId])
-  return <SkyBackgroundInner backgroundId={activeId} />
+  return (
+    <SkyErrorBoundary fallback={<Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={0.3} />}>
+      <SkyBackgroundInner backgroundId={activeId} />
+    </SkyErrorBoundary>
+  )
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -844,7 +926,7 @@ export default function Scene() {
   const isViewModeEditable = useOasisStore(s => s.isViewModeEditable)
   // Hide editing tools when viewing read-only worlds (but show for public_edit)
   // Anonymous users NEVER get edit tools, even on public_edit worlds
-  const hideEditTools = isViewMode && !isViewModeEditable
+  const hideEditTools = (isViewMode && !isViewModeEditable) || settings.rp1Mode
 
   // ─═̷─═̷─✨─═̷─═̷─{ WIZARD CONSOLE + ASSET EXPLORER STATE }─═̷─═̷─✨─═̷─═̷─
   const [wizardOpen, setWizardOpen] = useState(false)
@@ -856,6 +938,7 @@ export default function Scene() {
   const [anorakProOpen, setAnorakProOpen] = useState(false)
   const [devcraftOpen, setDevcraftOpen] = useState(false)
   const [parzivalOpen, setParzivalOpen] = useState(false)
+  const [consoleOpen, setConsoleOpen] = useState(false)
 
   // Panel toggle with sound
   const togglePanel = (setter: React.Dispatch<React.SetStateAction<boolean>>) => {
@@ -899,6 +982,17 @@ export default function Scene() {
     return useInputManager.getState().initGlobalListeners()
   }, [])
 
+  // ─═̷─═̷─🔄─═̷─═̷─{ INITIAL SYNC — InputManager must match loaded settings on mount }─═̷─═̷─🔄─═̷─═̷─
+  useEffect(() => {
+    // Direct set (not syncFromControlMode) — don't auto-request pointer lock on page load
+    const im = useInputManager.getState()
+    const current = im.inputState
+    if (current !== settings.controlMode) {
+      useInputManager.setState({ inputState: settings.controlMode })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Only on mount — settings.controlMode is the initial value from localStorage
+
   // ─═̷─═̷─🧪─═̷─═̷─{ TEST HARNESS — Parzival's Hands }─═̷─═̷─🧪─═̷─═̷─
   useEffect(() => { installTestHarness() }, [])
 
@@ -919,9 +1013,10 @@ export default function Scene() {
 
         {/* ─═̷─═̷─🎮 CAMERA CONTROLLER — ONE owner, ONE useFrame, ZERO fights ─═̷─═̷─🎮 */}
         <CameraControllerComponent />
+        <PointerLockRaycaster />
         {settings.controlMode === 'noclip' && <SprintParticles />}
 
-        {settings.showGrid && (
+        {settings.showGrid && !settings.rp1Mode && (
           <Grid
             position={[0, 0, 0]}
             args={[50, 50]}
@@ -1021,7 +1116,7 @@ export default function Scene() {
             🧙
           </button>
         )}
-        {isAdmin && (
+        {isAdmin && !hideEditTools && (
           <button
             onClick={() => togglePanel(setClaudeCodeOpen)}
             className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
@@ -1036,7 +1131,7 @@ export default function Scene() {
             💻
           </button>
         )}
-        {isAdmin && (
+        {isAdmin && !hideEditTools && (
           <button
             onClick={() => togglePanel(setAnorakProOpen)}
             className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
@@ -1051,7 +1146,7 @@ export default function Scene() {
             🔮
           </button>
         )}
-        <button
+        {!hideEditTools && <button
           onClick={() => togglePanel(setDevcraftOpen)}
           className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
           style={{
@@ -1063,7 +1158,7 @@ export default function Scene() {
           title="DevCraft — Productivity Terminal"
         >
           📅
-        </button>
+        </button>}
         <button
           onClick={() => togglePanel(setParzivalOpen)}
           className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
@@ -1077,6 +1172,19 @@ export default function Scene() {
         >
           🧿
         </button>
+        {isAdmin && <button
+          onClick={() => togglePanel(setConsoleOpen)}
+          className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
+          style={{
+            background: consoleOpen ? 'rgba(245,158,11,0.3)' : 'rgba(0,0,0,0.6)',
+            border: `1px solid ${consoleOpen ? 'rgba(245,158,11,0.6)' : 'rgba(255,255,255,0.15)'}`,
+            color: consoleOpen ? '#F59E0B' : '#aaa',
+            boxShadow: consoleOpen ? '0 0 12px rgba(245,158,11,0.3)' : 'none',
+          }}
+          title="Console — Live Server Logs"
+        >
+          📡
+        </button>}
         <button
           onClick={() => togglePanel(setHelpOpen)}
           className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
@@ -1166,11 +1274,48 @@ export default function Scene() {
 
       {/* 🔮 Feedback — disabled in local mode (legacy from b7_oasis SaaS) */}
 
+      {/* 📡 Console — Live Server Logs — admin only */}
+      {isAdmin && (
+        <ConsolePanel
+          isOpen={consoleOpen}
+          onClose={() => setConsoleOpen(false)}
+        />
+      )}
+
       {/* ❓ Help Panel — Controls, Guide, Glossary */}
       <HelpPanel
         isOpen={helpOpen}
         onClose={() => setHelpOpen(false)}
       />
+
+      {/* EXIT RP1 — floating escape hatch when Ready Player 1 mode is active */}
+      {settings.rp1Mode && (
+        <button
+          onClick={() => updateSetting('rp1Mode', false)}
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            zIndex: 9999,
+            padding: '6px 16px',
+            borderRadius: 8,
+            background: 'rgba(0,0,0,0.7)',
+            border: '1px solid rgba(20,184,166,0.4)',
+            color: '#14b8a6',
+            fontSize: 12,
+            fontWeight: 600,
+            letterSpacing: '0.05em',
+            cursor: 'pointer',
+            backdropFilter: 'blur(8px)',
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(20,184,166,0.2)'; e.currentTarget.style.borderColor = 'rgba(20,184,166,0.8)' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.7)'; e.currentTarget.style.borderColor = 'rgba(20,184,166,0.4)' }}
+          title="Exit Ready Player 1 mode — restore editing tools"
+        >
+          EXIT RP1
+        </button>
+      )}
 
       {/* ░▒▓ LOADING OVERLAY ▓▒░ */}
       <OasisLoader />
@@ -1181,8 +1326,7 @@ export default function Scene() {
       {/* ░▒▓ IMAGE DROP ZONE — drag & drop images into the world ▓▒░ */}
       <ImageDropZone />
 
-      {/* ░▒▓ ONBOARDING — first-login identity setup (requires auth) ▓▒░ */}
-      <OnboardingModal />
+      {/* OnboardingModal nuked — profile setup lives in ProfileButton */}
 
       {/* ░▒▓ ANONYMOUS CTA — conversion hook ▓▒░ */}
     </DragContext.Provider>

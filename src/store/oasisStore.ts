@@ -564,7 +564,14 @@ export const useOasisStore = create<OasisState>((set, get) => {
       import('@react-three/drei').then(drei => drei.useGLTF.preload(pending.path!))
     }
     set({ placementPending: pending })
-    try { require('../lib/input-manager').useInputManager.getState().transition('placement') } catch {}
+    // ░▒▓ FIX: Clear ALL UI layers before transitioning — can't be in a panel AND placing objects.
+    // This ensures _uiLayerStack is empty so pointer lock isn't blocked on placement exit. ▓▒░
+    try {
+      const im = require('../lib/input-manager').useInputManager.getState()
+      const stack = [...im._uiLayerStack]
+      for (const id of stack) im.popUILayer(id)
+      im.transition('placement')
+    } catch {}
   },
   cancelPlacement: () => {
     set({ placementPending: null })

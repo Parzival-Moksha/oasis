@@ -16,7 +16,7 @@ export interface AnorakToolStartEvent { type: 'tool_start'; name: string; icon: 
 export interface AnorakToolEvent { type: 'tool'; name: string; icon: string; id: string; input: Record<string, unknown>; display: string }
 export interface AnorakToolResultEvent { type: 'tool_result'; name: string; preview: string; isError: boolean; length: number; fullResult?: string; toolUseId?: string }
 export interface AnorakProgressEvent { type: 'progress'; inputTokens: number; outputTokens: number; stopReason?: string }
-export interface AnorakResultEvent { type: 'result'; costUsd: number; durationMs: number; sessionId: string }
+export interface AnorakResultEvent { type: 'result'; costUsd: number; durationMs: number; sessionId: string; inputTokens?: number; outputTokens?: number }
 export interface AnorakErrorEvent { type: 'error'; content: string }
 export interface AnorakStderrEvent { type: 'stderr'; content: string }
 export interface AnorakDoneEvent { type: 'done'; success: boolean; sessionId: string; costUsd?: number; inputTokens?: number; outputTokens?: number }
@@ -118,6 +118,11 @@ export const TOOL_ICONS_MAP: Record<string, string> = {
   Read: '📖', Edit: '✏️', Write: '📝', Bash: '⚡',
   Grep: '🔍', Glob: '📂', Agent: '🤖', TodoWrite: '📋',
   WebFetch: '🌐', WebSearch: '🔎', Task: '📋', Skill: '🎯',
+  // MCP media tools
+  generate_image: '🎨', generate_voice: '🔊', generate_video: '🎬',
+  // MCP mission tools
+  get_mission: '📋', get_missions_queue: '📋', create_mission: '📋',
+  mature_mission: '📋', report_review: '📋', report_test: '📋',
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -126,8 +131,32 @@ export const TOOL_ICONS_MAP: Record<string, string> = {
 
 export function fmtTokens(n: number): string {
   if (n < 1000) return String(n)
-  if (n < 10000) return `${(n / 1000).toFixed(1)}K`
-  return `${Math.round(n / 1000)}K`
+  if (n < 1_000_000) {
+    if (n < 10_000) return `${(n / 1000).toFixed(1)}K`
+    return `${Math.round(n / 1000)}K`
+  }
+  // 1M+
+  if (n < 10_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  return `${Math.round(n / 1_000_000)}M`
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOKEN BURN — fire-and-forget persistence to /api/token-burn
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Record token usage. Fire-and-forget POST to /api/token-burn.
+ * Called from both Anorak and Anorak Pro on each turn/result.
+ */
+export function recordTokenUsage(source: string, inputTokens: number, outputTokens: number) {
+  if (!inputTokens && !outputTokens) return
+  try {
+    fetch('/api/token-burn', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source, inputTokens, outputTokens }),
+    }).catch(() => { /* fire-and-forget — offline is fine */ })
+  } catch { /* SSR guard */ }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

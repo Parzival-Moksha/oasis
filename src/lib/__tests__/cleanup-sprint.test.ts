@@ -182,14 +182,8 @@ describe('FRAME_STYLES integrity', () => {
     })
   }
 
-  it('has exactly 14 frame styles', () => {
-    // Extract block between FRAME_STYLES declaration and closing ]\n
-    const startIdx = frameSource.indexOf('export const FRAME_STYLES')
-    const blockAfterStart = frameSource.slice(startIdx)
-    // Find the closing bracket of the array (first line that is just "]")
-    const closingIdx = blockAfterStart.indexOf('\n]\n')
-    const frameStylesBlock = blockAfterStart.slice(0, closingIdx > 0 ? closingIdx : 600)
-    const frameIds = frameStylesBlock.match(/id:\s*'[a-z]+'/g)
+  it('has exactly 13 frame styles', () => {
+    const frameIds = frameSource.match(/id:\s*'[a-z]+'/g)
     expect(frameIds).not.toBeNull()
     expect(frameIds!.length).toBe(13)
   })

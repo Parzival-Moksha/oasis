@@ -47,7 +47,7 @@ const STATE_CAPABILITIES: Record<InputState, StateCapabilities> = {
   'agent-focus':  { movement: false, mouseLook: false, objectSelection: false, transformShortcuts: false, clipboardShortcuts: false, deleteShortcut: false, enterFocuses: false, canLockPointer: false, showHoverLabels: false },
   'placement':    { movement: true,  mouseLook: true,  objectSelection: false, transformShortcuts: false, clipboardShortcuts: false, deleteShortcut: false, enterFocuses: false, canLockPointer: true,  showHoverLabels: false },
   'paint':        { movement: true,  mouseLook: true,  objectSelection: false, transformShortcuts: false, clipboardShortcuts: false, deleteShortcut: false, enterFocuses: false, canLockPointer: true,  showHoverLabels: false },
-  'ui-focused':   { movement: false, mouseLook: false, objectSelection: false, transformShortcuts: false, clipboardShortcuts: false, deleteShortcut: false, enterFocuses: false, canLockPointer: false, showHoverLabels: false },
+  'ui-focused':   { movement: false, mouseLook: false, objectSelection: false, transformShortcuts: false, clipboardShortcuts: false, deleteShortcut: true,  enterFocuses: false, canLockPointer: false, showHoverLabels: false },
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -121,11 +121,16 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
       document.exitPointerLock()
     }
     // Save previous camera state when entering temporary modes (paint/placement)
-    // so returnToPrevious() can restore the correct camera mode
+    // so returnToPrevious() can restore the correct camera mode.
+    // ░▒▓ FIX: When entering placement/paint from ui-focused or agent-focus,
+    // walk back to the REAL base camera via _previousCameraState. ▓▒░
     const isTemporary = to === 'paint' || to === 'placement'
-    const isBaseCamera = current === 'orbit' || current === 'noclip' || current === 'third-person'
-    if (isTemporary && isBaseCamera) {
-      set({ inputState: to, _previousCameraState: current })
+    if (isTemporary) {
+      const isBaseCamera = current === 'orbit' || current === 'noclip' || current === 'third-person'
+      const baseCamera = isBaseCamera
+        ? current
+        : get()._previousCameraState || 'orbit'
+      set({ inputState: to, _previousCameraState: baseCamera })
     } else {
       set({ inputState: to })
     }
@@ -187,13 +192,30 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
 
   syncFromControlMode: (mode) => {
     const current = get().inputState
-    if (current === 'orbit' || current === 'noclip' || current === 'third-person') {
-      // Release pointer lock when switching to orbit
+    const isBaseCamera = current === 'orbit' || current === 'noclip' || current === 'third-person'
+    const isTemporary = current === 'placement' || current === 'paint'
+
+    if (isBaseCamera) {
+      // Direct switch between base camera modes
       if (mode === 'orbit' && get().pointerLocked) {
         document.exitPointerLock()
       }
       set({ inputState: mode })
+      // Auto-request pointer lock when switching TO noclip or TPS
+      // Note: uses setTimeout(0) to let the state update propagate first,
+      // but stays within the browser's transient user activation window (~5s)
+      if (mode === 'noclip' || mode === 'third-person') {
+        setTimeout(() => get().requestPointerLock(), 50)
+      }
+    } else if (isTemporary) {
+      // In placement/paint: update the _previousCameraState so when the
+      // temporary mode ends, it returns to the newly selected camera mode
+      if (mode === 'orbit' && get().pointerLocked) {
+        document.exitPointerLock()
+      }
+      set({ _previousCameraState: mode })
     }
+    // agent-focus / ui-focused: ignore — don't disrupt those modes
   },
 
   // ── UI LAYER STACK ────────────────────────────────────────────
@@ -222,8 +244,19 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     if (get()._uiLayerStack.length > 0) return
     if (!STATE_CAPABILITIES[get().inputState].canLockPointer) return
     if (get().pointerLocked) return
-    const canvas = document.querySelector('#uploader-canvas') as HTMLCanvasElement
-    if (canvas) canvas.requestPointerLock()
+    // R3F puts id on wrapper div — find the actual <canvas> element inside it
+    const wrapper = document.querySelector('#uploader-canvas')
+    const canvas = wrapper?.querySelector('canvas') || wrapper
+    if (!canvas) return
+    ;(canvas as HTMLElement).requestPointerLock()
+    // ░▒▓ FIX: Verify pointer lock succeeded after a tick — browser may silently reject ▓▒░
+    setTimeout(() => {
+      if (get().pointerLocked) return // success
+      const state = get().inputState
+      if (state === 'orbit' || state === 'ui-focused' || state === 'agent-focus') return // no longer needs lock
+      console.warn('[InputManager] Pointer lock failed, retrying...')
+      ;(canvas as HTMLElement).requestPointerLock()
+    }, 100)
   },
 
   releasePointerLock: () => {
@@ -327,8 +360,12 @@ export function hasActiveUILayer(): boolean {
 
 export function useUILayer(id: string, active: boolean = true) {
   useEffect(() => {
-    if (!active) return
-    useInputManager.getState().pushUILayer(id)
+    if (active) {
+      useInputManager.getState().pushUILayer(id)
+    } else {
+      // Panel hidden (e.g. WizCon closed via state, not unmount) — pop immediately
+      useInputManager.getState().popUILayer(id)
+    }
     return () => useInputManager.getState().popUILayer(id)
   }, [id, active])
 }

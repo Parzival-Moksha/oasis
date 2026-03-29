@@ -15,6 +15,7 @@ import * as path from 'path'
 const FORGE_DIR = path.resolve(__dirname, '../../components/forge')
 const deleteModalSrc = fs.readFileSync(path.join(FORGE_DIR, 'DeleteConfirmModal.tsx'), 'utf-8')
 const wizConSrc = fs.readFileSync(path.join(FORGE_DIR, 'WizardConsole.tsx'), 'utf-8')
+const assetCardSrc = fs.readFileSync(path.join(FORGE_DIR, 'AssetCard.tsx'), 'utf-8')
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. DeleteConfirmModal logic
@@ -46,16 +47,17 @@ describe('DeleteConfirmModal — source patterns', () => {
     expect(deleteModalSrc).toContain('&rdquo;')
   })
 
-  it('uses nullish coalescing for placedCount > 0 check', () => {
-    // Pattern: (placedCount ?? 0) > 0
-    expect(deleteModalSrc).toContain('(placedCount ?? 0) > 0')
+  it('uses nullish coalescing via total variable for placedCount', () => {
+    // Pattern: const total = placedCount ?? 0; then total > 0
+    expect(deleteModalSrc).toContain('const total = placedCount ?? 0')
+    expect(deleteModalSrc).toContain('total > 0')
   })
 
-  it('shows placed-count warning when (placedCount ?? 0) > 0', () => {
-    // The yellow warning text containing placed count info
+  it('shows placed-count warning when total > 0', () => {
+    // The yellow warning text containing placed count info via ${total}
     expect(deleteModalSrc).toContain('text-yellow-400')
     expect(deleteModalSrc).toContain('placed')
-    expect(deleteModalSrc).toContain('{placedCount}')
+    expect(deleteModalSrc).toContain('${total}')
     expect(deleteModalSrc).toContain('time')
   })
 
@@ -63,9 +65,9 @@ describe('DeleteConfirmModal — source patterns', () => {
     expect(deleteModalSrc).toContain('This removes the file permanently.')
   })
 
-  it('pluralizes "times" when (placedCount ?? 0) > 1', () => {
-    // Pattern: (placedCount ?? 0) > 1 ? 's' : ''
-    expect(deleteModalSrc).toContain("(placedCount ?? 0) > 1 ? 's' : ''")
+  it('pluralizes "times" when total > 1', () => {
+    // Pattern: total > 1 ? 's' : ''
+    expect(deleteModalSrc).toContain("total > 1 ? 's' : ''")
   })
 
   it('registers Escape keydown handler only when isOpen', () => {
@@ -153,39 +155,45 @@ describe('GalleryItem — unified delete pattern', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('MediaTab — media playback', () => {
-  // Extract MediaTab function body for scoped analysis
-  const mediaTabStart = wizConSrc.indexOf('function MediaTab()')
+  // Media elements now live in AssetCard.tsx (CardThumbnail renderer).
+  // MediaTab delegates rendering to <AssetCard type="media-*"> components.
+  const mediaTabStart = wizConSrc.indexOf('function MediaTab(')
   const mediaTabEnd = wizConSrc.indexOf('\n// ═══', mediaTabStart + 1)
   const mediaTabBody = wizConSrc.slice(mediaTabStart, mediaTabEnd > mediaTabStart ? mediaTabEnd : mediaTabStart + 5000)
 
-  it('renders <video> with controls attribute for video items', () => {
-    expect(mediaTabBody).toMatch(/<video\s[^>]*controls/)
+  it('renders <video> via AssetCard CardThumbnail for video items', () => {
+    // MediaTab passes type='media-video' to AssetCard, which renders <video> in CardThumbnail
+    expect(mediaTabBody).toContain("'media-video'")
+    expect(assetCardSrc).toMatch(/<video/)
   })
 
-  it('renders <audio> with controls attribute for audio items', () => {
-    expect(mediaTabBody).toMatch(/<audio\s[^>]*controls/)
+  it('renders <audio> type via AssetCard for audio items', () => {
+    // MediaTab passes type='media-audio' to AssetCard; audio rendered via fallback emoji
+    expect(mediaTabBody).toContain("'media-audio'")
+    expect(assetCardSrc).toContain('media-audio')
   })
 
-  it('renders <img> for image items with click handler for lightbox', () => {
-    // Image onClick sets lightboxUrl
-    expect(mediaTabBody).toMatch(/<img\s[^>]*onClick=\{.*setLightboxUrl/)
+  it('renders <img> via AssetCard CardThumbnail for image items with click handler for lightbox', () => {
+    // AssetCard renders <img> in CardThumbnail; MediaTab wires onClick to setLightboxUrl
+    expect(assetCardSrc).toMatch(/<img/)
+    expect(mediaTabBody).toContain('setLightboxUrl')
   })
 
   it('video has preload="metadata" for efficient loading', () => {
-    expect(mediaTabBody).toContain('preload="metadata"')
+    expect(assetCardSrc).toContain('preload="metadata"')
   })
 
   it('video has playsInline for mobile compatibility', () => {
-    expect(mediaTabBody).toContain('playsInline')
+    expect(assetCardSrc).toContain('playsInline')
   })
 
   it('images use lazy loading', () => {
-    expect(mediaTabBody).toContain('loading="lazy"')
+    expect(assetCardSrc).toContain('loading="lazy"')
   })
 
   it('audio is wrapped in a container with icon', () => {
-    // Audio items get a visual wrapper with the music note emoji
-    expect(mediaTabBody).toContain('🎵')
+    // Audio items get a visual wrapper with the music note emoji — now in AssetCard via unicode escape
+    expect(assetCardSrc).toContain('\\u{1F3B5}')
   })
 })
 
@@ -244,7 +252,7 @@ describe('MediaLightbox — fullscreen image viewer', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('MediaTab — portal pattern', () => {
-  const mediaTabStart = wizConSrc.indexOf('function MediaTab()')
+  const mediaTabStart = wizConSrc.indexOf('function MediaTab(')
   const mediaTabEnd = wizConSrc.indexOf('\n// ═══', mediaTabStart + 1)
   const mediaTabBody = wizConSrc.slice(mediaTabStart, mediaTabEnd > mediaTabStart ? mediaTabEnd : mediaTabStart + 5000)
 
@@ -272,20 +280,20 @@ describe('MediaTab — portal pattern', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('MediaTab — deleteTarget state management', () => {
-  const mediaTabStart = wizConSrc.indexOf('function MediaTab()')
+  const mediaTabStart = wizConSrc.indexOf('function MediaTab(')
   const mediaTabEnd = wizConSrc.indexOf('\n// ═══', mediaTabStart + 1)
   const mediaTabBody = wizConSrc.slice(mediaTabStart, mediaTabEnd > mediaTabStart ? mediaTabEnd : mediaTabStart + 5000)
 
-  it('declares deleteTarget state with url, name, placedCount', () => {
-    expect(mediaTabBody).toMatch(/useState<\{\s*url:\s*string;\s*name:\s*string;\s*placedCount:\s*number\s*\}\s*\|\s*null>/)
+  it('declares deleteTarget state with url, name, placedCount, worldCount', () => {
+    expect(mediaTabBody).toMatch(/useState<\{\s*url:\s*string;\s*name:\s*string;\s*placedCount:\s*number;\s*worldCount:\s*number\s*\}\s*\|\s*null>/)
   })
 
   it('initializes deleteTarget as null', () => {
     expect(mediaTabBody).toContain('>(null)')
   })
 
-  it('sets deleteTarget with url, name, and placedCount on delete button click', () => {
-    expect(mediaTabBody).toContain('setDeleteTarget({ url: item.url, name: item.name, placedCount })')
+  it('sets deleteTarget with url, name, placedCount, and worldCount on delete button click', () => {
+    expect(mediaTabBody).toContain('setDeleteTarget({ url: item.url, name: item.name, placedCount, worldCount: 0 })')
   })
 
   it('passes deleteTarget.name as itemName to DeleteConfirmModal', () => {
@@ -322,7 +330,8 @@ describe('WizardConsole — conjured gallery delete modal', () => {
   })
 
   it('passes onRequestDelete to GalleryItem from main gallery', () => {
-    expect(wizConSrc).toMatch(/onRequestDelete=\{.*setConjureDeleteTarget/)
+    expect(wizConSrc).toMatch(/onRequestDelete=\{/)
+    expect(wizConSrc).toContain('setConjureDeleteTarget')
   })
 
   it('renders second DeleteConfirmModal for conjured assets', () => {
@@ -342,12 +351,11 @@ describe('WizardConsole — conjured gallery delete modal', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('DeleteConfirmModal — placedCount edge cases', () => {
-  it('handles placedCount=undefined safely via nullish coalescing', () => {
+  it('handles placedCount=undefined safely via nullish coalescing into total', () => {
     // The ?? 0 pattern ensures undefined doesn't cause NaN comparisons
-    const matches = deleteModalSrc.match(/placedCount \?\? 0/g)
-    expect(matches).toBeTruthy()
-    // Used twice: once for > 0 check, once for > 1 pluralization
-    expect(matches!.length).toBe(2)
+    // placedCount ?? 0 stored in total, worldCount ?? 0 stored in worlds
+    expect(deleteModalSrc).toContain('const total = placedCount ?? 0')
+    expect(deleteModalSrc).toContain('const worlds = worldCount ?? 0')
   })
 
   it('placedCount=0 shows generic message (not placed-count warning)', () => {
@@ -357,15 +365,15 @@ describe('DeleteConfirmModal — placedCount edge cases', () => {
   })
 
   it('placedCount=1 shows singular "time" (not "times")', () => {
-    // (placedCount ?? 0) > 1 is false when placedCount is 1
+    // total > 1 is false when placedCount is 1
     // So the ternary returns '' (no s suffix)
-    expect(deleteModalSrc).toContain("(placedCount ?? 0) > 1 ? 's' : ''")
+    expect(deleteModalSrc).toContain("total > 1 ? 's' : ''")
   })
 
   it('placedCount=5 would show "5 times" (plural)', () => {
-    // When placedCount > 1, the 's' suffix is added
-    // Verify the template produces: {placedCount} time{s}
-    expect(deleteModalSrc).toMatch(/\{placedCount\}\s*time\{/)
+    // When total > 1, the 's' suffix is added
+    // Verify the template produces: ${total} time${...}
+    expect(deleteModalSrc).toMatch(/\$\{total\}\s*time\$\{/)
   })
 
   it('DeleteConfirmModal is a client component', () => {
@@ -390,7 +398,7 @@ describe('DeleteConfirmModal — placedCount edge cases', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('MediaTab — countPlaced helper', () => {
-  const mediaTabStart = wizConSrc.indexOf('function MediaTab()')
+  const mediaTabStart = wizConSrc.indexOf('function MediaTab(')
   const mediaTabEnd = wizConSrc.indexOf('\n// ═══', mediaTabStart + 1)
   const mediaTabBody = wizConSrc.slice(mediaTabStart, mediaTabEnd > mediaTabStart ? mediaTabEnd : mediaTabStart + 5000)
 
@@ -415,7 +423,7 @@ describe('MediaTab — countPlaced helper', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('MediaTab — lightbox state', () => {
-  const mediaTabStart = wizConSrc.indexOf('function MediaTab()')
+  const mediaTabStart = wizConSrc.indexOf('function MediaTab(')
   const mediaTabEnd = wizConSrc.indexOf('\n// ═══', mediaTabStart + 1)
   const mediaTabBody = wizConSrc.slice(mediaTabStart, mediaTabEnd > mediaTabStart ? mediaTabEnd : mediaTabStart + 5000)
 

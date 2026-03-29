@@ -367,11 +367,23 @@ describe('fmtTokens', () => {
     expect(fmtTokens(9999)).toBe('10.0K')
   })
 
-  it('returns rounded K for 10000+', () => {
+  it('returns rounded K for 10000-999999', () => {
     expect(fmtTokens(10000)).toBe('10K')
     expect(fmtTokens(10500)).toBe('11K')
     expect(fmtTokens(100000)).toBe('100K')
-    expect(fmtTokens(1000000)).toBe('1000K')
+    expect(fmtTokens(999999)).toBe('1000K')
+  })
+
+  it('returns one decimal M for 1M-9.9M', () => {
+    expect(fmtTokens(1000000)).toBe('1.0M')
+    expect(fmtTokens(1500000)).toBe('1.5M')
+    expect(fmtTokens(9999999)).toBe('10.0M')
+  })
+
+  it('returns rounded M for 10M+', () => {
+    expect(fmtTokens(10000000)).toBe('10M')
+    expect(fmtTokens(15000000)).toBe('15M')
+    expect(fmtTokens(100000000)).toBe('100M')
   })
 
   it('handles boundary at 1000 exactly', () => {
@@ -382,6 +394,16 @@ describe('fmtTokens', () => {
   it('handles boundary at 10000 exactly', () => {
     expect(fmtTokens(9999)).toBe('10.0K')
     expect(fmtTokens(10000)).toBe('10K')
+  })
+
+  it('handles boundary at 1M exactly', () => {
+    expect(fmtTokens(999999)).toBe('1000K')
+    expect(fmtTokens(1000000)).toBe('1.0M')
+  })
+
+  it('handles boundary at 10M exactly', () => {
+    expect(fmtTokens(9999999)).toBe('10.0M')
+    expect(fmtTokens(10000000)).toBe('10M')
   })
 })
 

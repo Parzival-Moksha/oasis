@@ -10,8 +10,9 @@ import { createPortal } from 'react-dom'
 import { SettingsContext } from '../scene-lib'
 import { useOasisStore } from '../../store/oasisStore'
 import { useUILayer } from '@/lib/input-manager'
-import { TOOL_ICONS_MAP, fmtTokens } from '@/lib/anorak-engine'
-import { ToolCallCard, renderMarkdown } from '@/lib/anorak-renderers'
+import { TOOL_ICONS_MAP, recordTokenUsage } from '@/lib/anorak-engine'
+import { CollapsibleBlock, ToolCallCard, TokenCounter, renderMarkdown } from '@/lib/anorak-renderers'
+import { MediaBubble } from './MediaBubble'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -113,7 +114,7 @@ const DEFAULT_SETTINGS: PanelSettings = { bgColor: '#080a0f', opacity: 0.92, blu
 
 interface StreamEntry {
   id: number
-  type: 'text' | 'status' | 'tool' | 'tool_start' | 'tool_result' | 'error' | 'stderr' | 'thinking' | 'result'
+  type: 'text' | 'status' | 'tool' | 'tool_start' | 'tool_result' | 'error' | 'stderr' | 'thinking' | 'result' | 'media'
   content: string
   lobe: string
   timestamp: number
@@ -121,11 +122,13 @@ interface StreamEntry {
   toolIcon?: string
   toolInput?: Record<string, unknown>
   toolDisplay?: string
+  toolUseId?: string  // links tool calls to their results
   isError?: boolean
   resultLength?: number
+  mediaType?: string
+  mediaUrl?: string
+  mediaPrompt?: string
 }
-
-const TRUSTED_MEDIA = /^(\/|https?:\/\/(localhost|127\.0\.0\.1|fal\.media|fal-cdn\.|oaidalleapiprodscus\.|replicate\.delivery)[^\s]*)/
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SESSION MANAGEMENT
@@ -181,8 +184,8 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const visible = entries.slice(-200)
-  const [fullscreen, setFullscreen] = useState<{ type: 'image' | 'video'; url: string } | null>(null)
   const [chatInput, setChatInput] = useState('')
+  const [autoScroll, setAutoScroll] = useState(true)
 
   // Lobe filter state — persisted to localStorage
   const [visibleLobes, setVisibleLobes] = useState<Record<string, boolean>>(() => {
@@ -198,9 +201,22 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
   }, [])
   const filtered = visible.filter(e => visibleLobes[e.lobe] !== false)
 
+  // Auto-scroll on new content (only when enabled)
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-  }, [entries.length])
+    if (autoScroll && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+  }, [entries.length, autoScroll])
+
+  // Detect manual scroll-up via passive listener
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const onScroll = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60
+      setAutoScroll(atBottom)
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [])
 
   const handleSend = useCallback(() => {
     const msg = chatInput.trim()
@@ -256,53 +272,6 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
     )
   }
 
-  // Detect media URLs in text content (trusted domains only)
-  const renderContent = (content: string) => {
-    const imgMatch = content.match(/((?:https?:\/\/[^\s]+\.(?:png|jpg|jpeg|gif|webp))|(?:\/generated-images\/[^\s]+))/i)
-    if (imgMatch && TRUSTED_MEDIA.test(imgMatch[0])) {
-      return (
-        <span>
-          {content.replace(imgMatch[0], '')}
-          <img src={imgMatch[0]} alt="generated"
-            className="mt-1 max-w-[300px] max-h-[200px] rounded border border-white/10 cursor-pointer hover:border-teal-500/50 transition-colors"
-            onClick={() => setFullscreen({ type: 'image', url: imgMatch[0] })} />
-        </span>
-      )
-    }
-    const vidMatch = content.match(/((?:https?:\/\/[^\s]+\.(?:mp4|webm))|(?:\/generated-videos\/[^\s]+))/i)
-    if (vidMatch && TRUSTED_MEDIA.test(vidMatch[0])) {
-      return (
-        <span>
-          {content.replace(vidMatch[0], '')}
-          <video src={vidMatch[0]} controls
-            className="mt-1 max-w-[300px] rounded border border-white/10 cursor-pointer hover:border-teal-500/50 transition-colors"
-            onClick={e => { e.preventDefault(); setFullscreen({ type: 'video', url: vidMatch[0] }) }} />
-        </span>
-      )
-    }
-    const audioMatch = content.match(/((?:https?:\/\/[^\s]+\.(?:mp3|wav|ogg))|(?:\/generated-voices\/[^\s]+))/i)
-    if (audioMatch && TRUSTED_MEDIA.test(audioMatch[0])) {
-      return (
-        <span>
-          {content.replace(audioMatch[0], '')}
-          <span className="mt-1 flex items-center gap-1">
-            <audio src={audioMatch[0]} controls className="w-[220px] h-7" />
-            <select defaultValue="1" onChange={e => {
-              const audio = e.target.previousElementSibling as HTMLAudioElement
-              if (audio) audio.playbackRate = parseFloat(e.target.value)
-            }} className="text-[9px] bg-black/60 border border-white/10 rounded px-1 py-0.5 text-gray-400 outline-none cursor-pointer">
-              <option value="1">1x</option>
-              <option value="1.2">1.2x</option>
-              <option value="1.5">1.5x</option>
-              <option value="2">2x</option>
-            </select>
-          </span>
-        </span>
-      )
-    }
-    return content
-  }
-
   const lobeKeys = Object.keys(LOBE_COLORS)
 
   return (
@@ -320,58 +289,133 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
         ))}
         <span className="text-[9px] font-mono text-gray-600 ml-auto">{filtered.length}/{visible.length}</span>
       </div>
-      {/* Token counter bar */}
-      {(sessionTokens.inputTokens > 0 || sessionTokens.outputTokens > 0) && (
-        <div className={`flex items-center gap-3 px-2 py-0.5 border-b border-white/5 shrink-0 text-[9px] font-mono ${isStreaming ? 'animate-pulse' : ''}`}>
-          <span style={{ color: '#38bdf8' }}>↓{fmtTokens(sessionTokens.inputTokens)}</span>
-          <span style={{ color: '#fbbf24' }}>↑{fmtTokens(sessionTokens.outputTokens)}</span>
-          {sessionTokens.costUsd > 0 && <span style={{ color: '#4ade80' }}>${sessionTokens.costUsd.toFixed(4)}</span>}
+      {/* Token counter bar — always visible during streaming or when tokens exist */}
+      {(isStreaming || sessionTokens.inputTokens > 0 || sessionTokens.outputTokens > 0) && (
+        <div className="px-2 py-0.5 border-b border-white/5 shrink-0">
+          <TokenCounter
+            inputTokens={sessionTokens.inputTokens}
+            outputTokens={sessionTokens.outputTokens}
+            costUsd={sessionTokens.costUsd}
+            isStreaming={isStreaming}
+            alwaysShow
+          />
         </div>
       )}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-1 font-mono text-xs">
-        {filtered.map(e => {
+        {filtered.map((e, idx) => {
+          // Skip tool_result entries — they're rendered inline with the preceding tool card
+          if (e.type === 'tool_result') return null
+          // Skip tool_start when a matching tool entry follows (avoids duplicate cards)
+          if (e.type === 'tool_start') {
+            const next = filtered[idx + 1]
+            if (next && next.type === 'tool' && next.toolName === e.toolName) return null
+          }
+
           const lobeColor = LOBE_COLORS[e.lobe] || '#888'
+          const prevEntry = idx > 0 ? filtered[idx - 1] : null
+          const showLobe = !prevEntry || prevEntry.lobe !== e.lobe
+
+          // For tool/tool_start entries, find the matching tool_result to show completion state
+          let toolResult: { preview: string; isError: boolean; length: number; fullResult?: string } | undefined
+          if (e.type === 'tool' || e.type === 'tool_start') {
+            // Match by toolUseId first (precise), fall back to sequential toolName match
+            for (let j = idx + 1; j < filtered.length && j < idx + 50; j++) {
+              const candidate = filtered[j]
+              if (candidate.type === 'tool_result') {
+                // Precise match by toolUseId when available
+                if (e.toolUseId && candidate.toolUseId && candidate.toolUseId === e.toolUseId) {
+                  toolResult = {
+                    preview: candidate.content.substring(0, 500),
+                    isError: !!candidate.isError,
+                    length: candidate.resultLength || candidate.content.length,
+                    fullResult: candidate.content.length <= 2000 ? candidate.content : undefined,
+                  }
+                  break
+                }
+                // Fallback: match by toolName when no IDs (legacy entries)
+                if (!e.toolUseId && !candidate.toolUseId && candidate.toolName === e.toolName) {
+                  toolResult = {
+                    preview: candidate.content.substring(0, 500),
+                    isError: !!candidate.isError,
+                    length: candidate.resultLength || candidate.content.length,
+                    fullResult: candidate.content.length <= 2000 ? candidate.content : undefined,
+                  }
+                  break
+                }
+              }
+              // Stop scanning if we hit another tool/tool_start (only for legacy no-ID mode)
+              if (!e.toolUseId && (candidate.type === 'tool' || candidate.type === 'tool_start') && candidate.toolName !== e.toolName) break
+            }
+          }
+
           return (
-            <div key={e.id} style={{
+            <div key={`${e.id}-${e.type}-${e.timestamp}`} style={{
               borderLeft: `3px solid ${lobeColor}`,
               paddingLeft: 8,
               background: `${lobeColor}08`,
               borderRadius: 4,
               marginBottom: 2,
             }}>
-              <span className="text-[9px]" style={{ opacity: 0.4, marginRight: 6 }}>{e.lobe}</span>
-              {e.type === 'tool_start' && <span style={{ color: '#888' }}>⚙ starting {e.content}...</span>}
-              {e.type === 'tool' && (
+              {showLobe && <div className="text-[9px] mb-0.5" style={{ opacity: 0.4 }}>{e.lobe}</div>}
+              {(e.type === 'tool_start' || e.type === 'tool') && (
                 <ToolCallCard
                   name={e.toolName || e.content}
                   icon={e.toolIcon || TOOL_ICONS_MAP[e.toolName || ''] || '🔧'}
                   display={e.toolDisplay || e.content}
                   input={e.toolInput}
+                  result={toolResult}
                   compact
                 />
               )}
               {e.type === 'status' && <span style={{ fontStyle: 'italic', color: lobeColor }}>{e.content}</span>}
-              {e.type === 'text' && <div style={{ color: lobeColor }}>{renderContent(e.content)}</div>}
-              {e.type === 'error' && <span style={{ color: '#ef4444' }}>ERROR: {e.content}</span>}
+              {e.type === 'text' && (
+                <div className="text-[11px] text-gray-300 leading-relaxed" style={{ color: '#cbd5e1' }}>
+                  {renderMarkdown(e.content)}
+                </div>
+              )}
+              {e.type === 'error' && (
+                <div className="text-[10px] text-red-400 px-2 py-1 rounded"
+                  style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)' }}>
+                  {e.content}
+                </div>
+              )}
               {e.type === 'stderr' && <span style={{ opacity: 0.6, color: '#555' }}>{e.content}</span>}
-              {e.type === 'thinking' && <div style={{ opacity: 0.5, fontStyle: 'italic', color: lobeColor }}>{renderMarkdown(e.content)}</div>}
-              {e.type === 'tool_result' && (
-                e.toolName ? (
-                  <ToolCallCard
-                    name={e.toolName}
-                    icon={e.toolIcon || TOOL_ICONS_MAP[e.toolName] || '🔧'}
-                    display={e.toolDisplay || e.toolName}
-                    result={{ preview: e.content, isError: !!e.isError, length: e.resultLength || e.content.length }}
-                    compact
-                  />
-                ) : (
-                  <span style={{ opacity: 0.7 }}>{renderContent(e.content)}</span>
-                )
+              {e.type === 'thinking' && (
+                <CollapsibleBlock
+                  label={`thinking (${e.content.length} chars)`}
+                  icon="🧠"
+                  content={e.content}
+                  accentColor="rgba(168,85,247,0.4)"
+                  compact
+                />
               )}
               {e.type === 'result' && <span style={{ color: '#22c55e', fontStyle: 'italic' }}>✓ {e.content}</span>}
+              {e.type === 'media' && e.mediaUrl && (
+                <MediaBubble url={e.mediaUrl} mediaType={(e.mediaType as 'image' | 'audio' | 'video') || 'image'} prompt={e.mediaPrompt} compact />
+              )}
             </div>
           )
         })}
+
+        {/* Auto-scroll pill — appears when user scrolls up */}
+        {!autoScroll && filtered.length > 0 && (
+          <button
+            onClick={() => {
+              setAutoScroll(true)
+              if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+            }}
+            className="sticky bottom-1 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-full text-[9px] font-mono font-bold cursor-pointer z-10 transition-all hover:scale-105"
+            style={{
+              background: 'rgba(8,10,15,0.9)',
+              border: '1px solid rgba(20,184,166,0.4)',
+              color: '#14b8a6',
+              boxShadow: '0 2px 12px rgba(20,184,166,0.2)',
+              backdropFilter: 'blur(8px)',
+            }}
+          >
+            ↓ New messages
+          </button>
+        )}
       </div>
 
       {/* Chat input */}
@@ -397,21 +441,6 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
         </div>
       </div>
 
-      {/* Fullscreen media modal */}
-      {fullscreen && (
-        <div className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center cursor-pointer"
-          onClick={() => setFullscreen(null)}>
-          {fullscreen.type === 'image' && (
-            <img src={fullscreen.url} alt="fullscreen" className="max-w-[90vw] max-h-[90vh] rounded-lg shadow-2xl" />
-          )}
-          {fullscreen.type === 'video' && (
-            <video src={fullscreen.url} controls autoPlay className="max-w-[90vw] max-h-[90vh] rounded-lg shadow-2xl"
-              onClick={e => e.stopPropagation()} />
-          )}
-          <button className="absolute top-4 right-4 text-white/60 hover:text-white text-3xl cursor-pointer"
-            onClick={() => setFullscreen(null)}>×</button>
-        </div>
-      )}
     </>
   )
 })
@@ -1349,6 +1378,7 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
                 toolIcon: (event.name && TOOL_ICONS_MAP[event.name]) || undefined,
                 toolInput: event.input,
                 toolDisplay: event.display,
+                toolUseId: event.id,
               }])
             }
             // Tool result
@@ -1359,24 +1389,24 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
                 toolName: event.name,
                 toolIcon: (event.name && TOOL_ICONS_MAP[event.name]) || undefined,
                 toolDisplay: event.display,
+                toolUseId: event.toolUseId,
                 isError: event.isError,
                 resultLength: event.length,
               }])
             }
             // Result (cost/tokens)
             if (event.type === 'result') {
+              const inTok = Number(event.total_input_tokens) || 0
+              const outTok = Number(event.total_output_tokens) || 0
               const cost = event.cost_usd ? `$${Number(event.cost_usd).toFixed(4)}` : ''
-              const tokens = event.total_input_tokens ? `↓${event.total_input_tokens} ↑${event.total_output_tokens}` : ''
+              const tokens = inTok ? `↓${inTok} ↑${outTok}` : ''
               setStreamEntriesRef.current(prev => [...prev, {
                 id: entryIdRef.current++, type: 'result',
                 content: [tokens, cost].filter(Boolean).join(' | ') || 'done', lobe: 'anorak-pro', timestamp: Date.now(),
               }])
-              // Accumulate session tokens
-              addSessionTokensRef.current(
-                Number(event.total_input_tokens) || 0,
-                Number(event.total_output_tokens) || 0,
-                Number(event.cost_usd) || 0,
-              )
+              // Accumulate session tokens + persist
+              addSessionTokensRef.current(inTok, outTok, Number(event.cost_usd) || 0)
+              recordTokenUsage('anorak-pro-chat', inTok, outTok)
             }
             // Thinking
             if (event.type === 'thinking') {
@@ -1390,6 +1420,14 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
               setStreamEntriesRef.current(prev => [...prev, {
                 id: entryIdRef.current++, type: 'error',
                 content: event.content || event.error || '', lobe: 'anorak-pro', timestamp: Date.now(),
+              }])
+            }
+            // Media events
+            if (event.type === 'media') {
+              setStreamEntriesRef.current(prev => [...prev, {
+                id: entryIdRef.current++, type: 'media', content: event.prompt || '',
+                lobe: 'anorak-pro', timestamp: Date.now(),
+                mediaType: event.mediaType, mediaUrl: event.url, mediaPrompt: event.prompt,
               }])
             }
           } catch { /* skip malformed lines */ }
@@ -1520,15 +1558,23 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
               const tokens = event.total_input_tokens ? `↓${event.total_input_tokens} ↑${event.total_output_tokens}` : ''
               content = [tokens, cost].filter(Boolean).join(' | ') || 'done'
             }
-            // Accumulate session tokens on result events
+            // Accumulate session tokens on result events + persist
             if (type === 'result') {
-              addSessionTokensRef.current(
-                Number(event.total_input_tokens) || 0,
-                Number(event.total_output_tokens) || 0,
-                Number(event.cost_usd) || 0,
-              )
+              const inTok = Number(event.total_input_tokens) || 0
+              const outTok = Number(event.total_output_tokens) || 0
+              addSessionTokensRef.current(inTok, outTok, Number(event.cost_usd) || 0)
+              recordTokenUsage(`anorak-pro-${lobe}`, inTok, outTok)
             }
-            if (content || type === 'tool' || type === 'tool_result') {
+            // Media events
+            if (type === 'media') {
+              setStreamEntriesRef.current(prev => [...prev, {
+                id: entryIdRef.current++, type: 'media', content: event.prompt || '',
+                lobe, timestamp: Date.now(),
+                mediaType: event.mediaType, mediaUrl: event.url, mediaPrompt: event.prompt,
+              }])
+              continue
+            }
+            if (content || type === 'tool' || type === 'tool_start' || type === 'tool_result') {
               const entry: StreamEntry = {
                 id: entryIdRef.current++, type, content, lobe, timestamp: Date.now(),
                 // Enriched tool fields from stream parser
@@ -1536,6 +1582,7 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
                 toolIcon: (event.name && TOOL_ICONS_MAP[event.name]) || undefined,
                 toolInput: event.input,
                 toolDisplay: event.display,
+                toolUseId: event.id || event.toolUseId,
                 isError: event.isError,
                 resultLength: event.length,
               }

@@ -47,6 +47,9 @@ export function FourBarFrame({ w, h, border, depth, color, roughness = 0.5, meta
   emissive?: string; emissiveIntensity?: number; opacity?: number; transparent?: boolean
 }) {
   const matProps = { color, roughness, metalness, ...(emissive && { emissive, emissiveIntensity }), ...(transparent && { transparent, opacity }) }
+  // Side bars use polygonOffset to prevent z-fighting at corners where
+  // horizontal and vertical bars share co-planar faces
+  const sideMatProps = { ...matProps, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }
   return (
     <group position={[0, 0, -depth / 2]}>
       <mesh position={[0, (h + border) / 2, 0]}>
@@ -59,11 +62,11 @@ export function FourBarFrame({ w, h, border, depth, color, roughness = 0.5, meta
       </mesh>
       <mesh position={[-(w + border) / 2, 0, 0]}>
         <boxGeometry args={[border, h, depth]} />
-        <meshStandardMaterial {...matProps} />
+        <meshStandardMaterial {...sideMatProps} />
       </mesh>
       <mesh position={[(w + border) / 2, 0, 0]}>
         <boxGeometry args={[border, h, depth]} />
-        <meshStandardMaterial {...matProps} />
+        <meshStandardMaterial {...sideMatProps} />
       </mesh>
     </group>
   )

@@ -27,8 +27,11 @@ export interface OasisSettings {
   controlMode: 'orbit' | 'noclip' | 'third-person'
   mouseSensitivity: number
   moveSpeed: number
+  // ─═̷─═̷─📐 FIELD OF VIEW ─═̷─═̷─📐
+  fov: number                 // Camera FOV in degrees (30-120, default 75)
   // ─═̷─═̷─🔲 VISUAL ─═̷─═̷─🔲
   showGrid: boolean           // Toggle the infinite helper grid
+  rp1Mode: boolean            // Ready Player 1 — exploration-only, hide all editing UI
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

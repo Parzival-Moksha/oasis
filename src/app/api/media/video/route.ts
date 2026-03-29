@@ -124,7 +124,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const statusRes = await fetch(`${endpoint}/requests/${requestId}/status`, {
+    // fal.ai queue: status/result URLs use the base model path, NOT the sub-endpoint
+    // e.g. /fal-ai/ltx-2.3/requests/{id}/status — NOT /fal-ai/ltx-2.3/text-to-video/requests/{id}/status
+    const baseUrl = endpoint.replace(/\/(text-to-video|image-to-video(\/fast)?)$/, '')
+    const statusRes = await fetch(`${baseUrl}/requests/${requestId}/status`, {
       headers: { 'Authorization': `Key ${apiKey}` },
     })
     if (!statusRes.ok) {
@@ -140,7 +143,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (statusData.status === 'COMPLETED') {
-      const resultRes = await fetch(`${endpoint}/requests/${requestId}`, {
+      const resultRes = await fetch(`${baseUrl}/requests/${requestId}`, {
         headers: { 'Authorization': `Key ${apiKey}` },
       })
       if (resultRes.ok) {

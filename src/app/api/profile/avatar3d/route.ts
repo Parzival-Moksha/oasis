@@ -6,6 +6,7 @@
 
 import { NextResponse } from 'next/server'
 import { getLocalUserId } from '@/lib/local-auth'
+import { prisma } from '@/lib/db'
 import path from 'path'
 import fs from 'fs/promises'
 
@@ -20,6 +21,13 @@ export async function POST(request: Request) {
 
     // Remove avatar — set to null
     if (urlType === 'remove') {
+      try {
+        await prisma.profile.upsert({
+          where: { userId: _uid },
+          create: { userId: _uid, avatar3dUrl: null },
+          update: { avatar3dUrl: null },
+        })
+      } catch (e) { console.error('[Avatar3D] Profile update failed:', e) }
       console.log(`[Avatar3D] Removed avatar`)
       return NextResponse.json({ avatar_3d_url: null })
     }
@@ -61,6 +69,15 @@ export async function POST(request: Request) {
     } else {
       return NextResponse.json({ error: 'Invalid avatar URL type' }, { status: 400 })
     }
+
+    // Persist to Profile
+    try {
+      await prisma.profile.upsert({
+        where: { userId: _uid },
+        create: { userId: _uid, avatar3dUrl },
+        update: { avatar3dUrl },
+      })
+    } catch (e) { console.error('[Avatar3D] Profile update failed:', e) }
 
     return NextResponse.json({ avatar_3d_url: avatar3dUrl })
   } catch (err) {

@@ -87,9 +87,13 @@ async function listSessions(): Promise<NextResponse> {
           } catch { /* skip malformed lines */ }
         }
 
+        // Date-based fallback label (same format as Anorak Pro: "Mar 28 21:15")
+        const sessionDate = new Date(lastTimestamp || firstTimestamp || fileStat.mtime.toISOString())
+        const dateFallback = sessionDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
+          sessionDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
         sessions.push({
           id,
-          label: label || `Session ${id.slice(0, 8)}`,
+          label: label || dateFallback,
           timestamp: lastTimestamp || firstTimestamp,
           turnCount,
           fileSize: fileStat.size,

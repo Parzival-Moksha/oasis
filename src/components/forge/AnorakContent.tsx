@@ -15,11 +15,12 @@ import {
   type HistoryMessage,
   parseAnorakSSE,
   TOOL_ICONS_MAP,
-  fmtTokens,
+  recordTokenUsage,
 } from '../../lib/anorak-engine'
 import {
   CollapsibleBlock,
   ToolCallCard,
+  TokenCounter,
   renderMarkdown,
 } from '../../lib/anorak-renderers'
 import { MediaBubble } from './MediaBubble'
@@ -341,7 +342,10 @@ export function AnorakContent({
             break
           }
           case 'thinking': {
+            // Only null text block when CREATING a new thinking block
+            // (not on re-emissions — server re-sends full thinking on every snapshot)
             if (!currentThinkingBlock) {
+              currentTextBlock = null
               currentThinkingBlock = { id: `think-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, kind: 'thinking', content: '' }
               blocks.push(currentThinkingBlock)
             }
@@ -409,6 +413,9 @@ export function AnorakContent({
           }
           case 'result': {
             turnCost = event.costUsd
+            if (event.inputTokens) turnInputTokens = event.inputTokens
+            if (event.outputTokens) turnOutputTokens = event.outputTokens
+            setLiveTokens({ input: turnInputTokens, output: turnOutputTokens })
             break
           }
           case 'error': {
@@ -461,6 +468,8 @@ export function AnorakContent({
       setIsStreaming(false)
       setLiveTokens({ input: 0, output: 0 })
       abortRef.current = null
+      // Persist token usage (fire-and-forget)
+      recordTokenUsage('anorak', turnInputTokens, turnOutputTokens)
     }
   }, [input, isStreaming, sessionId, model, windowId, onSessionChange])
 
@@ -716,11 +725,13 @@ export function AnorakContent({
 
               {/* Turn metadata */}
               {!turn.isStreaming && (turn.costUsd || turn.inputTokens) && (
-                <div className={`flex items-center gap-3 ${metaSize} text-gray-600 font-mono pt-1 border-t border-white/5`}>
-                  {turn.costUsd !== undefined && turn.costUsd > 0 && <span>${turn.costUsd.toFixed(4)}</span>}
-                  {turn.inputTokens !== undefined && turn.inputTokens > 0 && (
-                    <span>{fmtTokens(turn.inputTokens || 0)} in / {fmtTokens(turn.outputTokens || 0)} out</span>
-                  )}
+                <div className={`pt-1 border-t border-white/5`}>
+                  <TokenCounter
+                    inputTokens={turn.inputTokens || 0}
+                    outputTokens={turn.outputTokens || 0}
+                    costUsd={turn.costUsd || 0}
+                    className={metaSize}
+                  />
                 </div>
               )}
             </div>

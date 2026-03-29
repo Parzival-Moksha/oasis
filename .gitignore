@@ -103,6 +103,9 @@ CLAUDE*.md
 feb*.txt
 public/screenshots/
 
+# Generated MCP config for claude-code route
+.claude-code-mcp.json
+
 # Test screenshots (CDP/Playwright — regenerated every run)
 test-screenshots/
 

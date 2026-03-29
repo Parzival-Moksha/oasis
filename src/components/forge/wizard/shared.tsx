@@ -10,6 +10,10 @@ import { PROVIDERS, REMESH_PRESETS } from '../../../lib/conjure/types'
 
 export const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 
+// Re-export unified AssetCard for use in all wizard tabs
+export { AssetCard, RegenAllButton } from '../AssetCard'
+export type { AssetCardProps, AssetCardType } from '../AssetCard'
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // STATUS BADGE — Visual feedback for conjuration progress
 // ═══════════════════════════════════════════════════════════════════════════════

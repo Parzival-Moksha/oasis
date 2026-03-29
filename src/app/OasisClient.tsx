@@ -56,11 +56,6 @@ export default function OasisClient() {
 
       <RealmSelector />
 
-      <div className="ui-overlay bottom-4 left-1/2 -translate-x-1/2">
-        <p className="text-xs text-gray-600 text-center">
-          Drag to orbit • Scroll to zoom • Click to interact
-        </p>
-      </div>
     </main>
   )
 }

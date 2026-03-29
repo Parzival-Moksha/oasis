@@ -5,14 +5,15 @@
 
 import React, { useState } from 'react'
 import { MediaBubble, type MediaType } from '../components/forge/MediaBubble'
+import { fmtTokens } from './anorak-engine'
 
 // Trusted media URL patterns for auto-detection
-const MEDIA_URL_RE = /((?:https?:\/\/(?:localhost|127\.0\.0\.1|fal\.media|fal-cdn\.|oaidalleapiprodscus\.|replicate\.delivery)[^\s]+)|(?:\/generated-(?:images|voices|videos)\/[^\s]+))/i
+const MEDIA_URL_RE = /((?:https?:\/\/(?:localhost|127\.0\.0\.1|fal\.media|fal-cdn\.|oaidalleapiprodscus\.|replicate\.delivery)[^\s]+)|(?:\/?generated-(?:images|voices|videos)\/[^\s"')]+))/i
 
 function detectMediaType(url: string): MediaType | null {
-  if (/\/generated-images\/|\.(?:png|jpg|jpeg|gif|webp)(?:\?|$)/i.test(url)) return 'image'
-  if (/\/generated-voices\/|\.(?:mp3|wav|ogg)(?:\?|$)/i.test(url)) return 'audio'
-  if (/\/generated-videos\/|\.(?:mp4|webm)(?:\?|$)/i.test(url)) return 'video'
+  if (/\/?generated-images\/|\.(?:png|jpg|jpeg|gif|webp)(?:\?|$)/i.test(url)) return 'image'
+  if (/\/?generated-voices\/|\.(?:mp3|wav|ogg)(?:\?|$)/i.test(url)) return 'audio'
+  if (/\/?generated-videos\/|\.(?:mp4|webm)(?:\?|$)/i.test(url)) return 'video'
   return null
 }
 
@@ -220,37 +221,98 @@ export function renderInline(text: string): React.ReactNode {
   let key = 0
 
   while (remaining.length > 0) {
+    // Find earliest match among: image ![...](url), link [...](url), `code`, **bold**
+    const imgMatch = remaining.match(/!\[([^\]]*)\]\(([^)]+)\)/)
+    const linkMatch = remaining.match(/(?<!!)\[([^\]]*)\]\(([^)]+)\)/)
     const codeIdx = remaining.indexOf('`')
     const boldIdx = remaining.indexOf('**')
 
-    if (codeIdx === -1 && boldIdx === -1) {
+    // Determine which pattern starts first
+    const imgIdx = imgMatch?.index ?? -1
+    const lnkIdx = linkMatch?.index ?? -1
+
+    const candidates: { type: string; idx: number }[] = []
+    if (imgIdx !== -1) candidates.push({ type: 'img', idx: imgIdx })
+    if (lnkIdx !== -1) candidates.push({ type: 'link', idx: lnkIdx })
+    if (codeIdx !== -1) candidates.push({ type: 'code', idx: codeIdx })
+    if (boldIdx !== -1) candidates.push({ type: 'bold', idx: boldIdx })
+
+    if (candidates.length === 0) {
       parts.push(<span key={key++}>{remaining}</span>)
       break
     }
 
-    const codeFirst = codeIdx !== -1 && (boldIdx === -1 || codeIdx < boldIdx)
-    const boldFirst = boldIdx !== -1 && (codeIdx === -1 || boldIdx < codeIdx)
+    candidates.sort((a, b) => a.idx - b.idx)
+    const first = candidates[0]
 
-    if (codeFirst) {
+    // Push text before the match
+    if (first.idx > 0) {
+      parts.push(<span key={key++}>{remaining.slice(0, first.idx)}</span>)
+    }
+
+    if (first.type === 'img' && imgMatch) {
+      const alt = imgMatch[1]
+      const url = imgMatch[2]
+      const mt = detectMediaType(url)
+      if (mt === 'audio') {
+        parts.push(<audio key={key++} controls src={url} className="max-w-full my-1" style={{ height: 36 }} />)
+      } else if (mt === 'video') {
+        parts.push(<video key={key++} controls src={url} className="max-w-full rounded my-1" style={{ maxHeight: 240 }} />)
+      } else {
+        // Image (or unknown) — render as MediaBubble with built-in lightbox
+        parts.push(<MediaBubble key={key++} url={url} mediaType="image" prompt={alt || undefined} compact />)
+      }
+      remaining = remaining.slice(first.idx + imgMatch[0].length)
+    } else if (first.type === 'link' && linkMatch) {
+      const linkText = linkMatch[1]
+      const url = linkMatch[2]
+      const mt = detectMediaType(url)
+      if (mt === 'audio') {
+        parts.push(
+          <span key={key++}>
+            <audio controls src={url} className="max-w-full my-1" style={{ height: 36 }} />
+            {linkText && <span className="text-gray-400 text-[10px]">{linkText}</span>}
+          </span>
+        )
+      } else if (mt === 'video') {
+        parts.push(
+          <span key={key++}>
+            <video controls src={url} className="max-w-full rounded my-1" style={{ maxHeight: 240 }} />
+            {linkText && <span className="text-gray-400 text-[10px]">{linkText}</span>}
+          </span>
+        )
+      } else if (mt === 'image') {
+        parts.push(<MediaBubble key={key++} url={url} mediaType="image" prompt={linkText || undefined} compact />)
+      } else {
+        // Regular link
+        parts.push(
+          <a key={key++} href={url} target="_blank" rel="noopener noreferrer"
+            className="underline" style={{ color: '#38bdf8' }}>
+            {linkText || url}
+          </a>
+        )
+      }
+      remaining = remaining.slice(first.idx + linkMatch[0].length)
+    } else if (first.type === 'code') {
       const closeIdx = remaining.indexOf('`', codeIdx + 1)
       if (closeIdx === -1) {
-        parts.push(<span key={key++}>{remaining}</span>)
+        parts.push(<span key={key++}>{remaining.slice(first.idx)}</span>)
+        remaining = ''
         break
       }
-      if (codeIdx > 0) parts.push(<span key={key++}>{remaining.slice(0, codeIdx)}</span>)
       parts.push(
         <code key={key++} className="px-1 py-0.5 rounded text-sky-300" style={{ background: 'rgba(56,189,248,0.1)' }}>
           {remaining.slice(codeIdx + 1, closeIdx)}
         </code>
       )
       remaining = remaining.slice(closeIdx + 1)
-    } else if (boldFirst) {
+    } else if (first.type === 'bold') {
       const closeIdx = remaining.indexOf('**', boldIdx + 2)
       if (closeIdx === -1) {
-        parts.push(<span key={key++}>{remaining}</span>)
+        parts.push(<span key={key++}>{remaining.slice(first.idx)}</span>)
+        remaining = ''
         break
       }
-      if (boldIdx > 0) parts.push(<span key={key++}>{remaining.slice(0, boldIdx)}</span>)
       parts.push(<strong key={key++} className="text-white font-semibold">{remaining.slice(boldIdx + 2, closeIdx)}</strong>)
       remaining = remaining.slice(closeIdx + 2)
     } else {
@@ -270,16 +332,21 @@ export function renderMarkdownLine(line: string, idx: number): React.ReactNode {
   if (/^\d+\. /.test(line)) return <div key={idx} className="pl-3">{renderInline(line)}</div>
   if (/^---+$/.test(line.trim())) return <hr key={idx} className="border-white/10 my-2" />
   if (line.trim() === '') return <div key={idx} className="h-1" />
-  // Auto-detect media URLs in text
+  // If line contains markdown image ![...](url) or link [...](url), let renderInline handle it
+  if (/!\[[^\]]*\]\([^)]+\)/.test(line) || /(?<!!)\[[^\]]*\]\([^)]+\)/.test(line)) {
+    return <div key={idx}>{renderInline(line)}</div>
+  }
+  // Auto-detect BARE media URLs in text — render as MediaBubble
   const mediaMatch = line.match(MEDIA_URL_RE)
   if (mediaMatch) {
-    const mt = detectMediaType(mediaMatch[0])
+    const matchedUrl = mediaMatch[0]
+    const mt = detectMediaType(matchedUrl)
     if (mt) {
-      const rest = line.replace(mediaMatch[0], '').trim()
+      const rest = line.replace(matchedUrl, '').trim()
       return (
         <div key={idx}>
           {rest && <div>{renderInline(rest)}</div>}
-          <MediaBubble url={mediaMatch[0]} mediaType={mt} />
+          <MediaBubble url={matchedUrl} mediaType={mt} />
         </div>
       )
     }
@@ -288,6 +355,65 @@ export function renderMarkdownLine(line: string, idx: number): React.ReactNode {
 }
 
 export function renderMarkdown(content: string): React.ReactNode {
+  // ── Extract <think>...</think> blocks before line processing ──
+  // Some models embed thinking in raw text with <think> tags.
+  // Split into segments: [{type:'text',content}, {type:'think',content}, ...]
+  const segments: { type: 'text' | 'think'; content: string }[] = []
+  let remaining = content
+  const thinkOpenRe = /<think>/i
+  const thinkCloseRe = /<\/think>/i
+  while (remaining.length > 0) {
+    const openMatch = thinkOpenRe.exec(remaining)
+    if (!openMatch) {
+      segments.push({ type: 'text', content: remaining })
+      break
+    }
+    // Text before <think>
+    if (openMatch.index > 0) {
+      segments.push({ type: 'text', content: remaining.slice(0, openMatch.index) })
+    }
+    const afterOpen = remaining.slice(openMatch.index + openMatch[0].length)
+    const closeMatch = thinkCloseRe.exec(afterOpen)
+    if (!closeMatch) {
+      // Unclosed <think> — treat rest as thinking (still streaming)
+      segments.push({ type: 'think', content: afterOpen })
+      remaining = ''
+      break
+    }
+    segments.push({ type: 'think', content: afterOpen.slice(0, closeMatch.index) })
+    remaining = afterOpen.slice(closeMatch.index + closeMatch[0].length)
+  }
+
+  // If we found <think> blocks, render segments with CollapsibleBlock for thinking
+  if (segments.some(s => s.type === 'think')) {
+    return (
+      <>
+        {segments.map((seg, si) => {
+          if (seg.type === 'think') {
+            const thinkContent = seg.content.trim()
+            if (!thinkContent) return null
+            return (
+              <CollapsibleBlock
+                key={`think-${si}`}
+                label={`thinking (${thinkContent.length} chars)`}
+                icon="🧠"
+                content={thinkContent}
+                accentColor="rgba(168,85,247,0.4)"
+              />
+            )
+          }
+          const textContent = seg.content.trim()
+          if (!textContent) return null
+          return <React.Fragment key={`seg-${si}`}>{renderMarkdownLines(textContent)}</React.Fragment>
+        })}
+      </>
+    )
+  }
+
+  return renderMarkdownLines(content)
+}
+
+function renderMarkdownLines(content: string): React.ReactNode {
   const lines = content.split('\n')
   const result: React.ReactNode[] = []
   let inCodeBlock = false
@@ -376,4 +502,34 @@ export function renderMarkdown(content: string): React.ReactNode {
   }
 
   return <>{result}</>
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOKEN COUNTER — shared compact display for both Anorak panels
+// Display format: ↓123K ↑45K $0.42
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function TokenCounter({
+  inputTokens,
+  outputTokens,
+  costUsd,
+  isStreaming = false,
+  alwaysShow = false,
+  className = '',
+}: {
+  inputTokens: number
+  outputTokens: number
+  costUsd: number
+  isStreaming?: boolean
+  alwaysShow?: boolean
+  className?: string
+}) {
+  if (!alwaysShow && inputTokens === 0 && outputTokens === 0 && costUsd === 0) return null
+  return (
+    <div className={`flex items-center gap-3 text-[9px] font-mono ${isStreaming ? 'animate-pulse' : ''} ${className}`}>
+      <span style={{ color: '#38bdf8' }}>↓{fmtTokens(inputTokens)}</span>
+      <span style={{ color: '#fbbf24' }}>↑{fmtTokens(outputTokens)}</span>
+      {costUsd > 0 && <span style={{ color: '#4ade80' }}>${costUsd.toFixed(costUsd < 0.01 ? 4 : 2)}</span>}
+    </div>
+  )
 }

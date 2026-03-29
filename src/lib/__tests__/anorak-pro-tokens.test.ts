@@ -388,8 +388,8 @@ describe('edge cases', () => {
   })
 
   it('very large token counts format correctly with fmtTokens', () => {
-    expect(fmtTokens(1_000_000)).toBe('1000K')
-    expect(fmtTokens(2_500_000)).toBe('2500K')
+    expect(fmtTokens(1_000_000)).toBe('1.0M')
+    expect(fmtTokens(2_500_000)).toBe('2.5M')
   })
 
   it('cost precision with toFixed(4)', () => {
