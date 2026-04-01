@@ -43,6 +43,7 @@ import { OnboardingModal } from './forge/OnboardingModal'
 import { MerlinPanel } from './forge/MerlinPanel'
 import { AnorakPanel } from './forge/AnorakPanel'
 import { AnorakProPanel } from './forge/AnorakProPanel'
+import { HermesPanel } from './forge/HermesPanel'
 import { ParzivalPanel } from './forge/ParzivalPanel'
 import dynamic from 'next/dynamic'
 const DevcraftPanel = dynamic(() => import('./forge/DevcraftPanel'), { ssr: false })
@@ -937,6 +938,7 @@ export default function Scene() {
   const [claudeCodeOpen, setClaudeCodeOpen] = useState(false)
   const [anorakProOpen, setAnorakProOpen] = useState(false)
   const [devcraftOpen, setDevcraftOpen] = useState(false)
+  const [hermesOpen, setHermesOpen] = useState(false)
   const [parzivalOpen, setParzivalOpen] = useState(false)
   const [consoleOpen, setConsoleOpen] = useState(false)
 
@@ -1160,6 +1162,19 @@ export default function Scene() {
           📅
         </button>}
         <button
+          onClick={() => togglePanel(setHermesOpen)}
+          className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
+          style={{
+            background: hermesOpen ? 'rgba(245,158,11,0.3)' : 'rgba(0,0,0,0.6)',
+            border: `1px solid ${hermesOpen ? 'rgba(245,158,11,0.6)' : 'rgba(255,255,255,0.15)'}`,
+            color: hermesOpen ? '#F59E0B' : '#aaa',
+            boxShadow: hermesOpen ? '0 0 12px rgba(245,158,11,0.3)' : 'none',
+          }}
+          title="Hermes - Remote Agent Chat"
+        >
+          ☤
+        </button>
+        <button
           onClick={() => togglePanel(setParzivalOpen)}
           className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
           style={{
@@ -1247,6 +1262,10 @@ export default function Scene() {
       )}
 
       {/* 🧿 Parzival — Autonomous Brain */}
+      <HermesPanel
+        isOpen={hermesOpen}
+        onClose={() => setHermesOpen(false)}
+      />
       <ParzivalPanel
         isOpen={parzivalOpen}
         onClose={() => setParzivalOpen(false)}
