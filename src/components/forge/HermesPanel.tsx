@@ -49,6 +49,17 @@ interface HermesUsage {
   totalTokens?: number
 }
 
+interface HermesNativeSessionSummary {
+  id: string
+  title: string | null
+  preview: string
+  source: string
+  model: string | null
+  startedAt: number | null
+  lastActiveAt: number | null
+  messageCount: number
+}
+
 interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
@@ -66,7 +77,7 @@ interface HermesReasoningEvent { type: 'reasoning'; content: string }
 interface HermesToolEvent { type: 'tool'; index: number; id?: string; name?: string; argumentsChunk?: string }
 interface HermesUsageEvent { type: 'usage'; promptTokens?: number; completionTokens?: number; totalTokens?: number }
 interface HermesDoneEvent { type: 'done'; finishReason?: string }
-interface HermesMetaEvent { type: 'meta'; model?: string; upstream?: string }
+interface HermesMetaEvent { type: 'meta'; model?: string; upstream?: string; sessionId?: string; sessionMode?: 'compat' | 'native' }
 interface HermesErrorEvent { type: 'error'; message: string }
 
 type HermesEvent =
@@ -89,13 +100,51 @@ const DEFAULT_TUNNEL_STATUS: HermesTunnelStatus = { configured: false, running: 
 const POS_KEY = 'oasis-hermes-pos'
 const SIZE_KEY = 'oasis-hermes-size'
 const SETTINGS_KEY = 'oasis-hermes-settings'
-const MODEL_KEY = 'oasis-hermes-model'
 const DETAILS_KEY = 'oasis-hermes-details'
 const CHAT_KEY = 'oasis-hermes-chat-history'
+const SESSION_KEY = 'oasis-hermes-session'
+const VOICE_OUTPUT_KEY = 'oasis-hermes-voice-output'
+const NEW_SESSION_VALUE = '__oasis_new__'
 const CONNECTION_HINT = `HERMES_API_BASE=http://127.0.0.1:8642/v1
 HERMES_API_KEY=your_secret_here
 HERMES_MODEL=optional_model_id`
 const TUNNEL_HINT = 'ssh -L 8642:127.0.0.1:8642 user@your-vps -N'
+
+type BrowserSpeechRecognitionResult = {
+  isFinal: boolean
+  0: { transcript: string }
+}
+
+type BrowserSpeechRecognitionEvent = {
+  resultIndex: number
+  results: ArrayLike<BrowserSpeechRecognitionResult>
+}
+
+type BrowserSpeechRecognitionErrorEvent = {
+  error: string
+}
+
+type BrowserSpeechRecognition = {
+  continuous: boolean
+  interimResults: boolean
+  lang: string
+  onstart: (() => void) | null
+  onend: (() => void) | null
+  onerror: ((event: BrowserSpeechRecognitionErrorEvent) => void) | null
+  onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null
+  start: () => void
+  stop: () => void
+  abort: () => void
+}
+
+type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition
+
+declare global {
+  interface Window {
+    SpeechRecognition?: BrowserSpeechRecognitionConstructor
+    webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor
+  }
+}
 
 function readStoredMessages(): ChatMessage[] {
   if (typeof window === 'undefined') return []
@@ -151,6 +200,28 @@ function summarizeToolArguments(raw: string): string {
   } catch {
     return trimmed.slice(0, 80)
   }
+}
+
+function getSpeechRecognitionConstructor(): BrowserSpeechRecognitionConstructor | null {
+  if (typeof window === 'undefined') return null
+  return window.SpeechRecognition || window.webkitSpeechRecognition || null
+}
+
+function formatSessionLabel(session: HermesNativeSessionSummary): string {
+  const primary = (session.title || session.preview || `Session ${session.id.slice(-8)}`).replace(/\s+/g, ' ').trim()
+  const source = session.source || 'unknown'
+  const preview = primary.length > 56 ? `${primary.slice(0, 56)}...` : primary
+  return `${preview} • ${source}`
+}
+
+function toSpeechText(content: string): string {
+  return content
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/https?:\/\/\S+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function getStatusColor(status: HermesStatus): string {
@@ -318,6 +389,10 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const autoConnectTriedRef = useRef(false)
+  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null)
+  const dictationBaseRef = useRef('')
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const spokenMessageIdsRef = useRef<Set<string>>(new Set())
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => readStoredMessages())
   const [input, setInput] = useState('')
@@ -327,10 +402,15 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   const [status, setStatus] = useState<HermesStatus>(DEFAULT_STATUS)
   const [tunnelStatus, setTunnelStatus] = useState<HermesTunnelStatus>(DEFAULT_TUNNEL_STATUS)
   const [statusLoading, setStatusLoading] = useState(false)
-  const [selectedModel, setSelectedModel] = useState(() => {
+  const [sessions, setSessions] = useState<HermesNativeSessionSummary[]>([])
+  const [nativeSessionsAvailable, setNativeSessionsAvailable] = useState(false)
+  const [sessionsLoading, setSessionsLoading] = useState(false)
+  const [sessionsError, setSessionsError] = useState('')
+  const [selectedSessionId, setSelectedSessionId] = useState(() => {
     if (typeof window === 'undefined') return ''
-    try { return localStorage.getItem(MODEL_KEY) || '' } catch { return '' }
+    try { return localStorage.getItem(SESSION_KEY) || '' } catch { return '' }
   })
+  const [sessionHydrating, setSessionHydrating] = useState(false)
   const [showDetails, setShowDetails] = useState(() => {
     if (typeof window === 'undefined') return true
     try { return localStorage.getItem(DETAILS_KEY) !== 'false' } catch { return true }
@@ -342,6 +422,14 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   const [tunnelAutoStart, setTunnelAutoStart] = useState(true)
   const [connectionSaving, setConnectionSaving] = useState(false)
   const [connectionError, setConnectionError] = useState('')
+  const [voiceInputSupported, setVoiceInputSupported] = useState(false)
+  const [voiceListening, setVoiceListening] = useState(false)
+  const [voiceOutputEnabled, setVoiceOutputEnabled] = useState(() => {
+    if (typeof window === 'undefined') return false
+    try { return localStorage.getItem(VOICE_OUTPUT_KEY) === 'true' } catch { return false }
+  })
+  const [voiceSpeaking, setVoiceSpeaking] = useState(false)
+  const [voiceError, setVoiceError] = useState('')
   const [panelSettings, setPanelSettings] = useState<PanelSettings>(() => {
     if (typeof window === 'undefined') return DEFAULT_SETTINGS
     try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null') || DEFAULT_SETTINGS } catch { return DEFAULT_SETTINGS }
@@ -402,15 +490,6 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         }
 
         setStatus(nextStatus)
-        setSelectedModel(current => {
-          const fallback = current && nextStatus.models.includes(current)
-            ? current
-            : nextStatus.defaultModel || nextStatus.models[0] || current || ''
-          try {
-            if (fallback) localStorage.setItem(MODEL_KEY, fallback)
-          } catch {}
-          return fallback
-        })
       }
 
       setTunnelStatus({
@@ -439,6 +518,247 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       setStatusLoading(false)
     }
   }, [])
+
+  const stopVoicePlayback = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+      audioRef.current = null
+    }
+
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+    }
+
+    setVoiceSpeaking(false)
+  }, [])
+
+  const speakAssistantReply = useCallback(async (content: string) => {
+    const speechText = toSpeechText(content).slice(0, 2400)
+    if (!speechText) return
+
+    stopVoicePlayback()
+    setVoiceError('')
+
+    try {
+      const response = await fetch('/api/media/voice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: speechText, voice: 'rachel' }),
+      })
+      const data = await response.json().catch(() => ({}))
+
+      if (response.ok && typeof data?.url === 'string') {
+        const audio = new Audio(data.url)
+        audioRef.current = audio
+        audio.onended = () => {
+          if (audioRef.current === audio) audioRef.current = null
+          setVoiceSpeaking(false)
+        }
+        audio.onerror = () => {
+          if (audioRef.current === audio) audioRef.current = null
+          setVoiceSpeaking(false)
+          setVoiceError('Voice playback failed.')
+        }
+
+        setVoiceSpeaking(true)
+        await audio.play()
+        return
+      }
+    } catch {
+      // Fall back to browser speech synthesis below.
+    }
+
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined') {
+      const utterance = new SpeechSynthesisUtterance(speechText)
+      utterance.onend = () => setVoiceSpeaking(false)
+      utterance.onerror = () => {
+        setVoiceSpeaking(false)
+        setVoiceError('Voice playback failed.')
+      }
+      setVoiceSpeaking(true)
+      window.speechSynthesis.cancel()
+      window.speechSynthesis.speak(utterance)
+      return
+    }
+
+    setVoiceSpeaking(false)
+  }, [stopVoicePlayback])
+
+  const loadSessions = useCallback(async (preferredSessionId?: string) => {
+    if (!status.connected || !tunnelStatus.configured) {
+      setNativeSessionsAvailable(false)
+      setSessions([])
+      setSessionsError('')
+      return
+    }
+
+    setSessionsLoading(true)
+    setSessionsError('')
+
+    try {
+      const response = await fetch('/api/hermes/sessions?limit=40', { cache: 'no-store' })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || data?.available === false) {
+        throw new Error(typeof data?.error === 'string' ? data.error : `HTTP ${response.status}`)
+      }
+
+      const nextSessions: HermesNativeSessionSummary[] = Array.isArray(data?.sessions)
+        ? data.sessions.filter((entry: unknown): entry is HermesNativeSessionSummary => {
+            if (!entry || typeof entry !== 'object') return false
+            const item = entry as Record<string, unknown>
+            return typeof item.id === 'string'
+          })
+        : []
+
+      setNativeSessionsAvailable(true)
+      setSessions(nextSessions)
+      setSelectedSessionId(current => {
+        const keepNew = preferredSessionId === NEW_SESSION_VALUE || current === NEW_SESSION_VALUE
+        let next = ''
+
+        if (preferredSessionId) {
+          next = preferredSessionId === NEW_SESSION_VALUE || nextSessions.some(session => session.id === preferredSessionId)
+            ? preferredSessionId
+            : ''
+        }
+
+        if (!next && current && current !== NEW_SESSION_VALUE && nextSessions.some(session => session.id === current)) {
+          next = current
+        }
+
+        if (!next && keepNew) {
+          next = NEW_SESSION_VALUE
+        }
+
+        if (!next) {
+          next = nextSessions[0]?.id || NEW_SESSION_VALUE
+        }
+
+        try {
+          localStorage.setItem(SESSION_KEY, next)
+        } catch {
+          // Ignore storage errors.
+        }
+
+        return next
+      })
+    } catch (error) {
+      setNativeSessionsAvailable(false)
+      setSessions([])
+      setSessionsError(error instanceof Error ? error.message : 'Unable to load Hermes sessions.')
+    } finally {
+      setSessionsLoading(false)
+    }
+  }, [status.connected, tunnelStatus.configured])
+
+  const hydrateSession = useCallback(async (sessionId: string) => {
+    if (!sessionId || sessionId === NEW_SESSION_VALUE) {
+      setSessionHydrating(false)
+      setMessages([])
+      setAutoScroll(true)
+      return
+    }
+
+    setSessionHydrating(true)
+    setSessionsError('')
+
+    try {
+      const response = await fetch(`/api/hermes/sessions?sessionId=${encodeURIComponent(sessionId)}`, { cache: 'no-store' })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || data?.available === false) {
+        throw new Error(typeof data?.error === 'string' ? data.error : `HTTP ${response.status}`)
+      }
+
+      const nextMessages: ChatMessage[] = Array.isArray(data?.messages)
+        ? data.messages
+            .filter((entry: unknown): entry is ChatMessage => {
+              if (!entry || typeof entry !== 'object') return false
+              const item = entry as Record<string, unknown>
+              return (
+                typeof item.id === 'string' &&
+                (item.role === 'user' || item.role === 'assistant') &&
+                typeof item.content === 'string'
+              )
+            })
+            .map((entry: ChatMessage) => ({
+              id: entry.id,
+              role: entry.role,
+              content: entry.content,
+              reasoning: entry.reasoning,
+              finishReason: entry.finishReason,
+              timestamp: typeof entry.timestamp === 'number' ? entry.timestamp : Date.now(),
+            }))
+        : []
+
+      nextMessages.forEach(message => {
+        spokenMessageIdsRef.current.add(message.id)
+      })
+
+      setMessages(nextMessages)
+      setAutoScroll(true)
+    } catch (error) {
+      setSessionsError(error instanceof Error ? error.message : 'Unable to load the selected Hermes session.')
+    } finally {
+      setSessionHydrating(false)
+    }
+  }, [])
+
+  const toggleVoiceInput = useCallback(() => {
+    if (voiceListening) {
+      recognitionRef.current?.stop()
+      return
+    }
+
+    const Recognition = getSpeechRecognitionConstructor()
+    if (!Recognition) {
+      setVoiceError('Browser speech input is not available here.')
+      return
+    }
+
+    setVoiceError('')
+    dictationBaseRef.current = input.trim()
+
+    const recognition = new Recognition()
+    recognition.continuous = false
+    recognition.interimResults = true
+    recognition.lang = 'en-US'
+
+    recognition.onstart = () => setVoiceListening(true)
+    recognition.onend = () => {
+      setVoiceListening(false)
+      if (recognitionRef.current === recognition) {
+        recognitionRef.current = null
+      }
+      window.setTimeout(() => inputRef.current?.focus(), 80)
+    }
+    recognition.onerror = event => {
+      setVoiceError(event.error === 'not-allowed' ? 'Microphone permission was denied.' : `Voice input failed: ${event.error}`)
+    }
+    recognition.onresult = event => {
+      let transcript = ''
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index]
+        const segment = result?.[0]?.transcript || ''
+        if (segment) {
+          transcript += `${segment} `
+        }
+      }
+
+      const nextTranscript = transcript.trim()
+      const prefix = dictationBaseRef.current
+      setInput([prefix, nextTranscript].filter(Boolean).join(prefix && nextTranscript ? ' ' : ''))
+    }
+
+    recognitionRef.current = recognition
+    try {
+      recognition.start()
+    } catch (error) {
+      recognitionRef.current = null
+      setVoiceListening(false)
+      setVoiceError(error instanceof Error ? error.message : 'Unable to start voice input.')
+    }
+  }, [input, voiceListening])
 
   const connectHermes = useCallback(async (tunnelCommandOverride?: string) => {
     if (isConnecting) return
@@ -591,6 +911,9 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       abortRef.current = null
       setIsStreaming(false)
       setMessages([])
+      setSessions([])
+      setNativeSessionsAvailable(false)
+      setSelectedSessionId('')
       setConnectionInput('')
       setTunnelInput('')
       setShowConnectionModal(false)
@@ -637,10 +960,17 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   }, [isOpen, loadStatus])
 
   useEffect(() => {
+    setVoiceInputSupported(Boolean(getSpeechRecognitionConstructor()))
+  }, [isOpen])
+
+  useEffect(() => {
     if (!isOpen) {
       autoConnectTriedRef.current = false
       setShowConnectionModal(false)
       setShowSettings(false)
+      recognitionRef.current?.abort()
+      recognitionRef.current = null
+      setVoiceListening(false)
       return
     }
   }, [isOpen])
@@ -653,12 +983,13 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 
   useEffect(() => {
     if (typeof window === 'undefined') return
+    if (nativeSessionsAvailable) return
     try {
       localStorage.setItem(CHAT_KEY, JSON.stringify(messages.slice(-60)))
     } catch {
       // Ignore storage errors.
     }
-  }, [messages])
+  }, [messages, nativeSessionsAvailable])
 
   useEffect(() => {
     const el = scrollContainerRef.current
@@ -673,6 +1004,62 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     el.addEventListener('scroll', onScroll, { passive: true })
     return () => el.removeEventListener('scroll', onScroll)
   }, [messages.length, isOpen])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      localStorage.setItem(VOICE_OUTPUT_KEY, String(voiceOutputEnabled))
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [voiceOutputEnabled])
+
+  useEffect(() => {
+    if (!isOpen || !status.connected || !tunnelStatus.configured) return
+    void loadSessions()
+  }, [isOpen, loadSessions, status.connected, tunnelStatus.configured])
+
+  useEffect(() => {
+    if (status.connected && tunnelStatus.configured) return
+    setNativeSessionsAvailable(false)
+    setSessions([])
+    setSessionHydrating(false)
+  }, [status.connected, tunnelStatus.configured])
+
+  useEffect(() => {
+    if (!nativeSessionsAvailable) return
+    if (isStreaming) return
+    if (!selectedSessionId || selectedSessionId === NEW_SESSION_VALUE) {
+      setMessages([])
+      setAutoScroll(true)
+      return
+    }
+
+    void hydrateSession(selectedSessionId)
+  }, [hydrateSession, isStreaming, nativeSessionsAvailable, selectedSessionId])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!selectedSessionId) return
+    try {
+      localStorage.setItem(SESSION_KEY, selectedSessionId)
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [selectedSessionId])
+
+  useEffect(() => {
+    if (voiceOutputEnabled) return
+    stopVoicePlayback()
+  }, [stopVoicePlayback, voiceOutputEnabled])
+
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.abort()
+      recognitionRef.current = null
+      stopVoicePlayback()
+    }
+  }, [stopVoicePlayback])
 
   useEffect(() => {
     if (!isOpen || statusLoading || isConnecting) return
@@ -769,11 +1156,20 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     abortRef.current?.abort()
     abortRef.current = null
     setIsStreaming(false)
+    stopVoicePlayback()
+
+    if (nativeSessionsAvailable) {
+      setSelectedSessionId(NEW_SESSION_VALUE)
+      setMessages([])
+      setAutoScroll(true)
+      return
+    }
+
     setMessages([])
     try {
       localStorage.removeItem(CHAT_KEY)
     } catch {}
-  }, [])
+  }, [nativeSessionsAvailable, stopVoicePlayback])
 
   const cancel = useCallback(() => {
     abortRef.current?.abort()
@@ -785,10 +1181,16 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     const prompt = input.trim()
     if (!prompt || isStreaming || !status.connected) return
 
-    const history = messages.map(message => ({
-      role: message.role === 'assistant' ? 'assistant' : 'user',
-      content: message.content,
-    }))
+    const useNativeSessions = nativeSessionsAvailable
+    const sessionIdForRequest = useNativeSessions && selectedSessionId && selectedSessionId !== NEW_SESSION_VALUE
+      ? selectedSessionId
+      : ''
+    const history = useNativeSessions
+      ? []
+      : messages.map(message => ({
+          role: message.role === 'assistant' ? 'assistant' : 'user',
+          content: message.content,
+        }))
 
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -820,7 +1222,8 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         body: JSON.stringify({
           message: prompt,
           history,
-          model: selectedModel || undefined,
+          sessionMode: useNativeSessions ? 'native' : 'compat',
+          sessionId: sessionIdForRequest || undefined,
         }),
         signal: controller.signal,
       })
@@ -840,6 +1243,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       let assistantUsage: HermesUsage | undefined
       let finishReason: string | undefined
       let assistantError: string | undefined
+      let resolvedSessionId = sessionIdForRequest
       const toolMap = new Map<number, HermesToolCall>()
 
       for await (const event of parseHermesSSE(response)) {
@@ -879,6 +1283,10 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             assistantError = event.message
             break
           case 'meta':
+            if (event.sessionId) {
+              resolvedSessionId = event.sessionId
+              setSelectedSessionId(event.sessionId)
+            }
             break
         }
 
@@ -897,6 +1305,15 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             : message
         ))
       }
+
+      if (!assistantError && assistantText.trim() && voiceOutputEnabled) {
+        spokenMessageIdsRef.current.add(assistantId)
+        void speakAssistantReply(assistantText)
+      }
+
+      if (useNativeSessions) {
+        void loadSessions(resolvedSessionId || undefined)
+      }
     } catch (error) {
       if ((error as Error).name === 'AbortError') return
       setMessages(previous => previous.map(message =>
@@ -911,7 +1328,17 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       if (abortRef.current === controller) abortRef.current = null
       setIsStreaming(false)
     }
-  }, [input, isStreaming, messages, selectedModel, status.connected])
+  }, [
+    input,
+    isStreaming,
+    loadSessions,
+    messages,
+    nativeSessionsAvailable,
+    selectedSessionId,
+    speakAssistantReply,
+    status.connected,
+    voiceOutputEnabled,
+  ])
 
   if (!isOpen || typeof document === 'undefined') return null
 
@@ -932,6 +1359,8 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         ? 'ssh saved'
         : 'ssh manual'
       : 'direct'
+  const sessionValue = nativeSessionsAvailable ? (selectedSessionId || sessions[0]?.id || NEW_SESSION_VALUE) : NEW_SESSION_VALUE
+  const activeSession = sessions.find(session => session.id === sessionValue) || null
 
   return createPortal(
     <div
@@ -1004,9 +1433,14 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             stop
           </button>
           <button
-            onClick={() => void loadStatus()}
+            onClick={() => {
+              void loadStatus()
+              if (status.connected && tunnelStatus.configured) {
+                void loadSessions(selectedSessionId || undefined)
+              }
+            }}
             className="px-1.5 py-0.5 rounded text-[10px] font-mono text-amber-200/70 hover:text-amber-300 border border-white/10 hover:border-amber-500/30 transition-all cursor-pointer"
-            title="Refresh Hermes status"
+            title="Refresh Hermes status and native sessions"
           >
             refresh
           </button>
@@ -1046,34 +1480,50 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       </div>
 
       <div className="px-3 py-2 border-b border-white/5 flex items-center gap-2 text-[10px] font-mono" style={{ background: 'rgba(0,0,0,0.22)' }}>
-        <span className="text-gray-500 uppercase">model</span>
+        <span className="text-gray-500 uppercase">session</span>
         <select
           data-no-drag
-          value={selectedModel}
-          onChange={event => {
-            setSelectedModel(event.target.value)
-            localStorage.setItem(MODEL_KEY, event.target.value)
-          }}
-          className="min-w-0 flex-1 rounded border border-white/10 bg-black/30 px-2 py-1 text-[10px] text-amber-100 outline-none"
+          value={sessionValue}
+          onChange={event => setSelectedSessionId(event.target.value)}
+          disabled={!nativeSessionsAvailable || sessionsLoading || isStreaming}
+          className="min-w-0 flex-1 rounded border border-white/10 bg-black/30 px-2 py-1 text-[10px] text-amber-100 outline-none disabled:opacity-50"
         >
-          {selectedModel && !status.models.includes(selectedModel) && (
-            <option value={selectedModel}>{selectedModel}</option>
-          )}
-          {!selectedModel && <option value="">Select model</option>}
-          {status.models.map(model => (
-            <option key={model} value={model}>{model}</option>
+          <option value={NEW_SESSION_VALUE}>+ new chat</option>
+          {sessions.map(session => (
+            <option key={session.id} value={session.id}>
+              {formatSessionLabel(session)}
+            </option>
           ))}
         </select>
+        <button
+          data-no-drag
+          onClick={() => {
+            setSelectedSessionId(NEW_SESSION_VALUE)
+            setMessages([])
+            setAutoScroll(true)
+          }}
+          disabled={isStreaming}
+          className="px-1.5 py-0.5 rounded text-[10px] font-mono text-amber-200/80 hover:text-amber-100 border border-amber-500/25 hover:border-amber-400/50 transition-all cursor-pointer disabled:opacity-50"
+          title="Start a new Hermes session in Oasis"
+        >
+          + new
+        </button>
         <span
           className="hidden md:block text-gray-500 truncate max-w-[120px]"
           title={tunnelStatus.commandPreview || 'No managed SSH tunnel saved'}
         >
-          {tunnelLabel}
+          {nativeSessionsAvailable ? (activeSession ? activeSession.source : 'native') : tunnelLabel}
         </span>
-        {status.base && showDetails && (
-          <span className="hidden lg:block text-gray-500 truncate max-w-[180px]" title={status.base}>
-            {status.base}
+        {activeSession && showDetails ? (
+          <span className="hidden lg:block text-gray-500 truncate max-w-[220px]" title={activeSession.preview || activeSession.id}>
+            {activeSession.preview || activeSession.id}
           </span>
+        ) : (
+          status.base && showDetails && (
+            <span className="hidden lg:block text-gray-500 truncate max-w-[180px]" title={status.base}>
+              {status.base}
+            </span>
+          )
         )}
       </div>
 
@@ -1083,12 +1533,30 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         </div>
       )}
 
+      {sessionsError && !connectionError && (
+        <div className="px-3 py-1.5 text-[10px] text-amber-100 border-b border-amber-500/20 bg-amber-500/10 font-mono">
+          {sessionsError}
+        </div>
+      )}
+
+      {voiceError && !connectionError && !sessionsError && (
+        <div className="px-3 py-1.5 text-[10px] text-amber-100 border-b border-amber-500/20 bg-amber-500/10 font-mono">
+          {voiceError}
+        </div>
+      )}
+
       <div className="relative flex-1 min-h-0">
         <div
           ref={scrollContainerRef}
           className="h-full overflow-y-auto px-3 py-3 space-y-3 min-h-0"
           style={{ scrollbarWidth: 'thin', scrollbarColor: '#4b5563 transparent' }}
         >
+          {sessionHydrating && (
+            <div className="px-3 py-2 rounded-lg text-[11px] font-mono text-amber-100 border border-amber-500/20 bg-black/30">
+              loading session...
+            </div>
+          )}
+
           {messages.length === 0 && (
             <div className="h-full flex flex-col justify-center text-center px-4">
               <div className="text-4xl mb-3 text-amber-300">?</div>
@@ -1098,6 +1566,11 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                   <div className="text-xs text-gray-400 mb-4">
                     This panel talks to Hermes through the local Oasis server route, so the browser never sees your VPS API key.
                   </div>
+                  {nativeSessionsAvailable && (
+                    <div className="text-[11px] text-amber-200/80 mb-4 font-mono">
+                      Native Hermes sessions are live. Pick one above or start a fresh chat.
+                    </div>
+                  )}
                   <div className="space-y-1 text-[11px] font-mono text-gray-500">
                     <button className="block w-full hover:text-amber-300 transition-colors cursor-pointer" onClick={() => setInput('Summarize what tools and capabilities you expose right now.')}>
                       Summarize what tools you expose right now.
@@ -1220,6 +1693,13 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         {!status.connected && status.error && (
           <div className="text-[10px] text-red-300 mb-2">{status.error}</div>
         )}
+        {nativeSessionsAvailable && (
+          <div className="text-[10px] text-amber-100/80 font-mono mb-2 truncate" title={activeSession?.id || 'New Oasis session'}>
+            {sessionValue === NEW_SESSION_VALUE
+              ? 'native session | new chat'
+              : `native session | ${activeSession?.title || activeSession?.id || sessionValue}`}
+          </div>
+        )}
         {tunnelStatus.configured && (
           <div className="text-[10px] text-gray-500 font-mono mb-2 truncate" title={tunnelStatus.commandPreview || tunnelStatus.command}>
             {tunnelStatus.running ? 'managed ssh live' : tunnelStatus.autoStart ? 'managed ssh saved' : 'managed ssh saved (manual)'}
@@ -1227,6 +1707,28 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           </div>
         )}
         <div className="flex gap-2 items-end">
+          <div className="flex flex-col gap-2">
+            <button
+              data-no-drag
+              onClick={toggleVoiceInput}
+              disabled={!status.connected || !voiceInputSupported}
+              className="px-2 py-2 rounded-lg text-[10px] font-mono border border-white/10 text-amber-100 disabled:opacity-30 disabled:cursor-not-allowed"
+              title={voiceInputSupported ? 'Dictate into the input box' : 'Browser speech input is unavailable here'}
+            >
+              {voiceListening ? 'stop mic' : 'mic'}
+            </button>
+            <button
+              data-no-drag
+              onClick={() => {
+                if (voiceOutputEnabled) stopVoicePlayback()
+                setVoiceOutputEnabled(current => !current)
+              }}
+              className="px-2 py-2 rounded-lg text-[10px] font-mono border border-white/10 text-amber-100"
+              title="Toggle spoken Hermes replies"
+            >
+              {voiceSpeaking ? 'speaking' : voiceOutputEnabled ? 'voice on' : 'voice off'}
+            </button>
+          </div>
           <textarea
             ref={inputRef}
             value={input}
@@ -1244,7 +1746,9 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                 ? 'Connect Hermes first...'
                 : isStreaming
                   ? 'Hermes is responding...'
-                  : 'Talk to Hermes...'
+                  : nativeSessionsAvailable
+                    ? 'Talk to Hermes in this session...'
+                    : 'Talk to Hermes...'
             }
             disabled={!status.connected || isStreaming}
             className="flex-1 resize-none rounded-lg px-3 py-2 text-xs text-white outline-none placeholder-gray-600 disabled:opacity-60"

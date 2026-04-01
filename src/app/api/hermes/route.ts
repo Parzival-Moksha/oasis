@@ -1,12 +1,25 @@
+import { spawn } from 'child_process'
+
 import { NextRequest, NextResponse } from 'next/server'
 
 import { resolveHermesConfig } from '@/lib/hermes-config'
+import { buildHermesRemoteExec } from '@/lib/hermes-remote'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 type ClientMessage = {
   role?: string
   content?: unknown
+}
+
+type NativeHermesEvent =
+  | { type?: 'text'; content?: unknown }
+  | { type?: 'session'; sessionId?: unknown }
+  | { type?: 'end'; code?: unknown; stderr?: unknown }
+
+function sanitizeString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
 }
 
 function rootBaseFromApiBase(apiBase: string): string {
@@ -83,6 +96,56 @@ function buildMessages(history: ClientMessage[], prompt: string, systemPrompt: s
 
   messages.push({ role: 'user', content: prompt })
   return messages
+}
+
+function buildNativeChatRunnerScript(prompt: string, sessionId: string) {
+  return `
+from pathlib import Path
+import json
+import subprocess
+import sys
+
+prompt = ${JSON.stringify(prompt)}
+session_id = ${JSON.stringify(sessionId)}
+home = Path.home()
+workspace = home / 'hermes-workspace'
+hermes_bin = home / '.hermes' / 'hermes-agent' / 'venv' / 'bin' / 'hermes'
+
+def emit(payload):
+  sys.stdout.write(json.dumps(payload) + '\\n')
+  sys.stdout.flush()
+
+cmd = [str(hermes_bin), 'chat', '-Q', '-q', prompt]
+if session_id:
+  cmd.extend(['--resume', session_id])
+else:
+  cmd.extend(['--source', 'oasis'])
+
+proc = subprocess.Popen(
+  cmd,
+  cwd=str(workspace),
+  stdout=subprocess.PIPE,
+  stderr=subprocess.PIPE,
+  text=True,
+  bufsize=1,
+)
+
+for raw_line in iter(proc.stdout.readline, ''):
+  line = raw_line.rstrip('\\n')
+  stripped = line.strip()
+  if stripped.startswith('session_id:'):
+    emit({'type': 'session', 'sessionId': stripped.split(':', 1)[1].strip()})
+    continue
+  if stripped and ord(stripped[0]) in (9581, 9584, 9474):
+    continue
+  if stripped.startswith('â•­') or stripped.startswith('â•°') or stripped.startswith('â”‚'):
+    continue
+  emit({'type': 'text', 'content': raw_line})
+
+stderr = proc.stderr.read() or ''
+code = proc.wait()
+emit({'type': 'end', 'code': code, 'stderr': stderr})
+`
 }
 
 function makeSseHeaders() {
@@ -222,17 +285,142 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null) as {
     message?: unknown
     history?: ClientMessage[]
-    model?: unknown
+    sessionMode?: unknown
+    sessionId?: unknown
   } | null
 
-  const prompt = typeof body?.message === 'string' ? body.message.trim() : ''
+  const prompt = sanitizeString(body?.message)
   if (!prompt) {
     return NextResponse.json({ error: 'Message is required.' }, { status: 400 })
   }
 
+  const sessionMode = sanitizeString(body?.sessionMode)
+  const requestedSessionId = sanitizeString(body?.sessionId)
+  if (sessionMode === 'native') {
+    const encoder = new TextEncoder()
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        const emit = (payload: Record<string, unknown>) => {
+          controller.enqueue(encoder.encode(serializeSse(payload)))
+        }
+
+        let closed = false
+        const closeStream = () => {
+          if (closed) return
+          closed = true
+          controller.close()
+        }
+
+        try {
+          const exec = await buildHermesRemoteExec(['python3', '-'])
+          const child = spawn(exec.executable, exec.args, {
+            stdio: ['pipe', 'pipe', 'pipe'],
+            windowsHide: true,
+          })
+
+          let stdoutBuffer = ''
+          let stderrBuffer = ''
+          let nativeEnded = false
+
+          const flushJsonLine = (line: string) => {
+            const trimmed = line.trim()
+            if (!trimmed) return
+
+            try {
+              const parsed = JSON.parse(trimmed) as NativeHermesEvent
+              if (parsed.type === 'text') {
+                const content = typeof parsed.content === 'string' ? parsed.content : ''
+                if (content) emit({ type: 'text', content })
+                return
+              }
+
+              if (parsed.type === 'session') {
+                const sessionId = sanitizeString(parsed.sessionId)
+                if (sessionId) {
+                  emit({ type: 'meta', sessionMode: 'native', sessionId, upstream: 'ssh' })
+                }
+                return
+              }
+
+              if (parsed.type === 'end') {
+                nativeEnded = true
+                const code = typeof parsed.code === 'number' ? parsed.code : 0
+                const stderr = sanitizeString(parsed.stderr)
+                if (code !== 0) {
+                  emit({
+                    type: 'error',
+                    message: stderr || `Hermes native chat exited with code ${code}.`,
+                  })
+                }
+                emit({ type: 'done', finishReason: code === 0 ? 'stop' : 'error' })
+                closeStream()
+              }
+            } catch {
+              // Skip malformed JSONL chunks.
+            }
+          }
+
+          child.stdout.setEncoding('utf8')
+          child.stderr.setEncoding('utf8')
+
+          child.stdout.on('data', chunk => {
+            stdoutBuffer += chunk
+            const lines = stdoutBuffer.split('\n')
+            stdoutBuffer = lines.pop() || ''
+            lines.forEach(flushJsonLine)
+          })
+
+          child.stderr.on('data', chunk => {
+            stderrBuffer += chunk
+          })
+
+          child.once('error', error => {
+            emit({ type: 'error', message: error.message })
+            closeStream()
+          })
+
+          child.once('close', code => {
+            if (stdoutBuffer.trim()) flushJsonLine(stdoutBuffer)
+            if (nativeEnded) return
+
+            if (code && code !== 0) {
+              emit({
+                type: 'error',
+                message: sanitizeString(stderrBuffer) || `Hermes native chat exited with code ${code}.`,
+              })
+            }
+            emit({ type: 'done', finishReason: code === 0 ? 'stop' : 'error' })
+            closeStream()
+          })
+
+          request.signal.addEventListener('abort', () => {
+            try {
+              child.kill()
+            } catch {
+              // Best effort.
+            }
+          }, { once: true })
+
+          emit({ type: 'meta', sessionMode: 'native', upstream: 'ssh', sessionId: requestedSessionId || undefined })
+          child.stdin.write(buildNativeChatRunnerScript(prompt, requestedSessionId))
+          child.stdin.end()
+        } catch (error) {
+          emit({
+            type: 'error',
+            message: error instanceof Error ? error.message : 'Unable to start Hermes native chat.',
+          })
+          emit({ type: 'done', finishReason: 'error' })
+          closeStream()
+        }
+      },
+    })
+
+    return new Response(stream, { headers: makeSseHeaders() })
+  }
+
   const history = Array.isArray(body?.history) ? body.history : []
-  const requestedModel = typeof body?.model === 'string' ? body.model.trim() : ''
-  const model = requestedModel || config.defaultModel || 'hermes'
+  const model = config.defaultModel || 'hermes'
 
   let upstreamResponse: Response
   try {
@@ -282,7 +470,7 @@ export async function POST(request: NextRequest) {
         controller.enqueue(encoder.encode(serializeSse(payload)))
       }
 
-      emit({ type: 'meta', model, upstream: config.apiBase })
+      emit({ type: 'meta', model, upstream: config.apiBase, sessionMode: 'compat' })
 
       try {
         while (true) {
