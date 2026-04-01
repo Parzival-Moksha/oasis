@@ -75,6 +75,7 @@ data/conjured-registry.json
 data/scene-library.json
 data/worlds/*.json
 !data/worlds/forge-default.json
+data/hermes-config.local.json
 
 # Backup / working copies of data files
 data/*-full.json
@@ -102,6 +103,8 @@ carbondir/
 CLAUDE*.md
 feb*.txt
 public/screenshots/
+__pycache__/
+*.pyc
 
 # Generated MCP config for claude-code route
 .claude-code-mcp.json

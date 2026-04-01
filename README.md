@@ -1,4 +1,4 @@
-# 04515 — The Oasis
+# Oasis — The Oasis
 
 **Conjure 3D worlds from text. Build. Paint. Persist.**
 
@@ -7,8 +7,8 @@ A standalone 3D world builder with AI-powered text-to-3D conjuring, terrain pain
 ## Quick Start
 
 ```bash
-git clone https://github.com/Parzival-Moksha/04515.git
-cd 04515
+git clone https://github.com/Parzival-Moksha/oasis.git
+cd oasis
 pnpm install
 ```
 
@@ -26,7 +26,42 @@ Then run:
 pnpm dev
 ```
 
-Open [http://localhost:4515](http://localhost:4515)
+Open [http://localhost:4516](http://localhost:4516)
+
+## Hermes Skill (Oasis)
+
+If you use Hermes, this repo includes an installable skill at `skills/oasis`.
+
+```bash
+hermes skills install Parzival-Moksha/oasis/skills/oasis
+```
+
+You can also point Hermes at the raw repo URL:
+
+- `https://github.com/Parzival-Moksha/oasis`
+
+Then ask Hermes to install the `oasis` skill and guide Oasis setup.
+
+Paste-ready prompt for Hermes:
+
+```text
+Install the oasis skill from https://github.com/Parzival-Moksha/oasis and guide me through connecting Oasis to this Hermes instance.
+```
+
+Expected Hermes guidance flow:
+
+1. Give you a pairing block (`HERMES_API_BASE`, `HERMES_API_KEY`, optional `HERMES_MODEL`).
+2. Give the SSH tunnel command if Hermes runs remotely.
+3. Tell you to open the Oasis Hermes panel, click `pair`, paste, save, then press `sync`.
+
+Hermes security defaults in Oasis:
+
+- `/api/hermes` is localhost-only by default.
+- Pairing writes (`POST`/`DELETE /api/hermes/config`) are localhost-only by default.
+- To allow remote access intentionally, set:
+  - `OASIS_ALLOW_REMOTE_HERMES_PROXY=true`
+  - `OASIS_ALLOW_REMOTE_HERMES_PAIRING=true`
+- Local pairing is stored in `data/hermes-config.local.json` (git-ignored).
 
 ## What You Can Do
 
