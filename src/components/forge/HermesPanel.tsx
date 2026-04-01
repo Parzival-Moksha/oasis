@@ -1223,7 +1223,6 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   const handleDragStart = useCallback((event: React.MouseEvent) => {
     const target = event.target as HTMLElement
     if (target.closest('button, input, textarea, select, option, a, [data-no-drag]')) return
-    if (!target.closest('[data-drag-handle]')) return
 
     setIsDragging(true)
     dragStart.current = { x: event.clientX - position.x, y: event.clientY - position.y }
@@ -1533,13 +1532,14 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       }}
       onPointerDownCapture={event => event.stopPropagation()}
       onMouseDown={event => {
+        event.stopPropagation()
         useOasisStore.getState().bringPanelToFront('hermes')
-        handleDragStart(event)
       }}
       onPointerDown={event => event.stopPropagation()}
     >
       <div
         data-drag-handle
+        onMouseDown={handleDragStart}
         className="flex items-center justify-between px-3 py-2 border-b border-white/10 cursor-grab active:cursor-grabbing select-none"
         style={{
           background: isStreaming
