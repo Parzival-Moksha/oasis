@@ -13,6 +13,7 @@ interface MediaBubbleProps {
   mediaType: MediaType
   prompt?: string
   compact?: boolean
+  autoPlay?: boolean
 }
 
 export function resolveMediaUrl(url: string): string {
@@ -21,7 +22,7 @@ export function resolveMediaUrl(url: string): string {
   return url
 }
 
-export function MediaBubble({ url, mediaType, prompt, compact }: MediaBubbleProps) {
+export function MediaBubble({ url, mediaType, prompt, compact, autoPlay = false }: MediaBubbleProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [lightbox, setLightbox] = useState(false)
@@ -75,7 +76,7 @@ export function MediaBubble({ url, mediaType, prompt, compact }: MediaBubbleProp
       {/* Audio */}
       {mediaType === 'audio' && (
         <div className="bg-[#111] rounded p-2 border-l-2 border-[#14b8a6]" style={{ maxWidth: 400 }}>
-          <audio controls preload="metadata" className="w-full h-8"
+          <audio controls preload="metadata" autoPlay={autoPlay} className="w-full h-8"
             onCanPlay={() => setLoading(false)}
             onError={() => { setLoading(false); setError(true) }}>
             <source src={resolved} />

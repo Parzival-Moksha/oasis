@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom'
 import { useOasisStore } from '@/store/oasisStore'
 import { useInputManager, useUILayer } from '@/lib/input-manager'
 import { CollapsibleBlock, renderMarkdown } from '@/lib/anorak-renderers'
+import { MediaBubble, type MediaType } from './MediaBubble'
 
 interface PanelSettings {
   bgColor: string
@@ -222,6 +223,96 @@ function toSpeechText(content: string): string {
     .replace(/https?:\/\/\S+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+interface HermesMediaReference {
+  path: string
+  mediaType: MediaType
+  proxyUrl: string
+}
+
+function detectHermesMediaType(path: string): MediaType | null {
+  if (/\.(?:mp3|wav|ogg)(?:\?|$)/i.test(path)) return 'audio'
+  if (/\.(?:png|jpg|jpeg|gif|webp)(?:\?|$)/i.test(path)) return 'image'
+  if (/\.(?:mp4|webm)(?:\?|$)/i.test(path)) return 'video'
+  return null
+}
+
+function buildHermesMediaProxyUrl(path: string): string {
+  return `/api/hermes/media?path=${encodeURIComponent(path)}`
+}
+
+function extractHermesMediaReferences(content: string): HermesMediaReference[] {
+  const refs: HermesMediaReference[] = []
+
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed.startsWith('MEDIA:')) continue
+
+    const path = trimmed.slice('MEDIA:'.length).trim()
+    const mediaType = detectHermesMediaType(path)
+    if (!path || !mediaType) continue
+
+    refs.push({
+      path,
+      mediaType,
+      proxyUrl: buildHermesMediaProxyUrl(path),
+    })
+  }
+
+  return refs
+}
+
+function renderHermesAssistantContent(content: string, autoPlayAudio: boolean): React.ReactNode {
+  const blocks: React.ReactNode[] = []
+  const textBuffer: string[] = []
+  let key = 0
+
+  const flushText = () => {
+    const text = textBuffer.join('\n').trim()
+    textBuffer.length = 0
+    if (!text) return
+    blocks.push(
+      <div key={`text-${key += 1}`}>
+        {renderMarkdown(text)}
+      </div>
+    )
+  }
+
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (trimmed.startsWith('MEDIA:')) {
+      const path = trimmed.slice('MEDIA:'.length).trim()
+      const mediaType = detectHermesMediaType(path)
+      if (path && mediaType) {
+        flushText()
+        blocks.push(
+          <MediaBubble
+            key={`media-${key += 1}`}
+            url={buildHermesMediaProxyUrl(path)}
+            mediaType={mediaType}
+            prompt={`Hermes ${mediaType}`}
+            compact
+            autoPlay={autoPlayAudio && mediaType === 'audio'}
+          />
+        )
+        continue
+      }
+    }
+
+    textBuffer.push(line)
+  }
+
+  flushText()
+
+  if (blocks.length === 0) {
+    return renderMarkdown(content)
+  }
+  if (blocks.length === 1) {
+    return blocks[0]
+  }
+
+  return <div className="space-y-2">{blocks}</div>
 }
 
 function getStatusColor(status: HermesStatus): string {
@@ -533,6 +624,33 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     setVoiceSpeaking(false)
   }, [])
 
+  const playVoiceUrl = useCallback(async (url: string) => {
+    if (!url) return
+
+    stopVoicePlayback()
+    setVoiceError('')
+
+    try {
+      const audio = new Audio(url)
+      audioRef.current = audio
+      audio.onended = () => {
+        if (audioRef.current === audio) audioRef.current = null
+        setVoiceSpeaking(false)
+      }
+      audio.onerror = () => {
+        if (audioRef.current === audio) audioRef.current = null
+        setVoiceSpeaking(false)
+        setVoiceError('Voice playback failed.')
+      }
+
+      setVoiceSpeaking(true)
+      await audio.play()
+    } catch (error) {
+      setVoiceSpeaking(false)
+      setVoiceError(error instanceof Error ? error.message : 'Voice playback failed.')
+    }
+  }, [stopVoicePlayback])
+
   const speakAssistantReply = useCallback(async (content: string) => {
     const speechText = toSpeechText(content).slice(0, 2400)
     if (!speechText) return
@@ -704,20 +822,39 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     }
   }, [])
 
-  const toggleVoiceInput = useCallback(() => {
+  const toggleVoiceInput = useCallback(async () => {
     if (voiceListening) {
       recognitionRef.current?.stop()
       return
     }
 
-    const Recognition = getSpeechRecognitionConstructor()
-    if (!Recognition) {
-      setVoiceError('Browser speech input is not available here.')
+    if (typeof window !== 'undefined' && !window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      setVoiceError('Mic input needs localhost or HTTPS. Open Oasis locally or behind HTTPS and try again.')
       return
     }
 
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      setVoiceError('Browser microphone capture is unavailable here.')
+      return
+    }
+
+    const Recognition = getSpeechRecognitionConstructor()
     setVoiceError('')
     dictationBaseRef.current = input.trim()
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream.getTracks().forEach(track => track.stop())
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Microphone permission was denied.'
+      setVoiceError(message)
+      return
+    }
+
+    if (!Recognition) {
+      setVoiceError('Mic permission is working, but browser speech-to-text is unavailable here. Chrome or Edge on localhost is the safest current path.')
+      return
+    }
 
     const recognition = new Recognition()
     recognition.continuous = false
@@ -960,7 +1097,9 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   }, [isOpen, loadStatus])
 
   useEffect(() => {
-    setVoiceInputSupported(Boolean(getSpeechRecognitionConstructor()))
+    setVoiceInputSupported(
+      typeof navigator !== 'undefined' && typeof navigator.mediaDevices?.getUserMedia === 'function'
+    )
   }, [isOpen])
 
   useEffect(() => {
@@ -1307,8 +1446,15 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       }
 
       if (!assistantError && assistantText.trim() && voiceOutputEnabled) {
+        const mediaRefs = extractHermesMediaReferences(assistantText)
+        const firstAudioRef = mediaRefs.find(ref => ref.mediaType === 'audio')
         spokenMessageIdsRef.current.add(assistantId)
-        void speakAssistantReply(assistantText)
+
+        if (firstAudioRef) {
+          void playVoiceUrl(firstAudioRef.proxyUrl)
+        } else {
+          void speakAssistantReply(assistantText)
+        }
       }
 
       if (useNativeSessions) {
@@ -1337,6 +1483,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     selectedSessionId,
     speakAssistantReply,
     status.connected,
+    playVoiceUrl,
     voiceOutputEnabled,
   ])
 
@@ -1620,7 +1767,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                       className="px-3 py-2 rounded-lg text-xs text-gray-100 whitespace-pre-wrap leading-relaxed"
                       style={{ background: 'rgba(0,0,0,0.48)', border: '1px solid rgba(255,255,255,0.06)' }}
                     >
-                      {message.content ? renderMarkdown(message.content) : <span className="text-gray-500">Streaming...</span>}
+                      {message.content ? renderHermesAssistantContent(message.content, false) : <span className="text-gray-500">Streaming...</span>}
                     </div>
                   )}
 
@@ -1713,7 +1860,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
               onClick={toggleVoiceInput}
               disabled={!status.connected || !voiceInputSupported}
               className="px-2 py-2 rounded-lg text-[10px] font-mono border border-white/10 text-amber-100 disabled:opacity-30 disabled:cursor-not-allowed"
-              title={voiceInputSupported ? 'Dictate into the input box' : 'Browser speech input is unavailable here'}
+              title={voiceInputSupported ? 'Request mic access, then dictate into the input box' : 'Browser microphone capture is unavailable here'}
             >
               {voiceListening ? 'stop mic' : 'mic'}
             </button>
@@ -1724,7 +1871,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                 setVoiceOutputEnabled(current => !current)
               }}
               className="px-2 py-2 rounded-lg text-[10px] font-mono border border-white/10 text-amber-100"
-              title="Toggle spoken Hermes replies"
+              title="Toggle spoken Hermes replies and auto-play Hermes audio messages"
             >
               {voiceSpeaking ? 'speaking' : voiceOutputEnabled ? 'voice on' : 'voice off'}
             </button>
