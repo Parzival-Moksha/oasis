@@ -352,6 +352,8 @@ export interface ObjectBehavior {
   audioMuted?: boolean
   audioState?: 'playing' | 'paused' | 'stopped'  // real playback state
   audioLoop?: boolean  // default true
+  /** ░▒▓ LIP SYNC — auto-ON when audioUrl set on VRM, toggle for edge cases ▓▒░ */
+  lipSyncEnabled?: boolean  // default true when audioUrl is set
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

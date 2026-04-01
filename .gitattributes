@@ -1,0 +1,48 @@
+# ═══════════════════════════════════════════════════════════════
+# OASIS .gitattributes — enforce LF line endings cross-platform
+# ═══════════════════════════════════════════════════════════════
+
+# Default: auto-detect text files, normalize to LF
+* text=auto eol=lf
+
+# Force LF on all source files
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.md text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.sql text eol=lf
+*.prisma text eol=lf
+*.sh text eol=lf
+
+# Windows scripts keep CRLF
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files — no text conversion
+*.glb binary
+*.gltf binary
+*.fbx binary
+*.obj binary
+*.bin binary
+*.vrm binary
+*.hdr binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.svg binary
+*.mp3 binary
+*.mp4 binary
+*.ogg binary
+*.wav binary
+*.ttf binary
+*.woff binary
+*.woff2 binary

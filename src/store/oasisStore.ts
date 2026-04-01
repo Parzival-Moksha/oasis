@@ -76,7 +76,7 @@ export interface ActivePlacementVfx {
 }
 
 // ─═̷─═̷─💻 AGENT WINDOW — placeable interactive panels in 3D ─═̷─═̷─💻
-export type AgentWindowType = 'anorak' | 'anorak-pro' | 'merlin' | 'devcraft' | 'parzival'
+export type AgentWindowType = 'anorak' | 'anorak-pro' | 'merlin' | 'devcraft' | 'parzival' | 'mission'
 
 export interface AgentWindow {
   id: string                              // e.g. 'agent-anorak-1710859200000'
@@ -187,6 +187,10 @@ interface OasisState {
   _loadedObjectCount: number         // ░▒▓ SANITY CHECK: object count at load time — blocks catastrophic overwrites ▓▒░
   _realtimeChannel: RealtimeChannel | null  // ░▒▓ Supabase Realtime — live Merlin updates ▓▒░
   _isReceivingRemoteUpdate: boolean  // ░▒▓ true while applying Realtime payload — prevents save loop ▓▒░
+
+  // ─═̷─═̷─📋 MINDCRAFT 3D — mission map selected mission ─═̷─═̷─📋
+  mindcraftSelectedMissionId: number | null
+  setMindcraftSelectedMissionId: (id: number | null) => void
 
   // ─═̷─═̷─🧑 AVATAR — RPM 3D avatar ─═̷─═̷─🧑
   avatar3dUrl: string | null
@@ -397,6 +401,10 @@ export const useOasisStore = create<OasisState>((set, get) => {
   _loadedObjectCount: 0,  // ░▒▓ SANITY CHECK: set on load, checked on save — blocks catastrophic nukes ▓▒░
   _realtimeChannel: null,
   _isReceivingRemoteUpdate: false,
+
+  // ─═̷─═̷─📋 MINDCRAFT 3D ─═̷─═̷─📋
+  mindcraftSelectedMissionId: null as number | null,
+  setMindcraftSelectedMissionId: (id: number | null) => set({ mindcraftSelectedMissionId: id }),
 
   // ─═̷─═̷─💻 3D AGENT WINDOWS ─═̷─═̷─💻
   placedAgentWindows: [],

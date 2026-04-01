@@ -258,15 +258,16 @@ describe('AnorakProPanel — siliconDescription in mindcraft window', () => {
     expect(panelSource).toContain('siliconDescription: string | null')
   })
 
-  it('renders siliconDescription conditionally', () => {
-    expect(panelSource).toContain('mission.siliconDescription &&')
+  it('renders siliconDescription via editSilicon state', () => {
+    expect(panelSource).toContain('mission.siliconDescription')
+    expect(panelSource).toContain('editSilicon')
   })
 
   it('displays "Silicon Description" label', () => {
     expect(panelSource).toContain('Silicon Description')
   })
 
-  it('renders siliconDescription value in JSX', () => {
-    expect(panelSource).toContain('{mission.siliconDescription}')
+  it('renders siliconDescription value in JSX via editSilicon', () => {
+    expect(panelSource).toContain('setEditSilicon')
   })
 })

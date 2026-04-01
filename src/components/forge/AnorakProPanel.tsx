@@ -11,6 +11,17 @@ import { SettingsContext } from '../scene-lib'
 import { useOasisStore } from '../../store/oasisStore'
 import { useUILayer } from '@/lib/input-manager'
 import { TOOL_ICONS_MAP, recordTokenUsage } from '@/lib/anorak-engine'
+import {
+  type AnorakLobe,
+  type CustomContextModule as SharedCustomContextModule,
+  type LegacyContextModules,
+  type LobeModuleMap,
+  BUILT_IN_MODULE_IDS,
+  getContextModuleCatalog,
+  getDefaultConfigFields,
+  mergeContextConfig,
+  normalizeContextConfig,
+} from '@/lib/anorak-context-config'
 import { CollapsibleBlock, ToolCallCard, TokenCounter, renderMarkdown } from '@/lib/anorak-renderers'
 import { MediaBubble } from './MediaBubble'
 
@@ -35,32 +46,34 @@ const LOBE_FILTER_KEY = 'oasis-anorak-pro-lobe-filters'
 // ANORAK PRO CONFIG — persisted to localStorage, flows to API calls
 // ═══════════════════════════════════════════════════════════════════════════
 
-export interface CustomContextModule {
-  name: string
-  content: string
-  enabled: boolean
-}
+export type CustomContextModule = SharedCustomContextModule
 
 export interface AnorakProConfig {
-  models: { curator: string; coder: string; reviewer: string; tester: string }
+  models: { curator: string; coder: string; reviewer: string; tester: string; gamer: string }
   reviewerThreshold: number
   batchSize: number
   recapLength: number
+  testerHeaded: boolean
+  gamerHeaded: boolean
   autoCurate: boolean
   autoCode: boolean
-  contextModules: { rl: boolean; queued: boolean; allTodo: boolean }
+  contextModules: LegacyContextModules
   customModules: CustomContextModule[]
+  lobeModules: LobeModuleMap
+  topMissionCount: number
+  moduleValues: Record<string, number>
 }
 
 const DEFAULT_CONFIG: AnorakProConfig = {
-  models: { curator: 'sonnet', coder: 'opus', reviewer: 'sonnet', tester: 'sonnet' },
+  models: { curator: 'sonnet', coder: 'opus', reviewer: 'sonnet', tester: 'sonnet', gamer: 'sonnet' },
   reviewerThreshold: 90,
   batchSize: 1,
   recapLength: 100,
+  testerHeaded: true,
+  gamerHeaded: true,
   autoCurate: false,
   autoCode: false,
-  contextModules: { rl: true, queued: true, allTodo: false },
-  customModules: [],
+  ...getDefaultConfigFields(),
 }
 
 function loadConfig(): AnorakProConfig {
@@ -68,12 +81,7 @@ function loadConfig(): AnorakProConfig {
   try {
     const saved = JSON.parse(localStorage.getItem(CONFIG_KEY) || 'null')
     if (!saved) return DEFAULT_CONFIG
-    return {
-      ...DEFAULT_CONFIG,
-      ...saved,
-      models: { ...DEFAULT_CONFIG.models, ...saved.models },
-      contextModules: { ...DEFAULT_CONFIG.contextModules, ...saved.contextModules },
-    }
+    return normalizeContextConfig(saved, DEFAULT_CONFIG) as AnorakProConfig
   } catch { return DEFAULT_CONFIG }
 }
 
@@ -97,6 +105,7 @@ const LOBE_COLORS: Record<string, string> = {
   coder: '#ef4444',
   reviewer: '#3b82f6',
   tester: '#22c55e',
+  gamer: '#eab308',
   carbondev: '#60a5fa',
 }
 
@@ -228,7 +237,7 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
   const sessionBar = (
     <div className="flex items-center gap-1.5 px-2 py-1 border-b border-white/5 shrink-0">
       <select value={activeSessionId} onChange={e => onSwitchSession(e.target.value)}
-        className="flex-1 bg-black/40 border border-white/10 rounded px-1.5 py-0.5 text-[10px] font-mono text-gray-300 outline-none focus:border-teal-500/50 truncate">
+        className="flex-1 bg-black/40 border border-white/10 rounded px-1.5 py-0.5 text-[10px] font-mono text-white/90 outline-none focus:border-teal-500/50 truncate">
         {sessions.map(s => (
           <option key={s.id} value={s.id}>{s.name} ({s.entries.length})</option>
         ))}
@@ -244,7 +253,7 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
     return (
       <div className="flex-1 flex flex-col">
         {sessionBar}
-        <div className="flex-1 flex items-center justify-center text-gray-600 text-sm font-mono">
+        <div className="flex-1 flex items-center justify-center text-[#c0ffee]/60 text-sm font-mono">
           Chat with Anorak Pro or curate a mission to see the stream.
         </div>
         <div className="p-2 border-t border-white/5">
@@ -256,7 +265,7 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
               placeholder="Talk to Anorak Pro..."
               rows={1}
-              className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-200 outline-none focus:border-teal-500/50 resize-none font-mono placeholder:text-gray-600"
+              className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-200 outline-none focus:border-teal-500/50 resize-none font-mono placeholder:text-[#c0ffee]/60"
             />
             <button
               onClick={handleSend}
@@ -284,10 +293,10 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
             <input type="checkbox" checked={visibleLobes[lobe] !== false} onChange={() => toggleLobe(lobe)}
               className="w-2.5 h-2.5 accent-teal-500 cursor-pointer" />
             <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: LOBE_COLORS[lobe] }} />
-            <span className="text-[9px] font-mono text-gray-400">{lobe}</span>
+            <span className="text-[9px] font-mono text-[#c0ffee]/80">{lobe}</span>
           </label>
         ))}
-        <span className="text-[9px] font-mono text-gray-600 ml-auto">{filtered.length}/{visible.length}</span>
+        <span className="text-[9px] font-mono text-[#c0ffee]/60 ml-auto">{filtered.length}/{visible.length}</span>
       </div>
       {/* Token counter bar — always visible during streaming or when tokens exist */}
       {(isStreaming || sessionTokens.inputTokens > 0 || sessionTokens.outputTokens > 0) && (
@@ -318,33 +327,43 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
           // For tool/tool_start entries, find the matching tool_result to show completion state
           let toolResult: { preview: string; isError: boolean; length: number; fullResult?: string } | undefined
           if (e.type === 'tool' || e.type === 'tool_start') {
-            // Match by toolUseId first (precise), fall back to sequential toolName match
+            // Match by toolUseId first (precise), fall back to sequential proximity
+            // Mirrors AnorakContent.tsx logic: if both IDs exist → match by ID,
+            // otherwise match the next tool_result with no intervening tool entries
             for (let j = idx + 1; j < filtered.length && j < idx + 50; j++) {
               const candidate = filtered[j]
               if (candidate.type === 'tool_result') {
-                // Precise match by toolUseId when available
-                if (e.toolUseId && candidate.toolUseId && candidate.toolUseId === e.toolUseId) {
-                  toolResult = {
-                    preview: candidate.content.substring(0, 500),
-                    isError: !!candidate.isError,
-                    length: candidate.resultLength || candidate.content.length,
-                    fullResult: candidate.content.length <= 2000 ? candidate.content : undefined,
+                if (e.toolUseId && candidate.toolUseId) {
+                  // Both have IDs — only match if they agree
+                  if (candidate.toolUseId === e.toolUseId) {
+                    toolResult = {
+                      preview: candidate.content.substring(0, 500),
+                      isError: !!candidate.isError,
+                      length: candidate.resultLength || candidate.content.length,
+                      fullResult: candidate.content.length <= 2000 ? candidate.content : undefined,
+                    }
+                    break
                   }
-                  break
-                }
-                // Fallback: match by toolName when no IDs (legacy entries)
-                if (!e.toolUseId && !candidate.toolUseId && candidate.toolName === e.toolName) {
-                  toolResult = {
-                    preview: candidate.content.substring(0, 500),
-                    isError: !!candidate.isError,
-                    length: candidate.resultLength || candidate.content.length,
-                    fullResult: candidate.content.length <= 2000 ? candidate.content : undefined,
+                } else {
+                  // At least one ID missing — sequential fallback: accept if no
+                  // intervening tool/tool_start sits between this tool and the result
+                  const hasInterveningTool = filtered.slice(idx + 1, j).some(
+                    x => x.type === 'tool' || x.type === 'tool_start'
+                  )
+                  if (!hasInterveningTool) {
+                    toolResult = {
+                      preview: candidate.content.substring(0, 500),
+                      isError: !!candidate.isError,
+                      length: candidate.resultLength || candidate.content.length,
+                      fullResult: candidate.content.length <= 2000 ? candidate.content : undefined,
+                    }
+                    break
                   }
-                  break
                 }
               }
-              // Stop scanning if we hit another tool/tool_start (only for legacy no-ID mode)
-              if (!e.toolUseId && (candidate.type === 'tool' || candidate.type === 'tool_start') && candidate.toolName !== e.toolName) break
+              // If both IDs exist but didn't match this candidate, keep scanning
+              // If sequential mode and we hit another tool, stop (result belongs to that tool)
+              if (!(e.toolUseId && candidate.toolUseId) && (candidate.type === 'tool' || candidate.type === 'tool_start')) break
             }
           }
 
@@ -369,7 +388,7 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
               )}
               {e.type === 'status' && <span style={{ fontStyle: 'italic', color: lobeColor }}>{e.content}</span>}
               {e.type === 'text' && (
-                <div className="text-[11px] text-gray-300 leading-relaxed" style={{ color: '#cbd5e1' }}>
+                <div className="text-[11px] text-white/90 leading-relaxed" style={{ color: '#cbd5e1' }}>
                   {renderMarkdown(e.content)}
                 </div>
               )}
@@ -428,7 +447,7 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
             placeholder="Talk to Anorak Pro..."
             rows={1}
-            className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-200 outline-none focus:border-teal-500/50 resize-none font-mono placeholder:text-gray-600"
+            className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-200 outline-none focus:border-teal-500/50 resize-none font-mono placeholder:text-[#c0ffee]/60"
           />
           <button
             onClick={handleSend}
@@ -449,8 +468,9 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
 // MINDCRAFT TAB — mission list with 4 segments
 // ═══════════════════════════════════════════════════════════════════════════
 
-const MATURITY_COLORS = ['#666', '#0ea5e9', '#14b8a6', '#f59e0b']
-const MATURITY_LABELS = ['\u{1F311} para', '\u{1F318} pashyanti', '\u{1F317} madhyama', '\u{1F315} vaikhari']
+const MATURITY_COLORS = ['#c0ffee', '#0ea5e9', '#14b8a6', '#f59e0b', '#ef4444', '#3b82f6', '#22c55e', '#eab308', '#a855f7']
+const MATURITY_LABELS = ['🌑 para', '🌒 pashyanti', '🌓 madhyama', '🌕 vaikhari', '⚡ built', '🔍 reviewed', '🧪 tested', '🎮 gamertested', '💎 carbontested']
+const MATURITY_EMOJIS = ['🌑', '🌒', '🌓', '🌕', '⚡', '🔍', '🧪', '🎮', '💎']
 
 const DHARMA_ABBR: Record<string, { label: string; color: string }> = {
   view: { label: 'VW', color: '#60a5fa' },
@@ -484,159 +504,361 @@ interface MindcraftMission {
   id: number; name: string; maturityLevel: number; status: string
   priority: number | null; flawlessPercent: number | null
   reviewerScore: number | null; testerScore: number | null
-  valor: number | null; assignedTo: string | null; dharmaPath: string | null
+  gamerScore: number | null; gamerVerdict: string | null
+  valor: number | null; score: number | null
+  assignedTo: string | null; dharmaPath: string | null
   executionPhase: string | null; executionRound: number
+  executionMode: string | null
   carbonDescription: string | null; siliconDescription: string | null
   description: string | null; history: string | null
+  urgency: number; easiness: number; impact: number
+  createdAt: string; imageUrl?: string | null
+  curatorQueuePosition: number | null
 }
 
-// ── Feedback Popup ──────────────────────────────────────────
-function FeedbackPopup({ mission, onClose, onSubmit }: {
+// ── Mission Popup — full tabbed modal ──────────────────────────────────────────
+type MissionPopupTab = 'overview' | 'specs' | 'thread'
+
+function MissionPopup({ mission, onClose, onSubmit, onCurate, onExecute, isAgentRunning }: {
   mission: MindcraftMission
   onClose: () => void
-  onSubmit: (data: { missionId: number; mature: boolean; verdict: string; rating: number; carbondevMsg?: string }) => void
+  onSubmit: () => void
+  onCurate: (id: number) => void
+  onExecute: (id: number) => void
+  isAgentRunning: boolean
 }) {
+  const [tab, setTab] = useState<MissionPopupTab>('overview')
+  const [editName, setEditName] = useState(mission.name)
+  const [editU, setEditU] = useState(mission.urgency)
+  const [editE, setEditE] = useState(mission.easiness)
+  const [editI, setEditI] = useState(mission.impact)
+  const [editCarbon, setEditCarbon] = useState(mission.carbonDescription || '')
+  const [editSilicon, setEditSilicon] = useState(mission.siliconDescription || '')
+  const [saving, setSaving] = useState(false)
   const [verdict, setVerdict] = useState<'accept' | 'modify' | 'rewrite'>('accept')
   const [rating, setRating] = useState(7)
   const [msg, setMsg] = useState('')
   const [startTime] = useState(Date.now())
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [imageFullscreen, setImageFullscreen] = useState(false)
 
-  const history = (() => { try { return JSON.parse(mission.history || '[]') } catch { return [] } })()
-  const lastCurator = [...history].reverse().find((e: Record<string, unknown>) => e.actor === 'curator')
+  const history: Array<Record<string, unknown>> = (() => { try { return JSON.parse(mission.history || '[]') } catch { return [] } })()
+  const age = Math.floor((Date.now() - new Date(mission.createdAt).getTime()) / 86400000)
+  const calcPri = (editU * editE * editI / 125).toFixed(2)
+
+  const saveMission = async (fields: Record<string, unknown>) => {
+    setSaving(true)
+    try {
+      await fetch(`/api/missions/${mission.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fields),
+      })
+    } catch { /* offline */ }
+    setSaving(false)
+  }
+
+  const deleteMission = async () => {
+    await fetch(`/api/missions/${mission.id}`, { method: 'DELETE' }).catch(() => {})
+    onSubmit()
+  }
+
+  const sendFeedback = async (mature: boolean) => {
+    const carbonSeconds = Math.round((Date.now() - startTime) / 1000)
+    await fetch('/api/anorak/pro/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ missionId: mission.id, mature, verdict, rating, carbondevMsg: msg || undefined, carbonSeconds }),
+    }).catch(() => {})
+    onSubmit()
+  }
+
+  const POPUP_TABS: { id: MissionPopupTab; label: string }[] = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'specs', label: 'Specs' },
+    { id: 'thread', label: `Thread (${history.length})` },
+  ]
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-      onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: '#111', border: '1px solid rgba(20,184,166,0.3)', borderRadius: 12, padding: 20, maxWidth: 500, width: '90%', maxHeight: '80vh', overflow: 'auto' }}>
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <span style={{ color: MATURITY_COLORS[mission.maturityLevel] }} className="text-xs">{MATURITY_LABELS[mission.maturityLevel]}</span>
-            <span className="text-white font-bold ml-2">#{mission.id} {mission.name}</span>
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[99999]" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()}
+        className="bg-[#0a0e1a] border border-[#14b8a6]/30 rounded-xl w-[95%] max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+
+        {/* ── Header ── */}
+        <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <span style={{ color: MATURITY_COLORS[mission.maturityLevel] }} className="text-xs shrink-0">{MATURITY_LABELS[mission.maturityLevel]}</span>
+            <span className="text-[#c0ffee]/70 text-xs shrink-0">#{mission.id}</span>
+            <input
+              value={editName}
+              onChange={e => setEditName(e.target.value)}
+              onBlur={() => { if (editName !== mission.name) saveMission({ name: editName }) }}
+              onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+              className="flex-1 min-w-0 bg-transparent text-white font-bold text-sm outline-none border-b border-transparent hover:border-[#14b8a6]/30 focus:border-[#14b8a6]"
+            />
           </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-white text-lg cursor-pointer">×</button>
+          <button onClick={onClose} className="text-[#c0ffee]/70 hover:text-white text-xl leading-none cursor-pointer shrink-0 ml-2">×</button>
         </div>
 
-        {/* Carbon description */}
-        {mission.carbonDescription && (
-          <div className="mb-3 p-2 rounded bg-black/40 border border-white/5 text-xs text-gray-300" style={{ fontStyle: 'italic' }}>
-            {mission.carbonDescription}
-          </div>
-        )}
+        {/* ── Tabs ── */}
+        <div className="flex border-b border-white/5 shrink-0">
+          {POPUP_TABS.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className="flex-1 py-1.5 text-[10px] font-mono tracking-wide cursor-pointer transition-all"
+              style={{ color: tab === t.id ? '#14b8a6' : '#c0ffee80', borderBottom: tab === t.id ? '2px solid #14b8a6' : '2px solid transparent' }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
 
-        {/* Silicon description */}
-        {mission.siliconDescription && (
-          <div className="mb-3">
-            <div className="text-[10px] text-red-400 uppercase tracking-widest mb-1">Silicon Description</div>
-            <div className="text-xs text-gray-300 p-2 rounded bg-red-500/5 border border-red-500/10 whitespace-pre-wrap max-h-48 overflow-y-auto">
-              {mission.siliconDescription}
-            </div>
-          </div>
-        )}
+        {/* ── Tab Content ── */}
+        <div className="flex-1 overflow-y-auto p-4 text-xs font-mono">
 
-        {/* Curator message */}
-        {lastCurator && (
-          <div className="mb-3">
-            <div className="text-[10px] text-amber-400 uppercase tracking-widest mb-1">Curator says</div>
-            <div className="text-xs text-gray-400 p-2 rounded bg-amber-500/5 border border-amber-500/10">
-              {(lastCurator as Record<string, string>).curatorMsg || '(no message)'}
-            </div>
-            {(lastCurator as Record<string, string>).silicondevMsg && (
-              <div className="mt-1">
-                <div className="text-[10px] text-teal-400 uppercase tracking-widest mb-1">SiliconDev predicts</div>
-                <div className="text-xs text-gray-500 p-2 rounded bg-teal-500/5 border border-teal-500/10">
-                  {(lastCurator as Record<string, string>).silicondevMsg}
-                </div>
+          {/* ═══ OVERVIEW TAB ═══ */}
+          {tab === 'overview' && (
+            <div className="space-y-3">
+              {/* Status bar */}
+              <div className="flex items-center gap-3 text-[10px] flex-wrap">
+                <span className="text-[#c0ffee]/70">pri {calcPri}</span>
+                <span className="text-[#c0ffee]/70">{age}d old</span>
+                {mission.flawlessPercent != null && <span className="text-teal-400">{mission.flawlessPercent}% flawless</span>}
+                {mission.assignedTo && <span className="text-blue-400">→ {mission.assignedTo}</span>}
+                {saving && <span className="text-amber-400 animate-pulse">saving...</span>}
               </div>
-            )}
-          </div>
-        )}
 
-        {/* Flawless */}
-        {mission.flawlessPercent != null && (
-          <div className="text-xs text-gray-500 mb-3">Flawless: {mission.flawlessPercent}%</div>
-        )}
+              {/* Mission image */}
+              {mission.imageUrl && (
+                <div className="cursor-pointer" onClick={() => setImageFullscreen(true)}>
+                  <img src={mission.imageUrl} alt={`Mission #${mission.id}`}
+                    className="w-full max-h-40 object-cover rounded border border-white/10 hover:border-[#14b8a6]/50 transition-all" />
+                </div>
+              )}
 
-        {/* Feedback form */}
-        <div className="space-y-3">
-          {/* Verdict */}
-          <div>
-            <div className="text-[10px] text-gray-500 uppercase mb-1">SiliconDev accuracy</div>
-            <div className="flex gap-2">
-              {(['accept', 'modify', 'rewrite'] as const).map(v => (
-                <button key={v} onClick={() => setVerdict(v)}
-                  className="text-[10px] px-3 py-1 rounded cursor-pointer transition-all"
-                  style={{
-                    background: verdict === v ? (v === 'accept' ? 'rgba(34,197,94,0.2)' : v === 'modify' ? 'rgba(245,158,11,0.2)' : 'rgba(239,68,68,0.2)') : 'rgba(255,255,255,0.05)',
-                    border: `1px solid ${verdict === v ? (v === 'accept' ? 'rgba(34,197,94,0.5)' : v === 'modify' ? 'rgba(245,158,11,0.5)' : 'rgba(239,68,68,0.5)') : 'rgba(255,255,255,0.1)'}`,
-                    color: verdict === v ? '#fff' : '#888',
-                  }}>
-                  {v.toUpperCase()}
+              {/* UEI sliders */}
+              <div className="grid grid-cols-3 gap-3">
+                {([['U', editU, setEditU], ['E', editE, setEditE], ['I', editI, setEditI]] as const).map(([label, val, setVal]) => (
+                  <div key={label}>
+                    <div className="text-[10px] text-[#c0ffee]/70 mb-0.5">{label === 'U' ? 'Urgency' : label === 'E' ? 'Easiness' : 'Impact'}: {val}</div>
+                    <input type="range" min={1} max={10} step={0.5} value={val}
+                      onChange={e => (setVal as (v: number) => void)(parseFloat(e.target.value))}
+                      onMouseUp={() => saveMission({ urgency: editU, easiness: editE, impact: editI })}
+                      className="w-full accent-teal-500" />
+                  </div>
+                ))}
+              </div>
+
+              {/* Carbon description (read-only preview) */}
+              {(mission.carbonDescription || mission.description) && (
+                <div className="p-2 rounded bg-black/40 border border-white/5 text-xs text-white/90 italic">
+                  {mission.carbonDescription || mission.description}
+                </div>
+              )}
+
+              {/* Dharma tags */}
+              <div className="flex gap-1 flex-wrap">
+                {Object.entries(DHARMA_ABBR).map(([path, d]) => {
+                  const active = (mission.dharmaPath || '').split(',').map(s => s.trim()).includes(path)
+                  return (
+                    <button key={path} onClick={() => {
+                      const current = (mission.dharmaPath || '').split(',').map(s => s.trim()).filter(Boolean)
+                      const next = active ? current.filter(p => p !== path) : [...current, path]
+                      saveMission({ dharmaPath: next.join(',') || null })
+                    }}
+                      className="text-[9px] px-2 py-0.5 rounded border cursor-pointer transition-all"
+                      style={{
+                        color: active ? d.color : `${d.color}50`,
+                        borderColor: active ? `${d.color}60` : `${d.color}20`,
+                        background: active ? `${d.color}15` : 'transparent',
+                      }}>
+                      {d.label}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* Quick actions */}
+              <div className="flex gap-2 pt-2 border-t border-white/5">
+                <button onClick={() => { onCurate(mission.id); onClose() }} disabled={isAgentRunning}
+                  className="flex-1 text-[10px] py-1.5 rounded cursor-pointer bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 disabled:opacity-30 transition-all">
+                  📋 CURATE
                 </button>
-              ))}
-            </div>
-          </div>
+                <button onClick={() => { onExecute(mission.id); onClose() }} disabled={isAgentRunning || mission.maturityLevel < 2}
+                  className="flex-1 text-[10px] py-1.5 rounded cursor-pointer bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 disabled:opacity-30 transition-all">
+                  🔥 CODE
+                </button>
+                <button onClick={() => setShowDeleteConfirm(true)}
+                  className="text-[10px] py-1.5 px-3 rounded cursor-pointer bg-red-900/30 text-red-400 border border-red-500/20 hover:bg-red-900/50 transition-all">
+                  🗑
+                </button>
+              </div>
 
-          {/* Rating */}
-          <div>
-            <div className="text-[10px] text-gray-500 uppercase mb-1">Rating: {rating}/10</div>
-            <input type="range" min={0} max={10} value={rating} onChange={e => setRating(parseInt(e.target.value))}
-              className="w-full accent-teal-500" />
-          </div>
-
-          {/* Message */}
-          {verdict !== 'accept' && (
-            <div>
-              <div className="text-[10px] text-gray-500 uppercase mb-1">Your message</div>
-              <textarea value={msg} onChange={e => setMsg(e.target.value)} rows={3}
-                className="w-full bg-black/60 border border-white/10 rounded p-2 text-xs text-gray-300 outline-none resize-none"
-                placeholder="What should curator know for next round?" />
+              {/* Delete confirmation */}
+              {showDeleteConfirm && (
+                <div className="p-3 rounded border border-red-500/30 bg-red-500/10 text-center">
+                  <div className="text-white mb-2">Delete mission #{mission.id}? This cannot be undone.</div>
+                  <div className="flex gap-2 justify-center">
+                    <button onClick={() => setShowDeleteConfirm(false)} className="text-[10px] px-4 py-1 rounded bg-white/5 text-[#c0ffee] cursor-pointer">Cancel</button>
+                    <button onClick={deleteMission} className="text-[10px] px-4 py-1 rounded bg-red-500/30 text-red-400 cursor-pointer">DELETE</button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Actions */}
-          <div className="flex gap-2 pt-2 border-t border-white/5">
-            <button onClick={async () => {
-              const carbonSeconds = Math.round((Date.now() - startTime) / 1000)
-              await fetch('/api/anorak/pro/feedback', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ missionId: mission.id, mature: true, verdict, rating, carbondevMsg: msg || undefined, carbonSeconds }),
-              }).catch(() => {})
-              onSubmit({ missionId: mission.id, mature: true, verdict, rating, carbondevMsg: msg || undefined })
-            }}
-              className="flex-1 text-xs py-1.5 rounded cursor-pointer bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 transition-all">
-              ⬆ BUMP
-            </button>
-            <button onClick={async () => {
-              const carbonSeconds = Math.round((Date.now() - startTime) / 1000)
-              await fetch('/api/anorak/pro/feedback', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ missionId: mission.id, mature: false, verdict, rating, carbondevMsg: msg || undefined, carbonSeconds }),
-              }).catch(() => {})
-              onSubmit({ missionId: mission.id, mature: false, verdict, rating, carbondevMsg: msg || undefined })
-            }}
-              className="flex-1 text-xs py-1.5 rounded cursor-pointer bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 transition-all">
-              ↻ REFINE
-            </button>
-            <button onClick={async () => {
-              const carbonSeconds = Math.round((Date.now() - startTime) / 1000)
-              await fetch(`/api/missions/${mission.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ maturityLevel: 3 }),
-              }).catch(() => {})
-              onSubmit({ missionId: mission.id, mature: true, verdict, rating, carbondevMsg: 'READY — skip to vaikhari' })
-            }}
-              className="text-xs py-1.5 px-3 rounded cursor-pointer bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30 transition-all"
-              title="Skip to vaikhari (maturity 3) — ready for execution">
-              ⚡ READY
-            </button>
-          </div>
+          {/* ═══ SPECS TAB ═══ */}
+          {tab === 'specs' && (
+            <div className="space-y-3">
+              <div>
+                <div className="text-[10px] text-amber-400 uppercase tracking-widest mb-1">Carbon Description (mammalianspeak)</div>
+                <textarea value={editCarbon} onChange={e => setEditCarbon(e.target.value)}
+                  onBlur={() => { if (editCarbon !== (mission.carbonDescription || '')) saveMission({ carbonDescription: editCarbon || null }) }}
+                  rows={5} placeholder="The war cry — emotional, dramatic, zero jargon..."
+                  className="w-full bg-black/40 border border-amber-500/20 rounded p-2 text-white/90 text-xs outline-none resize-y focus:border-amber-500/50" />
+              </div>
+              <div>
+                <div className="text-[10px] text-red-400 uppercase tracking-widest mb-1">Silicon Description (coder&apos;s bible)</div>
+                <textarea value={editSilicon} onChange={e => setEditSilicon(e.target.value)}
+                  onBlur={() => { if (editSilicon !== (mission.siliconDescription || '')) saveMission({ siliconDescription: editSilicon || null }) }}
+                  rows={10} placeholder="Technical spec — exact files, line ranges, functions, edge cases..."
+                  className="w-full bg-black/40 border border-red-500/20 rounded p-2 text-white/90 text-xs outline-none resize-y focus:border-red-500/50 font-mono" />
+              </div>
+            </div>
+          )}
+
+          {/* ═══ THREAD TAB ═══ */}
+          {tab === 'thread' && (
+            <div className="space-y-3">
+              {/* Full history */}
+              {history.length === 0 ? (
+                <div className="text-[#c0ffee]/60 text-center py-4">No history yet. Curate this mission to start the thread.</div>
+              ) : (
+                <div className="space-y-2">
+                  {history.map((entry, i) => {
+                    // Handle both old format (agent/msg) and new format (actor/curatorMsg)
+                    const actor = (entry.actor || entry.agent || 'unknown') as string
+                    const mainMsg = entry.curatorMsg || entry.msg || entry.message || null
+                    const isCurator = actor === 'curator'
+                    const accentColor = isCurator ? '#f59e0b' : actor === 'carbondev' ? '#60a5fa' : '#14b8a6'
+                    return (
+                      <div key={i} className="rounded border p-2" style={{ borderColor: `${accentColor}30`, background: `${accentColor}08` }}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[9px] font-bold uppercase" style={{ color: accentColor }}>{actor}</span>
+                          <span className="text-[9px] text-[#c0ffee]/60">{entry.action as string}</span>
+                          {entry.timestamp ? <span className="text-[9px] text-[#c0ffee]/60 ml-auto">{new Date(entry.timestamp as string).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span> : null}
+                        </div>
+                        {mainMsg ? <div className="text-xs text-white/90 mb-1">{String(mainMsg)}</div> : null}
+                        {entry.silicondevMsg ? (
+                          <div className="mt-1 p-1.5 rounded bg-teal-500/10 border border-teal-500/20">
+                            <div className="text-[9px] text-teal-400 uppercase mb-0.5">SiliconDev predicts{entry.silicondevConfidence ? ` (${Number(entry.silicondevConfidence).toFixed(1)})` : ''}</div>
+                            <div className="text-xs text-[#c0ffee]">{String(entry.silicondevMsg)}</div>
+                          </div>
+                        ) : null}
+                        {entry.carbondevMsg ? <div className="text-xs text-blue-300 mt-1">{String(entry.carbondevMsg)}</div> : null}
+                        {entry.verdict ? <span className="text-[9px] px-1.5 py-0.5 rounded mt-1 inline-block" style={{ background: `${accentColor}20`, color: accentColor }}>{String(entry.verdict).toUpperCase()}{entry.rating != null ? ` ${entry.rating}/10` : ''}</span> : null}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Feedback form — always available */}
+              <div className="border-t border-white/10 pt-3 space-y-2">
+                <div className="text-[10px] text-[#c0ffee] uppercase tracking-widest">Your Response</div>
+
+                {/* Verdict */}
+                <div className="flex gap-2">
+                  {(['accept', 'modify', 'rewrite'] as const).map(v => (
+                    <button key={v} onClick={() => setVerdict(v)}
+                      className="text-[10px] px-3 py-1 rounded cursor-pointer transition-all"
+                      style={{
+                        background: verdict === v ? (v === 'accept' ? 'rgba(34,197,94,0.2)' : v === 'modify' ? 'rgba(245,158,11,0.2)' : 'rgba(239,68,68,0.2)') : 'rgba(255,255,255,0.05)',
+                        border: `1px solid ${verdict === v ? (v === 'accept' ? 'rgba(34,197,94,0.5)' : v === 'modify' ? 'rgba(245,158,11,0.5)' : 'rgba(239,68,68,0.5)') : 'rgba(255,255,255,0.1)'}`,
+                        color: verdict === v ? '#fff' : '#c0ffee80',
+                      }}>
+                      {v.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Rating */}
+                <div>
+                  <div className="text-[10px] text-[#c0ffee]/70 mb-0.5">SiliconDev rating: {rating}/10</div>
+                  <input type="range" min={0} max={10} value={rating} onChange={e => setRating(parseInt(e.target.value))} className="w-full accent-teal-500" />
+                </div>
+
+                {/* Message — always visible */}
+                <textarea value={msg} onChange={e => setMsg(e.target.value)} rows={2}
+                  className="w-full bg-black/60 border border-white/10 rounded p-2 text-xs text-white/90 outline-none resize-y"
+                  placeholder="Your message to curator (optional for bump, required for refine)..." />
+
+                {/* Actions */}
+                <div className="flex gap-2">
+                  <button onClick={() => sendFeedback(true)}
+                    className="flex-1 text-[10px] py-1.5 rounded cursor-pointer bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 transition-all">
+                    ⬆ BUMP
+                  </button>
+                  <button onClick={() => sendFeedback(false)}
+                    className="flex-1 text-[10px] py-1.5 rounded cursor-pointer bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 transition-all">
+                    ↻ REFINE
+                  </button>
+                  <button onClick={async () => {
+                    await fetch(`/api/missions/${mission.id}`, {
+                      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ maturityLevel: 3 }),
+                    }).catch(() => {})
+                    onSubmit()
+                  }}
+                    className="text-[10px] py-1.5 px-3 rounded cursor-pointer bg-[#e879f9]/20 text-[#e879f9] border border-[#e879f9]/30 hover:bg-[#e879f9]/30 transition-all"
+                    title="Skip to vaikhari (maturity 3) — ready for execution">
+                    ⚡ READY
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
+
+        {/* Image fullscreen overlay */}
+        {imageFullscreen && mission.imageUrl && (
+          <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[999999] cursor-pointer" onClick={() => setImageFullscreen(false)}>
+            <img src={mission.imageUrl} alt={`Mission #${mission.id}`} className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg" />
+          </div>
+        )}
       </div>
     </div>
   )
+}
+
+// ── Column definitions for Mindcraft table ──
+const MC_COLS = [
+  { key: 'id', label: '#', w: 32, sortable: true },
+  { key: 'queue', label: 'Q', w: 24, sortable: true },
+  { key: 'maturity', label: '🌑', w: 28, sortable: true },
+  { key: 'name', label: 'Name', w: 0, sortable: true }, // flex
+  { key: 'pri', label: 'Pri', w: 36, sortable: true },
+  { key: 'flawless', label: 'F%', w: 32, sortable: true },
+  { key: 'rev', label: 'Rev', w: 32, sortable: true },
+  { key: 'score', label: 'Sc', w: 32, sortable: true },
+  { key: 'age', label: 'Age', w: 32, sortable: true },
+  { key: 'actions', label: '', w: 72, sortable: false },
+] as const
+
+type McSortKey = typeof MC_COLS[number]['key']
+const MC_WIDTHS_KEY = 'oasis-mindcraft-col-widths'
+
+function getMcSortValue(m: MindcraftMission, key: McSortKey): number {
+  switch (key) {
+    case 'id': return m.id
+    case 'queue': return m.curatorQueuePosition ?? 9999
+    case 'maturity': return m.maturityLevel
+    case 'name': return 0 // alpha sort handled separately
+    case 'pri': return m.priority ?? 0
+    case 'flawless': return m.flawlessPercent ?? -1
+    case 'rev': return m.reviewerScore ?? -1
+    case 'score': return m.score ?? -1
+    case 'age': return new Date(m.createdAt).getTime()
+    case 'actions': return 0
+  }
 }
 
 function MindcraftTab({
@@ -650,13 +872,62 @@ function MindcraftTab({
 }) {
   const [missions, setMissions] = useState<MindcraftMission[]>([])
   const [loading, setLoading] = useState(true)
-  const [feedbackMission, setFeedbackMission] = useState<MindcraftMission | null>(null)
+  const [popupMission, setPopupMission] = useState<MindcraftMission | null>(null)
   const [showNewForm, setShowNewForm] = useState(false)
   const [newName, setNewName] = useState('')
   const [newDesc, setNewDesc] = useState('')
   const [newDharma, setNewDharma] = useState('')
   const [creating, setCreating] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
+
+  // Column sort state per section
+  const [sortKey, setSortKey] = useState<McSortKey>('pri')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+
+  // Column widths (persisted)
+  const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
+    if (typeof window === 'undefined') return {}
+    try { return JSON.parse(localStorage.getItem(MC_WIDTHS_KEY) || '{}') } catch { return {} }
+  })
+  const resizeRef = useRef<{ key: string; startX: number; startW: number } | null>(null)
+
+  const handleResizeStart = useCallback((key: string, e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const col = MC_COLS.find(c => c.key === key)
+    const startW = colWidths[key] ?? col?.w ?? 40
+    resizeRef.current = { key, startX: e.clientX, startW }
+    const onMove = (ev: MouseEvent) => {
+      if (!resizeRef.current) return
+      const delta = ev.clientX - resizeRef.current.startX
+      const next = Math.max(20, resizeRef.current.startW + delta)
+      setColWidths(prev => {
+        const updated = { ...prev, [resizeRef.current!.key]: next }
+        localStorage.setItem(MC_WIDTHS_KEY, JSON.stringify(updated))
+        return updated
+      })
+    }
+    const onUp = () => { resizeRef.current = null; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp) }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [colWidths])
+
+  const toggleSort = useCallback((key: McSortKey) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir(key === 'pri' || key === 'flawless' || key === 'rev' || key === 'score' ? 'desc' : 'asc') }
+  }, [sortKey])
+
+  const sortMissions = useCallback((list: MindcraftMission[]) => {
+    return [...list].sort((a, b) => {
+      if (sortKey === 'name') {
+        const cmp = a.name.localeCompare(b.name)
+        return sortDir === 'asc' ? cmp : -cmp
+      }
+      const va = getMcSortValue(a, sortKey)
+      const vb = getMcSortValue(b, sortKey)
+      return sortDir === 'asc' ? va - vb : vb - va
+    })
+  }, [sortKey, sortDir])
 
   const fetchMissions = useCallback(async () => {
     abortRef.current?.abort()
@@ -666,10 +937,9 @@ function MindcraftTab({
       if (!res.ok) return
       const data = await res.json()
       const list = Array.isArray(data) ? data : (data.data ?? [])
-      // Show all anorak-related missions
       setMissions(list.filter((m: MindcraftMission) =>
         m.assignedTo === 'anorak' || m.assignedTo === 'anorak-pro' ||
-        m.assignedTo === 'carbondev' // show carbondev missions that have anorak history too
+        m.assignedTo === 'carbondev' || m.assignedTo === null
       ))
     } catch (err) { if ((err as Error).name !== 'AbortError') { /* offline */ } }
     setLoading(false)
@@ -706,183 +976,195 @@ function MindcraftTab({
     setCreating(false)
   }, [newName, newDesc, newDharma, fetchMissions])
 
-  if (loading) return <div className="flex-1 flex items-center justify-center text-gray-600 text-sm">Loading...</div>
+  if (loading) return <div className="flex-1 flex items-center justify-center text-[#c0ffee]/60 text-sm">Loading...</div>
 
-  const currentActivity = missions.filter(m => m.executionPhase != null)
-  const awaitingFeedback = missions.filter(m => m.assignedTo === 'carbondev' && m.maturityLevel < 3 && m.status !== 'done')
-  const curatorQueue = missions.filter(m => m.maturityLevel < 3 && m.status !== 'done' && (m.assignedTo === 'anorak' || m.assignedTo === 'anorak-pro'))
-  const curated = missions.filter(m => m.maturityLevel >= 3 && m.status !== 'done')
-  const done = missions.filter(m => m.status === 'done')
+  const wip = missions.filter(m => m.executionPhase != null || m.status === 'wip')
+  const feedback = missions.filter(m => m.assignedTo === 'carbondev' && m.maturityLevel < 3 && m.status === 'todo')
+  const southLoop = sortMissions(missions.filter(m =>
+    m.status === 'todo' && m.maturityLevel >= 3 && !m.executionPhase
+  ))
+  const curatorPipeline = sortMissions(missions.filter(m =>
+    m.status === 'todo' && m.maturityLevel < 3 && m.assignedTo !== 'carbondev' && !m.executionPhase
+  ))
+  const done = [...missions.filter(m => m.status === 'done')].sort((a, b) => b.id - a.id)
+
+  const age = (m: MindcraftMission) => Math.floor((Date.now() - new Date(m.createdAt).getTime()) / 86400000)
+
+  // Shared column header renderer
+  const renderHeader = (showSort: boolean) => (
+    <div className="flex items-center text-[8px] uppercase tracking-wider text-[#c0ffee]/50 border-b border-white/5 pb-1 mb-1 select-none">
+      {MC_COLS.map(col => {
+        const w = colWidths[col.key] ?? col.w
+        const isSorted = showSort && sortKey === col.key
+        return (
+          <div key={col.key} className="relative flex items-center"
+            style={col.key === 'name' ? { flex: 1, minWidth: 80 } : { width: w, flexShrink: 0 }}>
+            {col.sortable && showSort ? (
+              <button onClick={() => toggleSort(col.key)} className="cursor-pointer hover:text-[#14b8a6] transition-colors"
+                style={isSorted ? { color: '#14b8a6' } : {}}>
+                {col.label}{isSorted ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+              </button>
+            ) : (
+              <span>{col.label}</span>
+            )}
+            {col.key !== 'actions' && col.key !== 'name' && (
+              <div className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-[#14b8a6]/30"
+                onMouseDown={e => handleResizeStart(col.key, e)} />
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+
+  // Shared row renderer
+  const renderRow = (m: MindcraftMission, accentColor: string, showActions: 'curate' | 'code' | 'feedback' | 'wip' | 'done') => (
+    <div key={m.id}
+      className="flex items-center py-1 px-0.5 rounded cursor-pointer hover:bg-white/5 transition-all group"
+      style={{ borderLeft: `3px solid ${accentColor}40` }}
+      onClick={() => setPopupMission(m)}>
+      {/* ID + image indicator */}
+      <div style={{ width: colWidths.id ?? 32, flexShrink: 0 }} className="text-[10px] text-[#c0ffee]/60 flex items-center gap-0.5">
+        {m.imageUrl && <span className="text-[8px]">🖼</span>}
+        <span>#{m.id}</span>
+      </div>
+      {/* Queue */}
+      <div style={{ width: colWidths.queue ?? 24, flexShrink: 0 }} className="text-[10px] text-[#c0ffee]/40">{m.curatorQueuePosition ?? '·'}</div>
+      {/* Maturity */}
+      <div style={{ width: colWidths.maturity ?? 28, flexShrink: 0 }} className="text-[10px]">
+        <span style={{ color: MATURITY_COLORS[m.maturityLevel] }}>{MATURITY_EMOJIS[m.maturityLevel] || '?'}</span>
+      </div>
+      {/* Name */}
+      <div style={{ flex: 1, minWidth: 80 }} className="text-[11px] text-white truncate pr-1">{m.name}</div>
+      {/* Priority */}
+      <div style={{ width: colWidths.pri ?? 36, flexShrink: 0 }} className="text-[10px] text-[#c0ffee]/60">{m.priority?.toFixed(1) ?? '·'}</div>
+      {/* Flawless% */}
+      <div className="text-[10px]"
+        style={{ width: colWidths.flawless ?? 32, flexShrink: 0, color: m.flawlessPercent != null ? (m.flawlessPercent >= 80 ? '#22c55e' : m.flawlessPercent >= 50 ? '#f59e0b' : '#ef4444') : '#c0ffee40' }}>
+        {m.flawlessPercent != null ? `${m.flawlessPercent}` : '·'}
+      </div>
+      {/* Reviewer Score */}
+      <div className="text-[10px]"
+        style={{ width: colWidths.rev ?? 32, flexShrink: 0, color: m.reviewerScore != null ? (m.reviewerScore >= 90 ? '#22c55e' : m.reviewerScore >= 70 ? '#f59e0b' : '#ef4444') : '#c0ffee40' }}>
+        {m.reviewerScore != null ? `${m.reviewerScore}` : '·'}
+      </div>
+      {/* Score (priority × valor) */}
+      <div className="text-[10px]"
+        style={{ width: colWidths.score ?? 32, flexShrink: 0, color: m.score != null ? '#14b8a6' : '#c0ffee40' }}>
+        {m.score != null ? m.score.toFixed(1) : '·'}
+      </div>
+      {/* Age */}
+      <div style={{ width: colWidths.age ?? 32, flexShrink: 0 }} className="text-[10px] text-[#c0ffee]/50">{age(m)}d</div>
+      {/* Actions */}
+      <div style={{ width: colWidths.actions ?? 72, flexShrink: 0 }} className="flex items-center gap-1">
+        {showActions === 'curate' && (
+          <button onClick={e => { e.stopPropagation(); onCurate(m.id) }} disabled={isAgentRunning}
+            className="text-[8px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 disabled:opacity-30 cursor-pointer">CUR</button>
+        )}
+        {showActions === 'code' && (
+          <button onClick={e => { e.stopPropagation(); onExecute(m.id) }} disabled={isAgentRunning}
+            className="text-[8px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-30 cursor-pointer">CODE</button>
+        )}
+        {showActions === 'feedback' && (
+          <span className="text-[8px] text-blue-400 animate-pulse" style={{ animationDuration: '3s' }}>REVIEW →</span>
+        )}
+        {showActions === 'wip' && !isAgentRunning && (
+          <button onClick={e => { e.stopPropagation(); onExecute(m.id) }}
+            className="text-[8px] px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-400 cursor-pointer">RES</button>
+        )}
+        <button
+          onClick={async e => { e.stopPropagation(); if (confirm(`Delete #${m.id}?`)) { await fetch(`/api/missions/${m.id}`, { method: 'DELETE' }); fetchMissions() } }}
+          className="text-[8px] text-red-400/30 hover:text-red-400 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">🗑</button>
+      </div>
+    </div>
+  )
 
   return (
-    <div className="flex-1 overflow-y-auto p-2 space-y-3 text-xs font-mono">
-      {/* ─═̷─ New Mission ─═̷─ */}
-      <div>
-        {!showNewForm ? (
-          <button
-            onClick={() => setShowNewForm(true)}
-            className="w-full text-[10px] py-1.5 rounded border border-dashed border-teal-500/30 text-teal-400/70 hover:border-teal-500/60 hover:text-teal-400 hover:bg-teal-500/5 transition-colors cursor-pointer"
-          >
-            + NEW MISSION
-          </button>
-        ) : (
-          <div className="rounded border border-teal-500/30 bg-teal-500/5 p-2 space-y-2">
-            <input
-              autoFocus
-              value={newName}
-              onChange={e => setNewName(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleCreateMission()}
-              placeholder="Mission name..."
-              className="w-full bg-black/40 border border-white/10 rounded px-2 py-1 text-white text-[11px] outline-none focus:border-teal-500/50 placeholder-gray-600"
-            />
-            <textarea
-              value={newDesc}
-              onChange={e => setNewDesc(e.target.value)}
-              placeholder="Description (optional)..."
-              rows={2}
-              className="w-full bg-black/40 border border-white/10 rounded px-2 py-1 text-white text-[11px] outline-none focus:border-teal-500/50 placeholder-gray-600 resize-none"
-            />
-            <div className="flex items-center gap-2">
-              <select
-                value={newDharma}
-                onChange={e => setNewDharma(e.target.value)}
-                className="bg-black/40 border border-white/10 rounded px-1 py-0.5 text-gray-300 text-[10px] outline-none cursor-pointer"
-              >
-                <option value="">dharma path...</option>
-                {Object.keys(DHARMA_ABBR).map(d => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
-              <div className="flex-1" />
-              <button
-                onClick={() => { setShowNewForm(false); setNewName(''); setNewDesc(''); setNewDharma('') }}
-                className="text-[9px] px-2 py-0.5 rounded text-gray-500 hover:text-gray-300 cursor-pointer"
-              >
-                CANCEL
-              </button>
-              <button
-                onClick={handleCreateMission}
-                disabled={!newName.trim() || creating}
-                className="text-[9px] px-3 py-0.5 rounded bg-teal-500/20 text-teal-400 hover:bg-teal-500/30 disabled:opacity-30 cursor-pointer"
-              >
-                {creating ? '...' : 'CREATE'}
-              </button>
-            </div>
+    <div className="flex-1 overflow-y-auto p-2 text-xs font-mono">
+      {/* + New Mission */}
+      {!showNewForm ? (
+        <button onClick={() => setShowNewForm(true)}
+          className="w-full text-[10px] py-1 mb-2 rounded border border-dashed border-teal-500/30 text-teal-400/70 hover:border-teal-500/60 hover:text-teal-400 hover:bg-teal-500/5 cursor-pointer">
+          + NEW MISSION
+        </button>
+      ) : (
+        <div className="rounded border border-teal-500/30 bg-teal-500/5 p-2 mb-2 space-y-1">
+          <input autoFocus value={newName} onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleCreateMission()}
+            placeholder="Mission name..." className="w-full bg-black/40 border border-white/10 rounded px-2 py-1 text-white text-[11px] outline-none" />
+          <div className="flex gap-2">
+            <button onClick={() => { setShowNewForm(false); setNewName(''); setNewDesc(''); setNewDharma('') }}
+              className="text-[9px] px-2 py-0.5 text-[#c0ffee]/70 cursor-pointer">CANCEL</button>
+            <button onClick={handleCreateMission} disabled={!newName.trim() || creating}
+              className="text-[9px] px-3 py-0.5 rounded bg-teal-500/20 text-teal-400 disabled:opacity-30 cursor-pointer">{creating ? '...' : 'CREATE'}</button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Section A: Current Activity + Interrupted missions */}
-      <div>
-        <div className="text-[10px] text-teal-400 uppercase tracking-widest mb-1">Current Activity</div>
-        {currentActivity.length === 0 && !isAgentRunning ? (
-          <div className="text-gray-600 text-[11px] py-1">No active agent</div>
-        ) : currentActivity.map(m => (
-          <div key={m.id} className="flex items-center gap-2 py-1 px-2 rounded" style={{ background: 'rgba(20,184,166,0.1)', border: '1px solid rgba(20,184,166,0.3)' }}>
-            {isAgentRunning ? (
-              <span className="animate-pulse text-teal-400">●</span>
-            ) : (
-              <span className="text-amber-400">⚠</span>
-            )}
-            <span className="text-white">#{m.id}</span>
-            <span className="text-gray-300 truncate flex-1">{m.name}</span>
-            <span className="text-teal-400/70">{m.executionPhase} (r{m.executionRound})</span>
-            {!isAgentRunning && (
-              <>
-                <button onClick={() => onExecute(m.id)}
-                  className="text-[9px] px-2 py-0.5 rounded bg-teal-500/20 text-teal-400 hover:bg-teal-500/30 cursor-pointer">RESUME</button>
-                <button onClick={async () => {
-                  await fetch(`/api/missions/${m.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ executionPhase: null, status: 'todo' }) })
-                  fetchMissions()
-                }}
-                  className="text-[9px] px-2 py-0.5 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 cursor-pointer">ABORT</button>
-              </>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Section A.5: Awaiting Your Feedback */}
-      {awaitingFeedback.length > 0 && (
-        <div>
-          <div className="text-[10px] text-blue-400 uppercase tracking-widest mb-1">Awaiting Your Feedback ({awaitingFeedback.length})</div>
-          {awaitingFeedback.map(m => (
-            <div key={m.id} className="flex items-center gap-2 py-1 px-2 rounded cursor-pointer hover:bg-blue-500/10 border border-blue-500/10"
-              onClick={() => setFeedbackMission(m)}>
-              <span className="text-gray-500 w-6">#{m.id}</span>
-              <span style={{ color: MATURITY_COLORS[m.maturityLevel] }} className="text-[10px] w-16">{MATURITY_LABELS[m.maturityLevel]}</span>
-              <span className="text-gray-300 truncate flex-1">{m.name}</span>
-              {m.flawlessPercent != null && <span className="text-gray-500">{m.flawlessPercent}%</span>}
-              <span className="text-[9px] text-blue-400">REVIEW →</span>
+      {/* ═══ WIP Section ═══ */}
+      {wip.length > 0 && (
+        <div className="mb-2">
+          <div className="text-[9px] text-teal-400 uppercase tracking-widest mb-1">🔥 Work In Progress ({wip.length})</div>
+          {wip.map(m => (
+            <div key={m.id} className="flex items-center gap-2 py-1.5 px-2 rounded-md mb-1 animate-pulse"
+              style={{ background: 'rgba(20,184,166,0.08)', border: '1px solid rgba(20,184,166,0.3)', animationDuration: '3s' }}>
+              <span className="text-teal-400">●</span>
+              <span className="text-white text-[11px]">#{m.id}</span>
+              <span className="text-white truncate flex-1 text-[11px]">{m.name}</span>
+              <span className="text-teal-400/70 text-[10px]">{m.executionPhase} r{m.executionRound}</span>
+              {!isAgentRunning && <>
+                <button onClick={() => onExecute(m.id)} className="text-[8px] px-2 py-0.5 rounded bg-teal-500/20 text-teal-400 cursor-pointer">RESUME</button>
+                <button onClick={async () => { await fetch(`/api/missions/${m.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ executionPhase: null, status: 'todo' }) }); fetchMissions() }}
+                  className="text-[8px] px-2 py-0.5 rounded bg-red-500/20 text-red-400 cursor-pointer">ABORT</button>
+              </>}
             </div>
           ))}
         </div>
       )}
 
-      {/* Section B: Curator Queue */}
-      <div>
-        <div className="text-[10px] text-amber-400 uppercase tracking-widest mb-1">Curator Queue ({curatorQueue.length})</div>
-        {curatorQueue.map(m => (
-          <div key={m.id} className="flex items-center gap-2 py-1 px-1 border-b border-white/5">
-            <span className="text-gray-500 w-6">#{m.id}</span>
-            <span style={{ color: MATURITY_COLORS[m.maturityLevel] }} className="text-[10px] w-16">{MATURITY_LABELS[m.maturityLevel]}</span>
-            <span className="text-gray-300 truncate flex-1">{m.name}</span>
-            <DharmaTags dharma={m.dharmaPath} />
-            {m.flawlessPercent != null && <span className="text-gray-500">{m.flawlessPercent}%</span>}
-            <button
-              onClick={() => onCurate(m.id)}
-              disabled={isAgentRunning}
-              className="text-[9px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 disabled:opacity-30 cursor-pointer"
-            >
-              CURATE
-            </button>
-          </div>
-        ))}
-        {curatorQueue.length === 0 && <div className="text-gray-600 text-[11px] py-1">Queue empty</div>}
+      {/* ═══ South Loop — vaikhari missions ready for execution ═══ */}
+      {southLoop.length > 0 && (
+        <div className="mb-2">
+          <div className="text-[9px] text-red-400 uppercase tracking-widest mb-1">🔥 South Loop ({southLoop.length})</div>
+          {renderHeader(true)}
+          {southLoop.map(m => renderRow(m, '#ef4444', 'code'))}
+        </div>
+      )}
+
+      {/* ═══ Awaiting Feedback ═══ */}
+      {feedback.length > 0 && (
+        <div className="mb-2">
+          <div className="text-[9px] text-blue-400 uppercase tracking-widest mb-1">💬 Awaiting Feedback ({feedback.length})</div>
+          {renderHeader(false)}
+          {feedback.map(m => renderRow(m, '#60a5fa', 'feedback'))}
+        </div>
+      )}
+
+      {/* ═══ Curator Pipeline (sortable) ═══ */}
+      <div className="mb-2">
+        <div className="text-[9px] text-amber-400 uppercase tracking-widest mb-1">📋 Curator Pipeline ({curatorPipeline.length})</div>
+        {renderHeader(true)}
+        {curatorPipeline.length === 0
+          ? <div className="text-[#c0ffee]/40 text-[10px] py-2 text-center">Pipeline empty</div>
+          : curatorPipeline.map(m => renderRow(m, MATURITY_COLORS[m.maturityLevel], m.maturityLevel >= 3 ? 'code' : 'curate'))}
       </div>
 
-      {/* Section C: Curated / Ready */}
-      <div>
-        <div className="text-[10px] text-green-400 uppercase tracking-widest mb-1">Ready for Execution ({curated.length})</div>
-        {curated.map(m => (
-          <div key={m.id} className="flex items-center gap-2 py-1 px-1 border-b border-white/5">
-            <span className="text-gray-500 w-6">#{m.id}</span>
-            <span style={{ color: '#f59e0b' }} className="text-[10px]">{MATURITY_LABELS[3]}</span>
-            <span className="text-gray-300 truncate flex-1">{m.name}</span>
-            <button
-              onClick={() => onExecute(m.id)}
-              disabled={isAgentRunning}
-              className="text-[9px] px-2 py-0.5 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-30 cursor-pointer"
-            >
-              CODE
-            </button>
-          </div>
-        ))}
-        {curated.length === 0 && <div className="text-gray-600 text-[11px] py-1">No vaikhari missions</div>}
+      {/* ═══ Done ═══ */}
+      <div className="mb-2">
+        <div className="text-[9px] text-[#c0ffee]/50 uppercase tracking-widest mb-1">✅ Done ({done.length})</div>
+        {renderHeader(false)}
+        {done.map(m => renderRow(m, '#c0ffee', 'done'))}
       </div>
 
-      {/* Section D: Done */}
-      <div>
-        <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">Done ({done.length})</div>
-        {done.slice(0, 20).map(m => (
-          <div key={m.id} className="flex items-center gap-2 py-1 px-1 border-b border-white/5 text-gray-500">
-            <span className="w-6">#{m.id}</span>
-            <span className="truncate flex-1">{m.name}</span>
-            <DharmaTags dharma={m.dharmaPath} />
-            {m.reviewerScore != null && <span className="text-blue-400/50">R{m.reviewerScore}</span>}
-            {m.testerScore != null && <span className="text-green-400/50">T{m.testerScore}</span>}
-            {m.valor != null && <span className="text-amber-400/50">V{m.valor}</span>}
-          </div>
-        ))}
-      </div>
-
-      {/* Feedback popup */}
-      {feedbackMission && (
-        <FeedbackPopup
-          mission={feedbackMission}
-          onClose={() => { setFeedbackMission(null); fetchMissions() }}
-          onSubmit={() => { setFeedbackMission(null); fetchMissions() }}
+      {/* Mission popup */}
+      {popupMission && (
+        <MissionPopup
+          mission={popupMission}
+          onClose={() => { setPopupMission(null); fetchMissions() }}
+          onSubmit={() => { setPopupMission(null); fetchMissions() }}
+          onCurate={onCurate}
+          onExecute={onExecute}
+          isAgentRunning={isAgentRunning}
         />
       )}
     </div>
@@ -894,8 +1176,20 @@ function MindcraftTab({
 // ═══════════════════════════════════════════════════════════════════════════
 
 function CuratorLogTab() {
-  const [logs, setLogs] = useState<Array<{ id: number; status: string; startedAt: string; durationMs: number | null; missionsProcessed: number; missionsEnriched: number; tokensIn: number; tokensOut: number; error: string | null }>>([])
+  const [logs, setLogs] = useState<Array<{
+    id: number
+    status: string
+    startedAt: string
+    durationMs: number | null
+    missionsProcessed: number
+    missionsEnriched: number
+    tokensIn: number
+    tokensOut: number
+    error: string | null
+    missionResults: string | null
+  }>>([])
   const abortRef = useRef<AbortController | null>(null)
+  const [expandedId, setExpandedId] = useState<number | null>(null)
 
   useEffect(() => {
     const fetchLogs = async () => {
@@ -914,18 +1208,62 @@ function CuratorLogTab() {
   return (
     <div className="flex-1 overflow-y-auto p-3 text-xs font-mono">
       {logs.length === 0 ? (
-        <div className="text-gray-600 text-center py-8">
+        <div className="text-[#c0ffee] text-center py-8">
           No curator invocations yet.<br />
           Curate a mission to see logs here.
         </div>
       ) : logs.map(log => (
-        <div key={log.id} className="flex items-center gap-2 py-1 border-b border-white/5">
-          <span className={log.status === 'completed' ? 'text-green-400' : log.status === 'failed' ? 'text-red-400' : 'text-amber-400'}>
-            {log.status === 'completed' ? '✓' : log.status === 'failed' ? '✗' : '●'}
-          </span>
-          <span className="text-gray-400">{new Date(log.startedAt).toLocaleTimeString()}</span>
-          <span className="text-gray-500">{log.durationMs ? `${(log.durationMs / 1000).toFixed(1)}s` : '...'}</span>
-          <span className="text-gray-300">{log.missionsProcessed} processed, {log.missionsEnriched} enriched</span>
+        <div key={log.id} className="border-b border-[#14b8a6]/10 py-2">
+          <button
+            onClick={() => setExpandedId(prev => prev === log.id ? null : log.id)}
+            className="flex w-full items-center gap-2 text-left cursor-pointer"
+          >
+            <span className={log.status === 'completed' ? 'text-[#22c55e]' : log.status === 'failed' ? 'text-[#fb7185]' : 'text-[#fbbf24]'}>
+              {log.status === 'completed' ? '✓' : log.status === 'failed' ? '✗' : '●'}
+            </span>
+            <span className="text-[#7dd3fc]">{new Date(log.startedAt).toLocaleTimeString()}</span>
+            <span className="text-[#c0ffee]">{log.durationMs ? `${(log.durationMs / 1000).toFixed(1)}s` : '...'}</span>
+            <span className="text-white">{log.missionsProcessed} processed, {log.missionsEnriched} enriched</span>
+            <span className="ml-auto text-[#14b8a6] text-[10px]">{expandedId === log.id ? 'Hide' : 'Details'}</span>
+          </button>
+          {expandedId === log.id && (
+            <div className="mt-2 rounded border border-[#14b8a6]/15 bg-black/40 p-2 text-[10px]">
+              <div className="flex flex-wrap gap-3 text-[#c0ffee]">
+                <span>tokens in {log.tokensIn}</span>
+                <span>tokens out {log.tokensOut}</span>
+                <span>status {log.status}</span>
+              </div>
+              {log.error && <div className="mt-2 text-[#fb7185]">{log.error}</div>}
+              {(() => {
+                let results: Array<{ id: number; name: string; enriched: boolean; fromLevel: number | null; toLevel: number; historyDelta: number; wroteCarbon: boolean; wroteSilicon: boolean; wroteAcceptance: boolean }> = []
+                try {
+                  results = log.missionResults ? JSON.parse(log.missionResults) : []
+                } catch {
+                  results = []
+                }
+                if (results.length === 0) return <div className="mt-2 text-[#c0ffee]">No per-mission result data recorded.</div>
+                return (
+                  <div className="mt-2 space-y-2">
+                    {results.map(result => (
+                      <div key={result.id} className="rounded border border-[#14b8a6]/10 bg-black/50 p-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-white">#{result.id} {result.name}</span>
+                          <span className={result.enriched ? 'text-[#22c55e]' : 'text-[#c0ffee]'}>{result.enriched ? 'enriched' : 'unchanged'}</span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-3 text-[#c0ffee]">
+                          <span>level {result.fromLevel ?? '?'} → {result.toLevel}</span>
+                          <span>history +{result.historyDelta}</span>
+                          {result.wroteCarbon && <span className="text-[#22c55e]">carbon</span>}
+                          {result.wroteSilicon && <span className="text-[#0ea5e9]">silicon</span>}
+                          {result.wroteAcceptance && <span className="text-[#f59e0b]">acceptance</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
+            </div>
+          )}
         </div>
       ))}
     </div>
@@ -940,197 +1278,609 @@ function LobeEditor({ lobe }: { lobe: string }) {
   const [expanded, setExpanded] = useState(false)
   const [content, setContent] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
     if (!expanded) return
     const ac = new AbortController()
     setLoading(true)
+    setLoadError(null)
     fetch(`/api/anorak/pro/lobeprompt?lobe=${lobe}`, { signal: ac.signal })
-      .then(r => r.ok ? r.json() : null)
+      .then(async r => {
+        if (r.ok) return r.json()
+        let message = `Load failed (${r.status})`
+        try {
+          const data = await r.json() as { error?: string }
+          if (typeof data?.error === 'string' && data.error.trim()) message = data.error
+        } catch { /* keep generic error */ }
+        throw new Error(message)
+      })
       .then(data => { if (data?.content) { setContent(data.content); setDirty(false) } })
-      .catch(e => { if (e.name !== 'AbortError') { /* offline */ } })
+      .catch(e => {
+        if (e.name !== 'AbortError') {
+          setLoadError(typeof e?.message === 'string' && e.message ? e.message : 'Load failed while offline')
+        }
+      })
       .finally(() => setLoading(false))
     return () => ac.abort()
   }, [expanded, lobe])
 
   const handleSave = async () => {
     setSaved(false)
+    setSaveError(null)
     try {
       const res = await fetch('/api/anorak/pro/lobeprompt', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lobe, content }),
       })
-      if (res.ok) { setSaved(true); setDirty(false); setTimeout(() => setSaved(false), 2000) }
-    } catch { /* offline */ }
+      if (!res.ok) {
+        let message = 'Save failed'
+        try {
+          const data = await res.json() as { error?: string }
+          if (typeof data?.error === 'string' && data.error.trim()) message = data.error
+        } catch { /* keep generic error */ }
+        setSaveError(message)
+        return
+      }
+      setSaved(true)
+      setDirty(false)
+      setTimeout(() => setSaved(false), 2000)
+    } catch {
+      setSaveError('Save failed while offline')
+    }
   }
 
   return (
-    <div className="mt-1">
-      <button onClick={() => setExpanded(!expanded)} className="text-[10px] text-gray-600 hover:text-gray-400 cursor-pointer">
-        {expanded ? '▼' : '▶'} .claude/agents/{lobe}.md {dirty && <span className="text-amber-400 ml-1">●</span>}
+    <>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="rounded border border-[#14b8a6]/35 bg-[#0f172a] px-2 py-1 text-left text-[10px] text-[#c0ffee] hover:border-[#14b8a6] hover:text-white cursor-pointer"
+      >
+        <div className="font-bold">Sysprompt</div>
+        <div className="text-[9px] text-[#7dd3fc]">.claude/agents/{lobe}.md {dirty && <span className="text-[#f59e0b] ml-1">●</span>}</div>
       </button>
       {expanded && (
-        <div className="mt-1">
+        <div className="col-span-3 mt-2 rounded border border-[#14b8a6]/25 bg-black/50 p-2">
           {loading ? (
-            <div className="text-gray-600 text-[10px] py-2">Loading...</div>
+            <div className="text-[#c0ffee] text-[10px] py-2">Loading...</div>
+          ) : loadError ? (
+            <div className="text-[#fb7185] text-[10px] py-2">{loadError}</div>
           ) : (
             <>
               <textarea
                 value={content}
                 onChange={e => { setContent(e.target.value); setDirty(true) }}
-                className="w-full h-40 bg-black/60 border border-white/10 rounded p-2 text-gray-300 text-[10px] leading-relaxed resize-y outline-none focus:border-teal-500/30"
+                className="w-full h-40 bg-black/70 border border-[#14b8a6]/30 rounded p-2 text-white text-[10px] leading-relaxed resize-y outline-none focus:border-[#14b8a6]"
                 spellCheck={false}
               />
               <div className="flex items-center gap-2 mt-1">
                 <button onClick={handleSave} disabled={!dirty}
-                  className="text-[9px] px-2 py-0.5 rounded bg-teal-500/20 text-teal-400 hover:bg-teal-500/30 disabled:opacity-30 cursor-pointer">
+                  className="text-[9px] px-2 py-0.5 rounded bg-[#14b8a6]/20 text-[#14b8a6] hover:bg-[#14b8a6]/30 disabled:opacity-30 cursor-pointer">
                   Save
                 </button>
-                <span className="text-[9px] text-gray-600">{content.length} chars</span>
-                {saved && <span className="text-[9px] text-green-400">Saved ✓</span>}
+                <span className="text-[9px] text-[#c0ffee]">{content.length} chars</span>
+                {saved && <span className="text-[9px] text-[#22c55e]">Saved ✓</span>}
+                {saveError && <span className="text-[9px] text-[#fb7185]">{saveError}</span>}
               </div>
             </>
           )}
         </div>
       )}
+    </>
+  )
+}
+
+function CustomModuleEditor({ module, onSave, onDelete }: {
+  module: CustomContextModule
+  onSave: (next: CustomContextModule) => void
+  onDelete: () => void
+}) {
+  const [draft, setDraft] = useState(module)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    setDraft(module)
+  }, [module])
+
+  const dirty = JSON.stringify(draft) !== JSON.stringify(module)
+
+  const handleSave = () => {
+    onSave(draft)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 1500)
+  }
+
+  return (
+    <div className="rounded border border-[#14b8a6]/20 bg-black/40 p-2">
+      <div className="mb-2 flex items-center gap-2">
+        <input
+          type="text"
+          value={draft.name}
+          onChange={e => setDraft(prev => ({ ...prev, name: e.target.value }))}
+          className="flex-1 bg-transparent border-b border-[#14b8a6]/30 text-white text-[10px] outline-none focus:border-[#14b8a6]"
+          placeholder="Module name"
+        />
+        <label className="flex items-center gap-1 text-[9px] text-[#c0ffee] whitespace-nowrap">
+          <input
+            type="checkbox"
+            checked={draft.enabled}
+            onChange={e => setDraft(prev => ({ ...prev, enabled: e.target.checked }))}
+            className="accent-[#14b8a6]"
+          />
+          available
+        </label>
+        <button onClick={onDelete} className="text-[#fb7185] hover:text-white text-[10px] cursor-pointer">✕</button>
+      </div>
+
+      <div className="mb-2 flex items-center gap-2 text-[9px]">
+        <button
+          onClick={() => setDraft(prev => ({ ...prev, type: 'text' }))}
+          className={`rounded px-2 py-0.5 border cursor-pointer ${draft.type === 'text' ? 'border-[#22c55e] text-[#22c55e] bg-[#22c55e]/10' : 'border-[#14b8a6]/25 text-[#c0ffee]'}`}
+        >
+          Text
+        </button>
+        <button
+          onClick={() => setDraft(prev => ({ ...prev, type: 'file' }))}
+          className={`rounded px-2 py-0.5 border cursor-pointer ${draft.type === 'file' ? 'border-[#f59e0b] text-[#f59e0b] bg-[#f59e0b]/10' : 'border-[#14b8a6]/25 text-[#c0ffee]'}`}
+        >
+          Link File
+        </button>
+        {saved && <span className="text-[#22c55e]">Saved ✓</span>}
+      </div>
+
+      {draft.type === 'file' ? (
+        <div className="mb-2 flex items-center gap-1">
+          <input
+            type="text"
+            value={draft.filePath}
+            onChange={e => setDraft(prev => ({ ...prev, filePath: e.target.value }))}
+            placeholder="File path (type or browse)"
+            className="flex-1 bg-black/70 border border-[#f59e0b]/30 rounded px-2 py-1 text-[10px] text-white outline-none focus:border-[#f59e0b]"
+          />
+          <label className="shrink-0 rounded bg-[#f59e0b]/20 px-2 py-1 text-[9px] text-[#f59e0b] hover:bg-[#f59e0b]/30 cursor-pointer">
+            Browse
+            <input
+              type="file"
+              className="hidden"
+              onChange={e => {
+                const file = e.target.files?.[0]
+                if (file) {
+                  // webkitRelativePath is empty for single files; use name as fallback
+                  // The browser only gives us the filename, not the full path (security).
+                  // On Electron/desktop this would give full path. For web, user pastes path.
+                  setDraft(prev => ({ ...prev, filePath: (file as unknown as { path?: string }).path || file.name }))
+                }
+                e.target.value = '' // reset to allow re-selecting same file
+              }}
+            />
+          </label>
+        </div>
+      ) : (
+        <textarea
+          value={draft.content}
+          onChange={e => setDraft(prev => ({ ...prev, content: e.target.value }))}
+          placeholder="Free-text context injected into agent prompts..."
+          maxLength={400000}
+          className="mb-2 w-full h-20 bg-black/70 border border-[#14b8a6]/20 rounded p-2 text-white text-[10px] resize-y outline-none focus:border-[#14b8a6]"
+          spellCheck={false}
+        />
+      )}
+
+      <div className="flex items-center justify-between text-[9px] text-[#c0ffee]">
+        <span>{draft.type === 'file' ? (draft.filePath || 'No file linked yet') : `${draft.content.length} chars`}</span>
+        <button
+          onClick={handleSave}
+          disabled={!dirty}
+          className="rounded bg-[#14b8a6]/20 px-2 py-0.5 text-[#14b8a6] hover:bg-[#14b8a6]/30 disabled:opacity-30 cursor-pointer"
+        >
+          Save Module
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Type colors for module badges ──
+const MODULE_TYPE_COLORS: Record<string, string> = {
+  builtin: '#14b8a6',  // teal
+  custom: '#22c55e',   // green (text modules)
+  file: '#f59e0b',     // amber (file modules)
+  system: '#7dd3fc',   // sky blue (no grey allowed)
+}
+
+function moduleTypeColor(entry: { kind: string; type?: string }): string {
+  if (entry.kind === 'custom' && entry.type === 'file') return MODULE_TYPE_COLORS.file
+  return MODULE_TYPE_COLORS[entry.kind] || MODULE_TYPE_COLORS.builtin
+}
+
+function moduleTypeLabel(entry: { kind: string; parameterized?: boolean; type?: string }): string {
+  if (entry.kind === 'custom' && entry.type === 'file') return 'file'
+  if (entry.parameterized) return 'param'
+  return entry.kind
+}
+
+// ── Fullscreen Preview Modal ──
+function PreviewOverlay({ target, content, loading, onClose }: {
+  target: { lobe: AnorakLobe; moduleId: string; title: string }
+  content: string
+  loading: boolean
+  onClose: () => void
+}) {
+  const tokens = Math.ceil((content?.length || 0) / 4)
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999]" onClick={onClose}>
+      <div className="bg-[#0a0e1a] border border-[#14b8a6]/30 rounded-lg w-[90%] max-w-3xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-[#14b8a6]/20">
+          <div>
+            <h3 className="font-bold text-[#14b8a6] text-sm">{target.title}</h3>
+            <p className="text-[10px] text-[#c0ffee]">
+              {target.lobe} module{!loading && content ? ` · ~${tokens} tokens` : ''}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-[#c0ffee] hover:text-white text-2xl leading-none cursor-pointer">×</button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          {loading ? (
+            <div className="text-center text-[#c0ffee] py-8">
+              <div className="animate-spin text-2xl mb-2">⚙️</div>
+              Loading preview...
+            </div>
+          ) : (
+            <pre className="text-[10px] text-white whitespace-pre-wrap font-mono bg-black/50 p-4 rounded leading-relaxed">{content}</pre>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Fullscreen Add Module Modal ──
+function AddModuleOverlay({ lobe, options, onAdd, onClose }: {
+  lobe: AnorakLobe
+  options: ReturnType<typeof getContextModuleCatalog>
+  onAdd: (moduleId: string) => void
+  onClose: () => void
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999]" onClick={onClose}>
+      <div className="bg-[#0a0e1a] border border-[#14b8a6]/30 rounded-lg w-[90%] max-w-md max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-[#14b8a6]/20">
+          <h3 className="font-bold text-[#14b8a6] text-sm">Add Module to {lobe}</h3>
+          <button onClick={onClose} className="text-[#c0ffee] hover:text-white text-2xl leading-none cursor-pointer">×</button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {options.length === 0 ? (
+            <p className="text-center text-[#c0ffee] py-4">All modules already added</p>
+          ) : (
+            options.map(entry => (
+              <button
+                key={entry.id}
+                onClick={() => { onAdd(entry.id); onClose() }}
+                className="w-full p-3 text-left rounded border border-[#14b8a6]/20 hover:border-[#14b8a6]/50 hover:bg-[#14b8a6]/10 transition-colors cursor-pointer"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-[11px]" style={{ color: moduleTypeColor(entry) }}>{entry.name}</span>
+                  <span className="text-[8px] uppercase tracking-wide" style={{ color: moduleTypeColor(entry) }}>{moduleTypeLabel(entry)}</span>
+                </div>
+                <div className="text-[10px] text-[#c0ffee] mt-0.5">{entry.description}</div>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
     </div>
   )
 }
 
 function CEHQTab({ config, onUpdate }: { config: AnorakProConfig; onUpdate: (p: Partial<AnorakProConfig>) => void }) {
-  const inputCls = "w-14 text-center bg-black/60 border border-white/10 rounded px-1 py-0.5 text-gray-300 outline-none"
-  const selectCls = "text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/60 border border-white/10 text-gray-300 outline-none"
+  const selectCls = 'text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/70 border border-[#14b8a6]/25 text-white outline-none'
+  const catalog = getContextModuleCatalog(config.customModules)
+  const catalogById = new Map(catalog.map(entry => [entry.id, entry]))
+  const [expandedLobes, setExpandedLobes] = useState<Record<string, boolean>>({ curator: true })
+  const [addModalLobe, setAddModalLobe] = useState<AnorakLobe | null>(null)
+  const [previewTarget, setPreviewTarget] = useState<{ lobe: AnorakLobe; moduleId: string; title: string } | null>(null)
+  const [previewContent, setPreviewContent] = useState('')
+  const [previewLoading, setPreviewLoading] = useState(false)
+
+  const toggleExpand = useCallback((lobe: string) => {
+    setExpandedLobes(prev => ({ ...prev, [lobe]: !prev[lobe] }))
+  }, [])
+
+  const updateLobeModules = useCallback((lobe: AnorakLobe, nextIds: string[]) => {
+    onUpdate({
+      lobeModules: {
+        ...config.lobeModules,
+        [lobe]: nextIds,
+      },
+    })
+  }, [config.lobeModules, onUpdate])
+
+  const attachModule = useCallback((lobe: AnorakLobe, moduleId: string) => {
+    if (!moduleId || config.lobeModules[lobe].includes(moduleId)) return
+    updateLobeModules(lobe, [...config.lobeModules[lobe], moduleId])
+  }, [config.lobeModules, updateLobeModules])
+
+  const removeModule = useCallback((lobe: AnorakLobe, moduleId: string) => {
+    updateLobeModules(lobe, config.lobeModules[lobe].filter(id => id !== moduleId))
+    if (previewTarget?.lobe === lobe && previewTarget.moduleId === moduleId) {
+      setPreviewTarget(null)
+      setPreviewContent('')
+    }
+  }, [config.lobeModules, previewTarget, updateLobeModules])
+
+  const openPreview = useCallback(async (lobe: AnorakLobe, moduleId: string, title: string) => {
+    setPreviewTarget({ lobe, moduleId, title })
+    setPreviewLoading(true)
+    try {
+      const res = await fetch('/api/anorak/pro/context-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lobe,
+          contextModules: config.contextModules,
+          customModules: config.customModules,
+          lobeModules: config.lobeModules,
+          topMissionCount: config.topMissionCount,
+          moduleValues: config.moduleValues,
+        }),
+      })
+      if (!res.ok) {
+        setPreviewContent(`Failed to preview module (${res.status})`)
+        return
+      }
+      const data = await res.json()
+      const match = Array.isArray(data.modules)
+        ? data.modules.find((mod: { id: string; content: string }) => mod.id === moduleId)
+        : null
+      setPreviewContent(match?.content || 'This module currently resolves to no prompt content.')
+    } catch (error) {
+      setPreviewContent(`Preview failed: ${(error as Error).message}`)
+    } finally {
+      setPreviewLoading(false)
+    }
+  }, [config.contextModules, config.customModules, config.lobeModules, config.topMissionCount])
+
+  const saveCustomModule = useCallback((index: number, nextModule: CustomContextModule) => {
+    const next = [...config.customModules]
+    next[index] = nextModule
+    onUpdate({ customModules: next })
+  }, [config.customModules, onUpdate])
+
+  const addCustomModule = useCallback((type: 'text' | 'file') => {
+    if ((config.customModules?.length ?? 0) >= 20) return
+    const nextIndex = (config.customModules?.length ?? 0) + 1
+    onUpdate({
+      customModules: [
+        ...(config.customModules || []),
+        {
+          id: `custom:module-${Date.now()}-${nextIndex}`,
+          name: type === 'file' ? `Linked File ${nextIndex}` : `Module ${nextIndex}`,
+          content: '',
+          enabled: true,
+          type,
+          filePath: '',
+        },
+      ],
+    })
+  }, [config.customModules, onUpdate])
+
+  const availableModulesFor = useCallback((lobe: AnorakLobe) => {
+    return catalog.filter(entry => {
+      if (config.lobeModules[lobe].includes(entry.id)) return false
+      if (entry.kind === 'custom') {
+        const custom = config.customModules.find(mod => mod.id === entry.id)
+        return custom?.enabled !== false
+      }
+      return true
+    })
+  }, [catalog, config.customModules, config.lobeModules])
 
   return (
     <div className="flex-1 overflow-y-auto p-3 text-xs font-mono">
-      <div className="text-teal-400 text-[10px] uppercase tracking-widest mb-3">Context Engineering HQ</div>
+      <div className="text-[#14b8a6] text-[10px] uppercase tracking-widest mb-2">Context Engineering HQ</div>
 
-      <div className="space-y-3">
-        {/* Per-lobe model selection + lobeprompt editing */}
-        {(['curator', 'coder', 'reviewer', 'tester'] as const).map(lobe => (
-          <div key={lobe} className="border border-white/5 rounded p-2">
-            <div className="flex items-center justify-between mb-1">
-              <span style={{ color: LOBE_COLORS[lobe] }} className="font-bold capitalize">{lobe}</span>
-              <select
-                value={config.models[lobe]}
-                onChange={e => onUpdate({ models: { ...config.models, [lobe]: e.target.value } })}
-                className={selectCls}
+      {/* ── Type Legend ── */}
+      <div className="mb-3 flex gap-4 text-[9px]">
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: MODULE_TYPE_COLORS.builtin }} />
+          <span className="text-[#c0ffee]">built-in</span>
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: MODULE_TYPE_COLORS.custom }} />
+          <span className="text-[#c0ffee]">custom text</span>
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: MODULE_TYPE_COLORS.file }} />
+          <span className="text-[#c0ffee]">linked file</span>
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: '#e879f9' }} />
+          <span className="text-[#c0ffee]">runtime 🔒</span>
+        </span>
+      </div>
+
+      <div className="space-y-2">
+        {/* ── Per-lobe expandable cards ── */}
+        {(['curator', 'coder', 'reviewer', 'tester', 'gamer'] as const).map(lobe => {
+          const attached = config.lobeModules[lobe] || []
+          const moduleCount = attached.length + 1 + (lobe === 'curator' ? 1 : 0) // +1 sysprompt, +1 runtime mission for curator
+          const isExpanded = !!expandedLobes[lobe]
+          return (
+            <div key={lobe} className="border rounded bg-black/30" style={{ borderColor: `${LOBE_COLORS[lobe]}30` }}>
+              {/* ── Collapsed header ── */}
+              <div
+                className="flex items-center justify-between px-2 py-1.5 cursor-pointer select-none"
+                onClick={() => toggleExpand(lobe)}
               >
-                <option value="opus">Opus</option>
-                <option value="sonnet">Sonnet</option>
-                <option value="haiku">Haiku</option>
-              </select>
-            </div>
-            <LobeEditor lobe={lobe} />
-          </div>
-        ))}
+                <div className="flex items-center gap-2">
+                  <span className="text-white">{isExpanded ? '▼' : '▶'}</span>
+                  <span style={{ color: LOBE_COLORS[lobe] }} className="font-bold capitalize text-[11px]">{lobe}</span>
+                  <span className="text-[9px] text-[#c0ffee]">{config.models[lobe]}</span>
+                </div>
+                <span className="text-[9px] text-[#c0ffee]">{moduleCount} module{moduleCount !== 1 ? 's' : ''}</span>
+              </div>
 
-        {/* Context modules */}
-        <div className="border border-white/5 rounded p-2">
-          <div className="text-gray-400 font-bold text-[11px] mb-1">Context Modules</div>
-          <div className="space-y-1 text-[10px]">
-            <label className="flex items-center gap-2 text-gray-400 cursor-pointer">
-              <input type="checkbox" checked={config.contextModules.rl} onChange={e => onUpdate({ contextModules: { ...config.contextModules, rl: e.target.checked } })} className="accent-teal-500" /> RL Signal (curator-rl.md)
-            </label>
-            <label className="flex items-center gap-2 text-gray-400 cursor-pointer">
-              <input type="checkbox" checked={config.contextModules.queued} onChange={e => onUpdate({ contextModules: { ...config.contextModules, queued: e.target.checked } })} className="accent-teal-500" /> Queued Missions
-            </label>
-            <label className="flex items-center gap-2 text-gray-400 cursor-pointer">
-              <input type="checkbox" checked={config.contextModules.allTodo} onChange={e => onUpdate({ contextModules: { ...config.contextModules, allTodo: e.target.checked } })} className="accent-teal-500" /> All TODO Missions
-            </label>
+              {/* ── Expanded content ── */}
+              {isExpanded && (
+                <div className="px-2 pb-2 pt-1 border-t" style={{ borderColor: `${LOBE_COLORS[lobe]}20` }}>
+                  {/* Model selector + Add button */}
+                  <div className="flex items-center justify-between mb-2">
+                    <select
+                      value={config.models[lobe]}
+                      onChange={e => onUpdate({ models: { ...config.models, [lobe]: e.target.value } })}
+                      className={selectCls}
+                    >
+                      <option value="opus">Opus</option>
+                      <option value="sonnet">Sonnet</option>
+                      <option value="haiku">Haiku</option>
+                    </select>
+                    <button
+                      onClick={() => setAddModalLobe(lobe)}
+                      className="text-[9px] px-2 py-0.5 rounded border border-dashed border-[#14b8a6]/40 text-[#14b8a6] hover:bg-[#14b8a6]/10 cursor-pointer"
+                    >
+                      + Add Module
+                    </button>
+                  </div>
+
+                  {/* Module pill grid */}
+                  <div className="grid grid-cols-3 gap-2">
+                    {/* Runtime mission pill — locked, curator only */}
+                    {lobe === 'curator' && (
+                      <div className="relative rounded border border-[#e879f9]/30 bg-[#020617] p-2 opacity-80">
+                        <div className="absolute top-0.5 right-1 flex items-center gap-1">
+                          <span className="text-[7px] uppercase tracking-wide text-[#e879f9]">runtime</span>
+                          <span className="text-[#e879f9] text-[10px]">🔒</span>
+                        </div>
+                        <div className="pr-10 text-[10px] font-bold text-[#e879f9]">Target Mission</div>
+                        <div className="text-[9px] text-[#c0ffee] mt-0.5">Auto-injected: full mission data for the mission being curated</div>
+                      </div>
+                    )}
+
+                    <LobeEditor lobe={lobe} />
+
+                    {attached.map(moduleId => {
+                      const moduleMeta = catalogById.get(moduleId)
+                      if (!moduleMeta) return null
+                      const typeColor = moduleTypeColor(moduleMeta)
+                      return (
+                        <div
+                          key={moduleId}
+                          className="relative rounded border bg-[#020617] p-2 cursor-pointer transition-transform hover:scale-[1.02]"
+                          style={{ borderColor: `${typeColor}40` }}
+                          onClick={() => openPreview(lobe, moduleId, moduleMeta.name)}
+                        >
+                          {/* Type badge + remove */}
+                          <div className="absolute top-0.5 right-1 flex items-center gap-1">
+                            <span className="text-[7px] uppercase tracking-wide" style={{ color: typeColor }}>{moduleTypeLabel(moduleMeta)}</span>
+                            <button
+                              className="text-[#c0ffee] hover:text-[#fb7185] text-[10px] leading-none cursor-pointer"
+                              onClick={e => { e.stopPropagation(); removeModule(lobe, moduleId) }}
+                            >×</button>
+                          </div>
+                          <div className="pr-10 text-[10px] font-bold" style={{ color: typeColor }}>{moduleMeta.name}</div>
+                          <div className="text-[9px] text-[#c0ffee] mt-0.5 truncate">{moduleMeta.description}</div>
+                          {moduleMeta.parameterized && (
+                            <div className="mt-1.5 flex items-center gap-1 text-[9px]" onClick={e => e.stopPropagation()}>
+                              <button onClick={() => {
+                                const cur = config.moduleValues[moduleId] ?? 3
+                                onUpdate({ moduleValues: { ...config.moduleValues, [moduleId]: Math.max(1, cur - 1) } })
+                              }} className="rounded border px-1 cursor-pointer" style={{ borderColor: `${typeColor}50`, color: typeColor }}>◀</button>
+                              <span className="text-white w-3 text-center">{config.moduleValues[moduleId] ?? 3}</span>
+                              <button onClick={() => {
+                                const cur = config.moduleValues[moduleId] ?? 3
+                                onUpdate({ moduleValues: { ...config.moduleValues, [moduleId]: Math.min(50, cur + 1) } })
+                              }} className="rounded border px-1 cursor-pointer" style={{ borderColor: `${typeColor}50`, color: typeColor }}>▶</button>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+
+                    {attached.length === 0 && (
+                      <div className="rounded border border-dashed border-[#14b8a6]/20 p-2 text-[10px] text-[#c0ffee]">
+                        No modules attached.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+
+        {/* ── Gamer lobe (prompt-only) ── */}
+        <div className="border border-[#eab308]/20 rounded bg-black/30">
+          <div className="flex items-center justify-between px-2 py-1.5 cursor-pointer select-none" onClick={() => toggleExpand('gamer')}>
+            <div className="flex items-center gap-2">
+              <span className="text-white">{expandedLobes.gamer ? '▼' : '▶'}</span>
+              <span style={{ color: LOBE_COLORS.gamer }} className="font-bold capitalize text-[11px]">gamer</span>
+              <span className="text-[9px] text-[#fbbf24]">prompt-only</span>
+            </div>
           </div>
+          {expandedLobes.gamer && (
+            <div className="px-2 pb-2 pt-1 border-t border-[#eab308]/20">
+              <div className="mb-2 text-[10px] text-[#fef3c7]">Embodied gameplay agent. Does not participate in module orchestration yet.</div>
+              <div className="grid grid-cols-3 gap-2">
+                <LobeEditor lobe="gamer" />
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Custom context modules */}
-        <div className="border border-white/5 rounded p-2">
-          <div className="flex items-center justify-between mb-1">
-            <div className="text-gray-400 font-bold text-[11px]">Custom Modules</div>
-            <button onClick={() => {
-              if ((config.customModules?.length ?? 0) >= 20) return
-              const name = `Module ${(config.customModules?.length ?? 0) + 1}`
-              onUpdate({ customModules: [...(config.customModules || []), { name, content: '', enabled: true }] })
-            }} disabled={(config.customModules?.length ?? 0) >= 20}
-              className="text-[9px] px-2 py-0.5 rounded bg-teal-500/20 text-teal-400 hover:bg-teal-500/30 disabled:opacity-30 cursor-pointer">+ Add</button>
+        {/* ── Custom Module Library ── */}
+        <div className="border border-[#14b8a6]/15 rounded p-2 bg-black/30">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <div className="text-white font-bold text-[11px]">Custom Module Library</div>
+              <div className="text-[#c0ffee] text-[9px]">Saved modules become attachable to any lobe. File modules resolve live from disk.</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => addCustomModule('text')} disabled={(config.customModules?.length ?? 0) >= 20} className="text-[9px] px-2 py-0.5 rounded bg-[#22c55e]/20 text-[#22c55e] hover:bg-[#22c55e]/30 disabled:opacity-30 cursor-pointer">+ Text</button>
+              <button onClick={() => addCustomModule('file')} disabled={(config.customModules?.length ?? 0) >= 20} className="text-[9px] px-2 py-0.5 rounded bg-[#f59e0b]/20 text-[#f59e0b] hover:bg-[#f59e0b]/30 disabled:opacity-30 cursor-pointer">+ Link File</button>
+            </div>
           </div>
+
           <div className="space-y-2">
             {(config.customModules || []).map((mod, i) => (
-              <div key={i} className="border border-white/5 rounded p-1.5">
-                <div className="flex items-center gap-2 mb-1">
-                  <input type="checkbox" checked={mod.enabled}
-                    onChange={e => {
-                      const updated = [...config.customModules]
-                      updated[i] = { ...updated[i], enabled: e.target.checked }
-                      onUpdate({ customModules: updated })
-                    }} className="accent-teal-500" />
-                  <input type="text" value={mod.name}
-                    onChange={e => {
-                      const updated = [...config.customModules]
-                      updated[i] = { ...updated[i], name: e.target.value }
-                      onUpdate({ customModules: updated })
-                    }}
-                    className="flex-1 bg-transparent border-b border-white/10 text-gray-300 text-[10px] outline-none focus:border-teal-500/30" />
-                  <button onClick={() => {
-                    const updated = config.customModules.filter((_, j) => j !== i)
-                    onUpdate({ customModules: updated })
-                  }} className="text-red-400/50 hover:text-red-400 text-[10px] cursor-pointer">✕</button>
-                </div>
-                <textarea value={mod.content}
-                  onChange={e => {
-                    const updated = [...config.customModules]
-                    updated[i] = { ...updated[i], content: e.target.value }
-                    onUpdate({ customModules: updated })
-                  }}
-                  placeholder="Free-text context injected into agent prompts..."
-                  maxLength={10000}
-                  className="w-full h-16 bg-black/40 border border-white/5 rounded p-1.5 text-gray-400 text-[10px] resize-y outline-none focus:border-teal-500/30"
-                  spellCheck={false} />
-              </div>
+              <CustomModuleEditor
+                key={mod.id || i}
+                module={mod}
+                onSave={nextModule => saveCustomModule(i, nextModule)}
+                onDelete={() => {
+                  const filtered = config.customModules.filter((_, j) => j !== i)
+                  onUpdate({ customModules: filtered })
+                }}
+              />
             ))}
             {(config.customModules || []).length === 0 && (
-              <div className="text-gray-600 text-[10px] py-1">No custom modules. Add one to inject context into agent prompts.</div>
+              <div className="text-[#c0ffee] text-[10px] py-1">No custom modules yet. Add text or file-backed context.</div>
             )}
           </div>
         </div>
-
-        {/* Controls */}
-        <div className="border border-white/5 rounded p-2">
-          <div className="text-gray-400 font-bold text-[11px] mb-2">Controls</div>
-          <div className="space-y-2 text-[10px]">
-            <div className="flex items-center justify-between">
-              <span className="text-gray-500">Reviewer threshold</span>
-              <input type="number" value={config.reviewerThreshold} min={50} max={100}
-                onChange={e => onUpdate({ reviewerThreshold: Math.min(100, Math.max(50, parseInt(e.target.value) || 90)) })}
-                className={inputCls} />
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-gray-500">Batch size</span>
-              <input type="number" value={config.batchSize} min={1} max={5}
-                onChange={e => onUpdate({ batchSize: Math.min(5, Math.max(1, parseInt(e.target.value) || 1)) })}
-                className={inputCls} />
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-gray-500">Recap length (tokens)</span>
-              <input type="number" value={config.recapLength} min={50} max={500} step={50}
-                onChange={e => onUpdate({ recapLength: Math.min(500, Math.max(50, parseInt(e.target.value) || 100)) })}
-                className={inputCls} />
-            </div>
-            <div className="flex items-center justify-between pt-1 border-t border-white/5">
-              <span className="text-amber-400">Auto-curate</span>
-              <input type="checkbox" checked={config.autoCurate}
-                onChange={e => onUpdate({ autoCurate: e.target.checked })}
-                className="accent-amber-500" />
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-red-400">Auto-code</span>
-              <input type="checkbox" checked={config.autoCode}
-                onChange={e => onUpdate({ autoCode: e.target.checked })}
-                className="accent-red-500" />
-            </div>
-          </div>
-        </div>
       </div>
+
+      {/* ── Fullscreen Preview Modal ── */}
+      {previewTarget && (
+        <PreviewOverlay
+          target={previewTarget}
+          content={previewContent}
+          loading={previewLoading}
+          onClose={() => { setPreviewTarget(null); setPreviewContent('') }}
+        />
+      )}
+
+      {/* ── Fullscreen Add Module Modal ── */}
+      {addModalLobe && (
+        <AddModuleOverlay
+          lobe={addModalLobe}
+          options={availableModulesFor(addModalLobe)}
+          onAdd={moduleId => attachModule(addModalLobe, moduleId)}
+          onClose={() => setAddModalLobe(null)}
+        />
+      )}
     </div>
   )
 }
@@ -1142,11 +1892,11 @@ function CEHQTab({ config, onUpdate }: { config: AnorakProConfig; onUpdate: (p: 
 function SettingsDropdown({ settings, onChange }: { settings: PanelSettings; onChange: (s: PanelSettings) => void }) {
   return (
     <div className="absolute right-0 top-full mt-1 z-50 bg-gray-900 border border-white/10 rounded-lg p-3 shadow-xl w-56">
-      <div className="text-[10px] text-gray-400 uppercase tracking-widest mb-2">Panel Settings</div>
+      <div className="text-[10px] text-[#c0ffee]/80 uppercase tracking-widest mb-2">Panel Settings</div>
 
       <div className="space-y-2 text-[10px]">
         <div>
-          <div className="text-gray-500 mb-1">Background Color</div>
+          <div className="text-[#c0ffee]/70 mb-1">Background Color</div>
           <input
             type="color"
             value={settings.bgColor}
@@ -1155,7 +1905,7 @@ function SettingsDropdown({ settings, onChange }: { settings: PanelSettings; onC
           />
         </div>
         <div>
-          <div className="text-gray-500 mb-1">Opacity ({(settings.opacity * 100).toFixed(0)}%)</div>
+          <div className="text-[#c0ffee]/70 mb-1">Opacity ({(settings.opacity * 100).toFixed(0)}%)</div>
           <input
             type="range" min={0} max={1} step={0.05}
             value={settings.opacity}
@@ -1164,7 +1914,7 @@ function SettingsDropdown({ settings, onChange }: { settings: PanelSettings; onC
           />
         </div>
         <div>
-          <div className="text-gray-500 mb-1">Blur ({settings.blur}px)</div>
+          <div className="text-[#c0ffee]/70 mb-1">Blur ({settings.blur}px)</div>
           <input
             type="range" min={0} max={20} step={1}
             value={settings.blur}
@@ -1201,7 +1951,7 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
   const [config, setConfig] = useState<AnorakProConfig>(loadConfig)
   const updateConfig = useCallback((partial: Partial<AnorakProConfig>) => {
     setConfig(prev => {
-      const next = { ...prev, ...partial }
+      const next = mergeContextConfig(prev, partial) as AnorakProConfig
       saveConfig(next)
       return next
     })
@@ -1461,14 +2211,22 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
   const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 })
 
   const handleDragStart = useCallback((e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('button, select, input')) return
+    // Allow drag from background only — skip any element with text or interactive content
+    const target = e.target as HTMLElement
+    if (target.closest('button, select, input, textarea, a, pre, label, [data-no-drag]')) return
+    // Skip if target has text content (user might be trying to select text)
+    if (target.closest('.overflow-y-auto, .overflow-auto, .overflow-x-auto')) return
+    // Only drag from header bar, tab bar, or panel border areas
+    if (!target.closest('[data-drag-handle]')) return
     setIsDragging(true)
     dragStart.current = { x: e.clientX - position.x, y: e.clientY - position.y }
   }, [position])
 
   const handleDrag = useCallback((e: MouseEvent) => {
     if (!isDragging) return
-    const newPos = { x: e.clientX - dragStart.current.x, y: e.clientY - dragStart.current.y }
+    // Clamp north: header must stay at least 30px visible
+    const newY = Math.max(-10, e.clientY - dragStart.current.y)
+    const newPos = { x: e.clientX - dragStart.current.x, y: newY }
     setPosition(newPos)
     localStorage.setItem(POS_KEY, JSON.stringify(newPos))
   }, [isDragging])
@@ -1608,9 +2366,12 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
       model: config.models.curator,
       batchSize: config.batchSize,
       contextModules: config.contextModules,
-      customModules: (config.customModules || []).filter(m => m.enabled),
+      customModules: config.customModules,
+      lobeModules: config.lobeModules,
+      topMissionCount: config.topMissionCount,
+      moduleValues: config.moduleValues,
     })
-  }, [consumeSSE, config.models.curator, config.batchSize, config.contextModules, config.customModules])
+  }, [consumeSSE, config.models.curator, config.batchSize, config.contextModules, config.customModules, config.lobeModules, config.topMissionCount, config.moduleValues])
 
   const handleExecute = useCallback((missionId: number) => {
     setActiveTab('stream')
@@ -1619,10 +2380,15 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
       coderModel: config.models.coder,
       reviewerModel: config.models.reviewer,
       testerModel: config.models.tester,
-      recapModel: config.models.tester, // recap uses tester model slot for now
+      gamerModel: config.models.gamer,
       reviewerThreshold: config.reviewerThreshold,
       recapLength: config.recapLength,
-      customModules: (config.customModules || []).filter(m => m.enabled),
+      testerHeaded: config.testerHeaded,
+      gamerHeaded: config.gamerHeaded,
+      contextModules: config.contextModules,
+      customModules: config.customModules,
+      lobeModules: config.lobeModules,
+      topMissionCount: config.topMissionCount,
     })
   }, [consumeSSE, config])
 
@@ -1638,11 +2404,14 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
     const checkAndCurate = async () => {
       if (!autoCurateRef.current || isRunningRef.current) return
       try {
-        const res = await fetch('/api/missions?assignedTo=anorak')
+        const res = await fetch('/api/missions')
         if (!res.ok) return
         const missions = await res.json()
         const immature = (Array.isArray(missions) ? missions : missions.data ?? [])
-          .filter((m: { maturityLevel: number; status: string }) => m.maturityLevel < 3 && m.status !== 'done')
+          .filter((m: { assignedTo: string | null; maturityLevel: number; status: string }) =>
+            (m.assignedTo === 'anorak' || m.assignedTo === 'anorak-pro')
+            && m.maturityLevel < 3
+            && m.status !== 'done')
           .sort((a: { priority: number | null }, b: { priority: number | null }) => (b.priority ?? 0) - (a.priority ?? 0))
         if (immature.length > 0 && autoCurateRef.current && !isRunningRef.current) {
           handleCurate(immature[0].id)
@@ -1666,11 +2435,14 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
     const checkAndExecute = async () => {
       if (!autoCodeRef.current || isRunningRef.current) return
       try {
-        const res = await fetch('/api/missions?assignedTo=anorak')
+        const res = await fetch('/api/missions')
         if (!res.ok) return
         const missions = await res.json()
         const vaikhari = (Array.isArray(missions) ? missions : missions.data ?? [])
-          .filter((m: { maturityLevel: number; status: string }) => m.maturityLevel >= 3 && m.status === 'todo')
+          .filter((m: { assignedTo: string | null; maturityLevel: number; status: string }) =>
+            (m.assignedTo === 'anorak' || m.assignedTo === 'anorak-pro')
+            && m.maturityLevel >= 3
+            && m.status === 'todo')
           .sort((a: { priority: number | null }, b: { priority: number | null }) => (b.priority ?? 0) - (a.priority ?? 0))
         if (vaikhari.length > 0 && autoCodeRef.current && !isRunningRef.current) {
           handleExecute(vaikhari[0].id)
@@ -1706,12 +2478,11 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
           : '0 8px 40px rgba(0,0,0,0.8)',
         transition: 'box-shadow 0.5s, border-color 0.5s',
       }}
-      onMouseDown={e => { e.stopPropagation(); useOasisStore.getState().bringPanelToFront('anorak-pro') }}
+      onMouseDown={e => { e.stopPropagation(); useOasisStore.getState().bringPanelToFront('anorak-pro'); handleDragStart(e) }}
       onPointerDown={e => e.stopPropagation()}
     >
       {/* ═══ HEADER ═══ */}
-      <div
-        onMouseDown={handleDragStart}
+      <div data-drag-handle
         className="flex items-center justify-between px-3 py-2 border-b border-white/10 cursor-grab active:cursor-grabbing select-none"
         style={{ background: isAgentRunning ? 'linear-gradient(135deg, rgba(20,184,166,0.1) 0%, rgba(0,0,0,0) 100%)' : 'rgba(20,20,30,0.5)' }}
       >
@@ -1725,7 +2496,7 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
           <div className="relative">
             <button
               onClick={() => setShowSettings(p => !p)}
-              className="text-[10px] text-gray-500 hover:text-teal-400 px-1.5 py-0.5 rounded border border-gray-800 hover:border-teal-500/30 transition-all cursor-pointer"
+              className="text-[10px] text-[#c0ffee]/70 hover:text-teal-400 px-1.5 py-0.5 rounded border border-gray-800 hover:border-teal-500/30 transition-all cursor-pointer"
             >
               ⚙
             </button>
@@ -1733,12 +2504,12 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
           </div>
 
           {/* Close */}
-          <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors text-lg leading-none cursor-pointer">×</button>
+          <button onClick={onClose} className="text-[#c0ffee]/70 hover:text-white transition-colors text-lg leading-none cursor-pointer">×</button>
         </div>
       </div>
 
       {/* ═══ TABS ═══ */}
-      <div className="flex border-b border-white/5">
+      <div data-drag-handle className="flex border-b border-white/5">
         {TABS.map(tab => (
           <button
             key={tab.id}
@@ -1765,50 +2536,58 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
           <div className="text-teal-400 text-[10px] uppercase tracking-widest mb-3">Settings</div>
           <div className="space-y-3">
             <div className="border border-white/5 rounded p-2">
-              <div className="text-gray-400 font-bold text-[11px] mb-2">Automation</div>
+              <div className="text-[#c0ffee]/80 font-bold text-[11px] mb-2">Automation</div>
               <div className="space-y-2 text-[10px]">
                 <div className="flex items-center justify-between">
                   <span className="text-amber-400">Auto-curate</span>
                   <input type="checkbox" checked={config.autoCurate} onChange={e => updateConfig({ autoCurate: e.target.checked })} className="accent-amber-500" />
                 </div>
-                <div className="text-gray-600 text-[9px] -mt-1 ml-1">Curates immature anorak missions automatically</div>
+                <div className="text-[#c0ffee]/60 text-[9px] -mt-1 ml-1">Curates immature anorak missions automatically</div>
                 <div className="flex items-center justify-between">
                   <span className="text-red-400">Auto-code</span>
                   <input type="checkbox" checked={config.autoCode} onChange={e => updateConfig({ autoCode: e.target.checked })} className="accent-red-500" />
                 </div>
-                <div className="text-gray-600 text-[9px] -mt-1 ml-1">Executes vaikhari missions automatically</div>
+                <div className="text-[#c0ffee]/60 text-[9px] -mt-1 ml-1">Executes vaikhari missions automatically</div>
               </div>
             </div>
             <div className="border border-white/5 rounded p-2">
-              <div className="text-gray-400 font-bold text-[11px] mb-2">Pipeline</div>
+              <div className="text-[#c0ffee]/80 font-bold text-[11px] mb-2">Pipeline</div>
               <div className="space-y-2 text-[10px]">
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-500">Reviewer threshold</span>
-                  <input type="number" value={config.reviewerThreshold} min={50} max={100} onChange={e => updateConfig({ reviewerThreshold: Math.min(100, Math.max(50, parseInt(e.target.value) || 90)) })} className="w-14 text-center bg-black/60 border border-white/10 rounded px-1 py-0.5 text-gray-300 outline-none" />
+                  <span className="text-[#c0ffee]/70">Reviewer threshold</span>
+                  <input type="number" value={config.reviewerThreshold} min={50} max={100} onChange={e => updateConfig({ reviewerThreshold: Math.min(100, Math.max(50, parseInt(e.target.value) || 90)) })} className="w-14 text-center bg-black/60 border border-white/10 rounded px-1 py-0.5 text-white/90 outline-none" />
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-500">Batch size</span>
-                  <input type="number" value={config.batchSize} min={1} max={5} onChange={e => updateConfig({ batchSize: Math.min(5, Math.max(1, parseInt(e.target.value) || 1)) })} className="w-14 text-center bg-black/60 border border-white/10 rounded px-1 py-0.5 text-gray-300 outline-none" />
+                  <span className="text-[#c0ffee]/70">Batch size</span>
+                  <input type="number" value={config.batchSize} min={1} max={5} onChange={e => updateConfig({ batchSize: Math.min(5, Math.max(1, parseInt(e.target.value) || 1)) })} className="w-14 text-center bg-black/60 border border-white/10 rounded px-1 py-0.5 text-white/90 outline-none" />
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-500">Recap length</span>
-                  <input type="number" value={config.recapLength} min={50} max={500} step={50} onChange={e => updateConfig({ recapLength: Math.min(500, Math.max(50, parseInt(e.target.value) || 100)) })} className="w-14 text-center bg-black/60 border border-white/10 rounded px-1 py-0.5 text-gray-300 outline-none" />
+                  <span className="text-[#c0ffee]/70">Recap length</span>
+                  <input type="number" value={config.recapLength} min={50} max={500} step={50} onChange={e => updateConfig({ recapLength: Math.min(500, Math.max(50, parseInt(e.target.value) || 100)) })} className="w-14 text-center bg-black/60 border border-white/10 rounded px-1 py-0.5 text-white/90 outline-none" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[#c0ffee]/70">Tester headed</span>
+                  <input type="checkbox" checked={config.testerHeaded} onChange={e => updateConfig({ testerHeaded: e.target.checked })} className="accent-green-500" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[#c0ffee]/70">Gamer headed</span>
+                  <input type="checkbox" checked={config.gamerHeaded} onChange={e => updateConfig({ gamerHeaded: e.target.checked })} className="accent-yellow-500" />
                 </div>
               </div>
             </div>
             <div className="border border-white/5 rounded p-2">
-              <div className="text-gray-400 font-bold text-[11px] mb-2">Appearance</div>
+              <div className="text-[#c0ffee]/80 font-bold text-[11px] mb-2">Appearance</div>
               <div className="space-y-2 text-[10px]">
                 <div>
-                  <div className="text-gray-500 mb-1">Background Color</div>
+                  <div className="text-[#c0ffee]/70 mb-1">Background Color</div>
                   <input type="color" value={panelSettings.bgColor} onChange={e => updateSettings({ ...panelSettings, bgColor: e.target.value })} className="w-full h-6 rounded cursor-pointer bg-transparent border border-white/10" />
                 </div>
                 <div>
-                  <div className="text-gray-500 mb-1">Opacity ({(panelSettings.opacity * 100).toFixed(0)}%)</div>
+                  <div className="text-[#c0ffee]/70 mb-1">Opacity ({(panelSettings.opacity * 100).toFixed(0)}%)</div>
                   <input type="range" min={0} max={1} step={0.05} value={panelSettings.opacity} onChange={e => updateSettings({ ...panelSettings, opacity: parseFloat(e.target.value) })} className="w-full accent-teal-500" />
                 </div>
                 <div>
-                  <div className="text-gray-500 mb-1">Blur ({panelSettings.blur}px)</div>
+                  <div className="text-[#c0ffee]/70 mb-1">Blur ({panelSettings.blur}px)</div>
                   <input type="range" min={0} max={20} step={1} value={panelSettings.blur} onChange={e => updateSettings({ ...panelSettings, blur: parseInt(e.target.value) })} className="w-full accent-teal-500" />
                 </div>
               </div>

@@ -138,9 +138,15 @@ the main agent is aware, but don't let them affect the score.
 **When invoked by Anorak Pro's orchestrator**, you also have MCP tools:
 - `report_review`: write your score + findings to the mission in the DB.
   Call this AFTER producing your report. First-pass score is saved as RL signal.
-- `create_mission`: create para missions for discovered collateral bugs.
+- `create_para_mission`: create para missions for discovered collateral bugs.
   Call this for each discovered issue — creates a new para (🌑) mission
   assigned to anorak.
+
+### Phoenix Protocol Awareness
+
+The coder may have worked in a git worktree (CRISPR mode). Changes are merged
+into main before you review. Review the actual merged code on disk, not the
+diff from the worktree branch.
 
 ---
 

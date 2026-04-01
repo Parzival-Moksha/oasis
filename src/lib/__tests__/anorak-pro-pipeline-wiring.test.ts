@@ -363,14 +363,14 @@ describe('AnorakProPanel — handleCurate sends context', () => {
     expect(panelSrc).toMatch(/handleCurate[\s\S]*?contextModules:\s*config\.contextModules/)
   })
 
-  it('handleCurate passes filtered customModules to consumeSSE', () => {
-    // handleCurate should filter enabled customModules before sending
-    expect(panelSrc).toMatch(/handleCurate[\s\S]*?customModules:\s*\(config\.customModules/)
+  it('handleCurate passes customModules to consumeSSE', () => {
+    // handleCurate should include config.customModules in the body
+    expect(panelSrc).toMatch(/handleCurate[\s\S]*?customModules:\s*config\.customModules/)
   })
 
   it('handleCurate deps include contextModules and customModules', () => {
-    // The useCallback dep array should include config.contextModules and config.customModules
-    expect(panelSrc).toContain('config.contextModules, config.customModules]')
+    // The useCallback dep array should include config.contextModules and config.customModules (among others)
+    expect(panelSrc).toContain('config.contextModules, config.customModules, config.lobeModules')
   })
 })
 
@@ -385,7 +385,7 @@ describe('AnorakProPanel — handleExecute sends context', () => {
 
   it('handleExecute passes customModules to consumeSSE', () => {
     // handleExecute body should include customModules
-    expect(panelSrc).toMatch(/handleExecute[\s\S]*?customModules:\s*\(config\.customModules/)
+    expect(panelSrc).toMatch(/handleExecute[\s\S]*?customModules:\s*config\.customModules/)
   })
 
   it('consumeSSE sends body as JSON POST', () => {

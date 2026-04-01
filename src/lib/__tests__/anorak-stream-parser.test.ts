@@ -741,3 +741,224 @@ describe('createStreamParser — edge cases', () => {
     expect(call![1].preview).toContain('line1 line2 line3')
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// createStreamParser — tool ID tracking (content_block.id passthrough)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('createStreamParser — tool ID tracking', () => {
+  it('extracts content_block.id into tool_start events', () => {
+    const send = vi.fn()
+    const parser = createStreamParser({ send })
+
+    parser.feed(ndjson({
+      type: 'content_block_start',
+      content_block: { type: 'tool_use', name: 'Read', id: 'toolu_abc123' },
+    }))
+
+    expect(send).toHaveBeenCalledWith('tool_start', { name: 'Read', id: 'toolu_abc123' })
+  })
+
+  it('passes id through to tool event on content_block_stop', () => {
+    const send = vi.fn()
+    const parser = createStreamParser({ send })
+
+    parser.feed(ndjson(
+      { type: 'content_block_start', content_block: { type: 'tool_use', name: 'Bash', id: 'toolu_xyz789' } },
+      { type: 'content_block_delta', delta: { type: 'input_json_delta', partial_json: '{"command":"ls"}' } },
+      { type: 'content_block_stop' },
+    ))
+
+    const toolCall = send.mock.calls.find(c => c[0] === 'tool')
+    expect(toolCall).toBeDefined()
+    expect(toolCall![1].id).toBe('toolu_xyz789')
+    expect(toolCall![1].name).toBe('Bash')
+    expect(toolCall![1].display).toBe('Bash: ls')
+  })
+
+  it('omits id from tool_start when content_block has no id', () => {
+    const send = vi.fn()
+    const parser = createStreamParser({ send })
+
+    parser.feed(ndjson({
+      type: 'content_block_start',
+      content_block: { type: 'tool_use', name: 'Grep' },
+    }))
+
+    expect(send).toHaveBeenCalledWith('tool_start', { name: 'Grep' })
+    expect(send.mock.calls[0][1]).not.toHaveProperty('id')
+  })
+
+  it('omits id from tool event when content_block had no id', () => {
+    const send = vi.fn()
+    const parser = createStreamParser({ send })
+
+    parser.feed(ndjson(
+      { type: 'content_block_start', content_block: { type: 'tool_use', name: 'Read' } },
+      { type: 'content_block_delta', delta: { type: 'input_json_delta', partial_json: '{"file_path":"/a.ts"}' } },
+      { type: 'content_block_stop' },
+    ))
+
+    const toolCall = send.mock.calls.find(c => c[0] === 'tool')
+    expect(toolCall).toBeDefined()
+    expect(toolCall![1]).not.toHaveProperty('id')
+  })
+
+  it('passes id with lobe in tool_start and tool events', () => {
+    const send = vi.fn()
+    const parser = createStreamParser({ send }, 'curator')
+
+    parser.feed(ndjson(
+      { type: 'content_block_start', content_block: { type: 'tool_use', name: 'Edit', id: 'toolu_lobe1' } },
+      { type: 'content_block_delta', delta: { type: 'input_json_delta', partial_json: '{"file_path":"/b.ts"}' } },
+      { type: 'content_block_stop' },
+    ))
+
+    expect(send).toHaveBeenCalledWith('tool_start', { name: 'Edit', id: 'toolu_lobe1', lobe: 'curator' })
+    const toolCall = send.mock.calls.find(c => c[0] === 'tool')
+    expect(toolCall![1].id).toBe('toolu_lobe1')
+    expect(toolCall![1].lobe).toBe('curator')
+  })
+
+  it('extracts tool_use_id from tool_result events', () => {
+    const send = vi.fn()
+    const parser = createStreamParser({ send })
+
+    parser.feed(ndjson({
+      type: 'tool_result',
+      tool_name: 'Bash',
+      tool_use_id: 'toolu_res456',
+      result: 'output',
+    }))
+
+    const call = send.mock.calls.find(c => c[0] === 'tool_result')
+    expect(call).toBeDefined()
+    expect(call![1].toolUseId).toBe('toolu_res456')
+  })
+
+  it('falls back to event.id for tool_result toolUseId', () => {
+    const send = vi.fn()
+    const parser = createStreamParser({ send })
+
+    parser.feed(ndjson({
+      type: 'tool_result',
+      name: 'Read',
+      id: 'toolu_fallback',
+      result: 'data',
+    }))
+
+    const call = send.mock.calls.find(c => c[0] === 'tool_result')
+    expect(call).toBeDefined()
+    expect(call![1].toolUseId).toBe('toolu_fallback')
+  })
+
+  it('omits toolUseId from tool_result when neither tool_use_id nor id present', () => {
+    const send = vi.fn()
+    const parser = createStreamParser({ send })
+
+    parser.feed(ndjson({
+      type: 'tool_result',
+      tool_name: 'Glob',
+      result: 'files',
+    }))
+
+    const call = send.mock.calls.find(c => c[0] === 'tool_result')
+    expect(call).toBeDefined()
+    expect(call![1]).not.toHaveProperty('toolUseId')
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// createStreamParser — token field fallback (usage.input_tokens)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('createStreamParser — token field fallback', () => {
+  it('reads tokens from event.usage.input_tokens when total_input_tokens is missing', () => {
+    const send = vi.fn()
+    const parser = createStreamParser({ send })
+
+    parser.feed(ndjson({
+      type: 'result',
+      cost_usd: 0.02,
+      usage: { input_tokens: 750, output_tokens: 300 },
+      duration_ms: 2000,
+    }))
+
+    expect(send).toHaveBeenCalledWith('result', {
+      cost_usd: 0.02,
+      total_input_tokens: 750,
+      total_output_tokens: 300,
+      duration_ms: 2000,
+    })
+  })
+
+  it('prefers total_input_tokens over usage.input_tokens when both present', () => {
+    const send = vi.fn()
+    const parser = createStreamParser({ send })
+
+    parser.feed(ndjson({
+      type: 'result',
+      cost_usd: 0.05,
+      total_input_tokens: 1000,
+      total_output_tokens: 500,
+      usage: { input_tokens: 999, output_tokens: 499 },
+      duration_ms: 3000,
+    }))
+
+    expect(send).toHaveBeenCalledWith('result', {
+      cost_usd: 0.05,
+      total_input_tokens: 1000,
+      total_output_tokens: 500,
+      duration_ms: 3000,
+    })
+  })
+
+  it('prefers total_output_tokens over usage.output_tokens when both present', () => {
+    const send = vi.fn()
+    const parser = createStreamParser({ send })
+
+    parser.feed(ndjson({
+      type: 'result',
+      total_input_tokens: 800,
+      total_output_tokens: 400,
+      usage: { input_tokens: 777, output_tokens: 333 },
+    }))
+
+    const call = send.mock.calls.find(c => c[0] === 'result')
+    expect(call![1].total_input_tokens).toBe(800)
+    expect(call![1].total_output_tokens).toBe(400)
+  })
+
+  it('defaults tokens to 0 when neither total nor usage fields present', () => {
+    const send = vi.fn()
+    const parser = createStreamParser({ send })
+
+    parser.feed(ndjson({
+      type: 'result',
+      cost_usd: 0.01,
+      duration_ms: 500,
+    }))
+
+    const call = send.mock.calls.find(c => c[0] === 'result')
+    expect(call![1].total_input_tokens).toBe(0)
+    expect(call![1].total_output_tokens).toBe(0)
+  })
+
+  it('calls onResult with the raw event including usage object', () => {
+    const send = vi.fn()
+    const onResult = vi.fn()
+    const parser = createStreamParser({ send, onResult })
+
+    const resultEvent = {
+      type: 'result',
+      usage: { input_tokens: 600, output_tokens: 250 },
+    }
+
+    parser.feed(ndjson(resultEvent))
+
+    expect(onResult).toHaveBeenCalledTimes(1)
+    expect(onResult).toHaveBeenCalledWith(expect.objectContaining({
+      usage: { input_tokens: 600, output_tokens: 250 },
+    }))
+  })
+})

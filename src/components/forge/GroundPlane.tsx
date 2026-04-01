@@ -19,7 +19,7 @@
 'use client'
 
 import { useMemo, useEffect, useState, useCallback, useRef, useContext } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { type GroundPreset, GROUND_PRESETS, getTextureUrls } from '../../lib/forge/ground-textures'
 import { useOasisStore } from '../../store/oasisStore'
@@ -96,6 +96,7 @@ async function loadCachedTexture(url: string, colorSpace: THREE.ColorSpace): Pro
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function BaseGround({ preset }: { preset: GroundPreset }) {
+  const gl = useThree(s => s.gl)
   const urls = useMemo(() => getTextureUrls(preset.assetName), [preset.assetName])
   const [diffuse, setDiffuse] = useState<THREE.Texture | null>(null)
 
@@ -109,13 +110,17 @@ function BaseGround({ preset }: { preset: GroundPreset }) {
         const clone = tex.clone()
         clone.repeat.set(preset.tileRepeat, preset.tileRepeat)
         clone.needsUpdate = true
+        // Force synchronous GPU upload BEFORE React re-render.
+        // Without this, setDiffuse triggers render with map=clone + color=#ffffff,
+        // but the texture isn't in VRAM yet → white frame for 1-3 draws.
+        gl.initTexture(clone)
         activeClone = clone
         setDiffuse(clone)
       }
     })
 
     return () => { cancelled = true; activeClone?.dispose() }
-  }, [urls, preset.tileRepeat])
+  }, [urls, preset.tileRepeat, gl])
 
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
@@ -157,14 +162,22 @@ function TileGroupRenderer({ preset, tiles }: { preset: GroundPreset; tiles: [nu
     [preset.assetName, preset.customTextureUrl])
   const [diffuse, setDiffuse] = useState<THREE.Texture | null>(null)
 
+  const gl = useThree(s => s.gl)
+
   // Load diffuse texture ONCE — shared reference, no clone needed
   useEffect(() => {
     let cancelled = false
     loadCachedTexture(urls.diffuse, THREE.SRGBColorSpace).then(tex => {
-      if (!cancelled && tex) setDiffuse(tex) // direct reference, not clone!
+      if (!cancelled && tex) {
+        // Force synchronous GPU upload before React state update.
+        // InstancedMesh shader already has sampler slot (placeholder), so this
+        // is a data upload, not a recompile. Texture is in VRAM when mat.map swaps.
+        gl.initTexture(tex)
+        setDiffuse(tex)
+      }
     })
     return () => { cancelled = true }
-  }, [urls.diffuse])
+  }, [urls.diffuse, gl])
 
   // ░▒▓ IMPERATIVE MATERIAL SYNC — R3F declarative updates can miss texture
   // assignment on instancedMesh children. Force the GPU handshake here.

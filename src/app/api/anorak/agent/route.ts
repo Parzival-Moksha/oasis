@@ -124,7 +124,6 @@ export async function POST(request: NextRequest) {
 
       const child = spawn(claudePath, args, {
         cwd: OASIS_ROOT,
-        shell: true,
         env: { ...process.env },
       })
 

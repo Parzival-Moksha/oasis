@@ -23,13 +23,35 @@ public/conjured/*
 !public/conjured/conj_mm6nig1zk5eo_thumb.jpg
 !public/conjured/conj_mm3uhazzrh34.glb
 !public/conjured/conj_mm3uhazzrh34_thumb.jpg
+!public/conjured/conj_mn6ogn4ae05j.glb
+!public/conjured/conj_mn6ogn4ae05j_thumb.jpg
 # Runtime-generated images (user text-to-image creations)
-public/generated-images/
+public/generated-images/*
+# Showcase generated images — whitelisted
+!public/generated-images/img_mmwq8v7o7suj.jpg
+!public/generated-images/img_mmwq8v7o7suj_tile.jpg
+!public/generated-images/img_mmws4if4gn6w.png
+!public/generated-images/img_mmws4if4gn6w_tile.jpg
+!public/generated-images/img_mnb5wl7tfog1.jpg
+!public/generated-images/img_mnb5wl7tfog1_tile.jpg
 public/generated-videos/
 public/generated-voices/
 
 # User-uploaded media (images, videos, audio via /api/media/upload)
-public/images/
+public/images/*
+# Showcase uploads — whitelisted
+!public/images/img-1774472522211-1c0n8i.png
+!public/images/img-1774472696082-wxwosu.png
+!public/images/img-1774533114768-9kv3c5.png
+!public/images/img-1774539769598-lqb9dv.png
+!public/images/img-1774539884358-gufa5a.jpg
+!public/images/img-1774537876416-cl11uv.jpg
+!public/images/img-1774534031418-exj476.jpg
+!public/images/img-1774534031443-2cm5s2.jpg
+!public/images/vid-1774486478716-pxqyic.mp4
+!public/images/vid-1774545365239-yhgait.mp4
+!public/images/vid-1774536499903-3lr18z.mp4
+!public/images/aud-1775079059280-gsg0ii.mp3
 
 # SQLite database (local, per-instance)
 data/*.db
@@ -59,16 +81,8 @@ public/thumbs/
 *.blend.zip
 *.gltf.zip
 
-# HDRI sky backgrounds (large, 69MB+ total — download per-instance)
-public/hdri/
-
 # Animation libraries (large GLBs — not wired into catalog yet)
 public/models/animations/
-
-# Quaternius asset packs (large GLTF+textures, 200MB+)
-public/models/quaternius-scifi/
-public/models/quaternius-fantasy/
-public/models/quaternius-medieval-village/
 
 # Runtime data (per-instance, diverges between local dev and prod)
 data/conjured-registry.json
@@ -99,6 +113,12 @@ desktop.ini
 
 # Dev specs (carbondir)
 carbondir/
+
+# Dev scripts
+ralph.ps1
+
+# Internal specs (not public documentation)
+specs/
 
 # Dev session artifacts
 CLAUDE*.md

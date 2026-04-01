@@ -90,8 +90,9 @@ server.tool(
     urgency: z.number().min(1).max(10).optional().describe("1-10, only if deep dive reveals misestimation"),
     easiness: z.number().min(1).max(10).optional().describe("1-10, only if deep dive reveals misestimation"),
     impact: z.number().min(1).max(10).optional().describe("1-10, only if deep dive reveals misestimation"),
+    executionMode: z.enum(["crispr", "builder"]).optional().describe("crispr = worktree (touches Next.js module graph), builder = direct (safe files only)"),
   },
-  async ({ id, carbonDescription, siliconDescription, curatorMsg, silicondevMsg, silicondevConfidence, flawlessPercent, dharmaPath, urgency, easiness, impact }) => {
+  async ({ id, carbonDescription, siliconDescription, curatorMsg, silicondevMsg, silicondevConfidence, flawlessPercent, dharmaPath, urgency, easiness, impact, executionMode }) => {
     const mission = await prisma.mission.findUnique({ where: { id } });
     if (!mission) return { content: [{ type: "text", text: `Mission ${id} not found` }] };
 
@@ -122,6 +123,7 @@ server.tool(
       history: JSON.stringify(history),
       assignedTo: "carbondev",
       ...(dharmaPath ? { dharmaPath } : {}),
+      ...(executionMode ? { executionMode } : {}),
     };
 
     // Only update UEI if curator provides new values
@@ -266,26 +268,143 @@ server.tool(
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
-// CREATE MISSION — any agent can spawn para missions
+// REPORT GAME — gamer writes score + verdict
 // ═══════════════════════════════════════════════════════════════════════════
 
 server.tool(
-  "create_mission",
-  "Create a new mission (typically para/level 0). Used by reviewer/tester/curator to report discovered bugs and debt.",
+  "report_game",
+  "Gamer writes score, verdict, and findings to mission. First-pass score is saved as RL signal.",
+  {
+    id: z.number().describe("Mission ID"),
+    score: z.number().min(0).max(100).describe("Gamer score 0-100 (phases passed / total × 100)"),
+    verdict: z.enum(["PASS", "FAIL", "BLOCKED"]).describe("Overall gameplay verdict"),
+    findings: z.string().optional().describe("Gameplay findings summary"),
+    screenshots: z.array(z.string()).optional().describe("Screenshot paths or descriptions"),
+    discoveredIssues: z.array(z.object({
+      name: z.string(),
+      description: z.string(),
+    })).optional().describe("Collateral bugs found — will be created as para missions"),
+  },
+  async ({ id, score, verdict, findings, screenshots, discoveredIssues }) => {
+    const mission = await prisma.mission.findUnique({ where: { id } });
+    if (!mission) return { content: [{ type: "text", text: `Mission ${id} not found` }] };
+
+    let history = [];
+    try { history = JSON.parse(mission.history || "[]"); } catch { history = []; }
+
+    history.push({
+      timestamp: new Date().toISOString(),
+      actor: "gamer",
+      action: "game",
+      gamerScore: score,
+      gamerVerdict: verdict,
+      comment: findings || undefined,
+      screenshots: screenshots || undefined,
+      discoveredIssues: discoveredIssues || undefined,
+    });
+
+    const isFirstPass = mission.gamerScore === null;
+
+    const txOps = [
+      prisma.mission.update({
+        where: { id },
+        data: {
+          history: JSON.stringify(history),
+          gamerVerdict: verdict,
+          ...(isFirstPass ? { gamerScore: score } : {}),
+        },
+      }),
+      ...(discoveredIssues || []).map(issue =>
+        prisma.mission.create({
+          data: {
+            name: issue.name,
+            description: issue.description,
+            maturityLevel: 0,
+            assignedTo: "anorak",
+          },
+        })
+      ),
+    ];
+    await prisma.$transaction(txOps);
+
+    return { content: [{ type: "text", text: `Game recorded: ${score}/100, verdict: ${verdict}. ${isFirstPass ? "(first pass — saved as RL signal)" : "(re-game)"}${discoveredIssues?.length ? ` Created ${discoveredIssues.length} para missions.` : ""}` }] };
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CREATE PARA MISSION — quick bug report, minimal fields, level 0
+// Used by reviewer, tester, gamer, coder when they discover collateral bugs
+// ═══════════════════════════════════════════════════════════════════════════
+
+server.tool(
+  "create_para_mission",
+  "Create a para (🌑 level 0) mission — a quick bug/debt report. Minimal fields. For any agent that spots a collateral issue.",
+  {
+    name: z.string().describe("Short mission name — one-liner"),
+    description: z.string().optional().describe("What's wrong, vibes, what you saw"),
+    urgency: z.number().min(1).max(10).optional().describe("1-10 (default 5)"),
+    impact: z.number().min(1).max(10).optional().describe("1-10 (default 5)"),
+  },
+  async ({ name, description, urgency = 5, impact = 5 }) => {
+    const easiness = 5;
+    const priority = (urgency * easiness * impact) / 125;
+    const mission = await prisma.mission.create({
+      data: { name, description, assignedTo: "anorak", urgency, easiness, impact, priority, maturityLevel: 0 },
+    });
+    return { content: [{ type: "text", text: `Created para mission #${mission.id}: "${name}" (🌑 level 0, assigned to anorak)` }] };
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CREATE PASHYANTI MISSION — enriched mission with specs, level 1
+// Used by curator, Claude Code, Anorak, Anorak Pro after deep analysis
+// ═══════════════════════════════════════════════════════════════════════════
+
+server.tool(
+  "create_pashyanti_mission",
+  "Create a pashyanti (🌒 level 1) mission — enriched with specs, scoring, and curator analysis. For agents that have done deep codebase investigation.",
   {
     name: z.string().describe("Short mission name"),
     description: z.string().optional().describe("What needs doing"),
-    assignedTo: z.string().optional().describe("Who owns it (default: anorak)"),
+    carbonDescription: z.string().optional().describe("War cry — emotional, vibes, analogies. Zero technical jargon."),
+    siliconDescription: z.string().optional().describe("Coder's bible — exact files, functions, edge cases, blast radius."),
+    acceptanceCriteria: z.string().optional().describe("What 'done' means"),
+    curatorMsg: z.string().optional().describe("Curator analysis — what was found, risks, assessment"),
+    silicondevMsg: z.string().optional().describe("SiliconDev prediction — speak AS carbondev"),
+    silicondevConfidence: z.number().min(0).max(1).optional().describe("0.0-1.0 confidence in silicondev prediction"),
+    flawlessPercent: z.number().min(0).max(100).optional().describe("0-100 execution confidence"),
+    dharmaPath: z.string().optional().describe("Comma-separated: view,intention,speech,action,livelihood,effort,mindfulness,concentration"),
+    executionMode: z.enum(["crispr", "builder"]).optional().describe("crispr = worktree (touches Next.js module graph), builder = direct (safe files only)"),
     urgency: z.number().min(1).max(10).optional().describe("1-10 (default 5)"),
     easiness: z.number().min(1).max(10).optional().describe("1-10 (default 5)"),
     impact: z.number().min(1).max(10).optional().describe("1-10 (default 5)"),
   },
-  async ({ name, description, assignedTo = "anorak", urgency = 5, easiness = 5, impact = 5 }) => {
+  async ({ name, description, carbonDescription, siliconDescription, acceptanceCriteria, curatorMsg, silicondevMsg, silicondevConfidence, flawlessPercent, dharmaPath, executionMode, urgency = 5, easiness = 5, impact = 5 }) => {
     const priority = (urgency * easiness * impact) / 125;
+
+    let history = [];
+    if (curatorMsg || silicondevMsg) {
+      history.push({
+        timestamp: new Date().toISOString(),
+        actor: "curator",
+        action: "create-pashyanti",
+        curatorMsg: curatorMsg || undefined,
+        silicondevMsg: silicondevMsg || undefined,
+        silicondevConfidence: silicondevConfidence || undefined,
+      });
+    }
+
     const mission = await prisma.mission.create({
-      data: { name, description, assignedTo, urgency, easiness, impact, priority, maturityLevel: 0 },
+      data: {
+        name, description, assignedTo: "anorak",
+        urgency, easiness, impact, priority,
+        maturityLevel: 1,
+        carbonDescription, siliconDescription, acceptanceCriteria,
+        flawlessPercent, dharmaPath, executionMode,
+        history: history.length ? JSON.stringify(history) : undefined,
+      },
     });
-    return { content: [{ type: "text", text: `Created mission #${mission.id}: "${name}" (para 🌑, assigned to ${assignedTo})` }] };
+    return { content: [{ type: "text", text: `Created pashyanti mission #${mission.id}: "${name}" (🌒 level 1, assigned to anorak)${executionMode ? ` [${executionMode}]` : ""}` }] };
   }
 );
 

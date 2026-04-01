@@ -94,7 +94,7 @@ describe('MediaBubble component element', () => {
       url: 'https://fal.media/files/abc/out.png',
       mediaType: 'image' as MediaType,
     })
-    expect((el.props as Record<string, unknown>).url).toBe('https://fal.media/files/abc/out.png')
+    expect((el.props as unknown as Record<string, unknown>).url).toBe('https://fal.media/files/abc/out.png')
   })
 
   it('passes mediaType prop through', () => {
@@ -102,7 +102,7 @@ describe('MediaBubble component element', () => {
       url: '/test.mp4',
       mediaType: 'video' as MediaType,
     })
-    expect((el.props as Record<string, unknown>).mediaType).toBe('video')
+    expect((el.props as unknown as Record<string, unknown>).mediaType).toBe('video')
   })
 
   it('passes prompt prop through', () => {
@@ -111,7 +111,7 @@ describe('MediaBubble component element', () => {
       mediaType: 'image' as MediaType,
       prompt: 'A sunset over the ocean',
     })
-    expect((el.props as Record<string, unknown>).prompt).toBe('A sunset over the ocean')
+    expect((el.props as unknown as Record<string, unknown>).prompt).toBe('A sunset over the ocean')
   })
 
   it('prompt prop is undefined when not provided', () => {
@@ -119,7 +119,7 @@ describe('MediaBubble component element', () => {
       url: '/test.jpg',
       mediaType: 'image' as MediaType,
     })
-    expect((el.props as Record<string, unknown>).prompt).toBeUndefined()
+    expect((el.props as unknown as Record<string, unknown>).prompt).toBeUndefined()
   })
 
   it('passes compact=true prop through', () => {
@@ -128,7 +128,7 @@ describe('MediaBubble component element', () => {
       mediaType: 'image' as MediaType,
       compact: true,
     })
-    expect((el.props as Record<string, unknown>).compact).toBe(true)
+    expect((el.props as unknown as Record<string, unknown>).compact).toBe(true)
   })
 
   it('passes compact=false prop through', () => {
@@ -137,7 +137,7 @@ describe('MediaBubble component element', () => {
       mediaType: 'video' as MediaType,
       compact: false,
     })
-    expect((el.props as Record<string, unknown>).compact).toBe(false)
+    expect((el.props as unknown as Record<string, unknown>).compact).toBe(false)
   })
 
   it('compact prop is undefined when not provided', () => {
@@ -145,7 +145,7 @@ describe('MediaBubble component element', () => {
       url: '/test.mp3',
       mediaType: 'audio' as MediaType,
     })
-    expect((el.props as Record<string, unknown>).compact).toBeUndefined()
+    expect((el.props as unknown as Record<string, unknown>).compact).toBeUndefined()
   })
 
   it('accepts all props simultaneously', () => {
@@ -155,7 +155,7 @@ describe('MediaBubble component element', () => {
       prompt: 'Mountain scene',
       compact: true,
     })
-    const props = el.props as Record<string, unknown>
+    const props = el.props as unknown as Record<string, unknown>
     expect(props.url).toBe('https://example.com/photo.jpg')
     expect(props.mediaType).toBe('image')
     expect(props.prompt).toBe('Mountain scene')
@@ -167,7 +167,7 @@ describe('MediaBubble component element', () => {
     for (const t of types) {
       const el = React.createElement(MediaBubble, { url: '/test', mediaType: t })
       expect(React.isValidElement(el)).toBe(true)
-      expect((el.props as Record<string, unknown>).mediaType).toBe(t)
+      expect((el.props as unknown as Record<string, unknown>).mediaType).toBe(t)
     }
   })
 })
@@ -507,7 +507,7 @@ describe('AnorakContent media block construction', () => {
       compact: false,
     })
     expect(React.isValidElement(el)).toBe(true)
-    const props = el.props as Record<string, unknown>
+    const props = el.props as unknown as Record<string, unknown>
     expect(props.url).toBe('/uploads/media/song.mp3')
     expect(props.mediaType).toBe('audio')
     expect(props.prompt).toBe('Ambient music')
@@ -554,7 +554,7 @@ describe('AnorakContent media block construction', () => {
       prompt: block.mediaPrompt,
       compact,
     })
-    expect((el.props as Record<string, unknown>).compact).toBe(true)
+    expect((el.props as unknown as Record<string, unknown>).compact).toBe(true)
   })
 })
 

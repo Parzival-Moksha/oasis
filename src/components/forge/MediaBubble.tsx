@@ -17,7 +17,7 @@ interface MediaBubbleProps {
 }
 
 export function resolveMediaUrl(url: string): string {
-  if (url.startsWith('http')) return url
+  if (url.startsWith('http') || url.startsWith('blob:') || url.startsWith('data:')) return url
   if (typeof window !== 'undefined') return `${window.location.origin}${url}`
   return url
 }

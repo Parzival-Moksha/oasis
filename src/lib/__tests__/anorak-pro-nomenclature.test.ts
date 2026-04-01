@@ -122,9 +122,9 @@ describe('Anorak Pro route files exist', () => {
 describe('mission-mcp tool definitions', () => {
   const mcpPath = path.resolve(__dirname, '../../../tools/mission-mcp/index.js')
 
-  it('defines all 6 expected tools', () => {
+  it('defines all 8 expected tools', () => {
     const content = fs.readFileSync(mcpPath, 'utf-8')
-    const tools = ['get_mission', 'get_missions_queue', 'mature_mission', 'report_review', 'report_test', 'create_mission']
+    const tools = ['get_mission', 'get_missions_queue', 'mature_mission', 'report_review', 'report_test', 'report_game', 'create_para_mission', 'create_pashyanti_mission']
     for (const tool of tools) {
       expect(content).toContain(`"${tool}"`)
     }
@@ -136,9 +136,9 @@ describe('mission-mcp tool definitions', () => {
     expect(content).toContain('assignedTo: "carbondev"')
   })
 
-  it('create_mission defaults assignedTo anorak', () => {
+  it('create_para_mission defaults assignedTo anorak', () => {
     const content = fs.readFileSync(mcpPath, 'utf-8')
-    expect(content).toContain('assignedTo = "anorak"')
+    expect(content).toContain('assignedTo: "anorak"')
   })
 })
 

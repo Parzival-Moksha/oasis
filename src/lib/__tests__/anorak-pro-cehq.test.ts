@@ -316,11 +316,11 @@ describe('Custom modules — 20 cap', () => {
     expect(src).toContain("disabled={(config.customModules?.length ?? 0) >= 20}")
   })
 
-  it('textarea has maxLength={10000}', () => {
+  it('textarea has maxLength={400000}', () => {
     const src = fs.readFileSync(
       path.resolve(__dirname, '../../components/forge/AnorakProPanel.tsx'), 'utf-8'
     )
-    expect(src).toContain('maxLength={10000}')
+    expect(src).toContain('maxLength={400000}')
   })
 })
 
@@ -410,7 +410,7 @@ describe('LobeEditor source — AbortController + error handling', () => {
     expect(src).toContain('const handleSave = async ()')
     // Extract handleSave body — verify try/catch wraps the fetch
     const saveIdx = src.indexOf('const handleSave = async ()')
-    const saveBlock = src.slice(saveIdx, saveIdx + 500)
+    const saveBlock = src.slice(saveIdx, saveIdx + 800)
     expect(saveBlock).toContain('try {')
     expect(saveBlock).toContain('catch')
   })
@@ -460,20 +460,30 @@ describe('CustomContextModule interface in source', () => {
   const panelPath = path.resolve(__dirname, '../../components/forge/AnorakProPanel.tsx')
   const src = fs.readFileSync(panelPath, 'utf-8')
 
-  it('exports CustomContextModule interface', () => {
-    expect(src).toContain('export interface CustomContextModule')
+  it('re-exports CustomContextModule type from shared config', () => {
+    expect(src).toContain('export type CustomContextModule = SharedCustomContextModule')
   })
 
-  it('CustomContextModule has name field', () => {
-    expect(src).toContain('name: string')
+  it('CustomContextModule has name field (via shared interface)', () => {
+    // The interface is defined in anorak-context-config.ts and re-exported
+    const configSrc = fs.readFileSync(
+      path.resolve(__dirname, '../../lib/anorak-context-config.ts'), 'utf-8'
+    )
+    expect(configSrc).toContain('name: string')
   })
 
-  it('CustomContextModule has content field', () => {
-    expect(src).toContain('content: string')
+  it('CustomContextModule has content field (via shared interface)', () => {
+    const configSrc = fs.readFileSync(
+      path.resolve(__dirname, '../../lib/anorak-context-config.ts'), 'utf-8'
+    )
+    expect(configSrc).toContain('content: string')
   })
 
-  it('CustomContextModule has enabled field', () => {
-    expect(src).toContain('enabled: boolean')
+  it('CustomContextModule has enabled field (via shared interface)', () => {
+    const configSrc = fs.readFileSync(
+      path.resolve(__dirname, '../../lib/anorak-context-config.ts'), 'utf-8'
+    )
+    expect(configSrc).toContain('enabled: boolean')
   })
 
   it('AnorakProConfig includes customModules field', () => {

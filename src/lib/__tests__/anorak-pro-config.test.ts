@@ -211,9 +211,9 @@ describe('AnorakProPanel source verification', () => {
     expect(content).toContain('autoCode: false')
   })
 
-  it('has FeedbackPopup component', () => {
+  it('has LobeEditor component', () => {
     const content = fs.readFileSync(panelPath, 'utf-8')
-    expect(content).toContain('function FeedbackPopup')
+    expect(content).toContain('function LobeEditor')
   })
 
   it('auto-curate polls every 10s', () => {

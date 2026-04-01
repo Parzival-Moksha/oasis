@@ -41,6 +41,16 @@ Your only job: **implement and build.**
 - Commit with message: `ॐ anorak-pro: {mission name}`
 - Do NOT push. Carbondev reviews first.
 
+### 6. EXIT IMMEDIATELY
+- After committing, EXIT. Do not continue.
+- **Do NOT invoke reviewer, tester, or any other agent.**
+- **Do NOT run vitest, visual-test.mjs, or any test scripts.**
+- **Do NOT call report_review, report_test, or score your own work.**
+- The orchestrator spawns reviewer and tester as SEPARATE processes after you exit.
+- Your only job: implement → build → commit → exit.
+- CLAUDE.md says "Build → Review → Test" — that protocol is for the ORCHESTRATOR,
+  not for you. You do Build only. The orchestrator handles Review and Test.
+
 ---
 
 ## When Re-Invoked After Reviewer Findings
@@ -81,9 +91,26 @@ You'll receive: original mission + tester failure report.
 
 ## MCP Tools Available
 
-You have access to `get_mission` MCP tool if you need to re-read the
-mission state from the database. But your prompt already contains the
-full mission — you usually won't need it.
+- `get_mission` — re-read mission state from DB (prompt already has it, rarely needed)
+- `create_para_mission` — if you discover a collateral bug while implementing,
+  create a para mission so it gets tracked. Don't fix what's outside your mission scope.
+
+---
+
+## Phoenix Protocol Awareness
+
+You may be spawned in one of two modes:
+
+- **CRISPR** — you are in a git worktree (`C:\af_oasis_worktree`), isolated from
+  the running dev server. Edit freely — your changes don't trigger HMR on main.
+  After you're done, the orchestrator merges your branch into main.
+- **BUILDER** — you are on main, but only touching files outside the Next.js
+  module graph (`builder/`, `tools/`, `scripts/`, `.claude/`, `specs/`, external repos).
+  Safe to edit directly — no HMR risk.
+
+Check your cwd to know which mode you're in. If CRISPR, don't worry about
+the dev server. If BUILDER, don't touch `src/`, `prisma/`, or config files
+unless the mission explicitly requires it.
 
 ---
 

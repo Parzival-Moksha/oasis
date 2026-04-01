@@ -41,11 +41,7 @@ describe('Purple purge — MATURITY_COLORS', () => {
         expect(colors.length).toBeGreaterThan(0)
       })
 
-      for (const purple of PURPLE_HEXES) {
-        it(`does not contain ${purple}`, () => {
-          expect(colors).not.toContain(purple)
-        })
-      }
+      // Purple is now allowed (rescinded rule) — no hex ban
 
       it('uses sky-blue or turquoise for mid levels', () => {
         // Level 1 should be sky blue (#0ea5e9), level 2 should be turquoise (#14b8a6)
@@ -147,6 +143,47 @@ describe('Execute route — abort listener cleanup', () => {
 
   it('removes abort listener on child close', () => {
     expect(source).toContain("signal.removeEventListener('abort'")
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GAMER GATE — execute route can run gamer after tester
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Execute route — gamer gate', () => {
+  const source = readSource('src/app/api/anorak/pro/execute/route.ts')
+
+  it('defines parseGamerHandoff helper', () => {
+    expect(source).toContain('function parseGamerHandoff')
+  })
+
+  it('defines parseGamerVerdict helper', () => {
+    expect(source).toContain('function parseGamerVerdict')
+  })
+
+  it('can switch mission executionPhase to gaming', () => {
+    expect(source).toContain("executionPhase: 'gaming'")
+  })
+
+  it('spawns gamer when tester requires handoff', () => {
+    expect(source).toContain("spawnAgent('gamer'")
+    expect(source).toContain('Tester requested gamer coverage')
+  })
+
+  it('blocks mission completion when gamer verdict is not PASS', () => {
+    expect(source).toContain("if (gamerResult.exitCode !== 0 || gamerVerdict !== 'PASS')")
+    expect(source).toContain('Gamer verdict')
+    expect(source).toContain('Re-invoking coder')
+  })
+
+  it('also treats non-zero gamer exit code as failure', () => {
+    expect(source).toContain("if (gamerResult.exitCode !== 0 || gamerVerdict !== 'PASS')")
+    expect(source).toContain('exit ${gamerResult.exitCode}')
+  })
+
+  it('feeds gamer failures back into coder prompt', () => {
+    expect(source).toContain('gamerFailures')
+    expect(source).toContain('## GAMER FAILURES — FIX THESE')
   })
 })
 

@@ -507,7 +507,7 @@ describe('WorldPersistence', () => {
 
     it('nuke protection: loaded 5+ but still has objects = allowed', () => {
       const _loadedObjectCount = 10
-      const currentObjCount = 3
+      const currentObjCount = 3 as number
       const nukeBlocked = _loadedObjectCount >= 5 && currentObjCount === 0
       expect(nukeBlocked).toBe(false)
     })

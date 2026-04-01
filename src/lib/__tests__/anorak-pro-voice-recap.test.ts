@@ -23,10 +23,10 @@ function createRecapSend(send: (type: string, data: Record<string, unknown>) => 
 }
 
 describe('recapSend — text capture wrapper', () => {
-  let send: ReturnType<typeof vi.fn>
+  let send: (type: string, data: Record<string, unknown>) => void
 
   beforeEach(() => {
-    send = vi.fn()
+    send = vi.fn<(type: string, data: Record<string, unknown>) => void>()
   })
 
   it('forwards all events unchanged to the inner send', () => {
@@ -185,7 +185,8 @@ describe('voice text truncation — slice(0, 5000)', () => {
 async function generateVoiceRecap(
   recapText: string,
   send: (type: string, data: Record<string, unknown>) => void,
-  fetchFn: typeof fetch,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  fetchFn: any,
 ): Promise<void> {
   if (recapText.trim().length > 10) {
     try {
@@ -203,11 +204,11 @@ async function generateVoiceRecap(
 }
 
 describe('voice API call — fetch, payload, fire-and-forget', () => {
-  let send: ReturnType<typeof vi.fn>
+  let send: (type: string, data: Record<string, unknown>) => void
   let mockFetch: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
-    send = vi.fn()
+    send = vi.fn<(type: string, data: Record<string, unknown>) => void>()
     mockFetch = vi.fn()
   })
 
@@ -353,7 +354,7 @@ describe('voice API call — fetch, payload, fire-and-forget', () => {
 
 describe('voice URL text event format', () => {
   it('URL is wrapped with \\n\\n prefix and \\n suffix', async () => {
-    const send = vi.fn()
+    const send = vi.fn<(type: string, data: Record<string, unknown>) => void>()
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ url: '/generated-voices/abc123.mp3' }),
@@ -370,7 +371,7 @@ describe('voice URL text event format', () => {
   })
 
   it('URL with query params is preserved', async () => {
-    const send = vi.fn()
+    const send = vi.fn<(type: string, data: Record<string, unknown>) => void>()
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ url: '/generated-voices/recap.mp3?v=2&t=1234' }),
@@ -594,7 +595,7 @@ describe('anorak-renderers.tsx — voice media detection structure', () => {
   })
 
   it('renderMarkdownLine calls detectMediaType on matched URL', () => {
-    expect(rendererSrc).toContain('detectMediaType(mediaMatch[0])')
+    expect(rendererSrc).toContain('detectMediaType(matchedUrl)')
   })
 
   it('uses MediaBubble component for detected media', () => {
@@ -608,7 +609,7 @@ describe('anorak-renderers.tsx — voice media detection structure', () => {
 
 describe('end-to-end voice recap flow', () => {
   it('full flow: accumulate chunks → threshold pass → fetch → emit URL', async () => {
-    const send = vi.fn()
+    const send = vi.fn<(type: string, data: Record<string, unknown>) => void>()
     const { recapSend, getRecapText } = createRecapSend(send)
 
     // Simulate streamed recap chunks
@@ -626,7 +627,7 @@ describe('end-to-end voice recap flow', () => {
     expect(shouldGenerateVoice(text)).toBe(true)
 
     // Voice fetch
-    const voiceSend = vi.fn()
+    const voiceSend = vi.fn<(type: string, data: Record<string, unknown>) => void>()
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ url: '/generated-voices/mission42.mp3' }),
@@ -646,7 +647,7 @@ describe('end-to-end voice recap flow', () => {
   })
 
   it('full flow: short recap → threshold fail → no voice call', async () => {
-    const send = vi.fn()
+    const send = vi.fn<(type: string, data: Record<string, unknown>) => void>()
     const { recapSend, getRecapText } = createRecapSend(send)
 
     recapSend('text', { content: 'Done.' })
@@ -661,12 +662,12 @@ describe('end-to-end voice recap flow', () => {
   })
 
   it('full flow: voice API fails → no crash, no URL emitted', async () => {
-    const send = vi.fn()
+    const send = vi.fn<(type: string, data: Record<string, unknown>) => void>()
     const { recapSend, getRecapText } = createRecapSend(send)
 
     recapSend('text', { content: 'A recap long enough to pass the threshold check.' })
 
-    const voiceSend = vi.fn()
+    const voiceSend = vi.fn<(type: string, data: Record<string, unknown>) => void>()
     const mockFetch = vi.fn().mockRejectedValue(new Error('Voice service down'))
 
     await expect(

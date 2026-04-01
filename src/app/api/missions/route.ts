@@ -10,11 +10,24 @@ export async function GET(request: NextRequest) {
     // ░▒▓ GHOST MISSION CLEANUP — reset stale execution phases ▓▒░
     // If a mission has executionPhase set but hasn't been updated in >10 minutes,
     // it was likely left by a killed agent. Reset to prevent ghost activity.
+    // EXCEPTION: 'merging' phase is Phoenix Protocol waiting for dev-agent rebuild —
+    // give it 15 minutes before considering it stale (rebuild + gamer can take time).
     const staleThreshold = new Date(Date.now() - 10 * 60 * 1000)
+    const mergingStaleThreshold = new Date(Date.now() - 15 * 60 * 1000)
     await prisma.mission.updateMany({
       where: {
-        executionPhase: { not: null },
+        executionPhase: { not: null, notIn: ['merging'] },
         updatedAt: { lt: staleThreshold },
+      },
+      data: {
+        executionPhase: null,
+        executionRound: 0,
+      },
+    })
+    await prisma.mission.updateMany({
+      where: {
+        executionPhase: 'merging',
+        updatedAt: { lt: mergingStaleThreshold },
       },
       data: {
         executionPhase: null,

@@ -1,7 +1,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-// VISUAL QA MCP — Parzival's Eyes
-// Claude Code sees the Oasis through Chrome DevTools Protocol.
-// screenshot, execute_js, navigate, get_tabs, switch_tab, wait
+// GAMER MCP — The Oasis Eyes
+// Tester and Gamer agents see the Oasis through Chrome DevTools Protocol.
+// screenshot, execute_js, navigate, click, type, key_down/up, mouse, scroll
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";

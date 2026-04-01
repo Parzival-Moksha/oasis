@@ -50,8 +50,10 @@ model Mission {
   isIRL          Boolean   @default(false) // offline/physical work
 
   // Maturation (curator pipeline)
-  maturityLevel  Int       @default(0) // 0=para, 1=pashyanti, 2=madhyama, 3=vaikhari
+  // 0=para 1=pashyanti 2=madhyama 3=vaikhari 4=built 5=reviewed 6=tested 7=gamertested 8=carbontested
+  maturityLevel  Int       @default(0)
   assignedTo     String?   // 'carbondev' | 'anorak' | 'parzival' | null
+  executionMode  String?   // 'crispr' (worktree) | 'builder' (direct) — set by curator
 
   // Specs (curator-enriched)
   carbonDescription   String? // human-language war cry (vibes, emotions, analogies)
@@ -62,6 +64,8 @@ model Mission {
   flawlessPercent     Float?  // 0-100 curator's execution confidence
   reviewerScore       Float?  // 0-100 first-pass reviewer score
   testerScore         Float?  // 0-100 first-pass tester score
+  gamerScore          Float?  // 0-100 first-pass gamer score
+  gamerVerdict        String? // 'PASS' | 'FAIL' | 'BLOCKED'
 
   // Curator queue (separate from devcraft queue)
   curatorQueuePosition Int?   // null = not in curator queue
@@ -74,6 +78,9 @@ model Mission {
   // { timestamp, actor, action, curatorMsg?, silicondevMsg?, verdict?, rating?, ... }
   history        String?   // full lifecycle log (curator, carbondev, coder, reviewer, tester)
   notes          String?   // legacy / free-text notes
+
+  // Mission image (curator-generated battle flag)
+  imageUrl       String?   // URL or path to generated mission image
 
   // Dharma (Noble Eightfold Path of the Oasis)
   dharmaPath     String?   // comma-separated: view,intention,speech,action,livelihood,effort,mindfulness,concentration

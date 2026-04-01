@@ -242,12 +242,12 @@ describe('AnorakProPanel loadConfig source — deep merge verification', () => {
   const panelPath = path.resolve(__dirname, '../../components/forge/AnorakProPanel.tsx')
   const content = fs.readFileSync(panelPath, 'utf-8')
 
-  it('deep merges models: { ...DEFAULT_CONFIG.models, ...saved.models }', () => {
-    expect(content).toContain('models: { ...DEFAULT_CONFIG.models, ...saved.models }')
+  it('deep merges config via normalizeContextConfig', () => {
+    expect(content).toContain('normalizeContextConfig(saved, DEFAULT_CONFIG)')
   })
 
-  it('deep merges contextModules: { ...DEFAULT_CONFIG.contextModules, ...saved.contextModules }', () => {
-    expect(content).toContain('contextModules: { ...DEFAULT_CONFIG.contextModules, ...saved.contextModules }')
+  it('imports mergeContextConfig for partial updates', () => {
+    expect(content).toContain('mergeContextConfig')
   })
 
   it('handles null saved by returning DEFAULT_CONFIG early', () => {

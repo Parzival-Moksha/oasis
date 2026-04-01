@@ -111,42 +111,6 @@ HERMES_API_KEY=your_secret_here
 HERMES_MODEL=optional_model_id`
 const TUNNEL_HINT = 'ssh -L 8642:127.0.0.1:8642 user@your-vps -N'
 
-type BrowserSpeechRecognitionResult = {
-  isFinal: boolean
-  0: { transcript: string }
-}
-
-type BrowserSpeechRecognitionEvent = {
-  resultIndex: number
-  results: ArrayLike<BrowserSpeechRecognitionResult>
-}
-
-type BrowserSpeechRecognitionErrorEvent = {
-  error: string
-}
-
-type BrowserSpeechRecognition = {
-  continuous: boolean
-  interimResults: boolean
-  lang: string
-  onstart: (() => void) | null
-  onend: (() => void) | null
-  onerror: ((event: BrowserSpeechRecognitionErrorEvent) => void) | null
-  onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null
-  start: () => void
-  stop: () => void
-  abort: () => void
-}
-
-type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition
-
-declare global {
-  interface Window {
-    SpeechRecognition?: BrowserSpeechRecognitionConstructor
-    webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor
-  }
-}
-
 function readStoredMessages(): ChatMessage[] {
   if (typeof window === 'undefined') return []
   try {
@@ -203,11 +167,6 @@ function summarizeToolArguments(raw: string): string {
   }
 }
 
-function getSpeechRecognitionConstructor(): BrowserSpeechRecognitionConstructor | null {
-  if (typeof window === 'undefined') return null
-  return window.SpeechRecognition || window.webkitSpeechRecognition || null
-}
-
 function formatSessionLabel(session: HermesNativeSessionSummary): string {
   const primary = (session.title || session.preview || `Session ${session.id.slice(-8)}`).replace(/\s+/g, ' ').trim()
   const source = session.source || 'unknown'
@@ -242,6 +201,12 @@ function buildHermesMediaProxyUrl(path: string): string {
   return `/api/hermes/media?path=${encodeURIComponent(path)}`
 }
 
+function joinPrompt(base: string, addition: string): string {
+  if (!addition) return base
+  if (!base) return addition
+  return `${base} ${addition}`.trim()
+}
+
 function extractHermesMediaReferences(content: string): HermesMediaReference[] {
   const refs: HermesMediaReference[] = []
 
@@ -261,6 +226,81 @@ function extractHermesMediaReferences(content: string): HermesMediaReference[] {
   }
 
   return refs
+}
+
+function HermesRemoteAudioBubble({
+  proxyUrl,
+  prompt,
+  autoPlay,
+}: {
+  proxyUrl: string
+  prompt: string
+  autoPlay: boolean
+}) {
+  const [blobUrl, setBlobUrl] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [retryNonce, setRetryNonce] = useState(0)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    let objectUrl = ''
+
+    async function load() {
+      setLoading(true)
+      setError('')
+
+      try {
+        const response = await fetch(proxyUrl, { cache: 'no-store', signal: controller.signal })
+        if (!response.ok) {
+          const detail = await response.text().catch(() => '')
+          throw new Error(detail || `HTTP ${response.status}`)
+        }
+
+        const blob = await response.blob()
+        objectUrl = URL.createObjectURL(blob)
+        setBlobUrl(objectUrl)
+      } catch (fetchError) {
+        if ((fetchError as Error).name === 'AbortError') return
+        setError(fetchError instanceof Error ? fetchError.message : 'Unable to load Hermes audio.')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    void load()
+
+    return () => {
+      controller.abort()
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [proxyUrl, retryNonce])
+
+  if (loading) {
+    return (
+      <div className="rounded-lg border border-amber-400/30 bg-black/35 px-3 py-3">
+        <div className="text-[11px] text-amber-100">Loading Hermes audio...</div>
+      </div>
+    )
+  }
+
+  if (error || !blobUrl) {
+    return (
+      <div className="rounded-lg border border-red-400/30 bg-red-950/20 px-3 py-3 space-y-2">
+        <div className="text-[11px] text-red-200">Failed to load audio</div>
+        <div className="text-[11px] text-amber-100/90">{prompt}</div>
+        <div className="text-[10px] text-red-200/80 break-words">{error || 'Unknown remote audio error.'}</div>
+        <button
+          onClick={() => setRetryNonce(current => current + 1)}
+          className="px-2 py-1 rounded border border-amber-400/35 text-[10px] text-amber-100 hover:border-amber-300/60 cursor-pointer"
+        >
+          Retry
+        </button>
+      </div>
+    )
+  }
+
+  return <MediaBubble url={blobUrl} mediaType="audio" prompt={prompt} compact autoPlay={autoPlay} />
 }
 
 function renderHermesAssistantContent(content: string, autoPlayAudio: boolean): React.ReactNode {
@@ -286,16 +326,26 @@ function renderHermesAssistantContent(content: string, autoPlayAudio: boolean): 
       const mediaType = detectHermesMediaType(path)
       if (path && mediaType) {
         flushText()
-        blocks.push(
-          <MediaBubble
-            key={`media-${key += 1}`}
-            url={buildHermesMediaProxyUrl(path)}
-            mediaType={mediaType}
-            prompt={`Hermes ${mediaType}`}
-            compact
-            autoPlay={autoPlayAudio && mediaType === 'audio'}
-          />
-        )
+        if (mediaType === 'audio') {
+          blocks.push(
+            <HermesRemoteAudioBubble
+              key={`media-${key += 1}`}
+              proxyUrl={buildHermesMediaProxyUrl(path)}
+              prompt="Hermes audio"
+              autoPlay={autoPlayAudio}
+            />
+          )
+        } else {
+          blocks.push(
+            <MediaBubble
+              key={`media-${key += 1}`}
+              url={buildHermesMediaProxyUrl(path)}
+              mediaType={mediaType}
+              prompt={`Hermes ${mediaType}`}
+              compact
+            />
+          )
+        }
         continue
       }
     }
@@ -364,7 +414,8 @@ function SettingsDropdown({ settings, onChange }: { settings: PanelSettings; onC
   return (
     <div
       data-ui-panel
-      className="absolute right-0 top-full mt-1 z-50 bg-gray-900 border border-white/10 rounded-lg p-3 shadow-xl w-56"
+      className="absolute right-0 top-full mt-1 z-50 border border-white/10 rounded-lg p-3 shadow-xl w-56"
+      style={{ background: 'rgba(10, 8, 5, 0.96)', color: 'rgba(255,245,220,0.96)', fontFamily: 'Consolas, \"Segoe UI\", sans-serif' }}
     >
       <div className="text-[10px] text-amber-200/80 uppercase tracking-widest mb-2">Panel Settings</div>
 
@@ -480,10 +531,10 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const autoConnectTriedRef = useRef(false)
-  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null)
-  const dictationBaseRef = useRef('')
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  const spokenMessageIdsRef = useRef<Set<string>>(new Set())
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const recordingStreamRef = useRef<MediaStream | null>(null)
+  const recordedChunksRef = useRef<Blob[]>([])
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => readStoredMessages())
   const [input, setInput] = useState('')
@@ -515,12 +566,14 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   const [connectionError, setConnectionError] = useState('')
   const [voiceInputSupported, setVoiceInputSupported] = useState(false)
   const [voiceListening, setVoiceListening] = useState(false)
+  const [voiceTranscribing, setVoiceTranscribing] = useState(false)
   const [voiceOutputEnabled, setVoiceOutputEnabled] = useState(() => {
     if (typeof window === 'undefined') return false
     try { return localStorage.getItem(VOICE_OUTPUT_KEY) === 'true' } catch { return false }
   })
   const [voiceSpeaking, setVoiceSpeaking] = useState(false)
   const [voiceError, setVoiceError] = useState('')
+  const [autoPlayMediaMessageId, setAutoPlayMediaMessageId] = useState('')
   const [panelSettings, setPanelSettings] = useState<PanelSettings>(() => {
     if (typeof window === 'undefined') return DEFAULT_SETTINGS
     try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null') || DEFAULT_SETTINGS } catch { return DEFAULT_SETTINGS }
@@ -624,32 +677,41 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     setVoiceSpeaking(false)
   }, [])
 
-  const playVoiceUrl = useCallback(async (url: string) => {
-    if (!url) return
+  const stopRecordingStream = useCallback(() => {
+    recordingStreamRef.current?.getTracks().forEach(track => track.stop())
+    recordingStreamRef.current = null
+  }, [])
 
-    stopVoicePlayback()
+  const transcribeRecordedAudio = useCallback(async (audioBlob: Blob, fileName: string) => {
+    setVoiceTranscribing(true)
     setVoiceError('')
 
     try {
-      const audio = new Audio(url)
-      audioRef.current = audio
-      audio.onended = () => {
-        if (audioRef.current === audio) audioRef.current = null
-        setVoiceSpeaking(false)
-      }
-      audio.onerror = () => {
-        if (audioRef.current === audio) audioRef.current = null
-        setVoiceSpeaking(false)
-        setVoiceError('Voice playback failed.')
+      const form = new FormData()
+      form.append('audio', audioBlob, fileName)
+
+      const response = await fetch('/api/hermes/transcribe', {
+        method: 'POST',
+        body: form,
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(typeof data?.error === 'string' ? data.error : `HTTP ${response.status}`)
       }
 
-      setVoiceSpeaking(true)
-      await audio.play()
+      const transcript = typeof data?.transcript === 'string' ? data.transcript.trim() : ''
+      if (!transcript) {
+        throw new Error('Hermes returned an empty transcript.')
+      }
+
+      setInput(current => joinPrompt(current, transcript))
+      window.setTimeout(() => inputRef.current?.focus(), 80)
     } catch (error) {
-      setVoiceSpeaking(false)
-      setVoiceError(error instanceof Error ? error.message : 'Voice playback failed.')
+      setVoiceError(error instanceof Error ? error.message : 'Voice transcription failed.')
+    } finally {
+      setVoiceTranscribing(false)
     }
-  }, [stopVoicePlayback])
+  }, [])
 
   const speakAssistantReply = useCallback(async (content: string) => {
     const speechText = toSpeechText(content).slice(0, 2400)
@@ -809,12 +871,9 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             }))
         : []
 
-      nextMessages.forEach(message => {
-        spokenMessageIdsRef.current.add(message.id)
-      })
-
       setMessages(nextMessages)
       setAutoScroll(true)
+      setAutoPlayMediaMessageId('')
     } catch (error) {
       setSessionsError(error instanceof Error ? error.message : 'Unable to load the selected Hermes session.')
     } finally {
@@ -824,7 +883,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 
   const toggleVoiceInput = useCallback(async () => {
     if (voiceListening) {
-      recognitionRef.current?.stop()
+      mediaRecorderRef.current?.stop()
       return
     }
 
@@ -838,64 +897,73 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       return
     }
 
-    const Recognition = getSpeechRecognitionConstructor()
     setVoiceError('')
-    dictationBaseRef.current = input.trim()
+
+    try {
+      const permissionStatus = typeof navigator.permissions?.query === 'function'
+        ? await navigator.permissions.query({ name: 'microphone' as PermissionName })
+        : null
+      if (permissionStatus?.state === 'denied') {
+        setVoiceError('Microphone access is blocked in the browser. In Brave, click the lock icon in the address bar and allow the microphone for this site.')
+        return
+      }
+    } catch {
+      // Permissions API is optional.
+    }
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      stream.getTracks().forEach(track => track.stop())
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Microphone permission was denied.'
-      setVoiceError(message)
-      return
-    }
+      recordingStreamRef.current = stream
 
-    if (!Recognition) {
-      setVoiceError('Mic permission is working, but browser speech-to-text is unavailable here. Chrome or Edge on localhost is the safest current path.')
-      return
-    }
+      const recorderMimeType = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/ogg;codecs=opus',
+        'audio/ogg',
+      ].find(type => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) || ''
 
-    const recognition = new Recognition()
-    recognition.continuous = false
-    recognition.interimResults = true
-    recognition.lang = 'en-US'
+      const recorder = recorderMimeType
+        ? new MediaRecorder(stream, { mimeType: recorderMimeType })
+        : new MediaRecorder(stream)
 
-    recognition.onstart = () => setVoiceListening(true)
-    recognition.onend = () => {
-      setVoiceListening(false)
-      if (recognitionRef.current === recognition) {
-        recognitionRef.current = null
-      }
-      window.setTimeout(() => inputRef.current?.focus(), 80)
-    }
-    recognition.onerror = event => {
-      setVoiceError(event.error === 'not-allowed' ? 'Microphone permission was denied.' : `Voice input failed: ${event.error}`)
-    }
-    recognition.onresult = event => {
-      let transcript = ''
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const result = event.results[index]
-        const segment = result?.[0]?.transcript || ''
-        if (segment) {
-          transcript += `${segment} `
+      recordedChunksRef.current = []
+      mediaRecorderRef.current = recorder
+
+      recorder.ondataavailable = event => {
+        if (event.data && event.data.size > 0) {
+          recordedChunksRef.current.push(event.data)
         }
       }
 
-      const nextTranscript = transcript.trim()
-      const prefix = dictationBaseRef.current
-      setInput([prefix, nextTranscript].filter(Boolean).join(prefix && nextTranscript ? ' ' : ''))
-    }
+      recorder.onerror = () => {
+        setVoiceListening(false)
+        stopRecordingStream()
+        setVoiceError('Microphone recording failed.')
+      }
 
-    recognitionRef.current = recognition
-    try {
-      recognition.start()
+      recorder.onstop = () => {
+        const mimeType = recorder.mimeType || recorderMimeType || 'audio/webm'
+        const extension = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('wav') ? 'wav' : 'webm'
+        const audioBlob = new Blob(recordedChunksRef.current, { type: mimeType })
+        recordedChunksRef.current = []
+        mediaRecorderRef.current = null
+        setVoiceListening(false)
+        stopRecordingStream()
+
+        if (audioBlob.size > 0) {
+          void transcribeRecordedAudio(audioBlob, `oasis-voice.${extension}`)
+        }
+      }
+
+      recorder.start()
+      setVoiceListening(true)
     } catch (error) {
-      recognitionRef.current = null
+      stopRecordingStream()
+      const message = error instanceof Error ? error.message : 'Microphone permission was denied.'
       setVoiceListening(false)
-      setVoiceError(error instanceof Error ? error.message : 'Unable to start voice input.')
+      setVoiceError(message)
     }
-  }, [input, voiceListening])
+  }, [stopRecordingStream, transcribeRecordedAudio, voiceListening])
 
   const connectHermes = useCallback(async (tunnelCommandOverride?: string) => {
     if (isConnecting) return
@@ -1051,6 +1119,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       setSessions([])
       setNativeSessionsAvailable(false)
       setSelectedSessionId('')
+      setAutoPlayMediaMessageId('')
       setConnectionInput('')
       setTunnelInput('')
       setShowConnectionModal(false)
@@ -1098,7 +1167,10 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 
   useEffect(() => {
     setVoiceInputSupported(
-      typeof navigator !== 'undefined' && typeof navigator.mediaDevices?.getUserMedia === 'function'
+      typeof window !== 'undefined' &&
+      typeof navigator !== 'undefined' &&
+      typeof navigator.mediaDevices?.getUserMedia === 'function' &&
+      typeof MediaRecorder !== 'undefined'
     )
   }, [isOpen])
 
@@ -1107,12 +1179,14 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       autoConnectTriedRef.current = false
       setShowConnectionModal(false)
       setShowSettings(false)
-      recognitionRef.current?.abort()
-      recognitionRef.current = null
+      recordedChunksRef.current = []
+      mediaRecorderRef.current?.stop()
+      mediaRecorderRef.current = null
+      stopRecordingStream()
       setVoiceListening(false)
       return
     }
-  }, [isOpen])
+  }, [isOpen, stopRecordingStream])
 
   useEffect(() => {
     if (autoScroll) {
@@ -1194,11 +1268,13 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 
   useEffect(() => {
     return () => {
-      recognitionRef.current?.abort()
-      recognitionRef.current = null
+      recordedChunksRef.current = []
+      mediaRecorderRef.current?.stop()
+      mediaRecorderRef.current = null
+      stopRecordingStream()
       stopVoicePlayback()
     }
-  }, [stopVoicePlayback])
+  }, [stopRecordingStream, stopVoicePlayback])
 
   useEffect(() => {
     if (!isOpen || statusLoading || isConnecting) return
@@ -1295,6 +1371,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     abortRef.current = null
     setIsStreaming(false)
     stopVoicePlayback()
+    setAutoPlayMediaMessageId('')
 
     if (nativeSessionsAvailable) {
       setSelectedSessionId(NEW_SESSION_VALUE)
@@ -1346,6 +1423,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     }
 
     setAutoScroll(true)
+    setAutoPlayMediaMessageId('')
     setMessages(previous => [...previous, userMessage, assistantMessage])
     setInput('')
     setIsStreaming(true)
@@ -1447,10 +1525,9 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       if (!assistantError && assistantText.trim() && voiceOutputEnabled) {
         const mediaRefs = extractHermesMediaReferences(assistantText)
         const firstAudioRef = mediaRefs.find(ref => ref.mediaType === 'audio')
-        spokenMessageIdsRef.current.add(assistantId)
 
         if (firstAudioRef) {
-          void playVoiceUrl(firstAudioRef.proxyUrl)
+          setAutoPlayMediaMessageId(assistantId)
         } else {
           void speakAssistantReply(assistantText)
         }
@@ -1482,7 +1559,6 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     selectedSessionId,
     speakAssistantReply,
     status.connected,
-    playVoiceUrl,
     voiceOutputEnabled,
   ])
 
@@ -1520,6 +1596,8 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         width: size.w,
         height: size.h,
         ...backgroundStyle,
+        color: 'rgba(255, 245, 220, 0.96)',
+        fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif',
         border: `1px solid ${isStreaming ? 'rgba(245,158,11,0.58)' : 'rgba(245,158,11,0.24)'}`,
         boxShadow: isStreaming
           ? '0 0 40px rgba(245,158,11,0.16), inset 0 0 60px rgba(245,158,11,0.04)'
@@ -1615,19 +1693,19 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           </div>
           <button
             onClick={clearChat}
-            className="px-1.5 py-0.5 rounded text-[10px] font-mono text-gray-400 hover:text-red-300 border border-white/10 hover:border-red-500/30 transition-all cursor-pointer"
+            className="px-1.5 py-0.5 rounded text-[10px] font-mono text-amber-100/80 hover:text-red-200 border border-white/10 hover:border-red-500/30 transition-all cursor-pointer"
             title="Clear chat"
           >
             clear
           </button>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors text-lg leading-none cursor-pointer" title="Close">
+          <button onClick={onClose} className="text-amber-100/80 hover:text-white transition-colors text-lg leading-none cursor-pointer" title="Close">
             x
           </button>
         </div>
       </div>
 
       <div className="px-3 py-2 border-b border-white/5 flex items-center gap-2 text-[10px] font-mono" style={{ background: 'rgba(0,0,0,0.22)' }}>
-        <span className="text-gray-500 uppercase">session</span>
+        <span className="text-amber-100/70 uppercase">session</span>
         <select
           data-no-drag
           value={sessionValue}
@@ -1656,18 +1734,18 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           + new
         </button>
         <span
-          className="hidden md:block text-gray-500 truncate max-w-[120px]"
+          className="hidden md:block text-amber-100/65 truncate max-w-[120px]"
           title={tunnelStatus.commandPreview || 'No managed SSH tunnel saved'}
         >
           {nativeSessionsAvailable ? (activeSession ? activeSession.source : 'native') : tunnelLabel}
         </span>
         {activeSession && showDetails ? (
-          <span className="hidden lg:block text-gray-500 truncate max-w-[220px]" title={activeSession.preview || activeSession.id}>
+          <span className="hidden lg:block text-amber-100/65 truncate max-w-[220px]" title={activeSession.preview || activeSession.id}>
             {activeSession.preview || activeSession.id}
           </span>
         ) : (
           status.base && showDetails && (
-            <span className="hidden lg:block text-gray-500 truncate max-w-[180px]" title={status.base}>
+            <span className="hidden lg:block text-amber-100/65 truncate max-w-[180px]" title={status.base}>
               {status.base}
             </span>
           )
@@ -1710,7 +1788,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
               <div className="text-sm text-amber-100 mb-1">Your Hermes link lives here.</div>
               {status.connected ? (
                 <>
-                  <div className="text-xs text-gray-400 mb-4">
+                  <div className="text-xs text-amber-100/80 mb-4">
                     This panel talks to Hermes through the local Oasis server route, so the browser never sees your VPS API key.
                   </div>
                   {nativeSessionsAvailable && (
@@ -1718,7 +1796,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                       Native Hermes sessions are live. Pick one above or start a fresh chat.
                     </div>
                   )}
-                  <div className="space-y-1 text-[11px] font-mono text-gray-500">
+                  <div className="space-y-1 text-[11px] font-mono text-amber-100/80">
                     <button className="block w-full hover:text-amber-300 transition-colors cursor-pointer" onClick={() => setInput('Summarize what tools and capabilities you expose right now.')}>
                       Summarize what tools you expose right now.
                     </button>
@@ -1732,10 +1810,10 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                 </>
               ) : (
                 <>
-                  <div className="text-xs text-gray-400 mb-4">
+                  <div className="text-xs text-amber-100/80 mb-4">
                     Save Hermes connection data once, optionally save SSH once, then hit connect whenever you want this panel live.
                   </div>
-                  <div className="text-[11px] text-left font-mono rounded-lg border border-amber-500/20 bg-black/30 px-3 py-3 space-y-1 text-gray-300">
+                  <div className="text-[11px] text-left font-mono rounded-lg border border-amber-500/20 bg-black/30 px-3 py-3 space-y-1 text-amber-100/85">
                     <div>1. Ask Hermes for an Oasis connection block.</div>
                     <div>2. {canMutateAnyConfig ? 'Click `config` and paste the block.' : 'Open this panel on localhost to edit saved connection data.'}</div>
                     <div>3. Optional: paste your SSH tunnel command in the second field.</div>
@@ -1767,7 +1845,9 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                       className="px-3 py-2 rounded-lg text-xs text-gray-100 whitespace-pre-wrap leading-relaxed"
                       style={{ background: 'rgba(0,0,0,0.48)', border: '1px solid rgba(255,255,255,0.06)' }}
                     >
-                      {message.content ? renderHermesAssistantContent(message.content, false) : <span className="text-gray-500">Streaming...</span>}
+                      {message.content
+                        ? renderHermesAssistantContent(message.content, autoPlayMediaMessageId === message.id && voiceOutputEnabled)
+                        : <span className="text-amber-100/75">Streaming...</span>}
                     </div>
                   )}
 
@@ -1806,7 +1886,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                   )}
 
                   {(message.finishReason || (isStreaming && message === messages[messages.length - 1])) && (
-                    <div className="text-[10px] font-mono text-gray-500 px-1">
+                    <div className="text-[10px] font-mono text-amber-100/65 px-1">
                       {isStreaming && message === messages[messages.length - 1]
                         ? 'streaming...'
                         : `finish_reason=${message.finishReason}`}
@@ -1848,7 +1928,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           </div>
         )}
         {tunnelStatus.configured && (
-          <div className="text-[10px] text-gray-500 font-mono mb-2 truncate" title={tunnelStatus.commandPreview || tunnelStatus.command}>
+          <div className="text-[10px] text-amber-100/60 font-mono mb-2 truncate" title={tunnelStatus.commandPreview || tunnelStatus.command}>
             {tunnelStatus.running ? 'managed ssh live' : tunnelStatus.autoStart ? 'managed ssh saved' : 'managed ssh saved (manual)'}
             {tunnelStatus.commandPreview ? ` | ${tunnelStatus.commandPreview}` : ''}
           </div>
@@ -1858,11 +1938,11 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             <button
               data-no-drag
               onClick={toggleVoiceInput}
-              disabled={!status.connected || !voiceInputSupported}
+              disabled={!status.connected || !voiceInputSupported || voiceTranscribing}
               className="px-2 py-2 rounded-lg text-[10px] font-mono border border-white/10 text-amber-100 disabled:opacity-30 disabled:cursor-not-allowed"
-              title={voiceInputSupported ? 'Request mic access, then dictate into the input box' : 'Browser microphone capture is unavailable here'}
+              title={voiceInputSupported ? 'Record a voice note, then Hermes on Ashburn will transcribe it' : 'Browser microphone capture is unavailable here'}
             >
-              {voiceListening ? 'stop mic' : 'mic'}
+              {voiceTranscribing ? 'transcribing' : voiceListening ? 'stop rec' : 'mic'}
             </button>
             <button
               data-no-drag
@@ -1898,7 +1978,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                     : 'Talk to Hermes...'
             }
             disabled={!status.connected || isStreaming}
-            className="flex-1 resize-none rounded-lg px-3 py-2 text-xs text-white outline-none placeholder-gray-600 disabled:opacity-60"
+            className="flex-1 resize-none rounded-lg px-3 py-2 text-xs text-white outline-none placeholder:text-amber-100/45 disabled:opacity-60"
             style={{
               background: 'rgba(255,255,255,0.06)',
               border: `1px solid ${isStreaming ? 'rgba(245,158,11,0.32)' : 'rgba(245,158,11,0.18)'}`,
@@ -1939,14 +2019,14 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
               <div className="text-xs font-mono text-amber-200">Hermes Connection</div>
               <button
                 data-no-drag
-                className="text-gray-400 hover:text-white text-sm"
+                className="text-amber-100/80 hover:text-white text-sm"
                 onClick={() => setShowConnectionModal(false)}
               >
                 x
               </button>
             </div>
             <div className="px-3 py-3 space-y-3">
-              <div className="text-[11px] text-gray-300 font-mono">
+              <div className="text-[11px] text-amber-100/85 font-mono">
                 Save your Hermes connection block and optional SSH tunnel here. Oasis keeps the secret server-side and can re-launch the tunnel for you on future opens.
               </div>
 
@@ -1954,7 +2034,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-[10px] font-mono uppercase tracking-widest text-amber-200/80">Connection Data</div>
                   {status.source === 'pairing' && !connectionInput.trim() && (
-                    <div className="text-[10px] font-mono text-gray-500">saved locally already</div>
+                    <div className="text-[10px] font-mono text-amber-100/60">saved locally already</div>
                   )}
                 </div>
                 <textarea
@@ -1971,7 +2051,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-[10px] font-mono uppercase tracking-widest text-amber-200/80">SSH Tunnel</div>
                   {tunnelStatus.configured && !tunnelInput.trim() && (
-                    <div className="text-[10px] font-mono text-gray-500">saved locally already</div>
+                    <div className="text-[10px] font-mono text-amber-100/60">saved locally already</div>
                   )}
                 </div>
                 <textarea
@@ -1982,7 +2062,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                   className="w-full h-24 rounded border border-white/10 bg-black/40 px-2 py-2 text-[11px] text-amber-100 font-mono outline-none"
                   spellCheck={false}
                 />
-                <label className="flex items-center gap-2 text-[11px] font-mono text-gray-300 select-none">
+                <label className="flex items-center gap-2 text-[11px] font-mono text-amber-100/85 select-none">
                   <input
                     data-no-drag
                     type="checkbox"
@@ -2004,14 +2084,14 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                 <div className="flex items-center gap-2">
                   <button
                     data-no-drag
-                    className="px-2 py-1 rounded border border-white/10 text-[10px] font-mono text-gray-300 hover:text-white"
+                    className="px-2 py-1 rounded border border-white/10 text-[10px] font-mono text-amber-100/85 hover:text-white"
                     onClick={() => setConnectionInput(CONNECTION_HINT)}
                   >
                     secrets template
                   </button>
                   <button
                     data-no-drag
-                    className="px-2 py-1 rounded border border-white/10 text-[10px] font-mono text-gray-300 hover:text-white"
+                    className="px-2 py-1 rounded border border-white/10 text-[10px] font-mono text-amber-100/85 hover:text-white"
                     onClick={() => setTunnelInput(TUNNEL_HINT)}
                   >
                     ssh template
@@ -2028,7 +2108,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                   </button>
                   <button
                     data-no-drag
-                    className="px-2 py-1 rounded border border-white/10 text-[10px] font-mono text-gray-300 hover:text-white"
+                    className="px-2 py-1 rounded border border-white/10 text-[10px] font-mono text-amber-100/85 hover:text-white"
                     onClick={() => setShowConnectionModal(false)}
                   >
                     cancel

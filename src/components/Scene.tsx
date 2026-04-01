@@ -37,6 +37,7 @@ import PanoramaCapture from './forge/PanoramaCapture'
 import { WizardConsole } from './forge/WizardConsole'
 // AssetExplorerWindow deleted — functionality lives in WizardConsole
 import { ObjectInspector } from './forge/ObjectInspector'
+import { MindcraftMissionWindowBridge } from './forge/MindcraftMissionWindowBridge'
 import { ActionLogButton, ActionLogPanel } from './forge/ActionLog'
 import { ProfileButton } from './forge/ProfileButton'
 import { OnboardingModal } from './forge/OnboardingModal'
@@ -1230,6 +1231,9 @@ export default function Scene() {
           onClose={() => setInspectedObject(null)}
         />
       )}
+
+      {/* 📋 Mindcraft 3D — Mission Window (outside Canvas, bridged via Zustand) */}
+      <MindcraftMissionWindowBridge />
 
       {/* ⏪ Action Log */}
       <ActionLogPanel

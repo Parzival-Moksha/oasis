@@ -458,6 +458,7 @@ describe('mediaToolsOpenAI', () => {
 
   describe('generate_image schema', () => {
     const tool = mediaToolsOpenAI.find(t => t.function.name === 'generate_image')!
+    const props = tool.function.parameters.properties as Record<string, any>
 
     it('exists', () => {
       expect(tool).toBeDefined()
@@ -468,12 +469,11 @@ describe('mediaToolsOpenAI', () => {
     })
 
     it('prompt is type string', () => {
-      expect(tool.function.parameters.properties.prompt.type).toBe('string')
+      expect(props.prompt.type).toBe('string')
     })
 
     it('model enum matches IMAGE_MODELS', () => {
-      const modelProp = tool.function.parameters.properties.model as { enum: readonly string[] }
-      expect(modelProp.enum).toEqual(IMAGE_MODELS)
+      expect(props.model.enum).toEqual(IMAGE_MODELS)
     })
 
     it('model is not required', () => {
@@ -483,6 +483,7 @@ describe('mediaToolsOpenAI', () => {
 
   describe('generate_voice schema', () => {
     const tool = mediaToolsOpenAI.find(t => t.function.name === 'generate_voice')!
+    const props = tool.function.parameters.properties as Record<string, any>
 
     it('exists', () => {
       expect(tool).toBeDefined()
@@ -493,12 +494,11 @@ describe('mediaToolsOpenAI', () => {
     })
 
     it('text is type string', () => {
-      expect(tool.function.parameters.properties.text.type).toBe('string')
+      expect(props.text.type).toBe('string')
     })
 
     it('voice enum matches VOICE_NAMES', () => {
-      const voiceProp = tool.function.parameters.properties.voice as { enum: readonly string[] }
-      expect(voiceProp.enum).toEqual(VOICE_NAMES)
+      expect(props.voice.enum).toEqual(VOICE_NAMES)
     })
 
     it('voice is not required', () => {
@@ -508,6 +508,7 @@ describe('mediaToolsOpenAI', () => {
 
   describe('generate_video schema', () => {
     const tool = mediaToolsOpenAI.find(t => t.function.name === 'generate_video')!
+    const props = tool.function.parameters.properties as Record<string, any>
 
     it('exists', () => {
       expect(tool).toBeDefined()
@@ -518,17 +519,16 @@ describe('mediaToolsOpenAI', () => {
     })
 
     it('prompt is type string', () => {
-      expect(tool.function.parameters.properties.prompt.type).toBe('string')
+      expect(props.prompt.type).toBe('string')
     })
 
     it('duration is type number with enum matching VIDEO_DURATIONS', () => {
-      const durProp = tool.function.parameters.properties.duration as { type: string; enum: readonly number[] }
-      expect(durProp.type).toBe('number')
-      expect(durProp.enum).toEqual(VIDEO_DURATIONS)
+      expect(props.duration.type).toBe('number')
+      expect(props.duration.enum).toEqual(VIDEO_DURATIONS)
     })
 
     it('image_url is type string and not required', () => {
-      expect(tool.function.parameters.properties.image_url.type).toBe('string')
+      expect(props.image_url.type).toBe('string')
       expect(tool.function.parameters.required).not.toContain('image_url')
       expect(tool.function.parameters.required).not.toContain('duration')
     })

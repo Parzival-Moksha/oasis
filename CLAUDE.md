@@ -38,6 +38,19 @@ npx prisma db push    # Apply schema changes to SQLite
 npx prisma generate   # Regenerate client after schema changes
 ```
 
+### Phoenix Protocol (CRISPR vs Builder)
+**South loop MUST run with `pnpm dev:agent`** (not `pnpm dev`). The blue-green server
+handles rebuild+restart automatically when code is merged from a worktree.
+
+- **CRISPR** missions (touch `src/`, `prisma/`, configs) → coder works in git worktree
+  (`../af_oasis_worktree`), reviewer+tester verify there, then merge into main.
+  dev-agent detects changes → rebuild → gamer plays the live server.
+- **BUILDER** missions (only `builder/`, `tools/`, `scripts/`, `.claude/`) → coder works
+  directly on main. No worktree, no HMR risk.
+- Curator sets `executionMode` on each mission. When in doubt, default to `crispr`.
+
+Maturity levels: 0 para → 1 pashyanti → 2 madhyama → 3 vaikhari → 4 built → 5 reviewed → 6 tested → 7 gamertested → 8 carbontested.
+
 ---
 
 ## Architecture

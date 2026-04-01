@@ -28,10 +28,12 @@ import { extractModelStats } from './ModelPreview'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
 import { loadAnimationClip, loadClipFromGLTF, retargetClipForVRM, LIB_PREFIX } from '../../lib/forge/animation-library'
+import { MindcraftWorld } from './MindcraftWorld'
 import { AgentWindow3D } from './AgentWindow3D'
 import type { PlacementPending } from '../../store/oasisStore'
 import { useInputManager } from '../../lib/input-manager'
 import { dispatch } from '../../lib/event-bus'
+import { createLipSyncController, registerLipSync, unregisterLipSync, getLipSync } from '../../lib/lip-sync'
 
 // ░▒▓ CLIPBOARD — module-level, survives across renders, no reactivity needed ▓▒░
 let _clipboard: PlacementPending | null = null
@@ -397,7 +399,6 @@ export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, fram
   useEffect(() => {
     const video = document.createElement('video')
     // No crossOrigin — local-first, avoids CORS taint on CanvasTexture
-    video.src = videoUrl
     video.loop = true
     video.playsInline = true
     video.autoplay = true
@@ -408,25 +409,14 @@ export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, fram
     document.body.appendChild(video)
     videoRef.current = video
 
-    video.addEventListener('loadedmetadata', () => {
-      if (video.videoWidth && video.videoHeight) setAspect(video.videoWidth / video.videoHeight)
-    })
-
-    video.addEventListener('error', (e) => {
-      console.error('[VideoPlane] Load error:', videoUrl, (e.target as HTMLVideoElement)?.error)
-    })
-
-    // CRITICAL: Only create texture AFTER video has ACTUALLY decoded frames.
-    // White-rectangle bug: canplay fires before listener attached (cached videos),
-    // or readyState check passes but no frames are decoded yet.
-    // Fix: listen to MULTIPLE events + interval fallback + requestVideoFrameCallback.
+    // ░▒▓ TEXTURE CREATION — single gate for "video has decoded frames" ▓▒░
     let tex: THREE.VideoTexture | null = null
     let disposed = false
     let fallbackInterval: ReturnType<typeof setInterval> | null = null
 
     const createTexture = (trigger: string) => {
       if (tex || disposed) return
-      // Double-check: video must have nonzero dimensions (frames actually decoded)
+      // Hard gate: video must have nonzero dimensions (frames actually decoded)
       if (!video.videoWidth || !video.videoHeight) {
         console.warn(`[VideoPlane] ${trigger} fired but videoWidth=0, deferring:`, videoUrl)
         return
@@ -439,11 +429,20 @@ export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, fram
       tex.magFilter = THREE.LinearFilter
       setTexture(tex)
       textureRef.current = tex
-      // Clear fallback interval once texture is created
       if (fallbackInterval) { clearInterval(fallbackInterval); fallbackInterval = null }
     }
 
-    // Listen to multiple events — whichever fires first with valid frames wins
+    // ░▒▓ ATTACH ALL LISTENERS BEFORE setting video.src ▓▒░
+    // Cached videos fire canplay/loadeddata SYNCHRONOUSLY during src assignment.
+    // Old code set video.src first, then attached listeners → events lost → black frame.
+    video.addEventListener('loadedmetadata', () => {
+      if (video.videoWidth && video.videoHeight) setAspect(video.videoWidth / video.videoHeight)
+    })
+
+    video.addEventListener('error', (e) => {
+      console.error('[VideoPlane] Load error:', videoUrl, (e.target as HTMLVideoElement)?.error)
+    })
+
     const onCanPlay = () => createTexture('canplay')
     const onLoadedData = () => createTexture('loadeddata')
     const onPlaying = () => createTexture('playing')
@@ -451,16 +450,25 @@ export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, fram
     video.addEventListener('loadeddata', onLoadedData)
     video.addEventListener('playing', onPlaying)
 
-    // requestVideoFrameCallback: THE most reliable signal — actual frame decoded
+    // requestVideoFrameCallback: actual frame decoded (most reliable signal)
     if ('requestVideoFrameCallback' in video) {
       (video as any).requestVideoFrameCallback(() => createTexture('requestVideoFrameCallback'))
     }
 
-    // If already ready (cached), create immediately
-    if (video.readyState >= 2) createTexture('readyState-immediate')
+    // NOW assign src — all listeners are armed, cached events will be caught
+    video.src = videoUrl
 
-    // Fallback: poll readyState every 200ms for up to 5 seconds
-    // Catches edge cases where all events fire before listeners are attached
+    // Deferred readyState check — rAF gives browser one tick to populate videoWidth
+    // after cached video reports readyState >= 2 synchronously during src assignment.
+    // Old code checked synchronously → readyState=4 but videoWidth=0 → texture skipped.
+    requestAnimationFrame(() => {
+      if (video.readyState >= 2 && video.videoWidth > 0) {
+        createTexture('raf-deferred')
+      }
+    })
+
+    // Fallback polling: 100ms for first 2s (catch fast-cache), then 200ms up to 10s
+    const pollStart = Date.now()
     fallbackInterval = setInterval(() => {
       if (tex || disposed) {
         if (fallbackInterval) { clearInterval(fallbackInterval); fallbackInterval = null }
@@ -469,16 +477,28 @@ export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, fram
       if (video.readyState >= 2 && video.videoWidth > 0) {
         createTexture('fallback-interval')
       }
-    }, 200)
-    // Safety: clear interval after 5s regardless
+      // After 2s of fast polling, slow down to reduce CPU
+      if (Date.now() - pollStart > 2000 && fallbackInterval) {
+        clearInterval(fallbackInterval)
+        fallbackInterval = setInterval(() => {
+          if (tex || disposed) {
+            if (fallbackInterval) { clearInterval(fallbackInterval); fallbackInterval = null }
+            return
+          }
+          if (video.readyState >= 2 && video.videoWidth > 0) {
+            createTexture('fallback-interval-slow')
+          }
+        }, 200)
+      }
+    }, 100)
+    // Safety: clear interval after 10s, last-resort attempt
     const fallbackTimeout = setTimeout(() => {
       if (fallbackInterval) { clearInterval(fallbackInterval); fallbackInterval = null }
-      // Last resort: if still no texture and video has any data, force create
       if (!tex && !disposed && video.readyState >= 1) {
         console.warn('[VideoPlane] Last-resort texture creation at readyState', video.readyState, videoUrl)
         if (video.videoWidth && video.videoHeight) createTexture('last-resort')
       }
-    }, 5000)
+    }, 10000)
 
     video.play().catch(() => {
       setTimeout(() => video.play().catch(() => {}), 500)
@@ -655,6 +675,13 @@ export function SpatialAudioAttachment({ objectId, audioUrl, volume = 1, maxDist
     audio.volume = 0 // Will be set by useFrame based on distance
     audioRef.current = audio
     if (objectId) _audioElements.set(objectId, audio)
+    // ░▒▓ LIP SYNC — attach analyser to audio element ▓▒░
+    let lipSyncCtrl: ReturnType<typeof createLipSyncController> | null = null
+    if (objectId) {
+      lipSyncCtrl = createLipSyncController()
+      lipSyncCtrl.attachAudio(audio)
+      registerLipSync(objectId, lipSyncCtrl)
+    }
     // Autoplay if state is 'playing'
     if (audioState !== 'stopped' && audioState !== 'paused') {
       audio.play().catch(() => {})
@@ -664,6 +691,9 @@ export function SpatialAudioAttachment({ objectId, audioUrl, volume = 1, maxDist
       audio.src = ''
       audioRef.current = null
       if (objectId) _audioElements.delete(objectId)
+      // ░▒▓ LIP SYNC cleanup ▓▒░
+      if (lipSyncCtrl) lipSyncCtrl.detach()
+      if (objectId) unregisterLipSync(objectId)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audioUrl])
@@ -2135,6 +2165,12 @@ export function WorldObjectsRenderer() {
   const spawnPlacementVfx = useOasisStore(s => s.spawnPlacementVfx)
   const hasAgentFocus = useOasisStore(s => !!s.focusedAgentWindowId)
 
+  // ░▒▓ MINDCRAFT 3D — detect if active world is the Mindcraft mission map ▓▒░
+  const isMindcraftWorld = useOasisStore(s => {
+    const reg = s.worldRegistry.find(w => w.id === s.activeWorldId)
+    return reg?.name?.toLowerCase() === 'mindcraft'
+  })
+
   // Per-world filtering: only show conjured assets placed in THIS world
   const worldAssets = allConjuredAssets.filter(a => worldConjuredAssetIds.includes(a.id))
   const readyAssets = worldAssets.filter(a => a.status === 'ready' && a.glbPath)
@@ -2210,6 +2246,9 @@ export function WorldObjectsRenderer() {
 
       {/* ░▒▓ Placement spell VFX — self-removing golden effects ▓▒░ */}
       <PlacementVFXRenderer />
+
+      {/* ░▒▓ MINDCRAFT 3D — mission map overlay (renders alongside normal objects) ▓▒░ */}
+      {isMindcraftWorld && <MindcraftWorld />}
 
       {/* ░▒▓ Conjured objects — text-to-3D manifestations ▓▒░ */}
       {readyAssets.map(asset => {
