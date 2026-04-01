@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 
 import { useOasisStore } from '@/store/oasisStore'
-import { useUILayer } from '@/lib/input-manager'
+import { useInputManager, useUILayer } from '@/lib/input-manager'
 import { CollapsibleBlock, renderMarkdown } from '@/lib/anorak-renderers'
 
 interface PanelSettings {
@@ -21,6 +21,18 @@ interface HermesStatus {
   models: string[]
   source?: 'pairing' | 'env' | 'none'
   canMutateConfig?: boolean
+  error?: string
+}
+
+interface HermesTunnelStatus {
+  configured: boolean
+  running: boolean
+  command: string
+  commandPreview?: string
+  autoStart: boolean
+  canMutateConfig?: boolean
+  updatedAt?: string | null
+  lastStartedAt?: string | null
   error?: string
 }
 
@@ -72,15 +84,42 @@ const MIN_WIDTH = 360
 const MIN_HEIGHT = 360
 const DEFAULT_SETTINGS: PanelSettings = { bgColor: '#120c04', opacity: 0.92, blur: 0 }
 const DEFAULT_STATUS: HermesStatus = { configured: false, connected: false, base: null, defaultModel: null, models: [] }
+const DEFAULT_TUNNEL_STATUS: HermesTunnelStatus = { configured: false, running: false, command: '', autoStart: true }
 
 const POS_KEY = 'oasis-hermes-pos'
 const SIZE_KEY = 'oasis-hermes-size'
 const SETTINGS_KEY = 'oasis-hermes-settings'
 const MODEL_KEY = 'oasis-hermes-model'
 const DETAILS_KEY = 'oasis-hermes-details'
-const PAIRING_HINT = `HERMES_API_BASE=http://127.0.0.1:8642/v1
+const CHAT_KEY = 'oasis-hermes-chat-history'
+const CONNECTION_HINT = `HERMES_API_BASE=http://127.0.0.1:8642/v1
 HERMES_API_KEY=your_secret_here
 HERMES_MODEL=optional_model_id`
+const TUNNEL_HINT = 'ssh -L 8642:127.0.0.1:8642 user@your-vps -N'
+
+function readStoredMessages(): ChatMessage[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(CHAT_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+
+    return parsed
+      .filter((entry): entry is ChatMessage => {
+        if (!entry || typeof entry !== 'object') return false
+        const obj = entry as Record<string, unknown>
+        return (
+          (obj.role === 'user' || obj.role === 'assistant') &&
+          typeof obj.id === 'string' &&
+          typeof obj.content === 'string'
+        )
+      })
+      .slice(-60)
+  } catch {
+    return []
+  }
+}
 
 function formatToolName(name: string): string {
   return name
@@ -147,20 +186,24 @@ function StatusBadge({ status, loading }: { status: HermesStatus; loading: boole
 function SourceBadge({ source }: { source?: HermesStatus['source'] }) {
   if (!source || source === 'none') return null
   const color = source === 'pairing' ? '#f59e0b' : '#60a5fa'
+  const label = source === 'pairing' ? 'saved' : 'env'
   return (
     <span
       className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase tracking-wide"
       style={{ color, background: `${color}1a`, border: `1px solid ${color}40` }}
-      title={source === 'pairing' ? 'Using local paired config' : 'Using server env config'}
+      title={source === 'pairing' ? 'Using saved local connection data' : 'Using server env config'}
     >
-      {source}
+      {label}
     </span>
   )
 }
 
 function SettingsDropdown({ settings, onChange }: { settings: PanelSettings; onChange: (next: PanelSettings) => void }) {
   return (
-    <div className="absolute right-0 top-full mt-1 z-50 bg-gray-900 border border-white/10 rounded-lg p-3 shadow-xl w-56">
+    <div
+      data-ui-panel
+      className="absolute right-0 top-full mt-1 z-50 bg-gray-900 border border-white/10 rounded-lg p-3 shadow-xl w-56"
+    >
       <div className="text-[10px] text-amber-200/80 uppercase tracking-widest mb-2">Panel Settings</div>
 
       <div className="space-y-2 text-[10px]">
@@ -271,13 +314,18 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 
   const panelZIndex = useOasisStore(state => state.getPanelZIndex('hermes', 9998))
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const autoConnectTriedRef = useRef(false)
 
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [messages, setMessages] = useState<ChatMessage[]>(() => readStoredMessages())
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
+  const [isConnecting, setIsConnecting] = useState(false)
+  const [autoScroll, setAutoScroll] = useState(true)
   const [status, setStatus] = useState<HermesStatus>(DEFAULT_STATUS)
+  const [tunnelStatus, setTunnelStatus] = useState<HermesTunnelStatus>(DEFAULT_TUNNEL_STATUS)
   const [statusLoading, setStatusLoading] = useState(false)
   const [selectedModel, setSelectedModel] = useState(() => {
     if (typeof window === 'undefined') return ''
@@ -288,10 +336,12 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     try { return localStorage.getItem(DETAILS_KEY) !== 'false' } catch { return true }
   })
   const [showSettings, setShowSettings] = useState(false)
-  const [showPairing, setShowPairing] = useState(false)
-  const [pairingInput, setPairingInput] = useState(PAIRING_HINT)
-  const [pairingSaving, setPairingSaving] = useState(false)
-  const [pairingError, setPairingError] = useState('')
+  const [showConnectionModal, setShowConnectionModal] = useState(false)
+  const [connectionInput, setConnectionInput] = useState('')
+  const [tunnelInput, setTunnelInput] = useState('')
+  const [tunnelAutoStart, setTunnelAutoStart] = useState(true)
+  const [connectionSaving, setConnectionSaving] = useState(false)
+  const [connectionError, setConnectionError] = useState('')
   const [panelSettings, setPanelSettings] = useState<PanelSettings>(() => {
     if (typeof window === 'undefined') return DEFAULT_SETTINGS
     try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null') || DEFAULT_SETTINGS } catch { return DEFAULT_SETTINGS }
@@ -311,16 +361,22 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   const [isResizing, setIsResizing] = useState(false)
   const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 })
 
+  const focusPanelUI = useCallback(() => {
+    useInputManager.getState().enterUIFocus()
+  }, [])
+
   const loadStatus = useCallback(async () => {
     setStatusLoading(true)
     try {
-      const [statusResponse, configResponse] = await Promise.all([
+      const [statusResponse, configResponse, tunnelResponse] = await Promise.all([
         fetch('/api/hermes', { cache: 'no-store' }),
         fetch('/api/hermes/config', { cache: 'no-store' }),
+        fetch('/api/hermes/tunnel', { cache: 'no-store' }),
       ])
 
       const data = await statusResponse.json().catch(() => ({}))
       const cfg = await configResponse.json().catch(() => ({}))
+      const tunnel = await tunnelResponse.json().catch(() => ({}))
 
       if (!statusResponse.ok) {
         setStatus({
@@ -333,30 +389,43 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           canMutateConfig: Boolean(cfg?.canMutateConfig),
           error: typeof data?.error === 'string' ? data.error : `HTTP ${statusResponse.status}`,
         })
-        return
+      } else {
+        const nextStatus: HermesStatus = {
+          configured: Boolean(data?.configured),
+          connected: Boolean(data?.connected),
+          base: typeof data?.base === 'string' ? data.base : null,
+          defaultModel: typeof data?.defaultModel === 'string' ? data.defaultModel : null,
+          models: Array.isArray(data?.models) ? data.models.filter((entry: unknown): entry is string => typeof entry === 'string') : [],
+          source: (typeof data?.source === 'string' ? data.source : typeof cfg?.source === 'string' ? cfg.source : undefined) as HermesStatus['source'],
+          canMutateConfig: Boolean(cfg?.canMutateConfig),
+          error: typeof data?.error === 'string' ? data.error : undefined,
+        }
+
+        setStatus(nextStatus)
+        setSelectedModel(current => {
+          const fallback = current && nextStatus.models.includes(current)
+            ? current
+            : nextStatus.defaultModel || nextStatus.models[0] || current || ''
+          try {
+            if (fallback) localStorage.setItem(MODEL_KEY, fallback)
+          } catch {}
+          return fallback
+        })
       }
 
-      const nextStatus: HermesStatus = {
-        configured: Boolean(data?.configured),
-        connected: Boolean(data?.connected),
-        base: typeof data?.base === 'string' ? data.base : null,
-        defaultModel: typeof data?.defaultModel === 'string' ? data.defaultModel : null,
-        models: Array.isArray(data?.models) ? data.models.filter((entry: unknown): entry is string => typeof entry === 'string') : [],
-        source: (typeof data?.source === 'string' ? data.source : typeof cfg?.source === 'string' ? cfg.source : undefined) as HermesStatus['source'],
-        canMutateConfig: Boolean(cfg?.canMutateConfig),
-        error: typeof data?.error === 'string' ? data.error : undefined,
-      }
-
-      setStatus(nextStatus)
-      setSelectedModel(current => {
-        const fallback = current && nextStatus.models.includes(current)
-          ? current
-          : nextStatus.defaultModel || nextStatus.models[0] || current || ''
-        try {
-          if (fallback) localStorage.setItem(MODEL_KEY, fallback)
-        } catch {}
-        return fallback
+      setTunnelStatus({
+        configured: Boolean(tunnel?.configured),
+        running: Boolean(tunnel?.running),
+        command: typeof tunnel?.command === 'string' ? tunnel.command : '',
+        commandPreview: typeof tunnel?.commandPreview === 'string' ? tunnel.commandPreview : '',
+        autoStart: tunnel?.autoStart !== false,
+        canMutateConfig: Boolean(tunnel?.canMutateConfig ?? cfg?.canMutateConfig),
+        updatedAt: typeof tunnel?.updatedAt === 'string' ? tunnel.updatedAt : null,
+        lastStartedAt: typeof tunnel?.lastStartedAt === 'string' ? tunnel.lastStartedAt : null,
+        error: typeof tunnel?.error === 'string' ? tunnel.error : undefined,
       })
+      setTunnelInput(current => current || (typeof tunnel?.command === 'string' ? tunnel.command : ''))
+      setTunnelAutoStart(tunnel?.autoStart !== false)
     } catch (error) {
       setStatus({
         configured: false,
@@ -371,6 +440,195 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     }
   }, [])
 
+  const connectHermes = useCallback(async (tunnelCommandOverride?: string) => {
+    if (isConnecting) return
+
+    setIsConnecting(true)
+    setConnectionError('')
+
+    try {
+      const tunnelCommand = (tunnelCommandOverride || tunnelInput).trim()
+      if (tunnelCommand || tunnelStatus.configured) {
+        const tunnelResponse = await fetch('/api/hermes/tunnel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'connect',
+            command: tunnelCommand || undefined,
+          }),
+        })
+        const tunnelData = await tunnelResponse.json().catch(() => ({}))
+        if (!tunnelResponse.ok) {
+          throw new Error(typeof tunnelData?.error === 'string' ? tunnelData.error : `HTTP ${tunnelResponse.status}`)
+        }
+      }
+
+      let connected = false
+      let lastError = ''
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        const response = await fetch('/api/hermes', { cache: 'no-store' })
+        const data = await response.json().catch(() => ({}))
+        if (response.ok && data?.connected) {
+          connected = true
+          break
+        }
+        lastError = typeof data?.error === 'string' ? data.error : lastError
+        if (attempt < 5) {
+          await new Promise(resolve => window.setTimeout(resolve, 450))
+        }
+      }
+
+      await loadStatus()
+
+      if (!connected && lastError) {
+        setConnectionError(lastError)
+      } else {
+        window.setTimeout(() => inputRef.current?.focus(), 80)
+      }
+    } catch (error) {
+      setConnectionError(error instanceof Error ? error.message : 'Unable to connect Hermes.')
+      await loadStatus()
+    } finally {
+      setIsConnecting(false)
+    }
+  }, [isConnecting, loadStatus, tunnelInput, tunnelStatus.configured])
+
+  const openConnectionModal = useCallback(() => {
+    setConnectionError('')
+    setShowConnectionModal(true)
+  }, [])
+
+  const saveConnection = useCallback(async (connectAfter: boolean) => {
+    if (connectionSaving) return
+
+    const nextConnection = connectionInput.trim()
+    const nextTunnel = tunnelInput.trim()
+    const hasSavedConnection = status.source === 'pairing' || status.source === 'env'
+    const hasSavedTunnel = tunnelStatus.configured
+
+    if (!nextConnection && !nextTunnel && !hasSavedConnection && !hasSavedTunnel) {
+      setConnectionError('Paste Hermes connection data or an SSH tunnel command first.')
+      return
+    }
+
+    setConnectionSaving(true)
+    setConnectionError('')
+
+    try {
+      if (nextConnection) {
+        const response = await fetch('/api/hermes/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pairing: nextConnection }),
+        })
+        const data = await response.json().catch(() => ({}))
+        if (!response.ok) {
+          throw new Error(typeof data?.error === 'string' ? data.error : `HTTP ${response.status}`)
+        }
+      }
+
+      if (nextTunnel) {
+        const response = await fetch('/api/hermes/tunnel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            command: nextTunnel,
+            autoStart: tunnelAutoStart,
+          }),
+        })
+        const data = await response.json().catch(() => ({}))
+        if (!response.ok) {
+          throw new Error(typeof data?.error === 'string' ? data.error : `HTTP ${response.status}`)
+        }
+      }
+
+      setConnectionInput('')
+      setShowConnectionModal(false)
+      autoConnectTriedRef.current = false
+      await loadStatus()
+
+      if (connectAfter) {
+        await connectHermes(nextTunnel || undefined)
+      }
+    } catch (error) {
+      setConnectionError(error instanceof Error ? error.message : 'Unable to save Hermes connection data.')
+    } finally {
+      setConnectionSaving(false)
+    }
+  }, [
+    connectHermes,
+    connectionInput,
+    connectionSaving,
+    loadStatus,
+    status.source,
+    tunnelAutoStart,
+    tunnelInput,
+    tunnelStatus.configured,
+  ])
+
+  const forgetSavedConnection = useCallback(async () => {
+    if (connectionSaving) return
+    setConnectionSaving(true)
+    setConnectionError('')
+
+    try {
+      const [configResponse, tunnelResponse] = await Promise.all([
+        fetch('/api/hermes/config', { method: 'DELETE' }),
+        fetch('/api/hermes/tunnel', { method: 'DELETE' }),
+      ])
+
+      const configData = await configResponse.json().catch(() => ({}))
+      const tunnelData = await tunnelResponse.json().catch(() => ({}))
+
+      if (!configResponse.ok) {
+        throw new Error(typeof configData?.error === 'string' ? configData.error : `HTTP ${configResponse.status}`)
+      }
+      if (!tunnelResponse.ok) {
+        throw new Error(typeof tunnelData?.error === 'string' ? tunnelData.error : `HTTP ${tunnelResponse.status}`)
+      }
+
+      abortRef.current?.abort()
+      abortRef.current = null
+      setIsStreaming(false)
+      setMessages([])
+      setConnectionInput('')
+      setTunnelInput('')
+      setShowConnectionModal(false)
+      autoConnectTriedRef.current = false
+      try {
+        localStorage.removeItem(CHAT_KEY)
+      } catch {}
+      await loadStatus()
+    } catch (error) {
+      setConnectionError(error instanceof Error ? error.message : 'Unable to forget Hermes connection data.')
+    } finally {
+      setConnectionSaving(false)
+    }
+  }, [connectionSaving, loadStatus])
+
+  const stopManagedTunnel = useCallback(async () => {
+    if (isConnecting) return
+    setIsConnecting(true)
+    setConnectionError('')
+
+    try {
+      const response = await fetch('/api/hermes/tunnel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'disconnect' }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(typeof data?.error === 'string' ? data.error : `HTTP ${response.status}`)
+      }
+      await loadStatus()
+    } catch (error) {
+      setConnectionError(error instanceof Error ? error.message : 'Unable to stop the Hermes tunnel.')
+    } finally {
+      setIsConnecting(false)
+    }
+  }, [isConnecting, loadStatus])
+
   useEffect(() => {
     if (!isOpen) return
     void loadStatus()
@@ -379,8 +637,62 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   }, [isOpen, loadStatus])
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: isStreaming ? 'auto' : 'smooth' })
-  }, [messages, isStreaming])
+    if (!isOpen) {
+      autoConnectTriedRef.current = false
+      setShowConnectionModal(false)
+      setShowSettings(false)
+      return
+    }
+  }, [isOpen])
+
+  useEffect(() => {
+    if (autoScroll) {
+      messagesEndRef.current?.scrollIntoView({ behavior: isStreaming ? 'auto' : 'smooth' })
+    }
+  }, [messages, isStreaming, autoScroll])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      localStorage.setItem(CHAT_KEY, JSON.stringify(messages.slice(-60)))
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [messages])
+
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+
+    const onScroll = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60
+      setAutoScroll(atBottom)
+    }
+
+    onScroll()
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [messages.length, isOpen])
+
+  useEffect(() => {
+    if (!isOpen || statusLoading || isConnecting) return
+    if (status.connected) return
+    if (autoConnectTriedRef.current) return
+    if (!status.configured && !tunnelStatus.configured) return
+    if (tunnelStatus.configured && !tunnelStatus.autoStart) return
+
+    autoConnectTriedRef.current = true
+    void connectHermes()
+  }, [
+    connectHermes,
+    isConnecting,
+    isOpen,
+    status.configured,
+    status.connected,
+    statusLoading,
+    tunnelStatus.autoStart,
+    tunnelStatus.configured,
+  ])
 
   const handleDragStart = useCallback((event: React.MouseEvent) => {
     const target = event.target as HTMLElement
@@ -458,6 +770,9 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     abortRef.current = null
     setIsStreaming(false)
     setMessages([])
+    try {
+      localStorage.removeItem(CHAT_KEY)
+    } catch {}
   }, [])
 
   const cancel = useCallback(() => {
@@ -465,52 +780,6 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     abortRef.current = null
     setIsStreaming(false)
   }, [])
-
-  const savePairing = useCallback(async () => {
-    const payload = pairingInput.trim()
-    if (!payload || pairingSaving) return
-
-    setPairingSaving(true)
-    setPairingError('')
-    try {
-      const response = await fetch('/api/hermes/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pairing: payload }),
-      })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok) {
-        setPairingError(typeof data?.error === 'string' ? data.error : `HTTP ${response.status}`)
-        return
-      }
-      setShowPairing(false)
-      await loadStatus()
-    } catch (error) {
-      setPairingError(error instanceof Error ? error.message : 'Unable to save pairing data.')
-    } finally {
-      setPairingSaving(false)
-    }
-  }, [loadStatus, pairingInput, pairingSaving])
-
-  const unlinkPairing = useCallback(async () => {
-    if (pairingSaving) return
-    setPairingSaving(true)
-    setPairingError('')
-    try {
-      const response = await fetch('/api/hermes/config', { method: 'DELETE' })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok) {
-        setPairingError(typeof data?.error === 'string' ? data.error : `HTTP ${response.status}`)
-        return
-      }
-      setMessages([])
-      await loadStatus()
-    } catch (error) {
-      setPairingError(error instanceof Error ? error.message : 'Unable to clear pairing.')
-    } finally {
-      setPairingSaving(false)
-    }
-  }, [loadStatus, pairingSaving])
 
   const sendMessage = useCallback(async () => {
     const prompt = input.trim()
@@ -536,6 +805,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       timestamp: Date.now(),
     }
 
+    setAutoScroll(true)
     setMessages(previous => [...previous, userMessage, assistantMessage])
     setInput('')
     setIsStreaming(true)
@@ -654,10 +924,19 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     : { backgroundColor: `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${panelSettings.opacity})` }
 
   const canSend = status.connected && Boolean(input.trim()) && !isStreaming
+  const canMutateAnyConfig = Boolean(status.canMutateConfig || tunnelStatus.canMutateConfig)
+  const tunnelLabel = tunnelStatus.running
+    ? 'ssh running'
+    : tunnelStatus.configured
+      ? tunnelStatus.autoStart
+        ? 'ssh saved'
+        : 'ssh manual'
+      : 'direct'
 
   return createPortal(
     <div
       data-menu-portal="hermes-panel"
+      data-ui-panel
       className="fixed rounded-xl flex flex-col overflow-hidden"
       style={{
         zIndex: panelZIndex,
@@ -672,8 +951,12 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           : '0 8px 40px rgba(0,0,0,0.78)',
         transition: 'box-shadow 0.35s ease, border-color 0.35s ease',
       }}
-      onMouseDown={event => {
+      onMouseDownCapture={event => {
+        focusPanelUI()
         event.stopPropagation()
+      }}
+      onPointerDownCapture={event => event.stopPropagation()}
+      onMouseDown={event => {
         useOasisStore.getState().bringPanelToFront('hermes')
         handleDragStart(event)
       }}
@@ -689,42 +972,43 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         }}
       >
         <div className="flex items-center gap-2 min-w-0">
-          <span className={`text-base ${isStreaming ? 'animate-pulse' : ''}`}>☤</span>
+          <span className={`text-base ${isStreaming ? 'animate-pulse' : ''}`}>?</span>
           <span className="text-amber-300 font-bold text-sm tracking-wide">Hermes</span>
-          <StatusBadge status={status} loading={statusLoading} />
+          <StatusBadge status={status} loading={statusLoading || isConnecting} />
           <SourceBadge source={status.source} />
         </div>
 
         <div className="flex items-center gap-1.5">
-          {status.canMutateConfig && (
-            <button
-              onClick={() => {
-                setPairingError('')
-                setShowPairing(true)
-              }}
-              className="px-1.5 py-0.5 rounded text-[10px] font-mono text-amber-200/70 hover:text-amber-300 border border-white/10 hover:border-amber-500/30 transition-all cursor-pointer disabled:opacity-50"
-              title="Pair Hermes with this Oasis instance"
-              disabled={pairingSaving}
-            >
-              pair
-            </button>
-          )}
-          {status.source === 'pairing' && (
-            <button
-              onClick={() => void unlinkPairing()}
-              className="px-1.5 py-0.5 rounded text-[10px] font-mono text-red-300/80 hover:text-red-200 border border-red-500/25 hover:border-red-500/40 transition-all cursor-pointer disabled:opacity-50"
-              title="Remove local pairing"
-              disabled={pairingSaving}
-            >
-              unlink
-            </button>
-          )}
+          <button
+            onClick={() => void connectHermes()}
+            className="px-1.5 py-0.5 rounded text-[10px] font-mono text-emerald-200/80 hover:text-emerald-100 border border-emerald-500/25 hover:border-emerald-400/50 transition-all cursor-pointer disabled:opacity-50"
+            title={tunnelStatus.configured ? 'Start the saved SSH tunnel if needed, then connect to Hermes' : 'Refresh Hermes and connect'}
+            disabled={isConnecting || statusLoading || (!status.configured && !tunnelStatus.configured)}
+          >
+            {isConnecting ? 'connecting' : 'connect'}
+          </button>
+          <button
+            onClick={openConnectionModal}
+            className="px-1.5 py-0.5 rounded text-[10px] font-mono text-amber-200/70 hover:text-amber-300 border border-white/10 hover:border-amber-500/30 transition-all cursor-pointer disabled:opacity-50"
+            title="Edit saved connection data and SSH tunnel"
+            disabled={!canMutateAnyConfig || connectionSaving}
+          >
+            config
+          </button>
+          <button
+            onClick={() => void stopManagedTunnel()}
+            className="px-1.5 py-0.5 rounded text-[10px] font-mono text-red-300/80 hover:text-red-200 border border-red-500/25 hover:border-red-500/40 transition-all cursor-pointer disabled:opacity-50"
+            title="Stop the managed SSH tunnel without forgetting it"
+            disabled={isConnecting || !tunnelStatus.running}
+          >
+            stop
+          </button>
           <button
             onClick={() => void loadStatus()}
             className="px-1.5 py-0.5 rounded text-[10px] font-mono text-amber-200/70 hover:text-amber-300 border border-white/10 hover:border-amber-500/30 transition-all cursor-pointer"
             title="Refresh Hermes status"
           >
-            sync
+            refresh
           </button>
           <button
             onClick={toggleDetails}
@@ -780,134 +1064,167 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             <option key={model} value={model}>{model}</option>
           ))}
         </select>
+        <span
+          className="hidden md:block text-gray-500 truncate max-w-[120px]"
+          title={tunnelStatus.commandPreview || 'No managed SSH tunnel saved'}
+        >
+          {tunnelLabel}
+        </span>
         {status.base && showDetails && (
-          <span className="hidden md:block text-gray-500 truncate max-w-[160px]" title={status.base}>
+          <span className="hidden lg:block text-gray-500 truncate max-w-[180px]" title={status.base}>
             {status.base}
           </span>
         )}
       </div>
 
-      {pairingError && (
+      {connectionError && (
         <div className="px-3 py-1.5 text-[10px] text-red-200 border-b border-red-500/20 bg-red-500/10 font-mono">
-          {pairingError}
+          {connectionError}
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0" style={{ scrollbarWidth: 'thin', scrollbarColor: '#4b5563 transparent' }}>
-        {messages.length === 0 && (
-          <div className="h-full flex flex-col justify-center text-center px-4">
-            <div className="text-4xl mb-3 text-amber-300">☤</div>
-            <div className="text-sm text-amber-100 mb-1">Your Hermes link lives here.</div>
-            {status.connected ? (
-              <>
-                <div className="text-xs text-gray-400 mb-4">
-                  This panel talks to Hermes through the local Oasis server route, so the browser never sees your VPS API key.
+      <div className="relative flex-1 min-h-0">
+        <div
+          ref={scrollContainerRef}
+          className="h-full overflow-y-auto px-3 py-3 space-y-3 min-h-0"
+          style={{ scrollbarWidth: 'thin', scrollbarColor: '#4b5563 transparent' }}
+        >
+          {messages.length === 0 && (
+            <div className="h-full flex flex-col justify-center text-center px-4">
+              <div className="text-4xl mb-3 text-amber-300">?</div>
+              <div className="text-sm text-amber-100 mb-1">Your Hermes link lives here.</div>
+              {status.connected ? (
+                <>
+                  <div className="text-xs text-gray-400 mb-4">
+                    This panel talks to Hermes through the local Oasis server route, so the browser never sees your VPS API key.
+                  </div>
+                  <div className="space-y-1 text-[11px] font-mono text-gray-500">
+                    <button className="block w-full hover:text-amber-300 transition-colors cursor-pointer" onClick={() => setInput('Summarize what tools and capabilities you expose right now.')}>
+                      Summarize what tools you expose right now.
+                    </button>
+                    <button className="block w-full hover:text-amber-300 transition-colors cursor-pointer" onClick={() => setInput('What can you tell me about your current runtime, transport, and constraints?')}>
+                      What can you tell me about your current runtime, transport, and constraints?
+                    </button>
+                    <button className="block w-full hover:text-amber-300 transition-colors cursor-pointer" onClick={() => setInput('Help me design an Oasis connector for you, but do not modify files yet.')}>
+                      Help me design an Oasis connector for you, but do not modify files yet.
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="text-xs text-gray-400 mb-4">
+                    Save Hermes connection data once, optionally save SSH once, then hit connect whenever you want this panel live.
+                  </div>
+                  <div className="text-[11px] text-left font-mono rounded-lg border border-amber-500/20 bg-black/30 px-3 py-3 space-y-1 text-gray-300">
+                    <div>1. Ask Hermes for an Oasis connection block.</div>
+                    <div>2. {canMutateAnyConfig ? 'Click `config` and paste the block.' : 'Open this panel on localhost to edit saved connection data.'}</div>
+                    <div>3. Optional: paste your SSH tunnel command in the second field.</div>
+                    <div>4. Press `connect` and start chatting.</div>
+                  </div>
+                  {status.error && (
+                    <div className="mt-3 text-xs text-red-300">{status.error}</div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {messages.map(message => (
+            <div key={message.id} className="space-y-2">
+              {message.role === 'user' ? (
+                <div className="flex justify-end">
+                  <div
+                    className="max-w-[88%] px-3 py-2 rounded-lg text-xs text-gray-100"
+                    style={{ background: 'rgba(245,158,11,0.16)', border: '1px solid rgba(245,158,11,0.22)' }}
+                  >
+                    {message.content}
+                  </div>
                 </div>
-                <div className="space-y-1 text-[11px] font-mono text-gray-500">
-                  <button className="block w-full hover:text-amber-300 transition-colors cursor-pointer" onClick={() => setInput('Summarize what tools and capabilities you expose right now.')}>
-                    Summarize what tools you expose right now.
-                  </button>
-                  <button className="block w-full hover:text-amber-300 transition-colors cursor-pointer" onClick={() => setInput('What can you tell me about your current runtime, transport, and constraints?')}>
-                    What can you tell me about your current runtime, transport, and constraints?
-                  </button>
-                  <button className="block w-full hover:text-amber-300 transition-colors cursor-pointer" onClick={() => setInput('Help me design an Oasis connector for you, but do not modify files yet.')}>
-                    Help me design an Oasis connector for you, but do not modify files yet.
-                  </button>
+              ) : (
+                <div className="space-y-2">
+                  {(message.content || isStreaming) && (
+                    <div
+                      className="px-3 py-2 rounded-lg text-xs text-gray-100 whitespace-pre-wrap leading-relaxed"
+                      style={{ background: 'rgba(0,0,0,0.48)', border: '1px solid rgba(255,255,255,0.06)' }}
+                    >
+                      {message.content ? renderMarkdown(message.content) : <span className="text-gray-500">Streaming...</span>}
+                    </div>
+                  )}
+
+                  {message.error && (
+                    <div className="px-3 py-2 rounded-lg text-xs text-red-200 border border-red-500/25 bg-red-500/10">
+                      {message.error}
+                    </div>
+                  )}
+
+                  {showDetails && message.reasoning && (
+                    <CollapsibleBlock
+                      label={`reasoning (${message.reasoning.length} chars)`}
+                      icon="::"
+                      content={message.reasoning}
+                      accentColor="rgba(148,163,184,0.35)"
+                      compact
+                    />
+                  )}
+
+                  {showDetails && message.tools && message.tools.length > 0 && (
+                    <div className="space-y-1.5">
+                      {message.tools.map(tool => (
+                        <ToolDetails key={`${message.id}-${tool.index}-${tool.id || tool.name}`} tool={tool} />
+                      ))}
+                    </div>
+                  )}
+
+                  {showDetails && message.usage && (
+                    <CollapsibleBlock
+                      label={`usage (${message.usage.totalTokens || 0} total tokens)`}
+                      icon="##"
+                      content={JSON.stringify(message.usage, null, 2)}
+                      accentColor="rgba(52,211,153,0.35)"
+                      compact
+                    />
+                  )}
+
+                  {(message.finishReason || (isStreaming && message === messages[messages.length - 1])) && (
+                    <div className="text-[10px] font-mono text-gray-500 px-1">
+                      {isStreaming && message === messages[messages.length - 1]
+                        ? 'streaming...'
+                        : `finish_reason=${message.finishReason}`}
+                    </div>
+                  )}
                 </div>
-              </>
-            ) : (
-              <>
-                <div className="text-xs text-gray-400 mb-4">
-                  Pair this Oasis instance with a setup block from Hermes, then press sync.
-                </div>
-                <div className="text-[11px] text-left font-mono rounded-lg border border-amber-500/20 bg-black/30 px-3 py-3 space-y-1 text-gray-300">
-                  <div>1. Ask Hermes for an Oasis pairing block.</div>
-                  <div>2. {status.canMutateConfig ? 'Click `pair` above and paste the block.' : 'Open this panel on localhost to enable `pair`, then paste the block.'}</div>
-                  <div>3. If Hermes is remote, run the SSH tunnel Hermes gives you.</div>
-                  <div>4. Press `sync` and start chatting.</div>
-                </div>
-                {status.error && (
-                  <div className="mt-3 text-xs text-red-300">{status.error}</div>
-                )}
-              </>
-            )}
+              )}
+            </div>
+          ))}
+
+          <div ref={messagesEndRef} />
+        </div>
+
+        {!autoScroll && messages.length > 0 && (
+          <div className="pointer-events-none absolute bottom-3 right-3">
+            <button
+              data-no-drag
+              className="pointer-events-auto px-2 py-1 rounded-full text-[10px] font-mono border border-amber-500/25 bg-black/70 text-amber-100 hover:border-amber-400/50"
+              onClick={() => {
+                setAutoScroll(true)
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+              }}
+            >
+              v auto-scroll
+            </button>
           </div>
         )}
-
-        {messages.map(message => (
-          <div key={message.id} className="space-y-2">
-            {message.role === 'user' ? (
-              <div className="flex justify-end">
-                <div
-                  className="max-w-[88%] px-3 py-2 rounded-lg text-xs text-gray-100"
-                  style={{ background: 'rgba(245,158,11,0.16)', border: '1px solid rgba(245,158,11,0.22)' }}
-                >
-                  {message.content}
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {(message.content || isStreaming) && (
-                  <div
-                    className="px-3 py-2 rounded-lg text-xs text-gray-100 whitespace-pre-wrap leading-relaxed"
-                    style={{ background: 'rgba(0,0,0,0.48)', border: '1px solid rgba(255,255,255,0.06)' }}
-                  >
-                    {message.content ? renderMarkdown(message.content) : <span className="text-gray-500">Streaming...</span>}
-                  </div>
-                )}
-
-                {message.error && (
-                  <div className="px-3 py-2 rounded-lg text-xs text-red-200 border border-red-500/25 bg-red-500/10">
-                    {message.error}
-                  </div>
-                )}
-
-                {showDetails && message.reasoning && (
-                  <CollapsibleBlock
-                    label={`reasoning (${message.reasoning.length} chars)`}
-                    icon="::"
-                    content={message.reasoning}
-                    accentColor="rgba(148,163,184,0.35)"
-                    compact
-                  />
-                )}
-
-                {showDetails && message.tools && message.tools.length > 0 && (
-                  <div className="space-y-1.5">
-                    {message.tools.map(tool => (
-                      <ToolDetails key={`${message.id}-${tool.index}-${tool.id || tool.name}`} tool={tool} />
-                    ))}
-                  </div>
-                )}
-
-                {showDetails && message.usage && (
-                  <CollapsibleBlock
-                    label={`usage (${message.usage.totalTokens || 0} total tokens)`}
-                    icon="##"
-                    content={JSON.stringify(message.usage, null, 2)}
-                    accentColor="rgba(52,211,153,0.35)"
-                    compact
-                  />
-                )}
-
-                {(message.finishReason || (isStreaming && message === messages[messages.length - 1])) && (
-                  <div className="text-[10px] font-mono text-gray-500 px-1">
-                    {isStreaming && message === messages[messages.length - 1]
-                      ? 'streaming...'
-                      : `finish_reason=${message.finishReason}`}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
-
-        <div ref={messagesEndRef} />
       </div>
 
       <div className="px-3 py-2 border-t border-white/10" style={{ background: 'rgba(8,6,3,0.8)' }}>
         {!status.connected && status.error && (
           <div className="text-[10px] text-red-300 mb-2">{status.error}</div>
+        )}
+        {tunnelStatus.configured && (
+          <div className="text-[10px] text-gray-500 font-mono mb-2 truncate" title={tunnelStatus.commandPreview || tunnelStatus.command}>
+            {tunnelStatus.running ? 'managed ssh live' : tunnelStatus.autoStart ? 'managed ssh saved' : 'managed ssh saved (manual)'}
+            {tunnelStatus.commandPreview ? ` | ${tunnelStatus.commandPreview}` : ''}
+          </div>
         )}
         <div className="flex gap-2 items-end">
           <textarea
@@ -953,53 +1270,133 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         </div>
       </div>
 
-      {showPairing && (
-        <div className="absolute inset-0 z-40 bg-black/70 backdrop-blur-[1px] flex items-center justify-center p-3">
-          <div className="w-full max-w-[520px] rounded-lg border border-amber-500/30 bg-[#120f08] shadow-2xl">
+      {showConnectionModal && (
+        <div
+          data-ui-panel
+          className="absolute inset-0 z-40 bg-black/70 backdrop-blur-[1px] flex items-center justify-center p-3"
+          onMouseDownCapture={event => {
+            focusPanelUI()
+            event.stopPropagation()
+          }}
+          onPointerDownCapture={event => event.stopPropagation()}
+        >
+          <div
+            data-ui-panel
+            className="w-full max-w-[560px] rounded-lg border border-amber-500/30 bg-[#120f08] shadow-2xl"
+          >
             <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between">
-              <div className="text-xs font-mono text-amber-200">Pair Hermes</div>
+              <div className="text-xs font-mono text-amber-200">Hermes Connection</div>
               <button
                 data-no-drag
                 className="text-gray-400 hover:text-white text-sm"
-                onClick={() => setShowPairing(false)}
+                onClick={() => setShowConnectionModal(false)}
               >
                 x
               </button>
             </div>
-            <div className="px-3 py-3 space-y-2">
+            <div className="px-3 py-3 space-y-3">
               <div className="text-[11px] text-gray-300 font-mono">
-                Paste the block Hermes gave you. Supported formats: env lines, JSON, or oasis:// URL.
+                Save your Hermes connection block and optional SSH tunnel here. Oasis keeps the secret server-side and can re-launch the tunnel for you on future opens.
               </div>
-              <textarea
-                data-no-drag
-                value={pairingInput}
-                onChange={event => setPairingInput(event.target.value)}
-                className="w-full h-44 rounded border border-white/10 bg-black/40 px-2 py-2 text-[11px] text-amber-100 font-mono outline-none"
-                spellCheck={false}
-              />
-              <div className="flex items-center justify-between gap-2">
-                <button
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[10px] font-mono uppercase tracking-widest text-amber-200/80">Connection Data</div>
+                  {status.source === 'pairing' && !connectionInput.trim() && (
+                    <div className="text-[10px] font-mono text-gray-500">saved locally already</div>
+                  )}
+                </div>
+                <textarea
                   data-no-drag
-                  className="px-2 py-1 rounded border border-white/10 text-[10px] font-mono text-gray-300 hover:text-white"
-                  onClick={() => setPairingInput(PAIRING_HINT)}
-                >
-                  template
-                </button>
+                  value={connectionInput}
+                  onChange={event => setConnectionInput(event.target.value)}
+                  placeholder={CONNECTION_HINT}
+                  className="w-full h-40 rounded border border-white/10 bg-black/40 px-2 py-2 text-[11px] text-amber-100 font-mono outline-none"
+                  spellCheck={false}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[10px] font-mono uppercase tracking-widest text-amber-200/80">SSH Tunnel</div>
+                  {tunnelStatus.configured && !tunnelInput.trim() && (
+                    <div className="text-[10px] font-mono text-gray-500">saved locally already</div>
+                  )}
+                </div>
+                <textarea
+                  data-no-drag
+                  value={tunnelInput}
+                  onChange={event => setTunnelInput(event.target.value)}
+                  placeholder={TUNNEL_HINT}
+                  className="w-full h-24 rounded border border-white/10 bg-black/40 px-2 py-2 text-[11px] text-amber-100 font-mono outline-none"
+                  spellCheck={false}
+                />
+                <label className="flex items-center gap-2 text-[11px] font-mono text-gray-300 select-none">
+                  <input
+                    data-no-drag
+                    type="checkbox"
+                    checked={tunnelAutoStart}
+                    onChange={event => setTunnelAutoStart(event.target.checked)}
+                    className="accent-amber-500"
+                  />
+                  auto-start SSH when the Hermes panel opens
+                </label>
+              </div>
+
+              {connectionError && (
+                <div className="text-[10px] text-red-200 border border-red-500/20 bg-red-500/10 rounded px-2 py-1.5 font-mono">
+                  {connectionError}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <button
                     data-no-drag
                     className="px-2 py-1 rounded border border-white/10 text-[10px] font-mono text-gray-300 hover:text-white"
-                    onClick={() => setShowPairing(false)}
+                    onClick={() => setConnectionInput(CONNECTION_HINT)}
+                  >
+                    secrets template
+                  </button>
+                  <button
+                    data-no-drag
+                    className="px-2 py-1 rounded border border-white/10 text-[10px] font-mono text-gray-300 hover:text-white"
+                    onClick={() => setTunnelInput(TUNNEL_HINT)}
+                  >
+                    ssh template
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    data-no-drag
+                    className="px-2 py-1 rounded border border-red-500/25 text-[10px] font-mono text-red-200 hover:text-white disabled:opacity-50"
+                    onClick={() => void forgetSavedConnection()}
+                    disabled={connectionSaving || (!status.configured && !tunnelStatus.configured)}
+                  >
+                    forget saved
+                  </button>
+                  <button
+                    data-no-drag
+                    className="px-2 py-1 rounded border border-white/10 text-[10px] font-mono text-gray-300 hover:text-white"
+                    onClick={() => setShowConnectionModal(false)}
                   >
                     cancel
                   </button>
                   <button
                     data-no-drag
-                    className="px-2 py-1 rounded border border-amber-500/40 bg-amber-500/20 text-[10px] font-mono text-amber-100 disabled:opacity-50"
-                    onClick={() => void savePairing()}
-                    disabled={pairingSaving || !pairingInput.trim()}
+                    className="px-2 py-1 rounded border border-white/10 text-[10px] font-mono text-gray-100 hover:text-white disabled:opacity-50"
+                    onClick={() => void saveConnection(false)}
+                    disabled={connectionSaving}
                   >
-                    {pairingSaving ? 'saving...' : 'save pairing'}
+                    {connectionSaving ? 'saving...' : 'save'}
+                  </button>
+                  <button
+                    data-no-drag
+                    className="px-2 py-1 rounded border border-emerald-500/40 bg-emerald-500/15 text-[10px] font-mono text-emerald-100 disabled:opacity-50"
+                    onClick={() => void saveConnection(true)}
+                    disabled={connectionSaving}
+                  >
+                    {connectionSaving ? 'saving...' : 'save & connect'}
                   </button>
                 </div>
               </div>

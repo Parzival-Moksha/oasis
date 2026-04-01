@@ -76,6 +76,7 @@ data/scene-library.json
 data/worlds/*.json
 !data/worlds/forge-default.json
 data/hermes-config.local.json
+data/hermes-tunnel.local.json
 
 # Backup / working copies of data files
 data/*-full.json

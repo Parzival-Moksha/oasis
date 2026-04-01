@@ -145,7 +145,7 @@ export async function GET(request: NextRequest) {
       base: config.apiBase,
       defaultModel: config.defaultModel || null,
       models: [],
-      error: 'Hermes is not paired. Click pair and paste the setup block from Hermes.',
+      error: 'Hermes is not configured yet. Open config and paste the setup block from Hermes.',
     })
   }
 
@@ -216,7 +216,7 @@ export async function POST(request: NextRequest) {
 
   const config = await resolveHermesConfig()
   if (!config.apiKey) {
-    return NextResponse.json({ error: 'Hermes is not paired. Save a pairing block first.' }, { status: 500 })
+    return NextResponse.json({ error: 'Hermes is not configured. Save Hermes connection data first.' }, { status: 500 })
   }
 
   const body = await request.json().catch(() => null) as {
