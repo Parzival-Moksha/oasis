@@ -62,8 +62,8 @@ prisma/data/*.db-journal
 prisma/data/*.db-wal
 prisma/data/*.db-shm
 
-# Avatar gallery VRMs (downloaded per-instance, large files)
-public/avatars/gallery/
+# Avatar gallery thumbnails (auto-generated)
+public/avatars/gallery/thumbs/
 
 # User-uploaded avatars (runtime-generated)
 public/avatars/*.glb
