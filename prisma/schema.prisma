@@ -4,8 +4,9 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 generator client {
-  provider = "prisma-client-js"
-  output   = "../node_modules/.prisma/client"
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/client"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -161,6 +162,16 @@ model Journal {
   tags      String?  // JSON: string[]
   mood      String?
   createdAt DateTime @default(now())
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// APP CONFIG — Key-value store for dynamic settings (XP awards, etc.)
+// ═══════════════════════════════════════════════════════════════════════════
+
+model AppConfig {
+  key       String   @id
+  value     String   // JSON string
+  updatedAt DateTime @default(now())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
