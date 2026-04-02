@@ -62,8 +62,8 @@ prisma/data/*.db-journal
 prisma/data/*.db-wal
 prisma/data/*.db-shm
 
-# Avatar gallery thumbnails (auto-generated)
-public/avatars/gallery/thumbs/
+# Avatar gallery thumbnails — tracked (tiny, needed for UI)
+# public/avatars/gallery/thumbs/ is tracked
 
 # User-uploaded avatars (runtime-generated)
 public/avatars/*.glb
@@ -75,7 +75,9 @@ public/avatars/*.gif
 # Runtime-generated thumbnails
 public/crafted-thumbs/*
 !public/crafted-thumbs/.gitkeep
-public/thumbs/
+public/thumbs/*
+# Avatar thumbnails — whitelisted
+!public/thumbs/av_*.jpg
 
 # Bulk source archives (blend/gltf zips — only extracted textures needed)
 *.blend.zip
