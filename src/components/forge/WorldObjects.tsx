@@ -27,7 +27,7 @@ import type { MovementPreset, AnimationConfig } from '../../lib/conjure/types'
 import { extractModelStats } from './ModelPreview'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
-import { loadAnimationClip, loadClipFromGLTF, retargetClipForVRM, LIB_PREFIX } from '../../lib/forge/animation-library'
+import { loadAnimationClip, loadClipFromGLTF, retargetClipForVRM, retargetUALClipForVRM, isUALAnimation, LIB_PREFIX } from '../../lib/forge/animation-library'
 import { MindcraftWorld } from './MindcraftWorld'
 import { AgentWindow3D } from './AgentWindow3D'
 import type { PlacementPending } from '../../store/oasisStore'
@@ -1086,6 +1086,7 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
   const mixerRef = useRef<THREE.AnimationMixer | null>(null)
   const currentActionRef = useRef<THREE.AnimationAction | null>(null)
   const activeAnimRef = useRef<'none' | 'idle' | 'walk' | 'behavior'>('none')
+  const activeClipRef = useRef<THREE.AnimationClip | null>(null)
   const isMoving = useOasisStore(s => objectId ? !!s.behaviors[objectId]?.moveTarget : false)
   const animConfig = useOasisStore(s => objectId ? s.behaviors[objectId]?.animation : undefined)
 
@@ -1105,14 +1106,16 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
   useEffect(() => {
     if (!vrm) return
     const key = objectId || 'vrm-npc'
+    const retargetFor = (clip: THREE.AnimationClip, animId: string, k: string) =>
+      isUALAnimation(animId) ? retargetUALClipForVRM(clip, vrm, k) : retargetClipForVRM(clip, vrm, k)
     loadAnimationClip('walk').then(clip => {
-      if (clip) setWalkClip(retargetClipForVRM(clip, vrm, key))
+      if (clip) setWalkClip(retargetFor(clip, 'walk', key))
     })
     // Try proper idle first, fall back to idle-fight
     loadAnimationClip('idle').then(clip => {
-      if (clip) { setIdleClip(retargetClipForVRM(clip, vrm, key + '-idle')); return }
+      if (clip) { setIdleClip(retargetFor(clip, 'idle', key + '-idle')); return }
       return loadAnimationClip('idle-fight').then(fbxClip => {
-        if (fbxClip) setIdleClip(retargetClipForVRM(fbxClip, vrm, key + '-idle'))
+        if (fbxClip) setIdleClip(retargetFor(fbxClip, 'idle-fight', key + '-idle'))
       })
     })
   }, [vrm, objectId])
@@ -1126,7 +1129,12 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
       const animId = clipName.replace(LIB_PREFIX, '')
       const key = objectId || 'vrm-npc'
       loadAnimationClip(animId).then(clip => {
-        if (clip) setBehaviorClip(retargetClipForVRM(clip, vrm, key))
+        if (clip) {
+          const retargeted = isUALAnimation(animId)
+            ? retargetUALClipForVRM(clip, vrm, key)
+            : retargetClipForVRM(clip, vrm, key)
+          setBehaviorClip(retargeted)
+        }
       })
     }
   }, [animConfig?.clipName, vrm, objectId])
@@ -1139,12 +1147,14 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
 
     // Determine what SHOULD play right now
     let target: 'behavior' | 'walk' | 'idle' | 'none' = 'none'
-    if (behaviorClip) target = 'behavior'
-    else if (isMoving && walkClip) target = 'walk'
-    else if (idleClip) target = 'idle'
+    let targetClip: THREE.AnimationClip | null = null
+    if (behaviorClip) { target = 'behavior'; targetClip = behaviorClip }
+    else if (isMoving && walkClip) { target = 'walk'; targetClip = walkClip }
+    else if (idleClip) { target = 'idle'; targetClip = idleClip }
 
-    // Already in correct state → no-op
-    if (target === activeAnimRef.current) return
+    // Already playing same state AND same clip → no-op
+    // (clip check catches behavior-to-behavior switches like dance→combat)
+    if (target === activeAnimRef.current && targetClip === activeClipRef.current) return
 
     // Fade out current action
     if (currentActionRef.current) {
@@ -1173,6 +1183,7 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
     }
 
     activeAnimRef.current = target
+    activeClipRef.current = targetClip
     console.log(`[VRM:NPC] ${displayName || objectId} → anim: ${target}`)
   }, [isMoving, walkClip, idleClip, behaviorClip, animConfig?.loop, animConfig?.speed, displayName, objectId])
 
@@ -1229,16 +1240,34 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
       const blinkPhase = t % 4
       expr.setValue('blink', (blinkPhase > 3.7 && blinkPhase < 3.9) ? 1 : 0)
 
+      // ░▒▓ LIP SYNC — call controller.update() every frame, apply visemes directly ▓▒░
+      const lipCtrl = objectId ? getLipSync(objectId) : null
+      const lipState = lipCtrl?.isActive ? lipCtrl.update() : null
+
       // ░▒▓ Joystick expression overrides — if set, they take priority over defaults ▓▒░
       const exprOverrides = objectId ? useOasisStore.getState().behaviors[objectId]?.expressions : undefined
-      if (exprOverrides && Object.keys(exprOverrides).length > 0) {
-        // Apply all expression overrides from the Joystick panel
+      if (lipState && (lipState.aa > 0.01 || lipState.oh > 0.01 || lipState.ee > 0.01)) {
+        // Lip sync producing values → drive visemes from FFT analyser
+        expr.setValue('aa', lipState.aa)
+        expr.setValue('ih', lipState.ih)
+        expr.setValue('ou', lipState.ou)
+        expr.setValue('ee', lipState.ee)
+        expr.setValue('oh', lipState.oh)
+        // Still apply emotion overrides from Joystick (happy, angry, etc.)
+        if (exprOverrides) {
+          if (exprOverrides.happy != null) expr.setValue('happy', exprOverrides.happy)
+          if (exprOverrides.angry != null) expr.setValue('angry', exprOverrides.angry)
+          if (exprOverrides.sad != null) expr.setValue('sad', exprOverrides.sad)
+          if (exprOverrides.surprised != null) expr.setValue('surprised', exprOverrides.surprised)
+          if (exprOverrides.relaxed != null) expr.setValue('relaxed', exprOverrides.relaxed)
+        }
+      } else if (exprOverrides && Object.keys(exprOverrides).length > 0) {
+        // No lip sync → Joystick expression overrides
         if (exprOverrides.happy != null) expr.setValue('happy', exprOverrides.happy)
         if (exprOverrides.angry != null) expr.setValue('angry', exprOverrides.angry)
         if (exprOverrides.sad != null) expr.setValue('sad', exprOverrides.sad)
         if (exprOverrides.surprised != null) expr.setValue('surprised', exprOverrides.surprised)
         if (exprOverrides.relaxed != null) expr.setValue('relaxed', exprOverrides.relaxed)
-        // Visemes (mouth shapes)
         if (exprOverrides.aa != null) expr.setValue('aa', exprOverrides.aa)
         if (exprOverrides.ih != null) expr.setValue('ih', exprOverrides.ih)
         if (exprOverrides.ou != null) expr.setValue('ou', exprOverrides.ou)

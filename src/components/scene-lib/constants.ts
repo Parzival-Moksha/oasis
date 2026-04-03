@@ -11,6 +11,7 @@ import type { OasisSettings, AssetDefinition } from './types'
 
 export const defaultSettings: OasisSettings = {
   bloomEnabled: true,
+  bloomIntensity: 0.4,
   vignetteEnabled: true,
   chromaticEnabled: false,
   showOrbitTarget: true,      // Show orbit pivot sphere

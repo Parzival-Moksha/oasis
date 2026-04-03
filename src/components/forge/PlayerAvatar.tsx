@@ -22,6 +22,7 @@ import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
 import { useInputManager } from '../../lib/input-manager'
 import { AnimationController } from '../../lib/animation-state-machine'
 import { useAudioManager } from '../../lib/audio-manager'
+import { sprintRef } from '../CameraController'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -43,6 +44,15 @@ const CAMERA_DISTANCE = 5
 const CAMERA_HEIGHT_OFFSET = 1.5 // Look at chest height
 const MIN_ELEVATION = -1.2 // Near ground level
 const MAX_ELEVATION = 1.5  // Almost directly above
+
+// TPS speed tiers: walk (space) → run (default) → sprint (shift)
+// Hardcoded — independent of noclip settings.moveSpeed
+const TPS_BASE_SPEED = 3.0      // Default WASD run speed (bumped 25%)
+const TPS_SPRINT_MULT = 4       // Shift: 4x faster (12.0)
+const TPS_WALK_MULT = 0.25      // Space: 4x slower (0.75)
+
+// Random dance clips for C key
+const DANCE_CLIPS = ['breakdance', 'hip-hop', 'capoeira', 'moonwalk', 'shuffling', 'thriller', 'twist', 'twirl']
 
 // ═══════════════════════════════════════════════════════════════════════════
 // THE COMPONENT
@@ -144,8 +154,11 @@ export function PlayerAvatar({
     if (!vrm) return
     const controller = new AnimationController(vrm, {
       crossfadeDuration: 0.3,
-      walkSpeedThreshold: 0.5,
-      runSpeedThreshold: 3.0,
+      walkSpeedThreshold: 0.1,                          // below 0.1 = idle
+      runSpeedThreshold: TPS_BASE_SPEED * 0.4,          // ~1.2 = walk→run
+      sprintSpeedThreshold: TPS_BASE_SPEED * 2.5,       // ~7.5 = run→sprint
+      runTimeScale: 0.7,                                // slow run animation for foot sync
+      sprintTimeScale: 1.6,                             // fast sprint animation for foot sync
     })
     animControllerRef.current = controller
     return () => { controller.dispose(); animControllerRef.current = null }
@@ -246,9 +259,24 @@ export function PlayerAvatar({
     }
 
     // ── Third-person movement + camera ───────────────────────────
+    // Zero velocity when not in TPS (prevents stale run animation on view switch)
+    if (controlMode !== 'third-person') {
+      velocityRef.current.set(0, 0, 0)
+      isMovingRef.current = false
+    }
+
     if (controlMode === 'third-person') {
       const keys = getKeys() as Record<string, boolean>
-      const { forward, backward, left, right } = keys
+      const { forward, backward, left, right, sprint, slow } = keys
+
+      // Speed modifier: shift=sprint (4x), space=walk (0.25x), default=run
+      const speedMult = sprint ? TPS_SPRINT_MULT : slow ? TPS_WALK_MULT : 1
+      const currentSpeed = TPS_BASE_SPEED * speedMult
+
+      // Sprint VFX — same speed lines + chromatic aberration as noclip
+      const targetIntensity = sprint ? (TPS_SPRINT_MULT - 1) / 3 : 0
+      sprintRef.current.intensity += (targetIntensity - sprintRef.current.intensity) * (1 - Math.exp(-5 * delta))
+      sprintRef.current.multiplier = speedMult
 
       // Camera forward direction (projected to XZ plane)
       const az = cameraAzimuth.current
@@ -265,7 +293,7 @@ export function PlayerAvatar({
       const wantsToMove = moveDir.lengthSq() > 0.001
       if (wantsToMove) {
         moveDir.normalize()
-        const targetVelocity = _tempVec.current.copy(moveDir).multiplyScalar(moveSpeed)
+        const targetVelocity = _tempVec.current.copy(moveDir).multiplyScalar(currentSpeed)
         velocityRef.current.lerp(targetVelocity, 1 - Math.exp(-8 * delta))
         isMovingRef.current = true
 
@@ -298,6 +326,24 @@ export function PlayerAvatar({
 
       state.camera.position.copy(positionRef.current).add(offset)
       state.camera.lookAt(lookTarget)
+
+      // ── Sprint VFX: FOV ramp + camera shake (same feel as noclip) ──
+      const si = Math.max(0, sprintRef.current.intensity)
+      const cam = state.camera as THREE.PerspectiveCamera
+      if (cam.isPerspectiveCamera) {
+        const baseFov = 60 // TODO: read from settings
+        const targetFov = baseFov + si * 15  // sprint widens FOV
+        cam.fov += (targetFov - cam.fov) * (1 - Math.exp(-3 * delta))
+        cam.updateProjectionMatrix()
+
+        // Camera shake during sprint
+        if (si > 0.05) {
+          const t = state.clock.elapsedTime
+          const shakeAmt = si * 0.018
+          cam.position.x += Math.sin(t * 23.1) * Math.sin(t * 17.3) * shakeAmt
+          cam.position.y += Math.sin(t * 19.7) * Math.cos(t * 13.1) * shakeAmt * 0.5
+        }
+      }
     }
 
     // ── Sync group transform to position ref ─────────────────────
@@ -309,11 +355,22 @@ export function PlayerAvatar({
       const speed = velocityRef.current.length()
       animControllerRef.current.updateFromVelocity(speed)
 
-      // Footstep sounds — play at intervals when walking/running
+      // ── C key = random dance ──
+      if (controlMode === 'third-person') {
+        const { dance } = getKeys() as Record<string, boolean>
+        if (dance && animControllerRef.current.state !== 'custom') {
+          const randomDance = DANCE_CLIPS[Math.floor(Math.random() * DANCE_CLIPS.length)]
+          animControllerRef.current.preloadClip(randomDance).then(ok => {
+            if (ok) animControllerRef.current?.transitionTo('custom', randomDance)
+          })
+        }
+      }
+
+      // Footstep sounds — play at intervals when walking/running/sprinting
       const animState = animControllerRef.current.state
-      if (animState === 'walk' || animState === 'run') {
+      if (animState === 'walk' || animState === 'run' || animState === 'sprint') {
         footstepTimerRef.current += delta
-        const interval = animState === 'run' ? 0.3 : 0.5
+        const interval = animState === 'sprint' ? 0.25 : animState === 'run' ? 0.45 : 0.7
         if (footstepTimerRef.current >= interval) {
           footstepTimerRef.current = 0
           useAudioManager.getState().playFootstep()

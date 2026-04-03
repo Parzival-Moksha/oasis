@@ -10,6 +10,7 @@
 export interface OasisSettings {
   // Post-processing
   bloomEnabled: boolean
+  bloomIntensity: number
   vignetteEnabled: boolean
   chromaticEnabled: boolean
   // Visual

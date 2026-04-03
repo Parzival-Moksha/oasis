@@ -47,6 +47,7 @@ export enum FPSControls {
   down = 'down',
   sprint = 'sprint',
   slow = 'slow',
+  dance = 'dance',
 }
 
 export const FPS_KEYBOARD_MAP = [
@@ -58,6 +59,7 @@ export const FPS_KEYBOARD_MAP = [
   { name: FPSControls.down, keys: ['KeyE'] },
   { name: FPSControls.sprint, keys: ['ShiftLeft', 'ShiftRight'] },
   { name: FPSControls.slow, keys: ['Space'] },
+  { name: FPSControls.dance, keys: ['KeyC'] },
 ]
 
 // ═══════════════════════════════════════════════════════════════════════════

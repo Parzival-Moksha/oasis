@@ -227,6 +227,25 @@ function SettingsContent() {
             </label>
           ))}
 
+          {/* Bloom intensity slider (only when bloom is enabled) */}
+          {category === 'Post-FX' && settings.bloomEnabled && (
+            <div className="px-1 py-1.5">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-400">Bloom Intensity</span>
+                <span className="text-[10px] text-purple-400 font-mono">{(settings.bloomIntensity ?? 0.4).toFixed(2)}</span>
+              </div>
+              <input
+                type="range"
+                min="0.05"
+                max="2.0"
+                step="0.05"
+                value={settings.bloomIntensity ?? 0.4}
+                onChange={(e) => updateSetting('bloomIntensity', parseFloat(e.target.value))}
+                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+              />
+            </div>
+          )}
+
           {/* UI-specific settings */}
           {category === 'UI' && (
             <>
@@ -644,7 +663,7 @@ function PostProcessing() {
   return (
     <EffectComposer>
       <Bloom
-        intensity={settings.bloomEnabled ? 0.4 : 0}
+        intensity={settings.bloomEnabled ? (settings.bloomIntensity ?? 0.4) : 0}
         luminanceThreshold={0.85}
         luminanceSmoothing={0.4}
       />

@@ -17,24 +17,30 @@
 
 import * as THREE from 'three'
 import type { VRM } from '@pixiv/three-vrm'
-import { loadAnimationClip, retargetClipForVRM } from './forge/animation-library'
+import { loadAnimationClip, retargetClipForVRM, retargetUALClipForVRM, isUALAnimation } from './forge/animation-library'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════
 
-export type AnimState = 'idle' | 'walk' | 'run' | 'custom'
+export type AnimState = 'idle' | 'walk' | 'run' | 'sprint' | 'custom'
 
 export interface AnimationControllerConfig {
   crossfadeDuration?: number  // seconds, default 0.3
   walkSpeedThreshold?: number // velocity magnitude below which we idle
   runSpeedThreshold?: number  // velocity magnitude above which we run
+  sprintSpeedThreshold?: number // velocity above which we sprint
+  runTimeScale?: number       // animation playback speed for run (default 1)
+  sprintTimeScale?: number    // animation playback speed for sprint (default 1)
 }
 
 const DEFAULT_CONFIG: Required<AnimationControllerConfig> = {
   crossfadeDuration: 0.3,
   walkSpeedThreshold: 0.5,
   runSpeedThreshold: 3.0,
+  sprintSpeedThreshold: 7.0,
+  runTimeScale: 1,
+  sprintTimeScale: 1,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -45,6 +51,7 @@ export class AnimationController {
   private mixer: THREE.AnimationMixer
   private vrm: VRM
   private config: Required<AnimationControllerConfig>
+  private vrmCacheKey: string  // unique per VRM skeleton (prevents cross-avatar cache poisoning)
 
   // Clip cache (loaded + retargeted)
   private clips: Map<string, THREE.AnimationClip> = new Map()
@@ -65,10 +72,15 @@ export class AnimationController {
     this.mixer = new THREE.AnimationMixer(vrm.scene)
     this.config = { ...DEFAULT_CONFIG, ...config }
 
+    // VRM-specific cache key from hips bone — prevents T-pose on avatar switch
+    const hipsNode = vrm.humanoid.getNormalizedBoneNode('hips' as any)
+    this.vrmCacheKey = hipsNode?.name || `vrm-${Date.now()}`
+
     // Pre-load locomotion clips
     this.loadClip('idle')
     this.loadClip('walk')
     this.loadClip('run')
+    this.loadClip('sprint')
   }
 
   // ── CLIP LOADING ─────────────────────────────────────────────────────
@@ -87,7 +99,10 @@ export class AnimationController {
         return null
       }
 
-      const retargeted = retargetClipForVRM(rawClip, this.vrm, `anim-${animId}`)
+      // UAL clips use UE skeleton → need UE→VRM retargeting. Mixamo clips use Mixamo→VRM.
+      const retargeted = isUALAnimation(animId)
+        ? retargetUALClipForVRM(rawClip, this.vrm, `${this.vrmCacheKey}__${animId}`)
+        : retargetClipForVRM(rawClip, this.vrm, `${this.vrmCacheKey}__${animId}`)
       if (!retargeted || retargeted.tracks.length === 0) {
         console.warn(`[AnimController] Retarget produced empty clip: ${animId}`)
         this.loadingClips.delete(animId)
@@ -168,8 +183,11 @@ export class AnimationController {
     // Crossfade
     const newAction = this.mixer.clipAction(clip)
     newAction.reset()
-    newAction.setLoop(state === 'custom' ? THREE.LoopOnce : THREE.LoopRepeat, Infinity)
-    newAction.clampWhenFinished = state === 'custom'
+    newAction.setLoop(THREE.LoopRepeat, Infinity)
+    newAction.clampWhenFinished = false
+    // Adjust animation playback speed per state for foot sync
+    newAction.timeScale = state === 'run' ? this.config.runTimeScale
+      : state === 'sprint' ? this.config.sprintTimeScale : 1
     newAction.fadeIn(this.config.crossfadeDuration)
     newAction.play()
 
@@ -186,18 +204,24 @@ export class AnimationController {
   /** Call every frame with the character's velocity magnitude.
    *  Automatically transitions between idle/walk/run. */
   updateFromVelocity(speed: number): void {
-    if (this.currentState === 'custom') return // don't override custom animations
+    // Movement cancels custom animations (e.g., dance interrupted by WASD)
+    if (this.currentState === 'custom' && speed < this.config.walkSpeedThreshold) return
 
     let targetState: AnimState
     if (speed < this.config.walkSpeedThreshold) {
       targetState = 'idle'
     } else if (speed < this.config.runSpeedThreshold) {
       targetState = 'walk'
-    } else {
+    } else if (speed < this.config.sprintSpeedThreshold) {
       targetState = 'run'
+    } else {
+      targetState = 'sprint'
     }
 
-    // Fallback chain: if walk clip not loaded, use idle or run
+    // Fallback chain: sprint→run→walk→idle
+    if (targetState === 'sprint' && !this.clips.has('sprint')) {
+      targetState = this.clips.has('run') ? 'run' : this.clips.has('walk') ? 'walk' : 'idle'
+    }
     if (targetState === 'walk' && !this.clips.has('walk')) {
       targetState = speed > 1.5 ? (this.clips.has('run') ? 'run' : 'idle') : 'idle'
     }

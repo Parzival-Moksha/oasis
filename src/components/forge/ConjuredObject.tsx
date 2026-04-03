@@ -299,12 +299,13 @@ export function ConjuredObject({ asset }: ConjuredObjectProps) {
     // Resolve clip: library animation (lib: prefix) or baked-in
     let clip: THREE.AnimationClip | undefined
     if (isLibraryAnimation(clipName)) {
-      // Check explicit external clip first, then pre-loaded library walk
-      clip = externalClip || undefined
-      if (!clip && clipName === libWalkClip?.name) {
+      // Verify externalClip matches the requested animation (prevents stale clip on switch)
+      if (externalClip && externalClip.name === clipName) {
+        clip = externalClip
+      } else if (clipName === libWalkClip?.name) {
         clip = libWalkClip
       }
-      if (!clip) return  // Still loading
+      if (!clip) return  // Still loading the correct clip
       // ░▒▓ RETARGET — remap bone names to match this character's skeleton ▓▒░
       // Meshy uses "Hips", Tripo uses "mixamorigHips", library clips use "mixamorigHips"
       if (boneNames.length > 0 && skeletonKey) {
