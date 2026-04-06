@@ -136,6 +136,8 @@ for raw_line in iter(proc.stdout.readline, ''):
   if stripped.startswith('session_id:'):
     emit({'type': 'session', 'sessionId': stripped.split(':', 1)[1].strip()})
     continue
+  if stripped.lower().startswith('finish_reason'):
+    continue
   if stripped and ord(stripped[0]) in (9581, 9584, 9474):
     continue
   if stripped.startswith('â•­') or stripped.startswith('â•°') or stripped.startswith('â”‚'):

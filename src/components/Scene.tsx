@@ -56,6 +56,7 @@ import { useInputManager, getInputCapabilities, isPointerLocked } from '@/lib/in
 import { CameraController as CameraControllerComponent, sprintRef, FPSControls, FPS_KEYBOARD_MAP } from './CameraController'
 import { useAudioManager, SOUND_OPTIONS, type SoundEvent } from '@/lib/audio-manager'
 import { installTestHarness } from '@/lib/test-harness'
+import { useWorldEvents } from '@/hooks/useWorldEvents'
 import { AgentWindowPortals } from './forge/AgentWindowPortals'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -903,6 +904,7 @@ export default function Scene() {
   // Local mode: always admin, never anonymous. Auth is optional.
   const isAdmin = true
   const [isDragging, setIsDragging] = useState(false)
+  useWorldEvents()
 
   // ─═̷─═̷─⚔️─═̷─═̷─{ QUEST TRACKER — auto-detect onboarding actions }─═̷─═̷─⚔️─═̷─═̷─
   useQuestTracker()

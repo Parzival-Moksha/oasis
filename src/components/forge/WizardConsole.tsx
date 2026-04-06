@@ -1087,6 +1087,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
   const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
   const removeAgentWindow = useOasisStore(s => s.removeAgentWindow)
   const focusAgentWindow = useOasisStore(s => s.focusAgentWindow)
+  const focusedAgentWindowId = useOasisStore(s => s.focusedAgentWindowId)
   const generatedImages = useOasisStore(s => s.generatedImages)
   const removeGeneratedImage = useOasisStore(s => s.removeGeneratedImage)
   const addCustomGroundPreset = useOasisStore(s => s.addCustomGroundPreset)
@@ -3396,6 +3397,7 @@ function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject
   const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
   const removeAgentWindow = useOasisStore(s => s.removeAgentWindow)
   const focusAgentWindow = useOasisStore(s => s.focusAgentWindow)
+  const focusedAgentWindowId = useOasisStore(s => s.focusedAgentWindowId)
 
   return (
     <>
@@ -3438,6 +3440,7 @@ function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject
         <div className="space-y-1.5">
           {placedAgentWindows.map(win => {
             const isSelected = selectedObjectId === win.id
+            const isFocused = focusedAgentWindowId === win.id
             const agent = AGENT_TYPES.find(a => a.type === win.agentType) || AGENT_TYPES[0]
             const pos = transforms[win.id]?.position || win.position
             return (
@@ -3465,12 +3468,16 @@ function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject
                   </div>
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={(e) => { e.stopPropagation(); selectObject(win.id); focusAgentWindow(win.id) }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        selectObject(win.id)
+                        focusAgentWindow(isFocused ? null : win.id)
+                      }}
                       className="text-[9px] px-1.5 py-0.5 rounded font-mono border transition-colors hover:bg-purple-500/20"
                       style={{ color: agent.color, borderColor: `${agent.color}33` }}
                       title="Focus — fly camera to this window"
                     >
-                      focus
+                      {isFocused ? 'unfollow' : 'follow'}
                     </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); removeAgentWindow(win.id) }}

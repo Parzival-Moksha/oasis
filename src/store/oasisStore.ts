@@ -17,7 +17,6 @@ import {
 } from '../lib/forge/world-persistence'
 import { addToSceneLibrary, getSceneLibrary, removeFromSceneLibrary } from '../lib/forge/scene-library'
 import { awardXp } from '../hooks/useXp'
-import { getBrowserSupabase } from '../lib/supabase'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 
 // ─═̷─═̷─🏗️ SSR-SAFE LOCALSTORAGE ─═̷─═̷─🏗️
@@ -936,46 +935,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
       console.log('[World] Loaded:', world.savedAt, '| objects:', loadedObjCount, '| preset:', world.groundPresetId || 'none', '| tiles:', Object.keys(world.groundTiles || {}).length, '| catalog:', world.catalogPlacements?.length || 0, '| lights:', lights.length, '| sky:', world.skyBackgroundId || 'night007', '| agents:', (world.agentWindows || []).length)
     })
 
-    // ░▒▓ REALTIME — subscribe to Merlin/remote updates for the active world ▓▒░
-    // Read-only subscription: only mutates local Zustand state, never writes to DB.
-    // _isReceivingRemoteUpdate flag prevents the Zustand subscriber from triggering
-    // a save loop when we apply the incoming payload.
+    // World mutation fanout now comes from the shared SSE world-events bus.
+    // Scene.tsx mounts useWorldEvents(), so the store no longer opens its own
+    // Supabase channel here.
     if (isBrowser) {
-      const worldId = getActiveWorldId()
-      // Tear down any existing channel first (world switches, HMR, etc.)
       get()._realtimeChannel?.unsubscribe()
-      const channel = getBrowserSupabase()
-        .channel(`world-${worldId}`)
-        .on(
-          'postgres_changes',
-          { event: 'UPDATE', schema: 'public', table: 'worlds', filter: `id=eq.${worldId}` },
-          (payload) => {
-            if (get()._isReceivingRemoteUpdate) return // already applying
-            const newData = (payload.new as Record<string, unknown>).data as import('../lib/forge/world-persistence').WorldState
-            if (!newData) return
-            console.log('[Realtime] Remote world update received — applying Merlin/admin patch')
-            const defaultLights = DEFAULT_WORLD_LIGHTS.map((l, i) => ({ ...l, id: `light-${l.type}-default-${i}`, visible: true } as WorldLight))
-            const newCatalog = newData.catalogPlacements || []
-            const newCrafted = newData.craftedScenes || []
-            const newConjured = newData.conjuredAssetIds || []
-            set({
-              _isReceivingRemoteUpdate: true,
-              placedCatalogAssets: newCatalog,
-              craftedScenes: newCrafted,
-              worldLights: newData.lights ?? defaultLights,
-              worldSkyBackground: newData.skyBackgroundId || 'night007',
-              groundPresetId: newData.groundPresetId || 'none',
-              groundTiles: newData.groundTiles || {},
-              transforms: newData.transforms || {},
-              behaviors: newData.behaviors || {},
-              // Update loaded count so Merlin-placed objects don't trip the nuke protection
-              _loadedObjectCount: newCatalog.length + newCrafted.length + newConjured.length,
-            })
-            set({ _isReceivingRemoteUpdate: false })
-          }
-        )
-        .subscribe()
-      set({ _realtimeChannel: channel })
+      set({ _realtimeChannel: null })
     }
   },
   saveWorldState: () => {
@@ -1070,39 +1035,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
       persist('oasis-realm', 'forge')
       console.log(`[World] Switched to: ${worldId}`, world ? `(terrain: ${!!world.terrain}, scenes: ${world.craftedScenes?.length || 0}, assets: ${world.conjuredAssetIds?.length || 0}, catalog: ${world.catalogPlacements?.length || 0}, sky: ${world.skyBackgroundId || 'night007'})` : '(empty)')
 
-      // ░▒▓ REALTIME — subscribe to new world channel ▓▒░
+      // Shared SSE world-events fanout handles remote tool updates.
       if (isBrowser) {
-        const channel = getBrowserSupabase()
-          .channel(`world-${worldId}`)
-          .on(
-            'postgres_changes',
-            { event: 'UPDATE', schema: 'public', table: 'worlds', filter: `id=eq.${worldId}` },
-            (payload) => {
-              if (get()._isReceivingRemoteUpdate) return
-              const newData = (payload.new as Record<string, unknown>).data as import('../lib/forge/world-persistence').WorldState
-              if (!newData) return
-              console.log('[Realtime] Remote world update — applying after world switch')
-              const defaultLights = DEFAULT_WORLD_LIGHTS.map((l, i) => ({ ...l, id: `light-${l.type}-default-${i}`, visible: true } as WorldLight))
-              const newCatalog = newData.catalogPlacements || []
-              const newCrafted = newData.craftedScenes || []
-              const newConjured = newData.conjuredAssetIds || []
-              set({
-                _isReceivingRemoteUpdate: true,
-                placedCatalogAssets: newCatalog,
-                craftedScenes: newCrafted,
-                worldLights: newData.lights ?? defaultLights,
-                worldSkyBackground: newData.skyBackgroundId || 'night007',
-                groundPresetId: newData.groundPresetId || 'none',
-                groundTiles: newData.groundTiles || {},
-                transforms: newData.transforms || {},
-                behaviors: newData.behaviors || {},
-                _loadedObjectCount: newCatalog.length + newCrafted.length + newConjured.length,
-              })
-              set({ _isReceivingRemoteUpdate: false })
-            }
-          )
-          .subscribe()
-        set({ _realtimeChannel: channel })
+        set({ _realtimeChannel: null })
       }
     })
   },

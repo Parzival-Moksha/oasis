@@ -220,9 +220,18 @@ function useAgentFocusUpdate() {
 
         let dist: number
         if (win) {
-          // Agent window: 16×12 world units, D ≈ 14 * scale
+          // Frame the agent window a bit tighter and leave some breathing room
+          // for a companion avatar to live on the left in follow mode.
+          const worldWidth = (win.width || 800) * 0.02 * (win.scale || 1)
+          const worldHeight = (win.height || 600) * 0.02 * (win.scale || 1)
           const groupScale = typeof t?.scale === 'number' ? t.scale : Array.isArray(t?.scale) ? t.scale[0] : win.scale
-          dist = 14 * groupScale
+          const scaledWidth = worldWidth * groupScale
+          const scaledHeight = worldHeight * groupScale
+          const fovRad = (camera.fov * Math.PI) / 180
+          const hFov = 2 * Math.atan(Math.tan(fovRad / 2) * viewport.aspect)
+          const distV = (scaledHeight / 2) / Math.tan(fovRad / 2) / 0.82
+          const distH = (scaledWidth / 2) / Math.tan(hFov / 2) / 0.72
+          dist = Math.max(distV, distH)
         } else {
           // Image/video: placement.scale = base height in world units.
           // Transform override t?.scale = group scale multiplier from SelectableWrapper.
@@ -248,6 +257,12 @@ function useAgentFocusUpdate() {
           const baseScale = img.scale || 1
           const groupScale = typeof t?.scale === 'number' ? t.scale : Array.isArray(t?.scale) ? t.scale[1] : 1
           windowCenter.y += (baseScale * groupScale) / 2
+        }
+        if (win) {
+          const worldWidth = (win.width || 800) * 0.02 * (win.scale || 1)
+          const groupScale = typeof t?.scale === 'number' ? t.scale : Array.isArray(t?.scale) ? t.scale[0] : win.scale
+          const windowRight = new THREE.Vector3(1, 0, 0).applyEuler(new THREE.Euler(rot[0], rot[1], rot[2]))
+          windowCenter.add(windowRight.multiplyScalar(worldWidth * groupScale * 0.1))
         }
         const cameraGoal = windowCenter.clone().add(windowNormal.clone().multiplyScalar(dist))
 
@@ -444,13 +459,8 @@ export function CameraController() {
         break
 
       case 'third-person':
-        // PlayerAvatar owns the camera — we yield
+        // PlayerAvatar owns the full TPS camera, including sprint FOV
         if (orbitControlsRef.current) orbitControlsRef.current.enabled = false
-        // Apply settings FOV
-        if (Math.abs(camera.fov - settings.fov) > 0.1) {
-          camera.fov = settings.fov
-          camera.updateProjectionMatrix()
-        }
         break
 
       case 'ui-focused':

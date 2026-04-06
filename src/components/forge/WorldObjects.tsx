@@ -1419,9 +1419,10 @@ export function TransformKeyHandler() {
         return
       }
 
-      // ░▒▓ UI LAYER GUARD — when panels are open, only Escape + Delete/Backspace pass through ▓▒░
-      // Delete/Backspace need to reach the delete handler (isTyping guard below catches text inputs)
-      if (useInputManager.getState().hasActiveUILayer() && !['Escape', 'Delete', 'Backspace'].includes(e.key)) return
+      // ░▒▓ UI LAYER GUARD — when panels are open, keep core world navigation alive ▓▒░
+      // Enter is needed for window/image zoomon, PgUp/PgDown for slides, and
+      // Delete/Backspace still routes through the typing guard below.
+      if (useInputManager.getState().hasActiveUILayer() && !['Escape', 'Delete', 'Backspace', 'Enter', 'PageDown', 'PageUp'].includes(e.key)) return
 
       // ░▒▓ ALL KEYS — check if typing in form element ▓▒░
       const NON_TEXT_INPUTS = new Set(['range', 'color', 'checkbox', 'radio', 'file', 'button', 'image', 'reset', 'submit'])

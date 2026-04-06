@@ -15,10 +15,10 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextRequest, NextResponse } from 'next/server'
-import { saveWorld } from '@/lib/forge/world-server'
 import type { WorldState } from '@/lib/forge/world-persistence'
 import type { CatalogPlacement, CraftedScene, WorldLight } from '@/lib/conjure/types'
 import { ASSET_CATALOG } from '@/components/scene-lib/constants'
+import { executeMerlinTool } from '@/lib/mcp/merlin-tool-bridge'
 
 // ─═̷─═̷─🔒 ADMIN GUARD ─═̷─═̷─🔒
 // Local mode: always admin. No auth needed.
@@ -463,7 +463,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'World not found' }, { status: 404 })
   }
 
-  const userId = worldRow.userId
   const existingData = (worldRow.data ? JSON.parse(worldRow.data) : {}) as Partial<WorldState>
 
   // Mutable world state that tools modify in place
@@ -512,20 +511,8 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Save state to Prisma/SQLite — browser polls for updates
+  // Shared Oasis tools now own persistence + world-event fanout.
   async function persist() {
-    await saveWorld(worldId, userId, {
-      terrain: state.terrain,
-      groundPresetId: state.groundPresetId,
-      groundTiles: state.groundTiles,
-      craftedScenes: state.craftedScenes,
-      conjuredAssetIds: state.conjuredAssetIds,
-      catalogPlacements: state.catalogPlacements,
-      transforms: state.transforms,
-      behaviors: state.behaviors,
-      lights: state.lights,
-      skyBackgroundId: state.skyBackgroundId,
-    })
     send({ type: 'save', savedAt: new Date().toISOString() })
   }
 
@@ -627,7 +614,7 @@ export async function POST(request: NextRequest) {
 
           send({ type: 'tool', name: toolName, args: toolArgs })
 
-          const result = execTool(toolName, toolArgs, state)
+          const result = await executeMerlinTool(toolName, toolArgs, worldId)
           send({ type: 'result', name: toolName, ok: result.ok, message: result.message })
 
           // Save to Prisma/SQLite after each successful tool call

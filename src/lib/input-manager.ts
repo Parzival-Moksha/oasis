@@ -194,6 +194,7 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     const current = get().inputState
     const isBaseCamera = current === 'orbit' || current === 'noclip' || current === 'third-person'
     const isTemporary = current === 'placement' || current === 'paint'
+    const isFocusedUi = current === 'ui-focused' || current === 'agent-focus'
 
     if (isBaseCamera) {
       // Direct switch between base camera modes
@@ -214,8 +215,14 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
         document.exitPointerLock()
       }
       set({ _previousCameraState: mode })
+    } else if (isFocusedUi) {
+      // Panels and focus mode should still respect camera-mode changes so
+      // returning from UI/focus lands in the newly chosen base mode.
+      if (mode === 'orbit' && get().pointerLocked) {
+        document.exitPointerLock()
+      }
+      set({ _previousCameraState: mode })
     }
-    // agent-focus / ui-focused: ignore — don't disrupt those modes
   },
 
   // ── UI LAYER STACK ────────────────────────────────────────────

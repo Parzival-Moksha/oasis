@@ -250,11 +250,18 @@ export async function POST(request: NextRequest) {
       let totalInputTokens = 0
       let totalOutputTokens = 0
 
-      // Track what we've already sent from assistant messages
-      // Each assistant event is a COMPLETE snapshot — we diff against previous
-      let lastSeenContentLength = 0
-      let lastSeenTextContent = ''
-      let lastTextBlockIndex = -1
+      // Track what we've already sent from assistant messages.
+      // Each assistant event is a complete snapshot, so diffing the whole block
+      // list is more reliable than tracking one "last text block".
+      type AssistantSnapshotBlock = {
+        type: string
+        text?: string
+        thinking?: string
+        name?: string
+        id?: string
+        input?: Record<string, unknown>
+      }
+      let lastAssistantSnapshot: AssistantSnapshotBlock[] = []
       const emittedToolInputs = new Set<string>() // track which tool_use IDs we've emitted with populated input
       // Track tool_use_id → tool name for linking results
       const toolUseIdToName = new Map<string, string>()
@@ -300,93 +307,62 @@ export async function POST(request: NextRequest) {
                 signature?: string
               }>
 
-              // ── DIFF LOGIC: detect new + grown blocks in the snapshot ──
-              // Claude Code sends COMPLETE snapshots. We track what we've seen
-              // and emit only deltas. Three cases:
-              // 1. New blocks (index >= lastSeenContentLength) → emit fully
-              // 2. Last existing block grew (text/thinking streaming) → emit delta
-              // 3. Text block at any position grew (text between tool calls) → emit delta
-
-              // First: check ALL existing blocks for growth (fixes missing text + late tool input)
-              for (let i = 0; i < Math.min(lastSeenContentLength, content.length); i++) {
+              for (let i = 0; i < content.length; i++) {
                 const block = content[i]
-                if (block.type === 'text' && block.text && block.text.length > lastSeenTextContent.length && i === lastTextBlockIndex) {
-                  const delta = block.text.slice(lastSeenTextContent.length)
-                  if (delta) sendEvent('text', { content: delta })
-                  lastSeenTextContent = block.text
-                }
+                const prevBlock = lastAssistantSnapshot[i]
+                const isNewBlock = !prevBlock || prevBlock.type !== block.type || (block.id && prevBlock.id !== block.id)
+
                 if (block.type === 'thinking' && block.thinking) {
-                  sendEvent('thinking', { content: block.thinking })
-                }
-                // Re-emit tool_use if input was empty before but now populated
-                if (block.type === 'tool_use' && block.name && block.input && Object.keys(block.input).length > 0) {
-                  const toolId = block.id || ''
-                  if (toolId && !emittedToolInputs.has(toolId)) {
-                    emittedToolInputs.add(toolId)
-                    const icon = TOOL_ICONS[block.name] || '🔧'
-                    sendEvent('tool', {
-                      name: block.name,
-                      icon,
-                      id: toolId,
-                      input: block.input,
-                      display: formatToolMsg(block.name, block.input),
-                    })
-                    // Stash input for media tools so we can emit media events on result
-                    if (MEDIA_TOOL_NAMES.has(block.name)) {
-                      toolUseIdToInput.set(toolId, block.input)
-                    }
+                  if (isNewBlock || prevBlock?.thinking !== block.thinking) {
+                    sendEvent('thinking', { content: block.thinking })
                   }
-                }
-              }
-
-              // Then: process genuinely NEW blocks
-              for (let i = lastSeenContentLength; i < content.length; i++) {
-                const block = content[i]
-
-                if (block.type === 'thinking' && block.thinking) {
-                  sendEvent('thinking', { content: block.thinking })
-                }
-                else if (block.type === 'tool_use' && block.name) {
+                } else if (block.type === 'tool_use' && block.name) {
                   const toolName = block.name
                   const toolId = block.id || `tool-${eventCounter}`
                   const toolInput = block.input || {}
                   const icon = TOOL_ICONS[toolName] || '🔧'
                   const display = formatToolMsg(toolName, toolInput)
                   toolUseIdToName.set(toolId, toolName)
-                  if (Object.keys(toolInput).length > 0) {
+                  const gainedInput = Object.keys(toolInput).length > 0 && !emittedToolInputs.has(toolId)
+                  if (gainedInput) {
                     emittedToolInputs.add(toolId)
-                    // Stash input for media tools so we can emit media events on result
                     if (MEDIA_TOOL_NAMES.has(toolName)) {
                       toolUseIdToInput.set(toolId, toolInput)
                     }
                   }
-                  sendEvent('tool', {
-                    name: toolName,
-                    icon,
-                    id: toolId,
-                    input: toolInput,
-                    display,
-                  })
-                }
-                else if (block.type === 'text' && block.text) {
-                  sendEvent('text', { content: block.text })
-                  lastSeenTextContent = block.text
-                  lastTextBlockIndex = i
+                  if (isNewBlock || gainedInput) {
+                    sendEvent('tool', {
+                      name: toolName,
+                      icon,
+                      id: toolId,
+                      input: toolInput,
+                      display,
+                    })
+                  }
+                } else if (block.type === 'text' && block.text) {
+                  const previousText = prevBlock?.type === 'text' ? (prevBlock.text || '') : ''
+                  if (isNewBlock || !previousText) {
+                    sendEvent('text', { content: block.text })
+                  } else if (block.text !== previousText) {
+                    if (block.text.startsWith(previousText)) {
+                      const delta = block.text.slice(previousText.length)
+                      if (delta) sendEvent('text', { content: delta })
+                    } else {
+                      sendEvent('text', { content: `\n${block.text}` })
+                    }
+                  }
                 }
               }
 
-              // Track the index of the last text block we've seen (for delta detection)
-              for (let i = content.length - 1; i >= 0; i--) {
-                if (content[i].type === 'text') {
-                  lastTextBlockIndex = i
-                  if (content[i].text) lastSeenTextContent = content[i].text!
-                  break
-                }
-              }
+              lastAssistantSnapshot = content.map(block => ({
+                type: block.type,
+                text: block.text,
+                thinking: block.thinking,
+                name: block.name,
+                id: block.id,
+                input: block.input,
+              }))
 
-              lastSeenContentLength = content.length
-
-              // Extract token usage from assistant messages for live progress
               if (msg.usage) {
                 totalInputTokens = Number(msg.usage.input_tokens) || totalInputTokens
                 totalOutputTokens = Number(msg.usage.output_tokens) || totalOutputTokens
@@ -396,11 +372,12 @@ export async function POST(request: NextRequest) {
                 })
               }
 
-              // Capture session_id from assistant event too
               if (raw.session_id && !capturedSessionId) {
                 capturedSessionId = raw.session_id
                 sendEvent('session', { sessionId: capturedSessionId })
               }
+
+              continue
             }
 
             // ── USER messages (tool results) ───────────
@@ -523,9 +500,7 @@ export async function POST(request: NextRequest) {
               }
 
               // Reset content tracking — new assistant response will follow
-              lastSeenContentLength = 0
-              lastSeenTextContent = ''
-              lastTextBlockIndex = -1
+              lastAssistantSnapshot = []
             }
 
             // ── RESULT — final metadata ────────────────

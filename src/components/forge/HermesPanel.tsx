@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom'
 import { useOasisStore } from '@/store/oasisStore'
 import { useInputManager, useUILayer } from '@/lib/input-manager'
 import { CollapsibleBlock, renderMarkdown } from '@/lib/anorak-renderers'
+import { collapseDuplicateHermesMessages, mergeHydratedHermesMessages } from '@/lib/hermes-message-merge'
 import { MediaBubble, type MediaType } from './MediaBubble'
 
 interface PanelSettings {
@@ -105,6 +106,7 @@ const DETAILS_KEY = 'oasis-hermes-details'
 const CHAT_KEY = 'oasis-hermes-chat-history'
 const SESSION_KEY = 'oasis-hermes-session'
 const VOICE_OUTPUT_KEY = 'oasis-hermes-voice-output'
+const NATIVE_SESSION_CACHE_KEY = 'oasis-hermes-native-session-cache'
 const NEW_SESSION_VALUE = '__oasis_new__'
 const CONNECTION_HINT = `HERMES_API_BASE=http://127.0.0.1:8642/v1
 HERMES_API_KEY=your_secret_here
@@ -132,6 +134,69 @@ function readStoredMessages(): ChatMessage[] {
       .slice(-60)
   } catch {
     return []
+  }
+}
+
+function sanitizeCachedMessages(raw: unknown): ChatMessage[] {
+  if (!Array.isArray(raw)) return []
+
+  return raw
+    .filter((entry): entry is ChatMessage => {
+      if (!entry || typeof entry !== 'object') return false
+      const obj = entry as Record<string, unknown>
+      return (
+        (obj.role === 'user' || obj.role === 'assistant') &&
+        typeof obj.id === 'string' &&
+        typeof obj.content === 'string'
+      )
+    })
+    .map((entry: ChatMessage) => ({
+      id: entry.id,
+      role: entry.role,
+      content: entry.content,
+      reasoning: entry.reasoning,
+      tools: Array.isArray(entry.tools) ? entry.tools : undefined,
+      usage: entry.usage,
+      finishReason: entry.finishReason,
+      error: entry.error,
+      timestamp: typeof entry.timestamp === 'number' ? entry.timestamp : Date.now(),
+    }))
+    .slice(-80)
+}
+
+function readNativeSessionCache(sessionId: string): ChatMessage[] {
+  if (typeof window === 'undefined' || !sessionId) return []
+
+  try {
+    const raw = localStorage.getItem(NATIVE_SESSION_CACHE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object') return []
+    const entry = (parsed as Record<string, unknown>)[sessionId]
+    return sanitizeCachedMessages(entry)
+  } catch {
+    return []
+  }
+}
+
+function writeNativeSessionCache(sessionId: string, messages: ChatMessage[]) {
+  if (typeof window === 'undefined' || !sessionId) return
+
+  try {
+    const raw = localStorage.getItem(NATIVE_SESSION_CACHE_KEY)
+    const parsed = raw ? JSON.parse(raw) as Record<string, unknown> : {}
+    const next: Record<string, unknown> = parsed && typeof parsed === 'object' ? parsed : {}
+    next[sessionId] = sanitizeCachedMessages(messages)
+
+    const orderedEntries = Object.entries(next)
+    while (orderedEntries.length > 24) {
+      const [oldestKey] = orderedEntries.shift() || []
+      if (oldestKey) delete next[oldestKey]
+    }
+
+    localStorage.setItem(NATIVE_SESSION_CACHE_KEY, JSON.stringify(next))
+  } catch {
+    // Ignore storage errors.
   }
 }
 
@@ -174,31 +239,62 @@ function formatSessionLabel(session: HermesNativeSessionSummary): string {
   return `${preview} • ${source}`
 }
 
-function toSpeechText(content: string): string {
-  return content
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/https?:\/\/\S+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
+function isHermesControlLine(line: string): boolean {
+  const trimmed = line.trim()
+  if (!trimmed) return false
+  return /^finish_reason[-:=]/i.test(trimmed) || /^session_id:/i.test(trimmed)
+}
+
+function unwrapHermesPathLikeValue(path: string): string {
+  let next = path.trim()
+  const wrappedMatch = next.match(/^(?:Path|PosixPath)\((['"])(.+)\1\)$/)
+  if (wrappedMatch?.[2]) {
+    next = wrappedMatch[2].trim()
+  }
+  next = next.replace(/^['"`]+|['"`]+$/g, '').trim()
+  if (/^file:\/\//i.test(next)) {
+    try {
+      const url = new URL(next)
+      next = decodeURIComponent(url.pathname)
+    } catch {
+      next = next.replace(/^file:\/\//i, '')
+    }
+  }
+  const explicitPathMatch = next.match(/((?:https?:\/\/|file:\/\/|~\/|\/(?:home|tmp)\/)[^\s"'`]+?\.(?:mp3|wav|ogg|oga|opus|m4a|png|jpg|jpeg|gif|webp|mp4|webm|m4v)(?:\?[^\s"'`]+)?)/i)
+  if (explicitPathMatch?.[1]) {
+    return explicitPathMatch[1].trim()
+  }
+  return next.replace(/[)\],.;:!?]+$/g, '').trim()
+}
+
+function normalizeHermesMediaPath(path: string): string {
+  const next = unwrapHermesPathLikeValue(path)
+  if (!next) return ''
+  if (isDirectHermesMediaUrl(next)) return next
+  return next
 }
 
 interface HermesMediaReference {
   path: string
   mediaType: MediaType
-  proxyUrl: string
 }
 
 function detectHermesMediaType(path: string): MediaType | null {
-  if (/\.(?:mp3|wav|ogg)(?:\?|$)/i.test(path)) return 'audio'
-  if (/\.(?:png|jpg|jpeg|gif|webp)(?:\?|$)/i.test(path)) return 'image'
-  if (/\.(?:mp4|webm)(?:\?|$)/i.test(path)) return 'video'
+  const normalized = normalizeHermesMediaPath(path)
+  if (/\.(?:mp3|wav|ogg|oga|opus|m4a)(?:\?|$)/i.test(normalized)) return 'audio'
+  if (/\.(?:png|jpg|jpeg|gif|webp)(?:\?|$)/i.test(normalized)) return 'image'
+  if (/\.(?:mp4|webm|m4v)(?:\?|$)/i.test(normalized)) return 'video'
   return null
 }
 
-function buildHermesMediaProxyUrl(path: string): string {
-  return `/api/hermes/media?path=${encodeURIComponent(path)}`
+function isDirectHermesMediaUrl(path: string): boolean {
+  return /^(?:https?:\/\/|blob:|data:)/i.test(path)
+}
+
+function buildHermesMediaUrl(path: string): string {
+  const normalized = normalizeHermesMediaPath(path)
+  if (isDirectHermesMediaUrl(normalized)) return normalized
+  return `/api/hermes/media?path=${encodeURIComponent(normalized)}`
 }
 
 function joinPrompt(base: string, addition: string): string {
@@ -214,14 +310,13 @@ function extractHermesMediaReferences(content: string): HermesMediaReference[] {
     const trimmed = line.trim()
     if (!trimmed.startsWith('MEDIA:')) continue
 
-    const path = trimmed.slice('MEDIA:'.length).trim()
+    const path = normalizeHermesMediaPath(trimmed.slice('MEDIA:'.length))
     const mediaType = detectHermesMediaType(path)
     if (!path || !mediaType) continue
 
     refs.push({
       path,
       mediaType,
-      proxyUrl: buildHermesMediaProxyUrl(path),
     })
   }
 
@@ -229,11 +324,11 @@ function extractHermesMediaReferences(content: string): HermesMediaReference[] {
 }
 
 function HermesRemoteAudioBubble({
-  proxyUrl,
+  mediaUrl,
   prompt,
   autoPlay,
 }: {
-  proxyUrl: string
+  mediaUrl: string
   prompt: string
   autoPlay: boolean
 }) {
@@ -251,10 +346,19 @@ function HermesRemoteAudioBubble({
       setError('')
 
       try {
-        const response = await fetch(proxyUrl, { cache: 'no-store', signal: controller.signal })
+        const response = await fetch(mediaUrl, { cache: 'no-store', signal: controller.signal })
         if (!response.ok) {
           const detail = await response.text().catch(() => '')
-          throw new Error(detail || `HTTP ${response.status}`)
+          let message = detail || `HTTP ${response.status}`
+          try {
+            const parsed = JSON.parse(detail) as { error?: unknown }
+            if (typeof parsed?.error === 'string' && parsed.error.trim()) {
+              message = parsed.error
+            }
+          } catch {
+            // Response is plain text already.
+          }
+          throw new Error(message)
         }
 
         const blob = await response.blob()
@@ -274,7 +378,7 @@ function HermesRemoteAudioBubble({
       controller.abort()
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [proxyUrl, retryNonce])
+  }, [mediaUrl, retryNonce])
 
   if (loading) {
     return (
@@ -309,7 +413,10 @@ function renderHermesAssistantContent(content: string, autoPlayAudio: boolean): 
   let key = 0
 
   const flushText = () => {
-    const text = textBuffer.join('\n').trim()
+    const text = textBuffer
+      .filter(line => !isHermesControlLine(line))
+      .join('\n')
+      .trim()
     textBuffer.length = 0
     if (!text) return
     blocks.push(
@@ -322,24 +429,37 @@ function renderHermesAssistantContent(content: string, autoPlayAudio: boolean): 
   for (const line of content.split(/\r?\n/)) {
     const trimmed = line.trim()
     if (trimmed.startsWith('MEDIA:')) {
-      const path = trimmed.slice('MEDIA:'.length).trim()
+      const path = normalizeHermesMediaPath(trimmed.slice('MEDIA:'.length))
       const mediaType = detectHermesMediaType(path)
       if (path && mediaType) {
         flushText()
         if (mediaType === 'audio') {
+          const mediaUrl = buildHermesMediaUrl(path)
+          const useRemoteFetch = !isDirectHermesMediaUrl(path)
           blocks.push(
-            <HermesRemoteAudioBubble
-              key={`media-${key += 1}`}
-              proxyUrl={buildHermesMediaProxyUrl(path)}
-              prompt="Hermes audio"
-              autoPlay={autoPlayAudio}
-            />
+            useRemoteFetch ? (
+              <HermesRemoteAudioBubble
+                key={`media-${key += 1}`}
+                mediaUrl={mediaUrl}
+                prompt="Hermes audio"
+                autoPlay={autoPlayAudio}
+              />
+            ) : (
+              <MediaBubble
+                key={`media-${key += 1}`}
+                url={mediaUrl}
+                mediaType="audio"
+                prompt="Hermes audio"
+                compact
+                autoPlay={autoPlayAudio}
+              />
+            )
           )
         } else {
           blocks.push(
             <MediaBubble
               key={`media-${key += 1}`}
-              url={buildHermesMediaProxyUrl(path)}
+              url={buildHermesMediaUrl(path)}
               mediaType={mediaType}
               prompt={`Hermes ${mediaType}`}
               compact
@@ -531,7 +651,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const autoConnectTriedRef = useRef(false)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const lastHydratedSessionIdRef = useRef('')
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const recordingStreamRef = useRef<MediaStream | null>(null)
   const recordedChunksRef = useRef<Blob[]>([])
@@ -571,7 +691,6 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     if (typeof window === 'undefined') return false
     try { return localStorage.getItem(VOICE_OUTPUT_KEY) === 'true' } catch { return false }
   })
-  const [voiceSpeaking, setVoiceSpeaking] = useState(false)
   const [voiceError, setVoiceError] = useState('')
   const [autoPlayMediaMessageId, setAutoPlayMediaMessageId] = useState('')
   const [panelSettings, setPanelSettings] = useState<PanelSettings>(() => {
@@ -663,20 +782,6 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     }
   }, [])
 
-  const stopVoicePlayback = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause()
-      audioRef.current.currentTime = 0
-      audioRef.current = null
-    }
-
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel()
-    }
-
-    setVoiceSpeaking(false)
-  }, [])
-
   const stopRecordingStream = useCallback(() => {
     recordingStreamRef.current?.getTracks().forEach(track => track.stop())
     recordingStreamRef.current = null
@@ -712,58 +817,6 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       setVoiceTranscribing(false)
     }
   }, [])
-
-  const speakAssistantReply = useCallback(async (content: string) => {
-    const speechText = toSpeechText(content).slice(0, 2400)
-    if (!speechText) return
-
-    stopVoicePlayback()
-    setVoiceError('')
-
-    try {
-      const response = await fetch('/api/media/voice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: speechText, voice: 'rachel' }),
-      })
-      const data = await response.json().catch(() => ({}))
-
-      if (response.ok && typeof data?.url === 'string') {
-        const audio = new Audio(data.url)
-        audioRef.current = audio
-        audio.onended = () => {
-          if (audioRef.current === audio) audioRef.current = null
-          setVoiceSpeaking(false)
-        }
-        audio.onerror = () => {
-          if (audioRef.current === audio) audioRef.current = null
-          setVoiceSpeaking(false)
-          setVoiceError('Voice playback failed.')
-        }
-
-        setVoiceSpeaking(true)
-        await audio.play()
-        return
-      }
-    } catch {
-      // Fall back to browser speech synthesis below.
-    }
-
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined') {
-      const utterance = new SpeechSynthesisUtterance(speechText)
-      utterance.onend = () => setVoiceSpeaking(false)
-      utterance.onerror = () => {
-        setVoiceSpeaking(false)
-        setVoiceError('Voice playback failed.')
-      }
-      setVoiceSpeaking(true)
-      window.speechSynthesis.cancel()
-      window.speechSynthesis.speak(utterance)
-      return
-    }
-
-    setVoiceSpeaking(false)
-  }, [stopVoicePlayback])
 
   const loadSessions = useCallback(async (preferredSessionId?: string) => {
     if (!status.connected || !tunnelStatus.configured) {
@@ -832,16 +885,22 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     }
   }, [status.connected, tunnelStatus.configured])
 
-  const hydrateSession = useCallback(async (sessionId: string) => {
+  const hydrateSession = useCallback(async (
+    sessionId: string,
+    options?: {
+      mergeMessages?: ChatMessage[]
+    }
+  ): Promise<ChatMessage[]> => {
     if (!sessionId || sessionId === NEW_SESSION_VALUE) {
       setSessionHydrating(false)
       setMessages([])
       setAutoScroll(true)
-      return
+      return []
     }
 
     setSessionHydrating(true)
     setSessionsError('')
+    setAutoPlayMediaMessageId('')
 
     try {
       const response = await fetch(`/api/hermes/sessions?sessionId=${encodeURIComponent(sessionId)}`, { cache: 'no-store' })
@@ -850,7 +909,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         throw new Error(typeof data?.error === 'string' ? data.error : `HTTP ${response.status}`)
       }
 
-      const nextMessages: ChatMessage[] = Array.isArray(data?.messages)
+      const remoteMessages: ChatMessage[] = Array.isArray(data?.messages)
         ? data.messages
             .filter((entry: unknown): entry is ChatMessage => {
               if (!entry || typeof entry !== 'object') return false
@@ -866,16 +925,31 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
               role: entry.role,
               content: entry.content,
               reasoning: entry.reasoning,
+              tools: Array.isArray(entry.tools) ? entry.tools : undefined,
+              usage: entry.usage,
               finishReason: entry.finishReason,
+              error: entry.error,
               timestamp: typeof entry.timestamp === 'number' ? entry.timestamp : Date.now(),
             }))
         : []
 
+      const cachedMessages = options?.mergeMessages?.length
+        ? mergeHydratedHermesMessages(remoteMessages, options.mergeMessages)
+        : mergeHydratedHermesMessages(remoteMessages, readNativeSessionCache(sessionId))
+
+      const nextMessages = collapseDuplicateHermesMessages(cachedMessages)
       setMessages(nextMessages)
       setAutoScroll(true)
-      setAutoPlayMediaMessageId('')
+      writeNativeSessionCache(sessionId, nextMessages)
+      return nextMessages
     } catch (error) {
       setSessionsError(error instanceof Error ? error.message : 'Unable to load the selected Hermes session.')
+      const fallbackMessages = options?.mergeMessages || readNativeSessionCache(sessionId)
+      if (fallbackMessages.length) {
+        setMessages(fallbackMessages)
+        return fallbackMessages
+      }
+      return []
     } finally {
       setSessionHydrating(false)
     }
@@ -1119,6 +1193,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       setSessions([])
       setNativeSessionsAvailable(false)
       setSelectedSessionId('')
+      lastHydratedSessionIdRef.current = ''
       setAutoPlayMediaMessageId('')
       setConnectionInput('')
       setTunnelInput('')
@@ -1205,6 +1280,14 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   }, [messages, nativeSessionsAvailable])
 
   useEffect(() => {
+    if (!nativeSessionsAvailable) return
+    if (!selectedSessionId || selectedSessionId === NEW_SESSION_VALUE) return
+    if (sessionHydrating) return
+    if (!isStreaming && lastHydratedSessionIdRef.current !== selectedSessionId) return
+    writeNativeSessionCache(selectedSessionId, messages)
+  }, [isStreaming, messages, nativeSessionsAvailable, selectedSessionId, sessionHydrating])
+
+  useEffect(() => {
     const el = scrollContainerRef.current
     if (!el) return
 
@@ -1237,19 +1320,25 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     setNativeSessionsAvailable(false)
     setSessions([])
     setSessionHydrating(false)
+    lastHydratedSessionIdRef.current = ''
   }, [status.connected, tunnelStatus.configured])
 
   useEffect(() => {
     if (!nativeSessionsAvailable) return
-    if (isStreaming) return
     if (!selectedSessionId || selectedSessionId === NEW_SESSION_VALUE) {
+      lastHydratedSessionIdRef.current = selectedSessionId || NEW_SESSION_VALUE
+      setAutoPlayMediaMessageId('')
       setMessages([])
       setAutoScroll(true)
       return
     }
 
+    if (isStreaming) return
+    if (lastHydratedSessionIdRef.current === selectedSessionId && messages.length > 0) return
+
+    lastHydratedSessionIdRef.current = selectedSessionId
     void hydrateSession(selectedSessionId)
-  }, [hydrateSession, isStreaming, nativeSessionsAvailable, selectedSessionId])
+  }, [hydrateSession, isStreaming, messages.length, nativeSessionsAvailable, selectedSessionId])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -1263,8 +1352,8 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 
   useEffect(() => {
     if (voiceOutputEnabled) return
-    stopVoicePlayback()
-  }, [stopVoicePlayback, voiceOutputEnabled])
+    setAutoPlayMediaMessageId('')
+  }, [voiceOutputEnabled])
 
   useEffect(() => {
     return () => {
@@ -1272,9 +1361,8 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       mediaRecorderRef.current?.stop()
       mediaRecorderRef.current = null
       stopRecordingStream()
-      stopVoicePlayback()
     }
-  }, [stopRecordingStream, stopVoicePlayback])
+  }, [stopRecordingStream])
 
   useEffect(() => {
     if (!isOpen || statusLoading || isConnecting) return
@@ -1300,6 +1388,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     const target = event.target as HTMLElement
     if (target.closest('button, input, textarea, select, option, a, [data-no-drag]')) return
 
+    event.preventDefault()
     setIsDragging(true)
     dragStart.current = { x: event.clientX - position.x, y: event.clientY - position.y }
   }, [position])
@@ -1370,10 +1459,10 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     abortRef.current?.abort()
     abortRef.current = null
     setIsStreaming(false)
-    stopVoicePlayback()
     setAutoPlayMediaMessageId('')
 
     if (nativeSessionsAvailable) {
+      lastHydratedSessionIdRef.current = NEW_SESSION_VALUE
       setSelectedSessionId(NEW_SESSION_VALUE)
       setMessages([])
       setAutoScroll(true)
@@ -1384,7 +1473,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     try {
       localStorage.removeItem(CHAT_KEY)
     } catch {}
-  }, [nativeSessionsAvailable, stopVoicePlayback])
+  }, [nativeSessionsAvailable])
 
   const cancel = useCallback(() => {
     abortRef.current?.abort()
@@ -1522,19 +1611,39 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         ))
       }
 
-      if (!assistantError && assistantText.trim() && voiceOutputEnabled) {
-        const mediaRefs = extractHermesMediaReferences(assistantText)
-        const firstAudioRef = mediaRefs.find(ref => ref.mediaType === 'audio')
-
-        if (firstAudioRef) {
-          setAutoPlayMediaMessageId(assistantId)
-        } else {
-          void speakAssistantReply(assistantText)
-        }
+      const finalAssistantMessage: ChatMessage = {
+        ...assistantMessage,
+        content: assistantText,
+        reasoning: assistantReasoning || undefined,
+        tools: Array.from(toolMap.values()).sort((left, right) => left.index - right.index),
+        usage: assistantUsage,
+        finishReason,
+        error: assistantError,
       }
 
-      if (useNativeSessions) {
-        void loadSessions(resolvedSessionId || undefined)
+      let voiceTargetMessage = finalAssistantMessage
+      if (useNativeSessions && resolvedSessionId) {
+        const mergedMessages = await hydrateSession(resolvedSessionId, {
+          mergeMessages: [...messages, userMessage, finalAssistantMessage],
+        })
+        const mergedAssistant = [...mergedMessages].reverse().find(message => message.role === 'assistant')
+        if (mergedAssistant) {
+          voiceTargetMessage = mergedAssistant
+        }
+        lastHydratedSessionIdRef.current = resolvedSessionId
+        void loadSessions(resolvedSessionId)
+      }
+
+      if (!assistantError && voiceOutputEnabled) {
+        const voiceContent = voiceTargetMessage.content.trim()
+        if (voiceContent) {
+          const mediaRefs = extractHermesMediaReferences(voiceTargetMessage.content)
+          const firstAudioRef = mediaRefs.find(ref => ref.mediaType === 'audio')
+
+          if (firstAudioRef) {
+            setAutoPlayMediaMessageId(voiceTargetMessage.id)
+          }
+        }
       }
     } catch (error) {
       if ((error as Error).name === 'AbortError') return
@@ -1557,7 +1666,6 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     messages,
     nativeSessionsAvailable,
     selectedSessionId,
-    speakAssistantReply,
     status.connected,
     voiceOutputEnabled,
   ])
@@ -1595,6 +1703,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         top: position.y,
         width: size.w,
         height: size.h,
+        userSelect: isDragging || isResizing ? 'none' : 'auto',
         ...backgroundStyle,
         color: 'rgba(255, 245, 220, 0.96)',
         fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif',
@@ -1604,13 +1713,9 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           : '0 8px 40px rgba(0,0,0,0.78)',
         transition: 'box-shadow 0.35s ease, border-color 0.35s ease',
       }}
-      onMouseDownCapture={event => {
-        focusPanelUI()
-        event.stopPropagation()
-      }}
-      onPointerDownCapture={event => event.stopPropagation()}
       onMouseDown={event => {
         event.stopPropagation()
+        focusPanelUI()
         useOasisStore.getState().bringPanelToFront('hermes')
       }}
       onPointerDown={event => event.stopPropagation()}
@@ -1661,7 +1766,11 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             onClick={() => {
               void loadStatus()
               if (status.connected && tunnelStatus.configured) {
+                lastHydratedSessionIdRef.current = ''
                 void loadSessions(selectedSessionId || undefined)
+                if (selectedSessionId && selectedSessionId !== NEW_SESSION_VALUE && !isStreaming) {
+                  void hydrateSession(selectedSessionId)
+                }
               }
             }}
             className="px-1.5 py-0.5 rounded text-[10px] font-mono text-amber-200/70 hover:text-amber-300 border border-white/10 hover:border-amber-500/30 transition-all cursor-pointer"
@@ -1704,7 +1813,12 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         </div>
       </div>
 
-      <div className="px-3 py-2 border-b border-white/5 flex items-center gap-2 text-[10px] font-mono" style={{ background: 'rgba(0,0,0,0.22)' }}>
+      <div
+        data-drag-handle
+        onMouseDown={handleDragStart}
+        className="px-3 py-2 border-b border-white/5 flex items-center gap-2 text-[10px] font-mono"
+        style={{ background: 'rgba(0,0,0,0.22)' }}
+      >
         <span className="text-amber-100/70 uppercase">session</span>
         <select
           data-no-drag
@@ -1947,13 +2061,13 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             <button
               data-no-drag
               onClick={() => {
-                if (voiceOutputEnabled) stopVoicePlayback()
+                if (voiceOutputEnabled) setAutoPlayMediaMessageId('')
                 setVoiceOutputEnabled(current => !current)
               }}
               className="px-2 py-2 rounded-lg text-[10px] font-mono border border-white/10 text-amber-100"
-              title="Toggle spoken Hermes replies and auto-play Hermes audio messages"
+              title="Toggle auto-play for Hermes audio notes only"
             >
-              {voiceSpeaking ? 'speaking' : voiceOutputEnabled ? 'voice on' : 'voice off'}
+              {voiceOutputEnabled ? 'audio on' : 'audio off'}
             </button>
           </div>
           <textarea
@@ -2138,7 +2252,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 
       <div
         onMouseDown={handleResizeStart}
-        className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize"
+        className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize"
         style={{
           background: 'linear-gradient(135deg, transparent 50%, rgba(245,158,11,0.42) 50%)',
           borderRadius: '0 0 12px 0',
