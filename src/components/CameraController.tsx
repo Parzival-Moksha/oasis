@@ -26,6 +26,7 @@ let _audioListener: THREE.AudioListener | null = null
 export function getAudioListener(): THREE.AudioListener | null { return _audioListener }
 import { useOasisStore } from '../store/oasisStore'
 import { useInputManager, getInputCapabilities, type InputState } from '../lib/input-manager'
+import { setCameraSnapshot } from '../lib/camera-bridge'
 import { SettingsContext, DragContext } from './scene-lib'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -409,6 +410,7 @@ export function CameraController() {
   useFrame((state, frameDelta) => {
     const camera = state.camera as THREE.PerspectiveCamera
     const delta = Math.min(frameDelta, 0.1)
+    setCameraSnapshot(camera)
 
     // Sync OrbitControls target when re-entering orbit from another mode
     // Without this, OrbitControls snaps to its stale internal target (the "camera snapping" bug)

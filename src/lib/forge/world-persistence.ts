@@ -13,7 +13,7 @@
 import type { CraftedScene, CatalogPlacement, ObjectBehavior, WorldLight } from '../conjure/types'
 import type { GroundPreset } from './ground-textures'
 import type { TerrainParams } from './terrain-generator'
-import type { AgentWindow } from '../../store/oasisStore'
+import type { AgentWindow, AgentAvatar } from '../../store/oasisStore'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // WORLD STATE — the serializable snapshot of everything in a single Forge world
@@ -47,6 +47,8 @@ export interface WorldState {
   customGroundPresets?: GroundPreset[]
   /** 3D agent windows placed in the world (Claude Code / Merlin / DevCraft panels) */
   agentWindows?: AgentWindow[]
+  /** Embodied agent avatars placed in the world */
+  agentAvatars?: AgentAvatar[]
   savedAt: string
 }
 

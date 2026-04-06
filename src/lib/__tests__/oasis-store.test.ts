@@ -66,6 +66,8 @@ function makeAgentWindow(overrides: Partial<AgentWindow> = {}): AgentWindow {
 function resetStore() {
   useOasisStore.setState({
     placedAgentWindows: [],
+    placedAgentAvatars: [],
+    liveAgentAvatarAudio: {},
     focusedAgentWindowId: null,
     _preFocusCameraState: null,
     _panelZCounter: 0,
@@ -81,6 +83,7 @@ function resetStore() {
     placementPending: null,
     activePlacementVfx: [],
     focusedImageId: null,
+    transforms: {},
   })
 }
 
@@ -181,6 +184,15 @@ describe('OasisStore', () => {
       getState().removeAgentWindow('ghost')
       expect(getState().placedAgentWindows).toHaveLength(1)
     })
+
+    it('also removes any linked companion avatar', () => {
+      getState().addAgentWindow(makeAgentWindow({ id: 'rm-linked' }))
+      getState().assignAvatarToAgentWindow('rm-linked', '/avatars/gallery/Orion.vrm')
+      expect(getState().placedAgentAvatars).toHaveLength(1)
+
+      getState().removeAgentWindow('rm-linked')
+      expect(getState().placedAgentAvatars).toEqual([])
+    })
   })
 
   // ─═̷─═̷─ updateAgentWindow ─═̷─═̷─
@@ -241,6 +253,48 @@ describe('OasisStore', () => {
       expect(getState().focusedAgentWindowId).toBe('f1')
       getState().focusAgentWindow('f2')
       expect(getState().focusedAgentWindowId).toBe('f2')
+    })
+  })
+
+  describe('agent avatars', () => {
+    it('assignAvatarToAgentWindow creates a linked companion avatar', () => {
+      getState().addAgentWindow(makeAgentWindow({ id: 'avatar-win', label: 'Window Buddy' }))
+
+      const avatarId = getState().assignAvatarToAgentWindow('avatar-win', '/avatars/gallery/Orion.vrm')
+      const avatar = getState().placedAgentAvatars[0]
+
+      expect(avatarId).toBe('agent-avatar-avatar-win')
+      expect(avatar.linkedWindowId).toBe('avatar-win')
+      expect(avatar.avatar3dUrl).toBe('/avatars/gallery/Orion.vrm')
+      expect(avatar.label).toBe('Window Buddy')
+      expect(avatar.scale).toBeGreaterThan(1)
+    })
+
+    it('assignAvatarToAgentWindow(null) removes the linked avatar', () => {
+      getState().addAgentWindow(makeAgentWindow({ id: 'avatar-rm' }))
+      getState().assignAvatarToAgentWindow('avatar-rm', '/avatars/gallery/Orion.vrm')
+
+      const result = getState().assignAvatarToAgentWindow('avatar-rm', null)
+      expect(result).toBeNull()
+      expect(getState().placedAgentAvatars).toEqual([])
+    })
+
+    it('assignHermesAvatar creates a standalone Hermes body', () => {
+      const avatarId = getState().assignHermesAvatar('/avatars/gallery/CoolAlien.vrm')
+      const avatar = getState().placedAgentAvatars[0]
+
+      expect(avatarId).toBe('agent-avatar-hermes')
+      expect(avatar.agentType).toBe('hermes')
+      expect(avatar.avatar3dUrl).toBe('/avatars/gallery/CoolAlien.vrm')
+      expect(avatar.linkedWindowId).toBeUndefined()
+    })
+
+    it('setAgentAvatarAudio stores and clears ephemeral playback state', () => {
+      getState().setAgentAvatarAudio('agent-avatar-hermes', { url: 'blob:test', state: 'playing' })
+      expect(getState().liveAgentAvatarAudio['agent-avatar-hermes']?.url).toBe('blob:test')
+
+      getState().setAgentAvatarAudio('agent-avatar-hermes', null)
+      expect(getState().liveAgentAvatarAudio['agent-avatar-hermes']).toBeUndefined()
     })
   })
 

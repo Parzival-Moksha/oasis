@@ -34,6 +34,7 @@ import type { PlacementPending } from '../../store/oasisStore'
 import { useInputManager } from '../../lib/input-manager'
 import { dispatch } from '../../lib/event-bus'
 import { createLipSyncController, registerLipSync, unregisterLipSync, getLipSync } from '../../lib/lip-sync'
+import { deriveWindowAvatarAnchor, deriveWindowAvatarScale, scalarFromTransformScale } from '../../lib/agent-avatar-utils'
 
 // ░▒▓ CLIPBOARD — module-level, survives across renders, no reactivity needed ▓▒░
 let _clipboard: PlacementPending | null = null
@@ -2387,6 +2388,13 @@ export function WorldObjectsRenderer() {
         onTransformChange={handleTransformChange}
       />
 
+      <AgentAvatarsSection
+        selectedObjectId={selectedObjectId}
+        selectObject={selectObject}
+        transformMode={transformMode}
+        onTransformChange={handleTransformChange}
+      />
+
       {/* ░▒▓ World lights — user-placed light sources with visual orbs ▓▒░ */}
       <WorldLightsSection
         selectedObjectId={selectedObjectId}
@@ -2496,6 +2504,80 @@ function AgentWindowsSection({ selectedObjectId, selectObject, transformMode, on
             initialScale={t?.scale || win.scale}
           >
             <AgentWindow3D window={win} />
+          </SelectableWrapper>
+        )
+      })}
+    </>
+  )
+}
+
+function AgentAvatarsSection({ selectedObjectId, selectObject, transformMode, onTransformChange }: {
+  selectedObjectId: string | null
+  selectObject: (id: string | null) => void
+  transformMode: 'translate' | 'rotate' | 'scale'
+  onTransformChange: (id: string, position: [number, number, number], rotation: [number, number, number], scale: [number, number, number]) => void
+}) {
+  const placedAgentAvatars = useOasisStore(s => s.placedAgentAvatars)
+  const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
+  const transforms = useOasisStore(s => s.transforms)
+  const liveAgentAvatarAudio = useOasisStore(s => s.liveAgentAvatarAudio)
+
+  const windowMap = useMemo(
+    () => new Map(placedAgentWindows.map(window => [window.id, window])),
+    [placedAgentWindows],
+  )
+
+  if (placedAgentAvatars.length === 0) return null
+
+  return (
+    <>
+      {placedAgentAvatars.map(avatar => {
+        if (!avatar.avatar3dUrl) return null
+
+        const avatarTransform = transforms[avatar.id]
+        const linkedWindow = avatar.linkedWindowId ? windowMap.get(avatar.linkedWindowId) : undefined
+        const linkedWindowTransform = linkedWindow ? transforms[linkedWindow.id] : undefined
+        const derivedAnchor = linkedWindow && !avatarTransform
+          ? deriveWindowAvatarAnchor(linkedWindow, linkedWindowTransform)
+          : null
+        const derivedScale = linkedWindow && !avatarTransform
+          ? deriveWindowAvatarScale(linkedWindow, linkedWindowTransform)
+          : avatar.scale
+        const renderScale = scalarFromTransformScale(avatarTransform?.scale, derivedScale)
+        const audio = liveAgentAvatarAudio[avatar.id]
+
+        return (
+          <SelectableWrapper
+            key={avatar.id}
+            id={avatar.id}
+            selected={selectedObjectId === avatar.id}
+            onSelect={selectObject}
+            transformMode={transformMode}
+            onTransformChange={onTransformChange}
+            initialPosition={avatarTransform?.position || derivedAnchor?.position || avatar.position}
+            initialRotation={avatarTransform?.rotation || derivedAnchor?.rotation || avatar.rotation}
+            initialScale={avatarTransform?.scale}
+          >
+            <Suspense fallback={<PlaceholderBox />}>
+              <VRMCatalogRenderer
+                path={avatar.avatar3dUrl}
+                scale={renderScale}
+                objectId={avatar.id}
+                displayName={avatar.label || 'Agent Avatar'}
+              />
+              {audio?.url && (
+                <SpatialAudioAttachment
+                  key={`${avatar.id}-${audio.playbackId || audio.url}`}
+                  objectId={avatar.id}
+                  audioUrl={audio.url}
+                  volume={audio.volume}
+                  maxDistance={audio.maxDistance}
+                  muted={audio.muted}
+                  audioState={audio.state}
+                  loop={audio.loop ?? false}
+                />
+              )}
+            </Suspense>
           </SelectableWrapper>
         )
       })}

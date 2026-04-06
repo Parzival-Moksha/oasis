@@ -8,6 +8,7 @@ import { useInputManager, useUILayer } from '@/lib/input-manager'
 import { CollapsibleBlock, renderMarkdown } from '@/lib/anorak-renderers'
 import { collapseDuplicateHermesMessages, mergeHydratedHermesMessages } from '@/lib/hermes-message-merge'
 import { MediaBubble, type MediaType } from './MediaBubble'
+import { AvatarGallery } from './AvatarGallery'
 
 interface PanelSettings {
   bgColor: string
@@ -323,21 +324,33 @@ function extractHermesMediaReferences(content: string): HermesMediaReference[] {
   return refs
 }
 
-function HermesRemoteAudioBubble({
+function HermesAudioBubble({
   mediaUrl,
   prompt,
   autoPlay,
+  needsProxy,
+  avatarAudioTargetId,
 }: {
   mediaUrl: string
   prompt: string
   autoPlay: boolean
+  needsProxy: boolean
+  avatarAudioTargetId?: string | null
 }) {
-  const [blobUrl, setBlobUrl] = useState('')
-  const [loading, setLoading] = useState(true)
+  const setAgentAvatarAudio = useOasisStore(state => state.setAgentAvatarAudio)
+  const [resolvedUrl, setResolvedUrl] = useState(() => (needsProxy ? '' : mediaUrl))
+  const [loading, setLoading] = useState(needsProxy)
   const [error, setError] = useState('')
   const [retryNonce, setRetryNonce] = useState(0)
 
   useEffect(() => {
+    if (!needsProxy) {
+      setResolvedUrl(mediaUrl)
+      setLoading(false)
+      setError('')
+      return
+    }
+
     const controller = new AbortController()
     let objectUrl = ''
 
@@ -363,7 +376,7 @@ function HermesRemoteAudioBubble({
 
         const blob = await response.blob()
         objectUrl = URL.createObjectURL(blob)
-        setBlobUrl(objectUrl)
+        setResolvedUrl(objectUrl)
       } catch (fetchError) {
         if ((fetchError as Error).name === 'AbortError') return
         setError(fetchError instanceof Error ? fetchError.message : 'Unable to load Hermes audio.')
@@ -378,17 +391,37 @@ function HermesRemoteAudioBubble({
       controller.abort()
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [mediaUrl, retryNonce])
+  }, [mediaUrl, needsProxy, retryNonce])
+
+  useEffect(() => {
+    if (!avatarAudioTargetId || !autoPlay || !resolvedUrl || loading || error) return
+    const playbackId = `hermes-audio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    setAgentAvatarAudio(avatarAudioTargetId, {
+      url: resolvedUrl,
+      volume: 1,
+      maxDistance: 18,
+      state: 'playing',
+      loop: false,
+      playbackId,
+    })
+
+    return () => {
+      const current = useOasisStore.getState().liveAgentAvatarAudio[avatarAudioTargetId]
+      if (current?.playbackId === playbackId) {
+        useOasisStore.getState().setAgentAvatarAudio(avatarAudioTargetId, null)
+      }
+    }
+  }, [autoPlay, avatarAudioTargetId, error, loading, resolvedUrl, setAgentAvatarAudio])
 
   if (loading) {
     return (
       <div className="rounded-lg border border-amber-400/30 bg-black/35 px-3 py-3">
         <div className="text-[11px] text-amber-100">Loading Hermes audio...</div>
       </div>
-    )
+      )
   }
 
-  if (error || !blobUrl) {
+  if (error || !resolvedUrl) {
     return (
       <div className="rounded-lg border border-red-400/30 bg-red-950/20 px-3 py-3 space-y-2">
         <div className="text-[11px] text-red-200">Failed to load audio</div>
@@ -404,10 +437,14 @@ function HermesRemoteAudioBubble({
     )
   }
 
-  return <MediaBubble url={blobUrl} mediaType="audio" prompt={prompt} compact autoPlay={autoPlay} />
+  return <MediaBubble url={resolvedUrl} mediaType="audio" prompt={prompt} compact autoPlay={autoPlay && !avatarAudioTargetId} />
 }
 
-function renderHermesAssistantContent(content: string, autoPlayAudio: boolean): React.ReactNode {
+function renderHermesAssistantContent(
+  content: string,
+  autoPlayAudio: boolean,
+  audioTargetAvatarId?: string | null,
+): React.ReactNode {
   const blocks: React.ReactNode[] = []
   const textBuffer: string[] = []
   let key = 0
@@ -431,31 +468,21 @@ function renderHermesAssistantContent(content: string, autoPlayAudio: boolean): 
     if (trimmed.startsWith('MEDIA:')) {
       const path = normalizeHermesMediaPath(trimmed.slice('MEDIA:'.length))
       const mediaType = detectHermesMediaType(path)
-      if (path && mediaType) {
-        flushText()
-        if (mediaType === 'audio') {
-          const mediaUrl = buildHermesMediaUrl(path)
-          const useRemoteFetch = !isDirectHermesMediaUrl(path)
-          blocks.push(
-            useRemoteFetch ? (
-              <HermesRemoteAudioBubble
+        if (path && mediaType) {
+          flushText()
+          if (mediaType === 'audio') {
+            const mediaUrl = buildHermesMediaUrl(path)
+            blocks.push(
+              <HermesAudioBubble
                 key={`media-${key += 1}`}
                 mediaUrl={mediaUrl}
                 prompt="Hermes audio"
                 autoPlay={autoPlayAudio}
-              />
-            ) : (
-              <MediaBubble
-                key={`media-${key += 1}`}
-                url={mediaUrl}
-                mediaType="audio"
-                prompt="Hermes audio"
-                compact
-                autoPlay={autoPlayAudio}
+                needsProxy={!isDirectHermesMediaUrl(path)}
+                avatarAudioTargetId={audioTargetAvatarId}
               />
             )
-          )
-        } else {
+          } else {
           blocks.push(
             <MediaBubble
               key={`media-${key += 1}`}
@@ -678,6 +705,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     try { return localStorage.getItem(DETAILS_KEY) !== 'false' } catch { return true }
   })
   const [showSettings, setShowSettings] = useState(false)
+  const [showAvatarGallery, setShowAvatarGallery] = useState(false)
   const [showConnectionModal, setShowConnectionModal] = useState(false)
   const [connectionInput, setConnectionInput] = useState('')
   const [tunnelInput, setTunnelInput] = useState('')
@@ -711,6 +739,10 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   })
   const [isResizing, setIsResizing] = useState(false)
   const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 })
+
+  const hermesAvatar = useOasisStore(state => state.placedAgentAvatars.find(entry => entry.agentType === 'hermes') || null)
+  const assignHermesAvatar = useOasisStore(state => state.assignHermesAvatar)
+  const setAgentAvatarAudio = useOasisStore(state => state.setAgentAvatarAudio)
 
   const focusPanelUI = useCallback(() => {
     useInputManager.getState().enterUIFocus()
@@ -1254,6 +1286,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       autoConnectTriedRef.current = false
       setShowConnectionModal(false)
       setShowSettings(false)
+      setShowAvatarGallery(false)
       recordedChunksRef.current = []
       mediaRecorderRef.current?.stop()
       mediaRecorderRef.current = null
@@ -1309,6 +1342,22 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       // Ignore storage errors.
     }
   }, [voiceOutputEnabled])
+
+  useEffect(() => {
+    if (!hermesAvatar?.id) return
+    if (isOpen && voiceOutputEnabled) return
+    setAgentAvatarAudio(hermesAvatar.id, null)
+  }, [hermesAvatar?.id, isOpen, setAgentAvatarAudio, voiceOutputEnabled])
+
+  useEffect(() => {
+    if (!hermesAvatar?.id || autoPlayMediaMessageId) return
+    setAgentAvatarAudio(hermesAvatar.id, null)
+  }, [autoPlayMediaMessageId, hermesAvatar?.id, setAgentAvatarAudio])
+
+  useEffect(() => {
+    if (!hermesAvatar?.id) return
+    setAgentAvatarAudio(hermesAvatar.id, null)
+  }, [hermesAvatar?.id, selectedSessionId, setAgentAvatarAudio])
 
   useEffect(() => {
     if (!isOpen || !status.connected || !tunnelStatus.configured) return
@@ -1790,6 +1839,18 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           >
             info
           </button>
+          <button
+            onClick={() => setShowAvatarGallery(true)}
+            className="px-1.5 py-0.5 rounded text-[10px] font-mono border transition-all cursor-pointer"
+            style={{
+              color: hermesAvatar ? '#c084fc' : '#d1d5db',
+              borderColor: hermesAvatar ? 'rgba(192,132,252,0.28)' : 'rgba(255,255,255,0.08)',
+              background: hermesAvatar ? 'rgba(168,85,247,0.12)' : 'transparent',
+            }}
+            title={hermesAvatar ? 'Change Hermes avatar' : 'Assign Hermes an avatar in the world'}
+          >
+            avatar
+          </button>
           <div className="relative">
             <button
               onClick={() => setShowSettings(current => !current)}
@@ -1960,7 +2021,11 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                       style={{ background: 'rgba(0,0,0,0.48)', border: '1px solid rgba(255,255,255,0.06)' }}
                     >
                       {message.content
-                        ? renderHermesAssistantContent(message.content, autoPlayMediaMessageId === message.id && voiceOutputEnabled)
+                        ? renderHermesAssistantContent(
+                            message.content,
+                            autoPlayMediaMessageId === message.id && voiceOutputEnabled,
+                            hermesAvatar?.id,
+                          )
                         : <span className="text-amber-100/75">Streaming...</span>}
                     </div>
                   )}
@@ -2248,6 +2313,17 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             </div>
           </div>
         </div>
+      )}
+
+      {showAvatarGallery && (
+        <AvatarGallery
+          currentAvatarUrl={hermesAvatar?.avatar3dUrl || null}
+          onSelect={(avatarUrl) => {
+            assignHermesAvatar(avatarUrl)
+            setShowAvatarGallery(false)
+          }}
+          onClose={() => setShowAvatarGallery(false)}
+        />
       )}
 
       <div

@@ -19,6 +19,7 @@ import { GROUND_PRESETS, getTextureUrls } from '../../lib/forge/ground-textures'
 import { ASSET_CATALOG, SKY_BACKGROUNDS } from '../scene-lib/constants'
 import { SettingsContext } from '../scene-lib/contexts'
 import { DeleteConfirmModal } from './DeleteConfirmModal'
+import { AvatarGallery } from './AvatarGallery'
 import type { AssetDefinition } from '../scene-lib/types'
 import { awardXp } from '../../hooks/useXp'
 import { ModelPreviewPanel, CraftedPreviewPanel } from './ModelPreview'
@@ -3395,9 +3396,16 @@ function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject
   transforms: Record<string, { position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number }>
 }) {
   const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
+  const placedAgentAvatars = useOasisStore(s => s.placedAgentAvatars)
   const removeAgentWindow = useOasisStore(s => s.removeAgentWindow)
   const focusAgentWindow = useOasisStore(s => s.focusAgentWindow)
+  const assignAvatarToAgentWindow = useOasisStore(s => s.assignAvatarToAgentWindow)
   const focusedAgentWindowId = useOasisStore(s => s.focusedAgentWindowId)
+  const [avatarPickerWindowId, setAvatarPickerWindowId] = useState<string | null>(null)
+
+  const activeAvatar = avatarPickerWindowId
+    ? placedAgentAvatars.find(entry => entry.linkedWindowId === avatarPickerWindowId) || null
+    : null
 
   return (
     <>
@@ -3443,6 +3451,7 @@ function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject
             const isFocused = focusedAgentWindowId === win.id
             const agent = AGENT_TYPES.find(a => a.type === win.agentType) || AGENT_TYPES[0]
             const pos = transforms[win.id]?.position || win.position
+            const assignedAvatar = placedAgentAvatars.find(entry => entry.linkedWindowId === win.id) || null
             return (
               <div
                 key={win.id}
@@ -3467,6 +3476,20 @@ function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setAvatarPickerWindowId(win.id)
+                      }}
+                      className="text-[9px] px-1.5 py-0.5 rounded font-mono border transition-colors hover:bg-cyan-500/10"
+                      style={{
+                        color: assignedAvatar ? '#22d3ee' : '#cbd5e1',
+                        borderColor: assignedAvatar ? 'rgba(34,211,238,0.3)' : 'rgba(255,255,255,0.12)',
+                      }}
+                      title="Assign a companion avatar to this agent window"
+                    >
+                      avatar
+                    </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
@@ -3496,6 +3519,17 @@ function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject
             )
           })}
         </div>
+      )}
+
+      {avatarPickerWindowId && (
+        <AvatarGallery
+          currentAvatarUrl={activeAvatar?.avatar3dUrl || null}
+          onSelect={(avatarUrl) => {
+            assignAvatarToAgentWindow(avatarPickerWindowId, avatarUrl)
+            setAvatarPickerWindowId(null)
+          }}
+          onClose={() => setAvatarPickerWindowId(null)}
+        />
       )}
 
     </>

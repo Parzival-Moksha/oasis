@@ -49,6 +49,7 @@ function normalizeState(state: WorldState): WorldState {
   state.transforms = state.transforms || {}
   state.behaviors = state.behaviors || {}
   state.catalogPlacements = state.catalogPlacements || []
+  state.agentAvatars = state.agentAvatars || []
   state.craftedScenes = state.craftedScenes || []
   state.conjuredAssetIds = state.conjuredAssetIds || []
   state.lights = state.lights || []
@@ -151,6 +152,16 @@ tools.get_world_state = async (args) => {
       lights: (state.lights || []).map(l => ({
         id: l.id, type: l.type, color: l.color, intensity: l.intensity, position: l.position, visible: l.visible,
       })),
+      agentAvatars: (state.agentAvatars || []).map(a => ({
+        id: a.id,
+        agentType: a.agentType,
+        label: a.label,
+        avatar3dUrl: a.avatar3dUrl,
+        position: a.position,
+        rotation: a.rotation,
+        scale: a.scale,
+        linkedWindowId: a.linkedWindowId,
+      })),
       conjuredAssetCount: (state.conjuredAssetIds || []).length,
       behaviors: state.behaviors || {},
     },
@@ -212,6 +223,11 @@ tools.query_objects = async (args) => {
   if (!typeFilter || typeFilter === 'light') {
     for (const l of state.lights || []) {
       results.push({ id: l.id, type: 'light', name: `${l.type} light`, position: l.position })
+    }
+  }
+  if (!typeFilter || typeFilter === 'agent-avatar') {
+    for (const avatar of state.agentAvatars || []) {
+      results.push({ id: avatar.id, type: 'agent-avatar', name: avatar.label || avatar.agentType, position: avatar.position })
     }
   }
 
@@ -339,6 +355,19 @@ tools.modify_object = async (args) => {
     state.catalogPlacements![catalogIdx] = p
   }
 
+  const avatarIdx = (state.agentAvatars || []).findIndex(avatar => avatar.id === objectId)
+  if (avatarIdx >= 0) {
+    const avatar = state.agentAvatars![avatarIdx]
+    if (args.label) {
+      avatar.label = validStr(args.label, avatar.label || avatar.agentType)
+      changes.push('label')
+    }
+    if (args.scale !== undefined) {
+      avatar.scale = validNum(args.scale, avatar.scale)
+    }
+    state.agentAvatars![avatarIdx] = avatar
+  }
+
   // Update transform overrides
   const pos = validPos(args.position)
   const rot = validPos(args.rotation)
@@ -377,13 +406,18 @@ tools.remove_object = async (args) => {
   const { worldId, state } = await loadRequestedWorld(args.worldId)
   const beforeCatalog = state.catalogPlacements?.length || 0
   const beforeCrafted = state.craftedScenes?.length || 0
+  const beforeAvatars = state.agentAvatars?.length || 0
 
   state.catalogPlacements = (state.catalogPlacements || []).filter(p => p.id !== objectId)
   state.craftedScenes = (state.craftedScenes || []).filter(s => s.id !== objectId)
+  state.agentAvatars = (state.agentAvatars || []).filter(a => a.id !== objectId)
   delete state.transforms[objectId]
   if (state.behaviors) delete state.behaviors[objectId]
 
-  const removed = (beforeCatalog - (state.catalogPlacements?.length || 0)) + (beforeCrafted - (state.craftedScenes?.length || 0))
+  const removed =
+    (beforeCatalog - (state.catalogPlacements?.length || 0)) +
+    (beforeCrafted - (state.craftedScenes?.length || 0)) +
+    (beforeAvatars - (state.agentAvatars?.length || 0))
   if (removed === 0) return { ok: false, message: `Object ${objectId} not found in world.` }
 
   await saveWorldState(worldId, state)
@@ -506,12 +540,141 @@ tools.set_behavior = async (args) => {
   return { ok: true, message: `Set behavior on ${objectId}: movement=${movement}` }
 }
 
+tools.set_avatar = async (args) => {
+  const avatarUrl = validStr(args.avatarUrl || args.url, '')
+  if (!avatarUrl) return { ok: false, message: 'avatarUrl is required.' }
+
+  const { worldId, state } = await loadRequestedWorld(args.worldId)
+  const requestedAvatarId = validStr(args.avatarId, '')
+  const linkedWindowId = validStr(args.linkedWindowId, '')
+  const agentType = validStr(args.agent || args.agentType, linkedWindowId ? 'anorak' : 'hermes').toLowerCase()
+  const label = validStr(args.label, '')
+  const position = validPos(args.position)
+  const rotation = validPos(args.rotation)
+  const scale = validNum(args.scale, agentType === 'hermes' ? 1.15 : 1)
+
+  let avatarId = requestedAvatarId
+  let existing = requestedAvatarId
+    ? (state.agentAvatars || []).find(avatar => avatar.id === requestedAvatarId)
+    : null
+
+  if (!existing && linkedWindowId) {
+    existing = (state.agentAvatars || []).find(avatar => avatar.linkedWindowId === linkedWindowId) || null
+    avatarId = existing?.id || `agent-avatar-${linkedWindowId}`
+  }
+
+  if (!existing && agentType === 'hermes') {
+    existing = (state.agentAvatars || []).find(avatar => avatar.agentType === 'hermes') || null
+    avatarId = existing?.id || 'agent-avatar-hermes'
+  }
+
+  if (!existing && !avatarId) {
+    avatarId = `agent-avatar-${agentType}-${uid()}`
+  }
+
+  const nextAvatar = existing
+    ? {
+        ...existing,
+        avatar3dUrl: avatarUrl,
+        label: label || existing.label,
+        position: position || existing.position,
+        rotation: rotation || existing.rotation,
+        scale: Number.isFinite(Number(args.scale)) ? scale : existing.scale,
+        linkedWindowId: linkedWindowId || existing.linkedWindowId,
+        agentType: validStr(agentType, existing.agentType) as typeof existing.agentType,
+      }
+    : {
+        id: avatarId,
+        agentType: agentType as 'anorak' | 'anorak-pro' | 'merlin' | 'devcraft' | 'parzival' | 'mission' | 'hermes',
+        avatar3dUrl: avatarUrl,
+        position: position || [0, 0, 3.2],
+        rotation: rotation || [0, Math.PI, 0],
+        scale,
+        ...(linkedWindowId ? { linkedWindowId } : {}),
+        ...(label ? { label } : {}),
+      }
+
+  if (existing) {
+    state.agentAvatars = (state.agentAvatars || []).map(avatar => avatar.id === nextAvatar.id ? nextAvatar : avatar)
+  } else {
+    state.agentAvatars = [...(state.agentAvatars || []), nextAvatar]
+  }
+
+  await saveWorldState(worldId, state)
+  emitWorldEvent('agent_avatar_set', worldId, {
+    avatarId: nextAvatar.id,
+    agentType: nextAvatar.agentType,
+    linkedWindowId: nextAvatar.linkedWindowId,
+  })
+
+  return {
+    ok: true,
+    message: `Avatar ${nextAvatar.id} now uses ${avatarUrl}.`,
+    data: nextAvatar,
+  }
+}
+
+tools.walk_avatar_to = async (args) => {
+  const avatarId = validStr(args.avatarId, '')
+  if (!avatarId) return { ok: false, message: 'avatarId is required.' }
+  const target = validPos(args.position || args.target)
+  if (!target) return { ok: false, message: 'position is required as [x, y, z].' }
+  const moveSpeed = validNum(args.speed, 3)
+
+  const { worldId, state } = await loadRequestedWorld(args.worldId)
+  const avatar = (state.agentAvatars || []).find(entry => entry.id === avatarId)
+  if (!avatar) return { ok: false, message: `Avatar ${avatarId} not found.` }
+
+  const existing = state.behaviors?.[avatarId] || { visible: true, movement: { type: 'static' as const } }
+  state.behaviors = state.behaviors || {}
+  state.behaviors[avatarId] = {
+    ...existing,
+    visible: existing.visible ?? true,
+    moveTarget: target,
+    moveSpeed,
+  }
+
+  await saveWorldState(worldId, state)
+  emitWorldEvent('agent_avatar_walk', worldId, { avatarId, target, moveSpeed })
+  return { ok: true, message: `Avatar ${avatarId} is walking to [${target.join(', ')}].`, data: { avatarId, target, moveSpeed } }
+}
+
+tools.play_avatar_animation = async (args) => {
+  const avatarId = validStr(args.avatarId, '')
+  if (!avatarId) return { ok: false, message: 'avatarId is required.' }
+  const clipName = validStr(args.clipName || args.animation || args.name, '')
+  if (!clipName) return { ok: false, message: 'clipName is required.' }
+  const loop = validStr(args.loop, 'repeat')
+  const speed = validNum(args.speed, 1)
+
+  const { worldId, state } = await loadRequestedWorld(args.worldId)
+  const avatar = (state.agentAvatars || []).find(entry => entry.id === avatarId)
+  if (!avatar) return { ok: false, message: `Avatar ${avatarId} not found.` }
+
+  state.behaviors = state.behaviors || {}
+  const existing = state.behaviors[avatarId] || { visible: true, movement: { type: 'static' as const } }
+  state.behaviors[avatarId] = {
+    ...existing,
+    visible: existing.visible ?? true,
+    animation: {
+      clipName: clipName.startsWith('lib:') ? clipName : `lib:${clipName}`,
+      loop: loop === 'once' || loop === 'pingpong' ? loop : 'repeat',
+      speed,
+    },
+  }
+
+  await saveWorldState(worldId, state)
+  emitWorldEvent('agent_avatar_animation', worldId, { avatarId, clipName, loop, speed })
+  return { ok: true, message: `Avatar ${avatarId} is now playing ${clipName}.`, data: { avatarId, clipName, loop, speed } }
+}
+
 tools.clear_world = async (args) => {
   if (!args.confirm) return { ok: false, message: 'clear_world requires confirm: true. This is destructive.' }
 
   const { worldId, state } = await loadRequestedWorld(args.worldId)
   state.catalogPlacements = []
   state.craftedScenes = []
+  state.agentAvatars = []
   state.lights = []
   state.transforms = {}
   state.behaviors = {}
@@ -547,7 +710,7 @@ tools.create_world = async (args) => {
 
   const emptyState: WorldState = {
     version: 1, terrain: null, craftedScenes: [], conjuredAssetIds: [],
-    catalogPlacements: [], transforms: {}, savedAt: now.toISOString(),
+    catalogPlacements: [], agentAvatars: [], transforms: {}, savedAt: now.toISOString(),
   }
 
   await prisma.world.create({
@@ -626,7 +789,8 @@ export const TOOL_NAMES = Object.keys(tools)
 const MUTATING_TOOLS = new Set([
   'place_object', 'craft_scene', 'modify_object', 'remove_object',
   'set_sky', 'set_ground_preset', 'paint_ground_tiles', 'add_light',
-  'modify_light', 'set_behavior', 'clear_world',
+  'modify_light', 'set_behavior', 'set_avatar', 'walk_avatar_to',
+  'play_avatar_animation', 'clear_world',
 ])
 
 export async function callTool(name: string, args: Record<string, unknown>): Promise<ToolResult> {

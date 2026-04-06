@@ -18,6 +18,8 @@ import {
 import { addToSceneLibrary, getSceneLibrary, removeFromSceneLibrary } from '../lib/forge/scene-library'
 import { awardXp } from '../hooks/useXp'
 import type { RealtimeChannel } from '@supabase/supabase-js'
+import { getCameraSnapshot } from '../lib/camera-bridge'
+import { deriveHermesAvatarSpawn, deriveWindowAvatarAnchor, deriveWindowAvatarScale } from '../lib/agent-avatar-utils'
 
 // ─═̷─═̷─🏗️ SSR-SAFE LOCALSTORAGE ─═̷─═̷─🏗️
 // Next.js pre-renders on the server where `window` doesn't exist.
@@ -91,6 +93,50 @@ export interface AgentWindow {
   frameThickness?: number                 // frame thickness multiplier (default 1, range 0.2-3)
   windowOpacity?: number                  // window background opacity (default 1, range 0-1, dims to black)
   windowBlur?: number                     // backdrop blur in px (default 0, range 0-20)
+}
+
+export type AgentAvatarType = AgentWindowType | 'hermes'
+
+export interface AgentAvatar {
+  id: string
+  agentType: AgentAvatarType
+  avatar3dUrl: string
+  position: [number, number, number]
+  rotation: [number, number, number]
+  scale: number
+  linkedWindowId?: string
+  label?: string
+}
+
+export interface AgentAvatarAudioState {
+  url: string
+  volume?: number
+  maxDistance?: number
+  muted?: boolean
+  state?: 'playing' | 'paused' | 'stopped'
+  loop?: boolean
+  playbackId?: string
+}
+
+function defaultAgentAvatarLabel(agentType: AgentAvatarType): string {
+  switch (agentType) {
+    case 'anorak':
+      return 'Anorak'
+    case 'anorak-pro':
+      return 'Anorak Pro'
+    case 'merlin':
+      return 'Merlin'
+    case 'devcraft':
+      return 'DevCraft'
+    case 'parzival':
+      return 'Parzival'
+    case 'mission':
+      return 'Mission'
+    case 'hermes':
+      return 'Hermes'
+    default:
+      return 'Agent'
+  }
 }
 
 // ─═̷─═̷─⏪ UNDO/REDO — Time travel for world edits ─═̷─═̷─⏪
@@ -310,12 +356,17 @@ interface OasisState {
 
   // ─═̷─═̷─💻 3D AGENT WINDOWS — placeable Claude Code / Merlin / DevCraft in-world ─═̷─═̷─💻
   placedAgentWindows: AgentWindow[]
+  placedAgentAvatars: AgentAvatar[]
+  liveAgentAvatarAudio: Record<string, AgentAvatarAudioState>
   focusedAgentWindowId: string | null       // when set, camera locks to fill viewport with this window
   focusedImageId: string | null             // when set, camera locks to fill viewport with this image
   _preFocusCameraState: { position: [number, number, number]; target: [number, number, number] } | null
   addAgentWindow: (window: AgentWindow) => void
   removeAgentWindow: (id: string) => void
   updateAgentWindow: (id: string, partial: Partial<AgentWindow>) => void
+  assignAvatarToAgentWindow: (windowId: string, avatarUrl: string | null) => string | null
+  assignHermesAvatar: (avatarUrl: string | null) => string | null
+  setAgentAvatarAudio: (avatarId: string, audio: AgentAvatarAudioState | null) => void
   focusAgentWindow: (id: string | null) => void
   focusImage: (id: string | null) => void
   navigateSlide: (direction: 1 | -1) => void
@@ -407,6 +458,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
   // ─═̷─═̷─💻 3D AGENT WINDOWS ─═̷─═̷─💻
   placedAgentWindows: [],
+  placedAgentAvatars: [],
+  liveAgentAvatarAudio: {},
   focusedAgentWindowId: null,
   focusedImageId: null,
   _preFocusCameraState: null,
@@ -903,7 +956,23 @@ export const useOasisStore = create<OasisState>((set, get) => {
     loadWorld().then(world => {
       if (get().isViewMode) return // check again after async — view mode may have been entered during fetch
       if (!world) {
-        set({ _worldReady: true, _loadedObjectCount: 0, terrainParams: null, groundPresetId: 'none', groundTiles: {}, craftedScenes: [], worldConjuredAssetIds: [], placedCatalogAssets: [], transforms: {}, behaviors: {}, worldLights: seedDefaultLights(), worldSkyBackground: 'night007', placedAgentWindows: [] })
+        set({
+          _worldReady: true,
+          _loadedObjectCount: 0,
+          terrainParams: null,
+          groundPresetId: 'none',
+          groundTiles: {},
+          craftedScenes: [],
+          worldConjuredAssetIds: [],
+          placedCatalogAssets: [],
+          transforms: {},
+          behaviors: {},
+          worldLights: seedDefaultLights(),
+          worldSkyBackground: 'night007',
+          placedAgentWindows: [],
+          placedAgentAvatars: [],
+          liveAgentAvatarAudio: {},
+        })
         console.log('[World] No data — initialized empty world')
         return
       }
@@ -931,8 +1000,10 @@ export const useOasisStore = create<OasisState>((set, get) => {
         worldSkyBackground: world.skyBackgroundId || 'night007',
         customGroundPresets: mergedCustom,
         placedAgentWindows: world.agentWindows || [],
+        placedAgentAvatars: world.agentAvatars || [],
+        liveAgentAvatarAudio: {},
       })
-      console.log('[World] Loaded:', world.savedAt, '| objects:', loadedObjCount, '| preset:', world.groundPresetId || 'none', '| tiles:', Object.keys(world.groundTiles || {}).length, '| catalog:', world.catalogPlacements?.length || 0, '| lights:', lights.length, '| sky:', world.skyBackgroundId || 'night007', '| agents:', (world.agentWindows || []).length)
+      console.log('[World] Loaded:', world.savedAt, '| objects:', loadedObjCount, '| preset:', world.groundPresetId || 'none', '| tiles:', Object.keys(world.groundTiles || {}).length, '| catalog:', world.catalogPlacements?.length || 0, '| lights:', lights.length, '| sky:', world.skyBackgroundId || 'night007', '| agents:', (world.agentWindows || []).length, '| avatars:', (world.agentAvatars || []).length)
     })
 
     // World mutation fanout now comes from the shared SSE world-events bus.
@@ -953,7 +1024,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       console.warn('[World] ⚠️ Save blocked — world not loaded yet (preventing empty-state overwrite)')
       return
     }
-    const { terrainParams, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, transforms, behaviors, worldLights, worldSkyBackground, viewingWorldId, customGroundPresets, placedAgentWindows, _loadedObjectCount } = get()
+    const { terrainParams, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, transforms, behaviors, worldLights, worldSkyBackground, viewingWorldId, customGroundPresets, placedAgentWindows, placedAgentAvatars, _loadedObjectCount } = get()
 
     // ░▒▓ SANITY CHECK: block saves that would catastrophically reduce object count ▓▒░
     // If we loaded 5+ objects and now have 0, something is wrong (stale tab, empty init, etc.)
@@ -966,7 +1037,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     // Only include customGroundPresets in save if any tiles reference them
     const usedCustomIds = new Set(Object.values(groundTiles).filter(id => id.startsWith('custom_')))
     const relevantCustom = customGroundPresets.filter(p => usedCustomIds.has(p.id))
-    const worldState = { terrain: terrainParams, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, ...(relevantCustom.length > 0 && { customGroundPresets: relevantCustom }), agentWindows: placedAgentWindows }
+    const worldState = { terrain: terrainParams, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, ...(relevantCustom.length > 0 && { customGroundPresets: relevantCustom }), agentWindows: placedAgentWindows, agentAvatars: placedAgentAvatars }
     // If editing a public_edit world, save to THAT world (not user's own)
     if (get().isViewModeEditable && viewingWorldId) {
       saveWorld(worldState, viewingWorldId) // direct save to viewed world
@@ -990,12 +1061,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
     set({ _realtimeChannel: null })
     // Save current world first (immediate, not debounced) — but ONLY if world was loaded
     if (get()._worldReady) {
-      const { terrainParams, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId } = get()
+      const { terrainParams, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
       // ░▒▓ Filter out in-progress craft placeholders — objects.length === 0 means
       // the LLM hasn't materialized anything yet. Using objects.length (not name)
       // because the scene name gets updated mid-stream before objects arrive.
       const completedScenes = craftedScenes.filter(s => s.objects.length > 0)
-      saveWorld({ terrain: terrainParams, groundPresetId, groundTiles, craftedScenes: completedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground }, activeWorldId)
+      saveWorld({ terrain: terrainParams, groundPresetId, groundTiles, craftedScenes: completedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: placedAgentWindows, agentAvatars: placedAgentAvatars }, activeWorldId)
     }
 
     // ░▒▓ Block saves during transition — prevents empty state nuke ▓▒░
@@ -1022,6 +1093,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
         behaviors: world?.behaviors || {},
         worldLights: lights,
         worldSkyBackground: world?.skyBackgroundId || 'night007',
+        placedAgentWindows: world?.agentWindows || [],
+        placedAgentAvatars: world?.agentAvatars || [],
+        liveAgentAvatarAudio: {},
         selectedObjectId: null,
         inspectedObjectId: null,
         paintMode: false,
@@ -1046,8 +1120,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
     // Save current world first — only if world was loaded (prevent empty-state nuke)
     cancelPendingSave()
     if (get()._worldReady) {
-      const { terrainParams, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId } = get()
-      saveWorld({ terrain: terrainParams, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground }, activeWorldId)
+      const { terrainParams, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
+      saveWorld({ terrain: terrainParams, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: placedAgentWindows, agentAvatars: placedAgentAvatars }, activeWorldId)
     }
 
     // Create and switch to new world (async) — seed with default lights so it's not pitch black
@@ -1066,6 +1140,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
           craftedScenes: [],
           worldConjuredAssetIds: [],
           placedCatalogAssets: [],
+          placedAgentWindows: [],
+          placedAgentAvatars: [],
+          liveAgentAvatarAudio: {},
           transforms: {},
           behaviors: {},
           worldLights: defaultLights,
@@ -1164,10 +1241,27 @@ export const useOasisStore = create<OasisState>((set, get) => {
     setTimeout(() => get().saveWorldState(), 100)
   },
   removeAgentWindow: (id) => {
-    set(state => ({
-      placedAgentWindows: state.placedAgentWindows.filter(w => w.id !== id),
-      focusedAgentWindowId: state.focusedAgentWindowId === id ? null : state.focusedAgentWindowId,
-    }))
+    set(state => {
+      const linkedAvatarIds = state.placedAgentAvatars
+        .filter(entry => entry.linkedWindowId === id)
+        .map(entry => entry.id)
+      const linkedAvatarIdSet = new Set(linkedAvatarIds)
+      const nextTransforms = { ...state.transforms }
+      const nextAudio = { ...state.liveAgentAvatarAudio }
+      for (const avatarId of linkedAvatarIds) {
+        delete nextTransforms[avatarId]
+        delete nextAudio[avatarId]
+      }
+      return {
+        placedAgentWindows: state.placedAgentWindows.filter(w => w.id !== id),
+        placedAgentAvatars: state.placedAgentAvatars.filter(entry => entry.linkedWindowId !== id),
+        liveAgentAvatarAudio: nextAudio,
+        transforms: nextTransforms,
+        focusedAgentWindowId: state.focusedAgentWindowId === id ? null : state.focusedAgentWindowId,
+        selectedObjectId: linkedAvatarIdSet.has(state.selectedObjectId || '') ? null : state.selectedObjectId,
+        inspectedObjectId: linkedAvatarIdSet.has(state.inspectedObjectId || '') ? null : state.inspectedObjectId,
+      }
+    })
     setTimeout(() => get().saveWorldState(), 100)
   },
   updateAgentWindow: (id, partial) => {
@@ -1175,6 +1269,144 @@ export const useOasisStore = create<OasisState>((set, get) => {
       placedAgentWindows: state.placedAgentWindows.map(w => w.id === id ? { ...w, ...partial } : w),
     }))
     setTimeout(() => get().saveWorldState(), 100)
+  },
+  assignAvatarToAgentWindow: (windowId, avatarUrl) => {
+    const window = get().placedAgentWindows.find(entry => entry.id === windowId)
+    if (!window) return null
+
+    const existingAvatar = get().placedAgentAvatars.find(entry => entry.linkedWindowId === windowId)
+
+    if (!avatarUrl) {
+      if (!existingAvatar) return null
+      set(state => {
+        const nextTransforms = { ...state.transforms }
+        const nextAudio = { ...state.liveAgentAvatarAudio }
+        delete nextTransforms[existingAvatar.id]
+        delete nextAudio[existingAvatar.id]
+        return {
+          placedAgentAvatars: state.placedAgentAvatars.filter(entry => entry.id !== existingAvatar.id),
+          liveAgentAvatarAudio: nextAudio,
+          transforms: nextTransforms,
+          selectedObjectId: state.selectedObjectId === existingAvatar.id ? null : state.selectedObjectId,
+          inspectedObjectId: state.inspectedObjectId === existingAvatar.id ? null : state.inspectedObjectId,
+        }
+      })
+      setTimeout(() => get().saveWorldState(), 100)
+      return null
+    }
+
+    const windowTransform = get().transforms[windowId]
+    const anchor = deriveWindowAvatarAnchor(window, windowTransform)
+    const scale = deriveWindowAvatarScale(window, windowTransform)
+
+    if (existingAvatar) {
+      set(state => ({
+        placedAgentAvatars: state.placedAgentAvatars.map(entry =>
+          entry.id === existingAvatar.id
+            ? {
+                ...entry,
+                avatar3dUrl: avatarUrl,
+                label: entry.label || window.label || defaultAgentAvatarLabel(window.agentType),
+                position: entry.position || anchor.position,
+                rotation: entry.rotation || anchor.rotation,
+                scale: entry.scale || scale,
+              }
+            : entry
+        ),
+      }))
+      setTimeout(() => get().saveWorldState(), 100)
+      return existingAvatar.id
+    }
+
+    const avatarId = `agent-avatar-${windowId}`
+    set(state => ({
+      placedAgentAvatars: [
+        ...state.placedAgentAvatars,
+        {
+          id: avatarId,
+          agentType: window.agentType,
+          avatar3dUrl: avatarUrl,
+          linkedWindowId: windowId,
+          position: anchor.position,
+          rotation: anchor.rotation,
+          scale,
+          label: window.label || defaultAgentAvatarLabel(window.agentType),
+        },
+      ],
+    }))
+    setTimeout(() => get().saveWorldState(), 100)
+    return avatarId
+  },
+  assignHermesAvatar: (avatarUrl) => {
+    const existingAvatar = get().placedAgentAvatars.find(entry => entry.agentType === 'hermes')
+
+    if (!avatarUrl) {
+      if (!existingAvatar) return null
+      set(state => {
+        const nextTransforms = { ...state.transforms }
+        const nextAudio = { ...state.liveAgentAvatarAudio }
+        delete nextTransforms[existingAvatar.id]
+        delete nextAudio[existingAvatar.id]
+        return {
+          placedAgentAvatars: state.placedAgentAvatars.filter(entry => entry.id !== existingAvatar.id),
+          liveAgentAvatarAudio: nextAudio,
+          transforms: nextTransforms,
+          selectedObjectId: state.selectedObjectId === existingAvatar.id ? null : state.selectedObjectId,
+          inspectedObjectId: state.inspectedObjectId === existingAvatar.id ? null : state.inspectedObjectId,
+        }
+      })
+      setTimeout(() => get().saveWorldState(), 100)
+      return null
+    }
+
+    const spawn = deriveHermesAvatarSpawn(getCameraSnapshot())
+    if (existingAvatar) {
+      set(state => ({
+        placedAgentAvatars: state.placedAgentAvatars.map(entry =>
+          entry.id === existingAvatar.id
+            ? {
+                ...entry,
+                avatar3dUrl: avatarUrl,
+                label: entry.label || defaultAgentAvatarLabel('hermes'),
+                position: entry.position || spawn.position,
+                rotation: entry.rotation || spawn.rotation,
+                scale: entry.scale || spawn.scale,
+              }
+            : entry
+        ),
+      }))
+      setTimeout(() => get().saveWorldState(), 100)
+      return existingAvatar.id
+    }
+
+    const avatarId = 'agent-avatar-hermes'
+    set(state => ({
+      placedAgentAvatars: [
+        ...state.placedAgentAvatars,
+        {
+          id: avatarId,
+          agentType: 'hermes',
+          avatar3dUrl: avatarUrl,
+          position: spawn.position,
+          rotation: spawn.rotation,
+          scale: spawn.scale,
+          label: defaultAgentAvatarLabel('hermes'),
+        },
+      ],
+    }))
+    setTimeout(() => get().saveWorldState(), 100)
+    return avatarId
+  },
+  setAgentAvatarAudio: (avatarId, audio) => {
+    set(state => {
+      const nextAudio = { ...state.liveAgentAvatarAudio }
+      if (!audio) {
+        delete nextAudio[avatarId]
+      } else {
+        nextAudio[avatarId] = audio
+      }
+      return { liveAgentAvatarAudio: nextAudio }
+    })
   },
   focusAgentWindow: (id) => {
     if (id) {
@@ -1245,8 +1477,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
     // Save current world before entering view mode (if not already viewing)
     if (!get().isViewMode && get()._worldReady) {
       cancelPendingSave()
-      const { terrainParams, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId } = get()
-      saveWorld({ terrain: terrainParams, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground }, activeWorldId)
+      const { terrainParams, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
+      saveWorld({ terrain: terrainParams, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: placedAgentWindows, agentAvatars: placedAgentAvatars }, activeWorldId)
     }
 
     // Set view mode flag IMMEDIATELY — prevents initWorlds/loadWorldState from overwriting
@@ -1279,6 +1511,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
         behaviors: state.behaviors || {},
         worldLights: lights,
         worldSkyBackground: state.skyBackgroundId || 'night007',
+        placedAgentWindows: state.agentWindows || [],
+        placedAgentAvatars: state.agentAvatars || [],
+        liveAgentAvatarAudio: {},
         selectedObjectId: null,
         inspectedObjectId: null,
         paintMode: false,
