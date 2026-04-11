@@ -1,119 +1,164 @@
 ---
 name: oasis
-description: Teach Hermes how to work with the Oasis interface, connect to the Oasis Hermes panel, verify the transport, and troubleshoot current setup limits.
-version: 0.1.0
+description: Teach Hermes or another remote agent how to connect to Oasis as a world-building agent through the Oasis MCP endpoint, optional Oasis plugin, and live browser screenshot bridge.
+version: 0.2.0
 author: Levi
 license: MIT
 metadata:
   hermes:
-    tags: [oasis, 3d-ui, connector, remote-chat, transport]
+    tags: [oasis, mcp, world-building, 3d, hermes]
     category: integrations
-required_environment_variables:
-  - name: API_SERVER_KEY
-    prompt: Hermes API server bearer key
-    help: Set the same key used by the Hermes API server. Oasis uses it server-side when proxying chat.
-    required_for: Oasis connection verification and setup guidance
 ---
 
 # Oasis
 
-Oasis is a 3D-first interface layer for talking to Hermes, inspecting agent behavior, and eventually giving the agent world awareness. This skill teaches Hermes how Oasis works today, how the current Hermes panel is wired, what can and cannot be automated, and how to guide a user through connection or troubleshooting without pretending capabilities that do not exist yet.
+Oasis is a local-first 3D world that agents can inspect, modify, navigate, and build through a shared Oasis tool surface.
 
-## When to Use
+This skill is for the new reality, not the old one:
+- Oasis has a shared world-tool substrate
+- Oasis exposes a remote MCP endpoint at `/api/mcp/oasis`
+- Oasis can inject live world context through the optional Hermes plugin
+- visual tools depend on a live Oasis browser client with the screenshot bridge mounted
+
+Use this skill when an agent needs to become world-aware inside Oasis, not merely chat through an Oasis panel.
+
+## When To Use
 
 Use this skill when:
+- the user wants Hermes, OpenClaw, or another remote agent to work inside Oasis worlds
+- the user asks how to connect an agent to Oasis through MCP
+- the user wants an agent to inspect, place, remove, paint, light, move, or screenshot inside Oasis
+- the user asks what a remote Oasis agent can really perceive or control
+- the user wants the install path for the Oasis skill, plugin, and MCP endpoint
 
-- the user mentions Oasis, the Oasis Hermes panel, the Hermes button, `sync`, or an `UNCONFIGURED` Hermes state
-- the user wants Hermes connected to Oasis, especially from a VPS to a local Oasis instance
-- the user asks how Oasis sees Hermes: text, models, tool activity, reasoning, usage, or world state
-- the user wants to troubleshoot Oasis-side Hermes setup, transport, or security
-- the user asks about future Oasis pairing, MCP, avatar embodiment, or world-aware modes
-
-Do not use this skill for generic coding or general chat unless Oasis integration is explicitly relevant.
+Do not use this skill for generic coding unless Oasis integration is part of the task.
 
 ## Quick Reference
 
-- Oasis repo URL: `https://github.com/Parzival-Moksha/oasis`
+- Repo URL: `https://github.com/Parzival-Moksha/oasis`
 - Skill path: `skills/oasis`
-- Install directly from GitHub: `hermes skills install Parzival-Moksha/oasis/skills/oasis`
-- Add the repo as a tap: `hermes skills tap add Parzival-Moksha/oasis`
-- Verify the Hermes API server with the bundled helper: `scripts/check_hermes_api.py`
-- Emit a paste-ready Oasis pairing block: `scripts/write_oasis_env.py`
-- Preferred remote tunnel from the Oasis machine: `ssh -L 8642:127.0.0.1:8642 user@vps -N`
-- Current Oasis-side config inputs: paired block (`HERMES_API_BASE`, `HERMES_API_KEY`, optional `HERMES_MODEL`, optional `HERMES_SYSTEM_PROMPT`) with env fallback
-- Current Hermes checks: `GET /health`, `GET /v1/models`, `POST /v1/chat/completions` with `stream: true`
+- Plugin path: `hermes-plugin/oasis`
+- Remote MCP endpoint: `http://<oasis-host>:4516/api/mcp/oasis`
+- Legacy REST tools endpoint: `http://<oasis-host>:4516/api/oasis-tools`
+- Optional auth header: `Authorization: Bearer <OASIS_MCP_KEY>`
 
-## Procedure
+## Install Path
 
-1. Identify the topology before giving setup advice.
-   - Same machine: Hermes and Oasis run on the same host, VM, or WSL environment.
-   - Split machine: Hermes runs on a VPS and Oasis runs on a local desktop. This is the current common case.
-   - Hosted Oasis: the Oasis app is reachable over a public domain.
+1. Install the skill from the repo.
+   - `hermes skills install Parzival-Moksha/oasis/skills/oasis`
+   - or add the repo as a tap and install from there.
 
-2. Verify Hermes-side prerequisites first.
-   - Confirm the Hermes API server is enabled and reachable on loopback.
-   - Prefer the bundled `scripts/check_hermes_api.py` helper before ad-hoc shell parsing.
-   - Confirm `/v1/models` returns at least one model before blaming Oasis.
+2. Configure the Oasis MCP server in the agent runtime.
+   - Point the agent at `http://<oasis-host>:4516/api/mcp/oasis`
+   - If Oasis has `OASIS_MCP_KEY` set, send the same bearer token
+   - See `references/streamable-http-mcp.example.json` for a concrete starter shape
 
-3. Give setup advice that matches the topology.
-   - Same machine: provide exact setup commands and env keys, but keep the user in control of Oasis installation and configuration.
-   - Split machine: provide exact setup commands and env keys, but keep the user in control of Oasis installation and configuration.
-   - Hosted Oasis: treat `/api/hermes` as a sensitive proxy and require real app auth before routing traffic.
+3. Optionally install the Oasis Hermes plugin.
+   - Plugin folder: `hermes-plugin/oasis`
+   - The plugin injects compact live world context into each turn even before tools are called
 
-4. Explain the current Oasis transport accurately.
-   - The browser does not talk to Hermes directly.
-   - Oasis uses a server-side `/api/hermes` proxy.
-   - That proxy resolves config from local pairing storage first, then falls back to Oasis server env vars.
-   - The panel can currently show chat, models, streamed text, optional reasoning chunks, optional tool call chunks, and usage if the upstream emits them.
+4. Keep a real Oasis browser client open in the target world when the agent needs vision.
+   - `screenshot_viewport`
+   - `screenshot_avatar`
+   - `avatarpic_merlin`
+   - `avatarpic_user`
 
-5. Be explicit about the current automation boundary.
-   - Installing this skill teaches Hermes the workflow and communication style for Oasis onboarding.
-   - Installing this skill does not install Oasis automatically.
-   - This skill can guide the user and output a pairing block, but the user still performs a one-time paste in Oasis.
+Without the live browser bridge, screenshot tools cannot see the world.
 
-6. Recommend the right near-term path for "sexy window, minimal hassle".
-   - Today: SSH tunnel or private network plus one-time pairing paste in the Oasis Hermes panel.
-   - Hermes can run `scripts/write_oasis_env.py` to produce the pairing block fast.
-   - For hosted/public Oasis, require app auth before exposing `/api/hermes` externally.
+## Recommended MCP Config
 
-7. Inside Oasis conversations, behave for a compact UI.
-   - Prefer concise, structured answers.
-   - If the user asks what Hermes can see, distinguish among plain text, tool activity, reasoning summaries, and true world state.
-   - Never pretend to have world awareness or direct build powers unless a real Oasis bridge or MCP server is present.
+Use a remote HTTP MCP server entry that targets the Oasis endpoint. The exact config format depends on the host agent, but the important pieces are:
 
-8. Troubleshoot unconfigured states precisely.
-   - If Oasis is unconfigured, explain that the missing key is in Oasis server-side config (pairing store or env), not in the browser.
-   - If `sync` fails, verify tunnel, `/health`, `/v1/models`, and model selection.
-   - If the model list loads but chat fails, inspect the upstream `/v1/chat/completions` path and stream behavior.
+- URL: `/api/mcp/oasis`
+- Transport: Streamable HTTP MCP
+- Auth: bearer token if `OASIS_MCP_KEY` is set
 
-9. When asked for the "just make it work" path, use this response format.
-   - Step A: install the Oasis skill using `hermes skills install Parzival-Moksha/oasis/skills/oasis`.
-   - Step B: output a pairing block exactly in this env format:
-     `HERMES_API_BASE=...`
-     `HERMES_API_KEY=...`
-     `HERMES_MODEL=...` (optional)
-   - Step C: show the exact SSH tunnel command.
-   - Step D: tell the user to open Oasis, click `pair`, paste the block, save, press `sync`, and send a short test message.
-   - Step E: include one fallback check if the panel still shows `UNCONFIGURED`.
+If the agent also supports the Oasis plugin, use both:
+- MCP for tools
+- plugin for compact always-on context
 
-## Pitfalls
+That pairing gives the best result.
 
-- A skill is agent memory and workflow, not a real-time transport adapter.
-- Do not bind the Hermes API server to `0.0.0.0` over plain HTTP.
-- Do not paste `API_SERVER_KEY` into ordinary chat text.
-- Remote VPS plus local Oasis still needs a one-time local pairing paste with the current Oasis implementation.
-- Oasis currently does not give Hermes world awareness, avatar control, or direct world-edit authority on its own.
-- If the user wants true zero-touch pairing, explain that it requires additional Oasis product work beyond the current one-time pairing flow.
+## What The Agent Can Do
+
+The Oasis tool surface supports:
+- world state and world summary
+- object search and asset search
+- placing, modifying, and removing catalog objects
+- crafting procedural scenes
+- sky, ground, tile paint, and lights
+- embodied agent avatars
+- avatar walking and animation playback
+- viewport and avatar screenshots
+- Forge conjuration workflows for Meshy and Tripo assets
+
+The agent should usually:
+1. call `get_world_state` or `get_world_info`
+2. call `query_objects` or `search_assets` as needed
+3. make a world mutation
+4. use screenshot tools when visual verification matters
+
+## Visual Truth
+
+Oasis has three different truths the agent should keep straight:
+
+- world state: persisted build data and live player context from Oasis
+- avatar embodiment: agent avatars, movement targets, and avatar screenshots
+- browser vision: what the screenshot bridge can currently capture from the live client
+
+Important:
+- screenshot tools require a live Oasis browser client
+- live player avatar and camera context are refreshed per turn, not continuously every frame
+- a screenshot is stronger than verbal assumption when the user is asking about what is visible right now
+
+## Forge And Conjuration
+
+Oasis world-building now includes Forge conjuration tools in the shared tool layer:
+- `list_conjured_assets`
+- `get_conjured_asset`
+- `conjure_asset`
+- `process_conjured_asset`
+- `place_conjured_asset`
+- `delete_conjured_asset`
+
+Use them like this:
+- `conjure_asset` to start Meshy or Tripo generation
+- `process_conjured_asset` for texture, remesh, rig, or animate
+- `place_conjured_asset` to place or reposition an existing conjured asset
+- `delete_conjured_asset` to remove it from the active world and optionally from the Forge registry
+
+If the user wants a new 3D asset rather than a catalog asset, prefer these tools over pretending the asset already exists.
+
+## Operating Guidance
+
+- Prefer concise world-aware answers inside Oasis UI surfaces.
+- Distinguish between player view, agent view, and external view.
+- Do not pretend the agent sees the world if screenshot capture is unavailable.
+- Do not claim a generation is finished until the conjured asset status actually says so.
+- When the user asks to move relative to them, use live player context or avatar screenshot tools instead of guessing.
+- When the user asks for precise visual verification, use screenshot tools rather than narration alone.
+
+## Limits
+
+- The skill does not install Oasis itself.
+- The skill does not by itself register MCP config in every host agent runtime.
+- The plugin injects compact context, but real build power comes from the Oasis MCP tool surface.
+- Screenshot tools still depend on a live Oasis browser client in the target world.
+- Local Merlin and remote Hermes can share the same tool surface, but runtime UX may still differ by host client.
 
 ## Verification
 
-- Hermes API health responds successfully.
-- `/v1/models` returns at least one model.
-- If remote, the tunnel from the Oasis machine is active.
-- Oasis `sync` shows connected and lists models.
-- A short test prompt streams back in the Oasis Hermes panel.
+After setup, verify in this order:
+
+1. `get_world_info`
+2. `get_world_state`
+3. `search_assets`
+4. one safe placement or walk tool
+5. one screenshot tool with the live browser open
+
+If `get_world_info` works but screenshot tools fail, the MCP transport is up and the browser bridge is the missing link.
 
 ## References
 
-- Read `references/current-oasis-transport.md` for the exact current Oasis-side behavior and env expectations.
-- Use `scripts/check_hermes_api.py` for Hermes-side API verification before offering connection advice.
+- Read `references/current-oasis-transport.md` for the current Oasis transport and runtime boundary.
+- Read `references/streamable-http-mcp.example.json` for a generic remote MCP config skeleton.

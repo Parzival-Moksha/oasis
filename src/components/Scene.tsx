@@ -34,6 +34,7 @@ import { defaultSettings, SKY_BACKGROUNDS } from './scene-lib'
 import { SettingsContext, DragContext } from './scene-lib'
 import { ForgeRealm } from './realms/ForgeRealm'
 import PanoramaCapture from './forge/PanoramaCapture'
+import { ViewportScreenshotBridge } from './forge/ViewportScreenshotBridge'
 import { WizardConsole } from './forge/WizardConsole'
 // AssetExplorerWindow deleted — functionality lives in WizardConsole
 import { ObjectInspector } from './forge/ObjectInspector'
@@ -52,7 +53,7 @@ import { HelpPanel } from './forge/HelpPanel'
 import { ConsolePanel } from './forge/ConsolePanel'
 import { useWorldLoader } from './forge/WorldObjects'
 import { completeQuest } from '@/lib/quests'
-import { useInputManager, getInputCapabilities, isPointerLocked } from '@/lib/input-manager'
+import { useInputManager, getInputCapabilities, getMouseLookDebugState, isPointerLocked } from '@/lib/input-manager'
 import { CameraController as CameraControllerComponent, sprintRef, FPSControls, FPS_KEYBOARD_MAP } from './CameraController'
 import { useAudioManager, SOUND_OPTIONS, type SoundEvent } from '@/lib/audio-manager'
 import { installTestHarness } from '@/lib/test-harness'
@@ -100,6 +101,67 @@ function PointerLockRaycaster() {
 
 // ─═̷─═̷─💨─═̷─═̷─{ SPRINT SPEED LINES }─═̷─═̷─💨─═̷─═̷─
 // Instanced thin streaks that fly past the camera during sprint
+function isMouseLookDebugEnabled(): boolean {
+  if (typeof window === 'undefined') return false
+  const flagWindow = window as typeof window & { __OASIS_MOUSE_DEBUG__?: boolean }
+  return flagWindow.__OASIS_MOUSE_DEBUG__ === true || localStorage.getItem('oasis-mouse-debug') === '1'
+}
+
+function MouseLookDebugOverlay() {
+  const [enabled, setEnabled] = useState(false)
+  const [debug, setDebug] = useState(() => getMouseLookDebugState())
+
+  useEffect(() => {
+    const sync = () => {
+      setEnabled(isMouseLookDebugEnabled())
+      setDebug(getMouseLookDebugState())
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || !event.altKey || event.code !== 'KeyM') return
+      event.preventDefault()
+      const next = !isMouseLookDebugEnabled()
+      const flagWindow = window as typeof window & { __OASIS_MOUSE_DEBUG__?: boolean }
+      flagWindow.__OASIS_MOUSE_DEBUG__ = next
+      localStorage.setItem('oasis-mouse-debug', next ? '1' : '0')
+      sync()
+    }
+
+    sync()
+    window.addEventListener('keydown', onKeyDown)
+    const interval = window.setInterval(sync, 120)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.clearInterval(interval)
+    }
+  }, [])
+
+  if (!enabled) return null
+
+  return (
+    <div
+      className="fixed bottom-4 left-4 z-[120] pointer-events-none rounded-lg border border-cyan-400/25 bg-black/70 px-3 py-2 text-[11px] font-mono text-cyan-100"
+      style={{ minWidth: 270, backdropFilter: 'blur(6px)' }}
+    >
+      <div className="flex items-center justify-between gap-3 text-cyan-200">
+        <span>mouse-look debug</span>
+        <span className="text-cyan-100/60">Ctrl+Alt+M</span>
+      </div>
+      <div className="mt-1 text-cyan-100/80">
+        mode: {debug.activeEventType} | queued: {debug.queuedSampleCount} | queueAge: {debug.lastQueueAgeMs.toFixed(1)}ms
+      </div>
+      <div className="text-cyan-100/80">
+        pending: {debug.queuedDelta.x.toFixed(1)}, {debug.queuedDelta.y.toFixed(1)} | consumed: {debug.lastConsumedDelta.x.toFixed(1)}, {debug.lastConsumedDelta.y.toFixed(1)}
+      </div>
+      <div className="text-cyan-100/80">
+        consumedSamples: {debug.lastConsumedSampleCount} | consumedAge: {debug.lastConsumedAgeMs.toFixed(1)}ms
+      </div>
+      <div className="text-cyan-100/80">
+        dropped: {debug.droppedSampleCount} | droppedMag: {debug.droppedMagnitude.toFixed(1)}
+      </div>
+    </div>
+  )
+}
+
 const SPRINT_LINE_COUNT = 80
 
 function SprintParticles() {
@@ -803,6 +865,16 @@ function DevcraftMiniBar({ onExpand }: { onExpand: () => void }) {
   }, [dragging])
 
   useEffect(() => {
+    let cancelled = false
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+
+    const scheduleNext = () => {
+      if (cancelled) return
+      const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden'
+      const delay = hidden ? 60000 : mission ? 30000 : 15000
+      timeoutId = setTimeout(() => { void poll() }, delay)
+    }
+
     const poll = async () => {
       try {
         const res = await fetch('/api/missions?status=wip&limit=1')
@@ -811,11 +883,16 @@ function DevcraftMiniBar({ onExpand }: { onExpand: () => void }) {
         const wip = Array.isArray(data) ? data[0] : null
         setMission(wip)
       } catch {}
+      finally {
+        scheduleNext()
+      }
     }
-    poll()
-    const interval = setInterval(poll, 10000)
-    return () => clearInterval(interval)
-  }, [])
+    void poll()
+    return () => {
+      cancelled = true
+      if (timeoutId) clearTimeout(timeoutId)
+    }
+  }, [mission])
 
   useEffect(() => {
     if (!mission?.startedAt) return
@@ -1063,6 +1140,7 @@ export default function Scene() {
 
         {/* ─═̷─═̷─📸─═̷─═̷─ PANORAMA CAPTURE (Ctrl+Shift+P) ─═̷─═̷─📸─═̷─═̷─ */}
         <PanoramaCapture />
+        <ViewportScreenshotBridge />
 
         <PostProcessing />
         <FPSTracker />
@@ -1091,6 +1169,7 @@ export default function Scene() {
       )}
 
       {/* ─═̷─═̷─🎮 MODE SWITCH LABEL ─═̷─═̷─🎮 */}
+      <MouseLookDebugOverlay />
       <ModeSwitchLabel />
 
       {/* ─═̷─═̷─🔮─═̷─═̷─ TOP-LEFT BUTTON BAR — Profile, Settings, Wizard, Action Log ─═̷─═̷─🔮─═̷─═̷─ */}
@@ -1465,7 +1544,7 @@ function ImageDropZone() {
       {/* Upload progress */}
       {uploading && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[10001] bg-black/80 border border-sky-400/40 rounded-lg px-6 py-3 text-sky-400 text-sm pointer-events-none">
-          Uploading images...
+          Uploading media...
         </div>
       )}
     </>
@@ -1553,6 +1632,15 @@ function OasisLoader() {
   const hasCompletedFirstLoad = useRef(false)
 
   const [byteInfo, setByteInfo] = useState({ loaded: 0, total: 0, speed: 0 })
+  const normalizedProgress = Number.isFinite(progress)
+    ? Math.max(0, Math.min(progress, 100))
+    : total > 0 && loaded >= total
+      ? 100
+      : 0
+  const hasByteData = byteInfo.total > 0
+  const isSettled = normalizedProgress >= 100
+    || (total > 0 && loaded >= total)
+    || (hasByteData && byteInfo.loaded >= byteInfo.total)
 
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1618,7 +1706,7 @@ function OasisLoader() {
   }, [])
 
   useEffect(() => {
-    if (!active && progress === 100) {
+    if (isSettled) {
       const timer = setTimeout(() => {
         setShow(false)
         hasCompletedFirstLoad.current = true
@@ -1626,11 +1714,9 @@ function OasisLoader() {
       return () => clearTimeout(timer)
     }
     if (active && !hasCompletedFirstLoad.current) setShow(true)
-  }, [active, progress])
+  }, [active, isSettled])
 
   if (!show) return null
-
-  const hasByteData = byteInfo.total > 0
 
   return (
     <div
@@ -1686,7 +1772,7 @@ function OasisLoader() {
             )}
           </>
         ) : (
-          <span>{loaded}/{total} | {Math.round(progress)}%</span>
+          <span>{loaded}/{total} | {Math.round(normalizedProgress)}%</span>
         )}
       </div>
     </div>

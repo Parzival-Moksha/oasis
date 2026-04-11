@@ -27,13 +27,24 @@ import { generateSingleCraftedThumbnail, useCraftedThumbnailGenerator, useCatalo
 import { usePricing, getConjurePriceKey } from '../../hooks/usePricing'
 import { extractPartialCraftData } from '../../lib/craft-stream'
 import { addToSceneLibrary, getSceneLibrary } from '../../lib/forge/scene-library'
+import { derivePlayerCastSpawn } from '../../lib/player-avatar-runtime'
 import { useUILayer } from '@/lib/input-manager'
 import { AssetCard, RegenAllButton } from './AssetCard'
+import { DeleteButton } from './DeleteButton'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 
 function readCols(key: string, fallback: number): number {
   try { const v = parseInt(localStorage.getItem(`oasis-wizard-cols-${key}`) || ''); return v >= 1 && v <= 6 ? v : fallback } catch { return fallback }
+}
+
+interface ConfirmDeleteState {
+  requestId: string
+  itemName: string
+  placedCount?: number
+  worldCount?: number
+  loadingUsage?: boolean
+  onConfirm: () => void | Promise<void>
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -173,10 +184,11 @@ function LightTooltipWrap({ type, children, className }: { type: string; childre
 // GALLERY ITEM — Each conjured asset in the grid
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function GalleryItem({ asset, onDelete, onRequestDelete, isInWorld, onPlace, onRemove, onTexture, onRemesh, onRig, onRename, pricing }: {
+function GalleryItem({ asset, onDelete, onRequestDelete, onPreview, isInWorld, onPlace, onRemove, onTexture, onRemesh, onRig, onRename, pricing }: {
   asset: ConjuredAsset
   onDelete: (id: string) => void
   onRequestDelete?: (id: string, name: string) => void
+  onPreview?: (asset: ConjuredAsset) => void
   isInWorld: boolean
   onPlace: (id: string) => void
   onRemove: (id: string) => void
@@ -211,7 +223,9 @@ function GalleryItem({ asset, onDelete, onRequestDelete, isInWorld, onPlace, onR
 
   return (
     <div
-      className="relative rounded-lg border overflow-hidden group transition-all duration-200 hover:scale-[1.02]"
+      className={`relative rounded-lg border overflow-hidden group transition-all duration-200 hover:scale-[1.02] ${
+        asset.status === 'ready' ? 'cursor-pointer' : ''
+      }`}
       style={{
         background: 'rgba(20, 20, 20, 0.8)',
         borderColor: asset.status === 'ready'
@@ -219,6 +233,9 @@ function GalleryItem({ asset, onDelete, onRequestDelete, isInWorld, onPlace, onR
           : asset.status === 'failed'
             ? 'rgba(239, 68, 68, 0.3)'
             : 'rgba(255, 255, 255, 0.08)',
+      }}
+      onClick={() => {
+        if (asset.status === 'ready') onPreview?.(asset)
       }}
     >
       {/* Thumbnail / placeholder */}
@@ -252,17 +269,15 @@ function GalleryItem({ asset, onDelete, onRequestDelete, isInWorld, onPlace, onR
         )}
 
         {/* Delete button (top-right, on hover) — with confirmation */}
-        <button
+        <DeleteButton
           onClick={(e) => {
             e.stopPropagation()
             const name = asset.displayName || asset.prompt?.slice(0, 30) || asset.id
             if (onRequestDelete) onRequestDelete(asset.id, name)
             else onDelete(asset.id)
           }}
-          className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 text-gray-400 hover:text-red-400 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-        >
-          &#10005;
-        </button>
+          title={`Delete ${displayLabel}`}
+        />
 
         {/* Tier + action badge (top-left) */}
         <div className="absolute top-1 left-1 text-[8px] font-mono px-1 py-0.5 rounded bg-black/60 text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -423,7 +438,7 @@ interface InFlightImage {
   error?: string
 }
 
-function ImagineTab({ cols, setLightboxUrl }: { cols: number; setLightboxUrl: (url: string | null) => void }) {
+function ImagineTab({ cols, setLightboxUrl, onRequestDelete }: { cols: number; setLightboxUrl: (url: string | null) => void; onRequestDelete: (image: GeneratedImage, placedCount: number) => void }) {
   const [prompt, setPrompt] = useState('')
   const [selectedModel, setSelectedModel] = useState<string>('gemini-flash')
   const [inFlight, setInFlight] = useState<InFlightImage[]>([])
@@ -590,7 +605,8 @@ function ImagineTab({ cols, setLightboxUrl }: { cols: number; setLightboxUrl: (u
             </div>
             <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
               {[...generatedImages].reverse().map(img => {
-                const isPlaced = placedCatalogAssets.some(ca => ca.imageUrl === img.url)
+                const placedCount = placedCatalogAssets.filter(ca => ca.imageUrl === img.url).length
+                const isPlaced = placedCount > 0
                 return (
                   <AssetCard
                     key={img.id}
@@ -603,7 +619,7 @@ function ImagineTab({ cols, setLightboxUrl }: { cols: number; setLightboxUrl: (u
                     accentColor="#EC4899"
                     subtitle={new Date(img.createdAt).toLocaleDateString()}
                     onClick={() => enterPlacementMode({ type: 'image', name: img.prompt.slice(0, 24), imageUrl: img.url })}
-                    onDelete={() => removeGeneratedImage(img.id)}
+                    onDelete={() => onRequestDelete(img, placedCount)}
                     onDownload={(_, url) => {
                       const a = document.createElement('a')
                       a.href = url
@@ -672,12 +688,10 @@ function MediaLightbox({ url, onClose }: { url: string; onClose: () => void }) {
   )
 }
 
-function MediaTab({ cols }: { cols: number }) {
+function MediaTab({ cols, onRequestDelete }: { cols: number; onRequestDelete: (target: { url: string; name: string; placedCount: number }, onConfirm: () => Promise<void>) => void }) {
   const [subTab, setSubTab] = useState<'generate' | 'image' | 'video' | 'audio'>('generate')
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([])
   const [loading, setLoading] = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState<{ url: string; name: string; placedCount: number; worldCount: number } | null>(null)
-  const [loadingUsage, setLoadingUsage] = useState(false)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const enterPlacementMode = useOasisStore(s => s.enterPlacementMode)
   const placedCatalogAssets = useOasisStore(s => s.placedCatalogAssets)
@@ -685,6 +699,7 @@ function MediaTab({ cols }: { cols: number }) {
   const addCustomGroundPreset = useOasisStore(s => s.addCustomGroundPreset)
   const customGroundPresets = useOasisStore(s => s.customGroundPresets)
   const enterPaintMode = useOasisStore(s => s.enterPaintMode)
+  const removeGeneratedImage = useOasisStore(s => s.removeGeneratedImage)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Fetch media list
@@ -721,7 +736,6 @@ function MediaTab({ cols }: { cols: number }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
     })
-    setDeleteTarget(null)
     fetchMedia()
   }, [fetchMedia])
 
@@ -797,7 +811,18 @@ function MediaTab({ cols }: { cols: number }) {
       </div>
 
       {/* Generate sub-tab = ImagineTab (passes cols + lightbox) */}
-      {subTab === 'generate' && <ImagineTab cols={cols} setLightboxUrl={setLightboxUrl} />}
+      {subTab === 'generate' && (
+        <ImagineTab
+          cols={cols}
+          setLightboxUrl={setLightboxUrl}
+          onRequestDelete={(image, placedCount) => {
+            onRequestDelete(
+              { url: image.url, name: image.prompt.slice(0, 30) || 'generated image', placedCount },
+              async () => { removeGeneratedImage(image.id) }
+            )
+          }}
+        />
+      )}
 
       {/* Media browser */}
       {subTab !== 'generate' && (
@@ -837,22 +862,21 @@ function MediaTab({ cols }: { cols: number }) {
                       // Click on video = placement mode
                       enterPlacementMode({ type: 'video', name: item.name, videoUrl: item.url })
                     } else if (item.type === 'audio') {
-                      enterPlacementMode({ type: 'conjured', name: 'Loudspeaker', path: '/conjured/conj_mn6ogn4ae05j.glb', defaultScale: 0.5 })
-                      ;(window as any).__pendingAudioUrl = item.url
+                      enterPlacementMode({
+                        type: 'catalog',
+                        catalogId: 'kf_speaker',
+                        name: item.name.replace(/\.[^.]+$/, '') || 'Loudspeaker',
+                        path: '/models/kenney-furniture/speaker.glb',
+                        defaultScale: 2,
+                        audioUrl: item.url,
+                      })
                     }
                   }}
                   onDelete={() => {
-                    // Show modal immediately with local count, then fetch cross-world usage
-                    setDeleteTarget({ url: item.url, name: item.name, placedCount, worldCount: 0 })
-                    setLoadingUsage(true)
-                    const activeWorldId = useOasisStore.getState().activeWorldId
-                    fetch(`${OASIS_BASE}/api/worlds/asset-usage?url=${encodeURIComponent(item.url)}&currentWorldId=${encodeURIComponent(activeWorldId)}&type=media`)
-                      .then(r => r.json())
-                      .then((usage: { totalCount: number; worldCount: number }) => {
-                        setDeleteTarget(prev => prev ? { ...prev, placedCount: usage.totalCount, worldCount: usage.worldCount } : prev)
-                      })
-                      .catch(() => { /* keep local count on error */ })
-                      .finally(() => setLoadingUsage(false))
+                    onRequestDelete(
+                      { url: item.url, name: item.name, placedCount },
+                      async () => { await handleDelete(item.url) }
+                    )
                   }}
                   onDownload={item.type === 'image' ? (_, url) => {
                     const a = document.createElement('a')
@@ -874,18 +898,6 @@ function MediaTab({ cols }: { cols: number }) {
       )}
 
       {/* Delete confirmation modal — portaled to escape overflow:hidden */}
-      {typeof document !== 'undefined' && createPortal(
-        <DeleteConfirmModal
-          isOpen={!!deleteTarget}
-          itemName={deleteTarget?.name || ''}
-          placedCount={deleteTarget?.placedCount}
-          worldCount={deleteTarget?.worldCount}
-          loadingUsage={loadingUsage}
-          onConfirm={() => deleteTarget && handleDelete(deleteTarget.url)}
-          onCancel={() => { setDeleteTarget(null); setLoadingUsage(false) }}
-        />,
-        document.body
-      )}
 
       {/* Image lightbox — portaled to escape overflow:hidden */}
       {lightboxUrl && typeof document !== 'undefined' && createPortal(
@@ -928,7 +940,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
   const resizeStart = useRef({ width: 0, height: 0, x: 0, y: 0 })
   // ░▒▓ Adaptive tabs — measure overflow, downgrade to icon-only when needed ▓▒░
   const tabStripRef = useRef<HTMLDivElement>(null)
-  const [showTabLabels, setShowTabLabels] = useState(size.width >= 620)
+  const [showTabLabels, setShowTabLabels] = useState(size.width >= 720)
 
   // ░▒▓ Persist window geometry to localStorage on drag/resize end ▓▒░
   useEffect(() => {
@@ -939,7 +951,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
   }, [isDragging, isResizing, position, size])
 
   // ░▒▓ Tab label overflow detection — try labels at wide sizes, downgrade if overflow ▓▒░
-  useEffect(() => { setShowTabLabels(size.width >= 620) }, [size.width])
+  useEffect(() => { setShowTabLabels(size.width >= 720) }, [size.width])
   useEffect(() => {
     const el = tabStripRef.current
     if (!el || !showTabLabels) return
@@ -1002,8 +1014,6 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
 
   // ─═̷─ Conjuration engine ─═̷─
   const { conjuredAssets, startConjure, processAsset, deleteAsset, activeCount } = useConjure()
-  const [conjureDeleteTarget, setConjureDeleteTarget] = useState<{ id: string; name: string; placedCount?: number; worldCount?: number } | null>(null)
-  const [conjureLoadingUsage, setConjureLoadingUsage] = useState(false)
   const updateConjuredAsset = useOasisStore(s => s.updateConjuredAsset)
 
   // ░▒▓ Rename — PATCH to server + update local store ▓▒░
@@ -1032,7 +1042,6 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
   const deleteFromLibrary = useOasisStore(s => s.deleteFromLibrary)
   const [activeCrafts, setActiveCrafts] = useState(0)
   const craftLoading = activeCrafts > 0
-  const [craftAnimated, setCraftAnimated] = useState(false)
 
 
   // ─═̷─ Ground texture + paint mode ─═̷─
@@ -1068,6 +1077,43 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
   const importWorldFromJson = useOasisStore(s => s.importWorldFromJson)
   const activeWorldId = useOasisStore(s => s.activeWorldId)
   const worldRegistry = useOasisStore(s => s.worldRegistry)
+  const [deleteConfirm, setDeleteConfirm] = useState<ConfirmDeleteState | null>(null)
+
+  const requestPermanentDelete = useCallback((options: {
+    itemName: string
+    placedCount?: number
+    worldCount?: number
+    usageUrl?: string
+    onConfirm: () => void | Promise<void>
+  }) => {
+    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    setDeleteConfirm({
+      requestId,
+      itemName: options.itemName,
+      placedCount: options.placedCount,
+      worldCount: options.worldCount,
+      loadingUsage: !!options.usageUrl,
+      onConfirm: async () => {
+        await options.onConfirm()
+        setDeleteConfirm(null)
+      },
+    })
+
+    if (!options.usageUrl) return
+
+    fetch(options.usageUrl)
+      .then(r => r.json())
+      .then((usage: { totalCount: number; worldCount: number }) => {
+        setDeleteConfirm(prev => prev?.requestId === requestId
+          ? { ...prev, placedCount: usage.totalCount, worldCount: usage.worldCount, loadingUsage: false }
+          : prev)
+      })
+      .catch(() => {
+        setDeleteConfirm(prev => prev?.requestId === requestId
+          ? { ...prev, loadingUsage: false }
+          : prev)
+      })
+  }, [])
 
   // ─═̷─ Transform controls ─═̷─
   const selectedObjectId = useOasisStore(s => s.selectedObjectId)
@@ -1110,6 +1156,8 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
   // ░▒▓ Clear preview + exit paint mode when switching tabs ▓▒░
   useEffect(() => {
     setPreviewAsset(null)
+    setPreviewConjured(null)
+    setPreviewCrafted(null)
     if (mode !== 'world') exitPaintMode()
   }, [mode, exitPaintMode])
 
@@ -1279,21 +1327,23 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
     // 2. Stream tokens, parse partial JSON, update scene incrementally
     // 3. Finalize: library save, thumbnail, XP, world save
     const sceneId = `craft_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    const spawn = derivePlayerCastSpawn(4)
     const placeholderScene: CraftedScene = {
       id: sceneId,
       name: 'Crafting...',
       prompt: craftPrompt,
       objects: [],
-      position: [0, 0, 0],
+      position: spawn.position,
       model: craftModel,
       createdAt: new Date().toISOString(),
     }
 
     try {
-      const res = await fetch(`${OASIS_BASE}/api/craft/stream`, {
+      const isCC = craftModel.startsWith('cc-')
+      const res = await fetch(`${OASIS_BASE}/api/craft/${isCC ? 'cc' : 'stream'}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: iterativePrompt, model: craftModel, animated: craftAnimated }),
+        body: JSON.stringify({ prompt: iterativePrompt, model: craftModel }),
       })
 
       if (!res.ok) {
@@ -1344,7 +1394,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
         name: finalParsed.name || 'Unnamed Scene',
         prompt: craftPrompt,
         objects: finalParsed.objects,
-        position: [0, 0, 0],
+        position: spawn.position,
         createdAt: placeholderScene.createdAt,
         model: craftModel,
       }
@@ -1541,7 +1591,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
       >
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-lg">🧙‍♂️</span>
-          {size.width >= 420 && <span className="text-sm tracking-widest" style={{ color: forgeColor, fontFamily: "'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif", fontWeight: 700, fontVariant: 'small-caps', letterSpacing: '0.15em' }}>Wizard Console</span>}
+          {size.width >= 520 && <span className="text-sm tracking-widest" style={{ color: forgeColor, fontFamily: "'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif", fontWeight: 700, fontVariant: 'small-caps', letterSpacing: '0.15em' }}>Wizard Console</span>}
           {activeCount > 0 && (
             <span className="text-yellow-400 text-xs animate-pulse">&#9679; {activeCount}</span>
           )}
@@ -1549,7 +1599,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
 
         <div className="flex items-center gap-1 min-w-0 flex-1 ml-2 overflow-hidden">
           {/* ░▒▓ Adaptive tab strip — icons always, labels when there's room ▓▒░ */}
-          <div ref={tabStripRef} className="flex items-center gap-1 overflow-x-auto min-w-0 flex-1" style={{ scrollbarWidth: 'none' }}>
+          <div ref={tabStripRef} className="flex items-center gap-1 overflow-x-auto min-w-0 flex-1 pb-0.5" style={{ scrollbarWidth: 'none' }}>
             {([
               { key: 'conjure', label: 'Conjure', icon: '✨', color: 'orange', title: 'Text-to-3D conjuring' },
               { key: 'craft', label: 'Craft', icon: '⚒️', color: 'blue', title: 'LLM procedural geometry' },
@@ -1562,7 +1612,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
               <button
                 key={tab.key}
                 onClick={() => setMode(tab.key)}
-                className={`text-xs px-1.5 py-0.5 rounded transition-colors whitespace-nowrap ${
+                className={`inline-flex min-w-fit flex-shrink-0 items-center justify-center text-xs px-1.5 py-0.5 rounded transition-colors whitespace-nowrap ${
                   mode === tab.key
                     ? `bg-${tab.color}-500/20 text-${tab.color}-400 border border-${tab.color}-500/50`
                     : 'text-gray-300 border border-transparent hover:text-white'
@@ -1574,7 +1624,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                   borderColor: `rgba(${tab.color === 'orange' ? '249,115,22' : tab.color === 'blue' ? '59,130,246' : tab.color === 'emerald' ? '16,185,129' : tab.color === 'yellow' ? '234,179,8' : tab.color === 'cyan' ? '6,182,212' : tab.color === 'purple' ? '168,85,247' : '236,72,153'}, 0.5)`,
                 } : undefined}
               >
-                <span>{tab.icon}</span>{showTabLabels && <span className="ml-1">{tab.label}</span>}
+                <span className="flex-shrink-0 text-sm leading-none">{tab.icon}</span>{showTabLabels && <span className="ml-1">{tab.label}</span>}
               </button>
             ))}
           </div>
@@ -1812,18 +1862,6 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
         >
           <div className="flex items-center gap-2">
             <span className="text-xs text-blue-400/70 font-mono">LLM craft</span>
-            {/* Static / Animated toggle */}
-            <button
-              onClick={() => setCraftAnimated(!craftAnimated)}
-              className={`text-[9px] font-mono px-1.5 py-0.5 rounded border transition-all ${
-                craftAnimated
-                  ? 'border-purple-500/50 bg-purple-500/15 text-purple-300'
-                  : 'border-gray-700/30 bg-black/40 text-gray-500 hover:text-gray-400'
-              }`}
-              title={craftAnimated ? 'Animated mode — LLM will add motion to primitives' : 'Static mode — no animations'}
-            >
-              {craftAnimated ? 'Animated' : 'Static'}
-            </button>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-[9px] text-gray-500 font-mono">{craftedScenes.length} scene{craftedScenes.length !== 1 ? 's' : ''}</span>
@@ -1834,6 +1872,8 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
               style={{ backgroundImage: 'none' }}
               title="LLM model for crafting + terrain"
             >
+              <option value="cc-opus">CC Opus</option>
+              <option value="cc-sonnet">CC Sonnet</option>
               <option value="anthropic/claude-sonnet-4-6">Sonnet 4.6</option>
               <option value="anthropic/claude-haiku-4-5">Haiku 4.5</option>
               <option value="z-ai/glm-5">GLM-5</option>
@@ -2627,6 +2667,13 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                           savedScrollTop.current = scrollRef.current?.scrollTop ?? 0
                           setPreviewConjured(asset)
                         }}
+                        onDelete={() => {
+                          requestPermanentDelete({
+                            itemName: asset.displayName || asset.prompt.slice(0, 30),
+                            usageUrl: `${OASIS_BASE}/api/worlds/asset-usage?url=${encodeURIComponent(asset.id)}&currentWorldId=${encodeURIComponent(activeWorldId)}&type=conjured`,
+                            onConfirm: () => deleteAsset(asset.id),
+                          })
+                        }}
                         badges={<>
                           {asset.action === 'rig' && (
                             <span className="px-1 py-px rounded text-[7px] font-mono bg-amber-500/20 text-amber-400 border border-amber-500/30">{'\u2699'} rigged</span>
@@ -2672,7 +2719,12 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                             savedScrollTop.current = scrollRef.current?.scrollTop ?? 0
                             setPreviewCrafted(scene)
                           }}
-                          onDelete={() => deleteFromLibrary(scene.id)}
+                          onDelete={() => {
+                            requestPermanentDelete({
+                              itemName: scene.name,
+                              onConfirm: async () => { await deleteFromLibrary(scene.id) },
+                            })
+                          }}
                         />
                       )
                     })}
@@ -2691,22 +2743,30 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                     <div className="text-[10px] mt-1 text-gray-500">Use the Imagine tab to generate images</div>
                   </div>
                 ) : (
-                  <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${colsMedia}, minmax(0, 1fr))` }}>
-                    {[...generatedImages].reverse().map(img => {
-                      const isPlaced = placedCatalogAssets.some(ca => ca.imageUrl === img.url)
-                      return (
-                        <AssetCard
-                          key={img.id}
+                    <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${colsMedia}, minmax(0, 1fr))` }}>
+                      {[...generatedImages].reverse().map(img => {
+                        const placedCount = placedCatalogAssets.filter(ca => ca.imageUrl === img.url).length
+                        const isPlaced = placedCount > 0
+                        return (
+                          <AssetCard
+                            key={img.id}
                           id={img.id}
                           name={img.prompt}
                           type="media-image"
                           thumbnailUrl={img.url}
                           mediaUrl={img.url}
-                          isInWorld={isPlaced}
-                          accentColor="#EC4899"
-                          subtitle={new Date(img.createdAt).toLocaleDateString()}
-                          onClick={() => enterPlacementMode({ type: 'image', name: img.prompt.slice(0, 24), imageUrl: img.url })}
-                          onDelete={() => removeGeneratedImage(img.id)}
+                            isInWorld={isPlaced}
+                            accentColor="#EC4899"
+                            subtitle={new Date(img.createdAt).toLocaleDateString()}
+                            onClick={() => enterPlacementMode({ type: 'image', name: img.prompt.slice(0, 24), imageUrl: img.url })}
+                            onDelete={() => {
+                              requestPermanentDelete({
+                                itemName: img.prompt.slice(0, 30) || 'generated image',
+                                placedCount,
+                                usageUrl: `${OASIS_BASE}/api/worlds/asset-usage?url=${encodeURIComponent(img.url)}&currentWorldId=${encodeURIComponent(activeWorldId)}&type=media`,
+                                onConfirm: async () => { removeGeneratedImage(img.id) },
+                              })
+                            }}
                           onDownload={(_, url) => {
                             const a = document.createElement('a')
                             a.href = url
@@ -3156,9 +3216,46 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
           </>
 
         ) : mode === 'media' ? (
-          <MediaTab cols={colsMedia} />
+          <MediaTab
+            cols={colsMedia}
+            onRequestDelete={(target, onConfirm) => {
+              requestPermanentDelete({
+                itemName: target.name,
+                placedCount: target.placedCount,
+                usageUrl: `${OASIS_BASE}/api/worlds/asset-usage?url=${encodeURIComponent(target.url)}&currentWorldId=${encodeURIComponent(activeWorldId)}&type=media`,
+                onConfirm,
+              })
+            }}
+          />
 
-        ) : mode === 'conjure' ? (
+        ) : mode === 'conjure' ? previewConjured ? (
+          <ModelPreviewPanel
+            asset={{
+              id: previewConjured.id,
+              name: previewConjured.displayName || previewConjured.prompt.slice(0, 40),
+              path: previewConjured.glbPath ? `${OASIS_BASE}${previewConjured.glbPath}` : '',
+              category: 'props',
+              defaultScale: previewConjured.scale ?? 1,
+            }}
+            onBack={() => {
+              setPreviewConjured(null)
+              requestAnimationFrame(() => {
+                if (scrollRef.current) scrollRef.current.scrollTop = savedScrollTop.current
+              })
+            }}
+            onPlace={() => {
+              enterPlacementMode({
+                type: 'conjured',
+                name: (previewConjured.displayName || previewConjured.prompt).slice(0, 24),
+                path: previewConjured.glbPath ? `${OASIS_BASE}${previewConjured.glbPath}` : undefined,
+                defaultScale: previewConjured.scale ?? 1,
+              })
+              setPreviewConjured(null)
+            }}
+            accentColor="#F97316"
+            canvasHeight={400}
+          />
+        ) : (
           <>
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] text-gray-500 uppercase tracking-widest font-mono">
@@ -3196,16 +3293,15 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                     asset={asset}
                     onDelete={deleteAsset}
                     onRequestDelete={(id, name) => {
-                      setConjureDeleteTarget({ id, name })
-                      setConjureLoadingUsage(true)
-                      const activeWorldId = useOasisStore.getState().activeWorldId
-                      fetch(`${OASIS_BASE}/api/worlds/asset-usage?url=${encodeURIComponent(id)}&currentWorldId=${encodeURIComponent(activeWorldId)}&type=conjured`)
-                        .then(r => r.json())
-                        .then((usage: { totalCount: number; worldCount: number }) => {
-                          setConjureDeleteTarget(prev => prev ? { ...prev, placedCount: usage.totalCount, worldCount: usage.worldCount } : prev)
-                        })
-                        .catch(() => {})
-                        .finally(() => setConjureLoadingUsage(false))
+                      requestPermanentDelete({
+                        itemName: name,
+                        usageUrl: `${OASIS_BASE}/api/worlds/asset-usage?url=${encodeURIComponent(id)}&currentWorldId=${encodeURIComponent(activeWorldId)}&type=conjured`,
+                        onConfirm: () => deleteAsset(id),
+                      })
+                    }}
+                    onPreview={(previewAsset) => {
+                      savedScrollTop.current = scrollRef.current?.scrollTop ?? 0
+                      setPreviewConjured(previewAsset)
                     }}
                     isInWorld={worldConjuredAssetIds.includes(asset.id)}
                     onPlace={(id) => {
@@ -3232,6 +3328,26 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
               </div>
             )}
           </>
+        ) : previewCrafted ? (
+          <CraftedPreviewPanel
+            scene={previewCrafted}
+            onBack={() => {
+              setPreviewCrafted(null)
+              requestAnimationFrame(() => {
+                if (scrollRef.current) scrollRef.current.scrollTop = savedScrollTop.current
+              })
+            }}
+            onPlace={(scene) => {
+              if (sceneLibrary.some(entry => entry.id === scene.id)) {
+                enterPlacementMode({ type: 'library', sceneId: scene.id, name: scene.name })
+              } else {
+                enterPlacementMode({ type: 'crafted', sceneId: scene.id, name: scene.name })
+              }
+              setPreviewCrafted(null)
+            }}
+            accentColor="#3B82F6"
+            canvasHeight={400}
+          />
         ) : (
           <>
             <div className="flex items-center justify-between mb-2">
@@ -3263,30 +3379,23 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                 <div className="text-[10px] mt-1 text-blue-500/40">Each new craft builds on top of the last</div>
               </div>
             ) : (
-              <div className="space-y-2">
-                {craftedScenes.map(scene => (
-                  <div
+              <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${colsCrafted}, minmax(0, 1fr))` }}>
+                {[...craftedScenes].slice().reverse().map(scene => (
+                  <AssetCard
                     key={scene.id}
-                    className="rounded-lg border p-2 group transition-all duration-200 hover:border-blue-500/30"
-                    style={{
-                      background: 'rgba(20, 20, 20, 0.8)',
-                      borderColor: 'rgba(59, 130, 246, 0.15)',
+                    id={scene.id}
+                    name={scene.name}
+                    type="crafted"
+                    thumbnailUrl={scene.thumbnailUrl || `/crafted-thumbs/${scene.id}.jpg`}
+                    isInWorld
+                    accentColor="#3B82F6"
+                    subtitle={`${scene.objects.length} primitives`}
+                    onClick={() => {
+                      savedScrollTop.current = scrollRef.current?.scrollTop ?? 0
+                      setPreviewCrafted(scene)
                     }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-blue-300 font-medium">{scene.name}</span>
-                      <button
-                        onClick={() => removeCraftedScene(scene.id)}
-                        className="text-gray-400 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                        title="Remove from world (stays in library)"
-                      >
-                        &#10005;
-                      </button>
-                    </div>
-                    <div className="text-[10px] text-gray-500 mt-0.5">
-                      {scene.objects.length} primitive{scene.objects.length !== 1 ? 's' : ''}
-                    </div>
-                  </div>
+                    onDelete={() => removeCraftedScene(scene.id)}
+                  />
                 ))}
               </div>
             )}
@@ -3299,44 +3408,43 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                     ── Library ({sceneLibrary.length}) ──
                   </span>
                 </div>
-                <div className="space-y-1.5">
-                  {sceneLibrary.map(scene => {
+                <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${colsCrafted}, minmax(0, 1fr))` }}>
+                  {[...sceneLibrary].slice().reverse().map(scene => {
                     const isInWorld = craftedScenes.some(s => s.id === scene.id)
                     return (
-                      <div
+                      <AssetCard
                         key={scene.id}
-                        className="rounded-lg border p-2 group transition-all duration-200 hover:border-purple-500/30 flex items-center justify-between"
-                        style={{
-                          background: 'rgba(15, 15, 20, 0.8)',
-                          borderColor: isInWorld ? 'rgba(59, 130, 246, 0.2)' : 'rgba(128, 90, 213, 0.15)',
+                        id={scene.id}
+                        name={scene.name}
+                        type="crafted"
+                        thumbnailUrl={scene.thumbnailUrl || `/crafted-thumbs/${scene.id}.jpg`}
+                        isInWorld={isInWorld}
+                        accentColor="#8B5CF6"
+                        subtitle={`${scene.objects.length} primitives`}
+                        onClick={() => {
+                          savedScrollTop.current = scrollRef.current?.scrollTop ?? 0
+                          setPreviewCrafted(scene)
                         }}
-                      >
-                        <div>
-                          <span className="text-[11px] text-purple-300/80 font-medium">{scene.name}</span>
-                          <span className="text-[9px] text-gray-400 ml-2">
-                            {scene.objects.length} obj{scene.objects.length !== 1 ? 's' : ''}
-                          </span>
-                          {isInWorld && (
-                            <span className="text-[8px] text-blue-400/50 ml-1.5">in world</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        onDelete={() => {
+                          requestPermanentDelete({
+                            itemName: scene.name,
+                            onConfirm: async () => { await deleteFromLibrary(scene.id) },
+                          })
+                        }}
+                        badges={
                           <button
-                            onClick={() => enterPlacementMode({ type: 'library', sceneId: scene.id, name: scene.name })}
-                            className="text-[9px] text-emerald-400/70 hover:text-emerald-300 font-mono border border-emerald-500/20 rounded px-1.5 py-0.5"
-                            title="Place a copy in current world (click-to-place)"
+                            data-card-action="place"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              enterPlacementMode({ type: 'library', sceneId: scene.id, name: scene.name })
+                            }}
+                            className="px-1 py-px rounded text-[7px] font-mono bg-emerald-500/15 text-emerald-300/80 border border-emerald-500/25 hover:text-emerald-200 transition-colors"
+                            title="Place a copy"
                           >
                             + place
                           </button>
-                          <button
-                            onClick={() => deleteFromLibrary(scene.id)}
-                            className="text-[9px] text-red-400/50 hover:text-red-400 font-mono"
-                            title="Delete permanently from library"
-                          >
-                            &#10005;
-                          </button>
-                        </div>
-                      </div>
+                        }
+                      />
                     )
                   })}
                 </div>
@@ -3355,15 +3463,14 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
         }}
       />
 
-      {/* Conjured asset delete confirmation modal */}
       <DeleteConfirmModal
-        isOpen={!!conjureDeleteTarget}
-        itemName={conjureDeleteTarget?.name || ''}
-        placedCount={conjureDeleteTarget?.placedCount}
-        worldCount={conjureDeleteTarget?.worldCount}
-        loadingUsage={conjureLoadingUsage}
-        onConfirm={() => { if (conjureDeleteTarget) { deleteAsset(conjureDeleteTarget.id); setConjureDeleteTarget(null) } }}
-        onCancel={() => { setConjureDeleteTarget(null); setConjureLoadingUsage(false) }}
+        isOpen={!!deleteConfirm}
+        itemName={deleteConfirm?.itemName || ''}
+        placedCount={deleteConfirm?.placedCount}
+        worldCount={deleteConfirm?.worldCount}
+        loadingUsage={deleteConfirm?.loadingUsage}
+        onConfirm={() => { if (deleteConfirm) void deleteConfirm.onConfirm() }}
+        onCancel={() => setDeleteConfirm(null)}
       />
 
       {/* Assets tab image lightbox — portaled */}

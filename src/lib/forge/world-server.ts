@@ -44,18 +44,17 @@ function toWorldMeta(row: { id: string; name: string; icon: string; visibility: 
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// REGISTRY — All worlds for a user
+// REGISTRY — All worlds (local-first = no userId filter)
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function getRegistry(userId: string): Promise<WorldMeta[]> {
+export async function getRegistry(_userId?: string): Promise<WorldMeta[]> {
   const worlds = await prisma.world.findMany({
-    where: { userId },
     select: { id: true, name: true, icon: true, visibility: true, createdAt: true, updatedAt: true },
     orderBy: { createdAt: 'asc' },
   })
 
   if (worlds.length === 0) {
-    const defaultWorld = await createWorld('The Forge', '🔥', userId)
+    const defaultWorld = await createWorld('The Forge', '🔥', 'local-user')
     return [defaultWorld]
   }
 
@@ -66,9 +65,9 @@ export async function getRegistry(userId: string): Promise<WorldMeta[]> {
 // LOAD — Fetch a single world's full state
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function loadWorld(id: string, userId: string): Promise<WorldState | null> {
+export async function loadWorld(id: string, _userId?: string): Promise<WorldState | null> {
   const world = await prisma.world.findFirst({
-    where: { id, userId },
+    where: { id },
     select: { data: true },
   })
   if (!world?.data) return null
@@ -81,7 +80,7 @@ export async function loadWorld(id: string, userId: string): Promise<WorldState 
 
 export async function saveWorld(
   id: string,
-  userId: string,
+  _userId: string,
   state: Omit<WorldState, 'version' | 'savedAt'>,
   clientLoadedAt?: string
 ): Promise<{ saved: boolean; conflict?: boolean; serverUpdatedAt?: string }> {
@@ -91,7 +90,7 @@ export async function saveWorld(
   // Optimistic concurrency check
   if (clientLoadedAt) {
     const current = await prisma.world.findFirst({
-      where: { id, userId },
+      where: { id },
       select: { updatedAt: true },
     })
     if (current?.updatedAt && current.updatedAt.toISOString() > clientLoadedAt) {
@@ -101,7 +100,7 @@ export async function saveWorld(
   }
 
   // Auto-snapshot before overwriting
-  await snapshotBeforeSave(id, userId)
+  await snapshotBeforeSave(id)
 
   await prisma.world.update({
     where: { id },
@@ -149,8 +148,8 @@ export async function createWorld(name: string, icon = '🌍', userId: string): 
 // DELETE
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function deleteWorld(id: string, userId: string): Promise<void> {
-  await prisma.world.deleteMany({ where: { id, userId } })
+export async function deleteWorld(id: string, _userId?: string): Promise<void> {
+  await prisma.world.deleteMany({ where: { id } })
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -159,11 +158,11 @@ export async function deleteWorld(id: string, userId: string): Promise<void> {
 
 export async function setWorldVisibility(
   id: string,
-  userId: string,
+  _userId: string,
   visibility: 'private' | 'public' | 'unlisted' | 'public_edit'
 ): Promise<void> {
   await prisma.world.updateMany({
-    where: { id, userId },
+    where: { id },
     data: {
       visibility,
       creatorName: 'Player 1',

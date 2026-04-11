@@ -10,6 +10,7 @@ import { join } from 'path'
 
 const VOICE_DIR = 'generated-voices'
 const PUBLIC_DIR = join(process.cwd(), 'public', VOICE_DIR)
+const MERLIN_DEFAULT_VOICE_ID = process.env.OASIS_MERLIN_ELEVENLABS_VOICE_ID || '6sFKzaJr574YWVu4UuJF'
 
 // Default voice IDs from ElevenLabs (free tier voices)
 const VOICES: Record<string, string> = {
@@ -17,13 +18,28 @@ const VOICES: Record<string, string> = {
   'adam': 'pNInz6obpgDQGcFmaJgB',
   'sam': 'yoZ06aMxZJJ28mfd3POQ',
   'elli': 'MF3mGyEYCl7XYWbV9V6O',
+  'merlin': MERLIN_DEFAULT_VOICE_ID,
 }
-const DEFAULT_VOICE = 'rachel'
+const DEFAULT_VOICE = 'adam'
+
+function isLikelyElevenLabsVoiceId(value: string): boolean {
+  return /^[A-Za-z0-9]{20,32}$/.test(value)
+}
+
+function resolveVoiceId(voice: unknown, agentType: unknown): string {
+  const voiceKey = typeof voice === 'string' ? voice.trim() : ''
+  const normalizedAgentType = typeof agentType === 'string' ? agentType.trim().toLowerCase() : ''
+
+  if (voiceKey && VOICES[voiceKey]) return VOICES[voiceKey]
+  if (voiceKey && isLikelyElevenLabsVoiceId(voiceKey)) return voiceKey
+  if (normalizedAgentType === 'merlin') return MERLIN_DEFAULT_VOICE_ID
+  return VOICES[DEFAULT_VOICE]
+}
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { text, voice: voiceKey } = body
+    const { text, voice: voiceKey, agentType } = body
 
     if (!text || typeof text !== 'string' || text.trim().length === 0) {
       return NextResponse.json({ error: 'Text is required' }, { status: 400 })
@@ -37,7 +53,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'ELEVENLABS_API_KEY not configured' }, { status: 500 })
     }
 
-    const voiceId = VOICES[voiceKey as string] || VOICES[DEFAULT_VOICE]
+    const voiceId = resolveVoiceId(voiceKey, agentType)
 
     const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
       method: 'POST',

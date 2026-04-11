@@ -19,7 +19,7 @@ import { addToSceneLibrary, getSceneLibrary, removeFromSceneLibrary } from '../l
 import { awardXp } from '../hooks/useXp'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { getCameraSnapshot } from '../lib/camera-bridge'
-import { deriveHermesAvatarSpawn, deriveWindowAvatarAnchor, deriveWindowAvatarScale } from '../lib/agent-avatar-utils'
+import { deriveHermesAvatarSpawn, deriveStandaloneAgentAvatarSpawn, deriveWindowAvatarAnchor, deriveWindowAvatarScale } from '../lib/agent-avatar-utils'
 
 // ─═̷─═̷─🏗️ SSR-SAFE LOCALSTORAGE ─═̷─═̷─🏗️
 // Next.js pre-renders on the server where `window` doesn't exist.
@@ -60,6 +60,8 @@ export interface PlacementPending {
   imageUrl?: string
   /** For video placements */
   videoUrl?: string
+  /** For speaker placements sourced from uploaded audio */
+  audioUrl?: string
   /** Frame style ID for image/video placements */
   imageFrameStyle?: string
   /** For agent window placements */
@@ -287,7 +289,7 @@ interface OasisState {
   // ─═̷─═̷─🪄 PLACEMENT + VFX ACTIONS ─═̷─═̷─🪄
   enterPlacementMode: (pending: PlacementPending) => void
   cancelPlacement: () => void
-  placeCatalogAssetAt: (catalogId: string, name: string, path: string, defaultScale: number, position: [number, number, number]) => void
+  placeCatalogAssetAt: (catalogId: string, name: string, path: string, defaultScale: number, position: [number, number, number]) => string
   placeImageAt: (name: string, imageUrl: string, position: [number, number, number], frameStyle?: string) => void
   placeVideoAt: (name: string, videoUrl: string, position: [number, number, number]) => void
   updateCatalogPlacement: (id: string, updates: Partial<import('../lib/conjure/types').CatalogPlacement>) => void
@@ -341,7 +343,7 @@ interface OasisState {
   updateWorldLight: (id: string, updates: Partial<WorldLight>) => void
   setWorldLightTransform: (id: string, position: [number, number, number]) => void
 
-  loadWorldState: () => void
+  loadWorldState: (options?: { silent?: boolean; remote?: boolean }) => void
   saveWorldState: () => void
   switchWorld: (worldId: string) => void
   createNewWorld: (name: string, icon?: string) => string   // returns new world id
@@ -366,6 +368,7 @@ interface OasisState {
   updateAgentWindow: (id: string, partial: Partial<AgentWindow>) => void
   assignAvatarToAgentWindow: (windowId: string, avatarUrl: string | null) => string | null
   assignHermesAvatar: (avatarUrl: string | null) => string | null
+  assignMerlinAvatar: (avatarUrl: string | null) => string | null
   setAgentAvatarAudio: (avatarId: string, audio: AgentAvatarAudioState | null) => void
   focusAgentWindow: (id: string | null) => void
   focusImage: (id: string | null) => void
@@ -400,6 +403,13 @@ export const useOasisStore = create<OasisState>((set, get) => {
     }))
   }
 
+  const exitPlacementIfActive = () => {
+    try {
+      const inputManager = require('../lib/input-manager').useInputManager.getState()
+      if (inputManager.inputState === 'placement') inputManager.returnToPrevious()
+    } catch {}
+  }
+
   return ({
   // ─═̷─═̷─⚙️ VISUAL SETTINGS ─═̷─═̷─⚙️
   fpsCounterEnabled: true,
@@ -407,7 +417,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   streamOpacity: 0.85,
 
   // ─═̷─═̷─🧠 AI MODEL SETTINGS ─═̷─═̷─🧠
-  craftModel: stored('oasis-craft-model') || 'anthropic/claude-sonnet-4-6',
+  craftModel: stored('oasis-craft-model') || 'cc-opus',
   voiceModel: stored('oasis-voice-model') || 'merlin-v1',
 
   // ─═̷─═̷─🔥 REALM STATE ─═̷─═̷─🔥
@@ -528,19 +538,16 @@ export const useOasisStore = create<OasisState>((set, get) => {
     setTimeout(() => get().saveWorldState(), 100)
   },
   addCraftedScene: (scene) => {
-    // ░▒▓ SPAWN OFFSET — place crafted scene where the crafting VFX played ▓▒░
-    const activeConjures = get().conjuredAssets.filter(a => !['ready', 'failed'].includes(a.status)).length
-    const craftX = activeConjures * 4 + (activeConjures > 0 ? 4 : 0)
-    const offsetScene = { ...scene, position: [craftX, scene.position[1], scene.position[2]] as [number, number, number] }
+    // ░▒▓ Spawn at the position already set on the scene (derived from avatar forward) ▓▒░
     withUndo('Add crafted', '🔮', () => {
-      set((state) => ({ craftedScenes: [...state.craftedScenes, offsetScene] }))
+      set((state) => ({ craftedScenes: [...state.craftedScenes, scene] }))
     })
     // Persist to library — survives deletion from world
-    addToSceneLibrary(offsetScene).then(() =>
+    addToSceneLibrary(scene).then(() =>
       getSceneLibrary().then(lib => set({ sceneLibrary: lib }))
     )
     // ░▒▓ Spell VFX on materialization ▓▒░
-    get().spawnPlacementVfx(offsetScene.position)
+    get().spawnPlacementVfx(scene.position)
     // Auto-save world on scene add
     setTimeout(() => get().saveWorldState(), 100)
   },
@@ -639,17 +646,20 @@ export const useOasisStore = create<OasisState>((set, get) => {
   },
 
   placeCatalogAssetAt: (catalogId, name, path, defaultScale, position) => {
+    let placedId = ''
     withUndo(`Place ${name}`, '📦', () => {
-      const id = `catalog-${catalogId}-${Date.now()}`
-      const placement: CatalogPlacement = { id, catalogId, name, glbPath: path, position, scale: defaultScale }
+      placedId = `catalog-${catalogId}-${Date.now()}`
+      const placement: CatalogPlacement = { id: placedId, catalogId, name, glbPath: path, position, scale: defaultScale }
       set(state => ({
         placedCatalogAssets: [...state.placedCatalogAssets, placement],
         placementPending: null,
       }))
     })
+    exitPlacementIfActive()
     get().spawnPlacementVfx(position)
     setTimeout(() => get().saveWorldState(), 100)
     awardXp('PLACE_CATALOG_OBJECT', get().activeWorldId)
+    return placedId
   },
 
   placeImageAt: (name, imageUrl, position, frameStyle) => {
@@ -661,6 +671,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         placementPending: null,
       }))
     })
+    exitPlacementIfActive()
     get().spawnPlacementVfx(position)
     setTimeout(() => get().saveWorldState(), 100)
     awardXp('PLACE_CATALOG_OBJECT', get().activeWorldId)
@@ -675,6 +686,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         placementPending: null,
       }))
     })
+    exitPlacementIfActive()
     get().spawnPlacementVfx(position)
     setTimeout(() => get().saveWorldState(), 100)
     awardXp('PLACE_CATALOG_OBJECT', get().activeWorldId)
@@ -700,6 +712,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         placementPending: null,
       }))
     })
+    exitPlacementIfActive()
     get().spawnPlacementVfx(position)
     setTimeout(() => get().saveWorldState(), 100)
   },
@@ -940,14 +953,19 @@ export const useOasisStore = create<OasisState>((set, get) => {
     setTimeout(() => get().saveWorldState(), 100)
   },
 
-  loadWorldState: () => {
+  loadWorldState: (options: { silent?: boolean; remote?: boolean } = {}) => {
     if (get().isViewMode) return // don't overwrite viewed world with user's own data
+    const keepWorldReady = options.silent === true && get()._worldReady
+    const markRemote = options.remote === true
 
     // ░▒▓ CRITICAL: Cancel any pending saves BEFORE loading ▓▒░
     // Without this, a debounced save of stale/empty state can fire AFTER
     // the load starts, overwriting the world we're about to read.
     cancelPendingSave()
-    set({ _worldReady: false }) // Block saves until load completes
+    set({
+      ...(keepWorldReady ? {} : { _worldReady: false }),
+      ...(markRemote ? { _isReceivingRemoteUpdate: true } : {}),
+    }) // Block saves until load completes unless this is a silent remote refresh
 
     // Helper: seed default lights with proper IDs (for fresh/old worlds)
     const seedDefaultLights = (): WorldLight[] =>
@@ -958,6 +976,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       if (!world) {
         set({
           _worldReady: true,
+          _isReceivingRemoteUpdate: false,
           _loadedObjectCount: 0,
           terrainParams: null,
           groundPresetId: 'none',
@@ -987,6 +1006,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       const loadedObjCount = (world.conjuredAssetIds?.length || 0) + (world.catalogPlacements?.length || 0) + (world.craftedScenes?.length || 0)
       set({
         _worldReady: true,
+        _isReceivingRemoteUpdate: false,
         _loadedObjectCount: loadedObjCount,
         terrainParams: world.terrain || null,
         groundPresetId: world.groundPresetId || 'none',
@@ -1004,6 +1024,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
         liveAgentAvatarAudio: {},
       })
       console.log('[World] Loaded:', world.savedAt, '| objects:', loadedObjCount, '| preset:', world.groundPresetId || 'none', '| tiles:', Object.keys(world.groundTiles || {}).length, '| catalog:', world.catalogPlacements?.length || 0, '| lights:', lights.length, '| sky:', world.skyBackgroundId || 'night007', '| agents:', (world.agentWindows || []).length, '| avatars:', (world.agentAvatars || []).length)
+    }).catch(error => {
+      console.error('[World] Load failed:', error)
+      set({
+        _worldReady: true,
+        _isReceivingRemoteUpdate: false,
+      })
     })
 
     // World mutation fanout now comes from the shared SSE world-events bus.
@@ -1237,6 +1263,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       placedAgentWindows: [...state.placedAgentWindows, window],
       placementPending: null,
     }))
+    exitPlacementIfActive()
     get().spawnPlacementVfx(window.position)
     setTimeout(() => get().saveWorldState(), 100)
   },
@@ -1391,6 +1418,66 @@ export const useOasisStore = create<OasisState>((set, get) => {
           rotation: spawn.rotation,
           scale: spawn.scale,
           label: defaultAgentAvatarLabel('hermes'),
+        },
+      ],
+    }))
+    setTimeout(() => get().saveWorldState(), 100)
+    return avatarId
+  },
+  assignMerlinAvatar: (avatarUrl) => {
+    const existingAvatar = get().placedAgentAvatars.find(entry => entry.agentType === 'merlin')
+
+    if (!avatarUrl) {
+      if (!existingAvatar) return null
+      set(state => {
+        const nextTransforms = { ...state.transforms }
+        const nextAudio = { ...state.liveAgentAvatarAudio }
+        delete nextTransforms[existingAvatar.id]
+        delete nextAudio[existingAvatar.id]
+        return {
+          placedAgentAvatars: state.placedAgentAvatars.filter(entry => entry.id !== existingAvatar.id),
+          liveAgentAvatarAudio: nextAudio,
+          transforms: nextTransforms,
+          selectedObjectId: state.selectedObjectId === existingAvatar.id ? null : state.selectedObjectId,
+          inspectedObjectId: state.inspectedObjectId === existingAvatar.id ? null : state.inspectedObjectId,
+        }
+      })
+      setTimeout(() => get().saveWorldState(), 100)
+      return null
+    }
+
+    const spawn = deriveStandaloneAgentAvatarSpawn(getCameraSnapshot())
+    if (existingAvatar) {
+      set(state => ({
+        placedAgentAvatars: state.placedAgentAvatars.map(entry =>
+          entry.id === existingAvatar.id
+            ? {
+                ...entry,
+                avatar3dUrl: avatarUrl,
+                label: entry.label || defaultAgentAvatarLabel('merlin'),
+                position: entry.position || spawn.position,
+                rotation: entry.rotation || spawn.rotation,
+                scale: entry.scale || spawn.scale,
+              }
+            : entry
+        ),
+      }))
+      setTimeout(() => get().saveWorldState(), 100)
+      return existingAvatar.id
+    }
+
+    const avatarId = 'agent-avatar-merlin'
+    set(state => ({
+      placedAgentAvatars: [
+        ...state.placedAgentAvatars,
+        {
+          id: avatarId,
+          agentType: 'merlin',
+          avatar3dUrl: avatarUrl,
+          position: spawn.position,
+          rotation: spawn.rotation,
+          scale: spawn.scale,
+          label: defaultAgentAvatarLabel('merlin'),
         },
       ],
     }))

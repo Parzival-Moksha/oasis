@@ -198,9 +198,14 @@ export class MeshyClient implements ConjureProviderClient {
       ai_model: 'meshy-6',
     }
     // ░▒▓ Character mode: API params — belt AND suspenders ▓▒░
+    // Meshy docs: pose_mode + symmetry_mode are the official knobs, and
+    // topology is only respected when should_remesh is enabled.
     if (options?.poseMode) previewBody.pose_mode = options.poseMode
-    if (options?.topology) previewBody.topology = options.topology
-    if (options?.symmetry !== undefined) previewBody.symmetry = options.symmetry ? 'on' : 'off'
+    if (options?.topology) {
+      previewBody.topology = options.topology
+      previewBody.should_remesh = true
+    }
+    if (options?.symmetry !== undefined) previewBody.symmetry_mode = options.symmetry ? 'on' : 'off'
 
     const previewRes = await fetchWithTimeout(`${MESHY_V2}/text-to-3d`, {
       method: 'POST',
@@ -452,8 +457,14 @@ export class MeshyClient implements ConjureProviderClient {
       image_url: imageUrl,
       ai_model: 'meshy-6',
     }
-    if (options?.topology) body.topology = options.topology
-    if (options?.symmetry !== undefined) body.symmetry = options.symmetry ? 'on' : 'off'
+    // Meshy image-to-3D supports pose_mode directly; keep character-mode image
+    // conjures aligned with the text pipeline instead of silently dropping pose intent.
+    if (options?.poseMode) body.pose_mode = options.poseMode
+    if (options?.topology) {
+      body.topology = options.topology
+      body.should_remesh = true
+    }
+    if (options?.symmetry !== undefined) body.symmetry_mode = options.symmetry ? 'on' : 'off'
 
     const res = await fetchWithTimeout(`${MESHY_V1}/image-to-3d`, {
       method: 'POST',

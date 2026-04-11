@@ -947,8 +947,18 @@ export function CatalogModelRenderer({ path, scale, objectId, displayName }: { p
             dispatch({ type: 'INSPECT_OBJECT', payload: { id: objectId } })
           }
         }}
-        onPointerOver={(e) => { e.stopPropagation(); setHovered(true); if (!useInputManager.getState().pointerLocked) setShowLabel(true) }}
-        onPointerOut={(e) => { e.stopPropagation(); setHovered(false); setShowLabel(false) }}
+        onPointerOver={(e) => {
+          e.stopPropagation()
+          if (useInputManager.getState().pointerLocked) return
+          setHovered(true)
+          setShowLabel(true)
+        }}
+        onPointerOut={(e) => {
+          e.stopPropagation()
+          if (useInputManager.getState().pointerLocked) return
+          setHovered(false)
+          setShowLabel(false)
+        }}
       >
         <boxGeometry args={[
           Math.max(bounds.size.x * scale, 1),
@@ -1244,6 +1254,13 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
       // ░▒▓ LIP SYNC — call controller.update() every frame, apply visemes directly ▓▒░
       const lipCtrl = objectId ? getLipSync(objectId) : null
       const lipState = lipCtrl?.isActive ? lipCtrl.update() : null
+      const clearLipVisemes = () => {
+        expr.setValue('aa', 0)
+        expr.setValue('ih', 0)
+        expr.setValue('ou', 0)
+        expr.setValue('ee', 0)
+        expr.setValue('oh', 0)
+      }
 
       // ░▒▓ Joystick expression overrides — if set, they take priority over defaults ▓▒░
       const exprOverrides = objectId ? useOasisStore.getState().behaviors[objectId]?.expressions : undefined
@@ -1263,6 +1280,7 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
           if (exprOverrides.relaxed != null) expr.setValue('relaxed', exprOverrides.relaxed)
         }
       } else if (exprOverrides && Object.keys(exprOverrides).length > 0) {
+        clearLipVisemes()
         // No lip sync → Joystick expression overrides
         if (exprOverrides.happy != null) expr.setValue('happy', exprOverrides.happy)
         if (exprOverrides.angry != null) expr.setValue('angry', exprOverrides.angry)
@@ -1275,6 +1293,7 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
         if (exprOverrides.ee != null) expr.setValue('ee', exprOverrides.ee)
         if (exprOverrides.oh != null) expr.setValue('oh', exprOverrides.oh)
       } else {
+        clearLipVisemes()
         // Default: subtle breathing smile
         const smileAmount = Math.sin(t * 0.3) * 0.15 + 0.1
         expr.setValue('happy', Math.max(0, smileAmount))
@@ -1347,8 +1366,18 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
             dispatch({ type: 'INSPECT_OBJECT', payload: { id: objectId } })
           }
         }}
-        onPointerOver={(e) => { e.stopPropagation(); setHovered(true); if (!useInputManager.getState().pointerLocked) setShowLabel(true) }}
-        onPointerOut={(e) => { e.stopPropagation(); setHovered(false); setShowLabel(false) }}
+        onPointerOver={(e) => {
+          e.stopPropagation()
+          if (useInputManager.getState().pointerLocked) return
+          setHovered(true)
+          setShowLabel(true)
+        }}
+        onPointerOut={(e) => {
+          e.stopPropagation()
+          if (useInputManager.getState().pointerLocked) return
+          setHovered(false)
+          setShowLabel(false)
+        }}
       >
         <boxGeometry args={[bounds.size.x * scale, bounds.size.y * scale, bounds.size.z * scale]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
@@ -1844,24 +1873,19 @@ function PlacementOverlay() {
     const pos: [number, number, number] = [point.x, 0, point.z]
 
     if (placementPending.type === 'catalog' && placementPending.catalogId && placementPending.path) {
-      placeCatalogAssetAt(placementPending.catalogId, placementPending.name, placementPending.path, placementPending.defaultScale || 1, pos)
+      const placedId = placeCatalogAssetAt(placementPending.catalogId, placementPending.name, placementPending.path, placementPending.defaultScale || 1, pos)
+      if (placementPending.audioUrl && placedId) {
+        useOasisStore.getState().setObjectBehavior(placedId, {
+          audioUrl: placementPending.audioUrl,
+          audioLoop: true,
+          audioMuted: false,
+          audioState: 'playing',
+        })
+      }
     } else if (placementPending.type === 'conjured' && placementPending.path) {
       // ░▒▓ Conjured multi-placement — uses catalog placement system with conjured GLB path ▓▒░
       const conjId = `conjured-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
-      const prevCount = useOasisStore.getState().placedCatalogAssets.length
       placeCatalogAssetAt(conjId, placementPending.name, placementPending.path, placementPending.defaultScale || 1, pos)
-      // ░▒▓ Auto-assign audio if placed from Media tab with pending audio URL ▓▒░
-      const pendingAudio = (window as any).__pendingAudioUrl
-      if (pendingAudio) {
-        // Resolve actual ID synchronously (store is already updated by placeCatalogAssetAt)
-        const assets = useOasisStore.getState().placedCatalogAssets
-        const actualId = assets.length > prevCount ? assets[assets.length - 1].id : conjId
-        // Defer behavior attachment so SpatialAudioFromBehavior has mounted
-        setTimeout(() => {
-          useOasisStore.getState().setObjectBehavior(actualId, { audioUrl: pendingAudio, audioState: 'playing' })
-        }, 200)
-        delete (window as any).__pendingAudioUrl
-      }
     } else if (placementPending.type === 'image' && placementPending.imageUrl) {
       placeImageAt(placementPending.name, placementPending.imageUrl, pos, placementPending.imageFrameStyle)
     } else if (placementPending.type === 'video' && placementPending.videoUrl) {
@@ -1896,6 +1920,10 @@ function PlacementOverlay() {
           craftedScenes: [...state.craftedScenes, clone],
           placementPending: null,
         }))
+        try {
+          const inputManager = useInputManager.getState()
+          if (inputManager.inputState === 'placement') inputManager.returnToPrevious()
+        } catch {}
         dispatch({ type: 'SPAWN_VFX', payload: { position: pos } })
         setTimeout(() => dispatch({ type: 'SAVE_WORLD' }), 100)
       } else {
@@ -2082,8 +2110,16 @@ function LightHelperOrb({ light }: { light: import('../../lib/conjure/types').Wo
 
   return (
     <group
-      onPointerOver={(e) => { e.stopPropagation(); setHovered(true) }}
-      onPointerOut={(e) => { e.stopPropagation(); setHovered(false) }}
+      onPointerOver={(e) => {
+        e.stopPropagation()
+        if (useInputManager.getState().pointerLocked) return
+        setHovered(true)
+      }}
+      onPointerOut={(e) => {
+        e.stopPropagation()
+        if (useInputManager.getState().pointerLocked) return
+        setHovered(false)
+      }}
     >
       {/* The actual Three.js light */}
       {light.type === 'point' && (

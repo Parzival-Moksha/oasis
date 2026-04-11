@@ -242,8 +242,8 @@ describe('CEHQTab — expand/collapse toggles', () => {
     expect(panelSrc).toContain('{isExpanded && (')
   })
 
-  it('iterates over 5 lobes: curator, coder, reviewer, tester, gamer', () => {
-    expect(panelSrc).toContain("(['curator', 'coder', 'reviewer', 'tester', 'gamer'] as const).map")
+  it('iterates over lobes: curator, coder, reviewer, tester', () => {
+    expect(panelSrc).toContain("(['curator', 'coder', 'reviewer', 'tester'] as const).map")
   })
 
   it('shows module count in collapsed header', () => {

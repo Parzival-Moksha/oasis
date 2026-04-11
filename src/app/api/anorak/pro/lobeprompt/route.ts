@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 
-const VALID_LOBES = ['curator', 'coder', 'reviewer', 'tester'] as const
+const VALID_LOBES = ['curator', 'coder', 'reviewer', 'tester', 'gamer', 'merlin'] as const
 const AGENTS_DIR = path.resolve(process.cwd(), '.claude', 'agents')
 
 function lobePath(lobe: string): string {

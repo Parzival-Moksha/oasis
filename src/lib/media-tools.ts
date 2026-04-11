@@ -1,6 +1,6 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 // MEDIA TOOLS — Shared definitions + executors for image/voice/video gen
-// Used by: Anorak vibecode chat, MCP tools, Merlin (future)
+// Used by: Anorak vibecode chat, MCP tools, Merlin Claude Code sessions
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -12,7 +12,7 @@ export const OASIS_URL = process.env.NEXT_PUBLIC_OASIS_URL || process.env.OASIS_
 export const IMAGE_MODELS = ['gemini-flash', 'riverflow', 'seedream', 'flux-klein'] as const
 export type ImageModel = (typeof IMAGE_MODELS)[number]
 
-export const VOICE_NAMES = ['rachel', 'adam', 'sam', 'elli'] as const
+export const VOICE_NAMES = ['rachel', 'adam', 'sam', 'elli', 'merlin'] as const
 export type VoiceName = (typeof VOICE_NAMES)[number]
 
 export const VIDEO_DURATIONS = [6, 8, 10, 12, 14, 16, 18, 20] as const
@@ -34,7 +34,9 @@ export interface MediaToolResult {
 
 function resolveUrl(url: string | undefined, baseUrl: string): string | undefined {
   if (!url) return undefined
-  return url.startsWith('http') ? url : `${baseUrl}${url}`
+  if (url.startsWith('http') || url.startsWith('blob:') || url.startsWith('data:')) return url
+  if (url.startsWith('/')) return url
+  return `${baseUrl}${url}`
 }
 
 export async function execGenerateImage(
@@ -60,12 +62,13 @@ export async function execGenerateVoice(
   text: string,
   voice?: string,
   baseUrl: string = OASIS_URL,
+  agentType?: string,
 ): Promise<MediaToolResult> {
   try {
     const res = await fetch(`${baseUrl}/api/media/voice`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voice }),
+      body: JSON.stringify({ text, voice, agentType }),
     })
     const data = await res.json()
     if (!res.ok) return { ok: false, error: data.error || `HTTP ${res.status}` }
@@ -127,7 +130,12 @@ export async function execMediaTool(
     case 'generate_image':
       return execGenerateImage(args.prompt as string, args.model as string | undefined, baseUrl)
     case 'generate_voice':
-      return execGenerateVoice(args.text as string, args.voice as string | undefined, baseUrl)
+      return execGenerateVoice(
+        args.text as string,
+        args.voice as string | undefined,
+        baseUrl,
+        args.agentType as string | undefined,
+      )
     case 'generate_video':
       return execGenerateVideo(args.prompt as string, args.duration as number | undefined, args.image_url as string | undefined, baseUrl)
     default:
@@ -136,7 +144,7 @@ export async function execMediaTool(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// OpenAI-Compatible Tool Definitions (for Merlin/OpenRouter)
+// OpenAI-Compatible Tool Definitions (shared schema for function-calling surfaces)
 // ═══════════════════════════════════════════════════════════════════════════
 
 export const mediaToolsOpenAI = [
@@ -164,7 +172,7 @@ export const mediaToolsOpenAI = [
         type: 'object',
         properties: {
           text: { type: 'string', description: 'Text to convert to speech (1-5000 chars)' },
-          voice: { type: 'string', enum: VOICE_NAMES, description: 'Voice to use (default: rachel)' },
+          voice: { type: 'string', description: 'Voice alias (rachel, adam, sam, elli, merlin) or a raw ElevenLabs voice ID.' },
         },
         required: ['text'],
       },

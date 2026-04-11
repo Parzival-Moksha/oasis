@@ -24,6 +24,7 @@ describe('executeMerlinTool', () => {
     }, 'world-123')
 
     expect(callToolMock).toHaveBeenCalledWith('place_object', {
+      actorAgentType: 'merlin',
       worldId: 'world-123',
       catalogId: 'km_tower',
       position: [1, 0, 2],
@@ -39,6 +40,7 @@ describe('executeMerlinTool', () => {
     await executeMerlinTool('set_ground', { presetId: 'grass' }, 'world-456')
 
     expect(callToolMock).toHaveBeenCalledWith('set_ground_preset', {
+      actorAgentType: 'merlin',
       worldId: 'world-456',
       presetId: 'grass',
     })

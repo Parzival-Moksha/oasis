@@ -163,7 +163,10 @@ export interface ConjuredAsset {
 // CRAFTED SCENES (LLM procedural geometry)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export type PrimitiveType = 'box' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'plane' | 'capsule' | 'text'
+export type PrimitiveType =
+  | 'box' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'plane' | 'capsule' | 'text'
+  // Shader primitives — procedural effects rendered with custom GLSL
+  | 'flame' | 'flag' | 'crystal' | 'water' | 'particle_emitter' | 'glow_orb' | 'aurora'
 
 // Animation types for crafted primitives — LLM can assign these
 export type CraftAnimationType = 'rotate' | 'bob' | 'pulse' | 'swing' | 'orbit'
@@ -192,6 +195,17 @@ export interface CraftedPrimitive {
   fontSize?: number              // size in world units, default 1
   anchorX?: 'left' | 'center' | 'right'  // horizontal alignment, default 'center'
   anchorY?: 'top' | 'middle' | 'bottom'  // vertical alignment, default 'middle'
+  // Shader primitive parameters
+  color2?: string                // secondary color (flame tip, flag accent, crystal highlight)
+  color3?: string                // tertiary color (flame tip outer)
+  intensity?: number             // glow/emission strength, default 1. Range 0.1-5
+  speed?: number                 // animation speed override for shader primitives, default 1
+  particleCount?: number         // particle_emitter: number of particles (10-500, default 80)
+  particleType?: 'spark' | 'ember' | 'snow' | 'bubble' | 'firefly' | 'dust'  // particle style
+  seed?: number                  // random seed for variation (0-100, auto-assigned if omitted)
+  // Texture mapping — preset-based (safe for remote agents)
+  texturePresetId?: string       // references CraftTexturePreset.id from craft-textures.ts
+  textureRepeat?: number         // explicit tile repeat override. If omitted, auto-tiled from scale + naturalSizeMeters
 }
 
 export interface CraftedScene {

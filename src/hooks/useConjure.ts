@@ -9,9 +9,31 @@ import { useCallback } from 'react'
 import { useOasisStore } from '../store/oasisStore'
 import { awardXp } from '../hooks/useXp'
 import type { ConjuredAsset, ProviderName, ConjureStatus, PostProcessAction, MeshTopology, CharacterGenerationOptions } from '../lib/conjure/types'
+import { derivePlayerCastSpawn, setPlayerSpellCasting } from '../lib/player-avatar-runtime'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 const TERMINAL_STATES: ConjureStatus[] = ['ready', 'failed']
+
+function scalarFromScale(value: [number, number, number] | number | undefined, fallback: number): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (Array.isArray(value) && typeof value[0] === 'number' && Number.isFinite(value[0])) return value[0]
+  return fallback
+}
+
+async function syncAssetPlacementToRegistry(
+  assetId: string,
+  placement: {
+    position: [number, number, number]
+    rotation: [number, number, number]
+    scale: number
+  },
+): Promise<void> {
+  await fetch(`${OASIS_BASE}/api/conjure/${assetId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(placement),
+  })
+}
 
 export function useConjure() {
   const conjuredAssets = useOasisStore(s => s.conjuredAssets)
@@ -30,6 +52,7 @@ export function useConjure() {
     options?: { characterMode?: boolean; characterOptions?: CharacterGenerationOptions; imageUrl?: string; autoRig?: boolean; autoAnimate?: boolean; animationPreset?: string },
   ) => {
     try {
+      setPlayerSpellCasting(true)
       const res = await fetch(`${OASIS_BASE}/api/conjure`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -45,13 +68,9 @@ export function useConjure() {
       }
 
       const data = await res.json()
+      const spawn = derivePlayerCastSpawn(3)
 
       // Add to local store immediately for instant UI feedback
-      // ░▒▓ SPAWN OFFSET — Detect active conjurations and offset new ones so VFX don't stack ▓▒░
-      const activeCount = useOasisStore.getState().conjuredAssets.filter(
-        a => !['ready', 'failed'].includes(a.status)
-      ).length
-      const spawnX = activeCount * 4  // 4 units apart along X axis
       const newAsset: ConjuredAsset = {
         id: data.id,
         prompt,
@@ -60,14 +79,25 @@ export function useConjure() {
         providerTaskId: '',
         status: 'queued' as ConjureStatus,
         progress: 0,
-        position: [spawnX, 0, 0],
+        position: spawn.position,
         scale: 1,
-        rotation: [0, 0, 0],
+        rotation: spawn.rotation,
         createdAt: new Date().toISOString(),
       }
       addConjuredAsset(newAsset)
+      useOasisStore.getState().setObjectTransform(data.id, {
+        position: spawn.position,
+        rotation: spawn.rotation,
+        scale: 1,
+      })
       // Auto-place in current world
       placeConjuredAssetInWorld(data.id)
+      setPlayerSpellCasting(true)
+      void syncAssetPlacementToRegistry(data.id, {
+        position: spawn.position,
+        rotation: spawn.rotation,
+        scale: 1,
+      }).catch(err => console.warn('[Forge] Failed to sync conjure placement:', err))
 
       // Award XP for conjuration (fire-and-forget)
       const worldId = useOasisStore.getState().activeWorldId
@@ -75,6 +105,7 @@ export function useConjure() {
 
       return data
     } catch (err) {
+      setPlayerSpellCasting(false)
       console.error('[Forge] Conjuration failed:', err)
       throw err
     }
@@ -90,6 +121,7 @@ export function useConjure() {
     options?: { targetPolycount?: number; topology?: MeshTopology; texturePrompt?: string; heightMeters?: number; animationPresetId?: string },
   ) => {
     try {
+      setPlayerSpellCasting(true)
       const res = await fetch(`${OASIS_BASE}/api/conjure/${id}/process`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -108,6 +140,11 @@ export function useConjure() {
 
       // Find the source to inherit its prompt for display
       const source = conjuredAssets.find(a => a.id === id)
+      const sourceTransform = source ? useOasisStore.getState().transforms[source.id] : undefined
+      const fallbackSpawn = derivePlayerCastSpawn(3)
+      const childPosition = sourceTransform?.position || source?.position || fallbackSpawn.position
+      const childRotation = sourceTransform?.rotation || source?.rotation || fallbackSpawn.rotation
+      const childScale = scalarFromScale(sourceTransform?.scale, source?.scale || 1)
       const ACTION_LABELS: Record<string, string> = {
         texture: 'Texturing', remesh: 'Remeshing', rig: 'Rigging', animate: 'Animating',
       }
@@ -125,18 +162,30 @@ export function useConjure() {
         providerTaskId: '',
         status: 'queued' as ConjureStatus,
         progress: 0,
-        position: [0, 0, 0],              // neutral origin — VFX shows here until placed
-        scale: 1,
-        rotation: [0, 0, 0],
+        position: childPosition,
+        scale: childScale,
+        rotation: childRotation,
         createdAt: new Date().toISOString(),
         sourceAssetId: id,
         action,
       }
       addConjuredAsset(childAsset)
+      useOasisStore.getState().setObjectTransform(data.id, {
+        position: childPosition,
+        rotation: childRotation,
+        scale: childScale,
+      })
       placeConjuredAssetInWorld(data.id)
+      setPlayerSpellCasting(true)
+      void syncAssetPlacementToRegistry(data.id, {
+        position: childPosition,
+        rotation: childRotation,
+        scale: childScale,
+      }).catch(err => console.warn(`[Forge] Failed to sync ${action} placement:`, err))
 
       return data
     } catch (err) {
+      setPlayerSpellCasting(false)
       console.error(`[Forge] ${action} failed:`, err)
       throw err
     }

@@ -24,7 +24,7 @@ vi.mock('../db', () => ({
   },
 }))
 
-import { callTool, TOOL_NAMES, deliverScreenshot, isScreenshotPending } from '../mcp/oasis-tools'
+import { callTool, TOOL_NAMES, deliverScreenshot, getPendingScreenshotRequest, isScreenshotPending } from '../mcp/oasis-tools'
 import { prisma } from '../db'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -244,6 +244,206 @@ describe('deliverScreenshot', () => {
 
 describe('isScreenshotPending', () => {
   it('returns false by default', () => {
+    expect(isScreenshotPending()).toBe(false)
+  })
+
+  it('stores structured screenshot requests and resolves multi-view captures', async () => {
+    const pendingResult = callTool('screenshot_viewport', {
+      format: 'webp',
+      quality: 0.88,
+      width: 960,
+      height: 540,
+      views: [
+        { id: 'front', mode: 'current' },
+        {
+          id: 'merlin-eye',
+          mode: 'agent-avatar-phantom',
+          agentType: 'merlin',
+          distance: 1,
+          heightOffset: 1.6,
+          lookAhead: 6,
+          fov: 100,
+        },
+      ],
+    })
+
+    expect(isScreenshotPending()).toBe(true)
+    const request = getPendingScreenshotRequest()
+    expect(request).not.toBeNull()
+    expect(request?.format).toBe('webp')
+    expect(request?.quality).toBe(0.88)
+    expect(request?.width).toBe(960)
+    expect(request?.height).toBe(540)
+    expect(request?.views.map(view => view.id)).toEqual(['front', 'merlin-eye'])
+
+    const delivered = deliverScreenshot([
+      { viewId: 'front', base64: 'front-base64', format: 'webp' },
+      { viewId: 'merlin-eye', base64: 'merlin-base64', format: 'webp' },
+    ], request?.id)
+
+    expect(delivered).toBe(true)
+
+    const result = await pendingResult
+    expect(result.ok).toBe(true)
+    expect(result.data).toMatchObject({
+      format: 'webp',
+      captureCount: 2,
+      base64: 'front-base64',
+      captures: [
+        { viewId: 'front', format: 'webp', hasInlineBase64: true },
+        { viewId: 'merlin-eye', format: 'webp', hasInlineBase64: true },
+      ],
+    })
+    expect(isScreenshotPending()).toBe(false)
+  })
+
+  it('queues later screenshot requests instead of cancelling the first one', async () => {
+    const firstPending = callTool('screenshot_viewport', {
+      views: [{ id: 'agent-eye', mode: 'agent' }],
+      defaultAgentType: 'merlin',
+    })
+    const secondPending = callTool('screenshot_viewport', {
+      views: [{ id: 'overview', mode: 'external' }],
+      defaultAgentType: 'merlin',
+    })
+
+    const firstRequest = getPendingScreenshotRequest()
+    expect(firstRequest?.views[0]).toMatchObject({
+      id: 'agent-eye',
+      mode: 'agent-avatar-phantom',
+      agentType: 'merlin',
+    })
+
+    expect(deliverScreenshot('first-base64', firstRequest?.id)).toBe(true)
+    const firstResult = await firstPending
+    expect(firstResult.ok).toBe(true)
+
+    const secondRequest = getPendingScreenshotRequest()
+    expect(secondRequest?.views[0]).toMatchObject({
+      id: 'overview',
+      mode: 'external-orbit',
+      agentType: 'merlin',
+    })
+
+    expect(deliverScreenshot('second-base64', secondRequest?.id)).toBe(true)
+    const secondResult = await secondPending
+    expect(secondResult.ok).toBe(true)
+    expect(isScreenshotPending()).toBe(false)
+  })
+
+  it('treats explicit agent camera coordinates as a literal look-at view', async () => {
+    const pendingResult = callTool('screenshot_viewport', {
+      defaultAgentType: 'merlin',
+      views: [{
+        id: 'agent-self-shot',
+        mode: 'agent',
+        position: [0, 1.5, 3],
+        target: [0, 1.5, 5],
+        fov: 60,
+      }],
+    })
+
+    const request = getPendingScreenshotRequest()
+    expect(request?.views[0]).toMatchObject({
+      id: 'agent-self-shot',
+      mode: 'look-at',
+      position: [0, 1.5, 3],
+      target: [0, 1.5, 5],
+      agentType: 'merlin',
+      fov: 60,
+    })
+
+    expect(deliverScreenshot('look-at-base64', request?.id)).toBe(true)
+    const result = await pendingResult
+    expect(result.ok).toBe(true)
+    expect(isScreenshotPending()).toBe(false)
+  })
+
+  it('normalizes third-person follow screenshots for embodied self-checks', async () => {
+    const pendingResult = callTool('screenshot_viewport', {
+      defaultAgentType: 'merlin',
+      views: [{
+        id: 'merlin-tps',
+        mode: 'third-person',
+        agentType: 'merlin',
+      }],
+    })
+
+    const request = getPendingScreenshotRequest()
+    expect(request?.views[0]).toMatchObject({
+      id: 'merlin-tps',
+      mode: 'third-person-follow',
+      agentType: 'merlin',
+      fov: 72,
+      distance: 4.4,
+      heightOffset: 2.1,
+      lookAhead: 4,
+    })
+
+    expect(deliverScreenshot('tps-base64', request?.id)).toBe(true)
+    const result = await pendingResult
+    expect(result.ok).toBe(true)
+    expect(isScreenshotPending()).toBe(false)
+  })
+
+  it('builds a player avatar portrait via avatarpic_user', async () => {
+    const pendingResult = callTool('avatarpic_user', {})
+
+    const request = getPendingScreenshotRequest()
+    expect(request?.views[0]).toMatchObject({
+      id: 'player-portrait',
+      mode: 'avatar-portrait',
+      agentType: 'player',
+      fov: 35,
+      distance: 2.75,
+      heightOffset: 1.55,
+    })
+
+    expect(deliverScreenshot('player-portrait-base64', request?.id)).toBe(true)
+    const result = await pendingResult
+    expect(result.ok).toBe(true)
+    expect(isScreenshotPending()).toBe(false)
+  })
+
+  it('builds a third-person player avatar view via screenshot_avatar', async () => {
+    const pendingResult = callTool('screenshot_avatar', {
+      subject: 'player',
+      style: 'third-person',
+    })
+
+    const request = getPendingScreenshotRequest()
+    expect(request?.views[0]).toMatchObject({
+      id: 'player-tps',
+      mode: 'third-person-follow',
+      agentType: 'player',
+      fov: 72,
+      distance: 4.4,
+      heightOffset: 2.1,
+      lookAhead: 4,
+    })
+
+    expect(deliverScreenshot('player-tps-base64', request?.id)).toBe(true)
+    const result = await pendingResult
+    expect(result.ok).toBe(true)
+    expect(isScreenshotPending()).toBe(false)
+  })
+
+  it('rejects screenshot delivery for the wrong request id', async () => {
+    const pendingResult = callTool('screenshot_viewport', {
+      views: [{ id: 'only', mode: 'current' }],
+    })
+
+    const request = getPendingScreenshotRequest()
+    expect(request?.id).toBeTruthy()
+    expect(deliverScreenshot('wrong-base64', 'wrong-request')).toBe(false)
+    expect(isScreenshotPending()).toBe(true)
+
+    const delivered = deliverScreenshot('real-base64', request?.id)
+    expect(delivered).toBe(true)
+
+    const result = await pendingResult
+    expect(result.ok).toBe(true)
+    expect(result.data).toMatchObject({ base64: 'real-base64' })
     expect(isScreenshotPending()).toBe(false)
   })
 })

@@ -6,14 +6,16 @@
 
 'use client'
 
-import { useRef, useState, useEffect } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useRef, useState, useEffect, useMemo } from 'react'
+import { useFrame, useThree } from '@react-three/fiber'
 import { Html, Text3D, Center } from '@react-three/drei'
 import * as THREE from 'three'
 import type { CraftedScene, CraftedPrimitive } from '../../lib/conjure/types'
 import { useOasisStore } from '../../store/oasisStore'
 import { extractModelStats } from './ModelPreview'
 import { useInputManager } from '../../lib/input-manager'
+import { FlameShader, FlagShader, CrystalShader, WaterShader, ParticleEmitterShader, GlowOrbShader, AuroraShader } from './ShaderPrimitives'
+import { getCraftTexturePreset, computeAutoTiling, canHaveTexture } from '../../lib/forge/craft-textures'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PRIMITIVE GEOMETRY — maps type string to Three.js geometry
@@ -30,6 +32,92 @@ export function PrimitiveGeometry({ type }: { type: CraftedPrimitive['type'] }) 
     case 'capsule': return <capsuleGeometry args={[0.3, 0.5, 8, 16]} />
     default: return <boxGeometry args={[1, 1, 1]} />
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CRAFT TEXTURE CACHE — Load once, clone per unique repeat value
+// Same battle-tested pattern as GroundPlane: shared cache, placeholder,
+// retry with exponential backoff, GPU sync before render.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const craftTextureSource = new Map<string, THREE.Texture>()
+const craftTextureClones = new Map<string, THREE.Texture>()
+const craftFailedUrls = new Set<string>()
+const CRAFT_TEX_MAX_RETRIES = 3
+const CRAFT_TEX_RETRY_MS = 800
+
+let _craftPlaceholder: THREE.Texture | null = null
+function getCraftPlaceholder(): THREE.Texture {
+  if (!_craftPlaceholder) {
+    if (typeof document === 'undefined') return new THREE.Texture()
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = 1
+    const ctx = canvas.getContext('2d')!
+    ctx.fillStyle = '#888888'
+    ctx.fillRect(0, 0, 1, 1)
+    _craftPlaceholder = new THREE.CanvasTexture(canvas)
+    _craftPlaceholder.colorSpace = THREE.SRGBColorSpace
+  }
+  return _craftPlaceholder
+}
+
+async function loadCraftTextureSource(url: string): Promise<THREE.Texture | null> {
+  const cached = craftTextureSource.get(url)
+  if (cached) return cached
+  if (craftFailedUrls.has(url)) return null
+
+  for (let attempt = 0; attempt < CRAFT_TEX_MAX_RETRIES; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, CRAFT_TEX_RETRY_MS * Math.pow(2, attempt - 1)))
+    const tex = await new Promise<THREE.Texture | null>(resolve => {
+      new THREE.TextureLoader().load(url, resolve, undefined, () => resolve(null))
+    })
+    if (tex) {
+      tex.colorSpace = THREE.SRGBColorSpace
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+      craftTextureSource.set(url, tex)
+      return tex
+    }
+  }
+  craftFailedUrls.add(url)
+  return null
+}
+
+/** Hook: resolve preset → load source → clone with computed repeat → GPU sync */
+function useCraftTexture(primitive: CraftedPrimitive): THREE.Texture | null {
+  const gl = useThree(s => s.gl)
+  const [texture, setTexture] = useState<THREE.Texture | null>(null)
+
+  const preset = primitive.texturePresetId ? getCraftTexturePreset(primitive.texturePresetId) : undefined
+  const wantsTexture = !!preset && canHaveTexture(primitive.type)
+
+  const repeat = useMemo(() => {
+    if (!preset) return 1
+    if (primitive.textureRepeat) return primitive.textureRepeat
+    return computeAutoTiling(primitive.scale, preset.naturalSizeMeters)
+  }, [preset, primitive.textureRepeat, primitive.scale])
+
+  useEffect(() => {
+    if (!preset || !wantsTexture) { setTexture(null); return }
+    let cancelled = false
+
+    const cloneKey = `${preset.texturePath}:${repeat}`
+    const existing = craftTextureClones.get(cloneKey)
+    if (existing) { setTexture(existing); return }
+
+    loadCraftTextureSource(preset.texturePath).then(source => {
+      if (cancelled || !source) return
+      const clone = source.clone()
+      clone.repeat.set(repeat, repeat)
+      clone.needsUpdate = true
+      try { gl.initTexture(clone) } catch { /* GL sync optional */ }
+      craftTextureClones.set(cloneKey, clone)
+      setTexture(clone)
+    })
+
+    return () => { cancelled = true }
+  }, [preset, wantsTexture, repeat, gl])
+
+  return texture
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -148,14 +236,36 @@ function CraftedTextMesh({ primitive }: { primitive: CraftedPrimitive }) {
   )
 }
 
+// Shader primitive type set — used for routing
+const SHADER_TYPES = new Set(['flame', 'flag', 'crystal', 'water', 'particle_emitter', 'glow_orb', 'aurora'])
+
 export function CraftedPrimitiveMesh({ primitive }: { primitive: CraftedPrimitive }) {
   const meshRef = useRef<THREE.Mesh>(null)
   const hasOpacity = primitive.opacity !== undefined && primitive.opacity < 1
   useAnimation(meshRef, primitive)
 
+  // Texture support — preset-based, auto-tiled, cached
+  const craftTexture = useCraftTexture(primitive)
+  const wantsTexture = !!primitive.texturePresetId && canHaveTexture(primitive.type)
+  // Use placeholder when texture is loading (prevents shader recompile flash)
+  const textureMap = craftTexture || (wantsTexture ? getCraftPlaceholder() : null)
+
   // Text primitives use a separate component
   if (primitive.type === 'text') {
     return <CraftedTextMesh primitive={primitive} />
+  }
+
+  // Shader primitives — procedural GLSL effects
+  if (SHADER_TYPES.has(primitive.type)) {
+    switch (primitive.type) {
+      case 'flame': return <FlameShader primitive={primitive} />
+      case 'flag': return <FlagShader primitive={primitive} />
+      case 'crystal': return <CrystalShader primitive={primitive} />
+      case 'water': return <WaterShader primitive={primitive} />
+      case 'particle_emitter': return <ParticleEmitterShader primitive={primitive} />
+      case 'glow_orb': return <GlowOrbShader primitive={primitive} />
+      case 'aurora': return <AuroraShader primitive={primitive} />
+    }
   }
 
   return (
@@ -177,6 +287,7 @@ export function CraftedPrimitiveMesh({ primitive }: { primitive: CraftedPrimitiv
         transparent={hasOpacity}
         opacity={primitive.opacity ?? 1}
         depthWrite={!hasOpacity}
+        map={textureMap}
       />
     </mesh>
   )
@@ -234,11 +345,14 @@ export function CraftedSceneRenderer({ scene, onDelete }: CraftedSceneRendererPr
       ref={groupRef}
       onPointerOver={(e) => {
         e.stopPropagation()
+        if (useInputManager.getState().pointerLocked) return
         if (hoverTimeout.current) { clearTimeout(hoverTimeout.current); hoverTimeout.current = null }
-        setHovered(true); if (!useInputManager.getState().pointerLocked) setShowLabel(true)
+        setHovered(true)
+        setShowLabel(true)
       }}
       onPointerOut={(e) => {
         e.stopPropagation()
+        if (useInputManager.getState().pointerLocked) return
         setHovered(false)
         // Debounce label hide — prevents flicker when raycaster briefly loses the mesh
         hoverTimeout.current = setTimeout(() => setShowLabel(false), 150)

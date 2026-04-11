@@ -557,7 +557,7 @@ export async function loadAnimationClip(animId: string): Promise<THREE.Animation
   const promise = (async () => {
     try {
       // Dynamic import — FBXLoader uses DOM APIs, must be client-side only
-      const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js')
+      const { FBXLoader } = await import('three/examples/jsm/loaders/FBXLoader.js')
       const loader = new FBXLoader()
 
       const url = `${OASIS_BASE}/animations/${encodeURIComponent(entry.filename)}`

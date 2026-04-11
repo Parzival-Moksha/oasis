@@ -25,6 +25,7 @@ import { NextRequest } from 'next/server'
 import { spawn } from 'child_process'
 import path from 'path'
 import fs from 'fs'
+import { buildClaudeCliEnv } from '@/lib/claude-cli-env'
 
 const ADMIN_USER_ID = process.env.ADMIN_USER_ID || ''
 const OASIS_ROOT = process.env.OASIS_ROOT || process.cwd()
@@ -238,7 +239,7 @@ export async function POST(request: NextRequest) {
       const child = spawn(claudePath, args, {
         cwd: OASIS_ROOT,
         shell: true,
-        env: { ...process.env },
+        env: buildClaudeCliEnv(),
       })
 
       child.stdin.write(fullPrompt)

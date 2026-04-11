@@ -413,6 +413,7 @@ server.tool(
 // ═══════════════════════════════════════════════════════════════════════════
 
 const OASIS_URL = process.env.OASIS_URL || "http://localhost:4516";
+const DEFAULT_AGENT_TYPE = (process.env.OASIS_AGENT_TYPE || "").trim().toLowerCase();
 
 // Shared media executor — POST to Oasis, resolve relative URLs
 function resolveUrl(url) {
@@ -439,11 +440,11 @@ server.tool("generate_image",
 );
 
 server.tool("generate_voice",
-  "Generate a voice note from text (ElevenLabs TTS). Voices: rachel, adam, sam, elli.",
+  "Generate a voice note from text (ElevenLabs TTS). Supports preset aliases like rachel, adam, sam, elli, merlin, or a raw ElevenLabs voice ID.",
   { text: z.string(), voice: z.string().optional() },
   async ({ text, voice }) => {
     try {
-      const r = await mediaPost("/api/media/voice", { text, voice });
+      const r = await mediaPost("/api/media/voice", { text, voice, agentType: DEFAULT_AGENT_TYPE || undefined });
       return { content: [{ type: "text", text: r.ok ? `Voice note generated: ${r.url}` : `Voice gen failed: ${r.error}` }] };
     } catch (e) { return { content: [{ type: "text", text: `Voice gen error: ${e}` }] }; }
   }

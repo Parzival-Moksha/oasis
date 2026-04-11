@@ -14,7 +14,7 @@
 
 import { useState, useRef, useCallback, useEffect, useMemo, Suspense } from 'react'
 import { Canvas, useThree, useFrame } from '@react-three/fiber'
-import { OrbitControls, useGLTF, Environment, ContactShadows } from '@react-three/drei'
+import { OrbitControls, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js'
 import type { AssetDefinition } from '../scene-lib/types'
@@ -608,8 +608,6 @@ export function ModelPreviewPanel({ asset, onBack, onPlace, accentColor = '#38BD
               <ambientLight intensity={0.7} />
               <directionalLight position={[3, 5, 2]} intensity={1.0} />
               <directionalLight position={[-3, 2, -1]} intensity={0.3} color="#b4c6e0" />
-              <Environment preset="city" />
-              <ContactShadows position={[0, -0.01, 0]} opacity={0.35} scale={10} blur={2.5} far={4} />
               <OrbitControls enablePan={false} autoRotate={autoRotate} autoRotateSpeed={1.5} minDistance={0.1} maxDistance={100} />
               <Suspense fallback={null}>
                 <AutoFramedModel
@@ -831,8 +829,6 @@ export function CraftedPreviewPanel({ scene, onBack, onPlace, accentColor = '#3B
           <ambientLight intensity={0.7} />
           <directionalLight position={[3, 5, 2]} intensity={1.0} />
           <directionalLight position={[-3, 2, -1]} intensity={0.3} color="#b4c6e0" />
-          <Environment preset="city" />
-          <ContactShadows position={[0, -0.01, 0]} opacity={0.35} scale={10} blur={2.5} far={4} />
           <OrbitControls enablePan={false} autoRotate={autoRotate} autoRotateSpeed={1.5} minDistance={0.1} maxDistance={100} />
           <AutoFramedCraftedScene
             scene={scene}

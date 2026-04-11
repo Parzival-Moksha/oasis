@@ -224,6 +224,16 @@ export function getLipSync(objectId: string): LipSyncController | null {
   return _lipSyncRegistry.get(objectId) ?? null
 }
 
-export function unregisterLipSync(objectId: string): void {
+export function unregisterLipSync(
+  objectId: string,
+  expectedCtrl?: LipSyncController,
+  options?: { detach?: boolean },
+): void {
+  const current = _lipSyncRegistry.get(objectId)
+  if (!current) return
+  if (expectedCtrl && current !== expectedCtrl) return
+  if (options?.detach !== false) {
+    current.detach()
+  }
   _lipSyncRegistry.delete(objectId)
 }

@@ -1,45 +1,54 @@
-// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 // /api/media/list — Scan public/images/ for uploaded media files
-// ─═̷─═̷─📂─═̷─═̷─ Returns categorized list: images, videos, audio ─═̷─═̷─📂─═̷─═̷─
-// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextResponse } from 'next/server'
 import { readdir, stat } from 'fs/promises'
 import path from 'path'
 
-const IMAGE_EXT = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
-const VIDEO_EXT = ['.mp4', '.webm', '.ogg']
-const AUDIO_EXT = ['.mp3', '.wav', '.flac', '.ogg']
+type MediaType = 'image' | 'video' | 'audio'
+
+const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif'])
+const VIDEO_EXT = new Set(['.mp4', '.webm', '.mov', '.m4v', '.ogv'])
+const AUDIO_EXT = new Set(['.mp3', '.wav', '.flac', '.ogg', '.oga', '.opus', '.aac', '.m4a'])
 
 interface MediaItem {
   name: string
   url: string
-  type: 'image' | 'video' | 'audio'
+  type: MediaType
   size: number
   createdAt: string
 }
 
+function inferMediaType(fileName: string): MediaType | null {
+  if (fileName.startsWith('img-')) return 'image'
+  if (fileName.startsWith('vid-')) return 'video'
+  if (fileName.startsWith('aud-')) return 'audio'
+
+  const ext = path.extname(fileName).toLowerCase()
+  if (IMAGE_EXT.has(ext)) return 'image'
+  if (AUDIO_EXT.has(ext)) return 'audio'
+  if (VIDEO_EXT.has(ext)) return 'video'
+  return null
+}
+
 export async function GET() {
   try {
-    const imagesDir = path.join(process.cwd(), 'public', 'images')
+    const mediaDir = path.join(process.cwd(), 'public', 'images')
     let files: string[]
+
     try {
-      files = await readdir(imagesDir)
+      files = await readdir(mediaDir)
     } catch {
       return NextResponse.json({ items: [] })
     }
 
     const items: MediaItem[] = []
+
     for (const file of files) {
-      const ext = path.extname(file).toLowerCase()
-      let type: 'image' | 'video' | 'audio' | null = null
-      if (IMAGE_EXT.includes(ext)) type = 'image'
-      else if (VIDEO_EXT.includes(ext)) type = 'video'
-      else if (AUDIO_EXT.includes(ext)) type = 'audio'
+      const type = inferMediaType(file)
       if (!type) continue
 
       try {
-        const fileStat = await stat(path.join(imagesDir, file))
+        const fileStat = await stat(path.join(mediaDir, file))
         items.push({
           name: file,
           url: `/images/${file}`,
@@ -47,10 +56,11 @@ export async function GET() {
           size: fileStat.size,
           createdAt: fileStat.birthtime.toISOString(),
         })
-      } catch { /* skip unreadable */ }
+      } catch {
+        // Skip unreadable entries.
+      }
     }
 
-    // Sort newest first
     items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
     return NextResponse.json({ items })

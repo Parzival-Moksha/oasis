@@ -1,0 +1,8 @@
+name: oasis
+version: 1.0.0
+description: >
+  Oasis world-awareness bridge. Injects rich local world context into each
+  Hermes turn and advertises the remote Oasis MCP endpoint and shared tool
+  surface without modifying Hermes core.
+requires_env:
+  - OASIS_TOOLS_URL

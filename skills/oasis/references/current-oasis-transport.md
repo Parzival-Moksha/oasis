@@ -1,93 +1,84 @@
-# Current Oasis Hermes Transport
+# Current Oasis Agent Transport
 
-This reference describes the current Oasis implementation as of April 1, 2026.
+This reference describes the Oasis agent-transport shape as of April 9, 2026.
 
 ## Distribution
 
 - Repo URL: `https://github.com/Parzival-Moksha/oasis`
 - Skill path: `skills/oasis`
-- Install command: `hermes skills install Parzival-Moksha/oasis/skills/oasis`
+- Plugin path: `hermes-plugin/oasis`
 
-## Current Files
+## Current Agent Layers
 
-- `src/app/api/hermes/route.ts`
-- `src/components/forge/HermesPanel.tsx`
-- `src/components/Scene.tsx`
+Oasis now has three distinct agent layers:
 
-## Current Oasis-Side Configuration Inputs
+1. Shared world-tool substrate
+   - `src/lib/mcp/oasis-tools.ts`
+   - shared by REST, local stdio MCP, Merlin, and remote HTTP MCP
 
-The Oasis server route resolves config in this order:
+2. Remote MCP endpoint
+   - `src/app/api/mcp/oasis/route.ts`
+   - Streamable HTTP MCP endpoint for remote agents
 
-1. Local pairing file: `data/hermes-config.local.json`
-2. Server env fallback:
+3. Optional Hermes plugin
+   - `hermes-plugin/oasis/__init__.py`
+   - injects compact world context into Hermes turns
 
-- `HERMES_API_BASE`
-- `HERMES_API_KEY`
-- `HERMES_MODEL` (optional default model)
-- `HERMES_SYSTEM_PROMPT` (optional)
+## Current Remote Endpoints
 
-If no API key is available from pairing or env fallback, the Hermes panel will show an unconfigured state and the route will return an error.
+- Remote MCP: `POST/GET/DELETE /api/mcp/oasis`
+- REST tools fallback: `POST /api/oasis-tools`
+- Screenshot delivery: `POST /api/oasis-tools`
 
-Important: this is Oasis server configuration, not browser configuration.
+If `OASIS_MCP_KEY` is set, clients must send:
 
-## Current Transport Shape
-
-Oasis currently expects an OpenAI-style Hermes API server and proxies through `POST /api/hermes`.
-
-The route:
-
-- checks `GET /v1/models` for connectivity
-- sends chat to `POST /v1/chat/completions`
-- uses `stream: true`
-- transforms upstream SSE into local SSE events
-
-The local Oasis stream currently emits these event types when present:
-
-- `meta`
-- `text`
-- `reasoning`
-- `tool`
-- `usage`
-- `done`
-- `error`
-
-Whether reasoning or tool chunks actually appear depends on what Hermes emits upstream.
-
-## Current Remote Setup
-
-For Hermes on a VPS and Oasis on a local machine:
-
-1. Keep Hermes API bound to `127.0.0.1:8642`
-2. Set `API_SERVER_KEY` on the Hermes side
-3. Open a tunnel from the Oasis machine:
-
-```bash
-ssh -L 8642:127.0.0.1:8642 user@vps -N
+```http
+Authorization: Bearer <OASIS_MCP_KEY>
 ```
 
-4. In Oasis Hermes panel, click `pair`, then paste:
+## Current World Awareness
 
-```env
-HERMES_API_BASE=http://127.0.0.1:8642/v1
-HERMES_API_KEY=your_secret_here
-HERMES_MODEL=optional_model_id
-```
+The shared `get_world_state` tool includes:
+- catalog objects
+- crafted scenes
+- lights
+- agent avatars
+- placed conjured assets
+- behaviors
+- live player avatar context
+- live player camera context
 
-5. Save pairing in the panel
-6. Press `sync`
+Important:
+- live player context is refreshed when Oasis sends agent requests, not every animation frame
+- screenshot tools remain browser-mediated, not server-vision-native
 
-## Current Limitations
+## Current Visual Boundary
 
-- Installing the Oasis skill on Hermes does not automatically install Oasis itself.
-- The current Oasis implementation still needs a one-time pairing paste in the Oasis panel.
-- There is not yet an encrypted credential store, hosted multi-user auth layer, or user-account ACL around `/api/hermes`.
-- Oasis does not currently provide Hermes with world state unless a separate bridge or MCP server is added.
+Vision is not purely server-side.
 
-## Recommended Truthful Framing
+`screenshot_viewport` and avatar screenshot tools depend on:
+- a live Oasis browser client
+- the screenshot bridge being mounted
+- that browser actually being in the target world
 
-When guiding users, say:
+If the browser bridge is absent, the world tools may still work, but screenshot tools will fail or time out.
 
-- the skill teaches Hermes how Oasis works
-- the current transport still needs one-time setup
-- pairing paste removes `.env.local` editing for the common local workflow
-- a future MCP or bridge would be needed for true world awareness
+## Current Forge Boundary
+
+The shared tool surface now exposes Forge conjuration flows:
+- list
+- inspect
+- conjure
+- post-process
+- place
+- delete
+
+These tools rely on the local Oasis Forge stack and provider keys already configured on the Oasis host.
+
+## Current Truthful Framing
+
+When guiding users or remote agents, say:
+- Oasis exposes real world-building tools over MCP
+- the plugin provides compact passive context, not the full transport
+- screenshot tools require a live browser bridge
+- the shared tool layer is the source of truth for world actions

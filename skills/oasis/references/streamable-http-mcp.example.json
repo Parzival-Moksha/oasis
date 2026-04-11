@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "oasis": {
+      "transport": "streamable-http",
+      "url": "http://<oasis-host>:4516/api/mcp/oasis",
+      "headers": {
+        "Authorization": "Bearer <OASIS_MCP_KEY>"
+      }
+    }
+  }
+}

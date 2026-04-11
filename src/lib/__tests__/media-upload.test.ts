@@ -76,8 +76,8 @@ describe('/api/media/upload', () => {
     expect(json.error).toMatch(/unsupported type/i)
   })
 
-  it('rejects files over 100MB', async () => {
-    const oversize = 101 * 1024 * 1024 // 101MB
+  it('rejects files over 250MB', async () => {
+    const oversize = 251 * 1024 * 1024 // 251MB
     const file = makeFile('huge.png', 'image/png', oversize)
     const req = makeRequest(file)
     const res = await POST(req)
@@ -118,13 +118,23 @@ describe('/api/media/upload', () => {
     expect(json.url).toMatch(/\.webp$/)
   })
 
-  it('accepts files exactly at 20MB limit', async () => {
-    const exactLimit = 20 * 1024 * 1024
+  it('accepts files exactly at 250MB limit', async () => {
+    const exactLimit = 250 * 1024 * 1024
     const file = makeFile('big.png', 'image/png', exactLimit)
     const req = makeRequest(file)
     const res = await POST(req)
     const json = await res.json()
     expect(res.status).toBe(200)
+  })
+
+  it('accepts audio extensions that rely on extension fallback', async () => {
+    const file = makeFile('voice-note.m4a', '', 2048)
+    const req = makeRequest(file)
+    const res = await POST(req)
+    const json = await res.json()
+    expect(res.status).toBe(200)
+    expect(json.mediaType).toBe('audio')
+    expect(json.url).toMatch(/\.m4a$/)
   })
 
   it('sanitizes filename to safe format', async () => {

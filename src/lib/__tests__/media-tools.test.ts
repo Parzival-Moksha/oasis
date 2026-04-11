@@ -66,7 +66,8 @@ describe('Constants', () => {
     expect(VOICE_NAMES).toContain('adam')
     expect(VOICE_NAMES).toContain('sam')
     expect(VOICE_NAMES).toContain('elli')
-    expect(VOICE_NAMES).toHaveLength(4)
+    expect(VOICE_NAMES).toContain('merlin')
+    expect(VOICE_NAMES).toHaveLength(5)
   })
 
   it('VIDEO_DURATIONS contains only even numbers', () => {
@@ -127,11 +128,11 @@ describe('resolveUrl (via execGenerateImage)', () => {
     expect(result.url).toBe('https://cdn.example.com/img.png')
   })
 
-  it('prepends baseUrl to relative URL', async () => {
+  it('keeps relative URL relative so the browser can resolve it against the current app origin', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse({ url: '/uploads/img.png' }))
     const result = await execGenerateImage('a cat', undefined, 'http://test:4516')
     expect(result.ok).toBe(true)
-    expect(result.url).toBe('http://test:4516/uploads/img.png')
+    expect(result.url).toBe('/uploads/img.png')
   })
 
   it('handles http:// prefix in URL (not just https)', async () => {
@@ -171,7 +172,7 @@ describe('execGenerateImage', () => {
   it('returns ok:true with resolved url on success', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse({ url: '/gen/sunset.png' }))
     const result = await execGenerateImage('sunset', undefined, 'http://h:4516')
-    expect(result).toEqual({ ok: true, url: 'http://h:4516/gen/sunset.png' })
+    expect(result).toEqual({ ok: true, url: '/gen/sunset.png' })
   })
 
   it('returns ok:false with error on HTTP error', async () => {
@@ -204,13 +205,13 @@ describe('execGenerateImage', () => {
 describe('execGenerateVoice', () => {
   it('sends POST to /api/media/voice with text and voice', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse({ url: '/audio.mp3' }))
-    await execGenerateVoice('hello world', 'adam', 'http://h:4516')
+    await execGenerateVoice('hello world', 'adam', 'http://h:4516', 'merlin')
 
     expect(mockFetch).toHaveBeenCalledWith(
       'http://h:4516/api/media/voice',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ text: 'hello world', voice: 'adam' }),
+        body: JSON.stringify({ text: 'hello world', voice: 'adam', agentType: 'merlin' }),
       }),
     )
   })
@@ -257,7 +258,7 @@ describe('execGenerateVideo', () => {
   it('returns immediately when status is completed', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse({ status: 'completed', url: '/vid.mp4' }))
     const result = await execGenerateVideo('test', undefined, undefined, 'http://h:4516')
-    expect(result).toEqual({ ok: true, url: 'http://h:4516/vid.mp4' })
+    expect(result).toEqual({ ok: true, url: '/vid.mp4' })
     // Only one fetch call — no polling
     expect(mockFetch).toHaveBeenCalledTimes(1)
   })
@@ -291,7 +292,7 @@ describe('execGenerateVideo', () => {
 
     const result = await promise
     expect(result.ok).toBe(true)
-    expect(result.url).toBe('http://h:4516/vid.mp4')
+    expect(result.url).toBe('/vid.mp4')
     // 1 submit + 2 polls = 3 fetch calls
     expect(mockFetch).toHaveBeenCalledTimes(3)
 
@@ -497,8 +498,10 @@ describe('mediaToolsOpenAI', () => {
       expect(props.text.type).toBe('string')
     })
 
-    it('voice enum matches VOICE_NAMES', () => {
-      expect(props.voice.enum).toEqual(VOICE_NAMES)
+    it('voice description mentions aliases and raw voice ids', () => {
+      expect(props.voice.enum).toBeUndefined()
+      expect(props.voice.description).toContain('merlin')
+      expect(props.voice.description).toContain('raw ElevenLabs voice ID')
     })
 
     it('voice is not required', () => {

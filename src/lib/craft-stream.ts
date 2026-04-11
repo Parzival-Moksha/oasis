@@ -8,14 +8,20 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import type { CraftedPrimitive, PrimitiveType, CraftAnimation, CraftAnimationType } from './conjure/types'
+import { CRAFT_TEXTURE_MAP, canHaveTexture } from './forge/craft-textures'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // VALIDATION — same logic as /api/craft but for individual primitives
 // ═══════════════════════════════════════════════════════════════════════════
 
-const VALID_TYPES: PrimitiveType[] = ['box', 'sphere', 'cylinder', 'cone', 'torus', 'plane', 'capsule', 'text']
+const VALID_TYPES: PrimitiveType[] = [
+  'box', 'sphere', 'cylinder', 'cone', 'torus', 'plane', 'capsule', 'text',
+  // Shader primitives — procedural GLSL effects
+  'flame', 'flag', 'crystal', 'water', 'particle_emitter', 'glow_orb', 'aurora',
+]
 const VALID_ANIM_TYPES: CraftAnimationType[] = ['rotate', 'bob', 'pulse', 'swing', 'orbit']
 const VALID_AXES = ['x', 'y', 'z'] as const
+const VALID_PARTICLE_TYPES = ['spark', 'ember', 'snow', 'bubble', 'firefly', 'dust'] as const
 
 function validateAnimation(raw: unknown): CraftAnimation | undefined {
   if (!raw || typeof raw !== 'object') return undefined
@@ -68,13 +74,24 @@ export function validatePrimitive(raw: unknown): CraftedPrimitive | null {
     ...(typeof o.metalness === 'number' && { metalness: Math.max(0, Math.min(1, o.metalness)) }),
     ...(typeof o.roughness === 'number' && { roughness: Math.max(0, Math.min(1, o.roughness)) }),
     ...(typeof o.emissive === 'string' && o.emissive.startsWith('#') && { emissive: o.emissive }),
-    ...(typeof o.emissiveIntensity === 'number' && { emissiveIntensity: Math.max(0, Math.min(5, o.emissiveIntensity)) }),
+    ...(typeof o.emissiveIntensity === 'number' && { emissiveIntensity: Math.max(0, Math.min(2, o.emissiveIntensity)) }),
     ...(typeof o.opacity === 'number' && { opacity: Math.max(0, Math.min(1, o.opacity)) }),
     ...(animation && { animation }),
     ...(type === 'text' && typeof o.text === 'string' && { text: o.text.slice(0, 500) }),
     ...(type === 'text' && typeof o.fontSize === 'number' && { fontSize: Math.max(0.1, Math.min(20, o.fontSize)) }),
     ...(type === 'text' && typeof o.anchorX === 'string' && ['left', 'center', 'right'].includes(o.anchorX) && { anchorX: o.anchorX as 'left' | 'center' | 'right' }),
     ...(type === 'text' && typeof o.anchorY === 'string' && ['top', 'middle', 'bottom'].includes(o.anchorY) && { anchorY: o.anchorY as 'top' | 'middle' | 'bottom' }),
+    // Shader primitive parameters
+    ...(typeof o.color2 === 'string' && o.color2.startsWith('#') && { color2: o.color2 }),
+    ...(typeof o.color3 === 'string' && o.color3.startsWith('#') && { color3: o.color3 }),
+    ...(typeof o.intensity === 'number' && { intensity: Math.max(0.1, Math.min(5, o.intensity)) }),
+    ...(typeof o.speed === 'number' && { speed: Math.max(0.1, Math.min(10, o.speed)) }),
+    ...(typeof o.particleCount === 'number' && { particleCount: Math.max(10, Math.min(500, Math.round(o.particleCount))) }),
+    ...(typeof o.particleType === 'string' && VALID_PARTICLE_TYPES.includes(o.particleType as typeof VALID_PARTICLE_TYPES[number]) && { particleType: o.particleType as typeof VALID_PARTICLE_TYPES[number] }),
+    ...(typeof o.seed === 'number' && { seed: Math.max(0, Math.min(100, o.seed)) }),
+    // Texture mapping — only for geometric primitives (not shader, not text)
+    ...(typeof o.texturePresetId === 'string' && canHaveTexture(type) && CRAFT_TEXTURE_MAP.has(o.texturePresetId) && { texturePresetId: o.texturePresetId }),
+    ...(typeof o.textureRepeat === 'number' && { textureRepeat: Math.max(1, Math.min(50, Math.round(o.textureRepeat))) }),
   }
 }
 
@@ -99,7 +116,18 @@ export interface PartialCraftResult {
  * 3. Scans for complete {...} blocks using brace-depth tracking
  * 4. Validates each complete object and returns all valid ones
  */
-export function extractPartialCraftData(accumulated: string): PartialCraftResult {
+export function extractPartialCraftData(rawAccumulated: string): PartialCraftResult {
+  // Strip ALL markdown code fences — Claude Code models may wrap JSON in ```json ... ```
+  // Uses global regex to handle multiple fence blocks (concatenates their contents)
+  let accumulated = rawAccumulated
+  const fencePattern = /```(?:json)?\s*\n?([\s\S]*?)\n?```/g
+  let fenceMatch: RegExpExecArray | null
+  let stripped = ''
+  while ((fenceMatch = fencePattern.exec(accumulated)) !== null) {
+    stripped += fenceMatch[1]
+  }
+  if (stripped) accumulated = stripped
+
   // Extract name — appears before objects array
   const nameMatch = accumulated.match(/"name"\s*:\s*"([^"]*)"/)
   const name = nameMatch ? nameMatch[1] : null

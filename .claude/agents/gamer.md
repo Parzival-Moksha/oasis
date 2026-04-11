@@ -45,32 +45,98 @@ If `isWorldReady()` doesn't return true within 15s, reload once. If still false,
 
 ## Tooling Doctrine
 
-### 1. Gamer MCP (CDP — primary tool for embodied play)
-Use for everything that touches the canvas:
-- `screenshot` — your eyes
-- `click` — canvas clicks, object selection
-- `key_down` / `key_up` — WASD holds, Shift sprint, Ctrl+Alt+C mode switch
-- `mouse_move` — camera look in pointer lock, orbit rotation
-- `mouse_drag` — gizmo drags, panel resizing
-- `type_text` — typing into focused inputs/textareas
-- `press_key` — single key presses (Escape, Enter, Tab)
-- `execute_js` — run `window.__oasis.*` harness calls
-- `scroll` — scroll inside panels or zoom in orbit mode
-- `navigate` — load/reload the Oasis
-- `get_tabs` / `switch_tab` — multi-tab management
-- `wait` — explicit waits
+The gamer has TWO operational modes. Use the right one for the job.
 
-### 2. Playwright MCP (DOM-level — fallback for 2D UI)
-Use for DOM interactions when CDP can't reach:
-- `browser_snapshot` — DOM accessibility tree
-- `browser_click` — DOM element clicks by selector
-- `browser_fill_form` — form inputs
-- `browser_console_messages` — read console errors
-- `browser_network_requests` — check API failures
-- `browser_evaluate` — run JS in page context
+### Observer Mode — Merlin's Eyes (preferred for visual verification)
+
+The fastest, most reliable way to see the world from any angle. Uses the Oasis
+screenshot REST API — no pointer lock, no WASD timing, no mouse delta math.
+The camera teleports to exact coordinates and renders a pixel-perfect capture.
+
+**How:** Call the Oasis tools REST endpoint from Playwright or curl:
+```javascript
+const result = await fetch('http://localhost:4516/api/oasis-tools', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    tool: 'screenshot_viewport',
+    args: {
+      mode: 'look-at',
+      position: [0, 4, 12],   // camera position
+      target: [0, 2, -5],     // look-at target
+      width: 1280, height: 720,
+      format: 'jpeg', quality: 0.85,
+    }
+  })
+}).then(r => r.json())
+// result.data.captures[0].filePath → saved JPEG on disk
+```
+
+**Use observer mode for:**
+- Texture/material verification from specific angles
+- Multi-angle scene surveys (10+ viewpoints in seconds)
+- Checking objects at known coordinates
+- Overhead/bird's-eye layout verification
+- Any visual check where you know WHAT to look at and WHERE it is
+
+**Also available for observation:**
+- `get_world_state` — full scene data (objects, lights, sky, textures, avatars)
+- `get_world_info` — quick summary (object count, sky, ground)
+- `query_objects` — search objects by name, type, or proximity
+- `screenshot_avatar` — avatar-focused shots (portrait or third-person)
+
+### Player Mode — Embodied Interaction (for gameplay + chaos testing)
+
+For WASD movement, clicking objects, opening panels, and breaking things.
+Requires either CDP MCP tools or Playwright keyboard/mouse simulation.
+
+**IMPORTANT: Camera rotation under pointer lock is hard.**
+Pointer lock uses relative mouse deltas (`movementX/Y`). Playwright's
+`mouse.move()` sends absolute coordinates (doesn't work for camera look).
+Raw CDP `Input.dispatchMouseEvent` with `movementX`/`movementY` works but
+requires the gamer MCP or custom CDP commands.
+
+**Workaround for now:** Use `setControlMode('noclip')` via harness + the
+screenshot_viewport REST API for vision. Physical WASD + mouse-look will
+be added when CDP gamer MCP connection is stabilized.
+
+### 1. Playwright (self-contained Gamer scripts)
+**Primary execution model.** Write a Node.js script using `@playwright/test`,
+run it via `node scripts/gamer-*.mjs`. Playwright launches its own headed
+Chrome — no external browser setup needed.
+
+```javascript
+import { chromium } from '@playwright/test'
+const browser = await chromium.launch({ headless: false, args: ['--use-angle=gl'] })
+const page = await browser.newPage({ viewport: { width: 1400, height: 900 } })
+await page.goto('http://localhost:4516', { waitUntil: 'domcontentloaded' })
+```
+
+Use `page.evaluate()` for harness calls:
+```javascript
+await page.evaluate(() => window.__oasis.setControlMode('noclip'))
+await page.evaluate((wid) => window.__OASIS_STORE__.getState().switchWorld(wid), worldId)
+```
+
+Use `page.keyboard` and `page.mouse` for input simulation:
+```javascript
+await page.mouse.click(700, 450)        // Click canvas
+await page.keyboard.down('w')           // Start walking
+await page.waitForTimeout(2000)
+await page.keyboard.up('w')             // Stop
+await page.keyboard.press('Escape')     // Release pointer lock
+```
+
+**NOTE on `waitUntil`:** Never use `'networkidle'` — the HMR websocket keeps
+the connection alive forever. Use `'domcontentloaded'` and then wait for canvas.
+
+### 2. Gamer MCP (CDP — for embodied play when MCP is connected)
+Use when the `mcp__gamer__*` tools are available. These need a Chrome running
+with `--remote-debugging-port=9222`. Better for mouse-look deltas but requires
+manual browser setup.
 
 ### 3. Oasis test harness (`window.__oasis`)
-Query and drive world state:
+Query and drive world state from page.evaluate() or execute_js:
 - `getInputState()` / `getControlMode()` — verify mode transitions
 - `isPointerLocked()` — verify pointer lock state
 - `isWorldReady()` — the readiness gate
@@ -188,11 +254,11 @@ Dedicated chaos round. Pick 3-5 from:
 ## Existing Helpers To Reuse
 
 Before inventing a new script, check if one of these gets you close:
-- `scripts/visual-test.mjs`
-- `scripts/explore-oasis.mjs`
-- `scripts/test-wizard-console.mjs`
-- `scripts/test-3d-anorak.mjs`
-- `tools/visual-qa-mcp/cdp-play.mjs`
+- `scripts/visual-test.mjs` — 35-test regression suite (Playwright, headed)
+- `scripts/gamer-texture-test.mjs` — texture verification via observer mode (screenshot_viewport)
+- `scripts/test-wizard-console.mjs` — WizardConsole multi-phase test
+- `scripts/test-3d-anorak.mjs` — 3D agent window interaction
+- `tools/visual-qa-mcp/cdp-play.mjs` — raw CDP player (lower-level reference)
 
 Reuse and extend working patterns.
 

@@ -22,6 +22,7 @@
 'use client'
 
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { DeleteButton } from './DeleteButton'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 
@@ -320,14 +321,11 @@ export function AssetCard({
 
         {/* Delete X — always visible, small, top-right */}
         {onDelete && (
-          <button
-            data-card-action="delete"
+          <DeleteButton
             onClick={handleDelete}
-            className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/70 text-red-400/60 hover:text-red-300 text-[10px] flex items-center justify-center transition-colors z-10"
             title={`Delete ${name}`}
-          >
-            &#10005;
-          </button>
+            className="z-10"
+          />
         )}
 
         {/* Bottom-right action row: download, tile, view, frame */}

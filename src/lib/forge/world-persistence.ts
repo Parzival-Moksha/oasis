@@ -95,7 +95,7 @@ export function setActiveWorldId(id: string): void {
 
 export async function getWorldRegistry(): Promise<WorldMeta[]> {
   try {
-    const res = await fetch(API_BASE)
+    const res = await fetch(API_BASE, { cache: 'no-store' })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return await res.json() as WorldMeta[]
   } catch (err) {
@@ -145,7 +145,7 @@ export async function saveWorld(state: Omit<WorldState, 'version' | 'savedAt'>, 
 export async function loadWorld(worldId?: string): Promise<WorldState | null> {
   const id = worldId || getActiveWorldId()
   try {
-    const res = await fetch(`${API_BASE}/${id}`)
+    const res = await fetch(`${API_BASE}/${id}`, { cache: 'no-store' })
     if (res.status === 404) return null
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return await res.json() as WorldState
@@ -166,7 +166,7 @@ export interface PublicWorldResult {
 
 export async function loadPublicWorld(worldId: string): Promise<PublicWorldResult | null> {
   try {
-    const res = await fetch(`${API_BASE}/${worldId}/public`)
+    const res = await fetch(`${API_BASE}/${worldId}/public`, { cache: 'no-store' })
     if (!res.ok) return null
     return await res.json() as PublicWorldResult
   } catch (err) {

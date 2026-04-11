@@ -1,658 +1,625 @@
-// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-// MERLIN — The World-Builder Agent
-// ─═̷─═̷─ॐ─═̷─═̷─ Words → Tools → World ─═̷─═̷─ॐ─═̷─═̷─
-//
-// v0.1: Admin-only. POST { worldId, prompt } → SSE stream of tool calls.
-// Uses OpenRouter tool-use (OpenAI-compat format) with Claude Sonnet.
-// Loads world from Supabase, runs tool loop, saves partial state after each
-// tool call so Realtime subscription shows live progress in the client.
-//
-// Tools: add_catalog_object, remove_object, add_crafted_scene,
-//        add_light, set_sky, set_ground, set_behavior, clear_world
-//
-// Admin-only for v0.1 — no credit deduction, unlimited calls.
-// When we open it up: add auth + credit check just like /api/craft.
-// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-
 import { NextRequest, NextResponse } from 'next/server'
+import { spawn } from 'child_process'
+import fs from 'fs'
+import path from 'path'
+
+import { getAgentSessionRecord, upsertAgentSessionRecord } from '@/lib/agent-session-registry'
+import { buildClaudeCliEnv } from '@/lib/claude-cli-env'
+import { prisma } from '@/lib/db'
 import type { WorldState } from '@/lib/forge/world-persistence'
-import type { CatalogPlacement, CraftedScene, WorldLight } from '@/lib/conjure/types'
-import { ASSET_CATALOG } from '@/components/scene-lib/constants'
-import { executeMerlinTool } from '@/lib/mcp/merlin-tool-bridge'
+import {
+  publishWorldPlayerContext,
+  type RuntimePlayerContext as PromptPlayerContext,
+} from '@/lib/world-runtime-context'
 
-// ─═̷─═̷─🔒 ADMIN GUARD ─═̷─═̷─🔒
-// Local mode: always admin. No auth needed.
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
-const MERLIN_MODEL = 'anthropic/claude-sonnet-4-6'
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
+const OASIS_ROOT = process.env.OASIS_ROOT || process.cwd()
+const MERLIN_AGENT_PATH = path.join(OASIS_ROOT, '.claude', 'agents', 'merlin.md')
+const MERLIN_MCP_CONFIG_DIR = path.join(OASIS_ROOT, '.claude-code-mcp')
+const MERLIN_BOOTSTRAP_PREFIX = '[MERLIN_AGENT_BOOTSTRAP]'
+const MERLIN_MODELS = ['opus', 'sonnet', 'haiku'] as const
+const DEFAULT_MERLIN_MODEL = 'opus'
 
-// ═══════════════════════════════════════════════════════════════════════════
-// CATALOG LOOKUP — used by tools to resolve catalogId → glbPath + name
-// ═══════════════════════════════════════════════════════════════════════════
+type MerlinModel = typeof MERLIN_MODELS[number]
 
-// Build a fast lookup map at module init
-const CATALOG_MAP = new Map(ASSET_CATALOG.map(a => [a.id, a]))
+const MEDIA_TOOL_NAMES = new Set([
+  'generate_image',
+  'generate_voice',
+  'generate_video',
+  'mcp__mission__generate_image',
+  'mcp__mission__generate_voice',
+  'mcp__mission__generate_video',
+  'mcp_mission_generate_image',
+  'mcp_mission_generate_voice',
+  'mcp_mission_generate_video',
+])
 
-function resolveCatalogEntry(catalogId: string) {
-  return CATALOG_MAP.get(catalogId) ?? null
+const SCREENSHOT_TOOL_NAMES = new Set([
+  'screenshot_viewport',
+  'screenshot_avatar',
+  'avatarpic_merlin',
+  'avatarpic_user',
+  'mcp__oasis__screenshot_viewport',
+  'mcp_oasis_screenshot_viewport',
+])
+
+
+function resolveMerlinModel(model: unknown): MerlinModel {
+  return typeof model === 'string' && MERLIN_MODELS.includes(model as MerlinModel)
+    ? model as MerlinModel
+    : DEFAULT_MERLIN_MODEL
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// SYSTEM PROMPT — the world model in natural language
-// ═══════════════════════════════════════════════════════════════════════════
+function sanitizeWorldId(worldId: unknown): string {
+  return typeof worldId === 'string' ? worldId.trim() : ''
+}
 
-// Compact catalog summary for the prompt (category → sample IDs)
-function buildCatalogSummary(): string {
-  const byCategory: Record<string, string[]> = {}
-  for (const a of ASSET_CATALOG) {
-    const cat = a.category || 'misc'
-    if (!byCategory[cat]) byCategory[cat] = []
-    byCategory[cat].push(a.id)
+function readToolNumber(value: unknown): number | undefined {
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value.trim()) : NaN
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function readToolVec3(value: unknown): [number, number, number] | undefined {
+  if (Array.isArray(value) && value.length >= 3) {
+    const [x, y, z] = value.slice(0, 3).map(Number)
+    return [x, y, z].every(Number.isFinite) ? [x, y, z] : undefined
   }
-  return Object.entries(byCategory)
-    .map(([cat, ids]) => `${cat}: ${ids.slice(0, 15).join(', ')}${ids.length > 15 ? ` ... (+${ids.length - 15} more)` : ''}`)
-    .join('\n')
+
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown
+    if (Array.isArray(parsed) && parsed.length >= 3) {
+      const [x, y, z] = parsed.slice(0, 3).map(Number)
+      return [x, y, z].every(Number.isFinite) ? [x, y, z] : undefined
+    }
+  } catch {
+    // Fall back to token parsing below.
+  }
+
+  const parts = trimmed
+    .replace(/^[\[\(\{]\s*/, '')
+    .replace(/\s*[\]\)\}]$/, '')
+    .split(/[,\s]+/)
+    .map(part => part.trim())
+    .filter(Boolean)
+
+  if (parts.length < 3) return undefined
+  const [x, y, z] = parts.slice(0, 3).map(Number)
+  return [x, y, z].every(Number.isFinite) ? [x, y, z] : undefined
 }
 
-const CATALOG_SUMMARY = buildCatalogSummary()
-
-const SYSTEM_PROMPT = `You are Merlin, an AI world-builder operating inside the Oasis — a 3D world-building platform.
-You modify a user's 3D world by calling tools. You see the current world state and fulfill the user's creative request.
-
-COORDINATE SYSTEM:
-- Y is UP. Ground is Y=0. Objects sit on ground at Y = half their height.
-- Typical scene radius: -20 to +20 on X and Z. Don't go beyond ±50.
-- Scale: 1 unit = 1 meter.
-
-CATALOG ASSET IDs (use these with add_catalog_object):
-${CATALOG_SUMMARY}
-
-SKY PRESET IDs: night007, stars, night001, night004, night008, alps_field, autumn_ground, belfast_sunset, blue_grotto, evening_road, outdoor_umbrellas, stadium, sunny_vondelpark, city, dawn, forest, sunset
-
-GROUND PRESET IDs: none, grass, sand, dirt, stone, snow, water
-
-RULES:
-- Use tools one at a time. Each tool call immediately updates the live world.
-- Place objects at varied positions — don't stack everything at [0,0,0].
-- For catalog objects, defaultScale for most assets is 1-2. Check what feels right.
-- When removing objects, only remove IDs that actually exist in the current world state.
-- Explain your plan briefly before calling tools. Be creative but purposeful.
-- Max 20 tool calls per request to keep things snappy.
-`
-
-// ═══════════════════════════════════════════════════════════════════════════
-// TOOL DEFINITIONS (OpenAI-compat format for OpenRouter)
-// ═══════════════════════════════════════════════════════════════════════════
-
-const MERLIN_TOOLS = [
-  {
-    type: 'function',
-    function: {
-      name: 'add_catalog_object',
-      description: 'Place a pre-made 3D model from the catalog into the world.',
-      parameters: {
-        type: 'object',
-        properties: {
-          catalogId: { type: 'string', description: 'The catalog asset ID (e.g. km_tower, ku_tree_park)' },
-          position: {
-            type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3,
-            description: '[x, y, z] world position. Y should be 0 for ground-level objects.',
-          },
-          rotation: {
-            type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3,
-            description: '[rx, ry, rz] rotation in radians. Optional.',
-          },
-          scale: {
-            type: 'number',
-            description: 'Uniform scale factor (default 1.0). Most catalog assets look good at 1-2.',
-          },
-          label: { type: 'string', description: 'Optional display name label for this object.' },
-        },
-        required: ['catalogId', 'position'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'remove_object',
-      description: 'Remove an object from the world by its ID.',
-      parameters: {
-        type: 'object',
-        properties: {
-          objectId: { type: 'string', description: 'The ID of the object to remove (from catalogPlacements or craftedScenes).' },
-        },
-        required: ['objectId'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'add_crafted_scene',
-      description: 'Add a procedural geometry scene (primitives) to the world. Use this for custom shapes that have no catalog equivalent.',
-      parameters: {
-        type: 'object',
-        properties: {
-          name: { type: 'string', description: 'A short descriptive name for the scene (e.g. "Stone Altar", "Glowing Portal").' },
-          position: {
-            type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3,
-            description: '[x, y, z] world position offset for the whole scene.',
-          },
-          objects: {
-            type: 'array',
-            description: 'Array of primitives forming the scene.',
-            items: {
-              type: 'object',
-              properties: {
-                type: { type: 'string', enum: ['box', 'sphere', 'cylinder', 'cone', 'torus', 'plane', 'capsule', 'text'] },
-                position: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
-                scale: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
-                rotation: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
-                color: { type: 'string', description: 'Hex color e.g. #FF0000' },
-                emissive: { type: 'string', description: 'Hex emissive color for glow' },
-                emissiveIntensity: { type: 'number', minimum: 0, maximum: 5 },
-                metalness: { type: 'number', minimum: 0, maximum: 1 },
-                roughness: { type: 'number', minimum: 0, maximum: 1 },
-                opacity: { type: 'number', minimum: 0, maximum: 1 },
-                text: { type: 'string', description: 'For text primitives: the string to display (ASCII only)' },
-                fontSize: { type: 'number', minimum: 0.1, maximum: 20 },
-              },
-              required: ['type', 'position', 'scale', 'color'],
-            },
-          },
-        },
-        required: ['name', 'objects'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'add_light',
-      description: 'Add a light source to the world.',
-      parameters: {
-        type: 'object',
-        properties: {
-          type: {
-            type: 'string',
-            enum: ['point', 'spot', 'directional', 'ambient', 'hemisphere'],
-            description: 'Light type.',
-          },
-          position: {
-            type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3,
-            description: '[x, y, z] position (required for point/spot, optional for others).',
-          },
-          color: { type: 'string', description: 'Hex color e.g. #FFFFFF' },
-          intensity: { type: 'number', minimum: 0, maximum: 20, description: 'Light strength. 1-3 for subtle, 5-10 for dramatic.' },
-          label: { type: 'string', description: 'Optional label.' },
-        },
-        required: ['type'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'set_sky',
-      description: 'Change the sky/environment background.',
-      parameters: {
-        type: 'object',
-        properties: {
-          presetId: { type: 'string', description: 'Sky preset ID (e.g. night007, forest, dawn, city).' },
-        },
-        required: ['presetId'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'set_ground',
-      description: 'Change the ground texture.',
-      parameters: {
-        type: 'object',
-        properties: {
-          presetId: { type: 'string', description: 'Ground preset ID: none, grass, sand, dirt, stone, snow, water.' },
-        },
-        required: ['presetId'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'set_behavior',
-      description: 'Set movement/animation behavior on an object.',
-      parameters: {
-        type: 'object',
-        properties: {
-          objectId: { type: 'string', description: 'The object ID to animate.' },
-          movement: {
-            type: 'string',
-            enum: ['static', 'patrol', 'hover', 'spin', 'bob'],
-            description: 'Movement preset.',
-          },
-          label: { type: 'string', description: 'Optional display label for this object.' },
-        },
-        required: ['objectId', 'movement'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'clear_world',
-      description: 'Remove ALL objects from the world (catalog, crafted, lights). Use with caution — irreversible without undo.',
-      parameters: {
-        type: 'object',
-        properties: {
-          confirm: {
-            type: 'boolean',
-            description: 'Must be true to confirm destructive operation.',
-          },
-        },
-        required: ['confirm'],
-      },
-    },
-  },
-]
-
-// ═══════════════════════════════════════════════════════════════════════════
-// ═══════════════════════════════════════════════════════════════════════════
-// LLM ARG VALIDATORS — LLM output is untrusted, validate before use
-// ═══════════════════════════════════════════════════════════════════════════
-
-function validPosition(v: unknown): [number, number, number] | null {
-  if (!Array.isArray(v) || v.length < 3) return null
-  const [x, y, z] = v.map(Number)
-  if ([x, y, z].some(n => !Number.isFinite(n))) return null
-  return [x, y, z]
+function normalizeToolName(name: string): string {
+  if (!name) return 'tool'
+  return name
+    .replace(/^mcp__oasis__/, '')
+    .replace(/^mcp__mission__/, '')
+    .replace(/^mcp_oasis_/, '')
+    .replace(/^mcp_mission_/, '')
 }
 
-function validString(v: unknown, fallback: string): string {
-  return typeof v === 'string' && v.length > 0 ? v : fallback
-}
-
-function validNumber(v: unknown, fallback: number): number {
-  const n = Number(v)
-  return Number.isFinite(n) ? n : fallback
-}
-
-const VALID_LIGHT_TYPES = ['point', 'spot', 'directional', 'ambient', 'hemisphere'] as const
-type ValidLightType = typeof VALID_LIGHT_TYPES[number]
-function validLightType(v: unknown): ValidLightType {
-  return VALID_LIGHT_TYPES.includes(v as ValidLightType) ? (v as ValidLightType) : 'point'
-}
-
-// TOOL EXECUTOR — applies each tool call to the mutable world state
-// ═══════════════════════════════════════════════════════════════════════════
-
-function execTool(
-  name: string,
-  args: Record<string, unknown>,
-  state: WorldState
-): { ok: boolean; message: string } {
-  switch (name) {
-    case 'add_catalog_object': {
-      const catalogId = validString(args.catalogId, '')
-      const asset = resolveCatalogEntry(catalogId)
-      if (!asset) return { ok: false, message: `Unknown catalogId: ${catalogId}` }
-
-      const position = validPosition(args.position) || [0, 0, 0]
-      const rotation = validPosition(args.rotation) || undefined
-      const scale = typeof args.scale === 'number' ? args.scale : (asset.defaultScale || 1)
-
-      const id = `catalog-${catalogId}-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`
-      const placement: CatalogPlacement = {
-        id,
-        catalogId,
-        name: validString(args.label, asset.name),
-        glbPath: asset.path,
-        position,
-        rotation: rotation || [0, 0, 0],
-        scale,
-      }
-
-      state.catalogPlacements = [...(state.catalogPlacements || []), placement]
-      return { ok: true, message: `Placed ${asset.name} (${catalogId}) at [${position.join(', ')}] as ${id}` }
-    }
-
-    case 'remove_object': {
-      const objectId = args.objectId as string
-      const beforeCatalog = state.catalogPlacements?.length || 0
-      const beforeCrafted = state.craftedScenes?.length || 0
-
-      state.catalogPlacements = (state.catalogPlacements || []).filter(p => p.id !== objectId)
-      state.craftedScenes = (state.craftedScenes || []).filter(s => s.id !== objectId)
-
-      // Also remove from transforms/behaviors
-      delete state.transforms[objectId]
-      if (state.behaviors) delete state.behaviors[objectId]
-
-      const removed = (beforeCatalog - (state.catalogPlacements.length))
-        + (beforeCrafted - (state.craftedScenes.length))
-      if (removed === 0) return { ok: false, message: `Object ${objectId} not found in world` }
-      return { ok: true, message: `Removed ${objectId}` }
-    }
-
-    case 'add_crafted_scene': {
-      const sceneId = `crafted-merlin-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`
-      const rawObjects = Array.isArray(args.objects) ? args.objects : []
-      const position = validPosition(args.position) || [0, 0, 0]
-
-      // Basic validation — keep only objects with required fields
-      const objects = rawObjects.filter(o => {
-        if (!o || typeof o !== 'object') return false
-        const obj = o as Record<string, unknown>
-        return obj.type && obj.position && obj.scale && obj.color
-      }) as CraftedScene['objects']
-
-      if (objects.length === 0) return { ok: false, message: 'No valid primitives in scene' }
-
-      const scene: CraftedScene = {
-        id: sceneId,
-        name: validString(args.name, 'Merlin Scene'),
-        prompt: 'merlin',
-        objects,
-        position: position,
-        createdAt: new Date().toISOString(),
-      }
-
-      state.craftedScenes = [...(state.craftedScenes || []), scene]
-      // Apply position as transform
-      if (position.some(v => v !== 0)) {
-        state.transforms[sceneId] = { position }
-      }
-
-      return { ok: true, message: `Created scene "${scene.name}" with ${objects.length} primitives as ${sceneId}` }
-    }
-
-    case 'add_light': {
-      const lightId = `light-merlin-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`
-      const lightType = validLightType(args.type)
-      const lightPos = validPosition(args.position) || [0, 5, 0]
-      const light: WorldLight = {
-        id: lightId,
-        type: lightType,
-        color: validString(args.color, '#ffffff'),
-        intensity: validNumber(args.intensity, 3),
-        position: lightPos,
-        visible: true,
-      }
-      state.lights = [...(state.lights || []), light]
-      return { ok: true, message: `Added ${lightType} light (${lightId}) color=${light.color} intensity=${light.intensity}` }
-    }
-
-    case 'set_sky': {
-      const presetId = validString(args.presetId, '')
-      if (!presetId) return { ok: false, message: 'Missing presetId for set_sky' }
-      state.skyBackgroundId = presetId
-      return { ok: true, message: `Sky set to ${presetId}` }
-    }
-
-    case 'set_ground': {
-      const presetId = validString(args.presetId, '')
-      if (!presetId) return { ok: false, message: 'Missing presetId for set_ground' }
-      state.groundPresetId = presetId
-      return { ok: true, message: `Ground set to ${presetId}` }
-    }
-
-    case 'set_behavior': {
-      const objectId = validString(args.objectId, '')
-      if (!objectId) return { ok: false, message: 'Missing objectId for set_behavior' }
-      if (!state.behaviors) state.behaviors = {}
-      const movType = validString(args.movement, 'static')
-      // Build a default MovementPreset based on the type string
-      const movement: import('@/lib/conjure/types').MovementPreset =
-        movType === 'spin' ? { type: 'spin', axis: 'y', speed: 1 } :
-        movType === 'hover' ? { type: 'hover', amplitude: 0.5, speed: 1, offset: 0 } :
-        movType === 'orbit' ? { type: 'orbit', radius: 2, speed: 1, axis: 'xz' } :
-        movType === 'bounce' ? { type: 'bounce', height: 1, speed: 1 } :
-        movType === 'patrol' ? { type: 'patrol', radius: 3, speed: 1 } :
-        { type: 'static' }
-      const existingBehavior = state.behaviors[objectId]
-      state.behaviors[objectId] = {
-        visible: existingBehavior?.visible ?? true,
-        movement,
-        ...(args.label ? { label: validString(args.label, '') } : existingBehavior?.label ? { label: existingBehavior.label } : {}),
-      }
-      return { ok: true, message: `Set behavior on ${objectId}: movement=${movType}` }
-    }
-
-    case 'clear_world': {
-      if (!args.confirm) return { ok: false, message: 'clear_world requires confirm: true' }
-      state.catalogPlacements = []
-      state.craftedScenes = []
-      state.lights = []
-      state.transforms = {}
-      state.behaviors = {}
-      return { ok: true, message: 'World cleared' }
-    }
-
-    default:
-      return { ok: false, message: `Unknown tool: ${name}` }
+function readMerlinAgentSpec(): string {
+  try {
+    return fs.readFileSync(MERLIN_AGENT_PATH, 'utf-8').trim()
+  } catch (error) {
+    console.warn('[Merlin] Failed to read merlin.md:', error)
+    return [
+      '# Merlin',
+      '',
+      'You are Merlin, the Oasis world-builder.',
+      'Use only mcp__oasis__* and mcp__mission__* tools.',
+      'Do not use coding tools.',
+      'Keep building until the user is satisfied.',
+    ].join('\n')
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// POST /api/merlin — Run Merlin on a world
-// Body: { worldId: string, prompt: string }
-// Returns: SSE stream of { type: 'text'|'tool'|'result'|'save'|'done'|'error', ... }
-// ═══════════════════════════════════════════════════════════════════════════
+function sanitizeFileSegment(value: string): string {
+  return value.replace(/[^a-z0-9_-]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'active'
+}
+
+function ensureMerlinMcpConfig(worldId: string): string {
+  const safeWorldId = sanitizeFileSegment(worldId)
+  const configPath = path.join(MERLIN_MCP_CONFIG_DIR, `merlin-${safeWorldId}.json`)
+  const config = {
+    mcpServers: {
+      oasis: {
+        command: 'node',
+        args: [path.join(OASIS_ROOT, 'tools/oasis-mcp/index.js')],
+        cwd: OASIS_ROOT,
+        env: {
+          OASIS_DB_PATH: path.join(OASIS_ROOT, 'prisma/data/oasis.db'),
+          OASIS_ACTIVE_WORLD_ID: worldId,
+          OASIS_URL: process.env.OASIS_URL || 'http://localhost:4516',
+          OASIS_AGENT_TYPE: 'merlin',
+        },
+      },
+      mission: {
+        command: 'node',
+        args: [path.join(OASIS_ROOT, 'tools/mission-mcp/index.js')],
+        cwd: OASIS_ROOT,
+        env: {
+          OASIS_DB_PATH: path.join(OASIS_ROOT, 'prisma/data/oasis.db'),
+          OASIS_URL: 'http://localhost:4516',
+          OASIS_AGENT_TYPE: 'merlin',
+        },
+      },
+    },
+  }
+
+  const json = JSON.stringify(config, null, 2)
+  fs.mkdirSync(MERLIN_MCP_CONFIG_DIR, { recursive: true })
+  try {
+    const existing = fs.readFileSync(configPath, 'utf-8')
+    if (existing === json) return configPath
+  } catch {
+    // Write a fresh config below.
+  }
+  fs.writeFileSync(configPath, json)
+  return configPath
+}
+
+function formatPromptVec3(value: [number, number, number]): string {
+  return `[${value.map(component => Number.isFinite(component) ? Number(component.toFixed(2)) : component).join(', ')}]`
+}
+
+function parsePromptPlayerContext(value: unknown): PromptPlayerContext | null {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  const avatarRecord = record.avatar && typeof record.avatar === 'object' ? record.avatar as Record<string, unknown> : null
+  const cameraRecord = record.camera && typeof record.camera === 'object' ? record.camera as Record<string, unknown> : null
+
+  const avatarPosition = avatarRecord ? readToolVec3(avatarRecord.position) : undefined
+  const avatarForward = avatarRecord ? readToolVec3(avatarRecord.forward) : undefined
+  const avatarYaw = avatarRecord ? readToolNumber(avatarRecord.yaw) : undefined
+  const cameraPosition = cameraRecord ? readToolVec3(cameraRecord.position) : undefined
+  const cameraForward = cameraRecord ? readToolVec3(cameraRecord.forward) : undefined
+
+  const avatar = avatarPosition
+    ? {
+        position: avatarPosition,
+        ...(avatarYaw !== undefined ? { yaw: avatarYaw } : {}),
+        ...(avatarForward ? { forward: avatarForward } : {}),
+      }
+    : null
+  const camera = cameraPosition
+    ? {
+        position: cameraPosition,
+        ...(cameraForward ? { forward: cameraForward } : {}),
+      }
+    : null
+
+  if (!avatar && !camera) return null
+  return { avatar, camera }
+}
+
+async function buildMerlinRuntimeContext(worldId: string, playerContext?: PromptPlayerContext | null): Promise<string[]> {
+  const context = [
+    `- Oasis root: ${OASIS_ROOT}`,
+    `- Active world ID: ${worldId}`,
+    '- The Oasis MCP server is pinned to the active world above for this turn.',
+    '- Stay in character as Merlin, but do the actual work with MCP tools.',
+  ]
+
+  if (playerContext?.avatar) {
+    context.push(`- The user's live avatar body is at ${formatPromptVec3(playerContext.avatar.position)}.`)
+    if (playerContext.avatar.forward) {
+      context.push(`- The user's live avatar forward vector is ${formatPromptVec3(playerContext.avatar.forward)}.`)
+    }
+    context.push('- When the user says "me", "my avatar", or "come to me", they mean that live player avatar body above.')
+  }
+  if (playerContext?.camera) {
+    context.push(`- The user's current camera is at ${formatPromptVec3(playerContext.camera.position)}.`)
+    if (playerContext.camera.forward) {
+      context.push(`- The user's camera forward vector is ${formatPromptVec3(playerContext.camera.forward)}.`)
+    }
+  }
+
+  try {
+    const world = await prisma.world.findFirst({
+      where: { id: worldId },
+      select: { name: true, data: true },
+    })
+    if (!world?.data) {
+      context.push('- World snapshot unavailable at prompt-build time.')
+      return context
+    }
+
+    const state = JSON.parse(world.data) as WorldState
+    context.push(`- Active world name: ${world.name}`)
+
+    const merlinAvatar = (state.agentAvatars || []).find(avatar => avatar.agentType === 'merlin') || null
+    if (!merlinAvatar) {
+      context.push('- You do not currently have a persisted Merlin avatar body in this world snapshot. If embodiment matters, use set_avatar.')
+      return context
+    }
+
+    context.push(`- Your current in-world body: ${merlinAvatar.label || 'Merlin'} (${merlinAvatar.id})`)
+    context.push(`- Your current position: ${formatPromptVec3(merlinAvatar.position)}`)
+    context.push(`- Your current rotation: ${formatPromptVec3(merlinAvatar.rotation)}`)
+    context.push(`- Your current scale: ${Number.isFinite(merlinAvatar.scale) ? Number(merlinAvatar.scale.toFixed(2)) : merlinAvatar.scale}`)
+    if (typeof merlinAvatar.avatar3dUrl === 'string' && merlinAvatar.avatar3dUrl.trim()) {
+      context.push(`- Your avatar model URL: ${merlinAvatar.avatar3dUrl.trim()}`)
+    }
+    if (typeof merlinAvatar.linkedWindowId === 'string' && merlinAvatar.linkedWindowId.trim()) {
+      context.push(`- Your embodied window link: ${merlinAvatar.linkedWindowId.trim()}`)
+    }
+    context.push('- When reasoning about "toward me" vs "toward you", remember: you are the Merlin avatar above, not the player camera.')
+    context.push('- For a behind-the-body self view, call screenshot_viewport with mode "third-person" and agentType "merlin".')
+  } catch (error) {
+    console.warn('[Merlin] Failed to build runtime avatar context:', error)
+    context.push('- World snapshot unavailable at prompt-build time.')
+  }
+
+  return context
+}
+
+function buildInitialPrompt(runtimeContext: string[], prompt: string): string {
+  const agentSpec = readMerlinAgentSpec()
+  return [
+    MERLIN_BOOTSTRAP_PREFIX,
+    '',
+    'Load and obey the Merlin agent spec below exactly. This is a persistent Claude Code CLI session for the Oasis world-builder.',
+    '',
+    agentSpec,
+    '',
+    '## Runtime Context',
+    ...runtimeContext,
+    '',
+    '## Player Request',
+    prompt.trim(),
+  ].join('\n')
+}
+
+function buildResumePrompt(runtimeContext: string[], prompt: string): string {
+  return [
+    'Keep following the Merlin agent spec from this session.',
+    'For screenshots, prefer your own phantom view unless the user explicitly asks for the player camera.',
+    'For embodiment and composition around your body, prefer screenshot_viewport with mode "third-person" and agentType "merlin".',
+    'When the user wants multiple angles, use one screenshot_viewport call with a views array instead of separate screenshot calls.',
+    '',
+    '## Runtime Context',
+    ...runtimeContext,
+    '',
+    prompt.trim(),
+  ].join('\n')
+}
+
+function extractToolResultText(content: unknown): string {
+  if (typeof content === 'string') {
+    const trimmed = content.trim()
+    if ((trimmed.startsWith('[') || trimmed.startsWith('{')) && trimmed.length > 1) {
+      try {
+        return extractToolResultText(JSON.parse(trimmed))
+      } catch {
+        return content
+      }
+    }
+    return content
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .map(item => {
+        if (!item || typeof item !== 'object') return ''
+        const typedItem = item as Record<string, unknown>
+        if (typedItem.type === 'text' && typeof typedItem.text === 'string') return typedItem.text
+        return ''
+      })
+      .filter(Boolean)
+      .join('\n')
+  }
+
+  if (content && typeof content === 'object') {
+    const typedContent = content as Record<string, unknown>
+    if (typeof typedContent.text === 'string') return typedContent.text
+  }
+
+  return ''
+}
+
+function collectMediaUrls(value: unknown, urls = new Set<string>()): string[] {
+  if (typeof value === 'string') {
+    const matches = value.match(/(?:https?:\/\/[^\s"'<>]+|\/(?:generated-(?:images|voices|videos)|merlin\/screenshots)\/[^\s"'<>]+)/g) || []
+    for (const match of matches) urls.add(match)
+
+    const trimmed = value.trim()
+    if ((trimmed.startsWith('{') || trimmed.startsWith('[')) && trimmed.length > 1) {
+      try {
+        collectMediaUrls(JSON.parse(trimmed), urls)
+      } catch {
+        // Keep regex-discovered URLs from the raw string.
+      }
+    }
+    return [...urls]
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) collectMediaUrls(item, urls)
+    return [...urls]
+  }
+
+  if (value && typeof value === 'object') {
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+      if (key === 'url' && typeof nested === 'string') urls.add(nested)
+      collectMediaUrls(nested, urls)
+    }
+  }
+
+  return [...urls]
+}
+
 
 export async function POST(request: NextRequest) {
-  // Local mode: always admin
+  let body: { worldId?: unknown; prompt?: unknown; sessionId?: unknown; model?: unknown; playerContext?: unknown }
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
 
-  const body = await request.json().catch(() => null)
-  if (!body?.worldId || !body?.prompt) {
+  const worldId = sanitizeWorldId(body.worldId)
+  const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : ''
+  const requestedSessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : ''
+  const model = resolveMerlinModel(body.model)
+  const playerContext = parsePromptPlayerContext(body.playerContext)
+
+  if (!worldId || !prompt) {
     return NextResponse.json({ error: 'worldId and prompt are required' }, { status: 400 })
   }
 
-  const { worldId, prompt } = body as { worldId: string; prompt: string }
-  const apiKey = process.env.OPENROUTER_API_KEY
-  if (!apiKey) {
-    return NextResponse.json({ error: 'OPENROUTER_API_KEY not configured' }, { status: 500 })
+  if (playerContext) {
+    await publishWorldPlayerContext(worldId, playerContext)
   }
 
-  // Load world from local SQLite
-  const { prisma } = await import('@/lib/db')
-  const worldRow = await prisma.world.findUnique({ where: { id: worldId } })
-
-  if (!worldRow) {
-    return NextResponse.json({ error: 'World not found' }, { status: 404 })
+  if (requestedSessionId) {
+    const existingRecord = await getAgentSessionRecord(requestedSessionId)
+    if (existingRecord && existingRecord.agentType !== 'merlin') {
+      return NextResponse.json({ error: 'That Claude Code session belongs to a different agent.' }, { status: 403 })
+    }
   }
 
-  const existingData = (worldRow.data ? JSON.parse(worldRow.data) : {}) as Partial<WorldState>
+  const claudePath = process.platform === 'win32' ? 'claude.cmd' : 'claude'
+  const mcpConfigPath = ensureMerlinMcpConfig(worldId)
+  const isResume = Boolean(requestedSessionId)
+  const args = [
+    '--print',
+    '--verbose',
+    '--model', model,
+    '--output-format', 'stream-json',
+    '--dangerously-skip-permissions',
+    '--mcp-config', mcpConfigPath,
+  ]
+  if (isResume) args.push('--resume', requestedSessionId)
 
-  // Mutable world state that tools modify in place
-  const state: WorldState = {
-    version: 1,
-    terrain: existingData.terrain ?? null,
-    groundPresetId: existingData.groundPresetId ?? 'none',
-    groundTiles: existingData.groundTiles ?? {},
-    craftedScenes: existingData.craftedScenes ?? [],
-    conjuredAssetIds: existingData.conjuredAssetIds ?? [],
-    catalogPlacements: existingData.catalogPlacements ?? [],
-    transforms: existingData.transforms ?? {},
-    behaviors: existingData.behaviors ?? {},
-    lights: existingData.lights ?? [],
-    skyBackgroundId: existingData.skyBackgroundId ?? 'night007',
-    savedAt: new Date().toISOString(),
-  }
+  const runtimeContext = await buildMerlinRuntimeContext(worldId, playerContext)
+  const fullPrompt = isResume
+    ? buildResumePrompt(runtimeContext, prompt)
+    : buildInitialPrompt(runtimeContext, prompt)
 
-  // Compact world summary for Merlin's context
-  function worldSummary(): string {
-    const catalogCount = state.catalogPlacements?.length || 0
-    const craftedCount = state.craftedScenes?.length || 0
-    const lightCount = state.lights?.length || 0
-    const catalogIds = (state.catalogPlacements || []).map(p => `${p.id} (${p.catalogId}) at [${p.position?.join(',')}]`).join('\n  ')
-    const craftedIds = (state.craftedScenes || []).map(s => `${s.id} "${s.name}"`).join('\n  ')
-    return [
-      `Sky: ${state.skyBackgroundId}, Ground: ${state.groundPresetId}`,
-      `Catalog objects (${catalogCount}): ${catalogIds || 'none'}`,
-      `Crafted scenes (${craftedCount}): ${craftedIds || 'none'}`,
-      `Lights: ${lightCount}`,
-    ].join('\n')
-  }
-
-  // ─═̷─═̷─ SSE STREAM SETUP ─═̷─═̷─
   const encoder = new TextEncoder()
-  let controller!: ReadableStreamDefaultController
-  const stream = new ReadableStream({
-    start(c) { controller = c },
+
+  const readable = new ReadableStream({
+    start(controller) {
+      let eventCounter = 0
+      let streamBuffer = ''
+      let capturedSessionId = requestedSessionId || ''
+      let latestAssistantSnapshot: Array<{
+        type: string
+        id?: string
+        name?: string
+        text?: string
+        thinking?: string
+        input?: Record<string, unknown>
+      }> = []
+      const toolUseIdToName = new Map<string, string>()
+      const toolUseIdToInput = new Map<string, Record<string, unknown>>()
+      const emittedToolInputs = new Set<string>()
+
+      function sendEvent(type: string, data: Record<string, unknown>) {
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type, _id: eventCounter++, ...data })}\n\n`))
+        } catch {
+          // Stream is already closed.
+        }
+      }
+
+      async function recordSession(sessionId: string) {
+        if (!sessionId) return
+        try {
+          await upsertAgentSessionRecord(sessionId, 'merlin', { model })
+        } catch (error) {
+          console.warn('[Merlin] Failed to record session ownership:', error)
+        }
+      }
+
+      if (requestedSessionId) {
+        void recordSession(requestedSessionId)
+      }
+
+      const child = spawn(claudePath, args, {
+        cwd: OASIS_ROOT,
+        shell: true,
+        env: buildClaudeCliEnv(),
+      })
+
+      child.stdin.write(fullPrompt)
+      child.stdin.end()
+
+      const keepAlive = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(': keepalive\n\n'))
+        } catch {
+          // Ignore writes after close.
+        }
+      }, 15000)
+
+      child.stdout.on('data', (chunk: Buffer) => {
+        streamBuffer += chunk.toString()
+        const lines = streamBuffer.split('\n')
+        streamBuffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (!line.trim()) continue
+
+          try {
+            const raw = JSON.parse(line) as Record<string, unknown>
+            const eventType = typeof raw.type === 'string' ? raw.type : 'unknown'
+
+            if (eventType === 'system') {
+              if (raw.subtype === 'init' && typeof raw.session_id === 'string' && raw.session_id.trim()) {
+                capturedSessionId = raw.session_id.trim()
+                sendEvent('session', { sessionId: capturedSessionId })
+                void recordSession(capturedSessionId)
+              }
+              continue
+            }
+
+            if (eventType === 'assistant') {
+              const message = (raw.message || {}) as Record<string, unknown>
+              const content = Array.isArray(message.content) ? message.content as Array<Record<string, unknown>> : []
+
+              for (let index = 0; index < content.length; index += 1) {
+                const block = content[index]
+                const previous = latestAssistantSnapshot[index]
+                const blockType = typeof block.type === 'string' ? block.type : 'unknown'
+                const blockId = typeof block.id === 'string' ? block.id : ''
+                const isNewBlock = !previous || previous.type !== blockType || (blockId && previous.id !== blockId)
+
+                if (blockType === 'text' && typeof block.text === 'string') {
+                  const previousText = previous?.type === 'text' ? previous.text || '' : ''
+                  if (isNewBlock || !previousText) {
+                    sendEvent('text', { content: block.text })
+                  } else if (block.text !== previousText) {
+                    if (block.text.startsWith(previousText)) {
+                      const delta = block.text.slice(previousText.length)
+                      if (delta) sendEvent('text', { content: delta })
+                    } else {
+                      sendEvent('text', { content: `\n${block.text}` })
+                    }
+                  }
+                  continue
+                }
+
+                if (blockType !== 'tool_use' || typeof block.name !== 'string') continue
+
+                const rawToolName = block.name
+                const normalizedToolName = normalizeToolName(rawToolName)
+                const toolId = blockId || `tool-${eventCounter}`
+                const toolInput = block.input && typeof block.input === 'object'
+                  ? block.input as Record<string, unknown>
+                  : {}
+                const gainedInput = Object.keys(toolInput).length > 0 && !emittedToolInputs.has(toolId)
+
+                toolUseIdToName.set(toolId, normalizedToolName)
+                if (gainedInput) {
+                  emittedToolInputs.add(toolId)
+                  toolUseIdToInput.set(toolId, toolInput)
+                }
+
+                if (isNewBlock || gainedInput) {
+                  sendEvent('tool', { name: normalizedToolName, args: toolInput })
+                }
+              }
+
+              latestAssistantSnapshot = content.map(block => ({
+                type: typeof block.type === 'string' ? block.type : 'unknown',
+                id: typeof block.id === 'string' ? block.id : undefined,
+                name: typeof block.name === 'string' ? block.name : undefined,
+                text: typeof block.text === 'string' ? block.text : undefined,
+                thinking: typeof block.thinking === 'string' ? block.thinking : undefined,
+                input: block.input && typeof block.input === 'object' ? block.input as Record<string, unknown> : undefined,
+              }))
+              continue
+            }
+
+            if (eventType === 'user') {
+              const message = (raw.message || {}) as Record<string, unknown>
+              const content = Array.isArray(message.content) ? message.content as Array<Record<string, unknown>> : []
+
+              for (const block of content) {
+                if (block?.type !== 'tool_result') continue
+
+                const toolUseId = typeof block.tool_use_id === 'string' ? block.tool_use_id : ''
+                const toolName = toolUseIdToName.get(toolUseId) || 'tool'
+                const toolInput = toolUseIdToInput.get(toolUseId) || {}
+                const resultText = extractToolResultText(block.content)
+                const mediaUrls = collectMediaUrls(block.content)
+                const ok = block.is_error !== true
+
+                sendEvent('result', {
+                  name: toolName,
+                  ok,
+                  message: resultText,
+                  mediaUrls: ok && (MEDIA_TOOL_NAMES.has(toolName) || SCREENSHOT_TOOL_NAMES.has(toolName)) && mediaUrls.length > 0
+                    ? mediaUrls
+                    : undefined,
+                })
+              }
+
+              latestAssistantSnapshot = []
+              continue
+            }
+
+            if (eventType === 'direct') {
+              const tool = (raw.tool || {}) as Record<string, unknown>
+              if (typeof tool.name === 'string') {
+                sendEvent('tool', {
+                  name: normalizeToolName(tool.name),
+                  args: tool.input && typeof tool.input === 'object' ? tool.input as Record<string, unknown> : {},
+                })
+              }
+              continue
+            }
+          } catch {
+            // Ignore malformed NDJSON lines from Claude startup noise.
+          }
+        }
+      })
+
+      child.stderr.on('data', (chunk: Buffer) => {
+        const text = chunk.toString().trim()
+        if (!text) return
+        if (text.includes('Resuming conversation')) return
+        console.log(`[Merlin:stderr] ${text.substring(0, 300)}`)
+      })
+
+      child.on('error', (error) => {
+        clearInterval(keepAlive)
+        sendEvent('error', { message: `Failed to spawn Claude Code CLI: ${error.message}` })
+        sendEvent('done', { sessionId: capturedSessionId, worldId, success: false })
+        try { controller.enqueue(encoder.encode('data: [DONE]\n\n')) } catch {}
+        controller.close()
+      })
+
+      child.on('close', (code) => {
+        clearInterval(keepAlive)
+        sendEvent('done', {
+          sessionId: capturedSessionId,
+          worldId,
+          success: code === 0,
+        })
+        try { controller.enqueue(encoder.encode('data: [DONE]\n\n')) } catch {}
+        controller.close()
+      })
+
+      request.signal.addEventListener('abort', () => {
+        clearInterval(keepAlive)
+        child.kill('SIGTERM')
+      })
+    },
   })
 
-  function send(event: Record<string, unknown>) {
-    try {
-      controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
-    } catch {
-      // stream closed
-    }
-  }
-
-  // Shared Oasis tools now own persistence + world-event fanout.
-  async function persist() {
-    send({ type: 'save', savedAt: new Date().toISOString() })
-  }
-
-  // ─═̷─═̷─ AGENTIC TOOL LOOP ─═̷─═̷─
-  ;(async () => {
-    try {
-      const messages: Array<{ role: string; content: string | unknown[] }> = [
-        {
-          role: 'system',
-          content: SYSTEM_PROMPT,
-        },
-        {
-          role: 'user',
-          content: `Current world state:\n${worldSummary()}\n\nUser request: ${prompt}`,
-        },
-      ]
-
-      let iteration = 0
-      const MAX_ITERATIONS = 20 // safety cap
-
-      while (iteration < MAX_ITERATIONS) {
-        iteration++
-
-        const llmRes = await fetch(OPENROUTER_URL, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-            'HTTP-Referer': 'https://app.04515.xyz',
-            'X-Title': 'Oasis Merlin',
-          },
-          body: JSON.stringify({
-            model: MERLIN_MODEL,
-            messages,
-            tools: MERLIN_TOOLS,
-            tool_choice: 'auto',
-          }),
-        })
-
-        if (!llmRes.ok) {
-          const errText = await llmRes.text()
-          send({ type: 'error', message: `LLM error ${llmRes.status}: ${errText}` })
-          break
-        }
-
-        const llmData = await llmRes.json() as {
-          choices: Array<{
-            message: {
-              role: string
-              content: string | null
-              tool_calls?: Array<{
-                id: string
-                function: { name: string; arguments: string }
-              }>
-            }
-            finish_reason: string
-          }>
-        }
-
-        const choice = llmData.choices?.[0]
-        if (!choice) {
-          send({ type: 'error', message: 'No choices in LLM response' })
-          break
-        }
-
-        const msg = choice.message
-
-        // Stream any text content to client
-        if (msg.content) {
-          send({ type: 'text', content: msg.content })
-        }
-
-        // No tool calls = we're done
-        if (!msg.tool_calls || msg.tool_calls.length === 0) {
-          break
-        }
-
-        // ─═̷─═̷─ OpenAI-compat format ─═̷─═̷─
-        // Assistant message: { role: 'assistant', content, tool_calls }
-        // Tool results: { role: 'tool', tool_call_id, content } — one per call
-        messages.push({
-          role: 'assistant',
-          content: msg.content || '',
-          tool_calls: msg.tool_calls.map(tc => ({
-            id: tc.id,
-            type: 'function' as const,
-            function: { name: tc.function.name, arguments: tc.function.arguments },
-          })),
-        } as never) // cast — our message type is simplified, OpenRouter accepts this
-
-        for (const toolCall of msg.tool_calls) {
-          const toolName = toolCall.function.name
-          let toolArgs: Record<string, unknown> = {}
-          try {
-            toolArgs = JSON.parse(toolCall.function.arguments || '{}')
-          } catch {
-            toolArgs = {}
-          }
-
-          send({ type: 'tool', name: toolName, args: toolArgs })
-
-          const result = await executeMerlinTool(toolName, toolArgs, worldId)
-          send({ type: 'result', name: toolName, ok: result.ok, message: result.message })
-
-          // Save to Prisma/SQLite after each successful tool call
-          if (result.ok) {
-            await persist()
-          }
-
-          // OpenAI format: each tool result is its own message with role: 'tool'
-          messages.push({
-            role: 'tool',
-            tool_call_id: toolCall.id,
-            content: result.message,
-          } as never)
-        }
-      }
-
-      if (iteration >= MAX_ITERATIONS) {
-        send({ type: 'text', content: '[Merlin] Reached tool call limit — world saved.' })
-        await persist()
-      }
-
-      send({ type: 'done', worldId })
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.error('[Merlin] Fatal error:', msg)
-      send({ type: 'error', message: msg })
-    } finally {
-      controller.close()
-    }
-  })()
-
-  return new Response(stream, {
+  return new Response(readable, {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
     },
   })
 }
-
-// ▓▓▓▓【M̸E̸R̸L̸I̸N̸】▓▓▓▓ॐ▓▓▓▓【W̸O̸R̸L̸D̸】▓▓▓▓ॐ▓▓▓▓【A̸G̸E̸N̸T̸】▓▓▓▓

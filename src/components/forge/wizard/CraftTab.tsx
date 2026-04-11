@@ -12,6 +12,7 @@ import { extractPartialCraftData } from '../../../lib/craft-stream'
 import { addToSceneLibrary, getSceneLibrary } from '../../../lib/forge/scene-library'
 import { generateSingleCraftedThumbnail } from '../../../hooks/useThumbnailGenerator'
 import { awardXp } from '../../../hooks/useXp'
+import { derivePlayerCastSpawn } from '../../../lib/player-avatar-runtime'
 import { OASIS_BASE } from './shared'
 
 interface CraftTabProps {
@@ -28,7 +29,6 @@ export function CraftTabHeader({ setError }: CraftTabProps) {
 
   const [craftPromptInput, setCraftPromptInput] = useState('')
   const [activeCrafts, setActiveCrafts] = useState(0)
-  const [craftAnimated, setCraftAnimated] = useState(false)
   const [craftHistory, setCraftHistory] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([])
 
 
@@ -48,21 +48,23 @@ export function CraftTabHeader({ setError }: CraftTabProps) {
       : craftPrompt
 
     const sceneId = `craft_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    const spawn = derivePlayerCastSpawn(4)
     const placeholderScene: CraftedScene = {
       id: sceneId,
       name: 'Crafting...',
       prompt: craftPrompt,
       objects: [],
-      position: [0, 0, 0],
+      position: spawn.position,
       model: craftModel,
       createdAt: new Date().toISOString(),
     }
 
     try {
-      const res = await fetch(`${OASIS_BASE}/api/craft/stream`, {
+      const isCC = craftModel.startsWith('cc-')
+      const res = await fetch(`${OASIS_BASE}/api/craft/${isCC ? 'cc' : 'stream'}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: iterativePrompt, model: craftModel, animated: craftAnimated }),
+        body: JSON.stringify({ prompt: isCC ? iterativePrompt : iterativePrompt, model: craftModel }),
       })
 
       if (!res.ok) {
@@ -105,7 +107,7 @@ export function CraftTabHeader({ setError }: CraftTabProps) {
         name: finalParsed.name || 'Unnamed Scene',
         prompt: craftPrompt,
         objects: finalParsed.objects,
-        position: [0, 0, 0],
+        position: spawn.position,
         createdAt: placeholderScene.createdAt,
         model: craftModel,
       }
@@ -160,7 +162,7 @@ export function CraftTabHeader({ setError }: CraftTabProps) {
         return Math.max(0, next)
       })
     }
-  }, [craftPromptInput, addCraftedScene, updateCraftedScene, craftHistory, craftModel, setCraftingState, setError, craftAnimated])
+  }, [craftPromptInput, addCraftedScene, updateCraftedScene, craftHistory, craftModel, setCraftingState, setError])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -177,18 +179,6 @@ export function CraftTabHeader({ setError }: CraftTabProps) {
       >
         <div className="flex items-center gap-2">
           <span className="text-xs text-blue-400/70 font-mono">LLM craft</span>
-          {/* Static / Animated toggle */}
-          <button
-            onClick={() => setCraftAnimated(!craftAnimated)}
-            className={`text-[9px] font-mono px-1.5 py-0.5 rounded border transition-all ${
-              craftAnimated
-                ? 'border-purple-500/50 bg-purple-500/15 text-purple-300'
-                : 'border-gray-700/30 bg-black/40 text-gray-500 hover:text-gray-400'
-            }`}
-            title={craftAnimated ? 'Animated mode — LLM will add motion to primitives' : 'Static mode — no animations'}
-          >
-            {craftAnimated ? 'Animated' : 'Static'}
-          </button>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[9px] text-gray-500 font-mono">{craftedScenes.length} scene{craftedScenes.length !== 1 ? 's' : ''}</span>
@@ -199,6 +189,8 @@ export function CraftTabHeader({ setError }: CraftTabProps) {
             style={{ backgroundImage: 'none' }}
             title="LLM model for crafting + terrain"
           >
+            <option value="cc-opus">CC Opus</option>
+            <option value="cc-sonnet">CC Sonnet</option>
             <option value="anthropic/claude-sonnet-4-6">Sonnet 4.6</option>
             <option value="anthropic/claude-haiku-4-5">Haiku 4.5</option>
             <option value="z-ai/glm-5">GLM-5</option>

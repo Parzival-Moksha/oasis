@@ -1579,11 +1579,39 @@ function CEHQTab({ config, onUpdate }: { config: AnorakProConfig; onUpdate: (p: 
   const selectCls = 'text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/70 border border-[#14b8a6]/25 text-white outline-none'
   const catalog = getContextModuleCatalog(config.customModules)
   const catalogById = new Map(catalog.map(entry => [entry.id, entry]))
+  const activeWorldId = useOasisStore(state => state.activeWorldId)
   const [expandedLobes, setExpandedLobes] = useState<Record<string, boolean>>({ curator: true })
   const [addModalLobe, setAddModalLobe] = useState<AnorakLobe | null>(null)
   const [previewTarget, setPreviewTarget] = useState<{ lobe: AnorakLobe; moduleId: string; title: string } | null>(null)
   const [previewContent, setPreviewContent] = useState('')
   const [previewLoading, setPreviewLoading] = useState(false)
+  const merlinRuntimeModules = [
+    {
+      id: 'runtime:merlin-root',
+      name: 'Oasis root',
+      description: 'Server-side workspace path (`OASIS_ROOT` / `process.cwd()`) injected at bootstrap.',
+    },
+    {
+      id: 'runtime:merlin-world',
+      name: 'Active world',
+      description: activeWorldId ? `Pinned world for new sessions: ${activeWorldId}` : 'Pinned to the active Oasis world at session start.',
+    },
+    {
+      id: 'runtime:merlin-steer',
+      name: 'Runtime steer',
+      description: 'Keep Merlin in character, but route real work through MCP tools.',
+    },
+    {
+      id: 'runtime:merlin-oasis-mcp',
+      name: 'Oasis MCP',
+      description: 'World-aware tool bundle: build, place, move avatars, inspect world, screenshot.',
+    },
+    {
+      id: 'runtime:merlin-mission-mcp',
+      name: 'Mission MCP',
+      description: 'Media tool bundle: image, voice, and video generation.',
+    },
+  ] as const
 
   const toggleExpand = useCallback((lobe: string) => {
     setExpandedLobes(prev => ({ ...prev, [lobe]: !prev[lobe] }))
@@ -1704,7 +1732,7 @@ function CEHQTab({ config, onUpdate }: { config: AnorakProConfig; onUpdate: (p: 
 
       <div className="space-y-2">
         {/* ── Per-lobe expandable cards ── */}
-        {(['curator', 'coder', 'reviewer', 'tester', 'gamer'] as const).map(lobe => {
+        {(['curator', 'coder', 'reviewer', 'tester'] as const).map(lobe => {
           const attached = config.lobeModules[lobe] || []
           const moduleCount = attached.length + 1 + (lobe === 'curator' ? 1 : 0) // +1 sysprompt, +1 runtime mission for curator
           const isExpanded = !!expandedLobes[lobe]
@@ -1825,6 +1853,39 @@ function CEHQTab({ config, onUpdate }: { config: AnorakProConfig; onUpdate: (p: 
               <div className="mb-2 text-[10px] text-[#fef3c7]">Embodied gameplay agent. Does not participate in module orchestration yet.</div>
               <div className="grid grid-cols-3 gap-2">
                 <LobeEditor lobe="gamer" />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Merlin lobe (prompt-only) ── */}
+        <div className="border border-[#a78bfa]/20 rounded bg-black/30">
+          <div className="flex items-center justify-between px-2 py-1.5 cursor-pointer select-none" onClick={() => toggleExpand('merlin')}>
+            <div className="flex items-center gap-2">
+              <span className="text-white">{expandedLobes.merlin ? '▼' : '▶'}</span>
+              <span style={{ color: '#a78bfa' }} className="font-bold capitalize text-[11px]">merlin</span>
+              <span className="text-[9px] text-[#c4b5fd]">prompt + bootstrap</span>
+            </div>
+          </div>
+          {expandedLobes.merlin && (
+            <div className="px-2 pb-2 pt-1 border-t border-[#a78bfa]/20">
+              <div className="mb-2 text-[10px] text-[#ede9fe]">World-builder agent. CEHQ can edit `merlin.md`, and the locked runtime pills below mirror the extra bootstrap context Merlin receives at new-session start.</div>
+              <div className="mb-2 grid grid-cols-2 gap-2">
+                {merlinRuntimeModules.map(module => (
+                  <div
+                    key={module.id}
+                    className="rounded border border-[#a78bfa]/20 bg-[#1e1b4b]/20 px-2 py-1.5"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[10px] font-bold text-[#ddd6fe]">{module.name}</div>
+                      <span className="text-[7px] uppercase tracking-wide text-[#c4b5fd]">locked</span>
+                    </div>
+                    <div className="mt-1 text-[9px] text-[#c4b5fd]/85">{module.description}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <LobeEditor lobe="merlin" />
               </div>
             </div>
           )}

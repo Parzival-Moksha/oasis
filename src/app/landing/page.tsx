@@ -373,7 +373,7 @@ export default function LandingPage() {
 
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <AgentCard icon="💻" name="Claude Code" color="#38bdf8" desc="Full multi-turn Claude Code sessions via --resume. THE primary dev tool. Sky blue button." />
-            <AgentCard icon="🧙" name="Merlin" color="#14b8a6" desc="World-builder agent. Tool-use loop via OpenRouter. Places objects, sets sky, paints ground." />
+            <AgentCard icon="🧙" name="Merlin" color="#14b8a6" desc="World-builder agent. Real Claude Code CLI sessions with Oasis MCP tools for building, walking, and seeing the world." />
             <AgentCard icon="🔮" name="Anorak" color="#f97316" desc="Feedback portal + vibecode chat. Coding agent spawns Claude Code one-shot." />
             <AgentCard icon="⚡" name="DevCraft" color="#10b981" desc="Mission CRUD + timer + valor scoring + gamification. The productivity engine." />
           </div>

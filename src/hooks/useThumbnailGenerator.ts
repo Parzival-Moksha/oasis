@@ -401,29 +401,71 @@ async function persistThumbnailToLibrary(sceneId: string, thumbnailUrl: string):
   } catch { /* non-critical — display falls back to computed URL */ }
 }
 
+function collectCraftedScenesNeedingThumbs(): CraftedScene[] {
+  const perWorld = useOasisStore.getState().craftedScenes
+  const library = useOasisStore.getState().sceneLibrary
+  const merged = new Map<string, CraftedScene>()
+
+  for (const scene of [...library, ...perWorld]) {
+    const existing = merged.get(scene.id)
+    if (!existing) {
+      merged.set(scene.id, scene)
+      continue
+    }
+
+    const existingHasThumb = Boolean(existing.thumbnailUrl)
+    const nextHasThumb = Boolean(scene.thumbnailUrl)
+    const existingObjectCount = existing.objects?.length || 0
+    const nextObjectCount = scene.objects?.length || 0
+
+    if ((!existingHasThumb && nextHasThumb) || nextObjectCount > existingObjectCount) {
+      merged.set(scene.id, scene)
+    }
+  }
+
+  return [...merged.values()].filter(scene =>
+    !scene.thumbnailUrl && (scene.objects?.length || 0) > 0
+  )
+}
+
 /** Mount-time hook — catches any crafted scenes that don't have thumbnails yet */
 export function useCraftedThumbnailGenerator() {
   const runningRef = useRef(false)
+  const queuedRef = useRef(false)
+  const missingSignature = useOasisStore(s => {
+    const missing = [...s.sceneLibrary, ...s.craftedScenes]
+      .filter(scene => !scene.thumbnailUrl && (scene.objects?.length || 0) > 0)
+      .map(scene => `${scene.id}:${scene.objects.length}:${scene.createdAt || ''}`)
+      .sort()
+    return missing.join('|')
+  })
 
   useEffect(() => {
-    if (runningRef.current) return
-    runningRef.current = true
+    if (!missingSignature) return
 
-    generateCraftedThumbnails().finally(() => { runningRef.current = false })
-  }, [])
+    const flushQueue = async () => {
+      if (runningRef.current) {
+        queuedRef.current = true
+        return
+      }
+
+      runningRef.current = true
+      try {
+        do {
+          queuedRef.current = false
+          await generateCraftedThumbnails()
+        } while (queuedRef.current)
+      } finally {
+        runningRef.current = false
+      }
+    }
+
+    void flushQueue()
+  }, [missingSignature])
 }
 
 async function generateCraftedThumbnails() {
-  // Merge per-world + global library scenes, dedupe by ID
-  const perWorld = useOasisStore.getState().craftedScenes
-  const library = useOasisStore.getState().sceneLibrary
-  const seen = new Set<string>()
-  const all: CraftedScene[] = []
-  for (const s of [...perWorld, ...library]) {
-    if (!seen.has(s.id)) { seen.add(s.id); all.push(s) }
-  }
-
-  const needsThumb = all.filter(s => !s.thumbnailUrl).slice(0, MAX_PER_SESSION)
+  const needsThumb = collectCraftedScenesNeedingThumbs().slice(0, MAX_PER_SESSION)
 
   if (needsThumb.length === 0) return
 

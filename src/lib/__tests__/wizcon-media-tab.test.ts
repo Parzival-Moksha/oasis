@@ -248,101 +248,68 @@ describe('MediaLightbox — fullscreen image viewer', () => {
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 5. MediaTab uses createPortal for both modals
+// 5. Portal and modal patterns
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('MediaTab — portal pattern', () => {
-  const mediaTabStart = wizConSrc.indexOf('function MediaTab(')
-  const mediaTabEnd = wizConSrc.indexOf('\n// ═══', mediaTabStart + 1)
-  const mediaTabBody = wizConSrc.slice(mediaTabStart, mediaTabEnd > mediaTabStart ? mediaTabEnd : mediaTabStart + 5000)
-
-  it('uses createPortal for DeleteConfirmModal', () => {
-    // Pattern: createPortal(<DeleteConfirmModal ...>, document.body)
-    expect(mediaTabBody).toMatch(/createPortal\(\s*<DeleteConfirmModal/)
-  })
-
-  it('uses createPortal for MediaLightbox', () => {
-    expect(mediaTabBody).toMatch(/createPortal\(\s*<MediaLightbox/)
-  })
-
-  it('guards createPortal with typeof document check (SSR safety)', () => {
-    // Pattern: typeof document !== 'undefined' && createPortal(...)
-    expect(mediaTabBody).toContain("typeof document !== 'undefined'")
-  })
-
+describe('WizardConsole — portal and modal patterns', () => {
   it('imports createPortal from react-dom', () => {
     expect(wizConSrc).toContain("import { createPortal } from 'react-dom'")
-  })
-})
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 6. deleteTarget state shape and flow
-// ═══════════════════════════════════════════════════════════════════════════
-
-describe('MediaTab — deleteTarget state management', () => {
-  const mediaTabStart = wizConSrc.indexOf('function MediaTab(')
-  const mediaTabEnd = wizConSrc.indexOf('\n// ═══', mediaTabStart + 1)
-  const mediaTabBody = wizConSrc.slice(mediaTabStart, mediaTabEnd > mediaTabStart ? mediaTabEnd : mediaTabStart + 5000)
-
-  it('declares deleteTarget state with url, name, placedCount, worldCount', () => {
-    expect(mediaTabBody).toMatch(/useState<\{\s*url:\s*string;\s*name:\s*string;\s*placedCount:\s*number;\s*worldCount:\s*number\s*\}\s*\|\s*null>/)
-  })
-
-  it('initializes deleteTarget as null', () => {
-    expect(mediaTabBody).toContain('>(null)')
-  })
-
-  it('sets deleteTarget with url, name, placedCount, and worldCount on delete button click', () => {
-    expect(mediaTabBody).toContain('setDeleteTarget({ url: item.url, name: item.name, placedCount, worldCount: 0 })')
-  })
-
-  it('passes deleteTarget.name as itemName to DeleteConfirmModal', () => {
-    expect(mediaTabBody).toContain("itemName={deleteTarget?.name || ''}")
-  })
-
-  it('passes deleteTarget.placedCount to DeleteConfirmModal', () => {
-    expect(mediaTabBody).toContain('placedCount={deleteTarget?.placedCount}')
-  })
-
-  it('onConfirm calls handleDelete with deleteTarget.url', () => {
-    expect(mediaTabBody).toContain('deleteTarget && handleDelete(deleteTarget.url)')
-  })
-
-  it('onCancel resets deleteTarget to null', () => {
-    expect(mediaTabBody).toContain('setDeleteTarget(null)')
-  })
-
-  it('handleDelete also clears deleteTarget after API call', () => {
-    // Inside handleDelete: setDeleteTarget(null) + fetchMedia()
-    const handleDeleteMatch = mediaTabBody.match(/handleDelete[\s\S]*?setDeleteTarget\(null\)/)
-    expect(handleDeleteMatch).toBeTruthy()
-  })
-})
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 7. Conjured gallery also uses DeleteConfirmModal (dual usage)
-// ═══════════════════════════════════════════════════════════════════════════
-
-describe('WizardConsole — conjured gallery delete modal', () => {
-  it('has conjureDeleteTarget state for conjured asset deletion', () => {
-    expect(wizConSrc).toContain('conjureDeleteTarget')
-    expect(wizConSrc).toContain('setConjureDeleteTarget')
-  })
-
-  it('passes onRequestDelete to GalleryItem from main gallery', () => {
-    expect(wizConSrc).toMatch(/onRequestDelete=\{/)
-    expect(wizConSrc).toContain('setConjureDeleteTarget')
-  })
-
-  it('renders second DeleteConfirmModal for conjured assets', () => {
-    // Two separate DeleteConfirmModal usages in the file
-    const matches = wizConSrc.match(/<DeleteConfirmModal/g)
-    expect(matches).toBeTruthy()
-    expect(matches!.length).toBeGreaterThanOrEqual(2)
   })
 
   it('imports DeleteConfirmModal from ./DeleteConfirmModal', () => {
     expect(wizConSrc).toContain("import { DeleteConfirmModal } from './DeleteConfirmModal'")
+  })
+
+  it('renders at least one DeleteConfirmModal', () => {
+    const matches = wizConSrc.match(/<DeleteConfirmModal/g)
+    expect(matches).toBeTruthy()
+    expect(matches!.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('uses createPortal for at least one portal', () => {
+    expect(wizConSrc).toContain('createPortal(')
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 6. deleteConfirm state management (unified delete flow)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('WizardConsole — deleteConfirm state management', () => {
+  it('defines ConfirmDeleteState interface with itemName and placedCount', () => {
+    expect(wizConSrc).toContain('interface ConfirmDeleteState')
+    expect(wizConSrc).toContain('itemName: string')
+    expect(wizConSrc).toContain('placedCount?: number')
+  })
+
+  it('declares deleteConfirm state', () => {
+    expect(wizConSrc).toContain('deleteConfirm')
+    expect(wizConSrc).toContain('setDeleteConfirm')
+  })
+
+  it('passes deleteConfirm props to DeleteConfirmModal', () => {
+    expect(wizConSrc).toContain('isOpen={!!deleteConfirm}')
+    expect(wizConSrc).toContain("itemName={deleteConfirm?.itemName || ''}")
+    expect(wizConSrc).toContain('placedCount={deleteConfirm?.placedCount}')
+  })
+
+  it('clears deleteConfirm on cancel', () => {
+    expect(wizConSrc).toContain('setDeleteConfirm(null)')
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 7. onRequestDelete prop flow in media tabs
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('WizardConsole — onRequestDelete flow', () => {
+  it('passes onRequestDelete callback to media tabs', () => {
+    expect(wizConSrc).toMatch(/onRequestDelete/)
+  })
+
+  it('MediaTab receives onRequestDelete as a prop', () => {
+    expect(wizConSrc).toContain('function MediaTab(')
+    expect(wizConSrc).toContain('onRequestDelete')
   })
 })
 

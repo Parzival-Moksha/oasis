@@ -9,6 +9,162 @@
 import { create } from 'zustand'
 import { useEffect } from 'react'
 
+interface MouseLookDebugState {
+  droppedSampleCount: number
+  droppedMagnitude: number
+  queuedSampleCount: number
+  queuedDelta: { x: number; y: number }
+  lastQueueAgeMs: number
+  lastConsumedAt: number
+  lastConsumedSampleCount: number
+  lastConsumedDelta: { x: number; y: number }
+  lastConsumedAgeMs: number
+  lastPointerLockChangeAt: number
+  activeEventType: 'mousemove' | 'pointerrawupdate'
+}
+
+const mouseLookAccumulator = {
+  x: 0,
+  y: 0,
+  sampleCount: 0,
+  oldestTime: 0,
+}
+const MAX_MOUSE_LOOK_EVENT_DELTA = 96
+const MAX_MOUSE_LOOK_PENDING_DELTA = 384
+const MAX_MOUSE_LOOK_FRAME_DELTA = 160
+const mouseLookDebugState: MouseLookDebugState = {
+  droppedSampleCount: 0,
+  droppedMagnitude: 0,
+  queuedSampleCount: 0,
+  queuedDelta: { x: 0, y: 0 },
+  lastQueueAgeMs: 0,
+  lastConsumedAt: 0,
+  lastConsumedSampleCount: 0,
+  lastConsumedDelta: { x: 0, y: 0 },
+  lastConsumedAgeMs: 0,
+  lastPointerLockChangeAt: 0,
+  activeEventType: 'mousemove',
+}
+
+function clampMouseLookDelta(value: number, limit: number): number {
+  return Math.max(-limit, Math.min(limit, value))
+}
+
+function getMouseLookNow(preferred?: number): number {
+  if (typeof preferred === 'number' && Number.isFinite(preferred)) return preferred
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') return performance.now()
+  return Date.now()
+}
+
+function resolveMouseLookEventType(): 'mousemove' | 'pointerrawupdate' {
+  if (typeof window === 'undefined') return 'mousemove'
+  const useRawPointer = (window as typeof window & { __OASIS_USE_POINTER_RAW__?: boolean }).__OASIS_USE_POINTER_RAW__ === true
+  return useRawPointer && 'onpointerrawupdate' in window
+    ? 'pointerrawupdate'
+    : 'mousemove'
+}
+
+function updateMouseLookQueueDebug(now = getMouseLookNow()) {
+  mouseLookDebugState.queuedSampleCount = mouseLookAccumulator.sampleCount
+  mouseLookDebugState.queuedDelta = {
+    x: mouseLookAccumulator.x,
+    y: mouseLookAccumulator.y,
+  }
+  mouseLookDebugState.lastQueueAgeMs = mouseLookAccumulator.sampleCount > 0 && mouseLookAccumulator.oldestTime > 0
+    ? Math.max(0, now - mouseLookAccumulator.oldestTime)
+    : 0
+}
+
+function recordDroppedMouseLookMagnitude(magnitude: number) {
+  if (!Number.isFinite(magnitude) || magnitude <= 0) return
+  mouseLookDebugState.droppedSampleCount += 1
+  mouseLookDebugState.droppedMagnitude += magnitude
+}
+
+function clearMouseLookAccumulator() {
+  mouseLookAccumulator.x = 0
+  mouseLookAccumulator.y = 0
+  mouseLookAccumulator.sampleCount = 0
+  mouseLookAccumulator.oldestTime = 0
+  updateMouseLookQueueDebug()
+}
+
+function accumulateMouseLookDelta(event: Pick<MouseEvent, 'movementX' | 'movementY' | 'timeStamp'>) {
+  const state = useInputManager.getState()
+  if (!state.pointerLocked || !state.can().mouseLook) return
+  if (!Number.isFinite(event.movementX) || !Number.isFinite(event.movementY)) return
+  const clampedX = clampMouseLookDelta(event.movementX, MAX_MOUSE_LOOK_EVENT_DELTA)
+  const clampedY = clampMouseLookDelta(event.movementY, MAX_MOUSE_LOOK_EVENT_DELTA)
+  const now = getMouseLookNow(event.timeStamp)
+
+  if (mouseLookAccumulator.sampleCount === 0) {
+    mouseLookAccumulator.oldestTime = now
+  }
+
+  const nextX = mouseLookAccumulator.x + clampedX
+  const nextY = mouseLookAccumulator.y + clampedY
+  const boundedX = clampMouseLookDelta(nextX, MAX_MOUSE_LOOK_PENDING_DELTA)
+  const boundedY = clampMouseLookDelta(nextY, MAX_MOUSE_LOOK_PENDING_DELTA)
+  recordDroppedMouseLookMagnitude(Math.abs(nextX - boundedX) + Math.abs(nextY - boundedY))
+
+  mouseLookAccumulator.x = boundedX
+  mouseLookAccumulator.y = boundedY
+  mouseLookAccumulator.sampleCount += 1
+
+  updateMouseLookQueueDebug()
+}
+
+export function consumeMouseLookDelta(): { x: number; y: number } {
+  if (mouseLookAccumulator.sampleCount === 0) {
+    const now = getMouseLookNow()
+    mouseLookDebugState.lastConsumedAt = now
+    mouseLookDebugState.lastConsumedSampleCount = 0
+    mouseLookDebugState.lastConsumedDelta = { x: 0, y: 0 }
+    mouseLookDebugState.lastConsumedAgeMs = 0
+    updateMouseLookQueueDebug(now)
+    return { x: 0, y: 0 }
+  }
+
+  const now = getMouseLookNow()
+  const x = mouseLookAccumulator.x
+  const y = mouseLookAccumulator.y
+  const sampleCount = mouseLookAccumulator.sampleCount
+  const oldestTime = mouseLookAccumulator.oldestTime || now
+
+  const next = {
+    x: clampMouseLookDelta(x, MAX_MOUSE_LOOK_FRAME_DELTA),
+    y: clampMouseLookDelta(y, MAX_MOUSE_LOOK_FRAME_DELTA),
+  }
+  recordDroppedMouseLookMagnitude(
+    Math.max(0, Math.abs(x) - Math.abs(next.x)) + Math.max(0, Math.abs(y) - Math.abs(next.y))
+  )
+
+  mouseLookAccumulator.x = 0
+  mouseLookAccumulator.y = 0
+  mouseLookAccumulator.sampleCount = 0
+  mouseLookAccumulator.oldestTime = 0
+
+  mouseLookDebugState.lastConsumedAt = now
+  mouseLookDebugState.lastConsumedSampleCount = sampleCount
+  mouseLookDebugState.lastConsumedDelta = next
+  mouseLookDebugState.lastConsumedAgeMs = Math.max(0, now - oldestTime)
+  updateMouseLookQueueDebug(now)
+
+  return next
+}
+
+export function resetMouseLookDelta(): void {
+  clearMouseLookAccumulator()
+}
+
+export function getMouseLookDebugState(): MouseLookDebugState {
+  return {
+    ...mouseLookDebugState,
+    queuedDelta: { ...mouseLookDebugState.queuedDelta },
+    lastConsumedDelta: { ...mouseLookDebugState.lastConsumedDelta },
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // INPUT STATES
 // ═══════════════════════════════════════════════════════════════════════════
@@ -116,6 +272,7 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
   transition: (to) => {
     const current = get().inputState
     if (current === to) return
+    clearMouseLookAccumulator()
     // Release pointer lock when transitioning to a state that doesn't use it
     if (get().pointerLocked && !STATE_CAPABILITIES[to].canLockPointer) {
       document.exitPointerLock()
@@ -162,6 +319,7 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
       if (get().inputState !== 'ui-focused') set({ inputState: 'ui-focused' })
       return
     }
+    clearMouseLookAccumulator()
     const prev = get()._previousCameraState || 'orbit'
     set({ inputState: prev, _previousCameraState: null })
     // Blur DOM so keyboard goes back to game
@@ -178,6 +336,7 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     const current = get().inputState
     const fallback = escapeTransition(current)
     if (!fallback) return false
+    clearMouseLookAccumulator()
     const prev = get()._previousCameraState || fallback
     set({ inputState: prev, _previousCameraState: null })
     if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
@@ -195,6 +354,7 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     const isBaseCamera = current === 'orbit' || current === 'noclip' || current === 'third-person'
     const isTemporary = current === 'placement' || current === 'paint'
     const isFocusedUi = current === 'ui-focused' || current === 'agent-focus'
+    clearMouseLookAccumulator()
 
     if (isBaseCamera) {
       // Direct switch between base camera modes
@@ -273,14 +433,24 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
   },
 
   _syncPointerLockState: () => {
-    set({ pointerLocked: !!document.pointerLockElement })
+    const locked = !!document.pointerLockElement
+    if (!locked) clearMouseLookAccumulator()
+    mouseLookDebugState.lastPointerLockChangeAt = getMouseLookNow()
+    set({ pointerLocked: locked })
   },
 
   // ── GLOBAL LISTENERS (call once from Scene.tsx mount) ──────────
 
   initGlobalListeners: () => {
+    const mouseLookEvent = resolveMouseLookEventType()
+    mouseLookDebugState.activeEventType = mouseLookEvent
+
     const onPointerLockChange = () => {
       get()._syncPointerLockState()
+    }
+
+    const onMouseLookMove = (event: Event) => {
+      accumulateMouseLookDelta(event as MouseEvent)
     }
 
     const onRightClick = (e: MouseEvent) => {
@@ -334,6 +504,7 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     }
 
     document.addEventListener('pointerlockchange', onPointerLockChange)
+    document.addEventListener(mouseLookEvent, onMouseLookMove)
     document.addEventListener('mousedown', onRightClick)
     document.addEventListener('contextmenu', onContextMenu)
     document.addEventListener('focusin', onFocusIn)
@@ -341,6 +512,7 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
 
     return () => {
       document.removeEventListener('pointerlockchange', onPointerLockChange)
+      document.removeEventListener(mouseLookEvent, onMouseLookMove)
       document.removeEventListener('mousedown', onRightClick)
       document.removeEventListener('contextmenu', onContextMenu)
       document.removeEventListener('focusin', onFocusIn)

@@ -97,6 +97,7 @@ async function loadCachedTexture(url: string, colorSpace: THREE.ColorSpace): Pro
 
 function BaseGround({ preset }: { preset: GroundPreset }) {
   const gl = useThree(s => s.gl)
+  const matRef = useRef<THREE.MeshStandardMaterial>(null)
   const urls = useMemo(() => getTextureUrls(preset.assetName), [preset.assetName])
   const [diffuse, setDiffuse] = useState<THREE.Texture | null>(null)
 
@@ -122,12 +123,26 @@ function BaseGround({ preset }: { preset: GroundPreset }) {
     return () => { cancelled = true; activeClone?.dispose() }
   }, [urls, preset.tileRepeat, gl])
 
+  useEffect(() => {
+    const mat = matRef.current
+    if (!mat) return
+    if (diffuse) {
+      mat.map = diffuse
+      mat.color.set('#ffffff')
+    } else {
+      mat.map = getPlaceholderTexture()
+      mat.color.set(preset.color)
+    }
+    mat.needsUpdate = true
+  }, [diffuse, preset.color])
+
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
       <planeGeometry args={[GROUND_SIZE, GROUND_SIZE]} />
       <meshStandardMaterial
-        color={diffuse ? '#ffffff' : preset.color}
-        map={diffuse}
+        ref={matRef}
+        color={preset.color}
+        map={getPlaceholderTexture()}
         roughness={1}
         metalness={0}
         envMapIntensity={0.15}

@@ -5,12 +5,18 @@
 // Replaces Supabase Realtime. Agent modifies world → event published →
 // browser receives via SSE → Zustand updates → React re-renders.
 // ~10-50ms end-to-end, zero page reload.
+//
+// IMPORTANT: Listeners live on globalThis so they survive Next.js HMR.
+// Without this, hot-reloads orphan old SSE connections' listeners and
+// new events never reach the browser until a full page refresh.
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 export type WorldEventType =
   | 'object_added'
   | 'object_removed'
   | 'object_modified'
+  | 'conjured_asset_added'
+  | 'conjured_asset_removed'
   | 'scene_crafted'
   | 'sky_changed'
   | 'ground_changed'
@@ -33,7 +39,16 @@ export interface WorldEvent {
 
 type Listener = (event: WorldEvent) => void
 
-const listeners = new Set<Listener>()
+// Pin listeners to globalThis so they survive Next.js HMR reloads.
+// Without this, each hot-reload creates a new empty Set while existing
+// SSE subscriber references point at the orphaned old Set.
+const globalState = globalThis as typeof globalThis & {
+  __oasisWorldEventListeners?: Set<Listener>
+}
+if (!globalState.__oasisWorldEventListeners) {
+  globalState.__oasisWorldEventListeners = new Set()
+}
+const listeners = globalState.__oasisWorldEventListeners
 
 /** Subscribe to world events. Returns unsubscribe function. */
 export function subscribe(listener: Listener): () => void {

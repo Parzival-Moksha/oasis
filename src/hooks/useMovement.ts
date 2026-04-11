@@ -14,11 +14,12 @@
 //
 // ▓▓▓▓【M̸O̸T̸I̸O̸N̸】▓▓▓▓ॐ▓▓▓▓【F̸O̸R̸G̸E̸】▓▓▓▓
 
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import type { Group } from 'three'
 import type { MovementPreset } from '../lib/conjure/types'
 import { useOasisStore } from '../store/oasisStore'
+import { clearLiveObjectTransform, setLiveObjectTransform } from '../lib/live-object-transforms'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // INTERNAL STATE — refs that survive across frames without triggering renders
@@ -57,11 +58,28 @@ export function useMovement(
     prevType: undefined,
   })
 
+  useEffect(() => {
+    return () => {
+      if (objectId) {
+        clearLiveObjectTransform(objectId)
+      }
+    }
+  }, [objectId])
+
   useFrame((_, rawDelta) => {
     const group = groupRef.current
     if (!group) return
 
     const delta = Math.min(rawDelta, MAX_DELTA)
+
+    const syncLiveTransform = () => {
+      if (!objectId) return
+      setLiveObjectTransform(objectId, {
+        position: [group.position.x, group.position.y, group.position.z],
+        rotation: [group.rotation.x, group.rotation.y, group.rotation.z],
+        scale: [group.scale.x, group.scale.y, group.scale.z],
+      })
+    }
 
     // ═════════════════════════════════════════════════════════════════
     // RTS MOVE-TO — overrides everything when active
@@ -78,6 +96,7 @@ export function useMovement(
         // Arrived — snap XZ to target, preserve Y elevation
         group.position.x = tx
         group.position.z = tz
+        syncLiveTransform()
         useOasisStore.getState().clearMoveTarget(objectId)
         useOasisStore.getState().setObjectTransform(objectId, {
           position: [tx, group.position.y, tz],
@@ -100,6 +119,7 @@ export function useMovement(
       while (angleDiff > Math.PI) angleDiff -= Math.PI * 2
       while (angleDiff < -Math.PI) angleDiff += Math.PI * 2
       group.rotation.y += angleDiff * Math.min(8 * delta, 1)
+      syncLiveTransform()
 
       return // moveTarget overrides all other movement
     }
@@ -137,6 +157,7 @@ export function useMovement(
       // ── SPIN: continuous rotation around a single axis ────────────
       case 'spin': {
         group.rotation[movement.axis] += movement.speed * delta
+        syncLiveTransform()
         break
       }
 
@@ -146,6 +167,7 @@ export function useMovement(
         group.position.y =
           s.initialY +
           Math.sin(s.elapsed * movement.speed + phase) * movement.amplitude
+        syncLiveTransform()
         break
       }
 
@@ -172,6 +194,7 @@ export function useMovement(
             group.position.x = s.initialPos.x
             break
         }
+        syncLiveTransform()
         break
       }
 
@@ -180,6 +203,7 @@ export function useMovement(
         group.position.y =
           s.initialY +
           Math.abs(Math.sin(s.elapsed * movement.speed)) * movement.height
+        syncLiveTransform()
         break
       }
 
@@ -188,6 +212,7 @@ export function useMovement(
         const maxRad = (movement.angle * Math.PI) / 180
         group.rotation[movement.axis] =
           Math.sin(s.elapsed * movement.speed) * maxRad
+        syncLiveTransform()
         break
       }
 
@@ -198,6 +223,7 @@ export function useMovement(
         group.position.z = s.initialPos.z + Math.sin(angle) * movement.radius
         group.position.y = s.initialPos.y
         group.rotation.y = -angle // face direction of travel
+        syncLiveTransform()
         break
       }
     }

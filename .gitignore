@@ -2,8 +2,9 @@
 # OASIS .gitignore
 # ═══════════════════════════════════════════════════════════════
 
-# Dependencies
+# Dependencies (root + all tool subdirs)
 node_modules/
+tools/*/node_modules/
 
 # Next.js build output
 .next/
@@ -134,5 +135,38 @@ __pycache__/
 
 # Test screenshots (CDP/Playwright — regenerated every run)
 test-screenshots/
+gamer-screenshots/
+
+# Generated Merlin MCP configs + session data
+.claude-code-mcp/
+.merlin-mcp.json
+src/app/api/merlin/sessions/
+
+# Playwright MCP runtime
+.playwright-mcp/
+
+# Merlin runtime screenshots (regenerated per session)
+public/merlin/
+
+# Temp dev artifacts
+*.tmp
+tmp-stt-*.wav
+player-view*.png
+.tmp-dev-*.log
+oasis_playwright.md
+ad_oasiscloneprismadataoasis.db
+
+# Runtime context + session data (per-instance, regenerated)
+prisma/data/world-runtime-context.json
+prisma/data/agent-session-registry.json
+
+# Merlin runtime (screenshots + temp data)
+merlin/
+
+# Website (separate build, has own node_modules)
+website/
+
+# Personal audio files (not redistributable)
+public/audio/anaal nathrakh*
 
 /src/generated/prisma

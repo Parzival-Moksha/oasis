@@ -473,8 +473,18 @@ export function ConjuredObject({ asset }: ConjuredObjectProps) {
         ref={proxyRef}
         position={[bounds.center.x, bounds.center.y, bounds.center.z]}
         onClick={handleProxyClick}
-        onPointerOver={(e) => { e.stopPropagation(); setHovered(true); if (!useInputManager.getState().pointerLocked) setShowLabel(true) }}
-        onPointerOut={(e) => { e.stopPropagation(); setHovered(false); setShowLabel(false) }}
+        onPointerOver={(e) => {
+          e.stopPropagation()
+          if (useInputManager.getState().pointerLocked) return
+          setHovered(true)
+          setShowLabel(true)
+        }}
+        onPointerOut={(e) => {
+          e.stopPropagation()
+          if (useInputManager.getState().pointerLocked) return
+          setHovered(false)
+          setShowLabel(false)
+        }}
       >
         <boxGeometry args={[Math.max(bounds.size.x, 1), Math.max(bounds.size.y, 1), Math.max(bounds.size.z, 1)]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />

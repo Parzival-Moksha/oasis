@@ -25,7 +25,7 @@ import * as THREE from 'three'
 let _audioListener: THREE.AudioListener | null = null
 export function getAudioListener(): THREE.AudioListener | null { return _audioListener }
 import { useOasisStore } from '../store/oasisStore'
-import { useInputManager, getInputCapabilities, type InputState } from '../lib/input-manager'
+import { useInputManager, getInputCapabilities, consumeMouseLookDelta, type InputState } from '../lib/input-manager'
 import { setCameraSnapshot } from '../lib/camera-bridge'
 import { SettingsContext, DragContext } from './scene-lib'
 
@@ -60,7 +60,7 @@ export const FPS_KEYBOARD_MAP = [
   { name: FPSControls.down, keys: ['KeyE'] },
   { name: FPSControls.sprint, keys: ['ShiftLeft', 'ShiftRight'] },
   { name: FPSControls.slow, keys: ['Space'] },
-  { name: FPSControls.dance, keys: ['KeyC'] },
+  { name: FPSControls.dance, keys: ['KeyX'] },
 ]
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -147,33 +147,35 @@ function useNoclipUpdate() {
 
 function useMouseLook(sensitivity: number) {
   const eulerRef = useRef(new THREE.Euler(0, 0, 0, 'YXZ'))
-  const deltaRef = useRef({ x: 0, y: 0 })
+  const yawRef = useRef(0)
+  const pitchRef = useRef(0)
+  const initializedRef = useRef(false)
   const sensRef = useRef(sensitivity)
   sensRef.current = sensitivity
 
-  // useEffect: proper lifecycle — cleanup removes listener on unmount/HMR
-  useEffect(() => {
-    const onMouseMove = (e: MouseEvent) => {
-      if (!useInputManager.getState().pointerLocked) return
-      deltaRef.current.x += e.movementX
-      deltaRef.current.y += e.movementY
-    }
-    document.addEventListener('mousemove', onMouseMove)
-    return () => document.removeEventListener('mousemove', onMouseMove)
-  }, [])
-
   return (camera: THREE.PerspectiveCamera) => {
-    if (deltaRef.current.x === 0 && deltaRef.current.y === 0) return
+    const input = useInputManager.getState()
+    if (!input.pointerLocked || (input.inputState !== 'noclip' && input.inputState !== 'placement' && input.inputState !== 'paint')) {
+      initializedRef.current = false
+      return
+    }
+
+    if (!initializedRef.current) {
+      eulerRef.current.setFromQuaternion(camera.quaternion)
+      yawRef.current = eulerRef.current.y
+      pitchRef.current = eulerRef.current.x
+      initializedRef.current = true
+    }
+
+    const delta = consumeMouseLookDelta()
+    if (delta.x === 0 && delta.y === 0) return
 
     const sens = sensRef.current * 0.002
-    eulerRef.current.setFromQuaternion(camera.quaternion)
-    eulerRef.current.y -= deltaRef.current.x * sens
-    eulerRef.current.x -= deltaRef.current.y * sens
-    eulerRef.current.x = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, eulerRef.current.x))
+    yawRef.current -= delta.x * sens
+    pitchRef.current -= delta.y * sens
+    pitchRef.current = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, pitchRef.current))
+    eulerRef.current.set(pitchRef.current, yawRef.current, 0)
     camera.quaternion.setFromEuler(eulerRef.current)
-
-    deltaRef.current.x = 0
-    deltaRef.current.y = 0
   }
 }
 

@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'vitest'
 import React from 'react'
-import { MediaBubble, resolveMediaUrl, type MediaType } from '../../components/forge/MediaBubble'
+import { MediaBubble, resolveMediaUrl, shouldProxyMediaUrl, type MediaType } from '../../components/forge/MediaBubble'
 import type {
   AnorakEvent,
   AnorakMediaEvent,
@@ -56,6 +56,26 @@ describe('resolveMediaUrl', () => {
     // Should NOT be treated as absolute — will get origin prepended or stay as-is
     // The important thing: it does NOT just return the input
     expect(typeof result).toBe('string')
+  })
+})
+
+describe('shouldProxyMediaUrl', () => {
+  it('proxies generated local images', () => {
+    const result = shouldProxyMediaUrl('/generated-images/test.png', 'image')
+    expect(result).toBe(typeof window !== 'undefined')
+  })
+
+  it('proxies generated local audio', () => {
+    const result = shouldProxyMediaUrl('/generated-voices/test.mp3', 'audio')
+    expect(result).toBe(typeof window !== 'undefined')
+  })
+
+  it('does not proxy generated videos that already play directly', () => {
+    expect(shouldProxyMediaUrl('/generated-videos/test.mp4', 'video')).toBe(false)
+  })
+
+  it('does not proxy external media urls', () => {
+    expect(shouldProxyMediaUrl('https://example.com/test.png', 'image')).toBe(false)
   })
 })
 

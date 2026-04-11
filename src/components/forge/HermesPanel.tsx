@@ -7,8 +7,11 @@ import { useOasisStore } from '@/store/oasisStore'
 import { useInputManager, useUILayer } from '@/lib/input-manager'
 import { CollapsibleBlock, renderMarkdown } from '@/lib/anorak-renderers'
 import { collapseDuplicateHermesMessages, mergeHydratedHermesMessages } from '@/lib/hermes-message-merge'
+import { useAgentVoiceInput } from '@/hooks/useAgentVoiceInput'
 import { MediaBubble, type MediaType } from './MediaBubble'
 import { AvatarGallery } from './AvatarGallery'
+import { AgentToolCallCard } from './AgentToolCallCard'
+import { AgentVoiceInputButton } from './AgentVoiceInputButton'
 
 interface PanelSettings {
   bgColor: string
@@ -282,6 +285,9 @@ interface HermesMediaReference {
 
 function detectHermesMediaType(path: string): MediaType | null {
   const normalized = normalizeHermesMediaPath(path)
+  if (/^data:image\//i.test(normalized)) return 'image'
+  if (/^data:audio\//i.test(normalized)) return 'audio'
+  if (/^data:video\//i.test(normalized)) return 'video'
   if (/\.(?:mp3|wav|ogg|oga|opus|m4a)(?:\?|$)/i.test(normalized)) return 'audio'
   if (/\.(?:png|jpg|jpeg|gif|webp)(?:\?|$)/i.test(normalized)) return 'image'
   if (/\.(?:mp4|webm|m4v)(?:\?|$)/i.test(normalized)) return 'video'
@@ -324,6 +330,98 @@ function extractHermesMediaReferences(content: string): HermesMediaReference[] {
   return refs
 }
 
+function HermesProxiedMediaBubble({
+  mediaUrl,
+  mediaType,
+  prompt,
+  needsProxy,
+}: {
+  mediaUrl: string
+  mediaType: MediaType
+  prompt: string
+  needsProxy: boolean
+}) {
+  const [resolvedUrl, setResolvedUrl] = useState(() => (needsProxy ? '' : mediaUrl))
+  const [loading, setLoading] = useState(needsProxy)
+  const [error, setError] = useState('')
+  const [retryNonce, setRetryNonce] = useState(0)
+
+  useEffect(() => {
+    if (!needsProxy) {
+      setResolvedUrl(mediaUrl)
+      setLoading(false)
+      setError('')
+      return
+    }
+
+    const controller = new AbortController()
+    let objectUrl = ''
+
+    async function load() {
+      setLoading(true)
+      setError('')
+
+      try {
+        const response = await fetch(mediaUrl, { cache: 'no-store', signal: controller.signal })
+        if (!response.ok) {
+          const detail = await response.text().catch(() => '')
+          let message = detail || `HTTP ${response.status}`
+          try {
+            const parsed = JSON.parse(detail) as { error?: unknown }
+            if (typeof parsed?.error === 'string' && parsed.error.trim()) {
+              message = parsed.error
+            }
+          } catch {
+            // Response is plain text already.
+          }
+          throw new Error(message)
+        }
+
+        const blob = await response.blob()
+        objectUrl = URL.createObjectURL(blob)
+        setResolvedUrl(objectUrl)
+      } catch (fetchError) {
+        if ((fetchError as Error).name === 'AbortError') return
+        setError(fetchError instanceof Error ? fetchError.message : `Unable to load Hermes ${mediaType}.`)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    void load()
+
+    return () => {
+      controller.abort()
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [mediaUrl, mediaType, needsProxy, retryNonce])
+
+  if (loading) {
+    return (
+      <div className="rounded-lg border border-amber-400/30 bg-black/35 px-3 py-3">
+        <div className="text-[11px] text-amber-100">Loading Hermes {mediaType}...</div>
+      </div>
+    )
+  }
+
+  if (error || !resolvedUrl) {
+    return (
+      <div className="rounded-lg border border-red-400/30 bg-red-950/20 px-3 py-3 space-y-2">
+        <div className="text-[11px] text-red-200">Failed to load {mediaType}</div>
+        <div className="text-[10px] text-red-200/80 break-words">{error || `Unknown remote ${mediaType} error.`}</div>
+        <button
+          onClick={() => setRetryNonce(current => current + 1)}
+          className="px-2 py-1 rounded border border-amber-400/35 text-[10px] text-amber-100 hover:border-amber-300/60 cursor-pointer"
+        >
+          Retry
+        </button>
+      </div>
+    )
+  }
+
+  return <MediaBubble url={resolvedUrl} mediaType={mediaType} prompt={prompt} compact />
+}
+
 function HermesAudioBubble({
   mediaUrl,
   prompt,
@@ -337,7 +435,6 @@ function HermesAudioBubble({
   needsProxy: boolean
   avatarAudioTargetId?: string | null
 }) {
-  const setAgentAvatarAudio = useOasisStore(state => state.setAgentAvatarAudio)
   const [resolvedUrl, setResolvedUrl] = useState(() => (needsProxy ? '' : mediaUrl))
   const [loading, setLoading] = useState(needsProxy)
   const [error, setError] = useState('')
@@ -393,26 +490,6 @@ function HermesAudioBubble({
     }
   }, [mediaUrl, needsProxy, retryNonce])
 
-  useEffect(() => {
-    if (!avatarAudioTargetId || !autoPlay || !resolvedUrl || loading || error) return
-    const playbackId = `hermes-audio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    setAgentAvatarAudio(avatarAudioTargetId, {
-      url: resolvedUrl,
-      volume: 1,
-      maxDistance: 18,
-      state: 'playing',
-      loop: false,
-      playbackId,
-    })
-
-    return () => {
-      const current = useOasisStore.getState().liveAgentAvatarAudio[avatarAudioTargetId]
-      if (current?.playbackId === playbackId) {
-        useOasisStore.getState().setAgentAvatarAudio(avatarAudioTargetId, null)
-      }
-    }
-  }, [autoPlay, avatarAudioTargetId, error, loading, resolvedUrl, setAgentAvatarAudio])
-
   if (loading) {
     return (
       <div className="rounded-lg border border-amber-400/30 bg-black/35 px-3 py-3">
@@ -437,7 +514,16 @@ function HermesAudioBubble({
     )
   }
 
-  return <MediaBubble url={resolvedUrl} mediaType="audio" prompt={prompt} compact autoPlay={autoPlay && !avatarAudioTargetId} />
+  return (
+    <MediaBubble
+      url={resolvedUrl}
+      mediaType="audio"
+      prompt={prompt}
+      compact
+      autoPlay={autoPlay}
+      avatarLipSyncTargetId={avatarAudioTargetId}
+    />
+  )
 }
 
 function renderHermesAssistantContent(
@@ -483,13 +569,14 @@ function renderHermesAssistantContent(
               />
             )
           } else {
+          const mediaUrl = buildHermesMediaUrl(path)
           blocks.push(
-            <MediaBubble
+            <HermesProxiedMediaBubble
               key={`media-${key += 1}`}
-              url={buildHermesMediaUrl(path)}
+              mediaUrl={mediaUrl}
               mediaType={mediaType}
               prompt={`Hermes ${mediaType}`}
-              compact
+              needsProxy={!isDirectHermesMediaUrl(path)}
             />
           )
         }
@@ -608,12 +695,12 @@ function SettingsDropdown({ settings, onChange }: { settings: PanelSettings; onC
 function ToolDetails({ tool }: { tool: HermesToolCall }) {
   const label = summarizeToolArguments(tool.arguments)
   return (
-    <CollapsibleBlock
-      label={label ? `${formatToolName(tool.name)} - ${label}` : formatToolName(tool.name)}
+    <AgentToolCallCard
+      name={tool.name}
+      label={formatToolName(tool.name)}
       icon="[]"
-      content={prettyToolArguments(tool.arguments)}
-      accentColor="rgba(245,158,11,0.38)"
-      compact
+      summary={label}
+      input={prettyToolArguments(tool.arguments)}
     />
   )
 }
@@ -679,9 +766,6 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   const abortRef = useRef<AbortController | null>(null)
   const autoConnectTriedRef = useRef(false)
   const lastHydratedSessionIdRef = useRef('')
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const recordingStreamRef = useRef<MediaStream | null>(null)
-  const recordedChunksRef = useRef<Blob[]>([])
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => readStoredMessages())
   const [input, setInput] = useState('')
@@ -712,14 +796,10 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   const [tunnelAutoStart, setTunnelAutoStart] = useState(true)
   const [connectionSaving, setConnectionSaving] = useState(false)
   const [connectionError, setConnectionError] = useState('')
-  const [voiceInputSupported, setVoiceInputSupported] = useState(false)
-  const [voiceListening, setVoiceListening] = useState(false)
-  const [voiceTranscribing, setVoiceTranscribing] = useState(false)
   const [voiceOutputEnabled, setVoiceOutputEnabled] = useState(() => {
     if (typeof window === 'undefined') return false
     try { return localStorage.getItem(VOICE_OUTPUT_KEY) === 'true' } catch { return false }
   })
-  const [voiceError, setVoiceError] = useState('')
   const [autoPlayMediaMessageId, setAutoPlayMediaMessageId] = useState('')
   const [panelSettings, setPanelSettings] = useState<PanelSettings>(() => {
     if (typeof window === 'undefined') return DEFAULT_SETTINGS
@@ -743,6 +823,14 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   const hermesAvatar = useOasisStore(state => state.placedAgentAvatars.find(entry => entry.agentType === 'hermes') || null)
   const assignHermesAvatar = useOasisStore(state => state.assignHermesAvatar)
   const setAgentAvatarAudio = useOasisStore(state => state.setAgentAvatarAudio)
+  const voiceInput = useAgentVoiceInput({
+    enabled: isOpen,
+    transcribeEndpoint: '/api/voice/transcribe',
+    onTranscript: transcript => {
+      setInput(current => joinPrompt(current, transcript))
+    },
+    focusTargetRef: inputRef,
+  })
 
   const focusPanelUI = useCallback(() => {
     useInputManager.getState().enterUIFocus()
@@ -811,42 +899,6 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       })
     } finally {
       setStatusLoading(false)
-    }
-  }, [])
-
-  const stopRecordingStream = useCallback(() => {
-    recordingStreamRef.current?.getTracks().forEach(track => track.stop())
-    recordingStreamRef.current = null
-  }, [])
-
-  const transcribeRecordedAudio = useCallback(async (audioBlob: Blob, fileName: string) => {
-    setVoiceTranscribing(true)
-    setVoiceError('')
-
-    try {
-      const form = new FormData()
-      form.append('audio', audioBlob, fileName)
-
-      const response = await fetch('/api/hermes/transcribe', {
-        method: 'POST',
-        body: form,
-      })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok) {
-        throw new Error(typeof data?.error === 'string' ? data.error : `HTTP ${response.status}`)
-      }
-
-      const transcript = typeof data?.transcript === 'string' ? data.transcript.trim() : ''
-      if (!transcript) {
-        throw new Error('Hermes returned an empty transcript.')
-      }
-
-      setInput(current => joinPrompt(current, transcript))
-      window.setTimeout(() => inputRef.current?.focus(), 80)
-    } catch (error) {
-      setVoiceError(error instanceof Error ? error.message : 'Voice transcription failed.')
-    } finally {
-      setVoiceTranscribing(false)
     }
   }, [])
 
@@ -986,90 +1038,6 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       setSessionHydrating(false)
     }
   }, [])
-
-  const toggleVoiceInput = useCallback(async () => {
-    if (voiceListening) {
-      mediaRecorderRef.current?.stop()
-      return
-    }
-
-    if (typeof window !== 'undefined' && !window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      setVoiceError('Mic input needs localhost or HTTPS. Open Oasis locally or behind HTTPS and try again.')
-      return
-    }
-
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      setVoiceError('Browser microphone capture is unavailable here.')
-      return
-    }
-
-    setVoiceError('')
-
-    try {
-      const permissionStatus = typeof navigator.permissions?.query === 'function'
-        ? await navigator.permissions.query({ name: 'microphone' as PermissionName })
-        : null
-      if (permissionStatus?.state === 'denied') {
-        setVoiceError('Microphone access is blocked in the browser. In Brave, click the lock icon in the address bar and allow the microphone for this site.')
-        return
-      }
-    } catch {
-      // Permissions API is optional.
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      recordingStreamRef.current = stream
-
-      const recorderMimeType = [
-        'audio/webm;codecs=opus',
-        'audio/webm',
-        'audio/ogg;codecs=opus',
-        'audio/ogg',
-      ].find(type => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) || ''
-
-      const recorder = recorderMimeType
-        ? new MediaRecorder(stream, { mimeType: recorderMimeType })
-        : new MediaRecorder(stream)
-
-      recordedChunksRef.current = []
-      mediaRecorderRef.current = recorder
-
-      recorder.ondataavailable = event => {
-        if (event.data && event.data.size > 0) {
-          recordedChunksRef.current.push(event.data)
-        }
-      }
-
-      recorder.onerror = () => {
-        setVoiceListening(false)
-        stopRecordingStream()
-        setVoiceError('Microphone recording failed.')
-      }
-
-      recorder.onstop = () => {
-        const mimeType = recorder.mimeType || recorderMimeType || 'audio/webm'
-        const extension = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('wav') ? 'wav' : 'webm'
-        const audioBlob = new Blob(recordedChunksRef.current, { type: mimeType })
-        recordedChunksRef.current = []
-        mediaRecorderRef.current = null
-        setVoiceListening(false)
-        stopRecordingStream()
-
-        if (audioBlob.size > 0) {
-          void transcribeRecordedAudio(audioBlob, `oasis-voice.${extension}`)
-        }
-      }
-
-      recorder.start()
-      setVoiceListening(true)
-    } catch (error) {
-      stopRecordingStream()
-      const message = error instanceof Error ? error.message : 'Microphone permission was denied.'
-      setVoiceListening(false)
-      setVoiceError(message)
-    }
-  }, [stopRecordingStream, transcribeRecordedAudio, voiceListening])
 
   const connectHermes = useCallback(async (tunnelCommandOverride?: string) => {
     if (isConnecting) return
@@ -1273,28 +1241,14 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   }, [isOpen, loadStatus])
 
   useEffect(() => {
-    setVoiceInputSupported(
-      typeof window !== 'undefined' &&
-      typeof navigator !== 'undefined' &&
-      typeof navigator.mediaDevices?.getUserMedia === 'function' &&
-      typeof MediaRecorder !== 'undefined'
-    )
-  }, [isOpen])
-
-  useEffect(() => {
     if (!isOpen) {
       autoConnectTriedRef.current = false
       setShowConnectionModal(false)
       setShowSettings(false)
       setShowAvatarGallery(false)
-      recordedChunksRef.current = []
-      mediaRecorderRef.current?.stop()
-      mediaRecorderRef.current = null
-      stopRecordingStream()
-      setVoiceListening(false)
       return
     }
-  }, [isOpen, stopRecordingStream])
+  }, [isOpen])
 
   useEffect(() => {
     if (autoScroll) {
@@ -1403,15 +1357,6 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     if (voiceOutputEnabled) return
     setAutoPlayMediaMessageId('')
   }, [voiceOutputEnabled])
-
-  useEffect(() => {
-    return () => {
-      recordedChunksRef.current = []
-      mediaRecorderRef.current?.stop()
-      mediaRecorderRef.current = null
-      stopRecordingStream()
-    }
-  }, [stopRecordingStream])
 
   useEffect(() => {
     if (!isOpen || statusLoading || isConnecting) return
@@ -1939,9 +1884,15 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         </div>
       )}
 
-      {voiceError && !connectionError && !sessionsError && (
+      {!voiceInput.error && voiceInput.backendState === 'loading' && voiceInput.backendMessage && !connectionError && !sessionsError && (
+        <div className="px-3 py-1.5 text-[10px] text-sky-100 border-b border-sky-500/20 bg-sky-500/10 font-mono">
+          {voiceInput.backendMessage}
+        </div>
+      )}
+
+      {voiceInput.error && !connectionError && !sessionsError && (
         <div className="px-3 py-1.5 text-[10px] text-amber-100 border-b border-amber-500/20 bg-amber-500/10 font-mono">
-          {voiceError}
+          {voiceInput.error}
         </div>
       )}
 
@@ -2114,15 +2065,13 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         )}
         <div className="flex gap-2 items-end">
           <div className="flex flex-col gap-2">
-            <button
+            <AgentVoiceInputButton
               data-no-drag
-              onClick={toggleVoiceInput}
-              disabled={!status.connected || !voiceInputSupported || voiceTranscribing}
+              controller={voiceInput}
+              disabled={!status.connected}
               className="px-2 py-2 rounded-lg text-[10px] font-mono border border-white/10 text-amber-100 disabled:opacity-30 disabled:cursor-not-allowed"
-              title={voiceInputSupported ? 'Record a voice note, then Hermes on Ashburn will transcribe it' : 'Browser microphone capture is unavailable here'}
-            >
-              {voiceTranscribing ? 'transcribing' : voiceListening ? 'stop rec' : 'mic'}
-            </button>
+              titleReady="Record from your device mic and drop the local Whisper transcript into Hermes."
+            />
             <button
               data-no-drag
               onClick={() => {

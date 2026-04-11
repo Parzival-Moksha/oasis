@@ -19,6 +19,9 @@ import {
 
 type RouteContext = { params: Promise<{ id: string }> }
 
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 // ═══════════════════════════════════════════════════════════════════════════
 // GET /api/worlds/[id] — Load a single world's full state
 // ═══════════════════════════════════════════════════════════════════════════
@@ -32,7 +35,11 @@ export async function GET(_request: Request, context: RouteContext) {
     if (!world) {
       return NextResponse.json({ error: 'World not found' }, { status: 404 })
     }
-    return NextResponse.json(world)
+    return NextResponse.json(world, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      },
+    })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[Worlds] GET [id] error:', msg)

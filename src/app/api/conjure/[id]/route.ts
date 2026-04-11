@@ -22,6 +22,18 @@ import { getAssetById, removeAsset, updateAsset } from '@/lib/conjure/registry'
 // ░▒▓ NEVER cache this route — client polls for real-time progress ▓▒░
 export const dynamic = 'force-dynamic'
 
+function parseFiniteVector3(value: unknown): [number, number, number] | null {
+  if (!Array.isArray(value) || value.length < 3) return null
+  const coords = value.slice(0, 3).map(Number)
+  if (!coords.every(Number.isFinite)) return null
+  return [coords[0], coords[1], coords[2]]
+}
+
+function parseFiniteScale(value: unknown): number | null {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // GET /api/conjure/[id] — Observe a single conjuration
 //
@@ -58,8 +70,8 @@ export async function GET(
 // ═══════════════════════════════════════════════════════════════════════════
 // PATCH /api/conjure/[id] — Rename or update user-editable fields
 //
-// Body: { displayName?: string }
-// The gentle art of naming — every creation deserves a proper name.
+// Body: { displayName?: string, position?: [x,y,z], rotation?: [x,y,z], scale?: number }
+// The gentle art of naming and placement — every creation deserves a proper name and a home.
 // ═══════════════════════════════════════════════════════════════════════════
 
 export async function PATCH(
@@ -82,6 +94,18 @@ export async function PATCH(
     const allowedUpdates: Record<string, unknown> = {}
     if (typeof body.displayName === 'string') {
       allowedUpdates.displayName = body.displayName.trim().slice(0, 100)
+    }
+    const position = parseFiniteVector3(body.position)
+    if (position) {
+      allowedUpdates.position = position
+    }
+    const rotation = parseFiniteVector3(body.rotation)
+    if (rotation) {
+      allowedUpdates.rotation = rotation
+    }
+    const scale = parseFiniteScale(body.scale)
+    if (scale !== null) {
+      allowedUpdates.scale = scale
     }
 
     if (Object.keys(allowedUpdates).length === 0) {

@@ -13,16 +13,19 @@
 // NOT stored in world data — per-user, ephemeral, always present.
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useState, useContext } from 'react'
 import { useFrame, useLoader } from '@react-three/fiber'
 import { useKeyboardControls } from '@react-three/drei'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
-import { useInputManager } from '../../lib/input-manager'
+import { useInputManager, consumeMouseLookDelta } from '../../lib/input-manager'
 import { AnimationController } from '../../lib/animation-state-machine'
 import { useAudioManager } from '../../lib/audio-manager'
 import { sprintRef } from '../CameraController'
+import { SettingsContext } from '../scene-lib'
+import { getPlayerSpellCasting, setPlayerAvatarPose, setPlayerSpellCasting, subscribePlayerSpellCasting } from '../../lib/player-avatar-runtime'
+import { SPELL_CAST_ANIMATION_ID, SPELL_CAST_SOUND_URL } from '../../lib/spell-casting'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -40,8 +43,11 @@ interface PlayerAvatarProps {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const MAX_DELTA = 0.05
-const CAMERA_DISTANCE = 5
-const CAMERA_HEIGHT_OFFSET = 1.5 // Look at chest height
+const CAMERA_DISTANCE = 4.2
+const CAMERA_HEIGHT_OFFSET = 1.95
+const CAMERA_SHOULDER_OFFSET = 0.82
+const CAMERA_LOOK_AHEAD = 4
+const CAMERA_LOOK_TARGET_HEIGHT = 2.15
 const MIN_ELEVATION = -1.2 // Near ground level
 const MAX_ELEVATION = 1.5  // Almost directly above
 
@@ -51,7 +57,13 @@ const TPS_BASE_SPEED = 3.0      // Default WASD run speed (bumped 25%)
 const TPS_SPRINT_MULT = 4       // Shift: 4x faster (12.0)
 const TPS_WALK_MULT = 0.25      // Space: 4x slower (0.75)
 
-// Random dance clips for C key
+function normalizeAngle(angle: number): number {
+  while (angle > Math.PI) angle -= Math.PI * 2
+  while (angle < -Math.PI) angle += Math.PI * 2
+  return angle
+}
+
+// Random dance clips for X key
 const DANCE_CLIPS = ['breakdance', 'hip-hop', 'capoeira', 'moonwalk', 'shuffling', 'thriller', 'twist', 'twirl']
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -64,6 +76,10 @@ export function PlayerAvatar({
   moveSpeed = 6,
   mouseSensitivity = 1,
 }: PlayerAvatarProps) {
+  const { settings } = useContext(SettingsContext)
+  const inputState = useInputManager(s => s.inputState)
+  const pointerLocked = useInputManager(s => s.pointerLocked)
+  const isThirdPersonActive = inputState === 'third-person'
   const groupRef = useRef<THREE.Group>(null)
   const vrmRef = useRef<VRM | null>(null)
   const [vrm, setVrm] = useState<VRM | null>(null)
@@ -71,6 +87,7 @@ export function PlayerAvatar({
   // ── Camera orbit state (third-person) ──────────────────────────────
   const cameraAzimuth = useRef(Math.PI) // Start behind avatar (facing +Z)
   const cameraElevation = useRef(0.3)   // Slightly above horizontal
+  const wasThirdPersonActiveRef = useRef(false)
 
   // ── Movement state ─────────────────────────────────────────────────
   const positionRef = useRef(new THREE.Vector3(0, 0, 3))
@@ -81,18 +98,54 @@ export function PlayerAvatar({
   const _camFwd = useRef(new THREE.Vector3())
   const _camRt = useRef(new THREE.Vector3())
   const _moveDir = useRef(new THREE.Vector3())
+  const _cameraOffset = useRef(new THREE.Vector3())
+  const _lookTarget = useRef(new THREE.Vector3())
   const _tempVec = useRef(new THREE.Vector3())
   const _zeroVec = useRef(new THREE.Vector3())
 
   // ── Animation Controller (state machine) ──────────────────────────
   const animControllerRef = useRef<AnimationController | null>(null)
   const footstepTimerRef = useRef(0)
+  const spellAudioRef = useRef<HTMLAudioElement | null>(null)
+  const spellAnimationActiveRef = useRef(false)
+  const [playerSpellCasting, setPlayerSpellCastingState] = useState(() => getPlayerSpellCasting())
 
   // ── IBL one-shot flag ──────────────────────────────────────────────
   const iblAppliedRef = useRef(false)
 
   // ── Keyboard input (from drei KeyboardControls wrapping Canvas) ────
   const [, getKeys] = useKeyboardControls()
+
+  useEffect(() => {
+    return subscribePlayerSpellCasting(() => {
+      setPlayerSpellCastingState(getPlayerSpellCasting())
+    })
+  }, [])
+
+  useEffect(() => {
+    const audio = new Audio(SPELL_CAST_SOUND_URL)
+    audio.loop = true
+    audio.preload = 'auto'
+    spellAudioRef.current = audio
+    return () => {
+      audio.pause()
+      audio.src = ''
+      spellAudioRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    const audio = spellAudioRef.current
+    if (!audio) return
+    if (playerSpellCasting) {
+      void audio.play().catch(() => {})
+      return
+    }
+    audio.pause()
+    try {
+      audio.currentTime = 0
+    } catch {}
+  }, [playerSpellCasting])
 
   // ═══════════════════════════════════════════════════════════════════
   // VRM LOADING — same pipeline as VRMCatalogRenderer
@@ -164,36 +217,20 @@ export function PlayerAvatar({
     return () => { controller.dispose(); animControllerRef.current = null }
   }, [vrm])
 
+  useEffect(() => {
+    return () => {
+      setPlayerAvatarPose(null)
+    }
+  }, [])
+
   // ═══════════════════════════════════════════════════════════════════
   // POINTER LOCK — managed by InputManager
   // Click canvas → InputManager.requestPointerLock() (checks state)
   // ═══════════════════════════════════════════════════════════════════
 
-  useEffect(() => {
-    if (controlMode !== 'third-person') return
-    const canvas = document.querySelector('#uploader-canvas') as HTMLCanvasElement
-    if (!canvas) return
-    const onClick = () => useInputManager.getState().requestPointerLock()
-    canvas.addEventListener('click', onClick)
-    return () => canvas.removeEventListener('click', onClick)
-  }, [controlMode])
-
   // ═══════════════════════════════════════════════════════════════════
   // MOUSE LOOK — raw mousemove for camera azimuth/elevation
   // ═══════════════════════════════════════════════════════════════════
-
-  useEffect(() => {
-    const onMouseMove = (e: MouseEvent) => {
-      if (!useInputManager.getState().pointerLocked) return
-      if (controlMode !== 'third-person') return
-      const sens = mouseSensitivity * 0.003
-      cameraAzimuth.current -= e.movementX * sens
-      cameraElevation.current += e.movementY * sens
-      cameraElevation.current = Math.max(MIN_ELEVATION, Math.min(MAX_ELEVATION, cameraElevation.current))
-    }
-    document.addEventListener('mousemove', onMouseMove)
-    return () => document.removeEventListener('mousemove', onMouseMove)
-  }, [controlMode, mouseSensitivity])
 
   // ═══════════════════════════════════════════════════════════════════
   // THE FRAME LOOP — movement, camera, animation, VRM update
@@ -248,6 +285,31 @@ export function PlayerAvatar({
     animControllerRef.current?.update(delta)
     v.update(delta)
 
+    if (isThirdPersonActive && !wasThirdPersonActiveRef.current) {
+      const entryOffset = _tempVec.current.copy(state.camera.position).sub(positionRef.current)
+      const horizontalDistance = Math.hypot(entryOffset.x, entryOffset.z)
+      if (horizontalDistance > 0.001 || Math.abs(entryOffset.y) > 0.001) {
+        cameraAzimuth.current = normalizeAngle(Math.atan2(entryOffset.x, entryOffset.z))
+        cameraElevation.current = Math.max(
+          MIN_ELEVATION,
+          Math.min(MAX_ELEVATION, Math.atan2(entryOffset.y - CAMERA_HEIGHT_OFFSET, Math.max(horizontalDistance, 0.0001)))
+        )
+      }
+    }
+    wasThirdPersonActiveRef.current = isThirdPersonActive
+
+    if (isThirdPersonActive && pointerLocked) {
+      const mouseDelta = consumeMouseLookDelta()
+      if (mouseDelta.x !== 0 || mouseDelta.y !== 0) {
+        const sens = mouseSensitivity * 0.003
+        cameraAzimuth.current = normalizeAngle(cameraAzimuth.current - mouseDelta.x * sens)
+        cameraElevation.current = Math.max(
+          MIN_ELEVATION,
+          Math.min(MAX_ELEVATION, cameraElevation.current + mouseDelta.y * sens)
+        )
+      }
+    }
+
     // ── Blink + subtle smile ─────────────────────────────────────
     const t = state.clock.elapsedTime
     const expr = v.expressionManager
@@ -260,12 +322,12 @@ export function PlayerAvatar({
 
     // ── Third-person movement + camera ───────────────────────────
     // Zero velocity when not in TPS (prevents stale run animation on view switch)
-    if (controlMode !== 'third-person') {
+    if (!isThirdPersonActive) {
       velocityRef.current.set(0, 0, 0)
       isMovingRef.current = false
     }
 
-    if (controlMode === 'third-person') {
+    if (isThirdPersonActive) {
       const keys = getKeys() as Record<string, boolean>
       const { forward, backward, left, right, sprint, slow } = keys
 
@@ -291,6 +353,9 @@ export function PlayerAvatar({
       if (left) moveDir.sub(camRight)
 
       const wantsToMove = moveDir.lengthSq() > 0.001
+      if (wantsToMove && getPlayerSpellCasting()) {
+        setPlayerSpellCasting(false)
+      }
       if (wantsToMove) {
         moveDir.normalize()
         const targetVelocity = _tempVec.current.copy(moveDir).multiplyScalar(currentSpeed)
@@ -315,14 +380,16 @@ export function PlayerAvatar({
       // ── Position camera behind avatar using spherical coords ───
       const el = cameraElevation.current
       const dist = CAMERA_DISTANCE
-      const offset = _tempVec.current.set(
+      const offset = _cameraOffset.current.set(
         Math.sin(az) * Math.cos(el) * dist,
         Math.sin(el) * dist + CAMERA_HEIGHT_OFFSET,
         Math.cos(az) * Math.cos(el) * dist,
       )
+      offset.addScaledVector(camRight, CAMERA_SHOULDER_OFFSET)
 
-      const lookTarget = _camFwd.current.copy(positionRef.current)
-      lookTarget.y += CAMERA_HEIGHT_OFFSET
+      const lookTarget = _lookTarget.current.copy(positionRef.current)
+      lookTarget.addScaledVector(camForward, CAMERA_LOOK_AHEAD)
+      lookTarget.y += CAMERA_LOOK_TARGET_HEIGHT
 
       state.camera.position.copy(positionRef.current).add(offset)
       state.camera.lookAt(lookTarget)
@@ -331,7 +398,7 @@ export function PlayerAvatar({
       const si = Math.max(0, sprintRef.current.intensity)
       const cam = state.camera as THREE.PerspectiveCamera
       if (cam.isPerspectiveCamera) {
-        const baseFov = 60 // TODO: read from settings
+        const baseFov = settings.fov
         const targetFov = baseFov + si * 15  // sprint widens FOV
         cam.fov += (targetFov - cam.fov) * (1 - Math.exp(-3 * delta))
         cam.updateProjectionMatrix()
@@ -349,16 +416,37 @@ export function PlayerAvatar({
     // ── Sync group transform to position ref ─────────────────────
     group.position.copy(positionRef.current)
     group.rotation.y = facingAngle.current
+    setPlayerAvatarPose({
+      position: [positionRef.current.x, positionRef.current.y, positionRef.current.z],
+      yaw: facingAngle.current,
+      forward: [Math.sin(facingAngle.current), 0, Math.cos(facingAngle.current)],
+    })
 
     // ── Animation state machine — auto-transitions based on velocity ──
     if (animControllerRef.current) {
       const speed = velocityRef.current.length()
       animControllerRef.current.updateFromVelocity(speed)
 
-      // ── C key = random dance ──
-      if (controlMode === 'third-person') {
+      if (playerSpellCasting) {
+        if (!spellAnimationActiveRef.current) {
+          spellAnimationActiveRef.current = true
+          animControllerRef.current.preloadClip(SPELL_CAST_ANIMATION_ID).then(ok => {
+            if (ok && getPlayerSpellCasting()) {
+              animControllerRef.current?.transitionTo('custom', SPELL_CAST_ANIMATION_ID)
+            }
+          })
+        }
+      } else if (spellAnimationActiveRef.current) {
+        spellAnimationActiveRef.current = false
+        if (speed < 0.05) {
+          animControllerRef.current.transitionTo('idle')
+        }
+      }
+
+      // ── X key = random dance ──
+      if (isThirdPersonActive) {
         const { dance } = getKeys() as Record<string, boolean>
-        if (dance && animControllerRef.current.state !== 'custom') {
+        if (dance && !playerSpellCasting && animControllerRef.current.state !== 'custom') {
           const randomDance = DANCE_CLIPS[Math.floor(Math.random() * DANCE_CLIPS.length)]
           animControllerRef.current.preloadClip(randomDance).then(ok => {
             if (ok) animControllerRef.current?.transitionTo('custom', randomDance)

@@ -61,14 +61,16 @@ export function deriveWindowAvatarScale(
   return Math.max(1, worldHeight / 1.7)
 }
 
-export function deriveHermesAvatarSpawn(
+export function deriveStandaloneAgentAvatarSpawn(
   cameraSnapshot: CameraSnapshotLike | null | undefined,
+  spawnDistance: number = DEFAULT_HERMES_SPAWN_DISTANCE,
+  scale: number = DEFAULT_HERMES_AVATAR_SCALE,
 ): { position: [number, number, number]; rotation: [number, number, number]; scale: number } {
   if (!cameraSnapshot) {
     return {
-      position: [0, DEFAULT_GROUND_Y, DEFAULT_HERMES_SPAWN_DISTANCE],
+      position: [0, DEFAULT_GROUND_Y, spawnDistance],
       rotation: [0, Math.PI, 0],
-      scale: DEFAULT_HERMES_AVATAR_SCALE,
+      scale,
     }
   }
 
@@ -78,11 +80,17 @@ export function deriveHermesAvatarSpawn(
 
   return {
     position: [
-      cx + fx * DEFAULT_HERMES_SPAWN_DISTANCE,
+      cx + fx * spawnDistance,
       DEFAULT_GROUND_Y,
-      cz + fz * DEFAULT_HERMES_SPAWN_DISTANCE,
+      cz + fz * spawnDistance,
     ],
     rotation: [0, yaw, 0],
-    scale: DEFAULT_HERMES_AVATAR_SCALE,
+    scale,
   }
+}
+
+export function deriveHermesAvatarSpawn(
+  cameraSnapshot: CameraSnapshotLike | null | undefined,
+): { position: [number, number, number]; rotation: [number, number, number]; scale: number } {
+  return deriveStandaloneAgentAvatarSpawn(cameraSnapshot)
 }
