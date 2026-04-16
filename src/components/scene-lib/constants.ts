@@ -17,6 +17,10 @@ export const defaultSettings: OasisSettings = {
   showOrbitTarget: true,      // Show orbit pivot sphere
   skyBackground: 'night007',
   uiOpacity: 0.3,            // Transparent UI — lets the 3D world breathe
+  agentActionMode: 'embodied',
+  agentWalkSpeed: 3,
+  agentConjureDurationMs: 3000,
+  agentScreenshotSettleMs: 220,
   // FPS COUNTER
   fpsCounterEnabled: true,
   fpsCounterFontSize: 14,

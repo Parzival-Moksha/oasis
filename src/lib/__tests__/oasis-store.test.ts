@@ -289,6 +289,14 @@ describe('OasisStore', () => {
       expect(avatar.linkedWindowId).toBeUndefined()
     })
 
+    it('repairs invalid Hermes avatar URLs to a valid gallery VRM', () => {
+      const avatarId = getState().assignHermesAvatar('/avatars/hermes.glb#vrm')
+      const avatar = getState().placedAgentAvatars[0]
+
+      expect(avatarId).toBe('agent-avatar-hermes')
+      expect(avatar.avatar3dUrl).toBe('/avatars/gallery/CoolAlien.vrm')
+    })
+
     it('setAgentAvatarAudio stores and clears ephemeral playback state', () => {
       getState().setAgentAvatarAudio('agent-avatar-hermes', { url: 'blob:test', state: 'playing' })
       expect(getState().liveAgentAvatarAudio['agent-avatar-hermes']?.url).toBe('blob:test')

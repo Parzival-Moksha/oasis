@@ -7,8 +7,13 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import type { ThreeElements } from '@react-three/fiber'
+import type { OasisDesktopCaptureBridge } from './lib/desktop-capture'
 
 declare global {
+  interface Window {
+    oasisDesktopCapture?: OasisDesktopCaptureBridge
+  }
+
   namespace JSX {
     interface IntrinsicElements extends ThreeElements {}
   }

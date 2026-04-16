@@ -16,6 +16,9 @@
 // Start small, grow as we migrate actions from direct store calls.
 // ═══════════════════════════════════════════════════════════════════════════
 
+import type { AgentWindowRenderMode } from './agent-window-renderers'
+import type { BrowserSurfaceMode } from '../store/oasisStore'
+
 export type OasisCommand =
   // Object management
   | { type: 'SELECT_OBJECT'; payload: { id: string | null } }
@@ -32,7 +35,7 @@ export type OasisCommand =
   | { type: 'UNFOCUS_IMAGE' }
   | { type: 'NEXT_SLIDE' }
   | { type: 'PREV_SLIDE' }
-  | { type: 'ADD_AGENT_WINDOW'; payload: { agentType: string; position: [number, number, number]; sessionId?: string; label?: string } }
+  | { type: 'ADD_AGENT_WINDOW'; payload: { agentType: string; position: [number, number, number]; sessionId?: string; label?: string; renderMode?: AgentWindowRenderMode; width?: number; height?: number; browserSurfaceMode?: BrowserSurfaceMode; surfaceUrl?: string; captureSourceId?: string; captureSourceName?: string; captureFps?: number } }
   | { type: 'REMOVE_AGENT_WINDOW'; payload: { id: string } }
 
   // Camera
@@ -238,11 +241,17 @@ export function registerStoreHandler(): () => void {
           agentType: cmd.payload.agentType,
           position: cmd.payload.position,
           rotation: [0, 0, 0],
-          scale: 1,
-          width: 800,
-          height: 600,
+          scale: 0.2,
+          width: cmd.payload.width || 800,
+          height: cmd.payload.height || 600,
           sessionId: cmd.payload.sessionId,
           label: cmd.payload.label,
+          renderMode: cmd.payload.renderMode,
+          browserSurfaceMode: cmd.payload.browserSurfaceMode,
+          surfaceUrl: cmd.payload.surfaceUrl,
+          captureSourceId: cmd.payload.captureSourceId,
+          captureSourceName: cmd.payload.captureSourceName,
+          captureFps: cmd.payload.captureFps,
         })
         break
       case 'REMOVE_AGENT_WINDOW':

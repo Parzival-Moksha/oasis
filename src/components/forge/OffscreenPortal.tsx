@@ -14,10 +14,11 @@ interface OffscreenPortalProps {
   width: number
   height: number
   agentType?: string
+  captureMode?: 'snapdom' | 'foreign-object'
   children: React.ReactNode
 }
 
-export function OffscreenPortal({ windowId, width, height, agentType, children }: OffscreenPortalProps) {
+export function OffscreenPortal({ windowId, width, height, agentType, captureMode, children }: OffscreenPortalProps) {
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
   const mountedRef = useRef(false)
   const initialDimsRef = useRef<{ w: number; h: number } | null>(null)
@@ -26,7 +27,7 @@ export function OffscreenPortal({ windowId, width, height, agentType, children }
     const mgr = getOffscreenUIManager()
     if (!mgr) return
 
-    const { container: c } = mgr.mount(windowId, width, height, agentType)
+    const { container: c } = mgr.mount(windowId, width, height, agentType, captureMode)
     setContainer(c)
     mountedRef.current = true
     initialDimsRef.current = { w: width, h: height }
@@ -36,7 +37,7 @@ export function OffscreenPortal({ windowId, width, height, agentType, children }
       mgr.unmount(windowId)
       setContainer(null)
     }
-  }, [windowId]) // only remount if windowId changes
+  }, [windowId, agentType, captureMode]) // only remount if the rendering container identity changes
 
   // Handle resize without remounting — skip if dimensions match initial mount
   useEffect(() => {

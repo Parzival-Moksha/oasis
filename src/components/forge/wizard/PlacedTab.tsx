@@ -208,6 +208,8 @@ export function PlacedTab() {
             const isSelected = selectedObjectId === win.id
             const agentIcon = win.agentType === 'anorak' ? '💻' : win.agentType === 'anorak-pro' ? '🔮' : win.agentType === 'merlin' ? '🧙' : win.agentType === 'parzival' ? '🧿' : '⚡'
             const agentColor = win.agentType === 'anorak' ? 'text-sky-400' : win.agentType === 'anorak-pro' ? 'text-teal-400' : win.agentType === 'merlin' ? 'text-purple-400' : win.agentType === 'parzival' ? 'text-violet-400' : 'text-green-400'
+            const agentIconResolved = win.agentType === 'browser' ? 'WWW' : agentIcon
+            const agentColorResolved = win.agentType === 'browser' ? 'text-orange-400' : agentColor
             const pos = transforms[win.id]?.position || win.position
             return (
               <div
@@ -225,7 +227,7 @@ export function PlacedTab() {
                 }}
               >
                 <div>
-                  <span className={`text-[10px] font-mono mr-1 ${agentColor}`}>{agentIcon}</span>
+                  <span className={`text-[10px] font-mono mr-1 ${agentColorResolved}`}>{agentIconResolved}</span>
                   <span className="text-[11px] text-gray-200">{win.label || win.agentType}</span>
                   <span className="text-[9px] text-gray-400 ml-1.5">agent</span>
                 </div>

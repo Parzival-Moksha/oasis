@@ -15,13 +15,18 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { createRequire } from "module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 
-const DB_PATH = process.env.OASIS_DB_PATH || "c:/af_oasis/prisma/data/oasis.db";
+const TOOL_DIR = path.dirname(fileURLToPath(import.meta.url));
+const DEFAULT_DB_PATH = path.resolve(TOOL_DIR, "../prisma/data/oasis.db");
+const DB_PATH = process.env.OASIS_DB_PATH || DEFAULT_DB_PATH;
+const DB_URL = DB_PATH.startsWith("file:") ? DB_PATH : `file:${DB_PATH.replace(/\\/g, "/")}`;
 
 const { PrismaClient } = require("../node_modules/.prisma/client/default.js");
 const prisma = new PrismaClient({
-  datasources: { db: { url: `file:${DB_PATH}` } },
+  datasources: { db: { url: DB_URL } },
 });
 
 // WAL mode for concurrent access

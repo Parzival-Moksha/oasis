@@ -51,6 +51,7 @@ import {
   createLipSyncController,
   getLipSync,
   registerLipSync,
+  resumeLipSyncContext,
   unregisterLipSync,
 } from '../lip-sync'
 
@@ -63,6 +64,7 @@ function attachController() {
 
 beforeEach(() => {
   analyserFrames.length = 0
+  mockAudioCtx.state = 'running'
   mockAudioCtx.createAnalyser.mockClear()
   mockAudioCtx.createMediaElementSource.mockClear()
   mockAudioCtx.resume.mockClear()
@@ -184,5 +186,16 @@ describe('registry', () => {
     expect(getLipSync('test-obj-1')).toBe(ctrl2)
     unregisterLipSync('test-obj-1', ctrl2)
     expect(getLipSync('test-obj-1')).toBeNull()
+  })
+})
+
+describe('resumeLipSyncContext', () => {
+  it('resumes a suspended shared audio context', async () => {
+    mockAudioCtx.state = 'suspended'
+
+    const ctx = await resumeLipSyncContext()
+
+    expect(ctx).toBe(mockAudioCtx)
+    expect(mockAudioCtx.resume).toHaveBeenCalledTimes(1)
   })
 })

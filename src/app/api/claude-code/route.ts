@@ -25,6 +25,14 @@ import { NextRequest } from 'next/server'
 import { spawn } from 'child_process'
 import path from 'path'
 import fs from 'fs'
+import {
+  normalizeCustomModules,
+  normalizeLobeModules,
+  normalizeModuleValues,
+  normalizeTopMissionCount,
+  renderContextModuleSections,
+  resolveContextModulesForLobe,
+} from '@/lib/anorak-context-modules'
 import { buildClaudeCliEnv } from '@/lib/claude-cli-env'
 
 const ADMIN_USER_ID = process.env.ADMIN_USER_ID || ''
@@ -122,6 +130,31 @@ Use media tools when the conversation benefits from visuals, audio, or video. Us
 // FORMAT TOOL EVENTS
 // ═══════════════════════════════════════════════════════════════════════════
 
+function buildAnorakProConversationPrompt(
+  prompt: string,
+  contextSections: string,
+  options?: { resume?: boolean },
+): string {
+  const resumeLine = options?.resume
+    ? 'This is a resumed session. Refresh yourself with the live context below before answering.'
+    : 'This is a fresh direct conversation. Start from the live context below.'
+
+  return `## Direct Conversation With carbondev
+
+You are in the Anorak Pro Stream tab.
+Respond as Anorak Pro, not as Claude Code or a generic CLI agent.
+Stay in Conversational Mode: mentor, journalkeeper, orchestrator, mission creator, accountability partner.
+Default stance: warm, sharp, grounded, and increasingly cofounder-like.
+Learn the Oasis by following carbondev closely and capture durable patterns in tools/anorak-memory.md when they will help future check-ins.
+Use the context modules below as real working context, not decoration.
+You can still make trivial BUILDER-mode fixes yourself when it helps.
+
+${resumeLine}
+
+${contextSections ? `${contextSections}\n\n` : ''}## carbondev
+${prompt}`
+}
+
 function formatToolMsg(toolName: string, toolInput: Record<string, unknown>): string {
   if (toolName === 'Read' && toolInput.file_path) return `Read: ${toolInput.file_path}`
   if (toolName === 'Edit' && toolInput.file_path) return `Edit: ${toolInput.file_path}`
@@ -167,7 +200,16 @@ export async function POST(request: NextRequest) {
   // ── Local mode: always admin ──────────────────────────────
 
   // ── PARSE REQUEST ─────────────────────────────────────────
-  let body: { prompt: string; sessionId?: string; model?: string }
+  let body: {
+    prompt: string
+    sessionId?: string
+    model?: string
+    agent?: 'anorak-pro'
+    customModules?: unknown
+    lobeModules?: unknown
+    topMissionCount?: unknown
+    moduleValues?: unknown
+  }
   try {
     body = await request.json()
   } catch {
@@ -185,19 +227,24 @@ export async function POST(request: NextRequest) {
 
   const agentModel = model || 'opus'
   const isResume = !!sessionId
+  const selectedAgent = body.agent === 'anorak-pro' ? 'anorak-pro' : null
 
-  console.log(`[ClaudeCode] ${isResume ? 'Resuming' : 'New'} session (${agentModel}): "${prompt.substring(0, 80)}"`)
+  console.log(`[ClaudeCode] ${isResume ? 'Resuming' : 'New'} ${selectedAgent || 'default'} session (${agentModel}): "${prompt.substring(0, 80)}"`)
 
   // ── BUILD CLI ARGS ────────────────────────────────────────
   const claudePath = process.platform === 'win32' ? 'claude.cmd' : 'claude'
 
   // Ensure MCP config file exists for mission-mcp (media + mission tools)
+  // Agent-mode invocations rely on the repo's .mcp.json for the full tool surface.
   let mcpConfigPath: string | null = null
-  try { mcpConfigPath = ensureMcpConfig() } catch (e) {
-    console.warn(`[ClaudeCode] Failed to write MCP config: ${e}`)
+  if (!selectedAgent) {
+    try { mcpConfigPath = ensureMcpConfig() } catch (e) {
+      console.warn(`[ClaudeCode] Failed to write MCP config: ${e}`)
+    }
   }
 
   const args = [
+    ...(selectedAgent ? ['--agent', selectedAgent] : []),
     '--print',
     '--verbose',
     '--model', agentModel,
@@ -212,9 +259,28 @@ export async function POST(request: NextRequest) {
     args.push('--resume', sessionId)
   }
 
-  const fullPrompt = isResume
+  let fullPrompt = isResume
     ? prompt.trim()
     : `${buildSystemPreamble()}\n\n## ADMIN'S REQUEST\n${prompt.trim()}`
+
+  if (selectedAgent) {
+    const customModules = normalizeCustomModules(body.customModules)
+    const lobeModules = normalizeLobeModules(body.lobeModules, customModules)
+    const moduleValues = normalizeModuleValues(body.moduleValues)
+    const topMissionCount = normalizeTopMissionCount(body.topMissionCount)
+    const contextModules = await resolveContextModulesForLobe({
+      lobe: 'anorak-pro',
+      customModules,
+      lobeModules,
+      topMissionCount,
+      moduleValues,
+    })
+    fullPrompt = buildAnorakProConversationPrompt(
+      prompt.trim(),
+      renderContextModuleSections(contextModules),
+      { resume: isResume },
+    )
+  }
 
   // ── SSE STREAM ────────────────────────────────────────────
   const encoder = new TextEncoder()

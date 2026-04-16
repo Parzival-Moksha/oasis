@@ -197,7 +197,14 @@ async function generateVoiceRecap(
       })
       if (voiceRes.ok) {
         const voiceData = await voiceRes.json() as { url?: string }
-        if (voiceData.url) send('text', { content: `\n\n${voiceData.url}\n`, lobe: 'anorak-pro' })
+        if (voiceData.url) {
+          send('media', {
+            mediaType: 'audio',
+            url: voiceData.url,
+            prompt: 'Anorak Pro recap voice note',
+            lobe: 'anorak-pro',
+          })
+        }
       }
     } catch { /* voice is best-effort — never blocks pipeline */ }
   }
@@ -253,7 +260,7 @@ describe('voice API call — fetch, payload, fire-and-forget', () => {
     expect(body.text).toBe('X'.repeat(5000))
   })
 
-  it('emits voice URL as text event with lobe: anorak-pro', async () => {
+  it('emits voice recap as an audio media event with lobe: anorak-pro', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       json: async () => ({ url: '/generated-voices/mission42-recap.mp3' }),
@@ -262,8 +269,10 @@ describe('voice API call — fetch, payload, fire-and-forget', () => {
     await generateVoiceRecap('Voice recap for mission 42.', send, mockFetch)
 
     expect(send).toHaveBeenCalledOnce()
-    expect(send).toHaveBeenCalledWith('text', {
-      content: '\n\n/generated-voices/mission42-recap.mp3\n',
+    expect(send).toHaveBeenCalledWith('media', {
+      mediaType: 'audio',
+      url: '/generated-voices/mission42-recap.mp3',
+      prompt: 'Anorak Pro recap voice note',
       lobe: 'anorak-pro',
     })
   })
@@ -352,8 +361,8 @@ describe('voice API call — fetch, payload, fire-and-forget', () => {
 // 5. Voice URL format in text event — embedded with newlines
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('voice URL text event format', () => {
-  it('URL is wrapped with \\n\\n prefix and \\n suffix', async () => {
+describe('voice recap media event format', () => {
+  it('emits audio media payload with the generated voice URL', async () => {
     const send = vi.fn<(type: string, data: Record<string, unknown>) => void>()
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -362,15 +371,15 @@ describe('voice URL text event format', () => {
 
     await generateVoiceRecap('Enough text to trigger voice.', send, mockFetch)
 
-    const emittedContent = send.mock.calls[0][1].content as string
-    expect(emittedContent.startsWith('\n\n')).toBe(true)
-    expect(emittedContent.endsWith('\n')).toBe(true)
-    // URL is between the newlines
-    const url = emittedContent.trim()
-    expect(url).toBe('/generated-voices/abc123.mp3')
+    expect(send).toHaveBeenCalledWith('media', {
+      mediaType: 'audio',
+      url: '/generated-voices/abc123.mp3',
+      prompt: 'Anorak Pro recap voice note',
+      lobe: 'anorak-pro',
+    })
   })
 
-  it('URL with query params is preserved', async () => {
+  it('preserves voice URLs with query params', async () => {
     const send = vi.fn<(type: string, data: Record<string, unknown>) => void>()
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -379,8 +388,10 @@ describe('voice URL text event format', () => {
 
     await generateVoiceRecap('Enough text to trigger voice gen.', send, mockFetch)
 
-    const emittedContent = send.mock.calls[0][1].content as string
-    expect(emittedContent).toContain('/generated-voices/recap.mp3?v=2&t=1234')
+    expect(send).toHaveBeenCalledWith('media', expect.objectContaining({
+      mediaType: 'audio',
+      url: '/generated-voices/recap.mp3?v=2&t=1234',
+    }))
   })
 })
 
@@ -553,7 +564,9 @@ describe('execute/route.ts — voice recap block structure', () => {
     expect(routeSrc).toContain('/api/media/voice')
   })
 
-  it('emits voice URL with lobe: anorak-pro', () => {
+  it('emits a media event with lobe: anorak-pro', () => {
+    expect(routeSrc).toContain("send('media'")
+    expect(routeSrc).toContain("mediaType: 'audio'")
     expect(routeSrc).toContain("lobe: 'anorak-pro'")
   })
 
@@ -635,8 +648,10 @@ describe('end-to-end voice recap flow', () => {
 
     await generateVoiceRecap(text, voiceSend, mockFetch)
 
-    expect(voiceSend).toHaveBeenCalledWith('text', {
-      content: '\n\n/generated-voices/mission42.mp3\n',
+    expect(voiceSend).toHaveBeenCalledWith('media', {
+      mediaType: 'audio',
+      url: '/generated-voices/mission42.mp3',
+      prompt: 'Anorak Pro recap voice note',
       lobe: 'anorak-pro',
     })
 

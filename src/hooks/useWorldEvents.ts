@@ -2,11 +2,13 @@
 
 import { useEffect, useRef } from 'react'
 import type { CatalogPlacement, ConjuredAsset, CraftedScene, ObjectBehavior, WorldLight } from '@/lib/conjure/types'
-import { cancelPendingSave, getActiveWorldId } from '@/lib/forge/world-persistence'
+import { cancelPendingSave, getActiveWorldId, getWorldRegistry } from '@/lib/forge/world-persistence'
 import type { WorldEvent } from '@/lib/mcp/world-events'
 import { useOasisStore, type AgentAvatar } from '@/store/oasisStore'
+import { readEmbodiedAgentSettingsFromStorage, type EmbodiedAgentSettings } from '@/lib/agent-action-settings'
 import { SPELL_CAST_DURATION_MS, SPELL_CAST_SOUND_URL, withSpellCastAnimation, withoutSpellCastAnimation } from '@/lib/spell-casting'
 import { getLiveObjectTransform } from '@/lib/live-object-transforms'
+import { resolveAgentAvatarUrl } from '@/lib/agent-avatar-catalog'
 
 const RECONNECT_DELAY_MS = 3000
 const REMOTE_RELOAD_POLL_MS = 60
@@ -42,11 +44,10 @@ function readEventPosition(data?: Record<string, unknown>): [number, number, num
   return [x, y, z]
 }
 
-function readTransform(value: unknown): { position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number } | null {
+function readTransform(value: unknown): { position?: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number } | null {
   const record = asRecord(value)
   if (!record) return null
   const position = readEventPosition(record)
-  if (!position) return null
   const rotation = Array.isArray(record.rotation) && record.rotation.length >= 3
     ? [Number(record.rotation[0]), Number(record.rotation[1]), Number(record.rotation[2])] as [number, number, number]
     : undefined
@@ -55,8 +56,10 @@ function readTransform(value: unknown): { position: [number, number, number]; ro
     : typeof record.scale === 'number'
       ? record.scale
       : undefined
+  // At least one field must be present
+  if (!position && !rotation && scale === undefined) return null
   return {
-    position,
+    ...(position ? { position } : {}),
     ...(rotation && rotation.every(Number.isFinite) ? { rotation } : {}),
     ...(scale !== undefined ? { scale } : {}),
   }
@@ -162,6 +165,7 @@ function readAgentAvatar(value: unknown): AgentAvatar | null {
   const record = asRecord(value)
   const position = readEventPosition(record || undefined)
   if (!record || typeof record.id !== 'string' || typeof record.agentType !== 'string' || typeof record.avatar3dUrl !== 'string' || !position) return null
+  const avatarResolution = resolveAgentAvatarUrl(record.avatar3dUrl)
   const rotation = Array.isArray(record.rotation) && record.rotation.length >= 3
     ? [Number(record.rotation[0]), Number(record.rotation[1]), Number(record.rotation[2])] as [number, number, number]
     : [0, 0, 0] as [number, number, number]
@@ -169,7 +173,7 @@ function readAgentAvatar(value: unknown): AgentAvatar | null {
   return {
     id: record.id,
     agentType: record.agentType as AgentAvatar['agentType'],
-    avatar3dUrl: record.avatar3dUrl,
+    avatar3dUrl: avatarResolution.url,
     position,
     rotation: rotation.every(Number.isFinite) ? rotation : [0, 0, 0],
     scale: Number.isFinite(scale) ? scale : 1,
@@ -341,7 +345,8 @@ export function useWorldEvents() {
           return true
         }
 
-        case 'scene_crafted': {
+        case 'scene_crafted':
+        case 'scene_craft_progress': {
           const scene = readCraftedScene(data.scene)
           if (!scene) return false
           const transform = readTransform(data.transform)
@@ -531,13 +536,36 @@ export function useWorldEvents() {
         case 'agent_avatar_set': {
           const avatar = readAgentAvatar(data.avatar)
           if (!avatar) return false
+          const isSharedAvatarType = avatar.agentType === 'anorak-pro' || avatar.agentType === 'merlin' || avatar.agentType === 'hermes'
           useOasisStore.setState(state => ({
             placedAgentAvatars: [
-              ...state.placedAgentAvatars.filter(entry => entry.id !== avatar.id),
+              ...state.placedAgentAvatars.filter(entry =>
+                entry.id !== avatar.id && (!isSharedAvatarType || entry.agentType !== avatar.agentType),
+              ),
               cloneValue(avatar),
             ],
           }))
           actorPositionRef.current.set(avatar.id, avatar.position)
+
+          // Auto-spawn 3D window for agent avatars that don't have one yet
+          if (isSharedAvatarType) {
+            const store = useOasisStore.getState()
+            const hasWindow = store.placedAgentWindows.some(w => w.agentType === avatar.agentType)
+            if (!hasWindow) {
+              const windowId = `agent-${avatar.agentType}-${Date.now()}`
+              store.addAgentWindow({
+                id: windowId,
+                agentType: avatar.agentType as import('@/store/oasisStore').AgentWindowType,
+                position: avatar.position,
+                rotation: [0, 0, 0],
+                scale: 0.2,
+                width: 800,
+                height: 600,
+                linkedAvatarId: avatar.id,
+                anchorMode: 'next-to',
+              })
+            }
+          }
           return true
         }
 
@@ -557,7 +585,6 @@ export function useWorldEvents() {
               },
             }
           })
-          actorPositionRef.current.set(avatarId, target)
           return true
         }
 
@@ -568,6 +595,11 @@ export function useWorldEvents() {
           useOasisStore.setState(state => ({
             behaviors: { ...state.behaviors, [avatarId]: cloneValue(behavior) },
           }))
+          return true
+        }
+
+        case 'world_switch': {
+          // Handled in processRemoteEvent (needs async). Return true to prevent needsRemoteReload.
           return true
         }
 
@@ -633,7 +665,7 @@ export function useWorldEvents() {
       if (scene) return scene.position
 
       const transform = readTransform(data.transform)
-      if (transform) return transform.position
+      if (transform?.position) return transform.position
 
       const light = readWorldLight(data.light)
       if (light) return light.position
@@ -668,7 +700,11 @@ export function useWorldEvents() {
       return readKnownObjectPosition(actorAvatarId)
     }
 
-    const maybeWalkActorIntoPlace = async (event: RemoteWorldEvent, targetPosition: [number, number, number] | null) => {
+    const maybeWalkActorIntoPlace = async (
+      event: RemoteWorldEvent,
+      targetPosition: [number, number, number] | null,
+      agentSettings: EmbodiedAgentSettings,
+    ) => {
       if (!targetPosition) return
       const actorAvatarId = resolveActorAvatarId(event)
       if (!actorAvatarId) return
@@ -684,7 +720,7 @@ export function useWorldEvents() {
         actorPositionRef.current.set(actorAvatarId, currentPosition)
         return
       }
-      const moveSpeed = Number(store.behaviors[actorAvatarId]?.moveSpeed) || DEFAULT_AVATAR_MOVE_SPEED
+      const moveSpeed = Number(store.behaviors[actorAvatarId]?.moveSpeed) || agentSettings.agentWalkSpeed || DEFAULT_AVATAR_MOVE_SPEED
 
       useOasisStore.setState(state => {
         const existing = state.behaviors[actorAvatarId] || { visible: true, movement: { type: 'static' as const } }
@@ -705,9 +741,13 @@ export function useWorldEvents() {
       actorPositionRef.current.set(actorAvatarId, arrivedPosition || walkTarget)
     }
 
-    const playManifestSequence = async (event: RemoteWorldEvent, manifestPosition: [number, number, number] | null) => {
+    const playManifestSequence = async (
+      event: RemoteWorldEvent,
+      manifestPosition: [number, number, number] | null,
+      agentSettings: EmbodiedAgentSettings,
+    ) => {
       if (!manifestPosition) return
-      await maybeWalkActorIntoPlace(event, manifestPosition)
+      await maybeWalkActorIntoPlace(event, manifestPosition, agentSettings)
       if (disposedRef.current) return
 
       const actorAvatarId = resolveActorAvatarId(event)
@@ -731,7 +771,7 @@ export function useWorldEvents() {
         })
       }
 
-      await wait(SPELL_CAST_DURATION_MS)
+      await wait(Math.max(0, agentSettings.agentConjureDurationMs || SPELL_CAST_DURATION_MS))
       if (disposedRef.current) return
 
       if (actorAvatarId) {
@@ -753,10 +793,11 @@ export function useWorldEvents() {
     const processRemoteEvent = async (event: RemoteWorldEvent) => {
       if (event.worldId && event.worldId !== getActiveWorldId()) return
 
+      const agentSettings = readEmbodiedAgentSettingsFromStorage()
       const manifestPosition = resolveManifestPosition(event)
-      const shouldManifest = MANIFESTED_EVENT_TYPES.has(event.type) && !!manifestPosition
+      const shouldManifest = agentSettings.agentActionMode === 'embodied' && MANIFESTED_EVENT_TYPES.has(event.type) && !!manifestPosition
       if (shouldManifest) {
-        await playManifestSequence(event, manifestPosition)
+        await playManifestSequence(event, manifestPosition, agentSettings)
         if (disposedRef.current) return
       }
       const applied = applyRemoteWorldEvent(event)
@@ -812,6 +853,21 @@ export function useWorldEvents() {
           if (parsed.type === 'heartbeat' || parsed.type === 'connected') return
 
           const activeWorldId = getActiveWorldId()
+
+          // ═══ world_switch — bypass queue entirely, execute immediately ═══
+          if (parsed.type === 'world_switch') {
+            const targetWorldId = parsed.data?.targetWorldId as string | undefined
+            console.warn(`[WorldEvents] 🌍 world_switch! target=${targetWorldId} current=${activeWorldId}`)
+            if (targetWorldId && targetWorldId !== activeWorldId) {
+              getWorldRegistry().then(registry => {
+                useOasisStore.setState({ worldRegistry: registry })
+                useOasisStore.getState().switchWorld(targetWorldId)
+                console.warn(`[WorldEvents] 🌍 switchWorld() done → ${targetWorldId}`)
+              }).catch(err => console.error('[WorldEvents] world_switch failed:', err))
+            }
+            return
+          }
+
           if (parsed.worldId && parsed.worldId !== activeWorldId) return
 
           console.log(`[WorldEvents] queued ${parsed.type}`)

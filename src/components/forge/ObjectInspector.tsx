@@ -22,6 +22,7 @@ import { formatNumber, formatBytes } from './ModelPreview'
 import { ANIMATION_LIBRARY, ANIM_CATEGORIES, LIB_PREFIX, loadAnimationClip, type AnimCategory } from '../../lib/forge/animation-library'
 import { FRAME_STYLES, getAudioElement } from './WorldObjects'
 import { useUILayer } from '@/lib/input-manager'
+import { AGENT_WINDOW_RENDERERS, getAgentWindowRendererMeta, type AgentWindowRenderMode } from '../../lib/agent-window-renderers'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS — The inspector's visual DNA
@@ -458,8 +459,20 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
   // ─═̷─ Current transform ─═̷─
   const transform = useMemo(() => {
     if (!inspectedObjectId) return { position: [0, 0, 0] as [number, number, number], rotation: [0, 0, 0] as [number, number, number], scale: [1, 1, 1] as [number, number, number] | number }
-    return transforms[inspectedObjectId] || { position: [0, 0, 0] as [number, number, number], rotation: [0, 0, 0] as [number, number, number], scale: 1 }
-  }, [inspectedObjectId, transforms])
+
+    const base = resolved?.data as {
+      position?: [number, number, number]
+      rotation?: [number, number, number]
+      scale?: [number, number, number] | number
+    } | undefined
+    const override = transforms[inspectedObjectId]
+
+    return {
+      position: override?.position || base?.position || ([0, 0, 0] as [number, number, number]),
+      rotation: override?.rotation || base?.rotation || ([0, 0, 0] as [number, number, number]),
+      scale: override?.scale ?? base?.scale ?? 1,
+    }
+  }, [inspectedObjectId, resolved, transforms])
 
   // ─═̷─ Display name (behavior label > resolved name > fallback) ─═̷─
   const displayName = behavior.label || resolved?.name || 'Unknown Object'
@@ -519,15 +532,27 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
   /** ░▒▓ Precise transform editing — update a single axis value ▓▒░ */
   const updateTransformAxis = useCallback((property: 'position' | 'rotation' | 'scale', axis: 0 | 1 | 2, value: number) => {
     if (!inspectedObjectId) return
-    const current = transforms[inspectedObjectId] || { position: [0, 0, 0] as [number, number, number], rotation: [0, 0, 0] as [number, number, number], scale: [1, 1, 1] as [number, number, number] }
-    const pos = [...(current.position || [0, 0, 0])] as [number, number, number]
-    const rot = [...(current.rotation || [0, 0, 0])] as [number, number, number]
-    const scl = typeof current.scale === 'number' ? [current.scale, current.scale, current.scale] as [number, number, number] : [...(current.scale || [1, 1, 1])] as [number, number, number]
+    const base = resolved?.data as {
+      position?: [number, number, number]
+      rotation?: [number, number, number]
+      scale?: [number, number, number] | number
+    } | undefined
+    const current = transforms[inspectedObjectId]
+    const baseScale = base?.scale ?? 1
+    const pos = [...(current?.position || base?.position || [0, 0, 0])] as [number, number, number]
+    const rot = [...(current?.rotation || base?.rotation || [0, 0, 0])] as [number, number, number]
+    const scl = typeof current?.scale === 'number'
+      ? [current.scale, current.scale, current.scale] as [number, number, number]
+      : Array.isArray(current?.scale)
+        ? [...current.scale] as [number, number, number]
+        : typeof baseScale === 'number'
+          ? [baseScale, baseScale, baseScale] as [number, number, number]
+          : [...baseScale] as [number, number, number]
     if (property === 'position') pos[axis] = value
     else if (property === 'rotation') rot[axis] = value
     else scl[axis] = value
     setObjectTransform(inspectedObjectId, { position: pos, rotation: rot, scale: scl })
-  }, [inspectedObjectId, transforms, setObjectTransform])
+  }, [inspectedObjectId, resolved, setObjectTransform, transforms])
 
   /** ░▒▓ Delete object from world ▓▒░ */
   const handleDelete = useCallback(() => {
@@ -587,7 +612,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
   const fmt = (n: number) => n.toFixed(2)
   const rad2deg = (r: number) => (r * 180 / Math.PI).toFixed(1)
 
-  const pos = transform.position
+  const pos = transform.position || [0, 0, 0] as [number, number, number]
   const rot = transform.rotation || [0, 0, 0]
   const scl = transform.scale
   const sclArr: [number, number, number] = typeof scl === 'number' ? [scl, scl, scl] : (scl || [1, 1, 1])
@@ -1397,6 +1422,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
         {/* ░▒▓ AGENT WINDOW INFO — session, model, cost, frame ▓▒░ */}
         {resolved?.type === 'agent' && (() => {
           const agentWin = resolved.data as import('../../store/oasisStore').AgentWindow
+          const rendererMeta = getAgentWindowRendererMeta(agentWin.renderMode)
           return (
             <>
               <SectionHeader>&#128187; Agent Window</SectionHeader>
@@ -1429,40 +1455,102 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                 {/* Dimensions */}
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] text-gray-500 font-mono w-16 shrink-0">size</span>
-                  <span className="text-[9px] text-gray-400 font-mono">{agentWin.width ?? 800} x {agentWin.height ?? 600}px</span>
+                  <div className="grid flex-1 grid-cols-2 gap-1.5">
+                    <input
+                      type="number"
+                      min={320}
+                      max={2560}
+                      step={10}
+                      value={agentWin.width ?? 800}
+                      onChange={e => {
+                        const next = Number(e.target.value)
+                        if (!Number.isFinite(next)) return
+                        updateAgentWindow(inspectedObjectId!, { width: Math.max(320, Math.min(2560, Math.round(next))) })
+                      }}
+                      className="rounded border border-gray-700/30 bg-black/30 px-2 py-1 text-[9px] text-gray-300 font-mono outline-none focus:border-sky-400/30"
+                    />
+                    <input
+                      type="number"
+                      min={240}
+                      max={1600}
+                      step={10}
+                      value={agentWin.height ?? 600}
+                      onChange={e => {
+                        const next = Number(e.target.value)
+                        if (!Number.isFinite(next)) return
+                        updateAgentWindow(inspectedObjectId!, { height: Math.max(240, Math.min(1600, Math.round(next))) })
+                      }}
+                      className="rounded border border-gray-700/30 bg-black/30 px-2 py-1 text-[9px] text-gray-300 font-mono outline-none focus:border-sky-400/30"
+                    />
+                  </div>
                 </div>
 
                 {/* Scale */}
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] text-gray-500 font-mono w-16 shrink-0">scale</span>
-                  <span className="text-[9px] text-gray-400 font-mono">{(agentWin.scale ?? 1).toFixed(2)}</span>
-                </div>
-
-                {/* Per-window opacity (dim to black) */}
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-[9px] text-gray-500 font-mono min-w-[50px]">Opacity</span>
                   <input
-                    type="range" min={0.1} max={1} step={0.05}
-                    value={agentWin.windowOpacity ?? 1}
-                    onChange={e => updateAgentWindow(inspectedObjectId!, { windowOpacity: parseFloat(e.target.value) })}
+                    type="range"
+                    min={0.01}
+                    max={1}
+                    step={0.01}
+                    value={agentWin.scale ?? 1}
+                    onChange={e => updateAgentWindow(inspectedObjectId!, { scale: parseFloat(e.target.value) })}
                     className="flex-1 h-1 appearance-none rounded bg-gray-700 accent-sky-500"
                     style={{ cursor: 'pointer' }}
                   />
-                  <span className="text-[9px] text-gray-500 font-mono w-6 text-right">{((agentWin.windowOpacity ?? 1) * 100).toFixed(0)}%</span>
+                  <span className="text-[9px] text-gray-400 font-mono w-10 text-right">{(agentWin.scale ?? 1).toFixed(2)}</span>
                 </div>
 
-                {/* Per-window blur */}
-                <div className="flex items-center gap-2">
-                  <span className="text-[9px] text-gray-500 font-mono min-w-[50px]">Blur</span>
-                  <input
-                    type="range" min={0} max={20} step={1}
-                    value={agentWin.windowBlur ?? 0}
-                    onChange={e => updateAgentWindow(inspectedObjectId!, { windowBlur: parseFloat(e.target.value) })}
-                    className="flex-1 h-1 appearance-none rounded bg-gray-700 accent-sky-500"
-                    style={{ cursor: 'pointer' }}
-                  />
-                  <span className="text-[9px] text-gray-500 font-mono w-6 text-right">{agentWin.windowBlur ?? 0}px</span>
+                <div className="flex items-start gap-2">
+                  <span className="text-[10px] text-gray-500 font-mono w-16 shrink-0">render</span>
+                  <div className="flex-1">
+                    <div className="text-[9px] text-gray-400 font-mono mb-1">{rendererMeta.label}</div>
+                    <div className="grid grid-cols-3 gap-1">
+                      {AGENT_WINDOW_RENDERERS.map(renderer => {
+                        const isActive = renderer.id === rendererMeta.id
+                        return (
+                          <button
+                            key={renderer.id}
+                            onClick={() => updateAgentWindow(inspectedObjectId!, { renderMode: renderer.id as AgentWindowRenderMode })}
+                            className={`px-1.5 py-1 rounded border text-[8px] font-mono transition-colors ${
+                              isActive
+                                ? 'border-sky-500/40 bg-sky-500/10 text-sky-300'
+                                : 'border-gray-700/30 text-gray-400 hover:border-gray-500/50'
+                            }`}
+                            title={renderer.description}
+                          >
+                            {renderer.shortLabel}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
                 </div>
+
+                {agentWin.agentType === 'browser' && (
+                  <div className="rounded-lg border border-orange-500/10 bg-orange-500/5 p-2 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-gray-500 font-mono w-16 shrink-0">address</span>
+                      <input
+                        key={`browser-url-${agentWin.id}-${agentWin.surfaceUrl ?? ''}`}
+                        defaultValue={agentWin.surfaceUrl ?? ''}
+                        onBlur={e => updateAgentWindow(inspectedObjectId!, { surfaceUrl: e.target.value })}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            e.currentTarget.blur()
+                          }
+                        }}
+                        placeholder="https://example.com"
+                        className="flex-1 rounded border border-gray-700/30 bg-black/30 px-2 py-1 text-[9px] text-gray-300 font-mono outline-none focus:border-orange-400/30"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Opacity/Blur sliders removed (oasisspec3): they made windows go black,
+                    blur doesn't compose through the 3D <Html> portal. Use the per-agent
+                    in-window opacity/blur settings inside Anorak Pro / Hermes panels. */}
               </div>
 
               {/* Frame style selector */}
@@ -1509,14 +1597,14 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                     <input
                       type="range"
                       min={0.2}
-                      max={3}
-                      step={0.1}
+                      max={150}
+                      step={0.2}
                       value={agentWin.frameThickness ?? 1}
                       onChange={e => updateAgentWindow(inspectedObjectId!, { frameThickness: parseFloat(e.target.value) })}
                       className="flex-1 h-1 appearance-none rounded bg-gray-700 accent-sky-500"
                       style={{ cursor: 'pointer' }}
                     />
-                    <span className="text-[9px] text-gray-500 font-mono w-6 text-right">{(agentWin.frameThickness ?? 1).toFixed(1)}</span>
+                    <span className="text-[9px] text-gray-500 font-mono w-12 text-right">{(agentWin.frameThickness ?? 1).toFixed(1)}</span>
                   </div>
                 )}
               </div>

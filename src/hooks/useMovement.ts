@@ -19,6 +19,7 @@ import { useFrame } from '@react-three/fiber'
 import type { Group } from 'three'
 import type { MovementPreset } from '../lib/conjure/types'
 import { useOasisStore } from '../store/oasisStore'
+import { isAvatarLocomotionReady } from '../lib/avatar-locomotion-ready'
 import { clearLiveObjectTransform, setLiveObjectTransform } from '../lib/live-object-transforms'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -86,6 +87,9 @@ export function useMovement(
     // ░▒▓ Object walks toward target, rotates to face direction ▓▒░
     // ═════════════════════════════════════════════════════════════════
     if (moveTarget && objectId) {
+      if (!isAvatarLocomotionReady(objectId)) {
+        return
+      }
       const [tx, ty, tz] = moveTarget
       const speed = moveSpeed || 3
       const dx = tx - group.position.x

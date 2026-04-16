@@ -11,7 +11,7 @@
 'use client'
 
 import React, { Suspense, useRef, useState, useEffect, useCallback, useContext, useMemo } from 'react'
-import { useFrame, useLoader } from '@react-three/fiber'
+import { useFrame, useLoader, useThree } from '@react-three/fiber'
 import { TransformControls, useGLTF, Html } from '@react-three/drei'
 import * as THREE from 'three'
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js'
@@ -19,6 +19,7 @@ import { useOasisStore, type ConjureVfxType, CONJURE_VFX_LIST } from '../../stor
 import { ConjuredObjectSafe } from './ConjuredObject'
 import { CraftedSceneRenderer, PrimitiveGeometry } from './CraftedSceneRenderer'
 import { ConjureVFX } from './ConjureVFX'
+import { MarchOrderVFXRenderer } from './MarchOrderVFX'
 import { PlacementVFXRenderer } from './PlacementVFX'
 import { useMovement } from '../../hooks/useMovement'
 // drei useAnimations removed — manual AnimationMixer for proper SkeletonUtils support
@@ -27,14 +28,23 @@ import type { MovementPreset, AnimationConfig } from '../../lib/conjure/types'
 import { extractModelStats } from './ModelPreview'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
-import { loadAnimationClip, loadClipFromGLTF, retargetClipForVRM, retargetUALClipForVRM, isUALAnimation, LIB_PREFIX } from '../../lib/forge/animation-library'
+import { loadAnimationClip, loadClipFromGLTF, retargetClipForVRM, retargetUALClipForVRM, isUALAnimation, LIB_PREFIX, getCachedClip } from '../../lib/forge/animation-library'
 import { MindcraftWorld } from './MindcraftWorld'
 import { AgentWindow3D } from './AgentWindow3D'
 import type { PlacementPending } from '../../store/oasisStore'
-import { useInputManager } from '../../lib/input-manager'
+import { consumeRecentPointerLockRightClick, useInputManager } from '../../lib/input-manager'
 import { dispatch } from '../../lib/event-bus'
 import { createLipSyncController, registerLipSync, unregisterLipSync, getLipSync } from '../../lib/lip-sync'
-import { deriveWindowAvatarAnchor, deriveWindowAvatarScale, scalarFromTransformScale } from '../../lib/agent-avatar-utils'
+import { clearAvatarLocomotionReady, setAvatarLocomotionReady } from '../../lib/avatar-locomotion-ready'
+import { getLiveObjectTransform } from '../../lib/live-object-transforms'
+import {
+  deriveAvatarAnchoredWindowPlacement,
+  deriveWindowAvatarAnchor,
+  deriveWindowAvatarScale,
+  scalarFromTransformScale,
+} from '../../lib/agent-avatar-utils'
+import { resolveAgentAvatarUrl } from '../../lib/agent-avatar-catalog'
+import { canReceiveMoveOrder, resolveMoveOrderObjectIds } from '../../lib/march-order'
 
 // ░▒▓ CLIPBOARD — module-level, survives across renders, no reactivity needed ▓▒░
 let _clipboard: PlacementPending | null = null
@@ -116,7 +126,7 @@ function PlaceholderBox() {
 // Uses 'dragging-changed' event (the reliable way to coordinate with OrbitControls)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function SelectableWrapper({ id, children, selected, onSelect, transformMode, onTransformChange, initialPosition, initialRotation, initialScale }: {
+export function SelectableWrapper({ id, children, selected, onSelect, transformMode, onTransformChange, initialPosition, initialRotation, initialScale, inspectOn = 'click', allowTransform = true, liveTransformResolver }: {
   id: string
   children: React.ReactNode
   selected: boolean
@@ -126,6 +136,9 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
   initialPosition?: [number, number, number]
   initialRotation?: [number, number, number]
   initialScale?: [number, number, number] | number
+  inspectOn?: 'click' | 'double-click'
+  allowTransform?: boolean
+  liveTransformResolver?: (() => { position?: [number, number, number]; rotation?: [number, number, number] } | null) | undefined
 }) {
   const groupRef = useRef<THREE.Group>(null)
   const { setIsDragging } = useContext(DragContext)
@@ -152,6 +165,14 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
       }
     }
   }, [initialPosition, initialRotation, initialScale])
+
+  useFrame(() => {
+    if (!groupRef.current || !liveTransformResolver) return
+    const next = liveTransformResolver()
+    if (!next) return
+    if (next.position) groupRef.current.position.set(...next.position)
+    if (next.rotation) groupRef.current.rotation.set(...next.rotation)
+  })
 
   // Callback ref for TransformControls — attaches dragging-changed listener
   // reliably, regardless of conditional mount timing
@@ -184,12 +205,24 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
 
   // ─══ॐ══─ Respect visibility toggle from ObjectInspector ─══ॐ══─
   const isVisible = behavior?.visible !== false
+  const handleSelect = useCallback((event: { stopPropagation: () => void }, inspectNow: boolean) => {
+    if (isReadOnly || isRp1) return
+    event.stopPropagation()
+    if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur()
+    }
+    onSelect(id)
+    if (inspectNow) {
+      setInspectedObject(id)
+    }
+  }, [id, isReadOnly, isRp1, onSelect, setInspectedObject])
 
   return (
     <>
       <group
         ref={groupRef}
         visible={isVisible}
+        onDoubleClick={inspectOn === 'double-click' ? e => handleSelect(e, true) : undefined}
         onClick={(e) => {
           if (isReadOnly || isRp1) return  // ░▒▓ Read-only / RP1 — no selection ▓▒░
           e.stopPropagation()
@@ -198,7 +231,7 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
             document.activeElement.blur()
           }
           onSelect(id)
-          setInspectedObject(id)  // ░▒▓ One click = select + inspect (no double-click needed) ▓▒░
+          if (inspectOn === 'click') setInspectedObject(id)
         }}
       >
         {/* Selection highlight ring — on the ground, hidden in agent-focus */}
@@ -213,7 +246,7 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
 
       {/* TransformControls — callback ref ensures listener attaches on mount */}
       {/* Hidden in agent-focus mode — gizmo would obstruct the zoomon view */}
-      {selected && groupRef.current && !isReadOnly && !isRp1 && !isAgentFocused && (
+      {selected && allowTransform && groupRef.current && !isReadOnly && !isRp1 && !isAgentFocused && (
         <TransformControls
           ref={controlsCallbackRef}
           object={groupRef.current}
@@ -399,43 +432,56 @@ export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, fram
 
   useEffect(() => {
     const video = document.createElement('video')
-    // No crossOrigin — local-first, avoids CORS taint on CanvasTexture
+    video.crossOrigin = 'anonymous'
     video.loop = true
     video.playsInline = true
     video.autoplay = true
     video.muted = true // Required for autoplay
     video.preload = 'auto'
-    // Append to DOM (hidden) — some browsers won't decode frames for detached elements
-    video.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none'
+    // Keep the element minimally composited. Some browsers stop presenting frames
+    // when the source video is fully hidden or shoved far offscreen.
+    video.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0.001;pointer-events:none;z-index:-1'
     document.body.appendChild(video)
     videoRef.current = video
 
-    // ░▒▓ TEXTURE CREATION — single gate for "video has decoded frames" ▓▒░
     let tex: THREE.VideoTexture | null = null
     let disposed = false
     let fallbackInterval: ReturnType<typeof setInterval> | null = null
+    const supportsFrameCallback = typeof (video as HTMLVideoElement & {
+      requestVideoFrameCallback?: unknown
+    }).requestVideoFrameCallback === 'function'
+    let firstPresentedFrame = false
+
+    const watchPresentedFrame = () => {
+      if (disposed || !supportsFrameCallback) return
+      ;(video as HTMLVideoElement & {
+        requestVideoFrameCallback: (callback: () => void) => number
+      }).requestVideoFrameCallback(() => {
+        firstPresentedFrame = true
+        createTexture('requestVideoFrameCallback')
+        if (!tex) watchPresentedFrame()
+      })
+    }
 
     const createTexture = (trigger: string) => {
       if (tex || disposed) return
-      // Hard gate: video must have nonzero dimensions (frames actually decoded)
       if (!video.videoWidth || !video.videoHeight) {
         console.warn(`[VideoPlane] ${trigger} fired but videoWidth=0, deferring:`, videoUrl)
         return
       }
+      if (supportsFrameCallback && !firstPresentedFrame) return
       console.log(`[VideoPlane] Texture created via "${trigger}" for:`, videoUrl,
         `readyState=${video.readyState}, videoWidth=${video.videoWidth}`)
       tex = new THREE.VideoTexture(video)
       tex.colorSpace = THREE.SRGBColorSpace
       tex.minFilter = THREE.LinearFilter
       tex.magFilter = THREE.LinearFilter
+      tex.generateMipmaps = false
       setTexture(tex)
       textureRef.current = tex
       if (fallbackInterval) { clearInterval(fallbackInterval); fallbackInterval = null }
     }
 
-    // ░▒▓ ATTACH ALL LISTENERS BEFORE setting video.src ▓▒░
-    // Cached videos fire canplay/loadeddata SYNCHRONOUSLY during src assignment.
-    // Old code set video.src first, then attached listeners → events lost → black frame.
     video.addEventListener('loadedmetadata', () => {
       if (video.videoWidth && video.videoHeight) setAspect(video.videoWidth / video.videoHeight)
     })
@@ -444,41 +490,44 @@ export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, fram
       console.error('[VideoPlane] Load error:', videoUrl, (e.target as HTMLVideoElement)?.error)
     })
 
-    const onCanPlay = () => createTexture('canplay')
-    const onLoadedData = () => createTexture('loadeddata')
-    const onPlaying = () => createTexture('playing')
+    const onCanPlay = () => {
+      if (!supportsFrameCallback && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        createTexture('canplay')
+      }
+    }
+    const onLoadedData = () => {
+      if (!supportsFrameCallback && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        createTexture('loadeddata')
+      }
+    }
+    const onPlaying = () => {
+      if (!supportsFrameCallback && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        createTexture('playing')
+      }
+    }
     video.addEventListener('canplay', onCanPlay)
     video.addEventListener('loadeddata', onLoadedData)
     video.addEventListener('playing', onPlaying)
 
-    // requestVideoFrameCallback: actual frame decoded (most reliable signal)
-    if ('requestVideoFrameCallback' in video) {
-      (video as any).requestVideoFrameCallback(() => createTexture('requestVideoFrameCallback'))
-    }
+    watchPresentedFrame()
 
-    // NOW assign src — all listeners are armed, cached events will be caught
     video.src = videoUrl
 
-    // Deferred readyState check — rAF gives browser one tick to populate videoWidth
-    // after cached video reports readyState >= 2 synchronously during src assignment.
-    // Old code checked synchronously → readyState=4 but videoWidth=0 → texture skipped.
     requestAnimationFrame(() => {
-      if (video.readyState >= 2 && video.videoWidth > 0) {
+      if (!supportsFrameCallback && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0) {
         createTexture('raf-deferred')
       }
     })
 
-    // Fallback polling: 100ms for first 2s (catch fast-cache), then 200ms up to 10s
     const pollStart = Date.now()
     fallbackInterval = setInterval(() => {
       if (tex || disposed) {
         if (fallbackInterval) { clearInterval(fallbackInterval); fallbackInterval = null }
         return
       }
-      if (video.readyState >= 2 && video.videoWidth > 0) {
+      if (!supportsFrameCallback && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0) {
         createTexture('fallback-interval')
       }
-      // After 2s of fast polling, slow down to reduce CPU
       if (Date.now() - pollStart > 2000 && fallbackInterval) {
         clearInterval(fallbackInterval)
         fallbackInterval = setInterval(() => {
@@ -486,24 +535,37 @@ export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, fram
             if (fallbackInterval) { clearInterval(fallbackInterval); fallbackInterval = null }
             return
           }
-          if (video.readyState >= 2 && video.videoWidth > 0) {
+          if (!supportsFrameCallback && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0) {
             createTexture('fallback-interval-slow')
           }
         }, 200)
       }
     }, 100)
-    // Safety: clear interval after 10s, last-resort attempt
     const fallbackTimeout = setTimeout(() => {
       if (fallbackInterval) { clearInterval(fallbackInterval); fallbackInterval = null }
-      if (!tex && !disposed && video.readyState >= 1) {
+      if (!tex && !disposed && !supportsFrameCallback && video.readyState >= HTMLMediaElement.HAVE_METADATA) {
         console.warn('[VideoPlane] Last-resort texture creation at readyState', video.readyState, videoUrl)
         if (video.videoWidth && video.videoHeight) createTexture('last-resort')
       }
     }, 10000)
 
-    video.play().catch(() => {
-      setTimeout(() => video.play().catch(() => {}), 500)
-    })
+    void video.play()
+      .then(() => {
+        if (!supportsFrameCallback && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+          createTexture('play-resolved')
+        }
+      })
+      .catch(() => {
+        setTimeout(() => {
+          void video.play()
+            .then(() => {
+              if (!supportsFrameCallback && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+                createTexture('play-retry')
+              }
+            })
+            .catch(() => {})
+        }, 500)
+      })
 
     // Register in audio element map so Joystick can seek
     if (objectId) _audioElements.set(objectId, video)
@@ -886,6 +948,22 @@ export function CatalogModelRenderer({ path, scale, objectId, displayName }: { p
     currentClipRef.current = clipName
   }, [animConfig?.clipName, animConfig?.loop, animConfig?.speed, animations, isMoving, idleClip, walkClip])
 
+  useEffect(() => {
+    const mixer = mixerRef.current
+    if (!mixer || !objectId) return
+
+    const handleFinished = () => {
+      const activeAnimation = useOasisStore.getState().behaviors[objectId]?.animation
+      if (!activeAnimation || activeAnimation.loop !== 'once') return
+      useOasisStore.getState().setObjectBehavior(objectId, { animation: undefined })
+    }
+
+    mixer.addEventListener('finished', handleFinished)
+    return () => {
+      mixer.removeEventListener('finished', handleFinished)
+    }
+  }, [objectId])
+
   // ░▒▓ Tick the mixer every frame — drives all active animations ▓▒░
   useFrame((_, delta) => {
     mixerRef.current?.update(delta)
@@ -1100,13 +1178,23 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
   const activeClipRef = useRef<THREE.AnimationClip | null>(null)
   const isMoving = useOasisStore(s => objectId ? !!s.behaviors[objectId]?.moveTarget : false)
   const animConfig = useOasisStore(s => objectId ? s.behaviors[objectId]?.animation : undefined)
+  const clipCacheKey = useMemo(() => `${objectId || 'vrm-npc'}::${path}`, [objectId, path])
 
   // Create mixer on VRM scene
   useEffect(() => {
     if (!vrm) return
     const mixer = new THREE.AnimationMixer(vrm.scene)
     mixerRef.current = mixer
-    return () => { mixer.stopAllAction(); mixerRef.current = null }
+    currentActionRef.current = null
+    activeAnimRef.current = 'none'
+    activeClipRef.current = null
+    return () => {
+      mixer.stopAllAction()
+      mixerRef.current = null
+      currentActionRef.current = null
+      activeAnimRef.current = 'none'
+      activeClipRef.current = null
+    }
   }, [vrm])
 
   // ░▒▓ Load walk + idle clips from Mixamo FBX library, retarget for THIS VRM ▓▒░
@@ -1116,39 +1204,72 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
   const [idleClip, setIdleClip] = useState<THREE.AnimationClip | null>(null)
   useEffect(() => {
     if (!vrm) return
-    const key = objectId || 'vrm-npc'
+    let cancelled = false
+    setWalkClip(null)
+    setIdleClip(null)
     const retargetFor = (clip: THREE.AnimationClip, animId: string, k: string) =>
       isUALAnimation(animId) ? retargetUALClipForVRM(clip, vrm, k) : retargetClipForVRM(clip, vrm, k)
+    const cachedWalk = getCachedClip('walk')
+    if (cachedWalk) {
+      setWalkClip(retargetFor(cachedWalk, 'walk', clipCacheKey))
+    }
+    const cachedIdle = getCachedClip('idle')
+    if (cachedIdle) {
+      setIdleClip(retargetFor(cachedIdle, 'idle', `${clipCacheKey}::idle`))
+    }
     loadAnimationClip('walk').then(clip => {
-      if (clip) setWalkClip(retargetFor(clip, 'walk', key))
+      if (clip && !cancelled) setWalkClip(retargetFor(clip, 'walk', clipCacheKey))
     })
     // Try proper idle first, fall back to idle-fight
     loadAnimationClip('idle').then(clip => {
-      if (clip) { setIdleClip(retargetFor(clip, 'idle', key + '-idle')); return }
+      if (clip) {
+        if (!cancelled) setIdleClip(retargetFor(clip, 'idle', `${clipCacheKey}::idle`))
+        return
+      }
       return loadAnimationClip('idle-fight').then(fbxClip => {
-        if (fbxClip) setIdleClip(retargetFor(fbxClip, 'idle-fight', key + '-idle'))
+        if (fbxClip && !cancelled) setIdleClip(retargetFor(fbxClip, 'idle-fight', `${clipCacheKey}::idle`))
       })
     })
-  }, [vrm, objectId])
+    return () => {
+      cancelled = true
+    }
+  }, [clipCacheKey, vrm])
 
   // Load explicit behavior animation (from ObjectInspector — dance, combat, etc.)
   const [behaviorClip, setBehaviorClip] = useState<THREE.AnimationClip | null>(null)
   useEffect(() => {
     const clipName = animConfig?.clipName
     if (!clipName || !vrm) { setBehaviorClip(null); return }
+    let cancelled = false
+    setBehaviorClip(null)
     if (clipName.startsWith(LIB_PREFIX)) {
       const animId = clipName.replace(LIB_PREFIX, '')
-      const key = objectId || 'vrm-npc'
       loadAnimationClip(animId).then(clip => {
-        if (clip) {
+        if (clip && !cancelled) {
           const retargeted = isUALAnimation(animId)
-            ? retargetUALClipForVRM(clip, vrm, key)
-            : retargetClipForVRM(clip, vrm, key)
+            ? retargetUALClipForVRM(clip, vrm, `${clipCacheKey}::behavior:${animId}`)
+            : retargetClipForVRM(clip, vrm, `${clipCacheKey}::behavior:${animId}`)
           setBehaviorClip(retargeted)
         }
       })
     }
-  }, [animConfig?.clipName, vrm, objectId])
+    return () => {
+      cancelled = true
+    }
+  }, [animConfig?.clipName, clipCacheKey, vrm])
+
+  useEffect(() => {
+    if (!objectId) return
+    setAvatarLocomotionReady(objectId, false)
+    return () => {
+      clearAvatarLocomotionReady(objectId)
+    }
+  }, [objectId, path])
+
+  useEffect(() => {
+    if (!objectId) return
+    setAvatarLocomotionReady(objectId, Boolean(vrm && walkClip))
+  }, [objectId, vrm, walkClip])
 
   // ░▒▓ Animation state machine — behavior > walk > idle ▓▒░
   // Deterministic: compute desired state, skip if already there, otherwise transition.
@@ -1159,8 +1280,8 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
     // Determine what SHOULD play right now
     let target: 'behavior' | 'walk' | 'idle' | 'none' = 'none'
     let targetClip: THREE.AnimationClip | null = null
-    if (behaviorClip) { target = 'behavior'; targetClip = behaviorClip }
-    else if (isMoving && walkClip) { target = 'walk'; targetClip = walkClip }
+    if (isMoving && walkClip) { target = 'walk'; targetClip = walkClip }
+    else if (behaviorClip) { target = 'behavior'; targetClip = behaviorClip }
     else if (idleClip) { target = 'idle'; targetClip = idleClip }
 
     // Already playing same state AND same clip → no-op
@@ -1188,6 +1309,8 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
         action.timeScale = animConfig?.speed || 1
       } else {
         action.setLoop(THREE.LoopRepeat, Infinity)
+        // Walk anim sped up 2x — feet were lagging behind translation (oasisspec3 fix)
+        if (target === 'walk') action.timeScale = 2
       }
       action.reset().fadeIn(0.3).play()
       currentActionRef.current = action
@@ -1197,6 +1320,22 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
     activeClipRef.current = targetClip
     console.log(`[VRM:NPC] ${displayName || objectId} → anim: ${target}`)
   }, [isMoving, walkClip, idleClip, behaviorClip, animConfig?.loop, animConfig?.speed, displayName, objectId])
+
+  useEffect(() => {
+    const mixer = mixerRef.current
+    if (!mixer || !objectId) return
+
+    const handleFinished = () => {
+      const activeAnimation = useOasisStore.getState().behaviors[objectId]?.animation
+      if (!activeAnimation || activeAnimation.loop !== 'once') return
+      useOasisStore.getState().setObjectBehavior(objectId, { animation: undefined })
+    }
+
+    mixer.addEventListener('finished', handleFinished)
+    return () => {
+      mixer.removeEventListener('finished', handleFinished)
+    }
+  }, [objectId])
 
   // Animation tick — expressions + spring bones + mixer (drives idle/walk/behavior)
   useFrame((state, delta) => {
@@ -1863,6 +2002,7 @@ function PlacementOverlay() {
   const placeImageAt = useOasisStore(s => s.placeImageAt)
   const placeVideoAt = useOasisStore(s => s.placeVideoAt)
   const placeLibrarySceneAt = useOasisStore(s => s.placeLibrarySceneAt)
+  const placeLightAt = useOasisStore(s => s.placeLightAt)
   const cancelPlacement = useOasisStore(s => s.cancelPlacement)
   const [hoverPos, setHoverPos] = useState<[number, number, number] | null>(null)
 
@@ -1892,20 +2032,48 @@ function PlacementOverlay() {
       placeVideoAt(placementPending.name, placementPending.videoUrl, pos)
     } else if (placementPending.type === 'library' && placementPending.sceneId) {
       placeLibrarySceneAt(placementPending.sceneId, pos)
+    } else if (placementPending.type === 'light' && placementPending.lightType) {
+      // Raise y slightly off the ground so the light isn't flush with the plane
+      placeLightAt(placementPending.lightType, [pos[0], 3, pos[2]])
     } else if (placementPending.type === 'agent' && placementPending.agentType) {
       // ░▒▓ Agent window placement — create 3D interactive panel ▓▒░
+      const defaultWindowSize = placementPending.agentType === 'anorak-pro'
+        ? { width: 960, height: 720 }
+        : placementPending.agentType === 'browser'
+          ? { width: 1280, height: 820 }
+          : { width: 800, height: 600 }
+      const defaultWindowWorldHeight = defaultWindowSize.height * (8 / 400)
+      const browserDefaults = placementPending.agentType === 'browser'
+        ? {
+            surfaceUrl: '',
+          }
+        : {}
       const agentWindow = {
         id: `agent-${placementPending.agentType}-${Date.now()}`,
         agentType: placementPending.agentType as import('../../store/oasisStore').AgentWindowType,
-        position: [pos[0], 2.5, pos[2]] as [number, number, number],  // elevated so window floats at eye level
+        position: [pos[0], 1 + (defaultWindowWorldHeight * 0.2) / 2, pos[2]] as [number, number, number],
         rotation: [0, 0, 0] as [number, number, number],
-        scale: 1,
-        width: 800,
-        height: 600,
+        scale: 0.2,
+        width: defaultWindowSize.width,
+        height: defaultWindowSize.height,
         sessionId: placementPending.agentSessionId,
         label: placementPending.name,
+        renderMode: placementPending.agentRenderMode,
+        ...browserDefaults,
       }
-      dispatch({ type: 'ADD_AGENT_WINDOW', payload: { agentType: agentWindow.agentType, position: agentWindow.position, sessionId: agentWindow.sessionId, label: agentWindow.label } })
+      dispatch({
+        type: 'ADD_AGENT_WINDOW',
+        payload: {
+          agentType: agentWindow.agentType,
+          position: agentWindow.position,
+          sessionId: agentWindow.sessionId,
+          label: agentWindow.label,
+          renderMode: agentWindow.renderMode,
+          width: agentWindow.width,
+          height: agentWindow.height,
+          surfaceUrl: agentWindow.surfaceUrl,
+        },
+      })
     } else if (placementPending.type === 'crafted' && placementPending.sceneId) {
       // ░▒▓ Crafted multi-placement — clone the crafted scene at click position ▓▒░
       // Search per-world craftedScenes first, then global sceneLibrary as fallback
@@ -2230,7 +2398,9 @@ export function WorldObjectsRenderer() {
   const transforms = useOasisStore(s => s.transforms)
   const catalogAssets = useOasisStore(s => s.placedCatalogAssets)
   const spawnPlacementVfx = useOasisStore(s => s.spawnPlacementVfx)
+  const spawnMarchOrderVfx = useOasisStore(s => s.spawnMarchOrderVfx)
   const hasAgentFocus = useOasisStore(s => !!s.focusedAgentWindowId)
+  const placedAgentAvatars = useOasisStore(s => s.placedAgentAvatars)
 
   // ░▒▓ MINDCRAFT 3D — detect if active world is the Mindcraft mission map ▓▒░
   const isMindcraftWorld = useOasisStore(s => {
@@ -2276,18 +2446,39 @@ export function WorldObjectsRenderer() {
   const paintMode = useOasisStore(s => s.paintMode)
   const placementPending = useOasisStore(s => s.placementPending)
   const objectMeshStats = useOasisStore(s => s.objectMeshStats)
-  const WALK_PATTERNS = /walk|run|move|locomotion|jog/i
+  const camera = useThree(s => s.camera)
+  const crosshairRaycasterRef = useRef(new THREE.Raycaster())
+  const crosshairPlaneRef = useRef(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0))
+  const crosshairPointRef = useRef(new THREE.Vector3())
+  const walkableAvatarIds = useMemo(
+    () => placedAgentAvatars
+      .map(avatar => avatar.id)
+      .filter(id => canReceiveMoveOrder(objectMeshStats[id])),
+    [objectMeshStats, placedAgentAvatars],
+  )
+  const moveOrderObjectIds = useMemo(
+    () => resolveMoveOrderObjectIds(selectedObjectId, walkableAvatarIds, objectMeshStats),
+    [objectMeshStats, selectedObjectId, walkableAvatarIds],
+  )
 
   const handleRTSRightClick = useCallback((e: any) => {
-    if (!selectedObjectId || paintMode || placementPending) return
-    // Guard: only move objects that have walk/run animation clips
-    const stats = objectMeshStats[selectedObjectId]
-    if (!stats || !stats.clips.some(c => WALK_PATTERNS.test(c.name))) return
+    if (paintMode || placementPending || moveOrderObjectIds.length === 0) return
     e.stopPropagation()
     e.nativeEvent?.preventDefault?.()
-    const point = e.point as THREE.Vector3
-    setMoveTarget(selectedObjectId, [point.x, 0, point.z])
-  }, [selectedObjectId, paintMode, placementPending, setMoveTarget, objectMeshStats])
+    let point = e.point as THREE.Vector3
+    if (consumeRecentPointerLockRightClick()) {
+      const raycaster = crosshairRaycasterRef.current
+      const plane = crosshairPlaneRef.current
+      const hit = crosshairPointRef.current
+      raycaster.setFromCamera(new THREE.Vector2(0, 0), camera)
+      if (raycaster.ray.intersectPlane(plane, hit)) {
+        point = hit
+      }
+    }
+    const target: [number, number, number] = [point.x, 0, point.z]
+    moveOrderObjectIds.forEach((id) => setMoveTarget(id, target))
+    spawnMarchOrderVfx(target)
+  }, [camera, moveOrderObjectIds, paintMode, placementPending, setMoveTarget, spawnMarchOrderVfx])
 
   return (
     <group>
@@ -2300,7 +2491,7 @@ export function WorldObjectsRenderer() {
       <PlacementOverlay />
 
       {/* ░▒▓ RTS move-to — right-click ground sends selected object walking ▓▒░ */}
-      {selectedObjectId && !paintMode && !placementPending && (
+      {!paintMode && !placementPending && moveOrderObjectIds.length > 0 && (
         <mesh
           rotation={[-Math.PI / 2, 0, 0]}
           position={[0, 0.0005, 0]}
@@ -2313,6 +2504,7 @@ export function WorldObjectsRenderer() {
 
       {/* ░▒▓ Placement spell VFX — self-removing golden effects ▓▒░ */}
       <PlacementVFXRenderer />
+      <MarchOrderVFXRenderer />
 
       {/* ░▒▓ MINDCRAFT 3D — mission map overlay (renders alongside normal objects) ▓▒░ */}
       {isMindcraftWorld && <MindcraftWorld />}
@@ -2519,7 +2711,13 @@ function AgentWindowsSection({ selectedObjectId, selectObject, transformMode, on
   onTransformChange: (id: string, position: [number, number, number], rotation: [number, number, number], scale: [number, number, number]) => void
 }) {
   const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
+  const placedAgentAvatars = useOasisStore(s => s.placedAgentAvatars)
   const transforms = useOasisStore(s => s.transforms)
+
+  const avatarMap = useMemo(
+    () => new Map(placedAgentAvatars.map(avatar => [avatar.id, avatar])),
+    [placedAgentAvatars],
+  )
 
   if (placedAgentWindows.length === 0) return null
 
@@ -2527,6 +2725,13 @@ function AgentWindowsSection({ selectedObjectId, selectObject, transformMode, on
     <>
       {placedAgentWindows.map(win => {
         const t = transforms[win.id]
+        const linkedAvatar = win.linkedAvatarId
+          ? avatarMap.get(win.linkedAvatarId)
+          : placedAgentAvatars.find(entry => entry.linkedWindowId === win.id)
+        const avatarTransform = linkedAvatar ? (getLiveObjectTransform(linkedAvatar.id) || transforms[linkedAvatar.id]) : undefined
+        const derivedPlacement = linkedAvatar && win.anchorMode && win.anchorMode !== 'detached'
+          ? deriveAvatarAnchoredWindowPlacement(win, linkedAvatar, avatarTransform, win.anchorMode, t)
+          : null
         return (
           <SelectableWrapper
             key={win.id}
@@ -2535,9 +2740,17 @@ function AgentWindowsSection({ selectedObjectId, selectObject, transformMode, on
             onSelect={selectObject}
             transformMode={transformMode}
             onTransformChange={onTransformChange}
-            initialPosition={t?.position || win.position}
-            initialRotation={t?.rotation || win.rotation}
-            initialScale={t?.scale || win.scale}
+            initialPosition={derivedPlacement?.position || t?.position || win.position}
+            initialRotation={derivedPlacement?.rotation || t?.rotation || win.rotation}
+            initialScale={t?.scale ?? 1}
+            inspectOn="double-click"
+            allowTransform={win.anchorMode === 'detached' || !linkedAvatar}
+            liveTransformResolver={linkedAvatar && win.anchorMode && win.anchorMode !== 'detached'
+              ? () => {
+                  const currentAvatarTransform = getLiveObjectTransform(linkedAvatar.id) || transforms[linkedAvatar.id]
+                  return deriveAvatarAnchoredWindowPlacement(win, linkedAvatar, currentAvatarTransform, win.anchorMode, transforms[win.id])
+                }
+              : undefined}
           >
             <AgentWindow3D window={win} />
           </SelectableWrapper>
@@ -2558,25 +2771,51 @@ function AgentAvatarsSection({ selectedObjectId, selectObject, transformMode, on
   const transforms = useOasisStore(s => s.transforms)
   const liveAgentAvatarAudio = useOasisStore(s => s.liveAgentAvatarAudio)
 
+  useEffect(() => {
+    void loadAnimationClip('walk')
+    void loadAnimationClip('idle')
+    void loadAnimationClip('idle-fight')
+  }, [])
+
   const windowMap = useMemo(
     () => new Map(placedAgentWindows.map(window => [window.id, window])),
     [placedAgentWindows],
   )
+  const sharedAvatarWinnerByType = useMemo(() => {
+    const winners = new Map<string, string>()
+    const scores = new Map<string, number>()
+    for (const avatar of placedAgentAvatars) {
+      const isSharedAvatarType = avatar.agentType === 'anorak-pro' || avatar.agentType === 'merlin' || avatar.agentType === 'hermes'
+      if (!isSharedAvatarType) continue
+      const score = (avatar.linkedWindowId ? 0 : 100) + (transforms[avatar.id] ? 20 : 0)
+      const currentScore = scores.get(avatar.agentType) ?? Number.NEGATIVE_INFINITY
+      if (score > currentScore) {
+        scores.set(avatar.agentType, score)
+        winners.set(avatar.agentType, avatar.id)
+      }
+    }
+    return winners
+  }, [placedAgentAvatars, transforms])
 
   if (placedAgentAvatars.length === 0) return null
 
   return (
     <>
       {placedAgentAvatars.map(avatar => {
+        const isSharedAvatarType = avatar.agentType === 'anorak-pro' || avatar.agentType === 'merlin' || avatar.agentType === 'hermes'
+        if (isSharedAvatarType && sharedAvatarWinnerByType.get(avatar.agentType) !== avatar.id) return null
         if (!avatar.avatar3dUrl) return null
+        const renderAvatarUrl = resolveAgentAvatarUrl(avatar.avatar3dUrl).url
 
         const avatarTransform = transforms[avatar.id]
         const linkedWindow = avatar.linkedWindowId ? windowMap.get(avatar.linkedWindowId) : undefined
         const linkedWindowTransform = linkedWindow ? transforms[linkedWindow.id] : undefined
-        const derivedAnchor = linkedWindow && !avatarTransform
+        const usesSharedAvatarPose = isSharedAvatarType
+        const windowDrivesAvatar = linkedWindow && !usesSharedAvatarPose && (linkedWindow.anchorMode === 'detached' || !linkedWindow.anchorMode)
+        const derivedAnchor = linkedWindow && windowDrivesAvatar && !avatarTransform
           ? deriveWindowAvatarAnchor(linkedWindow, linkedWindowTransform)
           : null
-        const derivedScale = linkedWindow && !avatarTransform
+        const derivedScale = linkedWindow && windowDrivesAvatar && !avatarTransform
           ? deriveWindowAvatarScale(linkedWindow, linkedWindowTransform)
           : avatar.scale
         const renderScale = scalarFromTransformScale(avatarTransform?.scale, derivedScale)
@@ -2584,7 +2823,7 @@ function AgentAvatarsSection({ selectedObjectId, selectObject, transformMode, on
 
         return (
           <SelectableWrapper
-            key={avatar.id}
+            key={`${avatar.id}:${renderAvatarUrl}`}
             id={avatar.id}
             selected={selectedObjectId === avatar.id}
             onSelect={selectObject}
@@ -2596,7 +2835,7 @@ function AgentAvatarsSection({ selectedObjectId, selectObject, transformMode, on
           >
             <Suspense fallback={<PlaceholderBox />}>
               <VRMCatalogRenderer
-                path={avatar.avatar3dUrl}
+                path={renderAvatarUrl}
                 scale={renderScale}
                 objectId={avatar.id}
                 displayName={avatar.label || 'Agent Avatar'}

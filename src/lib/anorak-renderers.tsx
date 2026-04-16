@@ -10,10 +10,16 @@ import { fmtTokens } from './anorak-engine'
 // Trusted media URL patterns for auto-detection
 const MEDIA_URL_RE = /((?:https?:\/\/(?:localhost|127\.0\.0\.1|fal\.media|fal-cdn\.|oaidalleapiprodscus\.|replicate\.delivery)[^\s]+)|(?:\/?generated-(?:images|voices|videos)\/[^\s"')]+))/i
 
-function detectMediaType(url: string): MediaType | null {
+export function detectMediaType(url: string): MediaType | null {
   if (/\/?generated-images\/|\.(?:png|jpg|jpeg|gif|webp)(?:\?|$)/i.test(url)) return 'image'
-  if (/\/?generated-voices\/|\.(?:mp3|wav|ogg)(?:\?|$)/i.test(url)) return 'audio'
-  if (/\/?generated-videos\/|\.(?:mp4|webm)(?:\?|$)/i.test(url)) return 'video'
+  if (/\/?generated-voices\/|\.(?:mp3|wav|ogg|oga|opus|m4a)(?:\?|$)/i.test(url)) return 'audio'
+  if (/\/?generated-videos\/|\.(?:mp4|webm|m4v)(?:\?|$)/i.test(url)) return 'video'
+  // Trusted media services — infer type when extension is missing
+  if (/(?:fal\.media|fal-cdn\.|oaidalleapiprodscus\.|replicate\.delivery)/i.test(url)) {
+    if (/video|mp4|webm/i.test(url)) return 'video'
+    return 'image'
+  }
+  if (/(?:api\.elevenlabs\.io|elevenlabs\.io\/)/i.test(url)) return 'audio'
   return null
 }
 

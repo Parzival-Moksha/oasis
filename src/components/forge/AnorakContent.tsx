@@ -24,6 +24,15 @@ import {
   renderMarkdown,
 } from '../../lib/anorak-renderers'
 import { MediaBubble } from './MediaBubble'
+import { useAgentVoiceInput } from '@/hooks/useAgentVoiceInput'
+import { AgentVoiceInputButton } from './AgentVoiceInputButton'
+import { useAutoresizeTextarea } from '@/hooks/useAutoresizeTextarea'
+
+function joinAnorakPrompt(base: string, addition: string): string {
+  if (!addition) return base
+  if (!base) return addition
+  return `${base} ${addition}`.trim()
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PROPS
@@ -126,6 +135,17 @@ export function AnorakContent({
   const abortRef = useRef<AbortController | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
+  // ░▒▓ Voice input — Whisper transcription drops into the prompt (oasisspec3) ▓▒░
+  const voiceInput = useAgentVoiceInput({
+    enabled: true,
+    transcribeEndpoint: '/api/voice/transcribe',
+    onTranscript: transcript => setInput(current => joinAnorakPrompt(current, transcript)),
+    focusTargetRef: inputRef,
+  })
+
+  // ░▒▓ Textarea grows with content (oasisspec3) ▓▒░
+  useAutoresizeTextarea(inputRef, input, { minPx: 30, maxPx: 140 })
+
   // Detect duplicate session — only relevant for 3D windows
   const isDuplicateSession = useOasisStore(s => {
     if (!windowId || !sessionId) return false
@@ -226,9 +246,13 @@ export function AnorakContent({
     }
   }, [])
 
-  // Auto-scroll on new content (only when enabled)
+  // Auto-scroll on new content (only when enabled) — imperative scrollTop to
+  // avoid the scrollIntoView-walks-ancestors bug that clobbers drei CSS3D
+  // matrix3d wrappers. See HermesPanel.tsx:2119 for full writeup.
   useEffect(() => {
-    if (autoScroll) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (autoScroll && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
+    }
   }, [turns, autoScroll])
 
   // Detect manual scroll-up via passive listener (better for 3D performance)
@@ -745,7 +769,9 @@ export function AnorakContent({
           <button
             onClick={() => {
               setAutoScroll(true)
-              messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+              if (scrollContainerRef.current) {
+                scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
+              }
             }}
             className={`sticky bottom-1 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-full ${compact ? 'text-[9px]' : 'text-[10px]'} font-mono font-bold cursor-pointer z-10 transition-all hover:scale-105`}
             style={{
@@ -763,7 +789,18 @@ export function AnorakContent({
 
       {/* ═══ INPUT ═══ */}
       <div className={`${compact ? 'px-2 py-1.5' : 'px-3 py-2'} border-t border-white/10`}>
-        <div className={`flex ${compact ? 'gap-1.5' : 'gap-2'}`}>
+        {voiceInput.error && (
+          <div className="mb-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-[9px] font-mono text-amber-100">
+            {voiceInput.error}
+          </div>
+        )}
+        <div className={`flex ${compact ? 'gap-1.5' : 'gap-2'} items-end`}>
+          <AgentVoiceInputButton
+            controller={voiceInput}
+            disabled={isStreaming}
+            className={`${compact ? 'px-2 py-1.5' : 'px-3 py-2'} rounded${compact ? '' : '-lg'} ${inputSize} font-mono border border-sky-500/20 text-sky-100 disabled:opacity-30 disabled:cursor-not-allowed`}
+            titleReady="Record from your mic → local Whisper transcription → drops into the prompt."
+          />
           <textarea
             ref={inputRef}
             value={input}
@@ -785,7 +822,7 @@ export function AnorakContent({
               background: 'rgba(255,255,255,0.04)',
               border: `1px solid ${isStreaming ? 'rgba(56,189,248,0.3)' : 'rgba(56,189,248,0.12)'}`,
               minHeight: compact ? '30px' : '36px',
-              maxHeight: compact ? '80px' : '120px',
+              // maxHeight controlled by useAutoresizeTextarea
             }}
             disabled={isStreaming}
           />

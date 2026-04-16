@@ -1,4 +1,4 @@
-export const ANORAK_LOBES = ['curator', 'coder', 'reviewer', 'tester', 'gamer'] as const
+export const ANORAK_LOBES = ['curator', 'coder', 'reviewer', 'tester', 'gamer', 'anorak-pro'] as const
 
 export type AnorakLobe = typeof ANORAK_LOBES[number]
 
@@ -8,6 +8,8 @@ export const BUILT_IN_MODULE_IDS = {
   allTodo: 'builtin:all-todo-missions',
   anorakTodo: 'builtin:anorak-todo-missions',
   topAnorak: 'builtin:top-anorak-missions',
+  memory: 'builtin:anorak-memory',
+  pipeline: 'builtin:pipeline-status',
 } as const
 
 export interface CustomContextModule {
@@ -31,6 +33,7 @@ export interface LobeModuleMap {
   reviewer: string[]
   tester: string[]
   gamer: string[]
+  'anorak-pro': string[]
 }
 
 export interface ContextModuleCatalogEntry {
@@ -60,6 +63,7 @@ export const DEFAULT_LOBE_MODULES: LobeModuleMap = {
   reviewer: [],
   tester: [],
   gamer: [],
+  'anorak-pro': [BUILT_IN_MODULE_IDS.pipeline, BUILT_IN_MODULE_IDS.memory, BUILT_IN_MODULE_IDS.rl, BUILT_IN_MODULE_IDS.queued, BUILT_IN_MODULE_IDS.topAnorak],
 }
 
 export const DEFAULT_TOP_MISSION_COUNT = 3
@@ -114,6 +118,20 @@ const BUILT_IN_MODULES: ContextModuleCatalogEntry[] = [
     kind: 'builtin',
     color: '#fb7185',
     parameterized: true,
+  },
+  {
+    id: BUILT_IN_MODULE_IDS.memory,
+    name: 'Anorak Memory',
+    description: 'Persistent memory file (tools/anorak-memory.md) — ship targets, blockers, patterns, velocity.',
+    kind: 'builtin',
+    color: '#14b8a6',
+  },
+  {
+    id: BUILT_IN_MODULE_IDS.pipeline,
+    name: 'Pipeline Status',
+    description: 'Live pipeline snapshot: todo/wip/done counts, dharma distribution, velocity, stuck missions.',
+    kind: 'builtin',
+    color: '#0ea5e9',
   },
 ]
 
@@ -222,6 +240,7 @@ export function normalizeLobeModules(
       reviewer: requested.reviewer ?? fallback.reviewer,
       tester: requested.tester ?? fallback.tester,
       gamer: requested.gamer ?? fallback.gamer,
+      'anorak-pro': requested['anorak-pro'] ?? fallback['anorak-pro'],
     }
   }
 
@@ -244,6 +263,7 @@ export function normalizeLobeModules(
     reviewer: [],
     tester: [],
     gamer: [],
+    'anorak-pro': [...DEFAULT_LOBE_MODULES['anorak-pro']],
   }
 }
 

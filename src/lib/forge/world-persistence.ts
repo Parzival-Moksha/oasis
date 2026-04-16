@@ -2,12 +2,12 @@
 // WORLD PERSISTENCE — Memory that outlasts the session AND the origin
 // ─═̷─═̷─ॐ─═̷─═̷─ What the world remembers, forever ─═̷─═̷─ॐ─═̷─═̷─
 //
-// v2: File-based, Minecraft-style. One JSON per world on disk.
-// No more localStorage origin-lock. Worlds survive machine migrations.
-// Browser calls API routes → server reads/writes data/worlds/*.json
+// Current model: browser calls API routes and the server reads/writes SQLite rows.
+// Full WorldState lives in prisma/data/oasis.db (World.data), while export/import
+// still uses portable JSON files.
 //
 // Types are shared between client + server (world-server.ts re-exports).
-// All functions are async (network boundary between browser & fs).
+// All functions are async (network boundary between browser & API).
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import type { CraftedScene, CatalogPlacement, ObjectBehavior, WorldLight } from '../conjure/types'
@@ -31,9 +31,9 @@ export interface WorldState {
   conjuredAssetIds: string[]
   /** Pre-made catalog assets placed in this world */
   catalogPlacements?: CatalogPlacement[]
-  /** Transform overrides: objectId -> { position, rotation, scale } */
+  /** Transform overrides: objectId -> { position, rotation, scale } — all fields optional for partial overrides */
   transforms: Record<string, {
-    position: [number, number, number]
+    position?: [number, number, number]
     rotation?: [number, number, number]
     scale?: [number, number, number] | number
   }>
@@ -73,6 +73,8 @@ const API_BASE = typeof window !== 'undefined'
   ? `${window.location.origin}${process.env.NEXT_PUBLIC_BASE_PATH || ''}/api/worlds`
   : '/api/worlds'
 
+// Legacy placeholder ID until the real world registry loads.
+// initWorlds() replaces it with the first actual SQLite-backed world if needed.
 const DEFAULT_WORLD_ID = 'forge-default'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -235,7 +237,7 @@ export function cancelPendingSave(): void {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MIGRATION — no-op now. localStorage worlds are origin-locked ghosts.
+// MIGRATION — no-op now. Old file/localStorage world formats are legacy.
 // Dev imports old worlds via console dump → importWorld().
 // ═══════════════════════════════════════════════════════════════════════════════
 

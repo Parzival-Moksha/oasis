@@ -4,8 +4,13 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { chromium } from '@playwright/test'
+import { mkdirSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const DIR = 'C:/af_oasis/test-screenshots'
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url))
+const DIR = path.resolve(SCRIPT_DIR, '../test-screenshots')
+mkdirSync(DIR, { recursive: true })
 let testNum = 0
 let passed = 0
 let failed = 0

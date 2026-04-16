@@ -18,6 +18,7 @@ import { SettingsContext } from '../scene-lib'
 import { useUILayer } from '@/lib/input-manager'
 import { AvatarGallery } from './AvatarGallery'
 import { useAgentVoiceInput } from '@/hooks/useAgentVoiceInput'
+import { useAutoresizeTextarea } from '@/hooks/useAutoresizeTextarea'
 import { MediaBubble, type MediaType } from './MediaBubble'
 import { renderMarkdown } from '@/lib/anorak-renderers'
 import {
@@ -35,9 +36,10 @@ import { getCameraSnapshot } from '@/lib/camera-bridge'
 // ═══════════════════════════════════════════════════════════════════════════
 
 interface MerlinTextEvent { type: 'text'; content: string }
+interface MerlinThinkingEvent { type: 'thinking'; content: string }
 interface MerlinSessionEvent { type: 'session'; sessionId: string }
-interface MerlinToolEvent { type: 'tool'; name: string; args: Record<string, unknown> }
-interface MerlinResultEvent { type: 'result'; name: string; ok: boolean; message: string; mediaUrls?: string[] }
+interface MerlinToolEvent { type: 'tool'; name: string; args: Record<string, unknown>; toolId?: string }
+interface MerlinResultEvent { type: 'result'; name: string; ok: boolean; message: string; mediaUrls?: string[]; toolId?: string }
 interface MerlinSaveEvent { type: 'save'; savedAt: string }
 interface MerlinDoneEvent { type: 'done'; worldId?: string; sessionId?: string }
 interface MerlinErrorEvent { type: 'error'; message: string }
@@ -45,6 +47,7 @@ interface MerlinErrorEvent { type: 'error'; message: string }
 type MerlinEvent =
   | MerlinSessionEvent
   | MerlinTextEvent
+  | MerlinThinkingEvent
   | MerlinToolEvent
   | MerlinResultEvent
   | MerlinSaveEvent
@@ -74,11 +77,18 @@ const MERLIN_MODEL_KEY = 'oasis-merlin-model'
 const MERLIN_SESSION_CACHE_KEY = 'oasis-merlin-session-cache'
 const NEW_SESSION_VALUE = '__new__'
 const DEFAULT_MERLIN_MODEL = 'opus'
+// See HermesPanel.tsx — translateZ/backfaceVisibility nuke inner content when
+// stacked inside drei's CSS3D <Html transform>. Removed for the embedded case.
+const EMBEDDED_SCROLL_SURFACE_STYLE = {
+  overscrollBehavior: 'contain' as const,
+  WebkitOverflowScrolling: 'touch' as const,
+}
 const MERLIN_MODELS = [
   { id: 'sonnet', label: 'Sonnet 4.6' },
   { id: 'opus', label: 'Opus 4.6' },
   { id: 'haiku', label: 'Haiku 4.5' },
 ] as const
+const MERLIN_VISION_TOOL_NAMES = new Set(['screenshot_viewport', 'screenshot_avatar', 'avatarpic_merlin', 'avatarpic_user'])
 
 function countToolEvents(messages: MerlinMessage[]): number {
   return messages.reduce((count, message) => (
@@ -271,7 +281,7 @@ const TOOL_LABELS: Record<string, string> = {
 
 const MERLIN_STANDALONE_MEDIA_URL_RE = /(?:https?:\/\/[^\s)]+|\/(?:generated-(?:images|voices|videos)|merlin\/screenshots)\/[^\s)]+)/gi
 
-function detectMerlinMediaType(path: string): MediaType | null {
+export function detectMerlinMediaType(path: string): MediaType | null {
   const normalized = path.trim()
   if (!normalized) return null
   if (/^data:image\//i.test(normalized)) return 'image'
@@ -284,6 +294,12 @@ function detectMerlinMediaType(path: string): MediaType | null {
     if (/\.(?:png|jpg|jpeg|gif|webp)(?:\?|$)/i.test(normalized)) return 'image'
     if (/\.(?:mp3|wav|ogg|oga|opus|m4a)(?:\?|$)/i.test(normalized)) return 'audio'
     if (/\.(?:mp4|webm|m4v)(?:\?|$)/i.test(normalized)) return 'video'
+    // Trusted media services — infer type from domain when extension is missing
+    if (/(?:fal\.media|fal-cdn\.|oaidalleapiprodscus\.|replicate\.delivery)/i.test(normalized)) {
+      if (/video|mp4|webm/i.test(normalized)) return 'video'
+      return 'image' // fal/replicate/dalle default to image
+    }
+    if (/(?:api\.elevenlabs\.io|elevenlabs\.io\/)/i.test(normalized)) return 'audio'
   }
   return null
 }
@@ -498,6 +514,40 @@ function summarizeMerlinTool(event: MerlinToolEvent): string {
   return summary
 }
 
+function MerlinThinkingPill({ content }: { content: string }) {
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <div className="my-1">
+      <button
+        data-no-drag
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-mono transition-colors"
+        style={{
+          background: expanded ? 'rgba(168,85,247,0.15)' : 'rgba(168,85,247,0.08)',
+          border: '1px solid rgba(168,85,247,0.25)',
+          color: 'rgba(168,85,247,0.7)',
+        }}
+      >
+        <span className="w-1.5 h-1.5 rounded-full bg-purple-400/60" />
+        {expanded ? '▾' : '▸'} thinking ({content.length} chars)
+      </button>
+      {expanded && (
+        <div
+          className="mt-1 px-3 py-2 rounded-lg text-[10px] font-mono leading-relaxed overflow-y-auto whitespace-pre-wrap"
+          style={{
+            background: 'rgba(168,85,247,0.06)',
+            border: '1px solid rgba(168,85,247,0.15)',
+            color: 'rgba(168,85,247,0.55)',
+            maxHeight: 200,
+          }}
+        >
+          {content}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function renderMerlinEventTimeline(
   events: MerlinEvent[],
   autoPlayAudio: boolean,
@@ -524,32 +574,78 @@ function renderMerlinEventTimeline(
     )
   }
 
+  // Build a result lookup by toolId and name for proper pairing
+  // Build result lookup: prefer toolId matching, fall back to name matching
+  const resultByToolId = new Map<string, MerlinResultEvent>()
+  const resultsByName = new Map<string, MerlinResultEvent[]>()
+  for (const event of events) {
+    if (event.type !== 'result') continue
+    const re = event as MerlinResultEvent
+    if (re.toolId) {
+      resultByToolId.set(re.toolId, re)
+    } else {
+      const list = resultsByName.get(re.name) || []
+      list.push(re)
+      resultsByName.set(re.name, list)
+    }
+  }
+
+  let thinkingBuffer: string[] = []
+  const flushThinking = () => {
+    const thinking = thinkingBuffer.join('')
+    thinkingBuffer = []
+    if (!thinking) return
+    blocks.push(
+      <MerlinThinkingPill key={`timeline-thinking-${key += 1}`} content={thinking} />
+    )
+  }
+
   for (let i = 0; i < events.length; i++) {
     const event = events[i]
     if (event.type === 'text') {
+      flushThinking()
       textBuffer.push(event.content)
       continue
     }
+    if (event.type === 'thinking') {
+      thinkingBuffer.push(event.content)
+      continue
+    }
     if (event.type === 'error') {
+      flushThinking()
       textBuffer.push(`⚠️ ${event.message}`)
       continue
     }
+    if (event.type === 'result') {
+      // Results are consumed by tool pairing above — skip in main loop
+      continue
+    }
     if (event.type === 'tool') {
+      flushThinking()
       flushText()
-      const next = events[i + 1]
-      const result = next?.type === 'result' ? next as MerlinResultEvent : undefined
-      if (result) i += 1
+      const toolEvent = event as MerlinToolEvent
+      // Match result by toolId first, then fall back to next unmatched result by name
+      let result: MerlinResultEvent | undefined
+      if (toolEvent.toolId && resultByToolId.has(toolEvent.toolId)) {
+        result = resultByToolId.get(toolEvent.toolId)
+      } else {
+        // Fall back: pop next result matching this tool name
+        const nameQueue = resultsByName.get(toolEvent.name)
+        if (nameQueue?.length) {
+          result = nameQueue.shift()
+        }
+      }
       const hasAudio = extractMerlinResultMediaReferences(result).some(ref => ref.mediaType === 'audio')
       const shouldAutoPlay = autoPlayAudio && hasAudio && !audioPlaybackSpent
       if (shouldAutoPlay) audioPlaybackSpent = true
       blocks.push(
         <AgentToolCallCard
           key={`timeline-tool-${key += 1}`}
-          name={event.name}
-          label={TOOL_LABELS[event.name] || event.name}
-          icon={TOOL_ICONS[event.name] || '🔧'}
-          summary={summarizeMerlinTool(event)}
-          input={event.args}
+          name={toolEvent.name}
+          label={TOOL_LABELS[toolEvent.name] || toolEvent.name}
+          icon={TOOL_ICONS[toolEvent.name] || '🔧'}
+          summary={summarizeMerlinTool(toolEvent)}
+          input={toolEvent.args}
           result={result ? {
             ok: result.ok,
             message: result.message,
@@ -559,11 +655,12 @@ function renderMerlinEventTimeline(
           autoPlayAudio={shouldAutoPlay}
           audioTargetAvatarId={audioTargetAvatarId}
           showResultMessage={Boolean(result?.message && result.ok === false)}
-          mediaCompact={!['screenshot_viewport', 'screenshot_avatar', 'avatarpic_merlin', 'avatarpic_user'].includes(event.name)}
+          mediaCompact={!['screenshot_viewport', 'screenshot_avatar', 'avatarpic_merlin', 'avatarpic_user'].includes(toolEvent.name)}
         />
       )
     }
   }
+  flushThinking()
 
   flushText()
   return blocks
@@ -583,12 +680,24 @@ function getViewportBounds() {
   return { width: window.innerWidth, height: window.innerHeight }
 }
 
-export function MerlinPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  useUILayer('merlin', isOpen)
+export function MerlinPanel({
+  isOpen,
+  onClose,
+  embedded = false,
+  hideCloseButton = false,
+}: {
+  isOpen: boolean
+  onClose: () => void
+  embedded?: boolean
+  hideCloseButton?: boolean
+}) {
+  useUILayer('merlin', isOpen && !embedded)
   const { settings } = useContext(SettingsContext)
   const [messages, setMessages] = useState<MerlinMessage[]>(() => readInitialMerlinMessages())
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
+  const [isThinking, setIsThinking] = useState(false)
+  const [thinkingAccumulator, setThinkingAccumulator] = useState('')
   const [toolCount, setToolCount] = useState(() => countToolEvents(readInitialMerlinMessages()))
   const [selectedSessionId, setSelectedSessionId] = useState(readRememberedMerlinSessionId)
   const [sessionHistory, setSessionHistory] = useState<MerlinSessionSummary[]>([])
@@ -605,7 +714,7 @@ export function MerlinPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const loadRequestIdRef = useRef(0)
   const hydratedSessionIdRef = useRef('')
   const activeWorldName = useOasisStore(s => s.worldRegistry.find((w: { id: string; name: string }) => w.id === s.activeWorldId)?.name || 'unknown')
@@ -618,8 +727,11 @@ export function MerlinPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     onTranscript: transcript => {
       setInput(current => (current ? `${current} ${transcript}`.trim() : transcript))
     },
-    focusTargetRef: inputRef,
+    focusTargetRef: inputRef as React.RefObject<HTMLElement>,
   })
+
+  // Textarea grows with content (oasisspec3)
+  useAutoresizeTextarea(inputRef, input, { minPx: 36, maxPx: 160 })
 
   // ─═̷─ Drag state ─═̷─
   const [position, setPosition] = useState<MerlinPanelPosition>(() => {
@@ -741,10 +853,12 @@ export function MerlinPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     return () => window.removeEventListener('resize', handleWindowResize)
   }, [applyGeometry])
 
-  // Auto-scroll on new messages
+  // Auto-scroll on new messages — imperative scrollTop matches AnorakProPanel
+  // and avoids the scrollIntoView bug that nukes drei CSS3D matrix3d wrappers.
+  // See matching comment in HermesPanel.tsx for the full root-cause writeup.
   useEffect(() => {
-    if (autoScroll) {
-      messagesEndRef.current?.scrollIntoView({ behavior: isStreaming ? 'auto' : 'smooth' })
+    if (autoScroll && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
     }
   }, [messages, isStreaming, autoScroll])
 
@@ -1038,8 +1152,11 @@ export function MerlinPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       }
 
       let textAccumulator = ''
+      let thinkingAcc = ''
       let streamEvents: MerlinEvent[] = []
       let tools = 0
+      setIsThinking(false)
+      setThinkingAccumulator('')
       let resolvedSessionId = activeSessionId || ''
       for await (const event of parseMerlinSSE(res)) {
         if (abort.signal.aborted) break
@@ -1054,7 +1171,14 @@ export function MerlinPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             }
             streamEvents = [...streamEvents, event]
             break
+          case 'thinking':
+            thinkingAcc += event.content
+            setThinkingAccumulator(thinkingAcc)
+            setIsThinking(true)
+            streamEvents = [...streamEvents, event]
+            break
           case 'text':
+            setIsThinking(false)
             textAccumulator += event.content
             streamEvents = [...streamEvents, event]
             break
@@ -1065,6 +1189,14 @@ export function MerlinPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             break
           case 'result':
             streamEvents = [...streamEvents, event]
+            if (event.ok && MERLIN_VISION_TOOL_NAMES.has(event.name)) {
+              const firstImageRef = extractMerlinResultMediaReferences(event).find(ref => ref.mediaType === 'image')
+              if (firstImageRef?.path) {
+                setVisionCaptureError('')
+                setVisionCaptureUrl(firstImageRef.path)
+                setVisionCapturedAt(Date.now())
+              }
+            }
             if (
               event.ok
               && autoPlayMediaMessageId !== merlinId
@@ -1115,6 +1247,7 @@ export function MerlinPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       }
     } finally {
       setIsStreaming(false)
+      setIsThinking(false)
       abortRef.current = null
     }
   }, [fetchSessions, input, isStreaming, model, selectedSessionId])
@@ -1168,43 +1301,48 @@ export function MerlinPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           )}
 
           {isStreaming && msg === messages[messages.length - 1] && (
-            <div className="flex items-center gap-2 text-[10px] text-purple-400/60 font-mono">
-              <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
-              thinking...
-            </div>
+            isThinking && thinkingAccumulator ? (
+              <MerlinThinkingPill content={thinkingAccumulator} />
+            ) : (
+              <div className="flex items-center gap-2 text-[10px] text-purple-400/60 font-mono">
+                <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+                {isThinking ? 'thinking...' : 'streaming...'}
+              </div>
+            )
           )}
         </div>
       )}
     </div>
-  )), [autoPlayMediaMessageId, isStreaming, merlinAvatar?.id, messages])
+  )), [autoPlayMediaMessageId, isStreaming, isThinking, thinkingAccumulator, merlinAvatar?.id, messages])
 
-  if (!isOpen || typeof document === 'undefined') return null
+  const isVisible = embedded || isOpen
+  if (!isVisible || typeof document === 'undefined') return null
 
   // ─═̷─═̷─ RENDER ─═̷─═̷─
-  return createPortal(
+  const panelBody = (
     <div
-      data-menu-portal="merlin-panel"
-      data-ui-panel
-      className="fixed z-[9998] rounded-xl flex flex-col overflow-hidden"
+      data-menu-portal={embedded ? undefined : 'merlin-panel'}
+      data-ui-panel={embedded ? '' : undefined}
+      className={`${embedded ? 'relative w-full h-full' : 'fixed z-[9998]'} rounded-xl flex flex-col overflow-hidden`}
       style={{
-        left: position.x,
-        top: position.y,
-        width: size.w,
-        height: size.h,
+        ...(embedded ? {} : { left: position.x, top: position.y }),
+        width: embedded ? '100%' : size.w,
+        height: embedded ? '100%' : size.h,
         backgroundColor: `rgba(0, 0, 0, ${settings.uiOpacity})`,
         border: `1px solid ${isStreaming ? 'rgba(168,85,247,0.6)' : 'rgba(168,85,247,0.25)'}`,
         boxShadow: isStreaming
           ? '0 0 30px rgba(168,85,247,0.3), inset 0 0 40px rgba(168,85,247,0.05)'
           : '0 8px 32px rgba(0,0,0,0.6)',
         transition: 'box-shadow 0.5s, border-color 0.5s',
+        ...(embedded ? EMBEDDED_SCROLL_SURFACE_STYLE : {}),
       }}
       onMouseDown={e => e.stopPropagation()}
       onPointerDown={e => e.stopPropagation()}
     >
       {/* ═══ HEADER ═══ */}
       <div
-        onMouseDown={handleDragStart}
-        className="flex items-center justify-between px-3 py-2 border-b border-white/10 cursor-grab active:cursor-grabbing select-none"
+        onMouseDown={embedded ? undefined : handleDragStart}
+        className={`flex items-center justify-between px-3 py-2 border-b border-white/10 select-none ${embedded ? '' : 'cursor-grab active:cursor-grabbing'}`}
         style={{
           background: isStreaming
             ? 'linear-gradient(135deg, rgba(168,85,247,0.15) 0%, rgba(0,0,0,0) 100%)'
@@ -1258,12 +1396,14 @@ export function MerlinPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           >
             🗑️
           </button>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-white transition-colors text-lg leading-none cursor-pointer"
-          >
-            ×
-          </button>
+          {!hideCloseButton && (
+            <button
+              onClick={onClose}
+              className="text-gray-500 hover:text-white transition-colors text-lg leading-none cursor-pointer"
+            >
+              ×
+            </button>
+          )}
         </div>
       </div>
 
@@ -1329,8 +1469,9 @@ export function MerlinPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 
       <div
         ref={scrollContainerRef}
+        data-agent-window-scroll-root=""
         className="flex-1 overflow-y-auto px-3 py-2 space-y-3 min-h-0"
-        style={{ scrollbarWidth: 'thin', scrollbarColor: '#374151 transparent' }}
+        style={{ scrollbarWidth: 'thin', scrollbarColor: '#374151 transparent', ...EMBEDDED_SCROLL_SURFACE_STYLE }}
       >
         {(visionCaptureUrl || visionCaptureError || merlinAvatar) && (
           <div
@@ -1399,7 +1540,9 @@ export function MerlinPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             className="pointer-events-auto px-2 py-1 rounded-full text-[10px] font-mono border border-purple-500/25 bg-black/70 text-purple-100 hover:border-purple-400/50"
             onClick={() => {
               setAutoScroll(true)
-              messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+              if (scrollContainerRef.current) {
+                scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
+              }
             }}
           >
             v auto-scroll
@@ -1426,17 +1569,19 @@ export function MerlinPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             className="px-2 py-2 rounded-lg text-[10px] font-mono border border-white/10 text-purple-100 disabled:opacity-30 disabled:cursor-not-allowed"
             titleReady="Record from your device mic and drop the local Whisper transcript into Merlin's prompt."
           />
-          <input
+          <textarea
             ref={inputRef}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); invoke() } }}
-            maxLength={1000}
+            maxLength={4000}
+            rows={1}
             placeholder={isStreaming ? 'Merlin is building...' : 'Tell Merlin what to build...'}
-            className="flex-1 px-3 py-2 rounded-lg text-white text-xs outline-none placeholder-gray-600"
+            className="flex-1 px-3 py-2 rounded-lg text-white text-xs outline-none placeholder-gray-600 resize-none font-mono"
             style={{
               background: 'rgba(255,255,255,0.06)',
               border: `1px solid ${isStreaming ? 'rgba(168,85,247,0.3)' : 'rgba(168,85,247,0.15)'}`,
+              // Height managed by useAutoresizeTextarea
             }}
             disabled={isStreaming}
           />
@@ -1457,14 +1602,16 @@ export function MerlinPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       </div>
 
       {/* ═══ RESIZE HANDLE ═══ */}
-      <div
-        onMouseDown={handleResizeStart}
-        className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize"
-        style={{
-          background: 'linear-gradient(135deg, transparent 50%, rgba(168,85,247,0.4) 50%)',
-          borderRadius: '0 0 12px 0',
-        }}
-      />
+      {!embedded && (
+        <div
+          onMouseDown={handleResizeStart}
+          className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize"
+          style={{
+            background: 'linear-gradient(135deg, transparent 50%, rgba(168,85,247,0.4) 50%)',
+            borderRadius: '0 0 12px 0',
+          }}
+        />
+      )}
       {showAvatarGallery && (
         <AvatarGallery
           currentAvatarUrl={merlinAvatar?.avatar3dUrl || null}
@@ -1483,7 +1630,9 @@ export function MerlinPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           50% { transform: translateY(-8px); }
         }
       `}</style>
-    </div>,
-    document.body
+    </div>
   )
+
+  if (embedded) return panelBody
+  return createPortal(panelBody, document.body)
 }

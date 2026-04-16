@@ -11,7 +11,7 @@ import * as path from 'path'
 // Mirror pure-logic extracts from AnorakProPanel / lobeprompt route
 // ═══════════════════════════════════════════════════════════════════════════
 
-const VALID_LOBES = ['curator', 'coder', 'reviewer', 'tester', 'gamer', 'merlin'] as const
+const VALID_LOBES = ['curator', 'coder', 'reviewer', 'tester', 'gamer', 'merlin', 'anorak-pro'] as const
 
 function isValidLobe(lobe: string): boolean {
   return VALID_LOBES.includes(lobe as typeof VALID_LOBES[number])
@@ -90,6 +90,7 @@ describe('lobeprompt route — lobe whitelist', () => {
   it('accepts tester', () => expect(isValidLobe('tester')).toBe(true))
   it('accepts gamer', () => expect(isValidLobe('gamer')).toBe(true))
   it('accepts merlin', () => expect(isValidLobe('merlin')).toBe(true))
+  it('accepts anorak-pro', () => expect(isValidLobe('anorak-pro')).toBe(true))
 
   it('rejects "hacker"', () => expect(isValidLobe('hacker')).toBe(false))
   it('rejects "admin"', () => expect(isValidLobe('admin')).toBe(false))
@@ -132,7 +133,7 @@ describe('lobeprompt route — source verification', () => {
 
   it('validates VALID_LOBES whitelist', () => {
     const src = fs.readFileSync(routePath, 'utf-8')
-    expect(src).toContain("VALID_LOBES = ['curator', 'coder', 'reviewer', 'tester', 'gamer', 'merlin']")
+    expect(src).toContain("VALID_LOBES = ['curator', 'coder', 'reviewer', 'tester', 'gamer', 'merlin', 'anorak-pro']")
   })
 
   it('enforces min content length of 10', () => {

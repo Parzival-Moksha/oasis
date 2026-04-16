@@ -8,13 +8,19 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { createRequire } from "module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Resolve Prisma client from the main oasis project (where prisma generate runs)
 const require = createRequire(import.meta.url);
 const { PrismaClient } = require("../../node_modules/.prisma/client/default.js");
+const TOOL_DIR = path.dirname(fileURLToPath(import.meta.url));
+const DEFAULT_DB_PATH = path.resolve(TOOL_DIR, "../../prisma/data/oasis.db");
+const DB_PATH = process.env.OASIS_DB_PATH || DEFAULT_DB_PATH;
+const DB_URL = DB_PATH.startsWith("file:") ? DB_PATH : `file:${DB_PATH.replace(/\\/g, "/")}`;
 
 const prisma = new PrismaClient({
-  datasources: { db: { url: `file:${process.env.OASIS_DB_PATH || "c:/af_oasis/prisma/data/oasis.db"}` } },
+  datasources: { db: { url: DB_URL } },
 });
 
 // Enable WAL mode for concurrent access (MCP server + Next.js both hit the same .db)

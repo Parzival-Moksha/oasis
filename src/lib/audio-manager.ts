@@ -235,12 +235,12 @@ export const useAudioManager = create<AudioManagerState>((set, get) => {
       const step = steps[footstepIndex % steps.length]
       footstepIndex++
 
-      if (brokenPaths.has(step.path)) { playFallbackBeep(volume * 0.4); return }
+      if (brokenPaths.has(step.path)) { playFallbackBeep(volume * 0.15); return }
       const audio = getAudio(step.path)
-      audio.volume = volume * 0.4  // footsteps quieter than UI sounds
+      audio.volume = volume * 0.15  // footsteps much quieter than UI sounds
       audio.currentTime = 0
       audio.play().catch(() => {
-        if (audio.error) { brokenPaths.add(step.path); playFallbackBeep(volume * 0.4) }
+        if (audio.error) { brokenPaths.add(step.path); playFallbackBeep(volume * 0.15) }
       })
     },
 

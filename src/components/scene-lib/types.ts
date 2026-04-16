@@ -19,6 +19,11 @@ export interface OasisSettings {
   skyBackground: string  // 'stars' | 'night001' | 'night004' | 'night007' | 'night008'
   // UI
   uiOpacity: number  // 0.1 to 1.0
+  // Agents
+  agentActionMode: 'embodied' | 'instant'
+  agentWalkSpeed: number
+  agentConjureDurationMs: number
+  agentScreenshotSettleMs: number
   // ─═̷─═̷─⚡ FPS COUNTER ─═̷─═̷─⚡
   fpsCounterEnabled: boolean
   fpsCounterFontSize: number  // 10-24px

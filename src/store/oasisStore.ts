@@ -19,7 +19,18 @@ import { addToSceneLibrary, getSceneLibrary, removeFromSceneLibrary } from '../l
 import { awardXp } from '../hooks/useXp'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { getCameraSnapshot } from '../lib/camera-bridge'
-import { deriveHermesAvatarSpawn, deriveStandaloneAgentAvatarSpawn, deriveWindowAvatarAnchor, deriveWindowAvatarScale } from '../lib/agent-avatar-utils'
+import {
+  deriveAvatarAnchoredWindowPlacement,
+  deriveHermesAvatarSpawn,
+  deriveStandaloneAgentAvatarSpawn,
+  deriveWindowAvatarAnchor,
+  deriveWindowAvatarScale,
+  type LinkedWindowAnchorMode,
+} from '../lib/agent-avatar-utils'
+import { DEFAULT_AGENT_AVATAR_URL, resolveAgentAvatarUrl, sanitizeAgentAvatarList } from '../lib/agent-avatar-catalog'
+import { DEFAULT_AGENT_WINDOW_RENDER_MODE, type AgentWindowRenderMode } from '../lib/agent-window-renderers'
+
+const MAX_ACTIVE_MARCH_ORDER_VFX = 8
 
 // ─═̷─═̷─🏗️ SSR-SAFE LOCALSTORAGE ─═̷─═̷─🏗️
 // Next.js pre-renders on the server where `window` doesn't exist.
@@ -50,7 +61,7 @@ export type PlacementVfxType =
 const PLACEMENT_VFX_LIST: Exclude<PlacementVfxType, 'random'>[] = ['runeflash', 'sparkburst', 'portalring', 'sigilpulse', 'quantumcollapse', 'phoenixascension', 'dimensionalrift', 'crystalgenesis', 'meteorimpact', 'arcanebloom', 'voidanchor', 'stellarforge']
 
 export interface PlacementPending {
-  type: 'catalog' | 'conjured' | 'crafted' | 'library' | 'image' | 'video' | 'agent'
+  type: 'catalog' | 'conjured' | 'crafted' | 'library' | 'image' | 'video' | 'agent' | 'light'
   catalogId?: string
   name: string
   path?: string
@@ -68,6 +79,10 @@ export interface PlacementPending {
   agentType?: AgentWindowType
   /** Carry over session ID from existing panel */
   agentSessionId?: string
+  /** Projection technique used for the 3D window */
+  agentRenderMode?: AgentWindowRenderMode
+  /** For light placements — which placeable light type */
+  lightType?: 'point' | 'spot'
 }
 
 export interface ActivePlacementVfx {
@@ -78,12 +93,23 @@ export interface ActivePlacementVfx {
   duration: number
 }
 
+export interface ActiveMarchOrderVfx {
+  id: string
+  position: [number, number, number]
+  startedAt: number
+  duration: number
+}
+
 // ─═̷─═̷─💻 AGENT WINDOW — placeable interactive panels in 3D ─═̷─═̷─💻
-export type AgentWindowType = 'anorak' | 'anorak-pro' | 'merlin' | 'devcraft' | 'parzival' | 'mission'
+export type BrowserSurfaceMode = 'live-browser' | 'desktop-capture'
+export type AgentWindowType = 'anorak' | 'anorak-pro' | 'merlin' | 'hermes' | 'devcraft' | 'parzival' | 'browser' | 'mission'
 
 export interface AgentWindow {
   id: string                              // e.g. 'agent-anorak-1710859200000'
   agentType: AgentWindowType
+  renderMode?: AgentWindowRenderMode
+  linkedAvatarId?: string
+  anchorMode?: LinkedWindowAnchorMode
   position: [number, number, number]
   rotation: [number, number, number]      // euler angles
   scale: number                           // uniform scale (default 1)
@@ -91,8 +117,13 @@ export interface AgentWindow {
   height: number                          // px height of HTML content (default 600)
   sessionId?: string                      // claude code session ID (anorak only)
   label?: string                          // user-assignable name
+  browserSurfaceMode?: BrowserSurfaceMode // live iframe now, host capture bridge later
+  surfaceUrl?: string                     // URL for browser surfaces / offscreen Chromium targets
+  captureSourceId?: string                // host-provided native/browser surface ID
+  captureSourceName?: string              // last selected host source name
+  captureFps?: number                     // preferred host capture rate (1-60)
   frameStyle?: string                     // picture frame style id (gilded, neon, hologram, etc.)
-  frameThickness?: number                 // frame thickness multiplier (default 1, range 0.2-3)
+  frameThickness?: number                 // frame thickness multiplier (default 1, range 0.2-150)
   windowOpacity?: number                  // window background opacity (default 1, range 0-1, dims to black)
   windowBlur?: number                     // backdrop blur in px (default 0, range 0-20)
 }
@@ -132,12 +163,140 @@ function defaultAgentAvatarLabel(agentType: AgentAvatarType): string {
       return 'DevCraft'
     case 'parzival':
       return 'Parzival'
+    case 'browser':
+      return 'Browser'
     case 'mission':
       return 'Mission'
     case 'hermes':
       return 'Hermes'
     default:
       return 'Agent'
+  }
+}
+
+type AgentAvatarTransformMap = Record<string, {
+  position?: [number, number, number]
+  rotation?: [number, number, number]
+  scale?: [number, number, number] | number
+}>
+
+const SHARED_AGENT_AVATAR_TYPES = new Set<AgentAvatarType>(['anorak-pro', 'merlin', 'hermes'])
+
+function isSharedAgentAvatarType(agentType: string): agentType is AgentAvatarType {
+  return SHARED_AGENT_AVATAR_TYPES.has(agentType as AgentAvatarType)
+}
+
+function scoreSharedAgentAvatarCandidate(avatar: AgentAvatar, transforms: AgentAvatarTransformMap): number {
+  let score = 0
+  if (!avatar.linkedWindowId) score += 100
+  if (transforms[avatar.id]) score += 20
+  if (avatar.avatar3dUrl && avatar.avatar3dUrl !== DEFAULT_AGENT_AVATAR_URL) score += 10
+  if (avatar.label) score += 5
+  return score
+}
+
+function normalizeSharedAgentAvatarWorldState(args: {
+  windows: AgentWindow[]
+  avatars: AgentAvatar[]
+  transforms: AgentAvatarTransformMap
+}): {
+  windows: AgentWindow[]
+  avatars: AgentAvatar[]
+  transforms: AgentAvatarTransformMap
+  changed: boolean
+} {
+  const { windows, avatars, transforms } = args
+  const sharedGroups = new Map<AgentAvatarType, AgentAvatar[]>()
+
+  for (const avatar of avatars) {
+    if (!isSharedAgentAvatarType(avatar.agentType)) continue
+    const group = sharedGroups.get(avatar.agentType) || []
+    group.push(avatar)
+    sharedGroups.set(avatar.agentType, group)
+  }
+
+  const winnerByType = new Map<AgentAvatarType, AgentAvatar>()
+  const remappedAvatarIds = new Map<string, string>()
+
+  for (const [agentType, group] of sharedGroups.entries()) {
+    if (group.length === 0) continue
+    const winner = group.reduce((best, candidate) =>
+      scoreSharedAgentAvatarCandidate(candidate, transforms) > scoreSharedAgentAvatarCandidate(best, transforms)
+        ? candidate
+        : best,
+    )
+    const normalizedWinner: AgentAvatar = {
+      ...winner,
+      linkedWindowId: undefined,
+      label: winner.label || defaultAgentAvatarLabel(agentType),
+    }
+    winnerByType.set(agentType, normalizedWinner)
+    for (const avatar of group) remappedAvatarIds.set(avatar.id, normalizedWinner.id)
+  }
+
+  let changed = false
+  const emittedSharedTypes = new Set<AgentAvatarType>()
+  const nextAvatars: AgentAvatar[] = []
+
+  for (const avatar of avatars) {
+    if (!isSharedAgentAvatarType(avatar.agentType)) {
+      nextAvatars.push(avatar)
+      continue
+    }
+
+    if (emittedSharedTypes.has(avatar.agentType)) {
+      changed = true
+      continue
+    }
+
+    emittedSharedTypes.add(avatar.agentType)
+    const winner = winnerByType.get(avatar.agentType)
+    if (!winner) continue
+    if (winner.id !== avatar.id || avatar.linkedWindowId || winner.label !== avatar.label) changed = true
+    nextAvatars.push(winner)
+  }
+
+  const nextWindows = windows.map(window => {
+    if (!isSharedAgentAvatarType(window.agentType)) {
+      const remappedLinkedAvatarId = window.linkedAvatarId ? remappedAvatarIds.get(window.linkedAvatarId) : undefined
+      if (remappedLinkedAvatarId && remappedLinkedAvatarId !== window.linkedAvatarId) {
+        changed = true
+        return { ...window, linkedAvatarId: remappedLinkedAvatarId }
+      }
+      return window
+    }
+
+    const winner = winnerByType.get(window.agentType)
+    if (!winner) {
+      if (window.linkedAvatarId && remappedAvatarIds.has(window.linkedAvatarId)) {
+        changed = true
+        return { ...window, linkedAvatarId: undefined }
+      }
+      return window
+    }
+
+    const remappedLinkedAvatarId = window.linkedAvatarId ? (remappedAvatarIds.get(window.linkedAvatarId) || window.linkedAvatarId) : winner.id
+    if (remappedLinkedAvatarId !== window.linkedAvatarId) {
+      changed = true
+      return { ...window, linkedAvatarId: remappedLinkedAvatarId }
+    }
+    return window
+  })
+
+  const nextTransforms: AgentAvatarTransformMap = { ...transforms }
+  for (const [avatarId, winnerId] of remappedAvatarIds.entries()) {
+    if (avatarId === winnerId) continue
+    if (Object.prototype.hasOwnProperty.call(nextTransforms, avatarId)) {
+      delete nextTransforms[avatarId]
+      changed = true
+    }
+  }
+
+  return {
+    windows: nextWindows,
+    avatars: nextAvatars,
+    transforms: changed ? nextTransforms : transforms,
+    changed,
   }
 }
 
@@ -148,7 +307,7 @@ export interface WorldSnapshot {
   placedCatalogAssets: CatalogPlacement[]
   worldConjuredAssetIds: string[]
   craftedScenes: CraftedScene[]
-  transforms: Record<string, { position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number }>
+  transforms: Record<string, { position?: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number }>
   behaviors: Record<string, ObjectBehavior>
   groundTiles: Record<string, string>
   worldLights: WorldLight[]
@@ -206,6 +365,7 @@ interface OasisState {
   placementVfxType: PlacementVfxType
   placementVfxDuration: number                // seconds, 0.5-3.0
   activePlacementVfx: ActivePlacementVfx[]    // currently playing VFX instances
+  activeMarchOrderVfx: ActiveMarchOrderVfx[]  // right-click move-order markers
 
   // ─═̷─═̷─🌍 TERRAIN + WORLD STATE ─═̷─═̷─🌍
   terrainParams: TerrainParams | null
@@ -219,8 +379,8 @@ interface OasisState {
   inspectedObjectId: string | null     // id of object with inspector open (double-click)
   transformMode: 'translate' | 'rotate' | 'scale'
   cameraLookAt: [number, number, number] | null  // set to lerp camera to this position
-  transforms: Record<string, {        // object id → transform overrides
-    position: [number, number, number]
+  transforms: Record<string, {        // object id → transform overrides (all fields optional for partial overrides)
+    position?: [number, number, number]
     rotation?: [number, number, number]
     scale?: [number, number, number] | number
   }>
@@ -298,6 +458,8 @@ interface OasisState {
   setPlacementVfxDuration: (duration: number) => void
   spawnPlacementVfx: (position: [number, number, number]) => void
   removePlacementVfx: (id: string) => void
+  spawnMarchOrderVfx: (position: [number, number, number]) => void
+  removeMarchOrderVfx: (id: string) => void
   previewPlacementSpell: (type: PlacementVfxType) => void
   conjurePreview: { type: ConjureVfxType; startedAt: number } | null
   startConjurePreview: (type: ConjureVfxType) => void
@@ -339,6 +501,8 @@ interface OasisState {
   setWorldSkyBackground: (id: string) => void
   // ─═̷─═̷─💡 LIGHT ACTIONS ─═̷─═̷─💡
   addWorldLight: (type: WorldLightType) => void
+  /** Place a point or spot light at a specific world position (called from PlacementOverlay click). */
+  placeLightAt: (type: 'point' | 'spot', position: [number, number, number]) => void
   removeWorldLight: (id: string) => void
   updateWorldLight: (id: string, updates: Partial<WorldLight>) => void
   setWorldLightTransform: (id: string, position: [number, number, number]) => void
@@ -366,7 +530,9 @@ interface OasisState {
   addAgentWindow: (window: AgentWindow) => void
   removeAgentWindow: (id: string) => void
   updateAgentWindow: (id: string, partial: Partial<AgentWindow>) => void
+  setAgentWindowAnchorMode: (id: string, anchorMode: LinkedWindowAnchorMode) => void
   assignAvatarToAgentWindow: (windowId: string, avatarUrl: string | null) => string | null
+  assignSharedAgentAvatar: (agentType: AgentAvatarType, avatarUrl: string | null, options?: { preferredWindowId?: string | null }) => string | null
   assignHermesAvatar: (avatarUrl: string | null) => string | null
   assignMerlinAvatar: (avatarUrl: string | null) => string | null
   setAgentAvatarAudio: (avatarId: string, audio: AgentAvatarAudioState | null) => void
@@ -410,6 +576,126 @@ export const useOasisStore = create<OasisState>((set, get) => {
     } catch {}
   }
 
+  const deriveSharedAvatarSpawn = (
+    agentType: AgentAvatarType,
+    preferredWindowId?: string | null,
+  ): { position: [number, number, number]; rotation: [number, number, number]; scale: number } => {
+    const preferredWindow = preferredWindowId
+      ? get().placedAgentWindows.find(entry => entry.id === preferredWindowId)
+      : get().placedAgentWindows.find(entry => entry.agentType === agentType)
+
+    if (preferredWindow) {
+      const preferredWindowTransform = get().transforms[preferredWindow.id]
+      const anchor = deriveWindowAvatarAnchor(preferredWindow, preferredWindowTransform)
+      return {
+        position: anchor.position,
+        rotation: anchor.rotation,
+        scale: deriveWindowAvatarScale(preferredWindow, preferredWindowTransform),
+      }
+    }
+
+    return agentType === 'hermes'
+      ? deriveHermesAvatarSpawn(getCameraSnapshot())
+      : deriveStandaloneAgentAvatarSpawn(getCameraSnapshot())
+  }
+
+  const assignSharedAgentAvatar = (
+    agentType: AgentAvatarType,
+    avatarUrl: string | null,
+    options?: { preferredWindowId?: string | null },
+  ): string | null => {
+    const existingAvatar = get().placedAgentAvatars.find(entry => entry.agentType === agentType) || null
+
+    if (!avatarUrl) {
+      if (!existingAvatar) return null
+      set(state => {
+        const nextTransforms = { ...state.transforms }
+        const nextAudio = { ...state.liveAgentAvatarAudio }
+        delete nextTransforms[existingAvatar.id]
+        delete nextAudio[existingAvatar.id]
+        return {
+          placedAgentWindows: state.placedAgentWindows.map(entry =>
+            entry.agentType === agentType
+              ? { ...entry, linkedAvatarId: undefined, anchorMode: 'detached' }
+              : entry,
+          ),
+          placedAgentAvatars: state.placedAgentAvatars.filter(entry => entry.id !== existingAvatar.id),
+          liveAgentAvatarAudio: nextAudio,
+          transforms: nextTransforms,
+          selectedObjectId: state.selectedObjectId === existingAvatar.id ? null : state.selectedObjectId,
+          inspectedObjectId: state.inspectedObjectId === existingAvatar.id ? null : state.inspectedObjectId,
+        }
+      })
+      setTimeout(() => get().saveWorldState(), 100)
+      return null
+    }
+
+    const sanitizedAvatarUrl = resolveAgentAvatarUrl(avatarUrl).url
+    const spawn = deriveSharedAvatarSpawn(agentType, options?.preferredWindowId)
+
+    if (existingAvatar) {
+      set(state => ({
+        placedAgentWindows: state.placedAgentWindows.map(entry => {
+          if (entry.agentType !== agentType) return entry
+          const shouldSnapTarget = options?.preferredWindowId === entry.id
+          return {
+            ...entry,
+            linkedAvatarId: existingAvatar.id,
+            anchorMode: shouldSnapTarget && (!entry.anchorMode || entry.anchorMode === 'detached')
+              ? 'next-to'
+              : entry.anchorMode,
+          }
+        }),
+        placedAgentAvatars: state.placedAgentAvatars
+          .filter(entry => entry.id === existingAvatar.id || entry.agentType !== agentType)
+          .map(entry =>
+            entry.id === existingAvatar.id
+              ? {
+                  ...entry,
+                  avatar3dUrl: sanitizedAvatarUrl,
+                  linkedWindowId: undefined,
+                  label: entry.label || defaultAgentAvatarLabel(agentType),
+                  position: entry.position || spawn.position,
+                  rotation: entry.rotation || spawn.rotation,
+                  scale: entry.scale || spawn.scale,
+                }
+              : entry,
+          ),
+      }))
+      setTimeout(() => get().saveWorldState(), 100)
+      return existingAvatar.id
+    }
+
+    const avatarId = `agent-avatar-${agentType}-${Date.now()}`
+    set(state => ({
+      placedAgentWindows: state.placedAgentWindows.map(entry => {
+        if (entry.agentType !== agentType) return entry
+        const shouldSnapTarget = options?.preferredWindowId === entry.id
+        return {
+          ...entry,
+          linkedAvatarId: avatarId,
+          anchorMode: shouldSnapTarget && (!entry.anchorMode || entry.anchorMode === 'detached')
+            ? 'next-to'
+            : entry.anchorMode,
+        }
+      }),
+      placedAgentAvatars: [
+        ...state.placedAgentAvatars.filter(entry => entry.agentType !== agentType),
+        {
+          id: avatarId,
+          agentType,
+          avatar3dUrl: sanitizedAvatarUrl,
+          position: spawn.position,
+          rotation: spawn.rotation,
+          scale: spawn.scale,
+          label: defaultAgentAvatarLabel(agentType),
+        },
+      ],
+    }))
+    setTimeout(() => get().saveWorldState(), 100)
+    return avatarId
+  }
+
   return ({
   // ─═̷─═̷─⚙️ VISUAL SETTINGS ─═̷─═̷─⚙️
   fpsCounterEnabled: true,
@@ -434,6 +720,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   placementVfxType: (stored('oasis-placement-vfx') as PlacementVfxType) || 'random',
   placementVfxDuration: parseFloat(stored('oasis-placement-duration') || '1.2'),
   activePlacementVfx: [],
+  activeMarchOrderVfx: [],
   conjurePreview: null,
   craftingInProgress: false,
   craftingPrompt: null,
@@ -475,7 +762,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   _preFocusCameraState: null,
 
   // ─═̷─═̷─🧑 AVATAR ─═̷─═̷─🧑
-  avatar3dUrl: '/avatars/gallery/CoolAlien.vrm', // Default avatar for local mode
+  avatar3dUrl: DEFAULT_AGENT_AVATAR_URL, // Default avatar for local mode
 
   // ─═̷─═̷─🖼️ IMAGINE — text-to-image ─═̷─═̷─🖼️
   generatedImages: JSON.parse(stored('oasis-generated-images') || '[]') as GeneratedImage[],
@@ -748,6 +1035,23 @@ export const useOasisStore = create<OasisState>((set, get) => {
   removePlacementVfx: (id) => {
     set(state => ({ activePlacementVfx: state.activePlacementVfx.filter(v => v.id !== id) }))
   },
+  spawnMarchOrderVfx: (position) => {
+    const vfx: ActiveMarchOrderVfx = {
+      id: `march-order-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      position,
+      startedAt: performance.now(),
+      duration: 2.05,
+    }
+    set(state => ({
+      activeMarchOrderVfx: [
+        ...state.activeMarchOrderVfx.slice(-(MAX_ACTIVE_MARCH_ORDER_VFX - 1)),
+        vfx,
+      ],
+    }))
+  },
+  removeMarchOrderVfx: (id) => {
+    set(state => ({ activeMarchOrderVfx: state.activeMarchOrderVfx.filter(v => v.id !== id) }))
+  },
 
   // ─═̷─═̷─👁 SPELL PREVIEW — see the magic before you commit ─═̷─═̷─👁
   previewPlacementSpell: (type) => {
@@ -918,6 +1222,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
   addWorldLight: (type) => {
     // Only allow one environment light per world
     if (type === 'environment' && get().worldLights.some(l => l.type === 'environment')) return
+    // Point + spot are spatial lights — let the user pick the spot with a
+    // click, same UX as placing a catalog asset (oasisspec3 request).
+    if (type === 'point' || type === 'spot') {
+      get().enterPlacementMode({ type: 'light', name: `${type} light`, lightType: type })
+      return
+    }
     withUndo(`Add ${type} light`, '💡', () => {
       const light: WorldLight = {
         id: `light-${type}-${Date.now()}`,
@@ -926,11 +1236,28 @@ export const useOasisStore = create<OasisState>((set, get) => {
         intensity: type === 'ambient' ? 0.4 : type === 'hemisphere' ? 0.3 : type === 'directional' ? 1.2 : 1.0,
         position: type === 'directional' ? [30, 40, 20] : [0, 5, 0],
         ...(type === 'hemisphere' ? { groundColor: '#3a5f0b' } : {}),
-        ...(type === 'spot' ? { angle: 45, target: [0, 0, 0] } : {}),
         visible: true,
       }
       set(s => ({ worldLights: [...s.worldLights, light] }))
     })
+    setTimeout(() => get().saveWorldState(), 100)
+    awardXp('ADD_LIGHT', get().activeWorldId)
+  },
+  placeLightAt: (type, position) => {
+    withUndo(`Place ${type} light`, '💡', () => {
+      const light: WorldLight = {
+        id: `light-${type}-${Date.now()}`,
+        type,
+        color: '#FFF5E6',
+        intensity: 100,
+        position,
+        ...(type === 'spot' ? { angle: 45, target: [position[0], 0, position[2]] } : {}),
+        visible: true,
+      }
+      set(s => ({ worldLights: [...s.worldLights, light], placementPending: null }))
+    })
+    exitPlacementIfActive()
+    get().spawnPlacementVfx(position)
     setTimeout(() => get().saveWorldState(), 100)
     awardXp('ADD_LIGHT', get().activeWorldId)
   },
@@ -1004,6 +1331,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
       const mergedCustom = [...get().customGroundPresets, ...newCustom]
       if (newCustom.length > 0) persist('oasis-custom-ground', JSON.stringify(mergedCustom))
       const loadedObjCount = (world.conjuredAssetIds?.length || 0) + (world.catalogPlacements?.length || 0) + (world.craftedScenes?.length || 0)
+      const sanitizedAgentAvatars = sanitizeAgentAvatarList(world.agentAvatars || [])
+      const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
+        windows: world.agentWindows || [],
+        avatars: sanitizedAgentAvatars.entries,
+        transforms: world.transforms || {},
+      })
       set({
         _worldReady: true,
         _isReceivingRemoteUpdate: false,
@@ -1014,16 +1347,34 @@ export const useOasisStore = create<OasisState>((set, get) => {
         craftedScenes: world.craftedScenes || [],
         worldConjuredAssetIds: world.conjuredAssetIds || [],
         placedCatalogAssets: world.catalogPlacements || [],
-        transforms: world.transforms || {},
+        transforms: normalizedAgentWorldState.transforms,
         behaviors: world.behaviors || {},
         worldLights: lights,
         worldSkyBackground: world.skyBackgroundId || 'night007',
         customGroundPresets: mergedCustom,
-        placedAgentWindows: world.agentWindows || [],
-        placedAgentAvatars: world.agentAvatars || [],
+        placedAgentWindows: normalizedAgentWorldState.windows,
+        placedAgentAvatars: normalizedAgentWorldState.avatars,
         liveAgentAvatarAudio: {},
       })
-      console.log('[World] Loaded:', world.savedAt, '| objects:', loadedObjCount, '| preset:', world.groundPresetId || 'none', '| tiles:', Object.keys(world.groundTiles || {}).length, '| catalog:', world.catalogPlacements?.length || 0, '| lights:', lights.length, '| sky:', world.skyBackgroundId || 'night007', '| agents:', (world.agentWindows || []).length, '| avatars:', (world.agentAvatars || []).length)
+      if ((sanitizedAgentAvatars.changed || normalizedAgentWorldState.changed) && !get().isViewMode) {
+        console.warn('[World] Repaired invalid agent avatar URLs while loading the active world.')
+        void saveWorld({
+          terrain: world.terrain || null,
+          groundPresetId: world.groundPresetId || 'none',
+          groundTiles: world.groundTiles || {},
+          craftedScenes: world.craftedScenes || [],
+          conjuredAssetIds: world.conjuredAssetIds || [],
+          catalogPlacements: world.catalogPlacements || [],
+          transforms: normalizedAgentWorldState.transforms,
+          behaviors: world.behaviors || {},
+          lights,
+          skyBackgroundId: world.skyBackgroundId || 'night007',
+          ...(Array.isArray(world.customGroundPresets) && world.customGroundPresets.length > 0 ? { customGroundPresets: world.customGroundPresets } : {}),
+          agentWindows: normalizedAgentWorldState.windows,
+          agentAvatars: normalizedAgentWorldState.avatars,
+        }, get().activeWorldId)
+      }
+      console.log('[World] Loaded:', world.savedAt, '| objects:', loadedObjCount, '| preset:', world.groundPresetId || 'none', '| tiles:', Object.keys(world.groundTiles || {}).length, '| catalog:', world.catalogPlacements?.length || 0, '| lights:', lights.length, '| sky:', world.skyBackgroundId || 'night007', '| agents:', (world.agentWindows || []).length, '| avatars:', sanitizedAgentAvatars.entries.length)
     }).catch(error => {
       console.error('[World] Load failed:', error)
       set({
@@ -1051,6 +1402,18 @@ export const useOasisStore = create<OasisState>((set, get) => {
       return
     }
     const { terrainParams, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, transforms, behaviors, worldLights, worldSkyBackground, viewingWorldId, customGroundPresets, placedAgentWindows, placedAgentAvatars, _loadedObjectCount } = get()
+    const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
+      windows: placedAgentWindows,
+      avatars: placedAgentAvatars,
+      transforms,
+    })
+    if (normalizedAgentWorldState.changed) {
+      set({
+        transforms: normalizedAgentWorldState.transforms,
+        placedAgentWindows: normalizedAgentWorldState.windows,
+        placedAgentAvatars: normalizedAgentWorldState.avatars,
+      })
+    }
 
     // ░▒▓ SANITY CHECK: block saves that would catastrophically reduce object count ▓▒░
     // If we loaded 5+ objects and now have 0, something is wrong (stale tab, empty init, etc.)
@@ -1063,7 +1426,21 @@ export const useOasisStore = create<OasisState>((set, get) => {
     // Only include customGroundPresets in save if any tiles reference them
     const usedCustomIds = new Set(Object.values(groundTiles).filter(id => id.startsWith('custom_')))
     const relevantCustom = customGroundPresets.filter(p => usedCustomIds.has(p.id))
-    const worldState = { terrain: terrainParams, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, ...(relevantCustom.length > 0 && { customGroundPresets: relevantCustom }), agentWindows: placedAgentWindows, agentAvatars: placedAgentAvatars }
+    const worldState = {
+      terrain: terrainParams,
+      groundPresetId,
+      groundTiles,
+      craftedScenes,
+      conjuredAssetIds: worldConjuredAssetIds,
+      catalogPlacements: placedCatalogAssets,
+      transforms: normalizedAgentWorldState.transforms,
+      behaviors,
+      lights: worldLights,
+      skyBackgroundId: worldSkyBackground,
+      ...(relevantCustom.length > 0 && { customGroundPresets: relevantCustom }),
+      agentWindows: normalizedAgentWorldState.windows,
+      agentAvatars: normalizedAgentWorldState.avatars,
+    }
     // If editing a public_edit world, save to THAT world (not user's own)
     if (get().isViewModeEditable && viewingWorldId) {
       saveWorld(worldState, viewingWorldId) // direct save to viewed world
@@ -1088,11 +1465,16 @@ export const useOasisStore = create<OasisState>((set, get) => {
     // Save current world first (immediate, not debounced) — but ONLY if world was loaded
     if (get()._worldReady) {
       const { terrainParams, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
+      const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
+        windows: placedAgentWindows,
+        avatars: placedAgentAvatars,
+        transforms,
+      })
       // ░▒▓ Filter out in-progress craft placeholders — objects.length === 0 means
       // the LLM hasn't materialized anything yet. Using objects.length (not name)
       // because the scene name gets updated mid-stream before objects arrive.
       const completedScenes = craftedScenes.filter(s => s.objects.length > 0)
-      saveWorld({ terrain: terrainParams, groundPresetId, groundTiles, craftedScenes: completedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: placedAgentWindows, agentAvatars: placedAgentAvatars }, activeWorldId)
+      saveWorld({ terrain: terrainParams, groundPresetId, groundTiles, craftedScenes: completedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, transforms: normalizedAgentWorldState.transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: normalizedAgentWorldState.windows, agentAvatars: normalizedAgentWorldState.avatars }, activeWorldId)
     }
 
     // ░▒▓ Block saves during transition — prevents empty state nuke ▓▒░
@@ -1105,6 +1487,13 @@ export const useOasisStore = create<OasisState>((set, get) => {
       const defaultLights: WorldLight[] = DEFAULT_WORLD_LIGHTS.map((l, i) => ({ ...l, id: `light-${l.type}-default-${i}`, visible: true } as WorldLight))
       const lights = world?.lights !== undefined ? (world?.lights || []) : defaultLights
       const switchObjCount = (world?.conjuredAssetIds?.length || 0) + (world?.catalogPlacements?.length || 0) + (world?.craftedScenes?.length || 0)
+      const sanitizedAgentAvatars = sanitizeAgentAvatarList(world?.agentAvatars || [])
+      const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
+        windows: world?.agentWindows || [],
+        avatars: sanitizedAgentAvatars.entries,
+        transforms: world?.transforms || {},
+      })
+
       set({
         _worldReady: true,
         _loadedObjectCount: switchObjCount,
@@ -1115,12 +1504,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
         craftedScenes: world?.craftedScenes || [],
         worldConjuredAssetIds: world?.conjuredAssetIds || [],
         placedCatalogAssets: world?.catalogPlacements || [],
-        transforms: world?.transforms || {},
+        transforms: normalizedAgentWorldState.transforms,
         behaviors: world?.behaviors || {},
         worldLights: lights,
         worldSkyBackground: world?.skyBackgroundId || 'night007',
-        placedAgentWindows: world?.agentWindows || [],
-        placedAgentAvatars: world?.agentAvatars || [],
+        placedAgentWindows: normalizedAgentWorldState.windows,
+        placedAgentAvatars: normalizedAgentWorldState.avatars,
         liveAgentAvatarAudio: {},
         selectedObjectId: null,
         inspectedObjectId: null,
@@ -1135,6 +1524,24 @@ export const useOasisStore = create<OasisState>((set, get) => {
       persist('oasis-realm', 'forge')
       console.log(`[World] Switched to: ${worldId}`, world ? `(terrain: ${!!world.terrain}, scenes: ${world.craftedScenes?.length || 0}, assets: ${world.conjuredAssetIds?.length || 0}, catalog: ${world.catalogPlacements?.length || 0}, sky: ${world.skyBackgroundId || 'night007'})` : '(empty)')
 
+      if (world && (sanitizedAgentAvatars.changed || normalizedAgentWorldState.changed)) {
+        void saveWorld({
+          terrain: world.terrain || null,
+          groundPresetId: world.groundPresetId || 'none',
+          groundTiles: world.groundTiles || {},
+          craftedScenes: world.craftedScenes || [],
+          conjuredAssetIds: world.conjuredAssetIds || [],
+          catalogPlacements: world.catalogPlacements || [],
+          transforms: normalizedAgentWorldState.transforms,
+          behaviors: world.behaviors || {},
+          lights,
+          skyBackgroundId: world.skyBackgroundId || 'night007',
+          ...(Array.isArray(world.customGroundPresets) && world.customGroundPresets.length > 0 ? { customGroundPresets: world.customGroundPresets } : {}),
+          agentWindows: normalizedAgentWorldState.windows,
+          agentAvatars: normalizedAgentWorldState.avatars,
+        }, worldId)
+      }
+
       // Shared SSE world-events fanout handles remote tool updates.
       if (isBrowser) {
         set({ _realtimeChannel: null })
@@ -1147,7 +1554,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
     cancelPendingSave()
     if (get()._worldReady) {
       const { terrainParams, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
-      saveWorld({ terrain: terrainParams, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: placedAgentWindows, agentAvatars: placedAgentAvatars }, activeWorldId)
+      const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
+        windows: placedAgentWindows,
+        avatars: placedAgentAvatars,
+        transforms,
+      })
+      saveWorld({ terrain: terrainParams, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, transforms: normalizedAgentWorldState.transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: normalizedAgentWorldState.windows, agentAvatars: normalizedAgentWorldState.avatars }, activeWorldId)
     }
 
     // Create and switch to new world (async) — seed with default lights so it's not pitch black
@@ -1259,10 +1671,23 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
   // ─═̷─═̷─💻 3D AGENT WINDOWS — place, focus, interact ─═̷─═̷─💻
   addAgentWindow: (window) => {
-    set(state => ({
-      placedAgentWindows: [...state.placedAgentWindows, window],
+    set(state => {
+      const sharedAvatar = isSharedAgentAvatarType(window.agentType)
+        ? state.placedAgentAvatars.find(entry => entry.agentType === window.agentType) || null
+        : null
+      return ({
+      placedAgentWindows: [
+        ...state.placedAgentWindows,
+        {
+          ...window,
+          linkedAvatarId: window.linkedAvatarId || sharedAvatar?.id,
+          renderMode: window.renderMode || DEFAULT_AGENT_WINDOW_RENDER_MODE,
+          anchorMode: window.anchorMode || (sharedAvatar ? 'next-to' : 'detached'),
+        },
+      ],
       placementPending: null,
-    }))
+      })
+    })
     exitPlacementIfActive()
     get().spawnPlacementVfx(window.position)
     setTimeout(() => get().saveWorldState(), 100)
@@ -1297,9 +1722,51 @@ export const useOasisStore = create<OasisState>((set, get) => {
     }))
     setTimeout(() => get().saveWorldState(), 100)
   },
+  setAgentWindowAnchorMode: (id, anchorMode) => {
+    set(state => {
+      const targetWindow = state.placedAgentWindows.find(entry => entry.id === id)
+      if (!targetWindow) return state
+
+      let frozenPosition = targetWindow.position
+      let frozenRotation = targetWindow.rotation
+
+      if (anchorMode === 'detached' && targetWindow.anchorMode && targetWindow.anchorMode !== 'detached' && targetWindow.linkedAvatarId) {
+        const linkedAvatar = state.placedAgentAvatars.find(entry => entry.id === targetWindow.linkedAvatarId)
+        if (linkedAvatar) {
+          const avatarTransform = state.transforms[linkedAvatar.id]
+          const derivedPlacement = deriveAvatarAnchoredWindowPlacement(
+            targetWindow,
+            linkedAvatar,
+            avatarTransform,
+            targetWindow.anchorMode,
+          )
+          frozenPosition = derivedPlacement.position
+          frozenRotation = derivedPlacement.rotation
+        }
+      }
+
+      return {
+        placedAgentWindows: state.placedAgentWindows.map(entry =>
+          entry.id === id
+            ? {
+                ...entry,
+                anchorMode,
+                position: anchorMode === 'detached' ? frozenPosition : entry.position,
+                rotation: anchorMode === 'detached' ? frozenRotation : entry.rotation,
+              }
+            : entry,
+        ),
+      }
+    })
+    setTimeout(() => get().saveWorldState(), 100)
+  },
   assignAvatarToAgentWindow: (windowId, avatarUrl) => {
     const window = get().placedAgentWindows.find(entry => entry.id === windowId)
     if (!window) return null
+
+    if (isSharedAgentAvatarType(window.agentType)) {
+      return assignSharedAgentAvatar(window.agentType, avatarUrl, { preferredWindowId: windowId })
+    }
 
     const existingAvatar = get().placedAgentAvatars.find(entry => entry.linkedWindowId === windowId)
 
@@ -1311,6 +1778,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
         delete nextTransforms[existingAvatar.id]
         delete nextAudio[existingAvatar.id]
         return {
+          placedAgentWindows: state.placedAgentWindows.map(entry =>
+            entry.id === windowId
+              ? { ...entry, linkedAvatarId: undefined, anchorMode: 'detached' }
+              : entry
+          ),
           placedAgentAvatars: state.placedAgentAvatars.filter(entry => entry.id !== existingAvatar.id),
           liveAgentAvatarAudio: nextAudio,
           transforms: nextTransforms,
@@ -1322,17 +1794,28 @@ export const useOasisStore = create<OasisState>((set, get) => {
       return null
     }
 
+    const sanitizedAvatarUrl = resolveAgentAvatarUrl(avatarUrl).url
     const windowTransform = get().transforms[windowId]
     const anchor = deriveWindowAvatarAnchor(window, windowTransform)
     const scale = deriveWindowAvatarScale(window, windowTransform)
 
     if (existingAvatar) {
       set(state => ({
+        placedAgentWindows: state.placedAgentWindows.map(entry =>
+          entry.id === windowId
+            ? {
+                ...entry,
+                linkedAvatarId: existingAvatar.id,
+                anchorMode: entry.anchorMode && entry.anchorMode !== 'detached' ? entry.anchorMode : 'next-to',
+              }
+            : entry
+        ),
         placedAgentAvatars: state.placedAgentAvatars.map(entry =>
           entry.id === existingAvatar.id
             ? {
                 ...entry,
-                avatar3dUrl: avatarUrl,
+                avatar3dUrl: sanitizedAvatarUrl,
+                linkedWindowId: windowId,
                 label: entry.label || window.label || defaultAgentAvatarLabel(window.agentType),
                 position: entry.position || anchor.position,
                 rotation: entry.rotation || anchor.rotation,
@@ -1347,12 +1830,21 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
     const avatarId = `agent-avatar-${windowId}`
     set(state => ({
+      placedAgentWindows: state.placedAgentWindows.map(entry =>
+        entry.id === windowId
+          ? {
+              ...entry,
+              linkedAvatarId: avatarId,
+              anchorMode: entry.anchorMode && entry.anchorMode !== 'detached' ? entry.anchorMode : 'next-to',
+            }
+          : entry
+      ),
       placedAgentAvatars: [
         ...state.placedAgentAvatars,
         {
           id: avatarId,
           agentType: window.agentType,
-          avatar3dUrl: avatarUrl,
+          avatar3dUrl: sanitizedAvatarUrl,
           linkedWindowId: windowId,
           position: anchor.position,
           rotation: anchor.rotation,
@@ -1364,125 +1856,14 @@ export const useOasisStore = create<OasisState>((set, get) => {
     setTimeout(() => get().saveWorldState(), 100)
     return avatarId
   },
+  assignSharedAgentAvatar: (agentType, avatarUrl, options) => {
+    return assignSharedAgentAvatar(agentType, avatarUrl, options)
+  },
   assignHermesAvatar: (avatarUrl) => {
-    const existingAvatar = get().placedAgentAvatars.find(entry => entry.agentType === 'hermes')
-
-    if (!avatarUrl) {
-      if (!existingAvatar) return null
-      set(state => {
-        const nextTransforms = { ...state.transforms }
-        const nextAudio = { ...state.liveAgentAvatarAudio }
-        delete nextTransforms[existingAvatar.id]
-        delete nextAudio[existingAvatar.id]
-        return {
-          placedAgentAvatars: state.placedAgentAvatars.filter(entry => entry.id !== existingAvatar.id),
-          liveAgentAvatarAudio: nextAudio,
-          transforms: nextTransforms,
-          selectedObjectId: state.selectedObjectId === existingAvatar.id ? null : state.selectedObjectId,
-          inspectedObjectId: state.inspectedObjectId === existingAvatar.id ? null : state.inspectedObjectId,
-        }
-      })
-      setTimeout(() => get().saveWorldState(), 100)
-      return null
-    }
-
-    const spawn = deriveHermesAvatarSpawn(getCameraSnapshot())
-    if (existingAvatar) {
-      set(state => ({
-        placedAgentAvatars: state.placedAgentAvatars.map(entry =>
-          entry.id === existingAvatar.id
-            ? {
-                ...entry,
-                avatar3dUrl: avatarUrl,
-                label: entry.label || defaultAgentAvatarLabel('hermes'),
-                position: entry.position || spawn.position,
-                rotation: entry.rotation || spawn.rotation,
-                scale: entry.scale || spawn.scale,
-              }
-            : entry
-        ),
-      }))
-      setTimeout(() => get().saveWorldState(), 100)
-      return existingAvatar.id
-    }
-
-    const avatarId = 'agent-avatar-hermes'
-    set(state => ({
-      placedAgentAvatars: [
-        ...state.placedAgentAvatars,
-        {
-          id: avatarId,
-          agentType: 'hermes',
-          avatar3dUrl: avatarUrl,
-          position: spawn.position,
-          rotation: spawn.rotation,
-          scale: spawn.scale,
-          label: defaultAgentAvatarLabel('hermes'),
-        },
-      ],
-    }))
-    setTimeout(() => get().saveWorldState(), 100)
-    return avatarId
+    return assignSharedAgentAvatar('hermes', avatarUrl)
   },
   assignMerlinAvatar: (avatarUrl) => {
-    const existingAvatar = get().placedAgentAvatars.find(entry => entry.agentType === 'merlin')
-
-    if (!avatarUrl) {
-      if (!existingAvatar) return null
-      set(state => {
-        const nextTransforms = { ...state.transforms }
-        const nextAudio = { ...state.liveAgentAvatarAudio }
-        delete nextTransforms[existingAvatar.id]
-        delete nextAudio[existingAvatar.id]
-        return {
-          placedAgentAvatars: state.placedAgentAvatars.filter(entry => entry.id !== existingAvatar.id),
-          liveAgentAvatarAudio: nextAudio,
-          transforms: nextTransforms,
-          selectedObjectId: state.selectedObjectId === existingAvatar.id ? null : state.selectedObjectId,
-          inspectedObjectId: state.inspectedObjectId === existingAvatar.id ? null : state.inspectedObjectId,
-        }
-      })
-      setTimeout(() => get().saveWorldState(), 100)
-      return null
-    }
-
-    const spawn = deriveStandaloneAgentAvatarSpawn(getCameraSnapshot())
-    if (existingAvatar) {
-      set(state => ({
-        placedAgentAvatars: state.placedAgentAvatars.map(entry =>
-          entry.id === existingAvatar.id
-            ? {
-                ...entry,
-                avatar3dUrl: avatarUrl,
-                label: entry.label || defaultAgentAvatarLabel('merlin'),
-                position: entry.position || spawn.position,
-                rotation: entry.rotation || spawn.rotation,
-                scale: entry.scale || spawn.scale,
-              }
-            : entry
-        ),
-      }))
-      setTimeout(() => get().saveWorldState(), 100)
-      return existingAvatar.id
-    }
-
-    const avatarId = 'agent-avatar-merlin'
-    set(state => ({
-      placedAgentAvatars: [
-        ...state.placedAgentAvatars,
-        {
-          id: avatarId,
-          agentType: 'merlin',
-          avatar3dUrl: avatarUrl,
-          position: spawn.position,
-          rotation: spawn.rotation,
-          scale: spawn.scale,
-          label: defaultAgentAvatarLabel('merlin'),
-        },
-      ],
-    }))
-    setTimeout(() => get().saveWorldState(), 100)
-    return avatarId
+    return assignSharedAgentAvatar('merlin', avatarUrl)
   },
   setAgentAvatarAudio: (avatarId, audio) => {
     set(state => {
@@ -1583,6 +1964,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
       const defaultLights: WorldLight[] = DEFAULT_WORLD_LIGHTS.map((l, i) => ({ ...l, id: `light-${l.type}-default-${i}`, visible: true } as WorldLight))
       const lights = state.lights !== undefined ? state.lights : defaultLights
       const viewObjCount = (state.conjuredAssetIds?.length || 0) + (state.catalogPlacements?.length || 0) + (state.craftedScenes?.length || 0)
+      const sanitizedAgentAvatars = sanitizeAgentAvatarList(state.agentAvatars || [])
+      const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
+        windows: state.agentWindows || [],
+        avatars: sanitizedAgentAvatars.entries,
+        transforms: state.transforms || {},
+      })
       set({
         _worldReady: isEditable, // Only allow saves for authenticated public_edit
         _loadedObjectCount: viewObjCount,
@@ -1594,12 +1981,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
         craftedScenes: state.craftedScenes || [],
         worldConjuredAssetIds: state.conjuredAssetIds || [],
         placedCatalogAssets: state.catalogPlacements || [],
-        transforms: state.transforms || {},
+        transforms: normalizedAgentWorldState.transforms,
         behaviors: state.behaviors || {},
         worldLights: lights,
         worldSkyBackground: state.skyBackgroundId || 'night007',
-        placedAgentWindows: state.agentWindows || [],
-        placedAgentAvatars: state.agentAvatars || [],
+        placedAgentWindows: normalizedAgentWorldState.windows,
+        placedAgentAvatars: normalizedAgentWorldState.avatars,
         liveAgentAvatarAudio: {},
         selectedObjectId: null,
         inspectedObjectId: null,

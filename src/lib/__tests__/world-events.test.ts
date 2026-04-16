@@ -161,7 +161,7 @@ describe('world-events pub/sub', () => {
     const eventTypes: WorldEventType[] = [
       'object_added', 'object_removed', 'object_modified',
       'conjured_asset_added', 'conjured_asset_removed',
-      'scene_crafted', 'sky_changed', 'ground_changed',
+      'scene_crafted', 'scene_craft_progress', 'sky_changed', 'ground_changed',
       'tiles_painted', 'light_added', 'light_modified',
       'behavior_set', 'agent_avatar_set', 'agent_avatar_walk',
       'agent_avatar_animation', 'world_cleared', 'world_saved',

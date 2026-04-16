@@ -38,6 +38,19 @@ function getLipSyncCtx(): AudioContext | null {
   } catch { return null }
 }
 
+export async function resumeLipSyncContext(): Promise<AudioContext | null> {
+  const ctx = getLipSyncCtx()
+  if (!ctx) return null
+  if (ctx.state === 'suspended') {
+    try {
+      await ctx.resume()
+    } catch {
+      return ctx
+    }
+  }
+  return ctx
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // CRITICAL GUARD: createMediaElementSource() throws InvalidStateError
 // if called twice on the same element. WeakSet tracks connected elements.
@@ -50,8 +63,10 @@ const _connectedElements = new WeakSet<HTMLMediaElement>()
 // ═══════════════════════════════════════════════════════════════════════════
 
 const ZERO_STATE: LipSyncState = { aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 }
-const SILENCE_GATE = 0.05
+const SILENCE_GATE = 0.08
 const SMOOTH_FACTOR = 0.3
+// Cap so mouth never reaches max-open (looks unnatural). 0.65 = 65% of full jaw drop.
+const MOUTH_OPEN_CAP = 0.65
 
 export function createLipSyncController(): LipSyncController {
   let analyser: AnalyserNode | null = null
@@ -143,12 +158,13 @@ export function createLipSyncController(): LipSyncController {
         const eeWeight = centroid > 0.5 ? band2 * centroid : band2 * 0.3
         const ouWeight = centroid <= 0.5 ? band2 * (1 - centroid) : band2 * 0.3
 
+        // Lowered multipliers + cap → mouth opens proportionally instead of slamming wide
         raw = {
-          aa: clamp01(band0 * 1.5),
-          oh: clamp01(band1 * 1.2),
-          ee: clamp01(eeWeight * 1.3),
-          ou: clamp01(ouWeight * 1.3),
-          ih: clamp01(band3 * 2.0),
+          aa: Math.min(MOUTH_OPEN_CAP, clamp01(band0 * 0.8)),
+          oh: Math.min(MOUTH_OPEN_CAP, clamp01(band1 * 0.7)),
+          ee: clamp01(eeWeight * 0.9),
+          ou: clamp01(ouWeight * 0.9),
+          ih: clamp01(band3 * 1.4),
         }
       }
 

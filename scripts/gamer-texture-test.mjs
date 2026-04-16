@@ -7,8 +7,11 @@
 import { chromium } from '@playwright/test'
 import fs from 'fs'
 import { execSync } from 'child_process'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const DIR = 'C:/af_oasis/gamer-screenshots'
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url))
+const DIR = path.resolve(SCRIPT_DIR, '../gamer-screenshots')
 const OASIS_URL = 'http://localhost:4516'
 const TEXTURE_WORLD_ID = 'world-1775870997998-p7o9'
 let shotNum = 0

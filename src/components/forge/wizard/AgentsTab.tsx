@@ -7,8 +7,10 @@
 import { useOasisStore } from '../../../store/oasisStore'
 
 const AGENT_TYPES = [
+  { type: 'browser' as const, label: 'Browser', icon: 'WWW', color: '#f97316', desc: 'Live 3D browser surface with real typing and selection' },
   { type: 'anorak' as const, label: 'Anorak', icon: '💻', color: '#38bdf8', desc: 'Claude Code agent — full multi-turn sessions' },
   { type: 'anorak-pro' as const, label: 'Anorak Pro', icon: '🔮', color: '#14b8a6', desc: 'Autonomous dev pipeline — curator, coder, reviewer, tester' },
+  { type: 'hermes' as const, label: 'Hermes', icon: '☤', color: '#fb7185', desc: 'Embodied co-builder — remote tool agent inside the Oasis' },
   { type: 'merlin' as const, label: 'Merlin', icon: '🧙', color: '#a855f7', desc: 'World-builder agent — place objects, set sky' },
   { type: 'devcraft' as const, label: 'DevCraft', icon: '⚡', color: '#22c55e', desc: 'Mission management + gamification' },
   { type: 'parzival' as const, label: 'Parzival', icon: '🧿', color: '#c084fc', desc: 'Autonomous brain — modes, missions, thought stream' },
@@ -68,7 +70,7 @@ export function AgentsTabContent() {
           {placedAgentWindows.map(win => {
             const isSelected = selectedObjectId === win.id
             const isFocused = focusedAgentWindowId === win.id
-            const agent = AGENT_TYPES.find(a => a.type === win.agentType) || AGENT_TYPES[0]
+            const agent = AGENT_TYPES.find(a => a.type === win.agentType) || AGENT_TYPES.find(a => a.type === 'anorak') || AGENT_TYPES[0]
             const pos = transforms[win.id]?.position || win.position
             return (
               <div

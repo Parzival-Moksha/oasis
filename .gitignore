@@ -123,10 +123,20 @@ ralph.ps1
 # Internal specs (not public documentation)
 specs/
 
-# Dev session artifacts (project-root brain file + CLAUDE-*.md variants at root only)
-/CLAUDE.md
-/CLAUDE-*.md
+# Dev session artifacts
 feb*.txt
+tools/anorak-memory.md
+/tmp-*.jpg
+/tmp-*.png
+/viewport-screenshot.png
+public/viewport-screenshot.png
+
+# Personal runtime state
+data/anorak-pro*.local.json
+data/hermes-*.local.json
+
+# Runtime avatar gallery thumbnails (user-generated on-the-fly)
+public/avatars/gallery/thumbs/
 public/screenshots/
 __pycache__/
 *.pyc

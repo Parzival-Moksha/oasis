@@ -3,8 +3,13 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { chromium } from '@playwright/test'
+import { mkdirSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const SCREENSHOTS_DIR = 'C:/af_oasis/test-screenshots'
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url))
+const SCREENSHOTS_DIR = path.resolve(SCRIPT_DIR, '../test-screenshots')
+mkdirSync(SCREENSHOTS_DIR, { recursive: true })
 
 async function explore() {
   console.log('Launching browser...')

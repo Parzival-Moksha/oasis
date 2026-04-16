@@ -27,6 +27,8 @@ export function getAudioListener(): THREE.AudioListener | null { return _audioLi
 import { useOasisStore } from '../store/oasisStore'
 import { useInputManager, getInputCapabilities, consumeMouseLookDelta, type InputState } from '../lib/input-manager'
 import { setCameraSnapshot } from '../lib/camera-bridge'
+import { deriveAvatarAnchoredWindowPlacement, resolveAgentWindowRenderScale } from '../lib/agent-avatar-utils'
+import { getLiveObjectTransform } from '../lib/live-object-transforms'
 import { SettingsContext, DragContext } from './scene-lib'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -198,7 +200,7 @@ function useAgentFocusUpdate() {
 
   return (camera: THREE.PerspectiveCamera, focusedId: string | null, viewport: { aspect: number }) => {
     const store = useOasisStore.getState()
-    const { placedAgentWindows, placedCatalogAssets, transforms } = store
+    const { placedAgentWindows, placedCatalogAssets, placedAgentAvatars, transforms } = store
 
     // Detect focus change
     if (focusedId !== prevFocusedRef.current) {
@@ -215,26 +217,48 @@ function useAgentFocusUpdate() {
         if (!win && !img) return
 
         const t = transforms[focusedId]
-        const pos = t?.position || (win ? win.position : img!.position)
-        const rot = t?.rotation || (win ? win.rotation : img?.rotation || [0, 0, 0])
+        const linkedAvatar = win
+          ? (win.linkedAvatarId
+              ? placedAgentAvatars.find(entry => entry.id === win.linkedAvatarId) || null
+              : placedAgentAvatars.find(entry => entry.linkedWindowId === win.id) || null)
+          : null
+        const avatarTransform = linkedAvatar ? (getLiveObjectTransform(linkedAvatar.id) || transforms[linkedAvatar.id]) : undefined
+        const derivedPlacement = win && linkedAvatar && win.anchorMode && win.anchorMode !== 'detached'
+          ? deriveAvatarAnchoredWindowPlacement(win, linkedAvatar, avatarTransform, win.anchorMode, t)
+          : null
+        const pos = derivedPlacement?.position || t?.position || (win ? win.position : img!.position)
+        const rot = derivedPlacement?.rotation || t?.rotation || (win ? win.rotation : img?.rotation || [0, 0, 0])
 
         const windowNormal = new THREE.Vector3(0, 0, 1)
         windowNormal.applyEuler(new THREE.Euler(rot[0], rot[1], rot[2]))
 
         let dist: number
+        let focusOffset = new THREE.Vector3()
         if (win) {
-          // Frame the agent window a bit tighter and leave some breathing room
-          // for a companion avatar to live on the left in follow mode.
-          const worldWidth = (win.width || 800) * 0.02 * (win.scale || 1)
-          const worldHeight = (win.height || 600) * 0.02 * (win.scale || 1)
-          const groupScale = typeof t?.scale === 'number' ? t.scale : Array.isArray(t?.scale) ? t.scale[0] : win.scale
-          const scaledWidth = worldWidth * groupScale
-          const scaledHeight = worldHeight * groupScale
+          const renderScale = resolveAgentWindowRenderScale(win, t)
+          const scaledWidth = (win.width || 800) * 0.02 * renderScale
+          const scaledHeight = (win.height || 600) * 0.02 * renderScale
+          const windowRight = new THREE.Vector3(1, 0, 0).applyEuler(new THREE.Euler(rot[0], rot[1], rot[2])).normalize()
+          const avatarPosition = avatarTransform?.position || linkedAvatar?.position
+          const avatarDirection = avatarPosition
+            ? new THREE.Vector3(
+                avatarPosition[0] - pos[0],
+                avatarPosition[1] - pos[1],
+                avatarPosition[2] - pos[2],
+              )
+            : null
+          const avatarSide = avatarDirection ? Math.sign(avatarDirection.dot(windowRight)) || -1 : 0
+          const avatarFocusWidth = linkedAvatar ? Math.max(scaledHeight * 0.42, scaledWidth * 0.18) : 0
+          const framedWidth = scaledWidth + avatarFocusWidth
           const fovRad = (camera.fov * Math.PI) / 180
           const hFov = 2 * Math.atan(Math.tan(fovRad / 2) * viewport.aspect)
-          const distV = (scaledHeight / 2) / Math.tan(fovRad / 2) / 0.82
-          const distH = (scaledWidth / 2) / Math.tan(hFov / 2) / 0.72
+          const targetFill = 0.9
+          const distV = (scaledHeight / 2) / Math.tan(fovRad / 2) / targetFill
+          const distH = (framedWidth / 2) / Math.tan(hFov / 2) / targetFill
           dist = Math.max(distV, distH)
+          if (avatarSide !== 0) {
+            focusOffset = windowRight.multiplyScalar(scaledWidth * 0.15 * avatarSide)
+          }
         } else {
           // Image/video: placement.scale = base height in world units.
           // Transform override t?.scale = group scale multiplier from SelectableWrapper.
@@ -261,12 +285,7 @@ function useAgentFocusUpdate() {
           const groupScale = typeof t?.scale === 'number' ? t.scale : Array.isArray(t?.scale) ? t.scale[1] : 1
           windowCenter.y += (baseScale * groupScale) / 2
         }
-        if (win) {
-          const worldWidth = (win.width || 800) * 0.02 * (win.scale || 1)
-          const groupScale = typeof t?.scale === 'number' ? t.scale : Array.isArray(t?.scale) ? t.scale[0] : win.scale
-          const windowRight = new THREE.Vector3(1, 0, 0).applyEuler(new THREE.Euler(rot[0], rot[1], rot[2]))
-          windowCenter.add(windowRight.multiplyScalar(worldWidth * groupScale * 0.1))
-        }
+        windowCenter.add(focusOffset)
         const cameraGoal = windowCenter.clone().add(windowNormal.clone().multiplyScalar(dist))
 
         startPosRef.current = camera.position.clone()

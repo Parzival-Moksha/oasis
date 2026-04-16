@@ -60,6 +60,20 @@ interface MissionContextRow {
 }
 
 const MAX_FILE_MODULE_CONTENT = 400000
+const LINKED_FILE_SEARCH_SKIP_DIRS = new Set([
+  '.git',
+  '.next',
+  'node_modules',
+  'generated-images',
+  'generated-videos',
+  'generated-voices',
+  'coverage',
+  'dist',
+  'build',
+])
+const LINKED_FILE_SEARCH_PRIORITY_PREFIXES = ['carbondir', 'context', 'tools', 'docs']
+const LINKED_FILE_SEARCH_MAX_DEPTH = 6
+const LINKED_FILE_SEARCH_MAX_CANDIDATES = 24
 
 function describeMission(mission: MissionContextRow): string {
   const lines: string[] = [
@@ -119,12 +133,97 @@ async function readLinkedFile(filePath: string): Promise<{ filePath: string; con
     throw new Error(`File path must be within project root or user home: ${resolved}`)
   }
 
-  const content = await fs.readFile(target, 'utf8')
-  const exactContent = content.length > MAX_FILE_MODULE_CONTENT
-    ? `${content.slice(0, MAX_FILE_MODULE_CONTENT)}\n\n[truncated to ${MAX_FILE_MODULE_CONTENT} chars for prompt safety]`
-    : content
+  const toPromptSafeContent = (content: string) => {
+    const exactContent = content.length > MAX_FILE_MODULE_CONTENT
+      ? `${content.slice(0, MAX_FILE_MODULE_CONTENT)}\n\n[truncated to ${MAX_FILE_MODULE_CONTENT} chars for prompt safety]`
+      : content
+    return exactContent
+  }
 
-  return { filePath: target, content: exactContent }
+  const readCandidate = async (candidatePath: string) => {
+    const candidateResolved = path.resolve(candidatePath)
+    if (!candidateResolved.startsWith(oasisRoot) && !candidateResolved.startsWith(path.resolve(userHome))) {
+      throw new Error(`File path must be within project root or user home: ${candidateResolved}`)
+    }
+
+    const content = await fs.readFile(candidateResolved, 'utf8')
+    return { filePath: candidateResolved, content: toPromptSafeContent(content) }
+  }
+
+  const collectRepoMatches = async (
+    rootDir: string,
+    basename: string,
+    depth = 0,
+    matches: string[] = [],
+  ): Promise<string[]> => {
+    if (depth > LINKED_FILE_SEARCH_MAX_DEPTH || matches.length >= LINKED_FILE_SEARCH_MAX_CANDIDATES) return matches
+
+    let entries: Array<{ name: string; isDirectory(): boolean; isFile(): boolean }> = []
+    try {
+      entries = await fs.readdir(rootDir, { withFileTypes: true }) as Array<{ name: string; isDirectory(): boolean; isFile(): boolean }>
+    } catch {
+      return matches
+    }
+
+    for (const entry of entries) {
+      if (matches.length >= LINKED_FILE_SEARCH_MAX_CANDIDATES) break
+      if (LINKED_FILE_SEARCH_SKIP_DIRS.has(entry.name)) continue
+
+      const entryPath = path.join(rootDir, entry.name)
+      if (entry.isFile() && entry.name.toLowerCase() === basename.toLowerCase()) {
+        matches.push(entryPath)
+        continue
+      }
+
+      if (entry.isDirectory()) {
+        await collectRepoMatches(entryPath, basename, depth + 1, matches)
+      }
+    }
+
+    return matches
+  }
+
+  const rankCandidate = (candidatePath: string): number => {
+    const relative = path.relative(oasisRoot, candidatePath).replace(/\\/g, '/')
+    const prefixIndex = LINKED_FILE_SEARCH_PRIORITY_PREFIXES.findIndex(prefix => relative === prefix || relative.startsWith(`${prefix}/`))
+    const pathDepth = relative.split('/').length
+    return (prefixIndex >= 0 ? prefixIndex * 100 : 900) + pathDepth
+  }
+
+  try {
+    return await readCandidate(target)
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? String((error as { code?: unknown }).code || '') : ''
+    if (path.isAbsolute(filePath) || (code !== 'ENOENT' && code !== 'ENOTDIR')) {
+      throw error
+    }
+  }
+
+  const trimmed = filePath.trim()
+  const basename = path.basename(trimmed)
+  if (!basename || basename !== trimmed) {
+    throw new Error(`ENOENT: no such file or directory, open '${resolved}'`)
+  }
+
+  const preferredCandidates = LINKED_FILE_SEARCH_PRIORITY_PREFIXES.map(prefix => path.join(oasisRoot, prefix, basename))
+  const discoveredCandidates = await collectRepoMatches(oasisRoot, basename)
+  const fallbackCandidates = Array.from(new Set([...preferredCandidates, ...discoveredCandidates]))
+    .filter(candidate => path.resolve(candidate) !== resolved)
+    .sort((a, b) => rankCandidate(a) - rankCandidate(b))
+
+  let lastError: unknown = null
+  for (const candidate of fallbackCandidates) {
+    try {
+      return await readCandidate(candidate)
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error ? String((error as { code?: unknown }).code || '') : ''
+      if (code !== 'ENOENT' && code !== 'ENOTDIR') throw error
+      lastError = error
+    }
+  }
+
+  if (lastError) throw lastError
+  throw new Error(`ENOENT: no such file or directory, open '${resolved}'`)
 }
 
 async function resolveBuiltInModule(id: string, moduleValues: Record<string, number>): Promise<ResolvedContextModule | null> {
@@ -198,6 +297,49 @@ async function resolveBuiltInModule(id: string, moduleValues: Record<string, num
         description: 'Highest-priority anorak/anorak-pro TODO missions',
         kind: 'builtin',
         content: formatMissionBlock(`Top ${count} anorak TODO missions:`, missions),
+      }
+    }
+    case BUILT_IN_MODULE_IDS.pipeline: {
+      const [todo, wip, recentDone, immature] = await Promise.all([
+        prisma.mission.findMany({ where: { status: 'todo' }, orderBy: { priority: 'desc' }, select: { id: true, name: true, maturityLevel: true, priority: true, assignedTo: true, dharmaPath: true } }),
+        prisma.mission.findMany({ where: { status: 'wip' }, select: { id: true, name: true, executionPhase: true, executionRound: true, assignedTo: true } }),
+        prisma.mission.findMany({ where: { status: 'done' }, orderBy: { endedAt: 'desc' }, take: 10, select: { id: true, name: true, reviewerScore: true, testerScore: true, valor: true, score: true, endedAt: true } }),
+        prisma.mission.findMany({ where: { maturityLevel: { lt: 3 }, assignedTo: { in: ['anorak', 'anorak-pro'] } }, orderBy: { priority: 'desc' }, select: { id: true, name: true, maturityLevel: true, priority: true } }),
+      ])
+      const vaikhariCount = todo.filter(m => m.maturityLevel >= 3).length
+      const dharmaCounts: Record<string, number> = {}
+      for (const m of todo) {
+        if (m.dharmaPath) for (const p of m.dharmaPath.split(',').map(s => s.trim())) dharmaCounts[p] = (dharmaCounts[p] || 0) + 1
+      }
+      const dharmaLines = Object.entries(dharmaCounts).sort(([, a], [, b]) => b - a).map(([p, c]) => `  ${p}: ${c}`)
+      const lines = [
+        `Total TODO: ${todo.length} (${vaikhariCount} vaikhari, ${todo.length - vaikhariCount} immature)`,
+        `WIP: ${wip.length}${wip.length > 0 ? ` — ${wip.map(m => `#${m.id} "${m.name}" (${m.executionPhase || '?'} r${m.executionRound})`).join(', ')}` : ''}`,
+        `Immature (curator queue): ${immature.length}${immature.length > 0 ? ` — ${immature.slice(0, 5).map(m => `#${m.id} m${m.maturityLevel}`).join(', ')}${immature.length > 5 ? '...' : ''}` : ''}`,
+        `Recent done (last 10): ${recentDone.length > 0 ? recentDone.map(m => `#${m.id} (rev:${m.reviewerScore ?? '?'} test:${m.testerScore ?? '?'} valor:${m.valor ?? '?'})`).join(', ') : '(none)'}`,
+        '',
+        'Dharma distribution (TODO):',
+        ...(dharmaLines.length > 0 ? dharmaLines : ['  (no dharma tags yet)']),
+      ]
+      return { id, name: 'Pipeline Status', description: 'Live pipeline snapshot', kind: 'builtin', content: lines.join('\n') }
+    }
+    case BUILT_IN_MODULE_IDS.memory: {
+      const memoryPath = path.resolve(process.cwd(), 'tools', 'anorak-memory.md')
+      let memoryContent: string
+      try {
+        const raw = await fs.readFile(memoryPath, 'utf8')
+        memoryContent = raw.length > MAX_FILE_MODULE_CONTENT
+          ? `${raw.slice(0, MAX_FILE_MODULE_CONTENT)}\n\n[truncated]`
+          : raw
+      } catch {
+        memoryContent = '(anorak-memory.md not found — no persistent memory yet.)'
+      }
+      return {
+        id,
+        name: 'Anorak Memory',
+        description: 'Persistent memory — ship targets, blockers, patterns, velocity',
+        kind: 'builtin',
+        content: memoryContent,
       }
     }
     default:

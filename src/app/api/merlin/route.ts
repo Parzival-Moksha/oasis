@@ -203,6 +203,8 @@ async function buildMerlinRuntimeContext(worldId: string, playerContext?: Prompt
     `- Active world ID: ${worldId}`,
     '- The Oasis MCP server is pinned to the active world above for this turn.',
     '- Stay in character as Merlin, but do the actual work with MCP tools.',
+    '- Self-crafted craft_scene calls with explicit objects are the default. Call get_craft_guide when you need the primitive schema. Use prompt-based craft_scene only with strategy: "sculptor", then poll get_craft_job for long-running jobs.',
+    '- Avatar and craft mutations may execute as embodied sequences rather than instantaneous teleports, so allow time for completion.',
   ]
 
   if (playerContext?.avatar) {
@@ -490,6 +492,21 @@ export async function POST(request: NextRequest) {
                 const blockId = typeof block.id === 'string' ? block.id : ''
                 const isNewBlock = !previous || previous.type !== blockType || (blockId && previous.id !== blockId)
 
+                if (blockType === 'thinking' && typeof block.thinking === 'string') {
+                  const previousThinking = previous?.type === 'thinking' ? previous.thinking || '' : ''
+                  if (isNewBlock || !previousThinking) {
+                    sendEvent('thinking', { content: block.thinking })
+                  } else if (block.thinking !== previousThinking) {
+                    if (block.thinking.startsWith(previousThinking)) {
+                      const delta = block.thinking.slice(previousThinking.length)
+                      if (delta) sendEvent('thinking', { content: delta })
+                    } else {
+                      sendEvent('thinking', { content: block.thinking })
+                    }
+                  }
+                  continue
+                }
+
                 if (blockType === 'text' && typeof block.text === 'string') {
                   const previousText = previous?.type === 'text' ? previous.text || '' : ''
                   if (isNewBlock || !previousText) {
@@ -522,7 +539,7 @@ export async function POST(request: NextRequest) {
                 }
 
                 if (isNewBlock || gainedInput) {
-                  sendEvent('tool', { name: normalizedToolName, args: toolInput })
+                  sendEvent('tool', { name: normalizedToolName, args: toolInput, toolId: toolId })
                 }
               }
 
@@ -552,6 +569,7 @@ export async function POST(request: NextRequest) {
                 const ok = block.is_error !== true
 
                 sendEvent('result', {
+                  toolId: toolUseId,
                   name: toolName,
                   ok,
                   message: resultText,

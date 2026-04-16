@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   deriveHermesAvatarSpawn,
+  resolveAgentWindowRenderScale,
   deriveWindowAvatarAnchor,
   deriveWindowAvatarScale,
   scalarFromTransformScale,
@@ -30,8 +31,8 @@ describe('deriveWindowAvatarAnchor', () => {
 
     expect(result.position[0]).toBeLessThan(10)
     expect(result.position[2]).toBe(20)
-    expect(result.position[1]).toBeGreaterThanOrEqual(0)
-    expect(result.rotation).toEqual([0, 0, 0])
+    expect(result.position[1]).toBeCloseTo(0, 5)
+    expect(result.rotation[1]).toBeCloseTo(Math.PI / 6, 5)
   })
 
   it('respects transform overrides when present', () => {
@@ -52,7 +53,19 @@ describe('deriveWindowAvatarAnchor', () => {
 
     expect(result.position[0]).toBeCloseTo(4, 5)
     expect(result.position[2]).toBeGreaterThan(5)
-    expect(result.rotation[1]).toBeCloseTo(Math.PI / 2, 5)
+    expect(result.position[1]).toBeCloseTo(0, 5)
+    expect(result.rotation[1]).toBeCloseTo(Math.PI / 2 + Math.PI / 6, 5)
+  })
+})
+
+describe('resolveAgentWindowRenderScale', () => {
+  it('multiplies the window base scale by the transform override', () => {
+    expect(resolveAgentWindowRenderScale({ position: [0, 0, 0], scale: 0.2 }, { scale: 1.5 })).toBeCloseTo(0.3, 5)
+  })
+
+  it('falls back cleanly when one side is absent', () => {
+    expect(resolveAgentWindowRenderScale({ position: [0, 0, 0], scale: 0.2 })).toBeCloseTo(0.2, 5)
+    expect(resolveAgentWindowRenderScale({ position: [0, 0, 0] }, { scale: 2 })).toBeCloseTo(2, 5)
   })
 })
 
@@ -65,8 +78,8 @@ describe('deriveWindowAvatarScale', () => {
       scale: 1,
     })
 
-    expect(scale).toBeGreaterThan(6)
-    expect(scale).toBeLessThan(8)
+    expect(scale).toBeGreaterThan(4)
+    expect(scale).toBeLessThan(6)
   })
 })
 

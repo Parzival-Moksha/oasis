@@ -24,6 +24,10 @@ import {
 } from '@/lib/anorak-context-config'
 import { CollapsibleBlock, ToolCallCard, TokenCounter, renderMarkdown } from '@/lib/anorak-renderers'
 import { MediaBubble } from './MediaBubble'
+import { useAgentVoiceInput } from '@/hooks/useAgentVoiceInput'
+import { useAutoresizeTextarea } from '@/hooks/useAutoresizeTextarea'
+import { AgentVoiceInputButton } from './AgentVoiceInputButton'
+import { AvatarGallery } from './AvatarGallery'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -41,6 +45,7 @@ const TAB_KEY = 'oasis-anorak-pro-tab'
 const SETTINGS_KEY = 'oasis-anorak-pro-settings'
 const CONFIG_KEY = 'oasis-anorak-pro-config'
 const LOBE_FILTER_KEY = 'oasis-anorak-pro-lobe-filters'
+const PRO_SESSION_KEY = 'oasis-anorak-pro-session-v2'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ANORAK PRO CONFIG — persisted to localStorage, flows to API calls
@@ -49,7 +54,7 @@ const LOBE_FILTER_KEY = 'oasis-anorak-pro-lobe-filters'
 export type CustomContextModule = SharedCustomContextModule
 
 export interface AnorakProConfig {
-  models: { curator: string; coder: string; reviewer: string; tester: string; gamer: string }
+  models: { curator: string; coder: string; reviewer: string; tester: string; gamer: string; 'anorak-pro': string }
   reviewerThreshold: number
   batchSize: number
   recapLength: number
@@ -57,6 +62,11 @@ export interface AnorakProConfig {
   gamerHeaded: boolean
   autoCurate: boolean
   autoCode: boolean
+  heartbeat: boolean
+  heartbeatFirstPingDelayMin: number
+  heartbeatFrequencyMin: number
+  heartbeatWorkStart: number
+  heartbeatWorkEnd: number
   contextModules: LegacyContextModules
   customModules: CustomContextModule[]
   lobeModules: LobeModuleMap
@@ -65,7 +75,7 @@ export interface AnorakProConfig {
 }
 
 const DEFAULT_CONFIG: AnorakProConfig = {
-  models: { curator: 'sonnet', coder: 'opus', reviewer: 'sonnet', tester: 'sonnet', gamer: 'sonnet' },
+  models: { curator: 'sonnet', coder: 'opus', reviewer: 'sonnet', tester: 'sonnet', gamer: 'sonnet', 'anorak-pro': 'sonnet' },
   reviewerThreshold: 90,
   batchSize: 1,
   recapLength: 100,
@@ -73,6 +83,11 @@ const DEFAULT_CONFIG: AnorakProConfig = {
   gamerHeaded: true,
   autoCurate: false,
   autoCode: false,
+  heartbeat: false,
+  heartbeatFirstPingDelayMin: 60,
+  heartbeatFrequencyMin: 120,
+  heartbeatWorkStart: 9,
+  heartbeatWorkEnd: 18,
   ...getDefaultConfigFields(),
 }
 
@@ -116,6 +131,152 @@ interface PanelSettings {
 }
 
 const DEFAULT_SETTINGS: PanelSettings = { bgColor: '#080a0f', opacity: 0.92, blur: 0 }
+
+interface TelegramPanelConfig {
+  enabled: boolean
+  configured: boolean
+  hasBotToken: boolean
+  botToken: string
+  botTokenHint: string
+  chatId: string
+  messageThreadId: string
+  webhookSecret: string
+  webhookSecretSet: boolean
+  webhookUrl: string
+  pollingEnabled: boolean
+  pollingIntervalSec: number
+  voiceNotesEnabled: boolean
+  voiceRepliesEnabled: boolean
+  polling: TelegramPollingPanelStatus
+  source: string
+  canMutateConfig: boolean
+  updatedAt: string | null
+}
+
+interface TelegramPollingPanelStatus {
+  running: boolean
+  busy: boolean
+  enabled: boolean
+  configured: boolean
+  intervalSec: number
+  offset: number | null
+  origin: string
+  lastPollAt: string
+  lastSuccessfulPollAt: string
+  lastInboundAt: string
+  lastStartedAt: string
+  lastStoppedAt: string
+  lastError: string
+  processedUpdateCount: number
+  conversationCount: number
+  missionCount: number
+  lastUpdateId: number | null
+  lastTranscript: string
+  lastIgnoredAt: string
+  lastIgnoredReason: string
+  lastIgnoredChatId: string
+  lastIgnoredThreadId: string
+  lastIgnoredUsername: string
+  lastIgnoredTextPreview: string
+  bootstrappedAt: string
+}
+
+const DEFAULT_TELEGRAM_POLLING_STATUS: TelegramPollingPanelStatus = {
+  running: false,
+  busy: false,
+  enabled: false,
+  configured: false,
+  intervalSec: 8,
+  offset: null,
+  origin: '',
+  lastPollAt: '',
+  lastSuccessfulPollAt: '',
+  lastInboundAt: '',
+  lastStartedAt: '',
+  lastStoppedAt: '',
+  lastError: '',
+  processedUpdateCount: 0,
+  conversationCount: 0,
+  missionCount: 0,
+  lastUpdateId: null,
+  lastTranscript: '',
+  lastIgnoredAt: '',
+  lastIgnoredReason: '',
+  lastIgnoredChatId: '',
+  lastIgnoredThreadId: '',
+  lastIgnoredUsername: '',
+  lastIgnoredTextPreview: '',
+  bootstrappedAt: '',
+}
+
+function parseTelegramPollingStatus(value: unknown): TelegramPollingPanelStatus {
+  const raw = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+  const numberOrNull = (field: string) => {
+    const candidate = raw[field]
+    return typeof candidate === 'number' && Number.isFinite(candidate) ? candidate : null
+  }
+  const numberOr = (field: string, fallback: number) => {
+    const candidate = raw[field]
+    return typeof candidate === 'number' && Number.isFinite(candidate) ? candidate : fallback
+  }
+  const stringOr = (field: string) => typeof raw[field] === 'string' ? raw[field] as string : ''
+
+  return {
+    running: Boolean(raw.running),
+    busy: Boolean(raw.busy),
+    enabled: Boolean(raw.enabled),
+    configured: Boolean(raw.configured),
+    intervalSec: numberOr('intervalSec', DEFAULT_TELEGRAM_POLLING_STATUS.intervalSec),
+    offset: numberOrNull('offset'),
+    origin: stringOr('origin'),
+    lastPollAt: stringOr('lastPollAt'),
+    lastSuccessfulPollAt: stringOr('lastSuccessfulPollAt'),
+    lastInboundAt: stringOr('lastInboundAt'),
+    lastStartedAt: stringOr('lastStartedAt'),
+    lastStoppedAt: stringOr('lastStoppedAt'),
+    lastError: stringOr('lastError'),
+    processedUpdateCount: numberOr('processedUpdateCount', 0),
+    conversationCount: numberOr('conversationCount', 0),
+    missionCount: numberOr('missionCount', 0),
+    lastUpdateId: numberOrNull('lastUpdateId'),
+    lastTranscript: stringOr('lastTranscript'),
+    lastIgnoredAt: stringOr('lastIgnoredAt'),
+    lastIgnoredReason: stringOr('lastIgnoredReason'),
+    lastIgnoredChatId: stringOr('lastIgnoredChatId'),
+    lastIgnoredThreadId: stringOr('lastIgnoredThreadId'),
+    lastIgnoredUsername: stringOr('lastIgnoredUsername'),
+    lastIgnoredTextPreview: stringOr('lastIgnoredTextPreview'),
+    bootstrappedAt: stringOr('bootstrappedAt'),
+  }
+}
+
+const DEFAULT_TELEGRAM_CONFIG: TelegramPanelConfig = {
+  enabled: true,
+  configured: false,
+  hasBotToken: false,
+  botToken: '',
+  botTokenHint: '',
+  chatId: '',
+  messageThreadId: '',
+  webhookSecret: '',
+  webhookSecretSet: false,
+  webhookUrl: '',
+  pollingEnabled: true,
+  pollingIntervalSec: 8,
+  voiceNotesEnabled: true,
+  voiceRepliesEnabled: true,
+  polling: DEFAULT_TELEGRAM_POLLING_STATUS,
+  source: 'none',
+  canMutateConfig: true,
+  updatedAt: null,
+}
+
+// See HermesPanel.tsx — translateZ/backfaceVisibility nuke inner content when
+// stacked inside drei's CSS3D <Html transform>. Removed for the embedded case.
+const EMBEDDED_SCROLL_SURFACE_STYLE = {
+  overscrollBehavior: 'contain' as const,
+  WebkitOverflowScrolling: 'touch' as const,
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // STREAM TAB — unified chat/stream view with all lobe colors
@@ -179,7 +340,7 @@ function createSession(): AnorakProSession {
   return { id: `s-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: formatSessionName(new Date()), createdAt: new Date().toISOString(), entries: [] }
 }
 
-const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, isStreaming, sessionTokens, sessions, activeSessionId, onNewSession, onSwitchSession }: {
+const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, isStreaming, sessionTokens, sessions, activeSessionId, onNewSession, onSwitchSession, audioTargetAvatarId }: {
   entries: StreamEntry[]
   onSend: (msg: string) => void
   isChatting: boolean
@@ -189,12 +350,27 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
   activeSessionId: string
   onNewSession: () => void
   onSwitchSession: (id: string) => void
+  audioTargetAvatarId?: string | null
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const mountedAtRef = useRef(Date.now())
   const visible = entries.slice(-200)
   const [chatInput, setChatInput] = useState('')
   const [autoScroll, setAutoScroll] = useState(true)
+
+  // Voice input — reuses same hook as Merlin
+  const voiceInput = useAgentVoiceInput({
+    enabled: true,
+    transcribeEndpoint: '/api/voice/transcribe',
+    onTranscript: transcript => {
+      setChatInput(current => (current ? `${current} ${transcript}`.trim() : transcript))
+    },
+    focusTargetRef: inputRef as React.RefObject<HTMLElement>,
+  })
+
+  // Textarea grows with content (oasisspec3)
+  useAutoresizeTextarea(inputRef, chatInput, { minPx: 30, maxPx: 160 })
 
   // Lobe filter state — persisted to localStorage
   const [visibleLobes, setVisibleLobes] = useState<Record<string, boolean>>(() => {
@@ -257,7 +433,13 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
           Chat with Anorak Pro or curate a mission to see the stream.
         </div>
         <div className="p-2 border-t border-white/5">
-          <div className="flex gap-1.5">
+          <div className="flex gap-1.5 items-end">
+            <AgentVoiceInputButton
+              controller={voiceInput}
+              disabled={isChatting}
+              className="px-2 py-1.5 rounded-lg text-[10px] font-mono border border-white/10 text-teal-100 disabled:opacity-30 disabled:cursor-not-allowed"
+              titleReady="Record from mic → Whisper transcription → drops into prompt"
+            />
             <textarea
               ref={inputRef}
               value={chatInput}
@@ -310,7 +492,12 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
           />
         </div>
       )}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-1 font-mono text-xs">
+      <div
+        ref={scrollRef}
+        data-agent-window-scroll-root=""
+        className="flex-1 overflow-y-auto p-3 space-y-1 font-mono text-xs"
+        style={EMBEDDED_SCROLL_SURFACE_STYLE}
+      >
         {filtered.map((e, idx) => {
           // Skip tool_result entries — they're rendered inline with the preceding tool card
           if (e.type === 'tool_result') return null
@@ -323,6 +510,9 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
           const lobeColor = LOBE_COLORS[e.lobe] || '#888'
           const prevEntry = idx > 0 ? filtered[idx - 1] : null
           const showLobe = !prevEntry || prevEntry.lobe !== e.lobe
+          const shouldAutoPlayFreshAudio = e.mediaType === 'audio'
+            && e.timestamp >= mountedAtRef.current
+            && (Date.now() - e.timestamp) < 15000
 
           // For tool/tool_start entries, find the matching tool_result to show completion state
           let toolResult: { preview: string; isError: boolean; length: number; fullResult?: string } | undefined
@@ -410,7 +600,14 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
               )}
               {e.type === 'result' && <span style={{ color: '#22c55e', fontStyle: 'italic' }}>✓ {e.content}</span>}
               {e.type === 'media' && e.mediaUrl && (
-                <MediaBubble url={e.mediaUrl} mediaType={(e.mediaType as 'image' | 'audio' | 'video') || 'image'} prompt={e.mediaPrompt} compact />
+                <MediaBubble
+                  url={e.mediaUrl}
+                  mediaType={(e.mediaType as 'image' | 'audio' | 'video') || 'image'}
+                  prompt={e.mediaPrompt}
+                  compact
+                  autoPlay={shouldAutoPlayFreshAudio}
+                  avatarLipSyncTargetId={e.mediaType === 'audio' ? audioTargetAvatarId : undefined}
+                />
               )}
             </div>
           )
@@ -439,13 +636,29 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
 
       {/* Chat input */}
       <div className="p-2 border-t border-white/5">
+        {!voiceInput.error && voiceInput.backendState === 'loading' && voiceInput.backendMessage && (
+          <div className="mb-1.5 rounded-lg border border-teal-500/20 bg-teal-500/10 px-2.5 py-1 text-[10px] font-mono text-teal-100">
+            {voiceInput.backendMessage}
+          </div>
+        )}
+        {voiceInput.error && (
+          <div className="mb-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[10px] font-mono text-amber-100">
+            {voiceInput.error}
+          </div>
+        )}
         <div className="flex gap-1.5">
+          <AgentVoiceInputButton
+            controller={voiceInput}
+            disabled={isChatting}
+            className="px-2 py-1.5 rounded-lg text-[10px] font-mono border border-white/10 text-teal-100 disabled:opacity-30 disabled:cursor-not-allowed"
+            titleReady="Record from mic → Whisper transcription → drops into prompt"
+          />
           <textarea
             ref={inputRef}
             value={chatInput}
             onChange={e => setChatInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
-            placeholder="Talk to Anorak Pro..."
+            placeholder={voiceInput.listening ? 'Listening...' : voiceInput.transcribing ? 'Transcribing...' : 'Talk to Anorak Pro...'}
             rows={1}
             className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-200 outline-none focus:border-teal-500/50 resize-none font-mono placeholder:text-[#c0ffee]/60"
           />
@@ -1448,10 +1661,8 @@ function CustomModuleEditor({ module, onSave, onDelete }: {
               onChange={e => {
                 const file = e.target.files?.[0]
                 if (file) {
-                  // webkitRelativePath is empty for single files; use name as fallback
-                  // The browser only gives us the filename, not the full path (security).
-                  // On Electron/desktop this would give full path. For web, user pastes path.
-                  setDraft(prev => ({ ...prev, filePath: (file as unknown as { path?: string }).path || file.name }))
+                  const selectedPath = (file as unknown as { path?: string }).path || file.webkitRelativePath || file.name
+                  setDraft(prev => ({ ...prev, filePath: selectedPath }))
                 }
                 e.target.value = '' // reset to allow re-selecting same file
               }}
@@ -1586,6 +1797,11 @@ function CEHQTab({ config, onUpdate }: { config: AnorakProConfig; onUpdate: (p: 
   const [previewContent, setPreviewContent] = useState('')
   const [previewLoading, setPreviewLoading] = useState(false)
   const merlinRuntimeModules = [
+    {
+      id: 'runtime:claude-md',
+      name: 'CLAUDE.md',
+      description: 'Auto-loaded by Claude Code CLI. Project architecture, gotchas, commands, standards.',
+    },
     {
       id: 'runtime:merlin-root',
       name: 'Oasis root',
@@ -1776,6 +1992,16 @@ function CEHQTab({ config, onUpdate }: { config: AnorakProConfig; onUpdate: (p: 
                   {/* Module pill grid */}
                   <div className="grid grid-cols-3 gap-2">
                     {/* Runtime mission pill — locked, curator only */}
+                    {/* CLAUDE.md — auto-loaded by Claude Code CLI for all agents */}
+                    <div className="relative rounded border border-[#e879f9]/30 bg-[#020617] p-2 opacity-80">
+                      <div className="absolute top-0.5 right-1 flex items-center gap-1">
+                        <span className="text-[7px] uppercase tracking-wide text-[#e879f9]">runtime</span>
+                        <span className="text-[#e879f9] text-[10px]">🔒</span>
+                      </div>
+                      <div className="pr-10 text-[10px] font-bold text-[#e879f9]">CLAUDE.md</div>
+                      <div className="text-[9px] text-[#c0ffee] mt-0.5">Auto-loaded by CLI. Architecture, gotchas, commands, standards.</div>
+                    </div>
+
                     {lobe === 'curator' && (
                       <div className="relative rounded border border-[#e879f9]/30 bg-[#020617] p-2 opacity-80">
                         <div className="absolute top-0.5 right-1 flex items-center gap-1">
@@ -1839,6 +2065,114 @@ function CEHQTab({ config, onUpdate }: { config: AnorakProConfig; onUpdate: (p: 
           )
         })}
 
+        {/* ── Anorak Pro lobe (orchestrator) ── */}
+        {(() => {
+          const lobe = 'anorak-pro' as AnorakLobe
+          const attached = config.lobeModules[lobe] || []
+          const isExpanded = !!expandedLobes[lobe]
+          const anorakProRuntimeModules = [
+            { id: 'runtime:claude-md', name: 'CLAUDE.md', description: 'Auto-loaded by Claude Code CLI. Project architecture, gotchas, commands, standards.' },
+            { id: 'runtime:ap-mission-mcp', name: 'Mission MCP', description: 'Tools: create_para_mission, create_pashyanti_mission, get_mission, get_missions_queue, mature_mission, generate_image/voice/video.' },
+          ]
+          return (
+            <div className="border border-[#14b8a6]/30 rounded bg-black/30">
+              <div className="flex items-center justify-between px-2 py-1.5 cursor-pointer select-none" onClick={() => toggleExpand(lobe)}>
+                <div className="flex items-center gap-2">
+                  <span className="text-white">{isExpanded ? '▼' : '▶'}</span>
+                  <span style={{ color: '#14b8a6' }} className="font-bold text-[11px]">anorak-pro</span>
+                  <span className="text-[9px] text-[#5eead4]">orchestrator + heartbeat</span>
+                </div>
+                <span className="text-[9px] text-[#c0ffee]">{attached.length + anorakProRuntimeModules.length + 1} modules</span>
+              </div>
+              {isExpanded && (
+                <div className="px-2 pb-2 pt-1 border-t border-[#14b8a6]/20">
+                  <div className="mb-2 text-[10px] text-[#ccfbf1]">Prefrontal cortex: connects north loop (curator) and south loop (coder → reviewer → tester → gamer). Heartbeat wakes it periodically to assess pipeline and create missions.</div>
+
+                  {/* Model selector + Add button */}
+                  <div className="flex items-center justify-between mb-2">
+                    <select
+                      value={(config.models as Record<string, string>)[lobe] || 'sonnet'}
+                      onChange={e => onUpdate({ models: { ...config.models, [lobe]: e.target.value } })}
+                      className={selectCls}
+                    >
+                      <option value="opus">Opus</option>
+                      <option value="sonnet">Sonnet</option>
+                      <option value="haiku">Haiku</option>
+                    </select>
+                    <button
+                      onClick={() => setAddModalLobe(lobe)}
+                      className="text-[9px] px-2 py-0.5 rounded border border-dashed border-[#14b8a6]/40 text-[#14b8a6] hover:bg-[#14b8a6]/10 cursor-pointer"
+                    >
+                      + Add Module
+                    </button>
+                  </div>
+
+                  {/* Runtime pills (locked) */}
+                  <div className="mb-2 grid grid-cols-2 gap-2">
+                    {anorakProRuntimeModules.map(module => (
+                      <div key={module.id} className="rounded border border-[#14b8a6]/20 bg-[#042f2e]/40 px-2 py-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-[10px] font-bold text-[#5eead4]">{module.name}</div>
+                          <span className="text-[7px] uppercase tracking-wide text-[#14b8a6]">runtime 🔒</span>
+                        </div>
+                        <div className="mt-1 text-[9px] text-[#99f6e4]/70">{module.description}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Configurable module pills */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <LobeEditor lobe={lobe} />
+
+                    {attached.map(moduleId => {
+                      const moduleMeta = catalogById.get(moduleId)
+                      if (!moduleMeta) return null
+                      const typeColor = moduleTypeColor(moduleMeta)
+                      return (
+                        <div
+                          key={moduleId}
+                          className="relative rounded border bg-[#020617] p-2 cursor-pointer transition-transform hover:scale-[1.02]"
+                          style={{ borderColor: `${typeColor}40` }}
+                          onClick={() => openPreview(lobe, moduleId, moduleMeta.name)}
+                        >
+                          <div className="absolute top-0.5 right-1 flex items-center gap-1">
+                            <span className="text-[7px] uppercase tracking-wide" style={{ color: typeColor }}>{moduleTypeLabel(moduleMeta)}</span>
+                            <button
+                              className="text-[#c0ffee] hover:text-[#fb7185] text-[10px] leading-none cursor-pointer"
+                              onClick={e => { e.stopPropagation(); removeModule(lobe, moduleId) }}
+                            >×</button>
+                          </div>
+                          <div className="pr-10 text-[10px] font-bold" style={{ color: typeColor }}>{moduleMeta.name}</div>
+                          <div className="text-[9px] text-[#c0ffee] mt-0.5 truncate">{moduleMeta.description}</div>
+                          {moduleMeta.parameterized && (
+                            <div className="mt-1.5 flex items-center gap-1 text-[9px]" onClick={e => e.stopPropagation()}>
+                              <button onClick={() => {
+                                const cur = config.moduleValues[moduleId] ?? 3
+                                onUpdate({ moduleValues: { ...config.moduleValues, [moduleId]: Math.max(1, cur - 1) } })
+                              }} className="rounded border px-1 cursor-pointer" style={{ borderColor: `${typeColor}50`, color: typeColor }}>◀</button>
+                              <span className="text-white w-3 text-center">{config.moduleValues[moduleId] ?? 3}</span>
+                              <button onClick={() => {
+                                const cur = config.moduleValues[moduleId] ?? 3
+                                onUpdate({ moduleValues: { ...config.moduleValues, [moduleId]: Math.min(50, cur + 1) } })
+                              }} className="rounded border px-1 cursor-pointer" style={{ borderColor: `${typeColor}50`, color: typeColor }}>▶</button>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+
+                    {attached.length === 0 && (
+                      <div className="rounded border border-dashed border-[#14b8a6]/20 p-2 text-[10px] text-[#c0ffee]">
+                        No configurable modules attached.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })()}
+
         {/* ── Gamer lobe (prompt-only) ── */}
         <div className="border border-[#eab308]/20 rounded bg-black/30">
           <div className="flex items-center justify-between px-2 py-1.5 cursor-pointer select-none" onClick={() => toggleExpand('gamer')}>
@@ -1852,6 +2186,14 @@ function CEHQTab({ config, onUpdate }: { config: AnorakProConfig; onUpdate: (p: 
             <div className="px-2 pb-2 pt-1 border-t border-[#eab308]/20">
               <div className="mb-2 text-[10px] text-[#fef3c7]">Embodied gameplay agent. Does not participate in module orchestration yet.</div>
               <div className="grid grid-cols-3 gap-2">
+                <div className="relative rounded border border-[#e879f9]/30 bg-[#020617] p-2 opacity-80">
+                  <div className="absolute top-0.5 right-1 flex items-center gap-1">
+                    <span className="text-[7px] uppercase tracking-wide text-[#e879f9]">runtime</span>
+                    <span className="text-[#e879f9] text-[10px]">🔒</span>
+                  </div>
+                  <div className="pr-10 text-[10px] font-bold text-[#e879f9]">CLAUDE.md</div>
+                  <div className="text-[9px] text-[#c0ffee] mt-0.5">Auto-loaded by CLI. Architecture, gotchas, commands, standards.</div>
+                </div>
                 <LobeEditor lobe="gamer" />
               </div>
             </div>
@@ -1992,8 +2334,18 @@ function SettingsDropdown({ settings, onChange }: { settings: PanelSettings; onC
 // ANORAK PRO PANEL — main component
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  useUILayer('anorak-pro', isOpen)
+export function AnorakProPanel({
+  isOpen,
+  onClose,
+  embedded = false,
+  hideCloseButton = false,
+}: {
+  isOpen: boolean
+  onClose: () => void
+  embedded?: boolean
+  hideCloseButton?: boolean
+}) {
+  useUILayer('anorak-pro', isOpen && !embedded)
   const { settings: _sceneSettings } = useContext(SettingsContext)
   const panelZIndex = useOasisStore(s => s.getPanelZIndex('anorak-pro', 9998))
 
@@ -2008,6 +2360,12 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
   })
   const [showSettings, setShowSettings] = useState(false)
 
+  // Avatar gallery
+  const [showAvatarGallery, setShowAvatarGallery] = useState(false)
+  const anorakProAvatar = useOasisStore(s => s.placedAgentAvatars.find(a => a.agentType === 'anorak-pro'))
+  const assignSharedAgentAvatar = useOasisStore(s => s.assignSharedAgentAvatar)
+  const switchWorld = useOasisStore(s => s.switchWorld)
+
   // Anorak Pro config (flows to API calls)
   const [config, setConfig] = useState<AnorakProConfig>(loadConfig)
   const updateConfig = useCallback((partial: Partial<AnorakProConfig>) => {
@@ -2017,6 +2375,203 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
       return next
     })
   }, [])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void fetch('/api/anorak/pro/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customModules: config.customModules,
+        lobeModules: config.lobeModules,
+        topMissionCount: config.topMissionCount,
+        moduleValues: config.moduleValues,
+      }),
+      signal: controller.signal,
+    }).catch(() => {})
+
+    return () => controller.abort()
+  }, [config.customModules, config.lobeModules, config.topMissionCount, config.moduleValues])
+
+  const [telegramConfig, setTelegramConfig] = useState<TelegramPanelConfig>(DEFAULT_TELEGRAM_CONFIG)
+  const [telegramLoading, setTelegramLoading] = useState(false)
+  const [telegramSaving, setTelegramSaving] = useState(false)
+  const [telegramTesting, setTelegramTesting] = useState(false)
+  const [telegramPollingNow, setTelegramPollingNow] = useState(false)
+  const [telegramStatus, setTelegramStatus] = useState('')
+  const [roadmapWorldBusy, setRoadmapWorldBusy] = useState(false)
+  const [roadmapWorldStatus, setRoadmapWorldStatus] = useState('')
+
+  const loadTelegramConfig = useCallback(async () => {
+    setTelegramLoading(true)
+    try {
+      const res = await fetch('/api/anorak/pro/telegram', { cache: 'no-store' })
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>
+      if (!res.ok) throw new Error((typeof data.error === 'string' && data.error) || `HTTP ${res.status}`)
+
+      setTelegramConfig({
+        enabled: Boolean(data.enabled),
+        configured: Boolean(data.configured),
+        hasBotToken: Boolean(data.hasBotToken),
+        botToken: '',
+        botTokenHint: typeof data.botTokenHint === 'string' ? data.botTokenHint : '',
+        chatId: typeof data.chatId === 'string' ? data.chatId : '',
+        messageThreadId: typeof data.messageThreadId === 'string' ? data.messageThreadId : '',
+        webhookSecret: '',
+        webhookSecretSet: Boolean(data.webhookSecretSet),
+        webhookUrl: typeof data.webhookUrl === 'string' ? data.webhookUrl : '',
+        pollingEnabled: Boolean(data.pollingEnabled),
+        pollingIntervalSec: typeof data.pollingIntervalSec === 'number' ? data.pollingIntervalSec : 8,
+        voiceNotesEnabled: data.voiceNotesEnabled !== false,
+        voiceRepliesEnabled: data.voiceRepliesEnabled !== false,
+        polling: parseTelegramPollingStatus(data.polling),
+        source: typeof data.source === 'string' ? data.source : 'none',
+        canMutateConfig: data.canMutateConfig !== false,
+        updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : null,
+      })
+      setTelegramStatus('')
+    } catch (error) {
+      setTelegramStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setTelegramLoading(false)
+    }
+  }, [])
+
+  const saveTelegramConfig = useCallback(async () => {
+    setTelegramSaving(true)
+    setTelegramStatus('')
+    try {
+      const res = await fetch('/api/anorak/pro/telegram', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enabled: telegramConfig.enabled,
+          botToken: telegramConfig.botToken,
+          chatId: telegramConfig.chatId,
+          messageThreadId: telegramConfig.messageThreadId,
+          webhookSecret: telegramConfig.webhookSecret,
+          pollingEnabled: telegramConfig.pollingEnabled,
+          pollingIntervalSec: telegramConfig.pollingIntervalSec,
+          voiceNotesEnabled: telegramConfig.voiceNotesEnabled,
+          voiceRepliesEnabled: telegramConfig.voiceRepliesEnabled,
+        }),
+      })
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>
+      if (!res.ok) throw new Error((typeof data.error === 'string' && data.error) || `HTTP ${res.status}`)
+
+      setTelegramConfig(prev => ({
+        ...prev,
+        configured: Boolean(data.configured),
+        hasBotToken: Boolean(data.botTokenHint) || prev.hasBotToken || Boolean(prev.botToken),
+        botToken: '',
+        botTokenHint: typeof data.botTokenHint === 'string' ? data.botTokenHint : prev.botTokenHint,
+        chatId: typeof data.chatId === 'string' ? data.chatId : prev.chatId,
+        messageThreadId: typeof data.messageThreadId === 'string' ? data.messageThreadId : prev.messageThreadId,
+        webhookSecret: '',
+        webhookSecretSet: Boolean(data.webhookSecretSet),
+        pollingEnabled: data.pollingEnabled !== undefined ? Boolean(data.pollingEnabled) : prev.pollingEnabled,
+        pollingIntervalSec: typeof data.pollingIntervalSec === 'number' ? data.pollingIntervalSec : prev.pollingIntervalSec,
+        voiceNotesEnabled: data.voiceNotesEnabled !== undefined ? data.voiceNotesEnabled !== false : prev.voiceNotesEnabled,
+        voiceRepliesEnabled: data.voiceRepliesEnabled !== undefined ? data.voiceRepliesEnabled !== false : prev.voiceRepliesEnabled,
+        polling: parseTelegramPollingStatus(data.polling),
+        updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : prev.updatedAt,
+      }))
+      setTelegramStatus('Telegram settings saved. Polling is now synced with the local bridge.')
+    } catch (error) {
+      setTelegramStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setTelegramSaving(false)
+    }
+  }, [telegramConfig])
+
+  const sendTelegramTest = useCallback(async () => {
+    setTelegramTesting(true)
+    setTelegramStatus('')
+    try {
+      const res = await fetch('/api/anorak/pro/telegram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'test' }),
+      })
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>
+      if (!res.ok) throw new Error((typeof data.error === 'string' && data.error) || `HTTP ${res.status}`)
+      setTelegramStatus('Telegram test ping sent.')
+      await loadTelegramConfig()
+    } catch (error) {
+      setTelegramStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setTelegramTesting(false)
+    }
+  }, [loadTelegramConfig])
+
+  const pollTelegramNow = useCallback(async () => {
+    setTelegramPollingNow(true)
+    setTelegramStatus('')
+    try {
+      const res = await fetch('/api/anorak/pro/telegram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'poll-now' }),
+      })
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>
+      if (!res.ok) throw new Error((typeof data.error === 'string' && data.error) || `HTTP ${res.status}`)
+      await loadTelegramConfig()
+      const processedCount = typeof data.processedCount === 'number' ? data.processedCount : 0
+      const bootstrapped = Boolean(data.bootstrapped)
+      const bridgeDisabled = Boolean(data.bridgeDisabled)
+      const hint = typeof data.hint === 'string' ? data.hint : ''
+      setTelegramStatus(
+        bridgeDisabled
+          ? (hint || 'Telegram bridge is saved but disabled.')
+          : bootstrapped
+          ? 'Telegram polling initialized. Pending messages are being checked now.'
+          : (processedCount > 0 ? `Telegram polled ${processedCount} update${processedCount === 1 ? '' : 's'}.` : 'Telegram poll ran. No new messages.'),
+      )
+    } catch (error) {
+      setTelegramStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setTelegramPollingNow(false)
+    }
+  }, [loadTelegramConfig])
+
+  const clearTelegramConfig = useCallback(async () => {
+    setTelegramSaving(true)
+    setTelegramStatus('')
+    try {
+      const res = await fetch('/api/anorak/pro/telegram', { method: 'DELETE' })
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>
+      if (!res.ok) throw new Error((typeof data.error === 'string' && data.error) || `HTTP ${res.status}`)
+      await loadTelegramConfig()
+      setTelegramStatus('Telegram settings cleared.')
+    } catch (error) {
+      setTelegramStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setTelegramSaving(false)
+    }
+  }, [loadTelegramConfig])
+
+  const buildRoadmapWorld = useCallback(async () => {
+    setRoadmapWorldBusy(true)
+    setRoadmapWorldStatus('')
+    try {
+      const res = await fetch('/api/anorak/pro/roadmap-world', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ avatarUrl: anorakProAvatar?.avatar3dUrl || null }),
+      })
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>
+      if (!res.ok) throw new Error((typeof data.error === 'string' && data.error) || `HTTP ${res.status}`)
+
+      if (typeof data.worldId === 'string' && data.worldId) {
+        switchWorld(data.worldId)
+      }
+      setRoadmapWorldStatus(Boolean(data.created) ? 'Roadmap World created and opened.' : 'Roadmap World refreshed and opened.')
+    } catch (error) {
+      setRoadmapWorldStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setRoadmapWorldBusy(false)
+    }
+  }, [anorakProAvatar, switchWorld])
 
   // Session management
   const [sessions, setSessions] = useState<AnorakProSession[]>(() => loadSessions())
@@ -2097,6 +2652,17 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
     if (sessions.length === 0) handleNewSession()
   }, [sessions.length, handleNewSession])
 
+  useEffect(() => {
+    if (!isOpen) return
+    void loadTelegramConfig()
+  }, [isOpen, loadTelegramConfig])
+
+  useEffect(() => {
+    if (!isOpen || !telegramConfig.pollingEnabled) return
+    const id = window.setInterval(() => { void loadTelegramConfig() }, 15000)
+    return () => window.clearInterval(id)
+  }, [isOpen, telegramConfig.pollingEnabled, loadTelegramConfig])
+
   // Stream entries
   const entryIdRef = useRef(0)
   const [isAgentRunning, setIsAgentRunning] = useState(false)
@@ -2104,7 +2670,7 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
   const chatAbortRef = useRef<AbortController | null>(null)
   const [proSessionId, setProSessionId] = useState<string>(() => {
     if (typeof window === 'undefined') return ''
-    return localStorage.getItem('oasis-anorak-pro-session') || ''
+    return localStorage.getItem(PRO_SESSION_KEY) || ''
   })
 
   // ─═̷─ Chat with Anorak Pro ─═̷─
@@ -2128,8 +2694,13 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: msg,
+          agent: 'anorak-pro',
           sessionId: proSessionId || undefined,
           model: (config.models as Record<string, string>)?.['anorak-pro'] || 'opus',
+          customModules: config.customModules,
+          lobeModules: config.lobeModules,
+          topMissionCount: config.topMissionCount,
+          moduleValues: config.moduleValues,
         }),
         signal: controller.signal,
       })
@@ -2165,7 +2736,7 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
             // Capture session ID
             if (event.type === 'session' && event.sessionId && !proSessionId) {
               setProSessionId(event.sessionId)
-              localStorage.setItem('oasis-anorak-pro-session', event.sessionId)
+              localStorage.setItem(PRO_SESSION_KEY, event.sessionId)
             }
             // Text from assistant
             if (event.type === 'text') {
@@ -2254,7 +2825,7 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
       if (chatAbortRef.current === controller) chatAbortRef.current = null
       setIsChatting(false)
     }
-  }, [isChatting, proSessionId, config.models])
+  }, [isChatting, proSessionId, config.customModules, config.lobeModules, config.models, config.moduleValues, config.topMissionCount])
 
   // ─═̷─ Drag state ─═̷─
   const [position, setPosition] = useState(() => {
@@ -2460,7 +3031,7 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
   isRunningRef.current = isAgentRunning
 
   useEffect(() => {
-    if (!config.autoCurate) return
+    if (embedded || !config.autoCurate) return
 
     const checkAndCurate = async () => {
       if (!autoCurateRef.current || isRunningRef.current) return
@@ -2484,14 +3055,14 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
     checkAndCurate()
     const interval = setInterval(checkAndCurate, 10000)
     return () => clearInterval(interval)
-  }, [config.autoCurate, isAgentRunning, handleCurate])
+  }, [embedded, config.autoCurate, isAgentRunning, handleCurate])
 
   // ─═̷─ Auto-code: execute highest-priority vaikhari mission when toggle is ON ─═̷─
   const autoCodeRef = useRef(false)
   autoCodeRef.current = config.autoCode
 
   useEffect(() => {
-    if (!config.autoCode) return
+    if (embedded || !config.autoCode) return
 
     const checkAndExecute = async () => {
       if (!autoCodeRef.current || isRunningRef.current) return
@@ -2514,9 +3085,109 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
     checkAndExecute()
     const interval = setInterval(checkAndExecute, 15000)
     return () => clearInterval(interval)
-  }, [config.autoCode, isAgentRunning, handleExecute])
+  }, [embedded, config.autoCode, isAgentRunning, handleExecute])
 
-  if (!isOpen || typeof document === 'undefined') return null
+  // ─── Heartbeat polling ──────────────────────────────────────────────────
+  const heartbeatRef = useRef(false)
+  heartbeatRef.current = config.heartbeat
+  const heartbeatRunningRef = useRef(false)
+
+  useEffect(() => {
+    if (embedded || !config.heartbeat) return
+
+    const ac = new AbortController()
+    let interval: ReturnType<typeof setInterval> | null = null
+
+    const checkAndHeartbeat = async () => {
+      if (!heartbeatRef.current || heartbeatRunningRef.current || isRunningRef.current) return
+      const now = new Date()
+      const hour = now.getHours()
+      const start = config.heartbeatWorkStart
+      const end = config.heartbeatWorkEnd
+      if (start < end && (hour < start || hour >= end)) return
+      if (start >= end && hour >= end && hour < start) return
+
+      heartbeatRunningRef.current = true
+      try {
+        const resp = await fetch('/api/anorak/pro/heartbeat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: ac.signal,
+          body: JSON.stringify({
+            model: config.models.curator,
+            customModules: config.customModules,
+            lobeModules: config.lobeModules,
+            topMissionCount: config.topMissionCount,
+            moduleValues: config.moduleValues,
+          }),
+        })
+        if (resp.body) {
+          const reader = resp.body.getReader()
+          const decoder = new TextDecoder()
+          const addEntry = setStreamEntriesRef.current
+          addEntry(prev => [...prev, { id: entryIdRef.current++, type: 'status', content: 'Heartbeat started', lobe: 'anorak-pro', timestamp: Date.now() }])
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            const text = decoder.decode(value)
+            for (const line of text.split('\n')) {
+              if (!line.startsWith('data: ') || line === 'data: [DONE]') continue
+              try {
+                const evt = JSON.parse(line.slice(6))
+                if (evt.type === 'text' || evt.type === 'thinking') {
+                  addEntry(prev => {
+                    const last = prev[prev.length - 1]
+                    if (last?.type === evt.type && last?.lobe === 'anorak-pro') {
+                      const updated = [...prev]
+                      updated[updated.length - 1] = { ...last, content: last.content + evt.content }
+                      return updated
+                    }
+                    return [...prev, { id: entryIdRef.current++, type: evt.type, content: evt.content, lobe: 'anorak-pro', timestamp: Date.now() }]
+                  })
+                } else if (evt.type === 'tool' || evt.type === 'tool_start' || evt.type === 'tool_result') {
+                  addEntry(prev => [...prev, {
+                    id: entryIdRef.current++, type: evt.type, content: evt.display || evt.content || evt.name || '',
+                    lobe: 'anorak-pro', timestamp: Date.now(), toolName: evt.name, toolInput: evt.input,
+                    toolDisplay: evt.display, toolUseId: evt.id, isError: evt.isError,
+                  }])
+                } else if (evt.type === 'error') {
+                  addEntry(prev => [...prev, { id: entryIdRef.current++, type: 'error', content: evt.content, lobe: 'anorak-pro', timestamp: Date.now() }])
+                } else if (evt.type === 'media') {
+                  addEntry(prev => [...prev, {
+                    id: entryIdRef.current++, type: 'media', content: evt.prompt || '',
+                    lobe: 'anorak-pro', timestamp: Date.now(),
+                    mediaType: evt.mediaType, mediaUrl: evt.url, mediaPrompt: evt.prompt,
+                  }])
+                } else if (evt.type === 'status' || evt.type === 'result' || evt.type === 'stderr') {
+                  addEntry(prev => [...prev, { id: entryIdRef.current++, type: evt.type, content: evt.content || '', lobe: 'anorak-pro', timestamp: Date.now() }])
+                }
+              } catch { /* malformed SSE line */ }
+            }
+          }
+        }
+      } catch (e) {
+        if ((e as Error).name !== 'AbortError') { /* offline or unexpected */ }
+      }
+      heartbeatRunningRef.current = false
+    }
+
+    const intervalMs = Math.max(30, config.heartbeatFrequencyMin) * 60 * 1000
+    const firstDelayMs = Math.max(0, config.heartbeatFirstPingDelayMin) * 60 * 1000
+    const kickoff = setTimeout(() => {
+      if (ac.signal.aborted) return
+      void checkAndHeartbeat()
+      interval = setInterval(checkAndHeartbeat, intervalMs)
+    }, firstDelayMs)
+
+    return () => {
+      clearTimeout(kickoff)
+      if (interval) clearInterval(interval)
+      ac.abort()
+    }
+  }, [embedded, config.heartbeat, config.heartbeatFirstPingDelayMin, config.heartbeatFrequencyMin, config.heartbeatWorkStart, config.heartbeatWorkEnd])
+
+  const isVisible = embedded || isOpen
+  if (!isVisible || typeof document === 'undefined') return null
 
   // Compute background with settings
   const bgRgb = panelSettings.bgColor.match(/[0-9a-f]{2}/gi)?.map(h => parseInt(h, 16)) || [8, 10, 15]
@@ -2524,27 +3195,29 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
     ? { backgroundColor: `rgba(${bgRgb[0]},${bgRgb[1]},${bgRgb[2]},${panelSettings.opacity})`, backdropFilter: `blur(${panelSettings.blur}px)` }
     : { backgroundColor: `rgba(${bgRgb[0]},${bgRgb[1]},${bgRgb[2]},${panelSettings.opacity})` }
 
-  return createPortal(
+  const panelBody = (
     <div
-      data-menu-portal="anorak-pro-panel"
-      className="fixed rounded-xl flex flex-col overflow-hidden"
+      data-menu-portal={embedded ? undefined : 'anorak-pro-panel'}
+      data-ui-panel={embedded ? '' : undefined}
+      className={`${embedded ? 'relative w-full h-full' : 'fixed'} rounded-xl flex flex-col overflow-hidden`}
       style={{
-        zIndex: panelZIndex,
-        left: position.x, top: position.y,
-        width: size.w, height: size.h,
+        ...(embedded ? {} : { zIndex: panelZIndex, left: position.x, top: position.y }),
+        width: embedded ? '100%' : size.w,
+        height: embedded ? '100%' : size.h,
         ...bgStyle,
         border: `1px solid ${isAgentRunning ? 'rgba(20,184,166,0.6)' : 'rgba(20,184,166,0.2)'}`,
         boxShadow: isAgentRunning
           ? '0 0 40px rgba(20,184,166,0.2), inset 0 0 60px rgba(20,184,166,0.03)'
           : '0 8px 40px rgba(0,0,0,0.8)',
         transition: 'box-shadow 0.5s, border-color 0.5s',
+        ...(embedded ? EMBEDDED_SCROLL_SURFACE_STYLE : {}),
       }}
-      onMouseDown={e => { e.stopPropagation(); useOasisStore.getState().bringPanelToFront('anorak-pro'); handleDragStart(e) }}
+      onMouseDown={embedded ? undefined : e => { e.stopPropagation(); useOasisStore.getState().bringPanelToFront('anorak-pro'); handleDragStart(e) }}
       onPointerDown={e => e.stopPropagation()}
     >
       {/* ═══ HEADER ═══ */}
       <div data-drag-handle
-        className="flex items-center justify-between px-3 py-2 border-b border-white/10 cursor-grab active:cursor-grabbing select-none"
+        className={`flex items-center justify-between px-3 py-2 border-b border-white/10 select-none ${embedded ? '' : 'cursor-grab active:cursor-grabbing'}`}
         style={{ background: isAgentRunning ? 'linear-gradient(135deg, rgba(20,184,166,0.1) 0%, rgba(0,0,0,0) 100%)' : 'rgba(20,20,30,0.5)' }}
       >
         <div className="flex items-center gap-2">
@@ -2565,7 +3238,9 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
           </div>
 
           {/* Close */}
-          <button onClick={onClose} className="text-[#c0ffee]/70 hover:text-white transition-colors text-lg leading-none cursor-pointer">×</button>
+          {!hideCloseButton && (
+            <button onClick={onClose} className="text-[#c0ffee]/70 hover:text-white transition-colors text-lg leading-none cursor-pointer">×</button>
+          )}
         </div>
       </div>
 
@@ -2588,7 +3263,7 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
       </div>
 
       {/* ═══ TAB CONTENT ═══ */}
-      {activeTab === 'stream' && <StreamTab entries={streamEntries} onSend={handleChat} isChatting={isChatting} isStreaming={isChatting || isAgentRunning} sessionTokens={sessionTokens} sessions={sessions} activeSessionId={activeSessionId} onNewSession={handleNewSession} onSwitchSession={handleSwitchSession} />}
+      {activeTab === 'stream' && <StreamTab entries={streamEntries} onSend={handleChat} isChatting={isChatting} isStreaming={isChatting || isAgentRunning} sessionTokens={sessionTokens} sessions={sessions} activeSessionId={activeSessionId} onNewSession={handleNewSession} onSwitchSession={handleSwitchSession} audioTargetAvatarId={anorakProAvatar?.id || null} />}
       {activeTab === 'mindcraft' && <MindcraftTab onCurate={handleCurate} onExecute={handleExecute} isAgentRunning={isAgentRunning} />}
       {activeTab === 'curator-log' && <CuratorLogTab />}
       {activeTab === 'cehq' && <CEHQTab config={config} onUpdate={updateConfig} />}
@@ -2609,6 +3284,204 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
                   <input type="checkbox" checked={config.autoCode} onChange={e => updateConfig({ autoCode: e.target.checked })} className="accent-red-500" />
                 </div>
                 <div className="text-[#c0ffee]/60 text-[9px] -mt-1 ml-1">Executes vaikhari missions automatically</div>
+              </div>
+            </div>
+            <div className="border border-white/5 rounded p-2">
+              <div className="text-[#c0ffee]/80 font-bold text-[11px] mb-2">Heartbeat</div>
+              <div className="space-y-2 text-[10px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-teal-400">Proactive heartbeat</span>
+                  <input type="checkbox" checked={config.heartbeat} onChange={e => updateConfig({ heartbeat: e.target.checked })} className="accent-teal-500" />
+                </div>
+                <div className="text-[#c0ffee]/60 text-[9px] -mt-1 ml-1">Anorak checks in like a mentor: short reflection prompts, journaling energy, and one nudge toward the highest-leverage next move.</div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[#c0ffee]/70">First ping in (min)</span>
+                  <input type="number" value={config.heartbeatFirstPingDelayMin} min={0} max={1440} step={5} onChange={e => { const parsed = parseInt(e.target.value, 10); updateConfig({ heartbeatFirstPingDelayMin: Math.min(1440, Math.max(0, Number.isFinite(parsed) ? parsed : 60)) }) }} className="w-14 text-center bg-black/60 border border-white/10 rounded px-1 py-0.5 text-white/90 outline-none" />
+                </div>
+                <div className="text-[#c0ffee]/55 text-[9px] -mt-1 ml-1">Local-only delay before the first mentor ping after enabling heartbeat. Use 0 for immediate.</div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[#c0ffee]/70">Frequency (min)</span>
+                  <input type="number" value={config.heartbeatFrequencyMin} min={30} max={480} step={30} onChange={e => updateConfig({ heartbeatFrequencyMin: Math.min(480, Math.max(30, parseInt(e.target.value) || 120)) })} className="w-14 text-center bg-black/60 border border-white/10 rounded px-1 py-0.5 text-white/90 outline-none" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[#c0ffee]/70">Work hours</span>
+                  <div className="flex items-center gap-1">
+                    <input type="number" value={config.heartbeatWorkStart} min={0} max={23} onChange={e => updateConfig({ heartbeatWorkStart: Math.min(23, Math.max(0, parseInt(e.target.value) || 9)) })} className="w-10 text-center bg-black/60 border border-white/10 rounded px-1 py-0.5 text-white/90 outline-none" />
+                    <span className="text-[#c0ffee]/50">—</span>
+                    <input type="number" value={config.heartbeatWorkEnd} min={0} max={23} onChange={e => updateConfig({ heartbeatWorkEnd: Math.min(23, Math.max(0, parseInt(e.target.value) || 18)) })} className="w-10 text-center bg-black/60 border border-white/10 rounded px-1 py-0.5 text-white/90 outline-none" />
+                  </div>
+                </div>
+                <div className="text-[#c0ffee]/55 text-[9px] -mt-1 ml-1">Uses this Oasis machine's local time.</div>
+              </div>
+            </div>
+            <div className="border border-white/5 rounded p-2">
+              <div className="text-[#c0ffee]/80 font-bold text-[11px] mb-2">Telegram</div>
+              <div className="space-y-2 text-[10px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-sky-400">Telegram bridge</span>
+                  <input
+                    type="checkbox"
+                    checked={telegramConfig.enabled}
+                    disabled={!telegramConfig.canMutateConfig || telegramSaving}
+                    onChange={e => setTelegramConfig(prev => ({ ...prev, enabled: e.target.checked }))}
+                    className="accent-sky-500"
+                  />
+                </div>
+                <div className="text-[#c0ffee]/60 text-[9px] -mt-1 ml-1">Turns the local Anorak Pro Telegram bridge on. Heartbeats, replies, and polling all depend on this.</div>
+                <div className="flex items-center justify-between">
+                  <span className="text-teal-400">2-way local polling</span>
+                  <input
+                    type="checkbox"
+                    checked={telegramConfig.pollingEnabled}
+                    disabled={!telegramConfig.canMutateConfig || telegramSaving}
+                    onChange={e => setTelegramConfig(prev => ({ ...prev, pollingEnabled: e.target.checked }))}
+                    className="accent-teal-500"
+                  />
+                </div>
+                <div className="text-[#c0ffee]/60 text-[9px] -mt-1 ml-1">No public URL needed. Oasis polls Telegram directly from your laptop and replies as Anorak Pro.</div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[#c0ffee]/70 shrink-0">Poll every</span>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      value={telegramConfig.pollingIntervalSec}
+                      min={3}
+                      max={60}
+                      disabled={!telegramConfig.canMutateConfig || telegramSaving}
+                      onChange={e => setTelegramConfig(prev => ({
+                        ...prev,
+                        pollingIntervalSec: Math.min(60, Math.max(3, parseInt(e.target.value) || 8)),
+                      }))}
+                      className="w-14 text-center bg-black/60 border border-white/10 rounded px-1 py-0.5 text-white/90 outline-none"
+                    />
+                    <span className="text-[#c0ffee]/50">sec</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-violet-300">Voice notes {'->'} local STT</span>
+                  <input
+                    type="checkbox"
+                    checked={telegramConfig.voiceNotesEnabled}
+                    disabled={!telegramConfig.canMutateConfig || telegramSaving}
+                    onChange={e => setTelegramConfig(prev => ({ ...prev, voiceNotesEnabled: e.target.checked }))}
+                    className="accent-violet-400"
+                  />
+                </div>
+                <div className="text-[#c0ffee]/60 text-[9px] -mt-1 ml-1">Incoming Telegram voice messages are downloaded and transcribed with the same local STT path Anorak Pro already uses.</div>
+                <div className="flex items-center justify-between">
+                  <span className="text-amber-300">Text + voice TLDR reply</span>
+                  <input
+                    type="checkbox"
+                    checked={telegramConfig.voiceRepliesEnabled}
+                    disabled={!telegramConfig.canMutateConfig || telegramSaving}
+                    onChange={e => setTelegramConfig(prev => ({ ...prev, voiceRepliesEnabled: e.target.checked }))}
+                    className="accent-amber-400"
+                  />
+                </div>
+                <div className="text-[#c0ffee]/60 text-[9px] -mt-1 ml-1">Telegram replies send the full written answer plus a shorter spoken recap by default.</div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[#c0ffee]/70 shrink-0">Bot token</span>
+                  <input
+                    type="password"
+                    value={telegramConfig.botToken}
+                    placeholder={telegramConfig.botTokenHint || '123456:ABC...'}
+                    disabled={!telegramConfig.canMutateConfig || telegramSaving}
+                    onChange={e => setTelegramConfig(prev => ({ ...prev, botToken: e.target.value }))}
+                    className="flex-1 min-w-0 bg-black/60 border border-white/10 rounded px-2 py-1 text-white/90 outline-none"
+                  />
+                </div>
+                {telegramConfig.hasBotToken && !telegramConfig.botToken && (
+                  <div className="text-[9px] text-[#c0ffee]/50 ml-1">Stored token: {telegramConfig.botTokenHint}</div>
+                )}
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[#c0ffee]/70 shrink-0">Chat ID</span>
+                  <input
+                    type="text"
+                    value={telegramConfig.chatId}
+                    disabled={!telegramConfig.canMutateConfig || telegramSaving}
+                    onChange={e => setTelegramConfig(prev => ({ ...prev, chatId: e.target.value }))}
+                    className="w-40 bg-black/60 border border-white/10 rounded px-2 py-1 text-white/90 outline-none"
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[#c0ffee]/70 shrink-0">Thread ID</span>
+                  <input
+                    type="text"
+                    value={telegramConfig.messageThreadId}
+                    placeholder="optional"
+                    disabled={!telegramConfig.canMutateConfig || telegramSaving}
+                    onChange={e => setTelegramConfig(prev => ({ ...prev, messageThreadId: e.target.value }))}
+                    className="w-40 bg-black/60 border border-white/10 rounded px-2 py-1 text-white/90 outline-none"
+                  />
+                </div>
+                <div className="rounded border border-white/5 bg-black/30 px-2 py-1 space-y-1">
+                  <div className="flex items-center justify-between text-[9px]">
+                    <span className={telegramConfig.polling.running ? 'text-teal-300' : 'text-[#c0ffee]/60'}>
+                      {telegramConfig.polling.running ? (telegramConfig.polling.busy ? 'Polling live (busy)' : 'Polling live') : 'Polling stopped'}
+                    </span>
+                    <span className="text-[#c0ffee]/50">
+                      {telegramConfig.polling.lastPollAt ? new Date(telegramConfig.polling.lastPollAt).toLocaleTimeString() : 'never polled'}
+                    </span>
+                  </div>
+                  <div className="text-[9px] text-[#c0ffee]/65">
+                    Processed: {telegramConfig.polling.processedUpdateCount} | Conversations: {telegramConfig.polling.conversationCount} | Missions: {telegramConfig.polling.missionCount}
+                  </div>
+                  <div className="text-[9px] text-[#c0ffee]/65">
+                    Last inbound: {telegramConfig.polling.lastInboundAt ? new Date(telegramConfig.polling.lastInboundAt).toLocaleString() : 'none yet'}
+                  </div>
+                  {telegramConfig.polling.lastTranscript && (
+                    <div className="text-[9px] text-violet-200/85">Last transcript: {telegramConfig.polling.lastTranscript}</div>
+                  )}
+                  {telegramConfig.polling.lastIgnoredChatId && (
+                    <div className="text-[9px] text-amber-200/85">
+                      Last ignored chat: {telegramConfig.polling.lastIgnoredChatId}
+                      {telegramConfig.polling.lastIgnoredUsername ? ` (@${telegramConfig.polling.lastIgnoredUsername})` : ''}
+                      {telegramConfig.polling.lastIgnoredThreadId ? ` thread ${telegramConfig.polling.lastIgnoredThreadId}` : ''}
+                      {telegramConfig.polling.lastIgnoredReason ? ` - ${telegramConfig.polling.lastIgnoredReason}` : ''}
+                      {telegramConfig.polling.lastIgnoredTextPreview ? ` - "${telegramConfig.polling.lastIgnoredTextPreview}"` : ''}
+                    </div>
+                  )}
+                  {telegramConfig.polling.lastError && (
+                    <div className="text-[9px] text-red-300">Polling error: {telegramConfig.polling.lastError}</div>
+                  )}
+                </div>
+                <div className="flex items-center justify-between text-[9px] text-[#c0ffee]/55">
+                  <span>{telegramConfig.configured ? `Configured via ${telegramConfig.source}` : 'Not configured yet'}</span>
+                  <span>{telegramConfig.updatedAt ? new Date(telegramConfig.updatedAt).toLocaleString() : ''}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => void saveTelegramConfig()}
+                    disabled={!telegramConfig.canMutateConfig || telegramSaving}
+                    className="px-2 py-1 rounded border border-sky-500/30 text-sky-300 hover:bg-sky-500/10 disabled:opacity-50 cursor-pointer text-[10px]"
+                  >
+                    {telegramSaving ? 'Saving...' : 'Save'}
+                  </button>
+                  <button
+                    onClick={() => void sendTelegramTest()}
+                    disabled={telegramTesting || telegramLoading}
+                    className="px-2 py-1 rounded border border-teal-500/30 text-teal-300 hover:bg-teal-500/10 disabled:opacity-50 cursor-pointer text-[10px]"
+                  >
+                    {telegramTesting ? 'Pinging...' : 'Send Test'}
+                  </button>
+                  <button
+                    onClick={() => void pollTelegramNow()}
+                    disabled={telegramPollingNow || telegramLoading}
+                    className="px-2 py-1 rounded border border-violet-500/30 text-violet-300 hover:bg-violet-500/10 disabled:opacity-50 cursor-pointer text-[10px]"
+                  >
+                    {telegramPollingNow ? 'Polling...' : 'Poll Now'}
+                  </button>
+                  <button
+                    onClick={() => void clearTelegramConfig()}
+                    disabled={!telegramConfig.canMutateConfig || telegramSaving}
+                    className="px-2 py-1 rounded border border-red-500/30 text-red-300 hover:bg-red-500/10 disabled:opacity-50 cursor-pointer text-[10px]"
+                  >
+                    Clear
+                  </button>
+                </div>
+                {telegramStatus && (
+                  <div className="text-[9px] text-[#c0ffee]/75 rounded border border-white/5 bg-black/30 px-2 py-1">{telegramStatus}</div>
+                )}
               </div>
             </div>
             <div className="border border-white/5 rounded p-2">
@@ -2637,6 +3510,39 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
               </div>
             </div>
             <div className="border border-white/5 rounded p-2">
+              <div className="text-[#c0ffee]/80 font-bold text-[11px] mb-2">Roadmap World</div>
+              <div className="space-y-2 text-[10px]">
+                <div className="text-[#c0ffee]/60 text-[9px]">Builds or refreshes a dedicated world snapshot from the live mission DB and opens it immediately.</div>
+                <button
+                  onClick={() => void buildRoadmapWorld()}
+                  disabled={roadmapWorldBusy}
+                  className="px-2 py-1 rounded border border-teal-500/30 text-teal-300 hover:bg-teal-500/10 disabled:opacity-50 cursor-pointer text-[10px]"
+                >
+                  {roadmapWorldBusy ? 'Building...' : 'Open Roadmap World'}
+                </button>
+                {roadmapWorldStatus && (
+                  <div className="text-[9px] text-[#c0ffee]/75 rounded border border-white/5 bg-black/30 px-2 py-1">{roadmapWorldStatus}</div>
+                )}
+              </div>
+            </div>
+            <div className="border border-white/5 rounded p-2">
+              <div className="text-[#c0ffee]/80 font-bold text-[11px] mb-2">Avatar</div>
+              <div className="space-y-2 text-[10px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[#c0ffee]/70">{anorakProAvatar ? 'Current avatar' : 'No avatar assigned'}</span>
+                  <button
+                    onClick={() => setShowAvatarGallery(true)}
+                    className="px-2 py-0.5 rounded border border-teal-500/30 text-teal-400 hover:bg-teal-500/10 text-[10px] cursor-pointer"
+                  >
+                    {anorakProAvatar ? 'Change' : 'Select Avatar'}
+                  </button>
+                </div>
+                {anorakProAvatar && (
+                  <div className="text-[9px] text-[#c0ffee]/50 truncate">{anorakProAvatar.avatar3dUrl}</div>
+                )}
+              </div>
+            </div>
+            <div className="border border-white/5 rounded p-2">
               <div className="text-[#c0ffee]/80 font-bold text-[11px] mb-2">Appearance</div>
               <div className="space-y-2 text-[10px]">
                 <div>
@@ -2657,13 +3563,29 @@ export function AnorakProPanel({ isOpen, onClose }: { isOpen: boolean; onClose: 
         </div>
       )}
 
+      {/* ═══ AVATAR GALLERY ═══ */}
+      {showAvatarGallery && (
+        <AvatarGallery
+          currentAvatarUrl={anorakProAvatar?.avatar3dUrl || null}
+          onSelect={(avatarUrl) => {
+            assignSharedAgentAvatar('anorak-pro', avatarUrl)
+            setShowAvatarGallery(false)
+          }}
+          onClose={() => setShowAvatarGallery(false)}
+        />
+      )}
+
       {/* ═══ RESIZE HANDLE ═══ */}
-      <div
-        onMouseDown={handleResizeStart}
-        className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize"
-        style={{ background: 'linear-gradient(135deg, transparent 50%, rgba(20,184,166,0.3) 50%)' }}
-      />
-    </div>,
-    document.body
+      {!embedded && (
+        <div
+          onMouseDown={handleResizeStart}
+          className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize"
+          style={{ background: 'linear-gradient(135deg, transparent 50%, rgba(20,184,166,0.3) 50%)' }}
+        />
+      )}
+    </div>
   )
+
+  if (embedded) return panelBody
+  return createPortal(panelBody, document.body)
 }

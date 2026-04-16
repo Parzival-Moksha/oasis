@@ -979,11 +979,13 @@ describe('renderMarkdownLine media auto-detection', () => {
     expect(containsMediaBubble(result)).toBe(false)
   })
 
-  // --- edge: URL with unknown extension on trusted domain ---
-  it('does not render MediaBubble for trusted domain with unknown extension', () => {
-    // detectMediaType returns null for .txt, so no MediaBubble even though domain matches
+  // --- edge: trusted domain with unknown extension now infers media type ---
+  it('renders MediaBubble for trusted domain even with unknown extension', () => {
+    // After trusted-domain feature: fal.media defaults to image regardless of extension
     const result = renderMarkdownLine('https://fal.media/files/abc/readme.txt', 0)
-    expect(containsMediaBubble(result)).toBe(false)
+    expect(containsMediaBubble(result)).toBe(true)
+    const props = getMediaBubbleProps(result)
+    expect(props!.mediaType).toBe('image')
   })
 
   // --- URL only on its own line ---

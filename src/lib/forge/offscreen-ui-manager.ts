@@ -23,6 +23,7 @@ interface OffscreenWindow {
   paused: boolean          // true when window is focused (visible overlay, no capture needed)
   width: number
   height: number
+  captureMode: 'snapdom' | 'foreign-object'
 }
 
 // snapdom: 148x faster than html2canvas. SVG foreignObject + aggressive caching.
@@ -48,7 +49,7 @@ class OffscreenUIManager {
   private windows = new Map<string, OffscreenWindow>()
   private rafId: number | null = null
 
-  mount(windowId: string, width: number, height: number, agentType?: string): { container: HTMLDivElement, texture: THREE.CanvasTexture } {
+  mount(windowId: string, width: number, height: number, agentType?: string, captureMode: 'snapdom' | 'foreign-object' = 'snapdom'): { container: HTMLDivElement, texture: THREE.CanvasTexture } {
     if (this.windows.has(windowId)) {
       const existing = this.windows.get(windowId)!
       return { container: existing.container, texture: existing.texture }
@@ -121,6 +122,7 @@ class OffscreenUIManager {
       streaming: false, streamingTimeout: null,
       capturing: false, paused: false,
       width, height,
+      captureMode,
     }
     this.windows.set(windowId, win)
     if (this.rafId === null) this.startLoop()
@@ -231,7 +233,7 @@ class OffscreenUIManager {
         win.container.style.zIndex = '-1'
       }
 
-      const snapdom = await getSnapdom()
+      const snapdom = win.captureMode === 'snapdom' ? await getSnapdom() : null
       let screenshot: HTMLCanvasElement | null = null
 
       if (snapdom) {

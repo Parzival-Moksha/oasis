@@ -772,7 +772,14 @@ export async function POST(request: NextRequest) {
               })
               if (voiceRes.ok) {
                 const voiceData = await voiceRes.json() as { url?: string }
-                if (voiceData.url) send('text', { content: `\n\n${voiceData.url}\n`, lobe: 'anorak-pro' })
+                if (voiceData.url) {
+                  send('media', {
+                    mediaType: 'audio',
+                    url: voiceData.url,
+                    prompt: 'Anorak Pro recap voice note',
+                    lobe: 'anorak-pro',
+                  })
+                }
               }
             } catch { /* voice is best-effort — never blocks pipeline */ }
           }

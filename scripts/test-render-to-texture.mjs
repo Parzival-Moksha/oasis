@@ -5,8 +5,11 @@
 
 import { chromium } from '@playwright/test'
 import { mkdirSync } from 'fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const DIR = 'C:/af_oasis/test-screenshots/render-to-texture-final'
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url))
+const DIR = path.resolve(SCRIPT_DIR, '../test-screenshots/render-to-texture-final')
 mkdirSync(DIR, { recursive: true })
 
 let testNum = 0

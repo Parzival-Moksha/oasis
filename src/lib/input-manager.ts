@@ -29,6 +29,7 @@ const mouseLookAccumulator = {
   sampleCount: 0,
   oldestTime: 0,
 }
+let lastPointerLockRightClickAt = 0
 const MAX_MOUSE_LOOK_EVENT_DELTA = 96
 const MAX_MOUSE_LOOK_PENDING_DELTA = 384
 const MAX_MOUSE_LOOK_FRAME_DELTA = 160
@@ -411,19 +412,51 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     if (get()._uiLayerStack.length > 0) return
     if (!STATE_CAPABILITIES[get().inputState].canLockPointer) return
     if (get().pointerLocked) return
-    // R3F puts id on wrapper div — find the actual <canvas> element inside it
+    // ░▒▓ BROWSER COOLDOWN GUARD (oasisspec3): after an explicit exitPointerLock,
+    // Chrome blocks re-acquisition for ~1250ms, Firefox for ~1500ms. Calling
+    // requestPointerLock() during that window throws SecurityError. The previous
+    // implementation retried unconditionally 100ms later, which ALWAYS landed
+    // inside the cooldown window and produced the uncaught-promise spam the
+    // user reported. We now:
+    //   1) Skip entirely if we're within the cooldown window.
+    //   2) Wrap the native call in .catch() so SecurityError/NotAllowedError
+    //      never escapes as an unhandled promise rejection.
+    //   3) Schedule a single deferred retry *past* the cooldown so the user's
+    //      click isn't silently dropped. ▓▒░
+    const POINTER_LOCK_COOLDOWN_MS = 1600
+    const sinceLastChange = performance.now() - mouseLookDebugState.lastPointerLockChangeAt
     const wrapper = document.querySelector('#uploader-canvas')
-    const canvas = wrapper?.querySelector('canvas') || wrapper
+    const canvas = (wrapper?.querySelector('canvas') || wrapper) as HTMLElement | null
     if (!canvas) return
-    ;(canvas as HTMLElement).requestPointerLock()
-    // ░▒▓ FIX: Verify pointer lock succeeded after a tick — browser may silently reject ▓▒░
-    setTimeout(() => {
-      if (get().pointerLocked) return // success
+
+    const stillNeedsLock = () => {
+      if (get().pointerLocked) return false
+      if (get()._uiLayerStack.length > 0) return false
       const state = get().inputState
-      if (state === 'orbit' || state === 'ui-focused' || state === 'agent-focus') return // no longer needs lock
-      console.warn('[InputManager] Pointer lock failed, retrying...')
-      ;(canvas as HTMLElement).requestPointerLock()
-    }, 100)
+      if (!STATE_CAPABILITIES[state].canLockPointer) return false
+      return true
+    }
+
+    const safeLock = () => {
+      if (!stillNeedsLock()) return
+      try {
+        const result = (canvas as HTMLElement).requestPointerLock() as unknown
+        if (result && typeof (result as Promise<void>).then === 'function') {
+          ;(result as Promise<void>).catch(() => {/* swallowed — state settles on next user gesture */})
+        }
+      } catch {/* legacy sync throw — same handling */}
+    }
+
+    if (mouseLookDebugState.lastPointerLockChangeAt > 0 && sinceLastChange < POINTER_LOCK_COOLDOWN_MS) {
+      // Inside browser cooldown — schedule one try once the window closes
+      const wait = Math.max(0, POINTER_LOCK_COOLDOWN_MS - sinceLastChange) + 50
+      setTimeout(safeLock, wait)
+      return
+    }
+
+    safeLock()
+    // Single retry past the cooldown if the first attempt failed silently
+    setTimeout(() => { if (!get().pointerLocked) safeLock() }, POINTER_LOCK_COOLDOWN_MS + 50)
   },
 
   releasePointerLock: () => {
@@ -456,6 +489,7 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     const onRightClick = (e: MouseEvent) => {
       // Right-click releases pointer lock (noclip/TPS convention)
       if (e.button === 2 && get().pointerLocked) {
+        lastPointerLockRightClickAt = getMouseLookNow()
         e.preventDefault()
         document.exitPointerLock()
       }
@@ -555,4 +589,11 @@ export function getInputState(): InputState {
 
 export function isPointerLocked(): boolean {
   return useInputManager.getState().pointerLocked
+}
+
+export function consumeRecentPointerLockRightClick(maxAgeMs = 400): boolean {
+  const now = getMouseLookNow()
+  const isRecent = lastPointerLockRightClickAt > 0 && now - lastPointerLockRightClickAt <= maxAgeMs
+  lastPointerLockRightClickAt = 0
+  return isRecent
 }

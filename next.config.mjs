@@ -34,12 +34,14 @@ const nextConfig = {
 
   // Serve /presentation as static HTML (reveal.js slides)
   async rewrites() {
-    return [
-      {
-        source: '/presentation',
-        destination: '/presentation/index.html',
-      },
-    ]
+    return {
+      afterFiles: [
+        {
+          source: '/presentation',
+          destination: '/presentation/index.html',
+        },
+      ],
+    }
   },
 
   // ─═̷─═̷─🔒─═̷─═̷─ Security headers ─═̷─═̷─🔒─═̷─═̷─

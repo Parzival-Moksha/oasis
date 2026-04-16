@@ -31,6 +31,9 @@ import { derivePlayerCastSpawn } from '../../lib/player-avatar-runtime'
 import { useUILayer } from '@/lib/input-manager'
 import { AssetCard, RegenAllButton } from './AssetCard'
 import { DeleteButton } from './DeleteButton'
+import { AGENT_WINDOW_RENDERERS, getAgentWindowRendererMeta, type AgentWindowRenderMode } from '../../lib/agent-window-renderers'
+import { deriveAvatarAnchoredWindowPlacement } from '../../lib/agent-avatar-utils'
+import { getLiveObjectTransform } from '../../lib/live-object-transforms'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 
@@ -2958,8 +2961,10 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                 )}
                 {placedAgentWindows.map(win => {
                   const isSelected = selectedObjectId === win.id
-                  const agentIcon = win.agentType === 'anorak' ? '💻' : win.agentType === 'anorak-pro' ? '🔮' : win.agentType === 'merlin' ? '🧙' : win.agentType === 'parzival' ? '🧿' : '⚡'
-                  const agentColor = win.agentType === 'anorak' ? 'text-sky-400' : win.agentType === 'anorak-pro' ? 'text-teal-400' : win.agentType === 'merlin' ? 'text-purple-400' : win.agentType === 'parzival' ? 'text-violet-400' : 'text-green-400'
+                  const agentIcon = win.agentType === 'anorak' ? '💻' : win.agentType === 'anorak-pro' ? '🔮' : win.agentType === 'hermes' ? '☤' : win.agentType === 'merlin' ? '🧙' : win.agentType === 'parzival' ? '🧿' : '⚡'
+                  const agentColor = win.agentType === 'anorak' ? 'text-sky-400' : win.agentType === 'anorak-pro' ? 'text-teal-400' : win.agentType === 'hermes' ? 'text-rose-400' : win.agentType === 'merlin' ? 'text-purple-400' : win.agentType === 'parzival' ? 'text-violet-400' : 'text-green-400'
+                  const agentIconResolved = win.agentType === 'browser' ? 'WWW' : agentIcon
+                  const agentColorResolved = win.agentType === 'browser' ? 'text-orange-400' : agentColor
                   const pos = transforms[win.id]?.position || win.position
                   return (
                     <div
@@ -2977,7 +2982,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                       }}
                     >
                       <div>
-                        <span className={`text-[10px] font-mono mr-1 ${agentColor}`}>{agentIcon}</span>
+                        <span className={`text-[10px] font-mono mr-1 ${agentColorResolved}`}>{agentIconResolved}</span>
                         <span className="text-[11px] text-gray-200">{win.label || win.agentType}</span>
                         <span className="text-[9px] text-gray-400 ml-1.5">agent</span>
                       </div>
@@ -3487,12 +3492,16 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const AGENT_TYPES = [
+  { type: 'browser' as const, label: 'Browser', icon: 'WWW', color: '#f97316', desc: 'Live 3D browser surface with real typing and selection' },
   { type: 'anorak' as const, label: 'Anorak', icon: '💻', color: '#38bdf8', desc: 'Claude Code agent — full multi-turn sessions' },
   { type: 'anorak-pro' as const, label: 'Anorak Pro', icon: '🔮', color: '#14b8a6', desc: 'Autonomous dev pipeline — curator, coder, reviewer, tester' },
+  { type: 'hermes' as const, label: 'Hermes', icon: '☤', color: '#fb7185', desc: 'Embodied co-builder — remote tool agent inside the Oasis' },
   { type: 'merlin' as const, label: 'Merlin', icon: '🧙', color: '#a855f7', desc: 'World-builder agent — place objects, set sky' },
   { type: 'devcraft' as const, label: 'DevCraft', icon: '⚡', color: '#22c55e', desc: 'Mission management + gamification' },
   { type: 'parzival' as const, label: 'Parzival', icon: '🧿', color: '#c084fc', desc: 'Autonomous brain — modes, missions, thought stream' },
 ] as const
+
+const AGENT_SANDBOX_TYPES = AGENT_TYPES.filter(agent => agent.type === 'anorak' || agent.type === 'anorak-pro')
 
 function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject, setCameraLookAt, selectedObjectId, transforms }: {
   enterPlacementMode: (pending: import('../../store/oasisStore').PlacementPending) => void
@@ -3500,11 +3509,12 @@ function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject
   setInspectedObject: (id: string | null) => void
   setCameraLookAt: (pos: [number, number, number]) => void
   selectedObjectId: string | null
-  transforms: Record<string, { position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number }>
+  transforms: Record<string, { position?: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number }>
 }) {
   const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
   const placedAgentAvatars = useOasisStore(s => s.placedAgentAvatars)
   const removeAgentWindow = useOasisStore(s => s.removeAgentWindow)
+  const setAgentWindowAnchorMode = useOasisStore(s => s.setAgentWindowAnchorMode)
   const focusAgentWindow = useOasisStore(s => s.focusAgentWindow)
   const assignAvatarToAgentWindow = useOasisStore(s => s.assignAvatarToAgentWindow)
   const focusedAgentWindowId = useOasisStore(s => s.focusedAgentWindowId)
@@ -3539,6 +3549,35 @@ function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject
       </div>
 
       {/* ░▒▓ PLACED AGENTS ▓▒░ */}
+      <div className="mb-3">
+        <span className="text-[10px] text-gray-300 uppercase tracking-widest font-mono">
+          â”€â”€ Projection Sandbox â”€â”€
+        </span>
+        <div className="grid grid-cols-2 gap-1.5 mt-2">
+          {AGENT_SANDBOX_TYPES.flatMap(agent => AGENT_WINDOW_RENDERERS.map(renderer => (
+            <button
+              key={`${agent.type}-${renderer.id}`}
+              onClick={() => enterPlacementMode({
+                type: 'agent',
+                name: `${agent.label} - ${renderer.shortLabel}`,
+                agentType: agent.type,
+                agentRenderMode: renderer.id as AgentWindowRenderMode,
+              })}
+              className="rounded-lg border border-gray-700/30 bg-black/30 hover:border-sky-400/30 p-2 text-left transition-all duration-200"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-base">{agent.icon}</span>
+                  <span className="text-[10px] font-bold" style={{ color: agent.color }}>{agent.label}</span>
+                </div>
+                <span className="text-[8px] px-1.5 py-0.5 rounded border border-white/10 text-gray-300 font-mono">{renderer.shortLabel}</span>
+              </div>
+              <div className="text-[8px] text-gray-500 mt-1 leading-tight">{renderer.description}</div>
+            </button>
+          )))}
+        </div>
+      </div>
+
       <div className="flex items-center justify-between mb-2">
         <span className="text-[10px] text-gray-300 uppercase tracking-widest font-mono">
           ── Deployed ({placedAgentWindows.length}) ──
@@ -3556,9 +3595,16 @@ function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject
           {placedAgentWindows.map(win => {
             const isSelected = selectedObjectId === win.id
             const isFocused = focusedAgentWindowId === win.id
-            const agent = AGENT_TYPES.find(a => a.type === win.agentType) || AGENT_TYPES[0]
-            const pos = transforms[win.id]?.position || win.position
-            const assignedAvatar = placedAgentAvatars.find(entry => entry.linkedWindowId === win.id) || null
+            const agent = AGENT_TYPES.find(a => a.type === win.agentType) || AGENT_TYPES.find(a => a.type === 'anorak') || AGENT_TYPES[0]
+            const rendererMeta = getAgentWindowRendererMeta(win.renderMode)
+            const assignedAvatar = win.linkedAvatarId
+              ? placedAgentAvatars.find(entry => entry.id === win.linkedAvatarId) || null
+              : placedAgentAvatars.find(entry => entry.linkedWindowId === win.id) || null
+            const avatarTransform = assignedAvatar ? (getLiveObjectTransform(assignedAvatar.id) || transforms[assignedAvatar.id]) : undefined
+            const derivedPlacement = assignedAvatar && win.anchorMode && win.anchorMode !== 'detached'
+              ? deriveAvatarAnchoredWindowPlacement(win, assignedAvatar, avatarTransform, win.anchorMode, transforms[win.id])
+              : null
+            const pos = derivedPlacement?.position || transforms[win.id]?.position || win.position
             return (
               <div
                 key={win.id}
@@ -3580,6 +3626,7 @@ function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject
                     <div>
                       <span className="text-[11px] font-bold" style={{ color: agent.color }}>{win.label || agent.label}</span>
                       {win.sessionId && <span className="text-[8px] text-gray-600 font-mono ml-1.5">{win.sessionId.slice(0, 8)}</span>}
+                      <span className="text-[8px] text-gray-500 font-mono ml-1.5">{rendererMeta.shortLabel}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
@@ -3618,9 +3665,35 @@ function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject
                     </button>
                   </div>
                 </div>
+                {assignedAvatar && (
+                  <div className="mt-1 flex items-center gap-1">
+                    {(['detached', 'next-to', 'above'] as const).map(mode => {
+                      const isActive = (win.anchorMode || 'detached') === mode
+                      return (
+                        <button
+                          key={mode}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setAgentWindowAnchorMode(win.id, mode)
+                          }}
+                          className={`text-[8px] px-1.5 py-0.5 rounded font-mono border transition-colors ${
+                            isActive
+                              ? 'border-cyan-400/40 bg-cyan-500/10 text-cyan-200'
+                              : 'border-white/10 text-gray-500 hover:border-cyan-400/25 hover:text-cyan-100'
+                          }`}
+                          title={mode === 'detached' ? 'Window keeps its own world transform' : mode === 'next-to' ? 'Window rides beside the avatar' : 'Window rides above the avatar'}
+                        >
+                          {mode}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
                 <div className="flex items-center gap-2 mt-1 text-[8px] text-gray-500 font-mono">
                   <span>pos: [{pos.map(v => v.toFixed(1)).join(', ')}]</span>
                   <span>scale: {(() => { const s = transforms[win.id]?.scale; return typeof s === 'number' ? s.toFixed(2) : Array.isArray(s) ? s[0].toFixed(2) : win.scale.toFixed(2) })()}</span>
+                  <span>render: {rendererMeta.shortLabel}</span>
+                  {assignedAvatar && <span>anchor: {win.anchorMode || 'detached'}</span>}
                 </div>
               </div>
             )

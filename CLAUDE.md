@@ -2,7 +2,6 @@
 
 Next.js 14 + React Three Fiber + Three.js + Zustand + Prisma/SQLite. Port **4516**.
 
-**Master spec**: [localhost:4516/spec](http://localhost:4516/spec) — interactive roadmap.
 **Living todolist**: `carbondir/oasisspec3.txt` — reingest every time, delete confirmed fixes.
 **The Brain**: `c:\ae_parzival\` — Parzival, the soul of the Oasis. Single Node.js agent (port 4517), 4 modes (Coach/Coder/Curator/Hacker), local SQLite (Akasha). Interfaces with af_oasis via MCP. Spec: `carbondir/moltspec.md`.
 
@@ -78,7 +77,6 @@ Maturity levels: 0 para → 1 pashyanti → 2 madhyama → 3 vaikhari → 4 buil
 | `src/components/scene-lib/constants.ts` | SKY_BACKGROUNDS, ASSET_CATALOG (565 assets) |
 | `src/lib/forge/world-persistence.ts` | Browser-side world load/save (includes AgentWindow type) |
 | `src/lib/local-auth.ts` | Identity provider — returns 'local-user' always |
-| `src/app/spec/page.tsx` | **THE SPEC** — interactive roadmap |
 | `prisma/schema.prisma` | SQLite schema: Mission, Memory, World, Journal, CarbonModel |
 
 ### Persistence
@@ -141,6 +139,6 @@ Maturity levels: 0 para → 1 pashyanti → 2 madhyama → 3 vaikhari → 4 buil
 ## Code Standards
 - **Never use @anthropic-ai/claude-code SDK.** CLI subprocess only (`claude --print --output-format stream-json`).
 - **oasisspec3.txt is alive.** Reingest every time. Delete confirmed fixes immediately.
-- Deep-dive the repo before making changes. Read /spec.
+- Deep-dive the repo before making changes. Read `carbondir/oasisspec3.txt`.
 
 ॐ ship or die ॐ

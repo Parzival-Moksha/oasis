@@ -1,8 +1,12 @@
 // CDP Oasis Player — direct Chrome DevTools Protocol interaction
 import CDP from 'chrome-remote-interface';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const SHOT_DIR = 'C:/af_oasis/test-screenshots';
+const TOOL_DIR = path.dirname(fileURLToPath(import.meta.url));
+const SHOT_DIR = path.resolve(TOOL_DIR, '../../test-screenshots');
+mkdirSync(SHOT_DIR, { recursive: true });
 let shotN = 0;
 
 async function play() {

@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { readFileMock, findManyMock } = vi.hoisted(() => ({
+const { readFileMock, readdirMock, findManyMock } = vi.hoisted(() => ({
   readFileMock: vi.fn(),
+  readdirMock: vi.fn(),
   findManyMock: vi.fn(),
 }))
 
 vi.mock('fs', () => ({
   promises: {
     readFile: readFileMock,
+    readdir: readdirMock,
   },
 }))
 
@@ -25,6 +27,7 @@ import { renderContextModuleSections, resolveContextModulesForLobe } from '../an
 describe('resolveContextModulesForLobe', () => {
   beforeEach(() => {
     readFileMock.mockReset()
+    readdirMock.mockReset()
     findManyMock.mockReset()
   })
 
@@ -34,7 +37,7 @@ describe('resolveContextModulesForLobe', () => {
       customModules: [
         { id: 'custom:off', name: 'Off', content: 'hidden', enabled: false, type: 'text', filePath: '' },
       ],
-      lobeModules: { curator: ['custom:off'], coder: [], reviewer: [], tester: [], gamer: [] },
+      lobeModules: { curator: ['custom:off'], coder: [], reviewer: [], tester: [], gamer: [], 'anorak-pro': [] },
       topMissionCount: 3,
     })
 
@@ -48,7 +51,7 @@ describe('resolveContextModulesForLobe', () => {
         { id: 'custom:off', name: 'Off', content: 'hidden', enabled: false, type: 'text', filePath: '' },
         { id: 'custom:on', name: 'On', content: 'visible', enabled: true, type: 'text', filePath: '' },
       ],
-      lobeModules: { curator: ['custom:off', 'custom:on'], coder: [], reviewer: [], tester: [], gamer: [] },
+      lobeModules: { curator: ['custom:off', 'custom:on'], coder: [], reviewer: [], tester: [], gamer: [], 'anorak-pro': [] },
       topMissionCount: 3,
     })
 
@@ -62,7 +65,7 @@ describe('resolveContextModulesForLobe', () => {
       customModules: [
         { id: 'custom:blank', name: 'Blank', content: '   ', enabled: true, type: 'text', filePath: '' },
       ],
-      lobeModules: { curator: [], coder: [], reviewer: ['custom:blank'], tester: [], gamer: [] },
+      lobeModules: { curator: [], coder: [], reviewer: ['custom:blank'], tester: [], gamer: [], 'anorak-pro': [] },
       topMissionCount: 3,
     })
 
@@ -71,13 +74,14 @@ describe('resolveContextModulesForLobe', () => {
 
   it('resolves file-backed modules from disk', async () => {
     readFileMock.mockResolvedValue('linked content')
+    readdirMock.mockResolvedValue([])
 
     const modules = await resolveContextModulesForLobe({
       lobe: 'coder',
       customModules: [
         { id: 'custom:file', name: 'Spec File', content: '', enabled: true, type: 'file', filePath: 'carbondir/openclawuispec.txt' },
       ],
-      lobeModules: { curator: [], coder: ['custom:file'], reviewer: [], tester: [], gamer: [] },
+      lobeModules: { curator: [], coder: ['custom:file'], reviewer: [], tester: [], gamer: [], 'anorak-pro': [] },
       topMissionCount: 3,
     })
 
@@ -94,7 +98,7 @@ describe('resolveContextModulesForLobe', () => {
     const modules = await resolveContextModulesForLobe({
       lobe: 'curator',
       customModules: [],
-      lobeModules: { curator: [BUILT_IN_MODULE_IDS.queued], coder: [], reviewer: [], tester: [], gamer: [] },
+      lobeModules: { curator: [BUILT_IN_MODULE_IDS.queued], coder: [], reviewer: [], tester: [], gamer: [], 'anorak-pro': [] },
       topMissionCount: 3,
     })
 
@@ -117,7 +121,7 @@ describe('resolveContextModulesForLobe', () => {
     const modules = await resolveContextModulesForLobe({
       lobe: 'curator',
       customModules: [],
-      lobeModules: { curator: [BUILT_IN_MODULE_IDS.rl], coder: [], reviewer: [], tester: [], gamer: [] },
+      lobeModules: { curator: [BUILT_IN_MODULE_IDS.rl], coder: [], reviewer: [], tester: [], gamer: [], 'anorak-pro': [] },
       topMissionCount: 3,
     })
 
@@ -133,7 +137,7 @@ describe('resolveContextModulesForLobe', () => {
     const modules = await resolveContextModulesForLobe({
       lobe: 'curator',
       customModules: [],
-      lobeModules: { curator: [BUILT_IN_MODULE_IDS.allTodo], coder: [], reviewer: [], tester: [], gamer: [] },
+      lobeModules: { curator: [BUILT_IN_MODULE_IDS.allTodo], coder: [], reviewer: [], tester: [], gamer: [], 'anorak-pro': [] },
       topMissionCount: 3,
     })
 
@@ -150,7 +154,7 @@ describe('resolveContextModulesForLobe', () => {
     const modules = await resolveContextModulesForLobe({
       lobe: 'curator',
       customModules: [],
-      lobeModules: { curator: [BUILT_IN_MODULE_IDS.anorakTodo], coder: [], reviewer: [], tester: [], gamer: [] },
+      lobeModules: { curator: [BUILT_IN_MODULE_IDS.anorakTodo], coder: [], reviewer: [], tester: [], gamer: [], 'anorak-pro': [] },
       topMissionCount: 3,
     })
 
@@ -172,7 +176,7 @@ describe('resolveContextModulesForLobe', () => {
     const modules = await resolveContextModulesForLobe({
       lobe: 'curator',
       customModules: [],
-      lobeModules: { curator: [BUILT_IN_MODULE_IDS.topAnorak], coder: [], reviewer: [], tester: [], gamer: [] },
+      lobeModules: { curator: [BUILT_IN_MODULE_IDS.topAnorak], coder: [], reviewer: [], tester: [], gamer: [], 'anorak-pro': [] },
       topMissionCount: 5,
     })
 
@@ -189,17 +193,59 @@ describe('resolveContextModulesForLobe', () => {
 
   it('degrades file read failures into module content', async () => {
     readFileMock.mockRejectedValue(new Error('boom'))
+    readdirMock.mockResolvedValue([])
 
     const modules = await resolveContextModulesForLobe({
       lobe: 'tester',
       customModules: [
         { id: 'custom:file', name: 'Spec File', content: '', enabled: true, type: 'file', filePath: 'missing.txt' },
       ],
-      lobeModules: { curator: [], coder: [], reviewer: [], tester: ['custom:file'], gamer: [] },
+      lobeModules: { curator: [], coder: [], reviewer: [], tester: ['custom:file'], gamer: [], 'anorak-pro': [] },
       topMissionCount: 3,
     })
 
     expect(modules[0].content).toContain('Failed to read linked file: boom')
+  })
+
+  it('recovers basename-only links by preferring carbondir matches inside the repo', async () => {
+    readFileMock.mockImplementation(async (target: string) => {
+      const normalized = target.replace(/\\/g, '/')
+      if (normalized.endsWith('/carbondir/oasisspec3.txt')) return 'oasis spec content'
+      const error = new Error(`ENOENT: no such file or directory, open '${target}'`) as Error & { code?: string }
+      error.code = 'ENOENT'
+      throw error
+    })
+    readdirMock.mockImplementation(async (target: string) => {
+      const normalized = String(target).replace(/\\/g, '/')
+      if (normalized.endsWith('/carbondir')) {
+        return [
+          {
+            name: 'oasisspec3.txt',
+            isDirectory: () => false,
+            isFile: () => true,
+          },
+        ]
+      }
+      return [
+        {
+          name: 'carbondir',
+          isDirectory: () => true,
+          isFile: () => false,
+        },
+      ]
+    })
+
+    const modules = await resolveContextModulesForLobe({
+      lobe: 'coder',
+      customModules: [
+        { id: 'custom:file', name: 'Spec File', content: '', enabled: true, type: 'file', filePath: 'oasisspec3.txt' },
+      ],
+      lobeModules: { curator: [], coder: ['custom:file'], reviewer: [], tester: [], gamer: [], 'anorak-pro': [] },
+      topMissionCount: 3,
+    })
+
+    expect(modules[0].content).toContain('oasis spec content')
+    expect(modules[0].filePath?.replace(/\\/g, '/')).toContain('/carbondir/oasisspec3.txt')
   })
 })
 

@@ -1,13 +1,30 @@
-// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-// MEDIA BUBBLE — Inline image/audio/video renderer for Anorak chat
-// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { createLipSyncController, registerLipSync, unregisterLipSync, type LipSyncController } from '../../lib/lip-sync'
+import { createPortal } from 'react-dom'
+import { useEffect, useRef, useState } from 'react'
+
+import {
+  createLipSyncController,
+  registerLipSync,
+  resumeLipSyncContext,
+  unregisterLipSync,
+  type LipSyncController,
+} from '../../lib/lip-sync'
 
 export type MediaType = 'image' | 'audio' | 'video'
+
+type GalleryMediaType = Extract<MediaType, 'image' | 'video'>
+
+interface GalleryEntry {
+  url: string
+  mediaType: GalleryMediaType
+  prompt?: string
+}
+
+interface GalleryState {
+  entries: GalleryEntry[]
+  index: number
+}
 
 interface MediaBubbleProps {
   url: string
@@ -16,6 +33,7 @@ interface MediaBubbleProps {
   compact?: boolean
   autoPlay?: boolean
   avatarLipSyncTargetId?: string | null
+  galleryScopeId?: string
 }
 
 export function resolveMediaUrl(url: string): string {
@@ -51,6 +69,61 @@ export function shouldProxyMediaUrl(url: string, mediaType: MediaType): boolean 
   }
 }
 
+function normalizeGalleryPrompt(prompt?: string): string | undefined {
+  const trimmed = typeof prompt === 'string' ? prompt.trim() : ''
+  return trimmed || undefined
+}
+
+function isGalleryMediaType(mediaType: MediaType): mediaType is GalleryMediaType {
+  return mediaType === 'image' || mediaType === 'video'
+}
+
+function readGalleryEntries(scopeId: string): GalleryEntry[] {
+  if (typeof document === 'undefined' || !scopeId) return []
+
+  const nodes = Array.from(
+    document.querySelectorAll<HTMLElement>('[data-media-gallery-scope][data-media-gallery-url][data-media-gallery-type]')
+  )
+  const entries: GalleryEntry[] = []
+  const seen = new Set<string>()
+
+  for (const node of nodes) {
+    if (node.dataset.mediaGalleryScope !== scopeId) continue
+
+    const url = node.dataset.mediaGalleryUrl?.trim() || ''
+    const typeValue = node.dataset.mediaGalleryType?.trim()
+    const mediaType = typeValue === 'image' || typeValue === 'video' ? typeValue : null
+    if (!url || !mediaType) continue
+
+    const key = `${mediaType}:${url}`
+    if (seen.has(key)) continue
+    seen.add(key)
+
+    entries.push({
+      url,
+      mediaType,
+      prompt: normalizeGalleryPrompt(node.dataset.mediaGalleryPrompt),
+    })
+  }
+
+  return entries
+}
+
+function buildGalleryState(current: GalleryEntry, scopeId?: string): GalleryState {
+  const scopedEntries = scopeId ? readGalleryEntries(scopeId) : []
+  if (scopedEntries.length > 0) {
+    const index = scopedEntries.findIndex(entry => entry.url === current.url && entry.mediaType === current.mediaType)
+    if (index >= 0) {
+      return { entries: scopedEntries, index }
+    }
+  }
+
+  return {
+    entries: [current],
+    index: 0,
+  }
+}
+
 export function MediaBubble({
   url,
   mediaType,
@@ -58,18 +131,21 @@ export function MediaBubble({
   compact,
   autoPlay = false,
   avatarLipSyncTargetId = null,
+  galleryScopeId,
 }: MediaBubbleProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
-  const [lightbox, setLightbox] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
   const [proxiedUrl, setProxiedUrl] = useState('')
+  const [gallery, setGallery] = useState<GalleryState | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const lipSyncRef = useRef<LipSyncController | null>(null)
   const directResolved = resolveMediaUrl(url) + (retryCount ? `${url.includes('?') ? '&' : '?'}r=${retryCount}` : '')
   const proxyMedia = shouldProxyMediaUrl(url, mediaType)
   const resolved = proxyMedia ? proxiedUrl : directResolved
   const maxH = compact ? 200 : 300
+  const normalizedPrompt = normalizeGalleryPrompt(prompt)
+  const activeGalleryEntry = gallery ? gallery.entries[gallery.index] : null
 
   useEffect(() => {
     setLoading(true)
@@ -112,17 +188,44 @@ export function MediaBubble({
   }, [directResolved, mediaType, proxyMedia])
 
   useEffect(() => {
-    if (!lightbox) return
-    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setLightbox(false) }
+    if (!gallery) return
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setGallery(null)
+        return
+      }
+      if (event.key === 'ArrowLeft') {
+        setGallery(current => {
+          if (!current || current.entries.length < 2) return current
+          const nextIndex = (current.index - 1 + current.entries.length) % current.entries.length
+          return { ...current, index: nextIndex }
+        })
+        return
+      }
+      if (event.key === 'ArrowRight') {
+        setGallery(current => {
+          if (!current || current.entries.length < 2) return current
+          const nextIndex = (current.index + 1) % current.entries.length
+          return { ...current, index: nextIndex }
+        })
+      }
+    }
+
     window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
-  }, [lightbox])
+    return () => {
+      window.removeEventListener('keydown', handleKey)
+      document.body.style.overflow = previousOverflow
+    }
+  }, [gallery])
 
   useEffect(() => {
     if (mediaType !== 'audio' || !avatarLipSyncTargetId || !audioRef.current) return
 
     const ctrl = createLipSyncController()
-    ctrl.attachAudio(audioRef.current)
     lipSyncRef.current = ctrl
 
     return () => {
@@ -140,8 +243,15 @@ export function MediaBubble({
   }, [mediaType, resolved])
 
   const activateLipSync = () => {
-    if (!avatarLipSyncTargetId || !lipSyncRef.current) return
-    registerLipSync(avatarLipSyncTargetId, lipSyncRef.current)
+    if (!avatarLipSyncTargetId || !lipSyncRef.current || !audioRef.current) return
+
+    const ctrl = lipSyncRef.current
+    void resumeLipSyncContext().finally(() => {
+      if (!ctrl.isActive && audioRef.current) {
+        ctrl.attachAudio(audioRef.current)
+      }
+      registerLipSync(avatarLipSyncTargetId, ctrl)
+    })
   }
 
   const deactivateLipSync = () => {
@@ -149,20 +259,53 @@ export function MediaBubble({
     unregisterLipSync(avatarLipSyncTargetId, lipSyncRef.current, { detach: false })
   }
 
+  const openGallery = () => {
+    if (!resolved || !isGalleryMediaType(mediaType)) return
+    setGallery(buildGalleryState({
+      url: resolved,
+      mediaType,
+      prompt: normalizedPrompt,
+    }, galleryScopeId))
+  }
+
+  const shiftGallery = (delta: number) => {
+    setGallery(current => {
+      if (!current || current.entries.length < 2) return current
+      const nextIndex = (current.index + delta + current.entries.length) % current.entries.length
+      return { ...current, index: nextIndex }
+    })
+  }
+
+  const galleryAttributes = galleryScopeId && resolved && isGalleryMediaType(mediaType)
+    ? {
+        'data-media-gallery-scope': galleryScopeId,
+        'data-media-gallery-url': resolved,
+        'data-media-gallery-type': mediaType,
+        ...(normalizedPrompt ? { 'data-media-gallery-prompt': normalizedPrompt } : {}),
+      }
+    : {}
+
   if (error) {
     return (
       <div className="border border-red-500/30 bg-red-900/10 rounded p-3 my-1">
         <div className="text-xs font-mono text-red-400 mb-1">Failed to load {mediaType}</div>
         {prompt && <div className="text-xs text-gray-500 truncate">{prompt}</div>}
-        <button onClick={() => { setError(false); setLoading(true); setRetryCount(c => c + 1) }}
-          className="text-xs font-mono text-[#14b8a6] hover:underline mt-1">Retry</button>
+        <button
+          onClick={() => {
+            setError(false)
+            setLoading(true)
+            setRetryCount(current => current + 1)
+          }}
+          className="text-xs font-mono text-[#14b8a6] hover:underline mt-1"
+        >
+          Retry
+        </button>
       </div>
     )
   }
 
   return (
     <div className="my-1">
-      {/* Loading pulse */}
       {loading && mediaType !== 'audio' && (
         <div className="animate-pulse bg-[#222] rounded" style={{ height: compact ? 120 : 180, maxWidth: 400 }} />
       )}
@@ -173,25 +316,30 @@ export function MediaBubble({
         </div>
       )}
 
-      {/* Image */}
       {mediaType === 'image' && resolved && (
-        <>
-          <img src={resolved} alt={prompt || 'Generated image'}
-            loading="lazy"
+        <div className="relative inline-block" {...galleryAttributes}>
+          <img
+            src={resolved}
+            alt={prompt || 'Generated image'}
+            loading="eager"
             onLoad={() => setLoading(false)}
-            onError={() => { setLoading(false); setError(true) }}
-            onClick={() => setLightbox(true)}
+            onError={() => {
+              setLoading(false)
+              setError(true)
+            }}
+            onClick={openGallery}
             className="rounded cursor-pointer hover:opacity-90 transition-opacity border-l-2 border-[#14b8a6]"
-            style={{ maxHeight: maxH, display: loading ? 'none' : 'block', maxWidth: '100%', objectFit: 'contain' }} />
-          {lightbox && (
-            <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center cursor-pointer" onClick={() => setLightbox(false)}>
-              <img src={resolved} alt={prompt || 'Generated image'} className="max-w-[90vw] max-h-[90vh] object-contain" />
-            </div>
-          )}
-        </>
+            style={{
+              maxHeight: maxH,
+              maxWidth: '100%',
+              objectFit: 'contain',
+              opacity: loading ? 0 : 1,
+              visibility: loading ? 'hidden' : 'visible',
+            }}
+          />
+        </div>
       )}
 
-      {/* Audio */}
       {mediaType === 'audio' && resolved && (
         <div className="bg-[#111] rounded p-2 border-l-2 border-[#14b8a6]" style={{ maxWidth: 400 }}>
           <audio
@@ -205,27 +353,130 @@ export function MediaBubble({
             onPlay={activateLipSync}
             onPause={deactivateLipSync}
             onEnded={deactivateLipSync}
-            onError={() => { deactivateLipSync(); setLoading(false); setError(true) }}>
-          </audio>
+            onError={() => {
+              deactivateLipSync()
+              setLoading(false)
+              setError(true)
+            }}
+          />
         </div>
       )}
 
-      {/* Video */}
       {mediaType === 'video' && resolved && (
-        <video controls preload="metadata" playsInline
-          onLoadedMetadata={() => setLoading(false)}
-          onError={() => { setLoading(false); setError(true) }}
-          className="rounded border-l-2 border-[#14b8a6]"
-          style={{ maxHeight: maxH, display: loading ? 'none' : 'block', maxWidth: '100%' }}>
-          <source src={resolved} />
-        </video>
+        <div className="relative inline-block" {...galleryAttributes}>
+          <video
+            controls
+            preload="metadata"
+            playsInline
+            onLoadedMetadata={() => setLoading(false)}
+            onError={() => {
+              setLoading(false)
+              setError(true)
+            }}
+            onDoubleClick={openGallery}
+            className="rounded border-l-2 border-[#14b8a6]"
+            style={{
+              maxHeight: maxH,
+              maxWidth: '100%',
+              opacity: loading ? 0 : 1,
+              visibility: loading ? 'hidden' : 'visible',
+            }}
+          >
+            <source src={resolved} />
+          </video>
+          <button
+            type="button"
+            onClick={openGallery}
+            className="absolute top-2 right-2 rounded bg-black/75 px-2 py-1 text-[10px] font-mono text-white hover:bg-black/90"
+          >
+            Open
+          </button>
+        </div>
       )}
 
-      {/* Caption */}
       {prompt && !loading && (
         <div className="text-xs text-gray-400 mt-0.5 truncate" style={{ maxWidth: 400 }} title={prompt}>
-          {prompt.length > 80 ? prompt.slice(0, 80) + '...' : prompt}
+          {prompt.length > 80 ? `${prompt.slice(0, 80)}...` : prompt}
         </div>
+      )}
+
+      {gallery && activeGalleryEntry && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed inset-0 z-[100000] bg-black/95 flex items-center justify-center p-4"
+          onClick={() => setGallery(null)}
+        >
+          <button
+            type="button"
+            onClick={event => {
+              event.stopPropagation()
+              setGallery(null)
+            }}
+            className="absolute top-4 right-4 rounded bg-black/75 px-3 py-2 text-sm font-mono text-white hover:bg-black/90"
+          >
+            x
+          </button>
+
+          {gallery.entries.length > 1 && (
+            <button
+              type="button"
+              onClick={event => {
+                event.stopPropagation()
+                shiftGallery(-1)
+              }}
+              className="absolute left-4 top-1/2 -translate-y-1/2 rounded bg-black/75 px-3 py-4 text-lg font-mono text-white hover:bg-black/90"
+            >
+              {'<'}
+            </button>
+          )}
+
+          <div
+            className="max-w-[96vw] max-h-[96vh] flex flex-col items-center gap-3"
+            onClick={event => event.stopPropagation()}
+          >
+            {activeGalleryEntry.mediaType === 'image' ? (
+              <img
+                src={activeGalleryEntry.url}
+                alt={activeGalleryEntry.prompt || 'Expanded image'}
+                className="max-w-[92vw] max-h-[84vh] object-contain"
+              />
+            ) : (
+              <video
+                src={activeGalleryEntry.url}
+                controls
+                autoPlay
+                playsInline
+                className="max-w-[92vw] max-h-[84vh] rounded"
+              />
+            )}
+
+            {(activeGalleryEntry.prompt || gallery.entries.length > 1) && (
+              <div className="flex items-center gap-3 text-sm text-gray-200">
+                {activeGalleryEntry.prompt && (
+                  <div className="max-w-[70vw] text-center">{activeGalleryEntry.prompt}</div>
+                )}
+                {gallery.entries.length > 1 && (
+                  <div className="font-mono text-xs text-gray-400">
+                    {gallery.index + 1} / {gallery.entries.length}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {gallery.entries.length > 1 && (
+            <button
+              type="button"
+              onClick={event => {
+                event.stopPropagation()
+                shiftGallery(1)
+              }}
+              className="absolute right-4 top-1/2 -translate-y-1/2 rounded bg-black/75 px-3 py-4 text-lg font-mono text-white hover:bg-black/90"
+            >
+              {'>'}
+            </button>
+          )}
+        </div>,
+        document.body
       )}
     </div>
   )

@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback } from 'react'
 import { useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useOasisStore } from '@/store/oasisStore'
+import { readEmbodiedAgentSettingsFromStorage } from '@/lib/agent-action-settings'
 import { getLiveObjectTransform } from '@/lib/live-object-transforms'
 import { getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
 
@@ -27,11 +28,21 @@ interface ScreenshotViewRequest {
 
 interface PendingScreenshotRequest {
   id: string
+  worldId?: string
+  requesterAgentType?: string
+  requestedAt?: number
   format: ScreenshotFormat
   quality: number
   width: number
   height: number
+  settleMs?: number
   views: ScreenshotViewRequest[]
+}
+
+function waitForAnimationFrame() {
+  return new Promise<void>(resolve => {
+    window.requestAnimationFrame(() => resolve())
+  })
 }
 
 function createDataUrlFromPixels(
@@ -61,6 +72,7 @@ function createDataUrlFromPixels(
 
 export function ViewportScreenshotBridge() {
   const { gl, scene, camera, size } = useThree()
+  const activeWorldId = useOasisStore(state => state.activeWorldId)
   const placedAgentAvatars = useOasisStore(state => state.placedAgentAvatars)
   const transforms = useOasisStore(state => state.transforms)
   const busyRef = useRef(false)
@@ -275,7 +287,7 @@ export function ViewportScreenshotBridge() {
       }
 
       try {
-        const response = await fetch('/api/oasis-tools', { cache: 'no-store' })
+        const response = await fetch(`/api/oasis-tools${activeWorldId ? `?worldId=${encodeURIComponent(activeWorldId)}` : ''}`, { cache: 'no-store' })
         if (!response.ok) return
         const payload = await response.json().catch(() => null) as {
           screenshotPending?: boolean
@@ -287,6 +299,15 @@ export function ViewportScreenshotBridge() {
 
         nextDelay = ACTIVE_POLL_MS
         busyRef.current = true
+        const configuredSettleMs = readEmbodiedAgentSettingsFromStorage().agentScreenshotSettleMs
+        const settleMs = Math.max(0, Math.max(Number(request.settleMs) || 0, configuredSettleMs))
+        const requestedAt = Number(request.requestedAt) || Date.now()
+        const remainingSettleMs = Math.max(0, settleMs - Math.max(0, Date.now() - requestedAt))
+        if (remainingSettleMs > 0) {
+          await new Promise(resolve => window.setTimeout(resolve, remainingSettleMs))
+        }
+        await waitForAnimationFrame()
+        await waitForAnimationFrame()
         const captures = request.views
           .map(view => captureView(request, view))
           .filter((capture): capture is { viewId: string; base64: string; format: ScreenshotFormat } => !!capture && !!capture.base64)
@@ -296,6 +317,10 @@ export function ViewportScreenshotBridge() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             requestId: request.id,
+            requesterAgentType: request.requesterAgentType,
+            views: request.views.map(view => ({
+              agentType: view.agentType,
+            })),
             screenshotCaptures: captures,
           }),
         })
@@ -314,7 +339,7 @@ export function ViewportScreenshotBridge() {
         window.clearTimeout(timeoutId)
       }
     }
-  }, [captureView])
+  }, [activeWorldId, captureView])
 
   return null
 }
