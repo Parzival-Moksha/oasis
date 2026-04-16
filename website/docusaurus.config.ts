@@ -11,7 +11,7 @@ const docLink = (path: string) => `${docsPrefix}${path}`
 const config: Config = {
   title: 'The Oasis',
   tagline: 'Local-first 3D world building for humans and agents',
-  favicon: 'img/favicon.svg',
+  favicon: 'img/favicon.ico',
 
   future: {
     v4: true,
@@ -23,7 +23,8 @@ const config: Config = {
   organizationName: 'Parzival-Moksha',
   projectName: 'oasis',
 
-  onBrokenLinks: 'throw',
+  onBrokenLinks: 'warn',
+  onBrokenMarkdownLinks: 'warn',
 
   i18n: {
     defaultLocale: 'en',

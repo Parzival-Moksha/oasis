@@ -134,9 +134,6 @@ public/viewport-screenshot.png
 # Personal runtime state
 data/anorak-pro*.local.json
 data/hermes-*.local.json
-
-# Runtime avatar gallery thumbnails (user-generated on-the-fly)
-public/avatars/gallery/thumbs/
 public/screenshots/
 __pycache__/
 *.pyc
