@@ -10,6 +10,9 @@ A standalone 3D world builder with AI-powered text-to-3D conjuring, terrain pain
 git clone https://github.com/Parzival-Moksha/oasis.git
 cd oasis
 pnpm install
+pnpm approve-builds    # say "yes" to prisma + @prisma/client + @prisma/engines
+npx prisma generate
+npx prisma db push     # creates prisma/data/oasis.db on first run
 ```
 
 Create a `.env` file with at least one API key:
