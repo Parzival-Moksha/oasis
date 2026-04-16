@@ -79,6 +79,25 @@ Meaning:
 Without the `-R 4516...` half, Hermes can chat but cannot touch the Oasis world.
 Without the `-L 8642...` half, Oasis can render the Hermes panel but cannot reach the Hermes API.
 
+## What To Hand Back To The User (connection round-trip)
+
+After you finish the Hermes-side setup (MCP extra installed, `mcp_servers.oasis` entry in `~/.hermes/config.yaml`), **in the same turn**, output both of these blocks for the user to act on. Do not wait for them to ask.
+
+1. **SSH tunnel command** — the user runs this on their local machine (where Oasis lives), substituting their VPS user/host. Use the exact command block from the Split-Machine Topology section above.
+
+2. **Hermes pairing blob** — the user pastes this into the Oasis Hermes panel: click the ☤ button in the Oasis UI left toolbar → click **config** → paste → save & connect. The blob should look like:
+
+   ```text
+   HERMES_API_BASE=http://127.0.0.1:8642/v1
+   HERMES_API_KEY=<actual key value read from ~/.hermes/.env or config, NOT a placeholder>
+   ```
+
+   Read the real `HERMES_API_KEY` / `API_SERVER_KEY` from `~/.hermes/.env` and include the literal value. Do NOT output `your_hermes_api_key` or `<paste-key-here>` — the user should be able to copy-paste and hit save without editing.
+
+   If `API_SERVER_ENABLED=true` is not set in `~/.hermes/.env`, surface that as a blocker — the Hermes API won't answer without it.
+
+Why both in one turn: the SSH tunnel is the wire, the pairing blob is the address. Users need both at once to connect, and two turns of guessing wastes time.
+
 ## Install Path
 
 1. Add the repo as a Hermes tap, then install the skill.

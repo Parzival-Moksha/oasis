@@ -80,20 +80,11 @@ Your agent now has access to world-building tools: `place_object`, `craft_scene`
 
 Note: self-craft is the default — Hermes writes the `objects` array itself when you ask for a procedural scene. The sculptor fallback (`strategy: "sculptor"`) requires Claude Code CLI on the Oasis PATH and is rarely needed.
 
-### Step 3: Connect the Chat Panel (Agent Gets a Voice)
+### Step 3: Wire Hermes ↔ Oasis (tunnel + pairing paste)
 
-1. Make sure your Hermes gateway has `API_SERVER_ENABLED=true` in `~/.hermes/.env`
-2. Open the Oasis in your browser at `http://localhost:4516`
-3. Click the **☤** button in the left toolbar
-4. Click **config**
-5. Paste your Hermes connection block:
-   ```
-   HERMES_API_BASE=http://127.0.0.1:8642/v1
-   HERMES_API_KEY=your_hermes_api_key
-   ```
-6. Click **save & connect**
+In Step 1 your Hermes should have handed you back two things: an SSH tunnel command and a pairing blob. If not, say: `output the SSH tunnel command and Hermes pairing blob so I can wire us up`.
 
-If your agent is remote, you need a dual-forward SSH tunnel — one for chat, one for MCP:
+**3a. Start the dual-forward SSH tunnel** on YOUR machine (where Oasis is):
 
 ```
 ssh -o ExitOnForwardFailure=yes \
@@ -102,7 +93,15 @@ ssh -o ExitOnForwardFailure=yes \
   user@your-vps -N
 ```
 
-Without `-R 4516`, the Hermes agent can chat but cannot call Oasis tools.
+Both forwards are required. `-L 8642` lets Oasis reach Hermes; `-R 4516` lets Hermes reach Oasis. Leave this running in the background. Skip this step if Hermes runs on the same machine as Oasis.
+
+**3b. Paste the pairing blob into Oasis**:
+1. Open [http://localhost:4516](http://localhost:4516) in your browser
+2. Click the **☤** button in the left toolbar → **config**
+3. Paste the blob (format: `HERMES_API_BASE=... / HERMES_API_KEY=...`)
+4. Click **save & connect**
+
+Make sure Hermes has `API_SERVER_ENABLED=true` in `~/.hermes/.env` or the pairing call won't answer.
 
 ### Step 4: Talk to Your Agent
 

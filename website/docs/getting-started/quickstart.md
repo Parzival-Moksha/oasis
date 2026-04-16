@@ -5,7 +5,7 @@ title: Quickstart
 
 # Quickstart
 
-Connect your Hermes agent to your local Oasis in six steps. By the end, your agent chats, builds, crafts, and sees.
+Connect your Hermes agent to your local Oasis in five steps. By the end, your agent chats, builds, crafts, and sees.
 
 :::info
 This is the canonical onboarding path. If you arrived from the Hermes skill publication or Nous Discord, start here.
@@ -52,9 +52,17 @@ Either path reaches the same `SKILL.md` content.
 If `/reload-mcp` reports "No MCP servers connected", Hermes is missing the `[mcp]` pip extra. Run `cd ~/.hermes/hermes-agent && uv pip install -e ".[mcp]"` and retry.
 :::
 
-## 3. Dual-forward SSH tunnel (local machine → VPS)
+## 3. Wire Hermes ↔ Oasis (tunnel + pairing paste)
 
-If Hermes lives on a VPS while Oasis runs on your laptop, you need **one SSH session with two forwards** — one for chat, one for tools:
+In step 2, Hermes should have handed you back two things: a **dual-forward SSH tunnel command** and a **pairing blob**. Do both now.
+
+:::info
+If your Hermes didn't hand these back, ask: `output the SSH tunnel command and Hermes pairing blob so I can wire us up`. The skill instructs it to, but older Hermes versions may need a nudge.
+:::
+
+### 3a. Start the tunnel (local machine → your Hermes VPS)
+
+Run this on YOUR machine (where Oasis is), substituting your VPS user/host:
 
 ```bash
 ssh -o ExitOnForwardFailure=yes \
@@ -63,34 +71,36 @@ ssh -o ExitOnForwardFailure=yes \
   user@your-vps -N
 ```
 
-- `-L 8642:127.0.0.1:8642` — opens local port 8642, forwarding Oasis chat traffic to the Hermes API on the VPS.
-- `-R 4516:127.0.0.1:4516` — opens remote port 4516 on the VPS, forwarding Hermes MCP traffic back to your local Oasis server.
+- `-L 8642` — opens local port 8642; your Oasis UI uses this to reach the Hermes API.
+- `-R 4516` — opens remote port 4516 on the VPS; Hermes uses this to reach your Oasis MCP.
 
 :::warning
-Without `-R 4516`, your Hermes agent can chat but cannot touch the world. Tool calls will fail silently or time out. If you only run `-L`, you'll see the chat panel light up but `describe this world` will fail.
+Both forwards are required. Without `-R 4516`, Hermes chats but tool calls fail. Without `-L 8642`, the chat panel can't reach Hermes. Leave this SSH session running in the background (`-N` = no shell, just forwards).
+
+If Hermes runs on the same machine as Oasis, skip this entirely.
 :::
 
-If Hermes runs on the same machine as Oasis, skip this step entirely.
-
-## 4. Paste the Hermes pairing blob into Oasis
+### 3b. Paste the pairing blob into Oasis
 
 With Oasis open at [http://localhost:4516](http://localhost:4516):
 
 1. Click the **☤** button in the left toolbar.
 2. Click **config**.
-3. Paste your Hermes connection block. The paste parser accepts an env-style blob:
+3. Paste the blob Hermes gave you. It looks like:
    ```text
    HERMES_API_BASE=http://127.0.0.1:8642/v1
-   HERMES_API_KEY=your_hermes_api_key
+   HERMES_API_KEY=<the actual key from Hermes>
    ```
-   It also accepts a JSON object or an `oasis://` URL shape if your Hermes gives one.
+   The parser also accepts JSON objects or `oasis://` URL shapes.
 4. Click **save & connect**.
 
-Pairing is written to `data/hermes-config.local.json` (gitignored). You can also set `HERMES_API_KEY` and `HERMES_API_BASE` in `.env` as a static fallback — see [Hermes agent reference](../agents/hermes) for the split.
+Pairing is written to `data/hermes-config.local.json` (gitignored). You can also set `HERMES_API_KEY` / `HERMES_API_BASE` in `.env` as a static fallback — see [Hermes agent reference](../agents/hermes) for the split.
 
-Make sure your Hermes gateway has `API_SERVER_ENABLED=true` in `~/.hermes/.env` or it won't answer the pairing call.
+:::tip
+Make sure your Hermes gateway has `API_SERVER_ENABLED=true` in `~/.hermes/.env` or it won't answer the pairing call. Hermes' side of the skill is supposed to flag this — but double-check if step 4 below bugs.
+:::
 
-## 5. Progressive smoke test
+## 4. Progressive smoke test
 
 Run these five prompts in order. Each step escalates what it proves working.
 
@@ -113,7 +123,7 @@ Run these five prompts in order. Each step escalates what it proves working.
 If step 1 passes but 2 fails, check the SSH `-R 4516` reverse forward — that's the MCP path. If 2–4 pass but 5 fails, the Oasis browser tab is closed or the screenshot bridge is not mounted.
 :::
 
-## 6. What needs API keys
+## 5. What needs API keys
 
 The smoke test above works with **zero API keys on the Oasis host**. World state, placement, self-crafting, screenshots, and plain chat all run without external providers.
 
