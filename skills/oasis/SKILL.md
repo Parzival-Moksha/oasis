@@ -81,22 +81,44 @@ Without the `-L 8642...` half, Oasis can render the Hermes panel but cannot reac
 
 ## What To Hand Back To The User (connection round-trip)
 
-After you finish the Hermes-side setup (MCP extra installed, `mcp_servers.oasis` entry in `~/.hermes/config.yaml`), **in the same turn**, output both of these blocks for the user to act on. Do not wait for them to ask.
+After you finish the Hermes-side setup (MCP extra installed, `mcp_servers.oasis` entry in `~/.hermes/config.yaml`, API server running), **in the same turn**, output both of these blocks for the user to act on. Do not wait for them to ask.
 
-1. **SSH tunnel command** — the user runs this on their local machine (where Oasis lives), substituting their VPS user/host. Use the exact command block from the Split-Machine Topology section above.
+1. **SSH tunnel command** — the user runs this on their local machine (where Oasis lives). **Do NOT hardcode the SSH user or host IP based on `whoami` / `hostname` on your own VPS side.** The Hermes process user (e.g. `levi`) is almost never the SSH login user, and the user's own SSH config probably has a short alias for the VPS. Prefer this placeholder form and let the user substitute:
+
+   ```bash
+   ssh -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=accept-new \
+       -L 8642:127.0.0.1:8642 \
+       -R 4516:127.0.0.1:4516 \
+       <user@your-vps-or-ssh-alias> -N
+   ```
+
+   Tell the user: "Substitute `<user@your-vps-or-ssh-alias>` with whatever you normally SSH into this VPS as — often a short alias from your `~/.ssh/config` like `helsinki` or `parzival-eu`."
 
 2. **Hermes pairing blob** — the user pastes this into the Oasis Hermes panel: click the ☤ button in the Oasis UI left toolbar → click **config** → paste → save & connect. The blob should look like:
 
    ```text
    HERMES_API_BASE=http://127.0.0.1:8642/v1
-   HERMES_API_KEY=<actual key value read from ~/.hermes/.env or config, NOT a placeholder>
+   HERMES_API_KEY=<actual key value read from ~/.hermes/.env, NOT a placeholder>
    ```
 
-   Read the real `HERMES_API_KEY` / `API_SERVER_KEY` from `~/.hermes/.env` and include the literal value. Do NOT output `your_hermes_api_key` or `<paste-key-here>` — the user should be able to copy-paste and hit save without editing.
+   Read the real `API_SERVER_KEY` from `~/.hermes/.env` (or generate one, store it, and use it) and include the literal value. Do NOT output `your_hermes_api_key` or `<paste-key-here>` — the user should be able to copy-paste and hit save without editing.
 
-   If `API_SERVER_ENABLED=true` is not set in `~/.hermes/.env`, surface that as a blocker — the Hermes API won't answer without it.
+   If `API_SERVER_ENABLED=true` is not set in `~/.hermes/.env`, set it yourself, start the gateway (`hermes gateway run`), and verify `/health` + `/v1/models` respond before handing the blob over. Do not ask the user to enable the API server manually — you have the access.
 
 Why both in one turn: the SSH tunnel is the wire, the pairing blob is the address. Users need both at once to connect, and two turns of guessing wastes time.
+
+## Environment Prep (run on your VPS side before starting gateway)
+
+Fresh Hermes installs are missing a few things that the gateway silently needs. Do these proactively so the user never sees a cryptic `FileNotFoundError` mid-chat:
+
+```bash
+mkdir -p /root/hermes-workspace
+# or $HOME/hermes-workspace if you're running as a non-root user
+```
+
+Hermes shells out to subprocesses in this working directory for some actions. If the directory is missing, you get `FileNotFoundError: [Errno 2] No such file or directory: '/root/hermes-workspace'` the moment the user sends their first message.
+
+After config changes on an already-running gateway, tell the user to either restart the gateway or run `/reload-mcp` inside Hermes. Config writes to `~/.hermes/config.yaml` are NOT picked up live.
 
 ## Install Path
 
