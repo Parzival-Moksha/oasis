@@ -18,6 +18,7 @@ import urllib.request
 
 OASIS_TOOLS_URL = os.environ.get("OASIS_TOOLS_URL", "http://127.0.0.1:4516/api/oasis-tools")
 OASIS_MCP_KEY = os.environ.get("OASIS_MCP_KEY", "")
+OASIS_ACTIVE_WORLD_ID = os.environ.get("OASIS_ACTIVE_WORLD_ID", "").strip()
 
 
 def _derive_mcp_url() -> str:
@@ -34,7 +35,10 @@ OASIS_MCP_URL = _derive_mcp_url()
 
 def _call_oasis(tool, args=None, timeout=6):
     try:
-        payload = json.dumps({"tool": tool, "args": args or {}}).encode("utf-8")
+        next_args = dict(args or {})
+        if OASIS_ACTIVE_WORLD_ID and not next_args.get("worldId"):
+            next_args["worldId"] = OASIS_ACTIVE_WORLD_ID
+        payload = json.dumps({"tool": tool, "args": next_args}).encode("utf-8")
         headers = {"Content-Type": "application/json"}
         if OASIS_MCP_KEY:
             headers["Authorization"] = f"Bearer {OASIS_MCP_KEY}"
@@ -93,6 +97,7 @@ def _format_world_info(info):
             f"Lights: {data.get('lightCount', 0)}"
         ),
         f"Remote Oasis MCP endpoint: {OASIS_MCP_URL}",
+        f"Always include worldId={data.get('worldId', 'unknown')} on Oasis tool calls.",
         "Use get_world_state for full scene details. Oasis tools are available for placement, avatar movement, screenshots, and Forge conjuration.",
     ]
 
@@ -142,6 +147,7 @@ def _format_world_context_full(info, state):
 
     lines.extend([
         f"Remote Oasis MCP endpoint: {OASIS_MCP_URL}",
+        f"Always include worldId={info_data.get('worldId', 'unknown')} on Oasis tool calls.",
         "Oasis world tools are available for world state, asset search, placement, avatar movement, screenshots, and Forge conjuration.",
     ])
 

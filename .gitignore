@@ -123,8 +123,9 @@ ralph.ps1
 # Internal specs (not public documentation)
 specs/
 
-# Dev session artifacts
-CLAUDE*.md
+# Dev session artifacts (project-root brain file + CLAUDE-*.md variants at root only)
+/CLAUDE.md
+/CLAUDE-*.md
 feb*.txt
 public/screenshots/
 __pycache__/
@@ -163,8 +164,12 @@ prisma/data/agent-session-registry.json
 # Merlin runtime (screenshots + temp data)
 merlin/
 
-# Website (separate build, has own node_modules)
-website/
+# Website docs source (track source, ignore generated output)
+website/node_modules/
+website/build/
+website/.docusaurus/
+website/.cache-loader/
+public/docs-site/
 
 # Personal audio files (not redistributable)
 public/audio/anaal nathrakh*

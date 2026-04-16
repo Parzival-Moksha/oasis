@@ -16,17 +16,17 @@ describe('merlin stdio MCP wiring', () => {
   it('exposes screenshot_viewport from the stdio Oasis MCP server', () => {
     const source = fs.readFileSync(oasisMcpPath, 'utf-8')
 
-    expect(source).toContain('server.tool("screenshot_viewport"')
-    // screenshot_viewport proxies through proxyOasisTool with extra args
-    expect(source).toContain('proxyOasisTool("screenshot_viewport"')
+    expect(source).toContain('OASIS_MCP_TOOL_SPECS')
+    expect(source).toContain('prepareOasisToolArgs')
     expect(source).toContain('compactScreenshotProxyResult')
   })
 
   it('lets Merlin target its own avatar without requiring avatarId every time', () => {
     const source = fs.readFileSync(oasisMcpPath, 'utf-8')
 
-    // Agent type normalization resolves default avatar identity
+    // Shared spec + stdio context pin Merlin as the default actor identity.
     expect(source).toContain('function normalizeAgentType(')
-    expect(source).toContain('avatarId: z.string().optional().describe("Avatar ID. Optional when the session has a default agent avatar.")')
+    expect(source).toContain('PINNED_WORLD_ID')
+    expect(source).toContain('DEFAULT_AGENT_TYPE')
   })
 })

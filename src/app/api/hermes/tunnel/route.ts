@@ -28,7 +28,7 @@ function isAllowedOrigin(request: NextRequest): boolean {
     const originUrl = new URL(origin)
     if (originUrl.host === host) return true
 
-    const [hostName, hostPort = ''] = host.split(':')
+    const { hostName, hostPort } = splitHostHeader(host)
     const originPort = originUrl.port || (originUrl.protocol === 'https:' ? '443' : '80')
     const requestPort = hostPort || (originUrl.protocol === 'https:' ? '443' : '80')
 
@@ -38,14 +38,40 @@ function isAllowedOrigin(request: NextRequest): boolean {
   }
 }
 
+function splitHostHeader(host: string): { hostName: string; hostPort: string } {
+  const trimmed = host.trim()
+  if (!trimmed) return { hostName: '', hostPort: '' }
+
+  if (trimmed.startsWith('[')) {
+    const end = trimmed.indexOf(']')
+    if (end >= 0) {
+      return {
+        hostName: trimmed.slice(0, end + 1),
+        hostPort: trimmed.slice(end + 2),
+      }
+    }
+  }
+
+  const colonIndex = trimmed.lastIndexOf(':')
+  if (colonIndex > -1 && trimmed.indexOf(':') === colonIndex) {
+    return {
+      hostName: trimmed.slice(0, colonIndex),
+      hostPort: trimmed.slice(colonIndex + 1),
+    }
+  }
+
+  return { hostName: trimmed, hostPort: '' }
+}
+
 function canMutateTunnel(request: NextRequest): boolean {
   if (process.env.OASIS_ALLOW_REMOTE_HERMES_PAIRING === 'true') return true
+  if (process.env.NODE_ENV !== 'production') return true
   const host = request.headers.get('host') || ''
-  const hostName = host.split(':')[0]?.toLowerCase() || ''
+  const hostName = splitHostHeader(host).hostName.toLowerCase()
   if (!isLoopbackHost(hostName)) return false
 
   const forwardedHost = (request.headers.get('x-forwarded-host') || '').split(',')[0]?.trim().toLowerCase()
-  if (forwardedHost && !isLoopbackHost(forwardedHost.split(':')[0] || '')) return false
+  if (forwardedHost && !isLoopbackHost(splitHostHeader(forwardedHost).hostName || '')) return false
 
   const forwardedFor = (request.headers.get('x-forwarded-for') || '').split(',')[0]?.trim()
   if (forwardedFor && !isLoopbackAddress(forwardedFor)) return false

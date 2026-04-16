@@ -23,6 +23,31 @@ export interface HermesChatMessageLike {
   timestamp: number
 }
 
+function mergeHermesToolCalls(
+  primary: HermesToolCallLike[] | undefined,
+  secondary: HermesToolCallLike[] | undefined,
+): HermesToolCallLike[] | undefined {
+  const merged = [...(primary || []), ...(secondary || [])]
+  if (merged.length === 0) return undefined
+
+  const seen = new Set<string>()
+  const unique: HermesToolCallLike[] = []
+
+  for (const tool of merged) {
+    const signature = JSON.stringify({
+      index: tool.index,
+      id: tool.id || '',
+      name: tool.name,
+      arguments: normalizeMessageText(tool.arguments),
+    })
+    if (seen.has(signature)) continue
+    seen.add(signature)
+    unique.push(tool)
+  }
+
+  return unique
+}
+
 function normalizeMessageText(value: string | undefined): string {
   return typeof value === 'string'
     ? value
@@ -101,7 +126,7 @@ export function mergeHydratedHermesMessages<T extends HermesChatMessageLike>(hyd
       id: cachedMatch.id || message.id,
       content: mergedContent,
       reasoning: mergedReasoning || undefined,
-      tools: cachedMatch.tools || message.tools,
+      tools: mergeHermesToolCalls(cachedMatch.tools, message.tools),
       usage: cachedMatch.usage || message.usage,
       finishReason: message.finishReason || cachedMatch.finishReason,
       error: message.error || cachedMatch.error,
@@ -115,6 +140,100 @@ export function mergeHydratedHermesMessages<T extends HermesChatMessageLike>(hyd
   }
 
   return collapseDuplicateHermesMessages(merged)
+}
+
+function countRole(messages: HermesChatMessageLike[], role: 'user' | 'assistant'): number {
+  return messages.reduce((count, message) => count + (message.role === role ? 1 : 0), 0)
+}
+
+function countToolCalls(messages: HermesChatMessageLike[]): number {
+  return messages.reduce((count, message) => count + (message.tools?.length || 0), 0)
+}
+
+function countDuplicateAssistantLines(messages: HermesChatMessageLike[]): number {
+  let duplicates = 0
+
+  for (const message of messages) {
+    if (message.role !== 'assistant') continue
+
+    const counts = new Map<string, number>()
+    for (const line of normalizeMessageText(message.content).split(/\r?\n/)) {
+      const normalized = line.trim().toLowerCase()
+      if (!normalized) continue
+      counts.set(normalized, (counts.get(normalized) || 0) + 1)
+    }
+
+    for (const count of counts.values()) {
+      if (count > 1) duplicates += count - 1
+    }
+  }
+
+  return duplicates
+}
+
+export function shouldPreferHydratedHermesMessages(
+  hydrated: HermesChatMessageLike[],
+  cached: HermesChatMessageLike[],
+): boolean {
+  if (!hydrated.length) return false
+  if (!cached.length) return true
+
+  const hydratedUserCount = countRole(hydrated, 'user')
+  const cachedUserCount = countRole(cached, 'user')
+  const hydratedAssistantCount = countRole(hydrated, 'assistant')
+  const cachedAssistantCount = countRole(cached, 'assistant')
+  const hydratedToolCount = countToolCalls(hydrated)
+  const cachedToolCount = countToolCalls(cached)
+  const hydratedDuplicateLines = countDuplicateAssistantLines(hydrated)
+  const cachedDuplicateLines = countDuplicateAssistantLines(cached)
+
+  if (hydratedUserCount < cachedUserCount) {
+    return false
+  }
+
+  if (hydratedAssistantCount > cachedAssistantCount && hydratedToolCount >= cachedToolCount) {
+    return true
+  }
+
+  if (hydrated.length > cached.length && hydratedToolCount > cachedToolCount) {
+    return true
+  }
+
+  if (
+    hydratedDuplicateLines < cachedDuplicateLines
+    && hydratedAssistantCount >= cachedAssistantCount
+    && hydratedToolCount >= cachedToolCount
+  ) {
+    return true
+  }
+
+  return false
+}
+
+export function collapseConsecutiveHermesAssistantTurns<T extends HermesChatMessageLike>(messages: T[]): T[] {
+  const collapsed: T[] = []
+
+  for (const message of messages) {
+    const prev = collapsed[collapsed.length - 1]
+    if (!prev || prev.role !== 'assistant' || message.role !== 'assistant') {
+      collapsed.push(message)
+      continue
+    }
+
+    collapsed[collapsed.length - 1] = {
+      ...prev,
+      id: prev.id || message.id,
+      content: mergeHermesTextBlocks(prev.content, message.content),
+      reasoning: mergeHermesTextBlocks(prev.reasoning || '', message.reasoning || '') || undefined,
+      tools: mergeHermesToolCalls(prev.tools, message.tools),
+      usage: message.usage || prev.usage,
+      finishReason: message.finishReason || prev.finishReason,
+      error: message.error || prev.error,
+      timestamp: Math.min(prev.timestamp, message.timestamp),
+    }
+  }
+
+  return collapsed
 }
 
 function toolsSignature(message: HermesChatMessageLike): string {
@@ -183,7 +302,7 @@ export function collapseDuplicateHermesMessages<T extends HermesChatMessageLike>
       id: prev.id || message.id,
       content: mergeHermesTextBlocks(prev.content, message.content),
       reasoning: mergeHermesTextBlocks(prev.reasoning || '', message.reasoning || '') || undefined,
-      tools: (prev.tools?.length || 0) >= (message.tools?.length || 0) ? prev.tools : message.tools,
+      tools: mergeHermesToolCalls(prev.tools, message.tools),
       usage: message.usage || prev.usage,
       finishReason: message.finishReason || prev.finishReason,
       error: message.error || prev.error,

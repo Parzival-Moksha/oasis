@@ -70,7 +70,12 @@ def main() -> int:
             "If Hermes is remote, open an SSH tunnel first.",
             "Press sync in Oasis and send a test message.",
         ],
-        "ssh_tunnel_template": "ssh -L 8642:127.0.0.1:8642 user@your-vps -N",
+        "ssh_tunnel_template": (
+            "ssh -o ExitOnForwardFailure=yes "
+            "-L 8642:127.0.0.1:8642 "
+            "-R 4516:127.0.0.1:4516 "
+            "user@your-vps -N"
+        ),
     }
     print(json.dumps(payload, indent=2))
     return 0

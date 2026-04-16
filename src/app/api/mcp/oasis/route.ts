@@ -11,6 +11,15 @@ import {
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
+function readSessionContext(request: NextRequest) {
+  const worldId = (request.nextUrl.searchParams.get('worldId') || request.headers.get('x-oasis-world-id') || '').trim()
+  const agentType = (request.nextUrl.searchParams.get('agentType') || request.headers.get('x-oasis-agent-type') || '').trim().toLowerCase()
+  return {
+    ...(worldId ? { worldId } : {}),
+    ...(agentType ? { agentType } : {}),
+  }
+}
+
 function isAuthorized(request: NextRequest): boolean {
   const key = process.env.OASIS_MCP_KEY
   if (!key) return true
@@ -49,7 +58,7 @@ async function handleMcpRequest(request: NextRequest) {
     if (request.method !== 'POST') {
       return jsonError('Initialize with a POST request before using this MCP session.', 400)
     }
-    const created = await createOasisHttpMcpSession()
+    const created = await createOasisHttpMcpSession(readSessionContext(request))
     entry = {
       ...created,
       createdAt: Date.now(),

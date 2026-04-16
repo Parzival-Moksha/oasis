@@ -18,6 +18,7 @@ export type WorldEventType =
   | 'conjured_asset_added'
   | 'conjured_asset_removed'
   | 'scene_crafted'
+  | 'scene_craft_progress'
   | 'sky_changed'
   | 'ground_changed'
   | 'tiles_painted'
@@ -28,6 +29,7 @@ export type WorldEventType =
   | 'agent_avatar_walk'
   | 'agent_avatar_animation'
   | 'world_cleared'
+  | 'world_switch'
   | 'world_saved'
 
 export interface WorldEvent {

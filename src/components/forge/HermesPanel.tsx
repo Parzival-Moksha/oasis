@@ -6,8 +6,16 @@ import { createPortal } from 'react-dom'
 import { useOasisStore } from '@/store/oasisStore'
 import { useInputManager, useUILayer } from '@/lib/input-manager'
 import { CollapsibleBlock, renderMarkdown } from '@/lib/anorak-renderers'
-import { collapseDuplicateHermesMessages, mergeHydratedHermesMessages } from '@/lib/hermes-message-merge'
+import {
+  collapseConsecutiveHermesAssistantTurns,
+  collapseDuplicateHermesMessages,
+  mergeHydratedHermesMessages,
+  shouldPreferHydratedHermesMessages,
+} from '@/lib/hermes-message-merge'
 import { useAgentVoiceInput } from '@/hooks/useAgentVoiceInput'
+import { useAutoresizeTextarea } from '@/hooks/useAutoresizeTextarea'
+import { getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
+import { getCameraSnapshot } from '@/lib/camera-bridge'
 import { MediaBubble, type MediaType } from './MediaBubble'
 import { AvatarGallery } from './AvatarGallery'
 import { AgentToolCallCard } from './AgentToolCallCard'
@@ -23,7 +31,9 @@ interface HermesStatus {
   configured: boolean
   connected: boolean
   base: string | null
+  apiKey?: string | null
   defaultModel: string | null
+  systemPrompt?: string | null
   models: string[]
   source?: 'pairing' | 'env' | 'none'
   canMutateConfig?: boolean
@@ -33,6 +43,14 @@ interface HermesStatus {
 interface HermesTunnelStatus {
   configured: boolean
   running: boolean
+  processAlive: boolean
+  processMatches: boolean
+  healthy: boolean
+  health: 'unconfigured' | 'saved' | 'stopped' | 'stale' | 'partial' | 'healthy'
+  apiForwardReachable: boolean
+  apiForwardConfigured: boolean
+  reverseForwardConfigured: boolean
+  issues: string[]
   command: string
   commandPreview?: string
   autoStart: boolean
@@ -47,6 +65,15 @@ interface HermesToolCall {
   id?: string
   name: string
   arguments: string
+  resultOk?: boolean
+  resultMessage?: string
+  resultDetail?: string
+  mediaPaths?: string[]
+}
+
+interface HermesVisionCapture {
+  displayUrl: string
+  threadMediaRef?: string
 }
 
 interface HermesUsage {
@@ -99,9 +126,35 @@ const DEFAULT_POS = { x: 16, y: 120 }
 const DEFAULT_SIZE = { w: 420, h: 620 }
 const MIN_WIDTH = 360
 const MIN_HEIGHT = 360
+// ░▒▓ VANISH-ON-SCROLL FIX (oasisspec3): `transform: translateZ(0)` +
+// `backfaceVisibility: hidden` are the classic mobile-Safari smooth-scroll
+// GPU hints. They are ACTIVELY HARMFUL when this panel is embedded inside
+// drei's <Html transform> CSS3DObject: they stack a second (and third, when
+// applied to the inner scroll container) transform context on top of the
+// CSS3D transform. Chrome's compositor invalidates the innermost layer when
+// scroll hits end, leaving only the outer panel background painted — exactly
+// the "orange bg visible, inner content gone" symptom. Keep overscrollBehavior
+// + WebkitOverflowScrolling (those don't create new transform contexts). ▓▒░
+const EMBEDDED_SCROLL_SURFACE_STYLE = {
+  overscrollBehavior: 'contain' as const,
+  WebkitOverflowScrolling: 'touch' as const,
+}
 const DEFAULT_SETTINGS: PanelSettings = { bgColor: '#120c04', opacity: 0.92, blur: 0 }
-const DEFAULT_STATUS: HermesStatus = { configured: false, connected: false, base: null, defaultModel: null, models: [] }
-const DEFAULT_TUNNEL_STATUS: HermesTunnelStatus = { configured: false, running: false, command: '', autoStart: true }
+const DEFAULT_STATUS: HermesStatus = { configured: false, connected: false, base: null, apiKey: null, defaultModel: null, systemPrompt: null, models: [] }
+const DEFAULT_TUNNEL_STATUS: HermesTunnelStatus = {
+  configured: false,
+  running: false,
+  processAlive: false,
+  processMatches: false,
+  healthy: false,
+  health: 'unconfigured',
+  apiForwardReachable: false,
+  apiForwardConfigured: false,
+  reverseForwardConfigured: false,
+  issues: [],
+  command: '',
+  autoStart: true,
+}
 
 const POS_KEY = 'oasis-hermes-pos'
 const SIZE_KEY = 'oasis-hermes-size'
@@ -112,10 +165,12 @@ const SESSION_KEY = 'oasis-hermes-session'
 const VOICE_OUTPUT_KEY = 'oasis-hermes-voice-output'
 const NATIVE_SESSION_CACHE_KEY = 'oasis-hermes-native-session-cache'
 const NEW_SESSION_VALUE = '__oasis_new__'
+const HERMES_USER_REQUEST_MARKER = /User request:\s*/i
+const STREAM_RENDER_INTERVAL_MS = 33
 const CONNECTION_HINT = `HERMES_API_BASE=http://127.0.0.1:8642/v1
 HERMES_API_KEY=your_secret_here
 HERMES_MODEL=optional_model_id`
-const TUNNEL_HINT = 'ssh -L 8642:127.0.0.1:8642 user@your-vps -N'
+const TUNNEL_HINT = 'ssh -o ExitOnForwardFailure=yes -L 8642:127.0.0.1:8642 -R 4516:127.0.0.1:4516 user@your-vps -N'
 
 function readStoredMessages(): ChatMessage[] {
   if (typeof window === 'undefined') return []
@@ -123,19 +178,7 @@ function readStoredMessages(): ChatMessage[] {
     const raw = localStorage.getItem(CHAT_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed)) return []
-
-    return parsed
-      .filter((entry): entry is ChatMessage => {
-        if (!entry || typeof entry !== 'object') return false
-        const obj = entry as Record<string, unknown>
-        return (
-          (obj.role === 'user' || obj.role === 'assistant') &&
-          typeof obj.id === 'string' &&
-          typeof obj.content === 'string'
-        )
-      })
-      .slice(-60)
+    return sanitizeCachedMessages(parsed).slice(-60)
   } catch {
     return []
   }
@@ -157,7 +200,9 @@ function sanitizeCachedMessages(raw: unknown): ChatMessage[] {
     .map((entry: ChatMessage) => ({
       id: entry.id,
       role: entry.role,
-      content: entry.content,
+      content: entry.role === 'assistant'
+        ? sanitizeHermesAssistantText(entry.content)
+        : sanitizeHermesUserText(entry.content),
       reasoning: entry.reasoning,
       tools: Array.isArray(entry.tools) ? entry.tools : undefined,
       usage: entry.usage,
@@ -178,6 +223,24 @@ function readNativeSessionCache(sessionId: string): ChatMessage[] {
     if (!parsed || typeof parsed !== 'object') return []
     const entry = (parsed as Record<string, unknown>)[sessionId]
     return sanitizeCachedMessages(entry)
+  } catch {
+    return []
+  }
+}
+
+function readCachedNativeSessionSummaries(): HermesNativeSessionSummary[] {
+  if (typeof window === 'undefined') return []
+
+  try {
+    const raw = localStorage.getItem(NATIVE_SESSION_CACHE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object') return []
+
+    return Object.entries(parsed as Record<string, unknown>)
+      .map(([sessionId, entry]) => buildSyntheticHermesSessionSummary(sessionId, sanitizeCachedMessages(entry)))
+      .filter((entry): entry is HermesNativeSessionSummary => Boolean(entry))
+      .sort(compareHermesSessionSummaries)
   } catch {
     return []
   }
@@ -212,7 +275,7 @@ function formatToolName(name: string): string {
 
 function prettyToolArguments(raw: string): string {
   const trimmed = raw.trim()
-  if (!trimmed) return '(streaming tool arguments...)'
+  if (!trimmed) return '(tool arguments are still syncing from Hermes native history...)'
   try {
     return JSON.stringify(JSON.parse(trimmed), null, 2)
   } catch {
@@ -236,6 +299,71 @@ function summarizeToolArguments(raw: string): string {
   }
 }
 
+function parseToolArguments(raw: string): Record<string, unknown> | null {
+  const trimmed = raw.trim()
+  if (!trimmed) return {}
+  try {
+    const parsed = JSON.parse(trimmed) as unknown
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null
+  } catch {
+    return null
+  }
+}
+
+function normalizeHermesToolName(name: string): string {
+  return name
+    .replace(/^mcp_mcp_oasis_/, '')
+    .replace(/^mcp__oasis__/, '')
+    .replace(/^mcp_oasis_/, '')
+    .replace(/^oasis_/, '')
+    .trim()
+}
+
+function extractPreparedToolName(line: string): string | null {
+  const match = line.match(/preparing\s+([A-Za-z0-9_]+)/i)
+  return match?.[1] || null
+}
+
+function extractRepairedToolName(line: string): string | null {
+  const match = line.match(/->\s*'([^']+)'/i)
+  return match?.[1] || null
+}
+
+function isHermesToolProgressLine(line: string): boolean {
+  return Boolean(extractPreparedToolName(line) || /auto-repaired tool name/i.test(line))
+}
+
+function extractHermesProgressToolCalls(content: string): HermesToolCall[] {
+  if (!content) return []
+
+  const tools: HermesToolCall[] = []
+  for (const rawLine of content.split(/\r?\n/)) {
+    const prepared = extractPreparedToolName(rawLine)
+    if (prepared) {
+      tools.push({
+        index: tools.length,
+        name: prepared,
+        arguments: '',
+      })
+      continue
+    }
+
+    const repaired = extractRepairedToolName(rawLine)
+    if (repaired && tools.length > 0) {
+      tools[tools.length - 1] = {
+        ...tools[tools.length - 1],
+        name: repaired,
+      }
+    }
+  }
+
+  return tools
+}
+
+function isHermesVisionTool(name: string): boolean {
+  return ['screenshot_viewport', 'screenshot_avatar', 'avatarpic_merlin', 'avatarpic_user'].includes(normalizeHermesToolName(name))
+}
+
 function formatSessionLabel(session: HermesNativeSessionSummary): string {
   const primary = (session.title || session.preview || `Session ${session.id.slice(-8)}`).replace(/\s+/g, ' ').trim()
   const source = session.source || 'unknown'
@@ -247,6 +375,269 @@ function isHermesControlLine(line: string): boolean {
   const trimmed = line.trim()
   if (!trimmed) return false
   return /^finish_reason[-:=]/i.test(trimmed) || /^session_id:/i.test(trimmed)
+}
+
+function normalizeHermesLineForMatch(line: string): string {
+  return line
+    .trim()
+    .toLowerCase()
+    .replace(/\[\/?[a-z]+\]/g, '')
+    .replace(/^[^a-z0-9]+/, '')
+    .trim()
+}
+
+function isHermesNoiseLine(line: string): boolean {
+  const normalized = normalizeHermesLineForMatch(line)
+  if (!normalized) return false
+  return (
+    normalized.startsWith('normalized model') ||
+    normalized.startsWith('normalized m') ||
+    isHermesToolProgressLine(line) ||
+    normalized === 'anthropic' ||
+    normalized === 'anthropic.' ||
+    normalized === 'hermes'
+  )
+}
+
+function isHermesIgnorableLine(line: string): boolean {
+  return isHermesControlLine(line) || isHermesNoiseLine(line)
+}
+
+function normalizeHermesDuplicateLine(line: string): string {
+  return line.trim().replace(/\s+/g, ' ')
+}
+
+function collapseAdjacentRepeatedLineBlocks(lines: string[]): string[] {
+  const next = [...lines]
+
+  for (let size = Math.floor(next.length / 2); size >= 1; size -= 1) {
+    for (let start = 0; start + size * 2 <= next.length; start += 1) {
+      const left = next.slice(start, start + size).map(normalizeHermesDuplicateLine)
+      const right = next.slice(start + size, start + size * 2).map(normalizeHermesDuplicateLine)
+      if (!left.some(line => line.length > 0)) continue
+      const minimumBlockLength = size === 1 ? 8 : 32
+      if (left.join('\n').length < minimumBlockLength) continue
+      if (left.every((line, index) => line === right[index])) {
+        next.splice(start + size, size)
+        return collapseAdjacentRepeatedLineBlocks(next)
+      }
+    }
+  }
+
+  return next
+}
+
+function sanitizeHermesAssistantText(content: string): string {
+  if (!content) return ''
+
+  const lines: string[] = []
+  let previousBlank = false
+
+  for (const line of content.split(/\r?\n/)) {
+    if (isHermesIgnorableLine(line)) continue
+
+    if (!line.trim()) {
+      if (lines.length > 0 && !previousBlank) {
+        lines.push('')
+        previousBlank = true
+      }
+      continue
+    }
+
+    lines.push(line)
+    previousBlank = false
+  }
+
+  const collapsed = collapseAdjacentRepeatedLineBlocks(lines)
+
+  return collapsed.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+}
+
+function stripHermesMediaLines(content: string): string {
+  return content
+    .split(/\r?\n/)
+    .filter(line => !line.trim().startsWith('MEDIA:'))
+    .join('\n')
+    .trim()
+}
+
+function normalizeHermesAssistantComparisonText(content: string): string {
+  return stripHermesMediaLines(sanitizeHermesAssistantText(content))
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+}
+
+function parseHydratedHermesMessages(raw: unknown): ChatMessage[] {
+  if (!Array.isArray(raw)) return []
+
+  return raw
+    .filter((entry): entry is ChatMessage => {
+      if (!entry || typeof entry !== 'object') return false
+      const item = entry as Record<string, unknown>
+      return (
+        typeof item.id === 'string' &&
+        (item.role === 'user' || item.role === 'assistant') &&
+        typeof item.content === 'string'
+      )
+    })
+    .map((entry: ChatMessage) => ({
+      id: entry.id,
+      role: entry.role,
+      content: entry.role === 'assistant'
+        ? sanitizeHermesAssistantText(entry.content)
+        : sanitizeHermesUserText(entry.content),
+      reasoning: entry.reasoning,
+      tools: Array.isArray(entry.tools) ? entry.tools : undefined,
+      usage: entry.usage,
+      finishReason: entry.finishReason,
+      error: entry.error,
+      timestamp: typeof entry.timestamp === 'number' ? entry.timestamp : Date.now(),
+    }))
+}
+
+function mergeHermesToolCalls(
+  currentTools: HermesToolCall[],
+  hydratedTools: HermesToolCall[],
+): HermesToolCall[] {
+  if (!currentTools.length) {
+    return [...hydratedTools].sort((left, right) => left.index - right.index)
+  }
+  if (!hydratedTools.length) return currentTools
+
+  const usedHydratedIndexes = new Set<number>()
+  const merged = currentTools.map((tool, index) => {
+    const normalizedCurrentName = normalizeHermesToolName(tool.name)
+    const hydratedIndex = hydratedTools.findIndex((candidate, candidateIndex) => {
+      if (usedHydratedIndexes.has(candidateIndex)) return false
+      if (tool.id && candidate.id && tool.id === candidate.id) return true
+      const normalizedCandidateName = normalizeHermesToolName(candidate.name)
+      if (candidate.index === tool.index && normalizedCandidateName === normalizedCurrentName) return true
+      if (candidate.index === index && normalizedCandidateName === normalizedCurrentName) return true
+      return normalizedCandidateName === normalizedCurrentName
+    })
+
+    if (hydratedIndex < 0) return tool
+    usedHydratedIndexes.add(hydratedIndex)
+    const hydrated = hydratedTools[hydratedIndex]
+    return {
+      index: hydrated.index ?? tool.index,
+      id: tool.id || hydrated.id,
+      name: hydrated.name || tool.name,
+      arguments: tool.arguments.trim() ? tool.arguments : hydrated.arguments || '',
+      resultOk: tool.resultOk ?? hydrated.resultOk,
+      resultMessage: tool.resultMessage || hydrated.resultMessage,
+      resultDetail: tool.resultDetail || hydrated.resultDetail,
+      mediaPaths: tool.mediaPaths?.length ? tool.mediaPaths : hydrated.mediaPaths,
+    }
+  })
+
+  hydratedTools.forEach((tool, index) => {
+    if (!usedHydratedIndexes.has(index)) {
+      merged.push(tool)
+    }
+  })
+
+  return merged.sort((left, right) => left.index - right.index)
+}
+
+function hasHydratedToolArguments(tools?: HermesToolCall[]): boolean {
+  return Array.isArray(tools) && tools.some(tool => tool.arguments.trim().length > 0)
+}
+
+function hermesToolSignature(tools?: HermesToolCall[]): string {
+  return Array.isArray(tools)
+    ? tools
+        .map(tool => `${tool.index}:${tool.id || ''}:${tool.name}:${tool.arguments}`)
+        .join('\u0001')
+    : ''
+}
+
+function findHydratedAssistantToolSource(
+  hydratedMessages: ChatMessage[],
+  assistantMessage: ChatMessage,
+): ChatMessage | null {
+  const assistantCandidates = hydratedMessages.filter(message => message.role === 'assistant')
+  if (assistantCandidates.length === 0) return null
+
+  const localText = normalizeHermesAssistantComparisonText(assistantMessage.content)
+  const localPrefix = localText.slice(0, 120)
+
+  for (let index = assistantCandidates.length - 1; index >= 0; index -= 1) {
+    const candidate = assistantCandidates[index]
+    const candidateText = normalizeHermesAssistantComparisonText(candidate.content)
+    const closeInTime = Math.abs((candidate.timestamp || 0) - (assistantMessage.timestamp || 0)) <= 5 * 60 * 1000
+    const textMatches =
+      !localPrefix
+      || !candidateText
+      || candidateText.includes(localPrefix)
+      || localText.includes(candidateText.slice(0, 120))
+    if (closeInTime && textMatches) return candidate
+  }
+
+  return assistantCandidates[assistantCandidates.length - 1] || null
+}
+
+function findLatestHydratedAssistantTurnSource(hydratedMessages: ChatMessage[]): ChatMessage | null {
+  if (!hydratedMessages.length) return null
+
+  let startIndex = 0
+  for (let index = hydratedMessages.length - 1; index >= 0; index -= 1) {
+    if (hydratedMessages[index]?.role === 'user') {
+      startIndex = index + 1
+      break
+    }
+  }
+
+  const turnMessages = collapseConsecutiveHermesAssistantTurns(hydratedMessages.slice(startIndex))
+  return [...turnMessages]
+    .reverse()
+    .find(message => message.role === 'assistant' && (message.tools?.length || 0) > 0) || null
+}
+
+async function fetchHydratedHermesMessages(sessionId: string): Promise<ChatMessage[]> {
+  const response = await fetch(`/api/hermes/sessions?sessionId=${encodeURIComponent(sessionId)}`, { cache: 'no-store' })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok || data?.available === false) {
+    throw new Error(typeof data?.error === 'string' ? data.error : `HTTP ${response.status}`)
+  }
+  return parseHydratedHermesMessages(data?.messages)
+}
+
+function sleep(ms: number) {
+  return new Promise(resolve => window.setTimeout(resolve, ms))
+}
+
+function sanitizeHermesUserText(content: string): string {
+  const trimmed = typeof content === 'string' ? content.trim() : ''
+  if (!trimmed) return ''
+  if (!trimmed.startsWith('Oasis runtime context:')) return trimmed
+
+  const marker = HERMES_USER_REQUEST_MARKER.exec(trimmed)
+  if (!marker) return trimmed
+
+  return trimmed.slice(marker.index + marker[0].length).trim() || trimmed
+}
+
+function appendHermesMediaLine(content: string, mediaUrl: string): string {
+  const sanitizedContent = sanitizeHermesAssistantText(content)
+  const nextMediaUrl = mediaUrl.trim()
+  if (!nextMediaUrl) return sanitizedContent
+
+  const mediaLine = `MEDIA:${nextMediaUrl}`
+  if (sanitizedContent.split(/\r?\n/).some(line => line.trim() === mediaLine)) {
+    return sanitizedContent
+  }
+
+  return sanitizeHermesAssistantText(
+    sanitizedContent
+      ? `${sanitizedContent}\n${mediaLine}`
+      : mediaLine,
+  )
+}
+
+function appendHermesMediaLines(content: string, mediaUrls: string[]): string {
+  return mediaUrls.reduce((nextContent, mediaUrl) => appendHermesMediaLine(nextContent, mediaUrl), content)
 }
 
 function unwrapHermesPathLikeValue(path: string): string {
@@ -283,6 +674,10 @@ interface HermesMediaReference {
   mediaType: MediaType
 }
 
+function hermesMediaReferenceKey(path: string, mediaType: MediaType): string {
+  return `${mediaType}:${normalizeHermesMediaPath(path)}`
+}
+
 function detectHermesMediaType(path: string): MediaType | null {
   const normalized = normalizeHermesMediaPath(path)
   if (/^data:image\//i.test(normalized)) return 'image'
@@ -291,6 +686,12 @@ function detectHermesMediaType(path: string): MediaType | null {
   if (/\.(?:mp3|wav|ogg|oga|opus|m4a)(?:\?|$)/i.test(normalized)) return 'audio'
   if (/\.(?:png|jpg|jpeg|gif|webp)(?:\?|$)/i.test(normalized)) return 'image'
   if (/\.(?:mp4|webm|m4v)(?:\?|$)/i.test(normalized)) return 'video'
+  // Trusted media services — infer type when extension is missing
+  if (/(?:fal\.media|fal-cdn\.|oaidalleapiprodscus\.|replicate\.delivery)/i.test(normalized)) {
+    if (/video|mp4|webm/i.test(normalized)) return 'video'
+    return 'image'
+  }
+  if (/(?:api\.elevenlabs\.io|elevenlabs\.io\/)/i.test(normalized)) return 'audio'
   return null
 }
 
@@ -310,8 +711,73 @@ function joinPrompt(base: string, addition: string): string {
   return `${base} ${addition}`.trim()
 }
 
+function buildSyntheticHermesSessionSummary(sessionId: string, messages: ChatMessage[]): HermesNativeSessionSummary | null {
+  const sanitizedMessages = sanitizeCachedMessages(messages)
+  if (sanitizedMessages.length === 0) return null
+
+  const first = sanitizedMessages[0]
+  const last = sanitizedMessages[sanitizedMessages.length - 1]
+  const preview = [...sanitizedMessages]
+    .reverse()
+    .map(message => message.content
+      .split(/\r?\n/)
+      .filter(line => !line.trim().startsWith('MEDIA:'))
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim())
+    .find(Boolean) || `Session ${sessionId.slice(-8)}`
+
+  return {
+    id: sessionId,
+    title: null,
+    preview: preview.slice(0, 160),
+    source: 'native',
+    model: null,
+    startedAt: first?.timestamp || Date.now(),
+    lastActiveAt: last?.timestamp || first?.timestamp || Date.now(),
+    messageCount: sanitizedMessages.length,
+  }
+}
+
+function compareHermesSessionSummaries(left: HermesNativeSessionSummary, right: HermesNativeSessionSummary): number {
+  const leftTime = left.lastActiveAt || left.startedAt || 0
+  const rightTime = right.lastActiveAt || right.startedAt || 0
+  return rightTime - leftTime
+}
+
+function upsertHermesSessionSummary(
+  sessions: HermesNativeSessionSummary[],
+  summary: HermesNativeSessionSummary | null,
+): HermesNativeSessionSummary[] {
+  if (!summary) return sessions
+
+  const existingIndex = sessions.findIndex(session => session.id === summary.id)
+  if (existingIndex === -1) {
+    return [summary, ...sessions].sort(compareHermesSessionSummaries)
+  }
+
+  const next = sessions.slice()
+  next[existingIndex] = {
+    ...next[existingIndex],
+    ...summary,
+  }
+  return next.sort(compareHermesSessionSummaries)
+}
+
+function mergeHermesSessionSummaries(
+  primary: HermesNativeSessionSummary[],
+  secondary: HermesNativeSessionSummary[],
+): HermesNativeSessionSummary[] {
+  let merged = primary.slice()
+  for (const summary of secondary) {
+    merged = upsertHermesSessionSummary(merged, summary)
+  }
+  return merged.sort(compareHermesSessionSummaries)
+}
+
 function extractHermesMediaReferences(content: string): HermesMediaReference[] {
   const refs: HermesMediaReference[] = []
+  const seen = new Set<string>()
 
   for (const line of content.split(/\r?\n/)) {
     const trimmed = line.trim()
@@ -320,6 +786,10 @@ function extractHermesMediaReferences(content: string): HermesMediaReference[] {
     const path = normalizeHermesMediaPath(trimmed.slice('MEDIA:'.length))
     const mediaType = detectHermesMediaType(path)
     if (!path || !mediaType) continue
+
+    const key = hermesMediaReferenceKey(path, mediaType)
+    if (seen.has(key)) continue
+    seen.add(key)
 
     refs.push({
       path,
@@ -419,7 +889,7 @@ function HermesProxiedMediaBubble({
     )
   }
 
-  return <MediaBubble url={resolvedUrl} mediaType={mediaType} prompt={prompt} compact />
+  return <MediaBubble url={resolvedUrl} mediaType={mediaType} prompt={prompt} compact galleryScopeId="hermes-thread" />
 }
 
 function HermesAudioBubble({
@@ -522,6 +992,7 @@ function HermesAudioBubble({
       compact
       autoPlay={autoPlay}
       avatarLipSyncTargetId={avatarAudioTargetId}
+      galleryScopeId="hermes-thread"
     />
   )
 }
@@ -533,11 +1004,12 @@ function renderHermesAssistantContent(
 ): React.ReactNode {
   const blocks: React.ReactNode[] = []
   const textBuffer: string[] = []
+  const seenMediaRefs = new Set<string>()
   let key = 0
 
   const flushText = () => {
     const text = textBuffer
-      .filter(line => !isHermesControlLine(line))
+      .filter(line => !isHermesIgnorableLine(line))
       .join('\n')
       .trim()
     textBuffer.length = 0
@@ -554,21 +1026,27 @@ function renderHermesAssistantContent(
     if (trimmed.startsWith('MEDIA:')) {
       const path = normalizeHermesMediaPath(trimmed.slice('MEDIA:'.length))
       const mediaType = detectHermesMediaType(path)
-        if (path && mediaType) {
-          flushText()
-          if (mediaType === 'audio') {
-            const mediaUrl = buildHermesMediaUrl(path)
-            blocks.push(
-              <HermesAudioBubble
-                key={`media-${key += 1}`}
-                mediaUrl={mediaUrl}
-                prompt="Hermes audio"
-                autoPlay={autoPlayAudio}
-                needsProxy={!isDirectHermesMediaUrl(path)}
-                avatarAudioTargetId={audioTargetAvatarId}
-              />
-            )
-          } else {
+      if (path && mediaType) {
+        const mediaKey = hermesMediaReferenceKey(path, mediaType)
+        if (seenMediaRefs.has(mediaKey)) {
+          continue
+        }
+        seenMediaRefs.add(mediaKey)
+
+        flushText()
+        if (mediaType === 'audio') {
+          const mediaUrl = buildHermesMediaUrl(path)
+          blocks.push(
+            <HermesAudioBubble
+              key={`media-${key += 1}`}
+              mediaUrl={mediaUrl}
+              prompt="Hermes audio"
+              autoPlay={autoPlayAudio}
+              needsProxy={!isDirectHermesMediaUrl(path)}
+              avatarAudioTargetId={audioTargetAvatarId}
+            />
+          )
+        } else {
           const mediaUrl = buildHermesMediaUrl(path)
           blocks.push(
             <HermesProxiedMediaBubble
@@ -590,7 +1068,7 @@ function renderHermesAssistantContent(
   flushText()
 
   if (blocks.length === 0) {
-    return renderMarkdown(content)
+    return renderMarkdown(sanitizeHermesAssistantText(content))
   }
   if (blocks.length === 1) {
     return blocks[0]
@@ -644,7 +1122,53 @@ function SourceBadge({ source }: { source?: HermesStatus['source'] }) {
   )
 }
 
-function SettingsDropdown({ settings, onChange }: { settings: PanelSettings; onChange: (next: PanelSettings) => void }) {
+function getTunnelColor(status: HermesTunnelStatus): string {
+  if (!status.configured) return '#94a3b8'
+  if (status.healthy) return '#34d399'
+  if (status.running || status.processAlive) return '#f59e0b'
+  return '#ef4444'
+}
+
+function getTunnelLabel(status: HermesTunnelStatus): string {
+  switch (status.health) {
+    case 'healthy':
+      return 'oasis-ready'
+    case 'partial':
+      return 'ssh partial'
+    case 'stale':
+      return 'ssh stale'
+    case 'stopped':
+      return 'ssh down'
+    case 'saved':
+      return status.autoStart ? 'ssh saved' : 'ssh manual'
+    default:
+      return 'direct'
+  }
+}
+
+function buildTunnelTitle(status: HermesTunnelStatus): string {
+  if (!status.configured) return 'No managed SSH tunnel saved'
+  if (status.issues.length > 0) return status.issues[0]
+  if (status.healthy) return 'Managed SSH tunnel is carrying both Hermes chat and Oasis MCP traffic.'
+  return 'Managed SSH tunnel is saved but not fully verified yet.'
+}
+
+function TunnelBadge({ status }: { status: HermesTunnelStatus }) {
+  const color = getTunnelColor(status)
+  const label = getTunnelLabel(status)
+
+  return (
+    <span
+      className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase tracking-wide"
+      style={{ color, background: `${color}1a`, border: `1px solid ${color}40` }}
+      title={buildTunnelTitle(status)}
+    >
+      {label}
+    </span>
+  )
+}
+
+function SettingsDropdown({ settings, onChange, voiceOutput, onVoiceOutputChange }: { settings: PanelSettings; onChange: (next: PanelSettings) => void; voiceOutput?: boolean; onVoiceOutputChange?: (v: boolean) => void }) {
   return (
     <div
       data-ui-panel
@@ -687,20 +1211,59 @@ function SettingsDropdown({ settings, onChange }: { settings: PanelSettings; onC
             className="w-full accent-amber-500"
           />
         </div>
+        {onVoiceOutputChange && (
+          <div className="pt-1 border-t border-white/10 mt-1">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={voiceOutput ?? false}
+                onChange={event => onVoiceOutputChange(event.target.checked)}
+                className="accent-amber-500"
+              />
+              <span className="text-amber-200/70">Auto-play voice notes</span>
+            </label>
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-function ToolDetails({ tool }: { tool: HermesToolCall }) {
+function ToolDetails({
+  tool,
+  completed,
+  failed,
+}: {
+  tool: HermesToolCall
+  completed?: boolean
+  failed?: boolean
+}) {
+  const normalizedName = normalizeHermesToolName(tool.name) || tool.name
   const label = summarizeToolArguments(tool.arguments)
+  const toolMedia = (tool.mediaPaths || [])
+    .map(path => {
+      const mediaType = detectHermesMediaType(path)
+      if (!mediaType) return null
+      return {
+        path: buildHermesMediaUrl(path),
+        mediaType,
+      }
+    })
+    .filter((entry): entry is { path: string; mediaType: MediaType } => !!entry)
   return (
     <AgentToolCallCard
-      name={tool.name}
-      label={formatToolName(tool.name)}
+      name={normalizedName}
+      label={formatToolName(normalizedName)}
       icon="[]"
       summary={label}
       input={prettyToolArguments(tool.arguments)}
+      result={completed ? {
+        ok: failed ? false : tool.resultOk ?? true,
+        ...(tool.resultMessage ? { message: tool.resultMessage } : failed ? { message: 'Tool execution failed.' } : {}),
+        ...(tool.resultDetail ? { detail: tool.resultDetail } : {}),
+      } : undefined}
+      media={toolMedia}
+      showResultMessage={Boolean(tool.resultMessage)}
     />
   )
 }
@@ -756,8 +1319,18 @@ async function* parseHermesSSE(response: Response): AsyncGenerator<HermesEvent> 
   }
 }
 
-export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  useUILayer('hermes', isOpen)
+export function HermesPanel({
+  isOpen,
+  onClose,
+  embedded = false,
+  hideCloseButton = false,
+}: {
+  isOpen: boolean
+  onClose: () => void
+  embedded?: boolean
+  hideCloseButton?: boolean
+}) {
+  useUILayer('hermes', isOpen && !embedded)
 
   const panelZIndex = useOasisStore(state => state.getPanelZIndex('hermes', 9998))
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -765,9 +1338,12 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const autoConnectTriedRef = useRef(false)
+  const activeNativeSessionIdRef = useRef('')
   const lastHydratedSessionIdRef = useRef('')
+  const lastVisionToolSignatureRef = useRef('')
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => readStoredMessages())
+  const messagesRef = useRef<ChatMessage[]>(messages)
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
@@ -801,20 +1377,33 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     try { return localStorage.getItem(VOICE_OUTPUT_KEY) === 'true' } catch { return false }
   })
   const [autoPlayMediaMessageId, setAutoPlayMediaMessageId] = useState('')
+  const [visionCaptureUrl, setVisionCaptureUrl] = useState('')
+  const [visionCaptureError, setVisionCaptureError] = useState('')
+  const [visionCapturedAt, setVisionCapturedAt] = useState<number | null>(null)
+  const [isCapturingVision, setIsCapturingVision] = useState(false)
   const [panelSettings, setPanelSettings] = useState<PanelSettings>(() => {
     if (typeof window === 'undefined') return DEFAULT_SETTINGS
     try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null') || DEFAULT_SETTINGS } catch { return DEFAULT_SETTINGS }
   })
 
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+
+  useEffect(() => {
+    if (!selectedSessionId || selectedSessionId === NEW_SESSION_VALUE) return
+    activeNativeSessionIdRef.current = selectedSessionId
+  }, [selectedSessionId])
+
   const [position, setPosition] = useState(() => {
-    if (typeof window === 'undefined') return DEFAULT_POS
+    if (typeof window === 'undefined' || embedded) return DEFAULT_POS
     try { return JSON.parse(localStorage.getItem(POS_KEY) || 'null') || DEFAULT_POS } catch { return DEFAULT_POS }
   })
   const [isDragging, setIsDragging] = useState(false)
   const dragStart = useRef({ x: 0, y: 0 })
 
   const [size, setSize] = useState(() => {
-    if (typeof window === 'undefined') return DEFAULT_SIZE
+    if (typeof window === 'undefined' || embedded) return DEFAULT_SIZE
     try { return JSON.parse(localStorage.getItem(SIZE_KEY) || 'null') || DEFAULT_SIZE } catch { return DEFAULT_SIZE }
   })
   const [isResizing, setIsResizing] = useState(false)
@@ -831,6 +1420,9 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     },
     focusTargetRef: inputRef,
   })
+
+  // Textarea grows with content (oasisspec3)
+  useAutoresizeTextarea(inputRef, input, { minPx: 48, maxPx: 200 })
 
   const focusPanelUI = useCallback(() => {
     useInputManager.getState().enterUIFocus()
@@ -854,7 +1446,9 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           configured: false,
           connected: false,
           base: null,
+          apiKey: typeof cfg?.apiKey === 'string' ? cfg.apiKey : null,
           defaultModel: null,
+          systemPrompt: typeof cfg?.systemPrompt === 'string' ? cfg.systemPrompt : null,
           models: [],
           source: typeof cfg?.source === 'string' ? cfg.source : undefined,
           canMutateConfig: Boolean(cfg?.canMutateConfig),
@@ -865,7 +1459,9 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           configured: Boolean(data?.configured),
           connected: Boolean(data?.connected),
           base: typeof data?.base === 'string' ? data.base : null,
+          apiKey: typeof cfg?.apiKey === 'string' ? cfg.apiKey : (typeof data?.apiKey === 'string' ? data.apiKey : null),
           defaultModel: typeof data?.defaultModel === 'string' ? data.defaultModel : null,
+          systemPrompt: typeof cfg?.systemPrompt === 'string' ? cfg.systemPrompt : (typeof data?.systemPrompt === 'string' ? data.systemPrompt : null),
           models: Array.isArray(data?.models) ? data.models.filter((entry: unknown): entry is string => typeof entry === 'string') : [],
           source: (typeof data?.source === 'string' ? data.source : typeof cfg?.source === 'string' ? cfg.source : undefined) as HermesStatus['source'],
           canMutateConfig: Boolean(cfg?.canMutateConfig),
@@ -878,6 +1474,14 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       setTunnelStatus({
         configured: Boolean(tunnel?.configured),
         running: Boolean(tunnel?.running),
+        processAlive: Boolean(tunnel?.processAlive),
+        processMatches: Boolean(tunnel?.processMatches),
+        healthy: Boolean(tunnel?.healthy),
+        health: typeof tunnel?.health === 'string' ? tunnel.health as HermesTunnelStatus['health'] : 'unconfigured',
+        apiForwardReachable: Boolean(tunnel?.apiForwardReachable),
+        apiForwardConfigured: Boolean(tunnel?.apiForwardConfigured),
+        reverseForwardConfigured: Boolean(tunnel?.reverseForwardConfigured),
+        issues: Array.isArray(tunnel?.issues) ? tunnel.issues.filter((entry: unknown): entry is string => typeof entry === 'string') : [],
         command: typeof tunnel?.command === 'string' ? tunnel.command : '',
         commandPreview: typeof tunnel?.commandPreview === 'string' ? tunnel.commandPreview : '',
         autoStart: tunnel?.autoStart !== false,
@@ -893,7 +1497,9 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         configured: false,
         connected: false,
         base: null,
+        apiKey: null,
         defaultModel: null,
+        systemPrompt: null,
         models: [],
         error: error instanceof Error ? error.message : 'Unable to check Hermes status.',
       })
@@ -920,13 +1526,27 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         throw new Error(typeof data?.error === 'string' ? data.error : `HTTP ${response.status}`)
       }
 
-      const nextSessions: HermesNativeSessionSummary[] = Array.isArray(data?.sessions)
+      const fetchedSessions: HermesNativeSessionSummary[] = Array.isArray(data?.sessions)
         ? data.sessions.filter((entry: unknown): entry is HermesNativeSessionSummary => {
             if (!entry || typeof entry !== 'object') return false
             const item = entry as Record<string, unknown>
             return typeof item.id === 'string'
           })
         : []
+
+      const fallbackSessionId = preferredSessionId && preferredSessionId !== NEW_SESSION_VALUE
+        ? preferredSessionId
+        : selectedSessionId && selectedSessionId !== NEW_SESSION_VALUE
+          ? selectedSessionId
+          : activeNativeSessionIdRef.current
+      const cachedSummaries = readCachedNativeSessionSummaries()
+      const fallbackSummary = fallbackSessionId
+        ? buildSyntheticHermesSessionSummary(fallbackSessionId, readNativeSessionCache(fallbackSessionId))
+        : null
+      const nextSessions = mergeHermesSessionSummaries(
+        fetchedSessions,
+        fallbackSummary ? [fallbackSummary, ...cachedSummaries] : cachedSummaries,
+      )
 
       setNativeSessionsAvailable(true)
       setSessions(nextSessions)
@@ -942,6 +1562,10 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 
         if (!next && current && current !== NEW_SESSION_VALUE && nextSessions.some(session => session.id === current)) {
           next = current
+        }
+
+        if (!next && activeNativeSessionIdRef.current && nextSessions.some(session => session.id === activeNativeSessionIdRef.current)) {
+          next = activeNativeSessionIdRef.current
         }
 
         if (!next && keepNew) {
@@ -967,7 +1591,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     } finally {
       setSessionsLoading(false)
     }
-  }, [status.connected, tunnelStatus.configured])
+  }, [selectedSessionId, status.connected, tunnelStatus.configured])
 
   const hydrateSession = useCallback(async (
     sessionId: string,
@@ -987,41 +1611,17 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     setAutoPlayMediaMessageId('')
 
     try {
-      const response = await fetch(`/api/hermes/sessions?sessionId=${encodeURIComponent(sessionId)}`, { cache: 'no-store' })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok || data?.available === false) {
-        throw new Error(typeof data?.error === 'string' ? data.error : `HTTP ${response.status}`)
-      }
+      const remoteMessages = await fetchHydratedHermesMessages(sessionId)
+      const collapsedRemoteMessages = collapseConsecutiveHermesAssistantTurns(remoteMessages)
 
-      const remoteMessages: ChatMessage[] = Array.isArray(data?.messages)
-        ? data.messages
-            .filter((entry: unknown): entry is ChatMessage => {
-              if (!entry || typeof entry !== 'object') return false
-              const item = entry as Record<string, unknown>
-              return (
-                typeof item.id === 'string' &&
-                (item.role === 'user' || item.role === 'assistant') &&
-                typeof item.content === 'string'
-              )
-            })
-            .map((entry: ChatMessage) => ({
-              id: entry.id,
-              role: entry.role,
-              content: entry.content,
-              reasoning: entry.reasoning,
-              tools: Array.isArray(entry.tools) ? entry.tools : undefined,
-              usage: entry.usage,
-              finishReason: entry.finishReason,
-              error: entry.error,
-              timestamp: typeof entry.timestamp === 'number' ? entry.timestamp : Date.now(),
-            }))
-        : []
+      const cachedSourceMessages = options?.mergeMessages?.length
+        ? options.mergeMessages
+        : readNativeSessionCache(sessionId)
 
-      const cachedMessages = options?.mergeMessages?.length
-        ? mergeHydratedHermesMessages(remoteMessages, options.mergeMessages)
-        : mergeHydratedHermesMessages(remoteMessages, readNativeSessionCache(sessionId))
+      const nextMessages = shouldPreferHydratedHermesMessages(collapsedRemoteMessages, cachedSourceMessages)
+        ? collapseDuplicateHermesMessages(collapsedRemoteMessages)
+        : collapseDuplicateHermesMessages(mergeHydratedHermesMessages(collapsedRemoteMessages, cachedSourceMessages))
 
-      const nextMessages = collapseDuplicateHermesMessages(cachedMessages)
       setMessages(nextMessages)
       setAutoScroll(true)
       writeNativeSessionCache(sessionId, nextMessages)
@@ -1038,6 +1638,254 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       setSessionHydrating(false)
     }
   }, [])
+
+  const enrichAssistantToolsFromSession = useCallback(async (
+    sessionId: string,
+    assistantMessage: ChatMessage,
+  ): Promise<ChatMessage> => {
+    if (!sessionId || !assistantMessage.tools?.length || hasHydratedToolArguments(assistantMessage.tools)) {
+      return assistantMessage
+    }
+
+    for (let attempt = 0; attempt < 7; attempt += 1) {
+      try {
+        const hydratedMessages = collapseConsecutiveHermesAssistantTurns(await fetchHydratedHermesMessages(sessionId))
+        const hydratedAssistant =
+          findLatestHydratedAssistantTurnSource(hydratedMessages)
+          || findHydratedAssistantToolSource(hydratedMessages, assistantMessage)
+        if (!hydratedAssistant?.tools?.length) {
+          if (attempt < 6) await sleep(300 * (attempt + 1))
+          continue
+        }
+
+        const mergedTools = mergeHermesToolCalls(assistantMessage.tools, hydratedAssistant.tools)
+        const hydratedMediaRefs = extractHermesMediaReferences(hydratedAssistant.content).map(ref => ref.path)
+        const mergedContent = hydratedMediaRefs.length
+          ? appendHermesMediaLines(assistantMessage.content, hydratedMediaRefs)
+          : assistantMessage.content
+        const toolsChanged = hermesToolSignature(mergedTools) !== hermesToolSignature(assistantMessage.tools)
+        const contentChanged = mergedContent !== assistantMessage.content
+        if (!toolsChanged && !contentChanged) {
+          if (hasHydratedToolArguments(mergedTools)) {
+            return { ...assistantMessage, tools: mergedTools, content: mergedContent }
+          }
+          if (attempt < 6) await sleep(300 * (attempt + 1))
+          continue
+        }
+
+        const nextAssistantMessage: ChatMessage = {
+          ...assistantMessage,
+          content: mergedContent,
+          tools: mergedTools,
+        }
+
+        const nextMessages = collapseDuplicateHermesMessages(messagesRef.current.map(message =>
+          message.id === assistantMessage.id
+            ? nextAssistantMessage
+            : message
+        ))
+        setMessages(nextMessages)
+        writeNativeSessionCache(sessionId, nextMessages)
+        setSessions(previous => upsertHermesSessionSummary(
+          previous,
+          buildSyntheticHermesSessionSummary(sessionId, nextMessages),
+        ))
+        return nextAssistantMessage
+      } catch {
+        // Retry a couple times while Hermes flushes the session row.
+      }
+
+      if (attempt < 6) {
+        await sleep(300 * (attempt + 1))
+      }
+    }
+
+    return assistantMessage
+  }, [])
+
+  const captureHermesVision = useCallback(async (
+    tool?: HermesToolCall,
+    options?: {
+      attachToMessageId?: string
+      sessionId?: string
+    },
+  ): Promise<HermesVisionCapture | null> => {
+    if (isCapturingVision) return null
+
+    const worldId = useOasisStore.getState().activeWorldId
+    const rawToolArguments = tool?.arguments.trim() || ''
+    if (tool && !rawToolArguments) {
+      return null
+    }
+
+    const parsedArgs = tool ? parseToolArguments(rawToolArguments) : {}
+    if (tool && !parsedArgs) {
+      setVisionCaptureError('Hermes asked for a screenshot, but the tool arguments were malformed.')
+      return null
+    }
+
+    const requestedArgs = tool && parsedArgs
+      ? {
+          ...parsedArgs,
+          worldId: typeof parsedArgs.worldId === 'string' && parsedArgs.worldId.trim() ? parsedArgs.worldId : worldId,
+          defaultAgentType: 'hermes',
+          requesterAgentType: 'hermes',
+        }
+      : {
+          worldId,
+          defaultAgentType: 'hermes',
+          requesterAgentType: 'hermes',
+          format: 'jpeg',
+          quality: 0.82,
+          width: 960,
+          height: 540,
+          views: [{
+            id: 'hermes-phantom',
+            mode: 'agent-avatar-phantom',
+            agentType: 'hermes',
+            distance: 1,
+            heightOffset: 1.55,
+            lookAhead: 6,
+            fov: 100,
+          }],
+        }
+
+    if (!tool && !hermesAvatar?.id) {
+      setVisionCaptureError('Give Hermes an avatar first so he has a body to see from.')
+      return null
+    }
+
+    setIsCapturingVision(true)
+    setVisionCaptureError('')
+
+    try {
+      const response = await fetch('/api/oasis-tools', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tool: normalizeHermesToolName(tool?.name || 'screenshot_viewport'),
+          args: requestedArgs,
+        }),
+      })
+
+      const data = await response.json().catch(() => null) as {
+        ok?: boolean
+        error?: string
+        message?: string
+        data?: {
+          primaryCaptureUrl?: string
+          primaryCapturePath?: string
+          format?: 'jpeg' | 'png' | 'webp'
+          base64?: string
+          captures?: Array<{
+            format?: 'jpeg' | 'png' | 'webp'
+            base64?: string
+            url?: string
+            filePath?: string
+          }>
+        }
+      } | null
+
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.error || data?.message || `HTTP ${response.status}`)
+      }
+
+      const availableCaptures = Array.isArray(data.data?.captures)
+        ? data.data.captures.filter(entry =>
+            (typeof entry?.url === 'string' && entry.url.length > 0) ||
+            (typeof entry?.filePath === 'string' && entry.filePath.length > 0) ||
+            (typeof entry?.base64 === 'string' && entry.base64.length > 0)
+          )
+        : []
+      const capture = availableCaptures[0] || (
+        typeof data.data?.primaryCaptureUrl === 'string' && data.data.primaryCaptureUrl.length > 0
+          ? { url: data.data.primaryCaptureUrl, format: data.data.format }
+          : typeof data.data?.primaryCapturePath === 'string' && data.data.primaryCapturePath.length > 0
+            ? { filePath: data.data.primaryCapturePath, format: data.data.format }
+            : typeof data.data?.base64 === 'string' && data.data.base64.length > 0
+              ? { base64: data.data.base64, format: data.data.format }
+              : null
+      )
+
+      if (!capture?.url && !capture?.filePath && !capture?.base64) {
+        throw new Error('Hermes could not see anything yet.')
+      }
+
+      const captureMediaRefs = availableCaptures
+        .map(entry => {
+          if (typeof entry.url === 'string' && entry.url.length > 0) return entry.url
+          if (typeof entry.filePath === 'string' && entry.filePath.length > 0) return normalizeHermesMediaPath(entry.filePath)
+          return ''
+        })
+        .filter(Boolean)
+
+      if (capture.url) {
+        setVisionCaptureUrl(capture.url)
+        setVisionCapturedAt(Date.now())
+        if (options?.attachToMessageId) {
+          const nextMessages = messagesRef.current.map(message =>
+            message.id === options.attachToMessageId
+              ? { ...message, content: appendHermesMediaLines(message.content, captureMediaRefs.length ? captureMediaRefs : [capture.url || '']) }
+              : message
+          )
+          setMessages(nextMessages)
+          if (options.sessionId) {
+            writeNativeSessionCache(options.sessionId, nextMessages)
+            setSessions(previous => upsertHermesSessionSummary(
+              previous,
+              buildSyntheticHermesSessionSummary(options.sessionId || '', nextMessages),
+            ))
+          }
+        }
+        return {
+          displayUrl: capture.url,
+          threadMediaRef: capture.url,
+        }
+      }
+
+      if (capture.filePath) {
+        const threadMediaRef = normalizeHermesMediaPath(capture.filePath)
+        const displayUrl = buildHermesMediaUrl(threadMediaRef)
+        setVisionCaptureUrl(displayUrl)
+        setVisionCapturedAt(Date.now())
+        if (options?.attachToMessageId) {
+          const nextMessages = messagesRef.current.map(message =>
+            message.id === options.attachToMessageId
+              ? { ...message, content: appendHermesMediaLines(message.content, captureMediaRefs.length ? captureMediaRefs : [threadMediaRef]) }
+              : message
+          )
+          setMessages(nextMessages)
+          if (options.sessionId) {
+            writeNativeSessionCache(options.sessionId, nextMessages)
+            setSessions(previous => upsertHermesSessionSummary(
+              previous,
+              buildSyntheticHermesSessionSummary(options.sessionId || '', nextMessages),
+            ))
+          }
+        }
+        return {
+          displayUrl,
+          threadMediaRef,
+        }
+      }
+
+      const format = capture.format === 'png' || capture.format === 'webp' || capture.format === 'jpeg'
+        ? capture.format
+        : 'jpeg'
+
+      const displayUrl = `data:image/${format};base64,${capture.base64}`
+      setVisionCaptureUrl(displayUrl)
+      setVisionCapturedAt(Date.now())
+      return {
+        displayUrl,
+      }
+    } catch (error) {
+      setVisionCaptureError(error instanceof Error ? error.message : 'Hermes vision failed.')
+      return null
+    } finally {
+      setIsCapturingVision(false)
+    }
+  }, [hermesAvatar?.id, isCapturingVision, messagesRef])
 
   const connectHermes = useCallback(async (tunnelCommandOverride?: string) => {
     if (isConnecting) return
@@ -1060,11 +1908,14 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         if (!tunnelResponse.ok) {
           throw new Error(typeof tunnelData?.error === 'string' ? tunnelData.error : `HTTP ${tunnelResponse.status}`)
         }
+        if (typeof tunnelData?.error === 'string' && tunnelData.error.trim()) {
+          throw new Error(tunnelData.error)
+        }
       }
 
       let connected = false
       let lastError = ''
-      for (let attempt = 0; attempt < 6; attempt += 1) {
+      for (let attempt = 0; attempt < 20; attempt += 1) {
         const response = await fetch('/api/hermes', { cache: 'no-store' })
         const data = await response.json().catch(() => ({}))
         if (response.ok && data?.connected) {
@@ -1072,8 +1923,8 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           break
         }
         lastError = typeof data?.error === 'string' ? data.error : lastError
-        if (attempt < 5) {
-          await new Promise(resolve => window.setTimeout(resolve, 450))
+        if (attempt < 19) {
+          await new Promise(resolve => window.setTimeout(resolve, 600))
         }
       }
 
@@ -1094,8 +1945,21 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 
   const openConnectionModal = useCallback(() => {
     setConnectionError('')
+    if (!connectionInput.trim()) {
+      const lines: string[] = []
+      if (status.base) lines.push(`HERMES_API_BASE=${status.base}`)
+      if (status.apiKey) lines.push(`HERMES_API_KEY=${status.apiKey}`)
+      if (status.defaultModel) lines.push(`HERMES_MODEL=${status.defaultModel}`)
+      if (status.systemPrompt) lines.push(`HERMES_SYSTEM_PROMPT=${status.systemPrompt}`)
+      if (lines.length > 0) {
+        setConnectionInput(lines.join('\n'))
+      }
+    }
+    if (tunnelStatus.configured && tunnelStatus.commandPreview && !tunnelInput.trim()) {
+      setTunnelInput(tunnelStatus.commandPreview)
+    }
     setShowConnectionModal(true)
-  }, [])
+  }, [connectionInput, tunnelInput, status, tunnelStatus])
 
   const saveConnection = useCallback(async (connectAfter: boolean) => {
     if (connectionSaving) return
@@ -1114,11 +1978,17 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     setConnectionError('')
 
     try {
-      if (nextConnection) {
+      // Skip saving if the connection text only contains the placeholder key
+      const hasPlaceholderKey = nextConnection && /HERMES_API_KEY=(<paste-real-key-here>|[•]+)/i.test(nextConnection)
+      const connectionToSave = hasPlaceholderKey
+        ? nextConnection.split('\n').filter(line => !/HERMES_API_KEY=/i.test(line)).join('\n').trim()
+        : nextConnection
+
+      if (connectionToSave) {
         const response = await fetch('/api/hermes/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pairing: nextConnection }),
+          body: JSON.stringify({ pairing: connectionToSave }),
         })
         const data = await response.json().catch(() => ({}))
         if (!response.ok) {
@@ -1251,8 +2121,15 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   }, [isOpen])
 
   useEffect(() => {
-    if (autoScroll) {
-      messagesEndRef.current?.scrollIntoView({ behavior: isStreaming ? 'auto' : 'smooth' })
+    // ░▒▓ VANISH-ON-SCROLL ROOT CAUSE (oasisspec3): scrollIntoView() walks the
+    // ancestor chain and scrolls every scrollable parent, which inside drei's
+    // <Html transform> includes the CSS3DObject's internal wrapper → matrix3d
+    // gets clobbered → panel appears to vanish until the next three.js frame
+    // re-applies the matrix (camera wiggle / Esc). Imperative scrollTop on the
+    // known scroll container touches ONLY that container — same pattern as
+    // AnorakProPanel which has never had this bug. ▓▒░
+    if (autoScroll && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
     }
   }, [messages, isStreaming, autoScroll])
 
@@ -1268,10 +2145,13 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 
   useEffect(() => {
     if (!nativeSessionsAvailable) return
-    if (!selectedSessionId || selectedSessionId === NEW_SESSION_VALUE) return
+    const cacheSessionId = selectedSessionId && selectedSessionId !== NEW_SESSION_VALUE
+      ? selectedSessionId
+      : activeNativeSessionIdRef.current
+    if (!cacheSessionId) return
     if (sessionHydrating) return
-    if (!isStreaming && lastHydratedSessionIdRef.current !== selectedSessionId) return
-    writeNativeSessionCache(selectedSessionId, messages)
+    if (!isStreaming && lastHydratedSessionIdRef.current !== cacheSessionId) return
+    writeNativeSessionCache(cacheSessionId, messages)
   }, [isStreaming, messages, nativeSessionsAvailable, selectedSessionId, sessionHydrating])
 
   useEffect(() => {
@@ -1323,20 +2203,23 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     setNativeSessionsAvailable(false)
     setSessions([])
     setSessionHydrating(false)
+    activeNativeSessionIdRef.current = ''
     lastHydratedSessionIdRef.current = ''
   }, [status.connected, tunnelStatus.configured])
 
   useEffect(() => {
     if (!nativeSessionsAvailable) return
+    if (isStreaming) return
     if (!selectedSessionId || selectedSessionId === NEW_SESSION_VALUE) {
       lastHydratedSessionIdRef.current = selectedSessionId || NEW_SESSION_VALUE
-      setAutoPlayMediaMessageId('')
-      setMessages([])
-      setAutoScroll(true)
+      // Only clear if we're not actively sending (messages were just added by sendMessage)
+      if (messages.length === 0) {
+        setAutoPlayMediaMessageId('')
+        setAutoScroll(true)
+      }
       return
     }
 
-    if (isStreaming) return
     if (lastHydratedSessionIdRef.current === selectedSessionId && messages.length > 0) return
 
     lastHydratedSessionIdRef.current = selectedSessionId
@@ -1379,46 +2262,49 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   ])
 
   const handleDragStart = useCallback((event: React.MouseEvent) => {
+    if (embedded) return
     const target = event.target as HTMLElement
     if (target.closest('button, input, textarea, select, option, a, [data-no-drag]')) return
 
     event.preventDefault()
     setIsDragging(true)
     dragStart.current = { x: event.clientX - position.x, y: event.clientY - position.y }
-  }, [position])
+  }, [embedded, position])
 
   const handleDrag = useCallback((event: MouseEvent) => {
-    if (!isDragging) return
+    if (embedded || !isDragging) return
     const nextPos = {
       x: event.clientX - dragStart.current.x,
       y: Math.max(-8, event.clientY - dragStart.current.y),
     }
     setPosition(nextPos)
     localStorage.setItem(POS_KEY, JSON.stringify(nextPos))
-  }, [isDragging])
+  }, [embedded, isDragging])
 
   const handleDragEnd = useCallback(() => setIsDragging(false), [])
 
   const handleResizeStart = useCallback((event: React.MouseEvent) => {
+    if (embedded) return
     event.preventDefault()
     event.stopPropagation()
     setIsResizing(true)
     resizeStart.current = { x: event.clientX, y: event.clientY, w: size.w, h: size.h }
-  }, [size])
+  }, [embedded, size])
 
   const handleResize = useCallback((event: MouseEvent) => {
-    if (!isResizing) return
+    if (embedded || !isResizing) return
     const nextSize = {
       w: Math.max(MIN_WIDTH, resizeStart.current.w + (event.clientX - resizeStart.current.x)),
       h: Math.max(MIN_HEIGHT, resizeStart.current.h + (event.clientY - resizeStart.current.y)),
     }
     setSize(nextSize)
     localStorage.setItem(SIZE_KEY, JSON.stringify(nextSize))
-  }, [isResizing])
+  }, [embedded, isResizing])
 
   const handleResizeEnd = useCallback(() => setIsResizing(false), [])
 
   useEffect(() => {
+    if (embedded) return
     if (isDragging) {
       document.addEventListener('mousemove', handleDrag)
       document.addEventListener('mouseup', handleDragEnd)
@@ -1434,7 +2320,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       document.removeEventListener('mousemove', handleResize)
       document.removeEventListener('mouseup', handleResizeEnd)
     }
-  }, [handleDrag, handleDragEnd, handleResize, handleResizeEnd, isDragging, isResizing])
+  }, [embedded, handleDrag, handleDragEnd, handleResize, handleResizeEnd, isDragging, isResizing])
 
   const updatePanelSettings = useCallback((next: PanelSettings) => {
     setPanelSettings(next)
@@ -1456,6 +2342,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     setAutoPlayMediaMessageId('')
 
     if (nativeSessionsAvailable) {
+      activeNativeSessionIdRef.current = ''
       lastHydratedSessionIdRef.current = NEW_SESSION_VALUE
       setSelectedSessionId(NEW_SESSION_VALUE)
       setMessages([])
@@ -1473,22 +2360,31 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     abortRef.current?.abort()
     abortRef.current = null
     setIsStreaming(false)
-  }, [])
+    const sessionId = selectedSessionId && selectedSessionId !== NEW_SESSION_VALUE
+      ? selectedSessionId
+      : activeNativeSessionIdRef.current
+    if (nativeSessionsAvailable && sessionId) {
+      void hydrateSession(sessionId)
+    }
+  }, [hydrateSession, nativeSessionsAvailable, selectedSessionId])
 
   const sendMessage = useCallback(async () => {
     const prompt = input.trim()
     if (!prompt || isStreaming || !status.connected) return
 
+    const worldId = useOasisStore.getState().activeWorldId
     const useNativeSessions = nativeSessionsAvailable
-    const sessionIdForRequest = useNativeSessions && selectedSessionId && selectedSessionId !== NEW_SESSION_VALUE
-      ? selectedSessionId
+    const sessionIdForRequest = useNativeSessions
+      ? (
+          selectedSessionId && selectedSessionId !== NEW_SESSION_VALUE
+            ? selectedSessionId
+            : activeNativeSessionIdRef.current
+        )
       : ''
-    const history = useNativeSessions
-      ? []
-      : messages.map(message => ({
-          role: message.role === 'assistant' ? 'assistant' : 'user',
-          content: message.content,
-        }))
+    const history = messages.slice(-24).map(message => ({
+      role: message.role === 'assistant' ? 'assistant' : 'user',
+      content: message.content,
+    }))
 
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -1511,8 +2407,12 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     setInput('')
     setIsStreaming(true)
 
+    // Yield to the event loop so React paints the user message before the fetch blocks
+    await new Promise(resolve => setTimeout(resolve, 0))
+
     const controller = new AbortController()
     abortRef.current = controller
+    let resolvedSessionId = sessionIdForRequest
 
     try {
       const response = await fetch('/api/hermes', {
@@ -1521,6 +2421,11 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         body: JSON.stringify({
           message: prompt,
           history,
+          worldId,
+          playerContext: {
+            avatar: getPlayerAvatarPose(),
+            camera: getCameraSnapshot(),
+          },
           sessionMode: useNativeSessions ? 'native' : 'compat',
           sessionId: sessionIdForRequest || undefined,
         }),
@@ -1542,20 +2447,62 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       let assistantUsage: HermesUsage | undefined
       let finishReason: string | undefined
       let assistantError: string | undefined
-      let resolvedSessionId = sessionIdForRequest
       const toolMap = new Map<number, HermesToolCall>()
+      let dedupSnapshot = ''  // full text before tool_calls — used to skip re-sent chunks
+      let dedupPos = 0        // how far into the snapshot we've matched
+      let lastRenderTime = 0
 
       for await (const event of parseHermesSSE(response)) {
         if (controller.signal.aborted) break
 
         switch (event.type) {
-          case 'text':
-            assistantText += event.content
+          case 'text': {
+            const chunk = event.content
+            // After tool_calls, the API re-sends previous text. Skip chunks that match the snapshot.
+            if (dedupSnapshot && dedupPos < dedupSnapshot.length) {
+              const remaining = dedupSnapshot.length - dedupPos
+              if (chunk.length <= remaining) {
+                // Chunk fits within snapshot — check exact match
+                const expected = dedupSnapshot.slice(dedupPos, dedupPos + chunk.length)
+                if (chunk === expected) {
+                  dedupPos += chunk.length
+                  if (dedupPos >= dedupSnapshot.length) dedupSnapshot = ''
+                  break // skip — this is a re-send
+                }
+                // Chunk doesn't match — check if it's a trimmed/whitespace variant
+                if (chunk.trim() === expected.trim() && chunk.trim().length > 0) {
+                  dedupPos += chunk.length
+                  if (dedupPos >= dedupSnapshot.length) dedupSnapshot = ''
+                  break // skip — whitespace-variant re-send
+                }
+              } else {
+                // Chunk straddles the snapshot boundary — split it
+                const overlapPart = dedupSnapshot.slice(dedupPos)
+                if (chunk.startsWith(overlapPart)) {
+                  // Overlap matches, accept only the new portion past the snapshot
+                  dedupSnapshot = ''
+                  assistantText += chunk.slice(overlapPart.length)
+                  break
+                }
+                if (chunk.trimStart().startsWith(overlapPart.trimEnd()) && overlapPart.trim().length > 0) {
+                  dedupSnapshot = ''
+                  break // close enough — skip the whole chunk to avoid duplication
+                }
+              }
+              // True divergence — stop deduping, accept from here
+              dedupSnapshot = ''
+            }
+            assistantText += chunk
             break
+          }
           case 'reasoning':
             assistantReasoning += event.content
             break
           case 'tool': {
+            if (!toolMap.has(event.index) && assistantText.trim()) {
+              dedupSnapshot = assistantText
+              dedupPos = 0
+            }
             const current = toolMap.get(event.index) || {
               index: event.index,
               id: event.id,
@@ -1577,55 +2524,127 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             break
           case 'done':
             finishReason = event.finishReason || finishReason
+            // Snapshot text at tool_calls boundary — next turn will re-send it
+            if (event.finishReason === 'tool_calls' || event.finishReason === 'tool_use') {
+              dedupSnapshot = assistantText
+              dedupPos = 0
+            }
             break
           case 'error':
             assistantError = event.message
             break
           case 'meta':
             if (event.sessionId) {
-              resolvedSessionId = event.sessionId
-              setSelectedSessionId(event.sessionId)
+              const nextSessionId = event.sessionId
+              resolvedSessionId = nextSessionId
+              activeNativeSessionIdRef.current = nextSessionId
+              setSelectedSessionId(nextSessionId)
+              setSessions(previous => upsertHermesSessionSummary(
+                previous,
+                buildSyntheticHermesSessionSummary(nextSessionId, [...messages, userMessage, assistantMessage]),
+              ))
             }
             break
         }
 
-        const orderedTools = Array.from(toolMap.values()).sort((left, right) => left.index - right.index)
-        setMessages(previous => previous.map(message =>
-          message.id === assistantId
-            ? {
-                ...message,
-                content: assistantText,
-                reasoning: assistantReasoning || undefined,
-                tools: orderedTools.length ? orderedTools : undefined,
-                usage: assistantUsage,
-                finishReason,
-                error: assistantError,
-              }
-            : message
-        ))
+        // Throttle re-renders for smooth streaming feel (~33ms)
+        const now = Date.now()
+        if (now - lastRenderTime >= STREAM_RENDER_INTERVAL_MS || event.type === 'done' || event.type === 'error') {
+          lastRenderTime = now
+          const orderedTools = Array.from(toolMap.values()).sort((left, right) => left.index - right.index)
+          const liveTools = orderedTools.length ? orderedTools : extractHermesProgressToolCalls(assistantText)
+          setMessages(previous => previous.map(message =>
+            message.id === assistantId
+              ? {
+                  ...message,
+                  content: sanitizeHermesAssistantText(assistantText),
+                  reasoning: assistantReasoning || undefined,
+                  tools: liveTools.length ? liveTools : undefined,
+                  usage: assistantUsage,
+                  finishReason,
+                  error: assistantError,
+                }
+              : message
+          ))
+        }
+      }
+
+      const orderedTools = Array.from(toolMap.values()).sort((left, right) => left.index - right.index)
+      const finalTools = orderedTools.length ? orderedTools : extractHermesProgressToolCalls(assistantText)
+      const finalAssistantText = sanitizeHermesAssistantText(assistantText)
+      if (!finishReason && (assistantError || finalAssistantText.trim() || assistantReasoning.trim() || finalTools.length > 0)) {
+        finishReason = assistantError ? 'error' : 'stop'
       }
 
       const finalAssistantMessage: ChatMessage = {
         ...assistantMessage,
-        content: assistantText,
+        content: finalAssistantText,
         reasoning: assistantReasoning || undefined,
-        tools: Array.from(toolMap.values()).sort((left, right) => left.index - right.index),
+        tools: finalTools,
         usage: assistantUsage,
         finishReason,
         error: assistantError,
       }
 
-      let voiceTargetMessage = finalAssistantMessage
-      if (useNativeSessions && resolvedSessionId) {
-        const mergedMessages = await hydrateSession(resolvedSessionId, {
-          mergeMessages: [...messages, userMessage, finalAssistantMessage],
+      setMessages(previous => {
+        let replaced = false
+        const next = previous.map(message => {
+          if (message.id !== assistantId) return message
+          replaced = true
+          return finalAssistantMessage
         })
-        const mergedAssistant = [...mergedMessages].reverse().find(message => message.role === 'assistant')
-        if (mergedAssistant) {
-          voiceTargetMessage = mergedAssistant
-        }
+        return collapseDuplicateHermesMessages(replaced ? next : [...next, finalAssistantMessage])
+      })
+
+      let settledAssistantMessage = finalAssistantMessage
+      if (useNativeSessions && resolvedSessionId) {
+        activeNativeSessionIdRef.current = resolvedSessionId
         lastHydratedSessionIdRef.current = resolvedSessionId
         void loadSessions(resolvedSessionId)
+        settledAssistantMessage = await enrichAssistantToolsFromSession(resolvedSessionId, finalAssistantMessage)
+        if (hermesToolSignature(settledAssistantMessage.tools) !== hermesToolSignature(finalAssistantMessage.tools)) {
+          setMessages(previous => collapseDuplicateHermesMessages(previous.map(message =>
+            message.id === assistantId
+              ? settledAssistantMessage
+              : message
+          )))
+        }
+        const mergedMessages = collapseDuplicateHermesMessages([
+          ...messages,
+          userMessage,
+          settledAssistantMessage,
+        ])
+        writeNativeSessionCache(resolvedSessionId, mergedMessages)
+        setSessions(previous => upsertHermesSessionSummary(
+          previous,
+          buildSyntheticHermesSessionSummary(resolvedSessionId, mergedMessages),
+        ))
+      }
+      let voiceTargetMessage = settledAssistantMessage
+
+      const latestImageMediaRef = extractHermesMediaReferences(settledAssistantMessage.content)
+        .reverse()
+        .find(ref => ref.mediaType === 'image')
+      if (latestImageMediaRef?.path) {
+        setVisionCaptureError('')
+        setVisionCaptureUrl(buildHermesMediaUrl(latestImageMediaRef.path))
+        setVisionCapturedAt(Date.now())
+      }
+
+      if (!assistantError && settledAssistantMessage.tools?.length && hasHydratedToolArguments(settledAssistantMessage.tools)) {
+        const latestVisionTool = [...settledAssistantMessage.tools]
+          .reverse()
+          .find(tool => isHermesVisionTool(tool.name))
+        if (latestVisionTool) {
+          const signature = `${settledAssistantMessage.id}:${latestVisionTool.name}:${latestVisionTool.arguments}`
+          if (lastVisionToolSignatureRef.current !== signature) {
+            lastVisionToolSignatureRef.current = signature
+            void captureHermesVision(latestVisionTool, {
+              attachToMessageId: settledAssistantMessage.id,
+              ...(resolvedSessionId ? { sessionId: resolvedSessionId } : {}),
+            })
+          }
+        }
       }
 
       if (!assistantError && voiceOutputEnabled) {
@@ -1640,7 +2659,12 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         }
       }
     } catch (error) {
-      if ((error as Error).name === 'AbortError') return
+      if ((error as Error).name === 'AbortError') {
+        if (useNativeSessions && resolvedSessionId) {
+          void hydrateSession(resolvedSessionId)
+        }
+        return
+      }
       setMessages(previous => previous.map(message =>
         message.id === assistantId
           ? {
@@ -1654,17 +2678,21 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       setIsStreaming(false)
     }
   }, [
+    hydrateSession,
     input,
     isStreaming,
     loadSessions,
     messages,
     nativeSessionsAvailable,
+    captureHermesVision,
+    enrichAssistantToolsFromSession,
     selectedSessionId,
     status.connected,
     voiceOutputEnabled,
   ])
 
-  if (!isOpen || typeof document === 'undefined') return null
+  const isVisible = embedded || isOpen
+  if (!isVisible || typeof document === 'undefined') return null
 
   const rgb = panelSettings.bgColor.match(/[0-9a-f]{2}/gi)?.map(part => parseInt(part, 16)) || [18, 12, 4]
   const backgroundStyle = panelSettings.blur > 0 && panelSettings.opacity < 1
@@ -1676,28 +2704,24 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 
   const canSend = status.connected && Boolean(input.trim()) && !isStreaming
   const canMutateAnyConfig = Boolean(status.canMutateConfig || tunnelStatus.canMutateConfig)
-  const tunnelLabel = tunnelStatus.running
-    ? 'ssh running'
-    : tunnelStatus.configured
-      ? tunnelStatus.autoStart
-        ? 'ssh saved'
-        : 'ssh manual'
-      : 'direct'
-  const sessionValue = nativeSessionsAvailable ? (selectedSessionId || sessions[0]?.id || NEW_SESSION_VALUE) : NEW_SESSION_VALUE
+  const tunnelLabel = getTunnelLabel(tunnelStatus)
+  const tunnelTitle = buildTunnelTitle(tunnelStatus)
+  const sessionValue = nativeSessionsAvailable
+    ? (selectedSessionId || activeNativeSessionIdRef.current || sessions[0]?.id || NEW_SESSION_VALUE)
+    : NEW_SESSION_VALUE
   const activeSession = sessions.find(session => session.id === sessionValue) || null
 
-  return createPortal(
+  const panelBody = (
     <div
-      data-menu-portal="hermes-panel"
+      data-menu-portal={embedded ? undefined : 'hermes-panel'}
       data-ui-panel
-      className="fixed rounded-xl flex flex-col overflow-hidden"
+      className={`${embedded ? 'relative w-full h-full' : 'fixed'} rounded-xl flex flex-col overflow-hidden`}
       style={{
-        zIndex: panelZIndex,
-        left: position.x,
-        top: position.y,
-        width: size.w,
-        height: size.h,
+        ...(embedded ? {} : { zIndex: panelZIndex, left: position.x, top: position.y }),
+        width: embedded ? '100%' : size.w,
+        height: embedded ? '100%' : size.h,
         userSelect: isDragging || isResizing ? 'none' : 'auto',
+        ...(embedded ? EMBEDDED_SCROLL_SURFACE_STYLE : {}),
         ...backgroundStyle,
         color: 'rgba(255, 245, 220, 0.96)',
         fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif',
@@ -1710,14 +2734,15 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       onMouseDown={event => {
         event.stopPropagation()
         focusPanelUI()
-        useOasisStore.getState().bringPanelToFront('hermes')
+        if (!embedded) useOasisStore.getState().bringPanelToFront('hermes')
       }}
       onPointerDown={event => event.stopPropagation()}
+      onClick={embedded ? event => event.stopPropagation() : undefined}
     >
       <div
         data-drag-handle
-        onMouseDown={handleDragStart}
-        className="flex items-center justify-between px-3 py-2 border-b border-white/10 cursor-grab active:cursor-grabbing select-none"
+        onMouseDown={embedded ? undefined : handleDragStart}
+        className={`flex items-center justify-between px-3 py-2 border-b border-white/10 select-none ${embedded ? '' : 'cursor-grab active:cursor-grabbing'}`}
         style={{
           background: isStreaming
             ? 'linear-gradient(135deg, rgba(245,158,11,0.16) 0%, rgba(0,0,0,0) 100%)'
@@ -1729,6 +2754,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           <span className="text-amber-300 font-bold text-sm tracking-wide">Hermes</span>
           <StatusBadge status={status} loading={statusLoading || isConnecting} />
           <SourceBadge source={status.source} />
+          <TunnelBadge status={tunnelStatus} />
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -1757,34 +2783,6 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             stop
           </button>
           <button
-            onClick={() => {
-              void loadStatus()
-              if (status.connected && tunnelStatus.configured) {
-                lastHydratedSessionIdRef.current = ''
-                void loadSessions(selectedSessionId || undefined)
-                if (selectedSessionId && selectedSessionId !== NEW_SESSION_VALUE && !isStreaming) {
-                  void hydrateSession(selectedSessionId)
-                }
-              }
-            }}
-            className="px-1.5 py-0.5 rounded text-[10px] font-mono text-amber-200/70 hover:text-amber-300 border border-white/10 hover:border-amber-500/30 transition-all cursor-pointer"
-            title="Refresh Hermes status and native sessions"
-          >
-            refresh
-          </button>
-          <button
-            onClick={toggleDetails}
-            className="px-1.5 py-0.5 rounded text-[10px] font-mono border transition-all cursor-pointer"
-            style={{
-              color: showDetails ? '#fbbf24' : '#9ca3af',
-              borderColor: showDetails ? 'rgba(251,191,36,0.3)' : 'rgba(255,255,255,0.08)',
-              background: showDetails ? 'rgba(251,191,36,0.08)' : 'transparent',
-            }}
-            title="Toggle reasoning and tool details"
-          >
-            info
-          </button>
-          <button
             onClick={() => setShowAvatarGallery(true)}
             className="px-1.5 py-0.5 rounded text-[10px] font-mono border transition-all cursor-pointer"
             style={{
@@ -1796,32 +2794,40 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           >
             avatar
           </button>
-          <div className="relative">
+          <button
+            onClick={() => void captureHermesVision()}
+            className="px-1.5 py-0.5 rounded text-[10px] font-mono border transition-all cursor-pointer disabled:opacity-50"
+            style={{
+              color: visionCaptureUrl ? '#7dd3fc' : '#d1d5db',
+              borderColor: visionCaptureUrl ? 'rgba(125,211,252,0.28)' : 'rgba(255,255,255,0.08)',
+              background: visionCaptureUrl ? 'rgba(14,116,144,0.14)' : 'transparent',
+            }}
+            title="Capture Hermes' current phantom-camera view"
+            disabled={isCapturingVision}
+          >
+            {isCapturingVision ? 'view...' : 'view'}
+          </button>
+          <div className="relative flex items-center">
             <button
               onClick={() => setShowSettings(current => !current)}
               className="px-1.5 py-0.5 rounded text-[10px] font-mono text-amber-200/70 hover:text-amber-300 border border-white/10 hover:border-amber-500/30 transition-all cursor-pointer"
               title="Panel settings"
             >
-              set
+              {'\u2699'}
             </button>
-            {showSettings && <SettingsDropdown settings={panelSettings} onChange={updatePanelSettings} />}
+            {showSettings && <SettingsDropdown settings={panelSettings} onChange={updatePanelSettings} voiceOutput={voiceOutputEnabled} onVoiceOutputChange={(v) => { setVoiceOutputEnabled(v); if (!v) setAutoPlayMediaMessageId('') }} />}
           </div>
-          <button
-            onClick={clearChat}
-            className="px-1.5 py-0.5 rounded text-[10px] font-mono text-amber-100/80 hover:text-red-200 border border-white/10 hover:border-red-500/30 transition-all cursor-pointer"
-            title="Clear chat"
-          >
-            clear
-          </button>
-          <button onClick={onClose} className="text-amber-100/80 hover:text-white transition-colors text-lg leading-none cursor-pointer" title="Close">
-            x
-          </button>
+          {!hideCloseButton && (
+            <button onClick={onClose} className="text-amber-100/80 hover:text-white transition-colors text-lg leading-none cursor-pointer" title="Close">
+              x
+            </button>
+          )}
         </div>
       </div>
 
       <div
         data-drag-handle
-        onMouseDown={handleDragStart}
+        onMouseDown={embedded ? undefined : handleDragStart}
         className="px-3 py-2 border-b border-white/5 flex items-center gap-2 text-[10px] font-mono"
         style={{ background: 'rgba(0,0,0,0.22)' }}
       >
@@ -1829,7 +2835,16 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         <select
           data-no-drag
           value={sessionValue}
-          onChange={event => setSelectedSessionId(event.target.value)}
+          onChange={event => {
+            const nextSessionId = event.target.value
+            activeNativeSessionIdRef.current = nextSessionId === NEW_SESSION_VALUE ? '' : nextSessionId
+            setSelectedSessionId(nextSessionId)
+            if (nextSessionId === NEW_SESSION_VALUE) {
+              setMessages([])
+              setAutoPlayMediaMessageId('')
+              setAutoScroll(true)
+            }
+          }}
           disabled={!nativeSessionsAvailable || sessionsLoading || isStreaming}
           className="min-w-0 flex-1 rounded border border-white/10 bg-black/30 px-2 py-1 text-[10px] text-amber-100 outline-none disabled:opacity-50"
         >
@@ -1843,6 +2858,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         <button
           data-no-drag
           onClick={() => {
+            activeNativeSessionIdRef.current = ''
             setSelectedSessionId(NEW_SESSION_VALUE)
             setMessages([])
             setAutoScroll(true)
@@ -1855,7 +2871,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         </button>
         <span
           className="hidden md:block text-amber-100/65 truncate max-w-[120px]"
-          title={tunnelStatus.commandPreview || 'No managed SSH tunnel saved'}
+          title={tunnelStatus.commandPreview ? `${tunnelTitle}\n${tunnelStatus.commandPreview}` : tunnelTitle}
         >
           {nativeSessionsAvailable ? (activeSession ? activeSession.source : 'native') : tunnelLabel}
         </span>
@@ -1864,7 +2880,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             {activeSession.preview || activeSession.id}
           </span>
         ) : (
-          status.base && showDetails && (
+          status.base && (
             <span className="hidden lg:block text-amber-100/65 truncate max-w-[180px]" title={status.base}>
               {status.base}
             </span>
@@ -1875,6 +2891,12 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       {connectionError && (
         <div className="px-3 py-1.5 text-[10px] text-red-200 border-b border-red-500/20 bg-red-500/10 font-mono">
           {connectionError}
+        </div>
+      )}
+
+      {!connectionError && status.connected && tunnelStatus.configured && !tunnelStatus.healthy && tunnelStatus.issues[0] && (
+        <div className="px-3 py-1.5 text-[10px] text-amber-100 border-b border-amber-500/20 bg-amber-500/10 font-mono">
+          {tunnelStatus.issues[0]}
         </div>
       )}
 
@@ -1899,9 +2921,43 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       <div className="relative flex-1 min-h-0">
         <div
           ref={scrollContainerRef}
+          data-agent-window-scroll-root=""
           className="h-full overflow-y-auto px-3 py-3 space-y-3 min-h-0"
-          style={{ scrollbarWidth: 'thin', scrollbarColor: '#4b5563 transparent' }}
+          style={{ scrollbarWidth: 'thin', scrollbarColor: '#4b5563 transparent', ...EMBEDDED_SCROLL_SURFACE_STYLE }}
         >
+          {(visionCaptureUrl || visionCaptureError || hermesAvatar) && (
+            <div
+              className="rounded-xl border px-3 py-2 space-y-2"
+              style={{
+                borderColor: visionCaptureError ? 'rgba(239,68,68,0.35)' : 'rgba(56,189,248,0.25)',
+                background: 'rgba(7,12,20,0.75)',
+              }}
+            >
+              <div className="flex items-center justify-between gap-3 text-[10px] font-mono">
+                <span className="text-sky-200">Hermes vision</span>
+                <span className="text-gray-500">
+                  {hermesAvatar ? 'avatar online' : 'no avatar'}
+                  {visionCapturedAt ? ` - ${new Date(visionCapturedAt).toLocaleTimeString()}` : ''}
+                </span>
+              </div>
+              {visionCaptureUrl && (
+                <MediaBubble
+                  url={visionCaptureUrl}
+                  mediaType="image"
+                  prompt="Hermes vision"
+                  compact
+                  galleryScopeId="hermes-thread"
+                />
+              )}
+              {!visionCaptureUrl && hermesAvatar && !visionCaptureError && (
+                <div className="text-[11px] text-gray-400">Tap `view` and Hermes will show you what his phantom camera sees.</div>
+              )}
+              {visionCaptureError && (
+                <div className="text-[11px] text-red-300">{visionCaptureError}</div>
+              )}
+            </div>
+          )}
+
           {sessionHydrating && (
             <div className="px-3 py-2 rounded-lg text-[11px] font-mono text-amber-100 border border-amber-500/20 bg-black/30">
               loading session...
@@ -1910,40 +2966,35 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 
           {messages.length === 0 && (
             <div className="h-full flex flex-col justify-center text-center px-4">
-              <div className="text-4xl mb-3 text-amber-300">?</div>
-              <div className="text-sm text-amber-100 mb-1">Your Hermes link lives here.</div>
+              <div className="text-4xl mb-3 text-amber-300">☤</div>
+              <div className="text-sm text-amber-100 mb-1">Hermes is in the Oasis.</div>
               {status.connected ? (
                 <>
                   <div className="text-xs text-amber-100/80 mb-4">
-                    This panel talks to Hermes through the local Oasis server route, so the browser never sees your VPS API key.
+                    Try one of these to see your agent interact with the 3D world:
                   </div>
-                  {nativeSessionsAvailable && (
-                    <div className="text-[11px] text-amber-200/80 mb-4 font-mono">
-                      Native Hermes sessions are live. Pick one above or start a fresh chat.
-                    </div>
-                  )}
-                  <div className="space-y-1 text-[11px] font-mono text-amber-100/80">
-                    <button className="block w-full hover:text-amber-300 transition-colors cursor-pointer" onClick={() => setInput('Summarize what tools and capabilities you expose right now.')}>
-                      Summarize what tools you expose right now.
+                  <div className="space-y-2 text-[11px] font-mono text-amber-100/80">
+                    <button className="block w-full text-left hover:text-amber-300 transition-colors cursor-pointer px-2 py-1 rounded border border-amber-500/15 hover:border-amber-500/30" onClick={() => setInput('What world am I in? Call get_world_info.')}>
+                      <span className="text-emerald-400/80">easy</span> — What world am I in? Call get_world_info.
                     </button>
-                    <button className="block w-full hover:text-amber-300 transition-colors cursor-pointer" onClick={() => setInput('What can you tell me about your current runtime, transport, and constraints?')}>
-                      What can you tell me about your current runtime, transport, and constraints?
+                    <button className="block w-full text-left hover:text-amber-300 transition-colors cursor-pointer px-2 py-1 rounded border border-amber-500/15 hover:border-amber-500/30" onClick={() => setInput('Place a tree, a bench, and a lamp post in a small park arrangement.')}>
+                      <span className="text-amber-400/80">build</span> — Place a tree, a bench, and a lamp post in a park.
                     </button>
-                    <button className="block w-full hover:text-amber-300 transition-colors cursor-pointer" onClick={() => setInput('Help me design an Oasis connector for you, but do not modify files yet.')}>
-                      Help me design an Oasis connector for you, but do not modify files yet.
+                    <button className="block w-full text-left hover:text-amber-300 transition-colors cursor-pointer px-2 py-1 rounded border border-amber-500/15 hover:border-amber-500/30" onClick={() => setInput('Craft a medieval watchtower with flame torches, then set the sky to night and paint a stone path around it.')}>
+                      <span className="text-red-400/80">epic</span> — Craft a watchtower with torches, night sky, stone path.
                     </button>
                   </div>
                 </>
               ) : (
                 <>
                   <div className="text-xs text-amber-100/80 mb-4">
-                    Save Hermes connection data once, optionally save SSH once, then hit connect whenever you want this panel live.
+                    Connect your Hermes agent to co-build in this 3D world.
                   </div>
                   <div className="text-[11px] text-left font-mono rounded-lg border border-amber-500/20 bg-black/30 px-3 py-3 space-y-1 text-amber-100/85">
-                    <div>1. Ask Hermes for an Oasis connection block.</div>
-                    <div>2. {canMutateAnyConfig ? 'Click `config` and paste the block.' : 'Open this panel on localhost to edit saved connection data.'}</div>
-                    <div>3. Optional: paste your SSH tunnel command in the second field.</div>
-                    <div>4. Press `connect` and start chatting.</div>
+                    <div>1. {canMutateAnyConfig ? 'Click `config` above.' : 'Open this panel on localhost to edit saved connection data.'}</div>
+                    <div>2. Paste your Hermes API base URL and key.</div>
+                    <div>3. If remote, paste the SSH tunnel command too.</div>
+                    <div>4. Hit `connect` and start building.</div>
                   </div>
                   {status.error && (
                     <div className="mt-3 text-xs text-red-300">{status.error}</div>
@@ -1953,8 +3004,8 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             </div>
           )}
 
-          {messages.map(message => (
-            <div key={message.id} className="space-y-2">
+          {messages.map((message, messageIndex) => (
+            <div key={`${message.id}-${message.role}-${messageIndex}`} className="space-y-2">
               {message.role === 'user' ? (
                 <div className="flex justify-end">
                   <div
@@ -1987,7 +3038,7 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                     </div>
                   )}
 
-                  {showDetails && message.reasoning && (
+                  {message.reasoning && (
                     <CollapsibleBlock
                       label={`reasoning (${message.reasoning.length} chars)`}
                       icon="::"
@@ -1997,15 +3048,20 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                     />
                   )}
 
-                  {showDetails && message.tools && message.tools.length > 0 && (
+                  {message.tools && message.tools.length > 0 && (
                     <div className="space-y-1.5">
                       {message.tools.map(tool => (
-                        <ToolDetails key={`${message.id}-${tool.index}-${tool.id || tool.name}`} tool={tool} />
+                        <ToolDetails
+                          key={`${message.id}-${tool.index}-${tool.id || tool.name}`}
+                          tool={tool}
+                          completed={!isStreaming || message !== messages[messages.length - 1]}
+                          failed={Boolean(message.error) || message.finishReason === 'error'}
+                        />
                       ))}
                     </div>
                   )}
 
-                  {showDetails && message.usage && (
+                  {message.usage && (
                     <CollapsibleBlock
                       label={`usage (${message.usage.totalTokens || 0} total tokens)`}
                       icon="##"
@@ -2015,11 +3071,10 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                     />
                   )}
 
-                  {(message.finishReason || (isStreaming && message === messages[messages.length - 1])) && (
-                    <div className="text-[10px] font-mono text-amber-100/65 px-1">
-                      {isStreaming && message === messages[messages.length - 1]
-                        ? 'streaming...'
-                        : `finish_reason=${message.finishReason}`}
+                  {isStreaming && message === messages[messages.length - 1] && (
+                    <div className="flex items-center gap-2 text-[10px] font-mono text-amber-200/50 px-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                      streaming...
                     </div>
                   )}
                 </div>
@@ -2037,7 +3092,9 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
               className="pointer-events-auto px-2 py-1 rounded-full text-[10px] font-mono border border-amber-500/25 bg-black/70 text-amber-100 hover:border-amber-400/50"
               onClick={() => {
                 setAutoScroll(true)
-                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+                if (scrollContainerRef.current) {
+                  scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
+                }
               }}
             >
               v auto-scroll
@@ -2050,19 +3107,6 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         {!status.connected && status.error && (
           <div className="text-[10px] text-red-300 mb-2">{status.error}</div>
         )}
-        {nativeSessionsAvailable && (
-          <div className="text-[10px] text-amber-100/80 font-mono mb-2 truncate" title={activeSession?.id || 'New Oasis session'}>
-            {sessionValue === NEW_SESSION_VALUE
-              ? 'native session | new chat'
-              : `native session | ${activeSession?.title || activeSession?.id || sessionValue}`}
-          </div>
-        )}
-        {tunnelStatus.configured && (
-          <div className="text-[10px] text-amber-100/60 font-mono mb-2 truncate" title={tunnelStatus.commandPreview || tunnelStatus.command}>
-            {tunnelStatus.running ? 'managed ssh live' : tunnelStatus.autoStart ? 'managed ssh saved' : 'managed ssh saved (manual)'}
-            {tunnelStatus.commandPreview ? ` | ${tunnelStatus.commandPreview}` : ''}
-          </div>
-        )}
         <div className="flex gap-2 items-end">
           <div className="flex flex-col gap-2">
             <AgentVoiceInputButton
@@ -2072,17 +3116,6 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
               className="px-2 py-2 rounded-lg text-[10px] font-mono border border-white/10 text-amber-100 disabled:opacity-30 disabled:cursor-not-allowed"
               titleReady="Record from your device mic and drop the local Whisper transcript into Hermes."
             />
-            <button
-              data-no-drag
-              onClick={() => {
-                if (voiceOutputEnabled) setAutoPlayMediaMessageId('')
-                setVoiceOutputEnabled(current => !current)
-              }}
-              className="px-2 py-2 rounded-lg text-[10px] font-mono border border-white/10 text-amber-100"
-              title="Toggle auto-play for Hermes audio notes only"
-            >
-              {voiceOutputEnabled ? 'audio on' : 'audio off'}
-            </button>
           </div>
           <textarea
             ref={inputRef}
@@ -2275,15 +3308,23 @@ export function HermesPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         />
       )}
 
-      <div
-        onMouseDown={handleResizeStart}
-        className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize"
-        style={{
-          background: 'linear-gradient(135deg, transparent 50%, rgba(245,158,11,0.42) 50%)',
-          borderRadius: '0 0 12px 0',
-        }}
-      />
-    </div>,
+      {!embedded && (
+        <div
+          onMouseDown={handleResizeStart}
+          className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize"
+          style={{
+            background: 'linear-gradient(135deg, transparent 50%, rgba(245,158,11,0.42) 50%)',
+            borderRadius: '0 0 12px 0',
+          }}
+        />
+      )}
+    </div>
+  )
+
+  if (embedded) return panelBody
+
+  return createPortal(
+    panelBody,
     document.body
   )
 }

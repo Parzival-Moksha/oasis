@@ -105,7 +105,10 @@ describe('TOOL_NAMES', () => {
     expect(TOOL_NAMES).toContain('place_object')
     expect(TOOL_NAMES).toContain('set_avatar')
     expect(TOOL_NAMES).toContain('walk_avatar_to')
+    expect(TOOL_NAMES).toContain('list_avatar_animations')
     expect(TOOL_NAMES).toContain('play_avatar_animation')
+    expect(TOOL_NAMES).toContain('get_craft_guide')
+    expect(TOOL_NAMES).toContain('get_craft_job')
     expect(TOOL_NAMES).toContain('set_sky')
     expect(TOOL_NAMES).toContain('clear_world')
     expect(TOOL_NAMES).toContain('screenshot_viewport')
@@ -359,6 +362,33 @@ describe('isScreenshotPending', () => {
     expect(isScreenshotPending()).toBe(false)
   })
 
+  it('accepts lookat as an alias for explicit look-at screenshot views', async () => {
+    const pendingResult = callTool('screenshot_viewport', {
+      defaultAgentType: 'hermes',
+      views: [{
+        id: 'side-angle',
+        mode: 'lookat',
+        cameraPosition: [5, 2.5, 40],
+        cameraTarget: [1.64, 1, 38.08],
+      }],
+    })
+
+    const request = getPendingScreenshotRequest()
+    expect(request?.requesterAgentType).toBe('hermes')
+    expect(request?.views[0]).toMatchObject({
+      id: 'side-angle',
+      mode: 'look-at',
+      agentType: 'hermes',
+      position: [5, 2.5, 40],
+      target: [1.64, 1, 38.08],
+    })
+
+    expect(deliverScreenshot('lookat-alias-base64', request?.id)).toBe(true)
+    const result = await pendingResult
+    expect(result.ok).toBe(true)
+    expect(isScreenshotPending()).toBe(false)
+  })
+
   it('normalizes third-person follow screenshots for embodied self-checks', async () => {
     const pendingResult = callTool('screenshot_viewport', {
       defaultAgentType: 'merlin',
@@ -405,6 +435,28 @@ describe('isScreenshotPending', () => {
     expect(isScreenshotPending()).toBe(false)
   })
 
+  it('defaults screenshot_avatar to the requester agent when defaultAgentType is provided', async () => {
+    const pendingResult = callTool('screenshot_avatar', {
+      defaultAgentType: 'hermes',
+      worldId: 'world-hermes',
+    })
+
+    const request = getPendingScreenshotRequest({ worldId: 'world-hermes' })
+    expect(request?.requesterAgentType).toBe('hermes')
+    expect(request?.views[0]).toMatchObject({
+      id: 'hermes-portrait',
+      mode: 'avatar-portrait',
+      agentType: 'hermes',
+      distance: 2.75,
+      heightOffset: 1.55,
+    })
+
+    expect(deliverScreenshot('hermes-portrait-base64', request?.id)).toBe(true)
+    const result = await pendingResult
+    expect(result.ok).toBe(true)
+    expect(isScreenshotPending()).toBe(false)
+  })
+
   it('builds a third-person player avatar view via screenshot_avatar', async () => {
     const pendingResult = callTool('screenshot_avatar', {
       subject: 'player',
@@ -446,6 +498,34 @@ describe('isScreenshotPending', () => {
     expect(result.data).toMatchObject({ base64: 'real-base64' })
     expect(isScreenshotPending()).toBe(false)
   })
+
+  it('filters pending screenshot requests by world id when asked', async () => {
+    const worldAPending = callTool('screenshot_viewport', {
+      worldId: 'world-a',
+      views: [{ id: 'world-a-view', mode: 'current' }],
+    })
+    const worldBPending = callTool('screenshot_viewport', {
+      worldId: 'world-b',
+      views: [{ id: 'world-b-view', mode: 'current' }],
+    })
+
+    expect(getPendingScreenshotRequest({ worldId: 'world-a' })).toMatchObject({
+      worldId: 'world-a',
+      views: [expect.objectContaining({ id: 'world-a-view' })],
+      settleMs: 80,
+    })
+    expect(getPendingScreenshotRequest({ worldId: 'world-b' })).toMatchObject({
+      worldId: 'world-b',
+      views: [expect.objectContaining({ id: 'world-b-view' })],
+      settleMs: 80,
+    })
+
+    expect(deliverScreenshot('world-a-base64', getPendingScreenshotRequest({ worldId: 'world-a' })?.id)).toBe(true)
+    expect(deliverScreenshot('world-b-base64', getPendingScreenshotRequest({ worldId: 'world-b' })?.id)).toBe(true)
+
+    await expect(worldAPending).resolves.toMatchObject({ ok: true })
+    await expect(worldBPending).resolves.toMatchObject({ ok: true })
+  })
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -463,6 +543,7 @@ describe('clear_world', () => {
   it('succeeds with confirm: true and existing world', async () => {
     const world = makeWorldRow({
       catalogPlacements: [{ id: 'obj1', catalogId: 'antenna1', name: 'A', glbPath: '/x', position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 }],
+      conjuredAssetIds: ['asset-123'],
     })
     vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
     vi.mocked(prisma.world.update).mockResolvedValue(world)
@@ -470,6 +551,9 @@ describe('clear_world', () => {
     const result = await callTool('clear_world', { confirm: true })
     expect(result.ok).toBe(true)
     expect(result.message).toContain('cleared')
+    const updatePayload = vi.mocked(prisma.world.update).mock.calls[0]?.[0]
+    const savedState = JSON.parse(String(updatePayload?.data?.data || '{}'))
+    expect(savedState.conjuredAssetIds).toEqual([])
   })
 })
 
@@ -511,6 +595,24 @@ describe('agent avatar tools', () => {
     expect(vi.mocked(prisma.world.update)).toHaveBeenCalled()
   })
 
+  it('set_avatar repairs invalid avatar URLs instead of persisting broken ones', async () => {
+    const world = makeWorldRow()
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+
+    const result = await callTool('set_avatar', {
+      agent: 'hermes',
+      avatarUrl: '/avatars/hermes.glb#vrm',
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('Using Cool Alien')
+
+    const updatePayload = vi.mocked(prisma.world.update).mock.calls[0]?.[0]
+    const savedState = JSON.parse(String(updatePayload?.data?.data || '{}'))
+    expect(savedState.agentAvatars[0]?.avatar3dUrl).toBe('/avatars/gallery/CoolAlien.vrm')
+  })
+
   it('walk_avatar_to stores a move target for the avatar', async () => {
     const world = makeWorldRow({
       agentAvatars: [{
@@ -533,6 +635,74 @@ describe('agent avatar tools', () => {
 
     expect(result.ok).toBe(true)
     expect(result.message).toContain('walking')
+    const updatePayload = vi.mocked(prisma.world.update).mock.calls[0]?.[0]
+    const savedState = JSON.parse(String(updatePayload?.data?.data || '{}'))
+    expect(savedState.agentAvatars[0]?.position).toEqual([0, 0, 0])
+  })
+
+  it('walk_avatar_to clears stale looping avatar animations when movement starts', async () => {
+    const world = makeWorldRow({
+      agentAvatars: [{
+        id: 'agent-avatar-hermes',
+        agentType: 'hermes',
+        avatar3dUrl: '/avatars/gallery/CoolAlien.vrm',
+        position: [0, 0, 0],
+        rotation: [0, 0, 0],
+        scale: 1.15,
+      }],
+      behaviors: {
+        'agent-avatar-hermes': {
+          visible: true,
+          movement: { type: 'static' },
+          animation: {
+            clipName: 'lib:ual-capoeira',
+            loop: 'repeat',
+            speed: 1,
+          },
+        },
+      },
+    })
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+
+    const result = await callTool('walk_avatar_to', {
+      avatarId: 'agent-avatar-hermes',
+      position: [2, 0, 3],
+    })
+
+    expect(result.ok).toBe(true)
+    const updatePayload = vi.mocked(prisma.world.update).mock.calls[0]?.[0]
+    const savedState = JSON.parse(String(updatePayload?.data?.data || '{}'))
+    expect(savedState.behaviors?.['agent-avatar-hermes']?.animation).toBeUndefined()
+    expect(savedState.behaviors?.['agent-avatar-hermes']?.moveTarget).toEqual([2, 0, 3])
+  })
+
+  it('list_avatar_animations exposes exact supported clip ids', async () => {
+    const result = await callTool('list_avatar_animations', {
+      query: 'dance',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.data).toMatchObject({
+      animations: expect.arrayContaining([
+        expect.objectContaining({ id: 'ual-dance', clipName: 'lib:ual-dance' }),
+      ]),
+    })
+  })
+
+  it('get_craft_guide exposes the self-crafting schema', async () => {
+    const result = await callTool('get_craft_guide', {})
+
+    expect(result.ok).toBe(true)
+    expect(result.data).toMatchObject({
+      strategyDefault: 'agent',
+      geometryTypes: expect.arrayContaining(['box', 'cylinder']),
+      shaderTypes: expect.arrayContaining(['flame', 'crystal']),
+      animationTypes: expect.arrayContaining(['rotate', 'bob']),
+      example: expect.objectContaining({
+        objects: expect.any(Array),
+      }),
+    })
   })
 
   it('play_avatar_animation stores a behavior animation clip', async () => {
@@ -556,7 +726,132 @@ describe('agent avatar tools', () => {
     })
 
     expect(result.ok).toBe(true)
-    expect(result.message).toContain('dance')
+    expect(result.message).toContain('ual-dance')
+  })
+
+  it('play_avatar_animation defaults to loop once when loop is omitted', async () => {
+    const world = makeWorldRow({
+      agentAvatars: [{
+        id: 'agent-avatar-hermes',
+        agentType: 'hermes',
+        avatar3dUrl: '/avatars/gallery/CoolAlien.vrm',
+        position: [0, 0, 0],
+        rotation: [0, 0, 0],
+        scale: 1.15,
+      }],
+    })
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+
+    const result = await callTool('play_avatar_animation', {
+      avatarId: 'agent-avatar-hermes',
+      clipName: 'dance',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.data).toMatchObject({
+      loop: 'once',
+    })
+
+    const updateArgs = vi.mocked(prisma.world.update).mock.calls[0]?.[0] as { data?: { data?: string } } | undefined
+    const savedState = JSON.parse(updateArgs?.data?.data || '{}') as {
+      behaviors?: Record<string, { animation?: { loop?: string } }>
+    }
+    expect(savedState.behaviors?.['agent-avatar-hermes']?.animation?.loop).toBe('once')
+  })
+
+  it('play_avatar_animation rejects unknown clip names with suggestions', async () => {
+    const world = makeWorldRow({
+      agentAvatars: [{
+        id: 'agent-avatar-hermes',
+        agentType: 'hermes',
+        avatar3dUrl: '/avatars/gallery/CoolAlien.vrm',
+        position: [0, 0, 0],
+        rotation: [0, 0, 0],
+        scale: 1.15,
+      }],
+    })
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+
+    const result = await callTool('play_avatar_animation', {
+      avatarId: 'agent-avatar-hermes',
+      clipName: 'wave',
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('Unknown animation')
+    expect(result.data).toMatchObject({
+      requested: 'wave',
+      suggestions: expect.any(Array),
+    })
+  })
+})
+
+describe('craft_scene prompt fallback', () => {
+  it('defaults Hermes and Merlin to self-crafting unless sculptor fallback is explicit', async () => {
+    const result = await callTool('craft_scene', {
+      actorAgentType: 'hermes',
+      prompt: 'a stone tower',
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('self-crafted scenes')
+    expect(result.message).toContain('strategy: "sculptor"')
+  })
+
+  it('defaults sculptor fallback to cc-opus and can complete via the craft stream', async () => {
+    const world = makeWorldRow()
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"name":"Stone Tower","objects":[{"type":"box","position":[0,0.5,0],"scale":[1,1,1],"color":"#888888"}]}'))
+          controller.close()
+        },
+      }),
+      { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
+    ))
+
+    const result = await callTool('craft_scene', {
+      actorAgentType: 'merlin',
+      prompt: 'a stone tower',
+      strategy: 'sculptor',
+      waitForCompletion: true,
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.data).toMatchObject({
+      status: 'completed',
+      name: 'Stone Tower',
+      objectCount: 1,
+    })
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('/api/craft/cc'),
+      expect.objectContaining({
+        body: expect.stringContaining('"model":"cc-opus"'),
+      }),
+    )
+
+    fetchSpy.mockRestore()
+  })
+
+  it('accepts self-crafted objects arrays passed as JSON strings', async () => {
+    const world = makeWorldRow()
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+
+    const result = await callTool('craft_scene', {
+      actorAgentType: 'hermes',
+      name: 'JSON scene',
+      objects: JSON.stringify([
+        { type: 'box', position: [0, 0.5, 0], scale: [1, 1, 1], color: '#888888' },
+      ]),
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.message).toContain('JSON scene')
   })
 })
 

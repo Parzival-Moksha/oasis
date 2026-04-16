@@ -1,29 +1,32 @@
 {
   "mcpServers": {
-    "parzival": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["tsx", "src/mcp/index.ts"],
-      "cwd": "../ae_parzival",
-      "env": {}
-    },
-    "mission": {
-      "type": "stdio",
-      "command": "node",
-      "args": ["tools/mission-mcp/index.js"],
-      "env": {
-        "OASIS_DB_PATH": "./prisma/data/oasis.db"
-      }
-    },
     "gamer": {
       "type": "stdio",
       "command": "node",
-      "args": ["tools/visual-qa-mcp/index.js"]
+      "args": [
+        "tools/visual-qa-mcp/index.js"
+      ],
+      "env": {}
     },
     "playwright": {
       "type": "stdio",
       "command": "npx",
-      "args": ["@playwright/mcp@latest"]
+      "args": [
+        "@playwright/mcp@latest"
+      ],
+      "env": {}
+    },
+    "oasis": {
+      "type": "http",
+      "url": "http://localhost:4516/api/mcp/oasis"
+    },
+    "mission": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "tools/mission-mcp/index.js"
+      ],
+      "env": {}
     }
   }
 }

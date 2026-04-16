@@ -1,0 +1,139 @@
+---
+sidebar_position: 1
+title: Quickstart
+---
+
+# Quickstart
+
+Connect your Hermes agent to your local Oasis in six steps. By the end, your agent chats, builds, crafts, and sees.
+
+:::info
+This is the canonical onboarding path. If you arrived from the Hermes skill publication or Nous Discord, start here.
+:::
+
+## 1. Spin up Oasis locally
+
+```bash
+git clone https://github.com/Parzival-Moksha/oasis.git
+cd oasis
+pnpm install
+pnpm dev
+```
+
+Open [http://localhost:4516](http://localhost:4516). You should land in the main 3D world with the Wizard Console available.
+
+Node 18+ and pnpm required. No API keys needed for the progressive smoke test below — those unlock extra tools later.
+
+## 2. Talk to your Hermes agent: install the skill
+
+Tell your Hermes agent (on Telegram, CLI, or any existing channel):
+
+```text
+Install the oasis skill from https://github.com/Parzival-Moksha/oasis and guide me through connecting to my Oasis.
+```
+
+Or install directly from the Hermes CLI:
+
+```bash
+hermes skills tap add Parzival-Moksha/oasis
+hermes skills install oasis
+/reload-mcp
+```
+
+After `/reload-mcp` you should see:
+
+```text
+Reconnected: oasis
+35 tool(s) available from 1 server(s)
+```
+
+The skill teaches your agent what the Oasis is, which tools are available, and how to use them.
+
+:::tip
+If `/reload-mcp` reports "No MCP servers connected", Hermes is missing the `[mcp]` pip extra. Run `cd ~/.hermes/hermes-agent && uv pip install -e ".[mcp]"` and retry.
+:::
+
+## 3. Dual-forward SSH tunnel (local machine → VPS)
+
+If Hermes lives on a VPS while Oasis runs on your laptop, you need **one SSH session with two forwards** — one for chat, one for tools:
+
+```bash
+ssh -o ExitOnForwardFailure=yes \
+  -L 8642:127.0.0.1:8642 \
+  -R 4516:127.0.0.1:4516 \
+  user@your-vps -N
+```
+
+- `-L 8642:127.0.0.1:8642` — opens local port 8642, forwarding Oasis chat traffic to the Hermes API on the VPS.
+- `-R 4516:127.0.0.1:4516` — opens remote port 4516 on the VPS, forwarding Hermes MCP traffic back to your local Oasis server.
+
+:::warning
+Without `-R 4516`, your Hermes agent can chat but cannot touch the world. Tool calls will fail silently or time out. If you only run `-L`, you'll see the chat panel light up but `describe this world` will fail.
+:::
+
+If Hermes runs on the same machine as Oasis, skip this step entirely.
+
+## 4. Paste the Hermes pairing blob into Oasis
+
+With Oasis open at [http://localhost:4516](http://localhost:4516):
+
+1. Click the **☤** button in the left toolbar.
+2. Click **config**.
+3. Paste your Hermes connection block. The paste parser accepts an env-style blob:
+   ```text
+   HERMES_API_BASE=http://127.0.0.1:8642/v1
+   HERMES_API_KEY=your_hermes_api_key
+   ```
+   It also accepts a JSON object or an `oasis://` URL shape if your Hermes gives one.
+4. Click **save & connect**.
+
+Pairing is written to `data/hermes-config.local.json` (gitignored). You can also set `HERMES_API_KEY` and `HERMES_API_BASE` in `.env` as a static fallback — see [Hermes agent reference](../agents/hermes) for the split.
+
+Make sure your Hermes gateway has `API_SERVER_ENABLED=true` in `~/.hermes/.env` or it won't answer the pairing call.
+
+## 5. Progressive smoke test
+
+Run these five prompts in order. Each step escalates what it proves working.
+
+1. **Plain chat** — say `hi`.
+   - Proves: Hermes API reachable, panel wired up.
+2. **World awareness** — say `describe this world`.
+   - Expect `get_world_state` to fire. The agent should narrate sky, ground, object counts.
+   - Proves: MCP transport up, plugin context injection working.
+3. **Asset + placement** — say `find a cyberpunk streetlamp and place one in front of me`.
+   - Expect `search_assets` then `place_object`.
+   - Proves: catalog read, world mutation, no API keys required.
+4. **Self-craft** — say `craft a small campfire with embers and a crystal cluster`.
+   - Expect `craft_scene` with an `objects` array (NOT `strategy: "sculptor"`).
+   - Proves: self-craft path, rendering, no API keys required.
+5. **Vision** — say `take a screenshot and tell me what you see`.
+   - Expect `screenshot_viewport` with `mode: "current"`.
+   - Proves: live browser bridge attached.
+
+:::tip
+If step 1 passes but 2 fails, check the SSH `-R 4516` reverse forward — that's the MCP path. If 2–4 pass but 5 fails, the Oasis browser tab is closed or the screenshot bridge is not mounted.
+:::
+
+## 6. What needs API keys
+
+The smoke test above works with **zero API keys on the Oasis host**. World state, placement, self-crafting, screenshots, and plain chat all run without external providers.
+
+Optional keys in `.env` unlock extra tool surface:
+
+| `.env` var | Unlocks |
+|---|---|
+| `OPENROUTER_API_KEY` | Image generation (textures, material concepts), terrain generation via LLM |
+| `FAL_KEY` | Video generation |
+| `ELEVENLABS_API_KEY` | Voice notes / TTS in agent panels |
+| `MESHY_API_KEY` | Forge conjuration: text-to-3D, image-to-3D, rigging, animation |
+| `TRIPO_API_KEY` | Forge conjuration: fast text-to-3D |
+| Claude Code CLI on PATH | `craft_scene` sculptor fallback (also powers Merlin, Anorak, Anorak Pro local agents) |
+
+If a tool requires a key the host does not have, the call returns a clear error. Prefer self-craft and catalog placement for zero-config flows.
+
+## Next steps
+
+- [Hermes agent reference](../agents/hermes) — how pairing, plugin, and skill fit together
+- [MCP Tools](../agents/mcp-tools) — full tool catalog
+- [Your First World](./first-world) — build something start-to-finish
+- [Controls & Camera](../user-guide/controls) — WASD, gizmos, pointer lock

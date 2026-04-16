@@ -39,6 +39,10 @@ function sanitizeString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function stripUtf8Bom(value: string): string {
+  return value.charCodeAt(0) === 0xfeff ? value.slice(1) : value
+}
+
 function sanitizeStoredConfig(raw: unknown): HermesStoredConfig | null {
   if (!raw || typeof raw !== 'object') return null
 
@@ -58,11 +62,18 @@ function sanitizeStoredConfig(raw: unknown): HermesStoredConfig | null {
 export async function readStoredHermesConfig(): Promise<HermesStoredConfig | null> {
   try {
     const raw = await fs.readFile(STORED_CONFIG_PATH, 'utf8')
-    const parsed = JSON.parse(raw) as unknown
+    const parsed = JSON.parse(stripUtf8Bom(raw)) as unknown
     return sanitizeStoredConfig(parsed)
   } catch {
     return null
   }
+}
+
+function isAsciiSafe(value: string): boolean {
+  for (let i = 0; i < value.length; i++) {
+    if (value.charCodeAt(i) > 127) return false
+  }
+  return true
 }
 
 export async function writeStoredHermesConfig(input: WriteHermesConfigInput): Promise<HermesStoredConfig> {
@@ -76,6 +87,10 @@ export async function writeStoredHermesConfig(input: WriteHermesConfigInput): Pr
 
   if (!next.apiKey) {
     throw new Error('Hermes API key is required.')
+  }
+
+  if (!isAsciiSafe(next.apiKey)) {
+    throw new Error('API key contains non-ASCII characters (masked placeholder?). Paste the real key.')
   }
 
   await fs.mkdir(path.dirname(STORED_CONFIG_PATH), { recursive: true })

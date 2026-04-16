@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  collapseConsecutiveHermesAssistantTurns,
   collapseDuplicateHermesMessages,
   mergeHermesTextBlocks,
   mergeHydratedHermesMessages,
+  shouldPreferHydratedHermesMessages,
   type HermesChatMessageLike,
 } from '../hermes-message-merge'
 
@@ -152,5 +154,137 @@ describe('collapseDuplicateHermesMessages', () => {
     expect(result[0]?.content).toContain('Yeah, I remember.')
     expect(result[0]?.finishReason).toBe('stop')
     expect(result[0]?.tools?.[0]?.name).toBe('mcp_session_search')
+  })
+})
+
+describe('collapseConsecutiveHermesAssistantTurns', () => {
+  it('folds raw native assistant rows into a single conversational turn', () => {
+    const result = collapseConsecutiveHermesAssistantTurns([
+      makeMessage({ id: 'u1', role: 'user', content: 'show me screenshots', timestamp: 10 }),
+      makeMessage({
+        id: 'a1',
+        content: 'Working on it.',
+        tools: [{ index: 0, name: 'mcp_oasis_screenshot_viewport', arguments: '{"mode":"player"}' }],
+        finishReason: 'tool_calls',
+        timestamp: 20,
+      }),
+      makeMessage({
+        id: 'a2',
+        content: '',
+        tools: [{ index: 1, name: 'mcp_oasis_screenshot_avatar', arguments: '{"subject":"player"}' }],
+        finishReason: 'tool_calls',
+        timestamp: 21,
+      }),
+      makeMessage({
+        id: 'a3',
+        content: 'Done.',
+        finishReason: 'stop',
+        timestamp: 22,
+      }),
+    ])
+
+    expect(result).toHaveLength(2)
+    expect(result[1]?.role).toBe('assistant')
+    expect(result[1]?.content).toContain('Working on it.')
+    expect(result[1]?.content).toContain('Done.')
+    expect(result[1]?.tools).toHaveLength(2)
+    expect(result[1]?.finishReason).toBe('stop')
+  })
+})
+
+describe('shouldPreferHydratedHermesMessages', () => {
+  it('prefers hydrated native rows when they preserve multiple assistant turns and tool metadata', () => {
+    const hydrated = [
+      makeMessage({ id: 'u1', role: 'user', content: 'watchtower', timestamp: 10 }),
+      makeMessage({
+        id: 'a1',
+        content: 'Crafting tower...',
+        tools: [{ index: 0, name: 'mcp_oasis_craft_scene', arguments: '{}' }],
+        finishReason: 'tool_calls',
+        timestamp: 20,
+      }),
+      makeMessage({
+        id: 'a2',
+        content: 'Done.',
+        finishReason: 'stop',
+        timestamp: 21,
+      }),
+    ]
+
+    const cached = [
+      makeMessage({ id: 'u-local', role: 'user', content: 'watchtower', timestamp: 10 }),
+      makeMessage({
+        id: 'a-local',
+        content: 'Crafting tower...\nDone.\nDone.',
+        finishReason: 'stop',
+        timestamp: 21,
+      }),
+    ]
+
+    expect(shouldPreferHydratedHermesMessages(hydrated, cached)).toBe(true)
+  })
+
+  it('keeps cached messages when hydrated data is clearly thinner', () => {
+    const hydrated = [
+      makeMessage({ id: 'u1', role: 'user', content: 'hello', timestamp: 10 }),
+    ]
+    const cached = [
+      makeMessage({ id: 'u-local', role: 'user', content: 'hello', timestamp: 10 }),
+      makeMessage({
+        id: 'a-local',
+        content: 'hello there',
+        tools: [{ index: 0, name: 'generate_voice', arguments: '{}' }],
+        finishReason: 'stop',
+        timestamp: 20,
+      }),
+    ]
+
+    expect(shouldPreferHydratedHermesMessages(hydrated, cached)).toBe(false)
+  })
+
+  it('keeps cached messages when hydrated native rows lose user turns', () => {
+    const hydrated = [
+      makeMessage({ id: 'u1', role: 'user', content: 'first prompt', timestamp: 10 }),
+      makeMessage({
+        id: 'a1',
+        content: 'latest response',
+        tools: [{ index: 0, name: 'mcp_oasis_walk_avatar_to', arguments: '{}' }],
+        finishReason: 'stop',
+        timestamp: 20,
+      }),
+    ]
+
+    const cached = [
+      makeMessage({ id: 'u-local-1', role: 'user', content: 'first prompt', timestamp: 10 }),
+      makeMessage({ id: 'a-local-1', content: 'first response', finishReason: 'stop', timestamp: 11 }),
+      makeMessage({ id: 'u-local-2', role: 'user', content: 'second prompt', timestamp: 12 }),
+      makeMessage({ id: 'a-local-2', content: 'latest response', finishReason: 'stop', timestamp: 20 }),
+    ]
+
+    expect(shouldPreferHydratedHermesMessages(hydrated, cached)).toBe(false)
+  })
+
+  it('prefers hydrated messages when cached content is duplicated noise', () => {
+    const hydrated = [
+      makeMessage({ id: 'u1', role: 'user', content: 'voice note', timestamp: 10 }),
+      makeMessage({
+        id: 'a1',
+        content: 'MEDIA:/tmp/hermes-audio.mp3',
+        finishReason: 'stop',
+        timestamp: 20,
+      }),
+    ]
+
+    const cached = [
+      makeMessage({ id: 'u-local', role: 'user', content: 'voice note', timestamp: 10 }),
+      makeMessage({
+        id: 'a-local',
+        content: 'MEDIA:/tmp/hermes-audio.mp3\nMEDIA:/tmp/hermes-audio.mp3',
+        finishReason: 'stop',
+        timestamp: 20,
+      }),
+    ]
+
+    expect(shouldPreferHydratedHermesMessages(hydrated, cached)).toBe(true)
   })
 })

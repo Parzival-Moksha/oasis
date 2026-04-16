@@ -82,3 +82,35 @@ When guiding users or remote agents, say:
 - the plugin provides compact passive context, not the full transport
 - screenshot tools require a live browser bridge
 - the shared tool layer is the source of truth for world actions
+
+## Current Split-Machine Tunnel
+
+For Hermes on a VPS and Oasis on a local machine, use one SSH session with two forwards:
+
+```bash
+ssh -o ExitOnForwardFailure=yes \
+  -L 8642:127.0.0.1:8642 \
+  -R 4516:127.0.0.1:4516 \
+  user@your-vps -N
+```
+
+Why both are needed:
+
+- `-L 8642...` lets the local Oasis app reach the Hermes API server on the VPS
+- `-R 4516...` lets Hermes on the VPS reach the local Oasis MCP server
+
+Only `4516` is canonical for the Oasis MCP reverse forward. Any alternative port lore should be treated as stale duct tape.
+
+## Hermes MCP Config
+
+The Hermes config key for MCP servers is **`mcp_servers`** (snake_case, plural). Add to `~/.hermes/config.yaml`:
+
+```yaml
+mcp_servers:
+  oasis:
+    url: http://127.0.0.1:4516/api/mcp/oasis
+```
+
+Common mistake: using `mcp:` instead of `mcp_servers:` — Hermes will silently load zero servers.
+
+See `references/hermes-mcp-config.example.yaml` for the full annotated example.

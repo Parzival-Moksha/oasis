@@ -1,13 +1,20 @@
 ---
 name: oasis
 description: Teach Hermes or another remote agent how to connect to Oasis as a world-building agent through the Oasis MCP endpoint, optional Oasis plugin, and live browser screenshot bridge.
-version: 0.2.0
+version: 0.3.0
 author: Levi
 license: MIT
 metadata:
   hermes:
-    tags: [oasis, mcp, world-building, 3d, hermes]
-    category: integrations
+    tags: [oasis, mcp, world-building, 3d, hermes, integrations]
+    requires_toolsets: [mcp-oasis]
+    config:
+      oasis_host:
+        description: "Hostname or IP of the machine running Oasis (usually 127.0.0.1 when tunneled over SSH)"
+        default: "127.0.0.1"
+      oasis_port:
+        description: "Port Oasis dev server is listening on"
+        default: 4516
 ---
 
 # Oasis
@@ -40,13 +47,46 @@ Do not use this skill for generic coding unless Oasis integration is part of the
 - Plugin path: `hermes-plugin/oasis`
 - Remote MCP endpoint: `http://<oasis-host>:4516/api/mcp/oasis`
 - Legacy REST tools endpoint: `http://<oasis-host>:4516/api/oasis-tools`
-- Optional auth header: `Authorization: Bearer <OASIS_MCP_KEY>`
+
+## Split-Machine Topology
+
+When Hermes lives on a VPS and Oasis runs on the local machine, there are two separate services that must see each other:
+
+- Hermes API on the VPS at `127.0.0.1:8642`
+- Oasis MCP on the local machine at `127.0.0.1:4516`
+
+Use one SSH session with two forwards:
+
+```bash
+ssh -o ExitOnForwardFailure=yes \
+  -L 8642:127.0.0.1:8642 \
+  -R 4516:127.0.0.1:4516 \
+  user@your-vps -N
+```
+
+Meaning:
+
+- `-L 8642:127.0.0.1:8642`
+  - opens local port `8642`
+  - forwards local Oasis traffic to the Hermes API on the VPS
+  - used by the Oasis Hermes chat panel
+
+- `-R 4516:127.0.0.1:4516`
+  - opens remote port `4516` on the VPS
+  - forwards Hermes-side MCP traffic back to the local Oasis server
+  - used by Hermes when calling Oasis MCP tools
+
+Without the `-R 4516...` half, Hermes can chat but cannot touch the Oasis world.
+Without the `-L 8642...` half, Oasis can render the Hermes panel but cannot reach the Hermes API.
 
 ## Install Path
 
-1. Install the skill from the repo.
-   - `hermes skills install Parzival-Moksha/oasis/skills/oasis`
-   - or add the repo as a tap and install from there.
+1. Add the repo as a Hermes tap, then install the skill.
+   ```bash
+   hermes skills tap add Parzival-Moksha/oasis
+   hermes skills install oasis
+   ```
+   Subpath install (`Parzival-Moksha/oasis/skills/oasis`) may also work but is not the recommended path.
 
 2. Configure the Oasis MCP server in the agent runtime.
    - Point the agent at `http://<oasis-host>:4516/api/mcp/oasis`
@@ -62,16 +102,91 @@ Do not use this skill for generic coding unless Oasis integration is part of the
    - `screenshot_avatar`
    - `avatarpic_merlin`
    - `avatarpic_user`
+   - When Hermes asks for screenshots, prefer including `defaultAgentType="hermes"` so agent-view captures resolve cleanly and can be handed back as Hermes-usable files.
+   - For the user's actual camera, use `screenshot_viewport` with `mode: "current"` or `views: [{ mode: "current" }]`.
+   - For a behind-the-avatar shot, use `screenshot_avatar` with `style: "third-person"` or `screenshot_viewport` with `mode: "third-person-follow"`.
+   - Prefer one `screenshot_viewport` call with a `views` array for multi-angle capture instead of many separate screenshot calls.
+   - Do not fall back to generic `browser_*` tools for Oasis world vision; those browsers run remotely and may point at the wrong world.
 
 Without the live browser bridge, screenshot tools cannot see the world.
 
 ## Recommended MCP Config
 
-Use a remote HTTP MCP server entry that targets the Oasis endpoint. The exact config format depends on the host agent, but the important pieces are:
+The exact config key and format depends on the host agent runtime.
 
-- URL: `/api/mcp/oasis`
-- Transport: Streamable HTTP MCP
-- Auth: bearer token if `OASIS_MCP_KEY` is set
+### Hermes (`~/.hermes/config.yaml`)
+
+The config key is **`mcp_servers`** (snake_case, plural). NOT `mcp`, NOT `mcpServers`.
+
+```yaml
+mcp_servers:
+  oasis:
+    url: http://127.0.0.1:4516/api/mcp/oasis?agentType=hermes
+```
+
+After saving, run `/reload-mcp` in the Hermes session or restart the gateway.
+
+### Advanced: bearer auth (multi-user Oasis hosts only)
+
+Solo / local Oasis users should skip this section. The SSH reverse tunnel is already the auth boundary — only your VPS can reach port 4516. Set `OASIS_MCP_KEY` only if you are exposing Oasis to a shared network and need request-level auth. Hermes YAML headers expect literal strings (env var expansion is not documented as supported), so paste the token directly:
+
+```yaml
+mcp_servers:
+  oasis:
+    url: http://127.0.0.1:4516/api/mcp/oasis?agentType=hermes
+    headers:
+      Authorization: "Bearer paste-the-literal-token-here"
+```
+
+Important:
+- The MCP server name `oasis` is what makes Hermes register tools as `mcp_oasis_*`.
+- This is the correct layer for tool naming. `SKILL.md` can teach usage, but it does not rename the registered tools.
+- If you ever see `mcp_mcp_oasis_*` in Hermes progress text, treat that as a runtime/display issue or a model-side hallucinated tool name, not as the canonical Oasis registration.
+
+### Claude Code / Generic MCP (`mcp.json` or `claude_desktop_config.json`)
+
+```json
+{
+  "mcpServers": {
+    "oasis": {
+      "transport": "streamable-http",
+      "url": "http://<oasis-host>:4516/api/mcp/oasis"
+    }
+  }
+}
+```
+
+### Prerequisites
+
+Hermes MCP support requires the `[mcp]` extra:
+
+```bash
+cd ~/.hermes/hermes-agent && uv pip install -e ".[mcp]"
+```
+
+Without it, `/reload-mcp` will report "No MCP servers connected" even when config is correct.
+
+### Common mistakes
+
+- Using `mcp:` instead of `mcp_servers:` in Hermes config — tools will silently never load
+- Using `mcpServers` (camelCase) in Hermes YAML — wrong format, Hermes uses snake_case
+- Adding `type: streamable-http` — unnecessary, Hermes infers HTTP transport from the `url` key
+- Missing the `[mcp]` pip extra — MCP SDK won't be available, tools silently don't load
+- Forgetting the SSH reverse tunnel (`-R 4516`) when Hermes is on a VPS — MCP endpoint unreachable
+
+### Verification
+
+After configuring, run `/reload-mcp` in Hermes. The output should show tools discovered:
+
+```
+♻️  Reconnected: oasis
+🔧 35 tool(s) available from 1 server(s)
+```
+
+If it shows "No MCP servers connected", check:
+1. Is the config key `mcp_servers` (not `mcp`)?
+2. Is the SSH tunnel alive (`ss -tlnp | grep 4516` on the VPS)?
+3. Is the Oasis dev server running on port 4516?
 
 If the agent also supports the Oasis plugin, use both:
 - MCP for tools
@@ -97,6 +212,66 @@ The agent should usually:
 2. call `query_objects` or `search_assets` as needed
 3. make a world mutation
 4. use screenshot tools when visual verification matters
+
+## Self-Craft Is The Default For Hermes
+
+When the user asks you to build something procedural (a campfire, a shrine, a crystal cluster, a fountain), **you write the primitives yourself** and pass them as the `objects` array to `craft_scene`. Do **not** delegate to the sculptor.
+
+```
+craft_scene({
+  name: "Arcane campfire",
+  position: [0, 0, 0],
+  objects: [
+    { type: "cylinder", position: [0, 0.08, 0], scale: [0.55, 0.08, 0.55], color: "#3b2a1d", roughness: 0.92 },
+    { type: "flame", position: [0, 0.3, 0], scale: [0.22, 0.35, 0.22], color: "#fff4dd", color2: "#ff7a00", color3: "#9b1d00" },
+    { type: "particle_emitter", position: [0, 0.75, 0], scale: [0.45, 0.85, 0.45], color: "#ffb347", particleCount: 80, particleType: "ember" },
+    { type: "crystal", position: [0.65, 0.32, 0.1], scale: [0.22, 0.6, 0.22], rotation: [0.14, 0.3, -0.08], color: "#4338ca", color2: "#8b5cf6", seed: 11 }
+  ]
+})
+```
+
+What you have access to (call `get_craft_guide` for the live spec):
+- **Geometry**: `box`, `sphere`, `cylinder`, `cone`, `torus`, `plane`, `capsule`, `text`
+- **Shaders**: `flame`, `flag`, `crystal`, `water`, `particle_emitter`, `glow_orb`, `aurora`
+- **Animations**: `rotate`, `bob`, `pulse`, `swing`, `orbit` (with `type`, `speed`, `axis`, `amplitude`)
+- **Textures**: 20 presets including `stone`, `cobblestone`, `marble`, `concrete`, `grass`, `sand`, `snow`, `metal`, `wood`, `kn-planks`, `kn-cobblestone`, `kn-roof`, `kn-wall`. Apply via `texturePresetId` + `textureRepeat`.
+- **Material fields**: `metalness`, `roughness`, `opacity`, `emissive`, `emissiveIntensity`, `color2`, `color3`
+
+Rules the craft runtime enforces:
+- No ground planes, sky domes, or background walls — Oasis already provides the world.
+- Use shader primitives aggressively for fire, cloth, crystal, water, glow, aurora.
+- Many small overlapping primitives beat one oversized primitive.
+- Non-zero rotation on at least some primitives.
+
+### When to use sculptor fallback
+
+`craft_scene({ prompt: "...", strategy: "sculptor" })` spawns an out-of-process Claude Code LLM subprocess on the Oasis host to write the objects array FOR you. It costs a real LLM call, takes several seconds, and streams primitives in as they arrive. **Use it only if:**
+- The user explicitly asks you to delegate ("have the sculptor do it")
+- The scene is so ambitious you'd rather have a dedicated coder agent sketch it first
+
+Otherwise: self-craft. You are an LLM. You can write the JSON.
+
+## Progressive Smoke Test
+
+After install, verify in this exact order before trusting the connection. Each step escalates what it proves working.
+
+1. **Plain chat** — say `hi` to your agent. You should get a plain reply.
+   - Proves: Hermes API reachable, panel wired up.
+2. **World awareness** — say `describe this world`.
+   - Expect the agent to call `get_world_state` and narrate sky/ground/object counts.
+   - Proves: MCP transport up, plugin context injection working.
+3. **Asset search + placement** — say `find a cyberpunk streetlamp and place one in front of me`.
+   - Expect `search_assets` then `place_object`.
+   - Proves: catalog read, world mutation, no API keys required.
+4. **Self-craft** — say `craft a small campfire with embers and a crystal cluster`.
+   - Expect `craft_scene` with an `objects` array (NOT `strategy: "sculptor"`).
+   - Proves: self-craft path, rendering, no API keys required.
+5. **Vision** — say `take a screenshot and tell me what you see`.
+   - Expect `screenshot_viewport` with `mode: "current"`.
+   - Proves: live browser bridge attached.
+
+If step 1 passes but 2 fails, check the SSH `-R 4516` reverse forward — that's the MCP path.
+If step 2-4 pass but 5 fails, the Oasis browser tab is closed or the screenshot bridge is not mounted.
 
 ## Visual Truth
 
@@ -137,6 +312,24 @@ If the user wants a new 3D asset rather than a catalog asset, prefer these tools
 - Do not claim a generation is finished until the conjured asset status actually says so.
 - When the user asks to move relative to them, use live player context or avatar screenshot tools instead of guessing.
 - When the user asks for precise visual verification, use screenshot tools rather than narration alone.
+- When the user asks for catalog or asset-library content, prefer `search_assets` then `place_object`. Use `craft_scene` for procedural primitives, not catalog assets.
+
+## API Keys Unlock Extra Features
+
+The core progressive smoke test (steps 1-5 above) works with **zero API keys on the Oasis host**. All world state, placement, self-crafting, screenshots, and plain chat run without external providers.
+
+Optional keys in the Oasis `.env` unlock additional tool surface:
+
+| `.env` var | Unlocks |
+|---|---|
+| `OPENROUTER_API_KEY` | Image generation (textures, material concepts), terrain generation via LLM |
+| `FAL_KEY` | Video generation |
+| `ELEVENLABS_API_KEY` | Voice notes / TTS in agent panels |
+| `MESHY_API_KEY` | Forge conjuration: text-to-3D, image-to-3D, rigging, animation |
+| `TRIPO_API_KEY` | Forge conjuration: fast text-to-3D |
+| Claude Code CLI on PATH | `craft_scene` sculptor fallback (and powers Merlin, Anorak, Anorak Pro when the user uses those agents locally) |
+
+If a tool requires a key the host does not have, the tool call returns a clear error. Prefer self-craft and catalog placement for zero-config flows.
 
 ## Limits
 

@@ -28,39 +28,130 @@ pnpm dev
 
 Open [http://localhost:4516](http://localhost:4516)
 
-## Hermes Skill (Oasis)
+## Connect Your Hermes Agent
 
-If you use Hermes, this repo includes an installable skill at `skills/oasis`.
+Two channels connect your agent to the Oasis: **MCP** (tools) and **chat** (the panel). Both are needed for the full experience.
 
-```bash
-hermes skills install Parzival-Moksha/oasis/skills/oasis
-```
+### Step 1: Install the Oasis Skill on Your Agent
 
-You can also point Hermes at the raw repo URL:
-
-- `https://github.com/Parzival-Moksha/oasis`
-
-Then ask Hermes to install the `oasis` skill and guide Oasis setup.
-
-Paste-ready prompt for Hermes:
+Tell your Hermes agent on Telegram, CLI, or any existing channel:
 
 ```text
-Install the oasis skill from https://github.com/Parzival-Moksha/oasis and guide me through connecting Oasis to this Hermes instance.
+Install the oasis skill from https://github.com/Parzival-Moksha/oasis and guide me through connecting to my Oasis.
 ```
 
-Expected Hermes guidance flow:
+Or install directly from CLI using the canonical tap flow:
 
-1. Give you a pairing block (`HERMES_API_BASE`, `HERMES_API_KEY`, optional `HERMES_MODEL`).
-2. Give the SSH tunnel command if Hermes runs remotely.
-3. Tell you to open the Oasis Hermes panel, click `pair`, paste, save, then press `sync`.
+```bash
+hermes skills tap add Parzival-Moksha/oasis
+hermes skills install oasis
+/reload-mcp
+```
 
-Hermes security defaults in Oasis:
+The skill teaches your agent what the Oasis is, what 35 tools are available, and how to connect.
+
+### Step 2: Configure MCP (Agent Gets Tools)
+
+Add the Oasis MCP server to `~/.hermes/config.yaml`. Hermes uses snake_case `mcp_servers:` keyed by server name (NOT `mcp:` or camelCase `mcpServers`):
+
+```yaml
+mcp_servers:
+  oasis:
+    url: http://127.0.0.1:4516/api/mcp/oasis?agentType=hermes
+```
+
+If you set `OASIS_MCP_KEY` in the Oasis `.env`, add a matching bearer header:
+
+```yaml
+mcp_servers:
+  oasis:
+    url: http://127.0.0.1:4516/api/mcp/oasis?agentType=hermes
+    headers:
+      Authorization: "Bearer ${MCP_OASIS_API_KEY}"
+```
+
+Run `/reload-mcp` in the Hermes session (or restart the gateway). You should see `35 tool(s) available from 1 server(s)`.
+
+Replace `127.0.0.1:4516` with the Oasis host if it runs on a different machine. For other MCP clients (Claude Desktop, Claude Code, generic `mcp.json`), see `skills/oasis/SKILL.md` for the `mcpServers` JSON shape.
+
+Your agent now has access to world-building tools: `place_object`, `craft_scene`, `screenshot_viewport`, `set_sky`, and 30+ more.
+
+Note: self-craft is the default — Hermes writes the `objects` array itself when you ask for a procedural scene. The sculptor fallback (`strategy: "sculptor"`) requires Claude Code CLI on the Oasis PATH and is rarely needed.
+
+### Step 3: Connect the Chat Panel (Agent Gets a Voice)
+
+1. Make sure your Hermes gateway has `API_SERVER_ENABLED=true` in `~/.hermes/.env`
+2. Open the Oasis in your browser at `http://localhost:4516`
+3. Click the **☤** button in the left toolbar
+4. Click **config**
+5. Paste your Hermes connection block:
+   ```
+   HERMES_API_BASE=http://127.0.0.1:8642/v1
+   HERMES_API_KEY=your_hermes_api_key
+   ```
+6. Click **save & connect**
+
+If your agent is remote, you need a dual-forward SSH tunnel — one for chat, one for MCP:
+
+```
+ssh -o ExitOnForwardFailure=yes \
+  -L 8642:127.0.0.1:8642 \
+  -R 4516:127.0.0.1:4516 \
+  user@your-vps -N
+```
+
+Without `-R 4516`, the Hermes agent can chat but cannot call Oasis tools.
+
+### Step 4: Talk to Your Agent
+
+Say: *"Look around the world and build me a campfire scene with trees."*
+
+Your agent calls Oasis tools via MCP, objects appear live in the 3D world, and you see the conversation in the ☤ panel.
+
+### Progressive Smoke Test
+
+Verify the connection in this exact order. Each step escalates what it proves working.
+
+1. **Plain chat** — say `hi`. Proves Hermes API reachable, panel wired up.
+2. **World awareness** — say `describe this world`. Expect `get_world_state`. Proves MCP transport up, plugin context injection working.
+3. **Asset + placement** — say `find a cyberpunk streetlamp and place one in front of me`. Expect `search_assets` + `place_object`. Proves catalog read + world mutation.
+4. **Self-craft** — say `craft a small campfire with embers and a crystal cluster`. Expect `craft_scene` with an `objects` array (NOT `strategy: "sculptor"`). Proves self-craft path.
+5. **Vision** — say `take a screenshot and tell me what you see`. Expect `screenshot_viewport` with `mode: "current"`. Proves live browser bridge attached.
+
+If step 1 passes but 2 fails, check the SSH `-R 4516` reverse forward. If 2-4 pass but 5 fails, the Oasis browser tab is closed or the screenshot bridge is not mounted.
+
+### What Needs API Keys
+
+The core smoke test (steps 1-5) works with **zero API keys on the Oasis host**. World state, placement, self-crafting, screenshots, and plain chat all run without external providers.
+
+Optional keys in `.env` unlock extra tool surface:
+
+| `.env` var | Unlocks |
+|------------|---------|
+| `OPENROUTER_API_KEY` | Image generation (textures, material concepts), terrain generation via LLM |
+| `FAL_KEY` | Video generation |
+| `ELEVENLABS_API_KEY` | Voice notes / TTS in agent panels |
+| `MESHY_API_KEY` | Forge conjuration: text-to-3D, image-to-3D, rigging, animation |
+| `TRIPO_API_KEY` | Forge conjuration: fast text-to-3D |
+| Claude Code CLI on PATH | `craft_scene` sculptor fallback (and Merlin / Anorak / Anorak Pro local agents) |
+
+If a tool requires a key the host does not have, the tool call returns a clear error. Prefer self-craft and catalog placement for zero-config flows.
+
+### Optional: Install the Plugin
+
+For automatic world context in every agent turn (no explicit tool call needed):
+
+```bash
+cp -r hermes-plugin/oasis ~/.hermes/plugins/oasis
+```
+
+The plugin injects a compact world summary before each response and a full world state at session start.
+
+### Security Defaults
 
 - `/api/hermes` is localhost-only by default.
 - Pairing writes (`POST`/`DELETE /api/hermes/config`) are localhost-only by default.
-- To allow remote access intentionally, set:
-  - `OASIS_ALLOW_REMOTE_HERMES_PROXY=true`
-  - `OASIS_ALLOW_REMOTE_HERMES_PAIRING=true`
+- To allow remote access, set `OASIS_ALLOW_REMOTE_HERMES_PROXY=true` and `OASIS_ALLOW_REMOTE_HERMES_PAIRING=true`.
 - Local pairing is stored in `data/hermes-config.local.json` (git-ignored).
 
 ## What You Can Do
@@ -72,7 +163,7 @@ Hermes security defaults in Oasis:
 - **Craft** — LLM-powered scene generation. Describe a scene, get procedural geometry.
 - **Build** — Place, move, rotate, scale any object. 480+ built-in assets (cyberpunk, medieval, urban, furniture, nature). Full transform gizmos.
 - **Light** — Add point lights, spotlights, hemisphere lights. Full color, intensity, shadow control.
-- **Persist** — Every change autosaves. Create multiple worlds, switch between them.
+- **Persist** — Every change autosaves into local SQLite. Create multiple worlds, switch between them.
 - **Sky** — 24 sky environments: 4 night panoramas + 8 Poly Haven HDRIs (alps, grotto, sunset, stadium...) + 10 drei presets + procedural stars
 
 ## Controls
@@ -105,8 +196,9 @@ src/
   app/
     api/                   — Next.js API routes (conjure, craft, terrain, worlds)
 data/
+  prisma/data/oasis.db     — Local SQLite database for worlds, snapshots, profiles, and missions
   conjured-registry.json   — Asset metadata (GLB paths, providers, thumbnails)
-  worlds/                  — World save files (JSON per world)
+  worlds/                  — Legacy world JSON leftovers (not used by the current world API)
   scene-library.json       — Saved crafted scenes
 public/
   conjured/                — Runtime-generated GLB files
@@ -133,13 +225,9 @@ You need at least one 3D provider key (Meshy or Tripo) to conjure. OpenRouter en
 
 ## Default World
 
-The repo ships with a showcase world (`forge-default`) containing:
-- Oasis logo (image-to-3D)
-- Walking character (animated, right-click to move)
-- Maitreya shrine, Pixie Amazon, Moana boat
-- Cyberpunk street lights
-- Painted stone/grass circular plaza
-- Venice sunset sky
+On a fresh SQLite database, Oasis auto-creates a first world named **The Forge**.
+
+You may still see legacy artifacts like `data/worlds/forge-default.json` or `data/oasis.db` in the repo root. The current app does not load worlds from those files. Active world data lives in `prisma/data/oasis.db`.
 
 ## Asset Credits
 

@@ -18,6 +18,7 @@ import type { ConjuredAsset, PostProcessAction, ProviderName } from '../conjure/
 import { getAllAssets, getAssetById, updateAsset } from '../conjure/registry'
 import { emitWorldEvent } from './world-events'
 import { readWorldPlayerContext } from '../world-runtime-context'
+import { resolveAgentAvatarUrl } from '../agent-avatar-catalog'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -91,9 +92,73 @@ function validBool(v: unknown, fallback = false): boolean {
   return fallback
 }
 
+function parseLooseObjectArray(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) {
+    return value.filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === 'object')
+  }
+
+  if (typeof value !== 'string') return []
+  const trimmed = value.trim()
+  if (!trimmed) return []
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown
+    return Array.isArray(parsed)
+      ? parsed.filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === 'object')
+      : []
+  } catch {
+    return []
+  }
+}
+
 function mutationActorData(args: Record<string, unknown>): Record<string, unknown> {
   const actorAgentType = validStr(args.actorAgentType || args.agentType || args.agent, '').toLowerCase()
   return actorAgentType ? { actorAgentType } : {}
+}
+
+const AVATAR_ANIMATION_ALIASES: Record<string, string> = {
+  dance: 'ual-dance',
+  dancing: 'ual-dance',
+  talk: 'ual-talking',
+  talking: 'ual-talking',
+  speak: 'ual-talking',
+  speaking: 'ual-talking',
+  yes: 'ual-yes',
+  no: 'ual-no',
+  idle: 'ual-idle',
+  conjure: 'ual-spell-idle',
+  spell: 'ual-spell-idle',
+}
+
+function normalizeAnimationLookupKey(value: string): string {
+  return value.trim().toLowerCase().replace(/^lib:/, '')
+}
+
+async function loadAvatarAnimationCatalog() {
+  const { ANIMATION_LIBRARY } = await import('../forge/animation-library')
+  return ANIMATION_LIBRARY
+}
+
+async function resolveAvatarAnimation(requestedClip: string) {
+  const library = await loadAvatarAnimationCatalog()
+  const normalized = normalizeAnimationLookupKey(requestedClip)
+  const aliased = AVATAR_ANIMATION_ALIASES[normalized] || normalized
+  const exact = library.find(entry => entry.id === aliased)
+  const suggestions = library
+    .filter(entry =>
+      entry.id.includes(aliased) ||
+      entry.label.toLowerCase().includes(aliased) ||
+      entry.category.toLowerCase().includes(aliased)
+    )
+    .slice(0, 8)
+    .map(entry => entry.id)
+
+  return {
+    library,
+    exact,
+    normalized,
+    suggestions,
+  }
 }
 
 function normalizeState(state: WorldState): WorldState {
@@ -110,6 +175,7 @@ function normalizeState(state: WorldState): WorldState {
 }
 
 type AgentAvatarEntry = NonNullable<WorldState['agentAvatars']>[number]
+const SHARED_AGENT_AVATAR_TYPES = new Set(['anorak-pro', 'merlin', 'hermes'])
 
 function resolveAgentAvatarTarget(
   state: WorldState,
@@ -139,7 +205,7 @@ function resolveAgentAvatarTarget(
     existing = (state.agentAvatars || []).find(avatar => avatar.agentType === agentType) || null
     if (existing) {
       avatarId = existing.id
-    } else if (!avatarId && (agentType === 'hermes' || agentType === 'merlin')) {
+    } else if (!avatarId && SHARED_AGENT_AVATAR_TYPES.has(agentType)) {
       avatarId = `agent-avatar-${agentType}`
     }
   }
@@ -203,6 +269,49 @@ async function saveWorldState(worldId: string, state: WorldState): Promise<void>
   })
 }
 
+async function upsertCraftedSceneInWorld(
+  worldId: string,
+  scene: CraftedScene,
+  args: Record<string, unknown>,
+  eventType: 'scene_craft_progress' | 'scene_crafted',
+) {
+  return withWorldLock(worldId, async () => {
+    const state = await loadWorldById(worldId)
+    state.craftedScenes = [
+      ...(state.craftedScenes || []).filter(entry => entry.id !== scene.id),
+      scene,
+    ]
+    if (scene.position.some(value => value !== 0)) {
+      state.transforms[scene.id] = { position: scene.position }
+    }
+    await saveWorldState(worldId, state)
+    emitWorldEvent(eventType, worldId, {
+      id: scene.id,
+      name: scene.name,
+      position: scene.position,
+      scene,
+      transform: state.transforms[scene.id],
+      ...mutationActorData(args),
+    })
+    return state.transforms[scene.id]
+  })
+}
+
+async function removeCraftedSceneFromWorld(worldId: string, sceneId: string, args: Record<string, unknown>) {
+  await withWorldLock(worldId, async () => {
+    const state = await loadWorldById(worldId)
+    state.craftedScenes = (state.craftedScenes || []).filter(entry => entry.id !== sceneId)
+    if (state.transforms?.[sceneId]) {
+      delete state.transforms[sceneId]
+    }
+    await saveWorldState(worldId, state)
+    emitWorldEvent('object_removed', worldId, {
+      objectId: sceneId,
+      ...mutationActorData(args),
+    })
+  })
+}
+
 function cloneConjuredAsset(asset: ConjuredAsset | undefined | null): ConjuredAsset | null {
   return asset ? structuredClone(asset) as ConjuredAsset : null
 }
@@ -217,7 +326,7 @@ function readWorldTransform(
 } | null {
   const transform = state.transforms?.[objectId]
   if (!transform || !Array.isArray(transform.position) || transform.position.length < 3) return null
-  return structuredClone(transform) as typeof transform
+  return structuredClone(transform) as { position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number }
 }
 
 function summarizeWorldConjuredAsset(state: WorldState, assetId: string) {
@@ -334,6 +443,49 @@ export interface ToolResult {
   ok: boolean
   message: string
   data?: unknown
+}
+
+type CraftJobStatus = 'queued' | 'running' | 'completed' | 'failed'
+
+interface CraftJobRecord {
+  id: string
+  status: CraftJobStatus
+  worldId: string
+  sceneId: string
+  prompt: string
+  model: string
+  name: string
+  objectCount: number
+  startedAt: string
+  updatedAt: string
+  error?: string
+}
+
+function getCraftJobStore() {
+  const globalState = globalThis as typeof globalThis & {
+    __oasisCraftJobs?: Map<string, CraftJobRecord>
+  }
+  if (!globalState.__oasisCraftJobs) {
+    globalState.__oasisCraftJobs = new Map()
+  }
+  return globalState.__oasisCraftJobs
+}
+
+function writeCraftJob(job: CraftJobRecord) {
+  getCraftJobStore().set(job.id, job)
+  return job
+}
+
+function readCraftJob(jobId: string): CraftJobRecord | null {
+  return getCraftJobStore().get(jobId) || null
+}
+
+function updateCraftJob(jobId: string, updater: (current: CraftJobRecord) => CraftJobRecord) {
+  const current = readCraftJob(jobId)
+  if (!current) return null
+  const next = updater(current)
+  getCraftJobStore().set(jobId, next)
+  return next
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -548,91 +700,270 @@ tools.place_object = async (args) => {
   return { ok: true, message: `Placed ${asset.name} (${catalogId}) at [${position.join(', ')}] as ${id}`, data: { id, catalogId, position } }
 }
 
+function normalizeCraftModel(value: unknown): string {
+  const requested = validStr(value, '').toLowerCase()
+  if (!requested) return 'cc-opus'
+  if (requested === 'opus') return 'cc-opus'
+  if (requested === 'sonnet') return 'cc-sonnet'
+  return requested
+}
+
+const CRAFT_GEOMETRY_TYPES = ['box', 'sphere', 'cylinder', 'cone', 'torus', 'plane', 'capsule', 'text'] as const
+const CRAFT_SHADER_TYPES = ['flame', 'flag', 'crystal', 'water', 'particle_emitter', 'glow_orb', 'aurora'] as const
+const CRAFT_ANIMATION_TYPES = ['rotate', 'bob', 'pulse', 'swing', 'orbit'] as const
+const CRAFT_TEXTURE_PRESETS = [
+  'stone', 'cobblestone', 'marble', 'concrete', 'rock', 'grass', 'sand', 'dirt', 'snow', 'metal', 'gravel', 'forest-floor',
+  'kn-planks', 'kn-cobblestone', 'kn-roof', 'kn-wall', 'kn-asphalt', 'kn-concrete', 'kn-metal', 'kn-rock',
+] as const
+
+const SELF_CRAFT_GUIDE = {
+  strategyDefault: 'agent',
+  geometryTypes: CRAFT_GEOMETRY_TYPES,
+  shaderTypes: CRAFT_SHADER_TYPES,
+  animationTypes: CRAFT_ANIMATION_TYPES,
+  texturePresets: CRAFT_TEXTURE_PRESETS,
+  requiredFields: ['type', 'position', 'scale', 'color'],
+  optionalFields: [
+    'rotation', 'metalness', 'roughness', 'opacity', 'emissive', 'emissiveIntensity',
+    'color2', 'color3', 'intensity', 'speed', 'particleCount', 'particleType', 'seed',
+    'text', 'fontSize', 'texturePresetId', 'textureRepeat', 'animation',
+  ],
+  animationFields: ['type', 'speed', 'axis', 'amplitude'],
+  rules: [
+    'Do not add terrain, floor planes, sky domes, or background walls; Oasis already provides the world ground and sky.',
+    'Use shader primitives aggressively for fire, cloth, crystals, water, particles, glow, and aurora effects.',
+    'Use many overlapping primitives for richer silhouettes instead of one oversized primitive.',
+    'Keep flames physically small and pair fire with particle_emitter embers.',
+    'Crystal clusters should use 3+ crystals with varied seeds, scales, and rotations.',
+    'At least some primitives should have non-zero rotation for visual interest.',
+  ],
+  example: {
+    name: 'Arcane campfire',
+    objects: [
+      { type: 'cylinder', position: [0, 0.08, 0], scale: [0.55, 0.08, 0.55], color: '#3b2a1d', roughness: 0.92 },
+      { type: 'flame', position: [0, 0.3, 0], scale: [0.22, 0.35, 0.22], color: '#fff4dd', color2: '#ff7a00', color3: '#9b1d00', intensity: 1, speed: 1.1 },
+      { type: 'particle_emitter', position: [0, 0.75, 0], scale: [0.45, 0.85, 0.45], color: '#ffb347', color2: '#ff4d00', particleCount: 80, particleType: 'ember', speed: 0.7 },
+      { type: 'crystal', position: [0.65, 0.32, 0.1], scale: [0.22, 0.6, 0.22], rotation: [0.14, 0.3, -0.08], color: '#4338ca', color2: '#8b5cf6', seed: 11 },
+    ],
+  },
+} as const
+
+function usesSelfCraftByDefault(actorAgentType: string): boolean {
+  return actorAgentType === 'hermes' || actorAgentType === 'merlin'
+}
+
+async function startPromptCraftJob(
+  args: Record<string, unknown>,
+  worldId: string,
+  position: [number, number, number],
+  prompt: string,
+  name: string,
+  model: string,
+) {
+  const { extractPartialCraftData } = await import('../craft-stream')
+  const jobId = `craft-job-${uid()}`
+  const sceneId = `crafted-mcp-${uid()}`
+  const nowIso = new Date().toISOString()
+  const placeholderScene: CraftedScene = {
+    id: sceneId,
+    name: 'Crafting...',
+    prompt,
+    objects: [],
+    position,
+    createdAt: nowIso,
+    model,
+  }
+
+  writeCraftJob({
+    id: jobId,
+    status: 'queued',
+    worldId,
+    sceneId,
+    prompt,
+    model,
+    name: placeholderScene.name,
+    objectCount: 0,
+    startedAt: nowIso,
+    updatedAt: nowIso,
+  })
+
+  const run = async (): Promise<ToolResult> => {
+    try {
+      updateCraftJob(jobId, current => ({
+        ...current,
+        status: 'running',
+        updatedAt: new Date().toISOString(),
+      }))
+
+      await upsertCraftedSceneInWorld(worldId, placeholderScene, args, 'scene_craft_progress')
+
+      const isCC = model.startsWith('cc-')
+      const response = await fetch(`${INTERNAL_OASIS_BASE_URL}/api/craft/${isCC ? 'cc' : 'stream'}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, model }),
+      })
+
+      const errorBody = !response.ok ? await response.json().catch(() => null) as { error?: string } | null : null
+      if (!response.ok) {
+        throw new Error(errorBody?.error || `HTTP ${response.status}`)
+      }
+      if (!response.body) {
+        throw new Error('No craft stream body returned.')
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let accumulated = ''
+      let lastObjectCount = 0
+      let lastSceneName = placeholderScene.name
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        accumulated += decoder.decode(value, { stream: true })
+        const partial = extractPartialCraftData(accumulated)
+        const nextName = partial.name || name || placeholderScene.name
+
+        if (partial.objects.length !== lastObjectCount || nextName !== lastSceneName) {
+          const progressScene: CraftedScene = {
+            ...placeholderScene,
+            name: nextName,
+            objects: [...partial.objects],
+          }
+          await upsertCraftedSceneInWorld(worldId, progressScene, args, 'scene_craft_progress')
+          lastObjectCount = partial.objects.length
+          lastSceneName = nextName
+          updateCraftJob(jobId, current => ({
+            ...current,
+            name: nextName,
+            objectCount: partial.objects.length,
+            updatedAt: new Date().toISOString(),
+          }))
+        }
+      }
+
+      const finalParsed = extractPartialCraftData(accumulated)
+      if (finalParsed.objects.length === 0) {
+        await removeCraftedSceneFromWorld(worldId, sceneId, args)
+        const failedAt = new Date().toISOString()
+        updateCraftJob(jobId, current => ({
+          ...current,
+          status: 'failed',
+          name: name || current.name,
+          objectCount: 0,
+          updatedAt: failedAt,
+          error: 'Craft stream returned no valid objects.',
+        }))
+        return {
+          ok: false,
+          message: 'Craft stream returned no valid objects.',
+          data: { jobId, status: 'failed', sceneId },
+        }
+      }
+
+      const finalScene: CraftedScene = {
+        ...placeholderScene,
+        name: finalParsed.name || name || 'Crafted Scene',
+        objects: finalParsed.objects,
+      }
+      await upsertCraftedSceneInWorld(worldId, finalScene, args, 'scene_crafted')
+      const completedAt = new Date().toISOString()
+      updateCraftJob(jobId, current => ({
+        ...current,
+        status: 'completed',
+        name: finalScene.name,
+        objectCount: finalScene.objects.length,
+        updatedAt: completedAt,
+      }))
+      return {
+        ok: true,
+        message: `Crafted "${finalScene.name}" (${finalScene.objects.length} primitives) as ${sceneId}.`,
+        data: {
+          jobId,
+          status: 'completed',
+          id: sceneId,
+          name: finalScene.name,
+          objectCount: finalScene.objects.length,
+        },
+      }
+    } catch (error) {
+      const failedAt = new Date().toISOString()
+      updateCraftJob(jobId, current => ({
+        ...current,
+        status: 'failed',
+        updatedAt: failedAt,
+        error: error instanceof Error ? error.message : String(error),
+      }))
+      await removeCraftedSceneFromWorld(worldId, sceneId, args).catch(() => {})
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : 'Craft job failed.',
+        data: {
+          jobId,
+          status: 'failed',
+          sceneId,
+        },
+      }
+    }
+  }
+
+  return { jobId, sceneId, run }
+}
+
 tools.craft_scene = async (args) => {
   const position = validPos(args.position) || [0, 0, 0]
-  const rawObjects = Array.isArray(args.objects) ? args.objects : []
+  const rawObjects = parseLooseObjectArray(args.objects)
   const promptStr = validStr(args.prompt, '')
+  const requestedName = validStr(args.name, 'Crafted Scene')
+  const strategy = validStr(args.strategy, '').toLowerCase()
+  const actorAgentType = validStr(args.actorAgentType || args.agentType || args.agent, '').toLowerCase()
 
   // If prompt is provided and no objects, route through the LLM crafting pipeline
   if (promptStr && rawObjects.length === 0) {
-    const apiKey = process.env.OPENROUTER_API_KEY
-    if (!apiKey) return { ok: false, message: 'LLM provider not configured (OPENROUTER_API_KEY missing)' }
+    if (usesSelfCraftByDefault(actorAgentType) && strategy !== 'sculptor') {
+      return {
+        ok: false,
+        message: `${actorAgentType[0]?.toUpperCase() || 'A'}${actorAgentType.slice(1) || 'gent'} defaults to self-crafted scenes. Provide an objects array or explicitly set strategy: "sculptor" for prompt-mode fallback. Call get_craft_guide for the supported primitive schema.`,
+        data: {
+          strategyDefault: 'agent',
+          fallbackStrategy: 'sculptor',
+          actorAgentType,
+        },
+      }
+    }
 
-    const { CRAFT_SYSTEM_PROMPT } = await import('../craft-prompt')
-    const llmResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://parzival.dev',
-        'X-Title': 'Oasis MCP Craft',
+    const model = normalizeCraftModel(args.model)
+    const waitForCompletion = validBool(args.waitForCompletion, false)
+    const { worldId } = await loadRequestedWorld(args.worldId)
+    const job = await startPromptCraftJob(args, worldId, position, promptStr, requestedName, model)
+
+    if (waitForCompletion) {
+      return job.run()
+    }
+
+    void job.run()
+    return {
+      ok: true,
+      message: `Craft job ${job.jobId} started with ${model}. Poll get_craft_job for progress.`,
+      data: {
+        jobId: job.jobId,
+        sceneId: job.sceneId,
+        status: 'running',
+        worldId,
+        model,
       },
-      body: JSON.stringify({
-        model: 'anthropic/claude-sonnet-4-6',
-        messages: [
-          { role: 'system', content: CRAFT_SYSTEM_PROMPT },
-          { role: 'user', content: `Design a 3D scene for: ${promptStr}` },
-        ],
-        temperature: 0.7,
-        response_format: { type: 'json_object' },
-      }),
-    })
-
-    if (!llmResponse.ok) {
-      const err = await llmResponse.text()
-      console.error('[craft_scene:MCP] LLM error:', err)
-      return { ok: false, message: 'LLM crafting failed' }
     }
-
-    const llmData = await llmResponse.json()
-    const content = llmData.choices?.[0]?.message?.content
-    if (!content) return { ok: false, message: 'Empty LLM response' }
-
-    let parsed: Record<string, unknown>
-    try {
-      const cleaned = content.replace(/^```(?:json)?\s*/m, '').replace(/\s*```$/m, '').trim()
-      parsed = JSON.parse(cleaned)
-    } catch {
-      return { ok: false, message: 'Failed to parse LLM JSON' }
-    }
-
-    const sceneName = typeof parsed.name === 'string' ? parsed.name : (validStr(args.name, 'Crafted Scene'))
-    const llmObjects = Array.isArray(parsed.objects) ? parsed.objects : []
-    const validObjects = llmObjects.filter(o => {
-      if (!o || typeof o !== 'object') return false
-      const obj = o as Record<string, unknown>
-      return obj.type && obj.position && obj.scale && obj.color
-    }) as CraftedScene['objects']
-
-    if (validObjects.length === 0) return { ok: false, message: 'LLM returned no valid primitives' }
-
-    const { worldId, state } = await loadRequestedWorld(args.worldId)
-    const id = `crafted-mcp-${uid()}`
-
-    const scene: CraftedScene = {
-      id, name: sceneName, prompt: promptStr, objects: validObjects, position, createdAt: new Date().toISOString(),
-    }
-    state.craftedScenes = [...(state.craftedScenes || []), scene]
-    if (position.some(v => v !== 0)) {
-      state.transforms[id] = { position }
-    }
-    await saveWorldState(worldId, state)
-    emitWorldEvent('scene_crafted', worldId, {
-      id, name: sceneName, position, scene,
-      transform: state.transforms[id],
-      ...mutationActorData(args),
-    })
-
-    return { ok: true, message: `Crafted "${sceneName}" (${validObjects.length} primitives) from prompt as ${id}`, data: { id, name: sceneName, objectCount: validObjects.length } }
   }
 
   // Direct primitive placement — no LLM involved
-  const name = validStr(args.name, 'Crafted Scene')
+  const name = requestedName
   const objects = rawObjects.filter(o => {
     if (!o || typeof o !== 'object') return false
     const obj = o as Record<string, unknown>
     return obj.type && obj.position && obj.scale && obj.color
-  }) as CraftedScene['objects']
+  }) as unknown as CraftedScene['objects']
 
   if (objects.length === 0) return { ok: false, message: 'No valid primitives in scene. Each needs type, position, scale, color. Or provide a "prompt" to have the LLM design the scene.' }
 
@@ -659,6 +990,28 @@ tools.craft_scene = async (args) => {
   return { ok: true, message: `Created scene "${name}" with ${objects.length} primitives as ${id}`, data: { id, name, objectCount: objects.length } }
 }
 
+tools.get_craft_job = async (args) => {
+  const jobId = validStr(args.jobId, '')
+  if (!jobId) return { ok: false, message: 'jobId is required.' }
+  const job = readCraftJob(jobId)
+  if (!job) {
+    return { ok: false, message: `Craft job ${jobId} not found.` }
+  }
+  return {
+    ok: true,
+    message: `Craft job ${jobId} is ${job.status}.`,
+    data: {
+      ...job,
+    },
+  }
+}
+
+tools.get_craft_guide = async () => ({
+  ok: true,
+  message: 'Self-craft guide ready. Use this schema to build explicit objects arrays for craft_scene.',
+  data: SELF_CRAFT_GUIDE,
+})
+
 tools.modify_object = async (args) => {
   const objectId = validStr(args.objectId, '')
   if (!objectId) return { ok: false, message: 'objectId is required.' }
@@ -676,13 +1029,12 @@ tools.modify_object = async (args) => {
     state.craftedScenes![craftedIdx] = scene
   }
 
-  // Find in catalog placements
+  // Find in catalog placements — only update label here.
+  // Position/rotation/scale go through transforms (the override layer) to avoid
+  // double-application: SelectableWrapper applies transforms, CatalogModelRenderer applies placement.
   const catalogIdx = (state.catalogPlacements || []).findIndex(p => p.id === objectId)
   if (catalogIdx >= 0) {
     const p = state.catalogPlacements![catalogIdx]
-    if (args.position) { p.position = validPos(args.position) || p.position; changes.push('position') }
-    if (args.rotation) { p.rotation = validPos(args.rotation) || p.rotation; changes.push('rotation') }
-    if (args.scale !== undefined) { p.scale = validNum(args.scale, p.scale); changes.push('scale') }
     if (args.label) { p.name = validStr(args.label, p.name); changes.push('label') }
     state.catalogPlacements![catalogIdx] = p
   }
@@ -709,7 +1061,7 @@ tools.modify_object = async (args) => {
 
   // Update transform overrides
   if (pos || rot || scl !== undefined) {
-    const existing = state.transforms[objectId] || { position: [0, 0, 0] as [number, number, number] }
+    const existing = state.transforms[objectId] || {}
     if (pos) existing.position = pos
     if (rot) existing.rotation = rot
     if (scl !== undefined) existing.scale = scl
@@ -808,7 +1160,7 @@ tools.set_ground_preset = async (args) => {
 }
 
 tools.paint_ground_tiles = async (args) => {
-  const tiles = Array.isArray(args.tiles) ? args.tiles : []
+  const tiles = parseLooseObjectArray(args.tiles)
   if (tiles.length === 0) return { ok: false, message: 'tiles array is required: [{x, z, presetId}]' }
 
   const { worldId, state } = await loadRequestedWorld(args.worldId)
@@ -931,9 +1283,21 @@ tools.set_behavior = async (args) => {
   return { ok: true, message: `Set behavior on ${objectId}: movement=${movement}` }
 }
 
+function resolveAvatarUrl(raw: string): { url: string; resolved: boolean; suggestion?: string } {
+  // External URLs (http/https) are allowed as-is — user's responsibility
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return { url: raw, resolved: true }
+  const resolved = resolveAgentAvatarUrl(raw)
+  return {
+    url: resolved.url,
+    resolved: resolved.resolved,
+    suggestion: resolved.suggestion,
+  }
+}
+
 tools.set_avatar = async (args) => {
-  const avatarUrl = validStr(args.avatarUrl || args.url, '')
-  if (!avatarUrl) return { ok: false, message: 'avatarUrl is required.' }
+  const rawUrl = validStr(args.avatarUrl || args.url, '')
+  if (!rawUrl) return { ok: false, message: 'avatarUrl is required. Use a path like /avatars/gallery/Orion.vrm or call get_world_state to see available avatars.' }
+  const { url: avatarUrl, resolved, suggestion } = resolveAvatarUrl(rawUrl)
 
   const { worldId, state } = await loadRequestedWorld(args.worldId)
   const { existing, avatarId, linkedWindowId, agentType } = resolveAgentAvatarTarget(
@@ -941,6 +1305,7 @@ tools.set_avatar = async (args) => {
     args,
     validStr(args.linkedWindowId, '') ? 'anorak' : 'hermes',
   )
+  const isSharedAvatarType = SHARED_AGENT_AVATAR_TYPES.has(agentType)
   const label = validStr(args.label, '')
   const position = validPos(args.position)
   const rotation = validPos(args.rotation)
@@ -954,7 +1319,7 @@ tools.set_avatar = async (args) => {
         position: position || existing.position,
         rotation: rotation || existing.rotation,
         scale: Number.isFinite(Number(args.scale)) ? scale : existing.scale,
-        linkedWindowId: linkedWindowId || existing.linkedWindowId,
+        linkedWindowId: isSharedAvatarType ? undefined : (linkedWindowId || existing.linkedWindowId),
         agentType: validStr(agentType, existing.agentType) as typeof existing.agentType,
       }
     : {
@@ -964,7 +1329,7 @@ tools.set_avatar = async (args) => {
         position: position || [0, 0, 3.2],
         rotation: rotation || [0, Math.PI, 0],
         scale,
-        ...(linkedWindowId ? { linkedWindowId } : {}),
+        ...(!isSharedAvatarType && linkedWindowId ? { linkedWindowId } : {}),
         ...(label ? { label } : {}),
       }
 
@@ -972,6 +1337,12 @@ tools.set_avatar = async (args) => {
     state.agentAvatars = (state.agentAvatars || []).map(avatar => avatar.id === nextAvatar.id ? nextAvatar : avatar)
   } else {
     state.agentAvatars = [...(state.agentAvatars || []), nextAvatar]
+  }
+  if (isSharedAvatarType) {
+    state.agentAvatars = (state.agentAvatars || []).filter((avatar, index, list) => {
+      if (avatar.agentType !== agentType) return true
+      return list.findIndex(entry => entry.agentType === agentType) === index
+    })
   }
 
   await saveWorldState(worldId, state)
@@ -984,9 +1355,12 @@ tools.set_avatar = async (args) => {
     ...mutationActorData(args),
   })
 
+  const msg = suggestion
+    ? `Avatar ${nextAvatar.id} now uses ${avatarUrl}. Note: ${suggestion}`
+    : `Avatar ${nextAvatar.id} now uses ${avatarUrl}.`
   return {
-    ok: true,
-    message: `Avatar ${nextAvatar.id} now uses ${avatarUrl}.`,
+    ok: resolved,
+    message: msg,
     data: nextAvatar,
   }
 }
@@ -997,7 +1371,7 @@ tools.walk_avatar_to = async (args) => {
   const moveSpeed = validNum(args.speed, 3)
 
   const { worldId, state } = await loadRequestedWorld(args.worldId)
-  const { existing: matchedAvatar, avatarId } = resolveAgentAvatarTarget(state, args, 'merlin')
+  const { existing: matchedAvatar, avatarId } = resolveAgentAvatarTarget(state, args)
   const avatar = matchedAvatar || ((state.agentAvatars || []).find(entry => entry.id === avatarId) || null)
   if (!avatar || !avatarId) return { ok: false, message: 'No matching avatar found. Call set_avatar first or specify avatarId.' }
 
@@ -1006,6 +1380,8 @@ tools.walk_avatar_to = async (args) => {
   state.behaviors[avatarId] = {
     ...existingBehavior,
     visible: existingBehavior.visible ?? true,
+    // Walking should reclaim locomotion from stale emote loops instead of gliding forever in the old clip.
+    animation: undefined,
     moveTarget: target,
     moveSpeed,
   }
@@ -1021,14 +1397,60 @@ tools.walk_avatar_to = async (args) => {
   return { ok: true, message: `Avatar ${avatarId} is walking to [${target.join(', ')}].`, data: { avatarId, target, moveSpeed } }
 }
 
+tools.list_avatar_animations = async (args) => {
+  const library = await loadAvatarAnimationCatalog()
+  const query = normalizeAnimationLookupKey(validStr(args.query, ''))
+  const category = validStr(args.category, '').toLowerCase()
+  const limit = Math.max(1, Math.min(200, validNum(args.limit, 80)))
+
+  const animations = library
+    .filter(entry => !category || entry.category.toLowerCase() === category)
+    .filter(entry =>
+      !query ||
+      entry.id.includes(query) ||
+      entry.label.toLowerCase().includes(query) ||
+      entry.category.toLowerCase().includes(query)
+    )
+    .slice(0, limit)
+    .map(entry => ({
+      id: entry.id,
+      label: entry.label,
+      category: entry.category,
+      clipName: `lib:${entry.id}`,
+      source: entry.filename,
+      ...(entry.glbClipName ? { glbClipName: entry.glbClipName } : {}),
+    }))
+
+  return {
+    ok: true,
+    message: `Found ${animations.length} animation${animations.length === 1 ? '' : 's'}.`,
+    data: {
+      animations,
+      aliases: AVATAR_ANIMATION_ALIASES,
+    },
+  }
+}
+
 tools.play_avatar_animation = async (args) => {
   const clipName = validStr(args.clipName || args.animation || args.name, '')
-  if (!clipName) return { ok: false, message: 'clipName is required.' }
-  const loop = validStr(args.loop, 'repeat')
+  if (!clipName) return { ok: false, message: 'clipName is required. Call list_avatar_animations for valid IDs.' }
+  const loop = validStr(args.loop, 'once')
   const speed = validNum(args.speed, 1)
+  const animation = await resolveAvatarAnimation(clipName)
+  if (!animation.exact) {
+    return {
+      ok: false,
+      message: `Unknown animation "${clipName}". Call list_avatar_animations for exact IDs.`,
+      data: {
+        requested: clipName,
+        normalized: animation.normalized,
+        suggestions: animation.suggestions,
+      },
+    }
+  }
 
   const { worldId, state } = await loadRequestedWorld(args.worldId)
-  const { existing: matchedAvatar, avatarId } = resolveAgentAvatarTarget(state, args, 'merlin')
+  const { existing: matchedAvatar, avatarId } = resolveAgentAvatarTarget(state, args)
   const avatar = matchedAvatar || ((state.agentAvatars || []).find(entry => entry.id === avatarId) || null)
   if (!avatar || !avatarId) return { ok: false, message: 'No matching avatar found. Call set_avatar first or specify avatarId.' }
 
@@ -1038,7 +1460,7 @@ tools.play_avatar_animation = async (args) => {
     ...existingBehavior,
     visible: existingBehavior.visible ?? true,
     animation: {
-      clipName: clipName.startsWith('lib:') ? clipName : `lib:${clipName}`,
+      clipName: `lib:${animation.exact.id}`,
       loop: loop === 'once' || loop === 'pingpong' ? loop : 'repeat',
       speed,
     },
@@ -1047,13 +1469,24 @@ tools.play_avatar_animation = async (args) => {
   await saveWorldState(worldId, state)
   emitWorldEvent('agent_avatar_animation', worldId, {
     avatarId,
-    clipName,
+    clipName: animation.exact.id,
     loop,
     speed,
     behavior: state.behaviors[avatarId],
     ...mutationActorData(args),
   })
-  return { ok: true, message: `Avatar ${avatarId} is now playing ${clipName}.`, data: { avatarId, clipName, loop, speed } }
+  return {
+    ok: true,
+    message: `Avatar ${avatarId} is now playing ${animation.exact.id}.`,
+    data: {
+      avatarId,
+      clipName: animation.exact.id,
+      label: animation.exact.label,
+      category: animation.exact.category,
+      loop,
+      speed,
+    },
+  }
 }
 
 tools.clear_world = async (args) => {
@@ -1062,6 +1495,7 @@ tools.clear_world = async (args) => {
   const { worldId, state } = await loadRequestedWorld(args.worldId)
   state.catalogPlacements = []
   state.craftedScenes = []
+  state.conjuredAssetIds = []
   state.agentAvatars = []
   state.lights = []
   state.transforms = {}
@@ -1070,7 +1504,7 @@ tools.clear_world = async (args) => {
   await saveWorldState(worldId, state)
   emitWorldEvent('world_cleared', worldId, mutationActorData(args))
 
-  return { ok: true, message: 'World cleared. All objects, lights, tiles, and behaviors removed.' }
+  return { ok: true, message: 'World cleared. All objects, conjured placements, lights, tiles, and behaviors removed.' }
 }
 
 // ─═̷─═̷─ WORLD MANAGEMENT ─═̷─═̷─
@@ -1087,7 +1521,8 @@ tools.load_world = async (args) => {
   const worldId = validStr(args.worldId, '')
   if (!worldId) return { ok: false, message: 'worldId is required.' }
   const state = await loadWorldById(worldId)
-  return { ok: true, message: `Loaded world ${worldId}.`, data: { worldId, objectCount: (state.catalogPlacements?.length || 0) + (state.craftedScenes?.length || 0) } }
+  emitWorldEvent('world_switch', worldId, { targetWorldId: worldId, ...mutationActorData(args) })
+  return { ok: true, message: `Loaded world ${worldId}. Browser should switch momentarily.`, data: { worldId, objectCount: (state.catalogPlacements?.length || 0) + (state.craftedScenes?.length || 0) } }
 }
 
 tools.create_world = async (args) => {
@@ -1105,7 +1540,8 @@ tools.create_world = async (args) => {
     data: { id, userId: LOCAL_USER_ID, name, icon, data: JSON.stringify(emptyState), createdAt: now, updatedAt: now },
   })
 
-  return { ok: true, message: `Created world "${name}" (${id}).`, data: { worldId: id, name } }
+  emitWorldEvent('world_switch', id, { targetWorldId: id, ...mutationActorData(args) })
+  return { ok: true, message: `Created world "${name}" (${id}). Browser switching now.`, data: { worldId: id, name } }
 }
 
 // ─═̷─═̷─ SCREENSHOT (signal-based) ─═̷─═̷─
@@ -1133,10 +1569,13 @@ export interface ScreenshotViewRequest {
 export interface PendingScreenshotRequest {
   id: string
   requestedAt: number
+  requesterAgentType?: string
+  worldId?: string
   format: ScreenshotFormat
   quality: number
   width: number
   height: number
+  settleMs: number
   views: ScreenshotViewRequest[]
 }
 
@@ -1202,7 +1641,14 @@ function normalizeScreenshotMode(
   if (rawMode === 'agent' || rawMode === 'phantom' || rawMode === 'agent-avatar-phantom') {
     return hasExplicitLookAt ? 'look-at' : 'agent-avatar-phantom'
   }
-  if (rawMode === 'look-at' || rawMode === 'look_at') return 'look-at'
+  if (
+    rawMode === 'look-at'
+    || rawMode === 'look_at'
+    || rawMode === 'lookat'
+    || rawMode === 'look at'
+  ) {
+    return 'look-at'
+  }
   if (
     rawMode === 'third-person'
     || rawMode === 'third_person'
@@ -1223,6 +1669,9 @@ function normalizeScreenshotMode(
   }
   if (rawMode === 'external' || rawMode === 'outside' || rawMode === 'overhead' || rawMode === 'birdseye' || rawMode === 'birds-eye') {
     return hasExplicitLookAt ? 'look-at' : 'external-orbit'
+  }
+  if (hasExplicitLookAt) {
+    return 'look-at'
   }
   return null
 }
@@ -1267,11 +1716,20 @@ function normalizeAvatarSubject(value: unknown, fallback = 'merlin'): string {
 }
 
 function buildAvatarScreenshotArgs(args: Record<string, unknown>, fallbackSubject: string): Record<string, unknown> {
-  const subject = normalizeAvatarSubject(args.subject || args.agentType || args.agent, fallbackSubject)
+  const subject = normalizeAvatarSubject(
+    args.subject || args.agentType || args.agent || args.defaultAgentType || args.requesterAgentType || args.actorAgentType,
+    fallbackSubject,
+  )
   const style = validStr(args.style || args.mode, 'portrait').trim().toLowerCase()
   const thirdPerson = style === 'third-person' || style === 'third_person' || style === 'thirdperson' || style === 'tps'
+  const worldId = validStr(args.worldId, '')
 
   return {
+    ...(worldId ? { worldId } : {}),
+    ...(validStr(args.defaultAgentType, '') ? { defaultAgentType: validStr(args.defaultAgentType, '') } : {}),
+    ...(validStr(args.requesterAgentType, '') ? { requesterAgentType: validStr(args.requesterAgentType, '') } : {}),
+    ...(validStr(args.actorAgentType, '') ? { actorAgentType: validStr(args.actorAgentType, '') } : {}),
+    ...(args.settleMs !== undefined ? { settleMs: args.settleMs } : {}),
     format: validScreenshotFormat(args.format),
     quality: Math.max(0.35, Math.min(0.95, validNum(args.quality, thirdPerson ? 0.8 : 0.9))),
     width: Math.max(320, Math.min(1280, Math.round(validNum(args.width, thirdPerson ? 960 : 640)))),
@@ -1290,6 +1748,8 @@ function buildAvatarScreenshotArgs(args: Record<string, unknown>, fallbackSubjec
 
 function normalizeScreenshotRequest(args: Record<string, unknown>): PendingScreenshotRequest {
   const defaultAgentType = validStr(args.defaultAgentType || args.agentType || args.agent || args.actorAgentType, '').toLowerCase()
+  const requesterAgentType = validStr(args.requesterAgentType, defaultAgentType).toLowerCase()
+  const worldId = validStr(args.worldId, '')
   const requestedViewsRaw =
     Array.isArray(args.views)
       ? args.views
@@ -1307,14 +1767,18 @@ function normalizeScreenshotRequest(args: Record<string, unknown>): PendingScree
   const views = requestedViews
     .map((entry, index) => normalizeScreenshotView(entry, index, defaultAgentType))
     .filter((entry): entry is ScreenshotViewRequest => !!entry)
+  const defaultSettleMs = views.some(view => view.mode !== 'current') ? 220 : 80
 
   return {
     id: `shot-${uid()}`,
     requestedAt: Date.now(),
+    ...(requesterAgentType ? { requesterAgentType } : {}),
+    ...(worldId ? { worldId } : {}),
     format: validScreenshotFormat(args.format),
     quality: Math.max(0.35, Math.min(0.95, validNum(args.quality, 0.72))),
     width: Math.max(320, Math.min(1280, Math.round(validNum(args.width, 480)))),
     height: Math.max(180, Math.min(1280, Math.round(validNum(args.height, 270)))),
+    settleMs: Math.max(0, Math.min(4000, Math.round(validNum(args.settleMs, defaultSettleMs)))),
     views: views.length > 0
       ? views
       : [{
@@ -1360,7 +1824,10 @@ tools.screenshot_viewport = async (args) => {
       resolve: (captures: DeliveredScreenshotCapture[]) => {
         removeScreenshotJob(job)
         if (captures.length === 0) {
-          resolve({ ok: false, message: 'Screenshot capture timed out or failed.' })
+          resolve({
+            ok: false,
+            message: 'Screenshot capture timed out or failed. The live Oasis screenshot bridge may be unavailable, on a different world, or missing the requested avatar/camera subject.',
+          })
         } else {
           const summarizedCaptures = captures.map(summarizeDeliveredScreenshotCapture)
           const primaryInlineBase64 = !captures[0]?.url && !captures[0]?.filePath
@@ -1391,7 +1858,13 @@ tools.screenshot_viewport = async (args) => {
 }
 
 tools.screenshot_avatar = async (args) => {
-  return tools.screenshot_viewport(buildAvatarScreenshotArgs(args, normalizeAvatarSubject(args.subject || args.agentType || args.agent, 'merlin')))
+  return tools.screenshot_viewport(buildAvatarScreenshotArgs(
+    args,
+    normalizeAvatarSubject(
+      args.subject || args.agentType || args.agent || args.defaultAgentType || args.requesterAgentType || args.actorAgentType,
+      'merlin',
+    ),
+  ))
 }
 
 tools.avatarpic_merlin = async (args) => {
@@ -1407,7 +1880,7 @@ tools.list_conjured_assets = async (args) => {
   const statusFilter = validStr(args.status, '').toLowerCase()
   const providerFilter = validStr(args.provider, '').toLowerCase()
   const limit = Math.max(1, Math.min(200, validNum(args.limit, 50)))
-  const inWorldOnly = validBool(args.inWorldOnly, false)
+  const inWorldOnly = validBool(args.inWorldOnly ?? args.activeWorldOnly, false)
   const characterModeFilter = typeof args.characterMode === 'boolean' ? args.characterMode : null
 
   const { state, worldId: resolvedWorldId } = worldId
@@ -1685,8 +2158,14 @@ export function isScreenshotPending(): boolean {
   return pendingScreenshotJobs.length > 0
 }
 
-export function getPendingScreenshotRequest(): PendingScreenshotRequest | null {
-  const request = activeScreenshotJob()?.request
+export function getPendingScreenshotRequest(options?: { worldId?: string; requestId?: string }): PendingScreenshotRequest | null {
+  const requestedRequestId = validStr(options?.requestId, '')
+  const requestedWorldId = validStr(options?.worldId, '')
+  const request = requestedRequestId
+    ? pendingScreenshotJobs.find(entry => entry.request.id === requestedRequestId)?.request || null
+    : requestedWorldId
+      ? pendingScreenshotJobs.find(entry => !entry.request.worldId || entry.request.worldId === requestedWorldId)?.request || null
+      : activeScreenshotJob()?.request || null
   if (!request) return null
   return {
     ...request,
