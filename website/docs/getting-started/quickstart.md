@@ -18,6 +18,7 @@ git clone https://github.com/Parzival-Moksha/oasis.git
 cd oasis
 pnpm install
 pnpm approve-builds    # approve: prisma, @prisma/client, @prisma/engines
+cp .env.example .env   # DATABASE_URL etc — required before prisma commands
 npx prisma generate
 npx prisma db push
 pnpm dev
