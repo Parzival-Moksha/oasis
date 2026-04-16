@@ -32,15 +32,17 @@ Open [http://localhost:4516](http://localhost:4516)
 
 Two channels connect your agent to the Oasis: **MCP** (tools) and **chat** (the panel). Both are needed for the full experience.
 
-### Step 1: Install the Oasis Skill on Your Agent
+### Step 1: Tell Your Hermes Agent To Read The Skill
 
-Tell your Hermes agent on Telegram, CLI, or any existing channel:
+Paste this one line to Hermes on Telegram, CLI, or any existing channel:
 
 ```text
-Install the oasis skill from https://github.com/Parzival-Moksha/oasis and guide me through connecting to my Oasis.
+Read https://raw.githubusercontent.com/Parzival-Moksha/oasis/main/skills/oasis/SKILL.md and connect to my Oasis following its instructions.
 ```
 
-Or install directly from CLI using the canonical tap flow:
+That's it. The skill is written for agent consumption — it tells Hermes the topology (you on your laptop, Hermes on the VPS), the MCP URL, the SSH tunnel command, the progressive smoke test, everything. One WebFetch, no clone.
+
+Optional CLI alternative (for Hermes versions with a working skill installer):
 
 ```bash
 hermes skills tap add Parzival-Moksha/oasis
@@ -48,7 +50,7 @@ hermes skills install oasis
 /reload-mcp
 ```
 
-The skill teaches your agent what the Oasis is, what 35 tools are available, and how to connect.
+If your Hermes' built-in skill system errors out, use the WebFetch line instead — it reaches the same SKILL.md content.
 
 ### Step 2: Configure MCP (Agent Gets Tools)
 

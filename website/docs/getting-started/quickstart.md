@@ -24,15 +24,21 @@ Open [http://localhost:4516](http://localhost:4516). You should land in the main
 
 Node 18+ and pnpm required. No API keys needed for the progressive smoke test below — those unlock extra tools later.
 
-## 2. Talk to your Hermes agent: install the skill
+## 2. Tell your Hermes agent to read the skill
 
-Tell your Hermes agent (on Telegram, CLI, or any existing channel):
+Paste this one line to Hermes on Telegram, CLI, or any existing channel:
 
 ```text
-Install the oasis skill from https://github.com/Parzival-Moksha/oasis and guide me through connecting to my Oasis.
+Read https://raw.githubusercontent.com/Parzival-Moksha/oasis/main/skills/oasis/SKILL.md and connect to my Oasis following its instructions.
 ```
 
-Or install directly from the Hermes CLI:
+That's it. The `SKILL.md` is written for agent consumption — it tells Hermes the topology (you on your laptop, Hermes on the VPS), the MCP URL, the SSH tunnel command, the progressive smoke test, everything. One WebFetch on Hermes' side, no repo clone.
+
+:::info
+**Why not `hermes skills install`?** Hermes has a built-in skill installer, but support for third-party repos is uneven across Hermes versions. The raw `SKILL.md` URL is the lowest-common-denominator path — every Hermes can WebFetch.
+:::
+
+If you still want the CLI install flow (some Hermes versions do support it):
 
 ```bash
 hermes skills tap add Parzival-Moksha/oasis
@@ -40,14 +46,7 @@ hermes skills install oasis
 /reload-mcp
 ```
 
-After `/reload-mcp` you should see:
-
-```text
-Reconnected: oasis
-35 tool(s) available from 1 server(s)
-```
-
-The skill teaches your agent what the Oasis is, which tools are available, and how to use them.
+Either path reaches the same `SKILL.md` content.
 
 :::tip
 If `/reload-mcp` reports "No MCP servers connected", Hermes is missing the `[mcp]` pip extra. Run `cd ~/.hermes/hermes-agent && uv pip install -e ".[mcp]"` and retry.
