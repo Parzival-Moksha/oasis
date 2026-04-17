@@ -11,28 +11,19 @@ A standalone 3D world builder with AI-powered text-to-3D conjuring, terrain pain
 ```bash
 git clone https://github.com/Parzival-Moksha/oasis.git
 cd oasis
-pnpm install
-pnpm approve-builds    # say "yes" to prisma + @prisma/client + @prisma/engines
-cp .env.example .env   # DATABASE_URL etc — required before prisma commands
-npx prisma generate
-npx prisma db push     # creates prisma/data/oasis.db on first run
+pnpm install           # auto-generates prisma client
+cp .env.example .env
+npx prisma db push     # creates prisma/data/oasis.db
+pnpm dev
 ```
 
-Edit `.env` to add any API keys you want (all optional for the core Hermes flow):
+Open [http://localhost:4516](http://localhost:4516). Edit `.env` to add any API keys you want (all optional for the core Hermes flow):
 
 ```env
 MESHY_API_KEY=your_key_here       # meshy.ai — text-to-3D + rigging + animation
 TRIPO_API_KEY=your_key_here       # tripo3d.ai — text-to-3D (fast)
 OPENROUTER_API_KEY=your_key_here  # openrouter.ai — LLM craft + terrain generation
 ```
-
-Then run:
-
-```bash
-pnpm dev
-```
-
-Open [http://localhost:4516](http://localhost:4516)
 
 ## Connect Your Hermes Agent
 

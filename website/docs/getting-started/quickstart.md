@@ -20,23 +20,15 @@ This is the canonical onboarding path. If you arrived from the Hermes skill publ
 ```bash
 git clone https://github.com/Parzival-Moksha/oasis.git
 cd oasis
-pnpm install
-pnpm approve-builds    # approve: prisma, @prisma/client, @prisma/engines
-cp .env.example .env   # DATABASE_URL etc — required before prisma commands
-npx prisma generate
-npx prisma db push
+pnpm install           # auto-generates prisma client
+cp .env.example .env
+npx prisma db push     # creates prisma/data/oasis.db
 pnpm dev
 ```
 
 Open [http://localhost:4516](http://localhost:4516). You should land in the main 3D world with the Wizard Console available.
 
-:::info
-pnpm 10+ blocks postinstall scripts by default. Prisma needs them to generate its client and binaries. `pnpm approve-builds` is a one-time trust step — toggle the three `prisma*` entries with spacebar, confirm, done.
-
-`npx prisma db push` creates the SQLite database at `prisma/data/oasis.db` on a fresh clone. Without it, the world won't load.
-:::
-
-Node 18+ and pnpm required. No API keys needed for the progressive smoke test below — those unlock extra tools later.
+Node 18+ and pnpm 10+ required. No API keys needed for the progressive smoke test below — those unlock extra tools later.
 
 ## 2. Tell your Hermes agent to read the skill
 
