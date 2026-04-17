@@ -86,28 +86,17 @@ Your agent now has access to world-building tools: `place_object`, `craft_scene`
 
 Note: self-craft is the default — Hermes writes the `objects` array itself when you ask for a procedural scene. The sculptor fallback (`strategy: "sculptor"`) requires Claude Code CLI on the Oasis PATH and is rarely needed.
 
-### Step 3: Wire Hermes ↔ Oasis (tunnel + pairing paste)
+### Step 3: Paste what Hermes gave you into Oasis
 
-In Step 1 your Hermes should have handed you back two things: an SSH tunnel command and a pairing blob. If not, say: `output the SSH tunnel command and Hermes pairing blob so I can wire us up`.
+Hermes in Step 1 hands back an SSH tunnel command AND a pairing blob. Paste BOTH into Oasis — not into a terminal. Oasis owns the tunnel lifecycle.
 
-**3a. Start the dual-forward SSH tunnel** on YOUR machine (where Oasis is):
+1. Open [http://localhost:4516](http://localhost:4516)
+2. Click the **☤** button → **config**
+3. Paste pairing blob into **CONNECTION DATA** (`HERMES_API_BASE=... / HERMES_API_KEY=...`)
+4. Paste SSH command into **SSH TUNNEL** (leave empty if Hermes is on the same machine)
+5. **save & connect**
 
-```
-ssh -o ExitOnForwardFailure=yes \
-  -L 8642:127.0.0.1:8642 \
-  -R 4516:127.0.0.1:4516 \
-  user@your-vps -N
-```
-
-Both forwards are required. `-L 8642` lets Oasis reach Hermes; `-R 4516` lets Hermes reach Oasis. Leave this running in the background. Skip this step if Hermes runs on the same machine as Oasis.
-
-**3b. Paste the pairing blob into Oasis**:
-1. Open [http://localhost:4516](http://localhost:4516) in your browser
-2. Click the **☤** button in the left toolbar → **config**
-3. Paste the blob (format: `HERMES_API_BASE=... / HERMES_API_KEY=...`)
-4. Click **save & connect**
-
-Make sure Hermes has `API_SERVER_ENABLED=true` in `~/.hermes/.env` or the pairing call won't answer.
+**Do NOT also run the SSH in a terminal** — it conflicts with Oasis's own spawn (both try to bind the same ports, one dies with exit 255). One tunnel, Oasis owns it.
 
 ### Step 4: Talk to Your Agent
 

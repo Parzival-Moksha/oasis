@@ -66,52 +66,27 @@ Either path reaches the same `SKILL.md` content.
 If `/reload-mcp` reports "No MCP servers connected", Hermes is missing the `[mcp]` pip extra. Run `cd ~/.hermes/hermes-agent && uv pip install -e ".[mcp]"` and retry.
 :::
 
-## 3. Wire Hermes ↔ Oasis (tunnel + pairing paste)
+## 3. Paste what Hermes gave you into Oasis
 
-In step 2, Hermes should have handed you back two things: a **dual-forward SSH tunnel command** and a **pairing blob**. Do both now.
+In step 2, Hermes hands back two things: an **SSH tunnel command** and a **pairing blob**. Paste BOTH into the Oasis Hermes panel — not into a terminal. Oasis owns the tunnel lifecycle; it spawns, restarts, and tears down for you.
 
-:::info
-If your Hermes didn't hand these back, ask: `output the SSH tunnel command and Hermes pairing blob so I can wire us up`. The skill instructs it to, but older Hermes versions may need a nudge.
-:::
+In Oasis at [http://localhost:4516](http://localhost:4516):
 
-### 3a. Start the tunnel (local machine → your Hermes VPS)
+1. Click the **☤** button in the left toolbar → **config**
+2. Paste the pairing blob into **CONNECTION DATA** (`HERMES_API_BASE=... / HERMES_API_KEY=...`)
+3. Paste the SSH command into **SSH TUNNEL** (whole thing, as one line or as-given)
+4. Click **save & connect**
 
-Run this on YOUR machine (where Oasis is), substituting your VPS user/host:
-
-```bash
-ssh -o ExitOnForwardFailure=yes \
-  -L 8642:127.0.0.1:8642 \
-  -R 4516:127.0.0.1:4516 \
-  user@your-vps -N
-```
-
-- `-L 8642` — opens local port 8642; your Oasis UI uses this to reach the Hermes API.
-- `-R 4516` — opens remote port 4516 on the VPS; Hermes uses this to reach your Oasis MCP.
+Status should flip to **CONNECTED / SAVED / SSH SAVED / OASIS-READY** and the chat input unlocks.
 
 :::warning
-Both forwards are required. Without `-R 4516`, Hermes chats but tool calls fail. Without `-L 8642`, the chat panel can't reach Hermes. Leave this SSH session running in the background (`-N` = no shell, just forwards).
-
-If Hermes runs on the same machine as Oasis, skip this entirely.
+Do NOT also run the SSH command in a terminal. If you do, the terminal's tunnel binds ports 8642/4516, Oasis's own spawn hits "address already in use" and dies with exit 255. One tunnel at a time. Let Oasis own it.
 :::
 
-### 3b. Paste the pairing blob into Oasis
+:::info
+If Hermes didn't include a pairing blob or tunnel command, ask: `output the SSH tunnel command and Hermes pairing blob so I can wire us up`. Older Hermes versions need the nudge.
 
-With Oasis open at [http://localhost:4516](http://localhost:4516):
-
-1. Click the **☤** button in the left toolbar.
-2. Click **config**.
-3. Paste the blob Hermes gave you. It looks like:
-   ```text
-   HERMES_API_BASE=http://127.0.0.1:8642/v1
-   HERMES_API_KEY=<the actual key from Hermes>
-   ```
-   The parser also accepts JSON objects or `oasis://` URL shapes.
-4. Click **save & connect**.
-
-Pairing is written to `data/hermes-config.local.json` (gitignored). You can also set `HERMES_API_KEY` / `HERMES_API_BASE` in `.env` as a static fallback — see [Hermes agent reference](../agents/hermes) for the split.
-
-:::tip
-Make sure your Hermes gateway has `API_SERVER_ENABLED=true` in `~/.hermes/.env` or it won't answer the pairing call. Hermes' side of the skill is supposed to flag this — but double-check if step 4 below bugs.
+If Hermes and Oasis are on the same machine, leave the SSH TUNNEL field empty — no tunnel needed.
 :::
 
 ## 4. Progressive smoke test
