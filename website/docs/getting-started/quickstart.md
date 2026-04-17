@@ -137,11 +137,13 @@ Run these five prompts in order. Each step escalates what it proves working.
 If step 1 passes but 2 fails, check the SSH `-R 4516` reverse forward — that's the MCP path. If 2–4 pass but 5 fails, the Oasis browser tab is closed or the screenshot bridge is not mounted.
 :::
 
-## 5. What needs API keys
+## 5. Optional extras
 
-The smoke test above works with **zero API keys on the Oasis host**. World state, placement, self-crafting, screenshots, and plain chat all run without external providers.
+The smoke test above works with **zero keys, zero extra installs**. World state, placement, self-crafting, screenshots, and Hermes chat all run out of the box.
 
-Optional keys in `.env` unlock extra tool surface:
+Everything below is optional — enable only what you want.
+
+### External API keys (add to `.env`, restart `pnpm dev`)
 
 | `.env` var | Unlocks |
 |---|---|
@@ -150,9 +152,54 @@ Optional keys in `.env` unlock extra tool surface:
 | `ELEVENLABS_API_KEY` | Voice notes / TTS in agent panels |
 | `MESHY_API_KEY` | Forge conjuration: text-to-3D, image-to-3D, rigging, animation |
 | `TRIPO_API_KEY` | Forge conjuration: fast text-to-3D |
-| Claude Code CLI on PATH | `craft_scene` sculptor fallback (also powers Merlin, Anorak, Anorak Pro local agents) |
 
-If a tool requires a key the host does not have, the call returns a clear error. Prefer self-craft and catalog placement for zero-config flows.
+If a tool requires a key that's not set, the call returns a clear error. Nothing crashes.
+
+### Claude Code CLI (for local agents + sculptor fallback)
+
+Install [Claude Code](https://claude.com/claude-code), log in once. Enables:
+
+- **Merlin** — the in-Oasis build agent with vision and MCP tools
+- **Anorak** — the vibecode chat agent
+- **Anorak Pro** — the autonomous curator → coder → reviewer → tester → gamer pipeline
+- `craft_scene` sculptor fallback when you explicitly ask an MCP agent to delegate crafting
+
+If `claude` is on PATH, these light up automatically. If not, the buttons still show but return a clear "CLI not found" error.
+
+### Local speech-to-text (optional, for mic input)
+
+Oasis ships a local Whisper worker so the mic button transcribes on-device, no cloud. One-time setup:
+
+```bash
+# Ubuntu/WSL:
+sudo apt install -y python3-pip python3-venv ffmpeg
+python3 -m venv ~/.oasis-stt
+source ~/.oasis-stt/bin/activate
+pip install ctranslate2 faster-whisper
+echo 'export OASIS_STT_PYTHON="$HOME/.oasis-stt/bin/python"' >> ~/.bashrc
+
+# macOS (via brew + pyenv or similar):
+brew install ffmpeg
+python3 -m venv ~/.oasis-stt
+source ~/.oasis-stt/bin/activate
+pip install ctranslate2 faster-whisper
+echo 'export OASIS_STT_PYTHON="$HOME/.oasis-stt/bin/python"' >> ~/.zshrc
+
+# Windows (Python 3.11+ from python.org):
+py -m venv %USERPROFILE%\.oasis-stt
+%USERPROFILE%\.oasis-stt\Scripts\activate
+pip install ctranslate2 faster-whisper
+setx OASIS_STT_PYTHON "%USERPROFILE%\.oasis-stt\Scripts\python.exe"
+```
+
+Restart `pnpm dev` after. First mic press downloads the `distil-large-v3` weights (~600MB) into `~/.cache/huggingface/`. Subsequent transcriptions are 1-3s on CPU.
+
+Env overrides:
+- `OASIS_STT_MODEL` — default `distil-large-v3`. Try `small` for speed, `large-v3` for accuracy.
+- `OASIS_STT_DEVICE` — default `auto`. Set to `cpu` on WSL (GPU passthrough is finicky).
+- `OASIS_STT_COMPUTE_TYPE` — default `float16` on GPU / `int8` on CPU.
+
+Without the venv, the mic button still works if Oasis finds `python3` on PATH with `ctranslate2` installed globally — but venv is cleaner.
 
 ## Next steps
 

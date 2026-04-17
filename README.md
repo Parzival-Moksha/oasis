@@ -161,6 +161,21 @@ The plugin injects a compact world summary before each response and a full world
 - To allow remote access, set `OASIS_ALLOW_REMOTE_HERMES_PROXY=true` and `OASIS_ALLOW_REMOTE_HERMES_PAIRING=true`.
 - Local pairing is stored in `data/hermes-config.local.json` (git-ignored).
 
+## Optional Extras
+
+Core flow (git clone → pnpm dev → Hermes skill connect) needs zero keys and zero extras. These light up more features.
+
+| What | How to enable |
+|---|---|
+| **Text-to-3D, image gen, video, voice** | Add keys to `.env`: `MESHY_API_KEY`, `TRIPO_API_KEY`, `OPENROUTER_API_KEY`, `FAL_KEY`, `ELEVENLABS_API_KEY` |
+| **Merlin, Anorak, Anorak Pro** (local build agents) | Install [Claude Code CLI](https://claude.com/claude-code), log in once. Oasis spawns `claude` on your PATH. |
+| **Mic input (local Whisper STT)** | `python3 -m venv ~/.oasis-stt && source ~/.oasis-stt/bin/activate && pip install ctranslate2 faster-whisper`, then `export OASIS_STT_PYTHON=~/.oasis-stt/bin/python`. Restart `pnpm dev`. |
+| **`craft_scene` sculptor fallback** | Same Claude Code CLI. Rarely needed — Hermes/Merlin/Anorak self-craft by default. |
+
+Tools gracefully return errors if their dependency isn't set up. Nothing crashes.
+
+See [docs quickstart → Optional extras](https://parzival-moksha.github.io/oasis/docs/getting-started/quickstart/#5-optional-extras) for platform-specific install commands (Linux/WSL, macOS, Windows).
+
 ## What You Can Do
 
 - **Conjure** — Type a prompt, get a 3D model. Multiple providers (Meshy, Tripo, Rodin) with different quality tiers.
