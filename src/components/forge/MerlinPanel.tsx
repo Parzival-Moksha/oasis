@@ -84,8 +84,8 @@ const EMBEDDED_SCROLL_SURFACE_STYLE = {
   WebkitOverflowScrolling: 'touch' as const,
 }
 const MERLIN_MODELS = [
-  { id: 'sonnet', label: 'Sonnet 4.6' },
-  { id: 'opus', label: 'Opus 4.6' },
+  { id: 'sonnet', label: 'Sonnet 4.7' },
+  { id: 'opus', label: 'Opus 4.7' },
   { id: 'haiku', label: 'Haiku 4.5' },
 ] as const
 const MERLIN_VISION_TOOL_NAMES = new Set(['screenshot_viewport', 'screenshot_avatar', 'avatarpic_merlin', 'avatarpic_user'])
@@ -952,7 +952,15 @@ export function MerlinPanel({
         messages?: unknown[]
       } | null
       if (requestId !== loadRequestIdRef.current) return
-      if (!response.ok || !Array.isArray(data?.messages)) return
+      if (!response.ok || !Array.isArray(data?.messages)) {
+        // Mark this session as "attempted" even on 404/invalid so the
+        // hydrate effect's guard (hydratedSessionIdRef.current === selectedSessionId)
+        // trips on next fire and we don't loop. Without this, the finally block
+        // flips isLoadingSession false -> effect re-fires -> loadSession -> 404 -> repeat
+        // at HTTP-latency cadence, wiping the input field and flickering the UI.
+        hydratedSessionIdRef.current = sessionId
+        return
+      }
 
       const remoteMessages = data.messages
         .map(sanitizeMerlinMessage)
