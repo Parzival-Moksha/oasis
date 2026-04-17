@@ -102,7 +102,9 @@ Maturity levels: 0 para → 1 pashyanti → 2 madhyama → 3 vaikhari → 4 buil
 - **FPS never capped** → `frameloop="always"` = native refresh rate. NEVER limit FPS. Gamers want 250fps.
 - **Claude Code sessions** → Two windows sharing a session ID = corrupted context.
 - **drei Html + transform** → CSS overlay, NOT in WebGL depth buffer. Use `zIndexRange={[0,0]}`.
-- **No purple** → Purple is verboten. Use turquoise (#14b8a6), sky blue (#0ea5e9), green, yellow, orange.
+- **No purple** → Purple rescinded. Purple is fine.
+- **3D windows DO NOT OCCLUDE. THIS IS A FEATURE.** `<Html>` renders as a CSS overlay above WebGL. Every carbondev who tries to make 3D windows participate in the depth buffer ends up in a 40-hour rabbithole for zero shipped value. Do NOT touch this. If someone really wants occluding 3D windows, they can submit a working PR. Until then, transparent-over-scene IS the aesthetic.
+- **3D window flickering is FIXED.** No longer an issue as of April 2026.
 
 ---
 
@@ -110,7 +112,6 @@ Maturity levels: 0 para → 1 pashyanti → 2 madhyama → 3 vaikhari → 4 buil
 
 - **Input Haystack** → 62+ handlers across 15+ files. Needs unified InputState enum. See `project_input_state_machine.md`.
 - **Dual Database** → Some routes use Supabase. Should be all-Prisma for local.
-- **3D Window Flickering** → `<Html>` with `distanceFactor` re-renders on camera move + SSE streaming.
 
 ---
 

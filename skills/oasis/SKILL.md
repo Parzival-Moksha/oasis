@@ -83,16 +83,21 @@ Without the `-L 8642...` half, Oasis can render the Hermes panel but cannot reac
 
 After you finish the Hermes-side setup (MCP extra installed, `mcp_servers.oasis` entry in `~/.hermes/config.yaml`, API server running), **in the same turn**, output both of these blocks for the user to act on. Do not wait for them to ask.
 
-1. **SSH tunnel command** — the user runs this on their local machine (where Oasis lives). **Do NOT hardcode the SSH user or host IP based on `whoami` / `hostname` on your own VPS side.** The Hermes process user (e.g. `levi`) is almost never the SSH login user, and the user's own SSH config probably has a short alias for the VPS. Prefer this placeholder form and let the user substitute:
+1. **SSH tunnel command** — the user pastes this INTO THE OASIS HERMES PANEL (☤ button → config → SSH TUNNEL field). Oasis auto-launches it from the Oasis server's shell. The user does NOT paste this into a terminal themselves — doing so creates a duplicate tunnel that steals ports 8642/4516 and Oasis's own tunnel spawn dies with exit 255.
 
-   ```bash
-   ssh -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=accept-new \
-       -L 8642:127.0.0.1:8642 \
-       -R 4516:127.0.0.1:4516 \
-       <user@your-vps-or-ssh-alias> -N
+   **Output as a single line, no backslash line-continuations** (backslashes are fine in a terminal but confusing in a UI text field):
+
+   ```
+   ssh -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=accept-new -L 8642:127.0.0.1:8642 -R 4516:127.0.0.1:4516 <SSH_TARGET> -N
    ```
 
-   Tell the user: "Substitute `<user@your-vps-or-ssh-alias>` with whatever you normally SSH into this VPS as — often a short alias from your `~/.ssh/config` like `helsinki` or `parzival-eu`."
+   **`<SSH_TARGET>` must be replaced by the user** with whatever they normally type after `ssh` to log into the VPS you're running on. Three common shapes:
+
+   - A bare SSH config alias: `myvps`, `prod`, anything they've defined in their local `~/.ssh/config`. If they have one, this is easiest and carries their key + user automatically. No `@` needed.
+   - `user@ip`: e.g. `root@203.0.113.42`. Use this shape when they log in by explicit user + IP.
+   - `user@hostname`: e.g. `ubuntu@box.example.com`. Same as above but with DNS instead of a raw IP.
+
+   **Do NOT guess the user's SSH alias or insert `whoami` output as the login user** — the process user running Hermes on the VPS (often something like `levi` or `ubuntu`) is almost never the same as the SSH login username the user types locally. Hand them the template with `<SSH_TARGET>` literally present; tell them to substitute and point out the three shapes above. If they already SSH in as "foo@1.2.3.4", that's what goes in.
 
 2. **Hermes pairing blob** — the user pastes this into the Oasis Hermes panel: click the ☤ button in the Oasis UI left toolbar → click **config** → paste → save & connect. The blob should look like:
 

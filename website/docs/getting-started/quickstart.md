@@ -7,6 +7,10 @@ title: Quickstart
 
 Connect your Hermes agent to your local Oasis in five steps. By the end, your agent chats, builds, crafts, and sees.
 
+:::info Reference client
+The Oasis is built and tested primarily on **Windows 10/11 with Brave (Chromium)**. It runs on all major OSes and Chromium-based browsers, but Brave on Windows is the reference platform. If something looks off in Firefox, Safari, or Linux browsers, that's where to start debugging. Server side is tested on Ubuntu.
+:::
+
 :::info
 This is the canonical onboarding path. If you arrived from the Hermes skill publication or Nous Discord, start here.
 :::

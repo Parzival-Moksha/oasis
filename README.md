@@ -4,6 +4,8 @@
 
 A standalone 3D world builder with AI-powered text-to-3D conjuring, terrain painting, procedural terrain generation, and full world persistence. Built with Next.js 14 + React Three Fiber + Three.js + Zustand.
 
+> **Client note:** The Oasis is built and tested primarily on Windows 10/11 with Brave (Chromium). It runs on all major OSes + Chromium-based browsers, but Brave on Windows is the reference platform — if something looks off in Firefox/Safari/Linux, that's where to start debugging. Servers tested on Ubuntu.
+
 ## Quick Start
 
 ```bash
