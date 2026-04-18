@@ -1,6 +1,6 @@
 # Current Oasis Agent Transport
 
-This reference describes the Oasis agent-transport shape as of April 9, 2026.
+Snapshot of the Oasis agent-transport shape (as of the current skill version). This is a reference doc — the live setup instructions for humans live at https://parzival-moksha.github.io/oasis/ .
 
 ## Distribution
 
@@ -10,31 +10,25 @@ This reference describes the Oasis agent-transport shape as of April 9, 2026.
 
 ## Current Agent Layers
 
-Oasis now has three distinct agent layers:
+Oasis has three distinct agent layers:
 
 1. Shared world-tool substrate
    - `src/lib/mcp/oasis-tools.ts`
-   - shared by REST, local stdio MCP, Merlin, and remote HTTP MCP
+   - shared by REST, local stdio MCP, local agents, and remote HTTP MCP
 
 2. Remote MCP endpoint
    - `src/app/api/mcp/oasis/route.ts`
    - Streamable HTTP MCP endpoint for remote agents
 
-3. Optional Hermes plugin
+3. Optional agent plugin
    - `hermes-plugin/oasis/__init__.py`
-   - injects compact world context into Hermes turns
+   - injects compact world context into agent turns
 
 ## Current Remote Endpoints
 
 - Remote MCP: `POST/GET/DELETE /api/mcp/oasis`
 - REST tools fallback: `POST /api/oasis-tools`
 - Screenshot delivery: `POST /api/oasis-tools`
-
-If `OASIS_MCP_KEY` is set, clients must send:
-
-```http
-Authorization: Bearer <OASIS_MCP_KEY>
-```
 
 ## Current World Awareness
 
@@ -65,7 +59,7 @@ If the browser bridge is absent, the world tools may still work, but screenshot 
 
 ## Current Forge Boundary
 
-The shared tool surface now exposes Forge conjuration flows:
+The shared tool surface exposes Forge conjuration flows:
 - list
 - inspect
 - conjure
@@ -83,34 +77,7 @@ When guiding users or remote agents, say:
 - screenshot tools require a live browser bridge
 - the shared tool layer is the source of truth for world actions
 
-## Current Split-Machine Tunnel
+## Transport Note
 
-For Hermes on a VPS and Oasis on a local machine, use one SSH session with two forwards:
-
-```bash
-ssh -o ExitOnForwardFailure=yes \
-  -L 8642:127.0.0.1:8642 \
-  -R 4516:127.0.0.1:4516 \
-  user@your-vps -N
-```
-
-Why both are needed:
-
-- `-L 8642...` lets the local Oasis app reach the Hermes API server on the VPS
-- `-R 4516...` lets Hermes on the VPS reach the local Oasis MCP server
-
-Only `4516` is canonical for the Oasis MCP reverse forward. Any alternative port lore should be treated as stale duct tape.
-
-## Hermes MCP Config
-
-The Hermes config key for MCP servers is **`mcp_servers`** (snake_case, plural). Add to `~/.hermes/config.yaml`:
-
-```yaml
-mcp_servers:
-  oasis:
-    url: http://127.0.0.1:4516/api/mcp/oasis
-```
-
-Common mistake: using `mcp:` instead of `mcp_servers:` — Hermes will silently load zero servers.
-
-See `references/hermes-mcp-config.example.yaml` for the full annotated example.
+When the agent host and Oasis are on different machines, the user is responsible for establishing network reachability between them. See the Quickstart docs for the supported topologies:
+https://parzival-moksha.github.io/oasis/docs/getting-started/quickstart/
