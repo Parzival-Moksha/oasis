@@ -151,16 +151,14 @@ If the user wants a new 3D asset rather than a catalog asset, prefer these tools
 
 The core tool surface (world state, placement, self-crafting, screenshots, plain chat, avatar movement) works with **zero API keys**. If a richer feature is needed and the key isn't set, the tool call returns a clear error. Do not retry — tell the user what key is missing.
 
-Keys the Oasis host may optionally have set:
+Optional Oasis-side feature keys (the user sets these in their own Oasis `.env`, agent never touches them):
 
-| Unlocks | Host-side env |
-|---|---|
-| Image generation (textures, concepts), terrain LLM | `OPENROUTER_API_KEY` |
-| Video generation | `FAL_KEY` |
-| Voice notes / TTS in agent panels | `ELEVENLABS_API_KEY` |
-| Forge conjuration via Meshy | `MESHY_API_KEY` |
-| Forge conjuration via Tripo (fast) | `TRIPO_API_KEY` |
-| `craft_scene` sculptor fallback | Claude Code CLI installed on Oasis host |
+- Image generation, textures, concepts, terrain LLM → `OPENROUTER_API_KEY`
+- Video generation → `FAL_KEY`
+- Voice notes / TTS in agent panels → `ELEVENLABS_API_KEY`
+- Forge conjuration via Meshy → `MESHY_API_KEY`
+- Forge conjuration via Tripo (fast) → `TRIPO_API_KEY`
+- `craft_scene` sculptor fallback → Claude Code CLI installed on Oasis host
 
 ## Limits
 
