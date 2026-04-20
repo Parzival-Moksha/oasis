@@ -28,7 +28,6 @@ import {
   FourBarFrame,
   NeonFrame,
   HologramFrame,
-  VoidFrame,
   SpaghettiFrame,
   TriangleFrame,
   InfernoFrame,
@@ -143,6 +142,7 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
     : win.agentType === 'anorak-pro' ? '#14b8a6'
     : win.agentType === 'browser' ? '#f97316'
     : win.agentType === 'hermes' ? '#fb7185'
+    : win.agentType === 'openclaw' ? '#22d3ee'
     : win.agentType === 'merlin' ? '#f59e0b'
     : win.agentType === 'parzival' ? '#c084fc'
     : '#22c55e'

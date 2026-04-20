@@ -11,9 +11,9 @@ import {
   loadWorld, debouncedSaveWorld, saveWorld,
   getWorldRegistry, getActiveWorldId, setActiveWorldId,
   createWorld, deleteWorld, exportWorld, importWorld,
-  migrateIfNeeded, cancelPendingSave,
+  cancelPendingSave,
   loadPublicWorld,
-  type WorldMeta, type PublicWorldResult,
+  type WorldMeta,
 } from '../lib/forge/world-persistence'
 import { addToSceneLibrary, getSceneLibrary, removeFromSceneLibrary } from '../lib/forge/scene-library'
 import { awardXp } from '../hooks/useXp'
@@ -102,7 +102,7 @@ export interface ActiveMarchOrderVfx {
 
 // ─═̷─═̷─💻 AGENT WINDOW — placeable interactive panels in 3D ─═̷─═̷─💻
 export type BrowserSurfaceMode = 'live-browser' | 'desktop-capture'
-export type AgentWindowType = 'anorak' | 'anorak-pro' | 'merlin' | 'hermes' | 'devcraft' | 'parzival' | 'browser' | 'mission'
+export type AgentWindowType = 'anorak' | 'anorak-pro' | 'merlin' | 'hermes' | 'openclaw' | 'devcraft' | 'parzival' | 'browser' | 'mission'
 
 export interface AgentWindow {
   id: string                              // e.g. 'agent-anorak-1710859200000'
@@ -169,6 +169,8 @@ function defaultAgentAvatarLabel(agentType: AgentAvatarType): string {
       return 'Mission'
     case 'hermes':
       return 'Hermes'
+    case 'openclaw':
+      return 'OpenClaw'
     default:
       return 'Agent'
   }
@@ -180,7 +182,7 @@ type AgentAvatarTransformMap = Record<string, {
   scale?: [number, number, number] | number
 }>
 
-const SHARED_AGENT_AVATAR_TYPES = new Set<AgentAvatarType>(['anorak-pro', 'merlin', 'hermes'])
+const SHARED_AGENT_AVATAR_TYPES = new Set<AgentAvatarType>(['anorak-pro', 'merlin', 'hermes', 'openclaw'])
 
 function isSharedAgentAvatarType(agentType: string): agentType is AgentAvatarType {
   return SHARED_AGENT_AVATAR_TYPES.has(agentType as AgentAvatarType)
@@ -594,7 +596,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       }
     }
 
-    return agentType === 'hermes'
+    return agentType === 'hermes' || agentType === 'openclaw'
       ? deriveHermesAvatarSpawn(getCameraSnapshot())
       : deriveStandaloneAgentAvatarSpawn(getCameraSnapshot())
   }
@@ -1198,7 +1200,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     set((state) => {
       const existing = state.behaviors[id]
       if (!existing) return state
-      const { moveTarget, ...rest } = existing
+      const { moveTarget: _moveTarget, ...rest } = existing
       return {
         behaviors: { ...state.behaviors, [id]: rest as ObjectBehavior },
       }

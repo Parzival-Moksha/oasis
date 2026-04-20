@@ -24,11 +24,10 @@ import { PlacementVFXRenderer } from './PlacementVFX'
 import { useMovement } from '../../hooks/useMovement'
 // drei useAnimations removed — manual AnimationMixer for proper SkeletonUtils support
 import { DragContext, SettingsContext } from '../scene-lib'
-import type { MovementPreset, AnimationConfig } from '../../lib/conjure/types'
 import { extractModelStats } from './ModelPreview'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
-import { loadAnimationClip, loadClipFromGLTF, retargetClipForVRM, retargetUALClipForVRM, isUALAnimation, LIB_PREFIX, getCachedClip } from '../../lib/forge/animation-library'
+import { loadAnimationClip, retargetClipForVRM, retargetUALClipForVRM, isUALAnimation, LIB_PREFIX, getCachedClip } from '../../lib/forge/animation-library'
 import { MindcraftWorld } from './MindcraftWorld'
 import { AgentWindow3D } from './AgentWindow3D'
 import type { PlacementPending } from '../../store/oasisStore'
@@ -43,6 +42,9 @@ import {
   deriveWindowAvatarScale,
   scalarFromTransformScale,
 } from '../../lib/agent-avatar-utils'
+
+const IDLE_CLIP_PATTERNS = /idle|breathe?|stand|rest|pose|wait/i
+const WALK_CLIP_PATTERNS = /walk|run|move|locomotion|jog/i
 import { resolveAgentAvatarUrl } from '../../lib/agent-avatar-catalog'
 import { canReceiveMoveOrder, resolveMoveOrderObjectIds } from '../../lib/march-order'
 
@@ -877,16 +879,12 @@ export function CatalogModelRenderer({ path, scale, objectId, displayName }: { p
   const animConfig = useOasisStore(s => objectId ? s.behaviors[objectId]?.animation : undefined)
   const isMoving = useOasisStore(s => objectId ? !!s.behaviors[objectId]?.moveTarget : false)
 
-  // ░▒▓ Clip name patterns — how we detect idle vs walk vs combat clips ▓▒░
-  const IDLE_PATTERNS = /idle|breathe?|stand|rest|pose|wait/i
-  const WALK_PATTERNS = /walk|run|move|locomotion|jog/i
-
   // Find best idle and walk clips from available animations
   const { idleClip, walkClip } = useMemo(() => {
     const names = animations.map(a => a.name)
     return {
-      idleClip: names.find(n => IDLE_PATTERNS.test(n)) || null,
-      walkClip: names.find(n => WALK_PATTERNS.test(n)) || null,
+      idleClip: names.find(n => IDLE_CLIP_PATTERNS.test(n)) || null,
+      walkClip: names.find(n => WALK_CLIP_PATTERNS.test(n)) || null,
     }
   }, [animations])
 
@@ -1730,7 +1728,6 @@ const TERMINAL_CONJURE_STATES = ['ready', 'failed']
 export function useWorldLoader() {
   const initWorlds = useOasisStore(s => s.initWorlds)
   const setConjuredAssets = useOasisStore(s => s.setConjuredAssets)
-  const conjuredAssets = useOasisStore(s => s.conjuredAssets)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const discoveryTickRef = useRef(0)
 
@@ -2100,7 +2097,7 @@ function PlacementOverlay() {
     } else {
       cancelPlacement()
     }
-  }, [placementPending, placeCatalogAssetAt, placeImageAt, placeVideoAt, placeLibrarySceneAt, cancelPlacement])
+  }, [placementPending, placeCatalogAssetAt, placeImageAt, placeLightAt, placeVideoAt, placeLibrarySceneAt, cancelPlacement])
 
   const handlePointerMove = useCallback((e: any) => {
     // ░▒▓ FPS CAMERA FIX — skip R3F pointer events during pointer lock ▓▒░
@@ -2785,7 +2782,7 @@ function AgentAvatarsSection({ selectedObjectId, selectObject, transformMode, on
     const winners = new Map<string, string>()
     const scores = new Map<string, number>()
     for (const avatar of placedAgentAvatars) {
-      const isSharedAvatarType = avatar.agentType === 'anorak-pro' || avatar.agentType === 'merlin' || avatar.agentType === 'hermes'
+      const isSharedAvatarType = avatar.agentType === 'anorak-pro' || avatar.agentType === 'merlin' || avatar.agentType === 'hermes' || avatar.agentType === 'openclaw'
       if (!isSharedAvatarType) continue
       const score = (avatar.linkedWindowId ? 0 : 100) + (transforms[avatar.id] ? 20 : 0)
       const currentScore = scores.get(avatar.agentType) ?? Number.NEGATIVE_INFINITY
@@ -2802,7 +2799,7 @@ function AgentAvatarsSection({ selectedObjectId, selectObject, transformMode, on
   return (
     <>
       {placedAgentAvatars.map(avatar => {
-        const isSharedAvatarType = avatar.agentType === 'anorak-pro' || avatar.agentType === 'merlin' || avatar.agentType === 'hermes'
+        const isSharedAvatarType = avatar.agentType === 'anorak-pro' || avatar.agentType === 'merlin' || avatar.agentType === 'hermes' || avatar.agentType === 'openclaw'
         if (isSharedAvatarType && sharedAvatarWinnerByType.get(avatar.agentType) !== avatar.id) return null
         if (!avatar.avatar3dUrl) return null
         const renderAvatarUrl = resolveAgentAvatarUrl(avatar.avatar3dUrl).url

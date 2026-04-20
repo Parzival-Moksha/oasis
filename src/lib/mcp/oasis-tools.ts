@@ -19,6 +19,7 @@ import { getAllAssets, getAssetById, updateAsset } from '../conjure/registry'
 import { emitWorldEvent } from './world-events'
 import { readWorldPlayerContext } from '../world-runtime-context'
 import { resolveAgentAvatarUrl } from '../agent-avatar-catalog'
+import { readBrowserActiveWorldId } from '../browser-active-world'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -235,7 +236,18 @@ async function withWorldLock<T>(worldId: string, fn: () => Promise<T>): Promise<
 }
 
 async function loadActiveWorld(): Promise<{ worldId: string; state: WorldState }> {
-  // Find most recently updated world for local-user
+  const preferredWorldId = await readBrowserActiveWorldId()
+  if (preferredWorldId) {
+    const preferredWorld = await prisma.world.findFirst({
+      where: { id: preferredWorldId },
+      select: { id: true, data: true },
+    })
+    if (preferredWorld?.data) {
+      return { worldId: preferredWorld.id, state: normalizeState(JSON.parse(preferredWorld.data) as WorldState) }
+    }
+  }
+
+  // Fallback: find most recently updated world for local-user
   const world = await prisma.world.findFirst({
     orderBy: { updatedAt: 'desc' },
     select: { id: true, data: true },
@@ -543,16 +555,9 @@ tools.get_world_state = async (args) => {
 }
 
 tools.get_world_info = async (args) => {
-  const worldId = validStr(args.worldId, '')
-  let world
-  if (worldId) {
-    world = await prisma.world.findFirst({ where: { id: worldId } })
-  } else {
-    world = await prisma.world.findFirst({ orderBy: { updatedAt: 'desc' } })
-  }
+  const { worldId, state } = await loadRequestedWorld(args.worldId)
+  const world = await prisma.world.findFirst({ where: { id: worldId } })
   if (!world) return { ok: false, message: 'No world found.' }
-
-  const state = world.data ? JSON.parse(world.data) as WorldState : null
   const objectCount = state
     ? (state.catalogPlacements?.length || 0) + (state.craftedScenes?.length || 0) + (state.conjuredAssetIds?.length || 0)
     : 0
@@ -749,7 +754,7 @@ const SELF_CRAFT_GUIDE = {
 } as const
 
 function usesSelfCraftByDefault(actorAgentType: string): boolean {
-  return actorAgentType === 'hermes' || actorAgentType === 'merlin'
+  return actorAgentType === 'hermes' || actorAgentType === 'merlin' || actorAgentType === 'openclaw'
 }
 
 async function startPromptCraftJob(
@@ -1309,7 +1314,7 @@ tools.set_avatar = async (args) => {
   const label = validStr(args.label, '')
   const position = validPos(args.position)
   const rotation = validPos(args.rotation)
-  const scale = validNum(args.scale, agentType === 'hermes' ? 1.15 : 1)
+  const scale = validNum(args.scale, agentType === 'hermes' || agentType === 'openclaw' ? 1.15 : 1)
 
   const nextAvatar = existing
     ? {
@@ -1514,7 +1519,17 @@ tools.list_worlds = async () => {
     select: { id: true, name: true, icon: true, objectCount: true, updatedAt: true },
     orderBy: { updatedAt: 'desc' },
   })
-  return { ok: true, message: `${worlds.length} worlds.`, data: worlds.map(w => ({ id: w.id, name: w.name, icon: w.icon, objectCount: w.objectCount, lastSaved: w.updatedAt.toISOString() })) }
+  return {
+    ok: true,
+    message: `${worlds.length} worlds.`,
+    data: worlds.map((w: { id: string; name: string; icon: string; objectCount: number; updatedAt: Date }) => ({
+      id: w.id,
+      name: w.name,
+      icon: w.icon,
+      objectCount: w.objectCount,
+      lastSaved: w.updatedAt.toISOString(),
+    })),
+  }
 }
 
 tools.load_world = async (args) => {

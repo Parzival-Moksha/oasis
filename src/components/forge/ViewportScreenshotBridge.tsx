@@ -79,6 +79,20 @@ export function ViewportScreenshotBridge() {
 
   const buildCaptureCamera = useCallback((view: ScreenshotViewRequest, width: number, height: number) => {
     const aspect = Math.max(0.1, width / Math.max(height, 1))
+    const normalizeAgentIdentity = (value?: string | null) => (value || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+    const resolveAgentAvatar = (subject?: string) => {
+      const normalizedSubject = normalizeAgentIdentity(subject)
+      if (!normalizedSubject) return null
+
+      const candidateKeys = new Set([normalizedSubject])
+      if (normalizedSubject === 'clawdling') candidateKeys.add('openclaw')
+      if (normalizedSubject === 'openclaw') candidateKeys.add('clawdling')
+
+      const byAgentType = placedAgentAvatars.find(entry => candidateKeys.has(normalizeAgentIdentity(entry.agentType)))
+      if (byAgentType) return byAgentType
+
+      return placedAgentAvatars.find(entry => candidateKeys.has(normalizeAgentIdentity(entry.label)))
+    }
 
     const resolveSubjectPose = () => {
       const playerPose = !view.agentType || view.agentType === 'player'
@@ -92,7 +106,7 @@ export function ViewportScreenshotBridge() {
         }
       }
 
-      const avatar = placedAgentAvatars.find(entry => entry.agentType === view.agentType)
+      const avatar = resolveAgentAvatar(view.agentType)
       if (!avatar) return null
       const transform = getLiveObjectTransform(avatar.id) || transforms[avatar.id]
       const position = transform?.position || avatar.position
@@ -128,7 +142,7 @@ export function ViewportScreenshotBridge() {
       const anchor = view.target
         ? new THREE.Vector3(view.target[0], view.target[1], view.target[2])
         : (() => {
-            const avatar = placedAgentAvatars.find(entry => entry.agentType === view.agentType)
+            const avatar = resolveAgentAvatar(view.agentType)
             if (!avatar) return new THREE.Vector3(0, 0, 0)
             const transform = getLiveObjectTransform(avatar.id) || transforms[avatar.id]
             const position = transform?.position || avatar.position
@@ -195,7 +209,7 @@ export function ViewportScreenshotBridge() {
       return captureCamera
     }
 
-    const avatar = placedAgentAvatars.find(entry => entry.agentType === view.agentType)
+    const avatar = resolveAgentAvatar(view.agentType)
     if (!avatar) return null
 
     const transform = getLiveObjectTransform(avatar.id) || transforms[avatar.id]
@@ -216,6 +230,39 @@ export function ViewportScreenshotBridge() {
     captureCamera.updateMatrixWorld(true)
     return captureCamera
   }, [camera, placedAgentAvatars, transforms])
+
+  useEffect(() => {
+    if (!activeWorldId) return
+
+    let cancelled = false
+    let intervalId: number | null = null
+
+    const publishActiveWorld = async () => {
+      try {
+        await fetch('/api/world-active', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ worldId: activeWorldId }),
+        })
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('[ViewportScreenshotBridge] Failed to publish active world:', error)
+        }
+      }
+    }
+
+    void publishActiveWorld()
+    intervalId = window.setInterval(() => {
+      void publishActiveWorld()
+    }, 15000)
+
+    return () => {
+      cancelled = true
+      if (intervalId !== null) {
+        window.clearInterval(intervalId)
+      }
+    }
+  }, [activeWorldId])
 
   const captureView = useCallback((request: PendingScreenshotRequest, view: ScreenshotViewRequest) => {
     const width = Math.max(320, Math.round(request.width || size.width || 480))

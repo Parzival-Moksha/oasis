@@ -8,6 +8,7 @@ import { AnorakProPanel } from './AnorakProPanel'
 import { BrowserWindowContent } from './BrowserWindowContent'
 import { HermesPanel } from './HermesPanel'
 import { MerlinPanel } from './MerlinPanel'
+import { OpenclawPanel } from './OpenclawPanel'
 import { ParzivalWindowContent } from './ParzivalWindowContent'
 
 export const AgentWindowSurface = memo(function AgentWindowSurface({ win }: { win: AgentWindow }) {
@@ -33,6 +34,9 @@ export const AgentWindowSurface = memo(function AgentWindowSurface({ win }: { wi
       break
     case 'hermes':
       content = <HermesPanel isOpen embedded hideCloseButton onClose={() => {}} />
+      break
+    case 'openclaw':
+      content = <OpenclawPanel isOpen embedded hideCloseButton onClose={() => {}} />
       break
     case 'merlin':
       content = <MerlinPanel isOpen embedded hideCloseButton onClose={() => {}} />

@@ -2,8 +2,7 @@ import { z } from 'zod'
 
 const zVec3Like = z.union([
   z.string(),
-  z.array(z.number()).length(3),
-  z.tuple([z.number(), z.number(), z.number()]),
+  z.array(z.number()).min(3).max(3),
 ])
 
 const zLooseObject = z.object({}).passthrough()

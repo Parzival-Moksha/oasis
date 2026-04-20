@@ -6,10 +6,10 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { KeyboardControls, Stars, Grid, Html, TransformControls, Environment, useProgress } from '@react-three/drei'
+import { KeyboardControls, Stars, Grid, Environment, useProgress } from '@react-three/drei'
 import { EffectComposer, Bloom, Vignette, ChromaticAberration } from '@react-three/postprocessing'
 import { BlendFunction } from 'postprocessing'
-import React, { Suspense, useState, useRef, useContext, useEffect, useTransition, useCallback } from 'react'
+import React, { Suspense, useState, useRef, useContext, useEffect, useTransition } from 'react'
 import * as THREE from 'three'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -41,11 +41,11 @@ import { ObjectInspector } from './forge/ObjectInspector'
 import { MindcraftMissionWindowBridge } from './forge/MindcraftMissionWindowBridge'
 import { ActionLogButton, ActionLogPanel } from './forge/ActionLog'
 import { ProfileButton } from './forge/ProfileButton'
-import { OnboardingModal } from './forge/OnboardingModal'
 import { MerlinPanel } from './forge/MerlinPanel'
 import { AnorakPanel } from './forge/AnorakPanel'
 import { AnorakProPanel } from './forge/AnorakProPanel'
 import { HermesPanel } from './forge/HermesPanel'
+import { OpenclawPanel } from './forge/OpenclawPanel'
 import { ParzivalPanel } from './forge/ParzivalPanel'
 import dynamic from 'next/dynamic'
 const DevcraftPanel = dynamic(() => import('./forge/DevcraftPanel'), { ssr: false })
@@ -53,8 +53,8 @@ import { HelpPanel } from './forge/HelpPanel'
 import { ConsolePanel } from './forge/ConsolePanel'
 import { useWorldLoader } from './forge/WorldObjects'
 import { completeQuest } from '@/lib/quests'
-import { useInputManager, getInputCapabilities, getMouseLookDebugState, isPointerLocked } from '@/lib/input-manager'
-import { CameraController as CameraControllerComponent, sprintRef, FPSControls, FPS_KEYBOARD_MAP } from './CameraController'
+import { useInputManager, getMouseLookDebugState, isPointerLocked } from '@/lib/input-manager'
+import { CameraController as CameraControllerComponent, sprintRef, FPS_KEYBOARD_MAP } from './CameraController'
 import { useAudioManager, SOUND_OPTIONS, type SoundEvent } from '@/lib/audio-manager'
 import { installTestHarness } from '@/lib/test-harness'
 import { useWorldEvents } from '@/hooks/useWorldEvents'
@@ -64,7 +64,7 @@ import { AgentWindowPortals } from './forge/AgentWindowPortals'
 // ─═̷─═̷─🎮─═̷─═̷─{ QUAKE FPS CONTROLS - WASD + Q/E }─═̷─═̷─🎮─═̷─═̷─
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// FPSControls, FPS_KEYBOARD_MAP, sprintRef — imported from CameraController
+// FPS_KEYBOARD_MAP, sprintRef — imported from CameraController
 
 // ─═̷─═̷─🎯─═̷─═̷─{ POINTER LOCK RAYCASTER OVERRIDE }─═̷─═̷─🎯─═̷─═̷─
 // When pointer is locked (noclip/TPS), R3F's internal raycaster uses the stale mouse
@@ -685,7 +685,7 @@ class SkyErrorBoundary extends React.Component<{ children: React.ReactNode; fall
 // SkyErrorBoundary catches CDN/file failures → falls back to procedural stars
 function SkyBackground({ backgroundId }: { backgroundId: string }) {
   const [activeId, setActiveId] = useState(backgroundId)
-  const [isPending, startTransition] = useTransition()
+  const [, startTransition] = useTransition()
   useEffect(() => {
     startTransition(() => setActiveId(backgroundId))
   }, [backgroundId])
@@ -773,7 +773,7 @@ function PostProcessing() {
     const isActive = si > 0.05
     if (isActive !== sprintActiveRef.current) {
       sprintActiveRef.current = isActive
-      setSprintActive(isActive) // eslint-disable-line react-hooks/set-state-in-effect -- drives hasEffects conditional render
+      setSprintActive(isActive)
     }
 
     // Imperatively update effect uniforms — no re-renders needed
@@ -1087,7 +1087,7 @@ export default function Scene() {
   const inspectedObjectId = useOasisStore(s => s.inspectedObjectId)
   const setInspectedObject = useOasisStore(s => s.setInspectedObject)
   const worldSkyBackground = useOasisStore(s => s.worldSkyBackground)
-  const focusedAgentWindowId = useOasisStore(s => s.focusedAgentWindowId)
+  const _focusedAgentWindowId = useOasisStore(s => s.focusedAgentWindowId)
   // InputManager is THE authority for what controls are active
   const inputState = useInputManager(s => s.inputState)
   const isAgentFocused = inputState === 'agent-focus'
@@ -1111,6 +1111,7 @@ export default function Scene() {
   const [anorakProOpen, setAnorakProOpen] = useState(false)
   const [devcraftOpen, setDevcraftOpen] = useState(false)
   const [hermesOpen, setHermesOpen] = useState(false)
+  const [openclawOpen, setOpenclawOpen] = useState(false)
   const [parzivalOpen, setParzivalOpen] = useState(false)
   const [consoleOpen, setConsoleOpen] = useState(false)
 
@@ -1349,6 +1350,19 @@ export default function Scene() {
           ☤
         </button>
         <button
+          onClick={() => togglePanel(setOpenclawOpen)}
+          className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
+          style={{
+            background: openclawOpen ? 'rgba(34,211,238,0.24)' : 'rgba(0,0,0,0.6)',
+            border: `1px solid ${openclawOpen ? 'rgba(34,211,238,0.56)' : 'rgba(255,255,255,0.15)'}`,
+            color: openclawOpen ? '#67E8F9' : '#aaa',
+            boxShadow: openclawOpen ? '0 0 12px rgba(34,211,238,0.22)' : 'none',
+          }}
+          title="OpenClaw - local gateway bridge"
+        >
+          🦞
+        </button>
+        <button
           onClick={() => togglePanel(setParzivalOpen)}
           className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
           style={{
@@ -1442,6 +1456,10 @@ export default function Scene() {
       <HermesPanel
         isOpen={hermesOpen}
         onClose={() => setHermesOpen(false)}
+      />
+      <OpenclawPanel
+        isOpen={openclawOpen}
+        onClose={() => setOpenclawOpen(false)}
       />
       <ParzivalPanel
         isOpen={parzivalOpen}
@@ -1716,9 +1734,7 @@ function OasisLoader() {
     || (hasByteData && byteInfo.loaded >= byteInfo.total)
 
   useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const origOpen = XMLHttpRequest.prototype.open as any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const origSend = XMLHttpRequest.prototype.send as any
     const activeXhr = new Map<XMLHttpRequest, { loaded: number; total: number }>()
     let prevLoaded = 0
@@ -1726,7 +1742,6 @@ function OasisLoader() {
     let smoothSpeed = 0
     let rafId = 0
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     XMLHttpRequest.prototype.open = function(this: any, ...args: any[]) {
       const url = String(args[1] || '')
       if (/\.(glb|gltf|hdr|exr|bin|jpg|png|ktx2)(\?|$)/i.test(url)) {
@@ -1735,7 +1750,6 @@ function OasisLoader() {
       return origOpen.apply(this, args)
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     XMLHttpRequest.prototype.send = function(this: any, ...args: any[]) {
       if (this._oasisTrack) {
         activeXhr.set(this, { loaded: 0, total: 0 })

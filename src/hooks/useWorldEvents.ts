@@ -260,6 +260,7 @@ export function useWorldEvents() {
   useEffect(() => {
     if (typeof window === 'undefined') return
     disposedRef.current = false
+    const actorPositions = actorPositionRef.current
 
     const clearRemoteReloadWatch = () => {
       if (!remoteReloadWatchRef.current) return
@@ -536,7 +537,7 @@ export function useWorldEvents() {
         case 'agent_avatar_set': {
           const avatar = readAgentAvatar(data.avatar)
           if (!avatar) return false
-          const isSharedAvatarType = avatar.agentType === 'anorak-pro' || avatar.agentType === 'merlin' || avatar.agentType === 'hermes'
+          const isSharedAvatarType = avatar.agentType === 'anorak-pro' || avatar.agentType === 'merlin' || avatar.agentType === 'hermes' || avatar.agentType === 'openclaw'
           useOasisStore.setState(state => ({
             placedAgentAvatars: [
               ...state.placedAgentAvatars.filter(entry =>
@@ -895,7 +896,7 @@ export function useWorldEvents() {
       disposedRef.current = true
       clearRemoteReloadWatch()
       eventQueueRef.current = []
-      actorPositionRef.current.clear()
+      actorPositions.clear()
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current)
         reconnectTimerRef.current = null

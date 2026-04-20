@@ -11,7 +11,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useConjure } from '../../hooks/useConjure'
 import { useOasisStore } from '../../store/oasisStore'
-import { PROVIDERS, REMESH_PRESETS, LIGHT_INTENSITY_MAX, LIGHT_INTENSITY_STEP, type ProviderName, type ConjuredAsset, type ConjureStatus, type CraftedScene, type CatalogPlacement, type RemeshQuality, type WorldLightType, type GeneratedImage } from '../../lib/conjure/types'
+import { PROVIDERS, REMESH_PRESETS, LIGHT_INTENSITY_MAX, LIGHT_INTENSITY_STEP, type ProviderName, type ConjuredAsset, type ConjureStatus, type CraftedScene, type RemeshQuality, type WorldLightType, type GeneratedImage } from '../../lib/conjure/types'
 import type { PlacementVfxType } from '../../store/oasisStore'
 import { dispatch } from '../../lib/event-bus'
 import { useContext } from 'react'
@@ -81,20 +81,8 @@ function StatusBadge({ status, progress }: { status: ConjureStatus; progress: nu
 // ─═̷─═̷─ Every creation deserves a face, even if the portrait isn't ready yet ─═̷─═̷─
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function AssetThumb({ src, fallback, alt }: { src: string; fallback: string; alt: string }) {
-  const [failed, setFailed] = useState(false)
-  if (!src || failed) {
-    return <span className="text-xl opacity-30">{fallback}</span>
-  }
-  return (
-    <img
-      src={src}
-      alt={alt}
-      className="w-full h-full object-cover"
-      onError={() => setFailed(true)}
-      loading="lazy"
-    />
-  )
+function _AssetThumb({ fallback }: { src: string; fallback: string; alt: string }) {
+  return <span className="text-xl opacity-30">{fallback}</span>
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -187,14 +175,13 @@ function LightTooltipWrap({ type, children, className }: { type: string; childre
 // GALLERY ITEM — Each conjured asset in the grid
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function GalleryItem({ asset, onDelete, onRequestDelete, onPreview, isInWorld, onPlace, onRemove, onTexture, onRemesh, onRig, onRename, pricing }: {
+function GalleryItem({ asset, onDelete, onRequestDelete, onPreview, isInWorld, onPlace, onTexture, onRemesh, onRig, onRename, pricing }: {
   asset: ConjuredAsset
   onDelete: (id: string) => void
   onRequestDelete?: (id: string, name: string) => void
   onPreview?: (asset: ConjuredAsset) => void
   isInWorld: boolean
   onPlace: (id: string) => void
-  onRemove: (id: string) => void
   onTexture?: (id: string) => void
   onRemesh?: (id: string, quality: RemeshQuality) => void
   onRig?: (id: string) => void
@@ -448,7 +435,6 @@ function ImagineTab({ cols, setLightboxUrl, onRequestDelete }: { cols: number; s
   const [error, setError] = useState<string | null>(null)
   const generatedImages = useOasisStore(s => s.generatedImages)
   const addGeneratedImage = useOasisStore(s => s.addGeneratedImage)
-  const removeGeneratedImage = useOasisStore(s => s.removeGeneratedImage)
   const addCustomGroundPreset = useOasisStore(s => s.addCustomGroundPreset)
   const customGroundPresets = useOasisStore(s => s.customGroundPresets)
   const enterPaintMode = useOasisStore(s => s.enterPaintMode)
@@ -974,7 +960,6 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
   // ░▒▓ Character pipeline — A-pose mode for riggable output ▓▒░
   const [characterMode, setCharacterMode] = useState(false)
   const [imageUrl, setImageUrl] = useState('')
-  const [showImageInput, setShowImageInput] = useState(false)
   const [imagePreview, setImagePreview] = useState<string | null>(null) // thumbnail for dropped files
   const imageFileRef = useRef<HTMLInputElement>(null)
 
@@ -1041,15 +1026,12 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
   const updateCraftedScene = useOasisStore(s => s.updateCraftedScene)
   const removeCraftedScene = useOasisStore(s => s.removeCraftedScene)
   const sceneLibrary = useOasisStore(s => s.sceneLibrary)
-  const placeLibraryScene = useOasisStore(s => s.placeLibraryScene)
   const deleteFromLibrary = useOasisStore(s => s.deleteFromLibrary)
   const [activeCrafts, setActiveCrafts] = useState(0)
-  const craftLoading = activeCrafts > 0
 
 
   // ─═̷─ Ground texture + paint mode ─═̷─
   const groundPresetId = useOasisStore(s => s.groundPresetId)
-  const setGroundPreset = useOasisStore(s => s.setGroundPreset)
   const groundTiles = useOasisStore(s => s.groundTiles)
   const paintMode = useOasisStore(s => s.paintMode)
   const paintBrushPresetId = useOasisStore(s => s.paintBrushPresetId)
@@ -1121,23 +1103,18 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
   // ─═̷─ Transform controls ─═̷─
   const selectedObjectId = useOasisStore(s => s.selectedObjectId)
   const selectObject = useOasisStore(s => s.selectObject)
-  const transformMode = useOasisStore(s => s.transformMode)
-  const setTransformMode = useOasisStore(s => s.setTransformMode)
   const setInspectedObject = useOasisStore(s => s.setInspectedObject)
   const setCameraLookAt = useOasisStore(s => s.setCameraLookAt)
   const transforms = useOasisStore(s => s.transforms)
 
   // ─═̷─ Catalog + placement state ─═̷─
   const worldConjuredAssetIds = useOasisStore(s => s.worldConjuredAssetIds)
-  const placeConjuredAssetInWorld = useOasisStore(s => s.placeConjuredAssetInWorld)
   const removeConjuredAssetFromWorld = useOasisStore(s => s.removeConjuredAssetFromWorld)
   const placedCatalogAssets = useOasisStore(s => s.placedCatalogAssets)
-  const placeCatalogAsset = useOasisStore(s => s.placeCatalogAsset)
   const removeCatalogAsset = useOasisStore(s => s.removeCatalogAsset)
   const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
   const removeAgentWindow = useOasisStore(s => s.removeAgentWindow)
   const focusAgentWindow = useOasisStore(s => s.focusAgentWindow)
-  const focusedAgentWindowId = useOasisStore(s => s.focusedAgentWindowId)
   const generatedImages = useOasisStore(s => s.generatedImages)
   const removeGeneratedImage = useOasisStore(s => s.removeGeneratedImage)
   const addCustomGroundPreset = useOasisStore(s => s.addCustomGroundPreset)
@@ -1167,8 +1144,6 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
   // ─═̷─ Model selector (craft + voice) ─═̷─
   const craftModel = useOasisStore(s => s.craftModel)
   const setCraftModel = useOasisStore(s => s.setCraftModel)
-  const voiceModel = useOasisStore(s => s.voiceModel)
-  const setVoiceModel = useOasisStore(s => s.setVoiceModel)
 
   // ─═̷─ VFX settings + preview ─═̷─
   const conjureVfxType = useOasisStore(s => s.conjureVfxType)
@@ -2961,8 +2936,8 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                 )}
                 {placedAgentWindows.map(win => {
                   const isSelected = selectedObjectId === win.id
-                  const agentIcon = win.agentType === 'anorak' ? '💻' : win.agentType === 'anorak-pro' ? '🔮' : win.agentType === 'hermes' ? '☤' : win.agentType === 'merlin' ? '🧙' : win.agentType === 'parzival' ? '🧿' : '⚡'
-                  const agentColor = win.agentType === 'anorak' ? 'text-sky-400' : win.agentType === 'anorak-pro' ? 'text-teal-400' : win.agentType === 'hermes' ? 'text-rose-400' : win.agentType === 'merlin' ? 'text-purple-400' : win.agentType === 'parzival' ? 'text-violet-400' : 'text-green-400'
+                  const agentIcon = win.agentType === 'anorak' ? '💻' : win.agentType === 'anorak-pro' ? '🔮' : win.agentType === 'hermes' ? '☤' : win.agentType === 'openclaw' ? '🦞' : win.agentType === 'merlin' ? '🧙' : win.agentType === 'parzival' ? '🧿' : '⚡'
+                  const agentColor = win.agentType === 'anorak' ? 'text-sky-400' : win.agentType === 'anorak-pro' ? 'text-teal-400' : win.agentType === 'hermes' ? 'text-rose-400' : win.agentType === 'openclaw' ? 'text-cyan-300' : win.agentType === 'merlin' ? 'text-purple-400' : win.agentType === 'parzival' ? 'text-violet-400' : 'text-green-400'
                   const agentIconResolved = win.agentType === 'browser' ? 'WWW' : agentIcon
                   const agentColorResolved = win.agentType === 'browser' ? 'text-orange-400' : agentColor
                   const pos = transforms[win.id]?.position || win.position
@@ -3319,7 +3294,6 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                         defaultScale: a.scale ?? 1,
                       })
                     }}
-                    onRemove={removeConjuredAssetFromWorld}
                     onTexture={(id) => processAsset(id, 'texture').catch((e: Error) => setError(e.message))}
                     onRemesh={(id, quality) => {
                       const preset = REMESH_PRESETS[quality]
@@ -3493,6 +3467,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
 
 const AGENT_TYPES = [
   { type: 'browser' as const, label: 'Browser', icon: 'WWW', color: '#f97316', desc: 'Live 3D browser surface with real typing and selection' },
+  { type: 'openclaw' as const, label: 'OpenClaw', icon: '🦞', color: '#22d3ee', desc: 'Gateway-native peer — local first, MCP-ready, transport next' },
   { type: 'anorak' as const, label: 'Anorak', icon: '💻', color: '#38bdf8', desc: 'Claude Code agent — full multi-turn sessions' },
   { type: 'anorak-pro' as const, label: 'Anorak Pro', icon: '🔮', color: '#14b8a6', desc: 'Autonomous dev pipeline — curator, coder, reviewer, tester' },
   { type: 'hermes' as const, label: 'Hermes', icon: '☤', color: '#fb7185', desc: 'Embodied co-builder — remote tool agent inside the Oasis' },

@@ -3,7 +3,10 @@
 // Prevents hot-reload from spawning new connections in dev mode
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { PrismaClient } from '@prisma/client'
+// Prisma is generated into the repo-level node_modules/.prisma/client path.
+// With pnpm on Windows, @prisma/client can lag behind and keep a stale nested stub.
+// Importing the generated client directly keeps dev mode stable after prisma generate.
+import { PrismaClient } from '../../node_modules/.prisma/client'
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined }
 

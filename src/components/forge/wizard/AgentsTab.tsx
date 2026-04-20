@@ -8,6 +8,7 @@ import { useOasisStore } from '../../../store/oasisStore'
 
 const AGENT_TYPES = [
   { type: 'browser' as const, label: 'Browser', icon: 'WWW', color: '#f97316', desc: 'Live 3D browser surface with real typing and selection' },
+  { type: 'openclaw' as const, label: 'OpenClaw', icon: '🦞', color: '#22d3ee', desc: 'Gateway-native peer — local first, MCP-ready, transport next' },
   { type: 'anorak' as const, label: 'Anorak', icon: '💻', color: '#38bdf8', desc: 'Claude Code agent — full multi-turn sessions' },
   { type: 'anorak-pro' as const, label: 'Anorak Pro', icon: '🔮', color: '#14b8a6', desc: 'Autonomous dev pipeline — curator, coder, reviewer, tester' },
   { type: 'hermes' as const, label: 'Hermes', icon: '☤', color: '#fb7185', desc: 'Embodied co-builder — remote tool agent inside the Oasis' },

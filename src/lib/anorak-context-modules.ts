@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs'
 import path from 'path'
 
-import type { Prisma } from '@prisma/client'
+import type { Prisma } from '../../node_modules/.prisma/client'
 import { prisma } from '@/lib/db'
 import {
   BUILT_IN_MODULE_IDS,
