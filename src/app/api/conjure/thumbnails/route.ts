@@ -92,7 +92,6 @@ export async function POST() {
 export async function GET() {
   const assets = getAllAssets()
   const ready = assets.filter(a => a.status === 'ready')
-  const withThumb = ready.filter(a => a.thumbnailUrl)
   const withLocalThumb = ready.filter(a => a.thumbnailUrl && !a.thumbnailUrl.startsWith('http'))
   const withExternalThumb = ready.filter(a => a.thumbnailUrl?.startsWith('http'))
   const noThumb = ready.filter(a => !a.thumbnailUrl)

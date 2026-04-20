@@ -35,7 +35,6 @@ import {
 } from '@/lib/anorak-context-modules'
 import { buildClaudeCliEnv } from '@/lib/claude-cli-env'
 
-const ADMIN_USER_ID = process.env.ADMIN_USER_ID || ''
 const OASIS_ROOT = process.env.OASIS_ROOT || process.cwd()
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -625,7 +624,7 @@ export async function POST(request: NextRequest) {
 
             // Skip: rate_limit_event, hooks, etc.
 
-          } catch (parseErr) {
+          } catch {
             // Not JSON — raw startup text
             if (line.trim().length > 0 && line.trim().length < 500) {
               console.log(`[Ariel:raw] ${line.trim().substring(0, 100)}`)

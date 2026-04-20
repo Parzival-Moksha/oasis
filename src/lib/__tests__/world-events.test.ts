@@ -4,7 +4,7 @@
 //        globalThis HMR survival, error isolation, unsubscribe
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { WorldEvent, WorldEventType } from '../mcp/world-events'
 
 // ═══════════════════════════════════════════════════════════════════════════

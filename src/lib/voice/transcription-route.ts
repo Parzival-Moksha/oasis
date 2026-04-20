@@ -11,50 +11,6 @@ function isLoopbackHost(hostname: string): boolean {
   return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]'
 }
 
-function normalizeHostName(value: string): string {
-  const trimmed = value.trim().toLowerCase()
-  if (!trimmed) return ''
-  const withoutPort = trimmed.startsWith('[')
-    ? trimmed.replace(/^\[([^\]]+)\](?::\d+)?$/, '$1')
-    : trimmed.split(':')[0] || ''
-  return withoutPort
-}
-
-function isPrivateIpv4Host(hostname: string): boolean {
-  const parts = hostname.split('.').map(part => Number(part))
-  if (parts.length !== 4 || parts.some(part => !Number.isInteger(part) || part < 0 || part > 255)) return false
-
-  const [a, b] = parts
-  if (a === 10) return true
-  if (a === 127) return true
-  if (a === 192 && b === 168) return true
-  if (a === 172 && b >= 16 && b <= 31) return true
-  if (a === 169 && b === 254) return true
-  if (a === 100 && b >= 64 && b <= 127) return true
-  return false
-}
-
-function isPrivateIpv6Host(hostname: string): boolean {
-  const normalized = hostname.replace(/^\[|\]$/g, '').toLowerCase()
-  return (
-    normalized === '::1' ||
-    normalized.startsWith('fc') ||
-    normalized.startsWith('fd') ||
-    normalized.startsWith('fe80:')
-  )
-}
-
-function isTrustedLocalNetworkHost(hostname: string): boolean {
-  if (!hostname) return false
-  if (isLoopbackHost(hostname)) return true
-  if (isPrivateIpv4Host(hostname)) return true
-  if (isPrivateIpv6Host(hostname)) return true
-  if (hostname.endsWith('.local') || hostname.endsWith('.internal') || hostname.endsWith('.lan') || hostname.endsWith('.home.arpa') || hostname.endsWith('.ts.net')) {
-    return true
-  }
-  return false
-}
-
 function isAllowedOrigin(request: NextRequest): boolean {
   const origin = request.headers.get('origin')
   const host = request.headers.get('host')

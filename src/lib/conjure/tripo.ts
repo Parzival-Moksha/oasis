@@ -381,7 +381,7 @@ export class TripoClient implements ConjureProviderClient {
    * imageToThreeD — Upload image + create image_to_model task
    * Supports base64 data URIs (from drag-and-drop) and public URLs.
    */
-  async imageToThreeD(imageUrl: string, tier: string, options?: CharacterGenerationOptions): Promise<{ taskId: string }> {
+  async imageToThreeD(imageUrl: string, tier: string, _options?: CharacterGenerationOptions): Promise<{ taskId: string }> {
     console.log(`[Forge:Tripo] Starting image-to-3D: ${imageUrl.slice(0, 60)}...`)
 
     const body: Record<string, unknown> = {

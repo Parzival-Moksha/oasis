@@ -106,7 +106,7 @@ async function run() {
   }
 
   // Verify console is visible
-  const consoleVisible = await page.evaluate(() => {
+  await page.evaluate(() => {
     const panels = document.querySelectorAll('[class*="wizard"], [class*="Wizard"]')
     // Also check for any floating panel with the tab strip
     const tabPanels = document.querySelectorAll('[class*="fixed"][class*="rounded"]')
@@ -220,7 +220,7 @@ async function run() {
   await page.waitForTimeout(500)
 
   // Get current sky state before clicking
-  const skyBefore = await page.evaluate(() => {
+  await page.evaluate(() => {
     try { return JSON.stringify(document.querySelector('canvas')?.getBoundingClientRect()) }
     catch { return 'unknown' }
   })

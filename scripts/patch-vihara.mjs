@@ -50,7 +50,7 @@ const wallFixCount = { ns: 0, ew: 0 }
 worldData.catalogPlacements = worldData.catalogPlacements.map(p => {
   if (p.catalogId !== 'km_wall') return p
 
-  const [x, , z] = p.position
+  const [x] = p.position
   const isEW = Math.abs(Math.abs(x) - 8) < 0.5  // East or West wall (x ≈ ±8)
 
   if (isEW) {

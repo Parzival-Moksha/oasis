@@ -151,7 +151,7 @@ export function LightTooltipWrap({ type, children, className }: { type: string; 
 // GALLERY ITEM — Each conjured asset in the grid
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function GalleryItem({ asset, onDelete, isInWorld, onPlace, onRemove, onTexture, onRemesh, onRig, onRename, pricing }: {
+export function GalleryItem({ asset, onDelete, isInWorld, onPlace, onRemove: _onRemove, onTexture, onRemesh, onRig, onRename, pricing }: {
   asset: ConjuredAsset
   onDelete: (id: string) => void
   isInWorld: boolean

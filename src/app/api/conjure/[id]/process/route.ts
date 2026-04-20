@@ -28,9 +28,7 @@ import { existsSync, mkdirSync, statSync } from 'fs'
 import { getAssetById, addAsset, updateAsset } from '@/lib/conjure/registry'
 import { MeshyClient } from '@/lib/conjure/meshy'
 import { TripoClient } from '@/lib/conjure/tripo'
-import { POST_PROCESS_COSTS } from '@/lib/conjure/types'
 import type { ConjuredAsset, ProcessRequest, ConjureStatus, ProviderName } from '@/lib/conjure/types'
-import { getLocalUserId } from '@/lib/local-auth'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PROVIDER-AWARE CLIENT INTERFACE — Both Meshy + Tripo implement these

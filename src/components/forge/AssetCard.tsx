@@ -190,9 +190,10 @@ function AudioThumbnail({ mediaUrl, name }: { mediaUrl: string; name: string }) 
 
   // Cleanup on unmount
   useEffect(() => {
+    const audio = audioRef.current
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause()
+      if (audio) {
+        audio.pause()
       }
     }
   }, [])
@@ -236,7 +237,7 @@ export function AssetCard({
   name,
   type,
   thumbnailUrl,
-  modelUrl,
+  modelUrl: _modelUrl,
   mediaUrl,
   isInWorld,
   onDelete,

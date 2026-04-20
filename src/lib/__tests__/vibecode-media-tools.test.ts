@@ -7,7 +7,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { isMediaTool, execMediaTool, mediaToolsOpenAI, MEDIA_TOOL_NAMES } from '../media-tools'
+import { isMediaTool, mediaToolsOpenAI, MEDIA_TOOL_NAMES } from '../media-tools'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Replicate the route's internal logic as pure functions for unit testing.

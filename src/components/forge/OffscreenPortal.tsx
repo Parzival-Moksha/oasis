@@ -22,15 +22,18 @@ export function OffscreenPortal({ windowId, width, height, agentType, captureMod
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
   const mountedRef = useRef(false)
   const initialDimsRef = useRef<{ w: number; h: number } | null>(null)
+  const mountSizeRef = useRef({ width, height })
+  mountSizeRef.current = { width, height }
 
   useEffect(() => {
     const mgr = getOffscreenUIManager()
     if (!mgr) return
 
-    const { container: c } = mgr.mount(windowId, width, height, agentType, captureMode)
+    const { width: mountWidth, height: mountHeight } = mountSizeRef.current
+    const { container: c } = mgr.mount(windowId, mountWidth, mountHeight, agentType, captureMode)
     setContainer(c)
     mountedRef.current = true
-    initialDimsRef.current = { w: width, h: height }
+    initialDimsRef.current = { w: mountWidth, h: mountHeight }
 
     return () => {
       mountedRef.current = false

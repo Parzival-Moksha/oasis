@@ -233,7 +233,7 @@ function PriorityBar({ u, e, i }: { u: number; e: number; i: number }) {
 function IntegerSelector({ value, onChange, min = 1, max = 10, color }: {
   value: number; onChange: (v: number) => void; min?: number; max?: number; color: string
 }) {
-  const [flash, setFlash] = useState(false)
+  const [, setFlash] = useState(false)
   const change = (v: number) => { onChange(Math.max(min, Math.min(max, v))); setFlash(true); setTimeout(() => setFlash(false), 200) }
   return (
     <div className="flex items-center gap-1">
@@ -376,7 +376,7 @@ function SettingsGear({ fontSize, onFontSizeChange, bgEnabled, onBgToggle, panel
 // Stats Panel
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function StatsPanel({ stats, loading, ...settingsProps }: {
+function StatsPanel({ stats, loading }: {
   stats: DevStats | null; loading: boolean
   fontSize: number; onFontSizeChange: (s: number) => void
   bgEnabled: boolean; onBgToggle: () => void
@@ -1597,7 +1597,6 @@ export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
   useEffect(() => { localStorage.setItem('devcraft-panel-opacity', String(panelOpacity)) }, [panelOpacity])
   useEffect(() => { localStorage.setItem('devcraft-bg-enabled', String(bgEnabled)) }, [bgEnabled])
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only mount gate
   useEffect(() => { setMounted(true) }, [])
 
   const fetchMissions = useCallback(async () => {
@@ -1631,7 +1630,6 @@ export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
 
   useEffect(() => {
     if (!mounted) return
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch callbacks
     Promise.all([fetchMissions(), fetchStats()]).finally(() => setLoading(false))
     const interval = setInterval(() => { fetchMissions(); fetchStats() }, 30000)
     return () => clearInterval(interval)
@@ -1646,7 +1644,7 @@ export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
         const pausedMs = activeMission.totalPausedMs || 0
         return accumulated + Math.floor((Date.now() - startTime - pausedMs) / 1000)
       }
-      setElapsed(calcElapsed()) // eslint-disable-line react-hooks/set-state-in-effect -- initial sync with clock
+      setElapsed(calcElapsed())
       timerRef.current = setInterval(() => setElapsed(calcElapsed()), 1000)
     } else if (timerRef.current) {
       clearInterval(timerRef.current); timerRef.current = null
@@ -1667,7 +1665,7 @@ export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
         sendBrowserNotification(`D3VCR4F7 — ${totalMins}m`, activeMission.name)
         // First beep = TIME'S UP → auto-pause
         if (currentBeepNumber === 1) {
-          setTimerExpired(true) // eslint-disable-line react-hooks/set-state-in-effect -- derived from elapsed
+          setTimerExpired(true)
           fetch(`/api/missions/${activeMission.id}`, {
             method: 'PUT', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ isPaused: true, pausedAt: new Date().toISOString() }),
@@ -1679,7 +1677,6 @@ export default function Devcraft({ onClose }: { onClose?: () => void } = {}) {
   }, [elapsed, activeMission])
 
   // Reset beep counter on mission switch or interval change
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- reset on mission switch
   useEffect(() => { lastBeepRef.current = 0; setTimerExpired(false) }, [activeMission?.id, activeMission?.targetSeconds])
 
 

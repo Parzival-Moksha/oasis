@@ -991,7 +991,7 @@ function StellarNurseryEffect({ position, progress }: Omit<ConjureVFXProps, 'vfx
 
   // ░ Bright stars — positions, fade timing ░
   const starData = useMemo(() => {
-    return Array.from({ length: STAR_COUNT }, (_, i) => ({
+    return Array.from({ length: STAR_COUNT }, () => ({
       x: (Math.random() - 0.5) * 3,
       y: 1.5 + (Math.random() - 0.5) * 1.2,
       z: (Math.random() - 0.5) * 3,

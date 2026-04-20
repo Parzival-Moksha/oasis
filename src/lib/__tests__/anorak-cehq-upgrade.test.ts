@@ -53,7 +53,7 @@ describe('MODULE_TYPE_COLORS — brightness check', () => {
   })
 
   it('no grey values — all colors are vibrant (brightness spread)', () => {
-    for (const [key, hex] of Object.entries(MODULE_TYPE_COLORS)) {
+    for (const [, hex] of Object.entries(MODULE_TYPE_COLORS)) {
       const cleaned = hex.replace('#', '')
       const r = parseInt(cleaned.slice(0, 2), 16)
       const g = parseInt(cleaned.slice(2, 4), 16)

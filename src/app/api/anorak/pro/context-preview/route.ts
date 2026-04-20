@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import {
-  type AnorakLobe,
   type CustomContextModule,
   type LegacyContextModules,
   isAnorakLobe,

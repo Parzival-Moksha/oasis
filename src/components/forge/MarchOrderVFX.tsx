@@ -9,7 +9,6 @@ import { useOasisStore } from '../../store/oasisStore'
 const ARROW_COUNT = 5
 const ORDER_RADIUS = 2
 const START_HEIGHT = 1.5
-const IMPACT_HEIGHT = 0
 const ARROW_TRAVEL_DURATION = 1.5
 const ARROW_FADE_IN_DURATION = 0.5
 const IMPACT_DURATION = 0.55

@@ -4,7 +4,7 @@
 // Handles spring bones (hair/cloth physics), expressions, and idle animation
 // VRM is GLB + metadata: humanoid bone mapping, expression presets, spring bones
 
-import { useRef, useEffect, useMemo, useState } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { useFrame, useLoader } from '@react-three/fiber'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'

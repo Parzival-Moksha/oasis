@@ -16,7 +16,6 @@ import {
   type CustomContextModule as SharedCustomContextModule,
   type LegacyContextModules,
   type LobeModuleMap,
-  BUILT_IN_MODULE_IDS,
   getContextModuleCatalog,
   getDefaultConfigFields,
   mergeContextConfig,
@@ -694,23 +693,6 @@ const DHARMA_ABBR: Record<string, { label: string; color: string }> = {
   effort: { label: 'EF', color: '#f97316' },
   mindfulness: { label: 'MF', color: '#14b8a6' },
   concentration: { label: 'CN', color: '#ec4899' },
-}
-
-function DharmaTags({ dharma }: { dharma: string | null }) {
-  if (!dharma) return null
-  const paths = dharma.split(',').map(s => s.trim()).filter(Boolean)
-  return (
-    <span className="inline-flex gap-0.5">
-      {paths.map(p => {
-        const d = DHARMA_ABBR[p]
-        return d ? (
-          <span key={p} style={{ color: d.color, fontSize: 8, border: `1px solid ${d.color}33`, borderRadius: 2, padding: '0 2px' }} title={`Right ${p.charAt(0).toUpperCase() + p.slice(1)}`}>
-            {d.label}
-          </span>
-        ) : null
-      })}
-    </span>
-  )
 }
 
 interface MindcraftMission {
@@ -1885,7 +1867,7 @@ function CEHQTab({ config, onUpdate }: { config: AnorakProConfig; onUpdate: (p: 
     } finally {
       setPreviewLoading(false)
     }
-  }, [config.contextModules, config.customModules, config.lobeModules, config.topMissionCount])
+  }, [config.contextModules, config.customModules, config.lobeModules, config.moduleValues, config.topMissionCount])
 
   const saveCustomModule = useCallback((index: number, nextModule: CustomContextModule) => {
     const next = [...config.customModules]
@@ -3091,6 +3073,24 @@ export function AnorakProPanel({
   const heartbeatRef = useRef(false)
   heartbeatRef.current = config.heartbeat
   const heartbeatRunningRef = useRef(false)
+  const heartbeatConfigRef = useRef({
+    workStart: config.heartbeatWorkStart,
+    workEnd: config.heartbeatWorkEnd,
+    model: config.models.curator,
+    customModules: config.customModules,
+    lobeModules: config.lobeModules,
+    topMissionCount: config.topMissionCount,
+    moduleValues: config.moduleValues,
+  })
+  heartbeatConfigRef.current = {
+    workStart: config.heartbeatWorkStart,
+    workEnd: config.heartbeatWorkEnd,
+    model: config.models.curator,
+    customModules: config.customModules,
+    lobeModules: config.lobeModules,
+    topMissionCount: config.topMissionCount,
+    moduleValues: config.moduleValues,
+  }
 
   useEffect(() => {
     if (embedded || !config.heartbeat) return
@@ -3100,10 +3100,11 @@ export function AnorakProPanel({
 
     const checkAndHeartbeat = async () => {
       if (!heartbeatRef.current || heartbeatRunningRef.current || isRunningRef.current) return
+      const heartbeatConfig = heartbeatConfigRef.current
       const now = new Date()
       const hour = now.getHours()
-      const start = config.heartbeatWorkStart
-      const end = config.heartbeatWorkEnd
+      const start = heartbeatConfig.workStart
+      const end = heartbeatConfig.workEnd
       if (start < end && (hour < start || hour >= end)) return
       if (start >= end && hour >= end && hour < start) return
 
@@ -3114,11 +3115,11 @@ export function AnorakProPanel({
           headers: { 'Content-Type': 'application/json' },
           signal: ac.signal,
           body: JSON.stringify({
-            model: config.models.curator,
-            customModules: config.customModules,
-            lobeModules: config.lobeModules,
-            topMissionCount: config.topMissionCount,
-            moduleValues: config.moduleValues,
+            model: heartbeatConfig.model,
+            customModules: heartbeatConfig.customModules,
+            lobeModules: heartbeatConfig.lobeModules,
+            topMissionCount: heartbeatConfig.topMissionCount,
+            moduleValues: heartbeatConfig.moduleValues,
           }),
         })
         if (resp.body) {
@@ -3184,7 +3185,7 @@ export function AnorakProPanel({
       if (interval) clearInterval(interval)
       ac.abort()
     }
-  }, [embedded, config.heartbeat, config.heartbeatFirstPingDelayMin, config.heartbeatFrequencyMin, config.heartbeatWorkStart, config.heartbeatWorkEnd])
+  }, [embedded, config.heartbeat, config.heartbeatFirstPingDelayMin, config.heartbeatFrequencyMin])
 
   const isVisible = embedded || isOpen
   if (!isVisible || typeof document === 'undefined') return null
@@ -3311,7 +3312,7 @@ export function AnorakProPanel({
                     <input type="number" value={config.heartbeatWorkEnd} min={0} max={23} onChange={e => updateConfig({ heartbeatWorkEnd: Math.min(23, Math.max(0, parseInt(e.target.value) || 18)) })} className="w-10 text-center bg-black/60 border border-white/10 rounded px-1 py-0.5 text-white/90 outline-none" />
                   </div>
                 </div>
-                <div className="text-[#c0ffee]/55 text-[9px] -mt-1 ml-1">Uses this Oasis machine's local time.</div>
+                <div className="text-[#c0ffee]/55 text-[9px] -mt-1 ml-1">Uses this Oasis machine&apos;s local time.</div>
               </div>
             </div>
             <div className="border border-white/5 rounded p-2">

@@ -137,10 +137,6 @@ function normalizeChatId(value: unknown): string {
   return sanitizeString(value).replace(/\s+/g, '')
 }
 
-function normalizeThreadId(value: unknown): string {
-  return sanitizeString(value).replace(/\s+/g, '')
-}
-
 function normalizeOrigin(value: string): string {
   const trimmed = sanitizeString(value)
   if (!trimmed) return ''

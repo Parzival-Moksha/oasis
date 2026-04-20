@@ -24,7 +24,7 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js'
 import type { ConjuredAsset } from '../../lib/conjure/types'
 import { useOasisStore } from '../../store/oasisStore'
 import { extractModelStats } from './ModelPreview'
-import { isLibraryAnimation, getLibraryAnimId, loadAnimationClip, getCachedClip, LIB_PREFIX, retargetClip } from '../../lib/forge/animation-library'
+import { isLibraryAnimation, getLibraryAnimId, loadAnimationClip, getCachedClip, retargetClip } from '../../lib/forge/animation-library'
 import { useInputManager } from '../../lib/input-manager'
 import { dispatch } from '../../lib/event-bus'
 

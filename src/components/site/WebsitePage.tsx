@@ -156,7 +156,7 @@ export function WebsitePage() {
             <div className={styles.brandBadge}>04515</div>
             <div>
               <p className={styles.brandTitle}>The Oasis</p>
-              <p className={styles.brandMeta}>The gamer's agent interface.</p>
+              <p className={styles.brandMeta}>The gamer&apos;s agent interface.</p>
             </div>
           </div>
           <div className={styles.navLinks}>
@@ -167,7 +167,7 @@ export function WebsitePage() {
 
         <section className={styles.hero}>
           <div className={styles.heroCard}>
-            <div className={styles.eyebrow}>The gamer's agent interface</div>
+          <div className={styles.eyebrow}>The gamer&apos;s agent interface</div>
             <h1 className={styles.heroTitle}>Meet your agents face-to-face and build worlds together.</h1>
             <p className={styles.heroLead}>
               Oasis is a local-first 3D builder where agents can search assets, place objects, craft scenes,

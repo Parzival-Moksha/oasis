@@ -4,7 +4,7 @@
 // video event listener ordering (listeners before src assignment)
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GROUND PLANE — gl.initTexture() ordering tests
@@ -20,7 +20,7 @@ describe('GroundPlane initTexture ordering', () => {
     const callOrder: string[] = []
 
     const mockGl = {
-      initTexture: vi.fn((tex: any) => {
+      initTexture: vi.fn((_tex: any) => {
         callOrder.push('initTexture')
       }),
     }
@@ -129,7 +129,7 @@ describe('VideoPlaneRenderer event listener ordering', () => {
       removeEventListener: vi.fn(),
       pause: vi.fn(),
       play: vi.fn(() => Promise.resolve()),
-      requestVideoFrameCallback: vi.fn((cb: Function) => {
+      requestVideoFrameCallback: vi.fn((_cb: Function) => {
         // Track as listener equivalent
         addedListeners.push({ event: 'requestVideoFrameCallback', order: ++orderCounter })
       }),
@@ -200,7 +200,7 @@ describe('VideoPlaneRenderer event listener ordering', () => {
   it('deferred readyState check uses rAF, not synchronous', () => {
     // The fix: instead of checking readyState synchronously after src assignment,
     // wrap in requestAnimationFrame so the browser has one tick to populate videoWidth
-    const mockRAF = vi.fn((cb: FrameRequestCallback) => {
+    const mockRAF = vi.fn((_cb: FrameRequestCallback) => {
       // In real code, this defers to next frame
       return 1
     })
@@ -326,7 +326,7 @@ describe('createTexture gate logic', () => {
     const video = { videoWidth: 0, videoHeight: 0, readyState: 4 }
     let tex: any = null
 
-    const createTexture = (trigger: string) => {
+    const createTexture = (_trigger: string) => {
       if (tex) return
       if (!video.videoWidth || !video.videoHeight) return
       tex = { type: 'VideoTexture' }
@@ -376,8 +376,6 @@ describe('createTexture gate logic', () => {
   it('no-op when disposed (cleanup ran)', () => {
     let tex: any = null
     const disposed = true
-    const video = { videoWidth: 1920, videoHeight: 1080 }
-
     const createTexture = () => {
       if (tex || disposed) return
       tex = { type: 'VideoTexture' }

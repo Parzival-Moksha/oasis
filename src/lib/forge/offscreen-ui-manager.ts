@@ -277,7 +277,7 @@ class OffscreenUIManager {
         win.ctx.drawImage(screenshot, 0, 0, win.canvas.width, win.canvas.height)
         win.texture.needsUpdate = true
       }
-    } catch (err) {
+    } catch {
       win.ctx.fillStyle = '#0a0a0f'
       win.ctx.fillRect(0, 0, win.canvas.width, win.canvas.height)
       win.ctx.fillStyle = '#38bdf8'

@@ -3,7 +3,7 @@
 // Mission #25: src/lib/media-tools.ts
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   OASIS_URL,
   IMAGE_MODELS,
@@ -17,7 +17,7 @@ import {
   execGenerateVideo,
   execMediaTool,
 } from '../media-tools'
-import type { MediaToolResult, ImageModel, VoiceName, VideoDuration, MediaToolName } from '../media-tools'
+import type { MediaToolResult } from '../media-tools'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Mock fetch globally

@@ -1258,7 +1258,7 @@ export function MerlinPanel({
       setIsThinking(false)
       abortRef.current = null
     }
-  }, [fetchSessions, input, isStreaming, model, selectedSessionId])
+  }, [autoPlayMediaMessageId, fetchSessions, input, isStreaming, model, selectedSessionId])
 
   // Cancel streaming
   const cancel = useCallback(() => {

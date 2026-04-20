@@ -14,7 +14,7 @@
 // ONE useFrame runs the active mode. No fights. No races.
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { useRef, useContext, useEffect, createContext } from 'react'
+import { useRef, useContext, useEffect } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, useKeyboardControls } from '@react-three/drei'
 import * as THREE from 'three'
@@ -25,7 +25,7 @@ import * as THREE from 'three'
 let _audioListener: THREE.AudioListener | null = null
 export function getAudioListener(): THREE.AudioListener | null { return _audioListener }
 import { useOasisStore } from '../store/oasisStore'
-import { useInputManager, getInputCapabilities, consumeMouseLookDelta, type InputState } from '../lib/input-manager'
+import { useInputManager, getInputCapabilities, consumeMouseLookDelta } from '../lib/input-manager'
 import { setCameraSnapshot } from '../lib/camera-bridge'
 import { deriveAvatarAnchoredWindowPlacement, resolveAgentWindowRenderScale } from '../lib/agent-avatar-utils'
 import { getLiveObjectTransform } from '../lib/live-object-transforms'

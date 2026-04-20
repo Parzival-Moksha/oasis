@@ -90,7 +90,7 @@ export function useMovement(
       if (!isAvatarLocomotionReady(objectId)) {
         return
       }
-      const [tx, ty, tz] = moveTarget
+      const [tx, , tz] = moveTarget
       const speed = moveSpeed || 3
       const dx = tx - group.position.x
       const dz = tz - group.position.z

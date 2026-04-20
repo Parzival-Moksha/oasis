@@ -9,7 +9,7 @@
 
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useRef, useEffect } from 'react'
 import { useOasisStore, type UndoCommand } from '../../store/oasisStore'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -17,10 +17,6 @@ import { useOasisStore, type UndoCommand } from '../../store/oasisStore'
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export function ActionLogButton({ onClick, isOpen }: { onClick: () => void; isOpen: boolean }) {
-  const undoCount = useOasisStore(s => s.undoStack.length)
-  const redoCount = useOasisStore(s => s.redoStack.length)
-  const totalCount = undoCount + redoCount
-
   return (
     <button
       onClick={onClick}

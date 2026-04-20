@@ -49,7 +49,7 @@ export async function PUT(request: NextRequest) {
   try {
     await fs.writeFile(lobePath(lobe), content, 'utf-8')
     return NextResponse.json({ lobe, charCount: content.length, saved: true })
-  } catch (err) {
+  } catch {
     return NextResponse.json({ error: 'Failed to write agent definition' }, { status: 500 })
   }
 }

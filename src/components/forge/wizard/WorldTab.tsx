@@ -10,7 +10,7 @@ import type { TerrainParams } from '../../../lib/forge/terrain-generator'
 import type { WorldLightType } from '../../../lib/conjure/types'
 import { LIGHT_INTENSITY_MAX, LIGHT_INTENSITY_STEP } from '../../../lib/conjure/types'
 import { GROUND_PRESETS, getTextureUrls } from '../../../lib/forge/ground-textures'
-import { ASSET_CATALOG, SKY_BACKGROUNDS } from '../../scene-lib/constants'
+import { SKY_BACKGROUNDS } from '../../scene-lib/constants'
 import { LightTooltipWrap } from './shared'
 
 interface WorldTabProps {

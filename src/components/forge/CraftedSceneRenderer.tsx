@@ -302,7 +302,7 @@ interface CraftedSceneRendererProps {
   onDelete?: (id: string) => void
 }
 
-export function CraftedSceneRenderer({ scene, onDelete }: CraftedSceneRendererProps) {
+export function CraftedSceneRenderer({ scene, onDelete: _onDelete }: CraftedSceneRendererProps) {
   const groupRef = useRef<THREE.Group>(null)
   const [hovered, setHovered] = useState(false)
   const [showLabel, setShowLabel] = useState(false)

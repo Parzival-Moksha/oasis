@@ -11,8 +11,6 @@ import { getServerSupabase } from '@/lib/supabase'
 
 const MAX_TITLE_LENGTH = 500
 const MAX_BODY_LENGTH = 50000
-const ADMIN_USER_ID = process.env.ADMIN_USER_ID || ''
-
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)

@@ -89,7 +89,6 @@ describe('feedback validation', () => {
   })
 
   it('rejects mature as string (must be boolean)', () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(validateFeedback({ missionId: 1, mature: 'true' as any, verdict: 'accept' })).toBe('missionId, mature, verdict required')
   })
 

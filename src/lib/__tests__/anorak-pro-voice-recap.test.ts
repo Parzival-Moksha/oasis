@@ -185,7 +185,6 @@ describe('voice text truncation — slice(0, 5000)', () => {
 async function generateVoiceRecap(
   recapText: string,
   send: (type: string, data: Record<string, unknown>) => void,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   fetchFn: any,
 ): Promise<void> {
   if (recapText.trim().length > 10) {

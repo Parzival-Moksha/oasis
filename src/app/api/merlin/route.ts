@@ -563,7 +563,6 @@ export async function POST(request: NextRequest) {
 
                 const toolUseId = typeof block.tool_use_id === 'string' ? block.tool_use_id : ''
                 const toolName = toolUseIdToName.get(toolUseId) || 'tool'
-                const toolInput = toolUseIdToInput.get(toolUseId) || {}
                 const resultText = extractToolResultText(block.content)
                 const mediaUrls = collectMediaUrls(block.content)
                 const ok = block.is_error !== true

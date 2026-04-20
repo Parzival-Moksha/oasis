@@ -218,7 +218,7 @@ function GuideTab() {
           }}
         >
           <div className="text-lg mb-1">🏆</div>
-          <div className="text-sm text-green-300 font-medium">You're a Builder Now</div>
+          <div className="text-sm text-green-300 font-medium">You&apos;re a Builder Now</div>
           <div className="text-[10px] text-gray-500 mt-0.5">+200 XP completion bonus awarded</div>
         </div>
       )}

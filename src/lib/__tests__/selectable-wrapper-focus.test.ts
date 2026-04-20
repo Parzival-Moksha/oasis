@@ -4,7 +4,6 @@
 
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useInputManager } from '../input-manager'
-import { useOasisStore } from '../../store/oasisStore'
 
 function getInputState() { return useInputManager.getState() }
 function resetInput() {

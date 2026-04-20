@@ -4,7 +4,7 @@
 //        count display, edge cases (unknown lobes, corrupted localStorage)
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Mirror pure logic from AnorakProPanel.tsx — no React deps needed
@@ -392,7 +392,7 @@ describe('Lobe Filters — Edge Cases', () => {
   })
 
   it('LOBE_COLORS values are valid hex colors', () => {
-    for (const [lobe, color] of Object.entries(LOBE_COLORS)) {
+    for (const [, color] of Object.entries(LOBE_COLORS)) {
       expect(color).toMatch(/^#[0-9a-f]{6}$/i)
     }
   })

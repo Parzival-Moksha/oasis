@@ -118,7 +118,7 @@ export function AnorakContent({
     }
     return ''
   })
-  const [internalModel, setInternalModel] = useState('opus')
+  const [internalModel] = useState('opus')
   const model = controlledModel || internalModel
   const [totalCost, setTotalCost] = useState(0)
   const [liveTokens, setLiveTokens] = useState({ input: 0, output: 0 })
@@ -504,7 +504,7 @@ export function AnorakContent({
   }, [])
 
   // New session
-  const newSession = useCallback(() => {
+  const _newSession = useCallback(() => {
     if (isStreaming) return
     setSessionId('')
     setTurns([])
@@ -519,8 +519,6 @@ export function AnorakContent({
   const promptSize = compact ? 'text-[11px]' : 'text-xs'
   const inputSize = compact ? 'text-[11px]' : 'text-xs'
   const statusSize = compact ? 'text-[9px]' : 'text-[10px]'
-  const workingSize = compact ? 'text-[9px]' : 'text-[10px]'
-
   return (
     <div className="flex flex-col flex-1 min-h-0">
       {/* ═══ SESSION PICKER (only in showSessionControls mode) ═══ */}

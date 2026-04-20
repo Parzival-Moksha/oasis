@@ -65,7 +65,6 @@ const PETAL_PINK     = new THREE.Color('#FF66CC')
 const POLLEN_YELLOW  = new THREE.Color('#FFEE88')
 const VOID_BLACK     = new THREE.Color('#111111')
 const CHAIN_STEEL    = new THREE.Color('#8899AA')
-const ANCHOR_BLUE    = new THREE.Color('#0044AA')
 const IMPACT_PURPLE  = new THREE.Color('#6633CC')
 const NEBULA_BLUE    = new THREE.Color('#2244FF')
 const NEBULA_PINK    = new THREE.Color('#FF4488')
@@ -535,7 +534,7 @@ function QuantumCollapseEffect({ vfx, onComplete }: EffectProps) {
   const flashRef = useRef<THREE.Mesh>(null)
   const ringRef = useRef<THREE.Mesh>(null)
 
-  const { positions, origins, phases } = useMemo(() => {
+  const { positions, origins } = useMemo(() => {
     const pos = new Float32Array(QUANTUM_COUNT * 3)
     const ori = new Float32Array(QUANTUM_COUNT * 3)
     const ph = new Float32Array(QUANTUM_COUNT) // per-particle phase for flickering
@@ -911,8 +910,6 @@ function DimensionalRiftEffect({ vfx, onComplete }: EffectProps) {
   }, [])
 
   // crackle target positions (re-randomized each frame in useFrame)
-  const crackleTargets = useMemo(() => new Float32Array(RIFT_CRACKLE_COUNT * 3), [])
-
   const particles = useMemo(() => {
     const pos = new Float32Array(RIFT_PARTICLE_COUNT * 3)
     const vel = new Float32Array(RIFT_PARTICLE_COUNT * 3)

@@ -8,11 +8,8 @@
 
 import { NextRequest } from 'next/server'
 import { spawn } from 'child_process'
-import path from 'path'
-import fs from 'fs'
 import { createStreamParser } from '@/lib/anorak-stream-parser'
 
-const ADMIN_USER_ID = process.env.ADMIN_USER_ID || ''
 const OASIS_ROOT = process.env.OASIS_ROOT || process.cwd()
 
 // ═══════════════════════════════════════════════════════════════════════════

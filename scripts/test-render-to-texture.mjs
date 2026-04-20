@@ -185,7 +185,6 @@ async function run() {
   await shot(page, 'cleaned')
 
   // Verify windows removed
-  const remaining = await page.evaluate('window.__oasis.getPlacedAgentWindows().length')
   // May have pre-existing windows, just verify ours are gone
   await shot(page, 'final')
 

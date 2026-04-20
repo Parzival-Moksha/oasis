@@ -2327,7 +2327,7 @@ export function HermesPanel({
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(next))
   }, [])
 
-  const toggleDetails = useCallback(() => {
+  const _toggleDetails = useCallback(() => {
     setShowDetails(current => {
       const next = !current
       try { localStorage.setItem(DETAILS_KEY, String(next)) } catch {}
@@ -2335,7 +2335,7 @@ export function HermesPanel({
     })
   }, [])
 
-  const clearChat = useCallback(() => {
+  const _clearChat = useCallback(() => {
     abortRef.current?.abort()
     abortRef.current = null
     setIsStreaming(false)

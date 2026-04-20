@@ -16,7 +16,7 @@
 //          modal CRUD (use API directly for now)
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -98,6 +98,7 @@ const getDefaultWidths = (): Record<ColumnKey, number> => {
 const MATURITY_COLORS = ['#666', '#0ea5e9', '#14b8a6', '#f59e0b']
 const MATURITY_LABELS = ['🌑 para', '🌘 pashyanti', '🌗 madhyama', '🌕 vaikhari']
 const MATURITY_SHORT = ['para', 'pash', 'madh', 'vaik']
+void MATURITY_LABELS
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPERS

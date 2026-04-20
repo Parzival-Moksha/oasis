@@ -6,7 +6,6 @@
 
 import { chromium } from '@playwright/test'
 import fs from 'fs'
-import { execSync } from 'child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 

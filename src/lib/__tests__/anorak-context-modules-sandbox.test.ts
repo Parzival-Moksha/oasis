@@ -15,8 +15,6 @@ const moduleSrc = fs.readFileSync(MODULE_SRC_PATH, 'utf-8')
 // (extracted from anorak-context-modules.ts — avoids importing prisma)
 // ═══════════════════════════════════════════════════════════════════════════
 
-const MAX_FILE_MODULE_CONTENT = 12000
-
 function readLinkedFileSandboxCheck(filePath: string, projectRoot: string, userHome: string): { allowed: boolean; resolved: string } {
   const target = path.isAbsolute(filePath)
     ? filePath

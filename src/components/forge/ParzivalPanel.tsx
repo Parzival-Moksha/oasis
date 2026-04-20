@@ -91,6 +91,7 @@ const TABS: Array<{ id: TabId; icon: string; label: string }> = [
 const MATURITY_LABELS = ['🟥 Raw', '🟧 Formulated', '🟨 Analyzed', '🟩 Ready']
 
 const DEFAULT_POS = { x: 80, y: 80 }
+void MATURITY_LABELS
 const DEFAULT_SIZE = { w: 520, h: 640 }
 const STORAGE_POS = 'oasis-parzival-pos'
 const STORAGE_SIZE = 'oasis-parzival-size'

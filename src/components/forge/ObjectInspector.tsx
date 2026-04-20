@@ -475,7 +475,6 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
   }, [inspectedObjectId, resolved, transforms])
 
   // ─═̷─ Display name (behavior label > resolved name > fallback) ─═̷─
-  const displayName = behavior.label || resolved?.name || 'Unknown Object'
 
   // ─═̷─ Movement type ─═̷─
   const movementType: MovementType = behavior.movement.type

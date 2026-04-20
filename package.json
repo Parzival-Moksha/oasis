@@ -11,7 +11,7 @@
     "docs:local": "node scripts/sync-local-docs.mjs",
     "build": "next build",
     "start": "next start -p 4516",
-    "lint": "next lint"
+    "lint": "eslint src scripts next.config.mjs postcss.config.js tailwind.config.js vitest.config.ts --ext .js,.mjs,.ts,.tsx --report-unused-disable-directives"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -50,7 +50,11 @@
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@types/three": "^0.162.0",
+    "@typescript-eslint/eslint-plugin": "8.58.2",
+    "@typescript-eslint/parser": "8.58.2",
     "autoprefixer": "^10.4.20",
+    "eslint": "8.57.1",
+    "eslint-config-next": "14.2.35",
     "playwright": "^1.58.2",
     "postcss": "^8.4.49",
     "postprocessing": "^6.38.2",

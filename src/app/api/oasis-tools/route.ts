@@ -109,14 +109,11 @@ async function uploadScreenshotCaptureToHermesRemote(buffer: Buffer, fileName: s
         windowsHide: true,
       })
 
-      let stdout = ''
       let stderr = ''
 
       child.stdout.setEncoding('utf8')
       child.stderr.setEncoding('utf8')
-      child.stdout.on('data', chunk => {
-        stdout += chunk
-      })
+      child.stdout.on('data', () => {})
       child.stderr.on('data', chunk => {
         stderr += chunk
       })

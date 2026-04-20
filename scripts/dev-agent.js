@@ -13,7 +13,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 const { spawn, execSync } = require('child_process')
-const { watch, existsSync, rmSync, renameSync, mkdirSync } = require('fs')
+const { watch, existsSync, rmSync, renameSync } = require('fs')
 const { join } = require('path')
 
 const PORT = 4516

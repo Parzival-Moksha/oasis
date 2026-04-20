@@ -24,42 +24,6 @@ import { SettingsContext } from '../scene-lib'
 // FORGE GROUND — shows when no terrain is loaded (the original conjuring circle)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function ForgeGround() {
-  const ringRef = useRef<THREE.Mesh>(null)
-
-  useFrame((state) => {
-    if (ringRef.current) {
-      const mat = ringRef.current.material as THREE.MeshStandardMaterial
-      mat.emissiveIntensity = 0.3 + Math.sin(state.clock.elapsedTime * 0.5) * 0.15
-    }
-  })
-
-  return (
-    <group>
-      <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
-        <ringGeometry args={[2.8, 3, 64]} />
-        <meshStandardMaterial
-          color="#F97316"
-          emissive="#F97316"
-          emissiveIntensity={0.4}
-          transparent
-          opacity={0.3}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.005, 0]}>
-        <circleGeometry args={[2.8, 64]} />
-        <meshStandardMaterial color="#1a0a00" transparent opacity={0.5} />
-      </mesh>
-      <Html position={[0, 0.1, 4]} center style={{ pointerEvents: 'none' }}>
-        <div className="text-xs text-orange-500/40 font-mono tracking-[0.3em] select-none pointer-events-none">
-          CONJURING CIRCLE
-        </div>
-      </Html>
-    </group>
-  )
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // IBL INTENSITY SYNC — sets scene.environmentIntensity from world lights
 // drei <Environment> sets the map, this syncs the intensity every frame

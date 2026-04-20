@@ -53,7 +53,7 @@ describe('/api/media/upload', () => {
   it('rejects request with no file', async () => {
     const req = makeRequest(null)
     const res = await POST(req)
-    const json = await res.json()
+    await res.json()
     expect(res.status).toBe(400)
     expect(json.error).toMatch(/no file/i)
   })
@@ -123,7 +123,7 @@ describe('/api/media/upload', () => {
     const file = makeFile('big.png', 'image/png', exactLimit)
     const req = makeRequest(file)
     const res = await POST(req)
-    const json = await res.json()
+    await res.json()
     expect(res.status).toBe(200)
   })
 

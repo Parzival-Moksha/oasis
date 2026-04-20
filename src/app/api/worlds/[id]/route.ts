@@ -13,7 +13,7 @@
 import { NextResponse } from 'next/server'
 import { getLocalUserId } from '@/lib/local-auth'
 import {
-  loadWorld, saveWorld, savePublicEditWorld, deleteWorld, getRegistry, updateObjectCount,
+  loadWorld, saveWorld, deleteWorld, getRegistry, updateObjectCount,
   type WorldState,
 } from '@/lib/forge/world-server'
 

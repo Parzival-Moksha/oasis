@@ -146,7 +146,7 @@ async function run() {
     await page.waitForTimeout(800)
     await screenshot(page, 'merlin-panel')
     // Check if any fixed panel appeared
-    const merlinPanel = await page.$('.fixed.z-\\[9999\\]')
+    await page.$('.fixed.z-\\[9999\\]')
     pass('T19: Merlin panel opens')
     await merlinBtn.click({ force: true }) // close
     await page.waitForTimeout(500)
@@ -244,7 +244,7 @@ async function run() {
       await screenshot(page, 'agents-tab')
 
       // T29: Deploy buttons for agents
-      const agentCards = await page.$$eval('button:has-text("Deploy")', btns => btns.length).catch(() => 0)
+      await page.$$eval('button:has-text("Deploy")', btns => btns.length).catch(() => 0)
       // Alternative: look for agent type names
       const pageText = await page.textContent('body')
       const hasAnorak = pageText.includes('Anorak') || pageText.includes('Claude Code')

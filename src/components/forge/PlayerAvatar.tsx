@@ -72,8 +72,8 @@ const DANCE_CLIPS = ['breakdance', 'hip-hop', 'capoeira', 'moonwalk', 'shuffling
 
 export function PlayerAvatar({
   url,
-  controlMode,
-  moveSpeed = 6,
+  controlMode: _controlMode,
+  moveSpeed: _moveSpeed = 6,
   mouseSensitivity = 1,
 }: PlayerAvatarProps) {
   const { settings } = useContext(SettingsContext)
