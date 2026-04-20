@@ -890,7 +890,6 @@ export function useWorldEvents() {
       }
     }
 
-    const actorPositions = actorPositionRef.current
     connect()
 
     return () => {
