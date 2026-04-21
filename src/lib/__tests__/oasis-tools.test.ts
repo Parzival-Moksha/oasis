@@ -293,8 +293,8 @@ describe('isScreenshotPending', () => {
       captureCount: 2,
       base64: 'front-base64',
       captures: [
-        { viewId: 'front', format: 'webp', hasInlineBase64: true },
-        { viewId: 'merlin-eye', format: 'webp', hasInlineBase64: true },
+        { viewId: 'front', format: 'webp', base64: 'front-base64' },
+        { viewId: 'merlin-eye', format: 'webp', base64: 'merlin-base64' },
       ],
     })
     expect(isScreenshotPending()).toBe(false)
@@ -525,6 +525,68 @@ describe('isScreenshotPending', () => {
 
     await expect(worldAPending).resolves.toMatchObject({ ok: true })
     await expect(worldBPending).resolves.toMatchObject({ ok: true })
+  })
+
+  it('accepts the canonical "external-orbit" mode name', async () => {
+    const pendingResult = callTool('screenshot_viewport', {
+      defaultAgentType: 'merlin',
+      views: [{ id: 'canonical-overview', mode: 'external-orbit' }],
+    })
+
+    const request = getPendingScreenshotRequest()
+    expect(request?.views[0]).toMatchObject({
+      id: 'canonical-overview',
+      mode: 'external-orbit',
+      agentType: 'merlin',
+    })
+
+    expect(deliverScreenshot('canonical-overview-base64', request?.id)).toBe(true)
+    await expect(pendingResult).resolves.toMatchObject({ ok: true })
+    expect(isScreenshotPending()).toBe(false)
+  })
+
+  it('accepts "external" as an alias for external-orbit at the top level', async () => {
+    const pendingResult = callTool('screenshot_viewport', {
+      defaultAgentType: 'merlin',
+      mode: 'external',
+    })
+
+    const request = getPendingScreenshotRequest()
+    expect(request?.views[0]).toMatchObject({
+      mode: 'external-orbit',
+      agentType: 'merlin',
+    })
+
+    expect(deliverScreenshot('external-alias-base64', request?.id)).toBe(true)
+    await expect(pendingResult).resolves.toMatchObject({ ok: true })
+    expect(isScreenshotPending()).toBe(false)
+  })
+
+  it('returns a validation error for unknown modes instead of silently falling back', async () => {
+    const result = await callTool('screenshot_viewport', {
+      mode: 'garbage',
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain("Invalid mode 'garbage'")
+    expect(result.message).toContain('current')
+    expect(result.message).toContain('agent-avatar-phantom')
+    expect(result.message).toContain('look-at')
+    expect(result.message).toContain('external-orbit')
+    expect(result.message).toContain('third-person-follow')
+    expect(result.message).toContain('avatar-portrait')
+    expect(isScreenshotPending()).toBe(false)
+  })
+
+  it('rejects an unknown mode inside a views entry with a listing of valid values', async () => {
+    const result = await callTool('screenshot_viewport', {
+      views: [{ id: 'bad', mode: 'bird-eye' }],
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain("Invalid mode 'bird-eye'")
+    expect(result.message).toContain('external-orbit')
+    expect(isScreenshotPending()).toBe(false)
   })
 })
 

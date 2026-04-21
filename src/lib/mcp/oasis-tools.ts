@@ -1657,6 +1657,34 @@ function validScreenshotFormat(value: unknown): ScreenshotFormat {
     : 'jpeg'
 }
 
+export const CANONICAL_SCREENSHOT_MODES: readonly ScreenshotViewRequest['mode'][] = [
+  'current',
+  'agent-avatar-phantom',
+  'look-at',
+  'external-orbit',
+  'third-person-follow',
+  'avatar-portrait',
+] as const
+
+export class ScreenshotModeError extends Error {
+  readonly invalidMode: string
+  constructor(invalidMode: string) {
+    super(`Invalid mode '${invalidMode}'. Valid modes: ${CANONICAL_SCREENSHOT_MODES.join(', ')}.`)
+    this.name = 'ScreenshotModeError'
+    this.invalidMode = invalidMode
+  }
+}
+
+function readExplicitModeString(entry: Record<string, unknown>): string {
+  for (const key of ['mode', 'view', 'camera', 'perspective']) {
+    const raw = entry[key]
+    if (typeof raw === 'string' && raw.trim().length > 0) {
+      return raw.trim()
+    }
+  }
+  return ''
+}
+
 function normalizeScreenshotMode(
   entry: Record<string, unknown>,
   index: number,
@@ -1705,11 +1733,24 @@ function normalizeScreenshotMode(
   ) {
     return 'avatar-portrait'
   }
-  if (rawMode === 'external' || rawMode === 'outside' || rawMode === 'overhead' || rawMode === 'birdseye' || rawMode === 'birds-eye') {
+  if (
+    rawMode === 'external'
+    || rawMode === 'external-orbit'
+    || rawMode === 'external_orbit'
+    || rawMode === 'externalorbit'
+    || rawMode === 'outside'
+    || rawMode === 'overhead'
+    || rawMode === 'birdseye'
+    || rawMode === 'birds-eye'
+  ) {
     return hasExplicitLookAt ? 'look-at' : 'external-orbit'
   }
   if (hasExplicitLookAt) {
     return 'look-at'
+  }
+  const explicit = readExplicitModeString(entry)
+  if (explicit) {
+    throw new ScreenshotModeError(explicit)
   }
   return null
 }
@@ -1749,6 +1790,8 @@ function normalizeAvatarSubject(value: unknown, fallback = 'merlin'): string {
   const raw = validStr(value, fallback).trim().toLowerCase()
   if (!raw) return fallback
   if (raw === 'user' || raw === 'player' || raw === 'player-avatar' || raw === 'player_avatar' || raw === 'me' || raw === 'self' || raw === 'vibedev' || raw === 'carbondev') return 'player'
+  if (raw === 'anorak' || raw === 'anorak_pro' || raw === 'anorakpro') return 'anorak-pro'
+  if (raw === 'clawdling') return 'openclaw'
   if (raw === 'merlin-avatar' || raw === 'merlin_avatar') return 'merlin'
   return raw
 }
@@ -1854,7 +1897,15 @@ function resolveScreenshotJob(job: PendingScreenshotJob, captures: DeliveredScre
 }
 
 tools.screenshot_viewport = async (args) => {
-  const request = normalizeScreenshotRequest(args)
+  let request: PendingScreenshotRequest
+  try {
+    request = normalizeScreenshotRequest(args)
+  } catch (error) {
+    if (error instanceof ScreenshotModeError) {
+      return { ok: false, message: error.message }
+    }
+    throw error
+  }
 
   return new Promise<ToolResult>((resolve) => {
     const job: PendingScreenshotJob = {

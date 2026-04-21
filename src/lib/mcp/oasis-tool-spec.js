@@ -307,7 +307,7 @@ export const OASIS_MCP_TOOL_SPECS = [
       height: zNumberish.optional(),
       settleMs: z.number().optional(),
       views: zLooseArrayOrString.optional(),
-      mode: z.string().optional(),
+      mode: z.string().describe('current | agent-avatar-phantom | look-at | external-orbit | third-person-follow | avatar-portrait').optional(),
       agentType: z.string().optional(),
       agent: z.string().optional(),
       position: zVec3Like.optional(),
