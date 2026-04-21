@@ -105,7 +105,9 @@ export function ToolCallCard({
   result?: { preview: string; isError: boolean; length: number; fullResult?: string }
   compact?: boolean
 }) {
-  const isScreenshotTool = /^(screenshot_viewport|screenshot_avatar|avatarpic_)/.test(name)
+  // Match both unprefixed names (Anorak route/direct callTool) and namespaced
+  // names (Claude Code MCP subprocess uses mcp__<server>__<tool>).
+  const isScreenshotTool = /(?:^|__)(screenshot_viewport|screenshot_avatar|avatarpic_)/.test(name)
   const [expanded, setExpanded] = useState(isScreenshotTool)
   const hasDetails = input && Object.keys(input).length > 0
   const isFileOp = ['Read', 'Edit', 'Write'].includes(name)

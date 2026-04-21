@@ -529,7 +529,7 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
                       preview: candidate.content.substring(0, 500),
                       isError: !!candidate.isError,
                       length: candidate.resultLength || candidate.content.length,
-                      fullResult: candidate.content.length <= 2000 ? candidate.content : undefined,
+                      fullResult: candidate.content.length <= 16000 ? candidate.content : undefined,
                     }
                     break
                   }
@@ -544,7 +544,7 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
                       preview: candidate.content.substring(0, 500),
                       isError: !!candidate.isError,
                       length: candidate.resultLength || candidate.content.length,
-                      fullResult: candidate.content.length <= 2000 ? candidate.content : undefined,
+                      fullResult: candidate.content.length <= 16000 ? candidate.content : undefined,
                     }
                     break
                   }

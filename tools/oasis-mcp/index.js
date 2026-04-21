@@ -29,17 +29,51 @@ function normalizeAgentType(value, fallback = "merlin") {
   return trimmed || fallback;
 }
 
-function txt(result) {
+function txt(result, imageBlocks = []) {
   return {
     content: [
       {
         type: "text",
         text: JSON.stringify(result, null, 2),
       },
+      ...imageBlocks,
     ],
     structuredContent: result,
     isError: !result?.ok,
   };
+}
+
+function mimeTypeForFormat(format) {
+  if (format === "png") return "image/png";
+  if (format === "webp") return "image/webp";
+  return "image/jpeg";
+}
+
+// Extract base64 captures from screenshot tool results as MCP image content
+// blocks so Anorak Pro (via Claude Code CLI) SEES the pixels. Without this,
+// captures come through as URLs/paths that Claude Code can't reach.
+function extractScreenshotImageBlocks(toolName, result) {
+  const isScreenshotTool =
+    toolName === "screenshot_viewport" ||
+    toolName === "screenshot_avatar" ||
+    toolName === "avatarpic_merlin" ||
+    toolName === "avatarpic_user";
+  if (!isScreenshotTool || !result || typeof result !== "object") return [];
+  const data = result.data;
+  if (!data || typeof data !== "object") return [];
+  const captures = Array.isArray(data.captures) ? data.captures : [];
+  const blocks = [];
+  for (const capture of captures) {
+    if (!capture || typeof capture !== "object") continue;
+    const base64 = typeof capture.base64 === "string" ? capture.base64 : "";
+    if (!base64) continue;
+    blocks.push({
+      type: "image",
+      data: base64,
+      mimeType: mimeTypeForFormat(capture.format),
+    });
+  }
+  return blocks;
 }
 
 function compactScreenshotProxyResult(result) {
@@ -111,7 +145,10 @@ for (const spec of OASIS_MCP_TOOL_SPECS) {
     async (args) => {
       const preparedArgs = prepareOasisToolArgs(spec.name, args || {}, buildToolContext());
       const result = await proxyOasisTool(spec.name, preparedArgs);
-      return txt(maybeCompactToolResult(spec.name, result));
+      // Extract image blocks BEFORE compacting (compacting strips base64 from the
+      // text representation, but we still want pixels in the content array).
+      const imageBlocks = extractScreenshotImageBlocks(spec.name, result);
+      return txt(maybeCompactToolResult(spec.name, result), imageBlocks);
     },
   );
 }
