@@ -212,11 +212,14 @@ describe('WorldObjects.tsx hasActiveUILayer guard', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const ALWAYS_MOUNTED_PANELS_WITH_VISIBILITY = [
-  { file: 'src/components/forge/AnorakPanel.tsx',      id: 'anorak',           visArg: 'isOpen' },
-  { file: 'src/components/forge/AnorakProPanel.tsx',   id: 'anorak-pro',       visArg: 'isOpen' },
+  // Anorak/Merlin can be embedded inside other panels (e.g. 3D agent windows) —
+  // the embedded instance must NOT register as a modal UI layer, hence
+  // `isOpen && !embedded` in the useUILayer call.
+  { file: 'src/components/forge/AnorakPanel.tsx',      id: 'anorak',           visArg: 'isOpen && !embedded' },
+  { file: 'src/components/forge/AnorakProPanel.tsx',   id: 'anorak-pro',       visArg: 'isOpen && !embedded' },
   { file: 'src/components/forge/ClaudeCodePanel.tsx',  id: 'claude-code',      visArg: 'isOpen' },
   { file: 'src/components/forge/HelpPanel.tsx',        id: 'help',             visArg: 'isOpen' },
-  { file: 'src/components/forge/MerlinPanel.tsx',      id: 'merlin',           visArg: 'isOpen' },
+  { file: 'src/components/forge/MerlinPanel.tsx',      id: 'merlin',           visArg: 'isOpen && !embedded' },
   { file: 'src/components/forge/ObjectInspector.tsx',  id: 'object-inspector', visArg: 'isOpen' },
   { file: 'src/components/forge/OnboardingModal.tsx',  id: 'onboarding',       visArg: 'show' },
   { file: 'src/components/forge/ParzivalPanel.tsx',    id: 'parzival',         visArg: 'isOpen' },

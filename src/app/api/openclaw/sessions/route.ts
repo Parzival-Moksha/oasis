@@ -20,13 +20,20 @@ export async function GET(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'Session not found.' }, { status: 404 })
     }
+    // Phase 1: messages always empty here. Phase 2 will fetch transcripts via
+    // Gateway sessions.get WebSocket RPC instead of the local pointer store.
     return NextResponse.json({
-      session: session.summary,
-      messages: session.messages,
+      session,
+      messages: [],
     })
   }
 
-  const sessions = await listOpenclawCachedSessions()
+  const limitParam = Number(request.nextUrl.searchParams.get('limit'))
+  const offsetParam = Number(request.nextUrl.searchParams.get('offset'))
+  const sessions = await listOpenclawCachedSessions({
+    limit: Number.isFinite(limitParam) && limitParam > 0 ? limitParam : undefined,
+    offset: Number.isFinite(offsetParam) && offsetParam > 0 ? offsetParam : undefined,
+  })
   return NextResponse.json({
     sessions,
   })

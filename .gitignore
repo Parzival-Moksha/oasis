@@ -150,6 +150,9 @@ gamer-screenshots/
 .merlin-mcp.json
 src/app/api/merlin/sessions/
 
+# Claude Code harness worktrees (runtime scratch for spawn_task chips)
+.claude/worktrees/
+
 # Playwright MCP runtime
 .playwright-mcp/
 

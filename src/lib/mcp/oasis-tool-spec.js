@@ -287,7 +287,18 @@ export const OASIS_MCP_TOOL_SPECS = [
   },
   {
     name: 'screenshot_viewport',
-    description: 'Capture screenshots from the current viewport, player camera, agent phantom camera, third-person follow camera, external overview, or explicit look-at camera. Use mode:"current" for the user camera and third-person-follow for behind-an-avatar shots. Use views as an array for multi-angle capture.',
+    description: [
+      'Capture screenshots of the 3D world. Six modes, each with its own subject + arg recipe:',
+      '• mode:"current" — what the human user literally sees on screen (their camera). No args needed.',
+      '• mode:"agent-avatar-phantom" — first-person from an agent\'s eye, looking along their forward vector. Args: agentType (default=caller), heightOffset (1.55), distance (1), lookAhead (5), fov (100). Treat this as "agent FPS".',
+      '• mode:"look-at" — free camera. Args: position (camera pos), target (focal point), fov (75). Use when you want an explicit arbitrary camera placement.',
+      '• mode:"external-orbit" — distant overview orbiting a subject. Args: target OR agentType (defaults to caller), distance (16), heightOffset (9), fov (60). Good for scene-wide context. Alias: mode:"external".',
+      '• mode:"third-person-follow" — over-shoulder behind a subject. Args: agentType (default=caller; pass "player" to follow the user), distance (4.4), heightOffset (2.1), lookAhead (4), fov (72).',
+      '• mode:"avatar-portrait" — close headshot of a subject. Args: agentType (default=caller; "player"/"me"/"self" → the user), distance (2.75), heightOffset (1.55), fov (45).',
+      'lookAhead = meters ahead of the subject the camera focal point sits (camera POINTS THERE).',
+      'Pass views:[{mode,...}, {mode,...}] as an array for multi-angle capture in one call.',
+      'IMPORTANT: "player"/"user"/"me"/"self" all mean the human carbondev, NOT the calling agent.',
+    ].join('\n'),
     inputSchema: z.object({
       worldId: z.string().optional(),
       format: z.string().optional(),
@@ -314,7 +325,7 @@ export const OASIS_MCP_TOOL_SPECS = [
   },
   {
     name: 'screenshot_avatar',
-    description: 'Capture an avatar-focused screenshot for a subject such as merlin, hermes, or player. Use style=portrait for a thumbnail or style=third-person for behind-the-body context. This is for avatar shots, not the user camera viewport. When defaultAgentType is set, omitted subjects inherit that agent type.',
+    description: 'Capture an avatar-focused screenshot for a subject. Valid subjects: "player" (the human user; aliases "user"/"me"/"self"), "merlin", "hermes", "openclaw", "anorak", or any agentType present in the world. Use style:"portrait" for a headshot, style:"third-person" for behind-the-body context. This is for avatar shots specifically — NOT the user camera viewport (that\'s screenshot_viewport mode:"current"). If subject is omitted, falls back to the calling agent.',
     inputSchema: z.object({
       worldId: z.string().optional(),
       subject: z.string().optional(),
@@ -351,7 +362,7 @@ export const OASIS_MCP_TOOL_SPECS = [
   },
   {
     name: 'avatarpic_user',
-    description: 'Capture player avatar imagery, optionally in third-person mode.',
+    description: 'Capture avatar imagery of the human user (aka player/carbondev/me/self — the person you are talking to, NOT a calling agent). Use style:"portrait" for a headshot, style:"third-person" for full-body context.',
     inputSchema: z.object({
       worldId: z.string().optional(),
       style: z.string().optional(),

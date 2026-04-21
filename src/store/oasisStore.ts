@@ -668,7 +668,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
       return existingAvatar.id
     }
 
-    const avatarId = `agent-avatar-${agentType}-${Date.now()}`
+    // ░▒▓ Stable singleton ID per agentType — Hermes/Merlin MCP tools address  ▓▒░
+    // ░▒▓ their body by this fixed name. A timestamp suffix orphaned older    ▓▒░
+    // ░▒▓ bodies instead of replacing them (now handled by existingAvatar     ▓▒░
+    // ░▒▓ branch above — but the create path must use the same stable form). ▓▒░
+    const avatarId = `agent-avatar-${agentType}`
     set(state => ({
       placedAgentWindows: state.placedAgentWindows.map(entry => {
         if (entry.agentType !== agentType) return entry

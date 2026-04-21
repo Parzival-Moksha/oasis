@@ -30,7 +30,7 @@ export type { ModelStats } from '../../lib/conjure/types'
 // Survives panel switches (catalog ↔ crafted) within the same session.
 // Blob URLs are per-session and lightweight — no localStorage bloat.
 // Default: oasislogo.jpg — branded panorama backdrop instead of flat gray.
-const DEFAULT_BACKDROP = '/oasislogo.jpg'
+export const DEFAULT_BACKDROP = '/oasislogo.jpg'
 let _sharedBackdropUrl: string | null = DEFAULT_BACKDROP
 const _backdropListeners = new Set<(url: string | null) => void>()
 function setSharedBackdrop(url: string | null) {
@@ -42,7 +42,7 @@ function setSharedBackdrop(url: string | null) {
   _backdropListeners.forEach(fn => fn(url))
 }
 /** Hook to subscribe to shared backdrop state */
-function useSharedBackdrop(): [string | null, (url: string | null) => void] {
+export function useSharedBackdrop(): [string | null, (url: string | null) => void] {
   const [url, setUrl] = useState(_sharedBackdropUrl)
   useEffect(() => {
     _backdropListeners.add(setUrl)
@@ -165,7 +165,7 @@ function createStudioGradientTexture(): THREE.CanvasTexture {
   return texture
 }
 
-function StudioBackdrop({ imageUrl }: { imageUrl?: string | null }) {
+export function StudioBackdrop({ imageUrl }: { imageUrl?: string | null }) {
   const { scene } = useThree()
 
   useEffect(() => {

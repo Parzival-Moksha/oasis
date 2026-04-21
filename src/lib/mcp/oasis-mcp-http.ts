@@ -12,21 +12,96 @@ import {
   prepareOasisToolArgs,
 } from '@/lib/mcp/oasis-tool-spec.js'
 
-function formatToolResult(result: Awaited<ReturnType<typeof callTool>>) {
+// Tools whose captures should surface as MCP image content blocks so external
+// clients (OpenClaw, remote Claude Code, etc.) can SEE the pixels instead of
+// bouncing off loopback URLs and Windows file paths they can't reach.
+const SCREENSHOT_TOOL_NAMES = new Set([
+  'screenshot_viewport',
+  'screenshot_avatar',
+  'avatarpic_merlin',
+  'avatarpic_user',
+])
+
+function mimeTypeForFormat(format: unknown): string {
+  if (format === 'png') return 'image/png'
+  if (format === 'webp') return 'image/webp'
+  return 'image/jpeg'
+}
+
+type McpContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; data: string; mimeType: string }
+
+interface ScreenshotCaptureShape {
+  viewId?: unknown
+  base64?: unknown
+  format?: unknown
+  url?: unknown
+  filePath?: unknown
+}
+
+function isScreenshotCaptureShape(value: unknown): value is ScreenshotCaptureShape {
+  return !!value && typeof value === 'object'
+}
+
+function extractImageContentBlocks(toolName: string, data: unknown): { imageBlocks: McpContentBlock[]; strippedData: unknown } {
+  if (!SCREENSHOT_TOOL_NAMES.has(toolName) || !data || typeof data !== 'object') {
+    return { imageBlocks: [], strippedData: data }
+  }
+
+  const sourceCaptures = (data as { captures?: unknown }).captures
+  if (!Array.isArray(sourceCaptures)) {
+    return { imageBlocks: [], strippedData: data }
+  }
+
+  const imageBlocks: McpContentBlock[] = []
+  const strippedCaptures = sourceCaptures.map((capture) => {
+    if (!isScreenshotCaptureShape(capture)) return capture
+    const base64 = typeof capture.base64 === 'string' ? capture.base64 : ''
+    if (base64) {
+      imageBlocks.push({
+        type: 'image',
+        data: base64,
+        mimeType: mimeTypeForFormat(capture.format),
+      })
+    }
+    const { base64: _droppedBase64, ...rest } = capture as ScreenshotCaptureShape & { base64?: unknown }
+    return rest
+  })
+
+  // Also strip the top-level `data.base64` blob — if we emitted it as a content
+  // block, repeating it in the text JSON is just noise.
+  const { base64: _dataBase64, ...restData } = data as { base64?: unknown; [key: string]: unknown }
+  return {
+    imageBlocks,
+    strippedData: {
+      ...restData,
+      captures: strippedCaptures,
+    },
+  }
+}
+
+function formatToolResult(result: Awaited<ReturnType<typeof callTool>>, toolName: string) {
+  const { imageBlocks, strippedData } = extractImageContentBlocks(toolName, result.data)
+
   const structuredContent: Record<string, unknown> = {
     ok: result.ok,
     message: result.message,
   }
-  if (result.data !== undefined) {
-    structuredContent.data = result.data as unknown
+  if (strippedData !== undefined) {
+    structuredContent.data = strippedData
   }
+
+  const content: McpContentBlock[] = [
+    {
+      type: 'text',
+      text: JSON.stringify({ ok: result.ok, message: result.message, data: strippedData }, null, 2),
+    },
+    ...imageBlocks,
+  ]
+
   return {
-    content: [
-      {
-        type: 'text' as const,
-        text: JSON.stringify(result, null, 2),
-      },
-    ],
+    content,
     structuredContent,
     isError: !result.ok,
   }
@@ -56,7 +131,7 @@ export function createOasisMcpServer(context?: { worldId?: string; agentType?: s
       async (args: Record<string, unknown> = {}) => formatToolResult(await callTool(
         spec.name,
         prepareOasisToolArgs(spec.name, args, context),
-      )),
+      ), spec.name),
     )
   }
 

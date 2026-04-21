@@ -4,7 +4,7 @@
 
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useOasisStore } from '../../../store/oasisStore'
 import { useConjure } from '../../../hooks/useConjure'
 import type { ConjuredAsset, CraftedScene } from '../../../lib/conjure/types'
@@ -36,8 +36,16 @@ export function AssetsTab() {
   // ░▒▓ Catch orphan crafted scenes without thumbnails on mount ▓▒░
   useCraftedThumbnailGenerator()
 
-  // ░▒▓ Catalog thumbnail generator — manual trigger for 100+ GLB renders ▓▒░
+  // ░▒▓ Catalog thumbnail generator — auto-runs on mount for missing thumbs ▓▒░
   const catalogThumbGen = useCatalogThumbnailGenerator()
+  const autoGenTriggered = useRef(false)
+  useEffect(() => {
+    if (autoGenTriggered.current) return
+    autoGenTriggered.current = true
+    // Kick off silently — only renders missing thumbs (idempotent). Catalog
+    // assets fresh-cloned get their thumbs on first library open, then commit.
+    void catalogThumbGen.generate()
+  }, [catalogThumbGen])
 
   // ░▒▓ Rename — PATCH to server + update local store ▓▒░
   const renameAsset = useCallback(async (id: string, displayName: string) => {
@@ -192,16 +200,14 @@ export function AssetsTab() {
                 {cat}
               </button>
             ))}
-            <button
-              onClick={() => catalogThumbGen.generate()}
-              disabled={catalogThumbGen.running}
-              className="ml-auto text-[9px] px-1.5 py-0.5 rounded font-mono text-yellow-500/50 border border-yellow-500/20 hover:text-yellow-400 hover:border-yellow-500/40 disabled:opacity-30 transition-colors"
-              title="Render thumbnails for all catalog assets (takes ~1 min)"
-            >
-              {catalogThumbGen.running
-                ? `${catalogThumbGen.done}/${catalogThumbGen.total}`
-                : '\u{1F4F7}'}
-            </button>
+            {catalogThumbGen.running && catalogThumbGen.total > 0 && (
+              <span
+                className="ml-auto text-[9px] px-1.5 py-0.5 rounded font-mono text-yellow-500/70 border border-yellow-500/25"
+                title="Auto-rendering missing catalog thumbnails"
+              >
+                {'\u{1F4F7} '}{catalogThumbGen.done}/{catalogThumbGen.total}
+              </span>
+            )}
           </div>
 
           {/* Catalog grid — thumbnails with emoji fallback */}

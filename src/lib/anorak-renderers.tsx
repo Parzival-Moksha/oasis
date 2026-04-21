@@ -105,12 +105,35 @@ export function ToolCallCard({
   result?: { preview: string; isError: boolean; length: number; fullResult?: string }
   compact?: boolean
 }) {
-  const [expanded, setExpanded] = useState(false)
+  const isScreenshotTool = /^(screenshot_viewport|screenshot_avatar|avatarpic_)/.test(name)
+  const [expanded, setExpanded] = useState(isScreenshotTool)
   const hasDetails = input && Object.keys(input).length > 0
   const isFileOp = ['Read', 'Edit', 'Write'].includes(name)
   const filePath = input?.file_path as string | undefined
   const textSize = compact ? 'text-[10px]' : 'text-[11px]'
   const detailSize = compact ? 'text-[9px]' : 'text-[10px]'
+  // Parse screenshot URLs out of the tool result so we can render them inline.
+  // The result text is the JSON blob from the MCP formatter — data.captures[].url
+  // points to http://127.0.0.1:4516/merlin/screenshots/X.jpg which is same-origin
+  // from the browser, so <img> just works. External agents get base64 image blocks
+  // via MCP; this panel gets friendly URLs.
+  const screenshotUrls = React.useMemo(() => {
+    if (!isScreenshotTool || !result) return []
+    const source = result.fullResult || result.preview
+    if (!source) return []
+    try {
+      const parsed = JSON.parse(source) as { data?: { captures?: Array<{ url?: unknown }> } }
+      const captures = parsed?.data?.captures
+      if (!Array.isArray(captures)) return []
+      return captures
+        .map(c => (c && typeof c.url === 'string' ? c.url : null))
+        .filter((u): u is string => !!u && u.length > 0)
+    } catch {
+      return []
+    }
+  }, [isScreenshotTool, result])
+  const hasScreenshots = screenshotUrls.length > 0
+  const canExpand = hasDetails || hasScreenshots
 
   return (
     <div className="rounded-lg overflow-hidden" style={{
@@ -118,8 +141,8 @@ export function ToolCallCard({
       background: result ? (result.isError ? 'rgba(239,68,68,0.05)' : 'rgba(34,197,94,0.05)') : 'rgba(56,189,248,0.05)',
     }}>
       <button
-        onClick={() => hasDetails && setExpanded(!expanded)}
-        className={`w-full flex items-center gap-2 px-2.5 py-1.5 ${textSize} font-mono transition-colors select-none ${hasDetails ? 'cursor-pointer hover:bg-white/5' : ''}`}
+        onClick={() => canExpand && setExpanded(!expanded)}
+        className={`w-full flex items-center gap-2 px-2.5 py-1.5 ${textSize} font-mono transition-colors select-none ${canExpand ? 'cursor-pointer hover:bg-white/5' : ''}`}
       >
         <span>{icon}</span>
         <span className="font-bold" style={{
@@ -136,7 +159,10 @@ export function ToolCallCard({
         {!result && (
           <span className="ml-auto w-3 h-3 rounded-full border-2 border-sky-400 border-t-transparent animate-spin" />
         )}
-        {hasDetails && (
+        {hasScreenshots && (
+          <span className="ml-1 text-[9px] text-cyan-400/80">📸 {screenshotUrls.length}</span>
+        )}
+        {canExpand && (
           <span className="text-[9px] text-gray-600 ml-1">{expanded ? '▼' : '▶'}</span>
         )}
       </button>
@@ -193,6 +219,34 @@ export function ToolCallCard({
           ) : (
             JSON.stringify(input, null, 2)
           )}
+        </div>
+      )}
+
+      {/* Inline screenshots — same-origin http://127.0.0.1:4516 URLs, <img> just works */}
+      {expanded && hasScreenshots && (
+        <div
+          className="px-3 py-2 flex flex-wrap gap-2 border-t border-white/5"
+          style={{ background: 'rgba(0,0,0,0.25)' }}
+        >
+          {screenshotUrls.map((url, i) => (
+            <a
+              key={i}
+              href={url}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="rounded overflow-hidden border border-white/10 hover:border-cyan-400/60 transition-colors"
+              style={{ maxWidth: 280 }}
+              title={`Open capture ${i + 1} in new tab`}
+            >
+              <img
+                src={url}
+                alt={`capture ${i + 1}`}
+                loading="lazy"
+                className="block"
+                style={{ maxWidth: 280, maxHeight: 200, objectFit: 'contain' }}
+              />
+            </a>
+          ))}
         </div>
       )}
 

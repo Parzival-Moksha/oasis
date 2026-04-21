@@ -235,34 +235,63 @@ export function ViewportScreenshotBridge() {
     if (!activeWorldId) return
 
     let cancelled = false
-    let intervalId: number | null = null
+    let timeoutId: number | null = null
+    let lastPayload = ''
+    const abortController = new AbortController()
 
     const publishActiveWorld = async () => {
       try {
+        const pose = getPlayerAvatarPose()
+        const cameraPos: [number, number, number] = [camera.position.x, camera.position.y, camera.position.z]
+        const cameraForward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion)
+        const cameraForwardTuple: [number, number, number] = [cameraForward.x, cameraForward.y, cameraForward.z]
+        const payload = JSON.stringify({
+          worldId: activeWorldId,
+          player: {
+            ...(pose ? { avatar: pose } : {}),
+            camera: { position: cameraPos, forward: cameraForwardTuple },
+          },
+        })
+        // Skip no-op publishes — nothing to say if the pose hasn't budged.
+        if (payload === lastPayload) return
+        lastPayload = payload
         await fetch('/api/world-active', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ worldId: activeWorldId }),
+          body: payload,
+          signal: abortController.signal,
         })
       } catch (error) {
-        if (!cancelled) {
-          console.warn('[ViewportScreenshotBridge] Failed to publish active world:', error)
-        }
+        if (cancelled) return
+        // AbortError on unmount is expected — don't spam the console.
+        if ((error as Error)?.name === 'AbortError') return
+        console.warn('[ViewportScreenshotBridge] Failed to publish active world:', error)
       }
+    }
+
+    // Tight heartbeat (500ms) when tab visible — keeps pose fresh for MCP consumers
+    // (so agents like OpenClaw can "walk to the user"). Slow to 15s when hidden to
+    // avoid spam while tab is backgrounded.
+    const schedule = () => {
+      if (cancelled) return
+      const visible = typeof document !== 'undefined' ? document.visibilityState !== 'hidden' : true
+      const delay = visible ? 500 : 15000
+      timeoutId = window.setTimeout(() => {
+        void publishActiveWorld().finally(schedule)
+      }, delay)
     }
 
     void publishActiveWorld()
-    intervalId = window.setInterval(() => {
-      void publishActiveWorld()
-    }, 15000)
+    schedule()
 
     return () => {
       cancelled = true
-      if (intervalId !== null) {
-        window.clearInterval(intervalId)
+      abortController.abort()
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId)
       }
     }
-  }, [activeWorldId])
+  }, [activeWorldId, camera])
 
   const captureView = useCallback((request: PendingScreenshotRequest, view: ScreenshotViewRequest) => {
     const width = Math.max(320, Math.round(request.width || size.width || 480))

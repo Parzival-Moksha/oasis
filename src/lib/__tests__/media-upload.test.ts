@@ -53,7 +53,7 @@ describe('/api/media/upload', () => {
   it('rejects request with no file', async () => {
     const req = makeRequest(null)
     const res = await POST(req)
-    await res.json()
+    const json = await res.json()
     expect(res.status).toBe(400)
     expect(json.error).toMatch(/no file/i)
   })

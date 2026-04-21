@@ -20,6 +20,7 @@ import { emitWorldEvent } from './world-events'
 import { readWorldPlayerContext } from '../world-runtime-context'
 import { resolveAgentAvatarUrl } from '../agent-avatar-catalog'
 import { readBrowserActiveWorldId } from '../browser-active-world'
+import { readBrowserPlayerContext } from '../browser-player-context'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -515,7 +516,16 @@ tools.get_world_state = async (args) => {
   const { state, worldId: resolvedId } = worldId
     ? { state: await loadWorldById(worldId), worldId }
     : await loadActiveWorld()
-  const livePlayerContext = await readWorldPlayerContext(resolvedId)
+
+  // Prefer fresh browser-published pose (in-memory, ≤5min TTL).
+  // Fall back to disk (Hermes route's publishWorldPlayerContext).
+  const browserContext = readBrowserPlayerContext(resolvedId)
+  const livePlayerContext = browserContext
+    ? {
+        updatedAt: new Date(browserContext.updatedAt).toISOString(),
+        player: { avatar: browserContext.avatar, camera: browserContext.camera },
+      }
+    : await readWorldPlayerContext(resolvedId)
 
   return {
     ok: true,
@@ -1607,7 +1617,11 @@ interface ScreenshotCaptureSummary {
   format: ScreenshotFormat
   url?: string
   filePath?: string
-  hasInlineBase64?: true
+  // Inline base64 is preserved so MCP clients can render images as vision content
+  // (content blocks of type "image"). Strip at the formatter for text serialization
+  // to keep the JSON small. Loopback URLs + Windows paths alone aren't reachable
+  // from external MCP clients like OpenClaw.
+  base64?: string
 }
 
 function summarizeDeliveredScreenshotCapture(capture: DeliveredScreenshotCapture): ScreenshotCaptureSummary {
@@ -1616,7 +1630,7 @@ function summarizeDeliveredScreenshotCapture(capture: DeliveredScreenshotCapture
     format: capture.format,
     url: capture.url,
     filePath: capture.filePath,
-    hasInlineBase64: !capture.url && !capture.filePath && capture.base64 ? true : undefined,
+    base64: capture.base64 || undefined,
   }
 }
 
@@ -1626,7 +1640,16 @@ interface PendingScreenshotJob {
   timeout: ReturnType<typeof setTimeout> | null
 }
 
-const pendingScreenshotJobs: PendingScreenshotJob[] = []
+// Pin to globalThis — Next.js dev splits route handlers into separate chunks.
+// Without this, screenshot_viewport (called via /api/mcp/oasis) pushes a job into
+// one chunk's array while the browser poll (via /api/oasis-tools) reads from a
+// different chunk's array, so screenshots never get captured.
+const PENDING_SCREENSHOT_JOBS_KEY = Symbol.for('oasis.pendingScreenshotJobs.v1')
+const pendingScreenshotJobsGlobal = globalThis as unknown as { [key: symbol]: PendingScreenshotJob[] | undefined }
+const pendingScreenshotJobs: PendingScreenshotJob[] = pendingScreenshotJobsGlobal[PENDING_SCREENSHOT_JOBS_KEY] ?? []
+if (!pendingScreenshotJobsGlobal[PENDING_SCREENSHOT_JOBS_KEY]) {
+  pendingScreenshotJobsGlobal[PENDING_SCREENSHOT_JOBS_KEY] = pendingScreenshotJobs
+}
 
 function validScreenshotFormat(value: unknown): ScreenshotFormat {
   return value === 'png' || value === 'webp' || value === 'jpeg'
@@ -1702,7 +1725,7 @@ function normalizeScreenshotView(value: unknown, index: number, defaultAgentType
     mode === 'agent-avatar-phantom' ? 100 :
     mode === 'external-orbit' ? 60 :
     mode === 'third-person-follow' ? 72 :
-    mode === 'avatar-portrait' ? 34 :
+    mode === 'avatar-portrait' ? 45 :
     75
   const maxDistance = mode === 'external-orbit' ? 40 : mode === 'third-person-follow' ? 18 : mode === 'avatar-portrait' ? 8 : 12
   const defaultDistance = mode === 'external-orbit' ? 16 : mode === 'third-person-follow' ? 4.4 : mode === 'avatar-portrait' ? 2.75 : 1
@@ -1725,7 +1748,7 @@ function normalizeScreenshotView(value: unknown, index: number, defaultAgentType
 function normalizeAvatarSubject(value: unknown, fallback = 'merlin'): string {
   const raw = validStr(value, fallback).trim().toLowerCase()
   if (!raw) return fallback
-  if (raw === 'user' || raw === 'player' || raw === 'player-avatar' || raw === 'player_avatar') return 'player'
+  if (raw === 'user' || raw === 'player' || raw === 'player-avatar' || raw === 'player_avatar' || raw === 'me' || raw === 'self' || raw === 'vibedev' || raw === 'carbondev') return 'player'
   if (raw === 'merlin-avatar' || raw === 'merlin_avatar') return 'merlin'
   return raw
 }
@@ -1848,12 +1871,21 @@ tools.screenshot_viewport = async (args) => {
           const primaryInlineBase64 = !captures[0]?.url && !captures[0]?.filePath
             ? captures[0]?.base64
             : undefined
+          const deliveredViewIds = new Set(captures.map(capture => capture.viewId))
+          const droppedViewIds = request.views
+            .map(view => view.id)
+            .filter(viewId => !deliveredViewIds.has(viewId))
+          const message = droppedViewIds.length > 0
+            ? `Captured ${captures.length} of ${request.views.length} requested views (${request.format}, quality ${request.quality}). Dropped: ${droppedViewIds.join(', ')}. Dropped views usually mean the bridge couldn't resolve the subject (e.g. unknown agentType) or the mode needs different args.`
+            : `Captured ${captures.length} screenshot ${captures.length === 1 ? 'view' : 'views'} (${request.format}, quality ${request.quality}).`
           resolve({
             ok: true,
-            message: `Captured ${captures.length} screenshot ${captures.length === 1 ? 'view' : 'views'} (${request.format}, quality ${request.quality}).`,
+            message,
             data: {
               format: request.format,
               captureCount: captures.length,
+              requestedCount: request.views.length,
+              droppedViewIds: droppedViewIds.length > 0 ? droppedViewIds : undefined,
               captures: summarizedCaptures,
               primaryCaptureUrl: captures.find(capture => typeof capture.url === 'string' && capture.url.length > 0)?.url,
               primaryCapturePath: captures.find(capture => typeof capture.filePath === 'string' && capture.filePath.length > 0)?.filePath,

@@ -257,14 +257,12 @@ describe('DharmaTags logic', () => {
 describe('DharmaTags source', () => {
   const panelPath = path.resolve(__dirname, '../../components/forge/AnorakProPanel.tsx')
 
-  it('DharmaTags component exists', () => {
+  // The DharmaTags helper was inlined into an Object.entries(DHARMA_ABBR).map(...)
+  // render expression inside AnorakProPanel. The extract-into-component tests
+  // that used to live here are obsolete — verify the inlined render path exists.
+  it('DHARMA_ABBR is rendered inline (not extracted to a named component)', () => {
     const src = fs.readFileSync(panelPath, 'utf-8')
-    expect(src).toContain('function DharmaTags')
-  })
-
-  it('handles null dharma with early return', () => {
-    const src = fs.readFileSync(panelPath, 'utf-8')
-    expect(src).toContain('if (!dharma) return null')
+    expect(src).toMatch(/Object\.entries\(DHARMA_ABBR\)[\s\S]{0,200}\.map\(/)
   })
 
   it('DHARMA_ABBR has all 8 paths', () => {

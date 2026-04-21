@@ -1,22 +1,25 @@
 import 'server-only'
 
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+// OPENCLAW SESSION POINTER STORE — metadata only, NOT a transcript mirror
+// ─═̷─═̷─ॐ─═̷─═̷─
+//
+// Phase-1 stub + Phase-2-ready pointer store. OpenClaw owns session data —
+// the authoritative transcripts live in ~/.openclaw/agents/<agentId>/sessions/
+// and are fetched via the Gateway JSON-RPC methods sessions.list / sessions.get /
+// sessions.preview over ws://127.0.0.1:18789.
+//
+// This module ONLY stores lightweight summaries:
+//   - local drafts created before they're promoted to real OpenClaw sessions
+//   - cached previews from sessions.preview so the 3D panel renders instantly
+//
+// DO NOT add full message storage back here. That's OpenClaw's job.
+// When Phase 2 lands, listOpenclawCachedSessions becomes a Gateway call.
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+
 import { existsSync } from 'fs'
 import { mkdir, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
-
-export interface OpenclawCachedAttachment {
-  type: 'image' | 'video' | 'audio' | 'file'
-  name?: string
-  url?: string
-}
-
-export interface OpenclawCachedMessage {
-  id: string
-  role: 'user' | 'assistant' | 'system'
-  content: string
-  timestamp: number
-  attachments?: OpenclawCachedAttachment[]
-}
 
 export interface OpenclawCachedSessionSummary {
   id: string
@@ -28,12 +31,7 @@ export interface OpenclawCachedSessionSummary {
   messageCount: number
 }
 
-interface OpenclawSessionCacheEntry {
-  summary: OpenclawCachedSessionSummary
-  messages: OpenclawCachedMessage[]
-}
-
-type OpenclawSessionCache = Record<string, OpenclawSessionCacheEntry>
+type OpenclawSessionCache = Record<string, OpenclawCachedSessionSummary>
 
 const CACHE_PATH = join(process.cwd(), 'prisma', 'data', 'openclaw-session-cache.json')
 
@@ -41,56 +39,20 @@ function sanitizeString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-function normalizeAttachment(raw: unknown): OpenclawCachedAttachment | null {
-  if (!raw || typeof raw !== 'object') return null
-  const record = raw as Record<string, unknown>
-  const type = sanitizeString(record.type)
-  if (type !== 'image' && type !== 'video' && type !== 'audio' && type !== 'file') return null
-
-  return {
-    type,
-    ...(sanitizeString(record.name) ? { name: sanitizeString(record.name) } : {}),
-    ...(sanitizeString(record.url) ? { url: sanitizeString(record.url) } : {}),
-  }
-}
-
-function normalizeMessage(raw: unknown): OpenclawCachedMessage | null {
-  if (!raw || typeof raw !== 'object') return null
-  const record = raw as Record<string, unknown>
-  const role = sanitizeString(record.role)
-  if (role !== 'user' && role !== 'assistant' && role !== 'system') return null
-
-  const id = sanitizeString(record.id)
-  const content = sanitizeString(record.content)
-  const timestamp = typeof record.timestamp === 'number' && Number.isFinite(record.timestamp)
-    ? record.timestamp
-    : Date.now()
-
-  if (!id) return null
-
-  const attachments = Array.isArray(record.attachments)
-    ? record.attachments.map(normalizeAttachment).filter((entry): entry is OpenclawCachedAttachment => Boolean(entry))
-    : undefined
-
-  return {
-    id,
-    role,
-    content,
-    timestamp,
-    ...(attachments && attachments.length ? { attachments } : {}),
-  }
-}
-
 function normalizeSummary(raw: unknown, sessionId: string): OpenclawCachedSessionSummary | null {
   if (!raw || typeof raw !== 'object') return null
   const record = raw as Record<string, unknown>
-  const source = sanitizeString(record.source)
+  // Support legacy on-disk format that wrapped summary in { summary, messages }.
+  const summaryRecord = (record.summary && typeof record.summary === 'object')
+    ? record.summary as Record<string, unknown>
+    : record
+  const source = sanitizeString(summaryRecord.source)
   const normalizedSource = source === 'gateway' || source === 'cache' ? source : 'draft'
-  const createdAt = typeof record.createdAt === 'number' && Number.isFinite(record.createdAt) ? record.createdAt : Date.now()
-  const updatedAt = typeof record.updatedAt === 'number' && Number.isFinite(record.updatedAt) ? record.updatedAt : createdAt
-  const title = sanitizeString(record.title) || 'OpenClaw session'
-  const preview = sanitizeString(record.preview)
-  const messageCount = typeof record.messageCount === 'number' && Number.isFinite(record.messageCount) ? record.messageCount : 0
+  const createdAt = typeof summaryRecord.createdAt === 'number' && Number.isFinite(summaryRecord.createdAt) ? summaryRecord.createdAt : Date.now()
+  const updatedAt = typeof summaryRecord.updatedAt === 'number' && Number.isFinite(summaryRecord.updatedAt) ? summaryRecord.updatedAt : createdAt
+  const title = sanitizeString(summaryRecord.title) || 'OpenClaw session'
+  const preview = sanitizeString(summaryRecord.preview)
+  const messageCount = typeof summaryRecord.messageCount === 'number' && Number.isFinite(summaryRecord.messageCount) ? summaryRecord.messageCount : 0
 
   return {
     id: sessionId,
@@ -113,22 +75,9 @@ async function readCache(): Promise<OpenclawSessionCache> {
 
     const entries: OpenclawSessionCache = {}
     for (const [sessionId, value] of Object.entries(parsed as Record<string, unknown>)) {
-      if (!value || typeof value !== 'object') continue
-      const record = value as Record<string, unknown>
-      const messages = Array.isArray(record.messages)
-        ? record.messages.map(normalizeMessage).filter((entry): entry is OpenclawCachedMessage => Boolean(entry))
-        : []
-      const summary = normalizeSummary(record.summary, sessionId)
+      const summary = normalizeSummary(value, sessionId)
       if (!summary) continue
-      entries[sessionId] = {
-        summary: {
-          ...summary,
-          preview: summary.preview || messages[messages.length - 1]?.content.slice(0, 120) || '',
-          messageCount: Math.max(summary.messageCount, messages.length),
-          updatedAt: Math.max(summary.updatedAt, messages[messages.length - 1]?.timestamp || summary.updatedAt),
-        },
-        messages,
-      }
+      entries[sessionId] = summary
     }
 
     return entries
@@ -142,14 +91,20 @@ async function writeCache(cache: OpenclawSessionCache) {
   await writeFile(CACHE_PATH, `${JSON.stringify(cache, null, 2)}\n`)
 }
 
-export async function listOpenclawCachedSessions(): Promise<OpenclawCachedSessionSummary[]> {
-  const cache = await readCache()
-  return Object.values(cache)
-    .map(entry => entry.summary)
-    .sort((a, b) => b.updatedAt - a.updatedAt)
+export interface ListOpenclawCachedSessionsOptions {
+  limit?: number
+  offset?: number
 }
 
-export async function getOpenclawCachedSession(sessionId: string): Promise<OpenclawSessionCacheEntry | null> {
+export async function listOpenclawCachedSessions(opts: ListOpenclawCachedSessionsOptions = {}): Promise<OpenclawCachedSessionSummary[]> {
+  const cache = await readCache()
+  const sorted = Object.values(cache).sort((a, b) => b.updatedAt - a.updatedAt)
+  const offset = Math.max(0, opts.offset ?? 0)
+  const limit = opts.limit && opts.limit > 0 ? opts.limit : sorted.length
+  return sorted.slice(offset, offset + limit)
+}
+
+export async function getOpenclawCachedSession(sessionId: string): Promise<OpenclawCachedSessionSummary | null> {
   const safeSessionId = sanitizeString(sessionId)
   if (!safeSessionId) return null
   const cache = await readCache()
@@ -170,30 +125,17 @@ export async function createOpenclawDraftSession(title?: string): Promise<Opencl
     messageCount: 0,
   }
 
-  cache[sessionId] = {
-    summary,
-    messages: [],
-  }
+  cache[sessionId] = summary
   await writeCache(cache)
   return summary
 }
 
-export async function upsertOpenclawCachedSession(entry: OpenclawSessionCacheEntry): Promise<OpenclawSessionCacheEntry> {
+// Phase-2 hook: when Gateway wiring lands, call this with data from sessions.preview
+// to cache lightweight summaries for instant panel render. Full messages come
+// on demand from sessions.get — we never store them here.
+export async function upsertOpenclawSessionSummary(summary: OpenclawCachedSessionSummary): Promise<OpenclawCachedSessionSummary> {
   const cache = await readCache()
-  const messages = [...entry.messages].sort((a, b) => a.timestamp - b.timestamp)
-  const latestTimestamp = messages[messages.length - 1]?.timestamp || entry.summary.updatedAt || entry.summary.createdAt || Date.now()
-  const summary: OpenclawCachedSessionSummary = {
-    ...entry.summary,
-    preview: entry.summary.preview || messages[messages.length - 1]?.content.slice(0, 120) || '',
-    messageCount: messages.length,
-    updatedAt: latestTimestamp,
-  }
-
-  cache[summary.id] = {
-    summary,
-    messages,
-  }
-
+  cache[summary.id] = summary
   await writeCache(cache)
   return cache[summary.id]
 }
