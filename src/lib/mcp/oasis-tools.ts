@@ -1791,7 +1791,10 @@ function normalizeAvatarSubject(value: unknown, fallback = 'merlin'): string {
   if (!raw) return fallback
   if (raw === 'user' || raw === 'player' || raw === 'player-avatar' || raw === 'player_avatar' || raw === 'me' || raw === 'self' || raw === 'vibedev' || raw === 'carbondev') return 'player'
   if (raw === 'anorak' || raw === 'anorak_pro' || raw === 'anorakpro') return 'anorak-pro'
-  if (raw === 'clawdling') return 'openclaw'
+  // Note: 'clawdling' is NOT aliased to 'openclaw' — the Clawdling label is a
+  // legacy-artifact body from beginner-OpenClaw test runs. Masking it would hide
+  // the identity mess. Screenshot bridge's Clawdling/openclaw alias is fine at
+  // the render layer; tool-level subjects stay explicit.
   if (raw === 'merlin-avatar' || raw === 'merlin_avatar') return 'merlin'
   return raw
 }

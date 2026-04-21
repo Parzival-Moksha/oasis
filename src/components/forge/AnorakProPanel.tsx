@@ -294,6 +294,7 @@ interface StreamEntry {
   toolUseId?: string  // links tool calls to their results
   isError?: boolean
   resultLength?: number
+  fullResult?: string  // complete tool result payload for parsers (e.g. screenshot URL extraction). Capped upstream at 32KB.
   mediaType?: string
   mediaUrl?: string
   mediaPrompt?: string
@@ -529,7 +530,7 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
                       preview: candidate.content.substring(0, 500),
                       isError: !!candidate.isError,
                       length: candidate.resultLength || candidate.content.length,
-                      fullResult: candidate.content.length <= 16000 ? candidate.content : undefined,
+                      fullResult: candidate.fullResult ?? (candidate.content.length <= 16000 ? candidate.content : undefined),
                     }
                     break
                   }
@@ -544,7 +545,7 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
                       preview: candidate.content.substring(0, 500),
                       isError: !!candidate.isError,
                       length: candidate.resultLength || candidate.content.length,
-                      fullResult: candidate.content.length <= 16000 ? candidate.content : undefined,
+                      fullResult: candidate.fullResult ?? (candidate.content.length <= 16000 ? candidate.content : undefined),
                     }
                     break
                   }
@@ -2756,6 +2757,7 @@ export function AnorakProPanel({
                 toolUseId: event.toolUseId,
                 isError: event.isError,
                 resultLength: event.length,
+                fullResult: event.fullResult,
               }])
             }
             // Result (cost/tokens)

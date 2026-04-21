@@ -105,7 +105,11 @@ export function createStreamParser(callbacks: StreamParserCallbacks, lobe?: stri
         const resultStr = typeof result === 'string' ? result : JSON.stringify(result)
         const preview = resultStr.substring(0, 200).replace(/\n/g, ' ')
         const isError = event.is_error === true
-        callbacks.send('tool_result', { name: toolName, preview, isError, length: resultStr.length, ...(toolUseId ? { toolUseId } : {}), ...lobeData })
+        // Keep fullResult for panels that need to parse the complete payload
+        // (e.g. screenshot URL extraction for inline thumbnails). Cap at 32KB
+        // so pathologically large tool outputs don't bloat UI state.
+        const fullResult = resultStr.length <= 32000 ? resultStr : undefined
+        callbacks.send('tool_result', { name: toolName, preview, isError, length: resultStr.length, ...(fullResult ? { fullResult } : {}), ...(toolUseId ? { toolUseId } : {}), ...lobeData })
       }
 
       // ── RESULT: final metadata ─────────────────────────
@@ -143,7 +147,8 @@ export function createStreamParser(callbacks: StreamParserCallbacks, lobe?: stri
               callbacks.send('tool', { name: toolName, input: toolInput, display, ...lobeData })
             } else if (block.type === 'tool_result') {
               const resultStr = typeof block.content === 'string' ? block.content : JSON.stringify(block.content || '')
-              callbacks.send('tool_result', { name: block.tool_name || 'tool', preview: resultStr.slice(0, 200), isError: block.is_error === true, length: resultStr.length, ...lobeData })
+              const fullResult = resultStr.length <= 32000 ? resultStr : undefined
+              callbacks.send('tool_result', { name: block.tool_name || 'tool', preview: resultStr.slice(0, 200), isError: block.is_error === true, length: resultStr.length, ...(fullResult ? { fullResult } : {}), ...lobeData })
             }
           }
         }
@@ -157,11 +162,13 @@ export function createStreamParser(callbacks: StreamParserCallbacks, lobe?: stri
           for (const r of results) {
             const resultStr = typeof r.text === 'string' ? r.text : JSON.stringify(r.text || r.content || '')
             const preview = resultStr.slice(0, 300).replace(/\n/g, ' ')
+            const fullResult = resultStr.length <= 32000 ? resultStr : undefined
             callbacks.send('tool_result', {
               name: 'tool',
               preview,
               isError: false,
               length: resultStr.length,
+              ...(fullResult ? { fullResult } : {}),
               toolUseId: event.message?.content?.[0]?.tool_use_id,
               ...lobeData,
             })
@@ -176,11 +183,13 @@ export function createStreamParser(callbacks: StreamParserCallbacks, lobe?: stri
               for (const t of texts) {
                 const text = typeof t === 'string' ? t : (t.text || JSON.stringify(t))
                 const preview = text.slice(0, 300).replace(/\n/g, ' ')
+                const fullResult = text.length <= 32000 ? text : undefined
                 callbacks.send('tool_result', {
                   name: 'tool',
                   preview,
                   isError: block.is_error === true,
                   length: text.length,
+                  ...(fullResult ? { fullResult } : {}),
                   toolUseId: block.tool_use_id,
                   ...lobeData,
                 })
