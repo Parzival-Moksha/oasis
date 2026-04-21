@@ -169,8 +169,9 @@ export function ToolCallCard({
         )}
       </button>
 
-      {/* Expanded input */}
-      {expanded && hasDetails && (
+      {/* Expanded input — suppressed for screenshot tools (args already in header,
+          and the captured image is the informative payload) */}
+      {expanded && hasDetails && !isScreenshotTool && (
         <div className={`px-3 py-2 ${detailSize} font-mono text-gray-400 border-t border-white/5 max-h-[200px] overflow-y-auto whitespace-pre-wrap`}
           style={{ background: 'rgba(0,0,0,0.3)', scrollbarWidth: 'thin', scrollbarColor: '#374151 transparent' }}
         >
@@ -252,8 +253,9 @@ export function ToolCallCard({
         </div>
       )}
 
-      {/* Tool result */}
-      {expanded && result && result.preview && (
+      {/* Tool result — suppress verbose JSON for screenshot tools when images
+          are rendered; the pic itself is worth more than a 2KB JSON dump */}
+      {expanded && result && result.preview && !(isScreenshotTool && hasScreenshots) && (
         <div
           className={`px-3 py-2 ${detailSize} font-mono border-t border-white/5 max-h-[200px] overflow-y-auto whitespace-pre-wrap`}
           style={{

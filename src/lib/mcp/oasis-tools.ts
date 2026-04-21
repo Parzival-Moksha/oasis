@@ -1309,6 +1309,18 @@ function resolveAvatarUrl(raw: string): { url: string; resolved: boolean; sugges
   }
 }
 
+const CANONICAL_AGENT_AVATAR_TYPES = new Set([
+  'anorak',
+  'anorak-pro',
+  'merlin',
+  'hermes',
+  'openclaw',
+  'devcraft',
+  'parzival',
+  'browser',
+  'mission',
+])
+
 tools.set_avatar = async (args) => {
   const rawUrl = validStr(args.avatarUrl || args.url, '')
   if (!rawUrl) return { ok: false, message: 'avatarUrl is required. Use a path like /avatars/gallery/Orion.vrm or call get_world_state to see available avatars.' }
@@ -1320,6 +1332,16 @@ tools.set_avatar = async (args) => {
     args,
     validStr(args.linkedWindowId, '') ? 'anorak' : 'hermes',
   )
+
+  // Reject non-canonical agentTypes so beginner-agent typos don't create
+  // orphan avatars (e.g. "clawdling") that WizCon can't see or delete.
+  if (!CANONICAL_AGENT_AVATAR_TYPES.has(agentType)) {
+    return {
+      ok: false,
+      message: `Invalid agentType '${agentType}'. Canonical values: ${[...CANONICAL_AGENT_AVATAR_TYPES].join(', ')}. If this is the calling agent's own body, omit agentType and it defaults to the requester.`,
+    }
+  }
+
   const isSharedAvatarType = SHARED_AGENT_AVATAR_TYPES.has(agentType)
   const label = validStr(args.label, '')
   const position = validPos(args.position)
@@ -1822,10 +1844,11 @@ function buildAvatarScreenshotArgs(args: Record<string, unknown>, fallbackSubjec
       id: `${subject}-${thirdPerson ? 'tps' : 'portrait'}`,
       mode: thirdPerson ? 'third-person-follow' : 'avatar-portrait',
       agentType: subject,
-      fov: validNum(args.fov, thirdPerson ? 72 : 34),
-      distance: validNum(args.distance, thirdPerson ? 4.4 : 2.75),
-      heightOffset: validNum(args.heightOffset, thirdPerson ? 2.1 : 1.55),
-      lookAhead: validNum(args.lookAhead, thirdPerson ? 4 : 0.1),
+      fov: validNum(args.fov, thirdPerson ? 72 : 45),
+      // Tighter TPS defaults so small avatars (e.g. player's gnome) fill the frame.
+      distance: validNum(args.distance, thirdPerson ? 2.8 : 2.75),
+      heightOffset: validNum(args.heightOffset, thirdPerson ? 1.6 : 1.55),
+      lookAhead: validNum(args.lookAhead, thirdPerson ? 2.5 : 0.1),
     }],
   }
 }
