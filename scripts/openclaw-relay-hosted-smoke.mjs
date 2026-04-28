@@ -32,6 +32,17 @@ const OASIS_URL = (process.env.OASIS_URL || 'http://localhost:4516').replace(/\/
 const RELAY_URL = (process.env.RELAY_URL || OASIS_URL.replace(/^http/, 'ws')).replace(/\/+$/, '')
 const ORIGIN = process.env.OASIS_ORIGIN || OASIS_URL
 
+// In production behind Nginx, the WS upgrade lives at /relay (the proxy passes
+// it through to the sidecar). When running against a bare dev sidecar that
+// listens on `/`, set RELAY_PATH='' to skip the segment.
+const RELAY_PATH = process.env.RELAY_PATH ?? (
+  RELAY_URL.includes('://localhost') || RELAY_URL.includes('://127.0.0.1') ? '' : '/relay'
+)
+
+function relayUrlFor(role) {
+  return `${RELAY_URL}${RELAY_PATH}/?role=${role}`.replace(/\/\?/, '?')
+}
+
 const log = (...args) => console.log('[smoke]', ...args)
 
 function fail(reason, detail) {
@@ -139,14 +150,14 @@ async function main() {
 
   log('4. opening browser socket with cookie + Origin')
   const browser = await openSocket({
-    url: `${RELAY_URL}/?role=browser`,
+    url: relayUrlFor('browser'),
     headers: { cookie: cookieHeader, origin: ORIGIN },
     role: 'browser',
     label: 'browser',
   })
   log('5. opening agent socket with Bearer token')
   const agent = await openSocket({
-    url: `${RELAY_URL}/?role=agent`,
+    url: relayUrlFor('agent'),
     headers: { authorization: `Bearer ${deviceToken}` },
     role: 'agent',
     label: 'agent',
