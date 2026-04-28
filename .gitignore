@@ -11,6 +11,17 @@ tools/*/node_modules/
 .next-staging/
 out/
 *.tsbuildinfo
+.next-dev.log
+
+# PM2 logs (relay + web)
+logs/
+
+# Local-only data (worlds, configs)
+data/*.local.json
+
+# Tooling caches and IDE configs
+.cache/
+.codex/
 
 # Environment secrets
 .env
