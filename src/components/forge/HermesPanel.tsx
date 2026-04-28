@@ -2221,9 +2221,33 @@ export function HermesPanel({
   useEffect(() => {
     if (!isOpen) return
     void loadStatus()
-    const timer = window.setTimeout(() => inputRef.current?.focus(), 120)
-    return () => window.clearTimeout(timer)
+    const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 120)
+    // Poll status every 15s while the panel is open so the user sees a dead
+    // tunnel without having to click around. Stops when the panel closes.
+    const pollTimer = window.setInterval(() => { void loadStatus() }, 15000)
+    return () => {
+      window.clearTimeout(focusTimer)
+      window.clearInterval(pollTimer)
+    }
   }, [isOpen, loadStatus])
+
+  // Auto-reconnect ONCE per panel-open when the saved tunnel has gone dead.
+  // The respawn logic in hermes-tunnel.ts retries 3× on ssh exit; this just
+  // triggers the entry point so users don't have to click Connect manually.
+  const autoReconnectTriedRef = useRef(false)
+  useEffect(() => {
+    if (!isOpen) {
+      autoReconnectTriedRef.current = false
+      return
+    }
+    if (autoReconnectTriedRef.current) return
+    if (!tunnelStatus.configured || !tunnelStatus.autoStart) return
+    if (tunnelStatus.running && tunnelStatus.healthy) return
+    if (tunnelStatus.health !== 'stopped' && tunnelStatus.health !== 'stale') return
+    if (isConnecting) return
+    autoReconnectTriedRef.current = true
+    void connectHermes()
+  }, [isOpen, tunnelStatus.configured, tunnelStatus.autoStart, tunnelStatus.running, tunnelStatus.healthy, tunnelStatus.health, isConnecting, connectHermes])
 
   useEffect(() => {
     if (!isOpen) {

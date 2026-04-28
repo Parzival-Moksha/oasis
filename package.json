@@ -13,6 +13,7 @@
     "build": "next build",
     "start": "next start -p 4516",
     "smoke:relay-hosted": "node scripts/openclaw-relay-hosted-smoke.mjs",
+    "seed:welcome-hub": "npx tsx prisma/seed-welcome-hub.ts",
     "lint": "eslint src scripts next.config.mjs postcss.config.js tailwind.config.js vitest.config.ts --ext .js,.mjs,.ts,.tsx --report-unused-disable-directives"
   },
   "dependencies": {
