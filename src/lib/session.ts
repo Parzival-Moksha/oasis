@@ -80,6 +80,32 @@ export function readBrowserSession(
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Mode-aware user id — the canonical identity helper for routes
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Returns the user id to scope DB queries against.
+ *
+ *   - `OASIS_MODE !== 'hosted'`:   always `'local-user'` (preserves local behavior).
+ *   - `OASIS_MODE === 'hosted'`:   the verified browserSessionId from the cookie.
+ *                                   Falls back to `'local-user'` only if the cookie
+ *                                   is missing or invalid — middleware-equivalent
+ *                                   `/api/session/init` is supposed to mint one
+ *                                   on first visit, so the fallback is a defense
+ *                                   in depth, not a normal path.
+ *
+ * Use this in every API route that reads/writes per-user data (worlds,
+ * profile, XP, conjured assets, etc.). For lib helpers that already accept
+ * an explicit `userId` parameter, prefer threading the result of this
+ * function through, rather than letting the lib fall back internally.
+ */
+export async function getOasisUserId(request: Request | NextRequest): Promise<string> {
+  if (getOasisMode() !== 'hosted') return 'local-user'
+  const session = readBrowserSession(request)
+  return session?.browserSessionId ?? 'local-user'
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Cookie minting
 // ────────────────────────────────────────────────────────────────────────────
 

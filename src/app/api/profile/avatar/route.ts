@@ -3,7 +3,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextResponse } from 'next/server'
-import { getLocalUserId } from '@/lib/local-auth'
+import { getOasisUserId } from '@/lib/session'
 import { prisma } from '@/lib/db'
 import path from 'path'
 import fs from 'fs/promises'
@@ -13,7 +13,7 @@ const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 
 export async function POST(request: Request) {
   try {
-    const _uid = await getLocalUserId()
+    const userId = await getOasisUserId(request)
 
     const formData = await request.formData()
     const file = formData.get('avatar') as File | null
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
       'image/webp': 'webp', 'image/gif': 'gif',
     }
     const ext = extMap[file.type] || 'jpg'
-    const filename = `${_uid}.${ext}`
+    const filename = `${userId}.${ext}`
 
     // Ensure avatars directory exists
     const avatarDir = path.join(process.cwd(), 'public', 'avatars')
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     // Clean up any previous avatar with different extension
     for (const e of ['jpg', 'png', 'webp', 'gif']) {
       if (e !== ext) {
-        const old = path.join(avatarDir, `${_uid}.${e}`)
+        const old = path.join(avatarDir, `${userId}.${e}`)
         await fs.unlink(old).catch(() => {})
       }
     }
@@ -68,8 +68,8 @@ export async function POST(request: Request) {
     // Persist avatar URL in Profile
     try {
       await prisma.profile.upsert({
-        where: { userId: _uid },
-        create: { userId: _uid, avatarUrl },
+        where: { userId: userId },
+        create: { userId: userId, avatarUrl },
         update: { avatarUrl },
       })
     } catch (e) {

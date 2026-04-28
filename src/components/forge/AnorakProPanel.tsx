@@ -5,7 +5,7 @@
 // ─═̷─═̷─ॐ─═̷─═̷─ Curator, Coder, Reviewer, Tester in one view ─═̷─═̷─ॐ─═̷─═̷─
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import React, { useState, useRef, useEffect, useCallback, useContext } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useContext, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { SettingsContext } from '../scene-lib'
 import { useOasisStore } from '../../store/oasisStore'
@@ -21,7 +21,7 @@ import {
   mergeContextConfig,
   normalizeContextConfig,
 } from '@/lib/anorak-context-config'
-import { CollapsibleBlock, ToolCallCard, TokenCounter, renderMarkdown } from '@/lib/anorak-renderers'
+import { CollapsibleBlock, ToolCallCard, TokenCounter, extractToolResultMediaReferences, renderMarkdown } from '@/lib/anorak-renderers'
 import { MediaBubble } from './MediaBubble'
 import { useAgentVoiceInput } from '@/hooks/useAgentVoiceInput'
 import { useAutoresizeTextarea } from '@/hooks/useAutoresizeTextarea'
@@ -523,6 +523,22 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
     })
   }, [])
   const filtered = visible.filter(e => visibleLobes[e.lobe] !== false)
+  const explicitMediaUrls = useMemo(
+    () => new Set(
+      filtered
+        .filter((entry): entry is StreamEntry & { mediaUrl: string } => entry.type === 'media' && typeof entry.mediaUrl === 'string')
+        .map(entry => entry.mediaUrl.trim())
+    ),
+    [filtered]
+  )
+
+  const stripEchoedMediaUrls = useCallback((content: string) => {
+    let next = content
+    explicitMediaUrls.forEach((url: string) => {
+      next = next.split(url).join('')
+    })
+    return next.replace(/\n{3,}/g, '\n\n').trim()
+  }, [explicitMediaUrls])
 
   // Auto-scroll on new content (only when enabled)
   useEffect(() => {
@@ -636,13 +652,20 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
         className="flex-1 overflow-y-auto p-3 space-y-1 font-mono text-xs"
         style={EMBEDDED_SCROLL_SURFACE_STYLE}
       >
-        {filtered.map((e, idx) => {
+        {(() => {
+          const renderedMediaUrls = new Set<string>()
+          return filtered.map((e, idx) => {
           // Skip tool_result entries — they're rendered inline with the preceding tool card
           if (e.type === 'tool_result') return null
           // Skip tool_start when a matching tool entry follows (avoids duplicate cards)
           if (e.type === 'tool_start') {
             const next = filtered[idx + 1]
             if (next && next.type === 'tool' && next.toolName === e.toolName) return null
+          }
+          if (e.type === 'media' && e.mediaUrl) {
+            const mediaKey = e.mediaUrl.trim()
+            if (renderedMediaUrls.has(mediaKey)) return null
+            renderedMediaUrls.add(mediaKey)
           }
 
           const lobeColor = LOBE_COLORS[e.lobe] || '#888'
@@ -651,6 +674,7 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
           const shouldAutoPlayFreshAudio = e.mediaType === 'audio'
             && e.timestamp >= mountedAtRef.current
             && (Date.now() - e.timestamp) < 15000
+          const sanitizedText = e.type === 'text' ? stripEchoedMediaUrls(e.content) : e.content
 
           // For tool/tool_start entries, find the matching tool_result to show completion state
           let toolResult: { preview: string; isError: boolean; length: number; fullResult?: string } | undefined
@@ -694,6 +718,9 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
               if (!(e.toolUseId && candidate.toolUseId) && (candidate.type === 'tool' || candidate.type === 'tool_start')) break
             }
           }
+          const suppressToolMedia = Boolean(
+            toolResult && extractToolResultMediaReferences(toolResult).some(entry => explicitMediaUrls.has(entry.path.trim()))
+          )
 
           return (
             <div key={`${e.id}-${e.type}-${e.timestamp}`} style={{
@@ -712,12 +739,14 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
                   input={e.toolInput}
                   result={toolResult}
                   compact
+                  audioTargetAvatarId={audioTargetAvatarId}
+                  suppressMedia={suppressToolMedia}
                 />
               )}
               {e.type === 'status' && <span style={{ fontStyle: 'italic', color: lobeColor }}>{e.content}</span>}
-              {e.type === 'text' && (
+              {e.type === 'text' && sanitizedText && (
                 <div className="text-[11px] text-white/90 leading-relaxed" style={{ color: '#cbd5e1' }}>
-                  {renderMarkdown(e.content)}
+                  {renderMarkdown(sanitizedText)}
                 </div>
               )}
               {e.type === 'error' && (
@@ -749,7 +778,8 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
               )}
             </div>
           )
-        })}
+          })
+        })()}
 
         {/* Auto-scroll pill — appears when user scrolls up */}
         {!autoScroll && filtered.length > 0 && (

@@ -20,12 +20,13 @@ export function ActionLogButton({ onClick, isOpen }: { onClick: () => void; isOp
   return (
     <button
       onClick={onClick}
-      className={`relative w-10 h-10 rounded-lg flex items-center justify-center text-xs font-mono transition-all duration-200 hover:scale-110 ${
+      aria-label="Action Log"
+      data-oasis-tooltip="Action Log"
+      className={`oasis-tooltip relative w-10 h-10 rounded-lg flex items-center justify-center text-xs font-mono transition-all duration-200 hover:scale-110 ${
         isOpen
           ? 'bg-violet-500/20 border-violet-400/50 text-violet-300'
           : 'bg-black/60 border-gray-700/40 text-gray-400 hover:border-violet-500/30 hover:text-violet-300'
       } border`}
-      title="Action Log (Ctrl+Z / Ctrl+Shift+Z)"
     >
       <span className="text-lg">⏪</span>
     </button>

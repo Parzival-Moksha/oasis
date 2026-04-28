@@ -53,15 +53,80 @@ body {
   pointer-events: auto;
 }
 
-/* Tooltip styles */
-.tooltip {
-  background: rgba(0, 0, 0, 0.9);
-  border: 1px solid var(--glow);
-  border-radius: 4px;
+/* Game-style tooltips */
+.oasis-tooltip {
+  position: relative;
+}
+
+.oasis-tooltip::before,
+.oasis-tooltip::after {
+  pointer-events: none;
+  position: absolute;
+  left: 50%;
+  opacity: 0;
+  transition:
+    opacity 120ms ease-out,
+    transform 120ms ease-out;
+}
+
+.oasis-tooltip::before {
+  content: attr(data-oasis-tooltip);
+  bottom: calc(100% + 12px);
+  transform: translate(-50%, 6px);
+  min-width: 108px;
+  max-width: 220px;
   padding: 8px 12px;
-  font-size: 12px;
-  max-width: 200px;
-  box-shadow: 0 0 20px rgba(168, 85, 247, 0.3);
+  border-radius: 10px;
+  border: 1px solid rgba(103, 232, 249, 0.35);
+  background:
+    linear-gradient(180deg, rgba(10, 14, 22, 0.98) 0%, rgba(5, 8, 14, 0.96) 100%);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.5),
+    0 0 20px rgba(34, 211, 238, 0.16);
+  color: #d9f7ff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  line-height: 1.35;
+  text-align: center;
+  text-transform: uppercase;
+  white-space: nowrap;
+  z-index: 400;
+  backdrop-filter: blur(10px);
+}
+
+.oasis-tooltip::after {
+  content: '';
+  bottom: calc(100% + 7px);
+  width: 10px;
+  height: 10px;
+  transform: translateX(-50%) rotate(45deg) translateY(6px);
+  border-left: 1px solid rgba(103, 232, 249, 0.35);
+  border-top: 1px solid rgba(103, 232, 249, 0.35);
+  background: rgba(6, 10, 16, 0.98);
+  box-shadow: 0 0 14px rgba(34, 211, 238, 0.14);
+  z-index: 399;
+}
+
+.oasis-tooltip:hover::before,
+.oasis-tooltip:hover::after,
+.oasis-tooltip:focus-visible::before,
+.oasis-tooltip:focus-visible::after,
+.oasis-tooltip:focus-within::before,
+.oasis-tooltip:focus-within::after {
+  opacity: 1;
+}
+
+.oasis-tooltip:hover::before,
+.oasis-tooltip:focus-visible::before,
+.oasis-tooltip:focus-within::before {
+  transform: translate(-50%, 0);
+}
+
+.oasis-tooltip:hover::after,
+.oasis-tooltip:focus-visible::after,
+.oasis-tooltip:focus-within::after {
+  transform: translateX(-50%) rotate(45deg);
 }
 
 /* Glow effect for text */

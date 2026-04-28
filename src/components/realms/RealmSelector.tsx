@@ -31,7 +31,7 @@ const VISIBILITY_ICONS: Record<WorldVisibility, string> = Object.fromEntries(
   VISIBILITY_OPTIONS.map(o => [o.value, o.icon])
 ) as Record<WorldVisibility, string>
 
-export function RealmSelector() {
+export function RealmSelector({ placement = 'floating' }: { placement?: 'floating' | 'toolbar' }) {
   const [expanded, setExpanded] = useState(false)
   useUILayer('realm-selector', expanded)
   const [mounted, setMounted] = useState(false)
@@ -180,17 +180,22 @@ export function RealmSelector() {
   const currentLabel = isViewMode && viewingWorldMeta
     ? { icon: viewingWorldMeta.icon, name: viewingWorldMeta.name, color: '#A855F7' }  // purple for viewing
     : { icon: currentWorld?.icon || '🔥', name: currentWorld?.name || 'The Forge', color: '#F97316' }
+  const toolbarPlacement = placement === 'toolbar'
 
   return (
     <div
       ref={dropdownRef}
-      className="ui-overlay fixed top-4 left-1/2 -translate-x-1/2 z-[100] select-none"
-      style={{ pointerEvents: 'auto' }}
+      className={toolbarPlacement
+        ? 'relative z-[230] select-none'
+        : 'ui-overlay fixed top-4 left-1/2 -translate-x-1/2 z-[100] select-none'}
+      style={toolbarPlacement ? undefined : { pointerEvents: 'auto' }}
     >
       {/* ─═̷─ Current world indicator ─═̷─ */}
       <button
         onClick={() => { if (!expanded) refreshWorldRegistry(); setExpanded(!expanded) }}
-        className="group flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-300"
+        className={toolbarPlacement
+          ? 'group flex h-10 min-w-[168px] items-center gap-2 rounded-lg px-3 transition-all duration-200'
+          : 'group flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-300'}
         style={{
           background: 'rgba(0,0,0,0.7)',
           border: `1px solid ${currentLabel.color}44`,
@@ -222,7 +227,9 @@ export function RealmSelector() {
       {expanded && (
         <div
           data-ui-panel
-          className="mt-1 rounded-lg overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
+          className={toolbarPlacement
+            ? 'absolute left-0 top-12 rounded-lg overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200'
+            : 'mt-1 rounded-lg overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200'}
           style={{
             background: 'rgba(0,0,0,0.9)',
             border: '1px solid rgba(255,255,255,0.1)',

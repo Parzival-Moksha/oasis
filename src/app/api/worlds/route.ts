@@ -9,7 +9,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextResponse } from 'next/server'
-import { getLocalUserId } from '@/lib/local-auth'
+import { getOasisUserId } from '@/lib/session'
 import {
   getRegistry, createWorld, saveWorld,
   type WorldState,
@@ -19,9 +19,9 @@ import {
 // GET /api/worlds — All worlds for the authenticated user
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const userId = await getLocalUserId()
+    const userId = await getOasisUserId(request)
 
     const registry = await getRegistry(userId)
     return NextResponse.json(registry)
@@ -41,7 +41,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const userId = await getLocalUserId()
+    const userId = await getOasisUserId(request)
     const body = await request.json()
 
     // ░▒▓ Import path ▓▒░

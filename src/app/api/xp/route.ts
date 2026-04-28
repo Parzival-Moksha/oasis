@@ -6,13 +6,13 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { getLocalUserId } from '@/lib/local-auth'
+import { getOasisUserId } from '@/lib/session'
 import { DEFAULT_XP_AWARDS, levelFromXp } from '@/lib/xp'
 import type { XpAction } from '@/lib/xp'
 
 export async function POST(request: NextRequest) {
   try {
-    const userId = await getLocalUserId()
+    const userId = await getOasisUserId(request)
     const body = await request.json()
     const action = body.action as XpAction | undefined
 

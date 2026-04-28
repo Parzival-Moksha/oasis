@@ -242,11 +242,9 @@ export function AnorakPanel({
           {isStreaming && (liveTokens.input > 0 || liveTokens.output > 0) && (
             <div className="flex items-center gap-1 text-[9px] font-mono" style={{ fontVariantNumeric: 'tabular-nums' }}>
               <span className="text-sky-400/70">
-                {fmtTokens(liveTokens.input)}↓
-              </span>
+                in {fmtTokens(liveTokens.input)}</span>
               <span className="text-amber-400/70">
-                {fmtTokens(liveTokens.output)}↑
-              </span>
+                out {fmtTokens(liveTokens.output)}</span>
             </div>
           )}
 

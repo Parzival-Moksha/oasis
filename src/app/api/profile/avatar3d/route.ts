@@ -5,7 +5,7 @@
 // httpURL → store the URL directly
 
 import { NextResponse } from 'next/server'
-import { getLocalUserId } from '@/lib/local-auth'
+import { getOasisUserId } from '@/lib/session'
 import { prisma } from '@/lib/db'
 import path from 'path'
 import fs from 'fs/promises'
@@ -14,7 +14,7 @@ const MAX_GLB_SIZE = 10 * 1024 * 1024 // 10MB
 
 export async function POST(request: Request) {
   try {
-    const _uid = await getLocalUserId()
+    const userId = await getOasisUserId(request)
 
     const body = await request.json()
     const { url, urlType } = body
@@ -23,8 +23,8 @@ export async function POST(request: Request) {
     if (urlType === 'remove') {
       try {
         await prisma.profile.upsert({
-          where: { userId: _uid },
-          create: { userId: _uid, avatar3dUrl: null },
+          where: { userId: userId },
+          create: { userId: userId, avatar3dUrl: null },
           update: { avatar3dUrl: null },
         })
       } catch (e) { console.error('[Avatar3D] Profile update failed:', e) }
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Invalid avatar path' }, { status: 400 })
       }
       avatar3dUrl = url
-      console.log(`[Avatar3D] Gallery selection: ${url} for user ${_uid}`)
+      console.log(`[Avatar3D] Gallery selection: ${url} for user ${userId}`)
     } else if (urlType === 'dataURL' && url.startsWith('data:')) {
       const matches = url.match(/^data:([^;]+);base64,(.+)$/)
       if (!matches) {
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
       const avatarDir = path.join(process.cwd(), 'public', 'avatars')
       await fs.mkdir(avatarDir, { recursive: true })
 
-      const filename = `${_uid}_3d.glb`
+      const filename = `${userId}_3d.glb`
       await fs.writeFile(path.join(avatarDir, filename), buffer)
 
       avatar3dUrl = `/avatars/${filename}`
@@ -73,8 +73,8 @@ export async function POST(request: Request) {
     // Persist to Profile
     try {
       await prisma.profile.upsert({
-        where: { userId: _uid },
-        create: { userId: _uid, avatar3dUrl },
+        where: { userId: userId },
+        create: { userId: userId, avatar3dUrl },
         update: { avatar3dUrl },
       })
     } catch (e) { console.error('[Avatar3D] Profile update failed:', e) }

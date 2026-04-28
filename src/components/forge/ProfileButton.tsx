@@ -184,13 +184,14 @@ export function ProfileButton() {
       {/* Avatar button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden transition-all hover:scale-110"
+        aria-label={displayName}
+        data-oasis-tooltip={displayName}
+        className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden transition-all hover:scale-110"
         style={{
           background: isOpen ? 'rgba(168,85,247,0.3)' : 'rgba(0,0,0,0.6)',
           border: `1px solid ${isOpen ? 'rgba(168,85,247,0.6)' : 'rgba(255,255,255,0.15)'}`,
           boxShadow: isOpen ? '0 0 12px rgba(168,85,247,0.3)' : 'none',
         }}
-        title={displayName}
       >
         {avatarSrc ? (
           <img src={avatarSrc} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
@@ -232,7 +233,7 @@ export function ProfileButton() {
                   <button
                     onClick={startEditing}
                     className="text-gray-500 hover:text-purple-400 transition-colors cursor-pointer text-xs"
-                    title="Edit Profile"
+                    aria-label="Edit Profile"
                   >
                     ✏️
                   </button>
@@ -345,9 +346,9 @@ export function ProfileButton() {
                   <div key={label} className="flex items-center justify-between">
                     <span className="text-teal-400 text-xs w-14">{label}</span>
                     <span className="text-lg text-white font-bold">
-                      <span title="Input tokens (including cached prompt hits)">↓{fmtTokens(getProfileDisplayInputTokens(data.grand))}</span>
+                      <span>in {fmtTokens(getProfileDisplayInputTokens(data.grand))}</span>
                       {' '}
-                      <span title="Output tokens">↑{fmtTokens(data.grand.outputTokens)}</span>
+                      <span>out {fmtTokens(data.grand.outputTokens)}</span>
                       {/*
                       <span title="Input tokens">↓{fmtTokens(data.inputTokens)}</span>
                       {' '}

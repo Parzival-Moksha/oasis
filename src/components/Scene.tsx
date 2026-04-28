@@ -41,6 +41,7 @@ import { ObjectInspector } from './forge/ObjectInspector'
 import { MindcraftMissionWindowBridge } from './forge/MindcraftMissionWindowBridge'
 import { ActionLogButton, ActionLogPanel } from './forge/ActionLog'
 import { ProfileButton } from './forge/ProfileButton'
+import { RealmSelector } from './realms/RealmSelector'
 import { MerlinPanel } from './forge/MerlinPanel'
 import { AnorakPanel } from './forge/AnorakPanel'
 import { CodexPanel } from './forge/CodexPanel'
@@ -630,7 +631,7 @@ function SoundSettings() {
                   ))}
                 </select>
                 <button onClick={() => preview(event as SoundEvent, (selections as Record<string, string>)[event])}
-                  className="text-gray-600 hover:text-sky-400 cursor-pointer text-[11px]" title="Preview">▶</button>
+                  className="text-gray-600 hover:text-sky-400 cursor-pointer text-[11px]">▶</button>
               </div>
             )
           })}
@@ -1272,6 +1273,7 @@ export default function Scene() {
 
       {/* ─═̷─═̷─🔮─═̷─═̷─ TOP-LEFT BUTTON BAR — Profile, Settings, Wizard, Action Log ─═̷─═̷─🔮─═̷─═̷─ */}
       <div className="fixed top-4 left-4 z-[200] flex items-start gap-2">
+        <RealmSelector placement="toolbar" />
         <ProfileButton />
         <SettingsGear>
           <SettingsContent />
@@ -1284,14 +1286,15 @@ export default function Scene() {
                 return !prev
               })
             }}
-            className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
+            aria-label="Wizard Console"
+            data-oasis-tooltip="Wizard Console"
+            className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
             style={{
               background: wizardOpen ? 'rgba(249,115,22,0.4)' : 'rgba(0,0,0,0.6)',
               border: `1px solid ${wizardOpen ? 'rgba(249,115,22,0.6)' : 'rgba(255,255,255,0.15)'}`,
               color: wizardOpen ? '#F97316' : '#aaa',
               boxShadow: wizardOpen ? '0 0 12px rgba(249,115,22,0.3)' : 'none',
             }}
-            title="Wizard Console"
           >
             ✨
           </button>
@@ -1305,14 +1308,15 @@ export default function Scene() {
         {!hideEditTools && (
           <button
             onClick={() => togglePanel(setMerlinOpen)}
-            className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
+            aria-label="Merlin"
+            data-oasis-tooltip="Merlin"
+            className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
             style={{
               background: merlinOpen ? 'rgba(168,85,247,0.3)' : 'rgba(0,0,0,0.6)',
               border: `1px solid ${merlinOpen ? 'rgba(168,85,247,0.6)' : 'rgba(255,255,255,0.15)'}`,
               color: merlinOpen ? '#A855F7' : '#aaa',
               boxShadow: merlinOpen ? '0 0 12px rgba(168,85,247,0.3)' : 'none',
             }}
-            title="Merlin — AI World Builder"
           >
             🧙
           </button>
@@ -1320,14 +1324,15 @@ export default function Scene() {
         {isAdmin && !hideEditTools && (
           <button
             onClick={() => togglePanel(setClaudeCodeOpen)}
-            className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
+            aria-label="Claude Code"
+            data-oasis-tooltip="Claude Code"
+            className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
             style={{
               background: claudeCodeOpen ? 'rgba(56,189,248,0.3)' : 'rgba(0,0,0,0.6)',
               border: `1px solid ${claudeCodeOpen ? 'rgba(56,189,248,0.6)' : 'rgba(255,255,255,0.15)'}`,
               color: claudeCodeOpen ? '#38BDF8' : '#aaa',
               boxShadow: claudeCodeOpen ? '0 0 12px rgba(56,189,248,0.3)' : 'none',
             }}
-            title="Claude Code"
           >
             💻
           </button>
@@ -1335,14 +1340,15 @@ export default function Scene() {
         {isAdmin && !hideEditTools && (
           <button
             onClick={() => togglePanel(setCodexOpen)}
-            className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
+            aria-label="Codex"
+            data-oasis-tooltip="Codex"
+            className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
             style={{
               background: codexOpen ? 'rgba(16,185,129,0.3)' : 'rgba(0,0,0,0.6)',
               border: `1px solid ${codexOpen ? 'rgba(16,185,129,0.6)' : 'rgba(255,255,255,0.15)'}`,
               color: codexOpen ? '#34D399' : '#aaa',
               boxShadow: codexOpen ? '0 0 12px rgba(16,185,129,0.3)' : 'none',
             }}
-            title="Codex"
           >
             ⌘
           </button>
@@ -1350,119 +1356,114 @@ export default function Scene() {
         {isAdmin && !hideEditTools && (
           <button
             onClick={() => togglePanel(setAnorakProOpen)}
-            className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
+            aria-label="Anorak Pro"
+            data-oasis-tooltip="Anorak Pro"
+            className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
             style={{
               background: anorakProOpen ? 'rgba(20,184,166,0.3)' : 'rgba(0,0,0,0.6)',
               border: `1px solid ${anorakProOpen ? 'rgba(20,184,166,0.6)' : 'rgba(255,255,255,0.15)'}`,
               color: anorakProOpen ? '#14b8a6' : '#aaa',
               boxShadow: anorakProOpen ? '0 0 12px rgba(20,184,166,0.3)' : 'none',
             }}
-            title="Anorak Pro"
           >
             🔮
           </button>
         )}
         {!hideEditTools && <button
           onClick={() => togglePanel(setDevcraftOpen)}
-          className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
+          aria-label="DevCraft"
+          data-oasis-tooltip="DevCraft"
+          className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
           style={{
             background: devcraftOpen ? 'rgba(16,185,129,0.3)' : 'rgba(0,0,0,0.6)',
             border: `1px solid ${devcraftOpen ? 'rgba(16,185,129,0.6)' : 'rgba(255,255,255,0.15)'}`,
             color: devcraftOpen ? '#10B981' : '#aaa',
             boxShadow: devcraftOpen ? '0 0 12px rgba(16,185,129,0.3)' : 'none',
           }}
-          title="DevCraft — Productivity Terminal"
         >
           📅
         </button>}
         <button
           onClick={() => togglePanel(setHermesOpen)}
-          className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
+          aria-label="Hermes"
+          data-oasis-tooltip="Hermes"
+          className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
           style={{
             background: hermesOpen ? 'rgba(245,158,11,0.3)' : 'rgba(0,0,0,0.6)',
             border: `1px solid ${hermesOpen ? 'rgba(245,158,11,0.6)' : 'rgba(255,255,255,0.15)'}`,
             color: hermesOpen ? '#F59E0B' : '#aaa',
             boxShadow: hermesOpen ? '0 0 12px rgba(245,158,11,0.3)' : 'none',
           }}
-          title="Hermes - Remote Agent Chat"
         >
           ☤
         </button>
         <button
           onClick={() => togglePanel(setOpenclawOpen)}
-          className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
+          aria-label="OpenClaw"
+          data-oasis-tooltip="OpenClaw"
+          className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
           style={{
             background: openclawOpen ? 'rgba(34,211,238,0.24)' : 'rgba(0,0,0,0.6)',
             border: `1px solid ${openclawOpen ? 'rgba(34,211,238,0.56)' : 'rgba(255,255,255,0.15)'}`,
             color: openclawOpen ? '#67E8F9' : '#aaa',
             boxShadow: openclawOpen ? '0 0 12px rgba(34,211,238,0.22)' : 'none',
           }}
-          title="OpenClaw - local gateway bridge"
         >
           🦞
         </button>
         <button
           onClick={() => togglePanel(setRealtimeOpen)}
-          className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
+          aria-label="Realtime"
+          data-oasis-tooltip="Realtime"
+          className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
           style={{
             background: realtimeOpen ? 'rgba(192,132,252,0.3)' : 'rgba(0,0,0,0.6)',
             border: `1px solid ${realtimeOpen ? 'rgba(192,132,252,0.6)' : 'rgba(255,255,255,0.15)'}`,
             color: realtimeOpen ? '#DDD6FE' : '#aaa',
             boxShadow: realtimeOpen ? '0 0 12px rgba(192,132,252,0.26)' : 'none',
           }}
-          title="Realtime — Voice Sandbox"
         >
           🗣️
         </button>
         <button
-          onClick={() => togglePanel(setLipSyncLabOpen)}
-          className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
-          style={{
-            background: lipSyncLabOpen ? 'rgba(34,211,238,0.24)' : 'rgba(0,0,0,0.6)',
-            border: `1px solid ${lipSyncLabOpen ? 'rgba(34,211,238,0.58)' : 'rgba(255,255,255,0.15)'}`,
-            color: lipSyncLabOpen ? '#67E8F9' : '#aaa',
-            boxShadow: lipSyncLabOpen ? '0 0 12px rgba(34,211,238,0.24)' : 'none',
-          }}
-          title="Lip Sync Lab - sandboxed facial speech testing"
-        >
-          👄
-        </button>
-        <button
           onClick={() => togglePanel(setParzivalOpen)}
-          className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
+          aria-label="Parzival"
+          data-oasis-tooltip="Parzival"
+          className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
           style={{
             background: parzivalOpen ? 'rgba(192,132,252,0.3)' : 'rgba(0,0,0,0.6)',
             border: `1px solid ${parzivalOpen ? 'rgba(192,132,252,0.6)' : 'rgba(255,255,255,0.15)'}`,
             color: parzivalOpen ? '#C084FC' : '#aaa',
             boxShadow: parzivalOpen ? '0 0 12px rgba(192,132,252,0.3)' : 'none',
           }}
-          title="Parzival — Autonomous Brain"
         >
           🧿
         </button>
         {isAdmin && <button
           onClick={() => togglePanel(setConsoleOpen)}
-          className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
+          aria-label="Console"
+          data-oasis-tooltip="Console"
+          className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
           style={{
             background: consoleOpen ? 'rgba(245,158,11,0.3)' : 'rgba(0,0,0,0.6)',
             border: `1px solid ${consoleOpen ? 'rgba(245,158,11,0.6)' : 'rgba(255,255,255,0.15)'}`,
             color: consoleOpen ? '#F59E0B' : '#aaa',
             boxShadow: consoleOpen ? '0 0 12px rgba(245,158,11,0.3)' : 'none',
           }}
-          title="Console — Live Server Logs"
         >
           📡
         </button>}
         <button
           onClick={() => togglePanel(setHelpOpen)}
-          className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
+          aria-label="Help"
+          data-oasis-tooltip="Help"
+          className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
           style={{
             background: helpOpen ? 'rgba(168,85,247,0.3)' : 'rgba(0,0,0,0.6)',
             border: `1px solid ${helpOpen ? 'rgba(168,85,247,0.6)' : 'rgba(255,255,255,0.15)'}`,
             color: helpOpen ? '#A855F7' : '#aaa',
             boxShadow: helpOpen ? '0 0 12px rgba(168,85,247,0.3)' : 'none',
           }}
-          title="Help — Controls, Guide & Glossary"
         >
           ❓
         </button>
@@ -1604,7 +1605,6 @@ export default function Scene() {
           }}
           onMouseEnter={e => { e.currentTarget.style.background = 'rgba(20,184,166,0.2)'; e.currentTarget.style.borderColor = 'rgba(20,184,166,0.8)' }}
           onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.7)'; e.currentTarget.style.borderColor = 'rgba(20,184,166,0.4)' }}
-          title="Exit Ready Player 1 mode — restore editing tools"
         >
           EXIT RP1
         </button>
@@ -1751,14 +1751,15 @@ function SettingsGear({ children }: { children: React.ReactNode }) {
     <div ref={menuRef} className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
+        aria-label="Settings"
+        data-oasis-tooltip="Settings"
+        className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
         style={{
           background: isOpen ? 'rgba(168,85,247,0.3)' : 'rgba(0,0,0,0.6)',
           border: `1px solid ${isOpen ? 'rgba(168,85,247,0.6)' : 'rgba(255,255,255,0.15)'}`,
           color: isOpen ? '#A855F7' : '#aaa',
           boxShadow: isOpen ? '0 0 12px rgba(168,85,247,0.3)' : 'none',
         }}
-        title="Settings"
       >
         ⚙️
       </button>

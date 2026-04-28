@@ -3,9 +3,16 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   SESSION_COOKIE_NAME,
   getOasisMode,
+  getOasisUserId,
   mintSessionCookieValue,
   readBrowserSessionFromCookieHeader,
 } from '../session'
+
+function makeRequest(cookieHeader?: string): Request {
+  const headers = new Headers()
+  if (cookieHeader) headers.set('cookie', cookieHeader)
+  return new Request('http://localhost/test', { headers })
+}
 
 describe('getOasisMode', () => {
   let original: string | undefined
@@ -76,6 +83,52 @@ describe('readBrowserSessionFromCookieHeader', () => {
     const header = `${SESSION_COOKIE_NAME}=${encodeURIComponent(a.cookieValue)}; ${SESSION_COOKIE_NAME}=${encodeURIComponent(b.cookieValue)}`
     const verified = readBrowserSessionFromCookieHeader(header)
     expect(verified?.browserSessionId).toBe(b.browserSessionId)
+  })
+})
+
+describe('getOasisUserId', () => {
+  let originalMode: string | undefined
+  let originalKey: string | undefined
+  beforeEach(() => {
+    originalMode = process.env.OASIS_MODE
+    originalKey = process.env.RELAY_SIGNING_KEY
+    // Hosted mode requires a signing key — provide one for the duration of these tests.
+    process.env.RELAY_SIGNING_KEY = 'unit-test-key-not-secret'
+  })
+  afterEach(() => {
+    if (originalMode === undefined) delete process.env.OASIS_MODE
+    else process.env.OASIS_MODE = originalMode
+    if (originalKey === undefined) delete process.env.RELAY_SIGNING_KEY
+    else process.env.RELAY_SIGNING_KEY = originalKey
+  })
+
+  it('returns "local-user" in local mode regardless of cookie', async () => {
+    delete process.env.OASIS_MODE
+    const minted = mintSessionCookieValue()
+    const req = makeRequest(`${SESSION_COOKIE_NAME}=${encodeURIComponent(minted.cookieValue)}`)
+    expect(await getOasisUserId(req)).toBe('local-user')
+  })
+
+  it('returns the verified browserSessionId in hosted mode', async () => {
+    process.env.OASIS_MODE = 'hosted'
+    const minted = mintSessionCookieValue()
+    const req = makeRequest(`${SESSION_COOKIE_NAME}=${encodeURIComponent(minted.cookieValue)}`)
+    expect(await getOasisUserId(req)).toBe(minted.browserSessionId)
+  })
+
+  it('falls back to "local-user" in hosted mode when cookie is missing', async () => {
+    process.env.OASIS_MODE = 'hosted'
+    const req = makeRequest()
+    expect(await getOasisUserId(req)).toBe('local-user')
+  })
+
+  it('falls back to "local-user" in hosted mode when cookie is tampered', async () => {
+    process.env.OASIS_MODE = 'hosted'
+    const minted = mintSessionCookieValue()
+    const [payload] = minted.cookieValue.split('.')
+    const tampered = `${payload}.AAAAAAAAAAAAAAAAAAAAAA`
+    const req = makeRequest(`${SESSION_COOKIE_NAME}=${encodeURIComponent(tampered)}`)
+    expect(await getOasisUserId(req)).toBe('local-user')
   })
 })
 

@@ -143,6 +143,7 @@ export function ToolCallCard({
   compact = false,
   audioTargetAvatarId = null,
   autoPlayAudio = false,
+  suppressMedia = false,
 }: {
   name: string
   icon: string
@@ -152,6 +153,7 @@ export function ToolCallCard({
   compact?: boolean
   audioTargetAvatarId?: string | null
   autoPlayAudio?: boolean
+  suppressMedia?: boolean
 }) {
   // Match both unprefixed names (Anorak route/direct callTool) and namespaced
   // names (Claude Code MCP subprocess uses mcp__<server>__<tool>).
@@ -185,7 +187,7 @@ export function ToolCallCard({
     }
   }, [isScreenshotTool, result])
   const hasScreenshots = screenshotUrls.length > 0
-  const mediaRefs = isScreenshotTool ? [] : extractToolResultMediaReferences(result)
+  const mediaRefs = suppressMedia || isScreenshotTool ? [] : extractToolResultMediaReferences(result)
   const hasMedia = mediaRefs.length > 0
   const canExpand = hasDetails || hasScreenshots || hasMedia
 
@@ -646,7 +648,7 @@ function renderMarkdownLines(content: string): React.ReactNode {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TOKEN COUNTER — shared compact display for both Anorak panels
-// Display format: ↓123K ↑45K $0.42
+// Display format: in 123K out 45K $0.42
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function TokenCounter({
@@ -667,8 +669,8 @@ export function TokenCounter({
   if (!alwaysShow && inputTokens === 0 && outputTokens === 0 && costUsd === 0) return null
   return (
     <div className={`flex items-center gap-3 text-[9px] font-mono ${isStreaming ? 'animate-pulse' : ''} ${className}`}>
-      <span style={{ color: '#38bdf8' }}>↓{fmtTokens(inputTokens)}</span>
-      <span style={{ color: '#fbbf24' }}>↑{fmtTokens(outputTokens)}</span>
+      <span style={{ color: '#38bdf8' }}>in {fmtTokens(inputTokens)}</span>
+      <span style={{ color: '#fbbf24' }}>out {fmtTokens(outputTokens)}</span>
       {costUsd > 0 && <span style={{ color: '#4ade80' }}>${costUsd.toFixed(costUsd < 0.01 ? 4 : 2)}</span>}
     </div>
   )

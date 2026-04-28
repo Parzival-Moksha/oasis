@@ -10,7 +10,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextResponse } from 'next/server'
-import { getLocalUserId } from '@/lib/local-auth'
+import { getOasisUserId } from '@/lib/session'
 import { listSnapshots, restoreSnapshot, loadWorld } from '@/lib/forge/world-server'
 
 type RouteContext = { params: Promise<{ id: string }> }
@@ -19,12 +19,12 @@ type RouteContext = { params: Promise<{ id: string }> }
 // GET /api/worlds/[id]/snapshots — List all snapshots for a world
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   try {
-    const _userId = await getLocalUserId()
+    const userId = await getOasisUserId(request)
 
     const { id } = await context.params
-    const snapshots = await listSnapshots(id, _userId)
+    const snapshots = await listSnapshots(id, userId)
     return NextResponse.json(snapshots)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -40,7 +40,7 @@ export async function GET(_request: Request, context: RouteContext) {
 
 export async function POST(request: Request, context: RouteContext) {
   try {
-    const _userId = await getLocalUserId()
+    const userId = await getOasisUserId(request)
 
     const { id } = await context.params
     const { snapshotId } = await request.json() as { snapshotId: string }
@@ -49,7 +49,7 @@ export async function POST(request: Request, context: RouteContext) {
       return NextResponse.json({ error: 'snapshotId required' }, { status: 400 })
     }
 
-    const success = await restoreSnapshot(id, _userId, snapshotId)
+    const success = await restoreSnapshot(id, userId, snapshotId)
     if (!success) {
       return NextResponse.json({ error: 'Failed to restore snapshot' }, { status: 500 })
     }
@@ -66,14 +66,14 @@ export async function POST(request: Request, context: RouteContext) {
 // PUT /api/worlds/[id]/snapshots — Create a manual snapshot (user-triggered)
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function PUT(_request: Request, context: RouteContext) {
+export async function PUT(request: Request, context: RouteContext) {
   try {
-    const _userId = await getLocalUserId()
+    const userId = await getOasisUserId(request)
 
     const { id } = await context.params
 
     // Load current world state
-    const worldState = await loadWorld(id, _userId)
+    const worldState = await loadWorld(id, userId)
     if (!worldState) {
       return NextResponse.json({ error: 'World not found' }, { status: 404 })
     }

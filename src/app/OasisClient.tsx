@@ -6,7 +6,6 @@
 
 import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { RealmSelector } from '@/components/realms/RealmSelector'
 import { useOasisStore } from '@/store/oasisStore'
 import { registerStoreHandler } from '@/lib/event-bus'
 import { registerAudioSubscriber } from '@/lib/audio-manager'
@@ -53,9 +52,6 @@ export default function OasisClient() {
           </div>
         </div>
       )}
-
-      <RealmSelector />
-
     </main>
   )
 }

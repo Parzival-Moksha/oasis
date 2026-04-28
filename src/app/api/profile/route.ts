@@ -6,11 +6,11 @@
 
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { getLocalUserId } from '@/lib/local-auth'
+import { getOasisUserId } from '@/lib/session'
 import { levelFromXp, levelProgress, xpToNextLevel, getLevelTitle } from '@/lib/xp'
 import { FREE_CREDITS } from '@/lib/conjure/types'
 
-/** Ensure a Profile row exists for the local user, return it */
+/** Ensure a Profile row exists for the user, return it */
 async function ensureProfile(userId: string) {
   return prisma.profile.upsert({
     where: { userId },
@@ -19,9 +19,9 @@ async function ensureProfile(userId: string) {
   })
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const userId = await getLocalUserId()
+    const userId = await getOasisUserId(request)
     const p = await ensureProfile(userId)
 
     const level = levelFromXp(p.totalXp)
@@ -61,7 +61,7 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
-    const userId = await getLocalUserId()
+    const userId = await getOasisUserId(request)
     const body = await request.json()
 
     // Ensure profile exists first

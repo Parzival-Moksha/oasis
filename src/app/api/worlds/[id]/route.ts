@@ -11,7 +11,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextResponse } from 'next/server'
-import { getLocalUserId } from '@/lib/local-auth'
+import { getOasisUserId } from '@/lib/session'
 import {
   loadWorld, saveWorld, deleteWorld, getRegistry, updateObjectCount,
   type WorldState,
@@ -26,12 +26,12 @@ export const runtime = 'nodejs'
 // GET /api/worlds/[id] — Load a single world's full state
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   try {
-    const _userId = await getLocalUserId()
+    const userId = await getOasisUserId(request)
 
     const { id } = await context.params
-    const world = await loadWorld(id, _userId)
+    const world = await loadWorld(id, userId)
     if (!world) {
       return NextResponse.json({ error: 'World not found' }, { status: 404 })
     }
@@ -54,7 +54,7 @@ export async function GET(_request: Request, context: RouteContext) {
 
 export async function PUT(request: Request, context: RouteContext) {
   try {
-    const _userId = await getLocalUserId()
+    const userId = await getOasisUserId(request)
 
     const { id } = await context.params
     const body = await request.json()
@@ -62,13 +62,13 @@ export async function PUT(request: Request, context: RouteContext) {
     const state = body as Omit<WorldState, 'version' | 'savedAt'>
 
     // Local mode: just save. No ownership drama.
-    await saveWorld(id, _userId, state)
+    await saveWorld(id, userId, state)
 
     // Sync object count (fire-and-forget)
     const objectCount = (state.conjuredAssetIds?.length || 0)
       + (state.catalogPlacements?.length || 0)
       + (state.craftedScenes?.length || 0)
-    updateObjectCount(id, _userId, objectCount).catch(() => {})
+    updateObjectCount(id, userId, objectCount).catch(() => {})
 
     return NextResponse.json({ ok: true, savedAt: new Date().toISOString() })
   } catch (err) {
@@ -84,7 +84,7 @@ export async function PUT(request: Request, context: RouteContext) {
 
 export async function PATCH(request: Request, context: RouteContext) {
   try {
-    const _userId = await getLocalUserId()
+    const userId = await getOasisUserId(request)
 
     const { id } = await context.params
     const body = await request.json() as { name?: string; icon?: string }
@@ -99,7 +99,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     const { prisma } = await import('@/lib/db')
     await prisma.world.updateMany({
-      where: { id, userId: _userId },
+      where: { id, userId: userId },
       data: { ...updates, updatedAt: new Date() },
     })
 
@@ -115,19 +115,19 @@ export async function PATCH(request: Request, context: RouteContext) {
 // DELETE /api/worlds/[id] — Delete world
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function DELETE(_request: Request, context: RouteContext) {
+export async function DELETE(request: Request, context: RouteContext) {
   try {
-    const _userId = await getLocalUserId()
+    const userId = await getOasisUserId(request)
 
     const { id } = await context.params
 
     // Don't let user delete their last world
-    const registry = await getRegistry(_userId)
+    const registry = await getRegistry(userId)
     if (registry.length <= 1) {
       return NextResponse.json({ error: 'Cannot delete your only world' }, { status: 400 })
     }
 
-    await deleteWorld(id, _userId)
+    await deleteWorld(id, userId)
 
     return NextResponse.json({ ok: true, deleted: id })
   } catch (err) {
