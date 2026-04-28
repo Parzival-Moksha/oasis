@@ -139,11 +139,13 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
   const surfaceWindow = resizeDraft ? { ...win, width: winWidth, height: winHeight } : win
 
   const agentColor = win.agentType === 'anorak' ? '#38bdf8'
+    : win.agentType === 'codex' ? '#10b981'
     : win.agentType === 'anorak-pro' ? '#14b8a6'
     : win.agentType === 'browser' ? '#f97316'
     : win.agentType === 'hermes' ? '#fb7185'
     : win.agentType === 'openclaw' ? '#22d3ee'
     : win.agentType === 'merlin' ? '#f59e0b'
+    : win.agentType === 'realtime' ? '#c084fc'
     : win.agentType === 'parzival' ? '#c084fc'
     : '#22c55e'
 

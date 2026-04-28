@@ -5,6 +5,7 @@ import {
   resolveOpenclawConfig,
   writeStoredOpenclawConfig,
 } from '@/lib/openclaw-config'
+import { resetOasisGatewayClient } from '@/lib/openclaw-gateway-client'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -25,6 +26,7 @@ export async function POST(request: NextRequest) {
     defaultSessionId: typeof body?.defaultSessionId === 'string' ? body.defaultSessionId : undefined,
     lastSessionId: typeof body?.lastSessionId === 'string' ? body.lastSessionId : undefined,
   })
+  resetOasisGatewayClient()
 
   return NextResponse.json({
     ok: true,
@@ -34,6 +36,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE() {
   await clearStoredOpenclawConfig()
+  resetOasisGatewayClient()
   const config = await resolveOpenclawConfig()
   return NextResponse.json({
     ok: true,

@@ -1,0 +1,15 @@
+{
+  "name": "@oasis/oasis-voice-portal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Oasis voice portal plugin for OpenClaw Gateway.",
+  "openclaw": {
+    "extensions": [
+      "./index.js"
+    ]
+  },
+  "dependencies": {
+    "openclaw": "2026.4.15"
+  }
+}

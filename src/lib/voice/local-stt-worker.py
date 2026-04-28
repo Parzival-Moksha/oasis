@@ -74,35 +74,85 @@ emit({
 
 model = None
 
-try:
-    model = WhisperModel(
+
+def is_cuda_library_error(exc: Exception) -> bool:
+    text = f"{exc}\n{traceback.format_exc(limit=3)}".lower()
+    return any(part in text for part in ("cuda", "cublas", "cudnn"))
+
+
+def set_status(state: str, message: str, device: str, compute_type: str) -> None:
+    global status
+    status = {
+        "state": state,
+        "message": message,
+        "model": DEFAULT_MODEL,
+        "device": device,
+        "computeType": compute_type,
+    }
+    emit({
+        "type": "status",
+        **status,
+    })
+
+
+def load_whisper_model(device: str, compute_type: str):
+    return WhisperModel(
         DEFAULT_MODEL,
-        device=resolved_device,
-        compute_type=resolved_compute_type,
+        device=device,
+        compute_type=compute_type,
     )
-    status = {
-        "state": "ready",
-        "message": f"{DEFAULT_MODEL} ready on {resolved_device}",
-        "model": DEFAULT_MODEL,
-        "device": resolved_device,
-        "computeType": resolved_compute_type,
-    }
-    emit({
-        "type": "status",
-        **status,
-    })
+
+
+def switch_to_cpu(reason: Exception) -> bool:
+    global model, resolved_device, resolved_compute_type
+    if resolved_device != "cuda" or not is_cuda_library_error(reason):
+        return False
+
+    resolved_device = "cpu"
+    resolved_compute_type = "int8"
+    set_status(
+        "loading",
+        f"CUDA libraries unavailable; retrying {DEFAULT_MODEL} on CPU...",
+        resolved_device,
+        resolved_compute_type,
+    )
+
+    try:
+        model = load_whisper_model(resolved_device, resolved_compute_type)
+    except Exception as fallback_exc:
+        set_status(
+            "error",
+            f"Failed to load local STT model on CPU after CUDA fallback: {fallback_exc}",
+            resolved_device,
+            resolved_compute_type,
+        )
+        return False
+
+    set_status(
+        "ready",
+        f"{DEFAULT_MODEL} ready on CPU after CUDA fallback",
+        resolved_device,
+        resolved_compute_type,
+    )
+    return True
+
+
+try:
+    model = load_whisper_model(resolved_device, resolved_compute_type)
+    set_status(
+        "ready",
+        f"{DEFAULT_MODEL} ready on {resolved_device}",
+        resolved_device,
+        resolved_compute_type,
+    )
 except Exception as exc:
-    status = {
-        "state": "error",
-        "message": f"Failed to load local STT model: {exc}",
-        "model": DEFAULT_MODEL,
-        "device": resolved_device,
-        "computeType": resolved_compute_type,
-    }
-    emit({
-        "type": "status",
-        **status,
-    })
+    if not switch_to_cpu(exc):
+        set_status(
+            "error",
+            f"Failed to load local STT model: {exc}",
+            resolved_device,
+            resolved_compute_type,
+        )
 
 
 def transcribe_audio(audio_path: str, language: str | None) -> dict:
@@ -112,16 +162,30 @@ def transcribe_audio(audio_path: str, language: str | None) -> dict:
             "error": status.get("message") or "Local STT model is unavailable.",
         }
 
-    segments, info = model.transcribe(
-        audio_path,
-        beam_size=5,
-        language=None if not language or language == "auto" else language,
-        vad_filter=True,
-        vad_parameters={
-            "min_silence_duration_ms": 300,
-            "speech_pad_ms": 200,
-        },
-    )
+    try:
+        segments, info = model.transcribe(
+            audio_path,
+            beam_size=5,
+            language=None if not language or language == "auto" else language,
+            vad_filter=True,
+            vad_parameters={
+                "min_silence_duration_ms": 300,
+                "speech_pad_ms": 200,
+            },
+        )
+    except Exception as exc:
+        if not switch_to_cpu(exc) or model is None:
+            raise
+        segments, info = model.transcribe(
+            audio_path,
+            beam_size=5,
+            language=None if not language or language == "auto" else language,
+            vad_filter=True,
+            vad_parameters={
+                "min_silence_duration_ms": 300,
+                "speech_pad_ms": 200,
+            },
+        )
 
     chunks: list[str] = []
     for segment in segments:

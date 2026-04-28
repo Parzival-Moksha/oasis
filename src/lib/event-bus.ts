@@ -29,6 +29,8 @@ export type OasisCommand =
   // Agent windows
   | { type: 'FOCUS_AGENT_WINDOW'; payload: { id: string } }
   | { type: 'UNFOCUS_AGENT_WINDOW' }
+  | { type: 'NEXT_AGENT_WINDOW' }
+  | { type: 'PREV_AGENT_WINDOW' }
 
   // Presentation / slide navigation
   | { type: 'FOCUS_IMAGE'; payload: { id: string } }
@@ -190,6 +192,12 @@ export function registerStoreHandler(): () => void {
         break
       case 'UNFOCUS_AGENT_WINDOW':
         store.focusAgentWindow(null)
+        break
+      case 'NEXT_AGENT_WINDOW':
+        store.navigateAgentWindow(1)
+        break
+      case 'PREV_AGENT_WINDOW':
+        store.navigateAgentWindow(-1)
         break
       case 'FOCUS_IMAGE':
         store.focusImage(cmd.payload.id)

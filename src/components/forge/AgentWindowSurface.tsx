@@ -6,10 +6,12 @@ import { resolveAgentWindowRenderMode } from '../../lib/agent-window-renderers'
 import { AnorakWindowContent } from './AnorakWindowContent'
 import { AnorakProPanel } from './AnorakProPanel'
 import { BrowserWindowContent } from './BrowserWindowContent'
+import { CodexWindowContent } from './CodexWindowContent'
 import { HermesPanel } from './HermesPanel'
 import { MerlinPanel } from './MerlinPanel'
 import { OpenclawPanel } from './OpenclawPanel'
 import { ParzivalWindowContent } from './ParzivalWindowContent'
+import { RealtimePanel } from './RealtimePanel'
 
 export const AgentWindowSurface = memo(function AgentWindowSurface({ win }: { win: AgentWindow }) {
   const winWidth = win.width || 800
@@ -22,6 +24,9 @@ export const AgentWindowSurface = memo(function AgentWindowSurface({ win }: { wi
   switch (win.agentType) {
     case 'anorak':
       content = <AnorakWindowContent windowId={win.id} initialSessionId={win.sessionId} windowBlur={win.windowBlur ?? 0} />
+      break
+    case 'codex':
+      content = <CodexWindowContent windowId={win.id} initialSessionId={win.sessionId} windowBlur={win.windowBlur ?? 0} />
       break
     case 'anorak-pro':
       content = <AnorakProPanel isOpen embedded hideCloseButton onClose={() => {}} />
@@ -40,6 +45,9 @@ export const AgentWindowSurface = memo(function AgentWindowSurface({ win }: { wi
       break
     case 'merlin':
       content = <MerlinPanel isOpen embedded hideCloseButton onClose={() => {}} />
+      break
+    case 'realtime':
+      content = <RealtimePanel isOpen embedded hideCloseButton onClose={() => {}} />
       break
     case 'devcraft':
       content = (

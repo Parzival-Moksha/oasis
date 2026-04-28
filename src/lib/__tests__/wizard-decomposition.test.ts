@@ -207,9 +207,9 @@ describe('AgentsTab store isolation', () => {
     expect(source).toMatch(/export function AgentsTabContent\(\)\s*\{/)
   })
 
-  it('defines AGENT_TYPES with all 5 agents', () => {
+  it('defines AGENT_TYPES with codex and the existing core agents', () => {
     expect(source).toContain('AGENT_TYPES')
-    const expectedAgents = ['anorak', 'anorak-pro', 'merlin', 'devcraft', 'parzival']
+    const expectedAgents = ['anorak', 'codex', 'anorak-pro', 'merlin', 'devcraft', 'parzival']
     for (const agent of expectedAgents) {
       expect(source).toContain(`'${agent}'`)
     }

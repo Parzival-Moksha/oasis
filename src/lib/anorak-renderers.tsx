@@ -8,11 +8,11 @@ import { MediaBubble, type MediaType } from '../components/forge/MediaBubble'
 import { fmtTokens } from './anorak-engine'
 
 // Trusted media URL patterns for auto-detection
-const MEDIA_URL_RE = /((?:https?:\/\/(?:localhost|127\.0\.0\.1|fal\.media|fal-cdn\.|oaidalleapiprodscus\.|replicate\.delivery)[^\s]+)|(?:\/?generated-(?:images|voices|videos)\/[^\s"')]+))/i
+const MEDIA_URL_RE = /((?:https?:\/\/(?:localhost|127\.0\.0\.1|fal\.media|fal-cdn\.|oaidalleapiprodscus\.|replicate\.delivery)[^\s]+)|(?:\/?generated-(?:images|voices|videos|music)\/[^\s"')]+))/i
 
 export function detectMediaType(url: string): MediaType | null {
   if (/\/?generated-images\/|\.(?:png|jpg|jpeg|gif|webp)(?:\?|$)/i.test(url)) return 'image'
-  if (/\/?generated-voices\/|\.(?:mp3|wav|ogg|oga|opus|m4a)(?:\?|$)/i.test(url)) return 'audio'
+  if (/\/?generated-(?:voices|music)\/|\.(?:mp3|wav|ogg|oga|opus|m4a)(?:\?|$)/i.test(url)) return 'audio'
   if (/\/?generated-videos\/|\.(?:mp4|webm|m4v)(?:\?|$)/i.test(url)) return 'video'
   // Trusted media services — infer type when extension is missing
   if (/(?:fal\.media|fal-cdn\.|oaidalleapiprodscus\.|replicate\.delivery)/i.test(url)) {
@@ -21,6 +21,50 @@ export function detectMediaType(url: string): MediaType | null {
   }
   if (/(?:api\.elevenlabs\.io|elevenlabs\.io\/)/i.test(url)) return 'audio'
   return null
+}
+
+export function isScreenshotToolDisplay(name: string, display = ''): boolean {
+  const identity = `${name} ${display}`.toLowerCase()
+  return /(?:^|__|[\s.])(?:screenshot[_\s-]viewport|screenshot[_\s-]avatar|avatarpic[_\s-])/.test(identity)
+}
+
+export function extractToolResultMediaReferences(result?: { preview: string; fullResult?: string }): Array<{ path: string; mediaType: MediaType }> {
+  const source = result?.fullResult || result?.preview || ''
+  if (!source) return []
+
+  const refs: Array<{ path: string; mediaType: MediaType }> = []
+  const seen = new Set<string>()
+  const add = (value: unknown) => {
+    if (typeof value !== 'string') return
+    const mediaType = detectMediaType(value)
+    if (!mediaType || seen.has(value)) return
+    seen.add(value)
+    refs.push({ path: value, mediaType })
+  }
+  const walk = (value: unknown) => {
+    if (typeof value === 'string') {
+      add(value)
+      return
+    }
+    if (Array.isArray(value)) {
+      value.forEach(walk)
+      return
+    }
+    if (!value || typeof value !== 'object') return
+    for (const nested of Object.values(value as Record<string, unknown>)) {
+      walk(nested)
+    }
+  }
+
+  try {
+    walk(JSON.parse(source) as unknown)
+  } catch {
+    for (const match of source.matchAll(new RegExp(MEDIA_URL_RE.source, 'gi'))) {
+      add(match[1])
+    }
+  }
+
+  return refs
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -97,6 +141,8 @@ export function ToolCallCard({
   input,
   result,
   compact = false,
+  audioTargetAvatarId = null,
+  autoPlayAudio = false,
 }: {
   name: string
   icon: string
@@ -104,13 +150,17 @@ export function ToolCallCard({
   input?: Record<string, unknown>
   result?: { preview: string; isError: boolean; length: number; fullResult?: string }
   compact?: boolean
+  audioTargetAvatarId?: string | null
+  autoPlayAudio?: boolean
 }) {
   // Match both unprefixed names (Anorak route/direct callTool) and namespaced
   // names (Claude Code MCP subprocess uses mcp__<server>__<tool>).
-  const isScreenshotTool = /(?:^|__)(screenshot_viewport|screenshot_avatar|avatarpic_)/.test(name)
+  const isScreenshotTool = isScreenshotToolDisplay(name, display)
   const [expanded, setExpanded] = useState(isScreenshotTool)
   const hasDetails = input && Object.keys(input).length > 0
   const isFileOp = ['Read', 'Edit', 'Write'].includes(name)
+  const isShellOp = name === 'Bash' || name === 'Shell'
+  const isCommandLike = isShellOp || name === 'Generate Image' || name === 'Generate Voice' || name === 'Generate Video' || name === 'Oasis HTTP'
   const filePath = input?.file_path as string | undefined
   const textSize = compact ? 'text-[10px]' : 'text-[11px]'
   const detailSize = compact ? 'text-[9px]' : 'text-[10px]'
@@ -135,7 +185,15 @@ export function ToolCallCard({
     }
   }, [isScreenshotTool, result])
   const hasScreenshots = screenshotUrls.length > 0
-  const canExpand = hasDetails || hasScreenshots
+  const mediaRefs = isScreenshotTool ? [] : extractToolResultMediaReferences(result)
+  const hasMedia = mediaRefs.length > 0
+  const canExpand = hasDetails || hasScreenshots || hasMedia
+
+  React.useEffect(() => {
+    if ((isScreenshotTool && hasScreenshots) || hasMedia) {
+      setExpanded(true)
+    }
+  }, [hasMedia, hasScreenshots, isScreenshotTool])
 
   return (
     <div className="rounded-lg overflow-hidden" style={{
@@ -180,7 +238,7 @@ export function ToolCallCard({
               <div className="text-red-400/70 mb-1">- {String(input.old_string)}</div>
               <div className="text-green-400/70">+ {String(input.new_string)}</div>
             </>
-          ) : name === 'Bash' && input?.command ? (
+          ) : isCommandLike && input?.command ? (
             <span className="text-amber-300">$ {String(input.command)}</span>
           ) : name === 'TodoWrite' && input?.todos ? (
             <div className="space-y-0.5">
@@ -255,7 +313,25 @@ export function ToolCallCard({
 
       {/* Tool result — suppress verbose JSON for screenshot tools when images
           are rendered; the pic itself is worth more than a 2KB JSON dump */}
-      {expanded && result && result.preview && !(isScreenshotTool && hasScreenshots) && (
+      {expanded && hasMedia && (
+        <div
+          className="px-3 py-2 flex flex-col gap-2 border-t border-white/5"
+          style={{ background: 'rgba(0,0,0,0.25)' }}
+        >
+          {mediaRefs.map((entry, i) => (
+            <MediaBubble
+              key={`${entry.path}-${i}`}
+              url={entry.path}
+              mediaType={entry.mediaType}
+              compact={compact}
+              autoPlay={entry.mediaType === 'audio' && autoPlayAudio}
+              avatarLipSyncTargetId={entry.mediaType === 'audio' ? audioTargetAvatarId || undefined : undefined}
+            />
+          ))}
+        </div>
+      )}
+
+      {expanded && result && result.preview && !(isScreenshotTool && hasScreenshots) && !hasMedia && (
         <div
           className={`px-3 py-2 ${detailSize} font-mono border-t border-white/5 max-h-[200px] overflow-y-auto whitespace-pre-wrap`}
           style={{

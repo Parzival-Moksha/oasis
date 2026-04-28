@@ -6,7 +6,6 @@
 // Level 1: 100 XP, Level 10: 15,849 XP, Level 50: ~850K XP
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { getServerSupabase } from './supabase'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // XP AWARDS — hardcoded defaults, overridable via admin dashboard
@@ -39,7 +38,6 @@ export const DEFAULT_XP_AWARDS = {
   CO_BUILD: 15,              // build in someone else's world
 
   // Meta
-  SUBMIT_FEEDBACK: 10,       // Anorak: bug report or feature request
   VIBECODE_REPORT: 100,      // Anorak vibecode: LLM-assisted deep report
 
   // Onboarding quests — 3x multiplier on first-time actions
@@ -53,39 +51,17 @@ export const XP_AWARDS = DEFAULT_XP_AWARDS
 export type XpAction = keyof typeof DEFAULT_XP_AWARDS
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DYNAMIC XP CONFIG — from Supabase app_config, 60s cache (mirrors pricing)
+// LOCAL XP CONFIG — af_oasis uses local defaults
 // ═══════════════════════════════════════════════════════════════════════════
 
-let cachedXpAwards: Record<string, number> | null = null
-let xpCacheExpiry = 0
-
-/** Get XP awards with dynamic overrides from admin dashboard */
+/** XP awards are local-first in af_oasis. */
 export async function getXpAwards(): Promise<Record<string, number>> {
-  if (cachedXpAwards && Date.now() < xpCacheExpiry) return cachedXpAwards
-
-  try {
-    const { data } = await getServerSupabase()
-      .from('app_config')
-      .select('value')
-      .eq('key', 'xp_awards')
-      .single()
-
-    if (data?.value && typeof data.value === 'object') {
-      cachedXpAwards = { ...DEFAULT_XP_AWARDS, ...(data.value as Record<string, number>) }
-      xpCacheExpiry = Date.now() + 60_000
-      return cachedXpAwards
-    }
-  } catch {
-    // DB unavailable — use defaults
-  }
-
   return { ...DEFAULT_XP_AWARDS }
 }
 
-/** Get XP for a specific action, dynamically */
+/** Get XP for a specific action from local defaults. */
 export async function getXpForAction(action: string): Promise<number> {
-  const awards = await getXpAwards()
-  return awards[action] ?? 0
+  return DEFAULT_XP_AWARDS[action as XpAction] ?? 0
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

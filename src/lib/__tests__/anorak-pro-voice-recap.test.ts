@@ -593,13 +593,13 @@ describe('anorak-renderers.tsx — voice media detection structure', () => {
   )
 
   it('MEDIA_URL_RE matches /generated-voices/ pattern', () => {
-    expect(rendererSrc).toContain('generated-(?:images|voices|videos)')
+    expect(rendererSrc).toContain('generated-(?:images|voices|videos|music)')
   })
 
   it('detectMediaType returns "audio" for /generated-voices/', () => {
-    // In the raw source, forward slashes are escaped inside regex literals: \/generated-voices\/
-    expect(rendererSrc).toContain('generated-voices')
-    expect(rendererSrc).toMatch(/generated-voices.*?return 'audio'/)
+    // In the raw source, forward slashes are escaped inside regex literals: \/generated-(?:voices|music)\/
+    expect(rendererSrc).toContain('generated-(?:voices|music)')
+    expect(rendererSrc).toMatch(/generated-\(\?:voices\|music\).*?return 'audio'/)
   })
 
   it('renderMarkdownLine uses MEDIA_URL_RE for auto-detection', () => {

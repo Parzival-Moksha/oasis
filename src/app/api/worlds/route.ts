@@ -64,6 +64,8 @@ export async function POST(request: Request) {
         groundTiles: state.groundTiles,
         lights: state.lights,
         skyBackgroundId: state.skyBackgroundId,
+        agentWindows: state.agentWindows || [],
+        agentAvatars: state.agentAvatars || [],
       })
       return NextResponse.json(meta, { status: 201 })
     }

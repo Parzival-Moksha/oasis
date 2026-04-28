@@ -6,6 +6,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'fs'
 import { join } from 'path'
 import type { ConjuredAsset } from './types'
+import { getBundledConjuredAssets } from './bundled-assets'
 
 // Registry lives alongside the uploader data
 const DATA_DIR = join(process.cwd(), 'data')
@@ -36,8 +37,9 @@ function ensureDir() {
 function loadFromDisk(): ConjuredAsset[] {
   ensureDir()
   if (!existsSync(REGISTRY_PATH)) {
-    writeFileSync(REGISTRY_PATH, '[]', 'utf-8')
-    return []
+    const bundledAssets = getBundledConjuredAssets()
+    writeFileSync(REGISTRY_PATH, JSON.stringify(bundledAssets, null, 2), 'utf-8')
+    return bundledAssets
   }
   const raw = readFileSync(REGISTRY_PATH, 'utf-8')
   const parsed = JSON.parse(raw)
@@ -56,6 +58,13 @@ function loadFromDisk(): ConjuredAsset[] {
   if (assets.length < before) {
     console.log(`[Registry] Stripped ${before - assets.length} recovered-asset ghosts on load`)
     saveToDisk(assets)
+  }
+  if (assets.length === 0) {
+    const bundledAssets = getBundledConjuredAssets()
+    if (bundledAssets.length > 0) {
+      saveToDisk(bundledAssets)
+      return bundledAssets
+    }
   }
   return assets
 }

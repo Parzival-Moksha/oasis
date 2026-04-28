@@ -21,6 +21,7 @@ function getWindowDefaults(win: { width?: number; height?: number; scale?: numbe
 /** Agent color mapping — same as AgentWindow3D line 96 */
 function getAgentColor(agentType: string): string {
   return agentType === 'anorak' ? '#38bdf8'
+    : agentType === 'codex' ? '#10b981'
     : agentType === 'merlin' ? '#f59e0b'
     : agentType === 'parzival' ? '#14b8a6'
     : '#22c55e'
@@ -115,6 +116,10 @@ describe('AgentWindow3D colors', () => {
     expect(getAgentColor('anorak')).toBe('#38bdf8')
   })
 
+  it('codex = emerald (#10b981)', () => {
+    expect(getAgentColor('codex')).toBe('#10b981')
+  })
+
   it('merlin = amber (#f59e0b), NOT purple', () => {
     expect(getAgentColor('merlin')).toBe('#f59e0b')
   })
@@ -132,7 +137,7 @@ describe('AgentWindow3D colors', () => {
   })
 
   it('NO color contains purple hex patterns', () => {
-    const agents = ['anorak', 'merlin', 'parzival', 'devcraft', 'unknown']
+    const agents = ['anorak', 'codex', 'merlin', 'parzival', 'devcraft', 'unknown']
     for (const agent of agents) {
       const color = getAgentColor(agent)
       // Purple-ish hex ranges: #8b5cf6, #a855f7, #7c3aed, #9333ea, etc.

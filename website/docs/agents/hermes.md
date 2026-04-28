@@ -5,23 +5,31 @@ title: Hermes
 
 # Hermes
 
-Hermes is the world-aware chat bridge in Oasis. It's how a remote agent talks to you inside the Oasis UI while simultaneously reaching into the world to place objects, craft scenes, and take screenshots.
+Hermes is one supported remote-agent runtime for Oasis. Oasis does not host Hermes; it gives Hermes a chat surface, world context, and world-mutating MCP tools.
 
-If you just want to get connected, read the [Quickstart](../getting-started/quickstart). This page covers what's actually happening under the hood.
+For the shortest setup path, start with the [Quickstart](../getting-started/quickstart).
 
-## What Hermes is in Oasis
+## Integration Layers
 
-Hermes itself is an external agent runtime (typically running on a VPS). Oasis doesn't host Hermes — it integrates with it. The Oasis side of the integration gives the agent three things at once: a chat surface, world context, and world-mutating tools.
+Hermes can use three layers:
 
-## Three-layer integration
+| Layer | Purpose |
+|---|---|
+| MCP endpoint | Gives Hermes world tools such as `place_object`, `craft_scene`, `walk_avatar_to`, and `screenshot_viewport`. |
+| Optional plugin | Injects compact world context into Hermes turns. |
+| Oasis skill | Teaches Hermes how to use the shared Oasis tools safely and effectively. |
 
-Hermes connects to Oasis through three complementary layers. Each one can work without the others, but all three together is what turns a chatbot into a world-aware builder.
+The skill is no longer Hermes-only. It is the shared Oasis skill for Hermes, OpenClaw, and other MCP-capable agents.
 
-### 1. MCP endpoint — tools
+## MCP Endpoint
 
-Oasis exposes a remote MCP server at `/api/mcp/oasis` (streamable HTTP). This is where the 35+ world tools live: `place_object`, `craft_scene`, `screenshot_viewport`, `set_sky`, and friends.
+Oasis exposes streamable HTTP MCP at:
 
-Configure it in `~/.hermes/config.yaml` on the Hermes VPS:
+```text
+http://127.0.0.1:4516/api/mcp/oasis?agentType=hermes
+```
+
+Hermes config:
 
 ```yaml
 mcp_servers:
@@ -29,13 +37,11 @@ mcp_servers:
     url: http://127.0.0.1:4516/api/mcp/oasis?agentType=hermes
 ```
 
-The config key is `mcp_servers` (snake_case, plural). NOT `mcp`, NOT `mcpServers`. After saving, run `/reload-mcp` in the Hermes session.
+The config key is `mcp_servers` with snake case and plural form. After saving, run `/reload-mcp`.
 
-See [MCP Tools](./mcp-tools) for the full tool catalog.
+## Optional Plugin
 
-### 2. Plugin — per-turn context
-
-The optional Oasis Hermes plugin (`hermes-plugin/oasis`) injects a compact world summary into every agent turn before tools are called. The agent knows the sky, ground, object count, and player position without having to call `get_world_state` first.
+The optional Oasis Hermes plugin lives at `hermes-plugin/oasis`. It gives Hermes passive world context before tool calls. MCP is still the actual tool hand.
 
 Install:
 
@@ -43,13 +49,15 @@ Install:
 cp -r hermes-plugin/oasis ~/.hermes/plugins/oasis
 ```
 
-Plugin and MCP together is the best combination: plugin gives always-on context, MCP gives the hands.
+## Skill
 
-### 3. Skill — procedures
+Until ClawHub publishing is ready, ask Hermes to read:
 
-The Oasis skill (`skills/oasis/SKILL.md`, published as a Hermes tap) teaches your agent *how to use* the Oasis tools — when to self-craft vs. delegate to the sculptor, how to do progressive verification, what vision tools require. It's the playbook.
+```text
+https://raw.githubusercontent.com/Parzival-Moksha/oasis/main/skills/oasis/SKILL.md
+```
 
-Install on your Hermes agent:
+If your Hermes version supports repo taps:
 
 ```bash
 hermes skills tap add Parzival-Moksha/oasis
@@ -57,86 +65,51 @@ hermes skills install oasis
 /reload-mcp
 ```
 
-## Pairing config — where it lives and why
+## Pairing Config
 
-Hermes pairing (the API base + API key Oasis uses to call back into Hermes) lives in two places:
+Hermes pairing is the API base plus API key that Oasis uses to call Hermes.
 
-| Location | Source | Purpose |
-|---|---|---|
-| `data/hermes-config.local.json` | App-managed, written by the paste-config UI flow | Dynamic, user-authored, reload-instant |
-| `.env` (`HERMES_API_KEY`, `HERMES_API_BASE`) | Human-authored, static | Fallback when no pairing file exists |
+| Location | Purpose |
+|---|---|
+| `data/hermes-config.local.json` | App-managed, reload-instant config written by the Oasis UI. |
+| `.env` (`HERMES_API_BASE`, `HERMES_API_KEY`) | Static fallback for dev machines. |
 
-The stored JSON always wins if present. If the file is missing or empty, Oasis falls back to the `.env` values. Delete the file (via the config UI's "disconnect" action) to fall back again.
+The UI parser accepts JSON, `oasis://` URLs, and env-style blobs.
 
-Why this split:
-- The JSON file is **app-authored dynamic config**. The Oasis UI writes it when you paste a pairing blob. No restart needed — the server reads it fresh on every request.
-- The env var is **human-authored static config**. Fine for dev machines where you never rotate keys. Survives accidental JSON deletion.
+## VPS Bridge
 
-The paste parser in the config UI accepts three shapes:
-- JSON object with `apiBase` / `apiKey` keys
-- `oasis://` URL with `base` / `key` query params
-- Env-style blob (`HERMES_API_BASE=...` / `HERMES_API_KEY=...` on separate lines)
-
-Whichever your Hermes gateway hands you, paste it. The parser figures it out.
-
-## SSH dual-forward tunnel
-
-When Hermes lives on a VPS and Oasis runs on your laptop, you need a single SSH session with two forwards — one for chat traffic outbound, one for MCP traffic inbound:
+When Hermes runs on a VPS and Oasis runs on your laptop, use one SSH command with two forwards:
 
 ```bash
-ssh -o ExitOnForwardFailure=yes \
-  -L 8642:127.0.0.1:8642 \
-  -R 4516:127.0.0.1:4516 \
-  user@your-vps -N
+ssh -N -T -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -L 8642:127.0.0.1:8642 -R 4516:127.0.0.1:4516 user@hermes-host
 ```
 
-- `-L 8642` lets Oasis reach the Hermes API over `127.0.0.1:8642`.
-- `-R 4516` lets Hermes reach the Oasis MCP endpoint over `127.0.0.1:4516` from the VPS side.
+- `-L 8642` lets local Oasis reach the remote Hermes API.
+- `-R 4516` lets remote Hermes reach local Oasis MCP.
+- `ExitOnForwardFailure=yes` fails fast if a tunnel port is already occupied.
+- `ServerAliveInterval=15` and `ServerAliveCountMax=3` are SSH keepalives. If the bridge stops answering for about 45 seconds, SSH exits and frees the ports for reconnect.
 
-:::warning
-Without the `-R 4516` half, Hermes can chat but cannot touch the world. This is the #1 cause of "why does my agent pretend to place things but nothing appears" issues.
-:::
+Without the `-R 4516` half, Hermes may chat but cannot touch the world.
 
-The tunnel route (`/api/hermes/tunnel`) can remember and relaunch this command for you, so you don't have to rebuild the forward every time.
+## Security
 
-## Self-craft is the default
+Oasis keeps Hermes surfaces local by default:
 
-When you ask Hermes to build something procedural (campfire, shrine, crystal cluster, fountain), the skill instructs it to **write the primitives itself** and pass them as the `objects` array to `craft_scene`.
+- `/api/hermes` is localhost-only.
+- Pairing writes are localhost-only.
+- `data/hermes-config.local.json` is gitignored.
 
-The sculptor fallback (`strategy: "sculptor"`) spawns an out-of-process Claude Code subprocess on the Oasis host — it costs a real LLM call, takes seconds to stream primitives in, and requires the Claude Code CLI on PATH. Use it only for deliberately ambitious scenes or when you explicitly say "have the sculptor do it."
-
-Otherwise: self-craft. Hermes is an LLM. It can write the JSON.
-
-## Security & remote access
-
-Oasis keeps Hermes surfaces conservative by default:
-
-- `/api/hermes` (the chat proxy) is localhost-only.
-- Pairing writes (`POST` / `DELETE /api/hermes/config`) are localhost-only.
-- Pairing JSON at `data/hermes-config.local.json` is gitignored; on Unix it's chmod 0600.
-
-To allow remote access (exposing Oasis to a network rather than just your machine):
-
-- Set `OASIS_ALLOW_REMOTE_HERMES_PROXY=true` to open the chat proxy.
-- Set `OASIS_ALLOW_REMOTE_HERMES_PAIRING=true` to allow remote pairing writes.
-
-For multi-user Oasis hosts, set `OASIS_MCP_KEY` and send a matching `Authorization: Bearer` header from the Hermes side. Solo / local users should skip this — the SSH reverse tunnel is already the auth boundary.
+Only expose remote access deliberately. For shared hosts, set `OASIS_MCP_KEY` and require `Authorization: Bearer <token>` on remote MCP calls.
 
 ## Reference
 
-### Core routes
+| Route | Purpose |
+|---|---|
+| `/api/hermes` | Main Hermes chat bridge |
+| `/api/hermes/config` | Pairing storage |
+| `/api/hermes/sessions` | Session history |
+| `/api/hermes/media` | Media attachment inspection |
+| `/api/hermes/transcribe` | Speech transcription |
+| `/api/hermes/tunnel` | SSH tunnel command storage and lifecycle |
 
-| Route | Methods | Purpose |
-| --- | --- | --- |
-| `/api/hermes` | `GET`, `POST` | Main Hermes chat bridge |
-| `/api/hermes/config` | `GET`, `POST`, `DELETE` | Pairing storage (paste-parser + file writes) |
-| `/api/hermes/sessions` | `GET` | Session history |
-| `/api/hermes/media` | `GET` | Media attachment inspection |
-| `/api/hermes/transcribe` | `GET`, `POST` | Speech transcription |
-| `/api/hermes/tunnel` | `GET`, `POST`, `DELETE` | SSH tunnel command storage and control |
-
-### Links
-
-- [Quickstart](../getting-started/quickstart) — six-step onboarding from clone to `take a screenshot`
-- [MCP Tools](./mcp-tools) — full tool catalog
-- [Hermes skill on GitHub](https://github.com/Parzival-Moksha/oasis/tree/main/skills/oasis) — source of truth for skill behavior
+See [MCP Tools](./mcp-tools) for the full shared tool catalog.

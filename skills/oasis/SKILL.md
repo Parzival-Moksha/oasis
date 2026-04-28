@@ -1,186 +1,174 @@
 ---
 name: oasis
-description: Enables an agent to work inside Oasis 3D worlds — place catalog objects, craft procedural scenes with shaders and textures, paint ground tiles, move avatars, take screenshots, and drive Forge text-to-3D conjuration through the Oasis MCP tool surface.
-version: 0.4.0
-author: Levi
-license: MIT
+description: Connect Hermes, OpenClaw, and other MCP-capable agents to Oasis 3D worlds for world state, object placement, avatar movement, screenshots, and Forge text-to-3D tools.
+license: MIT-0
 metadata:
+  tags: [oasis, mcp, openclaw, hermes, world-building, 3d, creative]
+  agentTypes: [openclaw, hermes, mcp]
+  openclaw:
+    skillKey: oasis
+    homepage: https://github.com/Parzival-Moksha/oasis
   hermes:
     tags: [oasis, mcp, world-building, 3d, integrations, creative]
 ---
 
 # Oasis
 
-Oasis is a local-first 3D world that agents can inspect, modify, navigate, and build through a shared MCP tool surface. Humans run Oasis on their laptop; agents use these tools to co-create 3D scenes with them in real time.
+Oasis is a local-first 3D world that agents can inspect, modify, navigate, and build through a shared MCP tool surface. Humans run Oasis in a browser; agents use tools to co-create 3D scenes with them in real time.
 
-This skill teaches you HOW TO USE those tools effectively once the user has already connected you to their Oasis. It does not cover installation — see the user's setup docs at https://parzival-moksha.github.io/oasis/docs/getting-started/quickstart/ if they need help connecting.
+This skill is the agent playbook. It tells you how to connect when the user asks, how to use the tools once connected, and how to verify honestly.
 
-## When To Use
+## Quick Connect
 
-Use this skill when:
-- the user wants you to inspect, place, remove, paint, light, move, or screenshot inside Oasis
-- the user wants to craft a procedural scene (campfire, garden, cyberpunk alley, shrine, etc.)
-- the user wants a 3D asset conjured via text-to-3D
-- the user wants you to move your avatar or take visual verification shots
+If the user asks you to connect to Oasis:
 
-Do not use this skill for generic coding unless Oasis integration is part of the task.
+1. Identify your runtime: `openclaw`, `hermes`, or another MCP-capable agent.
+2. If Oasis tools are already available, skip setup and run the smoke test below.
+3. If you run on the same machine as Oasis, use:
 
-## What You Can Do
-
-The Oasis MCP tool surface supports:
-- world state and world summary (`get_world_state`, `get_world_info`)
-- object search and asset search (`search_assets`, `query_objects`)
-- placing, modifying, and removing catalog objects (`place_object`, `modify_object`, `remove_object`)
-- crafting procedural scenes (`craft_scene`, `get_craft_guide`, `get_craft_job`)
-- sky, ground presets, tile paint, and lights (`set_sky`, `set_ground_preset`, `paint_ground_tiles`, `add_light`, `modify_light`)
-- embodied agent avatars (`set_avatar`, `walk_avatar_to`, `play_avatar_animation`, `list_avatar_animations`)
-- viewport and avatar screenshots (`screenshot_viewport`, `screenshot_avatar`, `avatarpic_merlin`, `avatarpic_user`)
-- Forge conjuration workflows (`conjure_asset`, `process_conjured_asset`, `place_conjured_asset`, `list_conjured_assets`, `get_conjured_asset`, `delete_conjured_asset`)
-- world management (`list_worlds`, `create_world`, `load_world`, `clear_world`)
-- behavior hints (`set_behavior`)
-
-The agent should usually:
-1. call `get_world_state` or `get_world_info` to understand the current scene
-2. call `query_objects` or `search_assets` as needed
-3. make a world mutation
-4. use screenshot tools when visual verification matters
-
-## Self-Craft Is The Default
-
-When the user asks you to build something procedural (a campfire, a shrine, a crystal cluster, a fountain), **you write the primitives yourself** and pass them as the `objects` array to `craft_scene`. Do not delegate to the sculptor unless explicitly asked.
-
-```
-craft_scene({
-  name: "Arcane campfire",
-  position: [0, 0, 0],
-  objects: [
-    { type: "cylinder", position: [0, 0.08, 0], scale: [0.55, 0.08, 0.55], color: "#3b2a1d", roughness: 0.92 },
-    { type: "flame", position: [0, 0.3, 0], scale: [0.22, 0.35, 0.22], color: "#fff4dd", color2: "#ff7a00", color3: "#9b1d00" },
-    { type: "particle_emitter", position: [0, 0.75, 0], scale: [0.45, 0.85, 0.45], color: "#ffb347", particleCount: 80, particleType: "ember" },
-    { type: "crystal", position: [0.65, 0.32, 0.1], scale: [0.22, 0.6, 0.22], rotation: [0.14, 0.3, -0.08], color: "#4338ca", color2: "#8b5cf6", seed: 11 }
-  ]
-})
+```text
+http://127.0.0.1:4516/api/mcp/oasis?agentType=<your-agent-type>
 ```
 
-What you have access to (call `get_craft_guide` for the live spec):
-- **Geometry**: `box`, `sphere`, `cylinder`, `cone`, `torus`, `plane`, `capsule`, `text`
-- **Shaders**: `flame`, `flag`, `crystal`, `water`, `particle_emitter`, `glow_orb`, `aurora`
-- **Animations**: `rotate`, `bob`, `pulse`, `swing`, `orbit` (with `type`, `speed`, `axis`, `amplitude`)
-- **Textures**: 20 presets including `stone`, `cobblestone`, `marble`, `concrete`, `grass`, `sand`, `snow`, `metal`, `wood`, `kn-planks`, `kn-cobblestone`, `kn-roof`, `kn-wall`. Apply via `texturePresetId` + `textureRepeat`.
-- **Material fields**: `metalness`, `roughness`, `opacity`, `emissive`, `emissiveIntensity`, `color2`, `color3`
+For OpenClaw, the MCP registration command is:
 
-Rules the craft runtime enforces:
-- No ground planes, sky domes, or background walls — Oasis already provides the world.
-- Use shader primitives aggressively for fire, cloth, crystal, water, glow, aurora.
-- Many small overlapping primitives beat one oversized primitive.
-- Non-zero rotation on at least some primitives.
+```bash
+openclaw mcp set oasis '{"url":"http://127.0.0.1:4516/api/mcp/oasis?agentType=openclaw","transport":"streamable-http"}'
+```
 
-### When to use sculptor fallback
+For Hermes, configure the same URL in `mcp_servers.oasis` and reload MCP.
 
-`craft_scene({ prompt: "...", strategy: "sculptor" })` delegates scene generation to a separate coder subprocess on the Oasis host. It costs a real LLM call, takes several seconds, and streams primitives in as they arrive. Use it only if:
-- The user explicitly asks you to delegate ("have the sculptor do it")
-- The scene is so ambitious you'd rather have a dedicated coder agent sketch it first
+4. If you run on a VPS while Oasis is on the user's laptop, explain that there are two network lanes:
+   - Oasis -> agent chat/control
+   - agent -> Oasis MCP tools
 
-Otherwise: self-craft. You are an LLM. You can write the JSON.
+Ask the user to run one SSH bridge from the laptop running Oasis to the remote agent host, or ask them to use the Oasis connection panel. Do not invent SSH hosts, usernames, tokens, or keys.
+
+For a VPS OpenClaw Gateway, use one SSH session with both forwards:
+
+```bash
+ssh -N -T -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -L 18789:127.0.0.1:18789 -R 4516:127.0.0.1:4516 user@openclaw-host
+```
+
+Then:
+
+- Oasis talks to the Gateway at `ws://127.0.0.1:18789`.
+- OpenClaw registers the MCP URL `http://127.0.0.1:4516/api/mcp/oasis?agentType=openclaw` on the VPS.
+- The Gateway pairing approval still happens on the machine running the Gateway, which may be the VPS.
+
+Pairing details for OpenClaw:
+
+1. When Oasis first connects, it generates its own device keypair and signs the Gateway challenge.
+2. The Gateway records that new device as pending and creates the request id.
+3. On the Gateway host, run `openclaw devices list` to see the pending request id.
+4. Approve only the Oasis device, usually shown as `gateway-client` / `node`, with `openclaw devices approve <requestId>`.
+
+If you are the remote OpenClaw agent and you have shell access on your own host, you may offer to run the list command and show the pending device to the user. Do not auto-approve a new device without explicit user approval.
+
+For a VPS Hermes agent, the usual bridge is:
+
+```bash
+ssh -N -T -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -L 8642:127.0.0.1:8642 -R 4516:127.0.0.1:4516 user@hermes-host
+```
+
+`ExitOnForwardFailure=yes` prevents a fake-success bridge when a forwarded port is already occupied. `ServerAliveInterval=15` and `ServerAliveCountMax=3` are SSH keepalives; if the other side stops answering for about 45 seconds, the SSH session exits and frees the ports for reconnect.
 
 ## Progressive Smoke Test
 
-These are the five prompts a user typically sends to verify the connection. Each escalates what it proves working:
+Run these in order after setup:
 
-1. **Plain chat** — user says `hi`. You reply. Proves: chat layer works.
-2. **World awareness** — user says `describe this world`. You call `get_world_state` and narrate sky/ground/object counts. Proves: MCP transport up.
-3. **Asset search + placement** — user says `find a cyberpunk streetlamp and place one in front of me`. Expected: `search_assets` then `place_object`, the streetlamp appears.
-4. **Self-craft** — user says `craft a small campfire with embers and a crystal cluster`. Expected: `craft_scene` with an `objects` array (not sculptor).
-5. **Vision** — user says `take a screenshot and tell me what you see`. Expected: `screenshot_viewport` with `mode: "current"`.
+1. Plain chat: reply to `hi`.
+2. World awareness: call `get_world_info`, then `get_world_state`.
+3. Search and placement: use `search_assets`, then one safe `place_object`.
+4. Embodiment: use `set_avatar` or `walk_avatar_to` only if an agent avatar exists or the user wants one.
+5. Vision: call `screenshot_viewport` with `mode: "current"` while the user's Oasis tab is open.
 
-If step 1 passes but step 2 fails, the user's Oasis MCP transport is unreachable from your side. Point them at the troubleshooting section of https://parzival-moksha.github.io/oasis/ .
+If chat works but `get_world_info` fails, MCP reachability is broken. If tools work but screenshots fail, the live Oasis browser bridge is missing, in the wrong world, or closed.
 
-If step 2-4 pass but step 5 fails, the Oasis browser tab is closed or the screenshot bridge is not mounted. Ask the user to open the Oasis in their browser.
+## Tool Families
 
-## Screenshot Guidance
+The Oasis MCP tool surface includes:
 
-Screenshot tools depend on a live Oasis browser client — the user must have Oasis open in a browser tab for vision tools to work.
+- World state: `get_world_state`, `get_world_info`
+- Search: `search_assets`, `query_objects`, `get_asset_catalog`
+- Object edits: `place_object`, `modify_object`, `remove_object`
+- Procedural scenes: `craft_scene`, `get_craft_guide`, `get_craft_job`
+- Environment: `set_sky`, `set_ground_preset`, `paint_ground_tiles`, `add_light`, `modify_light`
+- Avatars: `set_avatar`, `walk_avatar_to`, `play_avatar_animation`, `list_avatar_animations`
+- Vision: `screenshot_viewport`, `screenshot_avatar`, `avatarpic_merlin`, `avatarpic_user`
+- Forge: `conjure_asset`, `process_conjured_asset`, `place_conjured_asset`, `list_conjured_assets`, `get_conjured_asset`, `delete_conjured_asset`
+- World management: `list_worlds`, `create_world`, `load_world`, `clear_world`
+- Behavior hints: `set_behavior`
 
-- When you take screenshots, prefer including `defaultAgentType="hermes"` so agent-view captures resolve cleanly.
-- For the user's actual camera, use `screenshot_viewport` with `mode: "current"` or `views: [{ mode: "current" }]`.
-- For a behind-the-avatar shot, use `screenshot_avatar` with `style: "third-person"` or `screenshot_viewport` with `mode: "third-person-follow"`.
-- Prefer one `screenshot_viewport` call with a `views` array for multi-angle capture instead of many separate screenshot calls.
-- Do not fall back to generic `browser_*` tools for Oasis world vision; those browsers run remotely and may point at the wrong world.
+The normal loop is: inspect, search if needed, mutate, then verify with screenshots when visual truth matters.
+
+## Self-Craft Is The Default
+
+When the user asks for a procedural object or scene, write the primitives yourself and pass them as `objects` to `craft_scene`. Do not use the sculptor fallback unless the user explicitly asks you to delegate or the scene is unusually ambitious.
+
+```json
+{
+  "name": "Arcane campfire",
+  "position": [0, 0, 0],
+  "objects": [
+    { "type": "cylinder", "position": [0, 0.08, 0], "scale": [0.55, 0.08, 0.55], "color": "#3b2a1d", "roughness": 0.92 },
+    { "type": "flame", "position": [0, 0.3, 0], "scale": [0.22, 0.35, 0.22], "color": "#fff4dd", "color2": "#ff7a00", "color3": "#9b1d00" },
+    { "type": "particle_emitter", "position": [0, 0.75, 0], "scale": [0.45, 0.85, 0.45], "color": "#ffb347", "particleCount": 80, "particleType": "ember" },
+    { "type": "crystal", "position": [0.65, 0.32, 0.1], "scale": [0.22, 0.6, 0.22], "rotation": [0.14, 0.3, -0.08], "color": "#4338ca", "color2": "#8b5cf6", "seed": 11 }
+  ]
+}
+```
+
+Call `get_craft_guide` for the live primitive spec. Common primitives include `box`, `sphere`, `cylinder`, `cone`, `torus`, `plane`, `capsule`, `text`, `flame`, `flag`, `crystal`, `water`, `particle_emitter`, `glow_orb`, and `aurora`.
+
+Rules the craft runtime enforces:
+
+- Do not create ground planes, sky domes, or background walls.
+- Use shader primitives for fire, cloth, crystal, water, glow, and aurora.
+- Many small overlapping primitives usually look better than one oversized primitive.
+- Use non-zero rotation on at least some primitives.
 
 ## Visual Truth
 
-Oasis has three different truths you should keep straight:
+Screenshot tools depend on a live Oasis browser client. The server cannot see the user's GPU-rendered world by itself.
 
-- **World state**: persisted build data and live player context returned by `get_world_state` / `get_world_info`
-- **Avatar embodiment**: agent avatars, movement targets, and avatar screenshots
-- **Browser vision**: what the screenshot bridge can currently capture from the live client
+- Use `screenshot_viewport` with `mode: "current"` for the user's current camera.
+- Use `screenshot_avatar` with `subject: "openclaw"`, `subject: "hermes"`, `subject: "player"`, or another known agent type for avatar-focused shots.
+- Use one `screenshot_viewport` call with a `views` array for multi-angle capture.
+- Do not pretend you saw the world if screenshot capture is unavailable.
+- Do not use generic remote browser tools as world vision unless that browser is the user's live Oasis tab.
 
-Important:
-- screenshot tools require a live Oasis browser client
-- live player avatar and camera context are refreshed per turn, not continuously every frame
-- a screenshot is stronger than verbal assumption when the user is asking about what is visible right now
+Keep three truths separate:
 
-## Forge And Conjuration
+- Persisted world state: what `get_world_state` returns.
+- Live avatar embodiment: current agent bodies, movement targets, and animation state.
+- Browser vision: what the live screenshot bridge can capture right now.
 
-Oasis exposes Forge conjuration for generating new 3D assets from text when the catalog lacks what you need:
-- `list_conjured_assets` — what's already been generated
-- `get_conjured_asset` — inspect a specific asset's status
-- `conjure_asset` — start a Meshy or Tripo generation
-- `process_conjured_asset` — texture, remesh, rig, or animate an existing asset
-- `place_conjured_asset` — place a conjured asset in the world
-- `delete_conjured_asset` — remove from world and optionally from the Forge registry
+## Forge And Keys
 
-Use them like this:
-- `conjure_asset` to start generation
-- `process_conjured_asset` for texture, remesh, rig, or animate
-- `place_conjured_asset` to place or reposition an existing conjured asset
+Core tools need zero API keys: world state, placement, self-crafting, screenshots, and avatar movement.
 
-If the user wants a new 3D asset rather than a catalog asset, prefer these tools over pretending the asset already exists. Do not claim a generation is finished until the conjured asset status actually says so.
+Optional keys live on the Oasis host, not in the agent:
 
-## Operating Guidance
+- `OPENROUTER_API_KEY`: image generation, material concepts, terrain LLM
+- `FAL_KEY`: video generation
+- `ELEVENLABS_API_KEY`: voice notes and TTS
+- `MESHY_API_KEY`: Meshy text-to-3D
+- `TRIPO_API_KEY`: fast Tripo text-to-3D
 
-- Prefer concise world-aware answers inside Oasis UI surfaces.
-- Distinguish between player view, agent view, and external view.
-- Do not pretend you see the world if screenshot capture is unavailable.
-- When the user asks to move relative to them, use live player context or avatar screenshot tools instead of guessing.
-- When the user asks for precise visual verification, use screenshot tools rather than narration alone.
-- When the user asks for catalog or asset-library content, prefer `search_assets` then `place_object`. Use `craft_scene` for procedural primitives, not catalog assets.
-- After building a scene, consider taking a screenshot and describing what landed — the user often wants visual confirmation.
+If a tool reports a missing key, do not retry in a loop. Tell the user which Oasis-side key is missing.
 
-## Features That Need Keys On The Oasis Host
+## Safety And Operating Guidance
 
-The core tool surface (world state, placement, self-crafting, screenshots, plain chat, avatar movement) works with **zero API keys**. If a richer feature is needed and the key isn't set, the tool call returns a clear error. Do not retry — tell the user what key is missing.
-
-Optional Oasis-side feature keys (the user sets these in their own Oasis `.env`, agent never touches them):
-
-- Image generation, textures, concepts, terrain LLM → `OPENROUTER_API_KEY`
-- Video generation → `FAL_KEY`
-- Voice notes / TTS in agent panels → `ELEVENLABS_API_KEY`
-- Forge conjuration via Meshy → `MESHY_API_KEY`
-- Forge conjuration via Tripo (fast) → `TRIPO_API_KEY`
-- `craft_scene` sculptor fallback → Claude Code CLI installed on Oasis host
-
-## Limits
-
-- This skill does not install Oasis; users install locally and connect you via MCP.
-- This skill does not configure the user's agent runtime — that lives in the user's setup docs.
-- The plugin injects compact context, but real build power comes from the Oasis MCP tool surface.
-- Screenshot tools depend on a live Oasis browser client in the target world.
-
-## Verification
-
-Once connected, verify the tool surface in this order:
-
-1. `get_world_info`
-2. `get_world_state`
-3. `search_assets`
-4. one safe placement or walk tool
-5. one screenshot tool with the live browser open
-
-If `get_world_info` works but screenshot tools fail, the MCP transport is up and the browser bridge is the missing link — ask the user to open / focus their Oasis browser tab.
+- Prefer concise world-aware replies inside Oasis UI surfaces.
+- Ask before running or suggesting destructive world changes.
+- Never invent secrets, SSH hosts, usernames, pairing tokens, API keys, or private URLs.
+- When the user asks to move relative to them, use live player context or screenshots instead of guessing.
+- When building, prefer catalog assets for known objects and `craft_scene` for procedural primitives.
+- After meaningful world edits, consider a screenshot and a short description of what landed.
 
 ## References
 
-- Setup + onboarding docs: https://parzival-moksha.github.io/oasis/
+- Read `references/current-oasis-transport.md` for the current transport shape.
+- Human setup docs: https://parzival-moksha.github.io/oasis/docs/getting-started/quickstart/
 - Repo: https://github.com/Parzival-Moksha/oasis
-- Read `references/current-oasis-transport.md` for the current Oasis MCP transport shape.

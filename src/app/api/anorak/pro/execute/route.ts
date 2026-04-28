@@ -11,7 +11,10 @@ import { existsSync, symlinkSync, rmSync, unlinkSync, lstatSync } from 'fs'
 import { join, resolve as resolvePath } from 'path'
 import { prisma } from '@/lib/db'
 import { regenerateCuratorRL } from '../../../../../lib/anorak-curator-rl'
-import { createStreamParser } from '@/lib/anorak-stream-parser'
+import {
+  createStreamParser,
+  type StreamParserResultEvent,
+} from '@/lib/anorak-stream-parser'
 import {
   type CustomContextModule,
   type LegacyContextModules,
@@ -21,6 +24,8 @@ import {
   renderContextModuleSections,
   resolveContextModulesForLobe,
 } from '@/lib/anorak-context-modules'
+import { recordTokenBurn } from '@/lib/token-burn'
+import { hasTokenUsage } from '@/lib/token-usage'
 const OASIS_ROOT = process.env.OASIS_ROOT || process.cwd()
 const AGENT_TIMEOUT_MS = 10 * 60 * 1000
 
@@ -325,6 +330,7 @@ function spawnAgent(
   send: (type: string, data: Record<string, unknown>) => void,
   signal: AbortSignal,
   cwd?: string,
+  usageSource?: string,
 ): Promise<{ exitCode: number; stdout: string }> {
   return new Promise((resolve) => {
     const claudePath = process.platform === 'win32' ? 'claude.cmd' : 'claude'
@@ -352,7 +358,17 @@ function spawnAgent(
     let lineBuffer = ''
     let extractedText = ''
     let settled = false
-    const parser = createStreamParser({ send }, lobe)
+    let latestUsage: StreamParserResultEvent | null = null
+    const parser = createStreamParser({
+      send,
+      onResult: event => {
+        latestUsage = event
+      },
+    }, {
+      lobe,
+      provider: 'anthropic',
+      model,
+    })
 
     const finish = (result: { exitCode: number; stdout: string }) => {
       if (settled) return
@@ -398,7 +414,7 @@ function spawnAgent(
       finish({ exitCode: 1, stdout: extractedText.trim() || extractAgentText(fullStdout) })
     })
 
-    child.on('close', (code) => {
+    child.on('close', async (code) => {
       if (lineBuffer.trim()) {
         try {
           const evt = JSON.parse(lineBuffer)
@@ -410,6 +426,16 @@ function spawnAgent(
         }
       }
       parser.flush()
+      if (usageSource && latestUsage && hasTokenUsage(latestUsage)) {
+        try {
+          await recordTokenBurn({
+            source: usageSource,
+            ...latestUsage,
+          })
+        } catch (error) {
+          console.warn(`[${lobe}] Failed to persist token burn:`, error)
+        }
+      }
       send('status', { content: `✓ ${lobe} exited (code ${code})`, lobe })
       finish({ exitCode: code ?? 1, stdout: extractedText.trim() || extractAgentText(fullStdout) })
     })
@@ -571,7 +597,7 @@ export async function POST(request: NextRequest) {
           const coderPrompt = buildCoderPrompt(freshMission as MissionRow, coderContext, reviewerFindings, testerFailures, gamerFailures)
 
           throwIfAborted()
-          const coderResult = await spawnAgent('coder', coderPrompt, coderModel, 'coder', send, request.signal, agentCwd)
+          const coderResult = await spawnAgent('coder', coderPrompt, coderModel, 'coder', send, request.signal, agentCwd, 'anorak-pro-coder')
           if (coderResult.exitCode !== 0) {
             send('error', { content: `Coder exited with error (code ${coderResult.exitCode})` })
           }
@@ -587,7 +613,7 @@ export async function POST(request: NextRequest) {
           }))
           const reviewerPrompt = buildReviewerPrompt(reviewerContext)
           throwIfAborted()
-          const reviewerResult = await spawnAgent('reviewer', reviewerPrompt, reviewerModel, 'reviewer', send, request.signal, agentCwd)
+          const reviewerResult = await spawnAgent('reviewer', reviewerPrompt, reviewerModel, 'reviewer', send, request.signal, agentCwd, 'anorak-pro-reviewer')
 
           // Read score from DB (reviewer wrote it via MCP)
           const afterReview = await prisma.mission.findUnique({ where: { id: missionId } })
@@ -626,7 +652,7 @@ export async function POST(request: NextRequest) {
           }))
           const testerPrompt = buildTesterPrompt(testerContext, testerHeaded)
           throwIfAborted()
-          const testerResult = await spawnAgent('tester', testerPrompt, testerModel, 'tester', send, request.signal, agentCwd)
+          const testerResult = await spawnAgent('tester', testerPrompt, testerModel, 'tester', send, request.signal, agentCwd, 'anorak-pro-tester')
 
           const afterTest = await prisma.mission.findUnique({ where: { id: missionId } })
           const testScore = afterTest?.testerScore
@@ -684,7 +710,7 @@ export async function POST(request: NextRequest) {
             throwIfAborted()
             const gamerPrompt = buildGamerPrompt(freshMission as MissionRow, testerResult.stdout.substring(Math.max(0, testerResult.stdout.length - 3000)), gamerHandoff.scenarios, gamerHeaded)
             // Gamer ALWAYS runs on main (OASIS_ROOT), never in worktree
-            const gamerResult = await spawnAgent('gamer', gamerPrompt, gamerModel, 'gamer', send, request.signal)
+            const gamerResult = await spawnAgent('gamer', gamerPrompt, gamerModel, 'gamer', send, request.signal, undefined, 'anorak-pro-gamer')
             const gamerVerdict = parseGamerVerdict(gamerResult.stdout)
 
             // Read gamer score from DB (gamer wrote it via report_game MCP)
@@ -759,7 +785,7 @@ export async function POST(request: NextRequest) {
             if (type === 'text' && typeof data.content === 'string') recapText += data.content
             send(type, data)
           }
-          await spawnAgent('anorak-pro', recapPrompt, recapModel, 'anorak-pro', recapSend, request.signal)
+          await spawnAgent('anorak-pro', recapPrompt, recapModel, 'anorak-pro', recapSend, request.signal, undefined, 'anorak-pro-recap')
 
           // ── VOICE RECAP (fire-and-forget) ──────────────────
           if (recapText.trim().length > 10) {

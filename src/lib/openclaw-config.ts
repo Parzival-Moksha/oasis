@@ -9,6 +9,12 @@ export const DEFAULT_OPENCLAW_BROWSER_CONTROL_URL = 'http://127.0.0.1:18791'
 
 const STORED_CONFIG_PATH = path.join(process.cwd(), 'data', 'openclaw-config.local.json')
 
+export interface OpenclawDeviceIdentityStored {
+  id: string          // sha256(rawPub32).hex
+  publicKey: string   // base64url raw 32 bytes
+  privateKey: string  // PKCS#8 PEM
+}
+
 export interface OpenclawStoredConfig {
   gatewayUrl: string
   controlUiUrl: string
@@ -18,6 +24,7 @@ export interface OpenclawStoredConfig {
   defaultSessionId: string
   lastSessionId: string
   updatedAt: string
+  deviceIdentity?: OpenclawDeviceIdentityStored
 }
 
 export interface OpenclawResolvedConfig extends OpenclawStoredConfig {
@@ -32,6 +39,7 @@ interface WriteOpenclawConfigInput {
   deviceToken?: string
   defaultSessionId?: string
   lastSessionId?: string
+  deviceIdentity?: OpenclawDeviceIdentityStored
 }
 
 function sanitizeString(value: unknown): string {
@@ -70,10 +78,21 @@ function stripUtf8Bom(value: string): string {
   return value.charCodeAt(0) === 0xfeff ? value.slice(1) : value
 }
 
+function sanitizeDeviceIdentity(raw: unknown): OpenclawDeviceIdentityStored | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const obj = raw as Record<string, unknown>
+  const id = sanitizeString(obj.id)
+  const publicKey = sanitizeString(obj.publicKey)
+  const privateKey = sanitizeString(obj.privateKey)
+  if (!id || !publicKey || !privateKey) return undefined
+  return { id, publicKey, privateKey }
+}
+
 function sanitizeStoredConfig(raw: unknown): OpenclawStoredConfig | null {
   if (!raw || typeof raw !== 'object') return null
 
   const obj = raw as Record<string, unknown>
+  const deviceIdentity = sanitizeDeviceIdentity(obj.deviceIdentity)
 
   return {
     gatewayUrl: normalizeGatewayUrl(sanitizeString(obj.gatewayUrl)),
@@ -84,6 +103,7 @@ function sanitizeStoredConfig(raw: unknown): OpenclawStoredConfig | null {
     defaultSessionId: sanitizeString(obj.defaultSessionId),
     lastSessionId: sanitizeString(obj.lastSessionId),
     updatedAt: sanitizeString(obj.updatedAt) || new Date().toISOString(),
+    ...(deviceIdentity ? { deviceIdentity } : {}),
   }
 }
 
@@ -99,6 +119,7 @@ export async function readStoredOpenclawConfig(): Promise<OpenclawStoredConfig |
 
 export async function writeStoredOpenclawConfig(input: WriteOpenclawConfigInput): Promise<OpenclawStoredConfig> {
   const previous = await readStoredOpenclawConfig()
+  const deviceIdentity = input.deviceIdentity ?? previous?.deviceIdentity
   const next: OpenclawStoredConfig = {
     gatewayUrl: normalizeGatewayUrl(input.gatewayUrl || previous?.gatewayUrl),
     controlUiUrl: normalizeHttpUrl(input.controlUiUrl || previous?.controlUiUrl, DEFAULT_OPENCLAW_CONTROL_UI_URL),
@@ -108,6 +129,7 @@ export async function writeStoredOpenclawConfig(input: WriteOpenclawConfigInput)
     defaultSessionId: sanitizeString(input.defaultSessionId ?? previous?.defaultSessionId),
     lastSessionId: sanitizeString(input.lastSessionId ?? previous?.lastSessionId),
     updatedAt: new Date().toISOString(),
+    ...(deviceIdentity ? { deviceIdentity } : {}),
   }
 
   await fs.mkdir(path.dirname(STORED_CONFIG_PATH), { recursive: true })

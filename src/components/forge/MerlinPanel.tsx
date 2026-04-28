@@ -30,6 +30,15 @@ import { AgentToolCallCard } from './AgentToolCallCard'
 import { AgentVoiceInputButton } from './AgentVoiceInputButton'
 import { getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
 import { getCameraSnapshot } from '@/lib/camera-bridge'
+import { type TokenUsagePayload } from '@/lib/token-usage'
+import {
+  getClientAgentSessionCache,
+  listClientAgentSessionCaches,
+  saveClientAgentSessionCache,
+  saveClientAgentSessionCaches,
+  type ClientAgentSessionCacheRecord,
+} from '@/lib/agent-session-cache-client'
+import { removeBrowserStorage, writeBrowserStorage } from '@/lib/browser-storage'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES — Merlin SSE event shapes
@@ -41,7 +50,8 @@ interface MerlinSessionEvent { type: 'session'; sessionId: string }
 interface MerlinToolEvent { type: 'tool'; name: string; args: Record<string, unknown>; toolId?: string }
 interface MerlinResultEvent { type: 'result'; name: string; ok: boolean; message: string; mediaUrls?: string[]; toolId?: string }
 interface MerlinSaveEvent { type: 'save'; savedAt: string }
-interface MerlinDoneEvent { type: 'done'; worldId?: string; sessionId?: string }
+interface MerlinUsageEvent extends TokenUsagePayload { type: 'usage' }
+interface MerlinDoneEvent extends Partial<TokenUsagePayload> { type: 'done'; worldId?: string; sessionId?: string; success?: boolean }
 interface MerlinErrorEvent { type: 'error'; message: string }
 
 type MerlinEvent =
@@ -50,6 +60,7 @@ type MerlinEvent =
   | MerlinThinkingEvent
   | MerlinToolEvent
   | MerlinResultEvent
+  | MerlinUsageEvent
   | MerlinSaveEvent
   | MerlinDoneEvent
   | MerlinErrorEvent
@@ -75,6 +86,8 @@ interface MerlinSessionSummary {
 const MERLIN_SESSION_KEY = 'oasis-merlin-session'
 const MERLIN_MODEL_KEY = 'oasis-merlin-model'
 const MERLIN_SESSION_CACHE_KEY = 'oasis-merlin-session-cache'
+const MERLIN_LEGACY_SESSIONS_KEY = 'oasis-merlin-sessions'
+const MERLIN_AGENT_CACHE_TYPE = 'merlin'
 const NEW_SESSION_VALUE = '__new__'
 const DEFAULT_MERLIN_MODEL = 'opus'
 // See HermesPanel.tsx — translateZ/backfaceVisibility nuke inner content when
@@ -123,6 +136,16 @@ function sanitizeCachedMerlinMessages(raw: unknown): MerlinMessage[] {
     .slice(-120)
 }
 
+function getMerlinMessagesLastActiveAt(messages: MerlinMessage[]): number {
+  return messages.reduce((latest, message) => Math.max(latest, message.timestamp || 0), 0) || Date.now()
+}
+
+function getMerlinSessionTitle(sessionId: string, messages: MerlinMessage[]): string {
+  const firstUserMessage = messages.find(message => message.role === 'user' && message.content.trim())
+  if (firstUserMessage) return firstUserMessage.content.trim().replace(/\s+/g, ' ').slice(0, 80)
+  return `Merlin ${sessionId.slice(-8)}`
+}
+
 function readMerlinSessionCache(sessionId: string): MerlinMessage[] {
   if (typeof window === 'undefined' || !sessionId) return []
   try {
@@ -136,24 +159,136 @@ function readMerlinSessionCache(sessionId: string): MerlinMessage[] {
   }
 }
 
-function writeMerlinSessionCache(sessionId: string, messages: MerlinMessage[]) {
-  if (typeof window === 'undefined' || !sessionId) return
+function readLegacyMerlinSessionCaches(): Map<string, {
+  messages: MerlinMessage[]
+  title?: string
+  model?: string
+  createdAt?: string | number
+  lastActiveAt?: string | number
+}> {
+  const sessions = new Map<string, {
+    messages: MerlinMessage[]
+    title?: string
+    model?: string
+    createdAt?: string | number
+    lastActiveAt?: string | number
+  }>()
+  if (typeof window === 'undefined') return sessions
+
   try {
     const raw = localStorage.getItem(MERLIN_SESSION_CACHE_KEY)
-    const parsed = raw ? JSON.parse(raw) as Record<string, unknown> : {}
-    const next: Record<string, unknown> = parsed && typeof parsed === 'object' ? parsed : {}
-    next[sessionId] = sanitizeCachedMerlinMessages(messages)
-
-    const orderedEntries = Object.entries(next)
-    while (orderedEntries.length > 24) {
-      const [oldestKey] = orderedEntries.shift() || []
-      if (oldestKey) delete next[oldestKey]
+    const parsed = raw ? JSON.parse(raw) as unknown : null
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      for (const [sessionId, value] of Object.entries(parsed as Record<string, unknown>)) {
+        const messages = sanitizeCachedMerlinMessages(value)
+        if (sessionId && messages.length > 0) {
+          sessions.set(sessionId, { messages, lastActiveAt: getMerlinMessagesLastActiveAt(messages) })
+        }
+      }
     }
-
-    localStorage.setItem(MERLIN_SESSION_CACHE_KEY, JSON.stringify(next))
   } catch {
-    // Ignore storage errors.
+    // Ignore malformed legacy cache.
   }
+
+  try {
+    const raw = localStorage.getItem(MERLIN_LEGACY_SESSIONS_KEY)
+    const parsed = raw ? JSON.parse(raw) as unknown : null
+    if (Array.isArray(parsed)) {
+      for (const entry of parsed) {
+        if (!entry || typeof entry !== 'object') continue
+        const record = entry as Record<string, unknown>
+        const sessionId = typeof record.id === 'string' ? record.id : ''
+        if (!sessionId) continue
+        const messages = sanitizeCachedMerlinMessages(record.messages)
+        if (messages.length === 0) continue
+        const existing = sessions.get(sessionId)
+        const next = chooseRicherMerlinMessages(existing?.messages || [], messages)
+        sessions.set(sessionId, {
+          messages: next,
+          title: typeof record.label === 'string' ? record.label : typeof record.name === 'string' ? record.name : existing?.title,
+          model: typeof record.model === 'string' ? record.model : existing?.model,
+          createdAt: typeof record.createdAt === 'string' || typeof record.createdAt === 'number' ? record.createdAt : existing?.createdAt,
+          lastActiveAt: typeof record.updatedAt === 'string' || typeof record.updatedAt === 'number'
+            ? record.updatedAt
+            : existing?.lastActiveAt || getMerlinMessagesLastActiveAt(next),
+        })
+      }
+    }
+  } catch {
+    // Ignore malformed legacy sessions.
+  }
+
+  return sessions
+}
+
+let merlinLegacyMigrationPromise: Promise<void> | null = null
+const merlinSaveTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+async function migrateLegacyMerlinStorage(): Promise<void> {
+  if (typeof window === 'undefined') return
+  if (merlinLegacyMigrationPromise) return merlinLegacyMigrationPromise
+
+  merlinLegacyMigrationPromise = (async () => {
+    const legacy = readLegacyMerlinSessionCaches()
+    if (legacy.size === 0) return
+
+    const ok = await saveClientAgentSessionCaches(MERLIN_AGENT_CACHE_TYPE, [...legacy.entries()].map(([sessionId, value]) => ({
+      sessionId,
+      title: value.title || getMerlinSessionTitle(sessionId, value.messages),
+      model: value.model,
+      payload: value.messages,
+      messageCount: value.messages.length,
+      source: 'legacy-localStorage',
+      createdAt: value.createdAt,
+      lastActiveAt: value.lastActiveAt || getMerlinMessagesLastActiveAt(value.messages),
+    })))
+
+    if (ok) {
+      removeBrowserStorage(MERLIN_SESSION_CACHE_KEY)
+      removeBrowserStorage(MERLIN_LEGACY_SESSIONS_KEY)
+    }
+  })()
+
+  try {
+    await merlinLegacyMigrationPromise
+  } finally {
+    merlinLegacyMigrationPromise = null
+  }
+}
+
+async function readPersistedMerlinSessionCache(sessionId: string): Promise<MerlinMessage[]> {
+  if (!sessionId) return []
+  await migrateLegacyMerlinStorage()
+
+  const record = await getClientAgentSessionCache<MerlinMessage[]>(MERLIN_AGENT_CACHE_TYPE, sessionId)
+  const persisted = sanitizeCachedMerlinMessages(record?.payload)
+  if (persisted.length > 0) return persisted
+
+  return readMerlinSessionCache(sessionId)
+}
+
+function writeMerlinSessionCache(sessionId: string, messages: MerlinMessage[], model?: string) {
+  if (typeof window === 'undefined' || !sessionId || messages.length === 0) return
+  const sanitized = sanitizeCachedMerlinMessages(messages)
+  if (sanitized.length === 0) return
+
+  const previous = merlinSaveTimers.get(sessionId)
+  if (previous) clearTimeout(previous)
+
+  merlinSaveTimers.set(sessionId, setTimeout(() => {
+    merlinSaveTimers.delete(sessionId)
+    void saveClientAgentSessionCache(MERLIN_AGENT_CACHE_TYPE, {
+      sessionId,
+      title: getMerlinSessionTitle(sessionId, sanitized),
+      model,
+      payload: sanitized,
+      messageCount: sanitized.length,
+      source: 'oasis-panel',
+      lastActiveAt: getMerlinMessagesLastActiveAt(sanitized),
+    }).catch(() => {
+      // Ignore persistence errors.
+    })
+  }, 500))
 }
 
 function chooseRicherMerlinMessages(primary: MerlinMessage[], secondary: MerlinMessage[]): MerlinMessage[] {
@@ -193,6 +328,32 @@ function sanitizeMerlinSessionSummary(value: unknown): MerlinSessionSummary | nu
 
 function formatMerlinSessionLabel(session: MerlinSessionSummary): string {
   return session.label
+}
+
+function buildCachedMerlinSessionSummary(
+  record: ClientAgentSessionCacheRecord<MerlinMessage[]>,
+): MerlinSessionSummary | null {
+  const messages = sanitizeCachedMerlinMessages(record.payload)
+  if (messages.length === 0) return null
+  const timestamp = record.lastActiveAt || new Date(getMerlinMessagesLastActiveAt(messages)).toISOString()
+  return {
+    id: record.sessionId,
+    label: record.title || getMerlinSessionTitle(record.sessionId, messages),
+    timestamp,
+    turnCount: messages.filter(message => message.role === 'user').length,
+    fileSize: JSON.stringify(messages).length,
+    model: record.model,
+  }
+}
+
+function mergeMerlinSessionSummaries(
+  primary: MerlinSessionSummary[],
+  cached: MerlinSessionSummary[],
+): MerlinSessionSummary[] {
+  const byId = new Map<string, MerlinSessionSummary>()
+  for (const session of cached) byId.set(session.id, session)
+  for (const session of primary) byId.set(session.id, session)
+  return [...byId.values()].sort((a, b) => b.timestamp.localeCompare(a.timestamp))
 }
 
 function readRememberedMerlinSessionId(): string {
@@ -279,7 +440,7 @@ const TOOL_LABELS: Record<string, string> = {
   generate_video: 'Video',
 }
 
-const MERLIN_STANDALONE_MEDIA_URL_RE = /(?:https?:\/\/[^\s)]+|\/(?:generated-(?:images|voices|videos)|merlin\/screenshots)\/[^\s)]+)/gi
+const MERLIN_STANDALONE_MEDIA_URL_RE = /(?:https?:\/\/[^\s)]+|\/(?:generated-(?:images|voices|videos|music)|merlin\/screenshots)\/[^\s)]+)/gi
 
 export function detectMerlinMediaType(path: string): MediaType | null {
   const normalized = path.trim()
@@ -288,7 +449,7 @@ export function detectMerlinMediaType(path: string): MediaType | null {
   if (/^data:audio\//i.test(normalized)) return 'audio'
   if (/^data:video\//i.test(normalized)) return 'video'
   if (/\/generated-images\/|\.(?:png|jpg|jpeg|gif|webp)(?:\?|$)/i.test(normalized)) return 'image'
-  if (/\/generated-voices\/|\.(?:mp3|wav|ogg|oga|opus|m4a)(?:\?|$)/i.test(normalized)) return 'audio'
+  if (/\/generated-(?:voices|music)\/|\.(?:mp3|wav|ogg|oga|opus|m4a)(?:\?|$)/i.test(normalized)) return 'audio'
   if (/\/generated-videos\/|\.(?:mp4|webm|m4v)(?:\?|$)/i.test(normalized)) return 'video'
   if (/^(?:https?:\/\/|blob:)/i.test(normalized)) {
     if (/\.(?:png|jpg|jpeg|gif|webp)(?:\?|$)/i.test(normalized)) return 'image'
@@ -441,7 +602,7 @@ function renderMerlinAssistantContent(
 // SSE PARSER — reads the ReadableStream from /api/merlin
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function* parseMerlinSSE(response: Response): AsyncGenerator<MerlinEvent> {
+export async function* parseMerlinSSE(response: Response): AsyncGenerator<MerlinEvent> {
   const reader = response.body!.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
@@ -717,10 +878,15 @@ export function MerlinPanel({
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const loadRequestIdRef = useRef(0)
   const hydratedSessionIdRef = useRef('')
+  const activityRunIdRef = useRef<string | null>(null)
   const activeWorldName = useOasisStore(s => s.worldRegistry.find((w: { id: string; name: string }) => w.id === s.activeWorldId)?.name || 'unknown')
   const activeSession = sessionHistory.find(session => session.id === selectedSessionId) || null
   const merlinAvatar = useOasisStore(state => state.placedAgentAvatars.find(entry => entry.agentType === 'merlin') || null)
   const assignMerlinAvatar = useOasisStore(state => state.assignMerlinAvatar)
+  const startAgentWork = useOasisStore(state => state.startAgentWork)
+  const setAgentWorkTool = useOasisStore(state => state.setAgentWorkTool)
+  const finishAgentWork = useOasisStore(state => state.finishAgentWork)
+  const failAgentWork = useOasisStore(state => state.failAgentWork)
   const voiceInput = useAgentVoiceInput({
     enabled: isOpen,
     transcribeEndpoint: '/api/voice/transcribe',
@@ -728,7 +894,15 @@ export function MerlinPanel({
       setInput(current => (current ? `${current} ${transcript}`.trim() : transcript))
     },
     focusTargetRef: inputRef as React.RefObject<HTMLElement>,
+    enablePlayerLipSync: true,
   })
+
+  useEffect(() => () => {
+    const runId = activityRunIdRef.current
+    if (!runId) return
+    activityRunIdRef.current = null
+    finishAgentWork('merlin', runId)
+  }, [finishAgentWork])
 
   // Textarea grows with content (oasisspec3)
   useAutoresizeTextarea(inputRef, input, { minPx: 36, maxPx: 160 })
@@ -758,12 +932,8 @@ export function MerlinPanel({
   const sizeRef = useRef(size)
 
   const persistGeometry = useCallback((nextPosition: MerlinPanelPosition, nextSize: MerlinPanelSize) => {
-    try {
-      localStorage.setItem('oasis-merlin-pos', JSON.stringify(nextPosition))
-      localStorage.setItem('oasis-merlin-size', JSON.stringify(nextSize))
-    } catch {
-      // ignore storage failures
-    }
+    writeBrowserStorage('oasis-merlin-pos', JSON.stringify(nextPosition))
+    writeBrowserStorage('oasis-merlin-size', JSON.stringify(nextSize))
   }, [])
 
   const applyGeometry = useCallback((nextPosition: MerlinPanelPosition, nextSize: MerlinPanelSize) => {
@@ -882,38 +1052,42 @@ export function MerlinPanel({
   }, [isOpen])
 
   useEffect(() => {
-    try {
-      if (selectedSessionId) localStorage.setItem(MERLIN_SESSION_KEY, selectedSessionId)
-      else localStorage.removeItem(MERLIN_SESSION_KEY)
-    } catch {
-      // ignore storage failures
-    }
+    if (selectedSessionId) writeBrowserStorage(MERLIN_SESSION_KEY, selectedSessionId)
+    else removeBrowserStorage(MERLIN_SESSION_KEY)
   }, [selectedSessionId])
 
   useEffect(() => {
-    try {
-      localStorage.setItem(MERLIN_MODEL_KEY, model)
-    } catch {
-      // ignore storage failures
-    }
+    writeBrowserStorage(MERLIN_MODEL_KEY, model)
   }, [model])
 
   useEffect(() => {
     if (!selectedSessionId || messages.length === 0) return
-    writeMerlinSessionCache(selectedSessionId, messages)
-  }, [messages, selectedSessionId])
+    writeMerlinSessionCache(selectedSessionId, messages, model)
+  }, [messages, model, selectedSessionId])
+
+  useEffect(() => {
+    void migrateLegacyMerlinStorage()
+  }, [])
 
   const fetchSessions = useCallback(async (preferredSessionId?: string) => {
     try {
-      const response = await fetch('/api/merlin/sessions', { cache: 'no-store' })
+      const [response, cachedRecords] = await Promise.all([
+        fetch('/api/merlin/sessions', { cache: 'no-store' }),
+        listClientAgentSessionCaches<MerlinMessage[]>(MERLIN_AGENT_CACHE_TYPE, 100),
+      ])
       const data = await response.json().catch(() => null) as {
         available?: boolean
         sessions?: unknown[]
       } | null
-      if (!response.ok || !Array.isArray(data?.sessions)) return
-      const sessions = data.sessions
-        .map(sanitizeMerlinSessionSummary)
+      const remoteSessions = response.ok && Array.isArray(data?.sessions)
+        ? data.sessions
+          .map(sanitizeMerlinSessionSummary)
+          .filter((session): session is MerlinSessionSummary => !!session)
+        : []
+      const cachedSessions = cachedRecords
+        .map(buildCachedMerlinSessionSummary)
         .filter((session): session is MerlinSessionSummary => !!session)
+      const sessions = mergeMerlinSessionSummaries(remoteSessions, cachedSessions)
       setSessionHistory(sessions)
       setSelectedSessionId(current => {
         let next = current
@@ -936,9 +1110,18 @@ export function MerlinPanel({
     const requestId = loadRequestIdRef.current + 1
     loadRequestIdRef.current = requestId
     hydratedSessionIdRef.current = ''
-    const cachedMessages = readMerlinSessionCache(sessionId)
     setIsLoadingSession(true)
     setSelectedSessionId(sessionId)
+    let cachedMessages: MerlinMessage[] = []
+    try {
+      cachedMessages = await readPersistedMerlinSessionCache(sessionId)
+    } catch {
+      cachedMessages = readMerlinSessionCache(sessionId)
+    }
+    if (requestId !== loadRequestIdRef.current) {
+      setIsLoadingSession(false)
+      return
+    }
     setMessages(cachedMessages)
     setAutoScroll(true)
     setToolCount(countToolEvents(cachedMessages))
@@ -969,7 +1152,7 @@ export function MerlinPanel({
       setMessages(nextMessages)
       setToolCount(countToolEvents(nextMessages))
       setModel(typeof data.model === 'string' ? data.model : DEFAULT_MERLIN_MODEL)
-      writeMerlinSessionCache(sessionId, nextMessages)
+      writeMerlinSessionCache(sessionId, nextMessages, typeof data.model === 'string' ? data.model : DEFAULT_MERLIN_MODEL)
       hydratedSessionIdRef.current = sessionId
     } catch (error) {
       console.error('[Merlin] Failed to load session:', error)
@@ -1129,6 +1312,19 @@ export function MerlinPanel({
     }
     setMessages(prev => [...prev, userMessage, merlinMsg])
     setIsStreaming(true)
+    const activityRunId = `merlin-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    activityRunIdRef.current = activityRunId
+    startAgentWork('merlin', activityRunId, activeSessionId)
+    const finishActivity = () => {
+      if (activityRunIdRef.current !== activityRunId) return
+      activityRunIdRef.current = null
+      finishAgentWork('merlin', activityRunId)
+    }
+    const failActivity = () => {
+      if (activityRunIdRef.current !== activityRunId) return
+      activityRunIdRef.current = null
+      failAgentWork('merlin', activityRunId)
+    }
 
     const abort = new AbortController()
     abortRef.current = abort
@@ -1155,7 +1351,7 @@ export function MerlinPanel({
         setMessages(prev => prev.map(m =>
           m.id === merlinId ? { ...m, content: `Error ${res.status}: ${errText}` } : m
         ))
-        setIsStreaming(false)
+        failActivity()
         return
       }
 
@@ -1188,15 +1384,21 @@ export function MerlinPanel({
           case 'text':
             setIsThinking(false)
             textAccumulator += event.content
+            setAgentWorkTool('merlin', activityRunId, null)
             streamEvents = [...streamEvents, event]
             break
           case 'tool':
             tools++
             setToolCount(tools)
+            setAgentWorkTool('merlin', activityRunId, event.name || 'tool')
+            streamEvents = [...streamEvents, event]
+            break
+          case 'usage':
             streamEvents = [...streamEvents, event]
             break
           case 'result':
             streamEvents = [...streamEvents, event]
+            setAgentWorkTool('merlin', activityRunId, null)
             if (event.ok && MERLIN_VISION_TOOL_NAMES.has(event.name)) {
               const firstImageRef = extractMerlinResultMediaReferences(event).find(ref => ref.mediaType === 'image')
               if (firstImageRef?.path) {
@@ -1247,24 +1449,34 @@ export function MerlinPanel({
         })
         setAutoPlayMediaMessageId(hasAudio ? merlinId : '')
       }
+      finishActivity()
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
         setMessages(prev => prev.map(m =>
           m.id === merlinId ? { ...m, content: m.content + `\n⚠️ ${(err as Error).message}` } : m
         ))
+        failActivity()
+      } else {
+        finishActivity()
       }
     } finally {
+      finishActivity()
       setIsStreaming(false)
       setIsThinking(false)
       abortRef.current = null
     }
-  }, [autoPlayMediaMessageId, fetchSessions, input, isStreaming, model, selectedSessionId])
+  }, [autoPlayMediaMessageId, failAgentWork, fetchSessions, finishAgentWork, input, isStreaming, model, selectedSessionId, setAgentWorkTool, startAgentWork])
 
   // Cancel streaming
   const cancel = useCallback(() => {
     abortRef.current?.abort()
+    const runId = activityRunIdRef.current
+    if (runId) {
+      activityRunIdRef.current = null
+      finishAgentWork('merlin', runId)
+    }
     setIsStreaming(false)
-  }, [])
+  }, [finishAgentWork])
 
   const renderedMessages = useMemo(() => messages.map(msg => (
     <div key={msg.id}>

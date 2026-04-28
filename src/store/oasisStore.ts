@@ -17,7 +17,6 @@ import {
 } from '../lib/forge/world-persistence'
 import { addToSceneLibrary, getSceneLibrary, removeFromSceneLibrary } from '../lib/forge/scene-library'
 import { awardXp } from '../hooks/useXp'
-import type { RealtimeChannel } from '@supabase/supabase-js'
 import { getCameraSnapshot } from '../lib/camera-bridge'
 import {
   deriveAvatarAnchoredWindowPlacement,
@@ -27,7 +26,13 @@ import {
   deriveWindowAvatarScale,
   type LinkedWindowAnchorMode,
 } from '../lib/agent-avatar-utils'
-import { DEFAULT_AGENT_AVATAR_URL, resolveAgentAvatarUrl, sanitizeAgentAvatarList } from '../lib/agent-avatar-catalog'
+import { DEFAULT_AGENT_AVATAR_URL, getDefaultAgentAvatarUrl, resolveAgentAvatarUrl, sanitizeAgentAvatarList } from '../lib/agent-avatar-catalog'
+import {
+  foldTransformIntoAgentAvatar,
+  isSharedAgentAvatarType as isSharedAgentAvatarWorldType,
+  normalizeAgentAvatarTransforms,
+  type AgentAvatarTransformMap,
+} from '../lib/agent-avatar-world-state'
 import { DEFAULT_AGENT_WINDOW_RENDER_MODE, type AgentWindowRenderMode } from '../lib/agent-window-renderers'
 
 const MAX_ACTIVE_MARCH_ORDER_VFX = 8
@@ -38,6 +43,8 @@ const MAX_ACTIVE_MARCH_ORDER_VFX = 8
 // of scattering the guard across every localStorage read/write in the store.
 const isBrowser = typeof window !== 'undefined'
 const stored  = (key: string): string | null => isBrowser ? localStorage.getItem(key) : null
+
+type RemoteSubscription = { unsubscribe: () => void }
 const persist = (key: string, value: string): void => { if (isBrowser) localStorage.setItem(key, value) }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -48,17 +55,19 @@ const persist = (key: string, value: string): void => { if (isBrowser) localStor
 export type ConjureVfxType =
   | 'textswirl' | 'arcane' | 'vortex'
   | 'quantumassembly' | 'primordialcauldron' | 'stellarnursery' | 'chronoforge' | 'abyssalemergence'
+  | 'realitystorm' | 'riftstorm' | 'cataclysm'
   | 'random'
 
-export const CONJURE_VFX_LIST: Exclude<ConjureVfxType, 'random'>[] = ['textswirl', 'arcane', 'vortex', 'quantumassembly', 'primordialcauldron', 'stellarnursery', 'chronoforge', 'abyssalemergence']
+export const CONJURE_VFX_LIST: Exclude<ConjureVfxType, 'random'>[] = ['realitystorm', 'riftstorm', 'cataclysm', 'vortex', 'quantumassembly', 'stellarnursery', 'chronoforge', 'abyssalemergence']
 
 export type PlacementVfxType =
   | 'runeflash' | 'sparkburst' | 'portalring' | 'sigilpulse'
   | 'quantumcollapse' | 'phoenixascension' | 'dimensionalrift' | 'crystalgenesis'
   | 'meteorimpact' | 'arcanebloom' | 'voidanchor' | 'stellarforge'
+  | 'realitydetonation' | 'dimensionalmaw' | 'hexstorm' | 'singularitydrop'
   | 'random'
 
-const PLACEMENT_VFX_LIST: Exclude<PlacementVfxType, 'random'>[] = ['runeflash', 'sparkburst', 'portalring', 'sigilpulse', 'quantumcollapse', 'phoenixascension', 'dimensionalrift', 'crystalgenesis', 'meteorimpact', 'arcanebloom', 'voidanchor', 'stellarforge']
+const PLACEMENT_VFX_LIST: Exclude<PlacementVfxType, 'random'>[] = ['realitydetonation', 'dimensionalmaw', 'hexstorm', 'singularitydrop', 'quantumcollapse', 'phoenixascension', 'dimensionalrift', 'crystalgenesis', 'meteorimpact', 'arcanebloom', 'voidanchor', 'stellarforge']
 
 export interface PlacementPending {
   type: 'catalog' | 'conjured' | 'crafted' | 'library' | 'image' | 'video' | 'agent' | 'light'
@@ -100,9 +109,31 @@ export interface ActiveMarchOrderVfx {
   duration: number
 }
 
+export interface AgentMaterialization {
+  objectId: string
+  phase: 'pending' | 'revealing'
+  minScale: number
+  startedAt: number
+  revealStartedAt: number | null
+  revealDurationMs: number
+}
+
+export type AgentActivityStateName = 'idle' | 'working' | 'tooling' | 'error'
+
+export interface AgentActivity {
+  agentKey: string
+  state: AgentActivityStateName
+  runId: string
+  sessionId?: string
+  activeTool?: string
+  startedAt: number
+  updatedAt: number
+  confidence: 'explicit'
+}
+
 // ─═̷─═̷─💻 AGENT WINDOW — placeable interactive panels in 3D ─═̷─═̷─💻
 export type BrowserSurfaceMode = 'live-browser' | 'desktop-capture'
-export type AgentWindowType = 'anorak' | 'anorak-pro' | 'merlin' | 'hermes' | 'openclaw' | 'devcraft' | 'parzival' | 'browser' | 'mission'
+export type AgentWindowType = 'anorak' | 'codex' | 'anorak-pro' | 'merlin' | 'realtime' | 'hermes' | 'openclaw' | 'devcraft' | 'parzival' | 'browser' | 'mission'
 
 export interface AgentWindow {
   id: string                              // e.g. 'agent-anorak-1710859200000'
@@ -155,10 +186,14 @@ function defaultAgentAvatarLabel(agentType: AgentAvatarType): string {
   switch (agentType) {
     case 'anorak':
       return 'Anorak'
+    case 'codex':
+      return 'Codex'
     case 'anorak-pro':
       return 'Anorak Pro'
     case 'merlin':
       return 'Merlin'
+    case 'realtime':
+      return 'Realtime'
     case 'devcraft':
       return 'DevCraft'
     case 'parzival':
@@ -176,16 +211,8 @@ function defaultAgentAvatarLabel(agentType: AgentAvatarType): string {
   }
 }
 
-type AgentAvatarTransformMap = Record<string, {
-  position?: [number, number, number]
-  rotation?: [number, number, number]
-  scale?: [number, number, number] | number
-}>
-
-const SHARED_AGENT_AVATAR_TYPES = new Set<AgentAvatarType>(['anorak-pro', 'merlin', 'hermes', 'openclaw'])
-
 function isSharedAgentAvatarType(agentType: string): agentType is AgentAvatarType {
-  return SHARED_AGENT_AVATAR_TYPES.has(agentType as AgentAvatarType)
+  return isSharedAgentAvatarWorldType(agentType)
 }
 
 function scoreSharedAgentAvatarCandidate(avatar: AgentAvatar, transforms: AgentAvatarTransformMap): number {
@@ -239,6 +266,7 @@ function normalizeSharedAgentAvatarWorldState(args: {
   let changed = false
   const emittedSharedTypes = new Set<AgentAvatarType>()
   const nextAvatars: AgentAvatar[] = []
+  const nextTransforms: AgentAvatarTransformMap = { ...transforms }
 
   for (const avatar of avatars) {
     if (!isSharedAgentAvatarType(avatar.agentType)) {
@@ -255,7 +283,13 @@ function normalizeSharedAgentAvatarWorldState(args: {
     const winner = winnerByType.get(avatar.agentType)
     if (!winner) continue
     if (winner.id !== avatar.id || avatar.linkedWindowId || winner.label !== avatar.label) changed = true
-    nextAvatars.push(winner)
+    const folded = foldTransformIntoAgentAvatar(winner, nextTransforms[winner.id])
+    if (folded.changed) changed = true
+    if (Object.prototype.hasOwnProperty.call(nextTransforms, winner.id)) {
+      delete nextTransforms[winner.id]
+      changed = true
+    }
+    nextAvatars.push(folded.avatar)
   }
 
   const nextWindows = windows.map(window => {
@@ -285,7 +319,6 @@ function normalizeSharedAgentAvatarWorldState(args: {
     return window
   })
 
-  const nextTransforms: AgentAvatarTransformMap = { ...transforms }
   for (const [avatarId, winnerId] of remappedAvatarIds.entries()) {
     if (avatarId === winnerId) continue
     if (Object.prototype.hasOwnProperty.call(nextTransforms, avatarId)) {
@@ -294,10 +327,13 @@ function normalizeSharedAgentAvatarWorldState(args: {
     }
   }
 
+  const normalizedAvatarTransforms = normalizeAgentAvatarTransforms(nextAvatars, nextTransforms)
+  if (normalizedAvatarTransforms.changed) changed = true
+
   return {
     windows: nextWindows,
-    avatars: nextAvatars,
-    transforms: changed ? nextTransforms : transforms,
+    avatars: normalizedAvatarTransforms.avatars,
+    transforms: changed ? normalizedAvatarTransforms.transforms : transforms,
     changed,
   }
 }
@@ -365,9 +401,10 @@ interface OasisState {
   // ─═̷─═̷─🪄 PLACEMENT MODE + VFX ─═̷─═̷─🪄
   placementPending: PlacementPending | null   // what we're about to place (null = not in placement mode)
   placementVfxType: PlacementVfxType
-  placementVfxDuration: number                // seconds, 0.5-3.0
+  placementVfxDuration: number                // seconds, 0.5-4.5
   activePlacementVfx: ActivePlacementVfx[]    // currently playing VFX instances
   activeMarchOrderVfx: ActiveMarchOrderVfx[]  // right-click move-order markers
+  agentMaterializations: Record<string, AgentMaterialization>
 
   // ─═̷─═̷─🌍 TERRAIN + WORLD STATE ─═̷─═̷─🌍
   terrainParams: TerrainParams | null
@@ -392,10 +429,10 @@ interface OasisState {
   worldSkyBackground: string           // per-world sky preset ID (was global in SettingsContext)
   activeWorldId: string
   worldRegistry: WorldMeta[]
-  _worldReady: boolean               // ░▒▓ GUARD: true after first successful load from Supabase ▓▒░
+  _worldReady: boolean               // ░▒▓ GUARD: true after first successful world load ▓▒░
   _loadedObjectCount: number         // ░▒▓ SANITY CHECK: object count at load time — blocks catastrophic overwrites ▓▒░
-  _realtimeChannel: RealtimeChannel | null  // ░▒▓ Supabase Realtime — live Merlin updates ▓▒░
-  _isReceivingRemoteUpdate: boolean  // ░▒▓ true while applying Realtime payload — prevents save loop ▓▒░
+  _realtimeChannel: RemoteSubscription | null  // ░▒▓ remote event subscription handle for cleanup ▓▒░
+  _isReceivingRemoteUpdate: boolean  // ░▒▓ true while applying remote payload — prevents save loop ▓▒░
 
   // ─═̷─═̷─📋 MINDCRAFT 3D — mission map selected mission ─═̷─═̷─📋
   mindcraftSelectedMissionId: number | null
@@ -460,6 +497,9 @@ interface OasisState {
   setPlacementVfxDuration: (duration: number) => void
   spawnPlacementVfx: (position: [number, number, number]) => void
   removePlacementVfx: (id: string) => void
+  startAgentMaterialization: (objectId: string) => void
+  revealAgentMaterialization: (objectId: string) => void
+  clearAgentMaterialization: (objectId: string) => void
   spawnMarchOrderVfx: (position: [number, number, number]) => void
   removeMarchOrderVfx: (id: string) => void
   previewPlacementSpell: (type: PlacementVfxType) => void
@@ -493,6 +533,7 @@ interface OasisState {
   setTransformMode: (mode: 'translate' | 'rotate' | 'scale') => void
   setCameraLookAt: (position: [number, number, number] | null) => void
   setObjectTransform: (id: string, transform: { position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number }) => void
+  setAgentAvatarTransform: (id: string, transform: { position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number }) => void
   setObjectBehavior: (id: string, behavior: Partial<ObjectBehavior>) => void
   setObjectMeshStats: (id: string, stats: import('../lib/conjure/types').ModelStats) => void
   /** RTS-style: send selected object to a target position */
@@ -526,6 +567,7 @@ interface OasisState {
   placedAgentWindows: AgentWindow[]
   placedAgentAvatars: AgentAvatar[]
   liveAgentAvatarAudio: Record<string, AgentAvatarAudioState>
+  agentActivity: Record<string, AgentActivity>
   focusedAgentWindowId: string | null       // when set, camera locks to fill viewport with this window
   focusedImageId: string | null             // when set, camera locks to fill viewport with this image
   _preFocusCameraState: { position: [number, number, number]; target: [number, number, number] } | null
@@ -538,8 +580,13 @@ interface OasisState {
   assignHermesAvatar: (avatarUrl: string | null) => string | null
   assignMerlinAvatar: (avatarUrl: string | null) => string | null
   setAgentAvatarAudio: (avatarId: string, audio: AgentAvatarAudioState | null) => void
+  startAgentWork: (agentKey: string, runId: string, sessionId?: string) => void
+  setAgentWorkTool: (agentKey: string, runId: string, activeTool: string | null) => void
+  finishAgentWork: (agentKey: string, runId: string) => void
+  failAgentWork: (agentKey: string, runId: string) => void
   focusAgentWindow: (id: string | null) => void
   focusImage: (id: string | null) => void
+  navigateAgentWindow: (direction: 1 | -1) => void
   navigateSlide: (direction: 1 | -1) => void
 
   // ─═̷─═̷─⏪ UNDO/REDO ─═̷─═̷─⏪
@@ -596,7 +643,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       }
     }
 
-    return agentType === 'hermes' || agentType === 'openclaw'
+    return agentType === 'hermes' || agentType === 'openclaw' || agentType === 'realtime'
       ? deriveHermesAvatarSpawn(getCameraSnapshot())
       : deriveStandaloneAgentAvatarSpawn(getCameraSnapshot())
   }
@@ -724,9 +771,10 @@ export const useOasisStore = create<OasisState>((set, get) => {
   // ─═̷─═̷─🪄 PLACEMENT MODE + VFX ─═̷─═̷─🪄
   placementPending: null,
   placementVfxType: (stored('oasis-placement-vfx') as PlacementVfxType) || 'random',
-  placementVfxDuration: parseFloat(stored('oasis-placement-duration') || '1.2'),
+  placementVfxDuration: parseFloat(stored('oasis-placement-duration') || '2.2'),
   activePlacementVfx: [],
   activeMarchOrderVfx: [],
+  agentMaterializations: {},
   conjurePreview: null,
   craftingInProgress: false,
   craftingPrompt: null,
@@ -750,7 +798,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   worldSkyBackground: 'night007',
   activeWorldId: isBrowser ? getActiveWorldId() : 'forge-default',
   worldRegistry: [],
-  _worldReady: false,  // ░▒▓ GUARD: prevents saving empty state before world loads from Supabase ▓▒░
+  _worldReady: false,  // ░▒▓ GUARD: prevents saving empty state before world load completes ▓▒░
   _loadedObjectCount: 0,  // ░▒▓ SANITY CHECK: set on load, checked on save — blocks catastrophic nukes ▓▒░
   _realtimeChannel: null,
   _isReceivingRemoteUpdate: false,
@@ -763,6 +811,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   placedAgentWindows: [],
   placedAgentAvatars: [],
   liveAgentAvatarAudio: {},
+  agentActivity: {},
   focusedAgentWindowId: null,
   focusedImageId: null,
   _preFocusCameraState: null,
@@ -819,6 +868,25 @@ export const useOasisStore = create<OasisState>((set, get) => {
           ? state.worldConjuredAssetIds
           : [...state.worldConjuredAssetIds, assetId],
       }))
+    })
+    setTimeout(() => get().saveWorldState(), 100)
+  },
+  setAgentAvatarTransform: (id, transform) => {
+    set((state) => {
+      const avatarIndex = state.placedAgentAvatars.findIndex(avatar => avatar.id === id)
+      if (avatarIndex < 0) return state
+
+      const nextTransforms = { ...state.transforms }
+      delete nextTransforms[id]
+
+      const folded = foldTransformIntoAgentAvatar(state.placedAgentAvatars[avatarIndex], transform)
+      const nextAvatars = [...state.placedAgentAvatars]
+      nextAvatars[avatarIndex] = folded.avatar
+
+      return {
+        placedAgentAvatars: nextAvatars,
+        transforms: nextTransforms,
+      }
     })
     setTimeout(() => get().saveWorldState(), 100)
   },
@@ -1016,7 +1084,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   },
 
   setPlacementVfxDuration: (duration) => {
-    const clamped = Math.max(0.5, Math.min(3.0, duration))
+    const clamped = Math.max(0.5, Math.min(4.5, duration))
     persist('oasis-placement-duration', String(clamped))
     set({ placementVfxDuration: clamped })
   },
@@ -1041,6 +1109,52 @@ export const useOasisStore = create<OasisState>((set, get) => {
   removePlacementVfx: (id) => {
     set(state => ({ activePlacementVfx: state.activePlacementVfx.filter(v => v.id !== id) }))
   },
+
+  startAgentMaterialization: (objectId) => {
+    if (!objectId) return
+    const now = Date.now()
+    set(state => ({
+      agentMaterializations: {
+        ...state.agentMaterializations,
+        [objectId]: {
+          objectId,
+          phase: 'pending',
+          minScale: 0.25,
+          startedAt: now,
+          revealStartedAt: null,
+          revealDurationMs: 1500,
+        },
+      },
+    }))
+  },
+
+  revealAgentMaterialization: (objectId) => {
+    if (!objectId) return
+    set(state => {
+      const current = state.agentMaterializations[objectId]
+      if (!current || current.phase === 'revealing') return state
+      return {
+        agentMaterializations: {
+          ...state.agentMaterializations,
+          [objectId]: {
+            ...current,
+            phase: 'revealing',
+            revealStartedAt: Date.now(),
+          },
+        },
+      }
+    })
+  },
+
+  clearAgentMaterialization: (objectId) => {
+    if (!objectId) return
+    set(state => {
+      if (!state.agentMaterializations[objectId]) return state
+      const { [objectId]: _removed, ...rest } = state.agentMaterializations
+      return { agentMaterializations: rest }
+    })
+  },
+
   spawnMarchOrderVfx: (position) => {
     const vfx: ActiveMarchOrderVfx = {
       id: `march-order-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -1062,10 +1176,13 @@ export const useOasisStore = create<OasisState>((set, get) => {
   // ─═̷─═̷─👁 SPELL PREVIEW — see the magic before you commit ─═̷─═̷─👁
   previewPlacementSpell: (type) => {
     const { placementVfxDuration } = get()
+    const resolvedType = type === 'random'
+      ? PLACEMENT_VFX_LIST[Math.floor(Math.random() * PLACEMENT_VFX_LIST.length)]
+      : type
     const vfx: ActivePlacementVfx = {
       id: `preview-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       position: [0, 0, 0],
-      type,
+      type: resolvedType,
       startedAt: performance.now(),
       duration: placementVfxDuration,
     }
@@ -1209,10 +1326,15 @@ export const useOasisStore = create<OasisState>((set, get) => {
         behaviors: { ...state.behaviors, [id]: rest as ObjectBehavior },
       }
     })
-    // Sync final position to transforms after arrival
+    // Final position is synced by the caller after arrival.
     setTimeout(() => get().saveWorldState(), 100)
   },
   setObjectTransform: (id, transform) => {
+    if (get().placedAgentAvatars.some(avatar => avatar.id === id)) {
+      get().setAgentAvatarTransform(id, transform)
+      return
+    }
+
     set((state) => ({
       transforms: { ...state.transforms, [id]: transform },
     }))
@@ -1391,7 +1513,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
     // World mutation fanout now comes from the shared SSE world-events bus.
     // Scene.tsx mounts useWorldEvents(), so the store no longer opens its own
-    // Supabase channel here.
+    // event channel here.
     if (isBrowser) {
       get()._realtimeChannel?.unsubscribe()
       set({ _realtimeChannel: null })
@@ -1400,7 +1522,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   saveWorldState: () => {
     // Don't save read-only viewed worlds — but DO save public_edit worlds
     if (get().isViewMode && !get().isViewModeEditable) return
-    // Skip saves while applying a remote Realtime update — prevents echo loop
+    // Skip saves while applying a remote update — prevents echo loop
     if (get()._isReceivingRemoteUpdate) return
     // ░▒▓ CRITICAL GUARD: never save until world has loaded from server ▓▒░
     if (!get()._worldReady) {
@@ -1644,7 +1766,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     ])
 
     // If stored activeWorldId doesn't exist in the registry (e.g. old 'forge-default'
-    // from pre-Supabase era), switch to the first available world
+    // from an earlier persistence layout), switch to the first available world
     const currentId = get().activeWorldId
     const worldExists = registry.some(w => w.id === currentId)
     if (!worldExists && registry.length > 0) {
@@ -1695,6 +1817,10 @@ export const useOasisStore = create<OasisState>((set, get) => {
       })
     })
     exitPlacementIfActive()
+    const placedWindow = get().placedAgentWindows.find(entry => entry.id === window.id)
+    if (placedWindow && !placedWindow.linkedAvatarId) {
+      get().assignAvatarToAgentWindow(placedWindow.id, getDefaultAgentAvatarUrl(placedWindow.agentType))
+    }
     get().spawnPlacementVfx(window.position)
     setTimeout(() => get().saveWorldState(), 100)
   },
@@ -1882,6 +2008,78 @@ export const useOasisStore = create<OasisState>((set, get) => {
       return { liveAgentAvatarAudio: nextAudio }
     })
   },
+  startAgentWork: (agentKey, runId, sessionId) => {
+    if (!agentKey || !runId) return
+    const now = Date.now()
+    set(state => ({
+      agentActivity: {
+        ...state.agentActivity,
+        [agentKey]: {
+          agentKey,
+          runId,
+          sessionId,
+          state: 'working',
+          startedAt: now,
+          updatedAt: now,
+          confidence: 'explicit',
+        },
+      },
+    }))
+  },
+  setAgentWorkTool: (agentKey, runId, activeTool) => {
+    if (!agentKey || !runId) return
+    set(state => {
+      const current = state.agentActivity[agentKey]
+      if (!current || current.runId !== runId) return state
+      return {
+        agentActivity: {
+          ...state.agentActivity,
+          [agentKey]: {
+            ...current,
+            state: activeTool ? 'tooling' : 'working',
+            activeTool: activeTool || undefined,
+            updatedAt: Date.now(),
+          },
+        },
+      }
+    })
+  },
+  finishAgentWork: (agentKey, runId) => {
+    if (!agentKey || !runId) return
+    set(state => {
+      const current = state.agentActivity[agentKey]
+      if (!current || current.runId !== runId) return state
+      return {
+        agentActivity: {
+          ...state.agentActivity,
+          [agentKey]: {
+            ...current,
+            state: 'idle',
+            activeTool: undefined,
+            updatedAt: Date.now(),
+          },
+        },
+      }
+    })
+  },
+  failAgentWork: (agentKey, runId) => {
+    if (!agentKey || !runId) return
+    set(state => {
+      const current = state.agentActivity[agentKey]
+      if (!current || current.runId !== runId) return state
+      return {
+        agentActivity: {
+          ...state.agentActivity,
+          [agentKey]: {
+            ...current,
+            state: 'error',
+            activeTool: undefined,
+            updatedAt: Date.now(),
+          },
+        },
+      }
+    })
+  },
   focusAgentWindow: (id) => {
     if (id) {
       try { require('../lib/input-manager').useInputManager.getState().enterAgentFocus() } catch {}
@@ -1895,7 +2093,53 @@ export const useOasisStore = create<OasisState>((set, get) => {
     }
   },
 
-  // ─═̷─═̷─🖼️ IMAGE FOCUS — camera locks to fill viewport with image ─═̷─═̷─🖼️
+  // Agent window navigation - mirrors slide ordering for 3D windows.
+  navigateAgentWindow: (direction) => {
+    const { placedAgentWindows, placedAgentAvatars, transforms, focusedAgentWindowId } = get()
+    if (placedAgentWindows.length === 0) return
+
+    const positionForWindow = (window: AgentWindow): [number, number, number] => {
+      const windowTransform = transforms[window.id]
+      const linkedAvatar = window.linkedAvatarId
+        ? placedAgentAvatars.find(entry => entry.id === window.linkedAvatarId) || null
+        : placedAgentAvatars.find(entry => entry.linkedWindowId === window.id) || null
+
+      if (linkedAvatar && window.anchorMode && window.anchorMode !== 'detached') {
+        return deriveAvatarAnchoredWindowPlacement(
+          window,
+          linkedAvatar,
+          transforms[linkedAvatar.id],
+          window.anchorMode,
+          windowTransform,
+        ).position
+      }
+
+      return windowTransform?.position || window.position
+    }
+
+    const sorted = [...placedAgentWindows].sort((a, b) => {
+      const [ax, ay, az] = positionForWindow(a)
+      const [bx, by, bz] = positionForWindow(b)
+      if (Math.abs(ax - bx) > 0.5) return ax - bx
+      if (Math.abs(az - bz) > 0.5) return az - bz
+      if (Math.abs(ay - by) > 0.5) return ay - by
+      return a.id.localeCompare(b.id)
+    })
+
+    const currentIdx = focusedAgentWindowId
+      ? sorted.findIndex(window => window.id === focusedAgentWindowId)
+      : -1
+    let nextIdx = currentIdx === -1
+      ? (direction === 1 ? 0 : sorted.length - 1)
+      : currentIdx + direction
+
+    if (nextIdx < 0) nextIdx = sorted.length - 1
+    if (nextIdx >= sorted.length) nextIdx = 0
+
+    get().focusAgentWindow(sorted[nextIdx].id)
+  },
+
+  // Image focus - camera locks to fill viewport with image.
   focusImage: (id) => {
     if (id) {
       // Reuse agent-focus input state — same UX (ESC to exit, no orbit controls)

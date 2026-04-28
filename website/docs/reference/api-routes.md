@@ -93,7 +93,6 @@ All routes are served from `http://localhost:4516/api`.
 | `/api/profile` | `GET`, `PATCH` | Profile read and update |
 | `/api/profile/avatar` | `POST` | Upload 2D avatar |
 | `/api/profile/avatar3d` | `POST` | Upload 3D avatar |
-| `/api/feedback` | `GET`, `PATCH`, `POST` | Feedback route |
 | `/api/health` | `GET` | Health check |
 | `/api/models` | `GET` | Model listing |
 | `/api/pricing` | `GET` | Pricing metadata |

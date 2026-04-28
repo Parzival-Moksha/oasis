@@ -213,10 +213,6 @@ vi.mock('../../hooks/useXp', () => ({
   awardXp: vi.fn(),
 }))
 
-vi.mock('../../lib/supabase', () => ({
-  getBrowserSupabase: vi.fn().mockReturnValue(null),
-}))
-
 // Must import AFTER mocks are set up
 import { useOasisStore } from '../../store/oasisStore'
 import { debouncedSaveWorld } from '../../lib/forge/world-persistence'

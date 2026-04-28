@@ -35,6 +35,9 @@ export function SettingsTab() {
           <div className="grid grid-cols-2 gap-1.5">
             {([
               { id: 'random' as const, label: 'Random', desc: 'Different effect each time', icon: '\u{1F3B2}' },
+              { id: 'realitystorm' as const, label: 'Reality Storm', desc: 'Smoke, lightning, shards, morphing core', icon: '\u{1F4A5}' },
+              { id: 'riftstorm' as const, label: 'Riftstorm', desc: 'Space tear, haze, violet arcs', icon: '\u29C9' },
+              { id: 'cataclysm' as const, label: 'Cataclysm', desc: 'Explosive forge smoke and shockwaves', icon: '\u2604' },
               { id: 'textswirl' as const, label: 'Text Swirl', desc: 'Prompt tokens orbit and collapse', icon: '\u2728' },
               { id: 'arcane' as const, label: 'Arcane Circle', desc: 'Sacred geometry + light pillars', icon: '\u26E2' },
               { id: 'vortex' as const, label: 'Particle Vortex', desc: 'Atom storm converges into form', icon: '\u{1F300}' },
@@ -71,6 +74,10 @@ export function SettingsTab() {
           <div className="grid grid-cols-2 gap-1.5">
             {([
               { id: 'random' as PlacementVfxType, label: 'Random', desc: 'Different spell each time', icon: '\u{1F3B2}' },
+              { id: 'realitydetonation' as PlacementVfxType, label: 'Reality Detonation', desc: 'Blast, smoke, shards, lightning flash', icon: '\u{1F4A5}' },
+              { id: 'dimensionalmaw' as PlacementVfxType, label: 'Dimensional Maw', desc: 'Vertical rift tears the object in', icon: '\u29C9' },
+              { id: 'hexstorm' as PlacementVfxType, label: 'Hex Storm', desc: 'Impossible glyph rings and polyhedra', icon: '\u26A1' },
+              { id: 'singularitydrop' as PlacementVfxType, label: 'Singularity Drop', desc: 'Black core impact with gravity smoke', icon: '\u25CF' },
               { id: 'runeflash' as PlacementVfxType, label: 'Rune Flash', desc: 'Arcane circle glows on ground', icon: '\u2726' },
               { id: 'sparkburst' as PlacementVfxType, label: 'Spark Burst', desc: '200 particles shower outward', icon: '\u2604' },
               { id: 'portalring' as PlacementVfxType, label: 'Portal Ring', desc: 'Glowing ring rises through object', icon: '\u25CE' },
@@ -112,7 +119,7 @@ export function SettingsTab() {
             <input
               type="range"
               min="0.5"
-              max="3.0"
+              max="4.5"
               step="0.1"
               value={placementVfxDuration}
               onChange={(e) => setPlacementVfxDuration(parseFloat(e.target.value))}

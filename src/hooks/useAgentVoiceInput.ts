@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 
+import { registerLipSync, unregisterLipSync, resumeLipSyncContext, type LipSyncController } from '@/lib/lip-sync'
+import { PLAYER_AVATAR_LIPSYNC_ID } from '@/lib/player-avatar-runtime'
 import type { VoiceBackendState } from '@/lib/voice/local-stt'
+import { createWLipSyncLegacyController } from '@/lib/wlipsync-driver'
 
 export interface UseAgentVoiceInputOptions {
   enabled?: boolean
@@ -8,6 +11,7 @@ export interface UseAgentVoiceInputOptions {
   statusEndpoint?: string
   onTranscript: (transcript: string) => void
   focusTargetRef?: RefObject<{ focus: () => void } | null>
+  enablePlayerLipSync?: boolean
 }
 
 export interface AgentVoiceInputController {
@@ -56,10 +60,12 @@ export function useAgentVoiceInput({
   statusEndpoint = transcribeEndpoint,
   onTranscript,
   focusTargetRef,
+  enablePlayerLipSync = false,
 }: UseAgentVoiceInputOptions): AgentVoiceInputController {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const recordingStreamRef = useRef<MediaStream | null>(null)
   const recordedChunksRef = useRef<Blob[]>([])
+  const lipSyncRef = useRef<LipSyncController | null>(null)
 
   const [supported, setSupported] = useState(false)
   const [backendState, setBackendState] = useState<VoiceBackendState>('idle')
@@ -72,6 +78,29 @@ export function useAgentVoiceInput({
     recordingStreamRef.current?.getTracks().forEach(track => track.stop())
     recordingStreamRef.current = null
   }, [])
+
+  const stopPlayerLipSync = useCallback(() => {
+    const ctrl = lipSyncRef.current
+    if (!ctrl) return
+    unregisterLipSync(PLAYER_AVATAR_LIPSYNC_ID, ctrl)
+    ctrl.detach()
+    lipSyncRef.current = null
+  }, [])
+
+  const startPlayerLipSync = useCallback(async (stream: MediaStream) => {
+    if (!enablePlayerLipSync) return
+
+    let ctrl = lipSyncRef.current
+    if (!ctrl) {
+      ctrl = createWLipSyncLegacyController()
+      lipSyncRef.current = ctrl
+    }
+
+    registerLipSync(PLAYER_AVATAR_LIPSYNC_ID, ctrl)
+    await resumeLipSyncContext().catch(() => null)
+    if (lipSyncRef.current !== ctrl) return
+    ctrl.attachStream(stream)
+  }, [enablePlayerLipSync])
 
   const clearError = useCallback(() => {
     setError('')
@@ -231,6 +260,7 @@ export function useAgentVoiceInput({
 
       recorder.onerror = () => {
         setListening(false)
+        stopPlayerLipSync()
         stopRecordingStream()
         setError('Microphone recording failed.')
       }
@@ -242,6 +272,7 @@ export function useAgentVoiceInput({
         recordedChunksRef.current = []
         mediaRecorderRef.current = null
         setListening(false)
+        stopPlayerLipSync()
         stopRecordingStream()
         if (audioBlob.size > 0) {
           void transcribeRecordedAudio(audioBlob, `oasis-voice.${extension}`)
@@ -249,14 +280,16 @@ export function useAgentVoiceInput({
       }
 
       recorder.start()
+      await startPlayerLipSync(stream)
       setListening(true)
     } catch (nextError) {
+      stopPlayerLipSync()
       stopRecordingStream()
       const message = nextError instanceof Error ? nextError.message : 'Unable to access the microphone.'
       setListening(false)
       setError(message)
     }
-  }, [backendMessage, backendState, enabled, listening, refreshBackendStatus, stopRecordingStream, transcribeRecordedAudio])
+  }, [backendMessage, backendState, enabled, listening, refreshBackendStatus, startPlayerLipSync, stopPlayerLipSync, stopRecordingStream, transcribeRecordedAudio])
 
   useEffect(() => {
     setSupported(isVoiceInputSupported())
@@ -277,18 +310,20 @@ export function useAgentVoiceInput({
     recordedChunksRef.current = []
     mediaRecorderRef.current?.stop()
     mediaRecorderRef.current = null
+    stopPlayerLipSync()
     stopRecordingStream()
     setListening(false)
-  }, [enabled, stopRecordingStream])
+  }, [enabled, stopPlayerLipSync, stopRecordingStream])
 
   useEffect(() => {
     return () => {
       recordedChunksRef.current = []
       mediaRecorderRef.current?.stop()
       mediaRecorderRef.current = null
+      stopPlayerLipSync()
       stopRecordingStream()
     }
-  }, [stopRecordingStream])
+  }, [stopPlayerLipSync, stopRecordingStream])
 
   return {
     supported,

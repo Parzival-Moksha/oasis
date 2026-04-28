@@ -23,8 +23,9 @@ import { useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import * as THREE from 'three'
+import { CataclysmConjureEffect, RealityStormConjureEffect, RiftstormConjureEffect } from './AdvancedSpellVFX'
 
-type VfxType = 'textswirl' | 'arcane' | 'vortex' | 'quantumassembly' | 'primordialcauldron' | 'stellarnursery' | 'chronoforge' | 'abyssalemergence'
+type VfxType = 'textswirl' | 'arcane' | 'vortex' | 'quantumassembly' | 'primordialcauldron' | 'stellarnursery' | 'chronoforge' | 'abyssalemergence' | 'realitystorm' | 'riftstorm' | 'cataclysm'
 
 interface ConjureVFXProps {
   position: [number, number, number]
@@ -55,6 +56,12 @@ export function ConjureVFX({ position, prompt, progress, vfxType }: ConjureVFXPr
       return <ChronoForgeEffect position={position} prompt={prompt} progress={progress} />
     case 'abyssalemergence':
       return <AbyssalEmergenceEffect position={position} prompt={prompt} progress={progress} />
+    case 'realitystorm':
+      return <RealityStormConjureEffect position={position} prompt={prompt} progress={progress} />
+    case 'riftstorm':
+      return <RiftstormConjureEffect position={position} prompt={prompt} progress={progress} />
+    case 'cataclysm':
+      return <CataclysmConjureEffect position={position} prompt={prompt} progress={progress} />
   }
 }
 

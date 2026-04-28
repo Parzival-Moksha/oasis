@@ -290,7 +290,7 @@ This is just a description, not a task
 - [ ] Third-person collision detection
 ### World Persistence
 - [x] Auto-save debounce
-- [ ] Cross-device sync via Supabase
+- [ ] Cross-device sync
 
 ## ░▒▓█ PHASE 2 — Agents █▓▒░
 ### Merlin

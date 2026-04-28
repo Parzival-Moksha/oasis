@@ -10,7 +10,7 @@ import { createPortal } from 'react-dom'
 import { SettingsContext } from '../scene-lib'
 import { useOasisStore } from '../../store/oasisStore'
 import { useUILayer } from '@/lib/input-manager'
-import { TOOL_ICONS_MAP, recordTokenUsage } from '@/lib/anorak-engine'
+import { TOOL_ICONS_MAP } from '@/lib/anorak-engine'
 import {
   type AnorakLobe,
   type CustomContextModule as SharedCustomContextModule,
@@ -27,6 +27,13 @@ import { useAgentVoiceInput } from '@/hooks/useAgentVoiceInput'
 import { useAutoresizeTextarea } from '@/hooks/useAutoresizeTextarea'
 import { AgentVoiceInputButton } from './AgentVoiceInputButton'
 import { AvatarGallery } from './AvatarGallery'
+import { readTokenUsagePayload } from '@/lib/token-usage'
+import {
+  listClientAgentSessionCaches,
+  saveClientAgentSessionCaches,
+  type ClientAgentSessionCacheRecord,
+} from '@/lib/agent-session-cache-client'
+import { readBrowserStorage, removeBrowserStorage, writeBrowserStorage } from '@/lib/browser-storage'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -100,7 +107,7 @@ function loadConfig(): AnorakProConfig {
 }
 
 function saveConfig(c: AnorakProConfig) {
-  try { localStorage.setItem(CONFIG_KEY, JSON.stringify(c)) } catch {}
+  writeBrowserStorage(CONFIG_KEY, JSON.stringify(c))
 }
 
 type Tab = 'stream' | 'mindcraft' | 'curator-log' | 'cehq' | 'settings'
@@ -306,6 +313,7 @@ interface StreamEntry {
 
 const SESSIONS_KEY = 'oasis-anorak-pro-sessions'
 const ACTIVE_SESSION_KEY = 'oasis-anorak-pro-active-session'
+const ANORAK_PRO_AGENT_CACHE_TYPE = 'anorak-pro'
 
 interface TokenStats {
   inputTokens: number
@@ -315,6 +323,26 @@ interface TokenStats {
 
 const ZERO_TOKENS: TokenStats = { inputTokens: 0, outputTokens: 0, costUsd: 0 }
 
+function summarizeUsageTokens(event: unknown, defaults: { sessionId?: string; model: string }) {
+  const usage = readTokenUsagePayload(event, {
+    sessionId: defaults.sessionId,
+    provider: 'anthropic',
+    model: defaults.model,
+  })
+  const inputTokens = usage?.inputTokens || 0
+  const outputTokens = usage?.outputTokens || 0
+  const costUsd = typeof usage?.costUsd === 'number' ? usage.costUsd : 0
+  const cost = costUsd > 0 ? `$${costUsd.toFixed(4)}` : ''
+  const tokens = inputTokens > 0 ? `â†“${inputTokens} â†‘${outputTokens}` : ''
+
+  return {
+    inputTokens,
+    outputTokens,
+    costUsd,
+    content: [tokens, cost].filter(Boolean).join(' | ') || 'done',
+  }
+}
+
 interface AnorakProSession {
   id: string
   name: string
@@ -323,17 +351,126 @@ interface AnorakProSession {
   tokens?: TokenStats
 }
 
+function sanitizeTokenStats(value: unknown): TokenStats | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const record = value as Partial<TokenStats>
+  return {
+    inputTokens: typeof record.inputTokens === 'number' && Number.isFinite(record.inputTokens) ? record.inputTokens : 0,
+    outputTokens: typeof record.outputTokens === 'number' && Number.isFinite(record.outputTokens) ? record.outputTokens : 0,
+    costUsd: typeof record.costUsd === 'number' && Number.isFinite(record.costUsd) ? record.costUsd : 0,
+  }
+}
+
 function formatSessionName(date: Date): string {
   return date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
+function sanitizeAnorakProSession(value: unknown): AnorakProSession | null {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Partial<AnorakProSession>
+  if (typeof record.id !== 'string' || !record.id) return null
+  return {
+    id: record.id,
+    name: typeof record.name === 'string' && record.name ? record.name : formatSessionName(new Date()),
+    createdAt: typeof record.createdAt === 'string' ? record.createdAt : new Date().toISOString(),
+    entries: Array.isArray(record.entries) ? record.entries.filter(entry => entry && typeof entry === 'object') as StreamEntry[] : [],
+    tokens: sanitizeTokenStats(record.tokens),
+  }
+}
+
+function getAnorakProSessionLastActiveAt(session: AnorakProSession): number {
+  const entryTime = session.entries.reduce((latest, entry) => Math.max(latest, entry.timestamp || 0), 0)
+  const createdAt = Date.parse(session.createdAt)
+  return entryTime || (Number.isFinite(createdAt) ? createdAt : Date.now())
+}
+
+function sanitizeAnorakProSessions(value: unknown): AnorakProSession[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map(sanitizeAnorakProSession)
+    .filter((session): session is AnorakProSession => Boolean(session))
+    .sort((a, b) => getAnorakProSessionLastActiveAt(b) - getAnorakProSessionLastActiveAt(a))
+}
+
 function loadSessions(): AnorakProSession[] {
   if (typeof window === 'undefined') return []
-  try { return JSON.parse(localStorage.getItem(SESSIONS_KEY) || '[]') } catch { return [] }
+  try { return sanitizeAnorakProSessions(JSON.parse(localStorage.getItem(SESSIONS_KEY) || '[]')) } catch { return [] }
+}
+
+function toAnorakProCacheInput(session: AnorakProSession) {
+  return {
+    sessionId: session.id,
+    title: session.name,
+    payload: session,
+    messageCount: session.entries.length,
+    source: 'oasis-panel',
+    createdAt: session.createdAt,
+    lastActiveAt: getAnorakProSessionLastActiveAt(session),
+  }
+}
+
+function fromAnorakProCacheRecord(record: ClientAgentSessionCacheRecord<AnorakProSession>): AnorakProSession | null {
+  const session = sanitizeAnorakProSession(record.payload)
+  if (!session) return null
+  return {
+    ...session,
+    id: record.sessionId || session.id,
+    name: record.title || session.name,
+  }
+}
+
+function mergeAnorakProSessions(primary: AnorakProSession[], secondary: AnorakProSession[]): AnorakProSession[] {
+  const byId = new Map<string, AnorakProSession>()
+  for (const session of secondary) byId.set(session.id, session)
+  for (const session of primary) byId.set(session.id, session)
+  return sanitizeAnorakProSessions([...byId.values()])
+}
+
+let anorakProLegacyMigrationPromise: Promise<void> | null = null
+
+async function migrateLegacyAnorakProSessions(): Promise<AnorakProSession[]> {
+  if (typeof window === 'undefined') return []
+  if (anorakProLegacyMigrationPromise) {
+    await anorakProLegacyMigrationPromise
+    return []
+  }
+
+  const legacy = loadSessions()
+  if (legacy.length === 0) return []
+
+  anorakProLegacyMigrationPromise = (async () => {
+    const ok = await saveClientAgentSessionCaches(
+      ANORAK_PRO_AGENT_CACHE_TYPE,
+      legacy.map(session => ({ ...toAnorakProCacheInput(session), source: 'legacy-localStorage' })),
+    )
+    if (ok) removeBrowserStorage(SESSIONS_KEY)
+  })()
+
+  try {
+    await anorakProLegacyMigrationPromise
+  } finally {
+    anorakProLegacyMigrationPromise = null
+  }
+
+  return legacy
+}
+
+async function loadPersistedAnorakProSessions(): Promise<AnorakProSession[]> {
+  const records = await listClientAgentSessionCaches<AnorakProSession>(ANORAK_PRO_AGENT_CACHE_TYPE, 100)
+  return sanitizeAnorakProSessions(records.map(fromAnorakProCacheRecord))
 }
 
 function saveSessions(sessions: AnorakProSession[]) {
-  try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions)) } catch { /* QuotaExceeded — silently drop */ }
+  const sanitized = sanitizeAnorakProSessions(sessions)
+  if (sanitized.length === 0) return
+  void saveClientAgentSessionCaches(
+    ANORAK_PRO_AGENT_CACHE_TYPE,
+    sanitized.map(toAnorakProCacheInput),
+  ).then(ok => {
+    if (ok) removeBrowserStorage(SESSIONS_KEY)
+  }).catch(() => {
+    // Ignore persistence errors; live React state remains authoritative.
+  })
 }
 
 function createSession(): AnorakProSession {
@@ -367,6 +504,7 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
       setChatInput(current => (current ? `${current} ${transcript}`.trim() : transcript))
     },
     focusTargetRef: inputRef as React.RefObject<HTMLElement>,
+    enablePlayerLipSync: true,
   })
 
   // Textarea grows with content (oasisspec3)
@@ -380,7 +518,7 @@ const StreamTab = React.memo(function StreamTab({ entries, onSend, isChatting, i
   const toggleLobe = useCallback((lobe: string) => {
     setVisibleLobes(prev => {
       const next = { ...prev, [lobe]: prev[lobe] === false ? true : false }
-      try { localStorage.setItem(LOBE_FILTER_KEY, JSON.stringify(next)) } catch {}
+      writeBrowserStorage(LOBE_FILTER_KEY, JSON.stringify(next))
       return next
     })
   }, [])
@@ -1099,7 +1237,7 @@ function MindcraftTab({
       const next = Math.max(20, resizeRef.current.startW + delta)
       setColWidths(prev => {
         const updated = { ...prev, [resizeRef.current!.key]: next }
-        localStorage.setItem(MC_WIDTHS_KEY, JSON.stringify(updated))
+        writeBrowserStorage(MC_WIDTHS_KEY, JSON.stringify(updated))
         return updated
       })
     }
@@ -2560,14 +2698,13 @@ export function AnorakProPanel({
   const [sessions, setSessions] = useState<AnorakProSession[]>(() => loadSessions())
   const [activeSessionId, setActiveSessionId] = useState<string>(() => {
     if (typeof window === 'undefined') return ''
-    const stored = localStorage.getItem(ACTIVE_SESSION_KEY)
+    const stored = readBrowserStorage(ACTIVE_SESSION_KEY) || ''
     const allSessions = loadSessions()
     if (stored && allSessions.find(s => s.id === stored)) return stored
     if (allSessions.length > 0) return allSessions[0].id
-    const first = createSession()
-    saveSessions([first])
-    return first.id
+    return stored
   })
+  const [sessionsHydrated, setSessionsHydrated] = useState(false)
   const saveDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Derive entries from active session
@@ -2580,7 +2717,7 @@ export function AnorakProPanel({
         const newEntries = typeof updater === 'function' ? updater(s.entries) : updater
         return { ...s, entries: newEntries }
       })
-      // Debounced save to localStorage
+      // Debounced save to SQLite-backed local cache.
       if (saveDebounce.current) clearTimeout(saveDebounce.current)
       saveDebounce.current = setTimeout(() => saveSessions(next), 500)
       return next
@@ -2616,7 +2753,7 @@ export function AnorakProPanel({
       return next
     })
     setActiveSessionId(s.id)
-    localStorage.setItem(ACTIVE_SESSION_KEY, s.id)
+    writeBrowserStorage(ACTIVE_SESSION_KEY, s.id)
   }, [])
 
   const handleSwitchSession = useCallback((id: string) => {
@@ -2627,13 +2764,36 @@ export function AnorakProPanel({
       setSessions(prev => { saveSessions(prev); return prev })
     }
     setActiveSessionId(id)
-    localStorage.setItem(ACTIVE_SESSION_KEY, id)
+    writeBrowserStorage(ACTIVE_SESSION_KEY, id)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const legacy = await migrateLegacyAnorakProSessions()
+      const persisted = await loadPersistedAnorakProSessions()
+      const next = mergeAnorakProSessions(persisted, legacy)
+      if (cancelled) return
+      if (next.length > 0) {
+        setSessions(next)
+        setActiveSessionId(current => {
+          if (current && next.some(session => session.id === current)) return current
+          return next[0].id
+        })
+      }
+      setSessionsHydrated(true)
+    })().catch(() => {
+      if (!cancelled) setSessionsHydrated(true)
+    })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   // Ensure at least one session exists
   useEffect(() => {
-    if (sessions.length === 0) handleNewSession()
-  }, [sessions.length, handleNewSession])
+    if (sessionsHydrated && sessions.length === 0) handleNewSession()
+  }, [sessions.length, sessionsHydrated, handleNewSession])
 
   useEffect(() => {
     if (!isOpen) return
@@ -2651,15 +2811,42 @@ export function AnorakProPanel({
   const [isAgentRunning, setIsAgentRunning] = useState(false)
   const [isChatting, setIsChatting] = useState(false)
   const chatAbortRef = useRef<AbortController | null>(null)
+  const chatActivityRunIdRef = useRef<string | null>(null)
+  const agentActivityRunIdRef = useRef<string | null>(null)
   const [proSessionId, setProSessionId] = useState<string>(() => {
     if (typeof window === 'undefined') return ''
-    return localStorage.getItem(PRO_SESSION_KEY) || ''
+    return readBrowserStorage(PRO_SESSION_KEY) || ''
   })
+
+  useEffect(() => () => {
+    const { finishAgentWork } = useOasisStore.getState()
+    if (chatActivityRunIdRef.current) {
+      finishAgentWork('anorak-pro', chatActivityRunIdRef.current)
+      chatActivityRunIdRef.current = null
+    }
+    if (agentActivityRunIdRef.current) {
+      finishAgentWork('anorak-pro', agentActivityRunIdRef.current)
+      agentActivityRunIdRef.current = null
+    }
+  }, [])
 
   // ─═̷─ Chat with Anorak Pro ─═̷─
   const handleChat = useCallback(async (msg: string) => {
     if (isChatting) return
     setIsChatting(true)
+    const activityRunId = `anorak-pro-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    chatActivityRunIdRef.current = activityRunId
+    useOasisStore.getState().startAgentWork('anorak-pro', activityRunId, proSessionId || undefined)
+    const finishActivity = () => {
+      if (chatActivityRunIdRef.current !== activityRunId) return
+      chatActivityRunIdRef.current = null
+      useOasisStore.getState().finishAgentWork('anorak-pro', activityRunId)
+    }
+    const failActivity = () => {
+      if (chatActivityRunIdRef.current !== activityRunId) return
+      chatActivityRunIdRef.current = null
+      useOasisStore.getState().failAgentWork('anorak-pro', activityRunId)
+    }
     const addEntry = setStreamEntriesRef.current
 
     // Add user message to stream
@@ -2693,6 +2880,7 @@ export function AnorakProPanel({
           id: entryIdRef.current++, type: 'error',
           content: `HTTP ${res.status}`, lobe: 'anorak-pro', timestamp: Date.now(),
         }])
+        failActivity()
         return
       }
 
@@ -2719,7 +2907,7 @@ export function AnorakProPanel({
             // Capture session ID
             if (event.type === 'session' && event.sessionId && !proSessionId) {
               setProSessionId(event.sessionId)
-              localStorage.setItem(PRO_SESSION_KEY, event.sessionId)
+              writeBrowserStorage(PRO_SESSION_KEY, event.sessionId)
             }
             // Text from assistant
             if (event.type === 'text') {
@@ -2736,6 +2924,7 @@ export function AnorakProPanel({
             }
             // Tool use
             if (event.type === 'tool' || event.type === 'tool_start') {
+              useOasisStore.getState().setAgentWorkTool('anorak-pro', activityRunId, event.name || 'tool')
               setStreamEntriesRef.current(prev => [...prev, {
                 id: entryIdRef.current++, type: event.type,
                 content: event.display || event.name || 'tool', lobe: 'anorak-pro', timestamp: Date.now(),
@@ -2748,6 +2937,7 @@ export function AnorakProPanel({
             }
             // Tool result
             if (event.type === 'tool_result') {
+              useOasisStore.getState().setAgentWorkTool('anorak-pro', activityRunId, null)
               setStreamEntriesRef.current(prev => [...prev, {
                 id: entryIdRef.current++, type: 'tool_result',
                 content: event.preview || event.name || '', lobe: 'anorak-pro', timestamp: Date.now(),
@@ -2762,17 +2952,18 @@ export function AnorakProPanel({
             }
             // Result (cost/tokens)
             if (event.type === 'result') {
-              const inTok = Number(event.total_input_tokens) || 0
-              const outTok = Number(event.total_output_tokens) || 0
-              const cost = event.cost_usd ? `$${Number(event.cost_usd).toFixed(4)}` : ''
+              const usage = summarizeUsageTokens(event, {
+                sessionId: proSessionId || undefined,
+                model: (config.models as Record<string, string>)?.['anorak-pro'] || 'opus',
+              })
+              /*
               const tokens = inTok ? `↓${inTok} ↑${outTok}` : ''
+              */
               setStreamEntriesRef.current(prev => [...prev, {
                 id: entryIdRef.current++, type: 'result',
-                content: [tokens, cost].filter(Boolean).join(' | ') || 'done', lobe: 'anorak-pro', timestamp: Date.now(),
+                content: usage.content, lobe: 'anorak-pro', timestamp: Date.now(),
               }])
-              // Accumulate session tokens + persist
-              addSessionTokensRef.current(inTok, outTok, Number(event.cost_usd) || 0)
-              recordTokenUsage('anorak-pro-chat', inTok, outTok)
+              addSessionTokensRef.current(usage.inputTokens, usage.outputTokens, usage.costUsd)
             }
             // Thinking
             if (event.type === 'thinking') {
@@ -2783,6 +2974,7 @@ export function AnorakProPanel({
             }
             // Errors
             if (event.type === 'error') {
+              failActivity()
               setStreamEntriesRef.current(prev => [...prev, {
                 id: entryIdRef.current++, type: 'error',
                 content: event.content || event.error || '', lobe: 'anorak-pro', timestamp: Date.now(),
@@ -2800,13 +2992,18 @@ export function AnorakProPanel({
         }
       }
     } catch (e) {
-      if (controller.signal.aborted) return
-      setStreamEntriesRef.current(prev => [...prev, {
-        id: entryIdRef.current++, type: 'error',
-        content: `${e}`, lobe: 'system', timestamp: Date.now(),
-      }])
+      if (controller.signal.aborted) {
+        finishActivity()
+      } else {
+        setStreamEntriesRef.current(prev => [...prev, {
+          id: entryIdRef.current++, type: 'error',
+          content: `${e}`, lobe: 'system', timestamp: Date.now(),
+        }])
+        failActivity()
+      }
     } finally {
       if (chatAbortRef.current === controller) chatAbortRef.current = null
+      finishActivity()
       setIsChatting(false)
     }
   }, [isChatting, proSessionId, config.customModules, config.lobeModules, config.models, config.moduleValues, config.topMissionCount])
@@ -2844,7 +3041,7 @@ export function AnorakProPanel({
     const newY = Math.max(-10, e.clientY - dragStart.current.y)
     const newPos = { x: e.clientX - dragStart.current.x, y: newY }
     setPosition(newPos)
-    localStorage.setItem(POS_KEY, JSON.stringify(newPos))
+    writeBrowserStorage(POS_KEY, JSON.stringify(newPos))
   }, [isDragging])
 
   const handleDragEnd = useCallback(() => setIsDragging(false), [])
@@ -2860,7 +3057,7 @@ export function AnorakProPanel({
     const newW = Math.max(MIN_WIDTH, resizeStart.current.w + (e.clientX - resizeStart.current.x))
     const newH = Math.max(MIN_HEIGHT, resizeStart.current.h + (e.clientY - resizeStart.current.y))
     setSize({ w: newW, h: newH })
-    localStorage.setItem(SIZE_KEY, JSON.stringify({ w: newW, h: newH }))
+    writeBrowserStorage(SIZE_KEY, JSON.stringify({ w: newW, h: newH }))
   }, [isResizing])
 
   const handleResizeEnd = useCallback(() => setIsResizing(false), [])
@@ -2877,11 +3074,11 @@ export function AnorakProPanel({
   // Save settings to localStorage
   const updateSettings = useCallback((s: PanelSettings) => {
     setPanelSettings(s)
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s))
+    writeBrowserStorage(SETTINGS_KEY, JSON.stringify(s))
   }, [])
 
   // Save active tab
-  useEffect(() => { localStorage.setItem(TAB_KEY, activeTab) }, [activeTab])
+  useEffect(() => { writeBrowserStorage(TAB_KEY, activeTab) }, [activeTab])
 
   // ─═̷─ SSE consumer for curate/execute streams ─═̷─
   const abortRef = useRef<AbortController | null>(null)
@@ -2893,6 +3090,19 @@ export function AnorakProPanel({
     abortRef.current = controller
 
     setIsAgentRunning(true)
+    const activityRunId = `anorak-pro-agent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    agentActivityRunIdRef.current = activityRunId
+    useOasisStore.getState().startAgentWork('anorak-pro', activityRunId, proSessionId || undefined)
+    const finishActivity = () => {
+      if (agentActivityRunIdRef.current !== activityRunId) return
+      agentActivityRunIdRef.current = null
+      useOasisStore.getState().finishAgentWork('anorak-pro', activityRunId)
+    }
+    const failActivity = () => {
+      if (agentActivityRunIdRef.current !== activityRunId) return
+      agentActivityRunIdRef.current = null
+      useOasisStore.getState().failAgentWork('anorak-pro', activityRunId)
+    }
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -2902,6 +3112,7 @@ export function AnorakProPanel({
       })
       if (!res.ok || !res.body) {
         setStreamEntriesRef.current(prev => [...prev, { id: entryIdRef.current++, type: 'error', content: `HTTP ${res.status}`, lobe: 'system', timestamp: Date.now() }])
+        failActivity()
         return
       }
 
@@ -2925,19 +3136,36 @@ export function AnorakProPanel({
             const lobe = event.lobe || 'system'
             const type = event.type || 'text'
             let content = event.content || event.display || event.preview || event.name || ''
+            if (type === 'tool' || type === 'tool_start') {
+              useOasisStore.getState().setAgentWorkTool('anorak-pro', activityRunId, event.name || 'tool')
+            }
+            if (type === 'tool_result' || type === 'result' || type === 'text') {
+              useOasisStore.getState().setAgentWorkTool('anorak-pro', activityRunId, null)
+            }
+            if (type === 'error') {
+              failActivity()
+            }
             if (type === 'done') continue
             // Result events have cost/token data but no content field
             if (type === 'result' && !content) {
+              const usage = summarizeUsageTokens(event, {
+                sessionId: proSessionId || undefined,
+                model: (config.models as Record<string, string>)?.[lobe] || 'sonnet',
+              })
+              content = usage.content
+              /*
               const cost = event.cost_usd ? `$${Number(event.cost_usd).toFixed(4)}` : ''
               const tokens = event.total_input_tokens ? `↓${event.total_input_tokens} ↑${event.total_output_tokens}` : ''
               content = [tokens, cost].filter(Boolean).join(' | ') || 'done'
+              */
             }
-            // Accumulate session tokens on result events + persist
+            // Accumulate session tokens on standardized result events
             if (type === 'result') {
-              const inTok = Number(event.total_input_tokens) || 0
-              const outTok = Number(event.total_output_tokens) || 0
-              addSessionTokensRef.current(inTok, outTok, Number(event.cost_usd) || 0)
-              recordTokenUsage(`anorak-pro-${lobe}`, inTok, outTok)
+              const usage = summarizeUsageTokens(event, {
+                sessionId: proSessionId || undefined,
+                model: (config.models as Record<string, string>)?.[lobe] || 'sonnet',
+              })
+              addSessionTokensRef.current(usage.inputTokens, usage.outputTokens, usage.costUsd)
             }
             // Media events
             if (type === 'media') {
@@ -2968,9 +3196,13 @@ export function AnorakProPanel({
     } catch (e) {
       if (!controller.signal.aborted) {
         setStreamEntriesRef.current(prev => [...prev, { id: entryIdRef.current++, type: 'error', content: `${e}`, lobe: 'system', timestamp: Date.now() }])
+        failActivity()
+      } else {
+        finishActivity()
       }
     } finally {
       if (abortRef.current === controller) abortRef.current = null
+      finishActivity()
       setIsAgentRunning(false)
     }
   }, [])

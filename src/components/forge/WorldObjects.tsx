@@ -45,8 +45,41 @@ import {
 
 const IDLE_CLIP_PATTERNS = /idle|breathe?|stand|rest|pose|wait/i
 const WALK_CLIP_PATTERNS = /walk|run|move|locomotion|jog/i
+const AGENT_WORK_ANIMATION_ID = 'ual-talking'
 import { resolveAgentAvatarUrl } from '../../lib/agent-avatar-catalog'
 import { canReceiveMoveOrder, resolveMoveOrderObjectIds } from '../../lib/march-order'
+
+type VRMExpressionManagerLike = {
+  expressionMap?: Record<string, unknown>
+  setValue: (name: string, value: number) => void
+}
+
+const VRM_EXPRESSION_ALIASES = {
+  blink: ['blink', 'blink_l', 'blink_r'],
+  aa: ['aa', 'a'],
+  ih: ['ih', 'i'],
+  ou: ['ou', 'u'],
+  ee: ['ee', 'e'],
+  oh: ['oh', 'o'],
+  happy: ['happy', 'joy', 'fun'],
+  angry: ['angry'],
+  sad: ['sad', 'sorrow'],
+  surprised: ['surprised'],
+  relaxed: ['relaxed', 'fun'],
+} as const
+
+function setVrmExpressionValue(
+  expr: VRMExpressionManagerLike,
+  aliases: readonly string[],
+  value: number,
+) {
+  const expressionMap = expr.expressionMap
+  const target = expressionMap
+    ? aliases.find(name => Object.prototype.hasOwnProperty.call(expressionMap, name))
+    : aliases[0]
+  if (!target) return
+  expr.setValue(target, value)
+}
 
 // ░▒▓ CLIPBOARD — module-level, survives across renders, no reactivity needed ▓▒░
 let _clipboard: PlacementPending | null = null
@@ -143,12 +176,15 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
   liveTransformResolver?: (() => { position?: [number, number, number]; rotation?: [number, number, number] } | null) | undefined
 }) {
   const groupRef = useRef<THREE.Group>(null)
+  const materializeRef = useRef<THREE.Group>(null)
   const { setIsDragging } = useContext(DragContext)
   const setInspectedObject = useOasisStore(s => s.setInspectedObject)
   const isReadOnly = useOasisStore(s => s.isViewMode && !s.isViewModeEditable)
   const { settings: _sceneSettings } = useContext(SettingsContext)
   const isRp1 = _sceneSettings.rp1Mode
   const isAgentFocused = useInputManager(s => s.inputState === 'agent-focus')
+  const materialization = useOasisStore(s => s.agentMaterializations[id])
+  const clearAgentMaterialization = useOasisStore(s => s.clearAgentMaterialization)
 
   // ░▒▓ Movement system — reads behavior from store, applies every frame ▓▒░
   const behavior = useOasisStore(s => s.behaviors[id])
@@ -174,6 +210,27 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
     if (!next) return
     if (next.position) groupRef.current.position.set(...next.position)
     if (next.rotation) groupRef.current.rotation.set(...next.rotation)
+  })
+
+  useFrame(() => {
+    const target = materializeRef.current
+    if (!target) return
+
+    if (!materialization) {
+      if (Math.abs(target.scale.x - 1) > 0.001) target.scale.setScalar(1)
+      return
+    }
+
+    if (materialization.phase === 'pending' || !materialization.revealStartedAt) {
+      target.scale.setScalar(materialization.minScale)
+      return
+    }
+
+    const elapsed = Date.now() - materialization.revealStartedAt
+    const progress = Math.min(1, Math.max(0, elapsed / materialization.revealDurationMs))
+    const scale = materialization.minScale + (1 - materialization.minScale) * progress
+    target.scale.setScalar(scale)
+    if (progress >= 1) clearAgentMaterialization(id)
   })
 
   // Callback ref for TransformControls — attaches dragging-changed listener
@@ -243,7 +300,9 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
             <meshBasicMaterial color="#3B82F6" transparent opacity={0.4} depthWrite={false} />
           </mesh>
         )}
-        {children}
+        <group ref={materializeRef}>
+          {children}
+        </group>
       </group>
 
       {/* TransformControls — callback ref ensures listener attaches on mount */}
@@ -804,6 +863,39 @@ export function SpatialAudioAttachment({ objectId, audioUrl, volume = 1, maxDist
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// AUDIO SOURCE RENDERER — placeholder mesh for audio-only placements (loudspeaker)
+// ░▒▓ Used when CatalogPlacement has audioUrl but no imageUrl/videoUrl/glbPath ▓▒░
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export function AudioSourceRenderer({ scale }: { scale: number }) {
+  const s = scale
+  return (
+    <group position={[0, s * 0.5, 0]}>
+      {/* Speaker cabinet */}
+      <mesh>
+        <boxGeometry args={[s * 0.7, s, s * 0.6]} />
+        <meshStandardMaterial color="#1a1a1a" roughness={0.6} metalness={0.4} />
+      </mesh>
+      {/* Tweeter (front) */}
+      <mesh position={[0, s * 0.22, s * 0.31]}>
+        <cylinderGeometry args={[s * 0.12, s * 0.14, s * 0.04, 24]} />
+        <meshStandardMaterial color="#222" roughness={0.7} metalness={0.3} />
+      </mesh>
+      {/* Woofer (front) */}
+      <mesh position={[0, -s * 0.18, s * 0.31]}>
+        <cylinderGeometry args={[s * 0.22, s * 0.25, s * 0.04, 32]} />
+        <meshStandardMaterial color="#0a0a0a" roughness={0.85} metalness={0.1} />
+      </mesh>
+      {/* Glow ring around woofer to signal it's an audio source */}
+      <mesh position={[0, -s * 0.18, s * 0.33]}>
+        <ringGeometry args={[s * 0.24, s * 0.27, 32]} />
+        <meshBasicMaterial color="#14b8a6" transparent opacity={0.6} side={THREE.DoubleSide} />
+      </mesh>
+    </group>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // AUDIO ELEMENT REGISTRY — allows Joystick to read/seek playback position
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1084,7 +1176,7 @@ export function CatalogModelRenderer({ path, scale, objectId, displayName }: { p
 // frozen mannequins. With it, they LIVE — blink, sway, smile.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { path: string; scale: number; objectId?: string; displayName?: string }) {
+export function VRMCatalogRenderer({ path, scale, objectId, displayName, activityAnimationId }: { path: string; scale: number; objectId?: string; displayName?: string; activityAnimationId?: string | null }) {
   const groupRef = useRef<THREE.Group>(null)
   const vrmRef = useRef<VRM | null>(null)
   const [vrm, setVrm] = useState<VRM | null>(null)
@@ -1172,7 +1264,7 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
   // ░▒▓ ANIMATION SYSTEM — Load from library, retarget for VRM skeleton ▓▒░
   const mixerRef = useRef<THREE.AnimationMixer | null>(null)
   const currentActionRef = useRef<THREE.AnimationAction | null>(null)
-  const activeAnimRef = useRef<'none' | 'idle' | 'walk' | 'behavior'>('none')
+  const activeAnimRef = useRef<'none' | 'idle' | 'walk' | 'behavior' | 'activity'>('none')
   const activeClipRef = useRef<THREE.AnimationClip | null>(null)
   const isMoving = useOasisStore(s => objectId ? !!s.behaviors[objectId]?.moveTarget : false)
   const animConfig = useOasisStore(s => objectId ? s.behaviors[objectId]?.animation : undefined)
@@ -1207,16 +1299,35 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
     setIdleClip(null)
     const retargetFor = (clip: THREE.AnimationClip, animId: string, k: string) =>
       isUALAnimation(animId) ? retargetUALClipForVRM(clip, vrm, k) : retargetClipForVRM(clip, vrm, k)
-    const cachedWalk = getCachedClip('walk')
+    const retargetUsable = (clip: THREE.AnimationClip, animId: string, k: string): THREE.AnimationClip | null => {
+      const retargeted = retargetFor(clip, animId, k)
+      return retargeted.tracks.length > 0 ? retargeted : null
+    }
+    const cachedUalWalk = getCachedClip('ual-walk')
+    const cachedWalk = cachedUalWalk || getCachedClip('walk')
     if (cachedWalk) {
-      setWalkClip(retargetFor(cachedWalk, 'walk', clipCacheKey))
+      const animId = cachedUalWalk ? 'ual-walk' : 'walk'
+      const retargeted = retargetUsable(cachedWalk, animId, clipCacheKey)
+      if (retargeted) setWalkClip(retargeted)
     }
     const cachedIdle = getCachedClip('idle')
     if (cachedIdle) {
       setIdleClip(retargetFor(cachedIdle, 'idle', `${clipCacheKey}::idle`))
     }
-    loadAnimationClip('walk').then(clip => {
-      if (clip && !cancelled) setWalkClip(retargetFor(clip, 'walk', clipCacheKey))
+    loadAnimationClip('ual-walk').then(clip => {
+      if (cancelled) return null
+      if (clip) {
+        const retargeted = retargetUsable(clip, 'ual-walk', clipCacheKey)
+        if (retargeted) {
+          setWalkClip(retargeted)
+          return null
+        }
+      }
+      return loadAnimationClip('walk').then(fbxClip => {
+        if (!fbxClip || cancelled) return
+        const retargeted = retargetUsable(fbxClip, 'walk', clipCacheKey)
+        if (retargeted) setWalkClip(retargeted)
+      })
     })
     // Try proper idle first, fall back to idle-fight
     loadAnimationClip('idle').then(clip => {
@@ -1256,6 +1367,26 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
     }
   }, [animConfig?.clipName, clipCacheKey, vrm])
 
+  const [activityClip, setActivityClip] = useState<THREE.AnimationClip | null>(null)
+  useEffect(() => {
+    const animId = activityAnimationId || ''
+    if (!animId || !vrm) { setActivityClip(null); return }
+    let cancelled = false
+    setActivityClip(null)
+    loadAnimationClip(animId).then(clip => {
+      if (!clip || cancelled) return
+      const retargeted = isUALAnimation(animId)
+        ? retargetUALClipForVRM(clip, vrm, `${clipCacheKey}::activity:${animId}`)
+        : retargetClipForVRM(clip, vrm, `${clipCacheKey}::activity:${animId}`)
+      if (retargeted.tracks.length > 0) setActivityClip(retargeted)
+    }).catch(() => {
+      if (!cancelled) setActivityClip(null)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [activityAnimationId, clipCacheKey, vrm])
+
   useEffect(() => {
     if (!objectId) return
     setAvatarLocomotionReady(objectId, false)
@@ -1276,10 +1407,11 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
     if (!mixer) return
 
     // Determine what SHOULD play right now
-    let target: 'behavior' | 'walk' | 'idle' | 'none' = 'none'
+    let target: 'behavior' | 'walk' | 'activity' | 'idle' | 'none' = 'none'
     let targetClip: THREE.AnimationClip | null = null
     if (isMoving && walkClip) { target = 'walk'; targetClip = walkClip }
     else if (behaviorClip) { target = 'behavior'; targetClip = behaviorClip }
+    else if (activityClip) { target = 'activity'; targetClip = activityClip }
     else if (idleClip) { target = 'idle'; targetClip = idleClip }
 
     // Already playing same state AND same clip → no-op
@@ -1296,6 +1428,7 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
     let clip: THREE.AnimationClip | null = null
     if (target === 'behavior') clip = behaviorClip
     else if (target === 'walk') clip = walkClip
+    else if (target === 'activity') clip = activityClip
     else if (target === 'idle') clip = idleClip
 
     if (clip) {
@@ -1309,6 +1442,7 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
         action.setLoop(THREE.LoopRepeat, Infinity)
         // Walk anim sped up 2x — feet were lagging behind translation (oasisspec3 fix)
         if (target === 'walk') action.timeScale = 2
+        if (target === 'activity') action.timeScale = 1
       }
       action.reset().fadeIn(0.3).play()
       currentActionRef.current = action
@@ -1317,7 +1451,7 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
     activeAnimRef.current = target
     activeClipRef.current = targetClip
     console.log(`[VRM:NPC] ${displayName || objectId} → anim: ${target}`)
-  }, [isMoving, walkClip, idleClip, behaviorClip, animConfig?.loop, animConfig?.speed, displayName, objectId])
+  }, [isMoving, walkClip, idleClip, behaviorClip, activityClip, animConfig?.loop, animConfig?.speed, displayName, objectId])
 
   useEffect(() => {
     const mixer = mixerRef.current
@@ -1386,54 +1520,54 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName }: { pat
     if (expr) {
       // Blink cycle — offset per NPC so they feel independent
       const blinkPhase = t % 4
-      expr.setValue('blink', (blinkPhase > 3.7 && blinkPhase < 3.9) ? 1 : 0)
+      setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.blink, (blinkPhase > 3.7 && blinkPhase < 3.9) ? 1 : 0)
 
       // ░▒▓ LIP SYNC — call controller.update() every frame, apply visemes directly ▓▒░
       const lipCtrl = objectId ? getLipSync(objectId) : null
       const lipState = lipCtrl?.isActive ? lipCtrl.update() : null
       const clearLipVisemes = () => {
-        expr.setValue('aa', 0)
-        expr.setValue('ih', 0)
-        expr.setValue('ou', 0)
-        expr.setValue('ee', 0)
-        expr.setValue('oh', 0)
+        setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.aa, 0)
+        setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.ih, 0)
+        setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.ou, 0)
+        setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.ee, 0)
+        setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.oh, 0)
       }
 
       // ░▒▓ Joystick expression overrides — if set, they take priority over defaults ▓▒░
       const exprOverrides = objectId ? useOasisStore.getState().behaviors[objectId]?.expressions : undefined
       if (lipState && (lipState.aa > 0.01 || lipState.oh > 0.01 || lipState.ee > 0.01)) {
         // Lip sync producing values → drive visemes from FFT analyser
-        expr.setValue('aa', lipState.aa)
-        expr.setValue('ih', lipState.ih)
-        expr.setValue('ou', lipState.ou)
-        expr.setValue('ee', lipState.ee)
-        expr.setValue('oh', lipState.oh)
+        setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.aa, lipState.aa)
+        setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.ih, lipState.ih)
+        setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.ou, lipState.ou)
+        setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.ee, lipState.ee)
+        setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.oh, lipState.oh)
         // Still apply emotion overrides from Joystick (happy, angry, etc.)
         if (exprOverrides) {
-          if (exprOverrides.happy != null) expr.setValue('happy', exprOverrides.happy)
-          if (exprOverrides.angry != null) expr.setValue('angry', exprOverrides.angry)
-          if (exprOverrides.sad != null) expr.setValue('sad', exprOverrides.sad)
-          if (exprOverrides.surprised != null) expr.setValue('surprised', exprOverrides.surprised)
-          if (exprOverrides.relaxed != null) expr.setValue('relaxed', exprOverrides.relaxed)
+          if (exprOverrides.happy != null) setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.happy, exprOverrides.happy)
+          if (exprOverrides.angry != null) setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.angry, exprOverrides.angry)
+          if (exprOverrides.sad != null) setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.sad, exprOverrides.sad)
+          if (exprOverrides.surprised != null) setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.surprised, exprOverrides.surprised)
+          if (exprOverrides.relaxed != null) setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.relaxed, exprOverrides.relaxed)
         }
       } else if (exprOverrides && Object.keys(exprOverrides).length > 0) {
         clearLipVisemes()
         // No lip sync → Joystick expression overrides
-        if (exprOverrides.happy != null) expr.setValue('happy', exprOverrides.happy)
-        if (exprOverrides.angry != null) expr.setValue('angry', exprOverrides.angry)
-        if (exprOverrides.sad != null) expr.setValue('sad', exprOverrides.sad)
-        if (exprOverrides.surprised != null) expr.setValue('surprised', exprOverrides.surprised)
-        if (exprOverrides.relaxed != null) expr.setValue('relaxed', exprOverrides.relaxed)
-        if (exprOverrides.aa != null) expr.setValue('aa', exprOverrides.aa)
-        if (exprOverrides.ih != null) expr.setValue('ih', exprOverrides.ih)
-        if (exprOverrides.ou != null) expr.setValue('ou', exprOverrides.ou)
-        if (exprOverrides.ee != null) expr.setValue('ee', exprOverrides.ee)
-        if (exprOverrides.oh != null) expr.setValue('oh', exprOverrides.oh)
+        if (exprOverrides.happy != null) setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.happy, exprOverrides.happy)
+        if (exprOverrides.angry != null) setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.angry, exprOverrides.angry)
+        if (exprOverrides.sad != null) setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.sad, exprOverrides.sad)
+        if (exprOverrides.surprised != null) setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.surprised, exprOverrides.surprised)
+        if (exprOverrides.relaxed != null) setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.relaxed, exprOverrides.relaxed)
+        if (exprOverrides.aa != null) setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.aa, exprOverrides.aa)
+        if (exprOverrides.ih != null) setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.ih, exprOverrides.ih)
+        if (exprOverrides.ou != null) setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.ou, exprOverrides.ou)
+        if (exprOverrides.ee != null) setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.ee, exprOverrides.ee)
+        if (exprOverrides.oh != null) setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.oh, exprOverrides.oh)
       } else {
         clearLipVisemes()
         // Default: subtle breathing smile
         const smileAmount = Math.sin(t * 0.3) * 0.15 + 0.1
-        expr.setValue('happy', Math.max(0, smileAmount))
+        setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.happy, Math.max(0, smileAmount))
       }
     }
 
@@ -1589,7 +1723,8 @@ export function TransformKeyHandler() {
       // ░▒▓ UI LAYER GUARD — when panels are open, keep core world navigation alive ▓▒░
       // Enter is needed for window/image zoomon, PgUp/PgDown for slides, and
       // Delete/Backspace still routes through the typing guard below.
-      if (useInputManager.getState().hasActiveUILayer() && !['Escape', 'Delete', 'Backspace', 'Enter', 'PageDown', 'PageUp'].includes(e.key)) return
+      const isAgentWindowCycleKey = input.inputState === 'agent-focus' && (e.key === 'n' || e.key === 'N')
+      if (useInputManager.getState().hasActiveUILayer() && !isAgentWindowCycleKey && !['Escape', 'Delete', 'Backspace', 'Enter', 'PageDown', 'PageUp'].includes(e.key)) return
 
       // ░▒▓ ALL KEYS — check if typing in form element ▓▒░
       const NON_TEXT_INPUTS = new Set(['range', 'color', 'checkbox', 'radio', 'file', 'button', 'image', 'reset', 'submit'])
@@ -1690,6 +1825,13 @@ export function TransformKeyHandler() {
         }
         case 'pageup': {
           dispatch({ type: 'PREV_SLIDE' })
+          e.preventDefault()
+          break
+        }
+
+        case 'n': {
+          if (input.inputState !== 'agent-focus') break
+          dispatch({ type: e.shiftKey ? 'PREV_AGENT_WINDOW' : 'NEXT_AGENT_WINDOW' })
           e.preventDefault()
           break
         }
@@ -2593,9 +2735,11 @@ export function WorldObjectsRenderer() {
                   ? <VideoPlaneRenderer objectId={ca.id} videoUrl={ca.videoUrl} scale={ca.scale} frameStyle={ca.imageFrameStyle} frameThickness={ca.imageFrameThickness} />
                   : ca.imageUrl
                     ? <ImagePlaneRenderer imageUrl={ca.imageUrl} scale={ca.scale} frameStyle={ca.imageFrameStyle} frameThickness={ca.imageFrameThickness} />
-                    : ca.glbPath.endsWith('.vrm')
-                      ? <VRMCatalogRenderer path={ca.glbPath} scale={ca.scale} objectId={ca.id} displayName={ca.name} />
-                      : <CatalogModelRenderer path={ca.glbPath} scale={ca.scale} objectId={ca.id} displayName={ca.name} />
+                    : !ca.glbPath && ca.audioUrl
+                      ? <AudioSourceRenderer scale={ca.scale} />
+                      : ca.glbPath.endsWith('.vrm')
+                        ? <VRMCatalogRenderer path={ca.glbPath} scale={ca.scale} objectId={ca.id} displayName={ca.name} />
+                        : <CatalogModelRenderer path={ca.glbPath} scale={ca.scale} objectId={ca.id} displayName={ca.name} />
                 }
                 {/* ░▒▓ SPATIAL AUDIO — read from behaviors store ▓▒░ */}
                 <SpatialAudioFromBehavior objectId={ca.id} />
@@ -2767,11 +2911,14 @@ function AgentAvatarsSection({ selectedObjectId, selectObject, transformMode, on
   const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
   const transforms = useOasisStore(s => s.transforms)
   const liveAgentAvatarAudio = useOasisStore(s => s.liveAgentAvatarAudio)
+  const agentActivity = useOasisStore(s => s.agentActivity)
 
   useEffect(() => {
+    void loadAnimationClip('ual-walk')
     void loadAnimationClip('walk')
     void loadAnimationClip('idle')
     void loadAnimationClip('idle-fight')
+    void loadAnimationClip(AGENT_WORK_ANIMATION_ID)
   }, [])
 
   const windowMap = useMemo(
@@ -2782,7 +2929,7 @@ function AgentAvatarsSection({ selectedObjectId, selectObject, transformMode, on
     const winners = new Map<string, string>()
     const scores = new Map<string, number>()
     for (const avatar of placedAgentAvatars) {
-      const isSharedAvatarType = avatar.agentType === 'anorak-pro' || avatar.agentType === 'merlin' || avatar.agentType === 'hermes' || avatar.agentType === 'openclaw'
+      const isSharedAvatarType = avatar.agentType === 'anorak-pro' || avatar.agentType === 'merlin' || avatar.agentType === 'realtime' || avatar.agentType === 'hermes' || avatar.agentType === 'openclaw'
       if (!isSharedAvatarType) continue
       const score = (avatar.linkedWindowId ? 0 : 100) + (transforms[avatar.id] ? 20 : 0)
       const currentScore = scores.get(avatar.agentType) ?? Number.NEGATIVE_INFINITY
@@ -2799,7 +2946,7 @@ function AgentAvatarsSection({ selectedObjectId, selectObject, transformMode, on
   return (
     <>
       {placedAgentAvatars.map(avatar => {
-        const isSharedAvatarType = avatar.agentType === 'anorak-pro' || avatar.agentType === 'merlin' || avatar.agentType === 'hermes' || avatar.agentType === 'openclaw'
+        const isSharedAvatarType = avatar.agentType === 'anorak-pro' || avatar.agentType === 'merlin' || avatar.agentType === 'realtime' || avatar.agentType === 'hermes' || avatar.agentType === 'openclaw'
         if (isSharedAvatarType && sharedAvatarWinnerByType.get(avatar.agentType) !== avatar.id) return null
         if (!avatar.avatar3dUrl) return null
         const renderAvatarUrl = resolveAgentAvatarUrl(avatar.avatar3dUrl).url
@@ -2817,6 +2964,9 @@ function AgentAvatarsSection({ selectedObjectId, selectObject, transformMode, on
           : avatar.scale
         const renderScale = scalarFromTransformScale(avatarTransform?.scale, derivedScale)
         const audio = liveAgentAvatarAudio[avatar.id]
+        const activity = agentActivity[avatar.agentType]
+        const showWorkAnimation = activity?.confidence === 'explicit'
+          && (activity.state === 'working' || activity.state === 'tooling')
 
         return (
           <SelectableWrapper
@@ -2836,6 +2986,7 @@ function AgentAvatarsSection({ selectedObjectId, selectObject, transformMode, on
                 scale={renderScale}
                 objectId={avatar.id}
                 displayName={avatar.label || 'Agent Avatar'}
+                activityAnimationId={showWorkAnimation ? AGENT_WORK_ANIMATION_ID : null}
               />
               {audio?.url && (
                 <SpatialAudioAttachment

@@ -150,6 +150,17 @@ describe('EventBus', () => {
       unsub()
     })
 
+    it('dispatches NEXT_AGENT_WINDOW and PREV_AGENT_WINDOW commands', () => {
+      const received: OasisCommand[] = []
+      const unsub = eventBus.subscribe(cmd => received.push(cmd))
+      eventBus.dispatch({ type: 'NEXT_AGENT_WINDOW' })
+      eventBus.dispatch({ type: 'PREV_AGENT_WINDOW' })
+      expect(received).toHaveLength(2)
+      expect(received[0].type).toBe('NEXT_AGENT_WINDOW')
+      expect(received[1].type).toBe('PREV_AGENT_WINDOW')
+      unsub()
+    })
+
     it('dispatches ADD_AGENT_WINDOW command', () => {
       const received: OasisCommand[] = []
       const unsub = eventBus.subscribe(cmd => received.push(cmd))

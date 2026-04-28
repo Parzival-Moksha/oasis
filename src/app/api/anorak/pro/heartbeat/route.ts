@@ -4,7 +4,10 @@ import { promises as fs } from 'fs'
 import { resolve as resolvePath } from 'path'
 
 import { prisma } from '@/lib/db'
-import { createStreamParser } from '@/lib/anorak-stream-parser'
+import {
+  createStreamParser,
+  type StreamParserResultEvent,
+} from '@/lib/anorak-stream-parser'
 import {
   normalizeCustomModules,
   normalizeLobeModules,
@@ -19,6 +22,8 @@ import {
   sendTelegramMessage,
 } from '@/lib/telegram'
 import { readStoredAnorakProContextConfig } from '@/lib/anorak-pro-config'
+import { recordTokenBurn } from '@/lib/token-burn'
+import { hasTokenUsage } from '@/lib/token-usage'
 
 const OASIS_ROOT = process.env.OASIS_ROOT || process.cwd()
 
@@ -237,6 +242,7 @@ async function handleHeartbeat(request: NextRequest) {
       let tokensOut = 0
       let assistantReport = ''
       let abortedByUser = false
+      let latestUsage: StreamParserResultEvent | null = null
 
       const parser = createStreamParser({
         send,
@@ -244,10 +250,15 @@ async function handleHeartbeat(request: NextRequest) {
           assistantReport += text
         },
         onResult: evt => {
-          if (evt.total_input_tokens) tokensIn = evt.total_input_tokens as number
-          if (evt.total_output_tokens) tokensOut = evt.total_output_tokens as number
+          latestUsage = evt
+          tokensIn = evt.inputTokens
+          tokensOut = evt.outputTokens
         },
-      }, 'anorak-pro')
+      }, {
+        lobe: 'anorak-pro',
+        provider: 'anthropic',
+        model,
+      })
 
       child.stdout.on('data', (chunk: Buffer) => {
         parser.feed(chunk.toString())
@@ -263,7 +274,15 @@ async function handleHeartbeat(request: NextRequest) {
       child.on('error', err => {
         clearInterval(keepAlive)
         send('error', { content: `Heartbeat spawn failed: ${err.message}` })
-        send('done', { success: false })
+        send('done', {
+          success: false,
+          inputTokens: tokensIn,
+          outputTokens: tokensOut,
+          sessionId: latestUsage?.sessionId || '',
+          provider: 'anthropic',
+          model,
+          ...(typeof latestUsage?.costUsd === 'number' ? { costUsd: latestUsage.costUsd } : {}),
+        })
         if (!abortedByUser) {
           void sendHeartbeatTelegramSummary(`Spawn failed: ${err.message}`, {
             success: false,
@@ -283,11 +302,31 @@ async function handleHeartbeat(request: NextRequest) {
         controller.close()
       })
 
-      child.on('close', code => {
+      child.on('close', async code => {
         parser.flush()
         clearInterval(keepAlive)
         const durationMs = Date.now() - startTime
-        send('done', { success: code === 0, exitCode: code, durationMs, tokensIn, tokensOut })
+        if (latestUsage && hasTokenUsage(latestUsage)) {
+          try {
+            await recordTokenBurn({
+              source: 'anorak-pro-heartbeat',
+              ...latestUsage,
+            })
+          } catch (error) {
+            console.warn('[heartbeat] Failed to persist token burn:', error)
+          }
+        }
+        send('done', {
+          success: code === 0,
+          exitCode: code,
+          durationMs,
+          inputTokens: tokensIn,
+          outputTokens: tokensOut,
+          sessionId: latestUsage?.sessionId || '',
+          provider: 'anthropic',
+          model,
+          ...(typeof latestUsage?.costUsd === 'number' ? { costUsd: latestUsage.costUsd } : {}),
+        })
         if (!abortedByUser) {
           void sendHeartbeatTelegramSummary(assistantReport, {
             success: code === 0,

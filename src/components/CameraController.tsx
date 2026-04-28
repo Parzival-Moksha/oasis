@@ -65,6 +65,9 @@ export const FPS_KEYBOARD_MAP = [
   { name: FPSControls.dance, keys: ['KeyX'] },
 ]
 
+const NOCLIP_SPRINT_MULT = 4
+const NOCLIP_SLOW_MULT = 0.125
+
 // ═══════════════════════════════════════════════════════════════════════════
 // NOCLIP MODE — WASD movement + mouse look
 // ═══════════════════════════════════════════════════════════════════════════
@@ -79,7 +82,6 @@ function useNoclipUpdate() {
   const directionRef = useRef(new THREE.Vector3())
   const cameraDirRef = useRef(new THREE.Vector3())
   const cameraRightRef = useRef(new THREE.Vector3())
-  const upVec = useRef(new THREE.Vector3(0, 1, 0))
 
   return (camera: THREE.PerspectiveCamera, delta: number, speed: number, settingsFov: number) => {
     // Always keep baseFov synced with settings (user can change FOV mid-flight)
@@ -95,22 +97,21 @@ function useNoclipUpdate() {
     const { forward, backward, left, right, up, down, sprint, slow } = getKeys()
 
     // Speed multiplier ramp
-    const targetMultiplier = sprint ? 4 : slow ? 0.25 : 1
+    const targetMultiplier = sprint ? NOCLIP_SPRINT_MULT : slow ? NOCLIP_SLOW_MULT : 1
     const rampLerp = 1 - Math.exp(-3 * delta)
     multiplierRef.current += (targetMultiplier - multiplierRef.current) * rampLerp
 
     // Sprint state for VFX
     const m = multiplierRef.current
     sprintRef.current.multiplier = m
-    sprintRef.current.intensity = m > 1.05 ? (m - 1) / 3 : m < 0.95 ? (m - 1) / 0.75 : 0
+    sprintRef.current.intensity = m > 1.05 ? (m - 1) / (NOCLIP_SPRINT_MULT - 1) : m < 0.95 ? (m - 1) / (1 - NOCLIP_SLOW_MULT) : 0
 
     // Direction from camera orientation (pre-allocated, zero GC)
     const direction = directionRef.current.set(0, 0, 0)
     const cameraDir = cameraDirRef.current
     camera.getWorldDirection(cameraDir)
-    cameraDir.y = 0
     cameraDir.normalize()
-    const cameraRight = cameraRightRef.current.crossVectors(cameraDir, upVec.current).normalize()
+    const cameraRight = cameraRightRef.current.setFromMatrixColumn(camera.matrixWorld, 0).normalize()
 
     if (forward) direction.add(cameraDir)
     if (backward) direction.sub(cameraDir)

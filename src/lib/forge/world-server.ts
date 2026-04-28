@@ -9,6 +9,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { prisma } from '../db'
+import { normalizeWorldStateAgentAvatarTransforms } from '../agent-avatar-world-state'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -27,6 +28,10 @@ export interface SnapshotMeta {
 
 const MAX_SNAPSHOTS_PER_WORLD = 20
 const SNAPSHOT_THROTTLE_MS = 5 * 60 * 1000
+
+function normalizeSavedWorldState(state: WorldState): WorldState {
+  return normalizeWorldStateAgentAvatarTransforms(state)
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -71,7 +76,7 @@ export async function loadWorld(id: string, _userId?: string): Promise<WorldStat
     select: { data: true },
   })
   if (!world?.data) return null
-  return JSON.parse(world.data) as WorldState
+  return normalizeSavedWorldState(JSON.parse(world.data) as WorldState)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -85,7 +90,7 @@ export async function saveWorld(
   clientLoadedAt?: string
 ): Promise<{ saved: boolean; conflict?: boolean; serverUpdatedAt?: string }> {
   const now = new Date()
-  const worldData: WorldState = { version: 1, ...state, savedAt: now.toISOString() }
+  const worldData = normalizeSavedWorldState({ version: 1, ...state, savedAt: now.toISOString() })
 
   // Optimistic concurrency check
   if (clientLoadedAt) {
@@ -180,7 +185,7 @@ export async function savePublicEditWorld(
   state: Omit<WorldState, 'version' | 'savedAt'>
 ): Promise<boolean> {
   const now = new Date()
-  const worldData: WorldState = { version: 1, ...state, savedAt: now.toISOString() }
+  const worldData = normalizeSavedWorldState({ version: 1, ...state, savedAt: now.toISOString() })
 
   await snapshotBeforeSave(id)
 
@@ -215,7 +220,7 @@ export async function loadPublicWorld(id: string): Promise<{ state: WorldState; 
   if (!world?.data) return null
 
   return {
-    state: JSON.parse(world.data) as WorldState,
+    state: normalizeSavedWorldState(JSON.parse(world.data) as WorldState),
     meta: {
       ...toWorldMeta(world),
       creator_name: world.creatorName || 'Player 1',
@@ -269,7 +274,7 @@ export async function countAssetUsageAcrossWorlds(
   for (const world of worlds) {
     if (!world.data) continue
     try {
-      const state = JSON.parse(world.data) as WorldState
+      const state = normalizeSavedWorldState(JSON.parse(world.data) as WorldState)
       let count = 0
 
       if (type === 'media') {
@@ -385,7 +390,7 @@ export async function loadSnapshot(snapshotId: string): Promise<WorldState | nul
     select: { data: true },
   })
   if (!snap?.data) return null
-  return JSON.parse(snap.data) as WorldState
+  return normalizeSavedWorldState(JSON.parse(snap.data) as WorldState)
 }
 
 export async function restoreSnapshot(
@@ -403,7 +408,7 @@ export async function restoreSnapshot(
   await prisma.world.updateMany({
     where: { id: worldId, userId },
     data: {
-      data: JSON.stringify({ ...snapshotState, savedAt: now.toISOString() }),
+      data: JSON.stringify(normalizeSavedWorldState({ ...snapshotState, savedAt: now.toISOString() })),
       updatedAt: now,
     },
   })

@@ -26,6 +26,7 @@ export const OASIS_MCP_INSTRUCTIONS = [
   'Use get_world_state first when you need rich context.',
   'Use screenshot_viewport and avatar screenshot tools for visual grounding when a live Oasis browser is connected.',
   'Avatar and world mutations may execute as embodied sequences rather than instantaneous teleports, so allow time for completion.',
+  'Use generate_image, generate_voice, and generate_video when media would help the conversation; Oasis can render the returned URLs in the agent panel.',
   'For Hermes and Merlin, self-crafted craft_scene objects are the default. Call get_craft_guide for the schema and use strategy:"sculptor" only when you intentionally want fallback prompt crafting.',
 ].join(' ')
 
@@ -378,6 +379,114 @@ export const OASIS_MCP_TOOL_SPECS = [
     injectWorldId: true,
   },
   {
+    name: 'generate_image',
+    description: 'Generate an image from a text prompt. Returns a media URL that Oasis can display in the OpenClaw stream.',
+    inputSchema: z.object({
+      prompt: z.string(),
+      model: z.string().optional(),
+    }).passthrough(),
+    injectActorAgentType: true,
+  },
+  {
+    name: 'generate_voice',
+    description: 'Generate a voice note from text. Returns an audio URL that Oasis can play and lip-sync through the OpenClaw avatar.',
+    inputSchema: z.object({
+      text: z.string().optional(),
+      prompt: z.string().optional(),
+      voice: z.string().optional(),
+    }).passthrough(),
+    injectActorAgentType: true,
+  },
+  {
+    name: 'generate_video',
+    description: 'Generate a short video clip from a text prompt. Returns a media URL that Oasis can display in the OpenClaw stream.',
+    inputSchema: z.object({
+      prompt: z.string(),
+      duration: zNumberish.optional(),
+      image_url: z.string().optional(),
+    }).passthrough(),
+    injectActorAgentType: true,
+  },
+  {
+    name: 'text_to_music',
+    description: 'Generate a music clip or song from a text prompt via ElevenLabs Music. Returns an MP3 URL Oasis can preview and play. Use place_media kind:"audio" to drop the result into the world as a loudspeaker.',
+    inputSchema: z.object({
+      prompt: z.string(),
+      durationMs: zNumberish.optional().describe('Length in milliseconds, 3000–600000. Default 30000.'),
+      instrumental: z.boolean().optional().describe('If true, no vocals. Default false.'),
+    }).passthrough(),
+    injectActorAgentType: true,
+  },
+  {
+    name: 'conjure_framed_picture',
+    description: [
+      'Generate an image from a prompt and place it in the world as a framed picture in one shot.',
+      'Frame styles: gilded | neon | thin | baroque | hologram | rustic | ice | void | spaghetti | fire | matrix | plasma | brutalist (default: baroque).',
+      'frameThickness: 0.5–5 multiplier (default 1).',
+      'scale: picture height in meters (default 2). Width auto-fits image aspect.',
+      'rotation: euler radians [x, y, z] (default [0, 0, 0]). Set y to face the picture toward viewers.',
+    ].join(' '),
+    inputSchema: z.object({
+      worldId: z.string().optional(),
+      prompt: z.string(),
+      position: zVec3Like.optional(),
+      rotation: zVec3Like.optional(),
+      scale: zNumberish.optional(),
+      frameStyle: z.string().optional(),
+      frameThickness: zNumberish.optional(),
+      model: z.string().optional(),
+      name: z.string().optional(),
+    }).passthrough(),
+    injectWorldId: true,
+    injectActorAgentType: true,
+  },
+  {
+    name: 'place_media',
+    description: [
+      'Place an existing media URL (image, video, or audio) into the world.',
+      'kind: "image" → framed picture; "video" → framed video screen; "audio" → loudspeaker box.',
+      'If kind is omitted, it is auto-detected from the URL extension.',
+      'frameStyle (image/video only): gilded | neon | thin | baroque | hologram | rustic | ice | void | spaghetti | fire | matrix | plasma | brutalist.',
+      'frameThickness: 0.5–5 (default 1).',
+      'For audio, use audioVolume (0–1, default 1) and audioMaxDistance (meters, default 15).',
+      'Use this when the asset already lives at a URL. To generate from a prompt instead, use conjure_framed_picture or text_to_music.',
+    ].join(' '),
+    inputSchema: z.object({
+      worldId: z.string().optional(),
+      url: z.string(),
+      kind: z.string().optional().describe('image | video | audio (auto-detected from URL if omitted)'),
+      position: zVec3Like.optional(),
+      rotation: zVec3Like.optional(),
+      scale: zNumberish.optional(),
+      frameStyle: z.string().optional(),
+      frameThickness: zNumberish.optional(),
+      audioVolume: zNumberish.optional(),
+      audioMaxDistance: zNumberish.optional(),
+      audioLoop: z.boolean().optional().describe('Audio only. Loop forever (default true).'),
+      audioMuted: z.boolean().optional().describe('Audio only. Start muted (default false).'),
+      audioState: z.string().optional().describe('Audio only. "playing" (default), "paused", or "stopped".'),
+      name: z.string().optional(),
+    }).passthrough(),
+    injectWorldId: true,
+    injectActorAgentType: true,
+  },
+  {
+    name: 'upload_to_library',
+    description: [
+      'Save an external media asset (image / video / audio) into the local Oasis media library so it can be referenced by URL later (e.g. via place_media).',
+      'Provide either url (the asset will be fetched server-side) or data (base64-encoded bytes).',
+      'kind: image | video | audio. Required.',
+      'Returns the new library URL under /images/.',
+    ].join(' '),
+    inputSchema: z.object({
+      url: z.string().optional(),
+      data: z.string().optional().describe('Base64-encoded media bytes (alternative to url).'),
+      kind: z.string(),
+      name: z.string().optional(),
+    }).passthrough(),
+    injectActorAgentType: true,
+  },
+  {
     name: 'list_conjured_assets',
     description: 'List Forge/Meshy/Tripo conjured assets known to Oasis, optionally filtered by status, provider, characterMode, or placement in the active world.',
     inputSchema: z.object({
@@ -499,7 +608,6 @@ export function prepareOasisToolArgs(name, args = {}, context = {}) {
   }
 
   if (name === 'walk_avatar_to') {
-    if (!next.position && next.target) next.position = next.target
     if (!validString(next.agentType) && validString(next.agent)) {
       next.agentType = validString(next.agent).toLowerCase()
     }

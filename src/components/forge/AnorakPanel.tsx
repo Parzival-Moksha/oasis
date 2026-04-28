@@ -42,6 +42,8 @@ export function AnorakPanel({
   const { settings } = useContext(SettingsContext)
   const panelZIndex = useOasisStore(s => s.getPanelZIndex('anorak', 9999))
   const isFocused = useOasisStore(s => windowId ? s.focusedAgentWindowId === windowId : false)
+  const startAgentWork = useOasisStore(s => s.startAgentWork)
+  const finishAgentWork = useOasisStore(s => s.finishAgentWork)
 
   const [isStreaming, setIsStreaming] = useState(false)
   const [model, setModel] = useState('opus')
@@ -54,6 +56,29 @@ export function AnorakPanel({
   })
   const [showSessionPicker, setShowSessionPicker] = useState(false)
   const [resetKey, setResetKey] = useState(0)
+  const activityRunIdRef = useRef<string | null>(null)
+
+  const handleStreamingChange = useCallback((streaming: boolean) => {
+    setIsStreaming(streaming)
+    if (streaming) {
+      if (activityRunIdRef.current) return
+      const runId = `anorak-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+      activityRunIdRef.current = runId
+      startAgentWork('anorak', runId, sessionId || undefined)
+      return
+    }
+    const runId = activityRunIdRef.current
+    if (!runId) return
+    activityRunIdRef.current = null
+    finishAgentWork('anorak', runId)
+  }, [finishAgentWork, sessionId, startAgentWork])
+
+  useEffect(() => () => {
+    const runId = activityRunIdRef.current
+    if (!runId) return
+    activityRunIdRef.current = null
+    finishAgentWork('anorak', runId)
+  }, [finishAgentWork])
 
   const [position, setPosition] = useState(() => {
     if (typeof window === 'undefined' || embedded) return DEFAULT_POS
@@ -292,7 +317,7 @@ export function AnorakPanel({
         onSessionPickerChange={setShowSessionPicker}
         model={model}
         opacity={settings.uiOpacity}
-        onStreamingChange={setIsStreaming}
+        onStreamingChange={handleStreamingChange}
         onModelChange={setModel}
         onCostChange={setTotalCost}
         onLiveTokensChange={setLiveTokens}

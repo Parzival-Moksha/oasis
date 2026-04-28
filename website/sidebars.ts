@@ -35,6 +35,7 @@ const sidebars: SidebarsConfig = {
         'agents/anorak',
         'agents/claude-code',
         'agents/hermes',
+        'agents/openclaw',
         'agents/devcraft',
         'agents/mcp-tools',
         'agents/3d-windows',
@@ -49,6 +50,7 @@ const sidebars: SidebarsConfig = {
         'developer/persistence',
         'developer/input-system',
         'developer/phoenix-protocol',
+        'developer/openclaw-04515',
       ],
     },
     {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { publishBrowserActiveWorld } from '@/lib/browser-active-world'
+import { publishBrowserAgentAvatarContext } from '@/lib/browser-agent-avatar-context'
 import { publishBrowserPlayerContext } from '@/lib/browser-player-context'
 
 export const dynamic = 'force-dynamic'
@@ -24,6 +25,8 @@ export async function POST(request: NextRequest) {
   if (player) {
     publishBrowserPlayerContext(worldId, player.avatar, player.camera)
   }
+
+  publishBrowserAgentAvatarContext(worldId, body?.agentAvatars)
 
   return NextResponse.json({ ok: true, worldId })
 }

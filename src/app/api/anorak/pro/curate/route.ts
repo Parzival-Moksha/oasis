@@ -7,7 +7,12 @@
 import { NextRequest } from 'next/server'
 import { spawn } from 'child_process'
 import { prisma } from '@/lib/db'
-import { createStreamParser } from '@/lib/anorak-stream-parser'
+import {
+  createStreamParser,
+  type StreamParserResultEvent,
+} from '@/lib/anorak-stream-parser'
+import { recordTokenBurn } from '@/lib/token-burn'
+import { hasTokenUsage } from '@/lib/token-usage'
 const OASIS_ROOT = process.env.OASIS_ROOT || process.cwd()
 
 interface ContextModuleConfig {
@@ -174,14 +179,20 @@ export async function POST(request: NextRequest) {
       const startTime = Date.now()
       let tokensIn = 0
       let tokensOut = 0
+      let latestUsage: StreamParserResultEvent | null = null
 
       const parser = createStreamParser({
         send,
         onResult: (evt) => {
-          if (evt.total_input_tokens) tokensIn = evt.total_input_tokens as number
-          if (evt.total_output_tokens) tokensOut = evt.total_output_tokens as number
+          latestUsage = evt
+          tokensIn = evt.inputTokens
+          tokensOut = evt.outputTokens
         },
-      }, 'curator')
+      }, {
+        lobe: 'curator',
+        provider: 'anthropic',
+        model,
+      })
 
       child.stdout.on('data', (chunk: Buffer) => {
         parser.feed(chunk.toString())
@@ -201,12 +212,20 @@ export async function POST(request: NextRequest) {
           where: { id: log.id },
           data: { status: 'failed', error: err.message, endedAt: new Date(), durationMs: Date.now() - startTime },
         }).catch(() => {})
-        send('done', { success: false })
+        send('done', {
+          success: false,
+          inputTokens: tokensIn,
+          outputTokens: tokensOut,
+          sessionId: latestUsage?.sessionId || '',
+          provider: 'anthropic',
+          model,
+          ...(typeof latestUsage?.costUsd === 'number' ? { costUsd: latestUsage.costUsd } : {}),
+        })
         try { controller.enqueue(encoder.encode('data: [DONE]\n\n')) } catch {}
         controller.close()
       })
 
-      child.on('close', (code) => {
+      child.on('close', async (code) => {
         parser.flush()
         clearInterval(keepAlive)
         const durationMs = Date.now() - startTime
@@ -221,7 +240,28 @@ export async function POST(request: NextRequest) {
             ...(code !== 0 ? { error: `Exit code ${code}` } : {}),
           },
         }).catch(() => {})
-        send('done', { success: code === 0, exitCode: code, durationMs, logId: log.id })
+        if (latestUsage && hasTokenUsage(latestUsage)) {
+          try {
+            await recordTokenBurn({
+              source: 'anorak-pro-curator',
+              ...latestUsage,
+            })
+          } catch (error) {
+            console.warn('[curator] Failed to persist token burn:', error)
+          }
+        }
+        send('done', {
+          success: code === 0,
+          exitCode: code,
+          durationMs,
+          logId: log.id,
+          inputTokens: tokensIn,
+          outputTokens: tokensOut,
+          sessionId: latestUsage?.sessionId || '',
+          provider: 'anthropic',
+          model,
+          ...(typeof latestUsage?.costUsd === 'number' ? { costUsd: latestUsage.costUsd } : {}),
+        })
         try { controller.enqueue(encoder.encode('data: [DONE]\n\n')) } catch {}
         controller.close()
       })

@@ -43,10 +43,13 @@ import { ActionLogButton, ActionLogPanel } from './forge/ActionLog'
 import { ProfileButton } from './forge/ProfileButton'
 import { MerlinPanel } from './forge/MerlinPanel'
 import { AnorakPanel } from './forge/AnorakPanel'
+import { CodexPanel } from './forge/CodexPanel'
 import { AnorakProPanel } from './forge/AnorakProPanel'
 import { HermesPanel } from './forge/HermesPanel'
 import { OpenclawPanel } from './forge/OpenclawPanel'
 import { ParzivalPanel } from './forge/ParzivalPanel'
+import { RealtimePanel } from './forge/RealtimePanel'
+import { LipSyncLabPanel } from './forge/LipSyncLabPanel'
 import dynamic from 'next/dynamic'
 const DevcraftPanel = dynamic(() => import('./forge/DevcraftPanel'), { ssr: false })
 import { HelpPanel } from './forge/HelpPanel'
@@ -56,6 +59,8 @@ import { completeQuest } from '@/lib/quests'
 import { useInputManager, getMouseLookDebugState, isPointerLocked } from '@/lib/input-manager'
 import { CameraController as CameraControllerComponent, sprintRef, FPS_KEYBOARD_MAP } from './CameraController'
 import { useAudioManager, SOUND_OPTIONS, type SoundEvent } from '@/lib/audio-manager'
+import { writeBrowserStorage } from '@/lib/browser-storage'
+import { runLocalStorageAgentCacheMigration } from '@/lib/localstorage-agent-cache-migration'
 import { installTestHarness } from '@/lib/test-harness'
 import { useWorldEvents } from '@/hooks/useWorldEvents'
 import { AgentWindowPortals } from './forge/AgentWindowPortals'
@@ -122,7 +127,7 @@ function MouseLookDebugOverlay() {
       const next = !isMouseLookDebugEnabled()
       const flagWindow = window as typeof window & { __OASIS_MOUSE_DEBUG__?: boolean }
       flagWindow.__OASIS_MOUSE_DEBUG__ = next
-      localStorage.setItem('oasis-mouse-debug', next ? '1' : '0')
+      writeBrowserStorage('oasis-mouse-debug', next ? '1' : '0')
       sync()
     }
 
@@ -1078,8 +1083,12 @@ export default function Scene() {
   })
 
   useEffect(() => {
+    void runLocalStorageAgentCacheMigration()
+  }, [])
+
+  useEffect(() => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem('oasis-settings', JSON.stringify(settings))
+      writeBrowserStorage('oasis-settings', JSON.stringify(settings))
     }
   }, [settings])
 
@@ -1108,12 +1117,27 @@ export default function Scene() {
   const [merlinOpen, setMerlinOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [claudeCodeOpen, setClaudeCodeOpen] = useState(false)
+  const [codexOpen, setCodexOpen] = useState(false)
   const [anorakProOpen, setAnorakProOpen] = useState(false)
   const [devcraftOpen, setDevcraftOpen] = useState(false)
   const [hermesOpen, setHermesOpen] = useState(false)
   const [openclawOpen, setOpenclawOpen] = useState(false)
+  const [realtimeOpen, setRealtimeOpen] = useState(false)
+  const [lipSyncLabOpen, setLipSyncLabOpen] = useState(false)
   const [parzivalOpen, setParzivalOpen] = useState(false)
   const [consoleOpen, setConsoleOpen] = useState(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const key = 'oasis-help-first-opened'
+      if (window.localStorage.getItem(key)) return
+      window.localStorage.setItem(key, '1')
+      setHelpOpen(true)
+    } catch {
+      // Ignore storage failures; the Help button remains available.
+    }
+  }, [])
 
   // Panel toggle with sound
   const togglePanel = (setter: React.Dispatch<React.SetStateAction<boolean>>) => {
@@ -1310,6 +1334,21 @@ export default function Scene() {
         )}
         {isAdmin && !hideEditTools && (
           <button
+            onClick={() => togglePanel(setCodexOpen)}
+            className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
+            style={{
+              background: codexOpen ? 'rgba(16,185,129,0.3)' : 'rgba(0,0,0,0.6)',
+              border: `1px solid ${codexOpen ? 'rgba(16,185,129,0.6)' : 'rgba(255,255,255,0.15)'}`,
+              color: codexOpen ? '#34D399' : '#aaa',
+              boxShadow: codexOpen ? '0 0 12px rgba(16,185,129,0.3)' : 'none',
+            }}
+            title="Codex"
+          >
+            ⌘
+          </button>
+        )}
+        {isAdmin && !hideEditTools && (
+          <button
             onClick={() => togglePanel(setAnorakProOpen)}
             className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
             style={{
@@ -1361,6 +1400,32 @@ export default function Scene() {
           title="OpenClaw - local gateway bridge"
         >
           🦞
+        </button>
+        <button
+          onClick={() => togglePanel(setRealtimeOpen)}
+          className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
+          style={{
+            background: realtimeOpen ? 'rgba(192,132,252,0.3)' : 'rgba(0,0,0,0.6)',
+            border: `1px solid ${realtimeOpen ? 'rgba(192,132,252,0.6)' : 'rgba(255,255,255,0.15)'}`,
+            color: realtimeOpen ? '#DDD6FE' : '#aaa',
+            boxShadow: realtimeOpen ? '0 0 12px rgba(192,132,252,0.26)' : 'none',
+          }}
+          title="Realtime — Voice Sandbox"
+        >
+          🗣️
+        </button>
+        <button
+          onClick={() => togglePanel(setLipSyncLabOpen)}
+          className="w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
+          style={{
+            background: lipSyncLabOpen ? 'rgba(34,211,238,0.24)' : 'rgba(0,0,0,0.6)',
+            border: `1px solid ${lipSyncLabOpen ? 'rgba(34,211,238,0.58)' : 'rgba(255,255,255,0.15)'}`,
+            color: lipSyncLabOpen ? '#67E8F9' : '#aaa',
+            boxShadow: lipSyncLabOpen ? '0 0 12px rgba(34,211,238,0.24)' : 'none',
+          }}
+          title="Lip Sync Lab - sandboxed facial speech testing"
+        >
+          👄
         </button>
         <button
           onClick={() => togglePanel(setParzivalOpen)}
@@ -1446,6 +1511,12 @@ export default function Scene() {
       )}
       {/* 🔮 Anorak Pro — Autonomous dev pipeline — admin only */}
       {isAdmin && (
+        <CodexPanel
+          isOpen={codexOpen}
+          onClose={() => setCodexOpen(false)}
+        />
+      )}
+      {isAdmin && (
         <AnorakProPanel
           isOpen={anorakProOpen}
           onClose={() => setAnorakProOpen(false)}
@@ -1460,6 +1531,14 @@ export default function Scene() {
       <OpenclawPanel
         isOpen={openclawOpen}
         onClose={() => setOpenclawOpen(false)}
+      />
+      <RealtimePanel
+        isOpen={realtimeOpen}
+        onClose={() => setRealtimeOpen(false)}
+      />
+      <LipSyncLabPanel
+        isOpen={lipSyncLabOpen}
+        onClose={() => setLipSyncLabOpen(false)}
       />
       <ParzivalPanel
         isOpen={parzivalOpen}

@@ -12,6 +12,8 @@ import {
   renderMarkdown,
   CollapsibleBlock,
   ToolCallCard,
+  isScreenshotToolDisplay,
+  extractToolResultMediaReferences,
 } from '../anorak-renderers'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -436,6 +438,31 @@ describe('CollapsibleBlock', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('ToolCallCard', () => {
+  it('detects screenshot tools from Codex MCP display names', () => {
+    expect(isScreenshotToolDisplay('Screenshot Viewport', 'oasis.screenshot_viewport')).toBe(true)
+    expect(isScreenshotToolDisplay('MCP Tool', 'oasis.screenshot_avatar')).toBe(true)
+    expect(isScreenshotToolDisplay('MCP Tool', 'oasis.avatarpic_merlin')).toBe(true)
+    expect(isScreenshotToolDisplay('Generate Voice', 'oasis.generate_voice')).toBe(false)
+  })
+
+  it('extracts generated media URLs from tool result JSON', () => {
+    const refs = extractToolResultMediaReferences({
+      preview: '',
+      fullResult: JSON.stringify({
+        ok: true,
+        data: {
+          mediaUrls: ['/generated-voices/voice-1.mp3'],
+          url: '/generated-images/image-1.webp',
+        },
+      }),
+    })
+
+    expect(refs).toEqual(expect.arrayContaining([
+      { path: '/generated-voices/voice-1.mp3', mediaType: 'audio' },
+      { path: '/generated-images/image-1.webp', mediaType: 'image' },
+    ]))
+  })
+
   it('creates a valid React element', () => {
     const el = React.createElement(ToolCallCard, {
       name: 'Read',

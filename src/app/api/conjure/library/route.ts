@@ -6,6 +6,7 @@
 import { NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
+import { getBundledConjuredAssetById } from '@/lib/conjure/bundled-assets'
 
 export const dynamic = 'force-dynamic'
 
@@ -67,17 +68,18 @@ export async function GET() {
     const items: LibraryItem[] = statResults.map(({ filename, size, mtime }) => {
       const id = filename.replace('.glb', '')
       const regEntry = registry[id]
+      const bundledEntry = getBundledConjuredAssetById(id)
       const thumbName = `${id}_thumb.jpg`
 
       return {
         id,
         filename,
         glbPath: `/conjured/${filename}`,
-        thumbnailUrl: thumbSet.has(thumbName) ? `/conjured/${thumbName}` : (regEntry?.thumbnailUrl || null),
-        displayName: regEntry?.displayName || regEntry?.prompt?.slice(0, 40) || id.replace('conj_', ''),
-        provider: regEntry?.provider || null,
-        tier: regEntry?.tier || null,
-        createdAt: regEntry?.createdAt || mtime.toISOString(),
+        thumbnailUrl: thumbSet.has(thumbName) ? `/conjured/${thumbName}` : (regEntry?.thumbnailUrl || bundledEntry?.thumbnailUrl || null),
+        displayName: regEntry?.displayName || bundledEntry?.displayName || regEntry?.prompt?.slice(0, 40) || bundledEntry?.prompt.slice(0, 40) || id.replace('conj_', ''),
+        provider: regEntry?.provider || bundledEntry?.provider || null,
+        tier: regEntry?.tier || bundledEntry?.tier || null,
+        createdAt: regEntry?.createdAt || bundledEntry?.createdAt || mtime.toISOString(),
         fileSizeBytes: size,
         inRegistry: !!regEntry,
       }

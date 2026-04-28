@@ -18,9 +18,15 @@ import type { ConjuredAsset, PostProcessAction, ProviderName } from '../conjure/
 import { getAllAssets, getAssetById, updateAsset } from '../conjure/registry'
 import { emitWorldEvent } from './world-events'
 import { readWorldPlayerContext } from '../world-runtime-context'
-import { resolveAgentAvatarUrl } from '../agent-avatar-catalog'
+import { DEFAULT_AGENT_AVATAR_URL, resolveAgentAvatarUrl } from '../agent-avatar-catalog'
+import {
+  isSharedAgentAvatarType,
+  normalizeWorldStateAgentAvatarTransforms,
+} from '../agent-avatar-world-state'
 import { readBrowserActiveWorldId } from '../browser-active-world'
+import { readBrowserAgentAvatarContext } from '../browser-agent-avatar-context'
 import { readBrowserPlayerContext } from '../browser-player-context'
+import { execMediaTool, type MediaToolName } from '../media-tools'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -113,6 +119,50 @@ function parseLooseObjectArray(value: unknown): Record<string, unknown>[] {
   }
 }
 
+type TransformOverride = WorldState['transforms'][string]
+
+function validScale(v: unknown, fallback?: number | [number, number, number]): number | [number, number, number] | undefined {
+  if (Array.isArray(v) && v.length >= 3) {
+    const [x, y, z] = v.slice(0, 3).map(Number)
+    if ([x, y, z].every(Number.isFinite)) return [x, y, z]
+    return fallback
+  }
+  if (v === undefined) return fallback
+  const n = Number(v)
+  return Number.isFinite(n) ? n : fallback
+}
+
+function readTransformOverride(state: WorldState, objectId: string): TransformOverride | undefined {
+  const transform = state.transforms?.[objectId]
+  return transform && Object.keys(transform).length > 0 ? transform : undefined
+}
+
+function effectivePosition(state: WorldState, objectId: string, fallback: unknown): [number, number, number] | null {
+  return validPos(readTransformOverride(state, objectId)?.position) || validPos(fallback)
+}
+
+function effectiveRotation(state: WorldState, objectId: string, fallback: unknown): [number, number, number] | null {
+  return validPos(readTransformOverride(state, objectId)?.rotation) || validPos(fallback)
+}
+
+function effectiveScale(state: WorldState, objectId: string, fallback: unknown): number | [number, number, number] | undefined {
+  const transform = readTransformOverride(state, objectId)
+  return transform?.scale !== undefined ? validScale(transform.scale) : validScale(fallback)
+}
+
+function matchesObjectQuery(entry: { id?: string; name?: string; catalogId?: string }, query: string): boolean {
+  if (!query) return true
+  const haystack = [entry.name, entry.id, entry.catalogId]
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+    .join(' ')
+    .toLowerCase()
+
+  if (haystack.includes(query)) return true
+
+  const terms = query.split(/\s+/).filter(Boolean)
+  return terms.length > 1 && terms.every(term => haystack.includes(term))
+}
+
 function mutationActorData(args: Record<string, unknown>): Record<string, unknown> {
   const actorAgentType = validStr(args.actorAgentType || args.agentType || args.agent, '').toLowerCase()
   return actorAgentType ? { actorAgentType } : {}
@@ -173,11 +223,64 @@ function normalizeState(state: WorldState): WorldState {
   state.conjuredAssetIds = state.conjuredAssetIds || []
   state.lights = state.lights || []
   state.groundTiles = state.groundTiles || {}
-  return state
+  return normalizeWorldStateAgentAvatarTransforms(state)
 }
 
 type AgentAvatarEntry = NonNullable<WorldState['agentAvatars']>[number]
-const SHARED_AGENT_AVATAR_TYPES = new Set(['anorak-pro', 'merlin', 'hermes'])
+
+function overlayLiveAgentAvatars(
+  avatars: AgentAvatarEntry[],
+  liveAvatars: Array<{
+    id: string
+    agentType: string
+    position: [number, number, number]
+    rotation?: [number, number, number]
+    scale?: number
+    linkedWindowId?: string
+    label?: string
+    avatar3dUrl?: string
+  }>,
+): AgentAvatarEntry[] {
+  if (liveAvatars.length === 0) return avatars
+
+  const merged = avatars.map(avatar => ({ ...structuredClone(avatar) }))
+
+  const findIndex = (liveAvatar: typeof liveAvatars[number]) => merged.findIndex(entry =>
+    entry.id === liveAvatar.id
+    || (!!liveAvatar.linkedWindowId && entry.linkedWindowId === liveAvatar.linkedWindowId)
+    || entry.agentType === liveAvatar.agentType
+  )
+
+  for (const liveAvatar of liveAvatars) {
+    const index = findIndex(liveAvatar)
+    if (index >= 0) {
+      const existing = merged[index]
+      merged[index] = {
+        ...existing,
+        position: [...liveAvatar.position] as [number, number, number],
+        ...(liveAvatar.rotation ? { rotation: [...liveAvatar.rotation] as [number, number, number] } : {}),
+        ...(typeof liveAvatar.scale === 'number' ? { scale: liveAvatar.scale } : {}),
+        ...(liveAvatar.label ? { label: liveAvatar.label } : {}),
+        ...(liveAvatar.linkedWindowId ? { linkedWindowId: liveAvatar.linkedWindowId } : {}),
+        ...(liveAvatar.avatar3dUrl ? { avatar3dUrl: liveAvatar.avatar3dUrl } : {}),
+      }
+      continue
+    }
+
+    merged.push({
+      id: liveAvatar.id,
+      agentType: liveAvatar.agentType as AgentAvatarEntry['agentType'],
+      avatar3dUrl: liveAvatar.avatar3dUrl || DEFAULT_AGENT_AVATAR_URL,
+      position: [...liveAvatar.position] as [number, number, number],
+      rotation: liveAvatar.rotation ? [...liveAvatar.rotation] as [number, number, number] : [0, 0, 0],
+      scale: typeof liveAvatar.scale === 'number' ? liveAvatar.scale : 1,
+      ...(liveAvatar.linkedWindowId ? { linkedWindowId: liveAvatar.linkedWindowId } : {}),
+      ...(liveAvatar.label ? { label: liveAvatar.label } : {}),
+    })
+  }
+
+  return merged
+}
 
 function resolveAgentAvatarTarget(
   state: WorldState,
@@ -207,7 +310,7 @@ function resolveAgentAvatarTarget(
     existing = (state.agentAvatars || []).find(avatar => avatar.agentType === agentType) || null
     if (existing) {
       avatarId = existing.id
-    } else if (!avatarId && SHARED_AGENT_AVATAR_TYPES.has(agentType)) {
+    } else if (!avatarId && isSharedAgentAvatarType(agentType)) {
       avatarId = `agent-avatar-${agentType}`
     }
   }
@@ -275,6 +378,8 @@ async function loadWorldById(worldId: string): Promise<WorldState> {
 }
 
 async function saveWorldState(worldId: string, state: WorldState): Promise<void> {
+  const normalized = normalizeWorldStateAgentAvatarTransforms(state)
+  Object.assign(state, normalized)
   state.savedAt = new Date().toISOString()
   await prisma.world.update({
     where: { id: worldId },
@@ -509,6 +614,30 @@ type ToolHandler = (args: Record<string, unknown>) => Promise<ToolResult>
 
 const tools: Record<string, ToolHandler> = {}
 
+async function runMediaTool(name: MediaToolName, args: Record<string, unknown>, mediaType: 'image' | 'audio' | 'video'): Promise<ToolResult> {
+  const result = await execMediaTool(name, args, INTERNAL_OASIS_BASE_URL)
+  if (!result.ok || !result.url) {
+    return {
+      ok: false,
+      message: result.error || `${name} failed.`,
+      data: {
+        mediaType,
+        error: result.error,
+      },
+    }
+  }
+
+  return {
+    ok: true,
+    message: `${mediaType} generated: ${result.url}`,
+    data: {
+      mediaType,
+      url: result.url,
+      mediaUrls: [result.url],
+    },
+  }
+}
+
 // ─═̷─═̷─ WORLD QUERY ─═̷─═̷─
 
 tools.get_world_state = async (args) => {
@@ -520,12 +649,14 @@ tools.get_world_state = async (args) => {
   // Prefer fresh browser-published pose (in-memory, ≤5min TTL).
   // Fall back to disk (Hermes route's publishWorldPlayerContext).
   const browserContext = readBrowserPlayerContext(resolvedId)
+  const liveAgentContext = readBrowserAgentAvatarContext(resolvedId)
   const livePlayerContext = browserContext
     ? {
         updatedAt: new Date(browserContext.updatedAt).toISOString(),
         player: { avatar: browserContext.avatar, camera: browserContext.camera },
       }
     : await readWorldPlayerContext(resolvedId)
+  const agentAvatars = overlayLiveAgentAvatars(state.agentAvatars || [], liveAgentContext?.avatars || [])
 
   return {
     ok: true,
@@ -535,16 +666,34 @@ tools.get_world_state = async (args) => {
       sky: state.skyBackgroundId || 'night007',
       ground: state.groundPresetId || 'none',
       tileCount: Object.keys(state.groundTiles || {}).length,
-      catalogObjects: (state.catalogPlacements || []).map(p => ({
-        id: p.id, catalogId: p.catalogId, name: p.name, position: p.position, rotation: p.rotation, scale: p.scale,
-      })),
-      craftedScenes: (state.craftedScenes || []).map(s => ({
-        id: s.id, name: s.name, objectCount: s.objects?.length || 0, position: s.position,
-      })),
+      catalogObjects: (state.catalogPlacements || []).map(p => {
+        const transform = readTransformOverride(state, p.id)
+        return {
+          id: p.id,
+          catalogId: p.catalogId,
+          name: p.name,
+          position: effectivePosition(state, p.id, p.position) || p.position,
+          rotation: effectiveRotation(state, p.id, p.rotation) || p.rotation,
+          scale: effectiveScale(state, p.id, p.scale) ?? p.scale,
+          ...(transform ? { transform } : {}),
+        }
+      }),
+      craftedScenes: (state.craftedScenes || []).map(s => {
+        const transform = readTransformOverride(state, s.id)
+        return {
+          id: s.id,
+          name: s.name,
+          objectCount: s.objects?.length || 0,
+          position: effectivePosition(state, s.id, s.position) || s.position,
+          rotation: effectiveRotation(state, s.id, undefined) || undefined,
+          scale: effectiveScale(state, s.id, undefined),
+          ...(transform ? { transform } : {}),
+        }
+      }),
       lights: (state.lights || []).map(l => ({
         id: l.id, type: l.type, color: l.color, intensity: l.intensity, position: l.position, visible: l.visible,
       })),
-      agentAvatars: (state.agentAvatars || []).map(a => ({
+      agentAvatars: agentAvatars.map(a => ({
         id: a.id,
         agentType: a.agentType,
         label: a.label,
@@ -554,6 +703,7 @@ tools.get_world_state = async (args) => {
         scale: a.scale,
         linkedWindowId: a.linkedWindowId,
       })),
+      liveAgentAvatarsUpdatedAt: liveAgentContext ? new Date(liveAgentContext.updatedAt).toISOString() : null,
       livePlayerAvatar: livePlayerContext?.player.avatar || null,
       livePlayerCamera: livePlayerContext?.player.camera || null,
       livePlayerUpdatedAt: livePlayerContext?.updatedAt || null,
@@ -601,12 +751,23 @@ tools.query_objects = async (args) => {
 
   if (!typeFilter || typeFilter === 'catalog') {
     for (const p of state.catalogPlacements || []) {
-      results.push({ id: p.id, type: 'catalog', name: p.name || p.catalogId, position: p.position, catalogId: p.catalogId })
+      results.push({
+        id: p.id,
+        type: 'catalog',
+        name: p.name || p.catalogId,
+        position: effectivePosition(state, p.id, p.position) || p.position,
+        catalogId: p.catalogId,
+      })
     }
   }
   if (!typeFilter || typeFilter === 'crafted') {
     for (const s of state.craftedScenes || []) {
-      results.push({ id: s.id, type: 'crafted', name: s.name, position: s.position })
+      results.push({
+        id: s.id,
+        type: 'crafted',
+        name: s.name,
+        position: effectivePosition(state, s.id, s.position) || s.position,
+      })
     }
   }
   if (!typeFilter || typeFilter === 'light') {
@@ -634,11 +795,7 @@ tools.query_objects = async (args) => {
 
   let filtered = results
   if (query) {
-    filtered = filtered.filter(o =>
-      o.name?.toLowerCase().includes(query) ||
-      o.id?.toLowerCase().includes(query) ||
-      o.catalogId?.toLowerCase().includes(query)
-    )
+    filtered = filtered.filter(o => matchesObjectQuery(o, query))
   }
   if (near) {
     filtered = filtered.filter(o => {
@@ -1035,7 +1192,7 @@ tools.modify_object = async (args) => {
   const changes: string[] = []
   const pos = validPos(args.position)
   const rot = validPos(args.rotation)
-  const scl = args.scale !== undefined ? validNum(args.scale, 1) : undefined
+  const scl = args.scale !== undefined ? validScale(args.scale, 1) : undefined
   const craftedIdx = (state.craftedScenes || []).findIndex(scene => scene.id === objectId)
   if (craftedIdx >= 0) {
     const scene = state.craftedScenes![craftedIdx]
@@ -1067,15 +1224,18 @@ tools.modify_object = async (args) => {
     }
     if (pos) {
       avatar.position = pos
+      changes.push('position')
     }
     if (rot) {
       avatar.rotation = rot
+      changes.push('rotation')
     }
     state.agentAvatars![avatarIdx] = avatar
+    delete state.transforms[objectId]
   }
 
   // Update transform overrides
-  if (pos || rot || scl !== undefined) {
+  if (avatarIdx < 0 && (pos || rot || scl !== undefined)) {
     const existing = state.transforms[objectId] || {}
     if (pos) existing.position = pos
     if (rot) existing.rotation = rot
@@ -1177,6 +1337,7 @@ tools.set_ground_preset = async (args) => {
 tools.paint_ground_tiles = async (args) => {
   const tiles = parseLooseObjectArray(args.tiles)
   if (tiles.length === 0) return { ok: false, message: 'tiles array is required: [{x, z, presetId}]' }
+  const fallbackPresetId = validStr(args.presetId, '')
 
   const { worldId, state } = await loadRequestedWorld(args.worldId)
   if (!state.groundTiles) state.groundTiles = {}
@@ -1187,7 +1348,7 @@ tools.paint_ground_tiles = async (args) => {
     const t = tile as Record<string, unknown>
     const x = Math.floor(validNum(t.x, NaN))
     const z = Math.floor(validNum(t.z, NaN))
-    const presetId = validStr(t.presetId, '')
+    const presetId = validStr(t.presetId, fallbackPresetId)
     if (!Number.isFinite(x) || !Number.isFinite(z) || !presetId) continue
     if (x < -50 || x > 49 || z < -50 || z > 49) continue
 
@@ -1206,7 +1367,7 @@ tools.paint_ground_tiles = async (args) => {
         const t = tile as Record<string, unknown>
         const x = Math.floor(validNum(t.x, NaN))
         const z = Math.floor(validNum(t.z, NaN))
-        const presetId = validStr(t.presetId, '')
+        const presetId = validStr(t.presetId, fallbackPresetId)
         if (!Number.isFinite(x) || !Number.isFinite(z) || !presetId) return null
         return { x, z, presetId }
       })
@@ -1311,6 +1472,7 @@ function resolveAvatarUrl(raw: string): { url: string; resolved: boolean; sugges
 
 const CANONICAL_AGENT_AVATAR_TYPES = new Set([
   'anorak',
+  'codex',
   'anorak-pro',
   'merlin',
   'hermes',
@@ -1319,6 +1481,7 @@ const CANONICAL_AGENT_AVATAR_TYPES = new Set([
   'parzival',
   'browser',
   'mission',
+  'realtime', // parallel realtime-voice agent
 ])
 
 tools.set_avatar = async (args) => {
@@ -1342,7 +1505,7 @@ tools.set_avatar = async (args) => {
     }
   }
 
-  const isSharedAvatarType = SHARED_AGENT_AVATAR_TYPES.has(agentType)
+  const isSharedAvatarType = isSharedAgentAvatarType(agentType)
   const label = validStr(args.label, '')
   const position = validPos(args.position)
   const rotation = validPos(args.rotation)
@@ -1361,7 +1524,7 @@ tools.set_avatar = async (args) => {
       }
     : {
         id: avatarId,
-        agentType: agentType as 'anorak' | 'anorak-pro' | 'merlin' | 'devcraft' | 'parzival' | 'mission' | 'hermes',
+        agentType: agentType as AgentAvatarEntry['agentType'],
         avatar3dUrl: avatarUrl,
         position: position || [0, 0, 3.2],
         rotation: rotation || [0, Math.PI, 0],
@@ -1381,6 +1544,7 @@ tools.set_avatar = async (args) => {
       return list.findIndex(entry => entry.agentType === agentType) === index
     })
   }
+  delete state.transforms[nextAvatar.id]
 
   await saveWorldState(worldId, state)
   emitWorldEvent('agent_avatar_set', worldId, {
@@ -1437,17 +1601,19 @@ tools.walk_avatar_to = async (args) => {
 tools.list_avatar_animations = async (args) => {
   const library = await loadAvatarAnimationCatalog()
   const query = normalizeAnimationLookupKey(validStr(args.query, ''))
-  const category = validStr(args.category, '').toLowerCase()
+  const rawCategory = validStr(args.category, '').trim().toLowerCase()
+  const category = rawCategory === 'all' || rawCategory === '*' ? '' : rawCategory
+  const queryTerms = [query, AVATAR_ANIMATION_ALIASES[query]]
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
   const limit = Math.max(1, Math.min(200, validNum(args.limit, 80)))
 
   const animations = library
     .filter(entry => !category || entry.category.toLowerCase() === category)
-    .filter(entry =>
-      !query ||
-      entry.id.includes(query) ||
-      entry.label.toLowerCase().includes(query) ||
-      entry.category.toLowerCase().includes(query)
-    )
+    .filter(entry => {
+      if (queryTerms.length === 0) return true
+      const haystack = `${entry.id} ${entry.label} ${entry.category}`.toLowerCase()
+      return queryTerms.some(term => haystack.includes(term))
+    })
     .slice(0, limit)
     .map(entry => ({
       id: entry.id,
@@ -1999,6 +2165,253 @@ tools.avatarpic_user = async (args) => {
   return tools.screenshot_viewport(buildAvatarScreenshotArgs({ ...args, subject: 'player' }, 'player'))
 }
 
+tools.generate_image = async (args) => {
+  const prompt = validStr(args.prompt, '')
+  if (!prompt) return { ok: false, message: 'prompt is required.' }
+  return runMediaTool('generate_image', { ...args, prompt }, 'image')
+}
+
+tools.generate_voice = async (args) => {
+  const text = validStr(args.text || args.prompt, '')
+  if (!text) return { ok: false, message: 'text is required.' }
+  const actorAgentType = validStr(args.actorAgentType || args.agentType || args.agent, '')
+  return runMediaTool('generate_voice', {
+    ...args,
+    text,
+    ...(actorAgentType ? { agentType: actorAgentType } : {}),
+  }, 'audio')
+}
+
+tools.generate_video = async (args) => {
+  const prompt = validStr(args.prompt, '')
+  if (!prompt) return { ok: false, message: 'prompt is required.' }
+  return runMediaTool('generate_video', { ...args, prompt }, 'video')
+}
+
+// ─═̷─═̷─🎵 TEXT-TO-MUSIC (ElevenLabs Music API) 🎵─═̷─═̷─
+
+tools.text_to_music = async (args) => {
+  const prompt = validStr(args.prompt, '')
+  if (!prompt) return { ok: false, message: 'prompt is required.' }
+  const durationMs = validNum(args.durationMs, 30000)
+  const instrumental = validBool(args.instrumental, false)
+  return runMediaTool('generate_music', { prompt, durationMs, instrumental }, 'audio')
+}
+
+// ─═̷─═̷─🖼️ CONJURE_FRAMED_PICTURE — gen image + place with frame in one shot 🖼️─═̷─═̷─
+
+const FRAME_STYLE_IDS = new Set([
+  'gilded', 'neon', 'thin', 'baroque', 'hologram', 'rustic', 'ice',
+  'void', 'spaghetti', 'fire', 'matrix', 'plasma', 'brutalist',
+])
+
+function detectMediaKindFromUrl(url: string): 'image' | 'video' | 'audio' | null {
+  const trimmed = url.split('?')[0].split('#')[0].toLowerCase()
+  if (/\.(png|jpe?g|webp|gif|bmp|avif)$/.test(trimmed)) return 'image'
+  if (/\.(mp4|webm|mov|m4v|ogv)$/.test(trimmed)) return 'video'
+  if (/\.(mp3|wav|flac|ogg|oga|opus|aac|m4a)$/.test(trimmed)) return 'audio'
+  if (trimmed.includes('/generated-images/')) return 'image'
+  if (trimmed.includes('/generated-videos/')) return 'video'
+  if (trimmed.includes('/generated-voices/') || trimmed.includes('/generated-music/')) return 'audio'
+  return null
+}
+
+tools.conjure_framed_picture = async (args) => {
+  const prompt = validStr(args.prompt, '')
+  if (!prompt) return { ok: false, message: 'prompt is required.' }
+
+  const requestedFrame = validStr(args.frameStyle, 'baroque').toLowerCase()
+  const frameStyle = FRAME_STYLE_IDS.has(requestedFrame) ? requestedFrame : 'baroque'
+  const frameThickness = Math.max(0.5, Math.min(5, validNum(args.frameThickness, 1)))
+  // Default y=1 so the bottom of the frame clears the ground plane.
+  const position = validPos(args.position) || [0, 1, 0]
+  const rotation = validPos(args.rotation) || [0, 0, 0]
+  const scale = validNum(args.scale, 2)
+  const model = validStr(args.model, '')
+  const name = validStr(args.name, prompt.slice(0, 60))
+
+  const generation = await execMediaTool(
+    'generate_image',
+    { prompt, ...(model ? { model } : {}) },
+    INTERNAL_OASIS_BASE_URL,
+  )
+  if (!generation.ok || !generation.url) {
+    return { ok: false, message: `Image generation failed: ${generation.error || 'unknown error'}` }
+  }
+
+  const { worldId, state } = await loadRequestedWorld(args.worldId)
+  const id = `image-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+
+  const placement: CatalogPlacement = {
+    id,
+    catalogId: 'generated-image',
+    name,
+    glbPath: '',
+    position,
+    rotation,
+    scale,
+    imageUrl: generation.url,
+    imageFrameStyle: frameStyle,
+    imageFrameThickness: frameThickness,
+  }
+
+  state.catalogPlacements = [...(state.catalogPlacements || []), placement]
+  await saveWorldState(worldId, state)
+  emitWorldEvent('object_added', worldId, {
+    id,
+    catalogId: 'generated-image',
+    position,
+    placement,
+    ...mutationActorData(args),
+  })
+
+  return {
+    ok: true,
+    message: `Conjured framed picture (${frameStyle} frame) at [${position.join(', ')}].`,
+    data: {
+      id,
+      mediaUrl: generation.url,
+      frameStyle,
+      frameThickness,
+      position,
+      rotation,
+      scale,
+    },
+  }
+}
+
+// ─═̷─═̷─🎬 PLACE_MEDIA — drop an existing image/video/audio URL into the world 🎬─═̷─═̷─
+
+tools.place_media = async (args) => {
+  const url = validStr(args.url, '')
+  if (!url) return { ok: false, message: 'url is required.' }
+
+  const declaredKind = validStr(args.kind, '').toLowerCase()
+  const kind = (declaredKind === 'image' || declaredKind === 'video' || declaredKind === 'audio')
+    ? declaredKind as 'image' | 'video' | 'audio'
+    : detectMediaKindFromUrl(url)
+  if (!kind) {
+    return { ok: false, message: 'Could not detect media kind from URL. Pass kind: "image" | "video" | "audio".' }
+  }
+
+  // image/video default y=1 so the frame clears the ground; audio defaults y=0 (loudspeaker on the floor).
+  const position = validPos(args.position) || (kind === 'audio' ? [0, 0, 0] : [0, 1, 0])
+  const rotation = validPos(args.rotation) || [0, 0, 0]
+  const scale = validNum(args.scale, kind === 'audio' ? 0.6 : 2)
+  const requestedFrame = validStr(args.frameStyle, '').toLowerCase()
+  const frameStyle = requestedFrame && FRAME_STYLE_IDS.has(requestedFrame) ? requestedFrame : ''
+  const frameThickness = Math.max(0.5, Math.min(5, validNum(args.frameThickness, 1)))
+  const audioVolume = Math.max(0, Math.min(1, validNum(args.audioVolume, 1)))
+  const audioMaxDistance = Math.max(1, validNum(args.audioMaxDistance, 15))
+  const audioLoop = typeof args.audioLoop === 'boolean' ? args.audioLoop : true
+  const audioMuted = typeof args.audioMuted === 'boolean' ? args.audioMuted : false
+  const requestedAudioState = validStr(args.audioState, '').toLowerCase()
+  const audioState: 'playing' | 'paused' | 'stopped' =
+    requestedAudioState === 'paused' || requestedAudioState === 'stopped' ? requestedAudioState : 'playing'
+  const name = validStr(args.name, kind === 'image' ? 'Picture' : kind === 'video' ? 'Video' : 'Music')
+
+  const { worldId, state } = await loadRequestedWorld(args.worldId)
+  const id = `${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+  const catalogId = kind === 'image' ? 'generated-image' : kind === 'video' ? 'video' : 'audio-source'
+
+  const placement: CatalogPlacement = {
+    id,
+    catalogId,
+    name,
+    glbPath: '',
+    position,
+    rotation,
+    scale,
+    ...(kind === 'image' ? {
+      imageUrl: url,
+      ...(frameStyle ? { imageFrameStyle: frameStyle, imageFrameThickness: frameThickness } : {}),
+    } : {}),
+    ...(kind === 'video' ? {
+      videoUrl: url,
+      ...(frameStyle ? { imageFrameStyle: frameStyle, imageFrameThickness: frameThickness } : {}),
+    } : {}),
+    ...(kind === 'audio' ? {
+      audioUrl: url,
+      audioVolume,
+      audioMaxDistance,
+      audioMuted,
+    } : {}),
+  }
+
+  state.catalogPlacements = [...(state.catalogPlacements || []), placement]
+  if (kind === 'audio') {
+    if (!state.behaviors) state.behaviors = {}
+    state.behaviors[id] = {
+      visible: true,
+      movement: { type: 'static' as const },
+      audioUrl: url,
+      audioVolume,
+      audioMaxDistance,
+      audioMuted,
+      audioState,
+      audioLoop,
+    }
+  }
+  await saveWorldState(worldId, state)
+  emitWorldEvent('object_added', worldId, {
+    id,
+    catalogId,
+    position,
+    placement,
+    ...mutationActorData(args),
+  })
+  // For audio placements, also fire behavior_set so SpatialAudioFromBehavior
+  // can hydrate without a page reload (the SSE 'object_added' handler
+  // does not currently propagate audio fields into the behaviors store).
+  if (kind === 'audio' && state.behaviors?.[id]) {
+    emitWorldEvent('behavior_set', worldId, {
+      objectId: id,
+      movement: 'static',
+      behavior: state.behaviors[id],
+      position,
+      ...mutationActorData(args),
+    })
+  }
+
+  return {
+    ok: true,
+    message: `Placed ${kind} at [${position.join(', ')}] as ${id}.`,
+    data: { id, kind, mediaUrl: url, position, ...(kind !== 'audio' && frameStyle ? { frameStyle, frameThickness } : {}) },
+  }
+}
+
+// ─═̷─═̷─📥 UPLOAD_TO_LIBRARY — register external asset into media library 📥─═̷─═̷─
+
+tools.upload_to_library = async (args) => {
+  const url = validStr(args.url, '')
+  const data = validStr(args.data, '')
+  const kind = validStr(args.kind, '').toLowerCase()
+  if (!url && !data) return { ok: false, message: 'Provide url (to fetch) or data (base64) for the asset.' }
+  if (kind !== 'image' && kind !== 'video' && kind !== 'audio') {
+    return { ok: false, message: 'kind must be "image", "video", or "audio".' }
+  }
+  const name = validStr(args.name, '')
+
+  try {
+    const response = await callInternalJson<{ url: string; name: string; type: string; size: number }>(
+      '/api/media/upload-from-url',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, data, kind, name }),
+      },
+    )
+    return {
+      ok: true,
+      message: `Saved ${kind} to library: ${response.url}`,
+      data: { mediaUrl: response.url, name: response.name, kind, size: response.size },
+    }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    return { ok: false, message: `Upload failed: ${msg}` }
+  }
+}
+
 tools.list_conjured_assets = async (args) => {
   const worldId = validStr(args.worldId, '')
   const statusFilter = validStr(args.status, '').toLowerCase()
@@ -2066,14 +2479,17 @@ tools.get_conjured_asset = async (args) => {
 tools.conjure_asset = async (args) => {
   const prompt = validStr(args.prompt, '')
   if (!prompt) return { ok: false, message: 'prompt is required.' }
+  const provider = validStr(args.provider, 'meshy') as ProviderName
+  // Match the UI default: agents should ask Meshy for textured assets unless they opt into preview.
+  const tier = validStr(args.tier, '') || (provider === 'meshy' ? 'refine' : '')
 
   const response = await callInternalJson<{ id: string; status: string; estimatedSeconds?: number }>('/api/conjure', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       prompt,
-      provider: validStr(args.provider, 'meshy') as ProviderName,
-      ...(validStr(args.tier, '') ? { tier: validStr(args.tier, '') } : {}),
+      provider,
+      ...(tier ? { tier } : {}),
       ...(validStr(args.imageUrl, '') ? { imageUrl: validStr(args.imageUrl, '') } : {}),
       ...(validBool(args.characterMode, false) ? { characterMode: true } : {}),
       ...(args.characterOptions && typeof args.characterOptions === 'object' ? { characterOptions: args.characterOptions } : {}),
@@ -2309,6 +2725,7 @@ const MUTATING_TOOLS = new Set([
   'modify_light', 'set_behavior', 'set_avatar', 'walk_avatar_to',
   'play_avatar_animation', 'clear_world',
   'conjure_asset', 'process_conjured_asset', 'place_conjured_asset', 'delete_conjured_asset',
+  'conjure_framed_picture', 'place_media',
 ])
 
 export async function callTool(name: string, args: Record<string, unknown>): Promise<ToolResult> {

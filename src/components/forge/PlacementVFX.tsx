@@ -34,6 +34,12 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { ActivePlacementVfx } from '../../store/oasisStore'
 import { useOasisStore } from '../../store/oasisStore'
+import {
+  DimensionalMawPlacementEffect,
+  HexstormPlacementEffect,
+  RealityDetonationPlacementEffect,
+  SingularityDropPlacementEffect,
+} from './AdvancedSpellVFX'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ░▒▓█ GOLDEN PALETTE — the warmth of materialization █▓▒░
@@ -102,6 +108,14 @@ export function PlacementVFX({ vfx, onComplete }: { vfx: ActivePlacementVfx; onC
       return <VoidAnchorEffect vfx={vfx} onComplete={onComplete} />
     case 'stellarforge':
       return <StellarForgeEffect vfx={vfx} onComplete={onComplete} />
+    case 'realitydetonation':
+      return <RealityDetonationPlacementEffect vfx={vfx} onComplete={onComplete} />
+    case 'dimensionalmaw':
+      return <DimensionalMawPlacementEffect vfx={vfx} onComplete={onComplete} />
+    case 'hexstorm':
+      return <HexstormPlacementEffect vfx={vfx} onComplete={onComplete} />
+    case 'singularitydrop':
+      return <SingularityDropPlacementEffect vfx={vfx} onComplete={onComplete} />
   }
 }
 

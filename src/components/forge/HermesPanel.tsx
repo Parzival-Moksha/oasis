@@ -20,6 +20,14 @@ import { MediaBubble, type MediaType } from './MediaBubble'
 import { AvatarGallery } from './AvatarGallery'
 import { AgentToolCallCard } from './AgentToolCallCard'
 import { AgentVoiceInputButton } from './AgentVoiceInputButton'
+import {
+  getClientAgentSessionCache,
+  listClientAgentSessionCaches,
+  saveClientAgentSessionCache,
+  saveClientAgentSessionCaches,
+  type ClientAgentSessionCacheRecord,
+} from '@/lib/agent-session-cache-client'
+import { removeBrowserStorage, writeBrowserStorage } from '@/lib/browser-storage'
 
 interface PanelSettings {
   bgColor: string
@@ -164,6 +172,7 @@ const CHAT_KEY = 'oasis-hermes-chat-history'
 const SESSION_KEY = 'oasis-hermes-session'
 const VOICE_OUTPUT_KEY = 'oasis-hermes-voice-output'
 const NATIVE_SESSION_CACHE_KEY = 'oasis-hermes-native-session-cache'
+const HERMES_NATIVE_AGENT_CACHE_TYPE = 'hermes-native'
 const NEW_SESSION_VALUE = '__oasis_new__'
 const HERMES_USER_REQUEST_MARKER = /User request:\s*/i
 const STREAM_RENDER_INTERVAL_MS = 33
@@ -213,7 +222,11 @@ function sanitizeCachedMessages(raw: unknown): ChatMessage[] {
     .slice(-80)
 }
 
-function readNativeSessionCache(sessionId: string): ChatMessage[] {
+function getHermesMessagesLastActiveAt(messages: ChatMessage[]): number {
+  return messages.reduce((latest, message) => Math.max(latest, message.timestamp || 0), 0) || Date.now()
+}
+
+function readLegacyNativeSessionCache(sessionId: string): ChatMessage[] {
   if (typeof window === 'undefined' || !sessionId) return []
 
   try {
@@ -228,43 +241,128 @@ function readNativeSessionCache(sessionId: string): ChatMessage[] {
   }
 }
 
-function readCachedNativeSessionSummaries(): HermesNativeSessionSummary[] {
-  if (typeof window === 'undefined') return []
+function readLegacyNativeSessionCaches(): Map<string, ChatMessage[]> {
+  const sessions = new Map<string, ChatMessage[]>()
+  if (typeof window === 'undefined') return sessions
 
   try {
     const raw = localStorage.getItem(NATIVE_SESSION_CACHE_KEY)
-    if (!raw) return []
+    if (!raw) return sessions
     const parsed = JSON.parse(raw) as unknown
-    if (!parsed || typeof parsed !== 'object') return []
+    if (!parsed || typeof parsed !== 'object') return sessions
 
-    return Object.entries(parsed as Record<string, unknown>)
-      .map(([sessionId, entry]) => buildSyntheticHermesSessionSummary(sessionId, sanitizeCachedMessages(entry)))
-      .filter((entry): entry is HermesNativeSessionSummary => Boolean(entry))
-      .sort(compareHermesSessionSummaries)
+    for (const [sessionId, entry] of Object.entries(parsed as Record<string, unknown>)) {
+      const messages = sanitizeCachedMessages(entry)
+      if (sessionId && messages.length > 0) sessions.set(sessionId, messages)
+    }
   } catch {
-    return []
+    // Ignore malformed legacy cache.
+  }
+
+  return sessions
+}
+
+let hermesNativeLegacyMigrationPromise: Promise<void> | null = null
+const hermesNativeSaveTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+async function migrateLegacyHermesNativeSessionCache(): Promise<void> {
+  if (typeof window === 'undefined') return
+  if (hermesNativeLegacyMigrationPromise) return hermesNativeLegacyMigrationPromise
+
+  hermesNativeLegacyMigrationPromise = (async () => {
+    const legacy = readLegacyNativeSessionCaches()
+    if (legacy.size === 0) return
+
+    const ok = await saveClientAgentSessionCaches(
+      HERMES_NATIVE_AGENT_CACHE_TYPE,
+      [...legacy.entries()].map(([sessionId, messages]) => {
+        const summary = buildSyntheticHermesSessionSummary(sessionId, messages)
+        return {
+          sessionId,
+          title: summary?.title || `Hermes ${sessionId.slice(-8)}`,
+          model: summary?.model || undefined,
+          payload: messages,
+          messageCount: messages.length,
+          source: 'legacy-localStorage',
+          lastActiveAt: summary?.lastActiveAt || getHermesMessagesLastActiveAt(messages),
+        }
+      }),
+    )
+
+    if (ok) removeBrowserStorage(NATIVE_SESSION_CACHE_KEY)
+  })()
+
+  try {
+    await hermesNativeLegacyMigrationPromise
+  } finally {
+    hermesNativeLegacyMigrationPromise = null
   }
 }
 
-function writeNativeSessionCache(sessionId: string, messages: ChatMessage[]) {
-  if (typeof window === 'undefined' || !sessionId) return
+async function readPersistedNativeSessionCache(sessionId: string): Promise<ChatMessage[]> {
+  if (!sessionId) return []
+  await migrateLegacyHermesNativeSessionCache()
 
-  try {
-    const raw = localStorage.getItem(NATIVE_SESSION_CACHE_KEY)
-    const parsed = raw ? JSON.parse(raw) as Record<string, unknown> : {}
-    const next: Record<string, unknown> = parsed && typeof parsed === 'object' ? parsed : {}
-    next[sessionId] = sanitizeCachedMessages(messages)
+  const record = await getClientAgentSessionCache<ChatMessage[]>(HERMES_NATIVE_AGENT_CACHE_TYPE, sessionId)
+  const persisted = sanitizeCachedMessages(record?.payload)
+  if (persisted.length > 0) return persisted
 
-    const orderedEntries = Object.entries(next)
-    while (orderedEntries.length > 24) {
-      const [oldestKey] = orderedEntries.shift() || []
-      if (oldestKey) delete next[oldestKey]
-    }
+  return readLegacyNativeSessionCache(sessionId)
+}
 
-    localStorage.setItem(NATIVE_SESSION_CACHE_KEY, JSON.stringify(next))
-  } catch {
-    // Ignore storage errors.
+function buildCachedHermesSessionSummary(
+  record: ClientAgentSessionCacheRecord<ChatMessage[]>,
+): HermesNativeSessionSummary | null {
+  const messages = sanitizeCachedMessages(record.payload)
+  const summary = buildSyntheticHermesSessionSummary(record.sessionId, messages)
+  if (!summary) return null
+  return {
+    ...summary,
+    title: record.title || summary.title,
+    model: record.model || summary.model,
+    source: record.source || summary.source,
+    lastActiveAt: Date.parse(record.lastActiveAt) || summary.lastActiveAt,
   }
+}
+
+async function readCachedNativeSessionSummaries(): Promise<HermesNativeSessionSummary[]> {
+  await migrateLegacyHermesNativeSessionCache()
+
+  const records = await listClientAgentSessionCaches<ChatMessage[]>(HERMES_NATIVE_AGENT_CACHE_TYPE, 100)
+  const persistedSummaries = records
+    .map(buildCachedHermesSessionSummary)
+    .filter((entry): entry is HermesNativeSessionSummary => Boolean(entry))
+
+  const legacySummaries = [...readLegacyNativeSessionCaches().entries()]
+    .map(([sessionId, entry]) => buildSyntheticHermesSessionSummary(sessionId, entry))
+    .filter((entry): entry is HermesNativeSessionSummary => Boolean(entry))
+
+  return mergeHermesSessionSummaries(persistedSummaries, legacySummaries)
+}
+
+function writeNativeSessionCache(sessionId: string, messages: ChatMessage[]) {
+  if (typeof window === 'undefined' || !sessionId || messages.length === 0) return
+  const sanitized = sanitizeCachedMessages(messages)
+  if (sanitized.length === 0) return
+
+  const previous = hermesNativeSaveTimers.get(sessionId)
+  if (previous) clearTimeout(previous)
+
+  hermesNativeSaveTimers.set(sessionId, setTimeout(() => {
+    hermesNativeSaveTimers.delete(sessionId)
+    const summary = buildSyntheticHermesSessionSummary(sessionId, sanitized)
+    void saveClientAgentSessionCache(HERMES_NATIVE_AGENT_CACHE_TYPE, {
+      sessionId,
+      title: summary?.title || `Hermes ${sessionId.slice(-8)}`,
+      model: summary?.model || undefined,
+      payload: sanitized,
+      messageCount: sanitized.length,
+      source: 'oasis-panel',
+      lastActiveAt: summary?.lastActiveAt || getHermesMessagesLastActiveAt(sanitized),
+    }).catch(() => {
+      // Ignore persistence errors; live React state remains authoritative.
+    })
+  }, 500))
 }
 
 function formatToolName(name: string): string {
@@ -1419,6 +1517,7 @@ export function HermesPanel({
       setInput(current => joinPrompt(current, transcript))
     },
     focusTargetRef: inputRef,
+    enablePlayerLipSync: true,
   })
 
   // Textarea grows with content (oasisspec3)
@@ -1539,9 +1638,12 @@ export function HermesPanel({
         : selectedSessionId && selectedSessionId !== NEW_SESSION_VALUE
           ? selectedSessionId
           : activeNativeSessionIdRef.current
-      const cachedSummaries = readCachedNativeSessionSummaries()
+      const cachedSummaries = await readCachedNativeSessionSummaries()
+      const fallbackMessages = fallbackSessionId
+        ? await readPersistedNativeSessionCache(fallbackSessionId).catch(() => readLegacyNativeSessionCache(fallbackSessionId))
+        : []
       const fallbackSummary = fallbackSessionId
-        ? buildSyntheticHermesSessionSummary(fallbackSessionId, readNativeSessionCache(fallbackSessionId))
+        ? buildSyntheticHermesSessionSummary(fallbackSessionId, fallbackMessages)
         : null
       const nextSessions = mergeHermesSessionSummaries(
         fetchedSessions,
@@ -1576,11 +1678,7 @@ export function HermesPanel({
           next = nextSessions[0]?.id || NEW_SESSION_VALUE
         }
 
-        try {
-          localStorage.setItem(SESSION_KEY, next)
-        } catch {
-          // Ignore storage errors.
-        }
+        writeBrowserStorage(SESSION_KEY, next)
 
         return next
       })
@@ -1616,7 +1714,7 @@ export function HermesPanel({
 
       const cachedSourceMessages = options?.mergeMessages?.length
         ? options.mergeMessages
-        : readNativeSessionCache(sessionId)
+        : await readPersistedNativeSessionCache(sessionId)
 
       const nextMessages = shouldPreferHydratedHermesMessages(collapsedRemoteMessages, cachedSourceMessages)
         ? collapseDuplicateHermesMessages(collapsedRemoteMessages)
@@ -1628,7 +1726,7 @@ export function HermesPanel({
       return nextMessages
     } catch (error) {
       setSessionsError(error instanceof Error ? error.message : 'Unable to load the selected Hermes session.')
-      const fallbackMessages = options?.mergeMessages || readNativeSessionCache(sessionId)
+      const fallbackMessages = options?.mergeMessages || await readPersistedNativeSessionCache(sessionId).catch(() => readLegacyNativeSessionCache(sessionId))
       if (fallbackMessages.length) {
         setMessages(fallbackMessages)
         return fallbackMessages
@@ -1876,8 +1974,27 @@ export function HermesPanel({
       const displayUrl = `data:image/${format};base64,${capture.base64}`
       setVisionCaptureUrl(displayUrl)
       setVisionCapturedAt(Date.now())
+      // Attach the data URL to the chat message too — without this, base64-only
+      // captures only show in the side preview and never in chat history (the
+      // url/filePath branches above DO attach; this branch was the gap).
+      if (options?.attachToMessageId) {
+        const nextMessages = messagesRef.current.map(message =>
+          message.id === options.attachToMessageId
+            ? { ...message, content: appendHermesMediaLines(message.content, [displayUrl]) }
+            : message
+        )
+        setMessages(nextMessages)
+        if (options.sessionId) {
+          writeNativeSessionCache(options.sessionId, nextMessages)
+          setSessions(previous => upsertHermesSessionSummary(
+            previous,
+            buildSyntheticHermesSessionSummary(options.sessionId || '', nextMessages),
+          ))
+        }
+      }
       return {
         displayUrl,
+        threadMediaRef: displayUrl,
       }
     } catch (error) {
       setVisionCaptureError(error instanceof Error ? error.message : 'Hermes vision failed.')
@@ -2069,9 +2186,7 @@ export function HermesPanel({
       setTunnelInput('')
       setShowConnectionModal(false)
       autoConnectTriedRef.current = false
-      try {
-        localStorage.removeItem(CHAT_KEY)
-      } catch {}
+      removeBrowserStorage(CHAT_KEY)
       await loadStatus()
     } catch (error) {
       setConnectionError(error instanceof Error ? error.message : 'Unable to forget Hermes connection data.')
@@ -2121,6 +2236,10 @@ export function HermesPanel({
   }, [isOpen])
 
   useEffect(() => {
+    void migrateLegacyHermesNativeSessionCache()
+  }, [])
+
+  useEffect(() => {
     // ░▒▓ VANISH-ON-SCROLL ROOT CAUSE (oasisspec3): scrollIntoView() walks the
     // ancestor chain and scrolls every scrollable parent, which inside drei's
     // <Html transform> includes the CSS3DObject's internal wrapper → matrix3d
@@ -2136,11 +2255,7 @@ export function HermesPanel({
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (nativeSessionsAvailable) return
-    try {
-      localStorage.setItem(CHAT_KEY, JSON.stringify(messages.slice(-60)))
-    } catch {
-      // Ignore storage errors.
-    }
+    writeBrowserStorage(CHAT_KEY, JSON.stringify(messages.slice(-60)))
   }, [messages, nativeSessionsAvailable])
 
   useEffect(() => {
@@ -2170,11 +2285,7 @@ export function HermesPanel({
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    try {
-      localStorage.setItem(VOICE_OUTPUT_KEY, String(voiceOutputEnabled))
-    } catch {
-      // Ignore storage errors.
-    }
+    writeBrowserStorage(VOICE_OUTPUT_KEY, String(voiceOutputEnabled))
   }, [voiceOutputEnabled])
 
   useEffect(() => {
@@ -2229,11 +2340,7 @@ export function HermesPanel({
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (!selectedSessionId) return
-    try {
-      localStorage.setItem(SESSION_KEY, selectedSessionId)
-    } catch {
-      // Ignore storage errors.
-    }
+    writeBrowserStorage(SESSION_KEY, selectedSessionId)
   }, [selectedSessionId])
 
   useEffect(() => {
@@ -2278,7 +2385,7 @@ export function HermesPanel({
       y: Math.max(-8, event.clientY - dragStart.current.y),
     }
     setPosition(nextPos)
-    localStorage.setItem(POS_KEY, JSON.stringify(nextPos))
+    writeBrowserStorage(POS_KEY, JSON.stringify(nextPos))
   }, [embedded, isDragging])
 
   const handleDragEnd = useCallback(() => setIsDragging(false), [])
@@ -2298,7 +2405,7 @@ export function HermesPanel({
       h: Math.max(MIN_HEIGHT, resizeStart.current.h + (event.clientY - resizeStart.current.y)),
     }
     setSize(nextSize)
-    localStorage.setItem(SIZE_KEY, JSON.stringify(nextSize))
+    writeBrowserStorage(SIZE_KEY, JSON.stringify(nextSize))
   }, [embedded, isResizing])
 
   const handleResizeEnd = useCallback(() => setIsResizing(false), [])
@@ -2324,13 +2431,13 @@ export function HermesPanel({
 
   const updatePanelSettings = useCallback((next: PanelSettings) => {
     setPanelSettings(next)
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(next))
+    writeBrowserStorage(SETTINGS_KEY, JSON.stringify(next))
   }, [])
 
   const _toggleDetails = useCallback(() => {
     setShowDetails(current => {
       const next = !current
-      try { localStorage.setItem(DETAILS_KEY, String(next)) } catch {}
+      writeBrowserStorage(DETAILS_KEY, String(next))
       return next
     })
   }, [])
@@ -2351,9 +2458,7 @@ export function HermesPanel({
     }
 
     setMessages([])
-    try {
-      localStorage.removeItem(CHAT_KEY)
-    } catch {}
+    removeBrowserStorage(CHAT_KEY)
   }, [nativeSessionsAvailable])
 
   const cancel = useCallback(() => {

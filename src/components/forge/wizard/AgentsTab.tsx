@@ -1,7 +1,3 @@
-// ═══════════════════════════════════════════════════════════════════════════════
-// AGENTS TAB — 3D agent windows management + placement
-// ═══════════════════════════════════════════════════════════════════════════════
-
 'use client'
 
 import { useOasisStore } from '../../../store/oasisStore'
@@ -10,9 +6,11 @@ const AGENT_TYPES = [
   { type: 'browser' as const, label: 'Browser', icon: 'WWW', color: '#f97316', desc: 'Live 3D browser surface with real typing and selection' },
   { type: 'openclaw' as const, label: 'OpenClaw', icon: '🦞', color: '#22d3ee', desc: 'Gateway-native peer — local first, MCP-ready, transport next' },
   { type: 'anorak' as const, label: 'Anorak', icon: '💻', color: '#38bdf8', desc: 'Claude Code agent — full multi-turn sessions' },
+  { type: 'codex' as const, label: 'Codex', icon: '⌘', color: '#10b981', desc: 'OpenAI coding agent — local exec threads inside the Oasis' },
   { type: 'anorak-pro' as const, label: 'Anorak Pro', icon: '🔮', color: '#14b8a6', desc: 'Autonomous dev pipeline — curator, coder, reviewer, tester' },
   { type: 'hermes' as const, label: 'Hermes', icon: '☤', color: '#fb7185', desc: 'Embodied co-builder — remote tool agent inside the Oasis' },
   { type: 'merlin' as const, label: 'Merlin', icon: '🧙', color: '#a855f7', desc: 'World-builder agent — place objects, set sky' },
+  { type: 'realtime' as const, label: 'Realtime', icon: '🗣️', color: '#c084fc', desc: 'Voice sandbox — WebRTC speech, transcript, lipsync' },
   { type: 'devcraft' as const, label: 'DevCraft', icon: '⚡', color: '#22c55e', desc: 'Mission management + gamification' },
   { type: 'parzival' as const, label: 'Parzival', icon: '🧿', color: '#c084fc', desc: 'Autonomous brain — modes, missions, thought stream' },
 ] as const
@@ -31,10 +29,9 @@ export function AgentsTabContent() {
 
   return (
     <>
-      {/* ░▒▓ DEPLOY NEW AGENT ▓▒░ */}
       <div className="mb-3">
         <span className="text-[10px] text-gray-300 uppercase tracking-widest font-mono">
-          ── Deploy Agent ──
+          Deploy Agent
         </span>
         <div className="grid grid-cols-3 gap-1.5 mt-2">
           {AGENT_TYPES.map(agent => (
@@ -53,10 +50,9 @@ export function AgentsTabContent() {
         </div>
       </div>
 
-      {/* ░▒▓ PLACED AGENTS ▓▒░ */}
       <div className="flex items-center justify-between mb-2">
         <span className="text-[10px] text-gray-300 uppercase tracking-widest font-mono">
-          ── Deployed ({placedAgentWindows.length}) ──
+          Deployed ({placedAgentWindows.length})
         </span>
       </div>
 
@@ -81,9 +77,12 @@ export function AgentsTabContent() {
                 }`}
                 style={{ background: isSelected ? undefined : 'rgba(15, 15, 15, 0.8)' }}
                 onClick={() => {
-                  if (isSelected) { selectObject(null); setInspectedObject(null) }
-                  else {
-                    selectObject(win.id); setInspectedObject(win.id)
+                  if (isSelected) {
+                    selectObject(null)
+                    setInspectedObject(null)
+                  } else {
+                    selectObject(win.id)
+                    setInspectedObject(win.id)
                     if (pos) setCameraLookAt(pos)
                   }
                 }}
@@ -110,7 +109,10 @@ export function AgentsTabContent() {
                       {isFocused ? 'unfollow' : 'follow'}
                     </button>
                     <button
-                      onClick={(e) => { e.stopPropagation(); removeAgentWindow(win.id) }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        removeAgentWindow(win.id)
+                      }}
                       className="text-gray-500 hover:text-red-400 text-xs transition-colors"
                       title="Remove from world"
                     >
@@ -120,7 +122,14 @@ export function AgentsTabContent() {
                 </div>
                 <div className="flex items-center gap-2 mt-1 text-[8px] text-gray-500 font-mono">
                   <span>pos: [{pos.map(v => v.toFixed(1)).join(', ')}]</span>
-                  <span>scale: {(() => { const s = transforms[win.id]?.scale; return typeof s === 'number' ? s.toFixed(2) : Array.isArray(s) ? s[0].toFixed(2) : win.scale.toFixed(2) })()}</span>
+                  <span>scale: {(() => {
+                    const scale = transforms[win.id]?.scale
+                    return typeof scale === 'number'
+                      ? scale.toFixed(2)
+                      : Array.isArray(scale)
+                        ? scale[0].toFixed(2)
+                        : win.scale.toFixed(2)
+                  })()}</span>
                 </div>
               </div>
             )

@@ -7,6 +7,12 @@ import { getAgentSessionRecord, upsertAgentSessionRecord } from '@/lib/agent-ses
 import { buildClaudeCliEnv } from '@/lib/claude-cli-env'
 import { prisma } from '@/lib/db'
 import type { WorldState } from '@/lib/forge/world-persistence'
+import { recordTokenBurn } from '@/lib/token-burn'
+import {
+  extractClaudeTokenUsage,
+  hasTokenUsage,
+  type TokenUsagePayload,
+} from '@/lib/token-usage'
 import {
   publishWorldPlayerContext,
   type RuntimePlayerContext as PromptPlayerContext,
@@ -369,6 +375,7 @@ export async function POST(request: NextRequest) {
   const requestedSessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : ''
   const model = resolveMerlinModel(body.model)
   const playerContext = parsePromptPlayerContext(body.playerContext)
+  const usageProvider = 'anthropic'
 
   if (!worldId || !prompt) {
     return NextResponse.json({ error: 'worldId and prompt are required' }, { status: 400 })
@@ -410,6 +417,13 @@ export async function POST(request: NextRequest) {
       let eventCounter = 0
       let streamBuffer = ''
       let capturedSessionId = requestedSessionId || ''
+      let latestUsage: TokenUsagePayload = {
+        inputTokens: 0,
+        outputTokens: 0,
+        sessionId: capturedSessionId,
+        provider: usageProvider,
+        model,
+      }
       let latestAssistantSnapshot: Array<{
         type: string
         id?: string
@@ -475,6 +489,7 @@ export async function POST(request: NextRequest) {
             if (eventType === 'system') {
               if (raw.subtype === 'init' && typeof raw.session_id === 'string' && raw.session_id.trim()) {
                 capturedSessionId = raw.session_id.trim()
+                latestUsage = { ...latestUsage, sessionId: capturedSessionId }
                 sendEvent('session', { sessionId: capturedSessionId })
                 void recordSession(capturedSessionId)
               }
@@ -551,6 +566,21 @@ export async function POST(request: NextRequest) {
                 thinking: typeof block.thinking === 'string' ? block.thinking : undefined,
                 input: block.input && typeof block.input === 'object' ? block.input as Record<string, unknown> : undefined,
               }))
+
+              if (message.usage && typeof message.usage === 'object') {
+                latestUsage = extractClaudeTokenUsage({
+                  usage: message.usage as Record<string, unknown>,
+                  session_id: capturedSessionId,
+                }, {
+                  sessionId: capturedSessionId,
+                  provider: usageProvider,
+                  model,
+                })
+
+                if (hasTokenUsage(latestUsage)) {
+                  sendEvent('usage', { ...latestUsage })
+                }
+              }
               continue
             }
 
@@ -582,6 +612,18 @@ export async function POST(request: NextRequest) {
               continue
             }
 
+            if (eventType === 'result') {
+              latestUsage = extractClaudeTokenUsage(raw, {
+                sessionId: capturedSessionId,
+                provider: usageProvider,
+                model,
+              })
+              if (hasTokenUsage(latestUsage)) {
+                sendEvent('usage', { ...latestUsage })
+              }
+              continue
+            }
+
             if (eventType === 'direct') {
               const tool = (raw.tool || {}) as Record<string, unknown>
               if (typeof tool.name === 'string') {
@@ -608,17 +650,39 @@ export async function POST(request: NextRequest) {
       child.on('error', (error) => {
         clearInterval(keepAlive)
         sendEvent('error', { message: `Failed to spawn Claude Code CLI: ${error.message}` })
-        sendEvent('done', { sessionId: capturedSessionId, worldId, success: false })
+        sendEvent('done', {
+          worldId,
+          success: false,
+          ...latestUsage,
+          sessionId: capturedSessionId || latestUsage.sessionId,
+        })
         try { controller.enqueue(encoder.encode('data: [DONE]\n\n')) } catch {}
         controller.close()
       })
 
-      child.on('close', (code) => {
+      child.on('close', async (code) => {
         clearInterval(keepAlive)
+        latestUsage = {
+          ...latestUsage,
+          sessionId: capturedSessionId || latestUsage.sessionId,
+        }
+
+        if (hasTokenUsage(latestUsage)) {
+          try {
+            await recordTokenBurn({
+              source: 'merlin',
+              ...latestUsage,
+            })
+          } catch (error) {
+            console.warn('[Merlin] Failed to persist token burn:', error)
+          }
+        }
+
         sendEvent('done', {
-          sessionId: capturedSessionId,
           worldId,
           success: code === 0,
+          ...latestUsage,
+          sessionId: capturedSessionId || latestUsage.sessionId,
         })
         try { controller.enqueue(encoder.encode('data: [DONE]\n\n')) } catch {}
         controller.close()

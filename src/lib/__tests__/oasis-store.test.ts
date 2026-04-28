@@ -30,13 +30,10 @@ vi.mock('../../hooks/useXp', () => ({
   awardXp: vi.fn(),
 }))
 
-vi.mock('../../lib/supabase', () => ({
-  getBrowserSupabase: vi.fn().mockReturnValue(null),
-}))
-
 // Must import AFTER mocks are set up
 import { useOasisStore } from '../../store/oasisStore'
 import type { AgentWindowType, AgentWindow } from '../../store/oasisStore'
+import { getDefaultAgentAvatarUrl } from '../../lib/agent-avatar-catalog'
 import { debouncedSaveWorld, saveWorld } from '../../lib/forge/world-persistence'
 
 // Cast the mocked imports for easy access
@@ -82,6 +79,8 @@ function resetStore() {
     worldConjuredAssetIds: [],
     placementPending: null,
     activePlacementVfx: [],
+    agentMaterializations: {},
+    agentActivity: {},
     focusedImageId: null,
     transforms: {},
   })
@@ -103,6 +102,36 @@ describe('OasisStore', () => {
     vi.useRealTimers()
   })
 
+  it('stores avatar movement on the avatar instead of transform overrides', () => {
+    useOasisStore.setState({
+      _worldReady: true,
+      placedAgentAvatars: [{
+        id: 'agent-avatar-openclaw',
+        agentType: 'openclaw',
+        avatar3dUrl: '/avatars/gallery/CoolAlien.vrm',
+        position: [0, 0, 0],
+        rotation: [0, 0, 0],
+        scale: 1,
+      }],
+      transforms: {
+        'agent-avatar-openclaw': { position: [99, 0, 99] },
+        'rock-1': { position: [1, 0, 1] },
+      },
+    })
+
+    getState().setObjectTransform('agent-avatar-openclaw', {
+      position: [2, 0, 3],
+      rotation: [0, 1.25, 0],
+      scale: [1.5, 1.5, 1.5],
+    })
+
+    expect(getState().placedAgentAvatars[0]?.position).toEqual([2, 0, 3])
+    expect(getState().placedAgentAvatars[0]?.rotation).toEqual([0, 1.25, 0])
+    expect(getState().placedAgentAvatars[0]?.scale).toBe(1.5)
+    expect(getState().transforms['agent-avatar-openclaw']).toBeUndefined()
+    expect(getState().transforms['rock-1']).toEqual({ position: [1, 0, 1] })
+  })
+
   // ─═̷─═̷─ AgentWindowType ─═̷─═̷─
   describe('AgentWindowType', () => {
     it('includes anorak-pro as a valid type', () => {
@@ -111,9 +140,14 @@ describe('OasisStore', () => {
       expect(t).toBe('anorak-pro')
     })
 
+    it('includes codex as a valid type', () => {
+      const t: AgentWindowType = 'codex'
+      expect(t).toBe('codex')
+    })
+
     it('includes all expected agent types', () => {
-      const types: AgentWindowType[] = ['anorak', 'anorak-pro', 'merlin', 'devcraft', 'parzival']
-      expect(types).toHaveLength(5)
+      const types: AgentWindowType[] = ['anorak', 'codex', 'anorak-pro', 'merlin', 'devcraft', 'parzival']
+      expect(types).toHaveLength(6)
     })
   })
 
@@ -130,6 +164,42 @@ describe('OasisStore', () => {
       useOasisStore.setState({ placementPending: { type: 'agent', name: 'test', agentType: 'anorak' } })
       getState().addAgentWindow(makeAgentWindow())
       expect(getState().placementPending).toBeNull()
+    })
+
+    it('auto-spawns a default companion avatar for new agent windows', () => {
+      getState().addAgentWindow(makeAgentWindow({
+        id: 'avatar-win',
+        agentType: 'codex',
+        position: [1, 2, 3],
+        rotation: [0, 0.5, 0],
+      }))
+
+      const placedWindow = getState().placedAgentWindows.find(entry => entry.id === 'avatar-win')
+      const avatar = getState().placedAgentAvatars.find(entry => entry.linkedWindowId === 'avatar-win')
+      expect(avatar).toBeDefined()
+      expect(avatar?.avatar3dUrl).toBe(getDefaultAgentAvatarUrl('codex'))
+      expect(placedWindow?.linkedAvatarId).toBe(avatar?.id)
+      expect(placedWindow?.anchorMode).toBe('next-to')
+    })
+
+    it('uses agent-specific default avatars when placing agent windows', () => {
+      const cases: Array<[AgentWindowType, string]> = [
+        ['anorak', '/avatars/gallery/Cyberpal.vrm'],
+        ['codex', '/avatars/gallery/CosmicBot.vrm'],
+        ['anorak-pro', '/avatars/gallery/UnicornPerson.vrm'],
+        ['merlin', '/avatars/gallery/EYE_Diviner.vrm'],
+        ['openclaw', '/avatars/gallery/CaptainLobster.vrm'],
+        ['hermes', '/avatars/gallery/Amazonas.vrm'],
+      ]
+
+      for (const [agentType, expectedUrl] of cases) {
+        resetStore()
+        getState().addAgentWindow(makeAgentWindow({ id: `${agentType}-win`, agentType }))
+        const avatar = getState().placedAgentAvatars.find(entry =>
+          entry.linkedWindowId === `${agentType}-win` || entry.agentType === agentType
+        )
+        expect(avatar?.avatar3dUrl).toBe(expectedUrl)
+      }
     })
 
     it('accumulates multiple windows', () => {
@@ -151,6 +221,59 @@ describe('OasisStore', () => {
       // spawnPlacementVfx adds to activePlacementVfx
       expect(getState().activePlacementVfx.length).toBeGreaterThanOrEqual(1)
       expect(getState().activePlacementVfx[0].position).toEqual(pos)
+    })
+  })
+
+  describe('agent materialization', () => {
+    it('tracks pending and revealing object materialization without saving world state', () => {
+      getState().startAgentMaterialization('asset-1')
+      expect(getState().agentMaterializations['asset-1']).toMatchObject({
+        objectId: 'asset-1',
+        phase: 'pending',
+        minScale: 0.25,
+        revealDurationMs: 1500,
+      })
+
+      getState().revealAgentMaterialization('asset-1')
+      expect(getState().agentMaterializations['asset-1']?.phase).toBe('revealing')
+      expect(getState().agentMaterializations['asset-1']?.revealStartedAt).toEqual(expect.any(Number))
+
+      getState().clearAgentMaterialization('asset-1')
+      expect(getState().agentMaterializations['asset-1']).toBeUndefined()
+      expect(mockDebouncedSave).not.toHaveBeenCalled()
+      expect(mockSaveWorld).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('agentActivity', () => {
+    it('uses explicit run ids to start, tool, finish, and ignore stale finishes', () => {
+      getState().startAgentWork('codex', 'run-1', 'session-a')
+      expect(getState().agentActivity.codex).toMatchObject({
+        agentKey: 'codex',
+        runId: 'run-1',
+        sessionId: 'session-a',
+        state: 'working',
+        confidence: 'explicit',
+      })
+
+      getState().setAgentWorkTool('codex', 'run-1', 'shell')
+      expect(getState().agentActivity.codex).toMatchObject({
+        state: 'tooling',
+        activeTool: 'shell',
+      })
+
+      getState().startAgentWork('codex', 'run-2')
+      getState().finishAgentWork('codex', 'run-1')
+      expect(getState().agentActivity.codex).toMatchObject({
+        runId: 'run-2',
+        state: 'working',
+      })
+
+      getState().finishAgentWork('codex', 'run-2')
+      expect(getState().agentActivity.codex).toMatchObject({
+        runId: 'run-2',
+        state: 'idle',
+      })
     })
   })
 
@@ -487,7 +610,59 @@ describe('OasisStore', () => {
     })
   })
 
-  // ─═̷─═̷─ navigateSlide ─═̷─═̷─
+  // ─═̷─═̷─ window + slide navigation ─═̷─═̷─
+  describe('navigateAgentWindow()', () => {
+    function makeWindow(id: string, x: number, z = 0) {
+      return {
+        id,
+        agentType: 'anorak',
+        position: [x, 2, z] as [number, number, number],
+        rotation: [0, 0, 0] as [number, number, number],
+        scale: 1,
+        width: 800,
+        height: 600,
+      }
+    }
+
+    it('does nothing when there are no agent windows', () => {
+      useOasisStore.setState({ placedAgentWindows: [], focusedAgentWindowId: null })
+      getState().navigateAgentWindow(1)
+      expect(getState().focusedAgentWindowId).toBeNull()
+    })
+
+    it('navigateAgentWindow(1) focuses first window sorted by X when none focused', () => {
+      useOasisStore.setState({
+        placedAgentWindows: [
+          makeWindow('b', 10),
+          makeWindow('a', -5),
+          makeWindow('c', 20),
+        ] as any,
+        transforms: {},
+        focusedAgentWindowId: null,
+      })
+      getState().navigateAgentWindow(1)
+      expect(getState().focusedAgentWindowId).toBe('a')
+    })
+
+    it('cycles through windows by resolved transform position', () => {
+      useOasisStore.setState({
+        placedAgentWindows: [
+          makeWindow('a', 0),
+          makeWindow('b', 100),
+          makeWindow('c', 10),
+        ] as any,
+        transforms: {
+          b: { position: [5, 2, 0] },
+        },
+        focusedAgentWindowId: 'a',
+      })
+      getState().navigateAgentWindow(1)
+      expect(getState().focusedAgentWindowId).toBe('b')
+      getState().navigateAgentWindow(1)
+      expect(getState().focusedAgentWindowId).toBe('c')
+    })
+  })
+
   describe('navigateSlide()', () => {
     function makePlacement(id: string, x: number, z = 0, imageUrl = 'http://img.png') {
       return {

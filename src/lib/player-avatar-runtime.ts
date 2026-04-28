@@ -11,6 +11,8 @@ export interface CastSpawn {
   rotation: [number, number, number]
 }
 
+export const PLAYER_AVATAR_LIPSYNC_ID = 'player-avatar'
+
 const DEFAULT_CAST_DISTANCE = 3
 const DEFAULT_GROUND_Y = 0
 

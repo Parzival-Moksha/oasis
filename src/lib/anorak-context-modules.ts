@@ -67,6 +67,7 @@ const LINKED_FILE_SEARCH_SKIP_DIRS = new Set([
   'generated-images',
   'generated-videos',
   'generated-voices',
+  'generated-music',
   'coverage',
   'dist',
   'build',

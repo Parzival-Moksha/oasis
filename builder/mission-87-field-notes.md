@@ -93,6 +93,37 @@ Might be fixed incidentally by the Cause-2 fix (structured error surfaces the is
 - **World auto-switch during MCP session**: Between my two test rounds, world shifted from `world-1775697550663-k95m` → `world-1776651675360-81bd` without explicit `load_world` call from me. Carbondev also reported being auto-switched to "Ready Player 1" world earlier in the session. **Not part of #87** but log it — might be related to OpenClaw skill test flow or the registry-first-world fallback at `oasisStore.ts:1610`.
 - **`subject=openclaw` vs `subject=clawdling`** returned visually identical dark tech-armor figures despite being two different placed avatars. Could be genuine same-model, or the subject resolver collapses them. Verify with `query_objects` + cross-ref positions if reviewer asks.
 
+## Round 4 — 9-tool focused batch (added 2026-04-21)
+
+With window focused, fired 9 vision tools in parallel — ALL succeeded. Visual verification:
+
+| Mode | Claimed subject | Actually framed | ✅/❌ |
+|---|---|---|---|
+| `current` | active camera | player TPS toward forge | ✅ |
+| `agent-avatar-phantom agentType=anorak-pro` | FPS from anorak-pro | ground-level FPS toward forge | ✅ |
+| `look-at [25,18,25]→[0,2,0]` | free cam | elevated diagonal | ✅ |
+| `external-orbit agentType=player d=20 h=12` | orbit player | player centered, high angle | ✅ |
+| `third-person-follow agentType=player` | TPS player | cyan player back | ✅ |
+| **`avatar-portrait agentType=anorak-pro`** | **anorak-pro portrait** | **player close-up, anorak-pro in bg** | **❌** |
+| `avatarpic_user tps` | user TPS | cyan player back | ✅ |
+| `avatarpic_merlin portrait` | merlin face | merlin samurai helmet | ✅ |
+| `screenshot_avatar subject=clawdling tps` | clawdling TPS | clawdling centered | ✅ |
+
+### Cause 6 (NEW): `mode=avatar-portrait agentType=<non-player>` silently falls back to player rig
+With `agentType="anorak-pro"` (exact-match, so alias fix from Cause 1 doesn't apply here), the portrait camera ended up framing the PLAYER avatar, not anorak-pro. Anorak-pro IS in the frame but as a background figure, ~3m away.
+
+Hypothesis: the portrait-mode camera-anchor path in `ViewportScreenshotBridge.tsx` has a separate lookup from the placed-avatars pose resolution, and that lookup defaults to the player when the agent-pose entry is missing OR the portrait-distance offset math subtracts from the wrong origin. Check what sets the camera's `position`/`lookAt` for portrait mode specifically — it's distinct from external-orbit/tps paths.
+
+**Test to confirm**: `mode=avatar-portrait agentType=merlin` in a world with Merlin placed. If it frames the player, same bug. If it frames Merlin, then the bug is specific to anorak-pro's placement data.
+
+## Round 3 — parallel-burst race (added 2026-04-21)
+
+Fired 3 view tools in a single parallel batch: `external-orbit agentType=player`, `third-person-follow agentType=player`, `look-at`. Both player-anchored calls TIMED OUT; `look-at` (free camera) succeeded. Immediately retried just 2 in a second batch: `external-orbit target=[0,0,0]` (no agent) + `avatarpic_user tps` — BOTH succeeded instantly.
+
+**Signal**: the agent-pose resolution path in the bridge has a concurrency bug. Two simultaneous requests for "player" pose cause at least one to bail silently (→ 20s timeout). `avatarpic_user` uses a different internal player-resolution path — immune. Hypothesis: the `pendingScreenshotJobs` FIFO serializes but the avatar-pose lookup inside `ViewportScreenshotBridge.tsx:95` shares state that races.
+
+**Add to Bug A/B instrumentation**: log enter/exit of `getAvatarPose()` with a request id. Fire 5 parallel `screenshot_viewport mode=third-person-follow agentType=player` in a test — expect at least one to drop silently. Fix likely = either await-chain the pose resolutions, OR clone pose snapshots at queue-enqueue time so each job has its own immutable view.
+
 ## Files to instrument during debug
 
 | File | Line | What to add |

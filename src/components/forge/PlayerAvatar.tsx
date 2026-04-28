@@ -22,9 +22,10 @@ import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
 import { useInputManager, consumeMouseLookDelta } from '../../lib/input-manager'
 import { AnimationController } from '../../lib/animation-state-machine'
 import { useAudioManager } from '../../lib/audio-manager'
+import { getLipSync } from '../../lib/lip-sync'
 import { sprintRef } from '../CameraController'
 import { SettingsContext } from '../scene-lib'
-import { getPlayerSpellCasting, setPlayerAvatarPose, setPlayerSpellCasting, subscribePlayerSpellCasting } from '../../lib/player-avatar-runtime'
+import { PLAYER_AVATAR_LIPSYNC_ID, getPlayerSpellCasting, setPlayerAvatarPose, setPlayerSpellCasting, subscribePlayerSpellCasting } from '../../lib/player-avatar-runtime'
 import { SPELL_CAST_ANIMATION_ID, SPELL_CAST_SOUND_URL } from '../../lib/spell-casting'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -44,10 +45,19 @@ interface PlayerAvatarProps {
 
 const MAX_DELTA = 0.05
 const CAMERA_DISTANCE = 4.2
-const CAMERA_HEIGHT_OFFSET = 1.95
-const CAMERA_SHOULDER_OFFSET = 0.82
-const CAMERA_LOOK_AHEAD = 4
-const CAMERA_LOOK_TARGET_HEIGHT = 2.15
+const TPS_MIN_CAMERA_DISTANCE = 1.2
+const TPS_MAX_CAMERA_DISTANCE = 100
+const TPS_ZOOM_CURVE = 1.35
+const TPS_ZOOM_WHEEL_SENSITIVITY = 0.0012
+const TPS_ZOOM_SMOOTHING = 10
+const TPS_CLOSE_CAMERA_HEIGHT_OFFSET = 1.5
+const TPS_CLOSE_SHOULDER_OFFSET = 0.32
+const TPS_CLOSE_LOOK_AHEAD = 0.25
+const TPS_CLOSE_LOOK_TARGET_HEIGHT = 1.45
+const CAMERA_HEIGHT_OFFSET = 1.85
+const CAMERA_SHOULDER_OFFSET = 0.58
+const CAMERA_LOOK_AHEAD = 2.3
+const CAMERA_LOOK_TARGET_HEIGHT = 1.75
 const MIN_ELEVATION = -1.2 // Near ground level
 const MAX_ELEVATION = 1.5  // Almost directly above
 
@@ -62,6 +72,54 @@ function normalizeAngle(angle: number): number {
   while (angle < -Math.PI) angle += Math.PI * 2
   return angle
 }
+
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return value < 0 ? 0 : value > 1 ? 1 : value
+}
+
+const PLAYER_EXPRESSION_ALIASES = {
+  blink: ['blink', 'blink_l', 'blink_r'],
+  aa: ['aa', 'a'],
+  ih: ['ih', 'i'],
+  ou: ['ou', 'u'],
+  ee: ['ee', 'e'],
+  oh: ['oh', 'o'],
+  happy: ['happy', 'joy', 'fun'],
+} as const
+
+function setPlayerExpressionValue(
+  expr: {
+    setValue: (name: string, value: number) => void
+    expressionMap?: Record<string, unknown>
+  },
+  aliases: readonly string[],
+  value: number,
+) {
+  const expressionMap = expr.expressionMap
+  const target = expressionMap
+    ? aliases.find(name => Object.prototype.hasOwnProperty.call(expressionMap, name))
+    : aliases[0]
+  expr.setValue(target || aliases[0], value)
+}
+
+function smoothstep01(value: number): number {
+  const t = clamp01(value)
+  return t * t * (3 - 2 * t)
+}
+
+function tpsZoomToDistance(zoom: number): number {
+  const shaped = Math.pow(clamp01(zoom), TPS_ZOOM_CURVE)
+  return TPS_MIN_CAMERA_DISTANCE * Math.pow(TPS_MAX_CAMERA_DISTANCE / TPS_MIN_CAMERA_DISTANCE, shaped)
+}
+
+function distanceToTpsZoom(distance: number): number {
+  const clamped = Math.max(TPS_MIN_CAMERA_DISTANCE, Math.min(TPS_MAX_CAMERA_DISTANCE, distance))
+  const normalized = Math.log(clamped / TPS_MIN_CAMERA_DISTANCE) / Math.log(TPS_MAX_CAMERA_DISTANCE / TPS_MIN_CAMERA_DISTANCE)
+  return Math.pow(clamp01(normalized), 1 / TPS_ZOOM_CURVE)
+}
+
+const DEFAULT_TPS_CAMERA_ZOOM = distanceToTpsZoom(CAMERA_DISTANCE)
 
 // Random dance clips for X key
 const DANCE_CLIPS = ['breakdance', 'hip-hop', 'capoeira', 'moonwalk', 'shuffling', 'thriller', 'twist', 'twirl']
@@ -87,6 +145,8 @@ export function PlayerAvatar({
   // ── Camera orbit state (third-person) ──────────────────────────────
   const cameraAzimuth = useRef(Math.PI) // Start behind avatar (facing +Z)
   const cameraElevation = useRef(0.3)   // Slightly above horizontal
+  const cameraZoomTarget = useRef(DEFAULT_TPS_CAMERA_ZOOM)
+  const cameraZoom = useRef(DEFAULT_TPS_CAMERA_ZOOM)
   const wasThirdPersonActiveRef = useRef(false)
 
   // ── Movement state ─────────────────────────────────────────────────
@@ -115,6 +175,27 @@ export function PlayerAvatar({
 
   // ── Keyboard input (from drei KeyboardControls wrapping Canvas) ────
   const [, getKeys] = useKeyboardControls()
+
+  useEffect(() => {
+    const handleWheel = (event: WheelEvent) => {
+      const input = useInputManager.getState()
+      if (input.inputState !== 'third-person') return
+      if (input.hasActiveUILayer()) return
+
+      const target = event.target as HTMLElement | null
+      if (target?.closest('[data-ui-panel]')) return
+
+      const deltaScale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 240 : 1
+      const wheelDelta = event.deltaY * deltaScale
+      if (!Number.isFinite(wheelDelta) || wheelDelta === 0) return
+
+      cameraZoomTarget.current = clamp01(cameraZoomTarget.current + wheelDelta * TPS_ZOOM_WHEEL_SENSITIVITY)
+      event.preventDefault()
+    }
+
+    window.addEventListener('wheel', handleWheel, { passive: false })
+    return () => window.removeEventListener('wheel', handleWheel)
+  }, [])
 
   useEffect(() => {
     return subscribePlayerSpellCasting(() => {
@@ -314,10 +395,31 @@ export function PlayerAvatar({
     const t = state.clock.elapsedTime
     const expr = v.expressionManager
     if (expr) {
+      const lipCtrl = getLipSync(PLAYER_AVATAR_LIPSYNC_ID)
+      const lipState = lipCtrl?.isActive ? lipCtrl.update() : null
       const blinkPhase = t % 4
-      expr.setValue('blink', (blinkPhase > 3.7 && blinkPhase < 3.9) ? 1 : 0)
+      setPlayerExpressionValue(expr, PLAYER_EXPRESSION_ALIASES.blink, (blinkPhase > 3.7 && blinkPhase < 3.9) ? 1 : 0)
       const smileAmount = Math.sin(t * 0.3) * 0.15 + 0.1
-      expr.setValue('happy', Math.max(0, smileAmount))
+
+      const clearLipVisemes = () => {
+        setPlayerExpressionValue(expr, PLAYER_EXPRESSION_ALIASES.aa, 0)
+        setPlayerExpressionValue(expr, PLAYER_EXPRESSION_ALIASES.ih, 0)
+        setPlayerExpressionValue(expr, PLAYER_EXPRESSION_ALIASES.ou, 0)
+        setPlayerExpressionValue(expr, PLAYER_EXPRESSION_ALIASES.ee, 0)
+        setPlayerExpressionValue(expr, PLAYER_EXPRESSION_ALIASES.oh, 0)
+      }
+
+      if (lipState && (lipState.aa > 0.01 || lipState.ih > 0.01 || lipState.ou > 0.01 || lipState.ee > 0.01 || lipState.oh > 0.01)) {
+        setPlayerExpressionValue(expr, PLAYER_EXPRESSION_ALIASES.aa, lipState.aa)
+        setPlayerExpressionValue(expr, PLAYER_EXPRESSION_ALIASES.ih, lipState.ih)
+        setPlayerExpressionValue(expr, PLAYER_EXPRESSION_ALIASES.ou, lipState.ou)
+        setPlayerExpressionValue(expr, PLAYER_EXPRESSION_ALIASES.ee, lipState.ee)
+        setPlayerExpressionValue(expr, PLAYER_EXPRESSION_ALIASES.oh, lipState.oh)
+        setPlayerExpressionValue(expr, PLAYER_EXPRESSION_ALIASES.happy, Math.max(0, smileAmount * 0.45))
+      } else {
+        clearLipVisemes()
+        setPlayerExpressionValue(expr, PLAYER_EXPRESSION_ALIASES.happy, Math.max(0, smileAmount))
+      }
     }
 
     // ── Third-person movement + camera ───────────────────────────
@@ -378,18 +480,24 @@ export function PlayerAvatar({
       positionRef.current.add(_tempVec.current.copy(velocityRef.current).multiplyScalar(delta))
 
       // ── Position camera behind avatar using spherical coords ───
+      cameraZoom.current += (cameraZoomTarget.current - cameraZoom.current) * (1 - Math.exp(-TPS_ZOOM_SMOOTHING * delta))
+      const zoomFraming = smoothstep01(cameraZoom.current / DEFAULT_TPS_CAMERA_ZOOM)
       const el = cameraElevation.current
-      const dist = CAMERA_DISTANCE
+      const dist = tpsZoomToDistance(cameraZoom.current)
+      const heightOffset = THREE.MathUtils.lerp(TPS_CLOSE_CAMERA_HEIGHT_OFFSET, CAMERA_HEIGHT_OFFSET, zoomFraming)
+      const shoulderOffset = THREE.MathUtils.lerp(TPS_CLOSE_SHOULDER_OFFSET, CAMERA_SHOULDER_OFFSET, zoomFraming)
+      const lookAhead = THREE.MathUtils.lerp(TPS_CLOSE_LOOK_AHEAD, CAMERA_LOOK_AHEAD, zoomFraming)
+      const lookTargetHeight = THREE.MathUtils.lerp(TPS_CLOSE_LOOK_TARGET_HEIGHT, CAMERA_LOOK_TARGET_HEIGHT, zoomFraming)
       const offset = _cameraOffset.current.set(
         Math.sin(az) * Math.cos(el) * dist,
-        Math.sin(el) * dist + CAMERA_HEIGHT_OFFSET,
+        Math.sin(el) * dist + heightOffset,
         Math.cos(az) * Math.cos(el) * dist,
       )
-      offset.addScaledVector(camRight, CAMERA_SHOULDER_OFFSET)
+      offset.addScaledVector(camRight, shoulderOffset)
 
       const lookTarget = _lookTarget.current.copy(positionRef.current)
-      lookTarget.addScaledVector(camForward, CAMERA_LOOK_AHEAD)
-      lookTarget.y += CAMERA_LOOK_TARGET_HEIGHT
+      lookTarget.addScaledVector(camForward, lookAhead)
+      lookTarget.y += lookTargetHeight
 
       state.camera.position.copy(positionRef.current).add(offset)
       state.camera.lookAt(lookTarget)

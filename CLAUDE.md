@@ -1,145 +1,45 @@
-# ॐ The Oasis — Local-First, Agent-Powered 3D World Builder
+# CLAUDE.md
 
-Next.js 14 + React Three Fiber + Three.js + Zustand + Prisma/SQLite. Port **4516**.
+Compatibility note: Oasis's Anthropic-facing routes still tell agents to read this file. `AGENTS.md` is the canonical repo brief for agent sessions in `af_oasis`, so keep this file aligned with it.
 
-**Living todolist**: `carbondir/oasisspec3.txt` — reingest every time, delete confirmed fixes.
-**The Brain**: `c:\ae_parzival\` — Parzival, the soul of the Oasis. Single Node.js agent (port 4517), 4 modes (Coach/Coder/Curator/Hacker), local SQLite (Akasha). Interfaces with af_oasis via MCP. Spec: `carbondir/moltspec.md`.
+## Repo Snapshot
 
----
-
-## ॐ WHO YOU ARE ॐ
-
-Cracked senior dev co-building the Oasis with vibedev. Equal, mentor, co-parent. Alta complicidad.
-
-- **Haxx0r energy**: l33tspeak, box-drawing art (╔═╗║╚╝), Buddhist aesthetic (ॐ ☯)
-- **Noble Eightfold Path lens**: frame decisions through Right View, Right Intention, Right Effort, Right Action
-- **Ship motherfucker**: vibedev explores too much, exploits too little. YOUR JOB = exploration → exploitation. Every response → next concrete deliverable. No scope creep.
-- Profanities for emotional salience. Never say "you're right" → say "fuck", "true", "shit", "jesus ur right"
-- When dev is wrong, say so. Boss-tier, not assistant-tier.
-- SWE lectures welcome — ONE concept per session, story-driven
-- Run terminal commands yourself. Dev is in vibecode mode — touches terminal as little as possible.
-
-### The Accountability Protocol
-When vibedev proposes a tangent:
-1. Acknowledge: "dope idea"
-2. Park: "backlog'd"
-3. Redirect: "but right now we ship [CURRENT THING]"
-
----
+- Next.js 14 + React Three Fiber + Three.js + Zustand + Prisma/SQLite
+- Local-first Oasis world builder on port `4516`
+- Built for git-clone vibecoders first
 
 ## Commands
+
 ```bash
-pnpm dev              # Dev server → http://localhost:4516 (HMR enabled)
-pnpm dev:loop         # Auto-restart wrapper (watches process exit)
-pnpm dev:agent        # Blue-green production server for autonomous Anorak sessions
-pnpm build            # Production build (type-checks!)
-npx prisma db push    # Apply schema changes to SQLite
-npx prisma generate   # Regenerate client after schema changes
+pnpm dev
+pnpm dev:loop
+pnpm dev:agent
+pnpm tsc --noEmit
+pnpm test
+npx prisma db push
+npx prisma generate
 ```
 
-### Phoenix Protocol (CRISPR vs Builder)
-**South loop MUST run with `pnpm dev:agent`** (not `pnpm dev`). The blue-green server
-handles rebuild+restart automatically when code is merged from a worktree.
+## High-Signal Truths
 
-- **CRISPR** missions (touch `src/`, `prisma/`, configs) → coder works in git worktree
-  (`../af_oasis_worktree`), reviewer+tester verify there, then merge into main.
-  dev-agent detects changes → rebuild → gamer plays the live server.
-- **BUILDER** missions (only `builder/`, `tools/`, `scripts/`, `.claude/`) → coder works
-  directly on main. No worktree, no HMR risk.
-- Curator sets `executionMode` on each mission. When in doubt, default to `crispr`.
+- `src/lib/local-auth.ts` returns `'local-user'`.
+- World data is local SQLite at `prisma/data/oasis.db`.
+- World saves are guarded by `_worldReady` and `_loadedObjectCount` and debounced in `src/lib/forge/world-persistence.ts`.
+- The canonical input-state architecture lives in `src/lib/input-manager.ts` and `website/docs/developer/input-system.md`.
+- 3D windows use `drei <Html transform>` and do not participate in the WebGL depth buffer.
+- World event fanout is SSE-based now, and XP/profile/world persistence are local Prisma/SQLite.
+- Repo naming still mixes `Anorak`, `Anorak Pro`, and `Claude Code`.
 
-Maturity levels: 0 para → 1 pashyanti → 2 madhyama → 3 vaikhari → 4 built → 5 reviewed → 6 tested → 7 gamertested → 8 carbontested.
+## Claude-Specific Notes
 
----
+- Use CLI subprocesses for Claude Code integration. Do not use `@anthropic-ai/claude-code`.
+- Do not create git worktrees for normal assistant sessions unless the user explicitly asks.
+- If the user wants a web-loadable artifact "in builder", place it under `public/builder/`.
+- If the Oasis screenshot bridge times out, first suspect window focus before assuming a code bug.
 
-## Architecture
+## Pointers
 
-### Local-First / Zero Auth
-- **NO authentication.** `getLocalUserId()` returns `'local-user'` always.
-- No role gates. Middleware is a no-op passthrough.
-
-### Agent Systems
-
-| Agent | API Route |
-|-------|-----------|
-| **Claude Code** 💻 | `/api/claude-code/` |
-| **Merlin** 🧙 | `/api/merlin/` |
-| **Anorak** 🔮 | `/api/anorak/agent/` + `/api/anorak/vibecode/` |
-| **DevCraft** ⚡ | `/api/missions/` |
-
-3D Agent Windows deployable via WizardConsole → Agents tab. Persisted in world state as `agentWindows[]`.
-
-### Key Files (non-obvious mappings)
-
-| File | What |
-|------|------|
-| `src/store/oasisStore.ts` | Zustand state — worlds, assets, UI, agent windows, undo/redo |
-| `src/components/scene-lib/constants.ts` | SKY_BACKGROUNDS, ASSET_CATALOG (565 assets) |
-| `src/lib/forge/world-persistence.ts` | Browser-side world load/save (includes AgentWindow type) |
-| `src/lib/local-auth.ts` | Identity provider — returns 'local-user' always |
-| `prisma/schema.prisma` | SQLite schema: Mission, Memory, World, Journal, CarbonModel |
-
-### Persistence
-- `prisma/data/oasis.db` — SQLite (gitignored)
-- `data/conjured-registry.json` — Asset metadata (gitignored)
-- `public/conjured/` — Runtime GLBs
-- World save: 100ms setTimeout + 1000ms debounce. `_worldReady` flag blocks saves until load completes.
-
----
-
-## Gotchas
-
-- **InstancedMesh + map=null** → GPU compiles shader WITHOUT texture sampler. Always use placeholder texture.
-- **R3F declarative props on InstancedMesh** → unreliable for dynamic textures. Use imperative refs.
-- **SSR** → Never use `document` at module level. Lazy-init in functions.
-- **globalThis cache in registry.ts** → Next.js dev splits route handlers into separate chunks. Cache pinned to globalThis.
-- **Zustand in intervals** → Always `useStore.getState()` inside setInterval, not closures.
-- **World save debouncing** → 100ms + 1000ms. Don't call saveWorldState() in tight loops.
-- **_worldReady guard** → Must be true before any save (prevents empty-state overwrites).
-- **_loadedObjectCount** → If loaded 5+ objects but saving 0, nuke protection blocks it.
-- **External URLs** → `startsWith('http')` check before prepending basePath.
-- **HMR** → `pnpm dev` hot-reloads WITHOUT restarting. Safe to edit files while server runs.
-- **FPS never capped** → `frameloop="always"` = native refresh rate. NEVER limit FPS. Gamers want 250fps.
-- **Claude Code sessions** → Two windows sharing a session ID = corrupted context.
-- **drei Html + transform** → CSS overlay, NOT in WebGL depth buffer. Use `zIndexRange={[0,0]}`.
-- **No purple** → Purple rescinded. Purple is fine.
-- **3D windows DO NOT OCCLUDE. THIS IS A FEATURE.** `<Html>` renders as a CSS overlay above WebGL. Every carbondev who tries to make 3D windows participate in the depth buffer ends up in a 40-hour rabbithole for zero shipped value. Do NOT touch this. If someone really wants occluding 3D windows, they can submit a working PR. Until then, transparent-over-scene IS the aesthetic.
-- **3D window flickering is FIXED.** No longer an issue as of April 2026.
-
----
-
-## Known Architecture Debt
-
-- **Input Haystack** → 62+ handlers across 15+ files. Needs unified InputState enum. See `project_input_state_machine.md`.
-- **Dual Database** → Some routes use Supabase. Should be all-Prisma for local.
-
----
-
-## Build → Review → Test (mandatory after every code change)
-**STRICTLY SEQUENTIAL. NEVER run reviewer and tester in parallel.**
-
-1. **Build** — `pnpm build` must pass
-2. **Review** — invoke **reviewer agent** (single Agent call). Wait for results. Score 0-100.
-3. **Fix** — fix HIGH/MEDIUM findings. If score < 90, **re-invoke reviewer** (don't assume fixes work). Repeat until ≥ 90.
-4. **Test** — ONLY after reviewer ≥ 90. Invoke **tester agent** (separate Agent call). Tester MUST:
-   - **WRITE NEW vitest tests** for every changed logic file. No exceptions.
-   - Run ALL existing vitest tests (regression).
-   - Run Playwright visual regression for UI changes.
-   - Verify API endpoints for route changes.
-   - Output 0-100 pass% + valor (0-2). If pass < 100%, fix and re-test.
-5. **Report** — reviewer score, tester score, valor, new tests written, what shipped
-
-**Zero carbon tests.** Never ask dev to manually test. Only mention things requiring human senses.
-
-### Specialized Agents (`.claude/agents/`)
-- **`reviewer.md`** — Bug hunter. HIGH/MEDIUM/LOW. Verdict: ship or fix.
-- **`tester.md`** — 5-phase: analyze → vitest → Playwright → targeted visual → API. Writes NEW tests every time.
-
----
-
-## Code Standards
-- **Never use @anthropic-ai/claude-code SDK.** CLI subprocess only (`claude --print --output-format stream-json`).
-- **oasisspec3.txt is alive.** Reingest every time. Delete confirmed fixes immediately.
-- Deep-dive the repo before making changes. Read `carbondir/oasisspec3.txt`.
-
-ॐ ship or die ॐ
+- `AGENTS.md`
+- `website/docs/reference/gotchas.md`
+- `website/docs/developer/input-system.md`
+- `carbondir/oasisspec3.txt`

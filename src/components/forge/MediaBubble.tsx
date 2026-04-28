@@ -1,19 +1,45 @@
 'use client'
 
 import { createPortal } from 'react-dom'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
+  DEFAULT_LIP_SYNC_TUNING,
   createLipSyncController,
   registerLipSync,
   resumeLipSyncContext,
   unregisterLipSync,
   type LipSyncController,
+  type LipSyncState,
+  type LipSyncTuning,
 } from '../../lib/lip-sync'
+import {
+  buildCharacterMouthTimeline,
+  mapMouthWeightsToLegacyLipSyncState,
+  sampleMouthTimeline,
+  type ElevenLabsAlignment,
+} from '../../lib/lip-sync-lab'
 
 export type MediaType = 'image' | 'audio' | 'video'
 
 type GalleryMediaType = Extract<MediaType, 'image' | 'video'>
+const LOCAL_GENERATED_MEDIA_PATHS = [
+  '/generated-images/',
+  '/generated-voices/',
+  '/generated-videos/',
+  '/generated-music/',
+  '/merlin/screenshots/',
+]
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
+const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
+
+interface GeneratedVoiceTimingData {
+  alignment: ElevenLabsAlignment | null
+  normalizedAlignment: ElevenLabsAlignment | null
+}
+
+const generatedVoiceTimingCache = new Map<string, GeneratedVoiceTimingData | null>()
+const ZERO_LIP_SYNC_STATE: LipSyncState = { aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 }
 
 interface GalleryEntry {
   url: string
@@ -37,8 +63,21 @@ interface MediaBubbleProps {
 }
 
 export function resolveMediaUrl(url: string): string {
-  if (url.startsWith('http') || url.startsWith('blob:') || url.startsWith('data:')) return url
   if (typeof window !== 'undefined') {
+    if (url.startsWith('blob:') || url.startsWith('data:')) return url
+    if (url.startsWith('http')) {
+      try {
+        const parsed = new URL(url)
+        const isLoopback = LOOPBACK_HOSTS.has(parsed.hostname)
+        if ((isLoopback || parsed.origin === window.location.origin) && isLocalGeneratedMediaPath(parsed.pathname)) {
+          return `${window.location.origin}${parsed.pathname}${parsed.search}${parsed.hash}`
+        }
+      } catch {
+        return url
+      }
+      return url
+    }
+
     const basePath = process.env.NEXT_PUBLIC_BASE_PATH || ''
     const normalizedUrl = url.startsWith(basePath) || !url.startsWith('/')
       ? url
@@ -46,6 +85,11 @@ export function resolveMediaUrl(url: string): string {
     return `${window.location.origin}${normalizedUrl}`
   }
   return url
+}
+
+export function isLocalGeneratedMediaPath(pathname: string): boolean {
+  const normalized = pathname.toLowerCase()
+  return LOCAL_GENERATED_MEDIA_PATHS.some(path => normalized.includes(path))
 }
 
 export function shouldProxyMediaUrl(url: string, mediaType: MediaType): boolean {
@@ -58,14 +102,89 @@ export function shouldProxyMediaUrl(url: string, mediaType: MediaType): boolean 
   try {
     const parsed = new URL(resolved, window.location.origin)
     const sameOrigin = parsed.origin === window.location.origin
-    const pathname = parsed.pathname.toLowerCase()
-    const isGeneratedMedia =
-      pathname.startsWith('/generated-images/')
-      || pathname.startsWith('/generated-voices/')
-      || pathname.startsWith('/merlin/screenshots/')
+    const isGeneratedMedia = isLocalGeneratedMediaPath(parsed.pathname)
     return sameOrigin && isGeneratedMedia
   } catch {
     return false
+  }
+}
+
+function stripBasePath(pathname: string): string {
+  if (OASIS_BASE && pathname.startsWith(OASIS_BASE)) {
+    return pathname.slice(OASIS_BASE.length) || '/'
+  }
+  return pathname
+}
+
+export function resolveGeneratedVoiceLookupPath(url: string): string | null {
+  try {
+    const baseOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
+    const resolved = new URL(resolveMediaUrl(url), baseOrigin)
+    const normalizedPath = stripBasePath(resolved.pathname)
+    if (!normalizedPath.startsWith('/generated-voices/')) return null
+    return normalizedPath
+  } catch {
+    return null
+  }
+}
+
+async function fetchGeneratedVoiceTimingData(lookupPath: string): Promise<GeneratedVoiceTimingData | null> {
+  if (generatedVoiceTimingCache.has(lookupPath)) {
+    return generatedVoiceTimingCache.get(lookupPath) ?? null
+  }
+
+  const response = await fetch(
+    `${OASIS_BASE}/api/media/voice/timestamps?url=${encodeURIComponent(lookupPath)}`,
+    { cache: 'no-store' },
+  )
+  if (!response.ok) {
+    throw new Error(`Generated voice metadata lookup failed: HTTP ${response.status}`)
+  }
+
+  const payload = await response.json() as { clip?: GeneratedVoiceTimingData | null }
+  const clip = payload.clip || null
+  generatedVoiceTimingCache.set(lookupPath, clip)
+  return clip
+}
+
+function createTimedLipSyncController(timing: GeneratedVoiceTimingData): LipSyncController {
+  const preferredAlignment = timing.normalizedAlignment || timing.alignment
+  const timeline = buildCharacterMouthTimeline(preferredAlignment)
+  let active = false
+  let currentElement: HTMLMediaElement | null = null
+
+  return {
+    get isActive() {
+      return active
+    },
+    attachAudio(el: HTMLMediaElement) {
+      currentElement = el
+      active = true
+    },
+    attachStream(_stream: MediaStream) {
+      currentElement = null
+      active = false
+    },
+    configure(_tuning: Partial<LipSyncTuning>) {
+      // Timing-driven clips do not use FFT tuning.
+    },
+    getTuning() {
+      return { ...DEFAULT_LIP_SYNC_TUNING }
+    },
+    update(): LipSyncState {
+      if (!active || !currentElement || !timeline.cues.length) return { ...ZERO_LIP_SYNC_STATE }
+      if (currentElement.paused || currentElement.ended) return { ...ZERO_LIP_SYNC_STATE }
+
+      const weights = sampleMouthTimeline(timeline, currentElement.currentTime, {
+        intensity: 1,
+        crossfadeSeconds: 0.07,
+      })
+      return mapMouthWeightsToLegacyLipSyncState(weights)
+    },
+    detach() {
+      currentElement = null
+      active = false
+    },
   }
 }
 
@@ -138,11 +257,17 @@ export function MediaBubble({
   const [retryCount, setRetryCount] = useState(0)
   const [proxiedUrl, setProxiedUrl] = useState('')
   const [gallery, setGallery] = useState<GalleryState | null>(null)
+  const [timingData, setTimingData] = useState<GeneratedVoiceTimingData | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const lipSyncRef = useRef<LipSyncController | null>(null)
   const directResolved = resolveMediaUrl(url) + (retryCount ? `${url.includes('?') ? '&' : '?'}r=${retryCount}` : '')
   const proxyMedia = shouldProxyMediaUrl(url, mediaType)
   const resolved = proxyMedia ? proxiedUrl : directResolved
+  const generatedVoiceLookupPath = useMemo(
+    () => (mediaType === 'audio' ? resolveGeneratedVoiceLookupPath(url) : null),
+    [mediaType, url],
+  )
+  const hasTimingLipSync = Boolean(timingData?.normalizedAlignment || timingData?.alignment)
   const maxH = compact ? 200 : 300
   const normalizedPrompt = normalizeGalleryPrompt(prompt)
   const activeGalleryEntry = gallery ? gallery.entries[gallery.index] : null
@@ -151,6 +276,28 @@ export function MediaBubble({
     setLoading(true)
     setError(false)
   }, [mediaType, directResolved, proxyMedia])
+
+  useEffect(() => {
+    if (mediaType !== 'audio' || !generatedVoiceLookupPath) {
+      setTimingData(null)
+      return
+    }
+
+    let cancelled = false
+    setTimingData(generatedVoiceTimingCache.get(generatedVoiceLookupPath) ?? null)
+
+    void fetchGeneratedVoiceTimingData(generatedVoiceLookupPath)
+      .then(clip => {
+        if (!cancelled) setTimingData(clip)
+      })
+      .catch(() => {
+        if (!cancelled) setTimingData(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [generatedVoiceLookupPath, mediaType])
 
   useEffect(() => {
     if (!proxyMedia) {
@@ -225,8 +372,21 @@ export function MediaBubble({
   useEffect(() => {
     if (mediaType !== 'audio' || !avatarLipSyncTargetId || !audioRef.current) return
 
-    const ctrl = createLipSyncController()
+    const ctrl = hasTimingLipSync && timingData
+      ? createTimedLipSyncController(timingData)
+      : createLipSyncController()
     lipSyncRef.current = ctrl
+
+    const audio = audioRef.current
+    if (audio && !audio.paused && !audio.ended) {
+      void resumeLipSyncContext().finally(() => {
+        if (lipSyncRef.current !== ctrl || !audioRef.current) return
+        if (!ctrl.isActive) {
+          ctrl.attachAudio(audioRef.current)
+        }
+        registerLipSync(avatarLipSyncTargetId, ctrl)
+      })
+    }
 
     return () => {
       unregisterLipSync(avatarLipSyncTargetId, ctrl)
@@ -235,7 +395,7 @@ export function MediaBubble({
         lipSyncRef.current = null
       }
     }
-  }, [avatarLipSyncTargetId, mediaType, resolved])
+  }, [avatarLipSyncTargetId, hasTimingLipSync, mediaType, resolved, timingData])
 
   useEffect(() => {
     if (mediaType !== 'audio' || !audioRef.current || !resolved) return
@@ -286,20 +446,33 @@ export function MediaBubble({
     : {}
 
   if (error) {
+    const fallbackHref = resolved || directResolved || resolveMediaUrl(url)
     return (
       <div className="border border-red-500/30 bg-red-900/10 rounded p-3 my-1">
         <div className="text-xs font-mono text-red-400 mb-1">Failed to load {mediaType}</div>
         {prompt && <div className="text-xs text-gray-500 truncate">{prompt}</div>}
-        <button
-          onClick={() => {
-            setError(false)
-            setLoading(true)
-            setRetryCount(current => current + 1)
-          }}
-          className="text-xs font-mono text-[#14b8a6] hover:underline mt-1"
-        >
-          Retry
-        </button>
+        <div className="mt-1 flex items-center gap-3">
+          <button
+            onClick={() => {
+              setError(false)
+              setLoading(true)
+              setRetryCount(current => current + 1)
+            }}
+            className="text-xs font-mono text-[#14b8a6] hover:underline"
+          >
+            Retry
+          </button>
+          {fallbackHref && (
+            <a
+              href={fallbackHref}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="text-xs font-mono text-gray-400 hover:text-[#14b8a6] hover:underline"
+            >
+              Open
+            </a>
+          )}
+        </div>
       </div>
     )
   }

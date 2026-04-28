@@ -1,55 +1,126 @@
-// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-// ANORAK ENGINE — Shared types, SSE parser, constants for Claude Code UI
-// ─═̷─═̷─ॐ─═̷─═̷─ Single source of truth for 2D panel + 3D window ─═̷─═̷─ॐ─═̷─═̷─
-// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+import {
+  type TokenUsagePayload,
+  hasTokenUsage,
+  normalizeTokenUsagePayload,
+} from '@/lib/token-usage'
 
-// ═══════════════════════════════════════════════════════════════════════════
-// TYPES — Anorak SSE event shapes
-// ═══════════════════════════════════════════════════════════════════════════
+export interface AnorakSessionEvent {
+  type: 'session'
+  sessionId: string
+}
 
-export interface AnorakSessionEvent { type: 'session'; sessionId: string }
-export interface AnorakStatusEvent { type: 'status'; content: string }
-export interface AnorakTextEvent { type: 'text'; content: string }
-export interface AnorakThinkingEvent { type: 'thinking'; content: string }
-export interface AnorakThinkingStartEvent { type: 'thinking_start' }
-export interface AnorakToolStartEvent { type: 'tool_start'; name: string; icon: string; id: string }
-export interface AnorakToolEvent { type: 'tool'; name: string; icon: string; id: string; input: Record<string, unknown>; display: string }
-export interface AnorakToolResultEvent { type: 'tool_result'; name: string; preview: string; isError: boolean; length: number; fullResult?: string; toolUseId?: string }
-export interface AnorakProgressEvent { type: 'progress'; inputTokens: number; outputTokens: number; stopReason?: string }
-export interface AnorakResultEvent { type: 'result'; costUsd: number; durationMs: number; sessionId: string; inputTokens?: number; outputTokens?: number }
-export interface AnorakErrorEvent { type: 'error'; content: string }
-export interface AnorakStderrEvent { type: 'stderr'; content: string }
-export interface AnorakDoneEvent { type: 'done'; success: boolean; sessionId: string; costUsd?: number; inputTokens?: number; outputTokens?: number }
-export interface AnorakMediaEvent { type: 'media'; mediaType: 'image' | 'audio' | 'video'; url: string; prompt?: string }
+export interface AnorakStatusEvent {
+  type: 'status'
+  content: string
+}
+
+export interface AnorakTextEvent {
+  type: 'text'
+  content: string
+}
+
+export interface AnorakThinkingEvent {
+  type: 'thinking'
+  content: string
+}
+
+export interface AnorakThinkingStartEvent {
+  type: 'thinking_start'
+}
+
+export interface AnorakToolStartEvent {
+  type: 'tool_start'
+  name: string
+  icon: string
+  id: string
+}
+
+export interface AnorakToolEvent {
+  type: 'tool'
+  name: string
+  icon: string
+  id: string
+  input: Record<string, unknown>
+  display: string
+}
+
+export interface AnorakToolResultEvent {
+  type: 'tool_result'
+  name: string
+  preview: string
+  isError: boolean
+  length: number
+  fullResult?: string
+  toolUseId?: string
+}
+
+export interface AnorakProgressEvent extends TokenUsagePayload {
+  type: 'progress'
+  stopReason?: string
+}
+
+export interface AnorakResultEvent extends TokenUsagePayload {
+  type: 'result'
+  durationMs: number
+  numTurns?: number
+  stopReason?: string
+}
+
+export interface AnorakErrorEvent {
+  type: 'error'
+  content: string
+}
+
+export interface AnorakStderrEvent {
+  type: 'stderr'
+  content: string
+}
+
+export interface AnorakDoneEvent extends TokenUsagePayload {
+  type: 'done'
+  success: boolean
+  exitCode?: number
+}
+
+export interface AnorakMediaEvent {
+  type: 'media'
+  mediaType: 'image' | 'audio' | 'video'
+  url: string
+  prompt?: string
+}
 
 export type AnorakEvent =
-  | AnorakSessionEvent | AnorakStatusEvent | AnorakTextEvent
-  | AnorakThinkingEvent | AnorakThinkingStartEvent
-  | AnorakToolStartEvent | AnorakToolEvent | AnorakToolResultEvent
-  | AnorakProgressEvent | AnorakResultEvent
-  | AnorakErrorEvent | AnorakStderrEvent | AnorakDoneEvent
+  | AnorakSessionEvent
+  | AnorakStatusEvent
+  | AnorakTextEvent
+  | AnorakThinkingEvent
+  | AnorakThinkingStartEvent
+  | AnorakToolStartEvent
+  | AnorakToolEvent
+  | AnorakToolResultEvent
+  | AnorakProgressEvent
+  | AnorakResultEvent
+  | AnorakErrorEvent
+  | AnorakStderrEvent
+  | AnorakDoneEvent
   | AnorakMediaEvent
 
-// A single block in the conversation stream
 export interface StreamBlock {
   id: string
   kind: 'text' | 'thinking' | 'tool' | 'tool_result' | 'error' | 'status' | 'user' | 'media'
   content: string
-  // Tool-specific
   toolName?: string
   toolIcon?: string
   toolInput?: Record<string, unknown>
   toolDisplay?: string
-  toolUseId?: string  // links tool calls to their results
+  toolUseId?: string
   isError?: boolean
   isExpanded?: boolean
-  // Media-specific
   mediaType?: 'image' | 'audio' | 'video'
   mediaUrl?: string
   mediaPrompt?: string
 }
 
-// A single turn (user prompt + Anorak response)
 export interface Turn {
   id: string
   userPrompt: string
@@ -61,7 +132,6 @@ export interface Turn {
   timestamp: number
 }
 
-// Session entry from /api/claude-code/sessions
 export interface SessionEntry {
   id: string
   label: string
@@ -70,7 +140,6 @@ export interface SessionEntry {
   fileSize: number
 }
 
-// History message from session replay
 export interface HistoryMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
@@ -81,12 +150,12 @@ export interface HistoryMessage {
   outputTokens?: number
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// SSE PARSER — generic async generator
-// ═══════════════════════════════════════════════════════════════════════════
-
 export async function* parseAnorakSSE(response: Response): AsyncGenerator<AnorakEvent> {
-  if (!response.body) { yield { type: 'error', content: 'No response body' }; return }
+  if (!response.body) {
+    yield { type: 'error', content: 'No response body' }
+    return
+  }
+
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
@@ -105,63 +174,83 @@ export async function* parseAnorakSSE(response: Response): AsyncGenerator<Anorak
       if (!trimmed.startsWith('data: ')) continue
       try {
         yield JSON.parse(trimmed.slice(6)) as AnorakEvent
-      } catch { /* skip malformed */ }
+      } catch {
+        // Ignore malformed SSE payloads.
+      }
     }
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// TOOL ICONS — shared between live stream and session history
-// ═══════════════════════════════════════════════════════════════════════════
-
 export const TOOL_ICONS_MAP: Record<string, string> = {
-  Read: '📖', Edit: '✏️', Write: '📝', Bash: '⚡',
-  Grep: '🔍', Glob: '📂', Agent: '🤖', TodoWrite: '📋',
-  WebFetch: '🌐', WebSearch: '🔎', Task: '📋', Skill: '🎯',
-  // MCP media tools
-  generate_image: '🎨', generate_voice: '🔊', generate_video: '🎬',
-  // MCP mission tools
-  get_mission: '📋', get_missions_queue: '📋', create_mission: '📋',
-  mature_mission: '📋', report_review: '📋', report_test: '📋',
+  Read: '📖',
+  Edit: '✏️',
+  Write: '📝',
+  Bash: '⚡',
+  Grep: '🔍',
+  Glob: '📂',
+  Agent: '🤖',
+  TodoWrite: '📋',
+  WebFetch: '🌐',
+  WebSearch: '🔎',
+  Task: '📋',
+  Skill: '🎯',
+  generate_image: '🎨',
+  generate_voice: '🔊',
+  generate_video: '🎬',
+  get_mission: '📋',
+  get_missions_queue: '📋',
+  create_mission: '📋',
+  mature_mission: '📋',
+  report_review: '📋',
+  report_test: '📋',
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// TOKEN FORMATTER — exact under 1K, rounded above
-// ═══════════════════════════════════════════════════════════════════════════
-
-export function fmtTokens(n: number): string {
-  if (n < 1000) return String(n)
-  if (n < 1_000_000) {
-    if (n < 10_000) return `${(n / 1000).toFixed(1)}K`
-    return `${Math.round(n / 1000)}K`
+export function fmtTokens(value: number): string {
+  if (value < 1000) return String(value)
+  if (value < 1_000_000) {
+    if (value < 10_000) return `${(value / 1000).toFixed(1)}K`
+    return `${Math.round(value / 1000)}K`
   }
-  // 1M+
-  if (n < 10_000_000) return `${(n / 1_000_000).toFixed(1)}M`
-  return `${Math.round(n / 1_000_000)}M`
+  if (value < 10_000_000) return `${(value / 1_000_000).toFixed(1)}M`
+  return `${Math.round(value / 1_000_000)}M`
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// TOKEN BURN — fire-and-forget persistence to /api/token-burn
-// ═══════════════════════════════════════════════════════════════════════════
+export function recordTokenUsage(source: string, inputTokens: number, outputTokens: number): void
+export function recordTokenUsage(source: string, usage: Partial<TokenUsagePayload>): void
+export function recordTokenUsage(
+  source: string,
+  inputOrUsage: number | Partial<TokenUsagePayload>,
+  outputTokens = 0,
+) {
+  const usage = typeof inputOrUsage === 'number'
+    ? normalizeTokenUsagePayload({
+        inputTokens: inputOrUsage,
+        outputTokens,
+        sessionId: '',
+        provider: 'unknown',
+        model: 'unknown',
+      })
+    : normalizeTokenUsagePayload({
+        sessionId: '',
+        provider: 'unknown',
+        model: 'unknown',
+        ...inputOrUsage,
+      })
 
-/**
- * Record token usage. Fire-and-forget POST to /api/token-burn.
- * Called from both Anorak and Anorak Pro on each turn/result.
- */
-export function recordTokenUsage(source: string, inputTokens: number, outputTokens: number) {
-  if (!inputTokens && !outputTokens) return
+  if (!hasTokenUsage(usage)) return
+
   try {
     fetch('/api/token-burn', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source, inputTokens, outputTokens }),
-    }).catch(() => { /* fire-and-forget — offline is fine */ })
-  } catch { /* SSR guard */ }
+      body: JSON.stringify({ source, ...usage }),
+    }).catch(() => {
+      // Fire-and-forget only.
+    })
+  } catch {
+    // Ignore SSR/offline cases.
+  }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// MODELS — available Claude models
-// ═══════════════════════════════════════════════════════════════════════════
 
 export const MODELS = [
   { id: 'opus', label: 'Opus', color: '#f59e0b' },

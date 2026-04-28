@@ -6,7 +6,13 @@
 
 import { describe, it, expect } from 'vitest'
 import React from 'react'
-import { MediaBubble, resolveMediaUrl, shouldProxyMediaUrl, type MediaType } from '../../components/forge/MediaBubble'
+import {
+  MediaBubble,
+  resolveGeneratedVoiceLookupPath,
+  resolveMediaUrl,
+  shouldProxyMediaUrl,
+  type MediaType,
+} from '../../components/forge/MediaBubble'
 import type {
   AnorakEvent,
   AnorakMediaEvent,
@@ -76,6 +82,21 @@ describe('shouldProxyMediaUrl', () => {
 
   it('does not proxy external media urls', () => {
     expect(shouldProxyMediaUrl('https://example.com/test.png', 'image')).toBe(false)
+  })
+})
+
+describe('resolveGeneratedVoiceLookupPath', () => {
+  it('returns generated voice paths unchanged', () => {
+    expect(resolveGeneratedVoiceLookupPath('/generated-voices/voice-123.mp3')).toBe('/generated-voices/voice-123.mp3')
+  })
+
+  it('extracts generated voice path from same-origin absolute urls', () => {
+    const result = resolveGeneratedVoiceLookupPath('http://localhost:4516/generated-voices/voice-abc.mp3')
+    expect(result).toBe('/generated-voices/voice-abc.mp3')
+  })
+
+  it('returns null for non-voice local media', () => {
+    expect(resolveGeneratedVoiceLookupPath('/generated-images/test.png')).toBeNull()
   })
 })
 

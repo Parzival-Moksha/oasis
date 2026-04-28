@@ -206,10 +206,10 @@ export function PlacedTab() {
           )}
           {placedAgentWindows.map(win => {
             const isSelected = selectedObjectId === win.id
-            const agentIcon = win.agentType === 'anorak' ? '💻' : win.agentType === 'anorak-pro' ? '🔮' : win.agentType === 'openclaw' ? '🦞' : win.agentType === 'merlin' ? '🧙' : win.agentType === 'parzival' ? '🧿' : '⚡'
-            const agentColor = win.agentType === 'anorak' ? 'text-sky-400' : win.agentType === 'anorak-pro' ? 'text-teal-400' : win.agentType === 'openclaw' ? 'text-cyan-300' : win.agentType === 'merlin' ? 'text-purple-400' : win.agentType === 'parzival' ? 'text-violet-400' : 'text-green-400'
-            const agentIconResolved = win.agentType === 'browser' ? 'WWW' : agentIcon
-            const agentColorResolved = win.agentType === 'browser' ? 'text-orange-400' : agentColor
+            const agentIcon = win.agentType === 'anorak' ? '💻' : win.agentType === 'anorak-pro' ? '🔮' : win.agentType === 'openclaw' ? '🦞' : win.agentType === 'merlin' ? '🧙' : win.agentType === 'realtime' ? '🗣️' : win.agentType === 'parzival' ? '🧿' : '⚡'
+            const agentColor = win.agentType === 'anorak' ? 'text-sky-400' : win.agentType === 'anorak-pro' ? 'text-teal-400' : win.agentType === 'openclaw' ? 'text-cyan-300' : win.agentType === 'merlin' ? 'text-purple-400' : win.agentType === 'realtime' ? 'text-violet-300' : win.agentType === 'parzival' ? 'text-violet-400' : 'text-green-400'
+            const agentIconResolved = win.agentType === 'browser' ? 'WWW' : win.agentType === 'codex' ? '⌘' : agentIcon
+            const agentColorResolved = win.agentType === 'browser' ? 'text-orange-400' : win.agentType === 'codex' ? 'text-emerald-400' : agentColor
             const pos = transforms[win.id]?.position || win.position
             return (
               <div

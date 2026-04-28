@@ -9,7 +9,7 @@ Deploy interactive agent panels as physical objects floating in your 3D world.
 
 ## What Are 3D Windows?
 
-Instead of agents living only in sidebars, the Oasis lets you place agent panels *inside* the 3D scene. They're rendered as HTML overlays with `drei <Html>` and interact with the world's depth buffer.
+Instead of agents living only in sidebars, the Oasis lets you place agent panels inside the 3D scene. They're rendered as HTML overlays with `drei <Html>`, anchored in world space, and they do not participate in the WebGL depth buffer.
 
 ## Window Types
 
@@ -43,31 +43,31 @@ Each 3D window has:
 | **Blur** | 0 to 20px backdrop blur |
 | **Frame Style** | Visual frame around the panel |
 | **Frame Thickness** | 0.2x to 3x multiplier |
-| **Session ID** | For Claude Code — unique per window |
+| **Session ID** | For Claude Code - unique per window |
 | **Label** | User-assignable name |
 
 ## Frame Styles
 
 Available frames:
 
-- `wood` — wooden picture frame
-- `metal` — brushed metal
-- `ornate` — decorative gold
-- `minimal` — thin border
-- `neon` — glowing edges
-- `hologram` — sci-fi translucent
+- `wood` - wooden picture frame
+- `metal` - brushed metal
+- `ornate` - decorative gold
+- `minimal` - thin border
+- `neon` - glowing edges
+- `hologram` - sci-fi translucent
 - And more
 
 ## Interaction
 
-- **Click** a window to focus it → camera zooms in, pointer unlocks for DOM interaction
+- **Click** a window to focus it - camera zooms in, pointer unlocks for DOM interaction
 - **Escape** to return to the world (restores previous camera state)
 - **Resize** via the bottom-right corner handle
 - The last-clicked window gets the highest z-index
 
 ## Session Isolation
 
-Each window maintains its own session. This is critical for Claude Code windows — sharing a session ID between two windows corrupts the context.
+Each window maintains its own session. This is critical for Claude Code windows - sharing a session ID between two windows corrupts the context.
 
 ## Persistence
 

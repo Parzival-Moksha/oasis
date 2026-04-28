@@ -248,15 +248,47 @@ model Profile {
 // ═══════════════════════════════════════════════════════════════════════════
 
 model TokenBurn {
-  id           Int      @id @default(autoincrement())
-  source       String   // 'anorak' | 'anorak-pro-chat' | 'anorak-pro-curator' | etc.
-  inputTokens  Int      @default(0)
-  outputTokens Int      @default(0)
-  window       String   // ISO hour bucket: '2026-03-28T14' (hourly aggregation key)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                Int      @id @default(autoincrement())
+  userId            String   @default("local-user")
+  source            String   // 'anorak' | 'anorak-pro-chat' | 'anorak-pro-curator' | etc.
+  provider          String   @default("unknown")
+  model             String   @default("unknown")
+  sessionId         String   @default("")
+  inputTokens       Int      @default(0)
+  cachedInputTokens Int      @default(0)
+  outputTokens      Int      @default(0)
+  costUsd           Float?
+  window            String   // ISO hour bucket: '2026-03-28T14' (query helper)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  @@unique([source, window])
-  @@index([source])
+  @@index([userId, createdAt])
+  @@index([source, createdAt])
+  @@index([provider, createdAt])
+  @@index([sessionId])
   @@index([window])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AGENT SESSION CACHE — durable local-first panel/session state
+// ═══════════════════════════════════════════════════════════════════════════
+
+model AgentSessionCache {
+  id            String   @id // cache key: agentType:sessionId
+  sessionId     String
+  userId        String   @default("local-user")
+  agentType     String
+  title         String?
+  model         String?
+  payload       String   // JSON: agent-specific messages/session state
+  messageCount  Int      @default(0)
+  source        String   @default("oasis")
+  lastActiveAt  DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, agentType, sessionId])
+  @@index([userId, agentType, updatedAt])
+  @@index([agentType, lastActiveAt])
+  @@index([sessionId])
 }

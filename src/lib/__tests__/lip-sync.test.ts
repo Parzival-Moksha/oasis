@@ -77,6 +77,8 @@ describe('createLipSyncController', () => {
     const ctrl = createLipSyncController()
     expect(typeof ctrl.update).toBe('function')
     expect(typeof ctrl.attachAudio).toBe('function')
+    expect(typeof ctrl.configure).toBe('function')
+    expect(typeof ctrl.getTuning).toBe('function')
     expect(typeof ctrl.detach).toBe('function')
     expect(ctrl.isActive).toBe(false)
   })
@@ -160,6 +162,26 @@ describe('smoothing and silence gate', () => {
     expect(ctrl.update().aa).toBeGreaterThan(0)
     ctrl.detach()
     expect(ctrl.update()).toEqual({ aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 })
+  })
+
+  it('lets tuning lower the silence gate for quieter frames', () => {
+    const { ctrl } = attachController()
+    ctrl.configure({ silenceGate: 0 })
+    queueAnalyserFrame({ 1: 8, 2: 8, 3: 8 })
+    expect(ctrl.update().aa).toBeGreaterThan(0)
+  })
+
+  it('updates analyser settings when tuning changes', () => {
+    const { ctrl } = attachController()
+    const analyser = mockAudioCtx.createAnalyser.mock.results[0]?.value
+    expect(analyser?.fftSize).toBe(256)
+    expect(analyser?.smoothingTimeConstant).toBe(0.4)
+
+    ctrl.configure({ fftSize: 1024, analyserSmoothing: 0.72 })
+
+    expect(analyser?.fftSize).toBe(1024)
+    expect(analyser?.smoothingTimeConstant).toBe(0.72)
+    expect(ctrl.getTuning()).toMatchObject({ fftSize: 1024, analyserSmoothing: 0.72 })
   })
 })
 

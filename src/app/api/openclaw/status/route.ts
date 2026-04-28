@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { readFile } from 'fs/promises'
 import { dirname, join } from 'path'
 
+import { getOasisGatewayClient } from '@/lib/openclaw-gateway-client'
 import { listOpenclawCachedSessions } from '@/lib/openclaw-session-cache'
 import { openclawGatewayHttpProbeUrl, resolveOpenclawConfig } from '@/lib/openclaw-config'
 import { runOpenclawCli } from '@/lib/openclaw-cli'
@@ -30,6 +31,17 @@ interface ProbeResult {
   error?: string
 }
 
+interface DeviceRecordSummary {
+  requestId: string
+  deviceId: string
+  clientId: string
+  clientMode: string
+  platform: string
+  deviceFamily: string
+  role: string
+  createdAtMs?: number
+}
+
 let cachedGatewayCliState: GatewayCliState | null = null
 
 function sanitizeString(value: unknown): string {
@@ -52,11 +64,14 @@ function resolveRequestBaseUrl(request: NextRequest): string {
 }
 
 async function probeHttpUrl(url: string): Promise<ProbeResult> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 4000)
   try {
     const response = await fetch(url, {
       method: 'GET',
       cache: 'no-store',
       redirect: 'manual',
+      signal: controller.signal,
     })
 
     return {
@@ -73,6 +88,8 @@ async function probeHttpUrl(url: string): Promise<ProbeResult> {
       label: 'offline',
       error: error instanceof Error ? error.message : 'Probe failed',
     }
+  } finally {
+    clearTimeout(timer)
   }
 }
 
@@ -120,32 +137,83 @@ async function readGatewayCliState(): Promise<GatewayCliState> {
   return next
 }
 
-async function countDeviceRecords(fileName: 'pending.json' | 'paired.json'): Promise<number> {
+function summarizeDeviceRecord(requestId: string, raw: unknown): DeviceRecordSummary {
+  const obj = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+  const createdAtMs = typeof obj.createdAtMs === 'number' && Number.isFinite(obj.createdAtMs)
+    ? obj.createdAtMs
+    : undefined
+
+  return {
+    requestId,
+    deviceId: sanitizeString(obj.deviceId),
+    clientId: sanitizeString(obj.clientId),
+    clientMode: sanitizeString(obj.clientMode),
+    platform: sanitizeString(obj.platform),
+    deviceFamily: sanitizeString(obj.deviceFamily),
+    role: sanitizeString(obj.role),
+    ...(createdAtMs ? { createdAtMs } : {}),
+  }
+}
+
+async function readDeviceRecords(fileName: 'pending.json' | 'paired.json'): Promise<DeviceRecordSummary[]> {
   try {
     const devicesDir = join(dirname(getOpenclawRuntimeConfigPath()), 'devices')
     const raw = await readFile(join(devicesDir, fileName), 'utf-8')
     const parsed = JSON.parse(raw) as unknown
-    if (Array.isArray(parsed)) return parsed.length
-    if (!parsed || typeof parsed !== 'object') return 0
-    return Object.keys(parsed as Record<string, unknown>).length
+    if (Array.isArray(parsed)) {
+      return parsed.map((entry, index) => summarizeDeviceRecord(String(index), entry))
+    }
+    if (!parsed || typeof parsed !== 'object') return []
+    return Object.entries(parsed as Record<string, unknown>)
+      .map(([requestId, entry]) => summarizeDeviceRecord(requestId, entry))
   } catch {
-    return 0
+    return []
   }
+}
+
+async function warmNativeGatewayClient(hasStoredDeviceToken: boolean) {
+  const client = getOasisGatewayClient()
+  const initialStatus = client.getStatus()
+  if (!hasStoredDeviceToken || initialStatus.state !== 'idle') {
+    return initialStatus
+  }
+
+  try {
+    await Promise.race([
+      client.ensureReady(),
+      new Promise((resolve) => setTimeout(resolve, 2500)),
+    ])
+  } catch {
+    // Ignore here; the status snapshot below will expose the native error.
+  }
+
+  return client.getStatus()
 }
 
 export async function GET(request: NextRequest) {
   const config = await resolveOpenclawConfig()
+  const gatewayClient = await warmNativeGatewayClient(Boolean(config.deviceToken))
   const sessions = await listOpenclawCachedSessions()
   const oasisBaseUrl = resolveRequestBaseUrl(request)
   const gatewayProbeUrl = openclawGatewayHttpProbeUrl(config.gatewayUrl)
   const expectedMcpServer = buildOasisOpenclawMcpDefinition(oasisBaseUrl)
-  const [gateway, controlUi, browserControl, gatewayCli, pendingDeviceCount, pairedDeviceCount, savedMcpServer] = await Promise.all([
+  const shouldSkipCliProbe = gatewayClient.state === 'ready' || (Boolean(config.deviceToken) && (gatewayClient.state === 'idle' || gatewayClient.state === 'connecting'))
+  const [gateway, controlUi, browserControl, gatewayCli, pendingDevices, pairedDevices, savedMcpServer] = await Promise.all([
     probeHttpUrl(gatewayProbeUrl),
     probeHttpUrl(config.controlUiUrl),
     probeHttpUrl(config.browserControlUrl),
-    readGatewayCliState(),
-    countDeviceRecords('pending.json'),
-    countDeviceRecords('paired.json'),
+    shouldSkipCliProbe
+      ? Promise.resolve<GatewayCliState>({
+        state: 'ready',
+        label: gatewayClient.state === 'ready' ? 'native' : 'warming up',
+        detail: gatewayClient.state === 'ready'
+          ? 'Using the native Oasis Gateway client. CLI health probe skipped to avoid stale device churn.'
+          : 'Native Oasis Gateway client has a stored device token and is warming up. CLI health probe skipped to avoid stale device churn.',
+        checkedAt: Date.now(),
+      })
+      : readGatewayCliState(),
+    readDeviceRecords('pending.json'),
+    readDeviceRecords('paired.json'),
     readOpenclawMcpServer('oasis'),
   ])
 
@@ -159,12 +227,14 @@ export async function GET(request: NextRequest) {
     hasDeviceToken: Boolean(config.deviceToken),
     defaultSessionId: config.defaultSessionId,
     lastSessionId: config.lastSessionId,
+    gatewayClient,
     gateway,
     controlUi,
     browserControl,
     gatewayCli,
-    pendingDeviceCount,
-    pairedDeviceCount,
+    pendingDeviceCount: pendingDevices.length,
+    pairedDeviceCount: pairedDevices.length,
+    pendingDevices,
     sessionCount: sessions.length,
     mcpUrl: `${oasisBaseUrl}/api/mcp/oasis?agentType=openclaw`,
     mcpInstalled: sameMcpDefinition(savedMcpServer, expectedMcpServer),

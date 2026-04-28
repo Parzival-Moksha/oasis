@@ -15,7 +15,6 @@ import {
   type HistoryMessage,
   parseAnorakSSE,
   TOOL_ICONS_MAP,
-  recordTokenUsage,
 } from '../../lib/anorak-engine'
 import {
   CollapsibleBlock,
@@ -141,6 +140,7 @@ export function AnorakContent({
     transcribeEndpoint: '/api/voice/transcribe',
     onTranscript: transcript => setInput(current => joinAnorakPrompt(current, transcript)),
     focusTargetRef: inputRef,
+    enablePlayerLipSync: true,
   })
 
   // ░▒▓ Textarea grows with content (oasisspec3) ▓▒░
@@ -230,9 +230,9 @@ export function AnorakContent({
                 })
               }
             }
-            if (msg.costUsd) currentTurn.costUsd = msg.costUsd
-            if (msg.inputTokens) currentTurn.inputTokens = msg.inputTokens
-            if (msg.outputTokens) currentTurn.outputTokens = msg.outputTokens
+            if (typeof msg.costUsd === 'number') currentTurn.costUsd = msg.costUsd
+            if (typeof msg.inputTokens === 'number') currentTurn.inputTokens = msg.inputTokens
+            if (typeof msg.outputTokens === 'number') currentTurn.outputTokens = msg.outputTokens
           }
         }
 
@@ -436,9 +436,9 @@ export function AnorakContent({
             break
           }
           case 'result': {
-            turnCost = event.costUsd
-            if (event.inputTokens) turnInputTokens = event.inputTokens
-            if (event.outputTokens) turnOutputTokens = event.outputTokens
+            if (typeof event.costUsd === 'number') turnCost = event.costUsd
+            if (typeof event.inputTokens === 'number') turnInputTokens = event.inputTokens
+            if (typeof event.outputTokens === 'number') turnOutputTokens = event.outputTokens
             setLiveTokens({ input: turnInputTokens, output: turnOutputTokens })
             break
           }
@@ -470,9 +470,9 @@ export function AnorakContent({
                 setSessionsLoaded(false)
               }
             }
-            if (event.costUsd) turnCost = event.costUsd
-            if (event.inputTokens) turnInputTokens = event.inputTokens
-            if (event.outputTokens) turnOutputTokens = event.outputTokens
+            if (typeof event.costUsd === 'number') turnCost = event.costUsd
+            if (typeof event.inputTokens === 'number') turnInputTokens = event.inputTokens
+            if (typeof event.outputTokens === 'number') turnOutputTokens = event.outputTokens
             break
           }
         }
@@ -492,8 +492,6 @@ export function AnorakContent({
       setIsStreaming(false)
       setLiveTokens({ input: 0, output: 0 })
       abortRef.current = null
-      // Persist token usage (fire-and-forget)
-      recordTokenUsage('anorak', turnInputTokens, turnOutputTokens)
     }
   }, [input, isStreaming, sessionId, model, windowId, onSessionChange])
 
@@ -746,7 +744,7 @@ export function AnorakContent({
               )}
 
               {/* Turn metadata */}
-              {!turn.isStreaming && (turn.costUsd || turn.inputTokens) && (
+              {!turn.isStreaming && (((turn.costUsd || 0) > 0) || ((turn.inputTokens || 0) > 0) || ((turn.outputTokens || 0) > 0)) && (
                 <div className={`pt-1 border-t border-white/5`}>
                   <TokenCounter
                     inputTokens={turn.inputTokens || 0}

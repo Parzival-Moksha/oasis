@@ -2,9 +2,10 @@
 # OASIS .gitignore
 # ═══════════════════════════════════════════════════════════════
 
-# Dependencies (root + all tool subdirs)
+# Dependencies (root + all tool/plugin subdirs)
 node_modules/
 tools/*/node_modules/
+openclaw-plugins/*/node_modules/
 
 # Next.js build output
 .next/

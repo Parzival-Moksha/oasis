@@ -8,7 +8,7 @@
 import { useState, useRef, useEffect, useCallback, useContext } from 'react'
 import { createPortal } from 'react-dom'
 import { SettingsContext } from '../scene-lib'
-import { QUESTS, QUEST_IDS, getQuestProgress, completedQuestCount, allQuestsComplete } from '@/lib/quests'
+import { QUESTS, QUEST_IDS, getQuestProgress, completedQuestCount } from '@/lib/quests'
 import { useUILayer } from '@/lib/input-manager'
 import type { QuestId } from '@/lib/quests'
 
@@ -37,7 +37,7 @@ const SHORTCUTS: ShortcutRow[] = [
   { keys: ['WASD'], action: 'Move (Noclip mode)', category: 'camera' },
   { keys: ['Q', 'E'], action: 'Up / Down (Noclip)', category: 'camera' },
   { keys: ['Shift'], action: 'Sprint — 4× speed', category: 'camera' },
-  { keys: ['Space'], action: 'Slow — 0.25× speed', category: 'camera' },
+  { keys: ['Space'], action: 'Slow - 0.125x speed', category: 'camera' },
   { keys: ['Ctrl', 'Alt', 'C'], action: 'Cycle camera mode (Orbit → Noclip → TPS)', category: 'camera' },
 
   // Building
@@ -325,10 +325,7 @@ export function HelpPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
   useUILayer('help', isOpen)
   const { settings } = useContext(SettingsContext)
 
-  // Default tab: show guide if quests incomplete, otherwise controls
-  const [tab, setTab] = useState<Tab>(() => {
-    return allQuestsComplete() ? 'controls' : 'guide'
-  })
+  const [tab, setTab] = useState<Tab>('controls')
 
   // Dragging (same pattern as FeedbackPanel)
   const [position, setPosition] = useState(() => {

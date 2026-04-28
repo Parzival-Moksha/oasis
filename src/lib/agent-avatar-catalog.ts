@@ -28,6 +28,20 @@ export const DEFAULT_AGENT_AVATAR_URL = AGENT_AVATAR_CATALOG.find(entry => entry
   || AGENT_AVATAR_CATALOG[0]?.path
   || '/avatars/gallery/CoolAlien.vrm'
 
+export const DEFAULT_AGENT_AVATAR_URL_BY_TYPE: Record<string, string> = {
+  anorak: '/avatars/gallery/Cyberpal.vrm',
+  codex: '/avatars/gallery/CosmicBot.vrm',
+  'anorak-pro': '/avatars/gallery/UnicornPerson.vrm',
+  merlin: '/avatars/gallery/EYE_Diviner.vrm',
+  openclaw: '/avatars/gallery/CaptainLobster.vrm',
+  hermes: '/avatars/gallery/Amazonas.vrm',
+}
+
+export function getDefaultAgentAvatarUrl(agentType: string): string {
+  const preferred = DEFAULT_AGENT_AVATAR_URL_BY_TYPE[agentType] || DEFAULT_AGENT_AVATAR_URL
+  return AGENT_AVATAR_CATALOG.find(entry => entry.path === preferred)?.path || DEFAULT_AGENT_AVATAR_URL
+}
+
 function stripAvatarUrlDecorations(value: string): string {
   let next = value.trim().replace(/^['"`]+|['"`]+$/g, '')
   if (!next) return ''

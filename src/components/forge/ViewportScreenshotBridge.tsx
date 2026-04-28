@@ -245,12 +245,42 @@ export function ViewportScreenshotBridge() {
         const cameraPos: [number, number, number] = [camera.position.x, camera.position.y, camera.position.z]
         const cameraForward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion)
         const cameraForwardTuple: [number, number, number] = [cameraForward.x, cameraForward.y, cameraForward.z]
+        const liveAgentAvatars = placedAgentAvatars
+          .map(avatar => {
+            const liveTransform = getLiveObjectTransform(avatar.id) || transforms[avatar.id]
+            const position = Array.isArray(liveTransform?.position) && liveTransform.position.length >= 3
+              ? [Number(liveTransform.position[0]), Number(liveTransform.position[1]), Number(liveTransform.position[2])] as [number, number, number]
+              : avatar.position
+            if (!Array.isArray(position) || position.length < 3 || position.some(value => !Number.isFinite(value))) return null
+
+            const liveRotation = Array.isArray(liveTransform?.rotation) && liveTransform.rotation.length >= 3
+              ? [Number(liveTransform.rotation[0]), Number(liveTransform.rotation[1]), Number(liveTransform.rotation[2])] as [number, number, number]
+              : avatar.rotation
+            const scale = Array.isArray(liveTransform?.scale)
+              ? Number(liveTransform.scale[0])
+              : typeof liveTransform?.scale === 'number'
+                ? liveTransform.scale
+                : avatar.scale
+
+            return {
+              id: avatar.id,
+              agentType: avatar.agentType,
+              label: avatar.label,
+              linkedWindowId: avatar.linkedWindowId,
+              avatar3dUrl: avatar.avatar3dUrl,
+              position,
+              ...(Array.isArray(liveRotation) && liveRotation.length >= 3 && liveRotation.every(Number.isFinite) ? { rotation: liveRotation } : {}),
+              ...(Number.isFinite(scale) ? { scale } : {}),
+            }
+          })
+          .filter((avatar): avatar is NonNullable<typeof avatar> => !!avatar)
         const payload = JSON.stringify({
           worldId: activeWorldId,
           player: {
             ...(pose ? { avatar: pose } : {}),
             camera: { position: cameraPos, forward: cameraForwardTuple },
           },
+          agentAvatars: liveAgentAvatars,
         })
         // Skip no-op publishes — nothing to say if the pose hasn't budged.
         if (payload === lastPayload) return
@@ -291,7 +321,7 @@ export function ViewportScreenshotBridge() {
         window.clearTimeout(timeoutId)
       }
     }
-  }, [activeWorldId, camera])
+  }, [activeWorldId, camera, placedAgentAvatars, transforms])
 
   const captureView = useCallback((request: PendingScreenshotRequest, view: ScreenshotViewRequest) => {
     const width = Math.max(320, Math.round(request.width || size.width || 480))
@@ -304,6 +334,7 @@ export function ViewportScreenshotBridge() {
       depthBuffer: true,
       stencilBuffer: false,
     })
+    renderTarget.texture.colorSpace = THREE.SRGBColorSpace
 
     const previousTarget = gl.getRenderTarget()
     const previousXr = gl.xr.enabled

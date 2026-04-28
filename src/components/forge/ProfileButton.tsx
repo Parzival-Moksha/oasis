@@ -12,11 +12,13 @@ import { useOasisStore } from '@/store/oasisStore'
 import { AvatarGallery } from './AvatarGallery'
 import { useUILayer } from '@/lib/input-manager'
 import { fmtTokens } from '@/lib/anorak-engine'
-
-interface TokenBurnData {
-  inputTokens: number
-  outputTokens: number
-}
+import {
+  type ProfileTokenBurnSummaryData,
+  formatProfileTokenCost,
+  getProfileDisplayInputTokens,
+  hasProfileTokenUsage,
+  normalizeProfileTokenBurnSummary,
+} from '@/lib/profile-token-display'
 
 interface ProfileData {
   credits: number
@@ -55,13 +57,11 @@ export function ProfileButton() {
   const [dailyBonusToast, setDailyBonusToast] = useState<string | null>(null)
   const dailyBonusTriedRef = useRef(false)
   const [savedFlash, setSavedFlash] = useState(false)
-  const [tokenBurn, setTokenBurn] = useState<{ daily: TokenBurnData; weekly: TokenBurnData; alltime: TokenBurnData } | null>(null)
-
-  // Cost estimation: ~$3/MTok input, ~$15/MTok output (Sonnet-class average)
-  const estimateCost = (inp: number, out: number) => {
-    const cost = (inp * 3 + out * 15) / 1_000_000
-    return cost < 0.01 ? '<$0.01' : `$${cost.toFixed(2)}`
-  }
+  const [tokenBurn, setTokenBurn] = useState<{
+    daily: ProfileTokenBurnSummaryData
+    weekly: ProfileTokenBurnSummaryData
+    alltime: ProfileTokenBurnSummaryData
+  } | null>(null)
 
   const fetchTokenBurn = useCallback(() => {
     Promise.all([
@@ -70,9 +70,9 @@ export function ProfileButton() {
       fetch('/api/token-burn?range=alltime').then(r => r.json()).catch(() => null),
     ]).then(([daily, weekly, alltime]) => {
       setTokenBurn({
-        daily: daily?.grand || { inputTokens: 0, outputTokens: 0 },
-        weekly: weekly?.grand || { inputTokens: 0, outputTokens: 0 },
-        alltime: alltime?.grand || { inputTokens: 0, outputTokens: 0 },
+        daily: normalizeProfileTokenBurnSummary(daily),
+        weekly: normalizeProfileTokenBurnSummary(weekly),
+        alltime: normalizeProfileTokenBurnSummary(alltime),
       })
     })
   }, [])
@@ -333,7 +333,7 @@ export function ProfileButton() {
           </div>
 
           {/* Token Burn */}
-          {tokenBurn && (tokenBurn.alltime.inputTokens > 0 || tokenBurn.alltime.outputTokens > 0) && (
+          {tokenBurn && hasProfileTokenUsage(tokenBurn.alltime.grand) && (
             <div className="px-4 py-3 border-b border-white/10">
               <p className="text-[10px] text-teal-400 uppercase tracking-wider mb-2 font-bold">Token Burn</p>
               <div className="space-y-1.5 font-mono">
@@ -345,12 +345,17 @@ export function ProfileButton() {
                   <div key={label} className="flex items-center justify-between">
                     <span className="text-teal-400 text-xs w-14">{label}</span>
                     <span className="text-lg text-white font-bold">
+                      <span title="Input tokens (including cached prompt hits)">↓{fmtTokens(getProfileDisplayInputTokens(data.grand))}</span>
+                      {' '}
+                      <span title="Output tokens">↑{fmtTokens(data.grand.outputTokens)}</span>
+                      {/*
                       <span title="Input tokens">↓{fmtTokens(data.inputTokens)}</span>
                       {' '}
                       <span title="Output tokens">↑{fmtTokens(data.outputTokens)}</span>
+                      */}
                     </span>
                     <span className="text-white text-sm text-right w-16">
-                      {estimateCost(data.inputTokens, data.outputTokens)}
+                      {formatProfileTokenCost(data)}
                     </span>
                   </div>
                 ))}

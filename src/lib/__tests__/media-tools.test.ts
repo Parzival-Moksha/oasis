@@ -82,8 +82,8 @@ describe('Constants', () => {
     expect(VIDEO_DURATIONS).toHaveLength(8)
   })
 
-  it('MEDIA_TOOL_NAMES enumerates the three tools', () => {
-    expect(MEDIA_TOOL_NAMES).toEqual(['generate_image', 'generate_voice', 'generate_video'])
+  it('MEDIA_TOOL_NAMES enumerates the four tools', () => {
+    expect(MEDIA_TOOL_NAMES).toEqual(['generate_image', 'generate_voice', 'generate_video', 'generate_music'])
   })
 })
 
@@ -105,7 +105,7 @@ describe('isMediaTool', () => {
   })
 
   it('returns false for unknown tool names', () => {
-    expect(isMediaTool('generate_music')).toBe(false)
+    expect(isMediaTool('generate_unknown')).toBe(false)
     expect(isMediaTool('')).toBe(false)
     expect(isMediaTool('GENERATE_IMAGE')).toBe(false)
   })
@@ -418,9 +418,9 @@ describe('execMediaTool', () => {
   })
 
   it('returns error for unknown tool names', async () => {
-    const result = await execMediaTool('generate_music', { prompt: 'jazz' })
+    const result = await execMediaTool('generate_unknown', { prompt: 'jazz' })
     expect(result.ok).toBe(false)
-    expect(result.error).toBe('Unknown media tool: generate_music')
+    expect(result.error).toBe('Unknown media tool: generate_unknown')
     expect(mockFetch).not.toHaveBeenCalled()
   })
 
@@ -436,8 +436,8 @@ describe('execMediaTool', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('mediaToolsOpenAI', () => {
-  it('has exactly 3 tool definitions', () => {
-    expect(mediaToolsOpenAI).toHaveLength(3)
+  it('has exactly 4 tool definitions', () => {
+    expect(mediaToolsOpenAI).toHaveLength(4)
   })
 
   it('all tools have type "function"', () => {

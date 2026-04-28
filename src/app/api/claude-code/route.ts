@@ -34,6 +34,12 @@ import {
   resolveContextModulesForLobe,
 } from '@/lib/anorak-context-modules'
 import { buildClaudeCliEnv } from '@/lib/claude-cli-env'
+import { recordTokenBurn } from '@/lib/token-burn'
+import {
+  extractClaudeTokenUsage,
+  hasTokenUsage,
+  type TokenUsagePayload,
+} from '@/lib/token-usage'
 
 const OASIS_ROOT = process.env.OASIS_ROOT || process.cwd()
 
@@ -227,6 +233,8 @@ export async function POST(request: NextRequest) {
   const agentModel = model || 'opus'
   const isResume = !!sessionId
   const selectedAgent = body.agent === 'anorak-pro' ? 'anorak-pro' : null
+  const usageProvider = 'anthropic'
+  const usageSource = selectedAgent ? 'anorak-pro-chat' : 'anorak'
 
   console.log(`[ClaudeCode] ${isResume ? 'Resuming' : 'New'} ${selectedAgent || 'default'} session (${agentModel}): "${prompt.substring(0, 80)}"`)
 
@@ -312,9 +320,13 @@ export async function POST(request: NextRequest) {
 
       let streamBuffer = ''
       let capturedSessionId = sessionId || ''
-      let costUsd = 0
-      let totalInputTokens = 0
-      let totalOutputTokens = 0
+      let latestUsage: TokenUsagePayload = {
+        inputTokens: 0,
+        outputTokens: 0,
+        sessionId: capturedSessionId,
+        provider: usageProvider,
+        model: agentModel,
+      }
 
       // Track what we've already sent from assistant messages.
       // Each assistant event is a complete snapshot, so diffing the whole block
@@ -351,6 +363,7 @@ export async function POST(request: NextRequest) {
               // Capture session_id from init
               if (raw.subtype === 'init' && raw.session_id) {
                 capturedSessionId = raw.session_id
+                latestUsage = { ...latestUsage, sessionId: capturedSessionId }
                 sendEvent('session', { sessionId: capturedSessionId })
                 console.log(`[ClaudeCode] Session: ${capturedSessionId}`)
               }
@@ -429,18 +442,29 @@ export async function POST(request: NextRequest) {
                 input: block.input,
               }))
 
-              if (msg.usage) {
-                totalInputTokens = Number(msg.usage.input_tokens) || totalInputTokens
-                totalOutputTokens = Number(msg.usage.output_tokens) || totalOutputTokens
-                sendEvent('progress', {
-                  inputTokens: totalInputTokens,
-                  outputTokens: totalOutputTokens,
-                })
-              }
-
               if (raw.session_id && !capturedSessionId) {
                 capturedSessionId = raw.session_id
+                latestUsage = { ...latestUsage, sessionId: capturedSessionId }
                 sendEvent('session', { sessionId: capturedSessionId })
+              }
+
+              if (msg.usage) {
+                const usage = extractClaudeTokenUsage({
+                  usage: msg.usage as Record<string, unknown>,
+                  session_id: capturedSessionId,
+                }, {
+                  sessionId: capturedSessionId,
+                  provider: usageProvider,
+                  model: agentModel,
+                })
+
+                latestUsage = {
+                  ...latestUsage,
+                  ...usage,
+                  sessionId: capturedSessionId || usage.sessionId,
+                }
+
+                sendEvent('progress', { ...latestUsage })
               }
 
               continue
@@ -489,7 +513,7 @@ export async function POST(request: NextRequest) {
                 const absMatch = text.match(/https?:\/\/[^\s"'\]}>)]+/)
                 if (absMatch) return absMatch[0]
                 // 2. Try local /generated-* path
-                const localMatch = text.match(/(\/generated-(?:images|voices|videos)\/[^\s"'\]}>)]+)/)
+                const localMatch = text.match(/(\/generated-(?:images|voices|videos|music)\/[^\s"'\]}>)]+)/)
                 if (localMatch) return localMatch[1]
                 // 3. Try to parse as JSON and extract url field
                 try {
@@ -571,20 +595,21 @@ export async function POST(request: NextRequest) {
 
             // ── RESULT — final metadata ────────────────
             else if (eventType === 'result') {
-              costUsd = raw.total_cost_usd ?? costUsd
-              // Extract final token counts from usage object
-              if (raw.usage) {
-                totalInputTokens = Number(raw.usage.input_tokens) || totalInputTokens
-                totalOutputTokens = Number(raw.usage.output_tokens) || totalOutputTokens
+              const usage = extractClaudeTokenUsage(raw as Record<string, unknown>, {
+                sessionId: capturedSessionId,
+                provider: usageProvider,
+                model: agentModel,
+              })
+              latestUsage = {
+                ...latestUsage,
+                ...usage,
+                sessionId: capturedSessionId || usage.sessionId,
               }
               sendEvent('result', {
-                costUsd,
-                durationMs: raw.duration_ms,
-                numTurns: raw.num_turns,
-                inputTokens: totalInputTokens,
-                outputTokens: totalOutputTokens,
-                sessionId: capturedSessionId,
-                stopReason: raw.stop_reason,
+                ...latestUsage,
+                ...(typeof raw.duration_ms === 'number' ? { durationMs: raw.duration_ms } : {}),
+                ...(typeof raw.num_turns === 'number' ? { numTurns: raw.num_turns } : {}),
+                ...(typeof raw.stop_reason === 'string' ? { stopReason: raw.stop_reason } : {}),
               })
             }
 
@@ -647,23 +672,40 @@ export async function POST(request: NextRequest) {
         clearInterval(keepAliveInterval)
         console.error(`[ClaudeCode] Spawn error: ${err.message}`)
         sendEvent('error', { content: `Failed to spawn claude: ${err.message}` })
-        sendEvent('done', { success: false, sessionId: capturedSessionId })
+        sendEvent('done', {
+          success: false,
+          ...latestUsage,
+          sessionId: capturedSessionId || latestUsage.sessionId,
+        })
         try { controller.enqueue(encoder.encode('data: [DONE]\n\n')) } catch {}
         controller.close()
       })
 
       // ── PROCESS EXIT ────────────────────────────────────
-      child.on('close', (code) => {
+      child.on('close', async (code) => {
         clearInterval(keepAliveInterval)
-        console.log(`[ClaudeCode] Process exited with code ${code}, cost=$${costUsd.toFixed(4)}`)
+        latestUsage = {
+          ...latestUsage,
+          sessionId: capturedSessionId || latestUsage.sessionId,
+        }
+        console.log(`[ClaudeCode] Process exited with code ${code}, cost=$${(latestUsage.costUsd || 0).toFixed(4)}`)
+
+        if (hasTokenUsage(latestUsage)) {
+          try {
+            await recordTokenBurn({
+              source: usageSource,
+              ...latestUsage,
+            })
+          } catch (error) {
+            console.warn('[ClaudeCode] Failed to persist token burn:', error)
+          }
+        }
 
         sendEvent('done', {
           success: code === 0,
           exitCode: code,
-          sessionId: capturedSessionId,
-          costUsd,
-          inputTokens: totalInputTokens,
-          outputTokens: totalOutputTokens,
+          ...latestUsage,
+          sessionId: capturedSessionId || latestUsage.sessionId,
         })
         try { controller.enqueue(encoder.encode('data: [DONE]\n\n')) } catch {}
         controller.close()

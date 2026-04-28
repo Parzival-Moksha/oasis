@@ -399,9 +399,13 @@ export function useWorldEvents() {
                 ]
               : state.placedAgentAvatars
 
-            const transforms = transform
-              ? { ...state.transforms, [objectId]: cloneValue(transform) }
-              : state.transforms
+            let transforms = state.transforms
+            if (avatar) {
+              const { [avatar.id]: _removedAvatarTransform, ...remainingTransforms } = state.transforms
+              transforms = remainingTransforms
+            } else if (transform) {
+              transforms = { ...state.transforms, [objectId]: cloneValue(transform) }
+            }
 
             const behaviors = behavior
               ? { ...state.behaviors, [objectId]: cloneValue(behavior) }
@@ -537,15 +541,19 @@ export function useWorldEvents() {
         case 'agent_avatar_set': {
           const avatar = readAgentAvatar(data.avatar)
           if (!avatar) return false
-          const isSharedAvatarType = avatar.agentType === 'anorak-pro' || avatar.agentType === 'merlin' || avatar.agentType === 'hermes' || avatar.agentType === 'openclaw'
-          useOasisStore.setState(state => ({
-            placedAgentAvatars: [
-              ...state.placedAgentAvatars.filter(entry =>
-                entry.id !== avatar.id && (!isSharedAvatarType || entry.agentType !== avatar.agentType),
-              ),
-              cloneValue(avatar),
-            ],
-          }))
+      const isSharedAvatarType = avatar.agentType === 'anorak-pro' || avatar.agentType === 'merlin' || avatar.agentType === 'realtime' || avatar.agentType === 'hermes' || avatar.agentType === 'openclaw'
+          useOasisStore.setState(state => {
+            const { [avatar.id]: _removedAvatarTransform, ...transforms } = state.transforms
+            return {
+              placedAgentAvatars: [
+                ...state.placedAgentAvatars.filter(entry =>
+                  entry.id !== avatar.id && (!isSharedAvatarType || entry.agentType !== avatar.agentType),
+                ),
+                cloneValue(avatar),
+              ],
+              transforms,
+            }
+          })
           actorPositionRef.current.set(avatar.id, avatar.position)
 
           // Auto-spawn 3D window for agent avatars that don't have one yet
@@ -746,10 +754,16 @@ export function useWorldEvents() {
       event: RemoteWorldEvent,
       manifestPosition: [number, number, number] | null,
       agentSettings: EmbodiedAgentSettings,
+      materializedObjectId: string | null,
     ) => {
       if (!manifestPosition) return
       await maybeWalkActorIntoPlace(event, manifestPosition, agentSettings)
       if (disposedRef.current) return
+
+      if (materializedObjectId) {
+        useOasisStore.getState().revealAgentMaterialization(materializedObjectId)
+      }
+      useOasisStore.getState().spawnPlacementVfx(manifestPosition)
 
       const actorAvatarId = resolveActorAvatarId(event)
       if (actorAvatarId) {
@@ -797,13 +811,23 @@ export function useWorldEvents() {
       const agentSettings = readEmbodiedAgentSettingsFromStorage()
       const manifestPosition = resolveManifestPosition(event)
       const shouldManifest = agentSettings.agentActionMode === 'embodied' && MANIFESTED_EVENT_TYPES.has(event.type) && !!manifestPosition
-      if (shouldManifest) {
-        await playManifestSequence(event, manifestPosition, agentSettings)
-        if (disposedRef.current) return
+      const materializedObjectId = shouldManifest ? readObjectIdFromEvent(event) : null
+      if (materializedObjectId) {
+        useOasisStore.getState().startAgentMaterialization(materializedObjectId)
       }
+
       const applied = applyRemoteWorldEvent(event)
       if (shouldManifest && manifestPosition && applied) {
-        useOasisStore.getState().spawnPlacementVfx(manifestPosition)
+        // Keep actor choreography from blocking remote world updates and input for seconds.
+        void playManifestSequence(event, manifestPosition, agentSettings, materializedObjectId).catch(error => {
+          console.warn('[WorldEvents] Manifest sequence failed:', error)
+        }).finally(() => {
+          if (materializedObjectId) {
+            useOasisStore.getState().revealAgentMaterialization(materializedObjectId)
+          }
+        })
+      } else if (materializedObjectId) {
+        useOasisStore.getState().clearAgentMaterialization(materializedObjectId)
       }
       if (!applied) {
         needsRemoteReloadRef.current = true

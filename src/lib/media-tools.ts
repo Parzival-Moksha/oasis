@@ -18,6 +18,10 @@ export type VoiceName = (typeof VOICE_NAMES)[number]
 export const VIDEO_DURATIONS = [6, 8, 10, 12, 14, 16, 18, 20] as const
 export type VideoDuration = (typeof VIDEO_DURATIONS)[number]
 
+export const MUSIC_DURATION_MIN_MS = 3000
+export const MUSIC_DURATION_MAX_MS = 600000
+export const MUSIC_DURATION_DEFAULT_MS = 30000
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
 // ═══════════════════════════════════════════════════════════════════════════
@@ -75,6 +79,26 @@ export async function execGenerateVoice(
     return { ok: true, url: resolveUrl(data.url, baseUrl) }
   } catch (e) {
     return { ok: false, error: `Voice gen error: ${e}` }
+  }
+}
+
+export async function execGenerateMusic(
+  prompt: string,
+  durationMs?: number,
+  instrumental?: boolean,
+  baseUrl: string = OASIS_URL,
+): Promise<MediaToolResult> {
+  try {
+    const res = await fetch(`${baseUrl}/api/media/music`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, durationMs, instrumental }),
+    })
+    const data = await res.json()
+    if (!res.ok) return { ok: false, error: data.error || `HTTP ${res.status}` }
+    return { ok: true, url: resolveUrl(data.url, baseUrl) }
+  } catch (e) {
+    return { ok: false, error: `Music gen error: ${e}` }
   }
 }
 
@@ -138,6 +162,13 @@ export async function execMediaTool(
       )
     case 'generate_video':
       return execGenerateVideo(args.prompt as string, args.duration as number | undefined, args.image_url as string | undefined, baseUrl)
+    case 'generate_music':
+      return execGenerateMusic(
+        args.prompt as string,
+        args.durationMs as number | undefined,
+        args.instrumental as boolean | undefined,
+        baseUrl,
+      )
     default:
       return { ok: false, error: `Unknown media tool: ${name}` }
   }
@@ -194,9 +225,28 @@ export const mediaToolsOpenAI = [
       },
     },
   },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'generate_music',
+      description: 'Generate a music clip or song from a text prompt via ElevenLabs Music. Returns an MP3 URL.',
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: { type: 'string', description: 'Text describing the music (genre, mood, instruments, lyrics, etc.)' },
+          durationMs: {
+            type: 'number',
+            description: `Length in milliseconds (${MUSIC_DURATION_MIN_MS}–${MUSIC_DURATION_MAX_MS}). Defaults to ${MUSIC_DURATION_DEFAULT_MS}.`,
+          },
+          instrumental: { type: 'boolean', description: 'If true, no vocals/lyrics. Default false.' },
+        },
+        required: ['prompt'],
+      },
+    },
+  },
 ] as const
 
-export const MEDIA_TOOL_NAMES = ['generate_image', 'generate_voice', 'generate_video'] as const
+export const MEDIA_TOOL_NAMES = ['generate_image', 'generate_voice', 'generate_video', 'generate_music'] as const
 export type MediaToolName = (typeof MEDIA_TOOL_NAMES)[number]
 
 export function isMediaTool(name: string): name is MediaToolName {

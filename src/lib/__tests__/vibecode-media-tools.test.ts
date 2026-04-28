@@ -808,8 +808,8 @@ Do NOT use tools unless the conversation genuinely benefits from media. Max 3 me
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('OpenRouter Request includes tools', () => {
-  it('mediaToolsOpenAI has 3 tool definitions for the request body', () => {
-    expect(mediaToolsOpenAI).toHaveLength(3)
+  it('mediaToolsOpenAI has 4 tool definitions for the request body', () => {
+    expect(mediaToolsOpenAI).toHaveLength(4)
   })
 
   it('all tool definitions have type "function"', () => {

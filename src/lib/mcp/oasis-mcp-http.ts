@@ -183,6 +183,16 @@ export async function createOasisHttpMcpSession(context?: { worldId?: string; ag
   return { server, transport }
 }
 
+export async function createStatelessOasisHttpMcpSession(context?: { worldId?: string; agentType?: string }) {
+  const server = createOasisMcpServer(context)
+  const transport = new WebStandardStreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+    enableJsonResponse: true,
+  })
+  await server.connect(transport)
+  return { server, transport }
+}
+
 export function rememberOasisHttpMcpSession(sessionId: string, session: OasisHttpMcpSession) {
   getSessionStore().set(sessionId, session)
 }

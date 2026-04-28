@@ -287,26 +287,32 @@ describe('buildCuratorPrompt — custom module blocks', () => {
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 4. Token tracking uses total_input_tokens / total_output_tokens
+// 4. Token tracking uses standardized camelCase usage payloads
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('curate/route — token tracking fields', () => {
-  it('route source uses total_input_tokens for tokensIn (via shared parser onResult)', () => {
+  it('route source uses inputTokens for tokensIn (via shared parser onResult)', () => {
     const routeSrc = fs.readFileSync(
       path.join(__dirname, '../../app/api/anorak/pro/curate/route.ts'), 'utf-8'
     )
-    // After refactor: tokens are extracted in onResult callback from shared parser
-    expect(routeSrc).toContain('evt.total_input_tokens')
-    expect(routeSrc).toContain('tokensIn = evt.total_input_tokens')
+    expect(routeSrc).toContain('evt.inputTokens')
+    expect(routeSrc).toContain('tokensIn = evt.inputTokens')
   })
 
-  it('route source uses total_output_tokens for tokensOut (via shared parser onResult)', () => {
+  it('route source uses outputTokens for tokensOut (via shared parser onResult)', () => {
     const routeSrc = fs.readFileSync(
       path.join(__dirname, '../../app/api/anorak/pro/curate/route.ts'), 'utf-8'
     )
-    // After refactor: tokens are extracted in onResult callback from shared parser
-    expect(routeSrc).toContain('evt.total_output_tokens')
-    expect(routeSrc).toContain('tokensOut = evt.total_output_tokens')
+    expect(routeSrc).toContain('evt.outputTokens')
+    expect(routeSrc).toContain('tokensOut = evt.outputTokens')
+  })
+
+  it('route persists curator token burn with the shared helper', () => {
+    const routeSrc = fs.readFileSync(
+      path.join(__dirname, '../../app/api/anorak/pro/curate/route.ts'), 'utf-8'
+    )
+    expect(routeSrc).toContain('recordTokenBurn({')
+    expect(routeSrc).toContain("source: 'anorak-pro-curator'")
   })
 })
 

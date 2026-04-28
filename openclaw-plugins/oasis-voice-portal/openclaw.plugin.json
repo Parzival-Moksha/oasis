@@ -1,0 +1,11 @@
+{
+  "id": "oasis-voice-portal",
+  "enabledByDefault": true,
+  "name": "Oasis Voice Portal",
+  "description": "Expose OpenClaw-owned voice turns to the Oasis Gateway client.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

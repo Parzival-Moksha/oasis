@@ -16,6 +16,9 @@ vi.mock('@/lib/input-manager', () => ({
 vi.mock('@/hooks/useAgentVoiceInput', () => ({
   useAgentVoiceInput: vi.fn(() => ({})),
 }))
+vi.mock('@/hooks/useAutoresizeTextarea', () => ({
+  useAutoresizeTextarea: vi.fn(() => ({})),
+}))
 vi.mock('@/lib/anorak-renderers', () => ({
   renderMarkdown: vi.fn((s: string) => s),
 }))
@@ -44,7 +47,7 @@ vi.mock('../components/scene-lib', () => ({
   SettingsContext: { Provider: vi.fn() },
 }))
 
-import { detectMerlinMediaType } from '@/components/forge/MerlinPanel'
+import { detectMerlinMediaType, parseMerlinSSE } from '@/components/forge/MerlinPanel'
 
 describe('detectMerlinMediaType', () => {
   // ─── Data URIs ───
@@ -183,5 +186,48 @@ describe('detectMerlinMediaType', () => {
       expect(detectMerlinMediaType('https://example.com/IMG.PNG')).toBe('image')
       expect(detectMerlinMediaType('https://example.com/CLIP.MP3')).toBe('audio')
     })
+  })
+})
+
+async function collectMerlinEvents(response: Response) {
+  const events = []
+  for await (const event of parseMerlinSSE(response)) {
+    events.push(event)
+  }
+  return events
+}
+
+describe('parseMerlinSSE', () => {
+  it('parses standardized usage events', async () => {
+    const payload = {
+      type: 'usage',
+      inputTokens: 700,
+      cachedInputTokens: 200,
+      outputTokens: 150,
+      costUsd: 0.02,
+      sessionId: 'merlin-session',
+      provider: 'anthropic',
+      model: 'opus',
+    }
+
+    await expect(
+      collectMerlinEvents(new Response(`data: ${JSON.stringify(payload)}\n\n`))
+    ).resolves.toEqual([payload])
+  })
+
+  it('parses done events carrying token payloads', async () => {
+    const payload = {
+      type: 'done',
+      success: true,
+      sessionId: 'merlin-session',
+      provider: 'anthropic',
+      model: 'opus',
+      inputTokens: 700,
+      outputTokens: 150,
+    }
+
+    await expect(
+      collectMerlinEvents(new Response(`data: ${JSON.stringify(payload)}\n\n`))
+    ).resolves.toEqual([payload])
   })
 })

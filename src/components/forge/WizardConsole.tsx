@@ -28,6 +28,7 @@ import { usePricing, getConjurePriceKey } from '../../hooks/usePricing'
 import { extractPartialCraftData } from '../../lib/craft-stream'
 import { addToSceneLibrary, getSceneLibrary } from '../../lib/forge/scene-library'
 import { derivePlayerCastSpawn } from '../../lib/player-avatar-runtime'
+import { findMissingLocalGeneratedImageIds, localGeneratedImageExists } from '../../lib/generated-images'
 import { useUILayer } from '@/lib/input-manager'
 import { AssetCard, RegenAllButton } from './AssetCard'
 import { DeleteButton } from './DeleteButton'
@@ -435,6 +436,7 @@ function ImagineTab({ cols, setLightboxUrl, onRequestDelete }: { cols: number; s
   const [error, setError] = useState<string | null>(null)
   const generatedImages = useOasisStore(s => s.generatedImages)
   const addGeneratedImage = useOasisStore(s => s.addGeneratedImage)
+  const removeGeneratedImage = useOasisStore(s => s.removeGeneratedImage)
   const addCustomGroundPreset = useOasisStore(s => s.addCustomGroundPreset)
   const customGroundPresets = useOasisStore(s => s.customGroundPresets)
   const enterPaintMode = useOasisStore(s => s.enterPaintMode)
@@ -442,6 +444,23 @@ function ImagineTab({ cols, setLightboxUrl, onRequestDelete }: { cols: number; s
   const placedCatalogAssets = useOasisStore(s => s.placedCatalogAssets)
   const { pricing } = usePricing()
   const imagineCost = pricing['imagine'] ?? 0.05
+
+  useEffect(() => {
+    let cancelled = false
+
+    findMissingLocalGeneratedImageIds(generatedImages, url => localGeneratedImageExists(url, OASIS_BASE))
+      .then(missingIds => {
+        if (cancelled) return
+        for (const id of missingIds) {
+          removeGeneratedImage(id)
+        }
+      })
+      .catch(() => {})
+
+    return () => {
+      cancelled = true
+    }
+  }, [generatedImages, removeGeneratedImage])
 
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim()) return
@@ -1396,8 +1415,9 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
           const { loadWorld, saveWorld } = await import('../../lib/forge/world-persistence')
           const originState = await loadWorld(originWorldId)
           if (originState) {
-            // Filter out the placeholder (sceneId) in case it snuck into Supabase
-            // during the world switch save, then append the completed final scene.
+            // Filter out the placeholder (sceneId) in case it snuck into an older
+            // remote-sync save path during the world switch save, then append the
+            // completed final scene.
             const withoutPlaceholder = (originState.craftedScenes || []).filter((s: { id: string }) => s.id !== sceneId)
             await saveWorld({ ...originState, craftedScenes: [...withoutPlaceholder, finalScene] }, originWorldId)
           }
@@ -2936,10 +2956,10 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                 )}
                 {placedAgentWindows.map(win => {
                   const isSelected = selectedObjectId === win.id
-                  const agentIcon = win.agentType === 'anorak' ? '💻' : win.agentType === 'anorak-pro' ? '🔮' : win.agentType === 'hermes' ? '☤' : win.agentType === 'openclaw' ? '🦞' : win.agentType === 'merlin' ? '🧙' : win.agentType === 'parzival' ? '🧿' : '⚡'
-                  const agentColor = win.agentType === 'anorak' ? 'text-sky-400' : win.agentType === 'anorak-pro' ? 'text-teal-400' : win.agentType === 'hermes' ? 'text-rose-400' : win.agentType === 'openclaw' ? 'text-cyan-300' : win.agentType === 'merlin' ? 'text-purple-400' : win.agentType === 'parzival' ? 'text-violet-400' : 'text-green-400'
-                  const agentIconResolved = win.agentType === 'browser' ? 'WWW' : agentIcon
-                  const agentColorResolved = win.agentType === 'browser' ? 'text-orange-400' : agentColor
+                  const agentIcon = win.agentType === 'anorak' ? '💻' : win.agentType === 'anorak-pro' ? '🔮' : win.agentType === 'hermes' ? '☤' : win.agentType === 'openclaw' ? '🦞' : win.agentType === 'merlin' ? '🧙' : win.agentType === 'realtime' ? '🗣️' : win.agentType === 'parzival' ? '🧿' : '⚡'
+                  const agentColor = win.agentType === 'anorak' ? 'text-sky-400' : win.agentType === 'anorak-pro' ? 'text-teal-400' : win.agentType === 'hermes' ? 'text-rose-400' : win.agentType === 'openclaw' ? 'text-cyan-300' : win.agentType === 'merlin' ? 'text-purple-400' : win.agentType === 'realtime' ? 'text-violet-300' : win.agentType === 'parzival' ? 'text-violet-400' : 'text-green-400'
+                  const agentIconResolved = win.agentType === 'browser' ? 'WWW' : win.agentType === 'codex' ? '⌘' : agentIcon
+                  const agentColorResolved = win.agentType === 'browser' ? 'text-orange-400' : win.agentType === 'codex' ? 'text-emerald-400' : agentColor
                   const pos = transforms[win.id]?.position || win.position
                   return (
                     <div
@@ -3004,6 +3024,9 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                 <div className="grid grid-cols-2 gap-1.5">
                   {([
                     { id: 'random' as const, label: 'Random', desc: 'Different effect each time', icon: '\u{1F3B2}' },
+                    { id: 'realitystorm' as const, label: 'Reality Storm', desc: 'Smoke, lightning, shards, morphing core', icon: '\u{1F4A5}' },
+                    { id: 'riftstorm' as const, label: 'Riftstorm', desc: 'Space tear, haze, violet arcs', icon: '\u29C9' },
+                    { id: 'cataclysm' as const, label: 'Cataclysm', desc: 'Explosive forge smoke and shockwaves', icon: '\u2604' },
                     { id: 'textswirl' as const, label: 'Text Swirl', desc: 'Prompt tokens orbit and collapse', icon: '\u2728' },
                     { id: 'arcane' as const, label: 'Arcane Circle', desc: 'Sacred geometry + light pillars', icon: '\u26E2' },
                     { id: 'vortex' as const, label: 'Particle Vortex', desc: 'Atom storm converges into form', icon: '\u{1F300}' },
@@ -3040,6 +3063,10 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                 <div className="grid grid-cols-2 gap-1.5">
                   {([
                     { id: 'random' as PlacementVfxType, label: 'Random', desc: 'Different spell each time', icon: '\u{1F3B2}' },
+                    { id: 'realitydetonation' as PlacementVfxType, label: 'Reality Detonation', desc: 'Blast, smoke, shards, lightning flash', icon: '\u{1F4A5}' },
+                    { id: 'dimensionalmaw' as PlacementVfxType, label: 'Dimensional Maw', desc: 'Vertical rift tears the object in', icon: '\u29C9' },
+                    { id: 'hexstorm' as PlacementVfxType, label: 'Hex Storm', desc: 'Impossible glyph rings and polyhedra', icon: '\u26A1' },
+                    { id: 'singularitydrop' as PlacementVfxType, label: 'Singularity Drop', desc: 'Black core impact with gravity smoke', icon: '\u25CF' },
                     { id: 'runeflash' as PlacementVfxType, label: 'Rune Flash', desc: 'Arcane circle glows on ground', icon: '\u2726' },
                     { id: 'sparkburst' as PlacementVfxType, label: 'Spark Burst', desc: '200 particles shower outward', icon: '\u2604' },
                     { id: 'portalring' as PlacementVfxType, label: 'Portal Ring', desc: 'Glowing ring rises through object', icon: '\u25CE' },
@@ -3081,7 +3108,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
                   <input
                     type="range"
                     min="0.5"
-                    max="3.0"
+                    max="4.5"
                     step="0.1"
                     value={placementVfxDuration}
                     onChange={(e) => setPlacementVfxDuration(parseFloat(e.target.value))}
@@ -3472,11 +3499,18 @@ const AGENT_TYPES = [
   { type: 'anorak-pro' as const, label: 'Anorak Pro', icon: '🔮', color: '#14b8a6', desc: 'Autonomous dev pipeline — curator, coder, reviewer, tester' },
   { type: 'hermes' as const, label: 'Hermes', icon: '☤', color: '#fb7185', desc: 'Embodied co-builder — remote tool agent inside the Oasis' },
   { type: 'merlin' as const, label: 'Merlin', icon: '🧙', color: '#a855f7', desc: 'World-builder agent — place objects, set sky' },
+  { type: 'realtime' as const, label: 'Realtime', icon: '🗣️', color: '#c084fc', desc: 'Voice sandbox — WebRTC speech, transcript, lipsync' },
   { type: 'devcraft' as const, label: 'DevCraft', icon: '⚡', color: '#22c55e', desc: 'Mission management + gamification' },
   { type: 'parzival' as const, label: 'Parzival', icon: '🧿', color: '#c084fc', desc: 'Autonomous brain — modes, missions, thought stream' },
 ] as const
 
-const AGENT_SANDBOX_TYPES = AGENT_TYPES.filter(agent => agent.type === 'anorak' || agent.type === 'anorak-pro')
+const DEPLOYABLE_AGENT_TYPES = [
+  ...AGENT_TYPES.slice(0, 3),
+  { type: 'codex' as const, label: 'Codex', icon: '⌘', color: '#10b981', desc: 'OpenAI coding agent — local exec threads inside the Oasis' },
+  ...AGENT_TYPES.slice(3),
+] as const
+
+const AGENT_SANDBOX_TYPES = DEPLOYABLE_AGENT_TYPES.filter(agent => agent.type === 'anorak' || agent.type === 'codex' || agent.type === 'anorak-pro')
 
 function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject, setCameraLookAt, selectedObjectId, transforms }: {
   enterPlacementMode: (pending: import('../../store/oasisStore').PlacementPending) => void
@@ -3507,7 +3541,7 @@ function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject
           ── Deploy Agent ──
         </span>
         <div className="grid grid-cols-3 gap-1.5 mt-2">
-          {AGENT_TYPES.map(agent => (
+          {DEPLOYABLE_AGENT_TYPES.map(agent => (
             <button
               key={agent.type}
               onClick={() => enterPlacementMode({ type: 'agent', name: agent.label, agentType: agent.type })}
@@ -3570,7 +3604,7 @@ function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject
           {placedAgentWindows.map(win => {
             const isSelected = selectedObjectId === win.id
             const isFocused = focusedAgentWindowId === win.id
-            const agent = AGENT_TYPES.find(a => a.type === win.agentType) || AGENT_TYPES.find(a => a.type === 'anorak') || AGENT_TYPES[0]
+            const agent = DEPLOYABLE_AGENT_TYPES.find(a => a.type === win.agentType) || DEPLOYABLE_AGENT_TYPES.find(a => a.type === 'anorak') || DEPLOYABLE_AGENT_TYPES[0]
             const rendererMeta = getAgentWindowRendererMeta(win.renderMode)
             const assignedAvatar = win.linkedAvatarId
               ? placedAgentAvatars.find(entry => entry.id === win.linkedAvatarId) || null

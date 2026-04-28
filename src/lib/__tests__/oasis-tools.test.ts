@@ -119,6 +119,72 @@ describe('TOOL_NAMES', () => {
 // 3. search_assets — finds real catalog items
 // ═══════════════════════════════════════════════════════════════════════════
 
+describe('get_world_state', () => {
+  it('reports effective catalog transforms from transform overrides', async () => {
+    const world = makeWorldRow({
+      catalogPlacements: [{
+        id: 'console-1',
+        catalogId: 'qs_prop_computer',
+        name: 'Console',
+        glbPath: '/x',
+        position: [1, 0, 1],
+        rotation: [0, 0, 0],
+        scale: 1,
+      }],
+      transforms: {
+        'console-1': { position: [4, 0, 5], rotation: [0, 1.2, 0], scale: 1.5 },
+      },
+    })
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+
+    const result = await callTool('get_world_state', { worldId: 'test-world-1' })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as { catalogObjects: Array<{ id: string; position: unknown; rotation: unknown; scale: unknown }> }
+    expect(data.catalogObjects[0]).toMatchObject({
+      id: 'console-1',
+      position: [4, 0, 5],
+      rotation: [0, 1.2, 0],
+      scale: 1.5,
+    })
+  })
+})
+
+describe('query_objects', () => {
+  it('uses effective positions and token matching across object names', async () => {
+    const world = makeWorldRow({
+      catalogPlacements: [{
+        id: 'book-1',
+        catalogId: 'qf_bookstand',
+        name: 'Codex spell test bookstand',
+        glbPath: '/x',
+        position: [0, 0, 0],
+        rotation: [0, 0, 0],
+        scale: 1,
+      }],
+      craftedScenes: [{
+        id: 'crafted-1',
+        name: 'Codex MCP spell test sigil',
+        objects: [],
+        position: [2, 0, 2],
+      }],
+      transforms: {
+        'book-1': { position: [9, 0, 9] },
+      },
+    })
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+
+    const result = await callTool('query_objects', { query: 'Codex spell test', near: [8, 0, 8], radius: 20 })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as Array<{ id: string; type: string; position: unknown }>
+    expect(data).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'book-1', type: 'catalog', position: [9, 0, 9] }),
+      expect.objectContaining({ id: 'crafted-1', type: 'crafted' }),
+    ]))
+  })
+})
+
 describe('search_assets', () => {
   it('returns results for "tree" query', async () => {
     const result = await callTool('search_assets', { query: 'tree' })
@@ -138,6 +204,31 @@ describe('search_assets', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 // 4. get_asset_catalog — returns categories
 // ═══════════════════════════════════════════════════════════════════════════
+
+describe('conjure_asset', () => {
+  it('defaults agent Meshy conjures to the textured refine tier', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 'conjure-test', status: 'queued', estimatedSeconds: 120 }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      const result = await callTool('conjure_asset', {
+        prompt: 'a brass owl statue',
+        placeInWorld: false,
+      })
+
+      expect(result.ok).toBe(true)
+      const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined
+      const body = JSON.parse(String(init?.body)) as { provider?: string; tier?: string }
+      expect(body.provider).toBe('meshy')
+      expect(body.tier).toBe('refine')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})
 
 describe('get_asset_catalog', () => {
   it('returns categories as object', async () => {
@@ -227,6 +318,25 @@ describe('paint_ground_tiles', () => {
   it('returns error when tiles is not provided', async () => {
     const result = await callTool('paint_ground_tiles', {})
     expect(result.ok).toBe(false)
+  })
+
+  it('uses top-level presetId as the tile preset fallback', async () => {
+    const world = makeWorldRow()
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+
+    const result = await callTool('paint_ground_tiles', {
+      presetId: 'kn-cobblestone',
+      tiles: [{ x: 1, z: 2 }, { x: 2, z: 2 }],
+    })
+
+    expect(result.ok).toBe(true)
+    const updatePayload = vi.mocked(prisma.world.update).mock.calls[0]?.[0]
+    const savedState = JSON.parse(String(updatePayload?.data?.data || '{}'))
+    expect(savedState.groundTiles).toMatchObject({
+      '1,2': 'kn-cobblestone',
+      '2,2': 'kn-cobblestone',
+    })
   })
 })
 
@@ -424,7 +534,7 @@ describe('isScreenshotPending', () => {
       id: 'player-portrait',
       mode: 'avatar-portrait',
       agentType: 'player',
-      fov: 35,
+      fov: 45,
       distance: 2.75,
       heightOffset: 1.55,
     })
@@ -469,9 +579,9 @@ describe('isScreenshotPending', () => {
       mode: 'third-person-follow',
       agentType: 'player',
       fov: 72,
-      distance: 4.4,
-      heightOffset: 2.1,
-      lookAhead: 4,
+      distance: 2.8,
+      heightOffset: 1.6,
+      lookAhead: 2.5,
     })
 
     expect(deliverScreenshot('player-tps-base64', request?.id)).toBe(true)
@@ -675,6 +785,106 @@ describe('agent avatar tools', () => {
     expect(savedState.agentAvatars[0]?.avatar3dUrl).toBe('/avatars/gallery/CoolAlien.vrm')
   })
 
+  it('set_avatar clears stale avatar transform overrides', async () => {
+    const world = makeWorldRow({
+      agentAvatars: [{
+        id: 'agent-avatar-openclaw',
+        agentType: 'openclaw',
+        avatar3dUrl: '/avatars/gallery/CoolAlien.vrm',
+        position: [0, 0, 0],
+        rotation: [0, 0, 0],
+        scale: 1,
+      }],
+      transforms: {
+        'agent-avatar-openclaw': { position: [9, 0, -9], scale: 2 },
+        'rock-1': { position: [1, 0, 1] },
+      },
+    })
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+
+    const result = await callTool('set_avatar', {
+      agent: 'openclaw',
+      avatarUrl: '/avatars/gallery/CoolAlien.vrm',
+    })
+
+    expect(result.ok).toBe(true)
+    const updatePayload = vi.mocked(prisma.world.update).mock.calls[0]?.[0]
+    const savedState = JSON.parse(String(updatePayload?.data?.data || '{}'))
+    expect(savedState.agentAvatars[0]?.position).toEqual([9, 0, -9])
+    expect(savedState.agentAvatars[0]?.scale).toBe(2)
+    expect(savedState.transforms['agent-avatar-openclaw']).toBeUndefined()
+    expect(savedState.transforms['rock-1']).toEqual({ position: [1, 0, 1] })
+  })
+
+  it('modify_object writes avatar transforms onto agentAvatars', async () => {
+    const world = makeWorldRow({
+      agentAvatars: [{
+        id: 'agent-avatar-openclaw',
+        agentType: 'openclaw',
+        avatar3dUrl: '/avatars/gallery/CoolAlien.vrm',
+        position: [0, 0, 0],
+        rotation: [0, 0, 0],
+        scale: 1,
+      }],
+      transforms: {
+        'agent-avatar-openclaw': { position: [9, 0, -9] },
+        'rock-1': { position: [1, 0, 1] },
+      },
+    })
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+
+    const result = await callTool('modify_object', {
+      objectId: 'agent-avatar-openclaw',
+      position: [3, 0, 4],
+      rotation: [0, 2, 0],
+      scale: 1.8,
+    })
+
+    expect(result.ok).toBe(true)
+    const updatePayload = vi.mocked(prisma.world.update).mock.calls[0]?.[0]
+    const savedState = JSON.parse(String(updatePayload?.data?.data || '{}'))
+    expect(savedState.agentAvatars[0]?.position).toEqual([3, 0, 4])
+    expect(savedState.agentAvatars[0]?.rotation).toEqual([0, 2, 0])
+    expect(savedState.agentAvatars[0]?.scale).toBe(1.8)
+    expect(savedState.transforms['agent-avatar-openclaw']).toBeUndefined()
+    expect(savedState.transforms['rock-1']).toEqual({ position: [1, 0, 1] })
+  })
+
+  it('modify_object writes catalog transforms onto transform overrides', async () => {
+    const world = makeWorldRow({
+      catalogPlacements: [{
+        id: 'console-1',
+        catalogId: 'qs_prop_computer',
+        name: 'Console',
+        glbPath: '/x',
+        position: [1, 0, 1],
+        rotation: [0, 0, 0],
+        scale: 1,
+      }],
+    })
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+
+    const result = await callTool('modify_object', {
+      objectId: 'console-1',
+      position: [3, 0, 4],
+      rotation: [0, 1.1, 0],
+      scale: [1.2, 1.3, 1.4],
+    })
+
+    expect(result.ok).toBe(true)
+    const updatePayload = vi.mocked(prisma.world.update).mock.calls[0]?.[0]
+    const savedState = JSON.parse(String(updatePayload?.data?.data || '{}'))
+    expect(savedState.catalogPlacements[0]?.position).toEqual([1, 0, 1])
+    expect(savedState.transforms['console-1']).toEqual({
+      position: [3, 0, 4],
+      rotation: [0, 1.1, 0],
+      scale: [1.2, 1.3, 1.4],
+    })
+  })
+
   it('walk_avatar_to stores a move target for the avatar', async () => {
     const world = makeWorldRow({
       agentAvatars: [{
@@ -750,6 +960,36 @@ describe('agent avatar tools', () => {
         expect.objectContaining({ id: 'ual-dance', clipName: 'lib:ual-dance' }),
       ]),
     })
+  })
+
+  it('list_avatar_animations treats category all as unfiltered', async () => {
+    const result = await callTool('list_avatar_animations', {
+      category: 'all',
+      limit: 20,
+    })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as { animations: Array<{ id: string }> }
+    expect(data.animations.length).toBeGreaterThan(0)
+  })
+
+  it('list_avatar_animations keeps raw spell queries broad while supporting aliases', async () => {
+    const spellResult = await callTool('list_avatar_animations', {
+      query: 'spell',
+    })
+    const conjureResult = await callTool('list_avatar_animations', {
+      query: 'conjure',
+    })
+
+    expect(spellResult.ok).toBe(true)
+    expect(conjureResult.ok).toBe(true)
+    const spellData = spellResult.data as { animations: Array<{ id: string }> }
+    const conjureData = conjureResult.data as { animations: Array<{ id: string }> }
+    expect(spellData.animations.map(entry => entry.id)).toEqual(expect.arrayContaining([
+      'ual-spell-idle',
+      'ual-spell-shoot',
+    ]))
+    expect(conjureData.animations.map(entry => entry.id)).toContain('ual-spell-idle')
   })
 
   it('get_craft_guide exposes the self-crafting schema', async () => {
