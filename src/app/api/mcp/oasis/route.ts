@@ -2,7 +2,6 @@ import { NextRequest } from 'next/server'
 
 import {
   createOasisHttpMcpSession,
-  createStatelessOasisHttpMcpSession,
   disposeOasisHttpMcpSession,
   getOasisHttpMcpSession,
   pruneOasisHttpMcpSessions,
@@ -57,23 +56,6 @@ function jsonError(message: string, status: number) {
   })
 }
 
-async function readJsonRpcBody(request: NextRequest): Promise<unknown | undefined> {
-  try {
-    return await request.clone().json() as unknown
-  } catch {
-    return undefined
-  }
-}
-
-function containsInitializeRequest(value: unknown): boolean {
-  const messages = Array.isArray(value) ? value : [value]
-  return messages.some(message =>
-    !!message
-      && typeof message === 'object'
-      && (message as Record<string, unknown>).method === 'initialize',
-  )
-}
-
 async function handleMcpRequest(request: NextRequest) {
   const blocked = hostedModeBlocked()
   if (blocked) return blocked
@@ -89,33 +71,6 @@ async function handleMcpRequest(request: NextRequest) {
 
   if (!entry) {
     if (sessionId) {
-      if (request.method === 'POST') {
-        const parsedBody = await readJsonRpcBody(request)
-        if (containsInitializeRequest(parsedBody)) {
-          const created = await createOasisHttpMcpSession(readSessionContext(request))
-          entry = {
-            ...created,
-            createdAt: Date.now(),
-            lastSeenAt: Date.now(),
-          }
-          const response = await entry.transport.handleRequest(request, { parsedBody })
-          const resolvedSessionId = entry.transport.sessionId
-          if (resolvedSessionId) {
-            rememberOasisHttpMcpSession(resolvedSessionId, entry)
-          }
-          return response
-        }
-
-        const rescue = await createStatelessOasisHttpMcpSession(readSessionContext(request))
-        try {
-          return await rescue.transport.handleRequest(request, { parsedBody })
-        } finally {
-          await Promise.allSettled([
-            rescue.transport.close(),
-            rescue.server.close(),
-          ])
-        }
-      }
       return jsonError(`Unknown MCP session: ${sessionId}`, 404)
     }
     if (request.method !== 'POST') {
