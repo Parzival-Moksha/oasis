@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import {
   PairingCodeError,
+  _dropPairingCodeStoreMemoryForTests,
   _peekPairingCode,
   _resetPairingCodeStoreForTests,
   createPairingCode,
@@ -9,9 +13,14 @@ import {
 } from '../pairing-codes'
 
 const FIXED_NOW = 1_700_000_000_000
+const ORIGINAL_STORE_PATH = process.env.OASIS_PAIRING_CODE_STORE_PATH
 
 beforeEach(() => { _resetPairingCodeStoreForTests() })
-afterEach(() => { _resetPairingCodeStoreForTests() })
+afterEach(() => {
+  _resetPairingCodeStoreForTests()
+  if (ORIGINAL_STORE_PATH === undefined) delete process.env.OASIS_PAIRING_CODE_STORE_PATH
+  else process.env.OASIS_PAIRING_CODE_STORE_PATH = ORIGINAL_STORE_PATH
+})
 
 describe('createPairingCode', () => {
   it('produces a code in the OASIS-XXXXXXXX shape', () => {
@@ -142,5 +151,32 @@ describe('expiry pruning', () => {
       now: FIXED_NOW + 10_000,
     })
     expect(_peekPairingCode(expired.code)).toBeNull()
+  })
+})
+
+describe('disk mirror', () => {
+  it('reloads unexpired codes after process memory is dropped', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'oasis-pairing-codes-'))
+    process.env.OASIS_PAIRING_CODE_STORE_PATH = join(dir, 'codes.json')
+    _resetPairingCodeStoreForTests()
+
+    try {
+      const created = createPairingCode({
+        browserSessionId: 'bs_persist',
+        worldId: 'world-persist',
+        scopes: ['world.read', 'chat.stream'],
+        now: FIXED_NOW,
+      })
+      _dropPairingCodeStoreMemoryForTests()
+
+      expect(_peekPairingCode(created.code)?.worldId).toBe('world-persist')
+      expect(redeemPairingCode(created.code, FIXED_NOW + 1_000).browserSessionId).toBe('bs_persist')
+
+      _dropPairingCodeStoreMemoryForTests()
+      expect(_peekPairingCode(created.code)).toBeNull()
+    } finally {
+      _resetPairingCodeStoreForTests()
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

@@ -397,6 +397,19 @@ function isLocalDraftSession(sessionId: string): boolean {
   return Boolean(sessionId) && !sessionId.includes(':')
 }
 
+function createClientDraftSessionSummary(title = 'New OpenClaw session'): OpenclawSessionSummary {
+  const now = Date.now()
+  return {
+    id: `draft-${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    title,
+    preview: '',
+    source: 'draft',
+    createdAt: now,
+    updatedAt: now,
+    messageCount: 0,
+  }
+}
+
 function sanitizeMessage(raw: unknown): OpenclawMessage | null {
   if (!raw || typeof raw !== 'object') return null
   const record = raw as Record<string, unknown>
@@ -1016,6 +1029,12 @@ export function OpenclawPanel({
   const voiceSessionIdRef = useRef('')
   const stopOpenclawVoiceRef = useRef<(opts?: { remote?: boolean; nextDetail?: string }) => Promise<void>>(async () => {})
   const openclawActivityRunIdRef = useRef<string | null>(null)
+  const relayChatPendingRef = useRef(new Map<string, {
+    assistantMessageId: string
+    activityRunId: string
+    sessionTitle: string
+  }>())
+  const relayChatTimeoutRef = useRef(new Map<string, ReturnType<typeof setTimeout>>())
 
   useEffect(() => {
     focusHandleRef.current = { focus: () => inputRef.current?.focus() }
@@ -1026,7 +1045,7 @@ export function OpenclawPanel({
   }, [])
 
   useEffect(() => {
-    if (hostedMode) setActiveTab(tab => (tab === 'config' ? tab : 'config'))
+    if (hostedMode) setActiveTab(tab => (tab === 'voice' ? 'config' : tab))
   }, [hostedMode])
 
   useEffect(() => {
@@ -1054,12 +1073,6 @@ export function OpenclawPanel({
   })
 
   const isVisible = embedded || isOpen
-  const relayBridge = useOpenclawRelayBridge({
-    enabled: isVisible && relayEnabled && Boolean(activeWorldId),
-    worldId: activeWorldId || '__active__',
-    agentType: 'openclaw',
-    availableTools: OPENCLAW_RELAY_TOOLS,
-  })
   const currentSession = useMemo(
     () => sessions.find(entry => entry.id === selectedSessionId) || null,
     [selectedSessionId, sessions],
@@ -1367,11 +1380,11 @@ export function OpenclawPanel({
   }, [])
 
   const persistMessages = useCallback((sessionId: string, nextMessages: OpenclawMessage[]) => {
-    if (isLocalDraftSession(sessionId)) {
+    if (hostedMode || isLocalDraftSession(sessionId)) {
       void saveStoredTranscript(sessionId, nextMessages)
     }
     setMessages(nextMessages)
-  }, [])
+  }, [hostedMode])
 
   const syncSessionSummary = useCallback(async (sessionId: string, nextMessages: OpenclawMessage[], fallbackTitle?: string) => {
     const previous = sessions.find(entry => entry.id === sessionId)
@@ -1386,13 +1399,14 @@ export function OpenclawPanel({
       id: sessionId,
       title,
       preview: summarizeText(latestText?.content || ''),
-      source: nextMessages.length > 0 ? 'gateway' : previous?.source || 'draft',
+      source: hostedMode ? 'draft' : nextMessages.length > 0 ? 'gateway' : previous?.source || 'draft',
       createdAt: previous?.createdAt || nextMessages[0]?.timestamp || Date.now(),
       updatedAt: nextMessages[nextMessages.length - 1]?.timestamp || Date.now(),
       messageCount: nextMessages.filter(entry => entry.role === 'user' || entry.role === 'assistant').length,
     }
 
     setSessions(current => [summary, ...current.filter(entry => entry.id !== summary.id)].sort((a, b) => b.updatedAt - a.updatedAt))
+    if (hostedMode) return
 
     try {
       await fetch('/api/openclaw/sessions', {
@@ -1403,7 +1417,7 @@ export function OpenclawPanel({
     } catch {
       // Local session summary is already updated optimistically.
     }
-  }, [sessions])
+  }, [hostedMode, sessions])
 
   const upsertSessionMessage = useCallback(async (sessionId: string, nextMessage: OpenclawMessage, fallbackTitle?: string) => {
     let nextMessages: OpenclawMessage[] = []
@@ -1448,6 +1462,57 @@ export function OpenclawPanel({
     await saveStoredTranscript(sessionId, nextMessages)
     await syncSessionSummary(sessionId, nextMessages, fallbackTitle)
   }, [syncSessionSummary])
+
+  const clearRelayChatPending = useCallback((sessionId: string, failed: boolean) => {
+    const pending = relayChatPendingRef.current.get(sessionId)
+    relayChatPendingRef.current.delete(sessionId)
+    const timeout = relayChatTimeoutRef.current.get(sessionId)
+    if (timeout) clearTimeout(timeout)
+    relayChatTimeoutRef.current.delete(sessionId)
+    if (!pending) return
+    openclawActivityRunIdRef.current = null
+    if (failed) {
+      useOasisStore.getState().failAgentWork('openclaw', pending.activityRunId)
+    } else {
+      useOasisStore.getState().finishAgentWork('openclaw', pending.activityRunId)
+    }
+    setSending(false)
+  }, [])
+
+  const handleRelayChatDelta = useCallback((event: { sessionId: string; text: string }) => {
+    const pending = relayChatPendingRef.current.get(event.sessionId)
+    const assistantMessageId = pending?.assistantMessageId || `relay-assistant-${event.sessionId}`
+    void appendSessionMessageDelta(event.sessionId, {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: event.text,
+      timestamp: Date.now(),
+      state: 'streaming',
+    }, pending?.sessionTitle || 'OpenClaw session')
+  }, [appendSessionMessageDelta])
+
+  const handleRelayChatFinal = useCallback((event: { sessionId: string; text: string }) => {
+    const pending = relayChatPendingRef.current.get(event.sessionId)
+    const assistantMessageId = pending?.assistantMessageId || `relay-assistant-${event.sessionId}`
+    void appendSessionMessageDelta(event.sessionId, {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: event.text,
+      timestamp: Date.now(),
+      state: 'done',
+    }, pending?.sessionTitle || 'OpenClaw session').finally(() => {
+      clearRelayChatPending(event.sessionId, false)
+    })
+  }, [appendSessionMessageDelta, clearRelayChatPending])
+
+  const relayBridge = useOpenclawRelayBridge({
+    enabled: isVisible && relayEnabled && Boolean(activeWorldId),
+    worldId: activeWorldId || '__active__',
+    agentType: 'openclaw',
+    availableTools: OPENCLAW_RELAY_TOOLS,
+    onChatAgentDelta: handleRelayChatDelta,
+    onChatAgentFinal: handleRelayChatFinal,
+  })
 
   const upsertVoiceMessage = useCallback((nextMessage: OpenclawMessage) => {
     setVoiceMessages(current => {
@@ -1535,6 +1600,32 @@ export function OpenclawPanel({
   const loadSessions = useCallback(async () => {
     setLoadingSessions(true)
     try {
+      if (hostedMode) {
+        const remembered = typeof window === 'undefined' ? '' : window.localStorage.getItem(SESSION_KEY) || ''
+        if (!remembered) {
+          setSessions([])
+          setSelectedSessionId('')
+          return
+        }
+        const storedMessages = await loadStoredTranscript(remembered)
+        const latestText = [...storedMessages]
+          .reverse()
+          .find(entry => (entry.role === 'assistant' || entry.role === 'user') && entry.content.trim())
+        const firstUser = storedMessages.find(entry => entry.role === 'user' && entry.content.trim())
+        const summary: OpenclawSessionSummary = {
+          id: remembered,
+          title: summarizeText(firstUser?.content || 'OpenClaw session', 44) || 'OpenClaw session',
+          preview: summarizeText(latestText?.content || ''),
+          source: 'draft',
+          createdAt: storedMessages[0]?.timestamp || Date.now(),
+          updatedAt: storedMessages[storedMessages.length - 1]?.timestamp || Date.now(),
+          messageCount: storedMessages.filter(entry => entry.role === 'user' || entry.role === 'assistant').length,
+        }
+        setSessions([summary])
+        setSelectedSessionId(remembered)
+        return
+      }
+
       const response = await fetch('/api/openclaw/sessions', { cache: 'no-store' })
       const payload = await response.json() as { sessions?: OpenclawSessionSummary[] }
       const nextSessions = dedupeOpenclawSessions(Array.isArray(payload.sessions) ? payload.sessions : [])
@@ -1559,7 +1650,7 @@ export function OpenclawPanel({
     } finally {
       setLoadingSessions(false)
     }
-  }, [selectedSessionId, status.defaultSessionId, status.lastSessionId])
+  }, [hostedMode, selectedSessionId, status.defaultSessionId, status.lastSessionId])
 
   const loadMessages = useCallback(async (sessionId: string) => {
     if (!sessionId) {
@@ -1570,6 +1661,12 @@ export function OpenclawPanel({
 
     setLoadingMessages(true)
     try {
+      if (hostedMode) {
+        setMessages(await loadStoredTranscript(sessionId))
+        setExpandedToolIds([])
+        return
+      }
+
       const response = await fetch(`/api/openclaw/sessions?sessionId=${encodeURIComponent(sessionId)}`, {
         cache: 'no-store',
       })
@@ -1610,7 +1707,7 @@ export function OpenclawPanel({
     } finally {
       setLoadingMessages(false)
     }
-  }, [])
+  }, [hostedMode])
 
   useEffect(() => {
     if (!isVisible) return
@@ -1986,6 +2083,17 @@ export function OpenclawPanel({
   }, [activeWorldId, ensureVoiceOutputContext, handleVoiceEvent, panelSettings.prefixPaddingMs, panelSettings.silenceDurationMs, panelSettings.vadThreshold, panelSettings.voiceModel, panelSettings.voiceName, profileName, resolveVoiceSessionKey, selectedSessionId, startVoiceCapture, stopOpenclawVoice, voiceState])
 
   const handleCreateSession = useCallback(async () => {
+    if (hostedMode) {
+      const session = createClientDraftSessionSummary()
+      setSessions(current => [session, ...current.filter(entry => entry.id !== session.id)])
+      setSelectedSessionId(session.id)
+      saveStoredString(SESSION_KEY, session.id)
+      await saveStoredTranscript(session.id, [])
+      setMessages([])
+      setExpandedToolIds([])
+      return
+    }
+
     try {
       const response = await fetch('/api/openclaw/sessions', {
         method: 'POST',
@@ -2002,7 +2110,7 @@ export function OpenclawPanel({
     } catch {
       // Session creation is best effort for now.
     }
-  }, [])
+  }, [hostedMode])
 
   const handleSend = useCallback(async () => {
     const message = composer.trim()
@@ -2026,8 +2134,18 @@ export function OpenclawPanel({
 
     let sessionId = selectedSessionId
     let sessionTitle = currentSession?.title || 'OpenClaw session'
+    let keepSendingForRelay = false
     try {
       if (!sessionId) {
+        if (hostedMode) {
+          const session = createClientDraftSessionSummary()
+          sessionId = session.id
+          sessionTitle = session.title
+          setSessions(current => [session, ...current.filter(entry => entry.id !== session.id)])
+          setSelectedSessionId(sessionId)
+          saveStoredString(SESSION_KEY, sessionId)
+          await saveStoredTranscript(sessionId, [])
+        } else {
         const createResponse = await fetch('/api/openclaw/sessions', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -2042,6 +2160,7 @@ export function OpenclawPanel({
         setSessions(current => [createPayload.session!, ...current.filter(entry => entry.id !== createPayload.session!.id)])
         setSelectedSessionId(sessionId)
         saveStoredString(SESSION_KEY, sessionId)
+        }
       }
 
       const userMessage: OpenclawMessage = {
@@ -2070,6 +2189,63 @@ export function OpenclawPanel({
 
       persistMessages(sessionId, workingMessages)
       await syncSessionSummary(sessionId, workingMessages, sessionTitle)
+
+      if (hostedMode) {
+        if (relayBridge.status !== 'paired') {
+          const failedMessages = workingMessages.map(entry =>
+            entry.id === assistantMessageId
+              ? {
+                  ...entry,
+                  content: 'Pair an OpenClaw bridge from Config first, then send from this Stream tab.',
+                  state: 'failed' as const,
+                  timestamp: Date.now(),
+                }
+              : entry,
+          )
+          persistMessages(sessionId, failedMessages)
+          await syncSessionSummary(sessionId, failedMessages, sessionTitle)
+          failActivity()
+          return
+        }
+
+        relayChatPendingRef.current.set(sessionId, {
+          assistantMessageId,
+          activityRunId,
+          sessionTitle,
+        })
+        const timeout = setTimeout(() => {
+          void appendSessionMessageDelta(sessionId, {
+            id: assistantMessageId,
+            role: 'assistant',
+            content: 'Timed out waiting for the OpenClaw bridge to answer.',
+            timestamp: Date.now(),
+            state: 'failed',
+          }, sessionTitle).finally(() => {
+            clearRelayChatPending(sessionId, true)
+          })
+        }, 120_000)
+        relayChatTimeoutRef.current.set(sessionId, timeout)
+
+        if (!relayBridge.sendChatUser(sessionId, message)) {
+          clearRelayChatPending(sessionId, true)
+          const failedMessages = workingMessages.map(entry =>
+            entry.id === assistantMessageId
+              ? {
+                  ...entry,
+                  content: 'Relay is not ready. Re-pair the OpenClaw bridge and try again.',
+                  state: 'failed' as const,
+                  timestamp: Date.now(),
+                }
+              : entry,
+          )
+          persistMessages(sessionId, failedMessages)
+          await syncSessionSummary(sessionId, failedMessages, sessionTitle)
+          return
+        }
+
+        keepSendingForRelay = true
+        return
+      }
 
       const response = await fetch('/api/openclaw/chat', {
         method: 'POST',
@@ -2301,9 +2477,9 @@ export function OpenclawPanel({
         loadSessions(),
       ])
     } finally {
-      setSending(false)
+      if (!keepSendingForRelay) setSending(false)
     }
-  }, [composer, currentSession?.title, loadSessions, loadStatus, messages, persistMessages, selectedSessionId, sending, syncSessionSummary])
+  }, [appendSessionMessageDelta, clearRelayChatPending, composer, currentSession?.title, hostedMode, loadSessions, loadStatus, messages, persistMessages, relayBridge, selectedSessionId, sending, syncSessionSummary])
 
   const handleSaveConfig = useCallback(async () => {
     setSavingConfig(true)
@@ -2506,12 +2682,16 @@ export function OpenclawPanel({
       : gatewayClientState === 'error' || gatewayClientState === 'closed'
         ? 'offline'
         : 'warn'
-  const chatReady = gatewayClientState === 'ready'
-  const transportLine = chatReady
-    ? 'Ready'
-    : gatewayClientState === 'pairing-required'
-      ? 'Approve the pending device on the OpenClaw host.'
-      : 'Connecting to the OpenClaw Gateway.'
+  const chatReady = hostedMode ? relayBridge.status === 'paired' : gatewayClientState === 'ready'
+  const transportLine = hostedMode
+    ? (relayBridge.status === 'paired'
+        ? 'Relay paired to the OpenClaw bridge.'
+        : 'Pair an OpenClaw bridge from Config before chatting.')
+    : chatReady
+      ? 'Ready'
+      : gatewayClientState === 'pairing-required'
+        ? 'Approve the pending device on the OpenClaw host.'
+        : 'Connecting to the OpenClaw Gateway.'
   const editedSshHost = configDraft.sshHost.trim()
   const rawRemoteHost = editedSshHost || status.sshHost.trim()
   const sshHostValidation = sanitizeOpenclawSshHost(rawRemoteHost)
@@ -2546,7 +2726,7 @@ export function OpenclawPanel({
     ? Math.max(0, Math.round((relayPairing.expiresAt - Date.now()) / 1000))
     : 0
   const visibleTabs: readonly OpenclawPanelTab[] = hostedMode
-    ? ['config']
+    ? ['stream', 'config', 'settings', 'diagnostics']
     : ['stream', 'voice', 'config', 'settings', 'diagnostics']
 
   const panelBody = (
@@ -3752,9 +3932,10 @@ export function OpenclawPanel({
       <div className="border-t border-white/8 bg-black/20 px-3 py-3">
         <div className="mb-2 flex items-center justify-between gap-2 text-[11px] text-cyan-50/55">
           <span>{sending ? 'OpenClaw is answering...' : chatReady ? 'Ready' : transportLine}</span>
-          <span>{sending ? 'streaming' : chatReady ? 'ready' : gatewayClientState}</span>
+          <span>{sending ? 'streaming' : chatReady ? 'ready' : hostedMode ? relayBridge.status : gatewayClientState}</span>
         </div>
         <div className="flex items-end gap-2">
+          {!hostedMode && (
           <button
             data-no-drag
             type="button"
@@ -3764,6 +3945,7 @@ export function OpenclawPanel({
           >
             {voice.listening ? 'stop' : voice.transcribing ? '...' : 'mic'}
           </button>
+          )}
           <div className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-black/25 px-3 py-2">
             <textarea
               data-no-drag
@@ -3788,12 +3970,12 @@ export function OpenclawPanel({
             onClick={() => void handleSend()}
             disabled={!composer.trim() || sending}
             className="flex h-11 shrink-0 items-center justify-center rounded-xl border border-cyan-300/20 bg-cyan-400/10 px-4 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-50 transition hover:bg-cyan-400/16 disabled:cursor-not-allowed disabled:border-cyan-300/12 disabled:bg-cyan-400/8 disabled:text-cyan-50/45"
-            title={sending ? 'OpenClaw is answering...' : 'Send through the Gateway WebSocket transport.'}
+            title={sending ? 'OpenClaw is answering...' : hostedMode ? 'Send through the hosted relay.' : 'Send through the Gateway WebSocket transport.'}
           >
             {sending ? 'live...' : 'send'}
           </button>
         </div>
-        {(voice.error || voice.backendMessage) && (
+        {!hostedMode && (voice.error || voice.backendMessage) && (
           <div className="mt-2 text-[11px] text-cyan-50/55">
             {voice.error || voice.backendMessage}
           </div>

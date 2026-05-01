@@ -6,11 +6,13 @@
  * Codes are short, human-readable, single-use, and expire in 5 minutes.
  * The store is pinned to globalThis so HMR doesn't drop pending pairings.
  *
- * Deliberately NOT persistent. Codes have no value outside their 5-minute
- * window; restart-on-crash dropping them is the right behavior.
+ * In Node deployments the map is mirrored to a tiny JSON file under
+ * prisma/data, so PM2 reloads do not invalidate an already-visible code.
  */
 
 import { randomBytes } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 
 import type { Scope } from './protocol'
 
@@ -32,20 +34,96 @@ interface PairingCodeEntry {
 
 interface PairingCodeStore {
   byCode: Map<string, PairingCodeEntry>
+  loaded: boolean
+}
+
+type PersistedPairingCodeStore = Record<string, PairingCodeEntry>
+
+function shouldPersistPairingCodes(): boolean {
+  if (process.env.OASIS_PAIRING_CODE_STORE === 'memory') return false
+  return process.env.NODE_ENV !== 'test' || Boolean(process.env.OASIS_PAIRING_CODE_STORE_PATH)
+}
+
+function pairingCodeStorePath(): string {
+  return process.env.OASIS_PAIRING_CODE_STORE_PATH?.trim()
+    || join(process.cwd(), 'prisma', 'data', 'relay-pairing-codes.local.json')
+}
+
+function isPairingCodeEntry(value: unknown): value is PairingCodeEntry {
+  if (!value || typeof value !== 'object') return false
+  const record = value as Record<string, unknown>
+  return typeof record.browserSessionId === 'string'
+    && typeof record.worldId === 'string'
+    && Array.isArray(record.scopes)
+    && record.scopes.every(scope => typeof scope === 'string')
+    && typeof record.exp === 'number'
+    && Number.isFinite(record.exp)
+    && typeof record.createdAt === 'number'
+    && Number.isFinite(record.createdAt)
+}
+
+function loadPersistedStore(store: PairingCodeStore): void {
+  if (store.loaded) return
+  store.loaded = true
+  if (!shouldPersistPairingCodes()) return
+
+  const file = pairingCodeStorePath()
+  if (!existsSync(file)) return
+  try {
+    const parsed = JSON.parse(readFileSync(file, 'utf8')) as unknown
+    if (!parsed || typeof parsed !== 'object') return
+    for (const [code, entry] of Object.entries(parsed as PersistedPairingCodeStore)) {
+      if (!isPairingCodeEntry(entry)) continue
+      store.byCode.set(code, {
+        browserSessionId: entry.browserSessionId,
+        worldId: entry.worldId,
+        scopes: [...entry.scopes],
+        exp: entry.exp,
+        createdAt: entry.createdAt,
+      })
+    }
+  } catch {
+    // Corrupt persistence should not take pairing down; fresh codes still work.
+  }
+}
+
+function persistStore(store: PairingCodeStore): void {
+  if (!shouldPersistPairingCodes()) return
+  const file = pairingCodeStorePath()
+  try {
+    const out: PersistedPairingCodeStore = {}
+    for (const [code, entry] of store.byCode.entries()) {
+      out[code] = { ...entry, scopes: [...entry.scopes] }
+    }
+    mkdirSync(dirname(file), { recursive: true })
+    if (Object.keys(out).length === 0) {
+      if (existsSync(file)) unlinkSync(file)
+      return
+    }
+    writeFileSync(file, `${JSON.stringify(out, null, 2)}\n`)
+  } catch {
+    // Pairing remains usable in memory if the disk mirror is unavailable.
+  }
 }
 
 function getStore(): PairingCodeStore {
   const g = globalThis as typeof globalThis & { __oasisRelayPairingCodes?: PairingCodeStore }
   if (!g.__oasisRelayPairingCodes) {
-    g.__oasisRelayPairingCodes = { byCode: new Map() }
+    g.__oasisRelayPairingCodes = { byCode: new Map(), loaded: false }
   }
+  loadPersistedStore(g.__oasisRelayPairingCodes)
   return g.__oasisRelayPairingCodes
 }
 
 function pruneExpired(store: PairingCodeStore, now: number) {
+  let changed = false
   for (const [code, entry] of store.byCode.entries()) {
-    if (entry.exp <= now) store.byCode.delete(code)
+    if (entry.exp <= now) {
+      store.byCode.delete(code)
+      changed = true
+    }
   }
+  if (changed) persistStore(store)
 }
 
 function generateCode(): string {
@@ -119,6 +197,7 @@ export function createPairingCode(input: CreatePairingCodeInput): CreatedPairing
     exp,
     createdAt: now,
   })
+  persistStore(store)
   return { code, expiresAt: exp }
 }
 
@@ -141,9 +220,11 @@ export function redeemPairingCode(code: string, now = Date.now()): RedeemedPairi
   }
   if (entry.exp <= now) {
     store.byCode.delete(code)
+    persistStore(store)
     throw new PairingCodeError('pairing code expired', 'expired')
   }
   store.byCode.delete(code)
+  persistStore(store)
   return {
     browserSessionId: entry.browserSessionId,
     worldId: entry.worldId,
@@ -159,5 +240,14 @@ export function _peekPairingCode(code: string): PairingCodeEntry | null {
 
 /** Test helper — never call from production code. */
 export function _resetPairingCodeStoreForTests(): void {
-  getStore().byCode.clear()
+  const store = getStore()
+  store.byCode.clear()
+  store.loaded = true
+  persistStore(store)
+}
+
+/** Test helper â€” simulate a fresh process without deleting the disk mirror. */
+export function _dropPairingCodeStoreMemoryForTests(): void {
+  const g = globalThis as typeof globalThis & { __oasisRelayPairingCodes?: PairingCodeStore }
+  g.__oasisRelayPairingCodes = { byCode: new Map(), loaded: false }
 }

@@ -67,6 +67,9 @@ import { installTestHarness } from '@/lib/test-harness'
 import { useWorldEvents } from '@/hooks/useWorldEvents'
 import { AgentWindowPortals } from './forge/AgentWindowPortals'
 
+const SHOW_LEGACY_DEVCRAFT_PANEL = false
+const SHOW_LEGACY_PARZIVAL_PANEL = false
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // ─═̷─═̷─🎮─═̷─═̷─{ QUAKE FPS CONTROLS - WASD + Q/E }─═̷─═̷─🎮─═̷─═̷─
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1117,7 +1120,7 @@ export default function Scene() {
   const activeWorldId = useOasisStore(s => s.activeWorldId)
   const worldRegistry = useOasisStore(s => s.worldRegistry)
   const activeWorldMeta = worldRegistry.find(world => world.id === activeWorldId)
-  const activeWorldCanWrite = Boolean(activeWorldMeta?.canWrite || (isViewMode && isViewModeEditable))
+  const activeWorldCanWrite = Boolean(isAdmin || activeWorldMeta?.canWrite || (isViewMode && isViewModeEditable))
   const activeWorldWriteKnown = Boolean(activeWorldMeta) || isViewMode
   // Hide mutation surfaces unless the active world explicitly says this session can write.
   // Settings stays separate: camera/UI preferences are always available.
@@ -1321,7 +1324,7 @@ export default function Scene() {
       {/* ─═̷─═̷─🔮─═̷─═̷─ TOP-LEFT BUTTON BAR — Profile, Settings, Wizard, Action Log ─═̷─═̷─🔮─═̷─═̷─ */}
       <div className="fixed top-4 left-4 z-[200] flex items-start gap-2">
         <RealmSelector placement="toolbar" hostedMode={hostedMode} />
-        {!hostedMode && <ProfileButton />}
+        <ProfileButton />
         <SettingsGear>
           <SettingsContent />
         </SettingsGear>
@@ -1416,7 +1419,7 @@ export default function Scene() {
             🔮
           </button>
         )}
-        {canUseLocalPanels && !hideEditTools && <button
+        {SHOW_LEGACY_DEVCRAFT_PANEL && canUseLocalPanels && !hideEditTools && <button
           onClick={() => togglePanel(setDevcraftOpen)}
           aria-label="DevCraft"
           data-oasis-tooltip="DevCraft"
@@ -1476,7 +1479,7 @@ export default function Scene() {
           🗣️
         </button>
         )}
-        {canUseLocalPanels && (
+        {SHOW_LEGACY_PARZIVAL_PANEL && canUseLocalPanels && (
         <button
           onClick={() => togglePanel(setParzivalOpen)}
           aria-label="Parzival"
@@ -1603,7 +1606,7 @@ export default function Scene() {
           onClose={() => setLipSyncLabOpen(false)}
         />
       )}
-      {canUseLocalPanels && (
+      {SHOW_LEGACY_PARZIVAL_PANEL && canUseLocalPanels && (
         <ParzivalPanel
           isOpen={parzivalOpen}
           onClose={() => setParzivalOpen(false)}
@@ -1611,7 +1614,7 @@ export default function Scene() {
       )}
 
       {/* ⚡ DevCraft — Productivity Terminal */}
-      {canUseLocalPanels && (devcraftOpen ? (
+      {SHOW_LEGACY_DEVCRAFT_PANEL && canUseLocalPanels && (devcraftOpen ? (
         <div
           style={{
             position: 'fixed',

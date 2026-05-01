@@ -9,9 +9,8 @@
  * `/api/relay/execute` to run against existing Oasis tool surface, and the
  * result goes back as `tool.result` on the same socket.
  *
- * v0 scope: tool execution only. Chat / presence / portal envelopes arrive
- * but are ignored at this layer; they will be wired into existing UI surfaces
- * in subsequent slices.
+ * Handles browser-executed tools plus chat envelopes. Presence / portal frames
+ * are still observed but left to future UI surfaces.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -51,6 +50,8 @@ export interface UseOpenclawRelayBridgeOptions {
    * memoize this array — a new identity triggers reconnect.
    */
   availableTools?: readonly string[]
+  onChatAgentDelta?: (event: { sessionId: string; text: string }) => void
+  onChatAgentFinal?: (event: { sessionId: string; text: string }) => void
 }
 
 export interface RelayBridgeState {
@@ -65,6 +66,7 @@ export interface RelayBridgeState {
    * pairing is unstable without reading logs.
    */
   droppedCalls: number
+  sendChatUser: (sessionId: string, text: string) => boolean
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -173,6 +175,8 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
     roomId,
     agentType = 'openclaw',
     availableTools,
+    onChatAgentDelta,
+    onChatAgentFinal,
   } = opts
 
   const [status, setStatus] = useState<RelayConnectionStatus>('idle')
@@ -187,6 +191,8 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reconnectDelayRef = useRef(RECONNECT_INITIAL_MS)
   const browserSessionIdRef = useRef<string>('')
+  const onChatAgentDeltaRef = useRef(onChatAgentDelta)
+  const onChatAgentFinalRef = useRef(onChatAgentFinal)
 
   // Latest values, read inside async handlers without forcing reconnect.
   const worldIdRef = useRef(worldId)
@@ -198,6 +204,8 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
   roomIdRef.current = roomId ?? worldId
   agentTypeRef.current = agentType
   availableToolsRef.current = availableTools ?? DEFAULT_AVAILABLE_TOOLS
+  onChatAgentDeltaRef.current = onChatAgentDelta
+  onChatAgentFinalRef.current = onChatAgentFinal
 
   if (!browserSessionIdRef.current) {
     browserSessionIdRef.current = getStableBrowserSessionId()
@@ -257,14 +265,16 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
   }, [enabled])
 
   const sendEnvelope = useCallback((ws: WebSocket, msg: Parameters<typeof buildRelayMessage>[0]) => {
-    if (ws.readyState !== ws.OPEN) return
+    if (ws.readyState !== ws.OPEN) return false
     try {
       const built = buildRelayMessage(msg)
       ws.send(JSON.stringify(built))
+      return true
     } catch (err) {
       const text = err instanceof Error ? err.message : String(err)
       setLastError(`send failed: ${text}`)
       console.error('[relay-bridge] send failed', err)
+      return false
     }
   }, [])
 
@@ -432,7 +442,17 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
           return
         }
 
-        // chat.user / chat.agent.* / presence.update / portal.enter /
+        if (envelope.type === 'chat.agent.delta') {
+          onChatAgentDeltaRef.current?.({ sessionId: envelope.sessionId, text: envelope.text })
+          return
+        }
+
+        if (envelope.type === 'chat.agent.final') {
+          onChatAgentFinalRef.current?.({ sessionId: envelope.sessionId, text: envelope.text })
+          return
+        }
+
+        // chat.user / presence.update / portal.enter /
         // pairing.approved / browser.hello / browser.ready / agent.hello /
         // tool.result / error — observed but not handled at this layer in v0.
       }
@@ -466,6 +486,21 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
     })
   }, [enabled, sessionReady, status, relaySessionId, worldId, roomId, availableTools, sendEnvelope])
 
+  const sendChatUser = useCallback((sessionId: string, text: string): boolean => {
+    const trimmedSessionId = sessionId.trim()
+    const trimmedText = text.trim()
+    const ws = wsRef.current
+    if (!trimmedSessionId || !trimmedText || !ws || ws.readyState !== WebSocket.OPEN || status !== 'paired') {
+      return false
+    }
+    return sendEnvelope(ws, {
+      type: 'chat.user',
+      sessionId: trimmedSessionId,
+      text: trimmedText,
+      relaySessionId: relaySessionId ?? undefined,
+    })
+  }, [relaySessionId, sendEnvelope, status])
+
   return {
     status,
     relaySessionId,
@@ -473,5 +508,6 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
     inFlightCalls,
     totalCalls,
     droppedCalls,
+    sendChatUser,
   }
 }
