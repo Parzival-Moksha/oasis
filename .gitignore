@@ -28,6 +28,8 @@ data/*.local.json
 .env
 .env.local
 .env.production.local
+.env.openclaw
+admin-token.txt
 
 # Runtime-generated GLBs (user conjurations)
 public/conjured/*
