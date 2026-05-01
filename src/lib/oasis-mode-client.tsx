@@ -41,8 +41,15 @@ const DEFAULT_HOSTED_CAPABILITIES: ClientOasisCapabilities = {
   canUseFullWizard: false,
 }
 
-const OasisModeContext = createContext<ClientOasisMode>('local')
-const OasisCapabilitiesContext = createContext<ClientOasisCapabilities>(DEFAULT_LOCAL_CAPABILITIES)
+declare global {
+  interface Window {
+    __oasisModeFallback?: ClientOasisMode
+    __oasisCapabilitiesFallback?: ClientOasisCapabilities
+  }
+}
+
+const OasisModeContext = createContext<ClientOasisMode | null>(null)
+const OasisCapabilitiesContext = createContext<ClientOasisCapabilities | null>(null)
 
 function normalizeCapabilities(
   mode: ClientOasisMode,
@@ -66,6 +73,11 @@ export function OasisModeProvider({
   children: ReactNode
 }) {
   const normalized = normalizeCapabilities(mode, capabilities)
+  if (typeof window !== 'undefined') {
+    window.__oasisModeFallback = mode
+    window.__oasisCapabilitiesFallback = normalized
+  }
+
   return (
     <OasisModeContext.Provider value={mode}>
       <OasisCapabilitiesContext.Provider value={normalized}>
@@ -77,6 +89,8 @@ export function OasisModeProvider({
 
 export function useClientOasisMode(): ClientOasisMode {
   return useContext(OasisModeContext)
+    ?? (typeof window !== 'undefined' ? window.__oasisModeFallback : undefined)
+    ?? 'local'
 }
 
 export function useIsHostedOasis(): boolean {
@@ -85,4 +99,6 @@ export function useIsHostedOasis(): boolean {
 
 export function useOasisCapabilities(): ClientOasisCapabilities {
   return useContext(OasisCapabilitiesContext)
+    ?? (typeof window !== 'undefined' ? window.__oasisCapabilitiesFallback : undefined)
+    ?? DEFAULT_LOCAL_CAPABILITIES
 }
