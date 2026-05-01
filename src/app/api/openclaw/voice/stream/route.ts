@@ -1,6 +1,10 @@
 import { NextRequest } from 'next/server'
 
 import { getOasisGatewayClient } from '@/lib/openclaw-gateway-client'
+import {
+  hostedVisitorOpenclawBlockedResponse,
+  shouldBlockHostedVisitorOpenclawGateway,
+} from '@/lib/openclaw-hosted-boundary'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -10,6 +14,10 @@ function sanitizeString(value: unknown): string {
 }
 
 export async function GET(request: NextRequest) {
+  if (shouldBlockHostedVisitorOpenclawGateway(request)) {
+    return hostedVisitorOpenclawBlockedResponse('OpenClaw Gateway voice')
+  }
+
   const voiceSessionId = sanitizeString(request.nextUrl.searchParams.get('voiceSessionId'))
   if (!voiceSessionId) {
     return new Response(JSON.stringify({ ok: false, error: 'voiceSessionId is required.' }), {

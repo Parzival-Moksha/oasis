@@ -6,16 +6,28 @@ import {
   writeStoredOpenclawConfig,
 } from '@/lib/openclaw-config'
 import { resetOasisGatewayClient } from '@/lib/openclaw-gateway-client'
+import {
+  hostedVisitorOpenclawBlockedResponse,
+  shouldBlockHostedVisitorOpenclawGateway,
+} from '@/lib/openclaw-hosted-boundary'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  if (shouldBlockHostedVisitorOpenclawGateway(request)) {
+    return hostedVisitorOpenclawBlockedResponse('OpenClaw local config')
+  }
+
   const config = await resolveOpenclawConfig()
   return NextResponse.json(config)
 }
 
 export async function POST(request: NextRequest) {
+  if (shouldBlockHostedVisitorOpenclawGateway(request)) {
+    return hostedVisitorOpenclawBlockedResponse('OpenClaw local config')
+  }
+
   const body = await request.json().catch(() => ({}))
   const saved = await writeStoredOpenclawConfig({
     gatewayUrl: typeof body?.gatewayUrl === 'string' ? body.gatewayUrl : undefined,
@@ -34,7 +46,11 @@ export async function POST(request: NextRequest) {
   })
 }
 
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
+  if (shouldBlockHostedVisitorOpenclawGateway(request)) {
+    return hostedVisitorOpenclawBlockedResponse('OpenClaw local config')
+  }
+
   await clearStoredOpenclawConfig()
   resetOasisGatewayClient()
   const config = await resolveOpenclawConfig()

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { runOpenclawSmoke, type OpenclawSmokeMode } from '@/lib/openclaw-smoke'
+import {
+  hostedVisitorOpenclawBlockedResponse,
+  shouldBlockHostedVisitorOpenclawGateway,
+} from '@/lib/openclaw-hosted-boundary'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -31,6 +35,10 @@ function normalizeMode(value: unknown): OpenclawSmokeMode {
 }
 
 export async function POST(request: NextRequest) {
+  if (shouldBlockHostedVisitorOpenclawGateway(request)) {
+    return hostedVisitorOpenclawBlockedResponse('OpenClaw smoke tests')
+  }
+
   const body = await request.json().catch(() => ({}))
   const mode = normalizeMode(body?.mode)
   const liveWorldId = sanitizeString(body?.worldId)

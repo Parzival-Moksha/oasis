@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getOasisGatewayClient } from '@/lib/openclaw-gateway-client'
+import {
+  hostedVisitorOpenclawBlockedResponse,
+  shouldBlockHostedVisitorOpenclawGateway,
+} from '@/lib/openclaw-hosted-boundary'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -34,6 +38,10 @@ function resolveRequestBaseUrl(request: NextRequest): string {
 }
 
 export async function POST(request: NextRequest) {
+  if (shouldBlockHostedVisitorOpenclawGateway(request)) {
+    return hostedVisitorOpenclawBlockedResponse('OpenClaw Gateway voice')
+  }
+
   const body = await request.json().catch(() => ({})) as Record<string, unknown>
   const sessionKey = sanitizeString(body.sessionKey)
   const model = sanitizeString(body.model)

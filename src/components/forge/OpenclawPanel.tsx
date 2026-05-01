@@ -1553,6 +1553,19 @@ export function OpenclawPanel({
   }, [])
 
   const loadStatus = useCallback(async () => {
+    if (hostedMode) {
+      setStatus(DEFAULT_STATUS)
+      setConfigDraft({
+        gatewayUrl: DEFAULT_STATUS.gatewayUrl,
+        controlUiUrl: DEFAULT_STATUS.controlUiUrl,
+        browserControlUrl: DEFAULT_STATUS.browserControlUrl,
+        sshHost: '',
+        deviceToken: '',
+      })
+      setLoadingStatus(false)
+      return
+    }
+
     setLoadingStatus(true)
     try {
       const response = await fetch('/api/openclaw/status', { cache: 'no-store' })
@@ -1570,7 +1583,7 @@ export function OpenclawPanel({
     } finally {
       setLoadingStatus(false)
     }
-  }, [])
+  }, [hostedMode])
 
   const loadProfileName = useCallback(async () => {
     try {
@@ -1585,6 +1598,12 @@ export function OpenclawPanel({
   }, [])
 
   const loadMcpInfo = useCallback(async () => {
+    if (hostedMode) {
+      setMcpInfo(null)
+      setLoadingMcp(false)
+      return
+    }
+
     setLoadingMcp(true)
     try {
       const response = await fetch('/api/openclaw/mcp', { cache: 'no-store' })
@@ -1595,7 +1614,7 @@ export function OpenclawPanel({
     } finally {
       setLoadingMcp(false)
     }
-  }, [])
+  }, [hostedMode])
 
   const loadSessions = useCallback(async () => {
     setLoadingSessions(true)

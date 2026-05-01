@@ -77,7 +77,7 @@ export function ParzivalWindowContent({ windowBlur = 0 }: { windowBlur?: number 
     let evtSource: EventSource | null = null
 
     try {
-      evtSource = new EventSource('http://localhost:4517/api/thoughts/stream')
+      evtSource = new EventSource('/api/parzival/proxy/thoughts/stream')
 
       evtSource.onmessage = (event) => {
         try {

@@ -7,6 +7,10 @@ import {
   sameMcpDefinition,
   upsertOpenclawMcpServer,
 } from '@/lib/openclaw-runtime-config'
+import {
+  hostedVisitorOpenclawBlockedResponse,
+  shouldBlockHostedVisitorOpenclawGateway,
+} from '@/lib/openclaw-hosted-boundary'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -31,6 +35,10 @@ function resolveRequestBaseUrl(request: NextRequest): string {
 }
 
 export async function GET(request: NextRequest) {
+  if (shouldBlockHostedVisitorOpenclawGateway(request)) {
+    return hostedVisitorOpenclawBlockedResponse('OpenClaw MCP config helper')
+  }
+
   const baseUrl = resolveRequestBaseUrl(request)
   const definition = buildOasisOpenclawMcpDefinition(baseUrl)
   const installed = await readOpenclawMcpServer('oasis')
@@ -45,6 +53,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  if (shouldBlockHostedVisitorOpenclawGateway(request)) {
+    return hostedVisitorOpenclawBlockedResponse('OpenClaw MCP config helper')
+  }
+
   const baseUrl = resolveRequestBaseUrl(request)
   const definition = buildOasisOpenclawMcpDefinition(baseUrl)
   await upsertOpenclawMcpServer('oasis', definition)

@@ -12,6 +12,10 @@ import {
   readOpenclawMcpServer,
   sameMcpDefinition,
 } from '@/lib/openclaw-runtime-config'
+import {
+  hostedVisitorOpenclawStatusResponse,
+  shouldBlockHostedVisitorOpenclawGateway,
+} from '@/lib/openclaw-hosted-boundary'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -191,6 +195,10 @@ async function warmNativeGatewayClient(hasStoredDeviceToken: boolean) {
 }
 
 export async function GET(request: NextRequest) {
+  if (shouldBlockHostedVisitorOpenclawGateway(request)) {
+    return hostedVisitorOpenclawStatusResponse()
+  }
+
   const config = await resolveOpenclawConfig()
   const gatewayClient = await warmNativeGatewayClient(Boolean(config.deviceToken))
   const sessions = await listOpenclawCachedSessions()

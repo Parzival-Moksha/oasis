@@ -8,6 +8,10 @@ import {
   type OpenclawCachedSessionSummary,
   upsertOpenclawSessionSummary,
 } from '@/lib/openclaw-session-cache'
+import {
+  hostedVisitorOpenclawBlockedResponse,
+  shouldBlockHostedVisitorOpenclawGateway,
+} from '@/lib/openclaw-hosted-boundary'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -374,6 +378,10 @@ async function listGatewaySessions(limit = 120): Promise<OpenclawCachedSessionSu
 }
 
 export async function GET(request: NextRequest) {
+  if (shouldBlockHostedVisitorOpenclawGateway(request)) {
+    return hostedVisitorOpenclawBlockedResponse('OpenClaw Gateway sessions')
+  }
+
   const sessionId = sanitizeString(request.nextUrl.searchParams.get('sessionId'))
   if (sessionId) {
     const cachedSession = await getOpenclawCachedSession(sessionId)
@@ -454,6 +462,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  if (shouldBlockHostedVisitorOpenclawGateway(request)) {
+    return hostedVisitorOpenclawBlockedResponse('OpenClaw Gateway sessions')
+  }
+
   const body = await request.json().catch(() => ({}))
   const session = await createOpenclawDraftSession(typeof body?.title === 'string' ? body.title : undefined)
   return NextResponse.json({
@@ -463,6 +475,10 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
+  if (shouldBlockHostedVisitorOpenclawGateway(request)) {
+    return hostedVisitorOpenclawBlockedResponse('OpenClaw Gateway sessions')
+  }
+
   const body = await request.json().catch(() => ({})) as Record<string, unknown>
   const id = sanitizeString(body.id)
   if (!id) {

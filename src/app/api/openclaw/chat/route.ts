@@ -2,6 +2,10 @@ import { NextRequest } from 'next/server'
 import { randomUUID } from 'crypto'
 
 import { getOasisGatewayClient } from '@/lib/openclaw-gateway-client'
+import {
+  hostedVisitorOpenclawBlockedResponse,
+  shouldBlockHostedVisitorOpenclawGateway,
+} from '@/lib/openclaw-hosted-boundary'
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 // POST /api/openclaw/chat  {sessionKey, message, idempotencyKey?}
@@ -33,6 +37,10 @@ function jsonError(message: string, status: number, extra: Record<string, unknow
 }
 
 export async function POST(request: NextRequest) {
+  if (shouldBlockHostedVisitorOpenclawGateway(request)) {
+    return hostedVisitorOpenclawBlockedResponse('OpenClaw Gateway chat')
+  }
+
   const body = await request.json().catch(() => ({})) as Record<string, unknown>
   const sessionKey = sanitizeString(body.sessionKey)
   const message = sanitizeString(body.message)
@@ -169,7 +177,11 @@ export async function POST(request: NextRequest) {
 
 // GET returns the current gateway client status — useful for panel UI
 // to decide whether to show "pair me" CTA vs "ready".
-export async function GET() {
+export async function GET(request: NextRequest) {
+  if (shouldBlockHostedVisitorOpenclawGateway(request)) {
+    return hostedVisitorOpenclawBlockedResponse('OpenClaw Gateway chat')
+  }
+
   const client = getOasisGatewayClient()
   return new Response(JSON.stringify(client.getStatus()), {
     headers: { 'content-type': 'application/json' },
