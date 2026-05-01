@@ -14,6 +14,7 @@ import type { CraftedScene, CatalogPlacement, ObjectBehavior, WorldLight } from 
 import type { GroundPreset } from './ground-textures'
 import type { TerrainParams } from './terrain-generator'
 import type { AgentWindow, AgentAvatar } from '../../store/oasisStore'
+import type { WorldWriteDecision } from './world-access'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // WORLD STATE — the serializable snapshot of everything in a single Forge world
@@ -60,7 +61,10 @@ export interface WorldMeta {
   id: string
   name: string
   icon: string          // emoji icon for the world
-  visibility: 'private' | 'public' | 'unlisted' | 'public_edit'
+  visibility: 'private' | 'public' | 'unlisted' | 'public_edit' | 'only-with-link' | 'ffa' | 'core' | 'template'
+  canWrite?: boolean
+  canEditSettings?: boolean
+  writeDecision?: WorldWriteDecision
   createdAt: string
   lastSavedAt: string
 }
@@ -77,6 +81,13 @@ const API_BASE = typeof window !== 'undefined'
 // initWorlds() replaces it with the first actual SQLite-backed world if needed.
 const DEFAULT_WORLD_ID = 'forge-default'
 
+interface ActiveWorldServerState {
+  worldId: string
+  mode: 'local' | 'hosted'
+  source: 'stored' | 'welcome' | 'registry'
+  authoritative: boolean
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // ACTIVE WORLD ID — still localStorage (per-browser preference, not world data)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -86,9 +97,44 @@ export function getActiveWorldId(): string {
   return localStorage.getItem('oasis-active-world') || DEFAULT_WORLD_ID
 }
 
-export function setActiveWorldId(id: string): void {
+export function setActiveWorldId(id: string, options: { publish?: boolean } = {}): void {
   if (typeof window === 'undefined') return
   localStorage.setItem('oasis-active-world', id)
+  if (!options.publish || !id || id === DEFAULT_WORLD_ID || typeof fetch !== 'function') return
+  try {
+    const request = fetch(`${window.location.origin}${process.env.NEXT_PUBLIC_BASE_PATH || ''}/api/world-active`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ worldId: id }),
+    })
+    if (request && typeof request.catch === 'function') {
+      void request.catch(() => {})
+    }
+  } catch {
+    // Active-world publication is best-effort; localStorage remains the local source.
+  }
+}
+
+export async function getServerActiveWorld(): Promise<ActiveWorldServerState | null> {
+  if (typeof window === 'undefined') return null
+  try {
+    const res = await fetch(`${window.location.origin}${process.env.NEXT_PUBLIC_BASE_PATH || ''}/api/world-active`, {
+      cache: 'no-store',
+      credentials: 'same-origin',
+    })
+    if (!res.ok) return null
+    const json = await res.json() as Partial<ActiveWorldServerState> & { ok?: boolean }
+    if (!json.ok || typeof json.worldId !== 'string') return null
+    return {
+      worldId: json.worldId,
+      mode: json.mode === 'hosted' ? 'hosted' : 'local',
+      source: json.source === 'welcome' || json.source === 'registry' ? json.source : 'stored',
+      authoritative: Boolean(json.authoritative),
+    }
+  } catch {
+    return null
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -130,7 +176,14 @@ export async function deleteWorld(id: string): Promise<void> {
 // SAVE / LOAD — the heartbeat of world persistence
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export async function saveWorld(state: Omit<WorldState, 'version' | 'savedAt'>, worldId?: string): Promise<void> {
+export interface SaveWorldResponse {
+  ok?: boolean
+  saved?: boolean
+  worldId?: string
+  forkedFromWorldId?: string
+}
+
+export async function saveWorld(state: Omit<WorldState, 'version' | 'savedAt'>, worldId?: string): Promise<SaveWorldResponse | null> {
   const id = worldId || getActiveWorldId()
   try {
     const res = await fetch(`${API_BASE}/${id}`, {
@@ -139,8 +192,16 @@ export async function saveWorld(state: Omit<WorldState, 'version' | 'savedAt'>, 
       body: JSON.stringify(state),
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const result = typeof res.json === 'function'
+      ? await res.json().catch(() => null) as SaveWorldResponse | null
+      : null
+    if (result?.forkedFromWorldId && result.worldId) {
+      setActiveWorldId(result.worldId, { publish: true })
+    }
+    return result
   } catch (err) {
     console.error('[WorldPersistence] Failed to save:', err)
+    return null
   }
 }
 

@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 
-import { callTool } from '@/lib/mcp/oasis-tools'
+import { callTool, type OasisToolContext } from '@/lib/mcp/oasis-tools'
 import {
   OASIS_MCP_INSTRUCTIONS,
   OASIS_MCP_TOOL_SPECS,
@@ -107,7 +107,7 @@ function formatToolResult(result: Awaited<ReturnType<typeof callTool>>, toolName
   }
 }
 
-export function createOasisMcpServer(context?: { worldId?: string; agentType?: string }) {
+export function createOasisMcpServer(context?: Pick<OasisToolContext, 'worldId' | 'agentType' | 'userId'>) {
   const server = new McpServer(
     { name: 'oasis-http-mcp', version: '1.0.0' },
     {
@@ -131,6 +131,12 @@ export function createOasisMcpServer(context?: { worldId?: string; agentType?: s
       async (args: Record<string, unknown> = {}) => formatToolResult(await callTool(
         spec.name,
         prepareOasisToolArgs(spec.name, args, context),
+        {
+          source: 'mcp',
+          userId: context?.userId,
+          worldId: context?.worldId,
+          agentType: context?.agentType,
+        },
       ), spec.name),
     )
   }
@@ -173,7 +179,7 @@ export function pruneOasisHttpMcpSessions() {
   }
 }
 
-export async function createOasisHttpMcpSession(context?: { worldId?: string; agentType?: string }) {
+export async function createOasisHttpMcpSession(context?: Pick<OasisToolContext, 'worldId' | 'agentType' | 'userId'>) {
   const server = createOasisMcpServer(context)
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: () => randomUUID(),
@@ -183,7 +189,7 @@ export async function createOasisHttpMcpSession(context?: { worldId?: string; ag
   return { server, transport }
 }
 
-export async function createStatelessOasisHttpMcpSession(context?: { worldId?: string; agentType?: string }) {
+export async function createStatelessOasisHttpMcpSession(context?: Pick<OasisToolContext, 'worldId' | 'agentType' | 'userId'>) {
   const server = createOasisMcpServer(context)
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,

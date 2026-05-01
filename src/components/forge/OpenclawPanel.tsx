@@ -14,8 +14,11 @@ import { useOasisStore } from '@/store/oasisStore'
 import { useInputManager, useUILayer } from '@/lib/input-manager'
 import { useAutoresizeTextarea } from '@/hooks/useAutoresizeTextarea'
 import { useAgentVoiceInput } from '@/hooks/useAgentVoiceInput'
+import { useOpenclawRelayBridge } from '@/hooks/useOpenclawRelayBridge'
 import { base64ToBytes, bytesToBase64, decodeMuLawToFloat32, encodeFloat32ToMuLaw } from '@/lib/audio-mulaw'
 import { renderMarkdown } from '@/lib/anorak-renderers'
+import { describeOpenclawSshHostIssue, sanitizeOpenclawSshHost } from '@/lib/openclaw-ssh-host'
+import { useIsHostedOasis } from '@/lib/oasis-mode-client'
 import { AvatarGallery } from './AvatarGallery'
 import { MediaBubble, type MediaType } from './MediaBubble'
 
@@ -133,6 +136,13 @@ interface OpenclawMcpInfo {
   installed: boolean
 }
 
+interface RelayPairingResult {
+  code: string
+  expiresAt: number
+  worldId: string
+  scopes: string[]
+}
+
 type SmokeMode = 'core' | 'live' | 'external'
 type SmokeStatus = 'passed' | 'failed' | 'skipped'
 type SmokeCategory = 'transport' | 'world' | 'avatar' | 'craft' | 'live-bridge' | 'conjure'
@@ -177,6 +187,30 @@ const EMBEDDED_SCROLL_SURFACE_STYLE = {
 const OPENCLAW_VOICE_MODELS = ['gpt-realtime', 'gpt-realtime-mini'] as const
 const OPENCLAW_VOICE_OPTIONS = ['alloy', 'ash', 'ballad', 'cedar', 'coral', 'echo', 'marin', 'sage', 'shimmer', 'verse'] as const
 const OPENCLAW_AUDIO_SAMPLE_RATE = 8000
+const OPENCLAW_RELAY_SCOPES = ['world.read', 'world.write.safe', 'screenshot.request', 'chat.stream'] as const
+const OPENCLAW_RELAY_TOOLS: readonly string[] = Object.freeze([
+  'get_world_state',
+  'get_world_info',
+  'query_objects',
+  'search_assets',
+  'get_asset_catalog',
+  'place_object',
+  'modify_object',
+  'remove_object',
+  'set_sky',
+  'set_ground_preset',
+  'paint_ground_tiles',
+  'add_light',
+  'modify_light',
+  'set_behavior',
+  'set_avatar',
+  'walk_avatar_to',
+  'list_avatar_animations',
+  'play_avatar_animation',
+  'screenshot_viewport',
+  'screenshot_avatar',
+  'avatarpic_user',
+])
 const DEFAULT_SETTINGS: PanelSettings = {
   bgColor: '#06161d',
   opacity: 0.92,
@@ -736,6 +770,44 @@ function buildOpenclawSshBridgeCommand(sshHost: string): string {
   return `ssh -N -T -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -L 18789:127.0.0.1:18789 -R 4516:127.0.0.1:4516 ${host}`
 }
 
+function normalizeCommandOrigin(origin: string): string {
+  return origin.trim().replace(/\/+$/, '')
+}
+
+function localRelayHostFromOrigin(origin: string): string {
+  try {
+    const parsed = new URL(origin)
+    const host = parsed.hostname.replace(/^\[(.*)\]$/, '$1')
+    if (host === '127.0.0.1') return '127.0.0.1'
+    if (host === '::1') return '[::1]'
+  } catch {
+    // Fall through to the common local dev hostname.
+  }
+  return 'localhost'
+}
+
+function isLocalOasisOrigin(origin: string): boolean {
+  try {
+    const parsed = new URL(origin)
+    const host = parsed.hostname.replace(/^\[(.*)\]$/, '$1').toLowerCase()
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1'
+  } catch {
+    return false
+  }
+}
+
+function buildOpenclawRelayPairingCommand(pairing: RelayPairingResult | null, origin: string): string {
+  if (!pairing) return ''
+  const normalizedOrigin = normalizeCommandOrigin(origin)
+  const pairingRef = normalizedOrigin
+    ? `${normalizedOrigin}/pair/${encodeURIComponent(pairing.code)}`
+    : pairing.code
+  const base = `node scripts/openclaw-oasis-bridge.mjs ${pairingRef}`
+  if (!isLocalOasisOrigin(normalizedOrigin)) return base
+  const relayHost = localRelayHostFromOrigin(normalizedOrigin)
+  return `${base} --relay-url="ws://${relayHost}:4517/?role=agent"`
+}
+
 function formatSessionSource(source: OpenclawSessionSummary['source']): string {
   switch (source) {
     case 'gateway':
@@ -751,6 +823,18 @@ function formatSessionOptionLabel(session: OpenclawSessionSummary): string {
   const count = `${session.messageCount} ${session.messageCount === 1 ? 'msg' : 'msgs'}`
   const stamp = formatTimestamp(session.updatedAt || session.createdAt)
   return `${session.title} [${formatSessionSource(session.source)}] · ${count}${stamp ? ` · ${stamp}` : ''}`
+}
+
+function dedupeOpenclawSessions(sessions: OpenclawSessionSummary[]): OpenclawSessionSummary[] {
+  const byId = new Map<string, OpenclawSessionSummary>()
+  for (const session of sessions) {
+    if (!session.id) continue
+    const existing = byId.get(session.id)
+    if (!existing || session.updatedAt >= existing.updatedAt) {
+      byId.set(session.id, session)
+    }
+  }
+  return [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
 function roleLabel(role: OpenclawMessage['role'], profileName: string): string {
@@ -843,6 +927,7 @@ export function OpenclawPanel({
   hideCloseButton?: boolean
 }) {
   useUILayer('openclaw', isOpen && !embedded)
+  const hostedMode = useIsHostedOasis()
 
   const panelZIndex = useOasisStore(state => state.getPanelZIndex('openclaw', 9998))
   const bringPanelToFront = useOasisStore(state => state.bringPanelToFront)
@@ -863,6 +948,7 @@ export function OpenclawPanel({
     sshHost: '',
     deviceToken: '',
   })
+  const [browserOrigin, setBrowserOrigin] = useState('')
   const [sessions, setSessions] = useState<OpenclawSessionSummary[]>([])
   const [selectedSessionId, setSelectedSessionId] = useState(() => {
     if (typeof window === 'undefined') return ''
@@ -884,7 +970,7 @@ export function OpenclawPanel({
   const [isDragging, setIsDragging] = useState(false)
   const [isResizing, setIsResizing] = useState(false)
   const [sending, setSending] = useState(false)
-  const [activeTab, setActiveTab] = useState<OpenclawPanelTab>('stream')
+  const [activeTab, setActiveTab] = useState<OpenclawPanelTab>(() => hostedMode ? 'config' : 'stream')
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false)
   const [expandedToolIds, setExpandedToolIds] = useState<string[]>([])
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
@@ -893,6 +979,10 @@ export function OpenclawPanel({
   const [voiceState, setVoiceState] = useState<OpenclawVoiceState>('idle')
   const [voiceDetail, setVoiceDetail] = useState('OpenClaw voice portal sleeps until you wake it.')
   const [voiceSessionId, setVoiceSessionId] = useState('')
+  const [relayEnabled, setRelayEnabled] = useState(false)
+  const [relayPairing, setRelayPairing] = useState<RelayPairingResult | null>(null)
+  const [relayPairingBusy, setRelayPairingBusy] = useState(false)
+  const [relayPairingError, setRelayPairingError] = useState('')
 
   const dragStart = useRef({ x: 0, y: 0 })
   const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 })
@@ -932,6 +1022,18 @@ export function OpenclawPanel({
   }, [])
 
   useEffect(() => {
+    if (hasWindow()) setBrowserOrigin(window.location.origin)
+  }, [])
+
+  useEffect(() => {
+    if (hostedMode) setActiveTab(tab => (tab === 'config' ? tab : 'config'))
+  }, [hostedMode])
+
+  useEffect(() => {
+    if (hostedMode && activeWorldId) setRelayEnabled(true)
+  }, [activeWorldId, hostedMode])
+
+  useEffect(() => {
     return () => {
       if (!openclawActivityRunIdRef.current) return
       useOasisStore.getState().finishAgentWork('openclaw', openclawActivityRunIdRef.current)
@@ -942,7 +1044,7 @@ export function OpenclawPanel({
   useAutoresizeTextarea(inputRef, composer, { minPx: 42, maxPx: 180 })
 
   const voice = useAgentVoiceInput({
-    enabled: embedded || isOpen,
+    enabled: !hostedMode && (embedded || isOpen),
     transcribeEndpoint: '/api/voice/transcribe',
     onTranscript: transcript => {
       setComposer(current => current ? `${current}\n${transcript}` : transcript)
@@ -952,6 +1054,12 @@ export function OpenclawPanel({
   })
 
   const isVisible = embedded || isOpen
+  const relayBridge = useOpenclawRelayBridge({
+    enabled: isVisible && relayEnabled && Boolean(activeWorldId),
+    worldId: activeWorldId || '__active__',
+    agentType: 'openclaw',
+    availableTools: OPENCLAW_RELAY_TOOLS,
+  })
   const currentSession = useMemo(
     () => sessions.find(entry => entry.id === selectedSessionId) || null,
     [selectedSessionId, sessions],
@@ -1429,7 +1537,7 @@ export function OpenclawPanel({
     try {
       const response = await fetch('/api/openclaw/sessions', { cache: 'no-store' })
       const payload = await response.json() as { sessions?: OpenclawSessionSummary[] }
-      const nextSessions = Array.isArray(payload.sessions) ? payload.sessions : []
+      const nextSessions = dedupeOpenclawSessions(Array.isArray(payload.sessions) ? payload.sessions : [])
       setSessions(nextSessions)
 
       const remembered = typeof window === 'undefined' ? '' : window.localStorage.getItem(SESSION_KEY) || ''
@@ -2199,12 +2307,17 @@ export function OpenclawPanel({
 
   const handleSaveConfig = useCallback(async () => {
     setSavingConfig(true)
+    const normalizedDraft = {
+      ...configDraft,
+      sshHost: sanitizeOpenclawSshHost(configDraft.sshHost).value,
+    }
     try {
       await fetch('/api/openclaw/config', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(configDraft),
+        body: JSON.stringify(normalizedDraft),
       })
+      setConfigDraft(current => ({ ...current, sshHost: normalizedDraft.sshHost }))
       await loadStatus()
     } finally {
       setSavingConfig(false)
@@ -2232,6 +2345,51 @@ export function OpenclawPanel({
       setInstallingMcp(false)
     }
   }, [loadMcpInfo, loadStatus])
+
+  const handleRequestRelayPairing = useCallback(async () => {
+    if (!activeWorldId) {
+      setRelayPairingError('active world is required')
+      return
+    }
+
+    setRelayPairingBusy(true)
+    setRelayPairingError('')
+    try {
+      const sessionResponse = await fetch('/api/session/init', { credentials: 'same-origin' })
+      if (!sessionResponse.ok) {
+        throw new Error(`session init failed: HTTP ${sessionResponse.status}`)
+      }
+
+      const response = await fetch('/api/relay/pairings', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          worldId: activeWorldId,
+          scopes: OPENCLAW_RELAY_SCOPES,
+        }),
+      })
+      const json = await response.json().catch(() => null) as
+        | { ok: true; code: string; expiresAt: number; worldId: string; scopes: string[] }
+        | { ok: false; error: { code: string; message: string } }
+        | null
+      if (!json) throw new Error(`pairing failed: HTTP ${response.status}`)
+      if (!json.ok) throw new Error(`${json.error.code}: ${json.error.message}`)
+
+      setRelayPairing({
+        code: json.code,
+        expiresAt: json.expiresAt,
+        worldId: json.worldId,
+        scopes: json.scopes,
+      })
+      setRelayEnabled(true)
+    } catch (error) {
+      setRelayPairingError(error instanceof Error ? error.message : String(error))
+      setRelayPairing(null)
+    } finally {
+      setRelayPairingBusy(false)
+    }
+  }, [activeWorldId])
 
   const handleRunSmoke = useCallback(async (mode: SmokeMode) => {
     setRunningSmokeMode(mode)
@@ -2354,12 +2512,19 @@ export function OpenclawPanel({
     : gatewayClientState === 'pairing-required'
       ? 'Approve the pending device on the OpenClaw host.'
       : 'Connecting to the OpenClaw Gateway.'
-  const remoteHost = configDraft.sshHost.trim() || status.sshHost.trim()
+  const editedSshHost = configDraft.sshHost.trim()
+  const rawRemoteHost = editedSshHost || status.sshHost.trim()
+  const sshHostValidation = sanitizeOpenclawSshHost(rawRemoteHost)
+  const draftSshHostValidation = sanitizeOpenclawSshHost(editedSshHost)
+  const sshHostIssue = editedSshHost && !draftSshHostValidation.valid
+    ? describeOpenclawSshHostIssue(draftSshHostValidation.reason)
+    : ''
+  const remoteHost = sshHostValidation.value
   const remoteMode = Boolean(remoteHost)
   const sshBridgeCommand = buildOpenclawSshBridgeCommand(remoteHost)
   const sshBridgeTone = remoteMode ? (status.gateway.reachable ? 'online' : 'warn') : 'online'
   const sshBridgeLabel = remoteMode
-    ? (status.gateway.reachable ? 'ssh bridge seen' : 'ssh bridge needed')
+    ? (status.gateway.reachable ? 'ssh tunnel seen' : 'ssh tunnel needed')
     : 'local mode'
   const mcpTone = status.mcpInstalled ? 'online' : 'warn'
   const gatewayBadgeLabel = chatReady
@@ -2368,6 +2533,21 @@ export function OpenclawPanel({
       ? 'gateway pairing'
       : `gateway ${gatewayClientState}`
   const showPairingHelp = gatewayClientState === 'pairing-required' || status.pendingDeviceCount > 0
+  const relayTone = !relayEnabled
+    ? 'offline'
+    : relayBridge.status === 'paired'
+      ? 'online'
+      : relayBridge.status === 'error' || relayBridge.status === 'closed'
+        ? 'offline'
+        : 'warn'
+  const relayBadgeLabel = relayEnabled ? `relay ${relayBridge.status}` : 'relay off'
+  const relayPairingCommand = buildOpenclawRelayPairingCommand(relayPairing, browserOrigin)
+  const relayPairingExpiresInS = relayPairing
+    ? Math.max(0, Math.round((relayPairing.expiresAt - Date.now()) / 1000))
+    : 0
+  const visibleTabs: readonly OpenclawPanelTab[] = hostedMode
+    ? ['config']
+    : ['stream', 'voice', 'config', 'settings', 'diagnostics']
 
   const panelBody = (
     <div
@@ -2407,21 +2587,34 @@ export function OpenclawPanel({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-[15px] font-semibold tracking-[0.16em] text-cyan-100 uppercase">OpenClaw</span>
+            {hostedMode ? (
+              <StatusBadge label="hosted oasis" tone="online" title="Public Oasis surface" />
+            ) : (
+              <>
+                <StatusBadge
+                  label={gatewayBadgeLabel}
+                  tone={gatewayClientTone}
+                  title={status.gatewayClient?.detail || transportLine}
+                />
+                <StatusBadge
+                  label={status.mcpInstalled ? 'mcp installed' : 'mcp repair'}
+                  tone={mcpTone}
+                  title={status.mcpInstalled ? status.mcpUrl : 'Oasis MCP is not registered in the local OpenClaw config.'}
+                />
+              </>
+            )}
             <StatusBadge
-              label={gatewayBadgeLabel}
-              tone={gatewayClientTone}
-              title={status.gatewayClient?.detail || transportLine}
+              label={relayBadgeLabel}
+              tone={relayTone}
+              title={relayBridge.lastError || (relayPairing ? `paired world ${relayPairing.worldId}` : activeWorldId)}
             />
-            <StatusBadge
-              label={status.mcpInstalled ? 'mcp installed' : 'mcp repair'}
-              tone={mcpTone}
-              title={status.mcpInstalled ? status.mcpUrl : 'Oasis MCP is not registered in the local OpenClaw config.'}
-            />
-            <StatusBadge
-              label={sshBridgeLabel}
-              tone={sshBridgeTone}
-              title={remoteMode ? sshBridgeCommand : 'Gateway and MCP are expected on this machine.'}
-            />
+            {!hostedMode && (
+              <StatusBadge
+                label={sshBridgeLabel}
+                tone={sshBridgeTone}
+                title={remoteMode ? sshBridgeCommand : 'Gateway and MCP are expected on this machine.'}
+              />
+            )}
           </div>
         </div>
         <div className="ml-3 flex items-center gap-2">
@@ -2439,7 +2632,7 @@ export function OpenclawPanel({
       </div>
 
       <div className="flex items-center gap-1 border-b border-white/8 bg-black/18 px-3 py-2">
-        {(['stream', 'voice', 'config', 'settings', 'diagnostics'] as const).map(tab => (
+        {visibleTabs.map(tab => (
           <button
             key={tab}
             data-no-drag
@@ -2634,6 +2827,7 @@ export function OpenclawPanel({
       >
         {activeTab === 'config' && (
         <>
+          {!hostedMode && (
           <div
             className="rounded-xl border px-3 py-3"
             style={{ borderColor: 'rgba(34,211,238,0.2)', background: 'rgba(2,12,18,0.42)' }}
@@ -2658,7 +2852,10 @@ export function OpenclawPanel({
                   className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-cyan-50 outline-none focus:border-cyan-300/40"
                   placeholder="user@203.0.113.10 or my-openclaw-vps"
                 />
-                <span className="block text-[10px] text-cyan-50/48">This is the only SSH bridge part that should change between users.</span>
+                <span className="block text-[10px] text-cyan-50/48">Leave blank for local OpenClaw. Do not paste relay URLs here.</span>
+                {sshHostIssue && (
+                  <span className="block text-[10px] font-semibold text-amber-100/82">{sshHostIssue}</span>
+                )}
               </label>
               <label className="space-y-1">
                 <span className="block uppercase tracking-[0.16em] text-cyan-100/70">Gateway WebSocket</span>
@@ -2738,13 +2935,129 @@ export function OpenclawPanel({
               </span>
             </div>
           </div>
+          )}
 
+          <div
+            className="rounded-xl border px-3 py-3"
+            style={{ borderColor: 'rgba(56,189,248,0.18)', background: 'rgba(4,18,28,0.38)' }}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-100">Hosted relay</span>
+                <div className="mt-1 max-w-[640px] text-[11px] leading-5 text-sky-50/58">
+                  {hostedMode
+                    ? 'Relay is the WebSocket switchboard. The copied command starts the OpenClaw bridge process on the machine with OpenClaw.'
+                    : 'Local dev proof of the hosted relay path. Start relay here, then run the OpenClaw bridge process command.'}
+                </div>
+                <div className="mt-1 flex flex-wrap gap-2">
+                  <StatusBadge label={relayBadgeLabel} tone={relayTone} title={relayBridge.lastError || undefined} />
+                  <StatusBadge
+                    label={activeWorldId ? `world ${activeWorldId.slice(-8)}` : 'no world'}
+                    tone={activeWorldId ? 'online' : 'warn'}
+                    title={activeWorldId || undefined}
+                  />
+                  {relayPairing && (
+                    <StatusBadge
+                      label={`${relayPairingExpiresInS}s code`}
+                      tone={relayPairingExpiresInS > 0 ? 'warn' : 'offline'}
+                      title={relayPairing.worldId}
+                    />
+                  )}
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  data-no-drag
+                  onClick={() => setRelayEnabled(value => !value)}
+                  disabled={!activeWorldId}
+                  className="rounded-lg border border-sky-300/25 bg-sky-400/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-50 transition hover:bg-sky-400/18 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  {relayEnabled ? 'stop relay' : 'start relay'}
+                </button>
+                <button
+                  type="button"
+                  data-no-drag
+                  onClick={() => void handleRequestRelayPairing()}
+                  disabled={relayPairingBusy || !activeWorldId}
+                  className="rounded-lg border border-white/10 px-3 py-2 text-[11px] uppercase tracking-[0.16em] text-sky-50/78 transition hover:border-sky-300/30 hover:text-white disabled:cursor-wait disabled:opacity-45"
+                >
+                  {relayPairingBusy ? 'minting code' : 'mint pairing code'}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] uppercase tracking-[0.16em] text-sky-50/58 sm:grid-cols-4">
+              <div className="rounded-lg border border-white/8 bg-black/20 px-2 py-2">
+                <div>calls</div>
+                <div className="mt-1 font-mono text-[12px] text-sky-50">{relayBridge.totalCalls}</div>
+              </div>
+              <div className="rounded-lg border border-white/8 bg-black/20 px-2 py-2">
+                <div>active</div>
+                <div className="mt-1 font-mono text-[12px] text-sky-50">{relayBridge.inFlightCalls}</div>
+              </div>
+              <div className="rounded-lg border border-white/8 bg-black/20 px-2 py-2">
+                <div>dropped</div>
+                <div className="mt-1 font-mono text-[12px] text-sky-50">{relayBridge.droppedCalls}</div>
+              </div>
+              <div className="rounded-lg border border-white/8 bg-black/20 px-2 py-2">
+                <div>session</div>
+                <div className="mt-1 truncate font-mono text-[12px] normal-case tracking-normal text-sky-50">
+                  {relayBridge.relaySessionId ? relayBridge.relaySessionId.slice(0, 8) : 'none'}
+                </div>
+              </div>
+            </div>
+
+            {relayPairing && (
+              <div className="mt-3 space-y-2">
+                <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
+                  <button
+                    type="button"
+                    data-no-drag
+                    onClick={() => { void copyText(relayPairing.code); flashCopied('relay-code') }}
+                    className="rounded-lg border border-sky-300/18 bg-black/24 px-3 py-2 text-left font-mono text-[12px] text-sky-50 transition hover:border-sky-300/35"
+                  >
+                    {copiedKey === 'relay-code' ? 'copied ' : ''}{relayPairing.code}
+                  </button>
+                  <button
+                    type="button"
+                    data-no-drag
+                    onClick={() => { void copyText(relayPairingCommand); flashCopied('relay-command') }}
+                    className="rounded-lg border border-white/10 px-3 py-2 text-[11px] uppercase tracking-[0.16em] text-sky-50/78 transition hover:border-sky-300/30 hover:text-white"
+                  >
+                    {copiedKey === 'relay-command' ? 'copied' : 'copy process cmd'}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  data-no-drag
+                  onClick={() => { void copyText(relayPairingCommand); flashCopied('relay-command') }}
+                  className="w-full rounded-lg border border-sky-300/18 bg-black/24 px-3 py-2 text-left transition hover:border-sky-300/35"
+                >
+                  <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-100/62">
+                    run this on the machine with OpenClaw
+                  </span>
+                  <span className="mt-1 block break-all font-mono text-[11px] leading-5 text-sky-50/88">
+                    {relayPairingCommand}
+                  </span>
+                </button>
+              </div>
+            )}
+
+            {(relayBridge.lastError || relayPairingError) && (
+              <div className="mt-3 rounded-lg border border-rose-300/18 bg-rose-400/8 px-3 py-2 text-[11px] text-rose-50/80">
+                {relayPairingError || relayBridge.lastError}
+              </div>
+            )}
+          </div>
+
+          {!hostedMode && (
           <div className="grid gap-3 md:grid-cols-3">
             <div
               className="rounded-xl border px-3 py-3"
               style={{ borderColor: 'rgba(34,211,238,0.18)', background: 'rgba(2,12,18,0.38)' }}
             >
-              <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100">Communication bridge</span>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100">Local gateway</span>
               <div className="mt-2 flex flex-wrap gap-2">
                 <StatusBadge label={gatewayBadgeLabel} tone={gatewayClientTone} title={status.gatewayClient?.detail || transportLine} />
                 <StatusBadge label={status.gateway.reachable ? 'port 18789 up' : 'port 18789 down'} tone={gatewayTone} title={status.gateway.status ? `HTTP ${status.gateway.status}` : status.gateway.error} />
@@ -2837,11 +3150,11 @@ export function OpenclawPanel({
               style={{ borderColor: 'rgba(251,191,36,0.16)', background: 'rgba(36,24,4,0.32)' }}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-100">Remote bridge</span>
+                <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-100">SSH tunnel</span>
                 <StatusBadge label={sshBridgeLabel} tone={sshBridgeTone} />
               </div>
               <div className="mt-3 space-y-2 text-[11px] text-amber-50/68">
-                <div>Remote mode uses one SSH session: Gateway comms forward in, Oasis MCP forwards back.</div>
+                <div>This is only the SSH port tunnel. The OpenClaw bridge process is the Node command copied from Hosted relay.</div>
                 {remoteMode ? (
                   <button
                     data-no-drag
@@ -2852,12 +3165,13 @@ export function OpenclawPanel({
                   </button>
                 ) : (
                   <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2 text-amber-50/58">
-                    Add an SSH host alias above to generate the remote bridge command.
+                    Add an SSH host alias above to generate the SSH tunnel command.
                   </div>
                 )}
               </div>
             </div>
           </div>
+          )}
         </>
         )}
 

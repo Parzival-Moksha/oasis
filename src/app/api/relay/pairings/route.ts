@@ -5,9 +5,9 @@
  * browser session, target world, and scope set. The user displays the code
  * in their browser and pastes it into the OpenClaw bridge command.
  *
- * Body (all optional):
+ * Body:
  *   {
- *     worldId?: string,                 // defaults to '__active__'
+ *     worldId?: string,                 // local defaults to '__active__'; hosted requires explicit id
  *     scopes?: Scope[],                 // defaults to a safe baseline set
  *   }
  *
@@ -20,9 +20,10 @@
 import { NextRequest } from 'next/server'
 
 import { createPairingCode, PairingCodeError } from '@/lib/relay/pairing-codes'
+import { resolvePairingWorldId } from '@/lib/relay/pairing-world'
 import type { Scope } from '@/lib/relay/protocol'
 import { clientKeyFromRequest, consumeRateLimit } from '@/lib/relay/rate-limit'
-import { readBrowserSession } from '@/lib/session'
+import { getOasisMode, readBrowserSession } from '@/lib/session'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -87,9 +88,14 @@ export async function POST(request: NextRequest) {
   let body: CreatePairingBody
   try { body = await request.json() as CreatePairingBody } catch { body = {} }
 
-  const worldId = typeof body.worldId === 'string' && body.worldId.trim()
-    ? body.worldId.trim()
-    : '__active__'
+  const resolvedWorld = resolvePairingWorldId(body.worldId, getOasisMode())
+  if (!resolvedWorld.ok) {
+    return jsonResponse({
+      ok: false,
+      error: { code: resolvedWorld.code, message: resolvedWorld.message },
+    }, 400)
+  }
+  const worldId = resolvedWorld.worldId
 
   const requestedScopes: Scope[] = Array.isArray(body.scopes)
     ? body.scopes.filter((s): s is Scope => typeof s === 'string' && SCOPE_ALLOWLIST.includes(s as Scope))

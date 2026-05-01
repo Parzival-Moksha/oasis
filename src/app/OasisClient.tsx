@@ -9,6 +9,12 @@ import dynamic from 'next/dynamic'
 import { useOasisStore } from '@/store/oasisStore'
 import { registerStoreHandler } from '@/lib/event-bus'
 import { registerAudioSubscriber } from '@/lib/audio-manager'
+import {
+  DEFAULT_LOCAL_CAPABILITIES,
+  OasisModeProvider,
+  type ClientOasisCapabilities,
+  type ClientOasisMode,
+} from '@/lib/oasis-mode-client'
 
 const Scene = dynamic(() => import('@/components/Scene'), {
   ssr: false,
@@ -19,8 +25,11 @@ export default function OasisClient() {
   const worldReady = useOasisStore(s => s._worldReady)
   const viewingWorldMeta = useOasisStore(s => s.viewingWorldMeta)
   const [ready, setReady] = useState(false)
+  const [mode, setMode] = useState<ClientOasisMode>('local')
+  const [capabilities, setCapabilities] = useState<ClientOasisCapabilities>(DEFAULT_LOCAL_CAPABILITIES)
 
   useEffect(() => {
+    let cancelled = false
     // Register EventBus → oasisStore bridge
     // registerStoreHandler() handles its own dedup — safe to call on remount (HMR/StrictMode)
     const unregisterStore = registerStoreHandler()
@@ -31,8 +40,26 @@ export default function OasisClient() {
       window.history.replaceState({}, '', window.location.pathname)
     }
 
-    setReady(true)
-    return () => { unregisterStore(); unregisterAudio() }
+    fetch('/api/session/init', { credentials: 'same-origin', cache: 'no-store' })
+      .then(response => response.json().catch(() => null))
+      .then(json => {
+        if (cancelled) return
+        const nextMode = json?.mode === 'hosted' ? 'hosted' : 'local'
+        setMode(nextMode)
+        if (json?.capabilities && typeof json.capabilities === 'object') {
+          setCapabilities(json.capabilities)
+        }
+      })
+      .catch(() => null)
+      .finally(() => {
+        if (!cancelled) setReady(true)
+      })
+
+    return () => {
+      cancelled = true
+      unregisterStore()
+      unregisterAudio()
+    }
   }, [])
 
   if (!ready) {
@@ -42,6 +69,7 @@ export default function OasisClient() {
   const showLoading = !worldReady && !viewingWorldMeta
 
   return (
+    <OasisModeProvider mode={mode} capabilities={capabilities}>
     <main className="w-full h-screen bg-black">
       <Scene />
 
@@ -53,5 +81,6 @@ export default function OasisClient() {
         </div>
       )}
     </main>
+    </OasisModeProvider>
   )
 }

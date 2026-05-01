@@ -62,6 +62,7 @@ import { CameraController as CameraControllerComponent, sprintRef, FPS_KEYBOARD_
 import { useAudioManager, SOUND_OPTIONS, type SoundEvent } from '@/lib/audio-manager'
 import { writeBrowserStorage } from '@/lib/browser-storage'
 import { runLocalStorageAgentCacheMigration } from '@/lib/localstorage-agent-cache-migration'
+import { useIsHostedOasis, useOasisCapabilities } from '@/lib/oasis-mode-client'
 import { installTestHarness } from '@/lib/test-harness'
 import { useWorldEvents } from '@/hooks/useWorldEvents'
 import { AgentWindowPortals } from './forge/AgentWindowPortals'
@@ -1057,8 +1058,12 @@ function DevcraftMiniBar({ onExpand }: { onExpand: () => void }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function Scene() {
-  // Local mode: always admin, never anonymous. Auth is optional.
-  const isAdmin = true
+  const hostedMode = useIsHostedOasis()
+  const capabilities = useOasisCapabilities()
+  const isAdmin = capabilities.admin
+  const canUseAgentPanels = capabilities.canUseAgentPanels
+  const canUseLocalPanels = capabilities.canUseLocalPanels
+  const canUseFullWizard = capabilities.canUseFullWizard
   const [isDragging, setIsDragging] = useState(false)
   useWorldEvents()
 
@@ -1107,9 +1112,18 @@ export default function Scene() {
 
   const isViewMode = useOasisStore(s => s.isViewMode)
   const isViewModeEditable = useOasisStore(s => s.isViewModeEditable)
-  // Hide editing tools when viewing read-only worlds (but show for public_edit)
-  // Anonymous users NEVER get edit tools, even on public_edit worlds
-  const hideEditTools = (isViewMode && !isViewModeEditable) || settings.rp1Mode
+  const activeWorldId = useOasisStore(s => s.activeWorldId)
+  const worldRegistry = useOasisStore(s => s.worldRegistry)
+  const activeWorldMeta = worldRegistry.find(world => world.id === activeWorldId)
+  const activeWorldCanWrite = Boolean(activeWorldMeta?.canWrite || (isViewMode && isViewModeEditable))
+  const activeWorldWriteKnown = Boolean(activeWorldMeta) || isViewMode
+  // Hide mutation surfaces unless the active world explicitly says this session can write.
+  // Settings stays separate: camera/UI preferences are always available.
+  const hideEditTools = Boolean(
+    !activeWorldWriteKnown ||
+    (activeWorldWriteKnown && !activeWorldCanWrite) ||
+    settings.rp1Mode,
+  )
 
   // ─═̷─═̷─✨─═̷─═̷─{ WIZARD CONSOLE + ASSET EXPLORER STATE }─═̷─═̷─✨─═̷─═̷─
   const [wizardOpen, setWizardOpen] = useState(false)
@@ -1122,13 +1136,14 @@ export default function Scene() {
   const [anorakProOpen, setAnorakProOpen] = useState(false)
   const [devcraftOpen, setDevcraftOpen] = useState(false)
   const [hermesOpen, setHermesOpen] = useState(false)
-  const [openclawOpen, setOpenclawOpen] = useState(false)
+  const [openclawOpen, setOpenclawOpen] = useState(hostedMode)
   const [realtimeOpen, setRealtimeOpen] = useState(false)
   const [lipSyncLabOpen, setLipSyncLabOpen] = useState(false)
   const [parzivalOpen, setParzivalOpen] = useState(false)
   const [consoleOpen, setConsoleOpen] = useState(false)
 
   useEffect(() => {
+    if (hostedMode) return
     if (typeof window === 'undefined') return
     try {
       const key = 'oasis-help-first-opened'
@@ -1138,7 +1153,11 @@ export default function Scene() {
     } catch {
       // Ignore storage failures; the Help button remains available.
     }
-  }, [])
+  }, [hostedMode])
+
+  useEffect(() => {
+    if (hostedMode) setOpenclawOpen(true)
+  }, [hostedMode])
 
   // Panel toggle with sound
   const togglePanel = (setter: React.Dispatch<React.SetStateAction<boolean>>) => {
@@ -1273,8 +1292,8 @@ export default function Scene() {
 
       {/* ─═̷─═̷─🔮─═̷─═̷─ TOP-LEFT BUTTON BAR — Profile, Settings, Wizard, Action Log ─═̷─═̷─🔮─═̷─═̷─ */}
       <div className="fixed top-4 left-4 z-[200] flex items-start gap-2">
-        <RealmSelector placement="toolbar" />
-        <ProfileButton />
+        <RealmSelector placement="toolbar" hostedMode={hostedMode} />
+        {!hostedMode && <ProfileButton />}
         <SettingsGear>
           <SettingsContent />
         </SettingsGear>
@@ -1286,8 +1305,8 @@ export default function Scene() {
                 return !prev
               })
             }}
-            aria-label="Wizard Console"
-            data-oasis-tooltip="Wizard Console"
+            aria-label={hostedMode ? 'World Console' : 'Wizard Console'}
+            data-oasis-tooltip={hostedMode ? 'World Console' : 'Wizard Console'}
             className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
             style={{
               background: wizardOpen ? 'rgba(249,115,22,0.4)' : 'rgba(0,0,0,0.6)',
@@ -1299,13 +1318,13 @@ export default function Scene() {
             ✨
           </button>
         )}
-        {!hideEditTools && (
+        {canUseLocalPanels && !hideEditTools && (
           <ActionLogButton
             onClick={() => setActionLogOpen(prev => !prev)}
             isOpen={actionLogOpen}
           />
         )}
-        {!hideEditTools && (
+        {canUseAgentPanels && !hideEditTools && (
           <button
             onClick={() => togglePanel(setMerlinOpen)}
             aria-label="Merlin"
@@ -1321,7 +1340,7 @@ export default function Scene() {
             🧙
           </button>
         )}
-        {isAdmin && !hideEditTools && (
+        {canUseAgentPanels && !hideEditTools && (
           <button
             onClick={() => togglePanel(setClaudeCodeOpen)}
             aria-label="Claude Code"
@@ -1337,7 +1356,7 @@ export default function Scene() {
             💻
           </button>
         )}
-        {isAdmin && !hideEditTools && (
+        {canUseAgentPanels && !hideEditTools && (
           <button
             onClick={() => togglePanel(setCodexOpen)}
             aria-label="Codex"
@@ -1353,7 +1372,7 @@ export default function Scene() {
             ⌘
           </button>
         )}
-        {isAdmin && !hideEditTools && (
+        {canUseAgentPanels && !hideEditTools && (
           <button
             onClick={() => togglePanel(setAnorakProOpen)}
             aria-label="Anorak Pro"
@@ -1369,7 +1388,7 @@ export default function Scene() {
             🔮
           </button>
         )}
-        {!hideEditTools && <button
+        {canUseLocalPanels && !hideEditTools && <button
           onClick={() => togglePanel(setDevcraftOpen)}
           aria-label="DevCraft"
           data-oasis-tooltip="DevCraft"
@@ -1383,6 +1402,7 @@ export default function Scene() {
         >
           📅
         </button>}
+        {canUseLocalPanels && (
         <button
           onClick={() => togglePanel(setHermesOpen)}
           aria-label="Hermes"
@@ -1397,6 +1417,7 @@ export default function Scene() {
         >
           ☤
         </button>
+        )}
         <button
           onClick={() => togglePanel(setOpenclawOpen)}
           aria-label="OpenClaw"
@@ -1411,6 +1432,7 @@ export default function Scene() {
         >
           🦞
         </button>
+        {canUseLocalPanels && (
         <button
           onClick={() => togglePanel(setRealtimeOpen)}
           aria-label="Realtime"
@@ -1425,6 +1447,8 @@ export default function Scene() {
         >
           🗣️
         </button>
+        )}
+        {canUseLocalPanels && (
         <button
           onClick={() => togglePanel(setParzivalOpen)}
           aria-label="Parzival"
@@ -1439,7 +1463,8 @@ export default function Scene() {
         >
           🧿
         </button>
-        {isAdmin && <button
+        )}
+        {(isAdmin || canUseLocalPanels) && <button
           onClick={() => togglePanel(setConsoleOpen)}
           aria-label="Console"
           data-oasis-tooltip="Console"
@@ -1474,6 +1499,7 @@ export default function Scene() {
         <WizardConsole
           isOpen={wizardOpen}
           onClose={() => setWizardOpen(false)}
+          variant={canUseFullWizard ? 'local' : 'hosted'}
         />
       )}
 
@@ -1486,17 +1512,19 @@ export default function Scene() {
       )}
 
       {/* 📋 Mindcraft 3D — Mission Window (outside Canvas, bridged via Zustand) */}
-      <MindcraftMissionWindowBridge />
+      {canUseLocalPanels && <MindcraftMissionWindowBridge />}
 
       {/* ⏪ Action Log */}
-      <ActionLogPanel
-        isOpen={actionLogOpen}
-        onClose={() => setActionLogOpen(false)}
-      />
+      {canUseLocalPanels && (
+        <ActionLogPanel
+          isOpen={actionLogOpen}
+          onClose={() => setActionLogOpen(false)}
+        />
+      )}
 
 
       {/* 🧙 Merlin — AI World Builder — hidden in view mode */}
-      {!hideEditTools && (
+      {canUseAgentPanels && !hideEditTools && (
         <MerlinPanel
           isOpen={merlinOpen}
           onClose={() => setMerlinOpen(false)}
@@ -1504,20 +1532,20 @@ export default function Scene() {
       )}
 
       {/* 💻 Anorak — Claude Code Agent — admin only */}
-      {isAdmin && (
+      {canUseAgentPanels && (
         <AnorakPanel
           isOpen={claudeCodeOpen}
           onClose={() => setClaudeCodeOpen(false)}
         />
       )}
       {/* 🔮 Anorak Pro — Autonomous dev pipeline — admin only */}
-      {isAdmin && (
+      {canUseAgentPanels && (
         <CodexPanel
           isOpen={codexOpen}
           onClose={() => setCodexOpen(false)}
         />
       )}
-      {isAdmin && (
+      {canUseAgentPanels && (
         <AnorakProPanel
           isOpen={anorakProOpen}
           onClose={() => setAnorakProOpen(false)}
@@ -1525,29 +1553,37 @@ export default function Scene() {
       )}
 
       {/* 🧿 Parzival — Autonomous Brain */}
-      <HermesPanel
-        isOpen={hermesOpen}
-        onClose={() => setHermesOpen(false)}
-      />
+      {canUseLocalPanels && (
+        <HermesPanel
+          isOpen={hermesOpen}
+          onClose={() => setHermesOpen(false)}
+        />
+      )}
       <OpenclawPanel
         isOpen={openclawOpen}
         onClose={() => setOpenclawOpen(false)}
       />
-      <RealtimePanel
-        isOpen={realtimeOpen}
-        onClose={() => setRealtimeOpen(false)}
-      />
-      <LipSyncLabPanel
-        isOpen={lipSyncLabOpen}
-        onClose={() => setLipSyncLabOpen(false)}
-      />
-      <ParzivalPanel
-        isOpen={parzivalOpen}
-        onClose={() => setParzivalOpen(false)}
-      />
+      {canUseLocalPanels && (
+        <RealtimePanel
+          isOpen={realtimeOpen}
+          onClose={() => setRealtimeOpen(false)}
+        />
+      )}
+      {canUseLocalPanels && (
+        <LipSyncLabPanel
+          isOpen={lipSyncLabOpen}
+          onClose={() => setLipSyncLabOpen(false)}
+        />
+      )}
+      {canUseLocalPanels && (
+        <ParzivalPanel
+          isOpen={parzivalOpen}
+          onClose={() => setParzivalOpen(false)}
+        />
+      )}
 
       {/* ⚡ DevCraft — Productivity Terminal */}
-      {devcraftOpen ? (
+      {canUseLocalPanels && (devcraftOpen ? (
         <div
           style={{
             position: 'fixed',
@@ -1564,12 +1600,12 @@ export default function Scene() {
         </div>
       ) : (
         <DevcraftMiniBar onExpand={() => setDevcraftOpen(true)} />
-      )}
+      ))}
 
       {/* 🔮 Feedback — disabled in local mode (legacy from b7_oasis SaaS) */}
 
       {/* 📡 Console — Live Server Logs — admin only */}
-      {isAdmin && (
+      {(isAdmin || canUseLocalPanels) && (
         <ConsolePanel
           isOpen={consoleOpen}
           onClose={() => setConsoleOpen(false)}
@@ -1617,7 +1653,7 @@ export default function Scene() {
       <AgentWindowPortals />
 
       {/* ░▒▓ IMAGE DROP ZONE — drag & drop images into the world ▓▒░ */}
-      <ImageDropZone />
+      {canUseLocalPanels && !hideEditTools && <ImageDropZone />}
 
       {/* OnboardingModal nuked — profile setup lives in ProfileButton */}
 
@@ -1915,7 +1951,7 @@ function OasisLoader() {
         borderRadius: '2px', overflow: 'hidden', flexShrink: 0,
       }}>
         <div style={{
-          width: `${progress}%`, height: '100%',
+          width: `${normalizedProgress}%`, height: '100%',
           background: 'linear-gradient(90deg, #A855F7, #06B6D4)',
           transition: 'width 0.3s ease',
           borderRadius: '2px',

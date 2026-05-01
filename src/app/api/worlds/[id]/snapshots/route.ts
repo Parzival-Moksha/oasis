@@ -10,10 +10,20 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextResponse } from 'next/server'
-import { getOasisUserId } from '@/lib/session'
-import { listSnapshots, restoreSnapshot, loadWorld } from '@/lib/forge/world-server'
+import { getRequiredOasisUserId } from '@/lib/session'
+import { createManualSnapshot, listSnapshots, restoreSnapshot } from '@/lib/forge/world-server'
+import { WorldAccessError } from '@/lib/forge/world-access'
 
 type RouteContext = { params: Promise<{ id: string }> }
+
+function errorResponse(err: unknown, label: string) {
+  const msg = err instanceof Error ? err.message : String(err)
+  console.error(`[Snapshots] ${label}:`, msg)
+  if (err instanceof WorldAccessError) {
+    return NextResponse.json({ error: msg, code: err.code }, { status: err.status })
+  }
+  return NextResponse.json({ error: msg }, { status: 500 })
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GET /api/worlds/[id]/snapshots — List all snapshots for a world
@@ -21,15 +31,16 @@ type RouteContext = { params: Promise<{ id: string }> }
 
 export async function GET(request: Request, context: RouteContext) {
   try {
-    const userId = await getOasisUserId(request)
+    const userId = getRequiredOasisUserId(request)
+    if (!userId) {
+      return NextResponse.json({ error: 'oasis_session cookie required' }, { status: 401 })
+    }
 
     const { id } = await context.params
     const snapshots = await listSnapshots(id, userId)
     return NextResponse.json(snapshots)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error('[Snapshots] GET error:', msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return errorResponse(err, 'GET error')
   }
 }
 
@@ -40,7 +51,10 @@ export async function GET(request: Request, context: RouteContext) {
 
 export async function POST(request: Request, context: RouteContext) {
   try {
-    const userId = await getOasisUserId(request)
+    const userId = getRequiredOasisUserId(request)
+    if (!userId) {
+      return NextResponse.json({ error: 'oasis_session cookie required' }, { status: 401 })
+    }
 
     const { id } = await context.params
     const { snapshotId } = await request.json() as { snapshotId: string }
@@ -56,9 +70,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     return NextResponse.json({ ok: true, restored: snapshotId })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error('[Snapshots] POST error:', msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return errorResponse(err, 'POST error')
   }
 }
 
@@ -68,35 +80,20 @@ export async function POST(request: Request, context: RouteContext) {
 
 export async function PUT(request: Request, context: RouteContext) {
   try {
-    const userId = await getOasisUserId(request)
+    const userId = getRequiredOasisUserId(request)
+    if (!userId) {
+      return NextResponse.json({ error: 'oasis_session cookie required' }, { status: 401 })
+    }
 
     const { id } = await context.params
 
-    // Load current world state
-    const worldState = await loadWorld(id, userId)
-    if (!worldState) {
+    const result = await createManualSnapshot(id, userId)
+    if (!result) {
       return NextResponse.json({ error: 'World not found' }, { status: 404 })
     }
 
-    const objectCount =
-      (worldState.conjuredAssetIds?.length || 0) +
-      (worldState.catalogPlacements?.length || 0) +
-      (worldState.craftedScenes?.length || 0)
-
-    const { prisma } = await import('@/lib/db')
-    await prisma.worldSnapshot.create({
-      data: {
-        worldId: id,
-        data: JSON.stringify(worldState),
-        objectCount,
-        source: 'manual',
-      },
-    })
-
-    return NextResponse.json({ ok: true, object_count: objectCount })
+    return NextResponse.json({ ok: true, object_count: result.objectCount })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error('[Snapshots] PUT error:', msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return errorResponse(err, 'PUT error')
   }
 }

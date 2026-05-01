@@ -1,12 +1,12 @@
 'use client'
 
 /**
- * /relay-test — DEV ONLY scratch page for proving the relay round trip end to
- * end with a real browser tab. Mount the relay bridge hook, watch its status,
- * and run `node scripts/openclaw-fake-bridge.mjs` against the running sidecar.
+ * /relay-test - DEV ONLY scratch page for proving the relay round trip end to
+ * end with a real browser tab. Mount the browser relay executor, watch its
+ * status, and run `node scripts/openclaw-oasis-bridge.mjs` against the sidecar.
  *
  * Also includes a "get pairing code" button that hits POST /api/relay/pairings
- * — useful for demoing the production flow (browser shows code → user pastes
+ * - useful for demoing the production flow (browser shows code, user pastes it
  *   into `node scripts/openclaw-oasis-bridge.mjs <code>`).
  *
  * TODO: gate this route behind OASIS_MODE !== 'hosted' before public deploy.
@@ -15,6 +15,7 @@
 import { useState } from 'react'
 
 import { useOpenclawRelayBridge } from '@/hooks/useOpenclawRelayBridge'
+import { useOasisStore } from '@/store/oasisStore'
 
 const STATUS_COLOR: Record<string, string> = {
   idle:         '#888',
@@ -33,6 +34,7 @@ interface PairingResult {
 }
 
 export default function RelayTestPage() {
+  const activeWorldId = useOasisStore(state => state.activeWorldId)
   const [enabled, setEnabled] = useState(false)
   const [pairing, setPairing] = useState<PairingResult | null>(null)
   const [pairingError, setPairingError] = useState<string | null>(null)
@@ -40,7 +42,7 @@ export default function RelayTestPage() {
 
   const state = useOpenclawRelayBridge({
     enabled,
-    worldId: '__active__',
+    worldId: activeWorldId || '__active__',
   })
 
   async function requestPairing() {
@@ -53,7 +55,7 @@ export default function RelayTestPage() {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify(activeWorldId ? { worldId: activeWorldId } : {}),
       })
       const json = await response.json().catch(() => null) as
         | { ok: true; code: string; expiresAt: number; scopes: string[] }
@@ -81,15 +83,15 @@ export default function RelayTestPage() {
       background: '#111',
       minHeight: '100vh',
     }}>
-      <h1 style={{ fontSize: 18, marginBottom: 16 }}>relay bridge — dev probe</h1>
+      <h1 style={{ fontSize: 18, marginBottom: 16 }}>relay switchboard - dev probe</h1>
 
       <p style={{ opacity: 0.8, lineHeight: 1.6 }}>
         Toggle <code>enabled</code> to open a WSS connection to the dev sidecar
-        at <code>ws://localhost:4517/?role=browser</code>. Then run{' '}
-        <code>node scripts/openclaw-fake-bridge.mjs</code> in another terminal.
-        The bridge will send <code>tool.call get_world_info</code>; this page
-        will execute it via <code>/api/relay/execute</code> and reply with{' '}
-        <code>tool.result</code>. Counters below increment per call.
+        at <code>ws://localhost:4517/?role=browser</code>. Then run the
+        OpenClaw bridge process in another terminal. The process exposes a
+        local MCP adapter, sends <code>tool.call get_world_info</code> through
+        the relay switchboard, and this browser page executes it via{' '}
+        <code>/api/relay/execute</code>. Counters below increment per call.
       </p>
 
       <button
@@ -125,6 +127,9 @@ export default function RelayTestPage() {
         <dt style={{ opacity: 0.6 }}>relaySessionId</dt>
         <dd style={{ margin: 0 }}>{state.relaySessionId ?? '—'}</dd>
 
+        <dt style={{ opacity: 0.6 }}>worldId</dt>
+        <dd style={{ margin: 0 }}>{activeWorldId || '—'}</dd>
+
         <dt style={{ opacity: 0.6 }}>inFlightCalls</dt>
         <dd style={{ margin: 0 }}>{state.inFlightCalls}</dd>
 
@@ -144,10 +149,10 @@ export default function RelayTestPage() {
 
       <hr style={{ marginTop: 32, marginBottom: 24, border: 0, borderTop: '1px solid #333' }} />
 
-      <h2 style={{ fontSize: 14, marginBottom: 8 }}>pair an OpenClaw bridge</h2>
+      <h2 style={{ fontSize: 14, marginBottom: 8 }}>pair an OpenClaw bridge process</h2>
       <p style={{ opacity: 0.7, fontSize: 13, lineHeight: 1.6 }}>
         Mints a code via <code>POST /api/relay/pairings</code>. Use this on
-        production to demo the agent-side flow.
+        production to demo the OpenClaw-side process flow.
       </p>
 
       <button
@@ -192,7 +197,7 @@ export default function RelayTestPage() {
       <p style={{ marginTop: 32, fontSize: 12, opacity: 0.5 }}>
         sidecar log: terminal running <code>node scripts/openclaw-relay-dev.mjs</code> (or <code>openclaw-relay.mjs</code> for hosted)
         <br />
-        bridge log: terminal running <code>node scripts/openclaw-fake-bridge.mjs</code> or <code>openclaw-oasis-bridge.mjs</code>
+        bridge-process log: terminal running <code>node scripts/openclaw-oasis-bridge.mjs</code>
       </p>
     </main>
   )

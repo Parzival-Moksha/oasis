@@ -99,6 +99,18 @@ function summarizeToolInput(toolName: string, value: unknown, maxLength = 120): 
   return normalizedSummary === normalizedToolName ? '' : summary
 }
 
+function dedupeSessionsById(sessions: OpenclawCachedSessionSummary[]): OpenclawCachedSessionSummary[] {
+  const byId = new Map<string, OpenclawCachedSessionSummary>()
+  for (const session of sessions) {
+    if (!session.id) continue
+    const existing = byId.get(session.id)
+    if (!existing || session.updatedAt >= existing.updatedAt) {
+      byId.set(session.id, session)
+    }
+  }
+  return [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
 function humanizeSessionKey(sessionKey: string): string {
   if (!sessionKey) return 'OpenClaw session'
   const tail = sessionKey.split(':').pop() || sessionKey
@@ -355,9 +367,10 @@ async function listGatewaySessions(limit = 120): Promise<OpenclawCachedSessionSu
     await upsertOpenclawSessionSummary(session)
   }
 
+  gatewaySessions = dedupeSessionsById(gatewaySessions)
   const drafts = cachedSessions.filter(session => session.source === 'draft' && !gatewaySessions.some(entry => entry.id === session.id))
 
-  return [...gatewaySessions, ...drafts].sort((a, b) => b.updatedAt - a.updatedAt)
+  return dedupeSessionsById([...gatewaySessions, ...drafts])
 }
 
 export async function GET(request: NextRequest) {

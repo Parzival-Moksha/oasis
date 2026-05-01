@@ -192,9 +192,11 @@ describe('signing-key resolution', () => {
     originalEnv = {
       RELAY_SIGNING_KEY: process.env.RELAY_SIGNING_KEY,
       OASIS_MODE: process.env.OASIS_MODE,
+      OASIS_PROFILE: process.env.OASIS_PROFILE,
     }
     delete process.env.RELAY_SIGNING_KEY
     delete process.env.OASIS_MODE
+    delete process.env.OASIS_PROFILE
   })
 
   afterEach(() => {
@@ -213,6 +215,16 @@ describe('signing-key resolution', () => {
 
   it('refuses to issue tokens in hosted mode without RELAY_SIGNING_KEY', () => {
     process.env.OASIS_MODE = 'hosted'
+    expect(() => issueDeviceToken({
+      browserSessionId: 'bs',
+      worldId: 'w',
+      scopes: ['chat.stream'],
+      agentLabel: 'b',
+    })).toThrowError(/RELAY_SIGNING_KEY/)
+  })
+
+  it('refuses to issue tokens in hosted-openclaw profile without RELAY_SIGNING_KEY', () => {
+    process.env.OASIS_PROFILE = 'hosted-openclaw'
     expect(() => issueDeviceToken({
       browserSessionId: 'bs',
       worldId: 'w',

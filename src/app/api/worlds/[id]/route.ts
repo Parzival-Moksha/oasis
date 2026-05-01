@@ -11,16 +11,26 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextResponse } from 'next/server'
-import { getOasisUserId } from '@/lib/session'
+import { getOasisUserId, getRequiredOasisUserId } from '@/lib/session'
 import {
-  loadWorld, saveWorld, deleteWorld, getRegistry, updateObjectCount,
+  loadWorld, saveWorld, deleteWorld, getRegistry, updateWorldMetadata,
   type WorldState,
 } from '@/lib/forge/world-server'
+import { WorldAccessError } from '@/lib/forge/world-access'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+
+function errorResponse(err: unknown, label: string) {
+  const msg = err instanceof Error ? err.message : String(err)
+  console.error(`[Worlds] ${label}:`, msg)
+  if (err instanceof WorldAccessError) {
+    return NextResponse.json({ error: msg, code: err.code }, { status: err.status })
+  }
+  return NextResponse.json({ error: msg }, { status: 500 })
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GET /api/worlds/[id] — Load a single world's full state
@@ -41,9 +51,7 @@ export async function GET(request: Request, context: RouteContext) {
       },
     })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error('[Worlds] GET [id] error:', msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return errorResponse(err, 'GET [id] error')
   }
 }
 
@@ -54,27 +62,20 @@ export async function GET(request: Request, context: RouteContext) {
 
 export async function PUT(request: Request, context: RouteContext) {
   try {
-    const userId = await getOasisUserId(request)
+    const userId = getRequiredOasisUserId(request)
+    if (!userId) {
+      return NextResponse.json({ error: 'oasis_session cookie required' }, { status: 401 })
+    }
 
     const { id } = await context.params
     const body = await request.json()
 
     const state = body as Omit<WorldState, 'version' | 'savedAt'>
 
-    // Local mode: just save. No ownership drama.
-    await saveWorld(id, userId, state)
-
-    // Sync object count (fire-and-forget)
-    const objectCount = (state.conjuredAssetIds?.length || 0)
-      + (state.catalogPlacements?.length || 0)
-      + (state.craftedScenes?.length || 0)
-    updateObjectCount(id, userId, objectCount).catch(() => {})
-
-    return NextResponse.json({ ok: true, savedAt: new Date().toISOString() })
+    const result = await saveWorld(id, userId, state)
+    return NextResponse.json({ ok: true, ...result, savedAt: new Date().toISOString() })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error('[Worlds] PUT [id] error:', msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return errorResponse(err, 'PUT [id] error')
   }
 }
 
@@ -84,7 +85,10 @@ export async function PUT(request: Request, context: RouteContext) {
 
 export async function PATCH(request: Request, context: RouteContext) {
   try {
-    const userId = await getOasisUserId(request)
+    const userId = getRequiredOasisUserId(request)
+    if (!userId) {
+      return NextResponse.json({ error: 'oasis_session cookie required' }, { status: 401 })
+    }
 
     const { id } = await context.params
     const body = await request.json() as { name?: string; icon?: string }
@@ -97,17 +101,14 @@ export async function PATCH(request: Request, context: RouteContext) {
       return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
     }
 
-    const { prisma } = await import('@/lib/db')
-    await prisma.world.updateMany({
-      where: { id, userId: userId },
-      data: { ...updates, updatedAt: new Date() },
-    })
+    const ok = await updateWorldMetadata(id, userId, updates)
+    if (!ok) {
+      return NextResponse.json({ error: 'World not found' }, { status: 404 })
+    }
 
     return NextResponse.json({ ok: true, ...updates })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error('[Worlds] PATCH [id] error:', msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return errorResponse(err, 'PATCH [id] error')
   }
 }
 
@@ -117,7 +118,10 @@ export async function PATCH(request: Request, context: RouteContext) {
 
 export async function DELETE(request: Request, context: RouteContext) {
   try {
-    const userId = await getOasisUserId(request)
+    const userId = getRequiredOasisUserId(request)
+    if (!userId) {
+      return NextResponse.json({ error: 'oasis_session cookie required' }, { status: 401 })
+    }
 
     const { id } = await context.params
 
@@ -131,9 +135,7 @@ export async function DELETE(request: Request, context: RouteContext) {
 
     return NextResponse.json({ ok: true, deleted: id })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error('[Worlds] DELETE [id] error:', msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return errorResponse(err, 'DELETE [id] error')
   }
 }
 

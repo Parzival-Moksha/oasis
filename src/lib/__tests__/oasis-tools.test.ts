@@ -5,7 +5,7 @@
 //        clear_world, deliverScreenshot, isScreenshotPending
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MOCKS — must be declared before imports
@@ -25,13 +25,17 @@ vi.mock('../db', () => ({
 }))
 
 import { callTool, TOOL_NAMES, deliverScreenshot, getPendingScreenshotRequest, isScreenshotPending } from '../mcp/oasis-tools'
+import { subscribe } from '../mcp/world-events'
 import { prisma } from '../db'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════════════
 
-function makeWorldRow(state: Record<string, unknown> = {}) {
+const originalOasisMode = process.env.OASIS_MODE
+const originalOasisProfile = process.env.OASIS_PROFILE
+
+function makeWorldRow(state: Record<string, unknown> = {}, rowOverrides: Record<string, unknown> = {}) {
   const base = {
     version: 1,
     terrain: null,
@@ -59,11 +63,21 @@ function makeWorldRow(state: Record<string, unknown> = {}) {
     visitCount: 0,
     updatedAt: new Date(),
     createdAt: new Date(),
+    ...rowOverrides,
   }
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  delete process.env.OASIS_MODE
+  process.env.OASIS_PROFILE = 'local'
+})
+
+afterEach(() => {
+  if (originalOasisMode === undefined) delete process.env.OASIS_MODE
+  else process.env.OASIS_MODE = originalOasisMode
+  if (originalOasisProfile === undefined) delete process.env.OASIS_PROFILE
+  else process.env.OASIS_PROFILE = originalOasisProfile
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -285,6 +299,150 @@ describe('place_object', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 // 6. set_sky — requires presetId
 // ═══════════════════════════════════════════════════════════════════════════
+
+describe('context-aware hosted world tools', () => {
+  beforeEach(() => {
+    process.env.OASIS_PROFILE = 'hosted-openclaw'
+  })
+
+  it('rejects relay mutations that do not carry an explicit worldId', async () => {
+    const result = await callTool('place_object', { assetId: 'antenna1' }, {
+      source: 'relay',
+      userId: 'session-a',
+      agentType: 'openclaw',
+      requireExplicitWorld: true,
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('explicit worldId')
+    expect(result.data).toMatchObject({ code: 'tool_world_context_required', status: 400 })
+    expect(vi.mocked(prisma.world.findFirst)).not.toHaveBeenCalled()
+  })
+
+  it('rejects hosted relay writes to another user private world', async () => {
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(makeWorldRow({}, {
+      id: 'private-world',
+      userId: 'session-b',
+      visibility: 'private',
+    }))
+
+    const result = await callTool('place_object', { assetId: 'antenna1', worldId: 'private-world' }, {
+      source: 'relay',
+      userId: 'session-a',
+      agentType: 'openclaw',
+      worldId: 'private-world',
+      requireExplicitWorld: true,
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.data).toMatchObject({ code: 'world_write_forbidden' })
+    expect(vi.mocked(prisma.world.update)).not.toHaveBeenCalled()
+  })
+
+  it('allows hosted relay writes to FFA worlds by non-owners', async () => {
+    const world = makeWorldRow({}, {
+      id: 'ffa-world',
+      userId: 'session-b',
+      visibility: 'public_edit',
+    })
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+
+    const result = await callTool('place_object', { assetId: 'antenna1', worldId: 'ffa-world' }, {
+      source: 'relay',
+      userId: 'session-a',
+      agentType: 'openclaw',
+      worldId: 'ffa-world',
+      requireExplicitWorld: true,
+    })
+
+    expect(result.ok).toBe(true)
+    expect(vi.mocked(prisma.world.update).mock.calls[0]?.[0]?.where).toEqual({ id: 'ffa-world' })
+  })
+
+  it('forks template worlds before a hosted relay mutation', async () => {
+    const template = makeWorldRow({}, {
+      id: 'template-world',
+      userId: 'system',
+      name: 'Starter Template',
+      visibility: 'template',
+    })
+    const fork = makeWorldRow({}, {
+      id: 'fork-world',
+      userId: 'session-a',
+      name: 'Starter Template',
+      visibility: 'private',
+    })
+    vi.mocked(prisma.world.findFirst)
+      .mockResolvedValueOnce(template)
+      .mockResolvedValueOnce(fork)
+    vi.mocked(prisma.world.create).mockResolvedValue(fork)
+    vi.mocked(prisma.world.update).mockResolvedValue(fork)
+    const events: Array<{ type: string; worldId: string; data?: Record<string, unknown> }> = []
+    const unsubscribe = subscribe(event => events.push(event))
+
+    let result!: Awaited<ReturnType<typeof callTool>>
+    try {
+      result = await callTool('place_object', { assetId: 'antenna1', worldId: 'template-world' }, {
+        source: 'relay',
+        userId: 'session-a',
+        agentType: 'openclaw',
+        worldId: 'template-world',
+        requireExplicitWorld: true,
+      })
+    } finally {
+      unsubscribe()
+    }
+
+    expect(result.ok).toBe(true)
+    expect(vi.mocked(prisma.world.create).mock.calls[0]?.[0]?.data).toMatchObject({
+      userId: 'session-a',
+      name: 'Starter Template',
+      visibility: 'private',
+    })
+    expect(vi.mocked(prisma.world.update).mock.calls[0]?.[0]?.where).toEqual({ id: 'fork-world' })
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'world_switch',
+        worldId: 'template-world',
+        data: expect.objectContaining({
+          targetWorldId: 'fork-world',
+          forkedFromWorldId: 'template-world',
+          actorAgentType: 'openclaw',
+        }),
+      }),
+    ]))
+  })
+
+  it('filters hosted list_worlds to owned and discoverable worlds', async () => {
+    vi.mocked(prisma.world.findMany).mockResolvedValue([
+      makeWorldRow({}, { id: 'owned-private', userId: 'session-a', visibility: 'private' }),
+      makeWorldRow({}, { id: 'other-private', userId: 'session-b', visibility: 'private' }),
+      makeWorldRow({}, { id: 'welcome-core', userId: 'system', visibility: 'core' }),
+      makeWorldRow({}, { id: 'public-world', userId: 'session-b', visibility: 'public' }),
+      makeWorldRow({}, { id: 'link-only', userId: 'session-b', visibility: 'unlisted' }),
+    ])
+
+    const result = await callTool('list_worlds', {}, {
+      source: 'relay',
+      userId: 'session-a',
+      agentType: 'openclaw',
+    })
+
+    expect(result.ok).toBe(true)
+    expect((result.data as Array<{ id: string }>).map(world => world.id)).toEqual([
+      'owned-private',
+      'welcome-core',
+      'public-world',
+    ])
+    expect(vi.mocked(prisma.world.findMany).mock.calls[0]?.[0]?.where).toEqual({
+      OR: [
+        { userId: 'session-a' },
+        { visibility: { in: ['core', 'template', 'ffa', 'public_edit', 'public'] } },
+      ],
+    })
+  })
+})
 
 describe('set_sky', () => {
   it('returns error without presetId', async () => {

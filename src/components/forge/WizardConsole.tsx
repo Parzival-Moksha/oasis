@@ -923,10 +923,32 @@ function MediaTab({ cols, onRequestDelete }: { cols: number; onRequestDelete: (t
 interface WizardConsoleProps {
   isOpen: boolean
   onClose: () => void
+  variant?: 'local' | 'hosted'
 }
 
-export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
+type WizardMode = 'conjure' | 'craft' | 'world' | 'assets' | 'placed' | 'agents' | 'media' | 'settings'
+
+const WIZARD_TABS = [
+  { key: 'conjure', label: 'Conjure', icon: '✨', color: 'orange', title: 'Text-to-3D conjuring' },
+  { key: 'craft', label: 'Craft', icon: '⚒️', color: 'blue', title: 'LLM procedural geometry' },
+  { key: 'world', label: 'World', icon: '🌍', color: 'emerald', title: 'Sky, ground, terrain' },
+  { key: 'assets', label: 'Assets', icon: '📦', color: 'yellow', title: 'Pre-made 3D asset catalog' },
+  { key: 'placed', label: 'Placed', icon: '📍', color: 'cyan', title: 'All objects placed in this world' },
+  { key: 'agents', label: 'Agents', icon: '💻', color: 'purple', title: '3D agent windows in this world' },
+  { key: 'media', label: 'Media', icon: '🎬', color: 'pink', title: 'Images, videos, audio — upload & manage' },
+] as const satisfies ReadonlyArray<{
+  key: WizardMode
+  label: string
+  icon: string
+  color: 'orange' | 'blue' | 'emerald' | 'yellow' | 'cyan' | 'purple' | 'pink'
+  title: string
+}>
+
+const HOSTED_WIZARD_MODES = new Set<WizardMode>(['world', 'assets', 'placed', 'agents'])
+
+export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardConsoleProps) {
   useUILayer('wizard-console', isOpen)
+  const hostedVariant = variant === 'hosted'
   // ─═̷─ Position & size state — persisted to localStorage ─═̷─
   const [position, setPosition] = useState(() => {
     if (typeof window === 'undefined') return { x: 60, y: 80 }
@@ -970,12 +992,17 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
   }, [showTabLabels, size.width])
 
   // ─═̷─ Wizard state ─═̷─
-  const [mode, setMode] = useState<'conjure' | 'craft' | 'world' | 'assets' | 'placed' | 'agents' | 'media' | 'settings'>('conjure')
+  const [mode, setMode] = useState<WizardMode>(hostedVariant ? 'world' : 'conjure')
+  const visibleTabs = hostedVariant ? WIZARD_TABS.filter(tab => HOSTED_WIZARD_MODES.has(tab.key)) : WIZARD_TABS
   const [provider, setProvider] = useState<ProviderName>('meshy')
   const [tier, setTier] = useState(PROVIDERS[0].tiers[1]?.id || PROVIDERS[0].tiers[0].id)  // Default: textured (refine)
   const [prompt, setPrompt] = useState('')
   const [isCasting, setIsCasting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (hostedVariant && !HOSTED_WIZARD_MODES.has(mode)) setMode('world')
+  }, [hostedVariant, mode])
   // ░▒▓ Character pipeline — A-pose mode for riggable output ▓▒░
   const [characterMode, setCharacterMode] = useState(false)
   const [imageUrl, setImageUrl] = useState('')
@@ -1589,7 +1616,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
       >
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-lg">🧙‍♂️</span>
-          {size.width >= 520 && <span className="text-sm tracking-widest" style={{ color: forgeColor, fontFamily: "'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif", fontWeight: 700, fontVariant: 'small-caps', letterSpacing: '0.15em' }}>Wizard Console</span>}
+          {size.width >= 520 && <span className="text-sm tracking-widest" style={{ color: forgeColor, fontFamily: "'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif", fontWeight: 700, fontVariant: 'small-caps', letterSpacing: '0.15em' }}>{hostedVariant ? 'World Console' : 'Wizard Console'}</span>}
           {activeCount > 0 && (
             <span className="text-yellow-400 text-xs animate-pulse">&#9679; {activeCount}</span>
           )}
@@ -1598,15 +1625,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
         <div className="flex items-center gap-1 min-w-0 flex-1 ml-2 overflow-hidden">
           {/* ░▒▓ Adaptive tab strip — icons always, labels when there's room ▓▒░ */}
           <div ref={tabStripRef} className="flex items-center gap-1 overflow-x-auto min-w-0 flex-1 pb-0.5" style={{ scrollbarWidth: 'none' }}>
-            {([
-              { key: 'conjure', label: 'Conjure', icon: '✨', color: 'orange', title: 'Text-to-3D conjuring' },
-              { key: 'craft', label: 'Craft', icon: '⚒️', color: 'blue', title: 'LLM procedural geometry' },
-              { key: 'world', label: 'World', icon: '🌍', color: 'emerald', title: 'Sky, ground, terrain' },
-              { key: 'assets', label: 'Assets', icon: '📦', color: 'yellow', title: 'Pre-made 3D asset catalog' },
-              { key: 'placed', label: 'Placed', icon: '📍', color: 'cyan', title: 'All objects placed in this world' },
-              { key: 'agents', label: 'Agents', icon: '💻', color: 'purple', title: '3D agent windows in this world' },
-              { key: 'media', label: 'Media', icon: '🎬', color: 'pink', title: 'Images, videos, audio — upload & manage' },
-            ] as const).map(tab => (
+            {visibleTabs.map(tab => (
               <button
                 key={tab.key}
                 onClick={() => setMode(tab.key)}
@@ -1628,7 +1647,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
           </div>
           {/* ░▒▓ Fixed controls — NEVER shrink, always visible ▓▒░ */}
           <div className="flex items-center gap-1 flex-shrink-0">
-            <button
+            {!hostedVariant && <button
               onClick={() => setMode('settings')}
               className={`text-xs px-2 py-0.5 rounded transition-colors ${
                 mode === 'settings'
@@ -1638,7 +1657,7 @@ export function WizardConsole({ isOpen, onClose }: WizardConsoleProps) {
               title="VFX + Placement Settings"
             >
               &#9881;
-            </button>
+            </button>}
             <button
               onClick={onClose}
               className="text-gray-500 hover:text-white transition-colors text-lg leading-none ml-1"

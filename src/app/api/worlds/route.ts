@@ -9,7 +9,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextResponse } from 'next/server'
-import { getOasisUserId } from '@/lib/session'
+import { getRequiredOasisUserId } from '@/lib/session'
 import {
   getRegistry, createWorld, saveWorld,
   type WorldState,
@@ -21,7 +21,10 @@ import {
 
 export async function GET(request: Request) {
   try {
-    const userId = await getOasisUserId(request)
+    const userId = getRequiredOasisUserId(request)
+    if (!userId) {
+      return NextResponse.json({ error: 'oasis_session cookie required' }, { status: 401 })
+    }
 
     const registry = await getRegistry(userId)
     return NextResponse.json(registry)
@@ -41,7 +44,10 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const userId = await getOasisUserId(request)
+    const userId = getRequiredOasisUserId(request)
+    if (!userId) {
+      return NextResponse.json({ error: 'oasis_session cookie required' }, { status: 401 })
+    }
     const body = await request.json()
 
     // ░▒▓ Import path ▓▒░

@@ -27,11 +27,24 @@ const VISIBILITY_OPTIONS: { value: WorldVisibility; icon: string; label: string;
   { value: 'public', icon: '🌐', label: 'Public', desc: 'Read-only' },
   { value: 'public_edit', icon: '✏️', label: 'Open Build', desc: 'Anyone edits' },
 ]
-const VISIBILITY_ICONS: Record<WorldVisibility, string> = Object.fromEntries(
-  VISIBILITY_OPTIONS.map(o => [o.value, o.icon])
-) as Record<WorldVisibility, string>
+const VISIBILITY_ICONS: Record<WorldVisibility, string> = {
+  private: '🔒',
+  unlisted: '🔗',
+  'only-with-link': '🔗',
+  public: '🌐',
+  public_edit: '✏️',
+  ffa: '✏️',
+  core: '◆',
+  template: '📋',
+}
 
-export function RealmSelector({ placement = 'floating' }: { placement?: 'floating' | 'toolbar' }) {
+export function RealmSelector({
+  placement = 'floating',
+  hostedMode = false,
+}: {
+  placement?: 'floating' | 'toolbar'
+  hostedMode?: boolean
+}) {
   const [expanded, setExpanded] = useState(false)
   useUILayer('realm-selector', expanded)
   const [mounted, setMounted] = useState(false)
@@ -112,13 +125,23 @@ export function RealmSelector({ placement = 'floating' }: { placement?: 'floatin
     const current = visibilityMap[worldId] || 'private'
     setVisDropdownId(null)
     if (next === current) return
-    // Optimistic update
     setVisibilityMap(prev => ({ ...prev, [worldId]: next }))
-    // Visibility is local-only for now (no server sync needed)
-    if (next === 'public' || next === 'public_edit' || next === 'unlisted') {
-      completeQuest('share-world')
+    try {
+      const res = await fetch(`/api/worlds/${worldId}/visibility`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visibility: next }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      refreshWorldRegistry()
+      if (next === 'public' || next === 'public_edit' || next === 'ffa' || next === 'unlisted' || next === 'only-with-link') {
+        completeQuest('share-world')
+      }
+    } catch (err) {
+      console.error('[RealmSelector] Visibility update failed:', err)
+      setVisibilityMap(prev => ({ ...prev, [worldId]: current }))
     }
-  }, [visibilityMap])
+  }, [refreshWorldRegistry, visibilityMap])
 
   useEffect(() => setMounted(true), [])
 
@@ -261,13 +284,17 @@ export function RealmSelector({ placement = 'floating' }: { placement?: 'floatin
           {/* Explore link removed — local mode */}
 
           <div className="px-4 py-2">
-            <span className="text-[10px] text-gray-600 uppercase tracking-wider">Your Worlds</span>
+            <span className="text-[10px] text-gray-600 uppercase tracking-wider">{hostedMode ? 'Worlds' : 'Your Worlds'}</span>
           </div>
 
           {/* FORGE WORLDS from registry */}
           {worldRegistry.map(world => {
             const isActive = activeWorldId === world.id
-            const isRenaming = renamingId === world.id
+            const worldVisibility = visibilityMap[world.id] || world.visibility || 'private'
+            const isSystemWorld = worldVisibility === 'core' || worldVisibility === 'template'
+            const canEditSettings = world.canEditSettings ?? !isSystemWorld
+            const canWrite = world.canWrite ?? !isSystemWorld
+            const isRenaming = canEditSettings && renamingId === world.id
             return (
               <div key={world.id}>
               <div className="group flex items-center">
@@ -287,12 +314,17 @@ export function RealmSelector({ placement = 'floating' }: { placement?: 'floatin
                 ) : (
                   <button
                     onClick={() => { switchWorld(world.id); setExpanded(false) }}
-                    onDoubleClick={(e) => { e.stopPropagation(); setRenamingId(world.id); setRenameValue(world.name) }}
+                    onDoubleClick={(e) => {
+                      if (!canEditSettings) return
+                      e.stopPropagation()
+                      setRenamingId(world.id)
+                      setRenameValue(world.name)
+                    }}
                     className="flex-1 flex items-center gap-3 px-4 py-3 text-left transition-all duration-150 hover:bg-white/5"
                     style={{
                       borderLeft: isActive ? '3px solid #F97316' : '3px solid transparent',
                     }}
-                    title="Double-click to rename"
+                    title={!canWrite ? 'Read-only world' : canEditSettings ? 'Double-click to rename' : 'Open-build world'}
                   >
                     <span className="text-lg">{world.icon}</span>
                     <div className="flex-1 min-w-0">
@@ -309,6 +341,7 @@ export function RealmSelector({ placement = 'floating' }: { placement?: 'floatin
                   </button>
                 )}
                 {/* Rename button */}
+                {canEditSettings && (
                 <button
                   onClick={(e) => { e.stopPropagation(); setRenamingId(world.id); setRenameValue(world.name) }}
                   className="opacity-0 group-hover:opacity-70 hover:!opacity-100 px-1.5 py-1 text-xs transition-opacity"
@@ -316,7 +349,9 @@ export function RealmSelector({ placement = 'floating' }: { placement?: 'floatin
                 >
                   ✏️
                 </button>
+                )}
                 {/* Snapshots / Time Travel button */}
+                {canEditSettings && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
@@ -332,23 +367,28 @@ export function RealmSelector({ placement = 'floating' }: { placement?: 'floatin
                 >
                   ⏪
                 </button>
+                )}
                 {/* Visibility dropdown */}
                 <div className="relative">
                   <button
-                    onClick={(e) => { e.stopPropagation(); setVisDropdownId(visDropdownId === world.id ? null : world.id) }}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (!canEditSettings) return
+                      setVisDropdownId(visDropdownId === world.id ? null : world.id)
+                    }}
                     className="opacity-0 group-hover:opacity-70 hover:!opacity-100 px-1.5 py-1 text-xs transition-opacity"
-                    title={`${visibilityMap[world.id] || 'private'} — click to change`}
+                    title={!canEditSettings ? `${worldVisibility} read-only world` : `${worldVisibility} — click to change`}
                   >
-                    {VISIBILITY_ICONS[visibilityMap[world.id] || 'private']}
+                    {VISIBILITY_ICONS[worldVisibility]}
                   </button>
-                  {visDropdownId === world.id && (
+                  {visDropdownId === world.id && canEditSettings && (
                     <div
                       className="absolute right-0 top-full mt-1 z-50 rounded-lg overflow-hidden shadow-xl"
                       style={{ background: 'rgba(15,15,15,0.97)', border: '1px solid rgba(255,255,255,0.12)', minWidth: '160px' }}
                       onClick={e => e.stopPropagation()}
                     >
                       {VISIBILITY_OPTIONS.map(opt => {
-                        const isActive = (visibilityMap[world.id] || 'private') === opt.value
+                        const isActive = worldVisibility === opt.value
                         return (
                           <button
                             key={opt.value}
@@ -370,7 +410,7 @@ export function RealmSelector({ placement = 'floating' }: { placement?: 'floatin
                   )}
                 </div>
                 {/* Delete button (not for default world) */}
-                {worldRegistry.length > 1 && (
+                {worldRegistry.length > 1 && canEditSettings && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation()

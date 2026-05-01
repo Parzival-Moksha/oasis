@@ -6,9 +6,9 @@
  * the relay, posts them here, and forwards the response back as `tool.result`.
  *
  * Why a dedicated route instead of fanning out to existing endpoints:
- *   - one auth path  (TODO: hosted-mode browser session cookie verification)
+ *   - one auth path  (hosted-mode browser session cookie verification)
  *   - one log path   (every relay-driven tool execution flows through here)
- *   - one allowlist  (TODO: spellbook filter when OASIS_MODE === 'hosted')
+ *   - one allowlist  (spellbook filter when OASIS_MODE === 'hosted')
  *   - matches the spec: "browser bridge calls native Oasis world functions"
  *
  * Request body:
@@ -80,12 +80,15 @@ export async function POST(request: NextRequest) {
     }, 400)
   }
 
+  const mode = getOasisMode()
+  const session = readBrowserSession(request)
+
   // Hosted-mode gates: signed session cookie + spellbook allowlist.
   // Local mode skips both — local-dev callers (curl, the test page) need the
   // route to be friction-free. The relay sidecar enforces equivalent checks
   // at the WS layer when it's running in production.
-  if (getOasisMode() === 'hosted') {
-    if (!readBrowserSession(request)) {
+  if (mode === 'hosted') {
+    if (!session) {
       return jsonResponse({
         ok: false,
         error: { code: 'no_session', message: 'oasis_session cookie required in hosted mode' },
@@ -112,16 +115,15 @@ export async function POST(request: NextRequest) {
     ? body.agentType.trim().toLowerCase()
     : 'openclaw'
 
-  // TODO(hosted): when OASIS_MODE === 'hosted'
-  //   1. verify signed browser-session cookie owns the worldId
-  //   2. apply spellbook allowlist (publicAllowlist flag on each tool spec)
-  //   3. apply per-scope rate limit
-  // None of these are blocking for the local-dev round trip. They land with
-  // the OASIS_MODE wrapper + pairing route in the next sprint slice.
-
   try {
     const prepared = prepareOasisToolArgs(toolName, args, { worldId, agentType })
-    const result = await callTool(toolName, prepared)
+    const result = await callTool(toolName, prepared, {
+      source: 'relay',
+      userId: session?.browserSessionId,
+      worldId,
+      agentType,
+      requireExplicitWorld: mode === 'hosted',
+    })
     if (result.ok) {
       return jsonResponse({
         ok: true,

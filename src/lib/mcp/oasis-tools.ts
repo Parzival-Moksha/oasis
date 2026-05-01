@@ -10,6 +10,8 @@
 
 import 'server-only'
 
+import { AsyncLocalStorage } from 'node:async_hooks'
+
 import { prisma } from '../db'
 import { ASSET_CATALOG } from '@/components/scene-lib/constants'
 import type { WorldState } from '../forge/world-persistence'
@@ -27,6 +29,16 @@ import { readBrowserActiveWorldId } from '../browser-active-world'
 import { readBrowserAgentAvatarContext } from '../browser-agent-avatar-context'
 import { readBrowserPlayerContext } from '../browser-player-context'
 import { execMediaTool, type MediaToolName } from '../media-tools'
+import { getOasisMode, type OasisMode } from '../oasis-profile'
+import {
+  DISCOVERABLE_VISIBILITIES,
+  WorldAccessError,
+  canDiscoverWorld,
+  canReadWorld,
+  getWorldWriteDecision,
+  type WorldAccessContext,
+  type WorldAccessSubject,
+} from '../forge/world-access'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -98,6 +110,130 @@ function validBool(v: unknown, fallback = false): boolean {
     if (trimmed === 'false' || trimmed === '0' || trimmed === 'no') return false
   }
   return fallback
+}
+
+export interface OasisToolContext {
+  source?: 'local' | 'api' | 'relay' | 'mcp' | 'merlin' | 'smoke' | string
+  userId?: string
+  worldId?: string
+  agentType?: string
+  deviceId?: string
+  scopes?: string[]
+  requireExplicitWorld?: boolean
+  system?: boolean
+  admin?: boolean
+}
+
+interface ResolvedOasisToolContext {
+  source: string
+  userId: string
+  mode: OasisMode
+  worldId?: string
+  agentType?: string
+  deviceId?: string
+  scopes: string[]
+  requireExplicitWorld: boolean
+  mutating: boolean
+  system: boolean
+  admin: boolean
+  forkedWorldIds: Map<string, string>
+}
+
+type ToolWorldRow = {
+  id: string
+  userId?: string | null
+  name?: string | null
+  icon?: string | null
+  visibility?: string | null
+  data?: string | null
+  objectCount?: number | null
+  updatedAt?: Date
+  createdAt?: Date
+}
+
+const toolContextStorage = new AsyncLocalStorage<ResolvedOasisToolContext>()
+
+function cleanWorldId(value: unknown): string {
+  const worldId = validStr(value, '').trim()
+  return worldId && worldId !== '__active__' ? worldId : ''
+}
+
+function currentToolContext(): ResolvedOasisToolContext {
+  return toolContextStorage.getStore() || {
+    source: 'local',
+    userId: LOCAL_USER_ID,
+    mode: getOasisMode(),
+    scopes: [],
+    requireExplicitWorld: false,
+    mutating: false,
+    system: false,
+    admin: false,
+    forkedWorldIds: new Map(),
+  }
+}
+
+function resolveToolContext(
+  name: string,
+  args: Record<string, unknown>,
+  context: OasisToolContext = {},
+): ResolvedOasisToolContext {
+  const mode = getOasisMode()
+  const source = validStr(context.source, 'local')
+  const contextWorldId = cleanWorldId(context.worldId)
+  const argsWorldId = cleanWorldId(args.worldId)
+  const agentType = validStr(context.agentType || args.agentType || args.agent, '').trim().toLowerCase()
+  const userId = validStr(context.userId || args.userId, LOCAL_USER_ID).trim() || LOCAL_USER_ID
+  return {
+    source,
+    userId,
+    mode,
+    ...(contextWorldId || argsWorldId ? { worldId: contextWorldId || argsWorldId } : {}),
+    ...(agentType ? { agentType } : {}),
+    ...(validStr(context.deviceId, '') ? { deviceId: validStr(context.deviceId, '') } : {}),
+    scopes: Array.isArray(context.scopes) ? context.scopes.filter((scope): scope is string => typeof scope === 'string') : [],
+    requireExplicitWorld: context.requireExplicitWorld ?? (mode === 'hosted' && source === 'relay'),
+    mutating: MUTATING_TOOLS.has(name),
+    system: Boolean(context.system),
+    admin: Boolean(context.admin),
+    forkedWorldIds: new Map(),
+  }
+}
+
+function applyToolContextToArgs(
+  args: Record<string, unknown>,
+  context: ResolvedOasisToolContext,
+): Record<string, unknown> {
+  const next = { ...args }
+  if (context.worldId && !cleanWorldId(next.worldId)) {
+    next.worldId = context.worldId
+  }
+  if (context.agentType && !validStr(next.agentType || next.agent, '')) {
+    next.agentType = context.agentType
+  }
+  return next
+}
+
+function toolAccessContext(context = currentToolContext()): WorldAccessContext {
+  return {
+    userId: context.userId,
+    mode: context.mode,
+    system: context.system,
+    admin: context.admin,
+  }
+}
+
+function toToolAccessSubject(row: ToolWorldRow): WorldAccessSubject {
+  return {
+    id: row.id,
+    userId: row.userId || LOCAL_USER_ID,
+    visibility: row.visibility || 'private',
+  }
+}
+
+function countWorldObjects(state: Pick<WorldState, 'conjuredAssetIds' | 'catalogPlacements' | 'craftedScenes'>): number {
+  return (state.conjuredAssetIds?.length || 0) +
+    (state.catalogPlacements?.length || 0) +
+    (state.craftedScenes?.length || 0)
 }
 
 function parseLooseObjectArray(value: unknown): Record<string, unknown>[] {
@@ -339,51 +475,145 @@ async function withWorldLock<T>(worldId: string, fn: () => Promise<T>): Promise<
   }
 }
 
+async function forkToolTemplateWorld(
+  template: ToolWorldRow,
+  context: ResolvedOasisToolContext,
+): Promise<{ worldId: string; state: WorldState }> {
+  const existingForkId = context.forkedWorldIds.get(template.id)
+  if (existingForkId) {
+    return loadToolWorld(existingForkId, 'write')
+  }
+  if (!template.data) {
+    throw new Error(`World ${template.id} has no saved data.`)
+  }
+
+  const now = new Date()
+  const id = `world-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+  const state = normalizeState(JSON.parse(template.data) as WorldState)
+  const fork = await prisma.world.create({
+    data: {
+      id,
+      userId: context.userId,
+      name: template.name || 'Template World',
+      icon: template.icon || '🌍',
+      visibility: 'private',
+      data: JSON.stringify(state),
+      objectCount: countWorldObjects(state),
+      createdAt: now,
+      updatedAt: now,
+    },
+  })
+  const forkId = typeof fork?.id === 'string' ? fork.id : id
+  context.forkedWorldIds.set(template.id, forkId)
+  emitWorldEvent('world_switch', template.id, {
+    targetWorldId: forkId,
+    forkedFromWorldId: template.id,
+    ...(context.agentType ? { actorAgentType: context.agentType } : {}),
+  })
+  return { worldId: forkId, state }
+}
+
+async function loadToolWorld(
+  worldId: string,
+  intent: 'read' | 'write',
+  preloaded?: ToolWorldRow | null,
+): Promise<{ worldId: string; state: WorldState }> {
+  const context = currentToolContext()
+  const forkedWorldId = context.forkedWorldIds.get(worldId)
+  if (forkedWorldId && forkedWorldId !== worldId) {
+    return loadToolWorld(forkedWorldId, intent)
+  }
+
+  const world = preloaded || await prisma.world.findFirst({
+    where: { id: worldId },
+    select: { id: true, userId: true, name: true, icon: true, visibility: true, data: true },
+  })
+  if (!world?.data) {
+    throw new Error(`World ${worldId} not found.`)
+  }
+
+  const subject = toToolAccessSubject(world)
+  if (intent === 'write') {
+    const writeDecision = getWorldWriteDecision(toolAccessContext(context), subject)
+    if (writeDecision === 'deny') {
+      throw new WorldAccessError('This tool context cannot mutate that world', 'world_write_forbidden')
+    }
+    if (writeDecision === 'fork') {
+      return forkToolTemplateWorld(world, context)
+    }
+  } else if (!canReadWorld(toolAccessContext(context), subject)) {
+    throw new WorldAccessError('World not found or not visible to this tool context', 'world_not_visible', 404)
+  }
+
+  return { worldId: world.id, state: normalizeState(JSON.parse(world.data) as WorldState) }
+}
+
 async function loadActiveWorld(): Promise<{ worldId: string; state: WorldState }> {
+  const context = currentToolContext()
+  if ((context.mode === 'hosted' && !context.system && !context.admin) || context.requireExplicitWorld) {
+    throw new WorldAccessError(
+      'Hosted tool calls require an explicit worldId so agent actions cannot drift into the wrong Oasis.',
+      'tool_world_context_required',
+      400,
+    )
+  }
+
   const preferredWorldId = await readBrowserActiveWorldId()
   if (preferredWorldId) {
-    const preferredWorld = await prisma.world.findFirst({
-      where: { id: preferredWorldId },
-      select: { id: true, data: true },
-    })
-    if (preferredWorld?.data) {
-      return { worldId: preferredWorld.id, state: normalizeState(JSON.parse(preferredWorld.data) as WorldState) }
+    try {
+      return await loadToolWorld(preferredWorldId, context.mutating ? 'write' : 'read')
+    } catch (error) {
+      if (error instanceof WorldAccessError) throw error
+      // Browser context can outlive a deleted world; fall back to latest local row.
     }
   }
 
   // Fallback: find most recently updated world for local-user
   const world = await prisma.world.findFirst({
     orderBy: { updatedAt: 'desc' },
-    select: { id: true, data: true },
+    select: { id: true, userId: true, name: true, icon: true, visibility: true, data: true },
   })
   if (!world?.data) {
     throw new Error('No world found. Create one first.')
   }
-  return { worldId: world.id, state: normalizeState(JSON.parse(world.data) as WorldState) }
+  return loadToolWorld(world.id, context.mutating ? 'write' : 'read', world)
 }
 
 async function loadRequestedWorld(worldIdLike: unknown): Promise<{ worldId: string; state: WorldState }> {
-  const worldId = validStr(worldIdLike, '')
+  const context = currentToolContext()
+  const worldId = cleanWorldId(worldIdLike) || context.worldId || ''
   if (!worldId) return loadActiveWorld()
-  return { worldId, state: await loadWorldById(worldId) }
+  return loadToolWorld(worldId, context.mutating ? 'write' : 'read')
 }
 
 async function loadWorldById(worldId: string): Promise<WorldState> {
-  const world = await prisma.world.findFirst({
-    where: { id: worldId },
-    select: { data: true },
-  })
-  if (!world?.data) throw new Error(`World ${worldId} not found.`)
-  return normalizeState(JSON.parse(world.data) as WorldState)
+  return (await loadToolWorld(worldId, currentToolContext().mutating ? 'write' : 'read')).state
 }
 
 async function saveWorldState(worldId: string, state: WorldState): Promise<void> {
   const normalized = normalizeWorldStateAgentAvatarTransforms(state)
   Object.assign(state, normalized)
   state.savedAt = new Date().toISOString()
+  const context = currentToolContext()
+  const target = await prisma.world.findFirst({
+    where: { id: worldId },
+    select: { id: true, userId: true, visibility: true },
+  })
+  if (!target) {
+    throw new WorldAccessError('World not found', 'world_not_found', 404)
+  }
+
+  const writeDecision = getWorldWriteDecision(toolAccessContext(context), toToolAccessSubject(target))
+  if (writeDecision === 'deny') {
+    throw new WorldAccessError('This tool context cannot mutate that world', 'world_write_forbidden')
+  }
+  if (writeDecision === 'fork') {
+    throw new WorldAccessError('Template worlds must be forked before tool writes are saved', 'world_template_fork_required', 409)
+  }
+
   await prisma.world.update({
     where: { id: worldId },
-    data: { data: JSON.stringify(state), updatedAt: new Date() },
+    data: { data: JSON.stringify(state), objectCount: countWorldObjects(state), updatedAt: new Date() },
   })
 }
 
@@ -1713,17 +1943,29 @@ tools.clear_world = async (args) => {
 // ─═̷─═̷─ WORLD MANAGEMENT ─═̷─═̷─
 
 tools.list_worlds = async () => {
+  const context = currentToolContext()
+  const access = toolAccessContext(context)
   const worlds = await prisma.world.findMany({
-    select: { id: true, name: true, icon: true, objectCount: true, updatedAt: true },
+    select: { id: true, userId: true, name: true, icon: true, visibility: true, objectCount: true, updatedAt: true },
+    where: context.mode === 'hosted' && !context.system && !context.admin
+      ? {
+          OR: [
+            { userId: context.userId },
+            { visibility: { in: DISCOVERABLE_VISIBILITIES } },
+          ],
+        }
+      : undefined,
     orderBy: { updatedAt: 'desc' },
   })
+  const visibleWorlds = worlds.filter(world => canDiscoverWorld(access, toToolAccessSubject(world)))
   return {
     ok: true,
-    message: `${worlds.length} worlds.`,
-    data: worlds.map((w: { id: string; name: string; icon: string; objectCount: number; updatedAt: Date }) => ({
+    message: `${visibleWorlds.length} worlds.`,
+    data: visibleWorlds.map(w => ({
       id: w.id,
       name: w.name,
       icon: w.icon,
+      visibility: w.visibility,
       objectCount: w.objectCount,
       lastSaved: w.updatedAt.toISOString(),
     })),
@@ -1739,6 +1981,7 @@ tools.load_world = async (args) => {
 }
 
 tools.create_world = async (args) => {
+  const context = currentToolContext()
   const name = validStr(args.name, 'New World')
   const icon = validStr(args.icon, '🌍')
   const id = `world-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -1750,7 +1993,7 @@ tools.create_world = async (args) => {
   }
 
   await prisma.world.create({
-    data: { id, userId: LOCAL_USER_ID, name, icon, data: JSON.stringify(emptyState), createdAt: now, updatedAt: now },
+    data: { id, userId: context.userId, name, icon, visibility: 'private', data: JSON.stringify(emptyState), createdAt: now, updatedAt: now },
   })
 
   emitWorldEvent('world_switch', id, { targetWorldId: id, ...mutationActorData(args) })
@@ -2724,26 +2967,44 @@ const MUTATING_TOOLS = new Set([
   'set_sky', 'set_ground_preset', 'paint_ground_tiles', 'add_light',
   'modify_light', 'set_behavior', 'set_avatar', 'walk_avatar_to',
   'play_avatar_animation', 'clear_world',
+  'create_world',
   'conjure_asset', 'process_conjured_asset', 'place_conjured_asset', 'delete_conjured_asset',
   'conjure_framed_picture', 'place_media',
 ])
 
-export async function callTool(name: string, args: Record<string, unknown>): Promise<ToolResult> {
+export async function callTool(
+  name: string,
+  args: Record<string, unknown>,
+  context: OasisToolContext = {},
+): Promise<ToolResult> {
   const handler = tools[name]
   if (!handler) {
     return { ok: false, message: `Unknown tool: ${name}. Available: ${TOOL_NAMES.join(', ')}` }
   }
+  const resolvedContext = resolveToolContext(name, args, context)
+  const effectiveArgs = applyToolContextToArgs(args, resolvedContext)
   try {
-    // Serialize mutating operations on the active world to prevent lost-update races
-    if (MUTATING_TOOLS.has(name)) {
-      // Resolve worldId for locking (all mutating tools use the active world)
-      const worldId = validStr(args.worldId, '__active__')
-      return await withWorldLock(worldId, () => handler(args))
-    }
-    return await handler(args)
+    return await toolContextStorage.run(resolvedContext, async () => {
+      // Serialize mutating operations on the intended world to prevent lost-update races.
+      if (resolvedContext.mutating) {
+        const worldId = cleanWorldId(effectiveArgs.worldId) || resolvedContext.worldId || '__active__'
+        return withWorldLock(worldId, () => handler(effectiveArgs))
+      }
+      return handler(effectiveArgs)
+    })
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
     console.error(`[OasisTools] ${name} failed:`, msg)
+    if (error instanceof WorldAccessError) {
+      return {
+        ok: false,
+        message: msg,
+        data: {
+          code: error.code,
+          status: error.status,
+        },
+      }
+    }
     return { ok: false, message: `Tool ${name} failed: ${msg}` }
   }
 }

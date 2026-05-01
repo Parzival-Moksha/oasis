@@ -1,13 +1,9 @@
 /**
- * Browser session helpers — the Next-side counterpart to `lib/relay/auth.ts`.
+ * Browser session helpers, the Next-side counterpart to `lib/relay/auth.ts`.
  *
- * In hosted mode (`OASIS_MODE=hosted`), every browser tab carries a signed
- * `oasis_session` cookie minted by the middleware on first visit. Relay
- * routes verify it to know which tab is making a request.
- *
- * In local mode, cookies are still minted (cheap, useful for the dev relay
- * smoke test) but world ownership and `getLocalUserId()` continue to return
- * `'local-user'` — we are not multi-tenanting world storage in v1.
+ * Hosted OpenClaw mode gives every browser tab a signed `oasis_session`
+ * cookie. Local mode still mints cookies for relay smoke tests, but route
+ * ownership stays on the single local user.
  */
 
 import type { NextRequest } from 'next/server'
@@ -17,37 +13,52 @@ import {
   signSessionCookie,
   verifySessionCookie,
 } from './relay/auth'
-
-// ────────────────────────────────────────────────────────────────────────────
-// Constants
-// ────────────────────────────────────────────────────────────────────────────
+import {
+  getAdminUserId,
+  isAdminAuthConfigured,
+  readAdminSession,
+} from './admin-auth'
+import {
+  getOasisMode,
+  getOasisProfile,
+  isHostedOasis,
+  type OasisMode,
+  type OasisProfile,
+} from './oasis-profile'
 
 export const SESSION_COOKIE_NAME = 'oasis_session'
 export const SESSION_COOKIE_MAX_AGE_S = 60 * 60 * 24 * 365 // one year
+export const HOSTED_ANONYMOUS_USER_ID = 'hosted-anonymous'
 
-export type OasisMode = 'local' | 'hosted'
-
-export function getOasisMode(): OasisMode {
-  return process.env.OASIS_MODE === 'hosted' ? 'hosted' : 'local'
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// Verified session
-// ────────────────────────────────────────────────────────────────────────────
+export { getOasisMode, getOasisProfile, isHostedOasis }
+export type { OasisMode, OasisProfile }
 
 export interface VerifiedBrowserSession {
   browserSessionId: string
+}
+
+export type OasisRole = 'local' | 'hosted-user' | 'hosted-admin'
+
+export interface OasisCapabilities {
+  mode: OasisMode
+  profile: OasisProfile
+  role: OasisRole
+  admin: boolean
+  adminConfigured: boolean
+  canSeeSettings: boolean
+  canUseAdminPanels: boolean
+  canUseAgentPanels: boolean
+  canUseLocalPanels: boolean
+  canUseFullWizard: boolean
 }
 
 /**
  * Parse a Cookie header (RFC 6265 shape: "a=1; b=2") and verify the embedded
  * `oasis_session` value. Returns null on absence or invalid signature.
  *
- * If the header contains MULTIPLE `oasis_session` cookies (a sign of injection
- * or a misconfigured proxy), we honor the LAST one — that mirrors what most
- * browsers do when they re-issue a cookie at a more specific path. Returning
- * null on duplicates would also be defensible; last-match keeps things working
- * during a cookie rotation.
+ * If the header contains multiple `oasis_session` cookies, honor the last one.
+ * That mirrors how browsers re-issue a cookie at a more specific path and keeps
+ * cookie rotation forgiving.
  */
 export function readBrowserSessionFromCookieHeader(
   cookieHeader: string | null | undefined,
@@ -63,7 +74,11 @@ export function readBrowserSessionFromCookieHeader(
   }
   if (!lastValue) return null
   let value: string
-  try { value = decodeURIComponent(lastValue) } catch { return null }
+  try {
+    value = decodeURIComponent(lastValue)
+  } catch {
+    return null
+  }
   try {
     const payload = verifySessionCookie(value)
     return { browserSessionId: payload.bs }
@@ -79,35 +94,54 @@ export function readBrowserSession(
   return readBrowserSessionFromCookieHeader(request.headers.get('cookie'))
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Mode-aware user id — the canonical identity helper for routes
-// ────────────────────────────────────────────────────────────────────────────
-
-/**
- * Returns the user id to scope DB queries against.
- *
- *   - `OASIS_MODE !== 'hosted'`:   always `'local-user'` (preserves local behavior).
- *   - `OASIS_MODE === 'hosted'`:   the verified browserSessionId from the cookie.
- *                                   Falls back to `'local-user'` only if the cookie
- *                                   is missing or invalid — middleware-equivalent
- *                                   `/api/session/init` is supposed to mint one
- *                                   on first visit, so the fallback is a defense
- *                                   in depth, not a normal path.
- *
- * Use this in every API route that reads/writes per-user data (worlds,
- * profile, XP, conjured assets, etc.). For lib helpers that already accept
- * an explicit `userId` parameter, prefer threading the result of this
- * function through, rather than letting the lib fall back internally.
- */
-export async function getOasisUserId(request: Request | NextRequest): Promise<string> {
-  if (getOasisMode() !== 'hosted') return 'local-user'
-  const session = readBrowserSession(request)
-  return session?.browserSessionId ?? 'local-user'
+export function isOasisAdmin(request: Request | NextRequest): boolean {
+  return isHostedOasis() && Boolean(readAdminSession(request))
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Cookie minting
-// ────────────────────────────────────────────────────────────────────────────
+export function getOasisCapabilities(request?: Request | NextRequest): OasisCapabilities {
+  const mode = getOasisMode()
+  const profile = getOasisProfile()
+  const admin = Boolean(request && isOasisAdmin(request))
+  const local = mode === 'local'
+  const role: OasisRole = local ? 'local' : admin ? 'hosted-admin' : 'hosted-user'
+  return {
+    mode,
+    profile,
+    role,
+    admin,
+    adminConfigured: isAdminAuthConfigured(),
+    canSeeSettings: true,
+    canUseAdminPanels: admin,
+    canUseAgentPanels: local || admin,
+    canUseLocalPanels: local || admin,
+    canUseFullWizard: local || admin,
+  }
+}
+
+/**
+ * Return the user id to scope DB queries against.
+ *
+ * Local mode always resolves to `local-user`. Hosted mode resolves to the
+ * verified browser session id and falls back to a non-owner anonymous identity
+ * if the cookie is missing or invalid. Hosted routes that mutate user-owned
+ * state should use `getRequiredOasisUserId` instead.
+ */
+export async function getOasisUserId(request: Request | NextRequest): Promise<string> {
+  if (!isHostedOasis()) return 'local-user'
+  if (isOasisAdmin(request)) return getAdminUserId()
+  const session = readBrowserSession(request)
+  return session?.browserSessionId ?? HOSTED_ANONYMOUS_USER_ID
+}
+
+/**
+ * Return a route-scoped user id only when hosted identity is actually present.
+ * Local mode remains the single-user cloneable app.
+ */
+export function getRequiredOasisUserId(request: Request | NextRequest): string | null {
+  if (!isHostedOasis()) return 'local-user'
+  if (isOasisAdmin(request)) return getAdminUserId()
+  return readBrowserSession(request)?.browserSessionId ?? null
+}
 
 export interface MintedSessionCookie {
   browserSessionId: string

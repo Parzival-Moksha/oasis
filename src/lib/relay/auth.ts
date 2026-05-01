@@ -19,6 +19,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 
 import type { Scope } from './protocol'
+import { isHostedOasis } from '../oasis-profile'
 
 // ────────────────────────────────────────────────────────────────────────────
 // Key resolution
@@ -46,9 +47,9 @@ export function getSigningKey(): string {
   const fromEnv = process.env.RELAY_SIGNING_KEY
   if (fromEnv && fromEnv.length > 0) return fromEnv
 
-  if (process.env.OASIS_MODE === 'hosted') {
+  if (isHostedOasis()) {
     throw new RelayAuthError(
-      'RELAY_SIGNING_KEY env var is required when OASIS_MODE=hosted',
+      'RELAY_SIGNING_KEY env var is required in hosted Oasis mode',
       'missing_signing_key',
     )
   }

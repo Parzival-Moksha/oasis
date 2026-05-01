@@ -19,7 +19,7 @@
  * Handshake:
  *   1. Open WS → server emits event "connect.challenge" { nonce, ts }
  *   2. Client signs v3 payload with Ed25519 priv key.
- *   3. Client sends `connect` req { minProtocol, maxProtocol, client, identity, signature, ... }.
+ *   3. Client sends `connect` req { minProtocol, maxProtocol, client, auth, device, ... }.
  *   4. Server returns hello-ok with auth.deviceToken (cached by us for fast reconnect).
  */
 
@@ -33,6 +33,7 @@ import {
 } from 'node:crypto'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import path from 'node:path'
+import { homedir } from 'node:os'
 
 // ────────────────────────────────────────────────────────────────────────────
 // Constants — mirror src/lib/openclaw-gateway-client.ts
@@ -90,6 +91,18 @@ function signV3(privateKey, payload) {
   const content = buildV3SignedContent(payload)
   const signature = cryptoSign(null, Buffer.from(content, 'utf8'), privateKey)
   return signature.toString('base64url')
+}
+
+async function readGatewaySharedToken() {
+  const configPath = process.env.OPENCLAW_CONFIG_PATH || path.join(homedir(), '.openclaw', 'openclaw.json')
+  try {
+    const raw = await readFile(configPath, 'utf8')
+    const parsed = JSON.parse(raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw)
+    const token = parsed?.gateway?.auth?.token
+    return typeof token === 'string' ? token.trim() : ''
+  } catch {
+    return ''
+  }
 }
 
 /**
@@ -224,6 +237,7 @@ export class GatewayClient {
     const privateKey = loadPrivateKey(this.identity)
     const signedAtMs = Date.now()
     // Server signatureToken precedence: sharedToken ?? deviceToken ?? '' — must mirror.
+    if (!this.sharedToken) this.sharedToken = await readGatewaySharedToken()
     const signatureToken = this.sharedToken || this.deviceToken || ''
     const signature = signV3(privateKey, {
       deviceId: this.identity.id,
@@ -242,15 +256,26 @@ export class GatewayClient {
       const result = await this._sendRequest('connect', {
         minProtocol: PROTOCOL_VERSION,
         maxProtocol: PROTOCOL_VERSION,
-        client: { id: CLIENT_ID, mode: CLIENT_MODE },
-        identity: { deviceId: this.identity.id, publicKey: this.identity.publicKey },
+        client: {
+          id: CLIENT_ID,
+          mode: CLIENT_MODE,
+          version: 'oasis-bridge-0.3.0',
+          platform: process.platform,
+          deviceFamily: DEVICE_FAMILY,
+        },
         role: DEFAULT_ROLE,
         scopes: DEFAULT_SCOPES,
-        signedAtMs,
-        signature,
-        token: signatureToken,
-        platform: process.platform,
-        deviceFamily: DEVICE_FAMILY,
+        auth: {
+          ...(this.deviceToken ? { deviceToken: this.deviceToken } : {}),
+          ...(this.sharedToken ? { token: this.sharedToken } : {}),
+        },
+        device: {
+          id: this.identity.id,
+          publicKey: this.identity.publicKey,
+          signature,
+          signedAt: signedAtMs,
+          nonce,
+        },
       })
 
       // Server response shape: { type:'hello-ok', auth:{ deviceToken, ... }, ... }

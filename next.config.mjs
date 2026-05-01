@@ -46,16 +46,29 @@ const nextConfig = {
 
   // ─═̷─═̷─🔒─═̷─═̷─ Security headers ─═̷─═̷─🔒─═̷─═̷─
   async headers() {
-    return [{
-      source: '/:path*',
-      headers: [
-        { key: 'X-Frame-Options', value: 'DENY' },
-        { key: 'X-Content-Type-Options', value: 'nosniff' },
-        { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-        // Allow first-party mic/camera features on Oasis itself while keeping geolocation off.
-        { key: 'Permissions-Policy', value: 'camera=(self), microphone=(self), geolocation=()' },
-      ],
-    }]
+    const securityHeaders = [
+      { key: 'X-Frame-Options', value: 'DENY' },
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+      // Allow first-party mic/camera features on Oasis itself while keeping geolocation off.
+      { key: 'Permissions-Policy', value: 'camera=(self), microphone=(self), geolocation=()' },
+    ]
+    const immutableAssetHeaders = [
+      { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+      ...securityHeaders,
+    ]
+    return [
+      { source: '/models/:path*', headers: immutableAssetHeaders },
+      { source: '/avatars/:path*', headers: immutableAssetHeaders },
+      { source: '/ground/:path*', headers: immutableAssetHeaders },
+      { source: '/hdri/:path*', headers: immutableAssetHeaders },
+      { source: '/textures/:path*', headers: immutableAssetHeaders },
+      { source: '/thumbs/:path*', headers: immutableAssetHeaders },
+      {
+        source: '/:path*',
+        headers: securityHeaders,
+      },
+    ]
   },
 }
 

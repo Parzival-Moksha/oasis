@@ -10,6 +10,23 @@
 
 import { prisma } from '../db'
 import { normalizeWorldStateAgentAvatarTransforms } from '../agent-avatar-world-state'
+import { getOasisMode } from '../oasis-profile'
+import { isAdminUserId } from '../admin-auth'
+import {
+  DISCOVERABLE_VISIBILITIES,
+  FFA_VISIBILITIES,
+  PUBLICLY_READABLE_VISIBILITIES,
+  WorldAccessError,
+  assertCanEditWorldSettings,
+  canDiscoverWorld,
+  canEditWorldSettings,
+  canReadWorld,
+  getWorldWriteDecision,
+  normalizeWorldKind,
+  toStorageVisibility,
+  type WorldAccessContext,
+  type WorldAccessSubject,
+} from './world-access'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -26,6 +43,14 @@ export interface SnapshotMeta {
   created_at: string
 }
 
+export interface SaveWorldResult {
+  saved: boolean
+  conflict?: boolean
+  serverUpdatedAt?: string
+  worldId?: string
+  forkedFromWorldId?: string
+}
+
 const MAX_SNAPSHOTS_PER_WORLD = 20
 const SNAPSHOT_THROTTLE_MS = 5 * 60 * 1000
 
@@ -33,48 +58,93 @@ function normalizeSavedWorldState(state: WorldState): WorldState {
   return normalizeWorldStateAgentAvatarTransforms(state)
 }
 
+function accessContext(userId?: string): WorldAccessContext {
+  const resolvedUserId = userId || 'local-user'
+  return {
+    userId: resolvedUserId,
+    mode: getOasisMode(),
+    admin: isAdminUserId(resolvedUserId),
+  }
+}
+
+function toAccessSubject(row: WorldAccessSubject): WorldAccessSubject {
+  return {
+    id: row.id,
+    userId: row.userId,
+    visibility: row.visibility || 'private',
+  }
+}
+
+function countWorldObjects(state: Pick<WorldState, 'conjuredAssetIds' | 'catalogPlacements' | 'craftedScenes'>): number {
+  return (state.conjuredAssetIds?.length || 0) +
+    (state.catalogPlacements?.length || 0) +
+    (state.craftedScenes?.length || 0)
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════════════
 
-function toWorldMeta(row: { id: string; name: string; icon: string; visibility: string; createdAt: Date; updatedAt: Date }): WorldMeta {
+function toWorldMeta(
+  row: { id: string; userId?: string; name: string; icon: string; visibility: string; createdAt: Date; updatedAt: Date },
+  ctx?: WorldAccessContext,
+): WorldMeta {
+  const subject = row.userId ? toAccessSubject(row as WorldAccessSubject) : null
+  const writeDecision = ctx && subject ? getWorldWriteDecision(ctx, subject) : undefined
   return {
     id: row.id,
     name: row.name,
     icon: row.icon || '🌍',
     visibility: (row.visibility as WorldMeta['visibility']) || 'private',
+    canWrite: writeDecision ? writeDecision !== 'deny' : undefined,
+    canEditSettings: ctx && subject ? canEditWorldSettings(ctx, subject) : undefined,
+    writeDecision,
     createdAt: row.createdAt.toISOString(),
     lastSavedAt: row.updatedAt.toISOString(),
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// REGISTRY — All worlds (local-first = no userId filter)
+// REGISTRY — local lists everything; hosted lists owned + discoverable worlds.
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function getRegistry(_userId?: string): Promise<WorldMeta[]> {
+export async function getRegistry(userId?: string): Promise<WorldMeta[]> {
+  const ctx = accessContext(userId)
   const worlds = await prisma.world.findMany({
-    select: { id: true, name: true, icon: true, visibility: true, createdAt: true, updatedAt: true },
+    select: { id: true, userId: true, name: true, icon: true, visibility: true, createdAt: true, updatedAt: true },
+    where: ctx.mode === 'hosted' && !ctx.admin
+      ? {
+          OR: [
+            { userId: ctx.userId },
+            { visibility: { in: DISCOVERABLE_VISIBILITIES } },
+          ],
+        }
+      : undefined,
     orderBy: { createdAt: 'asc' },
   })
 
   if (worlds.length === 0) {
-    const defaultWorld = await createWorld('The Forge', '🔥', 'local-user')
+    const defaultWorld = await createWorld('The Forge', '🔥', ctx.userId)
     return [defaultWorld]
   }
 
-  return worlds.map(toWorldMeta)
+  return worlds
+    .filter(world => canDiscoverWorld(ctx, toAccessSubject(world)))
+    .map(world => toWorldMeta(world, ctx))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // LOAD — Fetch a single world's full state
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function loadWorld(id: string, _userId?: string): Promise<WorldState | null> {
+export async function loadWorld(id: string, userId?: string): Promise<WorldState | null> {
+  const ctx = accessContext(userId)
   const world = await prisma.world.findFirst({
     where: { id },
-    select: { data: true },
+    select: { id: true, userId: true, visibility: true, data: true },
   })
+  if (!world) return null
+  if (!canReadWorld(ctx, toAccessSubject(world))) return null
   if (!world?.data) return null
   return normalizeSavedWorldState(JSON.parse(world.data) as WorldState)
 }
@@ -83,24 +153,64 @@ export async function loadWorld(id: string, _userId?: string): Promise<WorldStat
 // SAVE — Upsert world state with auto-snapshot
 // ═══════════════════════════════════════════════════════════════════════════
 
+async function forkTemplateWorld(
+  template: { id: string; name: string; icon: string; visibility: string },
+  userId: string,
+  worldData: WorldState,
+  now: Date,
+): Promise<WorldMeta> {
+  const id = `world-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+  const world = await prisma.world.create({
+    data: {
+      id,
+      userId,
+      name: template.name,
+      icon: template.icon,
+      visibility: 'private',
+      data: JSON.stringify(worldData),
+      objectCount: countWorldObjects(worldData),
+      createdAt: now,
+      updatedAt: now,
+    },
+  })
+
+  console.log(`[WorldServer] Forked template ${template.id} -> ${id} for user ${userId}`)
+  return toWorldMeta(world, accessContext(userId))
+}
+
 export async function saveWorld(
   id: string,
-  _userId: string,
+  userId: string,
   state: Omit<WorldState, 'version' | 'savedAt'>,
   clientLoadedAt?: string
-): Promise<{ saved: boolean; conflict?: boolean; serverUpdatedAt?: string }> {
+): Promise<SaveWorldResult> {
+  const ctx = accessContext(userId)
   const now = new Date()
   const worldData = normalizeSavedWorldState({ version: 1, ...state, savedAt: now.toISOString() })
 
+  const target = await prisma.world.findFirst({
+    where: { id },
+    select: { id: true, userId: true, name: true, icon: true, visibility: true, updatedAt: true },
+  })
+  if (!target) {
+    throw new WorldAccessError('World not found', 'world_not_found', 404)
+  }
+
+  const writeDecision = getWorldWriteDecision(ctx, toAccessSubject(target))
+  if (writeDecision === 'deny') {
+    throw new WorldAccessError('This session cannot mutate that world', 'world_write_forbidden')
+  }
+
+  if (writeDecision === 'fork') {
+    const fork = await forkTemplateWorld(target, ctx.userId, worldData, now)
+    return { saved: true, worldId: fork.id, forkedFromWorldId: id }
+  }
+
   // Optimistic concurrency check
   if (clientLoadedAt) {
-    const current = await prisma.world.findFirst({
-      where: { id },
-      select: { updatedAt: true },
-    })
-    if (current?.updatedAt && current.updatedAt.toISOString() > clientLoadedAt) {
+    if (target.updatedAt && target.updatedAt.toISOString() > clientLoadedAt) {
       console.warn(`[WorldServer] ⚠️ CONFLICT on ${id}`)
-      return { saved: false, conflict: true, serverUpdatedAt: current.updatedAt.toISOString() }
+      return { saved: false, conflict: true, serverUpdatedAt: target.updatedAt.toISOString() }
     }
   }
 
@@ -109,10 +219,14 @@ export async function saveWorld(
 
   await prisma.world.update({
     where: { id },
-    data: { data: JSON.stringify(worldData), updatedAt: now },
+    data: {
+      data: JSON.stringify(worldData),
+      objectCount: countWorldObjects(worldData),
+      updatedAt: now,
+    },
   })
 
-  return { saved: true }
+  return { saved: true, worldId: id }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -146,14 +260,21 @@ export async function createWorld(name: string, icon = '🌍', userId: string): 
   })
 
   console.log(`[WorldServer] Created world "${name}" (${id}) for user ${userId}`)
-  return toWorldMeta(world)
+  return toWorldMeta(world, accessContext(userId))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DELETE
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function deleteWorld(id: string, _userId?: string): Promise<void> {
+export async function deleteWorld(id: string, userId?: string): Promise<void> {
+  const ctx = accessContext(userId)
+  const world = await prisma.world.findFirst({
+    where: { id },
+    select: { id: true, userId: true, visibility: true },
+  })
+  if (!world) return
+  assertCanEditWorldSettings(ctx, toAccessSubject(world))
   await prisma.world.deleteMany({ where: { id } })
 }
 
@@ -163,13 +284,33 @@ export async function deleteWorld(id: string, _userId?: string): Promise<void> {
 
 export async function setWorldVisibility(
   id: string,
-  _userId: string,
-  visibility: 'private' | 'public' | 'unlisted' | 'public_edit'
+  userId: string,
+  visibility: string
 ): Promise<void> {
+  const nextVisibility = toStorageVisibility(visibility)
+  if (!nextVisibility) {
+    throw new WorldAccessError('Unsupported world visibility', 'invalid_world_visibility', 400)
+  }
+
+  const ctx = accessContext(userId)
+  const world = await prisma.world.findFirst({
+    where: { id },
+    select: { id: true, userId: true, visibility: true },
+  })
+  if (!world) {
+    throw new WorldAccessError('World not found', 'world_not_found', 404)
+  }
+  assertCanEditWorldSettings(ctx, toAccessSubject(world))
+
+  const nextKind = normalizeWorldKind(nextVisibility)
+  if (!ctx.system && !ctx.admin && (nextKind === 'core' || nextKind === 'template')) {
+    throw new WorldAccessError('Only system tools can mark core or template worlds', 'system_visibility_forbidden')
+  }
+
   await prisma.world.updateMany({
     where: { id },
     data: {
-      visibility,
+      visibility: nextVisibility,
       creatorName: 'Player 1',
       updatedAt: new Date(),
     },
@@ -177,9 +318,35 @@ export async function setWorldVisibility(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SAVE PUBLIC_EDIT — anyone can edit if visibility=public_edit
+// METADATA — settings changes use stricter owner/system permissions.
 // ═══════════════════════════════════════════════════════════════════════════
 
+export async function updateWorldMetadata(
+  id: string,
+  userId: string,
+  updates: { name?: string; icon?: string },
+): Promise<boolean> {
+  const ctx = accessContext(userId)
+  const world = await prisma.world.findFirst({
+    where: { id },
+    select: { id: true, userId: true, visibility: true },
+  })
+  if (!world) return false
+  assertCanEditWorldSettings(ctx, toAccessSubject(world))
+
+  const data: Record<string, string | Date> = { updatedAt: new Date() }
+  if (updates.name?.trim()) data.name = updates.name.trim().slice(0, 50)
+  if (updates.icon) data.icon = updates.icon
+  if (Object.keys(data).length === 1) return false
+
+  const result = await prisma.world.updateMany({
+    where: { id },
+    data,
+  })
+  return result.count > 0
+}
+
+// SAVE FFA — anyone can edit if visibility is ffa/public_edit.
 export async function savePublicEditWorld(
   id: string,
   state: Omit<WorldState, 'version' | 'savedAt'>
@@ -190,8 +357,12 @@ export async function savePublicEditWorld(
   await snapshotBeforeSave(id)
 
   const result = await prisma.world.updateMany({
-    where: { id, visibility: 'public_edit' },
-    data: { data: JSON.stringify(worldData), updatedAt: now },
+    where: { id, visibility: { in: FFA_VISIBILITIES } },
+    data: {
+      data: JSON.stringify(worldData),
+      objectCount: countWorldObjects(worldData),
+      updatedAt: now,
+    },
   })
 
   return result.count > 0
@@ -214,7 +385,7 @@ export async function recordVisit(worldId: string): Promise<void> {
 
 export async function loadPublicWorld(id: string): Promise<{ state: WorldState; meta: WorldMeta & { creator_name?: string; creator_avatar?: string } } | null> {
   const world = await prisma.world.findFirst({
-    where: { id, visibility: { in: ['public', 'unlisted', 'public_edit'] } },
+    where: { id, visibility: { in: PUBLICLY_READABLE_VISIBILITIES } },
   })
 
   if (!world?.data) return null
@@ -234,8 +405,16 @@ export async function loadPublicWorld(id: string): Promise<{ state: WorldState; 
 // ═══════════════════════════════════════════════════════════════════════════
 
 export async function updateObjectCount(id: string, userId: string, count: number): Promise<void> {
+  const ctx = accessContext(userId)
+  const world = await prisma.world.findFirst({
+    where: { id },
+    select: { id: true, userId: true, visibility: true },
+  })
+  if (!world) return
+  const decision = getWorldWriteDecision(ctx, toAccessSubject(world))
+  if (decision === 'deny' || decision === 'fork') return
   await prisma.world.updateMany({
-    where: { id, userId },
+    where: { id },
     data: { objectCount: count },
   })
 }
@@ -367,7 +546,15 @@ async function snapshotBeforeSave(worldId: string, userId?: string): Promise<voi
   }
 }
 
-export async function listSnapshots(worldId: string, _userId: string): Promise<SnapshotMeta[]> {
+export async function listSnapshots(worldId: string, userId: string): Promise<SnapshotMeta[]> {
+  const ctx = accessContext(userId)
+  const world = await prisma.world.findFirst({
+    where: { id: worldId },
+    select: { id: true, userId: true, visibility: true },
+  })
+  if (!world) return []
+  assertCanEditWorldSettings(ctx, toAccessSubject(world))
+
   const snapshots = await prisma.worldSnapshot.findMany({
     where: { worldId },
     orderBy: { createdAt: 'desc' },
@@ -398,23 +585,55 @@ export async function restoreSnapshot(
   userId: string,
   snapshotId: string
 ): Promise<boolean> {
+  const ctx = accessContext(userId)
+  const world = await prisma.world.findFirst({
+    where: { id: worldId },
+    select: { id: true, userId: true, visibility: true },
+  })
+  if (!world) return false
+  assertCanEditWorldSettings(ctx, toAccessSubject(world))
+
   const snapshotState = await loadSnapshot(snapshotId)
   if (!snapshotState) return false
 
   // Snapshot current state first (undo safety)
-  await snapshotBeforeSave(worldId, userId)
+  await snapshotBeforeSave(worldId)
 
   const now = new Date()
+  const worldData = normalizeSavedWorldState({ ...snapshotState, savedAt: now.toISOString() })
   await prisma.world.updateMany({
-    where: { id: worldId, userId },
+    where: { id: worldId },
     data: {
-      data: JSON.stringify(normalizeSavedWorldState({ ...snapshotState, savedAt: now.toISOString() })),
+      data: JSON.stringify(worldData),
+      objectCount: countWorldObjects(worldData),
       updatedAt: now,
     },
   })
 
   console.log(`[WorldServer] ✅ Restored snapshot ${snapshotId} → world ${worldId}`)
   return true
+}
+
+export async function createManualSnapshot(worldId: string, userId: string): Promise<{ ok: true; objectCount: number } | null> {
+  const ctx = accessContext(userId)
+  const world = await prisma.world.findFirst({
+    where: { id: worldId },
+    select: { id: true, userId: true, visibility: true, data: true },
+  })
+  if (!world?.data) return null
+  assertCanEditWorldSettings(ctx, toAccessSubject(world))
+
+  const worldState = normalizeSavedWorldState(JSON.parse(world.data) as WorldState)
+  const objectCount = countWorldObjects(worldState)
+  await prisma.worldSnapshot.create({
+    data: {
+      worldId,
+      data: JSON.stringify(worldState),
+      objectCount,
+      source: 'manual',
+    },
+  })
+  return { ok: true, objectCount }
 }
 
 // ▓▓▓▓【W̸O̸R̸L̸D̸】▓▓▓▓ॐ▓▓▓▓【S̸E̸R̸V̸E̸R̸】▓▓▓▓

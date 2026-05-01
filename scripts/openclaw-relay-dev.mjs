@@ -32,6 +32,17 @@ const log = (...args) => {
 
 const wss = new WebSocketServer({ port: PORT, maxPayload: FRAME_MAX_BYTES })
 
+wss.on('error', (err) => {
+  if (err?.code === 'EADDRINUSE') {
+    console.error(`[relay-dev] port ${PORT} is already in use. A relay may already be running.`)
+    console.error(`[relay-dev] Use the existing relay, stop the owning process, or run: $env:RELAY_PORT=4520; pnpm dev:relay`)
+    console.error(`[relay-dev] Windows owner check: Get-NetTCPConnection -LocalPort ${PORT} -State Listen | Select-Object OwningProcess`)
+    process.exit(1)
+  }
+  console.error('[relay-dev] fatal server error:', err?.message || String(err))
+  process.exit(1)
+})
+
 let waitingBrowser = null
 let waitingAgent = null
 const pairs = new Map() // ws -> peer ws

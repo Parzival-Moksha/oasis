@@ -3,7 +3,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextResponse } from 'next/server'
-import { getOasisUserId } from '@/lib/session'
+import { getRequiredOasisUserId } from '@/lib/session'
 import { prisma } from '@/lib/db'
 import path from 'path'
 import fs from 'fs/promises'
@@ -13,7 +13,10 @@ const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 
 export async function POST(request: Request) {
   try {
-    const userId = await getOasisUserId(request)
+    const userId = getRequiredOasisUserId(request)
+    if (!userId) {
+      return NextResponse.json({ error: 'oasis_session cookie required' }, { status: 401 })
+    }
 
     const formData = await request.formData()
     const file = formData.get('avatar') as File | null

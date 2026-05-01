@@ -455,6 +455,17 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
     }
   }, [enabled, sessionReady, relayUrl, sendEnvelope, handleToolCall])
 
+  useEffect(() => {
+    const ws = wsRef.current
+    if (!enabled || !sessionReady || status !== 'paired' || !ws || ws.readyState !== WebSocket.OPEN) return
+    sendEnvelope(ws, {
+      type: 'browser.ready',
+      worldId: worldIdRef.current,
+      availableTools: [...availableToolsRef.current],
+      relaySessionId: relaySessionId ?? undefined,
+    })
+  }, [enabled, sessionReady, status, relaySessionId, worldId, roomId, availableTools, sendEnvelope])
+
   return {
     status,
     relaySessionId,

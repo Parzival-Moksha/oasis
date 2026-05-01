@@ -88,6 +88,29 @@ function sessionLabel(option: CodexSessionOption): string {
   return label.length > 90 ? `${label.slice(0, 87).trim()}...` : label
 }
 
+function dedupeSessionOptions(records: CodexSessionOption[]): CodexSessionOption[] {
+  const bySessionId = new Map<string, CodexSessionOption>()
+
+  for (const record of records) {
+    const sessionId = typeof record.sessionId === 'string' ? record.sessionId.trim() : ''
+    if (!sessionId) continue
+
+    const normalized = { ...record, sessionId }
+    const existing = bySessionId.get(sessionId)
+    const existingTime = Date.parse(existing?.lastMessageAt || existing?.updatedAt || '')
+    const nextTime = Date.parse(normalized.lastMessageAt || normalized.updatedAt || '')
+
+    if (
+      !existing ||
+      (Number.isFinite(nextTime) && (!Number.isFinite(existingTime) || nextTime >= existingTime))
+    ) {
+      bySessionId.set(sessionId, normalized)
+    }
+  }
+
+  return [...bySessionId.values()]
+}
+
 type CodexPanelProps = {
   isOpen: boolean
   onClose: () => void
@@ -196,7 +219,7 @@ export function CodexPanel({
       const response = await fetch('/api/codex/sessions?limit=60', { cache: 'no-store' })
       const data = await response.json().catch(() => ({})) as CodexSessionsResponse
       const records = Array.isArray(data.records)
-        ? data.records.filter(record => typeof record.sessionId === 'string' && record.sessionId.trim())
+        ? dedupeSessionOptions(data.records)
         : []
       setSessionOptions(records)
     } catch {

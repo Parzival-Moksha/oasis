@@ -200,6 +200,19 @@ describe('WorldPersistence', () => {
       expect(url).not.toContain('should-not-use-this')
     })
 
+    it('stores the forked world id returned from a template save', async () => {
+      fetchMock.mockResolvedValueOnce(makeFetchOk({
+        ok: true,
+        saved: true,
+        worldId: 'forked-world',
+        forkedFromWorldId: 'template-world',
+      }))
+
+      await saveWorld({ terrain: null, craftedScenes: [], conjuredAssetIds: [], transforms: {} } as any, 'template-world')
+
+      expect(localStorageMock.setItem).toHaveBeenCalledWith('oasis-active-world', 'forked-world')
+    })
+
     it('does not throw on network error (logs instead)', async () => {
       fetchMock.mockRejectedValueOnce(new Error('offline'))
       // Should not throw

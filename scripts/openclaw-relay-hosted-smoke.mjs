@@ -18,6 +18,7 @@
  * Env:
  *   OASIS_URL    base http(s) URL of the Next app, default http://localhost:4516
  *   RELAY_URL    base ws(s) URL of the hosted relay,  default derived from OASIS_URL
+ *   WORLD_ID     world id to bind into the pairing token, default world-welcome-hub-system
  *
  * Exit codes:
  *   0 all assertions pass
@@ -31,6 +32,7 @@ import { randomUUID } from 'node:crypto'
 const OASIS_URL = (process.env.OASIS_URL || 'http://localhost:4516').replace(/\/+$/, '')
 const RELAY_URL = (process.env.RELAY_URL || OASIS_URL.replace(/^http/, 'ws')).replace(/\/+$/, '')
 const ORIGIN = process.env.OASIS_ORIGIN || OASIS_URL
+const WORLD_ID = process.env.WORLD_ID || process.env.OASIS_WORLD_ID || 'world-welcome-hub-system'
 
 // In production behind Nginx, the WS upgrade lives at /relay (the proxy passes
 // it through to the sidecar). When running against a bare dev sidecar that
@@ -65,7 +67,7 @@ async function step2_pair(cookieHeader) {
   const response = await fetch(`${OASIS_URL}/api/relay/pairings`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'cookie': cookieHeader },
-    body: JSON.stringify({}),
+    body: JSON.stringify({ worldId: WORLD_ID }),
   })
   const json = await response.json()
   if (!response.ok || !json?.ok) fail('pairings POST failed', json)

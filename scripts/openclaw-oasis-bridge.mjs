@@ -15,15 +15,20 @@
  *      complete the v3 Ed25519 challenge handshake.
  *   6. On `chat.user` from the relay → call `chat.send` on the Gateway,
  *      stream Gateway `chat` events back as `chat.agent.delta`/`final`.
- *   7. `tool.call` envelopes still receive a `bridge_no_executor` stub —
- *      the MCP-server-on-bridge half lands in a follow-up.
+ *   7. Start a local Streamable HTTP MCP adapter. OpenClaw calls Oasis tools
+ *      locally; the adapter proxies them through relay `tool.call` frames and
+ *      waits for browser-executed `tool.result` frames.
  *
  * Env / flags:
  *   --gateway-url=...        OPENCLAW_GATEWAY_URL    default ws://127.0.0.1:18789
  *   --gateway-token=...      OPENCLAW_GATEWAY_TOKEN  optional shared token
  *                                                    (some Gateway configs require)
  *   --identity=...           OPENCLAW_BRIDGE_IDENTITY default ~/.openclaw-oasis-bridge/identity.json
+ *   --mcp-port=...           OASIS_BRIDGE_MCP_PORT default 17890
+ *   --mcp-host=...           OASIS_BRIDGE_MCP_HOST default 127.0.0.1
+ *   --tool-timeout-ms=...    OASIS_BRIDGE_TOOL_TIMEOUT_MS default 30000
  *   --no-gateway             skip Gateway entirely (legacy stdin-echo mode)
+ *   --no-mcp                 skip the local MCP adapter
  *
  * Run:
  *   node scripts/openclaw-oasis-bridge.mjs https://openclaw.04515.xyz/pair/OASIS-XXXXXXXX
@@ -36,6 +41,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 import { GatewayClient, loadOrCreateIdentity } from './openclaw-gateway-shim.mjs'
+import { startBridgeMcpServer } from './openclaw-bridge-mcp.mjs'
 
 // ────────────────────────────────────────────────────────────────────────────
 // Argv / env
@@ -63,11 +69,16 @@ const gatewayUrlOverride = argv.flags['gateway-url'] || process.env.OPENCLAW_GAT
 const gatewaySharedToken = argv.flags['gateway-token'] || process.env.OPENCLAW_GATEWAY_TOKEN || ''
 const identityPathOverride = argv.flags.identity || process.env.OPENCLAW_BRIDGE_IDENTITY || ''
 const skipGateway = argv.flags['no-gateway'] === 'true'
+const skipMcp = argv.flags['no-mcp'] === 'true'
+const mcpHost = argv.flags['mcp-host'] || process.env.OASIS_BRIDGE_MCP_HOST || '127.0.0.1'
+const mcpPort = Number(argv.flags['mcp-port'] || process.env.OASIS_BRIDGE_MCP_PORT || 17890)
+const toolTimeoutMs = Number(argv.flags['tool-timeout-ms'] || process.env.OASIS_BRIDGE_TOOL_TIMEOUT_MS || 30_000)
 
 if (!rawCode) {
   console.error('usage: node scripts/openclaw-oasis-bridge.mjs <pairing-url-or-code>')
   console.error('  optional: --oasis-url=https://… --gateway-url=ws://127.0.0.1:18789')
-  console.error('  optional: --gateway-token=… --identity=… --label=… --no-gateway')
+  console.error('  optional: --gateway-token=… --identity=… --label=… --mcp-port=17890')
+  console.error('  optional: --no-gateway --no-mcp')
   process.exit(2)
 }
 
@@ -98,6 +109,7 @@ log('config:', {
   code: pairingCode,
   label: labelOverride,
   gateway: skipGateway ? '(skipped)' : finalGatewayUrl,
+  mcp: skipMcp ? '(skipped)' : `http://${mcpHost}:${mcpPort}/mcp`,
   identityPath,
 })
 
@@ -113,7 +125,7 @@ async function exchangePairingCode() {
     body: JSON.stringify({
       pairingCode,
       agentLabel: labelOverride,
-      agentVersion: '0.2.0-bridge-v2',
+      agentVersion: '0.3.0-bridge-tools',
     }),
   })
   const text = await response.text()
@@ -146,24 +158,104 @@ function buildRelayUrl(httpUrl) {
 
 let relayWs = null
 let gateway = null
+let mcpServer = null
 let exited = false
+const pendingToolCalls = new Map()
 
 const exitWith = (code, reason) => {
   if (exited) return
   exited = true
   log('exit', { code, reason })
+  rejectPendingToolCalls(`bridge exiting: ${reason}`)
   try { relayWs?.close() } catch { /* ignore */ }
   try { gateway?.close() } catch { /* ignore */ }
+  void mcpServer?.close?.().catch(() => {})
   setTimeout(() => process.exit(code), 50).unref()
 }
 
 function sendRelay(msg) {
   if (!relayWs || relayWs.readyState !== relayWs.OPEN) {
     log('cannot send to relay — socket not open', { type: msg.type })
-    return
+    return false
   }
   const enriched = { messageId: randomUUID(), sentAt: Date.now(), ...msg }
   relayWs.send(JSON.stringify(enriched))
+  return true
+}
+
+function rejectPendingToolCalls(message) {
+  for (const [callId, pending] of pendingToolCalls.entries()) {
+    clearTimeout(pending.timer)
+    pendingToolCalls.delete(callId)
+    pending.resolve({
+      ok: false,
+      error: { code: 'relay_disconnected', message },
+    })
+  }
+}
+
+function resolvePendingToolResult(result) {
+  const callId = typeof result?.callId === 'string' ? result.callId : ''
+  if (!callId) return false
+  const pending = pendingToolCalls.get(callId)
+  if (!pending) return false
+  clearTimeout(pending.timer)
+  pendingToolCalls.delete(callId)
+  pending.resolve({
+    ok: Boolean(result.ok),
+    data: result.data,
+    error: result.error,
+  })
+  return true
+}
+
+function proxyToolCallThroughRelay({ toolName, args, scope }) {
+  if (!relayWs || relayWs.readyState !== relayWs.OPEN) {
+    return Promise.resolve({
+      ok: false,
+      error: {
+        code: 'relay_not_connected',
+        message: 'Oasis relay is not connected or paired yet.',
+      },
+    })
+  }
+
+  const callId = randomUUID()
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingToolCalls.delete(callId)
+      resolve({
+        ok: false,
+        error: {
+          code: 'tool_timeout',
+          message: `Timed out waiting ${toolTimeoutMs}ms for browser tool result from "${toolName}".`,
+        },
+      })
+    }, toolTimeoutMs)
+    pendingToolCalls.set(callId, { resolve, timer, toolName })
+    try {
+      const sent = sendRelay({
+        type: 'tool.call',
+        callId,
+        toolName,
+        args: args || {},
+        scope,
+      })
+      if (!sent) {
+        throw new Error('relay socket not open')
+      }
+    } catch {
+      clearTimeout(timer)
+      pendingToolCalls.delete(callId)
+      resolve({
+        ok: false,
+        error: {
+          code: 'relay_send_failed',
+          message: `Could not send Oasis tool "${toolName}" to the relay.`,
+        },
+      })
+    }
+  })
 }
 
 // Track Gateway runIds we issued from a given relay-side sessionId so we can
@@ -265,25 +357,46 @@ async function start() {
     scopes: creds.scopes,
   })
 
-  // Connect to local OpenClaw Gateway in parallel with the relay so the first
-  // chat.user arriving doesn't have to wait for the handshake.
-  if (!skipGateway) {
+  if (!skipMcp) {
     try {
-      const identity = await loadOrCreateIdentity(identityPath)
-      log('device identity:', { id: identity.id, path: identityPath })
-      gateway = new GatewayClient({
-        gatewayUrl: finalGatewayUrl,
-        identity,
-        sharedToken: gatewaySharedToken,
+      mcpServer = await startBridgeMcpServer({
+        host: mcpHost,
+        port: mcpPort,
+        worldId: creds.worldId,
+        agentType: 'openclaw',
+        relayToolCall: proxyToolCallThroughRelay,
         logger: log,
       })
-      setupGatewayChatBridge(creds)
-      await gateway.ensureReady()
-      log('Gateway ready')
+      log('OpenClaw Oasis MCP URL:', mcpServer.url)
+      log('OpenClaw MCP config hint:', `openclaw mcp set oasis '{"url":"${mcpServer.url}","transport":"streamable-http"}'`)
     } catch (err) {
-      log('Gateway connect failed (continuing without; chat.user will echo to stdout):', err?.message || String(err))
-      gateway = null
+      log('MCP adapter failed to start; Oasis tools will not be available to OpenClaw:', err?.message || String(err))
+      mcpServer = null
     }
+  }
+
+  // Connect to local OpenClaw Gateway in the background. Relay + Oasis tools
+  // should come online even if Gateway auth is slow or temporarily unavailable;
+  // chat.user will wait on ensureReady() when it actually needs Gateway.
+  if (!skipGateway) {
+    void (async () => {
+      try {
+        const identity = await loadOrCreateIdentity(identityPath)
+        log('device identity:', { id: identity.id, path: identityPath })
+        gateway = new GatewayClient({
+          gatewayUrl: finalGatewayUrl,
+          identity,
+          sharedToken: gatewaySharedToken,
+          logger: log,
+        })
+        setupGatewayChatBridge(creds)
+        await gateway.ensureReady()
+        log('Gateway ready')
+      } catch (err) {
+        log('Gateway connect failed (continuing without; chat.user will echo to stdout):', err?.message || String(err))
+        gateway = null
+      }
+    })()
   }
 
   // Connect to the hosted relay.
@@ -308,7 +421,7 @@ async function start() {
         type: 'agent.hello',
         deviceToken: creds.deviceToken,
         agentLabel: labelOverride,
-        agentVersion: '0.2.0-bridge-v2',
+        agentVersion: '0.3.0-bridge-tools',
       })
       return
     }
@@ -320,16 +433,22 @@ async function start() {
       return
     }
 
+    if (parsed.type === 'tool.result') {
+      if (!resolvePendingToolResult(parsed)) {
+        log('tool.result received with no pending caller:', { callId: parsed.callId })
+      }
+      return
+    }
+
     if (parsed.type === 'tool.call') {
-      log('tool.call received (executor not wired yet — bridge MCP server is v3 work):',
-          { toolName: parsed.toolName, callId: parsed.callId })
+      log('unexpected inbound tool.call on OpenClaw bridge:', { toolName: parsed.toolName, callId: parsed.callId })
       sendRelay({
         type: 'tool.result',
         callId: parsed.callId,
         ok: false,
         error: {
-          code: 'bridge_no_executor',
-          message: 'bridge v2 ships chat translation; tool routing through OpenClaw MCP is v3',
+          code: 'bridge_wrong_direction',
+          message: 'Oasis tools are requested by OpenClaw through the local bridge MCP adapter.',
         },
       })
       return

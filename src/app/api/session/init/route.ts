@@ -20,6 +20,8 @@ import {
   SESSION_COOKIE_MAX_AGE_S,
   SESSION_COOKIE_NAME,
   getOasisMode,
+  getOasisProfile,
+  getOasisCapabilities,
   mintSessionCookieValue,
   readBrowserSession,
 } from '@/lib/session'
@@ -50,6 +52,9 @@ export async function GET(request: NextRequest) {
       ok: true,
       browserSessionId: existing.browserSessionId,
       minted: false,
+      mode: getOasisMode(),
+      profile: getOasisProfile(),
+      capabilities: getOasisCapabilities(request),
     })
   }
   const minted = mintSessionCookieValue()
@@ -58,6 +63,9 @@ export async function GET(request: NextRequest) {
       ok: true,
       browserSessionId: minted.browserSessionId,
       minted: true,
+      mode: getOasisMode(),
+      profile: getOasisProfile(),
+      capabilities: getOasisCapabilities(request),
     },
     minted.cookieValue,
   )

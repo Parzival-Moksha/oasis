@@ -10,6 +10,7 @@ import type { TerrainParams } from '../lib/forge/terrain-generator'
 import {
   loadWorld, debouncedSaveWorld, saveWorld,
   getWorldRegistry, getActiveWorldId, setActiveWorldId,
+  getServerActiveWorld,
   createWorld, deleteWorld, exportWorld, importWorld,
   cancelPendingSave,
   loadPublicWorld,
@@ -1609,7 +1610,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     set({ _worldReady: false })
 
     // Switch to new world
-    setActiveWorldId(worldId)
+    setActiveWorldId(worldId, { publish: true })
     loadWorld(worldId).then(world => {
       // Seed defaults for old worlds that never had lights (lights field undefined)
       const defaultLights: WorldLight[] = DEFAULT_WORLD_LIGHTS.map((l, i) => ({ ...l, id: `light-${l.type}-default-${i}`, visible: true } as WorldLight))
@@ -1693,7 +1694,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     // Create and switch to new world (async) — seed with default lights so it's not pitch black
     createWorld(name, icon).then(meta => {
       const defaultLights: WorldLight[] = DEFAULT_WORLD_LIGHTS.map((l, i) => ({ ...l, id: `light-${l.type}-default-${i}`, visible: true } as WorldLight))
-      setActiveWorldId(meta.id)
+      setActiveWorldId(meta.id, { publish: true })
       return getWorldRegistry().then(registry => {
         set({
           _worldReady: true,  // New world is "loaded" — it's empty by definition
@@ -1760,18 +1761,26 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
   // ─═̷─═̷─ॐ─═̷─═̷─ INIT — hydrate from server on mount ─═̷─═̷─ॐ─═̷─═̷─
   initWorlds: async () => {
-    const [registry, library] = await Promise.all([
+    const [registry, library, serverActiveWorld] = await Promise.all([
       getWorldRegistry(),
       getSceneLibrary(),
+      getServerActiveWorld(),
     ])
 
     // If stored activeWorldId doesn't exist in the registry (e.g. old 'forge-default'
     // from an earlier persistence layout), switch to the first available world
     const currentId = get().activeWorldId
     const worldExists = registry.some(w => w.id === currentId)
-    if (!worldExists && registry.length > 0) {
+    const serverActiveExists = Boolean(serverActiveWorld?.worldId && registry.some(w => w.id === serverActiveWorld.worldId))
+    if (serverActiveWorld?.authoritative && serverActiveExists) {
+      setActiveWorldId(serverActiveWorld.worldId, { publish: true })
+      set({ worldRegistry: registry, sceneLibrary: library, activeWorldId: serverActiveWorld.worldId })
+    } else if (!worldExists && serverActiveExists && serverActiveWorld?.worldId) {
+      setActiveWorldId(serverActiveWorld.worldId, { publish: true })
+      set({ worldRegistry: registry, sceneLibrary: library, activeWorldId: serverActiveWorld.worldId })
+    } else if (!worldExists && registry.length > 0) {
       const firstWorld = registry[0]
-      setActiveWorldId(firstWorld.id)
+      setActiveWorldId(firstWorld.id, { publish: true })
       set({ worldRegistry: registry, sceneLibrary: library, activeWorldId: firstWorld.id })
     } else {
       set({ worldRegistry: registry, sceneLibrary: library })
@@ -1793,8 +1802,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
   getPanelZIndex: (panelName, defaultZ) => {
     const order = get()._panelZMap[panelName]
     if (!order) return defaultZ
-    // Base z = 9990, each click adds 1. Max panels ~10, so z-range 9990-10000.
-    return 9990 + order
+    // Keep focused panels above their declared base layer.
+    return Math.max(defaultZ, 9990) + order
   },
 
   // ─═̷─═̷─💻 3D AGENT WINDOWS — place, focus, interact ─═̷─═̷─💻
@@ -2209,8 +2218,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
         return
       }
       const { state, meta } = result
-      // Only allow editing if caller permits AND world is public_edit
-      const isEditable = allowEdit && meta.visibility === 'public_edit'
+      // Only allow editing if caller permits AND world is FFA/open-build.
+      const isEditable = allowEdit && (meta.visibility === 'public_edit' || meta.visibility === 'ffa')
       const defaultLights: WorldLight[] = DEFAULT_WORLD_LIGHTS.map((l, i) => ({ ...l, id: `light-${l.type}-default-${i}`, visible: true } as WorldLight))
       const lights = state.lights !== undefined ? state.lights : defaultLights
       const viewObjCount = (state.conjuredAssetIds?.length || 0) + (state.catalogPlacements?.length || 0) + (state.craftedScenes?.length || 0)

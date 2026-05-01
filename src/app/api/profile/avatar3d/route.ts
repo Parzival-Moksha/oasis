@@ -5,7 +5,7 @@
 // httpURL → store the URL directly
 
 import { NextResponse } from 'next/server'
-import { getOasisUserId } from '@/lib/session'
+import { getRequiredOasisUserId } from '@/lib/session'
 import { prisma } from '@/lib/db'
 import path from 'path'
 import fs from 'fs/promises'
@@ -14,7 +14,10 @@ const MAX_GLB_SIZE = 10 * 1024 * 1024 // 10MB
 
 export async function POST(request: Request) {
   try {
-    const userId = await getOasisUserId(request)
+    const userId = getRequiredOasisUserId(request)
+    if (!userId) {
+      return NextResponse.json({ error: 'oasis_session cookie required' }, { status: 401 })
+    }
 
     const body = await request.json()
     const { url, urlType } = body

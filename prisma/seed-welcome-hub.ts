@@ -138,7 +138,7 @@ const STARWELL_RING = {
       scale: [2.0, 2.0, 2.0] as [number, number, number],
       color: '#7e3bff',
       emissive: '#a07bff',
-      emissiveIntensity: 1.4,
+      emissiveIntensity: 0.35,
       metalness: 0.3,
       roughness: 0.4,
       animation: { type: 'rotate' as const, axis: 'z' as const, speed: 0.25 },
@@ -150,9 +150,9 @@ const STARWELL_RING = {
       scale: [1.6, 1.6, 1.6] as [number, number, number],
       color: '#9be0ff',
       color2: '#7e3bff',
-      intensity: 2.5,
-      speed: 0.6,
-      opacity: 0.55,
+      intensity: 0.85,
+      speed: 0.45,
+      opacity: 0.35,
     },
     // Two small particle emitters for star sparkle
     {
@@ -160,18 +160,18 @@ const STARWELL_RING = {
       position: [-1.6, 0, 0] as [number, number, number],
       scale: [0.4, 0.4, 0.4] as [number, number, number],
       color: '#fff5b8',
-      particleCount: 60,
+      particleCount: 36,
       particleType: 'firefly' as const,
-      speed: 0.8,
+      speed: 0.45,
     },
     {
       type: 'particle_emitter' as const,
       position: [1.6, 0, 0] as [number, number, number],
       scale: [0.4, 0.4, 0.4] as [number, number, number],
       color: '#fff5b8',
-      particleCount: 60,
+      particleCount: 36,
       particleType: 'firefly' as const,
-      speed: 0.8,
+      speed: 0.45,
     },
     // Floating label above the ring
     {
@@ -180,7 +180,7 @@ const STARWELL_RING = {
       scale: [1, 1, 1] as [number, number, number],
       color: '#ffe9b8',
       emissive: '#ffe9b8',
-      emissiveIntensity: 0.6,
+      emissiveIntensity: 0.25,
       text: 'Starwell',
       fontSize: 0.6,
       anchorX: 'center' as const,
@@ -196,15 +196,15 @@ const STARWELL_RING = {
 
 const LIGHTS = [
   // Soft ambient warm fill — every PBR surface gets a baseline
-  { id: `light-ambient-${ts}-1`, type: 'ambient' as const, color: '#ffd9a8', intensity: 18, position: [0, 0, 0] as [number, number, number] },
+  { id: `light-ambient-${ts}-1`, type: 'ambient' as const, color: '#ffd9a8', intensity: 0.55, position: [0, 0, 0] as [number, number, number] },
   // Hemisphere — sky + ground tint
-  { id: `light-hemisphere-${ts}-2`, type: 'hemisphere' as const, color: '#ffc28a', groundColor: '#3a2d2a', intensity: 30, position: [0, 8, 0] as [number, number, number] },
+  { id: `light-hemisphere-${ts}-2`, type: 'hemisphere' as const, color: '#ffc28a', groundColor: '#3a2d2a', intensity: 0.9, position: [0, 8, 0] as [number, number, number] },
   // Sun-style directional from above-front
-  { id: `light-directional-${ts}-3`, type: 'directional' as const, color: '#fff1d6', intensity: 60, position: [6, 12, 6] as [number, number, number], target: [0, 0, 0] as [number, number, number] },
+  { id: `light-directional-${ts}-3`, type: 'directional' as const, color: '#fff1d6', intensity: 1.7, position: [6, 12, 6] as [number, number, number], target: [0, 0, 0] as [number, number, number] },
   // Accent point — purple at the portal
-  { id: `light-point-${ts}-4`, type: 'point' as const, color: '#9b6cff', intensity: 90, position: [0, 2.5, -12] as [number, number, number] },
+  { id: `light-point-${ts}-4`, type: 'point' as const, color: '#9b6cff', intensity: 3.2, position: [0, 2.5, -12] as [number, number, number] },
   // Accent point — warm at the spawn
-  { id: `light-point-${ts}-5`, type: 'point' as const, color: '#ffb070', intensity: 60, position: [0, 2.0, 2] as [number, number, number] },
+  { id: `light-point-${ts}-5`, type: 'point' as const, color: '#ffb070', intensity: 1.6, position: [0, 2.0, 2] as [number, number, number] },
 ]
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -258,7 +258,7 @@ async function main() {
         userId: SYSTEM_OWNER_ID,
         name: 'Welcome Hub',
         icon: '🌅',
-        visibility: 'public',
+        visibility: 'core',
         data: JSON.stringify(worldState),
         objectCount,
         creatorName: 'The Oasis',
@@ -273,7 +273,7 @@ async function main() {
         userId: SYSTEM_OWNER_ID,
         name: 'Welcome Hub',
         icon: '🌅',
-        visibility: 'public',
+        visibility: 'core',
         data: JSON.stringify(worldState),
         objectCount,
         creatorName: 'The Oasis',

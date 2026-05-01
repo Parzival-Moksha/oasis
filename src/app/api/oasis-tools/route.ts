@@ -16,6 +16,7 @@ import { mkdir, readdir, unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { callTool, TOOL_NAMES, deliverScreenshot, getPendingScreenshotRequest, isScreenshotPending } from '@/lib/mcp/oasis-tools'
 import { buildHermesRemoteExec } from '@/lib/hermes-remote'
+import { getOasisMode, readBrowserSession } from '@/lib/session'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -214,6 +215,14 @@ function isAuthorized(request: NextRequest): boolean {
   return token === key
 }
 
+function hasAuthorizedMcpBearer(request: NextRequest): boolean {
+  const key = process.env.OASIS_MCP_KEY
+  if (!key) return false
+  const auth = request.headers.get('authorization') || ''
+  const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : ''
+  return token === key
+}
+
 export async function GET(request: NextRequest) {
   if (!isAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -291,7 +300,17 @@ export async function POST(request: NextRequest) {
   }
 
   const args = body.args && typeof body.args === 'object' ? body.args : {}
-  const result = await callTool(toolName, args)
+  const mode = getOasisMode()
+  const session = readBrowserSession(request)
+  const mcpBearer = hasAuthorizedMcpBearer(request)
+  if (mode === 'hosted' && !session && !mcpBearer) {
+    return NextResponse.json({ error: 'oasis_session cookie or OASIS_MCP_KEY bearer required in hosted mode' }, { status: 401 })
+  }
+  const result = await callTool(toolName, args, {
+    source: 'api',
+    userId: session?.browserSessionId || process.env.ADMIN_USER_ID || 'local-user',
+    requireExplicitWorld: mode === 'hosted',
+  })
 
   return NextResponse.json(result, { status: result.ok ? 200 : 400 })
 }

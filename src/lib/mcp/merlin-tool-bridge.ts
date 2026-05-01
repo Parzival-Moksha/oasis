@@ -179,5 +179,9 @@ export async function executeMerlinTool(name: string, args: Record<string, unkno
   const normalizedArgs = name === 'screenshot_viewport'
     ? args
     : normalizeMerlinToolArgs(name as MerlinToolName, args, worldId)
-  return callTool(canonicalName, normalizedArgs)
+  return callTool(canonicalName, normalizedArgs, {
+    source: 'merlin',
+    worldId,
+    agentType: 'merlin',
+  })
 }

@@ -3,6 +3,8 @@ import 'server-only'
 import * as path from 'path'
 import { promises as fs } from 'fs'
 
+import { sanitizeOpenclawSshHost } from './openclaw-ssh-host'
+
 export const DEFAULT_OPENCLAW_GATEWAY_URL = 'ws://127.0.0.1:18789'
 export const DEFAULT_OPENCLAW_CONTROL_UI_URL = 'http://127.0.0.1:18789'
 export const DEFAULT_OPENCLAW_BROWSER_CONTROL_URL = 'http://127.0.0.1:18791'
@@ -98,7 +100,7 @@ function sanitizeStoredConfig(raw: unknown): OpenclawStoredConfig | null {
     gatewayUrl: normalizeGatewayUrl(sanitizeString(obj.gatewayUrl)),
     controlUiUrl: normalizeHttpUrl(sanitizeString(obj.controlUiUrl), DEFAULT_OPENCLAW_CONTROL_UI_URL),
     browserControlUrl: normalizeHttpUrl(sanitizeString(obj.browserControlUrl), DEFAULT_OPENCLAW_BROWSER_CONTROL_URL),
-    sshHost: sanitizeString(obj.sshHost),
+    sshHost: sanitizeOpenclawSshHost(obj.sshHost).value,
     deviceToken: sanitizeString(obj.deviceToken),
     defaultSessionId: sanitizeString(obj.defaultSessionId),
     lastSessionId: sanitizeString(obj.lastSessionId),
@@ -124,7 +126,7 @@ export async function writeStoredOpenclawConfig(input: WriteOpenclawConfigInput)
     gatewayUrl: normalizeGatewayUrl(input.gatewayUrl || previous?.gatewayUrl),
     controlUiUrl: normalizeHttpUrl(input.controlUiUrl || previous?.controlUiUrl, DEFAULT_OPENCLAW_CONTROL_UI_URL),
     browserControlUrl: normalizeHttpUrl(input.browserControlUrl || previous?.browserControlUrl, DEFAULT_OPENCLAW_BROWSER_CONTROL_URL),
-    sshHost: sanitizeString(input.sshHost ?? previous?.sshHost),
+    sshHost: sanitizeOpenclawSshHost(input.sshHost ?? previous?.sshHost).value,
     deviceToken: sanitizeString(input.deviceToken ?? previous?.deviceToken),
     defaultSessionId: sanitizeString(input.defaultSessionId ?? previous?.defaultSessionId),
     lastSessionId: sanitizeString(input.lastSessionId ?? previous?.lastSessionId),

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/db'
-import { getOasisUserId } from '@/lib/session'
+import { getRequiredOasisUserId } from '@/lib/session'
 import { createWorld, saveWorld } from '@/lib/forge/world-server'
 import { DEFAULT_WORLD_LIGHTS, type CraftedScene, type WorldLight } from '@/lib/conjure/types'
 
@@ -193,7 +193,10 @@ async function resolveRoadmapWorldId(userId: string): Promise<{ worldId: string;
 
 export async function POST(request: NextRequest) {
   try {
-    const userId = await getOasisUserId(request)
+    const userId = getRequiredOasisUserId(request)
+    if (!userId) {
+      return NextResponse.json({ error: 'oasis_session cookie required' }, { status: 401 })
+    }
     const body = await request.json().catch(() => ({})) as { avatarUrl?: unknown }
     const avatarUrl = sanitizeString(body.avatarUrl)
 

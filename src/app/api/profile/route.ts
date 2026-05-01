@@ -6,7 +6,7 @@
 
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { getOasisUserId } from '@/lib/session'
+import { getRequiredOasisUserId } from '@/lib/session'
 import { levelFromXp, levelProgress, xpToNextLevel, getLevelTitle } from '@/lib/xp'
 import { FREE_CREDITS } from '@/lib/conjure/types'
 
@@ -21,7 +21,10 @@ async function ensureProfile(userId: string) {
 
 export async function GET(request: Request) {
   try {
-    const userId = await getOasisUserId(request)
+    const userId = getRequiredOasisUserId(request)
+    if (!userId) {
+      return NextResponse.json({ error: 'oasis_session cookie required' }, { status: 401 })
+    }
     const p = await ensureProfile(userId)
 
     const level = levelFromXp(p.totalXp)
@@ -61,7 +64,10 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const userId = await getOasisUserId(request)
+    const userId = getRequiredOasisUserId(request)
+    if (!userId) {
+      return NextResponse.json({ error: 'oasis_session cookie required' }, { status: 401 })
+    }
     const body = await request.json()
 
     // Ensure profile exists first

@@ -8,12 +8,15 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextResponse } from 'next/server'
-import { getOasisUserId } from '@/lib/session'
+import { getRequiredOasisUserId } from '@/lib/session'
 import { countAssetUsageAcrossWorlds } from '@/lib/forge/world-server'
 
 export async function GET(request: Request) {
   try {
-    const userId = await getOasisUserId(request)
+    const userId = getRequiredOasisUserId(request)
+    if (!userId) {
+      return NextResponse.json({ error: 'oasis_session cookie required' }, { status: 401 })
+    }
     const { searchParams } = new URL(request.url)
     const url = searchParams.get('url')
     const currentWorldId = searchParams.get('currentWorldId') || ''

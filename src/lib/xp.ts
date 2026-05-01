@@ -141,6 +141,6 @@ export function getLevelTitle(level: number): LevelTitle {
 // WORLD VISIBILITY — who can see what
 // ═══════════════════════════════════════════════════════════════════════════
 
-export type WorldVisibility = 'private' | 'public' | 'unlisted' | 'public_edit'
+export type WorldVisibility = 'private' | 'public' | 'unlisted' | 'public_edit' | 'only-with-link' | 'ffa' | 'core' | 'template'
 
 // ▓▓▓▓【X̸P̸】▓▓▓▓ॐ▓▓▓▓【L̸E̸V̸E̸L̸】▓▓▓▓
