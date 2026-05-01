@@ -76,6 +76,8 @@ prisma/data/*.db
 prisma/data/*.db-journal
 prisma/data/*.db-wal
 prisma/data/*.db-shm
+prisma/data/*.json
+prisma/prisma/
 
 # Avatar gallery thumbnails — tracked (tiny, needed for UI)
 # public/avatars/gallery/thumbs/ is tracked
