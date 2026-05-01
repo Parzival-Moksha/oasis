@@ -396,31 +396,27 @@ export function CameraController() {
     const onClick = (e: MouseEvent) => {
       const state = useInputManager.getState()
 
-      // ░▒▓ BUG FIX: Clicking canvas while ui-focused from noclip/TPS ▓▒░
-      // If ui-focused (panel was open) and the click landed on the canvas (not a panel),
-      // dismiss all UI layers and return to previous camera state.
-      // The returnToPrevious() call will re-request pointer lock if returning to noclip/TPS.
-      if (state.inputState === 'ui-focused') {
-        const target = e.target as HTMLElement
-        const isCanvas = target?.tagName === 'CANVAS' || target?.closest('#uploader-canvas')
-        const isPanel = target?.closest('[data-ui-panel]')
-        if (isCanvas && !isPanel) {
-          // Clear all UI layers so returnToPrevious doesn't short-circuit
-          const layers = [...state._uiLayerStack]
-          for (const id of layers) {
-            state.popUILayer(id)
-          }
-          // If popUILayer didn't already trigger returnToPrevious (empty stack case),
-          // force it now
-          if (useInputManager.getState().inputState === 'ui-focused') {
-            state.returnToPrevious()
-          }
-          const nextState = useInputManager.getState()
-          if (nextState.can().canLockPointer && !nextState.pointerLocked) {
-            nextState.requestPointerLock()
-          }
-          return
+      // Canvas click should hand control back to the world even if a visible
+      // panel left an active UI layer behind.
+      const target = e.target as HTMLElement
+      const isCanvas = target?.tagName === 'CANVAS' || target?.closest('#uploader-canvas')
+      const isPanel = target?.closest('[data-ui-panel]')
+      if ((state.inputState === 'ui-focused' || state.hasActiveUILayer()) && isCanvas && !isPanel) {
+        // Clear all UI layers so the canvas click can become the active control surface.
+        const layers = [...state._uiLayerStack]
+        for (const id of layers) {
+          state.popUILayer(id)
         }
+        // If popUILayer didn't already trigger returnToPrevious (empty stack case),
+        // force it now.
+        if (useInputManager.getState().inputState === 'ui-focused') {
+          state.returnToPrevious()
+        }
+        const nextState = useInputManager.getState()
+        if (nextState.can().canLockPointer && !nextState.pointerLocked) {
+          nextState.requestPointerLock()
+        }
+        return
       }
 
       // Standard path: lock pointer in states that support it
