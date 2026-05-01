@@ -3577,7 +3577,7 @@ export function OpenclawPanel({
                 <OpenclawToolMediaBubbles
                   message={message}
                   avatarId={openclawAvatar?.id}
-                  autoPlayAudio={message.toolState === 'done'}
+                  autoPlayAudio={false}
                   galleryScopeId="openclaw-voice"
                 />
                 </div>
@@ -3685,7 +3685,7 @@ export function OpenclawPanel({
                 <OpenclawToolMediaBubbles
                   message={message}
                   avatarId={openclawAvatar?.id}
-                  autoPlayAudio={message.toolState === 'done'}
+                  autoPlayAudio={false}
                   galleryScopeId="openclaw-stream"
                 />
                 </div>

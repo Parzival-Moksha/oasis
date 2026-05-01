@@ -415,6 +415,10 @@ export function CameraController() {
           if (useInputManager.getState().inputState === 'ui-focused') {
             state.returnToPrevious()
           }
+          const nextState = useInputManager.getState()
+          if (nextState.can().canLockPointer && !nextState.pointerLocked) {
+            nextState.requestPointerLock()
+          }
           return
         }
       }

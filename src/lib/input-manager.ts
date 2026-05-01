@@ -327,9 +327,10 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
       document.activeElement.blur()
     }
-    // Re-acquire pointer lock if returning to a mode that needs it
+    // Re-acquire pointer lock while still inside the user's click/key gesture.
+    // Firefox rejects delayed pointer-lock requests much more aggressively than Chrome.
     if (prev === 'noclip' || prev === 'third-person') {
-      setTimeout(() => get().requestPointerLock(), 100)
+      get().requestPointerLock()
     }
   },
 
@@ -343,9 +344,9 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
       document.activeElement.blur()
     }
-    // Re-acquire pointer lock if returning to a mode that needs it
+    // Re-acquire pointer lock while still inside the Escape key gesture.
     if (prev === 'noclip' || prev === 'third-person') {
-      setTimeout(() => get().requestPointerLock(), 100)
+      get().requestPointerLock()
     }
     return true
   },
@@ -363,11 +364,10 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
         document.exitPointerLock()
       }
       set({ inputState: mode })
-      // Auto-request pointer lock when switching TO noclip or TPS
-      // Note: uses setTimeout(0) to let the state update propagate first,
-      // but stays within the browser's transient user activation window (~5s)
+      // Auto-request pointer lock when switching TO noclip or TPS. This must
+      // stay synchronous with the user gesture, especially in Firefox.
       if (mode === 'noclip' || mode === 'third-person') {
-        setTimeout(() => get().requestPointerLock(), 50)
+        get().requestPointerLock()
       }
     } else if (isTemporary) {
       // In placement/paint: update the _previousCameraState so when the
@@ -409,6 +409,7 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
   // ── POINTER LOCK LIFECYCLE ─────────────────────────────────────
 
   requestPointerLock: () => {
+    if (typeof document === 'undefined') return
     if (get()._uiLayerStack.length > 0) return
     if (!STATE_CAPABILITIES[get().inputState].canLockPointer) return
     if (get().pointerLocked) return

@@ -1087,6 +1087,7 @@ export default function Scene() {
     }
     return defaultSettings
   })
+  const controlModeRef = useRef(settings.controlMode)
 
   useEffect(() => {
     void runLocalStorageAgentCacheMigration()
@@ -1096,6 +1097,7 @@ export default function Scene() {
     if (typeof window !== 'undefined') {
       writeBrowserStorage('oasis-settings', JSON.stringify(settings))
     }
+    controlModeRef.current = settings.controlMode
   }, [settings])
 
   const selectObject = useOasisStore(s => s.selectObject)
@@ -1178,16 +1180,33 @@ export default function Scene() {
   // ─═̷─═̷─🎮─═̷─═̷─{ CAMERA MODE HOTKEY: Ctrl+Alt+C cycles orbit→noclip→third-person }─═̷─═̷─🎮─═̷─═̷─
   useEffect(() => {
     const MODES: Array<'orbit' | 'noclip' | 'third-person'> = ['orbit', 'noclip', 'third-person']
+    const isTypingTarget = (target: EventTarget | null) => {
+      const el = target as HTMLElement | null
+      if (!el) return false
+      const tag = el.tagName
+      if (tag === 'INPUT') {
+        const type = (el as HTMLInputElement).type
+        return !['range', 'color', 'checkbox', 'radio', 'file', 'button', 'image', 'reset', 'submit'].includes(type)
+      }
+      return tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
+    }
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.altKey && e.code === 'KeyC') {
+      const legacyChord = e.ctrlKey && e.altKey && e.code === 'KeyC'
+      const plainWorldKey = !e.ctrlKey
+        && !e.metaKey
+        && !e.altKey
+        && !e.shiftKey
+        && e.code === 'KeyC'
+        && !isTypingTarget(e.target)
+        && !useInputManager.getState().hasActiveUILayer()
+      if (legacyChord || plainWorldKey) {
         e.preventDefault()
-        setSettings(prev => {
-          const idx = MODES.indexOf(prev.controlMode)
-          const next = MODES[(idx + 1) % MODES.length]
-          useInputManager.getState().syncFromControlMode(next)
-          useAudioManager.getState().play('modeSwitch')
-          return { ...prev, controlMode: next }
-        })
+        const idx = MODES.indexOf(controlModeRef.current)
+        const next = MODES[(idx + 1) % MODES.length]
+        controlModeRef.current = next
+        useInputManager.getState().syncFromControlMode(next)
+        useAudioManager.getState().play('modeSwitch')
+        setSettings(prev => ({ ...prev, controlMode: next }))
       }
     }
     window.addEventListener('keydown', handleKeyDown)
@@ -1211,6 +1230,15 @@ export default function Scene() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Only on mount — settings.controlMode is the initial value from localStorage
+
+  useEffect(() => {
+    const im = useInputManager.getState()
+    const current = im.inputState
+    const isBaseCamera = current === 'orbit' || current === 'noclip' || current === 'third-person'
+    if (isBaseCamera && current !== settings.controlMode) {
+      useInputManager.setState({ inputState: settings.controlMode })
+    }
+  }, [inputState, settings.controlMode])
 
   // ─═̷─═̷─🧪─═̷─═̷─{ TEST HARNESS — Parzival's Hands }─═̷─═̷─🧪─═̷─═̷─
   useEffect(() => { installTestHarness() }, [])
