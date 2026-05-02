@@ -1,3 +1,5 @@
+import { extractTextFromGatewayContent } from './openclaw-bridge-chat-history.mjs'
+
 const TERMINAL_STATES = new Set(['final', 'aborted', 'error'])
 
 function cleanString(value) {
@@ -6,8 +8,20 @@ function cleanString(value) {
 
 function extractGatewayChatText(payload) {
   if (typeof payload?.message === 'string') return payload.message
+  if (payload?.message && typeof payload.message === 'object') {
+    const text = extractTextFromGatewayContent(payload.message.content ?? payload.message)
+    if (text) return text
+  }
   if (typeof payload?.delta === 'string') return payload.delta
+  if (payload?.delta && typeof payload.delta === 'object') {
+    const text = extractTextFromGatewayContent(payload.delta.content ?? payload.delta)
+    if (text) return text
+  }
   if (typeof payload?.content === 'string') return payload.content
+  if (Array.isArray(payload?.content)) {
+    const text = extractTextFromGatewayContent(payload.content)
+    if (text) return text
+  }
   return ''
 }
 
@@ -23,6 +37,23 @@ export function createGatewayChatRouter({ sendRelay, log = () => {} }) {
   const runIdToRelaySessionId = new Map()
   const bufferedByRunId = new Map()
   const completedRunIds = new Set()
+
+  function findPending({ runId = '', sessionKey = '', idempotencyKey = '' } = {}) {
+    const cleanRunId = cleanString(runId)
+    const cleanSessionKey = cleanString(sessionKey)
+    const cleanIdempotencyKey = cleanString(idempotencyKey)
+    if (cleanRunId) {
+      const mappedSessionId = runIdToRelaySessionId.get(cleanRunId)
+      if (mappedSessionId) {
+        const mappedPending = [...pendingBySessionKey.values()]
+          .find(entry => entry.sessionId === mappedSessionId)
+        if (mappedPending) return mappedPending
+      }
+    }
+    return (cleanSessionKey ? pendingBySessionKey.get(cleanSessionKey) : null)
+      || (cleanIdempotencyKey ? pendingByIdempotencyKey.get(cleanIdempotencyKey) : null)
+      || null
+  }
 
   function rememberPending({ sessionId, sessionKey, idempotencyKey }) {
     const pending = {
@@ -65,6 +96,14 @@ export function createGatewayChatRouter({ sendRelay, log = () => {} }) {
     }
 
     if (state === 'final') {
+      if (!text) {
+        log('chat.gateway final empty; awaiting history fallback', {
+          sessionId,
+          sessionKey: pending?.sessionKey || extractSessionKey(payload) || '(none)',
+          runId: runId || '(none)',
+        })
+        return false
+      }
       sendRelay({ type: 'chat.agent.final', sessionId, text })
       if (runId) completedRunIds.add(runId)
       forgetPending(pending, runId)
@@ -96,13 +135,11 @@ export function createGatewayChatRouter({ sendRelay, log = () => {} }) {
     if (mappedSessionId) {
       return {
         sessionId: mappedSessionId,
-        pending: sessionKey ? pendingBySessionKey.get(sessionKey) || null : null,
+        pending: findPending({ runId, sessionKey }),
       }
     }
 
-    const pending = (sessionKey ? pendingBySessionKey.get(sessionKey) : null)
-      || (idempotencyKey ? pendingByIdempotencyKey.get(idempotencyKey) : null)
-      || null
+    const pending = findPending({ sessionKey, idempotencyKey })
     if (pending && runId) runIdToRelaySessionId.set(runId, pending.sessionId)
     return {
       sessionId: pending?.sessionId || '',
@@ -166,6 +203,37 @@ export function createGatewayChatRouter({ sendRelay, log = () => {} }) {
         sessionKey: extractSessionKey(payload) || '(none)',
       })
       return false
+    },
+
+    isPending({ runId = '', sessionKey = '', idempotencyKey = '' } = {}) {
+      const cleanRunId = cleanString(runId)
+      if (cleanRunId && completedRunIds.has(cleanRunId)) return false
+      if (cleanRunId && runIdToRelaySessionId.has(cleanRunId)) return true
+      return Boolean(findPending({ sessionKey, idempotencyKey }))
+    },
+
+    routeSyntheticFinal({ runId = '', sessionId = '', sessionKey = '', idempotencyKey = '', text = '', source = 'synthetic' } = {}) {
+      const cleanRunId = cleanString(runId)
+      if (cleanRunId && completedRunIds.has(cleanRunId)) return false
+      const pending = findPending({ runId, sessionKey, idempotencyKey })
+      const targetSessionId = cleanString(sessionId)
+        || (cleanRunId ? runIdToRelaySessionId.get(cleanRunId) : '')
+        || pending?.sessionId
+        || ''
+      if (!targetSessionId) return false
+      log('chat.synthetic -> relay', {
+        source,
+        sessionId: targetSessionId,
+        sessionKey: pending?.sessionKey || cleanString(sessionKey) || '(none)',
+        runId: cleanRunId || '(none)',
+        chars: cleanString(text).length,
+      })
+      return routePayload({
+        runId: cleanRunId,
+        sessionKey: pending?.sessionKey || cleanString(sessionKey),
+        state: 'final',
+        message: cleanString(text),
+      }, targetSessionId, pending)
     },
   }
 }

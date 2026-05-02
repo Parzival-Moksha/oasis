@@ -46,6 +46,7 @@ import path from 'node:path'
 import { GatewayClient, loadOrCreateIdentity } from './openclaw-gateway-shim.mjs'
 import { startBridgeMcpServer } from './openclaw-bridge-mcp.mjs'
 import { createGatewayChatRouter } from './openclaw-bridge-chat-routing.mjs'
+import { extractAssistantReplyFromHistory } from './openclaw-bridge-chat-history.mjs'
 import {
   createBridgeMcpServerConfig,
   installBridgeMcpConfig,
@@ -199,6 +200,9 @@ let mcpServer = null
 let mcpConfigGuard = null
 let gatewayChatRouter = null
 let exited = false
+let gatewaySessionLaneReady = false
+let gatewaySessionLanePromise = null
+let gatewayIdentity = null
 const pendingToolCalls = new Map()
 const mcpDiagnostics = {
   requestCount: 0,
@@ -208,6 +212,9 @@ const mcpDiagnostics = {
   lastToolName: '',
   lastToolWorldId: '',
 }
+const CHAT_HISTORY_FIRST_POLL_MS = 4_000
+const CHAT_HISTORY_POLL_MS = 4_000
+const CHAT_HISTORY_DEADLINE_MS = 120_000
 
 const exitWith = (code, reason) => {
   if (exited) return
@@ -271,6 +278,73 @@ function resolvePendingToolResult(result) {
   return true
 }
 
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function summarizeGatewayPayload(payload) {
+  const rec = payload && typeof payload === 'object' ? payload : {}
+  const data = rec.data && typeof rec.data === 'object' ? rec.data : rec
+  return {
+    runId: typeof data.runId === 'string' ? data.runId : '(none)',
+    sessionKey: typeof data.sessionKey === 'string'
+      ? data.sessionKey
+      : typeof data.sessionId === 'string'
+        ? data.sessionId
+        : '(none)',
+    state: typeof data.state === 'string'
+      ? data.state
+      : typeof data.status === 'string'
+        ? data.status
+        : '(none)',
+    toolName: typeof data.toolName === 'string'
+      ? data.toolName
+      : typeof data.name === 'string'
+        ? data.name
+        : '(none)',
+  }
+}
+
+async function ensureGatewaySessionLane() {
+  if (!gateway) return false
+  if (gatewaySessionLaneReady) return true
+  if (!gatewaySessionLanePromise) {
+    gatewaySessionLanePromise = gateway.callMethod('sessions.subscribe', {})
+      .then(() => {
+        gatewaySessionLaneReady = true
+        log('Gateway sessions.subscribe ready')
+        return true
+      })
+      .catch((err) => {
+        log('Gateway sessions.subscribe unavailable; chat may rely on history fallback:', err?.message || String(err))
+        return false
+      })
+      .finally(() => {
+        gatewaySessionLanePromise = null
+      })
+  }
+  return gatewaySessionLanePromise
+}
+
+async function readGatewayChatHistory(sessionKey, limit = 60) {
+  if (!gatewayIdentity) {
+    return gateway.callMethod('chat.history', { sessionKey, limit })
+  }
+
+  const historyGateway = new GatewayClient({
+    gatewayUrl: finalGatewayUrl,
+    identity: gatewayIdentity,
+    sharedToken: gatewaySharedToken,
+    logger: () => {},
+  })
+  try {
+    await historyGateway.ensureReady()
+    return await historyGateway.callMethod('chat.history', { sessionKey, limit })
+  } finally {
+    historyGateway.close()
+  }
+}
+
 function proxyToolCallThroughRelay({ toolName, args, scope }) {
   if (!relayWs || relayWs.readyState !== relayWs.OPEN) {
     return Promise.resolve({
@@ -332,11 +406,108 @@ function setupGatewayChatBridge(creds) {
 
   gatewayChatRouter = createGatewayChatRouter({ sendRelay, log })
 
+  gateway.subscribeEvent('*', (payload, meta) => {
+    if (meta?.event === 'chat') return
+    if (!/chat|session|tool/i.test(meta?.event || '')) return
+    log('gateway.event <-', {
+      event: meta?.event || '(unknown)',
+      seq: meta?.seq,
+      ...summarizeGatewayPayload(payload),
+    })
+  })
+
   // Subscribe to Gateway 'chat' events. They arrive whether or not we initiated
   // the run — filter by runId we know about.
   gateway.subscribeEvent('chat', (payload) => {
     gatewayChatRouter?.handleGatewayChatPayload(payload)
   })
+
+  gateway.subscribeEvent('session.tool', (payload) => {
+    log('session.tool <- gateway', summarizeGatewayPayload(payload))
+  })
+}
+
+async function pollGatewayHistoryForFinal({
+  runId,
+  sessionId,
+  sessionKey,
+  idempotencyKey,
+  userMessage,
+  startedAtMs,
+}) {
+  let attempt = 0
+  const deadline = startedAtMs + CHAT_HISTORY_DEADLINE_MS
+  log('chat.history fallback armed', {
+    sessionId,
+    sessionKey,
+    runId: runId || '(none)',
+  })
+  while (Date.now() < deadline) {
+    await delay(attempt === 0 ? CHAT_HISTORY_FIRST_POLL_MS : CHAT_HISTORY_POLL_MS)
+    if (!gateway) return
+    if (!gatewayChatRouter?.isPending({ runId, sessionKey, idempotencyKey })) {
+      log('chat.history fallback skipped; run no longer pending', {
+        sessionId,
+        sessionKey,
+        runId: runId || '(none)',
+        attempt,
+      })
+      return
+    }
+    attempt += 1
+    try {
+      const history = await readGatewayChatHistory(sessionKey, 60)
+      const text = extractAssistantReplyFromHistory(history, {
+        userMessage,
+        startedAtMs,
+      })
+      if (text) {
+        const routed = gatewayChatRouter.routeSyntheticFinal({
+          runId,
+          sessionId,
+          sessionKey,
+          idempotencyKey,
+          text,
+          source: 'chat.history',
+        })
+        if (routed) {
+          log('chat.history fallback -> relay', {
+            sessionId,
+            sessionKey,
+            runId: runId || '(none)',
+            attempt,
+            chars: text.length,
+          })
+        }
+        return
+      }
+      log('chat.history fallback pending', {
+        sessionId,
+        sessionKey,
+        runId: runId || '(none)',
+        attempt,
+      })
+    } catch (err) {
+      log('chat.history fallback failed', {
+        sessionId,
+        sessionKey,
+        runId: runId || '(none)',
+        attempt,
+        error: err?.message || String(err),
+      })
+    }
+  }
+
+  if (gatewayChatRouter?.isPending({ runId, sessionKey, idempotencyKey })) {
+    gatewayChatRouter.routeSyntheticFinal({
+      runId,
+      sessionId,
+      sessionKey,
+      idempotencyKey,
+      text: '[bridge] OpenClaw accepted the message, but no Gateway chat event or history reply arrived before timeout.',
+      source: 'timeout',
+    })
+  }
 }
 
 async function forwardChatUserToGateway(sessionId, text) {
@@ -349,7 +520,9 @@ async function forwardChatUserToGateway(sessionId, text) {
   try {
     const idempotencyKey = randomUUID()
     const sessionKey = sessionId || 'oasis-default'
+    const startedAtMs = Date.now()
     gatewayChatRouter?.beginChat({ sessionId, sessionKey, idempotencyKey })
+    await ensureGatewaySessionLane()
     // Use the relay sessionId as the Gateway sessionKey. OpenClaw stores chat
     // history per sessionKey, so the user gets a coherent conversation per
     // browser-chat-session.
@@ -361,13 +534,25 @@ async function forwardChatUserToGateway(sessionId, text) {
     const runId = result?.runId
     if (typeof runId === 'string' && runId) {
       gatewayChatRouter?.attachRunId({ runId, sessionId, sessionKey, idempotencyKey })
+      log('chat.send accepted', { runId, sessionId })
+      await pollGatewayHistoryForFinal({
+        runId,
+        sessionId,
+        sessionKey,
+        idempotencyKey,
+        userMessage: text,
+        startedAtMs,
+      })
       log('chat.send →', { runId, sessionId })
     } else {
       log('chat.send returned no runId', result)
-      sendRelay({
-        type: 'chat.agent.final',
+      await pollGatewayHistoryForFinal({
+        runId: '',
         sessionId,
-        text: '[bridge] OpenClaw accepted the message but returned no runId',
+        sessionKey,
+        idempotencyKey,
+        userMessage: text,
+        startedAtMs,
       })
     }
   } catch (err) {
@@ -468,6 +653,7 @@ async function start() {
     void (async () => {
       try {
         const identity = await loadOrCreateIdentity(identityPath)
+        gatewayIdentity = identity
         log('device identity:', { id: identity.id, path: identityPath })
         gateway = new GatewayClient({
           gatewayUrl: finalGatewayUrl,

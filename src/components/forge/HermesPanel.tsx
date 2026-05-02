@@ -1407,6 +1407,7 @@ export function HermesPanel({
   const autoConnectTriedRef = useRef(false)
   const activeNativeSessionIdRef = useRef('')
   const lastHydratedSessionIdRef = useRef('')
+  const hydrationRequestIdRef = useRef(0)
   const lastVisionToolSignatureRef = useRef('')
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => readStoredMessages())
@@ -1664,26 +1665,39 @@ export function HermesPanel({
     sessionId: string,
     options?: {
       mergeMessages?: ChatMessage[]
+      clearBeforeHydrate?: boolean
     }
   ): Promise<ChatMessage[]> => {
     if (!sessionId || sessionId === NEW_SESSION_VALUE) {
+      hydrationRequestIdRef.current += 1
       setSessionHydrating(false)
       setMessages([])
       setAutoScroll(true)
       return []
     }
 
+    const requestId = hydrationRequestIdRef.current + 1
+    hydrationRequestIdRef.current = requestId
+    const isCurrentHydration = () => hydrationRequestIdRef.current === requestId
+
     setSessionHydrating(true)
     setSessionsError('')
     setAutoPlayMediaMessageId('')
+    if (options?.clearBeforeHydrate) {
+      setMessages([])
+      setAutoScroll(true)
+    }
 
     try {
       const remoteMessages = await fetchHydratedHermesMessages(sessionId)
+      if (!isCurrentHydration()) return []
+
       const collapsedRemoteMessages = collapseConsecutiveHermesAssistantTurns(remoteMessages)
 
       const cachedSourceMessages = options?.mergeMessages?.length
         ? options.mergeMessages
         : await readPersistedNativeSessionCache(sessionId)
+      if (!isCurrentHydration()) return []
 
       const nextMessages = shouldPreferHydratedHermesMessages(collapsedRemoteMessages, cachedSourceMessages)
         ? collapseDuplicateHermesMessages(collapsedRemoteMessages)
@@ -1694,15 +1708,19 @@ export function HermesPanel({
       writeNativeSessionCache(sessionId, nextMessages)
       return nextMessages
     } catch (error) {
+      if (!isCurrentHydration()) return []
       setSessionsError(error instanceof Error ? error.message : 'Unable to load the selected Hermes session.')
-      const fallbackMessages = options?.mergeMessages || await readPersistedNativeSessionCache(sessionId).catch(() => readLegacyNativeSessionCache(sessionId))
-      if (fallbackMessages.length) {
+      const fallbackMessages = options?.mergeMessages || []
+      if (fallbackMessages.length > 0) {
         setMessages(fallbackMessages)
         return fallbackMessages
       }
+      setMessages([])
       return []
     } finally {
-      setSessionHydrating(false)
+      if (isCurrentHydration()) {
+        setSessionHydrating(false)
+      }
     }
   }, [])
 
@@ -2327,7 +2345,7 @@ export function HermesPanel({
     if (lastHydratedSessionIdRef.current === selectedSessionId && messages.length > 0) return
 
     lastHydratedSessionIdRef.current = selectedSessionId
-    void hydrateSession(selectedSessionId)
+    void hydrateSession(selectedSessionId, { clearBeforeHydrate: true })
   }, [hydrateSession, isStreaming, messages.length, nativeSessionsAvailable, selectedSessionId])
 
   useEffect(() => {
@@ -2936,11 +2954,14 @@ export function HermesPanel({
           onChange={event => {
             const nextSessionId = event.target.value
             activeNativeSessionIdRef.current = nextSessionId === NEW_SESSION_VALUE ? '' : nextSessionId
+            lastHydratedSessionIdRef.current = ''
             setSelectedSessionId(nextSessionId)
+            setMessages([])
+            setAutoPlayMediaMessageId('')
+            setAutoScroll(true)
             if (nextSessionId === NEW_SESSION_VALUE) {
-              setMessages([])
-              setAutoPlayMediaMessageId('')
-              setAutoScroll(true)
+              hydrationRequestIdRef.current += 1
+              setSessionHydrating(false)
             }
           }}
           disabled={!nativeSessionsAvailable || sessionsLoading || isStreaming}
@@ -2956,9 +2977,12 @@ export function HermesPanel({
         <button
           data-no-drag
           onClick={() => {
+            hydrationRequestIdRef.current += 1
             activeNativeSessionIdRef.current = ''
+            lastHydratedSessionIdRef.current = NEW_SESSION_VALUE
             setSelectedSessionId(NEW_SESSION_VALUE)
             setMessages([])
+            setSessionHydrating(false)
             setAutoScroll(true)
           }}
           disabled={isStreaming}

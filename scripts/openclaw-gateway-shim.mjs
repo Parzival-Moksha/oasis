@@ -316,8 +316,11 @@ export class GatewayClient {
   }
 
   _handleEvent(frame) {
-    const handlers = this.eventHandlers.get(frame.event)
-    if (!handlers) return
+    const handlers = [
+      ...(this.eventHandlers.get(frame.event) || []),
+      ...(this.eventHandlers.get('*') || []),
+    ]
+    if (handlers.length === 0) return
     for (const handler of handlers) {
       try { handler(frame.payload, { event: frame.event, seq: frame.seq }) }
       catch (err) { this.log('event handler threw', err?.message || String(err)) }

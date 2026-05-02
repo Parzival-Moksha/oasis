@@ -95,4 +95,95 @@ describe('OpenClaw bridge chat routing', () => {
       { type: 'chat.agent.final', sessionId: 'hosted-session-c', text: 'hello' },
     ])
   })
+
+  it('extracts final text from structured Gateway message content', () => {
+    const { router, sent } = createHarness()
+
+    router.beginChat({
+      sessionId: 'hosted-session-structured',
+      sessionKey: 'hosted-session-structured',
+      idempotencyKey: 'idem-structured',
+    })
+    router.attachRunId({
+      runId: 'run-structured',
+      sessionId: 'hosted-session-structured',
+      sessionKey: 'hosted-session-structured',
+      idempotencyKey: 'idem-structured',
+    })
+    router.handleGatewayChatPayload({
+      runId: 'run-structured',
+      state: 'final',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'structured answer' }],
+      },
+    })
+
+    expect(sent).toEqual([{
+      type: 'chat.agent.final',
+      sessionId: 'hosted-session-structured',
+      text: 'structured answer',
+    }])
+  })
+
+  it('does not complete an empty final so history fallback can rescue it', () => {
+    const { router, sent } = createHarness()
+
+    router.beginChat({
+      sessionId: 'hosted-session-empty',
+      sessionKey: 'hosted-session-empty',
+      idempotencyKey: 'idem-empty',
+    })
+    router.attachRunId({
+      runId: 'run-empty',
+      sessionId: 'hosted-session-empty',
+      sessionKey: 'hosted-session-empty',
+      idempotencyKey: 'idem-empty',
+    })
+    router.handleGatewayChatPayload({ runId: 'run-empty', state: 'final', message: '' })
+
+    expect(sent).toEqual([])
+    expect(router.isPending({ runId: 'run-empty' })).toBe(true)
+  })
+
+  it('routes a synthetic final once and marks the run complete', () => {
+    const { router, sent } = createHarness()
+
+    router.beginChat({
+      sessionId: 'hosted-session-d',
+      sessionKey: 'hosted-session-d',
+      idempotencyKey: 'idem-d',
+    })
+    router.attachRunId({
+      runId: 'run-d',
+      sessionId: 'hosted-session-d',
+      sessionKey: 'hosted-session-d',
+      idempotencyKey: 'idem-d',
+    })
+
+    expect(router.isPending({ runId: 'run-d' })).toBe(true)
+    expect(router.routeSyntheticFinal({
+      runId: 'run-d',
+      sessionId: 'hosted-session-d',
+      sessionKey: 'hosted-session-d',
+      idempotencyKey: 'idem-d',
+      text: 'history answer',
+      source: 'test',
+    })).toBe(true)
+    expect(router.isPending({ runId: 'run-d' })).toBe(false)
+    expect(router.routeSyntheticFinal({
+      runId: 'run-d',
+      sessionId: 'hosted-session-d',
+      sessionKey: 'hosted-session-d',
+      idempotencyKey: 'idem-d',
+      text: 'duplicate',
+      source: 'test',
+    })).toBe(false)
+
+    expect(sent).toEqual([{
+      type: 'chat.agent.final',
+      sessionId: 'hosted-session-d',
+      text: 'history answer',
+    }])
+  })
 })

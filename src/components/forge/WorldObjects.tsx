@@ -46,6 +46,7 @@ import {
 const IDLE_CLIP_PATTERNS = /idle|breathe?|stand|rest|pose|wait/i
 const WALK_CLIP_PATTERNS = /walk|run|move|locomotion|jog/i
 const AGENT_WORK_ANIMATION_ID = 'ual-talking'
+const LOCAL_IMAGE_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
 import { resolveAgentAvatarUrl } from '../../lib/agent-avatar-catalog'
 import { canReceiveMoveOrder, resolveMoveOrderObjectIds } from '../../lib/march-order'
 
@@ -369,8 +370,25 @@ export { FourBarFrame, NeonFrame, HologramFrame, VoidFrame, SpaghettiFrame, Tria
 export const FRAME_STYLES = _FRAME_STYLES
 export type { FrameStyleDef } from './FrameComponents'
 
+function resolveWorldImageUrl(imageUrl: string): string {
+  if (typeof window === 'undefined') return imageUrl
+  if (!/^https?:\/\//i.test(imageUrl)) return imageUrl
+
+  try {
+    const parsed = new URL(imageUrl)
+    if (LOCAL_IMAGE_HOSTS.has(parsed.hostname) && parsed.pathname.startsWith('/generated-images/')) {
+      return `${window.location.origin}${parsed.pathname}${parsed.search}${parsed.hash}`
+    }
+  } catch {
+    return imageUrl
+  }
+
+  return imageUrl
+}
+
 export function ImagePlaneRenderer({ imageUrl, scale, frameStyle, frameThickness = 1 }: { imageUrl: string; scale: number; frameStyle?: string; frameThickness?: number }) {
-  const texture = useLoader(THREE.TextureLoader, imageUrl)
+  const resolvedImageUrl = useMemo(() => resolveWorldImageUrl(imageUrl), [imageUrl])
+  const texture = useLoader(THREE.TextureLoader, resolvedImageUrl)
   texture.colorSpace = THREE.SRGBColorSpace
 
   const aspect = texture.image ? texture.image.width / texture.image.height : 1
