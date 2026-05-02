@@ -21,6 +21,7 @@
  *   RELAY_SIGNING_KEY       REQUIRED — same value the Next process uses
  *   RELAY_ALLOWED_ORIGINS   comma-separated, e.g. "https://openclaw.04515.xyz,http://localhost:4516"
  *   RELAY_LOG_FRAMES        "1" to log every envelope type at info level (off by default)
+ *   RELAY_FRAME_MAX_BYTES   max JSON frame size, default 8 MiB
  */
 
 import { WebSocketServer } from 'ws'
@@ -35,7 +36,7 @@ const SIGNING_KEY = process.env.RELAY_SIGNING_KEY || ''
 const ALLOWED_ORIGINS = (process.env.RELAY_ALLOWED_ORIGINS || '')
   .split(',').map(s => s.trim()).filter(Boolean)
 const LOG_FRAMES = process.env.RELAY_LOG_FRAMES === '1'
-const FRAME_MAX_BYTES = 256 * 1024
+const FRAME_MAX_BYTES = Math.max(256 * 1024, Number(process.env.RELAY_FRAME_MAX_BYTES || 8 * 1024 * 1024))
 
 if (!SIGNING_KEY) {
   console.error('[relay] RELAY_SIGNING_KEY env var is required')

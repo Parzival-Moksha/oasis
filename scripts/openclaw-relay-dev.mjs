@@ -8,7 +8,7 @@
  * - Accepts two roles via querystring: ?role=browser and ?role=agent.
  * - Naively pairs the first browser with the first agent (FIFO single pair).
  * - Forwards every JSON frame between paired peers.
- * - Enforces 256 KB frame cap; rejects binary; logs every connection.
+ * - Enforces an 8 MiB default frame cap; rejects binary; logs every connection.
  *
  * No auth. No TLS. No persistence. The hosted relay (`scripts/openclaw-relay.mjs`,
  * future) replaces this with pairing codes, device tokens, scope checks, and
@@ -17,13 +17,14 @@
  * Run:
  *   node scripts/openclaw-relay-dev.mjs
  *   RELAY_PORT=4520 node scripts/openclaw-relay-dev.mjs
+ *   RELAY_FRAME_MAX_BYTES=16777216 node scripts/openclaw-relay-dev.mjs
  */
 
 import { WebSocketServer } from 'ws'
 import { randomUUID } from 'node:crypto'
 
 const PORT = Number(process.env.RELAY_PORT || 4517)
-const FRAME_MAX_BYTES = 256 * 1024
+const FRAME_MAX_BYTES = Math.max(256 * 1024, Number(process.env.RELAY_FRAME_MAX_BYTES || 8 * 1024 * 1024))
 
 const log = (...args) => {
   // ISO timestamp + tag — keeps PM2 logs grep-friendly later.

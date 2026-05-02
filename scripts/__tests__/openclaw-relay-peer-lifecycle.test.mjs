@@ -189,4 +189,32 @@ describe('hosted OpenClaw relay peer lifecycle', () => {
       text: 'gm',
     })
   })
+
+  it('forwards screenshot-sized tool results above the old 256 KB cap', async () => {
+    const relay = await startRelay()
+    const browserSessionId = `bs_${randomBytes(8).toString('hex')}`
+
+    const browser = openBrowserSocket({ ...relay, browserSessionId })
+    const agent = openAgentSocket({ ...relay, browserSessionId })
+    await Promise.all([waitForOpen(browser), waitForOpen(agent)])
+    await onceMessage(browser)
+    await onceMessage(agent)
+
+    const base64 = 'x'.repeat(320 * 1024)
+    browser.send(JSON.stringify({
+      type: 'tool.result',
+      callId: 'shot-a',
+      ok: true,
+      data: { captures: [{ viewId: 'current', format: 'jpeg', base64 }] },
+      messageId: 'msg-shot-a',
+      sentAt: Date.now(),
+    }))
+
+    expect(await onceMessage(agent)).toMatchObject({
+      type: 'tool.result',
+      callId: 'shot-a',
+      ok: true,
+      data: { captures: [{ viewId: 'current', format: 'jpeg', base64 }] },
+    })
+  })
 })
