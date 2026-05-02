@@ -54,7 +54,7 @@ function jsonResponse(payload: unknown, status = 200) {
 const MAX_EXECUTE_BODY_BYTES = 256 * 1024
 const RELAY_WORLD_PLACEHOLDERS = new Set(['__active__'])
 
-export function normalizeRelayWorldId(value: unknown): string | undefined {
+function normalizeRelayWorldId(value: unknown): string | undefined {
   const rawWorldId = typeof value === 'string' ? value.trim() : ''
   if (!rawWorldId || RELAY_WORLD_PLACEHOLDERS.has(rawWorldId)) return undefined
   return rawWorldId
