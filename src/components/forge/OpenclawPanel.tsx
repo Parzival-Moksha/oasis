@@ -20,6 +20,7 @@ import { renderMarkdown } from '@/lib/anorak-renderers'
 import { describeOpenclawSshHostIssue, sanitizeOpenclawSshHost } from '@/lib/openclaw-ssh-host'
 import { collectOpenclawMediaReferences } from '@/lib/openclaw-media-references'
 import { useIsHostedOasis } from '@/lib/oasis-mode-client'
+import type { SessionSyncResponse } from '@/lib/relay/protocol'
 import { AvatarGallery } from './AvatarGallery'
 import { MediaBubble } from './MediaBubble'
 
@@ -191,6 +192,7 @@ const OPENCLAW_RELAY_TOOLS: readonly string[] = Object.freeze([
   'list_worlds',
   'load_world',
   'create_world',
+  'create_and_load_world',
   'search_assets',
   'get_asset_catalog',
   'place_object',
@@ -987,6 +989,9 @@ export function OpenclawPanel({
   const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 })
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const focusHandleRef = useRef<{ focus: () => void } | null>(null)
+  const selectedSessionIdRef = useRef(selectedSessionId)
+  selectedSessionIdRef.current = selectedSessionId
+  const loadMessagesRequestRef = useRef(0)
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const transcriptRef = useRef<HTMLDivElement | null>(null)
   const autoScrollRef = useRef(true)
@@ -1615,6 +1620,49 @@ export function OpenclawPanel({
       : appendStoredRelayMessageDelta(sessionId, nextMessage, sessionTitle))
   }, [appendSessionMessageDelta, appendStoredRelayMessageDelta, currentSession?.title, selectedSessionId])
 
+  const applyHostedSessionSync = useCallback((event: SessionSyncResponse) => {
+    if (!hostedMode) return
+    if (event.error) {
+      console.warn('[OpenclawPanel] hosted session sync failed:', event.error.message)
+    }
+
+    const syncedSessions = event.sessions
+      .map(sanitizeSessionSummary)
+      .filter((entry): entry is OpenclawSessionSummary => Boolean(entry))
+    const messagesBySessionId = asRecord(event.messagesBySessionId)
+    const storedSessions = loadHostedSessionSummaries()
+    const mergedSessions = dedupeOpenclawSessions([
+      ...syncedSessions,
+      ...storedSessions.filter(entry => !syncedSessions.some(candidate => candidate.id === entry.id)),
+    ])
+    setSessions(mergedSessions)
+    saveHostedSessionSummaries(mergedSessions)
+
+    void (async () => {
+      for (const [sessionId, rawMessages] of Object.entries(messagesBySessionId)) {
+        if (!Array.isArray(rawMessages)) continue
+        const nextMessages = rawMessages
+          .map(sanitizeMessage)
+          .filter((entry): entry is OpenclawMessage => Boolean(entry))
+        await saveStoredTranscript(sessionId, nextMessages)
+        if (selectedSessionIdRef.current === sessionId) {
+          setMessages(nextMessages)
+          setExpandedToolIds([])
+        }
+      }
+
+      const currentSelected = selectedSessionIdRef.current
+      const fallbackSelected = event.selectedSessionId || syncedSessions[0]?.id || ''
+      const nextSelected = currentSelected && mergedSessions.some(entry => entry.id === currentSelected)
+        ? currentSelected
+        : fallbackSelected
+      if (nextSelected && nextSelected !== currentSelected && mergedSessions.some(entry => entry.id === nextSelected)) {
+        setSelectedSessionId(nextSelected)
+        saveStoredString(SESSION_KEY, nextSelected)
+      }
+    })()
+  }, [hostedMode])
+
   const wantsRelayConnection = isVisible && relayEnabled && Boolean(activeWorldId)
 
   const relayBridge = useSharedOpenclawRelayBridge({
@@ -1624,9 +1672,19 @@ export function OpenclawPanel({
     availableTools: OPENCLAW_RELAY_TOOLS,
     onChatAgentDelta: handleRelayChatDelta,
     onChatAgentFinal: handleRelayChatFinal,
+    onSessionSyncResponse: applyHostedSessionSync,
     onToolCall: handleRelayToolCall,
     onToolResult: handleRelayToolResult,
   })
+
+  useEffect(() => {
+    if (!hostedMode || relayBridge.status !== 'paired') return
+    relayBridge.requestSessionSync({
+      selectedSessionId: selectedSessionId || undefined,
+      includeMessages: true,
+      limit: 80,
+    })
+  }, [hostedMode, relayBridge.relaySessionId, relayBridge.requestSessionSync, relayBridge.status, selectedSessionId])
 
   const upsertVoiceMessage = useCallback((nextMessage: OpenclawMessage) => {
     setVoiceMessages(current => {
@@ -1782,8 +1840,9 @@ export function OpenclawPanel({
 
       const preferred = remembered || status.lastSessionId || status.defaultSessionId
       const fallbackId = nextSessions[0]?.id || ''
-      const nextSelected = nextSessions.some(entry => entry.id === selectedSessionId)
-        ? selectedSessionId
+      const currentSelected = selectedSessionIdRef.current
+      const nextSelected = nextSessions.some(entry => entry.id === currentSelected)
+        ? currentSelected
         : (preferred && nextSessions.some(entry => entry.id === preferred) ? preferred : fallbackId)
 
       setSelectedSessionId(nextSelected)
@@ -1793,19 +1852,24 @@ export function OpenclawPanel({
     } finally {
       setLoadingSessions(false)
     }
-  }, [hostedMode, selectedSessionId, status.defaultSessionId, status.lastSessionId])
+  }, [hostedMode, status.defaultSessionId, status.lastSessionId])
 
   const loadMessages = useCallback(async (sessionId: string) => {
+    const requestId = ++loadMessagesRequestRef.current
+    const isCurrentRequest = () => requestId === loadMessagesRequestRef.current
     if (!sessionId) {
       setMessages([])
       setExpandedToolIds([])
+      setLoadingMessages(false)
       return
     }
 
     setLoadingMessages(true)
     try {
       if (hostedMode) {
-        setMessages(await loadStoredTranscript(sessionId))
+        const storedMessages = await loadStoredTranscript(sessionId)
+        if (!isCurrentRequest()) return
+        setMessages(storedMessages)
         setExpandedToolIds([])
         return
       }
@@ -1820,6 +1884,7 @@ export function OpenclawPanel({
         session?: OpenclawSessionSummary | null
         messages?: OpenclawMessage[]
       }
+      if (!isCurrentRequest()) return
       const nextMessages = Array.isArray(payload.messages) ? payload.messages : []
       if (payload.session) {
         setSessions(current => {
@@ -1838,17 +1903,21 @@ export function OpenclawPanel({
           void saveStoredTranscript(sessionId, nextMessages)
         }
       }
+      if (!isCurrentRequest()) return
       setMessages(nextMessages)
       setExpandedToolIds([])
     } catch {
+      if (!isCurrentRequest()) return
       if (isLocalDraftSession(sessionId)) {
-        setMessages(await loadStoredTranscript(sessionId))
+        const storedMessages = await loadStoredTranscript(sessionId)
+        if (!isCurrentRequest()) return
+        setMessages(storedMessages)
       } else {
         setMessages([])
       }
       setExpandedToolIds([])
     } finally {
-      setLoadingMessages(false)
+      if (isCurrentRequest()) setLoadingMessages(false)
     }
   }, [hostedMode])
 
@@ -3118,7 +3187,11 @@ export function OpenclawPanel({
         <select
           data-no-drag
           value={selectedSessionId}
-          onChange={event => setSelectedSessionId(event.target.value)}
+          onChange={event => {
+            const nextSessionId = event.target.value
+            setSelectedSessionId(nextSessionId)
+            saveStoredString(SESSION_KEY, nextSessionId)
+          }}
           disabled={sending}
           className="min-w-0 flex-1 rounded-md border border-white/10 bg-black/35 px-2 py-1 text-[11px] normal-case tracking-normal text-cyan-50 outline-none focus:border-cyan-300/40"
         >

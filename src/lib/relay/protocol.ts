@@ -30,6 +30,7 @@ const MAX_TOOL_NAME_LEN   = 128
 const MAX_AGENT_LABEL_LEN = 128
 const MAX_TOKEN_LEN       = 4_096
 const MAX_ERROR_MSG_LEN   = 2_048
+const MAX_SESSION_TITLE_LEN = 256
 
 const idString = (max = 128) => z.string().min(1).max(max)
 
@@ -118,6 +119,38 @@ export const ChatAgentFinalSchema = envelopeBase.extend({
 }).strict()
 
 // ────────────────────────────────────────────────────────────────────────────
+// Session sync
+// ────────────────────────────────────────────────────────────────────────────
+
+export const RelaySessionSummarySchema = z.object({
+  id:           idString(256),
+  title:        z.string().min(1).max(MAX_SESSION_TITLE_LEN),
+  preview:      z.string().max(MAX_TEXT_LEN).optional(),
+  source:       z.enum(['draft', 'gateway', 'cache']).optional(),
+  createdAt:    z.number().nonnegative(),
+  updatedAt:    z.number().nonnegative(),
+  messageCount: z.number().int().nonnegative(),
+}).strict()
+
+export const SessionSyncRequestSchema = envelopeBase.extend({
+  type:              z.literal('session.sync.request'),
+  limit:             z.number().int().min(1).max(200).optional(),
+  includeMessages:   z.boolean().optional(),
+  selectedSessionId: idString(256).optional(),
+}).strict()
+
+export const SessionSyncResponseSchema = envelopeBase.extend({
+  type:              z.literal('session.sync.response'),
+  sessions:          z.array(RelaySessionSummarySchema).max(200),
+  selectedSessionId: idString(256).optional(),
+  messagesBySessionId: z.record(z.string(), z.array(z.unknown()).max(500)).optional(),
+  error: z.object({
+    code:    z.string().min(1).max(64),
+    message: z.string().min(1).max(MAX_ERROR_MSG_LEN),
+  }).optional(),
+}).strict()
+
+// ────────────────────────────────────────────────────────────────────────────
 // Tools — MCP-shaped semantically; WSS on the wire.
 // The browser bridge is the executor; it dispatches `toolName` against the
 // existing internal route surface and returns `tool.result`.
@@ -186,6 +219,8 @@ export const RelayMessageSchema = z.discriminatedUnion('type', [
   ChatUserSchema,
   ChatAgentDeltaSchema,
   ChatAgentFinalSchema,
+  SessionSyncRequestSchema,
+  SessionSyncResponseSchema,
   ToolCallSchema,
   ToolResultSchema,
   PresenceUpdateSchema,
@@ -246,6 +281,8 @@ export type RelayMessageInput =
   | (Omit<ChatUser,          EnvelopeFields> & { messageId?: string; sentAt?: number })
   | (Omit<ChatAgentDelta,    EnvelopeFields> & { messageId?: string; sentAt?: number })
   | (Omit<ChatAgentFinal,    EnvelopeFields> & { messageId?: string; sentAt?: number })
+  | (Omit<SessionSyncRequest,  EnvelopeFields> & { messageId?: string; sentAt?: number })
+  | (Omit<SessionSyncResponse, EnvelopeFields> & { messageId?: string; sentAt?: number })
   | (Omit<ToolCall,          EnvelopeFields> & { messageId?: string; sentAt?: number })
   | (Omit<ToolResult,        EnvelopeFields> & { messageId?: string; sentAt?: number })
   | (Omit<PresenceUpdate,    EnvelopeFields> & { messageId?: string; sentAt?: number })
@@ -282,6 +319,9 @@ export type PairingApproved   = z.infer<typeof PairingApprovedSchema>
 export type ChatUser          = z.infer<typeof ChatUserSchema>
 export type ChatAgentDelta    = z.infer<typeof ChatAgentDeltaSchema>
 export type ChatAgentFinal    = z.infer<typeof ChatAgentFinalSchema>
+export type RelaySessionSummary = z.infer<typeof RelaySessionSummarySchema>
+export type SessionSyncRequest  = z.infer<typeof SessionSyncRequestSchema>
+export type SessionSyncResponse = z.infer<typeof SessionSyncResponseSchema>
 export type ToolCall          = z.infer<typeof ToolCallSchema>
 export type ToolResult        = z.infer<typeof ToolResultSchema>
 export type PresenceUpdate    = z.infer<typeof PresenceUpdateSchema>

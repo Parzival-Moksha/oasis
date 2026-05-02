@@ -125,6 +125,7 @@ describe('TOOL_NAMES', () => {
     expect(TOOL_NAMES).toContain('get_craft_job')
     expect(TOOL_NAMES).toContain('set_sky')
     expect(TOOL_NAMES).toContain('clear_world')
+    expect(TOOL_NAMES).toContain('create_and_load_world')
     expect(TOOL_NAMES).toContain('screenshot_viewport')
   })
 })
@@ -154,7 +155,17 @@ describe('get_world_state', () => {
     const result = await callTool('get_world_state', { worldId: 'test-world-1' })
 
     expect(result.ok).toBe(true)
-    const data = result.data as { catalogObjects: Array<{ id: string; position: unknown; rotation: unknown; scale: unknown }> }
+    const data = result.data as {
+      worldName?: string
+      visibility?: string
+      canWrite?: boolean
+      catalogObjects: Array<{ id: string; position: unknown; rotation: unknown; scale: unknown }>
+    }
+    expect(data).toMatchObject({
+      worldName: 'Test World',
+      visibility: 'private',
+      canWrite: true,
+    })
     expect(data.catalogObjects[0]).toMatchObject({
       id: 'console-1',
       position: [4, 0, 5],

@@ -20,6 +20,7 @@ import {
   parseRelayMessage,
   RelayProtocolError,
   type RelayMessage,
+  type SessionSyncResponse,
   type ToolCall,
 } from '@/lib/relay/protocol'
 
@@ -52,6 +53,7 @@ export interface UseOpenclawRelayBridgeOptions {
   availableTools?: readonly string[]
   onChatAgentDelta?: (event: { sessionId: string; text: string }) => void
   onChatAgentFinal?: (event: { sessionId: string; text: string }) => void
+  onSessionSyncResponse?: (event: SessionSyncResponse) => void
   onToolCall?: (event: { callId: string; toolName: string; args: Record<string, unknown>; worldId: string }) => void
   onToolResult?: (event: {
     callId: string
@@ -80,6 +82,7 @@ export interface RelayBridgeState {
   lastToolName: string | null
   lastToolWorldId: string | null
   sendChatUser: (sessionId: string, text: string) => boolean
+  requestSessionSync: (opts?: { selectedSessionId?: string; includeMessages?: boolean; limit?: number }) => boolean
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -191,6 +194,7 @@ const IDLE_RELAY_BRIDGE_STATE: RelayBridgeState = Object.freeze({
   lastToolName: null,
   lastToolWorldId: null,
   sendChatUser: () => false,
+  requestSessionSync: () => false,
 })
 
 let sharedRelayOwnerId: string | null = null
@@ -199,7 +203,7 @@ const sharedRelayOwnershipListeners = new Set<() => void>()
 const sharedRelaySnapshotListeners = new Set<() => void>()
 const sharedRelayChatCallbacks = new Map<string, Pick<
   UseOpenclawRelayBridgeOptions,
-  'onChatAgentDelta' | 'onChatAgentFinal' | 'onToolCall' | 'onToolResult'
+  'onChatAgentDelta' | 'onChatAgentFinal' | 'onSessionSyncResponse' | 'onToolCall' | 'onToolResult'
 >>()
 
 function notifySharedRelayOwnership() {
@@ -235,6 +239,12 @@ function dispatchSharedRelayDelta(event: { sessionId: string; text: string }) {
 function dispatchSharedRelayFinal(event: { sessionId: string; text: string }) {
   for (const callbacks of sharedRelayChatCallbacks.values()) {
     callbacks.onChatAgentFinal?.(event)
+  }
+}
+
+function dispatchSharedRelaySessionSync(event: SessionSyncResponse) {
+  for (const callbacks of sharedRelayChatCallbacks.values()) {
+    callbacks.onSessionSyncResponse?.(event)
   }
 }
 
@@ -315,6 +325,7 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
     availableTools,
     onChatAgentDelta,
     onChatAgentFinal,
+    onSessionSyncResponse,
     onToolCall,
     onToolResult,
   } = opts
@@ -338,6 +349,7 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
   const browserSessionIdRef = useRef<string>('')
   const onChatAgentDeltaRef = useRef(onChatAgentDelta)
   const onChatAgentFinalRef = useRef(onChatAgentFinal)
+  const onSessionSyncResponseRef = useRef(onSessionSyncResponse)
   const onToolCallRef = useRef(onToolCall)
   const onToolResultRef = useRef(onToolResult)
 
@@ -353,6 +365,7 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
   availableToolsRef.current = availableTools ?? DEFAULT_AVAILABLE_TOOLS
   onChatAgentDeltaRef.current = onChatAgentDelta
   onChatAgentFinalRef.current = onChatAgentFinal
+  onSessionSyncResponseRef.current = onSessionSyncResponse
   onToolCallRef.current = onToolCall
   onToolResultRef.current = onToolResult
 
@@ -628,6 +641,11 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
           return
         }
 
+        if (envelope.type === 'session.sync.response') {
+          onSessionSyncResponseRef.current?.(envelope)
+          return
+        }
+
         // chat.user / presence.update / portal.enter /
         // pairing.approved / browser.hello / browser.ready / agent.hello /
         // tool.result / error — observed but not handled at this layer in v0.
@@ -677,6 +695,24 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
     })
   }, [relaySessionId, sendEnvelope, status])
 
+  const requestSessionSync = useCallback((opts?: {
+    selectedSessionId?: string
+    includeMessages?: boolean
+    limit?: number
+  }): boolean => {
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN || status !== 'paired') {
+      return false
+    }
+    return sendEnvelope(ws, {
+      type: 'session.sync.request',
+      limit: opts?.limit,
+      includeMessages: opts?.includeMessages,
+      selectedSessionId: opts?.selectedSessionId || undefined,
+      relaySessionId: relaySessionId ?? undefined,
+    })
+  }, [relaySessionId, sendEnvelope, status])
+
   return {
     status,
     relaySessionId,
@@ -688,6 +724,7 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
     lastToolName: lastToolCall?.toolName ?? null,
     lastToolWorldId: lastToolCall?.worldId ?? null,
     sendChatUser,
+    requestSessionSync,
   }
 }
 
@@ -710,19 +747,21 @@ export function useSharedOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions
     sharedRelayChatCallbacks.set(instanceId, {
       onChatAgentDelta: opts.onChatAgentDelta,
       onChatAgentFinal: opts.onChatAgentFinal,
+      onSessionSyncResponse: opts.onSessionSyncResponse,
       onToolCall: opts.onToolCall,
       onToolResult: opts.onToolResult,
     })
     return () => {
       sharedRelayChatCallbacks.delete(instanceId)
     }
-  }, [opts.onChatAgentDelta, opts.onChatAgentFinal, opts.onToolCall, opts.onToolResult])
+  }, [opts.onChatAgentDelta, opts.onChatAgentFinal, opts.onSessionSyncResponse, opts.onToolCall, opts.onToolResult])
 
   const ownedBridge = useOpenclawRelayBridge({
     ...opts,
     enabled: ownsRelayConnection,
     onChatAgentDelta: dispatchSharedRelayDelta,
     onChatAgentFinal: dispatchSharedRelayFinal,
+    onSessionSyncResponse: dispatchSharedRelaySessionSync,
     onToolCall: dispatchSharedRelayToolCall,
     onToolResult: dispatchSharedRelayToolResult,
   })
@@ -740,6 +779,7 @@ export function useSharedOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions
       lastToolName: ownedBridge.lastToolName,
       lastToolWorldId: ownedBridge.lastToolWorldId,
       sendChatUser: ownedBridge.sendChatUser,
+      requestSessionSync: ownedBridge.requestSessionSync,
     })
   }, [
     ownsRelayConnection,
@@ -753,6 +793,7 @@ export function useSharedOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions
     ownedBridge.lastToolName,
     ownedBridge.lastToolWorldId,
     ownedBridge.sendChatUser,
+    ownedBridge.requestSessionSync,
   ])
 
   return ownsRelayConnection ? ownedBridge : sharedSnapshot

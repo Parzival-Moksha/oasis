@@ -354,6 +354,261 @@ async function readGatewayChatHistory(sessionKey, limit = 60) {
   }
 }
 
+function asRecord(value) {
+  return value && typeof value === 'object' ? value : {}
+}
+
+function stringField(record, ...keys) {
+  for (const key of keys) {
+    const value = record?.[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return ''
+}
+
+function numberField(record, ...keys) {
+  for (const key of keys) {
+    const value = record?.[key]
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+  }
+  return undefined
+}
+
+function parseTimestamp(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return Date.now()
+}
+
+function summarizeText(value, maxLength = 140) {
+  const normalized = String(value || '').replace(/\s+/g, ' ').trim()
+  if (!normalized) return ''
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}...` : normalized
+}
+
+function cleanHistoryText(text) {
+  const normalized = String(text || '').replace(/\r\n/g, '\n')
+  const withoutSenderMeta = normalized.replace(
+    /^Sender \(untrusted metadata\):\s*```json\s*[\s\S]*?```\s*/m,
+    '',
+  )
+  return withoutSenderMeta
+    .replace(/^\[[A-Za-z]{3} \d{4}-\d{2}-\d{2}[^\]]*\]\s*/, '')
+    .replace(/^\[[^\]]+\]\s*/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function extractTextFromContent(content) {
+  if (typeof content === 'string') return cleanHistoryText(content)
+  if (!Array.isArray(content)) return ''
+  return cleanHistoryText(content
+    .map(block => {
+      if (typeof block === 'string') return block
+      const record = asRecord(block)
+      const type = stringField(record, 'type')
+      if (type && type !== 'text' && type !== 'output_text') return ''
+      return stringField(record, 'text', 'content')
+    })
+    .filter(Boolean)
+    .join('\n'))
+}
+
+function normalizeHistoryEntry(raw) {
+  const record = asRecord(raw)
+  if (stringField(record, 'type') === 'message') {
+    const nested = asRecord(record.message)
+    return {
+      ...nested,
+      id: stringField(record, 'id') || stringField(nested, 'id'),
+      timestamp: record.timestamp ?? nested.timestamp,
+      toolCallId: nested.toolCallId ?? nested.tool_call_id,
+      toolName: nested.toolName ?? nested.tool_name,
+      details: nested.details,
+      isError: nested.isError,
+    }
+  }
+  return record
+}
+
+function humanizeSessionKey(sessionKey) {
+  if (!sessionKey) return 'OpenClaw session'
+  const tail = sessionKey.split(':').pop() || sessionKey
+  if (tail === 'main') return 'Main'
+  if (tail.startsWith('draft-')) return 'OpenClaw session'
+  return tail
+}
+
+function normalizeGatewaySessionSummary(raw) {
+  const record = asRecord(raw)
+  const id = stringField(record, 'key', 'sessionKey', 'id')
+  if (!id) return null
+  const updatedAt = parseTimestamp(record.updatedAt ?? record.lastActivityAt ?? Date.now())
+  const createdAt = parseTimestamp(record.createdAt ?? updatedAt)
+  const title = summarizeText(
+    cleanHistoryText(stringField(record, 'displayName', 'label', 'subject', 'derivedTitle')),
+    44,
+  ) || humanizeSessionKey(id)
+  const preview = summarizeText(cleanHistoryText(stringField(record, 'lastMessagePreview', 'preview')))
+  const messageCount = numberField(record, 'messageCount', 'count') ?? 0
+  return { id, title, preview, source: 'gateway', createdAt, updatedAt, messageCount }
+}
+
+function summarizeToolInput(toolName, value, maxLength = 120) {
+  if (value == null) return 'no args'
+  const raw = typeof value === 'string' ? value : JSON.stringify(value)
+  if (!raw) return 'no args'
+  const summary = raw.length > maxLength ? `${raw.slice(0, maxLength - 1)}...` : raw
+  return summary.replace(/\s+/g, '').toLowerCase() === String(toolName || '').replace(/\s+/g, '').toLowerCase()
+    ? ''
+    : summary
+}
+
+function parseGatewayHistory(messages) {
+  const parsed = []
+  const toolIndexByCallId = new Map()
+  const upsertToolResult = (callId, nextMessage) => {
+    const existingIndex = toolIndexByCallId.get(callId)
+    if (typeof existingIndex === 'number' && parsed[existingIndex]) {
+      parsed[existingIndex] = {
+        ...parsed[existingIndex],
+        ...nextMessage,
+        toolInput: parsed[existingIndex].toolInput ?? nextMessage.toolInput,
+      }
+      return
+    }
+    parsed.push(nextMessage)
+    toolIndexByCallId.set(callId, parsed.length - 1)
+  }
+
+  for (const raw of Array.isArray(messages) ? messages : []) {
+    const entry = normalizeHistoryEntry(raw)
+    const role = stringField(entry, 'role').toLowerCase()
+    const timestamp = parseTimestamp(entry.timestamp)
+    const entryId = stringField(entry, 'id') || `history-${timestamp}-${parsed.length}`
+
+    if (role === 'user' || role === 'assistant' || role === 'system') {
+      const content = entry.content
+      const text = extractTextFromContent(content)
+      if (text) {
+        parsed.push({ id: entryId, role, content: text, timestamp, state: 'done' })
+      }
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          const blockRecord = asRecord(block)
+          const blockType = stringField(blockRecord, 'type').toLowerCase()
+          if (!['toolcall', 'tool_call', 'function_call', 'tooluse', 'tool_use'].includes(blockType)) continue
+          const callId = stringField(blockRecord, 'id', 'callId', 'toolCallId', 'tool_call_id') || `${entryId}-tool-${parsed.length}`
+          const toolName = stringField(blockRecord, 'name', 'toolName', 'tool') || 'tool'
+          const toolInput = blockRecord.arguments ?? blockRecord.args ?? blockRecord.input ?? {}
+          parsed.push({
+            id: callId,
+            role: 'tool',
+            content: '',
+            timestamp,
+            toolName,
+            toolInput,
+            toolState: 'running',
+            toolInputSummary: summarizeToolInput(toolName, toolInput),
+          })
+          toolIndexByCallId.set(callId, parsed.length - 1)
+        }
+      }
+      continue
+    }
+
+    if (['toolresult', 'tool_result', 'tool', 'function'].includes(role)) {
+      const callId = stringField(entry, 'toolCallId', 'tool_call_id', 'id') || `tool-result-${timestamp}-${parsed.length}`
+      const toolName = stringField(entry, 'toolName', 'tool_name', 'name') || 'tool'
+      const toolOutput = 'details' in entry ? entry.details : entry.output ?? extractTextFromContent(entry.content)
+      upsertToolResult(callId, {
+        id: callId,
+        role: 'tool',
+        content: '',
+        timestamp,
+        toolName,
+        toolOutput,
+        toolState: entry.isError ? 'failed' : 'done',
+        toolDurationMs: numberField(asRecord(entry.details), 'durationMs', 'elapsedMs'),
+      })
+    }
+  }
+  return parsed
+}
+
+async function handleSessionSyncRequest(request) {
+  const selectedSessionId = typeof request.selectedSessionId === 'string' ? request.selectedSessionId : ''
+  const limit = Math.min(200, Math.max(1, Number(request.limit || 80) || 80))
+  if (!gateway) {
+    sendRelay({
+      type: 'session.sync.response',
+      selectedSessionId: selectedSessionId || undefined,
+      sessions: [],
+      error: { code: 'gateway_unavailable', message: 'OpenClaw Gateway is not connected yet.' },
+    })
+    return
+  }
+
+  try {
+    const listPayload = await gateway.callMethod('sessions.list', {
+      limit,
+      includeDerivedTitles: true,
+      includeLastMessage: true,
+      includeGlobal: true,
+      includeUnknown: true,
+    })
+    const sessions = (Array.isArray(listPayload?.sessions) ? listPayload.sessions : [])
+      .map(normalizeGatewaySessionSummary)
+      .filter(Boolean)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+
+    const historyIds = request.includeMessages
+      ? [...new Set([
+          selectedSessionId,
+          sessions[0]?.id || '',
+          sessions[1]?.id || '',
+          sessions[2]?.id || '',
+        ].filter(Boolean))]
+      : []
+    const messagesBySessionId = {}
+    for (const sessionKey of historyIds) {
+      try {
+        const historyPayload = await readGatewayChatHistory(sessionKey, 200)
+        messagesBySessionId[sessionKey] = parseGatewayHistory(historyPayload?.messages || [])
+      } catch (err) {
+        log('session.sync chat.history failed', { sessionKey, error: err?.message || String(err) })
+      }
+    }
+
+    const resolvedSelected = selectedSessionId && sessions.some(session => session.id === selectedSessionId)
+      ? selectedSessionId
+      : sessions[0]?.id
+    log('session.sync -> relay', {
+      sessions: sessions.length,
+      selectedSessionId: resolvedSelected || '(none)',
+      histories: Object.keys(messagesBySessionId).length,
+    })
+    sendRelay({
+      type: 'session.sync.response',
+      sessions,
+      selectedSessionId: resolvedSelected || undefined,
+      ...(Object.keys(messagesBySessionId).length > 0 ? { messagesBySessionId } : {}),
+    })
+  } catch (err) {
+    const message = err?.message || String(err)
+    log('session.sync failed:', message)
+    sendRelay({
+      type: 'session.sync.response',
+      selectedSessionId: selectedSessionId || undefined,
+      sessions: [],
+      error: { code: 'session_sync_failed', message },
+    })
+  }
+}
+
 function proxyToolCallThroughRelay({ toolName, args, scope }) {
   if (!relayWs || relayWs.readyState !== relayWs.OPEN) {
     return Promise.resolve({
@@ -719,6 +974,15 @@ async function start() {
       const text = typeof parsed.text === 'string' ? parsed.text : ''
       log('chat.user <- relay', { sessionId, chars: text.length })
       void forwardChatUserToGateway(sessionId, text)
+      return
+    }
+
+    if (parsed.type === 'session.sync.request') {
+      log('session.sync <- relay', {
+        selectedSessionId: parsed.selectedSessionId || '(none)',
+        includeMessages: Boolean(parsed.includeMessages),
+      })
+      void handleSessionSyncRequest(parsed)
       return
     }
 

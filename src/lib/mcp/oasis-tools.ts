@@ -230,6 +230,18 @@ function toToolAccessSubject(row: ToolWorldRow): WorldAccessSubject {
   }
 }
 
+function worldAccessDetails(row: ToolWorldRow) {
+  const writeMode = getWorldWriteDecision(toolAccessContext(), toToolAccessSubject(row))
+  return {
+    visibility: row.visibility || 'private',
+    canRead: canReadWorld(toolAccessContext(), toToolAccessSubject(row)),
+    canWrite: writeMode === 'write' || writeMode === 'fork',
+    writeMode,
+    isCore: (row.visibility || '').toLowerCase() === 'core',
+    isTemplate: (row.visibility || '').toLowerCase() === 'template',
+  }
+}
+
 function countWorldObjects(state: Pick<WorldState, 'conjuredAssetIds' | 'catalogPlacements' | 'craftedScenes'>): number {
   return (state.conjuredAssetIds?.length || 0) +
     (state.catalogPlacements?.length || 0) +
@@ -887,12 +899,34 @@ tools.get_world_state = async (args) => {
       }
     : await readWorldPlayerContext(resolvedId)
   const agentAvatars = overlayLiveAgentAvatars(state.agentAvatars || [], liveAgentContext?.avatars || [])
+  const world = await prisma.world.findFirst({
+    where: { id: resolvedId },
+    select: {
+      id: true,
+      userId: true,
+      name: true,
+      icon: true,
+      visibility: true,
+      updatedAt: true,
+    },
+  })
+  const access = world ? worldAccessDetails(world) : null
 
   return {
     ok: true,
-    message: `World ${resolvedId} loaded.`,
+    message: world?.name ? `World "${world.name}" loaded.` : `World ${resolvedId} loaded.`,
     data: {
       worldId: resolvedId,
+      worldName: world?.name || '',
+      name: world?.name || '',
+      icon: world?.icon || '',
+      visibility: access?.visibility || '',
+      canRead: access?.canRead ?? true,
+      canWrite: access?.canWrite ?? false,
+      writeMode: access?.writeMode || 'unknown',
+      isCore: access?.isCore ?? false,
+      isTemplate: access?.isTemplate ?? false,
+      lastSaved: world?.updatedAt?.toISOString?.() || null,
       sky: state.skyBackgroundId || 'night007',
       ground: state.groundPresetId || 'none',
       tileCount: Object.keys(state.groundTiles || {}).length,
@@ -951,6 +985,7 @@ tools.get_world_info = async (args) => {
   const objectCount = state
     ? (state.catalogPlacements?.length || 0) + (state.craftedScenes?.length || 0) + (state.conjuredAssetIds?.length || 0)
     : 0
+  const access = worldAccessDetails(world)
 
   return {
     ok: true,
@@ -959,6 +994,12 @@ tools.get_world_info = async (args) => {
       worldId: world.id,
       name: world.name,
       icon: world.icon,
+      visibility: access.visibility,
+      canRead: access.canRead,
+      canWrite: access.canWrite,
+      writeMode: access.writeMode,
+      isCore: access.isCore,
+      isTemplate: access.isTemplate,
       objectCount,
       sky: state?.skyBackgroundId || 'night007',
       ground: state?.groundPresetId || 'none',
@@ -1999,6 +2040,7 @@ tools.create_world = async (args) => {
   emitWorldEvent('world_switch', id, { targetWorldId: id, ...mutationActorData(args) })
   return { ok: true, message: `Created world "${name}" (${id}). Browser switching now.`, data: { worldId: id, name } }
 }
+tools.create_and_load_world = tools.create_world
 
 // ─═̷─═̷─ SCREENSHOT (signal-based) ─═̷─═̷─
 
@@ -2967,7 +3009,7 @@ const MUTATING_TOOLS = new Set([
   'set_sky', 'set_ground_preset', 'paint_ground_tiles', 'add_light',
   'modify_light', 'set_behavior', 'set_avatar', 'walk_avatar_to',
   'play_avatar_animation', 'clear_world',
-  'create_world',
+  'create_world', 'create_and_load_world',
   'conjure_asset', 'process_conjured_asset', 'place_conjured_asset', 'delete_conjured_asset',
   'conjure_framed_picture', 'place_media',
 ])

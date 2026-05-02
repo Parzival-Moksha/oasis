@@ -33,13 +33,13 @@ export const OASIS_MCP_INSTRUCTIONS = [
 export const OASIS_MCP_TOOL_SPECS = [
   {
     name: 'get_world_state',
-    description: 'Get the full active world state, including catalog objects, crafted scenes, lights, agent avatars, live player avatar/camera context, behaviors, and placed conjured assets.',
+    description: 'Get the full active world state, including world name, access rights, catalog objects, crafted scenes, lights, agent avatars, live player avatar/camera context, behaviors, and placed conjured assets.',
     inputSchema: z.object({ worldId: z.string().optional() }).passthrough(),
     injectWorldId: true,
   },
   {
     name: 'get_world_info',
-    description: 'Get a fast summary of the active world: name, object count, sky, ground, tiles, and lights.',
+    description: 'Get a fast summary of the active world: name, write rights, object count, sky, ground, tiles, and lights.',
     inputSchema: z.object({ worldId: z.string().optional() }).passthrough(),
     injectWorldId: true,
   },
@@ -81,7 +81,12 @@ export const OASIS_MCP_TOOL_SPECS = [
   },
   {
     name: 'create_world',
-    description: 'Create a new empty world.',
+    description: 'Create a new empty world and ask the live Oasis browser to switch/load into it.',
+    inputSchema: z.object({ name: z.string(), icon: z.string().optional() }).passthrough(),
+  },
+  {
+    name: 'create_and_load_world',
+    description: 'Alias of create_world with the behavior made explicit: create a new empty world and switch/load the live Oasis browser into it.',
     inputSchema: z.object({ name: z.string(), icon: z.string().optional() }).passthrough(),
   },
   {

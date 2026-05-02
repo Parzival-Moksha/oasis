@@ -212,7 +212,12 @@ function isAuthorized(request: NextRequest): boolean {
 
   const auth = request.headers.get('authorization') || ''
   const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : ''
-  return token === key
+  if (token === key) return true
+
+  // Hosted browsers execute screenshot captures from inside the live Oasis tab.
+  // They should not need the machine MCP bearer; their signed session cookie is
+  // the authorization boundary for polling/delivering screenshot jobs.
+  return getOasisMode() === 'hosted' && Boolean(readBrowserSession(request))
 }
 
 function hasAuthorizedMcpBearer(request: NextRequest): boolean {

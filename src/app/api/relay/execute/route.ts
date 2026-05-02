@@ -57,6 +57,7 @@ const WORLD_CONTEXT_OPTIONAL_TOOLS = new Set([
   'list_worlds',
   'load_world',
   'create_world',
+  'create_and_load_world',
 ])
 
 function normalizeRelayWorldId(value: unknown): string | undefined {

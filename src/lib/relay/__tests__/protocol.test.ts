@@ -114,6 +114,30 @@ describe('parseRelayMessage — happy paths', () => {
     })
     expect(built.type).toBe('presence.update')
   })
+
+  it('accepts hosted session sync responses with cached history', () => {
+    const built = buildRelayMessage({
+      type: 'session.sync.response',
+      selectedSessionId: 'agent:main:main',
+      sessions: [{
+        id: 'agent:main:main',
+        title: 'Main',
+        preview: 'hello',
+        source: 'gateway',
+        createdAt: 1,
+        updatedAt: 2,
+        messageCount: 2,
+      }],
+      messagesBySessionId: {
+        'agent:main:main': [
+          { id: 'm1', role: 'user', content: 'hello', timestamp: 1, state: 'done' },
+        ],
+      },
+    })
+    expect(built.type).toBe('session.sync.response')
+    if (built.type !== 'session.sync.response') throw new Error('unexpected message type')
+    expect(built.sessions[0].id).toBe('agent:main:main')
+  })
 })
 
 describe('parseRelayMessage — rejection paths', () => {
