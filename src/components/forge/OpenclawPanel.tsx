@@ -933,11 +933,13 @@ export function OpenclawPanel({
   onClose,
   embedded = false,
   hideCloseButton = false,
+  ownRelayConnection = !embedded,
 }: {
   isOpen: boolean
   onClose: () => void
   embedded?: boolean
   hideCloseButton?: boolean
+  ownRelayConnection?: boolean
 }) {
   useUILayer('openclaw', isOpen && !embedded)
   const hostedMode = useIsHostedOasis()
@@ -1049,8 +1051,8 @@ export function OpenclawPanel({
   }, [hostedMode])
 
   useEffect(() => {
-    if (hostedMode && activeWorldId) setRelayEnabled(true)
-  }, [activeWorldId, hostedMode])
+    if (hostedMode && activeWorldId && ownRelayConnection) setRelayEnabled(true)
+  }, [activeWorldId, hostedMode, ownRelayConnection])
 
   useEffect(() => {
     return () => {
@@ -1506,7 +1508,7 @@ export function OpenclawPanel({
   }, [appendSessionMessageDelta, clearRelayChatPending])
 
   const relayBridge = useOpenclawRelayBridge({
-    enabled: isVisible && relayEnabled && Boolean(activeWorldId),
+    enabled: ownRelayConnection && isVisible && relayEnabled && Boolean(activeWorldId),
     worldId: activeWorldId || '__active__',
     agentType: 'openclaw',
     availableTools: OPENCLAW_RELAY_TOOLS,
@@ -2732,14 +2734,18 @@ export function OpenclawPanel({
       ? 'gateway pairing'
       : `gateway ${gatewayClientState}`
   const showPairingHelp = gatewayClientState === 'pairing-required' || status.pendingDeviceCount > 0
-  const relayTone = !relayEnabled
+  const relayTone = hostedMode && !ownRelayConnection
+    ? 'warn'
+    : !relayEnabled
     ? 'offline'
     : relayBridge.status === 'paired'
       ? 'online'
       : relayBridge.status === 'error' || relayBridge.status === 'closed'
         ? 'offline'
         : 'warn'
-  const relayBadgeLabel = relayEnabled ? `relay ${relayBridge.status}` : 'relay off'
+  const relayBadgeLabel = hostedMode && !ownRelayConnection
+    ? 'relay delegated'
+    : relayEnabled ? `relay ${relayBridge.status}` : 'relay off'
   const relayPairingCommand = buildOpenclawRelayPairingCommand(relayPairing, browserOrigin)
   const relayPairingExpiresInS = relayPairing
     ? Math.max(0, Math.round((relayPairing.expiresAt - Date.now()) / 1000))
@@ -3169,10 +3175,12 @@ export function OpenclawPanel({
                   type="button"
                   data-no-drag
                   onClick={() => setRelayEnabled(value => !value)}
-                  disabled={!activeWorldId}
+                  disabled={!activeWorldId || (hostedMode && !ownRelayConnection)}
                   className="rounded-lg border border-sky-300/25 bg-sky-400/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-50 transition hover:bg-sky-400/18 disabled:cursor-not-allowed disabled:opacity-45"
                 >
-                  {relayEnabled ? 'stop relay' : 'start relay'}
+                  {hostedMode && !ownRelayConnection
+                    ? 'relay delegated'
+                    : relayEnabled ? 'stop relay' : 'start relay'}
                 </button>
                 <button
                   type="button"

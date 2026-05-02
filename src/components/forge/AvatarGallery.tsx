@@ -15,6 +15,7 @@ import {
   type ModelStats,
 } from './ModelPreview'
 import { AGENT_AVATAR_CATALOG } from '@/lib/agent-avatar-catalog'
+import { useUILayer } from '@/lib/input-manager'
 import {
   ANIMATION_LIBRARY,
   ANIM_CATEGORIES,
@@ -277,6 +278,7 @@ interface AvatarGalleryProps {
 }
 
 export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGalleryProps) {
+  useUILayer('avatar-gallery', true)
   const [diskAvatars, setDiskAvatars] = useState<AvatarEntry[]>([])
   const [diskScanCompleted, setDiskScanCompleted] = useState(false)
   const allAvatars = useMemo<AvatarEntry[]>(() => {
@@ -476,6 +478,7 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
 
   return createPortal(
     <div
+      data-ui-panel
       style={{
         position: 'fixed',
         inset: 0,
@@ -491,6 +494,10 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
       }}
     >
       <div
+        data-ui-panel
+        onPointerDown={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
         style={{
           width: 1040,
           maxWidth: '95vw',

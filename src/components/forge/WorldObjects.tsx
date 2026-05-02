@@ -271,7 +271,7 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
       document.activeElement.blur()
     }
     onSelect(id)
-    if (inspectNow) {
+    if (inspectNow && !useInputManager.getState().pointerLocked) {
       setInspectedObject(id)
     }
   }, [id, isReadOnly, isRp1, onSelect, setInspectedObject])
@@ -290,7 +290,7 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
             document.activeElement.blur()
           }
           onSelect(id)
-          if (inspectOn === 'click') setInspectedObject(id)
+          if (inspectOn === 'click' && !useInputManager.getState().pointerLocked) setInspectedObject(id)
         }}
       >
         {/* Selection highlight ring — on the ground, hidden in agent-focus */}
@@ -1112,7 +1112,9 @@ export function CatalogModelRenderer({ path, scale, objectId, displayName }: { p
           e.stopPropagation()
           if (objectId) {
             dispatch({ type: 'SELECT_OBJECT', payload: { id: objectId } })
-            dispatch({ type: 'INSPECT_OBJECT', payload: { id: objectId } })
+            if (!useInputManager.getState().pointerLocked) {
+              dispatch({ type: 'INSPECT_OBJECT', payload: { id: objectId } })
+            }
           }
         }}
         onPointerOver={(e) => {
@@ -1634,7 +1636,9 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
           e.stopPropagation()
           if (objectId) {
             dispatch({ type: 'SELECT_OBJECT', payload: { id: objectId } })
-            dispatch({ type: 'INSPECT_OBJECT', payload: { id: objectId } })
+            if (!useInputManager.getState().pointerLocked) {
+              dispatch({ type: 'INSPECT_OBJECT', payload: { id: objectId } })
+            }
           }
         }}
         onPointerOver={(e) => {

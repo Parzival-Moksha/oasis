@@ -32,7 +32,7 @@ import { findMissingLocalGeneratedImageIds, localGeneratedImageExists } from '..
 import { useUILayer } from '@/lib/input-manager'
 import { AssetCard, RegenAllButton } from './AssetCard'
 import { DeleteButton } from './DeleteButton'
-import { AGENT_WINDOW_RENDERERS, getAgentWindowRendererMeta, type AgentWindowRenderMode } from '../../lib/agent-window-renderers'
+import { getAgentWindowRendererMeta } from '../../lib/agent-window-renderers'
 import { deriveAvatarAnchoredWindowPlacement } from '../../lib/agent-avatar-utils'
 import { getLiveObjectTransform } from '../../lib/live-object-transforms'
 
@@ -3529,8 +3529,6 @@ const DEPLOYABLE_AGENT_TYPES = [
   ...AGENT_TYPES.slice(3),
 ] as const
 
-const AGENT_SANDBOX_TYPES = DEPLOYABLE_AGENT_TYPES.filter(agent => agent.type === 'anorak' || agent.type === 'codex' || agent.type === 'anorak-pro')
-
 function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject, setCameraLookAt, selectedObjectId, transforms }: {
   enterPlacementMode: (pending: import('../../store/oasisStore').PlacementPending) => void
   selectObject: (id: string | null) => void
@@ -3577,35 +3575,6 @@ function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject
       </div>
 
       {/* ░▒▓ PLACED AGENTS ▓▒░ */}
-      <div className="mb-3">
-        <span className="text-[10px] text-gray-300 uppercase tracking-widest font-mono">
-          â”€â”€ Projection Sandbox â”€â”€
-        </span>
-        <div className="grid grid-cols-2 gap-1.5 mt-2">
-          {AGENT_SANDBOX_TYPES.flatMap(agent => AGENT_WINDOW_RENDERERS.map(renderer => (
-            <button
-              key={`${agent.type}-${renderer.id}`}
-              onClick={() => enterPlacementMode({
-                type: 'agent',
-                name: `${agent.label} - ${renderer.shortLabel}`,
-                agentType: agent.type,
-                agentRenderMode: renderer.id as AgentWindowRenderMode,
-              })}
-              className="rounded-lg border border-gray-700/30 bg-black/30 hover:border-sky-400/30 p-2 text-left transition-all duration-200"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-base">{agent.icon}</span>
-                  <span className="text-[10px] font-bold" style={{ color: agent.color }}>{agent.label}</span>
-                </div>
-                <span className="text-[8px] px-1.5 py-0.5 rounded border border-white/10 text-gray-300 font-mono">{renderer.shortLabel}</span>
-              </div>
-              <div className="text-[8px] text-gray-500 mt-1 leading-tight">{renderer.description}</div>
-            </button>
-          )))}
-        </div>
-      </div>
-
       <div className="flex items-center justify-between mb-2">
         <span className="text-[10px] text-gray-300 uppercase tracking-widest font-mono">
           ── Deployed ({placedAgentWindows.length}) ──

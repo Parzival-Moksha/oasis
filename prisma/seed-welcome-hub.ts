@@ -39,6 +39,8 @@ const prisma = new PrismaClient()
 
 const ts = Date.now()
 let placementSeq = 0
+const OPENCLAW_AVATAR_ID = 'agent-avatar-openclaw-welcome'
+const OPENCLAW_WINDOW_ID = 'agent-window-openclaw-welcome'
 function placementId(catalogId: string): string {
   placementSeq++
   return `catalog-${catalogId}-${ts}-${placementSeq}`
@@ -64,18 +66,6 @@ function p(
 ): SeedPlacement {
   return { id: placementId(catalogId), catalogId, name, glbPath, position, rotation, scale }
 }
-
-// Captain Lobster avatar — present in catalog at av_captain_lobster.
-// (See src/lib/agent-avatar-catalog.ts: DEFAULT_AGENT_AVATAR_URL_BY_TYPE.openclaw
-//  also points at this exact VRM, so this is the canonical OpenClaw face.)
-const CAPTAIN_LOBSTER = p(
-  'av_captain_lobster',
-  'Captain Lobster (OpenClaw)',
-  '/avatars/gallery/CaptainLobster.vrm',
-  [0, 0, -3],
-  1.2,
-  [0, Math.PI, 0], // facing the spawn point (player faces -Z by default)
-)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Scenery — small, tasteful spawn-point ring
@@ -105,8 +95,6 @@ const SCENERY: SeedPlacement[] = [
   p('qf_anvil_log', 'Anvil', '/models/quaternius-fantasy/Anvil_Log.gltf', [-4, 0, 4], 1.3, [0, PI / 4, 0]),
   p('qf_banner_1', 'Banner', '/models/quaternius-fantasy/Banner_1.gltf', [0, 0, 6], 1.5),
 
-  // Captain Lobster — OpenClaw greeter avatar
-  CAPTAIN_LOBSTER,
 ]
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -214,12 +202,28 @@ const LIGHTS = [
 
 const AGENT_AVATARS = [
   {
-    id: `agent-avatar-openclaw-${ts}`,
+    id: OPENCLAW_AVATAR_ID,
     agentType: 'openclaw' as const,
     avatar3dUrl: '/avatars/gallery/CaptainLobster.vrm',
     position: [0, 0, -3] as [number, number, number],
     rotation: [0, Math.PI, 0] as [number, number, number],
     scale: 1.2,
+    label: 'OpenClaw',
+  },
+]
+
+const AGENT_WINDOWS = [
+  {
+    id: OPENCLAW_WINDOW_ID,
+    agentType: 'openclaw' as const,
+    renderMode: 'live-html' as const,
+    linkedAvatarId: OPENCLAW_AVATAR_ID,
+    anchorMode: 'next-to' as const,
+    position: [2.6, 2.6, -3] as [number, number, number],
+    rotation: [0, Math.PI / 6, 0] as [number, number, number],
+    scale: 0.16,
+    width: 800,
+    height: 600,
     label: 'OpenClaw',
   },
 ]
@@ -239,13 +243,16 @@ const worldState = {
   lights: LIGHTS,
   skyBackgroundId: 'belfast_sunset', // warm sunset HDRI
   agentAvatars: AGENT_AVATARS,
+  agentWindows: AGENT_WINDOWS,
   savedAt: new Date().toISOString(),
 }
 
 const objectCount =
   worldState.craftedScenes.length +
   worldState.conjuredAssetIds.length +
-  worldState.catalogPlacements.length
+  worldState.catalogPlacements.length +
+  worldState.agentAvatars.length +
+  worldState.agentWindows.length
 
 async function main() {
   const existing = await prisma.world.findUnique({ where: { id: WELCOME_HUB_ID } })

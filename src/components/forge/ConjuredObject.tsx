@@ -424,7 +424,9 @@ export function ConjuredObject({ asset }: ConjuredObjectProps) {
   const handleProxyClick = useCallback((e: { stopPropagation: () => void }) => {
     e.stopPropagation()
     dispatch({ type: 'SELECT_OBJECT', payload: { id: asset.id } })
-    dispatch({ type: 'INSPECT_OBJECT', payload: { id: asset.id } })
+    if (!useInputManager.getState().pointerLocked) {
+      dispatch({ type: 'INSPECT_OBJECT', payload: { id: asset.id } })
+    }
   }, [asset.id])
 
   // ░▒▓ Display name: behavior label (user rename) > displayName > prompt ▓▒░

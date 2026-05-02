@@ -40,9 +40,9 @@ interface ProfileData {
 
 export function ProfileButton() {
   const [isOpen, setIsOpen] = useState(false)
-  useUILayer('profile', isOpen)
-  const [profile, setProfile] = useState<ProfileData>({ credits: 0, xp: 0, level: 1, aura: 0, wallet_address: null, levelTitle: 'Apprentice', levelBadge: '░', levelProgress: 0, xpToNext: 100, needsOnboarding: true, displayName: 'Wanderer', bio: null, avatar_url: null, avatar_3d_url: null, lastLoginDate: null })
   const [showAvatarGallery, setShowAvatarGallery] = useState(false)
+  useUILayer('profile', isOpen || showAvatarGallery)
+  const [profile, setProfile] = useState<ProfileData>({ credits: 0, xp: 0, level: 1, aura: 0, wallet_address: null, levelTitle: 'Apprentice', levelBadge: '░', levelProgress: 0, xpToNext: 100, needsOnboarding: true, displayName: 'Wanderer', bio: null, avatar_url: null, avatar_3d_url: null, lastLoginDate: null })
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState('')
   const [editBio, setEditBio] = useState('')
