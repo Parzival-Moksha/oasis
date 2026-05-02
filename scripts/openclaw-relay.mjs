@@ -150,12 +150,12 @@ const browsersBySession = new Map() // browserSessionId -> ws
 const agentsBySession   = new Map() // browserSessionId -> { ws, scopes, label }
 const peers             = new Map() // ws -> peer ws
 
-function unpair(ws) {
+function unpair(ws, { closePeer = false } = {}) {
   const peer = peers.get(ws)
   if (peer) {
     peers.delete(ws)
     peers.delete(peer)
-    if (peer.readyState === peer.OPEN) {
+    if (closePeer && peer.readyState === peer.OPEN) {
       try { peer.close(1001, 'peer disconnected') } catch { /* ignore */ }
     }
   }
