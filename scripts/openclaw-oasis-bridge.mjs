@@ -203,6 +203,7 @@ let exited = false
 let gatewaySessionLaneReady = false
 let gatewaySessionLanePromise = null
 let gatewayIdentity = null
+let activeWorldId = ''
 const pendingToolCalls = new Map()
 const mcpDiagnostics = {
   requestCount: 0,
@@ -245,6 +246,14 @@ function sendRelay(msg) {
   const enriched = { messageId: randomUUID(), sentAt: Date.now(), ...msg }
   relayWs.send(JSON.stringify(enriched))
   return true
+}
+
+function updateActiveWorldId(nextWorldId, source = 'relay') {
+  const trimmed = typeof nextWorldId === 'string' ? nextWorldId.trim() : ''
+  if (!trimmed || trimmed === activeWorldId) return
+  const previousWorldId = activeWorldId || '(none)'
+  activeWorldId = trimmed
+  log('active Oasis world updated', { source, previousWorldId, worldId: activeWorldId })
 }
 
 function rejectPendingToolCalls(message) {
@@ -580,6 +589,7 @@ async function start() {
     worldId: creds.worldId,
     scopes: creds.scopes,
   })
+  activeWorldId = creds.worldId
 
   if (!skipMcp) {
     try {
@@ -587,6 +597,7 @@ async function start() {
         host: mcpHost,
         port: mcpPort,
         worldId: creds.worldId,
+        getWorldId: () => activeWorldId || creds.worldId,
         agentType: 'openclaw',
         relayToolCall: proxyToolCallThroughRelay,
         logger: log,
@@ -695,6 +706,11 @@ async function start() {
         agentLabel: labelOverride,
         agentVersion: '0.3.0-bridge-tools',
       })
+      return
+    }
+
+    if (parsed.type === 'browser.hello' || parsed.type === 'browser.ready') {
+      updateActiveWorldId(parsed.worldId, parsed.type)
       return
     }
 

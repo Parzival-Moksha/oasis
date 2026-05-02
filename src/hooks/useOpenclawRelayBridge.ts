@@ -52,6 +52,16 @@ export interface UseOpenclawRelayBridgeOptions {
   availableTools?: readonly string[]
   onChatAgentDelta?: (event: { sessionId: string; text: string }) => void
   onChatAgentFinal?: (event: { sessionId: string; text: string }) => void
+  onToolCall?: (event: { callId: string; toolName: string; args: Record<string, unknown>; worldId: string }) => void
+  onToolResult?: (event: {
+    callId: string
+    toolName: string
+    ok: boolean
+    data?: unknown
+    error?: { code: string; message: string }
+    worldId: string
+    durationMs: number
+  }) => void
 }
 
 export interface RelayBridgeState {
@@ -189,7 +199,7 @@ const sharedRelayOwnershipListeners = new Set<() => void>()
 const sharedRelaySnapshotListeners = new Set<() => void>()
 const sharedRelayChatCallbacks = new Map<string, Pick<
   UseOpenclawRelayBridgeOptions,
-  'onChatAgentDelta' | 'onChatAgentFinal'
+  'onChatAgentDelta' | 'onChatAgentFinal' | 'onToolCall' | 'onToolResult'
 >>()
 
 function notifySharedRelayOwnership() {
@@ -225,6 +235,26 @@ function dispatchSharedRelayDelta(event: { sessionId: string; text: string }) {
 function dispatchSharedRelayFinal(event: { sessionId: string; text: string }) {
   for (const callbacks of sharedRelayChatCallbacks.values()) {
     callbacks.onChatAgentFinal?.(event)
+  }
+}
+
+function dispatchSharedRelayToolCall(event: { callId: string; toolName: string; args: Record<string, unknown>; worldId: string }) {
+  for (const callbacks of sharedRelayChatCallbacks.values()) {
+    callbacks.onToolCall?.(event)
+  }
+}
+
+function dispatchSharedRelayToolResult(event: {
+  callId: string
+  toolName: string
+  ok: boolean
+  data?: unknown
+  error?: { code: string; message: string }
+  worldId: string
+  durationMs: number
+}) {
+  for (const callbacks of sharedRelayChatCallbacks.values()) {
+    callbacks.onToolResult?.(event)
   }
 }
 
@@ -285,6 +315,8 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
     availableTools,
     onChatAgentDelta,
     onChatAgentFinal,
+    onToolCall,
+    onToolResult,
   } = opts
 
   const [status, setStatus] = useState<RelayConnectionStatus>('idle')
@@ -306,6 +338,8 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
   const browserSessionIdRef = useRef<string>('')
   const onChatAgentDeltaRef = useRef(onChatAgentDelta)
   const onChatAgentFinalRef = useRef(onChatAgentFinal)
+  const onToolCallRef = useRef(onToolCall)
+  const onToolResultRef = useRef(onToolResult)
 
   // Latest values, read inside async handlers without forcing reconnect.
   const worldIdRef = useRef(worldId)
@@ -319,6 +353,8 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
   availableToolsRef.current = availableTools ?? DEFAULT_AVAILABLE_TOOLS
   onChatAgentDeltaRef.current = onChatAgentDelta
   onChatAgentFinalRef.current = onChatAgentFinal
+  onToolCallRef.current = onToolCall
+  onToolResultRef.current = onToolResult
 
   if (!browserSessionIdRef.current) {
     browserSessionIdRef.current = getStableBrowserSessionId()
@@ -392,22 +428,39 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
   }, [])
 
   const handleToolCall = useCallback(async (ws: WebSocket, call: ToolCall) => {
+    const startedAt = Date.now()
+    const currentWorldId = worldIdRef.current
     setInFlightCalls(n => n + 1)
     setTotalCalls(n => n + 1)
     setLastToolCall({
-      at: Date.now(),
+      at: startedAt,
       toolName: call.toolName,
-      worldId: worldIdRef.current,
+      worldId: currentWorldId,
+    })
+    onToolCallRef.current?.({
+      callId: call.callId,
+      toolName: call.toolName,
+      args: call.args,
+      worldId: currentWorldId,
     })
     console.info('[relay-bridge] tool.call <- bridge', {
       callId: call.callId,
       toolName: call.toolName,
-      worldId: worldIdRef.current,
+      worldId: currentWorldId,
     })
     try {
       const response = await postExecute(call, {
-        worldId: worldIdRef.current,
+        worldId: currentWorldId,
         agentType: agentTypeRef.current,
+      })
+      onToolResultRef.current?.({
+        callId: call.callId,
+        toolName: call.toolName,
+        ok: response.ok,
+        data: response.ok ? response.data : response.data,
+        error: response.ok ? undefined : response.error,
+        worldId: currentWorldId,
+        durationMs: Date.now() - startedAt,
       })
       if (ws.readyState !== WebSocket.OPEN) {
         // Socket closed while we were executing. The agent will never see this
@@ -657,17 +710,21 @@ export function useSharedOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions
     sharedRelayChatCallbacks.set(instanceId, {
       onChatAgentDelta: opts.onChatAgentDelta,
       onChatAgentFinal: opts.onChatAgentFinal,
+      onToolCall: opts.onToolCall,
+      onToolResult: opts.onToolResult,
     })
     return () => {
       sharedRelayChatCallbacks.delete(instanceId)
     }
-  }, [opts.onChatAgentDelta, opts.onChatAgentFinal])
+  }, [opts.onChatAgentDelta, opts.onChatAgentFinal, opts.onToolCall, opts.onToolResult])
 
   const ownedBridge = useOpenclawRelayBridge({
     ...opts,
     enabled: ownsRelayConnection,
     onChatAgentDelta: dispatchSharedRelayDelta,
     onChatAgentFinal: dispatchSharedRelayFinal,
+    onToolCall: dispatchSharedRelayToolCall,
+    onToolResult: dispatchSharedRelayToolResult,
   })
 
   useEffect(() => {

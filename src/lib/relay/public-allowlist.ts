@@ -14,7 +14,6 @@ import type { Scope } from './protocol'
  *
  * Tools NOT here, intentionally, in v1:
  *   - clear_world
- *   - list_worlds / load_world / create_world
  *   - craft_scene* / get_craft_guide / get_craft_job
  *   - list/get/place/conjure/process/delete_conjured_asset
  *   - generate_image / generate_voice / generate_video

@@ -48,11 +48,16 @@ function jsonResponse(payload: unknown, status = 200) {
   })
 }
 
-// Match the relay's per-frame cap so a relay peer can't blow past it through
-// the HTTP route either. Honest oversized requests get rejected before parse;
-// a lying client still gets bounded by Next's runtime limits downstream.
+// This is the browser executor's inbound tool-call body, not the outbound
+// screenshot result. Keep call args tight; large capture payloads return on
+// the relay WebSocket after the tool completes.
 const MAX_EXECUTE_BODY_BYTES = 256 * 1024
 const RELAY_WORLD_PLACEHOLDERS = new Set(['__active__'])
+const WORLD_CONTEXT_OPTIONAL_TOOLS = new Set([
+  'list_worlds',
+  'load_world',
+  'create_world',
+])
 
 function normalizeRelayWorldId(value: unknown): string | undefined {
   const rawWorldId = typeof value === 'string' ? value.trim() : ''
@@ -116,7 +121,7 @@ export async function POST(request: NextRequest) {
   // real active world id. Hosted relay calls must name the target world instead
   // of inheriting a browser-local active world by accident.
   const worldId = normalizeRelayWorldId(body.worldId)
-  if (mode === 'hosted' && !worldId) {
+  if (mode === 'hosted' && !worldId && !WORLD_CONTEXT_OPTIONAL_TOOLS.has(toolName)) {
     return jsonResponse({
       ok: false,
       error: {

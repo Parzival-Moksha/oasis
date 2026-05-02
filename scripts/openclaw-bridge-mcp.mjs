@@ -121,6 +121,7 @@ export function formatMcpToolResult(result, toolName) {
 export function createBridgeMcpServer({
   relayToolCall,
   worldId,
+  getWorldId = null,
   agentType = 'openclaw',
   logger = () => {},
   onToolCall = () => {},
@@ -166,16 +167,19 @@ export function createBridgeMcpServer({
           }, spec.name)
         }
 
-        const preparedArgs = prepareOasisToolArgs(spec.name, args || {}, { worldId, agentType })
+        const currentWorldId = typeof getWorldId === 'function'
+          ? (getWorldId() || worldId)
+          : worldId
+        const preparedArgs = prepareOasisToolArgs(spec.name, args || {}, { worldId: currentWorldId, agentType })
         logger('MCP tool.call -> relay adapter', {
           toolName: spec.name,
           scope,
-          worldId: preparedArgs?.worldId || worldId || '(none)',
+          worldId: preparedArgs?.worldId || currentWorldId || '(none)',
         })
         onToolCall({
           toolName: spec.name,
           scope,
-          worldId: preparedArgs?.worldId || worldId || '',
+          worldId: preparedArgs?.worldId || currentWorldId || '',
         })
         const result = await relayToolCall({
           toolName: spec.name,
@@ -185,7 +189,7 @@ export function createBridgeMcpServer({
         onToolResult({
           toolName: spec.name,
           ok: Boolean(result?.ok),
-          worldId: preparedArgs?.worldId || worldId || '',
+          worldId: preparedArgs?.worldId || currentWorldId || '',
         })
         return formatMcpToolResult(result, spec.name)
       },
@@ -201,6 +205,7 @@ export async function startBridgeMcpServer({
   path = '/mcp',
   relayToolCall,
   worldId,
+  getWorldId = null,
   agentType = 'openclaw',
   logger = () => {},
   onRequest = () => {},
@@ -221,6 +226,7 @@ export async function startBridgeMcpServer({
     const server = createBridgeMcpServer({
       relayToolCall,
       worldId,
+      getWorldId,
       agentType,
       logger,
       onToolCall,

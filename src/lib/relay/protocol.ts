@@ -12,8 +12,8 @@
  * Decisions baked in:
  *   - Strict objects: unknown fields are rejected. Renames must be deliberate.
  *   - Discriminated union on `type`: unknown types are rejected.
- *   - Hard 256 KB frame cap. Screenshots fit comfortably; bigger payloads
- *     belong on a future media path, not on the agent control plane.
+ *   - Default 8 MiB frame cap. Screenshots can ride the relay for now; larger
+ *     media should still move to a future URL/object-store path.
  *   - IDs are plain strings at runtime; brand them in TS callers if mixing
  *     becomes a real bug, not preemptively.
  */
@@ -24,7 +24,7 @@ import { z } from 'zod'
 // Limits
 // ────────────────────────────────────────────────────────────────────────────
 
-export const RELAY_FRAME_MAX_BYTES = 256 * 1024
+export const RELAY_FRAME_MAX_BYTES = 8 * 1024 * 1024
 const MAX_TEXT_LEN        = 16_000
 const MAX_TOOL_NAME_LEN   = 128
 const MAX_AGENT_LABEL_LEN = 128

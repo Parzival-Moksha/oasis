@@ -225,7 +225,7 @@ describe('safeParseRelayMessage', () => {
 })
 
 describe('protocol limits', () => {
-  it('exposes RELAY_FRAME_MAX_BYTES at 256 KB', () => {
-    expect(RELAY_FRAME_MAX_BYTES).toBe(256 * 1024)
+  it('exposes RELAY_FRAME_MAX_BYTES at 8 MiB', () => {
+    expect(RELAY_FRAME_MAX_BYTES).toBe(8 * 1024 * 1024)
   })
 })

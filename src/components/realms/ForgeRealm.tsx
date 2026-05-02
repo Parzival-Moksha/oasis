@@ -18,6 +18,7 @@ import { WorldObjectsRenderer } from '../forge/WorldObjects'
 import { GROUND_PRESETS } from '../../lib/forge/ground-textures'
 import { useThumbnailGenerator } from '../../hooks/useThumbnailGenerator'
 import { PlayerAvatar } from '../forge/PlayerAvatar'
+import { PortalGateLayer } from '../forge/PortalGateLayer'
 import { SettingsContext } from '../scene-lib'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -114,6 +115,8 @@ export function ForgeRealm() {
 
       {/* ░▒▓ WORLD OBJECTS — shared renderer for all placed assets ▓▒░ */}
       <WorldObjectsRenderer />
+
+      <PortalGateLayer />
 
       {/* ░▒▓ PLAYER AVATAR — your body in the Oasis ▓▒░ */}
       {/* orbit: idle at spawn. fps: hidden. third-person: WASD moves, camera follows. */}

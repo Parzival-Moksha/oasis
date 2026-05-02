@@ -125,4 +125,37 @@ describe('openclaw bridge MCP adapter', () => {
     expect(formatted.content[0].text).toContain('capture.png')
     expect(formatted.content[0].text).not.toContain('abc123')
   })
+
+  it('uses the latest browser-announced world id for future tool calls', async () => {
+    let currentWorldId = 'world-a'
+    const calls = []
+    const server = await startBridgeMcpServer({
+      port: 0,
+      worldId: 'world-paired',
+      getWorldId: () => currentWorldId,
+      relayToolCall: async (call) => {
+        calls.push(call)
+        return { ok: true, data: { echoedArgs: call.args } }
+      },
+    })
+    started.push(server)
+
+    const sessionId = await initialize(server.url)
+
+    await postMcp(server.url, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'get_world_info', arguments: {} },
+    }, sessionId)
+    currentWorldId = 'world-b'
+    await postMcp(server.url, {
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: { name: 'get_world_info', arguments: {} },
+    }, sessionId)
+
+    expect(calls.map(call => call.args.worldId)).toEqual(['world-a', 'world-b'])
+  })
 })

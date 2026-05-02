@@ -62,4 +62,34 @@ describe('/api/relay/execute hosted world targeting', () => {
       expect(callTool).not.toHaveBeenCalled()
     },
   )
+
+  it('allows hosted create_world without an existing active world id', async () => {
+    vi.mocked(callTool).mockResolvedValueOnce({
+      ok: true,
+      data: { worldId: 'world-created', name: 'Created by OpenClaw' },
+      message: 'Created world.',
+    })
+
+    const response = await POST(makeHostedRequest({
+      toolName: 'create_world',
+      args: { name: 'Created by OpenClaw' },
+      agentType: 'openclaw',
+    }))
+
+    expect(response.status).toBe(200)
+    const json = await response.json()
+    expect(json).toMatchObject({
+      ok: true,
+      data: { worldId: 'world-created' },
+    })
+    expect(callTool).toHaveBeenCalledWith(
+      'create_world',
+      { name: 'Created by OpenClaw' },
+      expect.objectContaining({
+        source: 'relay',
+        userId: 'bs-test-route',
+        requireExplicitWorld: true,
+      }),
+    )
+  })
 })

@@ -192,6 +192,9 @@ const OPENCLAW_RELAY_TOOLS: readonly string[] = Object.freeze([
   'get_world_state',
   'get_world_info',
   'query_objects',
+  'list_worlds',
+  'load_world',
+  'create_world',
   'search_assets',
   'get_asset_catalog',
   'place_object',
@@ -254,6 +257,7 @@ const POS_KEY = 'oasis-openclaw-pos'
 const SIZE_KEY = 'oasis-openclaw-size'
 const SETTINGS_KEY = 'oasis-openclaw-settings'
 const SESSION_KEY = 'oasis-openclaw-session'
+const SESSIONS_KEY = 'oasis-openclaw-sessions'
 const TRANSCRIPT_KEY_PREFIX = 'oasis-openclaw-transcript:'
 const MAX_LOCAL_TRANSCRIPT_MESSAGES = 200
 const OPENCLAW_DB_NAME = 'oasis-openclaw-panel'
@@ -395,6 +399,50 @@ function transcriptStorageKey(sessionId: string): string {
 
 function isLocalDraftSession(sessionId: string): boolean {
   return Boolean(sessionId) && !sessionId.includes(':')
+}
+
+function sanitizeSessionSummary(raw: unknown): OpenclawSessionSummary | null {
+  if (!raw || typeof raw !== 'object') return null
+  const record = raw as Record<string, unknown>
+  const id = typeof record.id === 'string' ? record.id.trim() : ''
+  if (!id) return null
+  const title = typeof record.title === 'string' && record.title.trim()
+    ? record.title.trim()
+    : 'OpenClaw session'
+  const source = record.source === 'gateway' || record.source === 'cache'
+    ? record.source
+    : 'draft'
+  const createdAt = typeof record.createdAt === 'number' && Number.isFinite(record.createdAt)
+    ? record.createdAt
+    : Date.now()
+  const updatedAt = typeof record.updatedAt === 'number' && Number.isFinite(record.updatedAt)
+    ? record.updatedAt
+    : createdAt
+  return {
+    id,
+    title,
+    preview: typeof record.preview === 'string' ? record.preview : '',
+    source,
+    createdAt,
+    updatedAt,
+    messageCount: typeof record.messageCount === 'number' && Number.isFinite(record.messageCount)
+      ? record.messageCount
+      : 0,
+  }
+}
+
+function loadHostedSessionSummaries(): OpenclawSessionSummary[] {
+  return loadStored<unknown[]>(SESSIONS_KEY, [])
+    .map(sanitizeSessionSummary)
+    .filter((value): value is OpenclawSessionSummary => Boolean(value))
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+function saveHostedSessionSummaries(summaries: OpenclawSessionSummary[]) {
+  saveStored(SESSIONS_KEY, summaries
+    .filter(entry => entry.id)
+    .slice(0, 80)
+    .sort((a, b) => b.updatedAt - a.updatedAt))
 }
 
 function createClientDraftSessionSummary(title = 'New OpenClaw session'): OpenclawSessionSummary {
@@ -1052,6 +1100,12 @@ export function OpenclawPanel({
     sessionTitle: string
   }>())
   const relayChatTimeoutRef = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+  const relayToolSessionRef = useRef(new Map<string, {
+    sessionId: string
+    sessionTitle: string
+    activityRunId?: string
+    toolInput?: unknown
+  }>())
 
   useEffect(() => {
     focusHandleRef.current = { focus: () => inputRef.current?.focus() }
@@ -1429,8 +1483,13 @@ export function OpenclawPanel({
       messageCount: nextMessages.filter(entry => entry.role === 'user' || entry.role === 'assistant').length,
     }
 
-    setSessions(current => [summary, ...current.filter(entry => entry.id !== summary.id)].sort((a, b) => b.updatedAt - a.updatedAt))
-    if (hostedMode) return
+    const nextSessionList = [summary, ...sessions.filter(entry => entry.id !== summary.id)]
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+    setSessions(nextSessionList)
+    if (hostedMode) {
+      saveHostedSessionSummaries(nextSessionList)
+      return
+    }
 
     try {
       await fetch('/api/openclaw/sessions', {
@@ -1569,6 +1628,72 @@ export function OpenclawPanel({
     })
   }, [appendSessionMessageDelta, appendStoredRelayMessageDelta, clearRelayChatPending])
 
+  const handleRelayToolCall = useCallback((event: { callId: string; toolName: string; args: Record<string, unknown>; worldId: string }) => {
+    const pendingEntry = relayChatPendingRef.current.entries().next().value as
+      | [string, { assistantMessageId: string; activityRunId: string; sessionTitle: string }]
+      | undefined
+    const sessionId = pendingEntry?.[0] || selectedSessionId
+    if (!sessionId) return
+    const pending = pendingEntry?.[1]
+    const sessionTitle = pending?.sessionTitle || currentSession?.title || 'OpenClaw session'
+    relayToolSessionRef.current.set(event.callId, {
+      sessionId,
+      sessionTitle,
+      ...(pending?.activityRunId ? { activityRunId: pending.activityRunId } : {}),
+      toolInput: event.args,
+    })
+    if (pending?.activityRunId) {
+      useOasisStore.getState().setAgentWorkTool('openclaw', pending.activityRunId, event.toolName)
+    }
+    const nextMessage = {
+      id: `relay-tool-${event.callId}`,
+      role: 'tool',
+      content: '',
+      timestamp: Date.now(),
+      toolName: event.toolName,
+      toolInput: event.args,
+      toolState: 'running',
+      toolInputSummary: summarizeToolInput(event.toolName, event.args),
+    } satisfies OpenclawMessage
+    void (pending
+      ? appendSessionMessageDelta(sessionId, nextMessage, sessionTitle)
+      : appendStoredRelayMessageDelta(sessionId, nextMessage, sessionTitle))
+  }, [appendSessionMessageDelta, appendStoredRelayMessageDelta, currentSession?.title, selectedSessionId])
+
+  const handleRelayToolResult = useCallback((event: {
+    callId: string
+    toolName: string
+    ok: boolean
+    data?: unknown
+    error?: { code: string; message: string }
+    worldId: string
+    durationMs: number
+  }) => {
+    const routed = relayToolSessionRef.current.get(event.callId)
+    const sessionId = routed?.sessionId || selectedSessionId
+    if (!sessionId) return
+    const sessionTitle = routed?.sessionTitle || currentSession?.title || 'OpenClaw session'
+    if (routed?.activityRunId) {
+      useOasisStore.getState().setAgentWorkTool('openclaw', routed.activityRunId, null)
+    }
+    relayToolSessionRef.current.delete(event.callId)
+    const nextMessage = {
+      id: `relay-tool-${event.callId}`,
+      role: 'tool',
+      content: '',
+      timestamp: Date.now(),
+      toolName: event.toolName,
+      ...(routed && 'toolInput' in routed ? { toolInput: routed.toolInput } : {}),
+      toolOutput: event.ok ? event.data : (event.error || event.data || null),
+      toolState: event.ok ? 'done' : 'failed',
+      toolDurationMs: event.durationMs,
+      ...(routed && 'toolInput' in routed ? { toolInputSummary: summarizeToolInput(event.toolName, routed.toolInput) } : {}),
+    } satisfies OpenclawMessage
+    void (sessionId === selectedSessionId
+      ? appendSessionMessageDelta(sessionId, nextMessage, sessionTitle)
+      : appendStoredRelayMessageDelta(sessionId, nextMessage, sessionTitle))
+  }, [appendSessionMessageDelta, appendStoredRelayMessageDelta, currentSession?.title, selectedSessionId])
+
   const wantsRelayConnection = isVisible && relayEnabled && Boolean(activeWorldId)
 
   const relayBridge = useSharedOpenclawRelayBridge({
@@ -1578,6 +1703,8 @@ export function OpenclawPanel({
     availableTools: OPENCLAW_RELAY_TOOLS,
     onChatAgentDelta: handleRelayChatDelta,
     onChatAgentFinal: handleRelayChatFinal,
+    onToolCall: handleRelayToolCall,
+    onToolResult: handleRelayToolResult,
   })
 
   const upsertVoiceMessage = useCallback((nextMessage: OpenclawMessage) => {
@@ -1687,6 +1814,16 @@ export function OpenclawPanel({
     try {
       if (hostedMode) {
         const remembered = typeof window === 'undefined' ? '' : window.localStorage.getItem(SESSION_KEY) || ''
+        const storedSessions = loadHostedSessionSummaries()
+        if (storedSessions.length > 0) {
+          setSessions(storedSessions)
+          const preferred = remembered && storedSessions.some(entry => entry.id === remembered)
+            ? remembered
+            : storedSessions[0].id
+          setSelectedSessionId(preferred)
+          saveStoredString(SESSION_KEY, preferred)
+          return
+        }
         if (!remembered) {
           setSessions([])
           setSelectedSessionId('')
@@ -2170,7 +2307,9 @@ export function OpenclawPanel({
   const handleCreateSession = useCallback(async () => {
     if (hostedMode) {
       const session = createClientDraftSessionSummary()
-      setSessions(current => [session, ...current.filter(entry => entry.id !== session.id)])
+      const nextSessions = [session, ...sessions.filter(entry => entry.id !== session.id)]
+      setSessions(nextSessions)
+      saveHostedSessionSummaries(nextSessions)
       setSelectedSessionId(session.id)
       saveStoredString(SESSION_KEY, session.id)
       await saveStoredTranscript(session.id, [])
@@ -2195,7 +2334,7 @@ export function OpenclawPanel({
     } catch {
       // Session creation is best effort for now.
     }
-  }, [hostedMode])
+  }, [hostedMode, sessions])
 
   const handleSend = useCallback(async () => {
     const message = composer.trim()
