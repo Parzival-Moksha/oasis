@@ -403,7 +403,7 @@ def append_media_lines(content, media_paths):
     media_line = f"MEDIA:{cleaned}"
     if media_line in existing_lines:
       continue
-    next_content = f"{next_content}\n{media_line}".strip() if next_content else media_line
+    next_content = f"{next_content}\\n{media_line}".strip() if next_content else media_line
     existing_lines.add(media_line)
   return next_content
 

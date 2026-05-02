@@ -12,6 +12,13 @@ import {
   mergeHydratedHermesMessages,
   shouldPreferHydratedHermesMessages,
 } from '@/lib/hermes-message-merge'
+import {
+  hermesMediaReferenceKey,
+  normalizeHermesMediaPath,
+  promoteHermesContentMediaReferences,
+  shouldProxyHermesMediaPath,
+  type HermesMediaReference,
+} from '@/lib/hermes-media-paths'
 import { useAgentVoiceInput } from '@/hooks/useAgentVoiceInput'
 import { useAutoresizeTextarea } from '@/hooks/useAutoresizeTextarea'
 import { getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
@@ -179,7 +186,7 @@ const STREAM_RENDER_INTERVAL_MS = 33
 const CONNECTION_HINT = `HERMES_API_BASE=http://127.0.0.1:8642/v1
 HERMES_API_KEY=your_secret_here
 HERMES_MODEL=optional_model_id`
-const TUNNEL_HINT = 'ssh -o ExitOnForwardFailure=yes -L 8642:127.0.0.1:8642 -R 4516:127.0.0.1:4516 user@your-vps -N'
+const TUNNEL_HINT = 'ssh -o ExitOnForwardFailure=yes -L 8642:127.0.0.1:8642 -R 14516:127.0.0.1:4516 user@your-vps -N'
 
 function readStoredMessages(): ChatMessage[] {
   if (typeof window === 'undefined') return []
@@ -738,44 +745,6 @@ function appendHermesMediaLines(content: string, mediaUrls: string[]): string {
   return mediaUrls.reduce((nextContent, mediaUrl) => appendHermesMediaLine(nextContent, mediaUrl), content)
 }
 
-function unwrapHermesPathLikeValue(path: string): string {
-  let next = path.trim()
-  const wrappedMatch = next.match(/^(?:Path|PosixPath)\((['"])(.+)\1\)$/)
-  if (wrappedMatch?.[2]) {
-    next = wrappedMatch[2].trim()
-  }
-  next = next.replace(/^['"`]+|['"`]+$/g, '').trim()
-  if (/^file:\/\//i.test(next)) {
-    try {
-      const url = new URL(next)
-      next = decodeURIComponent(url.pathname)
-    } catch {
-      next = next.replace(/^file:\/\//i, '')
-    }
-  }
-  const explicitPathMatch = next.match(/((?:https?:\/\/|file:\/\/|~\/|\/(?:home|tmp)\/)[^\s"'`]+?\.(?:mp3|wav|ogg|oga|opus|m4a|png|jpg|jpeg|gif|webp|mp4|webm|m4v)(?:\?[^\s"'`]+)?)/i)
-  if (explicitPathMatch?.[1]) {
-    return explicitPathMatch[1].trim()
-  }
-  return next.replace(/[)\],.;:!?]+$/g, '').trim()
-}
-
-function normalizeHermesMediaPath(path: string): string {
-  const next = unwrapHermesPathLikeValue(path)
-  if (!next) return ''
-  if (isDirectHermesMediaUrl(next)) return next
-  return next
-}
-
-interface HermesMediaReference {
-  path: string
-  mediaType: MediaType
-}
-
-function hermesMediaReferenceKey(path: string, mediaType: MediaType): string {
-  return `${mediaType}:${normalizeHermesMediaPath(path)}`
-}
-
 function detectHermesMediaType(path: string): MediaType | null {
   const normalized = normalizeHermesMediaPath(path)
   if (/^data:image\//i.test(normalized)) return 'image'
@@ -793,14 +762,13 @@ function detectHermesMediaType(path: string): MediaType | null {
   return null
 }
 
-function isDirectHermesMediaUrl(path: string): boolean {
-  return /^(?:https?:\/\/|blob:|data:)/i.test(path)
-}
-
 function buildHermesMediaUrl(path: string): string {
   const normalized = normalizeHermesMediaPath(path)
-  if (isDirectHermesMediaUrl(normalized)) return normalized
-  return `/api/hermes/media?path=${encodeURIComponent(normalized)}`
+  if (!normalized) return ''
+  if (shouldProxyHermesMediaPath(normalized)) {
+    return `/api/hermes/media?path=${encodeURIComponent(normalized)}`
+  }
+  return normalized
 }
 
 function joinPrompt(base: string, addition: string): string {
@@ -877,7 +845,7 @@ function extractHermesMediaReferences(content: string): HermesMediaReference[] {
   const refs: HermesMediaReference[] = []
   const seen = new Set<string>()
 
-  for (const line of content.split(/\r?\n/)) {
+  for (const line of promoteHermesContentMediaReferences(content).split(/\r?\n/)) {
     const trimmed = line.trim()
     if (!trimmed.startsWith('MEDIA:')) continue
 
@@ -1100,6 +1068,7 @@ function renderHermesAssistantContent(
   autoPlayAudio: boolean,
   audioTargetAvatarId?: string | null,
 ): React.ReactNode {
+  const mediaAwareContent = promoteHermesContentMediaReferences(content)
   const blocks: React.ReactNode[] = []
   const textBuffer: string[] = []
   const seenMediaRefs = new Set<string>()
@@ -1119,7 +1088,7 @@ function renderHermesAssistantContent(
     )
   }
 
-  for (const line of content.split(/\r?\n/)) {
+  for (const line of mediaAwareContent.split(/\r?\n/)) {
     const trimmed = line.trim()
     if (trimmed.startsWith('MEDIA:')) {
       const path = normalizeHermesMediaPath(trimmed.slice('MEDIA:'.length))
@@ -1140,7 +1109,7 @@ function renderHermesAssistantContent(
               mediaUrl={mediaUrl}
               prompt="Hermes audio"
               autoPlay={autoPlayAudio}
-              needsProxy={!isDirectHermesMediaUrl(path)}
+              needsProxy={shouldProxyHermesMediaPath(path)}
               avatarAudioTargetId={audioTargetAvatarId}
             />
           )
@@ -1152,7 +1121,7 @@ function renderHermesAssistantContent(
               mediaUrl={mediaUrl}
               mediaType={mediaType}
               prompt={`Hermes ${mediaType}`}
-              needsProxy={!isDirectHermesMediaUrl(path)}
+              needsProxy={shouldProxyHermesMediaPath(path)}
             />
           )
         }

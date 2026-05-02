@@ -14,7 +14,7 @@ import { useOasisStore } from '@/store/oasisStore'
 import { useInputManager, useUILayer } from '@/lib/input-manager'
 import { useAutoresizeTextarea } from '@/hooks/useAutoresizeTextarea'
 import { useAgentVoiceInput } from '@/hooks/useAgentVoiceInput'
-import { useOpenclawRelayBridge } from '@/hooks/useOpenclawRelayBridge'
+import { useSharedOpenclawRelayBridge } from '@/hooks/useOpenclawRelayBridge'
 import { base64ToBytes, bytesToBase64, decodeMuLawToFloat32, encodeFloat32ToMuLaw } from '@/lib/audio-mulaw'
 import { renderMarkdown } from '@/lib/anorak-renderers'
 import { describeOpenclawSshHostIssue, sanitizeOpenclawSshHost } from '@/lib/openclaw-ssh-host'
@@ -117,57 +117,6 @@ interface OpenclawMessage {
 interface OpenclawMediaReference {
   path: string
   mediaType: MediaType
-}
-
-let openclawRelayOwnerId: string | null = null
-const openclawRelayOwnerListeners = new Set<() => void>()
-
-function notifyOpenclawRelayOwnerListeners() {
-  for (const listener of openclawRelayOwnerListeners) listener()
-}
-
-function useOpenclawRelayOwnership(wantsOwnership: boolean): boolean {
-  const ownerIdRef = useRef<string | null>(null)
-  if (!ownerIdRef.current) {
-    ownerIdRef.current = `openclaw-relay-owner-${Math.random().toString(36).slice(2)}`
-  }
-  const wantsOwnershipRef = useRef(wantsOwnership)
-  wantsOwnershipRef.current = wantsOwnership
-  const [, rerender] = useState(0)
-
-  const tryAcquireOrRefresh = useCallback(() => {
-    if (wantsOwnershipRef.current && openclawRelayOwnerId === null) {
-      openclawRelayOwnerId = ownerIdRef.current
-      notifyOpenclawRelayOwnerListeners()
-      return
-    }
-    rerender(value => value + 1)
-  }, [])
-
-  useEffect(() => {
-    openclawRelayOwnerListeners.add(tryAcquireOrRefresh)
-    return () => {
-      openclawRelayOwnerListeners.delete(tryAcquireOrRefresh)
-      if (openclawRelayOwnerId === ownerIdRef.current) {
-        openclawRelayOwnerId = null
-        notifyOpenclawRelayOwnerListeners()
-      }
-    }
-  }, [tryAcquireOrRefresh])
-
-  useEffect(() => {
-    if (wantsOwnership) {
-      if (openclawRelayOwnerId === null) {
-        openclawRelayOwnerId = ownerIdRef.current
-        notifyOpenclawRelayOwnerListeners()
-      }
-    } else if (openclawRelayOwnerId === ownerIdRef.current) {
-      openclawRelayOwnerId = null
-      notifyOpenclawRelayOwnerListeners()
-    }
-  }, [wantsOwnership])
-
-  return wantsOwnership && openclawRelayOwnerId === ownerIdRef.current
 }
 
 interface ProfileResponse {
@@ -914,6 +863,21 @@ function formatDuration(value: number): string {
   return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}s`
 }
 
+function formatPairingCountdown(totalSeconds: number): string {
+  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return 'Code expired'
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = Math.max(0, Math.floor(totalSeconds % 60))
+  return `Code expires in ${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
+function formatOpenclawWorldLabel(worldId: string): string {
+  if (!worldId) return 'no world'
+  if (worldId === 'world-welcome-hub-system') return 'Welcome Hub'
+  const match = worldId.match(/^world-\d+-(.+)$/)
+  if (match?.[1]) return `World ${match[1].toUpperCase()}`
+  return worldId.replace(/^world-/, 'World ')
+}
+
 function probeTone(probe: ProbeState): 'online' | 'warn' | 'offline' {
   if (!probe.reachable) return 'offline'
   if (probe.ok) return 'online'
@@ -984,13 +948,11 @@ export function OpenclawPanel({
   onClose,
   embedded = false,
   hideCloseButton = false,
-  ownRelayConnection = true,
 }: {
   isOpen: boolean
   onClose: () => void
   embedded?: boolean
   hideCloseButton?: boolean
-  ownRelayConnection?: boolean
 }) {
   useUILayer('openclaw', isOpen && !embedded)
   const hostedMode = useIsHostedOasis()
@@ -1049,6 +1011,8 @@ export function OpenclawPanel({
   const [relayPairing, setRelayPairing] = useState<RelayPairingResult | null>(null)
   const [relayPairingBusy, setRelayPairingBusy] = useState(false)
   const [relayPairingError, setRelayPairingError] = useState('')
+  const [relayCountdownNow, setRelayCountdownNow] = useState(() => Date.now())
+  const relayPairingExpiresAt = relayPairing?.expiresAt ?? 0
 
   const dragStart = useRef({ x: 0, y: 0 })
   const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 })
@@ -1102,8 +1066,15 @@ export function OpenclawPanel({
   }, [hostedMode])
 
   useEffect(() => {
-    if (hostedMode && activeWorldId && ownRelayConnection) setRelayEnabled(true)
-  }, [activeWorldId, hostedMode, ownRelayConnection])
+    if (hostedMode && activeWorldId) setRelayEnabled(true)
+  }, [activeWorldId, hostedMode])
+
+  useEffect(() => {
+    if (!relayPairingExpiresAt) return
+    setRelayCountdownNow(Date.now())
+    const interval = window.setInterval(() => setRelayCountdownNow(Date.now()), 1000)
+    return () => window.clearInterval(interval)
+  }, [relayPairingExpiresAt])
 
   useEffect(() => {
     return () => {
@@ -1516,6 +1487,40 @@ export function OpenclawPanel({
     await syncSessionSummary(sessionId, nextMessages, fallbackTitle)
   }, [syncSessionSummary])
 
+  const appendStoredRelayMessageDelta = useCallback(async (
+    sessionId: string,
+    nextMessage: OpenclawMessage,
+    fallbackTitle?: string,
+  ) => {
+    if (!sessionId) return
+    const current = await loadStoredTranscript(sessionId)
+    let resolvedMessage = nextMessage
+    if (nextMessage.role === 'assistant' && nextMessage.id.startsWith('relay-assistant-')) {
+      for (let index = current.length - 1; index >= 0; index -= 1) {
+        const candidate = current[index]
+        if (candidate.role === 'assistant' && candidate.state === 'streaming') {
+          resolvedMessage = { ...nextMessage, id: candidate.id }
+          break
+        }
+      }
+    }
+
+    const existingIndex = current.findIndex(entry => entry.id === resolvedMessage.id)
+    const nextMessages = existingIndex >= 0
+      ? current.map((entry, index) => index === existingIndex
+        ? {
+            ...entry,
+            ...resolvedMessage,
+            content: mergeStreamingText(entry.content, resolvedMessage.content, resolvedMessage.state === 'done'),
+          }
+        : entry)
+      : [...current, resolvedMessage].slice(-MAX_LOCAL_TRANSCRIPT_MESSAGES)
+
+    if (selectedSessionId === sessionId) setMessages(nextMessages)
+    await saveStoredTranscript(sessionId, nextMessages)
+    await syncSessionSummary(sessionId, nextMessages, fallbackTitle)
+  }, [selectedSessionId, syncSessionSummary])
+
   const clearRelayChatPending = useCallback((sessionId: string, failed: boolean) => {
     const pending = relayChatPendingRef.current.get(sessionId)
     relayChatPendingRef.current.delete(sessionId)
@@ -1535,35 +1540,39 @@ export function OpenclawPanel({
   const handleRelayChatDelta = useCallback((event: { sessionId: string; text: string }) => {
     const pending = relayChatPendingRef.current.get(event.sessionId)
     const assistantMessageId = pending?.assistantMessageId || `relay-assistant-${event.sessionId}`
-    void appendSessionMessageDelta(event.sessionId, {
+    const nextMessage = {
       id: assistantMessageId,
       role: 'assistant',
       content: event.text,
       timestamp: Date.now(),
       state: 'streaming',
-    }, pending?.sessionTitle || 'OpenClaw session')
-  }, [appendSessionMessageDelta])
+    } satisfies OpenclawMessage
+    void (pending
+      ? appendSessionMessageDelta(event.sessionId, nextMessage, pending.sessionTitle || 'OpenClaw session')
+      : appendStoredRelayMessageDelta(event.sessionId, nextMessage, 'OpenClaw session'))
+  }, [appendSessionMessageDelta, appendStoredRelayMessageDelta])
 
   const handleRelayChatFinal = useCallback((event: { sessionId: string; text: string }) => {
     const pending = relayChatPendingRef.current.get(event.sessionId)
     const assistantMessageId = pending?.assistantMessageId || `relay-assistant-${event.sessionId}`
-    void appendSessionMessageDelta(event.sessionId, {
+    const nextMessage = {
       id: assistantMessageId,
       role: 'assistant',
       content: event.text,
       timestamp: Date.now(),
       state: 'done',
-    }, pending?.sessionTitle || 'OpenClaw session').finally(() => {
+    } satisfies OpenclawMessage
+    void (pending
+      ? appendSessionMessageDelta(event.sessionId, nextMessage, pending.sessionTitle || 'OpenClaw session')
+      : appendStoredRelayMessageDelta(event.sessionId, nextMessage, 'OpenClaw session')).finally(() => {
       clearRelayChatPending(event.sessionId, false)
     })
-  }, [appendSessionMessageDelta, clearRelayChatPending])
+  }, [appendSessionMessageDelta, appendStoredRelayMessageDelta, clearRelayChatPending])
 
-  const wantsRelayConnection = ownRelayConnection && isVisible && relayEnabled && Boolean(activeWorldId)
-  const ownsRelayConnection = useOpenclawRelayOwnership(wantsRelayConnection)
-  const relayDelegated = wantsRelayConnection && !ownsRelayConnection
+  const wantsRelayConnection = isVisible && relayEnabled && Boolean(activeWorldId)
 
-  const relayBridge = useOpenclawRelayBridge({
-    enabled: ownsRelayConnection,
+  const relayBridge = useSharedOpenclawRelayBridge({
+    enabled: wantsRelayConnection,
     worldId: activeWorldId || '__active__',
     agentType: 'openclaw',
     availableTools: OPENCLAW_RELAY_TOOLS,
@@ -2789,22 +2798,20 @@ export function OpenclawPanel({
       ? 'gateway pairing'
       : `gateway ${gatewayClientState}`
   const showPairingHelp = gatewayClientState === 'pairing-required' || status.pendingDeviceCount > 0
-  const relayTone = relayDelegated
-    ? 'warn'
-    : !relayEnabled
+  const relayTone = !relayEnabled
     ? 'offline'
     : relayBridge.status === 'paired'
       ? 'online'
       : relayBridge.status === 'error' || relayBridge.status === 'closed'
         ? 'offline'
         : 'warn'
-  const relayBadgeLabel = relayDelegated
-    ? 'relay delegated'
-    : relayEnabled ? `relay ${relayBridge.status}` : 'relay off'
+  const relayBadgeLabel = relayEnabled ? `relay ${relayBridge.status}` : 'relay off'
   const relayPairingCommand = buildOpenclawRelayPairingCommand(relayPairing, browserOrigin)
   const relayPairingExpiresInS = relayPairing
-    ? Math.max(0, Math.round((relayPairing.expiresAt - Date.now()) / 1000))
+    ? Math.max(0, Math.ceil((relayPairing.expiresAt - relayCountdownNow) / 1000))
     : 0
+  const activeWorldLabel = formatOpenclawWorldLabel(activeWorldId)
+  const relayPairingCountdownLabel = formatPairingCountdown(relayPairingExpiresInS)
   const visibleTabs: readonly OpenclawPanelTab[] = hostedMode
     ? ['stream', 'config', 'settings', 'diagnostics']
     : ['stream', 'voice', 'config', 'settings', 'diagnostics']
@@ -3212,13 +3219,13 @@ export function OpenclawPanel({
                 <div className="mt-1 flex flex-wrap gap-2">
                   <StatusBadge label={relayBadgeLabel} tone={relayTone} title={relayBridge.lastError || undefined} />
                   <StatusBadge
-                    label={activeWorldId ? `world ${activeWorldId.slice(-8)}` : 'no world'}
+                    label={activeWorldLabel}
                     tone={activeWorldId ? 'online' : 'warn'}
                     title={activeWorldId || undefined}
                   />
                   {relayPairing && (
                     <StatusBadge
-                      label={`${relayPairingExpiresInS}s code`}
+                      label={relayPairingCountdownLabel}
                       tone={relayPairingExpiresInS > 0 ? 'warn' : 'offline'}
                       title={relayPairing.worldId}
                     />
@@ -3230,12 +3237,10 @@ export function OpenclawPanel({
                   type="button"
                   data-no-drag
                   onClick={() => setRelayEnabled(value => !value)}
-                  disabled={!activeWorldId || relayDelegated}
+                  disabled={!activeWorldId}
                   className="rounded-lg border border-sky-300/25 bg-sky-400/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-50 transition hover:bg-sky-400/18 disabled:cursor-not-allowed disabled:opacity-45"
                 >
-                  {relayDelegated
-                    ? 'relay delegated'
-                    : relayEnabled ? 'stop relay' : 'start relay'}
+                  {relayEnabled ? 'stop relay' : 'start relay'}
                 </button>
                 <button
                   type="button"
@@ -3268,6 +3273,21 @@ export function OpenclawPanel({
                   {relayBridge.relaySessionId ? relayBridge.relaySessionId.slice(0, 8) : 'none'}
                 </div>
               </div>
+            </div>
+
+            <div className="mt-2 rounded-lg border border-white/8 bg-black/18 px-3 py-2 text-[11px] leading-5 text-sky-50/62">
+              {relayBridge.lastToolCallAt ? (
+                <>
+                  Last hosted tool relay: <span className="font-mono text-sky-50">{relayBridge.lastToolName}</span>
+                  {' '}to <span className="font-mono text-sky-50">{formatOpenclawWorldLabel(relayBridge.lastToolWorldId || '')}</span>
+                  {' '}at {formatTimestamp(relayBridge.lastToolCallAt)}.
+                </>
+              ) : (
+                <>
+                  No Oasis MCP tool calls have reached this relay tab yet. If OpenClaw replies but this stays empty,
+                  restart the OpenClaw Gateway after the bridge writes the 17890 MCP config.
+                </>
+              )}
             </div>
 
             {relayPairing && (
@@ -3644,7 +3664,7 @@ export function OpenclawPanel({
                 <StatusBadge label={`${smokeReport.counts.passed} passed`} tone="online" />
                 <StatusBadge label={`${smokeReport.counts.failed} failed`} tone={smokeReport.counts.failed > 0 ? 'offline' : 'online'} />
                 <StatusBadge label={`${smokeReport.counts.skipped} skipped`} tone="warn" />
-                {smokeReport.worldId && <StatusBadge label={`world ${smokeReport.worldId.slice(-8)}`} tone="warn" />}
+                {smokeReport.worldId && <StatusBadge label={formatOpenclawWorldLabel(smokeReport.worldId)} tone="warn" />}
               </div>
 
               <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-cyan-50/68">

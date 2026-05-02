@@ -122,6 +122,9 @@ export function createBridgeMcpServer({
   relayToolCall,
   worldId,
   agentType = 'openclaw',
+  logger = () => {},
+  onToolCall = () => {},
+  onToolResult = () => {},
 }) {
   const server = new McpServer(
     { name: 'openclaw-oasis-relay-mcp', version: '0.3.0' },
@@ -161,10 +164,25 @@ export function createBridgeMcpServer({
         }
 
         const preparedArgs = prepareOasisToolArgs(spec.name, args || {}, { worldId, agentType })
+        logger('MCP tool.call -> relay adapter', {
+          toolName: spec.name,
+          scope,
+          worldId: preparedArgs?.worldId || worldId || '(none)',
+        })
+        onToolCall({
+          toolName: spec.name,
+          scope,
+          worldId: preparedArgs?.worldId || worldId || '',
+        })
         const result = await relayToolCall({
           toolName: spec.name,
           args: preparedArgs,
           scope,
+        })
+        onToolResult({
+          toolName: spec.name,
+          ok: Boolean(result?.ok),
+          worldId: preparedArgs?.worldId || worldId || '',
         })
         return formatMcpToolResult(result, spec.name)
       },
@@ -182,6 +200,9 @@ export async function startBridgeMcpServer({
   worldId,
   agentType = 'openclaw',
   logger = () => {},
+  onRequest = () => {},
+  onToolCall = () => {},
+  onToolResult = () => {},
 }) {
   const sessions = new Map()
 
@@ -194,7 +215,14 @@ export async function startBridgeMcpServer({
         sessions.set(sessionId, entry)
       },
     })
-    const server = createBridgeMcpServer({ relayToolCall, worldId, agentType })
+    const server = createBridgeMcpServer({
+      relayToolCall,
+      worldId,
+      agentType,
+      logger,
+      onToolCall,
+      onToolResult,
+    })
     entry = { server, transport }
     transport.onclose = () => {
       const sessionId = transport.sessionId
@@ -228,13 +256,26 @@ export async function startBridgeMcpServer({
 
       const sessionId = headerValue(req.headers['mcp-session-id'])
       let entry = sessionId ? sessions.get(sessionId) : null
+      const initialize = hasInitializeRequest(parsedBody)
+      logger('MCP adapter request', {
+        method: req.method,
+        path: requestUrl.pathname,
+        sessionId: sessionId || '(new)',
+        initialize,
+      })
+      onRequest({
+        method: req.method || '',
+        path: requestUrl.pathname,
+        sessionId,
+        initialize,
+      })
 
       if (!entry) {
         if (sessionId) {
           writeJsonRpcError(res, 404, -32001, `Unknown MCP session: ${sessionId}`)
           return
         }
-        if (req.method !== 'POST' || !hasInitializeRequest(parsedBody)) {
+        if (req.method !== 'POST' || !initialize) {
           writeJsonRpcError(res, 400, -32000, 'Initialize this MCP session with a POST request first.')
           return
         }

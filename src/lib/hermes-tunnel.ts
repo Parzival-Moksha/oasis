@@ -203,6 +203,13 @@ type ForwardBindEndpoint = {
   port: number | null
 }
 
+type ForwardEndpoint = {
+  bindHost: string | null
+  bindPort: number | null
+  targetHost: string | null
+  targetPort: number | null
+}
+
 function parseForwardBindEndpoint(spec: string): ForwardBindEndpoint {
   const parts = splitForwardSpec(spec)
   if (parts.length < 3) {
@@ -221,6 +228,33 @@ function parseForwardBindEndpoint(spec: string): ForwardBindEndpoint {
   return {
     host: parts[0] || null,
     port: Number.isFinite(port) ? port : null,
+  }
+}
+
+function parseForwardEndpoint(spec: string): ForwardEndpoint {
+  const parts = splitForwardSpec(spec)
+  if (parts.length < 3) {
+    return { bindHost: null, bindPort: null, targetHost: null, targetPort: null }
+  }
+
+  if (parts.length === 3) {
+    const bindPort = Number(parts[0])
+    const targetPort = Number(parts[2])
+    return {
+      bindHost: null,
+      bindPort: Number.isFinite(bindPort) ? bindPort : null,
+      targetHost: parts[1] || null,
+      targetPort: Number.isFinite(targetPort) ? targetPort : null,
+    }
+  }
+
+  const bindPort = Number(parts[1])
+  const targetPort = Number(parts[3])
+  return {
+    bindHost: parts[0] || null,
+    bindPort: Number.isFinite(bindPort) ? bindPort : null,
+    targetHost: parts[2] || null,
+    targetPort: Number.isFinite(targetPort) ? targetPort : null,
   }
 }
 
@@ -259,6 +293,31 @@ async function canReachTcp(host: string, port: number, timeoutMs = 500): Promise
     socket.once('timeout', () => finish(false))
     socket.once('error', () => finish(false))
   })
+}
+
+function formatUrlHost(host: string): string {
+  return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host
+}
+
+export function resolveRemoteOasisBaseUrlFromTunnelCommand(command: string, localPort = 4516): string {
+  try {
+    const parsedCommand = parseTunnelCommand(command)
+    const remoteForward = parsedCommand.remoteForwards
+      .map(parseForwardEndpoint)
+      .find(endpoint =>
+        endpoint.bindPort
+        && endpoint.targetPort === localPort
+        && areHostsCompatible(endpoint.targetHost, '127.0.0.1')
+      )
+
+    if (remoteForward?.bindPort) {
+      return `http://${formatUrlHost(normalizeProbeHost(remoteForward.bindHost))}:${remoteForward.bindPort}`
+    }
+  } catch {
+    // Fall back to the historical same-port reverse forward.
+  }
+
+  return `http://127.0.0.1:${localPort}`
 }
 
 async function runCommand(executable: string, args: string[]): Promise<{ stdout: string; stderr: string; code: number | null }> {
@@ -308,6 +367,53 @@ async function getProcessCommandLine(pid: number): Promise<string | null> {
   return stdout || null
 }
 
+async function findMatchingTunnelProcess(command: string): Promise<{ pid: number; commandLine: string } | null> {
+  if (process.platform === 'win32') {
+    const script = [
+      "$procs = Get-CimInstance Win32_Process -Filter \"Name = 'ssh.exe'\" | Select-Object ProcessId,CommandLine",
+      'if ($procs) { $procs | ConvertTo-Json -Compress }',
+    ].join('; ')
+    const result = await runCommand('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script])
+    const stdout = sanitizeString(result.stdout)
+    if (!stdout) return null
+
+    try {
+      const parsed = JSON.parse(stdout) as unknown
+      const entries = Array.isArray(parsed) ? parsed : [parsed]
+      for (const entry of entries) {
+        if (!entry || typeof entry !== 'object') continue
+        const item = entry as Record<string, unknown>
+        const pid = Number(item.ProcessId)
+        const commandLine = sanitizeString(item.CommandLine)
+        if (!Number.isFinite(pid) || !commandLine) continue
+        if (tunnelProcessMatchesCommand(command, commandLine)) {
+          return { pid, commandLine }
+        }
+      }
+    } catch {
+      return null
+    }
+
+    return null
+  }
+
+  const result = await runCommand('ps', ['-eo', 'pid=,args='])
+  for (const rawLine of result.stdout.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line) continue
+    const match = line.match(/^(\d+)\s+(.+)$/)
+    if (!match) continue
+    const pid = Number(match[1])
+    const commandLine = sanitizeString(match[2])
+    if (!Number.isFinite(pid) || !commandLine.includes('ssh')) continue
+    if (tunnelProcessMatchesCommand(command, commandLine)) {
+      return { pid, commandLine }
+    }
+  }
+
+  return null
+}
+
 export function tunnelProcessMatchesCommand(expectedRaw: string, actualRaw: string): boolean {
   try {
     const expected = parseTunnelCommand(expectedRaw)
@@ -331,10 +437,20 @@ export function tunnelProcessMatchesCommand(expectedRaw: string, actualRaw: stri
 }
 
 async function inspectTunnelProcess(pid: number | undefined, command: string): Promise<{
+  pid?: number
   processAlive: boolean
   processMatches: boolean
 }> {
   if (!pid || !Number.isFinite(pid) || !isProcessAlive(pid)) {
+    const matched = await findMatchingTunnelProcess(command)
+    if (matched) {
+      return {
+        pid: matched.pid,
+        processAlive: true,
+        processMatches: true,
+      }
+    }
+
     return {
       processAlive: false,
       processMatches: false,
@@ -344,12 +460,14 @@ async function inspectTunnelProcess(pid: number | undefined, command: string): P
   const commandLine = await getProcessCommandLine(pid)
   if (!commandLine) {
     return {
+      pid,
       processAlive: true,
       processMatches: false,
     }
   }
 
   return {
+    pid,
     processAlive: true,
     processMatches: tunnelProcessMatchesCommand(command, commandLine),
   }
@@ -425,8 +543,12 @@ async function buildHermesTunnelStatus(stored: HermesTunnelStoredConfig | null):
   })
 
   const reverseForwardConfigured = parsedCommand.remoteForwards.some(forward => {
-    const endpoint = parseForwardBindEndpoint(forward)
-    return endpoint.port === 4516
+    const endpoint = parseForwardEndpoint(forward)
+    return Boolean(
+      endpoint.bindPort
+      && endpoint.targetPort === 4516
+      && areHostsCompatible(endpoint.targetHost, '127.0.0.1'),
+    )
   })
 
   const apiForwardReachable = inspection.processMatches && apiForwardConfigured && apiHost && apiPort
@@ -447,7 +569,7 @@ async function buildHermesTunnelStatus(stored: HermesTunnelStoredConfig | null):
   }
 
   if (!reverseForwardConfigured) {
-    issues.push('Tunnel command is missing the Oasis MCP reverse forward on port 4516.')
+    issues.push('Tunnel command is missing the Oasis MCP reverse forward back to local port 4516.')
   }
 
   let health: HermesTunnelStatus['health'] = 'saved'
@@ -469,7 +591,7 @@ async function buildHermesTunnelStatus(stored: HermesTunnelStoredConfig | null):
     autoStart: stored?.autoStart !== false,
     updatedAt: stored?.updatedAt,
     lastStartedAt: stored?.lastStartedAt,
-    pid: stored?.pid,
+    pid: inspection.pid ?? stored?.pid,
     running: inspection.processMatches,
     processAlive: inspection.processAlive,
     processMatches: inspection.processMatches,
@@ -554,6 +676,11 @@ export async function readStoredHermesTunnelConfig(): Promise<HermesTunnelStored
   } catch {
     return null
   }
+}
+
+export async function getHermesRemoteOasisBaseUrl(localPort = 4516): Promise<string> {
+  const stored = await readStoredHermesTunnelConfig()
+  return resolveRemoteOasisBaseUrlFromTunnelCommand(stored?.command || '', localPort)
 }
 
 export async function writeStoredHermesTunnelConfig(input: WriteHermesTunnelInput): Promise<HermesTunnelStoredConfig> {
@@ -671,6 +798,14 @@ export async function ensureHermesTunnelRunning(commandOverride?: string): Promi
   })
 
   if (existingStatus.running && existingStatus.healthy) {
+    if (existingStatus.pid && existingStatus.pid !== stored?.pid) {
+      await writeStoredHermesTunnelConfig({
+        command,
+        autoStart: stored?.autoStart !== false,
+        pid: existingStatus.pid,
+        lastStartedAt: stored?.lastStartedAt || new Date().toISOString(),
+      })
+    }
     return existingStatus
   }
 
@@ -747,9 +882,9 @@ export async function ensureHermesTunnelRunning(commandOverride?: string): Promi
 export async function stopHermesTunnel(): Promise<HermesTunnelStatus> {
   const stored = await readStoredHermesTunnelConfig()
   const status = await buildHermesTunnelStatus(stored)
-  if (stored?.pid && status.processMatches) {
+  if (status.pid && status.processMatches) {
     try {
-      process.kill(stored.pid)
+      process.kill(status.pid)
     } catch {
       // Best effort.
     }

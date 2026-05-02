@@ -52,6 +52,13 @@ function jsonResponse(payload: unknown, status = 200) {
 // the HTTP route either. Honest oversized requests get rejected before parse;
 // a lying client still gets bounded by Next's runtime limits downstream.
 const MAX_EXECUTE_BODY_BYTES = 256 * 1024
+const RELAY_WORLD_PLACEHOLDERS = new Set(['__active__'])
+
+export function normalizeRelayWorldId(value: unknown): string | undefined {
+  const rawWorldId = typeof value === 'string' ? value.trim() : ''
+  if (!rawWorldId || RELAY_WORLD_PLACEHOLDERS.has(rawWorldId)) return undefined
+  return rawWorldId
+}
 
 export async function POST(request: NextRequest) {
   const declaredLength = Number(request.headers.get('content-length') || '0')
@@ -105,12 +112,19 @@ export async function POST(request: NextRequest) {
   const args = (body.args && typeof body.args === 'object' && !Array.isArray(body.args))
     ? body.args as Record<string, unknown>
     : {}
-  const rawWorldId = typeof body.worldId === 'string' ? body.worldId.trim() : ''
-  // `__active__` is a sentinel used by callers (e.g. /relay-test, the bridge)
-  // that don't know the real active world id. Treat it as "no context" so the
-  // tool handlers fall back to their own active-world resolution rather than
-  // looking up a literal world named "__active__".
-  const worldId = rawWorldId && rawWorldId !== '__active__' ? rawWorldId : undefined
+  // `__active__` is a sentinel used by local-dev callers that do not know the
+  // real active world id. Hosted relay calls must name the target world instead
+  // of inheriting a browser-local active world by accident.
+  const worldId = normalizeRelayWorldId(body.worldId)
+  if (mode === 'hosted' && !worldId) {
+    return jsonResponse({
+      ok: false,
+      error: {
+        code: 'tool_world_context_required',
+        message: 'Hosted relay tool calls require an explicit worldId.',
+      },
+    }, 400)
+  }
   const agentType = typeof body.agentType === 'string' && body.agentType.trim()
     ? body.agentType.trim().toLowerCase()
     : 'openclaw'

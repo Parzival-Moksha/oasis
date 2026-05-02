@@ -27,6 +27,9 @@
  *   --mcp-port=...           OASIS_BRIDGE_MCP_PORT default 17890
  *   --mcp-host=...           OASIS_BRIDGE_MCP_HOST default 127.0.0.1
  *   --tool-timeout-ms=...    OASIS_BRIDGE_TOOL_TIMEOUT_MS default 30000
+ *   --mcp-config=auto|preserve  OASIS_BRIDGE_MCP_CONFIG default auto
+ *   --no-mcp-config          alias for --mcp-config=preserve
+ *   --restore-mcp            restore the pre-bridge OpenClaw MCP config
  *   --no-gateway             skip Gateway entirely (legacy stdin-echo mode)
  *   --no-mcp                 skip the local MCP adapter
  *
@@ -42,6 +45,13 @@ import path from 'node:path'
 
 import { GatewayClient, loadOrCreateIdentity } from './openclaw-gateway-shim.mjs'
 import { startBridgeMcpServer } from './openclaw-bridge-mcp.mjs'
+import { createGatewayChatRouter } from './openclaw-bridge-chat-routing.mjs'
+import {
+  createBridgeMcpServerConfig,
+  installBridgeMcpConfig,
+  restoreBridgeMcpConfig,
+  resolveDefaultBridgeStatePath,
+} from './openclaw-mcp-config-guard.mjs'
 
 // ────────────────────────────────────────────────────────────────────────────
 // Argv / env
@@ -73,12 +83,39 @@ const skipMcp = argv.flags['no-mcp'] === 'true'
 const mcpHost = argv.flags['mcp-host'] || process.env.OASIS_BRIDGE_MCP_HOST || '127.0.0.1'
 const mcpPort = Number(argv.flags['mcp-port'] || process.env.OASIS_BRIDGE_MCP_PORT || 17890)
 const toolTimeoutMs = Number(argv.flags['tool-timeout-ms'] || process.env.OASIS_BRIDGE_TOOL_TIMEOUT_MS || 30_000)
+const mcpConfigMode = argv.flags['no-mcp-config'] === 'true'
+  ? 'preserve'
+  : (argv.flags['mcp-config'] || process.env.OASIS_BRIDGE_MCP_CONFIG || 'auto').toLowerCase()
+const mcpServerName = argv.flags['mcp-server-name'] || process.env.OASIS_BRIDGE_MCP_SERVER_NAME || 'oasis'
+const openclawConfigPath = argv.flags['openclaw-config'] || process.env.OPENCLAW_CONFIG_PATH || ''
+const mcpRestoreStatePath = argv.flags['mcp-restore-state'] || process.env.OASIS_BRIDGE_MCP_RESTORE_STATE || ''
+
+const log = (...args) => console.log('[bridge]', ...args)
+
+function resolvedMcpRestoreStatePath() {
+  return mcpRestoreStatePath || resolveDefaultBridgeStatePath(os.homedir(), mcpServerName)
+}
+
+if (argv.flags['restore-mcp'] === 'true') {
+  try {
+    await restoreBridgeMcpConfig({
+      statePath: resolvedMcpRestoreStatePath(),
+      logger: log,
+      force: true,
+    })
+    process.exit(0)
+  } catch (err) {
+    log('restore MCP config failed:', err?.message || String(err))
+    process.exit(1)
+  }
+}
 
 if (!rawCode) {
   console.error('usage: node scripts/openclaw-oasis-bridge.mjs <pairing-url-or-code>')
   console.error('  optional: --oasis-url=https://… --gateway-url=ws://127.0.0.1:18789')
   console.error('  optional: --gateway-token=… --identity=… --label=… --mcp-port=17890')
-  console.error('  optional: --no-gateway --no-mcp')
+  console.error('  optional: --no-gateway --no-mcp --no-mcp-config')
+  console.error('  optional: --restore-mcp')
   process.exit(2)
 }
 
@@ -102,14 +139,14 @@ const finalOasisUrl = oasisUrlOverride || oasisUrl
 const finalGatewayUrl = gatewayUrlOverride || 'ws://127.0.0.1:18789'
 const identityPath = identityPathOverride || path.join(os.homedir(), '.openclaw-oasis-bridge', 'identity.json')
 
-const log = (...args) => console.log('[bridge]', ...args)
-
 log('config:', {
   oasisUrl: finalOasisUrl,
   code: pairingCode,
   label: labelOverride,
   gateway: skipGateway ? '(skipped)' : finalGatewayUrl,
   mcp: skipMcp ? '(skipped)' : `http://${mcpHost}:${mcpPort}/mcp`,
+  mcpConfig: skipMcp ? '(skipped)' : mcpConfigMode,
+  mcpServerName,
   identityPath,
 })
 
@@ -159,8 +196,18 @@ function buildRelayUrl(httpUrl) {
 let relayWs = null
 let gateway = null
 let mcpServer = null
+let mcpConfigGuard = null
+let gatewayChatRouter = null
 let exited = false
 const pendingToolCalls = new Map()
+const mcpDiagnostics = {
+  requestCount: 0,
+  toolCallCount: 0,
+  lastRequestAt: 0,
+  lastToolCallAt: 0,
+  lastToolName: '',
+  lastToolWorldId: '',
+}
 
 const exitWith = (code, reason) => {
   if (exited) return
@@ -169,9 +216,19 @@ const exitWith = (code, reason) => {
   rejectPendingToolCalls(`bridge exiting: ${reason}`)
   try { relayWs?.close() } catch { /* ignore */ }
   try { gateway?.close() } catch { /* ignore */ }
-  void mcpServer?.close?.().catch(() => {})
-  setTimeout(() => process.exit(code), 50).unref()
+  const emergencyExit = setTimeout(() => process.exit(code), 4_000)
+  emergencyExit.unref()
+  Promise.allSettled([
+    mcpConfigGuard?.restore?.(),
+    mcpServer?.close?.(),
+  ]).finally(() => {
+    clearTimeout(emergencyExit)
+    process.exit(code)
+  })
 }
+
+process.on('SIGINT', () => exitWith(130, 'SIGINT'))
+process.on('SIGTERM', () => exitWith(143, 'SIGTERM'))
 
 function sendRelay(msg) {
   if (!relayWs || relayWs.readyState !== relayWs.OPEN) {
@@ -201,6 +258,11 @@ function resolvePendingToolResult(result) {
   if (!pending) return false
   clearTimeout(pending.timer)
   pendingToolCalls.delete(callId)
+  log('tool.result <- relay', {
+    toolName: pending.toolName,
+    worldId: pending.worldId || '(none)',
+    ok: Boolean(result.ok),
+  })
   pending.resolve({
     ok: Boolean(result.ok),
     data: result.data,
@@ -232,8 +294,9 @@ function proxyToolCallThroughRelay({ toolName, args, scope }) {
         },
       })
     }, toolTimeoutMs)
-    pendingToolCalls.set(callId, { resolve, timer, toolName })
+    pendingToolCalls.set(callId, { resolve, timer, toolName, worldId: args?.worldId || '' })
     try {
+      log('tool.call -> relay', { toolName, scope, callId, worldId: args?.worldId || '(none)' })
       const sent = sendRelay({
         type: 'tool.call',
         callId,
@@ -258,47 +321,21 @@ function proxyToolCallThroughRelay({ toolName, args, scope }) {
   })
 }
 
-// Track Gateway runIds we issued from a given relay-side sessionId so we can
-// route Gateway chat events back to the right browser chat session. The relay
+// Route Gateway chat events back to the hosted relay session that initiated
+// them, including early events that arrive before chat.send returns runId.
 // envelope's sessionId is opaque to us — we just echo it back on the result.
-const runIdToRelaySessionId = new Map()
-
 function setupGatewayChatBridge(creds) {
   if (skipGateway) {
     log('Gateway integration skipped (--no-gateway). chat.user envelopes will fall through to stdin echo.')
     return
   }
 
+  gatewayChatRouter = createGatewayChatRouter({ sendRelay, log })
+
   // Subscribe to Gateway 'chat' events. They arrive whether or not we initiated
   // the run — filter by runId we know about.
   gateway.subscribeEvent('chat', (payload) => {
-    const runId = typeof payload?.runId === 'string' ? payload.runId : ''
-    const state = typeof payload?.state === 'string' ? payload.state : ''
-    if (!runId) return
-    const sessionId = runIdToRelaySessionId.get(runId)
-    if (!sessionId) return  // not from a chat we initiated; ignore.
-
-    const text = typeof payload?.message === 'string'
-      ? payload.message
-      : typeof payload?.delta === 'string'
-        ? payload.delta
-        : typeof payload?.content === 'string'
-          ? payload.content
-          : ''
-
-    if (state === 'delta') {
-      sendRelay({ type: 'chat.agent.delta', sessionId, text })
-    } else if (state === 'final') {
-      sendRelay({ type: 'chat.agent.final', sessionId, text })
-      runIdToRelaySessionId.delete(runId)
-    } else if (state === 'aborted' || state === 'error') {
-      sendRelay({
-        type: 'chat.agent.final',
-        sessionId,
-        text: text || `[OpenClaw chat ${state}]`,
-      })
-      runIdToRelaySessionId.delete(runId)
-    }
+    gatewayChatRouter?.handleGatewayChatPayload(payload)
   })
 }
 
@@ -311,17 +348,19 @@ async function forwardChatUserToGateway(sessionId, text) {
   }
   try {
     const idempotencyKey = randomUUID()
+    const sessionKey = sessionId || 'oasis-default'
+    gatewayChatRouter?.beginChat({ sessionId, sessionKey, idempotencyKey })
     // Use the relay sessionId as the Gateway sessionKey. OpenClaw stores chat
     // history per sessionKey, so the user gets a coherent conversation per
     // browser-chat-session.
     const result = await gateway.callMethod('chat.send', {
-      sessionKey: sessionId || 'oasis-default',
+      sessionKey,
       message: text,
       idempotencyKey,
     })
     const runId = result?.runId
     if (typeof runId === 'string' && runId) {
-      runIdToRelaySessionId.set(runId, sessionId)
+      gatewayChatRouter?.attachRunId({ runId, sessionId, sessionKey, idempotencyKey })
       log('chat.send →', { runId, sessionId })
     } else {
       log('chat.send returned no runId', result)
@@ -366,9 +405,56 @@ async function start() {
         agentType: 'openclaw',
         relayToolCall: proxyToolCallThroughRelay,
         logger: log,
+        onRequest: ({ method, sessionId, initialize }) => {
+          mcpDiagnostics.requestCount += 1
+          mcpDiagnostics.lastRequestAt = Date.now()
+          log('MCP adapter hit', {
+            count: mcpDiagnostics.requestCount,
+            method,
+            sessionId: sessionId || '(new)',
+            initialize,
+          })
+        },
+        onToolCall: ({ toolName, worldId }) => {
+          mcpDiagnostics.toolCallCount += 1
+          mcpDiagnostics.lastToolCallAt = Date.now()
+          mcpDiagnostics.lastToolName = toolName
+          mcpDiagnostics.lastToolWorldId = worldId
+          log('MCP tool invoked', {
+            count: mcpDiagnostics.toolCallCount,
+            toolName,
+            worldId: worldId || '(none)',
+          })
+        },
       })
       log('OpenClaw Oasis MCP URL:', mcpServer.url)
       log('OpenClaw MCP config hint:', `openclaw mcp set oasis '{"url":"${mcpServer.url}","transport":"streamable-http"}'`)
+      if (mcpConfigMode === 'auto') {
+        try {
+          mcpConfigGuard = await installBridgeMcpConfig({
+            ...(openclawConfigPath ? { configPath: openclawConfigPath } : {}),
+            statePath: resolvedMcpRestoreStatePath(),
+            serverName: mcpServerName,
+            serverConfig: createBridgeMcpServerConfig(mcpServer.url),
+            logger: log,
+          })
+          if (mcpConfigGuard?.changed) {
+            log('OpenClaw MCP config changed on disk. If Gateway was already running, restart the Gateway once so it reloads the Oasis MCP URL.')
+            const previousMcpUrl = typeof mcpConfigGuard.previousServer?.url === 'string'
+              ? mcpConfigGuard.previousServer.url
+              : ''
+            if (previousMcpUrl.includes(':4516')) {
+              log('Previous Oasis MCP target was the local 4516 server. A running Gateway may keep using that stale target until manually restarted.')
+            }
+          }
+        } catch (err) {
+          log('OpenClaw MCP config auto-switch failed; use the config hint above:', err?.message || String(err))
+        }
+      } else if (mcpConfigMode === 'preserve' || mcpConfigMode === 'off') {
+        log(`OpenClaw MCP config left unchanged (--mcp-config=${mcpConfigMode}).`)
+      } else {
+        log(`Unknown --mcp-config=${mcpConfigMode}; leaving OpenClaw MCP config unchanged.`)
+      }
     } catch (err) {
       log('MCP adapter failed to start; Oasis tools will not be available to OpenClaw:', err?.message || String(err))
       mcpServer = null
@@ -429,6 +515,7 @@ async function start() {
     if (parsed.type === 'chat.user') {
       const sessionId = typeof parsed.sessionId === 'string' ? parsed.sessionId : 'oasis-default'
       const text = typeof parsed.text === 'string' ? parsed.text : ''
+      log('chat.user <- relay', { sessionId, chars: text.length })
       void forwardChatUserToGateway(sessionId, text)
       return
     }

@@ -54,9 +54,13 @@ async function initialize(url) {
 describe('openclaw bridge MCP adapter', () => {
   it('lists only public Oasis tools and proxies calls through relay tool.call shape', async () => {
     const calls = []
+    const toolHits = []
+    const requestHits = []
     const server = await startBridgeMcpServer({
       port: 0,
       worldId: 'world-test',
+      onRequest: (hit) => requestHits.push(hit),
+      onToolCall: (hit) => toolHits.push(hit),
       relayToolCall: async (call) => {
         calls.push(call)
         return { ok: true, data: { echoedTool: call.toolName, echoedArgs: call.args } }
@@ -93,6 +97,12 @@ describe('openclaw bridge MCP adapter', () => {
       toolName: 'get_world_info',
       args: { worldId: 'world-test' },
       scope: 'world.read',
+    }])
+    expect(requestHits.some(hit => hit.initialize)).toBe(true)
+    expect(toolHits).toEqual([{
+      toolName: 'get_world_info',
+      scope: 'world.read',
+      worldId: 'world-test',
     }])
   })
 

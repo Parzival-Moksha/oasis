@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { resolveHermesConfig } from '@/lib/hermes-config'
 import { buildHermesRemoteExec, ensureHermesRemoteOasisMcpUrl } from '@/lib/hermes-remote'
+import { getHermesRemoteOasisBaseUrl } from '@/lib/hermes-tunnel'
 import {
   publishWorldPlayerContext,
   type RuntimePlayerContext as PromptPlayerContext,
@@ -214,14 +215,6 @@ function buildPromptWithRuntimeContext(prompt: string, runtimeContext: string, c
   if (continuationContext) sections.push(continuationContext)
   sections.push(`User request:\n${prompt}`)
   return sections.join('\n\n').trim()
-}
-
-function resolveOasisBaseUrl(request: NextRequest): string {
-  const forwardedProto = sanitizeString(request.headers.get('x-forwarded-proto')).split(',')[0]?.trim()
-  const forwardedHost = sanitizeString(request.headers.get('x-forwarded-host')).split(',')[0]?.trim()
-  const host = forwardedHost || sanitizeString(request.headers.get('host'))
-  const protocol = forwardedProto || (host.startsWith('localhost') || host.startsWith('127.0.0.1') ? 'http' : 'https')
-  return host ? `${protocol}://${host}` : 'http://127.0.0.1:4516'
 }
 
 function rootBaseFromApiBase(apiBase: string): string {
@@ -804,9 +797,9 @@ export async function POST(request: NextRequest) {
   const playerContext = parsePromptPlayerContext(body?.playerContext)
   const runtimeContext = buildOasisRuntimeContext(worldId, playerContext)
   const nativeContinuationContext = buildNativeContinuationContext(history)
-  const oasisBaseUrl = resolveOasisBaseUrl(request)
-  const oasisToolsUrl = `${oasisBaseUrl}/api/oasis-tools`
-  const oasisMcpUrl = `${oasisBaseUrl}/api/mcp/oasis${worldId ? `?worldId=${encodeURIComponent(worldId)}&agentType=hermes` : '?agentType=hermes'}`
+  const remoteOasisBaseUrl = await getHermesRemoteOasisBaseUrl()
+  const remoteOasisToolsUrl = `${remoteOasisBaseUrl}/api/oasis-tools`
+  const remoteOasisMcpUrl = `${remoteOasisBaseUrl}/api/mcp/oasis${worldId ? `?worldId=${encodeURIComponent(worldId)}&agentType=hermes` : '?agentType=hermes'}`
 
   if (playerContext && worldId) {
     await publishWorldPlayerContext(worldId, playerContext)
@@ -829,7 +822,7 @@ export async function POST(request: NextRequest) {
         }
 
         try {
-          await ensureHermesRemoteOasisMcpUrl('http://127.0.0.1:4516/api/mcp/oasis?agentType=hermes')
+          await ensureHermesRemoteOasisMcpUrl(remoteOasisMcpUrl)
           const exec = await buildHermesRemoteExec(['python3', '-'])
           const child = spawn(exec.executable, exec.args, {
             stdio: ['pipe', 'pipe', 'pipe'],
@@ -952,8 +945,8 @@ export async function POST(request: NextRequest) {
             requestedSessionId,
             {
               worldId,
-              oasisToolsUrl,
-              oasisMcpUrl,
+              oasisToolsUrl: remoteOasisToolsUrl,
+              oasisMcpUrl: remoteOasisMcpUrl,
             },
           ))
           child.stdin.end()

@@ -30,6 +30,7 @@ function isAllowedOrigin(request: NextRequest): boolean {
 
 function canUseHermesSessions(request: NextRequest): boolean {
   if (process.env.OASIS_ALLOW_REMOTE_HERMES_PROXY === 'true') return true
+  if (process.env.NODE_ENV !== 'production') return true
 
   const host = request.headers.get('host') || ''
   const hostName = host.split(':')[0]?.toLowerCase() || ''
