@@ -119,6 +119,57 @@ interface OpenclawMediaReference {
   mediaType: MediaType
 }
 
+let openclawRelayOwnerId: string | null = null
+const openclawRelayOwnerListeners = new Set<() => void>()
+
+function notifyOpenclawRelayOwnerListeners() {
+  for (const listener of openclawRelayOwnerListeners) listener()
+}
+
+function useOpenclawRelayOwnership(wantsOwnership: boolean): boolean {
+  const ownerIdRef = useRef<string | null>(null)
+  if (!ownerIdRef.current) {
+    ownerIdRef.current = `openclaw-relay-owner-${Math.random().toString(36).slice(2)}`
+  }
+  const wantsOwnershipRef = useRef(wantsOwnership)
+  wantsOwnershipRef.current = wantsOwnership
+  const [, rerender] = useState(0)
+
+  const tryAcquireOrRefresh = useCallback(() => {
+    if (wantsOwnershipRef.current && openclawRelayOwnerId === null) {
+      openclawRelayOwnerId = ownerIdRef.current
+      notifyOpenclawRelayOwnerListeners()
+      return
+    }
+    rerender(value => value + 1)
+  }, [])
+
+  useEffect(() => {
+    openclawRelayOwnerListeners.add(tryAcquireOrRefresh)
+    return () => {
+      openclawRelayOwnerListeners.delete(tryAcquireOrRefresh)
+      if (openclawRelayOwnerId === ownerIdRef.current) {
+        openclawRelayOwnerId = null
+        notifyOpenclawRelayOwnerListeners()
+      }
+    }
+  }, [tryAcquireOrRefresh])
+
+  useEffect(() => {
+    if (wantsOwnership) {
+      if (openclawRelayOwnerId === null) {
+        openclawRelayOwnerId = ownerIdRef.current
+        notifyOpenclawRelayOwnerListeners()
+      }
+    } else if (openclawRelayOwnerId === ownerIdRef.current) {
+      openclawRelayOwnerId = null
+      notifyOpenclawRelayOwnerListeners()
+    }
+  }, [wantsOwnership])
+
+  return wantsOwnership && openclawRelayOwnerId === ownerIdRef.current
+}
+
 interface ProfileResponse {
   displayName?: string
 }
@@ -933,7 +984,7 @@ export function OpenclawPanel({
   onClose,
   embedded = false,
   hideCloseButton = false,
-  ownRelayConnection = !embedded,
+  ownRelayConnection = true,
 }: {
   isOpen: boolean
   onClose: () => void
@@ -1507,8 +1558,12 @@ export function OpenclawPanel({
     })
   }, [appendSessionMessageDelta, clearRelayChatPending])
 
+  const wantsRelayConnection = ownRelayConnection && isVisible && relayEnabled && Boolean(activeWorldId)
+  const ownsRelayConnection = useOpenclawRelayOwnership(wantsRelayConnection)
+  const relayDelegated = wantsRelayConnection && !ownsRelayConnection
+
   const relayBridge = useOpenclawRelayBridge({
-    enabled: ownRelayConnection && isVisible && relayEnabled && Boolean(activeWorldId),
+    enabled: ownsRelayConnection,
     worldId: activeWorldId || '__active__',
     agentType: 'openclaw',
     availableTools: OPENCLAW_RELAY_TOOLS,
@@ -2734,7 +2789,7 @@ export function OpenclawPanel({
       ? 'gateway pairing'
       : `gateway ${gatewayClientState}`
   const showPairingHelp = gatewayClientState === 'pairing-required' || status.pendingDeviceCount > 0
-  const relayTone = hostedMode && !ownRelayConnection
+  const relayTone = relayDelegated
     ? 'warn'
     : !relayEnabled
     ? 'offline'
@@ -2743,7 +2798,7 @@ export function OpenclawPanel({
       : relayBridge.status === 'error' || relayBridge.status === 'closed'
         ? 'offline'
         : 'warn'
-  const relayBadgeLabel = hostedMode && !ownRelayConnection
+  const relayBadgeLabel = relayDelegated
     ? 'relay delegated'
     : relayEnabled ? `relay ${relayBridge.status}` : 'relay off'
   const relayPairingCommand = buildOpenclawRelayPairingCommand(relayPairing, browserOrigin)
@@ -3175,10 +3230,10 @@ export function OpenclawPanel({
                   type="button"
                   data-no-drag
                   onClick={() => setRelayEnabled(value => !value)}
-                  disabled={!activeWorldId || (hostedMode && !ownRelayConnection)}
+                  disabled={!activeWorldId || relayDelegated}
                   className="rounded-lg border border-sky-300/25 bg-sky-400/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-50 transition hover:bg-sky-400/18 disabled:cursor-not-allowed disabled:opacity-45"
                 >
-                  {hostedMode && !ownRelayConnection
+                  {relayDelegated
                     ? 'relay delegated'
                     : relayEnabled ? 'stop relay' : 'start relay'}
                 </button>
