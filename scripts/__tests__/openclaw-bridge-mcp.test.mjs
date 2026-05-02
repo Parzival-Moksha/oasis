@@ -158,4 +158,35 @@ describe('openclaw bridge MCP adapter', () => {
 
     expect(calls.map(call => call.args.worldId)).toEqual(['world-a', 'world-b'])
   })
+
+  it('recovers a stale OpenClaw MCP session id as a one-shot stateless tool call', async () => {
+    const calls = []
+    const server = await startBridgeMcpServer({
+      port: 0,
+      worldId: 'world-stale-session',
+      relayToolCall: async (call) => {
+        calls.push(call)
+        return { ok: true, data: { recovered: true } }
+      },
+    })
+    started.push(server)
+
+    const called = await postMcp(server.url, {
+      jsonrpc: '2.0',
+      id: 99,
+      method: 'tools/call',
+      params: {
+        name: 'get_world_info',
+        arguments: {},
+      },
+    }, 'stale-openclaw-session-id')
+
+    expect(called.status).toBe(200)
+    expect(called.json.result.isError).toBe(false)
+    expect(calls).toEqual([{
+      toolName: 'get_world_info',
+      args: { worldId: 'world-stale-session' },
+      scope: 'world.read',
+    }])
+  })
 })

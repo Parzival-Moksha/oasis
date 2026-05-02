@@ -214,14 +214,18 @@ export async function startBridgeMcpServer({
 }) {
   const sessions = new Map()
 
-  function createSessionEntry() {
+  function createSessionEntry({ stateless = false } = {}) {
     let entry
     const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
+      sessionIdGenerator: stateless ? undefined : () => randomUUID(),
       enableJsonResponse: true,
-      onsessioninitialized: (sessionId) => {
-        sessions.set(sessionId, entry)
-      },
+      ...(stateless
+        ? {}
+        : {
+            onsessioninitialized: (sessionId) => {
+              sessions.set(sessionId, entry)
+            },
+          }),
     })
     const server = createBridgeMcpServer({
       relayToolCall,
@@ -266,6 +270,7 @@ export async function startBridgeMcpServer({
       const sessionId = headerValue(req.headers['mcp-session-id'])
       let entry = sessionId ? sessions.get(sessionId) : null
       const initialize = hasInitializeRequest(parsedBody)
+      let closeAfterRequest = false
       logger('MCP adapter request', {
         method: req.method,
         path: requestUrl.pathname,
@@ -280,19 +285,31 @@ export async function startBridgeMcpServer({
       })
 
       if (!entry) {
-        if (sessionId) {
+        if (sessionId && !initialize) {
+          logger('MCP adapter recovering stale session as stateless one-shot', { sessionId })
+          entry = createSessionEntry({ stateless: true })
+          await entry.server.connect(entry.transport)
+          closeAfterRequest = true
+        } else if (sessionId) {
           writeJsonRpcError(res, 404, -32001, `Unknown MCP session: ${sessionId}`)
           return
+        } else {
+          if (req.method !== 'POST' || !initialize) {
+            writeJsonRpcError(res, 400, -32000, 'Initialize this MCP session with a POST request first.')
+            return
+          }
+          entry = createSessionEntry()
+          await entry.server.connect(entry.transport)
         }
-        if (req.method !== 'POST' || !initialize) {
-          writeJsonRpcError(res, 400, -32000, 'Initialize this MCP session with a POST request first.')
-          return
-        }
-        entry = createSessionEntry()
-        await entry.server.connect(entry.transport)
       }
 
-      await entry.transport.handleRequest(req, res, parsedBody)
+      try {
+        await entry.transport.handleRequest(req, res, parsedBody)
+      } finally {
+        if (closeAfterRequest) {
+          await Promise.allSettled([entry.transport.close(), entry.server.close()])
+        }
+      }
 
       if (req.method === 'DELETE') {
         const closedSessionId = entry.transport.sessionId
