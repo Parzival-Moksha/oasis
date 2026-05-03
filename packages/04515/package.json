@@ -1,6 +1,6 @@
 {
   "name": "04515",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "description": "Connect OpenClaw to the hosted Oasis at openclaw.04515.xyz.",
   "license": "MIT-0",
