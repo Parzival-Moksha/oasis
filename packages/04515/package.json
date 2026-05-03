@@ -1,0 +1,34 @@
+{
+  "name": "04515",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Connect OpenClaw to the hosted Oasis at openclaw.04515.xyz.",
+  "license": "MIT-0",
+  "bin": {
+    "04515-bridge": "./bin/04515-bridge.mjs"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "skills/",
+    "cli.mjs",
+    "index.mjs",
+    "openclaw.plugin.json"
+  ],
+  "openclaw": {
+    "extensions": [
+      "./index.mjs"
+    ],
+    "build": {
+      "openclawVersion": "2026.4.15"
+    },
+    "compat": {
+      "pluginApi": ">=2026.3.24-beta.2"
+    }
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "openclaw": "2026.4.15",
+    "ws": "^8.20.0"
+  }
+}

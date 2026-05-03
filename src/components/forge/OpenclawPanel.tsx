@@ -143,7 +143,7 @@ interface RelayPairingResult {
 type SmokeMode = 'core' | 'live' | 'external'
 type SmokeStatus = 'passed' | 'failed' | 'skipped'
 type SmokeCategory = 'transport' | 'world' | 'avatar' | 'craft' | 'live-bridge' | 'conjure'
-type OpenclawPanelTab = 'stream' | 'voice' | 'config' | 'settings' | 'diagnostics'
+type OpenclawPanelTab = 'connect' | 'stream' | 'voice' | 'config' | 'settings' | 'diagnostics'
 
 interface OpenclawSmokeTestCase {
   name: string
@@ -185,6 +185,8 @@ const OPENCLAW_VOICE_MODELS = ['gpt-realtime', 'gpt-realtime-mini'] as const
 const OPENCLAW_VOICE_OPTIONS = ['alloy', 'ash', 'ballad', 'cedar', 'coral', 'echo', 'marin', 'sage', 'shimmer', 'verse'] as const
 const OPENCLAW_AUDIO_SAMPLE_RATE = 8000
 const OPENCLAW_RELAY_SCOPES = ['world.read', 'world.write.safe', 'screenshot.request', 'chat.stream'] as const
+const HOSTED_WELCOME_AUDIO_URL = '/audio/04515/welcome-sam.mp3'
+const HOSTED_WELCOME_TEXT = 'Welcome, traveler. Send this code to your OpenClaw, and the lobster steps into the avatar beside you. Then the world is yours to shape.'
 const OPENCLAW_RELAY_TOOLS: readonly string[] = Object.freeze([
   'get_world_state',
   'get_world_info',
@@ -786,10 +788,24 @@ function buildOpenclawRelayPairingCommand(pairing: RelayPairingResult | null, or
   const pairingRef = normalizedOrigin
     ? `${normalizedOrigin}/pair/${encodeURIComponent(pairing.code)}`
     : pairing.code
-  const base = `node scripts/openclaw-oasis-bridge.mjs ${pairingRef}`
+  const base = `openclaw 04515 connect ${pairingRef}`
   if (!isLocalOasisOrigin(normalizedOrigin)) return base
   const relayHost = localRelayHostFromOrigin(normalizedOrigin)
   return `${base} --relay-url="ws://${relayHost}:4517/?role=agent"`
+}
+
+function buildOpenclawRelayPairingMessage(pairing: RelayPairingResult | null, origin: string): string {
+  if (!pairing) return ''
+  const command = buildOpenclawRelayPairingCommand(pairing, origin)
+  const normalizedOrigin = normalizeCommandOrigin(origin) || 'https://openclaw.04515.xyz'
+  return [
+    'Install the 04515 plugin from ClawHub if it is not installed yet.',
+    'Then connect to this Oasis:',
+    '',
+    command,
+    '',
+    `After pairing, keep the bridge running so you can inhabit the lobster body at ${normalizedOrigin} and use Oasis world tools.`,
+  ].join('\n')
 }
 
 function formatSessionSource(source: OpenclawSessionSummary['source']): string {
@@ -969,7 +985,7 @@ export function OpenclawPanel({
   const [isDragging, setIsDragging] = useState(false)
   const [isResizing, setIsResizing] = useState(false)
   const [sending, setSending] = useState(false)
-  const [activeTab, setActiveTab] = useState<OpenclawPanelTab>(() => hostedMode ? 'config' : 'stream')
+  const [activeTab, setActiveTab] = useState<OpenclawPanelTab>(() => hostedMode ? 'connect' : 'stream')
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false)
   const [expandedToolIds, setExpandedToolIds] = useState<string[]>([])
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
@@ -999,6 +1015,9 @@ export function OpenclawPanel({
   const voiceAutoScrollRef = useRef(true)
   const voiceAudioRef = useRef<HTMLAudioElement | null>(null)
   const voiceLipSyncRef = useRef<LipSyncController | null>(null)
+  const hostedWelcomeAudioRef = useRef<HTMLAudioElement | null>(null)
+  const hostedWelcomeLipSyncRef = useRef<LipSyncController | null>(null)
+  const hostedWelcomeLipSyncObjectIdRef = useRef<string | null>(null)
   const voiceEventSourceRef = useRef<EventSource | null>(null)
   const voiceMediaStreamRef = useRef<MediaStream | null>(null)
   const voiceAudioContextRef = useRef<AudioContext | null>(null)
@@ -1042,12 +1061,69 @@ export function OpenclawPanel({
   }, [])
 
   useEffect(() => {
-    if (hostedMode) setActiveTab(tab => (tab === 'voice' ? 'config' : tab))
+    if (hostedMode) setActiveTab(tab => (tab === 'voice' ? 'connect' : tab))
   }, [hostedMode])
 
   useEffect(() => {
     if (hostedMode && activeWorldId) setRelayEnabled(true)
   }, [activeWorldId, hostedMode])
+
+  const stopHostedWelcome = useCallback(() => {
+    hostedWelcomeAudioRef.current?.pause()
+    hostedWelcomeAudioRef.current = null
+
+    const ctrl = hostedWelcomeLipSyncRef.current
+    const objectId = hostedWelcomeLipSyncObjectIdRef.current
+    if (ctrl && objectId) {
+      unregisterLipSync(objectId, ctrl)
+    } else {
+      ctrl?.detach()
+    }
+    hostedWelcomeLipSyncRef.current = null
+    hostedWelcomeLipSyncObjectIdRef.current = null
+  }, [])
+
+  const playHostedWelcome = useCallback(async () => {
+    if (typeof window === 'undefined') return
+
+    stopHostedWelcome()
+
+    const audio = new Audio(HOSTED_WELCOME_AUDIO_URL)
+    audio.preload = 'auto'
+    hostedWelcomeAudioRef.current = audio
+
+    const objectId = openclawAvatar?.id || null
+    let ctrl: LipSyncController | null = null
+    if (objectId) {
+      ctrl = createLipSyncController()
+      void resumeLipSyncContext().catch(() => {})
+      ctrl.attachAudio(audio)
+      registerLipSync(objectId, ctrl)
+      hostedWelcomeLipSyncRef.current = ctrl
+      hostedWelcomeLipSyncObjectIdRef.current = objectId
+    }
+
+    const cleanup = () => {
+      if (hostedWelcomeAudioRef.current === audio) hostedWelcomeAudioRef.current = null
+      if (ctrl && objectId && hostedWelcomeLipSyncRef.current === ctrl) {
+        unregisterLipSync(objectId, ctrl)
+        hostedWelcomeLipSyncRef.current = null
+        hostedWelcomeLipSyncObjectIdRef.current = null
+      }
+    }
+
+    audio.addEventListener('ended', cleanup, { once: true })
+    audio.addEventListener('error', cleanup, { once: true })
+
+    try {
+      await audio.play()
+    } catch (error) {
+      cleanup()
+      console.warn('[openclaw-panel] hosted welcome audio failed', error)
+    }
+  }, [openclawAvatar?.id, stopHostedWelcome])
+
+  useEffect(() => stopHostedWelcome, [stopHostedWelcome])
 
   useEffect(() => {
     if (!relayPairingExpiresAt) return
@@ -2410,7 +2486,7 @@ export function OpenclawPanel({
             entry.id === assistantMessageId
               ? {
                   ...entry,
-                  content: 'Pair an OpenClaw bridge from Config first, then send from this Stream tab.',
+                  content: 'Pair an OpenClaw bridge from Connect first, then send from this Stream tab.',
                   state: 'failed' as const,
                   timestamp: Date.now(),
                 }
@@ -2781,6 +2857,11 @@ export function OpenclawPanel({
     }
   }, [activeWorldId])
 
+  const handleConnectOpenclaw = useCallback(() => {
+    void playHostedWelcome()
+    void handleRequestRelayPairing()
+  }, [handleRequestRelayPairing, playHostedWelcome])
+
   const handleRunSmoke = useCallback(async (mode: SmokeMode) => {
     setRunningSmokeMode(mode)
     try {
@@ -2899,8 +2980,8 @@ export function OpenclawPanel({
   const chatReady = hostedMode ? relayBridge.status === 'paired' : gatewayClientState === 'ready'
   const transportLine = hostedMode
     ? (relayBridge.status === 'paired'
-        ? 'Relay paired to the OpenClaw bridge.'
-        : 'Pair an OpenClaw bridge from Config before chatting.')
+        ? 'Bridge paired through the hosted relay.'
+        : 'Pair an OpenClaw bridge from Connect before chatting.')
     : chatReady
       ? 'Ready'
       : gatewayClientState === 'pairing-required'
@@ -2927,22 +3008,44 @@ export function OpenclawPanel({
       ? 'gateway pairing'
       : `gateway ${gatewayClientState}`
   const showPairingHelp = gatewayClientState === 'pairing-required' || status.pendingDeviceCount > 0
-  const relayTone = !relayEnabled
+  const relayServiceTone = !relayEnabled
     ? 'offline'
-    : relayBridge.status === 'paired'
+    : relayBridge.status === 'paired' || relayBridge.status === 'connected'
       ? 'online'
       : relayBridge.status === 'error' || relayBridge.status === 'closed'
         ? 'offline'
         : 'warn'
-  const relayBadgeLabel = relayEnabled ? `relay ${relayBridge.status}` : 'relay off'
+  const relayServiceBadgeLabel = !relayEnabled
+    ? 'relay off'
+    : relayBridge.status === 'paired' || relayBridge.status === 'connected'
+      ? 'relay online'
+      : relayBridge.status === 'error' || relayBridge.status === 'closed'
+        ? 'relay down'
+        : relayBridge.status === 'connecting' || relayBridge.status === 'reconnecting'
+          ? 'relay connecting'
+          : 'relay idle'
+  const relayServiceTitle = relayBridge.lastError
+    || (relayEnabled
+      ? 'Oasis browser connection to the hosted relay service.'
+      : 'Hosted relay service connection is not active.')
+  const bridgePairingTone = relayBridge.status === 'paired'
+    ? 'online'
+    : relayEnabled && relayBridge.status !== 'error' && relayBridge.status !== 'closed'
+      ? 'warn'
+      : 'offline'
+  const bridgePairingBadgeLabel = relayBridge.status === 'paired' ? 'bridge paired' : 'bridge not paired'
+  const bridgePairingTitle = relayBridge.status === 'paired'
+    ? `OpenClaw bridge process is paired${relayBridge.relaySessionId ? ` (${relayBridge.relaySessionId})` : ''}.`
+    : 'Run the copied 04515 plugin command to pair this Oasis tab with an OpenClaw process.'
   const relayPairingCommand = buildOpenclawRelayPairingCommand(relayPairing, browserOrigin)
+  const relayPairingMessage = buildOpenclawRelayPairingMessage(relayPairing, browserOrigin)
   const relayPairingExpiresInS = relayPairing
     ? Math.max(0, Math.ceil((relayPairing.expiresAt - relayCountdownNow) / 1000))
     : 0
   const activeWorldLabel = formatOpenclawWorldLabel(activeWorldId)
   const relayPairingCountdownLabel = formatPairingCountdown(relayPairingExpiresInS)
   const visibleTabs: readonly OpenclawPanelTab[] = hostedMode
-    ? ['stream', 'config', 'settings', 'diagnostics']
+    ? ['connect', 'stream', 'config', 'settings', 'diagnostics']
     : ['stream', 'voice', 'config', 'settings', 'diagnostics']
 
   const panelBody = (
@@ -3000,9 +3103,14 @@ export function OpenclawPanel({
               </>
             )}
             <StatusBadge
-              label={relayBadgeLabel}
-              tone={relayTone}
-              title={relayBridge.lastError || (relayPairing ? `paired world ${relayPairing.worldId}` : activeWorldId)}
+              label={relayServiceBadgeLabel}
+              tone={relayServiceTone}
+              title={relayServiceTitle}
+            />
+            <StatusBadge
+              label={bridgePairingBadgeLabel}
+              tone={bridgePairingTone}
+              title={bridgePairingTitle}
             />
             {!hostedMode && (
               <StatusBadge
@@ -3225,6 +3333,139 @@ export function OpenclawPanel({
         className="flex-1 space-y-3 overflow-y-auto px-3 py-3"
         style={{ scrollbarWidth: 'thin', scrollbarColor: '#4b5563 transparent', ...EMBEDDED_SCROLL_SURFACE_STYLE }}
       >
+        {activeTab === 'connect' && hostedMode && (
+          <div className="space-y-3">
+            <div
+              className="rounded-xl border px-4 py-4"
+              style={{ borderColor: 'rgba(45,212,191,0.22)', background: 'rgba(2,18,24,0.46)' }}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="max-w-[680px]">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-100">Connect OpenClaw</span>
+                  <div className="mt-2 text-sm font-semibold leading-6 text-cyan-50">{HOSTED_WELCOME_TEXT}</div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <StatusBadge label={relayServiceBadgeLabel} tone={relayServiceTone} title={relayServiceTitle} />
+                    <StatusBadge label={bridgePairingBadgeLabel} tone={bridgePairingTone} title={bridgePairingTitle} />
+                    <StatusBadge label={activeWorldLabel} tone={activeWorldId ? 'online' : 'warn'} title={activeWorldId || undefined} />
+                    {relayPairing && (
+                      <StatusBadge
+                        label={relayPairingCountdownLabel}
+                        tone={relayPairingExpiresInS > 0 ? 'warn' : 'offline'}
+                        title="Pairing codes are single-use and expire after five minutes."
+                      />
+                    )}
+                  </div>
+                </div>
+                <div className="flex shrink-0 flex-col gap-2">
+                  {relayBridge.status === 'paired' ? (
+                    <button
+                      type="button"
+                      data-no-drag
+                      onClick={() => setActiveTab('stream')}
+                      className="rounded-lg border border-emerald-300/30 bg-emerald-400/14 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-50 transition hover:bg-emerald-400/22"
+                    >
+                      go to stream
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      data-no-drag
+                      onClick={handleConnectOpenclaw}
+                      disabled={relayPairingBusy || !activeWorldId}
+                      className="rounded-lg border border-cyan-300/30 bg-cyan-400/14 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-50 transition hover:bg-cyan-400/22 disabled:cursor-wait disabled:opacity-50"
+                    >
+                      {relayPairingBusy ? 'minting code' : 'connect openclaw'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    data-no-drag
+                    onClick={() => void playHostedWelcome()}
+                    className="rounded-lg border border-white/10 px-4 py-2 text-[11px] uppercase tracking-[0.16em] text-cyan-50/70 transition hover:border-cyan-300/25 hover:text-white"
+                  >
+                    replay sam
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-3 text-[11px] leading-5 text-cyan-50/58">
+                Click once to mint a single-use pairing code. The code expires in five minutes, but the paired bridge can stay connected after the code is redeemed.
+              </div>
+            </div>
+
+            {relayPairing ? (
+              <div
+                className="rounded-xl border px-4 py-4"
+                style={{ borderColor: 'rgba(56,189,248,0.2)', background: 'rgba(4,18,28,0.42)' }}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-100">
+                    paste this into OpenClaw
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      data-no-drag
+                      onClick={() => { void copyText(relayPairingMessage); flashCopied('relay-message') }}
+                      className="rounded-md border border-sky-300/20 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-sky-50/78 transition hover:border-sky-300/35 hover:text-white"
+                    >
+                      {copiedKey === 'relay-message' ? 'copied' : 'copy message'}
+                    </button>
+                    <button
+                      type="button"
+                      data-no-drag
+                      onClick={() => { void copyText(relayPairingCommand); flashCopied('relay-command') }}
+                      className="rounded-md border border-white/10 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-sky-50/65 transition hover:border-sky-300/30 hover:text-white"
+                    >
+                      {copiedKey === 'relay-command' ? 'copied' : 'copy command'}
+                    </button>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  data-no-drag
+                  onClick={() => { void copyText(relayPairingMessage); flashCopied('relay-message') }}
+                  className="mt-3 w-full rounded-lg border border-sky-300/16 bg-black/28 px-3 py-3 text-left transition hover:border-sky-300/34"
+                >
+                  <span className="block whitespace-pre-wrap font-mono text-[11px] leading-5 text-sky-50/88">
+                    {relayPairingMessage}
+                  </span>
+                </button>
+                <div className="mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
+                  <button
+                    type="button"
+                    data-no-drag
+                    onClick={() => { void copyText(relayPairing.code); flashCopied('relay-code') }}
+                    className="rounded-lg border border-white/8 bg-black/18 px-3 py-2 text-left font-mono text-[12px] text-sky-50 transition hover:border-sky-300/28"
+                  >
+                    {copiedKey === 'relay-code' ? 'copied ' : ''}{relayPairing.code}
+                  </button>
+                  <button
+                    type="button"
+                    data-no-drag
+                    onClick={handleConnectOpenclaw}
+                    disabled={relayPairingBusy || !activeWorldId}
+                    className="rounded-lg border border-white/10 px-3 py-2 text-[11px] uppercase tracking-[0.16em] text-sky-50/70 transition hover:border-sky-300/30 hover:text-white disabled:cursor-wait disabled:opacity-45"
+                  >
+                    mint fresh code
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-white/8 bg-black/16 px-4 py-4 text-[11px] leading-5 text-cyan-50/58">
+                The pairing message appears here after you click <span className="font-semibold text-cyan-50">Connect OpenClaw</span>.
+                Config still exists for diagnostics, but this is the normal hosted flow.
+              </div>
+            )}
+
+            {(relayBridge.lastError || relayPairingError) && (
+              <div className="rounded-lg border border-rose-300/18 bg-rose-400/8 px-3 py-2 text-[11px] text-rose-50/80">
+                {relayPairingError || relayBridge.lastError}
+              </div>
+            )}
+          </div>
+        )}
+
         {activeTab === 'config' && (
         <>
           {!hostedMode && (
@@ -3346,11 +3587,12 @@ export function OpenclawPanel({
                 <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-100">Hosted relay</span>
                 <div className="mt-1 max-w-[640px] text-[11px] leading-5 text-sky-50/58">
                   {hostedMode
-                    ? 'Relay is the WebSocket switchboard. The copied command starts the OpenClaw bridge process on the machine with OpenClaw.'
-                    : 'Local dev proof of the hosted relay path. Start relay here, then run the OpenClaw bridge process command.'}
+                    ? 'Relay is the WebSocket switchboard. Copy the command to OpenClaw so it can pair through the 04515 plugin.'
+                    : 'Local dev proof of the hosted relay path. Start relay here, then run the 04515 plugin command in OpenClaw.'}
                 </div>
                 <div className="mt-1 flex flex-wrap gap-2">
-                  <StatusBadge label={relayBadgeLabel} tone={relayTone} title={relayBridge.lastError || undefined} />
+                  <StatusBadge label={relayServiceBadgeLabel} tone={relayServiceTone} title={relayServiceTitle} />
+                  <StatusBadge label={bridgePairingBadgeLabel} tone={bridgePairingTone} title={bridgePairingTitle} />
                   <StatusBadge
                     label={activeWorldLabel}
                     tone={activeWorldId ? 'online' : 'warn'}
@@ -3440,7 +3682,7 @@ export function OpenclawPanel({
                     onClick={() => { void copyText(relayPairingCommand); flashCopied('relay-command') }}
                     className="rounded-lg border border-white/10 px-3 py-2 text-[11px] uppercase tracking-[0.16em] text-sky-50/78 transition hover:border-sky-300/30 hover:text-white"
                   >
-                    {copiedKey === 'relay-command' ? 'copied' : 'copy process cmd'}
+                    {copiedKey === 'relay-command' ? 'copied' : 'copy openclaw cmd'}
                   </button>
                 </div>
                 <button
@@ -3450,7 +3692,7 @@ export function OpenclawPanel({
                   className="w-full rounded-lg border border-sky-300/18 bg-black/24 px-3 py-2 text-left transition hover:border-sky-300/35"
                 >
                   <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-100/62">
-                    run this on the machine with OpenClaw
+                    copy this to OpenClaw
                   </span>
                   <span className="mt-1 block break-all font-mono text-[11px] leading-5 text-sky-50/88">
                     {relayPairingCommand}
@@ -3569,7 +3811,7 @@ export function OpenclawPanel({
                 <StatusBadge label={sshBridgeLabel} tone={sshBridgeTone} />
               </div>
               <div className="mt-3 space-y-2 text-[11px] text-amber-50/68">
-                <div>This is only the SSH port tunnel. The OpenClaw bridge process is the Node command copied from Hosted relay.</div>
+                <div>This is only the legacy SSH port tunnel. Hosted 04515 pairing uses the plugin command copied from Hosted relay.</div>
                 {remoteMode ? (
                   <button
                     data-no-drag
@@ -4167,7 +4409,7 @@ export function OpenclawPanel({
       <div className="border-t border-white/8 bg-black/20 px-3 py-3">
         <div className="mb-2 flex items-center justify-between gap-2 text-[11px] text-cyan-50/55">
           <span>{sending ? 'OpenClaw is answering...' : chatReady ? 'Ready' : transportLine}</span>
-          <span>{sending ? 'streaming' : chatReady ? 'ready' : hostedMode ? relayBridge.status : gatewayClientState}</span>
+          <span>{sending ? 'streaming' : chatReady ? 'ready' : hostedMode ? bridgePairingBadgeLabel : gatewayClientState}</span>
         </div>
         <div className="flex items-end gap-2">
           {!hostedMode && (
