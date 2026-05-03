@@ -7,7 +7,7 @@
  * relay and a local OpenClaw Gateway via the v3 WS protocol.
  *
  * Lifecycle:
- *   1. Parse pairing URL or bare code from argv / env.
+ *   1. Parse a 04515 pairing URL or bare code from argv.
  *   2. POST /api/relay/devices/exchange to swap code → signed device token.
  *   3. Open WSS to <oasisUrl>/relay?role=agent with `Authorization: Bearer …`.
  *   4. Load (or generate) the persistent device identity at IDENTITY_PATH.
@@ -19,15 +19,13 @@
  *      locally; the adapter proxies them through relay `tool.call` frames and
  *      waits for browser-executed `tool.result` frames.
  *
- * Env / flags:
- *   --gateway-url=...        OPENCLAW_GATEWAY_URL    default ws://127.0.0.1:18789
- *   --gateway-token=...      OPENCLAW_GATEWAY_TOKEN  optional shared token
- *                                                    (some Gateway configs require)
- *   --identity=...           OPENCLAW_BRIDGE_IDENTITY default ~/.openclaw-oasis-bridge/identity.json
- *   --mcp-port=...           OASIS_BRIDGE_MCP_PORT default 17890
- *   --mcp-host=...           OASIS_BRIDGE_MCP_HOST default 127.0.0.1
- *   --tool-timeout-ms=...    OASIS_BRIDGE_TOOL_TIMEOUT_MS default 30000
- *   --mcp-config=auto|preserve  OASIS_BRIDGE_MCP_CONFIG default auto
+ * Flags:
+ *   --gateway-url=...        default ws://127.0.0.1:18789
+ *   --identity=...           default ~/.openclaw-oasis-bridge/identity.json
+ *   --mcp-port=...           default 17890
+ *   --mcp-host=...           default 127.0.0.1
+ *   --tool-timeout-ms=...    default 30000
+ *   --mcp-config=auto|preserve default auto
  *   --no-mcp-config          alias for --mcp-config=preserve
  *   --restore-mcp            restore the pre-bridge OpenClaw MCP config
  *   --no-gateway             skip Gateway entirely (legacy stdin-echo mode)
@@ -56,7 +54,7 @@ import {
 } from './openclaw-mcp-config-guard.mjs'
 
 // ────────────────────────────────────────────────────────────────────────────
-// Argv / env
+// Argv
 // ────────────────────────────────────────────────────────────────────────────
 
 function parseArgv(argv) {
@@ -73,24 +71,27 @@ function parseArgv(argv) {
   return out
 }
 
-const argv = parseArgv(process.argv.slice(2))
-const rawCode = argv.positional[0] || process.env.OASIS_PAIRING_URL || ''
-const labelOverride = argv.flags.label || process.env.OASIS_AGENT_LABEL || 'openclaw-bridge'
-const oasisUrlOverride = argv.flags['oasis-url'] || process.env.OASIS_URL || ''
-const gatewayUrlOverride = argv.flags['gateway-url'] || process.env.OPENCLAW_GATEWAY_URL || ''
-const gatewaySharedToken = argv.flags['gateway-token'] || process.env.OPENCLAW_GATEWAY_TOKEN || ''
-const identityPathOverride = argv.flags.identity || process.env.OPENCLAW_BRIDGE_IDENTITY || ''
+const bridgeArgv = Array.isArray(globalThis.__04515BridgeArgv)
+  ? globalThis.__04515BridgeArgv
+  : process.argv.slice(2)
+const argv = parseArgv(bridgeArgv)
+const HOSTED_OASIS_ORIGIN = 'https://openclaw.04515.xyz'
+const rawCode = argv.positional[0] || ''
+const labelOverride = argv.flags.label || 'openclaw-bridge'
+const gatewayUrlOverride = argv.flags['gateway-url'] || ''
+const gatewaySharedToken = argv.flags['gateway-token'] || ''
+const identityPathOverride = argv.flags.identity || ''
 const skipGateway = argv.flags['no-gateway'] === 'true'
 const skipMcp = argv.flags['no-mcp'] === 'true'
-const mcpHost = argv.flags['mcp-host'] || process.env.OASIS_BRIDGE_MCP_HOST || '127.0.0.1'
-const mcpPort = Number(argv.flags['mcp-port'] || process.env.OASIS_BRIDGE_MCP_PORT || 17890)
-const toolTimeoutMs = Number(argv.flags['tool-timeout-ms'] || process.env.OASIS_BRIDGE_TOOL_TIMEOUT_MS || 30_000)
+const mcpHost = argv.flags['mcp-host'] || '127.0.0.1'
+const mcpPort = Number(argv.flags['mcp-port'] || 17890)
+const toolTimeoutMs = Number(argv.flags['tool-timeout-ms'] || 30_000)
 const mcpConfigMode = argv.flags['no-mcp-config'] === 'true'
   ? 'preserve'
-  : (argv.flags['mcp-config'] || process.env.OASIS_BRIDGE_MCP_CONFIG || 'auto').toLowerCase()
-const mcpServerName = argv.flags['mcp-server-name'] || process.env.OASIS_BRIDGE_MCP_SERVER_NAME || 'oasis'
-const openclawConfigPath = argv.flags['openclaw-config'] || process.env.OPENCLAW_CONFIG_PATH || ''
-const mcpRestoreStatePath = argv.flags['mcp-restore-state'] || process.env.OASIS_BRIDGE_MCP_RESTORE_STATE || ''
+  : (argv.flags['mcp-config'] || 'auto').toLowerCase()
+const mcpServerName = argv.flags['mcp-server-name'] || 'oasis'
+const openclawConfigPath = argv.flags['openclaw-config'] || ''
+const mcpRestoreStatePath = argv.flags['mcp-restore-state'] || ''
 
 const log = (...args) => console.log('[bridge]', ...args)
 
@@ -113,9 +114,9 @@ if (argv.flags['restore-mcp'] === 'true') {
 }
 
 if (!rawCode) {
-  console.error('usage: node scripts/openclaw-oasis-bridge.mjs <pairing-url-or-code>')
-  console.error('  optional: --oasis-url=https://… --gateway-url=ws://127.0.0.1:18789')
-  console.error('  optional: --gateway-token=… --identity=… --label=… --mcp-port=17890')
+  console.error('usage: 04515-bridge <https://openclaw.04515.xyz/pair/OASIS-XXXXXXXX|OASIS-XXXXXXXX>')
+  console.error('  optional: --gateway-url=ws://127.0.0.1:18789')
+  console.error('  optional: --identity=... --label=... --mcp-port=17890')
   console.error('  optional: --no-gateway --no-mcp --no-mcp-config')
   console.error('  optional: --restore-mcp')
   process.exit(2)
@@ -125,19 +126,29 @@ function parsePairing(input) {
   const trimmed = input.trim()
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     const url = new URL(trimmed)
+    if (url.protocol !== 'https:' || url.host !== 'openclaw.04515.xyz') {
+      throw new Error('04515 only accepts pairing URLs on https://openclaw.04515.xyz')
+    }
     const match = url.pathname.match(/\/(?:pair|p)\/([^/]+)/)
     const code = match ? decodeURIComponent(match[1]) : ''
-    return { code, oasisUrl: `${url.protocol}//${url.host}` }
+    return { code, oasisUrl: HOSTED_OASIS_ORIGIN }
   }
-  return { code: trimmed, oasisUrl: oasisUrlOverride || 'http://localhost:4516' }
+  return { code: trimmed, oasisUrl: HOSTED_OASIS_ORIGIN }
 }
 
-const { code: pairingCode, oasisUrl } = parsePairing(rawCode)
+let pairing
+try {
+  pairing = parsePairing(rawCode)
+} catch (err) {
+  console.error('[bridge]', err?.message || String(err))
+  process.exit(2)
+}
+const { code: pairingCode, oasisUrl } = pairing
 if (!pairingCode || !pairingCode.startsWith('OASIS-')) {
   console.error('[bridge] could not extract a valid OASIS-XXXXXXXX code from input:', rawCode)
   process.exit(2)
 }
-const finalOasisUrl = oasisUrlOverride || oasisUrl
+const finalOasisUrl = oasisUrl
 const finalGatewayUrl = gatewayUrlOverride || 'ws://127.0.0.1:18789'
 const identityPath = identityPathOverride || path.join(os.homedir(), '.openclaw-oasis-bridge', 'identity.json')
 
@@ -926,6 +937,7 @@ async function start() {
           gatewayUrl: finalGatewayUrl,
           identity,
           sharedToken: gatewaySharedToken,
+          openclawConfigPath,
           logger: log,
         })
         setupGatewayChatBridge(creds)
@@ -938,9 +950,8 @@ async function start() {
     })()
   }
 
-  // Connect to the hosted relay.
-  const explicitRelay = argv.flags['relay-url'] || process.env.OASIS_RELAY_URL || ''
-  const relayUrl = explicitRelay || buildRelayUrl(finalOasisUrl)
+  // Connect to the hosted relay for the paired 04515 browser session.
+  const relayUrl = buildRelayUrl(finalOasisUrl)
   log('connecting to relay:', relayUrl)
 
   relayWs = new WebSocket(relayUrl, {

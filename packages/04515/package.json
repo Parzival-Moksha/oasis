@@ -1,6 +1,6 @@
 {
   "name": "04515",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Connect OpenClaw to the hosted Oasis at openclaw.04515.xyz.",
   "license": "MIT-0",
@@ -20,10 +20,12 @@
       "./index.mjs"
     ],
     "build": {
-      "openclawVersion": "2026.4.15"
+      "openclawVersion": "2026.5.2",
+      "pluginSdkVersion": "2026.5.2"
     },
     "compat": {
-      "pluginApi": ">=2026.3.24-beta.2"
+      "pluginApi": ">=2026.3.24-beta.2",
+      "minGatewayVersion": "2026.4.15"
     }
   },
   "dependencies": {

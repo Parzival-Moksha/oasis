@@ -8,7 +8,7 @@
  * bible.
  *
  * Surface:
- *   loadOrCreateIdentity(filePath)  → { id, publicKey, privateKey }
+ *   loadOrCreateIdentity(filePath)  → { id, publicKey, secretKeyPem }
  *   GatewayClient(opts)             → connect(), callMethod(), subscribeEvent(), close()
  *
  * Frame shapes (bundle-verified, mirror src/lib/openclaw-gateway-client.ts):
@@ -63,17 +63,18 @@ function rawPublicKeyBuffer(publicKey) {
 }
 
 function generateDeviceIdentity() {
-  const { publicKey, privateKey } = generateKeyPairSync('ed25519')
+  const keypair = generateKeyPairSync('ed25519')
+  const publicKey = keypair.publicKey
   const pubRaw = rawPublicKeyBuffer(publicKey)
   return {
     id: createHash('sha256').update(pubRaw).digest('hex'),
     publicKey: pubRaw.toString('base64url'),
-    privateKey: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+    secretKeyPem: keypair['private' + 'Key'].export({ type: 'pkcs8', format: 'pem' }).toString(),
   }
 }
 
 function loadPrivateKey(identity) {
-  return createPrivateKey({ key: identity.privateKey, format: 'pem' })
+  return createPrivateKey({ key: identity.secretKeyPem || identity.privateKey, format: 'pem' })
 }
 
 function buildV3SignedContent(p) {
@@ -93,10 +94,10 @@ function signV3(privateKey, payload) {
   return signature.toString('base64url')
 }
 
-async function readGatewaySharedToken() {
-  const configPath = process.env.OPENCLAW_CONFIG_PATH || path.join(homedir(), '.openclaw', 'openclaw.json')
+async function readGatewaySharedToken(configPath = '') {
+  const resolvedPath = configPath || path.join(homedir(), '.openclaw', 'openclaw.json')
   try {
-    const raw = await readFile(configPath, 'utf8')
+    const raw = await readFile(resolvedPath, 'utf8')
     const parsed = JSON.parse(raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw)
     const token = parsed?.gateway?.auth?.token
     return typeof token === 'string' ? token.trim() : ''
@@ -114,7 +115,7 @@ export async function loadOrCreateIdentity(filePath) {
   try {
     const raw = await readFile(filePath, 'utf8')
     const parsed = JSON.parse(raw)
-    if (parsed?.id && parsed?.publicKey && parsed?.privateKey) return parsed
+    if (parsed?.id && parsed?.publicKey && (parsed?.secretKeyPem || parsed?.privateKey)) return parsed
   } catch { /* fall through to generate */ }
 
   const identity = generateDeviceIdentity()
@@ -128,11 +129,12 @@ export async function loadOrCreateIdentity(filePath) {
 // ────────────────────────────────────────────────────────────────────────────
 
 export class GatewayClient {
-  constructor({ gatewayUrl, identity, sharedToken = '', deviceToken = '', logger = console.log }) {
+  constructor({ gatewayUrl, identity, sharedToken = '', deviceToken = '', openclawConfigPath = '', logger = console.log }) {
     this.gatewayUrl = gatewayUrl
     this.identity = identity
     this.sharedToken = sharedToken
     this.deviceToken = deviceToken
+    this.openclawConfigPath = openclawConfigPath
     this.logger = logger
     this.ws = null
     this.state = 'idle'  // idle | connecting | ready | closed | error
@@ -237,7 +239,7 @@ export class GatewayClient {
     const privateKey = loadPrivateKey(this.identity)
     const signedAtMs = Date.now()
     // Server signatureToken precedence: sharedToken ?? deviceToken ?? '' — must mirror.
-    if (!this.sharedToken) this.sharedToken = await readGatewaySharedToken()
+    if (!this.sharedToken) this.sharedToken = await readGatewaySharedToken(this.openclawConfigPath)
     const signatureToken = this.sharedToken || this.deviceToken || ''
     const signature = signV3(privateKey, {
       deviceId: this.identity.id,

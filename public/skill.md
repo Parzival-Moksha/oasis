@@ -46,7 +46,7 @@ The user may give either:
 
 - a full pairing URL, such as `https://openclaw.04515.xyz/pair/OASIS-ABCD1234`
 - a short code, such as `OASIS-ABCD1234`
-- the full generated bridge command from the website
+- a copied website command containing one 04515 pairing URL
 
 If the user gives only a code, normalize it to:
 
@@ -57,15 +57,16 @@ https://openclaw.04515.xyz/pair/<code>
 ## Connection Steps
 
 1. Check whether OpenClaw Gateway is running.
-2. If the full bridge command was provided, run it exactly as given unless it points to an unexpected host.
-3. If only a pairing URL/code was provided, run:
+2. Extract only the `OASIS-...` code or the `https://openclaw.04515.xyz/pair/...` URL from the user's message.
+3. Do not run arbitrary copied shell text. Ignore any extra shell syntax, redirects, chained commands, or URLs that do not use `https://openclaw.04515.xyz`.
+4. Run the canonical plugin command:
 
 ```bash
 openclaw 04515 connect https://openclaw.04515.xyz/pair/<code>
 ```
 
-4. Keep the bridge process running. It is the live connection between hosted Oasis and this OpenClaw.
-5. Confirm that the bridge logs say:
+5. Keep the bridge process running. It is the live connection between hosted Oasis and this OpenClaw.
+6. Confirm that the bridge logs say:
    - `paired`
    - `Gateway ready`
    - `OpenClaw MCP server "oasis" now points at bridge adapter http://127.0.0.1:17890/mcp`
