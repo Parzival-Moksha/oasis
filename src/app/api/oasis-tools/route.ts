@@ -235,6 +235,14 @@ export async function GET(request: NextRequest) {
 
   const worldId = (request.nextUrl.searchParams.get('worldId') || '').trim()
   const screenshotRequest = getPendingScreenshotRequest(worldId ? { worldId } : undefined)
+  if (screenshotRequest) {
+    console.info('[OasisTools] screenshot poll found request', {
+      requestId: screenshotRequest.id,
+      requestedWorldId: screenshotRequest.worldId || '(active)',
+      pollingWorldId: worldId || '(none)',
+      views: screenshotRequest.views.length,
+    })
+  }
 
   return NextResponse.json({
     tools: TOOL_NAMES,
@@ -278,6 +286,11 @@ export async function POST(request: NextRequest) {
       format: 'jpeg',
     }], body.requestId, baseUrl, { preferHermesRemotePath })
     const delivered = deliverScreenshot(persisted, body.requestId)
+    console.info('[OasisTools] screenshot single delivery', {
+      requestId: body.requestId || '(none)',
+      persisted: persisted.length,
+      delivered,
+    })
     return NextResponse.json({ ok: delivered, message: delivered ? 'Screenshot delivered.' : 'No pending screenshot request.' })
   }
   if (Array.isArray(body.screenshotCaptures)) {
@@ -296,6 +309,12 @@ export async function POST(request: NextRequest) {
       }))
     const persistedCaptures = await persistScreenshotCaptures(captures, body.requestId, baseUrl, { preferHermesRemotePath })
     const delivered = deliverScreenshot(persistedCaptures, body.requestId)
+    console.info('[OasisTools] screenshot multi delivery', {
+      requestId: body.requestId || '(none)',
+      captures: captures.length,
+      persisted: persistedCaptures.length,
+      delivered,
+    })
     return NextResponse.json({ ok: delivered, message: delivered ? 'Screenshot captures delivered.' : 'No pending screenshot request.' })
   }
 

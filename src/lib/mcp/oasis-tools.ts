@@ -11,6 +11,15 @@
 import 'server-only'
 
 import { AsyncLocalStorage } from 'node:async_hooks'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
+import { join } from 'node:path'
 
 import { prisma } from '../db'
 import { ASSET_CATALOG } from '@/components/scene-lib/constants'
@@ -2111,6 +2120,7 @@ interface PendingScreenshotJob {
   request: PendingScreenshotRequest
   resolve: (captures: DeliveredScreenshotCapture[]) => void
   timeout: ReturnType<typeof setTimeout> | null
+  filePoll: ReturnType<typeof setInterval> | null
 }
 
 // Pin to globalThis — Next.js dev splits route handlers into separate chunks.
@@ -2122,6 +2132,158 @@ const pendingScreenshotJobsGlobal = globalThis as unknown as { [key: symbol]: Pe
 const pendingScreenshotJobs: PendingScreenshotJob[] = pendingScreenshotJobsGlobal[PENDING_SCREENSHOT_JOBS_KEY] ?? []
 if (!pendingScreenshotJobsGlobal[PENDING_SCREENSHOT_JOBS_KEY]) {
   pendingScreenshotJobsGlobal[PENDING_SCREENSHOT_JOBS_KEY] = pendingScreenshotJobs
+}
+
+const SCREENSHOT_QUEUE_DIR = join(process.cwd(), 'data', 'screenshot-requests')
+const SCREENSHOT_QUEUE_TTL_MS = 60_000
+
+type ScreenshotQueueRequestFile = {
+  request?: PendingScreenshotRequest
+}
+
+type ScreenshotQueueResultFile = {
+  captures?: DeliveredScreenshotCapture[]
+}
+
+function safeScreenshotQueueId(id: string): string {
+  const safe = id.trim().replace(/[^a-zA-Z0-9_-]+/g, '')
+  return safe || 'shot'
+}
+
+function ensureScreenshotQueueDir() {
+  try {
+    mkdirSync(SCREENSHOT_QUEUE_DIR, { recursive: true })
+  } catch (error) {
+    console.warn('[OasisTools] screenshot queue mkdir failed:', error)
+  }
+}
+
+function screenshotRequestPath(id: string): string {
+  return join(SCREENSHOT_QUEUE_DIR, `${safeScreenshotQueueId(id)}.request.json`)
+}
+
+function screenshotResultPath(id: string): string {
+  return join(SCREENSHOT_QUEUE_DIR, `${safeScreenshotQueueId(id)}.result.json`)
+}
+
+function unlinkScreenshotFile(path: string) {
+  try {
+    if (existsSync(path)) unlinkSync(path)
+  } catch {
+    // Best-effort queue cleanup.
+  }
+}
+
+function cleanupScreenshotQueueFiles(id: string) {
+  unlinkScreenshotFile(screenshotRequestPath(id))
+  unlinkScreenshotFile(screenshotResultPath(id))
+}
+
+function isFreshScreenshotRequest(request: PendingScreenshotRequest, now = Date.now()): boolean {
+  const requestedAt = Number(request.requestedAt) || 0
+  return requestedAt > 0 && now - requestedAt <= SCREENSHOT_QUEUE_TTL_MS
+}
+
+function pruneScreenshotQueue(now = Date.now()) {
+  if (!existsSync(SCREENSHOT_QUEUE_DIR)) return
+  let files: string[] = []
+  try {
+    files = readdirSync(SCREENSHOT_QUEUE_DIR)
+  } catch {
+    return
+  }
+
+  for (const file of files) {
+    if (!file.endsWith('.request.json')) continue
+    const requestPath = join(SCREENSHOT_QUEUE_DIR, file)
+    try {
+      const parsed = JSON.parse(readFileSync(requestPath, 'utf8')) as ScreenshotQueueRequestFile
+      const request = parsed?.request
+      if (!request || !isFreshScreenshotRequest(request, now)) {
+        const id = request?.id || file.replace(/\.request\.json$/, '')
+        cleanupScreenshotQueueFiles(id)
+      }
+    } catch {
+      unlinkScreenshotFile(requestPath)
+      unlinkScreenshotFile(join(SCREENSHOT_QUEUE_DIR, file.replace(/\.request\.json$/, '.result.json')))
+    }
+  }
+}
+
+function writeScreenshotRequestFile(request: PendingScreenshotRequest) {
+  ensureScreenshotQueueDir()
+  pruneScreenshotQueue()
+  try {
+    writeFileSync(screenshotRequestPath(request.id), JSON.stringify({ request }, null, 2), 'utf8')
+  } catch (error) {
+    console.warn('[OasisTools] screenshot request write failed:', error)
+  }
+}
+
+function readScreenshotRequestFile(id: string): PendingScreenshotRequest | null {
+  const path = screenshotRequestPath(id)
+  if (!existsSync(path)) return null
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as ScreenshotQueueRequestFile
+    const request = parsed?.request
+    if (!request || !isFreshScreenshotRequest(request)) {
+      cleanupScreenshotQueueFiles(id)
+      return null
+    }
+    return request
+  } catch {
+    cleanupScreenshotQueueFiles(id)
+    return null
+  }
+}
+
+function readScreenshotRequestsFromQueue(): PendingScreenshotRequest[] {
+  if (!existsSync(SCREENSHOT_QUEUE_DIR)) return []
+  pruneScreenshotQueue()
+  let files: string[] = []
+  try {
+    files = readdirSync(SCREENSHOT_QUEUE_DIR)
+  } catch {
+    return []
+  }
+
+  return files
+    .filter(file => file.endsWith('.request.json'))
+    .map(file => readScreenshotRequestFile(file.replace(/\.request\.json$/, '')))
+    .filter((request): request is PendingScreenshotRequest => !!request)
+    .sort((a, b) => a.requestedAt - b.requestedAt)
+}
+
+function writeScreenshotResultFile(requestId: string, captures: DeliveredScreenshotCapture[]) {
+  if (!requestId) return
+  ensureScreenshotQueueDir()
+  try {
+    writeFileSync(screenshotResultPath(requestId), JSON.stringify({ captures }, null, 2), 'utf8')
+  } catch (error) {
+    console.warn('[OasisTools] screenshot result write failed:', error)
+  }
+}
+
+function readScreenshotResultFile(requestId: string): DeliveredScreenshotCapture[] | null {
+  const path = screenshotResultPath(requestId)
+  if (!existsSync(path)) return null
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as ScreenshotQueueResultFile
+    const captures = Array.isArray(parsed?.captures)
+      ? parsed.captures.filter((capture): capture is DeliveredScreenshotCapture => {
+          return Boolean(
+            capture
+            && typeof capture.viewId === 'string'
+            && typeof capture.base64 === 'string'
+            && validScreenshotFormat(capture.format) === capture.format,
+          )
+        })
+      : []
+    return captures
+  } catch {
+    cleanupScreenshotQueueFiles(requestId)
+    return null
+  }
 }
 
 function validScreenshotFormat(value: unknown): ScreenshotFormat {
@@ -2360,12 +2522,17 @@ function clearScreenshotJobTimeout(job: PendingScreenshotJob) {
     clearTimeout(job.timeout)
     job.timeout = null
   }
+  if (job.filePoll) {
+    clearInterval(job.filePoll)
+    job.filePoll = null
+  }
 }
 
 function removeScreenshotJob(job: PendingScreenshotJob) {
   const index = pendingScreenshotJobs.indexOf(job)
   if (index >= 0) pendingScreenshotJobs.splice(index, 1)
   clearScreenshotJobTimeout(job)
+  cleanupScreenshotQueueFiles(job.request.id)
 }
 
 function resolveScreenshotJob(job: PendingScreenshotJob, captures: DeliveredScreenshotCapture[]) {
@@ -2423,10 +2590,31 @@ tools.screenshot_viewport = async (args) => {
         }
       },
       timeout: null,
+      filePoll: null,
     }
 
     pendingScreenshotJobs.push(job)
+    writeScreenshotRequestFile(request)
+    console.info('[OasisTools] screenshot queued', {
+      requestId: request.id,
+      worldId: request.worldId || '(active)',
+      views: request.views.map(view => `${view.id}:${view.mode}`).join(','),
+    })
+    job.filePoll = setInterval(() => {
+      const captures = readScreenshotResultFile(request.id)
+      if (!captures) return
+      console.info('[OasisTools] screenshot result picked up', {
+        requestId: request.id,
+        captureCount: captures.length,
+      })
+      resolveScreenshotJob(job, captures)
+    }, 250)
     job.timeout = setTimeout(() => {
+      console.warn('[OasisTools] screenshot timed out', {
+        requestId: request.id,
+        worldId: request.worldId || '(active)',
+        queuedJobs: pendingScreenshotJobs.length,
+      })
       resolveScreenshotJob(job, [])
     }, 20000)
   })
@@ -2963,34 +3151,56 @@ export function deliverScreenshot(
   const job = requestId
     ? pendingScreenshotJobs.find(entry => entry.request.id === requestId) || null
     : activeScreenshotJob()
-  if (!job) return false
+  const fileRequest = !job && requestId ? readScreenshotRequestFile(requestId) : null
+  const request = job?.request || fileRequest
+  if (!request) return false
 
+  let normalizedCaptures: DeliveredScreenshotCapture[]
   if (typeof captures === 'string') {
-    const fallbackCapture: DeliveredScreenshotCapture = {
-      viewId: job.request.views[0]?.id || 'view-1',
-      base64: captures,
-      format: job.request.format,
-    }
-    resolveScreenshotJob(job, captures ? [fallbackCapture] : [])
-    return true
+    normalizedCaptures = captures
+      ? [{
+          viewId: request.views[0]?.id || 'view-1',
+          base64: captures,
+          format: request.format,
+        }]
+      : []
+  } else {
+    normalizedCaptures = captures.filter(capture => typeof capture.base64 === 'string' && capture.base64.length > 0)
   }
-  resolveScreenshotJob(job, captures.filter(capture => typeof capture.base64 === 'string' && capture.base64.length > 0))
+
+  if (requestId) {
+    writeScreenshotResultFile(requestId, normalizedCaptures)
+  }
+  console.info('[OasisTools] screenshot delivered', {
+    requestId: request.id,
+    captureCount: normalizedCaptures.length,
+    resolvedInMemory: Boolean(job),
+  })
+
+  if (job) {
+    resolveScreenshotJob(job, normalizedCaptures)
+  }
   return true
 }
 
 /** Check if a screenshot is pending (called by client poll). */
 export function isScreenshotPending(): boolean {
-  return pendingScreenshotJobs.length > 0
+  return pendingScreenshotJobs.length > 0 || readScreenshotRequestsFromQueue().length > 0
 }
 
 export function getPendingScreenshotRequest(options?: { worldId?: string; requestId?: string }): PendingScreenshotRequest | null {
   const requestedRequestId = validStr(options?.requestId, '')
   const requestedWorldId = validStr(options?.worldId, '')
-  const request = requestedRequestId
+  const memoryRequest = requestedRequestId
     ? pendingScreenshotJobs.find(entry => entry.request.id === requestedRequestId)?.request || null
     : requestedWorldId
       ? pendingScreenshotJobs.find(entry => !entry.request.worldId || entry.request.worldId === requestedWorldId)?.request || null
       : activeScreenshotJob()?.request || null
+  const request = memoryRequest || (
+    requestedRequestId
+      ? readScreenshotRequestFile(requestedRequestId)
+      : readScreenshotRequestsFromQueue().find(entry => !requestedWorldId || !entry.worldId || entry.worldId === requestedWorldId) || null
+  )
   if (!request) return null
   return {
     ...request,

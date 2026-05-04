@@ -106,6 +106,7 @@ public/models/animations/
 # Runtime data (per-instance, diverges between local dev and prod)
 data/conjured-registry.json
 data/scene-library.json
+data/screenshot-requests/
 data/worlds/*.json
 !data/worlds/forge-default.json
 data/hermes-config.local.json

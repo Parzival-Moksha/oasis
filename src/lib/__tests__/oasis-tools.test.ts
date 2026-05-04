@@ -806,6 +806,37 @@ describe('isScreenshotPending', () => {
     await expect(worldBPending).resolves.toMatchObject({ ok: true })
   })
 
+  it('survives a route-chunk split by finding pending screenshots from the durable queue', async () => {
+    const pendingResult = callTool('screenshot_viewport', {
+      worldId: 'world-file-backed',
+      views: [{ id: 'file-backed-view', mode: 'current' }],
+    })
+
+    const firstRequest = getPendingScreenshotRequest({ worldId: 'world-file-backed' })
+    expect(firstRequest?.id).toBeTruthy()
+
+    const globalStore = globalThis as unknown as Record<symbol, unknown>
+    const jobs = globalStore[Symbol.for('oasis.pendingScreenshotJobs.v1')]
+    if (Array.isArray(jobs)) {
+      jobs.splice(0, jobs.length)
+    }
+
+    const requestFromFile = getPendingScreenshotRequest({ worldId: 'world-file-backed' })
+    expect(requestFromFile).toMatchObject({
+      id: firstRequest?.id,
+      worldId: 'world-file-backed',
+      views: [expect.objectContaining({ id: 'file-backed-view' })],
+    })
+
+    expect(deliverScreenshot('file-backed-base64', requestFromFile?.id)).toBe(true)
+    await expect(pendingResult).resolves.toMatchObject({
+      ok: true,
+      data: expect.objectContaining({
+        base64: 'file-backed-base64',
+      }),
+    })
+  })
+
   it('accepts the canonical "external-orbit" mode name', async () => {
     const pendingResult = callTool('screenshot_viewport', {
       defaultAgentType: 'merlin',
