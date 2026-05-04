@@ -214,6 +214,25 @@ const OPENCLAW_RELAY_TOOLS: readonly string[] = Object.freeze([
   'screenshot_avatar',
   'avatarpic_user',
 ])
+
+function findOpenclawAvatar() {
+  return useOasisStore.getState().placedAgentAvatars.find(entry =>
+    entry.agentType === 'openclaw' || entry.label === 'Clawdling',
+  ) || null
+}
+
+function openclawWindowSpawnPosition(): [number, number, number] {
+  const state = useOasisStore.getState()
+  const avatar = findOpenclawAvatar()
+  const avatarPosition = avatar
+    ? state.transforms[avatar.id]?.position || avatar.position
+    : null
+  if (avatarPosition) {
+    return [avatarPosition[0] + 1.6, Math.max(2.2, avatarPosition[1] + 1.4), avatarPosition[2] + 1.2]
+  }
+  return [0, 2.2, 4]
+}
+
 const DEFAULT_SETTINGS: PanelSettings = {
   bgColor: '#06161d',
   opacity: 0.92,
@@ -950,6 +969,7 @@ export function OpenclawPanel({
   const openclawAvatar = useOasisStore(state =>
     state.placedAgentAvatars.find(entry => entry.agentType === 'openclaw' || entry.label === 'Clawdling') || null,
   )
+  const addAgentWindow = useOasisStore(state => state.addAgentWindow)
   const assignSharedAgentAvatar = useOasisStore(state => state.assignSharedAgentAvatar)
 
   const [position, setPosition] = useState(() => embedded ? DEFAULT_POS : loadStored(POS_KEY, DEFAULT_POS))
@@ -1068,6 +1088,25 @@ export function OpenclawPanel({
     if (hostedMode && activeWorldId) setRelayEnabled(true)
   }, [activeWorldId, hostedMode])
 
+  const ensureOpenclawAgentWindow = useCallback(() => {
+    const existingWindow = useOasisStore.getState().placedAgentWindows.find(entry => entry.agentType === 'openclaw')
+    if (existingWindow) return existingWindow.id
+
+    const id = 'agent-openclaw-default'
+    addAgentWindow({
+      id,
+      agentType: 'openclaw',
+      position: openclawWindowSpawnPosition(),
+      rotation: [0, 0, 0],
+      scale: 0.2,
+      width: 800,
+      height: 600,
+      label: 'OpenClaw',
+      renderMode: 'live-html',
+    })
+    return id
+  }, [addAgentWindow])
+
   const stopHostedWelcome = useCallback(() => {
     hostedWelcomeAudioRef.current?.pause()
     hostedWelcomeAudioRef.current = null
@@ -1092,7 +1131,7 @@ export function OpenclawPanel({
     audio.preload = 'auto'
     hostedWelcomeAudioRef.current = audio
 
-    const objectId = openclawAvatar?.id || null
+    const objectId = findOpenclawAvatar()?.id || null
     let ctrl: LipSyncController | null = null
     if (objectId) {
       ctrl = createLipSyncController()
@@ -1121,7 +1160,7 @@ export function OpenclawPanel({
       cleanup()
       console.warn('[openclaw-panel] hosted welcome audio failed', error)
     }
-  }, [openclawAvatar?.id, stopHostedWelcome])
+  }, [stopHostedWelcome])
 
   useEffect(() => stopHostedWelcome, [stopHostedWelcome])
 
@@ -2858,9 +2897,10 @@ export function OpenclawPanel({
   }, [activeWorldId])
 
   const handleConnectOpenclaw = useCallback(() => {
+    ensureOpenclawAgentWindow()
     void playHostedWelcome()
     void handleRequestRelayPairing()
-  }, [handleRequestRelayPairing, playHostedWelcome])
+  }, [ensureOpenclawAgentWindow, handleRequestRelayPairing, playHostedWelcome])
 
   const handleRunSmoke = useCallback(async (mode: SmokeMode) => {
     setRunningSmokeMode(mode)
