@@ -3391,7 +3391,7 @@ export function OpenclawPanel({
                       <StatusBadge
                         label={relayPairingCountdownLabel}
                         tone={relayPairingExpiresInS > 0 ? 'warn' : 'offline'}
-                        title="Pairing codes are single-use and expire after five minutes."
+                        title="Pairing codes are single-use and expire after 30 minutes."
                       />
                     )}
                   </div>
@@ -3429,7 +3429,7 @@ export function OpenclawPanel({
               </div>
 
               <div className="mt-3 text-[11px] leading-5 text-cyan-50/58">
-                Click once to mint a single-use pairing code. The code expires in five minutes, but the paired bridge can stay connected after the code is redeemed.
+                Click once to mint a single-use pairing code. The code expires in 30 minutes, but the paired bridge can stay connected after the code is redeemed.
               </div>
             </div>
 

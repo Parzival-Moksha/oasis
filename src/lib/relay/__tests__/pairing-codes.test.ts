@@ -33,14 +33,14 @@ describe('createPairingCode', () => {
     expect(created.code).toMatch(/^OASIS-[A-Z2-9]{8}$/)
   })
 
-  it('binds the code to bs/world/scopes and a 5-min default expiry', () => {
+  it('binds the code to bs/world/scopes and a 30-min default expiry', () => {
     const created = createPairingCode({
       browserSessionId: 'bs_1',
       worldId: 'w',
       scopes: ['world.read', 'chat.stream'],
       now: FIXED_NOW,
     })
-    expect(created.expiresAt).toBe(FIXED_NOW + 5 * 60 * 1000)
+    expect(created.expiresAt).toBe(FIXED_NOW + 30 * 60 * 1000)
     const peek = _peekPairingCode(created.code)
     expect(peek?.browserSessionId).toBe('bs_1')
     expect(peek?.worldId).toBe('w')

@@ -3,7 +3,7 @@
  * never sees these — by the time the OpenClaw bridge talks to the relay it
  * already holds a signed device token issued by `/api/relay/devices/exchange`.
  *
- * Codes are short, human-readable, single-use, and expire in 5 minutes.
+ * Codes are short, human-readable, single-use, and expire in 30 minutes.
  * The store is pinned to globalThis so HMR doesn't drop pending pairings.
  *
  * In Node deployments the map is mirrored to a tiny JSON file under
@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path'
 
 import type { Scope } from './protocol'
 
-const DEFAULT_TTL_MS = 5 * 60 * 1000
+const DEFAULT_TTL_MS = 30 * 60 * 1000
 const CODE_LEN = 8
 // Avoid easily-confused glyphs (0/O, 1/I/l).
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'

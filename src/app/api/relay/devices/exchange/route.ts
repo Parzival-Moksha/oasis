@@ -30,7 +30,7 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 const MAX_BODY_BYTES = 8 * 1024
-// 32^8 ≈ 1.1 trillion code space, 5-min lifetime, but we still rate-limit
+// 32^8 ≈ 1.1 trillion code space, 30-min lifetime, but we still rate-limit
 // per-IP to make online enumeration infeasible and to absorb stuck retry loops.
 const RATE_LIMIT_PER_IP = 10
 const RATE_LIMIT_WINDOW_MS = 60_000
