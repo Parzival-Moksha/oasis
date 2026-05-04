@@ -19,6 +19,10 @@ import { base64ToBytes, bytesToBase64, decodeMuLawToFloat32, encodeFloat32ToMuLa
 import { renderMarkdown } from '@/lib/anorak-renderers'
 import { describeOpenclawSshHostIssue, sanitizeOpenclawSshHost } from '@/lib/openclaw-ssh-host'
 import { collectOpenclawMediaReferences } from '@/lib/openclaw-media-references'
+import {
+  createHostedWelcomeTimedController,
+  loadHostedWelcomeTiming,
+} from '@/lib/hosted-welcome-lipsync'
 import { useIsHostedOasis } from '@/lib/oasis-mode-client'
 import type { SessionSyncResponse } from '@/lib/relay/protocol'
 import { AvatarGallery } from './AvatarGallery'
@@ -1088,6 +1092,11 @@ export function OpenclawPanel({
     if (hostedMode && activeWorldId) setRelayEnabled(true)
   }, [activeWorldId, hostedMode])
 
+  useEffect(() => {
+    if (!hostedMode) return
+    void loadHostedWelcomeTiming()
+  }, [hostedMode])
+
   const ensureOpenclawAgentWindow = useCallback(() => {
     const existingWindow = useOasisStore.getState().placedAgentWindows.find(entry => entry.agentType === 'openclaw')
     if (existingWindow) return existingWindow.id
@@ -1128,10 +1137,13 @@ export function OpenclawPanel({
     stopHostedWelcome()
 
     const audio = new Audio(HOSTED_WELCOME_AUDIO_URL)
+    audio.crossOrigin = 'anonymous'
     audio.preload = 'auto'
     hostedWelcomeAudioRef.current = audio
 
-    const objectId = findOpenclawAvatar()?.id || null
+    const objectId = findOpenclawAvatar()?.id
+      || assignSharedAgentAvatar('openclaw', '/avatars/gallery/CaptainLobster.vrm')
+      || null
     let ctrl: LipSyncController | null = null
     if (objectId) {
       ctrl = createLipSyncController()
@@ -1155,12 +1167,29 @@ export function OpenclawPanel({
     audio.addEventListener('error', cleanup, { once: true })
 
     try {
+      void loadHostedWelcomeTiming().then(alignment => {
+        if (!alignment || hostedWelcomeAudioRef.current !== audio || !objectId) return
+        const timedCtrl = createHostedWelcomeTimedController(alignment)
+        if (!timedCtrl) return
+
+        const previousCtrl = hostedWelcomeLipSyncRef.current
+        if (previousCtrl) {
+          unregisterLipSync(objectId, previousCtrl, { detach: false })
+          previousCtrl.detach()
+        }
+
+        timedCtrl.attachAudio(audio)
+        registerLipSync(objectId, timedCtrl)
+        hostedWelcomeLipSyncRef.current = timedCtrl
+        hostedWelcomeLipSyncObjectIdRef.current = objectId
+        ctrl = timedCtrl
+      })
       await audio.play()
     } catch (error) {
       cleanup()
       console.warn('[openclaw-panel] hosted welcome audio failed', error)
     }
-  }, [stopHostedWelcome])
+  }, [assignSharedAgentAvatar, stopHostedWelcome])
 
   useEffect(() => stopHostedWelcome, [stopHostedWelcome])
 
