@@ -72,26 +72,6 @@ function healthUrlFromMcpUrl(value) {
   }
 }
 
-async function checkHttpHealth(url, timeoutMs = 1200) {
-  if (!url) return { ok: false, message: 'no url' }
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const response = await fetch(url, { signal: controller.signal })
-    return {
-      ok: response.ok,
-      message: `${response.status} ${response.statusText || ''}`.trim(),
-    }
-  } catch (error) {
-    return {
-      ok: false,
-      message: error?.name === 'AbortError' ? 'timeout' : (error?.message || String(error)),
-    }
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
 async function readBridgeStatus(options = {}) {
   const { resolveDefaultBridgeStatePath } = await loadBridgeGuard()
   const serverName = options.mcpServerName || 'oasis'
@@ -126,25 +106,23 @@ async function readBridgeStatus(options = {}) {
   const alive = processAlive(pid)
   const mcpUrl = typeof state.installedServer?.url === 'string' ? state.installedServer.url : ''
   const healthUrl = healthUrlFromMcpUrl(mcpUrl)
-  const health = await checkHttpHealth(healthUrl)
 
   return {
     statePath,
     serverName,
     hasState: true,
-    active: alive && health.ok,
-    stale: !alive || !health.ok,
+    active: alive,
+    stale: !alive,
     pid,
     alive,
     mcpUrl,
     healthUrl,
-    health,
     configPath: state.configPath || '',
     installedAt: state.installedAt || '',
     previousUrl: typeof state.previousServer?.url === 'string' ? state.previousServer.url : '',
-    message: alive && health.ok
+    message: alive
       ? 'Bridge appears active.'
-      : 'Bridge state exists, but the process or MCP adapter is not healthy.',
+      : 'Bridge state exists, but the recorded process is not alive.',
   }
 }
 
@@ -159,7 +137,7 @@ function printBridgeStatus(status) {
   }
   console.log(`pid: ${status.pid || 'unknown'} (${status.alive ? 'alive' : 'not alive'})`)
   console.log(`mcp: ${status.mcpUrl || 'unknown'}`)
-  console.log(`mcp health: ${status.health?.ok ? 'ok' : 'down'}${status.health?.message ? ` (${status.health.message})` : ''}`)
+  if (status.healthUrl) console.log(`mcp health: not checked by CLI (${status.healthUrl})`)
   if (status.configPath) console.log(`config: ${status.configPath}`)
   if (status.previousUrl) console.log(`previous oasis mcp: ${status.previousUrl}`)
   if (status.installedAt) console.log(`installed at: ${status.installedAt}`)
