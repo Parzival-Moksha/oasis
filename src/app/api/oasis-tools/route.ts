@@ -39,7 +39,13 @@ function resolveRequestBaseUrl(request: NextRequest): string {
   const forwardedProto = (request.headers.get('x-forwarded-proto') || '').split(',')[0]?.trim()
   const forwardedHost = (request.headers.get('x-forwarded-host') || '').split(',')[0]?.trim()
   const host = normalizeLoopbackHost(forwardedHost || request.headers.get('host') || '')
-  const protocol = forwardedProto || (host.startsWith('127.0.0.1') || host.startsWith('[::1]') ? 'http' : 'https')
+  const isLoopback = host.startsWith('127.0.0.1') || host.startsWith('[::1]')
+  // Some VPS proxy paths forward x-forwarded-proto=http to the local Next
+  // server even though the public browser origin is HTTPS. Public screenshot
+  // media URLs must stay HTTPS or the hosted app blocks them as mixed content.
+  const protocol = forwardedProto && (forwardedProto !== 'http' || isLoopback)
+    ? forwardedProto
+    : isLoopback ? 'http' : 'https'
   return host ? `${protocol}://${host}` : 'http://127.0.0.1:4516'
 }
 
