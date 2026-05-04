@@ -140,6 +140,7 @@ export function createBridgeMcpServer({
           'Use generate_image, generate_voice, and generate_video when media would help the conversation; Oasis can render the returned URLs in the agent panel.',
           'In hosted relay mode, this bridge exposes only the public world, avatar, and screenshot tools currently listed by MCP; media generation tools are not exposed here yet.',
         ),
+        'For procedural building, call get_craft_guide and then self_craft_scene with explicit primitive objects. Do not use prompt-sculpting in hosted mode.',
         'This local adapter sends Oasis tools through the paired hosted relay.',
         'The browser tab is the executor; keep the tab open and paired while using tools.',
       ].join(' '),

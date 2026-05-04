@@ -82,4 +82,25 @@ describe('prepareOasisToolArgs', () => {
       defaultAgentType: 'hermes',
     })
   })
+
+  it('injects hosted self-craft world and actor context', () => {
+    const result = prepareOasisToolArgs(
+      'self_craft_scene',
+      {
+        name: 'Tiny altar',
+        objects: [
+          { type: 'box', position: [0, 0.5, 0], scale: [1, 1, 1], color: '#ffffff' },
+        ],
+      },
+      {
+        worldId: 'world-123',
+        agentType: 'openclaw',
+      },
+    )
+
+    expect(result).toMatchObject({
+      worldId: 'world-123',
+      actorAgentType: 'openclaw',
+    })
+  })
 })

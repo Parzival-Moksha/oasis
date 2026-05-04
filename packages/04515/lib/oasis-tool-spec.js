@@ -27,7 +27,7 @@ export const OASIS_MCP_INSTRUCTIONS = [
   'Use screenshot_viewport and avatar screenshot tools for visual grounding when a live Oasis browser is connected.',
   'Avatar and world mutations may execute as embodied sequences rather than instantaneous teleports, so allow time for completion.',
   'Use generate_image, generate_voice, and generate_video when media would help the conversation; Oasis can render the returned URLs in the agent panel.',
-  'For Hermes and Merlin, self-crafted craft_scene objects are the default. Call get_craft_guide for the schema and use strategy:"sculptor" only when you intentionally want fallback prompt crafting.',
+  'For Hermes, Merlin, and OpenClaw, self-crafted objects are the default. Call get_craft_guide for the schema and use self_craft_scene with explicit primitive objects in hosted 04515 mode. Use craft_scene strategy:"sculptor" only in trusted local/full-tool contexts when you intentionally want fallback prompt crafting.',
 ].join(' ')
 
 export const OASIS_MCP_TOOL_SPECS = [
@@ -135,7 +135,7 @@ export const OASIS_MCP_TOOL_SPECS = [
   },
   {
     name: 'craft_scene',
-    description: 'Create procedural geometry scenes. For Hermes and Merlin, self-crafted objects are the default. Provide an objects array for direct self-crafting. Use prompt text only when you deliberately set strategy="sculptor". Prompt-mode crafting defaults to cc-opus and may continue asynchronously while primitives appear over time.',
+    description: 'Create procedural geometry scenes in the full/local Oasis tool surface. For Hermes, Merlin, and OpenClaw, self-crafted objects are the default. Provide an objects array for direct self-crafting. Use prompt text only when you deliberately set strategy="sculptor". Prompt-mode crafting defaults to cc-opus and may continue asynchronously while primitives appear over time. Hosted 04515 public bridges should use self_craft_scene instead.',
     inputSchema: z.object({
       worldId: z.string().optional(),
       name: z.string().optional(),
@@ -150,8 +150,20 @@ export const OASIS_MCP_TOOL_SPECS = [
     injectActorAgentType: true,
   },
   {
+    name: 'self_craft_scene',
+    description: 'Public-safe self-crafting tool for hosted 04515: create procedural geometry from an explicit objects array only. No prompt, model, or sculptor fallback is accepted. Call get_craft_guide first, then build the primitive array yourself.',
+    inputSchema: z.object({
+      worldId: z.string().optional(),
+      name: z.string().optional(),
+      position: zVec3Like.optional(),
+      objects: z.union([z.array(zLooseObject), z.string()]),
+    }).passthrough(),
+    injectWorldId: true,
+    injectActorAgentType: true,
+  },
+  {
     name: 'get_craft_guide',
-    description: 'Get the exact self-crafting schema for craft_scene: supported primitive types, animation types, texture presets, required fields, rules, and an example scene.',
+    description: 'Get the exact self-crafting schema for self_craft_scene/craft_scene objects: supported primitive types, animation types, texture presets, required fields, rules, and an example scene.',
     inputSchema: z.object({}).passthrough(),
   },
   {

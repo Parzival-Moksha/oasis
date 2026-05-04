@@ -58,6 +58,7 @@ const WORLD_CONTEXT_OPTIONAL_TOOLS = new Set([
   'load_world',
   'create_world',
   'create_and_load_world',
+  'get_craft_guide',
 ])
 
 function normalizeRelayWorldId(value: unknown): string | undefined {

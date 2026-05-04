@@ -92,4 +92,86 @@ describe('/api/relay/execute hosted world targeting', () => {
       }),
     )
   })
+
+  it('allows hosted get_craft_guide without an active world id', async () => {
+    vi.mocked(callTool).mockResolvedValueOnce({
+      ok: true,
+      data: { strategyDefault: 'agent' },
+      message: 'Self-craft guide ready.',
+    })
+
+    const response = await POST(makeHostedRequest({
+      toolName: 'get_craft_guide',
+      args: {},
+      agentType: 'openclaw',
+    }))
+
+    expect(response.status).toBe(200)
+    const json = await response.json()
+    expect(json).toMatchObject({
+      ok: true,
+      data: { strategyDefault: 'agent' },
+    })
+    expect(callTool).toHaveBeenCalledWith(
+      'get_craft_guide',
+      {},
+      expect.objectContaining({
+        source: 'relay',
+        requireExplicitWorld: true,
+      }),
+    )
+  })
+
+  it('allows hosted self_craft_scene only with an explicit world id', async () => {
+    vi.mocked(callTool).mockResolvedValueOnce({
+      ok: true,
+      data: { id: 'crafted-mcp-test', objectCount: 1 },
+      message: 'Created scene.',
+    })
+
+    const response = await POST(makeHostedRequest({
+      toolName: 'self_craft_scene',
+      worldId: 'world-hosted-test',
+      args: {
+        name: 'Hosted self craft',
+        objects: [
+          { type: 'box', position: [0, 0.5, 0], scale: [1, 1, 1], color: '#44ccff' },
+        ],
+      },
+      agentType: 'openclaw',
+    }))
+
+    expect(response.status).toBe(200)
+    expect(callTool).toHaveBeenCalledWith(
+      'self_craft_scene',
+      expect.objectContaining({
+        worldId: 'world-hosted-test',
+        actorAgentType: 'openclaw',
+      }),
+      expect.objectContaining({
+        worldId: 'world-hosted-test',
+        agentType: 'openclaw',
+      }),
+    )
+  })
+
+  it('keeps broad craft_scene out of the hosted public spellbook', async () => {
+    const response = await POST(makeHostedRequest({
+      toolName: 'craft_scene',
+      worldId: 'world-hosted-test',
+      args: {
+        prompt: 'build something with hidden prompt crafting',
+        strategy: 'sculptor',
+      },
+      agentType: 'openclaw',
+    }))
+
+    expect(response.status).toBe(403)
+    const json = await response.json()
+    expect(json).toMatchObject({
+      ok: false,
+      error: { code: 'tool_not_public' },
+    })
+    expect(callTool).not.toHaveBeenCalled()
+  })
 })

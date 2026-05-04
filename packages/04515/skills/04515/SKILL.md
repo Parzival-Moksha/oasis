@@ -17,6 +17,7 @@ The goal is simple: the user opens the site, gets a short pairing code or pairin
 - Starts the local bridge process that talks to the local OpenClaw Gateway.
 - Registers the Oasis MCP adapter on `http://127.0.0.1:17890/mcp`.
 - Verifies that chat, world state, world tools, and screenshots route to the hosted Oasis, not to a local Oasis tab.
+- Uses `get_craft_guide` + `self_craft_scene` for self-authored procedural scenes in hosted worlds.
 
 ## Bridge Command
 
@@ -98,6 +99,16 @@ Wrong behavior:
 - screenshot tools say the live Oasis screenshot bridge is unavailable while the hosted tab is open
 
 If wrong behavior happens, tell the user the stale local Oasis MCP route is probably still active. Do not keep placing objects until the MCP target is corrected to `http://127.0.0.1:17890/mcp`.
+
+## Procedural Crafting
+
+Use hosted self-craft only:
+
+1. Call `get_craft_guide`.
+2. Build a concrete `objects` array yourself from the guide.
+3. Call `self_craft_scene` with `name`, `position`, and `objects`.
+
+Do not send a prompt to hosted Oasis and ask it to craft for you. Prompt/sculptor crafting is a local/full-tool fallback, not the public 04515 bridge path.
 
 ## Ports And Meanings
 

@@ -122,6 +122,7 @@ describe('TOOL_NAMES', () => {
     expect(TOOL_NAMES).toContain('list_avatar_animations')
     expect(TOOL_NAMES).toContain('play_avatar_animation')
     expect(TOOL_NAMES).toContain('get_craft_guide')
+    expect(TOOL_NAMES).toContain('self_craft_scene')
     expect(TOOL_NAMES).toContain('get_craft_job')
     expect(TOOL_NAMES).toContain('set_sky')
     expect(TOOL_NAMES).toContain('clear_world')
@@ -1354,6 +1355,52 @@ describe('craft_scene prompt fallback', () => {
 
     expect(result.ok).toBe(true)
     expect(result.message).toContain('JSON scene')
+  })
+
+  it('self_craft_scene rejects prompt/sculptor inputs in hosted-safe mode', async () => {
+    const result = await callTool('self_craft_scene', {
+      actorAgentType: 'openclaw',
+      prompt: 'make a throne room for me',
+      strategy: 'sculptor',
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('only accepts explicit primitive objects')
+    expect(result.data).toMatchObject({
+      code: 'self_craft_requires_objects',
+      rejectedFields: expect.arrayContaining(['prompt', 'strategy']),
+    })
+  })
+
+  it('self_craft_scene creates direct primitive scenes without prompt fallback', async () => {
+    const world = makeWorldRow()
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+
+    const result = await callTool('self_craft_scene', {
+      actorAgentType: 'openclaw',
+      name: 'OpenClaw self craft',
+      position: [2, 0, 3],
+      objects: [
+        { type: 'box', position: [0, 0.5, 0], scale: [1, 1, 1], color: '#44ccff' },
+      ],
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.message).toContain('OpenClaw self craft')
+    expect(result.data).toMatchObject({
+      name: 'OpenClaw self craft',
+      objectCount: 1,
+    })
+
+    const updateArgs = vi.mocked(prisma.world.update).mock.calls[0]?.[0] as { data?: { data?: string } } | undefined
+    const savedState = JSON.parse(updateArgs?.data?.data || '{}') as {
+      craftedScenes?: Array<{ name?: string; prompt?: string }>
+    }
+    expect(savedState.craftedScenes?.[0]).toMatchObject({
+      name: 'OpenClaw self craft',
+      prompt: 'mcp-tool',
+    })
   })
 })
 

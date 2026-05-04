@@ -1442,6 +1442,51 @@ tools.craft_scene = async (args) => {
   return { ok: true, message: `Created scene "${name}" with ${objects.length} primitives as ${id}`, data: { id, name, objectCount: objects.length } }
 }
 
+tools.self_craft_scene = async (args) => {
+  const promptStr = validStr(args.prompt, '').trim()
+  const strategy = validStr(args.strategy, '').trim().toLowerCase()
+  const rawObjects = parseLooseObjectArray(args.objects)
+
+  if (promptStr || strategy === 'sculptor') {
+    return {
+      ok: false,
+      message: 'self_craft_scene only accepts explicit primitive objects. Call get_craft_guide, build an objects array yourself, then call self_craft_scene.',
+      data: {
+        code: 'self_craft_requires_objects',
+        rejectedFields: [
+          ...(promptStr ? ['prompt'] : []),
+          ...(strategy === 'sculptor' ? ['strategy'] : []),
+        ],
+      },
+    }
+  }
+
+  if (rawObjects.length === 0) {
+    return {
+      ok: false,
+      message: 'self_craft_scene requires an objects array. Call get_craft_guide for supported primitive types, fields, shaders, and animation schema.',
+      data: { code: 'self_craft_requires_objects' },
+    }
+  }
+
+  const result = await tools.craft_scene({
+    ...args,
+    prompt: undefined,
+    model: undefined,
+    waitForCompletion: true,
+    strategy: 'agent',
+  })
+
+  if (!result.ok && result.message.includes('provide a "prompt"')) {
+    return {
+      ...result,
+      message: 'No valid primitives in scene. Each primitive needs type, position, scale, and color. Call get_craft_guide for the exact self-craft schema.',
+    }
+  }
+
+  return result
+}
+
 tools.get_craft_job = async (args) => {
   const jobId = validStr(args.jobId, '')
   if (!jobId) return { ok: false, message: 'jobId is required.' }
@@ -3215,7 +3260,7 @@ export function getPendingScreenshotRequest(options?: { worldId?: string; reques
 export const TOOL_NAMES = Object.keys(tools)
 
 const MUTATING_TOOLS = new Set([
-  'place_object', 'craft_scene', 'modify_object', 'remove_object',
+  'place_object', 'craft_scene', 'self_craft_scene', 'modify_object', 'remove_object',
   'set_sky', 'set_ground_preset', 'paint_ground_tiles', 'add_light',
   'modify_light', 'set_behavior', 'set_avatar', 'walk_avatar_to',
   'play_avatar_animation', 'clear_world',

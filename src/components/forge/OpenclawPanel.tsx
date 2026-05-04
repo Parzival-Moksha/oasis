@@ -201,6 +201,8 @@ const OPENCLAW_RELAY_TOOLS: readonly string[] = Object.freeze([
   'create_and_load_world',
   'search_assets',
   'get_asset_catalog',
+  'get_craft_guide',
+  'self_craft_scene',
   'place_object',
   'modify_object',
   'remove_object',
