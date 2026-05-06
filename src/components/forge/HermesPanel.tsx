@@ -23,10 +23,12 @@ import { useAgentVoiceInput } from '@/hooks/useAgentVoiceInput'
 import { useAutoresizeTextarea } from '@/hooks/useAutoresizeTextarea'
 import { getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
 import { getCameraSnapshot } from '@/lib/camera-bridge'
+import { useIsHostedOasis } from '@/lib/oasis-mode-client'
 import { MediaBubble, type MediaType } from './MediaBubble'
 import { AvatarGallery } from './AvatarGallery'
 import { AgentToolCallCard } from './AgentToolCallCard'
 import { AgentVoiceInputButton } from './AgentVoiceInputButton'
+import { HermesHostedRelayPanel } from './HermesHostedRelayPanel'
 import {
   getClientAgentSessionCache,
   listClientAgentSessionCaches,
@@ -118,6 +120,13 @@ interface ChatMessage {
   finishReason?: string
   error?: string
   timestamp: number
+}
+
+interface HermesPanelProps {
+  isOpen: boolean
+  onClose: () => void
+  embedded?: boolean
+  hideCloseButton?: boolean
 }
 
 interface HermesTextEvent { type: 'text'; content: string }
@@ -1386,17 +1395,18 @@ async function* parseHermesSSE(response: Response): AsyncGenerator<HermesEvent> 
   }
 }
 
-export function HermesPanel({
+export function HermesPanel(props: HermesPanelProps) {
+  const hostedMode = useIsHostedOasis()
+  if (hostedMode) return <HermesHostedRelayPanel {...props} />
+  return <HermesLocalPanel {...props} />
+}
+
+function HermesLocalPanel({
   isOpen,
   onClose,
   embedded = false,
   hideCloseButton = false,
-}: {
-  isOpen: boolean
-  onClose: () => void
-  embedded?: boolean
-  hideCloseButton?: boolean
-}) {
+}: HermesPanelProps) {
   useUILayer('hermes', isOpen && !embedded)
 
   const panelZIndex = useOasisStore(state => state.getPanelZIndex('hermes', 9998))

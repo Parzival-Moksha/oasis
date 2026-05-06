@@ -1,0 +1,468 @@
+#!/usr/bin/env node
+/**
+ * scripts/hermes-oasis-bridge.mjs
+ *
+ * Chat-only Hermes bridge for hosted/local Oasis relay pairing.
+ *
+ * Runs beside Hermes, where Hermes API server is reachable on loopback. The
+ * bridge connects outbound to Oasis relay, receives chat.user frames, calls
+ * Hermes's OpenAI-compatible API server, and streams chat.agent.* frames back.
+ *
+ * Run:
+ *   node scripts/hermes-oasis-bridge.mjs https://openclaw.04515.xyz/pair/OASIS-XXXXXXXX
+ *
+ * Env / flags:
+ *   --api-base=...       HERMES_API_BASE default http://127.0.0.1:8642/v1
+ *   --api-key=...        HERMES_API_KEY or API_SERVER_KEY
+ *   --model=...          HERMES_MODEL optional
+ *   --system-prompt=...  HERMES_SYSTEM_PROMPT optional
+ *   --relay-url=...      OASIS_RELAY_URL optional override for local dev
+ *   --label=...          OASIS_AGENT_LABEL default hermes-bridge
+ *   --echo               skip Hermes API and echo replies for smoke testing
+ */
+
+import { WebSocket } from 'ws'
+import { randomUUID } from 'node:crypto'
+import readline from 'node:readline'
+
+const DEFAULT_HERMES_API_BASE = 'http://127.0.0.1:8642/v1'
+const BRIDGE_VERSION = '0.1.0-hermes-chat'
+const MAX_HISTORY_MESSAGES = 32
+
+function parseArgv(argv) {
+  const out = { positional: [], flags: {} }
+  for (const arg of argv) {
+    if (!arg.startsWith('--')) {
+      out.positional.push(arg)
+      continue
+    }
+    const eq = arg.indexOf('=')
+    if (eq >= 0) out.flags[arg.slice(2, eq)] = arg.slice(eq + 1)
+    else out.flags[arg.slice(2)] = 'true'
+  }
+  return out
+}
+
+const argv = parseArgv(process.argv.slice(2))
+const rawPairing = argv.positional[0] || process.env.OASIS_PAIRING_URL || ''
+const oasisUrlOverride = argv.flags['oasis-url'] || process.env.OASIS_URL || ''
+const explicitRelayUrl = argv.flags['relay-url'] || process.env.OASIS_RELAY_URL || ''
+const label = argv.flags.label || process.env.OASIS_AGENT_LABEL || 'hermes-bridge'
+const apiBase = normalizeApiBase(argv.flags['api-base'] || process.env.HERMES_API_BASE || DEFAULT_HERMES_API_BASE)
+const apiKey = argv.flags['api-key'] || process.env.HERMES_API_KEY || process.env.API_SERVER_KEY || ''
+const model = argv.flags.model || process.env.HERMES_MODEL || ''
+const systemPrompt = argv.flags['system-prompt'] || process.env.HERMES_SYSTEM_PROMPT || ''
+const echoMode = argv.flags.echo === 'true' || process.env.HERMES_BRIDGE_ECHO === '1'
+
+const log = (...args) => console.log('[hermes-bridge]', ...args)
+
+if (!rawPairing) {
+  console.error('usage: node scripts/hermes-oasis-bridge.mjs <pairing-url-or-code>')
+  console.error('  optional: --api-base=http://127.0.0.1:8642/v1 --api-key=... --model=...')
+  console.error('  optional: --relay-url=ws://localhost:4517/?role=agent --echo')
+  process.exit(2)
+}
+
+function normalizeApiBase(value) {
+  return String(value || DEFAULT_HERMES_API_BASE).trim().replace(/\/+$/, '')
+}
+
+function parsePairing(input) {
+  const trimmed = input.trim()
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    const url = new URL(trimmed)
+    const match = url.pathname.match(/\/(?:pair|p)\/([^/]+)/)
+    return {
+      code: match ? decodeURIComponent(match[1]) : '',
+      oasisUrl: `${url.protocol}//${url.host}`,
+    }
+  }
+  return { code: trimmed, oasisUrl: oasisUrlOverride || 'http://localhost:4516' }
+}
+
+const parsedPairing = parsePairing(rawPairing)
+const pairingCode = parsedPairing.code
+const oasisUrl = oasisUrlOverride || parsedPairing.oasisUrl
+
+if (!pairingCode || !pairingCode.startsWith('OASIS-')) {
+  console.error('[hermes-bridge] could not extract a valid OASIS-XXXXXXXX code from input:', rawPairing)
+  process.exit(2)
+}
+
+function buildRelayUrl(httpUrl) {
+  const base = httpUrl.replace(/\/+$/, '')
+  if (base.startsWith('https://')) return `wss://${base.slice('https://'.length)}/relay?role=agent`
+  if (base.startsWith('http://')) return `ws://${base.slice('http://'.length)}/relay?role=agent`
+  return `ws://${base}/relay?role=agent`
+}
+
+function rootBaseFromApiBase(base) {
+  return base.replace(/\/v1$/i, '')
+}
+
+function authHeaders() {
+  return apiKey ? { authorization: `Bearer ${apiKey}` } : {}
+}
+
+function jsonHeaders() {
+  return {
+    ...authHeaders(),
+    'content-type': 'application/json',
+  }
+}
+
+async function exchangePairingCode() {
+  const url = `${oasisUrl.replace(/\/+$/, '')}/api/relay/devices/exchange`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      pairingCode,
+      agentLabel: label,
+      agentVersion: BRIDGE_VERSION,
+    }),
+  })
+  const text = await response.text()
+  let json
+  try { json = JSON.parse(text) }
+  catch { throw new Error(`exchange returned non-JSON (status ${response.status}): ${text.slice(0, 200)}`) }
+  if (!response.ok || !json?.ok) {
+    const code = json?.error?.code || 'exchange_failed'
+    const message = json?.error?.message || `exchange failed with status ${response.status}`
+    throw new Error(`[${code}] ${message}`)
+  }
+  return {
+    deviceToken: json.deviceToken,
+    browserSessionId: json.browserSessionId,
+    worldId: json.worldId,
+    scopes: json.scopes,
+  }
+}
+
+async function fetchText(url, options = {}) {
+  const response = await fetch(url, options)
+  const text = await response.text().catch(() => '')
+  return { response, text }
+}
+
+async function checkHermesApi() {
+  if (echoMode) {
+    log('Hermes API check skipped (--echo).')
+    return { models: [] }
+  }
+
+  const healthUrl = `${rootBaseFromApiBase(apiBase)}/health`
+  const modelsUrl = `${apiBase}/models`
+  const [health, modelsResponse] = await Promise.allSettled([
+    fetchText(healthUrl, { headers: authHeaders() }),
+    fetchText(modelsUrl, { headers: authHeaders() }),
+  ])
+
+  const healthOk = health.status === 'fulfilled' && health.value.response.ok
+  const modelsOk = modelsResponse.status === 'fulfilled' && modelsResponse.value.response.ok
+  if (!healthOk && !modelsOk) {
+    const healthDetail = health.status === 'fulfilled'
+      ? `HTTP ${health.value.response.status} ${health.value.text.slice(0, 160)}`
+      : health.reason?.message || String(health.reason)
+    const modelsDetail = modelsResponse.status === 'fulfilled'
+      ? `HTTP ${modelsResponse.value.response.status} ${modelsResponse.value.text.slice(0, 160)}`
+      : modelsResponse.reason?.message || String(modelsResponse.reason)
+    throw new Error(
+      `Hermes API is not reachable at ${apiBase}. ` +
+      `Health: ${healthDetail}. Models: ${modelsDetail}. ` +
+      'Start Hermes gateway so 127.0.0.1:8642 is listening, or pass --api-base/--api-key.'
+    )
+  }
+
+  let models = []
+  if (modelsOk) {
+    try {
+      const parsed = JSON.parse(modelsResponse.value.text)
+      models = Array.isArray(parsed?.data)
+        ? parsed.data.map(entry => typeof entry?.id === 'string' ? entry.id : '').filter(Boolean)
+        : []
+    } catch {
+      models = []
+    }
+  }
+
+  log('Hermes API reachable:', {
+    apiBase,
+    health: healthOk ? 'ok' : 'unavailable',
+    models: models.length ? models.slice(0, 5) : '(none listed)',
+  })
+  return { models }
+}
+
+function buildMessages(sessionId, userText) {
+  const history = sessionHistory.get(sessionId) || []
+  const messages = []
+  if (systemPrompt.trim()) {
+    messages.push({ role: 'system', content: systemPrompt.trim() })
+  }
+  messages.push(...history.slice(-MAX_HISTORY_MESSAGES))
+  messages.push({ role: 'user', content: userText })
+  return messages
+}
+
+function rememberTurn(sessionId, userText, assistantText) {
+  const history = sessionHistory.get(sessionId) || []
+  history.push({ role: 'user', content: userText })
+  if (assistantText.trim()) history.push({ role: 'assistant', content: assistantText })
+  sessionHistory.set(sessionId, history.slice(-MAX_HISTORY_MESSAGES))
+}
+
+function extractText(value) {
+  if (typeof value === 'string') return value
+  if (!Array.isArray(value)) return ''
+  return value.map(part => {
+    if (typeof part === 'string') return part
+    if (!part || typeof part !== 'object') return ''
+    if (typeof part.text === 'string') return part.text
+    if (typeof part.content === 'string') return part.content
+    return ''
+  }).join('')
+}
+
+function extractSsePayloads(buffer) {
+  const normalized = buffer.replace(/\r/g, '')
+  const blocks = normalized.split('\n\n')
+  const remainder = blocks.pop() ?? ''
+  const payloads = []
+  for (const block of blocks) {
+    const data = block
+      .split('\n')
+      .filter(line => line.startsWith('data:'))
+      .map(line => line.slice(5).trimStart())
+      .join('\n')
+      .trim()
+    if (data) payloads.push(data)
+  }
+  return { payloads, remainder }
+}
+
+async function callHermes(sessionId, userText, onDelta) {
+  if (echoMode) {
+    const reply = `Hermes bridge echo: ${userText}`
+    await delay(80)
+    onDelta(reply)
+    rememberTurn(sessionId, userText, reply)
+    return reply
+  }
+
+  const body = {
+    model: model || 'hermes',
+    stream: true,
+    stream_options: { include_usage: true },
+    messages: buildMessages(sessionId, userText),
+  }
+
+  const response = await fetch(`${apiBase}/chat/completions`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(body),
+  })
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '')
+    throw new Error(`Hermes API returned HTTP ${response.status}: ${detail.slice(0, 600)}`)
+  }
+  if (!response.body) {
+    throw new Error('Hermes API returned no response body.')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let assistantText = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const extracted = extractSsePayloads(buffer)
+    buffer = extracted.remainder
+
+    for (const payload of extracted.payloads) {
+      if (payload === '[DONE]') continue
+      let parsed
+      try { parsed = JSON.parse(payload) }
+      catch { continue }
+      if (parsed?.error) {
+        const message = typeof parsed.error?.message === 'string' ? parsed.error.message : 'Hermes stream error.'
+        throw new Error(message)
+      }
+      const choice = Array.isArray(parsed?.choices) ? parsed.choices[0] : undefined
+      const delta = choice?.delta || {}
+      const text = extractText(delta.content)
+      if (text) {
+        assistantText += text
+        onDelta(text)
+      }
+    }
+  }
+
+  rememberTurn(sessionId, userText, assistantText)
+  return assistantText
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+let relayWs = null
+let exited = false
+let relaySessionId = ''
+const sessionHistory = new Map()
+
+function sendRelay(msg) {
+  if (!relayWs || relayWs.readyState !== relayWs.OPEN) {
+    log('cannot send to relay: socket not open', { type: msg.type })
+    return false
+  }
+  relayWs.send(JSON.stringify({
+    messageId: randomUUID(),
+    sentAt: Date.now(),
+    ...(relaySessionId ? { relaySessionId } : {}),
+    ...msg,
+  }))
+  return true
+}
+
+function exitWith(code, reason) {
+  if (exited) return
+  exited = true
+  log('exit', { code, reason })
+  try { relayWs?.close() } catch { /* ignore */ }
+  setTimeout(() => process.exit(code), 50).unref()
+}
+
+async function forwardChatUser(sessionId, text) {
+  const safeSessionId = sessionId || 'hermes-default'
+  try {
+    log('chat.user <- relay', { sessionId: safeSessionId, chars: text.length })
+    let sentAnyDelta = false
+    const finalText = await callHermes(safeSessionId, text, chunk => {
+      sentAnyDelta = true
+      sendRelay({ type: 'chat.agent.delta', sessionId: safeSessionId, text: chunk })
+    })
+    sendRelay({
+      type: 'chat.agent.final',
+      sessionId: safeSessionId,
+      text: finalText || (sentAnyDelta ? '' : '[hermes-bridge] Hermes returned no text.'),
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    log('Hermes chat failed:', message)
+    sendRelay({
+      type: 'chat.agent.final',
+      sessionId: safeSessionId,
+      text: `[hermes-bridge] Hermes request failed: ${message}`,
+    })
+  }
+}
+
+async function start() {
+  log('config:', {
+    oasisUrl,
+    pairingCode,
+    label,
+    apiBase: echoMode ? '(echo)' : apiBase,
+    model: model || '(default)',
+    relay: explicitRelayUrl || '(from Oasis URL)',
+  })
+
+  await checkHermesApi()
+
+  log('exchanging pairing code...')
+  const creds = await exchangePairingCode()
+  log('paired with browser session:', {
+    browserSessionId: creds.browserSessionId,
+    worldId: creds.worldId,
+    scopes: creds.scopes,
+  })
+
+  const relayUrl = explicitRelayUrl || buildRelayUrl(oasisUrl)
+  log('connecting to relay:', relayUrl)
+  relayWs = new WebSocket(relayUrl, {
+    headers: { authorization: `Bearer ${creds.deviceToken}` },
+  })
+
+  relayWs.on('open', () => log('relay socket open'))
+
+  relayWs.on('message', (raw) => {
+    let parsed
+    try { parsed = JSON.parse(raw.toString()) }
+    catch { log('non-JSON frame ignored'); return }
+
+    if (parsed.type === 'relay.paired') {
+      relaySessionId = typeof parsed.relaySessionId === 'string' ? parsed.relaySessionId : ''
+      log('paired by relay:', { relaySessionId })
+      sendRelay({
+        type: 'agent.hello',
+        deviceToken: creds.deviceToken,
+        agentLabel: label,
+        agentVersion: BRIDGE_VERSION,
+      })
+      return
+    }
+
+    if (parsed.type === 'browser.hello' || parsed.type === 'browser.ready') {
+      log(`${parsed.type} <- relay`, {
+        worldId: parsed.worldId || creds.worldId,
+        tools: Array.isArray(parsed.availableTools) ? parsed.availableTools.length : undefined,
+      })
+      return
+    }
+
+    if (parsed.type === 'chat.user') {
+      const sessionId = typeof parsed.sessionId === 'string' ? parsed.sessionId : 'hermes-default'
+      const text = typeof parsed.text === 'string' ? parsed.text : ''
+      if (text.trim()) void forwardChatUser(sessionId, text)
+      return
+    }
+
+    if (parsed.type === 'tool.call') {
+      log('tool.call rejected in chat-only Hermes bridge', { toolName: parsed.toolName, callId: parsed.callId })
+      sendRelay({
+        type: 'tool.result',
+        callId: parsed.callId || 'unknown',
+        ok: false,
+        error: {
+          code: 'hermes_bridge_chat_only',
+          message: 'This Hermes bridge build is chat-only. Relay MCP lands in the next sprint.',
+        },
+      })
+      return
+    }
+
+    if (parsed.type === 'error') {
+      log('relay error:', parsed)
+    }
+  })
+
+  relayWs.on('close', (code, reason) => {
+    log('relay socket closed', { code, reason: reason?.toString?.() })
+    if (!exited) exitWith(0, 'closed')
+  })
+
+  relayWs.on('error', (err) => {
+    log('relay socket error:', err?.message || String(err))
+    if (!exited) exitWith(5, 'socket_error')
+  })
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: false })
+  rl.on('line', (line) => {
+    const text = line.trim()
+    if (!text) return
+    sendRelay({ type: 'chat.agent.final', sessionId: 'bridge-console', text })
+  })
+}
+
+process.on('SIGINT', () => exitWith(130, 'SIGINT'))
+process.on('SIGTERM', () => exitWith(143, 'SIGTERM'))
+
+start().catch((err) => {
+  log('fatal:', err?.message || String(err))
+  exitWith(1, 'fatal')
+})

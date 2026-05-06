@@ -284,6 +284,7 @@ const SETTINGS_KEY = 'oasis-openclaw-settings'
 const SESSION_KEY = 'oasis-openclaw-session'
 const SESSIONS_KEY = 'oasis-openclaw-sessions'
 const TRANSCRIPT_KEY_PREFIX = 'oasis-openclaw-transcript:'
+const HOSTED_SESSION_PREFIX = 'oasis-04515-'
 const MAX_LOCAL_TRANSCRIPT_MESSAGES = 200
 const OPENCLAW_DB_NAME = 'oasis-openclaw-panel'
 const OPENCLAW_DB_VERSION = 1
@@ -425,6 +426,11 @@ function isLocalDraftSession(sessionId: string): boolean {
   return Boolean(sessionId) && !sessionId.includes(':')
 }
 
+function isHostedOasisSessionId(sessionId: string): boolean {
+  return Boolean(sessionId)
+    && (sessionId.startsWith(HOSTED_SESSION_PREFIX) || sessionId.startsWith('draft-'))
+}
+
 function sanitizeSessionSummary(raw: unknown): OpenclawSessionSummary | null {
   if (!raw || typeof raw !== 'object') return null
   const record = raw as Record<string, unknown>
@@ -459,6 +465,7 @@ function loadHostedSessionSummaries(): OpenclawSessionSummary[] {
   return loadStored<unknown[]>(SESSIONS_KEY, [])
     .map(sanitizeSessionSummary)
     .filter((value): value is OpenclawSessionSummary => Boolean(value))
+    .filter(entry => isHostedOasisSessionId(entry.id))
     .sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
@@ -472,7 +479,7 @@ function saveHostedSessionSummaries(summaries: OpenclawSessionSummary[]) {
 function createClientDraftSessionSummary(title = 'New OpenClaw session'): OpenclawSessionSummary {
   const now = Date.now()
   return {
-    id: `draft-${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    id: `${HOSTED_SESSION_PREFIX}${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     title,
     preview: '',
     source: 'draft',
@@ -657,6 +664,39 @@ function mergeStreamingText(previous: string, incoming: string, isFinal = false)
   }
 
   return `${earlier}${shouldJoinStreamingText(earlier, next) ? ' ' : ''}${next}`
+}
+
+function isSameTranscriptMessage(left: OpenclawMessage, right: OpenclawMessage): boolean {
+  if (left.id && left.id === right.id) return true
+  if (left.role !== right.role) return false
+  if (left.role === 'tool' || right.role === 'tool') return false
+  const leftText = normalizeCompactText(left.content)
+  const rightText = normalizeCompactText(right.content)
+  if (!leftText || leftText !== rightText) return false
+  return Math.abs((left.timestamp || 0) - (right.timestamp || 0)) < 5 * 60 * 1000
+}
+
+function mergeHostedTranscript(existing: OpenclawMessage[], incoming: OpenclawMessage[]): OpenclawMessage[] {
+  if (existing.length === 0) return incoming.slice(-MAX_LOCAL_TRANSCRIPT_MESSAGES)
+  if (incoming.length === 0) return existing.slice(-MAX_LOCAL_TRANSCRIPT_MESSAGES)
+
+  const merged = [...existing]
+  for (const message of incoming) {
+    const existingIndex = merged.findIndex(candidate => isSameTranscriptMessage(candidate, message))
+    if (existingIndex >= 0) {
+      merged[existingIndex] = {
+        ...merged[existingIndex],
+        ...message,
+        content: mergeStreamingText(merged[existingIndex].content, message.content, message.state === 'done'),
+      }
+    } else {
+      merged.push(message)
+    }
+  }
+
+  return merged
+    .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+    .slice(-MAX_LOCAL_TRANSCRIPT_MESSAGES)
 }
 
 function summarizeToolInput(toolName: string, value: unknown, maxLength = 120): string {
@@ -1101,7 +1141,14 @@ export function OpenclawPanel({
 
   const ensureOpenclawAgentWindow = useCallback(() => {
     const existingWindow = useOasisStore.getState().placedAgentWindows.find(entry => entry.agentType === 'openclaw')
-    if (existingWindow) return existingWindow.id
+    if (existingWindow) {
+      if (!existingWindow.linkedAvatarId) {
+        assignSharedAgentAvatar('openclaw', '/avatars/gallery/CaptainLobster.vrm', {
+          preferredWindowId: existingWindow.id,
+        })
+      }
+      return existingWindow.id
+    }
 
     const id = 'agent-openclaw-default'
     addAgentWindow({
@@ -1116,7 +1163,7 @@ export function OpenclawPanel({
       renderMode: 'live-html',
     })
     return id
-  }, [addAgentWindow])
+  }, [addAgentWindow, assignSharedAgentAvatar])
 
   const stopHostedWelcome = useCallback(() => {
     hostedWelcomeAudioRef.current?.pause()
@@ -1137,6 +1184,7 @@ export function OpenclawPanel({
     if (typeof window === 'undefined') return
 
     stopHostedWelcome()
+    const preferredWindowId = ensureOpenclawAgentWindow()
 
     const audio = new Audio(HOSTED_WELCOME_AUDIO_URL)
     audio.crossOrigin = 'anonymous'
@@ -1144,7 +1192,7 @@ export function OpenclawPanel({
     hostedWelcomeAudioRef.current = audio
 
     const objectId = findOpenclawAvatar()?.id
-      || assignSharedAgentAvatar('openclaw', '/avatars/gallery/CaptainLobster.vrm')
+      || assignSharedAgentAvatar('openclaw', '/avatars/gallery/CaptainLobster.vrm', { preferredWindowId })
       || null
     let ctrl: LipSyncController | null = null
     if (objectId) {
@@ -1191,7 +1239,7 @@ export function OpenclawPanel({
       cleanup()
       console.warn('[openclaw-panel] hosted welcome audio failed', error)
     }
-  }, [assignSharedAgentAvatar, stopHostedWelcome])
+  }, [assignSharedAgentAvatar, ensureOpenclawAgentWindow, stopHostedWelcome])
 
   useEffect(() => stopHostedWelcome, [stopHostedWelcome])
 
@@ -1775,21 +1823,22 @@ export function OpenclawPanel({
     const syncedSessions = event.sessions
       .map(sanitizeSessionSummary)
       .filter((entry): entry is OpenclawSessionSummary => Boolean(entry))
+      .filter(entry => isHostedOasisSessionId(entry.id))
     const messagesBySessionId = asRecord(event.messagesBySessionId)
-    const storedSessions = loadHostedSessionSummaries()
-    const mergedSessions = dedupeOpenclawSessions([
-      ...syncedSessions,
-      ...storedSessions.filter(entry => !syncedSessions.some(candidate => candidate.id === entry.id)),
-    ])
+    const mergedSessions = syncedSessions.length > 0
+      ? dedupeOpenclawSessions(syncedSessions)
+      : loadHostedSessionSummaries()
     setSessions(mergedSessions)
     saveHostedSessionSummaries(mergedSessions)
 
     void (async () => {
       for (const [sessionId, rawMessages] of Object.entries(messagesBySessionId)) {
         if (!Array.isArray(rawMessages)) continue
-        const nextMessages = rawMessages
+        const incomingMessages = rawMessages
           .map(sanitizeMessage)
           .filter((entry): entry is OpenclawMessage => Boolean(entry))
+        const existingMessages = await loadStoredTranscript(sessionId)
+        const nextMessages = mergeHostedTranscript(existingMessages, incomingMessages)
         await saveStoredTranscript(sessionId, nextMessages)
         if (selectedSessionIdRef.current === sessionId) {
           setMessages(nextMessages)
@@ -1938,7 +1987,11 @@ export function OpenclawPanel({
     setLoadingSessions(true)
     try {
       if (hostedMode) {
-        const remembered = typeof window === 'undefined' ? '' : window.localStorage.getItem(SESSION_KEY) || ''
+        const rememberedRaw = typeof window === 'undefined' ? '' : window.localStorage.getItem(SESSION_KEY) || ''
+        const remembered = isHostedOasisSessionId(rememberedRaw) ? rememberedRaw : ''
+        if (rememberedRaw && !remembered && typeof window !== 'undefined') {
+          window.localStorage.removeItem(SESSION_KEY)
+        }
         const storedSessions = loadHostedSessionSummaries()
         if (storedSessions.length > 0) {
           setSessions(storedSessions)

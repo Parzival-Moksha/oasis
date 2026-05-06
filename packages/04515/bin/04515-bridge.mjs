@@ -92,6 +92,7 @@ const mcpConfigMode = argv.flags['no-mcp-config'] === 'true'
 const mcpServerName = argv.flags['mcp-server-name'] || 'oasis'
 const openclawConfigPath = argv.flags['openclaw-config'] || ''
 const mcpRestoreStatePath = argv.flags['mcp-restore-state'] || ''
+const HOSTED_SESSION_PREFIX = 'oasis-04515-'
 
 const log = (...args) => console.log('[bridge]', ...args)
 
@@ -454,6 +455,11 @@ function humanizeSessionKey(sessionKey) {
   return tail
 }
 
+function isHostedOasisSessionKey(sessionKey) {
+  return typeof sessionKey === 'string'
+    && (sessionKey.startsWith(HOSTED_SESSION_PREFIX) || sessionKey.startsWith('draft-'))
+}
+
 function normalizeGatewaySessionSummary(raw) {
   const record = asRecord(raw)
   const id = stringField(record, 'key', 'sessionKey', 'id')
@@ -575,6 +581,7 @@ async function handleSessionSyncRequest(request) {
     const sessions = (Array.isArray(listPayload?.sessions) ? listPayload.sessions : [])
       .map(normalizeGatewaySessionSummary)
       .filter(Boolean)
+      .filter(session => isHostedOasisSessionKey(session.id))
       .sort((a, b) => b.updatedAt - a.updatedAt)
 
     const historyIds = request.includeMessages

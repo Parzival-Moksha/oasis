@@ -742,6 +742,7 @@ export function useSharedOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions
   )
 
   useEffect(() => {
+    if (!opts.enabled) return
     const instanceId = instanceIdRef.current
     if (!instanceId) return
     sharedRelayChatCallbacks.set(instanceId, {
@@ -754,7 +755,7 @@ export function useSharedOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions
     return () => {
       sharedRelayChatCallbacks.delete(instanceId)
     }
-  }, [opts.onChatAgentDelta, opts.onChatAgentFinal, opts.onSessionSyncResponse, opts.onToolCall, opts.onToolResult])
+  }, [opts.enabled, opts.onChatAgentDelta, opts.onChatAgentFinal, opts.onSessionSyncResponse, opts.onToolCall, opts.onToolResult])
 
   const ownedBridge = useOpenclawRelayBridge({
     ...opts,
