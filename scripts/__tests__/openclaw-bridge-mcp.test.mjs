@@ -159,6 +159,43 @@ describe('openclaw bridge MCP adapter', () => {
     expect(calls.map(call => call.args.worldId)).toEqual(['world-a', 'world-b'])
   })
 
+  it('can run the same relay adapter for Hermes and inject Hermes agent context', async () => {
+    const calls = []
+    const server = await startBridgeMcpServer({
+      port: 0,
+      worldId: 'world-hermes',
+      agentType: 'hermes',
+      relayToolCall: async (call) => {
+        calls.push(call)
+        return { ok: true, data: { echoedArgs: call.args } }
+      },
+    })
+    started.push(server)
+
+    const sessionId = await initialize(server.url)
+    const called = await postMcp(server.url, {
+      jsonrpc: '2.0',
+      id: 4,
+      method: 'tools/call',
+      params: {
+        name: 'set_avatar',
+        arguments: { label: 'Hermes' },
+      },
+    }, sessionId)
+
+    expect(called.status).toBe(200)
+    expect(called.json.result.isError).toBe(false)
+    expect(calls).toEqual([{
+      toolName: 'set_avatar',
+      args: {
+        label: 'Hermes',
+        worldId: 'world-hermes',
+        actorAgentType: 'hermes',
+      },
+      scope: 'world.write.safe',
+    }])
+  })
+
   it('recovers a stale OpenClaw MCP session id as a one-shot stateless tool call', async () => {
     const calls = []
     const server = await startBridgeMcpServer({

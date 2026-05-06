@@ -2,11 +2,14 @@
 /**
  * scripts/hermes-oasis-bridge.mjs
  *
- * Chat-only Hermes bridge for hosted/local Oasis relay pairing.
+ * Hermes bridge for hosted/local Oasis relay pairing.
  *
  * Runs beside Hermes, where Hermes API server is reachable on loopback. The
  * bridge connects outbound to Oasis relay, receives chat.user frames, calls
  * Hermes's OpenAI-compatible API server, and streams chat.agent.* frames back.
+ * It also starts a local Streamable HTTP MCP adapter so Hermes can call Oasis
+ * tools; the adapter proxies tool.call frames through the relay and waits for
+ * browser-executed tool.result frames.
  *
  * Run:
  *   node scripts/hermes-oasis-bridge.mjs https://openclaw.04515.xyz/pair/OASIS-XXXXXXXX
@@ -18,15 +21,31 @@
  *   --system-prompt=...  HERMES_SYSTEM_PROMPT optional
  *   --relay-url=...      OASIS_RELAY_URL optional override for local dev
  *   --label=...          OASIS_AGENT_LABEL default hermes-bridge
+ *   --mcp-port=...       HERMES_OASIS_MCP_PORT default 17891
+ *   --mcp-host=...       HERMES_OASIS_MCP_HOST default 127.0.0.1
+ *   --mcp-config=auto|preserve  HERMES_OASIS_MCP_CONFIG default auto
+ *   --no-mcp             skip local Oasis MCP adapter
+ *   --no-mcp-config      leave ~/.hermes/config.yaml unchanged
+ *   --restore-mcp        restore the previous Hermes MCP config snapshot
  *   --echo               skip Hermes API and echo replies for smoke testing
  */
 
 import { WebSocket } from 'ws'
 import { randomUUID } from 'node:crypto'
 import readline from 'node:readline'
+import os from 'node:os'
+
+import { startBridgeMcpServer } from './openclaw-bridge-mcp.mjs'
+import {
+  HERMES_OASIS_MCP_TOOL_INCLUDE,
+  installHermesMcpConfig,
+  resolveDefaultHermesConfigPath,
+  resolveDefaultHermesStatePath,
+  restoreHermesMcpConfig,
+} from './hermes-mcp-config-guard.mjs'
 
 const DEFAULT_HERMES_API_BASE = 'http://127.0.0.1:8642/v1'
-const BRIDGE_VERSION = '0.1.0-hermes-chat'
+const BRIDGE_VERSION = '0.2.0-hermes-tools'
 const MAX_HISTORY_MESSAGES = 32
 
 function parseArgv(argv) {
@@ -53,13 +72,41 @@ const apiKey = argv.flags['api-key'] || process.env.HERMES_API_KEY || process.en
 const model = argv.flags.model || process.env.HERMES_MODEL || ''
 const systemPrompt = argv.flags['system-prompt'] || process.env.HERMES_SYSTEM_PROMPT || ''
 const echoMode = argv.flags.echo === 'true' || process.env.HERMES_BRIDGE_ECHO === '1'
+const skipMcp = argv.flags['no-mcp'] === 'true' || process.env.HERMES_OASIS_NO_MCP === '1'
+const mcpHost = argv.flags['mcp-host'] || process.env.HERMES_OASIS_MCP_HOST || '127.0.0.1'
+const mcpPort = Number(argv.flags['mcp-port'] || process.env.HERMES_OASIS_MCP_PORT || 17891)
+const toolTimeoutMs = Number(argv.flags['tool-timeout-ms'] || process.env.HERMES_OASIS_TOOL_TIMEOUT_MS || 30_000)
+const mcpConfigMode = argv.flags['no-mcp-config'] === 'true'
+  ? 'preserve'
+  : (argv.flags['mcp-config'] || process.env.HERMES_OASIS_MCP_CONFIG || 'auto').toLowerCase()
+const mcpServerName = argv.flags['mcp-server-name'] || process.env.HERMES_OASIS_MCP_SERVER_NAME || 'oasis'
+const hermesConfigPath = argv.flags['hermes-config'] || process.env.HERMES_CONFIG_PATH || resolveDefaultHermesConfigPath()
+const mcpRestoreStatePath = argv.flags['mcp-restore-state'] || process.env.HERMES_OASIS_MCP_RESTORE_STATE || ''
 
 const log = (...args) => console.log('[hermes-bridge]', ...args)
+
+function resolvedMcpRestoreStatePath() {
+  return mcpRestoreStatePath || resolveDefaultHermesStatePath(os.homedir(), mcpServerName)
+}
+
+if (argv.flags['restore-mcp'] === 'true') {
+  try {
+    await restoreHermesMcpConfig({
+      statePath: resolvedMcpRestoreStatePath(),
+      logger: log,
+    })
+    process.exit(0)
+  } catch (err) {
+    log('restore MCP config failed:', err?.message || String(err))
+    process.exit(1)
+  }
+}
 
 if (!rawPairing) {
   console.error('usage: node scripts/hermes-oasis-bridge.mjs <pairing-url-or-code>')
   console.error('  optional: --api-base=http://127.0.0.1:8642/v1 --api-key=... --model=...')
-  console.error('  optional: --relay-url=ws://localhost:4517/?role=agent --echo')
+  console.error('  optional: --relay-url=ws://localhost:4517/?role=agent --mcp-port=17891 --echo')
+  console.error('  optional: --no-mcp --no-mcp-config --restore-mcp')
   process.exit(2)
 }
 
@@ -313,7 +360,18 @@ function delay(ms) {
 let relayWs = null
 let exited = false
 let relaySessionId = ''
+let activeWorldId = ''
+let mcpServer = null
 const sessionHistory = new Map()
+const pendingToolCalls = new Map()
+const mcpDiagnostics = {
+  requestCount: 0,
+  toolCallCount: 0,
+  lastRequestAt: 0,
+  lastToolCallAt: 0,
+  lastToolName: '',
+  lastToolWorldId: '',
+}
 
 function sendRelay(msg) {
   if (!relayWs || relayWs.readyState !== relayWs.OPEN) {
@@ -329,12 +387,107 @@ function sendRelay(msg) {
   return true
 }
 
+function updateActiveWorldId(nextWorldId, source = 'relay') {
+  const trimmed = typeof nextWorldId === 'string' ? nextWorldId.trim() : ''
+  if (!trimmed || trimmed === activeWorldId) return
+  const previousWorldId = activeWorldId || '(none)'
+  activeWorldId = trimmed
+  log('active Oasis world updated', { source, previousWorldId, worldId: activeWorldId })
+}
+
+function rejectPendingToolCalls(message) {
+  for (const [callId, pending] of pendingToolCalls.entries()) {
+    clearTimeout(pending.timer)
+    pendingToolCalls.delete(callId)
+    pending.resolve({
+      ok: false,
+      error: { code: 'relay_disconnected', message },
+    })
+  }
+}
+
+function resolvePendingToolResult(result) {
+  const callId = typeof result?.callId === 'string' ? result.callId : ''
+  if (!callId) return false
+  const pending = pendingToolCalls.get(callId)
+  if (!pending) return false
+  clearTimeout(pending.timer)
+  pendingToolCalls.delete(callId)
+  log('tool.result <- relay', {
+    toolName: pending.toolName,
+    worldId: pending.worldId || '(none)',
+    ok: Boolean(result.ok),
+  })
+  pending.resolve({
+    ok: Boolean(result.ok),
+    data: result.data,
+    error: result.error,
+  })
+  return true
+}
+
+function proxyToolCallThroughRelay({ toolName, args, scope }) {
+  if (!relayWs || relayWs.readyState !== relayWs.OPEN) {
+    return Promise.resolve({
+      ok: false,
+      error: {
+        code: 'relay_not_connected',
+        message: 'Oasis relay is not connected or paired yet.',
+      },
+    })
+  }
+
+  const callId = randomUUID()
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingToolCalls.delete(callId)
+      resolve({
+        ok: false,
+        error: {
+          code: 'tool_timeout',
+          message: `Timed out waiting ${toolTimeoutMs}ms for browser tool result from "${toolName}".`,
+        },
+      })
+    }, toolTimeoutMs)
+    pendingToolCalls.set(callId, { resolve, timer, toolName, worldId: args?.worldId || '' })
+    try {
+      log('tool.call -> relay', { toolName, scope, callId, worldId: args?.worldId || '(none)' })
+      const sent = sendRelay({
+        type: 'tool.call',
+        callId,
+        toolName,
+        args: args || {},
+        scope,
+      })
+      if (!sent) throw new Error('relay socket not open')
+    } catch {
+      clearTimeout(timer)
+      pendingToolCalls.delete(callId)
+      resolve({
+        ok: false,
+        error: {
+          code: 'relay_send_failed',
+          message: `Could not send Oasis tool "${toolName}" to the relay.`,
+        },
+      })
+    }
+  })
+}
+
 function exitWith(code, reason) {
   if (exited) return
   exited = true
   log('exit', { code, reason })
+  rejectPendingToolCalls(`bridge exiting: ${reason}`)
   try { relayWs?.close() } catch { /* ignore */ }
-  setTimeout(() => process.exit(code), 50).unref()
+  const emergencyExit = setTimeout(() => process.exit(code), 4_000)
+  emergencyExit.unref()
+  Promise.allSettled([
+    mcpServer?.close?.(),
+  ]).finally(() => {
+    clearTimeout(emergencyExit)
+    process.exit(code)
+  })
 }
 
 async function forwardChatUser(sessionId, text) {
@@ -381,6 +534,78 @@ async function start() {
     worldId: creds.worldId,
     scopes: creds.scopes,
   })
+  activeWorldId = creds.worldId
+
+  if (!skipMcp) {
+    try {
+      mcpServer = await startBridgeMcpServer({
+        host: mcpHost,
+        port: mcpPort,
+        worldId: creds.worldId,
+        getWorldId: () => activeWorldId || creds.worldId,
+        agentType: 'hermes',
+        relayToolCall: proxyToolCallThroughRelay,
+        logger: log,
+        onRequest: ({ method, sessionId, initialize }) => {
+          mcpDiagnostics.requestCount += 1
+          mcpDiagnostics.lastRequestAt = Date.now()
+          log('MCP adapter hit', {
+            count: mcpDiagnostics.requestCount,
+            method,
+            sessionId: sessionId || '(new)',
+            initialize,
+          })
+        },
+        onToolCall: ({ toolName, worldId }) => {
+          mcpDiagnostics.toolCallCount += 1
+          mcpDiagnostics.lastToolCallAt = Date.now()
+          mcpDiagnostics.lastToolName = toolName
+          mcpDiagnostics.lastToolWorldId = worldId
+          log('MCP tool invoked', {
+            count: mcpDiagnostics.toolCallCount,
+            toolName,
+            worldId: worldId || '(none)',
+          })
+        },
+      })
+      log('Hermes Oasis MCP URL:', mcpServer.url)
+      log('Hermes MCP config hint:', [
+        'mcp_servers:',
+        `  ${mcpServerName}:`,
+        `    url: "${mcpServer.url}"`,
+        '    enabled: true',
+        '    tools:',
+        '      prompts: false',
+        '      resources: false',
+      ].join('\\n'))
+      if (mcpConfigMode === 'auto') {
+        try {
+          const installed = await installHermesMcpConfig({
+            configPath: hermesConfigPath,
+            statePath: resolvedMcpRestoreStatePath(),
+            serverName: mcpServerName,
+            url: mcpServer.url,
+            tools: HERMES_OASIS_MCP_TOOL_INCLUDE,
+            logger: log,
+          })
+          if (installed?.changed) {
+            log('Run /reload-mcp in Hermes chat, or restart the Hermes gateway/dashboard so it discovers Oasis tools.')
+          }
+        } catch (err) {
+          log('Hermes MCP config auto-switch failed; use the config hint above:', err?.message || String(err))
+        }
+      } else if (mcpConfigMode === 'preserve' || mcpConfigMode === 'off') {
+        log(`Hermes MCP config left unchanged (--mcp-config=${mcpConfigMode}).`)
+      } else {
+        log(`Unknown --mcp-config=${mcpConfigMode}; leaving Hermes MCP config unchanged.`)
+      }
+    } catch (err) {
+      log('MCP adapter failed to start; Oasis tools will not be available to Hermes:', err?.message || String(err))
+      mcpServer = null
+    }
+  } else {
+    log('Hermes Oasis MCP adapter skipped (--no-mcp).')
+  }
 
   const relayUrl = explicitRelayUrl || buildRelayUrl(oasisUrl)
   log('connecting to relay:', relayUrl)
@@ -408,6 +633,7 @@ async function start() {
     }
 
     if (parsed.type === 'browser.hello' || parsed.type === 'browser.ready') {
+      updateActiveWorldId(parsed.worldId || creds.worldId, parsed.type)
       log(`${parsed.type} <- relay`, {
         worldId: parsed.worldId || creds.worldId,
         tools: Array.isArray(parsed.availableTools) ? parsed.availableTools.length : undefined,
@@ -422,15 +648,22 @@ async function start() {
       return
     }
 
+    if (parsed.type === 'tool.result') {
+      if (!resolvePendingToolResult(parsed)) {
+        log('tool.result received with no pending caller:', { callId: parsed.callId })
+      }
+      return
+    }
+
     if (parsed.type === 'tool.call') {
-      log('tool.call rejected in chat-only Hermes bridge', { toolName: parsed.toolName, callId: parsed.callId })
+      log('unexpected inbound tool.call on Hermes bridge', { toolName: parsed.toolName, callId: parsed.callId })
       sendRelay({
         type: 'tool.result',
         callId: parsed.callId || 'unknown',
         ok: false,
         error: {
-          code: 'hermes_bridge_chat_only',
-          message: 'This Hermes bridge build is chat-only. Relay MCP lands in the next sprint.',
+          code: 'bridge_wrong_direction',
+          message: 'Oasis tools are requested by Hermes through the local bridge MCP adapter.',
         },
       })
       return

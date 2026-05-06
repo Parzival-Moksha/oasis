@@ -8,6 +8,7 @@ import { useInputManager, useUILayer } from '@/lib/input-manager'
 import { writeBrowserStorage } from '@/lib/browser-storage'
 import { useAutoresizeTextarea } from '@/hooks/useAutoresizeTextarea'
 import { useOasisStore } from '@/store/oasisStore'
+import { PUBLIC_TOOL_NAMES } from '@/lib/relay/public-spellbook.js'
 
 interface HermesHostedRelayPanelProps {
   isOpen: boolean
@@ -31,8 +32,8 @@ interface RelayChatMessage {
   timestamp: number
 }
 
-const HERMES_RELAY_SCOPES = ['chat.stream'] as const
-const HERMES_RELAY_TOOLS: readonly string[] = Object.freeze([])
+const HERMES_RELAY_SCOPES = ['world.read', 'world.write.safe', 'screenshot.request', 'chat.stream'] as const
+const HERMES_RELAY_TOOLS: readonly string[] = Object.freeze([...PUBLIC_TOOL_NAMES])
 const CHAT_KEY = 'oasis-hermes-hosted-relay-chat'
 const SESSION_KEY = 'oasis-hermes-hosted-relay-session'
 
@@ -379,6 +380,11 @@ export function HermesHostedRelayPanel({
             <div className="mt-1 truncate text-[11px] text-amber-100/60" title={activeWorldId || ''}>
               world {activeWorldId ? activeWorldId.slice(0, 10) : 'none'}
             </div>
+            <div className="mt-0.5 truncate text-[10px] text-amber-100/45">
+              tools {HERMES_RELAY_TOOLS.length} · calls {relayBridge.totalCalls} · active {relayBridge.inFlightCalls}
+              {relayBridge.lastToolName ? ` · ${relayBridge.lastToolName}` : ''}
+              {relayBridge.droppedCalls > 0 ? ` · dropped ${relayBridge.droppedCalls}` : ''}
+            </div>
           </div>
           <button
             data-no-drag
@@ -424,9 +430,9 @@ export function HermesHostedRelayPanel({
       <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3" style={{ scrollbarWidth: 'thin', scrollbarColor: '#4b5563 transparent' }}>
         {messages.length === 0 && (
           <div className="flex h-full flex-col justify-center px-4 text-center">
-            <div className="text-sm text-amber-100">Hermes relay chat is ready to pair.</div>
+            <div className="text-sm text-amber-100">Hermes relay is ready to pair.</div>
             <div className="mt-2 text-xs leading-5 text-amber-100/62">
-              Mint a code, run the bridge beside Hermes, then chat through this window.
+              Mint a code, run the bridge beside Hermes, then chat and Oasis MCP tools share this window.
             </div>
           </div>
         )}
