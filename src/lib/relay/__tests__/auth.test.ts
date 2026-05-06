@@ -92,6 +92,8 @@ describe('device token issue/verify', () => {
       worldId: 'world-1',
       scopes: ['world.read', 'world.write.safe'],
       agentLabel: 'openclaw-bridge',
+      agentType: 'hermes',
+      agentSlot: 'hermes:arty',
       now: FIXED_NOW,
     }, TEST_KEY)
 
@@ -100,7 +102,22 @@ describe('device token issue/verify', () => {
     expect(payload.w).toBe('world-1')
     expect(payload.scopes).toEqual(['world.read', 'world.write.safe'])
     expect(payload.label).toBe('openclaw-bridge')
+    expect(payload.agentType).toBe('hermes')
+    expect(payload.agentSlot).toBe('hermes:arty')
     expect(payload.exp).toBeGreaterThan(FIXED_NOW)
+  })
+
+  it('defaults old-style tokens to the OpenClaw primary slot', () => {
+    const token = issueDeviceToken({
+      browserSessionId: 'bs_a',
+      worldId: 'w',
+      scopes: ['chat.stream'],
+      agentLabel: 'b',
+      now: FIXED_NOW,
+    }, TEST_KEY)
+    const payload = verifyDeviceToken(token, { now: FIXED_NOW }, TEST_KEY)
+    expect(payload.agentType).toBe('openclaw')
+    expect(payload.agentSlot).toBe('openclaw:primary')
   })
 
   it('uses default 24h TTL when ttlMs not provided', () => {

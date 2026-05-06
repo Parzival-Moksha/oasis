@@ -101,8 +101,23 @@ describe('parseRelayMessage — happy paths', () => {
       sentAt: 1,
       deviceToken: 'dev_eyJhb...',
       agentLabel: 'openclaw-bridge',
+      agentType: 'hermes',
+      agentSlot: 'hermes:primary',
     })
     expect(result.ok).toBe(true)
+  })
+
+  it('accepts agent.status diagnostics', () => {
+    const built = buildRelayMessage({
+      type: 'agent.status',
+      agentType: 'hermes',
+      agentSlot: 'hermes:primary',
+      localApi: { url: 'http://127.0.0.1:8642/v1', ok: true },
+      mcp: { url: 'http://127.0.0.1:17891/mcp', ok: true, configured: true },
+      capabilities: ['chat.stream', 'world.read'],
+    })
+    if (built.type !== 'agent.status') throw new Error('expected agent.status')
+    expect(built.agentSlot).toBe('hermes:primary')
   })
 
   it('accepts presence.update with optional vec3 fields', () => {

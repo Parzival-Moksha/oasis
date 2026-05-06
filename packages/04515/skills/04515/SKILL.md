@@ -27,6 +27,12 @@ This plugin ships the bridge runner. Prefer the native OpenClaw plugin command:
 openclaw 04515 connect <pairing-url-or-code>
 ```
 
+If the plugin has not reached this OpenClaw install yet, use the public npm bridge runner. It requires Node/npm but does not require cloning Oasis:
+
+```bash
+npx -y @04515xyz/oasis-bridge@latest <pairing-url-or-code>
+```
+
 If the plugin command is unavailable but the plugin binary is on PATH, use:
 
 ```bash
@@ -66,8 +72,14 @@ https://openclaw.04515.xyz/pair/<code>
 openclaw 04515 connect https://openclaw.04515.xyz/pair/<code>
 ```
 
-5. Keep the bridge process running. It is the live connection between hosted Oasis and this OpenClaw.
-6. Confirm that the bridge logs say:
+5. If the native plugin command is not available, run the npm fallback:
+
+```bash
+npx -y @04515xyz/oasis-bridge@latest https://openclaw.04515.xyz/pair/<code>
+```
+
+6. Keep the bridge process running. It is the live connection between hosted Oasis and this OpenClaw.
+7. Confirm that the bridge logs say:
    - `paired`
    - `Gateway ready`
    - `OpenClaw MCP server "oasis" now points at bridge adapter http://127.0.0.1:17890/mcp`
@@ -117,6 +129,7 @@ Do not send a prompt to hosted Oasis and ask it to craft for you. Prompt/sculpto
 - `4516`: local Oasis dev server. In hosted 04515 mode, OpenClaw tools should not target this.
 - `https://openclaw.04515.xyz`: hosted Oasis.
 - `wss://openclaw.04515.xyz/relay`: hosted relay service.
+- `@04515xyz/oasis-bridge`: public npm package for the zero-clone bridge runner.
 
 Keep these names distinct:
 

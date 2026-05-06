@@ -71,13 +71,24 @@ function parseArgv(argv) {
   return out
 }
 
-const bridgeArgv = Array.isArray(globalThis.__04515BridgeArgv)
+const incomingBridgeArgv = Array.isArray(globalThis.__04515BridgeArgv)
   ? globalThis.__04515BridgeArgv
   : process.argv.slice(2)
+const requestedBridge = incomingBridgeArgv[0]
+if (requestedBridge === 'hermes') {
+  globalThis.__HermesOasisBridgeArgv = incomingBridgeArgv.slice(1)
+  await import('./hermes-oasis-bridge.mjs')
+  await new Promise(() => {})
+}
+const bridgeArgv = requestedBridge === 'openclaw'
+  ? incomingBridgeArgv.slice(1)
+  : incomingBridgeArgv
 const argv = parseArgv(bridgeArgv)
 const HOSTED_OASIS_ORIGIN = 'https://openclaw.04515.xyz'
 const rawCode = argv.positional[0] || ''
 const labelOverride = argv.flags.label || 'openclaw-bridge'
+const agentType = argv.flags['agent-type'] || 'openclaw'
+const agentSlot = argv.flags['agent-slot'] || 'openclaw:primary'
 const gatewayUrlOverride = argv.flags['gateway-url'] || ''
 const gatewaySharedToken = argv.flags['gateway-token'] || ''
 const identityPathOverride = argv.flags.identity || ''
@@ -115,9 +126,11 @@ if (argv.flags['restore-mcp'] === 'true') {
 }
 
 if (!rawCode) {
-  console.error('usage: 04515-bridge <https://openclaw.04515.xyz/pair/OASIS-XXXXXXXX|OASIS-XXXXXXXX>')
+  console.error('usage: 04515-bridge [openclaw|hermes] <https://openclaw.04515.xyz/pair/OASIS-XXXXXXXX|OASIS-XXXXXXXX>')
+  console.error('  default subcommand: openclaw')
+  console.error('  hermes: npx -y @04515xyz/oasis-bridge@latest hermes <pairing-url-or-code>')
   console.error('  optional: --gateway-url=ws://127.0.0.1:18789')
-  console.error('  optional: --identity=... --label=... --mcp-port=17890')
+  console.error('  optional: --identity=... --label=... --agent-slot=... --mcp-port=17890')
   console.error('  optional: --no-gateway --no-mcp --no-mcp-config')
   console.error('  optional: --restore-mcp')
   process.exit(2)
@@ -157,6 +170,8 @@ log('config:', {
   oasisUrl: finalOasisUrl,
   code: pairingCode,
   label: labelOverride,
+  agentType,
+  agentSlot,
   gateway: skipGateway ? '(skipped)' : finalGatewayUrl,
   mcp: skipMcp ? '(skipped)' : `http://${mcpHost}:${mcpPort}/mcp`,
   mcpConfig: skipMcp ? '(skipped)' : mcpConfigMode,
@@ -176,6 +191,8 @@ async function exchangePairingCode() {
     body: JSON.stringify({
       pairingCode,
       agentLabel: labelOverride,
+      agentType,
+      agentSlot,
       agentVersion: '0.3.0-bridge-tools',
     }),
   })
@@ -193,14 +210,27 @@ async function exchangePairingCode() {
     browserSessionId: json.browserSessionId,
     worldId: json.worldId,
     scopes: json.scopes,
+    agentType: json.agentType || agentType,
+    agentSlot: json.agentSlot || agentSlot,
+  }
+}
+
+function withRelayIdentity(url, slot = agentSlot, type = agentType) {
+  try {
+    const parsed = new URL(url)
+    parsed.searchParams.set('agentType', type)
+    parsed.searchParams.set('agentSlot', slot)
+    return parsed.toString()
+  } catch {
+    return url
   }
 }
 
 function buildRelayUrl(httpUrl) {
   const base = httpUrl.replace(/\/+$/, '')
-  if (base.startsWith('https://')) return `wss://${base.slice('https://'.length)}/relay?role=agent`
-  if (base.startsWith('http://'))  return `ws://${base.slice('http://'.length)}/relay?role=agent`
-  return `ws://${base}/relay?role=agent`
+  if (base.startsWith('https://')) return withRelayIdentity(`wss://${base.slice('https://'.length)}/relay?role=agent`)
+  if (base.startsWith('http://'))  return withRelayIdentity(`ws://${base.slice('http://'.length)}/relay?role=agent`)
+  return withRelayIdentity(`ws://${base}/relay?role=agent`)
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -958,7 +988,7 @@ async function start() {
   }
 
   // Connect to the hosted relay for the paired 04515 browser session.
-  const relayUrl = buildRelayUrl(finalOasisUrl)
+  const relayUrl = withRelayIdentity(argv.flags['relay-url'] || buildRelayUrl(finalOasisUrl))
   log('connecting to relay:', relayUrl)
 
   relayWs = new WebSocket(relayUrl, {
@@ -978,6 +1008,8 @@ async function start() {
         type: 'agent.hello',
         deviceToken: creds.deviceToken,
         agentLabel: labelOverride,
+        agentType,
+        agentSlot,
         agentVersion: '0.3.0-bridge-tools',
       })
       return

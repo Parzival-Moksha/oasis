@@ -194,6 +194,10 @@ export interface DeviceTokenPayload {
   bs: string
   /** worldId at pairing time. The relay still routes by bs; w is informational. */
   w: string
+  /** Agent family, for example openclaw or hermes. */
+  agentType: string
+  /** Stable per-browser agent lane, for example openclaw:primary or hermes:arty. */
+  agentSlot: string
   /** Allowed scopes — checked on every tool.call. */
   scopes: Scope[]
   /** expiry, ms since epoch. Beyond this the relay refuses agent.hello. */
@@ -204,12 +208,30 @@ export interface DeviceTokenPayload {
 
 const DEVICE_TOKEN_DEFAULT_TTL_MS = 24 * 60 * 60 * 1000 // 24h
 const DEVICE_TOKEN_MAX_LABEL_LEN = 128
+const DEVICE_TOKEN_MAX_AGENT_TYPE_LEN = 64
+const DEVICE_TOKEN_MAX_AGENT_SLOT_LEN = 128
+const AGENT_ID_PATTERN = /^[A-Za-z0-9._:-]+$/
+
+function cleanAgentType(value: unknown): string {
+  const raw = typeof value === 'string' ? value.trim() : ''
+  if (!raw || raw.length > DEVICE_TOKEN_MAX_AGENT_TYPE_LEN || !AGENT_ID_PATTERN.test(raw)) return 'openclaw'
+  return raw
+}
+
+function cleanAgentSlot(value: unknown, agentType: string): string {
+  const fallback = `${agentType}:primary`
+  const raw = typeof value === 'string' ? value.trim() : ''
+  if (!raw || raw.length > DEVICE_TOKEN_MAX_AGENT_SLOT_LEN || !AGENT_ID_PATTERN.test(raw)) return fallback
+  return raw
+}
 
 export interface IssueDeviceTokenInput {
   browserSessionId: string
   worldId: string
   scopes: Scope[]
   agentLabel: string
+  agentType?: string
+  agentSlot?: string
   ttlMs?: number
   /** Override now() for testing. */
   now?: number
@@ -223,12 +245,16 @@ export function issueDeviceToken(input: IssueDeviceTokenInput, key = getSigningK
   }
   const label = String(input.agentLabel ?? '').slice(0, DEVICE_TOKEN_MAX_LABEL_LEN)
   if (!label) throw new RelayAuthError('agentLabel required', 'invalid_input')
+  const agentType = cleanAgentType(input.agentType)
+  const agentSlot = cleanAgentSlot(input.agentSlot, agentType)
 
   const ttl = typeof input.ttlMs === 'number' && input.ttlMs > 0 ? input.ttlMs : DEVICE_TOKEN_DEFAULT_TTL_MS
   const issuedAt = input.now ?? Date.now()
   const payload: DeviceTokenPayload = {
     bs: input.browserSessionId,
     w: input.worldId,
+    agentType,
+    agentSlot,
     scopes: [...input.scopes],
     exp: issuedAt + ttl,
     label,
@@ -252,6 +278,8 @@ export function verifyDeviceToken(
   if (!Array.isArray(payload.scopes) || payload.scopes.length === 0) throw new RelayAuthError('payload missing scopes', 'invalid_payload')
   if (typeof payload?.exp !== 'number' || !Number.isFinite(payload.exp)) throw new RelayAuthError('payload missing exp', 'invalid_payload')
   if (typeof payload?.label !== 'string') throw new RelayAuthError('payload missing label', 'invalid_payload')
+  const agentType = cleanAgentType(payload.agentType)
+  const agentSlot = cleanAgentSlot(payload.agentSlot, agentType)
 
   // Drop non-string scope entries so a malformed token can't smuggle objects
   // through downstream `.includes()` checks. The TS type claims `Scope[]` but
@@ -266,5 +294,5 @@ export function verifyDeviceToken(
   if (now >= payload.exp) {
     throw new RelayAuthError(`token expired at ${new Date(payload.exp).toISOString()}`, 'token_expired')
   }
-  return { ...payload, scopes: cleanScopes }
+  return { ...payload, agentType, agentSlot, scopes: cleanScopes }
 }

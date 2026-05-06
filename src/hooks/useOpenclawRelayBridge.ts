@@ -46,6 +46,8 @@ export interface UseOpenclawRelayBridgeOptions {
   roomId?: string
   /** Sent on every `/api/relay/execute` POST. Defaults to `'openclaw'`. */
   agentType?: string
+  /** Stable relay lane. Defaults to `${agentType}:primary`. */
+  agentSlot?: string
   /**
    * Tool names announced to the agent in `browser.ready`. Caller should
    * memoize this array — a new identity triggers reconnect.
@@ -69,6 +71,7 @@ export interface UseOpenclawRelayBridgeOptions {
 export interface RelayBridgeState {
   status: RelayConnectionStatus
   relaySessionId: string | null
+  agentStatus: Extract<RelayMessage, { type: 'agent.status' }> | null
   lastError: string | null
   inFlightCalls: number
   totalCalls: number
@@ -112,6 +115,17 @@ function defaultRelayUrl(): string {
   return `ws://${host}:4517/?role=browser`
 }
 
+function withRelayAgentIdentity(rawUrl: string, agentType: string, agentSlot: string): string {
+  try {
+    const url = new URL(rawUrl)
+    url.searchParams.set('agentType', agentType)
+    url.searchParams.set('agentSlot', agentSlot)
+    return url.toString()
+  } catch {
+    return rawUrl
+  }
+}
+
 function getStableBrowserSessionId(): string {
   if (typeof window === 'undefined') return 'ssr-no-session'
   try {
@@ -144,7 +158,7 @@ type ExecuteRouteResponse = ExecuteRouteSuccess | ExecuteRouteFailure
 
 async function postExecute(
   call: ToolCall,
-  context: { worldId: string; agentType: string },
+  context: { worldId: string; agentType: string; agentSlot: string },
 ): Promise<ExecuteRouteResponse> {
   try {
     const response = await fetch('/api/relay/execute', {
@@ -155,6 +169,7 @@ async function postExecute(
         args: call.args,
         worldId: context.worldId,
         agentType: context.agentType,
+        agentSlot: context.agentSlot,
       }),
     })
     const text = await response.text()
@@ -186,6 +201,7 @@ async function postExecute(
 const IDLE_RELAY_BRIDGE_STATE: RelayBridgeState = Object.freeze({
   status: 'idle',
   relaySessionId: null,
+  agentStatus: null,
   lastError: null,
   inFlightCalls: 0,
   totalCalls: 0,
@@ -322,6 +338,7 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
     worldId,
     roomId,
     agentType = 'openclaw',
+    agentSlot = `${agentType}:primary`,
     availableTools,
     onChatAgentDelta,
     onChatAgentFinal,
@@ -332,6 +349,7 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
 
   const [status, setStatus] = useState<RelayConnectionStatus>('idle')
   const [relaySessionId, setRelaySessionId] = useState<string | null>(null)
+  const [agentStatus, setAgentStatus] = useState<Extract<RelayMessage, { type: 'agent.status' }> | null>(null)
   const [lastError, setLastError] = useState<string | null>(null)
   const [inFlightCalls, setInFlightCalls] = useState(0)
   const [totalCalls, setTotalCalls] = useState(0)
@@ -357,11 +375,13 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
   const worldIdRef = useRef(worldId)
   const roomIdRef = useRef(roomId ?? worldId)
   const agentTypeRef = useRef(agentType)
+  const agentSlotRef = useRef(agentSlot)
   const availableToolsRef = useRef<readonly string[]>(availableTools ?? DEFAULT_AVAILABLE_TOOLS)
 
   worldIdRef.current = worldId
   roomIdRef.current = roomId ?? worldId
   agentTypeRef.current = agentType
+  agentSlotRef.current = agentSlot
   availableToolsRef.current = availableTools ?? DEFAULT_AVAILABLE_TOOLS
   onChatAgentDeltaRef.current = onChatAgentDelta
   onChatAgentFinalRef.current = onChatAgentFinal
@@ -465,6 +485,7 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
       const response = await postExecute(call, {
         worldId: currentWorldId,
         agentType: agentTypeRef.current,
+        agentSlot: agentSlotRef.current,
       })
       onToolResultRef.current?.({
         callId: call.callId,
@@ -515,7 +536,7 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
     }
 
     let cancelled = false
-    const url = relayUrl ?? defaultRelayUrl()
+    const url = withRelayAgentIdentity(relayUrl ?? defaultRelayUrl(), agentType, agentSlot)
 
     const scheduleReconnect = () => {
       if (cancelled) return
@@ -603,12 +624,16 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
             browserSessionId: browserSessionIdRef.current,
             worldId: worldIdRef.current,
             roomId: roomIdRef.current,
+            agentType: agentTypeRef.current,
+            agentSlot: agentSlotRef.current,
             relaySessionId: sessionId ?? undefined,
           })
           sendEnvelope(ws, {
             type: 'browser.ready',
             worldId: worldIdRef.current,
             availableTools: [...availableToolsRef.current],
+            agentType: agentTypeRef.current,
+            agentSlot: agentSlotRef.current,
             relaySessionId: sessionId ?? undefined,
           })
           return
@@ -646,6 +671,11 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
           return
         }
 
+        if (envelope.type === 'agent.status') {
+          setAgentStatus(envelope)
+          return
+        }
+
         // chat.user / presence.update / portal.enter /
         // pairing.approved / browser.hello / browser.ready / agent.hello /
         // tool.result / error — observed but not handled at this layer in v0.
@@ -667,7 +697,7 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
       }
       setStatus('closed')
     }
-  }, [enabled, sessionReady, relayUrl, sendEnvelope, handleToolCall])
+  }, [enabled, sessionReady, relayUrl, agentType, agentSlot, sendEnvelope, handleToolCall])
 
   useEffect(() => {
     const ws = wsRef.current
@@ -676,9 +706,11 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
       type: 'browser.ready',
       worldId: worldIdRef.current,
       availableTools: [...availableToolsRef.current],
+      agentType: agentTypeRef.current,
+      agentSlot: agentSlotRef.current,
       relaySessionId: relaySessionId ?? undefined,
     })
-  }, [enabled, sessionReady, status, relaySessionId, worldId, roomId, availableTools, sendEnvelope])
+  }, [enabled, sessionReady, status, relaySessionId, worldId, roomId, agentType, agentSlot, availableTools, sendEnvelope])
 
   const sendChatUser = useCallback((sessionId: string, text: string): boolean => {
     const trimmedSessionId = sessionId.trim()
@@ -716,6 +748,7 @@ export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): Rel
   return {
     status,
     relaySessionId,
+    agentStatus,
     lastError,
     inFlightCalls,
     totalCalls,
@@ -772,6 +805,7 @@ export function useSharedOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions
     setSharedRelaySnapshot({
       status: ownedBridge.status,
       relaySessionId: ownedBridge.relaySessionId,
+      agentStatus: ownedBridge.agentStatus,
       lastError: ownedBridge.lastError,
       inFlightCalls: ownedBridge.inFlightCalls,
       totalCalls: ownedBridge.totalCalls,
@@ -786,6 +820,7 @@ export function useSharedOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions
     ownsRelayConnection,
     ownedBridge.status,
     ownedBridge.relaySessionId,
+    ownedBridge.agentStatus,
     ownedBridge.lastError,
     ownedBridge.inFlightCalls,
     ownedBridge.totalCalls,

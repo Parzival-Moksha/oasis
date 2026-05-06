@@ -38,6 +38,8 @@ const RATE_LIMIT_WINDOW_MS = 60_000
 interface ExchangeBody {
   pairingCode?: unknown
   agentLabel?: unknown
+  agentType?: unknown
+  agentSlot?: unknown
   agentVersion?: unknown
 }
 
@@ -88,7 +90,7 @@ export async function POST(request: NextRequest) {
   const pairingCode = typeof body.pairingCode === 'string' ? body.pairingCode.trim() : ''
   const agentLabel = typeof body.agentLabel === 'string' && body.agentLabel.trim()
     ? body.agentLabel.trim()
-    : 'openclaw-bridge'
+    : ''
 
   if (!pairingCode) {
     return jsonResponse({
@@ -120,7 +122,9 @@ export async function POST(request: NextRequest) {
       browserSessionId: redeemed.browserSessionId,
       worldId: redeemed.worldId,
       scopes: redeemed.scopes,
-      agentLabel,
+      agentLabel: agentLabel || redeemed.agentLabel,
+      agentType: redeemed.agentType,
+      agentSlot: redeemed.agentSlot,
     })
   } catch (err) {
     if (err instanceof RelayAuthError) {
@@ -146,5 +150,8 @@ export async function POST(request: NextRequest) {
     browserSessionId: redeemed.browserSessionId,
     worldId: redeemed.worldId,
     scopes: redeemed.scopes,
+    agentType: redeemed.agentType,
+    agentSlot: redeemed.agentSlot,
+    agentLabel: agentLabel || redeemed.agentLabel,
   })
 }

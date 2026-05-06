@@ -45,6 +45,24 @@ describe('createPairingCode', () => {
     expect(peek?.browserSessionId).toBe('bs_1')
     expect(peek?.worldId).toBe('w')
     expect(peek?.scopes).toEqual(['world.read', 'chat.stream'])
+    expect(peek?.agentType).toBe('openclaw')
+    expect(peek?.agentSlot).toBe('openclaw:primary')
+  })
+
+  it('binds an agent identity slot', () => {
+    const created = createPairingCode({
+      browserSessionId: 'bs_hermes',
+      worldId: 'w',
+      scopes: ['world.read', 'chat.stream'],
+      agentType: 'hermes',
+      agentSlot: 'hermes:arty',
+      agentLabel: 'Arty Hermes',
+      now: FIXED_NOW,
+    })
+    const peek = _peekPairingCode(created.code)
+    expect(created.agentType).toBe('hermes')
+    expect(created.agentSlot).toBe('hermes:arty')
+    expect(peek?.agentLabel).toBe('Arty Hermes')
   })
 
   it('respects a custom ttl', () => {
@@ -95,6 +113,9 @@ describe('redeemPairingCode', () => {
       browserSessionId: 'bs_xyz',
       worldId: 'world-7',
       scopes: ['world.read', 'screenshot.request'],
+      agentType: 'openclaw',
+      agentSlot: 'openclaw:primary',
+      agentLabel: 'openclaw-bridge',
     })
     expect(_peekPairingCode(created.code)).toBeNull()
   })

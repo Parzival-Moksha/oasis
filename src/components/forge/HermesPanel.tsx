@@ -1397,8 +1397,23 @@ async function* parseHermesSSE(response: Response): AsyncGenerator<HermesEvent> 
 
 export function HermesPanel(props: HermesPanelProps) {
   const hostedMode = useIsHostedOasis()
-  if (hostedMode) return <HermesHostedRelayPanel {...props} />
-  return <HermesLocalPanel {...props} />
+  const [showAdvancedDiagnostics, setShowAdvancedDiagnostics] = useState(false)
+  if (!hostedMode && showAdvancedDiagnostics) {
+    return (
+      <HermesLocalPanel
+        {...props}
+        hideCloseButton={false}
+        onClose={() => setShowAdvancedDiagnostics(false)}
+      />
+    )
+  }
+  return (
+    <HermesHostedRelayPanel
+      {...props}
+      showAdvancedDiagnostics={!hostedMode}
+      onOpenAdvancedDiagnostics={() => setShowAdvancedDiagnostics(true)}
+    />
+  )
 }
 
 function HermesLocalPanel({

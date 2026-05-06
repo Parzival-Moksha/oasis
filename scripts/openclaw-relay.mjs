@@ -11,7 +11,7 @@
  *   - Agent side    : `Authorization: Bearer <deviceToken>` validated via HMAC.
  *                     Token's `bs` field pins the connection to a browser.
  *   - Routing       : Forwards JSON envelopes between browser+agent paired by
- *                     browserSessionId. tool.call frames are scope-checked
+ *                     browserSessionId + agentSlot. tool.call frames are scope-checked
  *                     against the agent's device-token scopes.
  *
  * HMAC verify here is mirrored from src/lib/relay/auth.ts. Keep them in sync.
@@ -37,6 +37,7 @@ const ALLOWED_ORIGINS = (process.env.RELAY_ALLOWED_ORIGINS || '')
   .split(',').map(s => s.trim()).filter(Boolean)
 const LOG_FRAMES = process.env.RELAY_LOG_FRAMES === '1'
 const FRAME_MAX_BYTES = Math.max(256 * 1024, Number(process.env.RELAY_FRAME_MAX_BYTES || 8 * 1024 * 1024))
+const AGENT_ID_PATTERN = /^[A-Za-z0-9._:-]+$/
 
 if (!SIGNING_KEY) {
   console.error('[relay] RELAY_SIGNING_KEY env var is required')
@@ -81,6 +82,22 @@ function verifyHmacEnvelope(token, key) {
   } catch {
     throw new Error('payload not JSON')
   }
+}
+
+function cleanAgentType(value) {
+  const raw = typeof value === 'string' ? value.trim() : ''
+  if (!raw || raw.length > 64 || !AGENT_ID_PATTERN.test(raw)) return 'openclaw'
+  return raw
+}
+
+function cleanAgentSlot(value, agentType = 'openclaw') {
+  const raw = typeof value === 'string' ? value.trim() : ''
+  if (!raw || raw.length > 128 || !AGENT_ID_PATTERN.test(raw)) return `${agentType}:primary`
+  return raw
+}
+
+function pairKey(browserSessionId, agentSlot) {
+  return `${browserSessionId}:${agentSlot}`
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -136,6 +153,8 @@ function readBearerToken(authHeader) {
       worldId:          payload.w,
       scopes:           cleanScopes,
       label:            typeof payload.label === 'string' ? payload.label.slice(0, 128) : 'unknown',
+      agentType:        cleanAgentType(payload.agentType),
+      agentSlot:        cleanAgentSlot(payload.agentSlot, cleanAgentType(payload.agentType)),
       exp:              payload.exp,
     }
   } catch {
@@ -147,8 +166,8 @@ function readBearerToken(authHeader) {
 // Connection registry
 // ────────────────────────────────────────────────────────────────────────────
 
-const browsersBySession = new Map() // browserSessionId -> ws
-const agentsBySession   = new Map() // browserSessionId -> { ws, scopes, label }
+const browsersByPairKey = new Map() // browserSessionId:agentSlot -> ws
+const agentsByPairKey   = new Map() // browserSessionId:agentSlot -> { ws, scopes, label, agentType, agentSlot }
 const peers             = new Map() // ws -> peer ws
 
 function unpair(ws, { closePeer = false } = {}) {
@@ -162,9 +181,10 @@ function unpair(ws, { closePeer = false } = {}) {
   }
 }
 
-function tryPair(browserSessionId) {
-  const browser = browsersBySession.get(browserSessionId)
-  const agent = agentsBySession.get(browserSessionId)
+function tryPair(meta) {
+  const key = pairKey(meta.browserSessionId, meta.agentSlot)
+  const browser = browsersByPairKey.get(key)
+  const agent = agentsByPairKey.get(key)
   if (!browser || !agent) return
   if (peers.has(browser) || peers.has(agent.ws)) return
 
@@ -172,12 +192,20 @@ function tryPair(browserSessionId) {
   peers.set(agent.ws, browser)
 
   const relaySessionId = randomUUID()
-  log('paired', { browserSessionId, relaySessionId, agentLabel: agent.label })
+  log('paired', {
+    browserSessionId: meta.browserSessionId,
+    agentType: agent.agentType,
+    agentSlot: agent.agentSlot,
+    relaySessionId,
+    agentLabel: agent.label,
+  })
 
   const courtesy = (role) => JSON.stringify({
     type: 'relay.paired',
     role,
     relaySessionId,
+    agentType: agent.agentType,
+    agentSlot: agent.agentSlot,
     sentAt: Date.now(),
     messageId: randomUUID(),
   })
@@ -208,7 +236,15 @@ const wss = new WebSocketServer({
         log('reject browser: missing/invalid cookie')
         return callback(false, 401, 'invalid session')
       }
-      info.req.__relayMeta = { role: 'browser', browserSessionId: session.browserSessionId }
+      const agentType = cleanAgentType(url.searchParams.get('agentType'))
+      const agentSlot = cleanAgentSlot(url.searchParams.get('agentSlot'), agentType)
+      info.req.__relayMeta = {
+        role: 'browser',
+        browserSessionId: session.browserSessionId,
+        agentType,
+        agentSlot,
+        pairKey: pairKey(session.browserSessionId, agentSlot),
+      }
       return callback(true)
     }
 
@@ -224,6 +260,9 @@ const wss = new WebSocketServer({
         scopes: auth.scopes,
         label: auth.label,
         worldId: auth.worldId,
+        agentType: auth.agentType,
+        agentSlot: auth.agentSlot,
+        pairKey: pairKey(auth.browserSessionId, auth.agentSlot),
       }
       return callback(true)
     }
@@ -237,32 +276,41 @@ wss.on('connection', (ws, req) => {
   const meta = req.__relayMeta
   if (!meta) { ws.close(1011, 'meta missing'); return }
   const { role, browserSessionId } = meta
+  const key = meta.pairKey || pairKey(browserSessionId, meta.agentSlot || 'openclaw:primary')
 
-  log('connection', { role, browserSessionId, agentLabel: meta.label })
+  log('connection', {
+    role,
+    browserSessionId,
+    agentType: meta.agentType,
+    agentSlot: meta.agentSlot,
+    agentLabel: meta.label,
+  })
 
   if (role === 'browser') {
-    const existing = browsersBySession.get(browserSessionId)
+    const existing = browsersByPairKey.get(key)
     if (existing && existing !== ws) {
       // Same browser session reconnecting — kick the old one.
       try { existing.close(1001, 'replaced by newer browser') } catch { /* ignore */ }
       unpair(existing)
     }
-    browsersBySession.set(browserSessionId, ws)
+    browsersByPairKey.set(key, ws)
   } else {
-    const existing = agentsBySession.get(browserSessionId)
+    const existing = agentsByPairKey.get(key)
     if (existing && existing.ws !== ws) {
       try { existing.ws.close(1001, 'replaced by newer agent') } catch { /* ignore */ }
       unpair(existing.ws)
     }
-    agentsBySession.set(browserSessionId, {
+    agentsByPairKey.set(key, {
       ws,
       scopes: meta.scopes,
       label:  meta.label,
       worldId: meta.worldId,
+      agentType: meta.agentType,
+      agentSlot: meta.agentSlot,
     })
   }
 
-  tryPair(browserSessionId)
+  tryPair(meta)
 
   ws.on('message', (raw, isBinary) => {
     if (isBinary) { ws.close(1003, 'binary frames not supported'); return }
@@ -283,10 +331,10 @@ wss.on('connection', (ws, req) => {
     if (LOG_FRAMES) log('frame', { browserSessionId, role, type: parsed.type })
 
     if (parsed.type === 'tool.call' && role === 'agent') {
-      const agent = agentsBySession.get(browserSessionId)
+      const agent = agentsByPairKey.get(key)
       const requestedScope = typeof parsed.scope === 'string' ? parsed.scope : ''
       if (!agent || !agent.scopes.includes(requestedScope)) {
-        log('reject tool.call: scope not granted', { browserSessionId, requestedScope, granted: agent?.scopes })
+        log('reject tool.call: scope not granted', { browserSessionId, agentSlot: meta.agentSlot, requestedScope, granted: agent?.scopes })
         try {
           ws.send(JSON.stringify({
             type: 'tool.result',
@@ -307,20 +355,20 @@ wss.on('connection', (ws, req) => {
   })
 
   ws.on('close', (code, reason) => {
-    log('disconnect', { role, browserSessionId, code, reason: reason?.toString?.() })
+    log('disconnect', { role, browserSessionId, agentSlot: meta.agentSlot, code, reason: reason?.toString?.() })
     unpair(ws)
     if (role === 'browser') {
-      if (browsersBySession.get(browserSessionId) === ws) {
-        browsersBySession.delete(browserSessionId)
+      if (browsersByPairKey.get(key) === ws) {
+        browsersByPairKey.delete(key)
       }
     } else {
-      const a = agentsBySession.get(browserSessionId)
-      if (a && a.ws === ws) agentsBySession.delete(browserSessionId)
+      const a = agentsByPairKey.get(key)
+      if (a && a.ws === ws) agentsByPairKey.delete(key)
     }
   })
 
   ws.on('error', (err) => {
-    log('socket error', { role, browserSessionId, err: err?.message || String(err) })
+    log('socket error', { role, browserSessionId, agentSlot: meta.agentSlot, err: err?.message || String(err) })
   })
 })
 

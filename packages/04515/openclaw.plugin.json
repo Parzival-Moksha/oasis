@@ -1,8 +1,8 @@
 {
   "id": "04515",
   "name": "04515",
-  "description": "Pair OpenClaw with the hosted Oasis at openclaw.04515.xyz.",
-  "version": "0.1.8",
+  "description": "Pair OpenClaw or Hermes with the hosted Oasis at openclaw.04515.xyz.",
+  "version": "0.1.10",
   "skills": [
     "skills/04515"
   ],

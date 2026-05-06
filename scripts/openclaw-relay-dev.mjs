@@ -44,9 +44,14 @@ wss.on('error', (err) => {
   process.exit(1)
 })
 
-let waitingBrowser = null
-let waitingAgent = null
+const waitingBrowsers = new Map()
+const waitingAgents = new Map()
 const pairs = new Map() // ws -> peer ws
+
+function cleanAgentSlot(value) {
+  const raw = typeof value === 'string' ? value.trim() : ''
+  return raw || 'openclaw:primary'
+}
 
 function unpair(ws) {
   const peer = pairs.get(ws)
@@ -57,21 +62,25 @@ function unpair(ws) {
       try { peer.close(1001, 'peer disconnected') } catch { /* ignore */ }
     }
   }
-  if (waitingBrowser === ws) waitingBrowser = null
-  if (waitingAgent   === ws) waitingAgent   = null
+  for (const [slot, waiting] of waitingBrowsers.entries()) {
+    if (waiting === ws) waitingBrowsers.delete(slot)
+  }
+  for (const [slot, waiting] of waitingAgents.entries()) {
+    if (waiting === ws) waitingAgents.delete(slot)
+  }
 }
 
-function tryPair() {
-  if (!waitingBrowser || !waitingAgent) return
-  const browser = waitingBrowser
-  const agent = waitingAgent
-  waitingBrowser = null
-  waitingAgent = null
+function tryPair(agentSlot) {
+  const browser = waitingBrowsers.get(agentSlot)
+  const agent = waitingAgents.get(agentSlot)
+  if (!browser || !agent) return
+  waitingBrowsers.delete(agentSlot)
+  waitingAgents.delete(agentSlot)
   pairs.set(browser, agent)
   pairs.set(agent, browser)
 
   const relaySessionId = randomUUID()
-  log('paired', { relaySessionId })
+  log('paired', { relaySessionId, agentSlot })
 
   const courtesy = (role) => JSON.stringify({
     // Sidecar courtesy frame — not part of the wire vocabulary.
@@ -79,6 +88,7 @@ function tryPair() {
     type: 'relay.paired',
     role,
     relaySessionId,
+    agentSlot,
     sentAt: Date.now(),
     messageId: randomUUID(),
   })
@@ -90,8 +100,9 @@ function tryPair() {
 wss.on('connection', (ws, req) => {
   const url = new URL(req.url || '/', 'http://localhost')
   const role = url.searchParams.get('role')
+  const agentSlot = cleanAgentSlot(url.searchParams.get('agentSlot'))
   const remote = req.socket?.remoteAddress
-  log('connection', { role, remote })
+  log('connection', { role, agentSlot, remote })
 
   if (role !== 'browser' && role !== 'agent') {
     ws.close(1008, 'role query param required (browser|agent)')
@@ -99,20 +110,22 @@ wss.on('connection', (ws, req) => {
   }
 
   if (role === 'browser') {
+    const waitingBrowser = waitingBrowsers.get(agentSlot)
     if (waitingBrowser && waitingBrowser.readyState === waitingBrowser.OPEN) {
-      log('replacing waiting browser')
+      log('replacing waiting browser', { agentSlot })
       try { waitingBrowser.close(1001, 'replaced by newer browser') } catch { /* ignore */ }
     }
-    waitingBrowser = ws
+    waitingBrowsers.set(agentSlot, ws)
   } else {
+    const waitingAgent = waitingAgents.get(agentSlot)
     if (waitingAgent && waitingAgent.readyState === waitingAgent.OPEN) {
-      log('replacing waiting agent')
+      log('replacing waiting agent', { agentSlot })
       try { waitingAgent.close(1001, 'replaced by newer agent') } catch { /* ignore */ }
     }
-    waitingAgent = ws
+    waitingAgents.set(agentSlot, ws)
   }
 
-  tryPair()
+  tryPair(agentSlot)
 
   ws.on('message', (raw, isBinary) => {
     if (isBinary) {
@@ -133,7 +146,7 @@ wss.on('connection', (ws, req) => {
   })
 
   ws.on('close', (code, reason) => {
-    log('disconnect', { role, code, reason: reason?.toString?.() })
+    log('disconnect', { role, agentSlot, code, reason: reason?.toString?.() })
     unpair(ws)
   })
 

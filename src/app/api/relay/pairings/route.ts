@@ -19,7 +19,13 @@
 
 import { NextRequest } from 'next/server'
 
-import { createPairingCode, PairingCodeError } from '@/lib/relay/pairing-codes'
+import {
+  createPairingCode,
+  normalizeAgentLabel,
+  normalizeAgentSlot,
+  normalizeAgentType,
+  PairingCodeError,
+} from '@/lib/relay/pairing-codes'
 import { resolvePairingWorldId } from '@/lib/relay/pairing-world'
 import type { Scope } from '@/lib/relay/protocol'
 import { clientKeyFromRequest, consumeRateLimit } from '@/lib/relay/rate-limit'
@@ -49,6 +55,9 @@ const DEFAULT_SCOPES: Scope[] = [
 interface CreatePairingBody {
   worldId?: unknown
   scopes?: unknown
+  agentType?: unknown
+  agentSlot?: unknown
+  agentLabel?: unknown
 }
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -101,12 +110,18 @@ export async function POST(request: NextRequest) {
     ? body.scopes.filter((s): s is Scope => typeof s === 'string' && SCOPE_ALLOWLIST.includes(s as Scope))
     : DEFAULT_SCOPES
   const scopes = requestedScopes.length > 0 ? requestedScopes : DEFAULT_SCOPES
+  const agentType = normalizeAgentType(body.agentType)
+  const agentSlot = normalizeAgentSlot(body.agentSlot, agentType)
+  const agentLabel = normalizeAgentLabel(body.agentLabel, `${agentType}-bridge`)
 
   try {
     const created = createPairingCode({
       browserSessionId: session.browserSessionId,
       worldId,
       scopes,
+      agentType,
+      agentSlot,
+      agentLabel,
     })
     return jsonResponse({
       ok: true,
@@ -114,6 +129,9 @@ export async function POST(request: NextRequest) {
       expiresAt: created.expiresAt,
       worldId,
       scopes,
+      agentType: created.agentType,
+      agentSlot: created.agentSlot,
+      agentLabel: created.agentLabel,
     })
   } catch (err) {
     if (err instanceof PairingCodeError) {

@@ -7,6 +7,7 @@ import { useOpenclawRelayBridge } from '@/hooks/useOpenclawRelayBridge'
 import { useInputManager, useUILayer } from '@/lib/input-manager'
 import { writeBrowserStorage } from '@/lib/browser-storage'
 import { useAutoresizeTextarea } from '@/hooks/useAutoresizeTextarea'
+import { awardXp } from '@/hooks/useXp'
 import { useOasisStore } from '@/store/oasisStore'
 import { PUBLIC_TOOL_NAMES } from '@/lib/relay/public-spellbook.js'
 
@@ -15,6 +16,8 @@ interface HermesHostedRelayPanelProps {
   onClose: () => void
   embedded?: boolean
   hideCloseButton?: boolean
+  showAdvancedDiagnostics?: boolean
+  onOpenAdvancedDiagnostics?: () => void
 }
 
 interface RelayPairingResult {
@@ -22,6 +25,9 @@ interface RelayPairingResult {
   expiresAt: number
   worldId: string
   scopes: string[]
+  agentType?: string
+  agentSlot?: string
+  agentLabel?: string
 }
 
 interface RelayChatMessage {
@@ -34,6 +40,9 @@ interface RelayChatMessage {
 
 const HERMES_RELAY_SCOPES = ['world.read', 'world.write.safe', 'screenshot.request', 'chat.stream'] as const
 const HERMES_RELAY_TOOLS: readonly string[] = Object.freeze([...PUBLIC_TOOL_NAMES])
+const HERMES_AGENT_TYPE = 'hermes'
+const HERMES_AGENT_SLOT = 'hermes:primary'
+const HERMES_AGENT_LABEL = 'hermes-bridge'
 const CHAT_KEY = 'oasis-hermes-hosted-relay-chat'
 const SESSION_KEY = 'oasis-hermes-hosted-relay-session'
 
@@ -101,10 +110,21 @@ function buildHermesRelayCommand(pairing: RelayPairingResult | null, origin: str
   const pairingRef = normalizedOrigin
     ? `${normalizedOrigin}/pair/${encodeURIComponent(pairing.code)}`
     : pairing.code
-  const base = `node scripts/hermes-oasis-bridge.mjs ${pairingRef}`
+  const base = `npx -y @04515xyz/oasis-bridge@latest hermes ${pairingRef} --agent-slot=${HERMES_AGENT_SLOT} --label=${HERMES_AGENT_LABEL}`
   if (!isLocalOasisOrigin(normalizedOrigin)) return base
   const relayHost = localRelayHostFromOrigin(normalizedOrigin)
   return `${base} --relay-url="ws://${relayHost}:4517/?role=agent"`
+}
+
+function buildHermesRelayPasteText(pairing: RelayPairingResult | null, origin: string): string {
+  if (!pairing) return ''
+  return [
+    'Connect this Hermes agent to Oasis.',
+    '',
+    buildHermesRelayCommand(pairing, origin),
+    '',
+    'Keep that bridge process running. After it pairs, chat and Oasis world tools are live in the Hermes window.',
+  ].join('\n')
 }
 
 function formatPairingCountdown(expiresAt: number, now: number): string {
@@ -137,6 +157,8 @@ export function HermesHostedRelayPanel({
   onClose,
   embedded = false,
   hideCloseButton = false,
+  showAdvancedDiagnostics = false,
+  onOpenAdvancedDiagnostics,
 }: HermesHostedRelayPanelProps) {
   useUILayer('hermes', isOpen && !embedded)
 
@@ -150,6 +172,7 @@ export function HermesHostedRelayPanel({
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const pendingAssistantIdRef = useRef('')
+  const awardedConnectionXpRef = useRef(false)
   const [messages, setMessages] = useState<RelayChatMessage[]>(() => readStoredMessages())
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
@@ -162,12 +185,13 @@ export function HermesHostedRelayPanel({
   const [sessionId, setSessionId] = useState(() => readStoredSessionId() || randomId('hermes-relay-session'))
 
   const origin = typeof window === 'undefined' ? '' : window.location.origin
-  const pairingCommand = useMemo(() => buildHermesRelayCommand(pairing, origin), [origin, pairing])
+  const pairingPasteText = useMemo(() => buildHermesRelayPasteText(pairing, origin), [origin, pairing])
   const isVisible = embedded || isOpen
   const relayBridge = useOpenclawRelayBridge({
     enabled: isVisible && relayEnabled && Boolean(activeWorldId),
     worldId: activeWorldId || '__active__',
-    agentType: 'hermes',
+    agentType: HERMES_AGENT_TYPE,
+    agentSlot: HERMES_AGENT_SLOT,
     availableTools: HERMES_RELAY_TOOLS,
     onChatAgentDelta: event => {
       const assistantId = pendingAssistantIdRef.current
@@ -220,6 +244,12 @@ export function HermesHostedRelayPanel({
     }
   }, [isStreaming, relayBridge.status])
 
+  useEffect(() => {
+    if (relayBridge.status !== 'paired' || awardedConnectionXpRef.current) return
+    awardedConnectionXpRef.current = true
+    void awardXp('QUEST_STEP_COMPLETE', activeWorldId || undefined)
+  }, [activeWorldId, relayBridge.status])
+
   const flashCopied = useCallback((key: string) => {
     setCopied(key)
     window.setTimeout(() => setCopied(current => current === key ? '' : current), 1200)
@@ -244,10 +274,13 @@ export function HermesHostedRelayPanel({
         body: JSON.stringify({
           worldId: activeWorldId,
           scopes: HERMES_RELAY_SCOPES,
+          agentType: HERMES_AGENT_TYPE,
+          agentSlot: HERMES_AGENT_SLOT,
+          agentLabel: HERMES_AGENT_LABEL,
         }),
       })
       const json = await response.json().catch(() => null) as
-        | { ok: true; code: string; expiresAt: number; worldId: string; scopes: string[] }
+        | { ok: true; code: string; expiresAt: number; worldId: string; scopes: string[]; agentType?: string; agentSlot?: string; agentLabel?: string }
         | { ok: false; error: { code: string; message: string } }
         | null
       if (!json) throw new Error(`pairing failed: HTTP ${response.status}`)
@@ -258,6 +291,9 @@ export function HermesHostedRelayPanel({
         expiresAt: json.expiresAt,
         worldId: json.worldId,
         scopes: json.scopes,
+        agentType: json.agentType,
+        agentSlot: json.agentSlot,
+        agentLabel: json.agentLabel,
       })
       setRelayEnabled(true)
     } catch (error) {
@@ -338,7 +374,7 @@ export function HermesHostedRelayPanel({
     >
       <div className="flex items-center justify-between border-b border-white/10 bg-black/25 px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="text-sm font-bold tracking-wide text-amber-300">Hermes</span>
+          <span className="text-sm font-black tracking-[0.18em] text-amber-200 drop-shadow-[0_0_10px_rgba(251,191,36,0.65)]">HERMES</span>
           <span className="rounded border border-amber-400/25 px-1.5 py-0.5 text-[10px] font-mono text-amber-100/80">
             {relayLabel}
           </span>
@@ -349,6 +385,15 @@ export function HermesHostedRelayPanel({
           )}
         </div>
         <div className="flex items-center gap-1.5">
+          {showAdvancedDiagnostics && (
+            <button
+              data-no-drag
+              onClick={onOpenAdvancedDiagnostics}
+              className="rounded border border-white/10 px-1.5 py-0.5 text-[10px] font-mono text-amber-100/75 hover:border-amber-300/35 hover:text-white"
+            >
+              advanced
+            </button>
+          )}
           <button
             data-no-drag
             onClick={() => setRelayEnabled(value => !value)}
@@ -373,10 +418,10 @@ export function HermesHostedRelayPanel({
         </div>
       </div>
 
-      <div className="border-b border-white/10 bg-black/18 px-3 py-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="border-b border-white/10 bg-[radial-gradient(circle_at_50%_0%,rgba(251,191,36,0.24),rgba(0,0,0,0.28)_58%)] px-3 py-3">
+        <div className="space-y-3">
           <div className="min-w-0">
-            <div className="text-[10px] font-mono uppercase tracking-[0.16em] text-amber-200/70">hosted relay</div>
+            <div className="text-[10px] font-mono uppercase tracking-[0.16em] text-amber-200/70">agent relay</div>
             <div className="mt-1 truncate text-[11px] text-amber-100/60" title={activeWorldId || ''}>
               world {activeWorldId ? activeWorldId.slice(0, 10) : 'none'}
             </div>
@@ -389,14 +434,20 @@ export function HermesHostedRelayPanel({
           <button
             data-no-drag
             onClick={() => void requestPairing()}
-            disabled={pairingBusy || !activeWorldId}
-            className="rounded-lg border border-amber-300/25 bg-amber-400/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-50 transition hover:bg-amber-400/18 disabled:cursor-wait disabled:opacity-45"
+            disabled={pairingBusy || !activeWorldId || relayBridge.status === 'paired'}
+            className="group relative min-h-[112px] w-full overflow-hidden rounded-lg border border-amber-200/45 bg-amber-400/20 px-5 py-5 text-center shadow-[0_0_34px_rgba(245,158,11,0.24)] transition hover:scale-[1.01] hover:border-amber-100 hover:bg-amber-300/24 hover:shadow-[0_0_52px_rgba(245,158,11,0.36)] disabled:cursor-wait disabled:opacity-45"
           >
-            {pairingBusy ? 'minting' : 'mint code'}
+            <span className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.18),transparent_42%)] opacity-0 transition group-hover:opacity-100" />
+            <span className="relative block text-[22px] font-black uppercase tracking-[0.18em] text-amber-50 drop-shadow-[0_0_14px_rgba(251,191,36,0.8)]">
+              {relayBridge.status === 'paired' ? 'HERMES CONNECTED' : pairingBusy ? 'SUMMONING' : 'CONNECT HERMES'}
+            </span>
+            <span className="relative mt-2 block text-[10px] uppercase tracking-[0.18em] text-amber-100/58">
+              {relayBridge.status === 'paired' ? 'chat and tools online' : activeWorldId ? 'one click pairing ritual' : 'load a world first'}
+            </span>
           </button>
         </div>
 
-        {pairing && (
+        {pairing && relayBridge.status !== 'paired' && (
           <div className="mt-2 space-y-2">
             <button
               data-no-drag
@@ -407,14 +458,14 @@ export function HermesHostedRelayPanel({
             </button>
             <button
               data-no-drag
-              onClick={() => { void copyText(pairingCommand); flashCopied('command') }}
+              onClick={() => { void copyText(pairingPasteText); flashCopied('paste') }}
               className="w-full rounded-lg border border-white/10 bg-black/24 px-3 py-2 text-left transition hover:border-amber-300/35"
             >
               <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-100/62">
-                run beside Hermes
+                paste into Hermes
               </span>
               <span className="mt-1 block break-all font-mono text-[11px] leading-5 text-amber-50/88">
-                {copied === 'command' ? 'copied ' : ''}{pairingCommand}
+                {copied === 'paste' ? 'copied ' : ''}{pairingPasteText}
               </span>
             </button>
           </div>
@@ -432,7 +483,7 @@ export function HermesHostedRelayPanel({
           <div className="flex h-full flex-col justify-center px-4 text-center">
             <div className="text-sm text-amber-100">Hermes relay is ready to pair.</div>
             <div className="mt-2 text-xs leading-5 text-amber-100/62">
-              Mint a code, run the bridge beside Hermes, then chat and Oasis MCP tools share this window.
+              Mint a code, paste the command into Hermes, then chat and Oasis MCP tools share this window.
             </div>
           </div>
         )}

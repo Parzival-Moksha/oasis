@@ -127,9 +127,9 @@ async function startRelay() {
   return { port, signingKey }
 }
 
-function openBrowserSocket({ port, signingKey, browserSessionId }) {
+function openBrowserSocket({ port, signingKey, browserSessionId, agentSlot = 'openclaw:primary', agentType = 'openclaw' }) {
   const token = sign({ bs: browserSessionId, iat: Date.now() }, signingKey)
-  const ws = new WebSocket(`ws://127.0.0.1:${port}?role=browser`, {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}?role=browser&agentType=${encodeURIComponent(agentType)}&agentSlot=${encodeURIComponent(agentSlot)}`, {
     headers: {
       cookie: `oasis_session=${encodeURIComponent(token)}`,
       origin: 'http://localhost:4516',
@@ -139,15 +139,17 @@ function openBrowserSocket({ port, signingKey, browserSessionId }) {
   return ws
 }
 
-function openAgentSocket({ port, signingKey, browserSessionId }) {
+function openAgentSocket({ port, signingKey, browserSessionId, agentSlot = 'openclaw:primary', agentType = 'openclaw', label = 'test-agent' }) {
   const token = sign({
     bs: browserSessionId,
     w: 'world-test',
     scopes: ['chat.stream', 'world.read'],
     exp: Date.now() + 60_000,
-    label: 'test-agent',
+    label,
+    agentType,
+    agentSlot,
   }, signingKey)
-  const ws = new WebSocket(`ws://127.0.0.1:${port}?role=agent`, {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}?role=agent&agentType=${encodeURIComponent(agentType)}&agentSlot=${encodeURIComponent(agentSlot)}`, {
     headers: {
       authorization: `Bearer ${token}`,
     },
@@ -216,5 +218,47 @@ describe('hosted OpenClaw relay peer lifecycle', () => {
       ok: true,
       data: { captures: [{ viewId: 'current', format: 'jpeg', base64 }] },
     })
+  })
+
+  it('keeps Hermes and OpenClaw in separate slots for the same browser session', async () => {
+    const relay = await startRelay()
+    const browserSessionId = `bs_${randomBytes(8).toString('hex')}`
+
+    const clawBrowser = openBrowserSocket({ ...relay, browserSessionId, agentSlot: 'openclaw:primary', agentType: 'openclaw' })
+    const clawAgent = openAgentSocket({ ...relay, browserSessionId, agentSlot: 'openclaw:primary', agentType: 'openclaw', label: 'claw' })
+    const hermesBrowser = openBrowserSocket({ ...relay, browserSessionId, agentSlot: 'hermes:primary', agentType: 'hermes' })
+    const hermesAgent = openAgentSocket({ ...relay, browserSessionId, agentSlot: 'hermes:primary', agentType: 'hermes', label: 'hermes' })
+    const pairedMessages = [
+      onceMessage(clawBrowser),
+      onceMessage(clawAgent),
+      onceMessage(hermesBrowser),
+      onceMessage(hermesAgent),
+    ]
+
+    await Promise.all([
+      waitForOpen(clawBrowser),
+      waitForOpen(clawAgent),
+      waitForOpen(hermesBrowser),
+      waitForOpen(hermesAgent),
+    ])
+    await Promise.all(pairedMessages)
+
+    clawBrowser.send(JSON.stringify({
+      type: 'chat.user',
+      sessionId: 'claw-session',
+      text: 'for claw',
+      messageId: 'msg-claw',
+      sentAt: Date.now(),
+    }))
+    hermesBrowser.send(JSON.stringify({
+      type: 'chat.user',
+      sessionId: 'hermes-session',
+      text: 'for hermes',
+      messageId: 'msg-hermes',
+      sentAt: Date.now(),
+    }))
+
+    expect(await onceMessage(clawAgent)).toMatchObject({ sessionId: 'claw-session', text: 'for claw' })
+    expect(await onceMessage(hermesAgent)).toMatchObject({ sessionId: 'hermes-session', text: 'for hermes' })
   })
 })

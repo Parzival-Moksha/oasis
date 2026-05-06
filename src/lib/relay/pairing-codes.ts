@@ -20,6 +20,27 @@ const DEFAULT_TTL_MS = 30 * 60 * 1000
 const CODE_LEN = 8
 // Avoid easily-confused glyphs (0/O, 1/I/l).
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+const MAX_AGENT_TYPE_LEN = 64
+const MAX_AGENT_SLOT_LEN = 128
+const MAX_AGENT_LABEL_LEN = 128
+const AGENT_ID_PATTERN = /^[A-Za-z0-9._:-]+$/
+
+export function normalizeAgentType(value: unknown, fallback = 'openclaw'): string {
+  const raw = typeof value === 'string' ? value.trim() : ''
+  if (!raw || raw.length > MAX_AGENT_TYPE_LEN || !AGENT_ID_PATTERN.test(raw)) return fallback
+  return raw
+}
+
+export function normalizeAgentSlot(value: unknown, agentType: string): string {
+  const raw = typeof value === 'string' ? value.trim() : ''
+  if (!raw || raw.length > MAX_AGENT_SLOT_LEN || !AGENT_ID_PATTERN.test(raw)) return `${agentType}:primary`
+  return raw
+}
+
+export function normalizeAgentLabel(value: unknown, fallback: string): string {
+  const raw = typeof value === 'string' ? value.trim() : ''
+  return (raw || fallback).slice(0, MAX_AGENT_LABEL_LEN)
+}
 
 /** Cap on simultaneously-active (unredeemed, unexpired) codes per session. */
 export const MAX_ACTIVE_CODES_PER_SESSION = 3
@@ -28,6 +49,9 @@ interface PairingCodeEntry {
   browserSessionId: string
   worldId: string
   scopes: Scope[]
+  agentType: string
+  agentSlot: string
+  agentLabel: string
   exp: number
   createdAt: number
 }
@@ -74,10 +98,14 @@ function loadPersistedStore(store: PairingCodeStore): void {
     if (!parsed || typeof parsed !== 'object') return
     for (const [code, entry] of Object.entries(parsed as PersistedPairingCodeStore)) {
       if (!isPairingCodeEntry(entry)) continue
+      const agentType = normalizeAgentType(entry.agentType)
       store.byCode.set(code, {
         browserSessionId: entry.browserSessionId,
         worldId: entry.worldId,
         scopes: [...entry.scopes],
+        agentType,
+        agentSlot: normalizeAgentSlot(entry.agentSlot, agentType),
+        agentLabel: normalizeAgentLabel(entry.agentLabel, `${agentType}-bridge`),
         exp: entry.exp,
         createdAt: entry.createdAt,
       })
@@ -150,6 +178,9 @@ export interface CreatePairingCodeInput {
   browserSessionId: string
   worldId: string
   scopes: Scope[]
+  agentType?: string
+  agentSlot?: string
+  agentLabel?: string
   ttlMs?: number
   /** Override now() for testing. */
   now?: number
@@ -158,6 +189,9 @@ export interface CreatePairingCodeInput {
 export interface CreatedPairingCode {
   code: string
   expiresAt: number
+  agentType: string
+  agentSlot: string
+  agentLabel: string
 }
 
 export function createPairingCode(input: CreatePairingCodeInput): CreatedPairingCode {
@@ -166,6 +200,9 @@ export function createPairingCode(input: CreatePairingCodeInput): CreatedPairing
   if (!Array.isArray(input.scopes) || input.scopes.length === 0) {
     throw new PairingCodeError('at least one scope required', 'invalid_input')
   }
+  const agentType = normalizeAgentType(input.agentType)
+  const agentSlot = normalizeAgentSlot(input.agentSlot, agentType)
+  const agentLabel = normalizeAgentLabel(input.agentLabel, `${agentType}-bridge`)
   const now = input.now ?? Date.now()
   const ttl = typeof input.ttlMs === 'number' && input.ttlMs > 0 ? input.ttlMs : DEFAULT_TTL_MS
   const exp = now + ttl
@@ -176,7 +213,7 @@ export function createPairingCode(input: CreatePairingCodeInput): CreatedPairing
   // global Map and exhaust the human-readable code namespace.
   let activeForSession = 0
   for (const entry of store.byCode.values()) {
-    if (entry.browserSessionId === input.browserSessionId && entry.exp > now) {
+    if (entry.browserSessionId === input.browserSessionId && entry.agentSlot === agentSlot && entry.exp > now) {
       activeForSession += 1
     }
   }
@@ -194,17 +231,23 @@ export function createPairingCode(input: CreatePairingCodeInput): CreatedPairing
     browserSessionId: input.browserSessionId,
     worldId: input.worldId,
     scopes: [...input.scopes],
+    agentType,
+    agentSlot,
+    agentLabel,
     exp,
     createdAt: now,
   })
   persistStore(store)
-  return { code, expiresAt: exp }
+  return { code, expiresAt: exp, agentType, agentSlot, agentLabel }
 }
 
 export interface RedeemedPairingCode {
   browserSessionId: string
   worldId: string
   scopes: Scope[]
+  agentType: string
+  agentSlot: string
+  agentLabel: string
 }
 
 /** Single-use redemption — the entry is deleted on success. */
@@ -229,6 +272,9 @@ export function redeemPairingCode(code: string, now = Date.now()): RedeemedPairi
     browserSessionId: entry.browserSessionId,
     worldId: entry.worldId,
     scopes: entry.scopes,
+    agentType: entry.agentType,
+    agentSlot: entry.agentSlot,
+    agentLabel: entry.agentLabel,
   }
 }
 

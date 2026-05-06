@@ -31,8 +31,12 @@ const MAX_AGENT_LABEL_LEN = 128
 const MAX_TOKEN_LEN       = 4_096
 const MAX_ERROR_MSG_LEN   = 2_048
 const MAX_SESSION_TITLE_LEN = 256
+const MAX_AGENT_TYPE_LEN = 64
+const MAX_AGENT_SLOT_LEN = 128
 
 const idString = (max = 128) => z.string().min(1).max(max)
+const AgentTypeSchema = idString(MAX_AGENT_TYPE_LEN)
+const AgentSlotSchema = idString(MAX_AGENT_SLOT_LEN)
 
 // ────────────────────────────────────────────────────────────────────────────
 // Scopes — what a paired device is allowed to do.
@@ -72,12 +76,16 @@ export const BrowserHelloSchema = envelopeBase.extend({
   browserSessionId: idString(),
   worldId:          idString(),
   roomId:           idString(),
+  agentType:        AgentTypeSchema.optional(),
+  agentSlot:        AgentSlotSchema.optional(),
 }).strict()
 
 export const BrowserReadySchema = envelopeBase.extend({
   type:           z.literal('browser.ready'),
   worldId:        idString(),
   availableTools: z.array(z.string().min(1).max(MAX_TOOL_NAME_LEN)).max(256),
+  agentType:      AgentTypeSchema.optional(),
+  agentSlot:      AgentSlotSchema.optional(),
 }).strict()
 
 export const AgentHelloSchema = envelopeBase.extend({
@@ -86,6 +94,8 @@ export const AgentHelloSchema = envelopeBase.extend({
   deviceToken:  z.string().min(1).max(MAX_TOKEN_LEN).optional(),
   agentLabel:   z.string().min(1).max(MAX_AGENT_LABEL_LEN),
   agentVersion: z.string().min(1).max(64).optional(),
+  agentType:    AgentTypeSchema.optional(),
+  agentSlot:    AgentSlotSchema.optional(),
 }).strict()
 // Cross-field check (pairingCode || deviceToken) is enforced in parseRelayMessage
 // because .refine wraps schemas in ZodEffects which breaks discriminatedUnion.
@@ -94,6 +104,23 @@ export const PairingApprovedSchema = envelopeBase.extend({
   type:        z.literal('pairing.approved'),
   deviceToken: z.string().min(1).max(MAX_TOKEN_LEN),
   scopes:      z.array(ScopeSchema).min(1),
+}).strict()
+
+export const AgentStatusSchema = envelopeBase.extend({
+  type:       z.literal('agent.status'),
+  agentType:  AgentTypeSchema,
+  agentSlot:  AgentSlotSchema,
+  localApi: z.object({
+    url: z.string().min(1).max(512),
+    ok:  z.boolean(),
+  }).partial().optional(),
+  mcp: z.object({
+    url:        z.string().min(1).max(512),
+    ok:         z.boolean(),
+    configured: z.boolean(),
+  }).partial().optional(),
+  model:        z.string().max(128).optional(),
+  capabilities: z.array(ScopeSchema).max(16).optional(),
 }).strict()
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -216,6 +243,7 @@ export const RelayMessageSchema = z.discriminatedUnion('type', [
   BrowserReadySchema,
   AgentHelloSchema,
   PairingApprovedSchema,
+  AgentStatusSchema,
   ChatUserSchema,
   ChatAgentDeltaSchema,
   ChatAgentFinalSchema,
@@ -278,6 +306,7 @@ export type RelayMessageInput =
   | (Omit<BrowserReady,      EnvelopeFields> & { messageId?: string; sentAt?: number })
   | (Omit<AgentHello,        EnvelopeFields> & { messageId?: string; sentAt?: number })
   | (Omit<PairingApproved,   EnvelopeFields> & { messageId?: string; sentAt?: number })
+  | (Omit<Extract<RelayMessage, { type: 'agent.status' }>, EnvelopeFields> & { messageId?: string; sentAt?: number })
   | (Omit<ChatUser,          EnvelopeFields> & { messageId?: string; sentAt?: number })
   | (Omit<ChatAgentDelta,    EnvelopeFields> & { messageId?: string; sentAt?: number })
   | (Omit<ChatAgentFinal,    EnvelopeFields> & { messageId?: string; sentAt?: number })

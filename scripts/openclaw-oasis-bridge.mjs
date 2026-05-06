@@ -75,6 +75,8 @@ function parseArgv(argv) {
 const argv = parseArgv(process.argv.slice(2))
 const rawCode = argv.positional[0] || process.env.OASIS_PAIRING_URL || ''
 const labelOverride = argv.flags.label || process.env.OASIS_AGENT_LABEL || 'openclaw-bridge'
+const agentType = argv.flags['agent-type'] || process.env.OASIS_AGENT_TYPE || 'openclaw'
+const agentSlot = argv.flags['agent-slot'] || process.env.OASIS_AGENT_SLOT || 'openclaw:primary'
 const oasisUrlOverride = argv.flags['oasis-url'] || process.env.OASIS_URL || ''
 const gatewayUrlOverride = argv.flags['gateway-url'] || process.env.OPENCLAW_GATEWAY_URL || ''
 const gatewaySharedToken = argv.flags['gateway-token'] || process.env.OPENCLAW_GATEWAY_TOKEN || ''
@@ -145,6 +147,8 @@ log('config:', {
   oasisUrl: finalOasisUrl,
   code: pairingCode,
   label: labelOverride,
+  agentType,
+  agentSlot,
   gateway: skipGateway ? '(skipped)' : finalGatewayUrl,
   mcp: skipMcp ? '(skipped)' : `http://${mcpHost}:${mcpPort}/mcp`,
   mcpConfig: skipMcp ? '(skipped)' : mcpConfigMode,
@@ -164,6 +168,8 @@ async function exchangePairingCode() {
     body: JSON.stringify({
       pairingCode,
       agentLabel: labelOverride,
+      agentType,
+      agentSlot,
       agentVersion: '0.3.0-bridge-tools',
     }),
   })
@@ -181,14 +187,27 @@ async function exchangePairingCode() {
     browserSessionId: json.browserSessionId,
     worldId: json.worldId,
     scopes: json.scopes,
+    agentType: json.agentType || agentType,
+    agentSlot: json.agentSlot || agentSlot,
+  }
+}
+
+function withRelayIdentity(url, slot = agentSlot, type = agentType) {
+  try {
+    const parsed = new URL(url)
+    parsed.searchParams.set('agentType', type)
+    parsed.searchParams.set('agentSlot', slot)
+    return parsed.toString()
+  } catch {
+    return url
   }
 }
 
 function buildRelayUrl(httpUrl) {
   const base = httpUrl.replace(/\/+$/, '')
-  if (base.startsWith('https://')) return `wss://${base.slice('https://'.length)}/relay?role=agent`
-  if (base.startsWith('http://'))  return `ws://${base.slice('http://'.length)}/relay?role=agent`
-  return `ws://${base}/relay?role=agent`
+  if (base.startsWith('https://')) return withRelayIdentity(`wss://${base.slice('https://'.length)}/relay?role=agent`)
+  if (base.startsWith('http://'))  return withRelayIdentity(`ws://${base.slice('http://'.length)}/relay?role=agent`)
+  return withRelayIdentity(`ws://${base}/relay?role=agent`)
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -946,7 +965,7 @@ async function start() {
 
   // Connect to the hosted relay.
   const explicitRelay = argv.flags['relay-url'] || process.env.OASIS_RELAY_URL || ''
-  const relayUrl = explicitRelay || buildRelayUrl(finalOasisUrl)
+  const relayUrl = explicitRelay ? withRelayIdentity(explicitRelay) : buildRelayUrl(finalOasisUrl)
   log('connecting to relay:', relayUrl)
 
   relayWs = new WebSocket(relayUrl, {
@@ -966,6 +985,8 @@ async function start() {
         type: 'agent.hello',
         deviceToken: creds.deviceToken,
         agentLabel: labelOverride,
+        agentType,
+        agentSlot,
         agentVersion: '0.3.0-bridge-tools',
       })
       return
