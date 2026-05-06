@@ -1066,6 +1066,7 @@ export default function Scene() {
   const isAdmin = capabilities.admin
   const canUseAgentPanels = capabilities.canUseAgentPanels
   const canUseLocalPanels = capabilities.canUseLocalPanels
+  const canUseHermesPanel = canUseLocalPanels || hostedMode
   const canUseFullWizard = capabilities.canUseFullWizard
   const [isDragging, setIsDragging] = useState(false)
   useWorldEvents()
@@ -1433,7 +1434,7 @@ export default function Scene() {
         >
           📅
         </button>}
-        {canUseLocalPanels && (
+        {canUseHermesPanel && (
         <button
           onClick={() => togglePanel(setHermesOpen)}
           aria-label="Hermes"
@@ -1584,7 +1585,7 @@ export default function Scene() {
       )}
 
       {/* 🧿 Parzival — Autonomous Brain */}
-      {canUseLocalPanels && (
+      {canUseHermesPanel && (
         <HermesPanel
           isOpen={hermesOpen}
           onClose={() => setHermesOpen(false)}
