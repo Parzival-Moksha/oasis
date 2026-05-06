@@ -45,8 +45,7 @@ import {
 } from './hermes-mcp-config-guard.mjs'
 
 const DEFAULT_HERMES_API_BASE = 'http://127.0.0.1:8642/v1'
-const BRIDGE_VERSION = '0.2.0-hermes-tools'
-const MAX_HISTORY_MESSAGES = 32
+const BRIDGE_VERSION = '0.2.1-hermes-responses'
 
 function parseArgv(argv) {
   const out = { positional: [], flags: {} }
@@ -77,6 +76,7 @@ const apiKey = argv.flags['api-key'] || process.env.HERMES_API_KEY || process.en
 const model = argv.flags.model || process.env.HERMES_MODEL || ''
 const systemPrompt = argv.flags['system-prompt'] || process.env.HERMES_SYSTEM_PROMPT || ''
 const echoMode = argv.flags.echo === 'true' || process.env.HERMES_BRIDGE_ECHO === '1'
+const apiMode = normalizeApiMode(argv.flags['api-mode'] || process.env.HERMES_API_MODE || 'responses')
 const skipMcp = argv.flags['no-mcp'] === 'true' || process.env.HERMES_OASIS_NO_MCP === '1'
 const mcpHost = argv.flags['mcp-host'] || process.env.HERMES_OASIS_MCP_HOST || '127.0.0.1'
 const mcpPort = Number(argv.flags['mcp-port'] || process.env.HERMES_OASIS_MCP_PORT || 17891)
@@ -110,9 +110,15 @@ if (argv.flags['restore-mcp'] === 'true') {
 if (!rawPairing) {
   console.error('usage: node scripts/hermes-oasis-bridge.mjs <pairing-url-or-code>')
   console.error('  optional: --api-base=http://127.0.0.1:8642/v1 --api-key=... --model=...')
-  console.error('  optional: --relay-url=ws://localhost:4517/?role=agent --mcp-port=17891 --echo')
+  console.error('  optional: --relay-url=ws://localhost:4517/?role=agent --api-mode=responses|chat --mcp-port=17891 --echo')
   console.error('  optional: --no-mcp --no-mcp-config --restore-mcp')
   process.exit(2)
+}
+
+function normalizeApiMode(value) {
+  const raw = String(value || '').trim().toLowerCase()
+  if (raw === 'chat' || raw === 'chat-completions' || raw === 'chat_completions') return 'chat'
+  return 'responses'
 }
 
 function normalizeApiBase(value) {
@@ -261,22 +267,25 @@ async function checkHermesApi() {
   return { models }
 }
 
-function buildMessages(sessionId, userText) {
-  const history = sessionHistory.get(sessionId) || []
+function buildChatMessages(userText) {
   const messages = []
   if (systemPrompt.trim()) {
     messages.push({ role: 'system', content: systemPrompt.trim() })
   }
-  messages.push(...history.slice(-MAX_HISTORY_MESSAGES))
   messages.push({ role: 'user', content: userText })
   return messages
 }
 
-function rememberTurn(sessionId, userText, assistantText) {
-  const history = sessionHistory.get(sessionId) || []
-  history.push({ role: 'user', content: userText })
-  if (assistantText.trim()) history.push({ role: 'assistant', content: assistantText })
-  sessionHistory.set(sessionId, history.slice(-MAX_HISTORY_MESSAGES))
+function hermesConversationId(sessionId) {
+  const cleanSlot = String(agentSlot || 'hermes-primary')
+    .replace(/[^A-Za-z0-9._:-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 44) || 'hermes-primary'
+  const cleanSession = String(sessionId || 'hermes-default')
+    .replace(/[^A-Za-z0-9._:-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 76) || 'hermes-default'
+  return `oasis-${cleanSlot}-${cleanSession}`.slice(0, 128)
 }
 
 function extractText(value) {
@@ -313,15 +322,21 @@ async function callHermes(sessionId, userText, onDelta) {
     const reply = `Hermes bridge echo: ${userText}`
     await delay(80)
     onDelta(reply)
-    rememberTurn(sessionId, userText, reply)
     return reply
   }
 
+  if (apiMode === 'chat') {
+    return callHermesChat(userText, onDelta)
+  }
+  return callHermesResponses(sessionId, userText, onDelta)
+}
+
+async function callHermesChat(userText, onDelta) {
   const body = {
     model: model || 'hermes',
     stream: true,
     stream_options: { include_usage: true },
-    messages: buildMessages(sessionId, userText),
+    messages: buildChatMessages(userText),
   }
 
   const response = await fetch(`${apiBase}/chat/completions`, {
@@ -369,7 +384,95 @@ async function callHermes(sessionId, userText, onDelta) {
     }
   }
 
-  rememberTurn(sessionId, userText, assistantText)
+  return assistantText
+}
+
+function extractResponsesOutputText(response) {
+  if (typeof response?.output_text === 'string') return response.output_text
+  if (!Array.isArray(response?.output)) return ''
+  return response.output.map(item => {
+    if (!item || typeof item !== 'object') return ''
+    if (item.type === 'message') return extractText(item.content)
+    if (item.type === 'output_text') return extractText(item.text ?? item.content)
+    return ''
+  }).join('')
+}
+
+function extractResponsesDelta(event) {
+  if (!event || typeof event !== 'object') return ''
+  if (event.type === 'response.output_text.delta') {
+    return extractText(event.delta ?? event.text ?? event.content)
+  }
+  if (event.type === 'response.completed') {
+    return extractResponsesOutputText(event.response)
+  }
+  return ''
+}
+
+async function callHermesResponses(sessionId, userText, onDelta) {
+  const body = {
+    model: model || 'hermes',
+    input: userText,
+    conversation: hermesConversationId(sessionId),
+    store: true,
+    stream: true,
+    ...(systemPrompt.trim() ? { instructions: systemPrompt.trim() } : {}),
+  }
+
+  const response = await fetch(`${apiBase}/responses`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(body),
+  })
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '')
+    const hint = response.status === 404
+      ? ' Hermes /v1/responses is unavailable; update Hermes Agent or run with --api-mode=chat for a stateless fallback.'
+      : ''
+    throw new Error(`Hermes Responses API returned HTTP ${response.status}: ${detail.slice(0, 600)}${hint}`)
+  }
+  if (!response.body) {
+    throw new Error('Hermes Responses API returned no response body.')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let assistantText = ''
+  let completedText = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const extracted = extractSsePayloads(buffer)
+    buffer = extracted.remainder
+
+    for (const payload of extracted.payloads) {
+      if (payload === '[DONE]') continue
+      let parsed
+      try { parsed = JSON.parse(payload) }
+      catch { continue }
+      if (parsed?.error) {
+        const message = typeof parsed.error?.message === 'string' ? parsed.error.message : 'Hermes stream error.'
+        throw new Error(message)
+      }
+      const text = extractResponsesDelta(parsed)
+      if (!text) continue
+      if (parsed.type === 'response.completed') {
+        completedText = text
+        continue
+      }
+      assistantText += text
+      onDelta(text)
+    }
+  }
+
+  if (!assistantText && completedText) {
+    assistantText = completedText
+    onDelta(completedText)
+  }
   return assistantText
 }
 
@@ -382,7 +485,6 @@ let exited = false
 let relaySessionId = ''
 let activeWorldId = ''
 let mcpServer = null
-const sessionHistory = new Map()
 const pendingToolCalls = new Map()
 const mcpDiagnostics = {
   requestCount: 0,
@@ -543,6 +645,7 @@ async function start() {
     agentType,
     agentSlot,
     apiBase: echoMode ? '(echo)' : apiBase,
+    apiMode: echoMode ? 'echo' : apiMode,
     model: model || '(default)',
     relay: explicitRelayUrl || '(from Oasis URL)',
   })
