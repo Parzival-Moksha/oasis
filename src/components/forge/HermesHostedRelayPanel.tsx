@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 
 import { useOpenclawRelayBridge } from '@/hooks/useOpenclawRelayBridge'
@@ -10,6 +10,8 @@ import { useAutoresizeTextarea } from '@/hooks/useAutoresizeTextarea'
 import { awardXp } from '@/hooks/useXp'
 import { useOasisStore } from '@/store/oasisStore'
 import { PUBLIC_TOOL_NAMES } from '@/lib/relay/public-spellbook.js'
+import { useAudioManager } from '@/lib/audio-manager'
+import { AvatarGallery } from './AvatarGallery'
 
 interface HermesHostedRelayPanelProps {
   isOpen: boolean
@@ -45,6 +47,20 @@ const HERMES_AGENT_SLOT = 'hermes:primary'
 const HERMES_AGENT_LABEL = 'hermes-bridge'
 const CHAT_KEY = 'oasis-hermes-hosted-relay-chat'
 const SESSION_KEY = 'oasis-hermes-hosted-relay-session'
+const SETTINGS_KEY = 'oasis-hermes-hosted-relay-settings'
+const DEFAULT_HERMES_AVATAR_URL = '/avatars/gallery/CoolAlien.vrm'
+
+interface HermesRelayPanelSettings {
+  bgColor: string
+  opacity: number
+  avatarUrl: string | null
+}
+
+const DEFAULT_PANEL_SETTINGS: HermesRelayPanelSettings = {
+  bgColor: '#090704',
+  opacity: 0.94,
+  avatarUrl: DEFAULT_HERMES_AVATAR_URL,
+}
 
 function randomId(prefix: string) {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -76,6 +92,26 @@ function readStoredMessages(): RelayChatMessage[] {
 function readStoredSessionId() {
   if (typeof window === 'undefined') return ''
   try { return window.localStorage.getItem(SESSION_KEY) || '' } catch { return '' }
+}
+
+function readStoredPanelSettings(): HermesRelayPanelSettings {
+  if (typeof window === 'undefined') return DEFAULT_PANEL_SETTINGS
+  try {
+    const raw = window.localStorage.getItem(SETTINGS_KEY)
+    const parsed = raw ? JSON.parse(raw) : null
+    if (!parsed || typeof parsed !== 'object') return DEFAULT_PANEL_SETTINGS
+    const record = parsed as Record<string, unknown>
+    const opacity = typeof record.opacity === 'number'
+      ? Math.min(1, Math.max(0.55, record.opacity))
+      : DEFAULT_PANEL_SETTINGS.opacity
+    return {
+      bgColor: typeof record.bgColor === 'string' ? record.bgColor : DEFAULT_PANEL_SETTINGS.bgColor,
+      opacity,
+      avatarUrl: typeof record.avatarUrl === 'string' ? record.avatarUrl : DEFAULT_PANEL_SETTINGS.avatarUrl,
+    }
+  } catch {
+    return DEFAULT_PANEL_SETTINGS
+  }
 }
 
 function normalizeCommandOrigin(origin: string): string {
@@ -164,6 +200,8 @@ export function HermesHostedRelayPanel({
 
   const panelZIndex = useOasisStore(state => state.getPanelZIndex('hermes', 9998))
   const activeWorldId = useOasisStore(state => state.activeWorldId)
+  const hermesAvatar = useOasisStore(state => state.placedAgentAvatars.find(entry => entry.agentType === 'hermes') || null)
+  const assignHermesAvatar = useOasisStore(state => state.assignHermesAvatar)
   const focusPanelUI = useCallback(() => {
     useInputManager.getState().enterUIFocus()
   }, [])
@@ -173,6 +211,7 @@ export function HermesHostedRelayPanel({
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const pendingAssistantIdRef = useRef('')
   const awardedConnectionXpRef = useRef(false)
+  const dragRef = useRef<{ startX: number; startY: number; left: number; top: number } | null>(null)
   const [messages, setMessages] = useState<RelayChatMessage[]>(() => readStoredMessages())
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
@@ -183,6 +222,12 @@ export function HermesHostedRelayPanel({
   const [copied, setCopied] = useState('')
   const [countdownNow, setCountdownNow] = useState(() => Date.now())
   const [sessionId, setSessionId] = useState(() => readStoredSessionId() || randomId('hermes-relay-session'))
+  const [panelSettings, setPanelSettings] = useState<HermesRelayPanelSettings>(() => readStoredPanelSettings())
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [showAvatarGallery, setShowAvatarGallery] = useState(false)
+  const [panelPosition, setPanelPosition] = useState({ left: 18, top: 132 })
+  const [draggingPanel, setDraggingPanel] = useState(false)
+  const [buttonPose, setButtonPose] = useState({ x: 50, y: 50, rx: 0, ry: 0, lift: 0 })
 
   const origin = typeof window === 'undefined' ? '' : window.location.origin
   const pairingPasteText = useMemo(() => buildHermesRelayPasteText(pairing, origin), [origin, pairing])
@@ -226,6 +271,10 @@ export function HermesHostedRelayPanel({
   }, [sessionId])
 
   useEffect(() => {
+    writeBrowserStorage(SETTINGS_KEY, JSON.stringify(panelSettings))
+  }, [panelSettings])
+
+  useEffect(() => {
     const el = scrollContainerRef.current
     if (!el) return
     el.scrollTop = el.scrollHeight
@@ -248,7 +297,74 @@ export function HermesHostedRelayPanel({
     if (relayBridge.status !== 'paired' || awardedConnectionXpRef.current) return
     awardedConnectionXpRef.current = true
     void awardXp('QUEST_STEP_COMPLETE', activeWorldId || undefined)
+    useAudioManager.getState().play('notification')
   }, [activeWorldId, relayBridge.status])
+
+  useEffect(() => {
+    if (!draggingPanel) return
+    const handleMove = (event: MouseEvent) => {
+      if (!dragRef.current) return
+      const nextLeft = dragRef.current.left + event.clientX - dragRef.current.startX
+      const nextTop = dragRef.current.top + event.clientY - dragRef.current.startY
+      const maxLeft = Math.max(8, window.innerWidth - 96)
+      const maxTop = Math.max(8, window.innerHeight - 80)
+      setPanelPosition({
+        left: Math.min(maxLeft, Math.max(8, nextLeft)),
+        top: Math.min(maxTop, Math.max(8, nextTop)),
+      })
+    }
+    const handleUp = () => {
+      dragRef.current = null
+      setDraggingPanel(false)
+    }
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+  }, [draggingPanel])
+
+  const startPanelDrag = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    if (embedded || event.button !== 0) return
+    const target = event.target as HTMLElement | null
+    if (target?.closest('[data-no-drag]')) return
+    event.preventDefault()
+    event.stopPropagation()
+    useOasisStore.getState().bringPanelToFront('hermes')
+    focusPanelUI()
+    dragRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      left: panelPosition.left,
+      top: panelPosition.top,
+    }
+    setDraggingPanel(true)
+  }, [embedded, focusPanelUI, panelPosition.left, panelPosition.top])
+
+  const updatePanelSettings = useCallback((patch: Partial<HermesRelayPanelSettings>) => {
+    setPanelSettings(current => ({ ...current, ...patch }))
+  }, [])
+
+  const manifestHermesAvatar = useCallback((avatarUrl?: string | null) => {
+    const selectedAvatar = avatarUrl || hermesAvatar?.avatar3dUrl || panelSettings.avatarUrl || DEFAULT_HERMES_AVATAR_URL
+    updatePanelSettings({ avatarUrl: selectedAvatar })
+    assignHermesAvatar(selectedAvatar)
+    useAudioManager.getState().play('place')
+  }, [assignHermesAvatar, hermesAvatar?.avatar3dUrl, panelSettings.avatarUrl, updatePanelSettings])
+
+  const updateButtonPose = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const x = ((event.clientX - rect.left) / rect.width) * 100
+    const y = ((event.clientY - rect.top) / rect.height) * 100
+    setButtonPose({
+      x,
+      y,
+      rx: (50 - y) * 0.34,
+      ry: (x - 50) * 0.42,
+      lift: 1,
+    })
+  }, [])
 
   const flashCopied = useCallback((key: string) => {
     setCopied(key)
@@ -261,6 +377,7 @@ export function HermesHostedRelayPanel({
       return
     }
 
+    useAudioManager.getState().play('buttonClick')
     setPairingBusy(true)
     setPairingError('')
     try {
@@ -347,7 +464,9 @@ export function HermesHostedRelayPanel({
     }
   }, [input, isStreaming, relayBridge, sessionId])
 
-  const canSend = relayBridge.status === 'paired' && Boolean(input.trim()) && !isStreaming
+  const isPaired = relayBridge.status === 'paired'
+  const canSend = isPaired && Boolean(input.trim()) && !isStreaming
+  const canRequestPairing = Boolean(activeWorldId) && !pairingBusy
   const countdown = pairing ? formatPairingCountdown(pairing.expiresAt, countdownNow) : ''
   const relayLabel = relayStatusLabel(relayBridge.status)
 
@@ -357,11 +476,19 @@ export function HermesHostedRelayPanel({
     <div
       data-menu-portal={embedded ? undefined : 'hermes-hosted-relay-panel'}
       data-ui-panel
-      className={`${embedded ? 'relative h-full w-full' : 'fixed'} flex flex-col overflow-hidden rounded-xl border border-amber-500/24 bg-[#120c04] text-amber-50 shadow-2xl`}
+      className={`${embedded ? 'relative h-full w-full' : 'fixed'} min-h-0 min-w-0 flex flex-col overflow-hidden rounded-lg border border-amber-400/30 text-amber-50 shadow-2xl`}
       style={{
-        ...(embedded ? {} : { zIndex: panelZIndex, left: 16, top: 120, width: 420, height: 620 }),
+        ...(embedded ? {} : {
+          zIndex: panelZIndex,
+          left: panelPosition.left,
+          top: panelPosition.top,
+          width: 'min(600px, calc(100vw - 32px))',
+          height: 'min(74vh, 680px)',
+        }),
         width: embedded ? '100%' : undefined,
         height: embedded ? '100%' : undefined,
+        backgroundColor: panelSettings.bgColor,
+        opacity: panelSettings.opacity,
         fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif',
       }}
       onMouseDown={event => {
@@ -372,7 +499,10 @@ export function HermesHostedRelayPanel({
       onPointerDown={event => event.stopPropagation()}
       onClick={embedded ? event => event.stopPropagation() : undefined}
     >
-      <div className="flex items-center justify-between border-b border-white/10 bg-black/25 px-3 py-2">
+      <div
+        className={`flex items-center justify-between border-b border-white/10 bg-black/40 px-3 py-2 ${embedded ? '' : 'cursor-grab'} ${draggingPanel ? 'cursor-grabbing' : ''}`}
+        onMouseDown={startPanelDrag}
+      >
         <div className="flex min-w-0 items-center gap-2">
           <span className="text-sm font-black tracking-[0.18em] text-amber-200 drop-shadow-[0_0_10px_rgba(251,191,36,0.65)]">HERMES</span>
           <span className="rounded border border-amber-400/25 px-1.5 py-0.5 text-[10px] font-mono text-amber-100/80">
@@ -394,6 +524,13 @@ export function HermesHostedRelayPanel({
               advanced
             </button>
           )}
+          <button
+            data-no-drag
+            onClick={() => setSettingsOpen(value => !value)}
+            className="rounded border border-white/10 px-1.5 py-0.5 text-[10px] font-mono text-amber-100/75 hover:border-cyan-300/40 hover:text-white"
+          >
+            settings
+          </button>
           <button
             data-no-drag
             onClick={() => setRelayEnabled(value => !value)}
@@ -418,9 +555,9 @@ export function HermesHostedRelayPanel({
         </div>
       </div>
 
-      <div className="border-b border-white/10 bg-[radial-gradient(circle_at_50%_0%,rgba(251,191,36,0.24),rgba(0,0,0,0.28)_58%)] px-3 py-3">
+      <div className="border-b border-white/10 bg-black/30 px-3 py-3">
         <div className="space-y-3">
-          <div className="min-w-0">
+          <div className="hidden">
             <div className="text-[10px] font-mono uppercase tracking-[0.16em] text-amber-200/70">agent relay</div>
             <div className="mt-1 truncate text-[11px] text-amber-100/60" title={activeWorldId || ''}>
               world {activeWorldId ? activeWorldId.slice(0, 10) : 'none'}
@@ -433,16 +570,36 @@ export function HermesHostedRelayPanel({
           </div>
           <button
             data-no-drag
-            onClick={() => void requestPairing()}
-            disabled={pairingBusy || !activeWorldId || relayBridge.status === 'paired'}
-            className="group relative min-h-[112px] w-full overflow-hidden rounded-lg border border-amber-200/45 bg-amber-400/20 px-5 py-5 text-center shadow-[0_0_34px_rgba(245,158,11,0.24)] transition hover:scale-[1.01] hover:border-amber-100 hover:bg-amber-300/24 hover:shadow-[0_0_52px_rgba(245,158,11,0.36)] disabled:cursor-wait disabled:opacity-45"
+            onClick={() => { if (!isPaired) void requestPairing() }}
+            onMouseMove={updateButtonPose}
+            onMouseEnter={() => useAudioManager.getState().play('buttonHover')}
+            onMouseLeave={() => setButtonPose({ x: 50, y: 50, rx: 0, ry: 0, lift: 0 })}
+            disabled={!canRequestPairing && !isPaired}
+            className={`group relative min-h-[126px] w-full overflow-hidden rounded-lg px-5 py-5 text-center transition duration-150 ${isPaired ? 'cursor-default border border-emerald-200/70 bg-emerald-400/20 shadow-[0_0_58px_rgba(16,185,129,0.32)]' : 'cursor-pointer border border-amber-100/50 bg-amber-300/10 shadow-[0_0_42px_rgba(245,158,11,0.28)] hover:border-white hover:shadow-[0_0_80px_rgba(250,204,21,0.42)]'} disabled:cursor-not-allowed disabled:opacity-45`}
+            style={{
+              '--mx': `${buttonPose.x}%`,
+              '--my': `${buttonPose.y}%`,
+              transform: `perspective(760px) rotateX(${buttonPose.rx}deg) rotateY(${buttonPose.ry}deg) translateY(${buttonPose.lift ? -3 : 0}px) scale(${buttonPose.lift ? 1.018 : 1})`,
+              transformStyle: 'preserve-3d',
+            } as CSSProperties}
           >
-            <span className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.18),transparent_42%)] opacity-0 transition group-hover:opacity-100" />
-            <span className="relative block text-[22px] font-black uppercase tracking-[0.18em] text-amber-50 drop-shadow-[0_0_14px_rgba(251,191,36,0.8)]">
-              {relayBridge.status === 'paired' ? 'HERMES CONNECTED' : pairingBusy ? 'SUMMONING' : 'CONNECT HERMES'}
+            <span className="absolute inset-0 opacity-95" style={{
+              background: isPaired
+                ? 'linear-gradient(110deg, rgba(16,185,129,0.28), rgba(45,212,191,0.22), rgba(250,204,21,0.18))'
+                : 'linear-gradient(110deg, rgba(255,0,128,0.30), rgba(250,204,21,0.24), rgba(34,211,238,0.24), rgba(168,85,247,0.26))',
+            }} />
+            <span className="absolute inset-[-35%] animate-[hermesConnectSpin_5s_linear_infinite] opacity-75" style={{
+              background: 'conic-gradient(from 0deg, transparent, rgba(255,255,255,0.42), transparent, rgba(251,191,36,0.34), transparent)',
+            }} />
+            <span className="absolute inset-0 opacity-0 transition group-hover:opacity-100" style={{
+              background: 'radial-gradient(circle at var(--mx) var(--my), rgba(255,255,255,0.62), rgba(255,255,255,0.16) 18%, transparent 44%)',
+            }} />
+            <span className={`absolute inset-2 rounded-md border ${isPaired ? 'border-emerald-100/32' : 'border-white/24'} shadow-[inset_0_0_32px_rgba(255,255,255,0.16)]`} />
+            <span className={`relative block text-[24px] font-black uppercase tracking-[0.22em] ${isPaired ? 'text-emerald-50 drop-shadow-[0_0_18px_rgba(52,211,153,0.95)]' : 'text-white drop-shadow-[0_0_18px_rgba(251,191,36,0.96)]'}`}>
+              {isPaired ? 'HERMES CONNECTED' : pairingBusy ? 'SUMMONING HERMES' : 'CONNECT HERMES'}
             </span>
             <span className="relative mt-2 block text-[10px] uppercase tracking-[0.18em] text-amber-100/58">
-              {relayBridge.status === 'paired' ? 'chat and tools online' : activeWorldId ? 'one click pairing ritual' : 'load a world first'}
+              {isPaired ? 'chat, tools, and XP online' : activeWorldId ? 'one click pairing ritual' : 'load a world first'}
             </span>
           </button>
         </div>
@@ -478,7 +635,60 @@ export function HermesHostedRelayPanel({
         )}
       </div>
 
-      <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3" style={{ scrollbarWidth: 'thin', scrollbarColor: '#4b5563 transparent' }}>
+      {settingsOpen && (
+        <div data-no-drag className="border-b border-white/10 bg-black/50 px-3 py-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="min-w-0 text-[10px] uppercase tracking-[0.16em] text-amber-100/62">
+              Background
+              <div className="mt-1 flex items-center gap-2">
+                <input
+                  type="color"
+                  value={panelSettings.bgColor}
+                  onChange={event => updatePanelSettings({ bgColor: event.target.value })}
+                  className="h-9 w-12 cursor-pointer rounded border border-white/10 bg-black"
+                />
+                <span className="truncate font-mono text-[11px] text-amber-50/80">{panelSettings.bgColor}</span>
+              </div>
+            </label>
+            <label className="min-w-0 text-[10px] uppercase tracking-[0.16em] text-amber-100/62">
+              Opacity
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  type="range"
+                  min="0.55"
+                  max="1"
+                  step="0.01"
+                  value={panelSettings.opacity}
+                  onChange={event => updatePanelSettings({ opacity: Number(event.target.value) })}
+                  className="min-w-0 flex-1 accent-emerald-400"
+                />
+                <span className="w-10 text-right font-mono text-[11px] text-amber-50/80">{Math.round(panelSettings.opacity * 100)}%</span>
+              </div>
+            </label>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              data-no-drag
+              onClick={() => setShowAvatarGallery(true)}
+              className="rounded border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.12em] text-cyan-50 transition hover:border-cyan-100 hover:bg-cyan-300/20"
+            >
+              avatar
+            </button>
+            <button
+              data-no-drag
+              onClick={() => manifestHermesAvatar()}
+              className="rounded border border-emerald-300/30 bg-emerald-300/10 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.12em] text-emerald-50 transition hover:border-emerald-100 hover:bg-emerald-300/20"
+            >
+              place 3D Hermes
+            </button>
+            <span className="min-w-0 truncate text-[11px] text-amber-100/50">
+              {hermesAvatar?.avatar3dUrl || panelSettings.avatarUrl || DEFAULT_HERMES_AVATAR_URL}
+            </span>
+          </div>
+        </div>
+      )}
+
+      <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-3" style={{ scrollbarWidth: 'thin', scrollbarColor: '#4b5563 transparent' }}>
         {messages.length === 0 && (
           <div className="flex h-full flex-col justify-center px-4 text-center">
             <div className="text-sm text-amber-100">Hermes relay is ready to pair.</div>
@@ -492,11 +702,13 @@ export function HermesHostedRelayPanel({
           {messages.map(message => (
             <div key={message.id} className={message.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
               <div
-                className="max-w-[88%] rounded-lg px-3 py-2 text-xs leading-relaxed"
+                className="max-w-[88%] rounded-lg px-3 py-2 text-xs leading-relaxed break-words"
                 style={{
                   background: message.role === 'user' ? 'rgba(245,158,11,0.16)' : 'rgba(0,0,0,0.48)',
                   border: message.role === 'user' ? '1px solid rgba(245,158,11,0.22)' : '1px solid rgba(255,255,255,0.06)',
                   whiteSpace: 'pre-wrap',
+                  overflowWrap: 'anywhere',
+                  wordBreak: 'break-word',
                 }}
               >
                 {message.content || (message.role === 'assistant' && isStreaming ? 'Streaming...' : '')}
@@ -525,7 +737,7 @@ export function HermesHostedRelayPanel({
             maxLength={6000}
             disabled={relayBridge.status !== 'paired' || isStreaming}
             placeholder={relayBridge.status === 'paired' ? 'Talk to Hermes...' : 'Pair Hermes first...'}
-            className="min-h-[48px] flex-1 resize-none rounded-lg border border-amber-500/18 bg-white/[0.06] px-3 py-2 text-xs text-white outline-none placeholder:text-amber-100/45 disabled:opacity-60"
+            className="min-h-[48px] min-w-0 flex-1 resize-none rounded-lg border border-amber-500/20 bg-white/[0.06] px-3 py-2 text-xs text-white outline-none placeholder:text-amber-100/45 disabled:opacity-60"
           />
           <button
             data-no-drag
@@ -538,6 +750,24 @@ export function HermesHostedRelayPanel({
           </button>
         </div>
       </div>
+      <style>{`
+        @keyframes hermesConnectSpin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+      {showAvatarGallery && (
+        <AvatarGallery
+          currentAvatarUrl={hermesAvatar?.avatar3dUrl || panelSettings.avatarUrl}
+          onSelect={avatarUrl => {
+            updatePanelSettings({ avatarUrl: avatarUrl || DEFAULT_HERMES_AVATAR_URL })
+            assignHermesAvatar(avatarUrl || null)
+            setShowAvatarGallery(false)
+            useAudioManager.getState().play('place')
+          }}
+          onClose={() => setShowAvatarGallery(false)}
+        />
+      )}
     </div>
   )
 

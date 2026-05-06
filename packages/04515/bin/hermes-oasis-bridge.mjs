@@ -34,6 +34,8 @@ import { WebSocket } from 'ws'
 import { randomUUID } from 'node:crypto'
 import readline from 'node:readline'
 import os from 'node:os'
+import path from 'node:path'
+import { readFileSync } from 'node:fs'
 
 import { startBridgeMcpServer } from './openclaw-bridge-mcp.mjs'
 import {
@@ -72,7 +74,7 @@ const label = argv.flags.label || process.env.OASIS_AGENT_LABEL || 'hermes-bridg
 const agentType = argv.flags['agent-type'] || process.env.OASIS_AGENT_TYPE || 'hermes'
 const agentSlot = argv.flags['agent-slot'] || process.env.OASIS_AGENT_SLOT || 'hermes:primary'
 const apiBase = normalizeApiBase(argv.flags['api-base'] || process.env.HERMES_API_BASE || DEFAULT_HERMES_API_BASE)
-const apiKey = argv.flags['api-key'] || process.env.HERMES_API_KEY || process.env.API_SERVER_KEY || ''
+const apiKey = argv.flags['api-key'] || process.env.HERMES_API_KEY || process.env.API_SERVER_KEY || loadHermesEnvValue(['HERMES_API_KEY', 'API_SERVER_KEY'])
 const model = argv.flags.model || process.env.HERMES_MODEL || ''
 const systemPrompt = argv.flags['system-prompt'] || process.env.HERMES_SYSTEM_PROMPT || ''
 const echoMode = argv.flags.echo === 'true' || process.env.HERMES_BRIDGE_ECHO === '1'
@@ -123,6 +125,31 @@ function normalizeApiMode(value) {
 
 function normalizeApiBase(value) {
   return String(value || DEFAULT_HERMES_API_BASE).trim().replace(/\/+$/, '')
+}
+
+function loadHermesEnvValue(names) {
+  const envPath = path.join(os.homedir(), '.hermes', '.env')
+  let raw = ''
+  try {
+    raw = readFileSync(envPath, 'utf8')
+  } catch {
+    return ''
+  }
+  const wanted = new Set(names)
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const eq = trimmed.indexOf('=')
+    if (eq <= 0) continue
+    const key = trimmed.slice(0, eq).trim()
+    if (!wanted.has(key)) continue
+    let value = trimmed.slice(eq + 1).trim()
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1)
+    }
+    return value
+  }
+  return ''
 }
 
 function parsePairing(input) {

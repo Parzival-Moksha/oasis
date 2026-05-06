@@ -131,6 +131,7 @@ if (!rawCode) {
   console.error('  hermes: npx -y @04515xyz/oasis-bridge@latest hermes <pairing-url-or-code>')
   console.error('  optional: --gateway-url=ws://127.0.0.1:18789')
   console.error('  optional: --identity=... --label=... --agent-slot=... --mcp-port=17890')
+  console.error('  hermes default MCP adapter: --mcp-port=17891')
   console.error('  optional: --no-gateway --no-mcp --no-mcp-config')
   console.error('  optional: --restore-mcp')
   process.exit(2)

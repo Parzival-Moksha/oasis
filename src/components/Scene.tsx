@@ -1061,6 +1061,105 @@ function DevcraftMiniBar({ onExpand }: { onExpand: () => void }) {
 // MAIN SCENE
 // ═══════════════════════════════════════════════════════════════════════════════
 
+type AgentLauncherMode = '2d' | '3d'
+type QuickAgentType = 'hermes' | 'openclaw'
+
+const QUICK_AGENT_ITEMS: Array<{
+  type: QuickAgentType
+  label: string
+  accent: string
+  shadow: string
+}> = [
+  { type: 'hermes', label: 'Hermes', accent: '#FACC15', shadow: 'rgba(250,204,21,0.45)' },
+  { type: 'openclaw', label: 'OpenClaw', accent: '#22D3EE', shadow: 'rgba(34,211,238,0.42)' },
+]
+
+function AgentQuickLauncher({
+  isOpen,
+  mode,
+  onToggle,
+  onMode,
+  onOpen2d,
+  onPlace3d,
+}: {
+  isOpen: boolean
+  mode: AgentLauncherMode
+  onToggle: () => void
+  onMode: (mode: AgentLauncherMode) => void
+  onOpen2d: (agentType: QuickAgentType) => void
+  onPlace3d: (agentType: QuickAgentType) => void
+}) {
+  const playHover = () => useAudioManager.getState().play('buttonHover')
+  const playClick = () => useAudioManager.getState().play('buttonClick')
+  const handleMode = (nextMode: AgentLauncherMode) => {
+    playClick()
+    onMode(nextMode)
+  }
+
+  return (
+    <div className="fixed left-4 top-[72px] z-[190] select-none">
+      <button
+        onClick={() => { playClick(); onToggle() }}
+        onMouseEnter={playHover}
+        className="group relative h-12 min-w-[132px] overflow-hidden rounded-lg border border-fuchsia-300/35 bg-black/70 px-4 text-left font-mono text-[12px] font-black uppercase tracking-[0.16em] text-white shadow-[0_0_28px_rgba(236,72,153,0.24)] transition hover:-translate-y-0.5 hover:border-white hover:shadow-[0_0_48px_rgba(34,211,238,0.30)]"
+      >
+        <span className="absolute inset-0 bg-[linear-gradient(110deg,rgba(236,72,153,0.26),rgba(250,204,21,0.16),rgba(34,211,238,0.22))] opacity-80" />
+        <span className="absolute inset-0 opacity-0 transition group-hover:opacity-100" style={{ background: 'radial-gradient(circle at 20% 30%, rgba(255,255,255,0.5), transparent 34%)' }} />
+        <span className="relative">agents</span>
+      </button>
+
+      {isOpen && (
+        <div className="mt-2 w-[248px] overflow-hidden rounded-lg border border-white/10 bg-black/80 p-3 shadow-[0_0_54px_rgba(0,0,0,0.65),0_0_38px_rgba(34,211,238,0.18)] backdrop-blur-md">
+          <div className="grid grid-cols-2 gap-2">
+            {(['2d', '3d'] as const).map(option => (
+              <button
+                key={option}
+                onClick={() => handleMode(option)}
+                onMouseEnter={playHover}
+                className="rounded-md border px-3 py-2 text-center text-[11px] font-black uppercase tracking-[0.18em] transition hover:scale-[1.03]"
+                style={{
+                  borderColor: mode === option ? 'rgba(255,255,255,0.72)' : 'rgba(255,255,255,0.14)',
+                  background: mode === option ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.05)',
+                  color: mode === option ? '#fff' : 'rgba(255,255,255,0.66)',
+                  boxShadow: mode === option ? '0 0 22px rgba(255,255,255,0.14)' : 'none',
+                }}
+              >
+                {option.toUpperCase()}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-3 space-y-2">
+            {QUICK_AGENT_ITEMS.map(agent => (
+              <button
+                key={agent.type}
+                onClick={() => {
+                  playClick()
+                  if (mode === '2d') onOpen2d(agent.type)
+                  else onPlace3d(agent.type)
+                }}
+                onMouseEnter={playHover}
+                className="group relative min-h-[58px] w-full overflow-hidden rounded-lg border px-4 text-left transition hover:-translate-y-0.5 hover:scale-[1.015]"
+                style={{
+                  borderColor: `${agent.accent}66`,
+                  background: `linear-gradient(105deg, ${agent.accent}22, rgba(255,255,255,0.05), rgba(236,72,153,0.12))`,
+                  boxShadow: `0 0 24px ${agent.shadow}`,
+                }}
+              >
+                <span className="absolute inset-0 opacity-0 transition group-hover:opacity-100" style={{ background: `radial-gradient(circle at 18% 40%, ${agent.accent}88, transparent 36%)` }} />
+                <span className="relative block text-[13px] font-black uppercase tracking-[0.18em] text-white">{agent.label}</span>
+                <span className="relative mt-1 block text-[10px] uppercase tracking-[0.14em] text-white/60">
+                  {mode === '2d' ? 'open command panel' : 'enter placement mode'}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Scene() {
   const hostedMode = useIsHostedOasis()
   const capabilities = useOasisCapabilities()
@@ -1144,6 +1243,8 @@ export default function Scene() {
   const [devcraftOpen, setDevcraftOpen] = useState(false)
   const [hermesOpen, setHermesOpen] = useState(false)
   const [openclawOpen, setOpenclawOpen] = useState(false)
+  const [agentLauncherOpen, setAgentLauncherOpen] = useState(false)
+  const [agentLauncherMode, setAgentLauncherMode] = useState<AgentLauncherMode>('2d')
   const [realtimeOpen, setRealtimeOpen] = useState(false)
   const [lipSyncLabOpen, setLipSyncLabOpen] = useState(false)
   const [parzivalOpen, setParzivalOpen] = useState(false)
@@ -1202,6 +1303,21 @@ export default function Scene() {
         // Ignore storage failures.
       }
     }
+  }
+  const openQuickAgentPanel = (agentType: QuickAgentType) => {
+    if (agentType === 'hermes') setHermesOpen(true)
+    else setOpenclawOpen(true)
+    setAgentLauncherOpen(false)
+  }
+  const placeQuickAgentWindow = (agentType: QuickAgentType) => {
+    useAudioManager.getState().play('place')
+    useOasisStore.getState().enterPlacementMode({
+      type: 'agent',
+      name: agentType === 'hermes' ? 'Hermes' : 'OpenClaw',
+      agentType,
+      agentRenderMode: 'live-html',
+    })
+    setAgentLauncherOpen(false)
   }
 
   const updateSetting = <K extends keyof OasisSettings>(key: K, value: OasisSettings[K]) => {
@@ -1556,6 +1672,15 @@ export default function Scene() {
           ❓
         </button>
       </div>
+
+      <AgentQuickLauncher
+        isOpen={agentLauncherOpen}
+        mode={agentLauncherMode}
+        onToggle={() => setAgentLauncherOpen(open => !open)}
+        onMode={mode => setAgentLauncherMode(mode)}
+        onOpen2d={openQuickAgentPanel}
+        onPlace3d={placeQuickAgentWindow}
+      />
 
       {/* ✨ Wizard Console — hidden in view mode */}
       {!hideEditTools && (
