@@ -75,6 +75,7 @@ function resetStore() {
     isViewMode: false,
     isViewModeEditable: false,
     placedCatalogAssets: [],
+    portalGates: [],
     craftedScenes: [],
     worldConjuredAssetIds: [],
     placementPending: null,
@@ -242,6 +243,67 @@ describe('OasisStore', () => {
       expect(getState().agentMaterializations['asset-1']).toBeUndefined()
       expect(mockDebouncedSave).not.toHaveBeenCalled()
       expect(mockSaveWorld).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('portal gates', () => {
+    it('places persistent two-way portal metadata in the active world', () => {
+      useOasisStore.setState({
+        _worldReady: true,
+        activeWorldId: 'world-origin',
+        worldRegistry: [{
+          id: 'world-target',
+          name: 'Target World',
+          icon: 'T',
+          visibility: 'private',
+          createdAt: '',
+          lastSavedAt: '',
+        }],
+      })
+
+      const id = getState().placePortalGateAt({
+        variant: 'void-door',
+        targetWorldId: 'world-target',
+        targetWorldName: 'Target World',
+        position: [1, 0, 2],
+      })
+
+      expect(getState().portalGates).toMatchObject([{
+        id,
+        variant: 'void-door',
+        position: [1, 0, 2],
+        direction: 'two-way',
+        targetWorldId: 'world-target',
+        targetWorldName: 'Target World',
+      }])
+      expect(getState().portalGates[0].linkedPortalId).toContain(`${id.slice(0, -1)}b`)
+      expect(getState().placementPending).toBeNull()
+      vi.runOnlyPendingTimers()
+      expect(mockDebouncedSave).toHaveBeenCalled()
+    })
+
+    it('updates portal style in place and schedules a save', () => {
+      useOasisStore.setState({
+        _worldReady: true,
+        portalGates: [{
+          id: 'portal-style-test',
+          variant: 'threshold-ring',
+          position: [0, 0, 0],
+          width: 2.4,
+          height: 3.2,
+          targetWorldId: 'world-target',
+        }],
+      })
+
+      getState().updatePortalGate('portal-style-test', { variant: 'solar-arch' })
+
+      expect(getState().portalGates[0]).toMatchObject({
+        id: 'portal-style-test',
+        variant: 'solar-arch',
+        targetWorldId: 'world-target',
+      })
+      vi.runOnlyPendingTimers()
+      expect(mockDebouncedSave).toHaveBeenCalled()
     })
   })
 

@@ -134,22 +134,20 @@ export function getWorldWriteDecision(
   ctx: WorldAccessContext,
   world: WorldAccessSubject,
 ): WorldWriteDecision {
-  if (hasSystemAccess(ctx)) return 'write'
+  if (hasSystemAccess(ctx) || hasLocalBypass(ctx)) return 'write'
 
   const kind = normalizeWorldKind(world.visibility)
   if (kind === 'core') return 'deny'
   if (kind === 'template') return 'fork'
   if (kind === 'ffa') return 'write'
-  if (hasLocalBypass(ctx)) return 'write'
   if (isWorldOwner(ctx, world)) return 'write'
   return 'deny'
 }
 
 export function canEditWorldSettings(ctx: WorldAccessContext, world: WorldAccessSubject): boolean {
-  if (hasSystemAccess(ctx)) return true
+  if (hasSystemAccess(ctx) || hasLocalBypass(ctx)) return true
   const kind = normalizeWorldKind(world.visibility)
   if (kind === 'core' || kind === 'template') return false
-  if (hasLocalBypass(ctx)) return true
   return isWorldOwner(ctx, world)
 }
 

@@ -9,6 +9,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { writeFileSync, mkdirSync, existsSync } from 'fs'
 import { join } from 'path'
+import { deriveImageTitle } from '@/lib/conjure/derive-image-title'
+import { emitWorldEvent } from '@/lib/mcp/world-events'
 
 const IMAGINE_MODELS: Record<string, { id: string; label: string }> = {
   'gemini-flash': { id: 'google/gemini-3.1-flash-image-preview', label: 'Gemini Flash' },
@@ -119,12 +121,26 @@ export async function POST(request: NextRequest) {
       console.warn('[Imagine] sharp unavailable, tile = full image:', (e as Error).message)
     }
 
+    const trimmedPrompt = prompt.trim()
+    const title = deriveImageTitle(trimmedPrompt)
+    const url = `/${IMAGE_DIR}/${filename}`
+    const tileUrl = `/${IMAGE_DIR}/${tileFilename}`
+    const createdAt = new Date().toISOString()
+
+    // Fan out to any open Wizard Console gallery so agent-driven generations
+    // (e.g. conjure_framed_picture) land alongside manual ones. Empty worldId
+    // = global event; the gallery is per-user, not per-world.
+    emitWorldEvent('generated_image_added', '', {
+      image: { id: imageId, prompt: trimmedPrompt, url, tileUrl, createdAt, title },
+    })
+
     return NextResponse.json({
       id: imageId,
-      url: `/${IMAGE_DIR}/${filename}`,
-      tileUrl: `/${IMAGE_DIR}/${tileFilename}`,
-      prompt: prompt.trim(),
-      createdAt: new Date().toISOString(),
+      url,
+      tileUrl,
+      prompt: trimmedPrompt,
+      title,
+      createdAt,
     }, { status: 201 })
 
   } catch (err) {

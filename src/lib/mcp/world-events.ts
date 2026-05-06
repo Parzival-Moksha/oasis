@@ -31,6 +31,7 @@ export type WorldEventType =
   | 'world_cleared'
   | 'world_switch'
   | 'world_saved'
+  | 'generated_image_added'
 
 export interface WorldEvent {
   type: WorldEventType

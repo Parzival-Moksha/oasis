@@ -10,7 +10,7 @@ import type { CraftedScene } from '../../../lib/conjure/types'
 import { dispatch } from '../../../lib/event-bus'
 import { extractPartialCraftData } from '../../../lib/craft-stream'
 import { addToSceneLibrary, getSceneLibrary } from '../../../lib/forge/scene-library'
-import { generateSingleCraftedThumbnail } from '../../../hooks/useThumbnailGenerator'
+import { generateSingleCraftedThumbnail, useCraftedThumbnailGenerator } from '../../../hooks/useThumbnailGenerator'
 import { awardXp } from '../../../hooks/useXp'
 import { derivePlayerCastSpawn } from '../../../lib/player-avatar-runtime'
 import { OASIS_BASE } from './shared'
@@ -236,6 +236,8 @@ export function CraftTabContent() {
   const enterPlacementMode = useOasisStore(s => s.enterPlacementMode)
   const deleteFromLibrary = useOasisStore(s => s.deleteFromLibrary)
 
+  useCraftedThumbnailGenerator()
+
   // Craft history is local to the header — we render a placeholder here
   // The actual craft history display lives in the header component
 
@@ -250,9 +252,8 @@ export function CraftTabContent() {
       {craftedScenes.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-8 text-gray-400">
           <div className="text-3xl mb-2">&#9881;</div>
-          <div className="text-xs">No crafted objects yet</div>
-          <div className="text-[10px] mt-1 text-gray-500">Describe what you want and the LLM will build it from procedural geometry</div>
-          <div className="text-[10px] mt-1 text-blue-500/40">Each new craft builds on top of the last</div>
+          <div className="text-xs">No crafted scenes placed here yet</div>
+          <div className="text-[10px] mt-1 text-gray-500">Craft a new scene above, or place one from the library below.</div>
         </div>
       ) : (
         <div className="space-y-2">

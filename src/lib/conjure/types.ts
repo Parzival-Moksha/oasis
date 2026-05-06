@@ -465,6 +465,8 @@ export interface GeneratedImage {
   url: string                    // full-res: /generated-images/{id}.png
   tileUrl: string                // tile-res: /generated-images/{id}_tile.jpg (256×256)
   createdAt: string
+  /** Truncated 50-char identifier derived from prompt; lets agents/users find an image without scanning the full prompt. */
+  title?: string
 }
 
 export interface ConjureResponse {

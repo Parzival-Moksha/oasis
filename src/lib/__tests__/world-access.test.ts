@@ -56,8 +56,6 @@ describe('world access policy', () => {
   it('denies core mutation and forks templates on normal writes', () => {
     expect(getWorldWriteDecision(hostedUser, world('core'))).toBe('deny')
     expect(getWorldWriteDecision(hostedUser, world('template'))).toBe('fork')
-    expect(getWorldWriteDecision(localUser, world('core'))).toBe('deny')
-    expect(getWorldWriteDecision(localUser, world('template'))).toBe('fork')
   })
 
   it('lets hosted admins mutate core and template worlds deliberately', () => {
@@ -75,7 +73,10 @@ describe('world access policy', () => {
 
   it('keeps local mode permissive for normal non-system worlds', () => {
     expect(canReadWorld(localUser, world('private', 'other-user'))).toBe(true)
+    expect(getWorldWriteDecision(localUser, world('core'))).toBe('write')
+    expect(getWorldWriteDecision(localUser, world('template'))).toBe('write')
     expect(getWorldWriteDecision(localUser, world('private', 'other-user'))).toBe('write')
+    expect(canEditWorldSettings(localUser, world('core'))).toBe(true)
     expect(canEditWorldSettings(localUser, world('public', 'other-user'))).toBe(true)
   })
 })

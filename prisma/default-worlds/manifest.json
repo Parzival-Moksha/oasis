@@ -1,0 +1,12 @@
+{
+  "seedVersion": 1,
+  "worlds": [
+    {
+      "slug": "portal-zero",
+      "id": "world-welcome-hub-system",
+      "file": "portal-zero.world.json",
+      "name": "Portal Zero",
+      "visibility": "core"
+    }
+  ]
+}

@@ -2,10 +2,17 @@ import { describe, expect, it } from 'vitest'
 import {
   WELCOME_HUB_WORLD_ID,
   buildWelcomeHubPortalGates,
+  crossedPortalPlane,
   createPortalTriggerState,
+  enteredPortalActivationZone,
   getSafePortalTargetWorlds,
-  isWithinPortalTriggerRadius,
+  isWithinPortalPlaneBounds,
+  getPortalGateLabel,
+  layoutPortalAreaGates,
   markPortalTriggered,
+  portalAreaPose,
+  portalRotationTowardCenter,
+  resolvePortalGateAction,
   shouldTriggerPortal,
   type PortalGate,
 } from '../portal-gates'
@@ -15,7 +22,8 @@ const gate: PortalGate = {
   id: 'portal-a',
   variant: 'threshold-ring',
   position: [2, 0, 3],
-  triggerRadius: 1.5,
+  width: 2,
+  height: 3,
   targetWorldId: 'world-target',
 }
 
@@ -31,29 +39,49 @@ function world(id: string, visibility: WorldMeta['visibility'] = 'private'): Wor
 }
 
 describe('portal gate trigger helpers', () => {
-  it('uses XZ distance for trigger radius checks', () => {
-    expect(isWithinPortalTriggerRadius([2, 20, 4.4], gate)).toBe(true)
-    expect(isWithinPortalTriggerRadius([2, 0, 4.51], gate)).toBe(false)
+  it('uses portal plane bounds instead of a radius bubble', () => {
+    expect(isWithinPortalPlaneBounds([2.9, 0, 3.01], gate)).toBe(true)
+    expect(isWithinPortalPlaneBounds([3.2, 0, 3.01], gate)).toBe(false)
   })
 
   it('does not trigger inert gates or missing player poses', () => {
     const state = createPortalTriggerState()
 
     expect(shouldTriggerPortal(null, gate, state, { nowMs: 1000, cooldownMs: 500 })).toBe(false)
-    expect(shouldTriggerPortal([2, 0, 3], { ...gate, inert: true }, state, { nowMs: 1000, cooldownMs: 500 })).toBe(false)
+    expect(shouldTriggerPortal([2, 0, 2.8], { ...gate, inert: true }, state, { nowMs: 1000, cooldownMs: 500 })).toBe(false)
+  })
+
+  it('triggers only when the player crosses the portal plane inside the doorway', () => {
+    expect(crossedPortalPlane([2, 0, 2.8], [2, 0, 3.2], gate)).toBe(true)
+    expect(crossedPortalPlane([0.5, 0, 2.8], [0.5, 0, 3.2], gate)).toBe(false)
+
+    const state = createPortalTriggerState()
+    expect(shouldTriggerPortal([2, 0, 2.8], gate, state, { nowMs: 1000, cooldownMs: 500 })).toBe(false)
+    expect(shouldTriggerPortal([2, 0, 3.2], gate, state, { nowMs: 1100, cooldownMs: 500 })).toBe(true)
+  })
+
+  it('also triggers when the player enters a shallow activation band around the portal plane', () => {
+    expect(enteredPortalActivationZone([2, 0, 2.2], [2, 0, 2.55], gate, 0.5)).toBe(true)
+    expect(enteredPortalActivationZone([2, 0, 2.55], [2, 0, 2.6], gate, 0.5)).toBe(false)
+    expect(enteredPortalActivationZone([0.5, 0, 2.2], [0.5, 0, 2.55], gate, 0.5)).toBe(false)
+
+    const state = createPortalTriggerState()
+    expect(shouldTriggerPortal([2, 0, 2.2], gate, state, { nowMs: 1000, cooldownMs: 500, activationDepth: 0.5 })).toBe(false)
+    expect(shouldTriggerPortal([2, 0, 2.55], gate, state, { nowMs: 1100, cooldownMs: 500, activationDepth: 0.5 })).toBe(true)
   })
 
   it('respects cooldowns before allowing another trigger', () => {
-    const state = markPortalTriggered(createPortalTriggerState(), 1000)
+    const state = { ...markPortalTriggered(createPortalTriggerState(), 1000), lastPlayerPosition: [2, 0, 2.8] as [number, number, number] }
 
-    expect(shouldTriggerPortal([2, 0, 3], gate, state, { nowMs: 1200, cooldownMs: 500 })).toBe(false)
-    expect(shouldTriggerPortal([2, 0, 3], gate, state, { nowMs: 1600, cooldownMs: 500 })).toBe(true)
+    expect(shouldTriggerPortal([2, 0, 3.2], gate, state, { nowMs: 1200, cooldownMs: 500 })).toBe(false)
+    state.lastPlayerPosition = [2, 0, 2.8]
+    expect(shouldTriggerPortal([2, 0, 3.2], gate, state, { nowMs: 1600, cooldownMs: 500 })).toBe(true)
   })
 
   it('supports one-shot portals', () => {
-    const state = markPortalTriggered(createPortalTriggerState(), 1000)
+    const state = { ...markPortalTriggered(createPortalTriggerState(), 1000), lastPlayerPosition: [2, 0, 2.8] as [number, number, number] }
 
-    expect(shouldTriggerPortal([2, 0, 3], gate, state, { nowMs: 5000, cooldownMs: 500, oneShot: true })).toBe(false)
+    expect(shouldTriggerPortal([2, 0, 3.2], gate, state, { nowMs: 5000, cooldownMs: 500, oneShot: true })).toBe(false)
   })
 
   it('filters Welcome Hub, active world, core worlds, and templates from targets', () => {
@@ -69,15 +97,73 @@ describe('portal gate trigger helpers', () => {
   it('builds inert gallery gates when there are no target worlds', () => {
     const gates = buildWelcomeHubPortalGates([])
 
-    expect(gates).toHaveLength(5)
-    expect(gates.every(item => item.inert && !item.targetWorldId && item.triggerRadius === 0)).toBe(true)
+    expect(gates).toHaveLength(10)
+    expect(gates.every(item => item.inert && !item.targetWorldId && item.width > 0 && item.height > 0)).toBe(true)
   })
 
-  it('places a single live destination away from spawn', () => {
+  it('places a single live destination in the portal area', () => {
     const [singleGate] = buildWelcomeHubPortalGates([world('world-safe')])
 
-    expect(singleGate.position).toEqual([0, 0, -4])
-    expect(singleGate.triggerRadius).toBeGreaterThan(0)
+    expect(singleGate.position).toEqual([30, 0, 0])
+    expect(singleGate.width).toBeGreaterThan(0)
+    expect(singleGate.height).toBeGreaterThan(0)
     expect(singleGate.inert).toBe(false)
+  })
+
+  it('lays out portal-area gates on a non-overlapping semicircle', () => {
+    expect(portalAreaPose(0, 2).position).toEqual([30, 0, -2])
+    expect(portalAreaPose(1, 2).position).toEqual([30, 0, 2])
+
+    const gates: PortalGate[] = Array.from({ length: 6 }, (_, index) => ({
+      id: `portal-${index}`,
+      variant: 'threshold-ring',
+      position: [30, 0, 0],
+      width: 2.4,
+      height: 3.2,
+      targetWorldId: `world-${index}`,
+    }))
+    const laidOut = layoutPortalAreaGates(gates)
+    for (let index = 1; index < laidOut.length; index += 1) {
+      const prev = laidOut[index - 1].position
+      const current = laidOut[index].position
+      expect(Math.hypot(current[0] - prev[0], current[2] - prev[2])).toBeGreaterThanOrEqual(3.99)
+    }
+  })
+
+  it('aims return portals from the rim back toward world center', () => {
+    expect(portalRotationTowardCenter([30, 0, 0])).toBeCloseTo(-Math.PI / 2)
+    expect(Math.abs(portalRotationTowardCenter([0, 0, 30]))).toBeCloseTo(Math.PI)
+  })
+
+  it('resolves legacy target portals as load_world actions', () => {
+    expect(resolvePortalGateAction({
+      ...gate,
+      targetWorldId: 'world-destination',
+      targetWorldName: 'Destination',
+    })).toEqual({
+      type: 'load_world',
+      worldId: 'world-destination',
+      worldName: 'Destination',
+    })
+  })
+
+  it('uses explicit portal actions and labels for creation and locked gates', () => {
+    const createGate: PortalGate = {
+      ...gate,
+      label: 'Make a new FFA',
+      action: { type: 'create_world', visibility: 'ffa', promptForName: true },
+      targetWorldId: undefined,
+      targetWorldName: undefined,
+    }
+    const lockedGate: PortalGate = {
+      ...gate,
+      action: { type: 'locked_message', message: 'Reach level 5.' },
+      targetWorldId: undefined,
+      targetWorldName: undefined,
+    }
+
+    expect(resolvePortalGateAction(createGate)).toEqual({ type: 'create_world', visibility: 'ffa', promptForName: true })
+    expect(getPortalGateLabel(createGate)).toBe('Make a new FFA')
+    expect(getPortalGateLabel(lockedGate)).toBe('Locked portal')
   })
 })

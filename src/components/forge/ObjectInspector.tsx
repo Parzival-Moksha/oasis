@@ -23,6 +23,7 @@ import { ANIMATION_LIBRARY, ANIM_CATEGORIES, LIB_PREFIX, loadAnimationClip, type
 import { FRAME_STYLES, getAudioElement } from './WorldObjects'
 import { useUILayer } from '@/lib/input-manager'
 import { AGENT_WINDOW_RENDERERS, getAgentWindowRendererMeta, type AgentWindowRenderMode } from '../../lib/agent-window-renderers'
+import { PORTAL_GATE_VARIANT_DEFS, resolvePortalGateAction, type PortalAction, type PortalGate, type PortalGateVariant } from '../../lib/portal-gates'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS — The inspector's visual DNA
@@ -399,12 +400,17 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
   const transforms = useOasisStore(s => s.transforms)
   const placedCatalogAssets = useOasisStore(s => s.placedCatalogAssets)
   const craftedScenes = useOasisStore(s => s.craftedScenes)
+  const portalGates = useOasisStore(s => s.portalGates)
+  const worldRegistry = useOasisStore(s => s.worldRegistry)
+  const activeWorldId = useOasisStore(s => s.activeWorldId)
   const conjuredAssets = useOasisStore(s => s.conjuredAssets)
   const worldConjuredAssetIds = useOasisStore(s => s.worldConjuredAssetIds)
   const setObjectBehavior = useOasisStore(s => s.setObjectBehavior)
   const setInspectedObject = useOasisStore(s => s.setInspectedObject)
   const removeCatalogAsset = useOasisStore(s => s.removeCatalogAsset)
   const removeCraftedScene = useOasisStore(s => s.removeCraftedScene)
+  const removePortalGate = useOasisStore(s => s.removePortalGate)
+  const updatePortalGate = useOasisStore(s => s.updatePortalGate)
   const removeConjuredAssetFromWorld = useOasisStore(s => s.removeConjuredAssetFromWorld)
   const selectObject = useOasisStore(s => s.selectObject)
   const setObjectTransform = useOasisStore(s => s.setObjectTransform)
@@ -433,6 +439,21 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
     const crafted = craftedScenes.find(s => s.id === inspectedObjectId)
     if (crafted) return { type: 'crafted' as const, id: crafted.id, name: crafted.name, data: crafted }
 
+    // 3. Portal gate?
+    const portal = portalGates.find(gate => gate.id === inspectedObjectId)
+    if (portal) {
+      return {
+        type: 'portal' as const,
+        id: portal.id,
+        name: portal.targetWorldName ? `Portal to ${portal.targetWorldName}` : 'Portal gate',
+        data: {
+          ...portal,
+          rotation: [0, portal.rotationY ?? 0, 0] as [number, number, number],
+          scale: portal.scale ?? 1,
+        },
+      }
+    }
+
     // 3. Conjured asset in world?
     if (worldConjuredAssetIds.includes(inspectedObjectId)) {
       const conjured = conjuredAssets.find(a => a.id === inspectedObjectId)
@@ -448,7 +469,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
     if (agentWin) return { type: 'agent' as const, id: agentWin.id, name: agentWin.label || `${agentWin.agentType} window`, data: agentWin }
 
     return null
-  }, [inspectedObjectId, placedCatalogAssets, craftedScenes, conjuredAssets, worldConjuredAssetIds, worldLights, placedAgentWindows])
+  }, [inspectedObjectId, placedCatalogAssets, craftedScenes, portalGates, conjuredAssets, worldConjuredAssetIds, worldLights, placedAgentWindows])
 
   // ─═̷─ Current behavior (or defaults) ─═̷─
   const behavior: ObjectBehavior = useMemo(() => {
@@ -558,13 +579,14 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
     if (!resolved || !inspectedObjectId) return
     if (resolved.type === 'catalog') removeCatalogAsset(inspectedObjectId)
     else if (resolved.type === 'crafted') removeCraftedScene(inspectedObjectId)
+    else if (resolved.type === 'portal') removePortalGate(inspectedObjectId)
     else if (resolved.type === 'conjured') removeConjuredAssetFromWorld(inspectedObjectId)
     else if (resolved.type === 'light') removeWorldLight(inspectedObjectId)
     else if (resolved.type === 'agent') removeAgentWindow(inspectedObjectId)
     selectObject(null)
     setInspectedObject(null)
     onClose()
-  }, [resolved, inspectedObjectId, removeCatalogAsset, removeCraftedScene, removeConjuredAssetFromWorld, removeWorldLight, removeAgentWindow, selectObject, setInspectedObject, onClose])
+  }, [resolved, inspectedObjectId, removeCatalogAsset, removeCraftedScene, removePortalGate, removeConjuredAssetFromWorld, removeWorldLight, removeAgentWindow, selectObject, setInspectedObject, onClose])
 
   // ═══════════════════════════════════════════════════════════════════════════
   // DRAG HANDLERS (same pattern as WizardConsole / AssetExplorerWindow)
@@ -616,7 +638,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
   const scl = transform.scale
   const sclArr: [number, number, number] = typeof scl === 'number' ? [scl, scl, scl] : (scl || [1, 1, 1])
 
-  const badge = TYPE_BADGE[resolved.type]
+  const badge = TYPE_BADGE[resolved.type] || { bg: 'rgba(34, 211, 238, 0.2)', text: '#67E8F9', label: 'portal' }
 
   // ─═̷─ Mesh stats for this object (if GLB has been loaded) ─═̷─
   const stats: ModelStats | undefined = objectMeshStats[inspectedObjectId]
@@ -1419,6 +1441,190 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
         })()}
 
         {/* ░▒▓ AGENT WINDOW INFO — session, model, cost, frame ▓▒░ */}
+        {resolved?.type === 'portal' && (() => {
+          const portal = resolved.data as PortalGate
+          const targetWorlds = worldRegistry.filter(world =>
+            world.id !== activeWorldId &&
+            world.visibility !== 'core' &&
+            world.visibility !== 'template'
+          )
+          const action = resolvePortalGateAction(portal)
+          const setPortalAction = (nextAction: PortalAction) => {
+            updatePortalGate(inspectedObjectId!, {
+              action: nextAction,
+              targetWorldId: nextAction.type === 'load_world' ? nextAction.worldId : undefined,
+              targetWorldName: nextAction.type === 'load_world' ? nextAction.worldName : undefined,
+              inert: false,
+            })
+          }
+          return (
+            <>
+              <SectionHeader>Portal Action</SectionHeader>
+              <div className="rounded-lg border border-white/5 p-2 space-y-1.5" style={{ background: 'rgba(20, 20, 20, 0.6)' }}>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-gray-500 font-mono w-16 shrink-0">variant</span>
+                  <span className="text-[10px] text-cyan-300 font-mono">{portal.variant}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-gray-500 font-mono w-16 shrink-0">action</span>
+                  <select
+                    value={action.type}
+                    onChange={event => {
+                      const type = event.target.value as PortalAction['type']
+                      if (type === 'load_world') {
+                        const world = targetWorlds.find(item => item.id === portal.targetWorldId) || targetWorlds[0]
+                        setPortalAction(world
+                          ? { type: 'load_world', worldId: world.id, worldName: world.name }
+                          : { type: 'locked_message', message: 'Choose a target world first.' })
+                      } else if (type === 'create_world') {
+                        setPortalAction({ type: 'create_world', visibility: 'private', promptForName: true, name: 'New Private World' })
+                      } else if (type === 'external_url') {
+                        setPortalAction({ type: 'external_url', url: 'https://conjure.04515.xyz/?portal=true&from=oasis', label: 'External world', returnUrl: 'current', requiresConfirm: true })
+                      } else {
+                        setPortalAction({ type: 'locked_message', message: 'This portal is not open yet.' })
+                      }
+                    }}
+                    className="min-w-0 flex-1 rounded border border-cyan-500/20 bg-black/40 px-2 py-1 text-[10px] text-cyan-100 font-mono outline-none focus:border-cyan-400/40"
+                  >
+                    <option value="load_world">load_world</option>
+                    <option value="create_world">create_world</option>
+                    <option value="external_url">external_url</option>
+                    <option value="locked_message">locked_message</option>
+                  </select>
+                </div>
+                {action.type === 'load_world' && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-gray-500 font-mono w-16 shrink-0">target</span>
+                  <select
+                    value={action.worldId || portal.targetWorldId || ''}
+                    onChange={event => {
+                      const worldId = event.target.value
+                      const world = targetWorlds.find(item => item.id === worldId)
+                      updatePortalGate(inspectedObjectId!, {
+                        targetWorldId: world?.id,
+                        targetWorldName: world?.name,
+                        action: world ? { type: 'load_world', worldId: world.id, worldName: world.name } : undefined,
+                        inert: !world,
+                      })
+                    }}
+                    className="min-w-0 flex-1 rounded border border-cyan-500/20 bg-black/40 px-2 py-1 text-[10px] text-cyan-100 font-mono outline-none focus:border-cyan-400/40"
+                    title={portal.targetWorldId}
+                  >
+                    <option value="">No target</option>
+                    {targetWorlds.map(world => (
+                      <option key={world.id} value={world.id}>{world.name}</option>
+                    ))}
+                  </select>
+                </div>
+                )}
+                {action.type === 'create_world' && (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-gray-500 font-mono w-16 shrink-0">visibility</span>
+                      <select
+                        value={action.visibility || 'private'}
+                        onChange={event => setPortalAction({ ...action, visibility: event.target.value as NonNullable<Extract<PortalAction, { type: 'create_world' }>['visibility']> })}
+                        className="min-w-0 flex-1 rounded border border-cyan-500/20 bg-black/40 px-2 py-1 text-[10px] text-cyan-100 font-mono outline-none focus:border-cyan-400/40"
+                      >
+                        <option value="private">private</option>
+                        <option value="public">public</option>
+                        <option value="ffa">FFA</option>
+                        <option value="unlisted">link-only</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-gray-500 font-mono w-16 shrink-0">name</span>
+                      <input
+                        value={action.name || ''}
+                        onChange={event => setPortalAction({ ...action, name: event.target.value })}
+                        className="min-w-0 flex-1 rounded border border-cyan-500/20 bg-black/40 px-2 py-1 text-[10px] text-cyan-100 font-mono outline-none focus:border-cyan-400/40"
+                        placeholder="New Oasis World"
+                      />
+                    </div>
+                  </>
+                )}
+                {action.type === 'external_url' && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-gray-500 font-mono w-16 shrink-0">url</span>
+                    <input
+                      value={action.url}
+                      onChange={event => setPortalAction({ ...action, url: event.target.value })}
+                      className="min-w-0 flex-1 rounded border border-cyan-500/20 bg-black/40 px-2 py-1 text-[10px] text-cyan-100 font-mono outline-none focus:border-cyan-400/40"
+                      placeholder="https://conjure.04515.xyz/"
+                    />
+                  </div>
+                )}
+                {action.type === 'locked_message' && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-gray-500 font-mono w-16 shrink-0">message</span>
+                    <input
+                      value={action.message}
+                      onChange={event => setPortalAction({ ...action, message: event.target.value })}
+                      className="min-w-0 flex-1 rounded border border-cyan-500/20 bg-black/40 px-2 py-1 text-[10px] text-cyan-100 font-mono outline-none focus:border-cyan-400/40"
+                      placeholder="This portal is not open yet."
+                    />
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-gray-500 font-mono w-16 shrink-0">direction</span>
+                  <select
+                    value={portal.direction || 'one-way'}
+                    onChange={event => updatePortalGate(inspectedObjectId!, { direction: event.target.value as 'one-way' | 'two-way' })}
+                    className="min-w-0 flex-1 rounded border border-cyan-500/20 bg-black/40 px-2 py-1 text-[10px] text-cyan-100 font-mono outline-none focus:border-cyan-400/40"
+                  >
+                    <option value="one-way">one-way</option>
+                    <option value="two-way">two-way</option>
+                  </select>
+                </div>
+                {portal.linkedPortalId && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-gray-500 font-mono w-16 shrink-0">linked</span>
+                    <span className="text-[9px] text-gray-500 font-mono truncate" title={portal.linkedPortalId}>
+                      {portal.linkedPortalId}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <SectionHeader>Portal Style</SectionHeader>
+              <div className="rounded-lg border border-white/5 p-2" style={{ background: 'rgba(20, 20, 20, 0.6)' }}>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {PORTAL_GATE_VARIANT_DEFS.map(style => {
+                    const isActive = portal.variant === style.id
+                    return (
+                      <button
+                        key={style.id}
+                        onClick={() => updatePortalGate(inspectedObjectId!, { variant: style.id as PortalGateVariant })}
+                        className={`group flex items-center gap-2 rounded p-1.5 text-left transition-colors ${
+                          isActive
+                            ? 'border border-cyan-400/50 bg-cyan-500/15'
+                            : 'border border-gray-700/30 hover:border-cyan-400/35 hover:bg-cyan-500/10'
+                        }`}
+                        title={style.desc}
+                      >
+                        <span
+                          className="h-10 w-7 shrink-0 rounded-full border shadow-[0_0_18px_rgba(34,211,238,0.45)]"
+                          style={{
+                            borderColor: style.accent,
+                            background: `linear-gradient(180deg, ${style.preview.from}, ${style.preview.via}, ${style.preview.to})`,
+                          }}
+                        />
+                        <span className="min-w-0">
+                          <span className={`block truncate text-[9px] font-mono ${isActive ? 'text-cyan-200' : 'text-gray-300'}`}>
+                            {style.label}
+                          </span>
+                          <span className="block truncate text-[8px] text-gray-500">
+                            {style.id}
+                          </span>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </>
+          )
+        })()}
+
         {resolved?.type === 'agent' && (() => {
           const agentWin = resolved.data as import('../../store/oasisStore').AgentWindow
           const rendererMeta = getAgentWindowRendererMeta(agentWin.renderMode)

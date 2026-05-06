@@ -23,6 +23,8 @@ data/*.local.json
 # Tooling caches and IDE configs
 .cache/
 .codex/
+.codex-logs/
+tmp/
 
 # Environment secrets
 .env
@@ -51,6 +53,7 @@ public/generated-images/*
 !public/generated-images/img_mnb5wl7tfog1_tile.jpg
 public/generated-videos/
 public/generated-voices/
+public/generated-music/
 
 # User-uploaded media (images, videos, audio via /api/media/upload)
 public/images/*

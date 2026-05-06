@@ -18,6 +18,7 @@ import * as THREE from 'three'
 // THREE.DefaultLoadingManager intercepts ALL asset fetches before they fire.
 // ═══════════════════════════════════════════════════════════════════════════════
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
+const OPENCLAW_PANEL_OPEN_KEY = 'oasis-openclaw-panel-open'
 if (OASIS_BASE) {
   THREE.DefaultLoadingManager.setURLModifier((url: string) => {
     if (url.startsWith('/') && !url.startsWith(OASIS_BASE)) {
@@ -1142,7 +1143,7 @@ export default function Scene() {
   const [anorakProOpen, setAnorakProOpen] = useState(false)
   const [devcraftOpen, setDevcraftOpen] = useState(false)
   const [hermesOpen, setHermesOpen] = useState(false)
-  const [openclawOpen, setOpenclawOpen] = useState(hostedMode)
+  const [openclawOpen, setOpenclawOpen] = useState(false)
   const [realtimeOpen, setRealtimeOpen] = useState(false)
   const [lipSyncLabOpen, setLipSyncLabOpen] = useState(false)
   const [parzivalOpen, setParzivalOpen] = useState(false)
@@ -1162,7 +1163,13 @@ export default function Scene() {
   }, [hostedMode])
 
   useEffect(() => {
-    if (hostedMode) setOpenclawOpen(true)
+    if (!hostedMode) return
+    if (typeof window === 'undefined') return
+    try {
+      setOpenclawOpen(window.localStorage.getItem(OPENCLAW_PANEL_OPEN_KEY) === '1')
+    } catch {
+      setOpenclawOpen(false)
+    }
   }, [hostedMode])
 
   // Panel toggle with sound
@@ -1171,6 +1178,30 @@ export default function Scene() {
       useAudioManager.getState().play(prev ? 'panelClose' : 'panelOpen')
       return !prev
     })
+  }
+  const toggleOpenclawPanel = () => {
+    setOpenclawOpen(prev => {
+      const next = !prev
+      useAudioManager.getState().play(prev ? 'panelClose' : 'panelOpen')
+      if (hostedMode && typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(OPENCLAW_PANEL_OPEN_KEY, next ? '1' : '0')
+        } catch {
+          // Ignore storage failures; the button still works for this tab.
+        }
+      }
+      return next
+    })
+  }
+  const closeOpenclawPanel = () => {
+    setOpenclawOpen(false)
+    if (hostedMode && typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(OPENCLAW_PANEL_OPEN_KEY, '0')
+      } catch {
+        // Ignore storage failures.
+      }
+    }
   }
 
   const updateSetting = <K extends keyof OasisSettings>(key: K, value: OasisSettings[K]) => {
@@ -1451,7 +1482,7 @@ export default function Scene() {
         </button>
         )}
         <button
-          onClick={() => togglePanel(setOpenclawOpen)}
+          onClick={toggleOpenclawPanel}
           aria-label="OpenClaw"
           data-oasis-tooltip="OpenClaw"
           className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
@@ -1593,7 +1624,7 @@ export default function Scene() {
       )}
       <OpenclawPanel
         isOpen={openclawOpen}
-        onClose={() => setOpenclawOpen(false)}
+        onClose={closeOpenclawPanel}
       />
       {canUseLocalPanels && (
         <RealtimePanel

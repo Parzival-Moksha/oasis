@@ -16,5 +16,8 @@ export function clearAvatarLocomotionReady(id: string) {
 
 export function isAvatarLocomotionReady(id?: string): boolean {
   if (!id) return true
+  if (id.startsWith('agent-avatar-')) {
+    return avatarLocomotionReady.get(id) ?? false
+  }
   return avatarLocomotionReady.get(id) ?? true
 }

@@ -17,6 +17,7 @@ If `CLAUDE.md`, old memory notes, or stale comments disagree with current code, 
 - If work comes from `carbondir/oasisspec3.txt`, delete completed lines instead of marking them done.
 - `ObjectInspector` is often called the "Joystick" in conversation.
 - Prefer `pnpm tsc --noEmit` when the user already has `pnpm dev`, `pnpm dev:loop`, or `pnpm dev:agent` running; `pnpm build` can fight over `.next/`.
+- When GitHub/deploy is the practical hosting path, bias toward committing coherent dirty work instead of leaving useful feature batches stranded. Keep credentials, caches, logs, screenshots, runtime media, generated voice/music/video/image bloat, and private local state out of commits; update `.gitignore` for repeat offenders.
 
 ## Commands
 

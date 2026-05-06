@@ -8,6 +8,7 @@ import { useState, useCallback, useRef } from 'react'
 import { useOasisStore } from '../../../store/oasisStore'
 import { usePricing } from '../../../hooks/usePricing'
 import { awardXp } from '../../../hooks/useXp'
+import { deriveImageTitle } from '../../../lib/conjure/derive-image-title'
 import { OASIS_BASE } from './shared'
 
 const IMAGINE_MODELS = [
@@ -53,12 +54,14 @@ export function ImagineTab() {
         const res = await fetch(`${OASIS_BASE}/api/media/upload`, { method: 'POST', body: formData })
         if (!res.ok) continue
         const { url, name } = await res.json()
+        const sourceLabel = name || file.name
         addGeneratedImage({
           id: `upload_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          prompt: name || file.name,
+          prompt: sourceLabel,
           url,
           tileUrl: url,
           createdAt: new Date().toISOString(),
+          title: deriveImageTitle(sourceLabel),
         })
       } catch (e) { console.error('[Upload]', e) }
     }
@@ -92,6 +95,7 @@ export function ImagineTab() {
         url: data.url,
         tileUrl: data.tileUrl,
         createdAt: data.createdAt,
+        title: typeof data.title === 'string' ? data.title : deriveImageTitle(data.prompt || ''),
       })
       awardXp('GENERATE_IMAGE')
     } catch (e) {
@@ -236,27 +240,37 @@ export function ImagineTab() {
               Gallery ({generatedImages.length})
             </div>
             <div className="grid grid-cols-2 gap-2">
-              {[...generatedImages].reverse().map(img => (
+              {[...generatedImages].reverse().map(img => {
+                const displayTitle = img.title || deriveImageTitle(img.prompt || '')
+                const placementName = displayTitle || img.prompt.slice(0, 24)
+                return (
                 <div key={img.id} className="group relative rounded-lg overflow-hidden border border-gray-700/30 bg-black/40">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={img.url}
-                    alt={img.prompt}
+                    alt={displayTitle || img.prompt}
+                    title={img.prompt}
                     className="w-full aspect-square object-cover"
                     loading="lazy"
                   />
+                  {/* Title strip — always visible, lets you spot a pic without hovering */}
+                  {displayTitle && (
+                    <div className="absolute left-0 right-0 bottom-0 px-1.5 py-1 bg-gradient-to-t from-black/85 to-transparent pointer-events-none">
+                      <div className="text-[9px] text-gray-200 font-mono line-clamp-1" title={img.prompt}>{displayTitle}</div>
+                    </div>
+                  )}
                   {/* Hover actions overlay */}
                   <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1.5 p-2">
-                    <div className="text-[9px] text-gray-300 font-mono text-center line-clamp-2 mb-1">{img.prompt}</div>
+                    <div className="text-[9px] text-gray-300 font-mono text-center line-clamp-2 mb-1" title={img.prompt}>{img.prompt}</div>
                     <div className="flex gap-1 w-full">
                       <button
-                        onClick={() => enterPlacementMode({ type: 'image', name: img.prompt.slice(0, 24), imageUrl: img.url })}
+                        onClick={() => enterPlacementMode({ type: 'image', name: placementName, imageUrl: img.url })}
                         className="flex-1 text-[10px] px-2 py-1 rounded bg-pink-500/20 text-pink-300 border border-pink-500/30 hover:bg-pink-500/30 transition-colors font-mono"
                       >
                         Place
                       </button>
                       <button
-                        onClick={() => enterPlacementMode({ type: 'image', name: img.prompt.slice(0, 24), imageUrl: img.url, imageFrameStyle: 'gilded' })}
+                        onClick={() => enterPlacementMode({ type: 'image', name: placementName, imageUrl: img.url, imageFrameStyle: 'gilded' })}
                         className="text-[10px] px-2 py-1 rounded bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 hover:bg-yellow-500/30 transition-colors font-mono"
                         title="Place with golden frame"
                       >
@@ -277,7 +291,8 @@ export function ImagineTab() {
                     </button>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         )}

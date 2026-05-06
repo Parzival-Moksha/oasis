@@ -636,6 +636,20 @@ export function useWorldEvents() {
           // remote reload fallback path, not an explicit handler.
           return false
 
+        case 'generated_image_added': {
+          const record = asRecord(data.image)
+          if (!record) return false
+          const id = typeof record.id === 'string' ? record.id : ''
+          const url = typeof record.url === 'string' ? record.url : ''
+          const tileUrl = typeof record.tileUrl === 'string' ? record.tileUrl : url
+          const prompt = typeof record.prompt === 'string' ? record.prompt : ''
+          const createdAt = typeof record.createdAt === 'string' ? record.createdAt : new Date().toISOString()
+          const title = typeof record.title === 'string' ? record.title : undefined
+          if (!id || !url) return false
+          useOasisStore.getState().addGeneratedImage({ id, prompt, url, tileUrl, createdAt, ...(title ? { title } : {}) })
+          return true
+        }
+
         default:
           if (process.env.NODE_ENV === 'development') {
             console.warn(`[WorldEvents] unhandled event type: ${event.type}`)

@@ -24,6 +24,7 @@ import { PlacementVFXRenderer } from './PlacementVFX'
 import { useMovement } from '../../hooks/useMovement'
 // drei useAnimations removed — manual AnimationMixer for proper SkeletonUtils support
 import { DragContext, SettingsContext } from '../scene-lib'
+import { ASSET_CATALOG } from '../scene-lib/constants'
 import { extractModelStats } from './ModelPreview'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
@@ -1555,7 +1556,7 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
 
       // ░▒▓ Joystick expression overrides — if set, they take priority over defaults ▓▒░
       const exprOverrides = objectId ? useOasisStore.getState().behaviors[objectId]?.expressions : undefined
-      if (lipState && (lipState.aa > 0.01 || lipState.oh > 0.01 || lipState.ee > 0.01)) {
+      if (lipState && (lipState.aa > 0.01 || lipState.ih > 0.01 || lipState.ou > 0.01 || lipState.ee > 0.01 || lipState.oh > 0.01)) {
         // Lip sync producing values → drive visemes from FFT analyser
         setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.aa, lipState.aa)
         setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.ih, lipState.ih)
@@ -2163,6 +2164,7 @@ function PlacementOverlay() {
   const placeImageAt = useOasisStore(s => s.placeImageAt)
   const placeVideoAt = useOasisStore(s => s.placeVideoAt)
   const placeLibrarySceneAt = useOasisStore(s => s.placeLibrarySceneAt)
+  const placePortalGateAt = useOasisStore(s => s.placePortalGateAt)
   const placeLightAt = useOasisStore(s => s.placeLightAt)
   const cancelPlacement = useOasisStore(s => s.cancelPlacement)
   const [hoverPos, setHoverPos] = useState<[number, number, number] | null>(null)
@@ -2193,6 +2195,15 @@ function PlacementOverlay() {
       placeVideoAt(placementPending.name, placementPending.videoUrl, pos)
     } else if (placementPending.type === 'library' && placementPending.sceneId) {
       placeLibrarySceneAt(placementPending.sceneId, pos)
+    } else if (placementPending.type === 'portal' && placementPending.portalVariant) {
+      placePortalGateAt({
+        variant: placementPending.portalVariant,
+        action: placementPending.portalAction,
+        targetWorldId: placementPending.portalTargetWorldId,
+        targetWorldName: placementPending.portalTargetWorldName,
+        direction: placementPending.portalDirection || 'two-way',
+        position: pos,
+      })
     } else if (placementPending.type === 'light' && placementPending.lightType) {
       // Raise y slightly off the ground so the light isn't flush with the plane
       placeLightAt(placementPending.lightType, [pos[0], 3, pos[2]])
@@ -2261,7 +2272,7 @@ function PlacementOverlay() {
     } else {
       cancelPlacement()
     }
-  }, [placementPending, placeCatalogAssetAt, placeImageAt, placeLightAt, placeVideoAt, placeLibrarySceneAt, cancelPlacement])
+  }, [placementPending, placeCatalogAssetAt, placeImageAt, placeLightAt, placePortalGateAt, placeVideoAt, placeLibrarySceneAt, cancelPlacement])
 
   const handlePointerMove = useCallback((e: any) => {
     // ░▒▓ FPS CAMERA FIX — skip R3F pointer events during pointer lock ▓▒░
@@ -2682,7 +2693,7 @@ export function WorldObjectsRenderer() {
             transformMode={transformMode}
             onTransformChange={handleTransformChange}
             initialPosition={t?.position || asset.position}
-            initialRotation={t?.rotation}
+            initialRotation={t?.rotation || asset.rotation}
             initialScale={t?.scale}
           >
             <Suspense fallback={<PlaceholderBox />}>
@@ -2739,32 +2750,39 @@ export function WorldObjectsRenderer() {
       {/* ░▒▓ Catalog assets — pre-made models from ASSET_CATALOG ▓▒░ */}
       {catalogAssets.map(ca => {
         const t = transforms[ca.id]
+        const catalogDefinition = ASSET_CATALOG.find(asset => asset.id === ca.catalogId)
+        const resolvedGlbPath = ca.imageUrl || ca.videoUrl || ca.audioUrl
+          ? (ca.glbPath || '')
+          : (catalogDefinition?.path || ca.glbPath || '')
+        const renderAsset = resolvedGlbPath !== ca.glbPath
+          ? { ...ca, glbPath: resolvedGlbPath, scale: ca.scale || catalogDefinition?.defaultScale || 1 }
+          : ca
         return (
           <SelectableWrapper
-            key={ca.id}
-            id={ca.id}
-            selected={selectedObjectId === ca.id}
+            key={renderAsset.id}
+            id={renderAsset.id}
+            selected={selectedObjectId === renderAsset.id}
             onSelect={selectObject}
             transformMode={transformMode}
             onTransformChange={handleTransformChange}
-            initialPosition={t?.position || ca.position}
-            initialRotation={t?.rotation}
+            initialPosition={t?.position || renderAsset.position}
+            initialRotation={t?.rotation || renderAsset.rotation}
             initialScale={t?.scale}
           >
-            <CatalogModelErrorBoundary path={ca.imageUrl || ca.glbPath} name={ca.name}>
+            <CatalogModelErrorBoundary path={renderAsset.imageUrl || renderAsset.glbPath} name={renderAsset.name}>
               <Suspense fallback={<PlaceholderBox />}>
-                {ca.videoUrl
-                  ? <VideoPlaneRenderer objectId={ca.id} videoUrl={ca.videoUrl} scale={ca.scale} frameStyle={ca.imageFrameStyle} frameThickness={ca.imageFrameThickness} />
-                  : ca.imageUrl
-                    ? <ImagePlaneRenderer imageUrl={ca.imageUrl} scale={ca.scale} frameStyle={ca.imageFrameStyle} frameThickness={ca.imageFrameThickness} />
-                    : !ca.glbPath && ca.audioUrl
-                      ? <AudioSourceRenderer scale={ca.scale} />
-                      : ca.glbPath.endsWith('.vrm')
-                        ? <VRMCatalogRenderer path={ca.glbPath} scale={ca.scale} objectId={ca.id} displayName={ca.name} />
-                        : <CatalogModelRenderer path={ca.glbPath} scale={ca.scale} objectId={ca.id} displayName={ca.name} />
+                {renderAsset.videoUrl
+                  ? <VideoPlaneRenderer objectId={renderAsset.id} videoUrl={renderAsset.videoUrl} scale={renderAsset.scale} frameStyle={renderAsset.imageFrameStyle} frameThickness={renderAsset.imageFrameThickness} />
+                  : renderAsset.imageUrl
+                    ? <ImagePlaneRenderer imageUrl={renderAsset.imageUrl} scale={renderAsset.scale} frameStyle={renderAsset.imageFrameStyle} frameThickness={renderAsset.imageFrameThickness} />
+                    : !renderAsset.glbPath && renderAsset.audioUrl
+                      ? <AudioSourceRenderer scale={renderAsset.scale} />
+                      : renderAsset.glbPath.endsWith('.vrm')
+                        ? <VRMCatalogRenderer path={renderAsset.glbPath} scale={renderAsset.scale} objectId={renderAsset.id} displayName={renderAsset.name} />
+                        : <CatalogModelRenderer path={renderAsset.glbPath} scale={renderAsset.scale} objectId={renderAsset.id} displayName={renderAsset.name} />
                 }
                 {/* ░▒▓ SPATIAL AUDIO — read from behaviors store ▓▒░ */}
-                <SpatialAudioFromBehavior objectId={ca.id} />
+                <SpatialAudioFromBehavior objectId={renderAsset.id} />
               </Suspense>
             </CatalogModelErrorBoundary>
           </SelectableWrapper>

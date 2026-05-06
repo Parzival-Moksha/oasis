@@ -23,7 +23,7 @@ import { AvatarGallery } from './AvatarGallery'
 import type { AssetDefinition } from '../scene-lib/types'
 import { awardXp } from '../../hooks/useXp'
 import { ModelPreviewPanel, CraftedPreviewPanel } from './ModelPreview'
-import { generateSingleCraftedThumbnail, useCraftedThumbnailGenerator, useCatalogThumbnailGenerator } from '../../hooks/useThumbnailGenerator'
+import { generateSingleCraftedThumbnail, useCraftedThumbnailGenerator, useCatalogThumbnailGenerator, usePortalThumbnailGenerator } from '../../hooks/useThumbnailGenerator'
 import { usePricing, getConjurePriceKey } from '../../hooks/usePricing'
 import { extractPartialCraftData } from '../../lib/craft-stream'
 import { addToSceneLibrary, getSceneLibrary } from '../../lib/forge/scene-library'
@@ -35,6 +35,8 @@ import { DeleteButton } from './DeleteButton'
 import { getAgentWindowRendererMeta } from '../../lib/agent-window-renderers'
 import { deriveAvatarAnchoredWindowPlacement } from '../../lib/agent-avatar-utils'
 import { getLiveObjectTransform } from '../../lib/live-object-transforms'
+import { PORTAL_GATE_VARIANT_DEFS, type PortalAction, type PortalGateVariant } from '../../lib/portal-gates'
+import { portalThumbPath } from '../../lib/portal-thumbnails'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 
@@ -944,7 +946,18 @@ const WIZARD_TABS = [
   title: string
 }>
 
-const HOSTED_WIZARD_MODES = new Set<WizardMode>(['world', 'assets', 'placed', 'agents'])
+const WIZARD_TAB_ORDER: WizardMode[] = ['world', 'assets', 'media', 'agents', 'craft', 'conjure', 'placed']
+const WIZARD_TAB_LABEL_OVERRIDES: Partial<Record<WizardMode, string>> = {
+  agents: '3D Agents',
+  craft: 'Crafting',
+  conjure: 'Conjuring',
+}
+const ORDERED_WIZARD_TABS = WIZARD_TAB_ORDER
+  .map(key => WIZARD_TABS.find(tab => tab.key === key))
+  .filter((tab): tab is NonNullable<typeof tab> => Boolean(tab))
+  .map(tab => ({ ...tab, label: WIZARD_TAB_LABEL_OVERRIDES[tab.key] || tab.label }))
+
+const HOSTED_WIZARD_MODES = new Set<WizardMode>(['world', 'assets', 'media', 'agents', 'craft', 'conjure', 'placed', 'settings'])
 
 export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardConsoleProps) {
   useUILayer('wizard-console', isOpen)
@@ -992,8 +1005,8 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
   }, [showTabLabels, size.width])
 
   // ─═̷─ Wizard state ─═̷─
-  const [mode, setMode] = useState<WizardMode>(hostedVariant ? 'world' : 'conjure')
-  const visibleTabs = hostedVariant ? WIZARD_TABS.filter(tab => HOSTED_WIZARD_MODES.has(tab.key)) : WIZARD_TABS
+  const [mode, setMode] = useState<WizardMode>('world')
+  const visibleTabs = hostedVariant ? ORDERED_WIZARD_TABS.filter(tab => HOSTED_WIZARD_MODES.has(tab.key)) : ORDERED_WIZARD_TABS
   const [provider, setProvider] = useState<ProviderName>('meshy')
   const [tier, setTier] = useState(PROVIDERS[0].tiers[1]?.id || PROVIDERS[0].tiers[0].id)  // Default: textured (refine)
   const [prompt, setPrompt] = useState('')
@@ -1157,6 +1170,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
   const worldConjuredAssetIds = useOasisStore(s => s.worldConjuredAssetIds)
   const removeConjuredAssetFromWorld = useOasisStore(s => s.removeConjuredAssetFromWorld)
   const placedCatalogAssets = useOasisStore(s => s.placedCatalogAssets)
+  const portalGates = useOasisStore(s => s.portalGates)
   const removeCatalogAsset = useOasisStore(s => s.removeCatalogAsset)
   const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
   const removeAgentWindow = useOasisStore(s => s.removeAgentWindow)
@@ -1165,7 +1179,11 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
   const removeGeneratedImage = useOasisStore(s => s.removeGeneratedImage)
   const addCustomGroundPreset = useOasisStore(s => s.addCustomGroundPreset)
   const [assetCategory, setAssetCategory] = useState<string>('all')
-  const [assetSubTab, setAssetSubTab] = useState<'catalog' | 'conjured' | 'crafted' | 'images'>('catalog')
+  const [assetSubTab, setAssetSubTab] = useState<'catalog' | 'portals' | 'conjured' | 'crafted' | 'images'>('catalog')
+  const [portalTargetWorldId, setPortalTargetWorldId] = useState('')
+  const [portalActionPreset, setPortalActionPreset] = useState<'load_world' | 'create_private' | 'create_public' | 'create_ffa' | 'external_url' | 'locked_message'>('load_world')
+  const [portalExternalUrl, setPortalExternalUrl] = useState('https://conjure.04515.xyz/?portal=true&from=oasis')
+  const [portalLockedMessage, setPortalLockedMessage] = useState('This portal is not open yet.')
   const [previewAsset, setPreviewAsset] = useState<AssetDefinition | null>(null)
   const [previewConjured, setPreviewConjured] = useState<ConjuredAsset | null>(null)
   const [previewCrafted, setPreviewCrafted] = useState<CraftedScene | null>(null)
@@ -1175,6 +1193,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
 
   // ░▒▓ Catch orphan crafted scenes without thumbnails on mount ▓▒░
   useCraftedThumbnailGenerator()
+  const portalThumbVersion = usePortalThumbnailGenerator()
 
   // ░▒▓ Catalog thumbnail generator — manual trigger for 100+ GLB renders ▓▒░
   const catalogThumbGen = useCatalogThumbnailGenerator()
@@ -1647,7 +1666,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
           </div>
           {/* ░▒▓ Fixed controls — NEVER shrink, always visible ▓▒░ */}
           <div className="flex items-center gap-1 flex-shrink-0">
-            {!hostedVariant && <button
+            <button
               onClick={() => setMode('settings')}
               className={`text-xs px-2 py-0.5 rounded transition-colors ${
                 mode === 'settings'
@@ -1657,7 +1676,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
               title="VFX + Placement Settings"
             >
               &#9881;
-            </button>}
+            </button>
             <button
               onClick={onClose}
               className="text-gray-500 hover:text-white transition-colors text-lg leading-none ml-1"
@@ -1926,9 +1945,9 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
           disabled={!prompt.trim()}
           className="px-3 py-2 rounded-lg text-sm font-bold transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed self-end"
           style={{ background: '#3B82F633', color: '#3B82F6', border: '1px solid #3B82F655' }}
-          title={`Costs ${p('craft', 0.05)} credits`}
+          title="Craft scene from description"
         >
-          {activeCrafts > 0 ? `Craft \u2699 (${activeCrafts})` : `Craft \u2699 ${p('craft', 0.05) > 0 ? `(${p('craft', 0.05)} cr)` : ''}`}
+          {activeCrafts > 0 ? `Craft \u2699 (${activeCrafts})` : 'Craft \u2699'}
         </button>
       </div>
       )}
@@ -2581,6 +2600,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
             <div className="flex items-center gap-1 mb-2">
               {([
                 { key: 'catalog' as const, label: 'Catalog', count: ASSET_CATALOG.length, color: 'yellow' },
+                { key: 'portals' as const, label: 'Portals', count: PORTAL_GATE_VARIANT_DEFS.length, color: 'cyan' },
                 { key: 'conjured' as const, label: 'Conjured', count: conjuredAssets.filter(a => a.status === 'ready').length, color: 'orange' },
                 { key: 'crafted' as const, label: 'Crafted', count: sceneLibrary.length, color: 'blue' },
                 { key: 'images' as const, label: 'Images', count: generatedImages.length, color: 'pink' },
@@ -2594,9 +2614,9 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
                       : 'text-gray-400 border border-gray-700/30 hover:text-gray-200 hover:border-gray-600/50'
                   }`}
                   style={assetSubTab === tab.key ? {
-                    background: tab.color === 'yellow' ? 'rgba(234,179,8,0.15)' : tab.color === 'orange' ? 'rgba(249,115,22,0.15)' : tab.color === 'pink' ? 'rgba(236,72,153,0.15)' : 'rgba(59,130,246,0.15)',
-                    color: tab.color === 'yellow' ? '#FDE047' : tab.color === 'orange' ? '#FB923C' : tab.color === 'pink' ? '#F9A8D4' : '#93C5FD',
-                    borderColor: tab.color === 'yellow' ? 'rgba(234,179,8,0.4)' : tab.color === 'orange' ? 'rgba(249,115,22,0.4)' : tab.color === 'pink' ? 'rgba(236,72,153,0.4)' : 'rgba(59,130,246,0.4)',
+                    background: tab.color === 'yellow' ? 'rgba(234,179,8,0.15)' : tab.color === 'orange' ? 'rgba(249,115,22,0.15)' : tab.color === 'pink' ? 'rgba(236,72,153,0.15)' : tab.color === 'cyan' ? 'rgba(34,211,238,0.15)' : 'rgba(59,130,246,0.15)',
+                    color: tab.color === 'yellow' ? '#FDE047' : tab.color === 'orange' ? '#FB923C' : tab.color === 'pink' ? '#F9A8D4' : tab.color === 'cyan' ? '#67E8F9' : '#93C5FD',
+                    borderColor: tab.color === 'yellow' ? 'rgba(234,179,8,0.4)' : tab.color === 'orange' ? 'rgba(249,115,22,0.4)' : tab.color === 'pink' ? 'rgba(236,72,153,0.4)' : tab.color === 'cyan' ? 'rgba(34,211,238,0.4)' : 'rgba(59,130,246,0.4)',
                   } : {}}
                 >
                   {tab.label}
@@ -2659,6 +2679,129 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
             )}
 
             {/* ░▒▓ CONJURED SUB-TAB — Text-to-3D creations ▓▒░ */}
+            {assetSubTab === 'portals' && (() => {
+              const targetWorlds = worldRegistry.filter(world =>
+                world.id !== activeWorldId &&
+                world.visibility !== 'core' &&
+                world.visibility !== 'template'
+              )
+              const selectedTarget = portalTargetWorldId
+                ? targetWorlds.find(world => world.id === portalTargetWorldId)
+                : undefined
+              const buildPortalAction = (): PortalAction | undefined => {
+                if (portalActionPreset === 'load_world') {
+                  return selectedTarget
+                    ? { type: 'load_world', worldId: selectedTarget.id, worldName: selectedTarget.name }
+                    : undefined
+                }
+                if (portalActionPreset === 'create_private') {
+                  return { type: 'create_world', visibility: 'private', promptForName: true, name: 'New Private World' }
+                }
+                if (portalActionPreset === 'create_public') {
+                  return { type: 'create_world', visibility: 'public', promptForName: true, name: 'New Public World' }
+                }
+                if (portalActionPreset === 'create_ffa') {
+                  return { type: 'create_world', visibility: 'ffa', promptForName: true, name: 'New FFA World' }
+                }
+                if (portalActionPreset === 'external_url') {
+                  const url = portalExternalUrl.trim()
+                  return url
+                    ? { type: 'external_url', url, label: 'External world', returnUrl: 'current', requiresConfirm: true }
+                    : undefined
+                }
+                return { type: 'locked_message', message: portalLockedMessage.trim() || 'This portal is not open yet.' }
+              }
+              const portalAction = buildPortalAction()
+              const canPlacePortal = Boolean(portalAction)
+              const portalSubtitle = portalAction?.type === 'load_world'
+                ? selectedTarget?.name || 'choose target'
+                : portalAction?.type === 'create_world'
+                  ? `create ${portalAction.visibility || 'private'}`
+                  : portalAction?.type === 'external_url'
+                    ? 'external URL'
+                    : 'locked'
+              return (
+                <>
+                  <div className="rounded-lg border border-cyan-500/15 bg-cyan-500/5 p-2 mb-2 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <div className="text-[10px] text-cyan-300 font-mono uppercase tracking-wider">Portal actions</div>
+                        <div className="text-[9px] text-gray-500">Place world, creation, external, or locked gates.</div>
+                      </div>
+                      <select
+                        value={portalActionPreset}
+                        onChange={event => setPortalActionPreset(event.target.value as typeof portalActionPreset)}
+                        className="min-w-0 max-w-[160px] rounded border border-cyan-500/25 bg-black/60 px-2 py-1 text-[10px] text-cyan-100 font-mono outline-none"
+                      >
+                        <option value="load_world">Existing world</option>
+                        <option value="create_private">Create private</option>
+                        <option value="create_public">Create public</option>
+                        <option value="create_ffa">Create FFA</option>
+                        <option value="external_url">External URL</option>
+                        <option value="locked_message">Locked message</option>
+                      </select>
+                    </div>
+                    {portalActionPreset === 'load_world' && (
+                      <select
+                        value={selectedTarget?.id || ''}
+                        onChange={event => setPortalTargetWorldId(event.target.value)}
+                        className="w-full rounded border border-cyan-500/25 bg-black/60 px-2 py-1 text-[10px] text-cyan-100 font-mono outline-none"
+                      >
+                        <option value="">{targetWorlds.length === 0 ? 'No target worlds' : 'Choose target world'}</option>
+                        {targetWorlds.map(world => (
+                          <option key={world.id} value={world.id}>{world.name}</option>
+                        ))}
+                      </select>
+                    )}
+                    {portalActionPreset === 'external_url' && (
+                      <input
+                        value={portalExternalUrl}
+                        onChange={event => setPortalExternalUrl(event.target.value)}
+                        className="w-full rounded border border-cyan-500/25 bg-black/60 px-2 py-1 text-[10px] text-cyan-100 font-mono outline-none"
+                        placeholder="https://conjure.04515.xyz/?portal=true&from=oasis"
+                      />
+                    )}
+                    {portalActionPreset === 'locked_message' && (
+                      <input
+                        value={portalLockedMessage}
+                        onChange={event => setPortalLockedMessage(event.target.value)}
+                        className="w-full rounded border border-cyan-500/25 bg-black/60 px-2 py-1 text-[10px] text-cyan-100 font-mono outline-none"
+                        placeholder="Reach level 5 to enter."
+                      />
+                    )}
+                  </div>
+                  <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${colsCatalog}, minmax(0, 1fr))` }}>
+                    {PORTAL_GATE_VARIANT_DEFS.map(style => (
+                      <AssetCard
+                        key={style.id}
+                        id={style.id}
+                        name={style.label}
+                        type="portal"
+                        thumbnailUrl={`${portalThumbPath(style.id)}?v=${portalThumbVersion}`}
+                        accentColor={style.accent}
+                        subtitle={portalSubtitle}
+                        onClick={() => canPlacePortal && enterPlacementMode({
+                          type: 'portal',
+                          name: portalAction?.type === 'load_world'
+                            ? `Portal to ${selectedTarget?.name || 'world'}`
+                            : portalAction?.type === 'create_world'
+                              ? `Portal to create ${portalAction.visibility || 'private'}`
+                              : portalAction?.type === 'external_url'
+                                ? 'Portal to external URL'
+                                : 'Locked portal',
+                          portalVariant: style.id as PortalGateVariant,
+                          portalAction,
+                          portalTargetWorldId: selectedTarget?.id,
+                          portalTargetWorldName: selectedTarget?.name,
+                          portalDirection: portalAction?.type === 'load_world' ? 'two-way' : 'one-way',
+                        })}
+                      />
+                    ))}
+                  </div>
+                </>
+              )
+            })()}
+
             {assetSubTab === 'conjured' && (
               <>
                 {conjuredAssets.filter(a => a.status === 'ready').length === 0 ? (
@@ -2824,11 +2967,11 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
                 ── Placed Objects ──
               </span>
               <span className="text-[10px] text-cyan-500/60 font-mono">
-                {worldConjuredAssetIds.length + placedCatalogAssets.length + craftedScenes.length + worldLights.length + placedAgentWindows.length} total
+                {worldConjuredAssetIds.length + placedCatalogAssets.length + craftedScenes.length + portalGates.length + worldLights.length + placedAgentWindows.length} total
               </span>
             </div>
 
-            {worldConjuredAssetIds.length === 0 && placedCatalogAssets.length === 0 && craftedScenes.length === 0 && worldLights.length === 0 && placedAgentWindows.length === 0 ? (
+            {worldConjuredAssetIds.length === 0 && placedCatalogAssets.length === 0 && craftedScenes.length === 0 && portalGates.length === 0 && worldLights.length === 0 && placedAgentWindows.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-gray-400">
                 <div className="text-3xl mb-2">&#128203;</div>
                 <div className="text-xs">No objects placed yet</div>
@@ -2931,6 +3074,33 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
                 )}
 
                 {/* ── LIGHTS — keep as list rows (no thumbnails for lights) ── */}
+                {portalGates.length > 0 && (
+                  <>
+                    <div className="text-[9px] text-cyan-300/70 uppercase tracking-wider font-mono mt-2 mb-0.5">Portals ({portalGates.length})</div>
+                    <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${colsCatalog}, minmax(0, 1fr))` }}>
+                      {portalGates.map(gate => (
+                        <AssetCard
+                          key={gate.id}
+                          id={gate.id}
+                          name={gate.targetWorldName ? `Portal to ${gate.targetWorldName}` : 'Portal gate'}
+                          type="placed"
+                          subtitle={gate.variant.replace(/-/g, ' ')}
+                          accentColor={selectedObjectId === gate.id ? '#3B82F6' : '#22D3EE'}
+                          isInWorld
+                          onClick={() => {
+                            if (selectedObjectId === gate.id) { selectObject(null); setInspectedObject(null) }
+                            else {
+                              selectObject(gate.id); setInspectedObject(gate.id)
+                              const pos = transforms[gate.id]?.position || gate.position
+                              if (pos) setCameraLookAt(pos)
+                            }
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+
                 {worldLights.length > 0 && (
                   <div className="text-[9px] text-yellow-400/60 uppercase tracking-wider font-mono mt-2 mb-0.5">💡 Lights ({worldLights.length})</div>
                 )}
@@ -3399,9 +3569,8 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
             {craftedScenes.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-gray-400">
                 <div className="text-3xl mb-2">&#9881;</div>
-                <div className="text-xs">No crafted objects yet</div>
-                <div className="text-[10px] mt-1 text-gray-500">Describe what you want and the LLM will build it from procedural geometry</div>
-                <div className="text-[10px] mt-1 text-blue-500/40">Each new craft builds on top of the last</div>
+                <div className="text-xs">No crafted scenes placed here yet</div>
+                <div className="text-[10px] mt-1 text-gray-500">Craft a new scene above, or place one from the library below.</div>
               </div>
             ) : (
               <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${colsCrafted}, minmax(0, 1fr))` }}>

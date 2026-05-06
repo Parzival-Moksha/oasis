@@ -249,6 +249,36 @@ export function useCatalogThumbnailGenerator() {
   return { generate, running, ...progress }
 }
 
+export function usePortalThumbnailGenerator(): number {
+  const [version, setVersion] = useState(0)
+  const runningRef = useRef(false)
+
+  useEffect(() => {
+    if (runningRef.current) return
+    runningRef.current = true
+
+    const generate = async () => {
+      try {
+        const res = await fetch(`${OASIS_BASE}/api/portal-thumbnails`, { method: 'POST' })
+        if (!res.ok) return
+        const data = await res.json()
+        if (Array.isArray(data.generated) && data.generated.length > 0) {
+          console.log(`[Forge:PortalThumbs] Generated ${data.generated.length} portal thumbnails`)
+        }
+        setVersion(Date.now())
+      } catch (err) {
+        console.warn('[Forge:PortalThumbs] Failed:', err)
+      } finally {
+        runningRef.current = false
+      }
+    }
+
+    void generate()
+  }, [])
+
+  return version
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // CRAFTED SCENE THUMBNAILS — JSON primitives → JPEG portraits
 // ─═̷─═̷─🎨─═̷─═̷─ The offscreen sculptor's darkroom ─═̷─═̷─🎨─═̷─═̷─

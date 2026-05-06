@@ -13,6 +13,7 @@
 import type { CraftedScene, CatalogPlacement, ObjectBehavior, WorldLight } from '../conjure/types'
 import type { GroundPreset } from './ground-textures'
 import type { TerrainParams } from './terrain-generator'
+import type { PortalGate } from '../portal-gates'
 import type { AgentWindow, AgentAvatar } from '../../store/oasisStore'
 import type { WorldWriteDecision } from './world-access'
 
@@ -32,6 +33,8 @@ export interface WorldState {
   conjuredAssetIds: string[]
   /** Pre-made catalog assets placed in this world */
   catalogPlacements?: CatalogPlacement[]
+  /** Persistent teleport gates placed in this world */
+  portalGates?: PortalGate[]
   /** Transform overrides: objectId -> { position, rotation, scale } — all fields optional for partial overrides */
   transforms: Record<string, {
     position?: [number, number, number]
@@ -156,14 +159,39 @@ export async function getWorldRegistry(): Promise<WorldMeta[]> {
 // CREATE / DELETE
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export async function createWorld(name: string, icon = '🌍'): Promise<WorldMeta> {
+export async function setWorldVisibility(id: string, visibility: WorldMeta['visibility']): Promise<WorldMeta['visibility'] | null> {
+  try {
+    const res = await fetch(`${API_BASE}/${id}/visibility`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visibility }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const json = await res.json() as { visibility?: WorldMeta['visibility'] }
+    return json.visibility || visibility
+  } catch (err) {
+    console.error('[WorldPersistence] Failed to set visibility:', err)
+    return null
+  }
+}
+
+export async function createWorld(
+  name: string,
+  icon = '🌍',
+  options: { visibility?: WorldMeta['visibility'] } = {},
+): Promise<WorldMeta> {
   const res = await fetch(API_BASE, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, icon }),
   })
   if (!res.ok) throw new Error(`Create world failed: HTTP ${res.status}`)
-  return await res.json() as WorldMeta
+  const meta = await res.json() as WorldMeta
+  if (options.visibility && options.visibility !== meta.visibility) {
+    const visibility = await setWorldVisibility(meta.id, options.visibility)
+    if (visibility) return { ...meta, visibility }
+  }
+  return meta
 }
 
 export async function deleteWorld(id: string): Promise<void> {

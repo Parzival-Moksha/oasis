@@ -14,7 +14,9 @@
     "start": "next start -p 4516",
     "smoke:relay-hosted": "node scripts/openclaw-relay-hosted-smoke.mjs",
     "deploy:openclaw": "node scripts/deploy-openclaw-parzival.mjs",
-    "seed:welcome-hub": "npx tsx prisma/seed-welcome-hub.ts",
+    "seed:default-worlds": "npx tsx prisma/seed-default-worlds.ts",
+    "seed:welcome-hub": "npx tsx prisma/seed-default-worlds.ts --world=portal-zero --update-core --snapshot",
+    "world:export-default": "npx tsx prisma/export-default-world.ts",
     "lint": "eslint src scripts next.config.mjs postcss.config.js tailwind.config.js vitest.config.ts --ext .js,.mjs,.ts,.tsx --report-unused-disable-directives"
   },
   "dependencies": {

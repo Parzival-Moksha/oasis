@@ -75,10 +75,13 @@ function toAccessSubject(row: WorldAccessSubject): WorldAccessSubject {
   }
 }
 
-function countWorldObjects(state: Pick<WorldState, 'conjuredAssetIds' | 'catalogPlacements' | 'craftedScenes'>): number {
+function countWorldObjects(state: Pick<WorldState, 'conjuredAssetIds' | 'catalogPlacements' | 'craftedScenes' | 'portalGates' | 'agentAvatars' | 'agentWindows'>): number {
   return (state.conjuredAssetIds?.length || 0) +
     (state.catalogPlacements?.length || 0) +
-    (state.craftedScenes?.length || 0)
+    (state.craftedScenes?.length || 0) +
+    (state.portalGates?.length || 0) +
+    (state.agentAvatars?.length || 0) +
+    (state.agentWindows?.length || 0)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

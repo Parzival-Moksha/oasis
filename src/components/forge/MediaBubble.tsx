@@ -260,6 +260,11 @@ export function MediaBubble({
   const [timingData, setTimingData] = useState<GeneratedVoiceTimingData | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const lipSyncRef = useRef<LipSyncController | null>(null)
+  // Owns the AudioContext graph (createMediaElementSource → analyser → destination).
+  // Must persist for the audio element's lifetime — re-creating it tears down the
+  // graph, and createMediaElementSource may only be called once per element, so the
+  // audio goes silent forever and replays fail.
+  const audioGraphRef = useRef<LipSyncController | null>(null)
   const directResolved = resolveMediaUrl(url) + (retryCount ? `${url.includes('?') ? '&' : '?'}r=${retryCount}` : '')
   const proxyMedia = shouldProxyMediaUrl(url, mediaType)
   const resolved = proxyMedia ? proxiedUrl : directResolved
@@ -371,29 +376,36 @@ export function MediaBubble({
 
   useEffect(() => {
     if (mediaType !== 'audio' || !avatarLipSyncTargetId || !audioRef.current) return
+    const fft = createLipSyncController()
+    audioGraphRef.current = fft
+    return () => {
+      fft.detach()
+      if (audioGraphRef.current === fft) audioGraphRef.current = null
+    }
+  }, [avatarLipSyncTargetId, mediaType, resolved])
 
-    const ctrl = hasTimingLipSync && timingData
-      ? createTimedLipSyncController(timingData)
-      : createLipSyncController()
+  useEffect(() => {
+    if (mediaType !== 'audio' || !avatarLipSyncTargetId || !audioRef.current) return
+    const fft = audioGraphRef.current
+    const timed = hasTimingLipSync && timingData ? createTimedLipSyncController(timingData) : null
+    const ctrl = timed ?? fft
+    if (!ctrl) return
     lipSyncRef.current = ctrl
 
     const audio = audioRef.current
     if (audio && !audio.paused && !audio.ended) {
       void resumeLipSyncContext().finally(() => {
         if (lipSyncRef.current !== ctrl || !audioRef.current) return
-        if (!ctrl.isActive) {
-          ctrl.attachAudio(audioRef.current)
-        }
+        if (fft && !fft.isActive) fft.attachAudio(audioRef.current)
+        if (timed) timed.attachAudio(audioRef.current)
         registerLipSync(avatarLipSyncTargetId, ctrl)
       })
     }
 
     return () => {
-      unregisterLipSync(avatarLipSyncTargetId, ctrl)
-      ctrl.detach()
-      if (lipSyncRef.current === ctrl) {
-        lipSyncRef.current = null
-      }
+      unregisterLipSync(avatarLipSyncTargetId, ctrl, { detach: false })
+      if (timed) timed.detach()
+      if (lipSyncRef.current === ctrl) lipSyncRef.current = null
     }
   }, [avatarLipSyncTargetId, hasTimingLipSync, mediaType, resolved, timingData])
 
@@ -406,10 +418,11 @@ export function MediaBubble({
     if (!avatarLipSyncTargetId || !lipSyncRef.current || !audioRef.current) return
 
     const ctrl = lipSyncRef.current
+    const fft = audioGraphRef.current
     void resumeLipSyncContext().finally(() => {
-      if (!ctrl.isActive && audioRef.current) {
-        ctrl.attachAudio(audioRef.current)
-      }
+      if (!audioRef.current) return
+      if (fft && !fft.isActive) fft.attachAudio(audioRef.current)
+      if (ctrl !== fft && !ctrl.isActive) ctrl.attachAudio(audioRef.current)
       registerLipSync(avatarLipSyncTargetId, ctrl)
     })
   }

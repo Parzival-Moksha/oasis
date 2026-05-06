@@ -37,6 +37,7 @@ export type AssetCardType =
   | 'media-image'
   | 'media-video'
   | 'media-audio'
+  | 'portal'
   | 'placed'
 
 export interface AssetCardProps {
@@ -77,6 +78,7 @@ const TYPE_CONFIG: Record<AssetCardType, { label: string; color: string; bgColor
   'media-image': { label: 'image',     color: '#F9A8D4', bgColor: 'rgba(236,72,153,0.15)',  borderColor: 'rgba(236,72,153,0.3)' },
   'media-video': { label: 'video',     color: '#F9A8D4', bgColor: 'rgba(236,72,153,0.15)',  borderColor: 'rgba(236,72,153,0.3)' },
   'media-audio': { label: 'audio',     color: '#F9A8D4', bgColor: 'rgba(236,72,153,0.15)',  borderColor: 'rgba(236,72,153,0.3)' },
+  portal:        { label: 'portal',    color: '#67E8F9', bgColor: 'rgba(34,211,238,0.15)',  borderColor: 'rgba(34,211,238,0.3)' },
   placed:        { label: 'placed',    color: '#22D3EE', bgColor: 'rgba(6,182,212,0.15)',   borderColor: 'rgba(6,182,212,0.3)' },
 }
 
@@ -92,6 +94,10 @@ function CardThumbnail({ type, thumbnailUrl, mediaUrl, name }: {
 }) {
   const [imgFailed, setImgFailed] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    setImgFailed(false)
+  }, [thumbnailUrl])
 
   // Image thumbnail (catalog, conjured, crafted, media-image, placed)
   if (type !== 'media-video' && type !== 'media-audio' && thumbnailUrl && !imgFailed) {
@@ -159,6 +165,7 @@ function CardThumbnail({ type, thumbnailUrl, mediaUrl, name }: {
     'media-image': { emoji: '\u{1F5BC}', color: 'text-pink-400/40' },
     'media-video': { emoji: '\u{1F3AC}', color: 'text-pink-400/40' },
     'media-audio': { emoji: '\u{1F3B5}', color: 'text-pink-400/40' },
+    portal:        { emoji: '\u{1F300}', color: 'text-cyan-400/40' },
     placed:        { emoji: '\u{1F4CD}', color: 'text-cyan-400/40' },
   }
   const fb = fallbacks[type]

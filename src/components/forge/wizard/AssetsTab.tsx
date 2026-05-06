@@ -11,8 +11,11 @@ import type { ConjuredAsset, CraftedScene } from '../../../lib/conjure/types'
 import type { AssetDefinition } from '../../scene-lib/types'
 import { ASSET_CATALOG } from '../../scene-lib/constants'
 import { ModelPreviewPanel, CraftedPreviewPanel } from '../ModelPreview'
-import { useCraftedThumbnailGenerator, useCatalogThumbnailGenerator } from '../../../hooks/useThumbnailGenerator'
+import { useCraftedThumbnailGenerator, useCatalogThumbnailGenerator, usePortalThumbnailGenerator } from '../../../hooks/useThumbnailGenerator'
 import { OASIS_BASE, AssetThumb } from './shared'
+import { PORTAL_GATE_VARIANT_DEFS, type PortalGateVariant } from '../../../lib/portal-gates'
+import { portalThumbPath } from '../../../lib/portal-thumbnails'
+import { AssetCard } from '../AssetCard'
 
 export function AssetsTab() {
   const { conjuredAssets } = useConjure()
@@ -22,11 +25,14 @@ export function AssetsTab() {
   const craftedScenes = useOasisStore(s => s.craftedScenes)
   const sceneLibrary = useOasisStore(s => s.sceneLibrary)
   const generatedImages = useOasisStore(s => s.generatedImages)
+  const worldRegistry = useOasisStore(s => s.worldRegistry)
+  const activeWorldId = useOasisStore(s => s.activeWorldId)
   const enterPlacementMode = useOasisStore(s => s.enterPlacementMode)
   const updateConjuredAsset = useOasisStore(s => s.updateConjuredAsset)
 
   const [assetCategory, setAssetCategory] = useState<string>('all')
-  const [assetSubTab, setAssetSubTab] = useState<'catalog' | 'conjured' | 'crafted' | 'images'>('catalog')
+  const [assetSubTab, setAssetSubTab] = useState<'catalog' | 'portals' | 'conjured' | 'crafted' | 'images'>('catalog')
+  const [portalTargetWorldId, setPortalTargetWorldId] = useState('')
   const [previewAsset, setPreviewAsset] = useState<AssetDefinition | null>(null)
   const [previewConjured, setPreviewConjured] = useState<ConjuredAsset | null>(null)
   const [previewCrafted, setPreviewCrafted] = useState<CraftedScene | null>(null)
@@ -35,6 +41,7 @@ export function AssetsTab() {
 
   // ░▒▓ Catch orphan crafted scenes without thumbnails on mount ▓▒░
   useCraftedThumbnailGenerator()
+  const portalThumbVersion = usePortalThumbnailGenerator()
 
   // ░▒▓ Catalog thumbnail generator — auto-runs on mount for missing thumbs ▓▒░
   const catalogThumbGen = useCatalogThumbnailGenerator()
@@ -156,6 +163,7 @@ export function AssetsTab() {
       <div className="flex items-center gap-1 mb-2">
         {([
           { key: 'catalog' as const, label: 'Catalog', count: ASSET_CATALOG.length, color: 'yellow' },
+          { key: 'portals' as const, label: 'Portals', count: PORTAL_GATE_VARIANT_DEFS.length, color: 'cyan' },
           { key: 'conjured' as const, label: 'Conjured', count: conjuredAssets.filter(a => a.status === 'ready').length, color: 'orange' },
           { key: 'crafted' as const, label: 'Crafted', count: sceneLibrary.length, color: 'blue' },
           { key: 'images' as const, label: 'Images', count: generatedImages.length, color: 'pink' },
@@ -169,9 +177,9 @@ export function AssetsTab() {
                 : 'text-gray-400 border border-gray-700/30 hover:text-gray-200 hover:border-gray-600/50'
             }`}
             style={assetSubTab === tab.key ? {
-              background: tab.color === 'yellow' ? 'rgba(234,179,8,0.15)' : tab.color === 'orange' ? 'rgba(249,115,22,0.15)' : tab.color === 'pink' ? 'rgba(236,72,153,0.15)' : 'rgba(59,130,246,0.15)',
-              color: tab.color === 'yellow' ? '#FDE047' : tab.color === 'orange' ? '#FB923C' : tab.color === 'pink' ? '#F9A8D4' : '#93C5FD',
-              borderColor: tab.color === 'yellow' ? 'rgba(234,179,8,0.4)' : tab.color === 'orange' ? 'rgba(249,115,22,0.4)' : tab.color === 'pink' ? 'rgba(236,72,153,0.4)' : 'rgba(59,130,246,0.4)',
+              background: tab.color === 'yellow' ? 'rgba(234,179,8,0.15)' : tab.color === 'orange' ? 'rgba(249,115,22,0.15)' : tab.color === 'pink' ? 'rgba(236,72,153,0.15)' : tab.color === 'cyan' ? 'rgba(34,211,238,0.15)' : 'rgba(59,130,246,0.15)',
+              color: tab.color === 'yellow' ? '#FDE047' : tab.color === 'orange' ? '#FB923C' : tab.color === 'pink' ? '#F9A8D4' : tab.color === 'cyan' ? '#67E8F9' : '#93C5FD',
+              borderColor: tab.color === 'yellow' ? 'rgba(234,179,8,0.4)' : tab.color === 'orange' ? 'rgba(249,115,22,0.4)' : tab.color === 'pink' ? 'rgba(236,72,153,0.4)' : tab.color === 'cyan' ? 'rgba(34,211,238,0.4)' : 'rgba(59,130,246,0.4)',
             } : {}}
           >
             {tab.label}
@@ -246,6 +254,60 @@ export function AssetsTab() {
       )}
 
       {/* ░▒▓ CONJURED SUB-TAB — Text-to-3D creations ▓▒░ */}
+      {assetSubTab === 'portals' && (() => {
+        const targetWorlds = worldRegistry.filter(world =>
+          world.id !== activeWorldId &&
+          world.visibility !== 'core' &&
+          world.visibility !== 'template'
+        )
+        const selectedTarget = portalTargetWorldId
+          ? targetWorlds.find(world => world.id === portalTargetWorldId)
+          : undefined
+        return (
+          <>
+            <div className="rounded-lg border border-cyan-500/15 bg-cyan-500/5 p-2 mb-2 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-[10px] text-cyan-300 font-mono uppercase tracking-wider">Teleport gates</div>
+                  <div className="text-[9px] text-gray-500">Place a two-way gate. The return gate appears in the target world.</div>
+                </div>
+                <select
+                  value={selectedTarget?.id || ''}
+                  onChange={event => setPortalTargetWorldId(event.target.value)}
+                  className="min-w-0 max-w-[160px] rounded border border-cyan-500/25 bg-black/60 px-2 py-1 text-[10px] text-cyan-100 font-mono outline-none"
+                >
+                  <option value="">{targetWorlds.length === 0 ? 'No target worlds' : 'Choose target world'}</option>
+                  {targetWorlds.map(world => (
+                    <option key={world.id} value={world.id}>{world.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {PORTAL_GATE_VARIANT_DEFS.map(style => (
+                <AssetCard
+                  key={style.id}
+                  id={style.id}
+                  name={style.label}
+                  type="portal"
+                  thumbnailUrl={`${portalThumbPath(style.id)}?v=${portalThumbVersion}`}
+                  accentColor={style.accent}
+                  subtitle={selectedTarget?.name || 'choose target'}
+                  onClick={() => selectedTarget && enterPlacementMode({
+                    type: 'portal',
+                    name: `Portal to ${selectedTarget.name}`,
+                    portalVariant: style.id as PortalGateVariant,
+                    portalTargetWorldId: selectedTarget.id,
+                    portalTargetWorldName: selectedTarget.name,
+                    portalDirection: 'two-way',
+                  })}
+                />
+              ))}
+            </div>
+          </>
+        )
+      })()}
+
       {assetSubTab === 'conjured' && (
         <>
           {conjuredAssets.filter(a => a.status === 'ready').length === 0 ? (
