@@ -307,13 +307,30 @@ export async function importWorld(json: string): Promise<WorldMeta | null> {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
+let pendingSaveState: Omit<WorldState, 'version' | 'savedAt'> | null = null
 
 export function debouncedSaveWorld(state: Omit<WorldState, 'version' | 'savedAt'>, delayMs = 1000): void {
   if (saveTimer) clearTimeout(saveTimer)
+  pendingSaveState = state
   saveTimer = setTimeout(() => {
-    saveWorld(state) // fire-and-forget async
+    const stateToSave = pendingSaveState
+    pendingSaveState = null
     saveTimer = null
+    if (stateToSave) {
+      saveWorld(stateToSave) // fire-and-forget async
+    }
   }, delayMs)
+}
+
+export async function flushPendingSaveWorld(worldId?: string): Promise<SaveWorldResponse | null> {
+  if (!pendingSaveState) return null
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+  }
+  const stateToSave = pendingSaveState
+  pendingSaveState = null
+  return saveWorld(stateToSave, worldId)
 }
 
 /** ░▒▓ Cancel any pending debounced save — MUST be called before world switch ▓▒░
@@ -323,6 +340,7 @@ export function cancelPendingSave(): void {
     clearTimeout(saveTimer)
     saveTimer = null
   }
+  pendingSaveState = null
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

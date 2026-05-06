@@ -67,6 +67,7 @@ import { useIsHostedOasis, useOasisCapabilities } from '@/lib/oasis-mode-client'
 import { installTestHarness } from '@/lib/test-harness'
 import { useWorldEvents } from '@/hooks/useWorldEvents'
 import { AgentWindowPortals } from './forge/AgentWindowPortals'
+import { PortalZeroCanonicalButton } from './forge/PortalZeroCanonicalButton'
 
 const SHOW_LEGACY_DEVCRAFT_PANEL = false
 const SHOW_LEGACY_PARZIVAL_PANEL = false
@@ -1438,6 +1439,7 @@ export default function Scene() {
         {/* ─═̷─═̷─📸─═̷─═̷─ PANORAMA CAPTURE (Ctrl+Shift+P) ─═̷─═̷─📸─═̷─═̷─ */}
         <PanoramaCapture />
         <ViewportScreenshotBridge />
+        <PortalZeroCanonicalButton />
 
         <PostProcessing />
         <FPSTracker />

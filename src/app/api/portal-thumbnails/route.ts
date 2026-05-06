@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { NextResponse } from 'next/server'
 
@@ -30,8 +30,9 @@ export async function POST() {
   const generated: string[] = []
 
   for (const item of allPortalThumbnailSvgs()) {
-    if (existing.has(item.id)) continue
-    writeFileSync(join(THUMBS_DIR, `${item.id}.svg`), item.svg, 'utf8')
+    const path = join(THUMBS_DIR, `${item.id}.svg`)
+    if (existing.has(item.id) && readFileSync(path, 'utf8') === item.svg) continue
+    writeFileSync(path, item.svg, 'utf8')
     generated.push(item.id)
   }
 

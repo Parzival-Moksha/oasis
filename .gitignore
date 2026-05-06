@@ -54,6 +54,7 @@ public/generated-images/*
 public/generated-videos/
 public/generated-voices/
 public/generated-music/
+data/generated-voice-library.json
 
 # User-uploaded media (images, videos, audio via /api/media/upload)
 public/images/*

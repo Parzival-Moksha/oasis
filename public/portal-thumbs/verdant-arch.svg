@@ -17,22 +17,31 @@
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
+    <filter id="glow-smoke" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="9"/>
+    </filter>
   </defs>
   <rect width="256" height="256" rx="22" fill="#020617"/>
   <circle cx="54" cy="46" r="82" fill="#86efac" opacity="0.12"/>
   <circle cx="205" cy="203" r="92" fill="#22c55e" opacity="0.1"/>
-  <ellipse cx="128" cy="126" rx="50" ry="86" fill="url(#core-verdant-arch)" filter="url(#glow-verdant-arch)"/>
-  <ellipse cx="128" cy="126" rx="67" ry="98" fill="none" stroke="url(#rim-verdant-arch)" stroke-width="10" filter="url(#glow-verdant-arch)"/>
-  <ellipse cx="128" cy="126" rx="43" ry="74" fill="none" stroke="#f8fafc" stroke-width="2" opacity="0.58"/>
-  <g opacity="0.8">
-    <circle cx="84" cy="61" r="3" fill="#fff"/>
-    <circle cx="179" cy="73" r="2" fill="#fff"/>
-    <circle cx="67" cy="161" r="2" fill="#fff"/>
-    <circle cx="192" cy="160" r="3" fill="#fff"/>
-    <circle cx="115" cy="39" r="1.5" fill="#fff"/>
-    <circle cx="151" cy="211" r="1.5" fill="#fff"/>
+  <g opacity="0.34" filter="url(#glow-smoke)">
+    <ellipse cx="74" cy="192" rx="40" ry="12" fill="#86efac"/>
+    <ellipse cx="126" cy="199" rx="58" ry="14" fill="#ffffff" opacity="0.42"/>
+    <ellipse cx="180" cy="190" rx="44" ry="12" fill="#86efac"/>
   </g>
-  <path d="M78 211c20 13 80 13 101 0" fill="none" stroke="#86efac" stroke-width="5" opacity="0.35"/>
+  <ellipse cx="128" cy="126" rx="48" ry="82" fill="url(#core-verdant-arch)"/>
+  <path d="M70 199c-4-86 21-145 58-156 36 11 62 70 58 156" fill="none" stroke="#36533b" stroke-width="16" stroke-linecap="round"/>
+  <path d="M78 193c2-69 22-122 50-137 28 15 48 68 50 137" fill="none" stroke="#86efac" stroke-width="5" opacity="0.78" filter="url(#glow-verdant-arch)"/>
+  <ellipse cx="176" cy="55" rx="14" ry="6" fill="#86efac" transform="rotate(28 176 55)" opacity="0.78"/><ellipse cx="88" cy="63" rx="14" ry="6" fill="#22c55e" transform="rotate(-28 88 63)" opacity="0.78"/><ellipse cx="160" cy="71" rx="14" ry="6" fill="#22c55e" transform="rotate(28 160 71)" opacity="0.78"/><ellipse cx="104" cy="79" rx="14" ry="6" fill="#86efac" transform="rotate(-28 104 79)" opacity="0.78"/><ellipse cx="176" cy="87" rx="14" ry="6" fill="#22c55e" transform="rotate(28 176 87)" opacity="0.78"/><ellipse cx="88" cy="95" rx="14" ry="6" fill="#22c55e" transform="rotate(-28 88 95)" opacity="0.78"/><ellipse cx="160" cy="103" rx="14" ry="6" fill="#86efac" transform="rotate(28 160 103)" opacity="0.78"/><ellipse cx="104" cy="111" rx="14" ry="6" fill="#22c55e" transform="rotate(-28 104 111)" opacity="0.78"/><ellipse cx="176" cy="119" rx="14" ry="6" fill="#22c55e" transform="rotate(28 176 119)" opacity="0.78"/><ellipse cx="88" cy="127" rx="14" ry="6" fill="#86efac" transform="rotate(-28 88 127)" opacity="0.78"/><ellipse cx="160" cy="135" rx="14" ry="6" fill="#22c55e" transform="rotate(28 160 135)" opacity="0.78"/><ellipse cx="104" cy="143" rx="14" ry="6" fill="#22c55e" transform="rotate(-28 104 143)" opacity="0.78"/><ellipse cx="176" cy="151" rx="14" ry="6" fill="#86efac" transform="rotate(28 176 151)" opacity="0.78"/><ellipse cx="88" cy="159" rx="14" ry="6" fill="#22c55e" transform="rotate(-28 88 159)" opacity="0.78"/><ellipse cx="160" cy="167" rx="14" ry="6" fill="#22c55e" transform="rotate(28 160 167)" opacity="0.78"/><ellipse cx="104" cy="175" rx="14" ry="6" fill="#86efac" transform="rotate(-28 104 175)" opacity="0.78"/>
+  <g opacity="0.86">
+    <circle cx="48" cy="54" r="2" fill="#fff"/>
+    <circle cx="205" cy="49" r="1.6" fill="#fff"/>
+    <circle cx="222" cy="139" r="2.4" fill="#fff"/>
+    <circle cx="42" cy="165" r="1.8" fill="#fff"/>
+    <circle cx="108" cy="31" r="1.4" fill="#fff"/>
+    <circle cx="154" cy="220" r="1.7" fill="#fff"/>
+    <circle cx="194" cy="206" r="1.2" fill="#fff"/>
+  </g>
   <text x="128" y="232" text-anchor="middle" fill="#dbeafe" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" font-weight="700" letter-spacing="0">Verdant</text>
   <text x="128" y="247" text-anchor="middle" fill="#64748b" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="8" letter-spacing="0">verdant-arch</text>
 </svg>

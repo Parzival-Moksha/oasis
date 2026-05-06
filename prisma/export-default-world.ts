@@ -2,19 +2,14 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, relative } from 'node:path'
 
 import { PrismaClient } from '../node_modules/.prisma/client'
-
-interface DefaultWorldManifestEntry {
-  slug: string
-  id: string
-  file: string
-  name: string
-  visibility: string
-}
-
-interface DefaultWorldManifest {
-  seedVersion: number
-  worlds: DefaultWorldManifestEntry[]
-}
+import {
+  buildDefaultWorldManifestEntry,
+  buildDefaultWorldSeed,
+  parseDefaultWorldManifest,
+  upsertDefaultWorldManifestEntry,
+  type DefaultWorldManifest,
+  type DefaultWorldManifestEntry,
+} from '../src/lib/default-world-seeds'
 
 const prisma = new PrismaClient()
 const args = process.argv.slice(2)
@@ -30,7 +25,7 @@ function readOption(name: string, fallback: string): string {
 
 async function readManifest(path: string): Promise<DefaultWorldManifest> {
   try {
-    return JSON.parse(await readFile(path, 'utf8')) as DefaultWorldManifest
+    return parseDefaultWorldManifest(await readFile(path, 'utf8'))
   } catch {
     return { seedVersion: 1, worlds: [] }
   }
@@ -38,10 +33,7 @@ async function readManifest(path: string): Promise<DefaultWorldManifest> {
 
 async function writeManifest(path: string, entry: DefaultWorldManifestEntry): Promise<void> {
   const manifest = await readManifest(path)
-  const worlds = manifest.worlds.filter(world => world.slug !== entry.slug && world.id !== entry.id)
-  worlds.push(entry)
-  worlds.sort((a, b) => a.slug.localeCompare(b.slug))
-  await writeFile(path, `${JSON.stringify({ seedVersion: 1, worlds }, null, 2)}\n`)
+  await writeFile(path, `${JSON.stringify(upsertDefaultWorldManifestEntry(manifest, entry), null, 2)}\n`)
 }
 
 async function main() {
@@ -72,21 +64,12 @@ async function main() {
     throw new Error(`World ${worldId} was not found or has no saved data.`)
   }
 
-  const name = nameOverride || world.name
-  const visibility = visibilityOverride || world.visibility
-  const output = {
-    seedVersion: 1,
+  const output = buildDefaultWorldSeed(world, {
     slug,
-    id: world.id,
-    userId: world.userId,
-    name,
-    icon: iconOverride || world.icon || '0',
-    visibility,
-    creatorName: world.creatorName || 'The Oasis',
-    creatorAvatar: world.creatorAvatar,
-    thumbnailUrl: world.thumbnailUrl,
-    data: JSON.parse(world.data) as unknown,
-  }
+    name: nameOverride || undefined,
+    icon: iconOverride || undefined,
+    visibility: visibilityOverride || undefined,
+  })
 
   const absoluteOutPath = join(process.cwd(), outPath)
   await mkdir(dirname(absoluteOutPath), { recursive: true })
@@ -94,13 +77,13 @@ async function main() {
 
   if (hasFlag('manifest')) {
     await mkdir(dirname(manifestPath), { recursive: true })
-    await writeManifest(manifestPath, {
-      slug,
-      id: world.id,
-      file: relative(join(process.cwd(), 'prisma', 'default-worlds'), absoluteOutPath).replace(/\\/g, '/'),
-      name,
-      visibility,
-    })
+    await writeManifest(
+      manifestPath,
+      buildDefaultWorldManifestEntry(
+        output,
+        relative(join(process.cwd(), 'prisma', 'default-worlds'), absoluteOutPath).replace(/\\/g, '/'),
+      ),
+    )
   }
 
   console.log(`[export:default-world] Wrote ${outPath}`)

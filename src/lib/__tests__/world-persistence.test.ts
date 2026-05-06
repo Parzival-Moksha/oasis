@@ -40,6 +40,7 @@ import {
   exportWorld,
   importWorld,
   debouncedSaveWorld,
+  flushPendingSaveWorld,
   cancelPendingSave,
   migrateIfNeeded,
   type WorldState,
@@ -387,6 +388,21 @@ describe('WorldPersistence', () => {
       // Verify it saved the SECOND payload (with 'extra' asset)
       const body = JSON.parse(fetchMock.mock.calls[0][1].body)
       expect(body.conjuredAssetIds).toEqual(['extra'])
+    })
+
+    it('flushes the pending debounced save immediately', async () => {
+      fetchMock.mockResolvedValue({ ok: true })
+      debouncedSaveWorld({ terrain: null, craftedScenes: [], conjuredAssetIds: ['fresh'], transforms: {} } as any)
+
+      await flushPendingSaveWorld('portal-zero')
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(fetchMock.mock.calls[0][0]).toContain('portal-zero')
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+      expect(body.conjuredAssetIds).toEqual(['fresh'])
+
+      vi.advanceTimersByTime(1000)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
     })
   })
 

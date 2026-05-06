@@ -31,6 +31,7 @@ function PortalLabel({ gate }: { gate: PortalGate }) {
 }
 
 type PortalMood = 'arcane' | 'void' | 'hologram' | 'solar' | 'rift' | 'forest' | 'water' | 'clockwork'
+type PortalWorldProfile = 'starwell' | 'void' | 'grid' | 'sun' | 'rift' | 'galaxy' | 'crystal' | 'forest' | 'ocean' | 'machine'
 
 const MOOD_COLORS: Record<
   PortalMood,
@@ -368,6 +369,197 @@ function MirrorGlassSkin({
   )
 }
 
+function PortalWorldGlimpse({
+  mood,
+  profile,
+  size = [1.18, 1.9],
+  inert,
+}: {
+  mood: PortalMood
+  profile: PortalWorldProfile
+  size?: [number, number]
+  inert?: boolean
+}) {
+  const groupRef = useRef<THREE.Group>(null)
+  const colors = MOOD_COLORS[mood]
+  const opacity = inert ? 0.16 : 0.72
+  const sx = size[0]
+  const sy = size[1]
+  const moonRadius = Math.min(sx, sy) * 0.105
+
+  useFrame(({ clock }) => {
+    if (!groupRef.current) return
+    const t = clock.elapsedTime
+    groupRef.current.rotation.z = Math.sin(t * 0.16 + sx) * 0.012
+  })
+
+  const mat = (color: string, alpha = opacity, additive = true) => (
+    <meshBasicMaterial
+      color={color}
+      transparent
+      opacity={alpha}
+      depthWrite={false}
+      side={THREE.DoubleSide}
+      blending={additive ? THREE.AdditiveBlending : THREE.NormalBlending}
+    />
+  )
+
+  const moon = (key: string, x: number, y: number, radius: number, color = colors.secondary, alpha = opacity * 0.7) => (
+    <mesh key={key} position={[x * sx, y * sy, 0.025]}>
+      <circleGeometry args={[radius, 48]} />
+      {mat(color, alpha)}
+    </mesh>
+  )
+
+  const horizon = (color: string, alpha = opacity * 0.5) => (
+    <mesh position={[0, -0.36 * sy, 0.018]} scale={[sx, sy, 1]}>
+      <circleGeometry args={[0.52, 48, 0, Math.PI]} />
+      {mat(color, alpha, false)}
+    </mesh>
+  )
+
+  return (
+    <group ref={groupRef} position={[0, 0, 0.02]} renderOrder={2}>
+      {profile === 'starwell' && (
+        <>
+          {moon('moon-a', -0.22, 0.22, moonRadius * 0.9)}
+          {moon('moon-b', 0.26, 0.08, moonRadius * 0.55, colors.primary, opacity * 0.52)}
+          <mesh position={[0, -0.24 * sy, 0.02]} scale={[sx, sy, 1]}>
+            <ringGeometry args={[0.24, 0.28, 72]} />
+            {mat(colors.secondary, opacity * 0.42)}
+          </mesh>
+          {horizon(colors.primary, opacity * 0.22)}
+        </>
+      )}
+      {profile === 'void' && (
+        <>
+          <mesh position={[0, 0.02 * sy, 0.025]} scale={[sx, sy, 1]}>
+            <circleGeometry args={[0.22, 72]} />
+            <meshBasicMaterial color="#000000" transparent opacity={inert ? 0.72 : 0.92} depthWrite={false} side={THREE.DoubleSide} />
+          </mesh>
+          <mesh position={[0, 0.02 * sy, 0.03]} scale={[sx, sy, 1]}>
+            <ringGeometry args={[0.22, 0.25, 72]} />
+            {mat(colors.secondary, opacity * 0.44)}
+          </mesh>
+          {moon('void-star', 0.26, 0.29, moonRadius * 0.38, colors.secondary, opacity * 0.42)}
+          {horizon(colors.primary, opacity * 0.12)}
+        </>
+      )}
+      {profile === 'grid' && (
+        <group>
+          {[-0.36, -0.18, 0, 0.18, 0.36].map(x => (
+            <mesh key={`grid-v-${x}`} position={[x * sx, 0, 0.02]}>
+              <boxGeometry args={[0.006, sy * 0.84, 0.012]} />
+              {mat(colors.primary, opacity * 0.28)}
+            </mesh>
+          ))}
+          {[-0.34, -0.16, 0.02, 0.2, 0.38].map(y => (
+            <mesh key={`grid-h-${y}`} position={[0, y * sy, 0.02]}>
+              <boxGeometry args={[sx * 0.84, 0.006, 0.012]} />
+              {mat(colors.secondary, opacity * 0.24)}
+            </mesh>
+          ))}
+          {moon('grid-node', 0.28, 0.3, moonRadius * 0.45, colors.secondary, opacity * 0.54)}
+        </group>
+      )}
+      {profile === 'sun' && (
+        <>
+          {moon('sun-core', 0.2, 0.22, moonRadius * 1.35, colors.secondary, opacity * 0.78)}
+          {Array.from({ length: 12 }, (_, index) => {
+            const angle = (index / 12) * Math.PI * 2
+            return (
+              <mesh key={index} position={[Math.cos(angle) * sx * 0.28, Math.sin(angle) * sy * 0.24, 0.025]} rotation={[0, 0, angle]}>
+                <boxGeometry args={[0.16, 0.012, 0.012]} />
+                {mat(index % 2 ? colors.secondary : colors.primary, opacity * 0.42)}
+              </mesh>
+            )
+          })}
+          {horizon(colors.ember, opacity * 0.25)}
+        </>
+      )}
+      {profile === 'rift' && (
+        <>
+          {[-0.22, 0.18, -0.06, 0.09, -0.15].map((x, index) => (
+            <mesh key={index} position={[x * sx, (0.34 - index * 0.17) * sy, 0.026]} rotation={[0, 0, x * 2.8]}>
+              <tetrahedronGeometry args={[0.055 + index * 0.008, 0]} />
+              {mat(index % 2 ? colors.secondary : colors.primary, opacity * 0.62)}
+            </mesh>
+          ))}
+          <mesh position={[0, 0, 0.026]} rotation={[0, 0, -0.18]}>
+            <boxGeometry args={[sx * 0.075, sy * 0.78, 0.014]} />
+            {mat(colors.secondary, opacity * 0.48)}
+          </mesh>
+        </>
+      )}
+      {profile === 'galaxy' && (
+        <>
+          {[0.24, 0.34, 0.44].map((radius, index) => (
+            <mesh key={index} position={[0, 0.02 * sy, 0.024]} scale={[sx, sy, 1]} rotation={[0, 0, index * 0.42]}>
+              <ringGeometry args={[radius, radius + 0.01, 96, 1, Math.PI * 0.15, Math.PI * 1.35]} />
+              {mat(index % 2 ? colors.secondary : colors.primary, opacity * (0.28 + index * 0.06))}
+            </mesh>
+          ))}
+          {moon('galaxy-core', 0, 0.02, moonRadius * 0.65, colors.secondary, opacity * 0.62)}
+        </>
+      )}
+      {profile === 'crystal' && (
+        <>
+          {[-0.28, -0.1, 0.12, 0.3].map((x, index) => (
+            <mesh key={index} position={[x * sx, (-0.24 + index * 0.12) * sy, 0.025]} rotation={[0.2, 0.3, x]}>
+              <octahedronGeometry args={[0.07 + index * 0.012, 0]} />
+              {mat(index % 2 ? colors.secondary : colors.primary, opacity * 0.6)}
+            </mesh>
+          ))}
+          {horizon(colors.secondary, opacity * 0.18)}
+        </>
+      )}
+      {profile === 'forest' && (
+        <>
+          {horizon(colors.core, opacity * 0.5)}
+          {[-0.32, -0.18, 0.02, 0.2, 0.34].map((x, index) => (
+            <mesh key={index} position={[x * sx, (-0.25 + (index % 2) * 0.06) * sy, 0.026]}>
+              <coneGeometry args={[0.04, 0.26, 6]} />
+              {mat(index % 2 ? colors.secondary : colors.primary, opacity * 0.44, false)}
+            </mesh>
+          ))}
+          {moon('forest-firefly', 0.24, 0.3, moonRadius * 0.38, colors.secondary, opacity * 0.55)}
+        </>
+      )}
+      {profile === 'ocean' && (
+        <>
+          {[-0.18, -0.06, 0.06, 0.18].map((y, index) => (
+            <mesh key={index} position={[0, y * sy, 0.024]}>
+              <torusGeometry args={[sx * (0.18 + index * 0.045), 0.006, 6, 96]} />
+              {mat(index % 2 ? colors.secondary : colors.primary, opacity * 0.3)}
+            </mesh>
+          ))}
+          {moon('ocean-moon', -0.24, 0.28, moonRadius * 0.62, '#ffffff', opacity * 0.42)}
+          {horizon(colors.primary, opacity * 0.2)}
+        </>
+      )}
+      {profile === 'machine' && (
+        <>
+          {[0.2, 0.31, 0.42].map((radius, index) => (
+            <mesh key={index} position={[0, 0, 0.025]} scale={[sx, sy, 1]} rotation={[0, 0, index * 0.18]}>
+              <ringGeometry args={[radius, radius + 0.012, 8 + index * 4]} />
+              {mat(index % 2 ? colors.secondary : colors.primary, opacity * 0.38)}
+            </mesh>
+          ))}
+          {Array.from({ length: 7 }, (_, index) => {
+            const angle = (index / 7) * Math.PI * 2
+            return (
+              <mesh key={index} position={[Math.cos(angle) * sx * 0.18, Math.sin(angle) * sy * 0.18, 0.027]} rotation={[0, 0, angle]}>
+                <boxGeometry args={[0.1, 0.018, 0.014]} />
+                {mat(colors.secondary, opacity * 0.34)}
+              </mesh>
+            )
+          })}
+        </>
+      )}
+    </group>
+  )
+}
+
 function EmissiveBolts({
   mood,
   inert,
@@ -694,7 +886,7 @@ function SmokeWisps({ mood, inert }: { mood: PortalMood; inert?: boolean }) {
     if (!smokeRef.current) return
     const t = clock.elapsedTime
     smokeRef.current.rotation.z = Math.sin(t * 0.28) * 0.06
-    smokeRef.current.position.y = -0.08 + Math.sin(t * 0.6) * 0.04
+    smokeRef.current.scale.set(1 + Math.sin(t * 0.6) * 0.025, 1 + Math.cos(t * 0.42) * 0.018, 1)
   })
 
   return (
@@ -755,6 +947,7 @@ function ThresholdRing({ inert }: { inert?: boolean }) {
       <SmokeWisps mood="arcane" inert={inert} />
       <StoneSegmentRing mood="arcane" inert={inert} />
       <PortalAperture mood="arcane" seed={211} shape="ellipse" size={[1.24, 2.08]} intensity={1.08} organic={0.38} inert={inert} />
+      <PortalWorldGlimpse mood="arcane" profile="starwell" size={[1.04, 1.72]} inert={inert} />
       <PortalDepthTunnel mood="arcane" inert={inert} elongated rings={8} radius={0.58} zStep={0.075} />
       <MirrorGlassSkin mood="arcane" shape="ellipse" size={[1.08, 1.86]} opacity={0.18} inert={inert} />
       <RimHalo mood="arcane" inert={inert} scale={[0.78, 1.18, 1]} radius={0.82} thickness={0.16} opacity={0.28} />
@@ -798,6 +991,7 @@ function VoidDoor({ inert }: { inert?: boolean }) {
     <group position={[0, 1.45, 0]}>
       <SmokeWisps mood="void" inert={inert} />
       <PortalAperture mood="void" seed={329} shape="door" size={[1.08, 2.56]} intensity={1.22} organic={0.82} inert={inert} />
+      <PortalWorldGlimpse mood="void" profile="void" size={[0.9, 2.24]} inert={inert} />
       <PortalDepthTunnel mood="void" inert={inert} elongated rings={9} radius={0.42} zStep={0.095} />
       <MirrorGlassSkin mood="void" shape="door" size={[0.92, 2.28]} opacity={0.16} inert={inert} />
       <RimHalo mood="void" inert={inert} scale={[0.78, 1.42, 1]} radius={0.5} thickness={0.11} opacity={0.38} />
@@ -852,6 +1046,7 @@ function HologramGate({ inert }: { inert?: boolean }) {
   return (
     <group position={[0, 1.48, 0]}>
       <PortalAperture mood="hologram" seed={441} shape="door" size={[1.46, 2.5]} intensity={0.94} organic={0.08} inert={inert} />
+      <PortalWorldGlimpse mood="hologram" profile="grid" size={[1.22, 2.16]} inert={inert} />
       <PortalDepthTunnel mood="hologram" inert={inert} elongated rings={6} radius={0.7} zStep={0.07} />
       <MirrorGlassSkin mood="hologram" shape="door" size={[1.32, 2.32]} opacity={0.12} inert={inert} />
       <PortalStarfield seed={41} color="#eaffff" accentColor="#6effe8" width={1.48} height={2.34} count={108} depth={0.48} inert={inert} />
@@ -901,6 +1096,7 @@ function SolarArch({ inert }: { inert?: boolean }) {
       <SmokeWisps mood="solar" inert={inert} />
       <StoneSegmentRing mood="solar" inert={inert} elongated />
       <PortalAperture mood="solar" seed={559} shape="ellipse" size={[1.14, 1.92]} intensity={1.25} organic={0.32} inert={inert} />
+      <PortalWorldGlimpse mood="solar" profile="sun" size={[0.96, 1.58]} inert={inert} />
       <PortalDepthTunnel mood="solar" inert={inert} elongated rings={7} radius={0.56} zStep={0.065} />
       <MirrorGlassSkin mood="solar" shape="ellipse" size={[1, 1.74]} opacity={0.14} inert={inert} />
       <RimHalo mood="solar" inert={inert} scale={[0.9, 1.3, 1]} radius={0.76} thickness={0.18} opacity={0.34} />
@@ -959,6 +1155,7 @@ function RiftSlit({ inert }: { inert?: boolean }) {
     <group position={[0, 1.52, 0]}>
       <SmokeWisps mood="rift" inert={inert} />
       <PortalAperture mood="rift" seed={673} shape="slit" size={[0.78, 2.86]} intensity={1.34} organic={1.0} inert={inert} />
+      <PortalWorldGlimpse mood="rift" profile="rift" size={[0.48, 2.52]} inert={inert} />
       <PortalDepthTunnel mood="rift" inert={inert} elongated rings={8} radius={0.36} zStep={0.09} />
       <MirrorGlassSkin mood="rift" shape="slit" size={[0.38, 2.6]} opacity={0.2} inert={inert} />
       <PortalStarfield seed={73} color="#f8d6ff" accentColor="#76f8ff" width={0.88} height={2.82} count={126} depth={0.64} inert={inert} />
@@ -996,6 +1193,7 @@ function StargateVortex({ inert }: { inert?: boolean }) {
       <SmokeWisps mood="arcane" inert={inert} />
       <StoneSegmentRing mood="arcane" inert={inert} />
       <PortalAperture mood="arcane" seed={789} shape="circle" size={[1.7, 1.7]} intensity={1.46} organic={0.25} inert={inert} />
+      <PortalWorldGlimpse mood="arcane" profile="galaxy" size={[1.44, 1.44]} inert={inert} />
       <PortalDepthTunnel mood="arcane" inert={inert} rings={11} radius={0.72} zStep={0.055} />
       <MirrorGlassSkin mood="arcane" shape="circle" size={[1.48, 1.48]} opacity={0.16} inert={inert} />
       <RimHalo mood="arcane" inert={inert} radius={0.96} thickness={0.2} opacity={0.38} />
@@ -1024,6 +1222,7 @@ function CrystalCavern({ inert }: { inert?: boolean }) {
     <group position={[0, 1.48, 0]}>
       <SmokeWisps mood="rift" inert={inert} />
       <PortalAperture mood="rift" seed={897} shape="ellipse" size={[1.18, 2.18]} intensity={1.08} organic={0.58} inert={inert} />
+      <PortalWorldGlimpse mood="rift" profile="crystal" size={[1, 1.86]} inert={inert} />
       <PortalDepthTunnel mood="rift" inert={inert} elongated rings={8} radius={0.58} zStep={0.08} />
       <MirrorGlassSkin mood="rift" shape="ellipse" size={[1.02, 1.96]} opacity={0.22} inert={inert} />
       <EnergyVeil mood="rift" scale={[0.72, 1.18, 1]} opacity={0.28} inert={inert} />
@@ -1057,6 +1256,7 @@ function VerdantArch({ inert }: { inert?: boolean }) {
     <group position={[0, 1.42, 0]}>
       <SmokeWisps mood="forest" inert={inert} />
       <PortalAperture mood="forest" seed={907} shape="ellipse" size={[1.2, 2.2]} intensity={0.86} organic={1.05} inert={inert} />
+      <PortalWorldGlimpse mood="forest" profile="forest" size={[1.02, 1.9]} inert={inert} />
       <PortalDepthTunnel mood="forest" inert={inert} elongated rings={7} radius={0.58} zStep={0.07} />
       <MirrorGlassSkin mood="forest" shape="ellipse" size={[1.02, 1.96]} opacity={0.12} inert={inert} />
       <EnergyVeil mood="forest" scale={[0.78, 1.18, 1]} opacity={0.24} inert={inert} />
@@ -1094,6 +1294,7 @@ function MirrorPool({ inert }: { inert?: boolean }) {
     <group position={[0, 1.4, 0]}>
       <SmokeWisps mood="water" inert={inert} />
       <PortalAperture mood="water" seed={919} shape="pool" size={[1.36, 2.3]} intensity={1.18} organic={0.72} inert={inert} />
+      <PortalWorldGlimpse mood="water" profile="ocean" size={[1.12, 1.92]} inert={inert} />
       <PortalDepthTunnel mood="water" inert={inert} elongated rings={10} radius={0.54} zStep={0.06} />
       <MirrorGlassSkin mood="water" shape="pool" size={[1.18, 2.02]} opacity={0.3} inert={inert} />
       <PortalStarfield seed={119} color="#e0f2fe" accentColor="#7dd3fc" width={1.18} height={2.25} count={104} depth={0.45} inert={inert} />
@@ -1122,6 +1323,7 @@ function ClockworkIris({ inert }: { inert?: boolean }) {
   return (
     <group position={[0, 1.48, 0]}>
       <PortalAperture mood="clockwork" seed={931} shape="circle" size={[1.42, 1.42]} intensity={0.9} organic={0.04} inert={inert} />
+      <PortalWorldGlimpse mood="clockwork" profile="machine" size={[1.16, 1.16]} inert={inert} />
       <PortalDepthTunnel mood="clockwork" inert={inert} rings={8} radius={0.58} zStep={0.065} />
       <MirrorGlassSkin mood="clockwork" shape="circle" size={[1.16, 1.16]} opacity={0.16} inert={inert} />
       <PortalStarfield seed={131} color="#fef3c7" accentColor="#facc15" width={1.22} height={1.72} count={88} depth={0.42} inert={inert} />
