@@ -138,7 +138,7 @@ export class AnimationController {
   // ── STATE TRANSITIONS ────────────────────────────────────────────────
 
   /** Transition to a new animation state with crossfade */
-  transitionTo(state: AnimState, customAnimId?: string): void {
+  transitionTo(state: AnimState, customAnimId?: string, options?: { loop?: boolean }): void {
     if (this.disposed) return
 
     // Determine the clip ID
@@ -183,8 +183,9 @@ export class AnimationController {
     // Crossfade
     const newAction = this.mixer.clipAction(clip)
     newAction.reset()
-    newAction.setLoop(THREE.LoopRepeat, Infinity)
-    newAction.clampWhenFinished = false
+    const loopOnce = state === 'custom' && options?.loop === false
+    newAction.setLoop(loopOnce ? THREE.LoopOnce : THREE.LoopRepeat, loopOnce ? 1 : Infinity)
+    newAction.clampWhenFinished = loopOnce
     // Adjust animation playback speed per state for foot sync
     newAction.timeScale = state === 'run' ? this.config.runTimeScale
       : state === 'sprint' ? this.config.sprintTimeScale : 1
@@ -197,6 +198,10 @@ export class AnimationController {
 
     this.currentAction = newAction
     this.currentState = state
+  }
+
+  getClipDuration(animId: string): number | null {
+    return this.clips.get(animId)?.duration ?? null
   }
 
   // ── VELOCITY-BASED AUTO-TRANSITION ───────────────────────────────────

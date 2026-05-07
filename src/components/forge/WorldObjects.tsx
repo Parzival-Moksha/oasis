@@ -1696,7 +1696,9 @@ export function TransformKeyHandler() {
       // Enter is needed for window/image zoomon, PgUp/PgDown for slides, and
       // Delete/Backspace still routes through the typing guard below.
       const isAgentWindowCycleKey = input.inputState === 'agent-focus' && (e.key === 'n' || e.key === 'N')
-      if (useInputManager.getState().hasActiveUILayer() && !isAgentWindowCycleKey && !['Escape', 'Delete', 'Backspace', 'Enter', 'PageDown', 'PageUp'].includes(e.key)) return
+      const key = e.key.toLowerCase()
+      const isUndoRedoChord = (e.ctrlKey || e.metaKey) && (key === 'z' || key === 'y')
+      if (useInputManager.getState().hasActiveUILayer() && !isUndoRedoChord && !isAgentWindowCycleKey && !['Escape', 'Delete', 'Backspace', 'Enter', 'PageDown', 'PageUp'].includes(e.key)) return
 
       // ░▒▓ ALL KEYS — check if typing in form element ▓▒░
       const NON_TEXT_INPUTS = new Set(['range', 'color', 'checkbox', 'radio', 'file', 'button', 'image', 'reset', 'submit'])
@@ -1712,8 +1714,6 @@ export function TransformKeyHandler() {
       // Block ALL edit shortcuts in read-only view mode
       const { isViewMode: vm, isViewModeEditable: vme } = useOasisStore.getState()
       if (vm && !vme) return
-
-      const key = e.key.toLowerCase()
 
       // ░▒▓ Ctrl+Z / Ctrl+Shift+Z — Undo/Redo via EventBus ▓▒░
       if ((e.ctrlKey || e.metaKey) && key === 'z') {

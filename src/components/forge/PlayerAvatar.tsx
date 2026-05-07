@@ -74,6 +74,14 @@ const MAX_ELEVATION = 1.5  // Almost directly above
 const TPS_BASE_SPEED = 3.0      // Default WASD run speed (bumped 25%)
 const TPS_SPRINT_MULT = 4       // Shift: 4x faster (12.0)
 const TPS_WALK_MULT = 0.25      // Space: 4x slower (0.75)
+const PORTAL_ROLL_FORWARD_DISTANCE = 3
+
+interface PortalRollMotion {
+  startedAt: number
+  durationMs: number
+  start: THREE.Vector3
+  forward: THREE.Vector3
+}
 
 function normalizeAngle(angle: number): number {
   while (angle > Math.PI) angle -= Math.PI * 2
@@ -149,6 +157,7 @@ export function PlayerAvatar({
   const groupRef = useRef<THREE.Group>(null)
   const vrmRef = useRef<VRM | null>(null)
   const [vrm, setVrm] = useState<VRM | null>(null)
+  const [avatarPoseReady, setAvatarPoseReady] = useState(false)
 
   // ── Camera orbit state (third-person) ──────────────────────────────
   const cameraAzimuth = useRef(Math.PI) // Start behind avatar (facing +Z)
@@ -177,6 +186,7 @@ export function PlayerAvatar({
   const spellAudioRef = useRef<HTMLAudioElement | null>(null)
   const spellAnimationActiveRef = useRef(false)
   const portalRollTimeoutRef = useRef<number | null>(null)
+  const portalRollMotionRef = useRef<PortalRollMotion | null>(null)
   const [playerSpellCasting, setPlayerSpellCastingState] = useState(() => getPlayerSpellCasting())
 
   // ── IBL one-shot flag ──────────────────────────────────────────────
@@ -284,6 +294,7 @@ export function PlayerAvatar({
     })
 
     vrmRef.current = loadedVrm
+    setAvatarPoseReady(false)
     setVrm(loadedVrm)
     iblAppliedRef.current = false
     console.log(`[PlayerAvatar] Loaded: ${url.split('/').pop()}`)
@@ -304,6 +315,13 @@ export function PlayerAvatar({
       sprintTimeScale: 1.6,                             // fast sprint animation for foot sync
     })
     animControllerRef.current = controller
+    controller.preloadClip('idle').then(ok => {
+      if (animControllerRef.current !== controller) return
+      if (ok) {
+        controller.transitionTo('idle')
+      }
+      setAvatarPoseReady(true)
+    })
     return () => { controller.dispose(); animControllerRef.current = null }
   }, [vrm])
 
@@ -311,16 +329,29 @@ export function PlayerAvatar({
     const onPortalRevealRoll = () => {
       const controller = animControllerRef.current
       if (!controller) return
+      const activeRoll = portalRollMotionRef.current
+      if (activeRoll && performance.now() - activeRoll.startedAt < activeRoll.durationMs) return
       if (portalRollTimeoutRef.current) window.clearTimeout(portalRollTimeoutRef.current)
       controller.preloadClip('ual-roll').then(ok => {
         const currentController = animControllerRef.current
         if (!ok || !currentController) return
-        currentController.transitionTo('custom', 'ual-roll')
+        const durationMs = Math.max(450, (currentController.getClipDuration('ual-roll') ?? 1.45) * 1000)
+        const forward = new THREE.Vector3(Math.sin(facingAngle.current), 0, Math.cos(facingAngle.current)).normalize()
+        portalRollMotionRef.current = {
+          startedAt: performance.now(),
+          durationMs,
+          start: positionRef.current.clone(),
+          forward,
+        }
+        velocityRef.current.set(0, 0, 0)
+        isMovingRef.current = false
+        currentController.transitionTo('custom', 'ual-roll', { loop: false })
         portalRollTimeoutRef.current = window.setTimeout(() => {
           const nextController = animControllerRef.current
           if (!nextController || nextController.state !== 'custom') return
+          portalRollMotionRef.current = null
           nextController.transitionTo('idle')
-        }, 2300)
+        }, durationMs + 90)
       })
     }
 
@@ -329,6 +360,7 @@ export function PlayerAvatar({
       window.removeEventListener(PORTAL_REVEAL_ROLL_EVENT, onPortalRevealRoll)
       if (portalRollTimeoutRef.current) window.clearTimeout(portalRollTimeoutRef.current)
       portalRollTimeoutRef.current = null
+      portalRollMotionRef.current = null
     }
   }, [])
 
@@ -569,6 +601,17 @@ export function PlayerAvatar({
     }
 
     // ── Sync group transform to position ref ─────────────────────
+    const portalRollMotion = portalRollMotionRef.current
+    if (portalRollMotion) {
+      const progress = clamp01((performance.now() - portalRollMotion.startedAt) / portalRollMotion.durationMs)
+      const eased = smoothstep01(progress)
+      positionRef.current.copy(portalRollMotion.start)
+        .addScaledVector(portalRollMotion.forward, PORTAL_ROLL_FORWARD_DISTANCE * eased)
+      velocityRef.current.set(0, 0, 0)
+      isMovingRef.current = false
+      if (progress >= 1) portalRollMotionRef.current = null
+    }
+
     group.position.copy(positionRef.current)
     group.rotation.y = facingAngle.current
     setPlayerAvatarPose({
@@ -627,7 +670,7 @@ export function PlayerAvatar({
   if (!vrm) return null
 
   return (
-    <group ref={groupRef}>
+    <group ref={groupRef} visible={avatarPoseReady}>
       <primitive object={vrm.scene} scale={1} />
     </group>
   )

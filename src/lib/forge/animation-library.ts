@@ -180,6 +180,26 @@ export const ANIM_CATEGORIES: { id: AnimCategory; label: string; icon: string }[
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ░▒▓ Meshy spine naming: Spine01/Spine02 instead of Spine1/Spine2 ▓▒░
+function sanitizedHipPositionTrack(
+  track: THREE.KeyframeTrack,
+  name: string,
+  source: 'mixamo' | 'ual',
+): THREE.VectorKeyframeTrack {
+  const vals = track.values.slice()
+  for (let i = 0; i < vals.length; i += 3) {
+    if (source === 'ual') {
+      const rawZUp = vals[i + 2]
+      vals[i] = 0
+      vals[i + 1] = rawZUp
+      vals[i + 2] = 0
+    } else {
+      vals[i] = 0
+      vals[i + 2] = 0
+    }
+  }
+  return new THREE.VectorKeyframeTrack(name, track.times, vals)
+}
+
 const SPINE_ALIASES: Record<string, string> = {
   'Spine1': 'Spine01',
   'Spine2': 'Spine02',
@@ -646,8 +666,9 @@ export async function loadAnimationClip(animId: string): Promise<THREE.Animation
           // model this teleports it. Stripping the whole track is safest — the skeleton
           // rest pose already positions the hips correctly, and rotation tracks handle
           // the body movement. Keeping Y-bob caused -infinity teleports on Tripo.
-          console.log(`[AnimLib] ${animId}: stripped root position track entirely (prevents teleport)`)
-          continue  // skip this track
+          normalizedTracks.push(sanitizedHipPositionTrack(track, normalizedName, 'mixamo'))
+          console.log(`[AnimLib] ${animId}: kept hip Y motion and zeroed horizontal root drift`)
+          continue
         }
 
         const newTrack = track.clone()
@@ -759,6 +780,7 @@ async function loadUALClip(entry: LocalAnimation): Promise<THREE.AnimationClip |
 
       // Strip pelvis/root position tracks
       if (boneName === 'pelvis' && property === '.position') {
+        normalizedTracks.push(sanitizedHipPositionTrack(track, track.name, 'ual'))
         continue
       }
 
@@ -973,6 +995,7 @@ export async function loadClipFromGLTF(
 
         // Strip root position — prevents teleporting (same as FBX pipeline)
         if ((boneName === 'Hips' || boneName === 'mixamorigHips') && property === '.position') {
+          normalizedTracks.push(sanitizedHipPositionTrack(track, boneName + property, 'mixamo'))
           continue
         }
 
