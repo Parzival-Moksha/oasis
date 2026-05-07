@@ -321,6 +321,183 @@ function PortalAperture({
   )
 }
 
+// ░▒▓ Sky aperture — single-pass discard ▓▒░
+// What it is: a flat plane inside the gate frame whose fragment shader
+//   1. discards pixels outside the aperture shape (so it reads as a punched-out window),
+//   2. samples a procedural starry sky by world-space view direction.
+// As the camera turns, the sky behind the cutout rotates exactly like a real
+// window into space. As the player walks past the gate, the direction through
+// each fragment shifts, giving subtle parallax. There are no 3D star meshes —
+// stars are computed on-GPU from camera-direction lat/lon, so they live on a
+// celestial sphere at infinity.
+const PORTAL_SKY_APERTURE_VERTEX_SHADER = `
+varying vec2 vUv;
+varying vec3 vWorldPosition;
+
+void main() {
+  vUv = uv;
+  vec4 worldPos = modelMatrix * vec4(position, 1.0);
+  vWorldPosition = worldPos.xyz;
+  gl_Position = projectionMatrix * viewMatrix * worldPos;
+}
+`
+
+const PORTAL_SKY_APERTURE_FRAGMENT_SHADER = `
+precision highp float;
+
+uniform float uTime;
+uniform float uSeed;
+uniform float uShape;
+uniform float uIntensity;
+uniform vec3 uVoid;
+uniform vec3 uNebula;
+uniform vec3 uStar;
+
+varying vec2 vUv;
+varying vec3 vWorldPosition;
+
+const float PI = 3.14159265359;
+const float TAU = 6.28318530718;
+
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
+float vnoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hash21(i);
+  float b = hash21(i + vec2(1.0, 0.0));
+  float c = hash21(i + vec2(0.0, 1.0));
+  float d = hash21(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+float fbm(vec2 p) {
+  float value = 0.0;
+  float amplitude = 0.52;
+  mat2 r = mat2(0.8, -0.6, 0.6, 0.8);
+  for (int i = 0; i < 4; i++) {
+    value += amplitude * vnoise(p);
+    p = r * p * 2.03 + vec2(9.2, 4.7);
+    amplitude *= 0.48;
+  }
+  return value;
+}
+
+// 0 = ellipse, 1 = door, 2 = slit, 3 = pool, 4 = circle. Returns >1 outside.
+float portalMask(vec2 p) {
+  if (uShape < 0.5) return length(p / vec2(0.72, 1.0));
+  if (uShape < 1.5) return max(abs(p.x) / 0.62, abs(p.y) / 0.96);
+  if (uShape < 2.5) return max(abs(p.x) / 0.18, abs(p.y) / 1.0);
+  if (uShape < 3.5) return length(p / vec2(0.92, 0.68));
+  return length(p);
+}
+
+float starLayer(vec2 uv, float scale, float threshold, float size) {
+  vec2 cell = floor(uv * scale);
+  vec2 local = fract(uv * scale) - 0.5;
+  vec2 jitter = vec2(hash21(cell + uSeed + 2.7), hash21(cell + uSeed + 8.1)) - 0.5;
+  float exists = step(threshold, hash21(cell + uSeed * 1.73));
+  float dStar = length(local - jitter * 0.72);
+  float twinkle = 0.72 + 0.28 * sin(uTime * (0.9 + hash21(cell) * 2.2) + hash21(cell + 5.0) * TAU);
+  return smoothstep(size, 0.0, dStar) * exists * twinkle;
+}
+
+void main() {
+  // Step 1: cookie-cutter the aperture shape. Pixels outside the shape are
+  // physically not part of the window, so we kill them with discard. This is
+  // the single-pass equivalent of a stencil mask — no buffer required.
+  vec2 p = (vUv - 0.5) * 2.0;
+  float mask = portalMask(p);
+  if (mask > 1.0) discard;
+
+  // Step 2: figure out which sky direction this fragment is staring into.
+  // World-space ray from camera through this pixel. Stars / nebula are
+  // sampled by direction so they live on a virtual celestial sphere; the
+  // camera's translation barely moves them (subtle window parallax) but
+  // rotation moves them 1:1.
+  vec3 direction = normalize(vWorldPosition - cameraPosition);
+  vec2 skyUv = vec2(
+    atan(direction.z, direction.x) / TAU + 0.5,
+    asin(clamp(direction.y, -1.0, 1.0)) / PI + 0.5
+  );
+  // Slow drift so identical seeds across multiple gates don't visually clone.
+  skyUv.x = fract(skyUv.x + uSeed * 0.013 + uTime * 0.0014);
+
+  float nebula = fbm(skyUv * vec2(4.6, 2.4) + vec2(uSeed * 0.11, -uSeed * 0.07));
+  float cloud = smoothstep(0.45, 0.92, nebula);
+
+  float stars = starLayer(skyUv, 150.0, 0.983, 0.06);
+  stars += starLayer(skyUv + vec2(0.173, 0.421), 310.0, 0.992, 0.05) * 0.72;
+  stars += starLayer(skyUv + vec2(0.621, 0.117), 620.0, 0.996, 0.04) * 0.42;
+
+  float verticalShade = smoothstep(-0.55, 0.85, direction.y);
+  vec3 color = mix(uVoid, uVoid * 0.42 + vec3(0.001, 0.004, 0.018), verticalShade);
+  color = mix(color, uNebula * (0.18 + uIntensity * 0.08) + uVoid * 0.72, cloud * 0.32);
+  color += uStar * stars * (0.85 + uIntensity * 0.42);
+
+  // Soft inner-edge fade so the rim sits like glass against the frame.
+  color *= 1.0 - smoothstep(0.94, 1.0, mask) * 0.28;
+  color = pow(color, vec3(0.82));
+
+  gl_FragColor = vec4(color, 1.0);
+}
+`
+
+function PortalSkyAperture({
+  mood,
+  seed,
+  shape = 'ellipse',
+  size = [1.18, 1.94],
+  position = [0, 0, -0.02],
+  intensity = 1,
+  inert,
+}: {
+  mood: PortalMood
+  seed: number
+  shape?: PortalApertureShape
+  size?: [number, number]
+  position?: [number, number, number]
+  intensity?: number
+  inert?: boolean
+}) {
+  const colors = MOOD_COLORS[mood]
+  const material = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uSeed: { value: seed },
+      uShape: { value: PORTAL_APERTURE_SHAPES[shape] },
+      uIntensity: { value: inert ? intensity * 0.32 : intensity },
+      uVoid: { value: new THREE.Color(inert ? '#02030a' : '#000109') },
+      uNebula: { value: new THREE.Color(inert ? colors.stone : colors.primary) },
+      uStar: { value: new THREE.Color(inert ? '#8b96a9' : colors.secondary) },
+    },
+    vertexShader: PORTAL_SKY_APERTURE_VERTEX_SHADER,
+    fragmentShader: PORTAL_SKY_APERTURE_FRAGMENT_SHADER,
+    side: THREE.DoubleSide,
+    transparent: false,
+    depthWrite: true,
+    depthTest: true,
+  }), [colors.primary, colors.secondary, colors.stone, inert, intensity, seed, shape])
+
+  useEffect(() => () => material.dispose(), [material])
+
+  useFrame(({ clock }) => {
+    material.uniforms.uTime.value = clock.elapsedTime
+  })
+
+  return (
+    <mesh position={position} renderOrder={1}>
+      <planeGeometry args={[size[0], size[1], 1, 1]} />
+      <primitive attach="material" object={material} />
+    </mesh>
+  )
+}
+
 function MirrorGlassSkin({
   mood,
   shape = 'ellipse',
@@ -869,12 +1046,16 @@ function StoneCaveMouth({
   seed = 500,
   count = 30,
   scale = [1, 1, 1],
+  showBacking = true,
 }: {
   mood: PortalMood
   inert?: boolean
   seed?: number
   count?: number
   scale?: [number, number, number]
+  // Set false when an explicit aperture (like PortalSkyAperture) is rendering
+  // the inside of the gate — the dark backing would otherwise hide it.
+  showBacking?: boolean
 }) {
   const colors = MOOD_COLORS[mood]
   const rocks = useMemo(() => {
@@ -898,10 +1079,12 @@ function StoneCaveMouth({
 
   return (
     <group scale={scale}>
-      <mesh position={[0, 0.03, -0.16]} scale={[1.34, 1.62, 1]}>
-        <circleGeometry args={[0.9, 96]} />
-        <meshBasicMaterial color="#030306" transparent opacity={inert ? 0.42 : 0.78} side={THREE.DoubleSide} depthWrite={false} />
-      </mesh>
+      {showBacking && (
+        <mesh position={[0, 0.03, -0.16]} scale={[1.34, 1.62, 1]}>
+          <circleGeometry args={[0.9, 96]} />
+          <meshBasicMaterial color="#030306" transparent opacity={inert ? 0.42 : 0.78} side={THREE.DoubleSide} depthWrite={false} />
+        </mesh>
+      )}
       {rocks.map((rock, index) => (
         <mesh key={index} position={[rock.x, rock.y, rock.z]} rotation={rock.rotate} scale={rock.squash}>
           {index % 5 === 0 ? <boxGeometry args={[rock.size * 1.4, rock.size, rock.size * 0.76]} /> : <dodecahedronGeometry args={[rock.size, 0]} />}
@@ -1359,15 +1542,12 @@ function ThresholdRing({ inert }: { inert?: boolean }) {
 
 function VoidDoor({ inert }: { inert?: boolean }) {
   const frameColor = inert ? '#6d7484' : MOOD_COLORS.void.primary
+  // Sky-aperture treatment: stone pillars + lintels are the frame. The
+  // doorway is a punched-out window into a starry void.
   return (
     <group position={[0, 1.45, 0]}>
-      <SmokeWisps mood="void" inert={inert} />
-      <PortalAperture mood="void" seed={329} shape="door" size={[1.08, 2.56]} intensity={1.22} organic={0.82} inert={inert} />
-      <PortalWorldGlimpse mood="void" profile="void" size={[0.9, 2.24]} inert={inert} />
-      <PortalDepthTunnel mood="void" inert={inert} elongated rings={9} radius={0.42} zStep={0.095} />
-      <MirrorGlassSkin mood="void" shape="door" size={[0.92, 2.28]} opacity={0.16} inert={inert} />
+      <PortalSkyAperture mood="void" seed={7329} shape="door" size={[0.96, 2.4]} intensity={1.32} inert={inert} />
       <RimHalo mood="void" inert={inert} scale={[0.78, 1.42, 1]} radius={0.5} thickness={0.11} opacity={0.38} />
-      <PortalStarfield seed={29} color="#d2c5ff" accentColor="#5ff0ff" width={1.02} height={2.42} count={146} depth={0.74} inert={inert} />
       <mesh position={[-0.62, 0, 0]}>
         <boxGeometry args={[0.18, 2.82, 0.24]} />
         <meshStandardMaterial color="#2d2639" emissive="#160020" emissiveIntensity={0.18} metalness={0.42} roughness={0.18} transparent opacity={inert ? 0.62 : 0.94} />
@@ -1398,19 +1578,6 @@ function VoidDoor({ inert }: { inert?: boolean }) {
           <meshBasicMaterial color={index === 1 ? '#5ff0ff' : frameColor} transparent opacity={inert ? 0.24 : 0.72} blending={THREE.AdditiveBlending} />
         </mesh>
       ))}
-      <EnergyVeil mood="void" shape="plane" scale={[0.86, 1.08, 1]} opacity={0.2} inert={inert} />
-      <OrbitingParticles mood="void" inert={inert} radius={0.52} count={24} elongated seed={229} spinSpeed={1.12} buzz={0.055} />
-      <FastParticleSwarm mood="void" inert={inert} profile="shards" radius={0.64} count={48} elongated seed={2329} speed={2.15} chaos={0.82} />
-      <EmissiveBolts mood="void" inert={inert} radius={0.72} count={10} elongated seed={3229} />
-      <PortalLightningCrown mood="void" inert={inert} radius={0.82} elongated count={24} seed={7329} intensity={1.1} />
-      <mesh position={[0, 0.12, 0.02]} scale={[1, 1.22, 1]}>
-        <ringGeometry args={[0.22, 0.48, 72]} />
-        <meshBasicMaterial color="#000000" transparent opacity={0.78} side={THREE.DoubleSide} />
-      </mesh>
-      <mesh position={[0, 0.12, 0.03]} scale={[1, 1.22, 1]}>
-        <ringGeometry args={[0.48, 0.54, 72]} />
-        <meshBasicMaterial color="#5ff0ff" transparent opacity={inert ? 0.14 : 0.42} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} />
-      </mesh>
     </group>
   )
 }
@@ -1465,54 +1632,20 @@ function HologramGate({ inert }: { inert?: boolean }) {
 
 function SolarArch({ inert }: { inert?: boolean }) {
   const color = inert ? '#8c8370' : MOOD_COLORS.solar.primary
-  const rays = Array.from({ length: 15 }, (_, index) => index)
+  // Sky-aperture treatment: stone-segment ring, torus, lintel, and decorative
+  // ember dots stay as the frame. The middle is a starry-sky window.
   return (
     <group position={[0, 1.42, 0]}>
-      <SmokeWisps mood="solar" inert={inert} />
       <StoneSegmentRing mood="solar" inert={inert} elongated />
-      <PortalAperture mood="solar" seed={559} shape="ellipse" size={[1.14, 1.92]} intensity={1.25} organic={0.32} inert={inert} />
-      <PortalWorldGlimpse mood="solar" profile="sun" size={[0.96, 1.58]} inert={inert} />
-      <PortalDepthTunnel mood="solar" inert={inert} elongated rings={7} radius={0.56} zStep={0.065} />
-      <MirrorGlassSkin mood="solar" shape="ellipse" size={[1, 1.74]} opacity={0.14} inert={inert} />
+      <PortalSkyAperture mood="solar" seed={5559} shape="ellipse" size={[1, 1.74]} intensity={1.18} inert={inert} />
       <RimHalo mood="solar" inert={inert} scale={[0.9, 1.3, 1]} radius={0.76} thickness={0.18} opacity={0.34} />
       <mesh scale={[0.9, 1.3, 1]}>
         <torusGeometry args={[0.82, 0.09, 16, 96]} />
         <meshStandardMaterial color={color} emissive={color} emissiveIntensity={inert ? 0.28 : 1.35} metalness={0.68} roughness={0.14} transparent opacity={0.94} />
       </mesh>
-      <PortalStarfield seed={59} color="#fff0bf" accentColor="#ff6a2b" width={1.2} height={1.94} count={118} depth={0.48} inert={inert} />
-      <EnergyVeil mood="solar" scale={[0.72, 1.02, 1]} opacity={0.34} inert={inert} />
       <mesh position={[0, -1.08, 0]}>
         <boxGeometry args={[1.9, 0.16, 0.22]} />
         <meshBasicMaterial color="#ffe7a1" transparent opacity={inert ? 0.36 : 0.7} />
-      </mesh>
-      {rays.map(index => {
-        const angle = Math.PI * (0.02 + index * 0.068)
-        const x = Math.cos(angle) * 1.08
-        const y = Math.sin(angle) * 1.38
-        return (
-          <mesh key={index} position={[x, y, 0]} rotation={[0, 0, angle]}>
-            <coneGeometry args={[0.045, index % 2 ? 0.36 : 0.56, 4]} />
-            <meshBasicMaterial color={index % 2 ? '#fff3b0' : '#ff6a2b'} transparent opacity={inert ? 0.28 : 0.74} blending={THREE.AdditiveBlending} />
-          </mesh>
-        )
-      })}
-      {Array.from({ length: 22 }, (_, index) => {
-        const angle = (index / 22) * Math.PI * 2
-        const radius = 0.42 + (index % 5) * 0.12
-        return (
-          <mesh key={`ember-${index}`} position={[Math.cos(angle) * radius, Math.sin(angle) * radius * 1.28, 0.055]}>
-            <sphereGeometry args={[index % 3 === 0 ? 0.026 : 0.016, 8, 8]} />
-            <meshBasicMaterial color={index % 2 ? '#fff3b0' : '#ff6a2b'} transparent opacity={inert ? 0.18 : 0.72} blending={THREE.AdditiveBlending} />
-          </mesh>
-        )
-      })}
-      <PortalFlameJets mood="solar" inert={inert} count={30} width={1.36} height={2.05} seed={1559} intensity={1.52} />
-      <FastParticleSwarm mood="solar" inert={inert} profile="embers" radius={1.08} count={68} elongated seed={2559} speed={2.35} chaos={0.72} />
-      <OrbitingParticles mood="solar" inert={inert} radius={0.74} count={30} elongated seed={459} spinSpeed={0.88} buzz={0.05} />
-      <EmissiveBolts mood="solar" inert={inert} radius={0.92} count={18} elongated seed={4559} />
-      <mesh position={[0, -0.02, 0.02]}>
-        <circleGeometry args={[0.66, 64]} />
-        <meshBasicMaterial color="#ff6a2b" transparent opacity={inert ? 0.1 : 0.28} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} />
       </mesh>
     </group>
   )
@@ -1600,21 +1733,18 @@ function StargateVortex({ inert }: { inert?: boolean }) {
 }
 
 function CrystalCavern({ inert }: { inert?: boolean }) {
+  // Sky-aperture treatment: frame + crystal shards only. The middle of the
+  // gate is a punched-out window into a procedural starfield, sampled by
+  // world-space view direction so the sky rotates with the camera.
   return (
     <group position={[0, 1.48, 0]}>
-      <SmokeWisps mood="rift" inert={inert} />
-      <StoneCaveMouth mood="rift" inert={inert} scale={[1.55, 1.42, 1]} seed={9897} count={44} />
-      <PortalAperture mood="rift" seed={897} shape="ellipse" size={[1.18, 2.18]} intensity={1.26} organic={0.58} inert={inert} />
-      <PortalWorldGlimpse mood="rift" profile="crystal" size={[1, 1.86]} inert={inert} />
-      <PortalDepthTunnel mood="rift" inert={inert} elongated rings={8} radius={0.58} zStep={0.08} />
-      <MirrorGlassSkin mood="rift" shape="ellipse" size={[1.02, 1.96]} opacity={0.22} inert={inert} />
-      <EnergyVeil mood="rift" scale={[0.72, 1.18, 1]} opacity={0.28} inert={inert} />
-      <PortalStarfield seed={97} color="#f5d0fe" accentColor="#bae6fd" width={1.28} height={2.24} count={134} depth={0.6} inert={inert} />
+      <StoneCaveMouth mood="rift" inert={inert} scale={[1.55, 1.42, 1]} seed={9897} count={44} showBacking={false} />
+      <PortalSkyAperture mood="rift" seed={7897} shape="ellipse" size={[1.3, 2.12]} intensity={1.16} inert={inert} />
       <CrystalHalo mood="rift" inert={inert} radius={1.04} count={12} />
       {Array.from({ length: 9 }, (_, index) => {
         const side = index % 2 === 0 ? -1 : 1
         const y = -1.1 + index * 0.28
-        const x = side * (0.46 + (index % 3) * 0.11)
+        const x = side * (0.9 + (index % 3) * 0.13)
         return (
           <mesh key={index} position={[x, y, 0.04]} rotation={[0.2, 0.3, side * 0.42]}>
             <octahedronGeometry args={[index % 3 === 0 ? 0.24 : 0.17, 0]} />
@@ -1628,26 +1758,17 @@ function CrystalCavern({ inert }: { inert?: boolean }) {
         )
       })}
       <RimHalo mood="rift" inert={inert} scale={[0.72, 1.34, 1]} radius={0.76} thickness={0.12} opacity={0.3} />
-      <PortalFlameJets mood="rift" inert={inert} count={18} width={1.1} height={1.9} seed={3897} intensity={0.72} />
-      <PortalLightningCrown mood="rift" inert={inert} radius={1.28} elongated count={32} seed={1897} intensity={1.1} />
-      <FastParticleSwarm mood="rift" inert={inert} profile="shards" radius={1.12} count={62} elongated seed={2897} speed={2.05} chaos={0.86} />
-      <OrbitingParticles mood="rift" inert={inert} radius={0.72} count={28} elongated seed={897} spinSpeed={0.96} buzz={0.052} />
-      <EmissiveBolts mood="rift" inert={inert} radius={0.92} count={18} elongated seed={8897} />
     </group>
   )
 }
 
 function VerdantArch({ inert }: { inert?: boolean }) {
+  // Sky-aperture treatment: root wreath + cylinder pillars + spherical caps +
+  // ladder rungs are the frame. Inside is a starry-sky window.
   return (
     <group position={[0, 1.42, 0]}>
-      <SmokeWisps mood="forest" inert={inert} />
       <RootTendrilWreath mood="forest" inert={inert} seed={1907} />
-      <PortalAperture mood="forest" seed={907} shape="ellipse" size={[1.2, 2.2]} intensity={0.86} organic={1.05} inert={inert} />
-      <PortalWorldGlimpse mood="forest" profile="forest" size={[1.02, 1.9]} inert={inert} />
-      <PortalDepthTunnel mood="forest" inert={inert} elongated rings={7} radius={0.58} zStep={0.07} />
-      <MirrorGlassSkin mood="forest" shape="ellipse" size={[1.02, 1.96]} opacity={0.12} inert={inert} />
-      <EnergyVeil mood="forest" scale={[0.78, 1.18, 1]} opacity={0.24} inert={inert} />
-      <PortalStarfield seed={107} color="#dcfce7" accentColor="#86efac" width={1.28} height={2.16} count={92} depth={0.4} inert={inert} />
+      <PortalSkyAperture mood="forest" seed={5907} shape="ellipse" size={[1.02, 1.96]} intensity={0.92} inert={inert} />
       {[-0.78, 0.78].map((x, index) => (
         <group key={index} position={[x, -0.05, 0]}>
           <mesh rotation={[0, 0, x * 0.18]}>
@@ -1669,9 +1790,6 @@ function VerdantArch({ inert }: { inert?: boolean }) {
           </mesh>
         )
       })}
-      <FastParticleSwarm mood="forest" inert={inert} profile="fireflies" radius={1.02} count={52} elongated seed={2907} speed={1.8} chaos={0.7} />
-      <OrbitingParticles mood="forest" inert={inert} radius={0.78} count={34} elongated seed={907} spinSpeed={0.76} buzz={0.05} />
-      <EmissiveBolts mood="forest" inert={inert} radius={0.94} count={14} elongated seed={9907} />
       <RimHalo mood="forest" inert={inert} scale={[0.76, 1.22, 1]} radius={0.76} thickness={0.1} opacity={0.28} />
     </group>
   )

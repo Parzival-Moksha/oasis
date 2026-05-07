@@ -2,11 +2,14 @@ import { loadAnimationClip } from './forge/animation-library'
 
 export type PortalTransitionEffect =
   | 'void-iris'
-  | 'star-streak'
+  | 'black-hole-pinch'
   | 'glass-shatter'
-  | 'clockwork-iris'
+  | 'prism-burst'
   | 'root-tendrils'
-  | 'rainbow-vortex'
+  | 'wireframe-wormhole'
+  | 'cosmic-wormhole'
+  | 'plasma-wormhole'
+  | 'datawave-wormhole'
 
 export interface PortalTransitionSettings {
   enabled: boolean
@@ -25,19 +28,22 @@ export interface PortalTransitionSettings {
 }
 
 export const PORTAL_TRANSITION_EFFECTS: Array<{ id: PortalTransitionEffect; label: string; desc: string }> = [
-  { id: 'void-iris', label: 'Void Iris', desc: 'black aperture swallow' },
-  { id: 'star-streak', label: 'Star Streak', desc: 'fast HDRI-like tunnel' },
-  { id: 'glass-shatter', label: 'Glass Shatter', desc: 'refractive shard break' },
-  { id: 'clockwork-iris', label: 'Clock Iris', desc: 'mechanical blackout' },
-  { id: 'root-tendrils', label: 'Root Tendrils', desc: 'organic wipe' },
-  { id: 'rainbow-vortex', label: 'Rainbow Vortex', desc: 'scene melt color spin' },
+  { id: 'void-iris', label: 'Void Iris', desc: 'swallow · black aperture' },
+  { id: 'black-hole-pinch', label: 'Black Hole Pinch', desc: 'swallow · gravity well + accretion ring' },
+  { id: 'glass-shatter', label: 'Glass Shatter', desc: 'reveal · refractive shard break' },
+  { id: 'prism-burst', label: 'Prism Burst', desc: 'reveal · chromatic flare' },
+  { id: 'root-tendrils', label: 'Root Tendrils', desc: 'reveal · organic wipe' },
+  { id: 'wireframe-wormhole', label: 'Wireframe Wormhole', desc: 'tunnel · neon Tron grid tube' },
+  { id: 'cosmic-wormhole', label: 'Cosmic Wormhole', desc: 'tunnel · nebula + hyperjump streaks' },
+  { id: 'plasma-wormhole', label: 'Plasma Wormhole', desc: 'tunnel · electric arc conduit' },
+  { id: 'datawave-wormhole', label: 'Datawave Wormhole', desc: 'tunnel · matrix glitch corridor' },
 ]
 
 export const DEFAULT_PORTAL_TRANSITION_SETTINGS: PortalTransitionSettings = {
   enabled: true,
-  swallowEffect: 'void-iris',
-  tunnelEffect: 'star-streak',
-  revealEffect: 'rainbow-vortex',
+  swallowEffect: 'black-hole-pinch',
+  tunnelEffect: 'cosmic-wormhole',
+  revealEffect: 'prism-burst',
   swallowSeconds: 0.55,
   tunnelSeconds: 2.2,
   revealSeconds: 0.6,
