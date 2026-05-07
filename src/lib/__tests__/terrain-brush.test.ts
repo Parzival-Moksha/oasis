@@ -18,6 +18,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { generateTerrain, DEFAULT_TERRAIN, type TerrainParams } from '../../lib/forge/terrain-generator'
+import { createFlatTerrainHeights } from '../../lib/forge/terrain-brush'
 
 describe('terrain-generator', () => {
   describe('deterministic output with known seed', () => {
@@ -249,6 +250,7 @@ function resetStore() {
   useOasisStore.setState({
     terrainParams: null,
     terrainLoading: false,
+    terrainHeights: createFlatTerrainHeights(),
     placedCatalogAssets: [],
     craftedScenes: [],
     worldConjuredAssetIds: [],

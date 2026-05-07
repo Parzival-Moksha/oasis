@@ -28,6 +28,8 @@ export interface WorldState {
   groundPresetId?: string
   /** Sparse tile map: "x,z" → presetId. Painted tiles override the base ground. */
   groundTiles?: Record<string, string>
+  /** Editable 101x101 ground heightmap for terrain brush relief. */
+  terrainHeights?: number[]
   craftedScenes: CraftedScene[]
   /** IDs of conjured assets placed in this world (GLBs live server-side, but placement is per-world) */
   conjuredAssetIds: string[]

@@ -8,6 +8,13 @@ import type { ConjuredAsset, CraftedScene, CatalogPlacement, RealmId, ObjectBeha
 import { DEFAULT_WORLD_LIGHTS } from '../lib/conjure/types'
 import type { TerrainParams } from '../lib/forge/terrain-generator'
 import {
+  applyTerrainBrush,
+  createFlatTerrainHeights,
+  normalizeTerrainHeights,
+  type TerrainBrushDirection,
+  type TerrainBrushMode,
+} from '../lib/forge/terrain-brush'
+import {
   loadWorld, debouncedSaveWorld, saveWorld,
   getWorldRegistry, getActiveWorldId, setActiveWorldId,
   getServerActiveWorld,
@@ -367,6 +374,7 @@ export interface WorldSnapshot {
   groundTiles: Record<string, string>
   worldLights: WorldLight[]
   terrainParams: TerrainParams | null
+  terrainHeights: number[]
 }
 
 export interface UndoCommand {
@@ -378,8 +386,10 @@ export interface UndoCommand {
 }
 
 const MAX_UNDO_STACK = 20
+const DEFAULT_TERRAIN_BRUSH_INTENSITY = 1.5
+const DEFAULT_TERRAIN_BRUSH_RADIUS = 3
 
-function captureWorldSnapshot(state: { placedCatalogAssets: CatalogPlacement[]; worldConjuredAssetIds: string[]; craftedScenes: CraftedScene[]; portalGates: PortalGate[]; transforms: Record<string, any>; behaviors: Record<string, ObjectBehavior>; groundTiles: Record<string, string>; worldLights: WorldLight[]; terrainParams: TerrainParams | null }): WorldSnapshot {
+function captureWorldSnapshot(state: { placedCatalogAssets: CatalogPlacement[]; worldConjuredAssetIds: string[]; craftedScenes: CraftedScene[]; portalGates: PortalGate[]; transforms: Record<string, any>; behaviors: Record<string, ObjectBehavior>; groundTiles: Record<string, string>; worldLights: WorldLight[]; terrainParams: TerrainParams | null; terrainHeights: number[] }): WorldSnapshot {
   // structuredClone for deep copy — no shared references between snapshots
   return structuredClone({
     placedCatalogAssets: state.placedCatalogAssets,
@@ -391,6 +401,7 @@ function captureWorldSnapshot(state: { placedCatalogAssets: CatalogPlacement[]; 
     groundTiles: state.groundTiles,
     worldLights: state.worldLights,
     terrainParams: state.terrainParams,
+    terrainHeights: state.terrainHeights,
   })
 }
 
@@ -428,6 +439,12 @@ interface OasisState {
   // ─═̷─═̷─🌍 TERRAIN + WORLD STATE ─═̷─═̷─🌍
   terrainParams: TerrainParams | null
   terrainLoading: boolean
+  terrainHeights: number[]
+  terrainBrushPanelOpen: boolean
+  terrainBrushMode: TerrainBrushMode
+  terrainBrushIntensity: number
+  terrainBrushRadius: number
+  terrainBrushDirection: TerrainBrushDirection
   groundPresetId: string                    // 'none', 'grass', 'sand', etc. (base/default ground)
   groundTiles: Record<string, string>       // sparse: "x,z" → presetId (painted tiles)
   paintMode: boolean
@@ -551,6 +568,13 @@ interface OasisState {
   // ─═̷─═̷─🌍 TERRAIN + WORLD ACTIONS ─═̷─═̷─🌍
   setTerrainParams: (params: TerrainParams | null) => void
   setTerrainLoading: (loading: boolean) => void
+  setTerrainBrushPanelOpen: (open: boolean) => void
+  setTerrainBrushMode: (mode: TerrainBrushMode) => void
+  setTerrainBrushIntensity: (intensity: number) => void
+  setTerrainBrushRadius: (radius: number) => void
+  setTerrainBrushDirection: (direction: TerrainBrushDirection) => void
+  sculptTerrainAt: (x: number, z: number, deltaSeconds: number) => void
+  resetTerrainHeights: () => void
   setGroundPreset: (presetId: string) => void
   enterPaintMode: (presetId: string) => void
   exitPaintMode: () => void
@@ -829,6 +853,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
   // ─═̷─═̷─🌍 TERRAIN + WORLD STATE ─═̷─═̷─🌍
   terrainParams: null,
   terrainLoading: false,
+  terrainHeights: createFlatTerrainHeights(),
+  terrainBrushPanelOpen: false,
+  terrainBrushMode: 'texture' as TerrainBrushMode,
+  terrainBrushIntensity: DEFAULT_TERRAIN_BRUSH_INTENSITY,
+  terrainBrushRadius: DEFAULT_TERRAIN_BRUSH_RADIUS,
+  terrainBrushDirection: 'up' as TerrainBrushDirection,
   groundPresetId: 'none',
   groundTiles: {},
   paintMode: false,
@@ -1364,13 +1394,61 @@ export const useOasisStore = create<OasisState>((set, get) => {
     setTimeout(() => get().saveWorldState(), 100)
   },
   setTerrainLoading: (terrainLoading) => set({ terrainLoading }),
+  setTerrainBrushPanelOpen: (terrainBrushPanelOpen) => {
+    set({
+      terrainBrushPanelOpen,
+      ...(terrainBrushPanelOpen ? {} : {
+        terrainBrushMode: 'texture' as TerrainBrushMode,
+        paintMode: false,
+        paintBrushPresetId: null,
+      }),
+    })
+    if (!terrainBrushPanelOpen) {
+      try { require('../lib/input-manager').useInputManager.getState().returnToPrevious() } catch {}
+    }
+  },
+  setTerrainBrushMode: (terrainBrushMode) => {
+    if (terrainBrushMode === 'sculpt') {
+      set({
+        terrainBrushMode,
+        terrainBrushPanelOpen: true,
+        paintMode: false,
+        paintBrushPresetId: null,
+        placementPending: null,
+      })
+      try { require('../lib/input-manager').useInputManager.getState().transition('paint') } catch {}
+      return
+    }
+    set({ terrainBrushMode, terrainBrushPanelOpen: true })
+  },
+  setTerrainBrushIntensity: (terrainBrushIntensity) => {
+    set({ terrainBrushIntensity: Math.max(0.1, Math.min(8, terrainBrushIntensity)) })
+  },
+  setTerrainBrushRadius: (terrainBrushRadius) => {
+    set({ terrainBrushRadius: Math.max(1, Math.min(10, terrainBrushRadius)) })
+  },
+  setTerrainBrushDirection: (terrainBrushDirection) => set({ terrainBrushDirection }),
+  sculptTerrainAt: (x, z, deltaSeconds) => {
+    set(state => ({
+      terrainHeights: applyTerrainBrush(state.terrainHeights, x, z, {
+        radius: state.terrainBrushRadius,
+        intensity: state.terrainBrushIntensity,
+        direction: state.terrainBrushDirection,
+        deltaSeconds,
+      }),
+    }))
+  },
+  resetTerrainHeights: () => {
+    withUndo('Reset relief', 'terrain', () => set({ terrainHeights: createFlatTerrainHeights() }))
+    setTimeout(() => get().saveWorldState(), 100)
+  },
   setGroundPreset: (groundPresetId) => {
     set({ groundPresetId })
     setTimeout(() => get().saveWorldState(), 100)
   },
   // ─═̷─═̷─🎨 PAINT MODE — tile-by-tile ground painting ─═̷─═̷─🎨
   enterPaintMode: (presetId) => {
-    set({ paintMode: true, paintBrushPresetId: presetId, placementPending: null })
+    set({ paintMode: true, paintBrushPresetId: presetId, terrainBrushPanelOpen: true, terrainBrushMode: 'texture', placementPending: null })
     try { require('../lib/input-manager').useInputManager.getState().transition('paint') } catch {}
   },
   exitPaintMode: () => {
@@ -1597,6 +1675,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
           _isReceivingRemoteUpdate: false,
           _loadedObjectCount: 0,
           terrainParams: null,
+          terrainHeights: createFlatTerrainHeights(),
           groundPresetId: 'none',
           groundTiles: {},
           craftedScenes: [],
@@ -1635,6 +1714,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         _isReceivingRemoteUpdate: false,
         _loadedObjectCount: loadedObjCount,
         terrainParams: world.terrain || null,
+        terrainHeights: normalizeTerrainHeights(world.terrainHeights),
         groundPresetId: world.groundPresetId || 'none',
         groundTiles: world.groundTiles || {},
         craftedScenes: world.craftedScenes || [],
@@ -1654,6 +1734,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         console.warn('[World] Repaired invalid agent avatar URLs while loading the active world.')
         void saveWorld({
           terrain: world.terrain || null,
+          terrainHeights: normalizeTerrainHeights(world.terrainHeights),
           groundPresetId: world.groundPresetId || 'none',
           groundTiles: world.groundTiles || {},
           craftedScenes: world.craftedScenes || [],
@@ -1696,7 +1777,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       console.warn('[World] ⚠️ Save blocked — world not loaded yet (preventing empty-state overwrite)')
       return
     }
-    const { terrainParams, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, transforms, behaviors, worldLights, worldSkyBackground, viewingWorldId, customGroundPresets, placedAgentWindows, placedAgentAvatars, _loadedObjectCount } = get()
+    const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, transforms, behaviors, worldLights, worldSkyBackground, viewingWorldId, customGroundPresets, placedAgentWindows, placedAgentAvatars, _loadedObjectCount } = get()
     const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
       windows: placedAgentWindows,
       avatars: placedAgentAvatars,
@@ -1723,6 +1804,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     const relevantCustom = customGroundPresets.filter(p => usedCustomIds.has(p.id))
     const worldState = {
       terrain: terrainParams,
+      terrainHeights,
       groundPresetId,
       groundTiles,
       craftedScenes,
@@ -1760,7 +1842,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     set({ _realtimeChannel: null })
     // Save current world first (immediate, not debounced) — but ONLY if world was loaded
     if (get()._worldReady) {
-      const { terrainParams, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
+      const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
       const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
         windows: placedAgentWindows,
         avatars: placedAgentAvatars,
@@ -1770,7 +1852,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       // the LLM hasn't materialized anything yet. Using objects.length (not name)
       // because the scene name gets updated mid-stream before objects arrive.
       const completedScenes = craftedScenes.filter(s => s.objects.length > 0)
-      saveWorld({ terrain: terrainParams, groundPresetId, groundTiles, craftedScenes: completedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, transforms: normalizedAgentWorldState.transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: normalizedAgentWorldState.windows, agentAvatars: normalizedAgentWorldState.avatars }, activeWorldId)
+      saveWorld({ terrain: terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes: completedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, transforms: normalizedAgentWorldState.transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: normalizedAgentWorldState.windows, agentAvatars: normalizedAgentWorldState.avatars }, activeWorldId)
     }
 
     // ░▒▓ Block saves during transition — prevents empty state nuke ▓▒░
@@ -1796,6 +1878,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         _loadedObjectCount: switchObjCount,
         activeWorldId: worldId,
         terrainParams: world?.terrain || null,
+        terrainHeights: normalizeTerrainHeights(world?.terrainHeights),
         groundPresetId: world?.groundPresetId || 'none',
         groundTiles: world?.groundTiles || {},
         craftedScenes: world?.craftedScenes || [],
@@ -1825,6 +1908,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       if (world && (sanitizedAgentAvatars.changed || normalizedAgentWorldState.changed)) {
         void saveWorld({
           terrain: world.terrain || null,
+          terrainHeights: normalizeTerrainHeights(world.terrainHeights),
           groundPresetId: world.groundPresetId || 'none',
           groundTiles: world.groundTiles || {},
           craftedScenes: world.craftedScenes || [],
@@ -1852,13 +1936,13 @@ export const useOasisStore = create<OasisState>((set, get) => {
     // Save current world first — only if world was loaded (prevent empty-state nuke)
     cancelPendingSave()
     if (get()._worldReady) {
-      const { terrainParams, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
+      const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
       const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
         windows: placedAgentWindows,
         avatars: placedAgentAvatars,
         transforms,
       })
-      saveWorld({ terrain: terrainParams, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, transforms: normalizedAgentWorldState.transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: normalizedAgentWorldState.windows, agentAvatars: normalizedAgentWorldState.avatars }, activeWorldId)
+      saveWorld({ terrain: terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, transforms: normalizedAgentWorldState.transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: normalizedAgentWorldState.windows, agentAvatars: normalizedAgentWorldState.avatars }, activeWorldId)
     }
 
     // Create and switch to new world (async) — seed with default lights so it's not pitch black
@@ -1872,6 +1956,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
           activeWorldId: meta.id,
           worldRegistry: registry,
           terrainParams: null,
+          terrainHeights: createFlatTerrainHeights(),
           groundPresetId: 'none',
           groundTiles: {},
           craftedScenes: [],
@@ -2375,8 +2460,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
     // Save current world before entering view mode (if not already viewing)
     if (!get().isViewMode && get()._worldReady) {
       cancelPendingSave()
-      const { terrainParams, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
-      saveWorld({ terrain: terrainParams, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: placedAgentWindows, agentAvatars: placedAgentAvatars }, activeWorldId)
+      const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
+      saveWorld({ terrain: terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: placedAgentWindows, agentAvatars: placedAgentAvatars }, activeWorldId)
     }
 
     // Set view mode flag IMMEDIATELY — prevents initWorlds/loadWorldState from overwriting
@@ -2407,6 +2492,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         isViewModeEditable: isEditable,
         viewingWorldMeta: { name: meta.name, icon: meta.icon, creator_name: meta.creator_name, creator_avatar: meta.creator_avatar, visibility: meta.visibility },
         terrainParams: state.terrain || null,
+        terrainHeights: normalizeTerrainHeights(state.terrainHeights),
         groundPresetId: state.groundPresetId || 'none',
         groundTiles: state.groundTiles || {},
         craftedScenes: state.craftedScenes || [],

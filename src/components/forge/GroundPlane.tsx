@@ -22,6 +22,13 @@ import { useMemo, useEffect, useState, useCallback, useRef, useContext } from 'r
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { type GroundPreset, GROUND_PRESETS, getTextureUrls } from '../../lib/forge/ground-textures'
+import {
+  TERRAIN_GRID_SEGMENTS,
+  TERRAIN_HEIGHT_COUNT,
+  hasTerrainRelief,
+  normalizeTerrainHeights,
+  sampleTerrainHeightAt,
+} from '../../lib/forge/terrain-brush'
 import { useOasisStore } from '../../store/oasisStore'
 import { DragContext } from '../scene-lib/contexts'
 
@@ -166,6 +173,83 @@ function BaseGround({ preset }: { preset: GroundPreset }) {
 // No remount on tile count change = no white flash, no texture reload.
 // ═══════════════════════════════════════════════════════════════════════════════
 
+function ReliefGround({ preset, heights }: { preset: GroundPreset; heights: number[] }) {
+  const gl = useThree(s => s.gl)
+  const matRef = useRef<THREE.MeshStandardMaterial>(null)
+  const urls = useMemo(() => (
+    preset.customTextureUrl
+      ? { diffuse: preset.customTextureUrl }
+      : preset.assetName
+        ? getTextureUrls(preset.assetName)
+        : null
+  ), [preset.assetName, preset.customTextureUrl])
+  const [diffuse, setDiffuse] = useState<THREE.Texture | null>(null)
+
+  const geometry = useMemo(() => {
+    const normalized = normalizeTerrainHeights(heights)
+    const geo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE, TERRAIN_GRID_SEGMENTS, TERRAIN_GRID_SEGMENTS)
+    const position = geo.attributes.position as THREE.BufferAttribute
+    const count = Math.min(position.count, TERRAIN_HEIGHT_COUNT, normalized.length)
+    for (let i = 0; i < count; i++) position.setZ(i, normalized[i])
+    position.needsUpdate = true
+    geo.computeVertexNormals()
+    return geo
+  }, [heights])
+
+  useEffect(() => () => geometry.dispose(), [geometry])
+
+  useEffect(() => {
+    let cancelled = false
+    let activeClone: THREE.Texture | null = null
+
+    if (!urls) {
+      setDiffuse(null)
+      return () => { cancelled = true }
+    }
+
+    loadCachedTexture(urls.diffuse, THREE.SRGBColorSpace).then(tex => {
+      if (!cancelled && tex) {
+        const clone = tex.clone()
+        clone.repeat.set(preset.tileRepeat, preset.tileRepeat)
+        clone.needsUpdate = true
+        gl.initTexture(clone)
+        activeClone = clone
+        setDiffuse(clone)
+      }
+    })
+
+    return () => { cancelled = true; activeClone?.dispose() }
+  }, [urls, preset.tileRepeat, gl])
+
+  useEffect(() => {
+    const mat = matRef.current
+    if (!mat) return
+    if (diffuse) {
+      mat.map = diffuse
+      mat.color.set('#ffffff')
+    } else {
+      mat.map = getPlaceholderTexture()
+      mat.color.set(preset.color)
+    }
+    mat.needsUpdate = true
+  }, [diffuse, preset.color])
+
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} geometry={geometry}>
+      <meshStandardMaterial
+        ref={matRef}
+        color={preset.color}
+        map={getPlaceholderTexture()}
+        roughness={0.95}
+        metalness={0}
+        envMapIntensity={0.2}
+        toneMapped
+        side={THREE.DoubleSide}
+      />
+    </mesh>
+  )
+}
+
 function TileGroupRenderer({ preset, tiles }: { preset: GroundPreset; tiles: [number, number][] }) {
   const meshRef = useRef<THREE.InstancedMesh>(null)
   const matRef = useRef<THREE.MeshStandardMaterial>(null)
@@ -281,7 +365,17 @@ function PaintGridOverlay() {
 // BRUSH PREVIEW — Shows which tiles will be painted on hover
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function BrushPreview({ position, size, color }: { position: [number, number, number]; size: number; color: string }) {
+function BrushPreview({
+  position,
+  size,
+  color,
+  shape = 'square',
+}: {
+  position: [number, number, number]
+  size: number
+  color: string
+  shape?: 'square' | 'circle'
+}) {
   const meshRef = useRef<THREE.Mesh>(null)
 
   useFrame((state) => {
@@ -295,9 +389,9 @@ function BrushPreview({ position, size, color }: { position: [number, number, nu
     <mesh
       ref={meshRef}
       rotation={[-Math.PI / 2, 0, 0]}
-      position={[position[0], 0.003, position[2]]}
+      position={[position[0], position[1], position[2]]}
     >
-      <planeGeometry args={[size, size]} />
+      {shape === 'circle' ? <circleGeometry args={[size, 48]} /> : <planeGeometry args={[size, size]} />}
       <meshBasicMaterial
         color={color}
         transparent
@@ -313,16 +407,23 @@ function BrushPreview({ position, size, color }: { position: [number, number, nu
 // ░▒▓ Handles: left-click paint, right-click erase, drag-paint ▓▒░
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function PaintOverlay() {
+function PaintOverlay({ texturePaintActive, sculptActive }: { texturePaintActive: boolean; sculptActive: boolean }) {
   const paintGroundArea = useOasisStore(s => s.paintGroundArea)
   const eraseGroundTile = useOasisStore(s => s.eraseGroundTile)
   const paintBrushSize = useOasisStore(s => s.paintBrushSize)
   const paintBrushPresetId = useOasisStore(s => s.paintBrushPresetId)
+  const terrainHeights = useOasisStore(s => s.terrainHeights)
+  const terrainBrushRadius = useOasisStore(s => s.terrainBrushRadius)
+  const terrainBrushDirection = useOasisStore(s => s.terrainBrushDirection)
+  const sculptTerrainAt = useOasisStore(s => s.sculptTerrainAt)
+  const saveWorldState = useOasisStore(s => s.saveWorldState)
   const beginUndoBatch = useOasisStore(s => s.beginUndoBatch)
   const commitUndoBatch = useOasisStore(s => s.commitUndoBatch)
   const { setIsDragging } = useContext(DragContext)
   const [hoverPos, setHoverPos] = useState<[number, number, number] | null>(null)
   const isPainting = useRef(false)
+  const isSculpting = useRef(false)
+  const lastSculptPoint = useRef<THREE.Vector3 | null>(null)
 
   const brushPreset = useMemo(() =>
     GROUND_PRESETS.find(p => p.id === paintBrushPresetId),
@@ -338,15 +439,46 @@ function PaintOverlay() {
     return [tx, 0.003, tz]
   }, [])
 
+  const getSculptPreviewPos = useCallback((point: THREE.Vector3): [number, number, number] => {
+    return [point.x, sampleTerrainHeightAt(terrainHeights, point.x, point.z) + 0.035, point.z]
+  }, [terrainHeights])
+
+  useFrame((_, delta) => {
+    if (!isSculpting.current || !lastSculptPoint.current || !sculptActive) return
+    const point = lastSculptPoint.current
+    sculptTerrainAt(point.x, point.z, Math.min(delta, 0.05))
+  })
+
+  const finishStroke = useCallback(() => {
+    const shouldSaveSculpt = isSculpting.current
+    isPainting.current = false
+    isSculpting.current = false
+    lastSculptPoint.current = null
+    setIsDragging(false)
+    commitUndoBatch()
+    if (shouldSaveSculpt) saveWorldState()
+  }, [setIsDragging, commitUndoBatch, saveWorldState])
+
   const handlePointerDown = useCallback((e: any) => {
     e.stopPropagation()
     const point = e.point as THREE.Vector3
+    if (sculptActive) {
+      if (e.button !== 0) return
+      beginUndoBatch('Sculpt terrain', 'terrain')
+      isSculpting.current = true
+      lastSculptPoint.current = point.clone()
+      setIsDragging(true)
+      sculptTerrainAt(point.x, point.z, 1 / 30)
+      return
+    }
+    if (!texturePaintActive) return
     // Right-click = erase (single tile, own undo command)
     if (e.button === 2) {
       setIsDragging(true) // Block orbit pan during erase — prevents camera lurch
       beginUndoBatch('Erase tile', '🧽')
       eraseGroundTile(point.x, point.z)
       commitUndoBatch()
+      setIsDragging(false)
       return
     }
     // ░▒▓ GUARD: only left-click (button 0) paints. Middle-click, extra buttons,
@@ -359,23 +491,24 @@ function PaintOverlay() {
     isPainting.current = true
     setIsDragging(true)
     paintGroundArea(point.x, point.z)
-  }, [paintGroundArea, eraseGroundTile, setIsDragging, beginUndoBatch, commitUndoBatch])
+  }, [paintGroundArea, eraseGroundTile, setIsDragging, beginUndoBatch, commitUndoBatch, sculptActive, texturePaintActive, sculptTerrainAt])
 
   const handlePointerUp = useCallback(() => {
-    isPainting.current = false
-    setIsDragging(false)
-    // ░▒▓ End paint stroke — commit undo batch ▓▒░
-    commitUndoBatch()
-  }, [setIsDragging, commitUndoBatch])
+    finishStroke()
+  }, [finishStroke])
 
   const handlePointerMove = useCallback((e: any) => {
     const point = e.point as THREE.Vector3
-    setHoverPos(snapToGrid(point))
+    setHoverPos(sculptActive ? getSculptPreviewPos(point) : snapToGrid(point))
+    if (isSculpting.current) {
+      lastSculptPoint.current = point.clone()
+      return
+    }
     // Drag-painting
-    if (isPainting.current) {
+    if (texturePaintActive && isPainting.current) {
       paintGroundArea(point.x, point.z)
     }
-  }, [snapToGrid, paintGroundArea])
+  }, [snapToGrid, getSculptPreviewPos, paintGroundArea, sculptActive, texturePaintActive])
 
   return (
     <>
@@ -386,7 +519,7 @@ function PaintOverlay() {
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
         onPointerMove={handlePointerMove}
-        onPointerLeave={() => { setHoverPos(null); isPainting.current = false; setIsDragging(false); commitUndoBatch() }}
+        onPointerLeave={() => { setHoverPos(null); finishStroke() }}
         onContextMenu={(e: any) => e.nativeEvent?.preventDefault?.()}
       >
         <planeGeometry args={[GROUND_SIZE, GROUND_SIZE]} />
@@ -394,11 +527,12 @@ function PaintOverlay() {
       </mesh>
 
       {/* Brush preview at cursor */}
-      {hoverPos && brushPreset && (
+      {hoverPos && (sculptActive || brushPreset) && (
         <BrushPreview
           position={hoverPos}
-          size={paintBrushSize}
-          color={brushPreset.color}
+          size={sculptActive ? terrainBrushRadius : paintBrushSize}
+          color={sculptActive ? (terrainBrushDirection === 'down' ? '#60A5FA' : '#F59E0B') : (brushPreset?.color || '#34D399')}
+          shape={sculptActive ? 'circle' : 'square'}
         />
       )}
     </>
@@ -420,6 +554,12 @@ interface GroundPlaneProps {
 
 export function GroundPlane({ preset, groundTiles, paintMode, customGroundPresets = [] }: GroundPlaneProps) {
   const showBase = preset.id !== 'none' && !!preset.assetName
+  const terrainHeights = useOasisStore(s => s.terrainHeights)
+  const terrainBrushPanelOpen = useOasisStore(s => s.terrainBrushPanelOpen)
+  const terrainBrushMode = useOasisStore(s => s.terrainBrushMode)
+  const reliefActive = hasTerrainRelief(terrainHeights)
+  const sculptActive = terrainBrushPanelOpen && terrainBrushMode === 'sculpt'
+  const showBrushOverlay = paintMode || sculptActive
 
   // Group tiles by preset ID for instanced rendering
   const tileGroups = useMemo(() => {
@@ -438,7 +578,7 @@ export function GroundPlane({ preset, groundTiles, paintMode, customGroundPreset
   return (
     <group>
       {/* ░▒▓ Base ground — the default texture for unpainted areas ▓▒░ */}
-      {showBase && <BaseGround preset={preset} />}
+      {reliefActive ? <ReliefGround preset={preset} heights={terrainHeights} /> : showBase && <BaseGround preset={preset} />}
 
       {/* ░▒▓ Painted tiles — one stable InstancedMesh per preset ▓▒░ */}
       {/* Key = presetId only (stable). Tile count changes update buffer, not remount. */}
@@ -457,8 +597,8 @@ export function GroundPlane({ preset, groundTiles, paintMode, customGroundPreset
       })}
 
       {/* ░▒▓ Paint mode overlays ▓▒░ */}
-      {paintMode && <PaintGridOverlay />}
-      {paintMode && <PaintOverlay />}
+      {showBrushOverlay && <PaintGridOverlay />}
+      {showBrushOverlay && <PaintOverlay texturePaintActive={paintMode} sculptActive={sculptActive} />}
     </group>
   )
 }

@@ -1101,6 +1101,12 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
   const setPaintBrushSize = useOasisStore(s => s.setPaintBrushSize)
   const clearAllGroundTiles = useOasisStore(s => s.clearAllGroundTiles)
   const customGroundPresets = useOasisStore(s => s.customGroundPresets)
+  const terrainHeights = useOasisStore(s => s.terrainHeights)
+  const terrainBrushRadius = useOasisStore(s => s.terrainBrushRadius)
+  const terrainBrushIntensity = useOasisStore(s => s.terrainBrushIntensity)
+  const terrainBrushDirection = useOasisStore(s => s.terrainBrushDirection)
+  const setTerrainBrushPanelOpen = useOasisStore(s => s.setTerrainBrushPanelOpen)
+  const setTerrainBrushMode = useOasisStore(s => s.setTerrainBrushMode)
 
   // ─═̷─ World sky ─═̷─
   const worldSkyBackground = useOasisStore(s => s.worldSkyBackground)
@@ -1228,7 +1234,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
   const opacity = settings.uiOpacity
 
   // ─═̷─ Collapsible world-tab sections ─═̷─
-  type WorldSection = 'sky' | 'ground' | 'lights' | 'terrain'
+  type WorldSection = 'sky' | 'terrainBrush' | 'ground' | 'lights' | 'terrain'
   const [collapsedSections, setCollapsedSections] = useState<Set<WorldSection>>(() => {
     if (typeof window === 'undefined') return new Set()
     try {
@@ -1244,6 +1250,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
       return next
     })
   }
+  const terrainReliefActive = terrainHeights.some(height => Math.abs(height) > 0.001)
 
   // Update tier when provider changes
   const selectedProvider = PROVIDERS.find(p => p.name === provider) || PROVIDERS[0]
@@ -2016,6 +2023,42 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
               )}
             </div>
 
+            {/* ░▒▓█ TERRAIN BRUSH — elevation + texture window █▓▒░ */}
+            <div>
+              <button onClick={() => toggleSection('terrainBrush')} className="w-full flex items-center justify-between px-2.5 py-1.5 -mx-0.5 rounded-md border border-teal-500/20 bg-teal-950/40 hover:bg-teal-900/30 hover:border-teal-400/30 transition-all duration-150 group cursor-pointer mb-1.5">
+                <span className="text-[11px] text-teal-300/90 uppercase tracking-wider font-mono font-medium flex items-center gap-1.5">
+                  <span className={`text-xs text-teal-400/70 transition-transform duration-150 inline-block ${collapsedSections.has('terrainBrush') ? '' : 'rotate-90'}`}>&#9654;</span>
+                  Terrain Brush
+                </span>
+                <span className="text-[10px] text-teal-400/50 font-mono">
+                  {terrainReliefActive ? 'relief active' : `${terrainBrushDirection} ${terrainBrushRadius.toFixed(1)}m`}
+                </span>
+              </button>
+              {!collapsedSections.has('terrainBrush') && (
+                <div className="rounded-lg border border-teal-500/20 bg-black/30 p-2.5 space-y-2">
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      onClick={() => { setTerrainBrushPanelOpen(true); setTerrainBrushMode('sculpt') }}
+                      className="rounded-md border border-amber-400/35 bg-amber-400/10 px-2 py-2 text-[10px] font-bold text-amber-200 hover:bg-amber-400/18"
+                    >
+                      Open elevation
+                    </button>
+                    <button
+                      onClick={() => { setTerrainBrushPanelOpen(true); setTerrainBrushMode('texture') }}
+                      className="rounded-md border border-emerald-400/30 bg-emerald-400/10 px-2 py-2 text-[10px] font-bold text-emerald-200 hover:bg-emerald-400/18"
+                    >
+                      Open texture
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between text-[9px] font-mono text-teal-100/45">
+                    <span>radius {terrainBrushRadius.toFixed(1)}m</span>
+                    <span>intensity {terrainBrushIntensity.toFixed(1)}/s</span>
+                    <span>{terrainReliefActive ? 'saved relief' : 'flat'}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* ░▒▓█ GROUND PAINT — Tile-by-tile ground painting █▓▒░ */}
             <div>
               <button onClick={() => toggleSection('ground')} className="w-full flex items-center justify-between px-2.5 py-1.5 -mx-0.5 rounded-md border border-emerald-500/20 bg-emerald-950/40 hover:bg-emerald-900/30 hover:border-emerald-400/30 transition-all duration-150 group cursor-pointer mb-1.5">
@@ -2099,6 +2142,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
                             alt={preset.name}
                             className="w-full h-full object-cover"
                             loading="lazy"
+                            onError={event => { event.currentTarget.style.display = 'none' }}
                           />
                         )}
                       </div>
@@ -2133,6 +2177,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
                             alt={preset.name}
                             className="w-full h-full object-cover"
                             loading="lazy"
+                            onError={event => { event.currentTarget.style.display = 'none' }}
                           />
                         )}
                       </div>

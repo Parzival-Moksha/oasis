@@ -69,6 +69,7 @@ import { useWorldEvents } from '@/hooks/useWorldEvents'
 import { AgentWindowPortals } from './forge/AgentWindowPortals'
 import { PortalZeroCanonicalButton } from './forge/PortalZeroCanonicalButton'
 import { PortalTransitionOverlay } from './forge/PortalTransitionOverlay'
+import { TerrainBrushPanel } from './forge/TerrainBrushPanel'
 
 const SHOW_LEGACY_DEVCRAFT_PANEL = false
 const SHOW_LEGACY_PARZIVAL_PANEL = false
@@ -1750,6 +1751,8 @@ export default function Scene() {
           onClose={() => setInspectedObject(null)}
         />
       )}
+
+      {!hideEditTools && <TerrainBrushPanel />}
 
       {/* 📋 Mindcraft 3D — Mission Window (outside Canvas, bridged via Zustand) */}
       {canUseLocalPanels && <MindcraftMissionWindowBridge />}

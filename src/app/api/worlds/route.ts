@@ -61,6 +61,7 @@ export async function POST(request: Request) {
       const meta = await createWorld(name, icon, userId)
       await saveWorld(meta.id, userId, {
         terrain: state.terrain,
+        terrainHeights: state.terrainHeights,
         craftedScenes: state.craftedScenes || [],
         conjuredAssetIds: state.conjuredAssetIds || [],
         catalogPlacements: state.catalogPlacements || [],
