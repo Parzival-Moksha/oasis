@@ -194,6 +194,56 @@ export interface CreatedPairingCode {
   agentLabel: string
 }
 
+export interface ActivePairingCode {
+  code: string
+  expiresAt: number
+  worldId: string
+  scopes: Scope[]
+  agentType: string
+  agentSlot: string
+  agentLabel: string
+  createdAt: number
+}
+
+export interface ActivePairingCodeFilter {
+  browserSessionId: string
+  worldId?: string
+  agentSlot?: string
+  now?: number
+}
+
+export function listActivePairingCodesForSession(filter: ActivePairingCodeFilter): ActivePairingCode[] {
+  if (!filter.browserSessionId) return []
+  const now = filter.now ?? Date.now()
+  const store = getStore()
+  pruneExpired(store, now)
+
+  return [...store.byCode.entries()]
+    .filter(([, entry]) => {
+      if (entry.browserSessionId !== filter.browserSessionId) return false
+      if (filter.worldId && entry.worldId !== filter.worldId) return false
+      if (filter.agentSlot && entry.agentSlot !== filter.agentSlot) return false
+      return entry.exp > now
+    })
+    .map(([code, entry]) => ({
+      code,
+      expiresAt: entry.exp,
+      worldId: entry.worldId,
+      scopes: [...entry.scopes],
+      agentType: entry.agentType,
+      agentSlot: entry.agentSlot,
+      agentLabel: entry.agentLabel,
+      createdAt: entry.createdAt,
+    }))
+    .sort((left, right) => right.createdAt - left.createdAt)
+}
+
+export function latestActivePairingCodeForSession(
+  filter: ActivePairingCodeFilter,
+): ActivePairingCode | null {
+  return listActivePairingCodesForSession(filter)[0] || null
+}
+
 export function createPairingCode(input: CreatePairingCodeInput): CreatedPairingCode {
   if (!input.browserSessionId) throw new PairingCodeError('browserSessionId required', 'invalid_input')
   if (!input.worldId)          throw new PairingCodeError('worldId required',          'invalid_input')
@@ -213,7 +263,12 @@ export function createPairingCode(input: CreatePairingCodeInput): CreatedPairing
   // global Map and exhaust the human-readable code namespace.
   let activeForSession = 0
   for (const entry of store.byCode.values()) {
-    if (entry.browserSessionId === input.browserSessionId && entry.agentSlot === agentSlot && entry.exp > now) {
+    if (
+      entry.browserSessionId === input.browserSessionId
+      && entry.worldId === input.worldId
+      && entry.agentSlot === agentSlot
+      && entry.exp > now
+    ) {
       activeForSession += 1
     }
   }

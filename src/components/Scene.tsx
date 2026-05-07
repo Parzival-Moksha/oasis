@@ -68,6 +68,7 @@ import { installTestHarness } from '@/lib/test-harness'
 import { useWorldEvents } from '@/hooks/useWorldEvents'
 import { AgentWindowPortals } from './forge/AgentWindowPortals'
 import { PortalZeroCanonicalButton } from './forge/PortalZeroCanonicalButton'
+import { PortalTransitionOverlay } from './forge/PortalTransitionOverlay'
 
 const SHOW_LEGACY_DEVCRAFT_PANEL = false
 const SHOW_LEGACY_PARZIVAL_PANEL = false
@@ -1470,6 +1471,7 @@ export default function Scene() {
       {/* ─═̷─═̷─🎮 MODE SWITCH LABEL ─═̷─═̷─🎮 */}
       <MouseLookDebugOverlay />
       <ModeSwitchLabel />
+      <PortalTransitionOverlay />
 
       {/* ─═̷─═̷─🔮─═̷─═̷─ TOP-LEFT BUTTON BAR — Profile, Settings, Wizard, Action Log ─═̷─═̷─🔮─═̷─═̷─ */}
       <div className="fixed top-4 left-4 z-[200] flex items-start gap-2">

@@ -9,6 +9,8 @@ import {
   _peekPairingCode,
   _resetPairingCodeStoreForTests,
   createPairingCode,
+  latestActivePairingCodeForSession,
+  listActivePairingCodesForSession,
   redeemPairingCode,
 } from '../pairing-codes'
 
@@ -83,6 +85,37 @@ describe('createPairingCode', () => {
       .toThrowError(PairingCodeError)
     expect(() => createPairingCode({ browserSessionId: 'bs', worldId: 'w', scopes: [] }))
       .toThrowError(PairingCodeError)
+  })
+
+  it('caps active codes per browser session, world, and agent slot', () => {
+    for (let i = 0; i < 3; i++) {
+      createPairingCode({
+        browserSessionId: 'bs_cap',
+        worldId: 'world-a',
+        scopes: ['chat.stream'],
+        agentType: 'hermes',
+        agentSlot: 'hermes:primary',
+        now: FIXED_NOW + i,
+      })
+    }
+
+    expect(() => createPairingCode({
+      browserSessionId: 'bs_cap',
+      worldId: 'world-a',
+      scopes: ['chat.stream'],
+      agentType: 'hermes',
+      agentSlot: 'hermes:primary',
+      now: FIXED_NOW + 10,
+    })).toThrowError(/at most 3 active pairing codes/)
+
+    expect(() => createPairingCode({
+      browserSessionId: 'bs_cap',
+      worldId: 'world-b',
+      scopes: ['chat.stream'],
+      agentType: 'hermes',
+      agentSlot: 'hermes:primary',
+      now: FIXED_NOW + 20,
+    })).not.toThrow()
   })
 
   it('produces unique codes across calls', () => {
@@ -171,6 +204,81 @@ describe('expiry pruning', () => {
       scopes: ['chat.stream'],
       now: FIXED_NOW + 10_000,
     })
+    expect(_peekPairingCode(expired.code)).toBeNull()
+  })
+})
+
+describe('active code lookup', () => {
+  it('lists active codes for a browser session, slot, and world newest first', () => {
+    const oldCode = createPairingCode({
+      browserSessionId: 'bs_reuse',
+      worldId: 'world-a',
+      scopes: ['chat.stream'],
+      agentType: 'hermes',
+      agentSlot: 'hermes:primary',
+      now: FIXED_NOW,
+    })
+    const newCode = createPairingCode({
+      browserSessionId: 'bs_reuse',
+      worldId: 'world-a',
+      scopes: ['world.read', 'chat.stream'],
+      agentType: 'hermes',
+      agentSlot: 'hermes:primary',
+      now: FIXED_NOW + 10,
+    })
+    createPairingCode({
+      browserSessionId: 'bs_reuse',
+      worldId: 'world-b',
+      scopes: ['chat.stream'],
+      agentType: 'hermes',
+      agentSlot: 'hermes:primary',
+      now: FIXED_NOW + 20,
+    })
+
+    const active = listActivePairingCodesForSession({
+      browserSessionId: 'bs_reuse',
+      worldId: 'world-a',
+      agentSlot: 'hermes:primary',
+      now: FIXED_NOW + 30,
+    })
+
+    expect(active.map(entry => entry.code)).toEqual([newCode.code, oldCode.code])
+    expect(latestActivePairingCodeForSession({
+      browserSessionId: 'bs_reuse',
+      worldId: 'world-a',
+      agentSlot: 'hermes:primary',
+      now: FIXED_NOW + 30,
+    })?.code).toBe(newCode.code)
+  })
+
+  it('omits expired and redeemed codes from active lookup', () => {
+    const expired = createPairingCode({
+      browserSessionId: 'bs_lookup',
+      worldId: 'world-a',
+      scopes: ['chat.stream'],
+      ttlMs: 1_000,
+      now: FIXED_NOW,
+    })
+    const redeemed = createPairingCode({
+      browserSessionId: 'bs_lookup',
+      worldId: 'world-a',
+      scopes: ['chat.stream'],
+      now: FIXED_NOW + 10,
+    })
+    const active = createPairingCode({
+      browserSessionId: 'bs_lookup',
+      worldId: 'world-a',
+      scopes: ['chat.stream'],
+      now: FIXED_NOW + 20,
+    })
+    redeemPairingCode(redeemed.code, FIXED_NOW + 30)
+
+    expect(listActivePairingCodesForSession({
+      browserSessionId: 'bs_lookup',
+      worldId: 'world-a',
+      agentSlot: 'openclaw:primary',
+      now: FIXED_NOW + 2_000,
+    }).map(entry => entry.code)).toEqual([active.code])
     expect(_peekPairingCode(expired.code)).toBeNull()
   })
 })

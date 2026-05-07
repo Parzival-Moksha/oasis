@@ -21,6 +21,8 @@ import { NextRequest } from 'next/server'
 
 import {
   createPairingCode,
+  latestActivePairingCodeForSession,
+  listActivePairingCodesForSession,
   normalizeAgentLabel,
   normalizeAgentSlot,
   normalizeAgentType,
@@ -58,6 +60,7 @@ interface CreatePairingBody {
   agentType?: unknown
   agentSlot?: unknown
   agentLabel?: unknown
+  reuseActive?: unknown
 }
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -65,6 +68,28 @@ function jsonResponse(payload: unknown, status = 200) {
     status,
     headers: { 'content-type': 'application/json' },
   })
+}
+
+export async function GET(request: NextRequest) {
+  const session = readBrowserSession(request)
+  if (!session) {
+    return jsonResponse({
+      ok: false,
+      error: { code: 'no_session', message: 'oasis_session cookie missing or invalid' },
+    }, 401)
+  }
+
+  const url = new URL(request.url)
+  const agentType = normalizeAgentType(url.searchParams.get('agentType') || undefined)
+  const agentSlot = normalizeAgentSlot(url.searchParams.get('agentSlot') || undefined, agentType)
+  const worldId = url.searchParams.get('worldId') || undefined
+  const active = listActivePairingCodesForSession({
+    browserSessionId: session.browserSessionId,
+    agentSlot,
+    worldId,
+  })
+
+  return jsonResponse({ ok: true, pairings: active })
 }
 
 export async function POST(request: NextRequest) {
@@ -113,6 +138,28 @@ export async function POST(request: NextRequest) {
   const agentType = normalizeAgentType(body.agentType)
   const agentSlot = normalizeAgentSlot(body.agentSlot, agentType)
   const agentLabel = normalizeAgentLabel(body.agentLabel, `${agentType}-bridge`)
+  const reuseActive = body.reuseActive !== false
+
+  if (reuseActive) {
+    const active = latestActivePairingCodeForSession({
+      browserSessionId: session.browserSessionId,
+      worldId,
+      agentSlot,
+    })
+    if (active) {
+      return jsonResponse({
+        ok: true,
+        reused: true,
+        code: active.code,
+        expiresAt: active.expiresAt,
+        worldId: active.worldId,
+        scopes: active.scopes,
+        agentType: active.agentType,
+        agentSlot: active.agentSlot,
+        agentLabel: active.agentLabel,
+      })
+    }
+  }
 
   try {
     const created = createPairingCode({

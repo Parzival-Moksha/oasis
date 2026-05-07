@@ -2,13 +2,13 @@
 
 This repo ships installable agent skills.
 
-## openclaw-04515
+## 04515 hosted Oasis
 
 - Public skill URL after deploy: `https://openclaw.04515.xyz/skill.md`
 - Repo path: `skills/openclaw-04515`
-- Target user flow: open `https://openclaw.04515.xyz`, mint a pairing code, give the code or pairing URL to OpenClaw, and let OpenClaw run the hosted relay bridge.
+- Target user flow: open `https://openclaw.04515.xyz`, mint a pairing code, give the code or pairing URL to OpenClaw or Hermes, and let the agent run the hosted relay bridge.
 
-Use this skill when connecting a local OpenClaw runtime to the hosted 04515 Oasis. It is the product-facing hosted relay path, not the legacy SSH/local MCP path.
+Use this skill when connecting a local OpenClaw or Hermes runtime to the hosted 04515 Oasis. It is the product-facing hosted relay path, not the legacy SSH/local MCP path.
 
 ## oasis
 

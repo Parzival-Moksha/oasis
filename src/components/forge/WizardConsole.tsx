@@ -37,6 +37,7 @@ import { deriveAvatarAnchoredWindowPlacement } from '../../lib/agent-avatar-util
 import { getLiveObjectTransform } from '../../lib/live-object-transforms'
 import { PORTAL_GATE_VARIANT_DEFS, type PortalAction, type PortalGateVariant } from '../../lib/portal-gates'
 import { portalThumbPath } from '../../lib/portal-thumbnails'
+import { PortalTransitionSettingsPanel } from './PortalTransitionSettingsPanel'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 
@@ -3308,6 +3309,8 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
               </div>
 
               {/* ░▒▓ Grid Columns — per-tab asset library density ▓▒░ */}
+              <PortalTransitionSettingsPanel />
+
               <div>
                 <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Grid Columns</div>
                 <div className="space-y-1.5">

@@ -616,6 +616,359 @@ function EmissiveBolts({
   )
 }
 
+type FastParticleProfile = 'embers' | 'shards' | 'fireflies' | 'sparks' | 'spray'
+
+function FastParticleSwarm({
+  mood,
+  inert,
+  profile = 'sparks',
+  count = 38,
+  radius = 0.92,
+  elongated = false,
+  seed = 100,
+  speed = 1.2,
+  chaos = 0.45,
+}: {
+  mood: PortalMood
+  inert?: boolean
+  profile?: FastParticleProfile
+  count?: number
+  radius?: number
+  elongated?: boolean
+  seed?: number
+  speed?: number
+  chaos?: number
+}) {
+  const swarmRef = useRef<THREE.Group>(null)
+  const colors = MOOD_COLORS[mood]
+  const particles = useMemo(() => {
+    const random = seededRandom(seed)
+    return Array.from({ length: count }, (_, index) => ({
+      angle: (index / count) * Math.PI * 2 + random() * 0.9,
+      orbit: (random() > 0.5 ? 1 : -1) * (0.72 + random() * 1.85),
+      radius: radius * (0.52 + random() * 0.72),
+      phase: random() * Math.PI * 2,
+      size: 0.018 + random() * (profile === 'shards' ? 0.07 : 0.04),
+      z: -0.04 + random() * 0.22,
+      color: random(),
+      lift: random(),
+    }))
+  }, [count, profile, radius, seed])
+
+  useFrame(({ clock }) => {
+    if (!swarmRef.current) return
+    const t = clock.elapsedTime * (inert ? 0.18 : speed)
+    const yScale = elongated ? 1.28 : 1
+    swarmRef.current.children.forEach((child, index) => {
+      const particle = particles[index]
+      if (!particle) return
+      const jitter = Math.sin(t * (2.4 + particle.lift * 3.8) + particle.phase) * chaos
+      const angle = particle.angle + t * particle.orbit + jitter * 0.36
+      const radiusPulse = particle.radius * (1 + Math.sin(t * 3.1 + particle.phase) * chaos * 0.18)
+      child.position.set(
+        Math.cos(angle) * radiusPulse,
+        Math.sin(angle * (profile === 'embers' ? 0.84 : 1)) * radiusPulse * yScale + Math.sin(t * 5.2 + particle.phase) * chaos * 0.09,
+        particle.z + Math.cos(t * 4.4 + particle.phase) * chaos * 0.08,
+      )
+      child.rotation.set(t * (1.2 + particle.lift), t * (0.7 + particle.color), angle)
+      child.scale.setScalar((inert ? 0.62 : 1) * (1 + Math.sin(t * 7.0 + particle.phase) * 0.34))
+    })
+  })
+
+  const colorFor = (value: number) => {
+    if (profile === 'embers') return value > 0.62 ? '#fff3b0' : value > 0.28 ? '#ff6a2b' : colors.primary
+    if (profile === 'fireflies') return value > 0.5 ? '#dcfce7' : '#86efac'
+    if (profile === 'shards') return value > 0.58 ? colors.secondary : colors.primary
+    if (profile === 'spray') return value > 0.5 ? '#e0f2fe' : colors.primary
+    return value > 0.5 ? colors.secondary : colors.ember
+  }
+
+  return (
+    <group ref={swarmRef}>
+      {particles.map((particle, index) => (
+        <mesh
+          key={index}
+          position={[Math.cos(particle.angle) * particle.radius, Math.sin(particle.angle) * particle.radius, particle.z]}
+        >
+          {profile === 'shards'
+            ? (index % 2 === 0 ? <tetrahedronGeometry args={[particle.size * 1.7, 0]} /> : <octahedronGeometry args={[particle.size * 1.45, 0]} />)
+            : profile === 'embers'
+              ? (index % 3 === 0 ? <coneGeometry args={[particle.size * 0.8, particle.size * 3.6, 5]} /> : <sphereGeometry args={[particle.size, 8, 8]} />)
+              : profile === 'fireflies'
+                ? <sphereGeometry args={[particle.size * 0.86, 8, 8]} />
+                : index % 4 === 0
+                  ? <icosahedronGeometry args={[particle.size * 1.35, 0]} />
+                  : <sphereGeometry args={[particle.size, 8, 8]} />}
+          <meshBasicMaterial
+            color={colorFor(particle.color)}
+            transparent
+            opacity={inert ? 0.22 : profile === 'fireflies' ? 0.92 : 0.78}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+function PortalLightningCrown({
+  mood,
+  inert,
+  seed = 300,
+  count = 28,
+  radius = 1,
+  elongated = false,
+  intensity = 1,
+}: {
+  mood: PortalMood
+  inert?: boolean
+  seed?: number
+  count?: number
+  radius?: number
+  elongated?: boolean
+  intensity?: number
+}) {
+  const lineRef = useRef<THREE.LineSegments>(null)
+  const materialRef = useRef<THREE.LineBasicMaterial>(null)
+  const colors = MOOD_COLORS[mood]
+  const positions = useMemo(() => new Float32Array(count * 2 * 3), [count])
+  const bolts = useMemo(() => {
+    const random = seededRandom(seed)
+    return Array.from({ length: count }, (_, index) => ({
+      angle: (index / count) * Math.PI * 2 + random() * 0.34,
+      phase: random() * Math.PI * 2,
+      reach: 0.18 + random() * 0.44,
+      fork: (random() - 0.5) * 0.42,
+      skip: random(),
+    }))
+  }, [count, seed])
+
+  useFrame(({ clock }) => {
+    if (!lineRef.current) return
+    const t = clock.elapsedTime
+    const yScale = elongated ? 1.35 : 1
+    bolts.forEach((bolt, index) => {
+      const live = Math.sin(t * 13.0 + bolt.phase) > -0.48 || bolt.skip > 0.72
+      const flicker = live ? 1 + Math.sin(t * 31.0 + bolt.phase) * 0.18 : 0.22
+      const angle = bolt.angle + Math.sin(t * 7.0 + bolt.phase) * 0.08
+      const nextAngle = angle + bolt.fork + Math.sin(t * 11.0 + index) * 0.12
+      const startRadius = radius * (0.66 + Math.sin(t * 4.1 + bolt.phase) * 0.06)
+      const endRadius = radius * (0.94 + bolt.reach * flicker)
+      const offset = index * 6
+      positions[offset] = Math.cos(angle) * startRadius
+      positions[offset + 1] = Math.sin(angle) * startRadius * yScale
+      positions[offset + 2] = 0.15 + Math.sin(t * 9.0 + bolt.phase) * 0.04
+      positions[offset + 3] = Math.cos(nextAngle) * endRadius
+      positions[offset + 4] = Math.sin(nextAngle) * endRadius * yScale
+      positions[offset + 5] = 0.18 + Math.cos(t * 8.4 + bolt.phase) * 0.07
+    })
+    const attribute = lineRef.current.geometry.getAttribute('position') as THREE.BufferAttribute
+    attribute.needsUpdate = true
+    if (materialRef.current) {
+      materialRef.current.opacity = inert ? 0.18 : 0.46 + Math.max(0, Math.sin(t * 17.0 + seed)) * 0.42 * intensity
+    }
+  })
+
+  return (
+    <lineSegments ref={lineRef} renderOrder={8}>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+      </bufferGeometry>
+      <lineBasicMaterial
+        ref={materialRef}
+        color={colors.secondary}
+        transparent
+        opacity={inert ? 0.18 : 0.82}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+      />
+    </lineSegments>
+  )
+}
+
+function PortalFlameJets({
+  mood,
+  inert,
+  seed = 400,
+  count = 18,
+  width = 1.15,
+  height = 1.72,
+  intensity = 1,
+}: {
+  mood: PortalMood
+  inert?: boolean
+  seed?: number
+  count?: number
+  width?: number
+  height?: number
+  intensity?: number
+}) {
+  const flameRef = useRef<THREE.Group>(null)
+  const colors = MOOD_COLORS[mood]
+  const jets = useMemo(() => {
+    const random = seededRandom(seed)
+    return Array.from({ length: count }, (_, index) => {
+      const side = index % 3 === 0 ? 0 : index % 2 === 0 ? -1 : 1
+      return {
+        x: side === 0 ? (random() - 0.5) * width * 1.1 : side * (width * (0.38 + random() * 0.22)),
+        y: side === 0 ? -height * (0.42 + random() * 0.14) : -height * 0.28 + random() * height * 0.82,
+        phase: random() * Math.PI * 2,
+        size: 0.06 + random() * 0.1,
+        lean: (random() - 0.5) * 0.8,
+      }
+    })
+  }, [count, height, seed, width])
+
+  useFrame(({ clock }) => {
+    if (!flameRef.current) return
+    const t = clock.elapsedTime
+    flameRef.current.children.forEach((child, index) => {
+      const jet = jets[index]
+      if (!jet) return
+      const pulse = 1 + Math.sin(t * (7.5 + index * 0.25) + jet.phase) * (inert ? 0.08 : 0.38)
+      child.position.y = jet.y + Math.max(0, Math.sin(t * 3.4 + jet.phase)) * 0.12 * intensity
+      child.rotation.z = jet.lean + Math.sin(t * 4.8 + jet.phase) * 0.18
+      child.scale.set(jet.size * (0.7 + pulse * 0.34), jet.size * (3.2 + pulse * 1.9) * intensity, jet.size)
+    })
+  })
+
+  return (
+    <group ref={flameRef}>
+      {jets.map((jet, index) => (
+        <mesh key={index} position={[jet.x, jet.y, 0.12]} rotation={[0, 0, jet.lean]}>
+          <coneGeometry args={[1, 1, index % 2 ? 5 : 8]} />
+          <meshBasicMaterial
+            color={index % 4 === 0 ? colors.secondary : index % 3 === 0 ? '#ff6a2b' : colors.primary}
+            transparent
+            opacity={inert ? 0.14 : 0.54 + (index % 3) * 0.08}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </mesh>
+      ))}
+      <pointLight color={colors.primary} intensity={inert ? 0.25 : 1.9 * intensity} distance={4.8} decay={2.1} position={[0, -height * 0.32, 0.5]} />
+    </group>
+  )
+}
+
+function StoneCaveMouth({
+  mood,
+  inert,
+  seed = 500,
+  count = 30,
+  scale = [1, 1, 1],
+}: {
+  mood: PortalMood
+  inert?: boolean
+  seed?: number
+  count?: number
+  scale?: [number, number, number]
+}) {
+  const colors = MOOD_COLORS[mood]
+  const rocks = useMemo(() => {
+    const random = seededRandom(seed)
+    return Array.from({ length: count }, (_, index) => {
+      const angle = (index / count) * Math.PI * 2 + (random() - 0.5) * 0.18
+      const ovalX = 1.05 + random() * 0.28
+      const ovalY = 1.28 + random() * 0.34
+      return {
+        angle,
+        x: Math.cos(angle) * ovalX,
+        y: Math.sin(angle) * ovalY,
+        z: -0.05 - random() * 0.08,
+        size: 0.16 + random() * 0.26,
+        squash: [0.75 + random() * 0.9, 0.7 + random() * 0.86, 0.7 + random() * 0.7] as [number, number, number],
+        color: random(),
+        rotate: [random() * 0.8, random() * 0.8, angle + random() * 0.7] as [number, number, number],
+      }
+    })
+  }, [count, seed])
+
+  return (
+    <group scale={scale}>
+      <mesh position={[0, 0.03, -0.16]} scale={[1.34, 1.62, 1]}>
+        <circleGeometry args={[0.9, 96]} />
+        <meshBasicMaterial color="#030306" transparent opacity={inert ? 0.42 : 0.78} side={THREE.DoubleSide} depthWrite={false} />
+      </mesh>
+      {rocks.map((rock, index) => (
+        <mesh key={index} position={[rock.x, rock.y, rock.z]} rotation={rock.rotate} scale={rock.squash}>
+          {index % 5 === 0 ? <boxGeometry args={[rock.size * 1.4, rock.size, rock.size * 0.76]} /> : <dodecahedronGeometry args={[rock.size, 0]} />}
+          <meshStandardMaterial
+            color={rock.color > 0.76 ? colors.stone : rock.color > 0.48 ? '#2f3340' : '#171923'}
+            emissive={rock.color > 0.84 ? colors.primary : '#050507'}
+            emissiveIntensity={inert ? 0.03 : rock.color > 0.84 ? 0.22 : 0.04}
+            roughness={0.86}
+            metalness={0.08}
+            transparent
+            opacity={inert ? 0.64 : 0.98}
+          />
+        </mesh>
+      ))}
+      {[-0.54, -0.24, 0.18, 0.46].map((x, index) => (
+        <mesh key={`stalactite-${index}`} position={[x, 1.18 + (index % 2) * 0.12, 0.02]} rotation={[0, 0, x * 0.38]}>
+          <coneGeometry args={[0.09 + index * 0.012, 0.52 + (index % 2) * 0.18, 7]} />
+          <meshStandardMaterial color="#20242f" roughness={0.92} metalness={0.05} transparent opacity={inert ? 0.48 : 0.9} />
+        </mesh>
+      ))}
+      <mesh position={[0, -1.42, -0.02]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[1.26, 72]} />
+        <meshBasicMaterial color="#060609" transparent opacity={inert ? 0.18 : 0.42} depthWrite={false} />
+      </mesh>
+    </group>
+  )
+}
+
+function RootTendrilWreath({ mood, inert, seed = 600 }: { mood: PortalMood; inert?: boolean; seed?: number }) {
+  const rootRef = useRef<THREE.Group>(null)
+  const colors = MOOD_COLORS[mood]
+  const tendrils = useMemo(() => {
+    const random = seededRandom(seed)
+    return Array.from({ length: 18 }, (_, index) => {
+      const side = index % 2 === 0 ? -1 : 1
+      return {
+        x: side * (0.66 + random() * 0.24),
+        y: -1.08 + random() * 2.28,
+        rot: side * (0.36 + random() * 0.72),
+        len: 0.34 + random() * 0.72,
+        width: 0.025 + random() * 0.045,
+        phase: random() * Math.PI * 2,
+      }
+    })
+  }, [seed])
+
+  useFrame(({ clock }) => {
+    if (!rootRef.current) return
+    const t = clock.elapsedTime
+    rootRef.current.children.forEach((child, index) => {
+      const tendril = tendrils[index]
+      if (!tendril) return
+      const pulse = 1 + Math.sin(t * 2.8 + tendril.phase) * (inert ? 0.03 : 0.13)
+      child.rotation.z = tendril.rot + Math.sin(t * 1.7 + tendril.phase) * 0.08
+      child.scale.set(tendril.width * pulse, tendril.len * (1 + Math.sin(t * 2.3 + tendril.phase) * 0.07), tendril.width)
+    })
+  })
+
+  return (
+    <group ref={rootRef}>
+      {tendrils.map((tendril, index) => (
+        <mesh key={index} position={[tendril.x, tendril.y, 0.08]} rotation={[0, 0, tendril.rot]}>
+          <cylinderGeometry args={[1, 0.55, 1, 7]} />
+          <meshStandardMaterial
+            color={index % 3 === 0 ? colors.primary : colors.stone}
+            emissive={index % 4 === 0 ? colors.primary : colors.dark}
+            emissiveIntensity={inert ? 0.03 : index % 4 === 0 ? 0.34 : 0.06}
+            roughness={0.78}
+            metalness={0.05}
+            transparent
+            opacity={inert ? 0.42 : 0.88}
+          />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
 function EnergyVeil({
   mood,
   shape = 'circle',
@@ -754,6 +1107,8 @@ function OrbitingParticles({
   radius = 0.9,
   elongated = false,
   seed = 5,
+  spinSpeed = 0.18,
+  buzz = 0.025,
 }: {
   mood: PortalMood
   inert?: boolean
@@ -761,6 +1116,8 @@ function OrbitingParticles({
   radius?: number
   elongated?: boolean
   seed?: number
+  spinSpeed?: number
+  buzz?: number
 }) {
   const particlesRef = useRef<THREE.Group>(null)
   const colors = MOOD_COLORS[mood]
@@ -777,8 +1134,9 @@ function OrbitingParticles({
   useFrame(({ clock }) => {
     if (!particlesRef.current) return
     const t = clock.elapsedTime
-    particlesRef.current.rotation.z = t * (inert ? -0.05 : -0.18)
-    particlesRef.current.position.z = Math.sin(t * 0.7 + seed) * 0.025
+    particlesRef.current.rotation.z = t * (inert ? -0.05 : -spinSpeed)
+    particlesRef.current.position.z = Math.sin(t * (0.9 + spinSpeed * 0.35) + seed) * buzz
+    particlesRef.current.scale.setScalar(1 + Math.sin(t * (1.2 + spinSpeed * 0.18) + seed) * (inert ? 0.012 : buzz * 0.9))
   })
 
   return (
@@ -970,9 +1328,11 @@ function ThresholdRing({ inert }: { inert?: boolean }) {
       <EnergyVeil mood="arcane" scale={[0.82, 1.14, 1]} opacity={0.32} inert={inert} />
       <PortalStarfield seed={11} color="#d9fbff" accentColor="#fff5c2" width={1.38} height={1.9} count={132} depth={0.54} inert={inert} />
       <RuneRing mood="arcane" radius={0.74} count={24} inert={inert} elongated />
-      <OrbitingParticles mood="arcane" inert={inert} radius={0.84} count={28} elongated seed={111} />
+      <OrbitingParticles mood="arcane" inert={inert} radius={0.84} count={28} elongated seed={111} spinSpeed={0.72} buzz={0.045} />
+      <FastParticleSwarm mood="arcane" inert={inert} profile="sparks" radius={0.9} count={42} elongated seed={1211} speed={1.45} chaos={0.5} />
       <CrystalHalo mood="arcane" inert={inert} radius={1.22} count={6} />
       <EmissiveBolts mood="arcane" inert={inert} radius={0.98} count={16} elongated seed={2111} />
+      <PortalLightningCrown mood="arcane" inert={inert} radius={1.05} elongated count={18} seed={8121} intensity={0.7} />
       <mesh position={[0, 0, 0.02]} scale={[0.52, 0.52, 1]}>
         <ringGeometry args={[0.44, 0.52, 72]} />
         <meshBasicMaterial color="#fff5c2" transparent opacity={inert ? 0.16 : 0.48} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} />
@@ -1027,8 +1387,10 @@ function VoidDoor({ inert }: { inert?: boolean }) {
         </mesh>
       ))}
       <EnergyVeil mood="void" shape="plane" scale={[0.86, 1.08, 1]} opacity={0.2} inert={inert} />
-      <OrbitingParticles mood="void" inert={inert} radius={0.52} count={24} elongated seed={229} />
+      <OrbitingParticles mood="void" inert={inert} radius={0.52} count={24} elongated seed={229} spinSpeed={1.12} buzz={0.055} />
+      <FastParticleSwarm mood="void" inert={inert} profile="shards" radius={0.64} count={48} elongated seed={2329} speed={2.15} chaos={0.82} />
       <EmissiveBolts mood="void" inert={inert} radius={0.72} count={10} elongated seed={3229} />
+      <PortalLightningCrown mood="void" inert={inert} radius={0.82} elongated count={24} seed={7329} intensity={1.1} />
       <mesh position={[0, 0.12, 0.02]} scale={[1, 1.22, 1]}>
         <ringGeometry args={[0.22, 0.48, 72]} />
         <meshBasicMaterial color="#000000" transparent opacity={0.78} side={THREE.DoubleSide} />
@@ -1071,7 +1433,8 @@ function HologramGate({ inert }: { inert?: boolean }) {
         </mesh>
       ))}
       <RuneRing mood="hologram" radius={0.88} count={20} inert={inert} elongated />
-      <OrbitingParticles mood="hologram" inert={inert} radius={0.78} count={18} elongated seed={341} />
+      <OrbitingParticles mood="hologram" inert={inert} radius={0.78} count={18} elongated seed={341} spinSpeed={0.95} buzz={0.038} />
+      <FastParticleSwarm mood="hologram" inert={inert} profile="sparks" radius={0.98} count={32} elongated seed={3341} speed={1.7} chaos={0.34} />
       <EmissiveBolts mood="hologram" inert={inert} radius={0.98} count={14} elongated seed={3441} />
       {[-0.72, 0.72].map((x, index) => (
         <mesh key={`side-node-${index}`} position={[x, 0.72 - index * 1.44, 0.06]}>
@@ -1131,7 +1494,9 @@ function SolarArch({ inert }: { inert?: boolean }) {
           </mesh>
         )
       })}
-      <OrbitingParticles mood="solar" inert={inert} radius={0.74} count={30} elongated seed={459} />
+      <PortalFlameJets mood="solar" inert={inert} count={24} width={1.28} height={1.9} seed={1559} intensity={1.18} />
+      <FastParticleSwarm mood="solar" inert={inert} profile="embers" radius={1.02} count={54} elongated seed={2559} speed={1.95} chaos={0.62} />
+      <OrbitingParticles mood="solar" inert={inert} radius={0.74} count={30} elongated seed={459} spinSpeed={0.88} buzz={0.05} />
       <EmissiveBolts mood="solar" inert={inert} radius={0.92} count={18} elongated seed={4559} />
       <mesh position={[0, -0.02, 0.02]}>
         <circleGeometry args={[0.66, 64]} />
@@ -1181,7 +1546,9 @@ function RiftSlit({ inert }: { inert?: boolean }) {
         <meshBasicMaterial color="#76f8ff" transparent opacity={inert ? 0.1 : 0.34} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} />
       </mesh>
       <RimHalo mood="rift" inert={inert} scale={[0.24, 1.64, 1]} radius={0.72} thickness={0.14} opacity={0.36} />
-      <OrbitingParticles mood="rift" inert={inert} radius={0.56} count={26} elongated seed={573} />
+      <PortalLightningCrown mood="rift" inert={inert} radius={0.72} elongated count={34} seed={4673} intensity={1.35} />
+      <FastParticleSwarm mood="rift" inert={inert} profile="shards" radius={0.78} count={58} elongated seed={5673} speed={2.65} chaos={0.96} />
+      <OrbitingParticles mood="rift" inert={inert} radius={0.56} count={26} elongated seed={573} spinSpeed={1.42} buzz={0.075} />
       <EmissiveBolts mood="rift" inert={inert} radius={0.58} count={12} elongated seed={6673} />
     </group>
   )
@@ -1207,7 +1574,9 @@ function StargateVortex({ inert }: { inert?: boolean }) {
         <meshBasicMaterial color="#f8fafc" transparent opacity={inert ? 0.18 : 0.72} blending={THREE.AdditiveBlending} />
       </mesh>
       <RuneRing mood="arcane" radius={0.96} count={32} inert={inert} />
-      <OrbitingParticles mood="arcane" inert={inert} radius={1.05} count={36} seed={789} />
+      <PortalLightningCrown mood="arcane" inert={inert} radius={1.24} count={36} seed={778} intensity={1.25} />
+      <FastParticleSwarm mood="arcane" inert={inert} profile="sparks" radius={1.18} count={62} seed={1789} speed={2.25} chaos={0.58} />
+      <OrbitingParticles mood="arcane" inert={inert} radius={1.05} count={36} seed={789} spinSpeed={1.18} buzz={0.052} />
       <EmissiveBolts mood="arcane" inert={inert} radius={1.12} count={24} seed={7789} />
       <mesh position={[0, -1.42, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[0.82, 1.36, 120]} />
@@ -1221,7 +1590,8 @@ function CrystalCavern({ inert }: { inert?: boolean }) {
   return (
     <group position={[0, 1.48, 0]}>
       <SmokeWisps mood="rift" inert={inert} />
-      <PortalAperture mood="rift" seed={897} shape="ellipse" size={[1.18, 2.18]} intensity={1.08} organic={0.58} inert={inert} />
+      <StoneCaveMouth mood="rift" inert={inert} scale={[1.18, 1.12, 1]} seed={9897} count={34} />
+      <PortalAperture mood="rift" seed={897} shape="ellipse" size={[1.18, 2.18]} intensity={1.26} organic={0.58} inert={inert} />
       <PortalWorldGlimpse mood="rift" profile="crystal" size={[1, 1.86]} inert={inert} />
       <PortalDepthTunnel mood="rift" inert={inert} elongated rings={8} radius={0.58} zStep={0.08} />
       <MirrorGlassSkin mood="rift" shape="ellipse" size={[1.02, 1.96]} opacity={0.22} inert={inert} />
@@ -1245,7 +1615,9 @@ function CrystalCavern({ inert }: { inert?: boolean }) {
         )
       })}
       <RimHalo mood="rift" inert={inert} scale={[0.72, 1.34, 1]} radius={0.76} thickness={0.12} opacity={0.3} />
-      <OrbitingParticles mood="rift" inert={inert} radius={0.72} count={28} elongated seed={897} />
+      <PortalLightningCrown mood="rift" inert={inert} radius={1.1} elongated count={22} seed={1897} intensity={0.85} />
+      <FastParticleSwarm mood="rift" inert={inert} profile="shards" radius={0.96} count={46} elongated seed={2897} speed={1.7} chaos={0.74} />
+      <OrbitingParticles mood="rift" inert={inert} radius={0.72} count={28} elongated seed={897} spinSpeed={0.96} buzz={0.052} />
       <EmissiveBolts mood="rift" inert={inert} radius={0.92} count={18} elongated seed={8897} />
     </group>
   )
@@ -1255,6 +1627,7 @@ function VerdantArch({ inert }: { inert?: boolean }) {
   return (
     <group position={[0, 1.42, 0]}>
       <SmokeWisps mood="forest" inert={inert} />
+      <RootTendrilWreath mood="forest" inert={inert} seed={1907} />
       <PortalAperture mood="forest" seed={907} shape="ellipse" size={[1.2, 2.2]} intensity={0.86} organic={1.05} inert={inert} />
       <PortalWorldGlimpse mood="forest" profile="forest" size={[1.02, 1.9]} inert={inert} />
       <PortalDepthTunnel mood="forest" inert={inert} elongated rings={7} radius={0.58} zStep={0.07} />
@@ -1282,7 +1655,8 @@ function VerdantArch({ inert }: { inert?: boolean }) {
           </mesh>
         )
       })}
-      <OrbitingParticles mood="forest" inert={inert} radius={0.78} count={34} elongated seed={907} />
+      <FastParticleSwarm mood="forest" inert={inert} profile="fireflies" radius={1.02} count={52} elongated seed={2907} speed={1.8} chaos={0.7} />
+      <OrbitingParticles mood="forest" inert={inert} radius={0.78} count={34} elongated seed={907} spinSpeed={0.76} buzz={0.05} />
       <EmissiveBolts mood="forest" inert={inert} radius={0.94} count={14} elongated seed={9907} />
       <RimHalo mood="forest" inert={inert} scale={[0.76, 1.22, 1]} radius={0.76} thickness={0.1} opacity={0.28} />
     </group>
@@ -1309,7 +1683,9 @@ function MirrorPool({ inert }: { inert?: boolean }) {
         </mesh>
       ))}
       <RimHalo mood="water" inert={inert} scale={[0.78, 1.28, 1]} radius={0.82} thickness={0.08} opacity={0.4} />
-      <OrbitingParticles mood="water" inert={inert} radius={0.78} count={24} elongated seed={919} />
+      <FastParticleSwarm mood="water" inert={inert} profile="spray" radius={0.94} count={38} elongated seed={2919} speed={1.35} chaos={0.46} />
+      <PortalLightningCrown mood="water" inert={inert} radius={0.94} elongated count={14} seed={3919} intensity={0.55} />
+      <OrbitingParticles mood="water" inert={inert} radius={0.78} count={24} elongated seed={919} spinSpeed={0.68} buzz={0.038} />
       <EmissiveBolts mood="water" inert={inert} radius={0.9} count={12} elongated seed={9919} />
       <mesh position={[0, -1.3, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <circleGeometry args={[0.94, 96]} />
@@ -1348,7 +1724,9 @@ function ClockworkIris({ inert }: { inert?: boolean }) {
           <meshBasicMaterial color="#422006" transparent opacity={inert ? 0.34 : 0.72} side={THREE.DoubleSide} />
         </mesh>
       ))}
-      <OrbitingParticles mood="clockwork" inert={inert} radius={0.78} count={20} seed={931} />
+      <PortalLightningCrown mood="clockwork" inert={inert} radius={1.05} count={18} seed={4931} intensity={0.7} />
+      <FastParticleSwarm mood="clockwork" inert={inert} profile="sparks" radius={0.98} count={36} seed={2931} speed={1.55} chaos={0.35} />
+      <OrbitingParticles mood="clockwork" inert={inert} radius={0.78} count={20} seed={931} spinSpeed={0.86} buzz={0.032} />
       <EmissiveBolts mood="clockwork" inert={inert} radius={1.02} count={22} seed={9931} />
     </group>
   )

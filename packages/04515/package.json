@@ -1,6 +1,6 @@
 {
   "name": "@04515xyz/oasis-bridge",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "type": "module",
   "description": "Connect OpenClaw or Hermes to the hosted Oasis at openclaw.04515.xyz.",
   "license": "MIT-0",

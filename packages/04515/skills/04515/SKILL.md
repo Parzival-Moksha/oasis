@@ -18,6 +18,8 @@ The goal is simple: the user opens Oasis, clicks the agent connect button, copie
 
 If this skill/plugin is missing or old, tell the user to install or update the `04515` Clawhub package first. If this skill is active, proceed.
 
+For Hermes, treat this package as a Hermes skill plus an npm bridge command. It is not a Hermes Python plugin. A Hermes plugin would be needed only if Oasis must register custom Python tools, hooks, slash commands, or gateway adapters inside Hermes itself.
+
 ## Hermes Path
 
 Hermes connects through:
@@ -58,10 +60,10 @@ Extract only the `OASIS-...` code or the `https://openclaw.04515.xyz/pair/...` U
 Run:
 
 ```bash
-npx -y @04515xyz/oasis-bridge@latest hermes https://openclaw.04515.xyz/pair/<code> --agent-slot=hermes:primary --label=hermes-bridge
+npx -y @04515xyz/oasis-bridge@latest hermes https://openclaw.04515.xyz/pair/<code> --agent-slot=hermes:primary --label=Hermes
 ```
 
-The bridge reads `API_SERVER_KEY` or `HERMES_API_KEY` from `~/.hermes/.env` when available. If the key is not there, pass it explicitly:
+The bridge reads `API_SERVER_KEY` or `HERMES_API_KEY` from `~/.hermes/.env` when available. Do not wrap the command in a shell snippet just to extract `API_SERVER_KEY`; the bridge already does that. If the key is not in the environment or `~/.hermes/.env`, pass it explicitly:
 
 ```bash
 npx -y @04515xyz/oasis-bridge@latest hermes https://openclaw.04515.xyz/pair/<code> --api-key="$API_SERVER_KEY"
@@ -70,6 +72,8 @@ npx -y @04515xyz/oasis-bridge@latest hermes https://openclaw.04515.xyz/pair/<cod
 The Hermes MCP adapter default is `http://127.0.0.1:17891/mcp`. Do not use `4516` for Hermes MCP unless the user explicitly overrides it and knows it is free; `4516` is the local Oasis dev server port.
 
 After the bridge updates `~/.hermes/config.yaml`, run `/reload-mcp` in an already-open Hermes chat or start a fresh Hermes session so the Oasis tools appear.
+
+If Hermes reports repeated background-process watch notifications for the same bridge PID, do not narrate each one. `pair`, `paired`, `MCP adapter listening`, and `relay socket open` are startup/status log lines. Summarize the first confirmed success and ignore repeated watcher echoes unless the process exits or the user asks for status.
 
 Hermes success logs should include:
 

@@ -296,11 +296,22 @@ async function checkHermesApi() {
 
 function buildChatMessages(userText) {
   const messages = []
-  if (systemPrompt.trim()) {
-    messages.push({ role: 'system', content: systemPrompt.trim() })
+  const instructions = buildHermesInstructions()
+  if (instructions) {
+    messages.push({ role: 'system', content: instructions })
   }
   messages.push({ role: 'user', content: userText })
   return messages
+}
+
+function buildHermesInstructions() {
+  if (systemPrompt.trim()) return systemPrompt.trim()
+  const displayName = String(label || 'Hermes').trim() || 'Hermes'
+  return [
+    `You are ${displayName}, a Hermes Agent connected to Oasis as an embodied world agent.`,
+    'When the user asks who you are, use that name unless your own configured Hermes profile strongly says otherwise.',
+    'You can inspect the Oasis world and use the installed Oasis MCP tools when available. Be concise, world-aware, and honest about what you can see or change.',
+  ].join(' ')
 }
 
 function hermesConversationId(sessionId) {
@@ -443,7 +454,10 @@ async function callHermesResponses(sessionId, userText, onDelta) {
     conversation: hermesConversationId(sessionId),
     store: true,
     stream: true,
-    ...(systemPrompt.trim() ? { instructions: systemPrompt.trim() } : {}),
+    ...(() => {
+      const instructions = buildHermesInstructions()
+      return instructions ? { instructions } : {}
+    })(),
   }
 
   const response = await fetch(`${apiBase}/responses`, {

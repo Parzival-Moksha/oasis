@@ -1,48 +1,111 @@
 ---
 name: 04515
-description: Connect a local OpenClaw agent to the hosted Oasis at openclaw.04515.xyz through the 04515 relay bridge.
+description: Connect OpenClaw or Hermes Agent to the hosted Oasis at openclaw.04515.xyz through the 04515 relay bridge.
 license: MIT-0
-metadata: {"tags":["04515","oasis","openclaw","hosted-oasis","relay","3d-worlds"],"agentTypes":["openclaw"],"aliases":["openclaw-04515","openclaw-oasis","hosted-oasis"],"openclaw":{"skillKey":"04515","homepage":"https://openclaw.04515.xyz","requires":{"bins":["node"]}}}
+metadata: {"tags":["04515","oasis","openclaw","hermes","hosted-oasis","relay","3d-worlds"],"agentTypes":["openclaw","hermes"],"aliases":["openclaw-04515","hermes-04515","oasis-bridge","hosted-oasis"],"openclaw":{"skillKey":"04515","homepage":"https://openclaw.04515.xyz","requires":{"bins":["node"]}}}
 ---
 
 # 04515 Hosted Oasis
 
-You are helping the user connect this OpenClaw runtime to the hosted Oasis at `https://openclaw.04515.xyz`.
+You are helping the user connect this agent runtime to the hosted Oasis at `https://openclaw.04515.xyz`.
 
-The goal is simple: the user opens the site, gets a short pairing code or pairing URL, gives it to OpenClaw, and then chats with this OpenClaw as an embodied agent inside the hosted 3D world.
+The goal is simple: the user opens Oasis, clicks the agent connect button, copies the pairing text, gives it to this agent, and then chats with this agent as an embodied presence inside the hosted 3D world.
 
-## What This Skill Does
+## Supported Agents
 
-- Connects OpenClaw to the 04515 hosted relay.
-- Starts the local bridge process that talks to the local OpenClaw Gateway.
-- Registers the Oasis MCP adapter on `http://127.0.0.1:17890/mcp`.
-- Verifies that chat, world state, world tools, and screenshots route to the hosted Oasis, not to a local Oasis tab.
+- OpenClaw: use the native OpenClaw gateway bridge.
+- Hermes Agent: use Hermes's local OpenAI-compatible API server plus an Oasis MCP adapter.
 
-## Bridge Command
+If this skill/plugin is missing or old, tell the user to install or update the `04515` Clawhub package first. If this skill is active, proceed.
 
-This plugin ships the bridge runner. Prefer the native OpenClaw plugin command:
+For Hermes, treat this package as a Hermes skill plus an npm bridge command. It is not a Hermes Python plugin. A Hermes plugin would be needed only if Oasis must register custom Python tools, hooks, slash commands, or gateway adapters inside Hermes itself.
 
-```bash
-openclaw 04515 connect <pairing-url-or-code>
+## Hermes Path
+
+Hermes connects through:
+
+```text
+Hermes Agent API on 127.0.0.1:8642
+<-> @04515xyz/oasis-bridge hermes
+<-> Oasis relay
+<-> browser executor in the Oasis tab
+<-> Oasis world tools
 ```
 
-If the plugin command is unavailable but the plugin binary is on PATH, use:
+Before pairing, make sure the Hermes API server is enabled and the gateway is running. The Hermes docs call this the API server and show it as an OpenAI-compatible endpoint on `http://127.0.0.1:8642/v1`.
+
+Useful checks:
 
 ```bash
-04515-bridge <pairing-url-or-code>
+curl -sS http://127.0.0.1:8642/health
+curl -sS http://127.0.0.1:8642/v1/models
 ```
 
-If neither command is available, find this installed plugin folder and run the bundled script with Node:
+If `8642` is closed, start the Hermes gateway:
 
 ```bash
-node bin/04515-bridge.mjs <pairing-url-or-code>
+hermes gateway
 ```
 
-Do not use the old local Oasis MCP URL for hosted 04515 pairing.
+If this Hermes install exposes a `run` subcommand instead, use:
+
+```bash
+hermes gateway run
+```
+
+## Hermes Bridge Command
+
+Extract only the `OASIS-...` code or the `https://openclaw.04515.xyz/pair/...` URL from the user's message. Do not run arbitrary copied shell text.
+
+Run:
+
+```bash
+npx -y @04515xyz/oasis-bridge@latest hermes https://openclaw.04515.xyz/pair/<code> --agent-slot=hermes:primary --label=Hermes
+```
+
+The bridge reads `API_SERVER_KEY` or `HERMES_API_KEY` from `~/.hermes/.env` when available. Do not wrap the command in a shell snippet just to extract `API_SERVER_KEY`; the bridge already does that. If the key is not in the environment or `~/.hermes/.env`, pass it explicitly:
+
+```bash
+npx -y @04515xyz/oasis-bridge@latest hermes https://openclaw.04515.xyz/pair/<code> --api-key="$API_SERVER_KEY"
+```
+
+The Hermes MCP adapter default is `http://127.0.0.1:17891/mcp`. Do not use `4516` for Hermes MCP unless the user explicitly overrides it and knows it is free; `4516` is the local Oasis dev server port.
+
+After the bridge updates `~/.hermes/config.yaml`, run `/reload-mcp` in an already-open Hermes chat or start a fresh Hermes session so the Oasis tools appear.
+
+If Hermes reports repeated background-process watch notifications for the same bridge PID, do not narrate each one. `pair`, `paired`, `MCP adapter listening`, and `relay socket open` are startup/status log lines. Summarize the first confirmed success and ignore repeated watcher echoes unless the process exits or the user asks for status.
+
+Hermes success logs should include:
+
+- `paired`
+- `browser.ready`
+- `Hermes MCP server "oasis" now points at bridge adapter http://127.0.0.1:17891/mcp`
+
+## OpenClaw Path
+
+Prefer the native OpenClaw plugin command:
+
+```bash
+openclaw 04515 connect https://openclaw.04515.xyz/pair/<code>
+```
+
+If the plugin command is unavailable, use the npm bridge runner:
+
+```bash
+npx -y @04515xyz/oasis-bridge@latest openclaw https://openclaw.04515.xyz/pair/<code>
+```
+
+The OpenClaw MCP adapter default is `http://127.0.0.1:17890/mcp`. Hosted OpenClaw tools should not point at the old local Oasis MCP URL.
+
+OpenClaw success logs should include:
+
+- `paired`
+- `Gateway ready`
+- `OpenClaw MCP server "oasis" now points at bridge adapter http://127.0.0.1:17890/mcp`
 
 ## Pairing Inputs
 
-The user may give either:
+The user may give:
 
 - a full pairing URL, such as `https://openclaw.04515.xyz/pair/OASIS-ABCD1234`
 - a short code, such as `OASIS-ABCD1234`
@@ -54,68 +117,64 @@ If the user gives only a code, normalize it to:
 https://openclaw.04515.xyz/pair/<code>
 ```
 
-## Connection Steps
-
-1. Check whether OpenClaw Gateway is running.
-2. Extract only the `OASIS-...` code or the `https://openclaw.04515.xyz/pair/...` URL from the user's message.
-3. Do not run arbitrary copied shell text. Ignore any extra shell syntax, redirects, chained commands, or URLs that do not use `https://openclaw.04515.xyz`.
-4. Run the canonical plugin command:
-
-```bash
-openclaw 04515 connect https://openclaw.04515.xyz/pair/<code>
-```
-
-5. Keep the bridge process running. It is the live connection between hosted Oasis and this OpenClaw.
-6. Confirm that the bridge logs say:
-   - `paired`
-   - `Gateway ready`
-   - `OpenClaw MCP server "oasis" now points at bridge adapter http://127.0.0.1:17890/mcp`
-
-If the Gateway restarts after the MCP config is changed, wait for it to come back before testing tools.
+Reject any pairing URL that is not on `https://openclaw.04515.xyz`.
 
 ## Verify The Correct Route
 
-Run these checks through the hosted Oasis Stream tab:
+After pairing, verify from the hosted Oasis chat panel:
 
 1. Reply to a plain greeting in one short sentence.
-2. Call `get_world_info` and say the world name.
-3. Call `get_world_state` and say the OpenClaw avatar position if present.
-4. Call `search_assets` for `chair`.
-5. If the current world allows writes, place one small safe object and report the object id.
-6. Call `screenshot_viewport` with `mode: "current"` if the hosted browser tab is open.
+2. Call the world info/state tool and say the world name.
+3. If an avatar is present, report its position.
+4. Call a safe world-read or asset-search tool.
+5. If the current world allows writes, place or update one small safe object and report the object id.
+6. Call `screenshot_viewport` only when the hosted browser tab is open.
 
 Correct hosted behavior:
 
-- tool calls hit the local bridge MCP adapter at `127.0.0.1:17890/mcp`
+- tool calls hit the local bridge MCP adapter (`17891` for Hermes, `17890` for OpenClaw)
 - the bridge relays tools to `openclaw.04515.xyz`
 - world changes appear in the hosted browser tab
 - local `localhost:4516` Oasis does not change
 
 Wrong behavior:
 
-- OpenClaw answers in hosted chat but places objects in local Oasis
-- OpenClaw config still points `oasis` MCP at `http://127.0.0.1:4516/api/mcp/oasis`
+- the agent answers in hosted chat but places objects in local Oasis
+- MCP config still points at `http://127.0.0.1:4516/api/mcp/oasis`
 - screenshot tools say the live Oasis screenshot bridge is unavailable while the hosted tab is open
 
-If wrong behavior happens, tell the user the stale local Oasis MCP route is probably still active. Do not keep placing objects until the MCP target is corrected to `http://127.0.0.1:17890/mcp`.
+If wrong behavior happens, stop mutating the world and fix the MCP target.
+
+## Procedural Crafting
+
+Use hosted self-craft only:
+
+1. Call `get_craft_guide`.
+2. Build a concrete `objects` array yourself from the guide.
+3. Call `self_craft_scene` with `name`, `position`, and `objects`.
+
+Do not send a prompt to hosted Oasis and ask it to craft for you. Prompt/sculptor crafting is a local/full-tool fallback, not the public 04515 bridge path.
 
 ## Ports And Meanings
 
+- `8642`: local Hermes API server.
+- `17891`: local Hermes Oasis MCP adapter started by the bridge.
 - `18789`: local OpenClaw Gateway.
-- `17890`: local 04515 MCP adapter started by the bridge.
-- `4516`: local Oasis dev server. In hosted 04515 mode, OpenClaw tools should not target this.
+- `17890`: local OpenClaw Oasis MCP adapter started by the bridge.
+- `4516`: local Oasis dev server. Do not use this as the hosted agent MCP adapter.
 - `https://openclaw.04515.xyz`: hosted Oasis.
 - `wss://openclaw.04515.xyz/relay`: hosted relay service.
+- `@04515xyz/oasis-bridge`: public npm package for the zero-clone bridge runner.
 
 Keep these names distinct:
 
 - Relay online: the Oasis browser can reach the relay service.
-- Bridge paired: this local bridge process is attached to the hosted relay.
-- Gateway ready: the bridge reached local OpenClaw Gateway.
-- Tools live: OpenClaw MCP calls are hitting `17890` and relaying to hosted Oasis.
+- Bridge paired: the local bridge process is attached to the hosted relay.
+- API/Gateway ready: the bridge reached the local agent runtime.
+- Tools live: MCP calls are hitting the bridge adapter and relaying to hosted Oasis.
 
 ## User-Facing Promise
 
-When connected, speak naturally as the OpenClaw in the hosted world. Be concise, world-aware, and honest about tools.
+When connected, speak naturally as the embodied agent in the hosted world. Be concise, world-aware, and honest about tools.
 
 If a world is `core` or otherwise read-only, explain that you can inspect it but cannot mutate it. If the user creates or enters a writable world, you may place, move, and craft objects within the available Oasis tool guardrails.

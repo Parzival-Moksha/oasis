@@ -8,6 +8,7 @@ import { useContext } from 'react'
 import { useOasisStore } from '../../../store/oasisStore'
 import type { PlacementVfxType } from '../../../store/oasisStore'
 import { SettingsContext } from '../../scene-lib/contexts'
+import { PortalTransitionSettingsPanel } from '../PortalTransitionSettingsPanel'
 
 export function SettingsTab() {
   const conjureVfxType = useOasisStore(s => s.conjureVfxType)
@@ -130,6 +131,8 @@ export function SettingsTab() {
         </div>
 
         {/* ░▒▓ Panel opacity — driven by system uiOpacity setting ▓▒░ */}
+        <PortalTransitionSettingsPanel />
+
         <div>
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-gray-500 uppercase tracking-wider font-mono whitespace-nowrap">Panel Opacity</span>

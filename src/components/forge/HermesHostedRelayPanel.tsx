@@ -11,6 +11,7 @@ import { awardXp } from '@/hooks/useXp'
 import { useOasisStore } from '@/store/oasisStore'
 import { PUBLIC_TOOL_NAMES } from '@/lib/relay/public-spellbook.js'
 import { useAudioManager } from '@/lib/audio-manager'
+import { getCameraSnapshot } from '@/lib/camera-bridge'
 import { AvatarGallery } from './AvatarGallery'
 
 interface HermesHostedRelayPanelProps {
@@ -30,6 +31,7 @@ interface RelayPairingResult {
   agentType?: string
   agentSlot?: string
   agentLabel?: string
+  reused?: boolean
 }
 
 interface RelayChatMessage {
@@ -44,7 +46,7 @@ const HERMES_RELAY_SCOPES = ['world.read', 'world.write.safe', 'screenshot.reque
 const HERMES_RELAY_TOOLS: readonly string[] = Object.freeze([...PUBLIC_TOOL_NAMES])
 const HERMES_AGENT_TYPE = 'hermes'
 const HERMES_AGENT_SLOT = 'hermes:primary'
-const HERMES_AGENT_LABEL = 'hermes-bridge'
+const HERMES_AGENT_LABEL = 'Hermes'
 const CHAT_KEY = 'oasis-hermes-hosted-relay-chat'
 const SESSION_KEY = 'oasis-hermes-hosted-relay-session'
 const SETTINGS_KEY = 'oasis-hermes-hosted-relay-settings'
@@ -54,12 +56,14 @@ interface HermesRelayPanelSettings {
   bgColor: string
   opacity: number
   avatarUrl: string | null
+  agentLabel: string
 }
 
 const DEFAULT_PANEL_SETTINGS: HermesRelayPanelSettings = {
   bgColor: '#090704',
   opacity: 0.94,
   avatarUrl: DEFAULT_HERMES_AVATAR_URL,
+  agentLabel: HERMES_AGENT_LABEL,
 }
 
 function randomId(prefix: string) {
@@ -108,6 +112,9 @@ function readStoredPanelSettings(): HermesRelayPanelSettings {
       bgColor: typeof record.bgColor === 'string' ? record.bgColor : DEFAULT_PANEL_SETTINGS.bgColor,
       opacity,
       avatarUrl: typeof record.avatarUrl === 'string' ? record.avatarUrl : DEFAULT_PANEL_SETTINGS.avatarUrl,
+      agentLabel: typeof record.agentLabel === 'string' && record.agentLabel.trim()
+        ? record.agentLabel.trim().slice(0, 48)
+        : DEFAULT_PANEL_SETTINGS.agentLabel,
     }
   } catch {
     return DEFAULT_PANEL_SETTINGS
@@ -140,27 +147,60 @@ function isLocalOasisOrigin(origin: string): boolean {
   }
 }
 
-function buildHermesRelayCommand(pairing: RelayPairingResult | null, origin: string): string {
+function shellArg(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return 'Hermes'
+  if (/^[A-Za-z0-9._:-]+$/.test(trimmed)) return trimmed
+  return `"${trimmed.replace(/(["\\$`])/g, '\\$1')}"`
+}
+
+function buildHermesRelayCommand(pairing: RelayPairingResult | null, origin: string, agentLabel = HERMES_AGENT_LABEL): string {
   if (!pairing) return ''
   const normalizedOrigin = normalizeCommandOrigin(origin)
   const pairingRef = normalizedOrigin
     ? `${normalizedOrigin}/pair/${encodeURIComponent(pairing.code)}`
     : pairing.code
-  const base = `npx -y @04515xyz/oasis-bridge@latest hermes ${pairingRef} --agent-slot=${HERMES_AGENT_SLOT} --label=${HERMES_AGENT_LABEL}`
+  const base = `npx -y @04515xyz/oasis-bridge@latest hermes ${pairingRef} --agent-slot=${HERMES_AGENT_SLOT} --label=${shellArg(agentLabel)}`
   if (!isLocalOasisOrigin(normalizedOrigin)) return base
   const relayHost = localRelayHostFromOrigin(normalizedOrigin)
   return `${base} --relay-url="ws://${relayHost}:4517/?role=agent"`
 }
 
-function buildHermesRelayPasteText(pairing: RelayPairingResult | null, origin: string): string {
+function buildHermesRelayPasteText(pairing: RelayPairingResult | null, origin: string, agentLabel = HERMES_AGENT_LABEL): string {
   if (!pairing) return ''
   return [
-    'Connect this Hermes agent to Oasis.',
+    `Connect this Hermes agent to Oasis as ${agentLabel.trim() || HERMES_AGENT_LABEL}.`,
     '',
-    buildHermesRelayCommand(pairing, origin),
+    'If your Oasis/04515 skill is missing or stale, install or update it first:',
+    'hermes skills install https://openclaw.04515.xyz/skill.md --name 04515 --force',
     '',
-    'Keep that bridge process running. After it pairs, chat and Oasis world tools are live in the Hermes window.',
+    'Then run this bridge command:',
+    buildHermesRelayCommand(pairing, origin, agentLabel),
+    '',
+    'Important: do not add --mcp-port=4516. The Hermes bridge uses 17891 by default.',
+    'Keep that bridge process running. After it pairs, run /reload-mcp in an already-open Hermes chat if Oasis tools do not appear.',
   ].join('\n')
+}
+
+function hermesWindowSpawnPosition(): [number, number, number] {
+  const state = useOasisStore.getState()
+  const avatar = state.placedAgentAvatars.find(entry => entry.agentType === 'hermes')
+  const avatarPosition = avatar
+    ? state.transforms[avatar.id]?.position || avatar.position
+    : null
+  if (avatarPosition) {
+    return [avatarPosition[0] + 1.65, Math.max(2.2, avatarPosition[1] + 1.45), avatarPosition[2] + 1.1]
+  }
+
+  const camera = getCameraSnapshot()
+  if (camera) {
+    return [
+      camera.position[0] + camera.forward[0] * 3.8,
+      Math.max(2.2, camera.position[1] - 0.25),
+      camera.position[2] + camera.forward[2] * 3.8,
+    ]
+  }
+  return [0, 2.2, 4]
 }
 
 function formatPairingCountdown(expiresAt: number, now: number): string {
@@ -188,6 +228,21 @@ function copyText(value: string) {
   return navigator.clipboard.writeText(value).catch(() => undefined)
 }
 
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 45_000) {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(input, { ...init, signal: controller.signal })
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`request timed out after ${Math.round(timeoutMs / 1000)}s`)
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
 export function HermesHostedRelayPanel({
   isOpen,
   onClose,
@@ -201,7 +256,6 @@ export function HermesHostedRelayPanel({
   const panelZIndex = useOasisStore(state => state.getPanelZIndex('hermes', 9998))
   const activeWorldId = useOasisStore(state => state.activeWorldId)
   const hermesAvatar = useOasisStore(state => state.placedAgentAvatars.find(entry => entry.agentType === 'hermes') || null)
-  const assignHermesAvatar = useOasisStore(state => state.assignHermesAvatar)
   const focusPanelUI = useCallback(() => {
     useInputManager.getState().enterUIFocus()
   }, [])
@@ -212,6 +266,8 @@ export function HermesHostedRelayPanel({
   const pendingAssistantIdRef = useRef('')
   const awardedConnectionXpRef = useRef(false)
   const dragRef = useRef<{ startX: number; startY: number; left: number; top: number } | null>(null)
+  const resizeRef = useRef<{ startX: number; startY: number; width: number; height: number } | null>(null)
+  const restoredPairingRef = useRef('')
   const [messages, setMessages] = useState<RelayChatMessage[]>(() => readStoredMessages())
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
@@ -226,11 +282,15 @@ export function HermesHostedRelayPanel({
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [showAvatarGallery, setShowAvatarGallery] = useState(false)
   const [panelPosition, setPanelPosition] = useState({ left: 18, top: 132 })
+  const [panelSize, setPanelSize] = useState({ width: 600, height: 680 })
   const [draggingPanel, setDraggingPanel] = useState(false)
+  const [resizingPanel, setResizingPanel] = useState(false)
   const [buttonPose, setButtonPose] = useState({ x: 50, y: 50, rx: 0, ry: 0, lift: 0 })
+  const [pastePose, setPastePose] = useState({ x: 50, y: 50, rx: 0, ry: 0, lift: 0 })
 
   const origin = typeof window === 'undefined' ? '' : window.location.origin
-  const pairingPasteText = useMemo(() => buildHermesRelayPasteText(pairing, origin), [origin, pairing])
+  const agentLabel = panelSettings.agentLabel.trim() || HERMES_AGENT_LABEL
+  const pairingPasteText = useMemo(() => buildHermesRelayPasteText(pairing, origin, agentLabel), [agentLabel, origin, pairing])
   const isVisible = embedded || isOpen
   const relayBridge = useOpenclawRelayBridge({
     enabled: isVisible && relayEnabled && Boolean(activeWorldId),
@@ -287,6 +347,34 @@ export function HermesHostedRelayPanel({
   }, [pairing?.expiresAt])
 
   useEffect(() => {
+    if (!isVisible || !activeWorldId || pairing || relayBridge.status === 'paired') return
+    const restoreKey = `${activeWorldId}:${HERMES_AGENT_SLOT}`
+    if (restoredPairingRef.current === restoreKey) return
+    restoredPairingRef.current = restoreKey
+
+    let cancelled = false
+    const params = new URLSearchParams({
+      agentType: HERMES_AGENT_TYPE,
+      agentSlot: HERMES_AGENT_SLOT,
+      worldId: activeWorldId,
+    })
+    fetch(`/api/relay/pairings?${params.toString()}`, { credentials: 'same-origin' })
+      .then(response => response.ok ? response.json() : null)
+      .then((json: unknown) => {
+        if (cancelled) return
+        const pairings = (json as { pairings?: RelayPairingResult[] } | null)?.pairings
+        const active = Array.isArray(pairings) ? pairings[0] : null
+        if (active?.code && active.expiresAt > Date.now()) {
+          setPairing(active)
+          setRelayEnabled(true)
+        }
+      })
+      .catch(() => {})
+
+    return () => { cancelled = true }
+  }, [activeWorldId, isVisible, pairing, relayBridge.status])
+
+  useEffect(() => {
     if (relayBridge.status === 'closed' || relayBridge.status === 'error') {
       if (isStreaming) setIsStreaming(false)
       pendingAssistantIdRef.current = ''
@@ -325,6 +413,31 @@ export function HermesHostedRelayPanel({
     }
   }, [draggingPanel])
 
+  useEffect(() => {
+    if (!resizingPanel) return
+    const handleMove = (event: MouseEvent) => {
+      if (!resizeRef.current) return
+      const viewportWidth = window.innerWidth
+      const viewportHeight = window.innerHeight
+      const maxWidth = Math.max(360, viewportWidth - panelPosition.left - 12)
+      const maxHeight = Math.max(360, viewportHeight - panelPosition.top - 12)
+      setPanelSize({
+        width: Math.min(maxWidth, Math.max(420, resizeRef.current.width + event.clientX - resizeRef.current.startX)),
+        height: Math.min(maxHeight, Math.max(420, resizeRef.current.height + event.clientY - resizeRef.current.startY)),
+      })
+    }
+    const handleUp = () => {
+      resizeRef.current = null
+      setResizingPanel(false)
+    }
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+  }, [panelPosition.left, panelPosition.top, resizingPanel])
+
   const startPanelDrag = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
     if (embedded || event.button !== 0) return
     const target = event.target as HTMLElement | null
@@ -342,16 +455,46 @@ export function HermesHostedRelayPanel({
     setDraggingPanel(true)
   }, [embedded, focusPanelUI, panelPosition.left, panelPosition.top])
 
+  const startPanelResize = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
+    if (embedded || event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    useOasisStore.getState().bringPanelToFront('hermes')
+    focusPanelUI()
+    resizeRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      width: panelSize.width,
+      height: panelSize.height,
+    }
+    setResizingPanel(true)
+  }, [embedded, focusPanelUI, panelSize.height, panelSize.width])
+
   const updatePanelSettings = useCallback((patch: Partial<HermesRelayPanelSettings>) => {
     setPanelSettings(current => ({ ...current, ...patch }))
   }, [])
 
   const manifestHermesAvatar = useCallback((avatarUrl?: string | null) => {
     const selectedAvatar = avatarUrl || hermesAvatar?.avatar3dUrl || panelSettings.avatarUrl || DEFAULT_HERMES_AVATAR_URL
+    let windowId = useOasisStore.getState().placedAgentWindows.find(entry => entry.agentType === 'hermes')?.id || ''
+    if (!windowId) {
+      windowId = 'agent-hermes-default'
+      useOasisStore.getState().addAgentWindow({
+        id: windowId,
+        agentType: 'hermes',
+        position: hermesWindowSpawnPosition(),
+        rotation: [0, 0, 0],
+        scale: 0.2,
+        width: 800,
+        height: 600,
+        label: 'Hermes',
+        renderMode: 'live-html',
+      })
+    }
     updatePanelSettings({ avatarUrl: selectedAvatar })
-    assignHermesAvatar(selectedAvatar)
+    useOasisStore.getState().assignSharedAgentAvatar('hermes', selectedAvatar, { preferredWindowId: windowId })
     useAudioManager.getState().play('place')
-  }, [assignHermesAvatar, hermesAvatar?.avatar3dUrl, panelSettings.avatarUrl, updatePanelSettings])
+  }, [hermesAvatar?.avatar3dUrl, panelSettings.avatarUrl, updatePanelSettings])
 
   const updateButtonPose = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -366,6 +509,19 @@ export function HermesHostedRelayPanel({
     })
   }, [])
 
+  const updatePastePose = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const x = ((event.clientX - rect.left) / rect.width) * 100
+    const y = ((event.clientY - rect.top) / rect.height) * 100
+    setPastePose({
+      x,
+      y,
+      rx: (50 - y) * 0.12,
+      ry: (x - 50) * 0.14,
+      lift: 1,
+    })
+  }, [])
+
   const flashCopied = useCallback((key: string) => {
     setCopied(key)
     window.setTimeout(() => setCopied(current => current === key ? '' : current), 1200)
@@ -376,15 +532,19 @@ export function HermesHostedRelayPanel({
       setPairingError('active world is required')
       return
     }
+    if (pairing && pairing.expiresAt > Date.now()) {
+      setRelayEnabled(true)
+      flashCopied('paste')
+      void copyText(pairingPasteText)
+      useAudioManager.getState().play('select')
+      return
+    }
 
     useAudioManager.getState().play('buttonClick')
     setPairingBusy(true)
     setPairingError('')
     try {
-      const sessionResponse = await fetch('/api/session/init', { credentials: 'same-origin' })
-      if (!sessionResponse.ok) throw new Error(`session init failed: HTTP ${sessionResponse.status}`)
-
-      const response = await fetch('/api/relay/pairings', {
+      const pairingRequest: RequestInit = {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json' },
@@ -393,11 +553,18 @@ export function HermesHostedRelayPanel({
           scopes: HERMES_RELAY_SCOPES,
           agentType: HERMES_AGENT_TYPE,
           agentSlot: HERMES_AGENT_SLOT,
-          agentLabel: HERMES_AGENT_LABEL,
+          agentLabel,
+          reuseActive: true,
         }),
-      })
+      }
+      let response = await fetchWithTimeout('/api/relay/pairings', pairingRequest)
+      if (response.status === 401) {
+        const sessionResponse = await fetchWithTimeout('/api/session/init', { credentials: 'same-origin' })
+        if (!sessionResponse.ok) throw new Error(`session init failed: HTTP ${sessionResponse.status}`)
+        response = await fetchWithTimeout('/api/relay/pairings', pairingRequest)
+      }
       const json = await response.json().catch(() => null) as
-        | { ok: true; code: string; expiresAt: number; worldId: string; scopes: string[]; agentType?: string; agentSlot?: string; agentLabel?: string }
+        | { ok: true; reused?: boolean; code: string; expiresAt: number; worldId: string; scopes: string[]; agentType?: string; agentSlot?: string; agentLabel?: string }
         | { ok: false; error: { code: string; message: string } }
         | null
       if (!json) throw new Error(`pairing failed: HTTP ${response.status}`)
@@ -411,15 +578,15 @@ export function HermesHostedRelayPanel({
         agentType: json.agentType,
         agentSlot: json.agentSlot,
         agentLabel: json.agentLabel,
+        reused: 'reused' in json ? Boolean(json.reused) : false,
       })
       setRelayEnabled(true)
     } catch (error) {
       setPairingError(error instanceof Error ? error.message : String(error))
-      setPairing(null)
     } finally {
       setPairingBusy(false)
     }
-  }, [activeWorldId])
+  }, [activeWorldId, agentLabel, flashCopied, pairing, pairingPasteText])
 
   const startNewChat = useCallback(() => {
     pendingAssistantIdRef.current = ''
@@ -472,24 +639,28 @@ export function HermesHostedRelayPanel({
 
   if (!isVisible || typeof document === 'undefined') return null
 
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+  const renderedPanelWidth = Math.min(panelSize.width, Math.max(420, viewportWidth - panelPosition.left - 12))
+  const renderedPanelHeight = Math.min(panelSize.height, Math.max(420, viewportHeight - panelPosition.top - 12))
+
   const panelBody = (
     <div
       data-menu-portal={embedded ? undefined : 'hermes-hosted-relay-panel'}
       data-ui-panel
       className={`${embedded ? 'relative h-full w-full' : 'fixed'} min-h-0 min-w-0 flex flex-col overflow-hidden rounded-lg border border-amber-400/30 text-amber-50 shadow-2xl`}
       style={{
-        ...(embedded ? {} : {
-          zIndex: panelZIndex,
-          left: panelPosition.left,
-          top: panelPosition.top,
-          width: 'min(600px, calc(100vw - 32px))',
-          height: 'min(74vh, 680px)',
-        }),
-        width: embedded ? '100%' : undefined,
-        height: embedded ? '100%' : undefined,
+        zIndex: embedded ? undefined : panelZIndex,
+        left: embedded ? undefined : panelPosition.left,
+        top: embedded ? undefined : panelPosition.top,
+        width: embedded ? '100%' : renderedPanelWidth,
+        height: embedded ? '100%' : renderedPanelHeight,
+        maxWidth: embedded ? undefined : 'calc(100vw - 16px)',
+        maxHeight: embedded ? undefined : 'calc(100vh - 16px)',
         backgroundColor: panelSettings.bgColor,
         opacity: panelSettings.opacity,
         fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif',
+        userSelect: draggingPanel || resizingPanel ? 'none' : 'auto',
       }}
       onMouseDown={event => {
         event.stopPropagation()
@@ -572,7 +743,7 @@ export function HermesHostedRelayPanel({
             data-no-drag
             onClick={() => { if (!isPaired) void requestPairing() }}
             onMouseMove={updateButtonPose}
-            onMouseEnter={() => useAudioManager.getState().play('buttonHover')}
+            onMouseEnter={() => useAudioManager.getState().play('select')}
             onMouseLeave={() => setButtonPose({ x: 50, y: 50, rx: 0, ry: 0, lift: 0 })}
             disabled={!canRequestPairing && !isPaired}
             className={`group relative min-h-[126px] w-full overflow-hidden rounded-lg px-5 py-5 text-center transition duration-150 ${isPaired ? 'cursor-default border border-emerald-200/70 bg-emerald-400/20 shadow-[0_0_58px_rgba(16,185,129,0.32)]' : 'cursor-pointer border border-amber-100/50 bg-amber-300/10 shadow-[0_0_42px_rgba(245,158,11,0.28)] hover:border-white hover:shadow-[0_0_80px_rgba(250,204,21,0.42)]'} disabled:cursor-not-allowed disabled:opacity-45`}
@@ -615,14 +786,37 @@ export function HermesHostedRelayPanel({
             </button>
             <button
               data-no-drag
-              onClick={() => { void copyText(pairingPasteText); flashCopied('paste') }}
-              className="w-full rounded-lg border border-white/10 bg-black/24 px-3 py-2 text-left transition hover:border-amber-300/35"
+              onClick={() => {
+                useAudioManager.getState().play('notification')
+                void copyText(pairingPasteText)
+                flashCopied('paste')
+              }}
+              onMouseMove={updatePastePose}
+              onMouseEnter={() => useAudioManager.getState().play('select')}
+              onMouseLeave={() => setPastePose({ x: 50, y: 50, rx: 0, ry: 0, lift: 0 })}
+              className="group relative w-full overflow-hidden rounded-lg border border-cyan-200/25 bg-black/40 px-3 py-2 text-left transition duration-150 hover:border-cyan-100 hover:shadow-[0_0_38px_rgba(34,211,238,0.24)]"
+              style={{
+                '--px': `${pastePose.x}%`,
+                '--py': `${pastePose.y}%`,
+                transform: `perspective(760px) rotateX(${pastePose.rx}deg) rotateY(${pastePose.ry}deg) translateY(${pastePose.lift ? -2 : 0}px)`,
+                transformStyle: 'preserve-3d',
+              } as CSSProperties}
             >
-              <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-100/62">
-                paste into Hermes
+              <span
+                className="pointer-events-none absolute inset-0 opacity-0 transition group-hover:opacity-100"
+                style={{
+                  background: 'radial-gradient(circle at var(--px) var(--py), rgba(255,255,255,0.42), rgba(34,211,238,0.15) 22%, transparent 52%)',
+                }}
+              />
+              <span className="pointer-events-none absolute inset-x-[-40%] top-0 h-px bg-gradient-to-r from-transparent via-cyan-200 to-transparent opacity-80 transition group-hover:translate-x-1/3" />
+              <span className="relative flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-100/78">
+                <span>paste into Hermes</span>
+                <span className="rounded border border-cyan-200/25 px-2 py-0.5 text-[9px] text-white/85">
+                  {copied === 'paste' ? 'copied' : 'copy text'}
+                </span>
               </span>
-              <span className="mt-1 block break-all font-mono text-[11px] leading-5 text-amber-50/88">
-                {copied === 'paste' ? 'copied ' : ''}{pairingPasteText}
+              <span className="relative mt-2 block max-h-40 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-white/10 bg-black/34 p-2 font-mono text-[11px] leading-5 text-amber-50/88">
+                {pairingPasteText}
               </span>
             </button>
           </div>
@@ -638,6 +832,16 @@ export function HermesHostedRelayPanel({
       {settingsOpen && (
         <div data-no-drag className="border-b border-white/10 bg-black/50 px-3 py-3">
           <div className="grid gap-3 sm:grid-cols-2">
+            <label className="min-w-0 text-[10px] uppercase tracking-[0.16em] text-amber-100/62">
+              Agent name
+              <input
+                type="text"
+                value={panelSettings.agentLabel}
+                maxLength={48}
+                onChange={event => updatePanelSettings({ agentLabel: event.target.value })}
+                className="mt-1 h-9 w-full rounded border border-white/10 bg-black/40 px-2 text-[12px] normal-case tracking-normal text-amber-50 outline-none focus:border-cyan-200/45"
+              />
+            </label>
             <label className="min-w-0 text-[10px] uppercase tracking-[0.16em] text-amber-100/62">
               Background
               <div className="mt-1 flex items-center gap-2">
@@ -750,6 +954,16 @@ export function HermesHostedRelayPanel({
           </button>
         </div>
       </div>
+      {!embedded && (
+        <button
+          data-no-drag
+          aria-label="Resize Hermes panel"
+          onMouseDown={startPanelResize}
+          className="absolute bottom-1 right-1 h-5 w-5 cursor-nwse-resize rounded border border-white/10 bg-white/[0.04] text-[10px] text-amber-100/50 hover:border-cyan-200/40 hover:text-cyan-100"
+        >
+          /
+        </button>
+      )}
       <style>{`
         @keyframes hermesConnectSpin {
           from { transform: rotate(0deg); }
@@ -760,10 +974,8 @@ export function HermesHostedRelayPanel({
         <AvatarGallery
           currentAvatarUrl={hermesAvatar?.avatar3dUrl || panelSettings.avatarUrl}
           onSelect={avatarUrl => {
-            updatePanelSettings({ avatarUrl: avatarUrl || DEFAULT_HERMES_AVATAR_URL })
-            assignHermesAvatar(avatarUrl || null)
+            manifestHermesAvatar(avatarUrl || DEFAULT_HERMES_AVATAR_URL)
             setShowAvatarGallery(false)
-            useAudioManager.getState().play('place')
           }}
           onClose={() => setShowAvatarGallery(false)}
         />

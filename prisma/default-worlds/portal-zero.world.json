@@ -13,121 +13,8 @@
     "version": 1,
     "terrain": null,
     "groundPresetId": "cobble",
-    "craftedScenes": [
-      {
-        "id": "craft-welcome-starwell-ring",
-        "name": "Portal Zero Ring",
-        "prompt": "A glowing Portal Zero ring with a swirling starfield core.",
-        "position": [
-          0,
-          1.8,
-          -12
-        ],
-        "createdAt": "2026-05-05T18:50:47.556Z",
-        "objects": [
-          {
-            "type": "torus",
-            "position": [
-              0,
-              0,
-              0
-            ],
-            "rotation": [
-              1.5707963267948966,
-              0,
-              0
-            ],
-            "scale": [
-              2,
-              2,
-              2
-            ],
-            "color": "#7e3bff",
-            "emissive": "#a07bff",
-            "emissiveIntensity": 0.35,
-            "metalness": 0.3,
-            "roughness": 0.4,
-            "animation": {
-              "type": "rotate",
-              "axis": "z",
-              "speed": 0.25
-            }
-          },
-          {
-            "type": "glow_orb",
-            "position": [
-              0,
-              0,
-              0
-            ],
-            "scale": [
-              1.6,
-              1.6,
-              1.6
-            ],
-            "color": "#9be0ff",
-            "color2": "#7e3bff",
-            "intensity": 0.85,
-            "speed": 0.45,
-            "opacity": 0.35
-          },
-          {
-            "type": "particle_emitter",
-            "position": [
-              -1.6,
-              0,
-              0
-            ],
-            "scale": [
-              0.4,
-              0.4,
-              0.4
-            ],
-            "color": "#fff5b8",
-            "particleCount": 36,
-            "particleType": "firefly",
-            "speed": 0.45
-          },
-          {
-            "type": "particle_emitter",
-            "position": [
-              1.6,
-              0,
-              0
-            ],
-            "scale": [
-              0.4,
-              0.4,
-              0.4
-            ],
-            "color": "#fff5b8",
-            "particleCount": 36,
-            "particleType": "firefly",
-            "speed": 0.45
-          },
-          {
-            "type": "text",
-            "position": [
-              0,
-              2.4,
-              0
-            ],
-            "scale": [
-              1,
-              1,
-              1
-            ],
-            "color": "#ffe9b8",
-            "emissive": "#ffe9b8",
-            "emissiveIntensity": 0.25,
-            "text": "Portal Zero",
-            "fontSize": 0.6,
-            "anchorX": "center",
-            "anchorY": "middle"
-          }
-        ]
-      }
-    ],
+    "groundTiles": {},
+    "craftedScenes": [],
     "conjuredAssetIds": [],
     "catalogPlacements": [
       {
@@ -333,26 +220,242 @@
           0
         ],
         "scale": 1.3
+      }
+    ],
+    "portalGates": [
+      {
+        "id": "portal-gate-world-1773879273716-x6ev",
+        "variant": "threshold-ring",
+        "position": [
+          3.3677786976552215e-16,
+          0,
+          -5.5
+        ],
+        "rotationY": 3.141592653589793,
+        "scale": 1,
+        "width": 2.4,
+        "height": 3.2,
+        "direction": "two-way",
+        "targetWorldId": "world-1773879273716-x6ev",
+        "targetWorldName": "SQLITE test",
+        "inert": false
       },
       {
-        "id": "catalog-qf_banner_1-1778007047556-13",
-        "catalogId": "qf_banner_1",
-        "name": "Banner",
-        "glbPath": "/models/quaternius-fantasy/Banner_1.gltf",
+        "id": "portal-gate-world-1773881811005-f777",
+        "variant": "void-door",
         "position": [
+          5.230810839623344,
           0,
+          -1.6995934690622108
+        ],
+        "rotationY": 1.8849555921538759,
+        "scale": 1,
+        "width": 2.4,
+        "height": 3.2,
+        "direction": "two-way",
+        "targetWorldId": "world-1773881811005-f777",
+        "targetWorldName": "fastworld",
+        "inert": false
+      },
+      {
+        "id": "portal-gate-world-1773911271021-csk9",
+        "variant": "hologram-gate",
+        "position": [
+          3.232818887608602,
           0,
-          6
+          4.449593469062211
+        ],
+        "rotationY": 0.6283185307179586,
+        "scale": 1,
+        "width": 2.4,
+        "height": 3.2,
+        "direction": "two-way",
+        "targetWorldId": "world-1773911271021-csk9",
+        "targetWorldName": "videotest",
+        "inert": false
+      },
+      {
+        "id": "portal-gate-world-1773921133291-b2ea",
+        "variant": "solar-arch",
+        "position": [
+          -3.2328188876086017,
+          0,
+          4.449593469062211
+        ],
+        "rotationY": -0.6283185307179586,
+        "scale": 1,
+        "width": 2.4,
+        "height": 3.2,
+        "direction": "two-way",
+        "targetWorldId": "world-1773921133291-b2ea",
+        "targetWorldName": "Anoraktest",
+        "inert": false
+      },
+      {
+        "id": "portal-gate-world-1773958302651-tgum",
+        "variant": "rift-slit",
+        "position": [
+          -5.230810839623345,
+          0,
+          -1.69959346906221
+        ],
+        "rotationY": -1.8849555921538759,
+        "scale": 1,
+        "width": 2.4,
+        "height": 3.2,
+        "direction": "two-way",
+        "targetWorldId": "world-1773958302651-tgum",
+        "targetWorldName": "The Forge",
+        "inert": false
+      },
+      {
+        "id": "portal-1778033291281-p3dq-a",
+        "variant": "threshold-ring",
+        "position": [
+          23.016416873174144,
+          0,
+          -10.27803741114937
+        ],
+        "rotationY": 0,
+        "scale": 1,
+        "width": 2.4,
+        "height": 3.2,
+        "direction": "two-way",
+        "sourceWorldId": "world-welcome-hub-system",
+        "targetWorldId": "world-1773879273716-x6ev",
+        "targetWorldName": "SQLITE test",
+        "linkedPortalId": "portal-1778033291281-p3dq-b",
+        "inert": false
+      },
+      {
+        "id": "portal-1778033296489-zai8-a",
+        "variant": "stargate-vortex",
+        "position": [
+          27.4486795757477,
+          0,
+          -9.166472402221462
+        ],
+        "rotationY": 0,
+        "scale": 1,
+        "width": 2.4,
+        "height": 3.2,
+        "direction": "two-way",
+        "sourceWorldId": "world-welcome-hub-system",
+        "targetWorldId": "world-1776290179104-dkwk",
+        "targetWorldName": "Crystal Cavern",
+        "linkedPortalId": "portal-1778033296489-zai8-b",
+        "inert": false
+      },
+      {
+        "id": "portal-1778077205293-7qbu-a",
+        "variant": "solar-arch",
+        "position": [
+          17.13551704884542,
+          0,
+          3.334759725016456
+        ],
+        "rotationY": 0,
+        "scale": 1,
+        "width": 2.4,
+        "height": 3.2,
+        "direction": "two-way",
+        "sourceWorldId": "world-welcome-hub-system",
+        "targetWorldId": "world-1775929250245-829s",
+        "targetWorldName": "Apr 11 showcase",
+        "linkedPortalId": "portal-1778077205293-7qbu-b",
+        "inert": false
+      },
+      {
+        "id": "portal-1778077319453-u0i3-a",
+        "variant": "void-door",
+        "position": [
+          14.157384331790784,
+          0,
+          12.888316038299116
+        ],
+        "rotationY": 0,
+        "scale": 1,
+        "width": 2.4,
+        "height": 3.2,
+        "direction": "two-way",
+        "sourceWorldId": "world-welcome-hub-system",
+        "targetWorldId": "world-1774823035369-jjqw",
+        "targetWorldName": "Mindcraft",
+        "linkedPortalId": "portal-1778077319453-u0i3-b",
+        "inert": false
+      }
+    ],
+    "transforms": {
+      "portal-gate-world-1773958302651-tgum": {
+        "position": [
+          -5.230810839623345,
+          0,
+          -1.69959346906221
+        ],
+        "rotation": [
+          0,
+          -1.8849555921538759,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "portal-1778033291281-p3dq-a": {
+        "position": [
+          23.016416873174144,
+          0,
+          -10.27803741114937
         ],
         "rotation": [
           0,
           0,
           0
         ],
-        "scale": 1.5
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "portal-1778033296489-zai8-a": {
+        "position": [
+          27.4486795757477,
+          0,
+          -9.166472402221462
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "portal-1778077205293-7qbu-a": {
+        "position": [
+          17.13551704884542,
+          0,
+          3.334759725016456
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
       }
-    ],
-    "transforms": {},
+    },
+    "behaviors": {},
     "lights": [
       {
         "id": "light-ambient-1778007047556-1",
@@ -394,17 +497,6 @@
         ]
       },
       {
-        "id": "light-point-1778007047556-4",
-        "type": "point",
-        "color": "#9b6cff",
-        "intensity": 3.2,
-        "position": [
-          0,
-          2.5,
-          -12
-        ]
-      },
-      {
         "id": "light-point-1778007047556-5",
         "type": "point",
         "color": "#ffb070",
@@ -417,25 +509,6 @@
       }
     ],
     "skyBackgroundId": "belfast_sunset",
-    "agentAvatars": [
-      {
-        "id": "agent-avatar-openclaw-welcome",
-        "agentType": "openclaw",
-        "avatar3dUrl": "/avatars/gallery/CaptainLobster.vrm",
-        "position": [
-          0,
-          0,
-          -3
-        ],
-        "rotation": [
-          0,
-          3.141592653589793,
-          0
-        ],
-        "scale": 1.2,
-        "label": "OpenClaw"
-      }
-    ],
     "agentWindows": [
       {
         "id": "agent-window-openclaw-welcome",
@@ -459,6 +532,25 @@
         "label": "OpenClaw"
       }
     ],
-    "savedAt": "2026-05-05T18:50:47.556Z"
+    "agentAvatars": [
+      {
+        "id": "agent-avatar-openclaw-welcome",
+        "agentType": "openclaw",
+        "avatar3dUrl": "/avatars/gallery/CaptainLobster.vrm",
+        "position": [
+          0,
+          0,
+          -3
+        ],
+        "rotation": [
+          0,
+          3.141592653589793,
+          0
+        ],
+        "scale": 1.2,
+        "label": "OpenClaw"
+      }
+    ],
+    "savedAt": "2026-05-07T00:50:21.114Z"
   }
 }
