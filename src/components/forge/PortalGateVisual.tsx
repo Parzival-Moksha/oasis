@@ -1146,12 +1146,14 @@ function StoneCaveMouth({
   seed = 500,
   count = 30,
   scale = [1, 1, 1],
+  showBacking = true,
 }: {
   mood: PortalMood
   inert?: boolean
   seed?: number
   count?: number
   scale?: [number, number, number]
+  showBacking?: boolean
 }) {
   const colors = MOOD_COLORS[mood]
   const rocks = useMemo(() => {
@@ -1175,10 +1177,12 @@ function StoneCaveMouth({
 
   return (
     <group scale={scale}>
-      <mesh position={[0, 0.03, -0.16]} scale={[1.34, 1.62, 1]}>
-        <circleGeometry args={[0.9, 96]} />
-        <meshBasicMaterial color="#030306" transparent opacity={inert ? 0.42 : 0.78} side={THREE.DoubleSide} depthWrite={false} />
-      </mesh>
+      {showBacking && (
+        <mesh position={[0, 0.03, -0.16]} scale={[1.34, 1.62, 1]}>
+          <circleGeometry args={[0.9, 96]} />
+          <meshBasicMaterial color="#030306" transparent opacity={inert ? 0.42 : 0.78} side={THREE.DoubleSide} depthWrite={false} />
+        </mesh>
+      )}
       {rocks.map((rock, index) => (
         <mesh key={index} position={[rock.x, rock.y, rock.z]} rotation={rock.rotate} scale={rock.squash}>
           {index % 5 === 0 ? <boxGeometry args={[rock.size * 1.4, rock.size, rock.size * 0.76]} /> : <dodecahedronGeometry args={[rock.size, 0]} />}
@@ -1912,12 +1916,12 @@ function StargateVortex({ inert }: { inert?: boolean }) {
 function CrystalCavern({ inert }: { inert?: boolean }) {
   return (
     <group position={[0, 1.48, 0]}>
-      <StoneCaveMouth mood="rift" inert={inert} scale={[1.55, 1.42, 1]} seed={9897} count={44} />
-      <StencilVoidAperture mood="rift" seed={7897} shape="ellipse" size={[0.98, 1.9]} intensity={1.16} inert={inert} />
+      <StoneCaveMouth mood="rift" inert={inert} scale={[1.55, 1.42, 1]} seed={9897} count={44} showBacking={false} />
+      <StencilVoidAperture mood="rift" seed={7897} shape="ellipse" size={[1.3, 2.12]} intensity={1.16} inert={inert} />
       {Array.from({ length: 9 }, (_, index) => {
         const side = index % 2 === 0 ? -1 : 1
         const y = -1.1 + index * 0.28
-        const x = side * (0.74 + (index % 3) * 0.12)
+        const x = side * (0.9 + (index % 3) * 0.13)
         return (
           <mesh key={index} position={[x, y, 0.04]} rotation={[0.2, 0.3, side * 0.42]}>
             <octahedronGeometry args={[index % 3 === 0 ? 0.24 : 0.17, 0]} />
