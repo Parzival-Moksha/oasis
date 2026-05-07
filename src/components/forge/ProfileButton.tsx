@@ -11,6 +11,7 @@ import { SettingsContext } from '../scene-lib'
 import { useOasisStore } from '@/store/oasisStore'
 import { AvatarGallery } from './AvatarGallery'
 import { useUILayer } from '@/lib/input-manager'
+import { useAudioManager } from '@/lib/audio-manager'
 import { fmtTokens } from '@/lib/anorak-engine'
 import {
   type ProfileTokenBurnSummaryData,
@@ -367,7 +368,11 @@ export function ProfileButton() {
           {/* Menu items */}
           <div className="p-2">
             <button
-              onClick={() => { setShowAvatarGallery(true); setIsOpen(false) }}
+              onClick={() => {
+                useAudioManager.getState().play('chooseCharacter')
+                setShowAvatarGallery(true)
+                setIsOpen(false)
+              }}
               className="w-full text-left px-3 py-2 rounded text-sm transition-colors cursor-pointer"
               style={{
                 color: profile.avatar_3d_url ? '#A855F7' : '#60A5FA',

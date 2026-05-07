@@ -25,7 +25,14 @@ import { useAudioManager } from '../../lib/audio-manager'
 import { getLipSync } from '../../lib/lip-sync'
 import { sprintRef } from '../CameraController'
 import { SettingsContext } from '../scene-lib'
-import { PLAYER_AVATAR_LIPSYNC_ID, getPlayerSpellCasting, setPlayerAvatarPose, setPlayerSpellCasting, subscribePlayerSpellCasting } from '../../lib/player-avatar-runtime'
+import {
+  PLAYER_AVATAR_LIPSYNC_ID,
+  getPlayerSpellCasting,
+  setPlayerAvatarPose,
+  setPlayerSpellCasting,
+  subscribePlayerAvatarTeleport,
+  subscribePlayerSpellCasting,
+} from '../../lib/player-avatar-runtime'
 import { SPELL_CAST_ANIMATION_ID, SPELL_CAST_SOUND_URL } from '../../lib/spell-casting'
 import { PORTAL_REVEAL_ROLL_EVENT } from '../../lib/portal-transition-settings'
 
@@ -312,7 +319,7 @@ export function PlayerAvatar({
         portalRollTimeoutRef.current = window.setTimeout(() => {
           const nextController = animControllerRef.current
           if (!nextController || nextController.state !== 'custom') return
-          nextController.transitionTo(isMovingRef.current ? 'run' : 'idle')
+          nextController.transitionTo('idle')
         }, 2300)
       })
     }
@@ -323,6 +330,19 @@ export function PlayerAvatar({
       if (portalRollTimeoutRef.current) window.clearTimeout(portalRollTimeoutRef.current)
       portalRollTimeoutRef.current = null
     }
+  }, [])
+
+  useEffect(() => {
+    return subscribePlayerAvatarTeleport((pose) => {
+      positionRef.current.set(...pose.position)
+      facingAngle.current = pose.yaw
+      velocityRef.current.set(0, 0, 0)
+      isMovingRef.current = false
+      if (groupRef.current) {
+        groupRef.current.position.copy(positionRef.current)
+        groupRef.current.rotation.y = facingAngle.current
+      }
+    })
   }, [])
 
   useEffect(() => {

@@ -5,6 +5,7 @@
 
 import { useCallback } from 'react'
 import type { XpAction } from '@/lib/xp'
+import { useAudioManager } from '@/lib/audio-manager'
 
 interface XpResult {
   xp: number
@@ -86,6 +87,7 @@ function getTitleForLevel(level: number) {
 function showLevelUpVFX(newLevel: number) {
   if (typeof document === 'undefined') return
 
+  useAudioManager.getState().play('levelUp')
   const title = getTitleForLevel(newLevel)
 
   // ░▒▓ 1. SCREEN FLASH — white burst that fades to gold ▓▒░

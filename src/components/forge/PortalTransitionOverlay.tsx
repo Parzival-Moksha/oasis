@@ -72,8 +72,12 @@ function layerBackground(effect: PortalTransitionEffect, phase: PhaseName, progr
       repeating-conic-gradient(from ${progress * -520}deg, rgba(250,204,21,0.72) 0deg, rgba(250,204,21,0.08) 8deg, rgba(0,0,0,0.85) 14deg, rgba(0,0,0,0.9) 24deg)`
   }
   if (effect === 'root-tendrils') {
-    return `radial-gradient(circle at 50% 50%, rgba(0,0,0,${0.72 + progress * 0.22}) 0%, rgba(5,46,22,0.88) 38%, rgba(0,0,0,0.96) 100%),
-      conic-gradient(from ${progress * 120}deg, rgba(34,197,94,0.2), rgba(20,83,45,0.82), rgba(0,0,0,0.94), rgba(134,239,172,0.22))`
+    return `radial-gradient(circle at 50% 50%, rgba(0,0,0,1) 0%, rgba(2,20,10,1) 34%, rgba(0,0,0,1) 100%),
+      conic-gradient(from ${progress * 120}deg, rgba(34,197,94,0.36), rgba(20,83,45,1), rgba(0,0,0,1), rgba(134,239,172,0.34))`
+  }
+  if (effect === 'wire-wormhole' || effect === 'spiral-wormhole' || effect === 'broken-wormhole') {
+    return `radial-gradient(circle at 50% 50%, rgba(255,255,255,${0.08 + alpha * 0.12}) 0%, rgba(15,23,42,0.48) 17%, rgba(0,0,0,0.96) 52%, rgba(0,0,0,1) 100%),
+      repeating-radial-gradient(circle at 50% 50%, rgba(103,232,249,0.22) 0 1px, rgba(0,0,0,0) 2px 18px)`
   }
   if (effect === 'rainbow-vortex') {
     return `radial-gradient(circle at 50% 50%, rgba(255,255,255,${0.1 + alpha * 0.2}) 0%, rgba(0,0,0,0.12) 14%, rgba(0,0,0,0.86) 76%, rgba(0,0,0,0.96) 100%),
@@ -137,13 +141,27 @@ export function PortalTransitionOverlay() {
 
   const tendrils = useMemo(() => {
     const seed = active?.seed ?? 0
-    return Array.from({ length: 38 }, (_, index) => ({
-      angle: (index / 38) * 360 + Math.sin(seed + index) * 18,
-      length: 34 + ((index * 17) % 44),
-      width: 3 + (index % 5),
-      offset: 8 + ((index * 19) % 30),
+    return Array.from({ length: 86 }, (_, index) => ({
+      angle: (index / 86) * 360 + Math.sin(seed + index) * 22,
+      length: 58 + ((index * 17) % 58),
+      width: 5 + (index % 9),
+      offset: -12 + ((index * 19) % 42),
       bend: Math.sin(seed * 0.2 + index * 2.4) * 24,
     }))
+  }, [active?.seed])
+
+  const wormholeRings = useMemo(() => {
+    const seed = active?.seed ?? 0
+    return Array.from({ length: 34 }, (_, index) => {
+      const driftA = Math.sin(seed + index * 1.7)
+      const driftB = Math.cos(seed * 0.6 + index * 2.1)
+      return {
+        base: index / 34,
+        wobble: driftA,
+        bend: driftB,
+        twist: Math.sin(seed * 0.3 + index * 3.3),
+      }
+    })
   }, [active?.seed])
 
   if (!active) return null
@@ -156,6 +174,8 @@ export function PortalTransitionOverlay() {
   const shake = settings.shake * (phase === 'tunnel' ? 16 : 8) * Math.sin(tick * 38)
   const zoom = effect === 'star-streak'
     ? 1.05 + progress * (phase === 'tunnel' ? 1.4 : 0.55) * settings.particleSpeed
+    : effect === 'wire-wormhole' || effect === 'spiral-wormhole' || effect === 'broken-wormhole'
+      ? 1.02 + progress * (0.32 + settings.particleSpeed * 0.18)
     : effect === 'rainbow-vortex'
       ? 1.02 + progress * 0.42
       : 1 + Math.sin(progress * Math.PI) * 0.12 * settings.intensity
@@ -183,7 +203,11 @@ export function PortalTransitionOverlay() {
       className="fixed inset-0 pointer-events-none z-[260] overflow-hidden"
       style={{
         opacity,
-        background: phase === 'reveal' ? `rgba(0,0,0,${0.68 * (1 - progress)})` : 'rgba(0,0,0,0.08)',
+        background: effect === 'root-tendrils'
+          ? '#010604'
+          : phase === 'reveal'
+            ? `rgba(0,0,0,${0.68 * (1 - progress)})`
+            : 'rgba(0,0,0,0.08)',
         backdropFilter: `blur(${phase === 'tunnel' ? 3 + settings.intensity * 2 : progress * 2}px) hue-rotate(${totalProgress * 210}deg) saturate(${1 + settings.intensity * 0.55})`,
       }}
     >
@@ -252,7 +276,7 @@ export function PortalTransitionOverlay() {
       {effect === 'root-tendrils' && (
         <div className="absolute inset-0">
           {tendrils.map((tendril, index) => {
-            const grow = phase === 'reveal' ? 1 - progress : Math.min(1, progress * 1.6)
+            const grow = phase === 'reveal' ? Math.max(0.28, 1 - progress * 0.72) : Math.min(1, 0.35 + progress * 1.5)
             return (
               <i
                 key={index}
@@ -264,17 +288,72 @@ export function PortalTransitionOverlay() {
                   height: `${tendril.length}vh`,
                   borderRadius: 999,
                   background: index % 4 === 0
-                    ? 'linear-gradient(180deg, rgba(134,239,172,0.92), rgba(21,128,61,0.18))'
-                    : 'linear-gradient(180deg, rgba(54,83,59,0.95), rgba(2,20,10,0.2))',
+                    ? 'linear-gradient(180deg, rgba(134,239,172,1), rgba(21,128,61,0.42), rgba(0,0,0,0.96))'
+                    : 'linear-gradient(180deg, rgba(74,92,64,1), rgba(2,20,10,0.86), rgba(0,0,0,0.98))',
                   transformOrigin: '50% 0%',
                   transform: `rotate(${tendril.angle + tendril.bend * Math.sin(tick * 3 + index)}deg) translateY(${tendril.offset}vh) scaleY(${grow})`,
-                  opacity: 0.18 + grow * 0.72,
+                  opacity: 0.45 + grow * 0.55,
                   boxShadow: index % 5 === 0 ? '0 0 18px rgba(134,239,172,0.6)' : 'none',
                 }}
               />
             )
           })}
         </div>
+      )}
+
+      {(effect === 'wire-wormhole' || effect === 'spiral-wormhole' || effect === 'broken-wormhole') && (
+        <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <defs>
+            <filter id="wormhole-glow">
+              <feGaussianBlur stdDeviation="0.6" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+          <g filter="url(#wormhole-glow)" style={{ mixBlendMode: 'screen' }}>
+            {wormholeRings.map((ring, index) => {
+              const travel = (ring.base + tick * 0.16 * settings.particleSpeed) % 1
+              const shaped = travel * travel
+              const spiral = effect === 'spiral-wormhole' ? tick * 1.8 + index * 0.42 : index * 0.18
+              const broken = effect === 'broken-wormhole' ? Math.sin(tick * 5.5 + index) * 9 : 0
+              const cx = 50 + Math.sin(spiral + ring.wobble) * (4 + shaped * 14) + broken * shaped
+              const cy = 50 + Math.cos(spiral * 0.82 + ring.bend) * (3 + shaped * 11) - broken * 0.42 * shaped
+              const rx = 1.4 + shaped * 46
+              const ry = 0.9 + shaped * 29
+              const opacityRing = Math.max(0, (1 - shaped) * 0.12 + shaped * 0.95) * (phase === 'reveal' ? 1 - progress * 0.85 : 1)
+              const prev = wormholeRings[index - 1]
+              const prevTravel = prev ? (prev.base + tick * 0.16 * settings.particleSpeed) % 1 : null
+              const prevShaped = prevTravel == null ? null : prevTravel * prevTravel
+              const prevCx = prev && prevShaped != null ? 50 + Math.sin((effect === 'spiral-wormhole' ? tick * 1.8 + (index - 1) * 0.42 : (index - 1) * 0.18) + prev.wobble) * (4 + prevShaped * 14) : cx
+              const prevCy = prev && prevShaped != null ? 50 + Math.cos((effect === 'spiral-wormhole' ? tick * 1.8 + (index - 1) * 0.42 : (index - 1) * 0.18) * 0.82 + prev.bend) * (3 + prevShaped * 11) : cy
+              return (
+                <g key={index}>
+                  {index > 0 && (
+                    <>
+                      <line x1={prevCx - rx * 0.55} y1={prevCy} x2={cx - rx * 0.55} y2={cy} stroke="rgba(103,232,249,0.48)" strokeWidth="0.18" opacity={opacityRing} />
+                      <line x1={prevCx + rx * 0.55} y1={prevCy} x2={cx + rx * 0.55} y2={cy} stroke="rgba(255,255,255,0.34)" strokeWidth="0.12" opacity={opacityRing} />
+                      <line x1={prevCx} y1={prevCy - ry * 0.55} x2={cx} y2={cy - ry * 0.55} stroke="rgba(167,139,250,0.36)" strokeWidth="0.12" opacity={opacityRing} />
+                    </>
+                  )}
+                  <ellipse
+                    cx={cx}
+                    cy={cy}
+                    rx={rx}
+                    ry={ry}
+                    fill="none"
+                    stroke={effect === 'broken-wormhole' && index % 3 === 0 ? 'rgba(244,114,182,0.86)' : index % 2 ? 'rgba(103,232,249,0.92)' : 'rgba(255,255,255,0.78)'}
+                    strokeWidth={effect === 'wire-wormhole' ? 0.24 : 0.34}
+                    strokeDasharray={effect === 'broken-wormhole' ? '1.2 1.6' : effect === 'spiral-wormhole' ? '2.2 1.1' : 'none'}
+                    opacity={opacityRing}
+                    transform={`rotate(${ring.twist * 42 + tick * 28}, ${cx}, ${cy})`}
+                  />
+                </g>
+              )
+            })}
+          </g>
+        </svg>
       )}
 
       <div

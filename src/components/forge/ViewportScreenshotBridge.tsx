@@ -13,6 +13,7 @@ type ScreenshotFormat = 'jpeg' | 'png' | 'webp'
 const ACTIVE_POLL_MS = 250
 const IDLE_POLL_MS = 2000
 const HIDDEN_POLL_MS = 5000
+const MAX_SCREENSHOT_DATA_URL_CHARS = 850_000
 
 interface ScreenshotViewRequest {
   id: string
@@ -39,9 +40,20 @@ interface PendingScreenshotRequest {
   views: ScreenshotViewRequest[]
 }
 
-function waitForAnimationFrame() {
+function waitForAnimationFrame(maxWaitMs = 750) {
   return new Promise<void>(resolve => {
-    window.requestAnimationFrame(() => resolve())
+    let done = false
+    const timeoutId = window.setTimeout(() => {
+      if (done) return
+      done = true
+      resolve()
+    }, maxWaitMs)
+    window.requestAnimationFrame(() => {
+      if (done) return
+      done = true
+      window.clearTimeout(timeoutId)
+      resolve()
+    })
   })
 }
 
@@ -51,7 +63,7 @@ function createDataUrlFromPixels(
   height: number,
   format: ScreenshotFormat,
   quality: number,
-): string {
+): { dataUrl: string; format: ScreenshotFormat } {
   const imageData = new ImageData(new Uint8ClampedArray(pixels), width, height)
   const sourceCanvas = document.createElement('canvas')
   sourceCanvas.width = width
@@ -67,7 +79,12 @@ function createDataUrlFromPixels(
   ctx.drawImage(sourceCanvas, 0, 0)
 
   const mime = format === 'png' ? 'image/png' : format === 'webp' ? 'image/webp' : 'image/jpeg'
-  return flippedCanvas.toDataURL(mime, quality)
+  let dataUrl = flippedCanvas.toDataURL(mime, quality)
+  if (dataUrl.length > MAX_SCREENSHOT_DATA_URL_CHARS && format !== 'jpeg') {
+    dataUrl = flippedCanvas.toDataURL('image/jpeg', Math.min(0.88, Math.max(0.65, quality || 0.82)))
+    return { dataUrl, format: 'jpeg' }
+  }
+  return { dataUrl, format }
 }
 
 export function ViewportScreenshotBridge() {
@@ -350,11 +367,11 @@ export function ViewportScreenshotBridge() {
 
       const pixels = new Uint8Array(width * height * 4)
       gl.readRenderTargetPixels(renderTarget, 0, 0, width, height, pixels)
-      const dataUrl = createDataUrlFromPixels(pixels, width, height, request.format, request.quality)
+      const { dataUrl, format } = createDataUrlFromPixels(pixels, width, height, request.format, request.quality)
       return {
         viewId: view.id,
         base64: dataUrl.split(',')[1] || '',
-        format: request.format,
+        format,
       }
     } catch (error) {
       console.warn('[ViewportScreenshotBridge] Capture failed:', error)
@@ -371,6 +388,37 @@ export function ViewportScreenshotBridge() {
     let cancelled = false
     let timeoutId: number | null = null
 
+    const deliverScreenshotResult = async (
+      request: PendingScreenshotRequest,
+      captures: Array<{ viewId: string; base64: string; format: ScreenshotFormat }>,
+    ) => {
+      const response = await fetch('/api/oasis-tools', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requestId: request.id,
+          requesterAgentType: request.requesterAgentType,
+          views: request.views.map(view => ({
+            agentType: view.agentType,
+          })),
+          screenshotCaptures: captures,
+        }),
+      })
+      if (!response.ok) {
+        const text = await response.text().catch(() => '')
+        throw new Error(`screenshot delivery failed: HTTP ${response.status}${text ? ` ${text.slice(0, 180)}` : ''}`)
+      }
+    }
+
+    const deliverScreenshotFailure = async (request: PendingScreenshotRequest, error: unknown) => {
+      try {
+        console.warn('[ViewportScreenshotBridge] Delivering screenshot failure:', error)
+        await deliverScreenshotResult(request, [])
+      } catch (deliveryError) {
+        console.warn('[ViewportScreenshotBridge] Failed to deliver screenshot failure:', deliveryError)
+      }
+    }
+
     const scheduleNext = (delay: number) => {
       if (cancelled) return
       if (timeoutId !== null) {
@@ -383,6 +431,7 @@ export function ViewportScreenshotBridge() {
 
     const poll = async () => {
       if (cancelled) return
+      let activeRequest: PendingScreenshotRequest | null = null
 
       let nextDelay = typeof document !== 'undefined' && document.visibilityState === 'hidden'
         ? HIDDEN_POLL_MS
@@ -403,6 +452,7 @@ export function ViewportScreenshotBridge() {
 
         const request = payload?.screenshotPending ? payload.screenshotRequest : null
         if (!request || !request.id || !Array.isArray(request.views) || request.views.length === 0) return
+        activeRequest = request
 
         nextDelay = ACTIVE_POLL_MS
         busyRef.current = true
@@ -419,20 +469,12 @@ export function ViewportScreenshotBridge() {
           .map(view => captureView(request, view))
           .filter((capture): capture is { viewId: string; base64: string; format: ScreenshotFormat } => !!capture && !!capture.base64)
 
-        await fetch('/api/oasis-tools', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            requestId: request.id,
-            requesterAgentType: request.requesterAgentType,
-            views: request.views.map(view => ({
-              agentType: view.agentType,
-            })),
-            screenshotCaptures: captures,
-          }),
-        })
+        await deliverScreenshotResult(request, captures)
       } catch (error) {
         console.warn('[ViewportScreenshotBridge] Poll failed:', error)
+        if (activeRequest) {
+          await deliverScreenshotFailure(activeRequest, error)
+        }
       } finally {
         busyRef.current = false
         scheduleNext(nextDelay)

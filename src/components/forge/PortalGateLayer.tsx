@@ -3,12 +3,14 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
-import { getPlayerAvatarPose } from '../../lib/player-avatar-runtime'
+import { getPlayerAvatarPose, requestPlayerAvatarTeleport, type PlayerAvatarPose } from '../../lib/player-avatar-runtime'
 import {
   DEFAULT_PORTAL_ACTIVATION_DEPTH,
   createPortalTriggerState,
   getPortalGateLabel,
+  layoutPortalAreaGates,
   markPortalTriggered,
+  portalRotationTowardCenter,
   resolvePortalGateAction,
   shouldTriggerPortal,
   type PortalGate,
@@ -125,6 +127,91 @@ function applyPortalTransform(
   }
 }
 
+function derivePortalArrivalPose(
+  gate: PortalGate,
+  transforms?: Record<string, { position?: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number } | undefined>,
+): PlayerAvatarPose {
+  const placedGate = applyPortalTransform(gate, transforms?.[gate.id])
+  const normal = portalFacingNormal(placedGate)
+  const arrivalDistance = Math.max(DEFAULT_PORTAL_ACTIVATION_DEPTH + 0.65, 1.15)
+  const position: [number, number, number] = [
+    placedGate.position[0] + normal.x * arrivalDistance,
+    placedGate.position[1],
+    placedGate.position[2] + normal.z * arrivalDistance,
+  ]
+  const yaw = placedGate.rotationY ?? 0
+  return {
+    position,
+    yaw,
+    forward: [normal.x, 0, normal.z],
+  }
+}
+
+async function waitForWorldReady(worldId: string, timeoutMs = 1800): Promise<void> {
+  const start = performance.now()
+  while (performance.now() - start < timeoutMs) {
+    const state = useOasisStore.getState()
+    if (state.activeWorldId === worldId && state._worldReady) return
+    await sleep(40)
+  }
+}
+
+async function ensureReturnPortalForArrival(args: {
+  sourceGate: PortalGate
+  sourceWorldId: string
+  sourceWorldName: string
+  targetWorldId: string
+  targetWorldName?: string
+}): Promise<PlayerAvatarPose | null> {
+  const { sourceGate, sourceWorldId, sourceWorldName, targetWorldId } = args
+  if (sourceGate.direction !== 'two-way') return null
+
+  const targetState = await loadWorld(targetWorldId)
+  if (!targetState) return null
+  const targetGates = targetState.portalGates || []
+  const existingReturnGate = targetGates.find(gate =>
+    gate.linkedPortalId === sourceGate.id ||
+    gate.id === sourceGate.linkedPortalId ||
+    (
+      gate.direction === 'two-way' &&
+      gate.sourceWorldId === targetWorldId &&
+      gate.targetWorldId === sourceWorldId
+    )
+  )
+
+  if (existingReturnGate) {
+    return derivePortalArrivalPose(existingReturnGate, targetState.transforms)
+  }
+
+  const returnPosition: [number, number, number] = [30, 0, 0]
+  const returnGate: PortalGate = {
+    id: sourceGate.linkedPortalId || `${sourceGate.id}-return`,
+    variant: sourceGate.variant,
+    label: sourceWorldName,
+    position: returnPosition,
+    rotationY: portalRotationTowardCenter(returnPosition),
+    scale: sourceGate.scale ?? 1,
+    width: sourceGate.width || 2.4,
+    height: sourceGate.height || 3.2,
+    direction: 'two-way',
+    sourceWorldId: targetWorldId,
+    targetWorldId: sourceWorldId,
+    targetWorldName: sourceWorldName,
+    action: { type: 'load_world', worldId: sourceWorldId, worldName: sourceWorldName },
+    linkedPortalId: sourceGate.id,
+    autoLayout: 'portal-area',
+  }
+  const nextPortalGates = layoutPortalAreaGates([...targetGates, returnGate], targetState.transforms)
+  const savedReturnGate = nextPortalGates.find(gate => gate.id === returnGate.id) || returnGate
+  const { version: _version, savedAt: _savedAt, ...targetSaveState } = targetState
+  await saveWorld({
+    ...targetSaveState,
+    portalGates: nextPortalGates,
+  }, targetWorldId)
+
+  return derivePortalArrivalPose(savedReturnGate, targetState.transforms)
+}
+
 export function PortalGateLayer() {
   const { camera } = useThree()
   const activeWorldId = useOasisStore(s => s.activeWorldId)
@@ -162,10 +249,14 @@ export function PortalGateLayer() {
     gate: PortalGate,
     targetWorldName: string | undefined,
     switcher: () => void,
+    options?: { targetWorldId?: string; arrivalPosePromise?: Promise<PlayerAvatarPose | null> },
   ) => {
     const settings = readPortalTransitionSettings()
     if (!settings.enabled) {
+      const arrivalPose = options?.arrivalPosePromise ? await options.arrivalPosePromise.catch(() => null) : null
       switcher()
+      if (options?.targetWorldId) await waitForWorldReady(options.targetWorldId)
+      if (arrivalPose) requestPlayerAvatarTeleport(arrivalPose)
       return
     }
 
@@ -185,7 +276,14 @@ export function PortalGateLayer() {
     try {
       void animatePortalCameraSwallow(camera, gate, settings)
       await sleep(switchDelayMs)
+      const arrivalPose = options?.arrivalPosePromise ? await options.arrivalPosePromise.catch(() => null) : null
       switcher()
+      if (options?.targetWorldId) {
+        await waitForWorldReady(options.targetWorldId)
+      }
+      if (arrivalPose) {
+        requestPlayerAvatarTeleport(arrivalPose)
+      }
       await sleep(remainingTunnelMs)
       if (settings.rollReveal) emitPortalRevealRoll(gate, targetWorldName)
       await sleep(revealMs)
@@ -209,7 +307,18 @@ export function PortalGateLayer() {
       if (action.type === 'load_world') {
         if (action.worldId) {
           const targetWorldName = worldRegistry.find(world => world.id === action.worldId)?.name
-          await runWorldTransition(gate, targetWorldName, () => switchWorld(action.worldId!))
+          const sourceWorldName = worldRegistry.find(world => world.id === activeWorldId)?.name || 'This world'
+          const arrivalPosePromise = ensureReturnPortalForArrival({
+            sourceGate: gate,
+            sourceWorldId: activeWorldId,
+            sourceWorldName,
+            targetWorldId: action.worldId,
+            targetWorldName,
+          })
+          await runWorldTransition(gate, targetWorldName, () => switchWorld(action.worldId!), {
+            targetWorldId: action.worldId,
+            arrivalPosePromise,
+          })
         }
         return
       }
@@ -260,7 +369,7 @@ export function PortalGateLayer() {
         if (activePortalActionRef.current === gate.id) activePortalActionRef.current = null
       }, 750)
     }
-  }, [refreshWorldRegistry, runWorldTransition, switchWorld, worldRegistry])
+  }, [activeWorldId, refreshWorldRegistry, runWorldTransition, switchWorld, worldRegistry])
 
   useFrame(() => {
     if (gates.length === 0) return

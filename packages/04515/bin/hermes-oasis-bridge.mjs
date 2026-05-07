@@ -307,9 +307,13 @@ function buildChatMessages(userText) {
 function buildHermesInstructions() {
   if (systemPrompt.trim()) return systemPrompt.trim()
   const displayName = String(label || 'Hermes').trim() || 'Hermes'
+  const worldLine = activeWorldId
+    ? `Current Oasis worldId: ${activeWorldId}. Use get_world_info or get_world_state when you need the live world name, objects, sky, ground, lights, or screenshot context.`
+    : 'Use the Oasis world tools to discover the live world before making broad assumptions about it.'
   return [
     `You are ${displayName}, a Hermes Agent connected to Oasis as an embodied world agent.`,
     'When the user asks who you are, use that name unless your own configured Hermes profile strongly says otherwise.',
+    worldLine,
     'You can inspect the Oasis world and use the installed Oasis MCP tools when available. Be concise, world-aware, and honest about what you can see or change.',
   ].join(' ')
 }

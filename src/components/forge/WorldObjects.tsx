@@ -947,14 +947,13 @@ function SpatialAudioFromBehavior({ objectId }: { objectId: string }) {
 // ░▒▓ Clone once + kill raycasting — SelectableWrapper handles pointer events ▓▒░
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function CatalogModelRenderer({ path, scale, objectId, displayName }: { path: string; scale: number; objectId?: string; displayName?: string }) {
+export function CatalogModelRenderer({ path, scale, objectId }: { path: string; scale: number; objectId?: string; displayName?: string }) {
   const { scene, animations } = useGLTF(path)
   const sceneRef = useRef<THREE.Group>(null)
   const mixerRef = useRef<THREE.AnimationMixer | null>(null)
   const currentActionRef = useRef<THREE.AnimationAction | null>(null)
   const currentClipRef = useRef<string | null>(null)
   const [hovered, setHovered] = useState(false)
-  const [showLabel, setShowLabel] = useState(false)
 
   // ─═̷─═̷─🦴 SkeletonUtils.clone for proper skinned mesh + bone cloning ─═̷─═̷─🦴
   const clonedScene = useMemo(() => {
@@ -1114,11 +1113,6 @@ export function CatalogModelRenderer({ path, scale, objectId, displayName }: { p
       .finally(() => setObjectMeshStats(objectId, stats))
   }, [objectId, clonedScene, animations, path, setObjectMeshStats])
 
-  // ░▒▓ Triangle count for hover label — extracted from mesh stats ▓▒░
-  const objectStats = useOasisStore(s => objectId ? s.objectMeshStats[objectId] : undefined)
-  const triCount = objectStats?.triangles || 0
-  const labelName = displayName || (objectId ? objectId.replace(/^catalog-/, '').replace(/-\d+$/, '') : 'asset')
-
   return (
     <group ref={sceneRef}>
       {/* Transparent bounding box — cheap raycast target for selection */}
@@ -1140,13 +1134,11 @@ export function CatalogModelRenderer({ path, scale, objectId, displayName }: { p
           e.stopPropagation()
           if (useInputManager.getState().pointerLocked) return
           setHovered(true)
-          setShowLabel(true)
         }}
         onPointerOut={(e) => {
           e.stopPropagation()
           if (useInputManager.getState().pointerLocked) return
           setHovered(false)
-          setShowLabel(false)
         }}
       >
         <boxGeometry args={[
@@ -1166,26 +1158,6 @@ export function CatalogModelRenderer({ path, scale, objectId, displayName }: { p
         </mesh>
       )}
 
-      {/* Info label — name + triangle count, consistent with conjured/crafted */}
-      {showLabel && (
-        <Html position={[0, bounds.size.y * scale + 0.5, 0]} center style={{ pointerEvents: 'none' }}>
-          <div
-            className="px-2 py-1 rounded text-xs whitespace-nowrap select-none pointer-events-none"
-            style={{
-              background: 'rgba(0,0,0,0.85)',
-              border: '1px solid rgba(234,179,8,0.3)',
-              color: '#EAB308',
-            }}
-          >
-            {labelName}
-            {triCount > 0 && (
-              <div className="text-[10px] text-gray-400">
-                {triCount >= 1000 ? `${(triCount / 1000).toFixed(1)}k` : triCount} tris
-              </div>
-            )}
-          </div>
-        </Html>
-      )}
     </group>
   )
 }
@@ -1202,7 +1174,6 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
   const vrmRef = useRef<VRM | null>(null)
   const [vrm, setVrm] = useState<VRM | null>(null)
   const [hovered, setHovered] = useState(false)
-  const [showLabel, setShowLabel] = useState(false)
   const catalogProxyRef = useRef<THREE.Mesh>(null)
   const paintMode = useOasisStore(s => s.paintMode)
   const iblMaterials = useRef<THREE.MeshStandardMaterial[]>([])
@@ -1638,10 +1609,6 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
     setObjectMeshStats(objectId, { triangles: Math.floor(tris), vertices: verts, meshCount, materialCount: 0, boneCount: 1, dimensions: { w: dims.x, h: dims.y, d: dims.z }, clips: [{ name: 'walk', duration: 1 }], fileSize: 0 })
   }, [objectId, vrm, gltf.scene, setObjectMeshStats])
 
-  const objectStats = useOasisStore(s => objectId ? s.objectMeshStats[objectId] : undefined)
-  const triCount = objectStats?.triangles || 0
-  const labelName = displayName || 'VRM Avatar'
-
   // The scene to render — VRM scene (with expressions/spring bones) or raw GLTF fallback
   const renderScene = vrm ? vrm.scene : gltf.scene
 
@@ -1664,13 +1631,11 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
           e.stopPropagation()
           if (useInputManager.getState().pointerLocked) return
           setHovered(true)
-          setShowLabel(true)
         }}
         onPointerOut={(e) => {
           e.stopPropagation()
           if (useInputManager.getState().pointerLocked) return
           setHovered(false)
-          setShowLabel(false)
         }}
       >
         <boxGeometry args={[bounds.size.x * scale, bounds.size.y * scale, bounds.size.z * scale]} />
@@ -1686,22 +1651,6 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
         </mesh>
       )}
 
-      {/* Info label */}
-      {showLabel && (
-        <Html position={[0, bounds.size.y * scale + 0.5, 0]} center style={{ pointerEvents: 'none' }}>
-          <div
-            className="px-2 py-1 rounded text-xs whitespace-nowrap select-none pointer-events-none"
-            style={{ background: 'rgba(0,0,0,0.85)', border: '1px solid rgba(168,85,247,0.3)', color: '#A855F7' }}
-          >
-            {labelName}
-            {triCount > 0 && (
-              <div className="text-[10px] text-gray-400">
-                {triCount >= 1000 ? `${(triCount / 1000).toFixed(1)}k` : triCount} tris • VRM
-              </div>
-            )}
-          </div>
-        </Html>
-      )}
     </group>
   )
 }
@@ -2209,6 +2158,8 @@ function PlacementOverlay() {
       placeLightAt(placementPending.lightType, [pos[0], 3, pos[2]])
     } else if (placementPending.type === 'agent' && placementPending.agentType) {
       // ░▒▓ Agent window placement — create 3D interactive panel ▓▒░
+      const isHermesAgent = placementPending.agentType === 'hermes'
+      const defaultWindowScale = 0.15
       const defaultWindowSize = placementPending.agentType === 'anorak-pro'
         ? { width: 960, height: 720 }
         : placementPending.agentType === 'browser'
@@ -2223,14 +2174,16 @@ function PlacementOverlay() {
       const agentWindow = {
         id: `agent-${placementPending.agentType}-${Date.now()}`,
         agentType: placementPending.agentType as import('../../store/oasisStore').AgentWindowType,
-        position: [pos[0], 1 + (defaultWindowWorldHeight * 0.2) / 2, pos[2]] as [number, number, number],
+        position: [pos[0], 1 + (defaultWindowWorldHeight * defaultWindowScale) / 2, pos[2]] as [number, number, number],
         rotation: [0, 0, 0] as [number, number, number],
-        scale: 0.2,
+        scale: defaultWindowScale,
         width: defaultWindowSize.width,
         height: defaultWindowSize.height,
         sessionId: placementPending.agentSessionId,
         label: placementPending.name,
         renderMode: placementPending.agentRenderMode,
+        frameStyle: isHermesAgent ? 'fire' : undefined,
+        frameThickness: isHermesAgent ? 6 : undefined,
         ...browserDefaults,
       }
       dispatch({
@@ -2243,6 +2196,9 @@ function PlacementOverlay() {
           renderMode: agentWindow.renderMode,
           width: agentWindow.width,
           height: agentWindow.height,
+          scale: agentWindow.scale,
+          frameStyle: agentWindow.frameStyle,
+          frameThickness: agentWindow.frameThickness,
           surfaceUrl: agentWindow.surfaceUrl,
         },
       })

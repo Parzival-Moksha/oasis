@@ -75,6 +75,7 @@ const SESSION_KEY = 'oasis-hermes-hosted-relay-session'
 const SESSIONS_KEY = 'oasis-hermes-hosted-relay-sessions'
 const SETTINGS_KEY = 'oasis-hermes-hosted-relay-settings'
 const DEFAULT_HERMES_AVATAR_URL = '/avatars/gallery/CoolAlien.vrm'
+const HERMES_STREAM_STALL_MS = 180_000
 
 interface HermesRelayPanelSettings {
   bgColor: string
@@ -524,6 +525,20 @@ export function HermesHostedRelayPanel({
   const origin = typeof window === 'undefined' ? '' : window.location.origin
   const agentLabel = panelSettings.agentLabel.trim() || HERMES_AGENT_LABEL
   const pairingPasteText = useMemo(() => buildHermesRelayPasteText(pairing, origin, agentLabel), [agentLabel, origin, pairing])
+  const stopStreaming = useCallback((reason = 'Stopped locally. Hermes may still finish in the bridge process.') => {
+    const assistantId = pendingAssistantIdRef.current
+    pendingAssistantIdRef.current = ''
+    setIsStreaming(false)
+    if (!assistantId) return
+    setMessages(previous => previous.map(message => {
+      if (message.id !== assistantId) return message
+      return {
+        ...message,
+        content: message.content || reason,
+        error: message.content ? reason : message.error,
+      }
+    }))
+  }, [])
   const isVisible = embedded || isOpen
   const relayBridge = useSharedOpenclawRelayBridge({
     enabled: isVisible && relayEnabled && Boolean(activeWorldId),
@@ -533,7 +548,10 @@ export function HermesHostedRelayPanel({
     availableTools: HERMES_RELAY_TOOLS,
     onChatAgentDelta: event => {
       const assistantId = pendingAssistantIdRef.current
-      if (!assistantId || event.sessionId !== sessionId) return
+      if (!assistantId) return
+      if (event.sessionId !== sessionId) {
+        console.warn('[HermesRelay] accepting delta for pending assistant despite session mismatch', { eventSessionId: event.sessionId, sessionId })
+      }
       setMessages(previous => previous.map(message =>
         message.id === assistantId
           ? { ...message, content: message.content + event.text }
@@ -542,7 +560,10 @@ export function HermesHostedRelayPanel({
     },
     onChatAgentFinal: event => {
       const assistantId = pendingAssistantIdRef.current
-      if (!assistantId || event.sessionId !== sessionId) return
+      if (!assistantId) return
+      if (event.sessionId !== sessionId) {
+        console.warn('[HermesRelay] accepting final for pending assistant despite session mismatch', { eventSessionId: event.sessionId, sessionId })
+      }
       setMessages(previous => previous.map(message =>
         message.id === assistantId
           ? { ...message, content: event.text || message.content }
@@ -594,6 +615,14 @@ export function HermesHostedRelayPanel({
   })
 
   useAutoresizeTextarea(inputRef, input, { minPx: 48, maxPx: 180 })
+
+  useEffect(() => {
+    if (!isStreaming) return
+    const timer = window.setTimeout(() => {
+      stopStreaming('Hermes response stalled locally. The bridge can keep working, but this chat input is unlocked.')
+    }, HERMES_STREAM_STALL_MS)
+    return () => window.clearTimeout(timer)
+  }, [isStreaming, stopStreaming])
 
   useEffect(() => {
     const storedMessages = messages.slice(-80)
@@ -808,11 +837,13 @@ export function HermesHostedRelayPanel({
         agentType: 'hermes',
         position: hermesWindowSpawnPosition(),
         rotation: [0, 0, 0],
-        scale: 0.2,
+        scale: 0.15,
         width: 800,
         height: 600,
         label: 'Hermes',
         renderMode: 'live-html',
+        frameStyle: 'fire',
+        frameThickness: 6,
       })
     }
     updatePanelSettings({ avatarUrl: selectedAvatar })
@@ -1292,8 +1323,7 @@ export function HermesHostedRelayPanel({
             data-no-drag
             value={sessionId}
             onChange={event => switchChatSession(event.target.value)}
-            disabled={isStreaming}
-            className="min-w-0 flex-1 rounded-md border border-white/10 bg-black/45 px-2 py-1.5 text-[11px] text-amber-50 outline-none hover:border-amber-300/35 disabled:opacity-50"
+            className="min-w-0 flex-1 rounded-md border border-white/10 bg-black/45 px-2 py-1.5 text-[11px] text-amber-50 outline-none hover:border-amber-300/35"
           >
             {sessionSummaries.map(session => (
               <option key={session.id} value={session.id}>
@@ -1304,8 +1334,7 @@ export function HermesHostedRelayPanel({
           <button
             data-no-drag
             onClick={startNewChat}
-            disabled={isStreaming}
-            className="rounded-md border border-cyan-300/25 bg-cyan-300/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-cyan-50 transition hover:border-cyan-100 hover:bg-cyan-300/20 disabled:opacity-40"
+            className="rounded-md border border-cyan-300/25 bg-cyan-300/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-cyan-50 transition hover:border-cyan-100 hover:bg-cyan-300/20"
           >
             new session
           </button>
@@ -1324,18 +1353,22 @@ export function HermesHostedRelayPanel({
             }}
             rows={3}
             maxLength={6000}
-            disabled={relayBridge.status !== 'paired' || isStreaming}
+            disabled={relayBridge.status !== 'paired'}
             placeholder={relayBridge.status === 'paired' ? 'Talk to Hermes...' : 'Pair Hermes first...'}
             className="min-h-[48px] min-w-0 flex-1 resize-none rounded-lg border border-amber-500/20 bg-white/[0.06] px-3 py-2 text-xs text-white outline-none placeholder:text-amber-100/45 disabled:opacity-60"
           />
           <button
             data-no-drag
-            onClick={sendMessage}
-            disabled={!canSend}
-            className="rounded-lg border border-amber-500/30 bg-amber-500/35 px-3 py-2 text-xs font-bold text-white transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-30"
+            onClick={isStreaming ? () => stopStreaming() : sendMessage}
+            disabled={isStreaming ? false : !canSend}
+            className={`rounded-lg border px-3 py-2 text-xs font-bold text-white transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-30 ${
+              isStreaming
+                ? 'border-red-400/35 bg-red-500/35'
+                : 'border-amber-500/30 bg-amber-500/35'
+            }`}
             style={{ minWidth: 70 }}
           >
-            send
+            {isStreaming ? 'stop' : 'send'}
           </button>
         </div>
       </div>

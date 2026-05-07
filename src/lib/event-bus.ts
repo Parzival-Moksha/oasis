@@ -37,7 +37,7 @@ export type OasisCommand =
   | { type: 'UNFOCUS_IMAGE' }
   | { type: 'NEXT_SLIDE' }
   | { type: 'PREV_SLIDE' }
-  | { type: 'ADD_AGENT_WINDOW'; payload: { agentType: string; position: [number, number, number]; sessionId?: string; label?: string; renderMode?: AgentWindowRenderMode; width?: number; height?: number; browserSurfaceMode?: BrowserSurfaceMode; surfaceUrl?: string; captureSourceId?: string; captureSourceName?: string; captureFps?: number } }
+  | { type: 'ADD_AGENT_WINDOW'; payload: { agentType: string; position: [number, number, number]; sessionId?: string; label?: string; renderMode?: AgentWindowRenderMode; width?: number; height?: number; scale?: number; frameStyle?: string; frameThickness?: number; browserSurfaceMode?: BrowserSurfaceMode; surfaceUrl?: string; captureSourceId?: string; captureSourceName?: string; captureFps?: number } }
   | { type: 'REMOVE_AGENT_WINDOW'; payload: { id: string } }
 
   // Camera
@@ -249,12 +249,14 @@ export function registerStoreHandler(): () => void {
           agentType: cmd.payload.agentType,
           position: cmd.payload.position,
           rotation: [0, 0, 0],
-          scale: 0.2,
+          scale: cmd.payload.scale ?? 0.15,
           width: cmd.payload.width || 800,
           height: cmd.payload.height || 600,
           sessionId: cmd.payload.sessionId,
           label: cmd.payload.label,
           renderMode: cmd.payload.renderMode,
+          frameStyle: cmd.payload.frameStyle,
+          frameThickness: cmd.payload.frameThickness,
           browserSurfaceMode: cmd.payload.browserSurfaceMode,
           surfaceUrl: cmd.payload.surfaceUrl,
           captureSourceId: cmd.payload.captureSourceId,

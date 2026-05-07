@@ -8,7 +8,7 @@
 
 import { useRef, useState, useEffect, useMemo } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
-import { Html, Text3D, Center } from '@react-three/drei'
+import { Text3D, Center } from '@react-three/drei'
 import * as THREE from 'three'
 import type { CraftedScene, CraftedPrimitive } from '../../lib/conjure/types'
 import { useOasisStore } from '../../store/oasisStore'
@@ -305,8 +305,6 @@ interface CraftedSceneRendererProps {
 export function CraftedSceneRenderer({ scene, onDelete: _onDelete }: CraftedSceneRendererProps) {
   const groupRef = useRef<THREE.Group>(null)
   const [hovered, setHovered] = useState(false)
-  const [showLabel, setShowLabel] = useState(false)
-  const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const spawnProgress = useRef(0)
   const spawnDone = useRef(false)
 
@@ -346,16 +344,12 @@ export function CraftedSceneRenderer({ scene, onDelete: _onDelete }: CraftedScen
       onPointerOver={(e) => {
         e.stopPropagation()
         if (useInputManager.getState().pointerLocked) return
-        if (hoverTimeout.current) { clearTimeout(hoverTimeout.current); hoverTimeout.current = null }
         setHovered(true)
-        setShowLabel(true)
       }}
       onPointerOut={(e) => {
         e.stopPropagation()
         if (useInputManager.getState().pointerLocked) return
         setHovered(false)
-        // Debounce label hide — prevents flicker when raycaster briefly loses the mesh
-        hoverTimeout.current = setTimeout(() => setShowLabel(false), 150)
       }}
     >
       {scene.objects.map((primitive, i) => (
@@ -370,28 +364,6 @@ export function CraftedSceneRenderer({ scene, onDelete: _onDelete }: CraftedScen
         </mesh>
       )}
 
-      {/* Info label — name + triangle count, consistent with conjured/catalog */}
-      {showLabel && (
-        <Html position={[0, 4, 0]} center style={{ pointerEvents: 'none' }}>
-          <div
-            className="px-2 py-1 rounded text-xs whitespace-nowrap select-none pointer-events-none"
-            style={{
-              background: 'rgba(0,0,0,0.85)',
-              border: '1px solid rgba(59,130,246,0.4)',
-              color: '#3B82F6',
-            }}
-          >
-            {scene.name}
-            <div className="text-[10px] text-gray-400">
-              {scene.objects.reduce((sum, obj) => {
-                // Estimate tris from primitive types
-                const PRIM_TRIS: Record<string, number> = { box: 12, sphere: 960, cylinder: 96, cone: 64, torus: 768, plane: 2, ring: 128, circle: 32 }
-                return sum + (PRIM_TRIS[(obj as any).geometry || 'box'] || 12)
-              }, 0).toLocaleString()} tris
-            </div>
-          </div>
-        </Html>
-      )}
     </group>
   )
 }

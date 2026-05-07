@@ -22,7 +22,6 @@ import { formatNumber, formatBytes } from './ModelPreview'
 import { ANIMATION_LIBRARY, ANIM_CATEGORIES, LIB_PREFIX, loadAnimationClip, type AnimCategory } from '../../lib/forge/animation-library'
 import { FRAME_STYLES, getAudioElement } from './WorldObjects'
 import { useUILayer } from '@/lib/input-manager'
-import { AGENT_WINDOW_RENDERERS, getAgentWindowRendererMeta, type AgentWindowRenderMode } from '../../lib/agent-window-renderers'
 import { PORTAL_GATE_VARIANT_DEFS, resolvePortalGateAction, type PortalAction, type PortalGate, type PortalGateVariant } from '../../lib/portal-gates'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1627,7 +1626,6 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
 
         {resolved?.type === 'agent' && (() => {
           const agentWin = resolved.data as import('../../store/oasisStore').AgentWindow
-          const rendererMeta = getAgentWindowRendererMeta(agentWin.renderMode)
           return (
             <>
               <SectionHeader>&#128187; Agent Window</SectionHeader>
@@ -1704,32 +1702,6 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                     style={{ cursor: 'pointer' }}
                   />
                   <span className="text-[9px] text-gray-400 font-mono w-10 text-right">{(agentWin.scale ?? 1).toFixed(2)}</span>
-                </div>
-
-                <div className="flex items-start gap-2">
-                  <span className="text-[10px] text-gray-500 font-mono w-16 shrink-0">render</span>
-                  <div className="flex-1">
-                    <div className="text-[9px] text-gray-400 font-mono mb-1">{rendererMeta.label}</div>
-                    <div className="grid grid-cols-3 gap-1">
-                      {AGENT_WINDOW_RENDERERS.map(renderer => {
-                        const isActive = renderer.id === rendererMeta.id
-                        return (
-                          <button
-                            key={renderer.id}
-                            onClick={() => updateAgentWindow(inspectedObjectId!, { renderMode: renderer.id as AgentWindowRenderMode })}
-                            className={`px-1.5 py-1 rounded border text-[8px] font-mono transition-colors ${
-                              isActive
-                                ? 'border-sky-500/40 bg-sky-500/10 text-sky-300'
-                                : 'border-gray-700/30 text-gray-400 hover:border-gray-500/50'
-                            }`}
-                            title={renderer.description}
-                          >
-                            {renderer.shortLabel}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
                 </div>
 
                 {agentWin.agentType === 'browser' && (

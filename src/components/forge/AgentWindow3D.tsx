@@ -38,7 +38,6 @@ import {
 
 const DISTANCE_FACTOR = 8
 const PX_TO_WORLD = DISTANCE_FACTOR / 400
-const LIVE_HTML_SELECT_BAR_PX = 24
 const LIVE_HTML_RESIZE_HANDLE_PX = 14
 const MIN_WINDOW_WIDTH = 320
 const MIN_WINDOW_HEIGHT = 240
@@ -118,7 +117,6 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
   const selectedObjectId = useOasisStore(s => s.selectedObjectId)
   const focusedAgentWindowId = useOasisStore(s => s.focusedAgentWindowId)
   const updateAgentWindow = useOasisStore(s => s.updateAgentWindow)
-  const focusAgentWindow = useOasisStore(s => s.focusAgentWindow)
   const isSelected = selectedObjectId === win.id
   const isFocused = focusedAgentWindowId === win.id
   const prevFocusedRef = useRef(false)
@@ -211,17 +209,6 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
     )
   })
 
-  const handleChromeSelect = useCallback((inspectNow: boolean) => (event: ReactMouseEvent<HTMLDivElement> | ReactPointerEvent<HTMLDivElement>) => {
-    stopSceneBridgeEvent(event)
-    const store = useOasisStore.getState()
-    if (store.selectedObjectId !== win.id) {
-      store.selectObject(win.id)
-    }
-    if (inspectNow) {
-      store.setInspectedObject(win.id)
-    }
-  }, [win.id])
-
   const handoffToWindowUi = useCallback(() => {
     const input = useInputManager.getState()
     if (input.pointerLocked) {
@@ -268,16 +255,6 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
   const handleContentScroll = useCallback((_event: ReactUIEvent<HTMLDivElement>) => {
     nudgeLiveHtmlRepaint()
   }, [nudgeLiveHtmlRepaint])
-
-
-  const handleChromeFocus = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
-    stopSceneBridgeEvent(event)
-    const store = useOasisStore.getState()
-    if (store.selectedObjectId !== win.id) {
-      store.selectObject(win.id)
-    }
-    focusAgentWindow(win.id)
-  }, [focusAgentWindow, win.id])
 
   const handleResizeStart = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     stopSceneBridgeEvent(event)
@@ -406,24 +383,6 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
               >
                 <AgentWindowSurface win={surfaceWindow} />
               </div>
-              <div
-                data-agent-window-select-zone=""
-                title="Click to select. Double-click to focus head-on."
-                onPointerDown={handleChromeSelect(false)}
-                onDoubleClick={handleChromeFocus}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: `${LIVE_HTML_SELECT_BAR_PX}px`,
-                  pointerEvents: 'auto',
-                  cursor: 'pointer',
-                  background: `linear-gradient(180deg, ${isSelected || isFocused ? `${agentColor}30` : `${agentColor}16`} 0%, transparent 100%)`,
-                  borderBottom: `1px solid ${isSelected || isFocused ? `${agentColor}55` : `${agentColor}24`}`,
-                  opacity: isFocused ? 1 : isSelected ? 0.92 : 0.68,
-                }}
-              />
               {isSelected && (
                 <div
                   data-agent-window-resize-handle=""

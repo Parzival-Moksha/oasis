@@ -115,7 +115,6 @@ const MIN_PROXY_DIM = 0.5
 export function ConjuredObject({ asset }: ConjuredObjectProps) {
   const groupRef = useRef<THREE.Group>(null)
   const [hovered, setHovered] = useState(false)
-  const [showLabel, setShowLabel] = useState(false)
   const spawnProgress = useRef(0)
   const spawnDone = useRef(false)
   const mixerRef = useRef<THREE.AnimationMixer | null>(null)
@@ -430,9 +429,6 @@ export function ConjuredObject({ asset }: ConjuredObjectProps) {
   }, [asset.id])
 
   // ░▒▓ Display name: behavior label (user rename) > displayName > prompt ▓▒░
-  const behaviorLabel = useOasisStore(s => s.behaviors[asset.id]?.label)
-  const label = behaviorLabel || asset.displayName || asset.prompt
-
   // ░▒▓ Paint mode: disable raycasting on proxy so clicks fall through to PaintOverlay ▓▒░
   const proxyRef = useRef<THREE.Mesh>(null)
   const paintMode = useOasisStore(s => s.paintMode)
@@ -479,13 +475,11 @@ export function ConjuredObject({ asset }: ConjuredObjectProps) {
           e.stopPropagation()
           if (useInputManager.getState().pointerLocked) return
           setHovered(true)
-          setShowLabel(true)
         }}
         onPointerOut={(e) => {
           e.stopPropagation()
           if (useInputManager.getState().pointerLocked) return
           setHovered(false)
-          setShowLabel(false)
         }}
       >
         <boxGeometry args={[Math.max(bounds.size.x, 1), Math.max(bounds.size.y, 1), Math.max(bounds.size.z, 1)]} />
@@ -503,25 +497,6 @@ export function ConjuredObject({ asset }: ConjuredObjectProps) {
         </mesh>
       )}
 
-      {/* Info label */}
-      {showLabel && (
-        <Html position={[0, 2, 0]} center style={{ pointerEvents: 'none' }}>
-          <div
-            className="px-2 py-1 rounded text-xs whitespace-nowrap select-none pointer-events-none"
-            style={{
-              background: 'rgba(0,0,0,0.8)',
-              border: '1px solid rgba(249,115,22,0.3)',
-              color: '#F97316',
-            }}
-          >
-            {label.slice(0, 40)}{label.length > 40 ? '...' : ''}
-            <div className="text-[10px] text-gray-500">
-              {asset.provider} / {asset.tier}
-              {triangleCount > 0 && <span className="ml-1.5 text-orange-400/60">{triangleCount >= 1000 ? `${(triangleCount / 1000).toFixed(1)}k` : triangleCount} tris</span>}
-            </div>
-          </div>
-        </Html>
-      )}
     </group>
   )
 }

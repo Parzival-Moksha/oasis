@@ -567,9 +567,12 @@ export function useWorldEvents() {
                 agentType: avatar.agentType as import('@/store/oasisStore').AgentWindowType,
                 position: avatar.position,
                 rotation: [0, 0, 0],
-                scale: 0.2,
+                scale: 0.15,
                 width: 800,
                 height: 600,
+                renderMode: 'live-html',
+                frameStyle: avatar.agentType === 'hermes' ? 'fire' : undefined,
+                frameThickness: avatar.agentType === 'hermes' ? 6 : undefined,
                 linkedAvatarId: avatar.id,
                 anchorMode: 'next-to',
               })

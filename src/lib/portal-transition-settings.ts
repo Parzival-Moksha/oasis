@@ -7,6 +7,9 @@ export type PortalTransitionEffect =
   | 'clockwork-iris'
   | 'root-tendrils'
   | 'rainbow-vortex'
+  | 'wire-wormhole'
+  | 'spiral-wormhole'
+  | 'broken-wormhole'
 
 export interface PortalTransitionSettings {
   enabled: boolean
@@ -31,12 +34,15 @@ export const PORTAL_TRANSITION_EFFECTS: Array<{ id: PortalTransitionEffect; labe
   { id: 'clockwork-iris', label: 'Clock Iris', desc: 'mechanical blackout' },
   { id: 'root-tendrils', label: 'Root Tendrils', desc: 'organic wipe' },
   { id: 'rainbow-vortex', label: 'Rainbow Vortex', desc: 'scene melt color spin' },
+  { id: 'wire-wormhole', label: 'Wire Wormhole', desc: 'procedural tube rings' },
+  { id: 'spiral-wormhole', label: 'Spiral Wormhole', desc: 'twisting ring tunnel' },
+  { id: 'broken-wormhole', label: 'Broken Wormhole', desc: 'chaotic tube collapse' },
 ]
 
 export const DEFAULT_PORTAL_TRANSITION_SETTINGS: PortalTransitionSettings = {
   enabled: true,
   swallowEffect: 'void-iris',
-  tunnelEffect: 'star-streak',
+  tunnelEffect: 'wire-wormhole',
   revealEffect: 'rainbow-vortex',
   swallowSeconds: 0.55,
   tunnelSeconds: 2.2,

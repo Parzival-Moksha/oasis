@@ -1,14 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="Verdant portal">
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="Torii portal">
   <defs>
     <radialGradient id="core-verdant-arch" cx="50%" cy="45%" r="58%">
-      <stop offset="0%" stop-color="#22c55e" stop-opacity="0.95"/>
-      <stop offset="42%" stop-color="#052e16" stop-opacity="0.72"/>
-      <stop offset="100%" stop-color="#dcfce7" stop-opacity="0.94"/>
+      <stop offset="0%" stop-color="#b91c1c" stop-opacity="0.95"/>
+      <stop offset="42%" stop-color="#1f1714" stop-opacity="0.72"/>
+      <stop offset="100%" stop-color="#facc15" stop-opacity="0.94"/>
     </radialGradient>
     <linearGradient id="rim-verdant-arch" x1="0%" x2="100%" y1="0%" y2="100%">
-      <stop offset="0%" stop-color="#86efac"/>
-      <stop offset="48%" stop-color="#22c55e"/>
-      <stop offset="100%" stop-color="#052e16"/>
+      <stop offset="0%" stop-color="#ef4444"/>
+      <stop offset="48%" stop-color="#b91c1c"/>
+      <stop offset="100%" stop-color="#1f1714"/>
     </linearGradient>
     <filter id="glow-verdant-arch" x="-50%" y="-50%" width="200%" height="200%">
       <feGaussianBlur stdDeviation="5" result="blur"/>
@@ -22,17 +22,17 @@
     </filter>
   </defs>
   <rect width="256" height="256" rx="22" fill="#020617"/>
-  <circle cx="54" cy="46" r="82" fill="#86efac" opacity="0.12"/>
-  <circle cx="205" cy="203" r="92" fill="#22c55e" opacity="0.1"/>
+  <circle cx="54" cy="46" r="82" fill="#ef4444" opacity="0.12"/>
+  <circle cx="205" cy="203" r="92" fill="#b91c1c" opacity="0.1"/>
   <g opacity="0.34" filter="url(#glow-smoke)">
-    <ellipse cx="74" cy="192" rx="40" ry="12" fill="#86efac"/>
+    <ellipse cx="74" cy="192" rx="40" ry="12" fill="#ef4444"/>
     <ellipse cx="126" cy="199" rx="58" ry="14" fill="#ffffff" opacity="0.42"/>
-    <ellipse cx="180" cy="190" rx="44" ry="12" fill="#86efac"/>
+    <ellipse cx="180" cy="190" rx="44" ry="12" fill="#ef4444"/>
   </g>
   <ellipse cx="128" cy="126" rx="48" ry="82" fill="url(#core-verdant-arch)"/>
   <path d="M70 199c-4-86 21-145 58-156 36 11 62 70 58 156" fill="none" stroke="#36533b" stroke-width="16" stroke-linecap="round"/>
-  <path d="M78 193c2-69 22-122 50-137 28 15 48 68 50 137" fill="none" stroke="#86efac" stroke-width="5" opacity="0.78" filter="url(#glow-verdant-arch)"/>
-  <ellipse cx="176" cy="55" rx="14" ry="6" fill="#86efac" transform="rotate(28 176 55)" opacity="0.78"/><ellipse cx="88" cy="63" rx="14" ry="6" fill="#22c55e" transform="rotate(-28 88 63)" opacity="0.78"/><ellipse cx="160" cy="71" rx="14" ry="6" fill="#22c55e" transform="rotate(28 160 71)" opacity="0.78"/><ellipse cx="104" cy="79" rx="14" ry="6" fill="#86efac" transform="rotate(-28 104 79)" opacity="0.78"/><ellipse cx="176" cy="87" rx="14" ry="6" fill="#22c55e" transform="rotate(28 176 87)" opacity="0.78"/><ellipse cx="88" cy="95" rx="14" ry="6" fill="#22c55e" transform="rotate(-28 88 95)" opacity="0.78"/><ellipse cx="160" cy="103" rx="14" ry="6" fill="#86efac" transform="rotate(28 160 103)" opacity="0.78"/><ellipse cx="104" cy="111" rx="14" ry="6" fill="#22c55e" transform="rotate(-28 104 111)" opacity="0.78"/><ellipse cx="176" cy="119" rx="14" ry="6" fill="#22c55e" transform="rotate(28 176 119)" opacity="0.78"/><ellipse cx="88" cy="127" rx="14" ry="6" fill="#86efac" transform="rotate(-28 88 127)" opacity="0.78"/><ellipse cx="160" cy="135" rx="14" ry="6" fill="#22c55e" transform="rotate(28 160 135)" opacity="0.78"/><ellipse cx="104" cy="143" rx="14" ry="6" fill="#22c55e" transform="rotate(-28 104 143)" opacity="0.78"/><ellipse cx="176" cy="151" rx="14" ry="6" fill="#86efac" transform="rotate(28 176 151)" opacity="0.78"/><ellipse cx="88" cy="159" rx="14" ry="6" fill="#22c55e" transform="rotate(-28 88 159)" opacity="0.78"/><ellipse cx="160" cy="167" rx="14" ry="6" fill="#22c55e" transform="rotate(28 160 167)" opacity="0.78"/><ellipse cx="104" cy="175" rx="14" ry="6" fill="#86efac" transform="rotate(-28 104 175)" opacity="0.78"/>
+  <path d="M78 193c2-69 22-122 50-137 28 15 48 68 50 137" fill="none" stroke="#ef4444" stroke-width="5" opacity="0.78" filter="url(#glow-verdant-arch)"/>
+  <ellipse cx="176" cy="55" rx="14" ry="6" fill="#ef4444" transform="rotate(28 176 55)" opacity="0.78"/><ellipse cx="88" cy="63" rx="14" ry="6" fill="#b91c1c" transform="rotate(-28 88 63)" opacity="0.78"/><ellipse cx="160" cy="71" rx="14" ry="6" fill="#b91c1c" transform="rotate(28 160 71)" opacity="0.78"/><ellipse cx="104" cy="79" rx="14" ry="6" fill="#ef4444" transform="rotate(-28 104 79)" opacity="0.78"/><ellipse cx="176" cy="87" rx="14" ry="6" fill="#b91c1c" transform="rotate(28 176 87)" opacity="0.78"/><ellipse cx="88" cy="95" rx="14" ry="6" fill="#b91c1c" transform="rotate(-28 88 95)" opacity="0.78"/><ellipse cx="160" cy="103" rx="14" ry="6" fill="#ef4444" transform="rotate(28 160 103)" opacity="0.78"/><ellipse cx="104" cy="111" rx="14" ry="6" fill="#b91c1c" transform="rotate(-28 104 111)" opacity="0.78"/><ellipse cx="176" cy="119" rx="14" ry="6" fill="#b91c1c" transform="rotate(28 176 119)" opacity="0.78"/><ellipse cx="88" cy="127" rx="14" ry="6" fill="#ef4444" transform="rotate(-28 88 127)" opacity="0.78"/><ellipse cx="160" cy="135" rx="14" ry="6" fill="#b91c1c" transform="rotate(28 160 135)" opacity="0.78"/><ellipse cx="104" cy="143" rx="14" ry="6" fill="#b91c1c" transform="rotate(-28 104 143)" opacity="0.78"/><ellipse cx="176" cy="151" rx="14" ry="6" fill="#ef4444" transform="rotate(28 176 151)" opacity="0.78"/><ellipse cx="88" cy="159" rx="14" ry="6" fill="#b91c1c" transform="rotate(-28 88 159)" opacity="0.78"/><ellipse cx="160" cy="167" rx="14" ry="6" fill="#b91c1c" transform="rotate(28 160 167)" opacity="0.78"/><ellipse cx="104" cy="175" rx="14" ry="6" fill="#ef4444" transform="rotate(-28 104 175)" opacity="0.78"/>
   <g opacity="0.86">
     <circle cx="48" cy="54" r="2" fill="#fff"/>
     <circle cx="205" cy="49" r="1.6" fill="#fff"/>
@@ -42,6 +42,6 @@
     <circle cx="154" cy="220" r="1.7" fill="#fff"/>
     <circle cx="194" cy="206" r="1.2" fill="#fff"/>
   </g>
-  <text x="128" y="232" text-anchor="middle" fill="#dbeafe" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" font-weight="700" letter-spacing="0">Verdant</text>
+  <text x="128" y="232" text-anchor="middle" fill="#dbeafe" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" font-weight="700" letter-spacing="0">Torii</text>
   <text x="128" y="247" text-anchor="middle" fill="#64748b" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="8" letter-spacing="0">verdant-arch</text>
 </svg>

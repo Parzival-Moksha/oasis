@@ -19,6 +19,7 @@ const DEFAULT_GROUND_Y = 0
 let latestPlayerAvatarPose: PlayerAvatarPose | null = null
 let playerSpellCasting = false
 const spellListeners = new Set<() => void>()
+const teleportListeners = new Set<(pose: PlayerAvatarPose) => void>()
 
 function cloneVec3(value: [number, number, number]): [number, number, number] {
   return [value[0], value[1], value[2]]
@@ -63,6 +64,25 @@ export function subscribePlayerSpellCasting(listener: () => void): () => void {
   spellListeners.add(listener)
   return () => {
     spellListeners.delete(listener)
+  }
+}
+
+export function requestPlayerAvatarTeleport(pose: PlayerAvatarPose): void {
+  const next: PlayerAvatarPose = {
+    position: cloneVec3(pose.position),
+    yaw: pose.yaw,
+    forward: cloneVec3(pose.forward),
+  }
+  latestPlayerAvatarPose = next
+  for (const listener of teleportListeners) {
+    listener(next)
+  }
+}
+
+export function subscribePlayerAvatarTeleport(listener: (pose: PlayerAvatarPose) => void): () => void {
+  teleportListeners.add(listener)
+  return () => {
+    teleportListeners.delete(listener)
   }
 }
 

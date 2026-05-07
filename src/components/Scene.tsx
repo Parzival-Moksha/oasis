@@ -587,6 +587,7 @@ function SoundSettings() {
     panelOpen: 'Panel Open', panelClose: 'Panel Close', buttonClick: 'Button Click', buttonHover: 'Button Hover',
     modeSwitch: 'Camera Mode', conjureStart: 'Conjure Start', conjureDone: 'Conjure Done',
     anorakDone: 'Anorak Done', notification: 'Notification', undo: 'Undo', redo: 'Redo',
+    connected: 'Agent Connected', levelUp: 'Level Up', chooseCharacter: 'Choose Character',
     agentFocus: 'Agent Focus', agentUnfocus: 'Agent Unfocus', tilePaint: 'Tile Paint',
     error: 'Error',
     // footstep excluded — always cycles through all footstep sounds for variety
@@ -1367,6 +1368,53 @@ export default function Scene() {
   }, [])
 
   // ─═̷─═̷─🎯─═̷─═̷─{ POINTER LOCK — owned by InputManager }─═̷─═̷─🎯─═̷─═̷─
+  useEffect(() => {
+    const isTypingTarget = (target: EventTarget | null) => {
+      const el = target as HTMLElement | null
+      if (!el) return false
+      const tag = el.tagName
+      if (tag === 'INPUT') {
+        const type = (el as HTMLInputElement).type
+        return !['range', 'color', 'checkbox', 'radio', 'file', 'button', 'image', 'reset', 'submit'].includes(type)
+      }
+      return tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
+    }
+    const handleDeleteKey = (event: KeyboardEvent) => {
+      if (event.code !== 'Delete' && event.code !== 'Backspace') return
+      if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return
+      if (isTypingTarget(event.target)) return
+      if (hideEditTools) return
+
+      const store = useOasisStore.getState()
+      const id = store.selectedObjectId
+      if (!id) return
+
+      const isPortal = store.portalGates.some(gate => gate.id === id)
+      const isCatalog = store.placedCatalogAssets.some(asset => asset.id === id)
+      const isCrafted = store.craftedScenes.some(scene => scene.id === id)
+      const isConjured = store.worldConjuredAssetIds.includes(id)
+      const isLight = store.worldLights.some(light => light.id === id)
+      const isAgentWindow = store.placedAgentWindows.some(win => win.id === id)
+      if (!isPortal && !isCatalog && !isCrafted && !isConjured && !isLight && !isAgentWindow) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      if (isPortal) store.removePortalGate(id)
+      else if (isCatalog) store.removeCatalogAsset(id)
+      else if (isCrafted) store.removeCraftedScene(id)
+      else if (isConjured) store.removeConjuredAssetFromWorld(id)
+      else if (isLight) store.removeWorldLight(id)
+      else if (isAgentWindow) store.removeAgentWindow(id)
+
+      store.selectObject(null)
+      store.setInspectedObject(null)
+      useAudioManager.getState().play('delete')
+    }
+
+    window.addEventListener('keydown', handleDeleteKey)
+    return () => window.removeEventListener('keydown', handleDeleteKey)
+  }, [hideEditTools])
+
   const pointerLocked = useInputManager(s => s.pointerLocked)
 
   useEffect(() => {

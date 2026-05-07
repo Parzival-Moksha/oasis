@@ -1156,7 +1156,7 @@ export function OpenclawPanel({
       agentType: 'openclaw',
       position: openclawWindowSpawnPosition(),
       rotation: [0, 0, 0],
-      scale: 0.2,
+      scale: 0.15,
       width: 800,
       height: 600,
       label: 'OpenClaw',

@@ -173,14 +173,25 @@ export const OASIS_MCP_TOOL_SPECS = [
   },
   {
     name: 'set_sky',
-    description: 'Change the world sky preset.',
+    description: [
+      'Change the world sky background (also drives HDRI lighting).',
+      'Valid presetId values:',
+      'stars, night001, night004, night007, night008,',
+      'alps_field, autumn_ground, belfast_sunset, blue_grotto, evening_road, outdoor_umbrellas, stadium, sunny_vondelpark,',
+      'city, dawn, forest, sunset, park, night_preset, studio, warehouse, apartment, lobby.',
+      'Quick guide: blue_grotto = cyan underwater cave; dawn = warm sunrise; belfast_sunset = orange dusk; alps_field = bright daylight; sunset = venice golden hour; forest = green canopy; stars = procedural starfield (no HDRI lighting). Use the exact id, not the display name.',
+    ].join(' '),
     inputSchema: z.object({ worldId: z.string().optional(), presetId: z.string() }).passthrough(),
     injectWorldId: true,
     injectActorAgentType: true,
   },
   {
     name: 'set_ground_preset',
-    description: 'Change the world ground preset.',
+    description: [
+      'Change the world ground texture.',
+      'Valid presetId values: none, grass, dirt, sand, stone, snow, cobble, forest, lava, concrete, marble, metal, beach, rocks, leaves, leaves2, pebbles, gravel, rocky, snow2.',
+      'Notes: "lava" is a rock-face texture (not glowing lava); "none" makes the ground transparent/black; "stone" is mossy flagstone; "marble" is light polished stone. Use the exact id, not the display name.',
+    ].join(' '),
     inputSchema: z.object({ worldId: z.string().optional(), presetId: z.string() }).passthrough(),
     injectWorldId: true,
     injectActorAgentType: true,

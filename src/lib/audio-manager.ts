@@ -30,6 +30,8 @@ export type SoundEvent =
   | 'anorakDone'    // Anorak finished response
   | 'notification'  // DevCraft timer, mission complete
   | 'connected'     // Agent/world link established
+  | 'levelUp'       // Player level increased
+  | 'chooseCharacter' // Self avatar picker opened
   | 'undo'          // Undo action
   | 'redo'          // Redo action
   | 'agentFocus'    // Enter zoomon mode
@@ -46,6 +48,7 @@ export type SoundEvent =
 const UI = '/audio/kenney-ui/Audio'
 const RPG = '/audio/kenney-rpg/Audio'
 const INTERFACE = '/audio/kenney_interface-sounds/Audio'
+const FIGHTER = '/audio/kenney_voiceover-pack-fighter'
 
 export interface SoundOption {
   id: string
@@ -78,10 +81,18 @@ export const SOUND_OPTIONS: Record<SoundEvent, SoundOption[]> = {
     { id: 'click5', label: 'Click 5', path: `${UI}/click5.ogg` },
   ],
   connected: [
+    { id: 'fighterReady', label: 'Ready', path: `${FIGHTER}/ready.ogg` },
     { id: 'confirm1', label: 'Confirmation 1', path: `${INTERFACE}/confirmation_001.ogg` },
     { id: 'confirm2', label: 'Confirmation 2', path: `${INTERFACE}/confirmation_002.ogg` },
     { id: 'confirm3', label: 'Confirmation 3', path: `${INTERFACE}/confirmation_003.ogg` },
     { id: 'complete', label: 'Mission Complete', path: '/audio/kenney_voiceover-pack/Female/mission_completed.ogg' },
+  ],
+  levelUp: [
+    { id: 'femaleLevelUp', label: 'Level Up Female', path: '/audio/kenney_voiceover-pack/Female/level_up.ogg' },
+    { id: 'maleLevelUp', label: 'Level Up Male', path: '/audio/kenney_voiceover-pack/Male/level_up.ogg' },
+  ],
+  chooseCharacter: [
+    { id: 'fighterChoose', label: 'Choose Character', path: `${FIGHTER}/choose_your_character.ogg` },
   ],
   undo:         [{ id: 'sw11', label: 'Switch 11', path: `${UI}/switch11.ogg` }, { id: 'sw12', label: 'Switch 12', path: `${UI}/switch12.ogg` }],
   redo:         [{ id: 'sw13', label: 'Switch 13', path: `${UI}/switch13.ogg` }, { id: 'sw14', label: 'Switch 14', path: `${UI}/switch14.ogg` }],
