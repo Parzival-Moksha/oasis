@@ -2,7 +2,7 @@
 
 import { Html } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
+import { memo, useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { getPortalGateLabel, type PortalGate } from '../../lib/portal-gates'
 
@@ -170,131 +170,6 @@ void main() {
   color += uSecondary * pow(edge, 2.6) * (0.34 + uIntensity * 0.18);
   color += uPrimary * core * 0.08;
   color = pow(color, vec3(0.86));
-
-  gl_FragColor = vec4(color, 1.0);
-}
-`
-
-const VOID_SKY_APERTURE_VERTEX_SHADER = `
-varying vec2 vUv;
-varying vec3 vWorldPosition;
-
-void main() {
-  vUv = uv;
-  vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-  vWorldPosition = worldPosition.xyz;
-  gl_Position = projectionMatrix * viewMatrix * worldPosition;
-}
-`
-
-const VOID_APERTURE_MASK_FRAGMENT_SHADER = `
-precision highp float;
-
-uniform float uShape;
-varying vec2 vUv;
-
-float portalMask(vec2 p) {
-  if (uShape < 0.5) return length(p / vec2(0.72, 1.0));
-  if (uShape < 1.5) return max(abs(p.x) / 0.62, abs(p.y) / 0.96);
-  if (uShape < 2.5) {
-    return max(abs(p.x) / 0.18, abs(p.y) / 1.0);
-  }
-  if (uShape < 3.5) return length(p / vec2(0.92, 0.68));
-  return length(p);
-}
-
-void main() {
-  vec2 p = (vUv - 0.5) * 2.0;
-  if (portalMask(p) > 1.0) discard;
-  gl_FragColor = vec4(1.0);
-}
-`
-
-const VOID_SKY_APERTURE_FRAGMENT_SHADER = `
-precision highp float;
-
-uniform float uTime;
-uniform float uSeed;
-uniform float uShape;
-uniform float uIntensity;
-uniform vec3 uVoid;
-uniform vec3 uNebula;
-uniform vec3 uStar;
-varying vec2 vUv;
-varying vec3 vWorldPosition;
-
-const float PI = 3.14159265359;
-const float TAU = 6.28318530718;
-
-float hash21(vec2 p) {
-  p = fract(p * vec2(123.34, 456.21));
-  p += dot(p, p + 45.32);
-  return fract(p.x * p.y);
-}
-
-float noise(vec2 p) {
-  vec2 i = floor(p);
-  vec2 f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
-  float a = hash21(i);
-  float b = hash21(i + vec2(1.0, 0.0));
-  float c = hash21(i + vec2(0.0, 1.0));
-  float d = hash21(i + vec2(1.0, 1.0));
-  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-}
-
-float fbm(vec2 p) {
-  float value = 0.0;
-  float amplitude = 0.52;
-  mat2 rotate = mat2(0.8, -0.6, 0.6, 0.8);
-  for (int i = 0; i < 4; i++) {
-    value += amplitude * noise(p);
-    p = rotate * p * 2.03 + vec2(9.2, 4.7);
-    amplitude *= 0.48;
-  }
-  return value;
-}
-
-float portalMask(vec2 p) {
-  if (uShape < 0.5) return length(p / vec2(0.72, 1.0));
-  if (uShape < 1.5) return max(abs(p.x) / 0.62, abs(p.y) / 0.96);
-  if (uShape < 2.5) return max(abs(p.x) / 0.18, abs(p.y) / 1.0);
-  if (uShape < 3.5) return length(p / vec2(0.92, 0.68));
-  return length(p);
-}
-
-float starLayer(vec2 uv, float scale, float threshold, float size) {
-  vec2 cell = floor(uv * scale);
-  vec2 local = fract(uv * scale) - 0.5;
-  vec2 jitter = vec2(hash21(cell + uSeed + 2.7), hash21(cell + uSeed + 8.1)) - 0.5;
-  float exists = step(threshold, hash21(cell + uSeed * 1.73));
-  float distanceToStar = length(local - jitter * 0.72);
-  float twinkle = 0.72 + 0.28 * sin(uTime * (0.9 + hash21(cell) * 2.2) + hash21(cell + 5.0) * TAU);
-  return smoothstep(size, 0.0, distanceToStar) * exists * twinkle;
-}
-
-void main() {
-  vec2 p = (vUv - 0.5) * 2.0;
-  float mask = portalMask(p);
-  if (mask > 1.0) discard;
-
-  vec3 direction = normalize(vWorldPosition - cameraPosition);
-  vec2 skyUv = vec2(atan(direction.z, direction.x) / TAU + 0.5, asin(clamp(direction.y, -1.0, 1.0)) / PI + 0.5);
-  skyUv.x = fract(skyUv.x + uSeed * 0.013 + uTime * 0.0015);
-
-  float nebula = fbm(skyUv * vec2(4.6, 2.4) + vec2(uSeed * 0.11, -uSeed * 0.07));
-  float cloud = smoothstep(0.45, 0.92, nebula);
-  float stars = starLayer(skyUv, 150.0, 0.983, 0.06);
-  stars += starLayer(skyUv + vec2(0.173, 0.421), 310.0, 0.992, 0.05) * 0.72;
-  stars += starLayer(skyUv + vec2(0.621, 0.117), 620.0, 0.996, 0.04) * 0.42;
-
-  float verticalShade = smoothstep(-0.55, 0.85, direction.y);
-  vec3 color = mix(uVoid, uVoid * 0.42 + vec3(0.001, 0.004, 0.018), verticalShade);
-  color = mix(color, uNebula * (0.18 + uIntensity * 0.08) + uVoid * 0.72, cloud * 0.36);
-  color += uStar * stars * (0.8 + uIntensity * 0.42);
-  color += vec3(0.01, 0.015, 0.035) * smoothstep(0.8, 1.0, abs(direction.y));
-  color *= 1.0 - smoothstep(0.955, 1.0, mask) * 0.32;
-  color = pow(color, vec3(0.82));
 
   gl_FragColor = vec4(color, 1.0);
 }
@@ -515,12 +390,143 @@ function PortalAperture({
   )
 }
 
-function StencilVoidAperture({
+// ░▒▓ Sky aperture — single-pass discard ▓▒░
+// What it is: a flat plane inside the gate frame whose fragment shader
+//   1. discards pixels outside the aperture shape (so it reads as a punched-out window),
+//   2. samples a procedural starry sky by world-space view direction.
+// As the camera turns, the sky behind the cutout rotates exactly like a real
+// window into space. As the player walks past the gate, the direction through
+// each fragment shifts, giving subtle parallax. There are no 3D star meshes —
+// stars are computed on-GPU from camera-direction lat/lon, so they live on a
+// celestial sphere at infinity.
+//
+// Replaces an earlier two-pass stencil-buffer aperture: that approach silently
+// fails when the WebGL renderer wasn't built with stencil enabled, and the
+// per-fragment discard here is robust in any renderer config.
+const PORTAL_SKY_APERTURE_VERTEX_SHADER = `
+varying vec2 vUv;
+varying vec3 vWorldPosition;
+
+void main() {
+  vUv = uv;
+  vec4 worldPos = modelMatrix * vec4(position, 1.0);
+  vWorldPosition = worldPos.xyz;
+  gl_Position = projectionMatrix * viewMatrix * worldPos;
+}
+`
+
+const PORTAL_SKY_APERTURE_FRAGMENT_SHADER = `
+precision highp float;
+
+uniform float uTime;
+uniform float uSeed;
+uniform float uShape;
+uniform float uIntensity;
+uniform vec3 uVoid;
+uniform vec3 uNebula;
+uniform vec3 uStar;
+
+varying vec2 vUv;
+varying vec3 vWorldPosition;
+
+const float PI = 3.14159265359;
+const float TAU = 6.28318530718;
+
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
+float vnoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hash21(i);
+  float b = hash21(i + vec2(1.0, 0.0));
+  float c = hash21(i + vec2(0.0, 1.0));
+  float d = hash21(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+float fbm(vec2 p) {
+  float value = 0.0;
+  float amplitude = 0.52;
+  mat2 r = mat2(0.8, -0.6, 0.6, 0.8);
+  for (int i = 0; i < 4; i++) {
+    value += amplitude * vnoise(p);
+    p = r * p * 2.03 + vec2(9.2, 4.7);
+    amplitude *= 0.48;
+  }
+  return value;
+}
+
+// 0 = ellipse, 1 = door, 2 = slit, 3 = pool, 4 = circle. Returns >1 outside.
+float portalMask(vec2 p) {
+  if (uShape < 0.5) return length(p / vec2(0.72, 1.0));
+  if (uShape < 1.5) return max(abs(p.x) / 0.62, abs(p.y) / 0.96);
+  if (uShape < 2.5) return max(abs(p.x) / 0.18, abs(p.y) / 1.0);
+  if (uShape < 3.5) return length(p / vec2(0.92, 0.68));
+  return length(p);
+}
+
+float starLayer(vec2 uv, float scale, float threshold, float size) {
+  vec2 cell = floor(uv * scale);
+  vec2 local = fract(uv * scale) - 0.5;
+  vec2 jitter = vec2(hash21(cell + uSeed + 2.7), hash21(cell + uSeed + 8.1)) - 0.5;
+  float exists = step(threshold, hash21(cell + uSeed * 1.73));
+  float dStar = length(local - jitter * 0.72);
+  float twinkle = 0.72 + 0.28 * sin(uTime * (0.9 + hash21(cell) * 2.2) + hash21(cell + 5.0) * TAU);
+  return smoothstep(size, 0.0, dStar) * exists * twinkle;
+}
+
+void main() {
+  // Step 1: cookie-cutter the aperture shape. Pixels outside the shape are
+  // physically not part of the window, so we kill them with discard. This is
+  // the single-pass equivalent of a stencil mask — no buffer required.
+  vec2 p = (vUv - 0.5) * 2.0;
+  float mask = portalMask(p);
+  if (mask > 1.0) discard;
+
+  // Step 2: figure out which sky direction this fragment is staring into.
+  // World-space ray from camera through this pixel. Stars / nebula are
+  // sampled by direction so they live on a virtual celestial sphere; the
+  // camera's translation barely moves them (subtle window parallax) but
+  // rotation moves them 1:1.
+  vec3 direction = normalize(vWorldPosition - cameraPosition);
+  vec2 skyUv = vec2(
+    atan(direction.z, direction.x) / TAU + 0.5,
+    asin(clamp(direction.y, -1.0, 1.0)) / PI + 0.5
+  );
+  // Slow drift so identical seeds across multiple gates don't visually clone.
+  skyUv.x = fract(skyUv.x + uSeed * 0.013 + uTime * 0.0014);
+
+  float nebula = fbm(skyUv * vec2(4.6, 2.4) + vec2(uSeed * 0.11, -uSeed * 0.07));
+  float cloud = smoothstep(0.45, 0.92, nebula);
+
+  float stars = starLayer(skyUv, 150.0, 0.983, 0.06);
+  stars += starLayer(skyUv + vec2(0.173, 0.421), 310.0, 0.992, 0.05) * 0.72;
+  stars += starLayer(skyUv + vec2(0.621, 0.117), 620.0, 0.996, 0.04) * 0.42;
+
+  float verticalShade = smoothstep(-0.55, 0.85, direction.y);
+  vec3 color = mix(uVoid, uVoid * 0.42 + vec3(0.001, 0.004, 0.018), verticalShade);
+  color = mix(color, uNebula * (0.18 + uIntensity * 0.08) + uVoid * 0.72, cloud * 0.32);
+  color += uStar * stars * (0.85 + uIntensity * 0.42);
+
+  // Soft inner-edge fade so the rim sits like glass against the frame.
+  color *= 1.0 - smoothstep(0.94, 1.0, mask) * 0.28;
+  color = pow(color, vec3(0.82));
+
+  gl_FragColor = vec4(color, 1.0);
+}
+`
+
+function PortalSkyAperture({
   mood,
   seed,
   shape = 'ellipse',
   size = [1.18, 1.94],
-  position = [0, 0, 0.01],
+  position = [0, 0, -0.02],
   intensity = 1,
   inert,
 }: {
@@ -533,8 +539,8 @@ function StencilVoidAperture({
   inert?: boolean
 }) {
   const colors = MOOD_COLORS[mood]
-  const stencilRef = useMemo(() => 1 + (Math.floor(seed) % 240), [seed])
-  const makeUniforms = useCallback(() => ({
+  const material = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
       uTime: { value: 0 },
       uSeed: { value: seed },
       uShape: { value: PORTAL_APERTURE_SHAPES[shape] },
@@ -542,59 +548,26 @@ function StencilVoidAperture({
       uVoid: { value: new THREE.Color(inert ? '#02030a' : '#000109') },
       uNebula: { value: new THREE.Color(inert ? colors.stone : colors.primary) },
       uStar: { value: new THREE.Color(inert ? '#8b96a9' : colors.secondary) },
-  }), [colors.primary, colors.secondary, colors.stone, inert, intensity, seed, shape])
-  const maskMaterial = useMemo(() => new THREE.ShaderMaterial({
-    uniforms: makeUniforms(),
-    vertexShader: PORTAL_APERTURE_VERTEX_SHADER,
-    fragmentShader: VOID_APERTURE_MASK_FRAGMENT_SHADER,
-    side: THREE.DoubleSide,
-    depthTest: true,
-    depthWrite: false,
-    colorWrite: false,
-    stencilWrite: true,
-    stencilWriteMask: 0xff,
-    stencilRef,
-    stencilFunc: THREE.AlwaysStencilFunc,
-    stencilZPass: THREE.ReplaceStencilOp,
-  }), [makeUniforms, stencilRef])
-  const material = useMemo(() => new THREE.ShaderMaterial({
-    uniforms: makeUniforms(),
-    vertexShader: VOID_SKY_APERTURE_VERTEX_SHADER,
-    fragmentShader: VOID_SKY_APERTURE_FRAGMENT_SHADER,
+    },
+    vertexShader: PORTAL_SKY_APERTURE_VERTEX_SHADER,
+    fragmentShader: PORTAL_SKY_APERTURE_FRAGMENT_SHADER,
     side: THREE.DoubleSide,
     transparent: false,
-    depthTest: true,
     depthWrite: true,
-    stencilWrite: true,
-    stencilWriteMask: 0x00,
-    stencilRef,
-    stencilFunc: THREE.EqualStencilFunc,
-    stencilFail: THREE.KeepStencilOp,
-    stencilZFail: THREE.KeepStencilOp,
-    stencilZPass: THREE.KeepStencilOp,
-  }), [makeUniforms, stencilRef])
+    depthTest: true,
+  }), [colors.primary, colors.secondary, colors.stone, inert, intensity, seed, shape])
 
-  useEffect(() => () => {
-    maskMaterial.dispose()
-    material.dispose()
-  }, [maskMaterial, material])
+  useEffect(() => () => material.dispose(), [material])
 
   useFrame(({ clock }) => {
-    maskMaterial.uniforms.uTime.value = clock.elapsedTime
     material.uniforms.uTime.value = clock.elapsedTime
   })
 
   return (
-    <group position={position}>
-      <mesh renderOrder={4.9}>
-        <planeGeometry args={[size[0], size[1], 1, 1]} />
-        <primitive attach="material" object={maskMaterial} />
-      </mesh>
-      <mesh renderOrder={5}>
-        <planeGeometry args={[size[0], size[1], 1, 1]} />
-        <primitive attach="material" object={material} />
-      </mesh>
-    </group>
+    <mesh position={position} renderOrder={1}>
+      <planeGeometry args={[size[0], size[1], 1, 1]} />
+      <primitive attach="material" object={material} />
+    </mesh>
   )
 }
 
@@ -1153,6 +1126,8 @@ function StoneCaveMouth({
   seed?: number
   count?: number
   scale?: [number, number, number]
+  // Set false when an explicit aperture (like PortalSkyAperture) is rendering
+  // the inside of the gate — the dark backing would otherwise hide it.
   showBacking?: boolean
 }) {
   const colors = MOOD_COLORS[mood]
@@ -1600,7 +1575,7 @@ function ThresholdRing({ inert }: { inert?: boolean }) {
       <StoneSegmentRing mood="arcane" inert={inert} />
       <PortalAperture mood="arcane" seed={211} shape="ellipse" size={[1.24, 2.08]} intensity={1.08} organic={0.38} inert={inert} />
       <PortalWorldGlimpse mood="arcane" profile="starwell" size={[1.04, 1.72]} inert={inert} />
-      <StencilVoidAperture mood="arcane" seed={7211} shape="ellipse" size={[1.02, 1.74]} intensity={1.05} inert={inert} />
+      <PortalSkyAperture mood="arcane" seed={7211} shape="ellipse" size={[1.02, 1.74]} intensity={1.05} inert={inert} />
       <PortalDepthTunnel mood="arcane" inert={inert} elongated rings={8} radius={0.58} zStep={0.075} />
       <MirrorGlassSkin mood="arcane" shape="ellipse" size={[1.08, 1.86]} opacity={0.18} inert={inert} />
       <RimHalo mood="arcane" inert={inert} scale={[0.78, 1.18, 1]} radius={0.82} thickness={0.16} opacity={0.28} />
@@ -1643,9 +1618,12 @@ function ThresholdRing({ inert }: { inert?: boolean }) {
 
 function VoidDoor({ inert }: { inert?: boolean }) {
   const frameColor = inert ? '#6d7484' : MOOD_COLORS.void.primary
+  // Sky-aperture treatment: stone pillars + lintels are the frame. The
+  // doorway is a punched-out window into a starry void.
   return (
     <group position={[0, 1.45, 0]}>
-      <StencilVoidAperture mood="void" seed={7329} shape="door" size={[0.88, 2.24]} intensity={1.45} inert={inert} />
+      <PortalSkyAperture mood="void" seed={7329} shape="door" size={[0.96, 2.4]} intensity={1.32} inert={inert} />
+      <RimHalo mood="void" inert={inert} scale={[0.78, 1.42, 1]} radius={0.5} thickness={0.11} opacity={0.38} />
       <mesh position={[-0.62, 0, 0]}>
         <boxGeometry args={[0.18, 2.82, 0.24]} />
         <meshStandardMaterial color="#2d2639" emissive="#160020" emissiveIntensity={0.18} metalness={0.42} roughness={0.18} transparent opacity={inert ? 0.62 : 0.94} />
@@ -1684,7 +1662,7 @@ function GreekTempleGate({ inert }: { inert?: boolean }) {
   const stoneColor = inert ? '#8a877e' : '#d7d0c0'
   return (
     <group position={[0, 1.42, 0]}>
-      <StencilVoidAperture mood="clockwork" seed={9441} shape="door" size={[0.94, 1.86]} intensity={0.86} inert={inert} />
+      <PortalSkyAperture mood="clockwork" seed={9441} shape="door" size={[0.94, 1.86]} intensity={0.86} inert={inert} />
 
       {[-0.96, 0.96].map((x, index) => (
         <group key={`column-${index}`} position={[x, -0.12, 0.06]}>
@@ -1845,7 +1823,7 @@ function RiftSlit({ inert }: { inert?: boolean }) {
       <SmokeWisps mood="rift" inert={inert} />
       <PortalAperture mood="rift" seed={673} shape="slit" size={[0.78, 2.86]} intensity={1.34} organic={1.0} inert={inert} />
       <PortalWorldGlimpse mood="rift" profile="rift" size={[0.48, 2.52]} inert={inert} />
-      <StencilVoidAperture mood="rift" seed={7673} shape="slit" size={[0.44, 2.62]} intensity={1.5} inert={inert} />
+      <PortalSkyAperture mood="rift" seed={7673} shape="slit" size={[0.44, 2.62]} intensity={1.5} inert={inert} />
       <PortalDepthTunnel mood="rift" inert={inert} elongated rings={8} radius={0.36} zStep={0.09} />
       <MirrorGlassSkin mood="rift" shape="slit" size={[0.38, 2.6]} opacity={0.2} inert={inert} />
       <PortalStarfield seed={73} color="#f8d6ff" accentColor="#76f8ff" width={0.88} height={2.82} count={126} depth={0.64} inert={inert} />
@@ -1887,7 +1865,7 @@ function StargateVortex({ inert }: { inert?: boolean }) {
       <StoneSegmentRing mood="arcane" inert={inert} />
       <PortalAperture mood="arcane" seed={789} shape="circle" size={[1.7, 1.7]} intensity={1.46} organic={0.25} inert={inert} />
       <PortalWorldGlimpse mood="arcane" profile="galaxy" size={[1.44, 1.44]} inert={inert} />
-      <StencilVoidAperture mood="arcane" seed={7789} shape="circle" size={[1.38, 1.38]} intensity={1.32} inert={inert} />
+      <PortalSkyAperture mood="arcane" seed={7789} shape="circle" size={[1.38, 1.38]} intensity={1.32} inert={inert} />
       <PortalDepthTunnel mood="arcane" inert={inert} rings={11} radius={0.72} zStep={0.055} />
       <MirrorGlassSkin mood="arcane" shape="circle" size={[1.48, 1.48]} opacity={0.16} inert={inert} />
       <RimHalo mood="arcane" inert={inert} radius={0.96} thickness={0.2} opacity={0.38} />
@@ -1914,10 +1892,14 @@ function StargateVortex({ inert }: { inert?: boolean }) {
 }
 
 function CrystalCavern({ inert }: { inert?: boolean }) {
+  // Sky-aperture treatment: frame + crystal shards only. The middle of the
+  // gate is a punched-out window into a procedural starfield, sampled by
+  // world-space view direction so the sky rotates with the camera.
   return (
     <group position={[0, 1.48, 0]}>
       <StoneCaveMouth mood="rift" inert={inert} scale={[1.55, 1.42, 1]} seed={9897} count={44} showBacking={false} />
-      <StencilVoidAperture mood="rift" seed={7897} shape="ellipse" size={[1.3, 2.12]} intensity={1.16} inert={inert} />
+      <PortalSkyAperture mood="rift" seed={7897} shape="ellipse" size={[1.3, 2.12]} intensity={1.16} inert={inert} />
+      <CrystalHalo mood="rift" inert={inert} radius={1.04} count={12} />
       {Array.from({ length: 9 }, (_, index) => {
         const side = index % 2 === 0 ? -1 : 1
         const y = -1.1 + index * 0.28
@@ -1934,6 +1916,7 @@ function CrystalCavern({ inert }: { inert?: boolean }) {
           </mesh>
         )
       })}
+      <RimHalo mood="rift" inert={inert} scale={[0.72, 1.34, 1]} radius={0.76} thickness={0.12} opacity={0.3} />
     </group>
   )
 }
@@ -1941,14 +1924,8 @@ function CrystalCavern({ inert }: { inert?: boolean }) {
 function _VerdantArch({ inert }: { inert?: boolean }) {
   return (
     <group position={[0, 1.42, 0]}>
-      <SmokeWisps mood="forest" inert={inert} />
       <RootTendrilWreath mood="forest" inert={inert} seed={1907} />
-      <PortalAperture mood="forest" seed={907} shape="ellipse" size={[1.2, 2.2]} intensity={0.86} organic={1.05} inert={inert} />
-      <PortalWorldGlimpse mood="forest" profile="forest" size={[1.02, 1.9]} inert={inert} />
-      <PortalDepthTunnel mood="forest" inert={inert} elongated rings={7} radius={0.58} zStep={0.07} />
-      <MirrorGlassSkin mood="forest" shape="ellipse" size={[1.02, 1.96]} opacity={0.12} inert={inert} />
-      <EnergyVeil mood="forest" scale={[0.78, 1.18, 1]} opacity={0.24} inert={inert} />
-      <PortalStarfield seed={107} color="#dcfce7" accentColor="#86efac" width={1.28} height={2.16} count={92} depth={0.4} inert={inert} />
+      <PortalSkyAperture mood="forest" seed={5907} shape="ellipse" size={[1.02, 1.96]} intensity={0.92} inert={inert} />
       {[-0.78, 0.78].map((x, index) => (
         <group key={index} position={[x, -0.05, 0]}>
           <mesh rotation={[0, 0, x * 0.18]}>
@@ -1970,9 +1947,6 @@ function _VerdantArch({ inert }: { inert?: boolean }) {
           </mesh>
         )
       })}
-      <FastParticleSwarm mood="forest" inert={inert} profile="fireflies" radius={1.02} count={52} elongated seed={2907} speed={1.8} chaos={0.7} />
-      <OrbitingParticles mood="forest" inert={inert} radius={0.78} count={34} elongated seed={907} spinSpeed={0.76} buzz={0.05} />
-      <EmissiveBolts mood="forest" inert={inert} radius={0.94} count={14} elongated seed={9907} />
       <RimHalo mood="forest" inert={inert} scale={[0.76, 1.22, 1]} radius={0.76} thickness={0.1} opacity={0.28} />
     </group>
   )
@@ -1984,7 +1958,7 @@ function EastAsianGate({ inert }: { inert?: boolean }) {
   const gold = inert ? '#8a7a45' : '#facc15'
   return (
     <group position={[0, 1.42, 0]}>
-      <StencilVoidAperture mood="solar" seed={5907} shape="door" size={[0.88, 1.84]} intensity={0.92} inert={inert} />
+      <PortalSkyAperture mood="solar" seed={5907} shape="door" size={[0.88, 1.84]} intensity={0.92} inert={inert} />
 
       {[-0.82, 0.82].map((x, index) => (
         <group key={index} position={[x, -0.1, 0.08]}>
