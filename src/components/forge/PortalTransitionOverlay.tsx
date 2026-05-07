@@ -177,6 +177,7 @@ export function PortalTransitionOverlay() {
 
   return (
     <div
+      data-portal-transition-overlay=""
       className="fixed inset-0 pointer-events-none z-[260] overflow-hidden"
       style={{
         opacity,

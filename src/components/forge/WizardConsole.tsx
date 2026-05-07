@@ -1172,6 +1172,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
   const removeConjuredAssetFromWorld = useOasisStore(s => s.removeConjuredAssetFromWorld)
   const placedCatalogAssets = useOasisStore(s => s.placedCatalogAssets)
   const portalGates = useOasisStore(s => s.portalGates)
+  const removePortalGate = useOasisStore(s => s.removePortalGate)
   const removeCatalogAsset = useOasisStore(s => s.removeCatalogAsset)
   const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
   const removeAgentWindow = useOasisStore(s => s.removeAgentWindow)
@@ -3096,6 +3097,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
                               if (pos) setCameraLookAt(pos)
                             }
                           }}
+                          onDelete={() => removePortalGate(gate.id)}
                         />
                       ))}
                     </div>

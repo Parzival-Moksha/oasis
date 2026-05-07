@@ -771,19 +771,30 @@ function PortalLightningCrown({
   })
 
   return (
-    <lineSegments ref={lineRef} renderOrder={8}>
-      <bufferGeometry>
-        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
-      </bufferGeometry>
-      <lineBasicMaterial
-        ref={materialRef}
-        color={colors.secondary}
-        transparent
-        opacity={inert ? 0.18 : 0.82}
-        depthWrite={false}
-        blending={THREE.AdditiveBlending}
-      />
-    </lineSegments>
+    <group>
+      <lineSegments ref={lineRef} renderOrder={8}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+        </bufferGeometry>
+        <lineBasicMaterial
+          ref={materialRef}
+          color={colors.secondary}
+          transparent
+          opacity={inert ? 0.18 : 0.82}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </lineSegments>
+      {!inert && (
+        <pointLight
+          color={colors.secondary}
+          intensity={0.75 + intensity * 1.25}
+          distance={3.6 + intensity * 1.4}
+          decay={2}
+          position={[0, 0, 0.42]}
+        />
+      )}
+    </group>
   )
 }
 
@@ -1330,6 +1341,7 @@ function ThresholdRing({ inert }: { inert?: boolean }) {
       <RuneRing mood="arcane" radius={0.74} count={24} inert={inert} elongated />
       <OrbitingParticles mood="arcane" inert={inert} radius={0.84} count={28} elongated seed={111} spinSpeed={0.72} buzz={0.045} />
       <FastParticleSwarm mood="arcane" inert={inert} profile="sparks" radius={0.9} count={42} elongated seed={1211} speed={1.45} chaos={0.5} />
+      <PortalFlameJets mood="arcane" inert={inert} count={14} width={0.95} height={1.74} seed={4211} intensity={0.72} />
       <CrystalHalo mood="arcane" inert={inert} radius={1.22} count={6} />
       <EmissiveBolts mood="arcane" inert={inert} radius={0.98} count={16} elongated seed={2111} />
       <PortalLightningCrown mood="arcane" inert={inert} radius={1.05} elongated count={18} seed={8121} intensity={0.7} />
@@ -1494,8 +1506,8 @@ function SolarArch({ inert }: { inert?: boolean }) {
           </mesh>
         )
       })}
-      <PortalFlameJets mood="solar" inert={inert} count={24} width={1.28} height={1.9} seed={1559} intensity={1.18} />
-      <FastParticleSwarm mood="solar" inert={inert} profile="embers" radius={1.02} count={54} elongated seed={2559} speed={1.95} chaos={0.62} />
+      <PortalFlameJets mood="solar" inert={inert} count={30} width={1.36} height={2.05} seed={1559} intensity={1.52} />
+      <FastParticleSwarm mood="solar" inert={inert} profile="embers" radius={1.08} count={68} elongated seed={2559} speed={2.35} chaos={0.72} />
       <OrbitingParticles mood="solar" inert={inert} radius={0.74} count={30} elongated seed={459} spinSpeed={0.88} buzz={0.05} />
       <EmissiveBolts mood="solar" inert={inert} radius={0.92} count={18} elongated seed={4559} />
       <mesh position={[0, -0.02, 0.02]}>
@@ -1546,8 +1558,9 @@ function RiftSlit({ inert }: { inert?: boolean }) {
         <meshBasicMaterial color="#76f8ff" transparent opacity={inert ? 0.1 : 0.34} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} />
       </mesh>
       <RimHalo mood="rift" inert={inert} scale={[0.24, 1.64, 1]} radius={0.72} thickness={0.14} opacity={0.36} />
-      <PortalLightningCrown mood="rift" inert={inert} radius={0.72} elongated count={34} seed={4673} intensity={1.35} />
-      <FastParticleSwarm mood="rift" inert={inert} profile="shards" radius={0.78} count={58} elongated seed={5673} speed={2.65} chaos={0.96} />
+      <PortalLightningCrown mood="rift" inert={inert} radius={0.82} elongated count={44} seed={4673} intensity={1.75} />
+      <PortalFlameJets mood="rift" inert={inert} count={16} width={0.66} height={2.1} seed={3673} intensity={0.86} />
+      <FastParticleSwarm mood="rift" inert={inert} profile="shards" radius={0.9} count={76} elongated seed={5673} speed={3.15} chaos={1.08} />
       <OrbitingParticles mood="rift" inert={inert} radius={0.56} count={26} elongated seed={573} spinSpeed={1.42} buzz={0.075} />
       <EmissiveBolts mood="rift" inert={inert} radius={0.58} count={12} elongated seed={6673} />
     </group>
@@ -1574,8 +1587,8 @@ function StargateVortex({ inert }: { inert?: boolean }) {
         <meshBasicMaterial color="#f8fafc" transparent opacity={inert ? 0.18 : 0.72} blending={THREE.AdditiveBlending} />
       </mesh>
       <RuneRing mood="arcane" radius={0.96} count={32} inert={inert} />
-      <PortalLightningCrown mood="arcane" inert={inert} radius={1.24} count={36} seed={778} intensity={1.25} />
-      <FastParticleSwarm mood="arcane" inert={inert} profile="sparks" radius={1.18} count={62} seed={1789} speed={2.25} chaos={0.58} />
+      <PortalLightningCrown mood="arcane" inert={inert} radius={1.34} count={48} seed={778} intensity={1.6} />
+      <FastParticleSwarm mood="arcane" inert={inert} profile="sparks" radius={1.24} count={82} seed={1789} speed={2.85} chaos={0.7} />
       <OrbitingParticles mood="arcane" inert={inert} radius={1.05} count={36} seed={789} spinSpeed={1.18} buzz={0.052} />
       <EmissiveBolts mood="arcane" inert={inert} radius={1.12} count={24} seed={7789} />
       <mesh position={[0, -1.42, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -1590,7 +1603,7 @@ function CrystalCavern({ inert }: { inert?: boolean }) {
   return (
     <group position={[0, 1.48, 0]}>
       <SmokeWisps mood="rift" inert={inert} />
-      <StoneCaveMouth mood="rift" inert={inert} scale={[1.18, 1.12, 1]} seed={9897} count={34} />
+      <StoneCaveMouth mood="rift" inert={inert} scale={[1.55, 1.42, 1]} seed={9897} count={44} />
       <PortalAperture mood="rift" seed={897} shape="ellipse" size={[1.18, 2.18]} intensity={1.26} organic={0.58} inert={inert} />
       <PortalWorldGlimpse mood="rift" profile="crystal" size={[1, 1.86]} inert={inert} />
       <PortalDepthTunnel mood="rift" inert={inert} elongated rings={8} radius={0.58} zStep={0.08} />
@@ -1615,8 +1628,9 @@ function CrystalCavern({ inert }: { inert?: boolean }) {
         )
       })}
       <RimHalo mood="rift" inert={inert} scale={[0.72, 1.34, 1]} radius={0.76} thickness={0.12} opacity={0.3} />
-      <PortalLightningCrown mood="rift" inert={inert} radius={1.1} elongated count={22} seed={1897} intensity={0.85} />
-      <FastParticleSwarm mood="rift" inert={inert} profile="shards" radius={0.96} count={46} elongated seed={2897} speed={1.7} chaos={0.74} />
+      <PortalFlameJets mood="rift" inert={inert} count={18} width={1.1} height={1.9} seed={3897} intensity={0.72} />
+      <PortalLightningCrown mood="rift" inert={inert} radius={1.28} elongated count={32} seed={1897} intensity={1.1} />
+      <FastParticleSwarm mood="rift" inert={inert} profile="shards" radius={1.12} count={62} elongated seed={2897} speed={2.05} chaos={0.86} />
       <OrbitingParticles mood="rift" inert={inert} radius={0.72} count={28} elongated seed={897} spinSpeed={0.96} buzz={0.052} />
       <EmissiveBolts mood="rift" inert={inert} radius={0.92} count={18} elongated seed={8897} />
     </group>
