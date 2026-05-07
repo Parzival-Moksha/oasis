@@ -178,6 +178,8 @@ export function PortalTransitionOverlay() {
   return (
     <div
       data-portal-transition-overlay=""
+      data-portal-transition-phase={phase}
+      data-portal-transition-total={total.toFixed(2)}
       className="fixed inset-0 pointer-events-none z-[260] overflow-hidden"
       style={{
         opacity,
