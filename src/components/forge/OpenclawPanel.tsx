@@ -1039,7 +1039,7 @@ export function OpenclawPanel({
   const [voiceMessages, setVoiceMessages] = useState<OpenclawMessage[]>([])
   const [composer, setComposer] = useState('')
   const [loadingStatus, setLoadingStatus] = useState(false)
-  const [loadingSessions, setLoadingSessions] = useState(false)
+  const [_loadingSessions, setLoadingSessions] = useState(false)
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [savingConfig, setSavingConfig] = useState(false)
   const [mcpInfo, setMcpInfo] = useState<OpenclawMcpInfo | null>(null)
@@ -1622,27 +1622,6 @@ export function OpenclawPanel({
     }
   }, [hostedMode, sessions])
 
-  const upsertSessionMessage = useCallback(async (sessionId: string, nextMessage: OpenclawMessage, fallbackTitle?: string) => {
-    let nextMessages: OpenclawMessage[] = []
-    setMessages(current => {
-      const existingIndex = current.findIndex(entry => entry.id === nextMessage.id)
-      if (existingIndex >= 0) {
-        nextMessages = [...current]
-        nextMessages[existingIndex] = {
-          ...nextMessages[existingIndex],
-          ...nextMessage,
-        }
-      } else {
-        nextMessages = [...current, nextMessage].slice(-MAX_LOCAL_TRANSCRIPT_MESSAGES)
-      }
-      return nextMessages
-    })
-
-    if (!sessionId) return
-    await saveStoredTranscript(sessionId, nextMessages)
-    await syncSessionSummary(sessionId, nextMessages, fallbackTitle)
-  }, [syncSessionSummary])
-
   const appendSessionMessageDelta = useCallback(async (sessionId: string, nextMessage: OpenclawMessage, fallbackTitle?: string) => {
     let nextMessages: OpenclawMessage[] = []
     setMessages(current => {
@@ -1872,14 +1851,18 @@ export function OpenclawPanel({
     onToolResult: handleRelayToolResult,
   })
 
+  const relayBridgeStatus = relayBridge.status
+  const relayBridgeSessionId = relayBridge.relaySessionId
+  const requestRelaySessionSync = relayBridge.requestSessionSync
+
   useEffect(() => {
-    if (!hostedMode || relayBridge.status !== 'paired') return
-    relayBridge.requestSessionSync({
+    if (!hostedMode || relayBridgeStatus !== 'paired') return
+    requestRelaySessionSync({
       selectedSessionId: selectedSessionId || undefined,
       includeMessages: true,
       limit: 80,
     })
-  }, [hostedMode, relayBridge.relaySessionId, relayBridge.requestSessionSync, relayBridge.status, selectedSessionId])
+  }, [hostedMode, relayBridgeSessionId, relayBridgeStatus, requestRelaySessionSync, selectedSessionId])
 
   const upsertVoiceMessage = useCallback((nextMessage: OpenclawMessage) => {
     setVoiceMessages(current => {
@@ -2147,7 +2130,7 @@ export function OpenclawPanel({
     }
     saveStoredString(SESSION_KEY, selectedSessionId)
     void loadMessages(selectedSessionId)
-  }, [isVisible, loadMessages, selectedSessionId])
+  }, [isVisible, loadMessages, selectedSessionId, sending])
 
   useEffect(() => {
     if (autoScrollRef.current) {

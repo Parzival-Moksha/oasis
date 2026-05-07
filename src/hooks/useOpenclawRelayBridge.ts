@@ -213,64 +213,89 @@ const IDLE_RELAY_BRIDGE_STATE: RelayBridgeState = Object.freeze({
   requestSessionSync: () => false,
 })
 
-let sharedRelayOwnerId: string | null = null
-let sharedRelaySnapshot: RelayBridgeState = IDLE_RELAY_BRIDGE_STATE
-const sharedRelayOwnershipListeners = new Set<() => void>()
-const sharedRelaySnapshotListeners = new Set<() => void>()
-const sharedRelayChatCallbacks = new Map<string, Pick<
+type SharedRelayCallbacks = Pick<
   UseOpenclawRelayBridgeOptions,
   'onChatAgentDelta' | 'onChatAgentFinal' | 'onSessionSyncResponse' | 'onToolCall' | 'onToolResult'
->>()
+>
 
-function notifySharedRelayOwnership() {
-  for (const listener of sharedRelayOwnershipListeners) listener()
+interface SharedRelayGroup {
+  ownerId: string | null
+  snapshot: RelayBridgeState
+  ownershipListeners: Set<() => void>
+  snapshotListeners: Set<() => void>
+  chatCallbacks: Map<string, SharedRelayCallbacks>
 }
 
-function notifySharedRelaySnapshot() {
-  for (const listener of sharedRelaySnapshotListeners) listener()
+const sharedRelayGroups = new Map<string, SharedRelayGroup>()
+
+function getSharedRelayGroup(sharedKey: string): SharedRelayGroup {
+  let group = sharedRelayGroups.get(sharedKey)
+  if (!group) {
+    group = {
+      ownerId: null,
+      snapshot: IDLE_RELAY_BRIDGE_STATE,
+      ownershipListeners: new Set(),
+      snapshotListeners: new Set(),
+      chatCallbacks: new Map(),
+    }
+    sharedRelayGroups.set(sharedKey, group)
+  }
+  return group
 }
 
-function setSharedRelaySnapshot(snapshot: RelayBridgeState) {
-  sharedRelaySnapshot = snapshot
-  notifySharedRelaySnapshot()
+function notifySharedRelayOwnership(sharedKey: string) {
+  const group = getSharedRelayGroup(sharedKey)
+  for (const listener of group.ownershipListeners) listener()
 }
 
-function subscribeSharedRelaySnapshot(listener: () => void) {
-  sharedRelaySnapshotListeners.add(listener)
+function notifySharedRelaySnapshot(sharedKey: string) {
+  const group = getSharedRelayGroup(sharedKey)
+  for (const listener of group.snapshotListeners) listener()
+}
+
+function setSharedRelaySnapshot(sharedKey: string, snapshot: RelayBridgeState) {
+  const group = getSharedRelayGroup(sharedKey)
+  group.snapshot = snapshot
+  notifySharedRelaySnapshot(sharedKey)
+}
+
+function subscribeSharedRelaySnapshot(sharedKey: string, listener: () => void) {
+  const group = getSharedRelayGroup(sharedKey)
+  group.snapshotListeners.add(listener)
   return () => {
-    sharedRelaySnapshotListeners.delete(listener)
+    group.snapshotListeners.delete(listener)
   }
 }
 
-function getSharedRelaySnapshot() {
-  return sharedRelaySnapshot
+function getSharedRelaySnapshot(sharedKey: string) {
+  return getSharedRelayGroup(sharedKey).snapshot
 }
 
-function dispatchSharedRelayDelta(event: { sessionId: string; text: string }) {
-  for (const callbacks of sharedRelayChatCallbacks.values()) {
+function dispatchSharedRelayDelta(sharedKey: string, event: { sessionId: string; text: string }) {
+  for (const callbacks of getSharedRelayGroup(sharedKey).chatCallbacks.values()) {
     callbacks.onChatAgentDelta?.(event)
   }
 }
 
-function dispatchSharedRelayFinal(event: { sessionId: string; text: string }) {
-  for (const callbacks of sharedRelayChatCallbacks.values()) {
+function dispatchSharedRelayFinal(sharedKey: string, event: { sessionId: string; text: string }) {
+  for (const callbacks of getSharedRelayGroup(sharedKey).chatCallbacks.values()) {
     callbacks.onChatAgentFinal?.(event)
   }
 }
 
-function dispatchSharedRelaySessionSync(event: SessionSyncResponse) {
-  for (const callbacks of sharedRelayChatCallbacks.values()) {
+function dispatchSharedRelaySessionSync(sharedKey: string, event: SessionSyncResponse) {
+  for (const callbacks of getSharedRelayGroup(sharedKey).chatCallbacks.values()) {
     callbacks.onSessionSyncResponse?.(event)
   }
 }
 
-function dispatchSharedRelayToolCall(event: { callId: string; toolName: string; args: Record<string, unknown>; worldId: string }) {
-  for (const callbacks of sharedRelayChatCallbacks.values()) {
+function dispatchSharedRelayToolCall(sharedKey: string, event: { callId: string; toolName: string; args: Record<string, unknown>; worldId: string }) {
+  for (const callbacks of getSharedRelayGroup(sharedKey).chatCallbacks.values()) {
     callbacks.onToolCall?.(event)
   }
 }
 
-function dispatchSharedRelayToolResult(event: {
+function dispatchSharedRelayToolResult(sharedKey: string, event: {
   callId: string
   toolName: string
   ok: boolean
@@ -279,12 +304,12 @@ function dispatchSharedRelayToolResult(event: {
   worldId: string
   durationMs: number
 }) {
-  for (const callbacks of sharedRelayChatCallbacks.values()) {
+  for (const callbacks of getSharedRelayGroup(sharedKey).chatCallbacks.values()) {
     callbacks.onToolResult?.(event)
   }
 }
 
-function useSharedRelayOwnership(wantsOwnership: boolean): boolean {
+function useSharedRelayOwnership(wantsOwnership: boolean, sharedKey: string): boolean {
   const ownerIdRef = useRef<string | null>(null)
   if (!ownerIdRef.current) {
     ownerIdRef.current = `openclaw-shared-relay-${Math.random().toString(36).slice(2)}`
@@ -295,40 +320,43 @@ function useSharedRelayOwnership(wantsOwnership: boolean): boolean {
   const [, rerender] = useState(0)
 
   const tryAcquireOrRefresh = useCallback(() => {
-    if (wantsOwnershipRef.current && sharedRelayOwnerId === null) {
-      sharedRelayOwnerId = ownerIdRef.current
-      notifySharedRelayOwnership()
+    const group = getSharedRelayGroup(sharedKey)
+    if (wantsOwnershipRef.current && group.ownerId === null) {
+      group.ownerId = ownerIdRef.current
+      notifySharedRelayOwnership(sharedKey)
       return
     }
     rerender(value => value + 1)
-  }, [])
+  }, [sharedKey])
 
   useEffect(() => {
-    sharedRelayOwnershipListeners.add(tryAcquireOrRefresh)
+    const group = getSharedRelayGroup(sharedKey)
+    group.ownershipListeners.add(tryAcquireOrRefresh)
     return () => {
-      sharedRelayOwnershipListeners.delete(tryAcquireOrRefresh)
-      if (sharedRelayOwnerId === ownerIdRef.current) {
-        sharedRelayOwnerId = null
-        setSharedRelaySnapshot(IDLE_RELAY_BRIDGE_STATE)
-        notifySharedRelayOwnership()
+      group.ownershipListeners.delete(tryAcquireOrRefresh)
+      if (group.ownerId === ownerIdRef.current) {
+        group.ownerId = null
+        setSharedRelaySnapshot(sharedKey, IDLE_RELAY_BRIDGE_STATE)
+        notifySharedRelayOwnership(sharedKey)
       }
     }
-  }, [tryAcquireOrRefresh])
+  }, [sharedKey, tryAcquireOrRefresh])
 
   useEffect(() => {
+    const group = getSharedRelayGroup(sharedKey)
     if (wantsOwnership) {
-      if (sharedRelayOwnerId === null) {
-        sharedRelayOwnerId = ownerIdRef.current
-        notifySharedRelayOwnership()
+      if (group.ownerId === null) {
+        group.ownerId = ownerIdRef.current
+        notifySharedRelayOwnership(sharedKey)
       }
-    } else if (sharedRelayOwnerId === ownerIdRef.current) {
-      sharedRelayOwnerId = null
-      setSharedRelaySnapshot(IDLE_RELAY_BRIDGE_STATE)
-      notifySharedRelayOwnership()
+    } else if (group.ownerId === ownerIdRef.current) {
+      group.ownerId = null
+      setSharedRelaySnapshot(sharedKey, IDLE_RELAY_BRIDGE_STATE)
+      notifySharedRelayOwnership(sharedKey)
     }
-  }, [wantsOwnership])
+  }, [sharedKey, wantsOwnership])
 
-  return wantsOwnership && sharedRelayOwnerId === ownerIdRef.current
+  return wantsOwnership && getSharedRelayGroup(sharedKey).ownerId === ownerIdRef.current
 }
 
 export function useOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions): RelayBridgeState {
@@ -767,18 +795,28 @@ export function useSharedOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions
     instanceIdRef.current = `openclaw-relay-subscriber-${Math.random().toString(36).slice(2)}`
   }
 
-  const ownsRelayConnection = useSharedRelayOwnership(opts.enabled)
+  const sharedAgentType = opts.agentType || 'openclaw'
+  const sharedAgentSlot = opts.agentSlot || `${sharedAgentType}:primary`
+  const sharedRelayUrl = opts.relayUrl || 'default'
+  const sharedKey = `${sharedRelayUrl}|${sharedAgentType}|${sharedAgentSlot}`
+  const ownsRelayConnection = useSharedRelayOwnership(opts.enabled, sharedKey)
+  const subscribeSharedSnapshot = useCallback(
+    (listener: () => void) => subscribeSharedRelaySnapshot(sharedKey, listener),
+    [sharedKey],
+  )
+  const readSharedSnapshot = useCallback(() => getSharedRelaySnapshot(sharedKey), [sharedKey])
   const sharedSnapshot = useSyncExternalStore(
-    subscribeSharedRelaySnapshot,
-    getSharedRelaySnapshot,
-    getSharedRelaySnapshot,
+    subscribeSharedSnapshot,
+    readSharedSnapshot,
+    readSharedSnapshot,
   )
 
   useEffect(() => {
     if (!opts.enabled) return
     const instanceId = instanceIdRef.current
     if (!instanceId) return
-    sharedRelayChatCallbacks.set(instanceId, {
+    const group = getSharedRelayGroup(sharedKey)
+    group.chatCallbacks.set(instanceId, {
       onChatAgentDelta: opts.onChatAgentDelta,
       onChatAgentFinal: opts.onChatAgentFinal,
       onSessionSyncResponse: opts.onSessionSyncResponse,
@@ -786,23 +824,23 @@ export function useSharedOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions
       onToolResult: opts.onToolResult,
     })
     return () => {
-      sharedRelayChatCallbacks.delete(instanceId)
+      group.chatCallbacks.delete(instanceId)
     }
-  }, [opts.enabled, opts.onChatAgentDelta, opts.onChatAgentFinal, opts.onSessionSyncResponse, opts.onToolCall, opts.onToolResult])
+  }, [opts.enabled, opts.onChatAgentDelta, opts.onChatAgentFinal, opts.onSessionSyncResponse, opts.onToolCall, opts.onToolResult, sharedKey])
 
   const ownedBridge = useOpenclawRelayBridge({
     ...opts,
     enabled: ownsRelayConnection,
-    onChatAgentDelta: dispatchSharedRelayDelta,
-    onChatAgentFinal: dispatchSharedRelayFinal,
-    onSessionSyncResponse: dispatchSharedRelaySessionSync,
-    onToolCall: dispatchSharedRelayToolCall,
-    onToolResult: dispatchSharedRelayToolResult,
+    onChatAgentDelta: event => dispatchSharedRelayDelta(sharedKey, event),
+    onChatAgentFinal: event => dispatchSharedRelayFinal(sharedKey, event),
+    onSessionSyncResponse: event => dispatchSharedRelaySessionSync(sharedKey, event),
+    onToolCall: event => dispatchSharedRelayToolCall(sharedKey, event),
+    onToolResult: event => dispatchSharedRelayToolResult(sharedKey, event),
   })
 
   useEffect(() => {
     if (!ownsRelayConnection) return
-    setSharedRelaySnapshot({
+    setSharedRelaySnapshot(sharedKey, {
       status: ownedBridge.status,
       relaySessionId: ownedBridge.relaySessionId,
       agentStatus: ownedBridge.agentStatus,
@@ -818,6 +856,7 @@ export function useSharedOpenclawRelayBridge(opts: UseOpenclawRelayBridgeOptions
     })
   }, [
     ownsRelayConnection,
+    sharedKey,
     ownedBridge.status,
     ownedBridge.relaySessionId,
     ownedBridge.agentStatus,

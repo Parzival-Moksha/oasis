@@ -270,7 +270,7 @@ export function CodexPanel({
     return () => {
       cancelled = true
     }
-  }, [isVisible])
+  }, [isVisible, model])
 
   useEffect(() => {
     if (embedded || windowId || typeof window === 'undefined' || !model) return

@@ -73,7 +73,9 @@ The Hermes MCP adapter default is `http://127.0.0.1:17891/mcp`. Do not use `4516
 
 After the bridge updates `~/.hermes/config.yaml`, run `/reload-mcp` in an already-open Hermes chat or start a fresh Hermes session so the Oasis tools appear.
 
-If Hermes reports repeated background-process watch notifications for the same bridge PID, do not narrate each one. `pair`, `paired`, `MCP adapter listening`, and `relay socket open` are startup/status log lines. Summarize the first confirmed success and ignore repeated watcher echoes unless the process exits or the user asks for status.
+When you launch the bridge as a kept-alive/background process, do not arm noisy watch patterns such as `pair`, `paired`, `browser.ready`, `MCP adapter listening`, or `relay socket open`. Confirm startup once by waiting/polling the process log, then leave it running quietly. If the runtime requires watch patterns, use only failure patterns such as `fatal`, `error`, `closed`, `exited`, `not_found`, `ECONNREFUSED`, or `EADDRINUSE`.
+
+If Hermes reports repeated background-process watch notifications for the same bridge PID, do not narrate each one. `pair`, `paired`, `browser.ready`, `MCP adapter listening`, and `relay socket open` are startup/status log lines. Summarize the first confirmed success and ignore repeated watcher echoes unless the process exits, a tool call fails, or the user asks for status.
 
 Hermes success logs should include:
 

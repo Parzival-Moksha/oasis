@@ -3235,7 +3235,7 @@ export function AnorakProPanel({
       finishActivity()
       setIsAgentRunning(false)
     }
-  }, [])
+  }, [config.models, proSessionId])
 
   const handleCurate = useCallback((missionId: number) => {
     setActiveTab('stream')

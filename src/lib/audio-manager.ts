@@ -29,6 +29,7 @@ export type SoundEvent =
   | 'conjureDone'   // Conjuration completed
   | 'anorakDone'    // Anorak finished response
   | 'notification'  // DevCraft timer, mission complete
+  | 'connected'     // Agent/world link established
   | 'undo'          // Undo action
   | 'redo'          // Redo action
   | 'agentFocus'    // Enter zoomon mode
@@ -44,6 +45,7 @@ export type SoundEvent =
 
 const UI = '/audio/kenney-ui/Audio'
 const RPG = '/audio/kenney-rpg/Audio'
+const INTERFACE = '/audio/kenney_interface-sounds/Audio'
 
 export interface SoundOption {
   id: string
@@ -74,6 +76,12 @@ export const SOUND_OPTIONS: Record<SoundEvent, SoundOption[]> = {
     { id: 'pot3', label: 'Metal Pot 3', path: `${RPG}/metalPot3.ogg` }, { id: 'coins1', label: 'Coins 1', path: `${RPG}/handleCoins.ogg` },
     { id: 'door1', label: 'Door Open', path: `${RPG}/doorOpen_1.ogg` }, { id: 'bookClose', label: 'Book Close', path: `${RPG}/bookClose.ogg` },
     { id: 'click5', label: 'Click 5', path: `${UI}/click5.ogg` },
+  ],
+  connected: [
+    { id: 'confirm1', label: 'Confirmation 1', path: `${INTERFACE}/confirmation_001.ogg` },
+    { id: 'confirm2', label: 'Confirmation 2', path: `${INTERFACE}/confirmation_002.ogg` },
+    { id: 'confirm3', label: 'Confirmation 3', path: `${INTERFACE}/confirmation_003.ogg` },
+    { id: 'complete', label: 'Mission Complete', path: '/audio/kenney_voiceover-pack/Female/mission_completed.ogg' },
   ],
   undo:         [{ id: 'sw11', label: 'Switch 11', path: `${UI}/switch11.ogg` }, { id: 'sw12', label: 'Switch 12', path: `${UI}/switch12.ogg` }],
   redo:         [{ id: 'sw13', label: 'Switch 13', path: `${UI}/switch13.ogg` }, { id: 'sw14', label: 'Switch 14', path: `${UI}/switch14.ogg` }],

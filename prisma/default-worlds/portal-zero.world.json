@@ -293,7 +293,7 @@
       },
       {
         "id": "portal-gate-world-1773958302651-tgum",
-        "variant": "rift-slit",
+        "variant": "solar-arch",
         "position": [
           -5.230810839623345,
           0,
@@ -329,7 +329,7 @@
       },
       {
         "id": "portal-1778033296489-zai8-a",
-        "variant": "stargate-vortex",
+        "variant": "solar-arch",
         "position": [
           27.4486795757477,
           0,
@@ -551,6 +551,6 @@
         "label": "OpenClaw"
       }
     ],
-    "savedAt": "2026-05-07T00:50:21.114Z"
+    "savedAt": "2026-05-07T02:44:54.507Z"
   }
 }
