@@ -178,6 +178,15 @@ export function PlayerAvatar({
   const spellAudioRef = useRef<HTMLAudioElement | null>(null)
   const spellAnimationActiveRef = useRef(false)
   const portalRollTimeoutRef = useRef<number | null>(null)
+  // Reveal-roll forward motion: avatar slides 3m in its facing direction during
+  // the ual-roll clip so the roll reads as physical forward momentum.
+  const rollMotionRef = useRef<{
+    startPos: THREE.Vector3
+    forward: THREE.Vector3
+    distance: number
+    startMs: number
+    durationMs: number
+  } | null>(null)
   const [playerSpellCasting, setPlayerSpellCastingState] = useState(() => getPlayerSpellCasting())
 
   // ── IBL one-shot flag ──────────────────────────────────────────────
@@ -328,8 +337,19 @@ export function PlayerAvatar({
         const durationMs = Math.max(450, (currentController.getClipDuration('ual-roll') ?? 1.45) * 1000)
         velocityRef.current.set(0, 0, 0)
         isMovingRef.current = false
+        // Capture spawn pose + facing direction; slide 3m forward over the roll
+        // duration in useFrame. positionRef.current is the avatar's spawn after
+        // the portal teleport; forward is yaw-derived (x = sin, z = cos).
+        rollMotionRef.current = {
+          startPos: positionRef.current.clone(),
+          forward: new THREE.Vector3(Math.sin(facingAngle.current), 0, Math.cos(facingAngle.current)),
+          distance: 3,
+          startMs: performance.now(),
+          durationMs,
+        }
         currentController.transitionTo('custom', 'ual-roll', { loop: false })
         portalRollTimeoutRef.current = window.setTimeout(() => {
+          rollMotionRef.current = null
           const nextController = animControllerRef.current
           if (!nextController || nextController.state !== 'custom') return
           nextController.transitionTo('idle')
@@ -342,6 +362,7 @@ export function PlayerAvatar({
       window.removeEventListener(PORTAL_REVEAL_ROLL_EVENT, onPortalRevealRoll)
       if (portalRollTimeoutRef.current) window.clearTimeout(portalRollTimeoutRef.current)
       portalRollTimeoutRef.current = null
+      rollMotionRef.current = null
     }
   }, [])
 
@@ -538,6 +559,20 @@ export function PlayerAvatar({
 
       // Apply velocity to position
       positionRef.current.add(_tempVec.current.copy(velocityRef.current).multiplyScalar(delta))
+
+      // Reveal-roll forward slide: avatar tweens 3m in facing direction over
+      // the roll clip's duration. Eased so the slide feels natural (faster at
+      // start, slower at end). Cleared automatically when the roll completes.
+      const rm = rollMotionRef.current
+      if (rm) {
+        const elapsed = performance.now() - rm.startMs
+        const t = Math.min(1, elapsed / Math.max(1, rm.durationMs))
+        // easeOutCubic — most of the slide happens early, settles smoothly
+        const ease = 1 - Math.pow(1 - t, 3)
+        positionRef.current.x = rm.startPos.x + rm.forward.x * rm.distance * ease
+        positionRef.current.z = rm.startPos.z + rm.forward.z * rm.distance * ease
+        if (t >= 1) rollMotionRef.current = null
+      }
 
       // ── Position camera behind avatar using spherical coords ───
       cameraZoom.current += (cameraZoomTarget.current - cameraZoom.current) * (1 - Math.exp(-TPS_ZOOM_SMOOTHING * delta))

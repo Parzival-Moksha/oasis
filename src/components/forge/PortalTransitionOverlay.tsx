@@ -8,6 +8,17 @@ import {
   type PortalTransitionEffect,
   type PortalTransitionSettings,
 } from '../../lib/portal-transition-settings'
+import { WormholeCanvas, type WormholeVariant } from './WormholeCanvas'
+
+const WEBGL_WORMHOLE_VARIANTS: PortalTransitionEffect[] = [
+  'bobbyroe-wormhole',
+  'infinite-tubes',
+  'wormhole-extreme',
+  'tsl-vortex',
+]
+function isWebglWormhole(effect: PortalTransitionEffect): effect is WormholeVariant {
+  return WEBGL_WORMHOLE_VARIANTS.includes(effect)
+}
 
 interface PortalTransitionStartDetail {
   settings?: Partial<PortalTransitionSettings>
@@ -86,9 +97,6 @@ function ambientBackground(effect: PortalTransitionEffect, phase: PhaseName, pro
         rgba(167,139,250,${0.26 + alpha * 0.2}) 32%,
         rgba(2,6,23,0.78) 64%,
         rgba(0,0,0,0.96) 100%)`
-    case 'root-tendrils':
-      return `radial-gradient(circle at 50% 50%, rgba(0,0,0,${0.72 + progress * 0.22}) 0%, rgba(5,46,22,0.88) 38%, rgba(0,0,0,0.96) 100%),
-        conic-gradient(from ${progress * 120}deg, rgba(34,197,94,0.2), rgba(20,83,45,0.82), rgba(0,0,0,0.94), rgba(134,239,172,0.22))`
     case 'wireframe-wormhole':
       return `radial-gradient(ellipse at 50% 50%,
         rgba(34,211,238,${0.28 + alpha * 0.22}) 0%,
@@ -115,6 +123,13 @@ function ambientBackground(effect: PortalTransitionEffect, phase: PhaseName, pro
         rgba(6,46,28,0.78) 28%,
         rgba(0,12,6,0.94) 70%,
         rgba(0,0,0,1) 100%)`
+    case 'bobbyroe-wormhole':
+    case 'infinite-tubes':
+    case 'wormhole-extreme':
+    case 'tsl-vortex':
+      // WebGL variants render their own canvas above this layer; the ambient
+      // backdrop just needs to be black so the canvas isn't bleed-through.
+      return 'rgba(0,0,0,1)'
   }
 }
 
@@ -1054,6 +1069,18 @@ export function PortalTransitionOverlay() {
         backdropFilter: `blur(${phase === 'tunnel' ? 3 + settings.intensity * 2 : progress * 2}px) hue-rotate(${totalProgress * 210}deg) saturate(${1 + settings.intensity * 0.55})`,
       }}
     >
+      {/* WebGL wormhole variants run on a separate Three.js canvas overlaid
+          full-screen. Mounted only during the tunnel phase so other phases
+          stay on the cheaper CSS path. */}
+      {phase === 'tunnel' && isWebglWormhole(effect) && (
+        <WormholeCanvas
+          variant={effect}
+          intensity={settings.intensity}
+          speed={settings.particleSpeed}
+          hue={(active.seed % 1000) / 1000}
+        />
+      )}
+
       <div style={layerStyle} />
 
       {effect === 'wireframe-wormhole' && (
@@ -1076,9 +1103,6 @@ export function PortalTransitionOverlay() {
       )}
       {effect === 'glass-shatter' && (
         <GlassShatter progress={progress} phase={phase} seed={active.seed} settings={settings} />
-      )}
-      {effect === 'root-tendrils' && (
-        <RootTendrils tick={tick} progress={progress} phase={phase} seed={active.seed} />
       )}
       {effect === 'void-iris' && (
         <VoidIris phase={phase} progress={progress} effect={effect} />

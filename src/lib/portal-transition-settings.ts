@@ -5,11 +5,14 @@ export type PortalTransitionEffect =
   | 'black-hole-pinch'
   | 'glass-shatter'
   | 'prism-burst'
-  | 'root-tendrils'
   | 'wireframe-wormhole'
   | 'cosmic-wormhole'
   | 'plasma-wormhole'
   | 'datawave-wormhole'
+  | 'bobbyroe-wormhole'
+  | 'infinite-tubes'
+  | 'wormhole-extreme'
+  | 'tsl-vortex'
 
 export interface PortalTransitionSettings {
   enabled: boolean
@@ -32,11 +35,14 @@ export const PORTAL_TRANSITION_EFFECTS: Array<{ id: PortalTransitionEffect; labe
   { id: 'black-hole-pinch', label: 'Black Hole Pinch', desc: 'swallow · gravity well + accretion ring' },
   { id: 'glass-shatter', label: 'Glass Shatter', desc: 'reveal · refractive shard break' },
   { id: 'prism-burst', label: 'Prism Burst', desc: 'reveal · chromatic flare' },
-  { id: 'root-tendrils', label: 'Root Tendrils', desc: 'reveal · organic wipe' },
-  { id: 'wireframe-wormhole', label: 'Wireframe Wormhole', desc: 'tunnel · neon Tron grid tube' },
-  { id: 'cosmic-wormhole', label: 'Cosmic Wormhole', desc: 'tunnel · nebula + hyperjump streaks' },
-  { id: 'plasma-wormhole', label: 'Plasma Wormhole', desc: 'tunnel · electric arc conduit' },
-  { id: 'datawave-wormhole', label: 'Datawave Wormhole', desc: 'tunnel · matrix glitch corridor' },
+  { id: 'wireframe-wormhole', label: 'Wireframe Wormhole', desc: 'tunnel · neon Tron grid tube (CSS)' },
+  { id: 'cosmic-wormhole', label: 'Cosmic Wormhole', desc: 'tunnel · nebula + hyperjump streaks (CSS)' },
+  { id: 'plasma-wormhole', label: 'Plasma Wormhole', desc: 'tunnel · electric arc conduit (CSS)' },
+  { id: 'datawave-wormhole', label: 'Datawave Wormhole', desc: 'tunnel · matrix glitch corridor (CSS)' },
+  { id: 'bobbyroe-wormhole', label: 'Bobbyroe Wormhole', desc: 'tunnel · WebGL noise-displaced star tube' },
+  { id: 'infinite-tubes', label: 'Infinite Tubes', desc: 'tunnel · WebGL textured tube w/ scrolling UVs' },
+  { id: 'wormhole-extreme', label: 'Wormhole Extreme', desc: 'tunnel · WebGL warp+nebula tunnel' },
+  { id: 'tsl-vortex', label: 'TSL Vortex', desc: 'tunnel · WebGL procedural vortex shader' },
 ]
 
 export const DEFAULT_PORTAL_TRANSITION_SETTINGS: PortalTransitionSettings = {

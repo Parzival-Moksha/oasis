@@ -2767,14 +2767,6 @@ export function WorldObjectsRenderer() {
         transformMode={transformMode}
       />
 
-      {/* Transform mode HUD — hidden in agent-focus (zoomon shows its own UI) */}
-      {selectedObjectId && !hasAgentFocus && (
-        <Html position={[0, 0.5, 0]} center style={{ pointerEvents: 'none' }}>
-          <div className="text-[10px] font-mono text-blue-400/60 bg-black/60 px-2 py-0.5 rounded whitespace-nowrap select-none">
-            {transformMode.toUpperCase()} | R/T/Y switch | ESC deselect
-          </div>
-        </Html>
-      )}
     </group>
   )
 }
