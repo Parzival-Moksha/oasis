@@ -40,10 +40,10 @@ function PortalLabel({ gate }: { gate: PortalGate }) {
   const palette = PORTAL_LABEL_COLORS[gate.variant] ?? PORTAL_LABEL_COLORS['threshold-ring']
   const label = getPortalGateLabel(gate)
   const dim = gate.inert ? 0.4 : 1
-  // Position: 1m higher than the old HTML label (was y=3.15 → now 4.15).
+  // Position: 3m higher than the old HTML label (was y=3.15 → now 6.15).
   // Center wraps the extruded geometry so it horizontally centers above the gate.
   return (
-    <group position={[0, 4.15, 0]}>
+    <group position={[0, 6.15, 0]}>
       <Center>
         <Text3D
           font={PORTAL_LABEL_FONT}
@@ -1021,7 +1021,6 @@ interface BoltDescriptor {
 }
 
 const BOLT_GROWTH_TIMINGS = [0, 150, 270, 360, 420] // ms cumulative
-const BOLT_BRANCH_TIMINGS = [240, 330, 390]
 const BOLT_GROWTH_TOTAL_MS = 450
 const BOLT_FADE_MS = 3000
 const BOLT_LIFETIME_MS = BOLT_GROWTH_TOTAL_MS + BOLT_FADE_MS
@@ -1066,9 +1065,11 @@ function makeBolt(seed: number, radius: number, yScale: number, color: string): 
     pos = next
   }
 
-  // 35% chance: branch off segment 2's endpoint with 3 mini-segments.
-  if (Math.random() < 0.35) {
-    let bp = segments[1].end
+  // 70% chance: primary branch off segment 1's end with 3 mini-segments.
+  // 50% chance (independent): a secondary branch off segment 2's end with 2
+  // mini-segments. Together this ~2× the branching density we had before.
+  function spawnBranch(rootIndex: number, count: number, baseBirthOffset: number) {
+    let bp = segments[rootIndex].end
     let bd: [number, number, number] = [
       (Math.random() - 0.5) * 1.4,
       (Math.random() - 0.5) * 1.4,
@@ -1076,14 +1077,18 @@ function makeBolt(seed: number, radius: number, yScale: number, color: string): 
     ]
     const bm = Math.hypot(bd[0], bd[1], bd[2]) || 1
     bd = [bd[0] / bm, bd[1] / bm, bd[2] / bm]
-    for (let i = 0; i < 3; i++) {
-      const len = 0.16 + Math.random() * 0.22
+    for (let i = 0; i < count; i++) {
+      const len = 0.14 + Math.random() * 0.22
       const next: [number, number, number] = [
         bp[0] + bd[0] * len,
         bp[1] + bd[1] * len * yScale,
         bp[2] + bd[2] * len * 0.5,
       ]
-      segments.push({ start: bp, end: next, birthMs: BOLT_BRANCH_TIMINGS[i] })
+      segments.push({
+        start: bp,
+        end: next,
+        birthMs: baseBirthOffset + i * 60,
+      })
       bp = next
       const turn = (Math.random() - 0.5) * 1.4
       bd = [
@@ -1094,6 +1099,10 @@ function makeBolt(seed: number, radius: number, yScale: number, color: string): 
     }
   }
 
+  if (Math.random() < 0.7) spawnBranch(1, 3, 240)
+  if (Math.random() < 0.5) spawnBranch(2, 2, 320)
+  if (Math.random() < 0.3) spawnBranch(3, 2, 380)
+
   return {
     id: `bolt-${seed}-${performance.now()}-${Math.random().toString(36).slice(2, 7)}`,
     segments,
@@ -1103,17 +1112,22 @@ function makeBolt(seed: number, radius: number, yScale: number, color: string): 
 }
 
 function Bolt({ bolt, intensity }: { bolt: BoltDescriptor; intensity: number }) {
-  // Pre-allocate a positions buffer for up to 8 segments × 2 verts × 3 floats.
+  // Pre-allocate a positions buffer for up to 11 segments × 2 verts × 3 floats.
   const segmentCount = bolt.segments.length
   const positions = useMemo(() => new Float32Array(segmentCount * 2 * 3), [segmentCount])
   const lineRef = useRef<THREE.LineSegments>(null)
   const materialRef = useRef<THREE.LineBasicMaterial>(null)
-  const lightRef = useRef<THREE.PointLight>(null)
+  // NOTE: deliberately no per-bolt pointLight. Spawning/disposing 5 lights/sec
+  // forces Three.js to recompile every shader in the scene whenever the active
+  // light count changes — that's a hard GPU stall (200+ ms freezes). Additive
+  // blending on the line itself is bright enough; if we want bloom we add a
+  // single static light per gate instead, in PortalLightningCrown.
 
   useFrame(() => {
     const elapsed = performance.now() - bolt.bornAt
     // Reveal segments by writing their endpoints once their birthMs has passed.
-    // Pre-birth segments stay zero-length (start == end) and render as a point.
+    // Pre-birth segments stay zero-length (start == end) so they render as a
+    // single (invisible) point rather than a stale line from the prior frame.
     for (let i = 0; i < segmentCount; i++) {
       const seg = bolt.segments[i]
       const visible = elapsed >= seg.birthMs
@@ -1126,7 +1140,6 @@ function Bolt({ bolt, intensity }: { bolt: BoltDescriptor; intensity: number }) 
         positions[offset + 4] = seg.end[1]
         positions[offset + 5] = seg.end[2]
       } else {
-        // zero-length so nothing renders
         positions[offset] = positions[offset + 3] = seg.start[0]
         positions[offset + 1] = positions[offset + 4] = seg.start[1]
         positions[offset + 2] = positions[offset + 5] = seg.start[2]
@@ -1147,39 +1160,23 @@ function Bolt({ bolt, intensity }: { bolt: BoltDescriptor; intensity: number }) 
       alpha = Math.max(0, 1 - (elapsed - BOLT_GROWTH_TOTAL_MS) / BOLT_FADE_MS)
     }
     if (materialRef.current) materialRef.current.opacity = alpha * intensity
-    if (lightRef.current) {
-      lightRef.current.intensity = alpha * 1.4 * intensity
-    }
   })
 
-  // Bolt center for the point light (rough midpoint of the polyline).
-  const lightPos = bolt.segments[Math.floor(segmentCount / 2)].end
-
   return (
-    <group>
-      <lineSegments ref={lineRef} renderOrder={9}>
-        <bufferGeometry>
-          <bufferAttribute attach="attributes-position" args={[positions, 3]} />
-        </bufferGeometry>
-        <lineBasicMaterial
-          ref={materialRef}
-          color={bolt.color}
-          transparent
-          opacity={0}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          linewidth={2}
-        />
-      </lineSegments>
-      <pointLight
-        ref={lightRef}
+    <lineSegments ref={lineRef} renderOrder={9}>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+      </bufferGeometry>
+      <lineBasicMaterial
+        ref={materialRef}
         color={bolt.color}
-        intensity={0}
-        distance={2.4}
-        decay={2}
-        position={lightPos}
+        transparent
+        opacity={0}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+        linewidth={2}
       />
-    </group>
+    </lineSegments>
   )
 }
 

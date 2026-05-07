@@ -143,6 +143,16 @@ export function PortalTransitionSettingsPanel() {
         <SliderRow label="Shake" value={settings.shake} min={0} max={0.7} step={0.01} onChange={value => patch({ shake: value })} />
       </div>
 
+      {/* WebGL wormhole tuning — affects bobbyroe / infinite-tubes /
+          wormhole-extreme / tsl-vortex. Ignored by CSS variants. */}
+      <div className="space-y-1.5 pt-1.5 border-t border-cyan-500/15">
+        <div className="text-[9px] text-cyan-400/70 uppercase tracking-wider font-mono pb-0.5">WebGL wormhole knobs</div>
+        <SliderRow label="WH hue" value={settings.wormholeHue} min={0} max={1} step={0.01} onChange={value => patch({ wormholeHue: value })} />
+        <SliderRow label="WH noise" value={settings.wormholeNoiseAmp} min={0} max={1.5} step={0.02} onChange={value => patch({ wormholeNoiseAmp: value })} />
+        <SliderRow label="WH radius" value={settings.wormholeRadius} min={1} max={6} step={0.1} onChange={value => patch({ wormholeRadius: value })} />
+        <SliderRow label="WH bob" value={settings.wormholeBob} min={0} max={3} step={0.05} onChange={value => patch({ wormholeBob: value })} />
+      </div>
+
       <div className="flex items-center gap-2">
         <button
           type="button"

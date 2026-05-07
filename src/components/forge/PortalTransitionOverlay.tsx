@@ -130,6 +130,9 @@ function ambientBackground(effect: PortalTransitionEffect, phase: PhaseName, pro
       // WebGL variants render their own canvas above this layer; the ambient
       // backdrop just needs to be black so the canvas isn't bleed-through.
       return 'rgba(0,0,0,1)'
+    case 'none':
+      // Transparent — caller skips overlay rendering entirely for this phase.
+      return 'rgba(0,0,0,0)'
   }
 }
 
@@ -1035,7 +1038,11 @@ export function PortalTransitionOverlay() {
   const { phase, progress, effect, total } = phaseFor(settings, tick)
   const totalProgress = Math.min(1, tick / Math.max(0.001, total))
   const revealFade = phase === 'reveal' ? 1 - progress : 1
-  const opacity = Math.min(1, (phase === 'swallow' ? progress * 2.5 : 1) * revealFade)
+  // 'none' for a phase = skip the overlay entirely. Camera animations driven
+  // by PortalGateLayer still run; we just don't paint anything on top.
+  const opacity = effect === 'none'
+    ? 0
+    : Math.min(1, (phase === 'swallow' ? progress * 2.5 : 1) * revealFade)
   const shake = settings.shake * (phase === 'tunnel' ? 16 : 8) * Math.sin(tick * 38)
   const isWormhole = effect === 'wireframe-wormhole'
     || effect === 'cosmic-wormhole'
@@ -1077,7 +1084,10 @@ export function PortalTransitionOverlay() {
           variant={effect}
           intensity={settings.intensity}
           speed={settings.particleSpeed}
-          hue={(active.seed % 1000) / 1000}
+          hue={settings.wormholeHue}
+          noiseAmp={settings.wormholeNoiseAmp}
+          radius={settings.wormholeRadius}
+          bob={settings.wormholeBob}
         />
       )}
 

@@ -320,7 +320,14 @@ export function PlayerAvatar({
       if (ok) {
         controller.transitionTo('idle')
       }
-      setAvatarPoseReady(true)
+      // Wait two animation frames before revealing the avatar. The first frame
+      // is when the idle clip's mixer evaluates and applies bone transforms;
+      // showing the avatar before that = T-pose. Two frames is generous and
+      // accounts for any internal Three.js scheduling.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (animControllerRef.current !== controller) return
+        setAvatarPoseReady(true)
+      }))
     })
     return () => { controller.dispose(); animControllerRef.current = null }
   }, [vrm])

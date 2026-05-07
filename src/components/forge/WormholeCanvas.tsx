@@ -32,6 +32,12 @@ export interface WormholeCanvasProps {
   speed?: number
   /** 0..1 — base hue for color-tinted variants */
   hue?: number
+  /** 0..1.5 — bobbyroe wall noise amplitude */
+  noiseAmp?: number
+  /** 1..6 — tunnel radius (bobbyroe + tube + extreme) */
+  radius?: number
+  /** 0..3 — camera bob amplitude (parallax sway) */
+  bob?: number
 }
 
 interface Variant {
@@ -76,8 +82,8 @@ function smoothNoise3(x: number, y: number, z: number): number {
   return ab * (1 - w) + cd * w
 }
 
-function setupBobbyroe(scene: THREE.Scene, camera: THREE.PerspectiveCamera, opts: { speed: number; hue: number }): Variant {
-  const radius = 3
+function setupBobbyroe(scene: THREE.Scene, camera: THREE.PerspectiveCamera, opts: { speed: number; hue: number; noiseAmp: number; radius: number; bob: number }): Variant {
+  const radius = opts.radius
   const tubeLength = 200
   // 64 × 1024 = ~65k verts per tube — about 1/8 of bobbyroe's original. Plenty
   // of points for the look, way cheaper to displace and upload.
@@ -85,7 +91,7 @@ function setupBobbyroe(scene: THREE.Scene, camera: THREE.PerspectiveCamera, opts
   const tubeVerts = tubeGeo.attributes.position
   const colors: number[] = []
   const noisefreq = 0.1
-  const noiseAmp = 0.5
+  const noiseAmp = opts.noiseAmp
   const hueNoiseFreq = 0.005
   const baseHue = opts.hue
   const p = new THREE.Vector3()
@@ -128,8 +134,8 @@ function setupBobbyroe(scene: THREE.Scene, camera: THREE.PerspectiveCamera, opts
         t.points.position.z += stride
         if (t.points.position.z > t.endPosZ) t.points.position.z = t.resetPosZ
       }
-      camera.position.x = Math.cos(elapsed) * 1.5
-      camera.position.y = Math.sin(elapsed) * 1.5
+      camera.position.x = Math.cos(elapsed) * opts.bob
+      camera.position.y = Math.sin(elapsed) * opts.bob
       camera.lookAt(0, 0, -10)
     },
     dispose() {
@@ -186,48 +192,50 @@ function makeInfiniteTubeTexture(): THREE.CanvasTexture {
 }
 
 function setupInfiniteTubes(scene: THREE.Scene, camera: THREE.PerspectiveCamera, opts: { speed: number; hue: number }): Variant {
-  // Curve: a wavy CatmullRom path through space.
+  // Curve: a wavy CatmullRom path stretching forward in -Z (camera default
+  // forward direction). Larger XY amplitude so the tube actually winds.
   const points: THREE.Vector3[] = []
-  for (let i = 0; i < 16; i++) {
+  const SEG = 24
+  for (let i = 0; i < SEG; i++) {
     points.push(new THREE.Vector3(
-      Math.sin(i * 0.7) * 0.6,
-      Math.cos(i * 0.5) * 0.5,
-      i * 1.2,
+      Math.sin(i * 0.55) * 4,
+      Math.cos(i * 0.4) * 3,
+      -i * 8, // -Z forward
     ))
   }
   const curve = new THREE.CatmullRomCurve3(points)
-  const tubeGeo = new THREE.TubeGeometry(curve, 70, 0.02, 50, true)
-  // Scaled UP so we feel inside it.
-  tubeGeo.scale(40, 40, 40)
+  // Radius 2.5 — large enough that the camera sits comfortably inside.
+  const tubeGeo = new THREE.TubeGeometry(curve, 200, 2.5, 32, false)
   const tex = makeInfiniteTubeTexture()
-  const mat = new THREE.MeshStandardMaterial({
+  // Repeat the texture down the tube length so the grid pattern reads small.
+  tex.repeat.set(60, 4)
+  const mat = new THREE.MeshBasicMaterial({
     map: tex,
-    side: THREE.BackSide,
-    roughness: 0.4,
-    metalness: 0.6,
-    emissive: new THREE.Color().setHSL(opts.hue, 0.5, 0.18),
-    emissiveIntensity: 0.6,
+    side: THREE.BackSide, // we render the tube's inside walls
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
   })
   const tube = new THREE.Mesh(tubeGeo, mat)
   scene.add(tube)
-  // Camera placed inside near the start.
-  camera.position.set(0, 0, 0)
-  // Fill light from inside the tube.
-  const light = new THREE.PointLight(0xffffff, 1.6, 80)
-  light.position.set(0, 0, 0)
-  scene.add(light)
+  // Camera at the curve's first point + look at the third point (down the tube).
+  const lookAt = new THREE.Vector3()
+  camera.position.set(points[0].x, points[0].y, points[0].z)
 
   return {
     update(elapsed, delta) {
-      // Texture offset → forward illusion (the trick).
-      tex.offset.x += delta * 0.3 * opts.speed
-      // Camera bobs gently inside the tube.
-      camera.position.x = Math.sin(elapsed * 0.6) * 0.8
-      camera.position.y = Math.cos(elapsed * 0.4) * 0.6
-      camera.lookAt(0, 0, 5)
+      // Scrolling UVs → forward-motion illusion (the Codrops trick).
+      tex.offset.x += delta * 0.35 * opts.speed
+      // March the camera through the curve at parameter t∈[0..1] looping.
+      const t = (elapsed * 0.012 * opts.speed) % 1
+      const here = curve.getPointAt(t)
+      const ahead = curve.getPointAt((t + 0.02) % 1)
+      camera.position.copy(here)
+      lookAt.copy(ahead)
+      camera.lookAt(lookAt)
     },
     dispose() {
-      scene.remove(tube, light)
+      scene.remove(tube)
       tubeGeo.dispose()
       mat.dispose()
       tex.dispose()
@@ -277,11 +285,17 @@ function makeWaterTexture(): THREE.CanvasTexture {
 }
 
 function setupWormholeExtreme(scene: THREE.Scene, camera: THREE.PerspectiveCamera, opts: { speed: number; hue: number }): Variant {
-  // Conical tube vanishing to a point ahead. BackSide so we see the inside.
-  const geo = new THREE.CylinderGeometry(100, 0, 300, 40, 40, true)
+  // Conical tube. Wide opening at +Z (behind us / above), vanishing point at
+  // -Z (in front, where the camera looks). After rotateX(pi/2): top (radius
+  // small) lands at -Z, bottom (radius wide) lands at +Z.
+  const geo = new THREE.CylinderGeometry(0.5, 30, 200, 40, 40, true)
+  geo.rotateX(Math.PI / 2)
   const tex = makeWaterTexture()
-  const tint = new THREE.Color().setHSL(opts.hue, 0.85, 0.6)
-  const mat = new THREE.MeshLambertMaterial({
+  tex.repeat.set(2, 4)
+  const tint = new THREE.Color().setHSL(opts.hue, 0.85, 0.7)
+  // MeshBasicMaterial avoids needing scene lights — additive blending +
+  // bright tint reads like glowing energy walls without lighting cost.
+  const mat = new THREE.MeshBasicMaterial({
     color: tint,
     map: tex,
     blending: THREE.AdditiveBlending,
@@ -290,26 +304,24 @@ function setupWormholeExtreme(scene: THREE.Scene, camera: THREE.PerspectiveCamer
     depthWrite: false,
   })
   const cyl = new THREE.Mesh(geo, mat)
-  cyl.rotation.x = Math.PI / 2
-  const group = new THREE.Object3D()
-  group.add(cyl)
-  scene.add(group)
-  // Bright point light at the center to color the inner walls.
-  const light = new THREE.PointLight(tint, 4, 100)
-  scene.add(light)
-  camera.position.set(0, 0, 0)
+  scene.add(cyl)
+  // Camera sits inside the wide end of the cone, looking toward the
+  // vanishing point at -Z.
+  camera.position.set(0, 0, 20)
 
   return {
     update(elapsed, delta) {
-      tex.offset.y -= delta * 0.5 * opts.speed
-      group.rotation.z -= 0.008 * 60 * delta
-      // Gentle camera sway.
-      camera.position.x = Math.sin(elapsed * 0.7) * 0.4
-      camera.position.y = Math.cos(elapsed * 0.5) * 0.3
-      camera.lookAt(0, 0, -10)
+      // Scroll the texture along the tube length for warp-speed motion.
+      tex.offset.y -= delta * 0.55 * opts.speed
+      // Slow rotation around the tube axis for parallax.
+      cyl.rotation.z -= 0.01 * 60 * delta * opts.speed
+      // Slight camera sway.
+      camera.position.x = Math.sin(elapsed * 0.5) * 0.6
+      camera.position.y = Math.cos(elapsed * 0.4) * 0.5
+      camera.lookAt(0, 0, -50)
     },
     dispose() {
-      scene.remove(group, light)
+      scene.remove(cyl)
       geo.dispose()
       mat.dispose()
       tex.dispose()
@@ -378,12 +390,14 @@ void main() {
   // Polar coords — angle θ, radius r. Vortex twists θ with r-dependent rotation.
   float r = length(p);
   float theta = atan(p.y, p.x);
-  float t = uTime * uSpeed;
+  // Boosted base speed: x4 vs the original. uSpeed slider still scales it.
+  float t = uTime * uSpeed * 4.0;
 
-  // Vortex swirl: angle adds a 1/r rotation, plus time. Tightens toward center.
-  float swirl = theta + 4.0 / max(r, 0.05) - t * 1.2;
-  // Project that into "tunnel UV" space — band along swirl, depth via 1/r.
-  vec2 tunnelUv = vec2(swirl * 0.5 / 3.14159, 1.5 / max(r, 0.001) - t * 0.6);
+  // Vortex swirl. Sign reversed on the time term so bands sweep INWARD toward
+  // the center (zooming IN to the singularity), instead of sweeping outward.
+  float swirl = theta + 4.0 / max(r, 0.05) + t * 1.2;
+  // tunnelUv.y also reversed for inward-flow.
+  vec2 tunnelUv = vec2(swirl * 0.5 / 3.14159, 1.5 / max(r, 0.001) + t * 0.9);
 
   // Noise + bands.
   float n = fbm(tunnelUv * 1.4);
@@ -441,7 +455,15 @@ function setupTslVortex(scene: THREE.Scene, _camera: THREE.PerspectiveCamera, op
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function WormholeCanvas({ variant, intensity = 1, speed = 1, hue = 0.55 }: WormholeCanvasProps) {
+export function WormholeCanvas({
+  variant,
+  intensity = 1,
+  speed = 1,
+  hue = 0.55,
+  noiseAmp = 0.5,
+  radius = 3,
+  bob = 1.5,
+}: WormholeCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -462,7 +484,7 @@ export function WormholeCanvas({ variant, intensity = 1, speed = 1, hue = 0.55 }
     container.appendChild(renderer.domElement)
 
     let v: Variant
-    if (variant === 'bobbyroe-wormhole') v = setupBobbyroe(scene, camera, { speed, hue })
+    if (variant === 'bobbyroe-wormhole') v = setupBobbyroe(scene, camera, { speed, hue, noiseAmp, radius, bob })
     else if (variant === 'infinite-tubes') v = setupInfiniteTubes(scene, camera, { speed, hue })
     else if (variant === 'wormhole-extreme') v = setupWormholeExtreme(scene, camera, { speed, hue })
     else v = setupTslVortex(scene, camera, { speed, hue, intensity })
@@ -497,7 +519,7 @@ export function WormholeCanvas({ variant, intensity = 1, speed = 1, hue = 0.55 }
       renderer.dispose()
       if (renderer.domElement.parentNode === container) container.removeChild(renderer.domElement)
     }
-  }, [variant, speed, hue, intensity])
+  }, [variant, speed, hue, intensity, noiseAmp, radius, bob])
 
   return <div ref={containerRef} className="absolute inset-0 pointer-events-none" />
 }

@@ -1,6 +1,7 @@
 import { loadAnimationClip } from './forge/animation-library'
 
 export type PortalTransitionEffect =
+  | 'none'
   | 'void-iris'
   | 'black-hole-pinch'
   | 'glass-shatter'
@@ -28,9 +29,17 @@ export interface PortalTransitionSettings {
   particleSpeed: number
   shake: number
   rollReveal: boolean
+  // ─── WebGL wormhole tuning ──────────────────────────────────────────────
+  // Apply only to bobbyroe / infinite-tubes / wormhole-extreme / tsl-vortex.
+  // CSS variants (wireframe/cosmic/plasma/datawave) ignore them.
+  wormholeHue: number          // 0..1
+  wormholeNoiseAmp: number     // 0..1.5 — how chunky the bobbyroe walls are
+  wormholeRadius: number       // 1..6 — tunnel radius for tube variants
+  wormholeBob: number          // 0..3 — camera sway amplitude
 }
 
 export const PORTAL_TRANSITION_EFFECTS: Array<{ id: PortalTransitionEffect; label: string; desc: string }> = [
+  { id: 'none', label: '— None —', desc: 'no overlay; camera animation still runs' },
   { id: 'void-iris', label: 'Void Iris', desc: 'swallow · black aperture' },
   { id: 'black-hole-pinch', label: 'Black Hole Pinch', desc: 'swallow · gravity well + accretion ring' },
   { id: 'glass-shatter', label: 'Glass Shatter', desc: 'reveal · refractive shard break' },
@@ -47,8 +56,8 @@ export const PORTAL_TRANSITION_EFFECTS: Array<{ id: PortalTransitionEffect; labe
 
 export const DEFAULT_PORTAL_TRANSITION_SETTINGS: PortalTransitionSettings = {
   enabled: true,
-  swallowEffect: 'black-hole-pinch',
-  tunnelEffect: 'cosmic-wormhole',
+  swallowEffect: 'none',
+  tunnelEffect: 'bobbyroe-wormhole',
   revealEffect: 'prism-burst',
   swallowSeconds: 0.55,
   tunnelSeconds: 2.2,
@@ -59,6 +68,10 @@ export const DEFAULT_PORTAL_TRANSITION_SETTINGS: PortalTransitionSettings = {
   particleSpeed: 1.5,
   shake: 0.18,
   rollReveal: true,
+  wormholeHue: 0.55,
+  wormholeNoiseAmp: 0.5,
+  wormholeRadius: 3,
+  wormholeBob: 1.5,
 }
 
 export const PORTAL_TRANSITION_STORAGE_KEY = 'oasis-portal-transition-vfx'
@@ -96,6 +109,10 @@ export function normalizePortalTransitionSettings(input?: Partial<PortalTransiti
     particleSpeed: clamp(input?.particleSpeed, 0.25, 3.5, defaults.particleSpeed),
     shake: clamp(input?.shake, 0, 0.7, defaults.shake),
     rollReveal: typeof input?.rollReveal === 'boolean' ? input.rollReveal : defaults.rollReveal,
+    wormholeHue: clamp(input?.wormholeHue, 0, 1, defaults.wormholeHue),
+    wormholeNoiseAmp: clamp(input?.wormholeNoiseAmp, 0, 1.5, defaults.wormholeNoiseAmp),
+    wormholeRadius: clamp(input?.wormholeRadius, 1, 6, defaults.wormholeRadius),
+    wormholeBob: clamp(input?.wormholeBob, 0, 3, defaults.wormholeBob),
   }
 }
 
