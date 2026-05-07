@@ -75,7 +75,7 @@ const SESSION_KEY = 'oasis-hermes-hosted-relay-session'
 const SESSIONS_KEY = 'oasis-hermes-hosted-relay-sessions'
 const SETTINGS_KEY = 'oasis-hermes-hosted-relay-settings'
 const DEFAULT_HERMES_AVATAR_URL = '/avatars/gallery/CoolAlien.vrm'
-const HERMES_STREAM_STALL_MS = 180_000
+const HERMES_STREAM_IDLE_STALL_MS = 10 * 60_000
 
 interface HermesRelayPanelSettings {
   bgColor: string
@@ -255,7 +255,7 @@ function buildHermesRelayPasteText(pairing: RelayPairingResult | null, origin: s
     `Connect this Hermes agent to Oasis as ${agentLabel.trim() || HERMES_AGENT_LABEL}.`,
     '',
     'If your Oasis/04515 skill is missing or stale, install or update it first:',
-    'hermes skills install https://openclaw.04515.xyz/skill.md --name 04515 --force',
+    'hermes skills install https://openclaw.04515.xyz/skill.md --name oasis-04515 --force',
     '',
     'Then run this bridge command:',
     buildHermesRelayCommand(pairing, origin, agentLabel),
@@ -521,21 +521,31 @@ export function HermesHostedRelayPanel({
   const [resizingPanel, setResizingPanel] = useState(false)
   const [buttonPose, setButtonPose] = useState({ x: 50, y: 50, rx: 0, ry: 0, lift: 0 })
   const [pastePose, setPastePose] = useState({ x: 50, y: 50, rx: 0, ry: 0, lift: 0 })
+  const [streamActivityTick, setStreamActivityTick] = useState(0)
+  const lastStreamActivityAtRef = useRef(Date.now())
 
   const origin = typeof window === 'undefined' ? '' : window.location.origin
   const agentLabel = panelSettings.agentLabel.trim() || HERMES_AGENT_LABEL
   const pairingPasteText = useMemo(() => buildHermesRelayPasteText(pairing, origin, agentLabel), [agentLabel, origin, pairing])
-  const stopStreaming = useCallback((reason = 'Stopped locally. Hermes may still finish in the bridge process.') => {
+  const markStreamActivity = useCallback(() => {
+    lastStreamActivityAtRef.current = Date.now()
+    setStreamActivityTick(value => value + 1)
+  }, [])
+  const stopStreaming = useCallback((
+    reason = 'Stopped locally. Hermes may still finish in the bridge process.',
+    options: { releasePending?: boolean } = {},
+  ) => {
     const assistantId = pendingAssistantIdRef.current
-    pendingAssistantIdRef.current = ''
+    const releasePending = options.releasePending !== false
+    if (releasePending) pendingAssistantIdRef.current = ''
     setIsStreaming(false)
     if (!assistantId) return
     setMessages(previous => previous.map(message => {
       if (message.id !== assistantId) return message
       return {
         ...message,
-        content: message.content || reason,
-        error: message.content ? reason : message.error,
+        content: releasePending ? (message.content || reason) : message.content,
+        error: reason,
       }
     }))
   }, [])
@@ -549,30 +559,33 @@ export function HermesHostedRelayPanel({
     onChatAgentDelta: event => {
       const assistantId = pendingAssistantIdRef.current
       if (!assistantId) return
+      markStreamActivity()
       if (event.sessionId !== sessionId) {
         console.warn('[HermesRelay] accepting delta for pending assistant despite session mismatch', { eventSessionId: event.sessionId, sessionId })
       }
       setMessages(previous => previous.map(message =>
         message.id === assistantId
-          ? { ...message, content: message.content + event.text }
+          ? { ...message, content: message.content + event.text, error: undefined }
           : message
       ))
     },
     onChatAgentFinal: event => {
       const assistantId = pendingAssistantIdRef.current
       if (!assistantId) return
+      markStreamActivity()
       if (event.sessionId !== sessionId) {
         console.warn('[HermesRelay] accepting final for pending assistant despite session mismatch', { eventSessionId: event.sessionId, sessionId })
       }
       setMessages(previous => previous.map(message =>
         message.id === assistantId
-          ? { ...message, content: event.text || message.content }
+          ? { ...message, content: event.text || message.content, error: undefined }
           : message
       ))
       pendingAssistantIdRef.current = ''
       setIsStreaming(false)
     },
     onToolCall: event => {
+      markStreamActivity()
       setToolEvents(previous => {
         const withoutExisting = previous.filter(item => item.callId !== event.callId)
         const nextEvent: RelayToolEvent = {
@@ -591,6 +604,7 @@ export function HermesHostedRelayPanel({
       })
     },
     onToolResult: event => {
+      markStreamActivity()
       setToolEvents(previous => {
         const timestamp = Date.now()
         const existingIndex = previous.findIndex(item => item.callId === event.callId)
@@ -618,11 +632,13 @@ export function HermesHostedRelayPanel({
 
   useEffect(() => {
     if (!isStreaming) return
+    const idleFor = Date.now() - lastStreamActivityAtRef.current
+    const timeoutMs = Math.max(1_000, HERMES_STREAM_IDLE_STALL_MS - idleFor)
     const timer = window.setTimeout(() => {
-      stopStreaming('Hermes response stalled locally. The bridge can keep working, but this chat input is unlocked.')
-    }, HERMES_STREAM_STALL_MS)
+      stopStreaming('Hermes has been quiet locally for 10 minutes. Input is unlocked, but this bubble will still accept a late final if the bridge sends one.', { releasePending: false })
+    }, timeoutMs)
     return () => window.clearTimeout(timer)
-  }, [isStreaming, stopStreaming])
+  }, [isStreaming, streamActivityTick, stopStreaming])
 
   useEffect(() => {
     const storedMessages = messages.slice(-80)
@@ -720,10 +736,11 @@ export function HermesHostedRelayPanel({
 
   useEffect(() => {
     if (relayBridge.status === 'closed' || relayBridge.status === 'error') {
-      if (isStreaming) setIsStreaming(false)
-      pendingAssistantIdRef.current = ''
+      if (isStreaming) {
+        stopStreaming('Hermes relay disconnected locally. Input is unlocked; this bubble will still accept a late final if the bridge reconnects and sends one.', { releasePending: false })
+      }
     }
-  }, [isStreaming, relayBridge.status])
+  }, [isStreaming, relayBridge.status, stopStreaming])
 
   useEffect(() => {
     if (relayBridge.status !== 'paired' || awardedConnectionXpRef.current) return
@@ -1010,6 +1027,7 @@ export function HermesHostedRelayPanel({
     }
 
     pendingAssistantIdRef.current = assistantId
+    markStreamActivity()
     setMessages(previous => [...previous, userMessage, assistantMessage])
     setInput('')
     setIsStreaming(true)
@@ -1024,7 +1042,7 @@ export function HermesHostedRelayPanel({
           : message
       ))
     }
-  }, [input, isStreaming, relayBridge, sessionId])
+  }, [input, isStreaming, markStreamActivity, relayBridge, sessionId])
 
   const isPaired = relayBridge.status === 'paired'
   const canSend = isPaired && Boolean(input.trim()) && !isStreaming

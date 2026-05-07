@@ -16,7 +16,7 @@ The goal is simple: the user opens Oasis, clicks the agent connect button, copie
 - OpenClaw: use the native OpenClaw gateway bridge.
 - Hermes Agent: use Hermes's local OpenAI-compatible API server plus an Oasis MCP adapter.
 
-If this skill/plugin is missing or old, tell the user to install or update the `04515` Clawhub package first. If this skill is active, proceed.
+If this skill/plugin is missing or old, tell the user to install or update the `04515` Clawhub package first. If installing the raw skill into Hermes, use the skill name `oasis-04515` because some Hermes builds reject all-numeric skill names. If this skill is active, proceed.
 
 For Hermes, treat this package as a Hermes skill plus an npm bridge command. It is not a Hermes Python plugin. A Hermes plugin would be needed only if Oasis must register custom Python tools, hooks, slash commands, or gateway adapters inside Hermes itself.
 

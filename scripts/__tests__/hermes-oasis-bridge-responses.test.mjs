@@ -153,4 +153,122 @@ describe('Hermes Oasis bridge Responses API mode', () => {
       await closeHttp(oasisApi)
     }
   })
+
+  it('reconnects and flushes a queued final if the relay socket closes mid-turn', async () => {
+    const hermesApi = http.createServer(async (req, res) => {
+      if (req.method === 'GET' && (req.url === '/v1/health' || req.url === '/health')) {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ status: 'ok' }))
+        return
+      }
+      if (req.method === 'GET' && req.url === '/v1/models') {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ data: [{ id: 'hermes-agent' }] }))
+        return
+      }
+      if (req.method === 'POST' && req.url === '/v1/responses') {
+        for await (const _chunk of req) {
+          // drain request
+        }
+        res.writeHead(200, {
+          'content-type': 'text/event-stream',
+          'cache-control': 'no-cache',
+          connection: 'keep-alive',
+        })
+        await new Promise(resolve => setTimeout(resolve, 250))
+        res.write('data: {"type":"response.output_text.delta","delta":"queued"}\n\n')
+        res.write('data: {"type":"response.output_text.delta","delta":" final"}\n\n')
+        res.write('data: [DONE]\n\n')
+        res.end()
+        return
+      }
+      res.writeHead(404)
+      res.end('not found')
+    })
+
+    const oasisApi = http.createServer(async (req, res) => {
+      if (req.method === 'POST' && req.url === '/api/relay/devices/exchange') {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({
+          ok: true,
+          deviceToken: 'dev_test_token',
+          browserSessionId: 'bs_test',
+          worldId: 'world_test',
+          scopes: ['chat.stream', 'world.read', 'world.write.safe', 'screenshot.request'],
+          agentType: 'hermes',
+          agentSlot: 'hermes:primary',
+          agentLabel: 'hermes-bridge',
+        }))
+        return
+      }
+      res.writeHead(404)
+      res.end('not found')
+    })
+
+    const relay = new WebSocketServer({ port: 0, host: '127.0.0.1' })
+    const relayReady = new Promise(resolve => relay.once('listening', resolve))
+    let connectionCount = 0
+    const finalMessage = new Promise(resolve => {
+      relay.on('connection', ws => {
+        connectionCount += 1
+        const connectionNumber = connectionCount
+        ws.send(JSON.stringify({
+          type: 'relay.paired',
+          role: 'agent',
+          relaySessionId: `rs_test_${connectionNumber}`,
+          sentAt: Date.now(),
+          messageId: `relay-paired-${connectionNumber}`,
+        }))
+        ws.on('message', raw => {
+          const msg = JSON.parse(raw.toString())
+          if (connectionNumber === 1 && msg.type === 'agent.hello') {
+            ws.send(JSON.stringify({
+              type: 'chat.user',
+              sessionId: 'hermes-session-reconnect',
+              text: 'finish after reconnect',
+              sentAt: Date.now(),
+              messageId: 'chat-user-reconnect',
+            }))
+            setTimeout(() => ws.close(1012, 'test reconnect'), 30)
+          }
+          if (connectionNumber >= 2 && msg.type === 'chat.agent.final') resolve(msg)
+        })
+      })
+    })
+
+    const hermesPort = await listen(hermesApi)
+    const oasisPort = await listen(oasisApi)
+    await relayReady
+    const relayPort = relay.address().port
+
+    const child = spawn(process.execPath, [
+      'scripts/hermes-oasis-bridge.mjs',
+      'OASIS-ABCDEFGH',
+      `--oasis-url=http://127.0.0.1:${oasisPort}`,
+      `--api-base=http://127.0.0.1:${hermesPort}/v1`,
+      `--relay-url=ws://127.0.0.1:${relayPort}/?role=agent`,
+      '--agent-slot=hermes:primary',
+      '--no-mcp',
+      '--no-mcp-config',
+    ], { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] })
+
+    let output = ''
+    child.stdout.on('data', chunk => { output += chunk.toString() })
+    child.stderr.on('data', chunk => { output += chunk.toString() })
+
+    try {
+      const final = await onceWithTimeout(finalMessage, 10_000, `queued Hermes final after reconnect. Output:\n${output}`)
+      expect(final).toMatchObject({
+        type: 'chat.agent.final',
+        sessionId: 'hermes-session-reconnect',
+        text: 'queued final',
+      })
+      expect(connectionCount).toBeGreaterThanOrEqual(2)
+    } finally {
+      child.kill('SIGTERM')
+      relay.close()
+      await closeHttp(hermesApi)
+      await closeHttp(oasisApi)
+    }
+  })
 })

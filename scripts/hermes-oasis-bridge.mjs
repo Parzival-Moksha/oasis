@@ -34,6 +34,8 @@ import { WebSocket } from 'ws'
 import { randomUUID } from 'node:crypto'
 import readline from 'node:readline'
 import os from 'node:os'
+import path from 'node:path'
+import { readFileSync } from 'node:fs'
 
 import { startBridgeMcpServer } from './openclaw-bridge-mcp.mjs'
 import {
@@ -45,7 +47,10 @@ import {
 } from './hermes-mcp-config-guard.mjs'
 
 const DEFAULT_HERMES_API_BASE = 'http://127.0.0.1:8642/v1'
-const BRIDGE_VERSION = '0.2.1-hermes-responses'
+const BRIDGE_VERSION = '0.2.2-hermes-reconnect'
+const RELAY_RECONNECT_INITIAL_MS = 1_000
+const RELAY_RECONNECT_MAX_MS = 30_000
+const RELAY_RECONNECT_FACTOR = 1.7
 
 function parseArgv(argv) {
   const out = { positional: [], flags: {} }
@@ -72,7 +77,7 @@ const label = argv.flags.label || process.env.OASIS_AGENT_LABEL || 'hermes-bridg
 const agentType = argv.flags['agent-type'] || process.env.OASIS_AGENT_TYPE || 'hermes'
 const agentSlot = argv.flags['agent-slot'] || process.env.OASIS_AGENT_SLOT || 'hermes:primary'
 const apiBase = normalizeApiBase(argv.flags['api-base'] || process.env.HERMES_API_BASE || DEFAULT_HERMES_API_BASE)
-const apiKey = argv.flags['api-key'] || process.env.HERMES_API_KEY || process.env.API_SERVER_KEY || ''
+const apiKey = argv.flags['api-key'] || process.env.HERMES_API_KEY || process.env.API_SERVER_KEY || loadHermesEnvValue(['HERMES_API_KEY', 'API_SERVER_KEY'])
 const model = argv.flags.model || process.env.HERMES_MODEL || ''
 const systemPrompt = argv.flags['system-prompt'] || process.env.HERMES_SYSTEM_PROMPT || ''
 const echoMode = argv.flags.echo === 'true' || process.env.HERMES_BRIDGE_ECHO === '1'
@@ -123,6 +128,31 @@ function normalizeApiMode(value) {
 
 function normalizeApiBase(value) {
   return String(value || DEFAULT_HERMES_API_BASE).trim().replace(/\/+$/, '')
+}
+
+function loadHermesEnvValue(names) {
+  const envPath = path.join(os.homedir(), '.hermes', '.env')
+  let raw = ''
+  try {
+    raw = readFileSync(envPath, 'utf8')
+  } catch {
+    return ''
+  }
+  const wanted = new Set(names)
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const eq = trimmed.indexOf('=')
+    if (eq <= 0) continue
+    const key = trimmed.slice(0, eq).trim()
+    if (!wanted.has(key)) continue
+    let value = trimmed.slice(eq + 1).trim()
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1)
+    }
+    return value
+  }
+  return ''
 }
 
 function parsePairing(input) {
@@ -269,11 +299,26 @@ async function checkHermesApi() {
 
 function buildChatMessages(userText) {
   const messages = []
-  if (systemPrompt.trim()) {
-    messages.push({ role: 'system', content: systemPrompt.trim() })
+  const instructions = buildHermesInstructions()
+  if (instructions) {
+    messages.push({ role: 'system', content: instructions })
   }
   messages.push({ role: 'user', content: userText })
   return messages
+}
+
+function buildHermesInstructions() {
+  if (systemPrompt.trim()) return systemPrompt.trim()
+  const displayName = String(label || 'Hermes').trim() || 'Hermes'
+  const worldLine = activeWorldId
+    ? `Current Oasis worldId: ${activeWorldId}. Use get_world_info or get_world_state when you need the live world name, objects, sky, ground, lights, or screenshot context.`
+    : 'Use the Oasis world tools to discover the live world before making broad assumptions about it.'
+  return [
+    `You are ${displayName}, a Hermes Agent connected to Oasis as an embodied world agent.`,
+    'When the user asks who you are, use that name unless your own configured Hermes profile strongly says otherwise.',
+    worldLine,
+    'You can inspect the Oasis world and use the installed Oasis MCP tools when available. Be concise, world-aware, and honest about what you can see or change.',
+  ].join(' ')
 }
 
 function hermesConversationId(sessionId) {
@@ -416,7 +461,10 @@ async function callHermesResponses(sessionId, userText, onDelta) {
     conversation: hermesConversationId(sessionId),
     store: true,
     stream: true,
-    ...(systemPrompt.trim() ? { instructions: systemPrompt.trim() } : {}),
+    ...(() => {
+      const instructions = buildHermesInstructions()
+      return instructions ? { instructions } : {}
+    })(),
   }
 
   const response = await fetch(`${apiBase}/responses`, {
@@ -485,7 +533,10 @@ let exited = false
 let relaySessionId = ''
 let activeWorldId = ''
 let mcpServer = null
+let relayReconnectTimer = null
+let relayReconnectDelayMs = RELAY_RECONNECT_INITIAL_MS
 const pendingToolCalls = new Map()
+const pendingChatFinals = new Map()
 const mcpDiagnostics = {
   requestCount: 0,
   toolCallCount: 0,
@@ -507,6 +558,31 @@ function sendRelay(msg) {
     ...msg,
   }))
   return true
+}
+
+function sendChatFinal(sessionId, text) {
+  const safeSessionId = sessionId || 'hermes-default'
+  const safeText = typeof text === 'string' ? text : String(text || '')
+  const sent = sendRelay({ type: 'chat.agent.final', sessionId: safeSessionId, text: safeText })
+  if (!sent) {
+    pendingChatFinals.set(safeSessionId, safeText)
+    log('queued chat.agent.final until relay reconnects', { sessionId: safeSessionId, chars: safeText.length })
+  }
+  return sent
+}
+
+function flushPendingChatFinals() {
+  for (const [sessionId, text] of pendingChatFinals.entries()) {
+    if (!sendRelay({ type: 'chat.agent.final', sessionId, text })) return
+    pendingChatFinals.delete(sessionId)
+    log('flushed queued chat.agent.final', { sessionId, chars: text.length })
+  }
+}
+
+function clearRelayReconnectTimer() {
+  if (!relayReconnectTimer) return
+  clearTimeout(relayReconnectTimer)
+  relayReconnectTimer = null
 }
 
 function updateActiveWorldId(nextWorldId, source = 'relay') {
@@ -600,6 +676,7 @@ function exitWith(code, reason) {
   if (exited) return
   exited = true
   log('exit', { code, reason })
+  clearRelayReconnectTimer()
   rejectPendingToolCalls(`bridge exiting: ${reason}`)
   try { relayWs?.close() } catch { /* ignore */ }
   const emergencyExit = setTimeout(() => process.exit(code), 4_000)
@@ -621,19 +698,11 @@ async function forwardChatUser(sessionId, text) {
       sentAnyDelta = true
       sendRelay({ type: 'chat.agent.delta', sessionId: safeSessionId, text: chunk })
     })
-    sendRelay({
-      type: 'chat.agent.final',
-      sessionId: safeSessionId,
-      text: finalText || (sentAnyDelta ? '' : '[hermes-bridge] Hermes returned no text.'),
-    })
+    sendChatFinal(safeSessionId, finalText || (sentAnyDelta ? '' : '[hermes-bridge] Hermes returned no text.'))
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     log('Hermes chat failed:', message)
-    sendRelay({
-      type: 'chat.agent.final',
-      sessionId: safeSessionId,
-      text: `[hermes-bridge] Hermes request failed: ${message}`,
-    })
+    sendChatFinal(safeSessionId, `[hermes-bridge] Hermes request failed: ${message}`)
   }
 }
 
@@ -735,102 +804,126 @@ async function start() {
   }
 
   const relayUrl = explicitRelayUrl ? withRelayIdentity(explicitRelayUrl) : buildRelayUrl(oasisUrl)
-  log('connecting to relay:', relayUrl)
-  relayWs = new WebSocket(relayUrl, {
-    headers: { authorization: `Bearer ${creds.deviceToken}` },
-  })
+  const scheduleRelayReconnect = (reason) => {
+    if (exited) return
+    clearRelayReconnectTimer()
+    const delay = Math.min(relayReconnectDelayMs, RELAY_RECONNECT_MAX_MS)
+    log('relay reconnect scheduled', { reason, delayMs: delay })
+    relayReconnectTimer = setTimeout(() => {
+      relayReconnectTimer = null
+      relayReconnectDelayMs = Math.min(relayReconnectDelayMs * RELAY_RECONNECT_FACTOR, RELAY_RECONNECT_MAX_MS)
+      connectRelay()
+    }, delay)
+  }
 
-  relayWs.on('open', () => log('relay socket open'))
+  const connectRelay = () => {
+    if (exited) return
+    if (relayWs && relayWs.readyState !== relayWs.CLOSED) return
+    log('connecting to relay:', relayUrl)
+    relayWs = new WebSocket(relayUrl, {
+      headers: { authorization: `Bearer ${creds.deviceToken}` },
+    })
 
-  relayWs.on('message', (raw) => {
-    let parsed
-    try { parsed = JSON.parse(raw.toString()) }
-    catch { log('non-JSON frame ignored'); return }
+    relayWs.on('open', () => {
+      relayReconnectDelayMs = RELAY_RECONNECT_INITIAL_MS
+      log('relay socket open')
+    })
 
-    if (parsed.type === 'relay.paired') {
-      relaySessionId = typeof parsed.relaySessionId === 'string' ? parsed.relaySessionId : ''
-      log('paired by relay:', { relaySessionId })
-      sendRelay({
-        type: 'agent.hello',
-        deviceToken: creds.deviceToken,
-        agentLabel: label,
-        agentType,
-        agentSlot,
-        agentVersion: BRIDGE_VERSION,
-      })
-      sendRelay({
-        type: 'agent.status',
-        agentType,
-        agentSlot,
-        localApi: { url: apiBase, ok: true },
-        mcp: {
-          url: mcpServer?.url || `http://${mcpHost}:${mcpPort}/mcp`,
-          ok: Boolean(mcpServer),
-          configured: mcpConfigMode === 'auto',
-        },
-        model: model || undefined,
-        capabilities: ['chat.stream', 'world.read', 'world.write.safe', 'screenshot.request'],
-      })
-      return
-    }
+    relayWs.on('message', (raw) => {
+      let parsed
+      try { parsed = JSON.parse(raw.toString()) }
+      catch { log('non-JSON frame ignored'); return }
 
-    if (parsed.type === 'browser.hello' || parsed.type === 'browser.ready') {
-      updateActiveWorldId(parsed.worldId || creds.worldId, parsed.type)
-      log(`${parsed.type} <- relay`, {
-        worldId: parsed.worldId || creds.worldId,
-        tools: Array.isArray(parsed.availableTools) ? parsed.availableTools.length : undefined,
-      })
-      return
-    }
-
-    if (parsed.type === 'chat.user') {
-      const sessionId = typeof parsed.sessionId === 'string' ? parsed.sessionId : 'hermes-default'
-      const text = typeof parsed.text === 'string' ? parsed.text : ''
-      if (text.trim()) void forwardChatUser(sessionId, text)
-      return
-    }
-
-    if (parsed.type === 'tool.result') {
-      if (!resolvePendingToolResult(parsed)) {
-        log('tool.result received with no pending caller:', { callId: parsed.callId })
+      if (parsed.type === 'relay.paired') {
+        relaySessionId = typeof parsed.relaySessionId === 'string' ? parsed.relaySessionId : ''
+        log('paired by relay:', { relaySessionId })
+        sendRelay({
+          type: 'agent.hello',
+          deviceToken: creds.deviceToken,
+          agentLabel: label,
+          agentType,
+          agentSlot,
+          agentVersion: BRIDGE_VERSION,
+        })
+        sendRelay({
+          type: 'agent.status',
+          agentType,
+          agentSlot,
+          localApi: { url: apiBase, ok: true },
+          mcp: {
+            url: mcpServer?.url || `http://${mcpHost}:${mcpPort}/mcp`,
+            ok: Boolean(mcpServer),
+            configured: mcpConfigMode === 'auto',
+          },
+          model: model || undefined,
+          capabilities: ['chat.stream', 'world.read', 'world.write.safe', 'screenshot.request'],
+        })
+        flushPendingChatFinals()
+        return
       }
-      return
-    }
 
-    if (parsed.type === 'tool.call') {
-      log('unexpected inbound tool.call on Hermes bridge', { toolName: parsed.toolName, callId: parsed.callId })
-      sendRelay({
-        type: 'tool.result',
-        callId: parsed.callId || 'unknown',
-        ok: false,
-        error: {
-          code: 'bridge_wrong_direction',
-          message: 'Oasis tools are requested by Hermes through the local bridge MCP adapter.',
-        },
-      })
-      return
-    }
+      if (parsed.type === 'browser.hello' || parsed.type === 'browser.ready') {
+        updateActiveWorldId(parsed.worldId || creds.worldId, parsed.type)
+        log(`${parsed.type} <- relay`, {
+          worldId: parsed.worldId || creds.worldId,
+          tools: Array.isArray(parsed.availableTools) ? parsed.availableTools.length : undefined,
+        })
+        return
+      }
 
-    if (parsed.type === 'error') {
-      log('relay error:', parsed)
-    }
-  })
+      if (parsed.type === 'chat.user') {
+        const sessionId = typeof parsed.sessionId === 'string' ? parsed.sessionId : 'hermes-default'
+        const text = typeof parsed.text === 'string' ? parsed.text : ''
+        if (text.trim()) void forwardChatUser(sessionId, text)
+        return
+      }
 
-  relayWs.on('close', (code, reason) => {
-    log('relay socket closed', { code, reason: reason?.toString?.() })
-    if (!exited) exitWith(0, 'closed')
-  })
+      if (parsed.type === 'tool.result') {
+        if (!resolvePendingToolResult(parsed)) {
+          log('tool.result received with no pending caller:', { callId: parsed.callId })
+        }
+        return
+      }
 
-  relayWs.on('error', (err) => {
-    log('relay socket error:', err?.message || String(err))
-    if (!exited) exitWith(5, 'socket_error')
-  })
+      if (parsed.type === 'tool.call') {
+        log('unexpected inbound tool.call on Hermes bridge', { toolName: parsed.toolName, callId: parsed.callId })
+        sendRelay({
+          type: 'tool.result',
+          callId: parsed.callId || 'unknown',
+          ok: false,
+          error: {
+            code: 'bridge_wrong_direction',
+            message: 'Oasis tools are requested by Hermes through the local bridge MCP adapter.',
+          },
+        })
+        return
+      }
+
+      if (parsed.type === 'error') {
+        log('relay error:', parsed)
+      }
+    })
+
+    relayWs.on('close', (code, reason) => {
+      relayWs = null
+      relaySessionId = ''
+      log('relay socket closed', { code, reason: reason?.toString?.() })
+      rejectPendingToolCalls('Oasis relay disconnected; bridge is reconnecting.')
+      scheduleRelayReconnect('socket_closed')
+    })
+
+    relayWs.on('error', (err) => {
+      log('relay socket error:', err?.message || String(err))
+    })
+  }
+
+  connectRelay()
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: false })
   rl.on('line', (line) => {
     const text = line.trim()
     if (!text) return
-    sendRelay({ type: 'chat.agent.final', sessionId: 'bridge-console', text })
+    sendChatFinal('bridge-console', text)
   })
 }
 
