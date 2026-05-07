@@ -9,7 +9,6 @@
 
 import { useRef, useCallback, useContext, Suspense } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { Html } from '@react-three/drei'
 import * as THREE from 'three'
 import { useOasisStore } from '../../store/oasisStore'
 import { GroundPlane } from '../forge/GroundPlane'
@@ -74,10 +73,6 @@ export function ForgeRealm() {
   const paintMode = useOasisStore(s => s.paintMode)
   const selectObject = useOasisStore(s => s.selectObject)
   const setInspectedObject = useOasisStore(s => s.setInspectedObject)
-  const craftedScenes = useOasisStore(s => s.craftedScenes)
-  const worldConjuredAssetIds = useOasisStore(s => s.worldConjuredAssetIds)
-  const catalogAssets = useOasisStore(s => s.placedCatalogAssets)
-  const conjuredAssets = useOasisStore(s => s.conjuredAssets)
   const worldLights = useOasisStore(s => s.worldLights)
   const avatar3dUrl = useOasisStore(s => s.avatar3dUrl)
   const isViewMode = useOasisStore(s => s.isViewMode)
@@ -95,11 +90,6 @@ export function ForgeRealm() {
     selectObject(null)
     setInspectedObject(null)
   }, [selectObject, setInspectedObject])
-
-  // Empty state detection
-  const worldAssets = conjuredAssets.filter(a => worldConjuredAssetIds.includes(a.id))
-  const readyAssets = worldAssets.filter(a => a.status === 'ready' && a.glbPath)
-  const isEmpty = readyAssets.length === 0 && craftedScenes.length === 0 && catalogAssets.length === 0
 
   return (
     <group onClick={handlePointerMissed}>
@@ -131,17 +121,6 @@ export function ForgeRealm() {
         </Suspense>
       )}
 
-      {/* Empty state hint */}
-      {isEmpty && (
-        <Html position={[0, 2, 0]} center style={{ pointerEvents: 'none' }}>
-          <div className="text-center select-none pointer-events-none">
-            <div className="text-4xl mb-2 opacity-30">🔥</div>
-            <div className="text-sm text-gray-500 opacity-50">
-              Open the Wizard Console to conjure
-            </div>
-          </div>
-        </Html>
-      )}
     </group>
   )
 }
