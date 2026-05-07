@@ -36,11 +36,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => window.setTimeout(resolve, ms))
 }
 
-function easeInOutCubic(value: number): number {
-  return value < 0.5
-    ? 4 * value * value * value
-    : 1 - Math.pow(-2 * value + 2, 3) / 2
-}
 
 function portalCenter(gate: PortalGate): THREE.Vector3 {
   return new THREE.Vector3(gate.position[0], gate.position[1] + gate.height * 0.48, gate.position[2])
@@ -82,7 +77,10 @@ function animatePortalCameraSwallow(camera: THREE.Camera, gate: PortalGate, sett
   const center = portalCenter(gate)
   const normal = portalFacingNormal(gate)
   const pull = Math.min(1, Math.max(0, settings.cameraPull))
-  const targetDistance = Math.max(0.42, gate.width * (0.82 - Math.min(1.5, settings.cameraPull) * 0.28))
+  // Final camera position: 0.5m IN FRONT of the portal plane (along its
+  // facing normal), regardless of gate width. Old behavior was a width-scaled
+  // distance that often left the camera ~1m+ short of the plane.
+  const targetDistance = 0.5
   const targetPosition = center.clone().add(normal.multiplyScalar(targetDistance)).add(new THREE.Vector3(0, gate.height * 0.02, 0))
   const originalFov = camera.fov
   const targetFov = Math.min(105, originalFov + settings.fovBoost)
@@ -90,7 +88,10 @@ function animatePortalCameraSwallow(camera: THREE.Camera, gate: PortalGate, sett
   return new Promise(resolve => {
     const frame = () => {
       const progress = Math.min(1, (performance.now() - startMs) / durationMs)
-      const eased = easeInOutCubic(progress)
+      // Pure quadratic accel — no ease-in-out. The camera starts slow and
+      // keeps accelerating toward the portal until the exact moment the
+      // swallow phase ends. No deceleration coast.
+      const eased = progress * progress
       camera.position.lerpVectors(startPosition, targetPosition, eased * pull)
       camera.fov = THREE.MathUtils.lerp(originalFov, targetFov, eased)
       camera.lookAt(center)

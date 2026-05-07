@@ -28,6 +28,11 @@ if (OASIS_BASE) {
   })
 }
 
+// Hook DefaultLoadingManager → React-subscribable world load state. Exposes
+// progress to the loading bar UI and the portal transition gating logic.
+import { installWorldLoadProgress } from '../lib/world-load-progress'
+installWorldLoadProgress()
+
 import { useOasisStore } from '../store/oasisStore'
 
 import type { OasisSettings } from './scene-lib'
@@ -69,6 +74,7 @@ import { useWorldEvents } from '@/hooks/useWorldEvents'
 import { AgentWindowPortals } from './forge/AgentWindowPortals'
 import { PortalZeroCanonicalButton } from './forge/PortalZeroCanonicalButton'
 import { PortalTransitionOverlay } from './forge/PortalTransitionOverlay'
+import { WorldLoadingBar } from './forge/WorldLoadingBar'
 import { TerrainBrushPanel } from './forge/TerrainBrushPanel'
 
 const SHOW_LEGACY_DEVCRAFT_PANEL = false
@@ -1521,6 +1527,7 @@ export default function Scene() {
       <MouseLookDebugOverlay />
       <ModeSwitchLabel />
       <PortalTransitionOverlay />
+      <WorldLoadingBar />
 
       {/* ─═̷─═̷─🔮─═̷─═̷─ TOP-LEFT BUTTON BAR — Profile, Settings, Wizard, Action Log ─═̷─═̷─🔮─═̷─═̷─ */}
       <div className="fixed top-4 left-4 z-[200] flex items-start gap-2">

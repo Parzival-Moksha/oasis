@@ -4,12 +4,7 @@ export type PortalTransitionEffect =
   | 'none'
   | 'void-iris'
   | 'black-hole-pinch'
-  | 'glass-shatter'
   | 'prism-burst'
-  | 'wireframe-wormhole'
-  | 'cosmic-wormhole'
-  | 'plasma-wormhole'
-  | 'datawave-wormhole'
   | 'bobbyroe-wormhole'
   | 'infinite-tubes'
   | 'wormhole-extreme'
@@ -42,12 +37,7 @@ export const PORTAL_TRANSITION_EFFECTS: Array<{ id: PortalTransitionEffect; labe
   { id: 'none', label: '— None —', desc: 'no overlay; camera animation still runs' },
   { id: 'void-iris', label: 'Void Iris', desc: 'swallow · black aperture' },
   { id: 'black-hole-pinch', label: 'Black Hole Pinch', desc: 'swallow · gravity well + accretion ring' },
-  { id: 'glass-shatter', label: 'Glass Shatter', desc: 'reveal · refractive shard break' },
   { id: 'prism-burst', label: 'Prism Burst', desc: 'reveal · chromatic flare' },
-  { id: 'wireframe-wormhole', label: 'Wireframe Wormhole', desc: 'tunnel · neon Tron grid tube (CSS)' },
-  { id: 'cosmic-wormhole', label: 'Cosmic Wormhole', desc: 'tunnel · nebula + hyperjump streaks (CSS)' },
-  { id: 'plasma-wormhole', label: 'Plasma Wormhole', desc: 'tunnel · electric arc conduit (CSS)' },
-  { id: 'datawave-wormhole', label: 'Datawave Wormhole', desc: 'tunnel · matrix glitch corridor (CSS)' },
   { id: 'bobbyroe-wormhole', label: 'Bobbyroe Wormhole', desc: 'tunnel · WebGL noise-displaced star tube' },
   { id: 'infinite-tubes', label: 'Infinite Tubes', desc: 'tunnel · WebGL textured tube w/ scrolling UVs' },
   { id: 'wormhole-extreme', label: 'Wormhole Extreme', desc: 'tunnel · WebGL warp+nebula tunnel' },

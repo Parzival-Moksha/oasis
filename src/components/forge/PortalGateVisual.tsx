@@ -40,18 +40,18 @@ function PortalLabel({ gate }: { gate: PortalGate }) {
   const palette = PORTAL_LABEL_COLORS[gate.variant] ?? PORTAL_LABEL_COLORS['threshold-ring']
   const label = getPortalGateLabel(gate)
   const dim = gate.inert ? 0.4 : 1
-  // Position: 3m higher than the old HTML label (was y=3.15 → now 6.15).
-  // Center wraps the extruded geometry so it horizontally centers above the gate.
+  // Position y=5.0 (was 6.15, dropped 1.15m). Font sized to 70% of previous
+  // (0.55 → 0.385) so labels feel less shouting at distance.
   return (
-    <group position={[0, 6.15, 0]}>
+    <group position={[0, 5.0, 0]}>
       <Center>
         <Text3D
           font={PORTAL_LABEL_FONT}
-          size={0.55}
-          height={0.18}
+          size={0.385}
+          height={0.13}
           bevelEnabled
-          bevelThickness={0.025}
-          bevelSize={0.012}
+          bevelThickness={0.018}
+          bevelSize={0.009}
           bevelSegments={4}
           curveSegments={6}
         >
@@ -2471,41 +2471,50 @@ function FlappingFlag({
   amp?: number
   opacity?: number
 }) {
-  const matRef = useRef<THREE.ShaderMaterial>(null)
+  // Build the material as a stable singleton via useMemo. Previously the
+  // uniforms object was an inline literal which made R3F recreate the
+  // ShaderMaterial on every render — that's why the flap "went static" after
+  // a few frames (each rebuild reset uTime to 0 before the next useFrame
+  // could mutate it).
+  const material = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uFreq: { value: freq },
+      uAmp: { value: amp },
+      uColor: { value: new THREE.Color(color) },
+      uTrim: { value: new THREE.Color(trim) },
+      uOpacity: { value: opacity },
+    },
+    vertexShader: FLAG_VERTEX_SHADER,
+    fragmentShader: FLAG_FRAGMENT_SHADER,
+    side: THREE.DoubleSide,
+    transparent: true,
+  }), [freq, amp, color, trim, opacity])
+
+  useEffect(() => () => material.dispose(), [material])
+
   useFrame(({ clock }) => {
-    if (matRef.current) matRef.current.uniforms.uTime.value = clock.elapsedTime
+    material.uniforms.uTime.value = clock.elapsedTime
   })
-  // Plane needs enough subdivisions for the vertex displacement to look smooth.
+
   return (
     <mesh position={position} rotation={rotation}>
       <planeGeometry args={[size[0], size[1], 24, 10]} />
-      <shaderMaterial
-        ref={matRef}
-        uniforms={{
-          uTime: { value: 0 },
-          uFreq: { value: freq },
-          uAmp: { value: amp },
-          uColor: { value: new THREE.Color(color) },
-          uTrim: { value: new THREE.Color(trim) },
-          uOpacity: { value: opacity },
-        }}
-        vertexShader={FLAG_VERTEX_SHADER}
-        fragmentShader={FLAG_FRAGMENT_SHADER}
-        side={THREE.DoubleSide}
-        transparent
-      />
+      <primitive attach="material" object={material} />
     </mesh>
   )
 }
 
 function ClockworkIris({ inert }: { inert?: boolean }) {
+  // Particle clutter behind the gate (FastParticleSwarm, EmissiveBolts) was
+  // removed; only the orbiting "spiral" particles + the iris blades + the
+  // lightning + the flapping pennants remain.
   return (
     <group position={[0, 1.48, 0]}>
       <PortalAperture mood="clockwork" seed={931} shape="circle" size={[1.42, 1.42]} intensity={0.9} organic={0.04} inert={inert} />
       <PortalWorldGlimpse mood="clockwork" profile="machine" size={[1.16, 1.16]} inert={inert} />
       <PortalDepthTunnel mood="clockwork" inert={inert} rings={8} radius={0.58} zStep={0.065} />
       <MirrorGlassSkin mood="clockwork" shape="circle" size={[1.16, 1.16]} opacity={0.16} inert={inert} />
-      <PortalStarfield seed={131} color="#fef3c7" accentColor="#facc15" width={1.22} height={1.72} count={88} depth={0.42} inert={inert} />
       <StoneSegmentRing mood="clockwork" inert={inert} />
       <RimHalo mood="clockwork" inert={inert} radius={0.86} thickness={0.14} opacity={0.34} />
       <mesh>
@@ -2528,38 +2537,44 @@ function ClockworkIris({ inert }: { inert?: boolean }) {
         </mesh>
       ))}
       <PortalLightningCrown mood="clockwork" inert={inert} radius={1.05} seed={4931} intensity={0.7} />
-      <FastParticleSwarm mood="clockwork" inert={inert} profile="sparks" radius={0.98} count={36} seed={2931} speed={1.55} chaos={0.35} />
+      {/* Spiral — kept (user liked it). */}
       <OrbitingParticles mood="clockwork" inert={inert} radius={0.78} count={20} seed={931} spinSpeed={0.86} buzz={0.032} />
-      <EmissiveBolts mood="clockwork" inert={inert} radius={1.02} count={22} seed={9931} />
-      {/* Flapping pennants — left + right pair flanking the iris, plus a
-          center banner above. Each rooted at the pole-end (closer to gate
-          axis) and trailing outward. Different frequencies/amplitudes so
-          they don't visually sync. */}
+      {/* Flapping pennants — rotated 90° around Y so they jut OUT from the
+          gate in profile. Pole on the gate-side edge of each flag. The wave
+          now travels in -Z (behind the gate plane) and visibly flaps when
+          viewed from the front. Higher amp + frequency for a more snappy,
+          obviously-moving feel. */}
       {!inert && (
         <>
+          {/* Left flag — pole at gate edge, flies left into -X */}
           <FlappingFlag
-            position={[-1.2, 0.3, 0.05]}
-            size={[0.62, 0.34]}
+            position={[-1.05, 0.5, 0.06]}
+            rotation={[0, Math.PI / 2, 0]}
+            size={[0.7, 0.36]}
             color="#facc15"
             trim="#7c2d12"
-            freq={9}
-            amp={0.18}
+            freq={11}
+            amp={0.32}
           />
+          {/* Right flag — flies right into +X */}
           <FlappingFlag
-            position={[0.58, 0.3, 0.05]}
-            size={[0.62, 0.34]}
+            position={[1.05, 0.5, 0.06]}
+            rotation={[0, -Math.PI / 2, 0]}
+            size={[0.7, 0.36]}
             color="#fef3c7"
             trim="#a16207"
-            freq={11}
-            amp={0.16}
+            freq={13}
+            amp={0.28}
           />
+          {/* Center banner crowning the gate, hanging forward */}
           <FlappingFlag
-            position={[-0.42, 1.1, 0.07]}
-            size={[0.84, 0.22]}
+            position={[0, 1.18, 0.18]}
+            rotation={[0, 0, 0]}
+            size={[0.92, 0.26]}
             color="#fde68a"
             trim="#92400e"
-            freq={7.5}
-            amp={0.12}
+            freq={9}
+            amp={0.22}
           />
         </>
       )}
