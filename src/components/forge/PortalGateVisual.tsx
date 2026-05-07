@@ -175,16 +175,56 @@ void main() {
 }
 `
 
-const VOID_APERTURE_FRAGMENT_SHADER = `
+const VOID_SKY_APERTURE_VERTEX_SHADER = `
+varying vec2 vUv;
+varying vec3 vWorldPosition;
+
+void main() {
+  vUv = uv;
+  vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+  vWorldPosition = worldPosition.xyz;
+  gl_Position = projectionMatrix * viewMatrix * worldPosition;
+}
+`
+
+const VOID_APERTURE_MASK_FRAGMENT_SHADER = `
+precision highp float;
+
+uniform float uShape;
+varying vec2 vUv;
+
+float portalMask(vec2 p) {
+  if (uShape < 0.5) return length(p / vec2(0.72, 1.0));
+  if (uShape < 1.5) return max(abs(p.x) / 0.62, abs(p.y) / 0.96);
+  if (uShape < 2.5) {
+    return max(abs(p.x) / 0.18, abs(p.y) / 1.0);
+  }
+  if (uShape < 3.5) return length(p / vec2(0.92, 0.68));
+  return length(p);
+}
+
+void main() {
+  vec2 p = (vUv - 0.5) * 2.0;
+  if (portalMask(p) > 1.0) discard;
+  gl_FragColor = vec4(1.0);
+}
+`
+
+const VOID_SKY_APERTURE_FRAGMENT_SHADER = `
 precision highp float;
 
 uniform float uTime;
 uniform float uSeed;
 uniform float uShape;
 uniform float uIntensity;
-uniform vec3 uRim;
-uniform vec3 uAccent;
+uniform vec3 uVoid;
+uniform vec3 uNebula;
+uniform vec3 uStar;
 varying vec2 vUv;
+varying vec3 vWorldPosition;
+
+const float PI = 3.14159265359;
+const float TAU = 6.28318530718;
 
 float hash21(vec2 p) {
   p = fract(p * vec2(123.34, 456.21));
@@ -192,21 +232,45 @@ float hash21(vec2 p) {
   return fract(p.x * p.y);
 }
 
-float portalMask(vec2 p) {
-  vec2 warped = p;
-  warped += vec2(
-    sin(p.y * 7.0 + uTime * 0.5 + uSeed),
-    cos(p.x * 6.0 - uTime * 0.45 + uSeed)
-  ) * 0.012;
+float noise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hash21(i);
+  float b = hash21(i + vec2(1.0, 0.0));
+  float c = hash21(i + vec2(0.0, 1.0));
+  float d = hash21(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
 
-  if (uShape < 0.5) return length(warped / vec2(0.72, 1.0));
-  if (uShape < 1.5) return max(abs(warped.x) / 0.62, abs(warped.y) / 0.96);
-  if (uShape < 2.5) {
-    float edgeWave = sin(warped.y * 13.0 + uTime * 2.8 + uSeed) * 0.035;
-    return max(abs(warped.x + edgeWave) / 0.18, abs(warped.y) / 1.0);
+float fbm(vec2 p) {
+  float value = 0.0;
+  float amplitude = 0.52;
+  mat2 rotate = mat2(0.8, -0.6, 0.6, 0.8);
+  for (int i = 0; i < 4; i++) {
+    value += amplitude * noise(p);
+    p = rotate * p * 2.03 + vec2(9.2, 4.7);
+    amplitude *= 0.48;
   }
-  if (uShape < 3.5) return length(warped / vec2(0.92, 0.68));
-  return length(warped);
+  return value;
+}
+
+float portalMask(vec2 p) {
+  if (uShape < 0.5) return length(p / vec2(0.72, 1.0));
+  if (uShape < 1.5) return max(abs(p.x) / 0.62, abs(p.y) / 0.96);
+  if (uShape < 2.5) return max(abs(p.x) / 0.18, abs(p.y) / 1.0);
+  if (uShape < 3.5) return length(p / vec2(0.92, 0.68));
+  return length(p);
+}
+
+float starLayer(vec2 uv, float scale, float threshold, float size) {
+  vec2 cell = floor(uv * scale);
+  vec2 local = fract(uv * scale) - 0.5;
+  vec2 jitter = vec2(hash21(cell + uSeed + 2.7), hash21(cell + uSeed + 8.1)) - 0.5;
+  float exists = step(threshold, hash21(cell + uSeed * 1.73));
+  float distanceToStar = length(local - jitter * 0.72);
+  float twinkle = 0.72 + 0.28 * sin(uTime * (0.9 + hash21(cell) * 2.2) + hash21(cell + 5.0) * TAU);
+  return smoothstep(size, 0.0, distanceToStar) * exists * twinkle;
 }
 
 void main() {
@@ -214,23 +278,23 @@ void main() {
   float mask = portalMask(p);
   if (mask > 1.0) discard;
 
-  float edge = smoothstep(0.58, 0.98, mask);
-  float hardRim = 1.0 - smoothstep(0.965, 1.0, mask);
-  hardRim *= smoothstep(0.78, 0.96, mask);
-  float innerEdge = smoothstep(0.28, 0.72, mask);
-  vec2 cell = floor((vUv + vec2(uTime * 0.012, -uTime * 0.018)) * 92.0);
-  float star = step(0.965, hash21(cell + uSeed * 2.13));
-  float starPulse = 0.35 + 0.65 * sin(uTime * (3.0 + hash21(cell) * 7.0) + hash21(cell + 7.0) * 6.28318);
-  float lens = 1.0 - smoothstep(0.0, 0.86, length(p));
-  float abyss = 1.0 - smoothstep(0.03, 0.58, length(p / vec2(0.86, 1.0)));
-  float voidNoise = hash21(floor(vUv * 34.0) + floor(uTime * 3.0) + uSeed);
-  vec3 color = vec3(0.0, 0.001, 0.006) * (0.75 + lens * 0.65);
-  color += uRim * pow(edge, 1.35) * (0.72 + uIntensity * 0.68);
-  color += uAccent * hardRim * (0.85 + uIntensity * 0.6);
-  color += uAccent * innerEdge * 0.13;
-  color += uAccent * star * starPulse * (0.42 + uIntensity * 0.32);
-  color += vec3(voidNoise * 0.006, voidNoise * 0.008, voidNoise * 0.018);
-  color *= 1.0 - abyss * 0.94;
+  vec3 direction = normalize(vWorldPosition - cameraPosition);
+  vec2 skyUv = vec2(atan(direction.z, direction.x) / TAU + 0.5, asin(clamp(direction.y, -1.0, 1.0)) / PI + 0.5);
+  skyUv.x = fract(skyUv.x + uSeed * 0.013 + uTime * 0.0015);
+
+  float nebula = fbm(skyUv * vec2(4.6, 2.4) + vec2(uSeed * 0.11, -uSeed * 0.07));
+  float cloud = smoothstep(0.45, 0.92, nebula);
+  float stars = starLayer(skyUv, 150.0, 0.983, 0.06);
+  stars += starLayer(skyUv + vec2(0.173, 0.421), 310.0, 0.992, 0.05) * 0.72;
+  stars += starLayer(skyUv + vec2(0.621, 0.117), 620.0, 0.996, 0.04) * 0.42;
+
+  float verticalShade = smoothstep(-0.55, 0.85, direction.y);
+  vec3 color = mix(uVoid, uVoid * 0.42 + vec3(0.001, 0.004, 0.018), verticalShade);
+  color = mix(color, uNebula * (0.18 + uIntensity * 0.08) + uVoid * 0.72, cloud * 0.36);
+  color += uStar * stars * (0.8 + uIntensity * 0.42);
+  color += vec3(0.01, 0.015, 0.035) * smoothstep(0.8, 1.0, abs(direction.y));
+  color *= 1.0 - smoothstep(0.955, 1.0, mask) * 0.32;
+  color = pow(color, vec3(0.82));
 
   gl_FragColor = vec4(color, 1.0);
 }
@@ -456,7 +520,7 @@ function StencilVoidAperture({
   seed,
   shape = 'ellipse',
   size = [1.18, 1.94],
-  position = [0, 0, 0.09],
+  position = [0, 0, 0.01],
   intensity = 1,
   inert,
 }: {
@@ -475,31 +539,34 @@ function StencilVoidAperture({
       uSeed: { value: seed },
       uShape: { value: PORTAL_APERTURE_SHAPES[shape] },
       uIntensity: { value: inert ? intensity * 0.32 : intensity },
-      uRim: { value: new THREE.Color(inert ? colors.stone : colors.primary) },
-      uAccent: { value: new THREE.Color(inert ? '#7f8ea3' : colors.secondary) },
+      uVoid: { value: new THREE.Color(inert ? '#02030a' : '#000109') },
+      uNebula: { value: new THREE.Color(inert ? colors.stone : colors.primary) },
+      uStar: { value: new THREE.Color(inert ? '#8b96a9' : colors.secondary) },
   }), [colors.primary, colors.secondary, colors.stone, inert, intensity, seed, shape])
   const maskMaterial = useMemo(() => new THREE.ShaderMaterial({
     uniforms: makeUniforms(),
     vertexShader: PORTAL_APERTURE_VERTEX_SHADER,
-    fragmentShader: VOID_APERTURE_FRAGMENT_SHADER,
+    fragmentShader: VOID_APERTURE_MASK_FRAGMENT_SHADER,
     side: THREE.DoubleSide,
     depthTest: true,
     depthWrite: false,
     colorWrite: false,
     stencilWrite: true,
+    stencilWriteMask: 0xff,
     stencilRef,
     stencilFunc: THREE.AlwaysStencilFunc,
     stencilZPass: THREE.ReplaceStencilOp,
   }), [makeUniforms, stencilRef])
   const material = useMemo(() => new THREE.ShaderMaterial({
     uniforms: makeUniforms(),
-    vertexShader: PORTAL_APERTURE_VERTEX_SHADER,
-    fragmentShader: VOID_APERTURE_FRAGMENT_SHADER,
+    vertexShader: VOID_SKY_APERTURE_VERTEX_SHADER,
+    fragmentShader: VOID_SKY_APERTURE_FRAGMENT_SHADER,
     side: THREE.DoubleSide,
     transparent: false,
     depthTest: true,
     depthWrite: true,
-    stencilWrite: false,
+    stencilWrite: true,
+    stencilWriteMask: 0x00,
     stencilRef,
     stencilFunc: THREE.EqualStencilFunc,
     stencilFail: THREE.KeepStencilOp,
@@ -1574,14 +1641,7 @@ function VoidDoor({ inert }: { inert?: boolean }) {
   const frameColor = inert ? '#6d7484' : MOOD_COLORS.void.primary
   return (
     <group position={[0, 1.45, 0]}>
-      <SmokeWisps mood="void" inert={inert} />
-      <PortalAperture mood="void" seed={329} shape="door" size={[1.08, 2.56]} intensity={1.22} organic={0.82} inert={inert} />
-      <PortalWorldGlimpse mood="void" profile="void" size={[0.9, 2.24]} inert={inert} />
       <StencilVoidAperture mood="void" seed={7329} shape="door" size={[0.88, 2.24]} intensity={1.45} inert={inert} />
-      <PortalDepthTunnel mood="void" inert={inert} elongated rings={9} radius={0.42} zStep={0.095} />
-      <MirrorGlassSkin mood="void" shape="door" size={[0.92, 2.28]} opacity={0.16} inert={inert} />
-      <RimHalo mood="void" inert={inert} scale={[0.78, 1.42, 1]} radius={0.5} thickness={0.11} opacity={0.38} />
-      <PortalStarfield seed={29} color="#d2c5ff" accentColor="#5ff0ff" width={1.02} height={2.42} count={146} depth={0.74} inert={inert} />
       <mesh position={[-0.62, 0, 0]}>
         <boxGeometry args={[0.18, 2.82, 0.24]} />
         <meshStandardMaterial color="#2d2639" emissive="#160020" emissiveIntensity={0.18} metalness={0.42} roughness={0.18} transparent opacity={inert ? 0.62 : 0.94} />
@@ -1612,19 +1672,6 @@ function VoidDoor({ inert }: { inert?: boolean }) {
           <meshBasicMaterial color={index === 1 ? '#5ff0ff' : frameColor} transparent opacity={inert ? 0.24 : 0.72} blending={THREE.AdditiveBlending} />
         </mesh>
       ))}
-      <EnergyVeil mood="void" shape="plane" scale={[0.86, 1.08, 1]} opacity={0.2} inert={inert} />
-      <OrbitingParticles mood="void" inert={inert} radius={0.52} count={24} elongated seed={229} spinSpeed={1.12} buzz={0.055} />
-      <FastParticleSwarm mood="void" inert={inert} profile="shards" radius={0.64} count={48} elongated seed={2329} speed={2.15} chaos={0.82} />
-      <EmissiveBolts mood="void" inert={inert} radius={0.72} count={10} elongated seed={3229} />
-      <PortalLightningCrown mood="void" inert={inert} radius={0.82} elongated count={24} seed={7329} intensity={1.1} />
-      <mesh position={[0, 0.12, 0.02]} scale={[1, 1.22, 1]}>
-        <ringGeometry args={[0.22, 0.48, 72]} />
-        <meshBasicMaterial color="#000000" transparent opacity={0.78} side={THREE.DoubleSide} />
-      </mesh>
-      <mesh position={[0, 0.12, 0.03]} scale={[1, 1.22, 1]}>
-        <ringGeometry args={[0.48, 0.54, 72]} />
-        <meshBasicMaterial color="#5ff0ff" transparent opacity={inert ? 0.14 : 0.42} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} />
-      </mesh>
     </group>
   )
 }
@@ -1633,8 +1680,6 @@ function GreekTempleGate({ inert }: { inert?: boolean }) {
   const stoneColor = inert ? '#8a877e' : '#d7d0c0'
   return (
     <group position={[0, 1.42, 0]}>
-      <PortalAperture mood="clockwork" seed={1441} shape="door" size={[1.18, 2.1]} intensity={0.68} organic={0.04} inert={inert} />
-      <PortalWorldGlimpse mood="clockwork" profile="machine" size={[0.96, 1.84]} inert={inert} />
       <StencilVoidAperture mood="clockwork" seed={9441} shape="door" size={[0.94, 1.86]} intensity={0.86} inert={inert} />
 
       {[-0.96, 0.96].map((x, index) => (
@@ -1674,11 +1719,6 @@ function GreekTempleGate({ inert }: { inert?: boolean }) {
         <boxGeometry args={[3.08, 0.18, 0.72]} />
         <StoneTexturedMaterial seed={842} palette={GREEK_STONE_PALETTE} color={stoneColor} inert={inert} />
       </mesh>
-      <mesh position={[0, 0, -0.09]}>
-        <boxGeometry args={[1.38, 2.34, 0.08]} />
-        <meshBasicMaterial color="#050505" transparent opacity={inert ? 0.38 : 0.76} depthWrite={false} />
-      </mesh>
-      <RimHalo mood="clockwork" inert={inert} scale={[0.68, 1.22, 1]} radius={0.78} thickness={0.05} opacity={0.18} />
     </group>
   )
 }
@@ -1872,20 +1912,12 @@ function StargateVortex({ inert }: { inert?: boolean }) {
 function CrystalCavern({ inert }: { inert?: boolean }) {
   return (
     <group position={[0, 1.48, 0]}>
-      <SmokeWisps mood="rift" inert={inert} />
       <StoneCaveMouth mood="rift" inert={inert} scale={[1.55, 1.42, 1]} seed={9897} count={44} />
-      <PortalAperture mood="rift" seed={897} shape="ellipse" size={[1.18, 2.18]} intensity={1.26} organic={0.58} inert={inert} />
-      <PortalWorldGlimpse mood="rift" profile="crystal" size={[1, 1.86]} inert={inert} />
       <StencilVoidAperture mood="rift" seed={7897} shape="ellipse" size={[0.98, 1.9]} intensity={1.16} inert={inert} />
-      <PortalDepthTunnel mood="rift" inert={inert} elongated rings={8} radius={0.58} zStep={0.08} />
-      <MirrorGlassSkin mood="rift" shape="ellipse" size={[1.02, 1.96]} opacity={0.22} inert={inert} />
-      <EnergyVeil mood="rift" scale={[0.72, 1.18, 1]} opacity={0.28} inert={inert} />
-      <PortalStarfield seed={97} color="#f5d0fe" accentColor="#bae6fd" width={1.28} height={2.24} count={134} depth={0.6} inert={inert} />
-      <CrystalHalo mood="rift" inert={inert} radius={1.04} count={12} />
       {Array.from({ length: 9 }, (_, index) => {
         const side = index % 2 === 0 ? -1 : 1
         const y = -1.1 + index * 0.28
-        const x = side * (0.46 + (index % 3) * 0.11)
+        const x = side * (0.74 + (index % 3) * 0.12)
         return (
           <mesh key={index} position={[x, y, 0.04]} rotation={[0.2, 0.3, side * 0.42]}>
             <octahedronGeometry args={[index % 3 === 0 ? 0.24 : 0.17, 0]} />
@@ -1898,12 +1930,6 @@ function CrystalCavern({ inert }: { inert?: boolean }) {
           </mesh>
         )
       })}
-      <RimHalo mood="rift" inert={inert} scale={[0.72, 1.34, 1]} radius={0.76} thickness={0.12} opacity={0.3} />
-      <PortalFlameJets mood="rift" inert={inert} count={18} width={1.1} height={1.9} seed={3897} intensity={0.72} />
-      <PortalLightningCrown mood="rift" inert={inert} radius={1.28} elongated count={32} seed={1897} intensity={1.1} />
-      <FastParticleSwarm mood="rift" inert={inert} profile="shards" radius={1.12} count={62} elongated seed={2897} speed={2.05} chaos={0.86} />
-      <OrbitingParticles mood="rift" inert={inert} radius={0.72} count={28} elongated seed={897} spinSpeed={0.96} buzz={0.052} />
-      <EmissiveBolts mood="rift" inert={inert} radius={0.92} count={18} elongated seed={8897} />
     </group>
   )
 }
@@ -1954,11 +1980,7 @@ function EastAsianGate({ inert }: { inert?: boolean }) {
   const gold = inert ? '#8a7a45' : '#facc15'
   return (
     <group position={[0, 1.42, 0]}>
-      <PortalAperture mood="solar" seed={1907} shape="door" size={[1.08, 2.12]} intensity={0.92} organic={0.18} inert={inert} />
-      <PortalWorldGlimpse mood="solar" profile="sun" size={[0.9, 1.82]} inert={inert} />
-      <PortalDepthTunnel mood="solar" inert={inert} elongated rings={6} radius={0.52} zStep={0.065} />
       <StencilVoidAperture mood="solar" seed={5907} shape="door" size={[0.88, 1.84]} intensity={0.92} inert={inert} />
-      <MirrorGlassSkin mood="solar" shape="door" size={[0.94, 1.96]} opacity={0.13} inert={inert} />
 
       {[-0.82, 0.82].map((x, index) => (
         <group key={index} position={[x, -0.1, 0.08]}>
@@ -1999,8 +2021,6 @@ function EastAsianGate({ inert }: { inert?: boolean }) {
         <boxGeometry args={[2.2, 0.18, 0.42]} />
         <meshStandardMaterial color="#1f1714" roughness={0.64} metalness={0.06} />
       </mesh>
-      <RimHalo mood="solar" inert={inert} scale={[0.72, 1.18, 1]} radius={0.75} thickness={0.08} opacity={0.2} />
-      <FastParticleSwarm mood="solar" inert={inert} profile="embers" radius={0.84} count={18} elongated seed={7907} speed={0.72} chaos={0.2} />
     </group>
   )
 }

@@ -127,6 +127,28 @@ function applyPortalTransform(
   }
 }
 
+function isMissingPortalTarget(gate: PortalGate, worldRegistry: Array<{ id?: string }>): boolean {
+  if (worldRegistry.length === 0) return false
+  const action = resolvePortalGateAction(gate)
+  return action.type === 'load_world'
+    && Boolean(action.worldId)
+    && !worldRegistry.some(world => world.id === action.worldId)
+}
+
+function resolvePortalAvailability(gate: PortalGate, worldRegistry: Array<{ id?: string }>): PortalGate {
+  if (!isMissingPortalTarget(gate, worldRegistry)) return gate
+  const label = getPortalGateLabel(gate)
+  return {
+    ...gate,
+    inert: true,
+    label: `${label} (world not found)`,
+    action: {
+      type: 'locked_message',
+      message: 'World not found on this Oasis. This portal will unlock when its destination world exists here.',
+    },
+  }
+}
+
 function derivePortalArrivalPose(
   gate: PortalGate,
   transforms?: Record<string, { position?: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number } | undefined>,
@@ -241,8 +263,8 @@ export function PortalGateLayer() {
   }, [activeWorldId])
 
   const gates = useMemo(
-    () => portalGates.map(gate => applyPortalTransform(gate, transforms[gate.id])),
-    [portalGates, transforms],
+    () => portalGates.map(gate => resolvePortalAvailability(applyPortalTransform(gate, transforms[gate.id]), worldRegistry)),
+    [portalGates, transforms, worldRegistry],
   )
 
   const runWorldTransition = useCallback(async (

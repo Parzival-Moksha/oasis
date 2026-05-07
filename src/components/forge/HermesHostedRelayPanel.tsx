@@ -851,6 +851,26 @@ export function HermesHostedRelayPanel({
     useAudioManager.getState().play('place')
   }, [hermesAvatar?.avatar3dUrl, panelSettings.avatarUrl, updatePanelSettings])
 
+  const openHermesWindowInspector = useCallback(() => {
+    let windowId = useOasisStore.getState().placedAgentWindows.find(entry => entry.agentType === 'hermes')?.id || ''
+    if (!windowId) {
+      manifestHermesAvatar()
+      windowId = 'agent-hermes-default'
+    }
+
+    const input = useInputManager.getState()
+    if (input.inputState === 'agent-focus') input.returnToPrevious()
+    if (input.pointerLocked) input.releasePointerLock()
+    if (input.inputState === 'orbit' || input.inputState === 'noclip' || input.inputState === 'third-person') {
+      input.enterUIFocus()
+    }
+
+    const store = useOasisStore.getState()
+    store.selectObject(windowId)
+    store.setInspectedObject(windowId)
+    useAudioManager.getState().play('buttonClick')
+  }, [manifestHermesAvatar])
+
   const updateButtonPose = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
     const x = ((event.clientX - rect.left) / rect.width) * 100
@@ -1263,6 +1283,13 @@ export function HermesHostedRelayPanel({
               className="rounded border border-emerald-300/30 bg-emerald-300/10 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.12em] text-emerald-50 transition hover:border-emerald-100 hover:bg-emerald-300/20"
             >
               place 3D Hermes
+            </button>
+            <button
+              data-no-drag
+              onClick={openHermesWindowInspector}
+              className="rounded border border-fuchsia-300/30 bg-fuchsia-300/10 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.12em] text-fuchsia-50 transition hover:border-fuchsia-100 hover:bg-fuchsia-300/20"
+            >
+              advanced
             </button>
             <span className="min-w-0 truncate text-[11px] text-amber-100/50">
               {hermesAvatar?.avatar3dUrl || panelSettings.avatarUrl || DEFAULT_HERMES_AVATAR_URL}

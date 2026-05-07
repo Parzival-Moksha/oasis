@@ -1165,6 +1165,20 @@ export function OpenclawPanel({
     return id
   }, [addAgentWindow, assignSharedAgentAvatar])
 
+  const openOpenclawWindowInspector = useCallback(() => {
+    const windowId = ensureOpenclawAgentWindow()
+    const input = useInputManager.getState()
+    if (input.inputState === 'agent-focus') input.returnToPrevious()
+    if (input.pointerLocked) input.releasePointerLock()
+    if (input.inputState === 'orbit' || input.inputState === 'noclip' || input.inputState === 'third-person') {
+      input.enterUIFocus()
+    }
+
+    const store = useOasisStore.getState()
+    store.selectObject(windowId)
+    store.setInspectedObject(windowId)
+  }, [ensureOpenclawAgentWindow])
+
   const stopHostedWelcome = useCallback(() => {
     hostedWelcomeAudioRef.current?.pause()
     hostedWelcomeAudioRef.current = null
@@ -3314,6 +3328,20 @@ export function OpenclawPanel({
                 </button>
                 <span className="block truncate font-mono text-[10px] text-cyan-100/70">
                   {openclawAvatar?.avatar3dUrl ? openclawAvatar.avatar3dUrl.split('/').pop() : 'No dedicated body'}
+                </span>
+              </div>
+              <div className="space-y-1">
+                <span className="block uppercase tracking-[0.16em] text-cyan-100/70">Advanced</span>
+                <button
+                  data-no-drag
+                  type="button"
+                  onClick={openOpenclawWindowInspector}
+                  className="h-9 w-full rounded border border-fuchsia-300/25 bg-fuchsia-400/10 px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-fuchsia-50 transition hover:border-fuchsia-200/45 hover:bg-fuchsia-400/18"
+                >
+                  show joystick
+                </button>
+                <span className="block truncate font-mono text-[10px] text-cyan-100/70">
+                  Selects the 3D OpenClaw window
                 </span>
               </div>
               <label className="hidden space-y-1">

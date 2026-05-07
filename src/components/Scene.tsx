@@ -1449,7 +1449,7 @@ export default function Scene() {
     <Canvas
       id="uploader-canvas"
       camera={{ position: [12, 10, 12], fov: 50, near: 0.1, far: 500 }}
-      gl={{ antialias: true }}
+      gl={{ antialias: true, stencil: true }}
       onPointerMissed={() => {
         if (isPointerLocked()) return  // Noclip/TPS mode — click locks pointer, not deselects
         selectObject(null)
@@ -1488,7 +1488,7 @@ export default function Scene() {
         {/* ─═̷─═̷─📸─═̷─═̷─ PANORAMA CAPTURE (Ctrl+Shift+P) ─═̷─═̷─📸─═̷─═̷─ */}
         <PanoramaCapture />
         <ViewportScreenshotBridge />
-        <PortalZeroCanonicalButton />
+        {!hostedMode && <PortalZeroCanonicalButton />}
 
         <PostProcessing />
         <FPSTracker />

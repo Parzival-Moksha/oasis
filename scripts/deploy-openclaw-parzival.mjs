@@ -14,7 +14,7 @@ const host = readOption('host', 'parzival-us')
 const remoteDir = readOption('dir', '/home/art3mis/openclaw-oasis')
 const branch = readOption('branch', 'main')
 const reset = args.includes('--reset')
-const seedWelcome = args.includes('--seed-welcome')
+const seedWelcome = args.includes('--seed-welcome') || args.includes('--seed-portal-zero')
 const skipInstall = args.includes('--skip-install')
 
 function shellQuote(value) {
