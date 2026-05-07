@@ -1,11 +1,13 @@
 'use client'
 
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
+import * as THREE from 'three'
 import { getPlayerAvatarPose } from '../../lib/player-avatar-runtime'
 import {
   DEFAULT_PORTAL_ACTIVATION_DEPTH,
   createPortalTriggerState,
+  getPortalGateLabel,
   markPortalTriggered,
   resolvePortalGateAction,
   shouldTriggerPortal,
@@ -13,11 +15,94 @@ import {
   type PortalTriggerState,
 } from '../../lib/portal-gates'
 import { createWorld, loadWorld, saveWorld } from '../../lib/forge/world-persistence'
+import {
+  PORTAL_REVEAL_ROLL_EVENT,
+  PORTAL_TRANSITION_START_EVENT,
+  preloadPortalRevealRoll,
+  readPortalTransitionSettings,
+  type PortalTransitionSettings,
+} from '../../lib/portal-transition-settings'
+import { useInputManager } from '../../lib/input-manager'
 import { useOasisStore } from '../../store/oasisStore'
 import { PortalGateVisual } from './PortalGateVisual'
 import { SelectableWrapper } from './WorldObjects'
 
 const PORTAL_COOLDOWN_MS = 2500
+const PORTAL_WORLD_SWITCH_TUNNEL_FRACTION = 0.56
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => window.setTimeout(resolve, ms))
+}
+
+function easeInOutCubic(value: number): number {
+  return value < 0.5
+    ? 4 * value * value * value
+    : 1 - Math.pow(-2 * value + 2, 3) / 2
+}
+
+function portalCenter(gate: PortalGate): THREE.Vector3 {
+  return new THREE.Vector3(gate.position[0], gate.position[1] + gate.height * 0.48, gate.position[2])
+}
+
+function portalFacingNormal(gate: PortalGate): THREE.Vector3 {
+  const rotationY = gate.rotationY ?? 0
+  return new THREE.Vector3(Math.sin(rotationY), 0, Math.cos(rotationY)).normalize()
+}
+
+function emitPortalTransitionStart(gate: PortalGate, settings: PortalTransitionSettings, targetWorldName?: string) {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(PORTAL_TRANSITION_START_EVENT, {
+    detail: {
+      settings,
+      gateLabel: getPortalGateLabel(gate),
+      targetWorldName,
+      variant: gate.variant,
+    },
+  }))
+}
+
+function emitPortalRevealRoll(gate: PortalGate, targetWorldName?: string) {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(PORTAL_REVEAL_ROLL_EVENT, {
+    detail: {
+      gateId: gate.id,
+      targetWorldName,
+      animationId: 'ual-roll',
+    },
+  }))
+}
+
+function animatePortalCameraSwallow(camera: THREE.Camera, gate: PortalGate, settings: PortalTransitionSettings): Promise<void> {
+  if (!(camera instanceof THREE.PerspectiveCamera)) return Promise.resolve()
+  const durationMs = Math.max(80, settings.swallowSeconds * 1000)
+  const startMs = performance.now()
+  const startPosition = camera.position.clone()
+  const center = portalCenter(gate)
+  const normal = portalFacingNormal(gate)
+  const pull = Math.min(1, Math.max(0, settings.cameraPull))
+  const targetDistance = Math.max(0.42, gate.width * (0.82 - Math.min(1.5, settings.cameraPull) * 0.28))
+  const targetPosition = center.clone().add(normal.multiplyScalar(targetDistance)).add(new THREE.Vector3(0, gate.height * 0.02, 0))
+  const originalFov = camera.fov
+  const targetFov = Math.min(105, originalFov + settings.fovBoost)
+
+  return new Promise(resolve => {
+    const frame = () => {
+      const progress = Math.min(1, (performance.now() - startMs) / durationMs)
+      const eased = easeInOutCubic(progress)
+      camera.position.lerpVectors(startPosition, targetPosition, eased * pull)
+      camera.fov = THREE.MathUtils.lerp(originalFov, targetFov, eased)
+      camera.lookAt(center)
+      camera.updateProjectionMatrix()
+
+      if (progress < 1) {
+        requestAnimationFrame(frame)
+      } else {
+        resolve()
+      }
+    }
+    requestAnimationFrame(frame)
+  })
+}
 
 function transformScaleScalar(scale: number | [number, number, number] | undefined): number {
   if (typeof scale === 'number') return scale
@@ -41,8 +126,10 @@ function applyPortalTransform(
 }
 
 export function PortalGateLayer() {
+  const { camera } = useThree()
   const activeWorldId = useOasisStore(s => s.activeWorldId)
   const portalGates = useOasisStore(s => s.portalGates)
+  const worldRegistry = useOasisStore(s => s.worldRegistry)
   const transforms = useOasisStore(s => s.transforms)
   const selectedObjectId = useOasisStore(s => s.selectedObjectId)
   const transformMode = useOasisStore(s => s.transformMode)
@@ -71,13 +158,59 @@ export function PortalGateLayer() {
     [portalGates, transforms],
   )
 
+  const runWorldTransition = useCallback(async (
+    gate: PortalGate,
+    targetWorldName: string | undefined,
+    switcher: () => void,
+  ) => {
+    const settings = readPortalTransitionSettings()
+    if (!settings.enabled) {
+      switcher()
+      return
+    }
+
+    const perspectiveCamera = camera instanceof THREE.PerspectiveCamera ? camera : null
+    const originalFov = perspectiveCamera?.fov
+    const inputManager = useInputManager.getState()
+    const shouldManageInput = inputManager.inputState !== 'ui-focused' && inputManager.inputState !== 'agent-focus'
+    if (shouldManageInput) inputManager.enterUIFocus()
+
+    if (settings.rollReveal) void preloadPortalRevealRoll()
+    emitPortalTransitionStart(gate, settings, targetWorldName)
+
+    const switchDelayMs = Math.max(0, (settings.swallowSeconds + settings.tunnelSeconds * PORTAL_WORLD_SWITCH_TUNNEL_FRACTION) * 1000)
+    const remainingTunnelMs = Math.max(0, settings.tunnelSeconds * (1 - PORTAL_WORLD_SWITCH_TUNNEL_FRACTION) * 1000)
+    const revealMs = Math.max(0, settings.revealSeconds * 1000)
+
+    try {
+      void animatePortalCameraSwallow(camera, gate, settings)
+      await sleep(switchDelayMs)
+      switcher()
+      await sleep(remainingTunnelMs)
+      if (settings.rollReveal) emitPortalRevealRoll(gate, targetWorldName)
+      await sleep(revealMs)
+    } finally {
+      if (perspectiveCamera && typeof originalFov === 'number') {
+        perspectiveCamera.fov = originalFov
+        perspectiveCamera.updateProjectionMatrix()
+      }
+      const currentInputManager = useInputManager.getState()
+      if (shouldManageInput && currentInputManager.inputState === 'ui-focused') {
+        currentInputManager.returnToPrevious()
+      }
+    }
+  }, [camera])
+
   const handlePortalAction = useCallback(async (gate: PortalGate) => {
     if (activePortalActionRef.current) return
     activePortalActionRef.current = gate.id
     try {
       const action = resolvePortalGateAction(gate)
       if (action.type === 'load_world') {
-        if (action.worldId) switchWorld(action.worldId)
+        if (action.worldId) {
+          const targetWorldName = worldRegistry.find(world => world.id === action.worldId)?.name
+          await runWorldTransition(gate, targetWorldName, () => switchWorld(action.worldId!))
+        }
         return
       }
 
@@ -99,7 +232,7 @@ export function PortalGateLayer() {
           }
         }
         refreshWorldRegistry()
-        switchWorld(meta.id)
+        await runWorldTransition(gate, meta.name, () => switchWorld(meta.id))
         return
       }
 
@@ -127,7 +260,7 @@ export function PortalGateLayer() {
         if (activePortalActionRef.current === gate.id) activePortalActionRef.current = null
       }, 750)
     }
-  }, [refreshWorldRegistry, switchWorld])
+  }, [refreshWorldRegistry, runWorldTransition, switchWorld, worldRegistry])
 
   useFrame(() => {
     if (gates.length === 0) return

@@ -27,6 +27,7 @@ import { sprintRef } from '../CameraController'
 import { SettingsContext } from '../scene-lib'
 import { PLAYER_AVATAR_LIPSYNC_ID, getPlayerSpellCasting, setPlayerAvatarPose, setPlayerSpellCasting, subscribePlayerSpellCasting } from '../../lib/player-avatar-runtime'
 import { SPELL_CAST_ANIMATION_ID, SPELL_CAST_SOUND_URL } from '../../lib/spell-casting'
+import { PORTAL_REVEAL_ROLL_EVENT } from '../../lib/portal-transition-settings'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -168,6 +169,7 @@ export function PlayerAvatar({
   const footstepTimerRef = useRef(0)
   const spellAudioRef = useRef<HTMLAudioElement | null>(null)
   const spellAnimationActiveRef = useRef(false)
+  const portalRollTimeoutRef = useRef<number | null>(null)
   const [playerSpellCasting, setPlayerSpellCastingState] = useState(() => getPlayerSpellCasting())
 
   // ── IBL one-shot flag ──────────────────────────────────────────────
@@ -297,6 +299,31 @@ export function PlayerAvatar({
     animControllerRef.current = controller
     return () => { controller.dispose(); animControllerRef.current = null }
   }, [vrm])
+
+  useEffect(() => {
+    const onPortalRevealRoll = () => {
+      const controller = animControllerRef.current
+      if (!controller) return
+      if (portalRollTimeoutRef.current) window.clearTimeout(portalRollTimeoutRef.current)
+      controller.preloadClip('ual-roll').then(ok => {
+        const currentController = animControllerRef.current
+        if (!ok || !currentController) return
+        currentController.transitionTo('custom', 'ual-roll')
+        portalRollTimeoutRef.current = window.setTimeout(() => {
+          const nextController = animControllerRef.current
+          if (!nextController || nextController.state !== 'custom') return
+          nextController.transitionTo(isMovingRef.current ? 'run' : 'idle')
+        }, 2300)
+      })
+    }
+
+    window.addEventListener(PORTAL_REVEAL_ROLL_EVENT, onPortalRevealRoll)
+    return () => {
+      window.removeEventListener(PORTAL_REVEAL_ROLL_EVENT, onPortalRevealRoll)
+      if (portalRollTimeoutRef.current) window.clearTimeout(portalRollTimeoutRef.current)
+      portalRollTimeoutRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     return () => {
