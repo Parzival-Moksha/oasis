@@ -1,32 +1,84 @@
 'use client'
 
-import { Html } from '@react-three/drei'
+import { Center, Text3D } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
-import { memo, useEffect, useMemo, useRef } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
-import { getPortalGateLabel, type PortalGate } from '../../lib/portal-gates'
+import {
+  getPortalGateLabel,
+  PORTAL_GATE_VARIANT_DEFS,
+  type PortalGate,
+  type PortalGateVariant,
+} from '../../lib/portal-gates'
 
 interface PortalGateVisualProps {
   gate: PortalGate
 }
 
+const PORTAL_LABEL_FONT = '/fonts/helvetiker_regular.typeface.json'
+
+// Per-variant label colors. Front/back faces get the bright accent (emissive,
+// reads as the portal's mood). Sides get a darker, metallic version so the
+// extrusion carves visible volume in the letter — like neon piping with
+// a metallic frame around the glow. Trick: face is matte+emissive (catches no
+// reflection, glows), sides are metallic+dim (catch HDRI reflections, look
+// like polished metal). The eye reads the contrast as readable depth.
+const PORTAL_LABEL_COLORS: Record<PortalGateVariant, { face: string; faceEmissive: string; side: string; sideEmissive: string }> = {
+  'threshold-ring':  { face: '#a5f3fc', faceEmissive: '#67e8f9', side: '#0e3946', sideEmissive: '#0e7490' },
+  'void-door':       { face: '#ddd6fe', faceEmissive: '#a78bfa', side: '#1e1b34', sideEmissive: '#4c1d95' },
+  'hologram-gate':   { face: '#f5f1e6', faceEmissive: '#d7d0c0', side: '#2a261d', sideEmissive: '#7a6f55' },
+  'solar-arch':      { face: '#fde68a', faceEmissive: '#fbbf24', side: '#3b1f06', sideEmissive: '#92400e' },
+  'rift-slit':       { face: '#fbcfe8', faceEmissive: '#f472b6', side: '#3f1129', sideEmissive: '#9d174d' },
+  'stargate-vortex': { face: '#bae6fd', faceEmissive: '#38bdf8', side: '#0c2a3e', sideEmissive: '#0369a1' },
+  'crystal-cavern':  { face: '#e9d5ff', faceEmissive: '#c084fc', side: '#2a154d', sideEmissive: '#6b21a8' },
+  'verdant-arch':    { face: '#fecaca', faceEmissive: '#ef4444', side: '#3a1010', sideEmissive: '#991b1b' },
+  'mirror-pool':     { face: '#bae6fd', faceEmissive: '#7dd3fc', side: '#0c2a3e', sideEmissive: '#075985' },
+  'clockwork-iris':  { face: '#fef3c7', faceEmissive: '#facc15', side: '#3a2a06', sideEmissive: '#a16207' },
+}
+
 function PortalLabel({ gate }: { gate: PortalGate }) {
+  const palette = PORTAL_LABEL_COLORS[gate.variant] ?? PORTAL_LABEL_COLORS['threshold-ring']
+  const label = getPortalGateLabel(gate)
+  const dim = gate.inert ? 0.4 : 1
+  // Position: 1m higher than the old HTML label (was y=3.15 → now 4.15).
+  // Center wraps the extruded geometry so it horizontally centers above the gate.
   return (
-    <Html position={[0, 3.15, 0]} center distanceFactor={12} style={{ pointerEvents: 'none' }}>
-      <div
-        style={{
-          color: gate.inert ? '#a8b1c5' : '#f8fbff',
-          fontSize: 12,
-          fontWeight: 700,
-          textShadow: '0 0 8px rgba(0,0,0,0.95), 0 0 14px rgba(88,166,255,0.85)',
-          whiteSpace: 'nowrap',
-          letterSpacing: 0,
-          opacity: gate.inert ? 0.72 : 0.95,
-        }}
-      >
-        {getPortalGateLabel(gate)}
-      </div>
-    </Html>
+    <group position={[0, 4.15, 0]}>
+      <Center>
+        <Text3D
+          font={PORTAL_LABEL_FONT}
+          size={0.55}
+          height={0.18}
+          bevelEnabled
+          bevelThickness={0.025}
+          bevelSize={0.012}
+          bevelSegments={4}
+          curveSegments={6}
+        >
+          {label}
+          {/* Front/back faces — emissive accent, near-zero metalness so the
+              face glows uniformly at any viewing angle. */}
+          <meshStandardMaterial
+            attach="material-0"
+            color={palette.face}
+            emissive={palette.faceEmissive}
+            emissiveIntensity={1.6 * dim}
+            metalness={0.18}
+            roughness={0.32}
+          />
+          {/* Sides (extrusion + bevel). Dark metallic — picks up environment
+              reflections, frames the glowing face like a sign-sign rim. */}
+          <meshStandardMaterial
+            attach="material-1"
+            color={palette.side}
+            emissive={palette.sideEmissive}
+            emissiveIntensity={0.32 * dim}
+            metalness={0.92}
+            roughness={0.18}
+          />
+        </Text3D>
+      </Center>
+    </group>
   )
 }
 
@@ -938,11 +990,203 @@ function FastParticleSwarm({
   )
 }
 
+// PortalLightningCrown — zigzag-bolt storm.
+//
+// Each bolt = 5 staged segments + optional 3-segment branch. Inter-segment
+// reveal timing: 150 → 120 → 90 → 60 → 30 ms (cumulative ~450 ms growth).
+// Once fully grown, the whole bolt fades out over 3 s. ~5 bolts/sec spawn.
+//
+// Implementation: one <Bolt> mesh per active bolt. Each <Bolt> owns a
+// LineSegments with pre-allocated positions. Per-frame in useFrame we
+// (a) reveal new segments by writing their endpoints (segments not yet born
+// have zero length so they're invisible), (b) crossfade material.opacity.
+//
+// Spawn/cleanup driven by setInterval + setTimeout. React state holds bolt IDs
+// only; geometry/material work is imperative.
+//
+// Replaces the old "wobbly lines" version. Same prop signature so call sites
+// don't change.
+
+interface BoltSegment {
+  start: [number, number, number]
+  end: [number, number, number]
+  birthMs: number
+}
+
+interface BoltDescriptor {
+  id: string
+  segments: BoltSegment[]
+  bornAt: number
+  color: string
+}
+
+const BOLT_GROWTH_TIMINGS = [0, 150, 270, 360, 420] // ms cumulative
+const BOLT_BRANCH_TIMINGS = [240, 330, 390]
+const BOLT_GROWTH_TOTAL_MS = 450
+const BOLT_FADE_MS = 3000
+const BOLT_LIFETIME_MS = BOLT_GROWTH_TOTAL_MS + BOLT_FADE_MS
+
+function makeBolt(seed: number, radius: number, yScale: number, color: string): BoltDescriptor {
+  // Random origin around the gate's rim.
+  const angle0 = Math.random() * Math.PI * 2
+  const startRadius = radius * (0.7 + Math.random() * 0.18)
+  let pos: [number, number, number] = [
+    Math.cos(angle0) * startRadius,
+    Math.sin(angle0) * startRadius * yScale,
+    0.12 + Math.random() * 0.08,
+  ]
+  // Initial direction biased outward (away from gate center) plus tangent.
+  let direction: [number, number, number] = [
+    Math.cos(angle0) * 0.7 + (Math.random() - 0.5) * 0.5,
+    Math.sin(angle0) * yScale * 0.7 + (Math.random() - 0.5) * 0.5,
+    (Math.random() - 0.5) * 0.4,
+  ]
+
+  const segments: BoltSegment[] = []
+  for (let i = 0; i < 5; i++) {
+    const len = 0.22 + Math.random() * 0.36
+    // Each new segment turns sharply (zigzag) — pick a perpendicular-ish axis.
+    if (i > 0) {
+      const turn = (Math.random() - 0.5) * 1.6
+      direction = [
+        direction[0] * Math.cos(turn) - direction[1] * Math.sin(turn),
+        direction[0] * Math.sin(turn) + direction[1] * Math.cos(turn),
+        direction[2] + (Math.random() - 0.5) * 0.4,
+      ]
+      // Renormalize to keep step size consistent.
+      const m = Math.hypot(direction[0], direction[1], direction[2]) || 1
+      direction = [direction[0] / m, direction[1] / m, direction[2] / m]
+    }
+    const next: [number, number, number] = [
+      pos[0] + direction[0] * len,
+      pos[1] + direction[1] * len * yScale,
+      pos[2] + direction[2] * len * 0.5,
+    ]
+    segments.push({ start: pos, end: next, birthMs: BOLT_GROWTH_TIMINGS[i] })
+    pos = next
+  }
+
+  // 35% chance: branch off segment 2's endpoint with 3 mini-segments.
+  if (Math.random() < 0.35) {
+    let bp = segments[1].end
+    let bd: [number, number, number] = [
+      (Math.random() - 0.5) * 1.4,
+      (Math.random() - 0.5) * 1.4,
+      (Math.random() - 0.5) * 0.4,
+    ]
+    const bm = Math.hypot(bd[0], bd[1], bd[2]) || 1
+    bd = [bd[0] / bm, bd[1] / bm, bd[2] / bm]
+    for (let i = 0; i < 3; i++) {
+      const len = 0.16 + Math.random() * 0.22
+      const next: [number, number, number] = [
+        bp[0] + bd[0] * len,
+        bp[1] + bd[1] * len * yScale,
+        bp[2] + bd[2] * len * 0.5,
+      ]
+      segments.push({ start: bp, end: next, birthMs: BOLT_BRANCH_TIMINGS[i] })
+      bp = next
+      const turn = (Math.random() - 0.5) * 1.4
+      bd = [
+        bd[0] * Math.cos(turn) - bd[1] * Math.sin(turn),
+        bd[0] * Math.sin(turn) + bd[1] * Math.cos(turn),
+        bd[2] + (Math.random() - 0.5) * 0.3,
+      ]
+    }
+  }
+
+  return {
+    id: `bolt-${seed}-${performance.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    segments,
+    bornAt: performance.now(),
+    color,
+  }
+}
+
+function Bolt({ bolt, intensity }: { bolt: BoltDescriptor; intensity: number }) {
+  // Pre-allocate a positions buffer for up to 8 segments × 2 verts × 3 floats.
+  const segmentCount = bolt.segments.length
+  const positions = useMemo(() => new Float32Array(segmentCount * 2 * 3), [segmentCount])
+  const lineRef = useRef<THREE.LineSegments>(null)
+  const materialRef = useRef<THREE.LineBasicMaterial>(null)
+  const lightRef = useRef<THREE.PointLight>(null)
+
+  useFrame(() => {
+    const elapsed = performance.now() - bolt.bornAt
+    // Reveal segments by writing their endpoints once their birthMs has passed.
+    // Pre-birth segments stay zero-length (start == end) and render as a point.
+    for (let i = 0; i < segmentCount; i++) {
+      const seg = bolt.segments[i]
+      const visible = elapsed >= seg.birthMs
+      const offset = i * 6
+      if (visible) {
+        positions[offset] = seg.start[0]
+        positions[offset + 1] = seg.start[1]
+        positions[offset + 2] = seg.start[2]
+        positions[offset + 3] = seg.end[0]
+        positions[offset + 4] = seg.end[1]
+        positions[offset + 5] = seg.end[2]
+      } else {
+        // zero-length so nothing renders
+        positions[offset] = positions[offset + 3] = seg.start[0]
+        positions[offset + 1] = positions[offset + 4] = seg.start[1]
+        positions[offset + 2] = positions[offset + 5] = seg.start[2]
+      }
+    }
+    if (lineRef.current) {
+      const attr = lineRef.current.geometry.getAttribute('position') as THREE.BufferAttribute
+      attr.needsUpdate = true
+    }
+
+    // Opacity envelope: ramp 0→1 over first 30 ms, then linear fade over 3 s.
+    let alpha = 0
+    if (elapsed < 30) {
+      alpha = elapsed / 30
+    } else if (elapsed < BOLT_GROWTH_TOTAL_MS) {
+      alpha = 1
+    } else {
+      alpha = Math.max(0, 1 - (elapsed - BOLT_GROWTH_TOTAL_MS) / BOLT_FADE_MS)
+    }
+    if (materialRef.current) materialRef.current.opacity = alpha * intensity
+    if (lightRef.current) {
+      lightRef.current.intensity = alpha * 1.4 * intensity
+    }
+  })
+
+  // Bolt center for the point light (rough midpoint of the polyline).
+  const lightPos = bolt.segments[Math.floor(segmentCount / 2)].end
+
+  return (
+    <group>
+      <lineSegments ref={lineRef} renderOrder={9}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+        </bufferGeometry>
+        <lineBasicMaterial
+          ref={materialRef}
+          color={bolt.color}
+          transparent
+          opacity={0}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          linewidth={2}
+        />
+      </lineSegments>
+      <pointLight
+        ref={lightRef}
+        color={bolt.color}
+        intensity={0}
+        distance={2.4}
+        decay={2}
+        position={lightPos}
+      />
+    </group>
+  )
+}
+
 function PortalLightningCrown({
   mood,
   inert,
   seed = 300,
-  count = 28,
   radius = 1,
   elongated = false,
   intensity = 1,
@@ -955,71 +1199,47 @@ function PortalLightningCrown({
   elongated?: boolean
   intensity?: number
 }) {
-  const lineRef = useRef<THREE.LineSegments>(null)
-  const materialRef = useRef<THREE.LineBasicMaterial>(null)
   const colors = MOOD_COLORS[mood]
-  const positions = useMemo(() => new Float32Array(count * 2 * 3), [count])
-  const bolts = useMemo(() => {
-    const random = seededRandom(seed)
-    return Array.from({ length: count }, (_, index) => ({
-      angle: (index / count) * Math.PI * 2 + random() * 0.34,
-      phase: random() * Math.PI * 2,
-      reach: 0.18 + random() * 0.44,
-      fork: (random() - 0.5) * 0.42,
-      skip: random(),
-    }))
-  }, [count, seed])
+  const [bolts, setBolts] = useState<BoltDescriptor[]>([])
+  const yScale = elongated ? 1.35 : 1
 
-  useFrame(({ clock }) => {
-    if (!lineRef.current) return
-    const t = clock.elapsedTime
-    const yScale = elongated ? 1.35 : 1
-    bolts.forEach((bolt, index) => {
-      const live = Math.sin(t * 13.0 + bolt.phase) > -0.48 || bolt.skip > 0.72
-      const flicker = live ? 1 + Math.sin(t * 31.0 + bolt.phase) * 0.18 : 0.22
-      const angle = bolt.angle + Math.sin(t * 7.0 + bolt.phase) * 0.08
-      const nextAngle = angle + bolt.fork + Math.sin(t * 11.0 + index) * 0.12
-      const startRadius = radius * (0.66 + Math.sin(t * 4.1 + bolt.phase) * 0.06)
-      const endRadius = radius * (0.94 + bolt.reach * flicker)
-      const offset = index * 6
-      positions[offset] = Math.cos(angle) * startRadius
-      positions[offset + 1] = Math.sin(angle) * startRadius * yScale
-      positions[offset + 2] = 0.15 + Math.sin(t * 9.0 + bolt.phase) * 0.04
-      positions[offset + 3] = Math.cos(nextAngle) * endRadius
-      positions[offset + 4] = Math.sin(nextAngle) * endRadius * yScale
-      positions[offset + 5] = 0.18 + Math.cos(t * 8.4 + bolt.phase) * 0.07
-    })
-    const attribute = lineRef.current.geometry.getAttribute('position') as THREE.BufferAttribute
-    attribute.needsUpdate = true
-    if (materialRef.current) {
-      materialRef.current.opacity = inert ? 0.18 : 0.46 + Math.max(0, Math.sin(t * 17.0 + seed)) * 0.42 * intensity
+  useEffect(() => {
+    if (inert) return
+    let active = true
+    // ~5 bolts per second = 200 ms interval. Lifespan ~3.45 s, so steady-state
+    // population is ~17 bolts on screen.
+    const spawnEvery = 200
+    const tick = () => {
+      if (!active) return
+      const bolt = makeBolt(seed, radius, yScale, colors.secondary)
+      setBolts(prev => [...prev, bolt])
+      window.setTimeout(() => {
+        if (!active) return
+        setBolts(prev => prev.filter(b => b.id !== bolt.id))
+      }, BOLT_LIFETIME_MS + 60)
     }
-  })
+    const interval = window.setInterval(tick, spawnEvery)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
+  }, [inert, seed, radius, yScale, colors.secondary])
+
+  if (inert) {
+    return (
+      <pointLight
+        color={colors.secondary}
+        intensity={0.18}
+        distance={2.4}
+        decay={2}
+        position={[0, 0, 0.42]}
+      />
+    )
+  }
 
   return (
     <group>
-      <lineSegments ref={lineRef} renderOrder={8}>
-        <bufferGeometry>
-          <bufferAttribute attach="attributes-position" args={[positions, 3]} />
-        </bufferGeometry>
-        <lineBasicMaterial
-          ref={materialRef}
-          color={colors.secondary}
-          transparent
-          opacity={inert ? 0.18 : 0.82}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </lineSegments>
-      {!inert && (
-        <pointLight
-          color={colors.secondary}
-          intensity={0.75 + intensity * 1.25}
-          distance={3.6 + intensity * 1.4}
-          decay={2}
-          position={[0, 0, 0.42]}
-        />
-      )}
+      {bolts.map(b => <Bolt key={b.id} bolt={b} intensity={intensity} />)}
     </group>
   )
 }
@@ -1688,47 +1908,142 @@ function VoidDoor({ inert }: { inert?: boolean }) {
 }
 
 function GreekTempleGate({ inert }: { inert?: boolean }) {
+  // Pantheon-flavored. Doric column flutes (8 each, deeper than before),
+  // 3-tier stepped stylobate base, full architrave + frieze + cornice
+  // entablature, triangular pediment with sculpted tympanum infill, plus
+  // central rosette and palmette acroteria.
   const stoneColor = inert ? '#8a877e' : '#d7d0c0'
+  const stoneDark = inert ? '#65605a' : '#a09684'
+  const stoneAccent = inert ? '#5a554d' : '#7d7363'
+
   return (
     <group position={[0, 1.42, 0]}>
-      <PortalSkyAperture mood="clockwork" seed={9441} shape="door" size={[1.7, 2.2]} intensity={0.86} inert={inert} />
+      <PortalSkyAperture mood="clockwork" seed={9441} shape="door" size={[1.7, 2.55]} intensity={0.86} inert={inert} />
 
+      {/* Two columns. Each: shaft, capital block (echinus + abacus), base
+          torus, and 8 fluted grooves running the height of the shaft. */}
       {[-0.96, 0.96].map((x, index) => (
         <group key={`column-${index}`} position={[x, -0.12, 0.06]}>
+          {/* Tapered shaft (Doric proportion: top 0.86× base diameter) */}
           <mesh position={[0, 0, 0]}>
-            <cylinderGeometry args={[0.16, 0.2, 2.55, 18]} />
+            <cylinderGeometry args={[0.16, 0.2, 2.55, 24]} />
             <StoneTexturedMaterial seed={440 + index} palette={GREEK_STONE_PALETTE} color={stoneColor} inert={inert} />
           </mesh>
-          {[-1.38, 1.38].map((y, capIndex) => (
-            <mesh key={capIndex} position={[0, y, 0]}>
-              <boxGeometry args={[0.58, 0.18, 0.34]} />
-              <StoneTexturedMaterial seed={540 + index * 2 + capIndex} palette={GREEK_STONE_PALETTE} color={stoneColor} inert={inert} />
-            </mesh>
-          ))}
-          {Array.from({ length: 6 }, (_, groove) => (
-            <mesh key={groove} position={[Math.cos((groove / 6) * Math.PI * 2) * 0.165, 0, Math.sin((groove / 6) * Math.PI * 2) * 0.02 + 0.1]} rotation={[0, 0, 0]}>
-              <boxGeometry args={[0.018, 2.28, 0.018]} />
-              <meshBasicMaterial color="#65615a" transparent opacity={inert ? 0.22 : 0.32} />
-            </mesh>
-          ))}
+          {/* Capital — echinus (rounded cushion) + abacus (square slab) */}
+          <mesh position={[0, 1.34, 0]}>
+            <cylinderGeometry args={[0.22, 0.16, 0.12, 20]} />
+            <StoneTexturedMaterial seed={540 + index * 2} palette={GREEK_STONE_PALETTE} color={stoneColor} inert={inert} />
+          </mesh>
+          <mesh position={[0, 1.43, 0]}>
+            <boxGeometry args={[0.58, 0.08, 0.36]} />
+            <StoneTexturedMaterial seed={541 + index * 2} palette={GREEK_STONE_PALETTE} color={stoneColor} inert={inert} />
+          </mesh>
+          {/* Base — torus + plinth */}
+          <mesh position={[0, -1.32, 0]}>
+            <cylinderGeometry args={[0.24, 0.24, 0.08, 18]} />
+            <StoneTexturedMaterial seed={640 + index} palette={GREEK_STONE_PALETTE} color={stoneAccent} inert={inert} />
+          </mesh>
+          <mesh position={[0, -1.41, 0]}>
+            <boxGeometry args={[0.6, 0.1, 0.4]} />
+            <StoneTexturedMaterial seed={641 + index} palette={GREEK_STONE_PALETTE} color={stoneAccent} inert={inert} />
+          </mesh>
+          {/* 8 deeper flutes */}
+          {Array.from({ length: 8 }, (_, groove) => {
+            const a = (groove / 8) * Math.PI * 2
+            return (
+              <mesh key={groove} position={[Math.cos(a) * 0.175, 0, Math.sin(a) * 0.175 + 0.05]} rotation={[0, -a, 0]}>
+                <boxGeometry args={[0.024, 2.32, 0.04]} />
+                <meshStandardMaterial color={stoneAccent} roughness={0.78} metalness={0.05} transparent opacity={inert ? 0.6 : 0.85} />
+              </mesh>
+            )
+          })}
         </group>
       ))}
 
+      {/* Entablature — three stacked horizontal members above the columns. */}
+      {/* 1. Architrave (smooth bottom band) */}
       <mesh position={[0, 1.32, 0.02]}>
-        <boxGeometry args={[2.38, 0.28, 0.42]} />
-        <StoneTexturedMaterial seed={641} palette={GREEK_STONE_PALETTE} color={stoneColor} inert={inert} />
+        <boxGeometry args={[2.46, 0.18, 0.42]} />
+        <StoneTexturedMaterial seed={742} palette={GREEK_STONE_PALETTE} color={stoneColor} inert={inert} />
       </mesh>
-      <mesh position={[0, 1.62, 0.02]} scale={[1.45, 0.42, 0.28]} rotation={[0, 0, Math.PI / 2]}>
-        <coneGeometry args={[0.8, 1.12, 3]} />
-        <StoneTexturedMaterial seed={741} palette={GREEK_STONE_PALETTE} color={stoneColor} emissive="#17120a" emissiveIntensity={0.04} inert={inert} />
+      {/* 2. Frieze (slightly recessed, with triglyph blocks for Doric vibe) */}
+      <mesh position={[0, 1.46, 0.0]}>
+        <boxGeometry args={[2.46, 0.16, 0.4]} />
+        <StoneTexturedMaterial seed={743} palette={GREEK_STONE_PALETTE} color={stoneAccent} inert={inert} />
       </mesh>
-      <mesh position={[0, -1.52, 0.08]}>
-        <boxGeometry args={[2.75, 0.2, 0.52]} />
+      {Array.from({ length: 7 }, (_, i) => {
+        const x = -1.05 + (i / 6) * 2.1
+        return (
+          <mesh key={`triglyph-${i}`} position={[x, 1.46, 0.21]}>
+            <boxGeometry args={[0.1, 0.14, 0.04]} />
+            <StoneTexturedMaterial seed={744 + i} palette={GREEK_STONE_PALETTE} color={stoneDark} inert={inert} />
+          </mesh>
+        )
+      })}
+      {/* 3. Cornice (overhanging cap) */}
+      <mesh position={[0, 1.6, 0.04]}>
+        <boxGeometry args={[2.66, 0.1, 0.5]} />
+        <StoneTexturedMaterial seed={745} palette={GREEK_STONE_PALETTE} color={stoneColor} inert={inert} />
+      </mesh>
+
+      {/* Triangular pediment — front face is a flat triangular plate; the
+          existing cone is the side ridge profile. */}
+      <mesh position={[0, 1.92, 0.06]} rotation={[0, 0, 0]}>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            args={[new Float32Array([-1.33, 0, 0, 1.33, 0, 0, 0, 0.6, 0]), 3]}
+          />
+          <bufferAttribute attach="attributes-normal" args={[new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]), 3]} />
+        </bufferGeometry>
         <StoneTexturedMaterial seed={841} palette={GREEK_STONE_PALETTE} color={stoneColor} inert={inert} />
       </mesh>
-      <mesh position={[0, -1.76, 0.14]}>
-        <boxGeometry args={[3.08, 0.18, 0.72]} />
-        <StoneTexturedMaterial seed={842} palette={GREEK_STONE_PALETTE} color={stoneColor} inert={inert} />
+      {/* Pediment ridge profile (the original cone, slightly smaller now) */}
+      <mesh position={[0, 1.92, 0]} scale={[1.33, 0.36, 0.3]} rotation={[0, 0, Math.PI / 2]}>
+        <coneGeometry args={[0.8, 1.12, 3]} />
+        <StoneTexturedMaterial seed={842} palette={GREEK_STONE_PALETTE} color={stoneColor} emissive="#17120a" emissiveIntensity={0.04} inert={inert} />
+      </mesh>
+
+      {/* Central rosette on tympanum */}
+      <mesh position={[0, 2.08, 0.13]}>
+        <torusGeometry args={[0.13, 0.04, 8, 18]} />
+        <meshStandardMaterial color={stoneAccent} roughness={0.6} metalness={0.08} />
+      </mesh>
+      <mesh position={[0, 2.08, 0.16]}>
+        <circleGeometry args={[0.07, 18]} />
+        <meshStandardMaterial color={stoneDark} roughness={0.7} metalness={0.05} />
+      </mesh>
+
+      {/* Acroteria — three palmette ornaments along the pediment ridge */}
+      {[
+        { x: 0, y: 2.55, scale: 1.0 },
+        { x: -1.32, y: 1.66, scale: 0.7 },
+        { x: 1.32, y: 1.66, scale: 0.7 },
+      ].map((a, i) => (
+        <group key={`acroterion-${i}`} position={[a.x, a.y, 0.04]} scale={a.scale}>
+          <mesh>
+            <coneGeometry args={[0.09, 0.22, 6]} />
+            <StoneTexturedMaterial seed={900 + i} palette={GREEK_STONE_PALETTE} color={stoneAccent} inert={inert} />
+          </mesh>
+          <mesh position={[0, -0.1, 0]}>
+            <boxGeometry args={[0.16, 0.05, 0.16]} />
+            <StoneTexturedMaterial seed={910 + i} palette={GREEK_STONE_PALETTE} color={stoneAccent} inert={inert} />
+          </mesh>
+        </group>
+      ))}
+
+      {/* Stylobate — three stepped slabs at the base, increasing in width */}
+      <mesh position={[0, -1.52, 0.08]}>
+        <boxGeometry args={[2.65, 0.16, 0.5]} />
+        <StoneTexturedMaterial seed={951} palette={GREEK_STONE_PALETTE} color={stoneColor} inert={inert} />
+      </mesh>
+      <mesh position={[0, -1.66, 0.12]}>
+        <boxGeometry args={[2.85, 0.12, 0.62]} />
+        <StoneTexturedMaterial seed={952} palette={GREEK_STONE_PALETTE} color={stoneAccent} inert={inert} />
+      </mesh>
+      <mesh position={[0, -1.78, 0.16]}>
+        <boxGeometry args={[3.08, 0.12, 0.74]} />
+        <StoneTexturedMaterial seed={953} palette={GREEK_STONE_PALETTE} color={stoneDark} inert={inert} />
       </mesh>
     </group>
   )
@@ -1927,7 +2242,7 @@ function CrystalCavern({ inert }: { inert?: boolean }) {
   return (
     <group position={[0, 1.48, 0]}>
       <StoneCaveMouth mood="rift" inert={inert} scale={[1.55, 1.42, 1]} seed={9897} count={44} showBacking={false} />
-      <PortalSkyAperture mood="rift" seed={7897} shape="ellipse" size={[2.4, 3.0]} intensity={1.16} inert={inert} />
+      <PortalSkyAperture mood="rift" seed={7897} shape="ellipse" size={[3.12, 3.9]} intensity={1.16} inert={inert} />
       <CrystalHalo mood="rift" inert={inert} radius={1.04} count={12} />
       {Array.from({ length: 9 }, (_, index) => {
         const side = index % 2 === 0 ? -1 : 1
@@ -1987,7 +2302,7 @@ function EastAsianGate({ inert }: { inert?: boolean }) {
   const gold = inert ? '#8a7a45' : '#facc15'
   return (
     <group position={[0, 1.42, 0]}>
-      <PortalSkyAperture mood="solar" seed={5907} shape="door" size={[1.6, 2.0]} intensity={0.92} inert={inert} />
+      <PortalSkyAperture mood="solar" seed={5907} shape="door" size={[1.6, 2.35]} intensity={0.92} inert={inert} />
 
       {[-0.82, 0.82].map((x, index) => (
         <group key={index} position={[x, -0.1, 0.08]}>
@@ -2095,6 +2410,97 @@ function _MirrorPool({ inert }: { inert?: boolean }) {
   )
 }
 
+// Cheap cloth flag. planeGeometry with vertex-shader displacement so the
+// flag ripples like fabric in heavy wind. The root edge (uv.x=0) is pinned;
+// the trailing edge (uv.x=1) flaps with full amplitude. High-freq overlay
+// gives that snappy "rapid-flap" feel rather than slow undulation.
+const FLAG_VERTEX_SHADER = `
+varying vec2 vUv;
+varying float vWave;
+uniform float uTime;
+uniform float uFreq;
+uniform float uAmp;
+
+void main() {
+  vUv = uv;
+  // Distance from the pole — pinned end is uv.x=0.
+  float d = uv.x;
+  // Primary flap: low-frequency standing wave that grows with distance.
+  float w = sin(uTime * uFreq + d * 6.0) * uAmp;
+  // High-frequency ripple riding on top — gives the snappy fabric tic.
+  w += sin(uTime * uFreq * 1.7 + uv.y * 5.0 + d * 12.0) * uAmp * 0.34;
+  // Vertical sway so it's not a flat sheet.
+  w += sin(uTime * uFreq * 0.7 + uv.y * 3.0) * uAmp * 0.18 * d;
+  vWave = w;
+  vec3 displaced = position + vec3(0.0, w * 0.4 * d, w);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
+}
+`
+
+const FLAG_FRAGMENT_SHADER = `
+varying vec2 vUv;
+varying float vWave;
+uniform vec3 uColor;
+uniform vec3 uTrim;
+uniform float uOpacity;
+
+void main() {
+  // Trim at the leading + trailing edges — paints a contrasting band, gives
+  // the eye a flag-like silhouette instead of a uniform rectangle.
+  float trimEdge = smoothstep(0.92, 1.0, vUv.x);
+  vec3 col = mix(uColor, uTrim, trimEdge);
+  // Shade by displacement so the wave reads as actual cloth volume.
+  col *= 0.78 + vWave * 0.55;
+  gl_FragColor = vec4(col, uOpacity);
+}
+`
+
+function FlappingFlag({
+  position,
+  rotation,
+  size = [0.6, 0.36],
+  color = '#facc15',
+  trim = '#7c2d12',
+  freq = 8,
+  amp = 0.16,
+  opacity = 0.92,
+}: {
+  position: [number, number, number]
+  rotation?: [number, number, number]
+  size?: [number, number]
+  color?: string
+  trim?: string
+  freq?: number
+  amp?: number
+  opacity?: number
+}) {
+  const matRef = useRef<THREE.ShaderMaterial>(null)
+  useFrame(({ clock }) => {
+    if (matRef.current) matRef.current.uniforms.uTime.value = clock.elapsedTime
+  })
+  // Plane needs enough subdivisions for the vertex displacement to look smooth.
+  return (
+    <mesh position={position} rotation={rotation}>
+      <planeGeometry args={[size[0], size[1], 24, 10]} />
+      <shaderMaterial
+        ref={matRef}
+        uniforms={{
+          uTime: { value: 0 },
+          uFreq: { value: freq },
+          uAmp: { value: amp },
+          uColor: { value: new THREE.Color(color) },
+          uTrim: { value: new THREE.Color(trim) },
+          uOpacity: { value: opacity },
+        }}
+        vertexShader={FLAG_VERTEX_SHADER}
+        fragmentShader={FLAG_FRAGMENT_SHADER}
+        side={THREE.DoubleSide}
+        transparent
+      />
+    </mesh>
+  )
+}
+
 function ClockworkIris({ inert }: { inert?: boolean }) {
   return (
     <group position={[0, 1.48, 0]}>
@@ -2124,10 +2530,42 @@ function ClockworkIris({ inert }: { inert?: boolean }) {
           <meshBasicMaterial color="#422006" transparent opacity={inert ? 0.34 : 0.72} side={THREE.DoubleSide} />
         </mesh>
       ))}
-      <PortalLightningCrown mood="clockwork" inert={inert} radius={1.05} count={18} seed={4931} intensity={0.7} />
+      <PortalLightningCrown mood="clockwork" inert={inert} radius={1.05} seed={4931} intensity={0.7} />
       <FastParticleSwarm mood="clockwork" inert={inert} profile="sparks" radius={0.98} count={36} seed={2931} speed={1.55} chaos={0.35} />
       <OrbitingParticles mood="clockwork" inert={inert} radius={0.78} count={20} seed={931} spinSpeed={0.86} buzz={0.032} />
       <EmissiveBolts mood="clockwork" inert={inert} radius={1.02} count={22} seed={9931} />
+      {/* Flapping pennants — left + right pair flanking the iris, plus a
+          center banner above. Each rooted at the pole-end (closer to gate
+          axis) and trailing outward. Different frequencies/amplitudes so
+          they don't visually sync. */}
+      {!inert && (
+        <>
+          <FlappingFlag
+            position={[-1.2, 0.3, 0.05]}
+            size={[0.62, 0.34]}
+            color="#facc15"
+            trim="#7c2d12"
+            freq={9}
+            amp={0.18}
+          />
+          <FlappingFlag
+            position={[0.58, 0.3, 0.05]}
+            size={[0.62, 0.34]}
+            color="#fef3c7"
+            trim="#a16207"
+            freq={11}
+            amp={0.16}
+          />
+          <FlappingFlag
+            position={[-0.42, 1.1, 0.07]}
+            size={[0.84, 0.22]}
+            color="#fde68a"
+            trim="#92400e"
+            freq={7.5}
+            amp={0.12}
+          />
+        </>
+      )}
     </group>
   )
 }
