@@ -48,7 +48,7 @@ const MOOD_COLORS: Record<
 }
 
 const GREEK_STONE_PALETTE = ['#c8c3b6', '#8f8b82', '#e5dfcf', '#5c5a55']
-const CAVE_STONE_PALETTE = ['#1e2027', '#393d49', '#626879', '#12141a']
+const _CAVE_STONE_PALETTE = ['#1e2027', '#393d49', '#626879', '#12141a']
 
 type PortalApertureShape = 'ellipse' | 'door' | 'slit' | 'pool' | 'circle'
 
@@ -1679,7 +1679,7 @@ function GreekTempleGate({ inert }: { inert?: boolean }) {
   )
 }
 
-function HologramGate({ inert }: { inert?: boolean }) {
+function _HologramGate({ inert }: { inert?: boolean }) {
   const color = inert ? '#8a94a6' : MOOD_COLORS.hologram.primary
   return (
     <group position={[0, 1.48, 0]}>
@@ -1904,7 +1904,7 @@ function CrystalCavern({ inert }: { inert?: boolean }) {
   )
 }
 
-function VerdantArch({ inert }: { inert?: boolean }) {
+function _VerdantArch({ inert }: { inert?: boolean }) {
   return (
     <group position={[0, 1.42, 0]}>
       <SmokeWisps mood="forest" inert={inert} />
@@ -2032,7 +2032,7 @@ function MoonCavernPool({ inert }: { inert?: boolean }) {
   )
 }
 
-function MirrorPool({ inert }: { inert?: boolean }) {
+function _MirrorPool({ inert }: { inert?: boolean }) {
   return (
     <group position={[0, 1.4, 0]}>
       <SmokeWisps mood="water" inert={inert} />
