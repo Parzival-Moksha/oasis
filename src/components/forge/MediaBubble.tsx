@@ -492,7 +492,7 @@ export function MediaBubble({
 
   return (
     <div className="my-1">
-      {loading && mediaType !== 'audio' && (
+      {loading && mediaType !== 'audio' && !(mediaType === 'image' && resolved) && (
         <div className="animate-pulse bg-[#222] rounded" style={{ height: compact ? 120 : 180, maxWidth: 400 }} />
       )}
 
@@ -519,8 +519,9 @@ export function MediaBubble({
               maxHeight: maxH,
               maxWidth: '100%',
               objectFit: 'contain',
-              opacity: loading ? 0 : 1,
-              visibility: loading ? 'hidden' : 'visible',
+              background: 'rgba(0,0,0,0.22)',
+              opacity: loading ? 0.82 : 1,
+              visibility: 'visible',
             }}
           />
         </div>

@@ -565,7 +565,7 @@ export function HermesHostedRelayPanel({
       }
       setMessages(previous => previous.map(message =>
         message.id === assistantId
-          ? { ...message, content: message.content + event.text, error: undefined }
+          ? { ...message, content: message.content + event.text, error: undefined, timestamp: Date.now() }
           : message
       ))
     },
@@ -578,7 +578,7 @@ export function HermesHostedRelayPanel({
       }
       setMessages(previous => previous.map(message =>
         message.id === assistantId
-          ? { ...message, content: event.text || message.content, error: undefined }
+          ? { ...message, content: event.text || message.content, error: undefined, timestamp: Date.now() }
           : message
       ))
       pendingAssistantIdRef.current = ''
@@ -1055,9 +1055,23 @@ export function HermesHostedRelayPanel({
       ? 'border-red-300/45 bg-red-500/10 text-red-100'
       : 'border-amber-400/25 text-amber-100/80'
   const timelineItems = useMemo(() => [
-    ...messages.map(message => ({ kind: 'message' as const, id: message.id, timestamp: message.timestamp, message })),
-    ...toolEvents.map(event => ({ kind: 'tool' as const, id: event.id, timestamp: event.timestamp, event })),
-  ].sort((a, b) => a.timestamp - b.timestamp), [messages, toolEvents])
+    ...messages.map((message, index) => ({
+      kind: 'message' as const,
+      id: message.id,
+      timestamp: message.timestamp,
+      order: message.role === 'assistant' ? 2 : 0,
+      index,
+      message,
+    })),
+    ...toolEvents.map((event, index) => ({
+      kind: 'tool' as const,
+      id: event.id,
+      timestamp: event.timestamp,
+      order: 1,
+      index,
+      event,
+    })),
+  ].sort((a, b) => (a.timestamp - b.timestamp) || (a.order - b.order) || (a.index - b.index)), [messages, toolEvents])
   const showPairingHero = !isPaired || !hideConnectedHero
 
   if (!isVisible || typeof document === 'undefined') return null
@@ -1319,9 +1333,13 @@ export function HermesHostedRelayPanel({
       <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-3" style={{ scrollbarWidth: 'thin', scrollbarColor: '#4b5563 transparent' }}>
         {timelineItems.length === 0 && (
           <div className="flex h-full flex-col justify-center px-4 text-center">
-            <div className="text-sm text-amber-100">Hermes relay is ready to pair.</div>
+            <div className="text-sm text-amber-100">
+              {isPaired ? 'Hermes is connected!' : 'Hermes is waiting to pair.'}
+            </div>
             <div className="mt-2 text-xs leading-5 text-amber-100/62">
-              Mint a code, paste the command into Hermes, then chat and Oasis MCP tools share this window.
+              {isPaired
+                ? 'Chat and Oasis tools are online in this window.'
+                : 'Mint a code, paste the command into Hermes, then chat and Oasis tools come online here.'}
             </div>
           </div>
         )}
