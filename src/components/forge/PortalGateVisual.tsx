@@ -214,19 +214,23 @@ void main() {
   float mask = portalMask(p);
   if (mask > 1.0) discard;
 
-  float edge = smoothstep(0.7, 1.0, mask);
-  float innerEdge = smoothstep(0.38, 0.72, mask);
-  vec2 cell = floor((vUv + vec2(uTime * 0.006, -uTime * 0.01)) * 72.0);
-  float star = step(0.986, hash21(cell + uSeed * 2.13));
-  float starPulse = 0.4 + 0.6 * sin(uTime * (2.0 + hash21(cell) * 5.0) + hash21(cell + 7.0) * 6.28318);
+  float edge = smoothstep(0.58, 0.98, mask);
+  float hardRim = 1.0 - smoothstep(0.965, 1.0, mask);
+  hardRim *= smoothstep(0.78, 0.96, mask);
+  float innerEdge = smoothstep(0.28, 0.72, mask);
+  vec2 cell = floor((vUv + vec2(uTime * 0.012, -uTime * 0.018)) * 92.0);
+  float star = step(0.965, hash21(cell + uSeed * 2.13));
+  float starPulse = 0.35 + 0.65 * sin(uTime * (3.0 + hash21(cell) * 7.0) + hash21(cell + 7.0) * 6.28318);
   float lens = 1.0 - smoothstep(0.0, 0.86, length(p));
   float abyss = 1.0 - smoothstep(0.03, 0.58, length(p / vec2(0.86, 1.0)));
-  vec3 color = vec3(0.0);
-  color += uRim * pow(edge, 2.2) * (0.58 + uIntensity * 0.38);
-  color += uAccent * innerEdge * 0.08;
-  color += uAccent * star * starPulse * (0.26 + uIntensity * 0.22);
-  color *= 1.0 - abyss * 0.88;
-  color += vec3(0.001, 0.002, 0.005) * lens;
+  float voidNoise = hash21(floor(vUv * 34.0) + floor(uTime * 3.0) + uSeed);
+  vec3 color = vec3(0.0, 0.001, 0.006) * (0.75 + lens * 0.65);
+  color += uRim * pow(edge, 1.35) * (0.72 + uIntensity * 0.68);
+  color += uAccent * hardRim * (0.85 + uIntensity * 0.6);
+  color += uAccent * innerEdge * 0.13;
+  color += uAccent * star * starPulse * (0.42 + uIntensity * 0.32);
+  color += vec3(voidNoise * 0.006, voidNoise * 0.008, voidNoise * 0.018);
+  color *= 1.0 - abyss * 0.94;
 
   gl_FragColor = vec4(color, 1.0);
 }
