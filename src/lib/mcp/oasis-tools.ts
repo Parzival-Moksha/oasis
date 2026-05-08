@@ -26,7 +26,7 @@ import { ASSET_CATALOG } from '@/components/scene-lib/constants'
 import type { WorldState } from '../forge/world-persistence'
 import type { CatalogPlacement, CraftedScene, WorldLight } from '../conjure/types'
 import type { ConjuredAsset, PostProcessAction, ProviderName } from '../conjure/types'
-import type { SpatialWebObject, SpatialWebObjectType, SpatialWebOption, SpatialWebValue } from '../spatial-web'
+import type { SpatialWebObject, SpatialWebObjectType, SpatialWebOption, SpatialWebValue, SpatialWebVisualStyle } from '../spatial-web'
 import { getAllAssets, getAssetById, updateAsset } from '../conjure/registry'
 import { emitWorldEvent } from './world-events'
 import { readWorldPlayerContext } from '../world-runtime-context'
@@ -60,6 +60,7 @@ const INTERNAL_OASIS_BASE_URL = process.env.OASIS_URL || 'http://127.0.0.1:4516'
 // Falls back to 'local-user' for fresh installs without ADMIN_USER_ID.
 const LOCAL_USER_ID = process.env.ADMIN_USER_ID || 'local-user'
 const SPATIAL_WEB_OBJECT_TYPES: SpatialWebObjectType[] = ['button', 'toggle', 'slider', 'select', 'multiselect', 'text', 'output']
+const SPATIAL_WEB_VISUAL_STYLES: SpatialWebVisualStyle[] = ['neon-panel', 'arcade-button', 'glass-slider', 'terminal-panel']
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -128,6 +129,13 @@ function validSpatialWebObjectType(value: unknown, fallback: SpatialWebObjectTyp
   return SPATIAL_WEB_OBJECT_TYPES.includes(requested as SpatialWebObjectType)
     ? requested as SpatialWebObjectType
     : fallback
+}
+
+function validSpatialWebVisualStyle(value: unknown): SpatialWebVisualStyle | undefined {
+  const requested = validStr(value, '').trim().toLowerCase()
+  return SPATIAL_WEB_VISUAL_STYLES.includes(requested as SpatialWebVisualStyle)
+    ? requested as SpatialWebVisualStyle
+    : undefined
 }
 
 function validSpatialWebValue(value: unknown, fallback: SpatialWebValue = null): SpatialWebValue {
@@ -1289,6 +1297,7 @@ tools.create_spatial_web_object = async (args) => {
   const options = parseSpatialWebOptions(args.options)
   const id = validStr(args.id, '') || `spatial-${type}-${uid()}`
   const formId = validStr(args.formId, '')
+  const visualStyle = validSpatialWebVisualStyle(args.visualStyle || args.style)
 
   const fallbackValue: SpatialWebValue =
     type === 'toggle' ? false
@@ -1300,6 +1309,10 @@ tools.create_spatial_web_object = async (args) => {
   const value = validSpatialWebValue(args.value, fallbackValue)
   const actionType = validStr(args.actionType || args.action, '').toLowerCase()
   const submitForm = validBool(args.submitForm, false) || actionType === 'submit_form' || actionType === 'submit'
+  const targetObjectId = validStr(args.targetObjectId || args.targetId, '')
+  const actionValue = validSpatialWebValue(args.actionValue ?? args.valueToSet, null)
+  const shouldSetValue = actionType === 'set_value' || actionType === 'set'
+  const shouldSpawnVfx = actionType === 'spawn_vfx' || actionType === 'vfx'
 
   const object: SpatialWebObject = {
     id,
@@ -1312,6 +1325,7 @@ tools.create_spatial_web_object = async (args) => {
     ...(validStr(args.description, '') ? { description: validStr(args.description, '') } : {}),
     ...(validStr(args.placeholder, '') ? { placeholder: validStr(args.placeholder, '') } : {}),
     ...(validStr(args.accentColor, '') ? { accentColor: validStr(args.accentColor, '') } : {}),
+    ...(visualStyle ? { visualStyle } : {}),
     ...(width !== undefined ? { width } : {}),
     ...(height !== undefined ? { height } : {}),
     ...(min !== undefined ? { min } : {}),
@@ -1327,7 +1341,11 @@ tools.create_spatial_web_object = async (args) => {
             ...(validStr(args.successMessage, '') ? { successMessage: validStr(args.successMessage, '') } : {}),
           },
         }
-      : {}),
+      : type === 'button' && shouldSetValue && targetObjectId
+        ? { action: { type: 'set_value', targetObjectId, value: actionValue } }
+        : type === 'button' && shouldSpawnVfx
+          ? { action: { type: 'spawn_vfx' } }
+          : {}),
   }
 
   const { worldId, state } = await loadRequestedWorld(args.worldId)

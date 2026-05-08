@@ -52,7 +52,16 @@ import {
   type AgentAvatarTransformMap,
 } from '../lib/agent-avatar-world-state'
 import { DEFAULT_AGENT_WINDOW_RENDER_MODE, type AgentWindowRenderMode } from '../lib/agent-window-renderers'
-import type { SpatialWebObject, SpatialWebValue } from '../lib/spatial-web'
+import {
+  SPATIAL_WEB_DEFAULT_SUBMIT_ENDPOINT,
+  buildSpatialWebSubmission,
+  getNextSpatialWebValue,
+  resolveSpatialWebObjectPosition,
+  summarizeSpatialWebSubmission,
+  type SpatialWebEventName,
+  type SpatialWebObject,
+  type SpatialWebValue,
+} from '../lib/spatial-web'
 
 const MAX_ACTIVE_MARCH_ORDER_VFX = 8
 
@@ -158,7 +167,7 @@ export interface AgentActivity {
 
 // ─═̷─═̷─💻 AGENT WINDOW — placeable interactive panels in 3D ─═̷─═̷─💻
 export type BrowserSurfaceMode = 'live-browser' | 'desktop-capture'
-export type AgentWindowType = 'anorak' | 'codex' | 'anorak-pro' | 'merlin' | 'realtime' | 'hermes' | 'openclaw' | 'devcraft' | 'parzival' | 'browser' | 'mission'
+export type AgentWindowType = 'anorak' | 'codex' | 'gemini' | 'anorak-pro' | 'merlin' | 'realtime' | 'hermes' | 'openclaw' | 'devcraft' | 'parzival' | 'browser' | 'mission'
 
 export interface AgentWindow {
   id: string                              // e.g. 'agent-anorak-1710859200000'
@@ -213,6 +222,8 @@ function defaultAgentAvatarLabel(agentType: AgentAvatarType): string {
       return 'Anorak'
     case 'codex':
       return 'Codex'
+    case 'gemini':
+      return 'Gemini'
     case 'anorak-pro':
       return 'Anorak Pro'
     case 'merlin':
@@ -598,6 +609,7 @@ interface OasisState {
   placeSpatialWebObjectAt: (object: SpatialWebObject, position: [number, number, number]) => void
   updateSpatialWebObject: (id: string, updates: Partial<SpatialWebObject>) => void
   setSpatialWebObjectValue: (id: string, value: SpatialWebValue) => void
+  interactSpatialWebObject: (id: string, event?: SpatialWebEventName) => Promise<void>
   removeSpatialWebObject: (id: string) => void
   seedSpatialWebRsvpDemo: () => void
   setObjectMeshStats: (id: string, stats: import('../lib/conjure/types').ModelStats) => void
@@ -1087,9 +1099,115 @@ export const useOasisStore = create<OasisState>((set, get) => {
   setSpatialWebObjectValue: (id, value) => {
     set(state => ({
       spatialWebObjects: state.spatialWebObjects.map(object =>
-        object.id === id ? { ...object, value } : object,
+        object.id === id ? { ...object, value, lastEvent: 'change', lastInteractionAt: new Date().toISOString(), interactionCount: (object.interactionCount || 0) + 1 } : object,
       ),
     }))
+    setTimeout(() => get().saveWorldState(), 100)
+  },
+  interactSpatialWebObject: async (id, event = 'press') => {
+    const object = get().spatialWebObjects.find(entry => entry.id === id)
+    if (!object) return
+
+    const now = new Date().toISOString()
+    const effectPosition = resolveSpatialWebObjectPosition(object, get().transforms[id])
+    const markInteraction = (updates: Partial<SpatialWebObject> = {}, actualEvent: SpatialWebEventName = event) => {
+      set(state => ({
+        spatialWebObjects: state.spatialWebObjects.map(entry =>
+          entry.id === id
+            ? {
+                ...entry,
+                ...updates,
+                lastEvent: actualEvent,
+                lastInteractionAt: now,
+                interactionCount: (entry.interactionCount || 0) + 1,
+              }
+            : entry,
+        ),
+      }))
+    }
+
+    const nextValue = getNextSpatialWebValue(object)
+    if (nextValue !== undefined) {
+      markInteraction({ value: nextValue }, 'change')
+      setTimeout(() => get().saveWorldState(), 100)
+      return
+    }
+
+    if (object.type !== 'button') {
+      markInteraction()
+      setTimeout(() => get().saveWorldState(), 100)
+      return
+    }
+
+    const action = object.action
+    if (action?.type === 'set_value' && action.targetObjectId) {
+      set(state => ({
+        spatialWebObjects: state.spatialWebObjects.map(entry => {
+          if (entry.id === action.targetObjectId) {
+            return {
+              ...entry,
+              value: action.value ?? entry.value ?? null,
+              lastEvent: 'change',
+              lastInteractionAt: now,
+              interactionCount: (entry.interactionCount || 0) + 1,
+            }
+          }
+          if (entry.id === id) {
+            return {
+              ...entry,
+              lastEvent: event,
+              lastInteractionAt: now,
+              interactionCount: (entry.interactionCount || 0) + 1,
+            }
+          }
+          return entry
+        }),
+      }))
+      setTimeout(() => get().saveWorldState(), 100)
+      return
+    }
+
+    if (action?.type === 'submit_form' && object.formId) {
+      const payload = buildSpatialWebSubmission(get().spatialWebObjects, object.formId)
+      const endpoint = action.endpoint || SPATIAL_WEB_DEFAULT_SUBMIT_ENDPOINT
+      let status = action.successMessage || 'Submitted.'
+
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (!response.ok) status = `Submit failed: HTTP ${response.status}`
+      } catch (error) {
+        status = error instanceof Error ? `Submit failed: ${error.message}` : 'Submit failed.'
+      }
+
+      const receipt = `${status}\n\n${summarizeSpatialWebSubmission(payload)}`
+      set(state => ({
+        spatialWebObjects: state.spatialWebObjects.map(entry => {
+          if (entry.formId === object.formId && entry.type === 'output' && entry.id !== id) {
+            return { ...entry, value: receipt, submittedAt: payload.submittedAt }
+          }
+          if (entry.id === id) {
+            return {
+              ...entry,
+              submittedAt: payload.submittedAt,
+              lastEvent: 'submit',
+              lastInteractionAt: now,
+              interactionCount: (entry.interactionCount || 0) + 1,
+            }
+          }
+          return entry
+        }),
+      }))
+      get().spawnPlacementVfx(effectPosition)
+      setTimeout(() => get().saveWorldState(), 100)
+      return
+    }
+
+    markInteraction()
+    get().spawnPlacementVfx(effectPosition)
     setTimeout(() => get().saveWorldState(), 100)
   },
   removeSpatialWebObject: (id) => {

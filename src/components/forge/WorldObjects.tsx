@@ -39,6 +39,9 @@ import { createLipSyncController, registerLipSync, unregisterLipSync, getLipSync
 import { clearAvatarLocomotionReady, setAvatarLocomotionReady } from '../../lib/avatar-locomotion-ready'
 import { getLiveObjectTransform, setLiveObjectTransform } from '../../lib/live-object-transforms'
 import { sampleTerrainHeightAt } from '../../lib/forge/terrain-brush'
+import { getCameraSnapshot } from '../../lib/camera-bridge'
+import { getPlayerAvatarPose } from '../../lib/player-avatar-runtime'
+import { findNearestSpatialWebObject, SPATIAL_WEB_INTERACTION_RADIUS } from '../../lib/spatial-web'
 import {
   deriveAvatarAnchoredWindowPlacement,
   deriveWindowAvatarAnchor,
@@ -52,6 +55,12 @@ const AGENT_WORK_ANIMATION_ID = 'ual-talking'
 const LOCAL_IMAGE_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
 import { resolveAgentAvatarUrl } from '../../lib/agent-avatar-catalog'
 import { canReceiveMoveOrder, resolveMoveOrderObjectIds } from '../../lib/march-order'
+
+function getSpatialInteractionActorPosition(): [number, number, number] | null {
+  const avatarPose = getPlayerAvatarPose()
+  if (avatarPose?.position) return avatarPose.position
+  return getCameraSnapshot()?.position || null
+}
 
 type VRMExpressionManagerLike = {
   expressionMap?: Record<string, unknown>
@@ -1759,6 +1768,23 @@ export function TransformKeyHandler() {
       )
       if (isTyping) return  // keys go to the form, not to us (including Ctrl+Z for native undo)
 
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && key === 'f') {
+        const state = useOasisStore.getState()
+        const nearest = findNearestSpatialWebObject(
+          state.spatialWebObjects,
+          getSpatialInteractionActorPosition(),
+          state.transforms,
+          SPATIAL_WEB_INTERACTION_RADIUS,
+        )
+        if (nearest) {
+          state.selectObject(nearest.id)
+          state.setInspectedObject(nearest.id)
+          void state.interactSpatialWebObject(nearest.id, 'press')
+          e.preventDefault()
+          return
+        }
+      }
+
       // Block ALL edit shortcuts in read-only view mode
       const { isViewMode: vm, isViewModeEditable: vme } = useOasisStore.getState()
       if (vm && !vme) return
@@ -2614,6 +2640,9 @@ export function WorldObjectsRenderer() {
   const spawnMarchOrderVfx = useOasisStore(s => s.spawnMarchOrderVfx)
   const hasAgentFocus = useOasisStore(s => !!s.focusedAgentWindowId)
   const placedAgentAvatars = useOasisStore(s => s.placedAgentAvatars)
+  const [nearestSpatialWebObjectId, setNearestSpatialWebObjectId] = useState<string | null>(null)
+  const nearestSpatialWebObjectIdRef = useRef<string | null>(null)
+  const spatialInteractionHintTickRef = useRef(0)
 
   // ░▒▓ MINDCRAFT 3D — detect if active world is the Mindcraft mission map ▓▒░
   const isMindcraftWorld = useOasisStore(s => {
@@ -2647,6 +2676,23 @@ export function WorldObjectsRenderer() {
       prevStatusRef.current[asset.id] = asset.status
     }
   }, [worldAssets, spawnPlacementVfx])
+
+  useFrame((_, delta) => {
+    spatialInteractionHintTickRef.current += delta
+    if (spatialInteractionHintTickRef.current < 0.15) return
+    spatialInteractionHintTickRef.current = 0
+
+    const nearest = findNearestSpatialWebObject(
+      spatialWebObjects,
+      getSpatialInteractionActorPosition(),
+      transforms,
+      SPATIAL_WEB_INTERACTION_RADIUS,
+    )
+    const nextId = nearest?.id || null
+    if (nearestSpatialWebObjectIdRef.current === nextId) return
+    nearestSpatialWebObjectIdRef.current = nextId
+    setNearestSpatialWebObjectId(nextId)
+  })
 
   // Persist transform changes to per-world localStorage
   const handleTransformChange = useCallback((id: string, position: [number, number, number], rotation: [number, number, number], scale: [number, number, number]) => {
@@ -2845,7 +2891,7 @@ export function WorldObjectsRenderer() {
             initialRotation={t?.rotation || object.rotation}
             initialScale={t?.scale ?? object.scale}
           >
-            <SpatialWebObject3D object={object} />
+            <SpatialWebObject3D object={object} interactionHint={nearestSpatialWebObjectId === object.id} />
           </SelectableWrapper>
         )
       })}

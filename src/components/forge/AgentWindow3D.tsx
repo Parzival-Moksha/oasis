@@ -138,6 +138,7 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
 
   const agentColor = win.agentType === 'anorak' ? '#38bdf8'
     : win.agentType === 'codex' ? '#10b981'
+    : win.agentType === 'gemini' ? '#67e8f9'
     : win.agentType === 'anorak-pro' ? '#14b8a6'
     : win.agentType === 'browser' ? '#f97316'
     : win.agentType === 'hermes' ? '#fb7185'

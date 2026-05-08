@@ -4,6 +4,7 @@ import { useOasisStore } from '../../../store/oasisStore'
 
 const AGENT_TYPES = [
   { type: 'browser' as const, label: 'Browser', icon: 'WWW', color: '#f97316', desc: 'Live 3D browser surface with real typing and selection' },
+  { type: 'gemini' as const, label: 'Gemini', icon: 'G', color: '#67e8f9', desc: 'Gemini Live lab - manifest, status, 3D surface' },
   { type: 'openclaw' as const, label: 'OpenClaw', icon: '🦞', color: '#22d3ee', desc: 'Gateway-native peer — local first, MCP-ready, transport next' },
   { type: 'anorak' as const, label: 'Anorak', icon: '💻', color: '#38bdf8', desc: 'Claude Code agent — full multi-turn sessions' },
   { type: 'codex' as const, label: 'Codex', icon: '⌘', color: '#10b981', desc: 'OpenAI coding agent — local exec threads inside the Oasis' },

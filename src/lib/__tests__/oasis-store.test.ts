@@ -35,6 +35,7 @@ import { useOasisStore } from '../../store/oasisStore'
 import type { AgentWindowType, AgentWindow } from '../../store/oasisStore'
 import { getDefaultAgentAvatarUrl } from '../../lib/agent-avatar-catalog'
 import { debouncedSaveWorld, saveWorld } from '../../lib/forge/world-persistence'
+import type { SpatialWebObject } from '../../lib/spatial-web'
 
 // Cast the mocked imports for easy access
 const mockDebouncedSave = debouncedSaveWorld as ReturnType<typeof vi.fn>
@@ -1014,6 +1015,78 @@ describe('OasisStore', () => {
   })
 
   // ─═̷─═̷─ focusImage / focusAgentWindow mutual exclusion ─═̷─═̷─
+  describe('interactSpatialWebObject()', () => {
+    it('changes controls through the shared interaction action', async () => {
+      const headcount: SpatialWebObject = {
+        id: 'headcount',
+        type: 'slider',
+        label: 'Headcount',
+        position: [0, 1, 0],
+        value: 1,
+        min: 1,
+        max: 3,
+        step: 1,
+      }
+      useOasisStore.setState({ spatialWebObjects: [headcount] })
+
+      await getState().interactSpatialWebObject('headcount')
+
+      expect(getState().spatialWebObjects[0]).toMatchObject({
+        value: 2,
+        lastEvent: 'change',
+        interactionCount: 1,
+      })
+    })
+
+    it('lets a button set another spatial object value', async () => {
+      const button: SpatialWebObject = {
+        id: 'rsvp-yes',
+        type: 'button',
+        label: 'Yes',
+        position: [0, 1, 0],
+        action: { type: 'set_value', targetObjectId: 'answer', value: 'yes' },
+      }
+      const output: SpatialWebObject = {
+        id: 'answer',
+        type: 'output',
+        label: 'Answer',
+        position: [1, 1, 0],
+        value: '',
+      }
+      useOasisStore.setState({ spatialWebObjects: [button, output] })
+
+      await getState().interactSpatialWebObject('rsvp-yes')
+
+      expect(getState().spatialWebObjects.find(object => object.id === 'answer')).toMatchObject({
+        value: 'yes',
+        lastEvent: 'change',
+        interactionCount: 1,
+      })
+      expect(getState().spatialWebObjects.find(object => object.id === 'rsvp-yes')).toMatchObject({
+        lastEvent: 'press',
+        interactionCount: 1,
+      })
+    })
+
+    it('spawns button VFX at the transformed position', async () => {
+      const button: SpatialWebObject = {
+        id: 'spark-button',
+        type: 'button',
+        label: 'Spark',
+        position: [0, 1, 0],
+        action: { type: 'spawn_vfx' },
+      }
+      useOasisStore.setState({
+        spatialWebObjects: [button],
+        transforms: { 'spark-button': { position: [5, 2, -4] } },
+      })
+
+      await getState().interactSpatialWebObject('spark-button')
+
+      expect(getState().activePlacementVfx[0]?.position).toEqual([5, 2, -4])
+    })
+  })
+
   describe('focusImage ↔ focusAgentWindow mutual exclusion', () => {
     it('focusImage clears focusedAgentWindowId', () => {
       getState().addAgentWindow(makeAgentWindow({ id: 'aw-me' }))

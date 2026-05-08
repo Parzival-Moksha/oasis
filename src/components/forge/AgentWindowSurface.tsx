@@ -7,6 +7,7 @@ import { AnorakWindowContent } from './AnorakWindowContent'
 import { AnorakProPanel } from './AnorakProPanel'
 import { BrowserWindowContent } from './BrowserWindowContent'
 import { CodexWindowContent } from './CodexWindowContent'
+import { GeminiLivePanel } from './GeminiLivePanel'
 import { HermesPanel } from './HermesPanel'
 import { MerlinPanel } from './MerlinPanel'
 import { OpenclawPanel } from './OpenclawPanel'
@@ -27,6 +28,9 @@ export const AgentWindowSurface = memo(function AgentWindowSurface({ win }: { wi
       break
     case 'codex':
       content = <CodexWindowContent windowId={win.id} initialSessionId={win.sessionId} windowBlur={win.windowBlur ?? 0} />
+      break
+    case 'gemini':
+      content = <GeminiLivePanel isOpen embedded hideCloseButton onClose={() => {}} />
       break
     case 'anorak-pro':
       content = <AnorakProPanel isOpen embedded hideCloseButton onClose={() => {}} />

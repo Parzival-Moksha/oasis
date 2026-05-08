@@ -390,6 +390,35 @@ describe('create_spatial_web_object', () => {
       }),
     ]))
   })
+
+  it('creates button actions for generated spatial flows', async () => {
+    const world = makeWorldRow()
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+
+    const result = await callTool('create_spatial_web_object', {
+      type: 'button',
+      label: 'Yes portal',
+      actionType: 'set_value',
+      targetObjectId: 'answer-panel',
+      actionValue: 'yes',
+      visualStyle: 'arcade-button',
+    })
+
+    expect(result.ok).toBe(true)
+    const updatePayload = vi.mocked(prisma.world.update).mock.calls[0]?.[0]
+    const savedState = JSON.parse(String(updatePayload?.data?.data || '{}')) as { spatialWebObjects?: Array<Record<string, unknown>> }
+    expect(savedState.spatialWebObjects?.[0]).toMatchObject({
+      type: 'button',
+      label: 'Yes portal',
+      visualStyle: 'arcade-button',
+      action: {
+        type: 'set_value',
+        targetObjectId: 'answer-panel',
+        value: 'yes',
+      },
+    })
+  })
 })
 
 describe('context-aware hosted world tools', () => {

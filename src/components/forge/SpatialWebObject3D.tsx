@@ -6,9 +6,6 @@ import * as THREE from 'three'
 
 import { useOasisStore } from '@/store/oasisStore'
 import {
-  SPATIAL_WEB_DEFAULT_SUBMIT_ENDPOINT,
-  buildSpatialWebSubmission,
-  summarizeSpatialWebSubmission,
   type SpatialWebObject,
   type SpatialWebValue,
 } from '@/lib/spatial-web'
@@ -23,32 +20,6 @@ function displayValue(value: SpatialWebValue): string {
 function normalizeHex(value: string | undefined, fallback: string): string {
   if (!value || !/^#[0-9a-f]{6}$/i.test(value.trim())) return fallback
   return value.trim()
-}
-
-function nextCycledOption(object: SpatialWebObject): string {
-  const options = object.options || []
-  if (options.length === 0) return ''
-  const current = typeof object.value === 'string' ? object.value : ''
-  const currentIndex = options.findIndex(option => option.value === current)
-  return options[(currentIndex + 1) % options.length]?.value || options[0].value
-}
-
-function nextMultiSelectValue(object: SpatialWebObject): string[] {
-  const options = object.options || []
-  if (options.length === 0) return []
-  const selected = Array.isArray(object.value) ? object.value.filter((value): value is string => typeof value === 'string') : []
-  if (selected.length >= options.length) return []
-  const next = options.find(option => !selected.includes(option.value))
-  return next ? [...selected, next.value] : selected
-}
-
-function nextSliderValue(object: SpatialWebObject): number {
-  const min = object.min ?? 0
-  const max = object.max ?? 100
-  const step = object.step ?? 1
-  const current = typeof object.value === 'number' ? object.value : min
-  const next = current + step
-  return next > max ? min : next
 }
 
 function valueForLabel(object: SpatialWebObject): string {
@@ -101,11 +72,15 @@ function SpatialText({
   )
 }
 
-export function SpatialWebObject3D({ object }: { object: SpatialWebObject }) {
+export function SpatialWebObject3D({
+  object,
+  interactionHint = false,
+}: {
+  object: SpatialWebObject
+  interactionHint?: boolean
+}) {
   const [busy, setBusy] = useState(false)
-  const setValue = useOasisStore(s => s.setSpatialWebObjectValue)
-  const updateObject = useOasisStore(s => s.updateSpatialWebObject)
-  const spawnPlacementVfx = useOasisStore(s => s.spawnPlacementVfx)
+  const interactSpatialWebObject = useOasisStore(s => s.interactSpatialWebObject)
   const selectObject = useOasisStore(s => s.selectObject)
   const setInspectedObject = useOasisStore(s => s.setInspectedObject)
 
@@ -114,17 +89,22 @@ export function SpatialWebObject3D({ object }: { object: SpatialWebObject }) {
   const height = object.height ?? (object.type === 'output' || object.type === 'text' ? 1.05 : 0.82)
   const labelValue = valueForLabel(object)
   const isWidePanel = object.type === 'output' || object.type === 'text'
-  const depth = object.type === 'button' ? 0.34 : 0.22
+  const visualStyle = object.visualStyle
+    || (object.type === 'button' ? 'arcade-button'
+      : object.type === 'slider' ? 'glass-slider'
+        : isWidePanel ? 'terminal-panel'
+          : 'neon-panel')
+  const depth = visualStyle === 'arcade-button' ? 0.42 : visualStyle === 'terminal-panel' ? 0.18 : 0.24
 
   const material = useMemo(() => {
     const color = new THREE.Color(accent)
-    const base = color.clone().multiplyScalar(object.type === 'button' ? 0.72 : 0.38)
+    const base = color.clone().multiplyScalar(visualStyle === 'arcade-button' ? 0.76 : visualStyle === 'terminal-panel' ? 0.24 : 0.38)
     return {
       color: `#${base.getHexString()}`,
       emissive: accent,
-      emissiveIntensity: object.type === 'button' ? 0.8 : 0.32,
+      emissiveIntensity: visualStyle === 'arcade-button' ? 0.9 : visualStyle === 'terminal-panel' ? 0.22 : 0.36,
     }
-  }, [accent, object.type])
+  }, [accent, visualStyle])
 
   const sliderProgress = useMemo(() => {
     if (object.type !== 'slider') return 0
@@ -140,57 +120,15 @@ export function SpatialWebObject3D({ object }: { object: SpatialWebObject }) {
     setInspectedObject(object.id)
   }
 
-  const submitForm = async () => {
-    if (!object.formId || busy) return
-    setBusy(true)
-    const payload = buildSpatialWebSubmission(useOasisStore.getState().spatialWebObjects, object.formId)
-    const endpoint = object.action?.endpoint || SPATIAL_WEB_DEFAULT_SUBMIT_ENDPOINT
-    let status = object.action?.successMessage || 'Submitted.'
-
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      if (!response.ok) status = `Submit failed: HTTP ${response.status}`
-    } catch (error) {
-      status = error instanceof Error ? `Submit failed: ${error.message}` : 'Submit failed.'
-    }
-
-    const receipt = `${status}\n\n${summarizeSpatialWebSubmission(payload)}`
-    useOasisStore.getState().spatialWebObjects
-      .filter(candidate => candidate.formId === object.formId && candidate.type === 'output' && candidate.id !== object.id)
-      .forEach(candidate => updateObject(candidate.id, { value: receipt, submittedAt: payload.submittedAt }))
-    updateObject(object.id, { submittedAt: payload.submittedAt })
-    spawnPlacementVfx(object.position)
-    setBusy(false)
-  }
-
   const handleInteract = (event: { stopPropagation: () => void }) => {
     event.stopPropagation()
     markSelected()
-
-    switch (object.type) {
-      case 'toggle':
-        setValue(object.id, !(object.value === true))
-        break
-      case 'slider':
-        setValue(object.id, nextSliderValue(object))
-        break
-      case 'select':
-        setValue(object.id, nextCycledOption(object))
-        break
-      case 'multiselect':
-        setValue(object.id, nextMultiSelectValue(object))
-        break
-      case 'button':
-        if (object.action?.type === 'submit_form') void submitForm()
-        else spawnPlacementVfx(object.position)
-        break
-      default:
-        break
-    }
+    if (busy) return
+    const waitsForNetwork = object.type === 'button' && object.action?.type === 'submit_form'
+    if (waitsForNetwork) setBusy(true)
+    void interactSpatialWebObject(object.id).finally(() => {
+      if (waitsForNetwork) setBusy(false)
+    })
   }
 
   return (
@@ -198,7 +136,7 @@ export function SpatialWebObject3D({ object }: { object: SpatialWebObject }) {
       <mesh castShadow receiveShadow position={[0, 0, -0.03]}>
         <boxGeometry args={[width + 0.16, height + 0.16, depth * 0.52]} />
         <meshStandardMaterial
-          color="#020617"
+          color={visualStyle === 'terminal-panel' ? '#031013' : '#020617'}
           emissive={accent}
           emissiveIntensity={0.08}
           roughness={0.7}
@@ -216,6 +154,20 @@ export function SpatialWebObject3D({ object }: { object: SpatialWebObject }) {
           metalness={object.type === 'button' ? 0.28 : 0.14}
         />
       </mesh>
+
+      {visualStyle === 'arcade-button' && (
+        <mesh castShadow position={[0, 0.03, depth * 0.82]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[Math.min(width, height) * 0.28, Math.min(width, height) * 0.38, 0.22, 32]} />
+          <meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={1.15} roughness={0.35} metalness={0.25} />
+        </mesh>
+      )}
+
+      {visualStyle === 'terminal-panel' && (
+        <mesh position={[-width * 0.42, height * 0.39, depth * 0.82]}>
+          <boxGeometry args={[0.11, 0.11, 0.04]} />
+          <meshBasicMaterial color="#22c55e" />
+        </mesh>
+      )}
 
       <mesh position={[0, height / 2 + 0.035, depth * 0.25]}>
         <boxGeometry args={[width * 0.92, 0.035, 0.035]} />
@@ -301,6 +253,18 @@ export function SpatialWebObject3D({ object }: { object: SpatialWebObject }) {
         <SpatialText position={[0, -height * 0.28, depth * 0.74]} fontSize={0.075} maxWidth={width * 0.8} color="#fecdd3">
           {clampText(object.description, 32)}
         </SpatialText>
+      )}
+
+      {interactionHint && (
+        <>
+          <mesh position={[0, height / 2 + 0.34, depth * 0.9]}>
+            <boxGeometry args={[0.54, 0.24, 0.05]} />
+            <meshStandardMaterial color="#020617" emissive={accent} emissiveIntensity={0.35} roughness={0.45} metalness={0.2} />
+          </mesh>
+          <SpatialText position={[0, height / 2 + 0.34, depth * 1.08]} fontSize={0.12} maxWidth={0.48} color="#ffffff">
+            F
+          </SpatialText>
+        </>
       )}
     </group>
   )

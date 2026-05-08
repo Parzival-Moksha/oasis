@@ -56,6 +56,7 @@ import { HermesPanel } from './forge/HermesPanel'
 import { OpenclawPanel } from './forge/OpenclawPanel'
 import { ParzivalPanel } from './forge/ParzivalPanel'
 import { RealtimePanel } from './forge/RealtimePanel'
+import { GeminiLivePanel } from './forge/GeminiLivePanel'
 import { LipSyncLabPanel } from './forge/LipSyncLabPanel'
 import dynamic from 'next/dynamic'
 const DevcraftPanel = dynamic(() => import('./forge/DevcraftPanel'), { ssr: false })
@@ -1074,7 +1075,7 @@ function DevcraftMiniBar({ onExpand }: { onExpand: () => void }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 type AgentLauncherMode = '2d' | '3d'
-type QuickAgentType = 'hermes' | 'openclaw'
+type QuickAgentType = 'hermes' | 'openclaw' | 'gemini'
 
 const QUICK_AGENT_ITEMS: Array<{
   type: QuickAgentType
@@ -1084,6 +1085,7 @@ const QUICK_AGENT_ITEMS: Array<{
 }> = [
   { type: 'hermes', label: 'Hermes', accent: '#FACC15', shadow: 'rgba(250,204,21,0.45)' },
   { type: 'openclaw', label: 'OpenClaw', accent: '#22D3EE', shadow: 'rgba(34,211,238,0.42)' },
+  { type: 'gemini', label: 'Gemini', accent: '#67E8F9', shadow: 'rgba(103,232,249,0.36)' },
 ]
 
 function AgentQuickLauncher({
@@ -1257,6 +1259,7 @@ export default function Scene() {
   const [devcraftOpen, setDevcraftOpen] = useState(false)
   const [hermesOpen, setHermesOpen] = useState(false)
   const [openclawOpen, setOpenclawOpen] = useState(false)
+  const [geminiOpen, setGeminiOpen] = useState(false)
   const [agentLauncherOpen, setAgentLauncherOpen] = useState(false)
   const [agentLauncherMode, setAgentLauncherMode] = useState<AgentLauncherMode>('2d')
   const [realtimeOpen, setRealtimeOpen] = useState(false)
@@ -1320,14 +1323,16 @@ export default function Scene() {
   }
   const openQuickAgentPanel = (agentType: QuickAgentType) => {
     if (agentType === 'hermes') setHermesOpen(true)
+    else if (agentType === 'gemini') setGeminiOpen(true)
     else setOpenclawOpen(true)
     setAgentLauncherOpen(false)
   }
   const placeQuickAgentWindow = (agentType: QuickAgentType) => {
     useAudioManager.getState().play('place')
+    const label = agentType === 'hermes' ? 'Hermes' : agentType === 'gemini' ? 'Gemini' : 'OpenClaw'
     useOasisStore.getState().enterPlacementMode({
       type: 'agent',
-      name: agentType === 'hermes' ? 'Hermes' : 'OpenClaw',
+      name: label,
       agentType,
       agentRenderMode: 'live-html',
     })
@@ -1818,6 +1823,10 @@ export default function Scene() {
       <OpenclawPanel
         isOpen={openclawOpen}
         onClose={closeOpenclawPanel}
+      />
+      <GeminiLivePanel
+        isOpen={geminiOpen}
+        onClose={() => setGeminiOpen(false)}
       />
       {canUseLocalPanels && (
         <RealtimePanel
