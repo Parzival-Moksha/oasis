@@ -17,6 +17,9 @@ vi.mock('../db', () => ({
       create: vi.fn(),
       deleteMany: vi.fn(),
     },
+    profile: {
+      findMany: vi.fn(),
+    },
   },
 }))
 
@@ -75,6 +78,7 @@ describe('world-server access enforcement', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(prisma.profile.findMany).mockResolvedValue([])
     delete process.env.OASIS_MODE
     process.env.OASIS_PROFILE = 'hosted-openclaw'
   })

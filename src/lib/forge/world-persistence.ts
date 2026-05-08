@@ -67,12 +67,23 @@ export interface WorldState {
 
 export interface WorldMeta {
   id: string
+  userId?: string
   name: string
   icon: string          // emoji icon for the world
   visibility: 'private' | 'public' | 'unlisted' | 'public_edit' | 'only-with-link' | 'ffa' | 'core' | 'template'
   canWrite?: boolean
   canEditSettings?: boolean
   writeDecision?: WorldWriteDecision
+  creatorName?: string
+  creatorAvatar?: string
+  creator_name?: string
+  creator_avatar?: string
+  ownerName?: string
+  ownerAvatar?: string
+  ownerLevel?: number
+  ownerAura?: number
+  objectCount?: number
+  visitCount?: number
   createdAt: string
   lastSavedAt: string
 }

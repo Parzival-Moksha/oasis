@@ -63,6 +63,38 @@ import {
   type SpatialWebValue,
 } from '../lib/spatial-web'
 
+const SPATIAL_WEB_WORLD_TOOL_ALLOWLIST = new Set([
+  'set_sky',
+  'set_ground_preset',
+  'paint_ground_tiles',
+  'add_light',
+  'modify_light',
+  'modify_object',
+  'set_behavior',
+  'place_object',
+  'create_spatial_web_object',
+  'create_portal_gate',
+  'self_craft_scene',
+])
+
+function spatialValueKey(value: SpatialWebValue | undefined): string {
+  if (Array.isArray(value)) return value.join(',')
+  return String(value)
+}
+
+function resolveSpatialWorldToolArgs(
+  action: NonNullable<SpatialWebObject['action']>,
+  value: SpatialWebValue | undefined,
+  worldId: string | null | undefined,
+): Record<string, unknown> {
+  const mappedArgs = value !== undefined ? action.argsByValue?.[spatialValueKey(value)] : undefined
+  return {
+    ...(action.args || {}),
+    ...(mappedArgs || {}),
+    ...(worldId ? { worldId } : {}),
+  }
+}
+
 const MAX_ACTIVE_MARCH_ORDER_VFX = 8
 
 // ─═̷─═̷─🏗️ SSR-SAFE LOCALSTORAGE ─═̷─═̷─🏗️
@@ -73,6 +105,7 @@ const isBrowser = typeof window !== 'undefined'
 const stored  = (key: string): string | null => isBrowser ? localStorage.getItem(key) : null
 
 type RemoteSubscription = { unsubscribe: () => void }
+type ViewingWorldMeta = Partial<WorldMeta> & { name: string; icon: string }
 const persist = (key: string, value: string): void => { if (isBrowser) localStorage.setItem(key, value) }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -503,7 +536,7 @@ interface OasisState {
 
   // ─═̷─═̷─👁️ VIEW MODE — read-only access to other users' worlds ─═̷─═̷─👁️
   isViewMode: boolean
-  viewingWorldMeta: { name: string; icon: string; creator_name?: string; creator_avatar?: string; visibility?: string } | null
+  viewingWorldMeta: ViewingWorldMeta | null
   /** True when viewing a public_edit world — editing tools stay enabled */
   isViewModeEditable: boolean
   /** The world ID being viewed (needed for saving to public_edit worlds) */
@@ -1126,9 +1159,72 @@ export const useOasisStore = create<OasisState>((set, get) => {
       }))
     }
 
+    const runWorldToolAction = async (
+      action: NonNullable<SpatialWebObject['action']>,
+      valueForArgs: SpatialWebValue | undefined,
+    ): Promise<boolean> => {
+      const tool = action.tool?.trim()
+      if (!tool || !SPATIAL_WEB_WORLD_TOOL_ALLOWLIST.has(tool)) return false
+      const worldId = get().viewingWorldId || get().activeWorldId
+      const args = resolveSpatialWorldToolArgs(action, valueForArgs, worldId)
+
+      try {
+        const response = await fetch('/api/oasis-tools', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tool, args }),
+        })
+        const result = await response.json().catch(() => null) as { ok?: boolean } | null
+        if (!response.ok || result?.ok === false) return false
+
+        if (tool === 'set_sky' && typeof args.presetId === 'string') {
+          set({ worldSkyBackground: args.presetId })
+        } else if (tool === 'set_ground_preset' && typeof args.presetId === 'string') {
+          set({ groundPresetId: args.presetId })
+        } else if (tool === 'paint_ground_tiles' && Array.isArray(args.tiles)) {
+          set(state => {
+            const nextTiles = { ...state.groundTiles }
+            for (const tile of args.tiles as Array<Record<string, unknown>>) {
+              if (!tile || typeof tile !== 'object') continue
+              const x = Math.floor(Number(tile.x))
+              const z = Math.floor(Number(tile.z))
+              const presetId = typeof tile.presetId === 'string' ? tile.presetId : typeof args.presetId === 'string' ? args.presetId : ''
+              if (!Number.isFinite(x) || !Number.isFinite(z) || !presetId) continue
+              nextTiles[`${x},${z}`] = presetId
+            }
+            return { groundTiles: nextTiles }
+          })
+        }
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    if (object.type === 'text') {
+      const currentValue = Array.isArray(object.value)
+        ? object.value.join(', ')
+        : object.value === null || object.value === undefined
+          ? ''
+          : String(object.value)
+      const nextText = typeof window !== 'undefined'
+        ? window.prompt(object.placeholder || object.label, currentValue)
+        : null
+      if (nextText !== null) {
+        markInteraction({ value: nextText }, 'change')
+        get().spawnPlacementVfx(effectPosition)
+        setTimeout(() => get().saveWorldState(), 100)
+      }
+      return
+    }
+
     const nextValue = getNextSpatialWebValue(object)
     if (nextValue !== undefined) {
       markInteraction({ value: nextValue }, 'change')
+      if (object.action?.type === 'world_tool') {
+        const ok = await runWorldToolAction(object.action, nextValue)
+        if (ok) get().spawnPlacementVfx(effectPosition)
+      }
       setTimeout(() => get().saveWorldState(), 100)
       return
     }
@@ -1168,7 +1264,10 @@ export const useOasisStore = create<OasisState>((set, get) => {
     }
 
     if (action?.type === 'submit_form' && object.formId) {
-      const payload = buildSpatialWebSubmission(get().spatialWebObjects, object.formId)
+      const payload = {
+        ...buildSpatialWebSubmission(get().spatialWebObjects, object.formId),
+        ...(action.destination ? { destination: action.destination } : {}),
+      }
       const endpoint = action.endpoint || SPATIAL_WEB_DEFAULT_SUBMIT_ENDPOINT
       let status = action.successMessage || 'Submitted.'
 
@@ -1178,7 +1277,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         })
-        if (!response.ok) status = `Submit failed: HTTP ${response.status}`
+        const result = await response.json().catch(() => null) as { ok?: boolean; message?: string; error?: string } | null
+        if (!response.ok || result?.ok === false) {
+          status = result?.error || result?.message || `Submit failed: HTTP ${response.status}`
+        } else if (result?.message) {
+          status = result.message
+        }
       } catch (error) {
         status = error instanceof Error ? `Submit failed: ${error.message}` : 'Submit failed.'
       }
@@ -1202,6 +1306,14 @@ export const useOasisStore = create<OasisState>((set, get) => {
         }),
       }))
       get().spawnPlacementVfx(effectPosition)
+      setTimeout(() => get().saveWorldState(), 100)
+      return
+    }
+
+    if (action?.type === 'world_tool') {
+      markInteraction()
+      const ok = await runWorldToolAction(action, object.value)
+      if (ok) get().spawnPlacementVfx(effectPosition)
       setTimeout(() => get().saveWorldState(), 100)
       return
     }
@@ -2807,7 +2919,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         _worldReady: isEditable, // Only allow saves for authenticated public_edit
         _loadedObjectCount: viewObjCount,
         isViewModeEditable: isEditable,
-        viewingWorldMeta: { name: meta.name, icon: meta.icon, creator_name: meta.creator_name, creator_avatar: meta.creator_avatar, visibility: meta.visibility },
+        viewingWorldMeta: meta,
         terrainParams: state.terrain || null,
         terrainHeights: normalizeTerrainHeights(state.terrainHeights),
         groundPresetId: state.groundPresetId || 'none',

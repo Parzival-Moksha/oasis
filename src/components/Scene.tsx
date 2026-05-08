@@ -47,7 +47,6 @@ import { ObjectInspector } from './forge/ObjectInspector'
 import { MindcraftMissionWindowBridge } from './forge/MindcraftMissionWindowBridge'
 import { ActionLogButton, ActionLogPanel } from './forge/ActionLog'
 import { ProfileButton } from './forge/ProfileButton'
-import { RealmSelector } from './realms/RealmSelector'
 import { MerlinPanel } from './forge/MerlinPanel'
 import { AnorakPanel } from './forge/AnorakPanel'
 import { CodexPanel } from './forge/CodexPanel'
@@ -64,7 +63,7 @@ import { HelpPanel } from './forge/HelpPanel'
 import { ConsolePanel } from './forge/ConsolePanel'
 import { useWorldLoader } from './forge/WorldObjects'
 import { completeQuest } from '@/lib/quests'
-import { useInputManager, getMouseLookDebugState, isPointerLocked } from '@/lib/input-manager'
+import { useInputManager, useUILayer, getMouseLookDebugState, isPointerLocked } from '@/lib/input-manager'
 import { CameraController as CameraControllerComponent, sprintRef, FPS_KEYBOARD_MAP } from './CameraController'
 import { useAudioManager, SOUND_OPTIONS, type SoundEvent } from '@/lib/audio-manager'
 import { writeBrowserStorage } from '@/lib/browser-storage'
@@ -77,6 +76,10 @@ import { PortalZeroCanonicalButton } from './forge/PortalZeroCanonicalButton'
 import { PortalTransitionOverlay } from './forge/PortalTransitionOverlay'
 import { WorldLoadingBar } from './forge/WorldLoadingBar'
 import { TerrainBrushPanel } from './forge/TerrainBrushPanel'
+import { WorldMenu } from './forge/WorldMenu'
+import { PlaceMenu } from './forge/PlaceMenu'
+import { GameMenuButton } from './forge/GameMenuButton'
+import { MobileOasisControls, useIsMobileOasis } from './forge/MobileOasisControls'
 
 const SHOW_LEGACY_DEVCRAFT_PANEL = false
 const SHOW_LEGACY_PARZIVAL_PANEL = false
@@ -271,7 +274,31 @@ function SprintParticles() {
 // SETTINGS PANEL — Forge-relevant controls only
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function SettingsContent() {
+const SETTINGS_MENU_OPACITY_KEY = 'oasis-settings-menu-opacity'
+
+function readSettingsMenuOpacity(): number {
+  if (typeof window === 'undefined') return 0.86
+  const raw = window.localStorage.getItem(SETTINGS_MENU_OPACITY_KEY)
+  const parsed = raw ? Number(raw) : 0.86
+  return Number.isFinite(parsed) ? Math.max(0.5, Math.min(1, parsed)) : 0.86
+}
+
+function writeSettingsMenuOpacity(value: number) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(SETTINGS_MENU_OPACITY_KEY, String(value))
+  } catch {}
+}
+
+function SettingsContent({
+  consoleControl,
+  menuOpacity,
+  onMenuOpacityChange,
+}: {
+  consoleControl?: React.ReactNode
+  menuOpacity: number
+  onMenuOpacityChange: (opacity: number) => void
+}) {
   const { settings, effectiveRp1Mode, rp1Locked, updateSetting } = useContext(SettingsContext)
 
   const toggles = [
@@ -285,11 +312,22 @@ function SettingsContent() {
   const categories = ['Post-FX', 'UI']
 
   return (
-    <div className="p-4 w-fit">
-      <div className="text-xs text-purple-400 uppercase tracking-wider mb-3 flex items-center gap-2 whitespace-nowrap">
-        <span className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-pulse" />
-        Settings
+    <div className="w-[360px] max-[700px]:w-full p-4">
+      <div className="mb-3 flex items-center gap-3 border-b border-white/10 pb-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-md border border-violet-300/35 bg-violet-300/10 text-sm font-black text-violet-100">
+          SYS
+        </div>
+        <div>
+          <div className="text-[12px] font-black uppercase tracking-[0.18em] text-white">Settings</div>
+          <div className="mt-0.5 text-[10px] uppercase tracking-[0.12em] text-white/42">display / control / audio</div>
+        </div>
       </div>
+
+      {consoleControl && (
+        <div className="mb-4 rounded-lg border border-amber-300/15 bg-amber-300/5 p-2">
+          {consoleControl}
+        </div>
+      )}
 
       {categories.map(category => (
         <div key={category} className="mb-4">
@@ -385,8 +423,8 @@ function SettingsContent() {
               {/* Panel Opacity — custom div slider, native range unreliable in portals on Windows */}
               <div className="py-1.5">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-gray-300">Menu Opacity</span>
-                  <span className="text-xs text-purple-400 font-mono">{Math.round(settings.uiOpacity * 100)}%</span>
+                  <span className="text-sm text-gray-300">Settings Opacity</span>
+                  <span className="text-xs text-purple-400 font-mono">{Math.round(menuOpacity * 100)}%</span>
                 </div>
                 <div
                   className="w-full h-4 rounded-full bg-gray-700 cursor-pointer relative select-none"
@@ -395,8 +433,8 @@ function SettingsContent() {
                     const rect = e.currentTarget.getBoundingClientRect()
                     const update = (clientX: number) => {
                       const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
-                      const v = Math.round((0.1 + pct * 0.9) * 20) / 20
-                      updateSetting('uiOpacity', v)
+                      const v = Math.round((0.5 + pct * 0.5) * 20) / 20
+                      onMenuOpacityChange(v)
                     }
                     update(e.clientX)
                     const onMove = (ev: MouseEvent) => update(ev.clientX)
@@ -407,11 +445,11 @@ function SettingsContent() {
                 >
                   <div
                     className="absolute inset-y-0 left-0 rounded-full bg-purple-500/60"
-                    style={{ width: `${((settings.uiOpacity - 0.1) / 0.9) * 100}%` }}
+                    style={{ width: `${((menuOpacity - 0.5) / 0.5) * 100}%` }}
                   />
                   <div
                     className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-purple-400 border-2 border-purple-300 shadow-md"
-                    style={{ left: `calc(${((settings.uiOpacity - 0.1) / 0.9) * 100}% - 6px)` }}
+                    style={{ left: `calc(${((menuOpacity - 0.5) / 0.5) * 100}% - 6px)` }}
                   />
                 </div>
               </div>
@@ -479,11 +517,6 @@ function SettingsContent() {
               />
             </div>
 
-            <div className="text-[10px] text-gray-500 mt-2">
-              {settings.controlMode === 'noclip'
-                ? 'Click canvas to lock pointer · WASD to move · Q/E up/down · ESC to unlock'
-                : 'Click canvas to lock pointer · WASD to move avatar · Mouse to orbit camera · ESC to unlock'}
-            </div>
           </>
         )}
 
@@ -590,7 +623,7 @@ function SettingsContent() {
 
 function SoundSettings() {
   const { volume, muted, selections, setVolume, toggleMute, selectSound, preview } = useAudioManager()
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(true)
 
   const EVENT_LABELS: Record<string, string> = {
     select: 'Select Object', deselect: 'Deselect', place: 'Place Object', delete: 'Delete Object',
@@ -608,7 +641,7 @@ function SoundSettings() {
       <div className="flex items-center justify-between mb-2">
         <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer hover:text-white transition-colors">
           <span>{expanded ? '▼' : '▸'}</span>
-          <span>🔊 Sounds</span>
+          <span>Sound Lab</span>
         </button>
         <div className="flex items-center gap-2">
           <button onClick={toggleMute} className="text-xs cursor-pointer px-1.5 py-0.5 rounded" style={{ background: muted ? 'rgba(239,68,68,0.2)' : 'rgba(34,197,94,0.2)', color: muted ? '#ef4444' : '#22c55e' }}>
@@ -629,7 +662,7 @@ function SoundSettings() {
 
       {/* Per-event sound selection */}
       {expanded && (
-        <div className="space-y-1 max-h-[300px] overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#374151 transparent' }}>
+        <div className="space-y-1 max-h-[260px] overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#374151 transparent' }}>
           {Object.entries(EVENT_LABELS).map(([event, label]) => {
             const options = (SOUND_OPTIONS as Record<string, Array<{ id: string; label: string }>>)[event]
             if (!options) return null
@@ -649,7 +682,7 @@ function SoundSettings() {
                   ))}
                 </select>
                 <button onClick={() => preview(event as SoundEvent, (selections as Record<string, string>)[event])}
-                  className="text-gray-600 hover:text-sky-400 cursor-pointer text-[11px]">▶</button>
+                  className="rounded border border-sky-300/15 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.08em] text-gray-500 hover:border-sky-300/45 hover:text-sky-300 cursor-pointer">Test</button>
               </div>
             )
           })}
@@ -1075,34 +1108,77 @@ function DevcraftMiniBar({ onExpand }: { onExpand: () => void }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 type AgentLauncherMode = '2d' | '3d'
-type QuickAgentType = 'hermes' | 'openclaw' | 'gemini'
+type QuickAgentType = 'hermes' | 'openclaw' | 'gemini' | 'merlin' | 'anorak' | 'codex' | 'anorak-pro' | 'realtime'
+
+function GeminiAgentIcon() {
+  return (
+    <svg viewBox="0 0 65 65" aria-hidden="true" className="h-5 w-5">
+      <defs>
+        <linearGradient id="oasis-quick-gemini-gradient" x1="8" y1="54" x2="58" y2="10" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#4285f4" />
+          <stop offset="0.25" stopColor="#34a853" />
+          <stop offset="0.52" stopColor="#fbbc04" />
+          <stop offset="0.76" stopColor="#ea4335" />
+          <stop offset="1" stopColor="#a142f4" />
+        </linearGradient>
+      </defs>
+      <path
+        fill="url(#oasis-quick-gemini-gradient)"
+        d="M32.447 0c.68 0 1.273.465 1.439 1.125a38.904 38.904 0 0 0 1.999 5.905c2.152 5 5.105 9.376 8.854 13.125 3.751 3.75 8.126 6.703 13.125 8.855a38.98 38.98 0 0 0 5.906 1.999c.66.166 1.124.758 1.124 1.438 0 .68-.464 1.273-1.125 1.439a38.902 38.902 0 0 0-5.905 1.999c-5 2.152-9.375 5.105-13.125 8.854-3.749 3.751-6.702 8.126-8.854 13.125a38.973 38.973 0 0 0-2 5.906 1.485 1.485 0 0 1-1.438 1.124c-.68 0-1.272-.464-1.438-1.125a38.913 38.913 0 0 0-2-5.905c-2.151-5-5.103-9.375-8.854-13.125-3.75-3.749-8.125-6.702-13.125-8.854a38.973 38.973 0 0 0-5.905-2A1.485 1.485 0 0 1 0 32.448c0-.68.465-1.272 1.125-1.438a38.903 38.903 0 0 0 5.905-2c5-2.151 9.376-5.104 13.125-8.854 3.75-3.749 6.703-8.125 8.855-13.125a38.972 38.972 0 0 0 1.999-5.905A1.485 1.485 0 0 1 32.447 0z"
+      />
+    </svg>
+  )
+}
+
+function CodexAgentIcon() {
+  return (
+    <svg viewBox="0 0 32 32" aria-hidden="true" className="h-5 w-5">
+      <rect x="4" y="5" width="24" height="22" rx="5" fill="none" stroke="currentColor" strokeWidth="2.2" />
+      <path d="M11 12l-4 4 4 4M21 12l4 4-4 4M18.5 10.5l-5 11" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9 26h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.55" />
+    </svg>
+  )
+}
 
 const QUICK_AGENT_ITEMS: Array<{
   type: QuickAgentType
   label: string
+  icon: React.ReactNode
   accent: string
   shadow: string
+  localOnly?: boolean
 }> = [
-  { type: 'hermes', label: 'Hermes', accent: '#FACC15', shadow: 'rgba(250,204,21,0.45)' },
-  { type: 'openclaw', label: 'OpenClaw', accent: '#22D3EE', shadow: 'rgba(34,211,238,0.42)' },
-  { type: 'gemini', label: 'Gemini', accent: '#67E8F9', shadow: 'rgba(103,232,249,0.36)' },
+  { type: 'hermes', label: 'Hermes', icon: '🧿', accent: '#FACC15', shadow: 'rgba(250,204,21,0.45)' },
+  { type: 'openclaw', label: 'OpenClaw', icon: '🦾', accent: '#22D3EE', shadow: 'rgba(34,211,238,0.42)' },
+  { type: 'gemini', label: 'Gemini', icon: <GeminiAgentIcon />, accent: '#67E8F9', shadow: 'rgba(103,232,249,0.36)' },
+  { type: 'merlin', label: 'Merlin', icon: '🧙', accent: '#A855F7', shadow: 'rgba(168,85,247,0.36)', localOnly: true },
+  { type: 'anorak', label: 'CC', icon: '💻', accent: '#38BDF8', shadow: 'rgba(56,189,248,0.34)', localOnly: true },
+  { type: 'codex', label: 'Codex', icon: <CodexAgentIcon />, accent: '#34D399', shadow: 'rgba(52,211,153,0.34)', localOnly: true },
+  { type: 'anorak-pro', label: 'Anorak Pro', icon: '🔮', accent: '#14B8A6', shadow: 'rgba(20,184,166,0.34)', localOnly: true },
+  { type: 'realtime', label: 'Realtime', icon: '📡', accent: '#C084FC', shadow: 'rgba(192,132,252,0.34)', localOnly: true },
 ]
 
 function AgentQuickLauncher({
   isOpen,
   mode,
   onToggle,
+  onClose,
   onMode,
   onOpen2d,
   onPlace3d,
+  canUseLocalAgents,
 }: {
   isOpen: boolean
   mode: AgentLauncherMode
   onToggle: () => void
+  onClose: () => void
   onMode: (mode: AgentLauncherMode) => void
   onOpen2d: (agentType: QuickAgentType) => void
   onPlace3d: (agentType: QuickAgentType) => void
+  canUseLocalAgents: boolean
 }) {
+  const menuRef = useRef<HTMLDivElement>(null)
+  useUILayer('agents-menu', isOpen)
   const playHover = () => useAudioManager.getState().play('buttonHover')
   const playClick = () => useAudioManager.getState().play('buttonClick')
   const handleMode = (nextMode: AgentLauncherMode) => {
@@ -1110,20 +1186,30 @@ function AgentQuickLauncher({
     onMode(nextMode)
   }
 
+  useEffect(() => {
+    if (!isOpen) return
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current?.contains(event.target as Node)) return
+      onClose()
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isOpen, onClose])
+
   return (
-    <div className="fixed left-4 top-[72px] z-[190] select-none">
-      <button
+    <div ref={menuRef} className="fixed left-4 top-[200px] z-[190] select-none">
+      <GameMenuButton
         onClick={() => { playClick(); onToggle() }}
         onMouseEnter={playHover}
-        className="group relative h-12 min-w-[132px] overflow-hidden rounded-lg border border-fuchsia-300/35 bg-black/70 px-4 text-left font-mono text-[12px] font-black uppercase tracking-[0.16em] text-white shadow-[0_0_28px_rgba(236,72,153,0.24)] transition hover:-translate-y-0.5 hover:border-white hover:shadow-[0_0_48px_rgba(34,211,238,0.30)]"
-      >
-        <span className="absolute inset-0 bg-[linear-gradient(110deg,rgba(236,72,153,0.26),rgba(250,204,21,0.16),rgba(34,211,238,0.22))] opacity-80" />
-        <span className="absolute inset-0 opacity-0 transition group-hover:opacity-100" style={{ background: 'radial-gradient(circle at 20% 30%, rgba(255,255,255,0.5), transparent 34%)' }} />
-        <span className="relative">agents</span>
-      </button>
+        label="Agents"
+        marker="AI"
+        accent="#F472B6"
+        active={isOpen}
+        aria-label="Agents menu"
+      />
 
       {isOpen && (
-        <div className="mt-2 w-[248px] overflow-hidden rounded-lg border border-white/10 bg-black/80 p-3 shadow-[0_0_54px_rgba(0,0,0,0.65),0_0_38px_rgba(34,211,238,0.18)] backdrop-blur-md">
+        <div className="absolute left-full top-0 ml-2 max-h-[calc(100vh-216px)] w-[238px] overflow-y-auto rounded-lg border border-white/10 bg-black/82 p-3 shadow-[0_0_54px_rgba(0,0,0,0.65),0_0_38px_rgba(34,211,238,0.18)] backdrop-blur-md max-[700px]:w-[calc(100vw-152px)]">
           <div className="grid grid-cols-2 gap-2">
             {(['2d', '3d'] as const).map(option => (
               <button
@@ -1144,7 +1230,9 @@ function AgentQuickLauncher({
           </div>
 
           <div className="mt-3 space-y-2">
-            {QUICK_AGENT_ITEMS.map(agent => (
+            {QUICK_AGENT_ITEMS
+              .filter(agent => !agent.localOnly || canUseLocalAgents)
+              .map(agent => (
               <button
                 key={agent.type}
                 onClick={() => {
@@ -1153,7 +1241,7 @@ function AgentQuickLauncher({
                   else onPlace3d(agent.type)
                 }}
                 onMouseEnter={playHover}
-                className="group relative min-h-[58px] w-full overflow-hidden rounded-lg border px-4 text-left transition hover:-translate-y-0.5 hover:scale-[1.015]"
+                className="group relative flex min-h-[48px] w-full items-center gap-3 overflow-hidden rounded-lg border px-3 text-left transition hover:-translate-y-0.5 hover:scale-[1.015]"
                 style={{
                   borderColor: `${agent.accent}66`,
                   background: `linear-gradient(105deg, ${agent.accent}22, rgba(255,255,255,0.05), rgba(236,72,153,0.12))`,
@@ -1161,9 +1249,11 @@ function AgentQuickLauncher({
                 }}
               >
                 <span className="absolute inset-0 opacity-0 transition group-hover:opacity-100" style={{ background: `radial-gradient(circle at 18% 40%, ${agent.accent}88, transparent 36%)` }} />
-                <span className="relative block text-[13px] font-black uppercase tracking-[0.18em] text-white">{agent.label}</span>
-                <span className="relative mt-1 block text-[10px] uppercase tracking-[0.14em] text-white/60">
-                  {mode === '2d' ? 'open command panel' : 'enter placement mode'}
+                <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-black/30 text-lg" style={{ borderColor: `${agent.accent}55`, color: agent.accent }}>
+                  {agent.icon}
+                </span>
+                <span className="relative block min-w-0 flex-1 truncate text-[13px] font-black uppercase tracking-[0.18em] text-white">
+                  {agent.label}
                 </span>
               </button>
             ))}
@@ -1177,6 +1267,7 @@ function AgentQuickLauncher({
 export default function Scene() {
   const hostedMode = useIsHostedOasis()
   const capabilities = useOasisCapabilities()
+  const mobileOasis = useIsMobileOasis()
   const isAdmin = capabilities.admin
   const canUseAgentPanels = capabilities.canUseAgentPanels
   const canUseLocalPanels = capabilities.canUseLocalPanels
@@ -1266,6 +1357,7 @@ export default function Scene() {
   const [lipSyncLabOpen, setLipSyncLabOpen] = useState(false)
   const [parzivalOpen, setParzivalOpen] = useState(false)
   const [consoleOpen, setConsoleOpen] = useState(false)
+  const [settingsMenuOpacity, setSettingsMenuOpacity] = useState(() => readSettingsMenuOpacity())
 
   useEffect(() => {
     if (hostedMode) return
@@ -1297,6 +1389,11 @@ export default function Scene() {
       return !prev
     })
   }
+  const handleSettingsMenuOpacity = (opacity: number) => {
+    const next = Math.max(0.5, Math.min(1, opacity))
+    setSettingsMenuOpacity(next)
+    writeSettingsMenuOpacity(next)
+  }
   const toggleOpenclawPanel = () => {
     setOpenclawOpen(prev => {
       const next = !prev
@@ -1324,12 +1421,17 @@ export default function Scene() {
   const openQuickAgentPanel = (agentType: QuickAgentType) => {
     if (agentType === 'hermes') setHermesOpen(true)
     else if (agentType === 'gemini') setGeminiOpen(true)
-    else setOpenclawOpen(true)
+    else if (agentType === 'openclaw') setOpenclawOpen(true)
+    else if (agentType === 'merlin') setMerlinOpen(true)
+    else if (agentType === 'anorak') setClaudeCodeOpen(true)
+    else if (agentType === 'codex') setCodexOpen(true)
+    else if (agentType === 'anorak-pro') setAnorakProOpen(true)
+    else if (agentType === 'realtime') setRealtimeOpen(true)
     setAgentLauncherOpen(false)
   }
   const placeQuickAgentWindow = (agentType: QuickAgentType) => {
     useAudioManager.getState().play('place')
-    const label = agentType === 'hermes' ? 'Hermes' : agentType === 'gemini' ? 'Gemini' : 'OpenClaw'
+    const label = QUICK_AGENT_ITEMS.find(agent => agent.type === agentType)?.label || agentType
     useOasisStore.getState().enterPlacementMode({
       type: 'agent',
       name: label,
@@ -1519,6 +1621,7 @@ export default function Scene() {
       <KeyboardControls map={FPS_KEYBOARD_MAP}>
         {CanvasContent}
       </KeyboardControls>
+      <MobileOasisControls enabled={mobileOasis && (settings.controlMode === 'noclip' || settings.controlMode === 'third-person')} />
 
       {/* ─═̷─═̷─⚡ FPS DISPLAY ─═̷─═̷─⚡ */}
       <FPSDisplay enabled={settings.fpsCounterEnabled} fontSize={settings.fpsCounterFontSize} />
@@ -1540,13 +1643,9 @@ export default function Scene() {
       <PortalTransitionOverlay />
       <WorldLoadingBar />
 
-      {/* ─═̷─═̷─🔮─═̷─═̷─ TOP-LEFT BUTTON BAR — Profile, Settings, Wizard, Action Log ─═̷─═̷─🔮─═̷─═̷─ */}
+      {/* ─═̷─═̷─🔮─═̷─═̷─ TOP-LEFT QUICK BUTTONS — Profile, Wizard, Action Log ─═̷─═̷─🔮─═̷─═̷─ */}
       <div className="fixed top-4 left-4 z-[200] flex items-start gap-2">
-        <RealmSelector placement="toolbar" hostedMode={hostedMode} />
         <ProfileButton />
-        <SettingsGear>
-          <SettingsContent />
-        </SettingsGear>
         {!hideEditTools && (
           <button
             onClick={() => {
@@ -1574,70 +1673,6 @@ export default function Scene() {
             isOpen={actionLogOpen}
           />
         )}
-        {canUseAgentPanels && !hideEditTools && (
-          <button
-            onClick={() => togglePanel(setMerlinOpen)}
-            aria-label="Merlin"
-            data-oasis-tooltip="Merlin"
-            className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
-            style={{
-              background: merlinOpen ? 'rgba(168,85,247,0.3)' : 'rgba(0,0,0,0.6)',
-              border: `1px solid ${merlinOpen ? 'rgba(168,85,247,0.6)' : 'rgba(255,255,255,0.15)'}`,
-              color: merlinOpen ? '#A855F7' : '#aaa',
-              boxShadow: merlinOpen ? '0 0 12px rgba(168,85,247,0.3)' : 'none',
-            }}
-          >
-            🧙
-          </button>
-        )}
-        {canUseAgentPanels && !hideEditTools && (
-          <button
-            onClick={() => togglePanel(setClaudeCodeOpen)}
-            aria-label="Claude Code"
-            data-oasis-tooltip="Claude Code"
-            className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
-            style={{
-              background: claudeCodeOpen ? 'rgba(56,189,248,0.3)' : 'rgba(0,0,0,0.6)',
-              border: `1px solid ${claudeCodeOpen ? 'rgba(56,189,248,0.6)' : 'rgba(255,255,255,0.15)'}`,
-              color: claudeCodeOpen ? '#38BDF8' : '#aaa',
-              boxShadow: claudeCodeOpen ? '0 0 12px rgba(56,189,248,0.3)' : 'none',
-            }}
-          >
-            💻
-          </button>
-        )}
-        {canUseAgentPanels && !hideEditTools && (
-          <button
-            onClick={() => togglePanel(setCodexOpen)}
-            aria-label="Codex"
-            data-oasis-tooltip="Codex"
-            className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
-            style={{
-              background: codexOpen ? 'rgba(16,185,129,0.3)' : 'rgba(0,0,0,0.6)',
-              border: `1px solid ${codexOpen ? 'rgba(16,185,129,0.6)' : 'rgba(255,255,255,0.15)'}`,
-              color: codexOpen ? '#34D399' : '#aaa',
-              boxShadow: codexOpen ? '0 0 12px rgba(16,185,129,0.3)' : 'none',
-            }}
-          >
-            ⌘
-          </button>
-        )}
-        {canUseAgentPanels && !hideEditTools && (
-          <button
-            onClick={() => togglePanel(setAnorakProOpen)}
-            aria-label="Anorak Pro"
-            data-oasis-tooltip="Anorak Pro"
-            className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
-            style={{
-              background: anorakProOpen ? 'rgba(20,184,166,0.3)' : 'rgba(0,0,0,0.6)',
-              border: `1px solid ${anorakProOpen ? 'rgba(20,184,166,0.6)' : 'rgba(255,255,255,0.15)'}`,
-              color: anorakProOpen ? '#14b8a6' : '#aaa',
-              boxShadow: anorakProOpen ? '0 0 12px rgba(20,184,166,0.3)' : 'none',
-            }}
-          >
-            🔮
-          </button>
-        )}
         {SHOW_LEGACY_DEVCRAFT_PANEL && canUseLocalPanels && !hideEditTools && <button
           onClick={() => togglePanel(setDevcraftOpen)}
           aria-label="DevCraft"
@@ -1652,52 +1687,6 @@ export default function Scene() {
         >
           📅
         </button>}
-        {canUseHermesPanel && (
-        <button
-          onClick={() => togglePanel(setHermesOpen)}
-          aria-label="Hermes"
-          data-oasis-tooltip="Hermes"
-          className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
-          style={{
-            background: hermesOpen ? 'rgba(245,158,11,0.3)' : 'rgba(0,0,0,0.6)',
-            border: `1px solid ${hermesOpen ? 'rgba(245,158,11,0.6)' : 'rgba(255,255,255,0.15)'}`,
-            color: hermesOpen ? '#F59E0B' : '#aaa',
-            boxShadow: hermesOpen ? '0 0 12px rgba(245,158,11,0.3)' : 'none',
-          }}
-        >
-          ☤
-        </button>
-        )}
-        <button
-          onClick={toggleOpenclawPanel}
-          aria-label="OpenClaw"
-          data-oasis-tooltip="OpenClaw"
-          className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
-          style={{
-            background: openclawOpen ? 'rgba(34,211,238,0.24)' : 'rgba(0,0,0,0.6)',
-            border: `1px solid ${openclawOpen ? 'rgba(34,211,238,0.56)' : 'rgba(255,255,255,0.15)'}`,
-            color: openclawOpen ? '#67E8F9' : '#aaa',
-            boxShadow: openclawOpen ? '0 0 12px rgba(34,211,238,0.22)' : 'none',
-          }}
-        >
-          🦞
-        </button>
-        {canUseLocalPanels && (
-        <button
-          onClick={() => togglePanel(setRealtimeOpen)}
-          aria-label="Realtime"
-          data-oasis-tooltip="Realtime"
-          className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
-          style={{
-            background: realtimeOpen ? 'rgba(192,132,252,0.3)' : 'rgba(0,0,0,0.6)',
-            border: `1px solid ${realtimeOpen ? 'rgba(192,132,252,0.6)' : 'rgba(255,255,255,0.15)'}`,
-            color: realtimeOpen ? '#DDD6FE' : '#aaa',
-            boxShadow: realtimeOpen ? '0 0 12px rgba(192,132,252,0.26)' : 'none',
-          }}
-        >
-          🗣️
-        </button>
-        )}
         {SHOW_LEGACY_PARZIVAL_PANEL && canUseLocalPanels && (
         <button
           onClick={() => togglePanel(setParzivalOpen)}
@@ -1714,43 +1703,50 @@ export default function Scene() {
           🧿
         </button>
         )}
-        {(isAdmin || canUseLocalPanels) && <button
-          onClick={() => togglePanel(setConsoleOpen)}
-          aria-label="Console"
-          data-oasis-tooltip="Console"
-          className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
-          style={{
-            background: consoleOpen ? 'rgba(245,158,11,0.3)' : 'rgba(0,0,0,0.6)',
-            border: `1px solid ${consoleOpen ? 'rgba(245,158,11,0.6)' : 'rgba(255,255,255,0.15)'}`,
-            color: consoleOpen ? '#F59E0B' : '#aaa',
-            boxShadow: consoleOpen ? '0 0 12px rgba(245,158,11,0.3)' : 'none',
-          }}
-        >
-          📡
-        </button>}
-        <button
-          onClick={() => togglePanel(setHelpOpen)}
-          aria-label="Help"
-          data-oasis-tooltip="Help"
-          className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
-          style={{
-            background: helpOpen ? 'rgba(168,85,247,0.3)' : 'rgba(0,0,0,0.6)',
-            border: `1px solid ${helpOpen ? 'rgba(168,85,247,0.6)' : 'rgba(255,255,255,0.15)'}`,
-            color: helpOpen ? '#A855F7' : '#aaa',
-            boxShadow: helpOpen ? '0 0 12px rgba(168,85,247,0.3)' : 'none',
-          }}
-        >
-          ❓
-        </button>
       </div>
+
+      <WorldMenu />
+
+      {!hideEditTools && <PlaceMenu />}
 
       <AgentQuickLauncher
         isOpen={agentLauncherOpen}
         mode={agentLauncherMode}
         onToggle={() => setAgentLauncherOpen(open => !open)}
+        onClose={() => setAgentLauncherOpen(false)}
         onMode={mode => setAgentLauncherMode(mode)}
         onOpen2d={openQuickAgentPanel}
         onPlace3d={placeQuickAgentWindow}
+        canUseLocalAgents={canUseAgentPanels && !hideEditTools}
+      />
+
+      <SettingsMenu opacity={settingsMenuOpacity}>
+        <SettingsContent
+          menuOpacity={settingsMenuOpacity}
+          onMenuOpacityChange={handleSettingsMenuOpacity}
+          consoleControl={(isAdmin || canUseLocalPanels) ? (
+            <button
+              type="button"
+              onClick={() => togglePanel(setConsoleOpen)}
+              className="group flex w-full items-center gap-3 rounded-md border border-amber-300/20 bg-black/30 px-3 py-2 text-left transition hover:border-amber-200/50 hover:bg-amber-300/10"
+            >
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-amber-300/25 bg-amber-300/10 text-[10px] font-black uppercase text-amber-100">
+                LOG
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[11px] font-black uppercase tracking-[0.14em] text-amber-100">Console</span>
+                <span className="mt-0.5 block text-[9px] uppercase tracking-[0.1em] text-white/40">
+                  {consoleOpen ? 'open' : 'closed'}
+                </span>
+              </span>
+            </button>
+          ) : undefined}
+        />
+      </SettingsMenu>
+
+      <HelpMenu
+        isOpen={helpOpen}
+        onToggle={() => togglePanel(setHelpOpen)}
       />
 
       {/* ✨ Wizard Console — hidden in view mode */}
@@ -2027,57 +2023,75 @@ function ImageDropZone() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SETTINGS GEAR — replaces the old hamburger MenuSystem
+// SETTINGS MENU — game-HUD shell for the old settings content
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function SettingsGear({ children }: { children: React.ReactNode }) {
+function SettingsMenu({ children, opacity }: { children: React.ReactNode; opacity: number }) {
   const [isOpen, setIsOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  useUILayer('settings-menu', isOpen)
+  const playHover = () => useAudioManager.getState().play('buttonHover')
+  const playClick = () => useAudioManager.getState().play('buttonClick')
 
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        if ((e.target as HTMLElement)?.tagName === 'CANVAS') return
-        const target = e.target as HTMLElement
-        if (target.closest('[data-menu-portal]')) return
-        if (target.closest('[class*="fixed"]')) return
-        setIsOpen(false)
-      }
+    if (!isOpen) return
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current?.contains(event.target as Node)) return
+      setIsOpen(false)
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  }, [isOpen])
 
   return (
-    <div ref={menuRef} className="relative">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        aria-label="Settings"
+    <div ref={menuRef} className="fixed left-4 top-[264px] z-[190] select-none">
+      <GameMenuButton
+        label="Settings"
+        marker="SYS"
+        accent="#A78BFA"
+        active={isOpen}
+        aria-label="Settings menu"
         data-oasis-tooltip="Settings"
-        className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
-        style={{
-          background: isOpen ? 'rgba(168,85,247,0.3)' : 'rgba(0,0,0,0.6)',
-          border: `1px solid ${isOpen ? 'rgba(168,85,247,0.6)' : 'rgba(255,255,255,0.15)'}`,
-          color: isOpen ? '#A855F7' : '#aaa',
-          boxShadow: isOpen ? '0 0 12px rgba(168,85,247,0.3)' : 'none',
+        onMouseEnter={playHover}
+        onClick={() => {
+          playClick()
+          setIsOpen(open => !open)
         }}
-      >
-        ⚙️
-      </button>
+      />
 
       {isOpen && (
         <div
-          className="absolute top-0 left-12 backdrop-blur-sm border border-gray-800 rounded-xl shadow-2xl animate-in slide-in-from-left-2 duration-200 z-[250]"
-          style={{
-            backgroundColor: 'rgba(0, 0, 0, 0.95)',
-            boxShadow: '0 0 40px rgba(0,0,0,0.5), 0 0 20px rgba(168, 85, 247, 0.1)',
-            maxHeight: '85vh',
-            overflowY: 'auto',
-          }}
+          data-ui-panel
+          className="absolute left-full top-0 ml-2 overflow-y-auto rounded-lg border border-white/10 bg-black/88 font-mono text-white shadow-[0_0_54px_rgba(0,0,0,0.68),0_0_38px_rgba(167,139,250,0.14)] backdrop-blur-md max-[700px]:w-[calc(100vw-152px)]"
+          style={{ maxHeight: 'calc(100vh - 280px)', opacity }}
+          onMouseDown={event => event.stopPropagation()}
         >
           {children}
         </div>
       )}
+    </div>
+  )
+}
+
+function HelpMenu({ isOpen, onToggle }: { isOpen: boolean; onToggle: () => void }) {
+  const playHover = () => useAudioManager.getState().play('buttonHover')
+  const playClick = () => useAudioManager.getState().play('buttonClick')
+
+  return (
+    <div className="fixed left-4 top-[328px] z-[190] select-none">
+      <GameMenuButton
+        label="Help"
+        marker="?"
+        accent="#60A5FA"
+        active={isOpen}
+        aria-label="Help menu"
+        data-oasis-tooltip="Help"
+        onMouseEnter={playHover}
+        onClick={() => {
+          playClick()
+          onToggle()
+        }}
+      />
     </div>
   )
 }

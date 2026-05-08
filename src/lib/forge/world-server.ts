@@ -12,6 +12,7 @@ import { prisma } from '../db'
 import { normalizeWorldStateAgentAvatarTransforms } from '../agent-avatar-world-state'
 import { getOasisMode } from '../oasis-profile'
 import { isAdminUserId } from '../admin-auth'
+import { levelFromXp } from '../xp'
 import {
   DISCOVERABLE_VISIBILITIES,
   FFA_VISIBILITIES,
@@ -34,6 +35,13 @@ import {
 
 import type { WorldMeta, WorldState } from './world-persistence'
 export type { WorldState, WorldMeta }
+
+interface OwnerProfileSummary {
+  displayName: string
+  avatarUrl: string | null
+  totalXp: number
+  aura: number
+}
 
 export interface SnapshotMeta {
   id: string
@@ -75,11 +83,12 @@ function toAccessSubject(row: WorldAccessSubject): WorldAccessSubject {
   }
 }
 
-function countWorldObjects(state: Pick<WorldState, 'conjuredAssetIds' | 'catalogPlacements' | 'craftedScenes' | 'portalGates' | 'agentAvatars' | 'agentWindows'>): number {
+function countWorldObjects(state: Pick<WorldState, 'conjuredAssetIds' | 'catalogPlacements' | 'craftedScenes' | 'portalGates' | 'spatialWebObjects' | 'agentAvatars' | 'agentWindows'>): number {
   return (state.conjuredAssetIds?.length || 0) +
     (state.catalogPlacements?.length || 0) +
     (state.craftedScenes?.length || 0) +
     (state.portalGates?.length || 0) +
+    (state.spatialWebObjects?.length || 0) +
     (state.agentAvatars?.length || 0) +
     (state.agentWindows?.length || 0)
 }
@@ -120,19 +129,47 @@ function assertNotPortalOnlyOverwrite(worldId: string, currentData: string | nul
 // ═══════════════════════════════════════════════════════════════════════════
 
 function toWorldMeta(
-  row: { id: string; userId?: string; name: string; icon: string; visibility: string; createdAt: Date; updatedAt: Date },
+  row: {
+    id: string
+    userId?: string
+    name: string
+    icon: string
+    visibility: string
+    creatorName?: string | null
+    creatorAvatar?: string | null
+    visitCount?: number | null
+    objectCount?: number | null
+    createdAt: Date
+    updatedAt: Date
+  },
   ctx?: WorldAccessContext,
+  ownerProfile?: OwnerProfileSummary | null,
 ): WorldMeta {
   const subject = row.userId ? toAccessSubject(row as WorldAccessSubject) : null
   const writeDecision = ctx && subject ? getWorldWriteDecision(ctx, subject) : undefined
+  const ownerName = row.creatorName || ownerProfile?.displayName || (row.userId === 'system' ? 'Oasis' : 'Player 1')
+  const ownerAvatar = row.creatorAvatar || ownerProfile?.avatarUrl || undefined
+  const ownerLevel = ownerProfile ? levelFromXp(ownerProfile.totalXp || 0) : undefined
+  const ownerAura = ownerProfile?.aura
   return {
     id: row.id,
+    userId: row.userId,
     name: row.name,
     icon: row.icon || '🌍',
     visibility: (row.visibility as WorldMeta['visibility']) || 'private',
     canWrite: writeDecision ? writeDecision !== 'deny' : undefined,
     canEditSettings: ctx && subject ? canEditWorldSettings(ctx, subject) : undefined,
     writeDecision,
+    creatorName: ownerName,
+    creatorAvatar: ownerAvatar,
+    creator_name: ownerName,
+    creator_avatar: ownerAvatar,
+    ownerName,
+    ownerAvatar,
+    ownerLevel,
+    ownerAura,
+    objectCount: row.objectCount || 0,
+    visitCount: row.visitCount || 0,
     createdAt: row.createdAt.toISOString(),
     lastSavedAt: row.updatedAt.toISOString(),
   }
@@ -142,10 +179,32 @@ function toWorldMeta(
 // REGISTRY — local lists everything; hosted lists owned + discoverable worlds.
 // ═══════════════════════════════════════════════════════════════════════════
 
+async function getOwnerProfiles(userIds: Array<string | undefined>): Promise<Map<string, OwnerProfileSummary>> {
+  const ids = Array.from(new Set(userIds.filter((id): id is string => Boolean(id))))
+  if (ids.length === 0) return new Map()
+  const profiles = await prisma.profile.findMany({
+    where: { userId: { in: ids } },
+    select: { userId: true, displayName: true, avatarUrl: true, totalXp: true, aura: true },
+  })
+  return new Map(profiles.map(profile => [profile.userId, profile] as const))
+}
+
 export async function getRegistry(userId?: string): Promise<WorldMeta[]> {
   const ctx = accessContext(userId)
   const worlds = await prisma.world.findMany({
-    select: { id: true, userId: true, name: true, icon: true, visibility: true, createdAt: true, updatedAt: true },
+    select: {
+      id: true,
+      userId: true,
+      name: true,
+      icon: true,
+      visibility: true,
+      creatorName: true,
+      creatorAvatar: true,
+      visitCount: true,
+      objectCount: true,
+      createdAt: true,
+      updatedAt: true,
+    },
     where: ctx.mode === 'hosted' && !ctx.admin
       ? {
           OR: [
@@ -162,9 +221,10 @@ export async function getRegistry(userId?: string): Promise<WorldMeta[]> {
     return [defaultWorld]
   }
 
+  const profiles = await getOwnerProfiles(worlds.map(world => world.userId))
   return worlds
     .filter(world => canDiscoverWorld(ctx, toAccessSubject(world)))
-    .map(world => toWorldMeta(world, ctx))
+    .map(world => toWorldMeta(world, ctx, profiles.get(world.userId)))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -431,13 +491,12 @@ export async function loadPublicWorld(id: string): Promise<{ state: WorldState; 
   })
 
   if (!world?.data) return null
+  const profiles = await getOwnerProfiles([world.userId])
 
   return {
     state: normalizeSavedWorldState(JSON.parse(world.data) as WorldState),
     meta: {
-      ...toWorldMeta(world),
-      creator_name: world.creatorName || 'Player 1',
-      creator_avatar: world.creatorAvatar || undefined,
+      ...toWorldMeta(world, undefined, profiles.get(world.userId)),
     },
   }
 }

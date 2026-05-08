@@ -49,6 +49,12 @@ import {
   scalarFromTransformScale,
 } from '../../lib/agent-avatar-utils'
 import { isSharedAgentAvatarType } from '../../lib/agent-avatar-world-state'
+import {
+  DEFAULT_GEMINI_AGENT_FRAME_STYLE,
+  DEFAULT_GEMINI_AGENT_FRAME_THICKNESS,
+  DEFAULT_GEMINI_AGENT_WINDOW_HEIGHT,
+  DEFAULT_GEMINI_AGENT_WINDOW_WIDTH,
+} from '../../lib/gemini-live'
 
 const IDLE_CLIP_PATTERNS = /idle|breathe?|stand|rest|pose|wait/i
 const WALK_CLIP_PATTERNS = /walk|run|move|locomotion|jog/i
@@ -861,8 +867,8 @@ export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, fram
 // ░▒▓ Loads audio file + plays with 3D positional falloff ▓▒░
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function SpatialAudioAttachment({ objectId, audioUrl, volume = 1, maxDistance = 15, muted = false, audioState = 'playing', loop = true }: {
-  objectId?: string; audioUrl: string; volume?: number; maxDistance?: number; muted?: boolean; audioState?: 'playing' | 'paused' | 'stopped'; loop?: boolean
+export function SpatialAudioAttachment({ objectId, audioUrl, volume = 1, maxDistance = 15, muted = false, audioState = 'playing', loop = true, lipSyncEnabled = true }: {
+  objectId?: string; audioUrl: string; volume?: number; maxDistance?: number; muted?: boolean; audioState?: 'playing' | 'paused' | 'stopped'; loop?: boolean; lipSyncEnabled?: boolean
 }) {
   const groupRef = useRef<THREE.Group>(null!)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -878,7 +884,7 @@ export function SpatialAudioAttachment({ objectId, audioUrl, volume = 1, maxDist
     if (objectId) _audioElements.set(objectId, audio)
     // ░▒▓ LIP SYNC — attach analyser to audio element ▓▒░
     let lipSyncCtrl: ReturnType<typeof createLipSyncController> | null = null
-    if (objectId) {
+    if (objectId && lipSyncEnabled) {
       lipSyncCtrl = createLipSyncController()
       lipSyncCtrl.attachAudio(audio)
       registerLipSync(objectId, lipSyncCtrl)
@@ -893,11 +899,14 @@ export function SpatialAudioAttachment({ objectId, audioUrl, volume = 1, maxDist
       audioRef.current = null
       if (objectId) _audioElements.delete(objectId)
       // ░▒▓ LIP SYNC cleanup ▓▒░
-      if (lipSyncCtrl) lipSyncCtrl.detach()
-      if (objectId) unregisterLipSync(objectId)
+      if (objectId && lipSyncCtrl) {
+        unregisterLipSync(objectId, lipSyncCtrl)
+      } else if (lipSyncCtrl) {
+        lipSyncCtrl.detach()
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [audioUrl])
+  }, [audioUrl, objectId, lipSyncEnabled])
 
   // Real play/pause/stop — reacts to audioState changes
   useEffect(() => {
@@ -944,8 +953,34 @@ export function SpatialAudioAttachment({ objectId, audioUrl, volume = 1, maxDist
 // ░▒▓ Used when CatalogPlacement has audioUrl but no imageUrl/videoUrl/glbPath ▓▒░
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function AudioSourceRenderer({ scale }: { scale: number }) {
+export function AudioSourceRenderer({ objectId, scale }: { objectId?: string; scale: number }) {
   const s = scale
+  const setObjectBehavior = useOasisStore(state => state.setObjectBehavior)
+  const audioState = useOasisStore(state => objectId ? state.behaviors[objectId]?.audioState : undefined) || 'paused'
+  const [progress, setProgress] = useState(0)
+  const progressTickRef = useRef(0)
+
+  useFrame((_, delta) => {
+    if (!objectId) return
+    progressTickRef.current += delta
+    if (progressTickRef.current < 0.15) return
+    progressTickRef.current = 0
+
+    const audio = getAudioElement(objectId)
+    if (!audio || !Number.isFinite(audio.duration) || audio.duration <= 0) {
+      if (progress !== 0) setProgress(0)
+      return
+    }
+    const next = Math.min(1, Math.max(0, audio.currentTime / audio.duration))
+    setProgress(prev => Math.abs(prev - next) > 0.01 ? next : prev)
+  })
+
+  const setPlayback = (state: 'playing' | 'paused' | 'stopped', event: { stopPropagation: () => void }) => {
+    event.stopPropagation()
+    if (!objectId) return
+    setObjectBehavior(objectId, { audioState: state })
+  }
+
   return (
     <group position={[0, s * 0.5, 0]}>
       {/* Speaker cabinet */}
@@ -968,6 +1003,29 @@ export function AudioSourceRenderer({ scale }: { scale: number }) {
         <ringGeometry args={[s * 0.24, s * 0.27, 32]} />
         <meshBasicMaterial color="#14b8a6" transparent opacity={0.6} side={THREE.DoubleSide} />
       </mesh>
+      {/* A2UI-style mini transport strip: play/pause/stop plus progress */}
+      <group position={[0, -s * 0.68, s * 0.38]}>
+        <mesh onClick={(event) => setPlayback('playing', event)}>
+          <boxGeometry args={[s * 0.16, s * 0.16, s * 0.04]} />
+          <meshBasicMaterial color={audioState === 'playing' ? '#22c55e' : '#0f766e'} />
+        </mesh>
+        <mesh position={[s * 0.23, 0, 0]} onClick={(event) => setPlayback('paused', event)}>
+          <boxGeometry args={[s * 0.16, s * 0.16, s * 0.04]} />
+          <meshBasicMaterial color={audioState === 'paused' ? '#fbbf24' : '#854d0e'} />
+        </mesh>
+        <mesh position={[s * 0.46, 0, 0]} onClick={(event) => setPlayback('stopped', event)}>
+          <boxGeometry args={[s * 0.16, s * 0.16, s * 0.04]} />
+          <meshBasicMaterial color={audioState === 'stopped' ? '#fb7185' : '#881337'} />
+        </mesh>
+        <mesh position={[0, -s * 0.2, 0]}>
+          <boxGeometry args={[s * 0.82, s * 0.045, s * 0.025]} />
+          <meshBasicMaterial color="#0f172a" />
+        </mesh>
+        <mesh position={[-s * 0.41 + (s * 0.82 * progress) / 2, -s * 0.2, s * 0.01]}>
+          <boxGeometry args={[Math.max(s * 0.025, s * 0.82 * progress), s * 0.05, s * 0.03]} />
+          <meshBasicMaterial color="#38bdf8" />
+        </mesh>
+      </group>
     </group>
   )
 }
@@ -1778,8 +1836,6 @@ export function TransformKeyHandler() {
           SPATIAL_WEB_INTERACTION_RADIUS,
         )
         if (nearest) {
-          state.selectObject(nearest.id)
-          state.setInspectedObject(nearest.id)
           void state.interactSpatialWebObject(nearest.id, 'press')
           e.preventDefault()
           return
@@ -2270,12 +2326,15 @@ function PlacementOverlay() {
     } else if (placementPending.type === 'agent' && placementPending.agentType) {
       // ░▒▓ Agent window placement — create 3D interactive panel ▓▒░
       const isHermesAgent = placementPending.agentType === 'hermes'
+      const isGeminiAgent = placementPending.agentType === 'gemini'
       const defaultWindowScale = 0.15
       const defaultWindowSize = placementPending.agentType === 'anorak-pro'
         ? { width: 960, height: 720 }
         : placementPending.agentType === 'browser'
           ? { width: 1280, height: 820 }
-          : { width: 800, height: 600 }
+          : isGeminiAgent
+            ? { width: DEFAULT_GEMINI_AGENT_WINDOW_WIDTH, height: DEFAULT_GEMINI_AGENT_WINDOW_HEIGHT }
+            : { width: 800, height: 600 }
       const defaultWindowWorldHeight = defaultWindowSize.height * (8 / 400)
       const browserDefaults = placementPending.agentType === 'browser'
         ? {
@@ -2293,8 +2352,8 @@ function PlacementOverlay() {
         sessionId: placementPending.agentSessionId,
         label: placementPending.name,
         renderMode: placementPending.agentRenderMode,
-        frameStyle: isHermesAgent ? 'fire' : undefined,
-        frameThickness: isHermesAgent ? 6 : undefined,
+        frameStyle: isGeminiAgent ? DEFAULT_GEMINI_AGENT_FRAME_STYLE : isHermesAgent ? 'fire' : undefined,
+        frameThickness: isGeminiAgent ? DEFAULT_GEMINI_AGENT_FRAME_THICKNESS : isHermesAgent ? 6 : undefined,
         ...browserDefaults,
       }
       dispatch({
@@ -2740,6 +2799,25 @@ export function WorldObjectsRenderer() {
     spawnMarchOrderVfx(target)
   }, [camera, moveOrderObjectIds, paintMode, placementPending, setMoveTarget, spawnMarchOrderVfx])
 
+  useEffect(() => {
+    if (paintMode || placementPending || moveOrderObjectIds.length === 0) return
+    const handleLockedRightClick = (event: MouseEvent) => {
+      if (event.button !== 2) return
+      if (!useInputManager.getState().pointerLocked) return
+      event.preventDefault()
+      const raycaster = crosshairRaycasterRef.current
+      const plane = crosshairPlaneRef.current
+      const hit = crosshairPointRef.current
+      raycaster.setFromCamera(new THREE.Vector2(0, 0), camera)
+      if (!raycaster.ray.intersectPlane(plane, hit)) return
+      const target: [number, number, number] = [hit.x, 0, hit.z]
+      moveOrderObjectIds.forEach((id) => setMoveTarget(id, target))
+      spawnMarchOrderVfx(target)
+    }
+    window.addEventListener('mousedown', handleLockedRightClick, true)
+    return () => window.removeEventListener('mousedown', handleLockedRightClick, true)
+  }, [camera, moveOrderObjectIds, paintMode, placementPending, setMoveTarget, spawnMarchOrderVfx])
+
   return (
     <group>
       {/* W/E/R keyboard shortcuts for transform modes + ESC for placement cancel */}
@@ -2864,7 +2942,7 @@ export function WorldObjectsRenderer() {
                   : renderAsset.imageUrl
                     ? <ImagePlaneRenderer imageUrl={renderAsset.imageUrl} scale={renderAsset.scale} frameStyle={renderAsset.imageFrameStyle} frameThickness={renderAsset.imageFrameThickness} />
                     : !renderAsset.glbPath && renderAsset.audioUrl
-                      ? <AudioSourceRenderer scale={renderAsset.scale} />
+                      ? <AudioSourceRenderer objectId={renderAsset.id} scale={renderAsset.scale} />
                       : renderAsset.glbPath.endsWith('.vrm')
                         ? <VRMCatalogRenderer path={renderAsset.glbPath} scale={renderAsset.scale} objectId={renderAsset.id} displayName={renderAsset.name} />
                         : <CatalogModelRenderer path={renderAsset.glbPath} scale={renderAsset.scale} objectId={renderAsset.id} displayName={renderAsset.name} />
@@ -3139,6 +3217,7 @@ function AgentAvatarsSection({ selectedObjectId, selectObject, transformMode, on
                   muted={audio.muted}
                   audioState={audio.state}
                   loop={audio.loop ?? false}
+                  lipSyncEnabled={false}
                 />
               )}
             </Suspense>

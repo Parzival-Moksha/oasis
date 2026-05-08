@@ -26,6 +26,7 @@ let _audioListener: THREE.AudioListener | null = null
 export function getAudioListener(): THREE.AudioListener | null { return _audioListener }
 import { useOasisStore } from '../store/oasisStore'
 import { useInputManager, getInputCapabilities, consumeMouseLookDelta } from '../lib/input-manager'
+import { getMobileInputSnapshot } from '../lib/mobile-controls'
 import { setCameraSnapshot } from '../lib/camera-bridge'
 import { deriveAvatarAnchoredWindowPlacement, resolveAgentWindowRenderScale } from '../lib/agent-avatar-utils'
 import { getLiveObjectTransform } from '../lib/live-object-transforms'
@@ -95,9 +96,10 @@ function useNoclipUpdate() {
     }
 
     const { forward, backward, left, right, up, down, sprint, slow } = getKeys()
+    const mobile = getMobileInputSnapshot()
 
     // Speed multiplier ramp
-    const targetMultiplier = sprint ? NOCLIP_SPRINT_MULT : slow ? NOCLIP_SLOW_MULT : 1
+    const targetMultiplier = sprint || mobile.sprint ? NOCLIP_SPRINT_MULT : slow ? NOCLIP_SLOW_MULT : 1
     const rampLerp = 1 - Math.exp(-3 * delta)
     multiplierRef.current += (targetMultiplier - multiplierRef.current) * rampLerp
 
@@ -113,10 +115,10 @@ function useNoclipUpdate() {
     cameraDir.normalize()
     const cameraRight = cameraRightRef.current.setFromMatrixColumn(camera.matrixWorld, 0).normalize()
 
-    if (forward) direction.add(cameraDir)
-    if (backward) direction.sub(cameraDir)
-    if (right) direction.add(cameraRight)
-    if (left) direction.sub(cameraRight)
+    const moveZ = (forward ? 1 : 0) - (backward ? 1 : 0) + mobile.moveZ
+    const moveX = (right ? 1 : 0) - (left ? 1 : 0) + mobile.moveX
+    direction.addScaledVector(cameraDir, moveZ)
+    direction.addScaledVector(cameraRight, moveX)
     if (up) direction.y += 1
     if (down) direction.y -= 1
     direction.normalize()
@@ -158,7 +160,9 @@ function useMouseLook(sensitivity: number) {
 
   return (camera: THREE.PerspectiveCamera) => {
     const input = useInputManager.getState()
-    if (!input.pointerLocked || (input.inputState !== 'noclip' && input.inputState !== 'placement' && input.inputState !== 'paint')) {
+    const mobile = getMobileInputSnapshot()
+    const lookDriven = input.pointerLocked || mobile.lookActive
+    if (!lookDriven || (input.inputState !== 'noclip' && input.inputState !== 'placement' && input.inputState !== 'paint')) {
       initializedRef.current = false
       return
     }

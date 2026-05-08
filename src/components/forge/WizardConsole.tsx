@@ -3392,7 +3392,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
               </div>
 
               {/* ░▒▓█ CRAFT MODEL SELECTOR — The silicon tongue █▓▒░ */}
-              <div>
+              <div className="hidden">
                 <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Craft / Terrain Model</div>
                 <div className="grid grid-cols-2 gap-1.5">
                   {([

@@ -126,6 +126,10 @@ describe('TOOL_NAMES', () => {
     expect(TOOL_NAMES).toContain('self_craft_scene')
     expect(TOOL_NAMES).toContain('get_craft_job')
     expect(TOOL_NAMES).toContain('set_sky')
+    expect(TOOL_NAMES).toContain('list_worlds')
+    expect(TOOL_NAMES).toContain('create_portal_gate')
+    expect(TOOL_NAMES).toContain('create_world_from_google_form')
+    expect(TOOL_NAMES).toContain('share_world_link')
     expect(TOOL_NAMES).toContain('clear_world')
     expect(TOOL_NAMES).toContain('create_and_load_world')
     expect(TOOL_NAMES).toContain('screenshot_viewport')
@@ -418,6 +422,118 @@ describe('create_spatial_web_object', () => {
         value: 'yes',
       },
     })
+  })
+
+  it('creates world-tool actions for wired spatial controls', async () => {
+    const world = makeWorldRow()
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+
+    const result = await callTool('create_spatial_web_object', {
+      type: 'toggle',
+      label: 'Sky switch',
+      value: false,
+      actionType: 'world_tool',
+      tool: 'set_sky',
+      argsByValue: {
+        true: { presetId: 'night007' },
+        false: { presetId: 'sunny_vondelpark' },
+      },
+    })
+
+    expect(result.ok).toBe(true)
+    const updatePayload = vi.mocked(prisma.world.update).mock.calls[0]?.[0]
+    const savedState = JSON.parse(String(updatePayload?.data?.data || '{}')) as { spatialWebObjects?: Array<Record<string, unknown>> }
+    expect(savedState.spatialWebObjects?.[0]).toMatchObject({
+      type: 'toggle',
+      label: 'Sky switch',
+      action: {
+        type: 'world_tool',
+        tool: 'set_sky',
+        argsByValue: {
+          true: { presetId: 'night007' },
+          false: { presetId: 'sunny_vondelpark' },
+        },
+      },
+    })
+  })
+})
+
+describe('create_portal_gate', () => {
+  it('resolves a named world and creates two linked portal gates', async () => {
+    const sourceWorld = makeWorldRow({}, {
+      id: 'source-world',
+      name: 'Gemini Demo',
+    })
+    const targetWorld = makeWorldRow({}, {
+      id: 'world-welcome-hub-system',
+      name: 'Portal Zero',
+      visibility: 'core',
+    })
+    vi.mocked(prisma.world.findMany).mockResolvedValue([targetWorld])
+    vi.mocked(prisma.world.findFirst).mockImplementation((async (query: any) => {
+      const id = query?.where?.id
+      if (id === 'source-world') return sourceWorld
+      if (id === 'world-welcome-hub-system') return targetWorld
+      return null
+    }) as any)
+    vi.mocked(prisma.world.update).mockImplementation((async (query: any) => {
+      const base = query?.where?.id === 'world-welcome-hub-system' ? targetWorld : sourceWorld
+      return { ...base, ...query?.data }
+    }) as any)
+    const events: Array<{ type: string; worldId: string; data?: Record<string, unknown> }> = []
+    const unsubscribe = subscribe(event => events.push(event))
+
+    let result!: Awaited<ReturnType<typeof callTool>>
+    try {
+      result = await callTool('create_portal_gate', {
+        worldId: 'source-world',
+        targetWorldName: 'Portal Zero',
+        label: 'Portal to Portal Zero',
+        position: [0, 0, -5],
+        direction: 'two-way',
+        variant: 'threshold-ring',
+      })
+    } finally {
+      unsubscribe()
+    }
+
+    expect(result.ok).toBe(true)
+    expect(result.message).toContain('two-way portal')
+    expect(result.message).toContain('Portal Zero')
+    expect(vi.mocked(prisma.world.update)).toHaveBeenCalledTimes(2)
+    const sourceSave = vi.mocked(prisma.world.update).mock.calls.find(call => call[0]?.where?.id === 'source-world')?.[0]
+    const targetSave = vi.mocked(prisma.world.update).mock.calls.find(call => call[0]?.where?.id === 'world-welcome-hub-system')?.[0]
+    const savedSource = JSON.parse(String(sourceSave?.data?.data || '{}')) as { portalGates?: Array<Record<string, unknown>> }
+    const savedTarget = JSON.parse(String(targetSave?.data?.data || '{}')) as { portalGates?: Array<Record<string, unknown>> }
+    expect(savedSource.portalGates?.[0]).toMatchObject({
+      label: 'Portal to Portal Zero',
+      targetWorldId: 'world-welcome-hub-system',
+      targetWorldName: 'Portal Zero',
+      position: [0, 0, -5],
+      direction: 'two-way',
+    })
+    expect(savedTarget.portalGates?.[0]).toMatchObject({
+      targetWorldId: 'source-world',
+      targetWorldName: 'Gemini Demo',
+      direction: 'two-way',
+    })
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'object_added',
+        worldId: 'source-world',
+        data: expect.objectContaining({
+          portalGate: expect.objectContaining({ label: 'Portal to Portal Zero' }),
+        }),
+      }),
+      expect.objectContaining({
+        type: 'object_added',
+        worldId: 'world-welcome-hub-system',
+        data: expect.objectContaining({
+          portalGate: expect.objectContaining({ targetWorldId: 'source-world' }),
+        }),
+      }),
+    ]))
   })
 })
 
@@ -1075,6 +1191,27 @@ describe('agent avatar tools', () => {
     expect(result.ok).toBe(true)
     expect(result.message).toContain('agent-avatar-hermes')
     expect(vi.mocked(prisma.world.update)).toHaveBeenCalled()
+  })
+
+  it('set_avatar accepts Gemini as a shared agent avatar type', async () => {
+    const world = makeWorldRow()
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+
+    const result = await callTool('set_avatar', {
+      agentType: 'gemini',
+      avatarUrl: '/avatars/gallery/Orion.vrm',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.message).toContain('agent-avatar-gemini')
+    const updatePayload = vi.mocked(prisma.world.update).mock.calls[0]?.[0]
+    const savedState = JSON.parse(String(updatePayload?.data?.data || '{}'))
+    expect(savedState.agentAvatars[0]).toMatchObject({
+      id: 'agent-avatar-gemini',
+      agentType: 'gemini',
+      avatar3dUrl: '/avatars/gallery/Orion.vrm',
+    })
   })
 
   it('set_avatar repairs invalid avatar URLs instead of persisting broken ones', async () => {

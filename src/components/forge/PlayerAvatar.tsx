@@ -22,6 +22,7 @@ import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
 import { useInputManager, consumeMouseLookDelta } from '../../lib/input-manager'
 import { AnimationController } from '../../lib/animation-state-machine'
 import { useAudioManager } from '../../lib/audio-manager'
+import { getMobileInputSnapshot } from '../../lib/mobile-controls'
 import { getLipSync } from '../../lib/lip-sync'
 import { sprintRef } from '../CameraController'
 import { SettingsContext } from '../scene-lib'
@@ -327,15 +328,27 @@ export function PlayerAvatar({
       if (animControllerRef.current !== controller) return
       if (ok) {
         controller.transitionTo('idle')
-      }
-      // Wait two animation frames before revealing the avatar. The first frame
-      // is when the idle clip's mixer evaluates and applies bone transforms;
-      // showing the avatar before that = T-pose. Two frames is generous and
-      // accounts for any internal Three.js scheduling.
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        if (animControllerRef.current !== controller) return
+        controller.update(0)
         setAvatarPoseReady(true)
-      }))
+        return
+      }
+      const startedAt = performance.now()
+      const waitForConstructorPreload = () => {
+        if (animControllerRef.current !== controller) return
+        if (controller.ready) {
+          controller.transitionTo('idle')
+          controller.update(0)
+          setAvatarPoseReady(true)
+          return
+        }
+        if (performance.now() - startedAt > 2400) {
+          console.warn('[PlayerAvatar] Idle animation did not finish loading; revealing avatar fallback.')
+          setAvatarPoseReady(true)
+          return
+        }
+        requestAnimationFrame(waitForConstructorPreload)
+      }
+      requestAnimationFrame(waitForConstructorPreload)
     })
     return () => { controller.dispose(); animControllerRef.current = null }
   }, [vrm])
@@ -476,7 +489,9 @@ export function PlayerAvatar({
     }
     wasThirdPersonActiveRef.current = isThirdPersonActive
 
-    if (isThirdPersonActive && pointerLocked) {
+    const mobile = getMobileInputSnapshot()
+
+    if (isThirdPersonActive && (pointerLocked || mobile.lookActive)) {
       const mouseDelta = consumeMouseLookDelta()
       if (mouseDelta.x !== 0 || mouseDelta.y !== 0) {
         const sens = mouseSensitivity * 0.003
@@ -531,11 +546,11 @@ export function PlayerAvatar({
       const { forward, backward, left, right, sprint, slow } = keys
 
       // Speed modifier: shift=sprint (4x), space=walk (0.25x), default=run
-      const speedMult = sprint ? TPS_SPRINT_MULT : slow ? TPS_WALK_MULT : 1
+      const speedMult = sprint || mobile.sprint ? TPS_SPRINT_MULT : slow ? TPS_WALK_MULT : 1
       const currentSpeed = TPS_BASE_SPEED * speedMult
 
       // Sprint VFX — same speed lines + chromatic aberration as noclip
-      const targetIntensity = sprint ? (TPS_SPRINT_MULT - 1) / 3 : 0
+      const targetIntensity = sprint || mobile.sprint ? (TPS_SPRINT_MULT - 1) / 3 : 0
       sprintRef.current.intensity += (targetIntensity - sprintRef.current.intensity) * (1 - Math.exp(-5 * delta))
       sprintRef.current.multiplier = speedMult
 
@@ -546,10 +561,10 @@ export function PlayerAvatar({
 
       // Movement direction relative to camera
       const moveDir = _moveDir.current.set(0, 0, 0)
-      if (forward) moveDir.add(camForward)
-      if (backward) moveDir.sub(camForward)
-      if (right) moveDir.add(camRight)
-      if (left) moveDir.sub(camRight)
+      const moveZ = (forward ? 1 : 0) - (backward ? 1 : 0) + mobile.moveZ
+      const moveX = (right ? 1 : 0) - (left ? 1 : 0) + mobile.moveX
+      moveDir.addScaledVector(camForward, moveZ)
+      moveDir.addScaledVector(camRight, moveX)
 
       const wantsToMove = moveDir.lengthSq() > 0.001
       if (wantsToMove && getPlayerSpellCasting()) {

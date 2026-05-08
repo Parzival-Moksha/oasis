@@ -6,6 +6,7 @@ import { cancelPendingSave, getActiveWorldId, getWorldRegistry } from '@/lib/for
 import type { WorldEvent } from '@/lib/mcp/world-events'
 import { useOasisStore, type AgentAvatar } from '@/store/oasisStore'
 import type { SpatialWebObject } from '@/lib/spatial-web'
+import type { PortalGate } from '@/lib/portal-gates'
 import { readEmbodiedAgentSettingsFromStorage, type EmbodiedAgentSettings } from '@/lib/agent-action-settings'
 import { SPELL_CAST_DURATION_MS, SPELL_CAST_SOUND_URL, withSpellCastAnimation, withoutSpellCastAnimation } from '@/lib/spell-casting'
 import { getLiveObjectTransform } from '@/lib/live-object-transforms'
@@ -193,6 +194,16 @@ function readSpatialWebObject(value: unknown): SpatialWebObject | null {
   }) as SpatialWebObject
 }
 
+function readPortalGate(value: unknown): PortalGate | null {
+  const record = asRecord(value)
+  const position = readEventPosition(record || undefined)
+  if (!record || typeof record.id !== 'string' || typeof record.variant !== 'string' || !position) return null
+  return cloneValue({
+    ...record,
+    position,
+  }) as PortalGate
+}
+
 function readBehavior(value: unknown): ObjectBehavior | null {
   const record = asRecord(value)
   if (!record) return null
@@ -203,9 +214,10 @@ function countLoadedObjects(state: {
   placedCatalogAssets: CatalogPlacement[]
   worldConjuredAssetIds?: string[]
   craftedScenes: CraftedScene[]
+  portalGates?: PortalGate[]
   spatialWebObjects?: SpatialWebObject[]
 }): number {
-  return state.placedCatalogAssets.length + state.craftedScenes.length + (state.worldConjuredAssetIds?.length || 0) + (state.spatialWebObjects?.length || 0)
+  return state.placedCatalogAssets.length + state.craftedScenes.length + (state.worldConjuredAssetIds?.length || 0) + (state.portalGates?.length || 0) + (state.spatialWebObjects?.length || 0)
 }
 
 function readStoreObjectPosition(state: ReturnType<typeof useOasisStore.getState>, objectId: string): [number, number, number] | null {
@@ -222,6 +234,9 @@ function readStoreObjectPosition(state: ReturnType<typeof useOasisStore.getState
 
   const spatialWebObject = state.spatialWebObjects.find(entry => entry.id === objectId)
   if (spatialWebObject) return spatialWebObject.position
+
+  const portalGate = state.portalGates.find(entry => entry.id === objectId)
+  if (portalGate) return portalGate.position
 
   const avatar = state.placedAgentAvatars.find(entry => entry.id === objectId)
   if (avatar) return avatar.position
@@ -327,7 +342,22 @@ export function useWorldEvents() {
               ]
               return {
                 spatialWebObjects,
-                _loadedObjectCount: countLoadedObjects({ placedCatalogAssets: state.placedCatalogAssets, craftedScenes: state.craftedScenes, worldConjuredAssetIds: state.worldConjuredAssetIds, spatialWebObjects }),
+                _loadedObjectCount: countLoadedObjects({ placedCatalogAssets: state.placedCatalogAssets, craftedScenes: state.craftedScenes, worldConjuredAssetIds: state.worldConjuredAssetIds, portalGates: state.portalGates, spatialWebObjects }),
+              }
+            })
+            return true
+          }
+
+          const portalGate = readPortalGate(data.portalGate)
+          if (portalGate) {
+            useOasisStore.setState(state => {
+              const portalGates = [
+                ...state.portalGates.filter(entry => entry.id !== portalGate.id),
+                cloneValue(portalGate),
+              ]
+              return {
+                portalGates,
+                _loadedObjectCount: countLoadedObjects({ placedCatalogAssets: state.placedCatalogAssets, craftedScenes: state.craftedScenes, worldConjuredAssetIds: state.worldConjuredAssetIds, portalGates, spatialWebObjects: state.spatialWebObjects }),
               }
             })
             return true
@@ -342,7 +372,7 @@ export function useWorldEvents() {
             ]
             return {
               placedCatalogAssets,
-              _loadedObjectCount: countLoadedObjects({ placedCatalogAssets, craftedScenes: state.craftedScenes, worldConjuredAssetIds: state.worldConjuredAssetIds, spatialWebObjects: state.spatialWebObjects }),
+              _loadedObjectCount: countLoadedObjects({ placedCatalogAssets, craftedScenes: state.craftedScenes, worldConjuredAssetIds: state.worldConjuredAssetIds, portalGates: state.portalGates, spatialWebObjects: state.spatialWebObjects }),
             }
           })
           return true
@@ -370,7 +400,7 @@ export function useWorldEvents() {
               conjuredAssets,
               worldConjuredAssetIds,
               transforms,
-              _loadedObjectCount: countLoadedObjects({ placedCatalogAssets: state.placedCatalogAssets, craftedScenes: state.craftedScenes, worldConjuredAssetIds, spatialWebObjects: state.spatialWebObjects }),
+              _loadedObjectCount: countLoadedObjects({ placedCatalogAssets: state.placedCatalogAssets, craftedScenes: state.craftedScenes, worldConjuredAssetIds, portalGates: state.portalGates, spatialWebObjects: state.spatialWebObjects }),
             }
           })
           return true
@@ -392,7 +422,7 @@ export function useWorldEvents() {
             return {
               craftedScenes,
               transforms,
-              _loadedObjectCount: countLoadedObjects({ placedCatalogAssets: state.placedCatalogAssets, craftedScenes, worldConjuredAssetIds: state.worldConjuredAssetIds, spatialWebObjects: state.spatialWebObjects }),
+              _loadedObjectCount: countLoadedObjects({ placedCatalogAssets: state.placedCatalogAssets, craftedScenes, worldConjuredAssetIds: state.worldConjuredAssetIds, portalGates: state.portalGates, spatialWebObjects: state.spatialWebObjects }),
             }
           })
           return true
@@ -405,6 +435,7 @@ export function useWorldEvents() {
           const scene = readCraftedScene(data.scene)
           const avatar = readAgentAvatar(data.avatar)
           const spatialWebObject = readSpatialWebObject(data.spatialWebObject)
+          const portalGate = readPortalGate(data.portalGate)
           const transform = readTransform(data.transform)
           const behavior = readBehavior(data.behavior)
 
@@ -437,6 +468,13 @@ export function useWorldEvents() {
                 ]
               : state.spatialWebObjects
 
+            const portalGates = portalGate
+              ? [
+                  ...state.portalGates.filter(entry => entry.id !== portalGate.id),
+                  cloneValue(portalGate),
+                ]
+              : state.portalGates
+
             let transforms = state.transforms
             if (avatar) {
               const { [avatar.id]: _removedAvatarTransform, ...remainingTransforms } = state.transforms
@@ -453,10 +491,11 @@ export function useWorldEvents() {
               placedCatalogAssets,
               craftedScenes,
               placedAgentAvatars,
+              portalGates,
               spatialWebObjects,
               transforms,
               behaviors,
-              _loadedObjectCount: countLoadedObjects({ placedCatalogAssets, craftedScenes, worldConjuredAssetIds: state.worldConjuredAssetIds, spatialWebObjects }),
+              _loadedObjectCount: countLoadedObjects({ placedCatalogAssets, craftedScenes, worldConjuredAssetIds: state.worldConjuredAssetIds, portalGates, spatialWebObjects }),
             }
           })
           return true
@@ -469,22 +508,25 @@ export function useWorldEvents() {
             const placedCatalogAssets = state.placedCatalogAssets.filter(entry => entry.id !== objectId)
             const craftedScenes = state.craftedScenes.filter(entry => entry.id !== objectId)
             const placedAgentAvatars = state.placedAgentAvatars.filter(entry => entry.id !== objectId)
+            const portalGates = state.portalGates.filter(entry => entry.id !== objectId)
             const spatialWebObjects = state.spatialWebObjects.filter(entry => entry.id !== objectId)
+            const worldConjuredAssetIds = state.worldConjuredAssetIds.filter(id => id !== objectId)
             const { [objectId]: _removedTransform, ...transforms } = state.transforms
             const { [objectId]: _removedBehavior, ...behaviors } = state.behaviors
             const { [objectId]: _removedAudio, ...liveAgentAvatarAudio } = state.liveAgentAvatarAudio
             return {
               placedCatalogAssets,
               craftedScenes,
-              worldConjuredAssetIds: state.worldConjuredAssetIds.filter(id => id !== objectId),
+              worldConjuredAssetIds,
               placedAgentAvatars,
+              portalGates,
               spatialWebObjects,
               transforms,
               behaviors,
               liveAgentAvatarAudio,
               selectedObjectId: state.selectedObjectId === objectId ? null : state.selectedObjectId,
               inspectedObjectId: state.inspectedObjectId === objectId ? null : state.inspectedObjectId,
-              _loadedObjectCount: countLoadedObjects({ placedCatalogAssets, craftedScenes, worldConjuredAssetIds: state.worldConjuredAssetIds.filter(id => id !== objectId), spatialWebObjects }),
+              _loadedObjectCount: countLoadedObjects({ placedCatalogAssets, craftedScenes, worldConjuredAssetIds, portalGates, spatialWebObjects }),
             }
           })
           return true
@@ -508,7 +550,7 @@ export function useWorldEvents() {
               behaviors,
               selectedObjectId: state.selectedObjectId === assetId ? null : state.selectedObjectId,
               inspectedObjectId: state.inspectedObjectId === assetId ? null : state.inspectedObjectId,
-              _loadedObjectCount: countLoadedObjects({ placedCatalogAssets: state.placedCatalogAssets, craftedScenes: state.craftedScenes, worldConjuredAssetIds, spatialWebObjects: state.spatialWebObjects }),
+              _loadedObjectCount: countLoadedObjects({ placedCatalogAssets: state.placedCatalogAssets, craftedScenes: state.craftedScenes, worldConjuredAssetIds, portalGates: state.portalGates, spatialWebObjects: state.spatialWebObjects }),
             }
           })
           return true

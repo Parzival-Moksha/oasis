@@ -59,12 +59,36 @@ export interface SoundOption {
 export const SOUND_OPTIONS: Record<SoundEvent, SoundOption[]> = {
   select:       [{ id: 'click1', label: 'Click 1', path: `${UI}/click1.ogg` }, { id: 'click2', label: 'Click 2', path: `${UI}/click2.ogg` }, { id: 'click3', label: 'Click 3', path: `${UI}/click3.ogg` }, { id: 'click4', label: 'Click 4', path: `${UI}/click4.ogg` }, { id: 'click5', label: 'Click 5', path: `${UI}/click5.ogg` }],
   deselect:     [{ id: 'release1', label: 'Release', path: `${UI}/mouserelease1.ogg` }, { id: 'click3', label: 'Soft Click', path: `${UI}/click3.ogg` }],
-  place:        [{ id: 'place1', label: 'Book Place 1', path: `${RPG}/bookPlace1.ogg` }, { id: 'place2', label: 'Book Place 2', path: `${RPG}/bookPlace2.ogg` }, { id: 'place3', label: 'Book Place 3', path: `${RPG}/bookPlace3.ogg` }],
+  place:        [{ id: 'place1', label: 'Book Place 1', path: `${RPG}/bookPlace1.ogg` }, { id: 'place2', label: 'Book Place 2', path: `${RPG}/bookPlace2.ogg` }, { id: 'place3', label: 'Book Place 3', path: `${RPG}/bookPlace3.ogg` }, { id: 'dropLeather', label: 'Drop Leather', path: `${RPG}/dropLeather.ogg` }, { id: 'interfaceDrop1', label: 'Interface Drop 1', path: `${INTERFACE}/drop_001.ogg` }, { id: 'interfaceDrop2', label: 'Interface Drop 2', path: `${INTERFACE}/drop_002.ogg` }, { id: 'interfaceDrop3', label: 'Interface Drop 3', path: `${INTERFACE}/drop_003.ogg` }, { id: 'interfaceDrop4', label: 'Interface Drop 4', path: `${INTERFACE}/drop_004.ogg` }, { id: 'interfacePluck1', label: 'Interface Pluck 1', path: `${INTERFACE}/pluck_001.ogg` }, { id: 'interfacePluck2', label: 'Interface Pluck 2', path: `${INTERFACE}/pluck_002.ogg` }],
   delete:       [{ id: 'chop', label: 'Chop', path: `${RPG}/chop.ogg` }, { id: 'knife', label: 'Knife Slice', path: `${RPG}/knifeSlice.ogg` }],
   panelOpen:    [{ id: 'open1', label: 'Book Open', path: `${RPG}/bookOpen.ogg` }, { id: 'door1', label: 'Door Open', path: `${RPG}/doorOpen_1.ogg` }, { id: 'creak1', label: 'Creak', path: `${RPG}/creak1.ogg` }],
   panelClose:   [{ id: 'close1', label: 'Book Close', path: `${RPG}/bookClose.ogg` }, { id: 'door1', label: 'Door Close', path: `${RPG}/doorClose_1.ogg` }],
-  buttonClick:  [{ id: 'switch1', label: 'Switch 1', path: `${UI}/switch1.ogg` }, { id: 'switch2', label: 'Switch 2', path: `${UI}/switch2.ogg` }, { id: 'switch3', label: 'Switch 3', path: `${UI}/switch3.ogg` }, { id: 'switch4', label: 'Switch 4', path: `${UI}/switch4.ogg` }, { id: 'switch5', label: 'Switch 5', path: `${UI}/switch5.ogg` }],
-  buttonHover:  [{ id: 'roll1', label: 'Rollover 1', path: `${UI}/rollover1.ogg` }, { id: 'roll2', label: 'Rollover 2', path: `${UI}/rollover2.ogg` }, { id: 'roll3', label: 'Rollover 3', path: `${UI}/rollover3.ogg` }],
+  buttonClick:  [
+    { id: 'menuHitToggle3', label: 'Menu Hit Toggle 3', path: `${INTERFACE}/toggle_003.ogg` },
+    { id: 'menuHitToggle2', label: 'Menu Hit Toggle 2', path: `${INTERFACE}/toggle_002.ogg` },
+    { id: 'menuHitClick4', label: 'Menu Hit Click 4', path: `${INTERFACE}/click_004.ogg` },
+    { id: 'menuHitClick5', label: 'Menu Hit Click 5', path: `${INTERFACE}/click_005.ogg` },
+    { id: 'menuHitDrop1', label: 'Menu Hit Drop 1', path: `${INTERFACE}/drop_001.ogg` },
+    { id: 'menuHitDrop2', label: 'Menu Hit Drop 2', path: `${INTERFACE}/drop_002.ogg` },
+    { id: 'menuHitSelect4', label: 'Menu Hit Select 4', path: `${INTERFACE}/select_004.ogg` },
+    { id: 'menuHitSelect5', label: 'Menu Hit Select 5', path: `${INTERFACE}/select_005.ogg` },
+    { id: 'menuHitPluck2', label: 'Menu Hit Pluck 2', path: `${INTERFACE}/pluck_002.ogg` },
+    { id: 'menuConfirm1', label: 'Menu Confirm 1', path: `${INTERFACE}/confirmation_001.ogg` },
+    { id: 'menuConfirm2', label: 'Menu Confirm 2', path: `${INTERFACE}/confirmation_002.ogg` },
+    { id: 'menuOpen3', label: 'Menu Open 3', path: `${INTERFACE}/open_003.ogg` },
+  ],
+  buttonHover:  [
+    { id: 'hoverTick1', label: 'Hover Tick 1', path: `${INTERFACE}/tick_001.ogg` },
+    { id: 'hoverTick2', label: 'Hover Tick 2', path: `${INTERFACE}/tick_002.ogg` },
+    { id: 'hoverSelect1', label: 'Hover Select 1', path: `${INTERFACE}/select_001.ogg` },
+    { id: 'hoverSelect2', label: 'Hover Select 2', path: `${INTERFACE}/select_002.ogg` },
+    { id: 'hoverSelect3', label: 'Hover Select 3', path: `${INTERFACE}/select_003.ogg` },
+    { id: 'hoverSelect6', label: 'Hover Select 6', path: `${INTERFACE}/select_006.ogg` },
+    { id: 'hoverSelect7', label: 'Hover Select 7', path: `${INTERFACE}/select_007.ogg` },
+    { id: 'hoverSelect8', label: 'Hover Select 8', path: `${INTERFACE}/select_008.ogg` },
+    { id: 'hoverScroll2', label: 'Hover Scroll 2', path: `${INTERFACE}/scroll_002.ogg` },
+    { id: 'hoverScroll5', label: 'Hover Scroll 5', path: `${INTERFACE}/scroll_005.ogg` },
+  ],
   modeSwitch:   [{ id: 'sw6', label: 'Switch 6', path: `${UI}/switch6.ogg` }, { id: 'sw7', label: 'Switch 7', path: `${UI}/switch7.ogg` }, { id: 'sw8', label: 'Switch 8', path: `${UI}/switch8.ogg` }, { id: 'sw9', label: 'Switch 9', path: `${UI}/switch9.ogg` }],
   conjureStart: [{ id: 'draw1', label: 'Draw Knife 1', path: `${RPG}/drawKnife1.ogg` }, { id: 'draw2', label: 'Draw Knife 2', path: `${RPG}/drawKnife2.ogg` }, { id: 'belt', label: 'Belt Handle', path: `${RPG}/beltHandle1.ogg` }],
   conjureDone:  [{ id: 'latch', label: 'Metal Latch', path: `${RPG}/metalLatch.ogg` }, { id: 'coins', label: 'Coins', path: `${RPG}/handleCoins.ogg` }],
@@ -114,6 +138,36 @@ const DEFAULT_SELECTIONS: Record<SoundEvent, string> = Object.fromEntries(
 
 const audioCache = new Map<string, HTMLAudioElement>()
 const brokenPaths = new Set<string>()
+const lastPlayedAt = new Map<SoundEvent, number>()
+
+function getSoundCooldownMs(event: SoundEvent): number {
+  if (event === 'buttonHover') return 850
+  if (event === 'footstep') return 80
+  return 0
+}
+
+function getSoundVolumeMultiplier(event: SoundEvent): number {
+  if (event === 'buttonHover') return 0.08
+  if (event === 'buttonClick') return 0.82
+  return 1
+}
+
+function isEventStillAudible(event: SoundEvent, audio: HTMLAudioElement): boolean {
+  if (event !== 'buttonHover') return false
+  if (audio.paused || audio.ended) return false
+  const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0.45
+  return audio.currentTime < Math.min(duration, 0.45)
+}
+
+function shouldSkipForCooldown(event: SoundEvent): boolean {
+  const cooldown = getSoundCooldownMs(event)
+  if (cooldown <= 0 || typeof performance === 'undefined') return false
+  const now = performance.now()
+  const last = lastPlayedAt.get(event) || 0
+  if (now - last < cooldown) return true
+  lastPlayedAt.set(event, now)
+  return false
+}
 
 function getAudio(path: string): HTMLAudioElement {
   let audio = audioCache.get(path)
@@ -188,10 +242,23 @@ function loadSettings(): { volume: number; muted: boolean; selections: Record<So
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) {
       const parsed = JSON.parse(saved)
+      const selections = { ...DEFAULT_SELECTIONS, ...parsed.selections }
+      if (
+        typeof selections.buttonClick === 'string' &&
+        (selections.buttonClick.startsWith('switch') || selections.buttonClick.startsWith('soft') || selections.buttonClick.startsWith('menuOpen'))
+      ) {
+        selections.buttonClick = DEFAULT_SELECTIONS.buttonClick
+      }
+      if (
+        typeof selections.buttonHover === 'string' &&
+        (selections.buttonHover.startsWith('roll') || selections.buttonHover.startsWith('soft') || selections.buttonHover.startsWith('hoverSwoosh') || selections.buttonHover.startsWith('hoverScroll'))
+      ) {
+        selections.buttonHover = DEFAULT_SELECTIONS.buttonHover
+      }
       return {
         volume: parsed.volume ?? 0.5,
         muted: parsed.muted ?? false,
-        selections: { ...DEFAULT_SELECTIONS, ...parsed.selections },
+        selections,
       }
     }
   } catch {}
@@ -221,26 +288,29 @@ export const useAudioManager = create<AudioManagerState>((set, get) => {
     play: (event) => {
       const { muted, volume, selections } = get()
       if (muted || volume === 0) return
+      if (shouldSkipForCooldown(event)) return
 
       const optionId = selections[event]
       const options = SOUND_OPTIONS[event]
       const option = options.find(o => o.id === optionId) || options[0]
       if (!option) return
+      const effectiveVolume = volume * getSoundVolumeMultiplier(event)
 
       // If this sound file is known-broken, use oscillator fallback immediately
       if (brokenPaths.has(option.path)) {
-        playFallbackBeep(volume)
+        playFallbackBeep(effectiveVolume)
         return
       }
 
       const audio = getAudio(option.path)
-      audio.volume = volume
+      if (isEventStillAudible(event, audio)) return
+      audio.volume = effectiveVolume
       audio.currentTime = 0
       audio.play().catch(() => {
         // File load error -> oscillator fallback (autoplay block -> silent, that's fine)
         if (audio.error) {
           brokenPaths.add(option.path)
-          playFallbackBeep(volume)
+          playFallbackBeep(effectiveVolume)
         }
       })
     },

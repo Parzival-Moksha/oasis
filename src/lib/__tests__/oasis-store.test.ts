@@ -75,6 +75,8 @@ function resetStore() {
     _isReceivingRemoteUpdate: false,
     isViewMode: false,
     isViewModeEditable: false,
+    viewingWorldId: null,
+    viewingWorldMeta: null,
     placedCatalogAssets: [],
     portalGates: [],
     spatialWebObjects: [],
@@ -1084,6 +1086,54 @@ describe('OasisStore', () => {
       await getState().interactSpatialWebObject('spark-button')
 
       expect(getState().activePlacementVfx[0]?.position).toEqual([5, 2, -4])
+    })
+
+    it('runs world-tool actions when a spatial control changes', async () => {
+      const originalFetch = globalThis.fetch
+      const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), {
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      globalThis.fetch = fetchMock as unknown as typeof fetch
+      const toggle: SpatialWebObject = {
+        id: 'sky-switch',
+        type: 'toggle',
+        label: 'Sky Switch',
+        position: [0, 1, 0],
+        value: false,
+        action: {
+          type: 'world_tool',
+          tool: 'set_sky',
+          argsByValue: {
+            true: { presetId: 'night007' },
+            false: { presetId: 'sunny_vondelpark' },
+          },
+        },
+      }
+      useOasisStore.setState({
+        activeWorldId: 'world-spatial',
+        spatialWebObjects: [toggle],
+        worldSkyBackground: 'sunny_vondelpark',
+      })
+
+      try {
+        await getState().interactSpatialWebObject('sky-switch')
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+
+      expect(fetchMock).toHaveBeenCalledWith('/api/oasis-tools', expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          tool: 'set_sky',
+          args: { presetId: 'night007', worldId: 'world-spatial' },
+        }),
+      }))
+      expect(getState().worldSkyBackground).toBe('night007')
+      expect(getState().spatialWebObjects[0]).toMatchObject({
+        value: true,
+        lastEvent: 'change',
+        interactionCount: 1,
+      })
     })
   })
 

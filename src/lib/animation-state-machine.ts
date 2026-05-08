@@ -172,7 +172,7 @@ export class AnimationController {
     }
 
     // Already playing this state? Skip.
-    if (this.currentState === state && (state !== 'custom' || this.customAnimId === customAnimId)) {
+    if (this.currentAction && this.currentState === state && (state !== 'custom' || this.customAnimId === customAnimId)) {
       return
     }
 
@@ -189,10 +189,13 @@ export class AnimationController {
     // Adjust animation playback speed per state for foot sync
     newAction.timeScale = state === 'run' ? this.config.runTimeScale
       : state === 'sprint' ? this.config.sprintTimeScale : 1
-    newAction.fadeIn(this.config.crossfadeDuration)
-    newAction.play()
-
-    if (this.currentAction) {
+    if (!this.currentAction) {
+      newAction.setEffectiveWeight(1)
+      newAction.play()
+      this.mixer.update(0)
+    } else {
+      newAction.fadeIn(this.config.crossfadeDuration)
+      newAction.play()
       this.currentAction.fadeOut(this.config.crossfadeDuration)
     }
 

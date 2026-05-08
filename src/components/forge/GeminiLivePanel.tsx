@@ -14,6 +14,7 @@ import {
 import { getLiveObjectTransform } from '@/lib/live-object-transforms'
 import { getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
 import { useUILayer } from '@/lib/input-manager'
+import { useAudioManager } from '@/lib/audio-manager'
 import {
   base64ToBytes,
   extractPcmSampleRate,
@@ -23,6 +24,12 @@ import {
 } from '@/lib/gemini-live-audio'
 import {
   DEFAULT_GEMINI_LIVE_PANEL_SETTINGS,
+  GEMINI_LIVE_AUDIO_CHUNK_FADE_SECONDS,
+  GEMINI_LIVE_AUDIO_INITIAL_JITTER_SECONDS,
+  GEMINI_LIVE_AUDIO_MIN_QUEUE_SECONDS,
+  GEMINI_LIVE_AUDIO_STARTUP_MIN_QUEUE_SECONDS,
+  GEMINI_LIVE_AUDIO_STARTUP_SMOOTH_SECONDS,
+  GEMINI_LIVE_GO_AWAY_RECONNECT_MARGIN_MS,
   GEMINI_AGENT_TYPE,
   GEMINI_LIVE_INPUT_SAMPLE_RATE,
   GEMINI_LIVE_MODELS,
@@ -38,6 +45,7 @@ import {
   type GeminiLiveSessionSettings,
 } from '@/lib/gemini-live'
 import { useOasisStore } from '@/store/oasisStore'
+import { AvatarGallery } from './AvatarGallery'
 
 interface GeminiLivePanelProps {
   isOpen: boolean
@@ -72,13 +80,32 @@ interface GeminiFunctionCall {
 const GEMINI_TOOL_NAMES = new Set([
   'get_world_info',
   'get_world_state',
+  'list_worlds',
+  'query_objects',
   'search_assets',
+  'get_asset_catalog',
   'place_object',
   'create_spatial_web_object',
+  'create_world_from_google_form',
+  'share_world_link',
+  'create_portal_gate',
+  'modify_object',
+  'remove_object',
+  'set_sky',
+  'set_ground_preset',
+  'paint_ground_tiles',
+  'add_light',
+  'modify_light',
+  'set_behavior',
   'get_craft_guide',
+  'self_craft_scene',
   'craft_scene',
   'get_craft_job',
+  'set_avatar',
   'walk_avatar_to',
+  'list_avatar_animations',
+  'play_avatar_animation',
+  'screenshot_viewport',
 ])
 
 function makeId(prefix: string): string {
@@ -100,6 +127,39 @@ function summarizeJson(value: unknown, maxLength = 260): string {
   const raw = typeof value === 'string' ? value : JSON.stringify(value)
   if (!raw) return ''
   return raw.length > maxLength ? `${raw.slice(0, maxLength - 3)}...` : raw
+}
+
+function parseGeminiDurationMs(value: unknown, fallbackMs = 50000): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, value * 1000)
+  if (typeof value !== 'string') return fallbackMs
+  const match = value.trim().match(/^([0-9]+(?:\.[0-9]+)?)s$/i)
+  if (!match) return fallbackMs
+  return Math.max(0, Number(match[1]) * 1000)
+}
+
+function GeminiLogoMark() {
+  return (
+    <svg
+      viewBox="0 0 65 65"
+      role="img"
+      aria-label="Gemini"
+      className="h-6 w-6"
+    >
+      <defs>
+        <linearGradient id="oasis-gemini-mark-gradient" x1="8" y1="54" x2="58" y2="10" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#4285f4" />
+          <stop offset="0.25" stopColor="#34a853" />
+          <stop offset="0.52" stopColor="#fbbc04" />
+          <stop offset="0.76" stopColor="#ea4335" />
+          <stop offset="1" stopColor="#a142f4" />
+        </linearGradient>
+      </defs>
+      <path
+        fill="url(#oasis-gemini-mark-gradient)"
+        d="M32.447 0c.68 0 1.273.465 1.439 1.125a38.904 38.904 0 0 0 1.999 5.905c2.152 5 5.105 9.376 8.854 13.125 3.751 3.75 8.126 6.703 13.125 8.855a38.98 38.98 0 0 0 5.906 1.999c.66.166 1.124.758 1.124 1.438 0 .68-.464 1.273-1.125 1.439a38.902 38.902 0 0 0-5.905 1.999c-5 2.152-9.375 5.105-13.125 8.854-3.749 3.751-6.702 8.126-8.854 13.125a38.973 38.973 0 0 0-2 5.906 1.485 1.485 0 0 1-1.438 1.124c-.68 0-1.272-.464-1.438-1.125a38.913 38.913 0 0 0-2-5.905c-2.151-5-5.103-9.375-8.854-13.125-3.75-3.749-8.125-6.702-13.125-8.854a38.973 38.973 0 0 0-5.905-2A1.485 1.485 0 0 1 0 32.448c0-.68.465-1.272 1.125-1.438a38.903 38.903 0 0 0 5.905-2c5-2.151 9.376-5.104 13.125-8.854 3.75-3.749 6.703-8.125 8.855-13.125a38.972 38.972 0 0 0 1.999-5.905A1.485 1.485 0 0 1 32.447 0z"
+      />
+    </svg>
+  )
 }
 
 function gainFromDb(db: number): number {
@@ -269,6 +329,8 @@ export function GeminiLivePanel({
   hideCloseButton = false,
 }: GeminiLivePanelProps) {
   useUILayer('gemini-live', isOpen && !embedded)
+  const playHover = () => useAudioManager.getState().play('buttonHover')
+  const playClick = () => useAudioManager.getState().play('buttonClick')
 
   const [config, setConfig] = useState<GeminiLiveConfigPayload | null>(null)
   const [configError, setConfigError] = useState('')
@@ -280,6 +342,7 @@ export function GeminiLivePanel({
   const [connectionState, setConnectionState] = useState<GeminiLiveConnectionState>('idle')
   const [connectionDetail, setConnectionDetail] = useState('Idle.')
   const [session, setSession] = useState<GeminiLiveSessionPayload | null>(null)
+  const [showAvatarGallery, setShowAvatarGallery] = useState(false)
   const [messages, setMessages] = useState<GeminiTranscriptMessage[]>([
     {
       id: makeId('gemini-system'),
@@ -290,6 +353,7 @@ export function GeminiLivePanel({
     },
   ])
   const [expandedToolIds, setExpandedToolIds] = useState<string[]>([])
+  const [textDraft, setTextDraft] = useState('')
   const [listening, setListening] = useState(false)
   const [speaking, setSpeaking] = useState(false)
 
@@ -308,8 +372,12 @@ export function GeminiLivePanel({
   const outputPannerNodeRef = useRef<PannerNode | null>(null)
   const outputDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null)
   const outputScheduleTimeRef = useRef(0)
-  const outputSourcesRef = useRef<AudioBufferSourceNode[]>([])
+  const outputUtteranceStartedAtRef = useRef(0)
+  const outputSourcesRef = useRef<Array<{ source: AudioBufferSourceNode; gain: GainNode }>>([])
   const lipSyncRef = useRef<LipSyncController | null>(null)
+  const goAwayReconnectTimeoutRef = useRef<number | null>(null)
+  const goAwayWarningShownRef = useRef(false)
+  const startSessionRef = useRef<((options?: { force?: boolean; reason?: string }) => Promise<void>) | null>(null)
   const userMessageIdRef = useRef('')
   const assistantMessageIdRef = useRef('')
   const toolMessageByCallIdRef = useRef<Map<string, string>>(new Map())
@@ -319,6 +387,7 @@ export function GeminiLivePanel({
   const activeWorldName = useOasisStore(state => state.worldRegistry.find(world => world.id === state.activeWorldId)?.name || 'Current world')
   const transforms = useOasisStore(state => state.transforms)
   const geminiAvatar = useOasisStore(state => state.placedAgentAvatars.find(entry => entry.agentType === GEMINI_AGENT_TYPE) || null)
+  const assignSharedAgentAvatar = useOasisStore(state => state.assignSharedAgentAvatar)
   const enterPlacementMode = useOasisStore(state => state.enterPlacementMode)
   const startAgentWork = useOasisStore(state => state.startAgentWork)
   const setAgentWorkTool = useOasisStore(state => state.setAgentWorkTool)
@@ -391,13 +460,16 @@ export function GeminiLivePanel({
   }, [appendMessage])
 
   const clearOutputQueue = useCallback(() => {
-    for (const source of outputSourcesRef.current) {
-      try { source.stop() } catch {}
-      try { source.disconnect() } catch {}
+    for (const entry of outputSourcesRef.current) {
+      try { entry.gain.gain.cancelScheduledValues(0) } catch {}
+      try { entry.source.stop() } catch {}
+      try { entry.source.disconnect() } catch {}
+      try { entry.gain.disconnect() } catch {}
     }
     outputSourcesRef.current = []
     const ctx = outputAudioContextRef.current
     outputScheduleTimeRef.current = ctx ? ctx.currentTime : 0
+    outputUtteranceStartedAtRef.current = 0
     setSpeaking(false)
   }, [])
 
@@ -468,7 +540,8 @@ export function GeminiLivePanel({
       gainNode.connect(ctx.destination)
     }
     gainNode.connect(destination)
-  }, [panelSettings.gainDb, panelSettings.spatialAudioEnabled, syncSpatialAudioFrame])
+    attachOutputStreamToLipSync(destination.stream)
+  }, [attachOutputStreamToLipSync, panelSettings.gainDb, panelSettings.spatialAudioEnabled, syncSpatialAudioFrame])
 
   const ensureOutputAudioContext = useCallback(async () => {
     if (typeof window === 'undefined') return null
@@ -512,20 +585,49 @@ export function GeminiLivePanel({
     const buffer = ctx.createBuffer(1, samples.length, sampleRate)
     buffer.copyToChannel(samples, 0)
     const source = ctx.createBufferSource()
+    const chunkGain = ctx.createGain()
+    const hadQueuedOutput = outputSourcesRef.current.length > 0
     source.buffer = buffer
-    source.connect(gainNode)
-    outputSourcesRef.current.push(source)
+    source.connect(chunkGain)
+    chunkGain.connect(gainNode)
+    outputSourcesRef.current.push({ source, gain: chunkGain })
     source.onended = () => {
-      outputSourcesRef.current = outputSourcesRef.current.filter(entry => entry !== source)
+      outputSourcesRef.current = outputSourcesRef.current.filter(entry => entry.source !== source)
       try { source.disconnect() } catch {}
-      if (outputSourcesRef.current.length === 0) setSpeaking(false)
+      try { chunkGain.disconnect() } catch {}
+      if (outputSourcesRef.current.length === 0) {
+        outputUtteranceStartedAtRef.current = 0
+        setSpeaking(false)
+      }
     }
 
-    const startAt = Math.max(ctx.currentTime + 0.02, outputScheduleTimeRef.current)
+    const now = ctx.currentTime
+    const hasWarmQueue = hadQueuedOutput && outputScheduleTimeRef.current > now
+    if (!hadQueuedOutput || outputUtteranceStartedAtRef.current === 0) {
+      outputUtteranceStartedAtRef.current = now
+    }
+    const isStartupSmoothing = now - outputUtteranceStartedAtRef.current < GEMINI_LIVE_AUDIO_STARTUP_SMOOTH_SECONDS
+    const targetLead = hadQueuedOutput
+      ? (isStartupSmoothing ? GEMINI_LIVE_AUDIO_STARTUP_MIN_QUEUE_SECONDS : GEMINI_LIVE_AUDIO_MIN_QUEUE_SECONDS)
+      : GEMINI_LIVE_AUDIO_INITIAL_JITTER_SECONDS
+    const startAt = hasWarmQueue
+      ? outputScheduleTimeRef.current
+      : Math.max(now + targetLead, outputScheduleTimeRef.current)
+    const endAt = startAt + buffer.duration
+    const fadeSeconds = Math.min(GEMINI_LIVE_AUDIO_CHUNK_FADE_SECONDS, Math.max(0.001, buffer.duration / 3))
+    chunkGain.gain.cancelScheduledValues(startAt)
+    if (hasWarmQueue) {
+      chunkGain.gain.setValueAtTime(1, startAt)
+    } else {
+      chunkGain.gain.setValueAtTime(0, startAt)
+      chunkGain.gain.linearRampToValueAtTime(1, startAt + fadeSeconds)
+    }
+    chunkGain.gain.setValueAtTime(1, endAt)
+    attachOutputStreamToLipSync(outputDestinationRef.current?.stream || null)
     source.start(startAt)
-    outputScheduleTimeRef.current = startAt + buffer.duration
+    outputScheduleTimeRef.current = endAt
     setSpeaking(true)
-  }, [ensureOutputAudioContext])
+  }, [attachOutputStreamToLipSync, ensureOutputAudioContext])
 
   const stopMicrophone = useCallback(() => {
     const ws = websocketRef.current
@@ -580,6 +682,11 @@ export function GeminiLivePanel({
 
   const disconnect = useCallback((options?: { silent?: boolean }) => {
     connectAttemptRef.current += 1
+    if (goAwayReconnectTimeoutRef.current != null && typeof window !== 'undefined') {
+      window.clearTimeout(goAwayReconnectTimeoutRef.current)
+      goAwayReconnectTimeoutRef.current = null
+    }
+    goAwayWarningShownRef.current = false
     const activeSession = sessionRef.current
     stopMicrophone()
     stopOutputAudio()
@@ -668,10 +775,32 @@ export function GeminiLivePanel({
     for (const call of calls) {
       const toolArgs: Record<string, unknown> = { ...call.args }
       if (!toolArgs.worldId && activeWorldId) toolArgs.worldId = activeWorldId
-      if (call.name === 'walk_avatar_to' && !toolArgs.agentType && !toolArgs.agent) {
+      if ((
+        call.name === 'set_avatar'
+        || call.name === 'walk_avatar_to'
+        || call.name === 'play_avatar_animation'
+        || call.name === 'screenshot_viewport'
+        || call.name === 'create_portal_gate'
+      ) && !toolArgs.agentType && !toolArgs.agent && !toolArgs.avatarId) {
         toolArgs.agentType = GEMINI_AGENT_TYPE
       }
-      if ((call.name === 'place_object' || call.name === 'create_spatial_web_object' || call.name === 'craft_scene') && !toolArgs.actorAgentType) {
+      if ((
+        call.name === 'place_object'
+        || call.name === 'create_spatial_web_object'
+        || call.name === 'create_portal_gate'
+        || call.name === 'modify_object'
+        || call.name === 'remove_object'
+        || call.name === 'craft_scene'
+        || call.name === 'self_craft_scene'
+        || call.name === 'set_sky'
+        || call.name === 'set_ground_preset'
+        || call.name === 'paint_ground_tiles'
+        || call.name === 'add_light'
+        || call.name === 'modify_light'
+        || call.name === 'set_behavior'
+        || call.name === 'set_avatar'
+        || call.name === 'play_avatar_animation'
+      ) && !toolArgs.actorAgentType) {
         toolArgs.actorAgentType = GEMINI_AGENT_TYPE
       }
 
@@ -756,6 +885,7 @@ export function GeminiLivePanel({
       setConnectionState('connected')
       setConnectionDetail('Gemini Live is connected. Speak now.')
       appendMessage({ role: 'system', content: 'Gemini Live setup complete. Microphone is streaming.', status: 'done' })
+      attachOutputStreamToLipSync(outputDestinationRef.current?.stream || null)
       try {
         await startMicrophone(ws, attempt)
       } catch (error) {
@@ -776,7 +906,20 @@ export function GeminiLivePanel({
     }
 
     if (payload.goAway && typeof payload.goAway === 'object') {
-      appendMessage({ role: 'system', content: `Gemini goAway: ${JSON.stringify(payload.goAway)}`, status: 'done' })
+      const goAway = payload.goAway as Record<string, unknown>
+      const timeLeftMs = parseGeminiDurationMs(goAway.timeLeft)
+      if (!goAwayWarningShownRef.current) {
+        goAwayWarningShownRef.current = true
+        appendMessage({ role: 'system', content: `Gemini goAway: ${JSON.stringify(goAway)}. Rolling reconnect armed.`, status: 'done' })
+      }
+      if (typeof window !== 'undefined' && goAwayReconnectTimeoutRef.current == null) {
+        const reconnectDelayMs = Math.max(1000, timeLeftMs - GEMINI_LIVE_GO_AWAY_RECONNECT_MARGIN_MS)
+        goAwayReconnectTimeoutRef.current = window.setTimeout(() => {
+          goAwayReconnectTimeoutRef.current = null
+          appendMessage({ role: 'system', content: 'Renewing Gemini Live socket before the server closes this session.', status: 'done' })
+          void startSessionRef.current?.({ force: true, reason: 'Gemini Live rolling reconnect.' })
+        }, reconnectDelayMs)
+      }
     }
 
     if (payload.toolCallCancellation && typeof payload.toolCallCancellation === 'object') {
@@ -851,7 +994,8 @@ export function GeminiLivePanel({
     for (const part of parts) {
       if (!part || typeof part !== 'object') continue
       const record = part as Record<string, unknown>
-      if (typeof record.text === 'string' && record.text) {
+      const isThoughtPart = record.thought === true || typeof record.thoughtSignature === 'string'
+      if (!outputText && !isThoughtPart && typeof record.text === 'string' && record.text) {
         const messageId = ensureAssistantMessage()
         updateMessage(messageId, message => ({
           ...message,
@@ -886,6 +1030,7 @@ export function GeminiLivePanel({
     }
   }, [
     appendMessage,
+    attachOutputStreamToLipSync,
     clearOutputQueue,
     ensureAssistantMessage,
     ensureUserMessage,
@@ -895,12 +1040,13 @@ export function GeminiLivePanel({
     updateMessage,
   ])
 
-  const startSession = useCallback(async () => {
-    if (connectionState === 'starting' || connectionState === 'connected') return
+  const startSession = useCallback(async (options?: { force?: boolean; reason?: string }) => {
+    if (!options?.force && (connectionState === 'starting' || connectionState === 'connected')) return
     disconnect({ silent: true })
     const attempt = connectAttemptRef.current
+    goAwayWarningShownRef.current = false
     setConnectionState('starting')
-    setConnectionDetail('Minting Gemini Live token.')
+    setConnectionDetail(options?.reason || 'Minting Gemini Live token.')
     setSession(null)
     sessionRef.current = null
 
@@ -1006,6 +1152,25 @@ export function GeminiLivePanel({
     stopMicrophone,
     systemPrompt,
   ])
+
+  useEffect(() => {
+    startSessionRef.current = startSession
+  }, [startSession])
+
+  const sendTextTurn = useCallback(() => {
+    const text = textDraft.trim()
+    const ws = websocketRef.current
+    if (!text || !ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({
+      clientContent: {
+        turns: [{ role: 'user', parts: [{ text }] }],
+        turnComplete: true,
+      },
+    }))
+    appendMessage({ role: 'user', content: text, status: 'done' })
+    setTextDraft('')
+    setConnectionDetail('Sent text turn to Gemini Live.')
+  }, [appendMessage, textDraft])
 
   const placeGeminiWindow = useCallback(() => {
     enterPlacementMode({
@@ -1142,7 +1307,11 @@ export function GeminiLivePanel({
   const tabButton = (tab: GeminiPanelTab, label: string) => (
     <button
       type="button"
-      onClick={() => setActiveTab(tab)}
+      onMouseEnter={playHover}
+      onClick={() => {
+        playClick()
+        setActiveTab(tab)
+      }}
       className="rounded-lg border px-3 py-1.5 text-[10px] font-mono uppercase tracking-[0.14em] transition"
       style={{
         borderColor: activeTab === tab ? 'rgba(34,211,238,0.42)' : 'rgba(148,163,184,0.18)',
@@ -1156,7 +1325,7 @@ export function GeminiLivePanel({
 
   const streamTab = (
     <>
-      <div className="border-b px-4 py-3" style={{ borderColor: 'rgba(34,211,238,0.12)', background: 'rgba(2,6,23,0.22)' }}>
+      <div className="shrink-0 border-b px-4 py-3" style={{ borderColor: 'rgba(34,211,238,0.12)', background: 'rgba(2,6,23,0.22)' }}>
         <div className="flex flex-wrap items-center gap-2 text-[11px] text-cyan-100/62">
           <span>env: {configured ? 'configured' : 'missing'}</span>
           <span>transport: {session?.transport || 'idle'}</span>
@@ -1173,6 +1342,13 @@ export function GeminiLivePanel({
         {messages.map(message => {
           const tone = messageTone(message.role)
           const expanded = expandedToolIds.includes(message.id)
+          const toolSummary = message.role === 'tool'
+            ? message.toolState === 'failed'
+              ? `failed: ${summarizeJson(message.toolOutput, 150) || message.toolInputSummary || message.toolName || 'tool call'}`
+              : message.toolState === 'done'
+                ? summarizeJson(message.toolOutput, 150) || message.toolInputSummary || message.toolName || 'tool call'
+                : message.toolInputSummary || message.toolName || 'tool call'
+            : ''
           return (
             <div
               key={message.id}
@@ -1193,7 +1369,7 @@ export function GeminiLivePanel({
                     className="w-full rounded-lg border px-2 py-1.5 text-left text-[11px] text-amber-100/82"
                     style={{ borderColor: 'rgba(245,158,11,0.22)', background: 'rgba(15,23,42,0.3)' }}
                   >
-                    {message.toolInputSummary || message.toolName || 'tool call'}
+                    {toolSummary}
                   </button>
                   {expanded && (
                     <pre className="mt-2 max-h-56 overflow-auto rounded-lg border p-2 text-[10px] leading-4 text-cyan-50/78" style={{ borderColor: 'rgba(148,163,184,0.18)', background: 'rgba(2,6,23,0.42)' }}>
@@ -1209,9 +1385,47 @@ export function GeminiLivePanel({
         })}
       </div>
 
-      <div className="border-t px-4 py-4" style={{ borderColor: 'rgba(34,211,238,0.12)', background: 'rgba(2,6,23,0.32)' }}>
+      <div className="shrink-0 border-t px-4 py-4" style={{ borderColor: 'rgba(34,211,238,0.12)', background: 'rgba(2,6,23,0.32)' }}>
+        <div className="mb-3 flex gap-2">
+          <textarea
+            value={textDraft}
+            disabled={connectionState !== 'connected'}
+            onChange={event => setTextDraft(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                sendTextTurn()
+              }
+            }}
+            placeholder={connectionState === 'connected' ? 'Paste or type to Gemini...' : 'Start conversation to type...'}
+            className="min-h-[46px] flex-1 resize-none rounded-lg border px-3 py-2 text-xs leading-4 outline-none disabled:opacity-45"
+            style={{ borderColor: 'rgba(34,211,238,0.2)', background: 'rgba(8,13,24,0.92)', color: '#ecfeff' }}
+          />
+          <button
+            type="button"
+            onMouseEnter={playHover}
+            onClick={() => {
+              playClick()
+              sendTextTurn()
+            }}
+            disabled={connectionState !== 'connected' || !textDraft.trim()}
+            className="shrink-0 rounded-lg border px-3 text-[10px] font-mono uppercase tracking-[0.14em] transition disabled:opacity-40"
+            style={{ borderColor: 'rgba(34,211,238,0.28)', background: 'rgba(14,116,144,0.22)', color: '#cffafe' }}
+          >
+            send
+          </button>
+        </div>
         <button
-          onClick={connectionState === 'connected' || connectionState === 'starting' ? () => disconnect() : startSession}
+          onMouseEnter={playHover}
+          onClick={connectionState === 'connected' || connectionState === 'starting'
+            ? () => {
+                playClick()
+                disconnect()
+              }
+            : () => {
+                playClick()
+                void startSession()
+              }}
           disabled={connectionState === 'connected' || connectionState === 'starting' ? false : !canStart}
           className="w-full rounded-xl border px-4 py-3 text-sm font-bold uppercase tracking-[0.16em] transition disabled:opacity-40"
           style={{
@@ -1272,7 +1486,11 @@ export function GeminiLivePanel({
       </label>
 
       <button
-        onClick={placeGeminiWindow}
+        onMouseEnter={playHover}
+        onClick={() => {
+          playClick()
+          placeGeminiWindow()
+        }}
         className="rounded-lg border px-3 py-2 text-[10px] font-mono uppercase tracking-[0.14em] transition hover:-translate-y-0.5"
         style={{ borderColor: 'rgba(16,185,129,0.28)', background: 'rgba(6,78,59,0.22)', color: '#bbf7d0' }}
       >
@@ -1283,6 +1501,27 @@ export function GeminiLivePanel({
 
   const settingsTab = (
     <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+      <div className="rounded-lg border px-3 py-3" style={{ borderColor: 'rgba(34,211,238,0.18)', background: 'rgba(8,13,24,0.92)' }}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[10px] font-mono uppercase tracking-[0.16em] text-cyan-100/60">avatar</div>
+            <div className="truncate text-[12px] text-cyan-50/82">{geminiAvatar?.avatar3dUrl || 'Default Gemini avatar'}</div>
+          </div>
+          <button
+            type="button"
+            onMouseEnter={playHover}
+            onClick={() => {
+              playClick()
+              setShowAvatarGallery(true)
+            }}
+            className="shrink-0 rounded-lg border px-3 py-2 text-[10px] font-mono uppercase tracking-[0.14em] transition hover:-translate-y-0.5"
+            style={{ borderColor: 'rgba(34,211,238,0.28)', background: 'rgba(14,116,144,0.22)', color: '#cffafe' }}
+          >
+            choose
+          </button>
+        </div>
+      </div>
+
       <label className="block text-[10px] font-mono uppercase tracking-[0.16em] text-cyan-100/60">
         bg color
         <input
@@ -1345,6 +1584,12 @@ export function GeminiLivePanel({
     </div>
   )
 
+  const activeTabContent = activeTab === 'stream'
+    ? streamTab
+    : activeTab === 'config'
+      ? configTab
+      : settingsTab
+
   const panelBody = (
     <div
       data-ui-panel=""
@@ -1352,18 +1597,20 @@ export function GeminiLivePanel({
       style={{
         ...containerStyle,
         borderColor: 'rgba(34,211,238,0.22)',
-        background: rgbaFromHex(panelSettings.bgColor, panelSettings.opacity),
+        background: embedded ? panelSettings.bgColor : rgbaFromHex(panelSettings.bgColor, panelSettings.opacity),
         boxShadow: embedded ? 'none' : '0 22px 80px rgba(0,0,0,0.55), 0 0 40px rgba(34,211,238,0.16)',
         color: '#e0f2fe',
+        isolation: 'isolate',
+        transform: 'translateZ(0)',
       }}
     >
       <audio ref={audioRef} autoPlay playsInline className="hidden" />
 
-      <div className="flex items-center justify-between gap-3 border-b px-4 py-3" style={{ borderColor: 'rgba(34,211,238,0.16)' }}>
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3" style={{ borderColor: 'rgba(34,211,238,0.16)' }}>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg border text-sm font-black" style={{ borderColor: 'rgba(34,211,238,0.34)', color: '#67e8f9', background: 'rgba(8,51,68,0.3)' }}>
-              G
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg border" style={{ borderColor: 'rgba(255,255,255,0.22)', background: 'rgba(255,255,255,0.08)' }}>
+              <GeminiLogoMark />
             </div>
             <div>
               <div className="text-sm font-black uppercase tracking-[0.18em] text-cyan-100">Gemini Live Lab</div>
@@ -1375,7 +1622,11 @@ export function GeminiLivePanel({
           <StatusBadge state={connectionState} listening={listening} speaking={speaking} />
           {!hideCloseButton && !embedded && (
             <button
-              onClick={onClose}
+              onMouseEnter={playHover}
+              onClick={() => {
+                playClick()
+                onClose()
+              }}
               className="rounded-lg border px-2 py-1 text-xs text-cyan-100/70 transition hover:text-white"
               style={{ borderColor: 'rgba(148,163,184,0.2)', background: 'rgba(15,23,42,0.35)' }}
               aria-label="Close Gemini Live lab"
@@ -1386,17 +1637,30 @@ export function GeminiLivePanel({
         </div>
       </div>
 
-      <div className="flex gap-2 border-b px-4 py-3" style={{ borderColor: 'rgba(34,211,238,0.12)', background: 'rgba(2,6,23,0.24)' }}>
+      <div className="flex shrink-0 flex-wrap gap-2 border-b px-4 py-3" style={{ borderColor: 'rgba(34,211,238,0.12)', background: 'rgba(2,6,23,0.24)' }}>
         {tabButton('stream', 'stream')}
         {tabButton('config', 'config')}
         {tabButton('settings', 'settings')}
       </div>
 
-      {activeTab === 'stream' ? streamTab : activeTab === 'config' ? configTab : settingsTab}
+      <div key={activeTab} className="min-h-0 flex flex-1 flex-col overflow-hidden">
+        {activeTabContent}
+      </div>
     </div>
   )
 
-  if (embedded) return panelBody
+  const avatarGallery = showAvatarGallery ? (
+    <AvatarGallery
+      currentAvatarUrl={geminiAvatar?.avatar3dUrl || null}
+      onSelect={avatarUrl => {
+        assignSharedAgentAvatar(GEMINI_AGENT_TYPE, avatarUrl)
+        setShowAvatarGallery(false)
+      }}
+      onClose={() => setShowAvatarGallery(false)}
+    />
+  ) : null
+
+  if (embedded) return <>{panelBody}{avatarGallery}</>
   if (!isOpen || typeof document === 'undefined') return null
-  return createPortal(panelBody, document.body)
+  return createPortal(<>{panelBody}{avatarGallery}</>, document.body)
 }

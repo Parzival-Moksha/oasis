@@ -22,11 +22,23 @@ export interface SpatialWebOption {
 }
 
 export interface SpatialWebAction {
-  type: 'none' | 'submit_form' | 'set_value' | 'spawn_vfx'
+  type: 'none' | 'submit_form' | 'set_value' | 'spawn_vfx' | 'world_tool'
   endpoint?: string
   successMessage?: string
+  destination?: SpatialWebSubmitDestination
   targetObjectId?: string
   value?: SpatialWebValue
+  tool?: string
+  args?: Record<string, unknown>
+  argsByValue?: Record<string, Record<string, unknown>>
+}
+
+export interface SpatialWebSubmitDestination {
+  type: 'local' | 'google_form' | 'webhook'
+  formUrl?: string
+  responseUrl?: string
+  fieldMap?: Record<string, string>
+  webhookUrl?: string
 }
 
 export interface SpatialWebObject {
@@ -66,6 +78,7 @@ export interface SpatialWebSubmissionPayload {
   formId: string
   submittedAt: string
   fields: SpatialWebSubmissionField[]
+  destination?: SpatialWebSubmitDestination
 }
 
 export function makeSpatialWebId(prefix = 'spatial-web'): string {

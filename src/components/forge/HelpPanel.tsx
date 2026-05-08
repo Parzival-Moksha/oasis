@@ -5,16 +5,24 @@
 // "Right View: seeing clearly before acting."
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { useState, useRef, useEffect, useCallback, useContext } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { SettingsContext } from '../scene-lib'
 import { QUESTS, QUEST_IDS, getQuestProgress, completedQuestCount } from '@/lib/quests'
 import { useUILayer } from '@/lib/input-manager'
 import type { QuestId } from '@/lib/quests'
 
 type Tab = 'controls' | 'guide' | 'glossary'
 
-const DEFAULT_POS = { x: 16, y: 220 }
+const DEFAULT_POS = { x: 244, y: 328 }
+
+function normalizeHelpPosition(value: unknown): { x: number; y: number } {
+  if (!value || typeof value !== 'object') return DEFAULT_POS
+  const pos = value as { x?: unknown; y?: unknown }
+  if (typeof pos.x !== 'number' || typeof pos.y !== 'number') return DEFAULT_POS
+  if (!Number.isFinite(pos.x) || !Number.isFinite(pos.y)) return DEFAULT_POS
+  if (pos.x < 232) return DEFAULT_POS
+  return { x: pos.x, y: pos.y }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONTROLS TAB — keyboard & mouse reference
@@ -30,7 +38,7 @@ const SHORTCUTS: ShortcutRow[] = [
   // Mouse
   { keys: ['Left Click'], action: 'Select object', category: 'mouse' },
   { keys: ['Left Drag'], action: 'Orbit camera', category: 'mouse' },
-  { keys: ['Right Click'], action: 'Unlock pointer (FPS)', category: 'mouse' },
+  { keys: ['Right Click'], action: 'Secondary action', category: 'mouse' },
   { keys: ['Scroll'], action: 'Zoom in / out', category: 'mouse' },
 
   // Camera
@@ -51,7 +59,7 @@ const SHORTCUTS: ShortcutRow[] = [
   { keys: ['Ctrl', 'Shift', 'Z'], action: 'Redo', category: 'building' },
 
   // General
-  { keys: ['Esc'], action: 'Cancel / Deselect / Close', category: 'general' },
+  { keys: ['Esc'], action: 'Unlock pointer / Cancel / Close', category: 'general' },
   { keys: ['Ctrl', 'Shift', 'P'], action: 'Panorama screenshot', category: 'general' },
 ]
 
@@ -323,8 +331,6 @@ function GlossaryTab() {
 
 export function HelpPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   useUILayer('help', isOpen)
-  const { settings } = useContext(SettingsContext)
-
   const [tab, setTab] = useState<Tab>('controls')
 
   // Dragging (same pattern as FeedbackPanel)
@@ -332,7 +338,7 @@ export function HelpPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
     if (typeof window === 'undefined') return DEFAULT_POS
     try {
       const saved = localStorage.getItem('oasis-help-pos')
-      return saved ? JSON.parse(saved) : DEFAULT_POS
+      return saved ? normalizeHelpPosition(JSON.parse(saved)) : DEFAULT_POS
     } catch { return DEFAULT_POS }
   })
   const [isDragging, setIsDragging] = useState(false)
@@ -382,7 +388,7 @@ export function HelpPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
         left: position.x,
         top: position.y,
         width: 380,
-        opacity: settings.uiOpacity,
+        opacity: 0.8,
       }}
     >
       <div
@@ -417,7 +423,7 @@ export function HelpPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
 
         {/* ── Tab bar ── */}
         <div
-          className="flex px-2 pt-2 gap-1"
+          className="hidden"
           style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}
         >
           {TABS.map(t => (

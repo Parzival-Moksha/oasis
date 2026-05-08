@@ -90,9 +90,7 @@ function clearMouseLookAccumulator() {
   updateMouseLookQueueDebug()
 }
 
-function accumulateMouseLookDelta(event: Pick<MouseEvent, 'movementX' | 'movementY' | 'timeStamp'>) {
-  const state = useInputManager.getState()
-  if (!state.pointerLocked || !state.can().mouseLook) return
+function queueMouseLookDelta(event: Pick<MouseEvent, 'movementX' | 'movementY' | 'timeStamp'>) {
   if (!Number.isFinite(event.movementX) || !Number.isFinite(event.movementY)) return
   const clampedX = clampMouseLookDelta(event.movementX, MAX_MOUSE_LOOK_EVENT_DELTA)
   const clampedY = clampMouseLookDelta(event.movementY, MAX_MOUSE_LOOK_EVENT_DELTA)
@@ -113,6 +111,22 @@ function accumulateMouseLookDelta(event: Pick<MouseEvent, 'movementX' | 'movemen
   mouseLookAccumulator.sampleCount += 1
 
   updateMouseLookQueueDebug()
+}
+
+function accumulateMouseLookDelta(event: Pick<MouseEvent, 'movementX' | 'movementY' | 'timeStamp'>) {
+  const state = useInputManager.getState()
+  if (!state.pointerLocked || !state.can().mouseLook) return
+  queueMouseLookDelta(event)
+}
+
+export function pushMouseLookDelta(x: number, y: number, timeStamp?: number): void {
+  const state = useInputManager.getState()
+  if (!state.can().mouseLook) return
+  queueMouseLookDelta({
+    movementX: x,
+    movementY: y,
+    timeStamp: timeStamp ?? getMouseLookNow(),
+  } as Pick<MouseEvent, 'movementX' | 'movementY' | 'timeStamp'>)
 }
 
 export function consumeMouseLookDelta(): { x: number; y: number } {
@@ -327,11 +341,8 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
       document.activeElement.blur()
     }
-    // Re-acquire pointer lock while still inside the user's click/key gesture.
-    // Firefox rejects delayed pointer-lock requests much more aggressively than Chrome.
-    if (prev === 'noclip' || prev === 'third-person') {
-      get().requestPointerLock()
-    }
+    // Do not auto-reacquire pointer lock after closing UI. The user should
+    // explicitly click back into the scene to hand mouse-look to the camera.
   },
 
   handleEscape: () => {
@@ -344,10 +355,8 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
       document.activeElement.blur()
     }
-    // Re-acquire pointer lock while still inside the Escape key gesture.
-    if (prev === 'noclip' || prev === 'third-person') {
-      get().requestPointerLock()
-    }
+    // Escape returns to the previous mode, but never re-locks the pointer.
+    // Browser pointer lock is opt-in again on the next canvas click.
     return true
   },
 
@@ -364,11 +373,8 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
         document.exitPointerLock()
       }
       set({ inputState: mode })
-      // Auto-request pointer lock when switching TO noclip or TPS. This must
-      // stay synchronous with the user gesture, especially in Firefox.
-      if (mode === 'noclip' || mode === 'third-person') {
-        get().requestPointerLock()
-      }
+      // Switching modes changes capabilities only. Mouse-look starts after an
+      // explicit canvas click, so menus and settings never steal the pointer.
     } else if (isTemporary) {
       // In placement/paint: update the _previousCameraState so when the
       // temporary mode ends, it returns to the newly selected camera mode
@@ -487,11 +493,8 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
       accumulateMouseLookDelta(event as MouseEvent)
     }
 
-    const onRightClick = (e: MouseEvent) => {
-      // Right-click releases pointer lock (noclip/TPS convention)
-      if (e.button === 2 && get().pointerLocked) {
-        lastPointerLockRightClickAt = getMouseLookNow()
-        e.preventDefault()
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && get().pointerLocked) {
         document.exitPointerLock()
       }
     }
@@ -540,7 +543,7 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
 
     document.addEventListener('pointerlockchange', onPointerLockChange)
     document.addEventListener(mouseLookEvent, onMouseLookMove)
-    document.addEventListener('mousedown', onRightClick)
+    document.addEventListener('keydown', onKeyDown)
     document.addEventListener('contextmenu', onContextMenu)
     document.addEventListener('focusin', onFocusIn)
     document.addEventListener('focusout', onFocusOut)
@@ -548,7 +551,7 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     return () => {
       document.removeEventListener('pointerlockchange', onPointerLockChange)
       document.removeEventListener(mouseLookEvent, onMouseLookMove)
-      document.removeEventListener('mousedown', onRightClick)
+      document.removeEventListener('keydown', onKeyDown)
       document.removeEventListener('contextmenu', onContextMenu)
       document.removeEventListener('focusin', onFocusIn)
       document.removeEventListener('focusout', onFocusOut)

@@ -26,7 +26,17 @@ import { ASSET_CATALOG } from '@/components/scene-lib/constants'
 import type { WorldState } from '../forge/world-persistence'
 import type { CatalogPlacement, CraftedScene, WorldLight } from '../conjure/types'
 import type { ConjuredAsset, PostProcessAction, ProviderName } from '../conjure/types'
-import type { SpatialWebObject, SpatialWebObjectType, SpatialWebOption, SpatialWebValue, SpatialWebVisualStyle } from '../spatial-web'
+import type { SpatialWebObject, SpatialWebObjectType, SpatialWebOption, SpatialWebSubmitDestination, SpatialWebValue, SpatialWebVisualStyle } from '../spatial-web'
+import { googleFormSpecToSpatialWebObjects, parseGoogleFormHtml } from '../google-form-spatial'
+import {
+  PORTAL_GATE_VARIANTS,
+  WELCOME_HUB_WORLD_ID,
+  layoutPortalAreaGates,
+  portalRotationTowardCenter,
+  type PortalAction,
+  type PortalGate,
+  type PortalGateVariant,
+} from '../portal-gates'
 import { getAllAssets, getAssetById, updateAsset } from '../conjure/registry'
 import { emitWorldEvent } from './world-events'
 import { readWorldPlayerContext } from '../world-runtime-context'
@@ -61,9 +71,33 @@ const INTERNAL_OASIS_BASE_URL = process.env.OASIS_URL || 'http://127.0.0.1:4516'
 const LOCAL_USER_ID = process.env.ADMIN_USER_ID || 'local-user'
 const SPATIAL_WEB_OBJECT_TYPES: SpatialWebObjectType[] = ['button', 'toggle', 'slider', 'select', 'multiselect', 'text', 'output']
 const SPATIAL_WEB_VISUAL_STYLES: SpatialWebVisualStyle[] = ['neon-panel', 'arcade-button', 'glass-slider', 'terminal-panel']
+const DEFAULT_PORTAL_GATE_VARIANT: PortalGateVariant = 'threshold-ring'
+const SHAREABLE_WORLD_VISIBILITIES = new Set(['unlisted', 'public', 'public_edit', 'private'])
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+}
+
+function validWorldVisibility(value: unknown, fallback = 'unlisted'): string {
+  const requested = validStr(value, '').trim().toLowerCase()
+  return SHAREABLE_WORLD_VISIBILITIES.has(requested) ? requested : fallback
+}
+
+function resolveOasisPublicBaseUrl(value?: unknown): string {
+  const requested = validStr(value, '').trim()
+  const envUrl = process.env.OASIS_PUBLIC_URL
+    || process.env.NEXT_PUBLIC_APP_URL
+    || process.env.NEXT_PUBLIC_OASIS_URL
+    || INTERNAL_OASIS_BASE_URL
+  return (requested || envUrl).replace(/\/+$/, '')
+}
+
+function buildWorldUrl(worldId: string, publicBaseUrl?: unknown): string {
+  return `${resolveOasisPublicBaseUrl(publicBaseUrl)}/w/${encodeURIComponent(worldId)}`
+}
+
+function buildQrCodeUrl(url: string): string {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(url)}`
 }
 
 function parseVec3Like(v: unknown): [number, number, number] | null {
@@ -136,6 +170,13 @@ function validSpatialWebVisualStyle(value: unknown): SpatialWebVisualStyle | und
   return SPATIAL_WEB_VISUAL_STYLES.includes(requested as SpatialWebVisualStyle)
     ? requested as SpatialWebVisualStyle
     : undefined
+}
+
+function validPortalGateVariant(value: unknown, fallback: PortalGateVariant = DEFAULT_PORTAL_GATE_VARIANT): PortalGateVariant {
+  const requested = validStr(value, '').trim().toLowerCase()
+  return PORTAL_GATE_VARIANTS.includes(requested as PortalGateVariant)
+    ? requested as PortalGateVariant
+    : fallback
 }
 
 function validSpatialWebValue(value: unknown, fallback: SpatialWebValue = null): SpatialWebValue {
@@ -322,6 +363,74 @@ function countWorldObjects(state: Pick<WorldState, 'conjuredAssetIds' | 'catalog
     (state.spatialWebObjects?.length || 0)
 }
 
+async function listVisibleToolWorlds(): Promise<ToolWorldRow[]> {
+  const context = currentToolContext()
+  const access = toolAccessContext(context)
+  const worlds = await prisma.world.findMany({
+    select: { id: true, userId: true, name: true, icon: true, visibility: true, objectCount: true, updatedAt: true },
+    where: context.mode === 'hosted' && !context.system && !context.admin
+      ? {
+          OR: [
+            { userId: context.userId },
+            { visibility: { in: DISCOVERABLE_VISIBILITIES } },
+          ],
+        }
+      : undefined,
+    orderBy: { updatedAt: 'desc' },
+  })
+  return worlds.filter(world => canDiscoverWorld(access, toToolAccessSubject(world)))
+}
+
+async function readToolWorldRow(worldId: string, intent: 'read' | 'write' = 'read'): Promise<ToolWorldRow | null> {
+  const world = await prisma.world.findFirst({
+    where: { id: worldId },
+    select: { id: true, userId: true, name: true, icon: true, visibility: true, data: true, objectCount: true, updatedAt: true },
+  })
+  if (!world) return null
+  const subject = toToolAccessSubject(world)
+  if (intent === 'write') {
+    const writeDecision = getWorldWriteDecision(toolAccessContext(), subject)
+    if (writeDecision === 'deny') return null
+  } else if (!canReadWorld(toolAccessContext(), subject)) {
+    return null
+  }
+  return world
+}
+
+function normalizeWorldSearchText(value: unknown): string {
+  return validStr(value, '').trim().toLowerCase().replace(/[_-]+/g, ' ')
+}
+
+function scoreWorldSearchMatch(world: ToolWorldRow, query: string): number {
+  const normalizedQuery = normalizeWorldSearchText(query)
+  if (!normalizedQuery) return 1
+  const name = normalizeWorldSearchText(world.name || '')
+  const id = normalizeWorldSearchText(world.id)
+  if (name === normalizedQuery || id === normalizedQuery) return 100
+  if (name.includes(normalizedQuery)) return 80
+  if (id.includes(normalizedQuery)) return 70
+  const queryWords = normalizedQuery.split(/\s+/).filter(Boolean)
+  if (queryWords.length > 0 && queryWords.every(word => name.includes(word) || id.includes(word))) return 60
+  return 0
+}
+
+async function findToolWorldsByQuery(query: string, limit = 8): Promise<ToolWorldRow[]> {
+  const normalizedQuery = normalizeWorldSearchText(query)
+  const worlds = await listVisibleToolWorlds()
+  const scored = worlds
+    .map(world => ({ world, score: scoreWorldSearchMatch(world, normalizedQuery) }))
+    .filter(entry => entry.score > 0)
+    .sort((a, b) => b.score - a.score || String(a.world.name || a.world.id).localeCompare(String(b.world.name || b.world.id)))
+    .map(entry => entry.world)
+    .slice(0, limit)
+
+  if (scored.length === 0 && normalizedQuery === 'portal zero') {
+    const portalZero = await readToolWorldRow(WELCOME_HUB_WORLD_ID, 'read')
+    return portalZero ? [portalZero] : []
+  }
+  return scored
+}
+
 function parseLooseObjectArray(value: unknown): Record<string, unknown>[] {
   if (Array.isArray(value)) {
     return value.filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === 'object')
@@ -339,6 +448,42 @@ function parseLooseObjectArray(value: unknown): Record<string, unknown>[] {
   } catch {
     return []
   }
+}
+
+function parseLooseObject(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>
+  if (typeof value !== 'string') return {}
+  const trimmed = value.trim()
+  if (!trimmed) return {}
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {}
+  } catch {
+    return {}
+  }
+}
+
+function parseLooseObjectRecord(value: unknown): Record<string, Record<string, unknown>> {
+  const raw = parseLooseObject(value)
+  const parsed: Record<string, Record<string, unknown>> = {}
+  for (const [key, entry] of Object.entries(raw)) {
+    if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+      parsed[key] = entry as Record<string, unknown>
+    }
+  }
+  return parsed
+}
+
+function parseStringRecord(value: unknown): Record<string, string> {
+  const raw = parseLooseObject(value)
+  const parsed: Record<string, string> = {}
+  for (const [key, entry] of Object.entries(raw)) {
+    if (typeof entry === 'string' && entry.trim()) parsed[key] = entry.trim()
+  }
+  return parsed
 }
 
 type TransformOverride = WorldState['transforms'][string]
@@ -1313,6 +1458,51 @@ tools.create_spatial_web_object = async (args) => {
   const actionValue = validSpatialWebValue(args.actionValue ?? args.valueToSet, null)
   const shouldSetValue = actionType === 'set_value' || actionType === 'set'
   const shouldSpawnVfx = actionType === 'spawn_vfx' || actionType === 'vfx'
+  const shouldRunWorldTool = actionType === 'world_tool' || actionType === 'tool' || actionType === 'call_tool'
+  const worldTool = validStr(args.tool || args.toolName || args.worldTool, '')
+  const worldToolArgs = parseLooseObject(args.args || args.toolArgs)
+  const worldToolArgsByValue = parseLooseObjectRecord(args.argsByValue || args.toolArgsByValue)
+  const destinationArgs = parseLooseObject(args.destination)
+  const destinationType = validStr(args.submitDestinationType || args.destinationType || destinationArgs.type, '').toLowerCase()
+  const googleFormUrl = validStr(args.googleFormUrl || args.formUrl || destinationArgs.formUrl, '')
+  const googleFormResponseUrl = validStr(args.googleFormResponseUrl || args.responseUrl || destinationArgs.responseUrl, '')
+  const webhookUrl = validStr(args.webhookUrl || destinationArgs.webhookUrl, '')
+  const fieldMap = parseStringRecord(args.fieldMap || destinationArgs.fieldMap)
+  const submitDestination: SpatialWebSubmitDestination | undefined =
+    destinationType === 'google_form' || googleFormUrl || googleFormResponseUrl
+      ? {
+          type: 'google_form',
+          ...(googleFormUrl ? { formUrl: googleFormUrl } : {}),
+          ...(googleFormResponseUrl ? { responseUrl: googleFormResponseUrl } : {}),
+          ...(Object.keys(fieldMap).length > 0 ? { fieldMap } : {}),
+        }
+      : destinationType === 'webhook' || webhookUrl
+        ? {
+            type: 'webhook',
+            ...(webhookUrl ? { webhookUrl } : {}),
+          }
+        : undefined
+
+  const action: SpatialWebObject['action'] =
+    submitForm
+      ? {
+          type: 'submit_form',
+          ...(validStr(args.endpoint, '') ? { endpoint: validStr(args.endpoint, '') } : {}),
+          ...(validStr(args.successMessage, '') ? { successMessage: validStr(args.successMessage, '') } : {}),
+          ...(submitDestination ? { destination: submitDestination } : {}),
+        }
+      : shouldSetValue && targetObjectId
+        ? { type: 'set_value', targetObjectId, value: actionValue }
+        : shouldSpawnVfx
+          ? { type: 'spawn_vfx' }
+          : shouldRunWorldTool && worldTool
+            ? {
+                type: 'world_tool',
+                tool: worldTool,
+                ...(Object.keys(worldToolArgs).length > 0 ? { args: worldToolArgs } : {}),
+                ...(Object.keys(worldToolArgsByValue).length > 0 ? { argsByValue: worldToolArgsByValue } : {}),
+              }
+            : undefined
 
   const object: SpatialWebObject = {
     id,
@@ -1333,19 +1523,7 @@ tools.create_spatial_web_object = async (args) => {
     ...(step !== undefined ? { step } : {}),
     ...(options ? { options } : {}),
     ...(value !== null ? { value } : {}),
-    ...(type === 'button' && submitForm
-      ? {
-          action: {
-            type: 'submit_form',
-            ...(validStr(args.endpoint, '') ? { endpoint: validStr(args.endpoint, '') } : {}),
-            ...(validStr(args.successMessage, '') ? { successMessage: validStr(args.successMessage, '') } : {}),
-          },
-        }
-      : type === 'button' && shouldSetValue && targetObjectId
-        ? { action: { type: 'set_value', targetObjectId, value: actionValue } }
-        : type === 'button' && shouldSpawnVfx
-          ? { action: { type: 'spawn_vfx' } }
-          : {}),
+    ...(action ? { action } : {}),
   }
 
   const { worldId, state } = await loadRequestedWorld(args.worldId)
@@ -1367,6 +1545,118 @@ tools.create_spatial_web_object = async (args) => {
     ok: true,
     message: `Created spatial ${type} "${label}" at [${position.join(', ')}] as ${id}.`,
     data: { id, type, label, formId: formId || undefined, position, object },
+  }
+}
+
+tools.create_world_from_google_form = async (args) => {
+  const formUrl = validStr(args.formUrl || args.url, '').trim()
+  if (!formUrl) return { ok: false, message: 'formUrl is required.' }
+
+  let normalizedFormUrl: string
+  try {
+    const url = new URL(formUrl)
+    const isGoogleFormHost = url.hostname === 'forms.gle'
+      || url.hostname === 'google.com'
+      || url.hostname.endsWith('.google.com')
+    const looksLikeGoogleFormPath = url.hostname === 'forms.gle' || url.pathname.includes('/forms/')
+    if (!isGoogleFormHost || !looksLikeGoogleFormPath) {
+      return { ok: false, message: 'formUrl must be a public Google Forms URL.' }
+    }
+    normalizedFormUrl = url.toString()
+  } catch {
+    return { ok: false, message: 'formUrl must be a valid URL.' }
+  }
+
+  const response = await fetch(normalizedFormUrl, { cache: 'no-store' })
+  if (!response.ok) return { ok: false, message: `Google Form fetch failed: HTTP ${response.status}.` }
+
+  const html = await response.text()
+  const finalFormUrl = response.url && response.url.startsWith('http') ? response.url : normalizedFormUrl
+  const spec = parseGoogleFormHtml(html, finalFormUrl)
+  if (spec.fields.length === 0) {
+    return {
+      ok: false,
+      message: 'Fetched the Google Form, but could not find supported entry fields. Make sure the form is public.',
+      data: { title: spec.title },
+    }
+  }
+
+  const formId = `google-form-${uid()}`
+  const spatialWebObjects = googleFormSpecToSpatialWebObjects(spec, formId)
+  const now = new Date()
+  const worldId = `world-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+  const name = validStr(args.name, spec.title)
+  const icon = validStr(args.icon, 'UI')
+  const visibility = validWorldVisibility(args.visibility, 'unlisted')
+  const state: WorldState = {
+    version: 1,
+    terrain: null,
+    groundPresetId: 'none',
+    groundTiles: {},
+    terrainHeights: [],
+    craftedScenes: [],
+    conjuredAssetIds: [],
+    catalogPlacements: [],
+    portalGates: [],
+    spatialWebObjects,
+    transforms: {},
+    behaviors: {},
+    lights: [],
+    skyBackgroundId: validStr(args.skyBackgroundId, 'night007'),
+    agentWindows: [],
+    agentAvatars: [],
+    savedAt: now.toISOString(),
+  }
+
+  await prisma.world.create({
+    data: {
+      id: worldId,
+      userId: currentToolContext().userId || LOCAL_USER_ID,
+      name,
+      icon,
+      visibility,
+      data: JSON.stringify(state),
+      objectCount: countWorldObjects(state),
+      createdAt: now,
+      updatedAt: now,
+    },
+  })
+
+  const worldUrl = buildWorldUrl(worldId, args.publicBaseUrl)
+  return {
+    ok: true,
+    message: `Created shareable spatial Google Form world "${name}" with ${spec.fields.length} field${spec.fields.length === 1 ? '' : 's'}.`,
+    data: {
+      worldId,
+      worldUrl,
+      qrUrl: buildQrCodeUrl(worldUrl),
+      visibility,
+      formId,
+      formUrl: spec.formUrl,
+      responseUrl: spec.responseUrl,
+      fields: spec.fields.map(field => ({ label: field.label, entryId: field.entryId, type: field.type })),
+      spatialObjectCount: spatialWebObjects.length,
+    },
+  }
+}
+
+tools.share_world_link = async (args) => {
+  const { worldId } = await loadRequestedWorld(args.worldId)
+  const visibility = validWorldVisibility(args.visibility, 'unlisted')
+  await prisma.world.update({
+    where: { id: worldId },
+    data: { visibility, updatedAt: new Date() },
+  })
+  const worldUrl = buildWorldUrl(worldId, args.publicBaseUrl)
+  return {
+    ok: true,
+    message: `World ${worldId} is ${visibility}. Share ${worldUrl}`,
+    data: {
+      worldId,
+      worldUrl,
+      qrUrl: buildQrCodeUrl(worldUrl),
+      visibility,
+    },
   }
 }
 
@@ -2032,6 +2322,7 @@ function resolveAvatarUrl(raw: string): { url: string; resolved: boolean; sugges
 const CANONICAL_AGENT_AVATAR_TYPES = new Set([
   'anorak',
   'codex',
+  'gemini',
   'anorak-pro',
   'merlin',
   'hermes',
@@ -2251,6 +2542,155 @@ tools.play_avatar_animation = async (args) => {
   }
 }
 
+tools.create_portal_gate = async (args) => {
+  const variant = validPortalGateVariant(args.variant || args.style)
+  const direction = validStr(args.direction, validBool(args.twoWay ?? args.two_way, true) ? 'two-way' : 'one-way') === 'one-way'
+    ? 'one-way'
+    : 'two-way'
+  const targetWorldNameQuery = validStr(args.targetWorldName || args.worldName || args.targetName, '')
+  const requestedTargetWorldId = validStr(args.targetWorldId || args.destinationWorldId, '')
+  let targetWorld = requestedTargetWorldId ? await readToolWorldRow(requestedTargetWorldId, 'read') : null
+  const matches = !targetWorld && targetWorldNameQuery ? await findToolWorldsByQuery(targetWorldNameQuery, 6) : []
+  if (!targetWorld && matches.length === 1) targetWorld = matches[0]
+  if (!targetWorld) {
+    return {
+      ok: false,
+      message: matches.length > 1
+        ? `Multiple worlds match "${targetWorldNameQuery}". Use one of these targetWorldIds.`
+        : `Target world${targetWorldNameQuery ? ` "${targetWorldNameQuery}"` : ''} not found. Call list_worlds first or provide targetWorldId.`,
+      data: {
+        matches: matches.map(world => ({
+          id: world.id,
+          name: world.name,
+          visibility: world.visibility,
+          objectCount: world.objectCount,
+        })),
+      },
+    }
+  }
+
+  const { worldId, state } = await loadRequestedWorld(args.worldId)
+  if (targetWorld.id === worldId) return { ok: false, message: 'Refusing to create a portal from a world to itself.' }
+
+  const sourceWorld = await readToolWorldRow(worldId, 'read')
+  const sourceWorldName = sourceWorld?.name || 'This world'
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+  const gateId = validStr(args.id, '') || `portal-${stamp}-a`
+  const linkedPortalId = direction === 'two-way' ? `portal-${stamp}-b` : undefined
+  const explicitPosition = validPos(args.position)
+  const actorAgentType = validStr(args.agentType || args.actorAgentType || args.agent, '').toLowerCase()
+  const sourceAvatar = actorAgentType
+    ? (state.agentAvatars || []).find(avatar => avatar.agentType === actorAgentType)
+    : null
+  const distanceAhead = Math.max(1, Math.min(50, validNum(args.distanceAhead ?? args.distance ?? args.metersAhead, 5)))
+  const avatarYaw = sourceAvatar?.rotation?.[1] || 0
+  const avatarPosition = sourceAvatar?.position
+  const position: [number, number, number] = explicitPosition || (avatarPosition
+    ? [
+        avatarPosition[0] + Math.sin(avatarYaw) * distanceAhead,
+        0,
+        avatarPosition[2] + Math.cos(avatarYaw) * distanceAhead,
+      ]
+    : [0, 0, -distanceAhead])
+  const rotationY = Number.isFinite(Number(args.rotationY))
+    ? Number(args.rotationY)
+    : Array.isArray(args.rotation) && args.rotation.length >= 2 && Number.isFinite(Number(args.rotation[1]))
+      ? Number(args.rotation[1])
+      : sourceAvatar?.rotation?.[1] ?? portalRotationTowardCenter(position)
+  const width = Math.max(1, Math.min(12, validNum(args.width, 2.4)))
+  const height = Math.max(1, Math.min(16, validNum(args.height, 3.2)))
+  const scale = validScale(args.scale, 1)
+  const targetWorldName = targetWorld.name || targetWorld.id
+  const action: PortalAction = { type: 'load_world', worldId: targetWorld.id, worldName: targetWorldName }
+  const gate: PortalGate = {
+    id: gateId,
+    variant,
+    label: validStr(args.label, targetWorldName ? `Portal to ${targetWorldName}` : 'World portal'),
+    position,
+    rotationY,
+    scale: typeof scale === 'number' ? scale : 1,
+    width,
+    height,
+    direction,
+    sourceWorldId: worldId,
+    targetWorldId: targetWorld.id,
+    targetWorldName,
+    action,
+    ...(linkedPortalId ? { linkedPortalId } : {}),
+  }
+
+  state.portalGates = [
+    ...(state.portalGates || []).filter(portal => portal.id !== gateId),
+    gate,
+  ]
+  await saveWorldState(worldId, state)
+  emitWorldEvent('object_added', worldId, {
+    id: gateId,
+    objectId: gateId,
+    position,
+    portalGate: gate,
+    ...mutationActorData(args),
+  })
+
+  let returnGate: PortalGate | null = null
+  let returnGateWarning = ''
+  if (direction === 'two-way' && linkedPortalId) {
+    try {
+      const targetState = (await loadToolWorld(targetWorld.id, 'write')).state
+      if (!(targetState.portalGates || []).some(existing => existing.id === linkedPortalId || existing.linkedPortalId === gateId)) {
+        const returnPosition: [number, number, number] = [30, 0, 0]
+        returnGate = {
+          id: linkedPortalId,
+          variant,
+          label: validStr(args.returnLabel, `Return to ${sourceWorldName}`),
+          position: returnPosition,
+          rotationY: portalRotationTowardCenter(returnPosition),
+          scale: typeof scale === 'number' ? scale : 1,
+          width,
+          height,
+          direction: 'two-way',
+          sourceWorldId: targetWorld.id,
+          targetWorldId: worldId,
+          targetWorldName: sourceWorldName,
+          action: { type: 'load_world', worldId, worldName: sourceWorldName },
+          linkedPortalId: gateId,
+          autoLayout: 'portal-area',
+        }
+        targetState.portalGates = layoutPortalAreaGates(
+          [...(targetState.portalGates || []), returnGate],
+          targetState.transforms,
+        )
+        await saveWorldState(targetWorld.id, targetState)
+        emitWorldEvent('object_added', targetWorld.id, {
+          id: linkedPortalId,
+          objectId: linkedPortalId,
+          position: returnGate.position,
+          portalGate: returnGate,
+          ...mutationActorData(args),
+        })
+      }
+    } catch (error) {
+      returnGateWarning = error instanceof Error ? error.message : 'Could not create return portal.'
+    }
+  }
+
+  return {
+    ok: true,
+    message: `Created ${direction} portal "${gate.label}" to ${targetWorldName}.${returnGateWarning ? ` Return portal skipped: ${returnGateWarning}` : ''}`,
+    data: {
+      id: gateId,
+      portalGate: gate,
+      targetWorld: {
+        id: targetWorld.id,
+        name: targetWorldName,
+        visibility: targetWorld.visibility,
+      },
+      ...(returnGate ? { returnGate } : {}),
+      ...(returnGateWarning ? { warning: returnGateWarning } : {}),
+    },
+  }
+}
+
 tools.clear_world = async (args) => {
   if (!args.confirm) return { ok: false, message: 'clear_world requires confirm: true. This is destructive.' }
 
@@ -2272,32 +2712,22 @@ tools.clear_world = async (args) => {
 
 // ─═̷─═̷─ WORLD MANAGEMENT ─═̷─═̷─
 
-tools.list_worlds = async () => {
-  const context = currentToolContext()
-  const access = toolAccessContext(context)
-  const worlds = await prisma.world.findMany({
-    select: { id: true, userId: true, name: true, icon: true, visibility: true, objectCount: true, updatedAt: true },
-    where: context.mode === 'hosted' && !context.system && !context.admin
-      ? {
-          OR: [
-            { userId: context.userId },
-            { visibility: { in: DISCOVERABLE_VISIBILITIES } },
-          ],
-        }
-      : undefined,
-    orderBy: { updatedAt: 'desc' },
-  })
-  const visibleWorlds = worlds.filter(world => canDiscoverWorld(access, toToolAccessSubject(world)))
+tools.list_worlds = async (args) => {
+  const query = validStr(args.query || args.search || args.name, '')
+  const limit = Math.max(1, Math.min(50, Math.floor(validNum(args.limit, 50))))
+  const visibleWorlds = (query
+    ? await findToolWorldsByQuery(query, limit)
+    : (await listVisibleToolWorlds()).slice(0, limit))
   return {
     ok: true,
-    message: `${visibleWorlds.length} worlds.`,
+    message: query ? `${visibleWorlds.length} worlds matching "${query}".` : `${visibleWorlds.length} worlds.`,
     data: visibleWorlds.map(w => ({
       id: w.id,
       name: w.name,
       icon: w.icon,
       visibility: w.visibility,
       objectCount: w.objectCount,
-      lastSaved: w.updatedAt.toISOString(),
+      lastSaved: w.updatedAt?.toISOString?.() || '',
     })),
   }
 }
@@ -3498,8 +3928,8 @@ const MUTATING_TOOLS = new Set([
   'place_object', 'create_spatial_web_object', 'craft_scene', 'self_craft_scene', 'modify_object', 'remove_object',
   'set_sky', 'set_ground_preset', 'paint_ground_tiles', 'add_light',
   'modify_light', 'set_behavior', 'set_avatar', 'walk_avatar_to',
-  'play_avatar_animation', 'clear_world',
-  'create_world', 'create_and_load_world',
+  'play_avatar_animation', 'create_portal_gate', 'clear_world',
+  'create_world', 'create_and_load_world', 'create_world_from_google_form', 'share_world_link',
   'conjure_asset', 'process_conjured_asset', 'place_conjured_asset', 'delete_conjured_asset',
   'conjure_framed_picture', 'place_media',
 ])

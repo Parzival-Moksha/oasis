@@ -4,7 +4,7 @@
 // OASIS CLIENT — Local-first. No auth. No routing. Just mount.
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useOasisStore } from '@/store/oasisStore'
 import { registerStoreHandler } from '@/lib/event-bus'
@@ -21,12 +21,17 @@ const Scene = dynamic(() => import('@/components/Scene'), {
   loading: () => null,
 })
 
-export default function OasisClient() {
+export default function OasisClient({ initialWorldId }: { initialWorldId?: string }) {
   const worldReady = useOasisStore(s => s._worldReady)
   const viewingWorldMeta = useOasisStore(s => s.viewingWorldMeta)
+  const activeWorldId = useOasisStore(s => s.activeWorldId)
+  const worldRegistry = useOasisStore(s => s.worldRegistry)
+  const switchWorld = useOasisStore(s => s.switchWorld)
+  const enterViewMode = useOasisStore(s => s.enterViewMode)
   const [ready, setReady] = useState(false)
   const [mode, setMode] = useState<ClientOasisMode>('local')
   const [capabilities, setCapabilities] = useState<ClientOasisCapabilities>(DEFAULT_LOCAL_CAPABILITIES)
+  const deepLinkHandledRef = useRef(false)
 
   useEffect(() => {
     let cancelled = false
@@ -61,6 +66,22 @@ export default function OasisClient() {
       unregisterAudio()
     }
   }, [])
+
+  useEffect(() => {
+    if (!ready || !initialWorldId || deepLinkHandledRef.current || worldRegistry.length === 0) return
+    if (activeWorldId === initialWorldId) {
+      deepLinkHandledRef.current = true
+      return
+    }
+
+    const ownedWorld = worldRegistry.some(world => world.id === initialWorldId)
+    deepLinkHandledRef.current = true
+    if (ownedWorld) {
+      switchWorld(initialWorldId)
+    } else {
+      enterViewMode(initialWorldId, false)
+    }
+  }, [activeWorldId, enterViewMode, initialWorldId, ready, switchWorld, worldRegistry])
 
   if (!ready) {
     return <main className="w-full h-screen bg-black" />

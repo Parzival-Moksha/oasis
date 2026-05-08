@@ -2,11 +2,22 @@
 // INPUT MANAGER TESTS — State transitions, capabilities, pointer lock
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { describe, it, expect, beforeEach } from 'vitest'
-import { useInputManager } from '../input-manager'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { consumeMouseLookDelta, pushMouseLookDelta, useInputManager } from '../input-manager'
 
 function getState() { return useInputManager.getState() }
-function reset() { useInputManager.setState({ inputState: 'noclip', _previousCameraState: null, pointerLocked: false }) }
+const originalRequestPointerLock = useInputManager.getState().requestPointerLock
+
+function reset() {
+  useInputManager.setState({
+    inputState: 'noclip',
+    _previousCameraState: null,
+    pointerLocked: false,
+    _uiLayerStack: [],
+    requestPointerLock: originalRequestPointerLock,
+  })
+  consumeMouseLookDelta()
+}
 
 describe('InputManager', () => {
   beforeEach(reset)
@@ -85,6 +96,33 @@ describe('InputManager', () => {
       expect(consumed).toBe(true)
       expect(getState().inputState).toBe('orbit')
     })
+    it('does not auto-lock the pointer when returning to noclip from UI', () => {
+      const requestPointerLock = vi.fn()
+      useInputManager.setState({
+        inputState: 'ui-focused',
+        _previousCameraState: 'noclip',
+        pointerLocked: false,
+        _uiLayerStack: [],
+        requestPointerLock,
+      })
+      const consumed = getState().handleEscape()
+      expect(consumed).toBe(true)
+      expect(getState().inputState).toBe('noclip')
+      expect(requestPointerLock).not.toHaveBeenCalled()
+    })
+    it('does not auto-lock the pointer when returning to third-person from UI', () => {
+      const requestPointerLock = vi.fn()
+      useInputManager.setState({
+        inputState: 'ui-focused',
+        _previousCameraState: 'third-person',
+        pointerLocked: false,
+        _uiLayerStack: [],
+        requestPointerLock,
+      })
+      getState().returnToPrevious()
+      expect(getState().inputState).toBe('third-person')
+      expect(requestPointerLock).not.toHaveBeenCalled()
+    })
   })
 
   describe('syncFromControlMode()', () => {
@@ -101,6 +139,30 @@ describe('InputManager', () => {
       getState().enterUIFocus()
       getState().syncFromControlMode('noclip')
       expect(getState().inputState).toBe('ui-focused')
+    })
+    it('switches into noclip without auto-locking the pointer', () => {
+      const requestPointerLock = vi.fn()
+      useInputManager.setState({
+        inputState: 'orbit',
+        pointerLocked: false,
+        _uiLayerStack: [],
+        requestPointerLock,
+      })
+      getState().syncFromControlMode('noclip')
+      expect(getState().inputState).toBe('noclip')
+      expect(requestPointerLock).not.toHaveBeenCalled()
+    })
+    it('switches into third-person without auto-locking the pointer', () => {
+      const requestPointerLock = vi.fn()
+      useInputManager.setState({
+        inputState: 'orbit',
+        pointerLocked: false,
+        _uiLayerStack: [],
+        requestPointerLock,
+      })
+      getState().syncFromControlMode('third-person')
+      expect(getState().inputState).toBe('third-person')
+      expect(requestPointerLock).not.toHaveBeenCalled()
     })
   })
 
@@ -125,6 +187,20 @@ describe('InputManager', () => {
       expect(can.objectSelection).toBe(false)
       expect(can.enterFocuses).toBe(false)
       expect(can.canLockPointer).toBe(false)
+    })
+  })
+
+  describe('mobile look delta', () => {
+    it('queues look movement without browser pointer lock when the state allows mouse look', () => {
+      useInputManager.setState({ inputState: 'noclip', pointerLocked: false })
+      pushMouseLookDelta(12, -6, 1000)
+      expect(consumeMouseLookDelta()).toEqual({ x: 12, y: -6 })
+    })
+
+    it('ignores look movement in states that do not own mouse look', () => {
+      useInputManager.setState({ inputState: 'orbit', pointerLocked: false })
+      pushMouseLookDelta(12, -6, 1000)
+      expect(consumeMouseLookDelta()).toEqual({ x: 0, y: 0 })
     })
   })
 

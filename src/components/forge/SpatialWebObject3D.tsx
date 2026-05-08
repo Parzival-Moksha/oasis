@@ -1,7 +1,8 @@
 'use client'
 
 import { Text } from '@react-three/drei'
-import { useMemo, useState } from 'react'
+import type { ThreeEvent } from '@react-three/fiber'
+import { useContext, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 
 import { useOasisStore } from '@/store/oasisStore'
@@ -9,6 +10,7 @@ import {
   type SpatialWebObject,
   type SpatialWebValue,
 } from '@/lib/spatial-web'
+import { SettingsContext } from '@/components/scene-lib'
 
 function displayValue(value: SpatialWebValue): string {
   if (Array.isArray(value)) return value.length ? value.join(', ') : 'None'
@@ -80,9 +82,13 @@ export function SpatialWebObject3D({
   interactionHint?: boolean
 }) {
   const [busy, setBusy] = useState(false)
+  const [draggingSlider, setDraggingSlider] = useState(false)
+  const groupRef = useRef<THREE.Group>(null)
+  const { effectiveRp1Mode } = useContext(SettingsContext)
   const interactSpatialWebObject = useOasisStore(s => s.interactSpatialWebObject)
-  const selectObject = useOasisStore(s => s.selectObject)
-  const setInspectedObject = useOasisStore(s => s.setInspectedObject)
+  const setSpatialWebObjectValue = useOasisStore(s => s.setSpatialWebObjectValue)
+  const isReadOnly = useOasisStore(s => s.isViewMode && !s.isViewModeEditable)
+  const canClickInteract = effectiveRp1Mode || isReadOnly
 
   const accent = normalizeHex(object.accentColor, '#38bdf8')
   const width = object.width ?? (object.type === 'button' ? 2.2 : 2.6)
@@ -115,14 +121,7 @@ export function SpatialWebObject3D({
     return Math.min(1, Math.max(0, (current - min) / (max - min)))
   }, [object])
 
-  const markSelected = () => {
-    selectObject(object.id)
-    setInspectedObject(object.id)
-  }
-
-  const handleInteract = (event: { stopPropagation: () => void }) => {
-    event.stopPropagation()
-    markSelected()
+  const runInteraction = () => {
     if (busy) return
     const waitsForNetwork = object.type === 'button' && object.action?.type === 'submit_form'
     if (waitsForNetwork) setBusy(true)
@@ -131,8 +130,47 @@ export function SpatialWebObject3D({
     })
   }
 
+  const handleInteractClick = (event: { stopPropagation: () => void }) => {
+    if (!canClickInteract || object.type === 'slider') return
+    event.stopPropagation()
+    runInteraction()
+  }
+
+  const updateSliderFromPointer = (event: ThreeEvent<PointerEvent>) => {
+    if (object.type !== 'slider' || !groupRef.current) return
+    const min = object.min ?? 0
+    const max = object.max ?? 100
+    const step = object.step ?? 1
+    const local = groupRef.current.worldToLocal(event.point.clone())
+    const trackWidth = width * 0.72
+    const rawProgress = (local.x + trackWidth / 2) / trackWidth
+    const progress = Math.min(1, Math.max(0, rawProgress))
+    const rawValue = min + progress * (max - min)
+    const snapped = step > 0 ? Math.round(rawValue / step) * step : rawValue
+    const value = Math.min(max, Math.max(min, Number(snapped.toFixed(4))))
+    setSpatialWebObjectValue(object.id, value)
+  }
+
+  const handleSliderPointerDown = (event: ThreeEvent<PointerEvent>) => {
+    if (!canClickInteract || object.type !== 'slider') return
+    event.stopPropagation()
+    setDraggingSlider(true)
+    updateSliderFromPointer(event)
+  }
+
+  const handleSliderPointerMove = (event: ThreeEvent<PointerEvent>) => {
+    if (!draggingSlider) return
+    event.stopPropagation()
+    updateSliderFromPointer(event)
+  }
+
   return (
-    <group onClick={handleInteract}>
+    <group
+      ref={groupRef}
+      onClick={handleInteractClick}
+      onPointerUp={() => setDraggingSlider(false)}
+      onPointerLeave={() => setDraggingSlider(false)}
+    >
       <mesh castShadow receiveShadow position={[0, 0, -0.03]}>
         <boxGeometry args={[width + 0.16, height + 0.16, depth * 0.52]} />
         <meshStandardMaterial
@@ -180,7 +218,11 @@ export function SpatialWebObject3D({
       </mesh>
 
       {object.type === 'slider' && (
-        <>
+        <group
+          onPointerDown={handleSliderPointerDown}
+          onPointerMove={handleSliderPointerMove}
+          onPointerUp={() => setDraggingSlider(false)}
+        >
           <mesh position={[0, -height * 0.21, depth * 0.72]}>
             <boxGeometry args={[width * 0.72, 0.08, 0.08]} />
             <meshBasicMaterial color="#0f172a" />
@@ -193,7 +235,7 @@ export function SpatialWebObject3D({
             <boxGeometry args={[0.16, 0.26, 0.12]} />
             <meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={1.1} />
           </mesh>
-        </>
+        </group>
       )}
 
       {object.type === 'toggle' && (
