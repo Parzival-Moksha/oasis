@@ -939,6 +939,7 @@ tools.get_world_state = async (args) => {
       sky: state.skyBackgroundId || 'night007',
       ground: state.groundPresetId || 'none',
       tileCount: Object.keys(state.groundTiles || {}).length,
+      portalCount: (state.portalGates || []).length,
       catalogObjects: (state.catalogPlacements || []).map(p => {
         const transform = readTransformOverride(state, p.id)
         return {
@@ -960,6 +961,31 @@ tools.get_world_state = async (args) => {
           position: effectivePosition(state, s.id, s.position) || s.position,
           rotation: effectiveRotation(state, s.id, undefined) || undefined,
           scale: effectiveScale(state, s.id, undefined),
+          ...(transform ? { transform } : {}),
+        }
+      }),
+      portalGates: (state.portalGates || []).map(gate => {
+        const transform = readTransformOverride(state, gate.id)
+        const rotation = effectiveRotation(state, gate.id, undefined)
+        return {
+          id: gate.id,
+          type: 'portal',
+          variant: gate.variant,
+          label: gate.label || gate.targetWorldName || gate.variant,
+          position: effectivePosition(state, gate.id, gate.position) || gate.position,
+          rotationY: Array.isArray(rotation) ? rotation[1] : gate.rotationY,
+          scale: effectiveScale(state, gate.id, gate.scale) ?? gate.scale,
+          width: gate.width,
+          height: gate.height,
+          direction: gate.direction,
+          sourceWorldId: gate.sourceWorldId,
+          targetWorldId: gate.targetWorldId,
+          targetWorldName: gate.targetWorldName,
+          action: gate.action,
+          spawnPose: gate.spawnPose,
+          requiresLevel: gate.requiresLevel,
+          linkedPortalId: gate.linkedPortalId,
+          inert: gate.inert,
           ...(transform ? { transform } : {}),
         }
       }),
@@ -992,7 +1018,7 @@ tools.get_world_info = async (args) => {
   const world = await prisma.world.findFirst({ where: { id: worldId } })
   if (!world) return { ok: false, message: 'No world found.' }
   const objectCount = state
-    ? (state.catalogPlacements?.length || 0) + (state.craftedScenes?.length || 0) + (state.conjuredAssetIds?.length || 0)
+    ? (state.catalogPlacements?.length || 0) + (state.craftedScenes?.length || 0) + (state.conjuredAssetIds?.length || 0) + (state.portalGates?.length || 0)
     : 0
   const access = worldAccessDetails(world)
 
@@ -1013,6 +1039,7 @@ tools.get_world_info = async (args) => {
       sky: state?.skyBackgroundId || 'night007',
       ground: state?.groundPresetId || 'none',
       tileCount: state ? Object.keys(state.groundTiles || {}).length : 0,
+      portalCount: state?.portalGates?.length || 0,
       lightCount: state?.lights?.length || 0,
       lastSaved: world.updatedAt.toISOString(),
     },
@@ -1047,6 +1074,16 @@ tools.query_objects = async (args) => {
         type: 'crafted',
         name: s.name,
         position: effectivePosition(state, s.id, s.position) || s.position,
+      })
+    }
+  }
+  if (!typeFilter || typeFilter === 'portal') {
+    for (const gate of state.portalGates || []) {
+      results.push({
+        id: gate.id,
+        type: 'portal',
+        name: gate.label || gate.targetWorldName || gate.variant,
+        position: effectivePosition(state, gate.id, gate.position) || gate.position,
       })
     }
   }

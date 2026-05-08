@@ -37,6 +37,15 @@ interface RelayPairingResult {
   reused?: boolean
 }
 
+interface LocalRelayStatus {
+  ok: boolean
+  running: boolean
+  port: number
+  managed?: boolean
+  pid?: number | null
+  error?: string | null
+}
+
 interface RelayChatMessage {
   id: string
   role: 'user' | 'assistant'
@@ -509,6 +518,9 @@ export function HermesHostedRelayPanel({
   const [pairing, setPairing] = useState<RelayPairingResult | null>(null)
   const [pairingBusy, setPairingBusy] = useState(false)
   const [pairingError, setPairingError] = useState('')
+  const [localRelayBusy, setLocalRelayBusy] = useState(false)
+  const [localRelayStatus, setLocalRelayStatus] = useState<LocalRelayStatus | null>(null)
+  const [localRelayError, setLocalRelayError] = useState('')
   const [copied, setCopied] = useState('')
   const [countdownNow, setCountdownNow] = useState(() => Date.now())
   const [hideConnectedHero, setHideConnectedHero] = useState(false)
@@ -525,6 +537,7 @@ export function HermesHostedRelayPanel({
   const lastStreamActivityAtRef = useRef(Date.now())
 
   const origin = typeof window === 'undefined' ? '' : window.location.origin
+  const localOasisOrigin = isLocalOasisOrigin(origin)
   const agentLabel = panelSettings.agentLabel.trim() || HERMES_AGENT_LABEL
   const pairingPasteText = useMemo(() => buildHermesRelayPasteText(pairing, origin, agentLabel), [agentLabel, origin, pairing])
   const markStreamActivity = useCallback(() => {
@@ -919,12 +932,80 @@ export function HermesHostedRelayPanel({
     window.setTimeout(() => setCopied(current => current === key ? '' : current), 1200)
   }, [])
 
+  const refreshLocalRelayStatus = useCallback(async () => {
+    if (!localOasisOrigin) return null
+    try {
+      const response = await fetchWithTimeout('/api/relay/local-dev', { credentials: 'same-origin' }, 4_000)
+      const json = await response.json().catch(() => null) as LocalRelayStatus | null
+      if (!response.ok || !json) throw new Error(`relay status failed: HTTP ${response.status}`)
+      setLocalRelayStatus(json)
+      setLocalRelayError('')
+      return json
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setLocalRelayError(message)
+      return null
+    }
+  }, [localOasisOrigin])
+
+  const ensureLocalRelayRunning = useCallback(async () => {
+    if (!localOasisOrigin) return null
+    setLocalRelayBusy(true)
+    setLocalRelayError('')
+    try {
+      const response = await fetchWithTimeout('/api/relay/local-dev', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'start' }),
+      }, 8_000)
+      const json = await response.json().catch(() => null) as LocalRelayStatus | null
+      if (!json) throw new Error(`relay start failed: HTTP ${response.status}`)
+      setLocalRelayStatus(json)
+      if (!json.running) throw new Error(json.error || `Relay did not open on port ${json.port}.`)
+      return json
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setLocalRelayError(message)
+      throw error
+    } finally {
+      setLocalRelayBusy(false)
+    }
+  }, [localOasisOrigin])
+
+  useEffect(() => {
+    if (!isVisible || !localOasisOrigin) return
+    void refreshLocalRelayStatus()
+  }, [isVisible, localOasisOrigin, refreshLocalRelayStatus])
+
+  const toggleRelayEnabled = useCallback(async () => {
+    if (relayEnabled) {
+      setRelayEnabled(false)
+      return
+    }
+    if (localOasisOrigin) {
+      try {
+        await ensureLocalRelayRunning()
+      } catch {
+        return
+      }
+    }
+    setRelayEnabled(true)
+  }, [ensureLocalRelayRunning, localOasisOrigin, relayEnabled])
+
   const requestPairing = useCallback(async () => {
     if (!activeWorldId) {
       setPairingError('active world is required')
       return
     }
     if (pairing && pairing.expiresAt > Date.now()) {
+      if (localOasisOrigin) {
+        try {
+          await ensureLocalRelayRunning()
+        } catch {
+          return
+        }
+      }
       setRelayEnabled(true)
       flashCopied('paste')
       void copyText(pairingPasteText)
@@ -936,6 +1017,9 @@ export function HermesHostedRelayPanel({
     setPairingBusy(true)
     setPairingError('')
     try {
+      if (localOasisOrigin) {
+        await ensureLocalRelayRunning()
+      }
       const pairingRequest: RequestInit = {
         method: 'POST',
         credentials: 'same-origin',
@@ -978,7 +1062,7 @@ export function HermesHostedRelayPanel({
     } finally {
       setPairingBusy(false)
     }
-  }, [activeWorldId, agentLabel, flashCopied, pairing, pairingPasteText])
+  }, [activeWorldId, agentLabel, ensureLocalRelayRunning, flashCopied, localOasisOrigin, pairing, pairingPasteText])
 
   const startNewChat = useCallback(() => {
     pendingAssistantIdRef.current = ''
@@ -1141,11 +1225,11 @@ export function HermesHostedRelayPanel({
           </button>
           <button
             data-no-drag
-            onClick={() => setRelayEnabled(value => !value)}
-            disabled={!activeWorldId}
+            onClick={() => { void toggleRelayEnabled() }}
+            disabled={!activeWorldId || localRelayBusy}
             className="rounded border border-white/10 px-1.5 py-0.5 text-[10px] font-mono text-amber-100/75 hover:text-white disabled:opacity-40"
           >
-            {relayEnabled ? 'stop relay' : 'start relay'}
+            {relayEnabled ? 'stop relay' : localRelayBusy ? 'starting...' : localOasisOrigin && !localRelayStatus?.running ? 'start local relay' : 'start relay'}
           </button>
           {!hideCloseButton && (
             <button onClick={onClose} className="text-lg leading-none text-amber-100/80 hover:text-white" title="Close">
@@ -1258,6 +1342,21 @@ export function HermesHostedRelayPanel({
             {pairingError || relayBridge.lastError}
           </div>
         )}
+        {localOasisOrigin && (localRelayStatus || localRelayError) && (
+          <div className={`mt-2 rounded border px-2 py-1.5 text-[10px] ${
+            localRelayError
+              ? 'border-red-400/20 bg-red-500/10 text-red-100'
+              : localRelayStatus?.running
+                ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-100'
+                : 'border-amber-400/20 bg-amber-500/10 text-amber-100'
+          }`}>
+            {localRelayError
+              ? `local relay: ${localRelayError}`
+              : localRelayStatus?.running
+                ? `local relay running on ${localRelayStatus.port}${localRelayStatus.pid ? ` · pid ${localRelayStatus.pid}` : ''}`
+                : `local relay stopped on ${localRelayStatus?.port || 4517}`}
+          </div>
+        )}
       </div>
 
       {settingsOpen && (
@@ -1357,6 +1456,7 @@ export function HermesHostedRelayPanel({
               )
             }
             const message = item.message
+            if (message.role === 'assistant' && !message.content && !message.error) return null
             return (
               <div key={message.id} className={message.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
                 <div
@@ -1369,7 +1469,7 @@ export function HermesHostedRelayPanel({
                   }}
                 >
                   <div className="whitespace-pre-wrap">
-                    {message.content ? renderMarkdown(message.content) : (message.role === 'assistant' && isStreaming ? 'Streaming...' : '')}
+                    {message.content ? renderMarkdown(message.content) : ''}
                   </div>
                   {message.error && <div className="mt-2 text-red-200">{message.error}</div>}
                 </div>
@@ -1377,6 +1477,14 @@ export function HermesHostedRelayPanel({
             )
           })}
         </div>
+        {isStreaming && (
+          <div className="mt-3 flex justify-end px-1">
+            <div className="flex items-center gap-2 rounded-full border border-amber-300/15 bg-black/30 px-2.5 py-1 text-[10px] font-mono text-amber-100/55">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-300 animate-pulse" />
+              streaming...
+            </div>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 

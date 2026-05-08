@@ -15,6 +15,11 @@ export interface TerrainBrushOptions {
   deltaSeconds: number
 }
 
+export interface TerrainSurfaceSample {
+  height: number
+  normal: [number, number, number]
+}
+
 export function terrainVertexIndex(ix: number, iz: number): number {
   return iz * TERRAIN_GRID_RESOLUTION + ix
 }
@@ -46,10 +51,40 @@ export function worldToTerrainCoord(value: number): number {
 }
 
 export function sampleTerrainHeightAt(heights: number[], worldX: number, worldZ: number): number {
-  const normalized = normalizeTerrainHeights(heights)
-  const gx = Math.round(worldToTerrainCoord(worldX))
-  const gz = Math.round(worldToTerrainCoord(worldZ))
-  return normalized[terrainVertexIndex(gx, gz)] || 0
+  return sampleTerrainSurfaceAt(heights, worldX, worldZ).height
+}
+
+export function sampleTerrainSurfaceAt(heights: number[], worldX: number, worldZ: number): TerrainSurfaceSample {
+  const gx = worldToTerrainCoord(worldX)
+  const gz = worldToTerrainCoord(worldZ)
+  const x0 = Math.floor(gx)
+  const z0 = Math.floor(gz)
+  const x1 = Math.ceil(gx)
+  const z1 = Math.ceil(gz)
+  const tx = gx - x0
+  const tz = gz - z0
+
+  const h00 = getTerrainGridHeight(heights, x0, z0)
+  const h10 = getTerrainGridHeight(heights, x1, z0)
+  const h01 = getTerrainGridHeight(heights, x0, z1)
+  const h11 = getTerrainGridHeight(heights, x1, z1)
+  const height = lerp(lerp(h00, h10, tx), lerp(h01, h11, tx), tz)
+
+  const ix = Math.round(gx)
+  const iz = Math.round(gz)
+  const hLeft = getTerrainGridHeight(heights, ix - 1, iz)
+  const hRight = getTerrainGridHeight(heights, ix + 1, iz)
+  const hBack = getTerrainGridHeight(heights, ix, iz - 1)
+  const hForward = getTerrainGridHeight(heights, ix, iz + 1)
+  const nx = hLeft - hRight
+  const ny = 2
+  const nz = hBack - hForward
+  const length = Math.hypot(nx, ny, nz) || 1
+
+  return {
+    height,
+    normal: [nx / length, ny / length, nz / length],
+  }
 }
 
 export function terrainBrushFalloff(distance: number, radius: number): number {
@@ -96,4 +131,17 @@ export function applyTerrainBrush(
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
+}
+
+function getTerrainGridHeight(heights: number[], ix: number, iz: number): number {
+  const x = Math.round(clamp(ix, 0, TERRAIN_GRID_SEGMENTS))
+  const z = Math.round(clamp(iz, 0, TERRAIN_GRID_SEGMENTS))
+  const value = Number(heights[terrainVertexIndex(x, z)])
+  return Number.isFinite(value)
+    ? clamp(value, TERRAIN_MIN_HEIGHT, TERRAIN_MAX_HEIGHT)
+    : 0
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t
 }

@@ -3164,18 +3164,16 @@ function HermesLocalPanel({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {(message.content || isStreaming) && (
+                  {message.content && (
                     <div
                       className="px-3 py-2 rounded-lg text-xs text-gray-100 whitespace-pre-wrap leading-relaxed"
                       style={{ background: 'rgba(0,0,0,0.48)', border: '1px solid rgba(255,255,255,0.06)' }}
                     >
-                      {message.content
-                        ? renderHermesAssistantContent(
-                            message.content,
-                            autoPlayMediaMessageId === message.id && voiceOutputEnabled,
-                            hermesAvatar?.id,
-                          )
-                        : <span className="text-amber-100/75">Streaming...</span>}
+                      {renderHermesAssistantContent(
+                        message.content,
+                        autoPlayMediaMessageId === message.id && voiceOutputEnabled,
+                        hermesAvatar?.id,
+                      )}
                     </div>
                   )}
 

@@ -144,6 +144,15 @@ interface RelayPairingResult {
   scopes: string[]
 }
 
+interface LocalRelayStatus {
+  ok: boolean
+  running: boolean
+  port: number
+  managed?: boolean
+  pid?: number | null
+  error?: string | null
+}
+
 type SmokeMode = 'core' | 'live' | 'external'
 type SmokeStatus = 'passed' | 'failed' | 'skipped'
 type SmokeCategory = 'transport' | 'world' | 'avatar' | 'craft' | 'live-bridge' | 'conjure'
@@ -1064,8 +1073,13 @@ export function OpenclawPanel({
   const [relayPairing, setRelayPairing] = useState<RelayPairingResult | null>(null)
   const [relayPairingBusy, setRelayPairingBusy] = useState(false)
   const [relayPairingError, setRelayPairingError] = useState('')
+  const [localRelayBusy, setLocalRelayBusy] = useState(false)
+  const [localRelayStatus, setLocalRelayStatus] = useState<LocalRelayStatus | null>(null)
+  const [localRelayError, setLocalRelayError] = useState('')
   const [relayCountdownNow, setRelayCountdownNow] = useState(() => Date.now())
   const relayPairingExpiresAt = relayPairing?.expiresAt ?? 0
+  const localOasisOrigin = useMemo(() => isLocalOasisOrigin(browserOrigin), [browserOrigin])
+  const isVisible = embedded || isOpen
 
   const dragStart = useRef({ x: 0, y: 0 })
   const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 })
@@ -1138,6 +1152,52 @@ export function OpenclawPanel({
     if (!hostedMode) return
     void loadHostedWelcomeTiming()
   }, [hostedMode])
+
+  const refreshLocalRelayStatus = useCallback(async () => {
+    if (!localOasisOrigin) return null
+    try {
+      const response = await fetch('/api/relay/local-dev', { credentials: 'same-origin' })
+      const json = await response.json().catch(() => null) as LocalRelayStatus | null
+      if (!json || !response.ok || !json.ok) {
+        throw new Error(json?.error || `local relay status failed: HTTP ${response.status}`)
+      }
+      setLocalRelayStatus(json)
+      setLocalRelayError('')
+      return json
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setLocalRelayError(message)
+      return null
+    }
+  }, [localOasisOrigin])
+
+  const ensureLocalRelayRunning = useCallback(async () => {
+    if (!localOasisOrigin) return
+    setLocalRelayBusy(true)
+    setLocalRelayError('')
+    try {
+      const response = await fetch('/api/relay/local-dev', {
+        method: 'POST',
+        credentials: 'same-origin',
+      })
+      const json = await response.json().catch(() => null) as LocalRelayStatus | null
+      if (!json || !json.ok || !json.running) {
+        throw new Error(json?.error || `local relay start failed: HTTP ${response.status}`)
+      }
+      setLocalRelayStatus(json)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setLocalRelayError(message)
+      throw error
+    } finally {
+      setLocalRelayBusy(false)
+    }
+  }, [localOasisOrigin])
+
+  useEffect(() => {
+    if (!isVisible || !localOasisOrigin) return
+    void refreshLocalRelayStatus()
+  }, [isVisible, localOasisOrigin, refreshLocalRelayStatus])
 
   const ensureOpenclawAgentWindow = useCallback(() => {
     const existingWindow = useOasisStore.getState().placedAgentWindows.find(entry => entry.agentType === 'openclaw')
@@ -1284,7 +1344,6 @@ export function OpenclawPanel({
     enablePlayerLipSync: true,
   })
 
-  const isVisible = embedded || isOpen
   const currentSession = useMemo(
     () => sessions.find(entry => entry.id === selectedSessionId) || null,
     [selectedSessionId, sessions],
@@ -2941,6 +3000,10 @@ export function OpenclawPanel({
     setRelayPairingBusy(true)
     setRelayPairingError('')
     try {
+      if (localOasisOrigin) {
+        await ensureLocalRelayRunning()
+      }
+
       const sessionResponse = await fetch('/api/session/init', { credentials: 'same-origin' })
       if (!sessionResponse.ok) {
         throw new Error(`session init failed: HTTP ${sessionResponse.status}`)
@@ -2975,7 +3038,23 @@ export function OpenclawPanel({
     } finally {
       setRelayPairingBusy(false)
     }
-  }, [activeWorldId])
+  }, [activeWorldId, ensureLocalRelayRunning, localOasisOrigin])
+
+  const toggleRelayEnabled = useCallback(async () => {
+    if (relayEnabled) {
+      setRelayEnabled(false)
+      return
+    }
+
+    try {
+      if (localOasisOrigin) {
+        await ensureLocalRelayRunning()
+      }
+      setRelayEnabled(true)
+    } catch (error) {
+      setRelayPairingError(error instanceof Error ? error.message : String(error))
+    }
+  }, [ensureLocalRelayRunning, localOasisOrigin, relayEnabled])
 
   const handleConnectOpenclaw = useCallback(() => {
     ensureOpenclawAgentWindow()
@@ -3746,23 +3825,32 @@ export function OpenclawPanel({
                 <button
                   type="button"
                   data-no-drag
-                  onClick={() => setRelayEnabled(value => !value)}
-                  disabled={!activeWorldId}
+                  onClick={() => { void toggleRelayEnabled() }}
+                  disabled={!activeWorldId || localRelayBusy}
                   className="rounded-lg border border-sky-300/25 bg-sky-400/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-50 transition hover:bg-sky-400/18 disabled:cursor-not-allowed disabled:opacity-45"
                 >
-                  {relayEnabled ? 'stop relay' : 'start relay'}
+                  {relayEnabled ? 'stop relay' : localRelayBusy ? 'starting relay' : localOasisOrigin && !localRelayStatus?.running ? 'start local relay' : 'start relay'}
                 </button>
                 <button
                   type="button"
                   data-no-drag
                   onClick={() => void handleRequestRelayPairing()}
-                  disabled={relayPairingBusy || !activeWorldId}
+                  disabled={relayPairingBusy || localRelayBusy || !activeWorldId}
                   className="rounded-lg border border-white/10 px-3 py-2 text-[11px] uppercase tracking-[0.16em] text-sky-50/78 transition hover:border-sky-300/30 hover:text-white disabled:cursor-wait disabled:opacity-45"
                 >
-                  {relayPairingBusy ? 'minting code' : 'mint pairing code'}
+                  {localRelayBusy ? 'starting relay' : relayPairingBusy ? 'minting code' : 'mint pairing code'}
                 </button>
               </div>
             </div>
+
+            {localOasisOrigin && (
+              <div className="mt-3 rounded-lg border border-sky-300/12 bg-black/18 px-3 py-2 text-[11px] leading-5 text-sky-50/64">
+                local relay: {localRelayStatus?.running ? `running on ${localRelayStatus.port}` : localRelayBusy ? 'starting...' : 'off'}
+                {localRelayError && (
+                  <span className="ml-2 font-semibold text-rose-100/82">{localRelayError}</span>
+                )}
+              </div>
+            )}
 
             <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] uppercase tracking-[0.16em] text-sky-50/58 sm:grid-cols-4">
               <div className="rounded-lg border border-white/8 bg-black/20 px-2 py-2">

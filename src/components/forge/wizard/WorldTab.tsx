@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// WORLD TAB — Sky background, ground paint, lights, terrain, import/export
+// WORLD TAB — Sky background, lights, terrain, import/export
 // ═══════════════════════════════════════════════════════════════════════════════
 
 'use client'
@@ -9,7 +9,6 @@ import { useOasisStore } from '../../../store/oasisStore'
 import type { TerrainParams } from '../../../lib/forge/terrain-generator'
 import type { WorldLightType } from '../../../lib/conjure/types'
 import { LIGHT_INTENSITY_MAX, LIGHT_INTENSITY_STEP } from '../../../lib/conjure/types'
-import { GROUND_PRESETS, getTextureUrls } from '../../../lib/forge/ground-textures'
 import { SKY_BACKGROUNDS } from '../../scene-lib/constants'
 import { LightTooltipWrap } from './shared'
 
@@ -18,18 +17,6 @@ interface WorldTabProps {
 }
 
 export function WorldTab({ setError }: WorldTabProps) {
-  // ─═̷─ Ground texture + paint mode ─═̷─
-  const groundPresetId = useOasisStore(s => s.groundPresetId)
-  const groundTiles = useOasisStore(s => s.groundTiles)
-  const paintMode = useOasisStore(s => s.paintMode)
-  const paintBrushPresetId = useOasisStore(s => s.paintBrushPresetId)
-  const paintBrushSize = useOasisStore(s => s.paintBrushSize)
-  const enterPaintMode = useOasisStore(s => s.enterPaintMode)
-  const exitPaintMode = useOasisStore(s => s.exitPaintMode)
-  const setPaintBrushSize = useOasisStore(s => s.setPaintBrushSize)
-  const clearAllGroundTiles = useOasisStore(s => s.clearAllGroundTiles)
-  const customGroundPresets = useOasisStore(s => s.customGroundPresets)
-
   // ─═̷─ World sky ─═̷─
   const worldSkyBackground = useOasisStore(s => s.worldSkyBackground)
   const setWorldSkyBackground = useOasisStore(s => s.setWorldSkyBackground)
@@ -83,7 +70,7 @@ export function WorldTab({ setError }: WorldTabProps) {
   const worldRegistry = useOasisStore(s => s.worldRegistry)
 
   // ─═̷─ Collapsible world-tab sections ─═̷─
-  type WorldSection = 'sky' | 'ground' | 'lights' | 'terrain'
+  type WorldSection = 'sky' | 'lights' | 'terrain'
   const [collapsedSections, setCollapsedSections] = useState<Set<WorldSection>>(() => {
     if (typeof window === 'undefined') return new Set()
     try {
@@ -141,153 +128,6 @@ export function WorldTab({ setError }: WorldTabProps) {
         )}
       </div>
 
-      {/* ░▒▓█ GROUND PAINT — Tile-by-tile ground painting █▓▒░ */}
-      <div>
-        <button onClick={() => toggleSection('ground')} className="w-full flex items-center justify-between px-2.5 py-1.5 -mx-0.5 rounded-md border border-emerald-500/20 bg-emerald-950/40 hover:bg-emerald-900/30 hover:border-emerald-400/30 transition-all duration-150 group cursor-pointer mb-1.5">
-          <span className="text-[11px] text-emerald-300/90 uppercase tracking-wider font-mono font-medium flex items-center gap-1.5">
-            <span className={`text-xs text-emerald-400/70 transition-transform duration-150 inline-block ${collapsedSections.has('ground') ? '' : 'rotate-90'}`}>&#9654;</span>
-            Ground Paint
-          </span>
-          <span className="text-[10px] text-emerald-400/50 font-mono">
-            {Object.keys(groundTiles).length > 0 ? `${Object.keys(groundTiles).length} tiles` : 'base: '}{GROUND_PRESETS.find(p => p.id === groundPresetId)?.name || 'Grass'}
-          </span>
-        </button>
-        {!collapsedSections.has('ground') && (<>
-
-        {/* Paint mode indicator */}
-        {paintMode && (
-          <div className="mb-2 p-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10">
-            <div className="flex items-center justify-between mb-1.5">
-              <div className="text-[10px] text-emerald-300 font-mono font-bold">
-                {'\u{1F3A8}'} PAINT MODE — {[...GROUND_PRESETS, ...customGroundPresets].find(p => p.id === paintBrushPresetId)?.name}
-              </div>
-              <button
-                onClick={exitPaintMode}
-                className="text-[9px] text-red-400/70 hover:text-red-300 font-mono border border-red-500/20 rounded px-1.5 py-0.5"
-              >
-                Exit
-              </button>
-            </div>
-            {/* Brush size selector */}
-            <div className="flex items-center gap-2">
-              <span className="text-[9px] text-gray-400 font-mono">Brush:</span>
-              {[1, 3, 5].map(size => (
-                <button
-                  key={size}
-                  onClick={() => setPaintBrushSize(size)}
-                  className={`text-[9px] px-1.5 py-0.5 rounded font-mono transition-colors ${
-                    paintBrushSize === size
-                      ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-500/50'
-                      : 'text-gray-400 border border-gray-700/30 hover:text-gray-200'
-                  }`}
-                >
-                  {size}x{size}
-                </button>
-              ))}
-            </div>
-            <div className="text-[8px] text-gray-400 font-mono mt-1">
-              L-click: paint | R-click: erase tile | ESC: exit
-            </div>
-          </div>
-        )}
-
-
-        {/* Ground preset palette — click to enter paint mode with that brush */}
-        <div className="grid grid-cols-3 gap-2">
-          {GROUND_PRESETS.map(preset => {
-            const isPaintBrush = paintMode && paintBrushPresetId === preset.id
-            return (
-              <button
-                key={preset.id}
-                onClick={() => {
-                  if (preset.id === 'none') {
-                    exitPaintMode()
-                  } else {
-                    enterPaintMode(preset.id)
-                  }
-                }}
-                className={`rounded-lg border p-2 transition-all duration-200 text-left ${
-                  isPaintBrush
-                    ? 'border-emerald-400/80 bg-emerald-500/20 scale-[1.02] ring-1 ring-emerald-400/40'
-                    : 'border-gray-700/30 bg-black/40 hover:border-emerald-500/30 hover:bg-emerald-500/5'
-                }`}
-                title={preset.id === 'none' ? 'Exit paint mode' : `Paint with ${preset.name}`}
-              >
-                <div
-                  className="w-full aspect-square rounded-md mb-1.5 border border-white/5 overflow-hidden"
-                  style={{ backgroundColor: preset.color }}
-                >
-                  {preset.assetName && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={getTextureUrls(preset.assetName).diffuse}
-                      alt={preset.name}
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                    />
-                  )}
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-sm">{preset.icon}</span>
-                  <span className={`text-[10px] font-medium ${isPaintBrush ? 'text-emerald-300' : 'text-gray-400'}`}>
-                    {preset.name}
-                  </span>
-                </div>
-              </button>
-            )
-          })}
-          {/* ░▒▓ Custom textures from Imagine ▓▒░ */}
-          {customGroundPresets.map(preset => {
-            const isPaintBrush = paintMode && paintBrushPresetId === preset.id
-            return (
-              <button
-                key={preset.id}
-                onClick={() => enterPaintMode(preset.id)}
-                className={`rounded-lg border p-2 transition-all duration-200 text-left ${
-                  isPaintBrush
-                    ? 'border-pink-400/80 bg-pink-500/20 scale-[1.02] ring-1 ring-pink-400/40'
-                    : 'border-gray-700/30 bg-black/40 hover:border-pink-500/30 hover:bg-pink-500/5'
-                }`}
-                title={`Paint with ${preset.name} (custom)`}
-              >
-                <div className="w-full aspect-square rounded-md mb-1.5 border border-pink-500/10 overflow-hidden bg-gray-800">
-                  {preset.customTextureUrl && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={preset.customTextureUrl}
-                      alt={preset.name}
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                    />
-                  )}
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-sm">{preset.icon}</span>
-                  <span className={`text-[10px] font-medium truncate ${isPaintBrush ? 'text-pink-300' : 'text-gray-400'}`}>
-                    {preset.name}
-                  </span>
-                </div>
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Tile count + clear button */}
-        {Object.keys(groundTiles).length > 0 && (
-          <div className="mt-2 flex items-center justify-between">
-            <span className="text-[9px] text-gray-400 font-mono">
-              {Object.keys(groundTiles).length} painted tiles
-            </span>
-            <button
-              onClick={clearAllGroundTiles}
-              className="text-[9px] text-red-400/60 hover:text-red-300 font-mono border border-red-500/20 rounded px-1.5 py-0.5"
-            >
-              Clear all tiles
-            </button>
-          </div>
-        )}
-        </>)}
-      </div>
 
       {/* ░▒▓█ TERRAIN — Simplex noise heightmap terrain █▓▒░ */}
       <div>

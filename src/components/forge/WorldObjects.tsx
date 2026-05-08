@@ -36,7 +36,8 @@ import { consumeRecentPointerLockRightClick, useInputManager } from '../../lib/i
 import { dispatch } from '../../lib/event-bus'
 import { createLipSyncController, registerLipSync, unregisterLipSync, getLipSync } from '../../lib/lip-sync'
 import { clearAvatarLocomotionReady, setAvatarLocomotionReady } from '../../lib/avatar-locomotion-ready'
-import { getLiveObjectTransform } from '../../lib/live-object-transforms'
+import { getLiveObjectTransform, setLiveObjectTransform } from '../../lib/live-object-transforms'
+import { sampleTerrainHeightAt } from '../../lib/forge/terrain-brush'
 import {
   deriveAvatarAnchoredWindowPlacement,
   deriveWindowAvatarAnchor,
@@ -163,7 +164,7 @@ function PlaceholderBox() {
 // Uses 'dragging-changed' event (the reliable way to coordinate with OrbitControls)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function SelectableWrapper({ id, children, selected, onSelect, transformMode, onTransformChange, initialPosition, initialRotation, initialScale, inspectOn = 'click', allowTransform = true, liveTransformResolver }: {
+export function SelectableWrapper({ id, children, selected, onSelect, transformMode, onTransformChange, initialPosition, initialRotation, initialScale, inspectOn = 'click', allowTransform = true, liveTransformResolver, groundToTerrain = false }: {
   id: string
   children: React.ReactNode
   selected: boolean
@@ -176,9 +177,11 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
   inspectOn?: 'click' | 'double-click'
   allowTransform?: boolean
   liveTransformResolver?: (() => { position?: [number, number, number]; rotation?: [number, number, number] } | null) | undefined
+  groundToTerrain?: boolean
 }) {
   const groupRef = useRef<THREE.Group>(null)
   const materializeRef = useRef<THREE.Group>(null)
+  const transformDraggingRef = useRef(false)
   const { setIsDragging } = useContext(DragContext)
   const setInspectedObject = useOasisStore(s => s.setInspectedObject)
   const isReadOnly = useOasisStore(s => s.isViewMode && !s.isViewModeEditable)
@@ -187,15 +190,35 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
   const isAgentFocused = useInputManager(s => s.inputState === 'agent-focus')
   const materialization = useOasisStore(s => s.agentMaterializations[id])
   const clearAgentMaterialization = useOasisStore(s => s.clearAgentMaterialization)
+  const terrainHeights = useOasisStore(s => s.terrainHeights)
+  const terrainHeightsRef = useRef(terrainHeights)
+
+  useEffect(() => {
+    terrainHeightsRef.current = terrainHeights
+  }, [terrainHeights])
+
+  const resolveTerrainHeight = useCallback((x: number, z: number) => {
+    return sampleTerrainHeightAt(terrainHeightsRef.current, x, z)
+  }, [])
 
   // ░▒▓ Movement system — reads behavior from store, applies every frame ▓▒░
   const behavior = useOasisStore(s => s.behaviors[id])
-  useMovement(groupRef, behavior?.movement, id, behavior?.moveTarget, behavior?.moveSpeed)
+  useMovement(
+    groupRef,
+    behavior?.movement,
+    id,
+    behavior?.moveTarget,
+    behavior?.moveSpeed,
+    groundToTerrain ? resolveTerrainHeight : undefined,
+  )
 
   // Apply initial transforms from stored overrides (position + rotation + scale)
   useEffect(() => {
     if (!groupRef.current) return
-    if (initialPosition) groupRef.current.position.set(...initialPosition)
+    if (initialPosition) {
+      const [x, y, z] = initialPosition
+      groupRef.current.position.set(x, groundToTerrain ? resolveTerrainHeight(x, z) : y, z)
+    }
     if (initialRotation) groupRef.current.rotation.set(...initialRotation)
     if (initialScale != null) {
       if (typeof initialScale === 'number') {
@@ -204,7 +227,7 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
         groupRef.current.scale.set(...initialScale)
       }
     }
-  }, [initialPosition, initialRotation, initialScale])
+  }, [initialPosition, initialRotation, initialScale, groundToTerrain, resolveTerrainHeight])
 
   useFrame(() => {
     if (!groupRef.current || !liveTransformResolver) return
@@ -212,6 +235,21 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
     if (!next) return
     if (next.position) groupRef.current.position.set(...next.position)
     if (next.rotation) groupRef.current.rotation.set(...next.rotation)
+  })
+
+  useFrame(() => {
+    if (!groundToTerrain || transformDraggingRef.current || !groupRef.current) return
+    const group = groupRef.current
+    const p = group.position
+    const y = resolveTerrainHeight(p.x, p.z)
+    if (Math.abs(p.y - y) > 0.0001) {
+      p.y = y
+    }
+    setLiveObjectTransform(id, {
+      position: [p.x, p.y, p.z],
+      rotation: [group.rotation.x, group.rotation.y, group.rotation.z],
+      scale: [group.scale.x, group.scale.y, group.scale.z],
+    })
   })
 
   useFrame(() => {
@@ -246,6 +284,7 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
     // Mode is controlled exclusively via React props from the store.
     controls.setMode = () => {}
     const callback = (event: { value: boolean }) => {
+      transformDraggingRef.current = event.value
       if (event.value) {
         // ░▒▓ Drag start — capture world state for undo ▓▒░
         beginUndoBatch('Transform', '🔄')
@@ -256,13 +295,21 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
         const p = groupRef.current.position
         const r = groupRef.current.rotation
         const s = groupRef.current.scale
+        if (groundToTerrain) {
+          p.y = resolveTerrainHeight(p.x, p.z)
+        }
         onTransformChange(id, [p.x, p.y, p.z], [r.x, r.y, r.z], [s.x, s.y, s.z])
+        setLiveObjectTransform(id, {
+          position: [p.x, p.y, p.z],
+          rotation: [r.x, r.y, r.z],
+          scale: [s.x, s.y, s.z],
+        })
         // ░▒▓ Drag end — commit the batch undo command ▓▒░
         setTimeout(() => commitUndoBatch(), 50)  // after setObjectTransform fires
       }
     }
     controls.addEventListener('dragging-changed', callback)
-  }, [id, setIsDragging, onTransformChange, beginUndoBatch, commitUndoBatch])
+  }, [id, setIsDragging, onTransformChange, beginUndoBatch, commitUndoBatch, groundToTerrain, resolveTerrainHeight])
 
   // ─══ॐ══─ Respect visibility toggle from ObjectInspector ─══ॐ══─
   const isVisible = behavior?.visible !== false
@@ -2967,6 +3014,7 @@ function AgentAvatarsSection({ selectedObjectId, selectObject, transformMode, on
             initialPosition={avatarTransform?.position || derivedAnchor?.position || avatar.position}
             initialRotation={avatarTransform?.rotation || derivedAnchor?.rotation || avatar.rotation}
             initialScale={avatarTransform?.scale}
+            groundToTerrain
           >
             <Suspense fallback={<PlaceholderBox />}>
               <VRMCatalogRenderer

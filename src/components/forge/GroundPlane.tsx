@@ -24,18 +24,101 @@ import * as THREE from 'three'
 import { type GroundPreset, GROUND_PRESETS, getTextureUrls } from '../../lib/forge/ground-textures'
 import {
   TERRAIN_GRID_SEGMENTS,
-  TERRAIN_HEIGHT_COUNT,
   hasTerrainRelief,
   normalizeTerrainHeights,
   sampleTerrainHeightAt,
+  terrainVertexIndex,
 } from '../../lib/forge/terrain-brush'
 import { useOasisStore } from '../../store/oasisStore'
 import { DragContext } from '../scene-lib/contexts'
 
 const GROUND_SIZE = 100
 const TILE_SIZE = 1
+const HALF_GROUND_SIZE = GROUND_SIZE / 2
+const TILE_RELIEF_OFFSET = 0.012
 // Max tiles per preset group — covers full 100×100 world (10,000 tiles)
 const MAX_TILES_PER_GROUP = 10000
+
+function clampGridIndex(value: number): number {
+  return Math.max(0, Math.min(TERRAIN_GRID_SEGMENTS, value))
+}
+
+function pushUpwardQuad(indices: number[], a: number, b: number, c: number, d: number) {
+  indices.push(a, c, b, a, d, c)
+}
+
+function buildReliefGroundGeometry(heights: number[]): THREE.BufferGeometry {
+  const normalized = normalizeTerrainHeights(heights)
+  const positions: number[] = []
+  const uvs: number[] = []
+  const indices: number[] = []
+
+  for (let iz = 0; iz <= TERRAIN_GRID_SEGMENTS; iz++) {
+    for (let ix = 0; ix <= TERRAIN_GRID_SEGMENTS; ix++) {
+      const height = normalized[terrainVertexIndex(ix, iz)] || 0
+      positions.push(ix - HALF_GROUND_SIZE, height, iz - HALF_GROUND_SIZE)
+      uvs.push(ix / TERRAIN_GRID_SEGMENTS, iz / TERRAIN_GRID_SEGMENTS)
+    }
+  }
+
+  for (let iz = 0; iz < TERRAIN_GRID_SEGMENTS; iz++) {
+    for (let ix = 0; ix < TERRAIN_GRID_SEGMENTS; ix++) {
+      const a = terrainVertexIndex(ix, iz)
+      const b = terrainVertexIndex(ix + 1, iz)
+      const d = terrainVertexIndex(ix, iz + 1)
+      const c = terrainVertexIndex(ix + 1, iz + 1)
+      pushUpwardQuad(indices, a, b, c, d)
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  geometry.computeBoundingSphere()
+  return geometry
+}
+
+function buildReliefTileGeometry(tiles: [number, number][], heights: number[]): THREE.BufferGeometry {
+  const normalized = normalizeTerrainHeights(heights)
+  const positions: number[] = []
+  const uvs: number[] = []
+  const indices: number[] = []
+
+  for (const [x, z] of tiles) {
+    const minX = clampGridIndex(x + HALF_GROUND_SIZE)
+    const minZ = clampGridIndex(z + HALF_GROUND_SIZE)
+    const maxX = clampGridIndex(x + TILE_SIZE + HALF_GROUND_SIZE)
+    const maxZ = clampGridIndex(z + TILE_SIZE + HALF_GROUND_SIZE)
+    const base = positions.length / 3
+    const x0 = minX - HALF_GROUND_SIZE
+    const x1 = maxX - HALF_GROUND_SIZE
+    const z0 = minZ - HALF_GROUND_SIZE
+    const z1 = maxZ - HALF_GROUND_SIZE
+    const h00 = (normalized[terrainVertexIndex(minX, minZ)] || 0) + TILE_RELIEF_OFFSET
+    const h10 = (normalized[terrainVertexIndex(maxX, minZ)] || 0) + TILE_RELIEF_OFFSET
+    const h11 = (normalized[terrainVertexIndex(maxX, maxZ)] || 0) + TILE_RELIEF_OFFSET
+    const h01 = (normalized[terrainVertexIndex(minX, maxZ)] || 0) + TILE_RELIEF_OFFSET
+
+    positions.push(
+      x0, h00, z0,
+      x1, h10, z0,
+      x1, h11, z1,
+      x0, h01, z1,
+    )
+    uvs.push(0, 0, 1, 0, 1, 1, 0, 1)
+    pushUpwardQuad(indices, base, base + 1, base + 2, base + 3)
+  }
+
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  geometry.computeBoundingSphere()
+  return geometry
+}
 
 // ░▒▓ PLACEHOLDER TEXTURE — 1x1 grey pixel, lazy-initialized (SSR-safe) ▓▒░
 // Forces GPU shader to compile WITH texture sampler from the start.
@@ -185,16 +268,7 @@ function ReliefGround({ preset, heights }: { preset: GroundPreset; heights: numb
   ), [preset.assetName, preset.customTextureUrl])
   const [diffuse, setDiffuse] = useState<THREE.Texture | null>(null)
 
-  const geometry = useMemo(() => {
-    const normalized = normalizeTerrainHeights(heights)
-    const geo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE, TERRAIN_GRID_SEGMENTS, TERRAIN_GRID_SEGMENTS)
-    const position = geo.attributes.position as THREE.BufferAttribute
-    const count = Math.min(position.count, TERRAIN_HEIGHT_COUNT, normalized.length)
-    for (let i = 0; i < count; i++) position.setZ(i, normalized[i])
-    position.needsUpdate = true
-    geo.computeVertexNormals()
-    return geo
-  }, [heights])
+  const geometry = useMemo(() => buildReliefGroundGeometry(heights), [heights])
 
   useEffect(() => () => geometry.dispose(), [geometry])
 
@@ -235,7 +309,7 @@ function ReliefGround({ preset, heights }: { preset: GroundPreset; heights: numb
   }, [diffuse, preset.color])
 
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} geometry={geometry}>
+    <mesh geometry={geometry}>
       <meshStandardMaterial
         ref={matRef}
         color={preset.color}
@@ -347,9 +421,74 @@ function TileGroupRenderer({ preset, tiles }: { preset: GroundPreset; tiles: [nu
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PAINT GRID OVERLAY — Shows the 1m grid when in paint mode
+// RELIEF TILE GROUP RENDERER — Painted tiles that conform to sculpted terrain
 // ═══════════════════════════════════════════════════════════════════════════════
 
+function ReliefTileGroupRenderer({
+  preset,
+  tiles,
+  heights,
+}: {
+  preset: GroundPreset
+  tiles: [number, number][]
+  heights: number[]
+}) {
+  const gl = useThree(s => s.gl)
+  const matRef = useRef<THREE.MeshStandardMaterial>(null)
+  const urls = useMemo(() =>
+    preset.customTextureUrl
+      ? { diffuse: preset.customTextureUrl }
+      : getTextureUrls(preset.assetName),
+    [preset.assetName, preset.customTextureUrl])
+  const [diffuse, setDiffuse] = useState<THREE.Texture | null>(null)
+  const geometry = useMemo(() => buildReliefTileGeometry(tiles, heights), [tiles, heights])
+
+  useEffect(() => () => geometry.dispose(), [geometry])
+
+  useEffect(() => {
+    let cancelled = false
+    loadCachedTexture(urls.diffuse, THREE.SRGBColorSpace).then(tex => {
+      if (!cancelled && tex) {
+        gl.initTexture(tex)
+        setDiffuse(tex)
+      }
+    })
+    return () => { cancelled = true }
+  }, [urls.diffuse, gl])
+
+  useEffect(() => {
+    const mat = matRef.current
+    if (!mat) return
+    if (diffuse) {
+      mat.map = diffuse
+      mat.color.set('#ffffff')
+    } else {
+      mat.map = getPlaceholderTexture()
+      mat.color.set(preset.color)
+    }
+    mat.needsUpdate = true
+  }, [diffuse, preset.color])
+
+  return (
+    <mesh geometry={geometry} frustumCulled={false}>
+      <meshStandardMaterial
+        ref={matRef}
+        color={preset.color}
+        map={getPlaceholderTexture()}
+        roughness={1}
+        metalness={0}
+        envMapIntensity={0.15}
+        toneMapped
+        side={THREE.DoubleSide}
+        polygonOffset
+        polygonOffsetFactor={-1}
+        polygonOffsetUnits={-1}
+      />
+    </mesh>
+  )
+}
+
+// PAINT GRID OVERLAY — Shows the 1m grid when in paint mode
 function PaintGridOverlay() {
   return (
     <gridHelper
@@ -587,7 +726,14 @@ export function GroundPlane({ preset, groundTiles, paintMode, customGroundPreset
         const tilePreset = GROUND_PRESETS.find(p => p.id === presetId)
           || customGroundPresets.find(p => p.id === presetId)
         if (!tilePreset || (!tilePreset.assetName && !tilePreset.customTextureUrl)) return null
-        return (
+        return reliefActive ? (
+          <ReliefTileGroupRenderer
+            key={presetId}
+            preset={tilePreset}
+            tiles={tiles}
+            heights={terrainHeights}
+          />
+        ) : (
           <TileGroupRenderer
             key={presetId}
             preset={tilePreset}

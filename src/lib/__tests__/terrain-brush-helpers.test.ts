@@ -7,6 +7,7 @@ import {
   hasTerrainRelief,
   normalizeTerrainHeights,
   sampleTerrainHeightAt,
+  sampleTerrainSurfaceAt,
   terrainBrushFalloff,
   terrainVertexIndex,
 } from '../forge/terrain-brush'
@@ -43,6 +44,18 @@ describe('terrain-brush helpers', () => {
     })
 
     expect(sampleTerrainHeightAt(sculpted, 0, 0)).toBeLessThan(0)
+  })
+
+  it('samples terrain surface height smoothly between heightmap vertices', () => {
+    const heights = createFlatTerrainHeights()
+    heights[terrainVertexIndex(50, 50)] = 0
+    heights[terrainVertexIndex(51, 50)] = 2
+    heights[terrainVertexIndex(50, 51)] = 2
+    heights[terrainVertexIndex(51, 51)] = 4
+
+    const surface = sampleTerrainSurfaceAt(heights, 0.5, 0.5)
+    expect(surface.height).toBeCloseTo(2)
+    expect(surface.normal[1]).toBeGreaterThan(0)
   })
 
   it('normalizes stale or invalid persisted height data safely', () => {

@@ -50,6 +50,7 @@ export function useMovement(
   objectId?: string,
   moveTarget?: [number, number, number],
   moveSpeed?: number,
+  resolveGroundHeight?: (x: number, z: number) => number,
 ): void {
   const stateRef = useRef<MovementState>({
     initialized: false,
@@ -97,24 +98,29 @@ export function useMovement(
       const dist = Math.sqrt(dx * dx + dz * dz)
 
       if (dist < ARRIVE_THRESHOLD) {
-        // Arrived — snap XZ to target, preserve Y elevation
+        // Arrived — snap XZ to target, optionally ground to terrain
+        const y = resolveGroundHeight ? resolveGroundHeight(tx, tz) : group.position.y
         group.position.x = tx
+        group.position.y = y
         group.position.z = tz
         syncLiveTransform()
         useOasisStore.getState().clearMoveTarget(objectId)
         useOasisStore.getState().setObjectTransform(objectId, {
-          position: [tx, group.position.y, tz],
+          position: [tx, y, tz],
           rotation: [group.rotation.x, group.rotation.y, group.rotation.z],
           scale: [group.scale.x, group.scale.y, group.scale.z],
         })
         return
       }
 
-      // Move toward target — XZ only, Y stays untouched
+      // Move toward target — XZ steering, optional terrain grounding
       const step = speed * delta
       const ratio = Math.min(step / dist, 1)
       group.position.x += dx * ratio
       group.position.z += dz * ratio
+      if (resolveGroundHeight) {
+        group.position.y = resolveGroundHeight(group.position.x, group.position.z)
+      }
 
       // Face movement direction (smooth rotation)
       const targetAngle = Math.atan2(dx, dz)

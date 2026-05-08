@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 
 import { useUILayer } from '@/lib/input-manager'
@@ -8,6 +8,34 @@ import { useOasisStore } from '@/store/oasisStore'
 import { GROUND_PRESETS, getTextureUrls, type GroundPreset } from '@/lib/forge/ground-textures'
 import { hasTerrainRelief } from '@/lib/forge/terrain-brush'
 import { SettingsContext } from '../scene-lib'
+
+const PANEL_WIDTH = 320
+const PANEL_MARGIN = 12
+const PANEL_POSITION_KEY = 'oasis-terrain-brush-panel-position'
+
+interface PanelPosition {
+  x: number
+  y: number
+}
+
+function clampPanelPosition(position: PanelPosition): PanelPosition {
+  if (typeof window === 'undefined') return position
+  return {
+    x: Math.max(PANEL_MARGIN, Math.min(window.innerWidth - PANEL_WIDTH - PANEL_MARGIN, position.x)),
+    y: Math.max(PANEL_MARGIN, Math.min(window.innerHeight - 96, position.y)),
+  }
+}
+
+function getInitialPanelPosition(): PanelPosition {
+  if (typeof window === 'undefined') return { x: 0, y: 96 }
+  try {
+    const stored = JSON.parse(localStorage.getItem(PANEL_POSITION_KEY) || 'null') as PanelPosition | null
+    if (stored && Number.isFinite(stored.x) && Number.isFinite(stored.y)) {
+      return clampPanelPosition(stored)
+    }
+  } catch {}
+  return clampPanelPosition({ x: window.innerWidth - PANEL_WIDTH - 20, y: 96 })
+}
 
 function GroundTextureThumb({ preset }: { preset: GroundPreset }) {
   const [failed, setFailed] = useState(false)
@@ -62,6 +90,8 @@ export function TerrainBrushPanel() {
   const panelZIndex = useOasisStore(s => s.getPanelZIndex('terrain-brush', 9996))
   const { settings } = useContext(SettingsContext)
   const [texturesExpanded, setTexturesExpanded] = useState(false)
+  const [panelPosition, setPanelPosition] = useState<PanelPosition>(getInitialPanelPosition)
+  const dragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null)
 
   useUILayer('terrain-brush', isOpen)
 
@@ -70,6 +100,55 @@ export function TerrainBrushPanel() {
   const reliefActive = hasTerrainRelief(terrainHeights)
 
   const close = useCallback(() => setOpen(false), [setOpen])
+
+  const persistPanelPosition = useCallback((position: PanelPosition) => {
+    try {
+      localStorage.setItem(PANEL_POSITION_KEY, JSON.stringify(position))
+    } catch {}
+  }, [])
+
+  const beginPanelDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+    const panel = event.currentTarget.closest('[data-menu-portal="terrain-brush-panel"]') as HTMLElement | null
+    const rect = panel?.getBoundingClientRect()
+    dragRef.current = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - (rect?.left ?? panelPosition.x),
+      offsetY: event.clientY - (rect?.top ?? panelPosition.y),
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    bringPanelToFront('terrain-brush')
+    event.preventDefault()
+    event.stopPropagation()
+  }, [bringPanelToFront, panelPosition.x, panelPosition.y])
+
+  const dragPanel = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    const next = clampPanelPosition({
+      x: event.clientX - drag.offsetX,
+      y: event.clientY - drag.offsetY,
+    })
+    setPanelPosition(next)
+    event.preventDefault()
+    event.stopPropagation()
+  }, [])
+
+  const endPanelDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    dragRef.current = null
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    } catch {}
+    setPanelPosition(current => {
+      const clamped = clampPanelPosition(current)
+      persistPanelPosition(clamped)
+      return clamped
+    })
+    event.preventDefault()
+    event.stopPropagation()
+  }, [persistPanelPosition])
 
   useEffect(() => {
     if (!isOpen) return
@@ -80,14 +159,29 @@ export function TerrainBrushPanel() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isOpen, close])
 
+  useEffect(() => {
+    if (!isOpen) return
+    const onResize = () => {
+      setPanelPosition(current => {
+        const clamped = clampPanelPosition(current)
+        persistPanelPosition(clamped)
+        return clamped
+      })
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [isOpen, persistPanelPosition])
+
   if (!isOpen || typeof document === 'undefined') return null
 
   return createPortal(
     <div
       data-ui-panel
       data-menu-portal="terrain-brush-panel"
-      className="fixed right-5 top-24 w-[320px] overflow-hidden rounded-lg border border-emerald-400/25 shadow-2xl"
+      className="fixed w-[320px] overflow-hidden rounded-lg border border-emerald-400/25 shadow-2xl"
       style={{
+        left: panelPosition.x,
+        top: panelPosition.y,
         zIndex: panelZIndex,
         background: `rgba(7, 12, 10, ${Math.max(0.72, settings.uiOpacity ?? 0.85)})`,
         color: '#d7f7e7',
@@ -98,7 +192,13 @@ export function TerrainBrushPanel() {
       onPointerDown={event => event.stopPropagation()}
       onClick={event => event.stopPropagation()}
     >
-      <div className="flex items-center justify-between border-b border-emerald-400/15 px-3 py-2">
+      <div
+        className="flex cursor-move select-none items-center justify-between border-b border-emerald-400/15 px-3 py-2"
+        onPointerDown={beginPanelDrag}
+        onPointerMove={dragPanel}
+        onPointerUp={endPanelDrag}
+        onPointerCancel={endPanelDrag}
+      >
         <div className="min-w-0">
           <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-200">
             Terrain Brush
@@ -109,6 +209,7 @@ export function TerrainBrushPanel() {
         </div>
         <button
           onClick={close}
+          onPointerDown={event => event.stopPropagation()}
           className="flex h-7 w-7 items-center justify-center rounded-md border border-white/10 text-lg leading-none text-emerald-100/70 hover:border-red-400/40 hover:text-red-200"
           aria-label="Close terrain brush"
         >

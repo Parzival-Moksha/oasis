@@ -35,6 +35,8 @@ import {
 } from '../../lib/player-avatar-runtime'
 import { SPELL_CAST_ANIMATION_ID, SPELL_CAST_SOUND_URL } from '../../lib/spell-casting'
 import { PORTAL_REVEAL_ROLL_EVENT } from '../../lib/portal-transition-settings'
+import { sampleTerrainHeightAt } from '../../lib/forge/terrain-brush'
+import { useOasisStore } from '../../store/oasisStore'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -145,6 +147,7 @@ export function PlayerAvatar({
   const { settings } = useContext(SettingsContext)
   const inputState = useInputManager(s => s.inputState)
   const pointerLocked = useInputManager(s => s.pointerLocked)
+  const terrainHeights = useOasisStore(s => s.terrainHeights)
   const isThirdPersonActive = inputState === 'third-person'
   const groupRef = useRef<THREE.Group>(null)
   const vrmRef = useRef<VRM | null>(null)
@@ -163,6 +166,7 @@ export function PlayerAvatar({
   const velocityRef = useRef(new THREE.Vector3())
   const facingAngle = useRef(0) // Y rotation avatar faces
   const isMovingRef = useRef(false)
+  const terrainHeightsRef = useRef(terrainHeights)
   // Pre-allocated temp vectors (avoid per-frame allocation)
   const _camFwd = useRef(new THREE.Vector3())
   const _camRt = useRef(new THREE.Vector3())
@@ -194,6 +198,10 @@ export function PlayerAvatar({
 
   // ── Keyboard input (from drei KeyboardControls wrapping Canvas) ────
   const [, getKeys] = useKeyboardControls()
+
+  useEffect(() => {
+    terrainHeightsRef.current = terrainHeights
+  }, [terrainHeights])
 
   useEffect(() => {
     const handleWheel = (event: WheelEvent) => {
@@ -375,7 +383,8 @@ export function PlayerAvatar({
 
   useEffect(() => {
     return subscribePlayerAvatarTeleport((pose) => {
-      positionRef.current.set(...pose.position)
+      const [x, , z] = pose.position
+      positionRef.current.set(x, sampleTerrainHeightAt(terrainHeightsRef.current, x, z), z)
       facingAngle.current = pose.yaw
       velocityRef.current.set(0, 0, 0)
       isMovingRef.current = false
@@ -581,6 +590,12 @@ export function PlayerAvatar({
         if (t >= 1) rollMotionRef.current = null
       }
 
+      positionRef.current.y = sampleTerrainHeightAt(
+        terrainHeightsRef.current,
+        positionRef.current.x,
+        positionRef.current.z,
+      )
+
       // ── Position camera behind avatar using spherical coords ───
       cameraZoom.current += (cameraZoomTarget.current - cameraZoom.current) * (1 - Math.exp(-TPS_ZOOM_SMOOTHING * delta))
       const zoomFraming = smoothstep01(cameraZoom.current / DEFAULT_TPS_CAMERA_ZOOM)
@@ -621,6 +636,14 @@ export function PlayerAvatar({
           cam.position.y += Math.sin(t * 19.7) * Math.cos(t * 13.1) * shakeAmt * 0.5
         }
       }
+    }
+
+    if (!isThirdPersonActive) {
+      positionRef.current.y = sampleTerrainHeightAt(
+        terrainHeightsRef.current,
+        positionRef.current.x,
+        positionRef.current.z,
+      )
     }
 
     // ── Sync group transform to position ref ─────────────────────

@@ -150,6 +150,17 @@ describe('get_world_state', () => {
       transforms: {
         'console-1': { position: [4, 0, 5], rotation: [0, 1.2, 0], scale: 1.5 },
       },
+      portalGates: [{
+        id: 'portal-sunny',
+        variant: 'solar-arch',
+        label: 'Orange sunny gate',
+        position: [30, 0, 0],
+        rotationY: Math.PI / 2,
+        width: 3,
+        height: 4,
+        direction: 'one-way',
+        action: { type: 'locked_message', message: 'The sun door hums but stays shut.' },
+      }],
     })
     vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
 
@@ -161,6 +172,8 @@ describe('get_world_state', () => {
       visibility?: string
       canWrite?: boolean
       catalogObjects: Array<{ id: string; position: unknown; rotation: unknown; scale: unknown }>
+      portalCount?: number
+      portalGates: Array<{ id: string; variant: string; label: string; position: unknown; action: unknown }>
     }
     expect(data).toMatchObject({
       worldName: 'Test World',
@@ -172,6 +185,14 @@ describe('get_world_state', () => {
       position: [4, 0, 5],
       rotation: [0, 1.2, 0],
       scale: 1.5,
+    })
+    expect(data.portalCount).toBe(1)
+    expect(data.portalGates[0]).toMatchObject({
+      id: 'portal-sunny',
+      variant: 'solar-arch',
+      label: 'Orange sunny gate',
+      position: [30, 0, 0],
+      action: { type: 'locked_message', message: 'The sun door hums but stays shut.' },
     })
   })
 })
@@ -194,19 +215,28 @@ describe('query_objects', () => {
         objects: [],
         position: [2, 0, 2],
       }],
+      portalGates: [{
+        id: 'portal-codex',
+        variant: 'solar-arch',
+        label: 'Codex sunny portal gate',
+        position: [10, 0, 9],
+        width: 3,
+        height: 4,
+      }],
       transforms: {
         'book-1': { position: [9, 0, 9] },
       },
     })
     vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
 
-    const result = await callTool('query_objects', { query: 'Codex spell test', near: [8, 0, 8], radius: 20 })
+    const result = await callTool('query_objects', { query: 'Codex', near: [8, 0, 8], radius: 20 })
 
     expect(result.ok).toBe(true)
     const data = result.data as Array<{ id: string; type: string; position: unknown }>
     expect(data).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'book-1', type: 'catalog', position: [9, 0, 9] }),
       expect.objectContaining({ id: 'crafted-1', type: 'crafted' }),
+      expect.objectContaining({ id: 'portal-codex', type: 'portal', position: [10, 0, 9] }),
     ]))
   })
 })
