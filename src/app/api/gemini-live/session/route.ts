@@ -4,6 +4,7 @@ import {
   buildGeminiLiveSessionManifest,
   getGeminiApiKey,
   sanitizeGeminiLiveModel,
+  sanitizeGeminiLiveVoice,
 } from '@/lib/gemini-live-server'
 
 export const dynamic = 'force-dynamic'
@@ -26,12 +27,21 @@ export async function POST(request: NextRequest) {
   }
 
   const model = sanitizeGeminiLiveModel(body.model)
+  const voice = sanitizeGeminiLiveVoice(body.voice)
   const worldId = sanitizeString(body.worldId)
   const worldName = sanitizeString(body.worldName)
+  const systemInstruction = sanitizeString(body.systemInstruction)
 
-  return NextResponse.json(buildGeminiLiveSessionManifest({
-    model,
-    worldId,
-    worldName,
-  }))
+  try {
+    return NextResponse.json(await buildGeminiLiveSessionManifest({
+      model,
+      voice,
+      worldId,
+      worldName,
+      systemInstruction,
+    }))
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to create Gemini Live session.'
+    return NextResponse.json({ error: message }, { status: 502 })
+  }
 }

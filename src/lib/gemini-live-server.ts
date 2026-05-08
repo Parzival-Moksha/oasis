@@ -1,15 +1,20 @@
 import 'server-only'
 
+import { GoogleGenAI } from '@google/genai'
+
 import {
+  GEMINI_LIVE_INPUT_SAMPLE_RATE,
   GEMINI_LIVE_MODELS,
+  GEMINI_LIVE_OUTPUT_SAMPLE_RATE,
   GEMINI_LIVE_RESPONSE_MODALITIES,
+  GEMINI_LIVE_VOICES,
   type GeminiLiveConfigPayload,
   type GeminiLiveFunctionDeclaration,
   type GeminiLiveSessionPayload,
 } from '@/lib/gemini-live'
 
 export const GEMINI_LIVE_WEBSOCKET_ENDPOINT =
-  'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent'
+  'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained'
 
 export const GEMINI_LIVE_DOCS = {
   overview: 'https://ai.google.dev/gemini-api/docs/live-api',
@@ -19,10 +24,15 @@ export const GEMINI_LIVE_DOCS = {
 }
 
 const FALLBACK_GEMINI_LIVE_MODEL = GEMINI_LIVE_MODELS[0]
+const FALLBACK_GEMINI_LIVE_VOICE = GEMINI_LIVE_VOICES[0]
 const requestedDefaultGeminiLiveModel = process.env.GEMINI_LIVE_MODEL?.trim() || FALLBACK_GEMINI_LIVE_MODEL
 const DEFAULT_GEMINI_LIVE_MODEL = isAllowedGeminiLiveModel(requestedDefaultGeminiLiveModel)
   ? requestedDefaultGeminiLiveModel
   : FALLBACK_GEMINI_LIVE_MODEL
+const requestedDefaultGeminiLiveVoice = process.env.GEMINI_LIVE_VOICE?.trim() || FALLBACK_GEMINI_LIVE_VOICE
+const DEFAULT_GEMINI_LIVE_VOICE = isAllowedGeminiLiveVoice(requestedDefaultGeminiLiveVoice)
+  ? requestedDefaultGeminiLiveVoice
+  : FALLBACK_GEMINI_LIVE_VOICE
 
 const zVec3Schema = {
   type: 'array',
@@ -35,6 +45,10 @@ function isAllowedGeminiLiveModel(value: string): boolean {
   return (GEMINI_LIVE_MODELS as readonly string[]).includes(value)
 }
 
+function isAllowedGeminiLiveVoice(value: string): boolean {
+  return (GEMINI_LIVE_VOICES as readonly string[]).includes(value)
+}
+
 export function getGeminiApiKey(): string {
   return process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim() || ''
 }
@@ -42,6 +56,11 @@ export function getGeminiApiKey(): string {
 export function sanitizeGeminiLiveModel(value: unknown): string {
   const next = typeof value === 'string' ? value.trim() : ''
   return next && isAllowedGeminiLiveModel(next) ? next : DEFAULT_GEMINI_LIVE_MODEL
+}
+
+export function sanitizeGeminiLiveVoice(value: unknown): string {
+  const next = typeof value === 'string' ? value.trim() : ''
+  return next && isAllowedGeminiLiveVoice(next) ? next : DEFAULT_GEMINI_LIVE_VOICE
 }
 
 export function getGeminiLiveToolDeclarations(): GeminiLiveFunctionDeclaration[] {
@@ -216,11 +235,17 @@ export function getGeminiLiveToolDeclarations(): GeminiLiveFunctionDeclaration[]
 
 export function getGeminiLiveConfig(): GeminiLiveConfigPayload {
   const models = Array.from(new Set([DEFAULT_GEMINI_LIVE_MODEL, ...GEMINI_LIVE_MODELS]))
+  const voices = Array.from(new Set([DEFAULT_GEMINI_LIVE_VOICE, ...GEMINI_LIVE_VOICES]))
   return {
     configured: Boolean(getGeminiApiKey()),
     model: DEFAULT_GEMINI_LIVE_MODEL,
     models,
+    defaultVoice: DEFAULT_GEMINI_LIVE_VOICE,
+    voices,
     responseModalities: [...GEMINI_LIVE_RESPONSE_MODALITIES],
+    promptTemplate: buildGeminiLiveSystemInstruction(),
+    inputSampleRate: GEMINI_LIVE_INPUT_SAMPLE_RATE,
+    outputSampleRate: GEMINI_LIVE_OUTPUT_SAMPLE_RATE,
     websocketEndpoint: GEMINI_LIVE_WEBSOCKET_ENDPOINT,
     toolDeclarations: getGeminiLiveToolDeclarations(),
     docs: GEMINI_LIVE_DOCS,
@@ -234,54 +259,148 @@ export function buildGeminiLiveSystemInstruction(args: { worldId?: string; world
   return [
     'You are Gemini Live inside Oasis, an experimental 3D agent lab.',
     `Active world: ${worldName} (${worldId}).`,
-    'Keep responses short, spatial, and useful.',
+    'Keep responses short, spatial, and useful. Speak like a co-wizard in a live demo, not a website chatbot.',
     'When tools are connected, use Oasis function calls for world changes instead of describing changes as if they already happened.',
     'Prefer create_spatial_web_object for 3D forms, controls, menus, and output panels.',
+    'When you create or change the world, say what you are doing while the tool call is running.',
   ].join('\n')
 }
 
-export function buildGeminiLiveSetup(args: {
-  model?: unknown
+function normalizeSystemInstruction(value: unknown, fallback: string): string {
+  const next = typeof value === 'string' ? value.trim() : ''
+  return next || fallback
+}
+
+export function buildGeminiLiveConnectConfig(args: {
+  voice?: unknown
   worldId?: string
   worldName?: string
+  systemInstruction?: unknown
 } = {}): Record<string, unknown> {
-  const model = sanitizeGeminiLiveModel(args.model)
+  const voice = sanitizeGeminiLiveVoice(args.voice)
+  const systemInstruction = normalizeSystemInstruction(
+    args.systemInstruction,
+    buildGeminiLiveSystemInstruction({ worldId: args.worldId, worldName: args.worldName }),
+  )
+
   return {
-    setup: {
-      model: `models/${model}`,
-      generationConfig: {
-        responseModalities: [...GEMINI_LIVE_RESPONSE_MODALITIES],
-      },
-      systemInstruction: {
-        parts: [{ text: buildGeminiLiveSystemInstruction({ worldId: args.worldId, worldName: args.worldName }) }],
-      },
-      tools: [
-        {
-          functionDeclarations: getGeminiLiveToolDeclarations(),
+    responseModalities: [...GEMINI_LIVE_RESPONSE_MODALITIES],
+    speechConfig: {
+      voiceConfig: {
+        prebuiltVoiceConfig: {
+          voiceName: voice,
         },
-      ],
-      inputAudioTranscription: {},
-      outputAudioTranscription: {},
+      },
+    },
+    systemInstruction: {
+      parts: [{ text: systemInstruction }],
+    },
+    tools: [
+      {
+        functionDeclarations: getGeminiLiveToolDeclarations(),
+      },
+    ],
+    inputAudioTranscription: {},
+    outputAudioTranscription: {},
+    realtimeInputConfig: {
+      activityHandling: 'START_OF_ACTIVITY_INTERRUPTS',
     },
   }
 }
 
-export function buildGeminiLiveSessionManifest(args: {
+export function buildGeminiLiveSetup(args: {
   model?: unknown
+  voice?: unknown
   worldId?: string
   worldName?: string
-} = {}): GeminiLiveSessionPayload {
+  systemInstruction?: unknown
+} = {}): Record<string, unknown> {
   const model = sanitizeGeminiLiveModel(args.model)
-  const toolDeclarations = getGeminiLiveToolDeclarations()
+  const config = buildGeminiLiveConnectConfig({
+    voice: args.voice,
+    worldId: args.worldId,
+    worldName: args.worldName,
+    systemInstruction: args.systemInstruction,
+  })
   return {
-    status: 'manifest-ready',
+    setup: {
+      model: `models/${model}`,
+      generationConfig: {
+        responseModalities: config.responseModalities,
+        speechConfig: config.speechConfig,
+      },
+      systemInstruction: config.systemInstruction,
+      tools: config.tools,
+      inputAudioTranscription: config.inputAudioTranscription,
+      outputAudioTranscription: config.outputAudioTranscription,
+      realtimeInputConfig: config.realtimeInputConfig,
+    },
+  }
+}
+
+export async function buildGeminiLiveSessionManifest(args: {
+  model?: unknown
+  voice?: unknown
+  worldId?: string
+  worldName?: string
+  systemInstruction?: unknown
+} = {}): Promise<GeminiLiveSessionPayload> {
+  const apiKey = getGeminiApiKey()
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY or GOOGLE_API_KEY is not configured.')
+  }
+
+  const model = sanitizeGeminiLiveModel(args.model)
+  const voice = sanitizeGeminiLiveVoice(args.voice)
+  const toolDeclarations = getGeminiLiveToolDeclarations()
+  const setupMessage = buildGeminiLiveSetup({
+    model,
+    voice,
+    worldId: args.worldId,
+    worldName: args.worldName,
+    systemInstruction: args.systemInstruction,
+  })
+  const connectConfig = buildGeminiLiveConnectConfig({
+    voice,
+    worldId: args.worldId,
+    worldName: args.worldName,
+    systemInstruction: args.systemInstruction,
+  })
+  const tokenExpiresAt = Date.now() + 30 * 60 * 1000
+  const newSessionExpiresAt = Date.now() + 60 * 1000
+  const ai = new GoogleGenAI({
+    apiKey,
+    httpOptions: { apiVersion: 'v1alpha' },
+  })
+  const token = await ai.authTokens.create({
+    config: {
+      uses: 1,
+      expireTime: new Date(tokenExpiresAt).toISOString(),
+      newSessionExpireTime: new Date(newSessionExpiresAt).toISOString(),
+      liveConnectConstraints: {
+        model,
+        config: connectConfig,
+      },
+      httpOptions: { apiVersion: 'v1alpha' },
+    },
+  })
+  const accessToken = typeof token.name === 'string' ? token.name : ''
+  if (!accessToken) {
+    throw new Error('Gemini did not return an ephemeral Live token.')
+  }
+
+  return {
+    status: 'session-ready',
     sessionId: `gemini-live-${Date.now()}`,
     model,
+    voice,
     configured: Boolean(getGeminiApiKey()),
-    transport: 'manifest-only',
+    transport: 'ephemeral-token',
     websocketEndpoint: GEMINI_LIVE_WEBSOCKET_ENDPOINT,
-    setupMessage: buildGeminiLiveSetup({ model, worldId: args.worldId, worldName: args.worldName }),
+    accessToken,
+    tokenExpiresAt,
+    setupMessage,
     toolDeclarationNames: toolDeclarations.map(tool => tool.name),
-    note: 'Gemini Live setup and Oasis tool declarations are prepared server-side. A WebSocket proxy or ephemeral-token client is still needed for live audio/text streaming.',
+    note: 'Gemini Live ephemeral token minted server-side. Browser may connect directly to the constrained Live WebSocket without exposing the real API key.',
   }
 }

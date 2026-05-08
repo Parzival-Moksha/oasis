@@ -19,7 +19,7 @@ export type AgentAvatarLike = {
 
 export type AgentAvatarTransformMap = Record<string, AgentAvatarTransform>
 
-export const SHARED_AGENT_AVATAR_TYPES = ['anorak-pro', 'merlin', 'realtime', 'hermes', 'openclaw'] as const
+export const SHARED_AGENT_AVATAR_TYPES = ['anorak-pro', 'merlin', 'realtime', 'hermes', 'openclaw', 'gemini'] as const
 
 export function isSharedAgentAvatarType(agentType: string): boolean {
   return SHARED_AGENT_AVATAR_TYPES.includes(agentType as typeof SHARED_AGENT_AVATAR_TYPES[number])

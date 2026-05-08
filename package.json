@@ -20,6 +20,7 @@
     "lint": "eslint src scripts next.config.mjs postcss.config.js tailwind.config.js vitest.config.ts --ext .js,.mjs,.ts,.tsx --report-unused-disable-directives"
   },
   "dependencies": {
+    "@google/genai": "^2.0.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@pixiv/three-vrm": "^3.5.0",
     "@prisma/client": "^6.19.2",

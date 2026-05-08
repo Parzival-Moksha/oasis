@@ -48,6 +48,7 @@ import {
   deriveWindowAvatarScale,
   scalarFromTransformScale,
 } from '../../lib/agent-avatar-utils'
+import { isSharedAgentAvatarType } from '../../lib/agent-avatar-world-state'
 
 const IDLE_CLIP_PATTERNS = /idle|breathe?|stand|rest|pose|wait/i
 const WALK_CLIP_PATTERNS = /walk|run|move|locomotion|jog/i
@@ -3068,7 +3069,7 @@ function AgentAvatarsSection({ selectedObjectId, selectObject, transformMode, on
     const winners = new Map<string, string>()
     const scores = new Map<string, number>()
     for (const avatar of placedAgentAvatars) {
-      const isSharedAvatarType = avatar.agentType === 'anorak-pro' || avatar.agentType === 'merlin' || avatar.agentType === 'realtime' || avatar.agentType === 'hermes' || avatar.agentType === 'openclaw'
+      const isSharedAvatarType = isSharedAgentAvatarType(avatar.agentType)
       if (!isSharedAvatarType) continue
       const score = (avatar.linkedWindowId ? 0 : 100) + (transforms[avatar.id] ? 20 : 0)
       const currentScore = scores.get(avatar.agentType) ?? Number.NEGATIVE_INFINITY
@@ -3085,7 +3086,7 @@ function AgentAvatarsSection({ selectedObjectId, selectObject, transformMode, on
   return (
     <>
       {placedAgentAvatars.map(avatar => {
-        const isSharedAvatarType = avatar.agentType === 'anorak-pro' || avatar.agentType === 'merlin' || avatar.agentType === 'realtime' || avatar.agentType === 'hermes' || avatar.agentType === 'openclaw'
+        const isSharedAvatarType = isSharedAgentAvatarType(avatar.agentType)
         if (isSharedAvatarType && sharedAvatarWinnerByType.get(avatar.agentType) !== avatar.id) return null
         if (!avatar.avatar3dUrl) return null
         const renderAvatarUrl = resolveAgentAvatarUrl(avatar.avatar3dUrl).url

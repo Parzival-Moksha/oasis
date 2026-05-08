@@ -2,8 +2,22 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('server-only', () => ({}))
 
+const geminiSdkMocks = vi.hoisted(() => ({
+  createAuthToken: vi.fn(),
+}))
+
+vi.mock('@google/genai', () => ({
+  GoogleGenAI: vi.fn().mockImplementation(function GoogleGenAI() {
+    return {
+      authTokens: {
+        create: geminiSdkMocks.createAuthToken,
+      },
+    }
+  }),
+}))
+
 const originalEnv = { ...process.env }
-const geminiEnvKeys = ['GEMINI_LIVE_MODEL', 'GEMINI_API_KEY', 'GOOGLE_API_KEY'] as const
+const geminiEnvKeys = ['GEMINI_LIVE_MODEL', 'GEMINI_LIVE_VOICE', 'GEMINI_API_KEY', 'GOOGLE_API_KEY'] as const
 
 async function loadGeminiLiveServer(env: Record<string, string | undefined> = {}) {
   vi.resetModules()
@@ -24,6 +38,7 @@ afterEach(() => {
     }
   }
   vi.restoreAllMocks()
+  geminiSdkMocks.createAuthToken.mockReset()
 })
 
 describe('gemini live server guardrails', () => {
@@ -39,28 +54,45 @@ describe('gemini live server guardrails', () => {
   })
 
   it('reports server key availability without leaking the key', async () => {
-    const { buildGeminiLiveSessionManifest, getGeminiApiKey, getGeminiLiveConfig } = await loadGeminiLiveServer({
+    const { getGeminiApiKey, getGeminiLiveConfig } = await loadGeminiLiveServer({
       GEMINI_API_KEY: 'secret-gemini-key',
     })
 
     const config = getGeminiLiveConfig()
-    const manifest = buildGeminiLiveSessionManifest({ worldId: 'world-1', worldName: 'Test World' })
-    const serialized = JSON.stringify({ config, manifest })
+    const serialized = JSON.stringify({ config })
 
     expect(getGeminiApiKey()).toBe('secret-gemini-key')
     expect(config.configured).toBe(true)
-    expect(manifest.configured).toBe(true)
     expect(serialized).not.toContain('secret-gemini-key')
   })
 
-  it('declares Oasis tools, including spatial web primitives, in the setup manifest', async () => {
-    const { buildGeminiLiveSessionManifest } = await loadGeminiLiveServer()
+  it('declares Oasis tools, voice config, and token transport in the session manifest', async () => {
+    geminiSdkMocks.createAuthToken.mockResolvedValue({ name: 'auth_tokens/test-token' })
+    const { buildGeminiLiveSessionManifest } = await loadGeminiLiveServer({
+      GEMINI_API_KEY: 'secret-gemini-key',
+    })
 
-    const manifest = buildGeminiLiveSessionManifest({ model: 'gemini-3.1-flash-live-preview' })
+    const manifest = await buildGeminiLiveSessionManifest({
+      model: 'gemini-3.1-flash-live-preview',
+      voice: 'Kore',
+      worldId: 'world-1',
+      worldName: 'Test World',
+    })
 
     expect(manifest.setupMessage).toHaveProperty('setup')
     expect(manifest.toolDeclarationNames).toContain('create_spatial_web_object')
     expect(manifest.toolDeclarationNames).toContain('get_world_state')
-    expect(manifest.transport).toBe('manifest-only')
+    expect(manifest.transport).toBe('ephemeral-token')
+    expect(manifest.accessToken).toBe('auth_tokens/test-token')
+    expect(JSON.stringify(manifest)).not.toContain('secret-gemini-key')
+    expect(JSON.stringify(manifest.setupMessage)).toContain('Kore')
+    expect(geminiSdkMocks.createAuthToken).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({
+        uses: 1,
+        liveConnectConstraints: expect.objectContaining({
+          model: 'gemini-3.1-flash-live-preview',
+        }),
+      }),
+    }))
   })
 })
