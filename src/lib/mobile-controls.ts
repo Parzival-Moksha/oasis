@@ -27,6 +27,12 @@ export function isProbablyMobileDevice(): boolean {
   const params = new URLSearchParams(window.location.search)
   if (params.get('mobile') === '1') return true
   if (params.get('mobile') === '0') return false
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+  if (hashParams.get('mobile') === '1') return true
+  if (hashParams.get('mobile') === '0') return false
+  const savedOverride = window.localStorage.getItem('oasis-mobile-override')
+  if (savedOverride === '1') return true
+  if (savedOverride === '0') return false
 
   const navigatorWithHints = navigator as Navigator & {
     userAgentData?: { mobile?: boolean }
