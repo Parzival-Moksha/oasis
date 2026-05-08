@@ -49,6 +49,37 @@ function isAllowedGeminiLiveVoice(value: string): boolean {
   return (GEMINI_LIVE_VOICES as readonly string[]).includes(value)
 }
 
+function sanitizeGeminiSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeGeminiSchema)
+  if (!value || typeof value !== 'object') return value
+
+  const input = value as Record<string, unknown>
+  const output: Record<string, unknown> = {}
+  for (const [key, child] of Object.entries(input)) {
+    if (key === 'additionalProperties' || key === 'minItems' || key === 'maxItems') continue
+    output[key] = sanitizeGeminiSchema(child)
+  }
+
+  const looksLikeUntypedProperty =
+    typeof output.description === 'string'
+    && output.type === undefined
+    && output.properties === undefined
+    && output.items === undefined
+    && output.enum === undefined
+  if (looksLikeUntypedProperty) {
+    output.type = 'string'
+  }
+
+  return output
+}
+
+function sanitizeGeminiFunctionDeclaration(declaration: GeminiLiveFunctionDeclaration): GeminiLiveFunctionDeclaration {
+  return {
+    ...declaration,
+    parameters: sanitizeGeminiSchema(declaration.parameters) as Record<string, unknown>,
+  }
+}
+
 export function getGeminiApiKey(): string {
   return process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim() || ''
 }
@@ -64,7 +95,7 @@ export function sanitizeGeminiLiveVoice(value: unknown): string {
 }
 
 export function getGeminiLiveToolDeclarations(): GeminiLiveFunctionDeclaration[] {
-  return [
+  const declarations: GeminiLiveFunctionDeclaration[] = [
     {
       name: 'get_world_info',
       description: 'Get a fast summary of the active Oasis world: name, object count, sky, ground, tiles, and lights.',
@@ -231,6 +262,7 @@ export function getGeminiLiveToolDeclarations(): GeminiLiveFunctionDeclaration[]
       },
     },
   ]
+  return declarations.map(sanitizeGeminiFunctionDeclaration)
 }
 
 export function getGeminiLiveConfig(): GeminiLiveConfigPayload {

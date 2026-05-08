@@ -28,12 +28,14 @@ import {
   GEMINI_LIVE_MODELS,
   GEMINI_LIVE_OUTPUT_SAMPLE_RATE,
   GEMINI_LIVE_PANEL_SETTINGS_KEY,
+  GEMINI_LIVE_SESSION_SETTINGS_KEY,
   GEMINI_LIVE_VOICES,
   clampGeminiLivePanelSettings,
   type GeminiLiveConfigPayload,
   type GeminiLiveConnectionState,
   type GeminiLivePanelSettings,
   type GeminiLiveSessionPayload,
+  type GeminiLiveSessionSettings,
 } from '@/lib/gemini-live'
 import { useOasisStore } from '@/store/oasisStore'
 
@@ -208,6 +210,18 @@ function readPanelSettings(): GeminiLivePanelSettings {
   }
 }
 
+function readSessionSettings(): Partial<GeminiLiveSessionSettings> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem(GEMINI_LIVE_SESSION_SETTINGS_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Partial<GeminiLiveSessionSettings>
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
 function StatusBadge({ state, listening, speaking }: { state: GeminiLiveConnectionState; listening: boolean; speaking: boolean }) {
   const active = state === 'connected'
   const palette = state === 'error'
@@ -258,9 +272,9 @@ export function GeminiLivePanel({
 
   const [config, setConfig] = useState<GeminiLiveConfigPayload | null>(null)
   const [configError, setConfigError] = useState('')
-  const [selectedModel, setSelectedModel] = useState<string>(GEMINI_LIVE_MODELS[0])
-  const [selectedVoice, setSelectedVoice] = useState<string>(GEMINI_LIVE_VOICES[0])
-  const [systemPrompt, setSystemPrompt] = useState('')
+  const [selectedModel, setSelectedModel] = useState<string>(() => readSessionSettings().model || GEMINI_LIVE_MODELS[0])
+  const [selectedVoice, setSelectedVoice] = useState<string>(() => readSessionSettings().voice || GEMINI_LIVE_VOICES[0])
+  const [systemPrompt, setSystemPrompt] = useState<string>(() => readSessionSettings().instructions || '')
   const [activeTab, setActiveTab] = useState<GeminiPanelTab>('stream')
   const [panelSettings, setPanelSettings] = useState<GeminiLivePanelSettings>(() => readPanelSettings())
   const [connectionState, setConnectionState] = useState<GeminiLiveConnectionState>('idle')
@@ -965,7 +979,10 @@ export function GeminiLivePanel({
         sessionRef.current = null
         setSession(null)
         setConnectionState(event.wasClean ? 'stopped' : 'error')
-        setConnectionDetail(event.wasClean ? 'Gemini Live socket closed.' : `Gemini Live socket closed (${event.code}).`)
+        const closeReason = event.reason ? `: ${event.reason}` : ''
+        setConnectionDetail(event.wasClean
+          ? `Gemini Live socket closed (${event.code})${closeReason}.`
+          : `Gemini Live socket closed (${event.code})${closeReason}.`)
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -1023,10 +1040,17 @@ export function GeminiLivePanel({
       })
       .then(payload => {
         if (cancelled) return
+        const saved = readSessionSettings()
         setConfig(payload)
-        setSelectedModel(current => payload.models.includes(current) ? current : payload.model)
-        setSelectedVoice(current => payload.voices.includes(current) ? current : payload.defaultVoice)
-        setSystemPrompt(current => current.trim() ? current : payload.promptTemplate)
+        setSelectedModel(current => {
+          const preferred = saved.model || current
+          return payload.models.includes(preferred) ? preferred : payload.model
+        })
+        setSelectedVoice(current => {
+          const preferred = saved.voice || current
+          return payload.voices.includes(preferred) ? preferred : payload.defaultVoice
+        })
+        setSystemPrompt(current => saved.instructions?.trim() || current.trim() || payload.promptTemplate)
       })
       .catch(error => {
         if (cancelled) return
@@ -1043,6 +1067,16 @@ export function GeminiLivePanel({
       window.localStorage.setItem(GEMINI_LIVE_PANEL_SETTINGS_KEY, JSON.stringify(panelSettings))
     } catch {}
   }, [panelSettings])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(GEMINI_LIVE_SESSION_SETTINGS_KEY, JSON.stringify({
+        model: selectedModel,
+        voice: selectedVoice,
+        instructions: systemPrompt,
+      }))
+    } catch {}
+  }, [selectedModel, selectedVoice, systemPrompt])
 
   useEffect(() => {
     reconnectOutputGraph()

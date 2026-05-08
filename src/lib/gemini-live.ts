@@ -20,6 +20,7 @@ export const GEMINI_LIVE_RESPONSE_MODALITIES = ['AUDIO'] as const
 export const GEMINI_LIVE_INPUT_SAMPLE_RATE = 16000
 export const GEMINI_LIVE_OUTPUT_SAMPLE_RATE = 24000
 export const GEMINI_LIVE_PANEL_SETTINGS_KEY = 'oasis-gemini-live-panel-settings'
+export const GEMINI_LIVE_SESSION_SETTINGS_KEY = 'oasis-gemini-live-session-settings'
 
 export type GeminiLiveModel = typeof GEMINI_LIVE_MODELS[number]
 export type GeminiLiveVoice = typeof GEMINI_LIVE_VOICES[number]

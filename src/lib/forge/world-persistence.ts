@@ -224,7 +224,10 @@ export async function saveWorld(state: Omit<WorldState, 'version' | 'savedAt'>, 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(state),
     })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '')
+      throw new Error(`HTTP ${res.status}${detail ? ` ${detail.slice(0, 500)}` : ''}`)
+    }
     const result = typeof res.json === 'function'
       ? await res.json().catch(() => null) as SaveWorldResponse | null
       : null

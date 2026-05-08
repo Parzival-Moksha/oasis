@@ -95,4 +95,15 @@ describe('gemini live server guardrails', () => {
       }),
     }))
   })
+
+  it('keeps Gemini function schemas inside the Live API subset', async () => {
+    const { getGeminiLiveToolDeclarations } = await loadGeminiLiveServer()
+
+    const serialized = JSON.stringify(getGeminiLiveToolDeclarations())
+
+    expect(serialized).not.toContain('additionalProperties')
+    expect(serialized).not.toContain('minItems')
+    expect(serialized).not.toContain('maxItems')
+    expect(serialized).toContain('create_spatial_web_object')
+  })
 })
