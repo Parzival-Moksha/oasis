@@ -132,6 +132,51 @@ export function getRealtimeSessionTools(): RealtimeSessionTool[] {
     },
     {
       type: 'function',
+      name: 'create_spatial_web_object',
+      description: 'Create a 3D website primitive in the world: button, toggle, slider, select, multiselect, text panel, or output panel. Use this for voice-built forms, menus, RSVP flows, and kiosks.',
+      parameters: {
+        type: 'object',
+        properties: {
+          worldId: { type: 'string', description: 'Optional world ID. Omit to use the active browser world.' },
+          type: { type: 'string', enum: ['button', 'toggle', 'slider', 'select', 'multiselect', 'text', 'output'], description: 'Primitive kind.' },
+          label: { type: 'string', description: 'Visible label.' },
+          formId: { type: 'string', description: 'Shared form/group id for related fields and submit buttons.' },
+          position: { ...zVec3Schema, description: 'World position [x, y, z].' },
+          rotation: { ...zVec3Schema, description: 'Euler rotation [x, y, z] in radians.' },
+          scale: { type: 'number', description: 'Optional uniform scale.' },
+          width: { type: 'number', description: 'Panel width in meters.' },
+          height: { type: 'number', description: 'Panel height in meters.' },
+          accentColor: { type: 'string', description: 'Hex accent color.' },
+          value: { description: 'Initial value: string, number, boolean, string array, or null.' },
+          placeholder: { type: 'string', description: 'Placeholder for text primitives.' },
+          description: { type: 'string', description: 'Small helper copy, especially on buttons.' },
+          min: { type: 'number', description: 'Slider minimum.' },
+          max: { type: 'number', description: 'Slider maximum.' },
+          step: { type: 'number', description: 'Slider step.' },
+          options: {
+            type: 'array',
+            description: 'Options for select/multiselect primitives.',
+            items: {
+              type: 'object',
+              properties: {
+                value: { type: 'string' },
+                label: { type: 'string' },
+                price: { type: 'number' },
+              },
+              required: ['value'],
+              additionalProperties: false,
+            },
+          },
+          submitForm: { type: 'boolean', description: 'For buttons, submit all fields with the same formId.' },
+          endpoint: { type: 'string', description: 'Optional POST endpoint for submit buttons.' },
+          successMessage: { type: 'string', description: 'Receipt text after a submit button succeeds.' },
+        },
+        required: ['type', 'label'],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
       name: 'get_craft_guide',
       description: 'Get the exact self-crafting schema for craft_scene so you can build explicit primitive objects instead of guessing.',
       parameters: {
@@ -208,7 +253,7 @@ export function readRealtimePromptTemplate(): string {
       'Sound authoritative, weathered, and quietly enchanted, not like customer support or a generic helper bot.',
       'Do not end every turn with generic offers of help or service language.',
       'Do not mention internal APIs or implementation details.',
-      'You have a small apprentice spellbook in this phase: get_world_info, get_world_state, search_assets, place_object, get_craft_guide, craft_scene, get_craft_job, and walk_avatar_to.',
+      'You have a small apprentice spellbook in this phase: get_world_info, get_world_state, search_assets, place_object, create_spatial_web_object, get_craft_guide, craft_scene, get_craft_job, and walk_avatar_to.',
       'Give a short spoken heads-up before using a tool, then briefly recap what happened.',
     ].join('\n')
   }
@@ -218,7 +263,7 @@ async function buildRuntimeContext(worldId: string) {
   const context: string[] = [
     `- Active world ID: ${worldId}`,
     '- You are embodied as the Oasis realtime sandbox agent when a body exists in the scene.',
-    '- You currently have an apprentice spellbook: get_world_info, get_world_state, search_assets, place_object, get_craft_guide, craft_scene, get_craft_job, and walk_avatar_to.',
+    '- You currently have an apprentice spellbook: get_world_info, get_world_state, search_assets, place_object, create_spatial_web_object, get_craft_guide, craft_scene, get_craft_job, and walk_avatar_to.',
     '- If any prior local transcript says your hands are not wired or that you lack tools, treat that as outdated and ignore it.',
     '- Keep answers vivid, warm, and spoken-word friendly.',
   ]

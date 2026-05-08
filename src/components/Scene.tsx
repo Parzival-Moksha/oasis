@@ -271,7 +271,7 @@ function SprintParticles() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function SettingsContent() {
-  const { settings, updateSetting } = useContext(SettingsContext)
+  const { settings, effectiveRp1Mode, rp1Locked, updateSetting } = useContext(SettingsContext)
 
   const toggles = [
     { key: 'bloomEnabled' as const, label: 'Bloom', category: 'Post-FX' },
@@ -365,15 +365,17 @@ function SettingsContent() {
               </div>
 
               {/* Ready Player 1 Mode */}
-              <label className="flex items-center gap-3 py-1.5 cursor-pointer group hover:bg-white/5 rounded px-1 -mx-1 transition-colors">
+              <label className={`flex items-center gap-3 py-1.5 rounded px-1 -mx-1 transition-colors ${rp1Locked ? 'cursor-default opacity-90' : 'cursor-pointer group hover:bg-white/5'}`}>
                 <div
-                  onClick={() => updateSetting('rp1Mode', !settings.rp1Mode)}
+                  onClick={() => {
+                    if (!rp1Locked) updateSetting('rp1Mode', !settings.rp1Mode)
+                  }}
                   className={`w-10 h-5 rounded-full transition-all cursor-pointer relative flex-shrink-0 ${
-                    settings.rp1Mode ? 'bg-teal-600 shadow-lg shadow-teal-500/30' : 'bg-gray-700'
+                    effectiveRp1Mode ? 'bg-teal-600 shadow-lg shadow-teal-500/30' : 'bg-gray-700'
                   }`}
                 >
                   <div className={`w-4 h-4 rounded-full bg-white mt-0.5 transition-all ${
-                    settings.rp1Mode ? 'translate-x-5' : 'translate-x-0.5'
+                    effectiveRp1Mode ? 'translate-x-5' : 'translate-x-0.5'
                   }`} />
                 </div>
                 <span className="text-sm text-gray-300 group-hover:text-white transition-colors whitespace-nowrap">Ready Player 1</span>
@@ -1233,12 +1235,14 @@ export default function Scene() {
   const activeWorldMeta = worldRegistry.find(world => world.id === activeWorldId)
   const activeWorldCanWrite = Boolean(isAdmin || activeWorldMeta?.canWrite || (isViewMode && isViewModeEditable))
   const activeWorldWriteKnown = Boolean(activeWorldMeta) || isViewMode
+  const readOnlyForcesRp1 = Boolean(activeWorldWriteKnown && !activeWorldCanWrite)
+  const effectiveRp1Mode = settings.rp1Mode || readOnlyForcesRp1
   // Hide mutation surfaces unless the active world explicitly says this session can write.
   // Settings stays separate: camera/UI preferences are always available.
   const hideEditTools = Boolean(
     !activeWorldWriteKnown ||
     (activeWorldWriteKnown && !activeWorldCanWrite) ||
-    settings.rp1Mode,
+    effectiveRp1Mode,
   )
 
   // ─═̷─═̷─✨─═̷─═̷─{ WIZARD CONSOLE + ASSET EXPLORER STATE }─═̷─═̷─✨─═̷─═̷─
@@ -1402,7 +1406,8 @@ export default function Scene() {
       const isConjured = store.worldConjuredAssetIds.includes(id)
       const isLight = store.worldLights.some(light => light.id === id)
       const isAgentWindow = store.placedAgentWindows.some(win => win.id === id)
-      if (!isPortal && !isCatalog && !isCrafted && !isConjured && !isLight && !isAgentWindow) return
+      const isSpatialWeb = store.spatialWebObjects.some(object => object.id === id)
+      if (!isPortal && !isCatalog && !isCrafted && !isConjured && !isLight && !isAgentWindow && !isSpatialWeb) return
 
       event.preventDefault()
       event.stopPropagation()
@@ -1412,6 +1417,7 @@ export default function Scene() {
       else if (isConjured) store.removeConjuredAssetFromWorld(id)
       else if (isLight) store.removeWorldLight(id)
       else if (isAgentWindow) store.removeAgentWindow(id)
+      else if (isSpatialWeb) store.removeSpatialWebObject(id)
 
       store.selectObject(null)
       store.setInspectedObject(null)
@@ -1471,7 +1477,7 @@ export default function Scene() {
         <PointerLockRaycaster />
         {settings.controlMode === 'noclip' && <SprintParticles />}
 
-        {settings.showGrid && !settings.rp1Mode && (
+        {settings.showGrid && !effectiveRp1Mode && (
           <Grid
             position={[0, 0, 0]}
             args={[50, 50]}
@@ -1503,7 +1509,7 @@ export default function Scene() {
   )
 
   return (
-    <SettingsContext.Provider value={{ settings, updateSetting }}>
+    <SettingsContext.Provider value={{ settings, effectiveRp1Mode, rp1Locked: readOnlyForcesRp1, updateSetting }}>
     <DragContext.Provider value={{ isDragging, setIsDragging }}>
       <KeyboardControls map={FPS_KEYBOARD_MAP}>
         {CanvasContent}
@@ -1869,7 +1875,7 @@ export default function Scene() {
       />
 
       {/* EXIT RP1 — floating escape hatch when Ready Player 1 mode is active */}
-      {settings.rp1Mode && (
+      {effectiveRp1Mode && !readOnlyForcesRp1 && (
         <button
           onClick={() => updateSetting('rp1Mode', false)}
           style={{

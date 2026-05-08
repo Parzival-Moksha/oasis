@@ -16,6 +16,7 @@ import type { TerrainParams } from './terrain-generator'
 import type { PortalGate } from '../portal-gates'
 import type { AgentWindow, AgentAvatar } from '../../store/oasisStore'
 import type { WorldWriteDecision } from './world-access'
+import type { SpatialWebObject } from '../spatial-web'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // WORLD STATE — the serializable snapshot of everything in a single Forge world
@@ -37,6 +38,8 @@ export interface WorldState {
   catalogPlacements?: CatalogPlacement[]
   /** Persistent teleport gates placed in this world */
   portalGates?: PortalGate[]
+  /** Spatial website primitives: buttons, sliders, selectors, text, and output panels */
+  spatialWebObjects?: SpatialWebObject[]
   /** Transform overrides: objectId -> { position, rotation, scale } — all fields optional for partial overrides */
   transforms: Record<string, {
     position?: [number, number, number]

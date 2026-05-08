@@ -117,6 +117,7 @@ describe('TOOL_NAMES', () => {
   it('includes key tools', () => {
     expect(TOOL_NAMES).toContain('search_assets')
     expect(TOOL_NAMES).toContain('place_object')
+    expect(TOOL_NAMES).toContain('create_spatial_web_object')
     expect(TOOL_NAMES).toContain('set_avatar')
     expect(TOOL_NAMES).toContain('walk_avatar_to')
     expect(TOOL_NAMES).toContain('list_avatar_animations')
@@ -341,6 +342,55 @@ describe('place_object', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 // 6. set_sky — requires presetId
 // ═══════════════════════════════════════════════════════════════════════════
+
+describe('create_spatial_web_object', () => {
+  it('creates a spatial website primitive and emits it to world events', async () => {
+    const world = makeWorldRow()
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+    const events: Array<{ type: string; data?: Record<string, unknown> }> = []
+    const unsubscribe = subscribe(event => events.push(event))
+
+    let result!: Awaited<ReturnType<typeof callTool>>
+    try {
+      result = await callTool('create_spatial_web_object', {
+        type: 'slider',
+        label: 'How many are coming?',
+        formId: 'rsvp',
+        position: [1, 1.2, -3],
+        min: 1,
+        max: 8,
+        step: 1,
+        value: 3,
+      })
+    } finally {
+      unsubscribe()
+    }
+
+    expect(result.ok).toBe(true)
+    expect(result.message).toContain('spatial slider')
+    const updatePayload = vi.mocked(prisma.world.update).mock.calls[0]?.[0]
+    const savedState = JSON.parse(String(updatePayload?.data?.data || '{}')) as { spatialWebObjects?: Array<Record<string, unknown>> }
+    expect(savedState.spatialWebObjects?.[0]).toMatchObject({
+      type: 'slider',
+      label: 'How many are coming?',
+      formId: 'rsvp',
+      position: [1, 1.2, -3],
+      min: 1,
+      max: 8,
+      step: 1,
+      value: 3,
+    })
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'object_added',
+        data: expect.objectContaining({
+          spatialWebObject: expect.objectContaining({ type: 'slider', label: 'How many are coming?' }),
+        }),
+      }),
+    ]))
+  })
+})
 
 describe('context-aware hosted world tools', () => {
   beforeEach(() => {

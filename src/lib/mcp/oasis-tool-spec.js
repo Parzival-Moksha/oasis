@@ -9,6 +9,7 @@ const zLooseObject = z.object({}).passthrough()
 const zLooseArrayOrString = z.union([z.array(zLooseObject), z.string()])
 const zNumberish = z.union([z.number(), z.string()])
 const zLoopMode = z.union([z.enum(['repeat', 'once', 'pingpong']), z.boolean()])
+const zSpatialWebValue = z.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()])
 
 function validString(value, fallback = '') {
   return typeof value === 'string' ? value.trim() || fallback : fallback
@@ -27,7 +28,7 @@ export const OASIS_MCP_INSTRUCTIONS = [
   'Use screenshot_viewport and avatar screenshot tools for visual grounding when a live Oasis browser is connected.',
   'Avatar and world mutations may execute as embodied sequences rather than instantaneous teleports, so allow time for completion.',
   'Use generate_image, generate_voice, and generate_video when media would help the conversation; Oasis can render the returned URLs in the agent panel.',
-  'For Hermes, Merlin, and OpenClaw, self-crafted objects are the default. Call get_craft_guide for the schema and use self_craft_scene with explicit primitive objects in hosted 04515 mode. Use craft_scene strategy:"sculptor" only in trusted local/full-tool contexts when you intentionally want fallback prompt crafting.',
+  'For Hermes, Merlin, and OpenClaw, self-crafted objects are the default. Call get_craft_guide for the schema and use self_craft_scene with explicit primitive objects in hosted 04515 mode. Use create_spatial_web_object for 3D form controls and website primitives. Use craft_scene strategy:"sculptor" only in trusted local/full-tool contexts when you intentionally want fallback prompt crafting.',
 ].join(' ')
 
 export const OASIS_MCP_TOOL_SPECS = [
@@ -91,7 +92,7 @@ export const OASIS_MCP_TOOL_SPECS = [
   },
   {
     name: 'clear_world',
-    description: 'Remove all catalog objects, crafted scenes, conjured placements, lights, tiles, behaviors, and avatars from a world.',
+    description: 'Remove all catalog objects, crafted scenes, spatial web primitives, conjured placements, lights, tiles, behaviors, and avatars from a world.',
     inputSchema: z.object({ worldId: z.string().optional(), confirm: z.boolean() }).passthrough(),
     injectWorldId: true,
     injectActorAgentType: true,
@@ -107,6 +108,35 @@ export const OASIS_MCP_TOOL_SPECS = [
       rotation: zVec3Like.optional(),
       scale: zNumberish.optional(),
       label: z.string().optional(),
+    }).passthrough(),
+    injectWorldId: true,
+    injectActorAgentType: true,
+  },
+  {
+    name: 'create_spatial_web_object',
+    description: 'Create a 3D website primitive in the world: button, toggle, slider, select, multiselect, text panel, or output panel. Use this for voice-built forms, menus, order kiosks, RSVP flows, and "website but not a website" interfaces.',
+    inputSchema: z.object({
+      worldId: z.string().optional(),
+      type: z.enum(['button', 'toggle', 'slider', 'select', 'multiselect', 'text', 'output']),
+      label: z.string(),
+      formId: z.string().optional(),
+      position: zVec3Like.optional(),
+      rotation: zVec3Like.optional(),
+      scale: z.union([z.number(), z.string(), zVec3Like]).optional(),
+      width: zNumberish.optional(),
+      height: zNumberish.optional(),
+      accentColor: z.string().optional(),
+      value: zSpatialWebValue.optional(),
+      placeholder: z.string().optional(),
+      description: z.string().optional(),
+      min: zNumberish.optional(),
+      max: zNumberish.optional(),
+      step: zNumberish.optional(),
+      options: z.union([z.array(z.union([zLooseObject, z.string()])), z.string()]).optional(),
+      submitForm: z.boolean().optional(),
+      actionType: z.string().optional(),
+      endpoint: z.string().optional(),
+      successMessage: z.string().optional(),
     }).passthrough(),
     injectWorldId: true,
     injectActorAgentType: true,

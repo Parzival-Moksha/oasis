@@ -76,6 +76,7 @@ function resetStore() {
     isViewModeEditable: false,
     placedCatalogAssets: [],
     portalGates: [],
+    spatialWebObjects: [],
     craftedScenes: [],
     worldConjuredAssetIds: [],
     placementPending: null,
@@ -972,6 +973,43 @@ describe('OasisStore', () => {
       getState().placeVideoAt('V1', 'http://v1.mp4', [0, 0, 0])
       getState().placeVideoAt('V2', 'http://v2.mp4', [5, 0, 0])
       expect(getState().placedCatalogAssets).toHaveLength(2)
+    })
+  })
+
+  // ─═̷─═̷─ spatial web placement ─═̷─═̷─
+  describe('placeSpatialWebObjectAt()', () => {
+    it('places a spatial control at clicked xz, preserves height, and exits placement mode', () => {
+      const spatialObject = {
+        id: 'spatial-slider-test',
+        type: 'slider' as const,
+        formId: 'demo-form',
+        label: 'Headcount',
+        position: [0, 1.25, 0] as [number, number, number],
+        width: 2.4,
+        height: 0.8,
+        value: 1,
+        min: 0,
+        max: 10,
+        step: 1,
+      }
+
+      useOasisStore.setState({
+        placementPending: {
+          type: 'spatialWeb',
+          name: spatialObject.label,
+          spatialWebObject: spatialObject,
+        },
+      })
+
+      getState().placeSpatialWebObjectAt(spatialObject, [4, 0, -3])
+
+      expect(getState().spatialWebObjects).toHaveLength(1)
+      expect(getState().spatialWebObjects[0]).toMatchObject({
+        id: 'spatial-slider-test',
+        position: [4, 1.25, -3],
+      })
+      expect(getState().placementPending).toBeNull()
+      expect(getState().activePlacementVfx[0]?.position).toEqual([4, 1.25, -3])
     })
   })
 

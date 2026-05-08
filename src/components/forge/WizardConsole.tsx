@@ -37,8 +37,24 @@ import { getLiveObjectTransform } from '../../lib/live-object-transforms'
 import { PORTAL_GATE_VARIANT_DEFS, type PortalAction, type PortalGateVariant } from '../../lib/portal-gates'
 import { portalThumbPath } from '../../lib/portal-thumbnails'
 import { PortalTransitionSettingsPanel } from './PortalTransitionSettingsPanel'
+import { makeSpatialWebId, type SpatialWebObject, type SpatialWebObjectType } from '../../lib/spatial-web'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
+
+const SPATIAL_WEB_ASSET_TEMPLATES: Array<{
+  type: SpatialWebObjectType
+  label: string
+  subtitle: string
+  accentColor: string
+}> = [
+  { type: 'button', label: 'Button', subtitle: 'one-click action', accentColor: '#fb7185' },
+  { type: 'toggle', label: 'Toggle', subtitle: 'yes / no switch', accentColor: '#22c55e' },
+  { type: 'slider', label: 'Slider', subtitle: 'range input', accentColor: '#f59e0b' },
+  { type: 'select', label: 'Selector', subtitle: 'single choice', accentColor: '#38bdf8' },
+  { type: 'multiselect', label: 'Multi-select', subtitle: 'many choices', accentColor: '#06b6d4' },
+  { type: 'text', label: 'Text field', subtitle: 'voice-filled text', accentColor: '#f472b6' },
+  { type: 'output', label: 'Output panel', subtitle: 'receipt / response', accentColor: '#34d399' },
+]
 
 function readCols(key: string, fallback: number): number {
   try { const v = parseInt(localStorage.getItem(`oasis-wizard-cols-${key}`) || ''); return v >= 1 && v <= 6 ? v : fallback } catch { return fallback }
@@ -1171,6 +1187,9 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
   const placedCatalogAssets = useOasisStore(s => s.placedCatalogAssets)
   const portalGates = useOasisStore(s => s.portalGates)
   const removePortalGate = useOasisStore(s => s.removePortalGate)
+  const spatialWebObjects = useOasisStore(s => s.spatialWebObjects)
+  const removeSpatialWebObject = useOasisStore(s => s.removeSpatialWebObject)
+  const seedSpatialWebRsvpDemo = useOasisStore(s => s.seedSpatialWebRsvpDemo)
   const removeCatalogAsset = useOasisStore(s => s.removeCatalogAsset)
   const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
   const removeAgentWindow = useOasisStore(s => s.removeAgentWindow)
@@ -1178,8 +1197,9 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
   const generatedImages = useOasisStore(s => s.generatedImages)
   const removeGeneratedImage = useOasisStore(s => s.removeGeneratedImage)
   const addCustomGroundPreset = useOasisStore(s => s.addCustomGroundPreset)
+  const enterPlacementMode = useOasisStore(s => s.enterPlacementMode)
   const [assetCategory, setAssetCategory] = useState<string>('all')
-  const [assetSubTab, setAssetSubTab] = useState<'catalog' | 'portals' | 'conjured' | 'crafted' | 'images'>('catalog')
+  const [assetSubTab, setAssetSubTab] = useState<'catalog' | 'portals' | 'spatial' | 'conjured' | 'crafted' | 'images'>('catalog')
   const [portalTargetWorldId, setPortalTargetWorldId] = useState('')
   const [portalActionPreset, setPortalActionPreset] = useState<'load_world' | 'create_private' | 'create_public' | 'create_ffa' | 'external_url' | 'locked_message'>('load_world')
   const [portalExternalUrl, setPortalExternalUrl] = useState('https://conjure.04515.xyz/?portal=true&from=oasis')
@@ -1190,6 +1210,53 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
   const [assetsLightboxUrl, setAssetsLightboxUrl] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const savedScrollTop = useRef(0)
+
+  const placeSpatialWebTemplate = useCallback((template: typeof SPATIAL_WEB_ASSET_TEMPLATES[number]) => {
+    const formId = 'spatial-library-demo'
+    const base: SpatialWebObject = {
+      id: makeSpatialWebId(`spatial-${template.type}`),
+      type: template.type,
+      formId,
+      label: template.label,
+      position: [0, 1.15, 0],
+      width: template.type === 'output' || template.type === 'text' ? 3 : 2.3,
+      height: template.type === 'output' || template.type === 'text' ? 1.05 : 0.82,
+      accentColor: template.accentColor,
+    }
+
+    const object: SpatialWebObject = {
+      ...base,
+      ...(template.type === 'toggle' ? { value: false } : {}),
+      ...(template.type === 'slider' ? { value: 50, min: 0, max: 100, step: 10 } : {}),
+      ...(template.type === 'select' ? {
+        value: 'yes',
+        options: [
+          { value: 'yes', label: 'Yes' },
+          { value: 'maybe', label: 'Maybe' },
+          { value: 'no', label: 'No' },
+        ],
+      } : {}),
+      ...(template.type === 'multiselect' ? {
+        value: ['ideas'],
+        options: [
+          { value: 'coffee', label: 'Coffee' },
+          { value: 'snacks', label: 'Snacks' },
+          { value: 'ideas', label: 'Ideas' },
+        ],
+      } : {}),
+      ...(template.type === 'text' ? { value: '', placeholder: 'Speak a short answer' } : {}),
+      ...(template.type === 'output' ? { value: 'Waiting for input.' } : {}),
+      ...(template.type === 'button' ? {
+        description: 'Submit this spatial form.',
+        action: { type: 'submit_form', successMessage: 'Submitted.' },
+      } : {}),
+    }
+    enterPlacementMode({
+      type: 'spatialWeb',
+      name: template.label,
+      spatialWebObject: object,
+    })
+  }, [enterPlacementMode])
 
   // ░▒▓ Catch orphan crafted scenes without thumbnails on mount ▓▒░
   useCraftedThumbnailGenerator()
@@ -1220,7 +1287,6 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
   const previewPlacementSpell = useOasisStore(s => s.previewPlacementSpell)
   const startConjurePreview = useOasisStore(s => s.startConjurePreview)
   const placementPending = useOasisStore(s => s.placementPending)
-  const enterPlacementMode = useOasisStore(s => s.enterPlacementMode)
   const cancelPlacement = useOasisStore(s => s.cancelPlacement)
   // Panel opacity driven by system-level uiOpacity setting (Settings gear menu)
   const opacity = settings.uiOpacity
@@ -2491,6 +2557,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
               {([
                 { key: 'catalog' as const, label: 'Catalog', count: ASSET_CATALOG.length, color: 'yellow' },
                 { key: 'portals' as const, label: 'Portals', count: PORTAL_GATE_VARIANT_DEFS.length, color: 'cyan' },
+                { key: 'spatial' as const, label: 'Spatial', count: SPATIAL_WEB_ASSET_TEMPLATES.length, color: 'cyan' },
                 { key: 'conjured' as const, label: 'Conjured', count: conjuredAssets.filter(a => a.status === 'ready').length, color: 'orange' },
                 { key: 'crafted' as const, label: 'Crafted', count: sceneLibrary.length, color: 'blue' },
                 { key: 'images' as const, label: 'Images', count: generatedImages.length, color: 'pink' },
@@ -2692,6 +2759,39 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
               )
             })()}
 
+            {assetSubTab === 'spatial' && (
+              <>
+                <div className="rounded-lg border border-cyan-500/15 bg-cyan-500/5 p-2 mb-2 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <div className="text-[10px] text-cyan-300 font-mono uppercase tracking-wider">Spatial web primitives</div>
+                      <div className="text-[9px] text-gray-500">Place 3D form controls for voice-built sites, menus, and kiosks.</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={seedSpatialWebRsvpDemo}
+                      className="rounded border border-cyan-400/30 bg-cyan-500/10 px-2 py-1 text-[9px] font-mono uppercase tracking-wider text-cyan-100 transition-colors hover:border-cyan-300/60 hover:bg-cyan-400/15"
+                    >
+                      RSVP demo
+                    </button>
+                  </div>
+                </div>
+                <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${colsCatalog}, minmax(0, 1fr))` }}>
+                  {SPATIAL_WEB_ASSET_TEMPLATES.map(template => (
+                    <AssetCard
+                      key={template.type}
+                      id={template.type}
+                      name={template.label}
+                      type="spatial"
+                      subtitle={template.subtitle}
+                      accentColor={template.accentColor}
+                      onClick={() => placeSpatialWebTemplate(template)}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+
             {assetSubTab === 'conjured' && (
               <>
                 {conjuredAssets.filter(a => a.status === 'ready').length === 0 ? (
@@ -2857,11 +2957,11 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
                 ── Placed Objects ──
               </span>
               <span className="text-[10px] text-cyan-500/60 font-mono">
-                {worldConjuredAssetIds.length + placedCatalogAssets.length + craftedScenes.length + portalGates.length + worldLights.length + placedAgentWindows.length} total
+                {worldConjuredAssetIds.length + placedCatalogAssets.length + craftedScenes.length + portalGates.length + spatialWebObjects.length + worldLights.length + placedAgentWindows.length} total
               </span>
             </div>
 
-            {worldConjuredAssetIds.length === 0 && placedCatalogAssets.length === 0 && craftedScenes.length === 0 && portalGates.length === 0 && worldLights.length === 0 && placedAgentWindows.length === 0 ? (
+            {worldConjuredAssetIds.length === 0 && placedCatalogAssets.length === 0 && craftedScenes.length === 0 && portalGates.length === 0 && spatialWebObjects.length === 0 && worldLights.length === 0 && placedAgentWindows.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-gray-400">
                 <div className="text-3xl mb-2">&#128203;</div>
                 <div className="text-xs">No objects placed yet</div>
@@ -2986,6 +3086,34 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
                             }
                           }}
                           onDelete={() => removePortalGate(gate.id)}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {spatialWebObjects.length > 0 && (
+                  <>
+                    <div className="text-[9px] text-cyan-300/70 uppercase tracking-wider font-mono mt-2 mb-0.5">WWW Spatial Web ({spatialWebObjects.length})</div>
+                    <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${colsCatalog}, minmax(0, 1fr))` }}>
+                      {spatialWebObjects.map(object => (
+                        <AssetCard
+                          key={object.id}
+                          id={object.id}
+                          name={object.label}
+                          type="placed"
+                          subtitle={object.type}
+                          accentColor={selectedObjectId === object.id ? '#3B82F6' : (object.accentColor || '#22D3EE')}
+                          isInWorld
+                          onClick={() => {
+                            if (selectedObjectId === object.id) { selectObject(null); setInspectedObject(null) }
+                            else {
+                              selectObject(object.id); setInspectedObject(object.id)
+                              const pos = transforms[object.id]?.position || object.position
+                              if (pos) setCameraLookAt(pos)
+                            }
+                          }}
+                          onDelete={() => removeSpatialWebObject(object.id)}
                         />
                       ))}
                     </div>

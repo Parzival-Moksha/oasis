@@ -421,6 +421,8 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
   const updateWorldLight = useOasisStore(s => s.updateWorldLight)
   const removeWorldLight = useOasisStore(s => s.removeWorldLight)
   const updateCatalogPlacement = useOasisStore(s => s.updateCatalogPlacement)
+  const spatialWebObjects = useOasisStore(s => s.spatialWebObjects)
+  const removeSpatialWebObject = useOasisStore(s => s.removeSpatialWebObject)
 
   const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
   const updateAgentWindow = useOasisStore(s => s.updateAgentWindow)
@@ -467,8 +469,12 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
     const agentWin = placedAgentWindows.find(w => w.id === inspectedObjectId)
     if (agentWin) return { type: 'agent' as const, id: agentWin.id, name: agentWin.label || `${agentWin.agentType} window`, data: agentWin }
 
+    // 6. Spatial web primitive?
+    const spatial = spatialWebObjects.find(object => object.id === inspectedObjectId)
+    if (spatial) return { type: 'spatial-web' as const, id: spatial.id, name: spatial.label, data: spatial }
+
     return null
-  }, [inspectedObjectId, placedCatalogAssets, craftedScenes, portalGates, conjuredAssets, worldConjuredAssetIds, worldLights, placedAgentWindows])
+  }, [inspectedObjectId, placedCatalogAssets, craftedScenes, portalGates, conjuredAssets, worldConjuredAssetIds, worldLights, placedAgentWindows, spatialWebObjects])
 
   // ─═̷─ Current behavior (or defaults) ─═̷─
   const behavior: ObjectBehavior = useMemo(() => {
@@ -582,10 +588,11 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
     else if (resolved.type === 'conjured') removeConjuredAssetFromWorld(inspectedObjectId)
     else if (resolved.type === 'light') removeWorldLight(inspectedObjectId)
     else if (resolved.type === 'agent') removeAgentWindow(inspectedObjectId)
+    else if (resolved.type === 'spatial-web') removeSpatialWebObject(inspectedObjectId)
     selectObject(null)
     setInspectedObject(null)
     onClose()
-  }, [resolved, inspectedObjectId, removeCatalogAsset, removeCraftedScene, removePortalGate, removeConjuredAssetFromWorld, removeWorldLight, removeAgentWindow, selectObject, setInspectedObject, onClose])
+  }, [resolved, inspectedObjectId, removeCatalogAsset, removeCraftedScene, removePortalGate, removeConjuredAssetFromWorld, removeWorldLight, removeAgentWindow, removeSpatialWebObject, selectObject, setInspectedObject, onClose])
 
   // ═══════════════════════════════════════════════════════════════════════════
   // DRAG HANDLERS (same pattern as WizardConsole / AssetExplorerWindow)

@@ -38,6 +38,7 @@ export type AssetCardType =
   | 'media-video'
   | 'media-audio'
   | 'portal'
+  | 'spatial'
   | 'placed'
 
 export interface AssetCardProps {
@@ -79,6 +80,7 @@ const TYPE_CONFIG: Record<AssetCardType, { label: string; color: string; bgColor
   'media-video': { label: 'video',     color: '#F9A8D4', bgColor: 'rgba(236,72,153,0.15)',  borderColor: 'rgba(236,72,153,0.3)' },
   'media-audio': { label: 'audio',     color: '#F9A8D4', bgColor: 'rgba(236,72,153,0.15)',  borderColor: 'rgba(236,72,153,0.3)' },
   portal:        { label: 'portal',    color: '#67E8F9', bgColor: 'rgba(34,211,238,0.15)',  borderColor: 'rgba(34,211,238,0.3)' },
+  spatial:       { label: 'spatial',   color: '#A5F3FC', bgColor: 'rgba(8,145,178,0.16)',   borderColor: 'rgba(34,211,238,0.32)' },
   placed:        { label: 'placed',    color: '#22D3EE', bgColor: 'rgba(6,182,212,0.15)',   borderColor: 'rgba(6,182,212,0.3)' },
 }
 
@@ -166,6 +168,7 @@ function CardThumbnail({ type, thumbnailUrl, mediaUrl, name }: {
     'media-video': { emoji: '\u{1F3AC}', color: 'text-pink-400/40' },
     'media-audio': { emoji: '\u{1F3B5}', color: 'text-pink-400/40' },
     portal:        { emoji: '\u{1F300}', color: 'text-cyan-400/40' },
+    spatial:       { emoji: 'WWW', color: 'text-cyan-300/60' },
     placed:        { emoji: '\u{1F4CD}', color: 'text-cyan-400/40' },
   }
   const fb = fallbacks[type]

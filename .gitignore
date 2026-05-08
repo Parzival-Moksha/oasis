@@ -19,6 +19,7 @@ logs/
 
 # Local-only data (worlds, configs)
 data/*.local.json
+data/*.local.jsonl
 
 # Tooling caches and IDE configs
 .cache/

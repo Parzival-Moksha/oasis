@@ -22,6 +22,8 @@ export function PlacedTab() {
   const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
   const removeAgentWindow = useOasisStore(s => s.removeAgentWindow)
   const focusAgentWindow = useOasisStore(s => s.focusAgentWindow)
+  const spatialWebObjects = useOasisStore(s => s.spatialWebObjects)
+  const removeSpatialWebObject = useOasisStore(s => s.removeSpatialWebObject)
 
   const selectedObjectId = useOasisStore(s => s.selectedObjectId)
   const selectObject = useOasisStore(s => s.selectObject)
@@ -36,11 +38,10 @@ export function PlacedTab() {
           ── Placed Objects ──
         </span>
         <span className="text-[10px] text-cyan-500/60 font-mono">
-          {worldConjuredAssetIds.length + placedCatalogAssets.length + craftedScenes.length + worldLights.length + placedAgentWindows.length} total
+          {worldConjuredAssetIds.length + placedCatalogAssets.length + craftedScenes.length + worldLights.length + placedAgentWindows.length + spatialWebObjects.length} total
         </span>
       </div>
-
-      {worldConjuredAssetIds.length === 0 && placedCatalogAssets.length === 0 && craftedScenes.length === 0 && worldLights.length === 0 && placedAgentWindows.length === 0 ? (
+      {worldConjuredAssetIds.length === 0 && placedCatalogAssets.length === 0 && craftedScenes.length === 0 && worldLights.length === 0 && placedAgentWindows.length === 0 && spatialWebObjects.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-8 text-gray-400">
           <div className="text-3xl mb-2">&#128203;</div>
           <div className="text-xs">No objects placed yet</div>
@@ -197,6 +198,43 @@ export function PlacedTab() {
                   </button>
                 </div>
               </LightTooltipWrap>
+            )
+          })}
+
+          {/* Spatial web */}
+          {spatialWebObjects.length > 0 && (
+            <div className="text-[9px] text-cyan-300/70 uppercase tracking-wider font-mono mt-2 mb-0.5">WWW Spatial Web ({spatialWebObjects.length})</div>
+          )}
+          {spatialWebObjects.map(object => {
+            const isSelected = selectedObjectId === object.id
+            const pos = transforms[object.id]?.position || object.position
+            return (
+              <div
+                key={object.id}
+                className={`rounded-lg border p-2 flex items-center justify-between cursor-pointer transition-all duration-200 ${
+                  isSelected ? 'border-blue-500/50 bg-blue-500/10' : 'border-gray-700/20 hover:border-cyan-400/30'
+                }`}
+                style={{ background: isSelected ? undefined : 'rgba(15, 15, 15, 0.8)' }}
+                onClick={() => {
+                  if (isSelected) { selectObject(null); setInspectedObject(null) }
+                  else {
+                    selectObject(object.id); setInspectedObject(object.id)
+                    if (pos) setCameraLookAt(pos)
+                  }
+                }}
+              >
+                <div>
+                  <span className="text-[10px] text-cyan-300 font-mono mr-1">WWW</span>
+                  <span className="text-[11px] text-gray-200">{object.label}</span>
+                  <span className="text-[9px] text-gray-400 ml-1.5">{object.type}</span>
+                </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); removeSpatialWebObject(object.id) }}
+                  className="text-gray-500 hover:text-red-400 text-xs"
+                >
+                  &#10005;
+                </button>
+              </div>
             )
           })}
 

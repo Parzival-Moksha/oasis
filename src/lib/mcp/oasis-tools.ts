@@ -26,6 +26,7 @@ import { ASSET_CATALOG } from '@/components/scene-lib/constants'
 import type { WorldState } from '../forge/world-persistence'
 import type { CatalogPlacement, CraftedScene, WorldLight } from '../conjure/types'
 import type { ConjuredAsset, PostProcessAction, ProviderName } from '../conjure/types'
+import type { SpatialWebObject, SpatialWebObjectType, SpatialWebOption, SpatialWebValue } from '../spatial-web'
 import { getAllAssets, getAssetById, updateAsset } from '../conjure/registry'
 import { emitWorldEvent } from './world-events'
 import { readWorldPlayerContext } from '../world-runtime-context'
@@ -58,6 +59,7 @@ const INTERNAL_OASIS_BASE_URL = process.env.OASIS_URL || 'http://127.0.0.1:4516'
 // Inherit userId from env so MCP-created worlds match the browser's userId filter.
 // Falls back to 'local-user' for fresh installs without ADMIN_USER_ID.
 const LOCAL_USER_ID = process.env.ADMIN_USER_ID || 'local-user'
+const SPATIAL_WEB_OBJECT_TYPES: SpatialWebObjectType[] = ['button', 'toggle', 'slider', 'select', 'multiselect', 'text', 'output']
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -119,6 +121,59 @@ function validBool(v: unknown, fallback = false): boolean {
     if (trimmed === 'false' || trimmed === '0' || trimmed === 'no') return false
   }
   return fallback
+}
+
+function validSpatialWebObjectType(value: unknown, fallback: SpatialWebObjectType = 'button'): SpatialWebObjectType {
+  const requested = validStr(value, '').trim().toLowerCase()
+  return SPATIAL_WEB_OBJECT_TYPES.includes(requested as SpatialWebObjectType)
+    ? requested as SpatialWebObjectType
+    : fallback
+}
+
+function validSpatialWebValue(value: unknown, fallback: SpatialWebValue = null): SpatialWebValue {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || value === null) return value
+  if (Array.isArray(value)) {
+    const values = value.filter((entry): entry is string => typeof entry === 'string')
+    return values.length === value.length ? values : fallback
+  }
+  return fallback
+}
+
+function parseSpatialWebOptions(value: unknown): SpatialWebOption[] | undefined {
+  const entries = parseLooseObjectArray(value)
+  if (entries.length > 0) {
+    const options = entries
+      .map(entry => {
+        const optionValue = validStr(entry.value, '')
+        if (!optionValue) return null
+        const price = Number(entry.price)
+        return {
+          value: optionValue,
+          label: validStr(entry.label, optionValue),
+          ...(Number.isFinite(price) ? { price } : {}),
+        }
+      })
+      .filter((entry): entry is SpatialWebOption => !!entry)
+    return options.length > 0 ? options : undefined
+  }
+
+  if (Array.isArray(value)) {
+    const options = value
+      .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+      .map(entry => ({ value: entry.trim(), label: entry.trim() }))
+    return options.length > 0 ? options : undefined
+  }
+
+  if (typeof value === 'string') {
+    const options = value
+      .split(',')
+      .map(entry => entry.trim())
+      .filter(Boolean)
+      .map(entry => ({ value: entry.toLowerCase().replace(/\s+/g, '-'), label: entry }))
+    return options.length > 0 ? options : undefined
+  }
+
+  return undefined
 }
 
 export interface OasisToolContext {
@@ -251,10 +306,12 @@ function worldAccessDetails(row: ToolWorldRow) {
   }
 }
 
-function countWorldObjects(state: Pick<WorldState, 'conjuredAssetIds' | 'catalogPlacements' | 'craftedScenes'>): number {
+function countWorldObjects(state: Pick<WorldState, 'conjuredAssetIds' | 'catalogPlacements' | 'craftedScenes' | 'portalGates' | 'spatialWebObjects'>): number {
   return (state.conjuredAssetIds?.length || 0) +
     (state.catalogPlacements?.length || 0) +
-    (state.craftedScenes?.length || 0)
+    (state.craftedScenes?.length || 0) +
+    (state.portalGates?.length || 0) +
+    (state.spatialWebObjects?.length || 0)
 }
 
 function parseLooseObjectArray(value: unknown): Record<string, unknown>[] {
@@ -378,6 +435,8 @@ function normalizeState(state: WorldState): WorldState {
   state.agentAvatars = state.agentAvatars || []
   state.craftedScenes = state.craftedScenes || []
   state.conjuredAssetIds = state.conjuredAssetIds || []
+  state.portalGates = state.portalGates || []
+  state.spatialWebObjects = state.spatialWebObjects || []
   state.lights = state.lights || []
   state.groundTiles = state.groundTiles || {}
   return normalizeWorldStateAgentAvatarTransforms(state)
@@ -989,6 +1048,22 @@ tools.get_world_state = async (args) => {
           ...(transform ? { transform } : {}),
         }
       }),
+      spatialWebObjects: (state.spatialWebObjects || []).map(object => {
+        const transform = readTransformOverride(state, object.id)
+        return {
+          id: object.id,
+          type: object.type,
+          label: object.label,
+          formId: object.formId,
+          value: object.value ?? null,
+          position: effectivePosition(state, object.id, object.position) || object.position,
+          rotation: effectiveRotation(state, object.id, object.rotation) || object.rotation,
+          scale: effectiveScale(state, object.id, object.scale) ?? object.scale,
+          options: object.options,
+          action: object.action,
+          ...(transform ? { transform } : {}),
+        }
+      }),
       lights: (state.lights || []).map(l => ({
         id: l.id, type: l.type, color: l.color, intensity: l.intensity, position: l.position, visible: l.visible,
       })),
@@ -1018,7 +1093,7 @@ tools.get_world_info = async (args) => {
   const world = await prisma.world.findFirst({ where: { id: worldId } })
   if (!world) return { ok: false, message: 'No world found.' }
   const objectCount = state
-    ? (state.catalogPlacements?.length || 0) + (state.craftedScenes?.length || 0) + (state.conjuredAssetIds?.length || 0) + (state.portalGates?.length || 0)
+    ? (state.catalogPlacements?.length || 0) + (state.craftedScenes?.length || 0) + (state.conjuredAssetIds?.length || 0) + (state.portalGates?.length || 0) + (state.spatialWebObjects?.length || 0)
     : 0
   const access = worldAccessDetails(world)
 
@@ -1040,6 +1115,7 @@ tools.get_world_info = async (args) => {
       ground: state?.groundPresetId || 'none',
       tileCount: state ? Object.keys(state.groundTiles || {}).length : 0,
       portalCount: state?.portalGates?.length || 0,
+      spatialWebCount: state?.spatialWebObjects?.length || 0,
       lightCount: state?.lights?.length || 0,
       lastSaved: world.updatedAt.toISOString(),
     },
@@ -1084,6 +1160,16 @@ tools.query_objects = async (args) => {
         type: 'portal',
         name: gate.label || gate.targetWorldName || gate.variant,
         position: effectivePosition(state, gate.id, gate.position) || gate.position,
+      })
+    }
+  }
+  if (!typeFilter || typeFilter === 'spatial-web') {
+    for (const object of state.spatialWebObjects || []) {
+      results.push({
+        id: object.id,
+        type: 'spatial-web',
+        name: object.label,
+        position: effectivePosition(state, object.id, object.position) || object.position,
       })
     }
   }
@@ -1187,6 +1273,83 @@ tools.place_object = async (args) => {
   })
 
   return { ok: true, message: `Placed ${asset.name} (${catalogId}) at [${position.join(', ')}] as ${id}`, data: { id, catalogId, position } }
+}
+
+tools.create_spatial_web_object = async (args) => {
+  const type = validSpatialWebObjectType(args.type, 'button')
+  const label = validStr(args.label, type === 'button' ? 'Button' : type)
+  const position = validPos(args.position) || [0, 1.2, -4]
+  const rotation = validPos(args.rotation)
+  const scale = validScale(args.scale)
+  const width = args.width !== undefined ? Math.max(0.6, Math.min(8, validNum(args.width, 2.6))) : undefined
+  const height = args.height !== undefined ? Math.max(0.35, Math.min(4, validNum(args.height, 0.82))) : undefined
+  const min = args.min !== undefined ? validNum(args.min, 0) : undefined
+  const max = args.max !== undefined ? validNum(args.max, 100) : undefined
+  const step = args.step !== undefined ? validNum(args.step, 1) : undefined
+  const options = parseSpatialWebOptions(args.options)
+  const id = validStr(args.id, '') || `spatial-${type}-${uid()}`
+  const formId = validStr(args.formId, '')
+
+  const fallbackValue: SpatialWebValue =
+    type === 'toggle' ? false
+      : type === 'slider' ? (min ?? 0)
+        : type === 'select' ? options?.[0]?.value || ''
+          : type === 'multiselect' ? []
+            : type === 'text' || type === 'output' ? ''
+              : null
+  const value = validSpatialWebValue(args.value, fallbackValue)
+  const actionType = validStr(args.actionType || args.action, '').toLowerCase()
+  const submitForm = validBool(args.submitForm, false) || actionType === 'submit_form' || actionType === 'submit'
+
+  const object: SpatialWebObject = {
+    id,
+    type,
+    label,
+    position,
+    ...(rotation ? { rotation } : {}),
+    ...(scale !== undefined ? { scale } : {}),
+    ...(formId ? { formId } : {}),
+    ...(validStr(args.description, '') ? { description: validStr(args.description, '') } : {}),
+    ...(validStr(args.placeholder, '') ? { placeholder: validStr(args.placeholder, '') } : {}),
+    ...(validStr(args.accentColor, '') ? { accentColor: validStr(args.accentColor, '') } : {}),
+    ...(width !== undefined ? { width } : {}),
+    ...(height !== undefined ? { height } : {}),
+    ...(min !== undefined ? { min } : {}),
+    ...(max !== undefined ? { max } : {}),
+    ...(step !== undefined ? { step } : {}),
+    ...(options ? { options } : {}),
+    ...(value !== null ? { value } : {}),
+    ...(type === 'button' && submitForm
+      ? {
+          action: {
+            type: 'submit_form',
+            ...(validStr(args.endpoint, '') ? { endpoint: validStr(args.endpoint, '') } : {}),
+            ...(validStr(args.successMessage, '') ? { successMessage: validStr(args.successMessage, '') } : {}),
+          },
+        }
+      : {}),
+  }
+
+  const { worldId, state } = await loadRequestedWorld(args.worldId)
+  state.spatialWebObjects = [
+    ...(state.spatialWebObjects || []).filter(entry => entry.id !== id),
+    object,
+  ]
+
+  await saveWorldState(worldId, state)
+  emitWorldEvent('object_added', worldId, {
+    id,
+    objectId: id,
+    position,
+    spatialWebObject: object,
+    ...mutationActorData(args),
+  })
+
+  return {
+    ok: true,
+    message: `Created spatial ${type} "${label}" at [${position.join(', ')}] as ${id}.`,
+    data: { id, type, label, formId: formId || undefined, position, object },
+  }
 }
 
 function normalizeCraftModel(value: unknown): string {
@@ -1573,6 +1736,16 @@ tools.modify_object = async (args) => {
     state.catalogPlacements![catalogIdx] = p
   }
 
+  const spatialIdx = (state.spatialWebObjects || []).findIndex(object => object.id === objectId)
+  if (spatialIdx >= 0) {
+    const object = state.spatialWebObjects![spatialIdx]
+    if (args.label) { object.label = validStr(args.label, object.label); changes.push('label') }
+    if (args.value !== undefined) { object.value = validSpatialWebValue(args.value, object.value ?? null); changes.push('value') }
+    if (args.accentColor) { object.accentColor = validStr(args.accentColor, object.accentColor || '#38bdf8'); changes.push('accentColor') }
+    if (args.description !== undefined) { object.description = validStr(args.description, ''); changes.push('description') }
+    state.spatialWebObjects![spatialIdx] = object
+  }
+
   const avatarIdx = (state.agentAvatars || []).findIndex(avatar => avatar.id === objectId)
   if (avatarIdx >= 0) {
     const avatar = state.agentAvatars![avatarIdx]
@@ -1624,6 +1797,7 @@ tools.modify_object = async (args) => {
     || validPos(state.transforms[objectId]?.position)
     || validPos(state.catalogPlacements?.[catalogIdx]?.position)
     || validPos(state.craftedScenes?.[craftedIdx]?.position)
+    || validPos(state.spatialWebObjects?.[spatialIdx]?.position)
     || validPos(state.agentAvatars?.find(avatar => avatar.id === objectId)?.position)
   emitWorldEvent('object_modified', worldId, {
     objectId,
@@ -1631,6 +1805,7 @@ tools.modify_object = async (args) => {
     ...(eventPosition ? { position: eventPosition } : {}),
     ...(catalogIdx >= 0 ? { placement: state.catalogPlacements?.[catalogIdx] } : {}),
     ...(craftedIdx >= 0 ? { scene: state.craftedScenes?.[craftedIdx] } : {}),
+    ...(spatialIdx >= 0 ? { spatialWebObject: state.spatialWebObjects?.[spatialIdx] } : {}),
     ...(avatarIdx >= 0 ? { avatar: state.agentAvatars?.[avatarIdx] } : {}),
     ...(state.transforms[objectId] ? { transform: state.transforms[objectId] } : {}),
     ...(state.behaviors?.[objectId] ? { behavior: state.behaviors[objectId] } : {}),
@@ -1647,22 +1822,26 @@ tools.remove_object = async (args) => {
   const beforeCatalog = state.catalogPlacements?.length || 0
   const beforeCrafted = state.craftedScenes?.length || 0
   const beforeAvatars = state.agentAvatars?.length || 0
+  const beforeSpatial = state.spatialWebObjects?.length || 0
   const removedPosition =
     validPos(state.transforms[objectId]?.position)
     || validPos((state.catalogPlacements || []).find(p => p.id === objectId)?.position)
     || validPos((state.craftedScenes || []).find(s => s.id === objectId)?.position)
+    || validPos((state.spatialWebObjects || []).find(object => object.id === objectId)?.position)
     || validPos((state.agentAvatars || []).find(a => a.id === objectId)?.position)
 
   state.catalogPlacements = (state.catalogPlacements || []).filter(p => p.id !== objectId)
   state.craftedScenes = (state.craftedScenes || []).filter(s => s.id !== objectId)
   state.agentAvatars = (state.agentAvatars || []).filter(a => a.id !== objectId)
+  state.spatialWebObjects = (state.spatialWebObjects || []).filter(object => object.id !== objectId)
   delete state.transforms[objectId]
   if (state.behaviors) delete state.behaviors[objectId]
 
   const removed =
     (beforeCatalog - (state.catalogPlacements?.length || 0)) +
     (beforeCrafted - (state.craftedScenes?.length || 0)) +
-    (beforeAvatars - (state.agentAvatars?.length || 0))
+    (beforeAvatars - (state.agentAvatars?.length || 0)) +
+    (beforeSpatial - (state.spatialWebObjects?.length || 0))
   if (removed === 0) return { ok: false, message: `Object ${objectId} not found in world.` }
 
   await saveWorldState(worldId, state)
@@ -2061,6 +2240,7 @@ tools.clear_world = async (args) => {
   state.catalogPlacements = []
   state.craftedScenes = []
   state.conjuredAssetIds = []
+  state.spatialWebObjects = []
   state.agentAvatars = []
   state.lights = []
   state.transforms = {}
@@ -2069,7 +2249,7 @@ tools.clear_world = async (args) => {
   await saveWorldState(worldId, state)
   emitWorldEvent('world_cleared', worldId, mutationActorData(args))
 
-  return { ok: true, message: 'World cleared. All objects, conjured placements, lights, tiles, and behaviors removed.' }
+  return { ok: true, message: 'World cleared. All objects, spatial web primitives, conjured placements, lights, tiles, and behaviors removed.' }
 }
 
 // ─═̷─═̷─ WORLD MANAGEMENT ─═̷─═̷─
@@ -3297,7 +3477,7 @@ export function getPendingScreenshotRequest(options?: { worldId?: string; reques
 export const TOOL_NAMES = Object.keys(tools)
 
 const MUTATING_TOOLS = new Set([
-  'place_object', 'craft_scene', 'self_craft_scene', 'modify_object', 'remove_object',
+  'place_object', 'create_spatial_web_object', 'craft_scene', 'self_craft_scene', 'modify_object', 'remove_object',
   'set_sky', 'set_ground_preset', 'paint_ground_tiles', 'add_light',
   'modify_light', 'set_behavior', 'set_avatar', 'walk_avatar_to',
   'play_avatar_animation', 'clear_world',

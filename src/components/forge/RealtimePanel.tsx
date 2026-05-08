@@ -76,6 +76,7 @@ const REALTIME_TOOL_NAMES = new Set([
   'get_world_state',
   'search_assets',
   'place_object',
+  'create_spatial_web_object',
   'get_craft_guide',
   'craft_scene',
   'get_craft_job',
@@ -1031,7 +1032,7 @@ export function RealtimePanel({
             if (call.name === 'walk_avatar_to' && !toolArgs.agentType && !toolArgs.agent) {
               toolArgs.agentType = REALTIME_AGENT_TYPE
             }
-            if ((call.name === 'place_object' || call.name === 'craft_scene') && !toolArgs.actorAgentType) {
+            if ((call.name === 'place_object' || call.name === 'create_spatial_web_object' || call.name === 'craft_scene') && !toolArgs.actorAgentType) {
               toolArgs.actorAgentType = REALTIME_AGENT_TYPE
             }
 

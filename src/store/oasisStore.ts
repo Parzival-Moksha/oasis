@@ -52,6 +52,7 @@ import {
   type AgentAvatarTransformMap,
 } from '../lib/agent-avatar-world-state'
 import { DEFAULT_AGENT_WINDOW_RENDER_MODE, type AgentWindowRenderMode } from '../lib/agent-window-renderers'
+import type { SpatialWebObject, SpatialWebValue } from '../lib/spatial-web'
 
 const MAX_ACTIVE_MARCH_ORDER_VFX = 8
 
@@ -88,7 +89,7 @@ export type PlacementVfxType =
 const PLACEMENT_VFX_LIST: Exclude<PlacementVfxType, 'random'>[] = ['realitydetonation', 'dimensionalmaw', 'hexstorm', 'singularitydrop', 'quantumcollapse', 'phoenixascension', 'dimensionalrift', 'crystalgenesis', 'meteorimpact', 'arcanebloom', 'voidanchor', 'stellarforge']
 
 export interface PlacementPending {
-  type: 'catalog' | 'conjured' | 'crafted' | 'library' | 'image' | 'video' | 'agent' | 'light' | 'portal'
+  type: 'catalog' | 'conjured' | 'crafted' | 'library' | 'image' | 'video' | 'agent' | 'light' | 'portal' | 'spatialWeb'
   catalogId?: string
   name: string
   path?: string
@@ -115,6 +116,7 @@ export interface PlacementPending {
   portalTargetWorldName?: string
   portalAction?: PortalAction
   portalDirection?: 'one-way' | 'two-way'
+  spatialWebObject?: SpatialWebObject
 }
 
 export interface ActivePlacementVfx {
@@ -369,6 +371,7 @@ export interface WorldSnapshot {
   worldConjuredAssetIds: string[]
   craftedScenes: CraftedScene[]
   portalGates: PortalGate[]
+  spatialWebObjects: SpatialWebObject[]
   transforms: Record<string, { position?: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number }>
   behaviors: Record<string, ObjectBehavior>
   groundTiles: Record<string, string>
@@ -389,13 +392,14 @@ const MAX_UNDO_STACK = 20
 const DEFAULT_TERRAIN_BRUSH_INTENSITY = 1.5
 const DEFAULT_TERRAIN_BRUSH_RADIUS = 3
 
-function captureWorldSnapshot(state: { placedCatalogAssets: CatalogPlacement[]; worldConjuredAssetIds: string[]; craftedScenes: CraftedScene[]; portalGates: PortalGate[]; transforms: Record<string, any>; behaviors: Record<string, ObjectBehavior>; groundTiles: Record<string, string>; worldLights: WorldLight[]; terrainParams: TerrainParams | null; terrainHeights: number[] }): WorldSnapshot {
+function captureWorldSnapshot(state: { placedCatalogAssets: CatalogPlacement[]; worldConjuredAssetIds: string[]; craftedScenes: CraftedScene[]; portalGates: PortalGate[]; spatialWebObjects: SpatialWebObject[]; transforms: Record<string, any>; behaviors: Record<string, ObjectBehavior>; groundTiles: Record<string, string>; worldLights: WorldLight[]; terrainParams: TerrainParams | null; terrainHeights: number[] }): WorldSnapshot {
   // structuredClone for deep copy — no shared references between snapshots
   return structuredClone({
     placedCatalogAssets: state.placedCatalogAssets,
     worldConjuredAssetIds: state.worldConjuredAssetIds,
     craftedScenes: state.craftedScenes,
     portalGates: state.portalGates,
+    spatialWebObjects: state.spatialWebObjects,
     transforms: state.transforms,
     behaviors: state.behaviors,
     groundTiles: state.groundTiles,
@@ -427,6 +431,7 @@ interface OasisState {
   conjureVfxType: ConjureVfxType
   placedCatalogAssets: CatalogPlacement[]  // pre-made assets placed in THIS world
   portalGates: PortalGate[]                // persistent teleport gates placed in THIS world
+  spatialWebObjects: SpatialWebObject[]    // spatial website primitives placed in THIS world
 
   // ─═̷─═̷─🪄 PLACEMENT MODE + VFX ─═̷─═̷─🪄
   placementPending: PlacementPending | null   // what we're about to place (null = not in placement mode)
@@ -589,6 +594,12 @@ interface OasisState {
   setObjectTransform: (id: string, transform: { position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number }) => void
   setAgentAvatarTransform: (id: string, transform: { position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number }) => void
   setObjectBehavior: (id: string, behavior: Partial<ObjectBehavior>) => void
+  addSpatialWebObject: (object: SpatialWebObject) => void
+  placeSpatialWebObjectAt: (object: SpatialWebObject, position: [number, number, number]) => void
+  updateSpatialWebObject: (id: string, updates: Partial<SpatialWebObject>) => void
+  setSpatialWebObjectValue: (id: string, value: SpatialWebValue) => void
+  removeSpatialWebObject: (id: string) => void
+  seedSpatialWebRsvpDemo: () => void
   setObjectMeshStats: (id: string, stats: import('../lib/conjure/types').ModelStats) => void
   /** RTS-style: send selected object to a target position */
   setMoveTarget: (id: string, target: [number, number, number]) => void
@@ -837,6 +848,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   conjureVfxType: (stored('oasis-vfx') as ConjureVfxType) || 'random',
   placedCatalogAssets: [],
   portalGates: [],
+  spatialWebObjects: [],
   sceneLibrary: [],
 
   // ─═̷─═̷─🪄 PLACEMENT MODE + VFX ─═̷─═̷─🪄
@@ -1038,6 +1050,186 @@ export const useOasisStore = create<OasisState>((set, get) => {
   },
 
   // ─═̷─═̷─📚 SCENE LIBRARY ACTIONS ─═̷─═̷─📚
+  // Spatial web primitives: the "website as a place" object layer.
+  addSpatialWebObject: (object) => {
+    withUndo(`Add ${object.label}`, 'WWW', () => {
+      set(state => ({
+        spatialWebObjects: [...state.spatialWebObjects, object],
+      }))
+    })
+    get().spawnPlacementVfx(object.position)
+    setTimeout(() => get().saveWorldState(), 100)
+  },
+  placeSpatialWebObjectAt: (object, position) => {
+    const placedObject: SpatialWebObject = {
+      ...object,
+      position: [position[0], object.position?.[1] ?? 1.15, position[2]],
+    }
+    withUndo(`Place ${object.label}`, 'WWW', () => {
+      set(state => ({
+        spatialWebObjects: [...state.spatialWebObjects, placedObject],
+        placementPending: null,
+      }))
+    })
+    exitPlacementIfActive()
+    get().spawnPlacementVfx(placedObject.position)
+    setTimeout(() => get().saveWorldState(), 100)
+    awardXp('PLACE_CATALOG_OBJECT', get().activeWorldId)
+  },
+  updateSpatialWebObject: (id, updates) => {
+    set(state => ({
+      spatialWebObjects: state.spatialWebObjects.map(object =>
+        object.id === id ? { ...object, ...updates } : object,
+      ),
+    }))
+    setTimeout(() => get().saveWorldState(), 100)
+  },
+  setSpatialWebObjectValue: (id, value) => {
+    set(state => ({
+      spatialWebObjects: state.spatialWebObjects.map(object =>
+        object.id === id ? { ...object, value } : object,
+      ),
+    }))
+    setTimeout(() => get().saveWorldState(), 100)
+  },
+  removeSpatialWebObject: (id) => {
+    const object = get().spatialWebObjects.find(entry => entry.id === id)
+    withUndo(`Delete ${object?.label || 'spatial web object'}`, 'delete', () => {
+      set(state => {
+        const nextTransforms = { ...state.transforms }
+        delete nextTransforms[id]
+        return {
+          spatialWebObjects: state.spatialWebObjects.filter(entry => entry.id !== id),
+          transforms: nextTransforms,
+          selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
+        }
+      })
+    })
+    setTimeout(() => get().saveWorldState(), 100)
+  },
+  seedSpatialWebRsvpDemo: () => {
+    const formId = 'hackathon-rsvp-demo'
+    const stamp = Date.now()
+    const objects: SpatialWebObject[] = [
+      {
+        id: `spatial-output-title-${stamp}`,
+        type: 'output',
+        formId,
+        label: 'Medellin Coffee RSVP',
+        value: 'Tomorrow, 4pm at El Cafetal. Walk the choices, then hit submit.',
+        position: [-4.5, 1.7, -5],
+        width: 3.2,
+        height: 1.15,
+        accentColor: '#38bdf8',
+      },
+      {
+        id: `spatial-choice-cancome-${stamp}`,
+        type: 'select',
+        formId,
+        label: 'Can you come?',
+        value: 'yes',
+        options: [
+          { value: 'yes', label: 'Yes' },
+          { value: 'maybe', label: 'Maybe' },
+          { value: 'no', label: 'No' },
+        ],
+        position: [-1.7, 1.2, -5],
+        accentColor: '#22c55e',
+      },
+      {
+        id: `spatial-slider-headcount-${stamp}`,
+        type: 'slider',
+        formId,
+        label: 'Headcount',
+        value: 1,
+        min: 1,
+        max: 8,
+        step: 1,
+        position: [1.2, 1.2, -5],
+        width: 2.8,
+        accentColor: '#f59e0b',
+      },
+      {
+        id: `spatial-choice-vibe-${stamp}`,
+        type: 'select',
+        formId,
+        label: 'Vibe',
+        value: 'code-jam',
+        options: [
+          { value: 'chill', label: 'Chill' },
+          { value: 'networking', label: 'Networking' },
+          { value: 'code-jam', label: 'Code jam' },
+        ],
+        position: [4, 1.2, -5],
+        accentColor: '#a78bfa',
+      },
+      {
+        id: `spatial-multi-bring-${stamp}`,
+        type: 'multiselect',
+        formId,
+        label: 'What will you bring?',
+        value: ['laptop'],
+        options: [
+          { value: 'coffee', label: 'Coffee' },
+          { value: 'laptop', label: 'Laptop' },
+          { value: 'snacks', label: 'Snacks' },
+          { value: 'ideas', label: 'Ideas' },
+        ],
+        position: [-1.7, 1.2, -2.7],
+        width: 3,
+        accentColor: '#06b6d4',
+      },
+      {
+        id: `spatial-text-comment-${stamp}`,
+        type: 'text',
+        formId,
+        label: 'Comment',
+        value: 'Save me a seat near an outlet.',
+        placeholder: 'Say a comment to the wizard',
+        position: [1.9, 1.2, -2.7],
+        width: 3.9,
+        accentColor: '#f472b6',
+      },
+      {
+        id: `spatial-submit-${stamp}`,
+        type: 'button',
+        formId,
+        label: 'Send RSVP',
+        description: 'Submits this spatial form.',
+        position: [-1.7, 0.95, -0.7],
+        width: 2.5,
+        height: 0.8,
+        accentColor: '#fb7185',
+        action: {
+          type: 'submit_form',
+          successMessage: 'Submitted. See you there.',
+        },
+      },
+      {
+        id: `spatial-output-receipt-${stamp}`,
+        type: 'output',
+        formId,
+        label: 'Receipt',
+        value: 'Waiting for submit.',
+        position: [1.9, 1.2, -0.7],
+        width: 3.9,
+        height: 1.4,
+        accentColor: '#34d399',
+      },
+    ]
+
+    withUndo('Seed spatial RSVP demo', 'WWW', () => {
+      set(state => ({
+        spatialWebObjects: [
+          ...state.spatialWebObjects.filter(object => object.formId !== formId),
+          ...objects,
+        ],
+      }))
+    })
+    objects.forEach(object => get().spawnPlacementVfx(object.position))
+    setTimeout(() => get().saveWorldState(), 100)
+  },
+
   placePortalGateAt: ({ variant, label, action, targetWorldId, targetWorldName, direction = 'two-way', position }) => {
     const activeWorldId = get().activeWorldId
     const activeWorldName = get().worldRegistry.find(world => world.id === activeWorldId)?.name || 'This world'
@@ -1682,6 +1874,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
           worldConjuredAssetIds: [],
           placedCatalogAssets: [],
           portalGates: [],
+          spatialWebObjects: [],
           transforms: {},
           behaviors: {},
           worldLights: seedDefaultLights(),
@@ -1702,7 +1895,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       const mergedCustom = [...get().customGroundPresets, ...newCustom]
       if (newCustom.length > 0) persist('oasis-custom-ground', JSON.stringify(mergedCustom))
       const portalGates = resolveDefaultPortalGates(get().activeWorldId, world.portalGates, world.transforms)
-      const loadedObjCount = (world.conjuredAssetIds?.length || 0) + (world.catalogPlacements?.length || 0) + (world.craftedScenes?.length || 0) + portalGates.length
+      const loadedObjCount = (world.conjuredAssetIds?.length || 0) + (world.catalogPlacements?.length || 0) + (world.craftedScenes?.length || 0) + portalGates.length + (world.spatialWebObjects?.length || 0)
       const sanitizedAgentAvatars = sanitizeAgentAvatarList(world.agentAvatars || [])
       const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
         windows: world.agentWindows || [],
@@ -1721,6 +1914,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         worldConjuredAssetIds: world.conjuredAssetIds || [],
         placedCatalogAssets: world.catalogPlacements || [],
         portalGates,
+        spatialWebObjects: world.spatialWebObjects || [],
         transforms: normalizedAgentWorldState.transforms,
         behaviors: world.behaviors || {},
         worldLights: lights,
@@ -1741,6 +1935,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
           conjuredAssetIds: world.conjuredAssetIds || [],
           catalogPlacements: world.catalogPlacements || [],
           portalGates,
+          spatialWebObjects: world.spatialWebObjects || [],
           transforms: normalizedAgentWorldState.transforms,
           behaviors: world.behaviors || {},
           lights,
@@ -1777,7 +1972,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       console.warn('[World] ⚠️ Save blocked — world not loaded yet (preventing empty-state overwrite)')
       return
     }
-    const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, transforms, behaviors, worldLights, worldSkyBackground, viewingWorldId, customGroundPresets, placedAgentWindows, placedAgentAvatars, _loadedObjectCount } = get()
+    const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, transforms, behaviors, worldLights, worldSkyBackground, viewingWorldId, customGroundPresets, placedAgentWindows, placedAgentAvatars, _loadedObjectCount } = get()
     const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
       windows: placedAgentWindows,
       avatars: placedAgentAvatars,
@@ -1793,7 +1988,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
     // ░▒▓ SANITY CHECK: block saves that would catastrophically reduce object count ▓▒░
     // If we loaded 5+ objects and now have 0, something is wrong (stale tab, empty init, etc.)
-    const currentObjCount = (worldConjuredAssetIds?.length || 0) + (placedCatalogAssets?.length || 0) + (craftedScenes?.length || 0) + (portalGates?.length || 0)
+    const currentObjCount = (worldConjuredAssetIds?.length || 0) + (placedCatalogAssets?.length || 0) + (craftedScenes?.length || 0) + (portalGates?.length || 0) + (spatialWebObjects?.length || 0)
     if (_loadedObjectCount >= 5 && currentObjCount === 0) {
       console.error(`[World] 🚨 NUKE BLOCKED — loaded ${_loadedObjectCount} objects but trying to save 0. This is the anorak2 protection.`)
       return
@@ -1811,6 +2006,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       conjuredAssetIds: worldConjuredAssetIds,
       catalogPlacements: placedCatalogAssets,
       portalGates,
+      spatialWebObjects,
       transforms: normalizedAgentWorldState.transforms,
       behaviors,
       lights: worldLights,
@@ -1842,7 +2038,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     set({ _realtimeChannel: null })
     // Save current world first (immediate, not debounced) — but ONLY if world was loaded
     if (get()._worldReady) {
-      const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
+      const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
       const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
         windows: placedAgentWindows,
         avatars: placedAgentAvatars,
@@ -1852,7 +2048,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       // the LLM hasn't materialized anything yet. Using objects.length (not name)
       // because the scene name gets updated mid-stream before objects arrive.
       const completedScenes = craftedScenes.filter(s => s.objects.length > 0)
-      saveWorld({ terrain: terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes: completedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, transforms: normalizedAgentWorldState.transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: normalizedAgentWorldState.windows, agentAvatars: normalizedAgentWorldState.avatars }, activeWorldId)
+      saveWorld({ terrain: terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes: completedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, spatialWebObjects, transforms: normalizedAgentWorldState.transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: normalizedAgentWorldState.windows, agentAvatars: normalizedAgentWorldState.avatars }, activeWorldId)
     }
 
     // ░▒▓ Block saves during transition — prevents empty state nuke ▓▒░
@@ -1865,7 +2061,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       const defaultLights: WorldLight[] = DEFAULT_WORLD_LIGHTS.map((l, i) => ({ ...l, id: `light-${l.type}-default-${i}`, visible: true } as WorldLight))
       const lights = world?.lights !== undefined ? (world?.lights || []) : defaultLights
       const portalGates = resolveDefaultPortalGates(worldId, world?.portalGates, world?.transforms)
-      const switchObjCount = (world?.conjuredAssetIds?.length || 0) + (world?.catalogPlacements?.length || 0) + (world?.craftedScenes?.length || 0) + portalGates.length
+      const switchObjCount = (world?.conjuredAssetIds?.length || 0) + (world?.catalogPlacements?.length || 0) + (world?.craftedScenes?.length || 0) + portalGates.length + (world?.spatialWebObjects?.length || 0)
       const sanitizedAgentAvatars = sanitizeAgentAvatarList(world?.agentAvatars || [])
       const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
         windows: world?.agentWindows || [],
@@ -1885,6 +2081,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         worldConjuredAssetIds: world?.conjuredAssetIds || [],
         placedCatalogAssets: world?.catalogPlacements || [],
         portalGates,
+        spatialWebObjects: world?.spatialWebObjects || [],
         transforms: normalizedAgentWorldState.transforms,
         behaviors: world?.behaviors || {},
         worldLights: lights,
@@ -1915,6 +2112,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
           conjuredAssetIds: world.conjuredAssetIds || [],
           catalogPlacements: world.catalogPlacements || [],
           portalGates,
+          spatialWebObjects: world.spatialWebObjects || [],
           transforms: normalizedAgentWorldState.transforms,
           behaviors: world.behaviors || {},
           lights,
@@ -1936,13 +2134,13 @@ export const useOasisStore = create<OasisState>((set, get) => {
     // Save current world first — only if world was loaded (prevent empty-state nuke)
     cancelPendingSave()
     if (get()._worldReady) {
-      const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
+      const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
       const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
         windows: placedAgentWindows,
         avatars: placedAgentAvatars,
         transforms,
       })
-      saveWorld({ terrain: terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, transforms: normalizedAgentWorldState.transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: normalizedAgentWorldState.windows, agentAvatars: normalizedAgentWorldState.avatars }, activeWorldId)
+      saveWorld({ terrain: terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, spatialWebObjects, transforms: normalizedAgentWorldState.transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: normalizedAgentWorldState.windows, agentAvatars: normalizedAgentWorldState.avatars }, activeWorldId)
     }
 
     // Create and switch to new world (async) — seed with default lights so it's not pitch black
@@ -1963,6 +2161,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
           worldConjuredAssetIds: [],
           placedCatalogAssets: [],
           portalGates: [],
+          spatialWebObjects: [],
           placedAgentWindows: [],
           placedAgentAvatars: [],
           liveAgentAvatarAudio: {},
@@ -2460,8 +2659,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
     // Save current world before entering view mode (if not already viewing)
     if (!get().isViewMode && get()._worldReady) {
       cancelPendingSave()
-      const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
-      saveWorld({ terrain: terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: placedAgentWindows, agentAvatars: placedAgentAvatars }, activeWorldId)
+      const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
+      saveWorld({ terrain: terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, spatialWebObjects, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: placedAgentWindows, agentAvatars: placedAgentAvatars }, activeWorldId)
     }
 
     // Set view mode flag IMMEDIATELY — prevents initWorlds/loadWorldState from overwriting
@@ -2479,7 +2678,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       const defaultLights: WorldLight[] = DEFAULT_WORLD_LIGHTS.map((l, i) => ({ ...l, id: `light-${l.type}-default-${i}`, visible: true } as WorldLight))
       const lights = state.lights !== undefined ? state.lights : defaultLights
       const portalGates = state.portalGates || []
-      const viewObjCount = (state.conjuredAssetIds?.length || 0) + (state.catalogPlacements?.length || 0) + (state.craftedScenes?.length || 0) + portalGates.length
+      const viewObjCount = (state.conjuredAssetIds?.length || 0) + (state.catalogPlacements?.length || 0) + (state.craftedScenes?.length || 0) + portalGates.length + (state.spatialWebObjects?.length || 0)
       const sanitizedAgentAvatars = sanitizeAgentAvatarList(state.agentAvatars || [])
       const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
         windows: state.agentWindows || [],
@@ -2499,6 +2698,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         worldConjuredAssetIds: state.conjuredAssetIds || [],
         placedCatalogAssets: state.catalogPlacements || [],
         portalGates,
+        spatialWebObjects: state.spatialWebObjects || [],
         transforms: normalizedAgentWorldState.transforms,
         behaviors: state.behaviors || {},
         worldLights: lights,

@@ -31,6 +31,7 @@ import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
 import { loadAnimationClip, retargetClipForVRM, retargetUALClipForVRM, isUALAnimation, LIB_PREFIX, getCachedClip } from '../../lib/forge/animation-library'
 import { MindcraftWorld } from './MindcraftWorld'
 import { AgentWindow3D } from './AgentWindow3D'
+import { SpatialWebObject3D } from './SpatialWebObject3D'
 import type { PlacementPending } from '../../store/oasisStore'
 import { consumeRecentPointerLockRightClick, useInputManager } from '../../lib/input-manager'
 import { dispatch } from '../../lib/event-bus'
@@ -185,8 +186,8 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
   const { setIsDragging } = useContext(DragContext)
   const setInspectedObject = useOasisStore(s => s.setInspectedObject)
   const isReadOnly = useOasisStore(s => s.isViewMode && !s.isViewModeEditable)
-  const { settings: _sceneSettings } = useContext(SettingsContext)
-  const isRp1 = _sceneSettings.rp1Mode
+  const { effectiveRp1Mode } = useContext(SettingsContext)
+  const isRp1 = effectiveRp1Mode
   const isAgentFocused = useInputManager(s => s.inputState === 'agent-focus')
   const materialization = useOasisStore(s => s.agentMaterializations[id])
   const clearAgentMaterialization = useOasisStore(s => s.clearAgentMaterialization)
@@ -2099,6 +2100,34 @@ function GhostCraftedScene({ sceneId }: { sceneId: string }) {
 }
 
 /** ░▒▓ Subtle ground ring — spatial anchor beneath the ghost ▓▒░ */
+function GhostSpatialWebObject({ object }: { object: NonNullable<PlacementPending['spatialWebObject']> }) {
+  const accent = object.accentColor || '#22d3ee'
+  const width = object.width ?? (object.type === 'button' ? 2.2 : 2.6)
+  const height = object.height ?? (object.type === 'output' || object.type === 'text' ? 1.05 : 0.82)
+  const y = object.position?.[1] ?? 1.15
+  return (
+    <group position={[0, y, 0]}>
+      <mesh>
+        <boxGeometry args={[width, height, 0.16]} />
+        <meshStandardMaterial
+          color={accent}
+          emissive={accent}
+          emissiveIntensity={0.45}
+          transparent
+          opacity={GHOST_OPACITY}
+          depthWrite={false}
+        />
+      </mesh>
+      {object.type === 'slider' && (
+        <mesh position={[0, -height * 0.23, 0.14]}>
+          <boxGeometry args={[width * 0.72, 0.08, 0.08]} />
+          <meshBasicMaterial color={accent} transparent opacity={0.55} depthWrite={false} />
+        </mesh>
+      )}
+    </group>
+  )
+}
+
 function GhostGroundRing({ color }: { color: string }) {
   const ringRef = useRef<THREE.Mesh>(null)
   useFrame((_, delta) => {
@@ -2115,11 +2144,12 @@ function GhostGroundRing({ color }: { color: string }) {
 /** ░▒▓ GHOST PREVIEW — composites model + ground ring at cursor ▓▒░ */
 function GhostPreview({ position, pending }: {
   position: [number, number, number]
-  pending: { type: string; path?: string; defaultScale?: number; sceneId?: string }
+  pending: PlacementPending
 }) {
   const color = pending.type === 'catalog' ? '#FFD700'
     : pending.type === 'library' || pending.type === 'crafted' ? '#3B82F6'
     : pending.type === 'image' ? '#EC4899'
+    : pending.type === 'spatialWeb' ? pending.spatialWebObject?.accentColor || '#22d3ee'
     : '#FF8C00'
 
   return (
@@ -2138,8 +2168,12 @@ function GhostPreview({ position, pending }: {
         <GhostCraftedScene sceneId={pending.sceneId} />
       )}
 
+      {pending.spatialWebObject && !pending.path && !pending.sceneId && (
+        <GhostSpatialWebObject object={pending.spatialWebObject} />
+      )}
+
       {/* Fallback beam if no model available (shouldn't happen but safety) */}
-      {!pending.path && !pending.sceneId && (
+      {!pending.path && !pending.sceneId && !pending.spatialWebObject && (
         <mesh position={[0, 2, 0]}>
           <cylinderGeometry args={[0.03, 0.03, 4, 8]} />
           <meshBasicMaterial color={color} transparent opacity={0.25} blending={THREE.AdditiveBlending} />
@@ -2162,6 +2196,7 @@ function PlacementOverlay() {
   const placeLibrarySceneAt = useOasisStore(s => s.placeLibrarySceneAt)
   const placePortalGateAt = useOasisStore(s => s.placePortalGateAt)
   const placeLightAt = useOasisStore(s => s.placeLightAt)
+  const placeSpatialWebObjectAt = useOasisStore(s => s.placeSpatialWebObjectAt)
   const cancelPlacement = useOasisStore(s => s.cancelPlacement)
   const [hoverPos, setHoverPos] = useState<[number, number, number] | null>(null)
 
@@ -2203,6 +2238,8 @@ function PlacementOverlay() {
     } else if (placementPending.type === 'light' && placementPending.lightType) {
       // Raise y slightly off the ground so the light isn't flush with the plane
       placeLightAt(placementPending.lightType, [pos[0], 3, pos[2]])
+    } else if (placementPending.type === 'spatialWeb' && placementPending.spatialWebObject) {
+      placeSpatialWebObjectAt(placementPending.spatialWebObject, pos)
     } else if (placementPending.type === 'agent' && placementPending.agentType) {
       // ░▒▓ Agent window placement — create 3D interactive panel ▓▒░
       const isHermesAgent = placementPending.agentType === 'hermes'
@@ -2275,7 +2312,7 @@ function PlacementOverlay() {
     } else {
       cancelPlacement()
     }
-  }, [placementPending, placeCatalogAssetAt, placeImageAt, placeLightAt, placePortalGateAt, placeVideoAt, placeLibrarySceneAt, cancelPlacement])
+  }, [placementPending, placeCatalogAssetAt, placeImageAt, placeLightAt, placePortalGateAt, placeSpatialWebObjectAt, placeVideoAt, placeLibrarySceneAt, cancelPlacement])
 
   const handlePointerMove = useCallback((e: any) => {
     // ░▒▓ FPS CAMERA FIX — skip R3F pointer events during pointer lock ▓▒░
@@ -2572,6 +2609,7 @@ export function WorldObjectsRenderer() {
   const setObjectTransform = useOasisStore(s => s.setObjectTransform)
   const transforms = useOasisStore(s => s.transforms)
   const catalogAssets = useOasisStore(s => s.placedCatalogAssets)
+  const spatialWebObjects = useOasisStore(s => s.spatialWebObjects)
   const spawnPlacementVfx = useOasisStore(s => s.spawnPlacementVfx)
   const spawnMarchOrderVfx = useOasisStore(s => s.spawnMarchOrderVfx)
   const hasAgentFocus = useOasisStore(s => !!s.focusedAgentWindowId)
@@ -2788,6 +2826,26 @@ export function WorldObjectsRenderer() {
                 <SpatialAudioFromBehavior objectId={renderAsset.id} />
               </Suspense>
             </CatalogModelErrorBoundary>
+          </SelectableWrapper>
+        )
+      })}
+
+      {/* Spatial web primitives - buttons, sliders, selectors, text, and outputs */}
+      {spatialWebObjects.map(object => {
+        const t = transforms[object.id]
+        return (
+          <SelectableWrapper
+            key={object.id}
+            id={object.id}
+            selected={selectedObjectId === object.id}
+            onSelect={selectObject}
+            transformMode={transformMode}
+            onTransformChange={handleTransformChange}
+            initialPosition={t?.position || object.position}
+            initialRotation={t?.rotation || object.rotation}
+            initialScale={t?.scale ?? object.scale}
+          >
+            <SpatialWebObject3D object={object} />
           </SelectableWrapper>
         )
       })}

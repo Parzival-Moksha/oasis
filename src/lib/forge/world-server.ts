@@ -84,6 +84,37 @@ function countWorldObjects(state: Pick<WorldState, 'conjuredAssetIds' | 'catalog
     (state.agentWindows?.length || 0)
 }
 
+function countNonPortalWorldContent(state: Pick<WorldState, 'conjuredAssetIds' | 'catalogPlacements' | 'craftedScenes' | 'spatialWebObjects' | 'agentAvatars' | 'agentWindows'>): number {
+  return (state.conjuredAssetIds?.length || 0) +
+    (state.catalogPlacements?.length || 0) +
+    (state.craftedScenes?.length || 0) +
+    (state.spatialWebObjects?.length || 0) +
+    (state.agentAvatars?.length || 0) +
+    (state.agentWindows?.length || 0)
+}
+
+function assertNotPortalOnlyOverwrite(worldId: string, currentData: string | null | undefined, nextState: WorldState): void {
+  if (!currentData) return
+  let currentState: WorldState
+  try {
+    currentState = JSON.parse(currentData) as WorldState
+  } catch {
+    return
+  }
+
+  const currentNonPortalContent = countNonPortalWorldContent(currentState)
+  const nextNonPortalContent = countNonPortalWorldContent(nextState)
+  const nextPortalCount = nextState.portalGates?.length || 0
+
+  if (currentNonPortalContent >= 3 && nextNonPortalContent === 0 && nextPortalCount > 0) {
+    throw new WorldAccessError(
+      `Refusing to overwrite ${worldId}: current world has ${currentNonPortalContent} non-portal objects, but the incoming save has 0 and only ${nextPortalCount} portal gates.`,
+      'world_content_drop_blocked',
+      409,
+    )
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════════════
@@ -193,7 +224,7 @@ export async function saveWorld(
 
   const target = await prisma.world.findFirst({
     where: { id },
-    select: { id: true, userId: true, name: true, icon: true, visibility: true, updatedAt: true },
+    select: { id: true, userId: true, name: true, icon: true, visibility: true, updatedAt: true, data: true },
   })
   if (!target) {
     throw new WorldAccessError('World not found', 'world_not_found', 404)
@@ -216,6 +247,8 @@ export async function saveWorld(
       return { saved: false, conflict: true, serverUpdatedAt: target.updatedAt.toISOString() }
     }
   }
+
+  assertNotPortalOnlyOverwrite(id, target.data, worldData)
 
   // Auto-snapshot before overwriting
   await snapshotBeforeSave(id)
@@ -356,6 +389,12 @@ export async function savePublicEditWorld(
 ): Promise<boolean> {
   const now = new Date()
   const worldData = normalizeSavedWorldState({ version: 1, ...state, savedAt: now.toISOString() })
+
+  const current = await prisma.world.findFirst({
+    where: { id, visibility: { in: FFA_VISIBILITIES } },
+    select: { data: true },
+  })
+  assertNotPortalOnlyOverwrite(id, current?.data, worldData)
 
   await snapshotBeforeSave(id)
 

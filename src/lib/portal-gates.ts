@@ -365,18 +365,13 @@ export function portalAreaPose(
   }
 }
 
-function distanceXZ(a: Vec3Tuple, b: Vec3Tuple): number {
-  return Math.hypot(a[0] - b[0], a[2] - b[2])
-}
-
 function isPortalAreaManaged(
   gate: PortalGate,
   transforms?: Record<string, { position?: Vec3Tuple } | undefined>,
 ): boolean {
   if (gate.inert) return false
   if (transforms?.[gate.id]?.position) return false
-  if (gate.autoLayout === 'portal-area') return true
-  return distanceXZ(gate.position, PORTAL_AREA_CENTER) <= 0.75
+  return gate.autoLayout === 'portal-area'
 }
 
 export function layoutPortalAreaGates(

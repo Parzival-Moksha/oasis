@@ -145,6 +145,36 @@ describe('world-server access enforcement', () => {
     expect(vi.mocked(prisma.world.update)).toHaveBeenCalled()
   })
 
+  it('blocks portal-only overwrites of worlds that already have real content', async () => {
+    const contentfulPortalZero = state({
+      catalogPlacements: [{ id: 'cat-1' }, { id: 'cat-2' }, { id: 'cat-3' }] as any,
+      portalGates: [{ id: 'portal-existing' } as any],
+    })
+    const portalOnlySave = state({
+      catalogPlacements: [],
+      craftedScenes: [],
+      conjuredAssetIds: [],
+      agentAvatars: [],
+      agentWindows: [],
+      spatialWebObjects: [],
+      portalGates: [{ id: 'portal-only' } as any],
+    })
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(
+      worldRow({
+        id: 'welcome',
+        userId: 'system',
+        visibility: 'core',
+        data: JSON.stringify(contentfulPortalZero),
+      }),
+    )
+
+    await expect(saveWorld('welcome', 'hosted-admin', portalOnlySave)).rejects.toMatchObject({
+      code: 'world_content_drop_blocked',
+    })
+    expect(vi.mocked(prisma.worldSnapshot.create)).not.toHaveBeenCalled()
+    expect(vi.mocked(prisma.world.update)).not.toHaveBeenCalled()
+  })
+
   it('forks templates on first save instead of mutating the template row', async () => {
     vi.mocked(prisma.world.findFirst).mockResolvedValue(worldRow({ id: 'template-1', userId: 'system', visibility: 'template', name: 'Starter' }))
     vi.mocked(prisma.world.create).mockImplementation((async (args: any) => ({

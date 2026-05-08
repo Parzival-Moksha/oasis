@@ -121,6 +121,7 @@ describe('portal gate trigger helpers', () => {
       width: 2.4,
       height: 3.2,
       targetWorldId: `world-${index}`,
+      autoLayout: 'portal-area',
     }))
     const laidOut = layoutPortalAreaGates(gates)
     for (let index = 1; index < laidOut.length; index += 1) {
@@ -128,6 +129,20 @@ describe('portal gate trigger helpers', () => {
       const current = laidOut[index].position
       expect(Math.hypot(current[0] - prev[0], current[2] - prev[2])).toBeGreaterThanOrEqual(3.99)
     }
+  })
+
+  it('does not sweep untagged gates just because they are near the portal area center', () => {
+    const [gate] = layoutPortalAreaGates([{
+      id: 'manual-portal',
+      variant: 'threshold-ring',
+      position: [30, 0, 0],
+      width: 2.4,
+      height: 3.2,
+      targetWorldId: 'world-manual',
+    }])
+
+    expect(gate.position).toEqual([30, 0, 0])
+    expect(gate.autoLayout).toBeUndefined()
   })
 
   it('aims return portals from the rim back toward world center', () => {

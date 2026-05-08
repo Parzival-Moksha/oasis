@@ -13,9 +13,13 @@ import { defaultSettings } from './constants'
 
 export const SettingsContext = createContext<{
   settings: OasisSettings
+  effectiveRp1Mode: boolean
+  rp1Locked: boolean
   updateSetting: <K extends keyof OasisSettings>(key: K, value: OasisSettings[K]) => void
 }>({
   settings: defaultSettings,
+  effectiveRp1Mode: defaultSettings.rp1Mode,
+  rp1Locked: false,
   updateSetting: () => {},
 })
 
