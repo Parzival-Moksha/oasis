@@ -26,11 +26,17 @@ import {
 } from '../../lib/portal-transition-settings'
 import { useInputManager } from '../../lib/input-manager'
 import { useOasisStore } from '../../store/oasisStore'
+import { sampleTerrainHeightAt } from '../../lib/forge/terrain-brush'
 import { PortalGateVisual } from './PortalGateVisual'
 import { SelectableWrapper } from './WorldObjects'
 
 const PORTAL_COOLDOWN_MS = 2500
 const PORTAL_WORLD_SWITCH_TUNNEL_FRACTION = 0.56
+const PORTAL_ARRIVAL_CAMERA_DISTANCE = 4.2
+const PORTAL_ARRIVAL_CAMERA_ELEVATION = Math.PI / 4
+const PORTAL_ARRIVAL_LOOK_AHEAD = 2.1
+const PORTAL_ARRIVAL_LOOK_TARGET_HEIGHT = 1.75
+const PORTAL_ARRIVAL_CAMERA_HEIGHT_OFFSET = 1.85
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => window.setTimeout(resolve, ms))
@@ -170,6 +176,33 @@ function derivePortalArrivalPose(
   }
 }
 
+function framePortalArrivalCamera(camera: THREE.Camera, pose: PlayerAvatarPose): void {
+  const [x, , z] = pose.position
+  const { terrainHeights } = useOasisStore.getState()
+  const groundY = sampleTerrainHeightAt(terrainHeights, x, z)
+  const avatarPosition = new THREE.Vector3(x, groundY, z)
+  const forward = new THREE.Vector3(pose.forward[0], 0, pose.forward[2])
+  if (forward.lengthSq() < 0.0001) {
+    forward.set(Math.sin(pose.yaw), 0, Math.cos(pose.yaw))
+  }
+  forward.normalize()
+
+  const horizontalDistance = Math.cos(PORTAL_ARRIVAL_CAMERA_ELEVATION) * PORTAL_ARRIVAL_CAMERA_DISTANCE
+  const cameraHeight = Math.sin(PORTAL_ARRIVAL_CAMERA_ELEVATION) * PORTAL_ARRIVAL_CAMERA_DISTANCE + PORTAL_ARRIVAL_CAMERA_HEIGHT_OFFSET
+  const cameraPosition = avatarPosition.clone()
+    .addScaledVector(forward, -horizontalDistance)
+    .add(new THREE.Vector3(0, cameraHeight, 0))
+  const lookTarget = avatarPosition.clone()
+    .addScaledVector(forward, PORTAL_ARRIVAL_LOOK_AHEAD)
+    .add(new THREE.Vector3(0, PORTAL_ARRIVAL_LOOK_TARGET_HEIGHT, 0))
+
+  camera.position.copy(cameraPosition)
+  camera.lookAt(lookTarget)
+  if (camera instanceof THREE.PerspectiveCamera) {
+    camera.updateProjectionMatrix()
+  }
+}
+
 async function waitForWorldReady(worldId: string, timeoutMs = 1800): Promise<void> {
   const start = performance.now()
   while (performance.now() - start < timeoutMs) {
@@ -276,10 +309,15 @@ export function PortalGateLayer() {
   ) => {
     const settings = readPortalTransitionSettings()
     if (!settings.enabled) {
-      const arrivalPose = options?.arrivalPosePromise ? await options.arrivalPosePromise.catch(() => null) : null
+      const arrivalPose = options?.arrivalPosePromise
+        ? await options.arrivalPosePromise.catch(() => null)
+        : derivePortalArrivalPose(gate)
       switcher()
       if (options?.targetWorldId) await waitForWorldReady(options.targetWorldId)
-      if (arrivalPose) requestPlayerAvatarTeleport(arrivalPose)
+      if (arrivalPose) {
+        requestPlayerAvatarTeleport(arrivalPose)
+        framePortalArrivalCamera(camera, arrivalPose)
+      }
       return
     }
 
@@ -299,13 +337,16 @@ export function PortalGateLayer() {
     try {
       void animatePortalCameraSwallow(camera, gate, settings)
       await sleep(switchDelayMs)
-      const arrivalPose = options?.arrivalPosePromise ? await options.arrivalPosePromise.catch(() => null) : null
+      const arrivalPose = options?.arrivalPosePromise
+        ? await options.arrivalPosePromise.catch(() => null)
+        : derivePortalArrivalPose(gate)
       switcher()
       if (options?.targetWorldId) {
         await waitForWorldReady(options.targetWorldId)
       }
       if (arrivalPose) {
         requestPlayerAvatarTeleport(arrivalPose)
+        framePortalArrivalCamera(camera, arrivalPose)
       }
       await sleep(remainingTunnelMs)
       if (settings.rollReveal) emitPortalRevealRoll(gate, targetWorldName)

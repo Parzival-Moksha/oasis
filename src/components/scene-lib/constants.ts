@@ -27,7 +27,7 @@ export const defaultSettings: OasisSettings = {
   // WINDOW OPACITY
   streamOpacity: 0.9,
   // CAMERA MODES
-  controlMode: 'noclip',
+  controlMode: 'third-person',
   mouseSensitivity: 1.0,
   moveSpeed: 10,
   fov: 75,

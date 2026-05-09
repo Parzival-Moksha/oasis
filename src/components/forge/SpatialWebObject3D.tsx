@@ -215,6 +215,180 @@ function SubmitConfetti({ trigger, accent }: { trigger?: string; accent: string 
   )
 }
 
+function GoogleFormsAltar({
+  object,
+  busy,
+  accent,
+  canClickInteract,
+  interactionHint,
+  runInteraction,
+}: {
+  object: SpatialWebObject
+  busy: boolean
+  accent: string
+  canClickInteract: boolean
+  interactionHint: boolean
+  runInteraction: () => void
+}) {
+  const rootRef = useRef<THREE.Group>(null)
+  const gearARef = useRef<THREE.Mesh>(null)
+  const gearBRef = useRef<THREE.Mesh>(null)
+  const coreRef = useRef<THREE.Mesh>(null)
+  const streamARef = useRef<THREE.Mesh>(null)
+  const streamBRef = useRef<THREE.Mesh>(null)
+  const hasWorld = Boolean(object.generatedWorldUrl && object.generatedWorldId)
+  const statusText = busy
+    ? 'Building Oasis world...'
+    : object.errorMessage
+      ? object.errorMessage
+      : hasWorld
+        ? 'World ready. Press F to copy.'
+        : 'Paste a public Google Forms URL.'
+  const inputText = hasWorld
+    ? object.generatedWorldUrl || ''
+    : typeof object.value === 'string' && object.value
+      ? object.value
+      : object.placeholder || 'https://forms.gle/...'
+
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime
+    if (rootRef.current) {
+      const shake = busy ? Math.sin(t * 34) * 0.018 : 0
+      rootRef.current.position.set(shake, busy ? Math.sin(t * 27) * 0.012 : 0, 0)
+      rootRef.current.rotation.z = busy ? Math.sin(t * 41) * 0.006 : 0
+    }
+    if (gearARef.current) gearARef.current.rotation.z = busy ? t * 3.2 : t * 0.35
+    if (gearBRef.current) gearBRef.current.rotation.z = busy ? -t * 3.7 : -t * 0.28
+    if (coreRef.current) {
+      const pulse = busy || hasWorld ? 1 + Math.sin(t * 5.5) * 0.08 : 1
+      coreRef.current.scale.setScalar(pulse)
+    }
+    if (streamARef.current) streamARef.current.position.x = -2.1 + ((t * 1.8) % 4.2)
+    if (streamBRef.current) streamBRef.current.position.x = 2.1 - ((t * 1.45) % 4.2)
+  })
+
+  return (
+    <group
+      ref={rootRef}
+      onClick={(event) => {
+        if (!canClickInteract) return
+        event.stopPropagation()
+        runInteraction()
+      }}
+    >
+      <mesh castShadow receiveShadow position={[0, -0.58, 0]} scale={[1, 1, 1]}>
+        <boxGeometry args={[5.25, 0.34, 1.2]} />
+        <meshStandardMaterial color="#111827" roughness={0.58} metalness={0.18} emissive="#06111f" emissiveIntensity={0.22} />
+      </mesh>
+      <mesh castShadow receiveShadow position={[0, -0.34, 0.04]}>
+        <boxGeometry args={[4.75, 0.26, 0.98]} />
+        <meshStandardMaterial color="#263244" roughness={0.42} metalness={0.32} emissive={accent} emissiveIntensity={0.1} />
+      </mesh>
+      <mesh castShadow receiveShadow position={[0, 0.1, 0.02]}>
+        <boxGeometry args={[4.42, 1.08, 0.42]} />
+        <meshStandardMaterial color="#07111e" roughness={0.36} metalness={0.18} emissive={accent} emissiveIntensity={0.34} />
+      </mesh>
+      <mesh position={[0, 0.1, 0.29]}>
+        <boxGeometry args={[3.72, 0.62, 0.055]} />
+        <meshBasicMaterial color="#05111f" />
+      </mesh>
+      <mesh position={[0, 0.47, 0.34]}>
+        <boxGeometry args={[3.95, 0.045, 0.05]} />
+        <meshBasicMaterial color={accent} />
+      </mesh>
+      <mesh position={[0, -0.28, 0.34]}>
+        <boxGeometry args={[3.95, 0.045, 0.05]} />
+        <meshBasicMaterial color={hasWorld ? '#86efac' : accent} />
+      </mesh>
+
+      <group position={[-2.12, 0.08, 0.36]}>
+        <mesh ref={gearARef} rotation={[0, 0, 0]}>
+          <torusGeometry args={[0.28, 0.045, 8, 18]} />
+          <meshStandardMaterial color="#94a3b8" roughness={0.34} metalness={0.68} emissive={accent} emissiveIntensity={busy ? 0.38 : 0.12} />
+        </mesh>
+        {Array.from({ length: 8 }, (_, index) => (
+          <mesh key={index} rotation={[0, 0, (index / 8) * Math.PI * 2]} position={[Math.cos((index / 8) * Math.PI * 2) * 0.31, Math.sin((index / 8) * Math.PI * 2) * 0.31, 0]}>
+            <boxGeometry args={[0.08, 0.045, 0.045]} />
+            <meshStandardMaterial color="#cbd5e1" roughness={0.45} metalness={0.55} />
+          </mesh>
+        ))}
+      </group>
+
+      <group position={[2.12, 0.08, 0.36]}>
+        <mesh ref={gearBRef}>
+          <torusGeometry args={[0.22, 0.04, 8, 18]} />
+          <meshStandardMaterial color="#bae6fd" roughness={0.28} metalness={0.62} emissive={accent} emissiveIntensity={busy ? 0.42 : 0.14} />
+        </mesh>
+        {Array.from({ length: 8 }, (_, index) => (
+          <mesh key={index} rotation={[0, 0, (index / 8) * Math.PI * 2]} position={[Math.cos((index / 8) * Math.PI * 2) * 0.25, Math.sin((index / 8) * Math.PI * 2) * 0.25, 0]}>
+            <boxGeometry args={[0.07, 0.04, 0.04]} />
+            <meshStandardMaterial color="#e0f2fe" roughness={0.42} metalness={0.5} />
+          </mesh>
+        ))}
+      </group>
+
+      <mesh ref={coreRef} castShadow position={[0, 0.95, 0.1]}>
+        <octahedronGeometry args={[0.34, 0]} />
+        <meshStandardMaterial
+          color={hasWorld ? '#86efac' : accent}
+          emissive={hasWorld ? '#22c55e' : accent}
+          emissiveIntensity={busy || hasWorld ? 1.6 : 0.72}
+          roughness={0.18}
+          metalness={0.18}
+        />
+      </mesh>
+      <pointLight color={hasWorld ? '#86efac' : accent} intensity={busy || hasWorld ? 2.1 : 0.85} distance={5} position={[0, 0.95, 0.75]} />
+
+      {busy && (
+        <>
+          <mesh ref={streamARef} position={[-2.1, 0.76, 0.42]}>
+            <boxGeometry args={[0.72, 0.035, 0.035]} />
+            <meshBasicMaterial color="#67e8f9" transparent opacity={0.82} />
+          </mesh>
+          <mesh ref={streamBRef} position={[2.1, -0.48, 0.42]}>
+            <boxGeometry args={[0.64, 0.035, 0.035]} />
+            <meshBasicMaterial color="#a7f3d0" transparent opacity={0.76} />
+          </mesh>
+        </>
+      )}
+
+      <EmbossedText position={[0, 1.52, 0.5]} fontSize={0.16} maxChars={24} maxLines={2} color="#e0f2fe" sideColor="#082f49">
+        {busy ? 'Forging the world' : object.label}
+      </EmbossedText>
+      <EmbossedText position={[0, 0.22, 0.52]} fontSize={0.082} maxChars={42} maxLines={3} color="#f8fafc" sideColor="#020617">
+        {inputText}
+      </EmbossedText>
+      <EmbossedText position={[0, -0.54, 0.52]} fontSize={0.075} maxChars={36} maxLines={2} color={object.errorMessage ? '#fecdd3' : '#a7f3d0'} sideColor="#042f2e">
+        {statusText}
+      </EmbossedText>
+
+      {hasWorld && (
+        <group position={[0, -1.04, 0.22]}>
+          <mesh castShadow>
+            <boxGeometry args={[2.18, 0.28, 0.18]} />
+            <meshStandardMaterial color="#064e3b" roughness={0.34} metalness={0.2} emissive="#22c55e" emissiveIntensity={0.46} />
+          </mesh>
+          <EmbossedText position={[0, -0.03, 0.15]} fontSize={0.08} maxChars={18} color="#ecfdf5" sideColor="#022c22">
+            Copy address
+          </EmbossedText>
+        </group>
+      )}
+
+      {interactionHint && (
+        <group position={[0, 1.96, 0.56]}>
+          <mesh>
+            <boxGeometry args={[0.6, 0.26, 0.06]} />
+            <meshStandardMaterial color="#020617" emissive={accent} emissiveIntensity={0.45} roughness={0.45} metalness={0.2} />
+          </mesh>
+          <EmbossedText position={[0, 0, 0.08]} fontSize={0.12} maxChars={2} color="#ffffff" sideColor="#111827">
+            F
+          </EmbossedText>
+        </group>
+      )}
+    </group>
+  )
+}
+
 export function SpatialWebObject3D({
   object,
   interactionHint = false,
@@ -242,7 +416,8 @@ export function SpatialWebObject3D({
         : isWidePanel ? 'terminal-panel'
           : 'neon-panel')
   const isPortalButton = visualStyle === 'portal-zero-button'
-  const depth = isPortalButton ? 0.34 : visualStyle === 'arcade-button' ? 0.42 : visualStyle === 'terminal-panel' ? 0.18 : 0.24
+  const isGoogleFormsAltar = visualStyle === 'google-form-altar'
+  const depth = isPortalButton ? 0.34 : isGoogleFormsAltar ? 0.5 : visualStyle === 'arcade-button' ? 0.42 : visualStyle === 'terminal-panel' ? 0.18 : 0.24
   const labelText = busy ? 'Sending...' : object.label
   const valueText = object.type === 'text' && !object.value ? object.placeholder || 'Empty' : labelValue
   const labelMaxChars = isWidePanel ? 36 : 30
@@ -275,7 +450,8 @@ export function SpatialWebObject3D({
 
   const runInteraction = () => {
     if (busy) return
-    const waitsForNetwork = object.type === 'button' && object.action?.type === 'submit_form'
+    const waitsForNetwork = (object.type === 'button' && object.action?.type === 'submit_form')
+      || (object.action?.type === 'create_world_from_google_form' && !object.generatedWorldUrl)
     if (waitsForNetwork) setBusy(true)
     void interactSpatialWebObject(object.id).finally(() => {
       if (waitsForNetwork) setBusy(false)
@@ -318,6 +494,19 @@ export function SpatialWebObject3D({
     if (!draggingSlider) return
     event.stopPropagation()
     updateSliderFromPointer(event)
+  }
+
+  if (isGoogleFormsAltar) {
+    return (
+      <GoogleFormsAltar
+        object={object}
+        busy={busy}
+        accent={accent}
+        canClickInteract={canClickInteract}
+        interactionHint={interactionHint}
+        runInteraction={runInteraction}
+      />
+    )
   }
 
   if (isPortalButton) {
@@ -534,11 +723,11 @@ export function SpatialWebObject3D({
 
       {interactionHint && (
         <>
-          <mesh position={[0, height / 2 + 0.34, depth * 0.9]}>
+          <mesh position={[0, height / 2 + 0.62 + labelLines.length * 0.12, depth * 0.9]}>
             <boxGeometry args={[0.54, 0.24, 0.05]} />
             <meshStandardMaterial color="#020617" emissive={accent} emissiveIntensity={0.35} roughness={0.45} metalness={0.2} />
           </mesh>
-          <EmbossedText position={[0, height / 2 + 0.34, depth * 1.08]} fontSize={0.12} maxChars={2} color="#ffffff">
+          <EmbossedText position={[0, height / 2 + 0.62 + labelLines.length * 0.12, depth * 1.08]} fontSize={0.12} maxChars={2} color="#ffffff">
             F
           </EmbossedText>
         </>

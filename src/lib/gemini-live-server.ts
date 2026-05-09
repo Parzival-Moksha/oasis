@@ -204,7 +204,7 @@ export function getGeminiLiveToolDeclarations(): GeminiLiveFunctionDeclaration[]
           accentColor: { type: 'string', description: 'Hex accent color.' },
           visualStyle: {
             type: 'string',
-            enum: ['neon-panel', 'arcade-button', 'glass-slider', 'terminal-panel', 'portal-zero-button'],
+            enum: ['neon-panel', 'arcade-button', 'glass-slider', 'terminal-panel', 'portal-zero-button', 'google-form-altar'],
             description: 'Optional 3D skin for the primitive.',
           },
           value: { description: 'Initial value: string, number, boolean, string array, or null.' },
@@ -230,7 +230,7 @@ export function getGeminiLiveToolDeclarations(): GeminiLiveFunctionDeclaration[]
           submitForm: { type: 'boolean', description: 'For buttons, submit all fields with the same formId.' },
           actionType: {
             type: 'string',
-            enum: ['submit_form', 'set_value', 'spawn_vfx', 'world_tool'],
+            enum: ['submit_form', 'set_value', 'spawn_vfx', 'world_tool', 'create_world_from_google_form'],
             description: 'Optional behavior when pressed or changed. Use world_tool to wire a control to an Oasis world tool.',
           },
           targetObjectId: { type: 'string', description: 'For set_value buttons, the spatial object ID to update.' },
@@ -741,6 +741,7 @@ export function buildGeminiLiveSystemInstruction(args: { worldId?: string; world
     'Never say you called, sent, placed, crafted, checked, or changed something with a tool unless you actually submitted that function call.',
     'Prefer create_spatial_web_object for 3D forms, controls, menus, and output panels.',
     'When the user gives a Google Form link and asks for a demo/shareable world, use create_world_from_google_form. Read back the returned worldUrl and qrUrl.',
+    'To place a reusable Google Forms altar in a world, create a text spatial web object with visualStyle google-form-altar and actionType create_world_from_google_form.',
     'Use share_world_link to produce a /w/ share link and QR code for the current world. Prefer visibility unlisted for hackathon demos.',
     'To wire spatial buttons, toggles, sliders, or selects to world changes, create them with actionType world_tool plus tool, args, and optional argsByValue.',
     'To wire a submit button to an existing Google Form manually, use actionType submit_form with submitDestinationType google_form and a fieldMap from spatial field labels or IDs to Google entry IDs.',

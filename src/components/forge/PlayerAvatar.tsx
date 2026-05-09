@@ -71,6 +71,7 @@ const CAMERA_LOOK_AHEAD = 2.3
 const CAMERA_LOOK_TARGET_HEIGHT = 1.75
 const MIN_ELEVATION = -1.2 // Near ground level
 const MAX_ELEVATION = 1.5  // Almost directly above
+const PORTAL_ARRIVAL_TPS_CAMERA_ELEVATION = Math.PI / 4
 
 // TPS speed tiers: walk (space) → run (default) → sprint (shift)
 // Hardcoded — independent of noclip settings.moveSpeed
@@ -161,6 +162,7 @@ export function PlayerAvatar({
   const cameraZoomTarget = useRef(DEFAULT_TPS_CAMERA_ZOOM)
   const cameraZoom = useRef(DEFAULT_TPS_CAMERA_ZOOM)
   const wasThirdPersonActiveRef = useRef(false)
+  const teleportCameraResetPendingRef = useRef(false)
 
   // ── Movement state ─────────────────────────────────────────────────
   const positionRef = useRef(new THREE.Vector3(0, 0, 3))
@@ -399,6 +401,11 @@ export function PlayerAvatar({
       const [x, , z] = pose.position
       positionRef.current.set(x, sampleTerrainHeightAt(terrainHeightsRef.current, x, z), z)
       facingAngle.current = pose.yaw
+      cameraAzimuth.current = normalizeAngle(pose.yaw + Math.PI)
+      cameraElevation.current = PORTAL_ARRIVAL_TPS_CAMERA_ELEVATION
+      cameraZoomTarget.current = DEFAULT_TPS_CAMERA_ZOOM
+      cameraZoom.current = DEFAULT_TPS_CAMERA_ZOOM
+      teleportCameraResetPendingRef.current = true
       velocityRef.current.set(0, 0, 0)
       isMovingRef.current = false
       if (groupRef.current) {
@@ -477,15 +484,21 @@ export function PlayerAvatar({
     v.update(delta)
 
     if (isThirdPersonActive && !wasThirdPersonActiveRef.current) {
-      const entryOffset = _tempVec.current.copy(state.camera.position).sub(positionRef.current)
-      const horizontalDistance = Math.hypot(entryOffset.x, entryOffset.z)
-      if (horizontalDistance > 0.001 || Math.abs(entryOffset.y) > 0.001) {
-        cameraAzimuth.current = normalizeAngle(Math.atan2(entryOffset.x, entryOffset.z))
-        cameraElevation.current = Math.max(
-          MIN_ELEVATION,
-          Math.min(MAX_ELEVATION, Math.atan2(entryOffset.y - CAMERA_HEIGHT_OFFSET, Math.max(horizontalDistance, 0.0001)))
-        )
+      if (teleportCameraResetPendingRef.current) {
+        teleportCameraResetPendingRef.current = false
+      } else {
+        const entryOffset = _tempVec.current.copy(state.camera.position).sub(positionRef.current)
+        const horizontalDistance = Math.hypot(entryOffset.x, entryOffset.z)
+        if (horizontalDistance > 0.001 || Math.abs(entryOffset.y) > 0.001) {
+          cameraAzimuth.current = normalizeAngle(Math.atan2(entryOffset.x, entryOffset.z))
+          cameraElevation.current = Math.max(
+            MIN_ELEVATION,
+            Math.min(MAX_ELEVATION, Math.atan2(entryOffset.y - CAMERA_HEIGHT_OFFSET, Math.max(horizontalDistance, 0.0001)))
+          )
+        }
       }
+    } else if (isThirdPersonActive && teleportCameraResetPendingRef.current) {
+      teleportCameraResetPendingRef.current = false
     }
     wasThirdPersonActiveRef.current = isThirdPersonActive
 

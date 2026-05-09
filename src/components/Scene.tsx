@@ -68,6 +68,7 @@ import { CameraController as CameraControllerComponent, sprintRef, FPS_KEYBOARD_
 import { useAudioManager, SOUND_OPTIONS, type SoundEvent } from '@/lib/audio-manager'
 import { writeBrowserStorage } from '@/lib/browser-storage'
 import { runLocalStorageAgentCacheMigration } from '@/lib/localstorage-agent-cache-migration'
+import { isProbablyMobileDevice } from '@/lib/mobile-controls'
 import { useIsHostedOasis, useOasisCapabilities } from '@/lib/oasis-mode-client'
 import { installTestHarness } from '@/lib/test-harness'
 import { useWorldEvents } from '@/hooks/useWorldEvents'
@@ -275,6 +276,18 @@ function SprintParticles() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const SETTINGS_MENU_OPACITY_KEY = 'oasis-settings-menu-opacity'
+const MOBILE_POSTFX_DEFAULTS_KEY = 'oasis-mobile-postfx-defaults-v1'
+
+function getDeviceDefaultSettings(): OasisSettings {
+  if (typeof window === 'undefined' || !isProbablyMobileDevice()) {
+    return defaultSettings
+  }
+  return {
+    ...defaultSettings,
+    bloomEnabled: false,
+    vignetteEnabled: false,
+  }
+}
 
 function readSettingsMenuOpacity(): number {
   if (typeof window === 'undefined') return 0.92
@@ -1280,6 +1293,7 @@ export default function Scene() {
 
   // ─═̷─═̷─💾─═̷─═̷─{ SETTINGS PERSISTENCE }─═̷─═̷─💾─═̷─═̷─
   const [settings, setSettings] = useState<OasisSettings>(() => {
+    const deviceDefaults = getDeviceDefaultSettings()
     if (typeof window !== 'undefined') {
       // Clean up Parzival-era key — start fresh with Oasis defaults
       if (localStorage.getItem('uploader-settings')) localStorage.removeItem('uploader-settings')
@@ -1287,13 +1301,19 @@ export default function Scene() {
       if (saved) {
         try {
           const parsed = JSON.parse(saved)
-          return { ...defaultSettings, ...parsed }
+          const next = { ...deviceDefaults, ...parsed }
+          if (isProbablyMobileDevice() && localStorage.getItem(MOBILE_POSTFX_DEFAULTS_KEY) !== '1') {
+            next.bloomEnabled = false
+            next.vignetteEnabled = false
+            localStorage.setItem(MOBILE_POSTFX_DEFAULTS_KEY, '1')
+          }
+          return next
         } catch {
-          return defaultSettings
+          return deviceDefaults
         }
       }
     }
-    return defaultSettings
+    return deviceDefaults
   })
   const controlModeRef = useRef(settings.controlMode)
 

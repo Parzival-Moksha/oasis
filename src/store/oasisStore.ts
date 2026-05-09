@@ -64,6 +64,7 @@ import {
   type SpatialWebObject,
   type SpatialWebValue,
 } from '../lib/spatial-web'
+import { createPortalZeroGoogleFormsAltar } from '../lib/spatial-web-presets'
 
 const SPATIAL_WEB_WORLD_TOOL_ALLOWLIST = new Set([
   'set_sky',
@@ -75,6 +76,7 @@ const SPATIAL_WEB_WORLD_TOOL_ALLOWLIST = new Set([
   'set_behavior',
   'place_object',
   'create_spatial_web_object',
+  'create_world_from_google_form',
   'create_portal_gate',
   'self_craft_scene',
 ])
@@ -110,6 +112,19 @@ function playSpatialWebSound(event: SoundEvent): void {
   try {
     useAudioManager.getState().play(event)
   } catch {}
+}
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  if (!isBrowser) return false
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {}
+  try {
+    window.prompt('Copy Oasis world URL', text)
+  } catch {}
+  return false
 }
 
 type RemoteSubscription = { unsubscribe: () => void }
@@ -748,6 +763,17 @@ export const useOasisStore = create<OasisState>((set, get) => {
     return buildWelcomeHubPortalGates(getSafePortalTargetWorlds(get().worldRegistry, worldId))
   }
 
+  const resolveDefaultSpatialWebObjects = (
+    worldId: string,
+    storedObjects?: SpatialWebObject[] | null,
+  ): SpatialWebObject[] => {
+    const existing = Array.isArray(storedObjects) ? storedObjects : []
+    if (!isWelcomeHubWorld(worldId)) return existing
+    const altar = createPortalZeroGoogleFormsAltar()
+    if (existing.some(object => object.id === altar.id || object.visualStyle === 'google-form-altar')) return existing
+    return [...existing, altar]
+  }
+
   const exitPlacementIfActive = () => {
     try {
       const inputManager = require('../lib/input-manager').useInputManager.getState()
@@ -1209,7 +1235,134 @@ export const useOasisStore = create<OasisState>((set, get) => {
       }
     }
 
+    const openPortalToWorld = (targetWorldId: string, targetWorldName: string, delayMs: number) => {
+      if (!isBrowser) return
+      const sourceWorldId = get().viewingWorldId || get().activeWorldId
+      if (!sourceWorldId || sourceWorldId === targetWorldId) return
+      const portalPosition: [number, number, number] = [effectPosition[0] + 3, 0, effectPosition[2]]
+      window.setTimeout(() => {
+        void (async () => {
+          try {
+            const response = await fetch('/api/oasis-tools', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                tool: 'create_portal_gate',
+                args: {
+                  id: `portal-${id}-generated-world`,
+                  worldId: sourceWorldId,
+                  targetWorldId,
+                  label: targetWorldName,
+                  variant: 'stargate-vortex',
+                  direction: 'one-way',
+                  position: portalPosition,
+                  width: 2.8,
+                  height: 3.4,
+                },
+              }),
+            })
+            const result = await response.json().catch(() => null) as { ok?: boolean; data?: { portalGate?: PortalGate } } | null
+            const portalGate = result?.ok !== false ? result?.data?.portalGate : null
+            if (portalGate) {
+              set(state => ({
+                portalGates: [
+                  ...state.portalGates.filter(gate => gate.id !== portalGate.id),
+                  portalGate,
+                ],
+              }))
+              get().spawnPlacementVfx(portalPosition)
+              setTimeout(() => get().saveWorldState(), 100)
+            }
+          } catch {}
+        })()
+      }, delayMs)
+    }
+
     if (object.type === 'text') {
+      if (object.action?.type === 'create_world_from_google_form') {
+        const generatedUrl = typeof object.generatedWorldUrl === 'string' ? object.generatedWorldUrl : ''
+        const generatedWorldId = typeof object.generatedWorldId === 'string' ? object.generatedWorldId : ''
+        if (generatedUrl && generatedWorldId) {
+          playSpatialWebSound('buttonClick')
+          const copied = await copyTextToClipboard(generatedUrl)
+          markInteraction({
+            statusMessage: copied ? 'Copied. Opening portal...' : 'World URL ready. Opening portal...',
+            errorMessage: undefined,
+          }, 'press')
+          get().spawnPlacementVfx(effectPosition)
+          openPortalToWorld(generatedWorldId, 'Generated form world', 3000)
+          setTimeout(() => get().saveWorldState(), 100)
+          return
+        }
+
+        const currentValue = Array.isArray(object.value)
+          ? object.value.join(', ')
+          : object.value === null || object.value === undefined
+            ? ''
+            : String(object.value)
+        const formUrl = typeof window !== 'undefined'
+          ? window.prompt(object.placeholder || object.label, currentValue)
+          : null
+        if (formUrl === null) return
+        playSpatialWebSound('buttonClick')
+        markInteraction({
+          value: formUrl,
+          statusMessage: 'Building Oasis world...',
+          errorMessage: undefined,
+          generatedWorldId: undefined,
+          generatedWorldUrl: undefined,
+          generatedQrUrl: undefined,
+        }, 'change')
+
+        try {
+          const response = await fetch('/api/oasis-tools', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              tool: 'create_world_from_google_form',
+              args: {
+                formUrl,
+                visibility: 'unlisted',
+                publicBaseUrl: isBrowser ? window.location.origin : undefined,
+              },
+            }),
+          })
+          const result = await response.json().catch(() => null) as {
+            ok?: boolean
+            message?: string
+            error?: string
+            data?: { worldId?: string; worldUrl?: string; qrUrl?: string }
+          } | null
+          if (!response.ok || result?.ok === false || !result?.data?.worldId || !result.data.worldUrl) {
+            const message = result?.error || result?.message || `Could not build form world: HTTP ${response.status}`
+            markInteraction({ statusMessage: 'Build failed.', errorMessage: message }, 'change')
+            playSpatialWebSound('error')
+            setTimeout(() => get().saveWorldState(), 100)
+            return
+          }
+
+          markInteraction({
+            value: result.data.worldUrl,
+            generatedWorldId: result.data.worldId,
+            generatedWorldUrl: result.data.worldUrl,
+            generatedQrUrl: result.data.qrUrl,
+            statusMessage: object.action.successMessage || result.message || 'Oasis world ready.',
+            errorMessage: undefined,
+            submittedAt: new Date().toISOString(),
+          }, 'submit')
+          playSpatialWebSound('winner')
+          get().spawnPlacementVfx(effectPosition)
+        } catch (error) {
+          markInteraction({
+            statusMessage: 'Build failed.',
+            errorMessage: error instanceof Error ? error.message : 'Could not build form world.',
+          }, 'change')
+          playSpatialWebSound('error')
+        }
+        setTimeout(() => get().saveWorldState(), 100)
+        return
+      }
+
       const currentValue = Array.isArray(object.value)
         ? object.value.join(', ')
         : object.value === null || object.value === undefined
@@ -2188,7 +2341,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
       const mergedCustom = [...get().customGroundPresets, ...newCustom]
       if (newCustom.length > 0) persist('oasis-custom-ground', JSON.stringify(mergedCustom))
       const portalGates = resolveDefaultPortalGates(get().activeWorldId, world.portalGates, world.transforms)
-      const loadedObjCount = (world.conjuredAssetIds?.length || 0) + (world.catalogPlacements?.length || 0) + (world.craftedScenes?.length || 0) + portalGates.length + (world.spatialWebObjects?.length || 0)
+      const spatialWebObjects = resolveDefaultSpatialWebObjects(get().activeWorldId, world.spatialWebObjects)
+      const loadedObjCount = (world.conjuredAssetIds?.length || 0) + (world.catalogPlacements?.length || 0) + (world.craftedScenes?.length || 0) + portalGates.length + spatialWebObjects.length
       const sanitizedAgentAvatars = sanitizeAgentAvatarList(world.agentAvatars || [])
       const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
         windows: world.agentWindows || [],
@@ -2207,7 +2361,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         worldConjuredAssetIds: world.conjuredAssetIds || [],
         placedCatalogAssets: world.catalogPlacements || [],
         portalGates,
-        spatialWebObjects: world.spatialWebObjects || [],
+        spatialWebObjects,
         transforms: normalizedAgentWorldState.transforms,
         behaviors: world.behaviors || {},
         worldLights: lights,
@@ -2228,7 +2382,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
           conjuredAssetIds: world.conjuredAssetIds || [],
           catalogPlacements: world.catalogPlacements || [],
           portalGates,
-          spatialWebObjects: world.spatialWebObjects || [],
+          spatialWebObjects,
           transforms: normalizedAgentWorldState.transforms,
           behaviors: world.behaviors || {},
           lights,
@@ -2354,7 +2508,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
       const defaultLights: WorldLight[] = DEFAULT_WORLD_LIGHTS.map((l, i) => ({ ...l, id: `light-${l.type}-default-${i}`, visible: true } as WorldLight))
       const lights = world?.lights !== undefined ? (world?.lights || []) : defaultLights
       const portalGates = resolveDefaultPortalGates(worldId, world?.portalGates, world?.transforms)
-      const switchObjCount = (world?.conjuredAssetIds?.length || 0) + (world?.catalogPlacements?.length || 0) + (world?.craftedScenes?.length || 0) + portalGates.length + (world?.spatialWebObjects?.length || 0)
+      const spatialWebObjects = resolveDefaultSpatialWebObjects(worldId, world?.spatialWebObjects)
+      const switchObjCount = (world?.conjuredAssetIds?.length || 0) + (world?.catalogPlacements?.length || 0) + (world?.craftedScenes?.length || 0) + portalGates.length + spatialWebObjects.length
       const sanitizedAgentAvatars = sanitizeAgentAvatarList(world?.agentAvatars || [])
       const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
         windows: world?.agentWindows || [],
@@ -2374,7 +2529,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         worldConjuredAssetIds: world?.conjuredAssetIds || [],
         placedCatalogAssets: world?.catalogPlacements || [],
         portalGates,
-        spatialWebObjects: world?.spatialWebObjects || [],
+        spatialWebObjects,
         transforms: normalizedAgentWorldState.transforms,
         behaviors: world?.behaviors || {},
         worldLights: lights,
@@ -2405,7 +2560,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
           conjuredAssetIds: world.conjuredAssetIds || [],
           catalogPlacements: world.catalogPlacements || [],
           portalGates,
-          spatialWebObjects: world.spatialWebObjects || [],
+          spatialWebObjects,
           transforms: normalizedAgentWorldState.transforms,
           behaviors: world.behaviors || {},
           lights,
@@ -2970,8 +3125,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
       const isEditable = allowEdit && (meta.visibility === 'public_edit' || meta.visibility === 'ffa')
       const defaultLights: WorldLight[] = DEFAULT_WORLD_LIGHTS.map((l, i) => ({ ...l, id: `light-${l.type}-default-${i}`, visible: true } as WorldLight))
       const lights = state.lights !== undefined ? state.lights : defaultLights
-      const portalGates = state.portalGates || []
-      const viewObjCount = (state.conjuredAssetIds?.length || 0) + (state.catalogPlacements?.length || 0) + (state.craftedScenes?.length || 0) + portalGates.length + (state.spatialWebObjects?.length || 0)
+      const portalGates = resolveDefaultPortalGates(worldId, state.portalGates, state.transforms)
+      const spatialWebObjects = resolveDefaultSpatialWebObjects(worldId, state.spatialWebObjects)
+      const viewObjCount = (state.conjuredAssetIds?.length || 0) + (state.catalogPlacements?.length || 0) + (state.craftedScenes?.length || 0) + portalGates.length + spatialWebObjects.length
       const sanitizedAgentAvatars = sanitizeAgentAvatarList(state.agentAvatars || [])
       const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
         windows: state.agentWindows || [],
@@ -2991,7 +3147,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         worldConjuredAssetIds: state.conjuredAssetIds || [],
         placedCatalogAssets: state.catalogPlacements || [],
         portalGates,
-        spatialWebObjects: state.spatialWebObjects || [],
+        spatialWebObjects,
         transforms: normalizedAgentWorldState.transforms,
         behaviors: state.behaviors || {},
         worldLights: lights,

@@ -37,24 +37,9 @@ import { getLiveObjectTransform } from '../../lib/live-object-transforms'
 import { PORTAL_GATE_VARIANT_DEFS, type PortalAction, type PortalGateVariant } from '../../lib/portal-gates'
 import { portalThumbPath } from '../../lib/portal-thumbnails'
 import { PortalTransitionSettingsPanel } from './PortalTransitionSettingsPanel'
-import { makeSpatialWebId, type SpatialWebObject, type SpatialWebObjectType } from '../../lib/spatial-web'
+import { createSpatialWebObjectFromTemplate, SPATIAL_WEB_ASSET_TEMPLATES } from '../../lib/spatial-web-presets'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
-
-const SPATIAL_WEB_ASSET_TEMPLATES: Array<{
-  type: SpatialWebObjectType
-  label: string
-  subtitle: string
-  accentColor: string
-}> = [
-  { type: 'button', label: 'Button', subtitle: 'one-click action', accentColor: '#fb7185' },
-  { type: 'toggle', label: 'Toggle', subtitle: 'yes / no switch', accentColor: '#22c55e' },
-  { type: 'slider', label: 'Slider', subtitle: 'range input', accentColor: '#f59e0b' },
-  { type: 'select', label: 'Selector', subtitle: 'single choice', accentColor: '#38bdf8' },
-  { type: 'multiselect', label: 'Multi-select', subtitle: 'many choices', accentColor: '#06b6d4' },
-  { type: 'text', label: 'Text field', subtitle: 'voice-filled text', accentColor: '#f472b6' },
-  { type: 'output', label: 'Output panel', subtitle: 'receipt / response', accentColor: '#34d399' },
-]
 
 function readCols(key: string, fallback: number): number {
   try { const v = parseInt(localStorage.getItem(`oasis-wizard-cols-${key}`) || ''); return v >= 1 && v <= 6 ? v : fallback } catch { return fallback }
@@ -1212,49 +1197,10 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
   const savedScrollTop = useRef(0)
 
   const placeSpatialWebTemplate = useCallback((template: typeof SPATIAL_WEB_ASSET_TEMPLATES[number]) => {
-    const formId = 'spatial-library-demo'
-    const base: SpatialWebObject = {
-      id: makeSpatialWebId(`spatial-${template.type}`),
-      type: template.type,
-      formId,
-      label: template.label,
-      position: [0, 1.15, 0],
-      width: template.type === 'output' || template.type === 'text' ? 3 : 2.3,
-      height: template.type === 'output' || template.type === 'text' ? 1.05 : 0.82,
-      accentColor: template.accentColor,
-    }
-
-    const object: SpatialWebObject = {
-      ...base,
-      ...(template.type === 'toggle' ? { value: false } : {}),
-      ...(template.type === 'slider' ? { value: 50, min: 0, max: 100, step: 10 } : {}),
-      ...(template.type === 'select' ? {
-        value: 'yes',
-        options: [
-          { value: 'yes', label: 'Yes' },
-          { value: 'maybe', label: 'Maybe' },
-          { value: 'no', label: 'No' },
-        ],
-      } : {}),
-      ...(template.type === 'multiselect' ? {
-        value: ['ideas'],
-        options: [
-          { value: 'coffee', label: 'Coffee' },
-          { value: 'snacks', label: 'Snacks' },
-          { value: 'ideas', label: 'Ideas' },
-        ],
-      } : {}),
-      ...(template.type === 'text' ? { value: '', placeholder: 'Speak a short answer' } : {}),
-      ...(template.type === 'output' ? { value: 'Waiting for input.' } : {}),
-      ...(template.type === 'button' ? {
-        description: 'Submit this spatial form.',
-        action: { type: 'submit_form', successMessage: 'Submitted.' },
-      } : {}),
-    }
     enterPlacementMode({
       type: 'spatialWeb',
       name: template.label,
-      spatialWebObject: object,
+      spatialWebObject: createSpatialWebObjectFromTemplate(template),
     })
   }, [enterPlacementMode])
 
@@ -2779,8 +2725,8 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
                 <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${colsCatalog}, minmax(0, 1fr))` }}>
                   {SPATIAL_WEB_ASSET_TEMPLATES.map(template => (
                     <AssetCard
-                      key={template.type}
-                      id={template.type}
+                      key={template.id}
+                      id={template.id}
                       name={template.label}
                       type="spatial"
                       subtitle={template.subtitle}

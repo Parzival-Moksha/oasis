@@ -11,7 +11,13 @@ export type SpatialWebObjectType =
 
 export type SpatialWebValue = string | number | boolean | string[] | null
 export type SpatialWebEventName = 'press' | 'change' | 'submit'
-export type SpatialWebVisualStyle = 'neon-panel' | 'arcade-button' | 'glass-slider' | 'terminal-panel' | 'portal-zero-button'
+export type SpatialWebVisualStyle =
+  | 'neon-panel'
+  | 'arcade-button'
+  | 'glass-slider'
+  | 'terminal-panel'
+  | 'portal-zero-button'
+  | 'google-form-altar'
 
 export const SPATIAL_WEB_INTERACTION_RADIUS = 3
 
@@ -22,7 +28,7 @@ export interface SpatialWebOption {
 }
 
 export interface SpatialWebAction {
-  type: 'none' | 'submit_form' | 'set_value' | 'spawn_vfx' | 'world_tool'
+  type: 'none' | 'submit_form' | 'set_value' | 'spawn_vfx' | 'world_tool' | 'create_world_from_google_form'
   endpoint?: string
   successMessage?: string
   destination?: SpatialWebSubmitDestination
@@ -65,6 +71,11 @@ export interface SpatialWebObject {
   interactionCount?: number
   lastEvent?: SpatialWebEventName
   submittedAt?: string
+  generatedWorldId?: string
+  generatedWorldUrl?: string
+  generatedQrUrl?: string
+  statusMessage?: string
+  errorMessage?: string
 }
 
 export interface SpatialWebSubmissionField {

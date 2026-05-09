@@ -126,7 +126,7 @@ export const OASIS_MCP_TOOL_SPECS = [
       width: zNumberish.optional(),
       height: zNumberish.optional(),
       accentColor: z.string().optional(),
-      visualStyle: z.enum(['neon-panel', 'arcade-button', 'glass-slider', 'terminal-panel', 'portal-zero-button']).optional(),
+      visualStyle: z.enum(['neon-panel', 'arcade-button', 'glass-slider', 'terminal-panel', 'portal-zero-button', 'google-form-altar']).optional(),
       value: zSpatialWebValue.optional(),
       placeholder: z.string().optional(),
       description: z.string().optional(),

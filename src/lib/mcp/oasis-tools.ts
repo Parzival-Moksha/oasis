@@ -70,7 +70,7 @@ const INTERNAL_OASIS_BASE_URL = process.env.OASIS_URL || 'http://127.0.0.1:4516'
 // Falls back to 'local-user' for fresh installs without ADMIN_USER_ID.
 const LOCAL_USER_ID = process.env.ADMIN_USER_ID || 'local-user'
 const SPATIAL_WEB_OBJECT_TYPES: SpatialWebObjectType[] = ['button', 'toggle', 'slider', 'select', 'multiselect', 'text', 'output']
-const SPATIAL_WEB_VISUAL_STYLES: SpatialWebVisualStyle[] = ['neon-panel', 'arcade-button', 'glass-slider', 'terminal-panel', 'portal-zero-button']
+const SPATIAL_WEB_VISUAL_STYLES: SpatialWebVisualStyle[] = ['neon-panel', 'arcade-button', 'glass-slider', 'terminal-panel', 'portal-zero-button', 'google-form-altar']
 const DEFAULT_PORTAL_GATE_VARIANT: PortalGateVariant = 'threshold-ring'
 const SHAREABLE_WORLD_VISIBILITIES = new Set(['unlisted', 'public', 'public_edit', 'private'])
 
@@ -1468,6 +1468,9 @@ tools.create_spatial_web_object = async (args) => {
   const shouldSetValue = actionType === 'set_value' || actionType === 'set'
   const shouldSpawnVfx = actionType === 'spawn_vfx' || actionType === 'vfx'
   const shouldRunWorldTool = actionType === 'world_tool' || actionType === 'tool' || actionType === 'call_tool'
+  const shouldCreateGoogleFormWorld = actionType === 'create_world_from_google_form'
+    || actionType === 'google_form_world'
+    || actionType === 'form_to_world'
   const worldTool = validStr(args.tool || args.toolName || args.worldTool, '')
   const worldToolArgs = parseLooseObject(args.args || args.toolArgs)
   const worldToolArgsByValue = parseLooseObjectRecord(args.argsByValue || args.toolArgsByValue)
@@ -1511,7 +1514,12 @@ tools.create_spatial_web_object = async (args) => {
                 ...(Object.keys(worldToolArgs).length > 0 ? { args: worldToolArgs } : {}),
                 ...(Object.keys(worldToolArgsByValue).length > 0 ? { argsByValue: worldToolArgsByValue } : {}),
               }
-            : undefined
+            : shouldCreateGoogleFormWorld
+              ? {
+                  type: 'create_world_from_google_form',
+                  ...(validStr(args.successMessage, '') ? { successMessage: validStr(args.successMessage, '') } : {}),
+                }
+              : undefined
 
   const object: SpatialWebObject = {
     id,

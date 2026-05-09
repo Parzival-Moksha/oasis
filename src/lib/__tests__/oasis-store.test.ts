@@ -36,6 +36,7 @@ import type { AgentWindowType, AgentWindow } from '../../store/oasisStore'
 import { getDefaultAgentAvatarUrl } from '../../lib/agent-avatar-catalog'
 import { debouncedSaveWorld, saveWorld } from '../../lib/forge/world-persistence'
 import type { SpatialWebObject } from '../../lib/spatial-web'
+import { createGoogleFormsAltarObject } from '../../lib/spatial-web-presets'
 
 // Cast the mocked imports for easy access
 const mockDebouncedSave = debouncedSaveWorld as ReturnType<typeof vi.fn>
@@ -1133,6 +1134,57 @@ describe('OasisStore', () => {
         value: true,
         lastEvent: 'change',
         interactionCount: 1,
+      })
+    })
+
+    it('turns the Google Forms altar prompt into generated world metadata', async () => {
+      const originalFetch = globalThis.fetch
+      const originalWindow = (globalThis as any).window
+      const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        ok: true,
+        message: 'Oasis world ready.',
+        data: {
+          worldId: 'world-generated-form',
+          worldUrl: 'http://localhost:4516/w/world-generated-form',
+          qrUrl: 'https://qr.example/form',
+        },
+      }), {
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      globalThis.fetch = fetchMock as unknown as typeof fetch
+      ;(globalThis as any).window = {
+        prompt: vi.fn().mockReturnValue('https://forms.gle/demo'),
+      }
+      const altar = createGoogleFormsAltarObject({ id: 'forms-altar' })
+      useOasisStore.setState({
+        activeWorldId: 'world-portal-zero',
+        spatialWebObjects: [altar],
+      })
+
+      try {
+        await getState().interactSpatialWebObject('forms-altar')
+      } finally {
+        globalThis.fetch = originalFetch
+        ;(globalThis as any).window = originalWindow
+      }
+
+      expect(fetchMock).toHaveBeenCalledWith('/api/oasis-tools', expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          tool: 'create_world_from_google_form',
+          args: {
+            formUrl: 'https://forms.gle/demo',
+            visibility: 'unlisted',
+            publicBaseUrl: undefined,
+          },
+        }),
+      }))
+      expect(getState().spatialWebObjects[0]).toMatchObject({
+        value: 'http://localhost:4516/w/world-generated-form',
+        generatedWorldId: 'world-generated-form',
+        generatedWorldUrl: 'http://localhost:4516/w/world-generated-form',
+        generatedQrUrl: 'https://qr.example/form',
+        lastEvent: 'submit',
       })
     })
   })
