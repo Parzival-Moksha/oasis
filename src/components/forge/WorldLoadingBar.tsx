@@ -27,7 +27,7 @@ export function WorldLoadingBar() {
     <div
       data-world-loading-bar=""
       data-world-loading-progress={pct.toFixed(3)}
-      className="fixed bottom-0 left-0 right-0 z-[280] pointer-events-none"
+      className="fixed bottom-0 left-0 right-0 z-[240] pointer-events-none"
     >
       {/* Bar track */}
       <div className="h-[4px] bg-black/40 backdrop-blur-sm overflow-hidden">

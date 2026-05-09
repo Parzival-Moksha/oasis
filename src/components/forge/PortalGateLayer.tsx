@@ -24,6 +24,7 @@ import {
 import { createWorld, loadWorld, saveWorld } from '../../lib/forge/world-persistence'
 import {
   PORTAL_REVEAL_ROLL_EVENT,
+  PORTAL_TRANSITION_READY_EVENT,
   PORTAL_TRANSITION_START_EVENT,
   preloadPortalRevealRoll,
   readPortalTransitionSettings,
@@ -67,6 +68,11 @@ function emitPortalTransitionStart(gate: PortalGate, settings: PortalTransitionS
       variant: gate.variant,
     },
   }))
+}
+
+function emitPortalTransitionReady() {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(PORTAL_TRANSITION_READY_EVENT))
 }
 
 function emitPortalRevealRoll(gate: PortalGate, targetWorldName?: string) {
@@ -383,7 +389,7 @@ export function PortalGateLayer() {
   const runWorldTransition = useCallback(async (
     gate: PortalGate,
     targetWorldName: string | undefined,
-    switcher: () => void,
+    switcher: () => void | string | Promise<void | string>,
     options?: { targetWorldId?: string; arrivalPosePromise?: Promise<PlayerAvatarPose | null> },
   ) => {
     const settings = readPortalTransitionSettings()
@@ -391,8 +397,9 @@ export function PortalGateLayer() {
       const arrivalPose = options?.arrivalPosePromise
         ? await options.arrivalPosePromise.catch(() => null)
         : derivePortalArrivalPose(gate)
-      switcher()
-      if (options?.targetWorldId) await waitForWorldReady(options.targetWorldId)
+      const switchedWorldId = await switcher()
+      const targetWorldId = typeof switchedWorldId === 'string' ? switchedWorldId : options?.targetWorldId
+      if (targetWorldId) await waitForWorldReady(targetWorldId)
       if (arrivalPose) {
         requestPlayerAvatarTeleport(arrivalPose)
         settlePortalArrivalCamera(camera, arrivalPose)
@@ -419,9 +426,11 @@ export function PortalGateLayer() {
       const arrivalPose = options?.arrivalPosePromise
         ? await options.arrivalPosePromise.catch(() => null)
         : derivePortalArrivalPose(gate)
-      switcher()
-      if (options?.targetWorldId) {
-        await waitForWorldReady(options.targetWorldId)
+      const switchedWorldId = await switcher()
+      emitPortalTransitionReady()
+      const targetWorldId = typeof switchedWorldId === 'string' ? switchedWorldId : options?.targetWorldId
+      if (targetWorldId) {
+        await waitForWorldReady(targetWorldId)
       }
       if (arrivalPose) {
         requestPlayerAvatarTeleport(arrivalPose)
@@ -458,7 +467,10 @@ export function PortalGateLayer() {
             targetWorldId: action.worldId,
             targetWorldName,
           })
-          await runWorldTransition(gate, targetWorldName, () => switchWorld(action.worldId!), {
+          await runWorldTransition(gate, targetWorldName, () => {
+            switchWorld(action.worldId!)
+            return action.worldId!
+          }, {
             targetWorldId: action.worldId,
             arrivalPosePromise,
           })
@@ -473,10 +485,12 @@ export function PortalGateLayer() {
           : window.prompt('Name this new world', fallbackName)
         const name = requestedName?.trim()
         if (!name) return
-        const meta = await createWorld(name.slice(0, 50), action.icon || '🌍', {
+        const nextWorldName = name.slice(0, 50)
+        const metaPromise = createWorld(nextWorldName, action.icon || 'UI', {
           visibility: action.visibility || 'private',
         })
-        if (action.templateWorldId) {
+        const preparedMetaPromise = metaPromise.then(async meta => {
+          if (!action.templateWorldId) return meta
           const template = await loadWorld(action.templateWorldId)
           if (template) {
             const { version: _version, savedAt: _savedAt, ...templateState } = template
@@ -485,11 +499,15 @@ export function PortalGateLayer() {
               portalGates: upsertPortalZeroReturnGate(templateState.portalGates, meta.id),
             }, meta.id)
           }
-        }
-        const arrivalPosePromise = ensurePortalZeroReturnGateForNewWorld(meta.id)
-        refreshWorldRegistry()
-        await runWorldTransition(gate, meta.name, () => switchWorld(meta.id), {
-          targetWorldId: meta.id,
+          return meta
+        })
+        const arrivalPosePromise = preparedMetaPromise.then(meta => ensurePortalZeroReturnGateForNewWorld(meta.id))
+        await runWorldTransition(gate, nextWorldName, async () => {
+          const meta = await preparedMetaPromise
+          refreshWorldRegistry()
+          switchWorld(meta.id)
+          return meta.id
+        }, {
           arrivalPosePromise,
         })
         return

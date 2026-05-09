@@ -22,8 +22,6 @@ const Scene = dynamic(() => import('@/components/Scene'), {
 })
 
 export default function OasisClient({ initialWorldId }: { initialWorldId?: string }) {
-  const worldReady = useOasisStore(s => s._worldReady)
-  const viewingWorldMeta = useOasisStore(s => s.viewingWorldMeta)
   const activeWorldId = useOasisStore(s => s.activeWorldId)
   const worldRegistry = useOasisStore(s => s.worldRegistry)
   const switchWorld = useOasisStore(s => s.switchWorld)
@@ -92,20 +90,10 @@ export default function OasisClient({ initialWorldId }: { initialWorldId?: strin
     return <main className="w-full h-screen bg-black" />
   }
 
-  const showLoading = !worldReady && !viewingWorldMeta
-
   return (
     <OasisModeProvider mode={mode} capabilities={capabilities}>
     <main className="w-full h-screen bg-black">
       <Scene />
-
-      {showLoading && (
-        <div className="fixed inset-0 z-[9999] bg-black flex items-center justify-center pointer-events-none">
-          <div className="text-gray-600 text-sm animate-pulse font-mono tracking-wider">
-            loading world...
-          </div>
-        </div>
-      )}
     </main>
     </OasisModeProvider>
   )

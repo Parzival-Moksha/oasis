@@ -163,6 +163,7 @@ export function PlayerAvatar({
   const cameraZoom = useRef(DEFAULT_TPS_CAMERA_ZOOM)
   const wasThirdPersonActiveRef = useRef(false)
   const teleportCameraResetPendingRef = useRef(false)
+  const movementSuppressedUntilReleaseRef = useRef(false)
 
   // ── Movement state ─────────────────────────────────────────────────
   const positionRef = useRef(new THREE.Vector3(0, 0, 3))
@@ -406,6 +407,7 @@ export function PlayerAvatar({
       cameraZoomTarget.current = DEFAULT_TPS_CAMERA_ZOOM
       cameraZoom.current = DEFAULT_TPS_CAMERA_ZOOM
       teleportCameraResetPendingRef.current = true
+      movementSuppressedUntilReleaseRef.current = true
       velocityRef.current.set(0, 0, 0)
       isMovingRef.current = false
       if (groupRef.current) {
@@ -556,14 +558,32 @@ export function PlayerAvatar({
 
     if (isThirdPersonActive) {
       const keys = getKeys() as Record<string, boolean>
-      const { forward, backward, left, right, sprint, slow } = keys
+      let { forward, backward, left, right, sprint, slow } = keys
+      let mobileMoveX = mobile.moveX
+      let mobileMoveZ = mobile.moveZ
+      let mobileSprint = mobile.sprint
+      const staleMoveHeld = Boolean(forward || backward || left || right || Math.abs(mobileMoveX) > 0.03 || Math.abs(mobileMoveZ) > 0.03)
+      if (movementSuppressedUntilReleaseRef.current) {
+        if (staleMoveHeld) {
+          forward = false
+          backward = false
+          left = false
+          right = false
+          sprint = false
+          mobileMoveX = 0
+          mobileMoveZ = 0
+          mobileSprint = false
+        } else {
+          movementSuppressedUntilReleaseRef.current = false
+        }
+      }
 
       // Speed modifier: shift=sprint (4x), space=walk (0.25x), default=run
-      const speedMult = sprint || mobile.sprint ? TPS_SPRINT_MULT : slow ? TPS_WALK_MULT : 1
+      const speedMult = sprint || mobileSprint ? TPS_SPRINT_MULT : slow ? TPS_WALK_MULT : 1
       const currentSpeed = TPS_BASE_SPEED * speedMult
 
       // Sprint VFX — same speed lines + chromatic aberration as noclip
-      const targetIntensity = sprint || mobile.sprint ? (TPS_SPRINT_MULT - 1) / 3 : 0
+      const targetIntensity = sprint || mobileSprint ? (TPS_SPRINT_MULT - 1) / 3 : 0
       sprintRef.current.intensity += (targetIntensity - sprintRef.current.intensity) * (1 - Math.exp(-5 * delta))
       sprintRef.current.multiplier = speedMult
 
@@ -574,8 +594,8 @@ export function PlayerAvatar({
 
       // Movement direction relative to camera
       const moveDir = _moveDir.current.set(0, 0, 0)
-      const moveZ = (forward ? 1 : 0) - (backward ? 1 : 0) + mobile.moveZ
-      const moveX = (right ? 1 : 0) - (left ? 1 : 0) + mobile.moveX
+      const moveZ = (forward ? 1 : 0) - (backward ? 1 : 0) + mobileMoveZ
+      const moveX = (right ? 1 : 0) - (left ? 1 : 0) + mobileMoveX
       moveDir.addScaledVector(camForward, moveZ)
       moveDir.addScaledVector(camRight, moveX)
 

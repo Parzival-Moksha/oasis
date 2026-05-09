@@ -67,6 +67,7 @@ export const DEFAULT_PORTAL_TRANSITION_SETTINGS: PortalTransitionSettings = {
 export const PORTAL_TRANSITION_STORAGE_KEY = 'oasis-portal-transition-vfx'
 export const PORTAL_TRANSITION_SETTINGS_EVENT = 'oasis:portal-transition-settings'
 export const PORTAL_TRANSITION_START_EVENT = 'oasis:portal-transition:start'
+export const PORTAL_TRANSITION_READY_EVENT = 'oasis:portal-transition:ready'
 export const PORTAL_REVEAL_ROLL_EVENT = 'oasis:portal-reveal-roll'
 
 const EFFECT_IDS = new Set(PORTAL_TRANSITION_EFFECTS.map(effect => effect.id))

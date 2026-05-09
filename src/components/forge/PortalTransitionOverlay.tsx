@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
   DEFAULT_PORTAL_TRANSITION_SETTINGS,
+  PORTAL_TRANSITION_READY_EVENT,
   PORTAL_TRANSITION_START_EVENT,
   normalizePortalTransitionSettings,
   type PortalTransitionEffect,
@@ -29,6 +30,7 @@ interface PortalTransitionStartDetail {
 
 interface ActiveTransition {
   startedAt: number
+  readyAt: number | null
   seed: number
   settings: PortalTransitionSettings
 }
@@ -409,13 +411,21 @@ export function PortalTransitionOverlay() {
       if (!settings.enabled) return
       setActive({
         startedAt: nowMs(),
+        readyAt: null,
         seed: Math.random() * 10000,
         settings,
       })
       setTick(0)
     }
+    const onReady = () => {
+      setActive(current => current ? { ...current, readyAt: current.readyAt ?? nowMs() } : current)
+    }
     window.addEventListener(PORTAL_TRANSITION_START_EVENT, onStart)
-    return () => window.removeEventListener(PORTAL_TRANSITION_START_EVENT, onStart)
+    window.addEventListener(PORTAL_TRANSITION_READY_EVENT, onReady)
+    return () => {
+      window.removeEventListener(PORTAL_TRANSITION_START_EVENT, onStart)
+      window.removeEventListener(PORTAL_TRANSITION_READY_EVENT, onReady)
+    }
   }, [])
 
   // Subscribe to the world-load manager. The tunnel phase is gated on this
@@ -430,7 +440,7 @@ export function PortalTransitionOverlay() {
     let frame = 0
     const loop = () => {
       const elapsedSeconds = (nowMs() - active.startedAt) / 1000
-      const phase = phaseFor(active.settings, elapsedSeconds, worldLoadingRef.current)
+      const phase = phaseFor(active.settings, elapsedSeconds, worldLoadingRef.current || active.readyAt === null)
       setTick(elapsedSeconds)
       if (elapsedSeconds < phase.total + 0.08) {
         frame = requestAnimationFrame(loop)
@@ -445,7 +455,7 @@ export function PortalTransitionOverlay() {
   if (!active) return null
 
   const settings = active.settings
-  const { phase, progress, effect, total } = phaseFor(settings, tick, worldLoading)
+  const { phase, progress, effect, total } = phaseFor(settings, tick, worldLoading || active.readyAt === null)
   const totalProgress = Math.min(1, tick / Math.max(0.001, total))
   const revealFade = phase === 'reveal' ? 1 - progress : 1
   // 'none' for a phase = skip the overlay entirely. Camera animations driven
