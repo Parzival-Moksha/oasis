@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { useOasisStore } from '@/store/oasisStore'
 import { useAudioManager } from '@/lib/audio-manager'
 import { useUILayer } from '@/lib/input-manager'
 import type { WorldMeta } from '@/lib/forge/world-persistence'
+import { SettingsContext } from '@/components/scene-lib'
 
 import { GameMenuButton } from './GameMenuButton'
 
@@ -91,7 +92,7 @@ async function copyText(value: string): Promise<void> {
   document.body.removeChild(textarea)
 }
 
-export function WorldMenu() {
+export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
@@ -108,7 +109,7 @@ export function WorldMenu() {
   const [newWorldIcon, setNewWorldIcon] = useState('O')
   const menuRef = useRef<HTMLDivElement>(null)
   useUILayer('world-menu', isOpen)
-  const playHover = () => useAudioManager.getState().play('buttonHover')
+  const { settings, updateSetting, rp1Locked } = useContext(SettingsContext)
   const playClick = () => useAudioManager.getState().play('buttonClick')
 
   const activeWorldId = useOasisStore(s => s.activeWorldId)
@@ -307,9 +308,8 @@ export function WorldMenu() {
   }
 
   return (
-    <div ref={menuRef} className="fixed left-4 top-[72px] z-[190] select-none">
+    <div ref={menuRef} className="fixed left-4 top-[112px] z-[190] select-none max-[700px]:left-2 max-[700px]:top-[76px]">
       <GameMenuButton
-        onMouseEnter={playHover}
         onClick={() => {
           playClick()
           setIsOpen(open => !open)
@@ -326,7 +326,7 @@ export function WorldMenu() {
       {isOpen && (
         <div
           data-ui-panel
-          className="absolute left-full top-0 ml-2 max-h-[82vh] w-[360px] overflow-y-auto rounded-lg border border-white/10 bg-black/85 p-3 font-mono text-white shadow-[0_0_54px_rgba(0,0,0,0.65),0_0_38px_rgba(34,211,238,0.14)] backdrop-blur-md"
+          className="absolute left-full top-0 z-[260] ml-2 max-h-[82vh] w-[360px] overflow-y-auto rounded-lg border border-white/10 bg-black/[0.92] p-3 font-mono text-white shadow-[0_0_54px_rgba(0,0,0,0.65),0_0_38px_rgba(34,211,238,0.14)] backdrop-blur-md max-[700px]:fixed max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:ml-0 max-[700px]:max-h-[calc(100vh-70px)] max-[700px]:w-auto max-[700px]:p-2"
           onMouseDown={event => event.stopPropagation()}
         >
           <div className="flex items-start gap-3 border-b border-white/10 pb-3">
@@ -340,16 +340,37 @@ export function WorldMenu() {
               {worldIcon}
             </button>
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
+              <div className="flex items-start gap-2">
                 <div className="min-w-0 flex-1 truncate text-sm font-black uppercase tracking-[0.12em]">{worldName}</div>
-                {canEditSettings && (
-                  <button
-                    onClick={() => setEditOpen(open => !open)}
-                    className="rounded border border-white/10 bg-white/5 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-white/60 transition hover:bg-white/10 hover:text-white"
-                  >
-                    Edit
-                  </button>
-                )}
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  {canEditSettings && (
+                    <button
+                      onClick={() => setEditOpen(open => !open)}
+                      className="rounded border border-white/10 bg-white/5 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-white/60 transition hover:bg-white/10 hover:text-white"
+                    >
+                      Edit
+                    </button>
+                  )}
+                  <label className={`flex items-center gap-1.5 text-[9px] font-black uppercase tracking-[0.1em] text-amber-100/75 ${rp1Locked ? 'cursor-not-allowed opacity-55' : 'cursor-pointer'}`}>
+                    <input
+                      type="checkbox"
+                      checked={settings.rp1Mode}
+                      disabled={rp1Locked}
+                      onChange={event => updateSetting('rp1Mode', event.target.checked)}
+                      className="sr-only"
+                    />
+                    <span className="relative h-4 w-8 rounded-full border border-amber-200/35 bg-stone-950 shadow-inner">
+                      <span
+                        className="absolute left-0.5 top-0.5 h-3 w-3 rounded-full border border-amber-100/35 bg-stone-700 transition"
+                        style={{
+                          transform: settings.rp1Mode ? 'translateX(16px)' : 'translateX(0)',
+                          background: settings.rp1Mode ? '#fde68a' : undefined,
+                        }}
+                      />
+                    </span>
+                    RP1
+                  </label>
+                </div>
               </div>
               <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-cyan-100/60">{visibilityLabel}</div>
               <div className="mt-2 flex items-center gap-2 text-[11px] text-white/75">
@@ -582,6 +603,12 @@ export function WorldMenu() {
               </div>
             )}
           </div>
+
+          {actionLogControl && (
+            <div className="mt-3 rounded-md border border-amber-300/15 bg-amber-300/5 p-2">
+              {actionLogControl}
+            </div>
+          )}
 
           <div className="mt-3 flex items-center gap-2">
             <button

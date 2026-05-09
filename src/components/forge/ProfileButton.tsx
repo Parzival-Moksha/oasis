@@ -20,6 +20,7 @@ import {
   hasProfileTokenUsage,
   normalizeProfileTokenBurnSummary,
 } from '@/lib/profile-token-display'
+import { GameMenuButton } from './GameMenuButton'
 
 interface ProfileData {
   credits: number
@@ -139,6 +140,7 @@ export function ProfileButton() {
   const displayName = profile.displayName || 'Wanderer'
   const avatarSrc = profile.avatar_url || null
   const initial = (displayName[0] || '?').toUpperCase()
+  const playClick = () => useAudioManager.getState().play('buttonClick')
 
   const startEditing = () => {
     setEditName(profile.displayName || '')
@@ -181,34 +183,29 @@ export function ProfileButton() {
   }
 
   return (
-    <div ref={panelRef} className="relative">
-      {/* Avatar button */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
+    <div ref={panelRef} className="fixed left-4 top-4 z-[190] select-none max-[700px]:left-2 max-[700px]:top-2">
+      <GameMenuButton
+        onClick={() => {
+          playClick()
+          setIsOpen(!isOpen)
+        }}
         aria-label={displayName}
         data-oasis-tooltip={displayName}
-        className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden transition-all hover:scale-110"
-        style={{
-          background: isOpen ? 'rgba(168,85,247,0.3)' : 'rgba(0,0,0,0.6)',
-          border: `1px solid ${isOpen ? 'rgba(168,85,247,0.6)' : 'rgba(255,255,255,0.15)'}`,
-          boxShadow: isOpen ? '0 0 12px rgba(168,85,247,0.3)' : 'none',
-        }}
-      >
-        {avatarSrc ? (
-          <img src={avatarSrc} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-        ) : (
-          <span className="text-sm font-bold text-purple-300">{initial}</span>
-        )}
-      </button>
+        className="oasis-tooltip"
+        label="Profile"
+        marker={initial}
+        accent="#C084FC"
+        active={isOpen || showAvatarGallery}
+      />
 
       {/* Dropdown panel */}
       {isOpen && (
         <div
           data-ui-panel
-          className="absolute top-12 left-0 w-64 rounded-lg overflow-hidden"
+          className="absolute left-full top-0 z-[260] ml-2 max-h-[calc(100vh-24px)] w-72 overflow-y-auto rounded-lg max-[700px]:fixed max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:ml-0 max-[700px]:max-h-[calc(100vh-70px)] max-[700px]:w-auto"
           onMouseDown={(e) => e.stopPropagation()}
           style={{
-            backgroundColor: `rgba(0, 0, 0, ${settings.uiOpacity})`,
+            backgroundColor: `rgba(0, 0, 0, ${Math.max(0.92, settings.uiOpacity)})`,
             border: '1px solid rgba(168,85,247,0.3)',
             boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
           }}

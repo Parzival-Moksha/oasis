@@ -11,7 +11,7 @@ export type SpatialWebObjectType =
 
 export type SpatialWebValue = string | number | boolean | string[] | null
 export type SpatialWebEventName = 'press' | 'change' | 'submit'
-export type SpatialWebVisualStyle = 'neon-panel' | 'arcade-button' | 'glass-slider' | 'terminal-panel'
+export type SpatialWebVisualStyle = 'neon-panel' | 'arcade-button' | 'glass-slider' | 'terminal-panel' | 'portal-zero-button'
 
 export const SPATIAL_WEB_INTERACTION_RADIUS = 3
 

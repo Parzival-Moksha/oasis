@@ -141,7 +141,7 @@ const brokenPaths = new Set<string>()
 const lastPlayedAt = new Map<SoundEvent, number>()
 
 function getSoundCooldownMs(event: SoundEvent): number {
-  if (event === 'buttonHover') return 850
+  if (event === 'buttonHover') return 0
   if (event === 'footstep') return 80
   return 0
 }
@@ -153,10 +153,9 @@ function getSoundVolumeMultiplier(event: SoundEvent): number {
 }
 
 function isEventStillAudible(event: SoundEvent, audio: HTMLAudioElement): boolean {
-  if (event !== 'buttonHover') return false
-  if (audio.paused || audio.ended) return false
-  const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0.45
-  return audio.currentTime < Math.min(duration, 0.45)
+  void event
+  void audio
+  return false
 }
 
 function shouldSkipForCooldown(event: SoundEvent): boolean {

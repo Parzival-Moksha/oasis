@@ -46,7 +46,11 @@ const SHORTCUTS: ShortcutRow[] = [
   { keys: ['Q', 'E'], action: 'Up / Down (Noclip)', category: 'camera' },
   { keys: ['Shift'], action: 'Sprint — 4× speed', category: 'camera' },
   { keys: ['Space'], action: 'Slow - 0.125x speed', category: 'camera' },
-  { keys: ['Ctrl', 'Alt', 'C'], action: 'Cycle camera mode (Orbit → Noclip → TPS)', category: 'camera' },
+  { keys: ['C'], action: 'Cycle camera view', category: 'camera' },
+  { keys: ['X'], action: 'Dance', category: 'camera' },
+  { keys: ['F'], action: 'Interact nearby', category: 'camera' },
+  { keys: ['N'], action: 'Next agent window', category: 'camera' },
+  { keys: ['PgUp', 'PgDn'], action: 'Previous / next picture', category: 'camera' },
 
   // Building
   { keys: ['R'], action: 'Translate mode (move)', category: 'building' },
@@ -75,7 +79,7 @@ const CATEGORY_ORDER: ShortcutRow['category'][] = ['mouse', 'camera', 'building'
 function Kbd({ children }: { children: string }) {
   return (
     <span
-      className="inline-block px-1.5 py-0.5 rounded text-[10px] font-mono font-bold leading-none"
+      className="inline-block rounded px-1.5 py-0.5 text-[10px] font-mono font-bold leading-none max-[700px]:text-[9px]"
       style={{
         background: 'rgba(255,255,255,0.12)',
         border: '1px solid rgba(255,255,255,0.25)',
@@ -90,15 +94,15 @@ function Kbd({ children }: { children: string }) {
 
 function ControlsTab() {
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 max-[700px]:space-y-2">
       {CATEGORY_ORDER.map(cat => (
         <div key={cat}>
-          <div className="text-[10px] text-purple-300 uppercase tracking-wider mb-2 font-bold">
+          <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-purple-300 max-[700px]:mb-1">
             {CATEGORY_LABELS[cat]}
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             {SHORTCUTS.filter(s => s.category === cat).map((s, i) => (
-              <div key={i} className="flex items-center justify-between gap-3">
+              <div key={i} className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2">
                 <div className="flex items-center gap-1 flex-shrink-0">
                   {s.keys.map((k, j) => (
                     <span key={j} className="flex items-center gap-0.5">
@@ -107,7 +111,7 @@ function ControlsTab() {
                     </span>
                   ))}
                 </div>
-                <span className="text-xs text-gray-300 text-right">{s.action}</span>
+                <span className="min-w-0 text-left text-[11px] text-gray-300 max-[700px]:text-[10px]">{s.action}</span>
               </div>
             ))}
           </div>
@@ -331,7 +335,9 @@ function GlossaryTab() {
 
 export function HelpPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   useUILayer('help', isOpen)
-  const [tab, setTab] = useState<Tab>('controls')
+  const [isMobile, setIsMobile] = useState(false)
+  const tab: Tab = 'controls'
+  const setTab = (_tab: Tab) => {}
 
   // Dragging (same pattern as FeedbackPanel)
   const [position, setPosition] = useState(() => {
@@ -370,6 +376,17 @@ export function HelpPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
     }
   }, [isDragging, handleDrag, handleDragEnd])
 
+  useEffect(() => {
+    const update = () => setIsMobile(window.innerWidth <= 700)
+    update()
+    window.addEventListener('resize', update)
+    window.addEventListener('orientationchange', update)
+    return () => {
+      window.removeEventListener('resize', update)
+      window.removeEventListener('orientationchange', update)
+    }
+  }, [])
+
   if (!isOpen) return null
 
   const done = completedQuestCount()
@@ -385,23 +402,24 @@ export function HelpPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
     <div
       className="fixed z-[9995] select-none"
       style={{
-        left: position.x,
-        top: position.y,
-        width: 380,
-        opacity: 0.8,
+        left: isMobile ? 12 : position.x,
+        top: isMobile ? 58 : position.y,
+        width: isMobile ? 'calc(100vw - 24px)' : 320,
+        maxWidth: 'calc(100vw - 24px)',
+        opacity: 0.92,
       }}
     >
       <div
-        className="rounded-xl overflow-hidden shadow-2xl"
+        className="overflow-hidden rounded-xl shadow-2xl"
         style={{
-          background: '#0a0a14',
+          background: 'rgba(0,0,0,0.92)',
           border: '1px solid rgba(168, 85, 247, 0.25)',
           boxShadow: '0 8px 40px rgba(0,0,0,0.8), 0 0 20px rgba(168, 85, 247, 0.1)',
         }}
       >
         {/* ── Header (drag handle) ── */}
         <div
-          className="flex items-center justify-between px-4 py-3 cursor-move"
+          className="flex cursor-move items-center justify-between px-3 py-2"
           onMouseDown={handleDragStart}
           style={{
             borderBottom: '1px solid rgba(255,255,255,0.08)',
@@ -411,7 +429,6 @@ export function HelpPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
           <div className="flex items-center gap-2">
             <span className="text-lg">❓</span>
             <span className="text-sm font-semibold text-white">Help</span>
-            <span className="text-[10px] text-gray-500 font-mono">— right view</span>
           </div>
           <button
             onClick={onClose}
@@ -456,12 +473,10 @@ export function HelpPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
 
         {/* ── Content ── */}
         <div
-          className="p-4 overflow-y-auto"
-          style={{ maxHeight: 'calc(85vh - 100px)' }}
+          className="overflow-y-auto p-3"
+          style={{ maxHeight: isMobile ? 'calc(100vh - 116px)' : 'min(560px, calc(85vh - 84px))' }}
         >
-          {tab === 'controls' && <ControlsTab />}
-          {tab === 'guide' && <GuideTab />}
-          {tab === 'glossary' && <GlossaryTab />}
+          <ControlsTab />
         </div>
       </div>
     </div>,

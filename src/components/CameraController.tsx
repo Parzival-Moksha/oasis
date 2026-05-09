@@ -25,7 +25,7 @@ import * as THREE from 'three'
 let _audioListener: THREE.AudioListener | null = null
 export function getAudioListener(): THREE.AudioListener | null { return _audioListener }
 import { useOasisStore } from '../store/oasisStore'
-import { useInputManager, getInputCapabilities, consumeMouseLookDelta } from '../lib/input-manager'
+import { useInputManager, getInputCapabilities, consumeMouseLookDelta, wasUILayerClosedRecently } from '../lib/input-manager'
 import { getMobileInputSnapshot } from '../lib/mobile-controls'
 import { setCameraSnapshot } from '../lib/camera-bridge'
 import { deriveAvatarAnchoredWindowPlacement, resolveAgentWindowRenderScale } from '../lib/agent-avatar-utils'
@@ -393,10 +393,32 @@ export function CameraController() {
   const updateAgentFocus = useAgentFocusUpdate()
 
   // Click-to-lock pointer in noclip mode (replaces PointerLockControls from drei)
-  // Also handles: clicking canvas while in ui-focused state to dismiss panels and re-lock
+  // Also handles: clicking canvas while in ui-focused state to dismiss panels.
   useEffect(() => {
     const canvas = document.querySelector('#uploader-canvas') as HTMLCanvasElement
     if (!canvas) return
+
+    const isCanvasControlTarget = (target: EventTarget | null) => {
+      const el = target as HTMLElement | null
+      if (!el) return false
+      if (el.closest('[data-ui-panel]')) return false
+      return el.tagName === 'CANVAS' || Boolean(el.closest('#uploader-canvas'))
+    }
+
+    const maybeRequestLock = (target: EventTarget | null) => {
+      if (!isCanvasControlTarget(target)) return
+      if (wasUILayerClosedRecently(220)) return
+      const state = useInputManager.getState()
+      if (state.can().canLockPointer && !state.pointerLocked) {
+        state.requestPointerLock()
+      }
+    }
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return
+      maybeRequestLock(e.target)
+    }
+
     const onClick = (e: MouseEvent) => {
       const state = useInputManager.getState()
 
@@ -416,20 +438,18 @@ export function CameraController() {
         if (useInputManager.getState().inputState === 'ui-focused') {
           state.returnToPrevious()
         }
-        const nextState = useInputManager.getState()
-        if (nextState.can().canLockPointer && !nextState.pointerLocked) {
-          nextState.requestPointerLock()
-        }
         return
       }
 
       // Standard path: lock pointer in states that support it
-      if (state.can().canLockPointer && !state.pointerLocked) {
-        state.requestPointerLock()
-      }
+      maybeRequestLock(e.target)
     }
+    canvas.addEventListener('pointerdown', onPointerDown)
     canvas.addEventListener('click', onClick)
-    return () => canvas.removeEventListener('click', onClick)
+    return () => {
+      canvas.removeEventListener('pointerdown', onPointerDown)
+      canvas.removeEventListener('click', onClick)
+    }
   }, [])
 
   // The ONE useFrame — delta from R3F, NOT state.clock.getDelta() (which double-consumes)

@@ -45,7 +45,7 @@ import { WizardConsole } from './forge/WizardConsole'
 // AssetExplorerWindow deleted — functionality lives in WizardConsole
 import { ObjectInspector } from './forge/ObjectInspector'
 import { MindcraftMissionWindowBridge } from './forge/MindcraftMissionWindowBridge'
-import { ActionLogButton, ActionLogPanel } from './forge/ActionLog'
+import { ActionLogPanel } from './forge/ActionLog'
 import { ProfileButton } from './forge/ProfileButton'
 import { MerlinPanel } from './forge/MerlinPanel'
 import { AnorakPanel } from './forge/AnorakPanel'
@@ -277,10 +277,10 @@ function SprintParticles() {
 const SETTINGS_MENU_OPACITY_KEY = 'oasis-settings-menu-opacity'
 
 function readSettingsMenuOpacity(): number {
-  if (typeof window === 'undefined') return 0.86
+  if (typeof window === 'undefined') return 0.92
   const raw = window.localStorage.getItem(SETTINGS_MENU_OPACITY_KEY)
-  const parsed = raw ? Number(raw) : 0.86
-  return Number.isFinite(parsed) ? Math.max(0.5, Math.min(1, parsed)) : 0.86
+  const parsed = raw ? Number(raw) : 0.92
+  return Number.isFinite(parsed) ? Math.max(0.5, Math.min(1, parsed)) : 0.92
 }
 
 function writeSettingsMenuOpacity(value: number) {
@@ -312,8 +312,8 @@ function SettingsContent({
   const categories = ['Post-FX', 'UI']
 
   return (
-    <div className="w-[360px] max-[700px]:w-full p-4">
-      <div className="mb-3 flex items-center gap-3 border-b border-white/10 pb-3">
+    <div className="w-[360px] p-4 max-[700px]:w-full max-[700px]:p-2">
+      <div className="mb-3 flex items-center gap-3 border-b border-white/10 pb-3 max-[700px]:mb-2 max-[700px]:pb-2">
         <div className="flex h-9 w-9 items-center justify-center rounded-md border border-violet-300/35 bg-violet-300/10 text-sm font-black text-violet-100">
           SYS
         </div>
@@ -330,7 +330,7 @@ function SettingsContent({
       )}
 
       {categories.map(category => (
-        <div key={category} className="mb-4">
+        <div key={category} className="mb-4 max-[700px]:mb-2">
           <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-2">{category}</div>
 
           {category !== 'UI' && toggles.filter(t => t.category === category).map(toggle => (
@@ -538,7 +538,7 @@ function SettingsContent({
         </div>
       </div>
 
-      <div className="mb-2 border-t border-white/10 pt-3">
+      <div className="mb-2 border-t border-white/10 pt-3 max-[700px]:pt-2">
         <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-2">Agent Embodiment</div>
 
         <label className="flex items-center gap-3 py-1.5 cursor-pointer group hover:bg-white/5 rounded px-1 -mx-1 transition-colors">
@@ -1197,10 +1197,9 @@ function AgentQuickLauncher({
   }, [isOpen, onClose])
 
   return (
-    <div ref={menuRef} className="fixed left-4 top-[200px] z-[190] select-none">
+    <div ref={menuRef} className="fixed left-4 top-[208px] z-[190] select-none max-[700px]:left-2 max-[700px]:top-[144px]">
       <GameMenuButton
         onClick={() => { playClick(); onToggle() }}
-        onMouseEnter={playHover}
         label="Agents"
         marker="AI"
         accent="#F472B6"
@@ -1209,7 +1208,7 @@ function AgentQuickLauncher({
       />
 
       {isOpen && (
-        <div className="absolute left-full top-0 ml-2 max-h-[calc(100vh-216px)] w-[238px] overflow-y-auto rounded-lg border border-white/10 bg-black/82 p-3 shadow-[0_0_54px_rgba(0,0,0,0.65),0_0_38px_rgba(34,211,238,0.18)] backdrop-blur-md max-[700px]:w-[calc(100vw-152px)]">
+        <div className="absolute left-full top-0 z-[260] ml-2 max-h-[calc(100vh-224px)] w-[238px] overflow-y-auto rounded-lg border border-white/10 bg-black/[0.92] p-3 shadow-[0_0_54px_rgba(0,0,0,0.65),0_0_38px_rgba(34,211,238,0.18)] backdrop-blur-md max-[700px]:fixed max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:ml-0 max-[700px]:max-h-[calc(100vh-70px)] max-[700px]:w-auto max-[700px]:p-2">
           <div className="grid grid-cols-2 gap-2">
             {(['2d', '3d'] as const).map(option => (
               <button
@@ -1352,7 +1351,7 @@ export default function Scene() {
   const [openclawOpen, setOpenclawOpen] = useState(false)
   const [geminiOpen, setGeminiOpen] = useState(false)
   const [agentLauncherOpen, setAgentLauncherOpen] = useState(false)
-  const [agentLauncherMode, setAgentLauncherMode] = useState<AgentLauncherMode>('2d')
+  const [agentLauncherMode, setAgentLauncherMode] = useState<AgentLauncherMode>('3d')
   const [realtimeOpen, setRealtimeOpen] = useState(false)
   const [lipSyncLabOpen, setLipSyncLabOpen] = useState(false)
   const [parzivalOpen, setParzivalOpen] = useState(false)
@@ -1449,7 +1448,7 @@ export default function Scene() {
     setSettings(prev => ({ ...prev, [key]: value }))
   }
 
-  // ─═̷─═̷─🎮─═̷─═̷─{ CAMERA MODE HOTKEY: Ctrl+Alt+C cycles orbit→noclip→third-person }─═̷─═̷─🎮─═̷─═̷─
+  // ─═̷─═̷─🎮─═̷─═̷─{ CAMERA MODE HOTKEY: C cycles orbit→noclip→third-person }─═̷─═̷─🎮─═̷─═̷─
   useEffect(() => {
     const MODES: Array<'orbit' | 'noclip' | 'third-person'> = ['orbit', 'noclip', 'third-person']
     const isTypingTarget = (target: EventTarget | null) => {
@@ -1463,7 +1462,6 @@ export default function Scene() {
       return tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
     }
     const handleKeyDown = (e: KeyboardEvent) => {
-      const legacyChord = e.ctrlKey && e.altKey && e.code === 'KeyC'
       const plainWorldKey = !e.ctrlKey
         && !e.metaKey
         && !e.altKey
@@ -1471,7 +1469,7 @@ export default function Scene() {
         && e.code === 'KeyC'
         && !isTypingTarget(e.target)
         && !useInputManager.getState().hasActiveUILayer()
-      if (legacyChord || plainWorldKey) {
+      if (plainWorldKey) {
         e.preventDefault()
         const idx = MODES.indexOf(controlModeRef.current)
         const next = MODES[(idx + 1) % MODES.length]
@@ -1643,69 +1641,49 @@ export default function Scene() {
       <PortalTransitionOverlay />
       <WorldLoadingBar />
 
-      {/* ─═̷─═̷─🔮─═̷─═̷─ TOP-LEFT QUICK BUTTONS — Profile, Wizard, Action Log ─═̷─═̷─🔮─═̷─═̷─ */}
-      <div className="fixed top-4 left-4 z-[200] flex items-start gap-2">
-        <ProfileButton />
-        {!hideEditTools && (
-          <button
+      {/* Main game rail */}
+
+      <ProfileButton />
+
+      {!hideEditTools && (
+        <div className="fixed left-4 top-[64px] z-[190] select-none max-[700px]:left-2 max-[700px]:top-[42px]">
+          <GameMenuButton
+            label="Wizard"
+            accent="#F97316"
+            active={wizardOpen}
+            aria-label={hostedMode ? 'World Console' : 'Wizard Console'}
+            data-oasis-tooltip={hostedMode ? 'World Console' : 'Wizard Console'}
+            className="oasis-tooltip"
             onClick={() => {
+              useAudioManager.getState().play('buttonClick')
               setWizardOpen(prev => {
                 if (!prev) completeQuest('open-wizard')
                 return !prev
               })
             }}
-            aria-label={hostedMode ? 'World Console' : 'Wizard Console'}
-            data-oasis-tooltip={hostedMode ? 'World Console' : 'Wizard Console'}
-            className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
-            style={{
-              background: wizardOpen ? 'rgba(249,115,22,0.4)' : 'rgba(0,0,0,0.6)',
-              border: `1px solid ${wizardOpen ? 'rgba(249,115,22,0.6)' : 'rgba(255,255,255,0.15)'}`,
-              color: wizardOpen ? '#F97316' : '#aaa',
-              boxShadow: wizardOpen ? '0 0 12px rgba(249,115,22,0.3)' : 'none',
-            }}
-          >
-            ✨
-          </button>
-        )}
-        {canUseLocalPanels && !hideEditTools && (
-          <ActionLogButton
-            onClick={() => setActionLogOpen(prev => !prev)}
-            isOpen={actionLogOpen}
           />
-        )}
-        {SHOW_LEGACY_DEVCRAFT_PANEL && canUseLocalPanels && !hideEditTools && <button
-          onClick={() => togglePanel(setDevcraftOpen)}
-          aria-label="DevCraft"
-          data-oasis-tooltip="DevCraft"
-          className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
-          style={{
-            background: devcraftOpen ? 'rgba(16,185,129,0.3)' : 'rgba(0,0,0,0.6)',
-            border: `1px solid ${devcraftOpen ? 'rgba(16,185,129,0.6)' : 'rgba(255,255,255,0.15)'}`,
-            color: devcraftOpen ? '#10B981' : '#aaa',
-            boxShadow: devcraftOpen ? '0 0 12px rgba(16,185,129,0.3)' : 'none',
-          }}
-        >
-          📅
-        </button>}
-        {SHOW_LEGACY_PARZIVAL_PANEL && canUseLocalPanels && (
-        <button
-          onClick={() => togglePanel(setParzivalOpen)}
-          aria-label="Parzival"
-          data-oasis-tooltip="Parzival"
-          className="oasis-tooltip w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all hover:scale-110"
-          style={{
-            background: parzivalOpen ? 'rgba(192,132,252,0.3)' : 'rgba(0,0,0,0.6)',
-            border: `1px solid ${parzivalOpen ? 'rgba(192,132,252,0.6)' : 'rgba(255,255,255,0.15)'}`,
-            color: parzivalOpen ? '#C084FC' : '#aaa',
-            boxShadow: parzivalOpen ? '0 0 12px rgba(192,132,252,0.3)' : 'none',
-          }}
-        >
-          🧿
-        </button>
-        )}
-      </div>
+        </div>
+      )}
 
-      <WorldMenu />
+      <WorldMenu
+        actionLogControl={canUseLocalPanels && !hideEditTools ? (
+          <button
+            type="button"
+            onClick={() => togglePanel(setActionLogOpen)}
+            className="group flex w-full items-center gap-3 rounded-md border border-amber-300/20 bg-black/30 px-3 py-2 text-left transition hover:border-amber-200/50 hover:bg-amber-300/10"
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-amber-300/25 bg-amber-300/10 text-[10px] font-black uppercase text-amber-100">
+              LOG
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[11px] font-black uppercase tracking-[0.14em] text-amber-100">Action Log</span>
+              <span className="mt-0.5 block text-[9px] uppercase tracking-[0.1em] text-white/40">
+                {actionLogOpen ? 'open' : 'closed'}
+              </span>
+            </span>
+          </button>
+        ) : undefined}
+      />
 
       {!hideEditTools && <PlaceMenu />}
 
@@ -2030,7 +2008,6 @@ function SettingsMenu({ children, opacity }: { children: React.ReactNode; opacit
   const [isOpen, setIsOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   useUILayer('settings-menu', isOpen)
-  const playHover = () => useAudioManager.getState().play('buttonHover')
   const playClick = () => useAudioManager.getState().play('buttonClick')
 
   useEffect(() => {
@@ -2044,7 +2021,7 @@ function SettingsMenu({ children, opacity }: { children: React.ReactNode; opacit
   }, [isOpen])
 
   return (
-    <div ref={menuRef} className="fixed left-4 top-[264px] z-[190] select-none">
+    <div ref={menuRef} className="fixed left-4 top-[256px] z-[190] select-none max-[700px]:left-2 max-[700px]:top-[178px]">
       <GameMenuButton
         label="Settings"
         marker="SYS"
@@ -2052,7 +2029,6 @@ function SettingsMenu({ children, opacity }: { children: React.ReactNode; opacit
         active={isOpen}
         aria-label="Settings menu"
         data-oasis-tooltip="Settings"
-        onMouseEnter={playHover}
         onClick={() => {
           playClick()
           setIsOpen(open => !open)
@@ -2062,8 +2038,8 @@ function SettingsMenu({ children, opacity }: { children: React.ReactNode; opacit
       {isOpen && (
         <div
           data-ui-panel
-          className="absolute left-full top-0 ml-2 overflow-y-auto rounded-lg border border-white/10 bg-black/88 font-mono text-white shadow-[0_0_54px_rgba(0,0,0,0.68),0_0_38px_rgba(167,139,250,0.14)] backdrop-blur-md max-[700px]:w-[calc(100vw-152px)]"
-          style={{ maxHeight: 'calc(100vh - 280px)', opacity }}
+          className="absolute left-full top-0 z-[260] ml-2 max-h-[calc(100vh-272px)] overflow-y-auto rounded-lg border border-white/10 bg-black/[0.92] font-mono text-white shadow-[0_0_54px_rgba(0,0,0,0.68),0_0_38px_rgba(167,139,250,0.14)] backdrop-blur-md max-[700px]:fixed max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:ml-0 max-[700px]:max-h-[calc(100vh-70px)] max-[700px]:w-auto"
+          style={{ opacity }}
           onMouseDown={event => event.stopPropagation()}
         >
           {children}
@@ -2074,11 +2050,10 @@ function SettingsMenu({ children, opacity }: { children: React.ReactNode; opacit
 }
 
 function HelpMenu({ isOpen, onToggle }: { isOpen: boolean; onToggle: () => void }) {
-  const playHover = () => useAudioManager.getState().play('buttonHover')
   const playClick = () => useAudioManager.getState().play('buttonClick')
 
   return (
-    <div className="fixed left-4 top-[328px] z-[190] select-none">
+    <div className="fixed left-4 top-[304px] z-[190] select-none max-[700px]:left-2 max-[700px]:top-[212px]">
       <GameMenuButton
         label="Help"
         marker="?"
@@ -2086,7 +2061,6 @@ function HelpMenu({ isOpen, onToggle }: { isOpen: boolean; onToggle: () => void 
         active={isOpen}
         aria-label="Help menu"
         data-oasis-tooltip="Help"
-        onMouseEnter={playHover}
         onClick={() => {
           playClick()
           onToggle()

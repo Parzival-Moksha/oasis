@@ -286,23 +286,23 @@ export function PlacementPalette({ showConjured = true, columns = 3, onPlace }: 
   }
 
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-3 gap-1.5">
+    <div className="space-y-3 max-[700px]:space-y-1.5">
+      <div className="grid grid-cols-3 gap-1.5 max-[700px]:gap-1">
         {availableTabs.map(item => {
           const active = tab === item.key
           return (
             <button
               key={item.key}
               onClick={() => setTab(item.key)}
-              className="rounded-md border px-2 py-2 text-left font-mono transition hover:-translate-y-0.5"
+              className="rounded-md border px-2 py-2 text-left font-mono transition max-[700px]:px-1.5 max-[700px]:py-1.5"
               style={{
                 borderColor: active ? `${item.color}99` : 'rgba(255,255,255,0.12)',
                 background: active ? `${item.color}1f` : 'rgba(255,255,255,0.045)',
                 color: active ? '#fff' : 'rgba(255,255,255,0.62)',
               }}
             >
-              <span className="block text-[10px] font-black uppercase tracking-[0.12em]">{item.label}</span>
-              <span className="mt-0.5 block text-[9px] text-white/36">{item.count} ready</span>
+              <span className="block text-[10px] font-black uppercase tracking-[0.12em] max-[700px]:text-[8px] max-[700px]:tracking-[0.08em]">{item.label}</span>
+              <span className="mt-0.5 block text-[9px] text-white/36 max-[700px]:hidden">{item.count} ready</span>
             </button>
           )
         })}
@@ -310,12 +310,12 @@ export function PlacementPalette({ showConjured = true, columns = 3, onPlace }: 
 
       {tab === 'catalog' && (
         <>
-          <div className="flex flex-wrap items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1 max-[700px]:max-h-16 max-[700px]:overflow-y-auto">
             {['all', ...Array.from(new Set(ASSET_CATALOG.map(asset => asset.category)))].map(item => (
               <button
                 key={item}
                 onClick={() => setCategory(item)}
-                className="rounded border px-2 py-1 text-[10px] font-mono uppercase tracking-[0.08em] transition"
+                className="rounded border px-2 py-1 text-[10px] font-mono uppercase tracking-[0.08em] transition max-[700px]:px-1.5 max-[700px]:py-0.5 max-[700px]:text-[8px]"
                 style={{
                   borderColor: category === item ? 'rgba(250,204,21,0.48)' : 'rgba(255,255,255,0.10)',
                   background: category === item ? 'rgba(250,204,21,0.14)' : 'rgba(255,255,255,0.04)',
@@ -353,11 +353,11 @@ export function PlacementPalette({ showConjured = true, columns = 3, onPlace }: 
 
       {tab === 'portal' && (
         <>
-          <div className="space-y-2 rounded-md border border-cyan-300/15 bg-cyan-300/5 p-2">
+          <div className="space-y-2 rounded-md border border-cyan-300/15 bg-cyan-300/5 p-2 max-[700px]:space-y-1 max-[700px]:p-1.5">
             <div className="flex items-center gap-2">
               <div className="min-w-0 flex-1">
-                <div className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-100">Portal actions</div>
-                <div className="text-[9px] text-white/36">World gates, creation gates, external gates.</div>
+                <div className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-100 max-[700px]:text-[8px]">Portal actions</div>
+                <div className="text-[9px] text-white/36 max-[700px]:hidden">World gates, creation gates, external gates.</div>
               </div>
               <select
                 value={portalActionPreset}
@@ -435,10 +435,10 @@ export function PlacementPalette({ showConjured = true, columns = 3, onPlace }: 
 
       {tab === 'spatial' && (
         <>
-          <div className="flex items-center gap-2 rounded-md border border-cyan-300/15 bg-cyan-300/5 p-2">
+          <div className="flex items-center gap-2 rounded-md border border-cyan-300/15 bg-cyan-300/5 p-2 max-[700px]:p-1.5">
             <div className="min-w-0 flex-1">
-              <div className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-100">A2UI-ish spatial controls</div>
-              <div className="text-[9px] text-white/36">Buttons, sliders, fields, selectors, output panels.</div>
+              <div className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-100 max-[700px]:text-[8px]">A2UI-ish spatial controls</div>
+              <div className="text-[9px] text-white/36 max-[700px]:hidden">Buttons, sliders, fields, selectors, output panels.</div>
             </div>
             <button
               type="button"

@@ -30,6 +30,8 @@ const mouseLookAccumulator = {
   oldestTime: 0,
 }
 let lastPointerLockRightClickAt = 0
+let lastUILayerClosedAt = 0
+let skipNextMouseLookSample = false
 const MAX_MOUSE_LOOK_EVENT_DELTA = 96
 const MAX_MOUSE_LOOK_PENDING_DELTA = 384
 const MAX_MOUSE_LOOK_FRAME_DELTA = 160
@@ -116,7 +118,15 @@ function queueMouseLookDelta(event: Pick<MouseEvent, 'movementX' | 'movementY' |
 function accumulateMouseLookDelta(event: Pick<MouseEvent, 'movementX' | 'movementY' | 'timeStamp'>) {
   const state = useInputManager.getState()
   if (!state.pointerLocked || !state.can().mouseLook) return
+  if (skipNextMouseLookSample) {
+    skipNextMouseLookSample = false
+    return
+  }
   queueMouseLookDelta(event)
+}
+
+export function wasUILayerClosedRecently(windowMs = 180): boolean {
+  return getMouseLookNow() - lastUILayerClosedAt < windowMs
 }
 
 export function pushMouseLookDelta(x: number, y: number, timeStamp?: number): void {
@@ -408,6 +418,7 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     const next = get()._uiLayerStack.filter(x => x !== id)
     set({ _uiLayerStack: next })
     if (next.length === 0 && get().inputState === 'ui-focused') {
+      lastUILayerClosedAt = getMouseLookNow()
       get().returnToPrevious()
     }
   },
@@ -419,19 +430,7 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     if (get()._uiLayerStack.length > 0) return
     if (!STATE_CAPABILITIES[get().inputState].canLockPointer) return
     if (get().pointerLocked) return
-    // ░▒▓ BROWSER COOLDOWN GUARD (oasisspec3): after an explicit exitPointerLock,
-    // Chrome blocks re-acquisition for ~1250ms, Firefox for ~1500ms. Calling
-    // requestPointerLock() during that window throws SecurityError. The previous
-    // implementation retried unconditionally 100ms later, which ALWAYS landed
-    // inside the cooldown window and produced the uncaught-promise spam the
-    // user reported. We now:
-    //   1) Skip entirely if we're within the cooldown window.
-    //   2) Wrap the native call in .catch() so SecurityError/NotAllowedError
-    //      never escapes as an unhandled promise rejection.
-    //   3) Schedule a single deferred retry *past* the cooldown so the user's
-    //      click isn't silently dropped. ▓▒░
-    const POINTER_LOCK_COOLDOWN_MS = 1600
-    const sinceLastChange = performance.now() - mouseLookDebugState.lastPointerLockChangeAt
+
     const wrapper = document.querySelector('#uploader-canvas')
     const canvas = (wrapper?.querySelector('canvas') || wrapper) as HTMLElement | null
     if (!canvas) return
@@ -444,26 +443,13 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
       return true
     }
 
-    const safeLock = () => {
-      if (!stillNeedsLock()) return
-      try {
-        const result = (canvas as HTMLElement).requestPointerLock() as unknown
-        if (result && typeof (result as Promise<void>).then === 'function') {
-          ;(result as Promise<void>).catch(() => {/* swallowed — state settles on next user gesture */})
-        }
-      } catch {/* legacy sync throw — same handling */}
-    }
-
-    if (mouseLookDebugState.lastPointerLockChangeAt > 0 && sinceLastChange < POINTER_LOCK_COOLDOWN_MS) {
-      // Inside browser cooldown — schedule one try once the window closes
-      const wait = Math.max(0, POINTER_LOCK_COOLDOWN_MS - sinceLastChange) + 50
-      setTimeout(safeLock, wait)
-      return
-    }
-
-    safeLock()
-    // Single retry past the cooldown if the first attempt failed silently
-    setTimeout(() => { if (!get().pointerLocked) safeLock() }, POINTER_LOCK_COOLDOWN_MS + 50)
+    if (!stillNeedsLock()) return
+    try {
+      const result = (canvas as HTMLElement).requestPointerLock() as unknown
+      if (result && typeof (result as Promise<void>).then === 'function') {
+        ;(result as Promise<void>).catch(() => {/* state settles on the next user gesture */})
+      }
+    } catch {/* legacy sync throw, same handling */}
   },
 
   releasePointerLock: () => {
@@ -474,7 +460,8 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
 
   _syncPointerLockState: () => {
     const locked = !!document.pointerLockElement
-    if (!locked) clearMouseLookAccumulator()
+    clearMouseLookAccumulator()
+    skipNextMouseLookSample = locked
     mouseLookDebugState.lastPointerLockChangeAt = getMouseLookNow()
     set({ pointerLocked: locked })
   },

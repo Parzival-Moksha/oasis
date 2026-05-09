@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { googleFormSpecToSpatialWebObjects, parseGoogleFormHtml } from '../google-form-spatial'
+import { googleFormSpecToJourneyGroundTiles, googleFormSpecToSpatialWebObjects, parseGoogleFormHtml } from '../google-form-spatial'
 
 describe('google form spatial adapter', () => {
   it('extracts Google Forms entry IDs and maps them to spatial submit destinations', () => {
@@ -31,13 +31,24 @@ describe('google form spatial adapter', () => {
 
     const objects = googleFormSpecToSpatialWebObjects(spec, 'google-form-test')
     const submit = objects.find(object => object.type === 'button')
+    const firstField = objects.find(object => object.id === 'google-form-test-field-1')
+    const secondField = objects.find(object => object.id === 'google-form-test-field-2')
 
     expect(submit?.action?.type).toBe('submit_form')
+    expect(submit?.visualStyle).toBe('portal-zero-button')
     expect(submit?.action?.destination?.type).toBe('google_form')
     expect(submit?.action?.destination?.fieldMap).toMatchObject({
       'Your name': 'entry.111111111',
       'Can you come?': 'entry.222222222',
       'What will you bring?': 'entry.333333333',
     })
+    expect(firstField?.position[0]).toBeLessThan(0)
+    expect(secondField?.position[0]).toBeGreaterThan(0)
+    expect(firstField?.rotation?.[1]).toBeGreaterThan(0)
+    expect(secondField?.rotation?.[1]).toBeLessThan(0)
+
+    const groundTiles = googleFormSpecToJourneyGroundTiles(spec)
+    expect(groundTiles['0,-3']).toBe('dirt')
+    expect(Object.values(groundTiles)).toContain('cobble')
   })
 })

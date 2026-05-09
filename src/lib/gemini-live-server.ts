@@ -204,7 +204,7 @@ export function getGeminiLiveToolDeclarations(): GeminiLiveFunctionDeclaration[]
           accentColor: { type: 'string', description: 'Hex accent color.' },
           visualStyle: {
             type: 'string',
-            enum: ['neon-panel', 'arcade-button', 'glass-slider', 'terminal-panel'],
+            enum: ['neon-panel', 'arcade-button', 'glass-slider', 'terminal-panel', 'portal-zero-button'],
             description: 'Optional 3D skin for the primitive.',
           },
           value: { description: 'Initial value: string, number, boolean, string array, or null.' },

@@ -187,10 +187,61 @@ function initialValue(field: GoogleFormFieldSpec) {
   return ''
 }
 
-function fieldPosition(index: number): [number, number, number] {
-  const column = index % 2
-  const row = Math.floor(index / 2)
-  return [column === 0 ? -2.7 : 2.7, 1.15, -3.8 + row * 2]
+const JOURNEY_TITLE_Z = -3.15
+const JOURNEY_FIRST_FIELD_Z = -5.7
+const JOURNEY_FIELD_STEP = -2.35
+const JOURNEY_SIDE_X = 3.05
+const JOURNEY_PANEL_Y = 1.18
+
+function fieldPose(index: number): { position: [number, number, number]; rotation: [number, number, number] } {
+  const side = index % 2 === 0 ? -1 : 1
+  const z = JOURNEY_FIRST_FIELD_Z + index * JOURNEY_FIELD_STEP
+  return {
+    position: [side * JOURNEY_SIDE_X, JOURNEY_PANEL_Y, z],
+    rotation: [0, side < 0 ? 0.62 : -0.62, 0],
+  }
+}
+
+function submitZ(fieldCount: number): number {
+  return JOURNEY_FIRST_FIELD_Z + Math.max(1, fieldCount) * JOURNEY_FIELD_STEP - 1.45
+}
+
+function sizeForField(field: GoogleFormFieldSpec): { width: number; height: number; visualStyle: SpatialWebObject['visualStyle'] } {
+  if (field.type === 'slider') return { width: 4.6, height: 1.05, visualStyle: 'glass-slider' }
+  if (field.type === 'text') return { width: 4.5, height: 1.1, visualStyle: 'terminal-panel' }
+  if (field.type === 'multiselect') return { width: 4.35, height: 1.05, visualStyle: 'neon-panel' }
+  return { width: 4.05, height: 1.0, visualStyle: 'neon-panel' }
+}
+
+export function googleFormSpecToJourneyGroundTiles(spec: Pick<GoogleFormSpatialSpec, 'fields'>): Record<string, string> {
+  const tiles: Record<string, string> = {}
+  const pathEndZ = Math.floor(submitZ(spec.fields.length) - 2)
+
+  for (let z = pathEndZ; z <= -1; z += 1) {
+    for (let x = -1; x <= 1; x += 1) {
+      tiles[`${x},${z}`] = 'dirt'
+    }
+  }
+
+  spec.fields.forEach((_, index) => {
+    const { position } = fieldPose(index)
+    const centerX = Math.floor(position[0])
+    const centerZ = Math.floor(position[2])
+    for (let x = centerX - 1; x <= centerX + 1; x += 1) {
+      for (let z = centerZ - 1; z <= centerZ; z += 1) {
+        tiles[`${x},${z}`] = 'cobble'
+      }
+    }
+  })
+
+  const sendZ = Math.floor(submitZ(spec.fields.length))
+  for (let x = -2; x <= 2; x += 1) {
+    for (let z = sendZ - 1; z <= sendZ + 1; z += 1) {
+      tiles[`${x},${z}`] = 'cobble'
+    }
+  }
+
+  return tiles
 }
 
 export function googleFormSpecToSpatialWebObjects(spec: GoogleFormSpatialSpec, formId: string): SpatialWebObject[] {
@@ -201,10 +252,11 @@ export function googleFormSpecToSpatialWebObjects(spec: GoogleFormSpatialSpec, f
       type: 'output',
       formId,
       label: spec.title,
-      value: 'Answer the 3D controls, then press submit.',
-      position: [0, 1.85, -6],
-      width: 6.4,
-      height: 1.1,
+      value: spec.description || 'Start here. Walk the path, answer each 3D control, then press submit.',
+      position: [0, 1.95, JOURNEY_TITLE_Z],
+      rotation: [0, 0, 0],
+      width: 7.2,
+      height: 1.35,
       accentColor: '#38bdf8',
       visualStyle: 'terminal-panel',
     },
@@ -212,6 +264,8 @@ export function googleFormSpecToSpatialWebObjects(spec: GoogleFormSpatialSpec, f
 
   spec.fields.forEach((field, index) => {
     const objectId = `${formId}-field-${index + 1}`
+    const pose = fieldPose(index)
+    const size = sizeForField(field)
     fieldMap[objectId] = field.entryId
     fieldMap[field.label] = field.entryId
     objects.push({
@@ -220,11 +274,12 @@ export function googleFormSpecToSpatialWebObjects(spec: GoogleFormSpatialSpec, f
       formId,
       label: field.label,
       value: initialValue(field),
-      position: fieldPosition(index),
-      width: field.type === 'text' ? 3.6 : 3.1,
-      height: field.type === 'text' ? 0.95 : 0.82,
-      accentColor: ['#22c55e', '#f59e0b', '#a78bfa', '#06b6d4'][index % 4],
-      visualStyle: field.type === 'slider' ? 'glass-slider' : 'neon-panel',
+      position: pose.position,
+      rotation: pose.rotation,
+      width: size.width,
+      height: size.height,
+      accentColor: ['#22c55e', '#f59e0b', '#a78bfa', '#06b6d4', '#f97316'][index % 5],
+      visualStyle: size.visualStyle,
       ...(field.options ? { options: field.options.map(option => ({ value: option, label: option })) } : {}),
       ...(field.min !== undefined ? { min: field.min } : {}),
       ...(field.max !== undefined ? { max: field.max } : {}),
@@ -233,20 +288,20 @@ export function googleFormSpecToSpatialWebObjects(spec: GoogleFormSpatialSpec, f
     })
   })
 
-  const rowCount = Math.ceil(spec.fields.length / 2)
-  const submitZ = -3.8 + rowCount * 2
+  const sendZ = submitZ(spec.fields.length)
   objects.push(
     {
       id: `${formId}-submit`,
       type: 'button',
       formId,
-      label: 'Submit',
+      label: 'Send',
       description: 'Send this spatial form to Google Forms.',
-      position: [-1.55, 1, submitZ],
-      width: 2.5,
-      height: 0.9,
+      position: [0, 0.75, sendZ],
+      rotation: [0, 0, 0],
+      width: 1.45,
+      height: 1.05,
       accentColor: '#fb7185',
-      visualStyle: 'arcade-button',
+      visualStyle: 'portal-zero-button',
       action: {
         type: 'submit_form',
         successMessage: 'Submitted to Google Forms.',
@@ -264,9 +319,10 @@ export function googleFormSpecToSpatialWebObjects(spec: GoogleFormSpatialSpec, f
       formId,
       label: 'Receipt',
       value: 'Waiting for submit.',
-      position: [1.65, 1.15, submitZ],
-      width: 3.2,
-      height: 1.25,
+      position: [0, 1.3, sendZ - 2.25],
+      rotation: [0, 0, 0],
+      width: 6.6,
+      height: 1.45,
       accentColor: '#34d399',
       visualStyle: 'terminal-panel',
     },

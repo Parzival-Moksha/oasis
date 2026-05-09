@@ -1811,8 +1811,8 @@ export function TransformKeyHandler() {
       // ░▒▓ UI LAYER GUARD — when panels are open, keep core world navigation alive ▓▒░
       // Enter is needed for window/image zoomon, PgUp/PgDown for slides, and
       // Delete/Backspace still routes through the typing guard below.
-      const isAgentWindowCycleKey = input.inputState === 'agent-focus' && (e.key === 'n' || e.key === 'N')
       const key = e.key.toLowerCase()
+      const isAgentWindowCycleKey = key === 'n'
       const isUndoRedoChord = (e.ctrlKey || e.metaKey) && (key === 'z' || key === 'y')
       if (useInputManager.getState().hasActiveUILayer() && !isUndoRedoChord && !isAgentWindowCycleKey && !['Escape', 'Delete', 'Backspace', 'Enter', 'PageDown', 'PageUp'].includes(e.key)) return
 
@@ -1840,6 +1840,37 @@ export function TransformKeyHandler() {
           e.preventDefault()
           return
         }
+      }
+
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && key === 'enter' && can.enterFocuses) {
+        const id = useOasisStore.getState().selectedObjectId
+        if (!id) return
+        if (useOasisStore.getState().placedAgentWindows.some(w => w.id === id)) {
+          dispatch({ type: 'FOCUS_AGENT_WINDOW', payload: { id } })
+          e.preventDefault()
+          return
+        }
+        if (useOasisStore.getState().placedCatalogAssets.some(a => a.id === id && (a.imageUrl || a.videoUrl))) {
+          dispatch({ type: 'FOCUS_IMAGE', payload: { id } })
+          e.preventDefault()
+          return
+        }
+      }
+
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && key === 'pagedown') {
+        dispatch({ type: 'NEXT_SLIDE' })
+        e.preventDefault()
+        return
+      }
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && key === 'pageup') {
+        dispatch({ type: 'PREV_SLIDE' })
+        e.preventDefault()
+        return
+      }
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && key === 'n' && (can.enterFocuses || input.inputState === 'agent-focus')) {
+        dispatch({ type: e.shiftKey ? 'PREV_AGENT_WINDOW' : 'NEXT_AGENT_WINDOW' })
+        e.preventDefault()
+        return
       }
 
       // Block ALL edit shortcuts in read-only view mode
@@ -1904,40 +1935,6 @@ export function TransformKeyHandler() {
         case 'r': if (can.transformShortcuts) setTransformMode('translate'); break
         case 't': if (can.transformShortcuts) setTransformMode('rotate'); break
         case 'y': if (can.transformShortcuts) setTransformMode('scale'); break
-
-        // ░▒▓ Enter — focus agent window OR image via EventBus ▓▒░
-        case 'enter': {
-          if (!can.enterFocuses) break
-          const id = useOasisStore.getState().selectedObjectId
-          if (!id) break
-          if (useOasisStore.getState().placedAgentWindows.some(w => w.id === id)) {
-            dispatch({ type: 'FOCUS_AGENT_WINDOW', payload: { id } })
-            e.preventDefault()
-          } else if (useOasisStore.getState().placedCatalogAssets.some(a => a.id === id && (a.imageUrl || a.videoUrl))) {
-            dispatch({ type: 'FOCUS_IMAGE', payload: { id } })
-            e.preventDefault()
-          }
-          break
-        }
-
-        // ░▒▓ PgDown/PgUp — slide navigation (cycles images by X position) ▓▒░
-        case 'pagedown': {
-          dispatch({ type: 'NEXT_SLIDE' })
-          e.preventDefault()
-          break
-        }
-        case 'pageup': {
-          dispatch({ type: 'PREV_SLIDE' })
-          e.preventDefault()
-          break
-        }
-
-        case 'n': {
-          if (input.inputState !== 'agent-focus') break
-          dispatch({ type: e.shiftKey ? 'PREV_AGENT_WINDOW' : 'NEXT_AGENT_WINDOW' })
-          e.preventDefault()
-          break
-        }
 
         // ░▒▓ Delete/Backspace — remove selected object via EventBus ▓▒░
         case 'delete':
@@ -2769,6 +2766,7 @@ export function WorldObjectsRenderer() {
   const crosshairRaycasterRef = useRef(new THREE.Raycaster())
   const crosshairPlaneRef = useRef(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0))
   const crosshairPointRef = useRef(new THREE.Vector3())
+  const lastGroundMoveOrderAtRef = useRef(0)
   const walkableAvatarIds = useMemo(
     () => placedAgentAvatars
       .map(avatar => avatar.id)
@@ -2782,8 +2780,12 @@ export function WorldObjectsRenderer() {
 
   const handleRTSRightClick = useCallback((e: any) => {
     if (paintMode || placementPending || moveOrderObjectIds.length === 0) return
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    if (now - lastGroundMoveOrderAtRef.current < 120) return
+    lastGroundMoveOrderAtRef.current = now
     e.stopPropagation()
     e.nativeEvent?.preventDefault?.()
+    e.preventDefault?.()
     let point = e.point as THREE.Vector3
     if (consumeRecentPointerLockRightClick()) {
       const raycaster = crosshairRaycasterRef.current
@@ -2833,6 +2835,10 @@ export function WorldObjectsRenderer() {
         <mesh
           rotation={[-Math.PI / 2, 0, 0]}
           position={[0, 0.0005, 0]}
+          onPointerDown={(event) => {
+            if (event.button !== 2) return
+            handleRTSRightClick(event)
+          }}
           onContextMenu={handleRTSRightClick}
         >
           <planeGeometry args={[200, 200]} />

@@ -60,18 +60,25 @@ export function MobileOasisControls({ enabled }: { enabled: boolean }) {
 
     const onPointerDown = (event: PointerEvent) => {
       if (event.pointerType === 'mouse' || !canLook()) return
+      event.preventDefault()
+      try { canvas.setPointerCapture(event.pointerId) } catch {}
       lookPointerRef.current = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false }
       setLookActive(true)
     }
 
     const onPointerMove = (event: PointerEvent) => {
       const active = lookPointerRef.current
-      if (!active || active.id !== event.pointerId || !canLook()) return
+      if (!active || active.id !== event.pointerId) return
+      event.preventDefault()
+      if (!canLook()) {
+        lookPointerRef.current = null
+        setLookActive(false)
+        return
+      }
       const dx = event.clientX - active.x
       const dy = event.clientY - active.y
       if (Math.hypot(dx, dy) > LOOK_DEADZONE_PX) active.moved = true
       if (active.moved) {
-        event.preventDefault()
         pushMouseLookDelta(dx * MOBILE_LOOK_MULTIPLIER, dy * MOBILE_LOOK_MULTIPLIER, event.timeStamp)
       }
       lookPointerRef.current = { ...active, x: event.clientX, y: event.clientY }
@@ -80,19 +87,21 @@ export function MobileOasisControls({ enabled }: { enabled: boolean }) {
     const endLook = (event: PointerEvent) => {
       if (lookPointerRef.current?.id !== event.pointerId) return
       lookPointerRef.current = null
+      try { canvas.releasePointerCapture(event.pointerId) } catch {}
       setLookActive(false)
     }
 
-    canvas.addEventListener('pointerdown', onPointerDown, { passive: true })
-    canvas.addEventListener('pointermove', onPointerMove, { passive: false })
-    canvas.addEventListener('pointerup', endLook)
-    canvas.addEventListener('pointercancel', endLook)
+    canvas.addEventListener('pointerdown', onPointerDown, { passive: false })
+    window.addEventListener('pointermove', onPointerMove, { passive: false, capture: true })
+    window.addEventListener('pointerup', endLook, true)
+    window.addEventListener('pointercancel', endLook, true)
     return () => {
       canvas.style.touchAction = previousTouchAction
       canvas.removeEventListener('pointerdown', onPointerDown)
-      canvas.removeEventListener('pointermove', onPointerMove)
-      canvas.removeEventListener('pointerup', endLook)
-      canvas.removeEventListener('pointercancel', endLook)
+      window.removeEventListener('pointermove', onPointerMove, true)
+      window.removeEventListener('pointerup', endLook, true)
+      window.removeEventListener('pointercancel', endLook, true)
+      lookPointerRef.current = null
       setLookActive(false)
     }
   }, [enabled, setLookActive])

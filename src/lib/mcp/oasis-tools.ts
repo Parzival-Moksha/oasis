@@ -27,7 +27,7 @@ import type { WorldState } from '../forge/world-persistence'
 import type { CatalogPlacement, CraftedScene, WorldLight } from '../conjure/types'
 import type { ConjuredAsset, PostProcessAction, ProviderName } from '../conjure/types'
 import type { SpatialWebObject, SpatialWebObjectType, SpatialWebOption, SpatialWebSubmitDestination, SpatialWebValue, SpatialWebVisualStyle } from '../spatial-web'
-import { googleFormSpecToSpatialWebObjects, parseGoogleFormHtml } from '../google-form-spatial'
+import { googleFormSpecToJourneyGroundTiles, googleFormSpecToSpatialWebObjects, parseGoogleFormHtml } from '../google-form-spatial'
 import {
   PORTAL_GATE_VARIANTS,
   WELCOME_HUB_WORLD_ID,
@@ -70,7 +70,7 @@ const INTERNAL_OASIS_BASE_URL = process.env.OASIS_URL || 'http://127.0.0.1:4516'
 // Falls back to 'local-user' for fresh installs without ADMIN_USER_ID.
 const LOCAL_USER_ID = process.env.ADMIN_USER_ID || 'local-user'
 const SPATIAL_WEB_OBJECT_TYPES: SpatialWebObjectType[] = ['button', 'toggle', 'slider', 'select', 'multiselect', 'text', 'output']
-const SPATIAL_WEB_VISUAL_STYLES: SpatialWebVisualStyle[] = ['neon-panel', 'arcade-button', 'glass-slider', 'terminal-panel']
+const SPATIAL_WEB_VISUAL_STYLES: SpatialWebVisualStyle[] = ['neon-panel', 'arcade-button', 'glass-slider', 'terminal-panel', 'portal-zero-button']
 const DEFAULT_PORTAL_GATE_VARIANT: PortalGateVariant = 'threshold-ring'
 const SHAREABLE_WORLD_VISIBILITIES = new Set(['unlisted', 'public', 'public_edit', 'private'])
 
@@ -98,6 +98,15 @@ function buildWorldUrl(worldId: string, publicBaseUrl?: unknown): string {
 
 function buildQrCodeUrl(url: string): string {
   return `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(url)}`
+}
+
+function buildSpatialFormLights(): WorldLight[] {
+  return [
+    { id: 'light-environment-spatial-form', type: 'environment', color: '#ffffff', intensity: 1.1, position: [0, 0, 0], visible: true },
+    { id: 'light-ambient-spatial-form', type: 'ambient', color: '#fff7ed', intensity: 1.35, position: [0, 0, 0], visible: true },
+    { id: 'light-directional-spatial-form', type: 'directional', color: '#fff1c8', intensity: 2.15, position: [-4, 10, 7], target: [0, 0, -12], castShadow: true, visible: true },
+    { id: 'light-point-submit-spatial-form', type: 'point', color: '#fb7185', intensity: 2.4, position: [0, 2.2, -18], visible: true },
+  ]
 }
 
 function parseVec3Like(v: unknown): [number, number, number] | null {
@@ -1591,8 +1600,8 @@ tools.create_world_from_google_form = async (args) => {
   const state: WorldState = {
     version: 1,
     terrain: null,
-    groundPresetId: 'none',
-    groundTiles: {},
+    groundPresetId: validStr(args.groundPresetId, 'grass'),
+    groundTiles: googleFormSpecToJourneyGroundTiles(spec),
     terrainHeights: [],
     craftedScenes: [],
     conjuredAssetIds: [],
@@ -1601,8 +1610,8 @@ tools.create_world_from_google_form = async (args) => {
     spatialWebObjects,
     transforms: {},
     behaviors: {},
-    lights: [],
-    skyBackgroundId: validStr(args.skyBackgroundId, 'night007'),
+    lights: buildSpatialFormLights(),
+    skyBackgroundId: validStr(args.skyBackgroundId, 'sunny_vondelpark'),
     agentWindows: [],
     agentAvatars: [],
     savedAt: now.toISOString(),

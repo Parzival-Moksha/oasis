@@ -1,6 +1,6 @@
 'use client'
 
-import { Text } from '@react-three/drei'
+import { Center, Text3D } from '@react-three/drei'
 import type { ThreeEvent } from '@react-three/fiber'
 import { useContext, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
@@ -11,6 +11,8 @@ import {
   type SpatialWebValue,
 } from '@/lib/spatial-web'
 import { SettingsContext } from '@/components/scene-lib'
+
+const TEXT3D_FONT = '/fonts/helvetiker_regular.typeface.json'
 
 function displayValue(value: SpatialWebValue): string {
   if (Array.isArray(value)) return value.length ? value.join(', ') : 'None'
@@ -40,38 +42,106 @@ function clampText(value: string, maxLength: number): string {
   return value.length > maxLength ? `${value.slice(0, maxLength - 1)}...` : value
 }
 
-function SpatialText({
+function colorTimes(hex: string, scalar: number): string {
+  const color = new THREE.Color(normalizeHex(hex, '#ffffff'))
+  color.multiplyScalar(scalar)
+  return `#${color.getHexString()}`
+}
+
+function wrapText(value: string, maxChars: number, maxLines: number): string[] {
+  const words = value.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean)
+  if (words.length === 0) return ['']
+  const lines: string[] = []
+  let line = ''
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word
+    if (candidate.length <= maxChars) {
+      line = candidate
+      continue
+    }
+    if (line) lines.push(line)
+    line = word.length > maxChars ? clampText(word, maxChars) : word
+    if (lines.length >= maxLines) break
+  }
+  if (line && lines.length < maxLines) lines.push(line)
+  if (lines.length > maxLines) lines.length = maxLines
+  const original = value.replace(/\s+/g, ' ').trim()
+  const joined = lines.join(' ')
+  if (joined.length < original.length && lines.length > 0) {
+    lines[lines.length - 1] = clampText(lines[lines.length - 1], Math.max(4, maxChars - 3)) + '...'
+  }
+  return lines
+}
+
+function EmbossedText({
   children,
   position,
   fontSize,
-  maxWidth,
+  maxChars,
+  maxLines = 2,
   color = '#f8fafc',
-  anchorX = 'center',
-  anchorY = 'middle',
+  sideColor,
 }: {
   children: string
   position: [number, number, number]
   fontSize: number
-  maxWidth: number
+  maxChars: number
+  maxLines?: number
   color?: string
-  anchorX?: 'left' | 'center' | 'right'
-  anchorY?: 'top' | 'middle' | 'bottom'
+  sideColor?: string
 }) {
+  const lines = wrapText(children, maxChars, maxLines)
+  const lineHeight = fontSize * 1.42
+  const top = ((lines.length - 1) * lineHeight) / 2
+  const darkSide = sideColor || colorTimes(color, 0.22)
   return (
-    <Text
-      position={position}
-      fontSize={fontSize}
-      maxWidth={maxWidth}
-      anchorX={anchorX}
-      anchorY={anchorY}
-      textAlign={anchorX === 'center' ? 'center' : 'left'}
-      color={color}
-      outlineWidth={0.006}
-      outlineColor="#020617"
-    >
-      {children}
-    </Text>
+    <group position={position}>
+      {lines.map((line, index) => (
+        <group key={`${line}-${index}`} position={[0, top - index * lineHeight, 0]}>
+          <Center>
+            <Text3D
+              font={TEXT3D_FONT}
+              size={fontSize}
+              height={fontSize * 0.24}
+              bevelEnabled
+              bevelThickness={fontSize * 0.035}
+              bevelSize={fontSize * 0.018}
+              bevelSegments={3}
+              curveSegments={5}
+            >
+              {line}
+              <meshStandardMaterial
+                attach="material-0"
+                color={color}
+                emissive={color}
+                emissiveIntensity={0.48}
+                metalness={0.16}
+                roughness={0.34}
+              />
+              <meshStandardMaterial
+                attach="material-1"
+                color={darkSide}
+                emissive={darkSide}
+                emissiveIntensity={0.14}
+                metalness={0.76}
+                roughness={0.24}
+              />
+            </Text3D>
+          </Center>
+        </group>
+      ))}
+    </group>
   )
+}
+
+function setPointerCapture(event: ThreeEvent<PointerEvent>) {
+  const target = event.target as EventTarget & { setPointerCapture?: (pointerId: number) => void }
+  target?.setPointerCapture?.(event.pointerId)
+}
+
+function releasePointerCapture(event: ThreeEvent<PointerEvent>) {
+  const target = event.target as EventTarget & { releasePointerCapture?: (pointerId: number) => void }
+  target?.releasePointerCapture?.(event.pointerId)
 }
 
 export function SpatialWebObject3D({
@@ -100,17 +170,18 @@ export function SpatialWebObject3D({
       : object.type === 'slider' ? 'glass-slider'
         : isWidePanel ? 'terminal-panel'
           : 'neon-panel')
-  const depth = visualStyle === 'arcade-button' ? 0.42 : visualStyle === 'terminal-panel' ? 0.18 : 0.24
+  const isPortalButton = visualStyle === 'portal-zero-button'
+  const depth = isPortalButton ? 0.34 : visualStyle === 'arcade-button' ? 0.42 : visualStyle === 'terminal-panel' ? 0.18 : 0.24
 
   const material = useMemo(() => {
     const color = new THREE.Color(accent)
-    const base = color.clone().multiplyScalar(visualStyle === 'arcade-button' ? 0.76 : visualStyle === 'terminal-panel' ? 0.24 : 0.38)
+    const base = color.clone().multiplyScalar(visualStyle === 'arcade-button' || isPortalButton ? 0.76 : visualStyle === 'terminal-panel' ? 0.24 : 0.38)
     return {
       color: `#${base.getHexString()}`,
       emissive: accent,
-      emissiveIntensity: visualStyle === 'arcade-button' ? 0.9 : visualStyle === 'terminal-panel' ? 0.22 : 0.36,
+      emissiveIntensity: visualStyle === 'arcade-button' || isPortalButton ? 0.9 : visualStyle === 'terminal-panel' ? 0.22 : 0.36,
     }
-  }, [accent, visualStyle])
+  }, [accent, isPortalButton, visualStyle])
 
   const sliderProgress = useMemo(() => {
     if (object.type !== 'slider') return 0
@@ -152,8 +223,9 @@ export function SpatialWebObject3D({
   }
 
   const handleSliderPointerDown = (event: ThreeEvent<PointerEvent>) => {
-    if (!canClickInteract || object.type !== 'slider') return
+    if (object.type !== 'slider') return
     event.stopPropagation()
+    setPointerCapture(event)
     setDraggingSlider(true)
     updateSliderFromPointer(event)
   }
@@ -164,11 +236,82 @@ export function SpatialWebObject3D({
     updateSliderFromPointer(event)
   }
 
+  if (isPortalButton) {
+    const buttonColor = busy ? '#fecdd3' : object.type === 'toggle'
+      ? object.value === true ? accent : '#94a3b8'
+      : accent
+    const emissive = new THREE.Color(buttonColor)
+    return (
+      <group
+        ref={groupRef}
+        onClick={(event) => {
+          if (!canClickInteract) return
+          event.stopPropagation()
+          runInteraction()
+        }}
+      >
+        <mesh castShadow receiveShadow position={[0, -0.28, 0]} rotation={[0, 0, 0]}>
+          <cylinderGeometry args={[0.64, 0.74, 0.2, 48]} />
+          <meshStandardMaterial color="#1f2937" roughness={0.5} metalness={0.35} />
+        </mesh>
+        <mesh castShadow position={[0, busy ? -0.12 : -0.05, 0]} scale={[1, busy ? 0.68 : 1, 1]}>
+          <cylinderGeometry args={[0.42, 0.5, 0.18, 48]} />
+          <meshStandardMaterial
+            color={buttonColor}
+            emissive={emissive}
+            emissiveIntensity={canClickInteract || busy ? 0.65 : 0.28}
+            roughness={0.32}
+            metalness={0.18}
+          />
+        </mesh>
+        <mesh position={[0, 0.07, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.52, 0.58, 64]} />
+          <meshBasicMaterial color={buttonColor} transparent opacity={canClickInteract ? 0.78 : 0.4} />
+        </mesh>
+        <pointLight color={buttonColor} intensity={canClickInteract ? 1.2 : 0.45} distance={4} position={[0, 0.55, 0]} />
+        <EmbossedText
+          position={[0, 0.68, 0.36]}
+          fontSize={0.16}
+          maxChars={16}
+          maxLines={2}
+          color="#fff7ed"
+          sideColor="#3b1020"
+        >
+          {busy ? 'Sending...' : object.label}
+        </EmbossedText>
+        {object.description && (
+          <EmbossedText position={[0, 0.34, 0.42]} fontSize={0.07} maxChars={24} maxLines={2} color="#fecdd3" sideColor="#451a1f">
+            {object.description}
+          </EmbossedText>
+        )}
+        {interactionHint && (
+          <EmbossedText position={[0, 1.02, 0.38]} fontSize={0.12} maxChars={3} color="#ffffff" sideColor="#111827">
+            F
+          </EmbossedText>
+        )}
+      </group>
+    )
+  }
+
   return (
     <group
       ref={groupRef}
-      onClick={handleInteractClick}
-      onPointerUp={() => setDraggingSlider(false)}
+      onClick={(event) => {
+        if (object.type === 'slider') {
+          event.stopPropagation()
+          return
+        }
+        handleInteractClick(event)
+      }}
+      onPointerDown={object.type === 'slider' ? handleSliderPointerDown : undefined}
+      onPointerMove={handleSliderPointerMove}
+      onPointerUp={(event) => {
+        if (draggingSlider) {
+          event.stopPropagation()
+          releasePointerCapture(event)
+        }
+        setDraggingSlider(false)
+      }}
       onPointerLeave={() => setDraggingSlider(false)}
     >
       <mesh castShadow receiveShadow position={[0, 0, -0.03]}>
@@ -190,6 +333,17 @@ export function SpatialWebObject3D({
           emissiveIntensity={material.emissiveIntensity}
           roughness={0.42}
           metalness={object.type === 'button' ? 0.28 : 0.14}
+        />
+      </mesh>
+
+      <mesh position={[0, 0, depth * 0.62]}>
+        <boxGeometry args={[width * 0.9, height * 0.68, 0.035]} />
+        <meshStandardMaterial
+          color={visualStyle === 'terminal-panel' ? '#05202a' : '#08111f'}
+          emissive={accent}
+          emissiveIntensity={visualStyle === 'terminal-panel' ? 0.16 : 0.1}
+          roughness={0.54}
+          metalness={0.2}
         />
       </mesh>
 
@@ -261,40 +415,40 @@ export function SpatialWebObject3D({
         )
       })}
 
-      <SpatialText
+      <EmbossedText
         position={[
-          isWidePanel ? -width * 0.43 : 0,
+          0,
           isWidePanel ? height * 0.28 : object.type === 'button' ? 0.05 : height * 0.22,
-          depth * 0.72,
+          depth * 0.76,
         ]}
-        fontSize={object.type === 'button' ? 0.19 : 0.105}
-        maxWidth={width * (isWidePanel ? 0.86 : 0.82)}
+        fontSize={object.type === 'button' ? 0.18 : isWidePanel ? 0.12 : 0.135}
+        maxChars={isWidePanel ? 38 : 28}
+        maxLines={isWidePanel ? 2 : 2}
         color={busy ? '#fecdd3' : accent}
-        anchorX={isWidePanel ? 'left' : 'center'}
       >
-        {clampText(busy ? 'Sending...' : object.label, object.type === 'button' ? 22 : 30)}
-      </SpatialText>
+        {busy ? 'Sending...' : object.label}
+      </EmbossedText>
 
       {object.type !== 'button' && (
-        <SpatialText
+        <EmbossedText
           position={[
-            isWidePanel ? -width * 0.43 : 0,
+            0,
             isWidePanel ? height * 0.07 : object.type === 'slider' || object.type === 'toggle' ? height * 0.02 : -height * 0.03,
-            depth * 0.74,
+            depth * 0.78,
           ]}
-          fontSize={isWidePanel ? 0.09 : 0.16}
-          maxWidth={width * (isWidePanel ? 0.86 : 0.76)}
+          fontSize={isWidePanel ? 0.095 : 0.18}
+          maxChars={isWidePanel ? 42 : 26}
+          maxLines={isWidePanel ? 4 : 2}
           color="#e2e8f0"
-          anchorX={isWidePanel ? 'left' : 'center'}
         >
-          {clampText(object.type === 'text' && !object.value ? object.placeholder || 'Empty' : labelValue, isWidePanel ? 72 : 28)}
-        </SpatialText>
+          {object.type === 'text' && !object.value ? object.placeholder || 'Empty' : labelValue}
+        </EmbossedText>
       )}
 
       {object.description && object.type === 'button' && (
-        <SpatialText position={[0, -height * 0.28, depth * 0.74]} fontSize={0.075} maxWidth={width * 0.8} color="#fecdd3">
-          {clampText(object.description, 32)}
-        </SpatialText>
+        <EmbossedText position={[0, -height * 0.28, depth * 0.78]} fontSize={0.075} maxChars={28} maxLines={2} color="#fecdd3">
+          {object.description}
+        </EmbossedText>
       )}
 
       {interactionHint && (
@@ -303,9 +457,9 @@ export function SpatialWebObject3D({
             <boxGeometry args={[0.54, 0.24, 0.05]} />
             <meshStandardMaterial color="#020617" emissive={accent} emissiveIntensity={0.35} roughness={0.45} metalness={0.2} />
           </mesh>
-          <SpatialText position={[0, height / 2 + 0.34, depth * 1.08]} fontSize={0.12} maxWidth={0.48} color="#ffffff">
+          <EmbossedText position={[0, height / 2 + 0.34, depth * 1.08]} fontSize={0.12} maxChars={2} color="#ffffff">
             F
-          </SpatialText>
+          </EmbossedText>
         </>
       )}
     </group>
