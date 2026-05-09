@@ -198,6 +198,7 @@ const OPENCLAW_VOICE_MODELS = ['gpt-realtime', 'gpt-realtime-mini'] as const
 const OPENCLAW_VOICE_OPTIONS = ['alloy', 'ash', 'ballad', 'cedar', 'coral', 'echo', 'marin', 'sage', 'shimmer', 'verse'] as const
 const OPENCLAW_AUDIO_SAMPLE_RATE = 8000
 const OPENCLAW_RELAY_SCOPES = ['world.read', 'world.write.safe', 'screenshot.request', 'chat.stream'] as const
+const HOSTED_RELAY_COMMAND_ORIGIN = 'https://openclaw.04515.xyz'
 const HOSTED_WELCOME_AUDIO_URL = '/audio/04515/welcome-sam.mp3'
 const HOSTED_WELCOME_TEXT = 'Welcome, traveler. Send this code to your OpenClaw, and the lobster steps into the avatar beside you. Then the world is yours to shape.'
 const OPENCLAW_RELAY_TOOLS: readonly string[] = Object.freeze([
@@ -859,12 +860,15 @@ function isLocalOasisOrigin(origin: string): boolean {
 function buildOpenclawRelayPairingCommand(pairing: RelayPairingResult | null, origin: string): string {
   if (!pairing) return ''
   const normalizedOrigin = normalizeCommandOrigin(origin)
-  const pairingRef = normalizedOrigin
-    ? `${normalizedOrigin}/pair/${encodeURIComponent(pairing.code)}`
+  const commandOrigin = normalizedOrigin && !isLocalOasisOrigin(normalizedOrigin)
+    ? HOSTED_RELAY_COMMAND_ORIGIN
+    : normalizedOrigin
+  const pairingRef = commandOrigin
+    ? `${commandOrigin}/pair/${encodeURIComponent(pairing.code)}`
     : pairing.code
   const base = `openclaw 04515 connect ${pairingRef}`
-  if (!isLocalOasisOrigin(normalizedOrigin)) return base
-  const relayHost = localRelayHostFromOrigin(normalizedOrigin)
+  if (!isLocalOasisOrigin(commandOrigin)) return base
+  const relayHost = localRelayHostFromOrigin(commandOrigin)
   return `${base} --relay-url="ws://${relayHost}:4517/?role=agent"`
 }
 

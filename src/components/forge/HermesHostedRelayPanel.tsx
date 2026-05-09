@@ -85,6 +85,7 @@ const SESSIONS_KEY = 'oasis-hermes-hosted-relay-sessions'
 const SETTINGS_KEY = 'oasis-hermes-hosted-relay-settings'
 const DEFAULT_HERMES_AVATAR_URL = '/avatars/gallery/CoolAlien.vrm'
 const HERMES_STREAM_IDLE_STALL_MS = 10 * 60_000
+const HOSTED_RELAY_COMMAND_ORIGIN = 'https://openclaw.04515.xyz'
 
 interface HermesRelayPanelSettings {
   bgColor: string
@@ -249,12 +250,15 @@ function shellArg(value: string): string {
 function buildHermesRelayCommand(pairing: RelayPairingResult | null, origin: string, agentLabel = HERMES_AGENT_LABEL): string {
   if (!pairing) return ''
   const normalizedOrigin = normalizeCommandOrigin(origin)
-  const pairingRef = normalizedOrigin
-    ? `${normalizedOrigin}/pair/${encodeURIComponent(pairing.code)}`
+  const commandOrigin = normalizedOrigin && !isLocalOasisOrigin(normalizedOrigin)
+    ? HOSTED_RELAY_COMMAND_ORIGIN
+    : normalizedOrigin
+  const pairingRef = commandOrigin
+    ? `${commandOrigin}/pair/${encodeURIComponent(pairing.code)}`
     : pairing.code
   const base = `npx -y @04515xyz/oasis-bridge@latest hermes ${pairingRef} --agent-slot=${HERMES_AGENT_SLOT} --label=${shellArg(agentLabel)}`
-  if (!isLocalOasisOrigin(normalizedOrigin)) return base
-  const relayHost = localRelayHostFromOrigin(normalizedOrigin)
+  if (!isLocalOasisOrigin(commandOrigin)) return base
+  const relayHost = localRelayHostFromOrigin(commandOrigin)
   return `${base} --relay-url="ws://${relayHost}:4517/?role=agent"`
 }
 
