@@ -1243,12 +1243,13 @@ export const useOasisStore = create<OasisState>((set, get) => {
     }
 
     const openPortalToWorld = (targetWorldId: string, targetWorldName: string, delayMs: number) => {
-      if (!isBrowser) return
+      if (typeof window === 'undefined') return
       const sourceWorldId = get().viewingWorldId || get().activeWorldId
       if (!sourceWorldId || sourceWorldId === targetWorldId) return
       const portalPosition: [number, number, number] = [effectPosition[0] + 3, 0, effectPosition[2]]
       const nowIso = new Date().toISOString()
-      window.setTimeout(() => {
+      const schedule = window.setTimeout || globalThis.setTimeout
+      schedule(() => {
         const portalGate: PortalGate = {
           id: `portal-${id}-generated-world`,
           variant: 'stargate-vortex',
@@ -1282,6 +1283,48 @@ export const useOasisStore = create<OasisState>((set, get) => {
         }))
         get().spawnPlacementVfx(portalPosition)
         if (isBrowser) get().refreshWorldRegistry()
+      }, delayMs)
+    }
+
+    const openLocalPortalToPortalZero = (delayMs: number) => {
+      if (typeof window === 'undefined') return
+      const sourceWorldId = get().viewingWorldId || get().activeWorldId
+      if (!sourceWorldId || sourceWorldId === WELCOME_HUB_WORLD_ID) return
+      const portalPosition: [number, number, number] = [effectPosition[0] + 3, 0, effectPosition[2]]
+      const schedule = window.setTimeout || globalThis.setTimeout
+      schedule(() => {
+        const portalGate: PortalGate = {
+          id: `portal-${id}-portal-zero`,
+          variant: 'stargate-vortex',
+          label: 'Portal Zero',
+          position: portalPosition,
+          rotationY: portalRotationTowardCenter(portalPosition),
+          scale: 1,
+          width: 2.8,
+          height: 3.4,
+          direction: 'one-way',
+          sourceWorldId,
+          targetWorldId: WELCOME_HUB_WORLD_ID,
+          targetWorldName: 'Portal Zero',
+          action: { type: 'load_world', worldId: WELCOME_HUB_WORLD_ID, worldName: 'Portal Zero' },
+        }
+        set(state => ({
+          worldRegistry: upsertWorldRegistryMeta(state.worldRegistry, {
+            id: WELCOME_HUB_WORLD_ID,
+            name: 'Portal Zero',
+            icon: '0',
+            visibility: 'core',
+            objectCount: 0,
+            visitCount: 0,
+            createdAt: new Date().toISOString(),
+            lastSavedAt: new Date().toISOString(),
+          }),
+          portalGates: [
+            ...state.portalGates.filter(gate => gate.id !== portalGate.id),
+            portalGate,
+          ],
+        }))
+        get().spawnPlacementVfx(portalPosition)
       }, delayMs)
     }
 
@@ -1507,45 +1550,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       if (submitSucceeded) {
         playSpatialWebSound('winner')
         get().spawnPlacementVfx(effectPosition)
-        if (isBrowser) {
-          const worldId = get().viewingWorldId || get().activeWorldId
-          const portalPosition: [number, number, number] = [effectPosition[0] + 3, 0, effectPosition[2]]
-          window.setTimeout(() => {
-            void (async () => {
-              try {
-                const response = await fetch('/api/oasis-tools', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    tool: 'create_portal_gate',
-                    args: {
-                      worldId,
-                      targetWorldId: WELCOME_HUB_WORLD_ID,
-                      label: 'Portal Zero',
-                      variant: 'stargate-vortex',
-                      direction: 'one-way',
-                      position: portalPosition,
-                      width: 2.8,
-                      height: 3.4,
-                    },
-                  }),
-                })
-                const result = await response.json().catch(() => null) as { ok?: boolean; data?: { portalGate?: PortalGate } } | null
-                const portalGate = result?.ok !== false ? result?.data?.portalGate : null
-                if (portalGate) {
-                  set(state => ({
-                    portalGates: [
-                      ...state.portalGates.filter(gate => gate.id !== portalGate.id),
-                      portalGate,
-                    ],
-                  }))
-                  get().spawnPlacementVfx(portalPosition)
-                  setTimeout(() => get().saveWorldState(), 100)
-                }
-              } catch {}
-            })()
-          }, 5000)
-        }
+        openLocalPortalToPortalZero(5000)
       } else {
         playSpatialWebSound('error')
       }
@@ -2722,7 +2727,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     get().loadWorldState()
   },
 
-  setAvatar3dUrl: (url) => set({ avatar3dUrl: url }),
+  setAvatar3dUrl: (url) => set({ avatar3dUrl: url || DEFAULT_PROFILE_AVATAR_3D_URL }),
 
   // ─═̷─═̷─🪟 PANEL Z-ORDERING ─═̷─═̷─🪟
   _panelZCounter: 0,

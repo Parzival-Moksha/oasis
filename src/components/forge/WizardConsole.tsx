@@ -38,6 +38,7 @@ import { PORTAL_GATE_VARIANT_DEFS, type PortalAction, type PortalGateVariant } f
 import { portalThumbPath } from '../../lib/portal-thumbnails'
 import { PortalTransitionSettingsPanel } from './PortalTransitionSettingsPanel'
 import { createSpatialWebObjectFromTemplate, SPATIAL_WEB_ASSET_TEMPLATES } from '../../lib/spatial-web-presets'
+import { useOasisCapabilities } from '@/lib/oasis-mode-client'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 
@@ -958,11 +959,14 @@ const ORDERED_WIZARD_TABS = WIZARD_TAB_ORDER
   .filter((tab): tab is NonNullable<typeof tab> => Boolean(tab))
   .map(tab => ({ ...tab, label: WIZARD_TAB_LABEL_OVERRIDES[tab.key] || tab.label }))
 
-const HOSTED_WIZARD_MODES = new Set<WizardMode>(['world', 'assets', 'media', 'agents', 'craft', 'conjure', 'placed', 'settings'])
+const HOSTED_WIZARD_MODES = new Set<WizardMode>(['world', 'assets', 'placed', 'settings'])
+const ADMIN_WIZARD_MODES = new Set<WizardMode>(['media', 'agents', 'craft', 'conjure'])
 
 export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardConsoleProps) {
   useUILayer('wizard-console', isOpen)
+  const capabilities = useOasisCapabilities()
   const hostedVariant = variant === 'hosted'
+  const canUseAdminTabs = !hostedVariant || capabilities.canUseFullWizard || capabilities.canUseAdminPanels
   // ─═̷─ Position & size state — persisted to localStorage ─═̷─
   const [position, setPosition] = useState(() => {
     if (typeof window === 'undefined') return { x: 60, y: 80 }
@@ -1007,7 +1011,10 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
 
   // ─═̷─ Wizard state ─═̷─
   const [mode, setMode] = useState<WizardMode>('world')
-  const visibleTabs = hostedVariant ? ORDERED_WIZARD_TABS.filter(tab => HOSTED_WIZARD_MODES.has(tab.key)) : ORDERED_WIZARD_TABS
+  const visibleTabs = ORDERED_WIZARD_TABS.filter(tab => {
+    if (canUseAdminTabs) return true
+    return HOSTED_WIZARD_MODES.has(tab.key) && !ADMIN_WIZARD_MODES.has(tab.key)
+  })
   const [provider, setProvider] = useState<ProviderName>('meshy')
   const [tier, setTier] = useState(PROVIDERS[0].tiers[1]?.id || PROVIDERS[0].tiers[0].id)  // Default: textured (refine)
   const [prompt, setPrompt] = useState('')
@@ -1015,8 +1022,8 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (hostedVariant && !HOSTED_WIZARD_MODES.has(mode)) setMode('world')
-  }, [hostedVariant, mode])
+    if (!visibleTabs.some(tab => tab.key === mode) && mode !== 'settings') setMode('world')
+  }, [mode, visibleTabs])
   // ░▒▓ Character pipeline — A-pose mode for riggable output ▓▒░
   const [characterMode, setCharacterMode] = useState(false)
   const [imageUrl, setImageUrl] = useState('')

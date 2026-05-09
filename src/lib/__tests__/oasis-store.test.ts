@@ -1222,6 +1222,63 @@ describe('OasisStore', () => {
       })
       expect(getState().spatialWebObjects[0].interactionCount).toBeUndefined()
     })
+
+    it('opens a local Portal Zero portal after a successful spatial form submit', async () => {
+      const originalFetch = globalThis.fetch
+      const originalWindow = (globalThis as any).window
+      const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        ok: true,
+        message: 'Submitted 2 mapped fields to Google Forms.',
+      }), {
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      globalThis.fetch = fetchMock as unknown as typeof fetch
+      ;(globalThis as any).window = {
+        setTimeout,
+      }
+      const submitButton: SpatialWebObject = {
+        id: 'submit-form',
+        type: 'button',
+        formId: 'form-world',
+        label: 'Send',
+        position: [4, 1, 8],
+        action: { type: 'submit_form', endpoint: '/api/hackathon/spatial-submit' },
+      }
+      const nameInput: SpatialWebObject = {
+        id: 'name-field',
+        type: 'text',
+        formId: 'form-world',
+        label: 'Name',
+        value: 'Lev',
+        position: [0, 1, 0],
+      }
+      useOasisStore.setState({
+        activeWorldId: 'world-generated-form',
+        spatialWebObjects: [nameInput, submitButton],
+        portalGates: [],
+      })
+
+      try {
+        await getState().interactSpatialWebObject('submit-form')
+        await vi.advanceTimersByTimeAsync(5000)
+      } finally {
+        globalThis.fetch = originalFetch
+        ;(globalThis as any).window = originalWindow
+      }
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(fetchMock).toHaveBeenCalledWith('/api/hackathon/spatial-submit', expect.objectContaining({
+        method: 'POST',
+      }))
+      expect(getState().portalGates).toEqual([
+        expect.objectContaining({
+          id: 'portal-submit-form-portal-zero',
+          targetWorldId: 'world-welcome-hub-system',
+          targetWorldName: 'Portal Zero',
+          action: expect.objectContaining({ type: 'load_world', worldId: 'world-welcome-hub-system' }),
+        }),
+      ])
+    })
   })
 
   describe('focusImage ↔ focusAgentWindow mutual exclusion', () => {

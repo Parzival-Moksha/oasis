@@ -13,6 +13,17 @@ import { useOasisStore } from '@/store/oasisStore'
 const HEARTBEAT_INTERVAL_MS = 700
 
 function makePresenceId(): string {
+  if (typeof window !== 'undefined') {
+    const key = 'oasis-presence-player-id'
+    const existing = window.sessionStorage.getItem(key)
+    if (existing) return existing
+    const randomId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID().replace(/-/g, '').slice(0, 12)
+      : Math.random().toString(36).slice(2, 14)
+    const id = `player-${randomId}`
+    window.sessionStorage.setItem(key, id)
+    return id
+  }
   const randomId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID().replace(/-/g, '').slice(0, 12)
     : Math.random().toString(36).slice(2, 14)

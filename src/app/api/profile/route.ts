@@ -13,7 +13,7 @@ import { DEFAULT_PROFILE_AVATAR_3D_URL, DEFAULT_PROFILE_DISPLAY_NAME } from '@/l
 
 /** Ensure a Profile row exists for the user, return it */
 async function ensureProfile(userId: string) {
-  return prisma.profile.upsert({
+  const profile = await prisma.profile.upsert({
     where: { userId },
     create: {
       userId,
@@ -22,6 +22,7 @@ async function ensureProfile(userId: string) {
     },
     update: {},
   })
+  return profile.avatar3dUrl ? profile : { ...profile, avatar3dUrl: DEFAULT_PROFILE_AVATAR_3D_URL }
 }
 
 export async function GET(request: Request) {

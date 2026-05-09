@@ -85,7 +85,7 @@ export function ProfileButton() {
       .then(r => r.json())
       .then(data => {
         setProfile(data)
-        if ('avatar_3d_url' in data) setAvatar3dUrl(data.avatar_3d_url ?? null)
+        if ('avatar_3d_url' in data) setAvatar3dUrl(data.avatar_3d_url || DEFAULT_PROFILE_AVATAR_3D_URL)
 
         // Auto-claim daily login bonus on first successful fetch
         if (!dailyBonusTriedRef.current) {

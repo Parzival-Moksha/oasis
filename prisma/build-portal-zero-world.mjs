@@ -296,7 +296,7 @@ const data = {
     { id: 'pz-public-warm-fill', type: 'point', position: [14, 2.8, 0], color: '#fbbf24', intensity: 0.56, distance: 15 },
     { id: 'pz-ffa-green-fill', type: 'point', position: [0, 2.8, 14], color: '#86efac', intensity: 0.48, distance: 15 },
   ],
-  skyBackgroundId: 'stars',
+  skyBackgroundId: 'blue_grotto',
   agentWindows: [],
   agentAvatars: [],
   savedAt: CREATED_AT,

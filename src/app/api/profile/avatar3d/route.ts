@@ -7,6 +7,7 @@
 import { NextResponse } from 'next/server'
 import { getRequiredOasisUserId } from '@/lib/session'
 import { prisma } from '@/lib/db'
+import { DEFAULT_PROFILE_AVATAR_3D_URL } from '@/lib/profile-defaults'
 import path from 'path'
 import fs from 'fs/promises'
 
@@ -22,17 +23,17 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { url, urlType } = body
 
-    // Remove avatar — set to null
+    // Remove avatar — reset to the default playable body.
     if (urlType === 'remove') {
       try {
         await prisma.profile.upsert({
           where: { userId: userId },
-          create: { userId: userId, avatar3dUrl: null },
-          update: { avatar3dUrl: null },
+          create: { userId: userId, avatar3dUrl: DEFAULT_PROFILE_AVATAR_3D_URL },
+          update: { avatar3dUrl: DEFAULT_PROFILE_AVATAR_3D_URL },
         })
       } catch (e) { console.error('[Avatar3D] Profile update failed:', e) }
-      console.log(`[Avatar3D] Removed avatar`)
-      return NextResponse.json({ avatar_3d_url: null })
+      console.log(`[Avatar3D] Reset avatar to default`)
+      return NextResponse.json({ avatar_3d_url: DEFAULT_PROFILE_AVATAR_3D_URL })
     }
 
     if (!url || typeof url !== 'string') {
