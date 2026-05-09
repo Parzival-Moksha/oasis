@@ -9,6 +9,8 @@ import * as THREE from 'three'
 import { useOasisStore } from '@/store/oasisStore'
 import { useAudioManager } from '@/lib/audio-manager'
 import {
+  SPATIAL_WEB_OPTION_WRAP_CHARS,
+  getSpatialWebOptionLetter,
   type SpatialWebObject,
   type SpatialWebValue,
 } from '@/lib/spatial-web'
@@ -85,6 +87,61 @@ function wrapText(value: string, maxChars: number, maxLines: number, truncate = 
     lines[lines.length - 1] = clampText(lines[lines.length - 1], Math.max(4, maxChars - 3)) + '...'
   }
   return lines
+}
+
+const SELECTOR_OPTION_FONT_SIZE = 0.068
+const SELECTOR_OPTION_LINE_HEIGHT = SELECTOR_OPTION_FONT_SIZE * 1.42
+const SELECTOR_OPTION_ROW_GAP = 0.055
+const SELECTOR_OPTION_BASE_ROW_HEIGHT = 0.24
+
+type SelectorOptionRow = {
+  key: string
+  letter: string
+  label: string
+  selected: boolean
+  lineCount: number
+  height: number
+  centerY: number
+}
+
+function selectorOptionLines(label: string): string[] {
+  return wrapText(
+    label,
+    SPATIAL_WEB_OPTION_WRAP_CHARS,
+    Math.max(1, Math.ceil(label.length / SPATIAL_WEB_OPTION_WRAP_CHARS) + 4),
+    false,
+  )
+}
+
+function selectorRowsFor(object: SpatialWebObject): { rows: SelectorOptionRow[]; totalHeight: number } {
+  if ((object.type !== 'select' && object.type !== 'multiselect') || !object.options?.length) {
+    return { rows: [], totalHeight: 0 }
+  }
+
+  const rawRows = object.options.map((option, index) => {
+    const label = option.label || option.value
+    const lineCount = selectorOptionLines(label).length
+    return {
+      key: `${option.value}-${index}`,
+      letter: getSpatialWebOptionLetter(index),
+      label,
+      selected: Array.isArray(object.value) ? object.value.includes(option.value) : object.value === option.value,
+      lineCount,
+      height: SELECTOR_OPTION_BASE_ROW_HEIGHT + Math.max(0, lineCount - 1) * SELECTOR_OPTION_LINE_HEIGHT,
+      centerY: 0,
+    }
+  })
+
+  const totalHeight = rawRows.reduce((sum, row) => sum + row.height, 0)
+    + Math.max(0, rawRows.length - 1) * SELECTOR_OPTION_ROW_GAP
+  let cursor = totalHeight / 2
+  const rows = rawRows.map(row => {
+    const centerY = cursor - row.height / 2
+    cursor -= row.height + SELECTOR_OPTION_ROW_GAP
+    return { ...row, centerY }
+  })
+
+  return { rows, totalHeight }
 }
 
 function EmbossedText({
@@ -442,9 +499,12 @@ export function SpatialWebObject3D({
   const canClickInteract = effectiveRp1Mode || isReadOnly
 
   const accent = normalizeHex(object.accentColor, '#38bdf8')
-  const width = object.width ?? (object.type === 'button' ? 2.2 : 2.6)
+  const isSelectorPanel = object.type === 'select' || object.type === 'multiselect'
+  const width = object.width ?? (object.type === 'button' ? 2.2 : isSelectorPanel ? 4.8 : 2.6)
   const baseHeight = object.height ?? (object.type === 'output' || object.type === 'text' ? 1.05 : 0.82)
   const labelValue = valueForLabel(object)
+  const selectorOptions = useMemo(() => selectorRowsFor(object), [object])
+  const hasSelectorRows = isSelectorPanel && selectorOptions.rows.length > 0
   const isWidePanel = object.type === 'output' || object.type === 'text'
   const visualStyle = object.visualStyle
     || (object.type === 'button' ? 'arcade-button'
@@ -460,10 +520,11 @@ export function SpatialWebObject3D({
   const labelMaxChars = isWidePanel ? 36 : 30
   const valueMaxChars = isWidePanel ? 42 : 26
   const labelLines = wrapText(labelText, labelMaxChars, 3)
-  const valueLines = object.type === 'button' ? [] : wrapText(valueText, valueMaxChars, isWidePanel ? 5 : 3)
+  const valueLines = object.type === 'button' || hasSelectorRows ? [] : wrapText(valueText, valueMaxChars, isWidePanel ? 5 : 3)
   const height = Math.max(
     baseHeight,
     baseHeight + Math.max(0, labelLines.length - 1) * 0.18 + Math.max(0, valueLines.length - 1) * (isWidePanel ? 0.18 : 0.24),
+    hasSelectorRows ? selectorOptions.totalHeight + 0.52 : baseHeight,
   )
 
   const material = useMemo(() => {
@@ -649,7 +710,7 @@ export function SpatialWebObject3D({
       </mesh>
 
       <mesh position={[0, 0, depth * 0.62]}>
-        <boxGeometry args={[width * 0.9, height * 0.68, 0.035]} />
+        <boxGeometry args={[width * 0.9, height * (hasSelectorRows ? 0.84 : 0.68), 0.035]} />
         <meshStandardMaterial
           color={visualStyle === 'terminal-panel' ? '#05202a' : '#08111f'}
           emissive={accent}
@@ -717,15 +778,36 @@ export function SpatialWebObject3D({
         </>
       )}
 
-      {(object.type === 'select' || object.type === 'multiselect') && object.options?.slice(0, 3).map((option, index) => {
-        const selected = Array.isArray(object.value) ? object.value.includes(option.value) : object.value === option.value
-        return (
-          <mesh key={option.value} position={[-width * 0.27 + index * width * 0.27, -height * 0.23, depth * 0.78]}>
-            <boxGeometry args={[width * 0.22, 0.13, 0.08]} />
-            <meshBasicMaterial color={selected ? accent : '#0f172a'} />
-          </mesh>
-        )
-      })}
+      {hasSelectorRows && (
+        <group position={[0, -height * 0.03, depth * 0.78]}>
+          {selectorOptions.rows.map(row => (
+            <group key={row.key} position={[0, row.centerY, 0]}>
+              <mesh position={[0, 0, 0]}>
+                <boxGeometry args={[width * 0.82, Math.max(0.08, row.height - 0.02), 0.06]} />
+                <meshBasicMaterial color={row.selected ? colorTimes(accent, 0.72) : '#07111f'} transparent opacity={row.selected ? 0.96 : 0.82} />
+              </mesh>
+              <mesh position={[-width * 0.36, 0, 0.06]}>
+                <boxGeometry args={[0.28, Math.min(0.18, Math.max(0.1, row.height - 0.06)), 0.08]} />
+                <meshBasicMaterial color={row.selected ? accent : '#0f172a'} />
+              </mesh>
+              <EmbossedText position={[-width * 0.36, -0.01, 0.13]} fontSize={0.064} maxChars={3} maxLines={1} color={row.selected ? '#ffffff' : '#cbd5e1'}>
+                {row.letter}
+              </EmbossedText>
+              <EmbossedText
+                position={[0.22, 0, 0.13]}
+                fontSize={SELECTOR_OPTION_FONT_SIZE}
+                maxChars={SPATIAL_WEB_OPTION_WRAP_CHARS}
+                maxLines={row.lineCount}
+                color={row.selected ? '#ffffff' : '#e2e8f0'}
+                sideColor="#020617"
+                truncate={false}
+              >
+                {row.label}
+              </EmbossedText>
+            </group>
+          ))}
+        </group>
+      )}
 
       <EmbossedText
         position={[0, height / 2 + 0.25 + Math.max(0, labelLines.length - 1) * 0.08, depth * 0.84]}

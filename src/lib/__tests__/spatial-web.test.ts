@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  estimateSpatialWebOptionLineCount,
   findNearestSpatialWebObject,
   getNextSpatialWebValue,
+  getSpatialWebOptionLetter,
   type SpatialWebObject,
 } from '../spatial-web'
 
@@ -40,6 +42,17 @@ describe('getNextSpatialWebValue', () => {
     expect(getNextSpatialWebValue(object)).toBe('maybe')
   })
 
+  it('cycles blank select values to the first answer', () => {
+    expect(getNextSpatialWebValue(spatial({
+      type: 'select',
+      value: '',
+      options: [
+        { value: 'a', label: 'A' },
+        { value: 'b', label: 'B' },
+      ],
+    }))).toBe('a')
+  })
+
   it('adds multiselect values until all are selected, then clears', () => {
     const options = [
       { value: 'cake', label: 'Cake' },
@@ -48,6 +61,19 @@ describe('getNextSpatialWebValue', () => {
 
     expect(getNextSpatialWebValue(spatial({ type: 'multiselect', value: ['cake'], options }))).toEqual(['cake', 'music'])
     expect(getNextSpatialWebValue(spatial({ type: 'multiselect', value: ['cake', 'music'], options }))).toEqual([])
+  })
+})
+
+describe('spatial web option helpers', () => {
+  it('labels selector options like form answers', () => {
+    expect(getSpatialWebOptionLetter(0)).toBe('A')
+    expect(getSpatialWebOptionLetter(3)).toBe('D')
+    expect(getSpatialWebOptionLetter(26)).toBe('AA')
+  })
+
+  it('estimates wrapped option lines at 40 characters', () => {
+    expect(estimateSpatialWebOptionLineCount('short answer')).toBe(1)
+    expect(estimateSpatialWebOptionLineCount('a '.repeat(41))).toBeGreaterThan(1)
   })
 })
 

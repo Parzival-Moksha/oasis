@@ -531,7 +531,7 @@ function spatialForLeaf(args: {
         label: stringifyDynamic(component.label, dataModel) || componentId,
         value: multiple
           ? Array.isArray(selected) ? selected.filter((entry): entry is string => typeof entry === 'string') : []
-          : firstSelected(selected) || options[0]?.value || '',
+          : firstSelected(selected) || '',
         surfaceId: surface.surfaceId,
         position,
         accentColor: args.accentColor,

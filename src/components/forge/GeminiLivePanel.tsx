@@ -85,8 +85,11 @@ const GEMINI_TOOL_NAMES = new Set([
   'search_assets',
   'get_asset_catalog',
   'place_object',
+  'place_agent_window',
+  'place_browser_window',
   'create_spatial_web_object',
   'create_world_from_google_form',
+  'create_test_world_from_google_form',
   'share_world_link',
   'create_portal_gate',
   'modify_object',
@@ -383,6 +386,7 @@ export function GeminiLivePanel({
   const assistantMessageIdRef = useRef('')
   const toolMessageByCallIdRef = useRef<Map<string, string>>(new Map())
   const toolStartedAtRef = useRef<Map<string, number>>(new Map())
+  const pendingExternalPromptRef = useRef('')
 
   const activeWorldId = useOasisStore(state => state.activeWorldId)
   const activeWorldName = useOasisStore(state => state.worldRegistry.find(world => world.id === state.activeWorldId)?.name || 'Current world')
@@ -798,6 +802,8 @@ export function GeminiLivePanel({
       }
       if ((
         call.name === 'place_object'
+        || call.name === 'place_agent_window'
+        || call.name === 'place_browser_window'
         || call.name === 'create_spatial_web_object'
         || call.name === 'create_portal_gate'
         || call.name === 'modify_object'
@@ -898,6 +904,18 @@ export function GeminiLivePanel({
       setConnectionDetail('Gemini Live is connected. Speak now.')
       appendMessage({ role: 'system', content: 'Gemini Live setup complete. Microphone is streaming.', status: 'done' })
       attachOutputStreamToLipSync(outputDestinationRef.current?.stream || null)
+      const pendingPrompt = pendingExternalPromptRef.current.trim()
+      if (pendingPrompt && ws.readyState === WebSocket.OPEN) {
+        pendingExternalPromptRef.current = ''
+        ws.send(JSON.stringify({
+          clientContent: {
+            turns: [{ role: 'user', parts: [{ text: pendingPrompt }] }],
+            turnComplete: true,
+          },
+        }))
+        appendMessage({ role: 'user', content: pendingPrompt, status: 'done' })
+        setConnectionDetail('Sent test result prompt to Gemini Live.')
+      }
       try {
         await startMicrophone(ws, attempt)
       } catch (error) {
@@ -1183,6 +1201,37 @@ export function GeminiLivePanel({
     setTextDraft('')
     setConnectionDetail('Sent text turn to Gemini Live.')
   }, [appendMessage, textDraft])
+
+  const sendExternalPrompt = useCallback((prompt: string) => {
+    const text = prompt.trim()
+    if (!text) return
+    const ws = websocketRef.current
+    if (ws?.readyState === WebSocket.OPEN && connectionState === 'connected') {
+      ws.send(JSON.stringify({
+        clientContent: {
+          turns: [{ role: 'user', parts: [{ text }] }],
+          turnComplete: true,
+        },
+      }))
+      appendMessage({ role: 'user', content: text, status: 'done' })
+      setConnectionDetail('Sent test result prompt to Gemini Live.')
+      return
+    }
+
+    pendingExternalPromptRef.current = text
+    appendMessage({ role: 'system', content: 'Queued test result prompt for Gemini Live.', status: 'done' })
+    void startSessionRef.current?.({ force: connectionState === 'error' || connectionState === 'stopped' || connectionState === 'idle', reason: 'Starting Gemini test review.' })
+  }, [appendMessage, connectionState])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ prompt?: unknown }>).detail
+      if (typeof detail?.prompt === 'string') sendExternalPrompt(detail.prompt)
+    }
+    window.addEventListener('oasis:gemini-live-prompt', handler)
+    return () => window.removeEventListener('oasis:gemini-live-prompt', handler)
+  }, [sendExternalPrompt])
 
   const placeGeminiWindow = useCallback(() => {
     enterPlacementMode({

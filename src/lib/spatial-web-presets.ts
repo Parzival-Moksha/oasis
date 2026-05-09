@@ -30,15 +30,29 @@ export const SPATIAL_WEB_ASSET_TEMPLATES: SpatialWebAssetTemplate[] = [
     accentColor: '#22d3ee',
     visualStyle: 'google-form-altar',
   },
+  {
+    id: 'google-test-altar',
+    type: 'text',
+    label: 'Test altar',
+    subtitle: 'Google quiz to tutor world',
+    accentColor: '#a78bfa',
+    visualStyle: 'google-form-altar',
+  },
 ]
 
-export function createGoogleFormsAltarObject(overrides: Partial<SpatialWebObject> = {}): SpatialWebObject {
+export function createGoogleFormsAltarObject(
+  overrides: Partial<SpatialWebObject> = {},
+  options: { testMode?: boolean } = {},
+): SpatialWebObject {
+  const testMode = options.testMode === true || overrides.action?.testMode === true
   return {
     id: overrides.id || makeSpatialWebId('spatial-google-form-altar'),
     type: 'text',
     formId: overrides.formId || 'google-forms-altar',
-    label: overrides.label || 'Google Forms Altar',
-    description: overrides.description || 'Paste a public Google Form link. The altar builds a shareable Oasis world, then opens a portal.',
+    label: overrides.label || (testMode ? 'Google Test Altar' : 'Google Forms Altar'),
+    description: overrides.description || (testMode
+      ? 'Paste a public Google quiz/form link. The altar builds a shareable test world with scoring and a Gemini tutor.'
+      : 'Paste a public Google Form link. The altar builds a shareable Oasis world, then opens a portal.'),
     value: overrides.value ?? '',
     placeholder: overrides.placeholder || 'https://forms.gle/...',
     position: overrides.position || [0, 1.15, 0],
@@ -50,6 +64,7 @@ export function createGoogleFormsAltarObject(overrides: Partial<SpatialWebObject
     visualStyle: 'google-form-altar',
     action: overrides.action || {
       type: 'create_world_from_google_form',
+      ...(testMode ? { testMode: true } : {}),
       successMessage: 'Oasis world ready.',
     },
     generatedWorldId: overrides.generatedWorldId,
@@ -74,8 +89,23 @@ export function createPortalZeroGoogleFormsAltar(): SpatialWebObject {
   })
 }
 
+export function createPortalZeroGoogleTestAltar(): SpatialWebObject {
+  return createGoogleFormsAltarObject({
+    id: 'spatial-google-test-altar-portal-zero',
+    formId: 'portal-zero-google-test-altar',
+    position: [-1.35, 1.2, -6.25],
+    rotation: [0, 0.18, 0],
+    accentColor: '#a78bfa',
+  }, { testMode: true })
+}
+
 export function createSpatialWebObjectFromTemplate(template: SpatialWebAssetTemplate): SpatialWebObject {
   if (template.id === 'google-form-altar') return createGoogleFormsAltarObject()
+  if (template.id === 'google-test-altar') return createGoogleFormsAltarObject({
+    id: makeSpatialWebId('spatial-google-test-altar'),
+    formId: 'google-test-altar',
+    accentColor: '#a78bfa',
+  }, { testMode: true })
 
   const formId = 'spatial-library-demo'
   const base: SpatialWebObject = {

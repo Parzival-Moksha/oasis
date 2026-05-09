@@ -2335,7 +2335,8 @@ function PlacementOverlay() {
       const defaultWindowWorldHeight = defaultWindowSize.height * (8 / 400)
       const browserDefaults = placementPending.agentType === 'browser'
         ? {
-            surfaceUrl: '',
+            browserSurfaceMode: placementPending.agentBrowserSurfaceMode || ('live-browser' as const),
+            surfaceUrl: placementPending.agentSurfaceUrl || '',
           }
         : {}
       const agentWindow = {
@@ -2349,8 +2350,8 @@ function PlacementOverlay() {
         sessionId: placementPending.agentSessionId,
         label: placementPending.name,
         renderMode: placementPending.agentRenderMode,
-        frameStyle: isGeminiAgent ? DEFAULT_GEMINI_AGENT_FRAME_STYLE : isHermesAgent ? 'fire' : undefined,
-        frameThickness: isGeminiAgent ? DEFAULT_GEMINI_AGENT_FRAME_THICKNESS : isHermesAgent ? 6 : undefined,
+        frameStyle: placementPending.agentFrameStyle || (placementPending.agentType === 'browser' ? 'baroque' : isGeminiAgent ? DEFAULT_GEMINI_AGENT_FRAME_STYLE : isHermesAgent ? 'fire' : undefined),
+        frameThickness: placementPending.agentFrameThickness ?? (placementPending.agentType === 'browser' ? 7 : isGeminiAgent ? DEFAULT_GEMINI_AGENT_FRAME_THICKNESS : isHermesAgent ? 6 : undefined),
         ...browserDefaults,
       }
       dispatch({
@@ -2366,6 +2367,7 @@ function PlacementOverlay() {
           scale: agentWindow.scale,
           frameStyle: agentWindow.frameStyle,
           frameThickness: agentWindow.frameThickness,
+          browserSurfaceMode: agentWindow.browserSurfaceMode,
           surfaceUrl: agentWindow.surfaceUrl,
         },
       })

@@ -20,6 +20,7 @@ export type SpatialWebVisualStyle =
   | 'google-form-altar'
 
 export const SPATIAL_WEB_INTERACTION_RADIUS = 3
+export const SPATIAL_WEB_OPTION_WRAP_CHARS = 40
 
 export interface SpatialWebOption {
   value: string
@@ -31,6 +32,7 @@ export interface SpatialWebAction {
   type: 'none' | 'submit_form' | 'set_value' | 'spawn_vfx' | 'world_tool' | 'create_world_from_google_form'
   endpoint?: string
   successMessage?: string
+  testMode?: boolean
   destination?: SpatialWebSubmitDestination
   targetObjectId?: string
   value?: SpatialWebValue
@@ -45,6 +47,9 @@ export interface SpatialWebSubmitDestination {
   responseUrl?: string
   fieldMap?: Record<string, string>
   webhookUrl?: string
+  testMode?: boolean
+  answerKey?: Record<string, string | string[]>
+  geminiReview?: boolean
 }
 
 export interface SpatialWebObject {
@@ -163,6 +168,47 @@ export function getNextSpatialWebValue(object: Pick<SpatialWebObject, 'type' | '
     default:
       return undefined
   }
+}
+
+export function getSpatialWebOptionLetter(index: number): string {
+  let cursor = Math.max(0, Math.floor(index))
+  let label = ''
+  do {
+    label = String.fromCharCode(65 + (cursor % 26)) + label
+    cursor = Math.floor(cursor / 26) - 1
+  } while (cursor >= 0)
+  return label
+}
+
+export function estimateSpatialWebOptionLineCount(
+  value: string,
+  maxChars = SPATIAL_WEB_OPTION_WRAP_CHARS,
+): number {
+  const limit = Math.max(1, Math.floor(maxChars))
+  const words = value.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean)
+  if (words.length === 0) return 1
+
+  let lines = 1
+  let lineLength = 0
+
+  for (const word of words) {
+    const chunks: string[] = []
+    for (let index = 0; index < word.length; index += limit) {
+      chunks.push(word.slice(index, index + limit))
+    }
+
+    for (const chunk of chunks.length ? chunks : [word]) {
+      const candidateLength = lineLength === 0 ? chunk.length : lineLength + 1 + chunk.length
+      if (candidateLength <= limit) {
+        lineLength = candidateLength
+        continue
+      }
+      lines += 1
+      lineLength = chunk.length
+    }
+  }
+
+  return lines
 }
 
 export function resolveSpatialWebObjectPosition(

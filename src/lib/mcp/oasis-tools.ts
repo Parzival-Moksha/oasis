@@ -41,7 +41,7 @@ import { createPortalZeroReturnGate } from '../portal-zero-return-gate'
 import { getAllAssets, getAssetById, updateAsset } from '../conjure/registry'
 import { emitWorldEvent } from './world-events'
 import { readWorldPlayerContext } from '../world-runtime-context'
-import { DEFAULT_AGENT_AVATAR_URL, resolveAgentAvatarUrl } from '../agent-avatar-catalog'
+import { DEFAULT_AGENT_AVATAR_URL, getDefaultAgentAvatarUrl, resolveAgentAvatarUrl } from '../agent-avatar-catalog'
 import {
   isSharedAgentAvatarType,
   normalizeWorldStateAgentAvatarTransforms,
@@ -74,6 +74,26 @@ const SPATIAL_WEB_OBJECT_TYPES: SpatialWebObjectType[] = ['button', 'toggle', 's
 const SPATIAL_WEB_VISUAL_STYLES: SpatialWebVisualStyle[] = ['neon-panel', 'arcade-button', 'glass-slider', 'terminal-panel', 'portal-zero-button', 'google-form-altar']
 const DEFAULT_PORTAL_GATE_VARIANT: PortalGateVariant = 'threshold-ring'
 const SHAREABLE_WORLD_VISIBILITIES = new Set(['unlisted', 'public', 'public_edit', 'private'])
+const AGENT_WINDOW_TYPES = new Set([
+  'anorak',
+  'codex',
+  'gemini',
+  'anorak-pro',
+  'merlin',
+  'realtime',
+  'hermes',
+  'openclaw',
+  'devcraft',
+  'parzival',
+  'browser',
+  'mission',
+])
+const AGENT_WINDOW_FRAME_STYLES = new Set(['gilded', 'neon', 'thin', 'baroque', 'hologram', 'rustic', 'ice', 'void', 'spaghetti', 'triangle', 'fire', 'matrix', 'plasma', 'brutalist', 'none'])
+const DEFAULT_BROWSER_WINDOW_WIDTH = 1280
+const DEFAULT_BROWSER_WINDOW_HEIGHT = 820
+const DEFAULT_BROWSER_WINDOW_SCALE = 0.15
+const DEFAULT_BROWSER_WINDOW_FRAME_STYLE = 'baroque'
+const DEFAULT_BROWSER_WINDOW_FRAME_THICKNESS = 7
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -108,6 +128,55 @@ function buildSpatialFormLights(): WorldLight[] {
     { id: 'light-directional-spatial-form', type: 'directional', color: '#fff1c8', intensity: 2.15, position: [-4, 10, 7], target: [0, 0, -12], castShadow: true, visible: true },
     { id: 'light-point-submit-spatial-form', type: 'point', color: '#fb7185', intensity: 2.4, position: [0, 2.2, -18], visible: true },
   ]
+}
+
+function normalizeAnswerKeyArg(value: unknown): Record<string, string | string[]> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter((entry): entry is [string, string | string[]] => {
+      const answer = entry[1]
+      return typeof entry[0] === 'string'
+        && entry[0].trim().length > 0
+        && (typeof answer === 'string' || (Array.isArray(answer) && answer.every(item => typeof item === 'string')))
+    })
+    .map(([key, answer]) => [key.trim(), Array.isArray(answer) ? answer.map(item => item.trim()).filter(Boolean) : answer.trim()] as const)
+    .filter(([, answer]) => Array.isArray(answer) ? answer.length > 0 : answer.length > 0)
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined
+}
+
+function buildGeminiTestTutorAgents(): {
+  agentWindows: NonNullable<WorldState['agentWindows']>
+  agentAvatars: NonNullable<WorldState['agentAvatars']>
+} {
+  const windowId = 'agent-gemini-test-tutor'
+  const avatarId = 'agent-avatar-gemini'
+  return {
+    agentWindows: [{
+      id: windowId,
+      agentType: 'gemini' as const,
+      renderMode: 'live-html' as const,
+      linkedAvatarId: avatarId,
+      anchorMode: 'next-to' as const,
+      position: [-5.7, 3.25, -2.9] as [number, number, number],
+      rotation: [0, 0.42, 0] as [number, number, number],
+      scale: 0.15,
+      width: 740,
+      height: 960,
+      label: 'Gemini Tutor',
+      frameStyle: 'void',
+      frameThickness: 7,
+    }],
+    agentAvatars: [{
+      id: avatarId,
+      agentType: 'gemini' as const,
+      avatar3dUrl: getDefaultAgentAvatarUrl('gemini'),
+      position: [-3.4, 0, -3.2] as [number, number, number],
+      rotation: [0, 0.72, 0] as [number, number, number],
+      scale: 1.65,
+      linkedWindowId: windowId,
+      label: 'Gemini Tutor',
+    }],
+  }
 }
 
 function parseVec3Like(v: unknown): [number, number, number] | null {
@@ -365,12 +434,13 @@ function worldAccessDetails(row: ToolWorldRow) {
   }
 }
 
-function countWorldObjects(state: Pick<WorldState, 'conjuredAssetIds' | 'catalogPlacements' | 'craftedScenes' | 'portalGates' | 'spatialWebObjects'>): number {
+function countWorldObjects(state: Pick<WorldState, 'conjuredAssetIds' | 'catalogPlacements' | 'craftedScenes' | 'portalGates' | 'spatialWebObjects' | 'agentWindows'>): number {
   return (state.conjuredAssetIds?.length || 0) +
     (state.catalogPlacements?.length || 0) +
     (state.craftedScenes?.length || 0) +
     (state.portalGates?.length || 0) +
-    (state.spatialWebObjects?.length || 0)
+    (state.spatialWebObjects?.length || 0) +
+    (state.agentWindows?.length || 0)
 }
 
 async function listVisibleToolWorlds(): Promise<ToolWorldRow[]> {
@@ -496,7 +566,61 @@ function parseStringRecord(value: unknown): Record<string, string> {
   return parsed
 }
 
+type AgentWindowEntry = NonNullable<WorldState['agentWindows']>[number]
 type TransformOverride = WorldState['transforms'][string]
+
+function validAgentWindowType(value: unknown, fallback: AgentWindowEntry['agentType'] = 'browser'): AgentWindowEntry['agentType'] {
+  const requested = validStr(value, '').trim().toLowerCase()
+  return AGENT_WINDOW_TYPES.has(requested)
+    ? requested as AgentWindowEntry['agentType']
+    : fallback
+}
+
+function validAgentWindowRenderMode(value: unknown): AgentWindowEntry['renderMode'] | undefined {
+  const requested = validStr(value, '').trim()
+  if (requested === 'hybrid-snapdom' || requested === 'hybrid-foreign-object' || requested === 'live-html') {
+    return requested
+  }
+  return undefined
+}
+
+function validBrowserSurfaceMode(value: unknown): AgentWindowEntry['browserSurfaceMode'] {
+  const requested = validStr(value, '').trim()
+  return requested === 'desktop-capture' ? 'desktop-capture' : 'live-browser'
+}
+
+function validAgentWindowFrameStyle(value: unknown, fallback?: string): string | undefined {
+  const requested = validStr(value, '').trim().toLowerCase()
+  if (requested && AGENT_WINDOW_FRAME_STYLES.has(requested)) return requested
+  return fallback
+}
+
+function normalizeBrowserWindowUrl(value: unknown): string {
+  const raw = validStr(value, '').trim()
+  if (!raw) return ''
+  if (raw.startsWith('/')) return raw
+  if (/^https?:\/\//i.test(raw)) return raw
+  if (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?)(:\d+)?(\/|$)/i.test(raw)) return `http://${raw}`
+  return `https://${raw}`
+}
+
+function browserWindowLabelForUrl(surfaceUrl: string): string {
+  if (!surfaceUrl) return 'Browser'
+  try {
+    const url = new URL(surfaceUrl, INTERNAL_OASIS_BASE_URL)
+    return url.hostname || 'Browser'
+  } catch {
+    return 'Browser'
+  }
+}
+
+function clampAgentWindowDimension(value: unknown, fallback: number): number {
+  return Math.max(320, Math.min(2400, validNum(value, fallback)))
+}
+
+function clampAgentWindowScale(value: unknown, fallback = DEFAULT_BROWSER_WINDOW_SCALE): number {
+  return Math.max(0.05, Math.min(1, validNum(value, fallback)))
+}
 
 function validScale(v: unknown, fallback?: number | [number, number, number]): number | [number, number, number] | undefined {
   if (Array.isArray(v) && v.length >= 3) {
@@ -600,6 +724,7 @@ function normalizeState(state: WorldState): WorldState {
   state.conjuredAssetIds = state.conjuredAssetIds || []
   state.portalGates = state.portalGates || []
   state.spatialWebObjects = state.spatialWebObjects || []
+  state.agentWindows = state.agentWindows || []
   state.lights = state.lights || []
   state.groundTiles = state.groundTiles || {}
   return normalizeWorldStateAgentAvatarTransforms(state)
@@ -1227,6 +1352,23 @@ tools.get_world_state = async (args) => {
           ...(transform ? { transform } : {}),
         }
       }),
+      agentWindows: (state.agentWindows || []).map(window => ({
+        id: window.id,
+        type: 'agent-window',
+        agentType: window.agentType,
+        label: window.label,
+        position: window.position,
+        rotation: window.rotation,
+        scale: window.scale,
+        width: window.width,
+        height: window.height,
+        renderMode: window.renderMode,
+        browserSurfaceMode: window.browserSurfaceMode,
+        surfaceUrl: window.surfaceUrl,
+        frameStyle: window.frameStyle,
+        frameThickness: window.frameThickness,
+        linkedAvatarId: window.linkedAvatarId,
+      })),
       lights: (state.lights || []).map(l => ({
         id: l.id, type: l.type, color: l.color, intensity: l.intensity, position: l.position, visible: l.visible,
       })),
@@ -1256,7 +1398,7 @@ tools.get_world_info = async (args) => {
   const world = await prisma.world.findFirst({ where: { id: worldId } })
   if (!world) return { ok: false, message: 'No world found.' }
   const objectCount = state
-    ? (state.catalogPlacements?.length || 0) + (state.craftedScenes?.length || 0) + (state.conjuredAssetIds?.length || 0) + (state.portalGates?.length || 0) + (state.spatialWebObjects?.length || 0)
+    ? (state.catalogPlacements?.length || 0) + (state.craftedScenes?.length || 0) + (state.conjuredAssetIds?.length || 0) + (state.portalGates?.length || 0) + (state.spatialWebObjects?.length || 0) + (state.agentWindows?.length || 0)
     : 0
   const access = worldAccessDetails(world)
 
@@ -1279,6 +1421,7 @@ tools.get_world_info = async (args) => {
       tileCount: state ? Object.keys(state.groundTiles || {}).length : 0,
       portalCount: state?.portalGates?.length || 0,
       spatialWebCount: state?.spatialWebObjects?.length || 0,
+      agentWindowCount: state?.agentWindows?.length || 0,
       lightCount: state?.lights?.length || 0,
       lastSaved: world.updatedAt.toISOString(),
     },
@@ -1333,6 +1476,17 @@ tools.query_objects = async (args) => {
         type: 'spatial-web',
         name: object.label,
         position: effectivePosition(state, object.id, object.position) || object.position,
+      })
+    }
+  }
+  if (!typeFilter || typeFilter === 'agent-window' || typeFilter === 'browser-window' || typeFilter === 'browser') {
+    for (const window of state.agentWindows || []) {
+      if ((typeFilter === 'browser-window' || typeFilter === 'browser') && window.agentType !== 'browser') continue
+      results.push({
+        id: window.id,
+        type: window.agentType === 'browser' ? 'browser-window' : 'agent-window',
+        name: window.label || (window.agentType === 'browser' ? browserWindowLabelForUrl(window.surfaceUrl || '') : window.agentType),
+        position: window.position,
       })
     }
   }
@@ -1438,6 +1592,104 @@ tools.place_object = async (args) => {
   return { ok: true, message: `Placed ${asset.name} (${catalogId}) at [${position.join(', ')}] as ${id}`, data: { id, catalogId, position } }
 }
 
+function defaultAgentWindowSize(agentType: AgentWindowEntry['agentType']): { width: number; height: number } {
+  if (agentType === 'browser') return { width: DEFAULT_BROWSER_WINDOW_WIDTH, height: DEFAULT_BROWSER_WINDOW_HEIGHT }
+  if (agentType === 'anorak-pro') return { width: 960, height: 720 }
+  if (agentType === 'gemini') return { width: 740, height: 960 }
+  return { width: 800, height: 600 }
+}
+
+function defaultAgentWindowFrame(agentType: AgentWindowEntry['agentType']): { frameStyle?: string; frameThickness?: number } {
+  if (agentType === 'browser') {
+    return {
+      frameStyle: DEFAULT_BROWSER_WINDOW_FRAME_STYLE,
+      frameThickness: DEFAULT_BROWSER_WINDOW_FRAME_THICKNESS,
+    }
+  }
+  if (agentType === 'gemini') return { frameStyle: 'void', frameThickness: 7 }
+  if (agentType === 'hermes') return { frameStyle: 'fire', frameThickness: 6 }
+  return {}
+}
+
+function buildAgentWindowFromArgs(args: Record<string, unknown>, defaultAgentType: AgentWindowEntry['agentType'] = 'browser'): AgentWindowEntry | { error: string } {
+  const rawAgentType = validStr(args.agentType || args.agent || args.type, '').trim().toLowerCase()
+  if (rawAgentType && !AGENT_WINDOW_TYPES.has(rawAgentType)) {
+    return {
+      error: `Invalid agentType '${rawAgentType}'. Canonical values: ${[...AGENT_WINDOW_TYPES].join(', ')}.`,
+    }
+  }
+  const agentType = validAgentWindowType(rawAgentType, defaultAgentType)
+  const isBrowser = agentType === 'browser'
+  const surfaceUrl = isBrowser ? normalizeBrowserWindowUrl(args.surfaceUrl || args.url || args.href) : normalizeBrowserWindowUrl(args.surfaceUrl || args.url || args.href)
+  const defaultSize = defaultAgentWindowSize(agentType)
+  const defaultFrame = defaultAgentWindowFrame(agentType)
+  const requestedFrame = validAgentWindowFrameStyle(args.frameStyle || args.frame, defaultFrame.frameStyle)
+  const frameStyle = requestedFrame === 'none' ? undefined : requestedFrame
+  const frameThickness = args.frameThickness !== undefined
+    ? Math.max(0.2, Math.min(150, validNum(args.frameThickness, defaultFrame.frameThickness || 1)))
+    : defaultFrame.frameThickness
+  const id = validStr(args.windowId || args.id, '') || `agent-${agentType}-${uid()}`
+  const position = validPos(args.position) || [0, 2.25, -4]
+  const rotation = validPos(args.rotation) || [0, 0, 0]
+  const width = clampAgentWindowDimension(args.width, defaultSize.width)
+  const height = clampAgentWindowDimension(args.height, defaultSize.height)
+  const label = validStr(args.label || args.name, isBrowser ? browserWindowLabelForUrl(surfaceUrl) : agentType)
+  return {
+    id,
+    agentType,
+    position,
+    rotation,
+    scale: clampAgentWindowScale(args.scale, DEFAULT_BROWSER_WINDOW_SCALE),
+    width,
+    height,
+    label,
+    ...(validStr(args.sessionId, '') ? { sessionId: validStr(args.sessionId, '') } : {}),
+    ...(validAgentWindowRenderMode(args.renderMode) ? { renderMode: validAgentWindowRenderMode(args.renderMode) } : { renderMode: 'live-html' as const }),
+    ...(isBrowser ? { browserSurfaceMode: validBrowserSurfaceMode(args.browserSurfaceMode || args.surfaceMode), surfaceUrl } : surfaceUrl ? { surfaceUrl } : {}),
+    ...(frameStyle ? { frameStyle } : {}),
+    ...(frameThickness !== undefined ? { frameThickness } : {}),
+  }
+}
+
+tools.place_agent_window = async (args) => {
+  const actorAgentType = validStr(args.actorAgentType, '') || currentToolContext().agentType || ''
+  const effectiveArgs = actorAgentType ? { ...args, actorAgentType } : args
+  const agentWindow = buildAgentWindowFromArgs(effectiveArgs)
+  if ('error' in agentWindow) return { ok: false, message: agentWindow.error }
+
+  const { worldId, state } = await loadRequestedWorld(effectiveArgs.worldId)
+  state.agentWindows = [
+    ...(state.agentWindows || []).filter(window => window.id !== agentWindow.id),
+    agentWindow,
+  ]
+  await saveWorldState(worldId, state)
+  emitWorldEvent('agent_window_added', worldId, {
+    id: agentWindow.id,
+    windowId: agentWindow.id,
+    agentType: agentWindow.agentType,
+    position: agentWindow.position,
+    window: agentWindow,
+    ...mutationActorData(effectiveArgs),
+  })
+
+  const surface = agentWindow.agentType === 'browser' && agentWindow.surfaceUrl ? ` showing ${agentWindow.surfaceUrl}` : ''
+  return {
+    ok: true,
+    message: `Placed ${agentWindow.agentType} 3D window${surface} at [${agentWindow.position.join(', ')}] as ${agentWindow.id}.`,
+    data: agentWindow,
+  }
+}
+
+tools.place_browser_window = async (args) => {
+  return tools.place_agent_window({
+    ...args,
+    agentType: 'browser',
+    frameStyle: args.frameStyle || DEFAULT_BROWSER_WINDOW_FRAME_STYLE,
+    frameThickness: args.frameThickness ?? DEFAULT_BROWSER_WINDOW_FRAME_THICKNESS,
+    browserSurfaceMode: args.browserSurfaceMode || 'live-browser',
+  })
+}
+
 tools.create_spatial_web_object = async (args) => {
   const type = validSpatialWebObjectType(args.type, 'button')
   const label = validStr(args.label, type === 'button' ? 'Button' : type)
@@ -1463,6 +1715,8 @@ tools.create_spatial_web_object = async (args) => {
               : null
   const value = validSpatialWebValue(args.value, fallbackValue)
   const actionType = validStr(args.actionType || args.action, '').toLowerCase()
+  const destinationArgs = parseLooseObject(args.destination)
+  const testMode = validBool(args.testMode, false) || validBool(destinationArgs.testMode, false)
   const submitForm = validBool(args.submitForm, false) || actionType === 'submit_form' || actionType === 'submit'
   const targetObjectId = validStr(args.targetObjectId || args.targetId, '')
   const actionValue = validSpatialWebValue(args.actionValue ?? args.valueToSet, null)
@@ -1475,12 +1729,12 @@ tools.create_spatial_web_object = async (args) => {
   const worldTool = validStr(args.tool || args.toolName || args.worldTool, '')
   const worldToolArgs = parseLooseObject(args.args || args.toolArgs)
   const worldToolArgsByValue = parseLooseObjectRecord(args.argsByValue || args.toolArgsByValue)
-  const destinationArgs = parseLooseObject(args.destination)
   const destinationType = validStr(args.submitDestinationType || args.destinationType || destinationArgs.type, '').toLowerCase()
   const googleFormUrl = validStr(args.googleFormUrl || args.formUrl || destinationArgs.formUrl, '')
   const googleFormResponseUrl = validStr(args.googleFormResponseUrl || args.responseUrl || destinationArgs.responseUrl, '')
   const webhookUrl = validStr(args.webhookUrl || destinationArgs.webhookUrl, '')
   const fieldMap = parseStringRecord(args.fieldMap || destinationArgs.fieldMap)
+  const answerKey = normalizeAnswerKeyArg(args.answerKey || destinationArgs.answerKey)
   const submitDestination: SpatialWebSubmitDestination | undefined =
     destinationType === 'google_form' || googleFormUrl || googleFormResponseUrl
       ? {
@@ -1488,6 +1742,8 @@ tools.create_spatial_web_object = async (args) => {
           ...(googleFormUrl ? { formUrl: googleFormUrl } : {}),
           ...(googleFormResponseUrl ? { responseUrl: googleFormResponseUrl } : {}),
           ...(Object.keys(fieldMap).length > 0 ? { fieldMap } : {}),
+          ...(testMode ? { testMode: true, geminiReview: true } : {}),
+          ...(answerKey ? { answerKey } : {}),
         }
       : destinationType === 'webhook' || webhookUrl
         ? {
@@ -1518,6 +1774,7 @@ tools.create_spatial_web_object = async (args) => {
             : shouldCreateGoogleFormWorld
               ? {
                   type: 'create_world_from_google_form',
+                  ...(testMode ? { testMode: true } : {}),
                   ...(validStr(args.successMessage, '') ? { successMessage: validStr(args.successMessage, '') } : {}),
                 }
               : undefined
@@ -1566,7 +1823,8 @@ tools.create_spatial_web_object = async (args) => {
   }
 }
 
-tools.create_world_from_google_form = async (args) => {
+async function createWorldFromGoogleForm(args: Record<string, unknown>, options: { testMode?: boolean } = {}) {
+  const testMode = options.testMode === true
   const formUrl = validStr(args.formUrl || args.url, '').trim()
   if (!formUrl) return { ok: false, message: 'formUrl is required.' }
 
@@ -1599,13 +1857,19 @@ tools.create_world_from_google_form = async (args) => {
     }
   }
 
-  const formId = `google-form-${uid()}`
-  const spatialWebObjects = googleFormSpecToSpatialWebObjects(spec, formId)
+  const answerKey = normalizeAnswerKeyArg(args.answerKey)
+  const formId = `${testMode ? 'google-test' : 'google-form'}-${uid()}`
+  const spatialWebObjects = googleFormSpecToSpatialWebObjects(spec, formId, {
+    testMode,
+    answerKey,
+    geminiReview: testMode,
+  })
   const now = new Date()
   const worldId = `world-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
-  const name = validStr(args.name, spec.title)
-  const icon = validStr(args.icon, 'UI')
+  const name = validStr(args.name, testMode ? `${spec.title} Test` : spec.title)
+  const icon = validStr(args.icon, testMode ? 'T' : 'UI')
   const visibility = validWorldVisibility(args.visibility, 'unlisted')
+  const testAgents = testMode ? buildGeminiTestTutorAgents() : { agentWindows: [], agentAvatars: [] }
   const state: WorldState = {
     version: 1,
     terrain: null,
@@ -1621,8 +1885,8 @@ tools.create_world_from_google_form = async (args) => {
     behaviors: {},
     lights: buildSpatialFormLights(),
     skyBackgroundId: validStr(args.skyBackgroundId, 'sunny_vondelpark'),
-    agentWindows: [],
-    agentAvatars: [],
+    agentWindows: testAgents.agentWindows,
+    agentAvatars: testAgents.agentAvatars,
     savedAt: now.toISOString(),
   }
 
@@ -1643,7 +1907,7 @@ tools.create_world_from_google_form = async (args) => {
   const worldUrl = buildWorldUrl(worldId, args.publicBaseUrl)
   return {
     ok: true,
-    message: `Created shareable spatial Google Form world "${name}" with ${spec.fields.length} field${spec.fields.length === 1 ? '' : 's'}.`,
+    message: `Created shareable spatial ${testMode ? 'test' : 'Google Form'} world "${name}" with ${spec.fields.length} field${spec.fields.length === 1 ? '' : 's'}.`,
     data: {
       worldId,
       worldName: name,
@@ -1655,9 +1919,16 @@ tools.create_world_from_google_form = async (args) => {
       responseUrl: spec.responseUrl,
       fields: spec.fields.map(field => ({ label: field.label, entryId: field.entryId, type: field.type })),
       spatialObjectCount: spatialWebObjects.length,
+      testMode,
+      hasAnswerKey: Boolean(answerKey),
+      geminiTutorSpawned: testMode,
     },
   }
 }
+
+tools.create_world_from_google_form = async (args) => createWorldFromGoogleForm(args)
+
+tools.create_test_world_from_google_form = async (args) => createWorldFromGoogleForm(args, { testMode: true })
 
 tools.share_world_link = async (args) => {
   const { worldId } = await loadRequestedWorld(args.worldId)
@@ -2096,8 +2367,61 @@ tools.modify_object = async (args) => {
     delete state.transforms[objectId]
   }
 
+  const agentWindowIdx = (state.agentWindows || []).findIndex(window => window.id === objectId)
+  if (agentWindowIdx >= 0) {
+    const window = state.agentWindows![agentWindowIdx]
+    if (args.label) {
+      window.label = validStr(args.label, window.label || window.agentType)
+      changes.push('label')
+    }
+    if (pos) {
+      window.position = pos
+      changes.push('position')
+    }
+    if (rot) {
+      window.rotation = rot
+      changes.push('rotation')
+    }
+    if (args.scale !== undefined) {
+      window.scale = clampAgentWindowScale(args.scale, window.scale)
+      changes.push('scale')
+    }
+    if (args.width !== undefined) {
+      window.width = clampAgentWindowDimension(args.width, window.width)
+      changes.push('width')
+    }
+    if (args.height !== undefined) {
+      window.height = clampAgentWindowDimension(args.height, window.height)
+      changes.push('height')
+    }
+    if (args.surfaceUrl !== undefined || args.url !== undefined || args.href !== undefined) {
+      window.surfaceUrl = normalizeBrowserWindowUrl(args.surfaceUrl || args.url || args.href)
+      changes.push('surfaceUrl')
+    }
+    if (args.browserSurfaceMode !== undefined || args.surfaceMode !== undefined) {
+      window.browserSurfaceMode = validBrowserSurfaceMode(args.browserSurfaceMode || args.surfaceMode)
+      changes.push('browserSurfaceMode')
+    }
+    if (args.frameStyle !== undefined || args.frame !== undefined) {
+      const frameStyle = validAgentWindowFrameStyle(args.frameStyle || args.frame)
+      window.frameStyle = frameStyle === 'none' ? undefined : frameStyle
+      changes.push('frameStyle')
+    }
+    if (args.frameThickness !== undefined) {
+      window.frameThickness = Math.max(0.2, Math.min(150, validNum(args.frameThickness, window.frameThickness || 1)))
+      changes.push('frameThickness')
+    }
+    const renderMode = validAgentWindowRenderMode(args.renderMode)
+    if (renderMode) {
+      window.renderMode = renderMode
+      changes.push('renderMode')
+    }
+    state.agentWindows![agentWindowIdx] = window
+    delete state.transforms[objectId]
+  }
+
   // Update transform overrides
-  if (avatarIdx < 0 && (pos || rot || scl !== undefined)) {
+  if (avatarIdx < 0 && agentWindowIdx < 0 && (pos || rot || scl !== undefined)) {
     const existing = state.transforms[objectId] || {}
     if (pos) existing.position = pos
     if (rot) existing.rotation = rot
@@ -2126,6 +2450,7 @@ tools.modify_object = async (args) => {
     || validPos(state.craftedScenes?.[craftedIdx]?.position)
     || validPos(state.spatialWebObjects?.[spatialIdx]?.position)
     || validPos(state.agentAvatars?.find(avatar => avatar.id === objectId)?.position)
+    || validPos(state.agentWindows?.find(window => window.id === objectId)?.position)
   emitWorldEvent('object_modified', worldId, {
     objectId,
     changes,
@@ -2134,6 +2459,7 @@ tools.modify_object = async (args) => {
     ...(craftedIdx >= 0 ? { scene: state.craftedScenes?.[craftedIdx] } : {}),
     ...(spatialIdx >= 0 ? { spatialWebObject: state.spatialWebObjects?.[spatialIdx] } : {}),
     ...(avatarIdx >= 0 ? { avatar: state.agentAvatars?.[avatarIdx] } : {}),
+    ...(agentWindowIdx >= 0 ? { agentWindow: state.agentWindows?.[agentWindowIdx], window: state.agentWindows?.[agentWindowIdx] } : {}),
     ...(state.transforms[objectId] ? { transform: state.transforms[objectId] } : {}),
     ...(state.behaviors?.[objectId] ? { behavior: state.behaviors[objectId] } : {}),
     ...mutationActorData(args),
@@ -2150,30 +2476,41 @@ tools.remove_object = async (args) => {
   const beforeCrafted = state.craftedScenes?.length || 0
   const beforeAvatars = state.agentAvatars?.length || 0
   const beforeSpatial = state.spatialWebObjects?.length || 0
+  const beforeAgentWindows = state.agentWindows?.length || 0
+  const linkedAvatarIds = new Set(
+    (state.agentAvatars || [])
+      .filter(avatar => avatar.linkedWindowId === objectId)
+      .map(avatar => avatar.id),
+  )
   const removedPosition =
     validPos(state.transforms[objectId]?.position)
     || validPos((state.catalogPlacements || []).find(p => p.id === objectId)?.position)
     || validPos((state.craftedScenes || []).find(s => s.id === objectId)?.position)
     || validPos((state.spatialWebObjects || []).find(object => object.id === objectId)?.position)
     || validPos((state.agentAvatars || []).find(a => a.id === objectId)?.position)
+    || validPos((state.agentWindows || []).find(window => window.id === objectId)?.position)
 
   state.catalogPlacements = (state.catalogPlacements || []).filter(p => p.id !== objectId)
   state.craftedScenes = (state.craftedScenes || []).filter(s => s.id !== objectId)
-  state.agentAvatars = (state.agentAvatars || []).filter(a => a.id !== objectId)
+  state.agentAvatars = (state.agentAvatars || []).filter(a => a.id !== objectId && a.linkedWindowId !== objectId)
   state.spatialWebObjects = (state.spatialWebObjects || []).filter(object => object.id !== objectId)
+  state.agentWindows = (state.agentWindows || []).filter(window => window.id !== objectId)
   delete state.transforms[objectId]
+  for (const avatarId of linkedAvatarIds) delete state.transforms[avatarId]
   if (state.behaviors) delete state.behaviors[objectId]
 
   const removed =
     (beforeCatalog - (state.catalogPlacements?.length || 0)) +
     (beforeCrafted - (state.craftedScenes?.length || 0)) +
     (beforeAvatars - (state.agentAvatars?.length || 0)) +
-    (beforeSpatial - (state.spatialWebObjects?.length || 0))
+    (beforeSpatial - (state.spatialWebObjects?.length || 0)) +
+    (beforeAgentWindows - (state.agentWindows?.length || 0))
   if (removed === 0) return { ok: false, message: `Object ${objectId} not found in world.` }
 
   await saveWorldState(worldId, state)
   emitWorldEvent('object_removed', worldId, {
     objectId,
+    ...(linkedAvatarIds.size > 0 ? { linkedAvatarIds: [...linkedAvatarIds] } : {}),
     ...(removedPosition ? { position: removedPosition } : {}),
     ...mutationActorData(args),
   })
@@ -3944,11 +4281,11 @@ export function getPendingScreenshotRequest(options?: { worldId?: string; reques
 export const TOOL_NAMES = Object.keys(tools)
 
 const MUTATING_TOOLS = new Set([
-  'place_object', 'create_spatial_web_object', 'craft_scene', 'self_craft_scene', 'modify_object', 'remove_object',
+  'place_object', 'place_agent_window', 'place_browser_window', 'create_spatial_web_object', 'craft_scene', 'self_craft_scene', 'modify_object', 'remove_object',
   'set_sky', 'set_ground_preset', 'paint_ground_tiles', 'add_light',
   'modify_light', 'set_behavior', 'set_avatar', 'walk_avatar_to',
   'play_avatar_animation', 'create_portal_gate', 'clear_world',
-  'create_world', 'create_and_load_world', 'create_world_from_google_form', 'share_world_link',
+  'create_world', 'create_and_load_world', 'create_world_from_google_form', 'create_test_world_from_google_form', 'share_world_link',
   'conjure_asset', 'process_conjured_asset', 'place_conjured_asset', 'delete_conjured_asset',
   'conjure_framed_picture', 'place_media',
 ])

@@ -118,6 +118,8 @@ describe('TOOL_NAMES', () => {
   it('includes key tools', () => {
     expect(TOOL_NAMES).toContain('search_assets')
     expect(TOOL_NAMES).toContain('place_object')
+    expect(TOOL_NAMES).toContain('place_agent_window')
+    expect(TOOL_NAMES).toContain('place_browser_window')
     expect(TOOL_NAMES).toContain('create_spatial_web_object')
     expect(TOOL_NAMES).toContain('set_avatar')
     expect(TOOL_NAMES).toContain('walk_avatar_to')
@@ -130,6 +132,7 @@ describe('TOOL_NAMES', () => {
     expect(TOOL_NAMES).toContain('list_worlds')
     expect(TOOL_NAMES).toContain('create_portal_gate')
     expect(TOOL_NAMES).toContain('create_world_from_google_form')
+    expect(TOOL_NAMES).toContain('create_test_world_from_google_form')
     expect(TOOL_NAMES).toContain('share_world_link')
     expect(TOOL_NAMES).toContain('clear_world')
     expect(TOOL_NAMES).toContain('create_and_load_world')
@@ -182,6 +185,54 @@ describe('create_world_from_google_form', () => {
         targetWorldName: 'Portal Zero',
       }),
     ])
+  })
+
+  it('creates test worlds with a Gemini tutor and answer key scoring metadata', async () => {
+    const html = `
+      <html>
+        <head><title>Geography Quiz - Google Forms</title></head>
+        <body>
+          <script>
+            var FB_PUBLIC_LOAD_DATA_ = [null, ["Geography Quiz", null, null, null, [
+              [123, "Capital of Colombia", null, 0, [[111111111, null]]]
+            ]]];
+          </script>
+        </body>
+      </html>
+    `
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      url: 'https://docs.google.com/forms/d/e/demo/viewform',
+      text: vi.fn().mockResolvedValue(html),
+    }))
+    vi.mocked(prisma.world.create).mockResolvedValue({} as any)
+
+    const result = await callTool('create_test_world_from_google_form', {
+      formUrl: 'https://forms.gle/demo',
+      answerKey: { 'Capital of Colombia': 'Bogota' },
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.data).toMatchObject({
+      testMode: true,
+      hasAnswerKey: true,
+      geminiTutorSpawned: true,
+    })
+    const createArgs = vi.mocked(prisma.world.create).mock.calls[0]?.[0] as any
+    const state = JSON.parse(createArgs.data.data)
+    expect(state.agentWindows).toEqual([
+      expect.objectContaining({ agentType: 'gemini', label: 'Gemini Tutor', frameStyle: 'void' }),
+    ])
+    expect(state.agentAvatars).toEqual([
+      expect.objectContaining({ agentType: 'gemini', label: 'Gemini Tutor' }),
+    ])
+    const submit = state.spatialWebObjects.find((object: any) => object.type === 'button')
+    expect(submit.action.destination).toMatchObject({
+      testMode: true,
+      geminiReview: true,
+      answerKey: { 'Capital of Colombia': 'Bogota' },
+    })
   })
 })
 
@@ -391,6 +442,59 @@ describe('place_object', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 // 6. set_sky — requires presetId
 // ═══════════════════════════════════════════════════════════════════════════
+
+describe('place_browser_window', () => {
+  it('places a live 3D browser window with baroque defaults and emits a window event', async () => {
+    const world = makeWorldRow()
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+    const events: Array<{ type: string; data?: Record<string, unknown> }> = []
+    const unsubscribe = subscribe(event => events.push(event))
+
+    let result!: Awaited<ReturnType<typeof callTool>>
+    try {
+      result = await callTool('place_browser_window', {
+        url: 'example.com',
+        label: 'Example Docs',
+        position: [2, 2.25, -6],
+      }, {
+        agentType: 'gemini',
+      })
+    } finally {
+      unsubscribe()
+    }
+
+    expect(result.ok).toBe(true)
+    expect(result.message).toContain('browser 3D window')
+    const updatePayload = vi.mocked(prisma.world.update).mock.calls[0]?.[0]
+    const savedState = JSON.parse(String(updatePayload?.data?.data || '{}')) as { agentWindows?: Array<Record<string, unknown>> }
+    expect(savedState.agentWindows?.[0]).toMatchObject({
+      agentType: 'browser',
+      label: 'Example Docs',
+      position: [2, 2.25, -6],
+      browserSurfaceMode: 'live-browser',
+      surfaceUrl: 'https://example.com',
+      frameStyle: 'baroque',
+      frameThickness: 7,
+      width: 1280,
+      height: 820,
+    })
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'agent_window_added',
+        data: expect.objectContaining({
+          actorAgentType: 'gemini',
+          window: expect.objectContaining({
+            agentType: 'browser',
+            surfaceUrl: 'https://example.com',
+            frameStyle: 'baroque',
+            frameThickness: 7,
+          }),
+        }),
+      }),
+    ]))
+  })
+})
 
 describe('create_spatial_web_object', () => {
   it('creates a spatial website primitive and emits it to world events', async () => {

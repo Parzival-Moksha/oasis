@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react'
 import type { CatalogPlacement, ConjuredAsset, CraftedScene, ObjectBehavior, WorldLight } from '@/lib/conjure/types'
 import { cancelPendingSave, getActiveWorldId, getWorldRegistry } from '@/lib/forge/world-persistence'
 import type { WorldEvent } from '@/lib/mcp/world-events'
-import { useOasisStore, type AgentAvatar } from '@/store/oasisStore'
+import { useOasisStore, type AgentAvatar, type AgentWindow } from '@/store/oasisStore'
 import type { SpatialWebObject } from '@/lib/spatial-web'
 import type { PortalGate } from '@/lib/portal-gates'
 import { readEmbodiedAgentSettingsFromStorage, type EmbodiedAgentSettings } from '@/lib/agent-action-settings'
@@ -23,6 +23,7 @@ const MANIFESTED_EVENT_TYPES = new Set([
   'object_added',
   'scene_crafted',
   'object_modified',
+  'agent_window_added',
   'light_added',
   'light_modified',
 ])
@@ -184,6 +185,48 @@ function readAgentAvatar(value: unknown): AgentAvatar | null {
   }
 }
 
+function readAgentWindow(value: unknown): AgentWindow | null {
+  const record = asRecord(value)
+  const position = readEventPosition(record || undefined)
+  if (!record || typeof record.id !== 'string' || typeof record.agentType !== 'string' || !position) return null
+  const rotation = Array.isArray(record.rotation) && record.rotation.length >= 3
+    ? [Number(record.rotation[0]), Number(record.rotation[1]), Number(record.rotation[2])] as [number, number, number]
+    : [0, 0, 0] as [number, number, number]
+  const scale = Number(record.scale)
+  const width = Number(record.width)
+  const height = Number(record.height)
+  const frameThickness = Number(record.frameThickness)
+  const windowOpacity = Number(record.windowOpacity)
+  const windowBlur = Number(record.windowBlur)
+  const renderMode = record.renderMode === 'hybrid-snapdom' || record.renderMode === 'hybrid-foreign-object' || record.renderMode === 'live-html'
+    ? record.renderMode
+    : undefined
+  const browserSurfaceMode = record.browserSurfaceMode === 'desktop-capture' ? 'desktop-capture' : record.browserSurfaceMode === 'live-browser' ? 'live-browser' : undefined
+  return {
+    id: record.id,
+    agentType: record.agentType as AgentWindow['agentType'],
+    position,
+    rotation: rotation.every(Number.isFinite) ? rotation : [0, 0, 0],
+    scale: Number.isFinite(scale) ? scale : 0.15,
+    width: Number.isFinite(width) ? width : 800,
+    height: Number.isFinite(height) ? height : 600,
+    ...(renderMode ? { renderMode } : {}),
+    ...(typeof record.sessionId === 'string' ? { sessionId: record.sessionId } : {}),
+    ...(typeof record.label === 'string' ? { label: record.label } : {}),
+    ...(typeof record.linkedAvatarId === 'string' ? { linkedAvatarId: record.linkedAvatarId } : {}),
+    ...(typeof record.anchorMode === 'string' ? { anchorMode: record.anchorMode as AgentWindow['anchorMode'] } : {}),
+    ...(browserSurfaceMode ? { browserSurfaceMode } : {}),
+    ...(typeof record.surfaceUrl === 'string' ? { surfaceUrl: record.surfaceUrl } : {}),
+    ...(typeof record.captureSourceId === 'string' ? { captureSourceId: record.captureSourceId } : {}),
+    ...(typeof record.captureSourceName === 'string' ? { captureSourceName: record.captureSourceName } : {}),
+    ...(Number.isFinite(Number(record.captureFps)) ? { captureFps: Number(record.captureFps) } : {}),
+    ...(typeof record.frameStyle === 'string' ? { frameStyle: record.frameStyle } : {}),
+    ...(Number.isFinite(frameThickness) ? { frameThickness } : {}),
+    ...(Number.isFinite(windowOpacity) ? { windowOpacity } : {}),
+    ...(Number.isFinite(windowBlur) ? { windowBlur } : {}),
+  }
+}
+
 function readSpatialWebObject(value: unknown): SpatialWebObject | null {
   const record = asRecord(value)
   const position = readEventPosition(record || undefined)
@@ -240,6 +283,9 @@ function readStoreObjectPosition(state: ReturnType<typeof useOasisStore.getState
 
   const avatar = state.placedAgentAvatars.find(entry => entry.id === objectId)
   if (avatar) return avatar.position
+
+  const agentWindow = state.placedAgentWindows.find(entry => entry.id === objectId)
+  if (agentWindow) return agentWindow.position
 
   return null
 }
@@ -434,6 +480,7 @@ export function useWorldEvents() {
           const placement = readCatalogPlacement(data.placement)
           const scene = readCraftedScene(data.scene)
           const avatar = readAgentAvatar(data.avatar)
+          const agentWindow = readAgentWindow(data.window || data.agentWindow)
           const spatialWebObject = readSpatialWebObject(data.spatialWebObject)
           const portalGate = readPortalGate(data.portalGate)
           const transform = readTransform(data.transform)
@@ -460,6 +507,13 @@ export function useWorldEvents() {
                   cloneValue(avatar),
                 ]
               : state.placedAgentAvatars
+
+            const placedAgentWindows = agentWindow
+              ? [
+                  ...state.placedAgentWindows.filter(entry => entry.id !== agentWindow.id),
+                  cloneValue(agentWindow),
+                ]
+              : state.placedAgentWindows
 
             const spatialWebObjects = spatialWebObject
               ? [
@@ -491,6 +545,7 @@ export function useWorldEvents() {
               placedCatalogAssets,
               craftedScenes,
               placedAgentAvatars,
+              placedAgentWindows,
               portalGates,
               spatialWebObjects,
               transforms,
@@ -504,28 +559,38 @@ export function useWorldEvents() {
         case 'object_removed': {
           const objectId = typeof data.objectId === 'string' ? data.objectId : ''
           if (!objectId) return false
+          const linkedAvatarIds = Array.isArray(data.linkedAvatarIds)
+            ? data.linkedAvatarIds.filter((entry): entry is string => typeof entry === 'string')
+            : []
+          const removedAvatarIds = new Set([objectId, ...linkedAvatarIds])
           useOasisStore.setState(state => {
             const placedCatalogAssets = state.placedCatalogAssets.filter(entry => entry.id !== objectId)
             const craftedScenes = state.craftedScenes.filter(entry => entry.id !== objectId)
-            const placedAgentAvatars = state.placedAgentAvatars.filter(entry => entry.id !== objectId)
+            const placedAgentAvatars = state.placedAgentAvatars.filter(entry => !removedAvatarIds.has(entry.id) && entry.linkedWindowId !== objectId)
+            const placedAgentWindows = state.placedAgentWindows.filter(entry => entry.id !== objectId)
             const portalGates = state.portalGates.filter(entry => entry.id !== objectId)
             const spatialWebObjects = state.spatialWebObjects.filter(entry => entry.id !== objectId)
             const worldConjuredAssetIds = state.worldConjuredAssetIds.filter(id => id !== objectId)
-            const { [objectId]: _removedTransform, ...transforms } = state.transforms
+            const transforms = { ...state.transforms }
+            delete transforms[objectId]
+            for (const avatarId of linkedAvatarIds) delete transforms[avatarId]
             const { [objectId]: _removedBehavior, ...behaviors } = state.behaviors
-            const { [objectId]: _removedAudio, ...liveAgentAvatarAudio } = state.liveAgentAvatarAudio
+            const liveAgentAvatarAudio = { ...state.liveAgentAvatarAudio }
+            delete liveAgentAvatarAudio[objectId]
+            for (const avatarId of linkedAvatarIds) delete liveAgentAvatarAudio[avatarId]
             return {
               placedCatalogAssets,
               craftedScenes,
               worldConjuredAssetIds,
               placedAgentAvatars,
+              placedAgentWindows,
               portalGates,
               spatialWebObjects,
               transforms,
               behaviors,
               liveAgentAvatarAudio,
-              selectedObjectId: state.selectedObjectId === objectId ? null : state.selectedObjectId,
-              inspectedObjectId: state.inspectedObjectId === objectId ? null : state.inspectedObjectId,
+              selectedObjectId: removedAvatarIds.has(state.selectedObjectId || '') ? null : state.selectedObjectId,
+              inspectedObjectId: removedAvatarIds.has(state.inspectedObjectId || '') ? null : state.inspectedObjectId,
               _loadedObjectCount: countLoadedObjects({ placedCatalogAssets, craftedScenes, worldConjuredAssetIds, portalGates, spatialWebObjects }),
             }
           })
@@ -621,6 +686,19 @@ export function useWorldEvents() {
           return true
         }
 
+        case 'agent_window_added': {
+          const agentWindow = readAgentWindow(data.window || data.agentWindow)
+          if (!agentWindow) return false
+          useOasisStore.setState(state => ({
+            placedAgentWindows: [
+              ...state.placedAgentWindows.filter(entry => entry.id !== agentWindow.id),
+              cloneValue(agentWindow),
+            ],
+          }))
+          actorPositionRef.current.set(agentWindow.id, agentWindow.position)
+          return true
+        }
+
         case 'agent_avatar_set': {
           const avatar = readAgentAvatar(data.avatar)
           if (!avatar) return false
@@ -705,6 +783,7 @@ export function useWorldEvents() {
             worldConjuredAssetIds: [],
             spatialWebObjects: [],
             placedAgentAvatars: [],
+            placedAgentWindows: [],
             worldLights: [],
             transforms: {},
             behaviors: {},
@@ -776,6 +855,9 @@ export function useWorldEvents() {
 
       const spatialWebObject = readSpatialWebObject(data.spatialWebObject)
       if (spatialWebObject) return spatialWebObject.position
+
+      const agentWindow = readAgentWindow(data.window || data.agentWindow)
+      if (agentWindow) return agentWindow.position
 
       const transform = readTransform(data.transform)
       if (transform?.position) return transform.position

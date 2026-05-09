@@ -28,7 +28,7 @@ export const OASIS_MCP_INSTRUCTIONS = [
   'Use screenshot_viewport and avatar screenshot tools for visual grounding when a live Oasis browser is connected.',
   'Avatar and world mutations may execute as embodied sequences rather than instantaneous teleports, so allow time for completion.',
   'Use generate_image, generate_voice, and generate_video when media would help the conversation; Oasis can render the returned URLs in the agent panel.',
-  'For Hermes, Merlin, and OpenClaw, self-crafted objects are the default. Call get_craft_guide for the schema and use self_craft_scene with explicit primitive objects in hosted 04515 mode. Use create_spatial_web_object for 3D form controls and website primitives. Use craft_scene strategy:"sculptor" only in trusted local/full-tool contexts when you intentionally want fallback prompt crafting.',
+  'For Hermes, Merlin, and OpenClaw, self-crafted objects are the default. Call get_craft_guide for the schema and use self_craft_scene with explicit primitive objects in hosted 04515 mode. Use create_spatial_web_object for 3D form controls and website primitives. Use place_browser_window for live 3D browser surfaces with a predefined URL. Use craft_scene strategy:"sculptor" only in trusted local/full-tool contexts when you intentionally want fallback prompt crafting.',
 ].join(' ')
 
 export const OASIS_MCP_TOOL_SPECS = [
@@ -113,6 +113,62 @@ export const OASIS_MCP_TOOL_SPECS = [
     injectActorAgentType: true,
   },
   {
+    name: 'place_agent_window',
+    description: 'Place a 3D agent window in the world. Use agentType:"browser" plus url/surfaceUrl to place a live 3D browser window. Browser windows default to a baroque frame with thickness 7.',
+    inputSchema: z.object({
+      worldId: z.string().optional(),
+      agentType: z.string().optional(),
+      agent: z.string().optional(),
+      windowId: z.string().optional(),
+      id: z.string().optional(),
+      url: z.string().optional(),
+      surfaceUrl: z.string().optional(),
+      href: z.string().optional(),
+      label: z.string().optional(),
+      name: z.string().optional(),
+      position: zVec3Like.optional(),
+      rotation: zVec3Like.optional(),
+      scale: zNumberish.optional(),
+      width: zNumberish.optional(),
+      height: zNumberish.optional(),
+      renderMode: z.enum(['hybrid-snapdom', 'hybrid-foreign-object', 'live-html']).optional(),
+      browserSurfaceMode: z.enum(['live-browser', 'desktop-capture']).optional(),
+      surfaceMode: z.enum(['live-browser', 'desktop-capture']).optional(),
+      frameStyle: z.string().optional(),
+      frame: z.string().optional(),
+      frameThickness: zNumberish.optional(),
+      sessionId: z.string().optional(),
+    }).passthrough(),
+    injectWorldId: true,
+    injectActorAgentType: true,
+  },
+  {
+    name: 'place_browser_window',
+    description: 'Place a live 3D web browser surface in the world with a predefined URL. Defaults: live-browser mode, baroque frame, frameThickness 7, 1280x820.',
+    inputSchema: z.object({
+      worldId: z.string().optional(),
+      url: z.string().optional(),
+      surfaceUrl: z.string().optional(),
+      href: z.string().optional(),
+      label: z.string().optional(),
+      name: z.string().optional(),
+      position: zVec3Like.optional(),
+      rotation: zVec3Like.optional(),
+      scale: zNumberish.optional(),
+      width: zNumberish.optional(),
+      height: zNumberish.optional(),
+      browserSurfaceMode: z.enum(['live-browser', 'desktop-capture']).optional(),
+      surfaceMode: z.enum(['live-browser', 'desktop-capture']).optional(),
+      frameStyle: z.string().optional(),
+      frame: z.string().optional(),
+      frameThickness: zNumberish.optional(),
+      windowId: z.string().optional(),
+      id: z.string().optional(),
+    }).passthrough(),
+    injectWorldId: true,
+    injectActorAgentType: true,
+  },
+  {
     name: 'create_spatial_web_object',
     description: 'Create a 3D website primitive in the world: button, toggle, slider, select, multiselect, text panel, or output panel. Use this for voice-built forms, menus, order kiosks, RSVP flows, and "website but not a website" interfaces.',
     inputSchema: z.object({
@@ -155,6 +211,17 @@ export const OASIS_MCP_TOOL_SPECS = [
       scale: z.union([z.number(), z.string(), zVec3Like]).optional(),
       label: z.string().optional(),
       visible: z.boolean().optional(),
+      url: z.string().optional(),
+      surfaceUrl: z.string().optional(),
+      href: z.string().optional(),
+      width: zNumberish.optional(),
+      height: zNumberish.optional(),
+      browserSurfaceMode: z.enum(['live-browser', 'desktop-capture']).optional(),
+      surfaceMode: z.enum(['live-browser', 'desktop-capture']).optional(),
+      frameStyle: z.string().optional(),
+      frame: z.string().optional(),
+      frameThickness: zNumberish.optional(),
+      renderMode: z.enum(['hybrid-snapdom', 'hybrid-foreign-object', 'live-html']).optional(),
     }).passthrough(),
     injectWorldId: true,
     injectActorAgentType: true,
@@ -658,6 +725,28 @@ export function prepareOasisToolArgs(name, args = {}, context = {}) {
 
   if (name === 'place_object' && !validString(next.catalogId) && validString(next.assetId)) {
     next.catalogId = next.assetId
+  }
+
+  if (name === 'place_agent_window') {
+    const surfaceUrl = validString(next.surfaceUrl || next.url || next.href)
+    if (surfaceUrl) next.surfaceUrl = surfaceUrl
+    if (!validString(next.agentType) && validString(next.agent)) {
+      next.agentType = validString(next.agent).toLowerCase()
+    }
+  }
+
+  if (name === 'place_browser_window') {
+    const surfaceUrl = validString(next.surfaceUrl || next.url || next.href)
+    if (surfaceUrl) next.surfaceUrl = surfaceUrl
+    next.agentType = 'browser'
+    if (!validString(next.browserSurfaceMode || next.surfaceMode)) next.browserSurfaceMode = 'live-browser'
+    if (!validString(next.frameStyle || next.frame)) next.frameStyle = 'baroque'
+    if (next.frameThickness === undefined) next.frameThickness = 7
+  }
+
+  if (name === 'modify_object') {
+    const surfaceUrl = validString(next.surfaceUrl || next.url || next.href)
+    if (surfaceUrl) next.surfaceUrl = surfaceUrl
   }
 
   if (name === 'set_avatar') {

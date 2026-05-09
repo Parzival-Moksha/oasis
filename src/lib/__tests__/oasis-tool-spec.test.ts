@@ -47,6 +47,29 @@ describe('prepareOasisToolArgs', () => {
     })
   })
 
+  it('normalizes browser-window aliases and keeps caller actor context', () => {
+    const result = prepareOasisToolArgs(
+      'place_browser_window',
+      {
+        href: 'example.com',
+      },
+      {
+        worldId: 'world-123',
+        agentType: 'gemini',
+      },
+    )
+
+    expect(result).toMatchObject({
+      worldId: 'world-123',
+      actorAgentType: 'gemini',
+      agentType: 'browser',
+      surfaceUrl: 'example.com',
+      browserSurfaceMode: 'live-browser',
+      frameStyle: 'baroque',
+      frameThickness: 7,
+    })
+  })
+
   it('maps activeWorldOnly to inWorldOnly for legacy conjured-asset callers', () => {
     const result = prepareOasisToolArgs(
       'list_conjured_assets',

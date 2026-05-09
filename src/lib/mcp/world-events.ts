@@ -25,6 +25,7 @@ export type WorldEventType =
   | 'light_added'
   | 'light_modified'
   | 'behavior_set'
+  | 'agent_window_added'
   | 'agent_avatar_set'
   | 'agent_avatar_walk'
   | 'agent_avatar_animation'

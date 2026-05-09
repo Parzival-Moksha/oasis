@@ -1,4 +1,8 @@
-import type { SpatialWebObject, SpatialWebObjectType } from './spatial-web'
+import {
+  estimateSpatialWebOptionLineCount,
+  type SpatialWebObject,
+  type SpatialWebObjectType,
+} from './spatial-web'
 
 export interface GoogleFormFieldSpec {
   entryId: string
@@ -16,6 +20,12 @@ export interface GoogleFormSpatialSpec {
   formUrl: string
   responseUrl: string
   fields: GoogleFormFieldSpec[]
+}
+
+export interface GoogleFormSpatialWorldOptions {
+  testMode?: boolean
+  answerKey?: Record<string, string | string[]>
+  geminiReview?: boolean
 }
 
 function stripHtml(value: string): string {
@@ -182,7 +192,7 @@ export function parseGoogleFormHtml(html: string, formUrl: string): GoogleFormSp
 
 function initialValue(field: GoogleFormFieldSpec) {
   if (field.type === 'slider') return field.min ?? 0
-  if (field.type === 'select') return field.options?.[0] || ''
+  if (field.type === 'select') return ''
   if (field.type === 'multiselect') return []
   return ''
 }
@@ -206,11 +216,19 @@ function submitZ(fieldCount: number): number {
   return JOURNEY_FIRST_FIELD_Z + Math.max(1, fieldCount) * JOURNEY_FIELD_STEP - 1.45
 }
 
+function optionListHeight(options: string[] | undefined): number {
+  if (!options?.length) return 0
+  return options.reduce((total, option) => {
+    const lines = estimateSpatialWebOptionLineCount(option)
+    return total + 0.26 + Math.max(0, lines - 1) * 0.13
+  }, 0)
+}
+
 function sizeForField(field: GoogleFormFieldSpec): { width: number; height: number; visualStyle: SpatialWebObject['visualStyle'] } {
   if (field.type === 'slider') return { width: 4.6, height: 1.05, visualStyle: 'glass-slider' }
   if (field.type === 'text') return { width: 4.5, height: 1.1, visualStyle: 'terminal-panel' }
-  if (field.type === 'multiselect') return { width: 4.35, height: 1.05, visualStyle: 'neon-panel' }
-  return { width: 4.05, height: 1.0, visualStyle: 'neon-panel' }
+  if (field.type === 'multiselect') return { width: 4.8, height: Math.max(1.05, 0.55 + optionListHeight(field.options)), visualStyle: 'neon-panel' }
+  return { width: 4.8, height: Math.max(1.0, 0.55 + optionListHeight(field.options)), visualStyle: 'neon-panel' }
 }
 
 export function googleFormSpecToJourneyGroundTiles(spec: Pick<GoogleFormSpatialSpec, 'fields'>): Record<string, string> {
@@ -244,15 +262,22 @@ export function googleFormSpecToJourneyGroundTiles(spec: Pick<GoogleFormSpatialS
   return tiles
 }
 
-export function googleFormSpecToSpatialWebObjects(spec: GoogleFormSpatialSpec, formId: string): SpatialWebObject[] {
+export function googleFormSpecToSpatialWebObjects(
+  spec: GoogleFormSpatialSpec,
+  formId: string,
+  options: GoogleFormSpatialWorldOptions = {},
+): SpatialWebObject[] {
   const fieldMap: Record<string, string> = {}
+  const testMode = options.testMode === true
   const objects: SpatialWebObject[] = [
     {
       id: `${formId}-title`,
       type: 'output',
       formId,
-      label: spec.title,
-      value: spec.description || 'Start here. Walk the path, answer each 3D control, then press submit.',
+      label: testMode ? `${spec.title} Test` : spec.title,
+      value: spec.description || (testMode
+        ? 'Start here. Walk the test path, answer each question, then press submit for your score.'
+        : 'Start here. Walk the path, answer each 3D control, then press submit.'),
       position: [0, 2.85, JOURNEY_TITLE_Z],
       rotation: [Math.PI / 6, 0, 0],
       width: 7.2,
@@ -294,8 +319,8 @@ export function googleFormSpecToSpatialWebObjects(spec: GoogleFormSpatialSpec, f
       id: `${formId}-submit`,
       type: 'button',
       formId,
-      label: 'Send',
-      description: 'Send this spatial form to Google Forms.',
+      label: testMode ? 'Send Test' : 'Send',
+      description: testMode ? 'Submit this test, score the answers, and wake Gemini for feedback.' : 'Send this spatial form to Google Forms.',
       position: [0, 0.75, sendZ],
       rotation: [0, 0, 0],
       width: 1.45,
@@ -304,12 +329,14 @@ export function googleFormSpecToSpatialWebObjects(spec: GoogleFormSpatialSpec, f
       visualStyle: 'portal-zero-button',
       action: {
         type: 'submit_form',
-        successMessage: 'Submitted to Google Forms.',
+        successMessage: testMode ? 'Test submitted.' : 'Submitted to Google Forms.',
         destination: {
           type: 'google_form',
           formUrl: spec.formUrl,
           responseUrl: spec.responseUrl,
           fieldMap,
+          ...(testMode ? { testMode: true, geminiReview: options.geminiReview !== false } : {}),
+          ...(options.answerKey ? { answerKey: options.answerKey } : {}),
         },
       },
     },

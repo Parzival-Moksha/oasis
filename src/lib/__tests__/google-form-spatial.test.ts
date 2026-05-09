@@ -11,7 +11,7 @@ describe('google form spatial adapter', () => {
           <script>
             var FB_PUBLIC_LOAD_DATA_ = [null, ["Hackathon RSVP", null, null, null, [
               [123, "Your name", null, 0, [[111111111, null]]],
-              [124, "Can you come?", null, 2, [[222222222, [["Yes"], ["Maybe"], ["No"]]]]],
+              [124, "Can you come?", null, 2, [[222222222, [["Yes"], ["Maybe"], ["No"], ["Only if there is enough coffee for the whole table"]]]]],
               [125, "What will you bring?", null, 4, [[333333333, [["Snacks"], ["Ideas"]]]]]
             ]]];
           </script>
@@ -25,7 +25,7 @@ describe('google form spatial adapter', () => {
     expect(spec.responseUrl).toBe('https://docs.google.com/forms/d/e/test/formResponse')
     expect(spec.fields).toEqual([
       { entryId: 'entry.111111111', label: 'Your name', type: 'text' },
-      { entryId: 'entry.222222222', label: 'Can you come?', type: 'select', options: ['Yes', 'Maybe', 'No'] },
+      { entryId: 'entry.222222222', label: 'Can you come?', type: 'select', options: ['Yes', 'Maybe', 'No', 'Only if there is enough coffee for the whole table'] },
       { entryId: 'entry.333333333', label: 'What will you bring?', type: 'multiselect', options: ['Snacks', 'Ideas'] },
     ])
 
@@ -46,9 +46,38 @@ describe('google form spatial adapter', () => {
     expect(secondField?.position[0]).toBeGreaterThan(0)
     expect(firstField?.rotation?.[1]).toBeGreaterThan(0)
     expect(secondField?.rotation?.[1]).toBeLessThan(0)
+    expect(secondField?.value).toBe('')
+    expect(secondField?.options).toHaveLength(4)
+    expect(secondField?.height).toBeGreaterThan(1)
 
     const groundTiles = googleFormSpecToJourneyGroundTiles(spec)
     expect(groundTiles['0,-3']).toBe('dirt')
     expect(Object.values(groundTiles)).toContain('cobble')
+  })
+
+  it('marks test worlds for local scoring and Gemini review', () => {
+    const spec = {
+      title: 'Quiz',
+      description: '',
+      formUrl: 'https://docs.google.com/forms/d/e/test/viewform',
+      responseUrl: 'https://docs.google.com/forms/d/e/test/formResponse',
+      fields: [
+        { entryId: 'entry.111', label: 'Capital of Colombia', type: 'text' as const },
+      ],
+    }
+
+    const objects = googleFormSpecToSpatialWebObjects(spec, 'google-test-demo', {
+      testMode: true,
+      answerKey: { 'Capital of Colombia': 'Bogota' },
+    })
+    const submit = objects.find(object => object.type === 'button')
+
+    expect(submit?.label).toBe('Send Test')
+    expect(submit?.action?.destination).toMatchObject({
+      type: 'google_form',
+      testMode: true,
+      geminiReview: true,
+      answerKey: { 'Capital of Colombia': 'Bogota' },
+    })
   })
 })

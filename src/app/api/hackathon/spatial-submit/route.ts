@@ -10,6 +10,28 @@ export const runtime = 'nodejs'
 
 const SUBMISSION_PATH = join(process.cwd(), 'data', 'spatial-web-submissions.local.jsonl')
 
+type GradeDetail = {
+  id: string
+  label: string
+  value: unknown
+  expected: string | string[]
+  correct: boolean
+}
+
+function normalizeAnswerKey(value: unknown): Record<string, string | string[]> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter((entry): entry is [string, string | string[]] => {
+      const answer = entry[1]
+      return typeof entry[0] === 'string'
+        && entry[0].trim().length > 0
+        && (typeof answer === 'string' || (Array.isArray(answer) && answer.every(item => typeof item === 'string')))
+    })
+    .map(([key, answer]) => [key.trim(), Array.isArray(answer) ? answer.map(item => item.trim()).filter(Boolean) : answer.trim()] as const)
+    .filter(([, answer]) => Array.isArray(answer) ? answer.length > 0 : answer.length > 0)
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined
+}
+
 function sanitizeDestination(value: unknown): SpatialWebSubmitDestination | undefined {
   if (!value || typeof value !== 'object') return undefined
   const record = value as Record<string, unknown>
@@ -31,6 +53,9 @@ function sanitizeDestination(value: unknown): SpatialWebSubmitDestination | unde
     ...(typeof record.responseUrl === 'string' && record.responseUrl.trim() ? { responseUrl: record.responseUrl.trim() } : {}),
     ...(Object.keys(fieldMap).length > 0 ? { fieldMap } : {}),
     ...(typeof record.webhookUrl === 'string' && record.webhookUrl.trim() ? { webhookUrl: record.webhookUrl.trim() } : {}),
+    ...(record.testMode === true ? { testMode: true } : {}),
+    ...(record.geminiReview === true ? { geminiReview: true } : {}),
+    ...(normalizeAnswerKey(record.answerKey) ? { answerKey: normalizeAnswerKey(record.answerKey) } : {}),
   }
 }
 
@@ -56,6 +81,65 @@ function fieldEntryId(fieldMap: Record<string, string>, field: SpatialWebSubmiss
     || fieldMap[field.label]
     || fieldMap[field.label.toLowerCase()]
     || null
+}
+
+function normalizeAnswerValue(value: unknown): string {
+  return String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+function compareAnswer(value: unknown, expected: string | string[]): boolean {
+  if (Array.isArray(expected)) {
+    const actual = Array.isArray(value) ? value : [value]
+    const actualSet = actual.map(normalizeAnswerValue).filter(Boolean).sort()
+    const expectedSet = expected.map(normalizeAnswerValue).filter(Boolean).sort()
+    return actualSet.length === expectedSet.length && actualSet.every((entry, index) => entry === expectedSet[index])
+  }
+  return normalizeAnswerValue(value) === normalizeAnswerValue(expected)
+}
+
+function gradeSubmission(payload: SpatialWebSubmissionPayload, destination?: SpatialWebSubmitDestination) {
+  const answerKey = destination?.answerKey
+  if (!answerKey || Object.keys(answerKey).length === 0) return null
+
+  const details: GradeDetail[] = []
+  for (const field of payload.fields) {
+    const expected = answerKey[field.id]
+      || answerKey[field.label]
+      || answerKey[field.label.toLowerCase()]
+    if (expected === undefined) continue
+    details.push({
+      id: field.id,
+      label: field.label,
+      value: field.value,
+      expected,
+      correct: compareAnswer(field.value, expected),
+    })
+  }
+
+  if (details.length === 0) return null
+  const correctCount = details.filter(detail => detail.correct).length
+  const totalCount = details.length
+  const percent = Math.round((correctCount / totalCount) * 100)
+  return { correctCount, totalCount, percent, details }
+}
+
+function buildGeminiReviewPrompt(payload: SpatialWebSubmissionPayload, grade: ReturnType<typeof gradeSubmission>) {
+  if (!grade) return ''
+  const lines = grade.details.map(detail => {
+    const submitted = Array.isArray(detail.value) ? detail.value.join(', ') : String(detail.value ?? '')
+    const expected = Array.isArray(detail.expected) ? detail.expected.join(', ') : detail.expected
+    return `- ${detail.label}: ${detail.correct ? 'correct' : 'wrong'}; student answered "${submitted}"; expected "${expected}".`
+  }).join('\n')
+  return [
+    'You are the Gemini tutor in this Oasis test world.',
+    `The student just submitted the test. Score: ${grade.correctCount}/${grade.totalCount} (${grade.percent}%).`,
+    'Start speaking proactively now. Be warm, concise, and specific. First celebrate what went well, then explain the misses without shaming the student, and invite one retry or follow-up question.',
+    '',
+    'Answer breakdown:',
+    lines,
+    '',
+    `Raw submission:\n${payload.fields.map(field => `- ${field.label}: ${Array.isArray(field.value) ? field.value.join(', ') : field.value ?? 'blank'}`).join('\n')}`,
+  ].join('\n')
 }
 
 async function forwardToGoogleForm(payload: SpatialWebSubmissionPayload, destination: SpatialWebSubmitDestination) {
@@ -180,15 +264,21 @@ export async function POST(request: NextRequest) {
     }, { status: 502 })
   }
 
+  const grade = gradeSubmission(payload, payload.destination)
+  const geminiPrompt = payload.destination?.geminiReview ? buildGeminiReviewPrompt(payload, grade) : ''
+  const scoreMessage = grade ? ` Score: ${grade.correctCount}/${grade.totalCount} (${grade.percent}%).` : ''
+
   return NextResponse.json({
     ok: true,
-    message: forwardResult?.message || `Saved ${payload.fields.length} spatial web fields.`,
+    message: `${forwardResult?.message || `Saved ${payload.fields.length} spatial web fields.`}${scoreMessage}`,
     data: {
       formId: payload.formId,
       submittedAt: payload.submittedAt,
       fieldCount: payload.fields.length,
       forwardStatus: forwardResult?.status,
       mappedCount: forwardResult?.mappedCount,
+      grade,
+      geminiPrompt,
     },
   })
 }

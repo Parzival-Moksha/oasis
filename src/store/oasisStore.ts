@@ -65,7 +65,7 @@ import {
   type SpatialWebObject,
   type SpatialWebValue,
 } from '../lib/spatial-web'
-import { createPortalZeroGoogleFormsAltar } from '../lib/spatial-web-presets'
+import { createPortalZeroGoogleFormsAltar, createPortalZeroGoogleTestAltar } from '../lib/spatial-web-presets'
 
 const SPATIAL_WEB_WORLD_TOOL_ALLOWLIST = new Set([
   'set_sky',
@@ -76,11 +76,29 @@ const SPATIAL_WEB_WORLD_TOOL_ALLOWLIST = new Set([
   'modify_object',
   'set_behavior',
   'place_object',
+  'place_agent_window',
+  'place_browser_window',
   'create_spatial_web_object',
   'create_world_from_google_form',
+  'create_test_world_from_google_form',
   'create_portal_gate',
   'self_craft_scene',
 ])
+
+type SpatialSubmitResponse = {
+  ok?: boolean
+  message?: string
+  error?: string
+  data?: {
+    geminiPrompt?: string
+    grade?: {
+      correctCount?: number
+      totalCount?: number
+      percent?: number
+      details?: Array<{ label?: string; correct?: boolean; value?: unknown; expected?: unknown }>
+    }
+  }
+}
 
 function spatialValueKey(value: SpatialWebValue | undefined): string {
   if (Array.isArray(value)) return value.join(',')
@@ -181,6 +199,11 @@ export interface PlacementPending {
   agentSessionId?: string
   /** Projection technique used for the 3D window */
   agentRenderMode?: AgentWindowRenderMode
+  /** Initial URL for browser agent windows */
+  agentSurfaceUrl?: string
+  agentBrowserSurfaceMode?: BrowserSurfaceMode
+  agentFrameStyle?: string
+  agentFrameThickness?: number
   /** For light placements — which placeable light type */
   lightType?: 'point' | 'spot'
   portalVariant?: PortalGateVariant
@@ -777,8 +800,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
     const existing = Array.isArray(storedObjects) ? storedObjects : []
     if (!isWelcomeHubWorld(worldId)) return existing
     const altar = createPortalZeroGoogleFormsAltar()
-    if (existing.some(object => object.id === altar.id || object.visualStyle === 'google-form-altar')) return existing
-    return [...existing, altar]
+    const testAltar = createPortalZeroGoogleTestAltar()
+    const next = [...existing]
+    if (!next.some(object => object.id === altar.id)) next.push(altar)
+    if (!next.some(object => object.id === testAltar.id)) next.push(testAltar)
+    return next
   }
 
   const exitPlacementIfActive = () => {
@@ -1330,6 +1356,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
     if (object.type === 'text') {
       if (object.action?.type === 'create_world_from_google_form') {
+        const isTestAltar = object.action.testMode === true
         const generatedUrl = typeof object.generatedWorldUrl === 'string' ? object.generatedWorldUrl : ''
         const generatedWorldId = typeof object.generatedWorldId === 'string' ? object.generatedWorldId : ''
         if (generatedUrl && generatedWorldId) {
@@ -1357,7 +1384,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         playSpatialWebSound('buttonClick')
         markInteraction({
           value: formUrl,
-          statusMessage: 'BUILDING WORLD',
+          statusMessage: isTestAltar ? 'BUILDING TEST WORLD' : 'BUILDING WORLD',
           errorMessage: undefined,
           generatedWorldId: undefined,
           generatedWorldName: undefined,
@@ -1370,7 +1397,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              tool: 'create_world_from_google_form',
+              tool: isTestAltar ? 'create_test_world_from_google_form' : 'create_world_from_google_form',
               args: {
                 formUrl,
                 visibility: 'unlisted',
@@ -1412,7 +1439,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
             generatedWorldName,
             generatedWorldUrl: result.data.worldUrl,
             generatedQrUrl: result.data.qrUrl,
-            statusMessage: 'FORMS WORLD BUILT! PORTAL OPENING...',
+            statusMessage: isTestAltar ? 'TEST WORLD BUILT! PORTAL OPENING...' : 'FORMS WORLD BUILT! PORTAL OPENING...',
             errorMessage: undefined,
             submittedAt: new Date().toISOString(),
           }, 'submit')
@@ -1509,6 +1536,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       const endpoint = action.endpoint || SPATIAL_WEB_DEFAULT_SUBMIT_ENDPOINT
       let status = action.successMessage || 'Submitted.'
       let submitSucceeded = false
+      let submitResult: SpatialSubmitResponse | null = null
 
       try {
         const response = await fetch(endpoint, {
@@ -1516,11 +1544,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         })
-        const result = await response.json().catch(() => null) as { ok?: boolean; message?: string; error?: string } | null
-        if (!response.ok || result?.ok === false) {
-          status = result?.error || result?.message || `Submit failed: HTTP ${response.status}`
-        } else if (result?.message) {
-          status = result.message
+        submitResult = await response.json().catch(() => null) as SpatialSubmitResponse | null
+        if (!response.ok || submitResult?.ok === false) {
+          status = submitResult?.error || submitResult?.message || `Submit failed: HTTP ${response.status}`
+        } else if (submitResult?.message) {
+          status = submitResult.message
           submitSucceeded = true
         } else {
           submitSucceeded = true
@@ -1529,7 +1557,15 @@ export const useOasisStore = create<OasisState>((set, get) => {
         status = error instanceof Error ? `Submit failed: ${error.message}` : 'Submit failed.'
       }
 
-      const receipt = `${status}\n\n${summarizeSpatialWebSubmission(payload)}`
+      const grade = submitResult?.data?.grade
+      const gradeLines = grade?.details?.length
+        ? [
+            '',
+            `Score: ${grade.correctCount ?? 0}/${grade.totalCount ?? grade.details.length} (${grade.percent ?? 0}%)`,
+            ...grade.details.map((detail: { label?: string; correct?: boolean }) => `${detail.correct ? 'OK' : 'MISS'} ${detail.label || 'Question'}`),
+          ].join('\n')
+        : ''
+      const receipt = `${status}${gradeLines}\n\n${summarizeSpatialWebSubmission(payload)}`
       set(state => ({
         spatialWebObjects: state.spatialWebObjects.map(entry => {
           if (entry.formId === object.formId && entry.type === 'output' && entry.id !== id) {
@@ -1551,6 +1587,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
         playSpatialWebSound('winner')
         get().spawnPlacementVfx(effectPosition)
         openLocalPortalToPortalZero(5000)
+        if (isBrowser && submitResult?.data?.geminiPrompt) {
+          window.dispatchEvent(new CustomEvent('oasis:gemini-live-prompt', {
+            detail: { prompt: submitResult.data.geminiPrompt, source: 'spatial-test-submit' },
+          }))
+        }
       } else {
         playSpatialWebSound('error')
       }
@@ -1607,7 +1648,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         type: 'select',
         formId,
         label: 'Can you come?',
-        value: 'yes',
+        value: '',
         options: [
           { value: 'yes', label: 'Yes' },
           { value: 'maybe', label: 'Maybe' },
@@ -1634,7 +1675,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         type: 'select',
         formId,
         label: 'Vibe',
-        value: 'code-jam',
+        value: '',
         options: [
           { value: 'chill', label: 'Chill' },
           { value: 'networking', label: 'Networking' },
