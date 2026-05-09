@@ -24,12 +24,11 @@ import {
   type WorldMeta,
 } from '../lib/forge/world-persistence'
 import {
-  buildWelcomeHubPortalGates,
   WELCOME_HUB_WORLD_ID,
-  getSafePortalTargetWorlds,
   isWelcomeHubWorld,
   layoutPortalAreaGates,
   portalRotationTowardCenter,
+  resolveWelcomeHubPortalGates,
   type PortalAction,
   type PortalGate,
   type PortalGateVariant,
@@ -838,11 +837,13 @@ export const useOasisStore = create<OasisState>((set, get) => {
     storedGates?: PortalGate[] | null,
     transforms?: Record<string, { position?: [number, number, number] } | undefined>,
   ): PortalGate[] => {
+    if (isWelcomeHubWorld(worldId)) {
+      return resolveWelcomeHubPortalGates(storedGates, get().worldRegistry, transforms)
+    }
     if (Array.isArray(storedGates) && storedGates.length > 0) {
       return layoutPortalAreaGates(storedGates, transforms)
     }
-    if (!isWelcomeHubWorld(worldId)) return []
-    return buildWelcomeHubPortalGates(getSafePortalTargetWorlds(get().worldRegistry, worldId))
+    return []
   }
 
   const resolveDefaultSpatialWebObjects = (

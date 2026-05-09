@@ -177,6 +177,31 @@ export const PORTAL_GATE_VARIANT_DEFS: PortalGateVariantDef[] = [
 export const DEFAULT_PORTAL_ACTIVATION_DEPTH = 0.55
 export const PORTAL_AREA_CENTER: Vec3Tuple = [30, 0, 0]
 export const PORTAL_AREA_MIN_SPACING = 4
+const WELCOME_HUB_DIRECTORY_LIMIT = 8
+const WELCOME_HUB_PUBLIC_PORTAL_PREFIX = 'portal-zero-public-world-'
+const WELCOME_HUB_FFA_PORTAL_PREFIX = 'portal-zero-ffa-world-'
+const CONJURE_ARENA_URL = 'https://conjure.04515.xyz'
+const OASIS_RETURN_URL = 'https://04515.xyz'
+
+export const WELCOME_HUB_CONJURE_PORTAL_GATE: PortalGate = {
+  id: 'portal-zero-conjure-external',
+  label: 'Conjure Arena',
+  variant: 'stargate-vortex',
+  position: [0, 0, -19.8],
+  rotationY: 0,
+  scale: 0.96,
+  width: 2.65,
+  height: 3.55,
+  direction: 'one-way',
+  sourceWorldId: WELCOME_HUB_WORLD_ID,
+  action: {
+    type: 'external_url',
+    url: CONJURE_ARENA_URL,
+    label: 'Conjure Arena',
+    returnUrl: OASIS_RETURN_URL,
+    requiresConfirm: false,
+  },
+}
 
 function portalNormalXZ(rotationY = 0): [number, number] {
   return [Math.sin(rotationY), Math.cos(rotationY)]
@@ -433,4 +458,120 @@ export function buildWelcomeHubPortalGates(targetWorlds: WorldMeta[]): PortalGat
       inert: worlds.length === 0,
     }
   })
+}
+
+function worldSortTime(world: WorldMeta): number {
+  const saved = Date.parse(world.lastSavedAt || '')
+  if (Number.isFinite(saved)) return saved
+  const created = Date.parse(world.createdAt || '')
+  return Number.isFinite(created) ? created : 0
+}
+
+function sortDirectoryWorlds(worlds: WorldMeta[]): WorldMeta[] {
+  return [...worlds].sort((a, b) => {
+    const visits = (b.visitCount || 0) - (a.visitCount || 0)
+    if (visits !== 0) return visits
+    return worldSortTime(b) - worldSortTime(a)
+  })
+}
+
+function laneOffset(index: number): number {
+  const row = Math.floor(index / 2)
+  const side = index % 2 === 0 ? -1 : 1
+  return side * (2.9 + row * 3.9)
+}
+
+function directoryPortalPose(kind: 'public' | 'ffa', index: number): { position: Vec3Tuple; rotationY: number } {
+  if (kind === 'public') {
+    const column = Math.floor(index / 4)
+    return {
+      position: [25.2 + column * 4.4, 0, laneOffset(index % 4)],
+      rotationY: -Math.PI / 2,
+    }
+  }
+
+  const column = Math.floor(index / 4)
+  return {
+    position: [laneOffset(index % 4), 0, 25.2 + column * 4.4],
+    rotationY: Math.PI,
+  }
+}
+
+function isWelcomeHubDirectoryGate(gate: PortalGate): boolean {
+  return gate.id.startsWith(WELCOME_HUB_PUBLIC_PORTAL_PREFIX)
+    || gate.id.startsWith(WELCOME_HUB_FFA_PORTAL_PREFIX)
+}
+
+function normalizeWelcomeHubConjureGate(gate: PortalGate): PortalGate {
+  if (gate.id !== WELCOME_HUB_CONJURE_PORTAL_GATE.id) return gate
+  const existingAction = gate.action?.type === 'external_url' ? gate.action : undefined
+  return {
+    ...WELCOME_HUB_CONJURE_PORTAL_GATE,
+    ...gate,
+    action: {
+      ...WELCOME_HUB_CONJURE_PORTAL_GATE.action,
+      ...(existingAction || {}),
+      type: 'external_url',
+      url: existingAction?.url || CONJURE_ARENA_URL,
+      returnUrl: OASIS_RETURN_URL,
+      requiresConfirm: false,
+    },
+  }
+}
+
+export function buildWelcomeHubDirectoryPortalGates(
+  worlds: WorldMeta[],
+  kind: 'public' | 'ffa',
+): PortalGate[] {
+  const prefix = kind === 'public' ? WELCOME_HUB_PUBLIC_PORTAL_PREFIX : WELCOME_HUB_FFA_PORTAL_PREFIX
+  const variants: PortalGateVariant[] = kind === 'public'
+    ? ['solar-arch', 'hologram-gate', 'mirror-pool', 'verdant-arch']
+    : ['rift-slit', 'crystal-cavern', 'clockwork-iris', 'threshold-ring']
+
+  return sortDirectoryWorlds(worlds)
+    .slice(0, WELCOME_HUB_DIRECTORY_LIMIT)
+    .map((world, index) => {
+      const pose = directoryPortalPose(kind, index)
+      return {
+        id: `${prefix}${world.id}`,
+        label: world.name || (kind === 'public' ? 'Public world' : 'FFA world'),
+        variant: variants[index % variants.length],
+        position: pose.position,
+        rotationY: pose.rotationY,
+        scale: 0.78,
+        width: 2.15,
+        height: 2.9,
+        direction: 'one-way' as const,
+        sourceWorldId: WELCOME_HUB_WORLD_ID,
+        targetWorldId: world.id,
+        targetWorldName: world.name,
+        action: { type: 'load_world' as const, worldId: world.id, worldName: world.name },
+      }
+    })
+}
+
+export function resolveWelcomeHubPortalGates(
+  storedGates: PortalGate[] | null | undefined,
+  worldRegistry: WorldMeta[],
+  transforms?: Record<string, { position?: Vec3Tuple } | undefined>,
+): PortalGate[] {
+  const base = Array.isArray(storedGates) ? storedGates : []
+  const withoutDirectory = base
+    .filter(gate => !isWelcomeHubDirectoryGate(gate))
+    .map(normalizeWelcomeHubConjureGate)
+  const withConjure = withoutDirectory.some(gate => gate.id === WELCOME_HUB_CONJURE_PORTAL_GATE.id)
+    ? withoutDirectory
+    : [WELCOME_HUB_CONJURE_PORTAL_GATE, ...withoutDirectory]
+
+  const existingTargets = new Set(withConjure.map(gate => gate.targetWorldId).filter(Boolean))
+  const eligible = getSafePortalTargetWorlds(worldRegistry, WELCOME_HUB_WORLD_ID)
+    .filter(world => !existingTargets.has(world.id))
+  const publicWorlds = eligible.filter(world => world.visibility === 'public')
+  const ffaWorlds = eligible.filter(world => world.visibility === 'ffa' || world.visibility === 'public_edit')
+
+  return layoutPortalAreaGates([
+    ...withConjure,
+    ...buildWelcomeHubDirectoryPortalGates(publicWorlds, 'public'),
+    ...buildWelcomeHubDirectoryPortalGates(ffaWorlds, 'ffa'),
+  ], transforms)
 }

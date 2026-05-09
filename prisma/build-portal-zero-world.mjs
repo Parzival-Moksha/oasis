@@ -212,7 +212,7 @@ const portalGates = [
       type: 'external_url',
       url: 'https://conjure.04515.xyz',
       label: 'Conjure Arena',
-      returnUrl: 'current',
+      returnUrl: 'https://04515.xyz',
       requiresConfirm: false,
     },
   },

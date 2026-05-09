@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   WELCOME_HUB_WORLD_ID,
   buildWelcomeHubPortalGates,
+  buildWelcomeHubDirectoryPortalGates,
   crossedPortalPlane,
   createPortalTriggerState,
   enteredPortalActivationZone,
@@ -12,6 +13,7 @@ import {
   markPortalTriggered,
   portalAreaPose,
   portalRotationTowardCenter,
+  resolveWelcomeHubPortalGates,
   resolvePortalGateAction,
   shouldTriggerPortal,
   type PortalGate,
@@ -99,6 +101,59 @@ describe('portal gate trigger helpers', () => {
 
     expect(gates).toHaveLength(10)
     expect(gates.every(item => item.inert && !item.targetWorldId && item.width > 0 && item.height > 0)).toBe(true)
+  })
+
+  it('builds public and FFA directory gates behind the create portals', () => {
+    const publicGate = buildWelcomeHubDirectoryPortalGates([world('world-public', 'public')], 'public')[0]
+    const ffaGate = buildWelcomeHubDirectoryPortalGates([world('world-ffa', 'public_edit')], 'ffa')[0]
+
+    expect(publicGate).toMatchObject({
+      id: 'portal-zero-public-world-world-public',
+      targetWorldId: 'world-public',
+      action: { type: 'load_world', worldId: 'world-public' },
+    })
+    expect(publicGate.position[0]).toBeGreaterThan(19.8)
+    expect(publicGate.rotationY).toBeCloseTo(-Math.PI / 2)
+
+    expect(ffaGate).toMatchObject({
+      id: 'portal-zero-ffa-world-world-ffa',
+      targetWorldId: 'world-ffa',
+      action: { type: 'load_world', worldId: 'world-ffa' },
+    })
+    expect(ffaGate.position[2]).toBeGreaterThan(19.8)
+    expect(ffaGate.rotationY).toBeCloseTo(Math.PI)
+  })
+
+  it('backfills Conjure and live public/FFA portals into Portal Zero without duplicating existing targets', () => {
+    const gates = resolveWelcomeHubPortalGates([{
+      id: 'portal-zero-new-public-world',
+      label: 'New Public World',
+      variant: 'solar-arch',
+      position: [19.8, 0, 0],
+      rotationY: -Math.PI / 2,
+      width: 2.35,
+      height: 3.15,
+      action: { type: 'create_world', visibility: 'public' },
+    }], [
+      world(WELCOME_HUB_WORLD_ID, 'core'),
+      world('world-public', 'public'),
+      world('world-ffa', 'public_edit'),
+      world('world-private', 'private'),
+    ])
+
+    expect(gates.map(item => item.id)).toEqual(expect.arrayContaining([
+      'portal-zero-conjure-external',
+      'portal-zero-new-public-world',
+      'portal-zero-public-world-world-public',
+      'portal-zero-ffa-world-world-ffa',
+    ]))
+    expect(gates.some(item => item.targetWorldId === 'world-private')).toBe(false)
+    const conjureGate = gates.find(item => item.id === 'portal-zero-conjure-external')
+    expect(conjureGate?.action).toMatchObject({
+      type: 'external_url',
+      url: 'https://conjure.04515.xyz',
+      returnUrl: 'https://04515.xyz',
+    })
   })
 
   it('places a single live destination in the portal area', () => {
