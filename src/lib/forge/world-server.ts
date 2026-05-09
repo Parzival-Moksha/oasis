@@ -13,6 +13,7 @@ import { normalizeWorldStateAgentAvatarTransforms } from '../agent-avatar-world-
 import { getOasisMode } from '../oasis-profile'
 import { isAdminUserId } from '../admin-auth'
 import { levelFromXp } from '../xp'
+import { createPortalZeroReturnGate } from '../portal-zero-return-gate'
 import {
   DISCOVERABLE_VISIBILITIES,
   FFA_VISIBILITIES,
@@ -339,6 +340,7 @@ export async function createWorld(name: string, icon = '🌍', userId: string): 
     craftedScenes: [],
     conjuredAssetIds: [],
     catalogPlacements: [],
+    portalGates: [createPortalZeroReturnGate(id)],
     transforms: {},
     savedAt: now.toISOString(),
   }

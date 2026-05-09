@@ -6,6 +6,7 @@ import * as THREE from 'three'
 import { getPlayerAvatarPose, requestPlayerAvatarTeleport, type PlayerAvatarPose } from '../../lib/player-avatar-runtime'
 import {
   DEFAULT_PORTAL_ACTIVATION_DEPTH,
+  WELCOME_HUB_WORLD_ID,
   createPortalTriggerState,
   getPortalGateLabel,
   layoutPortalAreaGates,
@@ -16,6 +17,10 @@ import {
   type PortalGate,
   type PortalTriggerState,
 } from '../../lib/portal-gates'
+import {
+  PORTAL_ZERO_RETURN_GATE_ID,
+  upsertPortalZeroReturnGate,
+} from '../../lib/portal-zero-return-gate'
 import { createWorld, loadWorld, saveWorld } from '../../lib/forge/world-persistence'
 import {
   PORTAL_REVEAL_ROLL_EVENT,
@@ -268,6 +273,27 @@ async function ensureReturnPortalForArrival(args: {
   return derivePortalArrivalPose(savedReturnGate, targetState.transforms)
 }
 
+async function ensurePortalZeroReturnGateForNewWorld(worldId: string): Promise<PlayerAvatarPose | null> {
+  const targetState = await loadWorld(worldId)
+  if (!targetState) return null
+
+  const existingGates = targetState.portalGates || []
+  const nextGates = upsertPortalZeroReturnGate(existingGates, worldId)
+  const returnGate = nextGates.find(gate => gate.id === PORTAL_ZERO_RETURN_GATE_ID)
+    || nextGates.find(gate => gate.targetWorldId === WELCOME_HUB_WORLD_ID)
+  if (!returnGate) return null
+
+  if (nextGates !== existingGates) {
+    const { version: _version, savedAt: _savedAt, ...targetSaveState } = targetState
+    await saveWorld({
+      ...targetSaveState,
+      portalGates: nextGates,
+    }, worldId)
+  }
+
+  return derivePortalArrivalPose(returnGate, targetState.transforms)
+}
+
 export function PortalGateLayer() {
   const { camera } = useThree()
   const activeWorldId = useOasisStore(s => s.activeWorldId)
@@ -421,11 +447,18 @@ export function PortalGateLayer() {
           const template = await loadWorld(action.templateWorldId)
           if (template) {
             const { version: _version, savedAt: _savedAt, ...templateState } = template
-            await saveWorld(templateState, meta.id)
+            await saveWorld({
+              ...templateState,
+              portalGates: upsertPortalZeroReturnGate(templateState.portalGates, meta.id),
+            }, meta.id)
           }
         }
+        const arrivalPosePromise = ensurePortalZeroReturnGateForNewWorld(meta.id)
         refreshWorldRegistry()
-        await runWorldTransition(gate, meta.name, () => switchWorld(meta.id))
+        await runWorldTransition(gate, meta.name, () => switchWorld(meta.id), {
+          targetWorldId: meta.id,
+          arrivalPosePromise,
+        })
         return
       }
 

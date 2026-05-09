@@ -28,6 +28,7 @@ vi.mock('../agent-avatar-world-state', () => ({
 }))
 
 import {
+  createWorld,
   createManualSnapshot,
   deleteWorld,
   getRegistry,
@@ -37,6 +38,7 @@ import {
 } from '../forge/world-server'
 import { WorldAccessError } from '../forge/world-access'
 import { prisma } from '../db'
+import { WELCOME_HUB_WORLD_ID } from '../portal-gates'
 
 const now = new Date('2026-04-30T12:00:00.000Z')
 
@@ -107,6 +109,38 @@ describe('world-server access enforcement', () => {
         { visibility: { in: ['core', 'template', 'ffa', 'public_edit', 'public'] } },
       ],
     })
+  })
+
+  it('seeds new worlds with a one-way crystal portal back to Portal Zero', async () => {
+    vi.mocked(prisma.world.create).mockImplementation((async (args: any) => ({
+      id: args.data.id,
+      userId: args.data.userId,
+      name: args.data.name,
+      icon: args.data.icon,
+      visibility: 'private',
+      data: args.data.data,
+      thumbnailUrl: null,
+      creatorName: null,
+      creatorAvatar: null,
+      visitCount: 0,
+      objectCount: 0,
+      createdAt: args.data.createdAt,
+      updatedAt: args.data.updatedAt,
+    })) as any)
+
+    await createWorld('Private Lab', 'P', 'user-a')
+    const createArgs = vi.mocked(prisma.world.create).mock.calls[0]?.[0] as any
+    const worldData = JSON.parse(createArgs.data.data) as WorldState
+
+    expect(worldData.portalGates).toEqual([
+      expect.objectContaining({
+        id: 'portal-return-to-portal-zero',
+        variant: 'crystal-cavern',
+        direction: 'one-way',
+        targetWorldId: WELCOME_HUB_WORLD_ID,
+        targetWorldName: 'Portal Zero',
+      }),
+    ])
   })
 
   it('lets hosted admin list every world', async () => {
