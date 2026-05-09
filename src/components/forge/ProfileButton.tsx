@@ -183,7 +183,7 @@ export function ProfileButton() {
   }
 
   return (
-    <div ref={panelRef} className="fixed left-4 top-4 z-[190] select-none max-[700px]:left-2 max-[700px]:top-2">
+    <div ref={panelRef} className="relative select-none">
       <GameMenuButton
         onClick={() => {
           playClick()

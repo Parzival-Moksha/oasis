@@ -308,7 +308,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
   }
 
   return (
-    <div ref={menuRef} className="fixed left-4 top-[112px] z-[190] select-none max-[700px]:left-2 max-[700px]:top-[76px]">
+    <div ref={menuRef} className="relative select-none">
       <GameMenuButton
         onClick={() => {
           playClick()

@@ -30,7 +30,7 @@ export function PlaceMenu() {
   }, [isOpen])
 
   return (
-    <div ref={menuRef} className="fixed left-4 top-[160px] z-[190] select-none max-[700px]:left-2 max-[700px]:top-[110px]">
+    <div ref={menuRef} className="relative select-none">
       <GameMenuButton
         label="Place"
         marker="+"

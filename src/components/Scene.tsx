@@ -1197,7 +1197,7 @@ function AgentQuickLauncher({
   }, [isOpen, onClose])
 
   return (
-    <div ref={menuRef} className="fixed left-4 top-[208px] z-[190] select-none max-[700px]:left-2 max-[700px]:top-[144px]">
+    <div ref={menuRef} className="relative select-none">
       <GameMenuButton
         onClick={() => { playClick(); onToggle() }}
         label="Agents"
@@ -1642,11 +1642,10 @@ export default function Scene() {
       <WorldLoadingBar />
 
       {/* Main game rail */}
+      <div className="fixed left-4 top-4 z-[190] flex flex-col gap-2 select-none max-[700px]:left-2 max-[700px]:top-2 max-[700px]:gap-1.5">
+        <ProfileButton />
 
-      <ProfileButton />
-
-      {!hideEditTools && (
-        <div className="fixed left-4 top-[64px] z-[190] select-none max-[700px]:left-2 max-[700px]:top-[42px]">
+        {!hideEditTools && (
           <GameMenuButton
             label="Wizard"
             accent="#F97316"
@@ -1662,70 +1661,70 @@ export default function Scene() {
               })
             }}
           />
-        </div>
-      )}
+        )}
 
-      <WorldMenu
-        actionLogControl={canUseLocalPanels && !hideEditTools ? (
-          <button
-            type="button"
-            onClick={() => togglePanel(setActionLogOpen)}
-            className="group flex w-full items-center gap-3 rounded-md border border-amber-300/20 bg-black/30 px-3 py-2 text-left transition hover:border-amber-200/50 hover:bg-amber-300/10"
-          >
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-amber-300/25 bg-amber-300/10 text-[10px] font-black uppercase text-amber-100">
-              LOG
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[11px] font-black uppercase tracking-[0.14em] text-amber-100">Action Log</span>
-              <span className="mt-0.5 block text-[9px] uppercase tracking-[0.1em] text-white/40">
-                {actionLogOpen ? 'open' : 'closed'}
-              </span>
-            </span>
-          </button>
-        ) : undefined}
-      />
-
-      {!hideEditTools && <PlaceMenu />}
-
-      <AgentQuickLauncher
-        isOpen={agentLauncherOpen}
-        mode={agentLauncherMode}
-        onToggle={() => setAgentLauncherOpen(open => !open)}
-        onClose={() => setAgentLauncherOpen(false)}
-        onMode={mode => setAgentLauncherMode(mode)}
-        onOpen2d={openQuickAgentPanel}
-        onPlace3d={placeQuickAgentWindow}
-        canUseLocalAgents={canUseAgentPanels && !hideEditTools}
-      />
-
-      <SettingsMenu opacity={settingsMenuOpacity}>
-        <SettingsContent
-          menuOpacity={settingsMenuOpacity}
-          onMenuOpacityChange={handleSettingsMenuOpacity}
-          consoleControl={(isAdmin || canUseLocalPanels) ? (
+        <WorldMenu
+          actionLogControl={canUseLocalPanels && !hideEditTools ? (
             <button
               type="button"
-              onClick={() => togglePanel(setConsoleOpen)}
+              onClick={() => togglePanel(setActionLogOpen)}
               className="group flex w-full items-center gap-3 rounded-md border border-amber-300/20 bg-black/30 px-3 py-2 text-left transition hover:border-amber-200/50 hover:bg-amber-300/10"
             >
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-amber-300/25 bg-amber-300/10 text-[10px] font-black uppercase text-amber-100">
                 LOG
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-[11px] font-black uppercase tracking-[0.14em] text-amber-100">Console</span>
+                <span className="block text-[11px] font-black uppercase tracking-[0.14em] text-amber-100">Action Log</span>
                 <span className="mt-0.5 block text-[9px] uppercase tracking-[0.1em] text-white/40">
-                  {consoleOpen ? 'open' : 'closed'}
+                  {actionLogOpen ? 'open' : 'closed'}
                 </span>
               </span>
             </button>
           ) : undefined}
         />
-      </SettingsMenu>
 
-      <HelpMenu
-        isOpen={helpOpen}
-        onToggle={() => togglePanel(setHelpOpen)}
-      />
+        {!hideEditTools && <PlaceMenu />}
+
+        <AgentQuickLauncher
+          isOpen={agentLauncherOpen}
+          mode={agentLauncherMode}
+          onToggle={() => setAgentLauncherOpen(open => !open)}
+          onClose={() => setAgentLauncherOpen(false)}
+          onMode={mode => setAgentLauncherMode(mode)}
+          onOpen2d={openQuickAgentPanel}
+          onPlace3d={placeQuickAgentWindow}
+          canUseLocalAgents={canUseAgentPanels && !hideEditTools}
+        />
+
+        <SettingsMenu opacity={settingsMenuOpacity}>
+          <SettingsContent
+            menuOpacity={settingsMenuOpacity}
+            onMenuOpacityChange={handleSettingsMenuOpacity}
+            consoleControl={(isAdmin || canUseLocalPanels) ? (
+              <button
+                type="button"
+                onClick={() => togglePanel(setConsoleOpen)}
+                className="group flex w-full items-center gap-3 rounded-md border border-amber-300/20 bg-black/30 px-3 py-2 text-left transition hover:border-amber-200/50 hover:bg-amber-300/10"
+              >
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-amber-300/25 bg-amber-300/10 text-[10px] font-black uppercase text-amber-100">
+                  LOG
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[11px] font-black uppercase tracking-[0.14em] text-amber-100">Console</span>
+                  <span className="mt-0.5 block text-[9px] uppercase tracking-[0.1em] text-white/40">
+                    {consoleOpen ? 'open' : 'closed'}
+                  </span>
+                </span>
+              </button>
+            ) : undefined}
+          />
+        </SettingsMenu>
+
+        <HelpMenu
+          isOpen={helpOpen}
+          onToggle={() => togglePanel(setHelpOpen)}
+        />
+      </div>
 
       {/* ✨ Wizard Console — hidden in view mode */}
       {!hideEditTools && (
@@ -2021,7 +2020,7 @@ function SettingsMenu({ children, opacity }: { children: React.ReactNode; opacit
   }, [isOpen])
 
   return (
-    <div ref={menuRef} className="fixed left-4 top-[256px] z-[190] select-none max-[700px]:left-2 max-[700px]:top-[178px]">
+    <div ref={menuRef} className="relative select-none">
       <GameMenuButton
         label="Settings"
         marker="SYS"
@@ -2053,7 +2052,7 @@ function HelpMenu({ isOpen, onToggle }: { isOpen: boolean; onToggle: () => void 
   const playClick = () => useAudioManager.getState().play('buttonClick')
 
   return (
-    <div className="fixed left-4 top-[304px] z-[190] select-none max-[700px]:left-2 max-[700px]:top-[212px]">
+    <div className="relative select-none">
       <GameMenuButton
         label="Help"
         marker="?"

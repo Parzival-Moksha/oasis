@@ -127,10 +127,43 @@ export const SOUND_OPTIONS: Record<SoundEvent, SoundOption[]> = {
   footstep:     [{ id: 'step0', label: 'Step 0', path: `${RPG}/footstep00.ogg` }, { id: 'step1', label: 'Step 1', path: `${RPG}/footstep01.ogg` }, { id: 'step2', label: 'Step 2', path: `${RPG}/footstep02.ogg` }, { id: 'step3', label: 'Step 3', path: `${RPG}/footstep03.ogg` }, { id: 'step4', label: 'Step 4', path: `${RPG}/footstep04.ogg` }],
 }
 
-// Default sound selection per event (first option)
-const DEFAULT_SELECTIONS: Record<SoundEvent, string> = Object.fromEntries(
-  Object.entries(SOUND_OPTIONS).map(([event, options]) => [event, options[0].id])
-) as Record<SoundEvent, string>
+const DEFAULT_VOLUME = 0.5
+const DEFAULT_MUTED = false
+
+// Default sound profile for fresh clones and deployed first-time visitors.
+const DEFAULT_SELECTIONS: Record<SoundEvent, string> = {
+  select: 'click1',
+  deselect: 'release1',
+  place: 'place1',
+  delete: 'chop',
+  panelOpen: 'open1',
+  panelClose: 'close1',
+  buttonClick: 'menuHitToggle3',
+  buttonHover: 'hoverTick1',
+  modeSwitch: 'sw6',
+  conjureStart: 'draw1',
+  conjureDone: 'latch',
+  anorakDone: 'coins',
+  notification: 'metal',
+  connected: 'fighterReady',
+  levelUp: 'femaleLevelUp',
+  chooseCharacter: 'fighterChoose',
+  undo: 'sw11',
+  redo: 'sw13',
+  agentFocus: 'open1',
+  agentUnfocus: 'close1',
+  tilePaint: 'cloth1',
+  error: 'pot1',
+  footstep: 'step0',
+}
+
+function createDefaultAudioSettings() {
+  return {
+    volume: DEFAULT_VOLUME,
+    muted: DEFAULT_MUTED,
+    selections: { ...DEFAULT_SELECTIONS },
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AUDIO CACHE — pre-loaded HTMLAudioElement pool
@@ -236,7 +269,7 @@ interface AudioManagerState {
 }
 
 function loadSettings(): { volume: number; muted: boolean; selections: Record<SoundEvent, string> } {
-  if (typeof window === 'undefined') return { volume: 0.5, muted: false, selections: { ...DEFAULT_SELECTIONS } }
+  if (typeof window === 'undefined') return createDefaultAudioSettings()
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) {
@@ -255,13 +288,13 @@ function loadSettings(): { volume: number; muted: boolean; selections: Record<So
         selections.buttonHover = DEFAULT_SELECTIONS.buttonHover
       }
       return {
-        volume: parsed.volume ?? 0.5,
-        muted: parsed.muted ?? false,
+        volume: parsed.volume ?? DEFAULT_VOLUME,
+        muted: parsed.muted ?? DEFAULT_MUTED,
         selections,
       }
     }
   } catch {}
-  return { volume: 0.5, muted: false, selections: { ...DEFAULT_SELECTIONS } }
+  return createDefaultAudioSettings()
 }
 
 function saveSettings(state: { volume: number; muted: boolean; selections: Record<SoundEvent, string> }) {

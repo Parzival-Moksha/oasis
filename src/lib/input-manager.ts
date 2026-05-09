@@ -32,6 +32,8 @@ const mouseLookAccumulator = {
 let lastPointerLockRightClickAt = 0
 let lastUILayerClosedAt = 0
 let skipNextMouseLookSample = false
+let uiFocusHoldUntil = 0
+let uiFocusHoldTimeout: ReturnType<typeof setTimeout> | null = null
 const MAX_MOUSE_LOOK_EVENT_DELTA = 96
 const MAX_MOUSE_LOOK_PENDING_DELTA = 384
 const MAX_MOUSE_LOOK_FRAME_DELTA = 160
@@ -127,6 +129,34 @@ function accumulateMouseLookDelta(event: Pick<MouseEvent, 'movementX' | 'movemen
 
 export function wasUILayerClosedRecently(windowMs = 180): boolean {
   return getMouseLookNow() - lastUILayerClosedAt < windowMs
+}
+
+function scheduleUIFocusHoldRelease() {
+  if (uiFocusHoldTimeout) clearTimeout(uiFocusHoldTimeout)
+  const delay = Math.max(0, uiFocusHoldUntil - getMouseLookNow()) + 16
+  uiFocusHoldTimeout = setTimeout(() => {
+    uiFocusHoldTimeout = null
+    const state = useInputManager.getState()
+    if (state._uiLayerStack.length > 0) return
+    if (state.inputState !== 'ui-focused') return
+    if (getMouseLookNow() < uiFocusHoldUntil) {
+      scheduleUIFocusHoldRelease()
+      return
+    }
+    lastUILayerClosedAt = getMouseLookNow()
+    state.returnToPrevious()
+  }, delay)
+}
+
+export function holdUIFocusForMenuTransition(windowMs = 260): void {
+  const now = getMouseLookNow()
+  uiFocusHoldUntil = Math.max(uiFocusHoldUntil, now + windowMs)
+  const state = useInputManager.getState()
+  const current = state.inputState
+  if (current === 'orbit' || current === 'noclip' || current === 'third-person') {
+    state.enterUIFocus()
+  }
+  scheduleUIFocusHoldRelease()
 }
 
 export function pushMouseLookDelta(x: number, y: number, timeStamp?: number): void {
@@ -419,6 +449,10 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     set({ _uiLayerStack: next })
     if (next.length === 0 && get().inputState === 'ui-focused') {
       lastUILayerClosedAt = getMouseLookNow()
+      if (getMouseLookNow() < uiFocusHoldUntil) {
+        scheduleUIFocusHoldRelease()
+        return
+      }
       get().returnToPrevious()
     }
   },

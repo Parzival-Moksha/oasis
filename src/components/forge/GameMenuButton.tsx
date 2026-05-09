@@ -4,6 +4,7 @@ import { useRef } from 'react'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 
 import { useAudioManager } from '@/lib/audio-manager'
+import { holdUIFocusForMenuTransition } from '@/lib/input-manager'
 
 const GAME_MENU_FONT = '"Arial Black", Impact, "Segoe UI Black", "Trebuchet MS", system-ui, sans-serif'
 
@@ -27,6 +28,7 @@ export function GameMenuButton({
   showCaret = true,
   className = '',
   onMouseEnter: _legacyMouseEnter,
+  onPointerDown,
   onPointerEnter,
   onPointerLeave,
   ...buttonProps
@@ -36,6 +38,10 @@ export function GameMenuButton({
   return (
     <button
       {...buttonProps}
+      onPointerDown={(event) => {
+        if (!event.currentTarget.disabled) holdUIFocusForMenuTransition()
+        onPointerDown?.(event)
+      }}
       onPointerEnter={(event) => {
         if (!hoverActiveRef.current) {
           useAudioManager.getState().play('buttonHover')
