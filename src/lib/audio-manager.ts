@@ -31,6 +31,7 @@ export type SoundEvent =
   | 'notification'  // DevCraft timer, mission complete
   | 'connected'     // Agent/world link established
   | 'levelUp'       // Player level increased
+  | 'winner'        // Successful form/world milestone
   | 'chooseCharacter' // Self avatar picker opened
   | 'undo'          // Undo action
   | 'redo'          // Redo action
@@ -115,6 +116,11 @@ export const SOUND_OPTIONS: Record<SoundEvent, SoundOption[]> = {
     { id: 'femaleLevelUp', label: 'Level Up Female', path: '/audio/kenney_voiceover-pack/Female/level_up.ogg' },
     { id: 'maleLevelUp', label: 'Level Up Male', path: '/audio/kenney_voiceover-pack/Male/level_up.ogg' },
   ],
+  winner: [
+    { id: 'fighterWinner', label: 'Winner', path: `${FIGHTER}/winner.ogg` },
+    { id: 'femaleYouWin', label: 'You Win Female', path: '/audio/kenney_voiceover-pack/Female/you_win.ogg' },
+    { id: 'fighterYouWin', label: 'You Win', path: `${FIGHTER}/you_win.ogg` },
+  ],
   chooseCharacter: [
     { id: 'fighterChoose', label: 'Choose Character', path: `${FIGHTER}/choose_your_character.ogg` },
   ],
@@ -147,6 +153,7 @@ const DEFAULT_SELECTIONS: Record<SoundEvent, string> = {
   notification: 'metal',
   connected: 'fighterReady',
   levelUp: 'femaleLevelUp',
+  winner: 'fighterWinner',
   chooseCharacter: 'fighterChoose',
   undo: 'sw11',
   redo: 'sw13',

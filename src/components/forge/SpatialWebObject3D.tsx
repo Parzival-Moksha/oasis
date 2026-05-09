@@ -2,10 +2,12 @@
 
 import { Center, Text3D } from '@react-three/drei'
 import type { ThreeEvent } from '@react-three/fiber'
-import { useContext, useMemo, useRef, useState } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 
 import { useOasisStore } from '@/store/oasisStore'
+import { useAudioManager } from '@/lib/audio-manager'
 import {
   type SpatialWebObject,
   type SpatialWebValue,
@@ -103,28 +105,17 @@ function EmbossedText({
               font={TEXT3D_FONT}
               size={fontSize}
               height={fontSize * 0.24}
-              bevelEnabled
-              bevelThickness={fontSize * 0.035}
-              bevelSize={fontSize * 0.018}
-              bevelSegments={3}
-              curveSegments={5}
+              bevelEnabled={false}
+              curveSegments={2}
             >
               {line}
-              <meshStandardMaterial
+              <meshBasicMaterial
                 attach="material-0"
                 color={color}
-                emissive={color}
-                emissiveIntensity={0.48}
-                metalness={0.16}
-                roughness={0.34}
               />
-              <meshStandardMaterial
+              <meshBasicMaterial
                 attach="material-1"
                 color={darkSide}
-                emissive={darkSide}
-                emissiveIntensity={0.14}
-                metalness={0.76}
-                roughness={0.24}
               />
             </Text3D>
           </Center>
@@ -142,6 +133,86 @@ function setPointerCapture(event: ThreeEvent<PointerEvent>) {
 function releasePointerCapture(event: ThreeEvent<PointerEvent>) {
   const target = event.target as EventTarget & { releasePointerCapture?: (pointerId: number) => void }
   target?.releasePointerCapture?.(event.pointerId)
+}
+
+type ConfettiPiece = {
+  angle: number
+  radius: number
+  rise: number
+  fall: number
+  spin: number
+  size: number
+  color: THREE.Color
+}
+
+function SubmitConfetti({ trigger, accent }: { trigger?: string; accent: string }) {
+  const meshRef = useRef<THREE.InstancedMesh>(null)
+  const [startedAt, setStartedAt] = useState<number | null>(null)
+  const dummy = useMemo(() => new THREE.Object3D(), [])
+  const pieces = useMemo<ConfettiPiece[]>(() => {
+    const colors = ['#facc15', '#fb7185', '#38bdf8', '#22c55e', '#f8fafc', accent]
+    return Array.from({ length: 180 }, (_, index) => ({
+      angle: (index * 2.399963 + (index % 7) * 0.13) % (Math.PI * 2),
+      radius: 0.35 + ((index * 37) % 100) / 100 * 2.1,
+      rise: 4.4 + ((index * 19) % 100) / 100 * 1.9,
+      fall: 0.65 + ((index * 23) % 100) / 100 * 1.15,
+      spin: 3.5 + ((index * 29) % 100) / 100 * 7,
+      size: 0.045 + ((index * 31) % 100) / 100 * 0.055,
+      color: new THREE.Color(colors[index % colors.length]),
+    }))
+  }, [accent])
+
+  useEffect(() => {
+    if (!trigger) return
+    setStartedAt(performance.now())
+  }, [trigger])
+
+  useEffect(() => {
+    const mesh = meshRef.current
+    if (!mesh) return
+    mesh.count = 0
+    pieces.forEach((piece, index) => mesh.setColorAt(index, piece.color))
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+  }, [pieces])
+
+  useFrame(() => {
+    const mesh = meshRef.current
+    if (!mesh) return
+    if (startedAt === null) {
+      mesh.count = 0
+      return
+    }
+    const elapsed = (performance.now() - startedAt) / 1000
+    if (elapsed > 7.5) {
+      mesh.count = 0
+      return
+    }
+    const live = elapsed < 6.8 ? pieces.length : Math.floor(pieces.length * Math.max(0, 1 - (elapsed - 6.8) / 0.7))
+    for (let index = 0; index < live; index += 1) {
+      const piece = pieces[index]
+      const burst = Math.min(1, elapsed / 1.1)
+      const settle = Math.max(0, elapsed - 1.15)
+      const swirl = piece.angle + elapsed * 0.75
+      const radius = piece.radius * (0.2 + burst)
+      const x = Math.cos(swirl) * radius
+      const z = Math.sin(swirl) * radius
+      const y = 0.22 + piece.rise * Math.sin(burst * Math.PI * 0.72) - settle * piece.fall
+      dummy.position.set(x, Math.max(0.05, y), z)
+      dummy.rotation.set(elapsed * piece.spin, elapsed * piece.spin * 0.37, piece.angle)
+      dummy.scale.set(piece.size, piece.size * 0.22, piece.size * 1.6)
+      dummy.updateMatrix()
+      mesh.setMatrixAt(index, dummy.matrix)
+    }
+    mesh.count = live
+    mesh.instanceMatrix.needsUpdate = true
+  })
+
+  return (
+    <instancedMesh ref={meshRef} args={[undefined, undefined, pieces.length]} frustumCulled={false}>
+      <boxGeometry args={[1, 1, 1]} />
+      <meshBasicMaterial vertexColors side={THREE.DoubleSide} />
+    </instancedMesh>
+  )
 }
 
 export function SpatialWebObject3D({
@@ -162,7 +233,7 @@ export function SpatialWebObject3D({
 
   const accent = normalizeHex(object.accentColor, '#38bdf8')
   const width = object.width ?? (object.type === 'button' ? 2.2 : 2.6)
-  const height = object.height ?? (object.type === 'output' || object.type === 'text' ? 1.05 : 0.82)
+  const baseHeight = object.height ?? (object.type === 'output' || object.type === 'text' ? 1.05 : 0.82)
   const labelValue = valueForLabel(object)
   const isWidePanel = object.type === 'output' || object.type === 'text'
   const visualStyle = object.visualStyle
@@ -172,6 +243,16 @@ export function SpatialWebObject3D({
           : 'neon-panel')
   const isPortalButton = visualStyle === 'portal-zero-button'
   const depth = isPortalButton ? 0.34 : visualStyle === 'arcade-button' ? 0.42 : visualStyle === 'terminal-panel' ? 0.18 : 0.24
+  const labelText = busy ? 'Sending...' : object.label
+  const valueText = object.type === 'text' && !object.value ? object.placeholder || 'Empty' : labelValue
+  const labelMaxChars = isWidePanel ? 36 : 30
+  const valueMaxChars = isWidePanel ? 42 : 26
+  const labelLines = wrapText(labelText, labelMaxChars, 3)
+  const valueLines = object.type === 'button' ? [] : wrapText(valueText, valueMaxChars, isWidePanel ? 5 : 3)
+  const height = Math.max(
+    baseHeight,
+    baseHeight + Math.max(0, labelLines.length - 1) * 0.18 + Math.max(0, valueLines.length - 1) * (isWidePanel ? 0.18 : 0.24),
+  )
 
   const material = useMemo(() => {
     const color = new THREE.Color(accent)
@@ -225,6 +306,9 @@ export function SpatialWebObject3D({
   const handleSliderPointerDown = (event: ThreeEvent<PointerEvent>) => {
     if (object.type !== 'slider') return
     event.stopPropagation()
+    try {
+      useAudioManager.getState().play('modeSwitch')
+    } catch {}
     setPointerCapture(event)
     setDraggingSlider(true)
     updateSliderFromPointer(event)
@@ -269,6 +353,7 @@ export function SpatialWebObject3D({
           <meshBasicMaterial color={buttonColor} transparent opacity={canClickInteract ? 0.78 : 0.4} />
         </mesh>
         <pointLight color={buttonColor} intensity={canClickInteract ? 1.2 : 0.45} distance={4} position={[0, 0.55, 0]} />
+        <SubmitConfetti trigger={object.submittedAt} accent={accent} />
         <EmbossedText
           position={[0, 0.68, 0.36]}
           fontSize={0.16}
@@ -416,32 +501,28 @@ export function SpatialWebObject3D({
       })}
 
       <EmbossedText
-        position={[
-          0,
-          isWidePanel ? height * 0.28 : object.type === 'button' ? 0.05 : height * 0.22,
-          depth * 0.76,
-        ]}
-        fontSize={object.type === 'button' ? 0.18 : isWidePanel ? 0.12 : 0.135}
-        maxChars={isWidePanel ? 38 : 28}
-        maxLines={isWidePanel ? 2 : 2}
+        position={[0, height / 2 + 0.25 + Math.max(0, labelLines.length - 1) * 0.08, depth * 0.84]}
+        fontSize={object.type === 'button' ? 0.18 : isWidePanel ? 0.115 : 0.14}
+        maxChars={labelMaxChars}
+        maxLines={3}
         color={busy ? '#fecdd3' : accent}
       >
-        {busy ? 'Sending...' : object.label}
+        {labelText}
       </EmbossedText>
 
       {object.type !== 'button' && (
         <EmbossedText
           position={[
             0,
-            isWidePanel ? height * 0.07 : object.type === 'slider' || object.type === 'toggle' ? height * 0.02 : -height * 0.03,
+            isWidePanel ? 0 : object.type === 'slider' || object.type === 'toggle' ? height * 0.05 : -height * 0.02,
             depth * 0.78,
           ]}
           fontSize={isWidePanel ? 0.095 : 0.18}
-          maxChars={isWidePanel ? 42 : 26}
-          maxLines={isWidePanel ? 4 : 2}
+          maxChars={valueMaxChars}
+          maxLines={isWidePanel ? 5 : 3}
           color="#e2e8f0"
         >
-          {object.type === 'text' && !object.value ? object.placeholder || 'Empty' : labelValue}
+          {valueText}
         </EmbossedText>
       )}
 

@@ -189,7 +189,7 @@ function initialValue(field: GoogleFormFieldSpec) {
 
 const JOURNEY_TITLE_Z = -3.15
 const JOURNEY_FIRST_FIELD_Z = -5.7
-const JOURNEY_FIELD_STEP = -2.35
+const JOURNEY_FIELD_STEP = -4
 const JOURNEY_SIDE_X = 3.05
 const JOURNEY_PANEL_Y = 1.18
 
@@ -253,8 +253,8 @@ export function googleFormSpecToSpatialWebObjects(spec: GoogleFormSpatialSpec, f
       formId,
       label: spec.title,
       value: spec.description || 'Start here. Walk the path, answer each 3D control, then press submit.',
-      position: [0, 1.95, JOURNEY_TITLE_Z],
-      rotation: [0, 0, 0],
+      position: [0, 2.85, JOURNEY_TITLE_Z],
+      rotation: [Math.PI / 6, 0, 0],
       width: 7.2,
       height: 1.35,
       accentColor: '#38bdf8',

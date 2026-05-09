@@ -25,6 +25,7 @@ import {
 } from '../lib/forge/world-persistence'
 import {
   buildWelcomeHubPortalGates,
+  WELCOME_HUB_WORLD_ID,
   getSafePortalTargetWorlds,
   isWelcomeHubWorld,
   layoutPortalAreaGates,
@@ -52,6 +53,7 @@ import {
   type AgentAvatarTransformMap,
 } from '../lib/agent-avatar-world-state'
 import { DEFAULT_AGENT_WINDOW_RENDER_MODE, type AgentWindowRenderMode } from '../lib/agent-window-renderers'
+import { useAudioManager, type SoundEvent } from '../lib/audio-manager'
 import {
   SPATIAL_WEB_DEFAULT_SUBMIT_ENDPOINT,
   buildSpatialWebSubmission,
@@ -103,6 +105,12 @@ const MAX_ACTIVE_MARCH_ORDER_VFX = 8
 // of scattering the guard across every localStorage read/write in the store.
 const isBrowser = typeof window !== 'undefined'
 const stored  = (key: string): string | null => isBrowser ? localStorage.getItem(key) : null
+function playSpatialWebSound(event: SoundEvent): void {
+  if (!isBrowser) return
+  try {
+    useAudioManager.getState().play(event)
+  } catch {}
+}
 
 type RemoteSubscription = { unsubscribe: () => void }
 type ViewingWorldMeta = Partial<WorldMeta> & { name: string; icon: string }
@@ -1211,6 +1219,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         ? window.prompt(object.placeholder || object.label, currentValue)
         : null
       if (nextText !== null) {
+        playSpatialWebSound('buttonClick')
         markInteraction({ value: nextText }, 'change')
         get().spawnPlacementVfx(effectPosition)
         setTimeout(() => get().saveWorldState(), 100)
@@ -1220,6 +1229,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
     const nextValue = getNextSpatialWebValue(object)
     if (nextValue !== undefined) {
+      playSpatialWebSound(object.type === 'toggle' || object.type === 'slider' ? 'modeSwitch' : 'buttonClick')
       markInteraction({ value: nextValue }, 'change')
       if (object.action?.type === 'world_tool') {
         const ok = await runWorldToolAction(object.action, nextValue)
@@ -1230,6 +1240,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     }
 
     if (object.type !== 'button') {
+      playSpatialWebSound('buttonClick')
       markInteraction()
       setTimeout(() => get().saveWorldState(), 100)
       return
@@ -1237,6 +1248,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
     const action = object.action
     if (action?.type === 'set_value' && action.targetObjectId) {
+      playSpatialWebSound('buttonClick')
       set(state => ({
         spatialWebObjects: state.spatialWebObjects.map(entry => {
           if (entry.id === action.targetObjectId) {
@@ -1264,12 +1276,14 @@ export const useOasisStore = create<OasisState>((set, get) => {
     }
 
     if (action?.type === 'submit_form' && object.formId) {
+      playSpatialWebSound('buttonClick')
       const payload = {
         ...buildSpatialWebSubmission(get().spatialWebObjects, object.formId),
         ...(action.destination ? { destination: action.destination } : {}),
       }
       const endpoint = action.endpoint || SPATIAL_WEB_DEFAULT_SUBMIT_ENDPOINT
       let status = action.successMessage || 'Submitted.'
+      let submitSucceeded = false
 
       try {
         const response = await fetch(endpoint, {
@@ -1282,6 +1296,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
           status = result?.error || result?.message || `Submit failed: HTTP ${response.status}`
         } else if (result?.message) {
           status = result.message
+          submitSucceeded = true
+        } else {
+          submitSucceeded = true
         }
       } catch (error) {
         status = error instanceof Error ? `Submit failed: ${error.message}` : 'Submit failed.'
@@ -1296,7 +1313,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
           if (entry.id === id) {
             return {
               ...entry,
-              submittedAt: payload.submittedAt,
+              submittedAt: submitSucceeded ? payload.submittedAt : entry.submittedAt,
               lastEvent: 'submit',
               lastInteractionAt: now,
               interactionCount: (entry.interactionCount || 0) + 1,
@@ -1305,12 +1322,57 @@ export const useOasisStore = create<OasisState>((set, get) => {
           return entry
         }),
       }))
-      get().spawnPlacementVfx(effectPosition)
+      if (submitSucceeded) {
+        playSpatialWebSound('winner')
+        get().spawnPlacementVfx(effectPosition)
+        if (isBrowser) {
+          const worldId = get().viewingWorldId || get().activeWorldId
+          const portalPosition: [number, number, number] = [effectPosition[0] + 3, 0, effectPosition[2]]
+          window.setTimeout(() => {
+            void (async () => {
+              try {
+                const response = await fetch('/api/oasis-tools', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    tool: 'create_portal_gate',
+                    args: {
+                      worldId,
+                      targetWorldId: WELCOME_HUB_WORLD_ID,
+                      label: 'Portal Zero',
+                      variant: 'stargate-vortex',
+                      direction: 'one-way',
+                      position: portalPosition,
+                      width: 2.8,
+                      height: 3.4,
+                    },
+                  }),
+                })
+                const result = await response.json().catch(() => null) as { ok?: boolean; data?: { portalGate?: PortalGate } } | null
+                const portalGate = result?.ok !== false ? result?.data?.portalGate : null
+                if (portalGate) {
+                  set(state => ({
+                    portalGates: [
+                      ...state.portalGates.filter(gate => gate.id !== portalGate.id),
+                      portalGate,
+                    ],
+                  }))
+                  get().spawnPlacementVfx(portalPosition)
+                  setTimeout(() => get().saveWorldState(), 100)
+                }
+              } catch {}
+            })()
+          }, 5000)
+        }
+      } else {
+        playSpatialWebSound('error')
+      }
       setTimeout(() => get().saveWorldState(), 100)
       return
     }
 
     if (action?.type === 'world_tool') {
+      playSpatialWebSound('buttonClick')
       markInteraction()
       const ok = await runWorldToolAction(action, object.value)
       if (ok) get().spawnPlacementVfx(effectPosition)
@@ -1318,6 +1380,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       return
     }
 
+    playSpatialWebSound('buttonClick')
     markInteraction()
     get().spawnPlacementVfx(effectPosition)
     setTimeout(() => get().saveWorldState(), 100)

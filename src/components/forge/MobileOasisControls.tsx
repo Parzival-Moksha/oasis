@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { pushMouseLookDelta, useInputManager } from '@/lib/input-manager'
 import { isProbablyMobileDevice, useMobileControls } from '@/lib/mobile-controls'
 
@@ -52,61 +52,62 @@ export function MobileOasisControls({ enabled }: { enabled: boolean }) {
     if (!canvas) return
     const previousTouchAction = canvas.style.touchAction
     canvas.style.touchAction = 'none'
-
-    const canLook = () => {
-      const state = useInputManager.getState()
-      return state.can().mouseLook && !state.hasActiveUILayer()
-    }
-
-    const onPointerDown = (event: PointerEvent) => {
-      if (event.pointerType === 'mouse' || !canLook()) return
-      event.preventDefault()
-      try { canvas.setPointerCapture(event.pointerId) } catch {}
-      lookPointerRef.current = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false }
-      setLookActive(true)
-    }
-
-    const onPointerMove = (event: PointerEvent) => {
-      const active = lookPointerRef.current
-      if (!active || active.id !== event.pointerId) return
-      event.preventDefault()
-      if (!canLook()) {
-        lookPointerRef.current = null
-        setLookActive(false)
-        return
-      }
-      const dx = event.clientX - active.x
-      const dy = event.clientY - active.y
-      if (Math.hypot(dx, dy) > LOOK_DEADZONE_PX) active.moved = true
-      if (active.moved) {
-        pushMouseLookDelta(dx * MOBILE_LOOK_MULTIPLIER, dy * MOBILE_LOOK_MULTIPLIER, event.timeStamp)
-      }
-      lookPointerRef.current = { ...active, x: event.clientX, y: event.clientY }
-    }
-
-    const endLook = (event: PointerEvent) => {
-      if (lookPointerRef.current?.id !== event.pointerId) return
-      lookPointerRef.current = null
-      try { canvas.releasePointerCapture(event.pointerId) } catch {}
-      setLookActive(false)
-    }
-
-    canvas.addEventListener('pointerdown', onPointerDown, { passive: false })
-    window.addEventListener('pointermove', onPointerMove, { passive: false, capture: true })
-    window.addEventListener('pointerup', endLook, true)
-    window.addEventListener('pointercancel', endLook, true)
     return () => {
       canvas.style.touchAction = previousTouchAction
-      canvas.removeEventListener('pointerdown', onPointerDown)
-      window.removeEventListener('pointermove', onPointerMove, true)
-      window.removeEventListener('pointerup', endLook, true)
-      window.removeEventListener('pointercancel', endLook, true)
       lookPointerRef.current = null
       setLookActive(false)
     }
   }, [enabled, setLookActive])
 
   if (!enabled) return null
+
+  const canLook = () => {
+    const state = useInputManager.getState()
+    return state.can().mouseLook && !state.hasActiveUILayer()
+  }
+
+  const beginLook = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'mouse' || !canLook()) return
+    event.preventDefault()
+    event.stopPropagation()
+    try { event.currentTarget.setPointerCapture(event.pointerId) } catch {}
+    lookPointerRef.current = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false }
+    setLookActive(true)
+  }
+
+  const updateLook = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const active = lookPointerRef.current
+    if (!active || active.id !== event.pointerId) return
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (!canLook()) {
+      lookPointerRef.current = null
+      setLookActive(false)
+      return
+    }
+
+    const dx = event.clientX - active.x
+    const dy = event.clientY - active.y
+    const moved = active.moved || Math.hypot(dx, dy) > LOOK_DEADZONE_PX
+    if (moved) {
+      pushMouseLookDelta(dx * MOBILE_LOOK_MULTIPLIER, dy * MOBILE_LOOK_MULTIPLIER, event.timeStamp)
+    }
+    lookPointerRef.current = { id: active.id, x: event.clientX, y: event.clientY, moved }
+  }
+
+  const endLook = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (lookPointerRef.current?.id !== event.pointerId) return
+    event.preventDefault()
+    event.stopPropagation()
+    try {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+    } catch {}
+    lookPointerRef.current = null
+    setLookActive(false)
+  }
 
   const updateMove = (clientX: number, clientY: number) => {
     const dx = clientX - moveCenterRef.current.x
@@ -125,10 +126,31 @@ export function MobileOasisControls({ enabled }: { enabled: boolean }) {
     setMove(0, 0)
   }
 
+  const endMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (movePointerIdRef.current !== event.pointerId) return
+    event.preventDefault()
+    event.stopPropagation()
+    try {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+    } catch {}
+    resetMove()
+  }
+
   return (
     <div className="pointer-events-none fixed inset-0 z-[185] touch-none select-none">
       <div
-        className="pointer-events-auto absolute bottom-6 left-5 h-28 w-28 rounded-full border border-cyan-200/24 bg-black/35 shadow-[0_0_30px_rgba(34,211,238,0.16)] backdrop-blur-sm"
+        aria-hidden="true"
+        className="pointer-events-auto absolute inset-y-0 right-0 w-[60vw] touch-none"
+        onPointerDown={beginLook}
+        onPointerMove={updateLook}
+        onPointerUp={endLook}
+        onPointerCancel={endLook}
+      />
+
+      <div
+        className="pointer-events-auto absolute bottom-6 left-5 h-28 w-28 touch-none rounded-full border border-cyan-200/24 bg-black/35 shadow-[0_0_30px_rgba(34,211,238,0.16)] backdrop-blur-sm"
         onPointerDown={event => {
           event.preventDefault()
           event.stopPropagation()
@@ -144,12 +166,8 @@ export function MobileOasisControls({ enabled }: { enabled: boolean }) {
           event.stopPropagation()
           updateMove(event.clientX, event.clientY)
         }}
-        onPointerUp={event => {
-          if (movePointerIdRef.current !== event.pointerId) return
-          event.currentTarget.releasePointerCapture(event.pointerId)
-          resetMove()
-        }}
-        onPointerCancel={resetMove}
+        onPointerUp={endMove}
+        onPointerCancel={endMove}
       >
         <div className="absolute inset-4 rounded-full border border-white/12" />
         <div
@@ -158,16 +176,25 @@ export function MobileOasisControls({ enabled }: { enabled: boolean }) {
         />
       </div>
 
-      <div className="pointer-events-auto absolute bottom-7 right-5 flex flex-col gap-2">
+      <div className="pointer-events-auto absolute bottom-7 right-5 flex touch-none flex-col gap-2">
         <button
           type="button"
-          className="h-11 min-w-20 rounded-lg border border-amber-200/35 bg-black/45 px-4 text-[11px] font-black uppercase tracking-[0.14em] text-amber-100 shadow-[0_0_28px_rgba(251,191,36,0.16)] backdrop-blur-sm"
+          className="h-11 min-w-20 touch-none rounded-lg border border-amber-200/35 bg-black/45 px-4 text-[11px] font-black uppercase tracking-[0.14em] text-amber-100 shadow-[0_0_28px_rgba(251,191,36,0.16)] backdrop-blur-sm"
           onPointerDown={event => {
             event.preventDefault()
+            event.stopPropagation()
             setSprint(true)
           }}
-          onPointerUp={() => setSprint(false)}
-          onPointerCancel={() => setSprint(false)}
+          onPointerUp={event => {
+            event.preventDefault()
+            event.stopPropagation()
+            setSprint(false)
+          }}
+          onPointerCancel={event => {
+            event.preventDefault()
+            event.stopPropagation()
+            setSprint(false)
+          }}
         >
           Run
         </button>

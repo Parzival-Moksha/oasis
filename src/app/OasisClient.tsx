@@ -40,9 +40,14 @@ export default function OasisClient({ initialWorldId }: { initialWorldId?: strin
     const unregisterStore = registerStoreHandler()
     const unregisterAudio = registerAudioSubscriber()
 
-    // Strip any stale URL params
+    // Strip stale URL params, but keep the explicit mobile test override alive.
     if (window.location.search) {
-      window.history.replaceState({}, '', window.location.pathname)
+      const params = new URLSearchParams(window.location.search)
+      const mobileOverride = params.get('mobile')
+      if (mobileOverride === '1' || mobileOverride === '0') {
+        window.localStorage.setItem('oasis-mobile-override', mobileOverride)
+      }
+      window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash}`)
     }
 
     fetch('/api/session/init', { credentials: 'same-origin', cache: 'no-store' })
