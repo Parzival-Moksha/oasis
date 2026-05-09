@@ -18,6 +18,7 @@ import { GROUND_PRESETS } from '../../lib/forge/ground-textures'
 import { useThumbnailGenerator } from '../../hooks/useThumbnailGenerator'
 import { PlayerAvatar } from '../forge/PlayerAvatar'
 import { PortalGateLayer } from '../forge/PortalGateLayer'
+import { MultiplayerPresenceLayer } from '../forge/MultiplayerPresenceLayer'
 import { SettingsContext } from '../scene-lib'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -75,7 +76,6 @@ export function ForgeRealm() {
   const setInspectedObject = useOasisStore(s => s.setInspectedObject)
   const worldLights = useOasisStore(s => s.worldLights)
   const avatar3dUrl = useOasisStore(s => s.avatar3dUrl)
-  const isViewMode = useOasisStore(s => s.isViewMode)
   const customGroundPresets = useOasisStore(s => s.customGroundPresets)
   const terrainParams = useOasisStore(s => s.terrainParams)
   const { settings } = useContext(SettingsContext)
@@ -107,10 +107,11 @@ export function ForgeRealm() {
       <WorldObjectsRenderer />
 
       <PortalGateLayer />
+      <MultiplayerPresenceLayer />
 
       {/* ░▒▓ PLAYER AVATAR — your body in the Oasis ▓▒░ */}
       {/* orbit: idle at spawn. fps: hidden. third-person: WASD moves, camera follows. */}
-      {avatar3dUrl && !isViewMode && avatar3dUrl.endsWith('.vrm') && (
+      {avatar3dUrl && avatar3dUrl.endsWith('.vrm') && (
         <Suspense fallback={null}>
           <PlayerAvatar
             url={avatar3dUrl}
