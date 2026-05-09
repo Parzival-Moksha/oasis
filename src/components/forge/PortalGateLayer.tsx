@@ -208,6 +208,14 @@ function framePortalArrivalCamera(camera: THREE.Camera, pose: PlayerAvatarPose):
   }
 }
 
+function settlePortalArrivalCamera(camera: THREE.Camera, pose: PlayerAvatarPose): void {
+  framePortalArrivalCamera(camera, pose)
+  if (typeof window === 'undefined') return
+
+  window.requestAnimationFrame(() => framePortalArrivalCamera(camera, pose))
+  window.setTimeout(() => framePortalArrivalCamera(camera, pose), 90)
+}
+
 async function waitForWorldReady(worldId: string, timeoutMs = 1800): Promise<void> {
   const start = performance.now()
   while (performance.now() - start < timeoutMs) {
@@ -225,7 +233,6 @@ async function ensureReturnPortalForArrival(args: {
   targetWorldName?: string
 }): Promise<PlayerAvatarPose | null> {
   const { sourceGate, sourceWorldId, sourceWorldName, targetWorldId } = args
-  if (sourceGate.direction !== 'two-way') return null
 
   const targetState = await loadWorld(targetWorldId)
   if (!targetState) return null
@@ -237,12 +244,38 @@ async function ensureReturnPortalForArrival(args: {
       gate.direction === 'two-way' &&
       gate.sourceWorldId === targetWorldId &&
       gate.targetWorldId === sourceWorldId
+    ) ||
+    gate.targetWorldId === sourceWorldId ||
+    (gate.action?.type === 'load_world' && gate.action.worldId === sourceWorldId) ||
+    (
+      sourceWorldId === WELCOME_HUB_WORLD_ID &&
+      (
+        gate.id === PORTAL_ZERO_RETURN_GATE_ID ||
+        gate.targetWorldId === WELCOME_HUB_WORLD_ID ||
+        (gate.action?.type === 'load_world' && gate.action.worldId === WELCOME_HUB_WORLD_ID)
+      )
     )
   )
 
   if (existingReturnGate) {
     return derivePortalArrivalPose(existingReturnGate, targetState.transforms)
   }
+
+  if (sourceWorldId === WELCOME_HUB_WORLD_ID && targetWorldId !== WELCOME_HUB_WORLD_ID) {
+    const nextPortalGates = upsertPortalZeroReturnGate(targetGates, targetWorldId)
+    const returnGate = nextPortalGates.find(gate => gate.id === PORTAL_ZERO_RETURN_GATE_ID)
+      || nextPortalGates.find(gate => gate.targetWorldId === WELCOME_HUB_WORLD_ID)
+    if (returnGate && nextPortalGates !== targetGates) {
+      const { version: _version, savedAt: _savedAt, ...targetSaveState } = targetState
+      await saveWorld({
+        ...targetSaveState,
+        portalGates: nextPortalGates,
+      }, targetWorldId).catch(() => null)
+    }
+    return returnGate ? derivePortalArrivalPose(returnGate, targetState.transforms) : null
+  }
+
+  if (sourceGate.direction !== 'two-way') return null
 
   const returnPosition: [number, number, number] = [30, 0, 0]
   const returnGate: PortalGate = {
@@ -362,7 +395,7 @@ export function PortalGateLayer() {
       if (options?.targetWorldId) await waitForWorldReady(options.targetWorldId)
       if (arrivalPose) {
         requestPlayerAvatarTeleport(arrivalPose)
-        framePortalArrivalCamera(camera, arrivalPose)
+        settlePortalArrivalCamera(camera, arrivalPose)
       }
       return
     }
@@ -392,7 +425,7 @@ export function PortalGateLayer() {
       }
       if (arrivalPose) {
         requestPlayerAvatarTeleport(arrivalPose)
-        framePortalArrivalCamera(camera, arrivalPose)
+        settlePortalArrivalCamera(camera, arrivalPose)
       }
       await sleep(remainingTunnelMs)
       if (settings.rollReveal) emitPortalRevealRoll(gate, targetWorldName)

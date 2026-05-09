@@ -74,6 +74,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.unstubAllGlobals()
   if (originalOasisMode === undefined) delete process.env.OASIS_MODE
   else process.env.OASIS_MODE = originalOasisMode
   if (originalOasisProfile === undefined) delete process.env.OASIS_PROFILE
@@ -139,6 +140,50 @@ describe('TOOL_NAMES', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 // 3. search_assets — finds real catalog items
 // ═══════════════════════════════════════════════════════════════════════════
+
+describe('create_world_from_google_form', () => {
+  it('creates form worlds with a one-way Portal Zero return gate', async () => {
+    const html = `
+      <html>
+        <head><title>Hackathon RSVP - Google Forms</title></head>
+        <body>
+          <script>
+            var FB_PUBLIC_LOAD_DATA_ = [null, ["Hackathon RSVP", null, null, null, [
+              [123, "Your name", null, 0, [[111111111, null]]],
+              [124, "Can you come?", null, 2, [[222222222, [["Yes"], ["Maybe"], ["No"]]]]]
+            ]]];
+          </script>
+        </body>
+      </html>
+    `
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      url: 'https://docs.google.com/forms/d/e/demo/viewform',
+      text: vi.fn().mockResolvedValue(html),
+    }))
+    vi.mocked(prisma.world.create).mockResolvedValue({} as any)
+
+    const result = await callTool('create_world_from_google_form', {
+      formUrl: 'https://forms.gle/demo',
+      name: 'Hackathon RSVP World',
+    })
+
+    expect(result.ok).toBe(true)
+    const createArgs = vi.mocked(prisma.world.create).mock.calls[0]?.[0] as any
+    const state = JSON.parse(createArgs.data.data)
+    expect(state.portalGates).toEqual([
+      expect.objectContaining({
+        id: 'portal-return-to-portal-zero',
+        variant: 'crystal-cavern',
+        label: 'Portal Zero',
+        direction: 'one-way',
+        targetWorldId: 'world-welcome-hub-system',
+        targetWorldName: 'Portal Zero',
+      }),
+    ])
+  })
+})
 
 describe('get_world_state', () => {
   it('reports effective catalog transforms from transform overrides', async () => {

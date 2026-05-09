@@ -37,6 +37,7 @@ import {
   type PortalGate,
   type PortalGateVariant,
 } from '../portal-gates'
+import { createPortalZeroReturnGate } from '../portal-zero-return-gate'
 import { getAllAssets, getAssetById, updateAsset } from '../conjure/registry'
 import { emitWorldEvent } from './world-events'
 import { readWorldPlayerContext } from '../world-runtime-context'
@@ -1614,7 +1615,7 @@ tools.create_world_from_google_form = async (args) => {
     craftedScenes: [],
     conjuredAssetIds: [],
     catalogPlacements: [],
-    portalGates: [],
+    portalGates: [createPortalZeroReturnGate(worldId)],
     spatialWebObjects,
     transforms: {},
     behaviors: {},
