@@ -272,7 +272,7 @@ function GoogleFormsAltar({
   const streamARef = useRef<THREE.Mesh>(null)
   const streamBRef = useRef<THREE.Mesh>(null)
   const hasWorld = Boolean(object.generatedWorldUrl && object.generatedWorldId)
-  const actionText = busy ? 'BUILDING' : hasWorld ? 'COPY TEXT' : 'CREATE'
+  const actionText = busy ? 'BUILDING WORLD' : hasWorld ? 'HIT F TO COPY URL' : 'HIT F TO CREATE'
   const statusText = busy
     ? 'BUILDING WORLD'
     : object.errorMessage
@@ -404,8 +404,8 @@ function GoogleFormsAltar({
             <boxGeometry args={[2.18, 0.28, 0.18]} />
             <meshStandardMaterial color="#064e3b" roughness={0.34} metalness={0.2} emissive="#22c55e" emissiveIntensity={0.46} />
           </mesh>
-          <EmbossedText position={[0, -0.03, 0.15]} fontSize={0.08} maxChars={18} color="#ecfdf5" sideColor="#022c22">
-            COPY TEXT
+          <EmbossedText position={[0, -0.03, 0.15]} fontSize={0.075} maxChars={20} color="#ecfdf5" sideColor="#022c22">
+            COPY WORLD URL
           </EmbossedText>
         </group>
       )}
@@ -413,10 +413,10 @@ function GoogleFormsAltar({
       {interactionHint && (
         <group position={[0, 2.12, 0.56]}>
           <mesh>
-            <boxGeometry args={[hasWorld ? 1.28 : 0.92, 0.26, 0.06]} />
+            <boxGeometry args={[hasWorld ? 1.86 : busy ? 1.68 : 1.62, 0.26, 0.06]} />
             <meshStandardMaterial color="#020617" emissive={accent} emissiveIntensity={0.45} roughness={0.45} metalness={0.2} />
           </mesh>
-          <EmbossedText position={[0, 0, 0.08]} fontSize={0.088} maxChars={9} color="#ffffff" sideColor="#111827">
+          <EmbossedText position={[0, 0, 0.08]} fontSize={0.064} maxChars={18} color="#ffffff" sideColor="#111827">
             {actionText}
           </EmbossedText>
         </group>

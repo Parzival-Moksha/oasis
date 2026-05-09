@@ -23,8 +23,8 @@ describe('multiplayer presence', () => {
 
   it('expires stale players', () => {
     upsertMultiplayerPresence({ playerId: 'a', worldId: 'world-1', position: [1, 0, 2], yaw: 0 }, 1000)
-    expect(listMultiplayerPresence('world-1', undefined, 9000)).toHaveLength(1)
-    expect(listMultiplayerPresence('world-1', undefined, 10000)).toHaveLength(0)
+    expect(listMultiplayerPresence('world-1', undefined, 30000)).toHaveLength(1)
+    expect(listMultiplayerPresence('world-1', undefined, 32000)).toHaveLength(0)
   })
 
   it('removes a leaving player', () => {

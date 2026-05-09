@@ -16,6 +16,7 @@ import {
 } from './ModelPreview'
 import { AGENT_AVATAR_CATALOG } from '@/lib/agent-avatar-catalog'
 import { useUILayer } from '@/lib/input-manager'
+import { isProbablyMobileDevice } from '@/lib/mobile-controls'
 import {
   ANIMATION_LIBRARY,
   ANIM_CATEGORIES,
@@ -277,8 +278,41 @@ interface AvatarGalleryProps {
   onClose: () => void
 }
 
+function useAvatarGalleryMobileLayout(): boolean {
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const query = window.matchMedia('(max-width: 700px)')
+    const update = () => setIsMobile(query.matches || isProbablyMobileDevice())
+    update()
+    window.addEventListener('resize', update)
+    window.addEventListener('orientationchange', update)
+
+    if (typeof query.addEventListener === 'function') {
+      query.addEventListener('change', update)
+      return () => {
+        query.removeEventListener('change', update)
+        window.removeEventListener('resize', update)
+        window.removeEventListener('orientationchange', update)
+      }
+    }
+
+    query.addListener(update)
+    return () => {
+      query.removeListener(update)
+      window.removeEventListener('resize', update)
+      window.removeEventListener('orientationchange', update)
+    }
+  }, [])
+
+  return isMobile
+}
+
 export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGalleryProps) {
   useUILayer('avatar-gallery', true)
+  const mobileLayout = useAvatarGalleryMobileLayout()
   const [diskAvatars, setDiskAvatars] = useState<AvatarEntry[]>([])
   const [diskScanCompleted, setDiskScanCompleted] = useState(false)
   const allAvatars = useMemo<AvatarEntry[]>(() => {
@@ -484,10 +518,11 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
         inset: 0,
         zIndex: 10050,
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+        alignItems: mobileLayout ? 'stretch' : 'center',
+        justifyContent: mobileLayout ? 'stretch' : 'center',
         background: 'rgba(2, 6, 23, 0.82)',
         backdropFilter: 'blur(10px)',
+        padding: mobileLayout ? 6 : 0,
       }}
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose()
@@ -499,12 +534,13 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
         onMouseDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
         style={{
-          width: 1040,
-          maxWidth: '95vw',
-          maxHeight: '92vh',
+          width: mobileLayout ? 'calc(100vw - 12px)' : 1040,
+          maxWidth: mobileLayout ? 'calc(100vw - 12px)' : '95vw',
+          height: mobileLayout ? 'calc(100vh - 12px)' : undefined,
+          maxHeight: mobileLayout ? 'calc(100vh - 12px)' : '92vh',
           background: 'rgba(7, 10, 18, 0.97)',
           border: '1px solid rgba(94, 234, 212, 0.22)',
-          borderRadius: 18,
+          borderRadius: mobileLayout ? 10 : 18,
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
@@ -513,7 +549,7 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
       >
         <div
           style={{
-            padding: '16px 20px',
+            padding: mobileLayout ? '8px 10px' : '16px 20px',
             borderBottom: '1px solid rgba(255,255,255,0.1)',
             display: 'flex',
             justifyContent: 'space-between',
@@ -521,10 +557,10 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
           }}
         >
           <div>
-            <h2 style={{ margin: 0, fontSize: 16, color: '#67e8f9', fontWeight: 700, letterSpacing: '0.08em' }}>
+            <h2 style={{ margin: 0, fontSize: mobileLayout ? 11 : 16, color: '#67e8f9', fontWeight: 700, letterSpacing: '0.08em' }}>
               OASIS AVATAR SELECTOR
             </h2>
-            <p style={{ margin: '4px 0 0', fontSize: 11, color: '#7dd3fc80', fontFamily: 'monospace' }}>
+            <p style={{ display: mobileLayout ? 'none' : undefined, margin: '4px 0 0', fontSize: 11, color: '#7dd3fc80', fontFamily: 'monospace' }}>
               Shared selector for user + all agent bodies · {allAvatars.length} avatars
               {autoGen.active && (
                 <span style={{ marginLeft: 10, color: '#14b8a6' }}>
@@ -539,24 +575,24 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
               background: 'none',
               border: 'none',
               color: '#666',
-              fontSize: 20,
+              fontSize: mobileLayout ? 18 : 20,
               cursor: 'pointer',
-              padding: '4px 8px',
+              padding: mobileLayout ? '2px 6px' : '4px 8px',
             }}
           >
             ✕
           </button>
         </div>
 
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
           <div
             style={{
-              width: 360,
-              padding: 16,
+              width: mobileLayout ? 96 : 360,
+              padding: mobileLayout ? 6 : 16,
               overflowY: 'auto',
               display: 'grid',
-              gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-              gap: 10,
+              gridTemplateColumns: mobileLayout ? 'minmax(0, 1fr)' : 'repeat(3, minmax(0, 1fr))',
+              gap: mobileLayout ? 6 : 10,
               alignContent: 'start',
               borderRight: '1px solid rgba(255,255,255,0.08)',
             }}
@@ -566,37 +602,37 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
               style={{
                 background: !currentAvatarUrl ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.03)',
                 border: `1px solid ${!currentAvatarUrl ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.08)'}`,
-                borderRadius: 12,
-                padding: 10,
+                borderRadius: mobileLayout ? 8 : 12,
+                padding: mobileLayout ? 4 : 10,
                 cursor: 'pointer',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'stretch',
-                gap: 10,
+                gap: mobileLayout ? 4 : 10,
                 transition: 'all 0.15s',
-                minHeight: 142,
+                minHeight: mobileLayout ? 88 : 142,
               }}
             >
               <div
                 style={{
                   width: '100%',
                   aspectRatio: '1 / 1',
-                  borderRadius: 10,
+                  borderRadius: mobileLayout ? 7 : 10,
                   background: 'rgba(239,68,68,0.1)',
                   border: '1px solid rgba(239,68,68,0.28)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: 28,
+                  fontSize: mobileLayout ? 18 : 28,
                 }}
               >
                 🚫
               </div>
               <div style={{ display: 'grid', gap: 2, textAlign: 'left' }}>
-                <span style={{ fontSize: 10, color: !currentAvatarUrl ? '#EF4444' : '#cbd5e1', lineHeight: 1.2, fontWeight: 700 }}>
+                <span style={{ fontSize: mobileLayout ? 8 : 10, color: !currentAvatarUrl ? '#EF4444' : '#cbd5e1', lineHeight: 1.2, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   No Avatar
                 </span>
-                <span style={{ fontSize: 9, color: '#64748b', fontFamily: 'monospace' }}>
+                <span style={{ display: mobileLayout ? 'none' : undefined, fontSize: 9, color: '#64748b', fontFamily: 'monospace' }}>
                   remove shared body
                 </span>
               </div>
@@ -618,22 +654,22 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
                         ? 'rgba(34,197,94,0.15)'
                         : 'rgba(255,255,255,0.03)',
                     border: `1px solid ${isPreviewing ? 'rgba(168,85,247,0.5)' : isSelected ? 'rgba(34,197,94,0.4)' : 'rgba(255,255,255,0.08)'}`,
-                    borderRadius: 12,
-                    padding: 10,
+                    borderRadius: mobileLayout ? 8 : 12,
+                    padding: mobileLayout ? 4 : 10,
                     cursor: 'pointer',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'stretch',
-                    gap: 10,
+                    gap: mobileLayout ? 4 : 10,
                     transition: 'all 0.15s',
-                    minHeight: 142,
+                    minHeight: mobileLayout ? 88 : 142,
                   }}
                 >
                   <div
                     style={{
                       width: '100%',
                       aspectRatio: '1 / 1',
-                      borderRadius: 10,
+                      borderRadius: mobileLayout ? 7 : 10,
                       background: '#2a2a3e',
                       border: '1px solid rgba(255,255,255,0.06)',
                       display: 'flex',
@@ -651,33 +687,33 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                       />
                     ) : (
-                      <span style={{ fontSize: 24, opacity: 0.5 }}>{'\u{1F9D1}'}</span>
+                      <span style={{ fontSize: mobileLayout ? 18 : 24, opacity: 0.5 }}>{'\u{1F9D1}'}</span>
                     )}
                     {isSelected && (
                       <div
                         style={{
                           position: 'absolute',
-                          top: 6,
-                          left: 6,
-                          padding: '2px 5px',
+                          top: mobileLayout ? 4 : 6,
+                          left: mobileLayout ? 4 : 6,
+                          padding: mobileLayout ? '1px 4px' : '2px 5px',
                           borderRadius: 999,
                           background: 'rgba(15,23,42,0.82)',
                           border: '1px solid rgba(34,197,94,0.32)',
                           color: '#22C55E',
-                          fontSize: 8,
+                          fontSize: mobileLayout ? 6 : 8,
                           fontWeight: 700,
                           letterSpacing: '0.08em',
                         }}
                       >
-                        ACTIVE
+                        {mobileLayout ? 'ON' : 'ACTIVE'}
                       </div>
                     )}
                   </div>
                   <div style={{ display: 'grid', gap: 2, textAlign: 'left' }}>
-                    <span style={{ fontSize: 10, color: isPreviewing ? '#A855F7' : '#e2e8f0', lineHeight: 1.2, fontWeight: isPreviewing ? 700 : 600 }}>
+                    <span style={{ fontSize: mobileLayout ? 8 : 10, color: isPreviewing ? '#A855F7' : '#e2e8f0', lineHeight: 1.2, fontWeight: isPreviewing ? 700 : 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {avatar.name}
                     </span>
-                    <span style={{ fontSize: 9, color: '#64748b', fontFamily: 'monospace', lineHeight: 1.2 }}>
+                    <span style={{ display: mobileLayout ? 'none' : undefined, fontSize: 9, color: '#64748b', fontFamily: 'monospace', lineHeight: 1.2 }}>
                       {avatar.file}
                     </span>
                   </div>
@@ -689,7 +725,7 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
             {previewAvatar ? (
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-                <div style={{ flex: '0 0 340px', position: 'relative', background: '#24262b' }}>
+                <div style={{ flex: mobileLayout ? '0 0 34vh' : '0 0 340px', position: 'relative', background: '#24262b' }}>
                   <Canvas
                     camera={{ fov: 45, near: 0.01, far: 1000 }}
                     style={{ width: '100%', height: '100%' }}
@@ -710,7 +746,7 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
                     </Suspense>
                   </Canvas>
                   {/* ░▒▓ Viewport controls — 1:1 with ModelPreviewPanel ▓▒░ */}
-                  <div style={{ position: 'absolute', bottom: 8, right: 8, zIndex: 20, display: 'flex', gap: 4 }}>
+                  <div style={{ position: 'absolute', bottom: mobileLayout ? 6 : 8, right: mobileLayout ? 6 : 8, zIndex: 20, display: 'flex', gap: 4 }}>
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -757,26 +793,26 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
                   </div>
                 </div>
 
-                <div style={{ padding: 18, borderTop: '1px solid rgba(255,255,255,0.08)', overflowY: 'auto' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 170px', gap: 18 }}>
+                <div style={{ padding: mobileLayout ? 8 : 18, borderTop: '1px solid rgba(255,255,255,0.08)', overflowY: 'auto' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: mobileLayout ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) 170px', gap: mobileLayout ? 8 : 18 }}>
                     <div>
-                      <p style={{ margin: 0, fontSize: 18, color: '#fff', fontWeight: 700 }}>{previewAvatar.name}</p>
-                      <p style={{ margin: '4px 0 12px', fontSize: 10, color: '#94a3b8', fontFamily: 'monospace' }}>
+                      <p style={{ margin: 0, fontSize: mobileLayout ? 13 : 18, color: '#fff', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{previewAvatar.name}</p>
+                      <p style={{ display: mobileLayout ? 'none' : undefined, margin: '4px 0 12px', fontSize: 10, color: '#94a3b8', fontFamily: 'monospace' }}>
                         /avatars/gallery/{previewAvatar.file}
                       </p>
 
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginBottom: 14 }}>
-                        <div style={{ padding: '8px 10px', borderRadius: 10, background: 'rgba(15,23,42,0.68)', border: '1px solid rgba(148,163,184,0.14)' }}>
-                          <div style={{ fontSize: 9, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Triangles</div>
-                          <div style={{ marginTop: 4, fontSize: 13, color: '#f8fafc', fontWeight: 600 }}>{previewStats?.triangles?.toLocaleString() || '—'}</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: mobileLayout ? 4 : 8, marginBottom: mobileLayout ? 8 : 14, marginTop: mobileLayout ? 6 : 0 }}>
+                        <div style={{ padding: mobileLayout ? '5px 6px' : '8px 10px', borderRadius: mobileLayout ? 7 : 10, background: 'rgba(15,23,42,0.68)', border: '1px solid rgba(148,163,184,0.14)' }}>
+                          <div style={{ fontSize: mobileLayout ? 7 : 9, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Triangles</div>
+                          <div style={{ marginTop: mobileLayout ? 2 : 4, fontSize: mobileLayout ? 10 : 13, color: '#f8fafc', fontWeight: 600 }}>{previewStats?.triangles?.toLocaleString() || '—'}</div>
                         </div>
-                        <div style={{ padding: '8px 10px', borderRadius: 10, background: 'rgba(15,23,42,0.68)', border: '1px solid rgba(148,163,184,0.14)' }}>
-                          <div style={{ fontSize: 9, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Vertices</div>
-                          <div style={{ marginTop: 4, fontSize: 13, color: '#f8fafc', fontWeight: 600 }}>{previewStats?.vertices?.toLocaleString() || '—'}</div>
+                        <div style={{ padding: mobileLayout ? '5px 6px' : '8px 10px', borderRadius: mobileLayout ? 7 : 10, background: 'rgba(15,23,42,0.68)', border: '1px solid rgba(148,163,184,0.14)' }}>
+                          <div style={{ fontSize: mobileLayout ? 7 : 9, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Vertices</div>
+                          <div style={{ marginTop: mobileLayout ? 2 : 4, fontSize: mobileLayout ? 10 : 13, color: '#f8fafc', fontWeight: 600 }}>{previewStats?.vertices?.toLocaleString() || '—'}</div>
                         </div>
-                        <div style={{ padding: '8px 10px', borderRadius: 10, background: 'rgba(15,23,42,0.68)', border: '1px solid rgba(148,163,184,0.14)' }}>
-                          <div style={{ fontSize: 9, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Size</div>
-                          <div style={{ marginTop: 4, fontSize: 13, color: '#f8fafc', fontWeight: 600 }}>
+                        <div style={{ padding: mobileLayout ? '5px 6px' : '8px 10px', borderRadius: mobileLayout ? 7 : 10, background: 'rgba(15,23,42,0.68)', border: '1px solid rgba(148,163,184,0.14)' }}>
+                          <div style={{ fontSize: mobileLayout ? 7 : 9, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Size</div>
+                          <div style={{ marginTop: mobileLayout ? 2 : 4, fontSize: mobileLayout ? 10 : 13, color: '#f8fafc', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {previewStats ? `${previewStats.dimensions.w} × ${previewStats.dimensions.h} × ${previewStats.dimensions.d}` : '—'}
                           </div>
                         </div>
@@ -787,14 +823,14 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
                         disabled={saving || currentFile === previewAvatar.file}
                         style={{
                           width: '100%',
-                          padding: '10px 0',
+                          padding: mobileLayout ? '8px 0' : '10px 0',
                           borderRadius: 6,
                           border: 'none',
                           background: currentFile === previewAvatar.file
                             ? 'rgba(34,197,94,0.2)'
                             : 'linear-gradient(135deg, #0f766e, #164e63)',
                           color: currentFile === previewAvatar.file ? '#22C55E' : '#fff',
-                          fontSize: 13,
+                          fontSize: mobileLayout ? 11 : 13,
                           fontWeight: 600,
                           cursor: currentFile === previewAvatar.file ? 'default' : 'pointer',
                         }}
@@ -803,7 +839,7 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
                       </button>
                     </div>
 
-                    <div style={{ display: 'grid', gap: 8, alignContent: 'start' }}>
+                    <div style={{ display: mobileLayout ? 'none' : 'grid', gap: 8, alignContent: 'start' }}>
                       {[
                         ['Meshes', previewStats?.meshCount],
                         ['Materials', previewStats?.materialCount],
@@ -819,6 +855,8 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
                   </div>
 
                   {/* ═══ Animation selector (ported from Joystick) ═══ */}
+                  {!mobileLayout && (
+                    <>
                   <div style={{ marginTop: 18, padding: 12, borderRadius: 12, background: 'rgba(15,23,42,0.55)', border: '1px solid rgba(148,163,184,0.12)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                       <span style={{ fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
@@ -926,6 +964,8 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
                       </div>
                     )}
                   </div>
+                    </>
+                  )}
                 </div>
               </div>
             ) : (
@@ -935,11 +975,11 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  padding: 20,
+                  padding: mobileLayout ? 10 : 20,
                   textAlign: 'center',
                 }}
               >
-                <p style={{ fontSize: 12, color: '#64748b', lineHeight: 1.6 }}>
+                <p style={{ fontSize: mobileLayout ? 11 : 12, color: '#64748b', lineHeight: 1.6 }}>
                   Click an avatar to preview.
                   <br />
                   Double-click to select instantly.

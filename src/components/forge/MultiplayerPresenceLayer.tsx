@@ -10,16 +10,13 @@ import { getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
 import type { MultiplayerPresencePlayer } from '@/lib/multiplayer-presence'
 import { useOasisStore } from '@/store/oasisStore'
 
-const HEARTBEAT_INTERVAL_SECONDS = 0.24
+const HEARTBEAT_INTERVAL_MS = 700
 
 function makePresenceId(): string {
-  if (typeof window === 'undefined') return 'server'
-  const key = 'oasis-presence-player-id'
-  const existing = window.sessionStorage.getItem(key)
-  if (existing) return existing
-  const id = `player-${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`
-  window.sessionStorage.setItem(key, id)
-  return id
+  const randomId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID().replace(/-/g, '').slice(0, 12)
+    : Math.random().toString(36).slice(2, 14)
+  return `player-${randomId}`
 }
 
 function makePresenceName(playerId: string): string {
@@ -109,9 +106,9 @@ export function MultiplayerPresenceLayer() {
   const playerIdRef = useRef<string>('')
   const playerNameRef = useRef<string>('Visitor')
   const playerColorRef = useRef<string>('#38bdf8')
-  const elapsedRef = useRef(HEARTBEAT_INTERVAL_SECONDS)
   const inFlightRef = useRef(false)
   const latestWorldIdRef = useRef(activeWorldId)
+  const latestPoseRef = useRef<{ position: [number, number, number]; yaw: number } | null>(null)
   const [players, setPlayers] = useState<MultiplayerPresencePlayer[]>([])
 
   useEffect(() => {
@@ -127,7 +124,7 @@ export function MultiplayerPresenceLayer() {
   }, [activeWorldId])
 
   useEffect(() => {
-    return () => {
+    const sendLeave = () => {
       const playerId = playerIdRef.current
       const worldId = latestWorldIdRef.current
       if (!playerId || !worldId) return
@@ -136,40 +133,55 @@ export function MultiplayerPresenceLayer() {
         navigator.sendBeacon?.('/api/presence', new Blob([payload], { type: 'application/json' }))
       } catch {}
     }
+
+    window.addEventListener('pagehide', sendLeave)
+    window.addEventListener('beforeunload', sendLeave)
+    return () => {
+      window.removeEventListener('pagehide', sendLeave)
+      window.removeEventListener('beforeunload', sendLeave)
+      sendLeave()
+    }
   }, [])
 
-  useFrame((_, delta) => {
-    elapsedRef.current += delta
-    if (elapsedRef.current < HEARTBEAT_INTERVAL_SECONDS || inFlightRef.current) return
-    elapsedRef.current = 0
+  useEffect(() => {
+    const sendPresence = () => {
+      if (inFlightRef.current) return
+      const worldId = latestWorldIdRef.current
+      const playerId = playerIdRef.current
+      const pose = getLocalPose() || latestPoseRef.current
+      if (!worldId || !playerId || !pose) return
 
-    const worldId = latestWorldIdRef.current
-    const playerId = playerIdRef.current
-    const pose = getLocalPose()
-    if (!worldId || !playerId || !pose) return
+      inFlightRef.current = true
+      fetch('/api/presence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          playerId,
+          worldId,
+          name: playerNameRef.current,
+          avatarUrl: avatarUrl || undefined,
+          color: playerColorRef.current,
+          position: pose.position,
+          yaw: pose.yaw,
+        }),
+      })
+        .then(response => response.ok ? response.json() : null)
+        .then((payload: { players?: MultiplayerPresencePlayer[] } | null) => {
+          if (Array.isArray(payload?.players)) setPlayers(payload.players)
+        })
+        .catch(() => {})
+        .finally(() => {
+          inFlightRef.current = false
+        })
+    }
 
-    inFlightRef.current = true
-    fetch('/api/presence', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        playerId,
-        worldId,
-        name: playerNameRef.current,
-        avatarUrl: avatarUrl || undefined,
-        color: playerColorRef.current,
-        position: pose.position,
-        yaw: pose.yaw,
-      }),
-    })
-      .then(response => response.ok ? response.json() : null)
-      .then((payload: { players?: MultiplayerPresencePlayer[] } | null) => {
-        if (Array.isArray(payload?.players)) setPlayers(payload.players)
-      })
-      .catch(() => {})
-      .finally(() => {
-        inFlightRef.current = false
-      })
+    sendPresence()
+    const timer = window.setInterval(sendPresence, HEARTBEAT_INTERVAL_MS)
+    return () => window.clearInterval(timer)
+  }, [avatarUrl])
+
+  useFrame(() => {
+    latestPoseRef.current = getLocalPose()
   })
 
   if (!activeWorldId || players.length === 0) return null

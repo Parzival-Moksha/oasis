@@ -9,12 +9,17 @@ import { prisma } from '@/lib/db'
 import { getRequiredOasisUserId } from '@/lib/session'
 import { levelFromXp, levelProgress, xpToNextLevel, getLevelTitle } from '@/lib/xp'
 import { FREE_CREDITS } from '@/lib/conjure/types'
+import { DEFAULT_PROFILE_AVATAR_3D_URL, DEFAULT_PROFILE_DISPLAY_NAME } from '@/lib/profile-defaults'
 
 /** Ensure a Profile row exists for the user, return it */
 async function ensureProfile(userId: string) {
   return prisma.profile.upsert({
     where: { userId },
-    create: { userId, displayName: 'Player 1' },
+    create: {
+      userId,
+      displayName: DEFAULT_PROFILE_DISPLAY_NAME,
+      avatar3dUrl: DEFAULT_PROFILE_AVATAR_3D_URL,
+    },
     update: {},
   })
 }
@@ -56,7 +61,10 @@ export async function GET(request: Request) {
       credits: FREE_CREDITS, xp: 0, level: 1, aura: 0,
       wallet_address: null, levelTitle: 'Apprentice', levelBadge: '░',
       levelProgress: 0, xpToNext: 100, needsOnboarding: true,
-      displayName: 'Player 1', bio: null, avatar_url: null, avatar_3d_url: null,
+      displayName: DEFAULT_PROFILE_DISPLAY_NAME,
+      bio: null,
+      avatar_url: null,
+      avatar_3d_url: DEFAULT_PROFILE_AVATAR_3D_URL,
       lastLoginDate: null,
     })
   }

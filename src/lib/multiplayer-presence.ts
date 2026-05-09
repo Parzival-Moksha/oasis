@@ -19,7 +19,7 @@ export interface MultiplayerPresenceUpdate {
   yaw?: unknown
 }
 
-const PRESENCE_TTL_MS = 8500
+const PRESENCE_TTL_MS = 30000
 const MAX_PLAYERS_PER_WORLD = 64
 
 const globalState = globalThis as typeof globalThis & {

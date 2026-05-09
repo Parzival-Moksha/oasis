@@ -46,6 +46,7 @@ import {
   type LinkedWindowAnchorMode,
 } from '../lib/agent-avatar-utils'
 import { DEFAULT_AGENT_AVATAR_URL, getDefaultAgentAvatarUrl, resolveAgentAvatarUrl, sanitizeAgentAvatarList } from '../lib/agent-avatar-catalog'
+import { DEFAULT_PROFILE_AVATAR_3D_URL } from '../lib/profile-defaults'
 import {
   foldTransformIntoAgentAvatar,
   isSharedAgentAvatarType as isSharedAgentAvatarWorldType,
@@ -991,7 +992,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   _preFocusCameraState: null,
 
   // ─═̷─═̷─🧑 AVATAR ─═̷─═̷─🧑
-  avatar3dUrl: DEFAULT_AGENT_AVATAR_URL, // Default avatar for local mode
+  avatar3dUrl: DEFAULT_PROFILE_AVATAR_3D_URL, // Default avatar for local mode
 
   // ─═̷─═̷─🖼️ IMAGINE — text-to-image ─═̷─═̷─🖼️
   generatedImages: JSON.parse(stored('oasis-generated-images') || '[]') as GeneratedImage[],
@@ -1247,57 +1248,40 @@ export const useOasisStore = create<OasisState>((set, get) => {
       if (!sourceWorldId || sourceWorldId === targetWorldId) return
       const portalPosition: [number, number, number] = [effectPosition[0] + 3, 0, effectPosition[2]]
       const nowIso = new Date().toISOString()
-      set(state => ({
-        worldRegistry: state.worldRegistry.some(world => world.id === targetWorldId)
-          ? state.worldRegistry
-          : upsertWorldRegistryMeta(state.worldRegistry, {
-              id: targetWorldId,
-              name: targetWorldName,
-              icon: 'UI',
-              visibility: 'unlisted',
-              objectCount: 0,
-              visitCount: 0,
-              createdAt: nowIso,
-              lastSavedAt: nowIso,
-            }),
-      }))
       window.setTimeout(() => {
-        void (async () => {
-          try {
-            const response = await fetch('/api/oasis-tools', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                tool: 'create_portal_gate',
-                args: {
-                  id: `portal-${id}-generated-world`,
-                  worldId: sourceWorldId,
-                  targetWorldId,
-                  label: targetWorldName,
-                  targetWorldName,
-                  variant: 'stargate-vortex',
-                  direction: 'one-way',
-                  position: portalPosition,
-                  width: 2.8,
-                  height: 3.4,
-                },
-              }),
-            })
-            const result = await response.json().catch(() => null) as { ok?: boolean; data?: { portalGate?: PortalGate } } | null
-            const portalGate = result?.ok !== false ? result?.data?.portalGate : null
-            if (portalGate) {
-              set(state => ({
-                portalGates: [
-                  ...state.portalGates.filter(gate => gate.id !== portalGate.id),
-                  portalGate,
-                ],
-              }))
-              get().spawnPlacementVfx(portalPosition)
-              if (isBrowser) get().refreshWorldRegistry()
-              setTimeout(() => get().saveWorldState(), 100)
-            }
-          } catch {}
-        })()
+        const portalGate: PortalGate = {
+          id: `portal-${id}-generated-world`,
+          variant: 'stargate-vortex',
+          label: targetWorldName,
+          position: portalPosition,
+          rotationY: portalRotationTowardCenter(portalPosition),
+          scale: 1,
+          width: 2.8,
+          height: 3.4,
+          direction: 'one-way',
+          sourceWorldId,
+          targetWorldId,
+          targetWorldName,
+          action: { type: 'load_world', worldId: targetWorldId, worldName: targetWorldName },
+        }
+        set(state => ({
+          worldRegistry: upsertWorldRegistryMeta(state.worldRegistry, {
+            id: targetWorldId,
+            name: targetWorldName,
+            icon: 'UI',
+            visibility: 'unlisted',
+            objectCount: 0,
+            visitCount: 0,
+            createdAt: nowIso,
+            lastSavedAt: nowIso,
+          }),
+          portalGates: [
+            ...state.portalGates.filter(gate => gate.id !== portalGate.id),
+            portalGate,
+          ],
+        }))
+        get().spawnPlacementVfx(portalPosition)
+        if (isBrowser) get().refreshWorldRegistry()
       }, delayMs)
     }
 
@@ -1385,12 +1369,13 @@ export const useOasisStore = create<OasisState>((set, get) => {
             generatedWorldName,
             generatedWorldUrl: result.data.worldUrl,
             generatedQrUrl: result.data.qrUrl,
-            statusMessage: 'FORMS WORLD BUILT!',
+            statusMessage: 'FORMS WORLD BUILT! PORTAL OPENING...',
             errorMessage: undefined,
             submittedAt: new Date().toISOString(),
           }, 'submit')
           playSpatialWebSound('winner')
           get().spawnPlacementVfx(effectPosition)
+          openPortalToWorld(result.data.worldId, generatedWorldName, 3000)
           if (isBrowser) get().refreshWorldRegistry()
         } catch (error) {
           markInteraction({

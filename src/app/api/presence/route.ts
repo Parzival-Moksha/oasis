@@ -41,3 +41,13 @@ export async function POST(request: NextRequest) {
     players: listMultiplayerPresence(player.worldId, player.playerId),
   })
 }
+
+export async function GET(request: NextRequest) {
+  const worldId = request.nextUrl.searchParams.get('worldId') || ''
+  const playerId = request.nextUrl.searchParams.get('playerId') || undefined
+  if (!worldId) return NextResponse.json({ ok: false, error: 'worldId is required.' }, { status: 400 })
+  return NextResponse.json({
+    ok: true,
+    players: listMultiplayerPresence(worldId, playerId),
+  })
+}

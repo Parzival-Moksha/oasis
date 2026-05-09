@@ -31,7 +31,7 @@ export default function OasisClient({ initialWorldId }: { initialWorldId?: strin
   const [ready, setReady] = useState(false)
   const [mode, setMode] = useState<ClientOasisMode>('local')
   const [capabilities, setCapabilities] = useState<ClientOasisCapabilities>(DEFAULT_LOCAL_CAPABILITIES)
-  const deepLinkHandledRef = useRef(false)
+  const deepLinkHandledRef = useRef<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -73,14 +73,14 @@ export default function OasisClient({ initialWorldId }: { initialWorldId?: strin
   }, [])
 
   useEffect(() => {
-    if (!ready || !initialWorldId || deepLinkHandledRef.current || worldRegistry.length === 0) return
+    if (!ready || !initialWorldId || deepLinkHandledRef.current === initialWorldId || worldRegistry.length === 0) return
     if (activeWorldId === initialWorldId) {
-      deepLinkHandledRef.current = true
+      deepLinkHandledRef.current = initialWorldId
       return
     }
 
     const ownedWorld = worldRegistry.some(world => world.id === initialWorldId)
-    deepLinkHandledRef.current = true
+    deepLinkHandledRef.current = initialWorldId
     if (ownedWorld) {
       switchWorld(initialWorldId)
     } else {

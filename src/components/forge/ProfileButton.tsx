@@ -20,6 +20,7 @@ import {
   hasProfileTokenUsage,
   normalizeProfileTokenBurnSummary,
 } from '@/lib/profile-token-display'
+import { DEFAULT_PROFILE_AVATAR_3D_URL } from '@/lib/profile-defaults'
 import { GameMenuButton } from './GameMenuButton'
 
 interface ProfileData {
@@ -44,7 +45,7 @@ export function ProfileButton() {
   const [isOpen, setIsOpen] = useState(false)
   const [showAvatarGallery, setShowAvatarGallery] = useState(false)
   useUILayer('profile', isOpen || showAvatarGallery)
-  const [profile, setProfile] = useState<ProfileData>({ credits: 0, xp: 0, level: 1, aura: 0, wallet_address: null, levelTitle: 'Apprentice', levelBadge: '░', levelProgress: 0, xpToNext: 100, needsOnboarding: true, displayName: 'Wanderer', bio: null, avatar_url: null, avatar_3d_url: null, lastLoginDate: null })
+  const [profile, setProfile] = useState<ProfileData>({ credits: 0, xp: 0, level: 1, aura: 0, wallet_address: null, levelTitle: 'Apprentice', levelBadge: '░', levelProgress: 0, xpToNext: 100, needsOnboarding: true, displayName: 'Wanderer', bio: null, avatar_url: null, avatar_3d_url: DEFAULT_PROFILE_AVATAR_3D_URL, lastLoginDate: null })
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState('')
   const [editBio, setEditBio] = useState('')
@@ -84,7 +85,7 @@ export function ProfileButton() {
       .then(r => r.json())
       .then(data => {
         setProfile(data)
-        if (data.avatar_3d_url) setAvatar3dUrl(data.avatar_3d_url)
+        if ('avatar_3d_url' in data) setAvatar3dUrl(data.avatar_3d_url ?? null)
 
         // Auto-claim daily login bonus on first successful fetch
         if (!dailyBonusTriedRef.current) {

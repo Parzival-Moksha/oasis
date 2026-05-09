@@ -893,39 +893,55 @@ function PostProcessing() {
 // FPS COUNTER
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const fpsRef = { current: 60 }
-const frameTimesRef = { current: [] as number[] }
+const FPS_SAMPLE_WINDOW_MS = 1000
+const FPS_SAMPLE_LIMIT = 240
+const FPS_STALE_AFTER_MS = 3000
+
+let latestFps: number | null = null
+let latestFpsSampleAt = 0
+let frameTimes: number[] = []
 
 function FPSTracker() {
   useFrame(() => {
     const now = performance.now()
-    const frameTimes = frameTimesRef.current
 
     frameTimes.push(now)
 
-    while (frameTimes.length > 60) {
+    while (frameTimes.length > FPS_SAMPLE_LIMIT) {
       frameTimes.shift()
     }
 
-    if (frameTimes.length >= 2) {
-      const elapsed = frameTimes[frameTimes.length - 1] - frameTimes[0]
-      if (elapsed > 0) {
-        fpsRef.current = Math.round((frameTimes.length - 1) / (elapsed / 1000))
-      }
+    while (frameTimes.length > 2 && now - frameTimes[0] > FPS_SAMPLE_WINDOW_MS) {
+      frameTimes.shift()
     }
+
+    const sampleCount = frameTimes.length
+    if (sampleCount >= 2) {
+      const firstFrameAt = frameTimes[0]
+      const lastFrameAt = frameTimes[sampleCount - 1]
+      const elapsed = lastFrameAt - firstFrameAt
+      if (elapsed > 0) latestFps = Math.round(((sampleCount - 1) * 1000) / elapsed)
+    }
+
+    latestFpsSampleAt = now
   })
 
   return null
 }
 
+function readLatestFps(): number | null {
+  if (latestFps === null || typeof performance === 'undefined') return null
+  return performance.now() - latestFpsSampleAt <= FPS_STALE_AFTER_MS ? latestFps : null
+}
+
 function FPSDisplay({ enabled, fontSize }: { enabled: boolean; fontSize: number }) {
-  const [fps, setFps] = useState(60)
+  const [fps, setFps] = useState<number | null>(null)
 
   useEffect(() => {
     if (!enabled) return
 
     const interval = setInterval(() => {
-      setFps(fpsRef.current)
+      setFps(readLatestFps())
     }, 200)
 
     return () => clearInterval(interval)
@@ -933,10 +949,11 @@ function FPSDisplay({ enabled, fontSize }: { enabled: boolean; fontSize: number 
 
   if (!enabled) return null
 
-  const color = fps >= 55 ? '#22c55e' : fps >= 30 ? '#facc15' : '#ef4444'
+  const color = fps === null ? '#94a3b8' : fps >= 55 ? '#22c55e' : fps >= 30 ? '#facc15' : '#ef4444'
 
   return (
     <div
+      data-testid="oasis-fps-display"
       className="fixed top-4 right-4 z-[100] font-mono font-bold pointer-events-none select-none"
       style={{
         fontSize: `${fontSize}px`,
@@ -944,7 +961,7 @@ function FPSDisplay({ enabled, fontSize }: { enabled: boolean; fontSize: number 
         textShadow: `0 0 10px ${color}40, 0 2px 4px rgba(0,0,0,0.5)`,
       }}
     >
-      {fps} FPS
+      {fps === null ? '--' : fps} FPS
     </div>
   )
 }
