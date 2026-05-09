@@ -371,6 +371,7 @@ export function GeminiLivePanel({
   const outputGainNodeRef = useRef<GainNode | null>(null)
   const outputPannerNodeRef = useRef<PannerNode | null>(null)
   const outputDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null)
+  const outputGraphReadyRef = useRef(false)
   const outputScheduleTimeRef = useRef(0)
   const outputUtteranceStartedAtRef = useRef(0)
   const outputSourcesRef = useRef<Array<{ source: AudioBufferSourceNode; gain: GainNode }>>([])
@@ -541,6 +542,7 @@ export function GeminiLivePanel({
     }
     gainNode.connect(destination)
     attachOutputStreamToLipSync(destination.stream)
+    outputGraphReadyRef.current = true
   }, [attachOutputStreamToLipSync, panelSettings.gainDb, panelSettings.spatialAudioEnabled, syncSpatialAudioFrame])
 
   const ensureOutputAudioContext = useCallback(async () => {
@@ -551,6 +553,10 @@ export function GeminiLivePanel({
       if (!AC) return null
       ctx = new AC()
       outputAudioContextRef.current = ctx
+      outputGainNodeRef.current = null
+      outputPannerNodeRef.current = null
+      outputDestinationRef.current = null
+      outputGraphReadyRef.current = false
       outputScheduleTimeRef.current = ctx.currentTime
     }
     if (ctx.state === 'suspended') {
@@ -569,7 +575,7 @@ export function GeminiLivePanel({
       }
       attachOutputStreamToLipSync(outputDestinationRef.current.stream)
     }
-    reconnectOutputGraph()
+    if (!outputGraphReadyRef.current) reconnectOutputGraph()
     return ctx
   }, [attachOutputStreamToLipSync, reconnectOutputGraph])
 
@@ -579,10 +585,15 @@ export function GeminiLivePanel({
     if (!ctx || !gainNode) return
 
     const sampleRate = extractPcmSampleRate(mimeType, GEMINI_LIVE_OUTPUT_SAMPLE_RATE)
-    const samples = Float32Array.from(pcm16Base64ToFloat32(base64))
+    const sourceSamples = pcm16Base64ToFloat32(base64)
+    if (sourceSamples.length === 0) return
+
+    const samples = Float32Array.from(Math.abs(sampleRate - ctx.sampleRate) < 1
+      ? sourceSamples
+      : resampleFloat32(sourceSamples, sampleRate, ctx.sampleRate))
     if (samples.length === 0) return
 
-    const buffer = ctx.createBuffer(1, samples.length, sampleRate)
+    const buffer = ctx.createBuffer(1, samples.length, ctx.sampleRate)
     buffer.copyToChannel(samples, 0)
     const source = ctx.createBufferSource()
     const chunkGain = ctx.createGain()
@@ -670,6 +681,7 @@ export function GeminiLivePanel({
       outputPannerNodeRef.current = null
     }
     outputDestinationRef.current = null
+    outputGraphReadyRef.current = false
     if (outputAudioContextRef.current) {
       outputAudioContextRef.current.close().catch(() => {})
       outputAudioContextRef.current = null
