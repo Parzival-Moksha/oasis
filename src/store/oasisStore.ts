@@ -127,6 +127,12 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
   return false
 }
 
+function upsertWorldRegistryMeta(registry: WorldMeta[], meta: WorldMeta): WorldMeta[] {
+  const index = registry.findIndex(world => world.id === meta.id)
+  if (index < 0) return [...registry, meta]
+  return registry.map(world => world.id === meta.id ? { ...world, ...meta } : world)
+}
+
 type RemoteSubscription = { unsubscribe: () => void }
 type ViewingWorldMeta = Partial<WorldMeta> & { name: string; icon: string }
 const persist = (key: string, value: string): void => { if (isBrowser) localStorage.setItem(key, value) }
@@ -1240,6 +1246,21 @@ export const useOasisStore = create<OasisState>((set, get) => {
       const sourceWorldId = get().viewingWorldId || get().activeWorldId
       if (!sourceWorldId || sourceWorldId === targetWorldId) return
       const portalPosition: [number, number, number] = [effectPosition[0] + 3, 0, effectPosition[2]]
+      const nowIso = new Date().toISOString()
+      set(state => ({
+        worldRegistry: state.worldRegistry.some(world => world.id === targetWorldId)
+          ? state.worldRegistry
+          : upsertWorldRegistryMeta(state.worldRegistry, {
+              id: targetWorldId,
+              name: targetWorldName,
+              icon: 'UI',
+              visibility: 'unlisted',
+              objectCount: 0,
+              visitCount: 0,
+              createdAt: nowIso,
+              lastSavedAt: nowIso,
+            }),
+      }))
       window.setTimeout(() => {
         void (async () => {
           try {
@@ -1253,6 +1274,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
                   worldId: sourceWorldId,
                   targetWorldId,
                   label: targetWorldName,
+                  targetWorldName,
                   variant: 'stargate-vortex',
                   direction: 'one-way',
                   position: portalPosition,
@@ -1271,6 +1293,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
                 ],
               }))
               get().spawnPlacementVfx(portalPosition)
+              if (isBrowser) get().refreshWorldRegistry()
               setTimeout(() => get().saveWorldState(), 100)
             }
           } catch {}
@@ -1286,11 +1309,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
           playSpatialWebSound('buttonClick')
           const copied = await copyTextToClipboard(generatedUrl)
           markInteraction({
-            statusMessage: copied ? 'Copied. Opening portal...' : 'World URL ready. Opening portal...',
+            statusMessage: copied ? 'COPIED. PORTAL OPENING...' : 'WORLD URL READY. PORTAL OPENING...',
             errorMessage: undefined,
           }, 'press')
           get().spawnPlacementVfx(effectPosition)
-          openPortalToWorld(generatedWorldId, 'Generated form world', 3000)
+          openPortalToWorld(generatedWorldId, object.generatedWorldName || 'Generated form world', 3000)
           setTimeout(() => get().saveWorldState(), 100)
           return
         }
@@ -1307,9 +1330,10 @@ export const useOasisStore = create<OasisState>((set, get) => {
         playSpatialWebSound('buttonClick')
         markInteraction({
           value: formUrl,
-          statusMessage: 'Building Oasis world...',
+          statusMessage: 'BUILDING WORLD',
           errorMessage: undefined,
           generatedWorldId: undefined,
+          generatedWorldName: undefined,
           generatedWorldUrl: undefined,
           generatedQrUrl: undefined,
         }, 'change')
@@ -1331,7 +1355,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
             ok?: boolean
             message?: string
             error?: string
-            data?: { worldId?: string; worldUrl?: string; qrUrl?: string }
+            data?: { worldId?: string; worldName?: string; worldUrl?: string; qrUrl?: string; visibility?: WorldMeta['visibility'] }
           } | null
           if (!response.ok || result?.ok === false || !result?.data?.worldId || !result.data.worldUrl) {
             const message = result?.error || result?.message || `Could not build form world: HTTP ${response.status}`
@@ -1341,17 +1365,33 @@ export const useOasisStore = create<OasisState>((set, get) => {
             return
           }
 
+          const generatedWorldName = result.data.worldName || 'Generated form world'
+          const generatedAt = new Date().toISOString()
+          set(state => ({
+            worldRegistry: upsertWorldRegistryMeta(state.worldRegistry, {
+              id: result.data!.worldId!,
+              name: generatedWorldName,
+              icon: 'UI',
+              visibility: result.data!.visibility || 'unlisted',
+              objectCount: 0,
+              visitCount: 0,
+              createdAt: generatedAt,
+              lastSavedAt: generatedAt,
+            }),
+          }))
           markInteraction({
             value: result.data.worldUrl,
             generatedWorldId: result.data.worldId,
+            generatedWorldName,
             generatedWorldUrl: result.data.worldUrl,
             generatedQrUrl: result.data.qrUrl,
-            statusMessage: object.action.successMessage || result.message || 'Oasis world ready.',
+            statusMessage: 'FORMS WORLD BUILT!',
             errorMessage: undefined,
             submittedAt: new Date().toISOString(),
           }, 'submit')
           playSpatialWebSound('winner')
           get().spawnPlacementVfx(effectPosition)
+          if (isBrowser) get().refreshWorldRegistry()
         } catch (error) {
           markInteraction({
             statusMessage: 'Build failed.',
@@ -1429,6 +1469,10 @@ export const useOasisStore = create<OasisState>((set, get) => {
     }
 
     if (action?.type === 'submit_form' && object.formId) {
+      if (object.submittedAt) {
+        playSpatialWebSound('modeSwitch')
+        return
+      }
       playSpatialWebSound('buttonClick')
       const payload = {
         ...buildSpatialWebSubmission(get().spatialWebObjects, object.formId),

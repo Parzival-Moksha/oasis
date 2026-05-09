@@ -3,10 +3,25 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { pushMouseLookDelta, useInputManager } from '@/lib/input-manager'
 import { isProbablyMobileDevice, useMobileControls } from '@/lib/mobile-controls'
+import { getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
+import { findNearestSpatialWebObject, SPATIAL_WEB_INTERACTION_RADIUS, type SpatialWebObject } from '@/lib/spatial-web'
+import { useOasisStore } from '@/store/oasisStore'
 
 const PAD_RADIUS = 48
 const MOBILE_LOOK_MULTIPLIER = 2.1
 const LOOK_DEADZONE_PX = 4
+
+function spatialActionLabel(object: SpatialWebObject): { label: string; disabled: boolean } {
+  if (object.visualStyle === 'google-form-altar') {
+    return { label: object.generatedWorldUrl ? 'Copy text' : 'Create', disabled: false }
+  }
+  if (object.type === 'button' && object.action?.type === 'submit_form') {
+    return { label: object.submittedAt ? 'Sent' : 'Send', disabled: Boolean(object.submittedAt) }
+  }
+  if (object.type === 'text') return { label: 'Edit', disabled: false }
+  if (object.type === 'slider') return { label: 'Adjust', disabled: false }
+  return { label: 'Interact', disabled: false }
+}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -35,6 +50,7 @@ export function MobileOasisControls({ enabled }: { enabled: boolean }) {
   const setLookActive = useMobileControls(s => s.setLookActive)
   const reset = useMobileControls(s => s.reset)
   const [thumb, setThumb] = useState({ x: 0, y: 0 })
+  const [nearbyAction, setNearbyAction] = useState<{ id: string; label: string; disabled: boolean } | null>(null)
   const movePointerIdRef = useRef<number | null>(null)
   const moveCenterRef = useRef({ x: 0, y: 0 })
   const lookPointerRef = useRef<{ id: number; x: number; y: number; moved: boolean } | null>(null)
@@ -43,8 +59,34 @@ export function MobileOasisControls({ enabled }: { enabled: boolean }) {
     if (!enabled) {
       reset()
       setThumb({ x: 0, y: 0 })
+      setNearbyAction(null)
     }
   }, [enabled, reset])
+
+  useEffect(() => {
+    if (!enabled) return
+
+    const updateNearbyAction = () => {
+      const pose = getPlayerAvatarPose()
+      const state = useOasisStore.getState()
+      const nearest = findNearestSpatialWebObject(
+        state.spatialWebObjects,
+        pose?.position || null,
+        state.transforms,
+        SPATIAL_WEB_INTERACTION_RADIUS,
+      )
+      if (!nearest) {
+        setNearbyAction(null)
+        return
+      }
+      const action = spatialActionLabel(nearest)
+      setNearbyAction({ id: nearest.id, ...action })
+    }
+
+    updateNearbyAction()
+    const timer = window.setInterval(updateNearbyAction, 160)
+    return () => window.clearInterval(timer)
+  }, [enabled])
 
   useEffect(() => {
     if (!enabled) return
@@ -177,6 +219,21 @@ export function MobileOasisControls({ enabled }: { enabled: boolean }) {
       </div>
 
       <div className="pointer-events-auto absolute bottom-7 right-5 flex touch-none flex-col gap-2">
+        {nearbyAction && (
+          <button
+            type="button"
+            disabled={nearbyAction.disabled}
+            className="h-12 min-w-28 touch-none rounded-lg border border-cyan-200/45 bg-cyan-950/72 px-4 text-[11px] font-black uppercase tracking-[0.14em] text-cyan-50 shadow-[0_0_32px_rgba(34,211,238,0.22)] backdrop-blur-sm disabled:border-slate-300/20 disabled:bg-slate-950/55 disabled:text-slate-300/70"
+            onPointerDown={event => {
+              event.preventDefault()
+              event.stopPropagation()
+              if (nearbyAction.disabled) return
+              void useOasisStore.getState().interactSpatialWebObject(nearbyAction.id, 'press')
+            }}
+          >
+            {nearbyAction.label}
+          </button>
+        )}
         <button
           type="button"
           className="h-11 min-w-20 touch-none rounded-lg border border-amber-200/35 bg-black/45 px-4 text-[11px] font-black uppercase tracking-[0.14em] text-amber-100 shadow-[0_0_28px_rgba(251,191,36,0.16)] backdrop-blur-sm"

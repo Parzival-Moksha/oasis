@@ -53,6 +53,7 @@ export function createGoogleFormsAltarObject(overrides: Partial<SpatialWebObject
       successMessage: 'Oasis world ready.',
     },
     generatedWorldId: overrides.generatedWorldId,
+    generatedWorldName: overrides.generatedWorldName,
     generatedWorldUrl: overrides.generatedWorldUrl,
     generatedQrUrl: overrides.generatedQrUrl,
     statusMessage: overrides.statusMessage,

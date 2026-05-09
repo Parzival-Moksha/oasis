@@ -9,7 +9,7 @@ vi.mock('../../lib/forge/world-persistence', () => ({
   loadWorld: vi.fn().mockResolvedValue(null),
   debouncedSaveWorld: vi.fn(),
   saveWorld: vi.fn(),
-  getWorldRegistry: vi.fn().mockReturnValue([]),
+  getWorldRegistry: vi.fn().mockResolvedValue([]),
   getActiveWorldId: vi.fn().mockReturnValue('test-world'),
   setActiveWorldId: vi.fn(),
   createWorld: vi.fn().mockResolvedValue('new-world-id'),
@@ -1143,11 +1143,13 @@ describe('OasisStore', () => {
       const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
         ok: true,
         message: 'Oasis world ready.',
-        data: {
-          worldId: 'world-generated-form',
-          worldUrl: 'http://localhost:4516/w/world-generated-form',
-          qrUrl: 'https://qr.example/form',
-        },
+          data: {
+            worldId: 'world-generated-form',
+            worldName: 'Hackathon RSVP',
+            worldUrl: 'http://localhost:4516/w/world-generated-form',
+            qrUrl: 'https://qr.example/form',
+            visibility: 'unlisted',
+          },
       }), {
         headers: { 'Content-Type': 'application/json' },
       }))
@@ -1182,10 +1184,43 @@ describe('OasisStore', () => {
       expect(getState().spatialWebObjects[0]).toMatchObject({
         value: 'http://localhost:4516/w/world-generated-form',
         generatedWorldId: 'world-generated-form',
+        generatedWorldName: 'Hackathon RSVP',
         generatedWorldUrl: 'http://localhost:4516/w/world-generated-form',
         generatedQrUrl: 'https://qr.example/form',
         lastEvent: 'submit',
       })
+      expect(getState().worldRegistry.some(world => world.id === 'world-generated-form')).toBe(true)
+    })
+
+    it('does not submit the same spatial form button twice', async () => {
+      const originalFetch = globalThis.fetch
+      const fetchMock = vi.fn()
+      globalThis.fetch = fetchMock as unknown as typeof fetch
+      const submitButton: SpatialWebObject = {
+        id: 'submit-once',
+        type: 'button',
+        formId: 'form-once',
+        label: 'Send',
+        position: [0, 0, 0],
+        submittedAt: '2026-05-08T12:00:00.000Z',
+        action: { type: 'submit_form', endpoint: '/api/hackathon/spatial-submit' },
+      }
+      useOasisStore.setState({
+        activeWorldId: 'world-spatial',
+        spatialWebObjects: [submitButton],
+      })
+
+      try {
+        await getState().interactSpatialWebObject('submit-once')
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(getState().spatialWebObjects[0]).toMatchObject({
+        submittedAt: '2026-05-08T12:00:00.000Z',
+      })
+      expect(getState().spatialWebObjects[0].interactionCount).toBeUndefined()
     })
   })
 

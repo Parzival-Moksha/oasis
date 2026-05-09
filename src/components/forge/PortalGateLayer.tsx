@@ -282,6 +282,7 @@ export function PortalGateLayer() {
   const refreshWorldRegistry = useOasisStore(s => s.refreshWorldRegistry)
   const triggerStatesRef = useRef<Record<string, PortalTriggerState>>({})
   const activePortalActionRef = useRef<string | null>(null)
+  const missingTargetRefreshKeyRef = useRef<string | null>(null)
 
   const handleTransformChange = useCallback((
     id: string,
@@ -295,6 +296,25 @@ export function PortalGateLayer() {
   useEffect(() => {
     triggerStatesRef.current = {}
   }, [activeWorldId])
+
+  useEffect(() => {
+    if (worldRegistry.length === 0 || portalGates.length === 0) return
+    const knownWorldIds = new Set(worldRegistry.map(world => world.id).filter(Boolean))
+    const missingTargetIds = portalGates
+      .map(gate => resolvePortalGateAction(gate))
+      .flatMap(action => action.type === 'load_world' && action.worldId && !knownWorldIds.has(action.worldId)
+        ? [action.worldId]
+        : [])
+      .sort()
+    const refreshKey = missingTargetIds.join('|')
+    if (!refreshKey) {
+      missingTargetRefreshKeyRef.current = null
+      return
+    }
+    if (missingTargetRefreshKeyRef.current === refreshKey) return
+    missingTargetRefreshKeyRef.current = refreshKey
+    refreshWorldRegistry()
+  }, [portalGates, refreshWorldRegistry, worldRegistry])
 
   const gates = useMemo(
     () => portalGates.map(gate => resolvePortalAvailability(applyPortalTransform(gate, transforms[gate.id]), worldRegistry)),

@@ -50,26 +50,38 @@ function colorTimes(hex: string, scalar: number): string {
   return `#${color.getHexString()}`
 }
 
-function wrapText(value: string, maxChars: number, maxLines: number): string[] {
+function splitLongWord(word: string, maxChars: number): string[] {
+  const chunks: string[] = []
+  for (let index = 0; index < word.length; index += maxChars) {
+    chunks.push(word.slice(index, index + maxChars))
+  }
+  return chunks.length ? chunks : [word]
+}
+
+function wrapText(value: string, maxChars: number, maxLines: number, truncate = true): string[] {
   const words = value.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean)
   if (words.length === 0) return ['']
   const lines: string[] = []
   let line = ''
   for (const word of words) {
-    const candidate = line ? `${line} ${word}` : word
-    if (candidate.length <= maxChars) {
-      line = candidate
-      continue
+    const chunks = word.length > maxChars ? splitLongWord(word, maxChars) : [word]
+    for (const chunk of chunks) {
+      const candidate = line ? `${line} ${chunk}` : chunk
+      if (candidate.length <= maxChars) {
+        line = candidate
+        continue
+      }
+      if (line) lines.push(line)
+      line = chunk
+      if (lines.length >= maxLines) break
     }
-    if (line) lines.push(line)
-    line = word.length > maxChars ? clampText(word, maxChars) : word
     if (lines.length >= maxLines) break
   }
   if (line && lines.length < maxLines) lines.push(line)
   if (lines.length > maxLines) lines.length = maxLines
   const original = value.replace(/\s+/g, ' ').trim()
   const joined = lines.join(' ')
-  if (joined.length < original.length && lines.length > 0) {
+  if (truncate && joined.length < original.length && lines.length > 0) {
     lines[lines.length - 1] = clampText(lines[lines.length - 1], Math.max(4, maxChars - 3)) + '...'
   }
   return lines
@@ -83,6 +95,7 @@ function EmbossedText({
   maxLines = 2,
   color = '#f8fafc',
   sideColor,
+  truncate = true,
 }: {
   children: string
   position: [number, number, number]
@@ -91,8 +104,9 @@ function EmbossedText({
   maxLines?: number
   color?: string
   sideColor?: string
+  truncate?: boolean
 }) {
-  const lines = wrapText(children, maxChars, maxLines)
+  const lines = wrapText(children, maxChars, maxLines, truncate)
   const lineHeight = fontSize * 1.42
   const top = ((lines.length - 1) * lineHeight) / 2
   const darkSide = sideColor || colorTimes(color, 0.22)
@@ -142,37 +156,25 @@ type ConfettiPiece = {
   fall: number
   spin: number
   size: number
-  color: THREE.Color
+  colorIndex: number
 }
 
-function SubmitConfetti({ trigger, accent }: { trigger?: string; accent: string }) {
+function ConfettiBand({
+  pieces,
+  startedAt,
+  color,
+}: {
+  pieces: ConfettiPiece[]
+  startedAt: number | null
+  color: string
+}) {
   const meshRef = useRef<THREE.InstancedMesh>(null)
-  const [startedAt, setStartedAt] = useState<number | null>(null)
   const dummy = useMemo(() => new THREE.Object3D(), [])
-  const pieces = useMemo<ConfettiPiece[]>(() => {
-    const colors = ['#facc15', '#fb7185', '#38bdf8', '#22c55e', '#f8fafc', accent]
-    return Array.from({ length: 180 }, (_, index) => ({
-      angle: (index * 2.399963 + (index % 7) * 0.13) % (Math.PI * 2),
-      radius: 0.35 + ((index * 37) % 100) / 100 * 2.1,
-      rise: 4.4 + ((index * 19) % 100) / 100 * 1.9,
-      fall: 0.65 + ((index * 23) % 100) / 100 * 1.15,
-      spin: 3.5 + ((index * 29) % 100) / 100 * 7,
-      size: 0.045 + ((index * 31) % 100) / 100 * 0.055,
-      color: new THREE.Color(colors[index % colors.length]),
-    }))
-  }, [accent])
-
-  useEffect(() => {
-    if (!trigger) return
-    setStartedAt(performance.now())
-  }, [trigger])
 
   useEffect(() => {
     const mesh = meshRef.current
     if (!mesh) return
     mesh.count = 0
-    pieces.forEach((piece, index) => mesh.setColorAt(index, piece.color))
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
   }, [pieces])
 
   useFrame(() => {
@@ -210,8 +212,41 @@ function SubmitConfetti({ trigger, accent }: { trigger?: string; accent: string 
   return (
     <instancedMesh ref={meshRef} args={[undefined, undefined, pieces.length]} frustumCulled={false}>
       <boxGeometry args={[1, 1, 1]} />
-      <meshBasicMaterial vertexColors side={THREE.DoubleSide} />
+      <meshBasicMaterial color={color} side={THREE.DoubleSide} toneMapped={false} />
     </instancedMesh>
+  )
+}
+
+function SubmitConfetti({ trigger, accent }: { trigger?: string; accent: string }) {
+  const [startedAt, setStartedAt] = useState<number | null>(null)
+  const palette = useMemo(() => ['#facc15', '#fb7185', '#38bdf8', '#22c55e', '#f97316', '#f8fafc', accent], [accent])
+  const pieces = useMemo<ConfettiPiece[]>(() => (
+    Array.from({ length: 210 }, (_, index) => ({
+      angle: (index * 2.399963 + (index % 7) * 0.13) % (Math.PI * 2),
+      radius: 0.35 + ((index * 37) % 100) / 100 * 2.1,
+      rise: 4.4 + ((index * 19) % 100) / 100 * 1.9,
+      fall: 0.65 + ((index * 23) % 100) / 100 * 1.15,
+      spin: 3.5 + ((index * 29) % 100) / 100 * 7,
+      size: 0.045 + ((index * 31) % 100) / 100 * 0.055,
+      colorIndex: index % palette.length,
+    }))
+  ), [palette.length])
+  const piecesByColor = useMemo(
+    () => palette.map((_, colorIndex) => pieces.filter(piece => piece.colorIndex === colorIndex)),
+    [palette, pieces],
+  )
+
+  useEffect(() => {
+    if (!trigger) return
+    setStartedAt(performance.now())
+  }, [trigger])
+
+  return (
+    <group>
+      {palette.map((color, index) => (
+        <ConfettiBand key={`${color}-${index}`} pieces={piecesByColor[index] || []} startedAt={startedAt} color={color} />
+      ))}
+    </group>
   )
 }
 
@@ -237,12 +272,13 @@ function GoogleFormsAltar({
   const streamARef = useRef<THREE.Mesh>(null)
   const streamBRef = useRef<THREE.Mesh>(null)
   const hasWorld = Boolean(object.generatedWorldUrl && object.generatedWorldId)
+  const actionText = busy ? 'BUILDING' : hasWorld ? 'COPY TEXT' : 'CREATE'
   const statusText = busy
-    ? 'Building Oasis world...'
+    ? 'BUILDING WORLD'
     : object.errorMessage
       ? object.errorMessage
       : hasWorld
-        ? 'World ready. Press F to copy.'
+        ? object.statusMessage || 'FORMS WORLD BUILT!'
         : 'Paste a public Google Forms URL.'
   const inputText = hasWorld
     ? object.generatedWorldUrl || ''
@@ -353,12 +389,12 @@ function GoogleFormsAltar({
       )}
 
       <EmbossedText position={[0, 1.52, 0.5]} fontSize={0.16} maxChars={24} maxLines={2} color="#e0f2fe" sideColor="#082f49">
-        {busy ? 'Forging the world' : object.label}
+        {busy ? 'BUILDING WORLD' : hasWorld ? 'FORMS WORLD BUILT!' : object.label}
       </EmbossedText>
-      <EmbossedText position={[0, 0.22, 0.52]} fontSize={0.082} maxChars={42} maxLines={3} color="#f8fafc" sideColor="#020617">
+      <EmbossedText position={[0, 0.22, 0.52]} fontSize={hasWorld ? 0.062 : 0.078} maxChars={hasWorld ? 54 : 48} maxLines={hasWorld ? 6 : 5} color="#f8fafc" sideColor="#020617" truncate={false}>
         {inputText}
       </EmbossedText>
-      <EmbossedText position={[0, -0.54, 0.52]} fontSize={0.075} maxChars={36} maxLines={2} color={object.errorMessage ? '#fecdd3' : '#a7f3d0'} sideColor="#042f2e">
+      <EmbossedText position={[0, -0.54, 0.52]} fontSize={0.075} maxChars={38} maxLines={2} color={object.errorMessage ? '#fecdd3' : '#a7f3d0'} sideColor="#042f2e">
         {statusText}
       </EmbossedText>
 
@@ -369,19 +405,19 @@ function GoogleFormsAltar({
             <meshStandardMaterial color="#064e3b" roughness={0.34} metalness={0.2} emissive="#22c55e" emissiveIntensity={0.46} />
           </mesh>
           <EmbossedText position={[0, -0.03, 0.15]} fontSize={0.08} maxChars={18} color="#ecfdf5" sideColor="#022c22">
-            Copy address
+            COPY TEXT
           </EmbossedText>
         </group>
       )}
 
       {interactionHint && (
-        <group position={[0, 1.96, 0.56]}>
+        <group position={[0, 2.12, 0.56]}>
           <mesh>
-            <boxGeometry args={[0.6, 0.26, 0.06]} />
+            <boxGeometry args={[hasWorld ? 1.28 : 0.92, 0.26, 0.06]} />
             <meshStandardMaterial color="#020617" emissive={accent} emissiveIntensity={0.45} roughness={0.45} metalness={0.2} />
           </mesh>
-          <EmbossedText position={[0, 0, 0.08]} fontSize={0.12} maxChars={2} color="#ffffff" sideColor="#111827">
-            F
+          <EmbossedText position={[0, 0, 0.08]} fontSize={0.088} maxChars={9} color="#ffffff" sideColor="#111827">
+            {actionText}
           </EmbossedText>
         </group>
       )}
@@ -417,8 +453,9 @@ export function SpatialWebObject3D({
           : 'neon-panel')
   const isPortalButton = visualStyle === 'portal-zero-button'
   const isGoogleFormsAltar = visualStyle === 'google-form-altar'
+  const isSubmittedButton = object.type === 'button' && object.action?.type === 'submit_form' && Boolean(object.submittedAt)
   const depth = isPortalButton ? 0.34 : isGoogleFormsAltar ? 0.5 : visualStyle === 'arcade-button' ? 0.42 : visualStyle === 'terminal-panel' ? 0.18 : 0.24
-  const labelText = busy ? 'Sending...' : object.label
+  const labelText = isSubmittedButton ? 'Sent' : busy ? 'Sending...' : object.label
   const valueText = object.type === 'text' && !object.value ? object.placeholder || 'Empty' : labelValue
   const labelMaxChars = isWidePanel ? 36 : 30
   const valueMaxChars = isWidePanel ? 42 : 26
@@ -450,6 +487,7 @@ export function SpatialWebObject3D({
 
   const runInteraction = () => {
     if (busy) return
+    if (isSubmittedButton) return
     const waitsForNetwork = (object.type === 'button' && object.action?.type === 'submit_form')
       || (object.action?.type === 'create_world_from_google_form' && !object.generatedWorldUrl)
     if (waitsForNetwork) setBusy(true)
@@ -510,7 +548,7 @@ export function SpatialWebObject3D({
   }
 
   if (isPortalButton) {
-    const buttonColor = busy ? '#fecdd3' : object.type === 'toggle'
+    const buttonColor = isSubmittedButton ? '#64748b' : busy ? '#fecdd3' : object.type === 'toggle'
       ? object.value === true ? accent : '#94a3b8'
       : accent
     const emissive = new THREE.Color(buttonColor)
@@ -532,16 +570,16 @@ export function SpatialWebObject3D({
           <meshStandardMaterial
             color={buttonColor}
             emissive={emissive}
-            emissiveIntensity={canClickInteract || busy ? 0.65 : 0.28}
+            emissiveIntensity={isSubmittedButton ? 0.12 : canClickInteract || busy ? 0.65 : 0.28}
             roughness={0.32}
             metalness={0.18}
           />
         </mesh>
         <mesh position={[0, 0.07, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[0.52, 0.58, 64]} />
-          <meshBasicMaterial color={buttonColor} transparent opacity={canClickInteract ? 0.78 : 0.4} />
+          <meshBasicMaterial color={buttonColor} transparent opacity={isSubmittedButton ? 0.28 : canClickInteract ? 0.78 : 0.4} />
         </mesh>
-        <pointLight color={buttonColor} intensity={canClickInteract ? 1.2 : 0.45} distance={4} position={[0, 0.55, 0]} />
+        <pointLight color={buttonColor} intensity={isSubmittedButton ? 0.18 : canClickInteract ? 1.2 : 0.45} distance={4} position={[0, 0.55, 0]} />
         <SubmitConfetti trigger={object.submittedAt} accent={accent} />
         <EmbossedText
           position={[0, 0.68, 0.36]}

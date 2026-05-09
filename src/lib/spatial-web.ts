@@ -72,6 +72,7 @@ export interface SpatialWebObject {
   lastEvent?: SpatialWebEventName
   submittedAt?: string
   generatedWorldId?: string
+  generatedWorldName?: string
   generatedWorldUrl?: string
   generatedQrUrl?: string
   statusMessage?: string

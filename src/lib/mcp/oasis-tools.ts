@@ -1645,6 +1645,7 @@ tools.create_world_from_google_form = async (args) => {
     message: `Created shareable spatial Google Form world "${name}" with ${spec.fields.length} field${spec.fields.length === 1 ? '' : 's'}.`,
     data: {
       worldId,
+      worldName: name,
       worldUrl,
       qrUrl: buildQrCodeUrl(worldUrl),
       visibility,
