@@ -51,10 +51,12 @@ export function createGoogleFormsAltarObject(
     formId: overrides.formId || 'google-forms-altar',
     label: overrides.label || (testMode ? 'Google Test Altar' : 'Google Forms Altar'),
     description: overrides.description || (testMode
-      ? 'Paste a public Google quiz/form link. The altar builds a shareable test world with scoring and a Gemini tutor.'
+      ? 'Paste a public Google quiz/form link, plus optional answer lines like "Question = Answer". The altar builds a scored test world with a Gemini tutor.'
       : 'Paste a public Google Form link. The altar builds a shareable Oasis world, then opens a portal.'),
     value: overrides.value ?? '',
-    placeholder: overrides.placeholder || 'https://forms.gle/...',
+    placeholder: overrides.placeholder || (testMode
+      ? 'https://forms.gle/...\nAnswers:\nCapital of Colombia = Bogota'
+      : 'https://forms.gle/...'),
     position: overrides.position || [0, 1.15, 0],
     rotation: overrides.rotation,
     scale: overrides.scale,

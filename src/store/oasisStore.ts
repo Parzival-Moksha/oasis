@@ -105,6 +105,58 @@ function spatialValueKey(value: SpatialWebValue | undefined): string {
   return String(value)
 }
 
+function normalizeTestAnswerValue(value: unknown): string | string[] | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed ? trimmed : null
+  }
+  if (Array.isArray(value) && value.every(item => typeof item === 'string')) {
+    const values = value.map(item => item.trim()).filter(Boolean)
+    return values.length > 0 ? values : null
+  }
+  return null
+}
+
+function parseTestAnswerKey(value: string): Record<string, string | string[]> | undefined {
+  const jsonMatch = value.match(/\{[\s\S]*\}/)
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>
+      const entries = Object.entries(parsed)
+        .map(([key, answer]) => [key.trim(), normalizeTestAnswerValue(answer)] as const)
+        .filter((entry): entry is readonly [string, string | string[]] => Boolean(entry[0] && entry[1]))
+      if (entries.length > 0) return Object.fromEntries(entries)
+    } catch {
+      // Fall through to line parsing.
+    }
+  }
+
+  const entries = value
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line && !/^https?:\/\//i.test(line) && !/^answers?:?$/i.test(line))
+    .map(line => {
+      const separator = line.includes('=>') ? '=>' : line.includes('=') ? '=' : ':'
+      const index = line.indexOf(separator)
+      if (index < 0) return null
+      const key = line.slice(0, index).trim()
+      const rawAnswer = line.slice(index + separator.length).trim()
+      const answer = rawAnswer.includes('|')
+        ? rawAnswer.split('|').map(part => part.trim()).filter(Boolean)
+        : rawAnswer
+      const normalized = normalizeTestAnswerValue(answer)
+      return key && normalized ? [key, normalized] as const : null
+    })
+    .filter((entry): entry is readonly [string, string | string[]] => Boolean(entry))
+
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined
+}
+
+function extractFirstUrl(value: string): string {
+  const match = value.match(/https?:\/\/[^\s<>"']+/i)
+  return (match?.[0] || value).replace(/[),.;]+$/, '').trim()
+}
+
 function resolveSpatialWorldToolArgs(
   action: NonNullable<SpatialWebObject['action']>,
   value: SpatialWebValue | undefined,
@@ -1377,13 +1429,15 @@ export const useOasisStore = create<OasisState>((set, get) => {
           : object.value === null || object.value === undefined
             ? ''
             : String(object.value)
-        const formUrl = typeof window !== 'undefined'
+        const promptText = typeof window !== 'undefined'
           ? window.prompt(object.placeholder || object.label, currentValue)
           : null
-        if (formUrl === null) return
+        if (promptText === null) return
+        const formUrl = extractFirstUrl(promptText)
+        const answerKey = isTestAltar ? parseTestAnswerKey(promptText) : undefined
         playSpatialWebSound('buttonClick')
         markInteraction({
-          value: formUrl,
+          value: promptText,
           statusMessage: isTestAltar ? 'BUILDING TEST WORLD' : 'BUILDING WORLD',
           errorMessage: undefined,
           generatedWorldId: undefined,
@@ -1402,6 +1456,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
                 formUrl,
                 visibility: 'unlisted',
                 publicBaseUrl: isBrowser ? window.location.origin : undefined,
+                ...(answerKey ? { answerKey } : {}),
               },
             }),
           })
