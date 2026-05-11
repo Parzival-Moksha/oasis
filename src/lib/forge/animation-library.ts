@@ -20,6 +20,11 @@ const OASIS_BASE = typeof window !== 'undefined'
   ? (process.env.NEXT_PUBLIC_BASE_PATH || '')
   : ''
 
+// ░▒▓ Gate noisy retargeting telemetry behind ?animlib=debug ▓▒░
+// These logs were essential when VRMs first learned to walk. Now they're spam.
+// Re-enable on demand by appending ?animlib=debug to the URL.
+const ANIMLIB_DEBUG = typeof window !== 'undefined' && /\banimlib=debug\b/.test(window.location.search)
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // ANIMATION CATALOG — What's on the jukebox
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -362,7 +367,7 @@ export function retargetClipForVRM(
 
   const retargeted = new THREE.AnimationClip(clip.name, clip.duration, tracks)
   retargetCache.set(fullKey, retargeted)
-  console.log(`[AnimLib:VRM] Retargeted "${clip.name}" (${cacheKey}): ${remapped} mapped, ${compensated} compensated, ${unmapped} unmapped`)
+  if (ANIMLIB_DEBUG) console.log(`[AnimLib:VRM] Retargeted "${clip.name}" (${cacheKey}): ${remapped} mapped, ${compensated} compensated, ${unmapped} unmapped`)
   return retargeted
 }
 
@@ -496,7 +501,7 @@ export function retargetClip(
     remappedTracks,
   )
 
-  console.log(`[AnimLib] Retargeted "${clip.name}" for "${cacheKey}": ${remapped} remapped, ${unmapped} unmapped, ${clip.tracks.length} total tracks`)
+  if (ANIMLIB_DEBUG) console.log(`[AnimLib] Retargeted "${clip.name}" for "${cacheKey}": ${remapped} remapped, ${unmapped} unmapped, ${clip.tracks.length} total tracks`)
 
   retargetCache.set(fullKey, retargeted)
   return retargeted
@@ -543,7 +548,7 @@ export async function loadAnimationClip(animId: string): Promise<THREE.Animation
 
   const entry = ANIMATION_LIBRARY.find(a => a.id === animId)
   if (!entry) {
-    console.warn(`[AnimLib] Animation "${animId}" not found in library`)
+    if (ANIMLIB_DEBUG) console.warn(`[AnimLib] Animation "${animId}" not found in library`)
     return null
   }
 
@@ -561,14 +566,14 @@ export async function loadAnimationClip(animId: string): Promise<THREE.Animation
       const loader = new FBXLoader()
 
       const url = `${OASIS_BASE}/animations/${encodeURIComponent(entry.filename)}`
-      console.log(`[AnimLib] Loading ${animId} from ${url}`)
+      if (ANIMLIB_DEBUG) console.log(`[AnimLib] Loading ${animId} from ${url}`)
 
       const fbx = await new Promise<THREE.Group>((resolve, reject) => {
         loader.load(url, resolve, undefined, reject)
       })
 
       if (!fbx.animations || fbx.animations.length === 0) {
-        console.warn(`[AnimLib] ${animId}: FBX has no animations`)
+        if (ANIMLIB_DEBUG) console.warn(`[AnimLib] ${animId}: FBX has no animations`)
         return null
       }
 
@@ -603,7 +608,7 @@ export async function loadAnimationClip(animId: string): Promise<THREE.Animation
       if (restRotations.size > 0) {
         mixamoRestCache.set(animId, restRotations)
         mixamoHipsHeightCache.set(animId, hipsHeight)
-        console.log(`[AnimLib] ${animId}: extracted ${restRotations.size} bone rest world rotations, hipsY=${hipsHeight.toFixed(1)}`)
+        if (ANIMLIB_DEBUG) console.log(`[AnimLib] ${animId}: extracted ${restRotations.size} bone rest world rotations, hipsY=${hipsHeight.toFixed(1)}`)
       }
 
       // Extract the first clip
@@ -613,7 +618,7 @@ export async function loadAnimationClip(animId: string): Promise<THREE.Animation
       // Normalize FBX track names to canonical Mixamo format: "mixamorigHips.quaternion"
       // Strip prefixes like "Armature|" and convert colons: "mixamorig:Hips" → "mixamorigHips"
       const sampleTrackNames = rawClip.tracks.slice(0, 3).map(t => t.name)
-      console.log(`[AnimLib] ${animId} raw tracks (first 3):`, sampleTrackNames)
+      if (ANIMLIB_DEBUG) console.log(`[AnimLib] ${animId} raw tracks (first 3):`, sampleTrackNames)
 
       const normalizedTracks: THREE.KeyframeTrack[] = []
 
@@ -646,7 +651,7 @@ export async function loadAnimationClip(animId: string): Promise<THREE.Animation
           // model this teleports it. Stripping the whole track is safest — the skeleton
           // rest pose already positions the hips correctly, and rotation tracks handle
           // the body movement. Keeping Y-bob caused -infinity teleports on Tripo.
-          console.log(`[AnimLib] ${animId}: stripped root position track entirely (prevents teleport)`)
+          if (ANIMLIB_DEBUG) console.log(`[AnimLib] ${animId}: stripped root position track entirely (prevents teleport)`)
           continue  // skip this track
         }
 
@@ -663,7 +668,7 @@ export async function loadAnimationClip(animId: string): Promise<THREE.Animation
 
       // Cache it
       clipCache.set(animId, clip)
-      console.log(`[AnimLib] ${animId} loaded: ${clip.duration.toFixed(1)}s, ${clip.tracks.length} tracks`)
+      if (ANIMLIB_DEBUG) console.log(`[AnimLib] ${animId} loaded: ${clip.duration.toFixed(1)}s, ${clip.tracks.length} tracks`)
 
       // Dispose the FBX scene — we only need the clip
       fbx.traverse(child => {
@@ -703,7 +708,7 @@ async function loadUALClip(entry: LocalAnimation): Promise<THREE.AnimationClip |
     let pack = ualGlbCache.get(entry.filename)
 
     if (!pack) {
-      console.log(`[AnimLib:UAL] Loading pack ${entry.filename}`)
+      if (ANIMLIB_DEBUG) console.log(`[AnimLib:UAL] Loading pack ${entry.filename}`)
       const loader = new GLTFLoader()
       const gltf = await new Promise<{ scene: THREE.Group; animations: THREE.AnimationClip[] }>((resolve, reject) => {
         loader.load(url, resolve as any, undefined, reject)
@@ -736,7 +741,7 @@ async function loadUALClip(entry: LocalAnimation): Promise<THREE.AnimationClip |
         if (restRotations.size > 0) {
           mixamoRestCache.set('__ual__', restRotations)
           mixamoHipsHeightCache.set('__ual__', hipsHeight)
-          console.log(`[AnimLib:UAL] Extracted ${restRotations.size} rest world rotations from ${entry.filename}, hipsY=${hipsHeight.toFixed(1)}`)
+          if (ANIMLIB_DEBUG) console.log(`[AnimLib:UAL] Extracted ${restRotations.size} rest world rotations from ${entry.filename}, hipsY=${hipsHeight.toFixed(1)}`)
         }
       }
     }
@@ -744,7 +749,7 @@ async function loadUALClip(entry: LocalAnimation): Promise<THREE.AnimationClip |
     // Find the named clip
     const rawClip = pack.animations.find(a => a.name === entry.glbClipName)
     if (!rawClip) {
-      console.warn(`[AnimLib:UAL] Clip "${entry.glbClipName}" not found in ${entry.filename}. Available:`, pack.animations.map(a => a.name))
+      if (ANIMLIB_DEBUG) console.warn(`[AnimLib:UAL] Clip "${entry.glbClipName}" not found in ${entry.filename}. Available:`, pack.animations.map(a => a.name))
       return null
     }
 
@@ -772,7 +777,7 @@ async function loadUALClip(entry: LocalAnimation): Promise<THREE.AnimationClip |
     )
 
     clipCache.set(entry.id, clip)
-    console.log(`[AnimLib:UAL] ${entry.id} loaded: "${entry.glbClipName}" ${clip.duration.toFixed(1)}s, ${normalizedTracks.length} tracks`)
+    if (ANIMLIB_DEBUG) console.log(`[AnimLib:UAL] ${entry.id} loaded: "${entry.glbClipName}" ${clip.duration.toFixed(1)}s, ${normalizedTracks.length} tracks`)
     return clip
   } catch (err) {
     console.error(`[AnimLib:UAL] Failed to load ${entry.id}:`, err)
@@ -868,7 +873,7 @@ export function retargetUALClipForVRM(
 
   const retargeted = new THREE.AnimationClip(clip.name, clip.duration, tracks)
   retargetCache.set(fullKey, retargeted)
-  console.log(`[AnimLib:UAL→VRM] Retargeted "${clip.name}" (${cacheKey}): ${remapped} mapped, ${compensated} compensated, ${unmapped} unmapped`)
+  if (ANIMLIB_DEBUG) console.log(`[AnimLib:UAL→VRM] Retargeted "${clip.name}" (${cacheKey}): ${remapped} mapped, ${compensated} compensated, ${unmapped} unmapped`)
   return retargeted
 }
 
@@ -906,21 +911,21 @@ export async function loadClipFromGLTF(
       const loader = new GLTFLoader()
 
       const url = `${OASIS_BASE}${gltfPath}`
-      console.log(`[AnimLib:GLTF] Loading /${clipPattern.source}/ from ${url}`)
+      if (ANIMLIB_DEBUG) console.log(`[AnimLib:GLTF] Loading /${clipPattern.source}/ from ${url}`)
 
       const gltf = await new Promise<{ scene: THREE.Group; animations: THREE.AnimationClip[] }>((resolve, reject) => {
         loader.load(url, resolve as any, undefined, reject)
       })
 
       if (!gltf.animations || gltf.animations.length === 0) {
-        console.warn(`[AnimLib:GLTF] ${gltfPath} has no animations`)
+        if (ANIMLIB_DEBUG) console.warn(`[AnimLib:GLTF] ${gltfPath} has no animations`)
         return null
       }
 
       // Find clip matching pattern
       const rawClip = gltf.animations.find(a => clipPattern.test(a.name))
       if (!rawClip) {
-        console.warn(`[AnimLib:GLTF] No clip matching /${clipPattern.source}/ in ${gltfPath}. Available:`, gltf.animations.map(a => a.name))
+        if (ANIMLIB_DEBUG) console.warn(`[AnimLib:GLTF] No clip matching /${clipPattern.source}/ in ${gltfPath}. Available:`, gltf.animations.map(a => a.name))
         return null
       }
 
@@ -950,14 +955,14 @@ export async function loadClipFromGLTF(
       if (restRotations.size > 0) {
         mixamoRestCache.set(animId, restRotations)
         mixamoHipsHeightCache.set(animId, hipsHeight)
-        console.log(`[AnimLib:GLTF] ${animId}: ${restRotations.size} rest world rotations from ${gltfPath}`)
+        if (ANIMLIB_DEBUG) console.log(`[AnimLib:GLTF] ${animId}: ${restRotations.size} rest world rotations from ${gltfPath}`)
       }
 
       // Log first 5 bone names + first 3 track names for debugging
       const boneNames = [...restRotations.keys()].slice(0, 5)
       const trackSample = rawClip.tracks.slice(0, 3).map(t => t.name)
-      console.log(`[AnimLib:GLTF] ${animId} bones (first 5):`, boneNames)
-      console.log(`[AnimLib:GLTF] ${animId} tracks (first 3):`, trackSample)
+      if (ANIMLIB_DEBUG) console.log(`[AnimLib:GLTF] ${animId} bones (first 5):`, boneNames)
+      if (ANIMLIB_DEBUG) console.log(`[AnimLib:GLTF] ${animId} tracks (first 3):`, trackSample)
 
       // Normalize tracks — same pipeline as FBX: strip prefixes, remove colons, kill root position
       const normalizedTracks: THREE.KeyframeTrack[] = []
@@ -988,7 +993,7 @@ export async function loadClipFromGLTF(
       )
 
       clipCache.set(animId, clip)
-      console.log(`[AnimLib:GLTF] ${animId} loaded: "${rawClip.name}" ${clip.duration.toFixed(1)}s, ${normalizedTracks.length} tracks`)
+      if (ANIMLIB_DEBUG) console.log(`[AnimLib:GLTF] ${animId} loaded: "${rawClip.name}" ${clip.duration.toFixed(1)}s, ${normalizedTracks.length} tracks`)
 
       // Dispose GLTF scene — we only needed clips + rest rotations
       gltf.scene.traverse((child) => {
