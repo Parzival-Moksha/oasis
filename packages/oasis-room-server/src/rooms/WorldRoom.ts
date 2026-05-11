@@ -72,6 +72,9 @@ export class WorldRoom extends Room<WorldRoomState> {
     this.setPatchRate(1000 / PATCH_HZ)
     this.setSimulationInterval(deltaMs => this.simulate(deltaMs), 1000 / SIM_HZ)
 
+    this.setMetadata({ worldId }).catch(() => {})
+    console.log(`[room ${this.roomId}] created worldId=${worldId}`)
+
     this.onMessage('input', (client, payload: InputMessage) => {
       const player = this.state.players.get(client.sessionId)
       if (!player) return
@@ -94,10 +97,12 @@ export class WorldRoom extends Room<WorldRoomState> {
     player.color = sanitizeText(options.color, '#38bdf8', 7)
     player.updatedAt = Date.now()
     this.state.players.set(client.sessionId, player)
+    console.log(`[room ${this.roomId}] join ${client.sessionId} (${player.displayName}) total=${this.state.players.size}`)
   }
 
   override onLeave(client: Client): void {
     this.state.players.delete(client.sessionId)
+    console.log(`[room ${this.roomId}] leave ${client.sessionId} total=${this.state.players.size}`)
   }
 
   override onDispose(): void {

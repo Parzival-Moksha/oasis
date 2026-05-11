@@ -43,15 +43,12 @@ interface RoomPlayerSchema {
   yaw: number
   animState: string
   updatedAt: number
-  onChange?(callback: () => void): () => void
-  listen?(field: string, callback: (value: unknown) => void): () => void
 }
 
 interface RoomStateSchema {
   players: {
     forEach(callback: (value: RoomPlayerSchema, key: string) => void): void
-    onAdd(callback: (value: RoomPlayerSchema, key: string) => void): () => void
-    onRemove(callback: (value: RoomPlayerSchema, key: string) => void): () => void
+    size: number
   }
 }
 
@@ -61,8 +58,9 @@ function resolveRoomEndpoint(): string {
   if (typeof window !== 'undefined') {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = window.location.hostname || 'localhost'
-    const port = host === 'localhost' || host === '127.0.0.1' ? ':4517' : ''
-    return `${protocol}//${host}${port}`
+    const isLocal = host === 'localhost' || host === '127.0.0.1'
+    if (isLocal) return `${protocol}//${host}:4517`
+    return `${protocol}//${host}/rooms`
   }
   return 'ws://localhost:4517'
 }
@@ -92,80 +90,82 @@ export interface MultiplayerRoomConnectArgs extends MultiplayerRoomJoinOptions {
   onConnectionState?: (state: 'connecting' | 'connected' | 'closed' | 'error', detail?: string) => void
 }
 
+const DEBUG = typeof window !== 'undefined' && /\bmultiplayer=debug\b/.test(window.location.search)
+const log = (...args: unknown[]) => {
+  if (DEBUG) console.debug('[oasis-room]', ...args)
+  else console.info('[oasis-room]', ...args)
+}
+
 export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Promise<MultiplayerRoomConnection> {
   const endpoint = resolveRoomEndpoint()
+  log('connecting to', endpoint, 'worldId=', args.worldId)
   const client = new Client(endpoint)
 
   args.onConnectionState?.('connecting')
 
-  const room = await client.joinOrCreate<RoomStateSchema>('world', {
-    worldId: args.worldId,
-    playerId: args.playerId,
-    displayName: args.displayName,
-    avatarUrl: args.avatarUrl,
-    color: args.color,
-  })
+  let room: Room<RoomStateSchema>
+  try {
+    room = await client.joinOrCreate<RoomStateSchema>('world', {
+      worldId: args.worldId,
+      playerId: args.playerId,
+      displayName: args.displayName,
+      avatarUrl: args.avatarUrl,
+      color: args.color,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error('[oasis-room] joinOrCreate failed', message)
+    args.onConnectionState?.('error', message)
+    throw error
+  }
 
+  log('joined room', room.roomId, 'sessionId=', room.sessionId)
   args.onConnectionState?.('connected')
 
-  const tracked = new Map<string, MultiplayerRoomPlayer>()
-  const playerDisposers = new Map<string, () => void>()
-
-  const flush = () => {
-    args.onPlayersChanged(
-      Array.from(tracked.values()).filter(player => player.sessionId !== room.sessionId),
-    )
-  }
-
-  const wirePlayer = (player: RoomPlayerSchema, sessionId: string) => {
-    tracked.set(sessionId, snapshotPlayer(sessionId, player))
-    const onChange = player.onChange?.(() => {
-      tracked.set(sessionId, snapshotPlayer(sessionId, player))
-      flush()
+  const emit = () => {
+    const state = room.state as RoomStateSchema | undefined
+    if (!state?.players) {
+      args.onPlayersChanged([])
+      return
+    }
+    const players: MultiplayerRoomPlayer[] = []
+    state.players.forEach((player: RoomPlayerSchema, sessionId: string) => {
+      if (sessionId === room.sessionId) return
+      players.push(snapshotPlayer(sessionId, player))
     })
-    if (onChange) playerDisposers.set(sessionId, onChange)
+    log('state change, peers=', players.length, 'total=', state.players.size)
+    args.onPlayersChanged(players)
   }
 
-  room.state.players.forEach((player, sessionId) => {
-    wirePlayer(player, sessionId)
+  room.onStateChange((_state) => {
+    emit()
   })
 
-  const addDisposer = room.state.players.onAdd((player, sessionId) => {
-    wirePlayer(player, sessionId)
-    flush()
-  })
+  emit()
 
-  const removeDisposer = room.state.players.onRemove((_player, sessionId) => {
-    tracked.delete(sessionId)
-    playerDisposers.get(sessionId)?.()
-    playerDisposers.delete(sessionId)
-    flush()
-  })
-
-  room.onLeave(code => {
+  room.onLeave((code: number) => {
+    log('room left, code=', code)
     args.onConnectionState?.('closed', String(code))
   })
-  room.onError((code, message) => {
-    args.onConnectionState?.('error', `${code}:${message || ''}`)
-  })
 
-  flush()
+  // colyseus.js Room.onError signature varies by version; use unknown to stay portable.
+  ;(room.onError as unknown as (cb: (...errArgs: unknown[]) => void) => void)((...errArgs: unknown[]) => {
+    const detail = errArgs.map(item => (typeof item === 'string' ? item : JSON.stringify(item))).join(':')
+    console.error('[oasis-room] room error', detail)
+    args.onConnectionState?.('error', detail)
+  })
 
   return {
     sessionId: room.sessionId,
     sendInput(input: MultiplayerRoomInput): void {
       try {
         room.send('input', input)
-      } catch {
-        // socket likely closed; swallow until reconnect logic exists
+      } catch (error) {
+        if (DEBUG) console.warn('[oasis-room] sendInput failed', error)
       }
     },
     async dispose(): Promise<void> {
-      addDisposer?.()
-      removeDisposer?.()
-      playerDisposers.forEach(disposer => disposer())
-      playerDisposers.clear()
-      tracked.clear()
+      log('disposing room connection')
       try {
         await room.leave(true)
       } catch {
