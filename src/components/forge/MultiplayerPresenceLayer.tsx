@@ -7,10 +7,16 @@ import * as THREE from 'three'
 
 import { getCameraSnapshot } from '@/lib/camera-bridge'
 import { getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
-import type { MultiplayerPresencePlayer } from '@/lib/multiplayer-presence'
+import {
+  connectToWorldRoom,
+  type MultiplayerRoomConnection,
+  type MultiplayerRoomPlayer,
+} from '@/lib/multiplayer-room-client'
 import { useOasisStore } from '@/store/oasisStore'
 
-const HEARTBEAT_INTERVAL_MS = 700
+const INPUT_SEND_INTERVAL_MS = 70
+const INPUT_POSITION_EPSILON = 0.03
+const INPUT_YAW_EPSILON = 0.02
 
 function makePresenceId(): string {
   if (typeof window !== 'undefined') {
@@ -61,7 +67,7 @@ function getLocalPose(): { position: [number, number, number]; yaw: number } | n
   }
 }
 
-function RemotePresenceAvatar({ player }: { player: MultiplayerPresencePlayer }) {
+function RemotePresenceAvatar({ player }: { player: MultiplayerRoomPlayer }) {
   const groupRef = useRef<THREE.Group>(null)
   const targetPosition = useMemo(() => new THREE.Vector3(), [])
   const color = player.color || '#38bdf8'
@@ -104,7 +110,7 @@ function RemotePresenceAvatar({ player }: { player: MultiplayerPresencePlayer })
         outlineWidth={0.01}
         outlineColor="#020617"
       >
-        {player.name}
+        {player.displayName}
         <meshBasicMaterial color="#e0f2fe" />
       </Text>
     </group>
@@ -117,10 +123,10 @@ export function MultiplayerPresenceLayer() {
   const playerIdRef = useRef<string>('')
   const playerNameRef = useRef<string>('Visitor')
   const playerColorRef = useRef<string>('#38bdf8')
-  const inFlightRef = useRef(false)
-  const latestWorldIdRef = useRef(activeWorldId)
-  const latestPoseRef = useRef<{ position: [number, number, number]; yaw: number } | null>(null)
-  const [players, setPlayers] = useState<MultiplayerPresencePlayer[]>([])
+  const connectionRef = useRef<MultiplayerRoomConnection | null>(null)
+  const lastSentPoseRef = useRef<{ position: [number, number, number]; yaw: number } | null>(null)
+  const lastSentAtRef = useRef<number>(0)
+  const [players, setPlayers] = useState<MultiplayerRoomPlayer[]>([])
 
   useEffect(() => {
     const playerId = makePresenceId()
@@ -130,69 +136,81 @@ export function MultiplayerPresenceLayer() {
   }, [])
 
   useEffect(() => {
-    latestWorldIdRef.current = activeWorldId
+    if (!activeWorldId) {
+      setPlayers([])
+      return
+    }
+    const playerId = playerIdRef.current
+    if (!playerId) return
+
+    let disposed = false
+    let connection: MultiplayerRoomConnection | null = null
+
     setPlayers([])
-  }, [activeWorldId])
 
-  useEffect(() => {
-    const sendLeave = () => {
-      const playerId = playerIdRef.current
-      const worldId = latestWorldIdRef.current
-      if (!playerId || !worldId) return
-      const payload = JSON.stringify({ playerId, worldId, leave: true })
-      try {
-        navigator.sendBeacon?.('/api/presence', new Blob([payload], { type: 'application/json' }))
-      } catch {}
-    }
-
-    window.addEventListener('pagehide', sendLeave)
-    window.addEventListener('beforeunload', sendLeave)
-    return () => {
-      window.removeEventListener('pagehide', sendLeave)
-      window.removeEventListener('beforeunload', sendLeave)
-      sendLeave()
-    }
-  }, [])
-
-  useEffect(() => {
-    const sendPresence = () => {
-      if (inFlightRef.current) return
-      const worldId = latestWorldIdRef.current
-      const playerId = playerIdRef.current
-      const pose = getLocalPose() || latestPoseRef.current
-      if (!worldId || !playerId || !pose) return
-
-      inFlightRef.current = true
-      fetch('/api/presence', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          playerId,
-          worldId,
-          name: playerNameRef.current,
-          avatarUrl: avatarUrl || undefined,
-          color: playerColorRef.current,
-          position: pose.position,
-          yaw: pose.yaw,
-        }),
+    connectToWorldRoom({
+      worldId: activeWorldId,
+      playerId,
+      displayName: playerNameRef.current,
+      avatarUrl: avatarUrl || undefined,
+      color: playerColorRef.current,
+      onPlayersChanged: next => {
+        if (!disposed) setPlayers(next)
+      },
+    })
+      .then(next => {
+        if (disposed) {
+          void next.dispose()
+          return
+        }
+        connection = next
+        connectionRef.current = next
+        lastSentPoseRef.current = null
+        lastSentAtRef.current = 0
       })
-        .then(response => response.ok ? response.json() : null)
-        .then((payload: { players?: MultiplayerPresencePlayer[] } | null) => {
-          if (Array.isArray(payload?.players)) setPlayers(payload.players)
-        })
-        .catch(() => {})
-        .finally(() => {
-          inFlightRef.current = false
-        })
-    }
+      .catch(() => {
+        // Room server unavailable. Stay silent; old HTTP fallback is gone but
+        // the rest of the world keeps working.
+      })
 
-    sendPresence()
-    const timer = window.setInterval(sendPresence, HEARTBEAT_INTERVAL_MS)
-    return () => window.clearInterval(timer)
-  }, [avatarUrl])
+    return () => {
+      disposed = true
+      if (connection) {
+        void connection.dispose()
+      }
+      connectionRef.current = null
+      lastSentPoseRef.current = null
+      lastSentAtRef.current = 0
+    }
+  }, [activeWorldId, avatarUrl])
 
   useFrame(() => {
-    latestPoseRef.current = getLocalPose()
+    const connection = connectionRef.current
+    if (!connection) return
+
+    const pose = getLocalPose()
+    if (!pose) return
+
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    if (now - lastSentAtRef.current < INPUT_SEND_INTERVAL_MS) return
+
+    const last = lastSentPoseRef.current
+    const moved = !last
+      || Math.abs(pose.position[0] - last.position[0]) > INPUT_POSITION_EPSILON
+      || Math.abs(pose.position[1] - last.position[1]) > INPUT_POSITION_EPSILON
+      || Math.abs(pose.position[2] - last.position[2]) > INPUT_POSITION_EPSILON
+      || Math.abs(pose.yaw - last.yaw) > INPUT_YAW_EPSILON
+
+    if (!moved) return
+
+    connection.sendInput({
+      x: pose.position[0],
+      y: pose.position[1],
+      z: pose.position[2],
+      yaw: pose.yaw,
+    })
+    lastSentPoseRef.current = { position: [...pose.position], yaw: pose.yaw }
+    lastSentAtRef.current = now
   })
 
   if (!activeWorldId || players.length === 0) return null
@@ -200,7 +218,7 @@ export function MultiplayerPresenceLayer() {
   return (
     <group name="multiplayer-presence-layer">
       {players.map(player => (
-        <RemotePresenceAvatar key={player.playerId} player={player} />
+        <RemotePresenceAvatar key={player.sessionId} player={player} />
       ))}
     </group>
   )

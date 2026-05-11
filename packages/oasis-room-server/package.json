@@ -1,0 +1,22 @@
+{
+  "name": "@04515xyz/oasis-room-server",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Authoritative Colyseus room server for Oasis multiplayer. One room per world. Player presence + transforms with prediction-friendly snapshots.",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@colyseus/schema": "^3.0.0",
+    "@colyseus/ws-transport": "^0.16.0",
+    "colyseus": "^0.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.4.0"
+  }
+}
