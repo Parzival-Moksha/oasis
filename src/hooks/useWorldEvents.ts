@@ -182,6 +182,7 @@ function readAgentAvatar(value: unknown): AgentAvatar | null {
     scale: Number.isFinite(scale) ? scale : 1,
     ...(typeof record.linkedWindowId === 'string' ? { linkedWindowId: record.linkedWindowId } : {}),
     ...(typeof record.label === 'string' ? { label: record.label } : {}),
+    ...(typeof record.ownerId === 'string' ? { ownerId: record.ownerId } : {}),
   }
 }
 
@@ -224,6 +225,7 @@ function readAgentWindow(value: unknown): AgentWindow | null {
     ...(Number.isFinite(frameThickness) ? { frameThickness } : {}),
     ...(Number.isFinite(windowOpacity) ? { windowOpacity } : {}),
     ...(Number.isFinite(windowBlur) ? { windowBlur } : {}),
+    ...(typeof record.ownerId === 'string' ? { ownerId: record.ownerId } : {}),
   }
 }
 

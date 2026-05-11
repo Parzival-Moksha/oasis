@@ -24,6 +24,7 @@ import {
 import { getOffscreenUIManager } from '../../lib/forge/offscreen-ui-manager'
 import { AgentWindowSurface } from './AgentWindowSurface'
 import { useInputManager } from '../../lib/input-manager'
+import { getViewerUserIdClient } from '../../lib/viewer-identity'
 import {
   FourBarFrame,
   NeonFrame,
@@ -120,6 +121,11 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
   const isSelected = selectedObjectId === win.id
   const isFocused = focusedAgentWindowId === win.id
   const prevFocusedRef = useRef(false)
+
+  // ░▒▓ Agent ownership gate — non-owners see body + transcript but cannot   ▓▒░
+  // ░▒▓ type / connect / delete via the window's own controls. Legacy        ▓▒░
+  // ░▒▓ windows have no ownerId and are treated as "open" (anyone can use).  ▓▒░
+  const ownedByCurrentViewer = !win.ownerId || win.ownerId === getViewerUserIdClient()
 
   const renderMode = resolveAgentWindowRenderMode(win.renderMode)
   const rendererMeta = getAgentWindowRendererMeta(renderMode)
@@ -372,7 +378,16 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
             >
               <div
                 data-agent-window-surface=""
-                style={{ width: '100%', height: '100%' }}
+                data-agent-window-owned={ownedByCurrentViewer ? 'self' : 'other'}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  // Non-owners see body + transcript but cannot type, connect,
+                  // or click any control. pointer-events:none blocks input at
+                  // the surface root; the lock badge is layered above with
+                  // pointer-events:auto so it can intercept stray clicks.
+                  pointerEvents: ownedByCurrentViewer ? 'auto' : 'none',
+                }}
                 onPointerDownCapture={handleContentPointerDown}
                 onWheelCapture={event => {
                   handleContentWheel(event)
@@ -384,6 +399,34 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
               >
                 <AgentWindowSurface win={surfaceWindow} />
               </div>
+              {!ownedByCurrentViewer && (
+                <div
+                  data-agent-window-owned-by-other=""
+                  title="This agent belongs to another visitor. You can see its body and transcript, but only the owner can type or connect."
+                  onPointerDown={e => e.stopPropagation()}
+                  onClick={e => e.stopPropagation()}
+                  style={{
+                    position: 'absolute',
+                    top: 8,
+                    right: 8,
+                    pointerEvents: 'auto',
+                    padding: '4px 8px',
+                    borderRadius: 6,
+                    background: 'rgba(15, 23, 42, 0.85)',
+                    color: '#fda4af',
+                    border: '1px solid rgba(244, 114, 182, 0.4)',
+                    boxShadow: '0 0 12px rgba(244, 114, 182, 0.25)',
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: '0.04em',
+                    textShadow: '0 0 8px rgba(244, 114, 182, 0.35)',
+                    userSelect: 'none',
+                  }}
+                >
+                  {'\u{1F512}'} Owned by someone else
+                </div>
+              )}
               {isSelected && (
                 <div
                   data-agent-window-resize-handle=""

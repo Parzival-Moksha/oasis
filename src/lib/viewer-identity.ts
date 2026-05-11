@@ -45,6 +45,21 @@ export async function getViewerUserId(): Promise<string> {
   return VIEWER_FALLBACK
 }
 
+/** Synchronous client-side read of the viewer cookie. Returns VIEWER_FALLBACK
+ *  if `document` is unavailable (SSR) or the cookie is missing. Safe to call
+ *  from any client component, store action, or browser event handler. */
+export function getViewerUserIdClient(): string {
+  if (typeof document === 'undefined') return VIEWER_FALLBACK
+  const match = document.cookie.match(/(?:^|;\s*)oasis-viewer-id=([^;]+)/)
+  if (!match) return VIEWER_FALLBACK
+  try {
+    const decoded = decodeURIComponent(match[1])
+    return isValidViewerId(decoded) ? decoded : VIEWER_FALLBACK
+  } catch {
+    return VIEWER_FALLBACK
+  }
+}
+
 /** Read-or-create the cookie and return the viewer id. Only call from a
  *  Route Handler or Server Action — cookies().set() is forbidden elsewhere. */
 export async function ensureViewerUserId(): Promise<string> {
