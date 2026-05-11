@@ -132,6 +132,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
   const loadWorldState = useOasisStore(s => s.loadWorldState)
   const switchWorld = useOasisStore(s => s.switchWorld)
   const createNewWorld = useOasisStore(s => s.createNewWorld)
+  const setTerrainBrushPanelOpen = useOasisStore(s => s.setTerrainBrushPanelOpen)
   const liveObjectCount = useOasisStore(s => countLiveObjects({
     worldConjuredAssetIds: s.worldConjuredAssetIds,
     placedCatalogAssets: s.placedCatalogAssets,
@@ -612,12 +613,14 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
           {/* SCENE CONTROLS — sky / ground / lights. Visible to:
               - owner of any world (full edit)
               - any visitor of an FFA / public_edit world (full sandbox per user)
-              Click opens WizCon at the World tab (which has sky + ground +
-              terrain + lights sections collapsed-by-default). Future tiering:
-              each button gates by `unlockedAtLevel` from a per-user level
-              system that doesn't exist yet — default level=1 means all unlocked
-              for now. When the level system lands, plumb the user's level
-              through and disable buttons whose `unlockedAtLevel` is higher. */}
+              Each button opens its own standalone panel (SkyPanel /
+              TerrainBrushPanel / LightsPanel) — these replaced the old
+              "open WizCon" path so visitors don't see the full forge surface,
+              just the controls they need. Future tiering: each button gates by
+              `unlockedAtLevel` from a per-user level system that doesn't exist
+              yet — default level=1 means all unlocked for now. When the level
+              system lands, plumb the user's level through and disable buttons
+              whose `unlockedAtLevel` is higher. */}
           {(() => {
             const sceneKind = (visibility === 'public_edit' || visibility === 'ffa')
             const canEditScene = canEditSettings || sceneKind
@@ -640,10 +643,16 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
                         key={btn.id}
                         onClick={() => {
                           playClick()
-                          // Tell Scene to open WizCon. WizCon defaults to the
-                          // 'world' mode which is exactly sky/ground/lights.
-                          if (typeof window !== 'undefined') {
-                            window.dispatchEvent(new CustomEvent('oasis:open-wizard', { detail: { section: btn.id } }))
+                          // Each scene button opens its own standalone panel.
+                          // Ground talks directly to the existing store flag
+                          // that TerrainBrushPanel already watches; Sky and
+                          // Lights fire CustomEvents that Scene.tsx listens for
+                          // and turns into local panel state.
+                          if (btn.id === 'ground') {
+                            setTerrainBrushPanelOpen(true)
+                          } else if (typeof window !== 'undefined') {
+                            const eventName = btn.id === 'sky' ? 'oasis:open-sky-panel' : 'oasis:open-lights-panel'
+                            window.dispatchEvent(new CustomEvent(eventName))
                           }
                           setIsOpen(false)
                         }}

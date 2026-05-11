@@ -77,6 +77,8 @@ import { PortalZeroCanonicalButton } from './forge/PortalZeroCanonicalButton'
 import { PortalTransitionOverlay } from './forge/PortalTransitionOverlay'
 import { WorldLoadingBar } from './forge/WorldLoadingBar'
 import { TerrainBrushPanel } from './forge/TerrainBrushPanel'
+import { SkyPanel } from './forge/SkyPanel'
+import { LightsPanel } from './forge/LightsPanel'
 import { WorldMenu } from './forge/WorldMenu'
 import { PlaceMenu } from './forge/PlaceMenu'
 import { GameMenuButton } from './forge/GameMenuButton'
@@ -1397,14 +1399,33 @@ export default function Scene() {
   const [parzivalOpen, setParzivalOpen] = useState(false)
   const [consoleOpen, setConsoleOpen] = useState(false)
   const [settingsMenuOpacity, setSettingsMenuOpacity] = useState(() => readSettingsMenuOpacity())
+  // Standalone scene-panel state. WorldMenu fires CustomEvents to open these
+  // instead of the full WizCon — sky/lights visitors only need their specific
+  // selector, not the whole forge surface.
+  const [skyPanelOpen, setSkyPanelOpen] = useState(false)
+  const [lightsPanelOpen, setLightsPanelOpen] = useState(false)
 
   // WorldMenu's Scene buttons (sky/ground/lights) fire this custom event to
-  // ask Scene to open WizCon. The world tab is WizCon's default landing.
+  // ask Scene to open WizCon. Legacy listener — kept so any other dispatcher
+  // (deeplinks, future agents) still reaches WizCon.
   useEffect(() => {
     if (typeof window === 'undefined') return
     const open = () => setWizardOpen(true)
     window.addEventListener('oasis:open-wizard', open)
     return () => window.removeEventListener('oasis:open-wizard', open)
+  }, [])
+
+  // New event hooks for the standalone Sky / Lights panels.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const openSky = () => setSkyPanelOpen(true)
+    const openLights = () => setLightsPanelOpen(true)
+    window.addEventListener('oasis:open-sky-panel', openSky)
+    window.addEventListener('oasis:open-lights-panel', openLights)
+    return () => {
+      window.removeEventListener('oasis:open-sky-panel', openSky)
+      window.removeEventListener('oasis:open-lights-panel', openLights)
+    }
   }, [])
 
   useEffect(() => {
@@ -1793,6 +1814,8 @@ export default function Scene() {
       )}
 
       {!hideEditTools && <TerrainBrushPanel />}
+      {!hideEditTools && <SkyPanel isOpen={skyPanelOpen} onClose={() => setSkyPanelOpen(false)} />}
+      {!hideEditTools && <LightsPanel isOpen={lightsPanelOpen} onClose={() => setLightsPanelOpen(false)} />}
 
       {/* 📋 Mindcraft 3D — Mission Window (outside Canvas, bridged via Zustand) */}
       {canUseLocalPanels && <MindcraftMissionWindowBridge />}
