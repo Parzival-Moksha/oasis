@@ -276,6 +276,28 @@ export function MultiplayerPresenceLayer() {
     playerColorRef.current = colorForId(playerId)
   }, [])
 
+  // Override the legacy `Visitor XXXX` localStorage name with the user's
+  // actual profile.displayName once it loads. We then forward the new name
+  // to the room via the existing profile mutation — no reconnect.
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/profile', { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : null))
+      .then((data: { displayName?: string } | null) => {
+        if (cancelled || !data?.displayName) return
+        const fromProfile = data.displayName.trim()
+        // Skip the default placeholders — only override the legacy
+        // Visitor XXXX label when the user actually picked a name.
+        if (!fromProfile || fromProfile === 'Player 1' || fromProfile === 'Wanderer') return
+        playerNameRef.current = fromProfile
+        try { window.localStorage.setItem('oasis-presence-player-name', fromProfile) } catch {}
+        const connection = connectionRef.current
+        if (connection) connection.sendProfile({ displayName: fromProfile })
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
   useEffect(() => {
     const store = useOasisStore.getState()
     return worldMutationBus.subscribe(mutation => {

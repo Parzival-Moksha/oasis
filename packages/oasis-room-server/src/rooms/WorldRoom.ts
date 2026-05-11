@@ -1,5 +1,6 @@
 import { Room, type Client } from 'colyseus'
 import { PlayerState, WorldRoomState } from '../schema/RoomSchema.js'
+import { rosterClearWorld, rosterRemove, rosterUpsert } from '../world-roster.js'
 
 interface JoinOptions {
   worldId?: string
@@ -123,6 +124,17 @@ export class WorldRoom extends Room<WorldRoomState> {
       if (payload.vz !== undefined) player.vz = clampVel(payload.vz, player.vz)
       if (payload.animState !== undefined) player.animState = sanitizeText(payload.animState, player.animState, 24)
       player.updatedAt = Date.now()
+      rosterUpsert(this.state.worldId, client.sessionId, {
+        playerId: player.playerId,
+        sessionId: client.sessionId,
+        displayName: player.displayName,
+        avatarUrl: player.avatarUrl,
+        color: player.color,
+        position: [player.x, player.y, player.z],
+        yaw: player.yaw,
+        animState: player.animState,
+        updatedAt: player.updatedAt,
+      })
     })
 
     this.onMessage('profile', (client, payload: ProfileMessage) => {
@@ -143,6 +155,17 @@ export class WorldRoom extends Room<WorldRoomState> {
         player.color = sanitizeText(payload.color, player.color, 7)
       }
       player.updatedAt = Date.now()
+      rosterUpsert(this.state.worldId, client.sessionId, {
+        playerId: player.playerId,
+        sessionId: client.sessionId,
+        displayName: player.displayName,
+        avatarUrl: player.avatarUrl,
+        color: player.color,
+        position: [player.x, player.y, player.z],
+        yaw: player.yaw,
+        animState: player.animState,
+        updatedAt: player.updatedAt,
+      })
     })
 
     this.onMessage('mutation', (client, payload: unknown) => {
@@ -179,21 +202,33 @@ export class WorldRoom extends Room<WorldRoomState> {
     const player = new PlayerState()
     player.playerId = sanitizePlayerId(options.playerId, client.sessionId)
     player.displayName = sanitizeText(options.displayName, `Player ${player.playerId.slice(0, 4)}`)
-    player.avatarUrl = sanitizeText(options.avatarUrl, '', 500)
+    player.avatarUrl = (typeof options.avatarUrl === 'string' ? options.avatarUrl.trim() : '').slice(0, 500)
     player.color = sanitizeText(options.color, '#38bdf8', 7)
     player.updatedAt = Date.now()
     this.state.players.set(client.sessionId, player)
+    rosterUpsert(this.state.worldId, client.sessionId, {
+      playerId: player.playerId,
+      sessionId: client.sessionId,
+      displayName: player.displayName,
+      avatarUrl: player.avatarUrl,
+      color: player.color,
+      position: [player.x, player.y, player.z],
+      yaw: player.yaw,
+      animState: player.animState,
+      updatedAt: player.updatedAt,
+    })
     console.log(`[room ${this.roomId}] join ${client.sessionId} (${player.displayName}) total=${this.state.players.size}`)
   }
 
   override onLeave(client: Client): void {
     this.state.players.delete(client.sessionId)
     this.mutationBuckets.delete(client.sessionId)
+    rosterRemove(this.state.worldId, client.sessionId)
     console.log(`[room ${this.roomId}] leave ${client.sessionId} total=${this.state.players.size}`)
   }
 
   override onDispose(): void {
-    // No-op for now; room state lives only in memory.
+    rosterClearWorld(this.state.worldId)
   }
 
   private simulate(_deltaMs: number): void {

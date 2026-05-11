@@ -1238,6 +1238,46 @@ async function runMediaTool(name: MediaToolName, args: Record<string, unknown>, 
 
 // ─═̷─═̷─ WORLD QUERY ─═̷─═̷─
 
+/** Fetch the live player roster for a world from the Colyseus room server.
+ *  Returns [] on any failure (room server down, network glitch, world has no
+ *  connected players) so callers can rely on the shape unconditionally. */
+async function fetchLivePlayers(worldId: string): Promise<Array<{
+  playerId: string
+  sessionId: string
+  displayName: string
+  avatarUrl: string
+  color: string
+  position: [number, number, number]
+  yaw: number
+  animState: string
+  updatedAt: number
+}>> {
+  if (!worldId) return []
+  const base = (process.env.OASIS_ROOM_INTERNAL_URL || 'http://127.0.0.1:4519').replace(/\/+$/, '')
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 1500)
+    const res = await fetch(`${base}/world-players?worldId=${encodeURIComponent(worldId)}`, { signal: controller.signal })
+    clearTimeout(timer)
+    if (!res.ok) return []
+    const body = await res.json() as { ok?: boolean; players?: unknown }
+    if (!body?.ok || !Array.isArray(body.players)) return []
+    return body.players as Array<{
+      playerId: string
+      sessionId: string
+      displayName: string
+      avatarUrl: string
+      color: string
+      position: [number, number, number]
+      yaw: number
+      animState: string
+      updatedAt: number
+    }>
+  } catch {
+    return []
+  }
+}
+
 tools.get_world_state = async (args) => {
   const worldId = validStr(args.worldId, '')
   const { state, worldId: resolvedId } = worldId
@@ -1386,6 +1426,11 @@ tools.get_world_state = async (args) => {
       livePlayerAvatar: livePlayerContext?.player.avatar || null,
       livePlayerCamera: livePlayerContext?.player.camera || null,
       livePlayerUpdatedAt: livePlayerContext?.updatedAt || null,
+      // Multiplayer roster — every player connected to this worldId via the
+      // Colyseus room. Pulled from the room server's /world-players HTTP
+      // endpoint. Agents querying world state previously only saw the local
+      // viewer's avatar; this exposes the full peer list.
+      livePlayers: await fetchLivePlayers(worldId),
       conjuredAssetCount: (state.conjuredAssetIds || []).length,
       conjuredAssets: (state.conjuredAssetIds || []).map(assetId => summarizeWorldConjuredAsset(state, assetId)),
       behaviors: state.behaviors || {},

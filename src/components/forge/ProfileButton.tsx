@@ -51,6 +51,7 @@ export function ProfileButton() {
   const [editBio, setEditBio] = useState('')
   const [editAvatarFile, setEditAvatarFile] = useState<File | null>(null)
   const [editAvatarPreview, setEditAvatarPreview] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const editFileRef = useRef<HTMLInputElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -139,7 +140,13 @@ export function ProfileButton() {
   }, [])
 
   const displayName = profile.displayName || 'Wanderer'
-  const avatarSrc = profile.avatar_url || null
+  // Cache-bust the avatar URL so a freshly-uploaded pic actually renders.
+  // Profile.avatarUrl always serves the same path (/avatars/<userId>.<ext>)
+  // because filenames are keyed by user, not content. Without ?v= the
+  // browser cache holds the old (or 404) version after upload.
+  const avatarSrc = profile.avatar_url
+    ? `${profile.avatar_url}?v=${profile.lastLoginDate || 'init'}`
+    : null
   const initial = (displayName[0] || '?').toUpperCase()
   const playClick = () => useAudioManager.getState().play('buttonClick')
 
@@ -153,7 +160,16 @@ export function ProfileButton() {
 
   const handleEditAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file || file.size > 2 * 1024 * 1024 || !file.type.startsWith('image/')) return
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setSaveError('That file is not an image. Use JPEG/PNG/WebP/GIF.')
+      return
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setSaveError(`Image is ${(file.size / 1024 / 1024).toFixed(1)} MB — must be under 2 MB.`)
+      return
+    }
+    setSaveError(null)
     setEditAvatarFile(file)
     setEditAvatarPreview(URL.createObjectURL(file))
   }
@@ -162,21 +178,31 @@ export function ProfileButton() {
     if (!editName.trim() || editName.trim().length < 2) return
     setSaving(true)
     try {
-      await fetch('/api/profile', {
+      const patchRes = await fetch('/api/profile', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ display_name: editName.trim(), bio: editBio.trim() }),
       })
+      if (!patchRes.ok) {
+        const errBody = await patchRes.json().catch(() => ({}))
+        throw new Error(errBody?.error || `Profile save failed (HTTP ${patchRes.status})`)
+      }
       if (editAvatarFile) {
         const fd = new FormData()
         fd.append('avatar', editAvatarFile)
-        await fetch('/api/profile/avatar', { method: 'POST', body: fd })
+        const upRes = await fetch('/api/profile/avatar', { method: 'POST', body: fd })
+        if (!upRes.ok) {
+          const errBody = await upRes.json().catch(() => ({}))
+          throw new Error(errBody?.error || `Avatar upload failed (HTTP ${upRes.status})`)
+        }
       }
       setEditing(false)
+      setSaveError(null)
       fetchProfile()
       setSavedFlash(true)
       setTimeout(() => setSavedFlash(false), 1500)
     } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err))
       console.error('[Profile] Save failed:', err)
     } finally {
       setSaving(false)
@@ -259,6 +285,11 @@ export function ProfileButton() {
                     </div>
                   </button>
                   <input ref={editFileRef} type="file" accept="image/*" onChange={handleEditAvatarChange} className="hidden" />
+                  {saveError && (
+                    <div className="absolute left-0 right-0 -top-7 mx-2 rounded-md px-2 py-1 text-[10px] text-red-100" style={{ background: 'rgba(239,68,68,0.18)', border: '1px solid rgba(239,68,68,0.45)' }}>
+                      {saveError}
+                    </div>
+                  )}
                   <input
                     value={editName}
                     onChange={e => setEditName(e.target.value)}

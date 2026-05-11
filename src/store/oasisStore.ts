@@ -71,6 +71,7 @@ import {
   type SpatialWebValue,
 } from '../lib/spatial-web'
 import { createPortalZeroGoogleFormsAltar, createPortalZeroGoogleTestAltar } from '../lib/spatial-web-presets'
+import { getViewerUserIdClient } from '../lib/viewer-identity'
 
 const SPATIAL_WEB_WORLD_TOOL_ALLOWLIST = new Set([
   'set_sky',
@@ -334,6 +335,10 @@ export interface AgentWindow {
   frameThickness?: number                 // frame thickness multiplier (default 1, range 0.2-150)
   windowOpacity?: number                  // window background opacity (default 1, range 0-1, dims to black)
   windowBlur?: number                     // backdrop blur in px (default 0, range 0-20)
+  /** Viewer cookie id of the user who placed this window. Optional during the
+   *  migration: legacy world snapshots have no ownerId and are treated as
+   *  "open" (any visitor may interact). Stamped at placement time only. */
+  ownerId?: string
 }
 
 export type AgentAvatarType = AgentWindowType | 'hermes'
@@ -347,6 +352,10 @@ export interface AgentAvatar {
   scale: number
   linkedWindowId?: string
   label?: string
+  /** Viewer cookie id of the user who placed this avatar. Optional during the
+   *  migration: legacy world snapshots have no ownerId. Stamped at placement
+   *  time only. Mirrors AgentWindow.ownerId. */
+  ownerId?: string
 }
 
 export interface AgentAvatarAudioState {
@@ -979,6 +988,13 @@ export const useOasisStore = create<OasisState>((set, get) => {
     // ░▒▓ bodies instead of replacing them (now handled by existingAvatar     ▓▒░
     // ░▒▓ branch above — but the create path must use the same stable form). ▓▒░
     const avatarId = `agent-avatar-${agentType}`
+    // Inherit ownerId from the preferred window if one was provided; otherwise
+    // stamp the current viewer. Shared singletons (Hermes/Merlin/etc.) are
+    // claimed by the user who first conjures them.
+    const preferredWindowOwner = options?.preferredWindowId
+      ? get().placedAgentWindows.find(entry => entry.id === options.preferredWindowId)?.ownerId
+      : undefined
+    const newAvatarOwnerId = preferredWindowOwner || getViewerUserIdClient()
     set(state => ({
       placedAgentWindows: state.placedAgentWindows.map(entry => {
         if (entry.agentType !== agentType) return entry
@@ -1001,6 +1017,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
           rotation: spawn.rotation,
           scale: spawn.scale,
           label: defaultAgentAvatarLabel(agentType),
+          ownerId: newAvatarOwnerId,
         },
       ],
     }))
@@ -2971,6 +2988,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
   // ─═̷─═̷─💻 3D AGENT WINDOWS — place, focus, interact ─═̷─═̷─💻
   addAgentWindow: (window) => {
+    // ░▒▓ Agent ownership stamp — the viewer who placed this window claims it. ▓▒░
+    // Legacy snapshots may have no ownerId (treated as "open"). Future-placed
+    // windows always carry the placer's cookie id so non-owners can see the
+    // body/transcript but can't type, connect, or delete via window controls.
+    const ownerId = window.ownerId || getViewerUserIdClient()
     set(state => {
       const sharedAvatar = isSharedAgentAvatarType(window.agentType)
         ? state.placedAgentAvatars.find(entry => entry.agentType === window.agentType) || null
@@ -2980,6 +3002,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         ...state.placedAgentWindows,
         {
           ...window,
+          ownerId,
           linkedAvatarId: window.linkedAvatarId || sharedAvatar?.id,
           renderMode: window.renderMode || DEFAULT_AGENT_WINDOW_RENDER_MODE,
           anchorMode: window.anchorMode || (sharedAvatar ? 'next-to' : 'detached'),
@@ -3133,6 +3156,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
     }
 
     const avatarId = `agent-avatar-${windowId}`
+    // Inherit ownership from the parent window so a non-shared avatar can never
+    // outlive (or out-permit) the window that birthed it.
+    const newAvatarOwnerId = window.ownerId || getViewerUserIdClient()
     set(state => ({
       placedAgentWindows: state.placedAgentWindows.map(entry =>
         entry.id === windowId
@@ -3154,6 +3180,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
           rotation: anchor.rotation,
           scale,
           label: window.label || defaultAgentAvatarLabel(window.agentType),
+          ownerId: newAvatarOwnerId,
         },
       ],
     }))
