@@ -255,7 +255,37 @@ export function MobileOasisControls({ enabled }: { enabled: boolean }) {
         >
           Run
         </button>
+        <MobilePaintHoldButton />
       </div>
     </div>
+  )
+}
+
+// Held-paint button: while pressed, paint mode is armed so the OTHER finger
+// (used for camera look) does not also trigger the wand. Releases on up/cancel.
+function MobilePaintHoldButton() {
+  const setPaintHeldActive = useOasisStore(s => s.setPaintHeldActive)
+  return (
+    <button
+      type="button"
+      className="h-11 min-w-20 touch-none rounded-lg border border-fuchsia-300/40 bg-black/45 px-4 text-[11px] font-black uppercase tracking-[0.14em] text-fuchsia-100 shadow-[0_0_28px_rgba(217,70,239,0.18)] backdrop-blur-sm"
+      onPointerDown={event => {
+        event.preventDefault()
+        event.stopPropagation()
+        setPaintHeldActive(true)
+      }}
+      onPointerUp={event => {
+        event.preventDefault()
+        event.stopPropagation()
+        setPaintHeldActive(false)
+      }}
+      onPointerCancel={event => {
+        event.preventDefault()
+        event.stopPropagation()
+        setPaintHeldActive(false)
+      }}
+    >
+      Paint
+    </button>
   )
 }

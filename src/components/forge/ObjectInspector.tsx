@@ -369,6 +369,88 @@ function AudioSeekSlider({ objectId }: { objectId: string }) {
   )
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// PAINT STROKE PLAYBACK — Play button + duration slider on the Joystick
+// ═══════════════════════════════════════════════════════════════════════════
+
+function PaintStrokePlaybackSection({ strokeId, pointCount, onPlay, onStop }: {
+  strokeId: string
+  pointCount: number
+  onPlay: (durationSec: number) => void
+  onStop: () => void
+}) {
+  const [duration, setDuration] = useState(4)
+  return (
+    <>
+      <SectionHeader>&#9608;&#9658; Playback</SectionHeader>
+      <div className="rounded-lg border border-fuchsia-400/15 p-2 space-y-2" style={{ background: 'rgba(20, 14, 24, 0.6)' }}>
+        <div className="text-[9px] font-mono text-fuchsia-300/55">{pointCount} points · csillagszóró-tipped reveal</div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-fuchsia-100/60 font-mono w-16 shrink-0">duration</span>
+          <input
+            type="range" min={1} max={20} step={0.5}
+            value={duration}
+            onChange={(e) => setDuration(parseFloat(e.target.value))}
+            className="flex-1 h-1 cursor-pointer accent-fuchsia-400"
+          />
+          <span className="text-[10px] text-fuchsia-100/55 font-mono w-10 text-right">{duration.toFixed(1)}s</span>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => onPlay(duration)}
+            className="flex-1 rounded-md border border-fuchsia-300/50 bg-fuchsia-500/20 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-fuchsia-100 transition-colors hover:bg-fuchsia-500/35"
+            title={`Replay this stroke over ${duration.toFixed(1)}s`}
+          >
+            &#9654; Play
+          </button>
+          <button
+            onClick={onStop}
+            className="rounded-md border border-white/15 px-2 py-1 text-[10px] font-mono text-fuchsia-100/55 hover:text-fuchsia-100"
+            title="Stop playback"
+          >
+            &#9632;
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TEXT 3D EDIT — Live edit text/size/depth/color on a placed text object
+// ═══════════════════════════════════════════════════════════════════════════
+
+function Text3DEditSection({ object, onChange }: {
+  object: import('../../lib/forge/text-3d-object').Text3DObject
+  onChange: (updates: Partial<import('../../lib/forge/text-3d-object').Text3DObject>) => void
+}) {
+  return (
+    <>
+      <SectionHeader>&#128221; Text</SectionHeader>
+      <div className="rounded-lg border border-amber-400/15 p-2 space-y-2" style={{ background: 'rgba(24, 18, 8, 0.6)' }}>
+        <textarea
+          value={object.text}
+          onChange={(e) => onChange({ text: e.target.value.slice(0, 240) })}
+          rows={2}
+          className="w-full resize-none rounded border border-white/10 bg-black/40 px-2 py-1 text-[12px] text-amber-50"
+        />
+        <ParamSlider label="size"  value={object.size}  min={0.05} max={3} step={0.05} onChange={(v) => onChange({ size: v })} />
+        <ParamSlider label="depth" value={object.depth} min={0.01} max={1} step={0.01} onChange={(v) => onChange({ depth: v })} />
+        <ParamSlider label="shine" value={object.shininess} min={0} max={1} step={0.05} onChange={(v) => onChange({ shininess: v })} />
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-amber-100/65 font-mono w-16 shrink-0">color</span>
+          <input
+            type="color"
+            value={object.color}
+            onChange={(e) => onChange({ color: e.target.value })}
+            className="h-6 flex-1 cursor-pointer rounded border border-white/10 bg-black/30"
+          />
+        </div>
+      </div>
+    </>
+  )
+}
+
 export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
   useUILayer('object-inspector', isOpen)
   // ─═̷─ Position & drag state — persisted to localStorage ─═̷─
@@ -428,6 +510,14 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
   const updateAgentWindow = useOasisStore(s => s.updateAgentWindow)
   const removeAgentWindow = useOasisStore(s => s.removeAgentWindow)
 
+  const paintStrokes = useOasisStore(s => s.paintStrokes)
+  const removePaintStroke = useOasisStore(s => s.removePaintStroke)
+  const playPaintStroke = useOasisStore(s => s.playPaintStroke)
+  const stopPaintStrokePlayback = useOasisStore(s => s.stopPaintStrokePlayback)
+  const text3dObjects = useOasisStore(s => s.text3dObjects)
+  const updateText3dObject = useOasisStore(s => s.updateText3dObject)
+  const removeText3dObject = useOasisStore(s => s.removeText3dObject)
+
   // ─═̷─ Resolve the inspected object: who are you? ─═̷─
   const resolved = useMemo(() => {
     if (!inspectedObjectId) return null
@@ -473,8 +563,16 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
     const spatial = spatialWebObjects.find(object => object.id === inspectedObjectId)
     if (spatial) return { type: 'spatial-web' as const, id: spatial.id, name: spatial.label, data: spatial }
 
+    // 7. Paint stroke?
+    const stroke = paintStrokes.find(s => s.id === inspectedObjectId)
+    if (stroke) return { type: 'paint_stroke' as const, id: stroke.id, name: 'paint stroke', data: stroke }
+
+    // 8. 3D text?
+    const t3d = text3dObjects.find(t => t.id === inspectedObjectId)
+    if (t3d) return { type: 'text_3d' as const, id: t3d.id, name: t3d.text.slice(0, 28) || '3D text', data: t3d }
+
     return null
-  }, [inspectedObjectId, placedCatalogAssets, craftedScenes, portalGates, conjuredAssets, worldConjuredAssetIds, worldLights, placedAgentWindows, spatialWebObjects])
+  }, [inspectedObjectId, placedCatalogAssets, craftedScenes, portalGates, conjuredAssets, worldConjuredAssetIds, worldLights, placedAgentWindows, spatialWebObjects, paintStrokes, text3dObjects])
 
   // ─═̷─ Current behavior (or defaults) ─═̷─
   const behavior: ObjectBehavior = useMemo(() => {
@@ -589,10 +687,12 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
     else if (resolved.type === 'light') removeWorldLight(inspectedObjectId)
     else if (resolved.type === 'agent') removeAgentWindow(inspectedObjectId)
     else if (resolved.type === 'spatial-web') removeSpatialWebObject(inspectedObjectId)
+    else if (resolved.type === 'paint_stroke') removePaintStroke(inspectedObjectId)
+    else if (resolved.type === 'text_3d') removeText3dObject(inspectedObjectId)
     selectObject(null)
     setInspectedObject(null)
     onClose()
-  }, [resolved, inspectedObjectId, removeCatalogAsset, removeCraftedScene, removePortalGate, removeConjuredAssetFromWorld, removeWorldLight, removeAgentWindow, removeSpatialWebObject, selectObject, setInspectedObject, onClose])
+  }, [resolved, inspectedObjectId, removeCatalogAsset, removeCraftedScene, removePortalGate, removeConjuredAssetFromWorld, removeWorldLight, removeAgentWindow, removeSpatialWebObject, removePaintStroke, removeText3dObject, selectObject, setInspectedObject, onClose])
 
   // ═══════════════════════════════════════════════════════════════════════════
   // DRAG HANDLERS (same pattern as WizardConsole / AssetExplorerWindow)
@@ -1805,6 +1905,30 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
             }}
           />
         )}
+
+        {/* ░▒▓ PAINT STROKE — Playback controls ▓▒░ */}
+        {resolved?.type === 'paint_stroke' && inspectedObjectId && (() => {
+          const stroke = resolved.data as import('../../lib/forge/paint-stroke').PaintStroke
+          return (
+            <PaintStrokePlaybackSection
+              strokeId={inspectedObjectId}
+              pointCount={Math.floor(stroke.points.length / 3)}
+              onPlay={(durationSec) => playPaintStroke(inspectedObjectId, durationSec)}
+              onStop={() => stopPaintStrokePlayback(inspectedObjectId)}
+            />
+          )
+        })()}
+
+        {/* ░▒▓ TEXT 3D — Live edit ▓▒░ */}
+        {resolved?.type === 'text_3d' && inspectedObjectId && (() => {
+          const t3d = resolved.data as import('../../lib/forge/text-3d-object').Text3DObject
+          return (
+            <Text3DEditSection
+              object={t3d}
+              onChange={(updates) => updateText3dObject(inspectedObjectId, updates)}
+            />
+          )
+        })()}
 
         {/* ░▒▓ ACTIONS ▓▒░ */}
         <SectionHeader>&#9881; Actions</SectionHeader>

@@ -623,11 +623,13 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
           {(() => {
             const sceneKind = (visibility === 'public_edit' || visibility === 'ffa')
             const canEditScene = canEditSettings || sceneKind
-            type SceneButton = { id: 'sky' | 'ground' | 'lights'; label: string; icon: string; accent: string; unlockedAtLevel: number }
+            type SceneButton = { id: 'sky' | 'ground' | 'lights' | 'paint' | 'text3d'; label: string; icon: string; accent: string; unlockedAtLevel: number }
             const SCENE_BUTTONS: SceneButton[] = [
               { id: 'sky',    label: 'Sky',    icon: '🌅', accent: 'rgba(129,140,248,0.85)', unlockedAtLevel: 1 },
               { id: 'ground', label: 'Ground', icon: '🌿', accent: 'rgba(74,222,128,0.85)',  unlockedAtLevel: 1 },
               { id: 'lights', label: 'Lights', icon: '💡', accent: 'rgba(250,204,21,0.85)',  unlockedAtLevel: 1 },
+              { id: 'paint',  label: 'Paint',  icon: '🪄', accent: 'rgba(217,70,239,0.85)',  unlockedAtLevel: 1 },
+              { id: 'text3d', label: 'Text 3D',icon: '🔤', accent: 'rgba(245,158,11,0.85)',  unlockedAtLevel: 1 },
             ]
             const viewerLevel = 1  // TODO: read from profile when level system ships
             return (
@@ -649,6 +651,10 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
                           // and turns into local panel state.
                           if (btn.id === 'ground') {
                             setTerrainBrushPanelOpen(true)
+                          } else if (btn.id === 'paint') {
+                            useOasisStore.getState().setPaintBrushPanelOpen(true)
+                          } else if (btn.id === 'text3d') {
+                            useOasisStore.getState().setText3dPanelOpen(true)
                           } else if (typeof window !== 'undefined') {
                             const eventName = btn.id === 'sky' ? 'oasis:open-sky-panel' : 'oasis:open-lights-panel'
                             window.dispatchEvent(new CustomEvent(eventName))

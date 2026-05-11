@@ -32,6 +32,9 @@ import { loadAnimationClip, retargetClipForVRM, retargetUALClipForVRM, isUALAnim
 import { MindcraftWorld } from './MindcraftWorld'
 import { AgentWindow3D } from './AgentWindow3D'
 import { SpatialWebObject3D } from './SpatialWebObject3D'
+import { PaintStrokeMesh } from './PaintStrokeMesh'
+import { Text3DObjectMesh } from './Text3DObjectMesh'
+import { LiveStrokesLayer } from './LiveStrokesLayer'
 import type { PlacementPending } from '../../store/oasisStore'
 import { consumeRecentPointerLockRightClick, useInputManager } from '../../lib/input-manager'
 import { dispatch } from '../../lib/event-bus'
@@ -3019,7 +3022,97 @@ export function WorldObjectsRenderer() {
         transformMode={transformMode}
       />
 
+      {/* ░▒▓ Paint strokes — wizardry tubes / lines drawn in 3-space ▓▒░ */}
+      <PaintStrokesSection />
+
+      {/* ░▒▓ 3D text — extruded shiny words ▓▒░ */}
+      <Text3DSection />
+
+      {/* ░▒▓ Live (in-progress) strokes — local + remote, with sparkler tip ▓▒░ */}
+      <LiveStrokesLayer />
     </group>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PAINT STROKES SECTION — persisted strokes from oasisStore
+// Includes playback ticker so the play button on the Joystick animates the
+// stroke from start to end over the chosen duration.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function PaintStrokesSection() {
+  const paintStrokes = useOasisStore(s => s.paintStrokes)
+  const strokePlayback = useOasisStore(s => s.paintStrokePlayback)
+  const setInspectedObject = useOasisStore(s => s.setInspectedObject)
+  return (
+    <>
+      <PaintStrokePlaybackTicker />
+      {paintStrokes.map(stroke => {
+        const playback = strokePlayback?.[stroke.id]
+        return (
+          <group
+            key={stroke.id}
+            onPointerDown={event => {
+              if (event.button !== 0) return
+              if ((event as unknown as { detail?: number }).detail === 2) {
+                event.stopPropagation()
+                setInspectedObject(stroke.id)
+              }
+            }}
+          >
+            <PaintStrokeMesh
+              points={stroke.points}
+              color={stroke.color}
+              thickness={stroke.thickness}
+              shininess={stroke.shininess}
+              mode={stroke.mode}
+              varyByVelocity={stroke.varyByVelocity}
+              progress={playback?.progress}
+              showLeadingSparkler={playback !== undefined && (playback.progress ?? 0) < 1}
+              leadingSparklerColor={stroke.authorColor || stroke.color}
+            />
+          </group>
+        )
+      })}
+    </>
+  )
+}
+
+function PaintStrokePlaybackTicker() {
+  const setProgress = useOasisStore(s => s.setPaintStrokePlaybackProgress)
+  const stopPlayback = useOasisStore(s => s.stopPaintStrokePlayback)
+  useFrame(() => {
+    const entries = Object.entries(useOasisStore.getState().paintStrokePlayback || {})
+    if (entries.length === 0) return
+    const now = performance.now()
+    for (const [id, { startedAt, durationSec }] of entries) {
+      const elapsed = (now - startedAt) / 1000
+      const next = elapsed / Math.max(0.001, durationSec)
+      if (next >= 1) {
+        // Hold "fully revealed" for half a second, then clear.
+        if (elapsed > durationSec + 0.5) stopPlayback(id)
+        else setProgress(id, 1)
+      } else {
+        setProgress(id, next)
+      }
+    }
+  })
+  return null
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TEXT 3D SECTION — persisted 3D text from oasisStore
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function Text3DSection() {
+  const text3dObjects = useOasisStore(s => s.text3dObjects)
+  if (text3dObjects.length === 0) return null
+  return (
+    <>
+      {text3dObjects.map(object => (
+        <Text3DObjectMesh key={object.id} object={object} />
+      ))}
+    </>
   )
 }
 

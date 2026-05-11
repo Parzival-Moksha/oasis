@@ -14,6 +14,11 @@ import {
 import { worldMutationBus, type WorldMutation } from '@/lib/world-mutation-bus'
 import { useOasisStore } from '@/store/oasisStore'
 import { RemoteVRMAvatar } from './RemoteVRMAvatar'
+import {
+  appendLiveStrokePoint,
+  endLiveStroke,
+  startLiveStroke,
+} from '@/lib/forge/live-strokes'
 
 const INPUT_SEND_INTERVAL_MS = 33
 // Position jitter epsilon for "did the player actually move?" — 5cm is well
@@ -363,6 +368,24 @@ export function MultiplayerPresenceLayer() {
         store.applyRemoteLightRemoved(mutation.payload.id)
       } else if (mutation.kind === 'light_updated') {
         store.applyRemoteLightUpdated(mutation.payload.id, mutation.payload.updates)
+      } else if (mutation.kind === 'stroke_started') {
+        const { strokeId, authorId, authorColor, style } = mutation.payload
+        startLiveStroke({ id: strokeId, authorId, authorColor, style })
+      } else if (mutation.kind === 'stroke_pointed') {
+        appendLiveStrokePoint(mutation.payload.strokeId, mutation.payload.point)
+      } else if (mutation.kind === 'stroke_ended') {
+        endLiveStroke(mutation.payload.strokeId)
+        // Persist remote final stroke so the rendering doesn't blink between
+        // the live preview vanishing and the persistent object loading.
+        store.applyRemotePaintStroke(mutation.payload.finalStroke)
+      } else if (mutation.kind === 'stroke_removed') {
+        store.applyRemotePaintStrokeRemoval(mutation.payload.id)
+      } else if (mutation.kind === 'text3d_added') {
+        store.applyRemoteText3dAdded(mutation.payload)
+      } else if (mutation.kind === 'text3d_updated') {
+        store.applyRemoteText3dUpdated(mutation.payload.id, mutation.payload.updates)
+      } else if (mutation.kind === 'text3d_removed') {
+        store.applyRemoteText3dRemoved(mutation.payload.id)
       }
     })
   }, [])

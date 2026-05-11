@@ -27,23 +27,23 @@ const OUT_DIR = path.join(ROOT, 'public/_quality-check')
 
 const CANDIDATES = [
   {
-    label: 'Bruno (VRM, faces matter)',
-    src: 'public/avatars/gallery/Bruno.vrm',
+    label: 'Anna (VRM avatar)',
+    src: 'public/avatars/gallery/Anna.vrm',
     outExt: '.vrm',
   },
   {
-    label: 'SciFi Crate (industrial textures)',
+    label: 'SciFi Crate (heavy industrial textures)',
     src: 'public/models/scifi-essentials/Prop_Crate.gltf',
     outExt: '.glb',
   },
   {
-    label: 'Conjured showcase (photographic textures)',
-    src: 'public/conjured/conj_mn6ogn4ae05j.glb',
+    label: 'SciFi Crate_Large (heavy industrial textures variant)',
+    src: 'public/models/scifi-essentials/Prop_Crate_Large.gltf',
     outExt: '.glb',
   },
   {
-    label: 'Quaternius base character (skin/hair)',
-    src: 'public/models/quaternius-base-characters/characters/Superhero_Male_FullBody.gltf',
+    label: 'Conjured showcase (40 MB photographic conjure)',
+    src: 'public/conjured/conj_mn6ogn4ae05j.glb',
     outExt: '.glb',
   },
 ]

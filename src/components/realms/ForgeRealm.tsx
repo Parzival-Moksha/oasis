@@ -19,6 +19,7 @@ import { useThumbnailGenerator } from '../../hooks/useThumbnailGenerator'
 import { PlayerAvatar } from '../forge/PlayerAvatar'
 import { PortalGateLayer } from '../forge/PortalGateLayer'
 import { MultiplayerPresenceLayer } from '../forge/MultiplayerPresenceLayer'
+import { PaintCursor } from '../forge/PaintCursor'
 import { SettingsContext } from '../scene-lib'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -109,6 +110,9 @@ export function ForgeRealm() {
       <PortalGateLayer />
       <MultiplayerPresenceLayer />
 
+      {/* ░▒▓ PAINT CURSOR — wand-tip raycaster + sparkler when paint mode active ▓▒░ */}
+      <ForgePaintCursor />
+
       {/* ░▒▓ PLAYER AVATAR — your body in the Oasis ▓▒░ */}
       {/* orbit: idle at spawn. fps: hidden. third-person: WASD moves, camera follows. */}
       {avatar3dUrl && avatar3dUrl.endsWith('.vrm') && (
@@ -124,6 +128,21 @@ export function ForgeRealm() {
 
     </group>
   )
+}
+
+function ForgePaintCursor() {
+  const active = useOasisStore(s => s.paintHeldActive)
+  // Stable per-tab id — reuse the multiplayer presence id key for color consistency.
+  const id = typeof window !== 'undefined'
+    ? (window.sessionStorage.getItem('oasis-presence-player-id') || 'local')
+    : 'local'
+  // Naive author color — palette match could be tightened by reading from
+  // multiplayer-presence color hash; for now derive from id like presence does.
+  const palette = ['#38bdf8', '#fb7185', '#facc15', '#22c55e', '#a78bfa', '#f97316', '#2dd4bf', '#e879f9']
+  let hash = 0
+  for (let i = 0; i < id.length; i += 1) hash = ((hash << 5) - hash + id.charCodeAt(i)) | 0
+  const color = palette[Math.abs(hash) % palette.length]
+  return <PaintCursor active={active} authorId={id} authorColor={color} />
 }
 
 // ▓▓▓▓【F̸O̸R̸G̸E̸】▓▓▓▓ॐ▓▓▓▓【R̸E̸A̸L̸M̸】▓▓▓▓ॐ▓▓▓▓【T̸E̸R̸R̸A̸I̸N̸】▓▓▓▓

@@ -599,6 +599,8 @@ interface OasisState {
   spatialWebObjects: SpatialWebObject[]    // spatial website primitives placed in THIS world
   paintStrokes: PaintStroke[]              // wizardry tubes/ribbons drawn in 3-space
   text3dObjects: Text3DObject[]            // extruded 3D text objects placed in 3-space
+  /** Per-stroke playback state — { progress: 0..1, durationSec, startedAt } */
+  paintStrokePlayback: Record<string, { progress: number; durationSec: number; startedAt: number }>
 
   // ─═̷─═̷─🎨 PAINT TOOL UI STATE ─═̷─═̷─🎨
   paintBrushPanelOpen: boolean
@@ -801,6 +803,12 @@ interface OasisState {
   removePaintStroke: (id: string) => void
   applyRemotePaintStroke: (stroke: PaintStroke) => void
   applyRemotePaintStrokeRemoval: (id: string) => void
+  /** Start a playback animation for a stroke; previous state for that id is replaced. */
+  playPaintStroke: (id: string, durationSec: number) => void
+  /** Update animated progress for a stroke (called from a useFrame loop). */
+  setPaintStrokePlaybackProgress: (id: string, progress: number) => void
+  /** Stop/clear a paint stroke playback state. */
+  stopPaintStrokePlayback: (id: string) => void
   // ─═̷─═̷─📜 TEXT 3D ACTIONS ─═̷─═̷─📜
   addText3dObject: (object: Text3DObject) => void
   updateText3dObject: (id: string, updates: Partial<Text3DObject>) => void
@@ -1093,6 +1101,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   spatialWebObjects: [],
   paintStrokes: [],
   text3dObjects: [],
+  paintStrokePlayback: {},
   paintBrushPanelOpen: false,
   text3dPanelOpen: false,
   paintHeldActive: false,
@@ -1960,6 +1969,31 @@ export const useOasisStore = create<OasisState>((set, get) => {
       selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
       inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
     }))
+  },
+  playPaintStroke: (id, durationSec) => {
+    set(state => ({
+      paintStrokePlayback: {
+        ...state.paintStrokePlayback,
+        [id]: { progress: 0, durationSec: Math.max(0.5, durationSec), startedAt: performance.now() },
+      },
+    }))
+  },
+  setPaintStrokePlaybackProgress: (id, progress) => {
+    set(state => {
+      const entry = state.paintStrokePlayback?.[id]
+      if (!entry) return state
+      return {
+        paintStrokePlayback: { ...state.paintStrokePlayback, [id]: { ...entry, progress } },
+      }
+    })
+  },
+  stopPaintStrokePlayback: (id) => {
+    set(state => {
+      if (!state.paintStrokePlayback?.[id]) return state
+      const next = { ...state.paintStrokePlayback }
+      delete next[id]
+      return { paintStrokePlayback: next }
+    })
   },
 
   // ─═̷─═̷─📜 TEXT 3D ACTIONS ─═̷─═̷─📜

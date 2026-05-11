@@ -1,21 +1,21 @@
 {
-  "generatedAt": "2026-05-11T23:42:00.755Z",
+  "generatedAt": "2026-05-11T23:43:30.113Z",
   "candidates": [
     {
-      "label": "Bruno (VRM, faces matter)",
-      "src": "/avatars/gallery/Bruno.vrm"
+      "label": "Anna (VRM avatar)",
+      "src": "/avatars/gallery/Anna.vrm"
     },
     {
-      "label": "SciFi Crate (industrial textures)",
+      "label": "SciFi Crate (heavy industrial textures)",
       "src": "/models/scifi-essentials/Prop_Crate.gltf"
     },
     {
-      "label": "Conjured showcase (photographic textures)",
-      "src": "/conjured/conj_mn6ogn4ae05j.glb"
+      "label": "SciFi Crate_Large (heavy industrial textures variant)",
+      "src": "/models/scifi-essentials/Prop_Crate_Large.gltf"
     },
     {
-      "label": "Quaternius base character (skin/hair)",
-      "src": "/models/quaternius-base-characters/characters/Superhero_Male_FullBody.gltf"
+      "label": "Conjured showcase (40 MB photographic conjure)",
+      "src": "/conjured/conj_mn6ogn4ae05j.glb"
     }
   ],
   "levels": [
@@ -36,7 +36,23 @@
   ],
   "report": [
     {
-      "candidate": "SciFi Crate (industrial textures)",
+      "candidate": "Anna (VRM avatar)",
+      "level": "Standard 1024",
+      "srcMB": "7.39",
+      "outMB": "0.02",
+      "outPath": "/_quality-check/Anna_L1_1k.vrm",
+      "srcPath": "/avatars/gallery/Anna.vrm"
+    },
+    {
+      "candidate": "Anna (VRM avatar)",
+      "level": "Aggressive 512",
+      "srcMB": "7.39",
+      "outMB": "0.02",
+      "outPath": "/_quality-check/Anna_L2_512.vrm",
+      "srcPath": "/avatars/gallery/Anna.vrm"
+    },
+    {
+      "candidate": "SciFi Crate (heavy industrial textures)",
       "level": "Standard 1024",
       "srcMB": "0.00",
       "outMB": "1.43",
@@ -44,7 +60,7 @@
       "srcPath": "/models/scifi-essentials/Prop_Crate.gltf"
     },
     {
-      "candidate": "SciFi Crate (industrial textures)",
+      "candidate": "SciFi Crate (heavy industrial textures)",
       "level": "Aggressive 512",
       "srcMB": "0.00",
       "outMB": "0.53",
@@ -52,7 +68,23 @@
       "srcPath": "/models/scifi-essentials/Prop_Crate.gltf"
     },
     {
-      "candidate": "Conjured showcase (photographic textures)",
+      "candidate": "SciFi Crate_Large (heavy industrial textures variant)",
+      "level": "Standard 1024",
+      "srcMB": "0.00",
+      "outMB": "1.43",
+      "outPath": "/_quality-check/Prop_Crate_Large_L1_1k.glb",
+      "srcPath": "/models/scifi-essentials/Prop_Crate_Large.gltf"
+    },
+    {
+      "candidate": "SciFi Crate_Large (heavy industrial textures variant)",
+      "level": "Aggressive 512",
+      "srcMB": "0.00",
+      "outMB": "0.54",
+      "outPath": "/_quality-check/Prop_Crate_Large_L2_512.glb",
+      "srcPath": "/models/scifi-essentials/Prop_Crate_Large.gltf"
+    },
+    {
+      "candidate": "Conjured showcase (40 MB photographic conjure)",
       "level": "Standard 1024",
       "srcMB": "40.00",
       "outMB": "39.88",
@@ -60,7 +92,7 @@
       "srcPath": "/conjured/conj_mn6ogn4ae05j.glb"
     },
     {
-      "candidate": "Conjured showcase (photographic textures)",
+      "candidate": "Conjured showcase (40 MB photographic conjure)",
       "level": "Aggressive 512",
       "srcMB": "40.00",
       "outMB": "39.69",

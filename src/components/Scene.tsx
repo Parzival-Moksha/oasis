@@ -79,6 +79,8 @@ import { WorldLoadingBar } from './forge/WorldLoadingBar'
 import { TerrainBrushPanel } from './forge/TerrainBrushPanel'
 import { SkyPanel } from './forge/SkyPanel'
 import { LightsPanel } from './forge/LightsPanel'
+import { PaintBrushPanel } from './forge/PaintBrushPanel'
+import { Text3DPanel } from './forge/Text3DPanel'
 import { WorldMenu } from './forge/WorldMenu'
 import { PlaceMenu } from './forge/PlaceMenu'
 import { GameMenuButton } from './forge/GameMenuButton'
@@ -1827,6 +1829,8 @@ export default function Scene() {
       {!hideEditTools && <TerrainBrushPanel />}
       {!hideEditTools && <SkyPanel isOpen={skyPanelOpen} onClose={() => setSkyPanelOpen(false)} />}
       {!hideEditTools && <LightsPanel isOpen={lightsPanelOpen} onClose={() => setLightsPanelOpen(false)} />}
+      {!hideEditTools && <PaintBrushPanel />}
+      {!hideEditTools && <Text3DPanel />}
 
       {/* 📋 Mindcraft 3D — Mission Window (outside Canvas, bridged via Zustand) */}
       {canUseLocalPanels && <MindcraftMissionWindowBridge />}
