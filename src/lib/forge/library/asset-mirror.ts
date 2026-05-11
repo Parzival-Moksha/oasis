@@ -91,4 +91,12 @@ export async function deleteMirroredAsset(id: string, requesterUserId: string): 
   try {
     const row = await prisma.asset.findUnique({ where: { id } })
     if (!row) return false
-    if (row.scope !== 'user')
+    if (row.scope !== 'user') return false
+    if (row.ownerId && row.ownerId !== requesterUserId) return false
+    await prisma.asset.delete({ where: { id } })
+    return true
+  } catch (err) {
+    console.warn('[asset-mirror] delete failed for', id, err)
+    return false
+  }
+}

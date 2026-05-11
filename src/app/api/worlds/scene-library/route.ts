@@ -33,9 +33,41 @@ function saveLibrary(scenes: CraftedScene[]): void {
   writeFileSync(LIBRARY_PATH, JSON.stringify(scenes, null, 2), 'utf-8')
 }
 
-// GET — all scenes
+// GET — all scenes. v1: read from the Asset table (kind='crafted'), filtered
+// by viewer-cookie ownership. Falls back to scene-library.json only if the
+// Asset table has nothing for this viewer yet (one-time migration window).
 export async function GET() {
-  return NextResponse.json(loadLibrary())
+  try {
+    const { getLocalUserId } = await import('@/lib/local-auth')
+    const { prisma } = await import('@/lib/db')
+    const ownerId = await getLocalUserId()
+    const rows = await prisma.asset.findMany({
+      where: { kind: 'crafted', scope: 'user', ownerId },
+      orderBy: { updatedAt: 'desc' },
+      take: 1000,
+    })
+    const scenes: CraftedScene[] = []
+    for (const row of rows) {
+      if (row.data) {
+        try {
+          const parsed = JSON.parse(row.data) as CraftedScene
+          if (parsed && typeof parsed === 'object' && typeof parsed.id === 'string') {
+            scenes.push(parsed)
+            continue
+          }
+        } catch {}
+      }
+      // No data blob — backfill not yet populated. Try the legacy file for this id.
+      const legacy = loadLibrary().find(s => s.id === row.id)
+      if (legacy) scenes.push(legacy)
+    }
+    // If Asset table is empty (fresh instance), fall through to legacy file.
+    if (scenes.length === 0) return NextResponse.json(loadLibrary())
+    return NextResponse.json(scenes)
+  } catch (err) {
+    console.warn('[scene-library] Asset-table read failed, falling back to JSON:', err)
+    return NextResponse.json(loadLibrary())
+  }
 }
 
 // PUT — replace entire library (for delete operations)

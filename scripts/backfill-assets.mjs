@@ -82,6 +82,7 @@ async function planCrafted(prisma, rows) {
       scope: 'user',
       ownerId: OWNER,
       source: r.model || 'self-craft',
+      data: JSON.stringify(r),  // full scene primitives + name + prompt + position + thumbnail
     })
   }
   return out
