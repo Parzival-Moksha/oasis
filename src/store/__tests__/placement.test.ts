@@ -1,20 +1,29 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 // Tests: enterPlacementMode → input-manager pointer-lock handshake.
 // ─═̷─═̷─🪄─═̷─═̷─
-// The store does `require('../lib/input-manager').useInputManager.getState()`
-// inside enterPlacementMode. To intercept that, we vi.mock that exact module
-// path BEFORE importing the store (vi.mock is hoisted, so this works).
+// The store uses `require('../lib/input-manager').useInputManager.getState()`
+// (CJS-style) inside enterPlacementMode. Node's plain CJS require can't load
+// .ts files; vitest's `vi.mock` interceptor only handles ESM `import`. To
+// bridge this, we patch Module._resolveFilename + pre-populate require.cache
+// with a shim that returns our fake input-manager state.
+//
+// NOTE: The eager-lock guard reads `im._previousCameraState` (set by the real
+// transition() side-effect), not im.can(). For faithful simulation, the
+// fake's `transition` mock mirrors the real input-manager's logic of stashing
+// the current base camera state on entry to 'placement'.
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// ── Mocks ────────────────────────────────────────────────────────────────
+// ── Fake input-manager ───────────────────────────────────────────────────
 
-// Reusable fake input-manager state. Tests reach in and tweak fields per case.
+type FakeBaseState = 'orbit' | 'noclip' | 'third-person'
+type FakeInputState = FakeBaseState | 'agent-focus' | 'placement' | 'paint' | 'ui-focused'
+
 const inputManagerFake = {
-  __identity__: 'TEST-FAKE-' + Math.random().toString(36).slice(2, 8),
-  inputState: 'orbit' as 'orbit' | 'noclip' | 'third-person' | 'agent-focus' | 'placement' | 'paint' | 'ui-focused',
+  inputState: 'orbit' as FakeInputState,
   pointerLocked: false,
+  _previousCameraState: null as FakeBaseState | null,
   _uiLayerStack: [] as string[],
   can: vi.fn(() => ({
     movement: false, mouseLook: false, objectSelection: true, transformShortcuts: true,
@@ -28,54 +37,37 @@ const inputManagerFake = {
 }
 
 vi.mock('../../lib/input-manager', () => ({
-  useInputManager: {
-    getState: () => inputManagerFake,
-  },
+  useInputManager: { getState: () => inputManagerFake },
 }))
 
-// ░▒▓ NODE.JS REQUIRE() SHIM ▓▒░
-// oasisStore.ts uses `require('../lib/input-manager')` at runtime (not
-// `import`) inside enterPlacementMode. Node's plain CJS require can't resolve
-// .ts files; vitest's mock interceptor only handles ESM `import`. To bridge
-// this, we hook Module._resolveFilename to redirect that specific request to
-// our pre-cached stub, and pre-populate require.cache so Node finds the stub
-// without needing the file to exist on disk.
+// ── Node.js CJS require() shim ───────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const path = require('node:path') as typeof import('node:path')
+const nodePath = require('node:path') as typeof import('node:path')
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const Module = require('node:module') as typeof import('node:module')
-type ModuleInternal = typeof Module & {
+const NodeModule = require('node:module') as typeof import('node:module')
+type ModuleInternal = typeof NodeModule & {
   _resolveFilename: (request: string, parent: NodeJS.Module | null, ...rest: unknown[]) => string
   _cache: Record<string, NodeJS.Module>
 }
-const ModuleAny = Module as unknown as ModuleInternal
-const inputManagerStubPath = path.resolve(__dirname, '../../lib/__input-manager.shim.js')
+const ModuleAny = NodeModule as unknown as ModuleInternal
+const inputManagerStubPath = nodePath.resolve(__dirname, '../../lib/__input-manager.shim.js')
 ModuleAny._cache[inputManagerStubPath] = {
   id: inputManagerStubPath,
   filename: inputManagerStubPath,
   loaded: true,
   exports: {
-    useInputManager: {
-      getState: () => {
-        // eslint-disable-next-line no-console
-        const canResult = inputManagerFake.can()
-        console.log('[SHIM getState] returning fake, identity=', (inputManagerFake as any).__identity__, 'pointerLocked=', inputManagerFake.pointerLocked, 'can()=', canResult)
-        return inputManagerFake
-      },
-    },
+    useInputManager: { getState: () => inputManagerFake },
   },
 } as unknown as NodeJS.Module
-const originalResolveFilename = ModuleAny._resolveFilename.bind(Module)
+const originalResolveFilename = ModuleAny._resolveFilename.bind(NodeModule)
 ModuleAny._resolveFilename = function patchedResolveFilename(request, parent, ...rest) {
-  // Match the literal request from oasisStore.ts AND its filename-prefixed
-  // variants, since Node resolves relative to the parent module.
   if (request === '../lib/input-manager' || request.endsWith('lib/input-manager') || request.endsWith('lib\\input-manager')) {
     return inputManagerStubPath
   }
   return originalResolveFilename(request, parent, ...rest)
 }
 
-// Quiet noisy collaborators that the store pulls in at module load.
+// ── Quiet noisy collaborators that the store pulls in at module load. ────
 vi.mock('../../lib/forge/world-persistence', () => ({
   loadWorld: vi.fn(),
   debouncedSaveWorld: vi.fn(),
@@ -96,133 +88,120 @@ vi.mock('../../lib/forge/scene-library', () => ({
   getSceneLibrary: vi.fn(async () => []),
   removeFromSceneLibrary: vi.fn(),
 }))
-vi.mock('../../hooks/useXp', () => ({
-  awardXp: vi.fn(),
-}))
+vi.mock('../../hooks/useXp', () => ({ awardXp: vi.fn() }))
 vi.mock('../../lib/audio-manager', () => ({
   useAudioManager: { getState: () => ({ play: vi.fn() }) },
 }))
 // Prevent the dynamic import('@react-three/drei') in enterPlacementMode from
-// hitting the real package (it pulls in three.js + a pile of WebGL globals
-// that don't exist in a vitest worker).
-vi.mock('@react-three/drei', () => ({
-  useGLTF: { preload: vi.fn() },
-}))
+// hitting the real package (pulls in three.js + WebGL globals that don't
+// exist in a vitest worker).
+vi.mock('@react-three/drei', () => ({ useGLTF: { preload: vi.fn() } }))
 
-// ── Import target AFTER mocks are declared ──────────────────────────────
+// ── Import target AFTER mocks are declared ───────────────────────────────
 
 import { useOasisStore } from '../oasisStore'
 
-// ── Helpers ─────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────
 
-function resetFake(opts: Partial<typeof inputManagerFake> & { canLockPointer?: boolean } = {}) {
-  inputManagerFake.inputState = opts.inputState ?? 'orbit'
+interface SetupOpts {
+  /** Camera mode the user is in BEFORE entering placement. */
+  fromCamera?: FakeBaseState
+  /** Whether pointer is already locked before entering placement. */
+  pointerLocked?: boolean
+  /** Pre-existing UI layer stack — placement should clear these. */
+  uiLayers?: string[]
+}
+
+function setupFake(opts: SetupOpts = {}) {
+  const from = opts.fromCamera ?? 'orbit'
+  inputManagerFake.inputState = from
   inputManagerFake.pointerLocked = opts.pointerLocked ?? false
-  inputManagerFake._uiLayerStack = opts._uiLayerStack ?? []
+  inputManagerFake._previousCameraState = null
+  inputManagerFake._uiLayerStack = opts.uiLayers ?? []
   inputManagerFake.popUILayer.mockReset()
   inputManagerFake.transition.mockReset()
   inputManagerFake.requestPointerLock.mockReset()
   inputManagerFake.returnToPrevious.mockReset()
   inputManagerFake.can.mockReset()
-  inputManagerFake.can.mockReturnValue({
-    movement: false, mouseLook: false, objectSelection: true, transformShortcuts: true,
-    clipboardShortcuts: true, deleteShortcut: true, enterFocuses: true,
-    canLockPointer: opts.canLockPointer ?? false, // default: orbit (cannot lock)
-    showHoverLabels: true,
+  // ░▒▓ The faithful bit: transition('placement') stashes the current base
+  // camera into _previousCameraState, matching what input-manager.ts does. ▓▒░
+  inputManagerFake.transition.mockImplementation((to: FakeInputState) => {
+    if (to === 'placement' || to === 'paint') {
+      const cur = inputManagerFake.inputState
+      const isBase = cur === 'orbit' || cur === 'noclip' || cur === 'third-person'
+      inputManagerFake._previousCameraState = isBase
+        ? (cur as FakeBaseState)
+        : (inputManagerFake._previousCameraState || 'orbit')
+    }
+    inputManagerFake.inputState = to
+  })
+  // popUILayer should remove from the stack the way the real one does.
+  inputManagerFake.popUILayer.mockImplementation((id: string) => {
+    inputManagerFake._uiLayerStack = inputManagerFake._uiLayerStack.filter(x => x !== id)
   })
 }
 
 beforeEach(() => {
   vi.resetAllMocks()
-  resetFake()
+  setupFake()
 })
 
-// ── Tests ───────────────────────────────────────────────────────────────
+// ── Tests ────────────────────────────────────────────────────────────────
 
-describe('enterPlacementMode — requests pointer-lock when the *current* state can lock', () => {
-  it('DIRECT: can a vi.fn-on-object be called by an external require', () => {
-    resetFake({ inputState: 'noclip', pointerLocked: false, canLockPointer: true })
-    // The shim uses inputManagerFake. Let's directly verify by calling im.requestPointerLock manually.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const path2 = require('node:path') as typeof import('node:path')
-    const p2 = path2.resolve(__dirname, '../../lib/__input-manager.shim.js')
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const M = require('node:module') as any
-    const im = (M._cache[p2].exports as any).useInputManager.getState()
-    console.log('[DIRECT] im === inputManagerFake?', im === inputManagerFake)
-    console.log('[DIRECT] im.pointerLocked:', im.pointerLocked)
-    console.log('[DIRECT] im.can():', im.can())
-    console.log('[DIRECT] im.can().canLockPointer:', im.can().canLockPointer)
-    console.log('[DIRECT] cond evaluates to:', (!im.pointerLocked && im.can().canLockPointer))
-    im.requestPointerLock()
-    console.log('[DIRECT] after manual call, count:', inputManagerFake.requestPointerLock.mock.calls.length)
-    expect(inputManagerFake.requestPointerLock).toHaveBeenCalledTimes(1)
-  })
-
-  it('calls requestPointerLock when canLockPointer=true and not already locked (noclip case)', () => {
-    resetFake({ inputState: 'noclip', pointerLocked: false, canLockPointer: true })
-    console.log('[DEBUG before] can():', inputManagerFake.can())
-    console.log('[DEBUG before] pointerLocked:', inputManagerFake.pointerLocked)
-    // Trace inside the store by intercepting the fake's requestPointerLock
-    inputManagerFake.requestPointerLock.mockImplementation(() => {
-      console.log('[DEBUG] requestPointerLock CALLED')
+describe('enterPlacementMode — eager pointer-lock handshake', () => {
+  it('requests pointer-lock when entering from noclip (a state that supports lock)', () => {
+    setupFake({ fromCamera: 'noclip', pointerLocked: false })
+    useOasisStore.getState().enterPlacementMode({
+      type: 'light', name: 'pointlight', lightType: 'pointlight' as never,
     })
-    inputManagerFake.transition.mockImplementation((arg: unknown) => {
-      console.log('[DEBUG] transition called with', arg)
-    })
-    useOasisStore.getState().enterPlacementMode({ type: 'light', name: 'pointlight', lightType: 'pointlight' as any })
-    console.log('[DEBUG after] can() calls:', inputManagerFake.can.mock.calls.length)
-    console.log('[DEBUG after] can() results:', inputManagerFake.can.mock.results)
-    console.log('[DEBUG after] requestPointerLock calls:', inputManagerFake.requestPointerLock.mock.calls.length)
     expect(inputManagerFake.transition).toHaveBeenCalledWith('placement')
     expect(inputManagerFake.requestPointerLock).toHaveBeenCalledTimes(1)
   })
 
-  it('does NOT call requestPointerLock when the originating state cannot lock (orbit case)', () => {
-    // The eager-lock guard uses im.can() — i.e. the state BEFORE transition.
-    // From orbit (canLockPointer=false), we transition into 'placement', but
-    // do not request pointer-lock eagerly. The lock happens later via the
-    // user's first canvas click, after CameraController re-checks.
-    resetFake({ inputState: 'orbit', pointerLocked: false, canLockPointer: false })
-    useOasisStore.getState().enterPlacementMode({ type: 'light', name: 'pointlight', lightType: 'pointlight' as any })
+  it('requests pointer-lock when entering from third-person', () => {
+    setupFake({ fromCamera: 'third-person', pointerLocked: false })
+    useOasisStore.getState().enterPlacementMode({
+      type: 'light', name: 'pointlight', lightType: 'pointlight' as never,
+    })
+    expect(inputManagerFake.requestPointerLock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT request pointer-lock when entering from orbit (mouse cursor stays visible)', () => {
+    // Orbit users expect to keep their mouse cursor visible — the eager lock
+    // would surprise them. transition() still runs to switch state, but the
+    // requestPointerLock gate falls through.
+    setupFake({ fromCamera: 'orbit', pointerLocked: false })
+    useOasisStore.getState().enterPlacementMode({
+      type: 'light', name: 'pointlight', lightType: 'pointlight' as never,
+    })
     expect(inputManagerFake.transition).toHaveBeenCalledWith('placement')
     expect(inputManagerFake.requestPointerLock).not.toHaveBeenCalled()
   })
 
-  it('does NOT call requestPointerLock when already pointer-locked', () => {
-    resetFake({ inputState: 'noclip', pointerLocked: true, canLockPointer: true })
-    useOasisStore.getState().enterPlacementMode({ type: 'light', name: 'pointlight', lightType: 'pointlight' as any })
+  it('does NOT request pointer-lock when already pointer-locked, even from noclip', () => {
+    setupFake({ fromCamera: 'noclip', pointerLocked: true })
+    useOasisStore.getState().enterPlacementMode({
+      type: 'light', name: 'pointlight', lightType: 'pointlight' as never,
+    })
     expect(inputManagerFake.transition).toHaveBeenCalledWith('placement')
     expect(inputManagerFake.requestPointerLock).not.toHaveBeenCalled()
   })
 
   it('clears every UI layer (popUILayer for each id) before transitioning', () => {
-    resetFake({ inputState: 'noclip', pointerLocked: false, canLockPointer: true, _uiLayerStack: ['panel-a', 'panel-b'] })
-    useOasisStore.getState().enterPlacementMode({ type: 'light', name: 'pointlight', lightType: 'pointlight' as any })
+    setupFake({ fromCamera: 'noclip', pointerLocked: false, uiLayers: ['panel-a', 'panel-b'] })
+    useOasisStore.getState().enterPlacementMode({
+      type: 'light', name: 'pointlight', lightType: 'pointlight' as never,
+    })
     expect(inputManagerFake.popUILayer).toHaveBeenCalledTimes(2)
     expect(inputManagerFake.popUILayer).toHaveBeenCalledWith('panel-a')
     expect(inputManagerFake.popUILayer).toHaveBeenCalledWith('panel-b')
     expect(inputManagerFake.transition).toHaveBeenCalledWith('placement')
   })
 
-  it('sets placementPending on the store', () => {
-    resetFake({ inputState: 'noclip', pointerLocked: false, canLockPointer: true })
-    const pending = { type: 'light' as const, name: 'pointlight', lightType: 'pointlight' as any }
+  it('sets placementPending on the store regardless of camera mode', () => {
+    setupFake({ fromCamera: 'noclip', pointerLocked: false })
+    const pending = { type: 'light' as const, name: 'pointlight', lightType: 'pointlight' as never }
     useOasisStore.getState().enterPlacementMode(pending)
     expect(useOasisStore.getState().placementPending).toEqual(pending)
-  })
-
-  it('DEBUG: what is require + dirname?', () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const r: any = (typeof require !== 'undefined' ? require : null)
-    console.log('[DEBUG] __dirname:', typeof __dirname !== 'undefined' ? __dirname : 'undef')
-    console.log('[DEBUG] __filename:', typeof __filename !== 'undefined' ? __filename : 'undef')
-    console.log('[DEBUG] require.cache keys (input-manager filtered):',
-      Object.keys(r?.cache || {}).filter(k => k.includes('input-manager')))
-    let err: any = null
-    let mod: any = null
-    try { mod = r('../../lib/input-manager') } catch (e) { err = e }
-    console.log('[DEBUG] mod:', mod ? Object.keys(mod) : 'ERR ' + err?.message)
-    expect(true).toBe(true)
   })
 })

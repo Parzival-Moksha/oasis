@@ -12,13 +12,22 @@
 // in a Route Handler (where Next.js allows cookies().set()).
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { cookies } from 'next/headers'
-
-// VIEWER_COOKIE / VIEWER_FALLBACK are re-exported here for back-compat with
-// existing imports. The client-safe variant lives in viewer-identity-client.ts
-// so client bundles don't have to drag in next/headers.
+// VIEWER_COOKIE / VIEWER_FALLBACK / getViewerUserIdClient are re-exported here
+// for back-compat with existing imports. next/headers is NOT imported at module
+// top — see getCookies() below. This file is safe to import from client code:
+// client bundlers see only the re-exports and async functions; the next/headers
+// call is buried inside an `await import()` that only runs server-side.
 export { VIEWER_COOKIE, VIEWER_FALLBACK, getViewerUserIdClient } from './viewer-identity-client'
 import { VIEWER_COOKIE, VIEWER_FALLBACK } from './viewer-identity-client'
+
+/** Lazy access to next/headers cookies(). Dynamic import means the module
+ *  doesn't sit in client bundles. Throws when called from a non-server
+ *  context — but no client code reaches this; only the async server functions
+ *  below do, and they're never invoked in a browser. */
+async function getCookies() {
+  const mod = await import('next/headers')
+  return mod.cookies()
+}
 
 export const VIEWER_COOKIE_MAX_AGE = 60 * 60 * 24 * 365 // 1 year
 
@@ -40,7 +49,7 @@ function generateViewerId(): string {
  *  call from any server context (Route Handler, Server Component, RSC). */
 export async function getViewerUserId(): Promise<string> {
   try {
-    const c = await cookies()
+    const c = await getCookies()
     const v = c.get(VIEWER_COOKIE)?.value
     if (isValidViewerId(v)) return v
   } catch {
@@ -52,7 +61,7 @@ export async function getViewerUserId(): Promise<string> {
 /** Read-or-create the cookie and return the viewer id. Only call from a
  *  Route Handler or Server Action — cookies().set() is forbidden elsewhere. */
 export async function ensureViewerUserId(): Promise<string> {
-  const c = await cookies()
+  const c = await getCookies()
   const existing = c.get(VIEWER_COOKIE)?.value
   if (isValidViewerId(existing)) return existing
   const fresh = generateViewerId()
