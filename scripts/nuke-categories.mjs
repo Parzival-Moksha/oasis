@@ -10,8 +10,15 @@
 import fs from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const ROOT = 'c:/af_oasis'
+// Resolve project root relative to this script so this runs on Linux hosts
+// too. The previous hard-coded 'c:/af_oasis' broke deploy-side use.
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const ROOT = path.resolve(__dirname, '..')
+
+const args = process.argv.slice(2)
+const DRY_RUN = !args.includes('--commit')
 const NUKE = new Set(['medieval', 'structures', 'nature', 'urban', 'vehicles'])
 const CONSTANTS = path.join(ROOT, 'src/components/scene-lib/constants.ts')
 const EXTRAS = path.join(ROOT, 'data/asset-catalog-extras.json')
@@ -95,17 +102,26 @@ async function main() {
   for (const dir of fullNukeDirs) console.log(`  ${dir} (${allBakedByDir.get(dir).nuke} models)`)
 
   // Translate /models/... to public/models/...
+  // DRY RUN by default — only --commit actually deletes from disk.
   let removedDirs = 0
   for (const dir of fullNukeDirs) {
     const stripped = dir.replace(/^\/models\/?/, '')
     const abs = path.join(PUBLIC_MODELS, stripped)
     if (existsSync(abs)) {
-      await fs.rm(abs, { recursive: true, force: true })
-      removedDirs++
-      console.log(`[nuke] rm -rf ${abs}`)
+      if (DRY_RUN) {
+        console.log(`[nuke] DRY: would rm -rf ${abs}`)
+      } else {
+        await fs.rm(abs, { recursive: true, force: true })
+        removedDirs++
+        console.log(`[nuke] rm -rf ${abs}`)
+      }
     }
   }
-  console.log(`[nuke] removed ${removedDirs} directories`)
+  if (DRY_RUN) {
+    console.log(`[nuke] DRY RUN: ${fullNukeDirs.length} directories would be removed. Pass --commit to actually delete.`)
+  } else {
+    console.log(`[nuke] removed ${removedDirs} directories`)
+  }
 
   // Summary
   const totalNuked = bakedToNuke.length + droppedAdds

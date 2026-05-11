@@ -24,9 +24,9 @@ const SHAREABLE_VISIBILITIES = new Set([
 
 const VISIBILITY_OPTIONS: Array<{ value: WorldMeta['visibility']; label: string; note: string }> = [
   { value: 'private', label: 'Private', note: 'owner only' },
-  { value: 'unlisted', label: 'Link-only', note: 'anyone with link can enter' },
+  { value: 'unlisted', label: 'Unlisted', note: 'anyone with link can enter' },
   { value: 'public', label: 'Public', note: 'discoverable, owner edits' },
-  { value: 'public_edit', label: 'FFA', note: 'anyone can build' },
+  { value: 'public_edit', label: 'Sandbox', note: 'anyone can build' },
 ]
 
 interface SnapshotMeta {
@@ -41,12 +41,12 @@ function formatVisibility(visibility?: string): string {
   switch (visibility) {
     case 'public_edit':
     case 'ffa':
-      return 'FFA'
+      return 'Sandbox'
     case 'public':
       return 'Public'
     case 'only-with-link':
     case 'unlisted':
-      return 'Link-only'
+      return 'Unlisted'
     case 'core':
       return 'Core'
     case 'template':
@@ -107,6 +107,16 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
   const [newWorldOpen, setNewWorldOpen] = useState(false)
   const [newWorldName, setNewWorldName] = useState('')
   const [newWorldIcon, setNewWorldIcon] = useState('O')
+  // ░▒▓ 3-tab world menu: This World / My Worlds / Public Worlds ▓▒░
+  const [worldTab, setWorldTab] = useState<'this' | 'my' | 'public'>('this')
+  // Within Public Worlds, filter pills for visibility tier.
+  const [publicFilter, setPublicFilter] = useState<'public' | 'sandbox' | 'unlisted'>('public')
+  // Viewer identity (cookie-based, non-httpOnly so client can read directly).
+  const viewerUserId = useMemo(() => {
+    if (typeof document === 'undefined') return 'local-user'
+    const m = document.cookie.match(/(?:^|;\s*)oasis-viewer-id=([^;]+)/)
+    return m ? decodeURIComponent(m[1]) : 'local-user'
+  }, [])
   const menuRef = useRef<HTMLDivElement>(null)
   useUILayer('world-menu', isOpen)
   const { settings, updateSetting, rp1Locked } = useContext(SettingsContext)
@@ -414,6 +424,32 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
             </div>
           )}
 
+          {/* ░▒▓ TAB BAR — This World / My Worlds / Public Worlds ▓▒░ */}
+          <div className="mt-3 flex gap-1 border-b border-white/10 pb-2 text-[10px] font-black uppercase tracking-[0.12em]">
+            {([
+              { key: 'this' as const, label: 'This World' },
+              { key: 'my' as const, label: 'My Worlds' },
+              { key: 'public' as const, label: 'Public Worlds' },
+            ]).map(tab => {
+              const active = worldTab === tab.key
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setWorldTab(tab.key)}
+                  className="flex-1 rounded-t-md border-b px-2 py-1.5 transition-colors"
+                  style={{
+                    borderColor: active ? 'rgba(103,232,249,0.7)' : 'transparent',
+                    color: active ? 'rgba(207,250,254,0.95)' : 'rgba(255,255,255,0.45)',
+                    background: active ? 'rgba(34,211,238,0.10)' : 'transparent',
+                  }}
+                >
+                  {tab.label}
+                </button>
+              )
+            })}
+          </div>
+
+          {worldTab === 'this' && (
           <div className="grid grid-cols-3 gap-2 py-3 text-center">
             <div className="rounded-md border border-white/10 bg-white/5 px-2 py-2">
               <div className="text-sm font-black text-cyan-100">{objectCount}</div>
@@ -428,76 +464,151 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
               <div className="mt-0.5 text-[9px] uppercase tracking-[0.12em] text-white/45">aura</div>
             </div>
           </div>
+          )}
 
-          <div className="mb-3 rounded-md border border-white/10 bg-white/5 p-2">
-            <div className="mb-2 flex items-center gap-2">
-              <div className="min-w-0 flex-1 text-[10px] font-black uppercase tracking-[0.14em] text-white/55">Worlds</div>
-              {!isViewMode && (
-                <button
-                  onClick={() => setNewWorldOpen(open => !open)}
-                  className="rounded border border-cyan-300/20 bg-cyan-300/10 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-cyan-100 transition hover:bg-cyan-300/20"
-                >
-                  New
-                </button>
-              )}
-            </div>
-
-            {newWorldOpen && (
-              <div className="mb-2 flex gap-2">
-                <input
-                  value={newWorldIcon}
-                  onChange={event => setNewWorldIcon(event.target.value.slice(0, 4))}
-                  className="w-12 rounded border border-white/10 bg-black/40 px-2 py-2 text-center text-sm text-white outline-none focus:border-cyan-300/50"
-                  aria-label="New world icon"
-                />
-                <input
-                  value={newWorldName}
-                  onChange={event => setNewWorldName(event.target.value)}
-                  onKeyDown={event => {
-                    if (event.key === 'Enter') handleCreateWorld()
-                  }}
-                  className="min-w-0 flex-1 rounded border border-white/10 bg-black/40 px-2 py-2 text-[11px] text-white outline-none focus:border-cyan-300/50"
-                  aria-label="New world name"
-                  placeholder="World name"
-                />
-                <button
-                  onClick={handleCreateWorld}
-                  disabled={!newWorldName.trim()}
-                  className="rounded border border-cyan-300/25 bg-cyan-300/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-cyan-100 transition hover:bg-cyan-300/20 disabled:opacity-40"
-                >
-                  Go
-                </button>
+          {/* ░▒▓ MY WORLDS TAB — worlds owned by the viewer ▓▒░ */}
+          {worldTab === 'my' && (() => {
+            const myWorlds = worldRegistry.filter(w => w.userId === viewerUserId)
+            return (
+              <div className="mb-3 rounded-md border border-white/10 bg-white/5 p-2">
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="min-w-0 flex-1 text-[10px] font-black uppercase tracking-[0.14em] text-white/55">{myWorlds.length} worlds</div>
+                  {!isViewMode && (
+                    <button
+                      onClick={() => setNewWorldOpen(open => !open)}
+                      className="rounded border border-cyan-300/20 bg-cyan-300/10 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-cyan-100 transition hover:bg-cyan-300/20"
+                    >
+                      New
+                    </button>
+                  )}
+                </div>
+                {newWorldOpen && (
+                  <div className="mb-2 flex gap-2">
+                    <input
+                      value={newWorldIcon}
+                      onChange={event => setNewWorldIcon(event.target.value.slice(0, 4))}
+                      className="w-12 rounded border border-white/10 bg-black/40 px-2 py-2 text-center text-sm text-white outline-none focus:border-cyan-300/50"
+                      aria-label="New world icon"
+                    />
+                    <input
+                      value={newWorldName}
+                      onChange={event => setNewWorldName(event.target.value)}
+                      onKeyDown={event => { if (event.key === 'Enter') handleCreateWorld() }}
+                      className="min-w-0 flex-1 rounded border border-white/10 bg-black/40 px-2 py-2 text-[11px] text-white outline-none focus:border-cyan-300/50"
+                      aria-label="New world name"
+                      placeholder="World name"
+                    />
+                    <button
+                      onClick={handleCreateWorld}
+                      disabled={!newWorldName.trim()}
+                      className="rounded border border-cyan-300/25 bg-cyan-300/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-cyan-100 transition hover:bg-cyan-300/20 disabled:opacity-40"
+                    >
+                      Go
+                    </button>
+                  </div>
+                )}
+                <div className="max-h-[44vh] space-y-1 overflow-y-auto pr-1">
+                  {myWorlds.length === 0 ? (
+                    <div className="py-4 text-center text-[10px] text-white/40">No worlds yet. Click <span className="text-cyan-200/80">New</span> to start one.</div>
+                  ) : myWorlds.map(world => {
+                    const active = world.id === activeWorldId
+                    return (
+                      <button
+                        key={world.id}
+                        onClick={() => handleSwitchWorld(world.id)}
+                        disabled={active}
+                        className="flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left transition hover:bg-white/10 disabled:cursor-default"
+                        style={{
+                          borderColor: active ? 'rgba(103,232,249,0.46)' : 'rgba(255,255,255,0.08)',
+                          background: active ? 'rgba(34,211,238,0.12)' : 'rgba(0,0,0,0.22)',
+                        }}
+                      >
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-white/10 bg-white/10 text-sm">{world.icon || 'O'}</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[11px] font-black uppercase tracking-[0.1em] text-white/80">{world.name}</span>
+                          <span className="mt-0.5 block text-[9px] uppercase tracking-[0.1em] text-white/35">{formatVisibility(world.visibility)}</span>
+                        </span>
+                        {active && <span className="text-[9px] font-black uppercase tracking-[0.12em] text-cyan-100/70">here</span>}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
-            )}
+            )
+          })()}
 
-            <div className="max-h-40 space-y-1 overflow-y-auto pr-1">
-              {worldRegistry.map(world => {
-                const active = world.id === activeWorldId
-                return (
-                  <button
-                    key={world.id}
-                    onClick={() => handleSwitchWorld(world.id)}
-                    disabled={active}
-                    className="flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left transition hover:bg-white/10 disabled:cursor-default"
-                    style={{
-                      borderColor: active ? 'rgba(103,232,249,0.46)' : 'rgba(255,255,255,0.08)',
-                      background: active ? 'rgba(34,211,238,0.12)' : 'rgba(0,0,0,0.22)',
-                    }}
-                  >
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-white/10 bg-white/10 text-sm">
-                      {world.icon || 'O'}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[11px] font-black uppercase tracking-[0.1em] text-white/80">{world.name}</span>
-                      <span className="mt-0.5 block text-[9px] uppercase tracking-[0.1em] text-white/35">{formatVisibility(world.visibility)}</span>
-                    </span>
-                    {active && <span className="text-[9px] font-black uppercase tracking-[0.12em] text-cyan-100/70">here</span>}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
+          {/* ░▒▓ PUBLIC WORLDS TAB — other users' worlds, filtered by visibility ▓▒░ */}
+          {worldTab === 'public' && (() => {
+            const filterVis = (v: string | undefined): boolean => {
+              if (!v || v === 'private' || v === 'core' || v === 'template') return false
+              if (publicFilter === 'public') return v === 'public'
+              if (publicFilter === 'sandbox') return v === 'public_edit' || v === 'ffa'
+              if (publicFilter === 'unlisted') return v === 'unlisted' || v === 'only-with-link'
+              return false
+            }
+            const publicWorlds = worldRegistry.filter(w => w.userId !== viewerUserId && filterVis(w.visibility))
+            const PILL: Array<{ key: 'public' | 'sandbox' | 'unlisted'; label: string; tip: string }> = [
+              { key: 'public', label: 'Public', tip: 'Visit and look around. Owner edits.' },
+              { key: 'sandbox', label: 'Sandbox', tip: 'Anyone can build.' },
+              { key: 'unlisted', label: 'Unlisted', tip: 'Link-only. Not in browse.' },
+            ]
+            return (
+              <div className="mb-3 rounded-md border border-white/10 bg-white/5 p-2">
+                <div className="mb-2 flex flex-wrap gap-1">
+                  {PILL.map(p => {
+                    const active = publicFilter === p.key
+                    return (
+                      <button
+                        key={p.key}
+                        onClick={() => setPublicFilter(p.key)}
+                        title={p.tip}
+                        className="rounded border px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] transition"
+                        style={{
+                          borderColor: active ? 'rgba(103,232,249,0.55)' : 'rgba(255,255,255,0.10)',
+                          background: active ? 'rgba(34,211,238,0.16)' : 'rgba(0,0,0,0.20)',
+                          color: active ? 'rgba(207,250,254,0.95)' : 'rgba(255,255,255,0.60)',
+                        }}
+                      >
+                        {p.label}
+                      </button>
+                    )
+                  })}
+                  <div className="ml-auto text-[9px] uppercase tracking-[0.12em] text-white/40">{publicWorlds.length}</div>
+                </div>
+                <div className="max-h-[44vh] space-y-1 overflow-y-auto pr-1">
+                  {publicWorlds.length === 0 ? (
+                    <div className="py-4 text-center text-[10px] text-white/40">No {publicFilter} worlds visible to you.</div>
+                  ) : publicWorlds.map(world => {
+                    const active = world.id === activeWorldId
+                    return (
+                      <button
+                        key={world.id}
+                        onClick={() => handleSwitchWorld(world.id)}
+                        disabled={active}
+                        className="flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left transition hover:bg-white/10 disabled:cursor-default"
+                        style={{
+                          borderColor: active ? 'rgba(103,232,249,0.46)' : 'rgba(255,255,255,0.08)',
+                          background: active ? 'rgba(34,211,238,0.12)' : 'rgba(0,0,0,0.22)',
+                        }}
+                      >
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-white/10 bg-white/10 text-sm">{world.icon || 'O'}</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[11px] font-black uppercase tracking-[0.1em] text-white/80">{world.name}</span>
+                          <span className="mt-0.5 block text-[9px] uppercase tracking-[0.1em] text-white/35">
+                            {formatVisibility(world.visibility)}{world.ownerName ? ` · ${world.ownerName}` : ''}
+                          </span>
+                        </span>
+                        {active && <span className="text-[9px] font-black uppercase tracking-[0.12em] text-cyan-100/70">here</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })()}
 
+          {worldTab === 'this' && (
+          <>
           <div className="mb-3 rounded-md border border-white/10 bg-white/5 p-2">
             <div className="mb-2 text-[10px] font-black uppercase tracking-[0.14em] text-white/55">Visibility</div>
             <div className="grid grid-cols-2 gap-1.5">
@@ -533,7 +644,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
               )}
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[10px] text-cyan-50/70">{worldUrl || 'World link unavailable'}</div>
-                <div className="mt-1 text-[9px] leading-3 text-cyan-100/42">Shareable when visibility is Link-only, Public, or FFA.</div>
+                <div className="mt-1 text-[9px] leading-3 text-cyan-100/42">Shareable when visibility is Unlisted, Public, or Sandbox.</div>
               </div>
             </div>
             <div className="mt-2 flex gap-2">
@@ -624,8 +735,10 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
 
           {!canCopyLink && (
             <div className="mt-2 text-[10px] leading-relaxed text-amber-200/75">
-              Private worlds need owner access. Public, FFA, and only-link worlds can be copied by visitors.
+              Private worlds need owner access. Public, Sandbox, and Unlisted worlds can be copied by visitors.
             </div>
+          )}
+          </>
           )}
         </div>
       )}

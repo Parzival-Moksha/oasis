@@ -2021,7 +2021,18 @@ export const useOasisStore = create<OasisState>((set, get) => {
       }))
     })
     if (placedPlacement) {
-      worldMutationBus.broadcast({ kind: 'object_added', payload: placedPlacement })
+      // Skip broadcast if the imageUrl is a local-only `blob:` URL (peers
+      // can't resolve it) or an oversized `data:` URL (~hundreds of KB of
+      // base64 over the WS for every peer). Stripping the URL would render
+      // a broken frame on peers; skipping the broadcast entirely lets peers
+      // pick it up on next world reload via the normal save.
+      const url = (placedPlacement as CatalogPlacement).imageUrl || ''
+      const isLocalOnly = url.startsWith('blob:') || (url.startsWith('data:') && url.length > 16 * 1024)
+      if (!isLocalOnly) {
+        worldMutationBus.broadcast({ kind: 'object_added', payload: placedPlacement })
+      } else {
+        console.info('[oasis-bus] skipping image broadcast (local-only URL): kind=', url.startsWith('blob:') ? 'blob' : 'oversize-data')
+      }
     }
     exitPlacementIfActive()
     get().spawnPlacementVfx(position)
@@ -2041,7 +2052,14 @@ export const useOasisStore = create<OasisState>((set, get) => {
       }))
     })
     if (placedPlacement) {
-      worldMutationBus.broadcast({ kind: 'object_added', payload: placedPlacement })
+      // Same local-only URL guard as placeImageAt.
+      const url = (placedPlacement as CatalogPlacement).videoUrl || ''
+      const isLocalOnly = url.startsWith('blob:') || (url.startsWith('data:') && url.length > 16 * 1024)
+      if (!isLocalOnly) {
+        worldMutationBus.broadcast({ kind: 'object_added', payload: placedPlacement })
+      } else {
+        console.info('[oasis-bus] skipping video broadcast (local-only URL)')
+      }
     }
     exitPlacementIfActive()
     get().spawnPlacementVfx(position)

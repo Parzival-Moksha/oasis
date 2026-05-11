@@ -12,11 +12,13 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const ROOT = path.resolve(__dirname, '..')
 
 const require = createRequire(import.meta.url)
-const { PrismaClient } = require('c:/af_oasis/node_modules/.prisma/client')
-
-const ROOT = 'c:/af_oasis'
+const { PrismaClient } = require(path.join(ROOT, 'node_modules/.prisma/client'))
 const REGISTRY = path.join(ROOT, 'data', 'conjured-registry.json')
 const SCENE_LIBRARY = path.join(ROOT, 'data', 'scene-library.json')
 

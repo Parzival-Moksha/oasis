@@ -19,6 +19,12 @@ interface InputMessage {
   animState?: string
 }
 
+interface ProfileMessage {
+  avatarUrl?: string
+  displayName?: string
+  color?: string
+}
+
 const MAX_PLAYERS_PER_WORLD = 64
 const SIM_HZ = 30
 const PATCH_HZ = 30
@@ -116,6 +122,26 @@ export class WorldRoom extends Room<WorldRoomState> {
       if (payload.vx !== undefined) player.vx = clampVel(payload.vx, player.vx)
       if (payload.vz !== undefined) player.vz = clampVel(payload.vz, player.vz)
       if (payload.animState !== undefined) player.animState = sanitizeText(payload.animState, player.animState, 24)
+      player.updatedAt = Date.now()
+    })
+
+    this.onMessage('profile', (client, payload: ProfileMessage) => {
+      // Mutates a connected player's avatarUrl/displayName/color in-place.
+      // Previously the layer had to disconnect+reconnect to swap avatars
+      // mid-session; this lets it just send a small update.
+      const player = this.state.players.get(client.sessionId)
+      if (!player || !payload || typeof payload !== 'object') return
+      if (typeof payload.avatarUrl === 'string') {
+        // Don't run sanitizeText on URLs — its whitespace-collapse corrupts
+        // valid encoded URLs. Just length-cap and trim leading/trailing space.
+        player.avatarUrl = payload.avatarUrl.trim().slice(0, 500)
+      }
+      if (typeof payload.displayName === 'string') {
+        player.displayName = sanitizeText(payload.displayName, player.displayName)
+      }
+      if (typeof payload.color === 'string') {
+        player.color = sanitizeText(payload.color, player.color, 7)
+      }
       player.updatedAt = Date.now()
     })
 

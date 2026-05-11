@@ -73,7 +73,12 @@ function getLocalPose(): { position: [number, number, number]; yaw: number } | n
 }
 
 interface RemoteSnapshot {
-  arrivedAt: number
+  // Server-side updatedAt (Date.now() on the room) at the moment this pose
+  // was last touched. Using server time instead of local arrival time
+  // sidesteps the "React batches three WS messages into one tick → three
+  // snapshots with identical local arrival time → interpolation collapses
+  // and the avatar teleports" failure mode.
+  serverTime: number
   position: [number, number, number]
   yaw: number
 }
@@ -88,6 +93,13 @@ function shortAngle(target: number, current: number): number {
 function RemotePresenceAvatar({ player }: { player: MultiplayerRoomPlayer }) {
   const groupRef = useRef<THREE.Group>(null)
   const bufferRef = useRef<RemoteSnapshot[]>([])
+  // Server↔local time anchor. We compute serverNow as
+  //   serverNow = performance.now() - firstLocalTime + firstServerTime
+  // After this anchor is set on the first incoming snapshot, we render at
+  // serverNow - REMOTE_RENDER_DELAY_MS, interpolating between two snapshots
+  // bracketing that server time. Server clock drift over a session is fine
+  // for a friend-server use case; rebase if drift becomes a real problem.
+  const timeAnchorRef = useRef<{ firstLocal: number; firstServer: number } | null>(null)
   // Per-frame inferred speed in m/s — fed to RemoteVRMAvatar so its animation
   // state machine can pick idle/walk/run/sprint without us reaching into the
   // controller. Smoothed mildly so a single jittery snapshot doesn't pop the
@@ -111,7 +123,7 @@ function RemotePresenceAvatar({ player }: { player: MultiplayerRoomPlayer }) {
   }, [])
 
   useEffect(() => {
-    const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    const localNow = typeof performance !== 'undefined' ? performance.now() : Date.now()
     const last = bufferRef.current[bufferRef.current.length - 1]
     if (last
       && Math.abs(last.position[0] - player.position[0]) < 0.0001
@@ -120,15 +132,30 @@ function RemotePresenceAvatar({ player }: { player: MultiplayerRoomPlayer }) {
       && Math.abs(last.yaw - player.yaw) < 0.0001) {
       return
     }
+    // Anchor server↔local time on the very first snapshot we see for this
+    // remote. Subsequent snapshots compute serverTime in the same domain.
+    if (!timeAnchorRef.current) {
+      timeAnchorRef.current = { firstLocal: localNow, firstServer: player.updatedAt || localNow }
+    }
     bufferRef.current.push({
-      arrivedAt: now,
+      serverTime: player.updatedAt || (localNow - timeAnchorRef.current.firstLocal + timeAnchorRef.current.firstServer),
       position: [player.position[0], player.position[1], player.position[2]],
       yaw: player.yaw,
     })
+    // Keep the buffer sorted by serverTime in case messages arrive out of
+    // order during a network hiccup. Bubble-up since we usually append at
+    // the end and only the last entry can be out of place.
+    for (let i = bufferRef.current.length - 1; i > 0; i -= 1) {
+      if (bufferRef.current[i].serverTime < bufferRef.current[i - 1].serverTime) {
+        const tmp = bufferRef.current[i]
+        bufferRef.current[i] = bufferRef.current[i - 1]
+        bufferRef.current[i - 1] = tmp
+      } else break
+    }
     if (bufferRef.current.length > REMOTE_SNAPSHOT_BUFFER) {
       bufferRef.current.shift()
     }
-  }, [player.position[0], player.position[1], player.position[2], player.yaw])
+  }, [player.position[0], player.position[1], player.position[2], player.yaw, player.updatedAt])
 
   useFrame((_, delta) => {
     const group = groupRef.current
@@ -136,28 +163,30 @@ function RemotePresenceAvatar({ player }: { player: MultiplayerRoomPlayer }) {
     const buffer = bufferRef.current
     if (buffer.length === 0) return
 
-    const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
-    const renderTime = now - REMOTE_RENDER_DELAY_MS
+    const localNow = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    const anchor = timeAnchorRef.current
+    const serverNow = anchor ? (localNow - anchor.firstLocal + anchor.firstServer) : localNow
+    const renderTime = serverNow - REMOTE_RENDER_DELAY_MS
 
     let target: { position: [number, number, number]; yaw: number }
-    if (buffer.length === 1 || renderTime >= buffer[buffer.length - 1].arrivedAt) {
+    if (buffer.length === 1 || renderTime >= buffer[buffer.length - 1].serverTime) {
       const last = buffer[buffer.length - 1]
       target = { position: last.position, yaw: last.yaw }
-    } else if (renderTime <= buffer[0].arrivedAt) {
+    } else if (renderTime <= buffer[0].serverTime) {
       const first = buffer[0]
       target = { position: first.position, yaw: first.yaw }
     } else {
       let lo = buffer[0]
       let hi = buffer[1]
       for (let i = 1; i < buffer.length; i += 1) {
-        if (buffer[i].arrivedAt >= renderTime) {
+        if (buffer[i].serverTime >= renderTime) {
           hi = buffer[i]
           lo = buffer[i - 1]
           break
         }
       }
-      const span = hi.arrivedAt - lo.arrivedAt
-      const alpha = span <= 0 ? 1 : (renderTime - lo.arrivedAt) / span
+      const span = hi.serverTime - lo.serverTime
+      const alpha = span <= 0 ? 1 : (renderTime - lo.serverTime) / span
       const yawDiff = shortAngle(hi.yaw, lo.yaw)
       target = {
         position: [
@@ -208,6 +237,10 @@ function RemotePresenceAvatar({ player }: { player: MultiplayerRoomPlayer }) {
 export function MultiplayerPresenceLayer() {
   const activeWorldId = useOasisStore(s => s.viewingWorldId || s.activeWorldId)
   const avatarUrl = useOasisStore(s => s.avatar3dUrl)
+  // Latest avatarUrl read at connect time. After connect, we send profile
+  // mutations on changes instead of reconnecting the whole room.
+  const avatarUrlRef = useRef(avatarUrl)
+  useEffect(() => { avatarUrlRef.current = avatarUrl }, [avatarUrl])
   const playerIdRef = useRef<string>('')
   const playerNameRef = useRef<string>('Visitor')
   const playerColorRef = useRef<string>('#38bdf8')
@@ -269,7 +302,7 @@ export function MultiplayerPresenceLayer() {
       worldId: activeWorldId,
       playerId,
       displayName: playerNameRef.current,
-      avatarUrl: avatarUrl || undefined,
+      avatarUrl: avatarUrlRef.current || undefined,
       color: playerColorRef.current,
       onPlayersChanged: next => {
         if (!disposed) setPlayers(next)
@@ -329,7 +362,15 @@ export function MultiplayerPresenceLayer() {
       lastSentPoseRef.current = null
       lastSentAtRef.current = 0
     }
-  }, [activeWorldId, avatarUrl, reconnectTick])
+  }, [activeWorldId, reconnectTick])
+
+  // Push avatar/profile changes as a small mutation instead of reconnecting
+  // the whole room. This decouples cosmetic changes from session lifecycle.
+  useEffect(() => {
+    const connection = connectionRef.current
+    if (!connection) return
+    connection.sendProfile({ avatarUrl: avatarUrl || '' })
+  }, [avatarUrl])
 
   useFrame(() => {
     const connection = connectionRef.current

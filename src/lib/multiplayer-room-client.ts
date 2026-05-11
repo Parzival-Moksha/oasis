@@ -80,9 +80,16 @@ function snapshotPlayer(sessionId: string, raw: RoomPlayerSchema): MultiplayerRo
   }
 }
 
+export interface MultiplayerRoomProfile {
+  avatarUrl?: string
+  displayName?: string
+  color?: string
+}
+
 export interface MultiplayerRoomConnection {
   sendInput(input: MultiplayerRoomInput): void
   sendMutation(payload: unknown): void
+  sendProfile(profile: MultiplayerRoomProfile): void
   dispose(): Promise<void>
   readonly sessionId: string
 }
@@ -182,6 +189,13 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
         room.send('mutation', payload)
       } catch (error) {
         if (DEBUG) console.warn('[oasis-room] sendMutation failed', error)
+      }
+    },
+    sendProfile(profile: MultiplayerRoomProfile): void {
+      try {
+        room.send('profile', profile)
+      } catch (error) {
+        if (DEBUG) console.warn('[oasis-room] sendProfile failed', error)
       }
     },
     async dispose(): Promise<void> {

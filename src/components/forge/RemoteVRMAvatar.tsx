@@ -174,6 +174,18 @@ function VRMBody({
 
     vrmRef.current = loaded
     setVrm(loaded)
+
+    // Cleanup: dispose the parsed VRM + GPU resources when this peer leaves
+    // (sessionId churn, world swap, or remount). Without this, drei's
+    // useLoader cache balloons across peer joins — each one's geometries,
+    // textures, and material maps stay resident. Per-player cache fragment
+    // ensures we're not stomping a VRM another peer still uses.
+    return () => {
+      try {
+        VRMUtils.deepDispose(loaded.scene)
+      } catch {}
+      if (vrmRef.current === loaded) vrmRef.current = null
+    }
   }, [gltf, avatarUrl])
 
   // Animation controller — task spec thresholds. AnimationController accepts

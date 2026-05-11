@@ -104,18 +104,19 @@ export async function POST(request: Request) {
       library.push(scene)
     }
     saveLibrary(library)
-    // ░▒▓ v1 ASSET MIRROR — also record this crafted scene in the unified Asset
-    // table tagged scope='user', ownerId=<viewer cookie>. Fire-and-forget. ▓▒░
-    void (async () => {
-      try {
-        const { getLocalUserId } = await import('@/lib/local-auth')
-        const { mirrorCraftedScene } = await import('@/lib/forge/library/asset-mirror')
-        const ownerId = await getLocalUserId()
-        await mirrorCraftedScene(scene, ownerId)
-      } catch (err) {
-        console.warn('[scene-library] asset mirror failed for', scene.id, err)
-      }
-    })()
+    // v1 ASSET MIRROR — also record this crafted scene in the unified Asset
+    // table tagged scope='user', ownerId=<viewer cookie>. AWAITED (was
+    // fire-and-forget) so a subsequent GET that reads from Asset doesn't
+    // briefly miss the just-saved scene. The legacy JSON store is the
+    // synchronous fallback, but inconsistent reads were observable.
+    try {
+      const { getLocalUserId } = await import('@/lib/local-auth')
+      const { mirrorCraftedScene } = await import('@/lib/forge/library/asset-mirror')
+      const ownerId = await getLocalUserId()
+      await mirrorCraftedScene(scene, ownerId)
+    } catch (err) {
+      console.warn('[scene-library] asset mirror failed for', scene.id, err)
+    }
     return NextResponse.json({ ok: true }, { status: 201 })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

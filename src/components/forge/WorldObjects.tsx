@@ -181,7 +181,7 @@ function PlaceholderBox() {
 // Uses 'dragging-changed' event (the reliable way to coordinate with OrbitControls)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function SelectableWrapper({ id, children, selected, onSelect, transformMode, onTransformChange, initialPosition, initialRotation, initialScale, inspectOn = 'click', allowTransform = true, liveTransformResolver, groundToTerrain = false }: {
+export function SelectableWrapper({ id, children, selected, onSelect, transformMode, onTransformChange, initialPosition, initialRotation, initialScale, allowTransform = true, liveTransformResolver, groundToTerrain = false }: {
   id: string
   children: React.ReactNode
   selected: boolean
@@ -191,7 +191,6 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
   initialPosition?: [number, number, number]
   initialRotation?: [number, number, number]
   initialScale?: [number, number, number] | number
-  inspectOn?: 'click' | 'double-click'
   allowTransform?: boolean
   liveTransformResolver?: (() => { position?: [number, number, number]; rotation?: [number, number, number] } | null) | undefined
   groundToTerrain?: boolean
@@ -3125,7 +3124,6 @@ function AgentWindowsSection({ selectedObjectId, selectObject, transformMode, on
             initialPosition={derivedPlacement?.position || t?.position || win.position}
             initialRotation={derivedPlacement?.rotation || t?.rotation || win.rotation}
             initialScale={t?.scale ?? 1}
-            inspectOn="double-click"
             allowTransform={win.anchorMode === 'detached' || !linkedAvatar}
             liveTransformResolver={linkedAvatar && win.anchorMode && win.anchorMode !== 'detached'
               ? () => {

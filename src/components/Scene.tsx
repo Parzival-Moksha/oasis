@@ -977,8 +977,11 @@ function useQuestTracker() {
       if (state.placedCatalogAssets.length > prev.placedCatalogAssets.length) {
         completeQuest('place-object')
       }
-      // Quest: Select & inspect an object
-      if (state.inspectedObjectId && !prev.inspectedObjectId) {
+      // Quest: Select an object. After the gesture-pair change (single-click
+      // selects, double-click inspects), new users who only single-click
+      // would never complete this if it gated on inspectedObjectId.
+      // selectedObjectId is the canonical "I picked something" signal.
+      if (state.selectedObjectId && !prev.selectedObjectId) {
         completeQuest('select-object')
       }
       // Quest: Add a light

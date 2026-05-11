@@ -58,16 +58,26 @@ export function AssetsTab() {
   // `worldConjuredAssetIds` lookups elsewhere in this file. ▓▒░
   const { assets: libraryAssets, refresh: refreshLibrary } = useLibraryCatalog()
   // Fallback: while the fetch is loading, use the baked ASSET_CATALOG so the
-  // grid never appears empty on first paint.
+  // grid never appears empty on first paint. Mirror every field the live
+  // listAssets path produces so downstream renderers don't flicker between
+  // undefined/defined values when the fetch resolves.
   const catalogList = libraryAssets.length > 0 ? libraryAssets : ASSET_CATALOG.map(a => ({
     id: a.id,
     name: a.name,
     path: a.path,
     category: a.category,
+    shortLabel: a.shortLabel ?? null,
+    description: a.description ?? null,
     defaultScale: a.defaultScale,
+    bbox: a.bbox || null,
+    thumbnailUrl: a.thumbnail || `/thumbs/${a.id}.jpg`,
+    bytes: null,
     kind: 'glb' as const,
     scope: 'core' as const,
     ownerId: null,
+    source: null,
+    license: null,
+    tags: null,
   }))
 
   // ░▒▓ Catalog asset banish — file off disk + entry off index ▓▒░
