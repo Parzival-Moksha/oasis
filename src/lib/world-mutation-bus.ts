@@ -5,6 +5,7 @@ import type { CatalogPlacement } from '@/lib/conjure/types'
 export type WorldMutation =
   | { kind: 'object_added'; payload: CatalogPlacement }
   | { kind: 'object_removed'; payload: { id: string } }
+  | { kind: 'object_transformed'; payload: { id: string; position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number } }
 
 type Sender = (mutation: WorldMutation) => void
 type Listener = (mutation: WorldMutation) => void

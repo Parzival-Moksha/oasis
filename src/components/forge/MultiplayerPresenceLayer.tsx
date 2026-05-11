@@ -224,13 +224,15 @@ export function MultiplayerPresenceLayer() {
   }, [])
 
   useEffect(() => {
-    const applyRemoteCatalogPlacement = useOasisStore.getState().applyRemoteCatalogPlacement
-    const applyRemoteCatalogRemoval = useOasisStore.getState().applyRemoteCatalogRemoval
+    const store = useOasisStore.getState()
     return worldMutationBus.subscribe(mutation => {
       if (mutation.kind === 'object_added') {
-        applyRemoteCatalogPlacement(mutation.payload)
+        store.applyRemoteCatalogPlacement(mutation.payload)
       } else if (mutation.kind === 'object_removed') {
-        applyRemoteCatalogRemoval(mutation.payload.id)
+        store.applyRemoteCatalogRemoval(mutation.payload.id)
+      } else if (mutation.kind === 'object_transformed') {
+        const { id, position, rotation, scale } = mutation.payload
+        store.applyRemoteObjectTransform(id, { position, rotation, scale })
       }
     })
   }, [])

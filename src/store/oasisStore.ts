@@ -743,6 +743,7 @@ interface OasisState {
   setTransformMode: (mode: 'translate' | 'rotate' | 'scale') => void
   setCameraLookAt: (position: [number, number, number] | null) => void
   setObjectTransform: (id: string, transform: { position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number }) => void
+  applyRemoteObjectTransform: (id: string, transform: { position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number }) => void
   setAgentAvatarTransform: (id: string, transform: { position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number }) => void
   setObjectBehavior: (id: string, behavior: Partial<ObjectBehavior>) => void
   addSpatialWebObject: (object: SpatialWebObject) => void
@@ -2384,8 +2385,18 @@ export const useOasisStore = create<OasisState>((set, get) => {
     set((state) => ({
       transforms: { ...state.transforms, [id]: transform },
     }))
+    worldMutationBus.broadcast({
+      kind: 'object_transformed',
+      payload: { id, position: transform.position, rotation: transform.rotation, scale: transform.scale },
+    })
     // Use the canonical saveWorldState — never assemble payload manually
     setTimeout(() => get().saveWorldState(), 100)
+  },
+  applyRemoteObjectTransform: (
+    id: string,
+    transform: { position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number },
+  ) => {
+    set(state => ({ transforms: { ...state.transforms, [id]: transform } }))
   },
   // ─═̷─═̷─🌅 SKY — per-world sky preset ─═̷─═̷─🌅
   setWorldSkyBackground: (id) => {
