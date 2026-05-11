@@ -732,6 +732,7 @@ interface OasisState {
   sculptTerrainAt: (x: number, z: number, deltaSeconds: number) => void
   resetTerrainHeights: () => void
   setGroundPreset: (presetId: string) => void
+  applyRemoteGroundChange: (presetId: string) => void
   enterPaintMode: (presetId: string) => void
   exitPaintMode: () => void
   setPaintBrushSize: (size: number) => void
@@ -760,6 +761,7 @@ interface OasisState {
   clearMoveTarget: (id: string) => void
   // ─═̷─═̷─🌅 SKY ACTION ─═̷─═̷─🌅
   setWorldSkyBackground: (id: string) => void
+  applyRemoteSkyChange: (skyBackgroundId: string) => void
   // ─═̷─═̷─💡 LIGHT ACTIONS ─═̷─═̷─💡
   addWorldLight: (type: WorldLightType) => void
   /** Place a point or spot light at a specific world position (called from PlacementOverlay click). */
@@ -2268,7 +2270,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
   },
   setGroundPreset: (groundPresetId) => {
     set({ groundPresetId })
+    worldMutationBus.broadcast({ kind: 'ground_changed', payload: { groundPresetId } })
     setTimeout(() => get().saveWorldState(), 100)
+  },
+  applyRemoteGroundChange: (groundPresetId: string) => {
+    set({ groundPresetId })
   },
   // ─═̷─═̷─🎨 PAINT MODE — tile-by-tile ground painting ─═̷─═̷─🎨
   enterPaintMode: (presetId) => {
@@ -2427,7 +2433,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
   // ─═̷─═̷─🌅 SKY — per-world sky preset ─═̷─═̷─🌅
   setWorldSkyBackground: (id) => {
     set({ worldSkyBackground: id })
+    worldMutationBus.broadcast({ kind: 'sky_changed', payload: { skyBackgroundId: id } })
     setTimeout(() => get().saveWorldState(), 100)
+  },
+  applyRemoteSkyChange: (skyBackgroundId: string) => {
+    set({ worldSkyBackground: skyBackgroundId })
   },
   // ─═̷─═̷─💡 LIGHT CRUD — placeable light sources, per-world ─═̷─═̷─💡
   addWorldLight: (type) => {

@@ -268,6 +268,10 @@ export function MultiplayerPresenceLayer() {
       } else if (mutation.kind === 'object_transformed') {
         const { id, position, rotation, scale } = mutation.payload
         store.applyRemoteObjectTransform(id, { position, rotation, scale })
+      } else if (mutation.kind === 'sky_changed') {
+        store.applyRemoteSkyChange(mutation.payload.skyBackgroundId)
+      } else if (mutation.kind === 'ground_changed') {
+        store.applyRemoteGroundChange(mutation.payload.groundPresetId)
       }
     })
   }, [])

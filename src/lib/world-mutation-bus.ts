@@ -6,6 +6,8 @@ export type WorldMutation =
   | { kind: 'object_added'; payload: CatalogPlacement }
   | { kind: 'object_removed'; payload: { id: string } }
   | { kind: 'object_transformed'; payload: { id: string; position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number } }
+  | { kind: 'sky_changed'; payload: { skyBackgroundId: string } }
+  | { kind: 'ground_changed'; payload: { groundPresetId: string } }
 
 type Sender = (mutation: WorldMutation) => void
 type Listener = (mutation: WorldMutation) => void

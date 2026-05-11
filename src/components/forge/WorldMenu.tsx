@@ -609,6 +609,72 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
 
           {worldTab === 'this' && (
           <>
+          {/* SCENE CONTROLS — sky / ground / lights. Visible to:
+              - owner of any world (full edit)
+              - any visitor of an FFA / public_edit world (full sandbox per user)
+              Click opens WizCon at the World tab (which has sky + ground +
+              terrain + lights sections collapsed-by-default). Future tiering:
+              each button gates by `unlockedAtLevel` from a per-user level
+              system that doesn't exist yet — default level=1 means all unlocked
+              for now. When the level system lands, plumb the user's level
+              through and disable buttons whose `unlockedAtLevel` is higher. */}
+          {(() => {
+            const sceneKind = (visibility === 'public_edit' || visibility === 'ffa')
+            const canEditScene = canEditSettings || sceneKind
+            type SceneButton = { id: 'sky' | 'ground' | 'lights'; label: string; icon: string; accent: string; unlockedAtLevel: number }
+            const SCENE_BUTTONS: SceneButton[] = [
+              { id: 'sky',    label: 'Sky',    icon: '🌅', accent: 'rgba(129,140,248,0.85)', unlockedAtLevel: 1 },
+              { id: 'ground', label: 'Ground', icon: '🌿', accent: 'rgba(74,222,128,0.85)',  unlockedAtLevel: 1 },
+              { id: 'lights', label: 'Lights', icon: '💡', accent: 'rgba(250,204,21,0.85)',  unlockedAtLevel: 1 },
+            ]
+            const viewerLevel = 1  // TODO: read from profile when level system ships
+            return (
+              <div className="mb-3 rounded-md border border-white/10 bg-white/5 p-2">
+                <div className="mb-2 text-[10px] font-black uppercase tracking-[0.14em] text-white/55">Scene</div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {SCENE_BUTTONS.map(btn => {
+                    const levelLocked = viewerLevel < btn.unlockedAtLevel
+                    const disabled = !canEditScene || levelLocked || Boolean(busyLabel)
+                    return (
+                      <button
+                        key={btn.id}
+                        onClick={() => {
+                          playClick()
+                          // Tell Scene to open WizCon. WizCon defaults to the
+                          // 'world' mode which is exactly sky/ground/lights.
+                          if (typeof window !== 'undefined') {
+                            window.dispatchEvent(new CustomEvent('oasis:open-wizard', { detail: { section: btn.id } }))
+                          }
+                          setIsOpen(false)
+                        }}
+                        onMouseEnter={() => { if (!disabled) useAudioManager.getState().play('buttonHover') }}
+                        disabled={disabled}
+                        title={levelLocked ? `Unlocks at level ${btn.unlockedAtLevel}` : disabled ? 'Owner or sandbox-visitor only' : `Open ${btn.label.toLowerCase()} controls`}
+                        className="group flex flex-col items-center gap-1 rounded-md border px-2 py-2 transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-45 hover:scale-[1.04] active:scale-[0.97]"
+                        style={{
+                          borderColor: disabled ? 'rgba(255,255,255,0.08)' : btn.accent,
+                          background: disabled ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)',
+                          boxShadow: disabled ? 'none' : `0 0 0 0 ${btn.accent}`,
+                        }}
+                        onMouseDown={e => { if (!disabled) (e.currentTarget as HTMLButtonElement).style.boxShadow = `0 0 14px 2px ${btn.accent}` }}
+                        onMouseUp={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 0 0 ' + btn.accent }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 0 0 ' + btn.accent }}
+                      >
+                        <span className="text-base leading-none transition-transform group-hover:scale-110 group-hover:rotate-3">{btn.icon}</span>
+                        <span className="text-[9px] font-black uppercase tracking-[0.12em]" style={{ color: disabled ? 'rgba(255,255,255,0.4)' : btn.accent }}>{btn.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                {!canEditScene && (
+                  <div className="mt-1.5 text-[9px] text-white/35">
+                    {sceneKind ? 'Scene controls require owner permission.' : 'Only this world\'s owner can change scene. Sandbox visibility lets everyone edit.'}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
           <div className="mb-3 rounded-md border border-white/10 bg-white/5 p-2">
             <div className="mb-2 text-[10px] font-black uppercase tracking-[0.14em] text-white/55">Visibility</div>
             <div className="grid grid-cols-2 gap-1.5">

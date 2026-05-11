@@ -1398,6 +1398,15 @@ export default function Scene() {
   const [consoleOpen, setConsoleOpen] = useState(false)
   const [settingsMenuOpacity, setSettingsMenuOpacity] = useState(() => readSettingsMenuOpacity())
 
+  // WorldMenu's Scene buttons (sky/ground/lights) fire this custom event to
+  // ask Scene to open WizCon. The world tab is WizCon's default landing.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const open = () => setWizardOpen(true)
+    window.addEventListener('oasis:open-wizard', open)
+    return () => window.removeEventListener('oasis:open-wizard', open)
+  }, [])
+
   useEffect(() => {
     if (hostedMode) return
     if (typeof window === 'undefined') return

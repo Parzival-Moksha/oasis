@@ -49,6 +49,7 @@ export type OasisCommand =
   | { type: 'LOAD_WORLD' }
   | { type: 'UNDO' }
   | { type: 'REDO' }
+  | { type: 'OPEN_WIZARD'; payload: { mode?: 'conjure' | 'craft' | 'world' | 'assets' | 'placed' | 'agents' | 'media' | 'settings'; section?: 'sky' | 'terrainBrush' | 'lights' | 'terrain' } }
 
   // Crafted scenes
   | { type: 'REMOVE_CRAFTED_SCENE'; payload: { id: string } }
