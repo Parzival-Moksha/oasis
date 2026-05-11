@@ -59,10 +59,11 @@ function resolveRoomEndpoint(): string {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = window.location.hostname || 'localhost'
     const isLocal = host === 'localhost' || host === '127.0.0.1'
-    if (isLocal) return `${protocol}//${host}:4517`
+    // 4519 locally — 4517 is the OpenClaw/Hermes relay sidecar.
+    if (isLocal) return `${protocol}//${host}:4519`
     return `${protocol}//${host}/rooms`
   }
-  return 'ws://localhost:4517'
+  return 'ws://localhost:4519'
 }
 
 function snapshotPlayer(sessionId: string, raw: RoomPlayerSchema): MultiplayerRoomPlayer {

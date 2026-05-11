@@ -45,10 +45,12 @@ export interface RemoteVRMAvatarProps {
   speed: number
 }
 
-// Animation thresholds — match the task spec, not the AnimationController
-// defaults (which assume a single-player TPS speed budget).
+// Animation thresholds aligned with PlayerAvatar's TPS speeds:
+//   default WASD = 3.0 m/s (TPS_BASE_SPEED), shift = 12.0 (sprint x4),
+//   space = 0.75 (walk x0.25). Default run is 3.0, so the run threshold
+//   must sit below it; otherwise remotes look like they're tip-toeing.
 const WALK_SPEED = 0.1
-const RUN_SPEED = 4
+const RUN_SPEED = 2
 const SPRINT_SPEED = 7
 const CROSSFADE_SECONDS = 0.15
 

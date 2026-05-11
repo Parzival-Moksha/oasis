@@ -1988,14 +1988,19 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
   placeCatalogAssetAt: (catalogId, name, path, defaultScale, position) => {
     let placedId = ''
+    let placedPlacement: CatalogPlacement | null = null
     withUndo(`Place ${name}`, '📦', () => {
       placedId = `catalog-${catalogId}-${Date.now()}`
       const placement: CatalogPlacement = { id: placedId, catalogId, name, glbPath: path, position, scale: defaultScale }
+      placedPlacement = placement
       set(state => ({
         placedCatalogAssets: [...state.placedCatalogAssets, placement],
         placementPending: null,
       }))
     })
+    if (placedPlacement) {
+      worldMutationBus.broadcast({ kind: 'object_added', payload: placedPlacement })
+    }
     exitPlacementIfActive()
     get().spawnPlacementVfx(position)
     setTimeout(() => get().saveWorldState(), 100)
@@ -2004,14 +2009,19 @@ export const useOasisStore = create<OasisState>((set, get) => {
   },
 
   placeImageAt: (name, imageUrl, position, frameStyle) => {
+    let placedPlacement: CatalogPlacement | null = null
     withUndo(`Place ${name}`, '🖼️', () => {
       const id = `image-${Date.now()}`
       const placement: CatalogPlacement = { id, catalogId: 'generated-image', name, glbPath: '', position, scale: 1, imageUrl, ...(frameStyle && { imageFrameStyle: frameStyle }) }
+      placedPlacement = placement
       set(state => ({
         placedCatalogAssets: [...state.placedCatalogAssets, placement],
         placementPending: null,
       }))
     })
+    if (placedPlacement) {
+      worldMutationBus.broadcast({ kind: 'object_added', payload: placedPlacement })
+    }
     exitPlacementIfActive()
     get().spawnPlacementVfx(position)
     setTimeout(() => get().saveWorldState(), 100)
@@ -2019,14 +2029,19 @@ export const useOasisStore = create<OasisState>((set, get) => {
   },
 
   placeVideoAt: (name: string, videoUrl: string, position: [number, number, number]) => {
+    let placedPlacement: CatalogPlacement | null = null
     withUndo(`Place video ${name}`, '🎬', () => {
       const id = `video-${Date.now()}`
       const placement: CatalogPlacement = { id, catalogId: 'video', name, glbPath: '', position, scale: 2, videoUrl }
+      placedPlacement = placement
       set(state => ({
         placedCatalogAssets: [...state.placedCatalogAssets, placement],
         placementPending: null,
       }))
     })
+    if (placedPlacement) {
+      worldMutationBus.broadcast({ kind: 'object_added', payload: placedPlacement })
+    }
     exitPlacementIfActive()
     get().spawnPlacementVfx(position)
     setTimeout(() => get().saveWorldState(), 100)

@@ -3,7 +3,10 @@ import { WebSocketTransport } from '@colyseus/ws-transport'
 import http from 'node:http'
 import { WorldRoom } from './rooms/WorldRoom.js'
 
-const PORT = Number(process.env.OASIS_ROOM_PORT) || 4517
+// 4519 NOT 4517: the OpenClaw/Hermes WSS relay sidecar
+// (scripts/openclaw-relay.mjs, ecosystem.openclaw.config.cjs) already binds
+// 4517. The Colyseus room sidecar must not collide with it on hosted PM2.
+const PORT = Number(process.env.OASIS_ROOM_PORT) || 4519
 
 const httpServer = http.createServer((req, res) => {
   if (req.url === '/rooms/health') {
