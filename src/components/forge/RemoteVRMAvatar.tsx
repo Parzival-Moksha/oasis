@@ -122,6 +122,10 @@ function VRMBody({
 }) {
   const vrmRef = useRef<VRM | null>(null)
   const animControllerRef = useRef<AnimationController | null>(null)
+  // One-shot IBL pass guard. PlayerAvatar does the same; without it remote
+  // VRMs render pitch-black against a lit scene because the loader-time
+  // material swap can't see state.scene.environment from a useEffect.
+  const iblAppliedRef = useRef(false)
   const [vrm, setVrm] = useState<VRM | null>(null)
 
   // Per-player cache fragment — hash isn't sent to server, but it forces
@@ -211,10 +215,68 @@ function VRMBody({
     }
   }, [vrm])
 
-  useFrame((_, rawDelta) => {
+  useFrame((state, rawDelta) => {
     const v = vrmRef.current
     if (!v) return
     const delta = Math.min(rawDelta, 0.05)
+
+    // ── IBL one-shot — mirror PlayerAvatar: swap MToon/Basic → Standard with
+    // the scene's HDRI envMap attached so the remote VRM picks up environment
+    // lighting. The loader-time material pass couldn't see scene.environment
+    // (no R3F state in a useEffect), so without this remote players render
+    // as silhouettes against a lit world.
+    if (!iblAppliedRef.current && state.scene.environment) {
+      v.scene.traverse((child) => {
+        if (!(child as THREE.Mesh).isMesh) return
+        const mesh = child as THREE.Mesh
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+        const newMats = mats.map(mat => {
+          const m = mat as unknown as Record<string, unknown> & {
+            type?: string
+            isMToonMaterial?: boolean
+            map?: THREE.Texture | null
+            normalMap?: THREE.Texture | null
+            emissiveMap?: THREE.Texture | null
+            emissive?: THREE.Color
+            color?: THREE.Color
+            side?: THREE.Side
+            transparent?: boolean
+            opacity?: number
+            alphaTest?: number
+            uniforms?: Record<string, { value?: THREE.Texture | null } | undefined>
+          }
+          if (m.type === 'MToonMaterial' || m.type === 'MeshBasicMaterial' || m.isMToonMaterial) {
+            const std = new THREE.MeshStandardMaterial({
+              map: m.map || m.uniforms?.map?.value || null,
+              normalMap: m.normalMap || m.uniforms?.normalMap?.value || null,
+              emissiveMap: m.emissiveMap || m.uniforms?.emissiveMap?.value || null,
+              emissive: m.emissive || new THREE.Color(0x000000),
+              color: m.color || new THREE.Color(0xffffff),
+              roughness: 0.8,
+              metalness: 0.0,
+              envMap: state.scene.environment,
+              envMapIntensity: 1.2,
+              side: m.side ?? THREE.FrontSide,
+              transparent: m.transparent ?? false,
+              opacity: m.opacity ?? 1,
+              alphaTest: m.alphaTest ?? 0,
+            })
+            std.needsUpdate = true
+            try { (mat as THREE.Material).dispose() } catch {}
+            return std
+          }
+          if ('envMap' in m) {
+            ;(m as unknown as THREE.MeshStandardMaterial).envMap = state.scene.environment
+            ;(m as unknown as THREE.MeshStandardMaterial).envMapIntensity = 1.2
+            ;(m as unknown as THREE.Material).needsUpdate = true
+          }
+          return mat as THREE.Material
+        })
+        mesh.material = Array.isArray(mesh.material) ? newMats : newMats[0]
+      })
+      iblAppliedRef.current = true
+    }
+
     animControllerRef.current?.update(delta)
     v.update(delta)
     animControllerRef.current?.updateFromVelocity(speedRef.current)

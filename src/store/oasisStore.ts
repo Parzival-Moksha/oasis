@@ -24,6 +24,11 @@ import {
   type WorldMeta,
 } from '../lib/forge/world-persistence'
 import { worldMutationBus } from '../lib/world-mutation-bus'
+
+// Per-client throttle for terrain-brush broadcasts. Module-level (one per
+// browser tab) is correct here — we want this user's brush rate-limited
+// independently of any other globals.
+const terrainBroadcastClock = { lastAt: 0 }
 import {
   WELCOME_HUB_WORLD_ID,
   isWelcomeHubWorld,
@@ -730,7 +735,9 @@ interface OasisState {
   setTerrainBrushRadius: (radius: number) => void
   setTerrainBrushDirection: (direction: TerrainBrushDirection) => void
   sculptTerrainAt: (x: number, z: number, deltaSeconds: number) => void
+  applyRemoteTerrainBrush: (x: number, z: number, radius: number, intensity: number, direction: TerrainBrushDirection, deltaSeconds: number) => void
   resetTerrainHeights: () => void
+  applyRemoteTerrainReset: () => void
   setGroundPreset: (presetId: string) => void
   applyRemoteGroundChange: (presetId: string) => void
   enterPaintMode: (presetId: string) => void
@@ -2255,18 +2262,57 @@ export const useOasisStore = create<OasisState>((set, get) => {
   },
   setTerrainBrushDirection: (terrainBrushDirection) => set({ terrainBrushDirection }),
   sculptTerrainAt: (x, z, deltaSeconds) => {
+    const s = get()
+    const radius = s.terrainBrushRadius
+    const intensity = s.terrainBrushIntensity
+    const direction = s.terrainBrushDirection
     set(state => ({
       terrainHeights: applyTerrainBrush(state.terrainHeights, x, z, {
-        radius: state.terrainBrushRadius,
-        intensity: state.terrainBrushIntensity,
-        direction: state.terrainBrushDirection,
+        radius,
+        intensity,
+        direction,
+        deltaSeconds,
+      }),
+    }))
+    // Real-time multiplayer terrain. Broadcast the brush OPERATION not the
+    // full heights array (the array is too big for the bus 16KiB cap and
+    // most ticks change only a small neighborhood). Receivers re-run the
+    // same applyTerrainBrush call against their local heights — deterministic
+    // given the same inputs. Throttle to ~15Hz client-side to keep within
+    // the room's 30/s sustained rate limit when multiple users brush at once.
+    const now = Date.now()
+    if (now - terrainBroadcastClock.lastAt > 65) {
+      terrainBroadcastClock.lastAt = now
+      worldMutationBus.broadcast({
+        kind: 'terrain_brushed',
+        payload: { x, z, radius, intensity, direction, deltaSeconds },
+      })
+    }
+  },
+  applyRemoteTerrainBrush: (
+    x: number,
+    z: number,
+    radius: number,
+    intensity: number,
+    direction: TerrainBrushDirection,
+    deltaSeconds: number,
+  ) => {
+    set(state => ({
+      terrainHeights: applyTerrainBrush(state.terrainHeights, x, z, {
+        radius,
+        intensity,
+        direction,
         deltaSeconds,
       }),
     }))
   },
   resetTerrainHeights: () => {
     withUndo('Reset relief', 'terrain', () => set({ terrainHeights: createFlatTerrainHeights() }))
+    worldMutationBus.broadcast({ kind: 'terrain_reset', payload: {} })
     setTimeout(() => get().saveWorldState(), 100)
+  },
+  applyRemoteTerrainReset: () => {
+    set({ terrainHeights: createFlatTerrainHeights() })
   },
   setGroundPreset: (groundPresetId) => {
     set({ groundPresetId })

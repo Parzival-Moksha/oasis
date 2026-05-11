@@ -8,6 +8,8 @@ export type WorldMutation =
   | { kind: 'object_transformed'; payload: { id: string; position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number } }
   | { kind: 'sky_changed'; payload: { skyBackgroundId: string } }
   | { kind: 'ground_changed'; payload: { groundPresetId: string } }
+  | { kind: 'terrain_brushed'; payload: { x: number; z: number; radius: number; intensity: number; direction: 'up' | 'down'; deltaSeconds: number } }
+  | { kind: 'terrain_reset'; payload: Record<string, never> }
 
 type Sender = (mutation: WorldMutation) => void
 type Listener = (mutation: WorldMutation) => void

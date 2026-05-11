@@ -205,19 +205,37 @@ function RemotePresenceAvatar({ player }: { player: MultiplayerRoomPlayer }) {
     const yawCatch = 1 - Math.exp(-REMOTE_YAW_CATCHUP * delta)
     group.rotation.y += shortAngle(target.yaw, group.rotation.y) * yawCatch
 
-    // ── Infer ground-plane speed from the group's displacement this frame.
-    // Y is excluded so vertical terrain hops don't push the avatar into run.
-    if (delta > 0.0001) {
-      const dx = group.position.x - lastPosRef.current.x
-      const dz = group.position.z - lastPosRef.current.z
-      const instSpeed = Math.sqrt(dx * dx + dz * dz) / delta
-      const smoothing = 1 - Math.exp(-8 * delta)
-      smoothedSpeedRef.current += (instSpeed - smoothedSpeedRef.current) * smoothing
-      // setState only when the value crosses a threshold band — avoids a
-      // re-render every frame while still keeping the animation responsive.
+    // ── Infer ground-plane speed from the SNAPSHOT BUFFER's most recent two
+    // entries (server-domain), not from the group's catch-up displacement.
+    // The catch-up lerp is asymptotic so group-displacement is never quite
+    // zero, which makes a STATIONARY remote read as perpetually walking.
+    // Buffer-derived speed is 0 the instant new snapshots stop arriving.
+    if (buffer.length >= 2) {
+      const latest = buffer[buffer.length - 1]
+      const prev = buffer[buffer.length - 2]
+      const dt = (latest.serverTime - prev.serverTime) / 1000
+      let targetSpeed = 0
+      if (dt > 0.001) {
+        const dx = latest.position[0] - prev.position[0]
+        const dz = latest.position[2] - prev.position[2]
+        targetSpeed = Math.sqrt(dx * dx + dz * dz) / dt
+      }
+      // Stale-snapshot guard: if the latest snapshot is more than 350ms old
+      // in server time (anchor-adjusted), treat as idle. Prevents the avatar
+      // from holding a walk animation when the network goes quiet.
+      const anchorForGuard = timeAnchorRef.current
+      if (anchorForGuard) {
+        const serverNowGuard = localNow - anchorForGuard.firstLocal + anchorForGuard.firstServer
+        if (serverNowGuard - latest.serverTime > 350) targetSpeed = 0
+      }
+      const smoothing = 1 - Math.exp(-12 * delta)
+      smoothedSpeedRef.current += (targetSpeed - smoothedSpeedRef.current) * smoothing
       if (Math.abs(smoothedSpeedRef.current - speed) > 0.15) {
         setSpeed(smoothedSpeedRef.current)
       }
+    } else if (speed !== 0) {
+      smoothedSpeedRef.current = 0
+      setSpeed(0)
     }
     lastPosRef.current.set(group.position.x, group.position.y, group.position.z)
   })
@@ -272,6 +290,11 @@ export function MultiplayerPresenceLayer() {
         store.applyRemoteSkyChange(mutation.payload.skyBackgroundId)
       } else if (mutation.kind === 'ground_changed') {
         store.applyRemoteGroundChange(mutation.payload.groundPresetId)
+      } else if (mutation.kind === 'terrain_brushed') {
+        const { x, z, radius, intensity, direction, deltaSeconds } = mutation.payload
+        store.applyRemoteTerrainBrush(x, z, radius, intensity, direction, deltaSeconds)
+      } else if (mutation.kind === 'terrain_reset') {
+        store.applyRemoteTerrainReset()
       }
     })
   }, [])
