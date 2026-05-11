@@ -1,6 +1,6 @@
 'use client'
 
-import type { CatalogPlacement } from '@/lib/conjure/types'
+import type { CatalogPlacement, WorldLight } from '@/lib/conjure/types'
 
 export type WorldMutation =
   | { kind: 'object_added'; payload: CatalogPlacement }
@@ -10,6 +10,9 @@ export type WorldMutation =
   | { kind: 'ground_changed'; payload: { groundPresetId: string } }
   | { kind: 'terrain_brushed'; payload: { x: number; z: number; radius: number; intensity: number; direction: 'up' | 'down'; deltaSeconds: number } }
   | { kind: 'terrain_reset'; payload: Record<string, never> }
+  | { kind: 'light_added'; payload: { light: WorldLight } }
+  | { kind: 'light_removed'; payload: { id: string } }
+  | { kind: 'light_updated'; payload: { id: string; updates: Partial<WorldLight> } }
 
 type Sender = (mutation: WorldMutation) => void
 type Listener = (mutation: WorldMutation) => void

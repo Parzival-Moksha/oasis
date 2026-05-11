@@ -780,6 +780,9 @@ interface OasisState {
   applyRemoteSkyChange: (skyBackgroundId: string) => void
   // ─═̷─═̷─💡 LIGHT ACTIONS ─═̷─═̷─💡
   addWorldLight: (type: WorldLightType) => void
+  applyRemoteLightAdded: (light: WorldLight) => void
+  applyRemoteLightRemoved: (id: string) => void
+  applyRemoteLightUpdated: (id: string, updates: Partial<WorldLight>) => void
   /** Place a point or spot light at a specific world position (called from PlacementOverlay click). */
   placeLightAt: (type: 'point' | 'spot', position: [number, number, number]) => void
   removeWorldLight: (id: string) => void
@@ -2512,6 +2515,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       get().enterPlacementMode({ type: 'light', name: `${type} light`, lightType: type })
       return
     }
+    let addedLight: WorldLight | null = null
     withUndo(`Add ${type} light`, '💡', () => {
       const light: WorldLight = {
         id: `light-${type}-${Date.now()}`,
@@ -2522,12 +2526,15 @@ export const useOasisStore = create<OasisState>((set, get) => {
         ...(type === 'hemisphere' ? { groundColor: '#3a5f0b' } : {}),
         visible: true,
       }
+      addedLight = light
       set(s => ({ worldLights: [...s.worldLights, light] }))
     })
+    if (addedLight) worldMutationBus.broadcast({ kind: 'light_added', payload: { light: addedLight } })
     setTimeout(() => get().saveWorldState(), 100)
     awardXp('ADD_LIGHT', get().activeWorldId)
   },
   placeLightAt: (type, position) => {
+    let addedLight: WorldLight | null = null
     withUndo(`Place ${type} light`, '💡', () => {
       const light: WorldLight = {
         id: `light-${type}-${Date.now()}`,
@@ -2538,8 +2545,10 @@ export const useOasisStore = create<OasisState>((set, get) => {
         ...(type === 'spot' ? { angle: 45, target: [position[0], 0, position[2]] } : {}),
         visible: true,
       }
+      addedLight = light
       set(s => ({ worldLights: [...s.worldLights, light], placementPending: null }))
     })
+    if (addedLight) worldMutationBus.broadcast({ kind: 'light_added', payload: { light: addedLight } })
     exitPlacementIfActive()
     get().spawnPlacementVfx(position)
     setTimeout(() => get().saveWorldState(), 100)
@@ -2549,19 +2558,36 @@ export const useOasisStore = create<OasisState>((set, get) => {
     withUndo('Remove light', '🗑️', () => {
       set(s => ({ worldLights: s.worldLights.filter(l => l.id !== id) }))
     })
+    worldMutationBus.broadcast({ kind: 'light_removed', payload: { id } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   updateWorldLight: (id, updates) => {
     set(s => ({
       worldLights: s.worldLights.map(l => l.id === id ? { ...l, ...updates } : l),
     }))
+    worldMutationBus.broadcast({ kind: 'light_updated', payload: { id, updates } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   setWorldLightTransform: (id, position) => {
     set(s => ({
       worldLights: s.worldLights.map(l => l.id === id ? { ...l, position } : l),
     }))
+    worldMutationBus.broadcast({ kind: 'light_updated', payload: { id, updates: { position } } })
     setTimeout(() => get().saveWorldState(), 100)
+  },
+  applyRemoteLightAdded: (light: WorldLight) => {
+    set(state => {
+      if (state.worldLights.some(l => l.id === light.id)) return state
+      return { worldLights: [...state.worldLights, light] }
+    })
+  },
+  applyRemoteLightRemoved: (id: string) => {
+    set(state => ({ worldLights: state.worldLights.filter(l => l.id !== id) }))
+  },
+  applyRemoteLightUpdated: (id: string, updates: Partial<WorldLight>) => {
+    set(state => ({
+      worldLights: state.worldLights.map(l => l.id === id ? { ...l, ...updates } : l),
+    }))
   },
 
   loadWorldState: (options: { silent?: boolean; remote?: boolean } = {}) => {

@@ -317,6 +317,12 @@ export function MultiplayerPresenceLayer() {
         store.applyRemoteTerrainBrush(x, z, radius, intensity, direction, deltaSeconds)
       } else if (mutation.kind === 'terrain_reset') {
         store.applyRemoteTerrainReset()
+      } else if (mutation.kind === 'light_added') {
+        store.applyRemoteLightAdded(mutation.payload.light)
+      } else if (mutation.kind === 'light_removed') {
+        store.applyRemoteLightRemoved(mutation.payload.id)
+      } else if (mutation.kind === 'light_updated') {
+        store.applyRemoteLightUpdated(mutation.payload.id, mutation.payload.updates)
       }
     })
   }, [])
