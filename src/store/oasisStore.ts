@@ -72,6 +72,8 @@ import {
 } from '../lib/spatial-web'
 import { createPortalZeroGoogleFormsAltar, createPortalZeroGoogleTestAltar } from '../lib/spatial-web-presets'
 import { getViewerUserIdClient } from '../lib/viewer-identity-client'
+import type { PaintStroke } from '../lib/forge/paint-stroke'
+import type { Text3DObject } from '../lib/forge/text-3d-object'
 
 const SPATIAL_WEB_WORLD_TOOL_ALLOWLIST = new Set([
   'set_sky',
@@ -595,6 +597,30 @@ interface OasisState {
   placedCatalogAssets: CatalogPlacement[]  // pre-made assets placed in THIS world
   portalGates: PortalGate[]                // persistent teleport gates placed in THIS world
   spatialWebObjects: SpatialWebObject[]    // spatial website primitives placed in THIS world
+  paintStrokes: PaintStroke[]              // wizardry tubes/ribbons drawn in 3-space
+  text3dObjects: Text3DObject[]            // extruded 3D text objects placed in 3-space
+
+  // ─═̷─═̷─🎨 PAINT TOOL UI STATE ─═̷─═̷─🎨
+  paintBrushPanelOpen: boolean
+  text3dPanelOpen: boolean
+  /** When true, a held-button is forcing paint mode (mobile or keyboard). */
+  paintHeldActive: boolean
+  paintBrushSettings: {
+    color: string
+    thickness: number
+    shininess: number
+    distance: number
+    mode: '2d' | '3d'
+    varyByVelocity: boolean
+  }
+  text3dSettings: {
+    text: string
+    fontId: string
+    size: number
+    depth: number
+    color: string
+    shininess: number
+  }
 
   // ─═̷─═̷─🪄 PLACEMENT MODE + VFX ─═̷─═̷─🪄
   placementPending: PlacementPending | null   // what we're about to place (null = not in placement mode)
@@ -770,6 +796,24 @@ interface OasisState {
   interactSpatialWebObject: (id: string, event?: SpatialWebEventName) => Promise<void>
   removeSpatialWebObject: (id: string) => void
   seedSpatialWebRsvpDemo: () => void
+  // ─═̷─═̷─🎨 PAINT STROKE ACTIONS ─═̷─═̷─🎨
+  addPaintStroke: (stroke: PaintStroke) => void
+  removePaintStroke: (id: string) => void
+  applyRemotePaintStroke: (stroke: PaintStroke) => void
+  applyRemotePaintStrokeRemoval: (id: string) => void
+  // ─═̷─═̷─📜 TEXT 3D ACTIONS ─═̷─═̷─📜
+  addText3dObject: (object: Text3DObject) => void
+  updateText3dObject: (id: string, updates: Partial<Text3DObject>) => void
+  removeText3dObject: (id: string) => void
+  applyRemoteText3dAdded: (object: Text3DObject) => void
+  applyRemoteText3dUpdated: (id: string, updates: Partial<Text3DObject>) => void
+  applyRemoteText3dRemoved: (id: string) => void
+  // ─═̷─═̷─🎨 PAINT TOOL UI ACTIONS ─═̷─═̷─🎨
+  setPaintBrushPanelOpen: (open: boolean) => void
+  setText3dPanelOpen: (open: boolean) => void
+  setPaintHeldActive: (active: boolean) => void
+  updatePaintBrushSettings: (updates: Partial<OasisState['paintBrushSettings']>) => void
+  updateText3dSettings: (updates: Partial<OasisState['text3dSettings']>) => void
   setObjectMeshStats: (id: string, stats: import('../lib/conjure/types').ModelStats) => void
   /** RTS-style: send selected object to a target position */
   setMoveTarget: (id: string, target: [number, number, number]) => void
@@ -1047,6 +1091,27 @@ export const useOasisStore = create<OasisState>((set, get) => {
   placedCatalogAssets: [],
   portalGates: [],
   spatialWebObjects: [],
+  paintStrokes: [],
+  text3dObjects: [],
+  paintBrushPanelOpen: false,
+  text3dPanelOpen: false,
+  paintHeldActive: false,
+  paintBrushSettings: {
+    color: '#ff3df0',
+    thickness: 0.04,
+    shininess: 0.7,
+    distance: 3.0,
+    mode: '3d',
+    varyByVelocity: false,
+  },
+  text3dSettings: {
+    text: 'hello',
+    fontId: 'helvetiker_regular',
+    size: 0.5,
+    depth: 0.12,
+    color: '#ffd166',
+    shininess: 0.8,
+  },
   sceneLibrary: [],
 
   // ─═̷─═̷─🪄 PLACEMENT MODE + VFX ─═̷─═̷─🪄
@@ -1867,6 +1932,85 @@ export const useOasisStore = create<OasisState>((set, get) => {
     setTimeout(() => get().saveWorldState(), 100)
   },
 
+  // ─═̷─═̷─🎨 PAINT STROKE ACTIONS ─═̷─═̷─🎨
+  // Strokes are flat point lists rebuilt into TubeGeometry/Line on render.
+  // Local writer adds + saves; applyRemote* paths skip the save (author saves).
+  addPaintStroke: (stroke) => {
+    set(state => ({ paintStrokes: [...state.paintStrokes, stroke] }))
+    setTimeout(() => get().saveWorldState(), 100)
+  },
+  removePaintStroke: (id) => {
+    set(state => ({
+      paintStrokes: state.paintStrokes.filter(s => s.id !== id),
+      selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
+      inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
+    }))
+    worldMutationBus.broadcast({ kind: 'stroke_removed', payload: { id } })
+    setTimeout(() => get().saveWorldState(), 100)
+  },
+  applyRemotePaintStroke: (stroke) => {
+    set(state => {
+      if (state.paintStrokes.some(existing => existing.id === stroke.id)) return state
+      return { paintStrokes: [...state.paintStrokes, stroke] }
+    })
+  },
+  applyRemotePaintStrokeRemoval: (id) => {
+    set(state => ({
+      paintStrokes: state.paintStrokes.filter(s => s.id !== id),
+      selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
+      inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
+    }))
+  },
+
+  // ─═̷─═̷─📜 TEXT 3D ACTIONS ─═̷─═̷─📜
+  addText3dObject: (object) => {
+    set(state => ({ text3dObjects: [...state.text3dObjects, object] }))
+    worldMutationBus.broadcast({ kind: 'text3d_added', payload: object })
+    get().spawnPlacementVfx(object.position)
+    setTimeout(() => get().saveWorldState(), 100)
+  },
+  updateText3dObject: (id, updates) => {
+    set(state => ({
+      text3dObjects: state.text3dObjects.map(t => t.id === id ? { ...t, ...updates } : t),
+    }))
+    worldMutationBus.broadcast({ kind: 'text3d_updated', payload: { id, updates } })
+    setTimeout(() => get().saveWorldState(), 100)
+  },
+  removeText3dObject: (id) => {
+    set(state => ({
+      text3dObjects: state.text3dObjects.filter(t => t.id !== id),
+      selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
+      inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
+    }))
+    worldMutationBus.broadcast({ kind: 'text3d_removed', payload: { id } })
+    setTimeout(() => get().saveWorldState(), 100)
+  },
+  applyRemoteText3dAdded: (object) => {
+    set(state => {
+      if (state.text3dObjects.some(existing => existing.id === object.id)) return state
+      return { text3dObjects: [...state.text3dObjects, object] }
+    })
+  },
+  applyRemoteText3dUpdated: (id, updates) => {
+    set(state => ({
+      text3dObjects: state.text3dObjects.map(t => t.id === id ? { ...t, ...updates } : t),
+    }))
+  },
+  applyRemoteText3dRemoved: (id) => {
+    set(state => ({
+      text3dObjects: state.text3dObjects.filter(t => t.id !== id),
+      selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
+      inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
+    }))
+  },
+
+  // ─═̷─═̷─🎨 PAINT TOOL UI ACTIONS ─═̷─═̷─🎨
+  setPaintBrushPanelOpen: (open) => set({ paintBrushPanelOpen: open }),
+  setText3dPanelOpen: (open) => set({ text3dPanelOpen: open }),
+  setPaintHeldActive: (active) => set({ paintHeldActive: active }),
+  updatePaintBrushSettings: (updates) => set(state => ({ paintBrushSettings: { ...state.paintBrushSettings, ...updates } })),
+  updateText3dSettings: (updates) => set(state => ({ text3dSettings: { ...state.text3dSettings, ...updates } })),
+
   placePortalGateAt: ({ variant, label, action, targetWorldId, targetWorldName, direction = 'two-way', position }) => {
     const activeWorldId = get().activeWorldId
     const activeWorldName = get().worldRegistry.find(world => world.id === activeWorldId)?.name || 'This world'
@@ -2648,6 +2792,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
           placedCatalogAssets: [],
           portalGates: [],
           spatialWebObjects: [],
+          paintStrokes: [],
+          text3dObjects: [],
           transforms: {},
           behaviors: {},
           worldLights: seedDefaultLights(),
@@ -2689,6 +2835,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
         placedCatalogAssets: world.catalogPlacements || [],
         portalGates,
         spatialWebObjects,
+        paintStrokes: world.paintStrokes || [],
+        text3dObjects: world.text3dObjects || [],
         transforms: normalizedAgentWorldState.transforms,
         behaviors: world.behaviors || {},
         worldLights: lights,
@@ -2746,7 +2894,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       console.warn('[World] ⚠️ Save blocked — world not loaded yet (preventing empty-state overwrite)')
       return
     }
-    const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, transforms, behaviors, worldLights, worldSkyBackground, viewingWorldId, customGroundPresets, placedAgentWindows, placedAgentAvatars, _loadedObjectCount } = get()
+    const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms, behaviors, worldLights, worldSkyBackground, viewingWorldId, customGroundPresets, placedAgentWindows, placedAgentAvatars, _loadedObjectCount } = get()
     const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
       windows: placedAgentWindows,
       avatars: placedAgentAvatars,
@@ -2781,6 +2929,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
       catalogPlacements: placedCatalogAssets,
       portalGates,
       spatialWebObjects,
+      paintStrokes,
+      text3dObjects,
       transforms: normalizedAgentWorldState.transforms,
       behaviors,
       lights: worldLights,
@@ -2812,7 +2962,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     set({ _realtimeChannel: null })
     // Save current world first (immediate, not debounced) — but ONLY if world was loaded
     if (get()._worldReady) {
-      const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
+      const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
       const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
         windows: placedAgentWindows,
         avatars: placedAgentAvatars,
@@ -2822,7 +2972,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       // the LLM hasn't materialized anything yet. Using objects.length (not name)
       // because the scene name gets updated mid-stream before objects arrive.
       const completedScenes = craftedScenes.filter(s => s.objects.length > 0)
-      saveWorld({ terrain: terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes: completedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, spatialWebObjects, transforms: normalizedAgentWorldState.transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: normalizedAgentWorldState.windows, agentAvatars: normalizedAgentWorldState.avatars }, activeWorldId)
+      saveWorld({ terrain: terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes: completedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms: normalizedAgentWorldState.transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: normalizedAgentWorldState.windows, agentAvatars: normalizedAgentWorldState.avatars }, activeWorldId)
     }
 
     // ░▒▓ Block saves during transition — prevents empty state nuke ▓▒░
@@ -2909,13 +3059,13 @@ export const useOasisStore = create<OasisState>((set, get) => {
     // Save current world first — only if world was loaded (prevent empty-state nuke)
     cancelPendingSave()
     if (get()._worldReady) {
-      const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
+      const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
       const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
         windows: placedAgentWindows,
         avatars: placedAgentAvatars,
         transforms,
       })
-      saveWorld({ terrain: terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, spatialWebObjects, transforms: normalizedAgentWorldState.transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: normalizedAgentWorldState.windows, agentAvatars: normalizedAgentWorldState.avatars }, activeWorldId)
+      saveWorld({ terrain: terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms: normalizedAgentWorldState.transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: normalizedAgentWorldState.windows, agentAvatars: normalizedAgentWorldState.avatars }, activeWorldId)
     }
 
     // Create and switch to new world (async) — seed with default lights so it's not pitch black
@@ -2937,6 +3087,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
           placedCatalogAssets: [],
           portalGates: [],
           spatialWebObjects: [],
+          paintStrokes: [],
+          text3dObjects: [],
           placedAgentWindows: [],
           placedAgentAvatars: [],
           liveAgentAvatarAudio: {},
@@ -3444,8 +3596,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
     // Save current world before entering view mode (if not already viewing)
     if (!get().isViewMode && get()._worldReady) {
       cancelPendingSave()
-      const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
-      saveWorld({ terrain: terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, spatialWebObjects, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: placedAgentWindows, agentAvatars: placedAgentAvatars }, activeWorldId)
+      const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
+      saveWorld({ terrain: terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: placedAgentWindows, agentAvatars: placedAgentAvatars }, activeWorldId)
     }
 
     // Set view mode flag IMMEDIATELY — prevents initWorlds/loadWorldState from overwriting

@@ -17,6 +17,8 @@ import type { PortalGate } from '../portal-gates'
 import type { AgentWindow, AgentAvatar } from '../../store/oasisStore'
 import type { WorldWriteDecision } from './world-access'
 import type { SpatialWebObject } from '../spatial-web'
+import type { PaintStroke } from './paint-stroke'
+import type { Text3DObject } from './text-3d-object'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // WORLD STATE — the serializable snapshot of everything in a single Forge world
@@ -58,6 +60,10 @@ export interface WorldState {
   agentWindows?: AgentWindow[]
   /** Embodied agent avatars placed in the world */
   agentAvatars?: AgentAvatar[]
+  /** Paint strokes — wizardry tubes/ribbons drawn in 3-space */
+  paintStrokes?: PaintStroke[]
+  /** 3D text objects — extruded shiny words placed in 3-space */
+  text3dObjects?: Text3DObject[]
   savedAt: string
 }
 

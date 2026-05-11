@@ -281,13 +281,24 @@ const SETTINGS_MENU_OPACITY_KEY = 'oasis-settings-menu-opacity'
 const MOBILE_POSTFX_DEFAULTS_KEY = 'oasis-mobile-postfx-defaults-v1'
 
 function getDeviceDefaultSettings(): OasisSettings {
+  // Hosted Oasis: visitors aren't building, they're hanging out. The helper
+  // grid is a builder tool. Default it off in hosted so the lobby looks
+  // like a place instead of a development scene. Local devs keep the grid.
+  const hostedDefaults: Partial<OasisSettings> =
+    typeof window !== 'undefined'
+    && (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_OASIS_MODE === 'hosted'
+      || /(?:^|\.)04515\.xyz$/.test(window.location.hostname || ''))
+    ? { showGrid: false }
+    : {}
+
   if (typeof window === 'undefined' || !isProbablyMobileDevice()) {
-    return defaultSettings
+    return { ...defaultSettings, ...hostedDefaults }
   }
   return {
     ...defaultSettings,
     bloomEnabled: false,
     vignetteEnabled: false,
+    ...hostedDefaults,
   }
 }
 
@@ -1956,8 +1967,12 @@ export default function Scene() {
         </button>
       )}
 
-      {/* ░▒▓ LOADING OVERLAY ▓▒░ */}
-      <OasisLoader />
+      {/* ░▒▓ LOADING OVERLAY — removed. WorldLoadingBar (subscribe via
+          THREE.DefaultLoadingManager, mounted further up the tree) covers
+          the same data with less visual noise and no double-counting.
+          OasisLoader's useProgress() hook was reading the SAME aggregate
+          and rendering a parallel "channeling bytes" pill, which is why
+          both appeared simultaneously after a state-sync. ▓▒░ */}
 
       {/* ░▒▓ AGENT WINDOW PORTALS — offscreen DOM for 3D window textures ▓▒░ */}
       <AgentWindowPortals />

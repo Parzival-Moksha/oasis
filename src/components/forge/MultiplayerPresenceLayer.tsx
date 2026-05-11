@@ -16,8 +16,14 @@ import { useOasisStore } from '@/store/oasisStore'
 import { RemoteVRMAvatar } from './RemoteVRMAvatar'
 
 const INPUT_SEND_INTERVAL_MS = 33
-const INPUT_POSITION_EPSILON = 0.02
-const INPUT_YAW_EPSILON = 0.015
+// Position jitter epsilon for "did the player actually move?" — 5cm is well
+// above VRM spring physics + camera bobbing noise but below any human walk
+// step. Stricter values (2cm before) made stationary remotes get classified
+// as walking on the receive side because their client kept emitting tiny
+// drift positions. Y is ignored separately — terrain sampling under a
+// stationary avatar can shift Y by >2cm without any actual movement intent.
+const INPUT_POSITION_EPSILON = 0.05
+const INPUT_YAW_EPSILON = 0.04
 const REMOTE_RENDER_DELAY_MS = 120
 const REMOTE_SNAPSHOT_BUFFER = 6
 const REMOTE_POSITION_CATCHUP = 9
@@ -472,9 +478,14 @@ export function MultiplayerPresenceLayer() {
     if (now - lastSentAtRef.current < INPUT_SEND_INTERVAL_MS) return
 
     const last = lastSentPoseRef.current
+    // Only horizontal motion counts as "moved." Y is sampled from the terrain
+    // height field under the avatar and shifts when the brush deforms the
+    // ground nearby — that's not the player walking, and treating it as such
+    // pushed peers' walk animations on perpetually. Y is still SENT (line
+    // below) so portal arrivals + height changes propagate, but it doesn't
+    // trigger the throttled send.
     const moved = !last
       || Math.abs(pose.position[0] - last.position[0]) > INPUT_POSITION_EPSILON
-      || Math.abs(pose.position[1] - last.position[1]) > INPUT_POSITION_EPSILON
       || Math.abs(pose.position[2] - last.position[2]) > INPUT_POSITION_EPSILON
       || Math.abs(pose.yaw - last.yaw) > INPUT_YAW_EPSILON
 

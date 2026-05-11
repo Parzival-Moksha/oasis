@@ -120,9 +120,20 @@ export function installWorldLoadProgress() {
 
   mgr.onError = (url: string) => {
     // Treat error as "this URL is no longer pending" — without this, total >
-    // loaded forever and the bar never closes.
-    state = { ...state, currentUrl: url }
+    // loaded forever and the bar never closes. The comment was right; the
+    // implementation wasn't doing it. THREE.LoadingManager's internal
+    // bookkeeping doesn't auto-clear errored URLs from the pending set,
+    // so we bump `loaded` ourselves to keep loaded === total reachable.
+    const bumpedLoaded = Math.min(state.total, state.loaded + 1)
+    state = {
+      ...state,
+      loaded: bumpedLoaded,
+      progress: state.total > 0 ? bumpedLoaded / state.total : 1,
+      isLoading: bumpedLoaded < state.total,
+      currentUrl: url,
+    }
     emit()
+    if (state.loaded >= state.total) setLoadingFalseDebounced()
     if (prevOnError) prevOnError(url)
   }
   // Mark used to satisfy TS noUnusedLocals — these are bound to closures.

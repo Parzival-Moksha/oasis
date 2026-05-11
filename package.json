@@ -23,7 +23,6 @@
   "dependencies": {
     "@a2ui/web_core": "0.9.2",
     "@google/genai": "^2.0.0",
-    "colyseus.js": "^0.16.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@pixiv/three-vrm": "^3.5.0",
     "@prisma/client": "^6.19.2",
@@ -31,6 +30,7 @@
     "@react-three/fiber": "^8.15.0",
     "@react-three/postprocessing": "^2.16.0",
     "@zumer/snapdom": "^2.6.0",
+    "colyseus.js": "^0.16.0",
     "ffmpeg-static": "^5.3.0",
     "next": "14.2.35",
     "next-auth": "5.0.0-beta.30",
@@ -57,6 +57,8 @@
     ]
   },
   "devDependencies": {
+    "@gltf-transform/core": "^4.3.0",
+    "@gltf-transform/functions": "^4.3.0",
     "@playwright/test": "^1.58.2",
     "@types/node": "^20.0.0",
     "@types/react": "^18.2.0",

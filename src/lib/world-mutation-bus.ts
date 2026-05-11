@@ -1,6 +1,8 @@
 'use client'
 
 import type { CatalogPlacement, WorldLight } from '@/lib/conjure/types'
+import type { PaintStroke, PaintStrokeStyle } from '@/lib/forge/paint-stroke'
+import type { Text3DObject } from '@/lib/forge/text-3d-object'
 
 export type WorldMutation =
   | { kind: 'object_added'; payload: CatalogPlacement }
@@ -13,6 +15,15 @@ export type WorldMutation =
   | { kind: 'light_added'; payload: { light: WorldLight } }
   | { kind: 'light_removed'; payload: { id: string } }
   | { kind: 'light_updated'; payload: { id: string; updates: Partial<WorldLight> } }
+  // ─═̷─ Paint strokes (live broadcast, csillagszóró-tipped) ─═̷─
+  | { kind: 'stroke_started'; payload: { strokeId: string; authorId: string; authorColor: string; style: PaintStrokeStyle } }
+  | { kind: 'stroke_pointed'; payload: { strokeId: string; point: [number, number, number] } }
+  | { kind: 'stroke_ended';   payload: { strokeId: string; finalStroke: PaintStroke } }
+  | { kind: 'stroke_removed'; payload: { id: string } }
+  // ─═̷─ 3D text objects ─═̷─
+  | { kind: 'text3d_added';   payload: Text3DObject }
+  | { kind: 'text3d_removed'; payload: { id: string } }
+  | { kind: 'text3d_updated'; payload: { id: string; updates: Partial<Text3DObject> } }
 
 type Sender = (mutation: WorldMutation) => void
 type Listener = (mutation: WorldMutation) => void

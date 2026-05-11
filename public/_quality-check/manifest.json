@@ -1,0 +1,71 @@
+{
+  "generatedAt": "2026-05-11T23:42:00.755Z",
+  "candidates": [
+    {
+      "label": "Bruno (VRM, faces matter)",
+      "src": "/avatars/gallery/Bruno.vrm"
+    },
+    {
+      "label": "SciFi Crate (industrial textures)",
+      "src": "/models/scifi-essentials/Prop_Crate.gltf"
+    },
+    {
+      "label": "Conjured showcase (photographic textures)",
+      "src": "/conjured/conj_mn6ogn4ae05j.glb"
+    },
+    {
+      "label": "Quaternius base character (skin/hair)",
+      "src": "/models/quaternius-base-characters/characters/Superhero_Male_FullBody.gltf"
+    }
+  ],
+  "levels": [
+    {
+      "key": "L1_1k",
+      "label": "Standard 1024",
+      "colorSize": 1024,
+      "colorQuality": 82,
+      "normalSize": 1024
+    },
+    {
+      "key": "L2_512",
+      "label": "Aggressive 512",
+      "colorSize": 512,
+      "colorQuality": 70,
+      "normalSize": 512
+    }
+  ],
+  "report": [
+    {
+      "candidate": "SciFi Crate (industrial textures)",
+      "level": "Standard 1024",
+      "srcMB": "0.00",
+      "outMB": "1.43",
+      "outPath": "/_quality-check/Prop_Crate_L1_1k.glb",
+      "srcPath": "/models/scifi-essentials/Prop_Crate.gltf"
+    },
+    {
+      "candidate": "SciFi Crate (industrial textures)",
+      "level": "Aggressive 512",
+      "srcMB": "0.00",
+      "outMB": "0.53",
+      "outPath": "/_quality-check/Prop_Crate_L2_512.glb",
+      "srcPath": "/models/scifi-essentials/Prop_Crate.gltf"
+    },
+    {
+      "candidate": "Conjured showcase (photographic textures)",
+      "level": "Standard 1024",
+      "srcMB": "40.00",
+      "outMB": "39.88",
+      "outPath": "/_quality-check/conj_mn6ogn4ae05j_L1_1k.glb",
+      "srcPath": "/conjured/conj_mn6ogn4ae05j.glb"
+    },
+    {
+      "candidate": "Conjured showcase (photographic textures)",
+      "level": "Aggressive 512",
+      "srcMB": "40.00",
+      "outMB": "39.69",
+      "outPath": "/_quality-check/conj_mn6ogn4ae05j_L2_512.glb",
+      "srcPath": "/conjured/conj_mn6ogn4ae05j.glb"
+    }
+  ]
+}
