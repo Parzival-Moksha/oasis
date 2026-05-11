@@ -18,20 +18,25 @@ class WorldMutationBus {
   }
 
   broadcast(mutation: WorldMutation): void {
-    if (!this.sender) return
+    if (!this.sender) {
+      console.info('[oasis-bus] broadcast skipped (no sender):', mutation.kind)
+      return
+    }
     try {
+      console.info('[oasis-bus] broadcast', mutation.kind)
       this.sender(mutation)
-    } catch {
-      // sender errored; swallow until reconnect logic exists
+    } catch (error) {
+      console.warn('[oasis-bus] sender errored', error)
     }
   }
 
   applyIncoming(mutation: WorldMutation): void {
+    console.info('[oasis-bus] apply incoming', mutation.kind, 'listeners=', this.listeners.size)
     for (const listener of this.listeners) {
       try {
         listener(mutation)
-      } catch {
-        // ignore per-listener errors
+      } catch (error) {
+        console.warn('[oasis-bus] listener errored', error)
       }
     }
   }

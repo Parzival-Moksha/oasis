@@ -1,6 +1,6 @@
 'use client'
 
-import { Text } from '@react-three/drei'
+import { Billboard, Text } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
@@ -18,8 +18,10 @@ import { useOasisStore } from '@/store/oasisStore'
 const INPUT_SEND_INTERVAL_MS = 33
 const INPUT_POSITION_EPSILON = 0.02
 const INPUT_YAW_EPSILON = 0.015
-const REMOTE_RENDER_DELAY_MS = 80
-const REMOTE_SNAPSHOT_BUFFER = 4
+const REMOTE_RENDER_DELAY_MS = 120
+const REMOTE_SNAPSHOT_BUFFER = 6
+const REMOTE_POSITION_CATCHUP = 9
+const REMOTE_YAW_CATCHUP = 9
 
 function makePresenceId(): string {
   if (typeof window !== 'undefined') {
@@ -147,11 +149,12 @@ function RemotePresenceAvatar({ player }: { player: MultiplayerRoomPlayer }) {
       }
     }
 
-    const catchUp = 1 - Math.exp(-22 * delta)
+    const catchUp = 1 - Math.exp(-REMOTE_POSITION_CATCHUP * delta)
     group.position.x += (target.position[0] - group.position.x) * catchUp
     group.position.y += (target.position[1] - group.position.y) * catchUp
     group.position.z += (target.position[2] - group.position.z) * catchUp
-    group.rotation.y += shortAngle(target.yaw, group.rotation.y) * Math.min(1, delta * 18)
+    const yawCatch = 1 - Math.exp(-REMOTE_YAW_CATCHUP * delta)
+    group.rotation.y += shortAngle(target.yaw, group.rotation.y) * yawCatch
   })
 
   return (
@@ -172,18 +175,18 @@ function RemotePresenceAvatar({ player }: { player: MultiplayerRoomPlayer }) {
         <ringGeometry args={[0.34, 0.42, 32]} />
         <meshBasicMaterial color={color} transparent opacity={0.54} />
       </mesh>
-      <Text
-        position={[0, 1.86, 0]}
-        rotation={[0, Math.PI, 0]}
-        fontSize={0.16}
-        anchorX="center"
-        anchorY="middle"
-        outlineWidth={0.01}
-        outlineColor="#020617"
-      >
-        {player.displayName}
-        <meshBasicMaterial color="#e0f2fe" />
-      </Text>
+      <Billboard position={[0, 1.86, 0]}>
+        <Text
+          fontSize={0.16}
+          anchorX="center"
+          anchorY="middle"
+          outlineWidth={0.01}
+          outlineColor="#020617"
+        >
+          {player.displayName}
+          <meshBasicMaterial color="#e0f2fe" />
+        </Text>
+      </Billboard>
     </group>
   )
 }

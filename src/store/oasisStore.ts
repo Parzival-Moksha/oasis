@@ -23,6 +23,7 @@ import {
   loadPublicWorld,
   type WorldMeta,
 } from '../lib/forge/world-persistence'
+import { worldMutationBus } from '../lib/world-mutation-bus'
 import {
   WELCOME_HUB_WORLD_ID,
   isWelcomeHubWorld,
@@ -1204,9 +1205,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       }))
     })
     if (placedPlacement) {
-      void import('../lib/world-mutation-bus').then(mod => {
-        mod.worldMutationBus.broadcast({ kind: 'object_added', payload: placedPlacement! })
-      })
+      worldMutationBus.broadcast({ kind: 'object_added', payload: placedPlacement })
     }
     setTimeout(() => get().saveWorldState(), 100)
     // XP for placing objects
@@ -1220,9 +1219,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
       }))
     })
-    void import('../lib/world-mutation-bus').then(mod => {
-      mod.worldMutationBus.broadcast({ kind: 'object_removed', payload: { id } })
-    })
+    worldMutationBus.broadcast({ kind: 'object_removed', payload: { id } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   applyRemoteCatalogPlacement: (placement: CatalogPlacement) => {
