@@ -24,7 +24,7 @@ import {
 import { getOffscreenUIManager } from '../../lib/forge/offscreen-ui-manager'
 import { AgentWindowSurface } from './AgentWindowSurface'
 import { useInputManager } from '../../lib/input-manager'
-import { getViewerUserIdClient } from '../../lib/viewer-identity'
+import { getViewerUserIdClient } from '../../lib/viewer-identity-client'
 import {
   FourBarFrame,
   NeonFrame,

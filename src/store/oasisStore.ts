@@ -71,7 +71,7 @@ import {
   type SpatialWebValue,
 } from '../lib/spatial-web'
 import { createPortalZeroGoogleFormsAltar, createPortalZeroGoogleTestAltar } from '../lib/spatial-web-presets'
-import { getViewerUserIdClient } from '../lib/viewer-identity'
+import { getViewerUserIdClient } from '../lib/viewer-identity-client'
 
 const SPATIAL_WEB_WORLD_TOOL_ALLOWLIST = new Set([
   'set_sky',

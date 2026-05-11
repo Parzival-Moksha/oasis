@@ -14,8 +14,12 @@
 
 import { cookies } from 'next/headers'
 
-export const VIEWER_COOKIE = 'oasis-viewer-id'
-export const VIEWER_FALLBACK = 'local-user'
+// VIEWER_COOKIE / VIEWER_FALLBACK are re-exported here for back-compat with
+// existing imports. The client-safe variant lives in viewer-identity-client.ts
+// so client bundles don't have to drag in next/headers.
+export { VIEWER_COOKIE, VIEWER_FALLBACK, getViewerUserIdClient } from './viewer-identity-client'
+import { VIEWER_COOKIE, VIEWER_FALLBACK } from './viewer-identity-client'
+
 export const VIEWER_COOKIE_MAX_AGE = 60 * 60 * 24 * 365 // 1 year
 
 function isValidViewerId(value: unknown): value is string {
@@ -43,21 +47,6 @@ export async function getViewerUserId(): Promise<string> {
     // Cookies API not available (e.g. during build) — fall back.
   }
   return VIEWER_FALLBACK
-}
-
-/** Synchronous client-side read of the viewer cookie. Returns VIEWER_FALLBACK
- *  if `document` is unavailable (SSR) or the cookie is missing. Safe to call
- *  from any client component, store action, or browser event handler. */
-export function getViewerUserIdClient(): string {
-  if (typeof document === 'undefined') return VIEWER_FALLBACK
-  const match = document.cookie.match(/(?:^|;\s*)oasis-viewer-id=([^;]+)/)
-  if (!match) return VIEWER_FALLBACK
-  try {
-    const decoded = decodeURIComponent(match[1])
-    return isValidViewerId(decoded) ? decoded : VIEWER_FALLBACK
-  } catch {
-    return VIEWER_FALLBACK
-  }
 }
 
 /** Read-or-create the cookie and return the viewer id. Only call from a
