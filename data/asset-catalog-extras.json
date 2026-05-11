@@ -229,7 +229,31 @@
     "ku_window_wide_a",
     "ku_window_wide_b",
     "ku_window_wide_c",
-    "ku_window_wide_d"
+    "ku_window_wide_d",
+    "qf_anvil_log",
+    "qf_barrel",
+    "qf_barrel_apples",
+    "qf_banner_1",
+    "qf_bookcase",
+    "qf_bookstand",
+    "qf_cauldron",
+    "qf_chandelier",
+    "qf_chest_wood",
+    "qf_candlestick_stand",
+    "qf_cage_small",
+    "qf_chalice",
+    "qf_coin_pile",
+    "qf_dummy",
+    "qf_lantern_wall",
+    "qf_potion_1",
+    "qf_shield_wooden",
+    "qf_sword_bronze",
+    "qf_stall_cart",
+    "qf_stall_empty",
+    "qf_table_large",
+    "qf_torch_metal",
+    "qf_weapon_stand",
+    "qf_workbench"
   ],
   "additions": [
     {
@@ -2940,6 +2964,5071 @@
       "path": "/models/stylized-nature/twistedtree_5.gltf",
       "category": "stylized-nature",
       "defaultScale": 1
+    },
+    {
+      "id": "qmv_balcony_cross_corner",
+      "name": "Balcony Cross Corner",
+      "path": "/models/quaternius-medieval-village/Balcony_Cross_Corner.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "balcony",
+        "corner",
+        "cross",
+        "edge",
+        "medieval",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_balcony_cross_straight",
+      "name": "Balcony Cross Straight",
+      "path": "/models/quaternius-medieval-village/Balcony_Cross_Straight.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "balcony",
+        "cross",
+        "medieval",
+        "straight",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_balcony_simple_corner",
+      "name": "Balcony Simple Corner",
+      "path": "/models/quaternius-medieval-village/Balcony_Simple_Corner.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "balcony",
+        "corner",
+        "edge",
+        "medieval",
+        "simple",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_corner_exteriorwide_brick",
+      "name": "Corner Exterior Wide Brick",
+      "path": "/models/quaternius-medieval-village/Corner_ExteriorWide_Brick.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick",
+        "corner",
+        "edge",
+        "exterior",
+        "masonry",
+        "medieval",
+        "stone",
+        "village",
+        "wide"
+      ]
+    },
+    {
+      "id": "qmv_corner_exteriorwide_wood",
+      "name": "Corner Exterior Wide Wood",
+      "path": "/models/quaternius-medieval-village/Corner_ExteriorWide_Wood.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "corner",
+        "edge",
+        "exterior",
+        "medieval",
+        "plank",
+        "timber",
+        "village",
+        "wide",
+        "wood"
+      ]
+    },
+    {
+      "id": "qmv_corner_exterior_brick",
+      "name": "Corner Exterior Brick",
+      "path": "/models/quaternius-medieval-village/Corner_Exterior_Brick.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick",
+        "corner",
+        "edge",
+        "exterior",
+        "masonry",
+        "medieval",
+        "stone",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_corner_exterior_topdown",
+      "name": "Corner Exterior Top Down",
+      "path": "/models/quaternius-medieval-village/Corner_Exterior_TopDown.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "corner",
+        "down",
+        "edge",
+        "exterior",
+        "medieval",
+        "top",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_corner_exterior_toponly",
+      "name": "Corner Exterior Top Only",
+      "path": "/models/quaternius-medieval-village/Corner_Exterior_TopOnly.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "corner",
+        "edge",
+        "exterior",
+        "medieval",
+        "only",
+        "top",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_corner_exterior_wood",
+      "name": "Corner Exterior Wood",
+      "path": "/models/quaternius-medieval-village/Corner_Exterior_Wood.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "corner",
+        "edge",
+        "exterior",
+        "medieval",
+        "plank",
+        "timber",
+        "village",
+        "wood"
+      ]
+    },
+    {
+      "id": "qmv_corner_interior_big",
+      "name": "Corner Interior Big",
+      "path": "/models/quaternius-medieval-village/Corner_Interior_Big.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "big",
+        "corner",
+        "edge",
+        "interior",
+        "medieval",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_corner_interior_small",
+      "name": "Corner Interior Small",
+      "path": "/models/quaternius-medieval-village/Corner_Interior_Small.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "corner",
+        "edge",
+        "interior",
+        "medieval",
+        "small",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_doorframe_flat_brick",
+      "name": "Door Frame Flat Brick",
+      "path": "/models/quaternius-medieval-village/DoorFrame_Flat_Brick.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick",
+        "door",
+        "entry",
+        "flat",
+        "frame",
+        "masonry",
+        "medieval",
+        "portal",
+        "stone",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_doorframe_flat_wooddark",
+      "name": "Door Frame Flat Wood Dark",
+      "path": "/models/quaternius-medieval-village/DoorFrame_Flat_WoodDark.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "dark",
+        "door",
+        "entry",
+        "flat",
+        "frame",
+        "medieval",
+        "plank",
+        "portal",
+        "timber",
+        "village",
+        "wood"
+      ]
+    },
+    {
+      "id": "qmv_doorframe_round_brick",
+      "name": "Door Frame Round Brick",
+      "path": "/models/quaternius-medieval-village/DoorFrame_Round_Brick.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick",
+        "door",
+        "entry",
+        "frame",
+        "masonry",
+        "medieval",
+        "portal",
+        "round",
+        "stone",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_doorframe_round_wooddark",
+      "name": "Door Frame Round Wood Dark",
+      "path": "/models/quaternius-medieval-village/DoorFrame_Round_WoodDark.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "dark",
+        "door",
+        "entry",
+        "frame",
+        "medieval",
+        "plank",
+        "portal",
+        "round",
+        "timber",
+        "village",
+        "wood"
+      ]
+    },
+    {
+      "id": "qmv_door_1_flat",
+      "name": "Door 1 Flat",
+      "path": "/models/quaternius-medieval-village/Door_1_Flat.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "door",
+        "entry",
+        "flat",
+        "medieval",
+        "portal",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_door_1_round",
+      "name": "Door 1 Round",
+      "path": "/models/quaternius-medieval-village/Door_1_Round.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "door",
+        "entry",
+        "medieval",
+        "portal",
+        "round",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_door_2_flat",
+      "name": "Door 2 Flat",
+      "path": "/models/quaternius-medieval-village/Door_2_Flat.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "door",
+        "entry",
+        "flat",
+        "medieval",
+        "portal",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_door_4_flat",
+      "name": "Door 4 Flat",
+      "path": "/models/quaternius-medieval-village/Door_4_Flat.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "door",
+        "entry",
+        "flat",
+        "medieval",
+        "portal",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_door_4_round",
+      "name": "Door 4 Round",
+      "path": "/models/quaternius-medieval-village/Door_4_Round.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "door",
+        "entry",
+        "medieval",
+        "portal",
+        "round",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_door_8_flat",
+      "name": "Door 8 Flat",
+      "path": "/models/quaternius-medieval-village/Door_8_Flat.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "door",
+        "entry",
+        "flat",
+        "medieval",
+        "portal",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_door_8_round",
+      "name": "Door 8 Round",
+      "path": "/models/quaternius-medieval-village/Door_8_Round.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "door",
+        "entry",
+        "medieval",
+        "portal",
+        "round",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_floor_brick",
+      "name": "Floor Brick",
+      "path": "/models/quaternius-medieval-village/Floor_Brick.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick",
+        "floor",
+        "ground",
+        "masonry",
+        "medieval",
+        "stone",
+        "tile",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_floor_redbrick",
+      "name": "Floor Red Brick",
+      "path": "/models/quaternius-medieval-village/Floor_RedBrick.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick",
+        "floor",
+        "ground",
+        "masonry",
+        "medieval",
+        "red",
+        "stone",
+        "tile",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_floor_unevenbrick",
+      "name": "Floor Uneven Brick",
+      "path": "/models/quaternius-medieval-village/Floor_UnevenBrick.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick",
+        "floor",
+        "ground",
+        "masonry",
+        "medieval",
+        "stone",
+        "tile",
+        "uneven",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_floor_wooddark",
+      "name": "Floor Wood Dark",
+      "path": "/models/quaternius-medieval-village/Floor_WoodDark.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "dark",
+        "floor",
+        "ground",
+        "medieval",
+        "plank",
+        "tile",
+        "timber",
+        "village",
+        "wood"
+      ]
+    },
+    {
+      "id": "qmv_floor_wooddark_half1",
+      "name": "Floor Wood Dark Half1",
+      "path": "/models/quaternius-medieval-village/Floor_WoodDark_Half1.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "dark",
+        "floor",
+        "ground",
+        "half1",
+        "medieval",
+        "plank",
+        "tile",
+        "timber",
+        "village",
+        "wood"
+      ]
+    },
+    {
+      "id": "qmv_floor_wooddark_half2",
+      "name": "Floor Wood Dark Half2",
+      "path": "/models/quaternius-medieval-village/Floor_WoodDark_Half2.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "dark",
+        "floor",
+        "ground",
+        "half2",
+        "medieval",
+        "plank",
+        "tile",
+        "timber",
+        "village",
+        "wood"
+      ]
+    },
+    {
+      "id": "qmv_floor_wooddark_half3",
+      "name": "Floor Wood Dark Half3",
+      "path": "/models/quaternius-medieval-village/Floor_WoodDark_Half3.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "dark",
+        "floor",
+        "ground",
+        "half3",
+        "medieval",
+        "plank",
+        "tile",
+        "timber",
+        "village",
+        "wood"
+      ]
+    },
+    {
+      "id": "qmv_floor_wooddark_overhangcorner",
+      "name": "Floor Wood Dark Overhang Corner",
+      "path": "/models/quaternius-medieval-village/Floor_WoodDark_OverhangCorner.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "corner",
+        "dark",
+        "edge",
+        "floor",
+        "ground",
+        "medieval",
+        "overhang",
+        "plank",
+        "tile",
+        "timber",
+        "village",
+        "wood"
+      ]
+    },
+    {
+      "id": "qmv_floor_wooddark_overhangcorner2",
+      "name": "Floor Wood Dark Overhang Corner2",
+      "path": "/models/quaternius-medieval-village/Floor_WoodDark_OverhangCorner2.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "corner2",
+        "dark",
+        "floor",
+        "ground",
+        "medieval",
+        "overhang",
+        "plank",
+        "tile",
+        "timber",
+        "village",
+        "wood"
+      ]
+    },
+    {
+      "id": "qmv_floor_woodlight",
+      "name": "Floor Wood Light",
+      "path": "/models/quaternius-medieval-village/Floor_WoodLight.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "floor",
+        "ground",
+        "lamp",
+        "light",
+        "lighting",
+        "medieval",
+        "plank",
+        "tile",
+        "timber",
+        "village",
+        "wood"
+      ]
+    },
+    {
+      "id": "qmv_floor_woodlight_overhangcorner",
+      "name": "Floor Wood Light Overhang Corner",
+      "path": "/models/quaternius-medieval-village/Floor_WoodLight_OverhangCorner.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "corner",
+        "edge",
+        "floor",
+        "ground",
+        "lamp",
+        "light",
+        "lighting",
+        "medieval",
+        "overhang",
+        "plank",
+        "tile",
+        "timber",
+        "village",
+        "wood"
+      ]
+    },
+    {
+      "id": "qmv_floor_woodlight_overhangcorner2",
+      "name": "Floor Wood Light Overhang Corner2",
+      "path": "/models/quaternius-medieval-village/Floor_WoodLight_OverhangCorner2.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "corner2",
+        "floor",
+        "ground",
+        "lamp",
+        "light",
+        "lighting",
+        "medieval",
+        "overhang",
+        "plank",
+        "tile",
+        "timber",
+        "village",
+        "wood"
+      ]
+    },
+    {
+      "id": "qmv_holecover_90angle",
+      "name": "Hole Cover 90Angle",
+      "path": "/models/quaternius-medieval-village/HoleCover_90Angle.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "90angle",
+        "cover",
+        "hole",
+        "medieval",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_holecover_90half",
+      "name": "Hole Cover 90Half",
+      "path": "/models/quaternius-medieval-village/HoleCover_90Half.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "90half",
+        "cover",
+        "hole",
+        "medieval",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_holecover_90stairs",
+      "name": "Hole Cover 90Stairs",
+      "path": "/models/quaternius-medieval-village/HoleCover_90Stairs.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "90stairs",
+        "cover",
+        "hole",
+        "medieval",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_holecover_straight",
+      "name": "Hole Cover Straight",
+      "path": "/models/quaternius-medieval-village/HoleCover_Straight.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "cover",
+        "hole",
+        "medieval",
+        "straight",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_holecover_straighthalf",
+      "name": "Hole Cover Straight Half",
+      "path": "/models/quaternius-medieval-village/HoleCover_StraightHalf.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "cover",
+        "half",
+        "hole",
+        "medieval",
+        "straight",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_overhang_plaster_corner",
+      "name": "Overhang Plaster Corner",
+      "path": "/models/quaternius-medieval-village/Overhang_Plaster_Corner.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "corner",
+        "edge",
+        "medieval",
+        "overhang",
+        "plaster",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_overhang_plaster_corner_front",
+      "name": "Overhang Plaster Corner Front",
+      "path": "/models/quaternius-medieval-village/Overhang_Plaster_Corner_Front.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "corner",
+        "edge",
+        "front",
+        "medieval",
+        "overhang",
+        "plaster",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_overhang_plaster_long",
+      "name": "Overhang Plaster Long",
+      "path": "/models/quaternius-medieval-village/Overhang_Plaster_Long.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "long",
+        "medieval",
+        "overhang",
+        "plaster",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_overhang_plaster_short",
+      "name": "Overhang Plaster Short",
+      "path": "/models/quaternius-medieval-village/Overhang_Plaster_Short.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "medieval",
+        "overhang",
+        "plaster",
+        "short",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_overhang_roofincline_plaster",
+      "name": "Overhang Roof Incline Plaster",
+      "path": "/models/quaternius-medieval-village/Overhang_RoofIncline_Plaster.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "incline",
+        "medieval",
+        "overhang",
+        "plaster",
+        "roof",
+        "rooftop",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_overhang_roofincline_unevenbricks",
+      "name": "Overhang Roof Incline Uneven Bricks",
+      "path": "/models/quaternius-medieval-village/Overhang_RoofIncline_UnevenBricks.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "bricks",
+        "incline",
+        "medieval",
+        "overhang",
+        "roof",
+        "rooftop",
+        "uneven",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_overhang_roof_plaster",
+      "name": "Overhang Roof Plaster",
+      "path": "/models/quaternius-medieval-village/Overhang_Roof_Plaster.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "medieval",
+        "overhang",
+        "plaster",
+        "roof",
+        "rooftop",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_overhang_roof_unevenbricks",
+      "name": "Overhang Roof Uneven Bricks",
+      "path": "/models/quaternius-medieval-village/Overhang_Roof_UnevenBricks.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "bricks",
+        "medieval",
+        "overhang",
+        "roof",
+        "rooftop",
+        "uneven",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_overhang_side_plaster_long_l",
+      "name": "Overhang Side Plaster Long L",
+      "path": "/models/quaternius-medieval-village/Overhang_Side_Plaster_Long_L.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "long",
+        "medieval",
+        "overhang",
+        "plaster",
+        "side",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_overhang_side_plaster_long_r",
+      "name": "Overhang Side Plaster Long R",
+      "path": "/models/quaternius-medieval-village/Overhang_Side_Plaster_Long_R.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "long",
+        "medieval",
+        "overhang",
+        "plaster",
+        "side",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_overhang_side_plaster_short_l",
+      "name": "Overhang Side Plaster Short L",
+      "path": "/models/quaternius-medieval-village/Overhang_Side_Plaster_Short_L.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "medieval",
+        "overhang",
+        "plaster",
+        "short",
+        "side",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_overhang_side_plaster_short_r",
+      "name": "Overhang Side Plaster Short R",
+      "path": "/models/quaternius-medieval-village/Overhang_Side_Plaster_Short_R.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "medieval",
+        "overhang",
+        "plaster",
+        "short",
+        "side",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_overhang_side_unevenbrick_long_l",
+      "name": "Overhang Side Uneven Brick Long L",
+      "path": "/models/quaternius-medieval-village/Overhang_Side_UnevenBrick_Long_L.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick",
+        "long",
+        "masonry",
+        "medieval",
+        "overhang",
+        "side",
+        "stone",
+        "uneven",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_overhang_side_unevenbrick_long_r",
+      "name": "Overhang Side Uneven Brick Long R",
+      "path": "/models/quaternius-medieval-village/Overhang_Side_UnevenBrick_Long_R.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick",
+        "long",
+        "masonry",
+        "medieval",
+        "overhang",
+        "side",
+        "stone",
+        "uneven",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_overhang_side_unevenbrick_short_l",
+      "name": "Overhang Side Uneven Brick Short L",
+      "path": "/models/quaternius-medieval-village/Overhang_Side_UnevenBrick_Short_L.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick",
+        "masonry",
+        "medieval",
+        "overhang",
+        "short",
+        "side",
+        "stone",
+        "uneven",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_overhang_side_unevenbrick_short_r",
+      "name": "Overhang Side Uneven Brick Short R",
+      "path": "/models/quaternius-medieval-village/Overhang_Side_UnevenBrick_Short_R.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick",
+        "masonry",
+        "medieval",
+        "overhang",
+        "short",
+        "side",
+        "stone",
+        "uneven",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_overhang_unevenbrick_corner",
+      "name": "Overhang Uneven Brick Corner",
+      "path": "/models/quaternius-medieval-village/Overhang_UnevenBrick_Corner.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick",
+        "corner",
+        "edge",
+        "masonry",
+        "medieval",
+        "overhang",
+        "stone",
+        "uneven",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_overhang_unevenbrick_corner_front",
+      "name": "Overhang Uneven Brick Corner Front",
+      "path": "/models/quaternius-medieval-village/Overhang_UnevenBrick_Corner_Front.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick",
+        "corner",
+        "edge",
+        "front",
+        "masonry",
+        "medieval",
+        "overhang",
+        "stone",
+        "uneven",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_overhang_unevenbrick_long",
+      "name": "Overhang Uneven Brick Long",
+      "path": "/models/quaternius-medieval-village/Overhang_UnevenBrick_Long.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick",
+        "long",
+        "masonry",
+        "medieval",
+        "overhang",
+        "stone",
+        "uneven",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_overhang_unevenbrick_short",
+      "name": "Overhang Uneven Brick Short",
+      "path": "/models/quaternius-medieval-village/Overhang_UnevenBrick_Short.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick",
+        "masonry",
+        "medieval",
+        "overhang",
+        "short",
+        "stone",
+        "uneven",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_prop_brick1",
+      "name": "Prop Brick1",
+      "path": "/models/quaternius-medieval-village/Prop_Brick1.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick1",
+        "decor",
+        "medieval",
+        "prop",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_prop_brick2",
+      "name": "Prop Brick2",
+      "path": "/models/quaternius-medieval-village/Prop_Brick2.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick2",
+        "decor",
+        "medieval",
+        "prop",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_prop_brick3",
+      "name": "Prop Brick3",
+      "path": "/models/quaternius-medieval-village/Prop_Brick3.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick3",
+        "decor",
+        "medieval",
+        "prop",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_prop_brick4",
+      "name": "Prop Brick4",
+      "path": "/models/quaternius-medieval-village/Prop_Brick4.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick4",
+        "decor",
+        "medieval",
+        "prop",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_prop_chimney2",
+      "name": "Prop Chimney2",
+      "path": "/models/quaternius-medieval-village/Prop_Chimney2.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "chimney2",
+        "decor",
+        "medieval",
+        "prop",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_prop_exteriorborder_corner",
+      "name": "Prop Exterior Border Corner",
+      "path": "/models/quaternius-medieval-village/Prop_ExteriorBorder_Corner.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "border",
+        "corner",
+        "decor",
+        "edge",
+        "exterior",
+        "medieval",
+        "prop",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_prop_exteriorborder_straight1",
+      "name": "Prop Exterior Border Straight1",
+      "path": "/models/quaternius-medieval-village/Prop_ExteriorBorder_Straight1.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "border",
+        "decor",
+        "exterior",
+        "medieval",
+        "prop",
+        "straight1",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_prop_exteriorborder_straight2",
+      "name": "Prop Exterior Border Straight2",
+      "path": "/models/quaternius-medieval-village/Prop_ExteriorBorder_Straight2.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "border",
+        "decor",
+        "exterior",
+        "medieval",
+        "prop",
+        "straight2",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_prop_metalfence_simple",
+      "name": "Prop Metal Fence Simple",
+      "path": "/models/quaternius-medieval-village/Prop_MetalFence_Simple.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "fence",
+        "iron",
+        "medieval",
+        "metal",
+        "prop",
+        "simple",
+        "steel",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_prop_support",
+      "name": "Prop Support",
+      "path": "/models/quaternius-medieval-village/Prop_Support.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "medieval",
+        "prop",
+        "support",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_prop_vine2",
+      "name": "Prop Vine2",
+      "path": "/models/quaternius-medieval-village/Prop_Vine2.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "medieval",
+        "prop",
+        "village",
+        "vine2"
+      ]
+    },
+    {
+      "id": "qmv_prop_vine4",
+      "name": "Prop Vine4",
+      "path": "/models/quaternius-medieval-village/Prop_Vine4.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "medieval",
+        "prop",
+        "village",
+        "vine4"
+      ]
+    },
+    {
+      "id": "qmv_prop_vine5",
+      "name": "Prop Vine5",
+      "path": "/models/quaternius-medieval-village/Prop_Vine5.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "medieval",
+        "prop",
+        "village",
+        "vine5"
+      ]
+    },
+    {
+      "id": "qmv_prop_vine6",
+      "name": "Prop Vine6",
+      "path": "/models/quaternius-medieval-village/Prop_Vine6.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "medieval",
+        "prop",
+        "village",
+        "vine6"
+      ]
+    },
+    {
+      "id": "qmv_prop_vine9",
+      "name": "Prop Vine9",
+      "path": "/models/quaternius-medieval-village/Prop_Vine9.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "medieval",
+        "prop",
+        "village",
+        "vine9"
+      ]
+    },
+    {
+      "id": "qmv_prop_woodenfence_extension1",
+      "name": "Prop Wooden Fence Extension1",
+      "path": "/models/quaternius-medieval-village/Prop_WoodenFence_Extension1.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "extension1",
+        "fence",
+        "medieval",
+        "prop",
+        "village",
+        "wooden"
+      ]
+    },
+    {
+      "id": "qmv_prop_woodenfence_extension2",
+      "name": "Prop Wooden Fence Extension2",
+      "path": "/models/quaternius-medieval-village/Prop_WoodenFence_Extension2.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "extension2",
+        "fence",
+        "medieval",
+        "prop",
+        "village",
+        "wooden"
+      ]
+    },
+    {
+      "id": "qmv_roof_2x4_roundtile",
+      "name": "Roof 2x4 Round Tile",
+      "path": "/models/quaternius-medieval-village/Roof_2x4_RoundTile.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "2x4",
+        "medieval",
+        "roof",
+        "rooftop",
+        "round",
+        "tile",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_frontsupports",
+      "name": "Roof Front Supports",
+      "path": "/models/quaternius-medieval-village/Roof_FrontSupports.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "front",
+        "medieval",
+        "roof",
+        "rooftop",
+        "supports",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_front_brick2",
+      "name": "Roof Front Brick2",
+      "path": "/models/quaternius-medieval-village/Roof_Front_Brick2.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick2",
+        "front",
+        "medieval",
+        "roof",
+        "rooftop",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_front_brick4",
+      "name": "Roof Front Brick4",
+      "path": "/models/quaternius-medieval-village/Roof_Front_Brick4.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick4",
+        "front",
+        "medieval",
+        "roof",
+        "rooftop",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_front_brick4_half_l",
+      "name": "Roof Front Brick4 Half L",
+      "path": "/models/quaternius-medieval-village/Roof_Front_Brick4_Half_L.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick4",
+        "front",
+        "half",
+        "medieval",
+        "roof",
+        "rooftop",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_front_brick4_half_r",
+      "name": "Roof Front Brick4 Half R",
+      "path": "/models/quaternius-medieval-village/Roof_Front_Brick4_Half_R.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick4",
+        "front",
+        "half",
+        "medieval",
+        "roof",
+        "rooftop",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_front_brick6",
+      "name": "Roof Front Brick6",
+      "path": "/models/quaternius-medieval-village/Roof_Front_Brick6.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick6",
+        "front",
+        "medieval",
+        "roof",
+        "rooftop",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_front_brick6_half_l",
+      "name": "Roof Front Brick6 Half L",
+      "path": "/models/quaternius-medieval-village/Roof_Front_Brick6_Half_L.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick6",
+        "front",
+        "half",
+        "medieval",
+        "roof",
+        "rooftop",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_front_brick6_half_r",
+      "name": "Roof Front Brick6 Half R",
+      "path": "/models/quaternius-medieval-village/Roof_Front_Brick6_Half_R.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick6",
+        "front",
+        "half",
+        "medieval",
+        "roof",
+        "rooftop",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_front_brick8",
+      "name": "Roof Front Brick8",
+      "path": "/models/quaternius-medieval-village/Roof_Front_Brick8.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick8",
+        "front",
+        "medieval",
+        "roof",
+        "rooftop",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_front_brick8_half_l",
+      "name": "Roof Front Brick8 Half L",
+      "path": "/models/quaternius-medieval-village/Roof_Front_Brick8_Half_L.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick8",
+        "front",
+        "half",
+        "medieval",
+        "roof",
+        "rooftop",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_front_brick8_half_r",
+      "name": "Roof Front Brick8 Half R",
+      "path": "/models/quaternius-medieval-village/Roof_Front_Brick8_Half_R.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "brick8",
+        "front",
+        "half",
+        "medieval",
+        "roof",
+        "rooftop",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_log",
+      "name": "Roof Log",
+      "path": "/models/quaternius-medieval-village/Roof_Log.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "log",
+        "medieval",
+        "roof",
+        "rooftop",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_modular_roundtiles",
+      "name": "Roof Modular Round Tiles",
+      "path": "/models/quaternius-medieval-village/Roof_Modular_RoundTiles.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "medieval",
+        "modular",
+        "roof",
+        "rooftop",
+        "round",
+        "tiles",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_roundtiles_4x4",
+      "name": "Roof Round Tiles 4x4",
+      "path": "/models/quaternius-medieval-village/Roof_RoundTiles_4x4.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "4x4",
+        "medieval",
+        "roof",
+        "rooftop",
+        "round",
+        "tiles",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_roundtiles_4x6",
+      "name": "Roof Round Tiles 4x6",
+      "path": "/models/quaternius-medieval-village/Roof_RoundTiles_4x6.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "4x6",
+        "medieval",
+        "roof",
+        "rooftop",
+        "round",
+        "tiles",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_roundtiles_4x8",
+      "name": "Roof Round Tiles 4x8",
+      "path": "/models/quaternius-medieval-village/Roof_RoundTiles_4x8.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "4x8",
+        "medieval",
+        "roof",
+        "rooftop",
+        "round",
+        "tiles",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_roundtiles_6x10",
+      "name": "Roof Round Tiles 6x10",
+      "path": "/models/quaternius-medieval-village/Roof_RoundTiles_6x10.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "6x10",
+        "medieval",
+        "roof",
+        "rooftop",
+        "round",
+        "tiles",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_roundtiles_6x12",
+      "name": "Roof Round Tiles 6x12",
+      "path": "/models/quaternius-medieval-village/Roof_RoundTiles_6x12.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "6x12",
+        "medieval",
+        "roof",
+        "rooftop",
+        "round",
+        "tiles",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_roundtiles_6x14",
+      "name": "Roof Round Tiles 6x14",
+      "path": "/models/quaternius-medieval-village/Roof_RoundTiles_6x14.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "6x14",
+        "medieval",
+        "roof",
+        "rooftop",
+        "round",
+        "tiles",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_roundtiles_6x4",
+      "name": "Roof Round Tiles 6x4",
+      "path": "/models/quaternius-medieval-village/Roof_RoundTiles_6x4.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "6x4",
+        "medieval",
+        "roof",
+        "rooftop",
+        "round",
+        "tiles",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_roundtiles_6x6",
+      "name": "Roof Round Tiles 6x6",
+      "path": "/models/quaternius-medieval-village/Roof_RoundTiles_6x6.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "6x6",
+        "medieval",
+        "roof",
+        "rooftop",
+        "round",
+        "tiles",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_roundtiles_8x10",
+      "name": "Roof Round Tiles 8x10",
+      "path": "/models/quaternius-medieval-village/Roof_RoundTiles_8x10.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "8x10",
+        "medieval",
+        "roof",
+        "rooftop",
+        "round",
+        "tiles",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_roundtiles_8x12",
+      "name": "Roof Round Tiles 8x12",
+      "path": "/models/quaternius-medieval-village/Roof_RoundTiles_8x12.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "8x12",
+        "medieval",
+        "roof",
+        "rooftop",
+        "round",
+        "tiles",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_roundtiles_8x14",
+      "name": "Roof Round Tiles 8x14",
+      "path": "/models/quaternius-medieval-village/Roof_RoundTiles_8x14.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "8x14",
+        "medieval",
+        "roof",
+        "rooftop",
+        "round",
+        "tiles",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_roundtiles_8x8",
+      "name": "Roof Round Tiles 8x8",
+      "path": "/models/quaternius-medieval-village/Roof_RoundTiles_8x8.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "8x8",
+        "medieval",
+        "roof",
+        "rooftop",
+        "round",
+        "tiles",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_roundtile_2x1",
+      "name": "Roof Round Tile 2x1",
+      "path": "/models/quaternius-medieval-village/Roof_RoundTile_2x1.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "2x1",
+        "medieval",
+        "roof",
+        "rooftop",
+        "round",
+        "tile",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_roundtile_2x1_long",
+      "name": "Roof Round Tile 2x1 Long",
+      "path": "/models/quaternius-medieval-village/Roof_RoundTile_2x1_Long.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "2x1",
+        "long",
+        "medieval",
+        "roof",
+        "rooftop",
+        "round",
+        "tile",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_support2",
+      "name": "Roof Support2",
+      "path": "/models/quaternius-medieval-village/Roof_Support2.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "medieval",
+        "roof",
+        "rooftop",
+        "support2",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_roof_wooden_2x1",
+      "name": "Roof Wooden 2x1",
+      "path": "/models/quaternius-medieval-village/Roof_Wooden_2x1.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "2x1",
+        "medieval",
+        "roof",
+        "rooftop",
+        "village",
+        "wooden"
+      ]
+    },
+    {
+      "id": "qmv_roof_wooden_2x1_center",
+      "name": "Roof Wooden 2x1 Center",
+      "path": "/models/quaternius-medieval-village/Roof_Wooden_2x1_Center.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "2x1",
+        "center",
+        "medieval",
+        "roof",
+        "rooftop",
+        "village",
+        "wooden"
+      ]
+    },
+    {
+      "id": "qmv_roof_wooden_2x1_center_mirror",
+      "name": "Roof Wooden 2x1 Center Mirror",
+      "path": "/models/quaternius-medieval-village/Roof_Wooden_2x1_Center_Mirror.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "2x1",
+        "center",
+        "medieval",
+        "mirror",
+        "roof",
+        "rooftop",
+        "village",
+        "wooden"
+      ]
+    },
+    {
+      "id": "qmv_roof_wooden_2x1_corner",
+      "name": "Roof Wooden 2x1 Corner",
+      "path": "/models/quaternius-medieval-village/Roof_Wooden_2x1_Corner.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "2x1",
+        "corner",
+        "edge",
+        "medieval",
+        "roof",
+        "rooftop",
+        "village",
+        "wooden"
+      ]
+    },
+    {
+      "id": "qmv_roof_wooden_2x1_l",
+      "name": "Roof Wooden 2x1 L",
+      "path": "/models/quaternius-medieval-village/Roof_Wooden_2x1_L.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "2x1",
+        "medieval",
+        "roof",
+        "rooftop",
+        "village",
+        "wooden"
+      ]
+    },
+    {
+      "id": "qmv_roof_wooden_2x1_middle",
+      "name": "Roof Wooden 2x1 Middle",
+      "path": "/models/quaternius-medieval-village/Roof_Wooden_2x1_Middle.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "2x1",
+        "medieval",
+        "middle",
+        "roof",
+        "rooftop",
+        "village",
+        "wooden"
+      ]
+    },
+    {
+      "id": "qmv_roof_wooden_2x1_r",
+      "name": "Roof Wooden 2x1 R",
+      "path": "/models/quaternius-medieval-village/Roof_Wooden_2x1_R.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "2x1",
+        "medieval",
+        "roof",
+        "rooftop",
+        "village",
+        "wooden"
+      ]
+    },
+    {
+      "id": "qmv_stairs_exterior_nofirststep",
+      "name": "Stairs Exterior No First Step",
+      "path": "/models/quaternius-medieval-village/Stairs_Exterior_NoFirstStep.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "exterior",
+        "first",
+        "medieval",
+        "no",
+        "stairs",
+        "step",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_stairs_exterior_platform",
+      "name": "Stairs Exterior Platform",
+      "path": "/models/quaternius-medieval-village/Stairs_Exterior_Platform.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "exterior",
+        "floor",
+        "medieval",
+        "platform",
+        "stairs",
+        "tile",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_stairs_exterior_platform45",
+      "name": "Stairs Exterior Platform45",
+      "path": "/models/quaternius-medieval-village/Stairs_Exterior_Platform45.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "exterior",
+        "medieval",
+        "platform45",
+        "stairs",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_stairs_exterior_platform45clean",
+      "name": "Stairs Exterior Platform45Clean",
+      "path": "/models/quaternius-medieval-village/Stairs_Exterior_Platform45Clean.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "exterior",
+        "medieval",
+        "platform45clean",
+        "stairs",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_stairs_exterior_platformu",
+      "name": "Stairs Exterior Platform U",
+      "path": "/models/quaternius-medieval-village/Stairs_Exterior_PlatformU.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "exterior",
+        "floor",
+        "medieval",
+        "platform",
+        "stairs",
+        "tile",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_stairs_exterior_sideplatform",
+      "name": "Stairs Exterior Side Platform",
+      "path": "/models/quaternius-medieval-village/Stairs_Exterior_SidePlatform.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "exterior",
+        "floor",
+        "medieval",
+        "platform",
+        "side",
+        "stairs",
+        "tile",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_stairs_exterior_sides",
+      "name": "Stairs Exterior Sides",
+      "path": "/models/quaternius-medieval-village/Stairs_Exterior_Sides.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "exterior",
+        "medieval",
+        "sides",
+        "stairs",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_stairs_exterior_sides45",
+      "name": "Stairs Exterior Sides45",
+      "path": "/models/quaternius-medieval-village/Stairs_Exterior_Sides45.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "exterior",
+        "medieval",
+        "sides45",
+        "stairs",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_stairs_exterior_sidesu",
+      "name": "Stairs Exterior Sides U",
+      "path": "/models/quaternius-medieval-village/Stairs_Exterior_SidesU.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "exterior",
+        "medieval",
+        "sides",
+        "stairs",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_stairs_exterior_singleside",
+      "name": "Stairs Exterior Single Side",
+      "path": "/models/quaternius-medieval-village/Stairs_Exterior_SingleSide.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "exterior",
+        "medieval",
+        "side",
+        "single",
+        "stairs",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_stairs_exterior_singlesidethick",
+      "name": "Stairs Exterior Single Side Thick",
+      "path": "/models/quaternius-medieval-village/Stairs_Exterior_SingleSideThick.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "exterior",
+        "medieval",
+        "side",
+        "single",
+        "stairs",
+        "thick",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_stairs_exterior_straight_center",
+      "name": "Stairs Exterior Straight Center",
+      "path": "/models/quaternius-medieval-village/Stairs_Exterior_Straight_Center.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "center",
+        "exterior",
+        "medieval",
+        "stairs",
+        "straight",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_stairs_exterior_straight_l",
+      "name": "Stairs Exterior Straight L",
+      "path": "/models/quaternius-medieval-village/Stairs_Exterior_Straight_L.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "exterior",
+        "medieval",
+        "stairs",
+        "straight",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_stairs_exterior_straight_r",
+      "name": "Stairs Exterior Straight R",
+      "path": "/models/quaternius-medieval-village/Stairs_Exterior_Straight_R.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "exterior",
+        "medieval",
+        "stairs",
+        "straight",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_stair_interior_rails",
+      "name": "Stair Interior Rails",
+      "path": "/models/quaternius-medieval-village/Stair_Interior_Rails.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "interior",
+        "medieval",
+        "rails",
+        "stair",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_stair_interior_simple",
+      "name": "Stair Interior Simple",
+      "path": "/models/quaternius-medieval-village/Stair_Interior_Simple.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "interior",
+        "medieval",
+        "simple",
+        "stair",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_stair_interior_solid",
+      "name": "Stair Interior Solid",
+      "path": "/models/quaternius-medieval-village/Stair_Interior_Solid.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "interior",
+        "medieval",
+        "solid",
+        "stair",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_stair_interior_solidextended",
+      "name": "Stair Interior Solid Extended",
+      "path": "/models/quaternius-medieval-village/Stair_Interior_SolidExtended.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "extended",
+        "interior",
+        "medieval",
+        "solid",
+        "stair",
+        "village"
+      ]
+    },
+    {
+      "id": "qmv_wall_bottomcover",
+      "name": "Wall Bottom Cover",
+      "path": "/models/quaternius-medieval-village/Wall_BottomCover.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "bottom",
+        "cover",
+        "medieval",
+        "village",
+        "wall"
+      ]
+    },
+    {
+      "id": "qmv_wall_plaster_door_flat",
+      "name": "Wall Plaster Door Flat",
+      "path": "/models/quaternius-medieval-village/Wall_Plaster_Door_Flat.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "door",
+        "entry",
+        "flat",
+        "medieval",
+        "plaster",
+        "portal",
+        "village",
+        "wall"
+      ]
+    },
+    {
+      "id": "qmv_wall_plaster_door_roundinset",
+      "name": "Wall Plaster Door Round Inset",
+      "path": "/models/quaternius-medieval-village/Wall_Plaster_Door_RoundInset.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "door",
+        "entry",
+        "inset",
+        "medieval",
+        "plaster",
+        "portal",
+        "round",
+        "village",
+        "wall"
+      ]
+    },
+    {
+      "id": "qmv_wall_plaster_straight_base",
+      "name": "Wall Plaster Straight Base",
+      "path": "/models/quaternius-medieval-village/Wall_Plaster_Straight_Base.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "base",
+        "medieval",
+        "plaster",
+        "straight",
+        "village",
+        "wall"
+      ]
+    },
+    {
+      "id": "qmv_wall_plaster_straight_l",
+      "name": "Wall Plaster Straight L",
+      "path": "/models/quaternius-medieval-village/Wall_Plaster_Straight_L.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "medieval",
+        "plaster",
+        "straight",
+        "village",
+        "wall"
+      ]
+    },
+    {
+      "id": "qmv_wall_plaster_straight_r",
+      "name": "Wall Plaster Straight R",
+      "path": "/models/quaternius-medieval-village/Wall_Plaster_Straight_R.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "medieval",
+        "plaster",
+        "straight",
+        "village",
+        "wall"
+      ]
+    },
+    {
+      "id": "qmv_wall_plaster_window_thin_round",
+      "name": "Wall Plaster Window Thin Round",
+      "path": "/models/quaternius-medieval-village/Wall_Plaster_Window_Thin_Round.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "glass",
+        "medieval",
+        "plaster",
+        "round",
+        "thin",
+        "village",
+        "wall",
+        "window"
+      ]
+    },
+    {
+      "id": "qmv_wall_plaster_window_wide_flat",
+      "name": "Wall Plaster Window Wide Flat",
+      "path": "/models/quaternius-medieval-village/Wall_Plaster_Window_Wide_Flat.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "flat",
+        "glass",
+        "medieval",
+        "plaster",
+        "village",
+        "wall",
+        "wide",
+        "window"
+      ]
+    },
+    {
+      "id": "qmv_wall_plaster_window_wide_flat2",
+      "name": "Wall Plaster Window Wide Flat2",
+      "path": "/models/quaternius-medieval-village/Wall_Plaster_Window_Wide_Flat2.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "flat2",
+        "glass",
+        "medieval",
+        "plaster",
+        "village",
+        "wall",
+        "wide",
+        "window"
+      ]
+    },
+    {
+      "id": "qmv_wall_plaster_woodgrid",
+      "name": "Wall Plaster Wood Grid",
+      "path": "/models/quaternius-medieval-village/Wall_Plaster_WoodGrid.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "grid",
+        "medieval",
+        "plank",
+        "plaster",
+        "timber",
+        "village",
+        "wall",
+        "wood"
+      ]
+    },
+    {
+      "id": "qmv_wall_unevenbrick_door_flat",
+      "name": "Wall Uneven Brick Door Flat",
+      "path": "/models/quaternius-medieval-village/Wall_UnevenBrick_Door_Flat.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "brick",
+        "door",
+        "entry",
+        "flat",
+        "masonry",
+        "medieval",
+        "portal",
+        "stone",
+        "uneven",
+        "village",
+        "wall"
+      ]
+    },
+    {
+      "id": "qmv_wall_unevenbrick_straight",
+      "name": "Wall Uneven Brick Straight",
+      "path": "/models/quaternius-medieval-village/Wall_UnevenBrick_Straight.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "brick",
+        "masonry",
+        "medieval",
+        "stone",
+        "straight",
+        "uneven",
+        "village",
+        "wall"
+      ]
+    },
+    {
+      "id": "qmv_wall_unevenbrick_window_thin_round",
+      "name": "Wall Uneven Brick Window Thin Round",
+      "path": "/models/quaternius-medieval-village/Wall_UnevenBrick_Window_Thin_Round.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "brick",
+        "glass",
+        "masonry",
+        "medieval",
+        "round",
+        "stone",
+        "thin",
+        "uneven",
+        "village",
+        "wall",
+        "window"
+      ]
+    },
+    {
+      "id": "qmv_wall_unevenbrick_window_wide_flat",
+      "name": "Wall Uneven Brick Window Wide Flat",
+      "path": "/models/quaternius-medieval-village/Wall_UnevenBrick_Window_Wide_Flat.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "brick",
+        "flat",
+        "glass",
+        "masonry",
+        "medieval",
+        "stone",
+        "uneven",
+        "village",
+        "wall",
+        "wide",
+        "window"
+      ]
+    },
+    {
+      "id": "qmv_wall_unevenbrick_window_wide_round",
+      "name": "Wall Uneven Brick Window Wide Round",
+      "path": "/models/quaternius-medieval-village/Wall_UnevenBrick_Window_Wide_Round.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "brick",
+        "glass",
+        "masonry",
+        "medieval",
+        "round",
+        "stone",
+        "uneven",
+        "village",
+        "wall",
+        "wide",
+        "window"
+      ]
+    },
+    {
+      "id": "qmv_windowshutters_thin_flat_closed",
+      "name": "Window Shutters Thin Flat Closed",
+      "path": "/models/quaternius-medieval-village/WindowShutters_Thin_Flat_Closed.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "closed",
+        "flat",
+        "glass",
+        "medieval",
+        "shutters",
+        "thin",
+        "village",
+        "window"
+      ]
+    },
+    {
+      "id": "qmv_windowshutters_thin_flat_open",
+      "name": "Window Shutters Thin Flat Open",
+      "path": "/models/quaternius-medieval-village/WindowShutters_Thin_Flat_Open.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "flat",
+        "glass",
+        "medieval",
+        "open",
+        "shutters",
+        "thin",
+        "village",
+        "window"
+      ]
+    },
+    {
+      "id": "qmv_windowshutters_thin_round_closed",
+      "name": "Window Shutters Thin Round Closed",
+      "path": "/models/quaternius-medieval-village/WindowShutters_Thin_Round_Closed.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "closed",
+        "glass",
+        "medieval",
+        "round",
+        "shutters",
+        "thin",
+        "village",
+        "window"
+      ]
+    },
+    {
+      "id": "qmv_windowshutters_thin_round_open",
+      "name": "Window Shutters Thin Round Open",
+      "path": "/models/quaternius-medieval-village/WindowShutters_Thin_Round_Open.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "glass",
+        "medieval",
+        "open",
+        "round",
+        "shutters",
+        "thin",
+        "village",
+        "window"
+      ]
+    },
+    {
+      "id": "qmv_windowshutters_wide_flat_closed",
+      "name": "Window Shutters Wide Flat Closed",
+      "path": "/models/quaternius-medieval-village/WindowShutters_Wide_Flat_Closed.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "closed",
+        "flat",
+        "glass",
+        "medieval",
+        "shutters",
+        "village",
+        "wide",
+        "window"
+      ]
+    },
+    {
+      "id": "qmv_windowshutters_wide_flat_open",
+      "name": "Window Shutters Wide Flat Open",
+      "path": "/models/quaternius-medieval-village/WindowShutters_Wide_Flat_Open.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "flat",
+        "glass",
+        "medieval",
+        "open",
+        "shutters",
+        "village",
+        "wide",
+        "window"
+      ]
+    },
+    {
+      "id": "qmv_windowshutters_wide_round_closed",
+      "name": "Window Shutters Wide Round Closed",
+      "path": "/models/quaternius-medieval-village/WindowShutters_Wide_Round_Closed.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "closed",
+        "glass",
+        "medieval",
+        "round",
+        "shutters",
+        "village",
+        "wide",
+        "window"
+      ]
+    },
+    {
+      "id": "qmv_window_roof_thin",
+      "name": "Window Roof Thin",
+      "path": "/models/quaternius-medieval-village/Window_Roof_Thin.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "glass",
+        "medieval",
+        "roof",
+        "rooftop",
+        "thin",
+        "village",
+        "window"
+      ]
+    },
+    {
+      "id": "qmv_window_roof_wide",
+      "name": "Window Roof Wide",
+      "path": "/models/quaternius-medieval-village/Window_Roof_Wide.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "glass",
+        "medieval",
+        "roof",
+        "rooftop",
+        "village",
+        "wide",
+        "window"
+      ]
+    },
+    {
+      "id": "qmv_window_thin_flat1",
+      "name": "Window Thin Flat1",
+      "path": "/models/quaternius-medieval-village/Window_Thin_Flat1.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "flat1",
+        "glass",
+        "medieval",
+        "thin",
+        "village",
+        "window"
+      ]
+    },
+    {
+      "id": "qmv_window_thin_round1",
+      "name": "Window Thin Round1",
+      "path": "/models/quaternius-medieval-village/Window_Thin_Round1.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "glass",
+        "medieval",
+        "round1",
+        "thin",
+        "village",
+        "window"
+      ]
+    },
+    {
+      "id": "qmv_window_wide_flat1",
+      "name": "Window Wide Flat1",
+      "path": "/models/quaternius-medieval-village/Window_Wide_Flat1.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "flat1",
+        "glass",
+        "medieval",
+        "village",
+        "wide",
+        "window"
+      ]
+    },
+    {
+      "id": "qmv_window_wide_round1",
+      "name": "Window Wide Round1",
+      "path": "/models/quaternius-medieval-village/Window_Wide_Round1.gltf",
+      "category": "village",
+      "defaultScale": 1,
+      "tags": [
+        "glass",
+        "medieval",
+        "round1",
+        "village",
+        "wide",
+        "window"
+      ]
+    },
+    {
+      "id": "qsc_column_large_straight",
+      "name": "Column Large Straight",
+      "path": "/models/quaternius-scifi/Columns/Column_Large_Straight.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "column",
+        "large",
+        "pillar",
+        "scifi",
+        "straight",
+        "support"
+      ]
+    },
+    {
+      "id": "qsc_column_metalsupport",
+      "name": "Column Metal Support",
+      "path": "/models/quaternius-scifi/Columns/Column_MetalSupport.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "column",
+        "iron",
+        "metal",
+        "pillar",
+        "scifi",
+        "steel",
+        "support"
+      ]
+    },
+    {
+      "id": "qsc_column_metalsupport_curve",
+      "name": "Column Metal Support Curve",
+      "path": "/models/quaternius-scifi/Columns/Column_MetalSupport_Curve.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "column",
+        "curve",
+        "iron",
+        "metal",
+        "pillar",
+        "scifi",
+        "steel",
+        "support"
+      ]
+    },
+    {
+      "id": "qsc_column_round",
+      "name": "Column Round",
+      "path": "/models/quaternius-scifi/Columns/Column_Round.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "column",
+        "pillar",
+        "round",
+        "scifi",
+        "support"
+      ]
+    },
+    {
+      "id": "qsc_column_simple",
+      "name": "Column Simple",
+      "path": "/models/quaternius-scifi/Columns/Column_Simple.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "column",
+        "pillar",
+        "scifi",
+        "simple",
+        "support"
+      ]
+    },
+    {
+      "id": "qsc_door_frame_a",
+      "name": "Door Frame A",
+      "path": "/models/quaternius-scifi/Platforms/Door_Frame_A.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "door",
+        "entry",
+        "frame",
+        "portal",
+        "scifi"
+      ]
+    },
+    {
+      "id": "qsc_door_frame_square",
+      "name": "Door Frame Square",
+      "path": "/models/quaternius-scifi/Platforms/Door_Frame_Square.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "door",
+        "entry",
+        "frame",
+        "portal",
+        "scifi",
+        "square"
+      ]
+    },
+    {
+      "id": "qsc_door_frame_squaretall",
+      "name": "Door Frame Square Tall",
+      "path": "/models/quaternius-scifi/Platforms/Door_Frame_SquareTall.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "door",
+        "entry",
+        "frame",
+        "portal",
+        "scifi",
+        "square",
+        "tall"
+      ]
+    },
+    {
+      "id": "qsc_door_frame_square_blocked",
+      "name": "Door Frame Square Blocked",
+      "path": "/models/quaternius-scifi/Platforms/Door_Frame_Square_Blocked.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "blocked",
+        "door",
+        "entry",
+        "frame",
+        "portal",
+        "scifi",
+        "square"
+      ]
+    },
+    {
+      "id": "qsc_door_simple",
+      "name": "Door Simple",
+      "path": "/models/quaternius-scifi/Platforms/Door_Simple.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "door",
+        "entry",
+        "portal",
+        "scifi",
+        "simple"
+      ]
+    },
+    {
+      "id": "qsc_platform_3plates",
+      "name": "Platform 3Plates",
+      "path": "/models/quaternius-scifi/Platforms/Platform_3Plates.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "3plates",
+        "floor",
+        "platform",
+        "scifi",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_centerplate",
+      "name": "Platform Center Plate",
+      "path": "/models/quaternius-scifi/Platforms/Platform_CenterPlate.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "center",
+        "floor",
+        "plate",
+        "platform",
+        "scifi",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_centerplate_curve",
+      "name": "Platform Center Plate Curve",
+      "path": "/models/quaternius-scifi/Platforms/Platform_CenterPlate_Curve.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "center",
+        "curve",
+        "floor",
+        "plate",
+        "platform",
+        "scifi",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_darkplates",
+      "name": "Platform Dark Plates",
+      "path": "/models/quaternius-scifi/Platforms/Platform_DarkPlates.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "dark",
+        "floor",
+        "plates",
+        "platform",
+        "scifi",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_darkplates_curves",
+      "name": "Platform Dark Plates Curves",
+      "path": "/models/quaternius-scifi/Platforms/Platform_DarkPlates_Curves.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "curves",
+        "dark",
+        "floor",
+        "plates",
+        "platform",
+        "scifi",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_metal",
+      "name": "Platform Metal",
+      "path": "/models/quaternius-scifi/Platforms/Platform_Metal.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "floor",
+        "iron",
+        "metal",
+        "platform",
+        "scifi",
+        "steel",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_metal2",
+      "name": "Platform Metal2",
+      "path": "/models/quaternius-scifi/Platforms/Platform_Metal2.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "floor",
+        "metal2",
+        "platform",
+        "scifi",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_metal2_curve",
+      "name": "Platform Metal2 Curve",
+      "path": "/models/quaternius-scifi/Platforms/Platform_Metal2_Curve.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "curve",
+        "floor",
+        "metal2",
+        "platform",
+        "scifi",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_metal_curve",
+      "name": "Platform Metal Curve",
+      "path": "/models/quaternius-scifi/Platforms/Platform_Metal_Curve.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "curve",
+        "floor",
+        "iron",
+        "metal",
+        "platform",
+        "scifi",
+        "steel",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_rails_2",
+      "name": "Platform Rails 2",
+      "path": "/models/quaternius-scifi/Platforms/Platform_Rails_2.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "floor",
+        "platform",
+        "rails",
+        "scifi",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_rails_4wide",
+      "name": "Platform Rails 4Wide",
+      "path": "/models/quaternius-scifi/Platforms/Platform_Rails_4Wide.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "4wide",
+        "floor",
+        "platform",
+        "rails",
+        "scifi",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_rails_4widetall",
+      "name": "Platform Rails 4Wide Tall",
+      "path": "/models/quaternius-scifi/Platforms/Platform_Rails_4WideTall.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "4wide",
+        "floor",
+        "platform",
+        "rails",
+        "scifi",
+        "tall",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_ramp_2",
+      "name": "Platform Ramp 2",
+      "path": "/models/quaternius-scifi/Platforms/Platform_Ramp_2.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "floor",
+        "platform",
+        "ramp",
+        "scifi",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_ramp_2short",
+      "name": "Platform Ramp 2Short",
+      "path": "/models/quaternius-scifi/Platforms/Platform_Ramp_2Short.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "2short",
+        "floor",
+        "platform",
+        "ramp",
+        "scifi",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_ramp_4wide",
+      "name": "Platform Ramp 4Wide",
+      "path": "/models/quaternius-scifi/Platforms/Platform_Ramp_4Wide.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "4wide",
+        "floor",
+        "platform",
+        "ramp",
+        "scifi",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_simple",
+      "name": "Platform Simple",
+      "path": "/models/quaternius-scifi/Platforms/Platform_Simple.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "floor",
+        "platform",
+        "scifi",
+        "simple",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_simple2",
+      "name": "Platform Simple2",
+      "path": "/models/quaternius-scifi/Platforms/Platform_Simple2.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "floor",
+        "platform",
+        "scifi",
+        "simple2",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_simple2_curve",
+      "name": "Platform Simple2 Curve",
+      "path": "/models/quaternius-scifi/Platforms/Platform_Simple2_Curve.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "curve",
+        "floor",
+        "platform",
+        "scifi",
+        "simple2",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_simple_curve",
+      "name": "Platform Simple Curve",
+      "path": "/models/quaternius-scifi/Platforms/Platform_Simple_Curve.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "curve",
+        "floor",
+        "platform",
+        "scifi",
+        "simple",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_squares",
+      "name": "Platform Squares",
+      "path": "/models/quaternius-scifi/Platforms/Platform_Squares.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "floor",
+        "platform",
+        "scifi",
+        "squares",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_squares_curve",
+      "name": "Platform Squares Curve",
+      "path": "/models/quaternius-scifi/Platforms/Platform_Squares_Curve.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "curve",
+        "floor",
+        "platform",
+        "scifi",
+        "squares",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_stairs_2",
+      "name": "Platform Stairs 2",
+      "path": "/models/quaternius-scifi/Platforms/Platform_Stairs_2.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "floor",
+        "platform",
+        "scifi",
+        "stairs",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_stairs_4wide",
+      "name": "Platform Stairs 4Wide",
+      "path": "/models/quaternius-scifi/Platforms/Platform_Stairs_4Wide.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "4wide",
+        "floor",
+        "platform",
+        "scifi",
+        "stairs",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_stairs_4widetall",
+      "name": "Platform Stairs 4Wide Tall",
+      "path": "/models/quaternius-scifi/Platforms/Platform_Stairs_4WideTall.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "4wide",
+        "floor",
+        "platform",
+        "scifi",
+        "stairs",
+        "tall",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_platform_window_thin",
+      "name": "Platform Window Thin",
+      "path": "/models/quaternius-scifi/Platforms/Platform_Window_Thin.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "floor",
+        "glass",
+        "platform",
+        "scifi",
+        "thin",
+        "tile",
+        "window"
+      ]
+    },
+    {
+      "id": "qsc_platform_window_wide",
+      "name": "Platform Window Wide",
+      "path": "/models/quaternius-scifi/Platforms/Platform_Window_Wide.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "floor",
+        "glass",
+        "platform",
+        "scifi",
+        "tile",
+        "wide",
+        "window"
+      ]
+    },
+    {
+      "id": "qsc_platform_x",
+      "name": "Platform X",
+      "path": "/models/quaternius-scifi/Platforms/Platform_X.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "floor",
+        "platform",
+        "scifi",
+        "tile"
+      ]
+    },
+    {
+      "id": "qsc_prop_cable_1",
+      "name": "Prop Cable 1",
+      "path": "/models/quaternius-scifi/Props/Prop_Cable_1.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "cable",
+        "decor",
+        "prop",
+        "scifi"
+      ]
+    },
+    {
+      "id": "qsc_prop_cable_3",
+      "name": "Prop Cable 3",
+      "path": "/models/quaternius-scifi/Props/Prop_Cable_3.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "cable",
+        "decor",
+        "prop",
+        "scifi"
+      ]
+    },
+    {
+      "id": "qsc_prop_clamp",
+      "name": "Prop Clamp",
+      "path": "/models/quaternius-scifi/Props/Prop_Clamp.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "clamp",
+        "decor",
+        "prop",
+        "scifi"
+      ]
+    },
+    {
+      "id": "qsc_prop_crate4",
+      "name": "Prop Crate4",
+      "path": "/models/quaternius-scifi/Props/Prop_Crate4.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "crate4",
+        "decor",
+        "prop",
+        "scifi"
+      ]
+    },
+    {
+      "id": "qsc_prop_fan_small",
+      "name": "Prop Fan Small",
+      "path": "/models/quaternius-scifi/Props/Prop_Fan_Small.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "fan",
+        "prop",
+        "scifi",
+        "small"
+      ]
+    },
+    {
+      "id": "qsc_prop_itemholder",
+      "name": "Prop Item Holder",
+      "path": "/models/quaternius-scifi/Props/Prop_ItemHolder.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "holder",
+        "item",
+        "prop",
+        "scifi"
+      ]
+    },
+    {
+      "id": "qsc_prop_light_corner",
+      "name": "Prop Light Corner",
+      "path": "/models/quaternius-scifi/Props/Prop_Light_Corner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "corner",
+        "decor",
+        "edge",
+        "lamp",
+        "light",
+        "lighting",
+        "prop",
+        "scifi"
+      ]
+    },
+    {
+      "id": "qsc_prop_light_small",
+      "name": "Prop Light Small",
+      "path": "/models/quaternius-scifi/Props/Prop_Light_Small.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "lamp",
+        "light",
+        "lighting",
+        "prop",
+        "scifi",
+        "small"
+      ]
+    },
+    {
+      "id": "qsc_prop_light_wide",
+      "name": "Prop Light Wide",
+      "path": "/models/quaternius-scifi/Props/Prop_Light_Wide.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "lamp",
+        "light",
+        "lighting",
+        "prop",
+        "scifi",
+        "wide"
+      ]
+    },
+    {
+      "id": "qsc_prop_pipeholder",
+      "name": "Prop Pipe Holder",
+      "path": "/models/quaternius-scifi/Props/Prop_PipeHolder.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "holder",
+        "industrial",
+        "pipe",
+        "pipes",
+        "prop",
+        "scifi"
+      ]
+    },
+    {
+      "id": "qsc_prop_rail_2",
+      "name": "Prop Rail 2",
+      "path": "/models/quaternius-scifi/Props/Prop_Rail_2.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "fence",
+        "prop",
+        "rail",
+        "railing",
+        "scifi"
+      ]
+    },
+    {
+      "id": "qsc_prop_rail_3",
+      "name": "Prop Rail 3",
+      "path": "/models/quaternius-scifi/Props/Prop_Rail_3.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "fence",
+        "prop",
+        "rail",
+        "railing",
+        "scifi"
+      ]
+    },
+    {
+      "id": "qsc_prop_rail_4",
+      "name": "Prop Rail 4",
+      "path": "/models/quaternius-scifi/Props/Prop_Rail_4.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "fence",
+        "prop",
+        "rail",
+        "railing",
+        "scifi"
+      ]
+    },
+    {
+      "id": "qsc_prop_rail_incline_long_l",
+      "name": "Prop Rail Incline Long L",
+      "path": "/models/quaternius-scifi/Props/Prop_Rail_Incline_Long_L.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "fence",
+        "incline",
+        "long",
+        "prop",
+        "rail",
+        "railing",
+        "scifi"
+      ]
+    },
+    {
+      "id": "qsc_prop_rail_incline_long_r",
+      "name": "Prop Rail Incline Long R",
+      "path": "/models/quaternius-scifi/Props/Prop_Rail_Incline_Long_R.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "fence",
+        "incline",
+        "long",
+        "prop",
+        "rail",
+        "railing",
+        "scifi"
+      ]
+    },
+    {
+      "id": "qsc_prop_rail_incline_short_l",
+      "name": "Prop Rail Incline Short L",
+      "path": "/models/quaternius-scifi/Props/Prop_Rail_Incline_Short_L.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "fence",
+        "incline",
+        "prop",
+        "rail",
+        "railing",
+        "scifi",
+        "short"
+      ]
+    },
+    {
+      "id": "qsc_prop_rail_incline_short_r",
+      "name": "Prop Rail Incline Short R",
+      "path": "/models/quaternius-scifi/Props/Prop_Rail_Incline_Short_R.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "fence",
+        "incline",
+        "prop",
+        "rail",
+        "railing",
+        "scifi",
+        "short"
+      ]
+    },
+    {
+      "id": "qsc_prop_rail_round_big",
+      "name": "Prop Rail Round Big",
+      "path": "/models/quaternius-scifi/Props/Prop_Rail_Round_Big.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "big",
+        "decor",
+        "fence",
+        "prop",
+        "rail",
+        "railing",
+        "round",
+        "scifi"
+      ]
+    },
+    {
+      "id": "qsc_prop_rail_round_small",
+      "name": "Prop Rail Round Small",
+      "path": "/models/quaternius-scifi/Props/Prop_Rail_Round_Small.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "fence",
+        "prop",
+        "rail",
+        "railing",
+        "round",
+        "scifi",
+        "small"
+      ]
+    },
+    {
+      "id": "qsc_prop_vent_small",
+      "name": "Prop Vent Small",
+      "path": "/models/quaternius-scifi/Props/Prop_Vent_Small.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "prop",
+        "scifi",
+        "small",
+        "vent"
+      ]
+    },
+    {
+      "id": "qsc_prop_vent_wide",
+      "name": "Prop Vent Wide",
+      "path": "/models/quaternius-scifi/Props/Prop_Vent_Wide.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "decor",
+        "prop",
+        "scifi",
+        "vent",
+        "wide"
+      ]
+    },
+    {
+      "id": "qsc_bottommetal_corner_round_inner",
+      "name": "Bottom Metal Corner Round Inner",
+      "path": "/models/quaternius-scifi/Walls/BottomMetal_Corner_Round_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "bottom",
+        "corner",
+        "edge",
+        "inner",
+        "iron",
+        "metal",
+        "round",
+        "scifi",
+        "steel"
+      ]
+    },
+    {
+      "id": "qsc_bottommetal_corner_round_outer",
+      "name": "Bottom Metal Corner Round Outer",
+      "path": "/models/quaternius-scifi/Walls/BottomMetal_Corner_Round_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "bottom",
+        "corner",
+        "edge",
+        "iron",
+        "metal",
+        "outer",
+        "round",
+        "scifi",
+        "steel"
+      ]
+    },
+    {
+      "id": "qsc_bottommetal_corner_square_inner",
+      "name": "Bottom Metal Corner Square Inner",
+      "path": "/models/quaternius-scifi/Walls/BottomMetal_Corner_Square_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "bottom",
+        "corner",
+        "edge",
+        "inner",
+        "iron",
+        "metal",
+        "scifi",
+        "square",
+        "steel"
+      ]
+    },
+    {
+      "id": "qsc_bottommetal_corner_square_outer_1",
+      "name": "Bottom Metal Corner Square Outer 1",
+      "path": "/models/quaternius-scifi/Walls/BottomMetal_Corner_Square_Outer_1.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "bottom",
+        "corner",
+        "edge",
+        "iron",
+        "metal",
+        "outer",
+        "scifi",
+        "square",
+        "steel"
+      ]
+    },
+    {
+      "id": "qsc_bottommetal_corner_square_outer_2",
+      "name": "Bottom Metal Corner Square Outer 2",
+      "path": "/models/quaternius-scifi/Walls/BottomMetal_Corner_Square_Outer_2.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "bottom",
+        "corner",
+        "edge",
+        "iron",
+        "metal",
+        "outer",
+        "scifi",
+        "square",
+        "steel"
+      ]
+    },
+    {
+      "id": "qsc_bottommetal_straight",
+      "name": "Bottom Metal Straight",
+      "path": "/models/quaternius-scifi/Walls/BottomMetal_Straight.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "bottom",
+        "iron",
+        "metal",
+        "scifi",
+        "steel",
+        "straight"
+      ]
+    },
+    {
+      "id": "qsc_bottomsimple_corner_round_inner",
+      "name": "Bottom Simple Corner Round Inner",
+      "path": "/models/quaternius-scifi/Walls/BottomSimple_Corner_Round_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "bottom",
+        "corner",
+        "edge",
+        "inner",
+        "round",
+        "scifi",
+        "simple"
+      ]
+    },
+    {
+      "id": "qsc_bottomsimple_corner_round_outer",
+      "name": "Bottom Simple Corner Round Outer",
+      "path": "/models/quaternius-scifi/Walls/BottomSimple_Corner_Round_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "bottom",
+        "corner",
+        "edge",
+        "outer",
+        "round",
+        "scifi",
+        "simple"
+      ]
+    },
+    {
+      "id": "qsc_bottomsimple_corner_square_inner",
+      "name": "Bottom Simple Corner Square Inner",
+      "path": "/models/quaternius-scifi/Walls/BottomSimple_Corner_Square_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "bottom",
+        "corner",
+        "edge",
+        "inner",
+        "scifi",
+        "simple",
+        "square"
+      ]
+    },
+    {
+      "id": "qsc_bottomsimple_corner_square_outer_1",
+      "name": "Bottom Simple Corner Square Outer 1",
+      "path": "/models/quaternius-scifi/Walls/BottomSimple_Corner_Square_Outer_1.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "bottom",
+        "corner",
+        "edge",
+        "outer",
+        "scifi",
+        "simple",
+        "square"
+      ]
+    },
+    {
+      "id": "qsc_bottomsimple_corner_square_outer_2",
+      "name": "Bottom Simple Corner Square Outer 2",
+      "path": "/models/quaternius-scifi/Walls/BottomSimple_Corner_Square_Outer_2.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "bottom",
+        "corner",
+        "edge",
+        "outer",
+        "scifi",
+        "simple",
+        "square"
+      ]
+    },
+    {
+      "id": "qsc_bottomsimple_straight",
+      "name": "Bottom Simple Straight",
+      "path": "/models/quaternius-scifi/Walls/BottomSimple_Straight.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "bottom",
+        "scifi",
+        "simple",
+        "straight"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_accentstrip_corner_inner",
+      "name": "Short Wall Accent Strip Corner Inner",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_AccentStrip_Corner_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "accent",
+        "barrier",
+        "corner",
+        "edge",
+        "inner",
+        "scifi",
+        "short",
+        "strip",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_accentstrip_corner_outer",
+      "name": "Short Wall Accent Strip Corner Outer",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_AccentStrip_Corner_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "accent",
+        "barrier",
+        "corner",
+        "edge",
+        "outer",
+        "scifi",
+        "short",
+        "strip",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_accentstrip_straight",
+      "name": "Short Wall Accent Strip Straight",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_AccentStrip_Straight.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "accent",
+        "barrier",
+        "scifi",
+        "short",
+        "straight",
+        "strip",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_band2_corner_inner",
+      "name": "Short Wall Band2 Corner Inner",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_Band2_Corner_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "band2",
+        "barrier",
+        "corner",
+        "edge",
+        "inner",
+        "scifi",
+        "short",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_band2_corner_outer",
+      "name": "Short Wall Band2 Corner Outer",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_Band2_Corner_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "band2",
+        "barrier",
+        "corner",
+        "edge",
+        "outer",
+        "scifi",
+        "short",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_band2_straight",
+      "name": "Short Wall Band2 Straight",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_Band2_Straight.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "band2",
+        "barrier",
+        "scifi",
+        "short",
+        "straight",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_darkmetal2_corner_inner",
+      "name": "Short Wall Dark Metal2 Corner Inner",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_DarkMetal2_Corner_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "corner",
+        "dark",
+        "edge",
+        "inner",
+        "metal2",
+        "scifi",
+        "short",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_darkmetal2_corner_outer",
+      "name": "Short Wall Dark Metal2 Corner Outer",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_DarkMetal2_Corner_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "corner",
+        "dark",
+        "edge",
+        "metal2",
+        "outer",
+        "scifi",
+        "short",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_darkmetal2_straight",
+      "name": "Short Wall Dark Metal2 Straight",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_DarkMetal2_Straight.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "dark",
+        "metal2",
+        "scifi",
+        "short",
+        "straight",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_darkplastic_corner_inner",
+      "name": "Short Wall Dark Plastic Corner Inner",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_DarkPlastic_Corner_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "corner",
+        "dark",
+        "edge",
+        "inner",
+        "plastic",
+        "scifi",
+        "short",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_darkplastic_corner_outer",
+      "name": "Short Wall Dark Plastic Corner Outer",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_DarkPlastic_Corner_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "corner",
+        "dark",
+        "edge",
+        "outer",
+        "plastic",
+        "scifi",
+        "short",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_darkplastic_straight",
+      "name": "Short Wall Dark Plastic Straight",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_DarkPlastic_Straight.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "dark",
+        "plastic",
+        "scifi",
+        "short",
+        "straight",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_metal2_corner_inner",
+      "name": "Short Wall Metal2 Corner Inner",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_Metal2_Corner_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "corner",
+        "edge",
+        "inner",
+        "metal2",
+        "scifi",
+        "short",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_metal2_corner_outer",
+      "name": "Short Wall Metal2 Corner Outer",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_Metal2_Corner_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "corner",
+        "edge",
+        "metal2",
+        "outer",
+        "scifi",
+        "short",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_metal2_straight",
+      "name": "Short Wall Metal2 Straight",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_Metal2_Straight.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "metal2",
+        "scifi",
+        "short",
+        "straight",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_metalplates_corner_inner",
+      "name": "Short Wall Metal Plates Corner Inner",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_MetalPlates_Corner_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "corner",
+        "edge",
+        "inner",
+        "iron",
+        "metal",
+        "plates",
+        "scifi",
+        "short",
+        "steel",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_metalplates_corner_outer",
+      "name": "Short Wall Metal Plates Corner Outer",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_MetalPlates_Corner_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "corner",
+        "edge",
+        "iron",
+        "metal",
+        "outer",
+        "plates",
+        "scifi",
+        "short",
+        "steel",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_metalplates_straight",
+      "name": "Short Wall Metal Plates Straight",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_MetalPlates_Straight.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "iron",
+        "metal",
+        "plates",
+        "scifi",
+        "short",
+        "steel",
+        "straight",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_simple1_corner_inner",
+      "name": "Short Wall Simple1 Corner Inner",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_Simple1_Corner_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "corner",
+        "edge",
+        "inner",
+        "scifi",
+        "short",
+        "simple1",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_simple1_corner_outer",
+      "name": "Short Wall Simple1 Corner Outer",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_Simple1_Corner_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "corner",
+        "edge",
+        "outer",
+        "scifi",
+        "short",
+        "simple1",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_simple1_straight",
+      "name": "Short Wall Simple1 Straight",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_Simple1_Straight.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "scifi",
+        "short",
+        "simple1",
+        "straight",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_simple2_corner_inner",
+      "name": "Short Wall Simple2 Corner Inner",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_Simple2_Corner_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "corner",
+        "edge",
+        "inner",
+        "scifi",
+        "short",
+        "simple2",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_simple2_corner_outer",
+      "name": "Short Wall Simple2 Corner Outer",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_Simple2_Corner_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "corner",
+        "edge",
+        "outer",
+        "scifi",
+        "short",
+        "simple2",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_simple2_straight",
+      "name": "Short Wall Simple2 Straight",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_Simple2_Straight.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "scifi",
+        "short",
+        "simple2",
+        "straight",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_triangles_corner_inner",
+      "name": "Short Wall Triangles Corner Inner",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_Triangles_Corner_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "corner",
+        "edge",
+        "inner",
+        "scifi",
+        "short",
+        "triangles",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_triangles_corner_outer",
+      "name": "Short Wall Triangles Corner Outer",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_Triangles_Corner_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "corner",
+        "edge",
+        "outer",
+        "scifi",
+        "short",
+        "triangles",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_triangles_straight",
+      "name": "Short Wall Triangles Straight",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_Triangles_Straight.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "scifi",
+        "short",
+        "straight",
+        "triangles",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_whiteplate2_corner_inner",
+      "name": "Short Wall White Plate2 Corner Inner",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_WhitePlate2_Corner_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "corner",
+        "edge",
+        "inner",
+        "plate2",
+        "scifi",
+        "short",
+        "wall",
+        "white"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_whiteplate2_corner_outer",
+      "name": "Short Wall White Plate2 Corner Outer",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_WhitePlate2_Corner_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "corner",
+        "edge",
+        "outer",
+        "plate2",
+        "scifi",
+        "short",
+        "wall",
+        "white"
+      ]
+    },
+    {
+      "id": "qsc_shortwall_whiteplate2_straight",
+      "name": "Short Wall White Plate2 Straight",
+      "path": "/models/quaternius-scifi/Walls/ShortWall_WhitePlate2_Straight.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "plate2",
+        "scifi",
+        "short",
+        "straight",
+        "wall",
+        "white"
+      ]
+    },
+    {
+      "id": "qsc_topastra_corner_round_inner",
+      "name": "Top Astra Corner Round Inner",
+      "path": "/models/quaternius-scifi/Walls/TopAstra_Corner_Round_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "astra",
+        "corner",
+        "edge",
+        "inner",
+        "round",
+        "scifi",
+        "top"
+      ]
+    },
+    {
+      "id": "qsc_topastra_curve_round_outer",
+      "name": "Top Astra Curve Round Outer",
+      "path": "/models/quaternius-scifi/Walls/TopAstra_Curve_Round_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "astra",
+        "curve",
+        "outer",
+        "round",
+        "scifi",
+        "top"
+      ]
+    },
+    {
+      "id": "qsc_topastra_straight",
+      "name": "Top Astra Straight",
+      "path": "/models/quaternius-scifi/Walls/TopAstra_Straight.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "astra",
+        "scifi",
+        "straight",
+        "top"
+      ]
+    },
+    {
+      "id": "qsc_topcables_corner_round_inner",
+      "name": "Top Cables Corner Round Inner",
+      "path": "/models/quaternius-scifi/Walls/TopCables_Corner_Round_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "cables",
+        "corner",
+        "edge",
+        "inner",
+        "round",
+        "scifi",
+        "top"
+      ]
+    },
+    {
+      "id": "qsc_topcables_corner_round_outer",
+      "name": "Top Cables Corner Round Outer",
+      "path": "/models/quaternius-scifi/Walls/TopCables_Corner_Round_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "cables",
+        "corner",
+        "edge",
+        "outer",
+        "round",
+        "scifi",
+        "top"
+      ]
+    },
+    {
+      "id": "qsc_topcables_corner_square_inner",
+      "name": "Top Cables Corner Square Inner",
+      "path": "/models/quaternius-scifi/Walls/TopCables_Corner_Square_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "cables",
+        "corner",
+        "edge",
+        "inner",
+        "scifi",
+        "square",
+        "top"
+      ]
+    },
+    {
+      "id": "qsc_topcables_corner_square_outer",
+      "name": "Top Cables Corner Square Outer",
+      "path": "/models/quaternius-scifi/Walls/TopCables_Corner_Square_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "cables",
+        "corner",
+        "edge",
+        "outer",
+        "scifi",
+        "square",
+        "top"
+      ]
+    },
+    {
+      "id": "qsc_topcables_straight",
+      "name": "Top Cables Straight",
+      "path": "/models/quaternius-scifi/Walls/TopCables_Straight.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "cables",
+        "scifi",
+        "straight",
+        "top"
+      ]
+    },
+    {
+      "id": "qsc_topcables_straight_hanging",
+      "name": "Top Cables Straight Hanging",
+      "path": "/models/quaternius-scifi/Walls/TopCables_Straight_Hanging.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "cables",
+        "hanging",
+        "scifi",
+        "straight",
+        "top"
+      ]
+    },
+    {
+      "id": "qsc_topplastic_corner_outer",
+      "name": "Top Plastic Corner Outer",
+      "path": "/models/quaternius-scifi/Walls/TopPlastic_Corner_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "corner",
+        "edge",
+        "outer",
+        "plastic",
+        "scifi",
+        "top"
+      ]
+    },
+    {
+      "id": "qsc_topplastic_corner_round_inner",
+      "name": "Top Plastic Corner Round Inner",
+      "path": "/models/quaternius-scifi/Walls/TopPlastic_Corner_Round_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "corner",
+        "edge",
+        "inner",
+        "plastic",
+        "round",
+        "scifi",
+        "top"
+      ]
+    },
+    {
+      "id": "qsc_topplastic_corner_round_outer",
+      "name": "Top Plastic Corner Round Outer",
+      "path": "/models/quaternius-scifi/Walls/TopPlastic_Corner_Round_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "corner",
+        "edge",
+        "outer",
+        "plastic",
+        "round",
+        "scifi",
+        "top"
+      ]
+    },
+    {
+      "id": "qsc_topplastic_straight",
+      "name": "Top Plastic Straight",
+      "path": "/models/quaternius-scifi/Walls/TopPlastic_Straight.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "plastic",
+        "scifi",
+        "straight",
+        "top"
+      ]
+    },
+    {
+      "id": "qsc_topsimple_corner_round_inner",
+      "name": "Top Simple Corner Round Inner",
+      "path": "/models/quaternius-scifi/Walls/TopSimple_Corner_Round_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "corner",
+        "edge",
+        "inner",
+        "round",
+        "scifi",
+        "simple",
+        "top"
+      ]
+    },
+    {
+      "id": "qsc_topsimple_corner_round_outer",
+      "name": "Top Simple Corner Round Outer",
+      "path": "/models/quaternius-scifi/Walls/TopSimple_Corner_Round_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "corner",
+        "edge",
+        "outer",
+        "round",
+        "scifi",
+        "simple",
+        "top"
+      ]
+    },
+    {
+      "id": "qsc_topsimple_straight",
+      "name": "Top Simple Straight",
+      "path": "/models/quaternius-scifi/Walls/TopSimple_Straight.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "scifi",
+        "simple",
+        "straight",
+        "top"
+      ]
+    },
+    {
+      "id": "qsc_topwindow_corner_curve_inner",
+      "name": "Top Window Corner Curve Inner",
+      "path": "/models/quaternius-scifi/Walls/TopWindow_Corner_Curve_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "corner",
+        "curve",
+        "edge",
+        "glass",
+        "inner",
+        "scifi",
+        "top",
+        "window"
+      ]
+    },
+    {
+      "id": "qsc_topwindow_corner_curve_outer",
+      "name": "Top Window Corner Curve Outer",
+      "path": "/models/quaternius-scifi/Walls/TopWindow_Corner_Curve_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "corner",
+        "curve",
+        "edge",
+        "glass",
+        "outer",
+        "scifi",
+        "top",
+        "window"
+      ]
+    },
+    {
+      "id": "qsc_topwindow_straight",
+      "name": "Top Window Straight",
+      "path": "/models/quaternius-scifi/Walls/TopWindow_Straight.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "glass",
+        "scifi",
+        "straight",
+        "top",
+        "window"
+      ]
+    },
+    {
+      "id": "qsc_wallastra_corner_round_inner",
+      "name": "Wall Astra Corner Round Inner",
+      "path": "/models/quaternius-scifi/Walls/WallAstra_Corner_Round_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "astra",
+        "barrier",
+        "corner",
+        "edge",
+        "inner",
+        "round",
+        "scifi",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_wallastra_corner_round_outer",
+      "name": "Wall Astra Corner Round Outer",
+      "path": "/models/quaternius-scifi/Walls/WallAstra_Corner_Round_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "astra",
+        "barrier",
+        "corner",
+        "edge",
+        "outer",
+        "round",
+        "scifi",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_wallastra_corner_square_inner",
+      "name": "Wall Astra Corner Square Inner",
+      "path": "/models/quaternius-scifi/Walls/WallAstra_Corner_Square_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "astra",
+        "barrier",
+        "corner",
+        "edge",
+        "inner",
+        "scifi",
+        "square",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_wallastra_corner_square_outer",
+      "name": "Wall Astra Corner Square Outer",
+      "path": "/models/quaternius-scifi/Walls/WallAstra_Corner_Square_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "astra",
+        "barrier",
+        "corner",
+        "edge",
+        "outer",
+        "scifi",
+        "square",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_wallastra_straight",
+      "name": "Wall Astra Straight",
+      "path": "/models/quaternius-scifi/Walls/WallAstra_Straight.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "astra",
+        "barrier",
+        "scifi",
+        "straight",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_wallastra_straight_broken",
+      "name": "Wall Astra Straight Broken",
+      "path": "/models/quaternius-scifi/Walls/WallAstra_Straight_Broken.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "astra",
+        "barrier",
+        "broken",
+        "scifi",
+        "straight",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_wallastra_straight_divided",
+      "name": "Wall Astra Straight Divided",
+      "path": "/models/quaternius-scifi/Walls/WallAstra_Straight_Divided.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "astra",
+        "barrier",
+        "divided",
+        "scifi",
+        "straight",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_wallastra_straight_flat",
+      "name": "Wall Astra Straight Flat",
+      "path": "/models/quaternius-scifi/Walls/WallAstra_Straight_Flat.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "astra",
+        "barrier",
+        "flat",
+        "scifi",
+        "straight",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_wallastra_straight_flat_window",
+      "name": "Wall Astra Straight Flat Window",
+      "path": "/models/quaternius-scifi/Walls/WallAstra_Straight_Flat_Window.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "astra",
+        "barrier",
+        "flat",
+        "glass",
+        "scifi",
+        "straight",
+        "wall",
+        "window"
+      ]
+    },
+    {
+      "id": "qsc_wallastra_straight_window",
+      "name": "Wall Astra Straight Window",
+      "path": "/models/quaternius-scifi/Walls/WallAstra_Straight_Window.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "astra",
+        "barrier",
+        "glass",
+        "scifi",
+        "straight",
+        "wall",
+        "window"
+      ]
+    },
+    {
+      "id": "qsc_wallband_corner_round_inner",
+      "name": "Wall Band Corner Round Inner",
+      "path": "/models/quaternius-scifi/Walls/WallBand_Corner_Round_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "band",
+        "barrier",
+        "corner",
+        "edge",
+        "inner",
+        "round",
+        "scifi",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_wallband_corner_round_outer",
+      "name": "Wall Band Corner Round Outer",
+      "path": "/models/quaternius-scifi/Walls/WallBand_Corner_Round_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "band",
+        "barrier",
+        "corner",
+        "edge",
+        "outer",
+        "round",
+        "scifi",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_wallband_corner_square_inner",
+      "name": "Wall Band Corner Square Inner",
+      "path": "/models/quaternius-scifi/Walls/WallBand_Corner_Square_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "band",
+        "barrier",
+        "corner",
+        "edge",
+        "inner",
+        "scifi",
+        "square",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_wallband_corner_square_outer",
+      "name": "Wall Band Corner Square Outer",
+      "path": "/models/quaternius-scifi/Walls/WallBand_Corner_Square_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "band",
+        "barrier",
+        "corner",
+        "edge",
+        "outer",
+        "scifi",
+        "square",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_wallband_straight",
+      "name": "Wall Band Straight",
+      "path": "/models/quaternius-scifi/Walls/WallBand_Straight.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "band",
+        "barrier",
+        "scifi",
+        "straight",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_wallband_straight_broken",
+      "name": "Wall Band Straight Broken",
+      "path": "/models/quaternius-scifi/Walls/WallBand_Straight_Broken.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "band",
+        "barrier",
+        "broken",
+        "scifi",
+        "straight",
+        "wall"
+      ]
+    },
+    {
+      "id": "qsc_wallwindow_cap_a",
+      "name": "Wall Window Cap A",
+      "path": "/models/quaternius-scifi/Walls/WallWindow_Cap_A.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "cap",
+        "glass",
+        "scifi",
+        "wall",
+        "window"
+      ]
+    },
+    {
+      "id": "qsc_wallwindow_cap_b",
+      "name": "Wall Window Cap B",
+      "path": "/models/quaternius-scifi/Walls/WallWindow_Cap_B.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "cap",
+        "glass",
+        "scifi",
+        "wall",
+        "window"
+      ]
+    },
+    {
+      "id": "qsc_wallwindow_corner_round_inner",
+      "name": "Wall Window Corner Round Inner",
+      "path": "/models/quaternius-scifi/Walls/WallWindow_Corner_Round_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "corner",
+        "edge",
+        "glass",
+        "inner",
+        "round",
+        "scifi",
+        "wall",
+        "window"
+      ]
+    },
+    {
+      "id": "qsc_wallwindow_corner_round_outer",
+      "name": "Wall Window Corner Round Outer",
+      "path": "/models/quaternius-scifi/Walls/WallWindow_Corner_Round_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "corner",
+        "edge",
+        "glass",
+        "outer",
+        "round",
+        "scifi",
+        "wall",
+        "window"
+      ]
+    },
+    {
+      "id": "qsc_wallwindow_corner_square_inner",
+      "name": "Wall Window Corner Square Inner",
+      "path": "/models/quaternius-scifi/Walls/WallWindow_Corner_Square_Inner.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "corner",
+        "edge",
+        "glass",
+        "inner",
+        "scifi",
+        "square",
+        "wall",
+        "window"
+      ]
+    },
+    {
+      "id": "qsc_wallwindow_corner_square_outer",
+      "name": "Wall Window Corner Square Outer",
+      "path": "/models/quaternius-scifi/Walls/WallWindow_Corner_Square_Outer.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "corner",
+        "edge",
+        "glass",
+        "outer",
+        "scifi",
+        "square",
+        "wall",
+        "window"
+      ]
+    },
+    {
+      "id": "qsc_wallwindow_straight",
+      "name": "Wall Window Straight",
+      "path": "/models/quaternius-scifi/Walls/WallWindow_Straight.gltf",
+      "category": "scifi",
+      "defaultScale": 1,
+      "tags": [
+        "barrier",
+        "glass",
+        "scifi",
+        "straight",
+        "wall",
+        "window"
+      ]
+    },
+    {
+      "id": "qbc_superhero_female_fullbody",
+      "name": "Superhero Female Full Body",
+      "path": "/models/quaternius-base-characters/characters/Superhero_Female_FullBody.gltf",
+      "category": "character",
+      "defaultScale": 1,
+      "tags": [
+        "base",
+        "body",
+        "character",
+        "characters",
+        "female",
+        "full",
+        "superhero"
+      ]
+    },
+    {
+      "id": "qbc_superhero_male_fullbody",
+      "name": "Superhero Male Full Body",
+      "path": "/models/quaternius-base-characters/characters/Superhero_Male_FullBody.gltf",
+      "category": "character",
+      "defaultScale": 1,
+      "tags": [
+        "base",
+        "body",
+        "character",
+        "characters",
+        "full",
+        "male",
+        "superhero"
+      ]
+    },
+    {
+      "id": "qbc_eyebrows_female",
+      "name": "Eyebrows Female",
+      "path": "/models/quaternius-base-characters/hairstyles-rigged/Eyebrows_Female.gltf",
+      "category": "character",
+      "defaultScale": 1,
+      "tags": [
+        "base",
+        "character",
+        "characters",
+        "eyebrows",
+        "female"
+      ]
+    },
+    {
+      "id": "qbc_eyebrows_regular",
+      "name": "Eyebrows Regular",
+      "path": "/models/quaternius-base-characters/hairstyles-rigged/Eyebrows_Regular.gltf",
+      "category": "character",
+      "defaultScale": 1,
+      "tags": [
+        "base",
+        "character",
+        "characters",
+        "eyebrows",
+        "regular"
+      ]
+    },
+    {
+      "id": "qbc_hair_beard",
+      "name": "Hair Beard",
+      "path": "/models/quaternius-base-characters/hairstyles-rigged/Hair_Beard.gltf",
+      "category": "character",
+      "defaultScale": 1,
+      "tags": [
+        "base",
+        "beard",
+        "character",
+        "characters",
+        "hair"
+      ]
+    },
+    {
+      "id": "qbc_hair_buns",
+      "name": "Hair Buns",
+      "path": "/models/quaternius-base-characters/hairstyles-rigged/Hair_Buns.gltf",
+      "category": "character",
+      "defaultScale": 1,
+      "tags": [
+        "base",
+        "buns",
+        "character",
+        "characters",
+        "hair"
+      ]
+    },
+    {
+      "id": "qbc_hair_buzzed",
+      "name": "Hair Buzzed",
+      "path": "/models/quaternius-base-characters/hairstyles-rigged/Hair_Buzzed.gltf",
+      "category": "character",
+      "defaultScale": 1,
+      "tags": [
+        "base",
+        "buzzed",
+        "character",
+        "characters",
+        "hair"
+      ]
+    },
+    {
+      "id": "qbc_hair_buzzedfemale",
+      "name": "Hair Buzzed Female",
+      "path": "/models/quaternius-base-characters/hairstyles-rigged/Hair_BuzzedFemale.gltf",
+      "category": "character",
+      "defaultScale": 1,
+      "tags": [
+        "base",
+        "buzzed",
+        "character",
+        "characters",
+        "female",
+        "hair"
+      ]
+    },
+    {
+      "id": "qbc_hair_long",
+      "name": "Hair Long",
+      "path": "/models/quaternius-base-characters/hairstyles-rigged/Hair_Long.gltf",
+      "category": "character",
+      "defaultScale": 1,
+      "tags": [
+        "base",
+        "character",
+        "characters",
+        "hair",
+        "long"
+      ]
+    },
+    {
+      "id": "qbc_hair_simpleparted",
+      "name": "Hair Simple Parted",
+      "path": "/models/quaternius-base-characters/hairstyles-rigged/Hair_SimpleParted.gltf",
+      "category": "character",
+      "defaultScale": 1,
+      "tags": [
+        "base",
+        "character",
+        "characters",
+        "hair",
+        "parted",
+        "simple"
+      ]
+    },
+    {
+      "id": "qbc_eyebrows_female_2",
+      "name": "Eyebrows Female",
+      "path": "/models/quaternius-base-characters/hairstyles-standalone/Eyebrows_Female.gltf",
+      "category": "character",
+      "defaultScale": 1,
+      "tags": [
+        "base",
+        "character",
+        "characters",
+        "eyebrows",
+        "female"
+      ]
+    },
+    {
+      "id": "qbc_eyebrows_regular_2",
+      "name": "Eyebrows Regular",
+      "path": "/models/quaternius-base-characters/hairstyles-standalone/Eyebrows_Regular.gltf",
+      "category": "character",
+      "defaultScale": 1,
+      "tags": [
+        "base",
+        "character",
+        "characters",
+        "eyebrows",
+        "regular"
+      ]
+    },
+    {
+      "id": "qbc_hair_beard_2",
+      "name": "Hair Beard",
+      "path": "/models/quaternius-base-characters/hairstyles-standalone/Hair_Beard.gltf",
+      "category": "character",
+      "defaultScale": 1,
+      "tags": [
+        "base",
+        "beard",
+        "character",
+        "characters",
+        "hair"
+      ]
+    },
+    {
+      "id": "qbc_hair_buns_2",
+      "name": "Hair Buns",
+      "path": "/models/quaternius-base-characters/hairstyles-standalone/Hair_Buns.gltf",
+      "category": "character",
+      "defaultScale": 1,
+      "tags": [
+        "base",
+        "buns",
+        "character",
+        "characters",
+        "hair"
+      ]
+    },
+    {
+      "id": "qbc_hair_buzzed_2",
+      "name": "Hair Buzzed",
+      "path": "/models/quaternius-base-characters/hairstyles-standalone/Hair_Buzzed.gltf",
+      "category": "character",
+      "defaultScale": 1,
+      "tags": [
+        "base",
+        "buzzed",
+        "character",
+        "characters",
+        "hair"
+      ]
+    },
+    {
+      "id": "qbc_hair_buzzedfemale_2",
+      "name": "Hair Buzzed Female",
+      "path": "/models/quaternius-base-characters/hairstyles-standalone/Hair_BuzzedFemale.gltf",
+      "category": "character",
+      "defaultScale": 1,
+      "tags": [
+        "base",
+        "buzzed",
+        "character",
+        "characters",
+        "female",
+        "hair"
+      ]
+    },
+    {
+      "id": "qbc_hair_long_2",
+      "name": "Hair Long",
+      "path": "/models/quaternius-base-characters/hairstyles-standalone/Hair_Long.gltf",
+      "category": "character",
+      "defaultScale": 1,
+      "tags": [
+        "base",
+        "character",
+        "characters",
+        "hair",
+        "long"
+      ]
+    },
+    {
+      "id": "qbc_hair_simpleparted_2",
+      "name": "Hair Simple Parted",
+      "path": "/models/quaternius-base-characters/hairstyles-standalone/Hair_SimpleParted.gltf",
+      "category": "character",
+      "defaultScale": 1,
+      "tags": [
+        "base",
+        "character",
+        "characters",
+        "hair",
+        "parted",
+        "simple"
+      ]
     }
   ]
 }

@@ -62,6 +62,9 @@ export interface AssetDefinition {
   bbox?: [number, number, number]
   /** Thumbnail URL — auto-generated to /thumbs/<id>.jpg. */
   thumbnail?: string
+  /** Free-form tags for search (e.g. ['wood','door','round','medieval']). Populated
+   *  by the registration script from filename tokens + category + synonyms. */
+  tags?: string[]
 }
 
 export interface PlacedAsset {

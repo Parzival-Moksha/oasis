@@ -2018,6 +2018,21 @@ export const useOasisStore = create<OasisState>((set, get) => {
       const stack = [...im._uiLayerStack]
       for (const id of stack) im.popUILayer(id)
       im.transition('placement')
+      // ░▒▓ EAGER POINTER-LOCK ON PLACEMENT ENTRY (Approach A) ▓▒░
+      // Lock the cursor NOW, while we're still inside the user-gesture
+      // stack from the originating "Place" click. Without this, the lock
+      // would race with the user's first canvas click and the click would
+      // land at screen-center (where the crosshair appears) instead of
+      // wherever they thought they were clicking.
+      //
+      // CRITICAL: only lock if the PRE-placement camera mode supported
+      // pointer-lock (TPS / noclip). For orbit users, lock would surprise
+      // them — they expect to keep their mouse cursor visible. transition()
+      // already stashed the prior mode in _previousCameraState; we read that
+      // here (NOT im.can() which now reads placement's capabilities).
+      const prevCameraState = im._previousCameraState
+      const prevAllowedLock = prevCameraState === 'noclip' || prevCameraState === 'third-person'
+      if (!im.pointerLocked && prevAllowedLock) im.requestPointerLock()
     } catch {}
   },
   cancelPlacement: () => {

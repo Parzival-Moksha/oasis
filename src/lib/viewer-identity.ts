@@ -69,10 +69,17 @@ export async function ensureViewerUserId(): Promise<string> {
   // This preserves the single-user illusion on a freshly-bootstrapped local
   // dev install. Hosted mode skips this — local-user content there is system
   // /admin content; we don't auto-grant it to arbitrary visitors.
+  // AWAITED (was fire-and-forget): without the await, the world-registry
+  // fetch right after /api/viewer/me can read rows still owned by
+  // 'local-user' before the claim lands → My Worlds renders empty. The
+  // cookie is already set on the response above; the await only delays
+  // sending the response, which is fine.
   if (process.env.OASIS_MODE !== 'hosted') {
-    void claimLocalUserRowsTo(fresh).catch(err => {
+    try {
+      await claimLocalUserRowsTo(fresh)
+    } catch (err) {
       console.warn('[viewer-identity] local-mode claim failed:', err)
-    })
+    }
   }
   return fresh
 }

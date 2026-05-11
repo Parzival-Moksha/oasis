@@ -14,6 +14,9 @@ out/
 *.tsbuildinfo
 .next-dev.log
 
+# Runtime tool artifacts (test-session output, etc.)
+.runtime/
+
 # PM2 logs (relay + web)
 logs/
 

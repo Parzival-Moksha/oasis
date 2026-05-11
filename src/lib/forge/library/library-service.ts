@@ -69,6 +69,7 @@ function coreAssets(): LibraryAsset[] {
       ownerId: null,
       source: null,
       license: null,
+      tags: a.tags ?? null,
     })
   }
 
@@ -193,7 +194,8 @@ export async function listAssets(opts: ListOptions): Promise<LibraryAsset[]> {
       a.name.toLowerCase().includes(q) ||
       (a.shortLabel || '').toLowerCase().includes(q) ||
       (a.description || '').toLowerCase().includes(q) ||
-      (a.category || '').toLowerCase().includes(q)
+      (a.category || '').toLowerCase().includes(q) ||
+      (Array.isArray(a.tags) && a.tags.some(t => t.toLowerCase().includes(q)))
     )
   }
   if (opts.limit) merged = merged.slice(0, opts.limit)

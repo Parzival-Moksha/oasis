@@ -20,7 +20,7 @@
 // VRMUtils.deepCloneVrm when @pixiv/three-vrm ships it (3.5 does not).
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import React, { forwardRef, Suspense, useEffect, useId, useRef, useState } from 'react'
+import React, { forwardRef, Suspense, useEffect, useRef, useState } from 'react'
 import { Billboard, Text } from '@react-three/drei'
 import { useFrame, useLoader } from '@react-three/fiber'
 import * as THREE from 'three'
@@ -132,11 +132,12 @@ function VRMBody({
 
   // Per-player cache fragment — appended as a URL hash, never sent to server.
   // Forces drei's useLoader to give each remote a fresh parsed GLTF (own
-  // skeleton + expressionManager). The mountId suffix rotates per React mount
-  // so a fast same-sessionId rejoin can't pull a just-disposed VRM from the
-  // loader cache.
-  const mountId = useId()
-  const vrmUrl = avatarUrl + '#vrm-remote-' + cacheKey + '-' + mountId
+  // skeleton + expressionManager). NOTE: we previously appended a per-mount
+  // useId() suffix to defeat the same-sessionId-rejoin race, but that turned
+  // drei's URL-keyed cache into an unbounded leak — every remount created a
+  // new cache entry the loader never evicts. The cache-stomp race is narrow;
+  // the memory leak was the real bug. Stable cacheKey wins.
+  const vrmUrl = avatarUrl + '#vrm-remote-' + cacheKey
   const gltf = useLoader(GLTFLoader, vrmUrl, (loader) => {
     loader.register((parser) => new VRMLoaderPlugin(parser))
   })

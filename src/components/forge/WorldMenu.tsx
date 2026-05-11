@@ -7,6 +7,7 @@ import { useAudioManager } from '@/lib/audio-manager'
 import { useUILayer } from '@/lib/input-manager'
 import type { WorldMeta } from '@/lib/forge/world-persistence'
 import { SettingsContext } from '@/components/scene-lib'
+import { getViewerUserIdClient } from '@/lib/viewer-identity'
 
 import { GameMenuButton } from './GameMenuButton'
 
@@ -111,12 +112,10 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
   const [worldTab, setWorldTab] = useState<'this' | 'my' | 'public'>('this')
   // Within Public Worlds, filter pills for visibility tier.
   const [publicFilter, setPublicFilter] = useState<'public' | 'sandbox' | 'unlisted'>('public')
-  // Viewer identity (cookie-based, non-httpOnly so client can read directly).
-  const viewerUserId = useMemo(() => {
-    if (typeof document === 'undefined') return 'local-user'
-    const m = document.cookie.match(/(?:^|;\s*)oasis-viewer-id=([^;]+)/)
-    return m ? decodeURIComponent(m[1]) : 'local-user'
-  }, [])
+  // Viewer identity — read fresh from the cookie on each render. Reading
+  // document.cookie is cheap and avoids a useMemo([])-with-stale-bootstrap
+  // race where the cookie is set after WorldMenu first mounts.
+  const viewerUserId = getViewerUserIdClient()
   const menuRef = useRef<HTMLDivElement>(null)
   useUILayer('world-menu', isOpen)
   const { settings, updateSetting, rp1Locked } = useContext(SettingsContext)
