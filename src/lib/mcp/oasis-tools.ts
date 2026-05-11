@@ -1530,33 +1530,62 @@ tools.query_objects = async (args) => {
 }
 
 tools.search_assets = async (args) => {
-  const query = validStr(args.query, '').toLowerCase()
+  const query = validStr(args.query, '')
   const category = validStr(args.category, '')
   const limit = Math.min(validNum(args.limit, 20), 50)
+  const { listAssets } = await import('../forge/library/library-service')
+  const { getLocalUserId } = await import('../local-auth')
+  const viewerUserId = await getLocalUserId()
+  let results = await listAssets({ viewerUserId, query: query || undefined, limit: 500 })
+  if (category) results = results.filter(a => (a.category || '').toLowerCase() === category.toLowerCase())
+  const trimmed = results.slice(0, limit).map(a => ({
+    id: a.id,
+    name: a.name,
+    category: a.category || 'misc',
+    defaultScale: a.defaultScale ?? 1,
+    shortLabel: a.shortLabel || undefined,
+    thumbnailUrl: a.thumbnailUrl || undefined,
+    kind: a.kind,
+    scope: a.scope,
+  }))
+  return { ok: true, message: `Found ${results.length} assets (${trimmed.length} returned).`, data: trimmed }
+}
 
-  let results = ASSET_CATALOG.map(a => ({ id: a.id, name: a.name, category: a.category || 'misc', defaultScale: a.defaultScale }))
-  if (category) results = results.filter(a => a.category.toLowerCase() === category.toLowerCase())
+tools.list_ground_presets = async (args) => {
+  const { GROUND_PRESETS } = await import('../forge/ground-textures')
+  const query = validStr(args.query, '').toLowerCase()
+  const limit = Math.min(validNum(args.limit, 30), 100)
+  let results = GROUND_PRESETS.map((p: { id: string; name: string; icon?: string; tileRepeat?: number; customTextureUrl?: string; assetName?: string; shortLabel?: string; description?: string }) => ({
+    id: p.id,
+    label: p.shortLabel || p.name,
+    description: p.description || '',
+    icon: p.icon,
+    tileRepeat: p.tileRepeat,
+  }))
   if (query) {
-    results = results.filter(a =>
-      a.id.toLowerCase().includes(query) ||
-      a.name.toLowerCase().includes(query) ||
-      a.category.toLowerCase().includes(query)
+    results = results.filter(p =>
+      p.id.toLowerCase().includes(query) ||
+      p.label.toLowerCase().includes(query) ||
+      (p.description || '').toLowerCase().includes(query)
     )
   }
-
-  return { ok: true, message: `Found ${results.length} assets.`, data: results.slice(0, limit) }
+  return { ok: true, message: `${results.length} ground presets matched.`, data: results.slice(0, limit) }
 }
 
 tools.get_asset_catalog = async (args) => {
   const category = validStr(args.category, '')
-  const byCategory: Record<string, Array<{ id: string; name: string; defaultScale?: number }>> = {}
-  for (const a of ASSET_CATALOG) {
+  const { listAssets } = await import('../forge/library/library-service')
+  const { getLocalUserId } = await import('../local-auth')
+  const viewerUserId = await getLocalUserId()
+  const all = await listAssets({ viewerUserId, limit: 2000 })
+  const byCategory: Record<string, Array<{ id: string; name: string; defaultScale?: number; scope?: string; shortLabel?: string }>> = {}
+  for (const a of all) {
     const cat = a.category || 'misc'
     if (category && cat.toLowerCase() !== category.toLowerCase()) continue
     if (!byCategory[cat]) byCategory[cat] = []
-    byCategory[cat].push({ id: a.id, name: a.name, defaultScale: a.defaultScale })
+    byCategory[cat].push({ id: a.id, name: a.name, defaultScale: a.defaultScale ?? 1, scope: a.scope, shortLabel: a.shortLabel || undefined })
   }
-  return { ok: true, message: `${ASSET_CATALOG.length} assets in catalog.`, data: byCategory }
+  return { ok: true, message: `${all.length} assets visible to viewer.`, data: byCategory }
 }
 
 // ─═̷─═̷─ WORLD BUILD ─═̷─═̷─

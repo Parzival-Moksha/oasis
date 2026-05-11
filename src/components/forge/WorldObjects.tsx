@@ -347,16 +347,27 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
       <group
         ref={groupRef}
         visible={isVisible}
-        onDoubleClick={inspectOn === 'double-click' ? e => handleSelect(e, true) : undefined}
-        onClick={(e) => {
-          if (isReadOnly || isRp1) return  // ░▒▓ Read-only / RP1 — no selection ▓▒░
+        // ░▒▓ Single-click selects in all camera modes. Double-click summons the
+        // Joystick (ObjectInspector) — also in all camera modes, including
+        // noclip/TPS where the cursor is pointer-locked. The legacy `inspectOn`
+        // prop is now ignored for inspector summoning; we keep the same gesture
+        // everywhere so muscle memory carries across camera modes. ▓▒░
+        onDoubleClick={(e) => {
+          if (isReadOnly || isRp1) return
           e.stopPropagation()
-          // Force-blur any focused panel input — breaks the ui-focused trance
           if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
             document.activeElement.blur()
           }
           onSelect(id)
-          if (inspectOn === 'click' && !useInputManager.getState().pointerLocked) setInspectedObject(id)
+          setInspectedObject(id)
+        }}
+        onClick={(e) => {
+          if (isReadOnly || isRp1) return
+          e.stopPropagation()
+          if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+            document.activeElement.blur()
+          }
+          onSelect(id)
         }}
       >
         {/* Selection highlight ring — on the ground, hidden in agent-focus */}

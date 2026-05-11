@@ -16,7 +16,7 @@ import {
 
 const OASIS_ROOT = process.env.OASIS_ROOT || process.cwd()
 const REALTIME_PROMPT_PATH = path.join(OASIS_ROOT, '.claude', 'agents', 'merlin-realtime.md')
-const FALLBACK_REALTIME_MODEL = 'gpt-realtime'
+const FALLBACK_REALTIME_MODEL = 'gpt-realtime-2'
 const requestedDefaultRealtimeModel = process.env.OPENAI_REALTIME_MODEL?.trim() || FALLBACK_REALTIME_MODEL
 const DEFAULT_REALTIME_MODEL = isAllowedRealtimeModel(requestedDefaultRealtimeModel)
   ? requestedDefaultRealtimeModel

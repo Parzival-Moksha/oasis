@@ -1,0 +1,179 @@
+[highlands] extracting C:/Users/l/Downloads/HighLandsFantasyBuildings.zip -> C:\Users\l\AppData\Local\Temp\highlands-import\extracted
+[highlands] downscaling 38 PNG textures to 1024px
+[highlands] running Blender FBX -> GLB...
+BlenderMCP addon registered
+[highlands] found 17 FBX files
+[highlands] Barracks\SM_Barracks.fbx -> C:\af_oasis\public\models\highlands-fantasy\barracks.glb
+BlenderMCP addon unregistered
+FBX version: 7400
+INFO Draco mesh compression is available, use library at C:\Program Files\Blender Foundation\Blender 5.0\5.0\scripts\addons_core\io_scene_gltf2\extern_draco.dll
+09:07:39 | INFO: Starting glTF 2.0 export
+09:07:39 | INFO: Extracting primitive: SM_Barracks
+09:07:39 | WARNING: The active Vertex Color will not be exported, as it is not used in the node tree of the material
+09:07:39 | INFO: Primitives created: 1
+09:07:39 | INFO: Extracting primitive: UCX_SM_Barracks
+09:07:39 | INFO: Primitives created: 1
+09:07:39 | INFO: Finished glTF 2.0 export in 0.01403951644897461 s
+
+[highlands] Hut\SM_Hut.fbx -> C:\af_oasis\public\models\highlands-fantasy\hut.glb
+FBX version: 7400
+09:07:40 | INFO: Starting glTF 2.0 export
+09:07:40 | INFO: Extracting primitive: SM_Hut
+09:07:40 | INFO: Primitives created: 1
+09:07:40 | INFO: Extracting primitive: UCX_SM_Hut
+09:07:40 | INFO: Primitives created: 1
+09:07:40 | INFO: Finished glTF 2.0 export in 0.009045600891113281 s
+
+[highlands] MiscProps\SM_Axe.fbx -> C:\af_oasis\public\models\highlands-fantasy\axe.glb
+FBX version: 7400
+09:07:40 | INFO: Starting glTF 2.0 export
+09:07:40 | INFO: Extracting primitive: SM_Axe
+09:07:40 | INFO: Primitives created: 1
+09:07:40 | INFO: Finished glTF 2.0 export in 0.005003929138183594 s
+
+[highlands] MiscProps\SM_Barrel.fbx -> C:\af_oasis\public\models\highlands-fantasy\barrel.glb
+FBX version: 7400
+09:07:40 | INFO: Starting glTF 2.0 export
+09:07:40 | INFO: Extracting primitive: SM_Barrel
+09:07:40 | WARNING: Image '<bpy_struct, Image("SM_Props_Bake1_pbr_metalness.png") at 0x0000018764044F08>' has no size and cannot be exported.
+09:07:40 | WARNING: Image '<bpy_struct, Image("SM_Props_Bake1_pbr_roughness.png") at 0x0000018764044808>' has no size and cannot be exported.
+09:07:40 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:07:40 | INFO: Primitives created: 1
+09:07:40 | INFO: Extracting primitive: UCX_SM_Barrel
+09:07:40 | INFO: Primitives created: 1
+09:07:40 | INFO: Finished glTF 2.0 export in 0.008996963500976562 s
+
+[highlands] MiscProps\SM_CropField.fbx -> C:\af_oasis\public\models\highlands-fantasy\cropfield.glb
+FBX version: 7400
+09:07:40 | INFO: Starting glTF 2.0 export
+09:07:40 | INFO: Extracting primitive: SM_CropField
+09:07:40 | WARNING: The active Vertex Color will not be exported, as it is not used in the node tree of the material
+09:07:40 | INFO: Primitives created: 1
+09:07:40 | INFO: Finished glTF 2.0 export in 0.008987903594970703 s
+
+[highlands] MiscProps\SM_Grass_01.fbx -> C:\af_oasis\public\models\highlands-fantasy\grass_01.glb
+FBX version: 7400
+09:07:40 | INFO: Starting glTF 2.0 export
+09:07:40 | INFO: Extracting primitive: SM_Grass_01
+09:07:40 | WARNING: The active Vertex Color will not be exported, as it is not used in the node tree of the material
+09:07:40 | INFO: Primitives created: 1
+09:07:40 | INFO: Finished glTF 2.0 export in 0.006082296371459961 s
+
+[highlands] MiscProps\SM_Grass_02.fbx -> C:\af_oasis\public\models\highlands-fantasy\grass_02.glb
+FBX version: 7400
+09:07:40 | INFO: Starting glTF 2.0 export
+09:07:40 | INFO: Extracting primitive: SM_Grass_02
+09:07:40 | WARNING: The active Vertex Color will not be exported, as it is not used in the node tree of the material
+09:07:40 | INFO: Primitives created: 1
+09:07:40 | INFO: Finished glTF 2.0 export in 0.005999326705932617 s
+
+[highlands] MiscProps\SM_Grass_03.fbx -> C:\af_oasis\public\models\highlands-fantasy\grass_03.glb
+FBX version: 7400
+09:07:40 | INFO: Starting glTF 2.0 export
+09:07:40 | INFO: Extracting primitive: SM_Grass_03
+09:07:40 | WARNING: The active Vertex Color will not be exported, as it is not used in the node tree of the material
+09:07:40 | INFO: Primitives created: 1
+09:07:40 | INFO: Finished glTF 2.0 export in 0.006043910980224609 s
+
+[highlands] MiscProps\SM_Shield.fbx -> C:\af_oasis\public\models\highlands-fantasy\shield.glb
+FBX version: 7400
+09:07:40 | INFO: Starting glTF 2.0 export
+09:07:40 | INFO: Extracting primitive: SM_Shield
+09:07:40 | WARNING: Image '<bpy_struct, Image("SM_Props_Bake1_pbr_metalness.png") at 0x00000187643C2B08>' has no size and cannot be exported.
+09:07:40 | WARNING: Image '<bpy_struct, Image("SM_Props_Bake1_pbr_roughness.png") at 0x0000018766B7B208>' has no size and cannot be exported.
+09:07:40 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:07:40 | INFO: Primitives created: 1
+09:07:40 | INFO: Finished glTF 2.0 export in 0.006999492645263672 s
+
+[highlands] MiscProps\SM_WoodCrate.fbx -> C:\af_oasis\public\models\highlands-fantasy\woodcrate.glb
+FBX version: 7400
+09:07:40 | INFO: Starting glTF 2.0 export
+09:07:40 | INFO: Extracting primitive: SM_WoodCrate
+09:07:40 | WARNING: Image '<bpy_struct, Image("SM_Props_Bake1_pbr_metalness.png") at 0x0000018764EEB208>' has no size and cannot be exported.
+09:07:40 | WARNING: Image '<bpy_struct, Image("SM_Props_Bake1_pbr_roughness.png") at 0x0000018764EE8108>' has no size and cannot be exported.
+09:07:40 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:07:40 | INFO: Primitives created: 1
+09:07:40 | INFO: Extracting primitive: UCX_SM_WoodCrate
+09:07:40 | INFO: Primitives created: 1
+09:07:40 | INFO: Finished glTF 2.0 export in 0.008998632431030273 s
+
+[highlands] MiscProps\SM_WoodFence.fbx -> C:\af_oasis\public\models\highlands-fantasy\woodfence.glb
+FBX version: 7400
+09:07:40 | INFO: Starting glTF 2.0 export
+09:07:40 | INFO: Extracting primitive: SM_WoodFence
+09:07:40 | WARNING: Image '<bpy_struct, Image("SM_Props_Bake1_pbr_metalness.png") at 0x00000187643D5D08>' has no size and cannot be exported.
+09:07:40 | WARNING: Image '<bpy_struct, Image("SM_Props_Bake1_pbr_roughness.png") at 0x00000187643D7908>' has no size and cannot be exported.
+09:07:40 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:07:40 | INFO: Primitives created: 1
+09:07:40 | INFO: Extracting primitive: UCX_SM_WoodFence
+09:07:40 | INFO: Primitives created: 1
+09:07:40 | INFO: Finished glTF 2.0 export in 0.007965564727783203 s
+
+[highlands] TownCenter\SM_TownCenter.fbx -> C:\af_oasis\public\models\highlands-fantasy\towncenter.glb
+FBX version: 7400
+09:07:40 | INFO: Starting glTF 2.0 export
+09:07:40 | INFO: Extracting primitive: SM_TownCenter
+09:07:40 | WARNING: The active Vertex Color will not be exported, as it is not used in the node tree of the material
+09:07:40 | INFO: Primitives created: 1
+09:07:40 | INFO: Extracting primitive: UCX_SM_TownCenter
+09:07:40 | INFO: Primitives created: 1
+09:07:40 | INFO: Finished glTF 2.0 export in 0.010905742645263672 s
+
+[highlands] Walls\Tower\SM_Tower.fbx -> C:\af_oasis\public\models\highlands-fantasy\tower.glb
+FBX version: 7400
+09:07:40 | INFO: Starting glTF 2.0 export
+09:07:40 | INFO: Extracting primitive: SM_TowerW
+09:07:40 | WARNING: The active Vertex Color will not be exported, as it is not used in the node tree of the material
+09:07:40 | INFO: Primitives created: 1
+09:07:40 | INFO: Extracting primitive: UCX_SM_TowerW
+09:07:40 | INFO: Primitives created: 1
+09:07:40 | INFO: Finished glTF 2.0 export in 0.009965896606445312 s
+
+[highlands] Walls\WallMid\SM_WallMid.fbx -> C:\af_oasis\public\models\highlands-fantasy\wallmid.glb
+FBX version: 7400
+09:07:40 | INFO: Starting glTF 2.0 export
+09:07:40 | INFO: Extracting primitive: SM_WallMid
+09:07:40 | WARNING: Image '<bpy_struct, Image("SM_WallMid_Bake1_pbr_metalness.png") at 0x00000187640F5D08>' has no size and cannot be exported.
+09:07:40 | WARNING: Image '<bpy_struct, Image("SM_WallMid_Bake1_pbr_roughness.png") at 0x00000187643D5D08>' has no size and cannot be exported.
+09:07:40 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:07:40 | INFO: Primitives created: 1
+09:07:40 | INFO: Extracting primitive: UCX_SM_WallMid
+09:07:40 | INFO: Primitives created: 1
+09:07:40 | INFO: Finished glTF 2.0 export in 0.00899958610534668 s
+
+[highlands] WatchTower\SM_WatchTower.fbx -> C:\af_oasis\public\models\highlands-fantasy\watchtower.glb
+FBX version: 7400
+09:07:41 | INFO: Starting glTF 2.0 export
+09:07:41 | INFO: Extracting primitive: SM_WatchTower
+09:07:41 | WARNING: The active Vertex Color will not be exported, as it is not used in the node tree of the material
+09:07:41 | INFO: Primitives created: 1
+09:07:41 | INFO: Extracting primitive: UCX_SM_WatchTower
+09:07:41 | INFO: Primitives created: 1
+09:07:41 | INFO: Finished glTF 2.0 export in 0.013002157211303711 s
+
+[highlands] Windmill\SM_Windmill.fbx -> C:\af_oasis\public\models\highlands-fantasy\windmill.glb
+FBX version: 7400
+09:07:41 | INFO: Starting glTF 2.0 export
+09:07:41 | INFO: Extracting primitive: SM_Windmill
+09:07:41 | WARNING: Image '<bpy_struct, Image("SM_Windmill_Bake1_pbr_metalness.png") at 0x00000187640F7208>' has no size and cannot be exported.
+09:07:41 | WARNING: Image '<bpy_struct, Image("SM_Windmill_Bake1_pbr_roughness.png") at 0x00000187640F4108>' has no size and cannot be exported.
+09:07:41 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:07:41 | INFO: Primitives created: 1
+09:07:41 | INFO: Extracting primitive: UCX_SM_Windmill
+09:07:41 | INFO: Primitives created: 1
+09:07:41 | INFO: Finished glTF 2.0 export in 0.010012388229370117 s
+
+[highlands] Windmill\SM_Windmill_Sails.fbx -> C:\af_oasis\public\models\highlands-fantasy\windmill_sails.glb
+FBX version: 7400
+09:07:41 | INFO: Starting glTF 2.0 export
+09:07:41 | INFO: Extracting primitive: SM_Windmill_Wings
+09:07:41 | WARNING: The active Vertex Color will not be exported, as it is not used in the node tree of the material
+09:07:41 | INFO: Primitives created: 1
+09:07:41 | INFO: Finished glTF 2.0 export in 0.007989645004272461 s
+
+[highlands] done
+Blender 5.0.1 (hash a3db93c5b259 built 2025-12-16 01:32:30)
+
+Blender quit
+[highlands] registered 17 buildings in C:\af_oasis\data\asset-catalog-extras.json
+[highlands] total output: 0.7 MB across 17 GLBs

@@ -4,9 +4,10 @@
 
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ConjureStatus, ConjuredAsset, RemeshQuality } from '../../../lib/conjure/types'
 import { PROVIDERS, REMESH_PRESETS } from '../../../lib/conjure/types'
+import { useThumbnailStore } from '../../../lib/thumbnail-store'
 
 export const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 
@@ -45,17 +46,42 @@ export function StatusBadge({ status, progress }: { status: ConjureStatus; progr
 // ─═̷─═̷─ Every creation deserves a face, even if the portrait isn't ready yet ─═̷─═̷─
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function AssetThumb({ src, fallback, alt }: { src: string; fallback: string; alt: string }) {
-  const [failed, setFailed] = useState(false)
-  if (!src || failed) {
+/** Asset thumbnail with status-aware rendering.
+ *  - `assetId` is optional; when provided, subscribes to the thumbnail store
+ *    for cache-bust + pending/failed status. Without it, behaves as a static
+ *    img with emoji fallback (legacy callers).
+ *  - On 'pending'/'missing' it shows the emoji fallback; once the queue marks
+ *    'ready' it triggers a re-render via store-driven version bump and the
+ *    img loads fresh (browser-side 404 cache busted by `?v=<n>`). */
+export function AssetThumb({ src, fallback, alt, assetId }: { src: string; fallback: string; alt: string; assetId?: string }) {
+  const [localFailed, setLocalFailed] = useState(false)
+  const status = useThumbnailStore(s => assetId ? (s.status[assetId] || 'missing') : 'ready')
+  const version = useThumbnailStore(s => assetId ? (s.versions[assetId] || 0) : 0)
+
+  // Reset local-fail flag if the version bumps (i.e. queue just rendered it).
+  useEffect(() => { setLocalFailed(false) }, [version])
+
+  // When the queue knows it's not ready, just show emoji — skip the network request.
+  if (!src || localFailed) {
     return <span className="text-xl opacity-30">{fallback}</span>
   }
+  if (assetId && (status === 'missing' || status === 'pending' || status === 'failed')) {
+    return (
+      <span className="relative text-xl opacity-30">
+        {fallback}
+        {status === 'pending' && (
+          <span className="absolute bottom-0 right-0 text-[7px] opacity-60 leading-none animate-pulse">…</span>
+        )}
+      </span>
+    )
+  }
+  const finalSrc = version > 0 ? `${src}${src.includes('?') ? '&' : '?'}v=${version}` : src
   return (
     <img
-      src={src}
+      src={finalSrc}
       alt={alt}
       className="w-full h-full object-cover"
-      onError={() => setFailed(true)}
+      onError={() => setLocalFailed(true)}
       loading="lazy"
     />
   )

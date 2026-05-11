@@ -12,10 +12,13 @@ import type { AssetDefinition } from '../../scene-lib/types'
 import { ASSET_CATALOG } from '../../scene-lib/constants'
 import { ModelPreviewPanel, CraftedPreviewPanel } from '../ModelPreview'
 import { useCraftedThumbnailGenerator, useCatalogThumbnailGenerator, usePortalThumbnailGenerator } from '../../../hooks/useThumbnailGenerator'
+import { useLibraryCatalog } from '../../../hooks/useLibraryCatalog'
 import { OASIS_BASE, AssetThumb } from './shared'
 import { PORTAL_GATE_VARIANT_DEFS, type PortalGateVariant } from '../../../lib/portal-gates'
 import { portalThumbPath } from '../../../lib/portal-thumbnails'
 import { AssetCard } from '../AssetCard'
+import { DeleteButton } from '../DeleteButton'
+import { canMutateLibrary } from '../../../lib/library-permissions'
 
 export function AssetsTab() {
   const { conjuredAssets } = useConjure()
@@ -32,6 +35,7 @@ export function AssetsTab() {
 
   const [assetCategory, setAssetCategory] = useState<string>('all')
   const [assetSubTab, setAssetSubTab] = useState<'catalog' | 'portals' | 'conjured' | 'crafted' | 'images'>('catalog')
+  const [deletedCatalogIds, setDeletedCatalogIds] = useState<Set<string>>(() => new Set())
   const [portalTargetWorldId, setPortalTargetWorldId] = useState('')
   const [previewAsset, setPreviewAsset] = useState<AssetDefinition | null>(null)
   const [previewConjured, setPreviewConjured] = useState<ConjuredAsset | null>(null)
@@ -43,16 +47,46 @@ export function AssetsTab() {
   useCraftedThumbnailGenerator()
   const portalThumbVersion = usePortalThumbnailGenerator()
 
-  // ░▒▓ Catalog thumbnail generator — auto-runs on mount for missing thumbs ▓▒░
+  // ░▒▓ Catalog thumbnail generator — kept as a manual fallback button. The
+  // unified thumbnail queue in Providers handles missing thumbs globally now,
+  // so this `generate()` call is no longer auto-fired on mount. ▓▒░
   const catalogThumbGen = useCatalogThumbnailGenerator()
-  const autoGenTriggered = useRef(false)
-  useEffect(() => {
-    if (autoGenTriggered.current) return
-    autoGenTriggered.current = true
-    // Kick off silently — only renders missing thumbs (idempotent). Catalog
-    // assets fresh-cloned get their thumbs on first library open, then commit.
-    void catalogThumbGen.generate()
-  }, [catalogThumbGen])
+
+  // ░▒▓ v1 library: catalog grid reads from listAssets() (Asset table + core
+  // tier merged), filtered by the viewer's cookie identity. Replaces the
+  // direct ASSET_CATALOG import. The legacy import is kept for the
+  // `worldConjuredAssetIds` lookups elsewhere in this file. ▓▒░
+  const { assets: libraryAssets, refresh: refreshLibrary } = useLibraryCatalog()
+  // Fallback: while the fetch is loading, use the baked ASSET_CATALOG so the
+  // grid never appears empty on first paint.
+  const catalogList = libraryAssets.length > 0 ? libraryAssets : ASSET_CATALOG.map(a => ({
+    id: a.id,
+    name: a.name,
+    path: a.path,
+    category: a.category,
+    defaultScale: a.defaultScale,
+    kind: 'glb' as const,
+    scope: 'core' as const,
+    ownerId: null,
+  }))
+
+  // ░▒▓ Catalog asset banish — file off disk + entry off index ▓▒░
+  const banishCatalogAsset = useCallback(async (id: string, assetPath: string) => {
+    setDeletedCatalogIds(prev => {
+      const next = new Set(prev)
+      next.add(id)
+      return next
+    })
+    try {
+      await fetch(`${OASIS_BASE}/api/library/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'asset', id, path: assetPath }),
+      })
+    } catch (err) {
+      console.error('[Forge] Catalog delete failed:', err)
+    }
+  }, [])
 
   // ░▒▓ Rename — PATCH to server + update local store ▓▒░
   const renameAsset = useCallback(async (id: string, displayName: string) => {
@@ -190,12 +224,12 @@ export function AssetsTab() {
         ))}
       </div>
 
-      {/* ░▒▓ CATALOG SUB-TAB — Pre-made Quaternius models ▓▒░ */}
+      {/* ░▒▓ CATALOG SUB-TAB — Unified library view ▓▒░ */}
       {assetSubTab === 'catalog' && (
         <>
           {/* Category filter pills + generate thumbs button */}
           <div className="flex flex-wrap gap-1 mb-2 items-center">
-            {['all', ...Array.from(new Set(ASSET_CATALOG.map(a => a.category)))].map(cat => (
+            {['all', ...Array.from(new Set(catalogList.map(a => a.category || 'misc')))].map(cat => (
               <button
                 key={cat}
                 onClick={() => setAssetCategory(cat)}
@@ -218,36 +252,55 @@ export function AssetsTab() {
             )}
           </div>
 
-          {/* Catalog grid — thumbnails with emoji fallback */}
+          {/* Catalog grid — thumbnails with emoji fallback. Top-right X banishes the asset (file + index). */}
           <div className="grid grid-cols-3 gap-1.5">
-            {ASSET_CATALOG
-              .filter(a => assetCategory === 'all' || a.category === assetCategory)
+            {catalogList
+              .filter(a => assetCategory === 'all' || (a.category || 'misc') === assetCategory)
+              .filter(a => !deletedCatalogIds.has(a.id))
               .map(asset => (
-              <button
+              <div
                 key={asset.id}
-                onClick={() => {
-                  const scrollParent = scrollRef.current?.closest('.overflow-y-auto') as HTMLElement | null
-                  if (scrollParent) savedScrollTop.current = scrollParent.scrollTop
-                  setPreviewAsset(asset)
-                }}
-                className="rounded-lg border p-1.5 transition-all duration-200 text-left hover:border-yellow-500/40 hover:bg-yellow-500/5 group"
+                className="relative rounded-lg border p-1.5 transition-all duration-200 text-left hover:border-yellow-500/40 hover:bg-yellow-500/5 group cursor-pointer"
                 style={{
                   background: 'rgba(15, 15, 15, 0.8)',
                   borderColor: 'rgba(255, 255, 255, 0.06)',
                 }}
                 title={`${asset.name} (${asset.category}) — click to preview`}
+                onClick={(e) => {
+                  if ((e.target as HTMLElement).closest('[data-card-action="delete"]')) return
+                  const scrollParent = scrollRef.current?.closest('.overflow-y-auto') as HTMLElement | null
+                  if (scrollParent) savedScrollTop.current = scrollParent.scrollTop
+                  setPreviewAsset({
+                    id: asset.id,
+                    name: asset.name,
+                    path: asset.path,
+                    category: asset.category || 'misc',
+                    defaultScale: asset.defaultScale ?? 1,
+                  })
+                }}
               >
-                <div className="w-full aspect-square rounded bg-black/40 flex items-center justify-center mb-1 overflow-hidden">
+                <div className="w-full aspect-square rounded bg-black/40 flex items-center justify-center mb-1 overflow-hidden relative">
                   <AssetThumb
                     src={`${OASIS_BASE}/thumbs/${asset.id}.jpg`}
-                    fallback={asset.category === 'enemies' ? '\u{1F916}' : asset.category === 'guns' ? '\u{1F52B}' : asset.category === 'pickups' ? '\u{1F48E}' : asset.category === 'character' ? '\u{1F9D1}' : asset.category === 'nature' ? '\u{1F332}' : asset.category === 'props' ? '\u{1F4E6}' : asset.category === 'scifi' ? '\u{1F680}' : asset.category === 'fantasy' ? '\u{1F9D9}' : asset.category === 'village' ? '\u{1F3E0}' : asset.category === 'avatar' ? '\u{1F9D1}' : '\u{1F3D7}'}
+                    assetId={asset.id}
+                    fallback={asset.category === 'enemies' ? '\u{1F916}' : asset.category === 'guns' ? '\u{1F52B}' : asset.category === 'pickups' ? '\u{1F48E}' : asset.category === 'character' ? '\u{1F9D1}' : asset.category === 'nature' ? '\u{1F332}' : asset.category === 'props' ? '\u{1F4E6}' : asset.category === 'scifi' ? '\u{1F680}' : asset.category === 'fantasy' ? '\u{1F9D9}' : asset.category === 'village' ? '\u{1F3E0}' : asset.category === 'avatar' ? '\u{1F9D1}' : asset.category === 'psx-derelict' ? '\u{1F6CB}' : asset.category === 'highlands-fantasy' ? '\u{1F3F0}' : asset.category === 'scifi-megakit' ? '\u{1F6F8}' : asset.category === 'fantasy-props' ? '\u{1F9D9}' : asset.category === 'stylized-nature' ? '\u{1F332}' : asset.category === 'random-objects' ? '\u{1F3B2}' : '\u{1F3D7}'}
                     alt={asset.name}
                   />
+                  {canMutateLibrary() && (
+                    <DeleteButton
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void banishCatalogAsset(asset.id, asset.path)
+                      }}
+                      title={`Delete ${asset.name} from catalog (no undo)`}
+                      className="z-10"
+                    />
+                  )}
                 </div>
                 <div className="text-[9px] text-gray-400 group-hover:text-gray-200 truncate transition-colors">
                   {asset.name}
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         </>

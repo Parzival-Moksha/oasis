@@ -48,8 +48,20 @@ export interface AssetDefinition {
   id: string
   name: string
   path: string
-  category: 'platforms' | 'enemies' | 'pickups' | 'character' | 'nature' | 'guns' | 'props' | 'medieval' | 'urban' | 'vehicles' | 'structures' | 'furniture' | 'scifi' | 'fantasy' | 'village' | 'avatar'
+  /** Free-form category string. Common values: platforms, enemies, pickups,
+   *  character, nature, guns, props, medieval, urban, vehicles, structures,
+   *  furniture, scifi, fantasy, village, avatar; new packs add their own
+   *  (e.g. highlands-fantasy, scifi-megakit, fantasy-props, stylized-nature). */
+  category: string
   defaultScale: number
+  /** Short human label for UI / agent picking; populated by the caption pipeline. */
+  shortLabel?: string
+  /** One-sentence description; populated by vision captioning. */
+  description?: string
+  /** Bounding box in meters at defaultScale (computed during import). */
+  bbox?: [number, number, number]
+  /** Thumbnail URL — auto-generated to /thumbs/<id>.jpg. */
+  thumbnail?: string
 }
 
 export interface PlacedAsset {

@@ -8,6 +8,8 @@ import { useOasisStore } from '@/store/oasisStore'
 import { GROUND_PRESETS, getTextureUrls, type GroundPreset } from '@/lib/forge/ground-textures'
 import { hasTerrainRelief } from '@/lib/forge/terrain-brush'
 import { SettingsContext } from '../scene-lib'
+import { DeleteButton } from './DeleteButton'
+import { canMutateLibrary } from '@/lib/library-permissions'
 
 const PANEL_WIDTH = 320
 const PANEL_MARGIN = 12
@@ -90,12 +92,33 @@ export function TerrainBrushPanel() {
   const panelZIndex = useOasisStore(s => s.getPanelZIndex('terrain-brush', 9996))
   const { settings } = useContext(SettingsContext)
   const [texturesExpanded, setTexturesExpanded] = useState(false)
+  const [deletedPresetIds, setDeletedPresetIds] = useState<Set<string>>(() => new Set())
   const [panelPosition, setPanelPosition] = useState<PanelPosition>(getInitialPanelPosition)
+
+  const banishGroundPreset = useCallback(async (id: string) => {
+    setDeletedPresetIds(prev => {
+      const next = new Set(prev)
+      next.add(id)
+      return next
+    })
+    try {
+      await fetch('/api/library/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'ground', id }),
+      })
+    } catch (err) {
+      console.error('[TerrainBrush] Delete failed:', err)
+    }
+  }, [])
   const dragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null)
 
   useUILayer('terrain-brush', isOpen)
 
-  const allPresets = useMemo(() => [...GROUND_PRESETS, ...customGroundPresets], [customGroundPresets])
+  const allPresets = useMemo(
+    () => [...GROUND_PRESETS, ...customGroundPresets].filter(p => !deletedPresetIds.has(p.id)),
+    [customGroundPresets, deletedPresetIds],
+  )
   const activePreset = allPresets.find(preset => preset.id === paintBrushPresetId)
   const reliefActive = hasTerrainRelief(terrainHeights)
 
@@ -277,10 +300,14 @@ export function TerrainBrushPanel() {
                 {allPresets.map(preset => {
                   const selected = paintMode && paintBrushPresetId === preset.id
                   return (
-                    <button
+                    <div
                       key={preset.id}
-                      onClick={() => preset.id === 'none' ? exitPaintMode() : enterPaintMode(preset.id)}
-                      className={`flex w-full items-center gap-2 rounded-md border p-1.5 text-left transition-colors ${selected ? 'border-emerald-300/60 bg-emerald-300/15' : 'border-white/10 bg-black/20 hover:border-emerald-400/30'}`}
+                      className={`relative flex w-full items-center gap-2 rounded-md border p-1.5 text-left transition-colors cursor-pointer ${selected ? 'border-emerald-300/60 bg-emerald-300/15' : 'border-white/10 bg-black/20 hover:border-emerald-400/30'}`}
+                      onClick={(e) => {
+                        if ((e.target as HTMLElement).closest('[data-card-action="delete"]')) return
+                        if (preset.id === 'none') exitPaintMode()
+                        else enterPaintMode(preset.id)
+                      }}
                     >
                       <GroundTextureThumb preset={preset} />
                       <div className="min-w-0 flex-1">
@@ -291,7 +318,16 @@ export function TerrainBrushPanel() {
                           {preset.customTextureUrl ? 'custom' : preset.assetName || 'none'}
                         </div>
                       </div>
-                    </button>
+                      {preset.id !== 'none' && canMutateLibrary() && (
+                        <DeleteButton
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void banishGroundPreset(preset.id)
+                          }}
+                          title={`Delete ${preset.name} from ground library`}
+                        />
+                      )}
+                    </div>
                   )
                 })}
               </div>

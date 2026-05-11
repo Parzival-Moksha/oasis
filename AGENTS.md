@@ -7,27 +7,35 @@ If `CLAUDE.md`, old memory notes, or stale comments disagree with current code, 
 ## Repo
 
 - Next.js 14 + React Three Fiber + Three.js + Zustand + Prisma/SQLite
-- Local-first Oasis world builder on port `4516`
-- Optimized for git-clone vibecoders, not auth-gated SaaS assumptions
+- **Dual-target**: local dev on port `4516` AND hosted production at 04515.xyz / openclaw.04515.xyz. `OASIS_MODE=hosted` + `OASIS_PROFILE=hosted-openclaw` flips into hosted behavior.
+- The hosted Oasis is the real product surface now. Imagine multiple users sharing a world via portals, presence, and (soon) auth.
+- Public users land in **Portal Zero** (welcome hub, slug `portal-zero`).
 
 ## Working Rules
 
 - Stay in the current checkout. Do not create git worktrees unless the user explicitly asks.
 - If the user asks for a runnable static artifact "in builder", put the loadable file under `public/builder/`; `builder/` itself is not web-served.
-- If work comes from `carbondir/oasisspec3.txt`, delete completed lines instead of marking them done.
+- If work comes from `carbondir/oasisspec3.txt` or `carbondir/oasisspec4.txt`, delete completed lines instead of marking them done.
 - `ObjectInspector` is often called the "Joystick" in conversation.
-- Prefer `pnpm tsc --noEmit` when the user already has `pnpm dev`, `pnpm dev:loop`, or `pnpm dev:agent` running; `pnpm build` can fight over `.next/`.
+- Prefer `pnpm tsc --noEmit` when the user already has `pnpm dev`, `pnpm dev:loop`, `pnpm dev:agent`, or `pnpm dev:relay` running; `pnpm build` can fight over `.next/`.
 - When GitHub/deploy is the practical hosting path, bias toward committing coherent dirty work instead of leaving useful feature batches stranded. Keep credentials, caches, logs, screenshots, runtime media, generated voice/music/video/image bloat, and private local state out of commits; update `.gitignore` for repeat offenders.
+- **Default to commit-soup**: `git add -A` the whole dirty tree (including parallel agents' WIP) rather than selectively staging just your own files. The user prefers velocity over clean history. Push freely. Fix-forward if a sweep breaks the build.
+- Time estimates default 5-20x too high. "Days of work" is usually 20-60 minutes of focused vibedev. Strip safety margin; the velocity is real.
 
 ## Commands
 
-- `pnpm dev`
+- `pnpm dev` (port 4516)
 - `pnpm dev:loop`
 - `pnpm dev:agent`
+- `pnpm dev:relay` (WSS sidecar)
 - `pnpm tsc --noEmit`
 - `pnpm test`
 - `npx prisma db push`
 - `npx prisma generate`
+- `pnpm seed:default-worlds`
+- `pnpm seed:welcome-hub` (reseed Portal Zero)
+- `pnpm deploy:openclaw` (SSH-deploy to hosted host)
+- `pnpm smoke:relay-hosted` (relay smoke against hosted)
 
 ## Verification Expectations
 
@@ -39,33 +47,57 @@ If `CLAUDE.md`, old memory notes, or stale comments disagree with current code, 
 
 ## Durable Repo Truths
 
-- `src/lib/local-auth.ts` returns `'local-user'`.
-- World data is local SQLite via Prisma and lives at `prisma/data/oasis.db`.
-- World persistence relies on `_worldReady` and `_loadedObjectCount` in `src/store/oasisStore.ts`, with debounced saves in `src/lib/forge/world-persistence.ts`.
-- The input state machine lives in `src/lib/input-manager.ts`. Do not cite missing `project_input_state_machine.md` docs as canonical.
-- 3D windows in `src/components/forge/AgentWindow3D.tsx` use `drei <Html transform>`. They are CSS overlays anchored in world space, not true WebGL depth-occluding surfaces.
-- World event fanout uses SSE (`src/app/api/world-events/route.ts` and `src/lib/mcp/world-events.ts`), not Supabase Realtime.
-- XP/profile/world persistence are local Prisma/SQLite codepaths in this repo.
-- Current repo naming still mixes `Anorak`, `Anorak Pro`, and `Claude Code`. Do not assume rename discussions have landed.
+- Local auth: `src/lib/local-auth.ts` returns `'local-user'`. Real auth is on the 10-day roadmap (`next-auth` v5-beta in deps).
+- World data: SQLite via Prisma at `prisma/data/oasis.db`. Hosted instance has its own copy.
+- World saves: `_worldReady` + `_loadedObjectCount` in `src/store/oasisStore.ts`, debounced in `src/lib/forge/world-persistence.ts`.
+- World event fanout: SSE (`src/app/api/world-events/route.ts`, `src/lib/mcp/world-events.ts`).
+- Multiplayer presence: `src/lib/multiplayer-presence.ts`. Spec: `specs/multiplayer_spec_may4.md`.
+- Relay WSS sidecar: routes at `/api/relay/*`, lib in `src/lib/relay/`. PM2 process `openclaw-oasis-relay`. Hosted nginx upgrades exact-match `/relay`.
+- Portal Zero (welcome hub): seeded from `prisma/default-worlds/portal-zero.world.json`, return-gate logic in `src/lib/portal-zero-return-gate.ts`.
+- Form-to-world altar: `src/lib/google-form-spatial.ts` + spatial primitives in `src/lib/spatial-web.ts`.
+- Mobile: `src/components/forge/MobileOasisControls.tsx` + `src/lib/mobile-controls.ts`; per-world overrides supported.
+- Asset catalog: merges baked-in TS arrays with `data/asset-catalog-extras.json` + `data/ground-presets-extras.json`; delete via `/api/library/delete`.
+- Input state machine: `src/lib/input-manager.ts`. Don't cite missing `project_input_state_machine.md` docs as canonical.
+- 3D windows in `src/components/forge/AgentWindow3D.tsx` use drei `<Html transform>` — CSS overlays anchored in world space, not WebGL depth-occluding.
+- Repo naming still mixes `Anorak`, `Anorak Pro`, and `Claude Code`. Don't assume rename discussions have landed.
 - Each 3D Claude/Anorak window needs a unique session id.
 
 ## Anthropic Integration Notes
 
-- Do not use `@anthropic-ai/claude-code`; use CLI subprocesses (`claude` / `claude.cmd`) for programmatic Claude Code integration.
+- Do not use `@anthropic-ai/claude-code`; use CLI subprocesses (`claude` / `claude.cmd`).
 - Claude MCP servers should be registered with `claude mcp add -s project`, not by editing JSON by hand.
+
+## Deploy (hosted)
+
+- `pnpm deploy:openclaw` — SSH to host, pull main, install, generate, build, optional `--seed-welcome`, PM2 reload (`openclaw-oasis-web` and `openclaw-oasis-relay`).
+- nginx config: `deploy/openclaw.04515.xyz.nginx.conf`.
+- Deploy does NOT touch the hosted DB unless `--seed-welcome` is passed (which only reseeds Portal Zero) or the operator runs `pnpm seed:default-worlds` manually on the host.
 
 ## Key Files
 
 - `src/store/oasisStore.ts`
 - `src/lib/forge/world-persistence.ts`
 - `src/lib/input-manager.ts`
+- `src/lib/multiplayer-presence.ts`
+- `src/lib/spatial-web.ts`
+- `src/lib/google-form-spatial.ts`
+- `src/lib/portal-gates.ts`
+- `src/lib/portal-zero-return-gate.ts`
+- `src/lib/mobile-controls.ts`
 - `src/components/forge/AgentWindow3D.tsx`
+- `src/components/forge/MobileOasisControls.tsx`
 - `src/lib/local-auth.ts`
 - `prisma/schema.prisma`
+- `prisma/seed-default-worlds.ts`
+- `prisma/default-worlds/portal-zero.world.json`
+- `scripts/deploy-openclaw-parzival.mjs`
+- `deploy/openclaw.04515.xyz.nginx.conf`
 - `carbondir/oasisspec3.txt`
+- `carbondir/oasisspec4.txt`
 
 ## Docs Worth Opening
 
+- `specs/multiplayer_spec_may4.md`
 - `website/docs/reference/gotchas.md`
 - `website/docs/developer/input-system.md`
 - `website/docs/developer/phoenix-protocol.md`

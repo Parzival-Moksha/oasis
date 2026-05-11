@@ -5,6 +5,8 @@
 // Each ground type: diffuse, normal, roughness maps at 1K resolution
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
+import groundExtras from '../../../data/ground-presets-extras.json'
+
 export interface GroundPreset {
   id: string
   name: string
@@ -16,6 +18,10 @@ export interface GroundPreset {
   tileRepeat: number
   /** Direct URL for user-generated textures (bypasses assetName→CDN path) */
   customTextureUrl?: string
+  /** Short human label (1-4 words) for agent picking; populated by vision captioning. */
+  shortLabel?: string
+  /** One-sentence description of the texture. */
+  description?: string
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -30,10 +36,11 @@ export function getTextureUrls(assetName: string) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// GROUND PRESETS — Curated selection of beautiful grounds
+// GROUND PRESETS — base entries below + override layer in
+// data/ground-presets-extras.json. Delete via /api/library/delete-ground.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const GROUND_PRESETS: GroundPreset[] = [
+const _BASE_GROUND_PRESETS: GroundPreset[] = [
   {
     id: 'none',
     name: 'None',
@@ -195,6 +202,12 @@ export const GROUND_PRESETS: GroundPreset[] = [
     assetName: 'snow_03',
     tileRepeat: 6,
   },
+]
+
+const _GROUND_DELETED_IDS = new Set<string>(((groundExtras as { deletedIds?: string[] }).deletedIds) || [])
+export const GROUND_PRESETS: GroundPreset[] = [
+  ..._BASE_GROUND_PRESETS.filter(p => !_GROUND_DELETED_IDS.has(p.id)),
+  ...(((groundExtras as { additions?: GroundPreset[] }).additions) || []),
 ]
 
 // ▓▓▓▓【G̸R̸O̸U̸N̸D̸】▓▓▓▓ॐ▓▓▓▓【T̸E̸X̸T̸U̸R̸E̸】▓▓▓▓

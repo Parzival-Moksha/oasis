@@ -286,11 +286,20 @@ export const OASIS_MCP_TOOL_SPECS = [
     injectActorAgentType: true,
   },
   {
+    name: 'list_ground_presets',
+    description: 'List available ground textures with short labels and descriptions. Use this BEFORE set_ground_preset or paint_ground_tiles to discover valid presetId values. Pass query to filter (e.g. "wood", "brick", "rough"). Returns: [{id, label, description, icon, tileRepeat}].',
+    inputSchema: z.object({
+      query: z.string().optional(),
+      limit: zNumberish.optional(),
+    }).passthrough(),
+  },
+  {
     name: 'set_ground_preset',
     description: [
       'Change the world ground texture.',
-      'Valid presetId values: none, grass, dirt, sand, stone, snow, cobble, forest, lava, concrete, marble, metal, beach, rocks, leaves, leaves2, pebbles, gravel, rocky, snow2.',
-      'Notes: "lava" is a rock-face texture (not glowing lava); "none" makes the ground transparent/black; "stone" is mossy flagstone; "marble" is light polished stone. Use the exact id, not the display name.',
+      'Use list_ground_presets first to find valid presetId values; the catalog is too large to list inline.',
+      'Common ids: none, grass, dirt, sand, stone, snow, cobble, forest, concrete, marble, metal, beach.',
+      'Use the exact id, not the display name.',
     ].join(' '),
     inputSchema: z.object({ worldId: z.string().optional(), presetId: z.string() }).passthrough(),
     injectWorldId: true,
@@ -298,7 +307,7 @@ export const OASIS_MCP_TOOL_SPECS = [
   },
   {
     name: 'paint_ground_tiles',
-    description: 'Paint individual 1x1m ground tiles using a presetId. tiles may be an array or JSON string.',
+    description: 'Paint individual 1x1m ground tiles using a presetId. Use list_ground_presets to find valid ids. tiles may be an array or JSON string.',
     inputSchema: z.object({
       worldId: z.string().optional(),
       presetId: z.string().optional(),

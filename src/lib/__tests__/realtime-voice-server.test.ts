@@ -36,9 +36,11 @@ describe('realtime voice server guardrails', () => {
       OPENAI_REALTIME_MODEL: 'gpt-5.5',
     })
 
-    expect(getRealtimeVoiceConfig().model).toBe('gpt-realtime')
+    expect(getRealtimeVoiceConfig().model).toBe('gpt-realtime-2')
     expect(getRealtimeVoiceConfig().models).not.toContain('gpt-5.5')
-    expect(sanitizeRealtimeModel('gpt-5.4')).toBe('gpt-realtime')
+    expect(sanitizeRealtimeModel('gpt-5.4')).toBe('gpt-realtime-2')
+    expect(sanitizeRealtimeModel('gpt-realtime-2')).toBe('gpt-realtime-2')
+    expect(sanitizeRealtimeModel('gpt-realtime-1.5')).toBe('gpt-realtime-1.5')
     expect(sanitizeRealtimeModel('gpt-realtime-mini')).toBe('gpt-realtime-mini')
   })
 

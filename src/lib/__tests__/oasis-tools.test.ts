@@ -57,6 +57,7 @@ function makeWorldRow(state: Record<string, unknown> = {}, rowOverrides: Record<
     data: JSON.stringify(base),
     objectCount: 0,
     visibility: 'private',
+    assetVisibility: 'public',
     thumbnailUrl: null,
     creatorName: null,
     creatorAvatar: null,

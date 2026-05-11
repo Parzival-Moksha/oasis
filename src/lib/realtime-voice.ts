@@ -19,6 +19,8 @@ export const REALTIME_VOICES = [
 ] as const
 
 export const REALTIME_MODELS = [
+  'gpt-realtime-2',
+  'gpt-realtime-1.5',
   'gpt-realtime',
   'gpt-realtime-mini',
 ] as const

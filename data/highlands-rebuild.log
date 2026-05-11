@@ -1,0 +1,187 @@
+c:\af_oasis\scripts\highlands-blender.py:80: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+  mat.use_nodes = True
+BlenderMCP addon registered
+[highlands] found 17 FBX files
+[highlands] Barracks\SM_Barracks.fbx -> c:/af_oasis/public/models/highlands-fantasy\barracks.glb
+BlenderMCP addon unregistered
+FBX version: 7400
+[highlands]   wiring material M_Barracks -> barracks: ['alpha', 'diffuse', 'metalness', 'normal', 'roughness']
+INFO Draco mesh compression is available, use library at C:\Program Files\Blender Foundation\Blender 5.0\5.0\scripts\addons_core\io_scene_gltf2\extern_draco.dll
+09:10:05 | INFO: Starting glTF 2.0 export
+09:10:05 | INFO: Extracting primitive: SM_Barracks
+09:10:06 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:06 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:06 | WARNING: The active Vertex Color will not be exported, as it is not used in the node tree of the material
+09:10:06 | INFO: Primitives created: 1
+09:10:06 | INFO: Finished glTF 2.0 export in 0.8679976463317871 s
+
+[highlands] Hut\SM_Hut.fbx -> c:/af_oasis/public/models/highlands-fantasy\hut.glb
+FBX version: 7400
+[highlands]   wiring material M_Hut -> hut: ['alpha', 'diffuse', 'normal', 'roughness']
+09:10:06 | INFO: Starting glTF 2.0 export
+09:10:06 | INFO: Extracting primitive: SM_Hut
+09:10:07 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:07 | INFO: Primitives created: 1
+09:10:07 | INFO: Finished glTF 2.0 export in 0.7769994735717773 s
+
+[highlands] MiscProps\SM_Axe.fbx -> c:/af_oasis/public/models/highlands-fantasy\axe.glb
+FBX version: 7400
+[highlands]   wiring material M_Props -> props: ['alpha', 'diffuse', 'metalness', 'normal', 'roughness']
+09:10:07 | INFO: Starting glTF 2.0 export
+09:10:07 | INFO: Extracting primitive: SM_Axe
+09:10:08 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:08 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:08 | INFO: Primitives created: 1
+09:10:08 | INFO: Finished glTF 2.0 export in 0.7810404300689697 s
+
+[highlands] MiscProps\SM_Barrel.fbx -> c:/af_oasis/public/models/highlands-fantasy\barrel.glb
+FBX version: 7400
+[highlands]   wiring material M_Props -> props: ['alpha', 'diffuse', 'metalness', 'normal', 'roughness']
+09:10:08 | INFO: Starting glTF 2.0 export
+09:10:08 | INFO: Extracting primitive: SM_Barrel
+09:10:08 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:08 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:08 | INFO: Primitives created: 1
+09:10:08 | INFO: Finished glTF 2.0 export in 0.7189605236053467 s
+
+[highlands] MiscProps\SM_CropField.fbx -> c:/af_oasis/public/models/highlands-fantasy\cropfield.glb
+FBX version: 7400
+[highlands]   wiring material M_Props -> props: ['alpha', 'diffuse', 'metalness', 'normal', 'roughness']
+09:10:08 | INFO: Starting glTF 2.0 export
+09:10:08 | INFO: Extracting primitive: SM_CropField
+09:10:09 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:09 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:09 | WARNING: The active Vertex Color will not be exported, as it is not used in the node tree of the material
+09:10:09 | INFO: Primitives created: 1
+09:10:09 | INFO: Finished glTF 2.0 export in 0.7069995403289795 s
+
+[highlands] MiscProps\SM_Grass_01.fbx -> c:/af_oasis/public/models/highlands-fantasy\grass_01.glb
+FBX version: 7400
+[highlands]   wiring material M_Props -> props: ['alpha', 'diffuse', 'metalness', 'normal', 'roughness']
+09:10:09 | INFO: Starting glTF 2.0 export
+09:10:09 | INFO: Extracting primitive: SM_Grass_01
+09:10:10 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:10 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:10 | WARNING: The active Vertex Color will not be exported, as it is not used in the node tree of the material
+09:10:10 | INFO: Primitives created: 1
+09:10:10 | INFO: Finished glTF 2.0 export in 0.7089612483978271 s
+
+[highlands] MiscProps\SM_Grass_02.fbx -> c:/af_oasis/public/models/highlands-fantasy\grass_02.glb
+FBX version: 7400
+[highlands]   wiring material M_Props -> props: ['alpha', 'diffuse', 'metalness', 'normal', 'roughness']
+09:10:10 | INFO: Starting glTF 2.0 export
+09:10:10 | INFO: Extracting primitive: SM_Grass_02
+09:10:11 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:11 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:11 | WARNING: The active Vertex Color will not be exported, as it is not used in the node tree of the material
+09:10:11 | INFO: Primitives created: 1
+09:10:11 | INFO: Finished glTF 2.0 export in 0.8830833435058594 s
+
+[highlands] MiscProps\SM_Grass_03.fbx -> c:/af_oasis/public/models/highlands-fantasy\grass_03.glb
+FBX version: 7400
+[highlands]   wiring material M_Props -> props: ['alpha', 'diffuse', 'metalness', 'normal', 'roughness']
+09:10:11 | INFO: Starting glTF 2.0 export
+09:10:11 | INFO: Extracting primitive: SM_Grass_03
+09:10:12 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:12 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:12 | WARNING: The active Vertex Color will not be exported, as it is not used in the node tree of the material
+09:10:12 | INFO: Primitives created: 1
+09:10:12 | INFO: Finished glTF 2.0 export in 0.9379575252532959 s
+
+[highlands] MiscProps\SM_Shield.fbx -> c:/af_oasis/public/models/highlands-fantasy\shield.glb
+FBX version: 7400
+[highlands]   wiring material M_Props -> props: ['alpha', 'diffuse', 'metalness', 'normal', 'roughness']
+09:10:12 | INFO: Starting glTF 2.0 export
+09:10:12 | INFO: Extracting primitive: SM_Shield
+09:10:13 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:13 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:13 | INFO: Primitives created: 1
+09:10:13 | INFO: Finished glTF 2.0 export in 1.0649933815002441 s
+
+[highlands] MiscProps\SM_WoodCrate.fbx -> c:/af_oasis/public/models/highlands-fantasy\woodcrate.glb
+FBX version: 7400
+[highlands]   wiring material M_Props -> props: ['alpha', 'diffuse', 'metalness', 'normal', 'roughness']
+09:10:13 | INFO: Starting glTF 2.0 export
+09:10:13 | INFO: Extracting primitive: SM_WoodCrate
+09:10:14 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:14 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:14 | INFO: Primitives created: 1
+09:10:14 | INFO: Finished glTF 2.0 export in 1.000999927520752 s
+
+[highlands] MiscProps\SM_WoodFence.fbx -> c:/af_oasis/public/models/highlands-fantasy\woodfence.glb
+FBX version: 7400
+[highlands]   wiring material M_Props -> props: ['alpha', 'diffuse', 'metalness', 'normal', 'roughness']
+09:10:14 | INFO: Starting glTF 2.0 export
+09:10:14 | INFO: Extracting primitive: SM_WoodFence
+09:10:15 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:15 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:15 | INFO: Primitives created: 1
+09:10:15 | INFO: Finished glTF 2.0 export in 1.0229976177215576 s
+
+[highlands] TownCenter\SM_TownCenter.fbx -> c:/af_oasis/public/models/highlands-fantasy\towncenter.glb
+FBX version: 7400
+[highlands]   wiring material M_TownCenter -> towncenter: ['alpha', 'diffuse', 'metalness', 'normal', 'roughness']
+09:10:15 | INFO: Starting glTF 2.0 export
+09:10:15 | INFO: Extracting primitive: SM_TownCenter
+09:10:16 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:16 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:16 | WARNING: The active Vertex Color will not be exported, as it is not used in the node tree of the material
+09:10:16 | INFO: Primitives created: 1
+09:10:16 | INFO: Finished glTF 2.0 export in 1.1330006122589111 s
+
+[highlands] Walls\Tower\SM_Tower.fbx -> c:/af_oasis/public/models/highlands-fantasy\tower.glb
+FBX version: 7400
+[highlands]   wiring material M_TowerW -> tower: ['alpha', 'diffuse', 'metalness', 'normal', 'roughness']
+09:10:17 | INFO: Starting glTF 2.0 export
+09:10:17 | INFO: Extracting primitive: SM_TowerW
+09:10:17 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:17 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:17 | WARNING: The active Vertex Color will not be exported, as it is not used in the node tree of the material
+09:10:17 | INFO: Primitives created: 1
+09:10:17 | INFO: Finished glTF 2.0 export in 0.8930251598358154 s
+
+[highlands] Walls\WallMid\SM_WallMid.fbx -> c:/af_oasis/public/models/highlands-fantasy\wallmid.glb
+FBX version: 7400
+[highlands]   wiring material M_WallMid -> wallmid: ['alpha', 'diffuse', 'normal', 'roughness']
+09:10:18 | INFO: Starting glTF 2.0 export
+09:10:18 | INFO: Extracting primitive: SM_WallMid
+09:10:18 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:18 | INFO: Primitives created: 1
+09:10:18 | INFO: Finished glTF 2.0 export in 0.7920167446136475 s
+
+[highlands] WatchTower\SM_WatchTower.fbx -> c:/af_oasis/public/models/highlands-fantasy\watchtower.glb
+FBX version: 7400
+[highlands]   wiring material M_WatchTower -> watchtower: ['alpha', 'diffuse', 'metalness', 'normal', 'roughness']
+09:10:18 | INFO: Starting glTF 2.0 export
+09:10:18 | INFO: Extracting primitive: SM_WatchTower
+09:10:19 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:19 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:19 | WARNING: The active Vertex Color will not be exported, as it is not used in the node tree of the material
+09:10:19 | INFO: Primitives created: 1
+09:10:19 | INFO: Finished glTF 2.0 export in 1.0179948806762695 s
+
+[highlands] Windmill\SM_Windmill.fbx -> c:/af_oasis/public/models/highlands-fantasy\windmill.glb
+FBX version: 7400
+[highlands]   wiring material M_Windmill -> windmill: ['alpha', 'diffuse', 'metalness', 'normal', 'roughness']
+09:10:20 | INFO: Starting glTF 2.0 export
+09:10:20 | INFO: Extracting primitive: SM_Windmill
+09:10:20 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:21 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:21 | INFO: Primitives created: 1
+09:10:21 | INFO: Finished glTF 2.0 export in 1.140000343322754 s
+
+[highlands] Windmill\SM_Windmill_Sails.fbx -> c:/af_oasis/public/models/highlands-fantasy\windmill_sails.glb
+FBX version: 7400
+[highlands]   wiring material M_Windmill -> windmill: ['alpha', 'diffuse', 'metalness', 'normal', 'roughness']
+09:10:21 | INFO: Starting glTF 2.0 export
+09:10:21 | INFO: Extracting primitive: SM_Windmill_Wings
+09:10:22 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:22 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+09:10:22 | WARNING: The active Vertex Color will not be exported, as it is not used in the node tree of the material
+09:10:22 | INFO: Primitives created: 1
+09:10:22 | INFO: Finished glTF 2.0 export in 1.1540031433105469 s
+
+[highlands] done
+Blender 5.0.1 (hash a3db93c5b259 built 2025-12-16 01:32:30)
+
+Blender quit

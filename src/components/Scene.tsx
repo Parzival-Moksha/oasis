@@ -1730,7 +1730,7 @@ export default function Scene() {
           onMode={mode => setAgentLauncherMode(mode)}
           onOpen2d={openQuickAgentPanel}
           onPlace3d={placeQuickAgentWindow}
-          canUseLocalAgents={canUseAgentPanels && !hideEditTools}
+          canUseLocalAgents={!hostedMode && canUseAgentPanels && !hideEditTools}
         />
 
         <SettingsMenu opacity={settingsMenuOpacity}>

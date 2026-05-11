@@ -107,10 +107,28 @@ export function updateAsset(id: string, updates: Partial<ConjuredAsset>): Conjur
   const assets = getCache()
   const idx = assets.findIndex(a => a.id === id)
   if (idx === -1) return undefined
+  const prevStatus = assets[idx].status
   assets[idx] = { ...assets[idx], ...updates }
   setSharedCache(assets)
   saveToDisk(assets)
+  // ░▒▓ v1 ASSET-MIRROR — when a conjure transitions to ready, also write to the
+  // unified Asset table so library-service can see it under the viewer's ownerId.
+  // Fire-and-forget: the legacy JSON registry stays the source of truth. ▓▒░
+  if (prevStatus !== 'ready' && assets[idx].status === 'ready' && assets[idx].glbPath) {
+    void mirrorOnReady(assets[idx])
+  }
   return assets[idx]
+}
+
+async function mirrorOnReady(asset: ConjuredAsset): Promise<void> {
+  try {
+    const { getLocalUserId } = await import('../local-auth')
+    const { mirrorConjuredAsset } = await import('../forge/library/asset-mirror')
+    const ownerId = await getLocalUserId()
+    await mirrorConjuredAsset(asset, ownerId)
+  } catch (err) {
+    console.warn('[Registry] asset-mirror failed for', asset.id, err)
+  }
 }
 
 export function removeAsset(id: string): boolean {

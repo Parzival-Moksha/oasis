@@ -26,7 +26,7 @@ let _audioListener: THREE.AudioListener | null = null
 export function getAudioListener(): THREE.AudioListener | null { return _audioListener }
 import { useOasisStore } from '../store/oasisStore'
 import { useInputManager, getInputCapabilities, consumeMouseLookDelta, wasUILayerClosedRecently } from '../lib/input-manager'
-import { getMobileInputSnapshot } from '../lib/mobile-controls'
+import { getMobileInputSnapshot, isProbablyMobileDevice } from '../lib/mobile-controls'
 import { setCameraSnapshot } from '../lib/camera-bridge'
 import { deriveAvatarAnchoredWindowPlacement, resolveAgentWindowRenderScale } from '../lib/agent-avatar-utils'
 import { getLiveObjectTransform } from '../lib/live-object-transforms'
@@ -408,6 +408,11 @@ export function CameraController() {
     const maybeRequestLock = (target: EventTarget | null) => {
       if (!isCanvasControlTarget(target)) return
       if (wasUILayerClosedRecently(220)) return
+      // ░▒▓ Never pointer-lock on mobile. The touch-drag camera handler in
+      // MobileOasisControls relies on receiving pointermove events; once the
+      // browser engages pointer-lock the events go to the lock target and the
+      // touch-camera goes dead. Mobile users keep the always-free-look path. ▓▒░
+      if (isProbablyMobileDevice()) return
       const state = useInputManager.getState()
       if (state.can().canLockPointer && !state.pointerLocked) {
         state.requestPointerLock()

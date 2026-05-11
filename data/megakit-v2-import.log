@@ -1,0 +1,21 @@
+
+=== scifi-megakit ===
+[scifi-megakit] reusing C:\Users\l\AppData\Local\Temp\megakit-import\scifi
+[downscale] resized 0/24 PNGs in C:\Users\l\AppData\Local\Temp\megakit-import\scifi
+[scifi-megakit] found 190 vendor glTF files
+[scifi-megakit] FAILED C:\Users\l\AppData\Local\Temp\megakit-import\scifi\Modular SciFi MegaKit[Standard]\glTF\Decals\Decal_Line_90.gltf: ENOENT: no such file or directory, open 'C:\Users\l\AppData\Local\Temp\megakit-import\scifi\Modular SciFi MegaKit[Standard]\glTF\Decals\Decal_Line_90_001.bin'
+[scifi-megakit] packed 189 GLBs, failed 1
+
+=== fantasy-props ===
+[fantasy-props] reusing C:\Users\l\AppData\Local\Temp\megakit-import\fantasy-props
+[downscale] resized 0/43 PNGs in C:\Users\l\AppData\Local\Temp\megakit-import\fantasy-props
+[fantasy-props] found 94 vendor glTF files
+[fantasy-props] packed 94 GLBs, failed 0
+
+=== stylized-nature ===
+[stylized-nature] reusing C:\Users\l\AppData\Local\Temp\megakit-import\stylized-nature
+[downscale] resized 0/40 PNGs in C:\Users\l\AppData\Local\Temp\megakit-import\stylized-nature
+[stylized-nature] found 68 vendor glTF files
+[stylized-nature] packed 68 GLBs, failed 0
+
+Total packed additions: 351

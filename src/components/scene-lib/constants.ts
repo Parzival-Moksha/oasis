@@ -4,6 +4,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import type { OasisSettings, AssetDefinition } from './types'
+import catalogExtras from '../../../data/asset-catalog-extras.json'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DEFAULT SETTINGS
@@ -55,6 +56,7 @@ export const SKY_BACKGROUNDS = [
   { id: 'outdoor_umbrellas', name: 'Outdoor Umbrellas', path: '/hdri/outdoor_umbrellas_2k.hdr' },
   { id: 'stadium', name: 'Stadium', path: '/hdri/stadium_01_2k.hdr' },
   { id: 'sunny_vondelpark', name: 'Sunny Vondelpark', path: '/hdri/sunny_vondelpark_2k.hdr' },
+  { id: 'umhlanga_sunrise', name: 'Umhlanga Sunrise', path: '/hdri/umhlanga_sunrise_2k.hdr' },
   // drei built-in presets (CDN-hosted 1k HDRIs — may fail in production)
   { id: 'city', name: 'City (Potsdamer Platz)', path: null, preset: 'city' },
   { id: 'dawn', name: 'Dawn', path: null, preset: 'dawn' },
@@ -73,7 +75,10 @@ export const SKY_BACKGROUNDS = [
 // 565 assets: Quaternius (Cyberpunk + SciFi + Fantasy + Medieval Village) + Kenney (Medieval + Urban + Furniture)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const ASSET_CATALOG: AssetDefinition[] = [
+// ─═̷─═̷─ Catalog is BASE entries (in this file) merged with override layer in
+// data/asset-catalog-extras.json. Delete via /api/library/delete-asset moves an
+// id into the deletedIds list and removes the GLB from disk.
+const _BASE_ASSET_CATALOG: AssetDefinition[] = [
 
   // ─═══─ PLATFORMS (Quaternius Cyberpunk Kit) ─═══─
   { id: 'antenna1', name: 'Antenna 1', path: '/models/cyberpunk/Cyberpunk Game Kit - Quaternius/Platforms/Antenna_1.gltf', category: 'platforms', defaultScale: 1.5 },
@@ -698,4 +703,14 @@ export const ASSET_CATALOG: AssetDefinition[] = [
   { id: 'av_vipe_2770', name: 'VIPE Hero 2770', path: '/avatars/gallery/VIPE_Hero__2770.vrm', category: 'avatar', defaultScale: 1 },
   { id: 'av_vipe_2902', name: 'VIPE Hero 2902', path: '/avatars/gallery/VIPE_Hero__2902.vrm', category: 'avatar', defaultScale: 1 },
   { id: 'av_witch', name: 'Witch', path: '/avatars/gallery/Witch.vrm', category: 'avatar', defaultScale: 1 },
+]
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CATALOG MERGE — base entries minus deletedIds, plus additions from JSON
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const _CATALOG_DELETED_IDS = new Set<string>(((catalogExtras as { deletedIds?: string[] }).deletedIds) || [])
+export const ASSET_CATALOG: AssetDefinition[] = [
+  ..._BASE_ASSET_CATALOG.filter(a => !_CATALOG_DELETED_IDS.has(a.id)),
+  ...(((catalogExtras as { additions?: AssetDefinition[] }).additions) || []),
 ]

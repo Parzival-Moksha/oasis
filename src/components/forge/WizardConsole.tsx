@@ -38,7 +38,7 @@ import { PORTAL_GATE_VARIANT_DEFS, type PortalAction, type PortalGateVariant } f
 import { portalThumbPath } from '../../lib/portal-thumbnails'
 import { PortalTransitionSettingsPanel } from './PortalTransitionSettingsPanel'
 import { createSpatialWebObjectFromTemplate, SPATIAL_WEB_ASSET_TEMPLATES } from '../../lib/spatial-web-presets'
-import { useOasisCapabilities } from '@/lib/oasis-mode-client'
+import { useIsHostedOasis, useOasisCapabilities } from '@/lib/oasis-mode-client'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 
@@ -3680,6 +3680,7 @@ function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject
   selectedObjectId: string | null
   transforms: Record<string, { position?: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number }>
 }) {
+  const hostedMode = useIsHostedOasis()
   const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
   const placedAgentAvatars = useOasisStore(s => s.placedAgentAvatars)
   const removeAgentWindow = useOasisStore(s => s.removeAgentWindow)
@@ -3701,7 +3702,9 @@ function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject
           ── Deploy Agent ──
         </span>
         <div className="grid grid-cols-3 gap-1.5 mt-2">
-          {DEPLOYABLE_AGENT_TYPES.map(agent => (
+          {DEPLOYABLE_AGENT_TYPES
+            .filter(agent => !hostedMode || agent.type !== 'realtime')
+            .map(agent => (
             <button
               key={agent.type}
               onClick={() => enterPlacementMode({ type: 'agent', name: agent.label, agentType: agent.type })}

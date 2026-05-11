@@ -194,7 +194,7 @@ const EMBEDDED_SCROLL_SURFACE_STYLE = {
   overscrollBehavior: 'contain' as const,
   WebkitOverflowScrolling: 'touch' as const,
 }
-const OPENCLAW_VOICE_MODELS = ['gpt-realtime', 'gpt-realtime-mini'] as const
+const OPENCLAW_VOICE_MODELS = ['gpt-realtime-2', 'gpt-realtime-1.5', 'gpt-realtime', 'gpt-realtime-mini'] as const
 const OPENCLAW_VOICE_OPTIONS = ['alloy', 'ash', 'ballad', 'cedar', 'coral', 'echo', 'marin', 'sage', 'shimmer', 'verse'] as const
 const OPENCLAW_AUDIO_SAMPLE_RATE = 8000
 const OPENCLAW_RELAY_SCOPES = ['world.read', 'world.write.safe', 'screenshot.request', 'chat.stream'] as const
@@ -253,7 +253,7 @@ const DEFAULT_SETTINGS: PanelSettings = {
   bgColor: '#06161d',
   opacity: 0.92,
   blur: 8,
-  voiceModel: 'gpt-realtime',
+  voiceModel: 'gpt-realtime-2',
   voiceName: 'alloy',
   vadThreshold: 0.5,
   silenceDurationMs: 500,

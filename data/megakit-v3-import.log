@@ -1,0 +1,30 @@
+
+=== scifi-megakit ===
+[scifi-megakit] reusing C:\Users\l\AppData\Local\Temp\megakit-import\scifi
+[textures] processed 21/21 -> C:\af_oasis\public\models\scifi-megakit\Textures
+[scifi-megakit] copying 190 gltfs
+[scifi-megakit] FAILED: Error: ENOENT: no such file or directory, copyfile 'C:\Users\l\AppData\Local\Temp\megakit-import\scifi\Modular SciFi MegaKit[Standard]\glTF\Aliens\Alien_Cyclop.bin' -> 'C:\af_oasis\public\models\scifi-megakit\aliens\Alien_Cyclop.bin'
+    at async Object.copyFile (node:internal/fs/promises:620:10)
+    at async copyGltfWithRewrites (file:///C:/af_oasis/scripts/import-megakits-v3.mjs:137:7)
+    at async importPack (file:///C:/af_oasis/scripts/import-megakits-v3.mjs:190:5)
+    at async main (file:///C:/af_oasis/scripts/import-megakits-v3.mjs:220:25) {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'copyfile',
+  path: 'C:\\Users\\l\\AppData\\Local\\Temp\\megakit-import\\scifi\\Modular SciFi MegaKit[Standard]\\glTF\\Aliens\\Alien_Cyclop.bin',
+  dest: 'C:\\af_oasis\\public\\models\\scifi-megakit\\aliens\\Alien_Cyclop.bin'
+}
+
+=== fantasy-props ===
+[fantasy-props] reusing C:\Users\l\AppData\Local\Temp\megakit-import\fantasy-props
+[textures] processed 13/17 -> C:\af_oasis\public\models\fantasy-props\Textures
+[fantasy-props] copying 94 gltfs
+[fantasy-props] +94 additions
+
+=== stylized-nature ===
+[stylized-nature] reusing C:\Users\l\AppData\Local\Temp\megakit-import\stylized-nature
+[textures] processed 20/20 -> C:\af_oasis\public\models\stylized-nature\Textures
+[stylized-nature] copying 68 gltfs
+[stylized-nature] +68 additions
+
+Total additions: 162
