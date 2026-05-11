@@ -1,6 +1,5 @@
 'use client'
 
-import { Billboard, Text } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
@@ -14,6 +13,7 @@ import {
 } from '@/lib/multiplayer-room-client'
 import { worldMutationBus, type WorldMutation } from '@/lib/world-mutation-bus'
 import { useOasisStore } from '@/store/oasisStore'
+import { RemoteVRMAvatar } from './RemoteVRMAvatar'
 
 const INPUT_SEND_INTERVAL_MS = 33
 const INPUT_POSITION_EPSILON = 0.02
@@ -88,7 +88,27 @@ function shortAngle(target: number, current: number): number {
 function RemotePresenceAvatar({ player }: { player: MultiplayerRoomPlayer }) {
   const groupRef = useRef<THREE.Group>(null)
   const bufferRef = useRef<RemoteSnapshot[]>([])
+  // Per-frame inferred speed in m/s — fed to RemoteVRMAvatar so its animation
+  // state machine can pick idle/walk/run/sprint without us reaching into the
+  // controller. Smoothed mildly so a single jittery snapshot doesn't pop the
+  // state machine between idle and walk.
+  const lastPosRef = useRef<THREE.Vector3>(new THREE.Vector3(player.position[0], player.position[1], player.position[2]))
+  const smoothedSpeedRef = useRef<number>(0)
+  const [speed, setSpeed] = useState(0)
   const color = player.color || '#38bdf8'
+  const avatarUrl = player.avatarUrl || ''
+
+  // One-shot seed: place the group at the player's incoming pose before the
+  // first useFrame runs, so a new remote doesn't appear at world origin and
+  // visibly slide toward its spawn.
+  useEffect(() => {
+    const group = groupRef.current
+    if (!group) return
+    group.position.set(player.position[0], player.position[1], player.position[2])
+    group.rotation.y = player.yaw
+    lastPosRef.current.set(player.position[0], player.position[1], player.position[2])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
@@ -155,39 +175,33 @@ function RemotePresenceAvatar({ player }: { player: MultiplayerRoomPlayer }) {
     group.position.z += (target.position[2] - group.position.z) * catchUp
     const yawCatch = 1 - Math.exp(-REMOTE_YAW_CATCHUP * delta)
     group.rotation.y += shortAngle(target.yaw, group.rotation.y) * yawCatch
+
+    // ── Infer ground-plane speed from the group's displacement this frame.
+    // Y is excluded so vertical terrain hops don't push the avatar into run.
+    if (delta > 0.0001) {
+      const dx = group.position.x - lastPosRef.current.x
+      const dz = group.position.z - lastPosRef.current.z
+      const instSpeed = Math.sqrt(dx * dx + dz * dz) / delta
+      const smoothing = 1 - Math.exp(-8 * delta)
+      smoothedSpeedRef.current += (instSpeed - smoothedSpeedRef.current) * smoothing
+      // setState only when the value crosses a threshold band — avoids a
+      // re-render every frame while still keeping the animation responsive.
+      if (Math.abs(smoothedSpeedRef.current - speed) > 0.15) {
+        setSpeed(smoothedSpeedRef.current)
+      }
+    }
+    lastPosRef.current.set(group.position.x, group.position.y, group.position.z)
   })
 
   return (
-    <group ref={groupRef} position={player.position} rotation={[0, player.yaw, 0]}>
-      <mesh castShadow position={[0, 0.88, 0]}>
-        <cylinderGeometry args={[0.22, 0.28, 0.9, 18]} />
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.18} roughness={0.52} metalness={0.12} />
-      </mesh>
-      <mesh castShadow position={[0, 1.46, 0]}>
-        <sphereGeometry args={[0.22, 18, 12]} />
-        <meshStandardMaterial color="#f8fafc" emissive={color} emissiveIntensity={0.08} roughness={0.48} metalness={0.08} />
-      </mesh>
-      <mesh position={[0, 1.15, 0.28]}>
-        <boxGeometry args={[0.42, 0.08, 0.06]} />
-        <meshBasicMaterial color={color} />
-      </mesh>
-      <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[0.34, 0.42, 32]} />
-        <meshBasicMaterial color={color} transparent opacity={0.54} />
-      </mesh>
-      <Billboard position={[0, 1.86, 0]}>
-        <Text
-          fontSize={0.16}
-          anchorX="center"
-          anchorY="middle"
-          outlineWidth={0.01}
-          outlineColor="#020617"
-        >
-          {player.displayName}
-          <meshBasicMaterial color="#e0f2fe" />
-        </Text>
-      </Billboard>
-    </group>
+    <RemoteVRMAvatar
+      ref={groupRef}
+      avatarUrl={avatarUrl}
+      cacheKey={player.sessionId}
+      displayName={player.displayName}
+      color={color}
+      speed={speed}
+    />
   )
 }
 
