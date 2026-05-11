@@ -32,7 +32,17 @@ const httpServer = http.createServer((req, res) => {
 })
 
 const gameServer = new Server({
-  transport: new WebSocketTransport({ server: httpServer }),
+  transport: new WebSocketTransport({
+    server: httpServer,
+    // Set the ws-transport payload ceiling slightly above the app-level
+    // MUTATION_MAX_BYTES (16 KiB) so our silent app-level drop fires first.
+    // Default ws@8 maxPayload is lower than 16 KiB once Colyseus's own
+    // overhead is accounted for, so oversize mutations were tripping the
+    // transport's RangeError and writing stack traces to room.err.log
+    // instead of being silently rejected by our handler. 32 KiB headroom
+    // catches legitimate large room state ops while still bounding abuse.
+    maxPayload: 32 * 1024,
+  }),
 })
 
 gameServer.define('world', WorldRoom)
