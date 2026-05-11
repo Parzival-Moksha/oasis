@@ -2396,6 +2396,14 @@ export const useOasisStore = create<OasisState>((set, get) => {
     id: string,
     transform: { position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number },
   ) => {
+    // Mirror the local-write branch in setObjectTransform: agent-avatar IDs
+    // route through setAgentAvatarTransform; everything else writes to the
+    // transforms map. Without this, remote-moved agent avatars desync —
+    // their `transforms` row updates but their visible position doesn't.
+    if (get().placedAgentAvatars.some(avatar => avatar.id === id)) {
+      get().setAgentAvatarTransform(id, transform)
+      return
+    }
     set(state => ({ transforms: { ...state.transforms, [id]: transform } }))
   },
   // ─═̷─═̷─🌅 SKY — per-world sky preset ─═̷─═̷─🌅

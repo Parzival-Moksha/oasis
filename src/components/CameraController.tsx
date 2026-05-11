@@ -443,6 +443,9 @@ export function CameraController() {
         if (useInputManager.getState().inputState === 'ui-focused') {
           state.returnToPrevious()
         }
+        // Intent was "dismiss the panel", not "engage pointer-lock". Return
+        // before the standard lock path so we don't lock the cursor on a UX
+        // dismiss click.
         return
       }
 

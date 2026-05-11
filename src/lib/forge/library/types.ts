@@ -56,10 +56,15 @@ export interface AssetVisibilityContext {
  *  - the viewer owns the asset
  *  - we're in a public-visibility world and the asset is the world owner's
  *  - (TODO once auth: explicit per-asset grants)
+ *
+ *  A user-scope asset with a NULL ownerId is treated as orphaned — invisible
+ *  to all viewers. This shouldn't happen in normal flow (mirror always sets
+ *  ownerId from `getLocalUserId()`) but if a partial backfill or a race
+ *  produces one, hiding it is safer than leaking it to everyone.
  */
 export function canViewAsset(asset: LibraryAsset, ctx: AssetVisibilityContext): boolean {
   if (asset.scope === 'core' || asset.scope === 'shared') return true
-  if (!asset.ownerId) return false
+  if (!asset.ownerId) return false   // orphaned user-scope row — invisible
   if (asset.ownerId === ctx.viewerUserId) return true
   if (ctx.worldAssetVisibility === 'public' && asset.ownerId === ctx.worldOwnerId) return true
   return false

@@ -1250,11 +1250,13 @@ export function CatalogModelRenderer({ path, scale, objectId }: { path: string; 
         position={[bounds.center.x * scale, bounds.center.y * scale, bounds.center.z * scale]}
         onClick={(e) => {
           e.stopPropagation()
+          if (objectId) dispatch({ type: 'SELECT_OBJECT', payload: { id: objectId } })
+        }}
+        onDoubleClick={(e) => {
+          e.stopPropagation()
           if (objectId) {
             dispatch({ type: 'SELECT_OBJECT', payload: { id: objectId } })
-            if (!useInputManager.getState().pointerLocked) {
-              dispatch({ type: 'INSPECT_OBJECT', payload: { id: objectId } })
-            }
+            dispatch({ type: 'INSPECT_OBJECT', payload: { id: objectId } })
           }
         }}
         onPointerOver={(e) => {
@@ -1747,11 +1749,13 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
         position={[bounds.center.x * scale, bounds.center.y * scale, bounds.center.z * scale]}
         onClick={(e) => {
           e.stopPropagation()
+          if (objectId) dispatch({ type: 'SELECT_OBJECT', payload: { id: objectId } })
+        }}
+        onDoubleClick={(e) => {
+          e.stopPropagation()
           if (objectId) {
             dispatch({ type: 'SELECT_OBJECT', payload: { id: objectId } })
-            if (!useInputManager.getState().pointerLocked) {
-              dispatch({ type: 'INSPECT_OBJECT', payload: { id: objectId } })
-            }
+            dispatch({ type: 'INSPECT_OBJECT', payload: { id: objectId } })
           }
         }}
         onPointerOver={(e) => {

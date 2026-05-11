@@ -58,9 +58,14 @@ async function writeExtras(file: string, data: ExtrasFile): Promise<void> {
 }
 
 /** Delete is destructive on disk and is gated to local-first dev mode.
- *  Set OASIS_ALLOW_LIBRARY_DELETE=1 to override (e.g. internal admin builds). */
+ *  Set OASIS_ALLOW_LIBRARY_DELETE=1 OR NEXT_PUBLIC_OASIS_ALLOW_LIBRARY_DELETE=1
+ *  to override. We honor both names because the client-side gate at
+ *  src/lib/library-permissions.ts can only read NEXT_PUBLIC_* (inlined at
+ *  build time); keeping both aligned prevents the "button shows but route
+ *  403s" foot-gun. */
 function isDeleteAllowed(): boolean {
   if (process.env.OASIS_ALLOW_LIBRARY_DELETE === '1') return true
+  if (process.env.NEXT_PUBLIC_OASIS_ALLOW_LIBRARY_DELETE === '1') return true
   return process.env.NODE_ENV !== 'production'
 }
 

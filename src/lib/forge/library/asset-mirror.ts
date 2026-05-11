@@ -86,13 +86,16 @@ export async function mirrorCraftedScene(scene: CraftedScene, ownerId: string): 
   }
 }
 
-/** Delete an Asset row by id (only if user-scope + ownerId matches). */
+/** Delete an Asset row by id. Only succeeds if scope='user' AND ownerId
+ *  matches the requester. Null-owner rows are never deletable through this
+ *  surface — they represent broken/orphaned state that needs admin cleanup,
+ *  not user-facing deletion. */
 export async function deleteMirroredAsset(id: string, requesterUserId: string): Promise<boolean> {
   try {
     const row = await prisma.asset.findUnique({ where: { id } })
     if (!row) return false
     if (row.scope !== 'user') return false
-    if (row.ownerId && row.ownerId !== requesterUserId) return false
+    if (!row.ownerId || row.ownerId !== requesterUserId) return false
     await prisma.asset.delete({ where: { id } })
     return true
   } catch (err) {

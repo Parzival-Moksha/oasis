@@ -2,10 +2,15 @@
 // UNIFIED THUMBNAIL QUEUE — Global orchestrator, runs on app mount
 // ─═̷─═̷─📸─═̷─═̷─ Replaces the per-tab autoGenTriggered scatter ─═̷─═̷─📸─═̷─═̷─
 //
-// Subscribes to ASSET_CATALOG + conjuredAssets + craftedScenes. For every
-// asset without a thumbnail, queues a render + upload. Concurrency=1 to
-// avoid GPU contention. Updates the thumbnail store as it goes; consumers
-// re-render with cache-bust suffixes when their asset goes 'ready'.
+// Scans ASSET_CATALOG + conjuredAssets. For every asset without a thumbnail,
+// queues a render + upload. Concurrency=1 to avoid GPU contention. Updates
+// the thumbnail store as it goes; consumers re-render with cache-bust
+// suffixes when their asset goes 'ready'.
+//
+// Crafted scenes are NOT handled here — they have a separate generator
+// (`useCraftedThumbnailGenerator`) that renders from procedural primitives
+// (not GLB files) and mounts inside AssetsTab. The two pipelines do not
+// share GPU rigs; both can run concurrently safely.
 //
 // Survives a single mount — runs in Providers, persists for the session.
 // Cancellation: if the page unloads, in-flight renders are abandoned.
@@ -89,13 +94,17 @@ async function renderModelToBlob(rig: RenderRig, modelUrl: string): Promise<Blob
 
 /** Single-mount orchestrator. Returns nothing — drives state through the store. */
 export function useUnifiedThumbnailQueue() {
-  const mountedRef = useRef(false)
   const cancelledRef = useRef(false)
   const inFlightRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
-    if (mountedRef.current) return
-    mountedRef.current = true
+    // ░▒▓ Global single-instance guard (StrictMode + HMR safe) ▓▒░
+    // useRef is per-component-instance, which React 18 StrictMode double-
+    // mounts on purpose and HMR can also double-mount across reloads. Pin
+    // to globalThis so only one drain loop ever exists per process.
+    const GLOBAL_KEY = '__oasis_thumb_queue_running__' as const
+    if ((globalThis as Record<string, unknown>)[GLOBAL_KEY]) return
+    ;(globalThis as Record<string, unknown>)[GLOBAL_KEY] = true
     cancelledRef.current = false
     const store = useThumbnailStore.getState()
     let rig: RenderRig | null = null
@@ -193,6 +202,9 @@ export function useUnifiedThumbnailQueue() {
     return () => {
       cancelledRef.current = true
       try { rig?.renderer.dispose() } catch {}
+      // Don't clear the global guard — let the singleton survive component
+      // unmount/remount cycles (StrictMode, HMR). Only a full page reload
+      // resets globalThis, which is what we want.
     }
   }, [])
 }

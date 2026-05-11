@@ -21,7 +21,8 @@ export async function GET(req: Request) {
   const scopeParam = url.searchParams.get('scope')
   const scope = scopeParam && (VALID_SCOPES as string[]).includes(scopeParam) ? (scopeParam as AssetScope) : undefined
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '2000', 10), 5000)
+  const worldId = url.searchParams.get('worldId') || undefined
   const viewerUserId = await getLocalUserId()
-  const assets = await listAssets({ viewerUserId, query, kind, scope, limit })
+  const assets = await listAssets({ viewerUserId, worldId, query, kind, scope, limit })
   return NextResponse.json({ assets, viewerUserId, count: assets.length })
 }

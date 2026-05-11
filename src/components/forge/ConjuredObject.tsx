@@ -417,15 +417,19 @@ export function ConjuredObject({ asset }: ConjuredObjectProps) {
     return { size, center }
   }, [clonedScene, asset.id, asset.tier, isRigged])
 
-  // ░▒▓ Direct click handler — bypasses R3F event bubbling for reliability ▓▒░
-  // Event bubbling from proxy mesh → SelectableWrapper group was unreliable for
-  // dynamically-discovered child assets (rig/animate). Direct store call is bulletproof.
-  const handleProxyClick = useCallback((e: { stopPropagation: () => void }) => {
+  // Mirrors the SelectableWrapper gesture pair: single-click selects only,
+  // double-click summons the inspector in every camera mode. Bubbling to the
+  // outer SelectableWrapper was unreliable for dynamically-discovered children,
+  // so we re-implement the gesture pair here directly.
+  const handleProxySelect = useCallback((e: { stopPropagation: () => void }) => {
     e.stopPropagation()
     dispatch({ type: 'SELECT_OBJECT', payload: { id: asset.id } })
-    if (!useInputManager.getState().pointerLocked) {
-      dispatch({ type: 'INSPECT_OBJECT', payload: { id: asset.id } })
-    }
+  }, [asset.id])
+
+  const handleProxyInspect = useCallback((e: { stopPropagation: () => void }) => {
+    e.stopPropagation()
+    dispatch({ type: 'SELECT_OBJECT', payload: { id: asset.id } })
+    dispatch({ type: 'INSPECT_OBJECT', payload: { id: asset.id } })
   }, [asset.id])
 
   // ░▒▓ Display name: behavior label (user rename) > displayName > prompt ▓▒░
@@ -470,7 +474,8 @@ export function ConjuredObject({ asset }: ConjuredObjectProps) {
       <mesh
         ref={proxyRef}
         position={[bounds.center.x, bounds.center.y, bounds.center.z]}
-        onClick={handleProxyClick}
+        onClick={handleProxySelect}
+        onDoubleClick={handleProxyInspect}
         onPointerOver={(e) => {
           e.stopPropagation()
           if (useInputManager.getState().pointerLocked) return

@@ -20,6 +20,7 @@ If `CLAUDE.md`, old memory notes, or stale comments disagree with current code, 
 - Prefer `pnpm tsc --noEmit` when the user already has `pnpm dev`, `pnpm dev:loop`, `pnpm dev:agent`, or `pnpm dev:relay` running; `pnpm build` can fight over `.next/`.
 - When GitHub/deploy is the practical hosting path, bias toward committing coherent dirty work instead of leaving useful feature batches stranded. Keep credentials, caches, logs, screenshots, runtime media, generated voice/music/video/image bloat, and private local state out of commits; update `.gitignore` for repeat offenders.
 - **Default to commit-soup**: `git add -A` the whole dirty tree (including parallel agents' WIP) rather than selectively staging just your own files. The user prefers velocity over clean history. Push freely. Fix-forward if a sweep breaks the build.
+- **Coder → reviewer → tester pipeline** on large commits. >50 files, >1000 LOC, cross-cutting changes, parallel-agent merges, or new external surfaces → spawn reviewer subagents in parallel (one per logical unit), then a tester. Reviewers REPORT findings; the coder applies fixes. Typecheck-clean is not the same as logic-clean.
 - Time estimates default 5-20x too high. "Days of work" is usually 20-60 minutes of focused vibedev. Strip safety margin; the velocity is real.
 
 ## Commands

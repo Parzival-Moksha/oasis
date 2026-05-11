@@ -58,6 +58,7 @@ pnpm smoke:relay-hosted        # WSS relay smoke test against hosted
 - When the user already has `pnpm dev` (or `dev:loop` / `dev:agent`) running, prefer `pnpm tsc --noEmit` over `pnpm build`.
 - Your time estimates for code changes default 5-20x too high. What you'd frame as "days of work" is usually 20-60 minutes of focused vibedev. Strip safety margin; trust the velocity.
 - **Commit-soup is the default**, not selective staging. When committing, `git add -A` the dirty tree (including parallel agents' WIP). GitHub is hosting/state-sync, not clean history. Push freely. Fix-forward if the soup breaks the build. Hold back only secrets, credentials, .env, generated runtime media bloat, or files >10MB.
+- **Coder → reviewer → tester reflex.** After large commits (>50 files, >1000 LOC, cross-cutting refactor, commit-soup with parallel-agent WIP, or new external surfaces), spawn reviewer subagents in parallel — one per logical unit of work. Each reviewer reads the diff for its unit and reports logic bugs / races / security holes / broken invariants. After reviewers, dispatch a tester subagent if the change has runtime surfaces (HTTP/WS/MCP/browser). Don't wait to be asked.
 
 ## Pointers
 

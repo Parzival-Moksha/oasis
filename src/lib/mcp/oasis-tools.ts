@@ -1533,10 +1533,26 @@ tools.search_assets = async (args) => {
   const query = validStr(args.query, '')
   const category = validStr(args.category, '')
   const limit = Math.min(validNum(args.limit, 20), 50)
+  const argViewer = validStr(args.viewerUserId, '')
+  const argWorldId = validStr(args.worldId, '')
   const { listAssets } = await import('../forge/library/library-service')
   const { getLocalUserId } = await import('../local-auth')
-  const viewerUserId = await getLocalUserId()
-  let results = await listAssets({ viewerUserId, query: query || undefined, limit: 500 })
+  // Prefer explicit args (the relay forwards per-session identity); fall back
+  // to the cookie context. Cookie context returns 'local-user' for stdio /
+  // relay-invoked MCP calls with no Next request context, which would hide
+  // every viewer's user-scope content — so callers should pass viewerUserId
+  // when they have it.
+  let viewerUserId = argViewer
+  if (!viewerUserId) {
+    try { viewerUserId = await getLocalUserId() } catch {}
+  }
+  if (!viewerUserId) viewerUserId = 'local-user'
+  let results = await listAssets({
+    viewerUserId,
+    worldId: argWorldId || undefined,
+    query: query || undefined,
+    limit: 500,
+  })
   if (category) results = results.filter(a => (a.category || '').toLowerCase() === category.toLowerCase())
   const trimmed = results.slice(0, limit).map(a => ({
     id: a.id,
@@ -1574,10 +1590,16 @@ tools.list_ground_presets = async (args) => {
 
 tools.get_asset_catalog = async (args) => {
   const category = validStr(args.category, '')
+  const argViewer = validStr(args.viewerUserId, '')
+  const argWorldId = validStr(args.worldId, '')
   const { listAssets } = await import('../forge/library/library-service')
   const { getLocalUserId } = await import('../local-auth')
-  const viewerUserId = await getLocalUserId()
-  const all = await listAssets({ viewerUserId, limit: 2000 })
+  let viewerUserId = argViewer
+  if (!viewerUserId) {
+    try { viewerUserId = await getLocalUserId() } catch {}
+  }
+  if (!viewerUserId) viewerUserId = 'local-user'
+  const all = await listAssets({ viewerUserId, worldId: argWorldId || undefined, limit: 2000 })
   const byCategory: Record<string, Array<{ id: string; name: string; defaultScale?: number; scope?: string; shortLabel?: string }>> = {}
   for (const a of all) {
     const cat = a.category || 'misc'
@@ -1592,7 +1614,29 @@ tools.get_asset_catalog = async (args) => {
 
 tools.place_object = async (args) => {
   const catalogId = validStr(args.assetId || args.catalogId, '')
-  const asset = CATALOG_MAP.get(catalogId)
+  // First try the fast path: baked-in catalog index. Then fall back to the
+  // unified Asset table so user-scope conjured/crafted ids work too.
+  let asset: { id: string; name: string; path: string; defaultScale?: number } | undefined = CATALOG_MAP.get(catalogId)
+  if (!asset) {
+    try {
+      const { listAssets } = await import('../forge/library/library-service')
+      const { getLocalUserId } = await import('../local-auth')
+      const argViewer = validStr((args as Record<string, unknown>).viewerUserId, '')
+      const argWorldId = validStr((args as Record<string, unknown>).worldId, '')
+      let viewerUserId = argViewer
+      if (!viewerUserId) {
+        try { viewerUserId = await getLocalUserId() } catch {}
+      }
+      if (!viewerUserId) viewerUserId = 'local-user'
+      const matches = await listAssets({ viewerUserId, worldId: argWorldId || undefined, limit: 5000 })
+      const found = matches.find(a => a.id === catalogId)
+      if (found) {
+        asset = { id: found.id, name: found.name, path: found.path, defaultScale: found.defaultScale }
+      }
+    } catch (err) {
+      console.warn('[place_object] listAssets fallback failed:', err)
+    }
+  }
   if (!asset) return { ok: false, message: `Unknown asset: ${catalogId}. Use search_assets to find valid IDs.` }
 
   const position = validPos(args.position) || [0, 0, 0]
@@ -3987,10 +4031,36 @@ tools.list_conjured_assets = async (args) => {
   const limit = Math.max(1, Math.min(200, validNum(args.limit, 50)))
   const inWorldOnly = validBool(args.inWorldOnly ?? args.activeWorldOnly, false)
   const characterModeFilter = typeof args.characterMode === 'boolean' ? args.characterMode : null
+  const argViewer = validStr((args as Record<string, unknown>).viewerUserId, '')
 
   const { state, worldId: resolvedWorldId } = worldId
     ? { state: await loadWorldById(worldId), worldId }
     : await loadActiveWorld()
+
+  // Build the viewer-visibility allow-set via listAssets so this MCP tool
+  // matches search_assets / get_asset_catalog semantics. Without this, two
+  // MCP tools listing the same domain would disagree (legacy registry was
+  // viewer-agnostic; listAssets is viewer-filtered).
+  let visibleIds: Set<string> | null = null
+  try {
+    const { listAssets } = await import('../forge/library/library-service')
+    const { getLocalUserId } = await import('../local-auth')
+    let viewerUserId = argViewer
+    if (!viewerUserId) {
+      try { viewerUserId = await getLocalUserId() } catch {}
+    }
+    if (viewerUserId) {
+      const visible = await listAssets({
+        viewerUserId,
+        worldId: resolvedWorldId || undefined,
+        kind: 'conjured',
+        limit: 5000,
+      })
+      visibleIds = new Set(visible.map(a => a.id))
+    }
+  } catch (err) {
+    console.warn('[list_conjured_assets] visibility filter degraded:', err)
+  }
 
   const placedIds = new Set(state.conjuredAssetIds || [])
   const assets = getAllAssets()
@@ -3998,6 +4068,9 @@ tools.list_conjured_assets = async (args) => {
     .filter(asset => !providerFilter || asset.provider.toLowerCase() === providerFilter)
     .filter(asset => characterModeFilter === null || !!asset.characterMode === characterModeFilter)
     .filter(asset => !inWorldOnly || placedIds.has(asset.id))
+    // Apply viewer visibility unless the lookup degraded (then fall through to
+    // the legacy permissive behavior so we never silently hide everything).
+    .filter(asset => !visibleIds || visibleIds.has(asset.id))
     .slice(-limit)
     .reverse()
     .map(asset => ({

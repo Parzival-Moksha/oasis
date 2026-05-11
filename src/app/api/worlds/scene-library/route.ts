@@ -34,8 +34,9 @@ function saveLibrary(scenes: CraftedScene[]): void {
 }
 
 // GET — all scenes. v1: read from the Asset table (kind='crafted'), filtered
-// by viewer-cookie ownership. Falls back to scene-library.json only if the
-// Asset table has nothing for this viewer yet (one-time migration window).
+// by viewer-cookie ownership. Local-mode-only JSON fallback: in hosted mode,
+// new viewers get [] (otherwise we'd leak every user's legacy scenes from the
+// shared scene-library.json blob).
 export async function GET() {
   try {
     const { getLocalUserId } = await import('@/lib/local-auth')
@@ -47,6 +48,8 @@ export async function GET() {
       take: 1000,
     })
     const scenes: CraftedScene[] = []
+    let legacyCache: CraftedScene[] | null = null
+    const getLegacy = () => legacyCache ?? (legacyCache = loadLibrary())
     for (const row of rows) {
       if (row.data) {
         try {
@@ -58,15 +61,22 @@ export async function GET() {
         } catch {}
       }
       // No data blob — backfill not yet populated. Try the legacy file for this id.
-      const legacy = loadLibrary().find(s => s.id === row.id)
+      const legacy = getLegacy().find(s => s.id === row.id)
       if (legacy) scenes.push(legacy)
     }
-    // If Asset table is empty (fresh instance), fall through to legacy file.
-    if (scenes.length === 0) return NextResponse.json(loadLibrary())
+    // Local-mode-only fallback: if the Asset table is empty for this viewer
+    // AND we're not in hosted mode, surface the on-disk JSON as legacy content.
+    // Hosted mode never falls back — every visitor has a separate cookie
+    // identity, and the JSON is a per-instance shared blob that would leak
+    // every user's scenes to every fresh visitor.
+    if (scenes.length === 0 && process.env.OASIS_MODE !== 'hosted') {
+      return NextResponse.json(getLegacy())
+    }
     return NextResponse.json(scenes)
   } catch (err) {
-    console.warn('[scene-library] Asset-table read failed, falling back to JSON:', err)
-    return NextResponse.json(loadLibrary())
+    console.warn('[scene-library] Asset-table read failed:', err)
+    if (process.env.OASIS_MODE !== 'hosted') return NextResponse.json(loadLibrary())
+    return NextResponse.json([])
   }
 }
 

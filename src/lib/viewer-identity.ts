@@ -59,5 +59,34 @@ export async function ensureViewerUserId(): Promise<string> {
     path: '/',
     maxAge: VIEWER_COOKIE_MAX_AGE,
   })
+  // ░▒▓ LOCAL-MODE FIRST-COOKIE MIGRATION ▓▒░
+  // On a local install, any existing rows tagged `ownerId='local-user'` (from
+  // the backfill or pre-cookie writes) should be claimed by the new viewer.
+  // This preserves the single-user illusion on a freshly-bootstrapped local
+  // dev install. Hosted mode skips this — local-user content there is system
+  // /admin content; we don't auto-grant it to arbitrary visitors.
+  if (process.env.OASIS_MODE !== 'hosted') {
+    void claimLocalUserRowsTo(fresh).catch(err => {
+      console.warn('[viewer-identity] local-mode claim failed:', err)
+    })
+  }
   return fresh
+}
+
+async function claimLocalUserRowsTo(newViewerId: string): Promise<void> {
+  // Lazy-load Prisma to avoid pulling the DB into edge contexts that won't hit
+  // this branch (most of viewer-identity is cookie-only).
+  const { prisma } = await import('./db')
+  const assetUpdate = prisma.asset.updateMany({
+    where: { ownerId: VIEWER_FALLBACK },
+    data: { ownerId: newViewerId },
+  })
+  const worldUpdate = prisma.world.updateMany({
+    where: { userId: VIEWER_FALLBACK },
+    data: { userId: newViewerId },
+  })
+  const [a, w] = await Promise.all([assetUpdate, worldUpdate])
+  if (a.count || w.count) {
+    console.log(`[viewer-identity] claimed ${a.count} Asset rows + ${w.count} World rows from '${VIEWER_FALLBACK}' to '${newViewerId}'`)
+  }
 }

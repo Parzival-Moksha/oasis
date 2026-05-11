@@ -215,6 +215,8 @@ export function MultiplayerPresenceLayer() {
   const lastSentPoseRef = useRef<{ position: [number, number, number]; yaw: number } | null>(null)
   const lastSentAtRef = useRef<number>(0)
   const [players, setPlayers] = useState<MultiplayerRoomPlayer[]>([])
+  const [reconnectTick, setReconnectTick] = useState(0)
+  const reconnectAttemptRef = useRef(0)
 
   useEffect(() => {
     const playerId = makePresenceId()
@@ -247,8 +249,21 @@ export function MultiplayerPresenceLayer() {
 
     let disposed = false
     let connection: MultiplayerRoomConnection | null = null
+    let reconnectTimer: number | null = null
 
     setPlayers([])
+
+    const scheduleReconnect = () => {
+      if (disposed) return
+      const attempt = reconnectAttemptRef.current + 1
+      reconnectAttemptRef.current = attempt
+      // Exponential backoff capped at 15s: 1s, 2s, 4s, 8s, 15s, 15s...
+      const delayMs = Math.min(15000, 1000 * Math.pow(2, attempt - 1))
+      if (typeof window === 'undefined') return
+      reconnectTimer = window.setTimeout(() => {
+        if (!disposed) setReconnectTick(t => t + 1)
+      }, delayMs)
+    }
 
     connectToWorldRoom({
       worldId: activeWorldId,
@@ -265,11 +280,25 @@ export function MultiplayerPresenceLayer() {
         if (!mutation || typeof mutation !== 'object' || typeof mutation.kind !== 'string') return
         worldMutationBus.applyIncoming(mutation)
       },
+      onConnectionState: (state, detail) => {
+        if (disposed) return
+        if (state === 'connected') {
+          reconnectAttemptRef.current = 0
+        } else if (state === 'closed' || state === 'error') {
+          console.warn('[oasis-room] connection lost:', state, detail || '')
+          // Only the layer's reconnect path may null the sender. Guard so we
+          // don't stomp a sender belonging to a newer connection.
+          if (connection === connectionRef.current) {
+            worldMutationBus.setSender(null)
+            connectionRef.current = null
+          }
+          scheduleReconnect()
+        }
+      },
     })
       .then(next => {
         if (disposed) {
           void next.dispose()
-          worldMutationBus.setSender(null)
           return
         }
         connection = next
@@ -278,22 +307,29 @@ export function MultiplayerPresenceLayer() {
         lastSentPoseRef.current = null
         lastSentAtRef.current = 0
       })
-      .catch(() => {
-        // Room server unavailable. Stay silent; old HTTP fallback is gone but
-        // the rest of the world keeps working.
+      .catch(error => {
+        console.warn('[oasis-room] connect rejected:', error)
+        scheduleReconnect()
       })
 
     return () => {
       disposed = true
-      worldMutationBus.setSender(null)
+      if (reconnectTimer !== null && typeof window !== 'undefined') {
+        window.clearTimeout(reconnectTimer)
+      }
+      // Only null the sender if we're disposing the active connection — a
+      // newer effect may have already wired its own sender.
+      if (connection === connectionRef.current) {
+        worldMutationBus.setSender(null)
+        connectionRef.current = null
+      }
       if (connection) {
         void connection.dispose()
       }
-      connectionRef.current = null
       lastSentPoseRef.current = null
       lastSentAtRef.current = 0
     }
-  }, [activeWorldId, avatarUrl])
+  }, [activeWorldId, avatarUrl, reconnectTick])
 
   useFrame(() => {
     const connection = connectionRef.current

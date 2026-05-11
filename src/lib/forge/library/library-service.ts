@@ -22,6 +22,12 @@ import { canViewAsset } from './types'
 interface ListOptions {
   /** Viewer identity; used to filter user-scope rows by visibility rules. */
   viewerUserId: string
+  /** Optional world context. When provided, we look up the world's
+   *  assetVisibility + ownerId so visitors of public-visibility worlds
+   *  see the owner's user-scope content too (per
+   *  feedback_world_visibility_is_universal: world contents are world-public).
+   */
+  worldId?: string
   /** Restrict to one tier. Default: all tiers. */
   scope?: AssetScope
   /** Restrict to one kind. Default: all kinds. */
@@ -155,10 +161,29 @@ export async function listAssets(opts: ListOptions): Promise<LibraryAsset[]> {
   const wantsCore = !opts.scope || opts.scope === 'core'
   const wantsDb = !opts.scope || opts.scope !== 'core'
 
+  // Look up the world context so visitors of public worlds see the owner's
+  // user-scope content. Failures (world not found, DB hiccup) degrade to
+  // "no world context" rather than throwing — better to show core only than
+  // to 500 the whole library list.
+  let worldAssetVisibility: 'public' | 'private' | undefined
+  let worldOwnerId: string | null | undefined
+  if (opts.worldId) {
+    try {
+      const world = await prisma.world.findUnique({
+        where: { id: opts.worldId },
+        select: { userId: true, assetVisibility: true },
+      })
+      if (world) {
+        worldAssetVisibility = (world.assetVisibility as 'public' | 'private') || 'public'
+        worldOwnerId = world.userId
+      }
+    } catch {}
+  }
+
   const core = wantsCore ? coreAssets() : []
   const db = wantsDb ? await dbAssets(opts) : []
 
-  let merged = [...core, ...db].filter(a => canViewAsset(a, { viewerUserId }))
+  let merged = [...core, ...db].filter(a => canViewAsset(a, { viewerUserId, worldAssetVisibility, worldOwnerId }))
 
   if (opts.kind) merged = merged.filter(a => a.kind === opts.kind)
   if (opts.query) {

@@ -22,6 +22,12 @@ interface InputMessage {
 const MAX_PLAYERS_PER_WORLD = 64
 const SIM_HZ = 30
 const PATCH_HZ = 30
+// Mutation passthrough is unauthenticated by design (no auth yet) — bound
+// the abuse surface explicitly. A malicious WS client could otherwise flood
+// every peer with megabyte-sized payloads.
+const MUTATION_MAX_BYTES = 16 * 1024  // 16 KiB per mutation envelope
+const MUTATION_TOKENS_PER_SEC = 30    // 30 mutation broadcasts/sec sustained
+const MUTATION_BURST = 60             // allow short bursts for drag streams
 
 function sanitizeWorldId(value: unknown): string {
   if (typeof value !== 'string') return ''
@@ -56,8 +62,33 @@ function clampYaw(value: unknown, fallback: number): number {
   return Math.max(-Math.PI * 4, Math.min(Math.PI * 4, n))
 }
 
+interface MutationBucket {
+  tokens: number
+  lastRefillAt: number
+}
+
 export class WorldRoom extends Room<WorldRoomState> {
   override maxClients = MAX_PLAYERS_PER_WORLD
+  private readonly mutationBuckets = new Map<string, MutationBucket>()
+
+  private consumeMutationToken(sessionId: string, now: number): boolean {
+    let bucket = this.mutationBuckets.get(sessionId)
+    if (!bucket) {
+      bucket = { tokens: MUTATION_BURST, lastRefillAt: now }
+      this.mutationBuckets.set(sessionId, bucket)
+    } else {
+      const elapsedSec = (now - bucket.lastRefillAt) / 1000
+      if (elapsedSec > 0) {
+        bucket.tokens = Math.min(MUTATION_BURST, bucket.tokens + elapsedSec * MUTATION_TOKENS_PER_SEC)
+        bucket.lastRefillAt = now
+      }
+    }
+    if (bucket.tokens >= 1) {
+      bucket.tokens -= 1
+      return true
+    }
+    return false
+  }
 
   override onCreate(options: JoinOptions): void {
     const worldId = sanitizeWorldId(options.worldId)
@@ -93,6 +124,27 @@ export class WorldRoom extends Room<WorldRoomState> {
       // Persistence still happens client-side via the existing debounced save
       // path on the originating client. Phase 4 v2 will move persistence into
       // the room and add baseVersion conflict rules from the spec.
+
+      // Defensive caps: shape, payload size, per-client rate.
+      if (!payload || typeof payload !== 'object') return
+      const env = payload as { kind?: unknown; payload?: unknown }
+      if (typeof env.kind !== 'string' || env.kind.length > 64) return
+
+      // Serialized-size cap. JSON.stringify is the cheapest realistic proxy
+      // for the wire size of an arbitrary unknown payload here; perfectly
+      // synced with the actual broadcast cost given Colyseus uses msgpack
+      // for everything that isn't schema-typed.
+      let serializedSize: number
+      try {
+        serializedSize = JSON.stringify(env).length
+      } catch {
+        return  // unserializable payload
+      }
+      if (serializedSize > MUTATION_MAX_BYTES) return
+
+      // Token-bucket rate limit per session.
+      if (!this.consumeMutationToken(client.sessionId, Date.now())) return
+
       this.broadcast('mutation', payload, { except: client })
     })
   }
@@ -110,6 +162,7 @@ export class WorldRoom extends Room<WorldRoomState> {
 
   override onLeave(client: Client): void {
     this.state.players.delete(client.sessionId)
+    this.mutationBuckets.delete(client.sessionId)
     console.log(`[room ${this.roomId}] leave ${client.sessionId} total=${this.state.players.size}`)
   }
 
