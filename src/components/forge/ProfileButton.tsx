@@ -52,6 +52,10 @@ export function ProfileButton() {
   const [editAvatarFile, setEditAvatarFile] = useState<File | null>(null)
   const [editAvatarPreview, setEditAvatarPreview] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  // Cache-bust counter: bumps on every successful avatar upload AND every
+  // profile fetch. Avoids the same-day stale-image case where lastLoginDate
+  // alone (day granularity) lets the browser keep showing the old pic.
+  const [avatarBust, setAvatarBust] = useState<number>(() => Date.now())
   const [saving, setSaving] = useState(false)
   const editFileRef = useRef<HTMLInputElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -145,7 +149,7 @@ export function ProfileButton() {
   // because filenames are keyed by user, not content. Without ?v= the
   // browser cache holds the old (or 404) version after upload.
   const avatarSrc = profile.avatar_url
-    ? `${profile.avatar_url}?v=${profile.lastLoginDate || 'init'}`
+    ? `${profile.avatar_url}?v=${avatarBust}`
     : null
   const initial = (displayName[0] || '?').toUpperCase()
   const playClick = () => useAudioManager.getState().play('buttonClick')
@@ -199,6 +203,12 @@ export function ProfileButton() {
       setEditing(false)
       setSaveError(null)
       fetchProfile()
+      setAvatarBust(Date.now())
+      // Notify multiplayer presence layer + other listeners that the profile
+      // changed mid-session so they re-pull displayName/avatarUrl/etc.
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('oasis:profile-updated'))
+      }
       setSavedFlash(true)
       setTimeout(() => setSavedFlash(false), 1500)
     } catch (err) {

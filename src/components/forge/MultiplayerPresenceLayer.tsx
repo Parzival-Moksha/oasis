@@ -277,25 +277,59 @@ export function MultiplayerPresenceLayer() {
   }, [])
 
   // Override the legacy `Visitor XXXX` localStorage name with the user's
-  // actual profile.displayName once it loads. We then forward the new name
-  // to the room via the existing profile mutation — no reconnect.
+  // actual profile.displayName once it loads, AND re-pull whenever the user
+  // edits their profile mid-session (ProfileButton dispatches the
+  // `oasis:profile-updated` event after a successful save).
   useEffect(() => {
     let cancelled = false
-    fetch('/api/profile', { cache: 'no-store' })
-      .then(r => (r.ok ? r.json() : null))
-      .then((data: { displayName?: string } | null) => {
-        if (cancelled || !data?.displayName) return
-        const fromProfile = data.displayName.trim()
-        // Skip the default placeholders — only override the legacy
-        // Visitor XXXX label when the user actually picked a name.
-        if (!fromProfile || fromProfile === 'Player 1' || fromProfile === 'Wanderer') return
-        playerNameRef.current = fromProfile
-        try { window.localStorage.setItem('oasis-presence-player-name', fromProfile) } catch {}
-        const connection = connectionRef.current
-        if (connection) connection.sendProfile({ displayName: fromProfile })
-      })
-      .catch(() => {})
-    return () => { cancelled = true }
+    let pendingName: string | null = null
+
+    const apply = (fromProfile: string) => {
+      // Skip the default placeholders — only override the legacy Visitor
+      // label when the user picked a real name.
+      if (!fromProfile || fromProfile === 'Player 1' || fromProfile === 'Wanderer') return
+      playerNameRef.current = fromProfile
+      try { window.localStorage.setItem('oasis-presence-player-name', fromProfile) } catch {}
+      const connection = connectionRef.current
+      if (connection) {
+        connection.sendProfile({ displayName: fromProfile })
+      } else {
+        // Profile fetch resolved before the room connected. Stash and let
+        // the poller below flush once a sender is wired.
+        pendingName = fromProfile
+      }
+    }
+
+    const refresh = () => {
+      fetch('/api/profile', { cache: 'no-store' })
+        .then(r => (r.ok ? r.json() : null))
+        .then((data: { displayName?: string } | null) => {
+          if (cancelled || !data?.displayName) return
+          apply(data.displayName.trim())
+        })
+        .catch(() => {})
+    }
+
+    refresh()
+
+    const onProfileUpdated = () => refresh()
+    window.addEventListener('oasis:profile-updated', onProfileUpdated)
+
+    // Flush pendingName once the connection establishes (async after this
+    // effect runs). Stops polling when consumed or unmount.
+    const flushTimer = window.setInterval(() => {
+      if (cancelled) return
+      if (pendingName && connectionRef.current) {
+        connectionRef.current.sendProfile({ displayName: pendingName })
+        pendingName = null
+      }
+    }, 250)
+
+    return () => {
+      cancelled = true
+      window.removeEventListener('oasis:profile-updated', onProfileUpdated)
+      window.clearInterval(flushTimer)
+    }
   }, [])
 
   useEffect(() => {

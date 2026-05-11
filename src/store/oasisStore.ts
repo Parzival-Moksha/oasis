@@ -1175,6 +1175,15 @@ export const useOasisStore = create<OasisState>((set, get) => {
         transforms: nextTransforms,
       }
     })
+    // Mirror the bus broadcast in setObjectTransform — when setObjectTransform
+    // detects an agent-avatar id it re-routes here, but the broadcast was
+    // missing on this branch, so dragging an agent avatar was invisible to
+    // peers even though applyRemoteObjectTransform already handles the
+    // receive-side agent-avatar branch.
+    worldMutationBus.broadcast({
+      kind: 'object_transformed',
+      payload: { id, position: transform.position, rotation: transform.rotation, scale: transform.scale },
+    })
     setTimeout(() => get().saveWorldState(), 100)
   },
   removeConjuredAssetFromWorld: (assetId) => {

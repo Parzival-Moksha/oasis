@@ -221,10 +221,17 @@ export class WorldRoom extends Room<WorldRoomState> {
   }
 
   override onLeave(client: Client): void {
-    this.state.players.delete(client.sessionId)
-    this.mutationBuckets.delete(client.sessionId)
-    rosterRemove(this.state.worldId, client.sessionId)
-    console.log(`[room ${this.roomId}] leave ${client.sessionId} total=${this.state.players.size}`)
+    // try/finally guards against a roster leak if state.players.delete or
+    // mutationBuckets.delete were to throw mid-cleanup — the roster must
+    // drop the session regardless so /world-players doesn't keep reporting
+    // ghosts.
+    try {
+      this.state.players.delete(client.sessionId)
+      this.mutationBuckets.delete(client.sessionId)
+    } finally {
+      rosterRemove(this.state.worldId, client.sessionId)
+      console.log(`[room ${this.roomId}] leave ${client.sessionId} total=${this.state.players.size}`)
+    }
   }
 
   override onDispose(): void {

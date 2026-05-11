@@ -228,6 +228,8 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
 
   const handleContentPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     stopSceneBridgeEvent(event)
+    // Shift-click always selects — the world owner uses this gesture to
+    // select+delete another visitor's agent window via the Joystick.
     if (event.shiftKey) {
       const store = useOasisStore.getState()
       if (store.selectedObjectId !== win.id) {
@@ -235,13 +237,19 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
       }
       return
     }
+    // Non-shift click on a non-owned window: read-only. No focus handoff,
+    // no pointer-lock release. The lock pill explains the disabled state.
+    if (!ownedByCurrentViewer) return
     handoffToWindowUi()
-  }, [handoffToWindowUi, win.id])
+  }, [handoffToWindowUi, win.id, ownedByCurrentViewer])
 
   const handleContentWheel = useCallback((event: ReactWheelEvent<HTMLDivElement>) => {
     stopSceneBridgeEvent(event)
-    handoffToWindowUi()
-  }, [handoffToWindowUi])
+    // Wheel-scroll for transcript reading stays open to all viewers; only
+    // owners get the focus handoff (UI focus would otherwise steal pointer
+    // lock from non-owners trying to look around).
+    if (ownedByCurrentViewer) handoffToWindowUi()
+  }, [handoffToWindowUi, ownedByCurrentViewer])
 
   // ░▒▓ VANISH-ON-SCROLL FIX (oasisspec3) ▓▒░
   // Previous implementation toggled `transform: translateZ(0 ↔ 0.001px)` on
@@ -382,11 +390,12 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
                 style={{
                   width: '100%',
                   height: '100%',
-                  // Non-owners see body + transcript but cannot type, connect,
-                  // or click any control. pointer-events:none blocks input at
-                  // the surface root; the lock badge is layered above with
-                  // pointer-events:auto so it can intercept stray clicks.
-                  pointerEvents: ownedByCurrentViewer ? 'auto' : 'none',
+                  // Non-owners keep pointer-events:auto so shift-click selection
+                  // still works (world owner needs to select+delete a visitor's
+                  // window via the Joystick) and wheel-scroll lets them read the
+                  // transcript. Handlers gate WRITE actions (typing, connect,
+                  // focus handoff) by ownership; READ stays open.
+                  pointerEvents: 'auto',
                 }}
                 onPointerDownCapture={handleContentPointerDown}
                 onWheelCapture={event => {

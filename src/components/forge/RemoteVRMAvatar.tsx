@@ -20,7 +20,7 @@
 // VRMUtils.deepCloneVrm when @pixiv/three-vrm ships it (3.5 does not).
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import React, { forwardRef, Suspense, useEffect, useRef, useState } from 'react'
+import React, { forwardRef, Suspense, useEffect, useId, useRef, useState } from 'react'
 import { Billboard, Text } from '@react-three/drei'
 import { useFrame, useLoader } from '@react-three/fiber'
 import * as THREE from 'three'
@@ -122,16 +122,21 @@ function VRMBody({
 }) {
   const vrmRef = useRef<VRM | null>(null)
   const animControllerRef = useRef<AnimationController | null>(null)
-  // One-shot IBL pass guard. PlayerAvatar does the same; without it remote
-  // VRMs render pitch-black against a lit scene because the loader-time
-  // material swap can't see state.scene.environment from a useEffect.
-  const iblAppliedRef = useRef(false)
+  // Tracks which scene.environment was last baked into the materials. Re-runs
+  // the IBL pass when the environment identity changes (e.g. mid-session HDRI
+  // swap via SkyPanel's now-live sky_changed mutation). Without this, remote
+  // VRMs keep the previous environment cubemap baked into their materials
+  // after a sky swap.
+  const appliedEnvRef = useRef<THREE.Texture | null>(null)
   const [vrm, setVrm] = useState<VRM | null>(null)
 
-  // Per-player cache fragment — hash isn't sent to server, but it forces
-  // useLoader to give us a unique parsed GLTF (so each remote owns its own
-  // skeleton + expression manager).
-  const vrmUrl = avatarUrl + '#vrm-remote-' + cacheKey
+  // Per-player cache fragment — appended as a URL hash, never sent to server.
+  // Forces drei's useLoader to give each remote a fresh parsed GLTF (own
+  // skeleton + expressionManager). The mountId suffix rotates per React mount
+  // so a fast same-sessionId rejoin can't pull a just-disposed VRM from the
+  // loader cache.
+  const mountId = useId()
+  const vrmUrl = avatarUrl + '#vrm-remote-' + cacheKey + '-' + mountId
   const gltf = useLoader(GLTFLoader, vrmUrl, (loader) => {
     loader.register((parser) => new VRMLoaderPlugin(parser))
   })
@@ -225,7 +230,7 @@ function VRMBody({
     // lighting. The loader-time material pass couldn't see scene.environment
     // (no R3F state in a useEffect), so without this remote players render
     // as silhouettes against a lit world.
-    if (!iblAppliedRef.current && state.scene.environment) {
+    if (state.scene.environment && appliedEnvRef.current !== state.scene.environment) {
       v.scene.traverse((child) => {
         if (!(child as THREE.Mesh).isMesh) return
         const mesh = child as THREE.Mesh
@@ -274,7 +279,7 @@ function VRMBody({
         })
         mesh.material = Array.isArray(mesh.material) ? newMats : newMats[0]
       })
-      iblAppliedRef.current = true
+      appliedEnvRef.current = state.scene.environment
     }
 
     animControllerRef.current?.update(delta)

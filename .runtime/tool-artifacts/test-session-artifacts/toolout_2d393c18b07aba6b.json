@@ -1,0 +1,15 @@
+{
+  "artifact": {
+    "id": "toolout_2d393c18b07aba6b",
+    "sessionId": "test-session-artifacts",
+    "messageId": "msg-stable",
+    "toolName": "terminal",
+    "kind": "terminal_log",
+    "title": "terminal output",
+    "summary": "terminal output externalized (17 chars). Full output stored as artifact toolout_2d393c18b07aba6b.",
+    "preview": "same terminal log",
+    "contentSize": 17,
+    "createdAt": 1778537951180
+  },
+  "content": "same terminal log"
+}
