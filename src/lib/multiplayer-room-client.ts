@@ -81,6 +81,7 @@ function snapshotPlayer(sessionId: string, raw: RoomPlayerSchema): MultiplayerRo
 
 export interface MultiplayerRoomConnection {
   sendInput(input: MultiplayerRoomInput): void
+  sendMutation(payload: unknown): void
   dispose(): Promise<void>
   readonly sessionId: string
 }
@@ -88,6 +89,7 @@ export interface MultiplayerRoomConnection {
 export interface MultiplayerRoomConnectArgs extends MultiplayerRoomJoinOptions {
   onPlayersChanged: (players: MultiplayerRoomPlayer[]) => void
   onConnectionState?: (state: 'connecting' | 'connected' | 'closed' | 'error', detail?: string) => void
+  onMutation?: (payload: unknown) => void
 }
 
 const DEBUG = typeof window !== 'undefined' && /\bmultiplayer=debug\b/.test(window.location.search)
@@ -143,6 +145,16 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
 
   emit()
 
+  if (args.onMutation) {
+    room.onMessage('mutation', (payload: unknown) => {
+      try {
+        args.onMutation?.(payload)
+      } catch (error) {
+        if (DEBUG) console.warn('[oasis-room] onMutation handler threw', error)
+      }
+    })
+  }
+
   room.onLeave((code: number) => {
     log('room left, code=', code)
     args.onConnectionState?.('closed', String(code))
@@ -162,6 +174,13 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
         room.send('input', input)
       } catch (error) {
         if (DEBUG) console.warn('[oasis-room] sendInput failed', error)
+      }
+    },
+    sendMutation(payload: unknown): void {
+      try {
+        room.send('mutation', payload)
+      } catch (error) {
+        if (DEBUG) console.warn('[oasis-room] sendMutation failed', error)
       }
     },
     async dispose(): Promise<void> {

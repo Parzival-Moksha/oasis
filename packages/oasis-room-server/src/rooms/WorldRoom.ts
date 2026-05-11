@@ -20,8 +20,8 @@ interface InputMessage {
 }
 
 const MAX_PLAYERS_PER_WORLD = 64
-const SIM_HZ = 20
-const PATCH_HZ = 15
+const SIM_HZ = 30
+const PATCH_HZ = 30
 
 function sanitizeWorldId(value: unknown): string {
   if (typeof value !== 'string') return ''
@@ -86,6 +86,14 @@ export class WorldRoom extends Room<WorldRoomState> {
       if (payload.vz !== undefined) player.vz = clampVel(payload.vz, player.vz)
       if (payload.animState !== undefined) player.animState = sanitizeText(payload.animState, player.animState, 24)
       player.updatedAt = Date.now()
+    })
+
+    this.onMessage('mutation', (client, payload: unknown) => {
+      // v1: server is a passthrough broadcaster. No validation, no persistence.
+      // Persistence still happens client-side via the existing debounced save
+      // path on the originating client. Phase 4 v2 will move persistence into
+      // the room and add baseVersion conflict rules from the spec.
+      this.broadcast('mutation', payload, { except: client })
     })
   }
 

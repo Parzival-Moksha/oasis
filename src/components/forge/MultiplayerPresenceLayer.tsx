@@ -2,7 +2,7 @@
 
 import { Text } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 
 import { getCameraSnapshot } from '@/lib/camera-bridge'
@@ -12,11 +12,14 @@ import {
   type MultiplayerRoomConnection,
   type MultiplayerRoomPlayer,
 } from '@/lib/multiplayer-room-client'
+import { worldMutationBus, type WorldMutation } from '@/lib/world-mutation-bus'
 import { useOasisStore } from '@/store/oasisStore'
 
-const INPUT_SEND_INTERVAL_MS = 70
-const INPUT_POSITION_EPSILON = 0.03
-const INPUT_YAW_EPSILON = 0.02
+const INPUT_SEND_INTERVAL_MS = 33
+const INPUT_POSITION_EPSILON = 0.02
+const INPUT_YAW_EPSILON = 0.015
+const REMOTE_RENDER_DELAY_MS = 80
+const REMOTE_SNAPSHOT_BUFFER = 4
 
 function makePresenceId(): string {
   if (typeof window !== 'undefined') {
@@ -67,20 +70,88 @@ function getLocalPose(): { position: [number, number, number]; yaw: number } | n
   }
 }
 
+interface RemoteSnapshot {
+  arrivedAt: number
+  position: [number, number, number]
+  yaw: number
+}
+
+function shortAngle(target: number, current: number): number {
+  let diff = target - current
+  while (diff > Math.PI) diff -= Math.PI * 2
+  while (diff < -Math.PI) diff += Math.PI * 2
+  return diff
+}
+
 function RemotePresenceAvatar({ player }: { player: MultiplayerRoomPlayer }) {
   const groupRef = useRef<THREE.Group>(null)
-  const targetPosition = useMemo(() => new THREE.Vector3(), [])
+  const bufferRef = useRef<RemoteSnapshot[]>([])
   const color = player.color || '#38bdf8'
+
+  useEffect(() => {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    const last = bufferRef.current[bufferRef.current.length - 1]
+    if (last
+      && Math.abs(last.position[0] - player.position[0]) < 0.0001
+      && Math.abs(last.position[1] - player.position[1]) < 0.0001
+      && Math.abs(last.position[2] - player.position[2]) < 0.0001
+      && Math.abs(last.yaw - player.yaw) < 0.0001) {
+      return
+    }
+    bufferRef.current.push({
+      arrivedAt: now,
+      position: [player.position[0], player.position[1], player.position[2]],
+      yaw: player.yaw,
+    })
+    if (bufferRef.current.length > REMOTE_SNAPSHOT_BUFFER) {
+      bufferRef.current.shift()
+    }
+  }, [player.position[0], player.position[1], player.position[2], player.yaw])
 
   useFrame((_, delta) => {
     const group = groupRef.current
     if (!group) return
-    targetPosition.set(player.position[0], player.position[1], player.position[2])
-    group.position.lerp(targetPosition, 1 - Math.exp(-10 * delta))
-    let diff = player.yaw - group.rotation.y
-    while (diff > Math.PI) diff -= Math.PI * 2
-    while (diff < -Math.PI) diff += Math.PI * 2
-    group.rotation.y += diff * Math.min(1, delta * 10)
+    const buffer = bufferRef.current
+    if (buffer.length === 0) return
+
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    const renderTime = now - REMOTE_RENDER_DELAY_MS
+
+    let target: { position: [number, number, number]; yaw: number }
+    if (buffer.length === 1 || renderTime >= buffer[buffer.length - 1].arrivedAt) {
+      const last = buffer[buffer.length - 1]
+      target = { position: last.position, yaw: last.yaw }
+    } else if (renderTime <= buffer[0].arrivedAt) {
+      const first = buffer[0]
+      target = { position: first.position, yaw: first.yaw }
+    } else {
+      let lo = buffer[0]
+      let hi = buffer[1]
+      for (let i = 1; i < buffer.length; i += 1) {
+        if (buffer[i].arrivedAt >= renderTime) {
+          hi = buffer[i]
+          lo = buffer[i - 1]
+          break
+        }
+      }
+      const span = hi.arrivedAt - lo.arrivedAt
+      const alpha = span <= 0 ? 1 : (renderTime - lo.arrivedAt) / span
+      const yawDiff = shortAngle(hi.yaw, lo.yaw)
+      target = {
+        position: [
+          lo.position[0] + (hi.position[0] - lo.position[0]) * alpha,
+          lo.position[1] + (hi.position[1] - lo.position[1]) * alpha,
+          lo.position[2] + (hi.position[2] - lo.position[2]) * alpha,
+        ],
+        yaw: lo.yaw + yawDiff * alpha,
+      }
+    }
+
+    const catchUp = 1 - Math.exp(-22 * delta)
+    group.position.x += (target.position[0] - group.position.x) * catchUp
+    group.position.y += (target.position[1] - group.position.y) * catchUp
+    group.position.z += (target.position[2] - group.position.z) * catchUp
+    group.rotation.y += shortAngle(target.yaw, group.rotation.y) * Math.min(1, delta * 18)
   })
 
   return (
@@ -136,6 +207,18 @@ export function MultiplayerPresenceLayer() {
   }, [])
 
   useEffect(() => {
+    const applyRemoteCatalogPlacement = useOasisStore.getState().applyRemoteCatalogPlacement
+    const applyRemoteCatalogRemoval = useOasisStore.getState().applyRemoteCatalogRemoval
+    return worldMutationBus.subscribe(mutation => {
+      if (mutation.kind === 'object_added') {
+        applyRemoteCatalogPlacement(mutation.payload)
+      } else if (mutation.kind === 'object_removed') {
+        applyRemoteCatalogRemoval(mutation.payload.id)
+      }
+    })
+  }, [])
+
+  useEffect(() => {
     if (!activeWorldId) {
       setPlayers([])
       return
@@ -157,14 +240,22 @@ export function MultiplayerPresenceLayer() {
       onPlayersChanged: next => {
         if (!disposed) setPlayers(next)
       },
+      onMutation: payload => {
+        if (disposed) return
+        const mutation = payload as WorldMutation
+        if (!mutation || typeof mutation !== 'object' || typeof mutation.kind !== 'string') return
+        worldMutationBus.applyIncoming(mutation)
+      },
     })
       .then(next => {
         if (disposed) {
           void next.dispose()
+          worldMutationBus.setSender(null)
           return
         }
         connection = next
         connectionRef.current = next
+        worldMutationBus.setSender(mutation => next.sendMutation(mutation))
         lastSentPoseRef.current = null
         lastSentAtRef.current = 0
       })
@@ -175,6 +266,7 @@ export function MultiplayerPresenceLayer() {
 
     return () => {
       disposed = true
+      worldMutationBus.setSender(null)
       if (connection) {
         void connection.dispose()
       }

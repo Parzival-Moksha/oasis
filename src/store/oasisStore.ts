@@ -673,6 +673,8 @@ interface OasisState {
   setConjureVfxType: (type: ConjureVfxType) => void
   placeCatalogAsset: (catalogId: string, name: string, path: string, defaultScale: number) => void
   removeCatalogAsset: (id: string) => void
+  applyRemoteCatalogPlacement: (placement: CatalogPlacement) => void
+  applyRemoteCatalogRemoval: (id: string) => void
   placePortalGateAt: (args: {
     variant: PortalGateVariant
     label?: string
@@ -1185,6 +1187,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
   // ─═̷─═̷─📦 CATALOG ASSET ACTIONS ─═̷─═̷─📦
   placeCatalogAsset: (catalogId, name, path, defaultScale) => {
+    let placedPlacement: CatalogPlacement | null = null
     withUndo(`Place ${name}`, '📦', () => {
       const id = `catalog-${catalogId}-${Date.now()}`
       const placement: CatalogPlacement = {
@@ -1195,10 +1198,16 @@ export const useOasisStore = create<OasisState>((set, get) => {
         position: [(Math.random() - 0.5) * 8, 0, (Math.random() - 0.5) * 8],
         scale: defaultScale,
       }
+      placedPlacement = placement
       set(state => ({
         placedCatalogAssets: [...state.placedCatalogAssets, placement],
       }))
     })
+    if (placedPlacement) {
+      void import('../lib/world-mutation-bus').then(mod => {
+        mod.worldMutationBus.broadcast({ kind: 'object_added', payload: placedPlacement! })
+      })
+    }
     setTimeout(() => get().saveWorldState(), 100)
     // XP for placing objects
     awardXp('PLACE_CATALOG_OBJECT', get().activeWorldId)
@@ -1211,7 +1220,22 @@ export const useOasisStore = create<OasisState>((set, get) => {
         selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
       }))
     })
+    void import('../lib/world-mutation-bus').then(mod => {
+      mod.worldMutationBus.broadcast({ kind: 'object_removed', payload: { id } })
+    })
     setTimeout(() => get().saveWorldState(), 100)
+  },
+  applyRemoteCatalogPlacement: (placement: CatalogPlacement) => {
+    set(state => {
+      if (state.placedCatalogAssets.some(existing => existing.id === placement.id)) return state
+      return { placedCatalogAssets: [...state.placedCatalogAssets, placement] }
+    })
+  },
+  applyRemoteCatalogRemoval: (id: string) => {
+    set(state => ({
+      placedCatalogAssets: state.placedCatalogAssets.filter(a => a.id !== id),
+      selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
+    }))
   },
 
   // ─═̷─═̷─📚 SCENE LIBRARY ACTIONS ─═̷─═̷─📚
