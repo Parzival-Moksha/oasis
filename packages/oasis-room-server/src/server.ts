@@ -9,7 +9,11 @@ import { WorldRoom } from './rooms/WorldRoom.js'
 const PORT = Number(process.env.OASIS_ROOM_PORT) || 4519
 
 const httpServer = http.createServer((req, res) => {
-  if (req.url === '/rooms/health') {
+  // Match both /health and /rooms/health: locally we serve on root, but on
+  // hosted nginx routes /rooms/* here so /rooms/health is the public URL.
+  // Nginx is configured to rewrite /rooms away, so by the time the request
+  // lands we typically see /health. Match both for resilience.
+  if (req.url === '/health' || req.url === '/rooms/health') {
     matchMaker.stats.fetchAll()
       .then(stats => {
         const totalRooms = stats.reduce((sum, node) => sum + node.roomCount, 0)

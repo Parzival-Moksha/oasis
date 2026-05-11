@@ -32,6 +32,10 @@ const commands = [
     ? `git reset --hard origin/${branch}`
     : `git pull --ff-only origin ${shellQuote(branch)}`,
   skipInstall ? 'echo "[deploy] skipping pnpm install"' : 'pnpm install --frozen-lockfile',
+  skipInstall
+    ? 'echo "[deploy] skipping room-server install"'
+    : 'pnpm --dir packages/oasis-room-server install --frozen-lockfile',
+  'pnpm --dir packages/oasis-room-server build',
   'npx prisma generate',
   'pnpm build',
   seedWelcome ? 'pnpm seed:welcome-hub' : 'echo "[deploy] skipping welcome reseed"',
@@ -40,6 +44,9 @@ const commands = [
   'if [ -z "${PM2:-}" ]; then echo "[deploy] pm2 not found" >&2; exit 1; fi',
   '$PM2 reload openclaw-oasis-web --time --update-env',
   'if $PM2 describe openclaw-oasis-relay >/dev/null 2>&1; then $PM2 reload openclaw-oasis-relay --time --update-env; fi',
+  // First-deploy of the room server: start from the ecosystem config.
+  // Subsequent deploys: reload.
+  'if $PM2 describe openclaw-oasis-room >/dev/null 2>&1; then $PM2 reload openclaw-oasis-room --time --update-env; else $PM2 start ecosystem.openclaw.config.cjs --only openclaw-oasis-room --time --update-env; fi',
   '$PM2 save',
   'echo "[deploy] done"',
 ]
