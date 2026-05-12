@@ -72,14 +72,22 @@ export function distanceBetween(a: [number, number, number], b: [number, number,
   return Math.sqrt(dx * dx + dy * dy + dz * dz)
 }
 
-/** Map a segment length to an inverse-velocity thickness; clamped so thin strokes stay visible. */
+/**
+ * Map a segment length to an inverse-velocity thickness — slow careful strokes
+ * swell into bold marks, fast sweeps thin out toward a hairline. The clamp is
+ * dramatic on purpose: 30x dynamic range from thinnest to thickest. Power
+ * curve (≈sqrt) softens the transition so strokes don't strobe between
+ * extremes when speed wobbles.
+ *
+ * Reference 10cm = baseline. <1cm crawl → ~3x. >50cm sweep → ~0.10x.
+ */
 export function thicknessForSegment(baseThickness: number, segmentLength: number, varyByVelocity: boolean | undefined): number {
   if (!varyByVelocity) return baseThickness
-  // 10cm step ≈ baseline. <2cm → 1.6x. >40cm → 0.35x. Tuned by feel.
   const ref = 0.10
-  const ratio = ref / Math.max(0.005, segmentLength)
-  const scaled = baseThickness * Math.max(0.35, Math.min(1.6, ratio))
-  return Math.max(0.005, scaled)
+  const ratio = ref / Math.max(0.003, segmentLength)
+  const shaped = Math.sign(ratio - 1) * Math.pow(Math.abs(ratio - 1), 0.55) + 1
+  const scaled = baseThickness * Math.max(0.10, Math.min(3.0, shaped))
+  return Math.max(0.002, scaled)
 }
 
 export function makeStrokeId(): string {

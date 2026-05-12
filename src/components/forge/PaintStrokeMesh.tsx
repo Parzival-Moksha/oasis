@@ -49,7 +49,11 @@ export function PaintStrokeMesh({
   showLeadingSparkler,
   leadingSparklerColor,
 }: PaintStrokeMeshProps) {
-  const allPoints = useMemo(() => unpackPoints(points), [points])
+  // Live in-progress strokes mutate `points` in place (Array.push) so the
+  // outer reference is stable across appends. Including `points.length` in
+  // the dep list ensures the geometry rebuilds each time a sample is added —
+  // without it, the live tube would only appear on stroke_ended.
+  const allPoints = useMemo(() => unpackPoints(points), [points, points.length])
 
   // Compute the visible prefix from progress.
   const visiblePoints = useMemo(() => {

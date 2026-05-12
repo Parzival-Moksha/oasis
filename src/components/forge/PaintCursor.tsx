@@ -78,10 +78,24 @@ export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps)
     const dom = gl.domElement
 
     const projectPointerToWorld = (clientX: number, clientY: number): [number, number, number] | null => {
-      const rect = dom.getBoundingClientRect()
-      const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1
-      const ndcY = -(((clientY - rect.top) / rect.height) * 2 - 1)
-      // Build a ray from the camera through the pointer NDC.
+      // When the pointer is locked (noclip/third-person mouse-look), the OS
+      // cursor is invisible and clientX/clientY are STALE — they hold the
+      // last position before lock. Painting from that stale position drifts
+      // the stroke off the crosshair in random directions (drift direction =
+      // wherever the cursor was when lock engaged minus screen center).
+      // Force NDC center while locked so strokes always land on the
+      // crosshair, matching the existing PointerLockRaycaster fix in Scene.tsx.
+      let ndcX: number
+      let ndcY: number
+      if (typeof document !== 'undefined' && document.pointerLockElement) {
+        ndcX = 0
+        ndcY = 0
+      } else {
+        const rect = dom.getBoundingClientRect()
+        ndcX = ((clientX - rect.left) / rect.width) * 2 - 1
+        ndcY = -(((clientY - rect.top) / rect.height) * 2 - 1)
+      }
+      // Build a ray from the camera through the (NDC) cursor.
       const ndc = new THREE.Vector3(ndcX, ndcY, 0.5)
       ndc.unproject(camera)
       const dir = ndc.sub(camera.position).normalize()
@@ -154,11 +168,16 @@ export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps)
     }
 
     const onPointerMove = (event: PointerEvent) => {
+      const id = strokeIdRef.current
+      // Only do work while a stroke is in progress. Without an active stroke,
+      // pointer moves are just hovering — we don't want the wand-tip sparkler
+      // to render whenever the cursor is over the canvas, only while the
+      // user is actively painting (LMB held). This is also a fast path for
+      // mouse-look in pointer-locked modes (no allocations, no broadcasts).
+      if (!id) return
       const point = projectPointerToWorld(event.clientX, event.clientY)
       if (!point) return
       setCursorWorldPos(point)
-      const id = strokeIdRef.current
-      if (!id) return
       event.preventDefault()
       event.stopPropagation()
       const sampled = sampleIfDue(point)
@@ -234,6 +253,9 @@ export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps)
     allPointsRef.current = []
     pointCountRef.current = 0
     lastSampleRef.current = null
+    // Drop the cursor so the wand-tip sparkler vanishes the instant the user
+    // releases the mouse — it should only be visible during active painting.
+    setCursorWorldPos(null)
   }
 
   if (!active) return null
