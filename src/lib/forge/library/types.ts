@@ -44,7 +44,7 @@ export interface LibraryAsset {
 }
 
 export interface AssetVisibilityContext {
-  /** Current viewer's user id. With local-auth this is always 'local-user'. */
+  /** Current viewer's user id. Local mode is always 'local-user'. */
   viewerUserId: string
   /** World's assetVisibility setting, if we're rendering in a world context. */
   worldAssetVisibility?: WorldAssetVisibility

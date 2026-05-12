@@ -1,20 +1,13 @@
-// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-// LOCAL AUTH — Identity for DB queries
-// ─═̷─═̷─🔑─═̷─═̷─ Cookie-backed in v1; OAuth migration is v2 ─═̷─═̷─🔑─═̷─═̷─
+// LOCAL AUTH - identity for DB queries.
 //
-// Local dev: cookie is rarely set, so callers get 'local-user' (legacy
-// behavior). Hosted: every browser gets a stable `oasis-viewer-id` cookie
-// once they hit /api/viewer/me (or any route that calls ensureViewerUserId),
-// and that cookie becomes the userId for asset/world ownership.
-//
-// Function name stays getLocalUserId() so the 60+ call sites don't churn.
-// Treat it as "the current viewer's stable id" from now on.
-// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+// Local mode is the single-user cloneable app, so DB ownership stays on
+// `local-user` even when the browser carries an old viewer cookie. Hosted mode
+// uses the viewer cookie until real auth replaces it.
 
-import { getViewerUserId } from './viewer-identity'
+import { isHostedOasis } from './oasis-profile'
+import { getViewerUserId, VIEWER_FALLBACK } from './viewer-identity'
 
-/** Returns the user ID for all DB queries. Reads the browser cookie if
- *  present, falls back to 'local-user' otherwise. */
+/** Returns the user ID for DB queries. Hosted reads the cookie; local stays local-user. */
 export async function getLocalUserId(): Promise<string> {
-  return getViewerUserId()
+  return isHostedOasis() ? getViewerUserId() : VIEWER_FALLBACK
 }

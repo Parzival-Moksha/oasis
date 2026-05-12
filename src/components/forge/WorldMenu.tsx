@@ -7,7 +7,9 @@ import { useAudioManager } from '@/lib/audio-manager'
 import { useUILayer } from '@/lib/input-manager'
 import type { WorldMeta } from '@/lib/forge/world-persistence'
 import { SettingsContext } from '@/components/scene-lib'
-import { getViewerUserIdClient } from '@/lib/viewer-identity'
+import { getViewerUserIdClient } from '@/lib/viewer-identity-client'
+import { ensureViewerCookie, VIEWER_IDENTITY_EVENT } from '@/lib/viewer-identity-bootstrap'
+import { WELCOME_HUB_WORLD_ID } from '@/lib/portal-gates'
 
 import { GameMenuButton } from './GameMenuButton'
 
@@ -115,10 +117,9 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
   const [worldTab, setWorldTab] = useState<'this' | 'my' | 'public'>('this')
   // Within Public Worlds, filter pills for visibility tier.
   const [publicFilter, setPublicFilter] = useState<'public' | 'sandbox' | 'unlisted'>('public')
-  // Viewer identity — read fresh from the cookie on each render. Reading
-  // document.cookie is cheap and avoids a useMemo([])-with-stale-bootstrap
-  // race where the cookie is set after WorldMenu first mounts.
-  const viewerUserId = getViewerUserIdClient()
+  // Viewer identity may be corrected by /api/viewer/me after mount.
+  // In local mode, stale viewer-* cookies collapse back to local-user.
+  const [viewerUserId, setViewerUserId] = useState(() => getViewerUserIdClient())
   const menuRef = useRef<HTMLDivElement>(null)
   useUILayer('world-menu', isOpen)
   const { settings, updateSetting, rp1Locked } = useContext(SettingsContext)
@@ -181,6 +182,24 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [isOpen])
+
+  useEffect(() => {
+    let cancelled = false
+    const applyViewerId = (viewerId: unknown) => {
+      if (!cancelled && typeof viewerId === 'string' && viewerId.length > 0) {
+        setViewerUserId(viewerId)
+      }
+    }
+    const handleViewerIdentity = (event: Event) => {
+      applyViewerId((event as CustomEvent<{ viewerId?: string | null }>).detail?.viewerId)
+    }
+    window.addEventListener(VIEWER_IDENTITY_EVENT, handleViewerIdentity)
+    void ensureViewerCookie().then(applyViewerId)
+    return () => {
+      cancelled = true
+      window.removeEventListener(VIEWER_IDENTITY_EVENT, handleViewerIdentity)
+    }
+  }, [])
 
   useEffect(() => {
     if (!meta) return
@@ -473,7 +492,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
 
           {/* ░▒▓ MY WORLDS TAB — worlds owned by the viewer ▓▒░ */}
           {worldTab === 'my' && (() => {
-            const myWorlds = worldRegistry.filter(w => w.userId === viewerUserId)
+            const myWorlds = worldRegistry.filter(w => w.id !== WELCOME_HUB_WORLD_ID && w.userId === viewerUserId)
             return (
               <div className="mb-3 rounded-md border border-white/10 bg-white/5 p-2">
                 <div className="mb-2 flex items-center gap-2">
@@ -544,14 +563,16 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
 
           {/* ░▒▓ PUBLIC WORLDS TAB — other users' worlds, filtered by visibility ▓▒░ */}
           {worldTab === 'public' && (() => {
-            const filterVis = (v: string | undefined): boolean => {
+            const filterVis = (world: WorldMeta): boolean => {
+              const v = world.visibility
+              if (world.id === WELCOME_HUB_WORLD_ID) return publicFilter === 'public'
               if (!v || v === 'private' || v === 'core' || v === 'template') return false
               if (publicFilter === 'public') return v === 'public'
               if (publicFilter === 'sandbox') return v === 'public_edit' || v === 'ffa'
               if (publicFilter === 'unlisted') return v === 'unlisted' || v === 'only-with-link' || v === 'unlisted_edit'
               return false
             }
-            const publicWorlds = worldRegistry.filter(w => w.userId !== viewerUserId && filterVis(w.visibility))
+            const publicWorlds = worldRegistry.filter(w => (w.id === WELCOME_HUB_WORLD_ID || w.userId !== viewerUserId) && filterVis(w))
             const PILL: Array<{ key: 'public' | 'sandbox' | 'unlisted'; label: string; tip: string }> = [
               { key: 'public', label: 'Public', tip: 'Visit and look around. Owner edits.' },
               { key: 'sandbox', label: 'Sandbox', tip: 'Anyone can build.' },
@@ -600,7 +621,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-[11px] font-black uppercase tracking-[0.1em] text-white/80">{world.name}</span>
                           <span className="mt-0.5 block text-[9px] uppercase tracking-[0.1em] text-white/35">
-                            {formatVisibility(world.visibility)}{world.ownerName ? ` · ${world.ownerName}` : ''}
+                            {world.id === WELCOME_HUB_WORLD_ID ? 'Public' : formatVisibility(world.visibility)}{world.ownerName ? ` · ${world.ownerName}` : ''}
                           </span>
                         </span>
                         {active && <span className="text-[9px] font-black uppercase tracking-[0.12em] text-cyan-100/70">here</span>}

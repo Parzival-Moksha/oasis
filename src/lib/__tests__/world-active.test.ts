@@ -50,7 +50,18 @@ describe('resolveActiveWorldForUser', () => {
     })
   })
 
-  it('falls back to registry in local mode without making it authoritative', async () => {
+  it('sends fresh local sessions to Portal Zero without making it authoritative', async () => {
+    vi.mocked(getOasisMode).mockReturnValue('local')
+    vi.mocked(loadWorld).mockImplementation(async (worldId) => worldId === WELCOME_HUB_WORLD_ID ? ({} as any) : null)
+
+    await expect(resolveActiveWorldForUser('local-user')).resolves.toEqual({
+      worldId: WELCOME_HUB_WORLD_ID,
+      source: 'welcome',
+      authoritative: false,
+    })
+  })
+
+  it('falls back to registry in local mode when Portal Zero is unavailable', async () => {
     vi.mocked(getOasisMode).mockReturnValue('local')
     vi.mocked(getRegistry).mockResolvedValue([
       { id: 'world-local', name: 'The Forge', icon: 'F', visibility: 'private', createdAt: '', lastSavedAt: '' },
