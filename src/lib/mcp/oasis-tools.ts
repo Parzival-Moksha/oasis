@@ -2129,7 +2129,10 @@ const SELF_CRAFT_GUIDE = {
 } as const
 
 function usesSelfCraftByDefault(actorAgentType: string): boolean {
-  return actorAgentType === 'hermes' || actorAgentType === 'merlin' || actorAgentType === 'openclaw'
+  return actorAgentType === 'hermes'
+    || actorAgentType === 'merlin'
+    || actorAgentType === 'openclaw'
+    || actorAgentType === 'realtime'
 }
 
 async function startPromptCraftJob(
@@ -2315,7 +2318,8 @@ tools.craft_scene = async (args) => {
     }
 
     const model = normalizeCraftModel(args.model)
-    const waitForCompletion = validBool(args.waitForCompletion, false)
+    const requestedWaitForCompletion = validBool(args.waitForCompletion, false)
+    const waitForCompletion = actorAgentType === 'realtime' ? false : requestedWaitForCompletion
     const { worldId } = await loadRequestedWorld(args.worldId)
     const job = await startPromptCraftJob(args, worldId, position, promptStr, requestedName, model)
 

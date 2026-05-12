@@ -64,10 +64,14 @@ describe('realtime voice server guardrails', () => {
     expect(names).toContain('get_craft_guide')
     expect(names).toContain('self_craft_scene')
     expect(names).toContain('craft_scene')
+    expect(names).toContain('set_avatar')
+    expect(names).toContain('list_avatar_animations')
+    expect(names).toContain('play_avatar_animation')
     expect(selfCraftTool?.parameters).toMatchObject({
       required: ['objects'],
     })
     expect(JSON.stringify(selfCraftTool)).toContain('worldId')
     expect(readRealtimePromptTemplate()).toContain('self_craft_scene')
+    expect(readRealtimePromptTemplate()).toContain('set_avatar')
   })
 })

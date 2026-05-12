@@ -43,3 +43,43 @@ export function fetchOasisToolFromBrowser(
     }),
   })
 }
+
+function stripHtmlForToolMessage(value: string): string {
+  return value
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+export async function readOasisToolJson(response: Response): Promise<Record<string, unknown>> {
+  const contentType = response.headers.get('content-type') || ''
+  if (contentType.toLowerCase().includes('application/json')) {
+    try {
+      return await response.json() as Record<string, unknown>
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Oasis tool returned malformed JSON.',
+        data: {
+          code: 'oasis_tool_malformed_json',
+          status: response.status,
+          contentType,
+        },
+      }
+    }
+  }
+
+  const rawText = await response.text().catch(() => '')
+  const text = stripHtmlForToolMessage(rawText).slice(0, 280)
+  return {
+    ok: false,
+    error: `Oasis tool returned ${response.status} ${response.statusText || 'non-JSON response'}${text ? `: ${text}` : '.'}`,
+    data: {
+      code: 'oasis_tool_non_json_response',
+      status: response.status,
+      contentType,
+    },
+  }
+}

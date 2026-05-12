@@ -1687,7 +1687,7 @@ describe('agent avatar tools', () => {
 })
 
 describe('craft_scene prompt fallback', () => {
-  it('defaults Hermes and Merlin to self-crafting unless sculptor fallback is explicit', async () => {
+  it('defaults embodied agents to self-crafting unless sculptor fallback is explicit', async () => {
     const result = await callTool('craft_scene', {
       actorAgentType: 'hermes',
       prompt: 'a stone tower',
@@ -1696,6 +1696,14 @@ describe('craft_scene prompt fallback', () => {
     expect(result.ok).toBe(false)
     expect(result.message).toContain('self-crafted scenes')
     expect(result.message).toContain('strategy: "sculptor"')
+
+    const realtimeResult = await callTool('craft_scene', {
+      actorAgentType: 'realtime',
+      prompt: 'a ruby cube',
+    })
+
+    expect(realtimeResult.ok).toBe(false)
+    expect(realtimeResult.message).toContain('self-crafted scenes')
   })
 
   it('defaults sculptor fallback to Gemini Flash Lite and can complete via the craft stream', async () => {

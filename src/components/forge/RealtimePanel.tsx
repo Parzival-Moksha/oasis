@@ -14,7 +14,7 @@ import { useInputManager, useUILayer } from '@/lib/input-manager'
 import { getCameraSnapshot } from '@/lib/camera-bridge'
 import { getLiveObjectTransform } from '@/lib/live-object-transforms'
 import { PLAYER_AVATAR_LIPSYNC_ID, getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
-import { fetchOasisToolFromBrowser, withBrowserWorldId } from '@/lib/browser-oasis-tool-client'
+import { fetchOasisToolFromBrowser, readOasisToolJson, withBrowserWorldId } from '@/lib/browser-oasis-tool-client'
 import { useOasisStore } from '@/store/oasisStore'
 import {
   REALTIME_AGENT_TYPE,
@@ -83,6 +83,9 @@ const REALTIME_TOOL_NAMES = new Set([
   'craft_scene',
   'get_craft_job',
   'walk_avatar_to',
+  'set_avatar',
+  'list_avatar_animations',
+  'play_avatar_animation',
 ])
 
 function makeId(prefix: string): string {
@@ -1031,7 +1034,11 @@ export function RealtimePanel({
             }
 
             const toolArgs: Record<string, unknown> = withBrowserWorldId(parsedArgs, activeWorldId)
-            if (call.name === 'walk_avatar_to' && !toolArgs.agentType && !toolArgs.agent) {
+            if ((
+              call.name === 'set_avatar'
+              || call.name === 'walk_avatar_to'
+              || call.name === 'play_avatar_animation'
+            ) && !toolArgs.agentType && !toolArgs.agent && !toolArgs.avatarId) {
               toolArgs.agentType = REALTIME_AGENT_TYPE
             }
             if ((
@@ -1039,6 +1046,8 @@ export function RealtimePanel({
               || call.name === 'create_spatial_web_object'
               || call.name === 'craft_scene'
               || call.name === 'self_craft_scene'
+              || call.name === 'set_avatar'
+              || call.name === 'play_avatar_animation'
             ) && !toolArgs.actorAgentType) {
               toolArgs.actorAgentType = REALTIME_AGENT_TYPE
             }
@@ -1048,7 +1057,7 @@ export function RealtimePanel({
             try {
               const toolResponse = await fetchOasisToolFromBrowser(call.name, toolArgs, { worldId: activeWorldId })
 
-              const result = await toolResponse.json() as Record<string, unknown>
+              const result = await readOasisToolJson(toolResponse)
               output = result
               updateMessage(messageId, message => ({
                 ...message,

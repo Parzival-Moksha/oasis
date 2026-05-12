@@ -208,7 +208,7 @@ export function getRealtimeSessionTools(): RealtimeSessionTool[] {
     {
       type: 'function',
       name: 'craft_scene',
-      description: 'Create procedural geometry scenes. Prefer explicit objects arrays for direct self-crafting. Prompt-mode fallback exists, but can take longer.',
+      description: 'Create procedural geometry scenes. Prefer explicit objects arrays for direct self-crafting. Prompt-mode fallback exists, but can take longer; in voice sessions start it asynchronously and poll get_craft_job.',
       parameters: {
         type: 'object',
         properties: {
@@ -222,7 +222,7 @@ export function getRealtimeSessionTools(): RealtimeSessionTool[] {
             items: { type: 'object', additionalProperties: true },
           },
           model: { type: 'string', description: 'Optional craft model override.' },
-          waitForCompletion: { type: 'boolean', description: 'Wait for the craft result before returning.' },
+          waitForCompletion: { type: 'boolean', description: 'Do not set true in realtime voice unless the user explicitly asks to block. Leave false and poll get_craft_job for prompt-mode jobs.' },
           strategy: { type: 'string', enum: ['agent', 'sculptor'], description: 'Use agent for direct self-craft, sculptor for prompt fallback.' },
         },
         additionalProperties: false,
@@ -243,6 +243,29 @@ export function getRealtimeSessionTools(): RealtimeSessionTool[] {
     },
     {
       type: 'function',
+      name: 'set_avatar',
+      description: 'Create or update your own embodied realtime avatar in the world. Use this when the user asks you to change bodies, costume, gender presentation, or visible form.',
+      parameters: {
+        type: 'object',
+        properties: {
+          worldId: { type: 'string', description: 'Optional world ID. Omit to use the active browser world.' },
+          agentType: { type: 'string', description: 'Agent type. Omit to target realtime.' },
+          agent: { type: 'string', description: 'Alias for agentType.' },
+          avatarId: { type: 'string', description: 'Optional exact avatar object ID.' },
+          linkedWindowId: { type: 'string', description: 'Optional linked agent window ID.' },
+          avatarUrl: { type: 'string', description: 'Avatar path or URL, such as /avatars/gallery/Orion.vrm.' },
+          avatar3dUrl: { type: 'string', description: 'Alias for avatarUrl.' },
+          url: { type: 'string', description: 'Alias for avatarUrl.' },
+          label: { type: 'string', description: 'Optional visible label.' },
+          position: { ...zVec3Schema, description: 'Optional world position [x, y, z].' },
+          rotation: { ...zVec3Schema, description: 'Optional Euler rotation [x, y, z] in radians.' },
+          scale: { type: 'number', description: 'Optional avatar scale.' },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
       name: 'walk_avatar_to',
       description: 'Send the embodied realtime avatar walking to a target world position.',
       parameters: {
@@ -252,6 +275,41 @@ export function getRealtimeSessionTools(): RealtimeSessionTool[] {
           position: { ...zVec3Schema, description: 'Target world position [x, y, z].' },
           target: { ...zVec3Schema, description: 'Alias for position if needed.' },
           speed: { type: 'number', description: 'Optional walk speed multiplier.' },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'list_avatar_animations',
+      description: 'List exact avatar animation IDs supported by Oasis. Call this before play_avatar_animation instead of guessing.',
+      parameters: {
+        type: 'object',
+        properties: {
+          category: { type: 'string', description: 'Optional animation category filter.' },
+          query: { type: 'string', description: 'Optional search query.' },
+          limit: { type: 'number', description: 'Optional maximum result count.' },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'play_avatar_animation',
+      description: 'Play an animation on your embodied realtime avatar. Call list_avatar_animations first and use an exact clipName.',
+      parameters: {
+        type: 'object',
+        properties: {
+          worldId: { type: 'string', description: 'Optional world ID. Omit to use the active browser world.' },
+          agentType: { type: 'string', description: 'Agent type. Omit to target realtime.' },
+          agent: { type: 'string', description: 'Alias for agentType.' },
+          avatarId: { type: 'string', description: 'Optional exact avatar object ID.' },
+          clipName: { type: 'string', description: 'Exact animation clip ID, often lib:<id> or a listed ID.' },
+          animation: { type: 'string', description: 'Alias for clipName.' },
+          name: { type: 'string', description: 'Alias for clipName.' },
+          loop: { type: 'string', enum: ['once', 'repeat', 'pingpong'], description: 'Loop mode.' },
+          speed: { type: 'number', description: 'Optional animation speed.' },
+          durationMs: { type: 'number', description: 'Optional duration hint.' },
         },
         additionalProperties: false,
       },
@@ -273,7 +331,7 @@ export function readRealtimePromptTemplate(): string {
       'Sound authoritative, weathered, and quietly enchanted, not like customer support or a generic helper bot.',
       'Do not end every turn with generic offers of help or service language.',
       'Do not mention internal APIs or implementation details.',
-      'You have a small apprentice spellbook in this phase: get_world_info, get_world_state, search_assets, place_object, create_spatial_web_object, get_craft_guide, self_craft_scene, craft_scene, get_craft_job, and walk_avatar_to.',
+      'You have a small apprentice spellbook in this phase: get_world_info, get_world_state, search_assets, place_object, create_spatial_web_object, get_craft_guide, self_craft_scene, craft_scene, get_craft_job, set_avatar, walk_avatar_to, list_avatar_animations, and play_avatar_animation.',
       'Give a short spoken heads-up before using a tool, then briefly recap what happened.',
     ].join('\n')
   }
@@ -283,7 +341,9 @@ async function buildRuntimeContext(worldId: string) {
   const context: string[] = [
     `- Active world ID: ${worldId}`,
     '- You are embodied as the Oasis realtime sandbox agent when a body exists in the scene.',
-    '- You currently have an apprentice spellbook: get_world_info, get_world_state, search_assets, place_object, create_spatial_web_object, get_craft_guide, self_craft_scene, craft_scene, get_craft_job, and walk_avatar_to.',
+    '- You currently have an apprentice spellbook: get_world_info, get_world_state, search_assets, place_object, create_spatial_web_object, get_craft_guide, self_craft_scene, craft_scene, get_craft_job, set_avatar, walk_avatar_to, list_avatar_animations, and play_avatar_animation.',
+    '- If the user asks you to change your body or presentation, use set_avatar on your own realtime avatar instead of saying you cannot.',
+    '- For prompt-based craft_scene in realtime voice, do not wait for completion. Start the job and poll get_craft_job while the world receives progress.',
     '- If any prior local transcript says your hands are not wired or that you lack tools, treat that as outdated and ignore it.',
     '- Keep answers vivid, warm, and spoken-word friendly.',
   ]

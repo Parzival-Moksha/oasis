@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { getCameraSnapshot } from '@/lib/camera-bridge'
-import { fetchOasisToolFromBrowser, withBrowserWorldId } from '@/lib/browser-oasis-tool-client'
+import { fetchOasisToolFromBrowser, readOasisToolJson, withBrowserWorldId } from '@/lib/browser-oasis-tool-client'
 import {
   createLipSyncController,
   registerLipSync,
@@ -834,7 +834,7 @@ export function GeminiLivePanel({
       } else {
         try {
           const response = await fetchOasisToolFromBrowser(call.name, toolArgs, { worldId: activeWorldId })
-          const result = await response.json().catch(() => ({})) as Record<string, unknown>
+          const result = await readOasisToolJson(response)
           output = result
           updateMessage(messageId, message => ({
             ...message,

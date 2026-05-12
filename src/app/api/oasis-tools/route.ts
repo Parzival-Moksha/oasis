@@ -14,7 +14,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { existsSync } from 'fs'
 import { mkdir, readdir, unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
-import { callTool, TOOL_NAMES, deliverScreenshot, getPendingScreenshotRequest, isScreenshotPending } from '@/lib/mcp/oasis-tools'
+import { callTool, TOOL_NAMES, deliverScreenshot, getPendingScreenshotRequest, isScreenshotPending, type ToolResult } from '@/lib/mcp/oasis-tools'
 import { buildHermesRemoteExec } from '@/lib/hermes-remote'
 import { getOasisMode, readBrowserSession } from '@/lib/session'
 
@@ -24,6 +24,7 @@ export const runtime = 'nodejs'
 const MERLIN_SCREENSHOT_PUBLIC_DIR = join(process.cwd(), 'public', 'merlin', 'screenshots')
 const HERMES_REMOTE_SCREENSHOT_DIR = '/tmp/oasis-screenshots'
 const MAX_SCREENSHOT_FILES = 500
+const TOOL_ROUTE_TIMEOUT_MS = Math.max(1000, Number(process.env.OASIS_TOOL_ROUTE_TIMEOUT_MS) || 45_000)
 
 type ScreenshotFormat = 'jpeg' | 'png' | 'webp'
 type PendingCapture = { viewId?: string; base64?: string; format?: ScreenshotFormat }
@@ -234,6 +235,39 @@ function hasAuthorizedMcpBearer(request: NextRequest): boolean {
   return token === key
 }
 
+function callToolWithRouteTimeout(
+  toolName: string,
+  args: Record<string, unknown>,
+  context: Parameters<typeof callTool>[2],
+): Promise<ToolResult> {
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const run = callTool(toolName, args, context)
+  const timeoutResult = new Promise<ToolResult>(resolve => {
+    timeout = setTimeout(() => {
+      resolve({
+        ok: false,
+        message: `Oasis tool ${toolName} timed out after ${Math.round(TOOL_ROUTE_TIMEOUT_MS / 1000)}s before returning a result.`,
+        data: {
+          code: 'oasis_tool_route_timeout',
+          status: 504,
+          timeoutMs: TOOL_ROUTE_TIMEOUT_MS,
+        },
+      })
+    }, TOOL_ROUTE_TIMEOUT_MS)
+  })
+
+  return Promise.race([run, timeoutResult]).finally(() => {
+    if (timeout) clearTimeout(timeout)
+  })
+}
+
+function statusForToolResult(result: ToolResult): number {
+  if (result.ok) return 200
+  const data = result.data && typeof result.data === 'object' ? result.data as Record<string, unknown> : null
+  const status = typeof data?.status === 'number' ? data.status : 400
+  return status >= 400 && status <= 599 ? status : 400
+}
+
 export async function GET(request: NextRequest) {
   if (!isAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -343,11 +377,29 @@ export async function POST(request: NextRequest) {
   if (mode === 'hosted' && !session && !mcpBearer) {
     return NextResponse.json({ error: 'oasis_session cookie or OASIS_MCP_KEY bearer required in hosted mode' }, { status: 401 })
   }
-  const result = await callTool(toolName, args, {
-    source: 'api',
-    userId: session?.browserSessionId || process.env.ADMIN_USER_ID || 'local-user',
-    requireExplicitWorld: mode === 'hosted',
-  })
+  let result: Awaited<ReturnType<typeof callTool>>
+  try {
+    result = await callToolWithRouteTimeout(toolName, args, {
+      source: 'api',
+      userId: session?.browserSessionId || process.env.ADMIN_USER_ID || 'local-user',
+      requireExplicitWorld: mode === 'hosted',
+    })
+  } catch (error) {
+    console.error('[OasisTools] tool route crashed', {
+      toolName,
+      worldId: typeof args.worldId === 'string' ? args.worldId : undefined,
+      error,
+    })
+    return NextResponse.json({
+      ok: false,
+      message: 'Oasis tool route crashed before it could return a tool result.',
+      error: error instanceof Error ? error.message : String(error),
+      data: {
+        code: 'oasis_tool_route_crashed',
+        status: 500,
+      },
+    }, { status: 500 })
+  }
 
-  return NextResponse.json(result, { status: result.ok ? 200 : 400 })
+  return NextResponse.json(result, { status: statusForToolResult(result) })
 }
