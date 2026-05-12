@@ -187,6 +187,26 @@ export function getRealtimeSessionTools(): RealtimeSessionTool[] {
     },
     {
       type: 'function',
+      name: 'self_craft_scene',
+      description: 'Directly conjure a procedural scene from explicit primitive objects. Use get_craft_guide first, then provide the objects array yourself for fastest visible magic.',
+      parameters: {
+        type: 'object',
+        properties: {
+          worldId: { type: 'string', description: 'Optional world ID. Omit to use the active browser world.' },
+          name: { type: 'string', description: 'Optional scene name.' },
+          position: { ...zVec3Schema, description: 'Scene root position [x, y, z].' },
+          objects: {
+            type: 'array',
+            description: 'Explicit primitive objects from get_craft_guide. Do not pass a prose prompt to self_craft_scene.',
+            items: { type: 'object', additionalProperties: true },
+          },
+        },
+        required: ['objects'],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
       name: 'craft_scene',
       description: 'Create procedural geometry scenes. Prefer explicit objects arrays for direct self-crafting. Prompt-mode fallback exists, but can take longer.',
       parameters: {
@@ -253,7 +273,7 @@ export function readRealtimePromptTemplate(): string {
       'Sound authoritative, weathered, and quietly enchanted, not like customer support or a generic helper bot.',
       'Do not end every turn with generic offers of help or service language.',
       'Do not mention internal APIs or implementation details.',
-      'You have a small apprentice spellbook in this phase: get_world_info, get_world_state, search_assets, place_object, create_spatial_web_object, get_craft_guide, craft_scene, get_craft_job, and walk_avatar_to.',
+      'You have a small apprentice spellbook in this phase: get_world_info, get_world_state, search_assets, place_object, create_spatial_web_object, get_craft_guide, self_craft_scene, craft_scene, get_craft_job, and walk_avatar_to.',
       'Give a short spoken heads-up before using a tool, then briefly recap what happened.',
     ].join('\n')
   }
@@ -263,7 +283,7 @@ async function buildRuntimeContext(worldId: string) {
   const context: string[] = [
     `- Active world ID: ${worldId}`,
     '- You are embodied as the Oasis realtime sandbox agent when a body exists in the scene.',
-    '- You currently have an apprentice spellbook: get_world_info, get_world_state, search_assets, place_object, create_spatial_web_object, get_craft_guide, craft_scene, get_craft_job, and walk_avatar_to.',
+    '- You currently have an apprentice spellbook: get_world_info, get_world_state, search_assets, place_object, create_spatial_web_object, get_craft_guide, self_craft_scene, craft_scene, get_craft_job, and walk_avatar_to.',
     '- If any prior local transcript says your hands are not wired or that you lack tools, treat that as outdated and ignore it.',
     '- Keep answers vivid, warm, and spoken-word friendly.',
   ]

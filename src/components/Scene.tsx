@@ -1391,6 +1391,7 @@ export default function Scene() {
     (activeWorldWriteKnown && !activeWorldCanWrite) ||
     effectiveRp1Mode,
   )
+  const canShowWizardConsole = Boolean(!hideEditTools && canUseFullWizard)
 
   // ─═̷─═̷─✨─═̷─═̷─{ WIZARD CONSOLE + ASSET EXPLORER STATE }─═̷─═̷─✨─═̷─═̷─
   const [wizardOpen, setWizardOpen] = useState(false)
@@ -1753,7 +1754,7 @@ export default function Scene() {
       <div className="fixed left-4 top-4 z-[190] flex flex-col gap-2 select-none max-[700px]:left-2 max-[700px]:top-2 max-[700px]:gap-1.5">
         <ProfileButton />
 
-        {!hideEditTools && (
+        {canShowWizardConsole && (
           <GameMenuButton
             label="Wizard"
             accent="#F97316"
@@ -1835,7 +1836,7 @@ export default function Scene() {
       </div>
 
       {/* ✨ Wizard Console — hidden in view mode */}
-      {!hideEditTools && (
+      {canShowWizardConsole && (
         <WizardConsole
           isOpen={wizardOpen}
           onClose={() => setWizardOpen(false)}

@@ -1698,7 +1698,7 @@ describe('craft_scene prompt fallback', () => {
     expect(result.message).toContain('strategy: "sculptor"')
   })
 
-  it('defaults sculptor fallback to cc-opus and can complete via the craft stream', async () => {
+  it('defaults sculptor fallback to Gemini Flash Lite and can complete via the craft stream', async () => {
     const world = makeWorldRow()
     vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
     vi.mocked(prisma.world.update).mockResolvedValue(world)
@@ -1727,9 +1727,9 @@ describe('craft_scene prompt fallback', () => {
       objectCount: 1,
     })
     expect(fetchSpy).toHaveBeenCalledWith(
-      expect.stringContaining('/api/craft/cc'),
+      expect.stringContaining('/api/craft/stream'),
       expect.objectContaining({
-        body: expect.stringContaining('"model":"cc-opus"'),
+        body: expect.stringContaining('"model":"google/gemini-3.1-flash-lite-preview"'),
       }),
     )
 

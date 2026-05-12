@@ -11,6 +11,8 @@ import type { CraftedScene, CraftedPrimitive, PrimitiveType, CraftAnimation, Cra
 import { CRAFT_SYSTEM_PROMPT } from '../../../lib/craft-prompt'
 
 const ALLOWED_MODELS = [
+  'google/gemini-3.1-flash-lite-preview',
+  'google/gemini-3.1-flash-lite',
   'anthropic/claude-sonnet-4-6',
   'anthropic/claude-haiku-4-5',
   'z-ai/glm-5',
@@ -22,7 +24,7 @@ const ALLOWED_MODELS = [
   'google/gemini-3.1-pro-preview',
   'minimax/minimax-m2.7',
 ]
-const DEFAULT_MODEL = 'anthropic/claude-sonnet-4-6'
+const DEFAULT_MODEL = 'google/gemini-3.1-flash-lite-preview'
 
 // System prompt is now shared — see src/lib/craft-prompt.ts
 

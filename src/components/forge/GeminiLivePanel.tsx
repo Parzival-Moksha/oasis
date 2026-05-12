@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { getCameraSnapshot } from '@/lib/camera-bridge'
+import { fetchOasisToolFromBrowser, withBrowserWorldId } from '@/lib/browser-oasis-tool-client'
 import {
   createLipSyncController,
   registerLipSync,
@@ -789,8 +790,7 @@ export function GeminiLivePanel({
     const responses: Array<{ id: string; name: string; response: Record<string, unknown> }> = []
 
     for (const call of calls) {
-      const toolArgs: Record<string, unknown> = { ...call.args }
-      if (!toolArgs.worldId && activeWorldId) toolArgs.worldId = activeWorldId
+      const toolArgs: Record<string, unknown> = withBrowserWorldId(call.args, activeWorldId)
       if ((
         call.name === 'set_avatar'
         || call.name === 'walk_avatar_to'
@@ -833,14 +833,7 @@ export function GeminiLivePanel({
         output = { ok: false, error: `Tool ${call.name} is unavailable in this Gemini Live session.` }
       } else {
         try {
-          const response = await fetch('/api/oasis-tools', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              tool: call.name,
-              args: toolArgs,
-            }),
-          })
+          const response = await fetchOasisToolFromBrowser(call.name, toolArgs, { worldId: activeWorldId })
           const result = await response.json().catch(() => ({})) as Record<string, unknown>
           output = result
           updateMessage(messageId, message => ({

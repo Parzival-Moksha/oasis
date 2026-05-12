@@ -15,7 +15,7 @@ import { useFrame, useLoader, useThree } from '@react-three/fiber'
 import { TransformControls, useGLTF, Html } from '@react-three/drei'
 import * as THREE from 'three'
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js'
-import { useOasisStore, type ConjureVfxType, CONJURE_VFX_LIST } from '../../store/oasisStore'
+import { useOasisStore, type AgentWindow, type AgentWindowType, type ConjureVfxType, CONJURE_VFX_LIST } from '../../store/oasisStore'
 import { ConjuredObjectSafe } from './ConjuredObject'
 import { CraftedSceneRenderer, PrimitiveGeometry } from './CraftedSceneRenderer'
 import { ConjureVFX } from './ConjureVFX'
@@ -58,13 +58,31 @@ import {
   DEFAULT_GEMINI_AGENT_WINDOW_HEIGHT,
   DEFAULT_GEMINI_AGENT_WINDOW_WIDTH,
 } from '../../lib/gemini-live'
+import { resolveAgentAvatarUrl } from '../../lib/agent-avatar-catalog'
+import { canReceiveMoveOrder, resolveMoveOrderObjectIds } from '../../lib/march-order'
+import { getViewerUserIdClient } from '../../lib/viewer-identity-client'
 
 const IDLE_CLIP_PATTERNS = /idle|breathe?|stand|rest|pose|wait/i
 const WALK_CLIP_PATTERNS = /walk|run|move|locomotion|jog/i
 const AGENT_WORK_ANIMATION_ID = 'ual-talking'
 const LOCAL_IMAGE_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
-import { resolveAgentAvatarUrl } from '../../lib/agent-avatar-catalog'
-import { canReceiveMoveOrder, resolveMoveOrderObjectIds } from '../../lib/march-order'
+const PRIVATE_AGENT_WINDOW_TYPES = new Set<AgentWindowType>([
+  'anorak',
+  'codex',
+  'gemini',
+  'anorak-pro',
+  'merlin',
+  'realtime',
+  'hermes',
+  'openclaw',
+  'devcraft',
+  'parzival',
+])
+
+function canRenderAgentWindowForViewer(win: AgentWindow, viewerUserId: string): boolean {
+  if (!win.ownerId || win.ownerId === viewerUserId) return true
+  return !PRIVATE_AGENT_WINDOW_TYPES.has(win.agentType)
+}
 
 function getSpatialInteractionActorPosition(): [number, number, number] | null {
   const avatarPose = getPlayerAvatarPose()
@@ -3221,6 +3239,7 @@ function AgentWindowsSection({ selectedObjectId, selectObject, transformMode, on
   const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
   const placedAgentAvatars = useOasisStore(s => s.placedAgentAvatars)
   const transforms = useOasisStore(s => s.transforms)
+  const viewerUserId = getViewerUserIdClient()
 
   const avatarMap = useMemo(
     () => new Map(placedAgentAvatars.map(avatar => [avatar.id, avatar])),
@@ -3231,7 +3250,7 @@ function AgentWindowsSection({ selectedObjectId, selectObject, transformMode, on
 
   return (
     <>
-      {placedAgentWindows.map(win => {
+      {placedAgentWindows.filter(win => canRenderAgentWindowForViewer(win, viewerUserId)).map(win => {
         const t = transforms[win.id]
         const linkedAvatar = win.linkedAvatarId
           ? avatarMap.get(win.linkedAvatarId)

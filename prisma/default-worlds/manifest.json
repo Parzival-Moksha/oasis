@@ -7,6 +7,13 @@
       "file": "portal-zero.world.json",
       "name": "Portal Zero",
       "visibility": "core"
+    },
+    {
+      "slug": "rookie-wizard",
+      "id": "world-rookie-wizard-system",
+      "file": "rookie-wizard.world.json",
+      "name": "Rookie Wizard",
+      "visibility": "core"
     }
   ]
 }

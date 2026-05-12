@@ -22,7 +22,7 @@ import {
 import { join } from 'node:path'
 
 import { prisma } from '../db'
-import { ASSET_CATALOG } from '@/components/scene-lib/constants'
+import { ASSET_CATALOG, resolveCatalogAssetDefinition } from '@/components/scene-lib/constants'
 import type { WorldState } from '../forge/world-persistence'
 import type { CatalogPlacement, CraftedScene, WorldLight } from '../conjure/types'
 import type { ConjuredAsset, PostProcessAction, ProviderName } from '../conjure/types'
@@ -88,6 +88,16 @@ const AGENT_WINDOW_TYPES = new Set([
   'browser',
   'mission',
 ])
+
+function resolvePlaceableCatalogAsset(catalogId: string) {
+  const direct = CATALOG_MAP.get(catalogId)
+  if (direct) return { asset: direct, catalogId: direct.id }
+
+  const resolved = resolveCatalogAssetDefinition(catalogId)
+  if (resolved) return { asset: resolved, catalogId: resolved.id }
+
+  return { asset: undefined, catalogId }
+}
 const AGENT_WINDOW_FRAME_STYLES = new Set(['gilded', 'neon', 'thin', 'baroque', 'hologram', 'rustic', 'ice', 'void', 'spaghetti', 'triangle', 'fire', 'matrix', 'plasma', 'brutalist', 'none'])
 const DEFAULT_BROWSER_WINDOW_WIDTH = 1280
 const DEFAULT_BROWSER_WINDOW_HEIGHT = 820
@@ -1658,10 +1668,12 @@ tools.get_asset_catalog = async (args) => {
 // ─═̷─═̷─ WORLD BUILD ─═̷─═̷─
 
 tools.place_object = async (args) => {
-  const catalogId = validStr(args.assetId || args.catalogId, '')
+  let catalogId = validStr(args.assetId || args.catalogId, '')
   // First try the fast path: baked-in catalog index. Then fall back to the
   // unified Asset table so user-scope conjured/crafted ids work too.
-  let asset: { id: string; name: string; path: string; defaultScale?: number } | undefined = CATALOG_MAP.get(catalogId)
+  const resolvedCatalogAsset = resolvePlaceableCatalogAsset(catalogId)
+  catalogId = resolvedCatalogAsset.catalogId
+  let asset: { id: string; name: string; path: string; defaultScale?: number } | undefined = resolvedCatalogAsset.asset
   if (!asset) {
     try {
       const { listAssets } = await import('../forge/library/library-service')
@@ -2070,7 +2082,7 @@ tools.share_world_link = async (args) => {
 
 function normalizeCraftModel(value: unknown): string {
   const requested = validStr(value, '').toLowerCase()
-  if (!requested) return 'cc-opus'
+  if (!requested) return process.env.OASIS_PROMPT_CRAFT_MODEL?.trim() || 'google/gemini-3.1-flash-lite-preview'
   if (requested === 'opus') return 'cc-opus'
   if (requested === 'sonnet') return 'cc-sonnet'
   return requested

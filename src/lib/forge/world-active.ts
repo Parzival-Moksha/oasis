@@ -2,10 +2,10 @@ import 'server-only'
 
 import { readBrowserActiveWorldId } from '../browser-active-world'
 import { getOasisMode } from '../oasis-profile'
-import { WELCOME_HUB_WORLD_ID } from '../portal-gates'
+import { ROOKIE_WIZARD_WORLD_ID, WELCOME_HUB_WORLD_ID } from '../portal-gates'
 import { getRegistry, loadWorld } from './world-server'
 
-export { WELCOME_HUB_WORLD_ID } from '../portal-gates'
+export { ROOKIE_WIZARD_WORLD_ID, WELCOME_HUB_WORLD_ID } from '../portal-gates'
 
 export interface ResolvedActiveWorld {
   worldId: string
@@ -24,8 +24,10 @@ export async function resolveActiveWorldForUser(userId: string): Promise<Resolve
     return { worldId: storedWorldId, source: 'stored', authoritative: mode === 'hosted' }
   }
 
-  if (await canLoadWorld(WELCOME_HUB_WORLD_ID, userId)) {
-    return { worldId: WELCOME_HUB_WORLD_ID, source: 'welcome', authoritative: mode === 'hosted' }
+  for (const worldId of [ROOKIE_WIZARD_WORLD_ID, WELCOME_HUB_WORLD_ID]) {
+    if (await canLoadWorld(worldId, userId)) {
+      return { worldId, source: 'welcome', authoritative: mode === 'hosted' }
+    }
   }
 
   const registry = await getRegistry(userId)

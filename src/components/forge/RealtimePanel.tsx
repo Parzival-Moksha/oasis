@@ -14,6 +14,7 @@ import { useInputManager, useUILayer } from '@/lib/input-manager'
 import { getCameraSnapshot } from '@/lib/camera-bridge'
 import { getLiveObjectTransform } from '@/lib/live-object-transforms'
 import { PLAYER_AVATAR_LIPSYNC_ID, getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
+import { fetchOasisToolFromBrowser, withBrowserWorldId } from '@/lib/browser-oasis-tool-client'
 import { useOasisStore } from '@/store/oasisStore'
 import {
   REALTIME_AGENT_TYPE,
@@ -78,6 +79,7 @@ const REALTIME_TOOL_NAMES = new Set([
   'place_object',
   'create_spatial_web_object',
   'get_craft_guide',
+  'self_craft_scene',
   'craft_scene',
   'get_craft_job',
   'walk_avatar_to',
@@ -1028,25 +1030,23 @@ export function RealtimePanel({
               }
             }
 
-            const toolArgs: Record<string, unknown> = { ...parsedArgs }
+            const toolArgs: Record<string, unknown> = withBrowserWorldId(parsedArgs, activeWorldId)
             if (call.name === 'walk_avatar_to' && !toolArgs.agentType && !toolArgs.agent) {
               toolArgs.agentType = REALTIME_AGENT_TYPE
             }
-            if ((call.name === 'place_object' || call.name === 'create_spatial_web_object' || call.name === 'craft_scene') && !toolArgs.actorAgentType) {
+            if ((
+              call.name === 'place_object'
+              || call.name === 'create_spatial_web_object'
+              || call.name === 'craft_scene'
+              || call.name === 'self_craft_scene'
+            ) && !toolArgs.actorAgentType) {
               toolArgs.actorAgentType = REALTIME_AGENT_TYPE
             }
 
             const messageId = ensureToolMessage({ callId: call.callId, name: call.name, input: toolArgs })
 
             try {
-              const toolResponse = await fetch('/api/oasis-tools', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  tool: call.name,
-                  args: toolArgs,
-                }),
-              })
+              const toolResponse = await fetchOasisToolFromBrowser(call.name, toolArgs, { worldId: activeWorldId })
 
               const result = await toolResponse.json() as Record<string, unknown>
               output = result

@@ -189,6 +189,8 @@ export function CraftTabHeader({ setError }: CraftTabProps) {
             style={{ backgroundImage: 'none' }}
             title="LLM model for crafting + terrain"
           >
+            <option value="google/gemini-3.1-flash-lite-preview">Gemini 3.1 Flash Lite Preview</option>
+            <option value="google/gemini-3.1-flash-lite">Gemini 3.1 Flash Lite</option>
             <option value="cc-opus">CC Opus</option>
             <option value="cc-sonnet">CC Sonnet</option>
             <option value="anthropic/claude-sonnet-4-6">Sonnet 4.6</option>

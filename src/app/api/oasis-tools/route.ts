@@ -265,6 +265,7 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => null) as {
     tool?: string
+    worldId?: string
     args?: Record<string, unknown>
     screenshotData?: string
     screenshotCaptures?: Array<{ viewId?: string; base64?: string; format?: 'jpeg' | 'png' | 'webp' }>
@@ -329,7 +330,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'tool name is required. Available: ' + TOOL_NAMES.join(', ') }, { status: 400 })
   }
 
-  const args = body.args && typeof body.args === 'object' ? body.args : {}
+  const requestWorldId = (request.nextUrl.searchParams.get('worldId') || '').trim()
+  const bodyWorldId = typeof body.worldId === 'string' ? body.worldId.trim() : ''
+  const rawArgs = body.args && typeof body.args === 'object' ? body.args : {}
+  const args = { ...rawArgs }
+  if (!args.worldId && (bodyWorldId || requestWorldId)) {
+    args.worldId = bodyWorldId || requestWorldId
+  }
   const mode = getOasisMode()
   const session = readBrowserSession(request)
   const mcpBearer = hasAuthorizedMcpBearer(request)

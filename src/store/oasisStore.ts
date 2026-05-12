@@ -1091,7 +1091,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   streamOpacity: 0.85,
 
   // ─═̷─═̷─🧠 AI MODEL SETTINGS ─═̷─═̷─🧠
-  craftModel: stored('oasis-craft-model') || 'cc-opus',
+  craftModel: stored('oasis-craft-model') || 'google/gemini-3.1-flash-lite-preview',
   voiceModel: stored('oasis-voice-model') || 'merlin-v1',
 
   // ─═̷─═̷─🔥 REALM STATE ─═̷─═̷─🔥

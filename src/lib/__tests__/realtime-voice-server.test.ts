@@ -53,4 +53,21 @@ describe('realtime voice server guardrails', () => {
     expect(getRealtimeApiKey()).toBe('test-realtime-key')
     expect(getRealtimeVoiceConfig().configured).toBe(true)
   })
+
+  it('exposes direct self-craft alongside prompt craft for realtime sessions', async () => {
+    const { getRealtimeSessionTools, readRealtimePromptTemplate } = await loadRealtimeVoiceServer()
+
+    const tools = getRealtimeSessionTools()
+    const names = tools.map(tool => tool.name)
+    const selfCraftTool = tools.find(tool => tool.name === 'self_craft_scene')
+
+    expect(names).toContain('get_craft_guide')
+    expect(names).toContain('self_craft_scene')
+    expect(names).toContain('craft_scene')
+    expect(selfCraftTool?.parameters).toMatchObject({
+      required: ['objects'],
+    })
+    expect(JSON.stringify(selfCraftTool)).toContain('worldId')
+    expect(readRealtimePromptTemplate()).toContain('self_craft_scene')
+  })
 })

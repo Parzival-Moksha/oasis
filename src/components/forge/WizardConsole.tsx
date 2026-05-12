@@ -1933,6 +1933,8 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
               style={{ backgroundImage: 'none' }}
               title="LLM model for crafting + terrain"
             >
+              <option value="google/gemini-3.1-flash-lite-preview">Gemini 3.1 Flash Lite Preview</option>
+              <option value="google/gemini-3.1-flash-lite">Gemini 3.1 Flash Lite</option>
               <option value="cc-opus">CC Opus</option>
               <option value="cc-sonnet">CC Sonnet</option>
               <option value="anthropic/claude-sonnet-4-6">Sonnet 4.6</option>
@@ -3442,6 +3444,8 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
                 <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Craft / Terrain Model</div>
                 <div className="grid grid-cols-2 gap-1.5">
                   {([
+                    { id: 'google/gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash Lite Preview', desc: 'Fast OpenRouter default', icon: '\u26A1' },
+                    { id: 'google/gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite', desc: 'Fast GA fallback', icon: '\u{1F539}' },
                     { id: 'anthropic/claude-sonnet-4-6', label: 'Sonnet 4.6', desc: 'Best balance of speed + quality', icon: '\u2728' },
                     { id: 'anthropic/claude-haiku-4-5', label: 'Haiku 4.5', desc: 'Fast + cheap, good for iteration', icon: '\u26A1' },
                     { id: 'z-ai/glm-5', label: 'GLM-5', desc: 'ZhipuAI frontier model', icon: '\u{1F30F}' },

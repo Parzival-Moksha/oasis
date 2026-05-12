@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { signSessionCookie } from '@/lib/relay/auth'
 import { SESSION_COOKIE_NAME } from '@/lib/session'
+import { callTool } from '@/lib/mcp/oasis-tools'
 
-import { GET } from './route'
+import { GET, POST } from './route'
 
 vi.mock('@/lib/mcp/oasis-tools', () => ({
   TOOL_NAMES: ['get_world_info', 'screenshot_viewport'],
@@ -33,12 +34,25 @@ function makeHostedBrowserRequest(): NextRequest {
   })
 }
 
+function makeHostedBrowserPost(body: unknown, url = 'http://localhost/api/oasis-tools?worldId=world-test'): NextRequest {
+  const cookie = signSessionCookie('bs-oasis-tools-test')
+  return new NextRequest(url, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      cookie: `${SESSION_COOKIE_NAME}=${encodeURIComponent(cookie)}`,
+    },
+    body: JSON.stringify(body),
+  })
+}
+
 describe('/api/oasis-tools hosted browser auth', () => {
   beforeEach(() => {
     process.env.OASIS_PROFILE = 'hosted-openclaw'
     process.env.OASIS_MODE = 'hosted'
     process.env.OASIS_MCP_KEY = 'unit-test-mcp-key'
     process.env.RELAY_SIGNING_KEY = 'unit-test-relay-signing-key'
+    vi.mocked(callTool).mockReset()
   })
 
   afterEach(() => {
@@ -56,5 +70,28 @@ describe('/api/oasis-tools hosted browser auth', () => {
       tools: ['get_world_info', 'screenshot_viewport'],
       screenshotPending: false,
     })
+  })
+
+  it('merges the browser worldId query into hosted tool args before execution', async () => {
+    vi.mocked(callTool).mockResolvedValue({
+      ok: true,
+      message: 'ok',
+      data: { worldId: 'world-test' },
+    })
+
+    const response = await POST(makeHostedBrowserPost({
+      tool: 'get_world_info',
+      args: {},
+    }))
+
+    expect(response.status).toBe(200)
+    expect(callTool).toHaveBeenCalledWith(
+      'get_world_info',
+      { worldId: 'world-test' },
+      expect.objectContaining({
+        requireExplicitWorld: true,
+        userId: 'bs-oasis-tools-test',
+      }),
+    )
   })
 })

@@ -122,8 +122,8 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
   const isFocused = focusedAgentWindowId === win.id
   const prevFocusedRef = useRef(false)
 
-  // ░▒▓ Agent ownership gate — non-owners see body + transcript but cannot   ▓▒░
-  // ░▒▓ type / connect / delete via the window's own controls. Legacy        ▓▒░
+  // ░▒▓ Agent ownership gate — rendered non-owned windows stay read-only.     ▓▒░
+  // ░▒▓ Private agent windows are hidden earlier in WorldObjects; legacy      ▓▒░
   // ░▒▓ windows have no ownerId and are treated as "open" (anyone can use).  ▓▒░
   const ownedByCurrentViewer = !win.ownerId || win.ownerId === getViewerUserIdClient()
 
