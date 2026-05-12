@@ -19,6 +19,7 @@ export type WorldMutation =
   | { kind: 'stroke_started'; payload: { strokeId: string; authorId: string; authorColor: string; style: PaintStrokeStyle } }
   | { kind: 'stroke_pointed'; payload: { strokeId: string; point: [number, number, number] } }
   | { kind: 'stroke_ended';   payload: { strokeId: string; finalStroke: PaintStroke } }
+  | { kind: 'stroke_updated'; payload: { id: string; updates: Partial<Pick<PaintStroke, 'color' | 'thickness' | 'shininess' | 'mode' | 'varyByVelocity'>> } }
   | { kind: 'stroke_removed'; payload: { id: string } }
   // ─═̷─ 3D text objects ─═̷─
   | { kind: 'text3d_added';   payload: Text3DObject }

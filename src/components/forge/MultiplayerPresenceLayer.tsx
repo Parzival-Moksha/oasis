@@ -251,6 +251,7 @@ function RemotePresenceAvatar({ player }: { player: MultiplayerRoomPlayer }) {
     <RemoteVRMAvatar
       ref={groupRef}
       avatarUrl={avatarUrl}
+      profileAvatarUrl={player.profileAvatarUrl}
       cacheKey={player.sessionId}
       displayName={player.displayName}
       color={color}
@@ -266,6 +267,7 @@ export function MultiplayerPresenceLayer() {
   // mutations on changes instead of reconnecting the whole room.
   const avatarUrlRef = useRef(avatarUrl)
   useEffect(() => { avatarUrlRef.current = avatarUrl }, [avatarUrl])
+  const profileAvatarUrlRef = useRef('')
   const playerIdRef = useRef<string>('')
   const playerNameRef = useRef<string>('Visitor')
   const playerColorRef = useRef<string>('#38bdf8')
@@ -292,30 +294,38 @@ export function MultiplayerPresenceLayer() {
   // `oasis:profile-updated` event after a successful save).
   useEffect(() => {
     let cancelled = false
-    let pendingName: string | null = null
+    let pendingProfile: { displayName?: string; profileAvatarUrl?: string } | null = null
 
-    const apply = (fromProfile: string) => {
-      // Skip the default placeholders — only override the legacy Visitor
-      // label when the user picked a real name.
-      if (!fromProfile || fromProfile === 'Player 1' || fromProfile === 'Wanderer') return
-      playerNameRef.current = fromProfile
-      try { window.localStorage.setItem('oasis-presence-player-name', fromProfile) } catch {}
+    const sendProfilePatch = (patch: { displayName?: string; profileAvatarUrl?: string }) => {
       const connection = connectionRef.current
       if (connection) {
-        connection.sendProfile({ displayName: fromProfile })
+        connection.sendProfile(patch)
       } else {
-        // Profile fetch resolved before the room connected. Stash and let
-        // the poller below flush once a sender is wired.
-        pendingName = fromProfile
+        pendingProfile = { ...(pendingProfile || {}), ...patch }
       }
+    }
+
+    const apply = (fromProfile: string, profileAvatarUrl?: string | null) => {
+      const avatarUrl = profileAvatarUrl || ''
+      profileAvatarUrlRef.current = avatarUrl
+      const patch: { displayName?: string; profileAvatarUrl?: string } = { profileAvatarUrl: avatarUrl }
+      // Skip the default placeholders — only override the legacy Visitor
+      // label when the user picked a real name.
+      if (fromProfile && fromProfile !== 'Player 1' && fromProfile !== 'Wanderer') {
+        playerNameRef.current = fromProfile
+        try { window.localStorage.setItem('oasis-presence-player-name', fromProfile) } catch {}
+        patch.displayName = fromProfile
+      }
+      sendProfilePatch(patch)
     }
 
     const refresh = () => {
       fetch('/api/profile', { cache: 'no-store' })
         .then(r => (r.ok ? r.json() : null))
-        .then((data: { displayName?: string } | null) => {
+        .then((data: { displayName?: string; avatar_url?: string | null } | null) => {
           if (cancelled || !data?.displayName) return
-          apply(data.displayName.trim())
+          const profileAvatarUrl = data.avatar_url ? `${data.avatar_url}?v=${Date.now()}` : ''
+          apply(data.displayName.trim(), profileAvatarUrl)
         })
         .catch(() => {})
     }
@@ -325,13 +335,13 @@ export function MultiplayerPresenceLayer() {
     const onProfileUpdated = () => refresh()
     window.addEventListener('oasis:profile-updated', onProfileUpdated)
 
-    // Flush pendingName once the connection establishes (async after this
+    // Flush pending profile once the connection establishes (async after this
     // effect runs). Stops polling when consumed or unmount.
     const flushTimer = window.setInterval(() => {
       if (cancelled) return
-      if (pendingName && connectionRef.current) {
-        connectionRef.current.sendProfile({ displayName: pendingName })
-        pendingName = null
+      if (pendingProfile && connectionRef.current) {
+        connectionRef.current.sendProfile(pendingProfile)
+        pendingProfile = null
       }
     }, 250)
 
@@ -378,6 +388,8 @@ export function MultiplayerPresenceLayer() {
         // stroke vanishing and the persisted PaintStrokeMesh appearing.
         store.applyRemotePaintStroke(mutation.payload.finalStroke)
         endLiveStroke(mutation.payload.strokeId)
+      } else if (mutation.kind === 'stroke_updated') {
+        store.applyRemotePaintStrokeUpdated(mutation.payload.id, mutation.payload.updates)
       } else if (mutation.kind === 'stroke_removed') {
         store.applyRemotePaintStrokeRemoval(mutation.payload.id)
       } else if (mutation.kind === 'text3d_added') {
@@ -421,6 +433,7 @@ export function MultiplayerPresenceLayer() {
       playerId,
       displayName: playerNameRef.current,
       avatarUrl: avatarUrlRef.current || undefined,
+      profileAvatarUrl: profileAvatarUrlRef.current || undefined,
       color: playerColorRef.current,
       onPlayersChanged: next => {
         if (!disposed) setPlayers(next)

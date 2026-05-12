@@ -115,8 +115,8 @@ const mounds = [
 
 const craftedScenes = [
   crafted('rookie-south-threshold', 'South cave threshold', 'The first steps of the apprentice path.', [0, 0, -18.5], [
-    box([0, 0.03, 0], [2.4, 0.06, 1.2], '#1f2937'),
-    text([0, 0.12, -0.45], 'ROOKIE WIZARD', '#bfdbfe', [0.5, 0.5, 0.5]),
+    box([0, -0.02, 0], [2.4, 0.035, 1.2], '#1f2937'),
+    text([0, 0.88, -0.45], 'ROOKIE WIZARD', '#bfdbfe', [0.5, 0.5, 0.5]),
   ]),
   crafted('rookie-plaza', 'Merlin plaza', 'A small circular stone plaza where Merlin greets new players.', [0, 0, 8.3], [
     cylinder([0, 0.04, 0], [4.2, 0.08, 4.2], '#3f3f46'),

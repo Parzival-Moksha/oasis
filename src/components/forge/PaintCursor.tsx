@@ -47,9 +47,11 @@ interface PaintCursorProps {
 }
 
 export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps) {
-  const { gl, camera } = useThree()
+  const { gl, camera, scene } = useThree()
   const settings = useOasisStore(s => s.paintBrushSettings)
   const addPaintStroke = useOasisStore(s => s.addPaintStroke)
+  const selectObject = useOasisStore(s => s.selectObject)
+  const setInspectedObject = useOasisStore(s => s.setInspectedObject)
 
   // Sparkler position — only set during active painting, cleared on finish.
   const [cursorWorldPos, setCursorWorldPos] = useState<[number, number, number] | null>(null)
@@ -70,23 +72,38 @@ export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps)
   // Live settings ref — read inside event handlers + useFrame so the effect
   // can keep its dep array short.
   const liveSettingsRef = useRef(settings)
+  const raycasterRef = useRef(new THREE.Raycaster())
   useEffect(() => { liveSettingsRef.current = settings }, [settings])
 
-  const projectPointerToWorld = useCallback((clientX: number, clientY: number): [number, number, number] | null => {
-    const dom = gl.domElement
-    let ndcX: number
-    let ndcY: number
+  const pointerToNdc = useCallback((clientX: number, clientY: number): THREE.Vector2 => {
     if (typeof document !== 'undefined' && document.pointerLockElement) {
-      // Pointer-locked: cursor is invisible and clientX/Y are stale, paint
-      // from screen center (the crosshair).
-      ndcX = 0
-      ndcY = 0
-    } else {
-      const rect = dom.getBoundingClientRect()
-      ndcX = ((clientX - rect.left) / rect.width) * 2 - 1
-      ndcY = -(((clientY - rect.top) / rect.height) * 2 - 1)
+      return new THREE.Vector2(0, 0)
     }
-    const ndc = new THREE.Vector3(ndcX, ndcY, 0.5)
+    const rect = gl.domElement.getBoundingClientRect()
+    return new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -(((clientY - rect.top) / rect.height) * 2 - 1),
+    )
+  }, [gl])
+
+  const findPaintStrokeHit = useCallback((clientX: number, clientY: number): string | null => {
+    const raycaster = raycasterRef.current
+    raycaster.setFromCamera(pointerToNdc(clientX, clientY), camera)
+    const hits = raycaster.intersectObjects(scene.children, true)
+    for (const hit of hits) {
+      let object: THREE.Object3D | null = hit.object
+      while (object) {
+        const strokeId = object.userData?.paintStrokeId
+        if (typeof strokeId === 'string') return strokeId
+        object = object.parent
+      }
+    }
+    return null
+  }, [camera, pointerToNdc, scene])
+
+  const projectPointerToWorld = useCallback((clientX: number, clientY: number): [number, number, number] | null => {
+    const ndc2 = pointerToNdc(clientX, clientY)
+    const ndc = new THREE.Vector3(ndc2.x, ndc2.y, 0.5)
     ndc.unproject(camera)
     const dir = ndc.sub(camera.position).normalize()
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion)
@@ -97,7 +114,7 @@ export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps)
     if (t <= 0) return null
     const point = camera.position.clone().addScaledVector(dir, t)
     return [point.x, point.y, point.z]
-  }, [gl, camera])
+  }, [camera, pointerToNdc])
 
   const sampleIfDue = useCallback((point: [number, number, number]): boolean => {
     const now = performance.now()
@@ -145,6 +162,14 @@ export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps)
 
     const onPointerDown = (event: PointerEvent) => {
       if (event.button !== 0) return
+      const hitStrokeId = findPaintStrokeHit(event.clientX, event.clientY)
+      if (hitStrokeId) {
+        event.preventDefault()
+        event.stopPropagation()
+        selectObject(hitStrokeId)
+        setInspectedObject(hitStrokeId)
+        return
+      }
       // Lock in style for this stroke (panel wiggles mid-stroke don't apply).
       styleRef.current = liveSettingsRef.current
       lastPointerRef.current = { x: event.clientX, y: event.clientY }
@@ -223,7 +248,7 @@ export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps)
     // liveSettingsRef inside handlers. Otherwise we'd retear down every
     // listener on every panel slider change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, authorId, authorColor, gl, camera])
+  }, [active, authorId, authorColor, gl, camera, findPaintStrokeHit, selectObject, setInspectedObject])
 
   function finishStroke() {
     const strokeId = strokeIdRef.current

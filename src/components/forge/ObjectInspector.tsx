@@ -55,13 +55,14 @@ const TYPE_BADGE: Record<string, { bg: string; text: string; label: string }> = 
 // SLIDER — Reusable parameter slider with label + value display
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function ParamSlider({ label, value, min, max, step, onChange }: {
+function ParamSlider({ label, value, min, max, step, onChange, format }: {
   label: string
   value: number
   min: number
   max: number
   step: number
   onChange: (v: number) => void
+  format?: (value: number) => string
 }) {
   return (
     <div className="flex items-center gap-2">
@@ -75,7 +76,7 @@ function ParamSlider({ label, value, min, max, step, onChange }: {
         onChange={(e) => onChange(parseFloat(e.target.value))}
         className="flex-1 h-1 accent-sky-500 cursor-pointer"
       />
-      <span className="text-[10px] text-gray-400 font-mono w-10 text-right">{value.toFixed(step < 1 ? 1 : 0)}</span>
+      <span className="text-[10px] text-gray-400 font-mono w-10 text-right">{format ? format(value) : value.toFixed(step < 1 ? 1 : 0)}</span>
     </div>
   )
 }
@@ -427,6 +428,54 @@ function PaintStrokePlaybackSection({ strokeId, pointCount, onPlay, onStop }: {
 // the user expects immediate feedback while dragging them.
 // ═══════════════════════════════════════════════════════════════════════════
 
+function PaintStrokeEditSection({ stroke, onChange }: {
+  stroke: import('../../lib/forge/paint-stroke').PaintStroke
+  onChange: (updates: Partial<Pick<import('../../lib/forge/paint-stroke').PaintStroke, 'color' | 'thickness' | 'shininess' | 'mode' | 'varyByVelocity'>>) => void
+}) {
+  return (
+    <>
+      <SectionHeader>&#127912; Stroke Style</SectionHeader>
+      <div className="rounded-lg border border-fuchsia-400/15 p-2 space-y-2" style={{ background: 'rgba(22, 12, 26, 0.6)' }}>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-fuchsia-100/65 font-mono w-16 shrink-0">color</span>
+          <input
+            type="color"
+            value={stroke.color}
+            onChange={(e) => onChange({ color: e.target.value })}
+            className="h-6 flex-1 cursor-pointer rounded border border-white/10 bg-black/30"
+          />
+        </div>
+        <ParamSlider label="thick" value={stroke.thickness} min={0.005} max={0.2} step={0.005} format={value => `${(value * 100).toFixed(1)}`} onChange={(value) => onChange({ thickness: value })} />
+        <ParamSlider label="shine" value={stroke.shininess} min={0} max={1} step={0.05} format={value => `${Math.round(value * 100)}`} onChange={(value) => onChange({ shininess: value })} />
+        <div className="grid grid-cols-2 gap-1.5">
+          {(['3d', '2d'] as const).map(mode => (
+            <button
+              key={mode}
+              onClick={() => onChange({ mode })}
+              className={`rounded-md border px-2 py-1 text-[10px] font-bold uppercase tracking-wide transition-colors ${
+                stroke.mode === mode
+                  ? 'border-fuchsia-300/60 bg-fuchsia-500/25 text-fuchsia-50'
+                  : 'border-white/10 bg-black/25 text-fuchsia-100/55 hover:text-fuchsia-100'
+              }`}
+            >
+              {mode}
+            </button>
+          ))}
+        </div>
+        <label className="flex items-center gap-2 rounded-md border border-white/10 bg-black/25 px-2 py-1.5 text-[10px] font-mono text-fuchsia-100/70">
+          <input
+            type="checkbox"
+            checked={Boolean(stroke.varyByVelocity)}
+            onChange={(e) => onChange({ varyByVelocity: e.target.checked })}
+            className="h-3 w-3 accent-fuchsia-400"
+          />
+          velocity width
+        </label>
+      </div>
+    </>
+  )
+}
+
 function Text3DEditSection({ object, onChange }: {
   object: import('../../lib/forge/text-3d-object').Text3DObject
   onChange: (updates: Partial<import('../../lib/forge/text-3d-object').Text3DObject>) => void
@@ -531,6 +580,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
   const removeAgentWindow = useOasisStore(s => s.removeAgentWindow)
 
   const paintStrokes = useOasisStore(s => s.paintStrokes)
+  const updatePaintStroke = useOasisStore(s => s.updatePaintStroke)
   const removePaintStroke = useOasisStore(s => s.removePaintStroke)
   const playPaintStroke = useOasisStore(s => s.playPaintStroke)
   const stopPaintStrokePlayback = useOasisStore(s => s.stopPaintStrokePlayback)
@@ -1931,12 +1981,18 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
         {resolved?.type === 'paint_stroke' && inspectedObjectId && (() => {
           const stroke = resolved.data as import('../../lib/forge/paint-stroke').PaintStroke
           return (
-            <PaintStrokePlaybackSection
-              strokeId={inspectedObjectId}
-              pointCount={Math.floor(stroke.points.length / 3)}
-              onPlay={(durationSec) => playPaintStroke(inspectedObjectId, durationSec)}
-              onStop={() => stopPaintStrokePlayback(inspectedObjectId)}
-            />
+            <>
+              <PaintStrokeEditSection
+                stroke={stroke}
+                onChange={(updates) => updatePaintStroke(inspectedObjectId, updates)}
+              />
+              <PaintStrokePlaybackSection
+                strokeId={inspectedObjectId}
+                pointCount={Math.floor(stroke.points.length / 3)}
+                onPlay={(durationSec) => playPaintStroke(inspectedObjectId, durationSec)}
+                onStop={() => stopPaintStrokePlayback(inspectedObjectId)}
+              />
+            </>
           )
         })()}
 

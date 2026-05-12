@@ -7,6 +7,7 @@ export interface MultiplayerRoomPlayer {
   playerId: string
   displayName: string
   avatarUrl?: string
+  profileAvatarUrl?: string
   color: string
   position: [number, number, number]
   yaw: number
@@ -19,6 +20,7 @@ export interface MultiplayerRoomJoinOptions {
   playerId: string
   displayName: string
   avatarUrl?: string
+  profileAvatarUrl?: string
   color?: string
 }
 
@@ -36,6 +38,7 @@ interface RoomPlayerSchema {
   playerId: string
   displayName: string
   avatarUrl: string
+  profileAvatarUrl: string
   color: string
   x: number
   y: number
@@ -72,6 +75,7 @@ function snapshotPlayer(sessionId: string, raw: RoomPlayerSchema): MultiplayerRo
     playerId: raw.playerId,
     displayName: raw.displayName,
     avatarUrl: raw.avatarUrl || undefined,
+    profileAvatarUrl: raw.profileAvatarUrl || undefined,
     color: raw.color || '#38bdf8',
     position: [raw.x, raw.y, raw.z],
     yaw: raw.yaw,
@@ -82,6 +86,7 @@ function snapshotPlayer(sessionId: string, raw: RoomPlayerSchema): MultiplayerRo
 
 export interface MultiplayerRoomProfile {
   avatarUrl?: string
+  profileAvatarUrl?: string
   displayName?: string
   color?: string
 }
@@ -120,6 +125,7 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
       playerId: args.playerId,
       displayName: args.displayName,
       avatarUrl: args.avatarUrl,
+      profileAvatarUrl: args.profileAvatarUrl,
       color: args.color,
     })
   } catch (error) {

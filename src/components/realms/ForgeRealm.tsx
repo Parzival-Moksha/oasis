@@ -22,6 +22,7 @@ import { MultiplayerPresenceLayer } from '../forge/MultiplayerPresenceLayer'
 import { PaintCursor } from '../forge/PaintCursor'
 import { colorForPlayerId } from '../../lib/multiplayer-color'
 import { SettingsContext } from '../scene-lib'
+import { useClientOasisMode, useOasisCapabilities } from '../../lib/oasis-mode-client'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // FORGE GROUND — shows when no terrain is loaded (the original conjuring circle)
@@ -133,6 +134,16 @@ export function ForgeRealm() {
 
 function ForgePaintCursor() {
   const active = useOasisStore(s => s.paintHeldActive)
+  const isViewMode = useOasisStore(s => s.isViewMode)
+  const isViewModeEditable = useOasisStore(s => s.isViewModeEditable)
+  const activeWorldId = useOasisStore(s => s.activeWorldId)
+  const worldRegistry = useOasisStore(s => s.worldRegistry)
+  const activeWorldMeta = worldRegistry.find(world => world.id === activeWorldId)
+  const oasisMode = useClientOasisMode()
+  const capabilities = useOasisCapabilities()
+  const canWrite = isViewMode
+    ? isViewModeEditable
+    : Boolean(capabilities.admin || activeWorldMeta?.canWrite || (oasisMode !== 'hosted' && worldRegistry.length === 0))
   // Stable per-tab id — reuse the multiplayer presence id key for color
   // consistency. colorForPlayerId is the single source of truth (peers'
   // RemoteVRMAvatar uses the same hash).
@@ -140,7 +151,7 @@ function ForgePaintCursor() {
     ? (window.sessionStorage.getItem('oasis-presence-player-id') || 'local')
     : 'local'
   const color = colorForPlayerId(id)
-  return <PaintCursor active={active} authorId={id} authorColor={color} />
+  return <PaintCursor active={active && canWrite} authorId={id} authorColor={color} />
 }
 
 // ▓▓▓▓【F̸O̸R̸G̸E̸】▓▓▓▓ॐ▓▓▓▓【R̸E̸A̸L̸M̸】▓▓▓▓ॐ▓▓▓▓【T̸E̸R̸R̸A̸I̸N̸】▓▓▓▓

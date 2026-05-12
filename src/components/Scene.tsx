@@ -1584,7 +1584,9 @@ export default function Scene() {
       (state, prev) => {
         if (state.paintHeldActive && !prev?.paintHeldActive && controlModeRef.current === 'orbit') {
           controlModeRef.current = 'noclip'
-          useInputManager.getState().syncFromControlMode('noclip')
+          const input = useInputManager.getState()
+          input.syncFromControlMode('noclip')
+          input.requestPointerLock()
           setSettings(prev => ({ ...prev, controlMode: 'noclip' }))
         }
       },
@@ -1621,7 +1623,9 @@ export default function Scene() {
       const isLight = store.worldLights.some(light => light.id === id)
       const isAgentWindow = store.placedAgentWindows.some(win => win.id === id)
       const isSpatialWeb = store.spatialWebObjects.some(object => object.id === id)
-      if (!isPortal && !isCatalog && !isCrafted && !isConjured && !isLight && !isAgentWindow && !isSpatialWeb) return
+      const isPaintStroke = store.paintStrokes.some(stroke => stroke.id === id)
+      const isText3D = store.text3dObjects.some(text => text.id === id)
+      if (!isPortal && !isCatalog && !isCrafted && !isConjured && !isLight && !isAgentWindow && !isSpatialWeb && !isPaintStroke && !isText3D) return
 
       event.preventDefault()
       event.stopPropagation()
@@ -1632,6 +1636,8 @@ export default function Scene() {
       else if (isLight) store.removeWorldLight(id)
       else if (isAgentWindow) store.removeAgentWindow(id)
       else if (isSpatialWeb) store.removeSpatialWebObject(id)
+      else if (isPaintStroke) store.removePaintStroke(id)
+      else if (isText3D) store.removeText3dObject(id)
 
       store.selectObject(null)
       store.setInspectedObject(null)

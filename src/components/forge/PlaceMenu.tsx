@@ -32,12 +32,12 @@ export function PlaceMenu() {
   return (
     <div ref={menuRef} className="relative select-none">
       <GameMenuButton
-        label="Place"
+        label="Spells"
         marker="+"
         accent="#34D399"
         active={isOpen}
-        aria-label="Place menu"
-        data-oasis-tooltip="Place"
+        aria-label="Spells menu"
+        data-oasis-tooltip="Spells"
         onClick={() => {
           playClick()
           setIsOpen(open => !open)
@@ -56,9 +56,9 @@ export function PlaceMenu() {
               +
             </div>
             <div className="min-w-0">
-              <div className="text-[12px] font-black uppercase tracking-[0.16em] text-white max-[700px]:text-[10px]">Place</div>
+              <div className="text-[12px] font-black uppercase tracking-[0.16em] text-white max-[700px]:text-[10px]">Spells</div>
               <div className="mt-0.5 text-[10px] uppercase tracking-[0.12em] text-white/45 max-[700px]:hidden">
-                pick an object, then click the world
+                pick a spell, then click the world
               </div>
             </div>
           </div>

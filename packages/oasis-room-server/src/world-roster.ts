@@ -10,6 +10,7 @@ export interface WorldRosterEntry {
   sessionId: string
   displayName: string
   avatarUrl: string
+  profileAvatarUrl: string
   color: string
   position: [number, number, number]
   yaw: number

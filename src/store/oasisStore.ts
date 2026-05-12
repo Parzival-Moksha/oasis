@@ -811,8 +811,10 @@ interface OasisState {
   seedSpatialWebRsvpDemo: () => void
   // ─═̷─═̷─🎨 PAINT STROKE ACTIONS ─═̷─═̷─🎨
   addPaintStroke: (stroke: PaintStroke) => void
+  updatePaintStroke: (id: string, updates: Partial<Pick<PaintStroke, 'color' | 'thickness' | 'shininess' | 'mode' | 'varyByVelocity'>>) => void
   removePaintStroke: (id: string) => void
   applyRemotePaintStroke: (stroke: PaintStroke) => void
+  applyRemotePaintStrokeUpdated: (id: string, updates: Partial<Pick<PaintStroke, 'color' | 'thickness' | 'shininess' | 'mode' | 'varyByVelocity'>>) => void
   applyRemotePaintStrokeRemoval: (id: string) => void
   /** Start a playback animation for a stroke; previous state for that id is replaced. */
   playPaintStroke: (id: string, durationSec: number) => void
@@ -918,6 +920,75 @@ export const useOasisStore = create<OasisState>((set, get) => {
       undoStack: [...state.undoStack, { label, icon, timestamp: Date.now(), before, after }].slice(-MAX_UNDO_STACK),
       redoStack: [],  // new action clears redo stack
     }))
+  }
+
+  const canWriteCurrentWorld = () => {
+    const state = get()
+    if (state.isViewMode) return state.isViewModeEditable
+    const meta = state.worldRegistry.find(world => world.id === state.activeWorldId)
+    if (meta) return meta.canWrite === true
+    // Before registry metadata exists, local dev/tests stay permissive. Hosted
+    // sessions fail closed because the server-side world allowlist is the owner
+    // of write permission.
+    const mode = typeof window !== 'undefined'
+      ? window.__oasisModeFallback
+      : (typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_OASIS_MODE : undefined)
+    return mode !== 'hosted' && state.worldRegistry.length === 0
+  }
+
+  const sanitizePaintStrokeUpdates = (
+    updates: Partial<Pick<PaintStroke, 'color' | 'thickness' | 'shininess' | 'mode' | 'varyByVelocity'>>,
+  ): Partial<Pick<PaintStroke, 'color' | 'thickness' | 'shininess' | 'mode' | 'varyByVelocity'>> => {
+    const clean: Partial<Pick<PaintStroke, 'color' | 'thickness' | 'shininess' | 'mode' | 'varyByVelocity'>> = {}
+    if (typeof updates.color === 'string') clean.color = updates.color
+    if (typeof updates.thickness === 'number' && Number.isFinite(updates.thickness)) clean.thickness = Math.max(0.005, Math.min(0.5, updates.thickness))
+    if (typeof updates.shininess === 'number' && Number.isFinite(updates.shininess)) clean.shininess = Math.max(0, Math.min(1, updates.shininess))
+    if (updates.mode === '2d' || updates.mode === '3d') clean.mode = updates.mode
+    if (typeof updates.varyByVelocity === 'boolean') clean.varyByVelocity = updates.varyByVelocity
+    return clean
+  }
+
+  const broadcastSnapshotMutationDelta = (from: WorldSnapshot, to: WorldSnapshot) => {
+    const fromStrokes = new Map(from.paintStrokes.map(stroke => [stroke.id, stroke]))
+    const toStrokes = new Map(to.paintStrokes.map(stroke => [stroke.id, stroke]))
+    for (const stroke of to.paintStrokes) {
+      const prev = fromStrokes.get(stroke.id)
+      if (!prev) {
+        worldMutationBus.broadcast({ kind: 'stroke_ended', payload: { strokeId: stroke.id, finalStroke: stroke } })
+        continue
+      }
+      const updates = sanitizePaintStrokeUpdates({
+        color: prev.color !== stroke.color ? stroke.color : undefined,
+        thickness: prev.thickness !== stroke.thickness ? stroke.thickness : undefined,
+        shininess: prev.shininess !== stroke.shininess ? stroke.shininess : undefined,
+        mode: prev.mode !== stroke.mode ? stroke.mode : undefined,
+        varyByVelocity: prev.varyByVelocity !== stroke.varyByVelocity ? Boolean(stroke.varyByVelocity) : undefined,
+      })
+      if (Object.keys(updates).length > 0) {
+        worldMutationBus.broadcast({ kind: 'stroke_updated', payload: { id: stroke.id, updates } })
+      }
+    }
+    for (const stroke of from.paintStrokes) {
+      if (!toStrokes.has(stroke.id)) {
+        worldMutationBus.broadcast({ kind: 'stroke_removed', payload: { id: stroke.id } })
+      }
+    }
+
+    const fromText = new Map(from.text3dObjects.map(object => [object.id, object]))
+    const toText = new Map(to.text3dObjects.map(object => [object.id, object]))
+    for (const object of to.text3dObjects) {
+      const prev = fromText.get(object.id)
+      if (!prev) {
+        worldMutationBus.broadcast({ kind: 'text3d_added', payload: object })
+      } else if (JSON.stringify(prev) !== JSON.stringify(object)) {
+        worldMutationBus.broadcast({ kind: 'text3d_updated', payload: { id: object.id, updates: object } })
+      }
+    }
+    for (const object of from.text3dObjects) {
+      if (!toText.has(object.id)) {
+        worldMutationBus.broadcast({ kind: 'text3d_removed', payload: { id: object.id } })
+      }
+    }
   }
 
   const resolveDefaultPortalGates = (
@@ -1956,15 +2027,34 @@ export const useOasisStore = create<OasisState>((set, get) => {
   // Strokes are flat point lists rebuilt into TubeGeometry/Line on render.
   // Local writer adds + saves; applyRemote* paths skip the save (author saves).
   addPaintStroke: (stroke) => {
-    set(state => ({ paintStrokes: [...state.paintStrokes, stroke] }))
+    if (!canWriteCurrentWorld()) return
+    withUndo('Paint stroke', 'paint', () => {
+      set(state => ({ paintStrokes: [...state.paintStrokes, stroke] }))
+    })
+    setTimeout(() => get().saveWorldState(), 100)
+  },
+  updatePaintStroke: (id, updates) => {
+    if (!canWriteCurrentWorld()) return
+    const clean = sanitizePaintStrokeUpdates(updates)
+    if (Object.keys(clean).length === 0) return
+    withUndo('Update stroke', 'paint', () => {
+      set(state => ({
+        paintStrokes: state.paintStrokes.map(stroke => stroke.id === id ? { ...stroke, ...clean } : stroke),
+      }))
+    })
+    worldMutationBus.broadcast({ kind: 'stroke_updated', payload: { id, updates: clean } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   removePaintStroke: (id) => {
-    set(state => ({
-      paintStrokes: state.paintStrokes.filter(s => s.id !== id),
-      selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
-      inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
-    }))
+    if (!canWriteCurrentWorld()) return
+    if (!get().paintStrokes.some(stroke => stroke.id === id)) return
+    withUndo('Delete stroke', 'delete', () => {
+      set(state => ({
+        paintStrokes: state.paintStrokes.filter(s => s.id !== id),
+        selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
+        inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
+      }))
+    })
     worldMutationBus.broadcast({ kind: 'stroke_removed', payload: { id } })
     setTimeout(() => get().saveWorldState(), 100)
   },
@@ -1973,6 +2063,13 @@ export const useOasisStore = create<OasisState>((set, get) => {
       if (state.paintStrokes.some(existing => existing.id === stroke.id)) return state
       return { paintStrokes: [...state.paintStrokes, stroke] }
     })
+  },
+  applyRemotePaintStrokeUpdated: (id, updates) => {
+    const clean = sanitizePaintStrokeUpdates(updates)
+    if (Object.keys(clean).length === 0) return
+    set(state => ({
+      paintStrokes: state.paintStrokes.map(stroke => stroke.id === id ? { ...stroke, ...clean } : stroke),
+    }))
   },
   applyRemotePaintStrokeRemoval: (id) => {
     set(state => ({
@@ -2009,24 +2106,34 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
   // ─═̷─═̷─📜 TEXT 3D ACTIONS ─═̷─═̷─📜
   addText3dObject: (object) => {
-    set(state => ({ text3dObjects: [...state.text3dObjects, object] }))
+    if (!canWriteCurrentWorld()) return
+    withUndo('Place 3D text', 'text', () => {
+      set(state => ({ text3dObjects: [...state.text3dObjects, object] }))
+    })
     worldMutationBus.broadcast({ kind: 'text3d_added', payload: object })
     get().spawnPlacementVfx(object.position)
     setTimeout(() => get().saveWorldState(), 100)
   },
   updateText3dObject: (id, updates) => {
-    set(state => ({
-      text3dObjects: state.text3dObjects.map(t => t.id === id ? { ...t, ...updates } : t),
-    }))
+    if (!canWriteCurrentWorld()) return
+    withUndo('Update 3D text', 'text', () => {
+      set(state => ({
+        text3dObjects: state.text3dObjects.map(t => t.id === id ? { ...t, ...updates } : t),
+      }))
+    })
     worldMutationBus.broadcast({ kind: 'text3d_updated', payload: { id, updates } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   removeText3dObject: (id) => {
-    set(state => ({
-      text3dObjects: state.text3dObjects.filter(t => t.id !== id),
-      selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
-      inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
-    }))
+    if (!canWriteCurrentWorld()) return
+    if (!get().text3dObjects.some(object => object.id === id)) return
+    withUndo('Delete 3D text', 'delete', () => {
+      set(state => ({
+        text3dObjects: state.text3dObjects.filter(t => t.id !== id),
+        selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
+        inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
+      }))
+    })
     worldMutationBus.broadcast({ kind: 'text3d_removed', payload: { id } })
     setTimeout(() => get().saveWorldState(), 100)
   },
@@ -2066,23 +2173,23 @@ export const useOasisStore = create<OasisState>((set, get) => {
   },
   setText3dPanelOpen: (open) => set({ text3dPanelOpen: open }),
   setPaintHeldActive: (active) => {
+    if (active && !canWriteCurrentWorld()) {
+      set({ paintHeldActive: false })
+      return
+    }
     set({ paintHeldActive: active })
-    // Transition the InputManager + try to engage pointer-lock so the wand
-    // feels game-armed from the first frame (crosshair, hidden cursor, mouse
-    // rotates camera). PaintBrushPanel deliberately doesn't push a UI layer
-    // so it doesn't block lock here. We do NOT pop other panels' layers
-    // (Text3D, Gemini, Realtime, etc. — they have text inputs that need
-    // keyboard suppression). If those are open, lock fails silently and
-    // the user can dismiss them to engage. requestPointerLock is also a
-    // no-op on mobile (guarded inside InputManager).
+    // The wand is an overlay on the current base camera mode, not its own
+    // camera state. Third-person stays third-person; noclip stays noclip.
+    // Scene.tsx performs the only allowed auto-switch: orbit -> noclip.
+    // PaintBrushPanel deliberately doesn't push a UI layer, so pointer lock
+    // can be requested here when the active base mode supports it.
     try {
       const im = require('../lib/input-manager').useInputManager.getState()
       if (active) {
-        im.transition('paint')
         im.requestPointerLock()
       } else if (im.inputState === 'paint') {
-        // Return to whichever camera mode we came in on (orbit / noclip /
-        // third-person — InputManager remembers via _previousCameraState).
+        // Cleanup for older sessions that may still have entered the legacy
+        // temporary paint state.
         im.returnToPrevious()
       }
     } catch { /* noop in non-browser contexts */ }
@@ -2876,6 +2983,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
           spatialWebObjects: [],
           paintStrokes: [],
           text3dObjects: [],
+          paintStrokePlayback: {},
           transforms: {},
           behaviors: {},
           worldLights: seedDefaultLights(),
@@ -2897,7 +3005,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       if (newCustom.length > 0) persist('oasis-custom-ground', JSON.stringify(mergedCustom))
       const portalGates = resolveDefaultPortalGates(get().activeWorldId, world.portalGates, world.transforms)
       const spatialWebObjects = resolveDefaultSpatialWebObjects(get().activeWorldId, world.spatialWebObjects)
-      const loadedObjCount = (world.conjuredAssetIds?.length || 0) + (world.catalogPlacements?.length || 0) + (world.craftedScenes?.length || 0) + portalGates.length + spatialWebObjects.length
+      const loadedObjCount = (world.conjuredAssetIds?.length || 0) + (world.catalogPlacements?.length || 0) + (world.craftedScenes?.length || 0) + portalGates.length + spatialWebObjects.length + (world.paintStrokes?.length || 0) + (world.text3dObjects?.length || 0)
       const sanitizedAgentAvatars = sanitizeAgentAvatarList(world.agentAvatars || [])
       const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
         windows: world.agentWindows || [],
@@ -2919,6 +3027,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         spatialWebObjects,
         paintStrokes: world.paintStrokes || [],
         text3dObjects: world.text3dObjects || [],
+        paintStrokePlayback: {},
         transforms: normalizedAgentWorldState.transforms,
         behaviors: world.behaviors || {},
         worldLights: lights,
@@ -2994,8 +3103,10 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
     // ░▒▓ SANITY CHECK: block saves that would catastrophically reduce object count ▓▒░
     // If we loaded 5+ objects and now have 0, something is wrong (stale tab, empty init, etc.)
-    const currentObjCount = (worldConjuredAssetIds?.length || 0) + (placedCatalogAssets?.length || 0) + (craftedScenes?.length || 0) + (portalGates?.length || 0) + (spatialWebObjects?.length || 0)
-    if (_loadedObjectCount >= 5 && currentObjCount === 0) {
+    const currentObjCount = (worldConjuredAssetIds?.length || 0) + (placedCatalogAssets?.length || 0) + (craftedScenes?.length || 0) + (portalGates?.length || 0) + (spatialWebObjects?.length || 0) + (paintStrokes?.length || 0) + (text3dObjects?.length || 0)
+    const latestUndo = get().undoStack[get().undoStack.length - 1]
+    const zeroSaveIsExplicitEdit = Boolean(latestUndo && /delete|remove|clear/i.test(latestUndo.label))
+    if (_loadedObjectCount >= 5 && currentObjCount === 0 && !zeroSaveIsExplicitEdit) {
       console.error(`[World] 🚨 NUKE BLOCKED — loaded ${_loadedObjectCount} objects but trying to save 0. This is the anorak2 protection.`)
       return
     }
@@ -3070,7 +3181,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       const lights = world?.lights !== undefined ? (world?.lights || []) : defaultLights
       const portalGates = resolveDefaultPortalGates(worldId, world?.portalGates, world?.transforms)
       const spatialWebObjects = resolveDefaultSpatialWebObjects(worldId, world?.spatialWebObjects)
-      const switchObjCount = (world?.conjuredAssetIds?.length || 0) + (world?.catalogPlacements?.length || 0) + (world?.craftedScenes?.length || 0) + portalGates.length + spatialWebObjects.length
+      const switchObjCount = (world?.conjuredAssetIds?.length || 0) + (world?.catalogPlacements?.length || 0) + (world?.craftedScenes?.length || 0) + portalGates.length + spatialWebObjects.length + (world?.paintStrokes?.length || 0) + (world?.text3dObjects?.length || 0)
       const sanitizedAgentAvatars = sanitizeAgentAvatarList(world?.agentAvatars || [])
       const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
         windows: world?.agentWindows || [],
@@ -3091,6 +3202,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
         placedCatalogAssets: world?.catalogPlacements || [],
         portalGates,
         spatialWebObjects,
+        paintStrokes: world?.paintStrokes || [],
+        text3dObjects: world?.text3dObjects || [],
+        paintStrokePlayback: {},
         transforms: normalizedAgentWorldState.transforms,
         behaviors: world?.behaviors || {},
         worldLights: lights,
@@ -3175,6 +3289,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
           spatialWebObjects: [],
           paintStrokes: [],
           text3dObjects: [],
+          paintStrokePlayback: {},
           placedAgentWindows: [],
           placedAgentAvatars: [],
           liveAgentAvatarAudio: {},
@@ -3706,7 +3821,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       const lights = state.lights !== undefined ? state.lights : defaultLights
       const portalGates = resolveDefaultPortalGates(worldId, state.portalGates, state.transforms)
       const spatialWebObjects = resolveDefaultSpatialWebObjects(worldId, state.spatialWebObjects)
-      const viewObjCount = (state.conjuredAssetIds?.length || 0) + (state.catalogPlacements?.length || 0) + (state.craftedScenes?.length || 0) + portalGates.length + spatialWebObjects.length
+      const viewObjCount = (state.conjuredAssetIds?.length || 0) + (state.catalogPlacements?.length || 0) + (state.craftedScenes?.length || 0) + portalGates.length + spatialWebObjects.length + (state.paintStrokes?.length || 0) + (state.text3dObjects?.length || 0)
       const sanitizedAgentAvatars = sanitizeAgentAvatarList(state.agentAvatars || [])
       const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
         windows: state.agentWindows || [],
@@ -3729,6 +3844,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         spatialWebObjects,
         paintStrokes: state.paintStrokes || [],
         text3dObjects: state.text3dObjects || [],
+        paintStrokePlayback: {},
         transforms: normalizedAgentWorldState.transforms,
         behaviors: state.behaviors || {},
         worldLights: lights,
@@ -3772,6 +3888,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       ...command.before,
     }))
     set({ _isUndoRedoing: false })
+    broadcastSnapshotMutationDelta(command.after, command.before)
     // Persist the restored state
     setTimeout(() => get().saveWorldState(), 100)
   },
@@ -3788,6 +3905,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       ...command.after,
     }))
     set({ _isUndoRedoing: false })
+    broadcastSnapshotMutationDelta(command.before, command.after)
     setTimeout(() => get().saveWorldState(), 100)
   },
 

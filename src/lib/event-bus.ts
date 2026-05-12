@@ -177,9 +177,13 @@ export function registerStoreHandler(): () => void {
         const id = cmd.payload.id
         if (store.placedCatalogAssets.some((a: { id: string }) => a.id === id)) store.removeCatalogAsset(id)
         else if (store.craftedScenes.some((s: { id: string }) => s.id === id)) store.removeCraftedScene(id)
+        else if (store.portalGates.some((g: { id: string }) => g.id === id)) store.removePortalGate(id)
         else if (store.worldConjuredAssetIds.includes(id)) store.removeConjuredAssetFromWorld(id)
         else if (store.worldLights.some((l: { id: string }) => l.id === id)) store.removeWorldLight(id)
         else if (store.placedAgentWindows.some((w: { id: string }) => w.id === id)) store.removeAgentWindow(id)
+        else if (store.spatialWebObjects.some((o: { id: string }) => o.id === id)) store.removeSpatialWebObject(id)
+        else if (store.paintStrokes.some((s: { id: string }) => s.id === id)) store.removePaintStroke(id)
+        else if (store.text3dObjects.some((t: { id: string }) => t.id === id)) store.removeText3dObject(id)
         store.selectObject(null)
         store.setInspectedObject(null)
         break

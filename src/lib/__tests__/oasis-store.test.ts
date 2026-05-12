@@ -34,12 +34,13 @@ vi.mock('../../hooks/useXp', () => ({
 import { useOasisStore } from '../../store/oasisStore'
 import type { AgentWindowType, AgentWindow } from '../../store/oasisStore'
 import { getDefaultAgentAvatarUrl } from '../../lib/agent-avatar-catalog'
-import { debouncedSaveWorld, saveWorld } from '../../lib/forge/world-persistence'
+import { debouncedSaveWorld, loadWorld, saveWorld } from '../../lib/forge/world-persistence'
 import type { SpatialWebObject } from '../../lib/spatial-web'
 import { createGoogleFormsAltarObject } from '../../lib/spatial-web-presets'
 
 // Cast the mocked imports for easy access
 const mockDebouncedSave = debouncedSaveWorld as ReturnType<typeof vi.fn>
+const mockLoadWorld = loadWorld as ReturnType<typeof vi.fn>
 const mockSaveWorld = saveWorld as ReturnType<typeof vi.fn>
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -74,6 +75,8 @@ function resetStore() {
     _worldReady: false,
     _loadedObjectCount: 0,
     _isReceivingRemoteUpdate: false,
+    activeWorldId: 'test-world',
+    worldRegistry: [],
     isViewMode: false,
     isViewModeEditable: false,
     viewingWorldId: null,
@@ -81,6 +84,9 @@ function resetStore() {
     placedCatalogAssets: [],
     portalGates: [],
     spatialWebObjects: [],
+    paintStrokes: [],
+    text3dObjects: [],
+    paintStrokePlayback: {},
     craftedScenes: [],
     worldConjuredAssetIds: [],
     placementPending: null,
@@ -89,6 +95,10 @@ function resetStore() {
     agentActivity: {},
     focusedImageId: null,
     transforms: {},
+    undoStack: [],
+    redoStack: [],
+    _undoBatch: null,
+    _isUndoRedoing: false,
   })
 }
 
@@ -101,6 +111,8 @@ describe('OasisStore', () => {
     vi.useFakeTimers()
     resetStore()
     mockDebouncedSave.mockClear()
+    mockLoadWorld.mockReset()
+    mockLoadWorld.mockResolvedValue(null)
     mockSaveWorld.mockClear()
   })
 
@@ -654,6 +666,85 @@ describe('OasisStore', () => {
   })
 
   // ─═̷─═̷─ focusImage ─═̷─═̷─
+  describe('paint strokes and 3D text world scope', () => {
+    const oldStroke = {
+      id: 'stroke-old',
+      type: 'paint_stroke' as const,
+      points: [0, 0, 0, 1, 1, 1],
+      color: '#ff00ff',
+      thickness: 0.04,
+      shininess: 0.7,
+      mode: '3d' as const,
+      createdAt: 1,
+    }
+    const newStroke = {
+      ...oldStroke,
+      id: 'stroke-new',
+      color: '#00ffff',
+      createdAt: 2,
+    }
+    const oldText = {
+      id: 'text-old',
+      type: 'text_3d' as const,
+      text: 'old',
+      fontId: 'helvetiker_regular' as const,
+      size: 1,
+      depth: 0.1,
+      color: '#ffffff',
+      shininess: 0.5,
+      position: [0, 1, 0] as [number, number, number],
+      rotation: [0, 0, 0] as [number, number, number],
+      createdAt: 1,
+    }
+    const newText = {
+      ...oldText,
+      id: 'text-new',
+      text: 'new',
+      createdAt: 2,
+    }
+
+    it('switchWorld replaces paint and text slices from the destination world', async () => {
+      mockLoadWorld.mockResolvedValue({
+        conjuredAssetIds: [],
+        catalogPlacements: [],
+        craftedScenes: [],
+        portalGates: [],
+        spatialWebObjects: [],
+        paintStrokes: [newStroke],
+        text3dObjects: [newText],
+        transforms: {},
+        behaviors: {},
+        lights: [],
+      })
+      useOasisStore.setState({
+        _worldReady: false,
+        activeWorldId: 'world-old',
+        paintStrokes: [oldStroke],
+        text3dObjects: [oldText],
+        paintStrokePlayback: { [oldStroke.id]: { progress: 0.5, durationSec: 3, startedAt: 10 } },
+      })
+
+      getState().switchWorld('world-new')
+      await Promise.resolve()
+      await Promise.resolve()
+
+      expect(getState().paintStrokes).toEqual([newStroke])
+      expect(getState().text3dObjects).toEqual([newText])
+      expect(getState().paintStrokePlayback).toEqual({})
+    })
+
+    it('undo removes a locally added paint stroke', () => {
+      useOasisStore.setState({ _worldReady: true, paintStrokes: [], undoStack: [], redoStack: [] })
+
+      getState().addPaintStroke(newStroke)
+      expect(getState().paintStrokes.map(stroke => stroke.id)).toEqual(['stroke-new'])
+      expect(getState().undoStack).toHaveLength(1)
+
+      getState().undo()
+      expect(getState().paintStrokes).toEqual([])
+    })
+  })
+
   describe('focusImage()', () => {
     it('sets focusedImageId and clears focusedAgentWindowId', () => {
       useOasisStore.setState({ focusedAgentWindowId: 'agent-1' })

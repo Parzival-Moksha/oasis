@@ -177,6 +177,7 @@ New mutation kinds (all extending `WorldMutation`):
 | { kind: 'stroke_started'; payload: { strokeId, authorId, authorColor, style } }
 | { kind: 'stroke_pointed'; payload: { strokeId, point: [x,y,z] } }
 | { kind: 'stroke_ended';   payload: { strokeId, finalStroke: PaintStroke } }
+| { kind: 'stroke_updated'; payload: { id, updates } }
 | { kind: 'stroke_removed'; payload: { id } }
 | { kind: 'text3d_added';   payload: Text3DObject }
 | { kind: 'text3d_removed'; payload: { id } }
@@ -251,8 +252,10 @@ in **orbit mode** (where the camera rotates around a fixed target). So:
   third-person` (orbit excluded).
   [Scene.tsx:1547-1572](../../../src/components/Scene.tsx#L1547-L1572).
 
-Pointer-lock engages on paint arm — without it, the user has to chase a
-visible cursor through pointer-locked mouse-look modes and the stroke drifts:
+The 3D paint wand is an overlay on the current base camera mode. It does not
+enter InputManager's legacy temporary `paint` state. Third-person stays
+third-person; noclip stays noclip. Pointer-lock is requested on paint arm when
+the current base mode supports it:
 
 [oasisStore.ts setPaintHeldActive](../../../src/store/oasisStore.ts):
 
@@ -261,10 +264,9 @@ setPaintHeldActive: (active) => {
   set({ paintHeldActive: active })
   const im = useInputManager.getState()
   if (active) {
-    im.transition('paint')           // canLockPointer:true input state
-    im.requestPointerLock()          // engage immediately
+    im.requestPointerLock()
   } else if (im.inputState === 'paint') {
-    im.returnToPrevious()            // back to noclip / TP / orbit
+    im.returnToPrevious()            // cleanup for legacy sessions only
   }
 }
 ```
@@ -295,6 +297,8 @@ fixes:
 
 1. **PaintStrokeMesh** wraps its render in `<group onClick onDoubleClick>`
    directly. R3F has a stable target to fire pointer events on.
+   It also renders an invisible oversized tube as a pick target so thin
+   strokes and 2D lines can be selected reliably.
 2. **Persisted strokes drop SelectableWrapper entirely**
    ([WorldObjects.tsx PersistedPaintStroke](../../../src/components/forge/WorldObjects.tsx)).
    Strokes have no single anchor for TransformControls, and the ground-ring
@@ -305,17 +309,12 @@ fixes:
 **Text3D** keeps SelectableWrapper (text needs the gizmo for repositioning)
 but Text3DObjectMesh adds a backstop click-group inside as belt-and-suspenders.
 
-### Important UX trade-off
+### Selection while armed
 
-While paint is **armed**, `PaintCursor`'s capture-phase pointer listeners
-swallow LMB events to start strokes. Single-click selection of an existing
-stroke does NOT work in armed mode — every click starts a new stroke instead.
-Workaround: close the paint panel (releases paint mode) → click strokes
-normally → reopen panel to keep painting.
-
-This is a known limitation, not a bug. A future fix could raycast first on
-LMB-down to check if the click hits a stroke, and route to selection vs new-
-stroke based on the result.
+While paint is **armed**, `PaintCursor` owns capture-phase pointerdown. Before
+starting a new stroke it raycasts against persisted stroke hit targets. If the
+click hits a stroke, it selects and inspects that stroke instead of drawing
+over it; otherwise it starts a new stroke.
 
 ---
 
@@ -344,7 +343,8 @@ through every save site in oasisStore:
 
 - `loadWorldState` — populates from `world.paintStrokes / text3dObjects`
 - `saveWorldState` — includes both in the WorldState payload
-- `switchWorld` — pre-switch save includes both
+- `switchWorld` — pre-switch save includes both AND the destination load
+  replaces both store slices
 - The avatar-repair save path (auto-fired on load if any agent avatar URL is
   corrupted) includes both — was a silent data-loss bug in round 2
 - `enterViewMode` — populates from the loaded view world (was dropping them
@@ -357,10 +357,10 @@ small structures (transforms, behaviors, etc.) but treats `paintStrokes` and
 a 20K-point stroke (240KB flat number array) would deep-clone twice per
 unrelated undo command, freezing the UI.
 
-`addPaintStroke` and `addText3dObject` deliberately do NOT go through
-`withUndo` — long strokes shouldn't bloat the undo stack. Removal goes
-through `removePaintStroke`/`removeText3dObject` which DO save (so the
-deletion persists) but skip undo capture.
+`addPaintStroke`, `removePaintStroke`, `updatePaintStroke`, and the matching
+3D text add/update/remove paths go through `withUndo`. Snapshot capture keeps
+stroke arrays shallow, so Ctrl+Z can delete/restore a stroke without deep-
+cloning every 20K-point flat array.
 
 ---
 

@@ -7,6 +7,7 @@ interface JoinOptions {
   playerId?: string
   displayName?: string
   avatarUrl?: string
+  profileAvatarUrl?: string
   color?: string
 }
 
@@ -22,6 +23,7 @@ interface InputMessage {
 
 interface ProfileMessage {
   avatarUrl?: string
+  profileAvatarUrl?: string
   displayName?: string
   color?: string
 }
@@ -129,6 +131,7 @@ export class WorldRoom extends Room<WorldRoomState> {
         sessionId: client.sessionId,
         displayName: player.displayName,
         avatarUrl: player.avatarUrl,
+        profileAvatarUrl: player.profileAvatarUrl,
         color: player.color,
         position: [player.x, player.y, player.z],
         yaw: player.yaw,
@@ -148,6 +151,9 @@ export class WorldRoom extends Room<WorldRoomState> {
         // valid encoded URLs. Just length-cap and trim leading/trailing space.
         player.avatarUrl = payload.avatarUrl.trim().slice(0, 500)
       }
+      if (typeof payload.profileAvatarUrl === 'string') {
+        player.profileAvatarUrl = payload.profileAvatarUrl.trim().slice(0, 500)
+      }
       if (typeof payload.displayName === 'string') {
         player.displayName = sanitizeText(payload.displayName, player.displayName)
       }
@@ -160,6 +166,7 @@ export class WorldRoom extends Room<WorldRoomState> {
         sessionId: client.sessionId,
         displayName: player.displayName,
         avatarUrl: player.avatarUrl,
+        profileAvatarUrl: player.profileAvatarUrl,
         color: player.color,
         position: [player.x, player.y, player.z],
         yaw: player.yaw,
@@ -203,6 +210,7 @@ export class WorldRoom extends Room<WorldRoomState> {
     player.playerId = sanitizePlayerId(options.playerId, client.sessionId)
     player.displayName = sanitizeText(options.displayName, `Player ${player.playerId.slice(0, 4)}`)
     player.avatarUrl = (typeof options.avatarUrl === 'string' ? options.avatarUrl.trim() : '').slice(0, 500)
+    player.profileAvatarUrl = (typeof options.profileAvatarUrl === 'string' ? options.profileAvatarUrl.trim() : '').slice(0, 500)
     player.color = sanitizeText(options.color, '#38bdf8', 7)
     player.updatedAt = Date.now()
     this.state.players.set(client.sessionId, player)
@@ -211,6 +219,7 @@ export class WorldRoom extends Room<WorldRoomState> {
       sessionId: client.sessionId,
       displayName: player.displayName,
       avatarUrl: player.avatarUrl,
+      profileAvatarUrl: player.profileAvatarUrl,
       color: player.color,
       position: [player.x, player.y, player.z],
       yaw: player.yaw,

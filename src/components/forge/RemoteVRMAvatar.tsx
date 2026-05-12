@@ -21,7 +21,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import React, { forwardRef, Suspense, useEffect, useRef, useState } from 'react'
-import { Billboard, Text } from '@react-three/drei'
+import { Billboard, Html, Text } from '@react-three/drei'
 import { useFrame, useLoader } from '@react-three/fiber'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
@@ -36,6 +36,8 @@ import { AnimationController } from '../../lib/animation-state-machine'
 export interface RemoteVRMAvatarProps {
   /** VRM URL. Empty string -> pill fallback. */
   avatarUrl: string
+  /** 2D profile picture shown beside the nameplate. */
+  profileAvatarUrl?: string
   /** Stable identifier used to keep the per-player VRM cache entry unique. */
   cacheKey: string
   displayName: string
@@ -60,7 +62,7 @@ const CROSSFADE_SECONDS = 0.15
 // the VRM-failure path render identically.
 // ═══════════════════════════════════════════════════════════════════════════
 
-function PillBody({ color, displayName }: { color: string; displayName: string }) {
+function PillBody({ color, displayName, profileAvatarUrl }: { color: string; displayName: string; profileAvatarUrl?: string }) {
   return (
     <>
       <mesh castShadow position={[0, 0.88, 0]}>
@@ -79,17 +81,45 @@ function PillBody({ color, displayName }: { color: string; displayName: string }
         <ringGeometry args={[0.34, 0.42, 32]} />
         <meshBasicMaterial color={color} transparent opacity={0.54} />
       </mesh>
-      <NameTag displayName={displayName} />
+      <NameTag displayName={displayName} profileAvatarUrl={profileAvatarUrl} />
     </>
   )
 }
 
-function NameTag({ displayName }: { displayName: string }) {
+function NameTag({ displayName, profileAvatarUrl }: { displayName: string; profileAvatarUrl?: string }) {
   return (
     <Billboard position={[0, 1.86, 0]}>
+      {profileAvatarUrl && (
+        <Html
+          transform
+          position={[-0.22, 0, 0]}
+          distanceFactor={7}
+          style={{ pointerEvents: 'none' }}
+        >
+          <div
+            style={{
+              width: 22,
+              height: 22,
+              borderRadius: 999,
+              overflow: 'hidden',
+              border: '1px solid rgba(224,242,254,0.92)',
+              background: 'rgba(2,6,23,0.92)',
+              boxShadow: '0 0 10px rgba(56,189,248,0.35)',
+            }}
+          >
+            <img
+              src={profileAvatarUrl}
+              alt=""
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+              referrerPolicy="no-referrer"
+            />
+          </div>
+        </Html>
+      )}
       <Text
+        position={profileAvatarUrl ? [0.02, 0, 0] : [0, 0, 0]}
         fontSize={0.16}
-        anchorX="center"
+        anchorX={profileAvatarUrl ? 'left' : 'center'}
         anchorY="middle"
         outlineWidth={0.01}
         outlineColor="#020617"
@@ -111,12 +141,14 @@ function VRMBody({
   avatarUrl,
   cacheKey,
   displayName,
+  profileAvatarUrl,
   color,
   speedRef,
 }: {
   avatarUrl: string
   cacheKey: string
   displayName: string
+  profileAvatarUrl?: string
   color: string
   speedRef: React.MutableRefObject<number>
 }) {
@@ -293,7 +325,7 @@ function VRMBody({
   return (
     <>
       <primitive object={vrm.scene} />
-      <NameTag displayName={displayName} />
+      <NameTag displayName={displayName} profileAvatarUrl={profileAvatarUrl} />
       {/* Foot ring stays — tints the floor under the remote player so they
           read as "another presence" even when crowded. */}
       <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -338,7 +370,7 @@ class VRMErrorBoundary extends React.Component<VRMBoundaryProps, { hasError: boo
 // ═══════════════════════════════════════════════════════════════════════════
 
 export const RemoteVRMAvatar = forwardRef<THREE.Group, RemoteVRMAvatarProps>(function RemoteVRMAvatar(
-  { avatarUrl, cacheKey, displayName, color, speed },
+  { avatarUrl, profileAvatarUrl, cacheKey, displayName, color, speed },
   ref,
 ) {
   // Speed mirror — the body's useFrame reads from a ref so we don't re-render
@@ -350,12 +382,12 @@ export const RemoteVRMAvatar = forwardRef<THREE.Group, RemoteVRMAvatarProps>(fun
   if (!avatarUrl) {
     return (
       <group ref={ref}>
-        <PillBody color={color} displayName={displayName} />
+        <PillBody color={color} displayName={displayName} profileAvatarUrl={profileAvatarUrl} />
       </group>
     )
   }
 
-  const pillFallback = <PillBody color={color} displayName={displayName} />
+  const pillFallback = <PillBody color={color} displayName={displayName} profileAvatarUrl={profileAvatarUrl} />
 
   return (
     <group ref={ref}>
@@ -365,6 +397,7 @@ export const RemoteVRMAvatar = forwardRef<THREE.Group, RemoteVRMAvatarProps>(fun
             avatarUrl={avatarUrl}
             cacheKey={cacheKey}
             displayName={displayName}
+            profileAvatarUrl={profileAvatarUrl}
             color={color}
             speedRef={speedRef}
           />

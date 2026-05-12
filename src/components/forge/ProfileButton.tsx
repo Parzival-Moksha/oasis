@@ -21,6 +21,7 @@ import {
   normalizeProfileTokenBurnSummary,
 } from '@/lib/profile-token-display'
 import { DEFAULT_PROFILE_AVATAR_3D_URL } from '@/lib/profile-defaults'
+import { QUESTS, QUEST_IDS, getQuestProgress, type QuestId } from '@/lib/quests'
 import { GameMenuButton } from './GameMenuButton'
 
 interface ProfileData {
@@ -41,6 +42,8 @@ interface ProfileData {
   lastLoginDate: string | null
 }
 
+type ProfileTab = 'player' | 'quests' | 'skills'
+
 export function ProfileButton() {
   const [isOpen, setIsOpen] = useState(false)
   const [showAvatarGallery, setShowAvatarGallery] = useState(false)
@@ -52,6 +55,7 @@ export function ProfileButton() {
   const [editAvatarFile, setEditAvatarFile] = useState<File | null>(null)
   const [editAvatarPreview, setEditAvatarPreview] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<ProfileTab>('player')
   // Cache-bust counter: bumps on every successful avatar upload AND every
   // profile fetch. Avoids the same-day stale-image case where lastLoginDate
   // alone (day granularity) lets the browser keep showing the old pic.
@@ -165,7 +169,9 @@ export function ProfileButton() {
   const handleEditAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (!file.type.startsWith('image/')) {
+    const fileExt = file.name.split('.').pop()?.toLowerCase() || ''
+    const looksLikeImage = file.type.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(fileExt)
+    if (!looksLikeImage) {
       setSaveError('That file is not an image. Use JPEG/PNG/WebP/GIF.')
       return
     }
@@ -239,7 +245,7 @@ export function ProfileButton() {
       {isOpen && (
         <div
           data-ui-panel
-          className="absolute left-full top-0 z-[260] ml-2 max-h-[calc(100vh-24px)] w-72 overflow-y-auto rounded-lg max-[700px]:fixed max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:ml-0 max-[700px]:max-h-[calc(100vh-70px)] max-[700px]:w-auto"
+          className="absolute left-full top-0 z-[260] ml-2 max-h-[calc(100vh-24px)] w-80 overflow-y-auto rounded-lg max-[700px]:fixed max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:ml-0 max-[700px]:max-h-[calc(100vh-70px)] max-[700px]:w-auto"
           onMouseDown={(e) => e.stopPropagation()}
           style={{
             backgroundColor: `rgba(0, 0, 0, ${Math.max(0.92, settings.uiOpacity)})`,
@@ -340,7 +346,26 @@ export function ProfileButton() {
             )}
           </div>
 
+          <div className="grid grid-cols-3 gap-1 border-b border-white/10 p-2">
+            {(['player', 'quests', 'skills'] as const).map(tab => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className="rounded-md px-2 py-1.5 text-[10px] font-bold uppercase tracking-[0.12em] transition-colors"
+                style={{
+                  color: activeTab === tab ? '#F8FAFC' : 'rgba(255,255,255,0.48)',
+                  background: activeTab === tab ? 'rgba(168,85,247,0.2)' : 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${activeTab === tab ? 'rgba(168,85,247,0.45)' : 'rgba(255,255,255,0.06)'}`,
+                }}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+
           {/* Stats */}
+          {activeTab === 'player' && (
+          <>
           <div className="p-4 border-b border-white/10">
             {/* Level title + badge */}
             <div className="flex items-center justify-between mb-2">
@@ -421,6 +446,11 @@ export function ProfileButton() {
               {profile.avatar_3d_url ? '🧑 Change Avatar' : '✨ Choose Avatar'}
             </button>
           </div>
+          </>
+          )}
+
+          {activeTab === 'quests' && <QuestProfilePanel />}
+          {activeTab === 'skills' && <SkillsProfilePanel level={profile.level} />}
         </div>
       )}
       {/* Avatar Gallery */}
@@ -454,6 +484,117 @@ export function ProfileButton() {
           <span className="text-yellow-400 font-bold text-sm">{dailyBonusToast}</span>
         </div>
       )}
+    </div>
+  )
+}
+
+function QuestProfilePanel() {
+  const [progress, setProgress] = useState<Partial<Record<QuestId, boolean>>>(() => getQuestProgress())
+
+  useEffect(() => {
+    const refresh = () => setProgress(getQuestProgress())
+    refresh()
+    window.addEventListener('quest-complete', refresh)
+    window.addEventListener('storage', refresh)
+    return () => {
+      window.removeEventListener('quest-complete', refresh)
+      window.removeEventListener('storage', refresh)
+    }
+  }, [])
+
+  const done = QUEST_IDS.filter(id => progress[id]).length
+  const total = QUEST_IDS.length
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0
+  const nextQuest = QUESTS.find(quest => !progress[quest.id])
+
+  return (
+    <div className="space-y-3 p-3">
+      <div className="rounded-lg border border-purple-400/25 bg-purple-400/10 p-3 shadow-[0_0_24px_rgba(168,85,247,0.14)]">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-purple-200">Quest Log</p>
+            <p className="mt-1 text-xs text-white/60">{nextQuest ? nextQuest.title : 'All builder quests complete'}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-lg font-black text-white">{done}/{total}</p>
+            <p className="text-[9px] uppercase tracking-[0.14em] text-purple-200/70">complete</p>
+          </div>
+        </div>
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+          <div
+            className="h-full rounded-full transition-all duration-700"
+            style={{
+              width: `${pct}%`,
+              background: 'linear-gradient(90deg, #22D3EE, #A855F7, #F59E0B)',
+              boxShadow: '0 0 18px rgba(168,85,247,0.55)',
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        {QUESTS.map(quest => {
+          const isDone = Boolean(progress[quest.id])
+          return (
+            <div
+              key={quest.id}
+              className="rounded-lg p-2.5"
+              style={{
+                background: isDone ? 'rgba(34,197,94,0.1)' : 'rgba(255,255,255,0.035)',
+                border: `1px solid ${isDone ? 'rgba(34,197,94,0.28)' : 'rgba(255,255,255,0.07)'}`,
+              }}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-bold text-white">
+                    <span className={isDone ? 'text-green-300' : 'text-purple-300'}>{quest.number}. </span>
+                    {quest.title}
+                  </p>
+                  <p className="mt-1 line-clamp-2 text-[10px] leading-snug text-white/45">{quest.description}</p>
+                </div>
+                <span className={`rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] ${isDone ? 'bg-green-400/15 text-green-200' : 'bg-white/5 text-white/45'}`}>
+                  {isDone ? 'done' : '+25 xp'}
+                </span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function SkillsProfilePanel({ level }: { level: number }) {
+  const skills = [
+    { name: 'Walk', state: 'Known', detail: 'Move, jump, look, and enter portals.' },
+    { name: 'Inspect', state: 'Known', detail: 'Select objects and tune transforms or behavior.' },
+    { name: 'Spells', state: 'Known', detail: 'The renamed place menu: choose a spell, then click the world.' },
+    { name: 'Craft Scene', state: level >= 5 ? 'Ready' : 'Quest Zero', detail: 'Text-to-3D scene casting, wired to the streaming primitive path.' },
+    { name: 'Agent Ally', state: 'Soon', detail: 'Bind Merlin, Hermes, or OpenClaw to your spellbook.' },
+  ]
+
+  return (
+    <div className="space-y-3 p-3">
+      <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-3">
+        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-100">Spellbook</p>
+        <p className="mt-1 text-xs leading-snug text-white/60">
+          Quest Zero should make this feel earned: pick up the book, unlock Spells, then learn the first creation loop from Merlin.
+        </p>
+      </div>
+
+      <div className="grid gap-2">
+        {skills.map(skill => (
+          <div key={skill.name} className="rounded-lg border border-white/10 bg-white/[0.035] p-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-bold text-white">{skill.name}</p>
+              <span className="rounded-full border border-white/10 bg-black/30 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-cyan-100">
+                {skill.state}
+              </span>
+            </div>
+            <p className="mt-1 text-[10px] leading-snug text-white/50">{skill.detail}</p>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

@@ -4,6 +4,7 @@ export class PlayerState extends Schema {
   @type('string') playerId = ''
   @type('string') displayName = ''
   @type('string') avatarUrl = ''
+  @type('string') profileAvatarUrl = ''
   @type('string') color = '#38bdf8'
 
   @type('number') x = 0

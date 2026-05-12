@@ -25,6 +25,8 @@ import {
 import { Sparkler } from './Sparkler'
 
 interface PaintStrokeMeshProps extends PaintStrokeStyle {
+  /** Persisted stroke id, used by the paint wand raycaster for selection while armed. */
+  strokeId?: string
   /** Flat [x,y,z, x,y,z, ...]. */
   points: number[]
   /** Optional 0..1 prefix-of-points to reveal — used by playback. Undefined = full stroke. */
@@ -45,6 +47,7 @@ const TUBE_RADIAL_SEGMENTS = 6
 const VARIABLE_RADIAL_SEGMENTS = 6
 
 export function PaintStrokeMesh({
+  strokeId,
   points,
   color,
   thickness,
@@ -94,10 +97,18 @@ export function PaintStrokeMesh({
     return buildUniformTube(visiblePoints, thickness)
   }, [mode, visiblePoints, thickness, varyByVelocity])
 
+  const hitGeometry = useMemo(() => {
+    if (visiblePoints.length < 2 || (!onSelect && !onInspect)) return null
+    return buildUniformTube(visiblePoints, Math.max(thickness * 2.5, 0.16))
+  }, [visiblePoints, thickness, onSelect, onInspect])
+
   // Dispose tube geometry when it changes / unmounts.
   useEffect(() => {
     return () => { tubeGeometry?.dispose() }
   }, [tubeGeometry])
+  useEffect(() => {
+    return () => { hitGeometry?.dispose() }
+  }, [hitGeometry])
 
   const material = useMemo(() => {
     // Selected strokes glow harder so the user gets visual feedback even when
@@ -117,6 +128,15 @@ export function PaintStrokeMesh({
     return () => { material.dispose() }
   }, [material])
 
+  const hitMaterial = useMemo(() => new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+  }), [])
+  useEffect(() => {
+    return () => { hitMaterial.dispose() }
+  }, [hitMaterial])
+
   // R3F event bubbling from a thin TubeGeometry up through SelectableWrapper
   // proved unreliable for stroke selection (the agent's investigation found
   // raw <mesh> children of nested <group> wrappers don't always propagate
@@ -135,6 +155,7 @@ export function PaintStrokeMesh({
   if (mode === '3d') {
     return (
       <group onClick={handleClick} onDoubleClick={handleDoubleClick}>
+        {hitGeometry && <mesh geometry={hitGeometry} material={hitMaterial} userData={strokeId ? { paintStrokeHitTarget: true, paintStrokeId: strokeId } : undefined} />}
         {tubeGeometry && <mesh geometry={tubeGeometry} material={material} />}
         {showLeadingSparkler && leadingPoint && (
           <Sparkler position={leadingPoint} color={leadingSparklerColor || color} active />
@@ -152,6 +173,7 @@ export function PaintStrokeMesh({
   }
   return (
     <group onClick={handleClick} onDoubleClick={handleDoubleClick}>
+      {hitGeometry && <mesh geometry={hitGeometry} material={hitMaterial} userData={strokeId ? { paintStrokeHitTarget: true, paintStrokeId: strokeId } : undefined} />}
       <Line
         points={visiblePoints as Array<[number, number, number]>}
         color={color}

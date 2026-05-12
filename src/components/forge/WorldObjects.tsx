@@ -3093,6 +3093,7 @@ function PersistedPaintStroke({ stroke, selected, onSelect }: {
   const isReadOnly = useOasisStore(s => s.isViewMode && !s.isViewModeEditable)
   return (
     <PaintStrokeMesh
+      strokeId={stroke.id}
       points={stroke.points}
       color={stroke.color}
       thickness={stroke.thickness}
