@@ -275,6 +275,9 @@ export function MultiplayerPresenceLayer() {
   const [players, setPlayers] = useState<MultiplayerRoomPlayer[]>([])
   const [reconnectTick, setReconnectTick] = useState(0)
   const reconnectAttemptRef = useRef(0)
+  // Tracks which world we last cleared live-strokes for, so transient WS
+  // reconnects (which bump reconnectTick) don't wipe in-progress strokes.
+  const clearedWorldIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     const playerId = makePresenceId()
@@ -476,10 +479,14 @@ export function MultiplayerPresenceLayer() {
       }
       lastSentPoseRef.current = null
       lastSentAtRef.current = 0
-      // Drop any in-progress remote strokes — they belong to the OLD room.
-      // Without this, mid-stroke trails from world A keep rendering after a
-      // portal jump to world B until the next stroke_ended arrives (never).
-      clearAllLiveStrokes()
+      // Drop any in-progress remote strokes ONLY when the world id actually
+      // changes. Reconnects (transient WS drops) bump reconnectTick but the
+      // world is the same — clearing here would wipe the local user's
+      // in-progress stroke mid-draw.
+      if (clearedWorldIdRef.current !== activeWorldId) {
+        clearAllLiveStrokes()
+        clearedWorldIdRef.current = activeWorldId
+      }
     }
   }, [activeWorldId, reconnectTick])
 

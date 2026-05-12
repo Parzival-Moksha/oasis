@@ -464,6 +464,11 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     if (get()._uiLayerStack.length > 0) return
     if (!STATE_CAPABILITIES[get().inputState].canLockPointer) return
     if (get().pointerLocked) return
+    // Mobile guard — never engage pointer-lock on touch devices. CameraController
+    // already gates its lock-on-click path the same way; without this guard
+    // direct callers (e.g. setPaintHeldActive) could grant lock on Android Chrome
+    // and starve MobileOasisControls' touch-camera fingers.
+    if (typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) return
 
     const wrapper = document.querySelector('#uploader-canvas')
     const canvas = (wrapper?.querySelector('canvas') || wrapper) as HTMLElement | null

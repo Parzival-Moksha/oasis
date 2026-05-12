@@ -6,9 +6,58 @@
 'use client'
 
 import { Center, Text3D } from '@react-three/drei'
+import React, { Suspense } from 'react'
 
-import { fontUrlFor, type Text3DObject } from '@/lib/forge/text-3d-object'
+import { fontUrlFor, TEXT3D_FONT_OPTIONS, type Text3DObject } from '@/lib/forge/text-3d-object'
 import { useOasisStore } from '@/store/oasisStore'
+
+// drei <Text3D> uses useLoader(FontLoader) which throws into Suspense on
+// network failure. The 9 streamed fonts depend on unpkg @ three@0.162.0;
+// if unpkg is unreachable (offline, firewall, regional outage), the throw
+// would crash the entire scene tree. This boundary catches the failure
+// per text object and falls back to the locally-vendored helvetiker.
+class FontErrorBoundary extends React.Component<
+  { fallback: React.ReactNode; children: React.ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false }
+  static getDerivedStateFromError() { return { hasError: true } }
+  componentDidCatch(err: Error) {
+    console.warn('[Text3D] font load failed, using fallback:', err.message)
+  }
+  render() {
+    return this.state.hasError ? this.props.fallback : this.props.children
+  }
+}
+
+const FALLBACK_FONT_URL = TEXT3D_FONT_OPTIONS[0].url
+
+interface Text3DGlyphsProps {
+  text: string
+  fontUrl: string
+  size: number
+  depth: number
+  color: string
+  shininess: number
+}
+
+function Text3DGlyphs({ text, fontUrl, size, depth, color, shininess }: Text3DGlyphsProps) {
+  const clamped = Math.max(0, Math.min(1, shininess))
+  return (
+    <Center>
+      <Text3D font={fontUrl} size={size} height={depth} curveSegments={6} bevelEnabled={false}>
+        {text}
+        <meshStandardMaterial
+          color={color}
+          metalness={clamped * 0.8}
+          roughness={1 - clamped * 0.8}
+          emissive={color}
+          emissiveIntensity={clamped * 0.25}
+        />
+      </Text3D>
+    </Center>
+  )
+}
 
 // Position + rotation are handled by the outer SelectableWrapper (so single-
 // click selects, double-click inspects, and TransformControls can drag the
@@ -22,6 +71,9 @@ export function Text3DObjectMesh({ object }: { object: Text3DObject }) {
   const isReadOnly = useOasisStore(s => s.isViewMode && !s.isViewModeEditable)
   const text = object.text.trim()
   if (!text) return null
+
+  const fontUrl = fontUrlFor(object.fontId)
+  const styleProps = { text, size: object.size, depth: object.depth, color: object.color, shininess: object.shininess }
 
   return (
     <group
@@ -37,24 +89,17 @@ export function Text3DObjectMesh({ object }: { object: Text3DObject }) {
         setInspectedObject(object.id)
       }}
     >
-      <Center>
-        <Text3D
-          font={fontUrlFor(object.fontId)}
-          size={object.size}
-          height={object.depth}
-          curveSegments={6}
-          bevelEnabled={false}
-        >
-          {text}
-          <meshStandardMaterial
-            color={object.color}
-            metalness={Math.max(0, Math.min(1, object.shininess)) * 0.8}
-            roughness={1 - Math.max(0, Math.min(1, object.shininess)) * 0.8}
-            emissive={object.color}
-            emissiveIntensity={Math.max(0, Math.min(1, object.shininess)) * 0.25}
-          />
-        </Text3D>
-      </Center>
+      <FontErrorBoundary
+        fallback={
+          <Suspense fallback={null}>
+            <Text3DGlyphs {...styleProps} fontUrl={FALLBACK_FONT_URL} />
+          </Suspense>
+        }
+      >
+        <Suspense fallback={null}>
+          <Text3DGlyphs {...styleProps} fontUrl={fontUrl} />
+        </Suspense>
+      </FontErrorBoundary>
     </group>
   )
 }

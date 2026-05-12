@@ -560,15 +560,17 @@ const DEFAULT_TERRAIN_BRUSH_INTENSITY = 1.5
 const DEFAULT_TERRAIN_BRUSH_RADIUS = 3
 
 function captureWorldSnapshot(state: { placedCatalogAssets: CatalogPlacement[]; worldConjuredAssetIds: string[]; craftedScenes: CraftedScene[]; portalGates: PortalGate[]; spatialWebObjects: SpatialWebObject[]; paintStrokes: PaintStroke[]; text3dObjects: Text3DObject[]; transforms: Record<string, any>; behaviors: Record<string, ObjectBehavior>; groundTiles: Record<string, string>; worldLights: WorldLight[]; terrainParams: TerrainParams | null; terrainHeights: number[] }): WorldSnapshot {
-  // structuredClone for deep copy — no shared references between snapshots
-  return structuredClone({
+  // Deep-clone the small structures (transforms, behaviors, etc.) but treat
+  // paintStrokes + text3dObjects as immutable arrays — we never mutate
+  // individual strokes after addPaintStroke; subsequent operations replace
+  // the array. structuredClone'ing 20K-point strokes (240KB each) on every
+  // unrelated withUndo call would freeze the UI.
+  const cloned = structuredClone({
     placedCatalogAssets: state.placedCatalogAssets,
     worldConjuredAssetIds: state.worldConjuredAssetIds,
     craftedScenes: state.craftedScenes,
     portalGates: state.portalGates,
     spatialWebObjects: state.spatialWebObjects,
-    paintStrokes: state.paintStrokes,
-    text3dObjects: state.text3dObjects,
     transforms: state.transforms,
     behaviors: state.behaviors,
     groundTiles: state.groundTiles,
@@ -576,6 +578,11 @@ function captureWorldSnapshot(state: { placedCatalogAssets: CatalogPlacement[]; 
     terrainParams: state.terrainParams,
     terrainHeights: state.terrainHeights,
   })
+  return {
+    ...cloned,
+    paintStrokes: state.paintStrokes.slice(),
+    text3dObjects: state.text3dObjects.slice(),
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2060,23 +2067,21 @@ export const useOasisStore = create<OasisState>((set, get) => {
   setText3dPanelOpen: (open) => set({ text3dPanelOpen: open }),
   setPaintHeldActive: (active) => {
     set({ paintHeldActive: active })
-    // Transition the InputManager + force-engage pointer-lock so the wand
+    // Transition the InputManager + try to engage pointer-lock so the wand
     // feels game-armed from the first frame (crosshair, hidden cursor, mouse
-    // rotates camera). Without this, the panel UI layer blocks lock and the
-    // cursor only locks after the first canvas click — the user perceives
-    // "paint mode" as not-really-on until they finish a stroke.
+    // rotates camera). PaintBrushPanel deliberately doesn't push a UI layer
+    // so it doesn't block lock here. We do NOT pop other panels' layers
+    // (Text3D, Gemini, Realtime, etc. — they have text inputs that need
+    // keyboard suppression). If those are open, lock fails silently and
+    // the user can dismiss them to engage. requestPointerLock is also a
+    // no-op on mobile (guarded inside InputManager).
     try {
       const im = require('../lib/input-manager').useInputManager.getState()
       if (active) {
         im.transition('paint')
-        // Pop any UI layers (panel registration, etc.) so the lock can engage.
-        for (const id of [...im._uiLayerStack]) im.popUILayer(id)
-        // requestPointerLock needs a recent user gesture; the panel-open
-        // click counts. Browser may still reject if too much time passed —
-        // safe to call regardless.
         im.requestPointerLock()
       } else if (im.inputState === 'paint') {
-        // Returning to whichever camera mode we came in on (orbit / noclip /
+        // Return to whichever camera mode we came in on (orbit / noclip /
         // third-person — InputManager remembers via _previousCameraState).
         im.returnToPrevious()
       }
