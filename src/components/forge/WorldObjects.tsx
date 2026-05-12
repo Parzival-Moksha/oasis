@@ -24,7 +24,7 @@ import { PlacementVFXRenderer } from './PlacementVFX'
 import { useMovement } from '../../hooks/useMovement'
 // drei useAnimations removed — manual AnimationMixer for proper SkeletonUtils support
 import { DragContext, SettingsContext } from '../scene-lib'
-import { ASSET_CATALOG } from '../scene-lib/constants'
+import { resolveCatalogAssetDefinition } from '../scene-lib/constants'
 import { extractModelStats } from './ModelPreview'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
@@ -2941,7 +2941,7 @@ export function WorldObjectsRenderer() {
       {/* ░▒▓ Catalog assets — pre-made models from ASSET_CATALOG ▓▒░ */}
       {catalogAssets.map(ca => {
         const t = transforms[ca.id]
-        const catalogDefinition = ASSET_CATALOG.find(asset => asset.id === ca.catalogId)
+        const catalogDefinition = resolveCatalogAssetDefinition(ca.catalogId)
         const resolvedGlbPath = ca.imageUrl || ca.videoUrl || ca.audioUrl
           ? (ca.glbPath || '')
           : (catalogDefinition?.path || ca.glbPath || '')

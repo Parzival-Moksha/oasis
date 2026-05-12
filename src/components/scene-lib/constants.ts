@@ -710,7 +710,87 @@ const _BASE_ASSET_CATALOG: AssetDefinition[] = [
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const _CATALOG_DELETED_IDS = new Set<string>(((catalogExtras as { deletedIds?: string[] }).deletedIds) || [])
+export const ASSET_CATALOG_ALIASES: Record<string, string> = {
+  ...(((catalogExtras as { legacyAliases?: Record<string, string> }).legacyAliases) || {}),
+}
+
 export const ASSET_CATALOG: AssetDefinition[] = [
   ..._BASE_ASSET_CATALOG.filter(a => !_CATALOG_DELETED_IDS.has(a.id)),
   ...(((catalogExtras as { additions?: AssetDefinition[] }).additions) || []),
 ]
+
+const _ASSET_CATALOG_BY_ID = new Map(ASSET_CATALOG.map(asset => [asset.id, asset]))
+const _BASE_ASSET_CATALOG_BY_ID = new Map(_BASE_ASSET_CATALOG.map(asset => [asset.id, asset]))
+
+function activeCatalogTarget(id: string): string | undefined {
+  return _ASSET_CATALOG_BY_ID.has(id) ? id : undefined
+}
+
+function inferLegacyCatalogAlias(id: string): string | undefined {
+  if (!_CATALOG_DELETED_IDS.has(id)) return undefined
+  const asset = _BASE_ASSET_CATALOG_BY_ID.get(id)
+  if (!asset) return undefined
+
+  const haystack = `${asset.id} ${asset.name} ${asset.path} ${asset.category}`.toLowerCase()
+  const target = (...ids: string[]) => ids.find(activeCatalogTarget)
+
+  if (haystack.includes('/kenney-urban/')) {
+    if (haystack.includes('light double')) return target('light_street2')
+    if (haystack.includes('light')) return target('light_street1')
+    if (haystack.includes('bench')) return target('fantasy-props_bench', 'kf_bench')
+    if (haystack.includes('shrub')) return target('stylized-nature_bush_common')
+    if (haystack.includes('pine small')) return target('stylized-nature_pine_1')
+    if (haystack.includes('pine')) return target('stylized-nature_pine_4')
+    if (haystack.includes('tree')) return target('stylized-nature_commontree_3')
+    if (haystack.includes('grass hill')) return target('highlands_grass_03')
+    if (haystack.includes('grass')) return target('highlands_grass_01')
+    if (haystack.includes('cliff')) return target('highlands_wallmid')
+    if (haystack.includes('wall') && haystack.includes('door')) return target('qv_wall_plaster_door', 'qmv_wall_unevenbrick_door_flat')
+    if (haystack.includes('wall') && haystack.includes('window')) return target('qv_wall_plaster_window', 'qmv_wall_unevenbrick_window_wide_flat')
+    if (haystack.includes('wall')) return target('qv_wall_plaster', 'qmv_wall_unevenbrick_straight')
+    if (haystack.includes('door')) return target('qmv_door_1_flat')
+    if (haystack.includes('window')) return target('qmv_window_wide_flat1')
+    if (haystack.includes('roof')) return target('qmv_roof_wooden_2x1', 'qv_roof_roundtiles')
+    if (haystack.includes('road')) return target('qmv_floor_unevenbrick')
+    return target('qmv_floor_unevenbrick', 'qmv_floor_brick')
+  }
+
+  if (haystack.includes('/kenney-medieval/')) {
+    if (haystack.includes('tower top')) return target('qv_roof_tower', 'highlands_tower')
+    if (haystack.includes('tower')) return target('highlands_tower')
+    if (haystack.includes('battlement')) return target('highlands_wallmid', 'qv_wall_arch')
+    if (haystack.includes('wall') && (haystack.includes('door') || haystack.includes('gate'))) return target('qv_wall_plaster_door', 'qmv_wall_unevenbrick_door_flat')
+    if (haystack.includes('wall') && haystack.includes('window')) return target('qv_wall_plaster_window', 'qmv_wall_unevenbrick_window_wide_flat')
+    if (haystack.includes('wall')) return target('qv_wall_plaster', 'qmv_wall_unevenbrick_straight')
+    if (haystack.includes('roof')) return target('qv_roof_roundtiles', 'qmv_roof_roundtiles_6x8')
+    if (haystack.includes('stairs') || haystack.includes('steps')) return target('qv_stairs_exterior', 'qmv_stairs_exterior_straight_center')
+    if (haystack.includes('dock corner')) return target('qmv_floor_wooddark_overhangcorner', 'qmv_floor_wooddark')
+    if (haystack.includes('dock') || haystack.includes('wood floor')) return target('qmv_floor_wooddark')
+    if (haystack.includes('floor')) return target('qmv_floor_brick')
+    if (haystack.includes('column') || haystack.includes('structure') || haystack.includes('pole')) return target('qmv_prop_support')
+    if (haystack.includes('brick')) return target('qmv_prop_brick1', 'qmv_floor_brick')
+    if (haystack.includes('barrels')) return target('fantasy-props_barrel_holder', 'fantasy-props_barrel')
+    if (haystack.includes('barrel')) return target('fantasy-props_barrel', 'highlands_barrel')
+    if (haystack.includes('crate')) return target('qmv_prop_crate', 'fantasy-props_crate_wooden')
+    if (haystack.includes('shrub')) return target('stylized-nature_bush_common')
+    if (haystack.includes('tree')) return target('stylized-nature_commontree_3')
+    if (haystack.includes('water')) return target('qmv_floor_unevenbrick', 'highlands_grass_02')
+    return target('qmv_floor_brick')
+  }
+
+  return undefined
+}
+
+export function resolveCatalogAssetId(id: string): string {
+  let current = id
+  const seen = new Set<string>()
+  while (ASSET_CATALOG_ALIASES[current] && !seen.has(current)) {
+    seen.add(current)
+    current = ASSET_CATALOG_ALIASES[current]
+  }
+  return inferLegacyCatalogAlias(current) || current
+}
+
+export function resolveCatalogAssetDefinition(id: string): AssetDefinition | undefined {
+  return _ASSET_CATALOG_BY_ID.get(resolveCatalogAssetId(id)) || _ASSET_CATALOG_BY_ID.get(id)
+}

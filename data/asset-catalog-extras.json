@@ -255,6 +255,32 @@
     "qf_weapon_stand",
     "qf_workbench"
   ],
+  "legacyAliases": {
+    "qf_anvil_log": "fantasy-props_anvil_log",
+    "qf_barrel": "fantasy-props_barrel",
+    "qf_barrel_apples": "fantasy-props_barrel_apples",
+    "qf_banner_1": "fantasy-props_banner_1",
+    "qf_bookcase": "fantasy-props_bookcase_2",
+    "qf_bookstand": "fantasy-props_bookstand",
+    "qf_cauldron": "fantasy-props_cauldron",
+    "qf_chandelier": "fantasy-props_chandelier",
+    "qf_chest_wood": "fantasy-props_chest_wood",
+    "qf_candlestick_stand": "fantasy-props_candlestick_stand",
+    "qf_cage_small": "fantasy-props_cage_small",
+    "qf_chalice": "fantasy-props_chalice",
+    "qf_coin_pile": "fantasy-props_coin_pile",
+    "qf_dummy": "fantasy-props_dummy",
+    "qf_lantern_wall": "fantasy-props_lantern_wall",
+    "qf_potion_1": "fantasy-props_potion_1",
+    "qf_shield_wooden": "fantasy-props_shield_wooden",
+    "qf_sword_bronze": "fantasy-props_sword_bronze",
+    "qf_stall_cart": "fantasy-props_stall_cart_empty",
+    "qf_stall_empty": "fantasy-props_stall_empty",
+    "qf_table_large": "fantasy-props_table_large",
+    "qf_torch_metal": "fantasy-props_torch_metal",
+    "qf_weapon_stand": "fantasy-props_weaponstand",
+    "qf_workbench": "fantasy-props_workbench"
+  },
   "additions": [
     {
       "id": "psx_chair",
