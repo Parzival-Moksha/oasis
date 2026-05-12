@@ -19,6 +19,7 @@ const SHAREABLE_VISIBILITIES = new Set([
   'ffa',
   'only-with-link',
   'unlisted',
+  'unlisted_edit',
   'core',
   'template',
 ])
@@ -48,6 +49,8 @@ function formatVisibility(visibility?: string): string {
     case 'only-with-link':
     case 'unlisted':
       return 'Unlisted'
+    case 'unlisted_edit':
+      return 'Unlisted Sandbox'
     case 'core':
       return 'Core'
     case 'template':
@@ -149,6 +152,8 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
   const worldIcon = meta?.icon || 'O'
   const visibility = meta?.visibility
   const visibilityLabel = formatVisibility(visibility)
+  const isUnlistedVisibility = visibility === 'unlisted' || visibility === 'only-with-link' || visibility === 'unlisted_edit'
+  const unlistedFullAccess = visibility === 'unlisted_edit'
   const ownerName = meta?.ownerName || meta?.creatorName || meta?.creator_name || 'Player 1'
   const ownerAvatar = meta?.ownerAvatar || meta?.creatorAvatar || meta?.creator_avatar || null
   const ownerLevel = meta?.ownerLevel || 1
@@ -543,7 +548,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
               if (!v || v === 'private' || v === 'core' || v === 'template') return false
               if (publicFilter === 'public') return v === 'public'
               if (publicFilter === 'sandbox') return v === 'public_edit' || v === 'ffa'
-              if (publicFilter === 'unlisted') return v === 'unlisted' || v === 'only-with-link'
+              if (publicFilter === 'unlisted') return v === 'unlisted' || v === 'only-with-link' || v === 'unlisted_edit'
               return false
             }
             const publicWorlds = worldRegistry.filter(w => w.userId !== viewerUserId && filterVis(w.visibility))
@@ -621,7 +626,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
               system lands, plumb the user's level through and disable buttons
               whose `unlockedAtLevel` is higher. */}
           {(() => {
-            const sceneKind = (visibility === 'public_edit' || visibility === 'ffa')
+            const sceneKind = (visibility === 'public_edit' || visibility === 'ffa' || visibility === 'unlisted_edit')
             const canEditScene = canEditSettings || sceneKind
             type SceneButton = { id: 'sky' | 'ground' | 'lights' | 'paint' | 'text3d'; label: string; icon: string; accent: string; unlockedAtLevel: number }
             const SCENE_BUTTONS: SceneButton[] = [
@@ -693,7 +698,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
             <div className="mb-2 text-[10px] font-black uppercase tracking-[0.14em] text-white/55">Visibility</div>
             <div className="grid grid-cols-2 gap-1.5">
               {VISIBILITY_OPTIONS.map(option => {
-                const active = option.value === visibility || (option.value === 'unlisted' && visibility === 'only-with-link')
+                const active = option.value === visibility || (option.value === 'unlisted' && isUnlistedVisibility)
                 return (
                   <button
                     key={option.value}
@@ -711,6 +716,35 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
                 )
               })}
             </div>
+            {isUnlistedVisibility && (
+              <button
+                type="button"
+                onClick={() => handleVisibility(unlistedFullAccess ? 'unlisted' : 'unlisted_edit')}
+                disabled={!canEditSettings || Boolean(busyLabel)}
+                className="mt-2 flex w-full items-center justify-between gap-3 rounded-md border px-2 py-2 text-left transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-45"
+                style={{
+                  borderColor: unlistedFullAccess ? 'rgba(74,222,128,0.58)' : 'rgba(255,255,255,0.10)',
+                  background: unlistedFullAccess ? 'rgba(34,197,94,0.13)' : 'rgba(255,255,255,0.04)',
+                }}
+              >
+                <span className="min-w-0">
+                  <span className="block text-[10px] font-black uppercase tracking-[0.12em] text-white/85">Full-access link</span>
+                  <span className="mt-0.5 block text-[9px] text-white/42">anyone with this link can build</span>
+                </span>
+                <span
+                  className="relative h-5 w-9 shrink-0 rounded-full border transition"
+                  style={{
+                    borderColor: unlistedFullAccess ? 'rgba(134,239,172,0.75)' : 'rgba(255,255,255,0.16)',
+                    background: unlistedFullAccess ? 'rgba(34,197,94,0.35)' : 'rgba(255,255,255,0.08)',
+                  }}
+                >
+                  <span
+                    className="absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full bg-white transition"
+                    style={{ left: unlistedFullAccess ? '18px' : '3px' }}
+                  />
+                </span>
+              </button>
+            )}
           </div>
 
           <div className="rounded-md border border-cyan-300/15 bg-cyan-300/5 p-2">

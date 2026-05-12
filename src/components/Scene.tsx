@@ -1203,7 +1203,7 @@ const QUICK_AGENT_ITEMS: Array<{
   { type: 'anorak', label: 'CC', icon: '💻', accent: '#38BDF8', shadow: 'rgba(56,189,248,0.34)', localOnly: true },
   { type: 'codex', label: 'Codex', icon: <CodexAgentIcon />, accent: '#34D399', shadow: 'rgba(52,211,153,0.34)', localOnly: true },
   { type: 'anorak-pro', label: 'Anorak Pro', icon: '🔮', accent: '#14B8A6', shadow: 'rgba(20,184,166,0.34)', localOnly: true },
-  { type: 'realtime', label: 'Realtime', icon: '📡', accent: '#C084FC', shadow: 'rgba(192,132,252,0.34)', localOnly: true },
+  { type: 'realtime', label: 'Realtime', icon: '📡', accent: '#C084FC', shadow: 'rgba(192,132,252,0.34)' },
 ]
 
 function AgentQuickLauncher({
@@ -1532,8 +1532,12 @@ export default function Scene() {
   }
 
   // ─═̷─═̷─🎮─═̷─═̷─{ CAMERA MODE HOTKEY: C cycles orbit→noclip→third-person }─═̷─═̷─🎮─═̷─═̷─
+  // ─═̷─ When the paint wand is armed, orbit is forbidden — the cycle is
+  // ─═̷─ noclip ↔ third-person only, because orbit's "rotate around a fixed
+  // ─═̷─ target" mode makes painting at a fixed distance nonsensical.
   useEffect(() => {
-    const MODES: Array<'orbit' | 'noclip' | 'third-person'> = ['orbit', 'noclip', 'third-person']
+    const MODES_DEFAULT: Array<'orbit' | 'noclip' | 'third-person'> = ['orbit', 'noclip', 'third-person']
+    const MODES_PAINT: Array<'orbit' | 'noclip' | 'third-person'> = ['noclip', 'third-person']
     const isTypingTarget = (target: EventTarget | null) => {
       const el = target as HTMLElement | null
       if (!el) return false
@@ -1554,8 +1558,12 @@ export default function Scene() {
         && !useInputManager.getState().hasActiveUILayer()
       if (plainWorldKey) {
         e.preventDefault()
-        const idx = MODES.indexOf(controlModeRef.current)
-        const next = MODES[(idx + 1) % MODES.length]
+        const painting = useOasisStore.getState().paintHeldActive
+        const modes = painting ? MODES_PAINT : MODES_DEFAULT
+        // If current mode isn't in the allowed set (e.g. orbit while painting),
+        // jump straight to the first allowed mode instead of incrementing.
+        const idx = modes.indexOf(controlModeRef.current)
+        const next = idx === -1 ? modes[0] : modes[(idx + 1) % modes.length]
         controlModeRef.current = next
         useInputManager.getState().syncFromControlMode(next)
         useAudioManager.getState().play('modeSwitch')
@@ -1564,6 +1572,23 @@ export default function Scene() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  // ─═̷─═̷─🪄─═̷─═̷─{ PAINT WAND: orbit → noclip auto-flip when armed }─═̷─═̷─🪄─═̷─═̷─
+  // Subscribe to the paint-armed flag. When it flips on while we're in orbit,
+  // switch to noclip so the wand actually works. Leaving paint mode does NOT
+  // automatically restore orbit — the user is free to stay in noclip / TP.
+  useEffect(() => {
+    const unsubscribe = useOasisStore.subscribe(
+      (state, prev) => {
+        if (state.paintHeldActive && !prev?.paintHeldActive && controlModeRef.current === 'orbit') {
+          controlModeRef.current = 'noclip'
+          useInputManager.getState().syncFromControlMode('noclip')
+          setSettings(prev => ({ ...prev, controlMode: 'noclip' }))
+        }
+      },
+    )
+    return () => unsubscribe()
   }, [])
 
   // ─═̷─═̷─🎯─═̷─═̷─{ POINTER LOCK — owned by InputManager }─═̷─═̷─🎯─═̷─═̷─
@@ -1888,12 +1913,10 @@ export default function Scene() {
         isOpen={geminiOpen}
         onClose={() => setGeminiOpen(false)}
       />
-      {canUseLocalPanels && (
-        <RealtimePanel
-          isOpen={realtimeOpen}
-          onClose={() => setRealtimeOpen(false)}
-        />
-      )}
+      <RealtimePanel
+        isOpen={realtimeOpen}
+        onClose={() => setRealtimeOpen(false)}
+      />
       {canUseLocalPanels && (
         <LipSyncLabPanel
           isOpen={lipSyncLabOpen}

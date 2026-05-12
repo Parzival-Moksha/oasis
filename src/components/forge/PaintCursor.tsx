@@ -56,9 +56,14 @@ export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps)
   const lastSampleRef = useRef<[number, number, number] | null>(null)
   const pointCountRef = useRef(0)
   const allPointsRef = useRef<number[]>([])
-  // Pinned references so the stroke style for the current drag is locked in
-  // at pointerdown (prevents mid-stroke style shifts if the user wiggles UI).
+  // Pinned style for the current drag — locked at pointerdown so panel wiggles
+  // mid-stroke don't change thickness/color halfway through.
   const styleRef = useRef(settings)
+  // Live settings ref — read inside event handlers so the effect can keep its
+  // dep array short (without this, every panel tweak retears down the capture
+  // listeners and a pending pointer-capture token could get lost).
+  const liveSettingsRef = useRef(settings)
+  useEffect(() => { liveSettingsRef.current = settings }, [settings])
 
   useEffect(() => {
     if (!active) {
@@ -93,10 +98,17 @@ export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps)
 
     const sampleIfDue = (point: [number, number, number]): boolean => {
       const now = performance.now()
-      if (now - lastSampleAtRef.current < SAMPLE_INTERVAL_MS) return false
+      const dueByTime = now - lastSampleAtRef.current >= SAMPLE_INTERVAL_MS
       const last = lastSampleRef.current
-      if (last && distanceBetween(point, last) < PAINT_MIN_POINT_DISTANCE) return false
+      const dueByDistance = !last || distanceBetween(point, last) >= PAINT_MIN_POINT_DISTANCE
+      // OR-gate the filters (used to be AND): slow careful artistic drags
+      // could starve forever waiting for 10cm net travel between frames.
+      // Now we sample when EITHER the cadence elapsed OR the distance hit.
+      // The PAINT_MAX_POINTS cap still bounds total stroke complexity.
+      if (!dueByTime && !dueByDistance) return false
       if (pointCountRef.current >= PAINT_MAX_POINTS) return false
+      // Avoid coincident-point geometry NaNs: skip if literally identical.
+      if (last && distanceBetween(point, last) < 1e-4) return false
       lastSampleAtRef.current = now
       lastSampleRef.current = point
       pointCountRef.current += 1
@@ -107,8 +119,9 @@ export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps)
     const onPointerDown = (event: PointerEvent) => {
       if (event.button !== 0) return
       // Lock in style for this stroke; capture pointer so move/up land on us
-      // even if the cursor leaves the canvas mid-drag.
-      styleRef.current = settings
+      // even if the cursor leaves the canvas mid-drag. Use the live ref so a
+      // stale closure can't pin yesterday's settings to today's stroke.
+      styleRef.current = liveSettingsRef.current
       const startPoint = projectPointerToWorld(event.clientX, event.clientY)
       if (!startPoint) return
       event.preventDefault()
@@ -185,7 +198,12 @@ export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps)
       dom.removeEventListener('pointerup', onPointerUp, { capture: true } as EventListenerOptions)
       dom.removeEventListener('pointercancel', onPointerCancel, { capture: true } as EventListenerOptions)
     }
-  }, [active, authorId, authorColor, gl, camera, settings])
+    // `settings` is intentionally NOT in the dep array — read via
+    // liveSettingsRef inside the handlers. Otherwise we'd retear down every
+    // listener on every panel slider change, possibly losing in-flight
+    // pointer capture mid-stroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, authorId, authorColor, gl, camera])
 
   function finishStroke() {
     const strokeId = strokeIdRef.current

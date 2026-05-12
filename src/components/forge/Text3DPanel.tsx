@@ -5,7 +5,7 @@
 
 'use client'
 
-import { useCallback, useContext, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useContext, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import * as THREE from 'three'
 
@@ -55,8 +55,23 @@ export function Text3DPanel() {
 
   const [panelPosition, setPanelPosition] = useState<PanelPosition>(getInitialPanelPosition)
   const dragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null)
+  const bringPanelToFront = useOasisStore(s => s.bringPanelToFront)
+  const panelZIndex = useOasisStore(s => s.getPanelZIndex('text3d-panel', 9996))
 
   useUILayer('text3d-panel', isOpen)
+
+  useEffect(() => {
+    if (!isOpen) return
+    const onResize = () => {
+      setPanelPosition(current => {
+        const clamped = clampPanelPosition(current)
+        try { localStorage.setItem(PANEL_POSITION_KEY, JSON.stringify(clamped)) } catch {}
+        return clamped
+      })
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [isOpen])
 
   const close = useCallback(() => setOpen(false), [setOpen])
 
@@ -139,12 +154,13 @@ export function Text3DPanel() {
       style={{
         left: panelPosition.x,
         top: panelPosition.y,
-        zIndex: 9996,
+        zIndex: panelZIndex,
         background: `rgba(18, 13, 6, ${Math.max(0.72, uiSettings.uiOpacity ?? 0.85)})`,
         color: '#fff3d6',
         backdropFilter: 'blur(16px)',
         boxShadow: '0 18px 60px rgba(0,0,0,0.45), 0 0 28px rgba(245,158,11,0.18)',
       }}
+      onMouseDown={() => bringPanelToFront('text3d-panel')}
       onPointerDown={event => event.stopPropagation()}
       onClick={event => event.stopPropagation()}
     >

@@ -537,6 +537,8 @@ export interface WorldSnapshot {
   craftedScenes: CraftedScene[]
   portalGates: PortalGate[]
   spatialWebObjects: SpatialWebObject[]
+  paintStrokes: PaintStroke[]
+  text3dObjects: Text3DObject[]
   transforms: Record<string, { position?: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number }>
   behaviors: Record<string, ObjectBehavior>
   groundTiles: Record<string, string>
@@ -557,7 +559,7 @@ const MAX_UNDO_STACK = 20
 const DEFAULT_TERRAIN_BRUSH_INTENSITY = 1.5
 const DEFAULT_TERRAIN_BRUSH_RADIUS = 3
 
-function captureWorldSnapshot(state: { placedCatalogAssets: CatalogPlacement[]; worldConjuredAssetIds: string[]; craftedScenes: CraftedScene[]; portalGates: PortalGate[]; spatialWebObjects: SpatialWebObject[]; transforms: Record<string, any>; behaviors: Record<string, ObjectBehavior>; groundTiles: Record<string, string>; worldLights: WorldLight[]; terrainParams: TerrainParams | null; terrainHeights: number[] }): WorldSnapshot {
+function captureWorldSnapshot(state: { placedCatalogAssets: CatalogPlacement[]; worldConjuredAssetIds: string[]; craftedScenes: CraftedScene[]; portalGates: PortalGate[]; spatialWebObjects: SpatialWebObject[]; paintStrokes: PaintStroke[]; text3dObjects: Text3DObject[]; transforms: Record<string, any>; behaviors: Record<string, ObjectBehavior>; groundTiles: Record<string, string>; worldLights: WorldLight[]; terrainParams: TerrainParams | null; terrainHeights: number[] }): WorldSnapshot {
   // structuredClone for deep copy — no shared references between snapshots
   return structuredClone({
     placedCatalogAssets: state.placedCatalogAssets,
@@ -565,6 +567,8 @@ function captureWorldSnapshot(state: { placedCatalogAssets: CatalogPlacement[]; 
     craftedScenes: state.craftedScenes,
     portalGates: state.portalGates,
     spatialWebObjects: state.spatialWebObjects,
+    paintStrokes: state.paintStrokes,
+    text3dObjects: state.text3dObjects,
     transforms: state.transforms,
     behaviors: state.behaviors,
     groundTiles: state.groundTiles,
@@ -684,9 +688,9 @@ interface OasisState {
   // ─═̷─═̷─👁️ VIEW MODE — read-only access to other users' worlds ─═̷─═̷─👁️
   isViewMode: boolean
   viewingWorldMeta: ViewingWorldMeta | null
-  /** True when viewing a public_edit world — editing tools stay enabled */
+  /** True when viewing an open-build world - editing tools stay enabled */
   isViewModeEditable: boolean
-  /** The world ID being viewed (needed for saving to public_edit worlds) */
+  /** The world ID being viewed (needed for saving open-build worlds) */
   viewingWorldId: string | null
 
   // ─═̷─═̷─🪟 PANEL Z-ORDERING — last clicked = highest z-index ─═̷─═̷─🪟
@@ -2039,7 +2043,20 @@ export const useOasisStore = create<OasisState>((set, get) => {
   },
 
   // ─═̷─═̷─🎨 PAINT TOOL UI ACTIONS ─═̷─═̷─🎨
-  setPaintBrushPanelOpen: (open) => set({ paintBrushPanelOpen: open }),
+  setPaintBrushPanelOpen: (open) => {
+    // Mutual exclusion: opening the paint wand retracts the terrain brush
+    // (both want canvas pointer events + the InputManager 'paint' state).
+    // Also exit any in-progress ground-paint or sculpt mode + cancel a
+    // pending object placement.
+    set(open ? {
+      paintBrushPanelOpen: true,
+      terrainBrushPanelOpen: false,
+      paintMode: false,
+      paintBrushPresetId: null,
+      terrainBrushMode: 'texture' as TerrainBrushMode,
+      placementPending: null,
+    } : { paintBrushPanelOpen: false })
+  },
   setText3dPanelOpen: (open) => set({ text3dPanelOpen: open }),
   setPaintHeldActive: (active) => {
     set({ paintHeldActive: active })
@@ -2462,7 +2479,10 @@ export const useOasisStore = create<OasisState>((set, get) => {
   setTerrainBrushPanelOpen: (terrainBrushPanelOpen) => {
     set({
       terrainBrushPanelOpen,
-      ...(terrainBrushPanelOpen ? {} : {
+      // Mutual exclusion: opening the terrain brush retracts the paint wand
+      // (both compete for canvas pointer events; the InputManager 'paint'
+      // state would also collide). Closing terrain leaves paint untouched.
+      ...(terrainBrushPanelOpen ? { paintBrushPanelOpen: false, paintHeldActive: false } : {
         terrainBrushMode: 'texture' as TerrainBrushMode,
         paintMode: false,
         paintBrushPresetId: null,
@@ -2931,7 +2951,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     }
   },
   saveWorldState: () => {
-    // Don't save read-only viewed worlds — but DO save public_edit worlds
+    // Don't save read-only viewed worlds, but do save open-build worlds.
     if (get().isViewMode && !get().isViewModeEditable) return
     // Skip saves while applying a remote update — prevents echo loop
     if (get()._isReceivingRemoteUpdate) return
@@ -2985,7 +3005,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       agentWindows: normalizedAgentWorldState.windows,
       agentAvatars: normalizedAgentWorldState.avatars,
     }
-    // If editing a public_edit world, save to THAT world (not user's own)
+    // If editing an open-build world, save to THAT world (not user's own).
     if (get().isViewModeEditable && viewingWorldId) {
       saveWorld(worldState, viewingWorldId) // direct save to viewed world
     } else {
@@ -3658,8 +3678,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
         return
       }
       const { state, meta } = result
-      // Only allow editing if caller permits AND world is FFA/open-build.
-      const isEditable = allowEdit && (meta.visibility === 'public_edit' || meta.visibility === 'ffa')
+      // Only allow editing if caller permits AND world is open-build.
+      const isEditable = allowEdit && (
+        meta.visibility === 'public_edit' ||
+        meta.visibility === 'ffa' ||
+        meta.visibility === 'unlisted_edit'
+      )
       const defaultLights: WorldLight[] = DEFAULT_WORLD_LIGHTS.map((l, i) => ({ ...l, id: `light-${l.type}-default-${i}`, visible: true } as WorldLight))
       const lights = state.lights !== undefined ? state.lights : defaultLights
       const portalGates = resolveDefaultPortalGates(worldId, state.portalGates, state.transforms)
@@ -3672,7 +3696,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         transforms: state.transforms || {},
       })
       set({
-        _worldReady: isEditable, // Only allow saves for authenticated public_edit
+        _worldReady: isEditable, // Only allow saves for authenticated open-build worlds
         _loadedObjectCount: viewObjCount,
         isViewModeEditable: isEditable,
         viewingWorldMeta: meta,

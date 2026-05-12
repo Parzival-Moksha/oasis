@@ -46,8 +46,25 @@ export function PaintBrushPanel() {
 
   const [panelPosition, setPanelPosition] = useState<PanelPosition>(getInitialPanelPosition)
   const dragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null)
+  const bringPanelToFront = useOasisStore(s => s.bringPanelToFront)
+  const panelZIndex = useOasisStore(s => s.getPanelZIndex('paint-brush-panel', 9996))
 
   useUILayer('paint-brush-panel', isOpen)
+
+  // Re-clamp panel position if the viewport shrinks so the user can always
+  // grab the header back. Mirrors TerrainBrushPanel's effect.
+  useEffect(() => {
+    if (!isOpen) return
+    const onResize = () => {
+      setPanelPosition(current => {
+        const clamped = clampPanelPosition(current)
+        try { localStorage.setItem(PANEL_POSITION_KEY, JSON.stringify(clamped)) } catch {}
+        return clamped
+      })
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [isOpen])
 
   // Auto-arm paint mode when the panel opens; release on close OR unmount.
   // Unmount-release matters: if hideEditTools flips true (visibility change,
@@ -111,12 +128,13 @@ export function PaintBrushPanel() {
       style={{
         left: panelPosition.x,
         top: panelPosition.y,
-        zIndex: 9996,
+        zIndex: panelZIndex,
         background: `rgba(15, 7, 18, ${Math.max(0.72, uiSettings.uiOpacity ?? 0.85)})`,
         color: '#f5e1ff',
         backdropFilter: 'blur(16px)',
         boxShadow: '0 18px 60px rgba(0,0,0,0.45), 0 0 28px rgba(217,70,239,0.18)',
       }}
+      onMouseDown={() => bringPanelToFront('paint-brush-panel')}
       onPointerDown={event => event.stopPropagation()}
       onClick={event => event.stopPropagation()}
     >

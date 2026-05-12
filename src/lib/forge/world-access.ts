@@ -4,6 +4,7 @@ export type WorldKind =
   | 'core'
   | 'template'
   | 'ffa'
+  | 'link-ffa'
   | 'public'
   | 'only-with-link'
   | 'private'
@@ -12,6 +13,7 @@ export type StoredWorldVisibility =
   | WorldKind
   | 'public_edit'
   | 'unlisted'
+  | 'unlisted_edit'
 
 export type WorldWriteDecision = 'write' | 'fork' | 'deny'
 
@@ -47,6 +49,7 @@ export const PUBLICLY_READABLE_VISIBILITIES: StoredWorldVisibility[] = [
   'public',
   'only-with-link',
   'unlisted',
+  'unlisted_edit',
 ]
 
 export const DISCOVERABLE_VISIBILITIES: StoredWorldVisibility[] = [
@@ -57,7 +60,7 @@ export const DISCOVERABLE_VISIBILITIES: StoredWorldVisibility[] = [
   'public',
 ]
 
-export const FFA_VISIBILITIES: StoredWorldVisibility[] = ['ffa', 'public_edit']
+export const FFA_VISIBILITIES: StoredWorldVisibility[] = ['ffa', 'public_edit', 'unlisted_edit']
 
 export function normalizeWorldKind(visibility: string | null | undefined): WorldKind {
   switch ((visibility || 'private').trim()) {
@@ -68,6 +71,9 @@ export function normalizeWorldKind(visibility: string | null | undefined): World
     case 'ffa':
     case 'public_edit':
       return 'ffa'
+    case 'link-ffa':
+    case 'unlisted_edit':
+      return 'link-ffa'
     case 'public':
       return 'public'
     case 'only-with-link':
@@ -88,6 +94,9 @@ export function toStorageVisibility(input: string | null | undefined): StoredWor
     case 'ffa':
     case 'public_edit':
       return 'public_edit'
+    case 'link-ffa':
+    case 'unlisted_edit':
+      return 'unlisted_edit'
     case 'public':
       return 'public'
     case 'only-with-link':
@@ -125,6 +134,7 @@ export function canReadWorld(ctx: WorldAccessContext, world: WorldAccessSubject)
     kind === 'core' ||
     kind === 'template' ||
     kind === 'ffa' ||
+    kind === 'link-ffa' ||
     kind === 'public' ||
     kind === 'only-with-link'
   )
@@ -139,7 +149,7 @@ export function getWorldWriteDecision(
   const kind = normalizeWorldKind(world.visibility)
   if (kind === 'core') return 'deny'
   if (kind === 'template') return 'fork'
-  if (kind === 'ffa') return 'write'
+  if (kind === 'ffa' || kind === 'link-ffa') return 'write'
   if (isWorldOwner(ctx, world)) return 'write'
   return 'deny'
 }

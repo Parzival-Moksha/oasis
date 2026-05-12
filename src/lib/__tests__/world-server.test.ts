@@ -99,6 +99,7 @@ describe('world-server access enforcement', () => {
       worldRow({ id: 'welcome-core', userId: 'system', visibility: 'core' }),
       worldRow({ id: 'public-world', userId: 'user-b', visibility: 'public' }),
       worldRow({ id: 'link-only', userId: 'user-b', visibility: 'unlisted' }),
+      worldRow({ id: 'link-build', userId: 'user-b', visibility: 'unlisted_edit' }),
     ])
 
     const registry = await getRegistry('user-a')
@@ -251,6 +252,23 @@ describe('world-server access enforcement', () => {
     expect(result).toMatchObject({ saved: true, worldId: 'ffa-1' })
     expect(vi.mocked(prisma.world.update).mock.calls[0]?.[0]).toMatchObject({
       where: { id: 'ffa-1' },
+      data: { objectCount: 1 },
+    })
+  })
+
+  it('allows hosted link-build writes by non-owners without making them discoverable', async () => {
+    const current = state({ catalogPlacements: [{ id: 'cat-1' } as any] })
+    vi.mocked(prisma.world.findFirst)
+      .mockResolvedValueOnce(worldRow({ id: 'link-build-1', userId: 'user-b', visibility: 'unlisted_edit' }))
+      .mockResolvedValueOnce({ data: JSON.stringify(current) } as any)
+    vi.mocked(prisma.worldSnapshot.findFirst).mockResolvedValue(null)
+    vi.mocked(prisma.world.update).mockResolvedValue(worldRow({ id: 'link-build-1', visibility: 'unlisted_edit' }))
+
+    const result = await saveWorld('link-build-1', 'user-a', current)
+
+    expect(result).toMatchObject({ saved: true, worldId: 'link-build-1' })
+    expect(vi.mocked(prisma.world.update).mock.calls[0]?.[0]).toMatchObject({
+      where: { id: 'link-build-1' },
       data: { objectCount: 1 },
     })
   })

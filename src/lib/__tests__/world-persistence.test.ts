@@ -496,7 +496,7 @@ describe('WorldPersistence', () => {
     })
 
     it('supports all visibility modes', () => {
-      const modes: WorldMeta['visibility'][] = ['private', 'public', 'unlisted', 'public_edit']
+      const modes: WorldMeta['visibility'][] = ['private', 'public', 'unlisted', 'unlisted_edit', 'public_edit']
       modes.forEach(v => {
         const meta: WorldMeta = { id: 'x', name: 'X', icon: '🌍', visibility: v, createdAt: '', lastSavedAt: '' }
         expect(meta.visibility).toBe(v)

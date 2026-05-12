@@ -3042,39 +3042,54 @@ export function WorldObjectsRenderer() {
 
 function PaintStrokesSection() {
   const paintStrokes = useOasisStore(s => s.paintStrokes)
-  const strokePlayback = useOasisStore(s => s.paintStrokePlayback)
-  const setInspectedObject = useOasisStore(s => s.setInspectedObject)
+  const selectedObjectId = useOasisStore(s => s.selectedObjectId)
+  const selectObject = useOasisStore(s => s.selectObject)
   return (
     <>
       <PaintStrokePlaybackTicker />
-      {paintStrokes.map(stroke => {
-        const playback = strokePlayback?.[stroke.id]
-        return (
-          <group
-            key={stroke.id}
-            onPointerDown={event => {
-              if (event.button !== 0) return
-              if ((event as unknown as { detail?: number }).detail === 2) {
-                event.stopPropagation()
-                setInspectedObject(stroke.id)
-              }
-            }}
-          >
-            <PaintStrokeMesh
-              points={stroke.points}
-              color={stroke.color}
-              thickness={stroke.thickness}
-              shininess={stroke.shininess}
-              mode={stroke.mode}
-              varyByVelocity={stroke.varyByVelocity}
-              progress={playback?.progress}
-              showLeadingSparkler={playback !== undefined && (playback.progress ?? 0) < 1}
-              leadingSparklerColor={stroke.authorColor || stroke.color}
-            />
-          </group>
-        )
-      })}
+      {paintStrokes.map(stroke => (
+        <PersistedPaintStroke
+          key={stroke.id}
+          stroke={stroke}
+          selected={selectedObjectId === stroke.id}
+          onSelect={selectObject}
+        />
+      ))}
     </>
+  )
+}
+
+// Per-stroke wrapper. Each one subscribes ONLY to its own playback entry so a
+// single stroke's per-frame progress update doesn't re-render every other
+// stroke in the world. Strokes opt out of TransformControls — the editable
+// thing is the underlying point list, not a single transform.
+function PersistedPaintStroke({ stroke, selected, onSelect }: {
+  stroke: import('@/lib/forge/paint-stroke').PaintStroke
+  selected: boolean
+  onSelect: (id: string | null) => void
+}) {
+  const playback = useOasisStore(s => s.paintStrokePlayback?.[stroke.id])
+  return (
+    <SelectableWrapper
+      id={stroke.id}
+      selected={selected}
+      onSelect={onSelect}
+      transformMode="translate"
+      onTransformChange={() => { /* paint strokes are point-anchored — no group transform */ }}
+      allowTransform={false}
+    >
+      <PaintStrokeMesh
+        points={stroke.points}
+        color={stroke.color}
+        thickness={stroke.thickness}
+        shininess={stroke.shininess}
+        mode={stroke.mode}
+        varyByVelocity={stroke.varyByVelocity}
+        progress={playback?.progress}
+        showLeadingSparkler={playback !== undefined && (playback.progress ?? 0) < 1}
+        leadingSparklerColor={stroke.authorColor || stroke.color}
+      />
+    </SelectableWrapper>
   )
 }
 
@@ -3085,13 +3100,15 @@ function PaintStrokePlaybackTicker() {
     const entries = Object.entries(useOasisStore.getState().paintStrokePlayback || {})
     if (entries.length === 0) return
     const now = performance.now()
-    for (const [id, { startedAt, durationSec }] of entries) {
+    for (const [id, { startedAt, durationSec, progress }] of entries) {
       const elapsed = (now - startedAt) / 1000
       const next = elapsed / Math.max(0.001, durationSec)
       if (next >= 1) {
-        // Hold "fully revealed" for half a second, then clear.
+        // Hold "fully revealed" for half a second, then clear. Skip the no-op
+        // setProgress write when we're already at 1.0 — otherwise we burn
+        // 30+ frames of re-renders for nothing.
         if (elapsed > durationSec + 0.5) stopPlayback(id)
-        else setProgress(id, 1)
+        else if (progress !== 1) setProgress(id, 1)
       } else {
         setProgress(id, next)
       }
@@ -3106,12 +3123,31 @@ function PaintStrokePlaybackTicker() {
 
 function Text3DSection() {
   const text3dObjects = useOasisStore(s => s.text3dObjects)
+  const selectedObjectId = useOasisStore(s => s.selectedObjectId)
+  const selectObject = useOasisStore(s => s.selectObject)
+  const setObjectTransform = useOasisStore(s => s.setObjectTransform)
+  const transforms = useOasisStore(s => s.transforms)
+  const transformMode = useOasisStore(s => s.transformMode)
   if (text3dObjects.length === 0) return null
   return (
     <>
-      {text3dObjects.map(object => (
-        <Text3DObjectMesh key={object.id} object={object} />
-      ))}
+      {text3dObjects.map(object => {
+        const t = transforms[object.id]
+        return (
+          <SelectableWrapper
+            key={object.id}
+            id={object.id}
+            selected={selectedObjectId === object.id}
+            onSelect={selectObject}
+            transformMode={transformMode}
+            onTransformChange={(id, position, rotation, scale) => setObjectTransform(id, { position, rotation, scale })}
+            initialPosition={t?.position || object.position}
+            initialRotation={t?.rotation || object.rotation}
+          >
+            <Text3DObjectMesh object={object} />
+          </SelectableWrapper>
+        )
+      })}
     </>
   )
 }

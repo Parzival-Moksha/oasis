@@ -22,6 +22,7 @@ describe('world access policy', () => {
   it('normalizes legacy visibility names to hosted product kinds', () => {
     expect(normalizeWorldKind('public_edit')).toBe('ffa')
     expect(normalizeWorldKind('ffa')).toBe('ffa')
+    expect(normalizeWorldKind('unlisted_edit')).toBe('link-ffa')
     expect(normalizeWorldKind('unlisted')).toBe('only-with-link')
     expect(normalizeWorldKind('only-with-link')).toBe('only-with-link')
     expect(normalizeWorldKind('core')).toBe('core')
@@ -31,6 +32,8 @@ describe('world access policy', () => {
 
   it('stores new public product names through backwards-compatible values', () => {
     expect(toStorageVisibility('ffa')).toBe('public_edit')
+    expect(toStorageVisibility('link-ffa')).toBe('unlisted_edit')
+    expect(toStorageVisibility('unlisted_edit')).toBe('unlisted_edit')
     expect(toStorageVisibility('only-with-link')).toBe('unlisted')
     expect(toStorageVisibility('core')).toBe('core')
     expect(toStorageVisibility('template')).toBe('template')
@@ -43,11 +46,13 @@ describe('world access policy', () => {
     expect(canDiscoverWorld(hostedUser, world('public'))).toBe(true)
     expect(canDiscoverWorld(hostedUser, world('public_edit'))).toBe(true)
     expect(canDiscoverWorld(hostedUser, world('unlisted'))).toBe(false)
+    expect(canDiscoverWorld(hostedUser, world('unlisted_edit'))).toBe(false)
     expect(canDiscoverWorld(hostedUser, world('private'))).toBe(false)
   })
 
   it('lets hosted sessions read link-only worlds by id without exposing private worlds', () => {
     expect(canReadWorld(hostedUser, world('unlisted'))).toBe(true)
+    expect(canReadWorld(hostedUser, world('unlisted_edit'))).toBe(true)
     expect(canReadWorld(hostedUser, world('only-with-link'))).toBe(true)
     expect(canReadWorld(hostedUser, world('private'))).toBe(false)
     expect(canReadWorld(hostedUser, world('private', 'user-a'))).toBe(true)
@@ -67,8 +72,11 @@ describe('world access policy', () => {
   it('allows FFA writes while preserving settings ownership', () => {
     expect(getWorldWriteDecision(hostedUser, world('public_edit'))).toBe('write')
     expect(getWorldWriteDecision(hostedUser, world('ffa'))).toBe('write')
+    expect(getWorldWriteDecision(hostedUser, world('unlisted_edit'))).toBe('write')
     expect(canEditWorldSettings(hostedUser, world('ffa'))).toBe(false)
+    expect(canEditWorldSettings(hostedUser, world('unlisted_edit'))).toBe(false)
     expect(canEditWorldSettings(hostedUser, world('ffa', 'user-a'))).toBe(true)
+    expect(canEditWorldSettings(hostedUser, world('unlisted_edit', 'user-a'))).toBe(true)
   })
 
   it('keeps local mode permissive for normal non-system worlds', () => {

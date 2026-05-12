@@ -38,7 +38,7 @@ import { PORTAL_GATE_VARIANT_DEFS, type PortalAction, type PortalGateVariant } f
 import { portalThumbPath } from '../../lib/portal-thumbnails'
 import { PortalTransitionSettingsPanel } from './PortalTransitionSettingsPanel'
 import { createSpatialWebObjectFromTemplate, SPATIAL_WEB_ASSET_TEMPLATES } from '../../lib/spatial-web-presets'
-import { useIsHostedOasis, useOasisCapabilities } from '@/lib/oasis-mode-client'
+import { useOasisCapabilities } from '@/lib/oasis-mode-client'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 
@@ -1186,6 +1186,11 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
   const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
   const removeAgentWindow = useOasisStore(s => s.removeAgentWindow)
   const focusAgentWindow = useOasisStore(s => s.focusAgentWindow)
+  const paintStrokes = useOasisStore(s => s.paintStrokes)
+  const removePaintStroke = useOasisStore(s => s.removePaintStroke)
+  const playPaintStroke = useOasisStore(s => s.playPaintStroke)
+  const text3dObjects = useOasisStore(s => s.text3dObjects)
+  const removeText3dObject = useOasisStore(s => s.removeText3dObject)
   const generatedImages = useOasisStore(s => s.generatedImages)
   const removeGeneratedImage = useOasisStore(s => s.removeGeneratedImage)
   const addCustomGroundPreset = useOasisStore(s => s.addCustomGroundPreset)
@@ -3073,6 +3078,94 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
                   </>
                 )}
 
+                {/* ── PAINT STROKES — wizardry tubes/lines drawn in 3-space ── */}
+                {paintStrokes.length > 0 && (
+                  <div className="text-[9px] text-fuchsia-400/60 uppercase tracking-wider font-mono mt-2 mb-0.5">🪄 Strokes ({paintStrokes.length})</div>
+                )}
+                {paintStrokes.map(stroke => {
+                  const isSelected = selectedObjectId === stroke.id
+                  const pointCount = Math.floor(stroke.points.length / 3)
+                  const firstPos: [number, number, number] | null = pointCount > 0
+                    ? [stroke.points[0], stroke.points[1], stroke.points[2]]
+                    : null
+                  return (
+                    <div
+                      key={stroke.id}
+                      className={`rounded-lg border p-2 flex items-center justify-between cursor-pointer transition-all duration-200 ${
+                        isSelected ? 'border-blue-500/50 bg-blue-500/10' : 'border-gray-700/20 hover:border-fuchsia-500/30'
+                      }`}
+                      style={{ background: isSelected ? undefined : 'rgba(15, 15, 15, 0.8)' }}
+                      onClick={() => {
+                        if (isSelected) { selectObject(null); setInspectedObject(null) }
+                        else {
+                          selectObject(stroke.id); setInspectedObject(stroke.id)
+                          if (firstPos) setCameraLookAt(firstPos)
+                        }
+                      }}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm">🪄</span>
+                        <span className="text-[11px] text-gray-200">{stroke.mode === '3d' ? 'tube' : 'line'}</span>
+                        <span className="text-[9px] text-gray-400">{pointCount} pts</span>
+                        <div className="w-3 h-3 rounded-full border border-gray-700/30" style={{ backgroundColor: stroke.color }} />
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); playPaintStroke(stroke.id, 4) }}
+                          className="text-[9px] text-fuchsia-300 hover:text-fuchsia-200 font-mono transition-colors"
+                          title="Play back this stroke over 4s"
+                        >
+                          ▶
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); removePaintStroke(stroke.id) }}
+                          className="text-gray-500 hover:text-red-400 text-xs"
+                        >
+                          &#10005;
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {/* ── 3D TEXT — extruded shiny words placed in 3-space ── */}
+                {text3dObjects.length > 0 && (
+                  <div className="text-[9px] text-amber-400/60 uppercase tracking-wider font-mono mt-2 mb-0.5">🔤 Text ({text3dObjects.length})</div>
+                )}
+                {text3dObjects.map(t3d => {
+                  const isSelected = selectedObjectId === t3d.id
+                  const pos = transforms[t3d.id]?.position || t3d.position
+                  const preview = t3d.text.replace(/\s+/g, ' ').trim().slice(0, 28) || '(empty)'
+                  return (
+                    <div
+                      key={t3d.id}
+                      className={`rounded-lg border p-2 flex items-center justify-between cursor-pointer transition-all duration-200 ${
+                        isSelected ? 'border-blue-500/50 bg-blue-500/10' : 'border-gray-700/20 hover:border-amber-500/30'
+                      }`}
+                      style={{ background: isSelected ? undefined : 'rgba(15, 15, 15, 0.8)' }}
+                      onClick={() => {
+                        if (isSelected) { selectObject(null); setInspectedObject(null) }
+                        else {
+                          selectObject(t3d.id); setInspectedObject(t3d.id)
+                          if (pos) setCameraLookAt(pos)
+                        }
+                      }}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-sm">🔤</span>
+                        <span className="text-[11px] text-gray-200 truncate" title={t3d.text}>{preview}</span>
+                        <div className="w-3 h-3 rounded-full border border-gray-700/30 shrink-0" style={{ backgroundColor: t3d.color }} />
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); removeText3dObject(t3d.id) }}
+                        className="text-gray-500 hover:text-red-400 text-xs shrink-0"
+                      >
+                        &#10005;
+                      </button>
+                    </div>
+                  )
+                })}
+
                 {worldLights.length > 0 && (
                   <div className="text-[9px] text-yellow-400/60 uppercase tracking-wider font-mono mt-2 mb-0.5">💡 Lights ({worldLights.length})</div>
                 )}
@@ -3680,7 +3773,6 @@ function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject
   selectedObjectId: string | null
   transforms: Record<string, { position?: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number }>
 }) {
-  const hostedMode = useIsHostedOasis()
   const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
   const placedAgentAvatars = useOasisStore(s => s.placedAgentAvatars)
   const removeAgentWindow = useOasisStore(s => s.removeAgentWindow)
@@ -3702,9 +3794,7 @@ function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject
           ── Deploy Agent ──
         </span>
         <div className="grid grid-cols-3 gap-1.5 mt-2">
-          {DEPLOYABLE_AGENT_TYPES
-            .filter(agent => !hostedMode || agent.type !== 'realtime')
-            .map(agent => (
+          {DEPLOYABLE_AGENT_TYPES.map(agent => (
             <button
               key={agent.type}
               onClick={() => enterPlacementMode({ type: 'agent', name: agent.label, agentType: agent.type })}

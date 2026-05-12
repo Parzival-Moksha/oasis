@@ -20,6 +20,7 @@ import { PlayerAvatar } from '../forge/PlayerAvatar'
 import { PortalGateLayer } from '../forge/PortalGateLayer'
 import { MultiplayerPresenceLayer } from '../forge/MultiplayerPresenceLayer'
 import { PaintCursor } from '../forge/PaintCursor'
+import { colorForPlayerId } from '../../lib/multiplayer-color'
 import { SettingsContext } from '../scene-lib'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -132,16 +133,13 @@ export function ForgeRealm() {
 
 function ForgePaintCursor() {
   const active = useOasisStore(s => s.paintHeldActive)
-  // Stable per-tab id — reuse the multiplayer presence id key for color consistency.
+  // Stable per-tab id — reuse the multiplayer presence id key for color
+  // consistency. colorForPlayerId is the single source of truth (peers'
+  // RemoteVRMAvatar uses the same hash).
   const id = typeof window !== 'undefined'
     ? (window.sessionStorage.getItem('oasis-presence-player-id') || 'local')
     : 'local'
-  // Naive author color — palette match could be tightened by reading from
-  // multiplayer-presence color hash; for now derive from id like presence does.
-  const palette = ['#38bdf8', '#fb7185', '#facc15', '#22c55e', '#a78bfa', '#f97316', '#2dd4bf', '#e879f9']
-  let hash = 0
-  for (let i = 0; i < id.length; i += 1) hash = ((hash << 5) - hash + id.charCodeAt(i)) | 0
-  const color = palette[Math.abs(hash) % palette.length]
+  const color = colorForPlayerId(id)
   return <PaintCursor active={active} authorId={id} authorColor={color} />
 }
 

@@ -4,8 +4,23 @@
 // Renderer uses drei <Text3D> with a typeface .json font (helvetiker bundled).
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
+// Font set: helvetiker_regular is vendored locally; the others stream from
+// unpkg @ the project's three.js version. They're plain JSON, so cached
+// aggressively after first load. Bundling locally is a future ergonomics
+// pass — for now, more variety with no repo bloat.
+const THREE_FONT_BASE = 'https://unpkg.com/three@0.162.0/examples/fonts'
+
 export const TEXT3D_FONT_OPTIONS = [
-  { id: 'helvetiker_regular', label: 'Helvetiker',  url: '/fonts/helvetiker_regular.typeface.json' },
+  { id: 'helvetiker_regular',   label: 'Helvetiker',         url: '/fonts/helvetiker_regular.typeface.json' },
+  { id: 'helvetiker_bold',      label: 'Helvetiker Bold',    url: `${THREE_FONT_BASE}/helvetiker_bold.typeface.json` },
+  { id: 'optimer_regular',      label: 'Optimer',            url: `${THREE_FONT_BASE}/optimer_regular.typeface.json` },
+  { id: 'optimer_bold',         label: 'Optimer Bold',       url: `${THREE_FONT_BASE}/optimer_bold.typeface.json` },
+  { id: 'gentilis_regular',     label: 'Gentilis',           url: `${THREE_FONT_BASE}/gentilis_regular.typeface.json` },
+  { id: 'gentilis_bold',        label: 'Gentilis Bold',      url: `${THREE_FONT_BASE}/gentilis_bold.typeface.json` },
+  { id: 'droid_sans_regular',   label: 'Droid Sans',         url: `${THREE_FONT_BASE}/droid/droid_sans_regular.typeface.json` },
+  { id: 'droid_sans_bold',      label: 'Droid Sans Bold',    url: `${THREE_FONT_BASE}/droid/droid_sans_bold.typeface.json` },
+  { id: 'droid_serif_regular',  label: 'Droid Serif',        url: `${THREE_FONT_BASE}/droid/droid_serif_regular.typeface.json` },
+  { id: 'droid_serif_bold',     label: 'Droid Serif Bold',   url: `${THREE_FONT_BASE}/droid/droid_serif_bold.typeface.json` },
 ] as const
 
 export type Text3DFontId = typeof TEXT3D_FONT_OPTIONS[number]['id']

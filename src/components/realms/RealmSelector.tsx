@@ -24,12 +24,14 @@ const WORLD_ICONS = ['🌍', '🌋', '🏔️', '🌊', '🏜️', '🌌', '🪐
 const VISIBILITY_OPTIONS: { value: WorldVisibility; icon: string; label: string; desc: string }[] = [
   { value: 'private', icon: '🔒', label: 'Private', desc: 'Only you' },
   { value: 'unlisted', icon: '🔗', label: 'Unlisted', desc: 'Link only' },
+  { value: 'unlisted_edit', icon: '🔗', label: 'Link Build', desc: 'Link edits' },
   { value: 'public', icon: '🌐', label: 'Public', desc: 'Read-only' },
   { value: 'public_edit', icon: '✏️', label: 'Open Build', desc: 'Anyone edits' },
 ]
 const VISIBILITY_ICONS: Record<WorldVisibility, string> = {
   private: '🔒',
   unlisted: '🔗',
+  unlisted_edit: '🔗',
   'only-with-link': '🔗',
   public: '🌐',
   public_edit: '✏️',
@@ -134,7 +136,7 @@ export function RealmSelector({
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       refreshWorldRegistry()
-      if (next === 'public' || next === 'public_edit' || next === 'ffa' || next === 'unlisted' || next === 'only-with-link') {
+      if (next === 'public' || next === 'public_edit' || next === 'ffa' || next === 'unlisted' || next === 'only-with-link' || next === 'unlisted_edit') {
         completeQuest('share-world')
       }
     } catch (err) {

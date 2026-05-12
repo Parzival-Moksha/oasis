@@ -73,7 +73,7 @@ const LOCAL_USER_ID = process.env.ADMIN_USER_ID || 'local-user'
 const SPATIAL_WEB_OBJECT_TYPES: SpatialWebObjectType[] = ['button', 'toggle', 'slider', 'select', 'multiselect', 'text', 'output']
 const SPATIAL_WEB_VISUAL_STYLES: SpatialWebVisualStyle[] = ['neon-panel', 'arcade-button', 'glass-slider', 'terminal-panel', 'portal-zero-button', 'google-form-altar']
 const DEFAULT_PORTAL_GATE_VARIANT: PortalGateVariant = 'threshold-ring'
-const SHAREABLE_WORLD_VISIBILITIES = new Set(['unlisted', 'public', 'public_edit', 'private'])
+const SHAREABLE_WORLD_VISIBILITIES = new Set(['unlisted', 'unlisted_edit', 'public', 'public_edit', 'private'])
 const AGENT_WINDOW_TYPES = new Set([
   'anorak',
   'codex',

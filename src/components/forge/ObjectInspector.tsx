@@ -421,20 +421,36 @@ function PaintStrokePlaybackSection({ strokeId, pointCount, onPlay, onStop }: {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TEXT 3D EDIT — Live edit text/size/depth/color on a placed text object
+// TEXT 3D EDIT — Live edit text/size/depth/color on a placed text object.
+// `text` is debounced via local draft state so typing "hello" doesn't fire
+// 5 WS broadcasts + 5 debounced saves. Sliders/color stay synchronous —
+// the user expects immediate feedback while dragging them.
 // ═══════════════════════════════════════════════════════════════════════════
 
 function Text3DEditSection({ object, onChange }: {
   object: import('../../lib/forge/text-3d-object').Text3DObject
   onChange: (updates: Partial<import('../../lib/forge/text-3d-object').Text3DObject>) => void
 }) {
+  const [draftText, setDraftText] = useState(object.text)
+  // Re-sync the draft when the inspector swaps to a different text object.
+  useEffect(() => { setDraftText(object.text) }, [object.id])
+  // Trailing-edge debounce on text only — flushes when the user pauses.
+  useEffect(() => {
+    if (draftText === object.text) return
+    const handle = window.setTimeout(() => onChange({ text: draftText.slice(0, 240) }), 220)
+    return () => window.clearTimeout(handle)
+    // onChange is a fresh closure per render; omit to avoid retrigger churn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftText, object.text])
+
   return (
     <>
       <SectionHeader>&#128221; Text</SectionHeader>
       <div className="rounded-lg border border-amber-400/15 p-2 space-y-2" style={{ background: 'rgba(24, 18, 8, 0.6)' }}>
         <textarea
-          value={object.text}
-          onChange={(e) => onChange({ text: e.target.value.slice(0, 240) })}
+          value={draftText}
+          onChange={(e) => setDraftText(e.target.value.slice(0, 240))}
+          onBlur={() => { if (draftText !== object.text) onChange({ text: draftText.slice(0, 240) }) }}
           rows={2}
           className="w-full resize-none rounded border border-white/10 bg-black/40 px-2 py-1 text-[12px] text-amber-50"
         />
@@ -1640,6 +1656,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                         <option value="public">public</option>
                         <option value="ffa">FFA</option>
                         <option value="unlisted">link-only</option>
+                        <option value="unlisted_edit">link-build</option>
                       </select>
                     </div>
                     <div className="flex items-center gap-2">

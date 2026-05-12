@@ -76,7 +76,7 @@ export interface WorldMeta {
   userId?: string
   name: string
   icon: string          // emoji icon for the world
-  visibility: 'private' | 'public' | 'unlisted' | 'public_edit' | 'only-with-link' | 'ffa' | 'core' | 'template'
+  visibility: 'private' | 'public' | 'unlisted' | 'unlisted_edit' | 'public_edit' | 'only-with-link' | 'ffa' | 'core' | 'template'
   canWrite?: boolean
   canEditSettings?: boolean
   writeDecision?: WorldWriteDecision

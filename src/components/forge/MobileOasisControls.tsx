@@ -180,11 +180,22 @@ export function MobileOasisControls({ enabled }: { enabled: boolean }) {
     resetMove()
   }
 
+  // When paint mode is armed, the look-overlay must hand its events through to
+  // the canvas underneath so PaintCursor sees the drag — otherwise dragging
+  // anywhere on screen rotates the camera and never paints.
+  const paintHeldActive = useOasisStore(s => s.paintHeldActive)
+
   return (
     <div className="pointer-events-none fixed inset-0 z-[185] touch-none select-none">
+      {/* Full-canvas look surface — covers the entire viewport so any finger
+          drag rotates the camera (mobile feel). Joystick + action buttons are
+          siblings later in DOM order with their own pointer-events-auto, so
+          they sit ABOVE this overlay and keep working. When the user holds
+          the Paint button, this overlay disables its own pointer-events so
+          drags flow through to PaintCursor on the canvas underneath. */}
       <div
         aria-hidden="true"
-        className="pointer-events-auto absolute inset-y-0 right-0 w-[60vw] touch-none"
+        className={`absolute inset-0 touch-none ${paintHeldActive ? 'pointer-events-none' : 'pointer-events-auto'}`}
         onPointerDown={beginLook}
         onPointerMove={updateLook}
         onPointerUp={endLook}

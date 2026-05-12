@@ -12,6 +12,7 @@ import {
   type MultiplayerRoomPlayer,
 } from '@/lib/multiplayer-room-client'
 import { worldMutationBus, type WorldMutation } from '@/lib/world-mutation-bus'
+import { colorForPlayerId as colorForId } from '@/lib/multiplayer-color'
 import { useOasisStore } from '@/store/oasisStore'
 import { RemoteVRMAvatar } from './RemoteVRMAvatar'
 import {
@@ -63,14 +64,8 @@ function makePresenceName(playerId: string): string {
   return name
 }
 
-function colorForId(playerId: string): string {
-  const palette = ['#38bdf8', '#fb7185', '#facc15', '#22c55e', '#a78bfa', '#f97316', '#2dd4bf', '#e879f9']
-  let hash = 0
-  for (let index = 0; index < playerId.length; index += 1) {
-    hash = ((hash << 5) - hash + playerId.charCodeAt(index)) | 0
-  }
-  return palette[Math.abs(hash) % palette.length] || palette[0]
-}
+// (colorForId is imported above from @/lib/multiplayer-color — single source
+// of truth shared with PaintCursor's wand-tip sparkler tint.)
 
 function getLocalPose(): { position: [number, number, number]; yaw: number } | null {
   const avatarPose = getPlayerAvatarPose()

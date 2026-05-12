@@ -22,6 +22,7 @@ export type PortalCreateWorldVisibility =
   | 'public_edit'
   | 'ffa'
   | 'unlisted'
+  | 'unlisted_edit'
   | 'only-with-link'
 
 export type PortalAction =

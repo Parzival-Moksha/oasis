@@ -444,7 +444,7 @@ export async function updateWorldMetadata(
   return result.count > 0
 }
 
-// SAVE FFA — anyone can edit if visibility is ffa/public_edit.
+// SAVE OPEN-BUILD - anyone can edit if visibility is ffa/public_edit/unlisted_edit.
 export async function savePublicEditWorld(
   id: string,
   state: Omit<WorldState, 'version' | 'savedAt'>
