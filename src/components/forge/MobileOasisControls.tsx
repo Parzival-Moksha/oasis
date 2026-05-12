@@ -54,6 +54,9 @@ export function MobileOasisControls({ enabled }: { enabled: boolean }) {
   const movePointerIdRef = useRef<number | null>(null)
   const moveCenterRef = useRef({ x: 0, y: 0 })
   const lookPointerRef = useRef<{ id: number; x: number; y: number; moved: boolean } | null>(null)
+  // When paint mode is armed, the look-overlay must hand its events through to
+  // the canvas underneath so PaintCursor sees the drag.
+  const paintHeldActive = useOasisStore(s => s.paintHeldActive)
 
   useEffect(() => {
     if (!enabled) {
@@ -179,11 +182,6 @@ export function MobileOasisControls({ enabled }: { enabled: boolean }) {
     } catch {}
     resetMove()
   }
-
-  // When paint mode is armed, the look-overlay must hand its events through to
-  // the canvas underneath so PaintCursor sees the drag — otherwise dragging
-  // anywhere on screen rotates the camera and never paints.
-  const paintHeldActive = useOasisStore(s => s.paintHeldActive)
 
   return (
     <div className="pointer-events-none fixed inset-0 z-[185] touch-none select-none">
