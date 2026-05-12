@@ -2060,13 +2060,26 @@ export const useOasisStore = create<OasisState>((set, get) => {
   setText3dPanelOpen: (open) => set({ text3dPanelOpen: open }),
   setPaintHeldActive: (active) => {
     set({ paintHeldActive: active })
-    // Transition the InputManager so CameraController disables OrbitControls
-    // (and the rest of the input layer agrees we're in a paint context).
-    // Mirrors the enterPaintMode/exitPaintMode pattern used by terrain paint.
+    // Transition the InputManager + force-engage pointer-lock so the wand
+    // feels game-armed from the first frame (crosshair, hidden cursor, mouse
+    // rotates camera). Without this, the panel UI layer blocks lock and the
+    // cursor only locks after the first canvas click — the user perceives
+    // "paint mode" as not-really-on until they finish a stroke.
     try {
       const im = require('../lib/input-manager').useInputManager.getState()
-      if (active) im.transition('paint')
-      else if (im.inputState === 'paint') im.transition('orbit')
+      if (active) {
+        im.transition('paint')
+        // Pop any UI layers (panel registration, etc.) so the lock can engage.
+        for (const id of [...im._uiLayerStack]) im.popUILayer(id)
+        // requestPointerLock needs a recent user gesture; the panel-open
+        // click counts. Browser may still reject if too much time passed —
+        // safe to call regardless.
+        im.requestPointerLock()
+      } else if (im.inputState === 'paint') {
+        // Returning to whichever camera mode we came in on (orbit / noclip /
+        // third-person — InputManager remembers via _previousCameraState).
+        im.returnToPrevious()
+      }
     } catch { /* noop in non-browser contexts */ }
   },
   updatePaintBrushSettings: (updates) => set(state => ({ paintBrushSettings: { ...state.paintBrushSettings, ...updates } })),

@@ -8,7 +8,6 @@
 import { useCallback, useContext, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 
-import { useUILayer } from '@/lib/input-manager'
 import { SettingsContext } from '../scene-lib/contexts'
 import { useOasisStore } from '@/store/oasisStore'
 
@@ -49,7 +48,11 @@ export function PaintBrushPanel() {
   const bringPanelToFront = useOasisStore(s => s.bringPanelToFront)
   const panelZIndex = useOasisStore(s => s.getPanelZIndex('paint-brush-panel', 9996))
 
-  useUILayer('paint-brush-panel', isOpen)
+  // NOTE: deliberately NOT calling useUILayer here. Registering as a UI layer
+  // would block pointer-lock in CameraController and the panel-open click
+  // would never feel "game-armed". The paint panel is a HUD overlay with no
+  // text inputs that need keyboard suppression — sliders + color picker +
+  // toggle buttons all work fine while WASD/QE keys flow to the avatar.
 
   // Re-clamp panel position if the viewport shrinks so the user can always
   // grab the header back. Mirrors TerrainBrushPanel's effect.
@@ -72,9 +75,11 @@ export function PaintBrushPanel() {
   // firing the close handler. Without the cleanup, paintHeldActive stays true
   // and PaintCursor silently captures canvas pointers in a world the user
   // can't actually paint in.
+  // Effect skips entirely when isOpen is false so we don't flicker the
+  // store state by setting then immediately cleaning up.
   useEffect(() => {
-    if (isOpen) setPaintHeldActive(true)
-    else setPaintHeldActive(false)
+    if (!isOpen) return
+    setPaintHeldActive(true)
     return () => setPaintHeldActive(false)
   }, [isOpen, setPaintHeldActive])
 

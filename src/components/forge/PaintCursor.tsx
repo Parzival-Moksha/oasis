@@ -2,17 +2,21 @@
 // PAINT CURSOR ░▒▓█ The wand-tip raycaster + stroke writer █▓▒░
 // ─═̷─═̷─ॐ─═̷─═̷─ Hold to paint. Strokes ride the multiplayer mutation channel ─═̷─═̷─ॐ─═̷─═̷─
 //
-// Pointer-down → start stroke. Pointer-move → sample at distance D from camera,
-// throttle by 10cm and ~30Hz. Pointer-up → finalize, broadcast, persist.
-// Disables OrbitControls (and absorbs canvas pointer events) while held.
-// Renders a Sparkler at the live cursor point even before pointer-down so the
-// wand-tip wizardry is constantly visible while paint mode is engaged.
+// Sampling lives in useFrame, NOT pointermove — that way WASD/QE camera motion
+// (and pointer-locked mouselook) records points even when no pointer event
+// fires. The pointer event handlers now just bracket the stroke (down=start,
+// up=end) and cache the latest cursor for the unlocked case.
+//
+// In pointer-locked modes (noclip, third-person, paint) the OS cursor freezes
+// at the moment of lock and clientX/Y go stale. We force NDC (0,0) — strokes
+// always land on the crosshair, matching the existing PointerLockRaycaster
+// fix in Scene.tsx.
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 'use client'
 
-import { useThree } from '@react-three/fiber'
-import { useEffect, useRef, useState } from 'react'
+import { useFrame, useThree } from '@react-three/fiber'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 
 import {
@@ -47,7 +51,7 @@ export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps)
   const settings = useOasisStore(s => s.paintBrushSettings)
   const addPaintStroke = useOasisStore(s => s.addPaintStroke)
 
-  // Local cursor world position — updated on pointer move (and during draw).
+  // Sparkler position — only set during active painting, cleared on finish.
   const [cursorWorldPos, setCursorWorldPos] = useState<[number, number, number] | null>(null)
 
   // Mutable per-stroke state — refs so we don't trigger re-renders mid-drag.
@@ -56,18 +60,80 @@ export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps)
   const lastSampleRef = useRef<[number, number, number] | null>(null)
   const pointCountRef = useRef(0)
   const allPointsRef = useRef<number[]>([])
+  // Latest cursor position from pointer events — only used in non-pointer-lock
+  // mode (when we actually have a meaningful clientX/Y). In pointer-lock we
+  // ignore it and use NDC (0,0).
+  const lastPointerRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
   // Pinned style for the current drag — locked at pointerdown so panel wiggles
   // mid-stroke don't change thickness/color halfway through.
   const styleRef = useRef(settings)
-  // Live settings ref — read inside event handlers so the effect can keep its
-  // dep array short (without this, every panel tweak retears down the capture
-  // listeners and a pending pointer-capture token could get lost).
+  // Live settings ref — read inside event handlers + useFrame so the effect
+  // can keep its dep array short.
   const liveSettingsRef = useRef(settings)
   useEffect(() => { liveSettingsRef.current = settings }, [settings])
 
+  const projectPointerToWorld = useCallback((clientX: number, clientY: number): [number, number, number] | null => {
+    const dom = gl.domElement
+    let ndcX: number
+    let ndcY: number
+    if (typeof document !== 'undefined' && document.pointerLockElement) {
+      // Pointer-locked: cursor is invisible and clientX/Y are stale, paint
+      // from screen center (the crosshair).
+      ndcX = 0
+      ndcY = 0
+    } else {
+      const rect = dom.getBoundingClientRect()
+      ndcX = ((clientX - rect.left) / rect.width) * 2 - 1
+      ndcY = -(((clientY - rect.top) / rect.height) * 2 - 1)
+    }
+    const ndc = new THREE.Vector3(ndcX, ndcY, 0.5)
+    ndc.unproject(camera)
+    const dir = ndc.sub(camera.position).normalize()
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion)
+    const planeOrigin = camera.position.clone().addScaledVector(fwd, styleRef.current.distance)
+    const denom = dir.dot(fwd)
+    if (Math.abs(denom) < 1e-5) return null
+    const t = planeOrigin.clone().sub(camera.position).dot(fwd) / denom
+    if (t <= 0) return null
+    const point = camera.position.clone().addScaledVector(dir, t)
+    return [point.x, point.y, point.z]
+  }, [gl, camera])
+
+  const sampleIfDue = useCallback((point: [number, number, number]): boolean => {
+    const now = performance.now()
+    const dueByTime = now - lastSampleAtRef.current >= SAMPLE_INTERVAL_MS
+    const last = lastSampleRef.current
+    const dueByDistance = !last || distanceBetween(point, last) >= PAINT_MIN_POINT_DISTANCE
+    if (!dueByTime && !dueByDistance) return false
+    if (pointCountRef.current >= PAINT_MAX_POINTS) return false
+    if (last && distanceBetween(point, last) < 1e-4) return false
+    lastSampleAtRef.current = now
+    lastSampleRef.current = point
+    pointCountRef.current += 1
+    allPointsRef.current.push(point[0], point[1], point[2])
+    return true
+  }, [])
+
+  // Per-frame sampler — runs ONLY while a stroke is in progress. Decoupling
+  // from pointer events lets the user drag a continuous stroke while moving
+  // with WASD/QE (no mouse motion needed) and lets pointer-locked mouselook
+  // record strokes even though clientX/Y are stale.
+  useFrame(() => {
+    const id = strokeIdRef.current
+    if (!id || !active) return
+    const point = projectPointerToWorld(lastPointerRef.current.x, lastPointerRef.current.y)
+    if (!point) return
+    const sampled = sampleIfDue(point)
+    if (sampled) {
+      setCursorWorldPos(point)
+      appendLiveStrokePoint(id, point)
+      worldMutationBus.broadcast({ kind: 'stroke_pointed', payload: { strokeId: id, point } })
+    }
+  })
+
   useEffect(() => {
     if (!active) {
-      // If we deactivate mid-stroke, finalize gracefully.
+      // Deactivating mid-stroke: finalize gracefully + clear sparkler.
       if (strokeIdRef.current) finishStroke()
       setCursorWorldPos(null)
     }
@@ -77,65 +143,11 @@ export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps)
     if (!active) return
     const dom = gl.domElement
 
-    const projectPointerToWorld = (clientX: number, clientY: number): [number, number, number] | null => {
-      // When the pointer is locked (noclip/third-person mouse-look), the OS
-      // cursor is invisible and clientX/clientY are STALE — they hold the
-      // last position before lock. Painting from that stale position drifts
-      // the stroke off the crosshair in random directions (drift direction =
-      // wherever the cursor was when lock engaged minus screen center).
-      // Force NDC center while locked so strokes always land on the
-      // crosshair, matching the existing PointerLockRaycaster fix in Scene.tsx.
-      let ndcX: number
-      let ndcY: number
-      if (typeof document !== 'undefined' && document.pointerLockElement) {
-        ndcX = 0
-        ndcY = 0
-      } else {
-        const rect = dom.getBoundingClientRect()
-        ndcX = ((clientX - rect.left) / rect.width) * 2 - 1
-        ndcY = -(((clientY - rect.top) / rect.height) * 2 - 1)
-      }
-      // Build a ray from the camera through the (NDC) cursor.
-      const ndc = new THREE.Vector3(ndcX, ndcY, 0.5)
-      ndc.unproject(camera)
-      const dir = ndc.sub(camera.position).normalize()
-      // Intersect the ray with a plane perpendicular to the camera forward at distance D.
-      const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion)
-      const planeOrigin = camera.position.clone().addScaledVector(fwd, styleRef.current.distance)
-      const denom = dir.dot(fwd)
-      if (Math.abs(denom) < 1e-5) return null
-      const t = planeOrigin.clone().sub(camera.position).dot(fwd) / denom
-      if (t <= 0) return null
-      const point = camera.position.clone().addScaledVector(dir, t)
-      return [point.x, point.y, point.z]
-    }
-
-    const sampleIfDue = (point: [number, number, number]): boolean => {
-      const now = performance.now()
-      const dueByTime = now - lastSampleAtRef.current >= SAMPLE_INTERVAL_MS
-      const last = lastSampleRef.current
-      const dueByDistance = !last || distanceBetween(point, last) >= PAINT_MIN_POINT_DISTANCE
-      // OR-gate the filters (used to be AND): slow careful artistic drags
-      // could starve forever waiting for 10cm net travel between frames.
-      // Now we sample when EITHER the cadence elapsed OR the distance hit.
-      // The PAINT_MAX_POINTS cap still bounds total stroke complexity.
-      if (!dueByTime && !dueByDistance) return false
-      if (pointCountRef.current >= PAINT_MAX_POINTS) return false
-      // Avoid coincident-point geometry NaNs: skip if literally identical.
-      if (last && distanceBetween(point, last) < 1e-4) return false
-      lastSampleAtRef.current = now
-      lastSampleRef.current = point
-      pointCountRef.current += 1
-      allPointsRef.current.push(point[0], point[1], point[2])
-      return true
-    }
-
     const onPointerDown = (event: PointerEvent) => {
       if (event.button !== 0) return
-      // Lock in style for this stroke; capture pointer so move/up land on us
-      // even if the cursor leaves the canvas mid-drag. Use the live ref so a
-      // stale closure can't pin yesterday's settings to today's stroke.
+      // Lock in style for this stroke (panel wiggles mid-stroke don't apply).
       styleRef.current = liveSettingsRef.current
+      lastPointerRef.current = { x: event.clientX, y: event.clientY }
       const startPoint = projectPointerToWorld(event.clientX, event.clientY)
       if (!startPoint) return
       event.preventDefault()
@@ -168,22 +180,12 @@ export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps)
     }
 
     const onPointerMove = (event: PointerEvent) => {
-      const id = strokeIdRef.current
-      // Only do work while a stroke is in progress. Without an active stroke,
-      // pointer moves are just hovering — we don't want the wand-tip sparkler
-      // to render whenever the cursor is over the canvas, only while the
-      // user is actively painting (LMB held). This is also a fast path for
-      // mouse-look in pointer-locked modes (no allocations, no broadcasts).
-      if (!id) return
-      const point = projectPointerToWorld(event.clientX, event.clientY)
-      if (!point) return
-      setCursorWorldPos(point)
-      event.preventDefault()
-      event.stopPropagation()
-      const sampled = sampleIfDue(point)
-      if (sampled) {
-        appendLiveStrokePoint(id, point)
-        worldMutationBus.broadcast({ kind: 'stroke_pointed', payload: { strokeId: id, point } })
+      // Just cache the latest pointer for the unlocked case. Sampling is
+      // useFrame's job. While locked the cached coords are ignored anyway.
+      lastPointerRef.current = { x: event.clientX, y: event.clientY }
+      if (strokeIdRef.current) {
+        event.preventDefault()
+        event.stopPropagation()
       }
     }
 
@@ -196,8 +198,8 @@ export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps)
       finishStroke()
     }
 
-    // pointercancel reports button === -1 (not 0), so the up-handler's button
-    // guard would skip it and orphan the stroke. Always finalize on cancel.
+    // pointercancel reports button === -1, so the up-handler's button guard
+    // would skip it and orphan the stroke. Always finalize on cancel.
     const onPointerCancel = (event: PointerEvent) => {
       if (!strokeIdRef.current) return
       event.preventDefault()
@@ -217,10 +219,9 @@ export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps)
       dom.removeEventListener('pointerup', onPointerUp, { capture: true } as EventListenerOptions)
       dom.removeEventListener('pointercancel', onPointerCancel, { capture: true } as EventListenerOptions)
     }
-    // `settings` is intentionally NOT in the dep array — read via
-    // liveSettingsRef inside the handlers. Otherwise we'd retear down every
-    // listener on every panel slider change, possibly losing in-flight
-    // pointer capture mid-stroke.
+    // `settings` is intentionally NOT in the dep array — read via the
+    // liveSettingsRef inside handlers. Otherwise we'd retear down every
+    // listener on every panel slider change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, authorId, authorColor, gl, camera])
 
@@ -243,8 +244,6 @@ export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps)
       authorColor,
       createdAt: Date.now(),
     }
-    // Add locally first; then broadcast end so receivers can replace their
-    // live in-progress stroke with the persisted object atomically.
     if (points.length >= 6) {
       addPaintStroke(finalStroke)
     }
@@ -253,8 +252,6 @@ export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps)
     allPointsRef.current = []
     pointCountRef.current = 0
     lastSampleRef.current = null
-    // Drop the cursor so the wand-tip sparkler vanishes the instant the user
-    // releases the mouse — it should only be visible during active painting.
     setCursorWorldPos(null)
   }
 

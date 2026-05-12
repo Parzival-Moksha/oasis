@@ -33,6 +33,12 @@ interface PaintStrokeMeshProps extends PaintStrokeStyle {
   showLeadingSparkler?: boolean
   /** Sparkler tint when leading sparkler is shown. */
   leadingSparklerColor?: string
+  /** Visual selection feedback — boosts emissive so the stroke glows. */
+  selected?: boolean
+  /** Single-click handler (selects the stroke). */
+  onSelect?: () => void
+  /** Double-click handler (opens the inspector / Joystick). */
+  onInspect?: () => void
 }
 
 const TUBE_RADIAL_SEGMENTS = 6
@@ -48,6 +54,9 @@ export function PaintStrokeMesh({
   progress,
   showLeadingSparkler,
   leadingSparklerColor,
+  selected,
+  onSelect,
+  onInspect,
 }: PaintStrokeMeshProps) {
   // Live in-progress strokes mutate `points` in place (Array.push) so the
   // outer reference is stable across appends. Including `points.length` in
@@ -91,28 +100,46 @@ export function PaintStrokeMesh({
   }, [tubeGeometry])
 
   const material = useMemo(() => {
+    // Selected strokes glow harder so the user gets visual feedback even when
+    // the stroke is in mid-air with no ground-ring to anchor a highlight.
+    const baseEmissive = clamp01(shininess) * 0.25
+    const selectedBoost = selected ? 0.85 : 0
     return new THREE.MeshStandardMaterial({
       color,
       metalness: clamp01(shininess) * 0.85,
       roughness: 1 - clamp01(shininess) * 0.85,
       emissive: color,
-      emissiveIntensity: clamp01(shininess) * 0.25,
+      emissiveIntensity: baseEmissive + selectedBoost,
     })
-  }, [color, shininess])
+  }, [color, shininess, selected])
 
   useEffect(() => {
     return () => { material.dispose() }
   }, [material])
 
+  // R3F event bubbling from a thin TubeGeometry up through SelectableWrapper
+  // proved unreliable for stroke selection (the agent's investigation found
+  // raw <mesh> children of nested <group> wrappers don't always propagate
+  // pointer events). Wrapping our render in a group with explicit onClick /
+  // onDoubleClick handlers gives R3F a direct event target to bubble to.
+  // The same group also catches the drei <Line> case (where the line itself
+  // is hard to hit) by wrapping a parent target.
+  const handleClick = onSelect
+    ? (e: { stopPropagation: () => void }) => { e.stopPropagation(); onSelect() }
+    : undefined
+  const handleDoubleClick = onInspect
+    ? (e: { stopPropagation: () => void }) => { e.stopPropagation(); onInspect() }
+    : undefined
+
   // Empty stroke (e.g. progress=0): render only the sparkler if asked.
   if (mode === '3d') {
     return (
-      <>
+      <group onClick={handleClick} onDoubleClick={handleDoubleClick}>
         {tubeGeometry && <mesh geometry={tubeGeometry} material={material} />}
         {showLeadingSparkler && leadingPoint && (
           <Sparkler position={leadingPoint} color={leadingSparklerColor || color} active />
         )}
-      </>
+      </group>
     )
   }
 
@@ -124,7 +151,7 @@ export function PaintStrokeMesh({
     return null
   }
   return (
-    <>
+    <group onClick={handleClick} onDoubleClick={handleDoubleClick}>
       <Line
         points={visiblePoints as Array<[number, number, number]>}
         color={color}
@@ -135,7 +162,7 @@ export function PaintStrokeMesh({
       {showLeadingSparkler && leadingPoint && (
         <Sparkler position={leadingPoint} color={leadingSparklerColor || color} active />
       )}
-    </>
+    </group>
   )
 }
 

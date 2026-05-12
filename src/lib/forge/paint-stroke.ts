@@ -8,7 +8,12 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 export const PAINT_MIN_POINT_DISTANCE = 0.10
-export const PAINT_MAX_POINTS = 600
+// Soft cap on stroke length. Bumped from 600 to 20000 so multi-minute strokes
+// don't visually truncate. TubeGeometry vertex count is fixed (capped by
+// tubularSegments in PaintStrokeMesh) so the rendered mesh size doesn't grow
+// with this number — only the CatmullRomCurve3 control-point list does, and
+// per-frame curve setup is O(N) which stays cheap into the tens of thousands.
+export const PAINT_MAX_POINTS = 20000
 export const PAINT_DEFAULT_THICKNESS = 0.04
 export const PAINT_DEFAULT_DISTANCE = 3.0
 export const PAINT_DEFAULT_COLOR = '#ff3df0'

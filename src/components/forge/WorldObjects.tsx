@@ -3061,35 +3061,33 @@ function PaintStrokesSection() {
 
 // Per-stroke wrapper. Each one subscribes ONLY to its own playback entry so a
 // single stroke's per-frame progress update doesn't re-render every other
-// stroke in the world. Strokes opt out of TransformControls — the editable
-// thing is the underlying point list, not a single transform.
+// stroke in the world. Strokes skip SelectableWrapper entirely — they have
+// no single anchor for TransformControls (their geometry is point-anchored)
+// and the ground-ring highlight makes no sense for in-air ribbons. Selection
+// happens via the inner PaintStrokeMesh's own onClick / onDoubleClick.
 function PersistedPaintStroke({ stroke, selected, onSelect }: {
   stroke: import('@/lib/forge/paint-stroke').PaintStroke
   selected: boolean
   onSelect: (id: string | null) => void
 }) {
   const playback = useOasisStore(s => s.paintStrokePlayback?.[stroke.id])
+  const setInspectedObject = useOasisStore(s => s.setInspectedObject)
+  const isReadOnly = useOasisStore(s => s.isViewMode && !s.isViewModeEditable)
   return (
-    <SelectableWrapper
-      id={stroke.id}
+    <PaintStrokeMesh
+      points={stroke.points}
+      color={stroke.color}
+      thickness={stroke.thickness}
+      shininess={stroke.shininess}
+      mode={stroke.mode}
+      varyByVelocity={stroke.varyByVelocity}
+      progress={playback?.progress}
+      showLeadingSparkler={playback !== undefined && (playback.progress ?? 0) < 1}
+      leadingSparklerColor={stroke.authorColor || stroke.color}
       selected={selected}
-      onSelect={onSelect}
-      transformMode="translate"
-      onTransformChange={() => { /* paint strokes are point-anchored — no group transform */ }}
-      allowTransform={false}
-    >
-      <PaintStrokeMesh
-        points={stroke.points}
-        color={stroke.color}
-        thickness={stroke.thickness}
-        shininess={stroke.shininess}
-        mode={stroke.mode}
-        varyByVelocity={stroke.varyByVelocity}
-        progress={playback?.progress}
-        showLeadingSparkler={playback !== undefined && (playback.progress ?? 0) < 1}
-        leadingSparklerColor={stroke.authorColor || stroke.color}
-      />
-    </SelectableWrapper>
+      onSelect={isReadOnly ? undefined : () => onSelect(stroke.id)}
+      onInspect={isReadOnly ? undefined : () => { onSelect(stroke.id); setInspectedObject(stroke.id) }}
+    />
   )
 }
 

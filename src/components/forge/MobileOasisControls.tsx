@@ -272,8 +272,11 @@ export function MobileOasisControls({ enabled }: { enabled: boolean }) {
 
 // Held-paint button: while pressed, paint mode is armed so the OTHER finger
 // (used for camera look) does not also trigger the wand. Releases on up/cancel.
+// Hidden in read-only worlds — the wand is a write operation.
 function MobilePaintHoldButton() {
   const setPaintHeldActive = useOasisStore(s => s.setPaintHeldActive)
+  const isReadOnly = useOasisStore(s => s.isViewMode && !s.isViewModeEditable)
+  if (isReadOnly) return null
   return (
     <button
       type="button"
