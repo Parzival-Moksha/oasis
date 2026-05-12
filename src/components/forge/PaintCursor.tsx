@@ -164,16 +164,26 @@ export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps)
       finishStroke()
     }
 
+    // pointercancel reports button === -1 (not 0), so the up-handler's button
+    // guard would skip it and orphan the stroke. Always finalize on cancel.
+    const onPointerCancel = (event: PointerEvent) => {
+      if (!strokeIdRef.current) return
+      event.preventDefault()
+      event.stopPropagation()
+      try { dom.releasePointerCapture(event.pointerId) } catch { /* */ }
+      finishStroke()
+    }
+
     dom.addEventListener('pointerdown', onPointerDown, { capture: true })
     dom.addEventListener('pointermove', onPointerMove, { capture: true })
     dom.addEventListener('pointerup', onPointerUp, { capture: true })
-    dom.addEventListener('pointercancel', onPointerUp, { capture: true })
+    dom.addEventListener('pointercancel', onPointerCancel, { capture: true })
 
     return () => {
       dom.removeEventListener('pointerdown', onPointerDown, { capture: true } as EventListenerOptions)
       dom.removeEventListener('pointermove', onPointerMove, { capture: true } as EventListenerOptions)
       dom.removeEventListener('pointerup', onPointerUp, { capture: true } as EventListenerOptions)
-      dom.removeEventListener('pointercancel', onPointerUp, { capture: true } as EventListenerOptions)
+      dom.removeEventListener('pointercancel', onPointerCancel, { capture: true } as EventListenerOptions)
     }
   }, [active, authorId, authorColor, gl, camera, settings])
 

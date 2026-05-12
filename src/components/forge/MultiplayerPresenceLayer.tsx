@@ -16,6 +16,7 @@ import { useOasisStore } from '@/store/oasisStore'
 import { RemoteVRMAvatar } from './RemoteVRMAvatar'
 import {
   appendLiveStrokePoint,
+  clearAllLiveStrokes,
   endLiveStroke,
   startLiveStroke,
 } from '@/lib/forge/live-strokes'
@@ -374,10 +375,11 @@ export function MultiplayerPresenceLayer() {
       } else if (mutation.kind === 'stroke_pointed') {
         appendLiveStrokePoint(mutation.payload.strokeId, mutation.payload.point)
       } else if (mutation.kind === 'stroke_ended') {
-        endLiveStroke(mutation.payload.strokeId)
-        // Persist remote final stroke so the rendering doesn't blink between
-        // the live preview vanishing and the persistent object loading.
+        // Persist FIRST so the persistent mesh is mounted before we clear the
+        // live preview — otherwise there's a one-frame blink between the live
+        // stroke vanishing and the persisted PaintStrokeMesh appearing.
         store.applyRemotePaintStroke(mutation.payload.finalStroke)
+        endLiveStroke(mutation.payload.strokeId)
       } else if (mutation.kind === 'stroke_removed') {
         store.applyRemotePaintStrokeRemoval(mutation.payload.id)
       } else if (mutation.kind === 'text3d_added') {
@@ -479,6 +481,10 @@ export function MultiplayerPresenceLayer() {
       }
       lastSentPoseRef.current = null
       lastSentAtRef.current = 0
+      // Drop any in-progress remote strokes — they belong to the OLD room.
+      // Without this, mid-stroke trails from world A keep rendering after a
+      // portal jump to world B until the next stroke_ended arrives (never).
+      clearAllLiveStrokes()
     }
   }, [activeWorldId, reconnectTick])
 

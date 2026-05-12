@@ -195,7 +195,8 @@ function buildVariableTube(points: Array<[number, number, number]>, baseThicknes
       const b = (s + 1) * (VARIABLE_RADIAL_SEGMENTS + 1) + r
       const c = (s + 1) * (VARIABLE_RADIAL_SEGMENTS + 1) + r + 1
       const d = s * (VARIABLE_RADIAL_SEGMENTS + 1) + r + 1
-      indices.push(a, b, d, b, c, d)
+      // CCW winding so outward-facing normals match THREE.js FrontSide default.
+      indices.push(a, d, b, b, d, c)
     }
   }
 

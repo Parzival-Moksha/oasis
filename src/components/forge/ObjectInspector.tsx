@@ -40,11 +40,15 @@ type MovementType = typeof MOVEMENT_TYPES[number]
 
 /** ░▒▓ Type badge colors — identity at a glance ▓▒░ */
 const TYPE_BADGE: Record<string, { bg: string; text: string; label: string }> = {
-  catalog:  { bg: 'rgba(234, 179, 8, 0.2)',  text: '#EAB308', label: 'catalog' },
-  crafted:  { bg: 'rgba(59, 130, 246, 0.2)', text: '#3B82F6', label: 'crafted' },
-  conjured: { bg: 'rgba(249, 115, 22, 0.2)', text: '#F97316', label: 'conjured' },
-  light:    { bg: 'rgba(250, 204, 21, 0.2)', text: '#FACC15', label: '💡 light' },
-  agent:    { bg: 'rgba(56, 189, 248, 0.2)', text: '#38BDF8', label: '💻 agent' },
+  catalog:        { bg: 'rgba(234, 179, 8, 0.2)',   text: '#EAB308', label: 'catalog' },
+  crafted:        { bg: 'rgba(59, 130, 246, 0.2)',  text: '#3B82F6', label: 'crafted' },
+  conjured:       { bg: 'rgba(249, 115, 22, 0.2)',  text: '#F97316', label: 'conjured' },
+  light:          { bg: 'rgba(250, 204, 21, 0.2)',  text: '#FACC15', label: '💡 light' },
+  agent:          { bg: 'rgba(56, 189, 248, 0.2)',  text: '#38BDF8', label: '💻 agent' },
+  portal:         { bg: 'rgba(34, 211, 238, 0.2)',  text: '#22D3EE', label: '🌀 portal' },
+  'spatial-web':  { bg: 'rgba(168, 85, 247, 0.2)',  text: '#A855F7', label: '🕸 spatial' },
+  paint_stroke:   { bg: 'rgba(217, 70, 239, 0.2)',  text: '#D946EF', label: '🪄 stroke' },
+  text_3d:        { bg: 'rgba(245, 158, 11, 0.2)',  text: '#F59E0B', label: '🔤 text' },
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

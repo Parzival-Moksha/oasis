@@ -49,10 +49,16 @@ export function PaintBrushPanel() {
 
   useUILayer('paint-brush-panel', isOpen)
 
-  // Auto-arm paint mode when the panel opens; release on close.
+  // Auto-arm paint mode when the panel opens; release on close OR unmount.
+  // Unmount-release matters: if hideEditTools flips true (visibility change,
+  // portal jump to a read-only world), Scene.tsx unmounts the panel without
+  // firing the close handler. Without the cleanup, paintHeldActive stays true
+  // and PaintCursor silently captures canvas pointers in a world the user
+  // can't actually paint in.
   useEffect(() => {
     if (isOpen) setPaintHeldActive(true)
     else setPaintHeldActive(false)
+    return () => setPaintHeldActive(false)
   }, [isOpen, setPaintHeldActive])
 
   const close = useCallback(() => setOpen(false), [setOpen])

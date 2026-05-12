@@ -41,8 +41,13 @@ export function Sparkler({ position, color = '#fff7c2', active = true, intensity
   const tintColor = useMemo(() => new THREE.Color(color), [color])
 
   const geometry = useMemo(() => {
+    // Park every particle far below the world so they don't render at (0,0,0)
+    // until the first emission cycle pulls them up to the cursor. Without this,
+    // every Sparkler flashes 48 bright dots at world origin on mount.
+    const positions = positionsRef.current
+    for (let i = 0; i < MAX_PARTICLES; i += 1) positions[i * 3 + 1] = -1e6
     const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.BufferAttribute(positionsRef.current, 3))
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
     return geo
   }, [])
 
@@ -58,12 +63,11 @@ export function Sparkler({ position, color = '#fff7c2', active = true, intensity
     })
   }, [tintColor])
 
-  useEffect(() => {
-    return () => {
-      geometry.dispose()
-      material.dispose()
-    }
-  }, [geometry, material])
+  // Split disposal: geometry only on unmount; material on identity change OR unmount.
+  // The merged effect would dispose the (memo-stable) geometry every time the
+  // material identity changed (e.g. color prop change), causing use-after-dispose.
+  useEffect(() => () => geometry.dispose(), [geometry])
+  useEffect(() => () => material.dispose(), [material])
 
   useFrame((_, delta) => {
     const dt = Math.min(delta, 0.05)

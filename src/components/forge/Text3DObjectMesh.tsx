@@ -26,10 +26,14 @@ export function Text3DObjectMesh({ object }: { object: Text3DObject }) {
       position={position}
       rotation={rotation}
       onPointerDown={event => {
+        // Only act on left-button double-click; everything else passes through
+        // so right-click camera, middle-click pan, and single-click selection
+        // all keep working.
+        if (event.button !== 0) return
+        const detail = (event.nativeEvent as PointerEvent & { detail?: number }).detail
+        if (detail !== 2) return
         event.stopPropagation()
-        if (event.button === 0 && (event as unknown as { detail?: number }).detail === 2) {
-          setInspectedObject(object.id)
-        }
+        setInspectedObject(object.id)
       }}
     >
       <Center>

@@ -2041,7 +2041,17 @@ export const useOasisStore = create<OasisState>((set, get) => {
   // ─═̷─═̷─🎨 PAINT TOOL UI ACTIONS ─═̷─═̷─🎨
   setPaintBrushPanelOpen: (open) => set({ paintBrushPanelOpen: open }),
   setText3dPanelOpen: (open) => set({ text3dPanelOpen: open }),
-  setPaintHeldActive: (active) => set({ paintHeldActive: active }),
+  setPaintHeldActive: (active) => {
+    set({ paintHeldActive: active })
+    // Transition the InputManager so CameraController disables OrbitControls
+    // (and the rest of the input layer agrees we're in a paint context).
+    // Mirrors the enterPaintMode/exitPaintMode pattern used by terrain paint.
+    try {
+      const im = require('../lib/input-manager').useInputManager.getState()
+      if (active) im.transition('paint')
+      else if (im.inputState === 'paint') im.transition('orbit')
+    } catch { /* noop in non-browser contexts */ }
+  },
   updatePaintBrushSettings: (updates) => set(state => ({ paintBrushSettings: { ...state.paintBrushSettings, ...updates } })),
   updateText3dSettings: (updates) => set(state => ({ text3dSettings: { ...state.text3dSettings, ...updates } })),
 
@@ -2892,6 +2902,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
           catalogPlacements: world.catalogPlacements || [],
           portalGates,
           spatialWebObjects,
+          paintStrokes: world.paintStrokes || [],
+          text3dObjects: world.text3dObjects || [],
           transforms: normalizedAgentWorldState.transforms,
           behaviors: world.behaviors || {},
           lights,
@@ -3072,6 +3084,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
           catalogPlacements: world.catalogPlacements || [],
           portalGates,
           spatialWebObjects,
+          paintStrokes: world.paintStrokes || [],
+          text3dObjects: world.text3dObjects || [],
           transforms: normalizedAgentWorldState.transforms,
           behaviors: world.behaviors || {},
           lights,
@@ -3671,6 +3685,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
         placedCatalogAssets: state.catalogPlacements || [],
         portalGates,
         spatialWebObjects,
+        paintStrokes: state.paintStrokes || [],
+        text3dObjects: state.text3dObjects || [],
         transforms: normalizedAgentWorldState.transforms,
         behaviors: state.behaviors || {},
         worldLights: lights,
