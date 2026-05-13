@@ -365,7 +365,7 @@ export function PortalGateLayer() {
   const triggerStatesRef = useRef<Record<string, PortalTriggerState>>({})
   const activePortalActionRef = useRef<string | null>(null)
   const missingTargetRefreshKeyRef = useRef<string | null>(null)
-  const [runtimeRevealVersion, setRuntimeRevealVersion] = useState(0)
+  const [, setRuntimeRevealVersion] = useState(0)
 
   const handleTransformChange = useCallback((
     id: string,
@@ -414,10 +414,7 @@ export function PortalGateLayer() {
     [portalGates, transforms, worldRegistry],
   )
 
-  const visibleGates = useMemo(
-    () => gates.filter(gate => !gate.hidden || revealedRuntimePortalIds.has(gate.id)),
-    [gates, runtimeRevealVersion],
-  )
+  const visibleGates = gates.filter(gate => !gate.hidden || revealedRuntimePortalIds.has(gate.id))
 
   const runWorldTransition = useCallback(async (
     gate: PortalGate,
