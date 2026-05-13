@@ -10,6 +10,7 @@ import { getRequiredOasisUserId } from '@/lib/session'
 import { levelFromXp, levelProgress, xpToNextLevel, getLevelTitle } from '@/lib/xp'
 import { FREE_CREDITS } from '@/lib/conjure/types'
 import { DEFAULT_PROFILE_AVATAR_3D_URL, DEFAULT_PROFILE_DISPLAY_NAME } from '@/lib/profile-defaults'
+import { buildPlayerProgression } from '@/lib/player-progression'
 
 /** Ensure a Profile row exists for the user, return it */
 async function ensureProfile(userId: string) {
@@ -25,6 +26,39 @@ async function ensureProfile(userId: string) {
   return profile.avatar3dUrl ? profile : { ...profile, avatar3dUrl: DEFAULT_PROFILE_AVATAR_3D_URL }
 }
 
+function serializeProfile(p: Awaited<ReturnType<typeof ensureProfile>>) {
+  const level = levelFromXp(p.totalXp)
+  const progress = levelProgress(p.totalXp)
+  const toNext = xpToNextLevel(level)
+  const lt = getLevelTitle(level)
+  const player = buildPlayerProgression({ ...p, level })
+
+  return {
+    credits: FREE_CREDITS,
+    xp: p.totalXp,
+    level,
+    aura: p.aura,
+    wallet_address: null,
+    levelTitle: lt.title,
+    levelBadge: lt.badge,
+    levelProgress: progress,
+    xpToNext: toNext,
+    needsOnboarding: p.totalXp === 0,
+    displayName: p.displayName,
+    bio: p.bio,
+    avatar_url: p.avatarUrl,
+    avatar_3d_url: p.avatar3dUrl,
+    lastLoginDate: p.lastLoginDate,
+    hp: player.hp,
+    maxHp: player.maxHp,
+    mana: player.mana,
+    maxMana: player.maxMana,
+    unspentSkillPoints: player.unspentSkillPoints,
+    skills: player.skills,
+    playerStats: player.stats,
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const userId = getRequiredOasisUserId(request)
@@ -33,28 +67,7 @@ export async function GET(request: Request) {
     }
     const p = await ensureProfile(userId)
 
-    const level = levelFromXp(p.totalXp)
-    const progress = levelProgress(p.totalXp)
-    const toNext = xpToNextLevel(level)
-    const lt = getLevelTitle(level)
-
-    return NextResponse.json({
-      credits: FREE_CREDITS,
-      xp: p.totalXp,
-      level,
-      aura: p.aura,
-      wallet_address: null,
-      levelTitle: lt.title,
-      levelBadge: lt.badge,
-      levelProgress: progress,
-      xpToNext: toNext,
-      needsOnboarding: p.totalXp === 0,
-      displayName: p.displayName,
-      bio: p.bio,
-      avatar_url: p.avatarUrl,
-      avatar_3d_url: p.avatar3dUrl,
-      lastLoginDate: p.lastLoginDate,
-    })
+    return NextResponse.json(serializeProfile(p))
   } catch (err) {
     console.error('[Profile] GET error:', err)
     // Fallback so the UI never breaks
@@ -67,6 +80,30 @@ export async function GET(request: Request) {
       avatar_url: null,
       avatar_3d_url: DEFAULT_PROFILE_AVATAR_3D_URL,
       lastLoginDate: null,
+      hp: 100,
+      maxHp: 100,
+      mana: 20,
+      maxMana: 20,
+      unspentSkillPoints: 0,
+      skills: {
+        fire: 0,
+        ice: 0,
+        lightning: 0,
+        vitality: 0,
+        focus: 0,
+        conjuration: 0,
+        mobility: 0,
+      },
+      playerStats: {
+        maxHp: 100,
+        maxMana: 20,
+        fireboltDamage: 14,
+        fireboltManaCost: 5,
+        fireboltSpeedMetersPerSecond: 24,
+        manaRegenMultiplier: 1,
+        conjureManaCost: 20,
+        moveSpeedMultiplier: 1,
+      },
     })
   }
 }
@@ -102,29 +139,7 @@ export async function PATCH(request: Request) {
       data: update,
     })
 
-    // Return full profile shape
-    const level = levelFromXp(updated.totalXp)
-    const progress = levelProgress(updated.totalXp)
-    const toNext = xpToNextLevel(level)
-    const lt = getLevelTitle(level)
-
-    return NextResponse.json({
-      credits: FREE_CREDITS,
-      xp: updated.totalXp,
-      level,
-      aura: updated.aura,
-      wallet_address: null,
-      levelTitle: lt.title,
-      levelBadge: lt.badge,
-      levelProgress: progress,
-      xpToNext: toNext,
-      needsOnboarding: updated.totalXp === 0,
-      displayName: updated.displayName,
-      bio: updated.bio,
-      avatar_url: updated.avatarUrl,
-      avatar_3d_url: updated.avatar3dUrl,
-      lastLoginDate: updated.lastLoginDate,
-    })
+    return NextResponse.json(serializeProfile(updated))
   } catch (err) {
     console.error('[Profile] PATCH error:', err)
     return NextResponse.json({ error: 'Update failed' }, { status: 500 })

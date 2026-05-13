@@ -33,7 +33,12 @@ export async function POST(request: NextRequest) {
 
     // Update level + lastLoginDate if daily login
     const updates: Record<string, unknown> = {}
-    if (newLevel !== oldLevel) updates.level = newLevel
+    if (newLevel !== oldLevel) {
+      updates.level = newLevel
+      if (newLevel > oldLevel) {
+        updates.unspentSkillPoints = { increment: newLevel - oldLevel }
+      }
+    }
     if (action === 'DAILY_LOGIN') updates.lastLoginDate = new Date().toISOString().split('T')[0]
 
     if (Object.keys(updates).length > 0) {

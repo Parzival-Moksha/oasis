@@ -307,6 +307,16 @@ model Profile {
   totalXp       Int      @default(0)
   level         Int      @default(1)
   aura          Int      @default(0)
+  hp            Int      @default(100)
+  mana          Int      @default(20)
+  unspentSkillPoints Int @default(0)
+  skillFire     Int      @default(0)
+  skillIce      Int      @default(0)
+  skillLightning Int    @default(0)
+  skillVitality Int      @default(0)
+  skillFocus    Int      @default(0)
+  skillConjuration Int  @default(0)
+  skillMobility Int      @default(0)
   lastLoginDate String?  // ISO date string 'YYYY-MM-DD'
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

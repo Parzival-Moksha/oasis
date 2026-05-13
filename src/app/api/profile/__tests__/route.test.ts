@@ -52,5 +52,8 @@ describe('/api/profile defaults', () => {
       update: {},
     })
     expect(body.avatar_3d_url).toBe(DEFAULT_PROFILE_AVATAR_3D_URL)
+    expect(body.hp).toBe(100)
+    expect(body.mana).toBe(20)
+    expect(body.skills.fire).toBe(0)
   })
 })

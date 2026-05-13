@@ -23,6 +23,15 @@ import {
 import { DEFAULT_PROFILE_AVATAR_3D_URL } from '@/lib/profile-defaults'
 import { QUESTS, QUEST_IDS, getQuestProgress, type QuestId } from '@/lib/quests'
 import { GameMenuButton } from './GameMenuButton'
+import {
+  DEFAULT_PLAYER_SKILLS,
+  PLAYER_SKILL_CAP,
+  PLAYER_SKILL_DEFS,
+  summarizeSkill,
+  type PlayerComputedStats,
+  type PlayerSkillKey,
+  type PlayerSkillSet,
+} from '@/lib/player-progression'
 
 interface ProfileData {
   credits: number
@@ -40,9 +49,27 @@ interface ProfileData {
   avatar_url: string | null
   avatar_3d_url: string | null
   lastLoginDate: string | null
+  hp?: number
+  maxHp?: number
+  mana?: number
+  maxMana?: number
+  unspentSkillPoints?: number
+  skills?: PlayerSkillSet
+  playerStats?: PlayerComputedStats
 }
 
 type ProfileTab = 'player' | 'quests' | 'skills'
+
+const DEFAULT_PLAYER_STATS: PlayerComputedStats = {
+  maxHp: 100,
+  maxMana: 20,
+  fireboltDamage: 14,
+  fireboltManaCost: 5,
+  fireboltSpeedMetersPerSecond: 24,
+  manaRegenMultiplier: 1,
+  conjureManaCost: 20,
+  moveSpeedMultiplier: 1,
+}
 
 export function ProfileButton() {
   const [isOpen, setIsOpen] = useState(false)
@@ -450,7 +477,7 @@ export function ProfileButton() {
           )}
 
           {activeTab === 'quests' && <QuestProfilePanel />}
-          {activeTab === 'skills' && <SkillsProfilePanel level={profile.level} />}
+          {activeTab === 'skills' && <SkillsProfilePanel profile={profile} onAllocated={fetchProfile} />}
         </div>
       )}
       {/* Avatar Gallery */}
@@ -564,36 +591,84 @@ function QuestProfilePanel() {
   )
 }
 
-function SkillsProfilePanel({ level }: { level: number }) {
-  const skills = [
-    { name: 'Walk', state: 'Known', detail: 'Move, jump, look, and enter portals.' },
-    { name: 'Inspect', state: 'Known', detail: 'Select objects and tune transforms or behavior.' },
-    { name: 'Spells', state: 'Known', detail: 'The renamed place menu: choose a spell, then click the world.' },
-    { name: 'Craft Scene', state: level >= 5 ? 'Ready' : 'Quest Zero', detail: 'Text-to-3D scene casting, wired to the streaming primitive path.' },
-    { name: 'Agent Ally', state: 'Soon', detail: 'Bind Merlin, Hermes, or OpenClaw to your spellbook.' },
-  ]
+function SkillsProfilePanel({ profile, onAllocated }: { profile: ProfileData; onAllocated: () => void }) {
+  const [allocating, setAllocating] = useState<PlayerSkillKey | null>(null)
+  const skills = profile.skills ?? DEFAULT_PLAYER_SKILLS
+  const stats = profile.playerStats ?? DEFAULT_PLAYER_STATS
+  const unspent = profile.unspentSkillPoints ?? 0
+
+  const allocate = async (skill: PlayerSkillKey) => {
+    if (allocating || unspent <= 0 || (skills[skill] ?? 0) >= PLAYER_SKILL_CAP) return
+    setAllocating(skill)
+    try {
+      const res = await fetch('/api/profile/skills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skill }),
+      })
+      if (res.ok) onAllocated()
+    } finally {
+      setAllocating(null)
+    }
+  }
 
   return (
     <div className="space-y-3 p-3">
       <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-3">
-        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-100">Spellbook</p>
-        <p className="mt-1 text-xs leading-snug text-white/60">
-          Quest Zero should make this feel earned: pick up the book, unlock Spells, then learn the first creation loop from Merlin.
-        </p>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-100">Wizard Stats</p>
+            <p className="mt-1 text-xs leading-snug text-white/60">
+              Firebolt is the first combat spell: {stats.fireboltManaCost} mana, {stats.fireboltDamage} damage, {stats.fireboltSpeedMetersPerSecond} m/s.
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-lg font-black text-white">{unspent}</p>
+            <p className="text-[9px] uppercase tracking-[0.14em] text-cyan-100/70">points</p>
+          </div>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 text-[10px]">
+          <div className="rounded-md border border-white/10 bg-black/25 px-2 py-1.5 text-white/70">
+            HP <strong className="float-right text-green-200">{profile.hp ?? 100}/{profile.maxHp ?? stats.maxHp}</strong>
+          </div>
+          <div className="rounded-md border border-white/10 bg-black/25 px-2 py-1.5 text-white/70">
+            Mana <strong className="float-right text-cyan-200">{profile.mana ?? 20}/{profile.maxMana ?? stats.maxMana}</strong>
+          </div>
+        </div>
       </div>
 
       <div className="grid gap-2">
-        {skills.map(skill => (
-          <div key={skill.name} className="rounded-lg border border-white/10 bg-white/[0.035] p-2.5">
+        {PLAYER_SKILL_DEFS.map(skill => {
+          const rank = skills[skill.id] ?? 0
+          const canSpend = unspent > 0 && rank < PLAYER_SKILL_CAP
+          const nextSkills = { ...skills, [skill.id]: Math.min(PLAYER_SKILL_CAP, rank + 1) }
+          return (
+          <div key={skill.id} className="rounded-lg border border-white/10 bg-white/[0.035] p-2.5">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-bold text-white">{skill.name}</p>
-              <span className="rounded-full border border-white/10 bg-black/30 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-cyan-100">
-                {skill.state}
-              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-white">{skill.label}</p>
+                <p className="mt-0.5 text-[10px] leading-snug text-white/45">{skill.description}</p>
+              </div>
+              <button
+                onClick={() => allocate(skill.id)}
+                disabled={!canSpend || allocating !== null}
+                className="shrink-0 rounded-md border px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] disabled:opacity-35"
+                style={{
+                  color: canSpend ? skill.tone : 'rgba(255,255,255,0.45)',
+                  borderColor: canSpend ? `${skill.tone}88` : 'rgba(255,255,255,0.1)',
+                  background: canSpend ? `${skill.tone}18` : 'rgba(0,0,0,0.25)',
+                }}
+              >
+                {allocating === skill.id ? '...' : rank >= PLAYER_SKILL_CAP ? 'max' : `Lv.${rank}`}
+              </button>
             </div>
-            <p className="mt-1 text-[10px] leading-snug text-white/50">{skill.detail}</p>
+            <div className="mt-2 grid grid-cols-2 gap-1 text-[9px] text-white/45">
+              <span>{summarizeSkill(skill.id, skills)}</span>
+              <span className="text-right text-white/60">next {summarizeSkill(skill.id, nextSkills)}</span>
+            </div>
           </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
