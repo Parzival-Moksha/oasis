@@ -3141,6 +3141,7 @@ function PaintStrokePlaybackTicker() {
 function Text3DSection() {
   const text3dObjects = useOasisStore(s => s.text3dObjects)
   const selectedObjectId = useOasisStore(s => s.selectedObjectId)
+  const inspectedObjectId = useOasisStore(s => s.inspectedObjectId)
   const selectObject = useOasisStore(s => s.selectObject)
   const setObjectTransform = useOasisStore(s => s.setObjectTransform)
   const transforms = useOasisStore(s => s.transforms)
@@ -3160,6 +3161,7 @@ function Text3DSection() {
             onTransformChange={(id, position, rotation, scale) => setObjectTransform(id, { position, rotation, scale })}
             initialPosition={t?.position || object.position}
             initialRotation={t?.rotation || object.rotation}
+            allowTransform={inspectedObjectId === object.id}
           >
             <Text3DObjectMesh object={object} />
           </SelectableWrapper>

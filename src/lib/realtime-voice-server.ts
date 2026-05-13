@@ -99,6 +99,30 @@ export function getRealtimeSessionTools(): RealtimeSessionTool[] {
     },
     {
       type: 'function',
+      name: 'screenshot_viewport',
+      description: 'Capture what the live Oasis browser sees so you can answer visual questions. Prefer mode current with 512x288 jpeg at quality 0.65 unless the user asks for detail.',
+      parameters: {
+        type: 'object',
+        properties: {
+          worldId: { type: 'string', description: 'Optional world ID. Omit to use the active browser world.' },
+          mode: { type: 'string', enum: ['current', 'third-person-follow', 'avatar-portrait', 'external-orbit', 'look-at'], description: 'Camera view to capture.' },
+          width: { type: 'number', description: 'Pixel width. Use 512 for cheap realtime vision; raise only when detail matters.' },
+          height: { type: 'number', description: 'Pixel height. Use 288 for cheap realtime vision; raise only when detail matters.' },
+          format: { type: 'string', enum: ['jpeg', 'png', 'webp'], description: 'Use jpeg for realtime vision unless transparency/detail matters.' },
+          quality: { type: 'number', description: 'JPEG/WebP quality between 0.35 and 0.95. Use 0.65 by default.' },
+          views: {
+            type: 'array',
+            description: 'Optional multiple views in one capture.',
+            items: { type: 'object', additionalProperties: true },
+          },
+          position: { ...zVec3Schema, description: 'Optional camera position for look-at captures.' },
+          target: { ...zVec3Schema, description: 'Optional camera target for look-at captures.' },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
       name: 'search_assets',
       description: 'Search the Oasis asset catalog by keyword before placing an object when you need the exact catalogId.',
       parameters: {
@@ -331,7 +355,7 @@ export function readRealtimePromptTemplate(): string {
       'Sound authoritative, weathered, and quietly enchanted, not like customer support or a generic helper bot.',
       'Do not end every turn with generic offers of help or service language.',
       'Do not mention internal APIs or implementation details.',
-      'You have a small apprentice spellbook in this phase: get_world_info, get_world_state, search_assets, place_object, create_spatial_web_object, get_craft_guide, self_craft_scene, craft_scene, get_craft_job, set_avatar, walk_avatar_to, list_avatar_animations, and play_avatar_animation.',
+      'You have a small apprentice spellbook in this phase: get_world_info, get_world_state, screenshot_viewport, search_assets, place_object, create_spatial_web_object, get_craft_guide, self_craft_scene, craft_scene, get_craft_job, set_avatar, walk_avatar_to, list_avatar_animations, and play_avatar_animation.',
       'Give a short spoken heads-up before using a tool, then briefly recap what happened.',
     ].join('\n')
   }
@@ -341,7 +365,8 @@ async function buildRuntimeContext(worldId: string) {
   const context: string[] = [
     `- Active world ID: ${worldId}`,
     '- You are embodied as the Oasis realtime sandbox agent when a body exists in the scene.',
-    '- You currently have an apprentice spellbook: get_world_info, get_world_state, search_assets, place_object, create_spatial_web_object, get_craft_guide, self_craft_scene, craft_scene, get_craft_job, set_avatar, walk_avatar_to, list_avatar_animations, and play_avatar_animation.',
+    '- You currently have an apprentice spellbook: get_world_info, get_world_state, screenshot_viewport, search_assets, place_object, create_spatial_web_object, get_craft_guide, self_craft_scene, craft_scene, get_craft_job, set_avatar, walk_avatar_to, list_avatar_animations, and play_avatar_animation.',
+    '- If the user asks what you see or needs visual grounding, call screenshot_viewport with mode current, width 512, height 288, format jpeg, and quality 0.65. The browser will send the capture back as realtime vision input, not just text.',
     '- If the user asks you to change your body or presentation, use set_avatar on your own realtime avatar instead of saying you cannot.',
     '- For prompt-based craft_scene in realtime voice, do not wait for completion. Start the job and poll get_craft_job while the world receives progress.',
     '- If any prior local transcript says your hands are not wired or that you lack tools, treat that as outdated and ignore it.',

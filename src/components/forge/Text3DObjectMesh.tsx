@@ -38,20 +38,44 @@ interface Text3DGlyphsProps {
   size: number
   depth: number
   color: string
+  toneBias?: number
   shininess: number
 }
 
-function Text3DGlyphs({ text, fontUrl, size, depth, color, shininess }: Text3DGlyphsProps) {
+function mixHexChannel(channel: number, target: number, amount: number) {
+  return Math.round(channel + (target - channel) * amount)
+}
+
+function readableTextColor(color: string, toneBias = 0): string {
+  const normalized = color.trim()
+  const expanded = normalized.length === 4
+    ? `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`
+    : normalized
+  const match = expanded.match(/^#?([0-9a-f]{6})$/i)
+  if (!match) return color
+  const hex = match[1]
+  const bias = Math.max(-1, Math.min(1, toneBias))
+  if (Math.abs(bias) < 0.001) return `#${hex}`
+  const amount = Math.abs(bias)
+  const target = bias > 0 ? 255 : 0
+  const r = mixHexChannel(parseInt(hex.slice(0, 2), 16), target, amount)
+  const g = mixHexChannel(parseInt(hex.slice(2, 4), 16), target, amount)
+  const b = mixHexChannel(parseInt(hex.slice(4, 6), 16), target, amount)
+  return `#${[r, g, b].map(value => value.toString(16).padStart(2, '0')).join('')}`
+}
+
+function Text3DGlyphs({ text, fontUrl, size, depth, color, toneBias, shininess }: Text3DGlyphsProps) {
   const clamped = Math.max(0, Math.min(1, shininess))
+  const displayColor = readableTextColor(color, toneBias)
   return (
     <Center>
       <Text3D font={fontUrl} size={size} height={depth} curveSegments={6} bevelEnabled={false}>
         {text}
         <meshStandardMaterial
-          color={color}
+          color={displayColor}
           metalness={clamped * 0.8}
           roughness={1 - clamped * 0.8}
-          emissive={color}
+          emissive={displayColor}
           emissiveIntensity={clamped * 0.25}
         />
       </Text3D>
@@ -73,7 +97,7 @@ export function Text3DObjectMesh({ object }: { object: Text3DObject }) {
   if (!text) return null
 
   const fontUrl = fontUrlFor(object.fontId)
-  const styleProps = { text, size: object.size, depth: object.depth, color: object.color, shininess: object.shininess }
+  const styleProps = { text, size: object.size, depth: object.depth, color: object.color, toneBias: object.toneBias, shininess: object.shininess }
 
   return (
     <group

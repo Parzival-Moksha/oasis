@@ -6,10 +6,10 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { KeyboardControls, Stars, Grid, Environment, useProgress } from '@react-three/drei'
+import { KeyboardControls, Stars, Grid, Environment, Html, useProgress } from '@react-three/drei'
 import { EffectComposer, Bloom, Vignette, ChromaticAberration } from '@react-three/postprocessing'
 import { BlendFunction } from 'postprocessing'
-import React, { Suspense, useState, useRef, useContext, useEffect, useTransition } from 'react'
+import React, { Suspense, useState, useRef, useContext, useEffect, useTransition, useCallback } from 'react'
 import * as THREE from 'three'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -64,6 +64,8 @@ import { ConsolePanel } from './forge/ConsolePanel'
 import { useWorldLoader } from './forge/WorldObjects'
 import { completeQuest } from '@/lib/quests'
 import { useInputManager, useUILayer, getMouseLookDebugState, isPointerLocked } from '@/lib/input-manager'
+import { getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
+import { ROOKIE_WIZARD_WORLD_ID, WELCOME_HUB_WORLD_ID } from '@/lib/portal-gates'
 import { CameraController as CameraControllerComponent, sprintRef, FPS_KEYBOARD_MAP } from './CameraController'
 import { useAudioManager, SOUND_OPTIONS, type SoundEvent } from '@/lib/audio-manager'
 import { writeBrowserStorage } from '@/lib/browser-storage'
@@ -1311,6 +1313,121 @@ function AgentQuickLauncher({
   )
 }
 
+const ROOKIE_MERLIN_POSITION: [number, number, number] = [0, 0, 10.2]
+const ROOKIE_MERLIN_INTERACTION_RADIUS = 5
+
+function isWorldTypingTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null
+  if (!el) return false
+  const tag = el.tagName
+  if (tag === 'INPUT') {
+    const type = (el as HTMLInputElement).type
+    return !['range', 'color', 'checkbox', 'radio', 'file', 'button', 'image', 'reset', 'submit'].includes(type)
+  }
+  return tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
+}
+
+function readRookieMerlinDistance(activeWorldId: string): number | null {
+  if (activeWorldId !== ROOKIE_WIZARD_WORLD_ID) return null
+  const pose = getPlayerAvatarPose()
+  if (!pose) return null
+  const dx = pose.position[0] - ROOKIE_MERLIN_POSITION[0]
+  const dz = pose.position[2] - ROOKIE_MERLIN_POSITION[2]
+  return Math.hypot(dx, dz)
+}
+
+function useRookieMerlinNearby(activeWorldId: string): boolean {
+  const [nearby, setNearby] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    const update = () => {
+      if (cancelled) return
+      const distance = readRookieMerlinDistance(activeWorldId)
+      setNearby(distance !== null && distance <= ROOKIE_MERLIN_INTERACTION_RADIUS)
+    }
+    update()
+    const interval = window.setInterval(update, 180)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [activeWorldId])
+  return nearby
+}
+
+function RookieMerlinWorldPrompt() {
+  const activeWorldId = useOasisStore(s => s.activeWorldId)
+  const nearby = useRookieMerlinNearby(activeWorldId)
+  if (!nearby) return null
+  return (
+    <group position={[ROOKIE_MERLIN_POSITION[0], 3.05, ROOKIE_MERLIN_POSITION[2]]}>
+      <Html transform center distanceFactor={8} style={{ pointerEvents: 'none' }}>
+        <div className="rounded-md border border-amber-200/35 bg-black/75 px-3 py-2 text-center shadow-[0_0_22px_rgba(251,191,36,0.18)] backdrop-blur-md">
+          <div className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-100">Merlin</div>
+          <div className="mt-1 flex gap-1.5 text-[10px] font-mono text-white/90">
+            <span className="rounded border border-white/15 bg-white/10 px-1.5 py-0.5">F Talk</span>
+            <span className="rounded border border-white/15 bg-white/10 px-1.5 py-0.5">Q Quest</span>
+            <span className="rounded border border-white/15 bg-white/10 px-1.5 py-0.5">P Portal</span>
+          </div>
+        </div>
+      </Html>
+    </group>
+  )
+}
+
+function RookieMerlinInteractionOverlay({
+  activeWorldId,
+  onTalk,
+  onQuest,
+  onPortalZero,
+}: {
+  activeWorldId: string
+  onTalk: () => void
+  onQuest: () => void
+  onPortalZero: () => void
+}) {
+  const nearby = useRookieMerlinNearby(activeWorldId)
+
+  useEffect(() => {
+    if (!nearby) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return
+      if (isWorldTypingTarget(event.target)) return
+      if (useInputManager.getState().hasActiveUILayer()) return
+      if (event.code === 'KeyF') {
+        event.preventDefault()
+        onTalk()
+      } else if (event.code === 'KeyQ') {
+        event.preventDefault()
+        onQuest()
+      } else if (event.code === 'KeyP') {
+        event.preventDefault()
+        onPortalZero()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [nearby, onPortalZero, onQuest, onTalk])
+
+  if (!nearby) return null
+  return (
+    <div className="fixed bottom-5 right-5 z-[210] flex max-w-[min(380px,calc(100vw-32px))] flex-col gap-2 rounded-lg border border-amber-200/20 bg-slate-950/90 p-3 text-white shadow-[0_18px_50px_rgba(0,0,0,0.42)] backdrop-blur-xl max-[700px]:bottom-4 max-[700px]:right-3 max-[700px]:left-3">
+      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-100/85">Merlin awaits</div>
+      <div className="grid grid-cols-3 gap-2">
+        <button type="button" onClick={onTalk} className="rounded-md border border-sky-300/25 bg-sky-400/10 px-2 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-sky-100 transition hover:bg-sky-400/20">
+          F Talk
+        </button>
+        <button type="button" onClick={onQuest} className="rounded-md border border-violet-300/25 bg-violet-400/10 px-2 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-violet-100 transition hover:bg-violet-400/20">
+          Q Quest
+        </button>
+        <button type="button" onClick={onPortalZero} className="rounded-md border border-emerald-300/25 bg-emerald-400/10 px-2 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-emerald-100 transition hover:bg-emerald-400/20">
+          P Portal
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function Scene() {
   const hostedMode = useIsHostedOasis()
   const capabilities = useOasisCapabilities()
@@ -1379,6 +1496,8 @@ export default function Scene() {
   const isViewModeEditable = useOasisStore(s => s.isViewModeEditable)
   const activeWorldId = useOasisStore(s => s.activeWorldId)
   const worldRegistry = useOasisStore(s => s.worldRegistry)
+  const switchWorld = useOasisStore(s => s.switchWorld)
+  const createNewWorld = useOasisStore(s => s.createNewWorld)
   const activeWorldMeta = worldRegistry.find(world => world.id === activeWorldId)
   const activeWorldCanWrite = Boolean(isAdmin || activeWorldMeta?.canWrite || (isViewMode && isViewModeEditable))
   const activeWorldWriteKnown = Boolean(activeWorldMeta) || isViewMode
@@ -1418,6 +1537,24 @@ export default function Scene() {
   // selector, not the whole forge surface.
   const [skyPanelOpen, setSkyPanelOpen] = useState(false)
   const [lightsPanelOpen, setLightsPanelOpen] = useState(false)
+  const startRookieTalk = useCallback(() => {
+    useAudioManager.getState().play('buttonClick')
+    setRealtimeOpen(true)
+    window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('oasis:realtime-start-talking'))
+    }, 80)
+  }, [])
+  const startRookieQuest = useCallback(() => {
+    useAudioManager.getState().play('buttonClick')
+    const requestedName = window.prompt('Name your first private spell room', 'First spell room')
+    const name = requestedName?.trim()
+    if (!name) return
+    createNewWorld(name.slice(0, 50), 'R')
+  }, [createNewWorld])
+  const jumpToPortalZero = useCallback(() => {
+    useAudioManager.getState().play('buttonClick')
+    switchWorld(WELCOME_HUB_WORLD_ID)
+  }, [switchWorld])
 
   // WorldMenu's Scene buttons (sky/ground/lights) fire this custom event to
   // ask Scene to open WizCon. Legacy listener — kept so any other dispatcher
@@ -1716,6 +1853,7 @@ export default function Scene() {
         {/* ─═̷─═̷─🌍─═̷─═̷─ THE FORGE ─═̷─═̷─🌍─═̷─═̷─ */}
         <Suspense fallback={null}>
           <ForgeRealm />
+          <RookieMerlinWorldPrompt />
         </Suspense>
 
         {/* ─═̷─═̷─📸─═̷─═̷─ PANORAMA CAPTURE (Ctrl+Shift+P) ─═̷─═̷─📸─═̷─═̷─ */}
@@ -1755,6 +1893,12 @@ export default function Scene() {
       <ModeSwitchLabel />
       <PortalTransitionOverlay />
       <WorldLoadingBar />
+      <RookieMerlinInteractionOverlay
+        activeWorldId={activeWorldId}
+        onTalk={startRookieTalk}
+        onQuest={startRookieQuest}
+        onPortalZero={jumpToPortalZero}
+      />
 
       {/* Main game rail */}
       <div className="fixed left-4 top-4 z-[190] flex flex-col gap-2 select-none max-[700px]:left-2 max-[700px]:top-2 max-[700px]:gap-1.5">

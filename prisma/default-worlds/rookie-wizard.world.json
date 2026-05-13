@@ -170,7 +170,43 @@
       "-2,13": "kn-cobblestone",
       "2,13": "kn-cobblestone",
       "3,13": "kn-cobblestone",
-      "4,13": "kn-cobblestone"
+      "4,13": "kn-cobblestone",
+      "-2,-18": "kn-dirt",
+      "2,-18": "kn-rock",
+      "-2,-16": "kn-rock",
+      "2,-16": "kn-dirt",
+      "-2,-14": "kn-dirt",
+      "2,-14": "kn-rock",
+      "-2,-12": "kn-rock",
+      "2,-12": "kn-dirt",
+      "-2,-10": "kn-dirt",
+      "2,-10": "kn-rock",
+      "-2,-8": "kn-rock",
+      "2,-8": "kn-dirt",
+      "-2,-6": "kn-dirt",
+      "2,-6": "kn-rock",
+      "-2,-4": "kn-rock",
+      "2,-4": "kn-dirt",
+      "-2,-2": "kn-dirt",
+      "2,-2": "kn-rock",
+      "-2,0": "kn-rock",
+      "2,0": "kn-dirt",
+      "-2,2": "kn-dirt",
+      "2,2": "kn-rock",
+      "-2,4": "kn-rock",
+      "2,4": "kn-dirt",
+      "-3,-17": "kn-grass",
+      "3,-17": "kn-grass",
+      "-3,-13": "kn-grass",
+      "3,-13": "kn-grass",
+      "-3,-9": "kn-grass",
+      "3,-9": "kn-grass",
+      "-3,-5": "kn-grass",
+      "3,-5": "kn-grass",
+      "-3,-1": "kn-grass",
+      "3,-1": "kn-grass",
+      "-3,3": "kn-grass",
+      "3,3": "kn-grass"
     },
     "craftedScenes": [
       {
@@ -206,18 +242,24 @@
             "text": "ROOKIE WIZARD",
             "position": [
               0,
-              0.88,
-              -0.45
+              1.05,
+              0.15
             ],
             "scale": [
-              0.5,
-              0.5,
-              0.5
+              0.28,
+              0.28,
+              0.28
             ],
             "color": "#bfdbfe",
             "align": "center",
             "emissive": "#bfdbfe",
-            "emissiveIntensity": 0.16
+            "emissiveIntensity": 0.16,
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "fontSize": 0.44
           }
         ]
       },
@@ -290,14 +332,20 @@
               -2.65
             ],
             "scale": [
-              0.42,
-              0.42,
-              0.42
+              0.36,
+              0.36,
+              0.36
             ],
             "color": "#fbbf24",
             "align": "center",
             "emissive": "#fbbf24",
-            "emissiveIntensity": 0.16
+            "emissiveIntensity": 0.16,
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "fontSize": 0.46
           }
         ]
       },
@@ -365,14 +413,20 @@
               0
             ],
             "scale": [
-              0.42,
-              0.42,
-              0.42
+              0.38,
+              0.38,
+              0.38
             ],
             "color": "#fde68a",
             "align": "center",
             "emissive": "#fde68a",
-            "emissiveIntensity": 0.16
+            "emissiveIntensity": 0.16,
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "fontSize": 0.42
           }
         ]
       },
@@ -397,14 +451,20 @@
               -0.55
             ],
             "scale": [
-              0.32,
-              0.32,
-              0.32
+              0.24,
+              0.24,
+              0.24
             ],
             "color": "#dbeafe",
             "align": "center",
             "emissive": "#dbeafe",
-            "emissiveIntensity": 0.16
+            "emissiveIntensity": 0.16,
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "fontSize": 0.34
           },
           {
             "type": "text",
@@ -415,14 +475,20 @@
               -0.55
             ],
             "scale": [
-              0.36,
-              0.36,
-              0.36
+              0.32,
+              0.32,
+              0.32
             ],
             "color": "#bbf7d0",
             "align": "center",
             "emissive": "#bbf7d0",
-            "emissiveIntensity": 0.16
+            "emissiveIntensity": 0.16,
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "fontSize": 0.36
           }
         ]
       },
@@ -2897,11 +2963,2022 @@
             "metalness": 0.02
           }
         ]
+      },
+      {
+        "id": "rookie-ground-crystal-1",
+        "name": "Low path crystal 1",
+        "prompt": "Small low-poly crystal growths beside the apprentice walkway.",
+        "position": [
+          3.1,
+          0,
+          -16.2
+        ],
+        "createdAt": "2026-05-12T18:00:00.000Z",
+        "model": "codex-rookie-wizard-primitives",
+        "objects": [
+          {
+            "type": "cone",
+            "position": [
+              0,
+              0.32,
+              0
+            ],
+            "scale": [
+              0.24,
+              0.64,
+              0.24
+            ],
+            "color": "#38bdf8",
+            "roughness": 0.7,
+            "metalness": 0.02,
+            "emissive": "#38bdf8",
+            "emissiveIntensity": 0.18,
+            "rotation": [
+              0.08,
+              0.2,
+              -0.08
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              0.32,
+              0.22,
+              0.18
+            ],
+            "scale": [
+              0.16,
+              0.44,
+              0.16
+            ],
+            "color": "#a78bfa",
+            "roughness": 0.7,
+            "metalness": 0.02,
+            "emissive": "#a78bfa",
+            "emissiveIntensity": 0.14,
+            "rotation": [
+              -0.16,
+              -0.35,
+              0.12
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              -0.26,
+              0.19,
+              -0.1
+            ],
+            "scale": [
+              0.14,
+              0.38,
+              0.14
+            ],
+            "color": "#67e8f9",
+            "roughness": 0.7,
+            "metalness": 0.02,
+            "emissive": "#67e8f9",
+            "emissiveIntensity": 0.12,
+            "rotation": [
+              0.18,
+              0.5,
+              -0.16
+            ]
+          }
+        ]
+      },
+      {
+        "id": "rookie-path-pebbles-1",
+        "name": "Path pebbles 1",
+        "prompt": "A sparse scatter of readable stones and moss at the path edge.",
+        "position": [
+          -2.9,
+          0,
+          -13.8
+        ],
+        "createdAt": "2026-05-12T18:00:00.000Z",
+        "model": "codex-rookie-wizard-primitives",
+        "objects": [
+          {
+            "type": "sphere",
+            "position": [
+              0,
+              0.08,
+              0
+            ],
+            "scale": [
+              0.32,
+              0.14,
+              0.22
+            ],
+            "color": "#475569",
+            "roughness": 0.82,
+            "metalness": 0.02
+          },
+          {
+            "type": "sphere",
+            "position": [
+              0.45,
+              0.06,
+              -0.22
+            ],
+            "scale": [
+              0.198,
+              0.1,
+              0.128
+            ],
+            "color": "#334155",
+            "roughness": 0.82,
+            "metalness": 0.02
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -0.38,
+              0.04,
+              0.2
+            ],
+            "scale": [
+              0.147,
+              0.07,
+              0.092
+            ],
+            "color": "#166534",
+            "roughness": 0.9,
+            "metalness": 0.02
+          }
+        ]
+      },
+      {
+        "id": "rookie-path-pebbles-2",
+        "name": "Path pebbles 2",
+        "prompt": "A sparse scatter of readable stones and moss at the path edge.",
+        "position": [
+          2.85,
+          0,
+          -10.4
+        ],
+        "createdAt": "2026-05-12T18:00:00.000Z",
+        "model": "codex-rookie-wizard-primitives",
+        "objects": [
+          {
+            "type": "sphere",
+            "position": [
+              0,
+              0.08,
+              0
+            ],
+            "scale": [
+              0.26,
+              0.14,
+              0.2
+            ],
+            "color": "#475569",
+            "roughness": 0.82,
+            "metalness": 0.02
+          },
+          {
+            "type": "sphere",
+            "position": [
+              0.45,
+              0.06,
+              -0.22
+            ],
+            "scale": [
+              0.161,
+              0.1,
+              0.116
+            ],
+            "color": "#334155",
+            "roughness": 0.82,
+            "metalness": 0.02
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -0.38,
+              0.04,
+              0.2
+            ],
+            "scale": [
+              0.12,
+              0.07,
+              0.084
+            ],
+            "color": "#166534",
+            "roughness": 0.9,
+            "metalness": 0.02
+          }
+        ]
+      },
+      {
+        "id": "rookie-ground-crystal-2",
+        "name": "Low path crystal 2",
+        "prompt": "Small low-poly crystal growths beside the apprentice walkway.",
+        "position": [
+          -3.05,
+          0,
+          -7.2
+        ],
+        "createdAt": "2026-05-12T18:00:00.000Z",
+        "model": "codex-rookie-wizard-primitives",
+        "objects": [
+          {
+            "type": "cone",
+            "position": [
+              0,
+              0.32,
+              0
+            ],
+            "scale": [
+              0.24,
+              0.64,
+              0.24
+            ],
+            "color": "#a78bfa",
+            "roughness": 0.7,
+            "metalness": 0.02,
+            "emissive": "#a78bfa",
+            "emissiveIntensity": 0.18,
+            "rotation": [
+              0.08,
+              0.2,
+              -0.08
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              0.32,
+              0.22,
+              0.18
+            ],
+            "scale": [
+              0.16,
+              0.44,
+              0.16
+            ],
+            "color": "#a78bfa",
+            "roughness": 0.7,
+            "metalness": 0.02,
+            "emissive": "#a78bfa",
+            "emissiveIntensity": 0.14,
+            "rotation": [
+              -0.16,
+              -0.35,
+              0.12
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              -0.26,
+              0.19,
+              -0.1
+            ],
+            "scale": [
+              0.14,
+              0.38,
+              0.14
+            ],
+            "color": "#67e8f9",
+            "roughness": 0.7,
+            "metalness": 0.02,
+            "emissive": "#67e8f9",
+            "emissiveIntensity": 0.12,
+            "rotation": [
+              0.18,
+              0.5,
+              -0.16
+            ]
+          }
+        ]
+      },
+      {
+        "id": "rookie-path-pebbles-3",
+        "name": "Path pebbles 3",
+        "prompt": "A sparse scatter of readable stones and moss at the path edge.",
+        "position": [
+          -2.75,
+          0,
+          -3.6
+        ],
+        "createdAt": "2026-05-12T18:00:00.000Z",
+        "model": "codex-rookie-wizard-primitives",
+        "objects": [
+          {
+            "type": "sphere",
+            "position": [
+              0,
+              0.08,
+              0
+            ],
+            "scale": [
+              0.3,
+              0.14,
+              0.24
+            ],
+            "color": "#475569",
+            "roughness": 0.82,
+            "metalness": 0.02
+          },
+          {
+            "type": "sphere",
+            "position": [
+              0.45,
+              0.06,
+              -0.22
+            ],
+            "scale": [
+              0.186,
+              0.1,
+              0.139
+            ],
+            "color": "#334155",
+            "roughness": 0.82,
+            "metalness": 0.02
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -0.38,
+              0.04,
+              0.2
+            ],
+            "scale": [
+              0.138,
+              0.07,
+              0.101
+            ],
+            "color": "#166534",
+            "roughness": 0.9,
+            "metalness": 0.02
+          }
+        ]
+      },
+      {
+        "id": "rookie-ground-crystal-3",
+        "name": "Low path crystal 3",
+        "prompt": "Small low-poly crystal growths beside the apprentice walkway.",
+        "position": [
+          3.2,
+          0,
+          1.6
+        ],
+        "createdAt": "2026-05-12T18:00:00.000Z",
+        "model": "codex-rookie-wizard-primitives",
+        "objects": [
+          {
+            "type": "cone",
+            "position": [
+              0,
+              0.32,
+              0
+            ],
+            "scale": [
+              0.24,
+              0.64,
+              0.24
+            ],
+            "color": "#67e8f9",
+            "roughness": 0.7,
+            "metalness": 0.02,
+            "emissive": "#67e8f9",
+            "emissiveIntensity": 0.18,
+            "rotation": [
+              0.08,
+              0.2,
+              -0.08
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              0.32,
+              0.22,
+              0.18
+            ],
+            "scale": [
+              0.16,
+              0.44,
+              0.16
+            ],
+            "color": "#a78bfa",
+            "roughness": 0.7,
+            "metalness": 0.02,
+            "emissive": "#a78bfa",
+            "emissiveIntensity": 0.14,
+            "rotation": [
+              -0.16,
+              -0.35,
+              0.12
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              -0.26,
+              0.19,
+              -0.1
+            ],
+            "scale": [
+              0.14,
+              0.38,
+              0.14
+            ],
+            "color": "#67e8f9",
+            "roughness": 0.7,
+            "metalness": 0.02,
+            "emissive": "#67e8f9",
+            "emissiveIntensity": 0.12,
+            "rotation": [
+              0.18,
+              0.5,
+              -0.16
+            ]
+          }
+        ]
+      },
+      {
+        "id": "rookie-lore-panel-1",
+        "name": "Portal Zero",
+        "prompt": "A floating framed lore panel about Portal Zero, angled toward the Rookie Wizard path.",
+        "position": [
+          4.15,
+          0,
+          -14.9
+        ],
+        "createdAt": "2026-05-12T18:00:00.000Z",
+        "model": "codex-rookie-wizard-primitives",
+        "objects": [
+          {
+            "type": "box",
+            "position": [
+              0,
+              2.9,
+              0
+            ],
+            "scale": [
+              3.15,
+              1.85,
+              0.12
+            ],
+            "color": "#0f172a",
+            "roughness": 0.78,
+            "metalness": 0.02,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#1e293b",
+            "emissiveIntensity": 0.08
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              2.9,
+              0.075
+            ],
+            "scale": [
+              2.78,
+              1.48,
+              0.06
+            ],
+            "color": "#172554",
+            "roughness": 0.78,
+            "metalness": 0.02,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#172554",
+            "emissiveIntensity": 0.07
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              3.84,
+              0.13
+            ],
+            "scale": [
+              3.35,
+              0.12,
+              0.16
+            ],
+            "color": "#d6b25e",
+            "roughness": 0.42,
+            "metalness": 0.18,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ]
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              1.96,
+              0.13
+            ],
+            "scale": [
+              3.35,
+              0.12,
+              0.16
+            ],
+            "color": "#d6b25e",
+            "roughness": 0.42,
+            "metalness": 0.18,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ]
+          },
+          {
+            "type": "box",
+            "position": [
+              -1.64,
+              2.9,
+              0.13
+            ],
+            "scale": [
+              0.12,
+              1.92,
+              0.16
+            ],
+            "color": "#d6b25e",
+            "roughness": 0.42,
+            "metalness": 0.18,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ]
+          },
+          {
+            "type": "box",
+            "position": [
+              1.64,
+              2.9,
+              0.13
+            ],
+            "scale": [
+              0.12,
+              1.92,
+              0.16
+            ],
+            "color": "#d6b25e",
+            "roughness": 0.42,
+            "metalness": 0.18,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ]
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -0.92,
+              2.98,
+              0.22
+            ],
+            "scale": [
+              0.42,
+              0.42,
+              0.08
+            ],
+            "color": "#38bdf8",
+            "roughness": 0.82,
+            "metalness": 0.02,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#38bdf8",
+            "emissiveIntensity": 0.34,
+            "transparent": true,
+            "opacity": 0.72
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -0.92,
+              2.98,
+              0.25
+            ],
+            "scale": [
+              0.6,
+              0.035,
+              0.6
+            ],
+            "color": "#f8fafc",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              1.7907963267948965,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#f8fafc",
+            "emissiveIntensity": 0.08
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -0.92,
+              2.98,
+              0.32
+            ],
+            "scale": [
+              0.36,
+              0.04,
+              0.36
+            ],
+            "color": "#0f172a",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              1.7907963267948965,
+              -1.5707963267948966,
+              0
+            ]
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -0.92,
+              2.98,
+              0.38
+            ],
+            "scale": [
+              0.18,
+              0.18,
+              0.04
+            ],
+            "color": "#38bdf8",
+            "roughness": 0.82,
+            "metalness": 0.02,
+            "emissive": "#38bdf8",
+            "emissiveIntensity": 0.5
+          },
+          {
+            "type": "text",
+            "text": "Portal Zero",
+            "position": [
+              0.48,
+              3.34,
+              0.24
+            ],
+            "scale": [
+              0.22,
+              0.22,
+              0.22
+            ],
+            "color": "#fef3c7",
+            "align": "center",
+            "emissive": "#fef3c7",
+            "emissiveIntensity": 0.16,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "fontSize": 0.42
+          },
+          {
+            "type": "text",
+            "text": "Every shared road",
+            "position": [
+              0.5,
+              2.74,
+              0.24
+            ],
+            "scale": [
+              0.16,
+              0.16,
+              0.16
+            ],
+            "color": "#dbeafe",
+            "align": "center",
+            "emissive": "#dbeafe",
+            "emissiveIntensity": 0.16,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "fontSize": 0.28
+          },
+          {
+            "type": "text",
+            "text": "starts at the hub.",
+            "position": [
+              0.5,
+              2.34,
+              0.24
+            ],
+            "scale": [
+              0.14,
+              0.14,
+              0.14
+            ],
+            "color": "#bae6fd",
+            "align": "center",
+            "emissive": "#bae6fd",
+            "emissiveIntensity": 0.16,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "fontSize": 0.24
+          }
+        ]
+      },
+      {
+        "id": "rookie-lore-panel-2",
+        "name": "The First Gate",
+        "prompt": "A floating framed lore panel about The First Gate, angled toward the Rookie Wizard path.",
+        "position": [
+          4.15,
+          0,
+          -10.9
+        ],
+        "createdAt": "2026-05-12T18:00:00.000Z",
+        "model": "codex-rookie-wizard-primitives",
+        "objects": [
+          {
+            "type": "box",
+            "position": [
+              0,
+              2.9,
+              0
+            ],
+            "scale": [
+              3.15,
+              1.85,
+              0.12
+            ],
+            "color": "#0f172a",
+            "roughness": 0.78,
+            "metalness": 0.02,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#1e293b",
+            "emissiveIntensity": 0.08
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              2.9,
+              0.075
+            ],
+            "scale": [
+              2.78,
+              1.48,
+              0.06
+            ],
+            "color": "#2e1065",
+            "roughness": 0.78,
+            "metalness": 0.02,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#2e1065",
+            "emissiveIntensity": 0.07
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              3.84,
+              0.13
+            ],
+            "scale": [
+              3.35,
+              0.12,
+              0.16
+            ],
+            "color": "#d6b25e",
+            "roughness": 0.42,
+            "metalness": 0.18,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ]
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              1.96,
+              0.13
+            ],
+            "scale": [
+              3.35,
+              0.12,
+              0.16
+            ],
+            "color": "#d6b25e",
+            "roughness": 0.42,
+            "metalness": 0.18,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ]
+          },
+          {
+            "type": "box",
+            "position": [
+              -1.64,
+              2.9,
+              0.13
+            ],
+            "scale": [
+              0.12,
+              1.92,
+              0.16
+            ],
+            "color": "#d6b25e",
+            "roughness": 0.42,
+            "metalness": 0.18,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ]
+          },
+          {
+            "type": "box",
+            "position": [
+              1.64,
+              2.9,
+              0.13
+            ],
+            "scale": [
+              0.12,
+              1.92,
+              0.16
+            ],
+            "color": "#d6b25e",
+            "roughness": 0.42,
+            "metalness": 0.18,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ]
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -0.92,
+              2.98,
+              0.22
+            ],
+            "scale": [
+              0.42,
+              0.42,
+              0.08
+            ],
+            "color": "#c084fc",
+            "roughness": 0.82,
+            "metalness": 0.02,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#c084fc",
+            "emissiveIntensity": 0.34,
+            "transparent": true,
+            "opacity": 0.72
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -0.92,
+              2.98,
+              0.25
+            ],
+            "scale": [
+              0.6,
+              0.035,
+              0.6
+            ],
+            "color": "#f8fafc",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              1.7907963267948965,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#f8fafc",
+            "emissiveIntensity": 0.08
+          },
+          {
+            "type": "box",
+            "position": [
+              -0.92,
+              2.98,
+              0.34
+            ],
+            "scale": [
+              0.52,
+              0.78,
+              0.05
+            ],
+            "color": "#111827",
+            "roughness": 0.78,
+            "metalness": 0.02,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#7c3aed",
+            "emissiveIntensity": 0.18
+          },
+          {
+            "type": "box",
+            "position": [
+              -0.92,
+              3.42,
+              0.38
+            ],
+            "scale": [
+              0.68,
+              0.08,
+              0.06
+            ],
+            "color": "#c084fc",
+            "roughness": 0.78,
+            "metalness": 0.02,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#c084fc",
+            "emissiveIntensity": 0.22
+          },
+          {
+            "type": "text",
+            "text": "The First Gate",
+            "position": [
+              0.48,
+              3.34,
+              0.24
+            ],
+            "scale": [
+              0.22,
+              0.22,
+              0.22
+            ],
+            "color": "#fef3c7",
+            "align": "center",
+            "emissive": "#fef3c7",
+            "emissiveIntensity": 0.16,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "fontSize": 0.42
+          },
+          {
+            "type": "text",
+            "text": "A door is a promise:",
+            "position": [
+              0.5,
+              2.74,
+              0.24
+            ],
+            "scale": [
+              0.16,
+              0.16,
+              0.16
+            ],
+            "color": "#dbeafe",
+            "align": "center",
+            "emissive": "#dbeafe",
+            "emissiveIntensity": 0.16,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "fontSize": 0.28
+          },
+          {
+            "type": "text",
+            "text": "step through and return.",
+            "position": [
+              0.5,
+              2.34,
+              0.24
+            ],
+            "scale": [
+              0.14,
+              0.14,
+              0.14
+            ],
+            "color": "#bae6fd",
+            "align": "center",
+            "emissive": "#bae6fd",
+            "emissiveIntensity": 0.16,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "fontSize": 0.24
+          }
+        ]
+      },
+      {
+        "id": "rookie-lore-panel-3",
+        "name": "Merlin Lantern",
+        "prompt": "A floating framed lore panel about Merlin Lantern, angled toward the Rookie Wizard path.",
+        "position": [
+          4.15,
+          0,
+          -6.9
+        ],
+        "createdAt": "2026-05-12T18:00:00.000Z",
+        "model": "codex-rookie-wizard-primitives",
+        "objects": [
+          {
+            "type": "box",
+            "position": [
+              0,
+              2.9,
+              0
+            ],
+            "scale": [
+              3.15,
+              1.85,
+              0.12
+            ],
+            "color": "#0f172a",
+            "roughness": 0.78,
+            "metalness": 0.02,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#1e293b",
+            "emissiveIntensity": 0.08
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              2.9,
+              0.075
+            ],
+            "scale": [
+              2.78,
+              1.48,
+              0.06
+            ],
+            "color": "#422006",
+            "roughness": 0.78,
+            "metalness": 0.02,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#422006",
+            "emissiveIntensity": 0.07
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              3.84,
+              0.13
+            ],
+            "scale": [
+              3.35,
+              0.12,
+              0.16
+            ],
+            "color": "#d6b25e",
+            "roughness": 0.42,
+            "metalness": 0.18,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ]
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              1.96,
+              0.13
+            ],
+            "scale": [
+              3.35,
+              0.12,
+              0.16
+            ],
+            "color": "#d6b25e",
+            "roughness": 0.42,
+            "metalness": 0.18,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ]
+          },
+          {
+            "type": "box",
+            "position": [
+              -1.64,
+              2.9,
+              0.13
+            ],
+            "scale": [
+              0.12,
+              1.92,
+              0.16
+            ],
+            "color": "#d6b25e",
+            "roughness": 0.42,
+            "metalness": 0.18,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ]
+          },
+          {
+            "type": "box",
+            "position": [
+              1.64,
+              2.9,
+              0.13
+            ],
+            "scale": [
+              0.12,
+              1.92,
+              0.16
+            ],
+            "color": "#d6b25e",
+            "roughness": 0.42,
+            "metalness": 0.18,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ]
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -0.92,
+              2.98,
+              0.22
+            ],
+            "scale": [
+              0.42,
+              0.42,
+              0.08
+            ],
+            "color": "#fbbf24",
+            "roughness": 0.82,
+            "metalness": 0.02,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#fbbf24",
+            "emissiveIntensity": 0.34,
+            "transparent": true,
+            "opacity": 0.72
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -0.92,
+              2.98,
+              0.25
+            ],
+            "scale": [
+              0.6,
+              0.035,
+              0.6
+            ],
+            "color": "#f8fafc",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              1.7907963267948965,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#f8fafc",
+            "emissiveIntensity": 0.08
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -0.92,
+              2.78,
+              0.34
+            ],
+            "scale": [
+              0.18,
+              0.46,
+              0.18
+            ],
+            "color": "#78350f",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              -0.92,
+              3.18,
+              0.39
+            ],
+            "scale": [
+              0.3,
+              0.54,
+              0.3
+            ],
+            "color": "#f59e0b",
+            "roughness": 0.7,
+            "metalness": 0.02,
+            "rotation": [
+              0.1,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#f59e0b",
+            "emissiveIntensity": 0.55
+          },
+          {
+            "type": "text",
+            "text": "Merlin Lantern",
+            "position": [
+              0.48,
+              3.34,
+              0.24
+            ],
+            "scale": [
+              0.22,
+              0.22,
+              0.22
+            ],
+            "color": "#fef3c7",
+            "align": "center",
+            "emissive": "#fef3c7",
+            "emissiveIntensity": 0.16,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "fontSize": 0.42
+          },
+          {
+            "type": "text",
+            "text": "Guides do not own",
+            "position": [
+              0.5,
+              2.74,
+              0.24
+            ],
+            "scale": [
+              0.16,
+              0.16,
+              0.16
+            ],
+            "color": "#dbeafe",
+            "align": "center",
+            "emissive": "#dbeafe",
+            "emissiveIntensity": 0.16,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "fontSize": 0.28
+          },
+          {
+            "type": "text",
+            "text": "the spell. They aim it.",
+            "position": [
+              0.5,
+              2.34,
+              0.24
+            ],
+            "scale": [
+              0.14,
+              0.14,
+              0.14
+            ],
+            "color": "#bae6fd",
+            "align": "center",
+            "emissive": "#bae6fd",
+            "emissiveIntensity": 0.16,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "fontSize": 0.24
+          }
+        ]
+      },
+      {
+        "id": "rookie-lore-panel-4",
+        "name": "Shared World",
+        "prompt": "A floating framed lore panel about Shared World, angled toward the Rookie Wizard path.",
+        "position": [
+          4.15,
+          0,
+          -2.9
+        ],
+        "createdAt": "2026-05-12T18:00:00.000Z",
+        "model": "codex-rookie-wizard-primitives",
+        "objects": [
+          {
+            "type": "box",
+            "position": [
+              0,
+              2.9,
+              0
+            ],
+            "scale": [
+              3.15,
+              1.85,
+              0.12
+            ],
+            "color": "#0f172a",
+            "roughness": 0.78,
+            "metalness": 0.02,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#1e293b",
+            "emissiveIntensity": 0.08
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              2.9,
+              0.075
+            ],
+            "scale": [
+              2.78,
+              1.48,
+              0.06
+            ],
+            "color": "#14532d",
+            "roughness": 0.78,
+            "metalness": 0.02,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#14532d",
+            "emissiveIntensity": 0.07
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              3.84,
+              0.13
+            ],
+            "scale": [
+              3.35,
+              0.12,
+              0.16
+            ],
+            "color": "#d6b25e",
+            "roughness": 0.42,
+            "metalness": 0.18,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ]
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              1.96,
+              0.13
+            ],
+            "scale": [
+              3.35,
+              0.12,
+              0.16
+            ],
+            "color": "#d6b25e",
+            "roughness": 0.42,
+            "metalness": 0.18,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ]
+          },
+          {
+            "type": "box",
+            "position": [
+              -1.64,
+              2.9,
+              0.13
+            ],
+            "scale": [
+              0.12,
+              1.92,
+              0.16
+            ],
+            "color": "#d6b25e",
+            "roughness": 0.42,
+            "metalness": 0.18,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ]
+          },
+          {
+            "type": "box",
+            "position": [
+              1.64,
+              2.9,
+              0.13
+            ],
+            "scale": [
+              0.12,
+              1.92,
+              0.16
+            ],
+            "color": "#d6b25e",
+            "roughness": 0.42,
+            "metalness": 0.18,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ]
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -0.92,
+              2.98,
+              0.22
+            ],
+            "scale": [
+              0.42,
+              0.42,
+              0.08
+            ],
+            "color": "#86efac",
+            "roughness": 0.82,
+            "metalness": 0.02,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#86efac",
+            "emissiveIntensity": 0.34,
+            "transparent": true,
+            "opacity": 0.72
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -0.92,
+              2.98,
+              0.25
+            ],
+            "scale": [
+              0.6,
+              0.035,
+              0.6
+            ],
+            "color": "#f8fafc",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              1.7907963267948965,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#f8fafc",
+            "emissiveIntensity": 0.08
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -1.12,
+              3.04,
+              0.35
+            ],
+            "scale": [
+              0.18,
+              0.18,
+              0.06
+            ],
+            "color": "#86efac",
+            "roughness": 0.82,
+            "metalness": 0.02,
+            "emissive": "#86efac",
+            "emissiveIntensity": 0.28
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -0.76,
+              2.84,
+              0.35
+            ],
+            "scale": [
+              0.18,
+              0.18,
+              0.06
+            ],
+            "color": "#67e8f9",
+            "roughness": 0.82,
+            "metalness": 0.02,
+            "emissive": "#67e8f9",
+            "emissiveIntensity": 0.22
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -0.76,
+              3.24,
+              0.35
+            ],
+            "scale": [
+              0.18,
+              0.18,
+              0.06
+            ],
+            "color": "#fef3c7",
+            "roughness": 0.82,
+            "metalness": 0.02,
+            "emissive": "#fef3c7",
+            "emissiveIntensity": 0.16
+          },
+          {
+            "type": "text",
+            "text": "Shared World",
+            "position": [
+              0.48,
+              3.34,
+              0.24
+            ],
+            "scale": [
+              0.22,
+              0.22,
+              0.22
+            ],
+            "color": "#fef3c7",
+            "align": "center",
+            "emissive": "#fef3c7",
+            "emissiveIntensity": 0.16,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "fontSize": 0.42
+          },
+          {
+            "type": "text",
+            "text": "Presence makes stone",
+            "position": [
+              0.5,
+              2.74,
+              0.24
+            ],
+            "scale": [
+              0.16,
+              0.16,
+              0.16
+            ],
+            "color": "#dbeafe",
+            "align": "center",
+            "emissive": "#dbeafe",
+            "emissiveIntensity": 0.16,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "fontSize": 0.28
+          },
+          {
+            "type": "text",
+            "text": "remember footsteps.",
+            "position": [
+              0.5,
+              2.34,
+              0.24
+            ],
+            "scale": [
+              0.14,
+              0.14,
+              0.14
+            ],
+            "color": "#bae6fd",
+            "align": "center",
+            "emissive": "#bae6fd",
+            "emissiveIntensity": 0.16,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "fontSize": 0.24
+          }
+        ]
+      },
+      {
+        "id": "rookie-lore-panel-5",
+        "name": "OpenClaw Signal",
+        "prompt": "A floating framed lore panel about OpenClaw Signal, angled toward the Rookie Wizard path.",
+        "position": [
+          4.15,
+          0,
+          1.1
+        ],
+        "createdAt": "2026-05-12T18:00:00.000Z",
+        "model": "codex-rookie-wizard-primitives",
+        "objects": [
+          {
+            "type": "box",
+            "position": [
+              0,
+              2.9,
+              0
+            ],
+            "scale": [
+              3.15,
+              1.85,
+              0.12
+            ],
+            "color": "#0f172a",
+            "roughness": 0.78,
+            "metalness": 0.02,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#1e293b",
+            "emissiveIntensity": 0.08
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              2.9,
+              0.075
+            ],
+            "scale": [
+              2.78,
+              1.48,
+              0.06
+            ],
+            "color": "#4c0519",
+            "roughness": 0.78,
+            "metalness": 0.02,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#4c0519",
+            "emissiveIntensity": 0.07
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              3.84,
+              0.13
+            ],
+            "scale": [
+              3.35,
+              0.12,
+              0.16
+            ],
+            "color": "#d6b25e",
+            "roughness": 0.42,
+            "metalness": 0.18,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ]
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              1.96,
+              0.13
+            ],
+            "scale": [
+              3.35,
+              0.12,
+              0.16
+            ],
+            "color": "#d6b25e",
+            "roughness": 0.42,
+            "metalness": 0.18,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ]
+          },
+          {
+            "type": "box",
+            "position": [
+              -1.64,
+              2.9,
+              0.13
+            ],
+            "scale": [
+              0.12,
+              1.92,
+              0.16
+            ],
+            "color": "#d6b25e",
+            "roughness": 0.42,
+            "metalness": 0.18,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ]
+          },
+          {
+            "type": "box",
+            "position": [
+              1.64,
+              2.9,
+              0.13
+            ],
+            "scale": [
+              0.12,
+              1.92,
+              0.16
+            ],
+            "color": "#d6b25e",
+            "roughness": 0.42,
+            "metalness": 0.18,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ]
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -0.92,
+              2.98,
+              0.22
+            ],
+            "scale": [
+              0.42,
+              0.42,
+              0.08
+            ],
+            "color": "#fb7185",
+            "roughness": 0.82,
+            "metalness": 0.02,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#fb7185",
+            "emissiveIntensity": 0.34,
+            "transparent": true,
+            "opacity": 0.72
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -0.92,
+              2.98,
+              0.25
+            ],
+            "scale": [
+              0.6,
+              0.035,
+              0.6
+            ],
+            "color": "#f8fafc",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              1.7907963267948965,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#f8fafc",
+            "emissiveIntensity": 0.08
+          },
+          {
+            "type": "cone",
+            "position": [
+              -0.92,
+              3.18,
+              0.35
+            ],
+            "scale": [
+              0.36,
+              0.62,
+              0.36
+            ],
+            "color": "#fb7185",
+            "roughness": 0.7,
+            "metalness": 0.02,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "emissive": "#fb7185",
+            "emissiveIntensity": 0.3
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -0.92,
+              2.74,
+              0.37
+            ],
+            "scale": [
+              0.26,
+              0.18,
+              0.08
+            ],
+            "color": "#f8fafc",
+            "roughness": 0.82,
+            "metalness": 0.02,
+            "emissive": "#f8fafc",
+            "emissiveIntensity": 0.12
+          },
+          {
+            "type": "text",
+            "text": "OpenClaw Signal",
+            "position": [
+              0.48,
+              3.34,
+              0.24
+            ],
+            "scale": [
+              0.22,
+              0.22,
+              0.22
+            ],
+            "color": "#fef3c7",
+            "align": "center",
+            "emissive": "#fef3c7",
+            "emissiveIntensity": 0.16,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "fontSize": 0.42
+          },
+          {
+            "type": "text",
+            "text": "The avatar is body.",
+            "position": [
+              0.5,
+              2.74,
+              0.24
+            ],
+            "scale": [
+              0.16,
+              0.16,
+              0.16
+            ],
+            "color": "#dbeafe",
+            "align": "center",
+            "emissive": "#dbeafe",
+            "emissiveIntensity": 0.16,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "fontSize": 0.28
+          },
+          {
+            "type": "text",
+            "text": "The mind arrives awake.",
+            "position": [
+              0.5,
+              2.34,
+              0.24
+            ],
+            "scale": [
+              0.14,
+              0.14,
+              0.14
+            ],
+            "color": "#bae6fd",
+            "align": "center",
+            "emissive": "#bae6fd",
+            "emissiveIntensity": 0.16,
+            "rotation": [
+              0.22,
+              -1.5707963267948966,
+              0
+            ],
+            "fontSize": 0.24
+          }
+        ]
       }
     ],
     "conjuredAssetIds": [],
     "catalogPlacements": [],
     "portalGates": [
+      {
+        "id": "rookie-arrival-from-portal-zero",
+        "label": "Portal Zero return",
+        "variant": "threshold-ring",
+        "position": [
+          0,
+          0,
+          -19.15
+        ],
+        "rotationY": 0,
+        "scale": 0.72,
+        "width": 1.9,
+        "height": 2.65,
+        "direction": "one-way",
+        "hidden": true,
+        "sourceWorldId": "world-rookie-wizard-system",
+        "targetWorldId": "world-welcome-hub-system",
+        "targetWorldName": "Portal Zero",
+        "action": {
+          "type": "load_world",
+          "worldId": "world-welcome-hub-system",
+          "worldName": "Portal Zero"
+        },
+        "spawnPose": {
+          "position": [
+            0,
+            0,
+            -17.6
+          ],
+          "rotationY": 0
+        }
+      },
       {
         "id": "rookie-new-private-world",
         "label": "Create Private World",

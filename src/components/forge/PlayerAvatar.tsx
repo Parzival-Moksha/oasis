@@ -29,6 +29,7 @@ import { SettingsContext } from '../scene-lib'
 import {
   PLAYER_AVATAR_LIPSYNC_ID,
   getPlayerSpellCasting,
+  requestPlayerAvatarTeleport,
   setPlayerAvatarPose,
   setPlayerSpellCasting,
   subscribePlayerAvatarTeleport,
@@ -36,6 +37,7 @@ import {
 } from '../../lib/player-avatar-runtime'
 import { SPELL_CAST_ANIMATION_ID, SPELL_CAST_SOUND_URL } from '../../lib/spell-casting'
 import { PORTAL_REVEAL_ROLL_EVENT } from '../../lib/portal-transition-settings'
+import { ROOKIE_WIZARD_WORLD_ID } from '../../lib/portal-gates'
 import { sampleTerrainHeightAt } from '../../lib/forge/terrain-brush'
 import { useOasisStore } from '../../store/oasisStore'
 
@@ -150,6 +152,8 @@ export function PlayerAvatar({
   const inputState = useInputManager(s => s.inputState)
   const pointerLocked = useInputManager(s => s.pointerLocked)
   const terrainHeights = useOasisStore(s => s.terrainHeights)
+  const activeWorldId = useOasisStore(s => s.activeWorldId)
+  const worldReady = useOasisStore(s => s._worldReady)
   const isThirdPersonActive = inputState === 'third-person'
   const groupRef = useRef<THREE.Group>(null)
   const vrmRef = useRef<VRM | null>(null)
@@ -171,6 +175,7 @@ export function PlayerAvatar({
   const facingAngle = useRef(0) // Y rotation avatar faces
   const isMovingRef = useRef(false)
   const terrainHeightsRef = useRef(terrainHeights)
+  const defaultSpawnAppliedForWorldRef = useRef<string | null>(null)
   // Pre-allocated temp vectors (avoid per-frame allocation)
   const _camFwd = useRef(new THREE.Vector3())
   const _camRt = useRef(new THREE.Vector3())
@@ -206,6 +211,23 @@ export function PlayerAvatar({
   useEffect(() => {
     terrainHeightsRef.current = terrainHeights
   }, [terrainHeights])
+
+  useEffect(() => {
+    if (activeWorldId !== ROOKIE_WIZARD_WORLD_ID) {
+      if (defaultSpawnAppliedForWorldRef.current === ROOKIE_WIZARD_WORLD_ID) {
+        defaultSpawnAppliedForWorldRef.current = null
+      }
+      return
+    }
+    if (!worldReady) return
+    if (defaultSpawnAppliedForWorldRef.current === activeWorldId) return
+    defaultSpawnAppliedForWorldRef.current = activeWorldId
+    requestPlayerAvatarTeleport({
+      position: [0, 0, -17.6],
+      yaw: 0,
+      forward: [0, 0, 1],
+    })
+  }, [activeWorldId, worldReady])
 
   useEffect(() => {
     const handleWheel = (event: WheelEvent) => {

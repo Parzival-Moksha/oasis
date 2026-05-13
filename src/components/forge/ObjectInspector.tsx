@@ -506,6 +506,15 @@ function Text3DEditSection({ object, onChange }: {
         <ParamSlider label="size"  value={object.size}  min={0.05} max={3} step={0.05} onChange={(v) => onChange({ size: v })} />
         <ParamSlider label="depth" value={object.depth} min={0.01} max={1} step={0.01} onChange={(v) => onChange({ depth: v })} />
         <ParamSlider label="shine" value={object.shininess} min={0} max={1} step={0.05} onChange={(v) => onChange({ shininess: v })} />
+        <ParamSlider
+          label="tone"
+          value={object.toneBias ?? 0}
+          min={-1}
+          max={1}
+          step={0.05}
+          format={(value) => value < -0.05 ? `B${Math.round(Math.abs(value) * 100)}` : value > 0.05 ? `W${Math.round(value * 100)}` : 'pick'}
+          onChange={(v) => onChange({ toneBias: v })}
+        />
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-amber-100/65 font-mono w-16 shrink-0">color</span>
           <input

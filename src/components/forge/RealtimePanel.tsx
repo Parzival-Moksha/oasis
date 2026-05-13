@@ -75,6 +75,7 @@ const LEGACY_NO_TOOLS_MARKERS = [
 const REALTIME_TOOL_NAMES = new Set([
   'get_world_info',
   'get_world_state',
+  'screenshot_viewport',
   'search_assets',
   'place_object',
   'create_spatial_web_object',
@@ -135,6 +136,57 @@ function summarizeJson(value: unknown, maxLength = 260): string {
   const raw = typeof value === 'string' ? value : JSON.stringify(value)
   if (!raw) return ''
   return raw.length > maxLength ? `${raw.slice(0, maxLength - 3)}...` : raw
+}
+
+function recordFrom(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : null
+}
+
+function extractRealtimeScreenshotImage(result: unknown): { imageUrl: string; label: string } | null {
+  const root = recordFrom(result)
+  const data = recordFrom(root?.data)
+  const captures = Array.isArray(data?.captures) ? data.captures : []
+  const firstCapture = captures.map(recordFrom).find(Boolean) || null
+  const format = typeof firstCapture?.format === 'string'
+    ? firstCapture.format
+    : typeof data?.format === 'string'
+      ? data.format
+      : 'jpeg'
+  const url = typeof firstCapture?.url === 'string' && firstCapture.url.trim()
+    ? firstCapture.url.trim()
+    : typeof data?.primaryCaptureUrl === 'string' && data.primaryCaptureUrl.trim()
+      ? data.primaryCaptureUrl.trim()
+      : ''
+  if (url) {
+    return { imageUrl: url, label: typeof firstCapture?.viewId === 'string' ? firstCapture.viewId : 'Oasis viewport' }
+  }
+  const base64 = typeof firstCapture?.base64 === 'string' && firstCapture.base64.trim()
+    ? firstCapture.base64.trim()
+    : typeof data?.base64 === 'string' && data.base64.trim()
+      ? data.base64.trim()
+      : ''
+  if (!base64) return null
+  return {
+    imageUrl: `data:image/${format === 'png' || format === 'webp' ? format : 'jpeg'};base64,${base64}`,
+    label: typeof firstCapture?.viewId === 'string' ? firstCapture.viewId : 'Oasis viewport',
+  }
+}
+
+function stripRealtimeScreenshotPayload(result: Record<string, unknown>): Record<string, unknown> {
+  const data = recordFrom(result.data)
+  if (!data) return result
+  const nextData: Record<string, unknown> = { ...data }
+  if (typeof nextData.base64 === 'string') nextData.base64 = '[sent as realtime vision input]'
+  if (Array.isArray(nextData.captures)) {
+    nextData.captures = nextData.captures.map(capture => {
+      const record = recordFrom(capture)
+      if (!record) return capture
+      return typeof record.base64 === 'string'
+        ? { ...record, base64: '[sent as realtime vision input]' }
+        : record
+    })
+  }
+  return { ...result, data: nextData }
 }
 
 function gainFromDb(db: number): number {
@@ -1034,6 +1086,13 @@ export function RealtimePanel({
             }
 
             const toolArgs: Record<string, unknown> = withBrowserWorldId(parsedArgs, activeWorldId)
+            if (call.name === 'screenshot_viewport') {
+              if (toolArgs.width === undefined) toolArgs.width = 512
+              if (toolArgs.height === undefined) toolArgs.height = 288
+              if (toolArgs.format === undefined) toolArgs.format = 'jpeg'
+              if (toolArgs.quality === undefined) toolArgs.quality = 0.65
+              if (toolArgs.mode === undefined && toolArgs.views === undefined) toolArgs.mode = 'current'
+            }
             if ((
               call.name === 'set_avatar'
               || call.name === 'walk_avatar_to'
@@ -1058,14 +1117,36 @@ export function RealtimePanel({
               const toolResponse = await fetchOasisToolFromBrowser(call.name, toolArgs, { worldId: activeWorldId })
 
               const result = await readOasisToolJson(toolResponse)
-              output = result
+              const screenshotImage = call.name === 'screenshot_viewport' ? extractRealtimeScreenshotImage(result) : null
+              output = screenshotImage
+                ? stripRealtimeScreenshotPayload(result)
+                : result
               updateMessage(messageId, message => ({
                 ...message,
                 status: 'done',
                 toolState: toolResponse.ok && result.ok !== false ? 'done' : 'failed',
-                toolOutput: result,
+                toolOutput: output,
                 toolDurationMs: Date.now() - (toolStartedAtRef.current.get(call.callId) || Date.now()),
               }))
+              if (screenshotImage) {
+                sendRealtimeEvent({
+                  type: 'conversation.item.create',
+                  item: {
+                    type: 'message',
+                    role: 'user',
+                    content: [
+                      {
+                        type: 'input_text',
+                        text: `Visual context from the live Oasis viewport (${screenshotImage.label}).`,
+                      },
+                      {
+                        type: 'input_image',
+                        image_url: screenshotImage.imageUrl,
+                      },
+                    ],
+                  },
+                })
+              }
             } catch (error) {
               output = {
                 ok: false,
@@ -1302,6 +1383,16 @@ export function RealtimePanel({
       appendSystemMessage(detail)
     }
   }, [activeWorldId, activeWorldName, appendMessage, appendSystemMessage, attachLocalMicLipSync, attachRemotePlaybackStream, config, connectionState, disconnect, ensureOutputAudioContext, markUiFocus, selectedSession, sessionSettings, updateMessage])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handler = () => {
+      if (connectionState === 'connected' || connectionState === 'connecting') return
+      void connect()
+    }
+    window.addEventListener('oasis:realtime-start-talking', handler)
+    return () => window.removeEventListener('oasis:realtime-start-talking', handler)
+  }, [connect, connectionState])
 
   const handleSessionChange = useCallback((nextId: string) => {
     if (!nextId) return

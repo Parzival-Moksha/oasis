@@ -75,6 +75,7 @@ export interface PortalGate {
   linkedPortalId?: string
   autoLayout?: 'portal-area'
   inert?: boolean
+  hidden?: boolean
 }
 
 export interface PortalTriggerState {

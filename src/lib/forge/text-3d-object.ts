@@ -39,6 +39,7 @@ export interface Text3DObject {
   size: number
   depth: number
   color: string
+  toneBias?: number
   shininess: number
   position: [number, number, number]
   rotation: [number, number, number]

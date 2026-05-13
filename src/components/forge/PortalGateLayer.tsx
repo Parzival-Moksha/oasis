@@ -172,6 +172,14 @@ function derivePortalArrivalPose(
   transforms?: Record<string, { position?: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number } | undefined>,
 ): PlayerAvatarPose {
   const placedGate = applyPortalTransform(gate, transforms?.[gate.id])
+  if (gate.spawnPose?.position) {
+    const yaw = gate.spawnPose.rotationY ?? placedGate.rotationY ?? 0
+    return {
+      position: gate.spawnPose.position,
+      yaw,
+      forward: [Math.sin(yaw), 0, Math.cos(yaw)],
+    }
+  }
   const normal = portalFacingNormal(placedGate)
   const arrivalDistance = Math.max(DEFAULT_PORTAL_ACTIVATION_DEPTH + 0.65, 1.15)
   const position: [number, number, number] = [
@@ -386,6 +394,11 @@ export function PortalGateLayer() {
     [portalGates, transforms, worldRegistry],
   )
 
+  const visibleGates = useMemo(
+    () => gates.filter(gate => !gate.hidden),
+    [gates],
+  )
+
   const runWorldTransition = useCallback(async (
     gate: PortalGate,
     targetWorldName: string | undefined,
@@ -540,12 +553,12 @@ export function PortalGateLayer() {
   }, [activeWorldId, refreshWorldRegistry, runWorldTransition, switchWorld, worldRegistry])
 
   useFrame(() => {
-    if (gates.length === 0) return
+    if (visibleGates.length === 0) return
     const pose = getPlayerAvatarPose()
     if (!pose) return
 
     const nowMs = Date.now()
-    for (const gate of gates) {
+    for (const gate of visibleGates) {
       const state = triggerStatesRef.current[gate.id] || createPortalTriggerState()
       if (!shouldTriggerPortal(pose.position, gate, state, {
         nowMs,
@@ -563,11 +576,11 @@ export function PortalGateLayer() {
     }
   })
 
-  if (gates.length === 0) return null
+  if (visibleGates.length === 0) return null
 
   return (
     <group name="portal-gate-layer">
-      {gates.map(gate => {
+      {visibleGates.map(gate => {
         const baseGate = portalGates.find(portal => portal.id === gate.id) || gate
         const childGate: PortalGate = {
           ...gate,
