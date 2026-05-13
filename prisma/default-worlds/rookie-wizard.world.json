@@ -5,7 +5,7 @@
   "userId": "local-user",
   "name": "Rookie Wizard",
   "icon": "R",
-  "visibility": "core",
+  "visibility": "public",
   "creatorName": "The Oasis",
   "creatorAvatar": null,
   "thumbnailUrl": null,
@@ -3400,1552 +3400,424 @@
         ]
       },
       {
-        "id": "rookie-lore-panel-1",
-        "name": "Portal Zero",
-        "prompt": "A floating framed lore panel about Portal Zero, angled toward the Rookie Wizard path.",
+        "id": "rookie-lore-caption-portal-zero",
+        "name": "Portal Zero caption",
+        "prompt": "Readable caption beside the Portal Zero generated media frame.",
         "position": [
-          4.15,
+          3.72,
           0,
-          -14.9
+          -13.65
         ],
         "createdAt": "2026-05-12T18:00:00.000Z",
         "model": "codex-rookie-wizard-primitives",
         "objects": [
           {
-            "type": "box",
-            "position": [
-              0,
-              2.9,
-              0
-            ],
-            "scale": [
-              3.15,
-              1.85,
-              0.12
-            ],
-            "color": "#0f172a",
-            "roughness": 0.78,
-            "metalness": 0.02,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ],
-            "emissive": "#1e293b",
-            "emissiveIntensity": 0.08
-          },
-          {
-            "type": "box",
-            "position": [
-              0,
-              2.9,
-              0.075
-            ],
-            "scale": [
-              2.78,
-              1.48,
-              0.06
-            ],
-            "color": "#172554",
-            "roughness": 0.78,
-            "metalness": 0.02,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ],
-            "emissive": "#172554",
-            "emissiveIntensity": 0.07
-          },
-          {
-            "type": "box",
-            "position": [
-              0,
-              3.84,
-              0.13
-            ],
-            "scale": [
-              3.35,
-              0.12,
-              0.16
-            ],
-            "color": "#d6b25e",
-            "roughness": 0.42,
-            "metalness": 0.18,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ]
-          },
-          {
-            "type": "box",
-            "position": [
-              0,
-              1.96,
-              0.13
-            ],
-            "scale": [
-              3.35,
-              0.12,
-              0.16
-            ],
-            "color": "#d6b25e",
-            "roughness": 0.42,
-            "metalness": 0.18,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ]
-          },
-          {
-            "type": "box",
-            "position": [
-              -1.64,
-              2.9,
-              0.13
-            ],
-            "scale": [
-              0.12,
-              1.92,
-              0.16
-            ],
-            "color": "#d6b25e",
-            "roughness": 0.42,
-            "metalness": 0.18,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ]
-          },
-          {
-            "type": "box",
-            "position": [
-              1.64,
-              2.9,
-              0.13
-            ],
-            "scale": [
-              0.12,
-              1.92,
-              0.16
-            ],
-            "color": "#d6b25e",
-            "roughness": 0.42,
-            "metalness": 0.18,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ]
-          },
-          {
-            "type": "sphere",
-            "position": [
-              -0.92,
-              2.98,
-              0.22
-            ],
-            "scale": [
-              0.42,
-              0.42,
-              0.08
-            ],
-            "color": "#38bdf8",
-            "roughness": 0.82,
-            "metalness": 0.02,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ],
-            "emissive": "#38bdf8",
-            "emissiveIntensity": 0.34,
-            "transparent": true,
-            "opacity": 0.72
-          },
-          {
-            "type": "cylinder",
-            "position": [
-              -0.92,
-              2.98,
-              0.25
-            ],
-            "scale": [
-              0.6,
-              0.035,
-              0.6
-            ],
-            "color": "#f8fafc",
-            "roughness": 0.72,
-            "metalness": 0.02,
-            "rotation": [
-              1.7907963267948965,
-              -1.5707963267948966,
-              0
-            ],
-            "emissive": "#f8fafc",
-            "emissiveIntensity": 0.08
-          },
-          {
-            "type": "cylinder",
-            "position": [
-              -0.92,
-              2.98,
-              0.32
-            ],
-            "scale": [
-              0.36,
-              0.04,
-              0.36
-            ],
-            "color": "#0f172a",
-            "roughness": 0.72,
-            "metalness": 0.02,
-            "rotation": [
-              1.7907963267948965,
-              -1.5707963267948966,
-              0
-            ]
-          },
-          {
-            "type": "sphere",
-            "position": [
-              -0.92,
-              2.98,
-              0.38
-            ],
-            "scale": [
-              0.18,
-              0.18,
-              0.04
-            ],
-            "color": "#38bdf8",
-            "roughness": 0.82,
-            "metalness": 0.02,
-            "emissive": "#38bdf8",
-            "emissiveIntensity": 0.5
-          },
-          {
             "type": "text",
-            "text": "Portal Zero",
+            "text": "PORTAL ZERO",
             "position": [
-              0.48,
-              3.34,
-              0.24
+              0,
+              2.95,
+              0
             ],
             "scale": [
-              0.22,
-              0.22,
-              0.22
+              0.16,
+              0.16,
+              0.16
             ],
             "color": "#fef3c7",
             "align": "center",
             "emissive": "#fef3c7",
             "emissiveIntensity": 0.16,
             "rotation": [
-              0.22,
+              0,
               -1.5707963267948966,
               0
             ],
-            "fontSize": 0.42
+            "fontSize": 0.34
           },
           {
             "type": "text",
-            "text": "Every shared road",
+            "text": "Every shared road starts at the hub.",
             "position": [
-              0.5,
-              2.74,
-              0.24
+              0,
+              2.48,
+              0
             ],
             "scale": [
-              0.16,
-              0.16,
-              0.16
+              0.11,
+              0.11,
+              0.11
             ],
-            "color": "#dbeafe",
+            "color": "#38bdf8",
             "align": "center",
-            "emissive": "#dbeafe",
+            "emissive": "#38bdf8",
             "emissiveIntensity": 0.16,
             "rotation": [
-              0.22,
+              0,
               -1.5707963267948966,
               0
             ],
-            "fontSize": 0.28
-          },
-          {
-            "type": "text",
-            "text": "starts at the hub.",
-            "position": [
-              0.5,
-              2.34,
-              0.24
-            ],
-            "scale": [
-              0.14,
-              0.14,
-              0.14
-            ],
-            "color": "#bae6fd",
-            "align": "center",
-            "emissive": "#bae6fd",
-            "emissiveIntensity": 0.16,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ],
-            "fontSize": 0.24
+            "fontSize": 0.23
           }
         ]
       },
       {
-        "id": "rookie-lore-panel-2",
-        "name": "The First Gate",
-        "prompt": "A floating framed lore panel about The First Gate, angled toward the Rookie Wizard path.",
+        "id": "rookie-lore-caption-first-gate",
+        "name": "The First Gate caption",
+        "prompt": "Readable caption beside the The First Gate generated media frame.",
         "position": [
-          4.15,
+          3.72,
           0,
-          -10.9
+          -9.65
         ],
         "createdAt": "2026-05-12T18:00:00.000Z",
         "model": "codex-rookie-wizard-primitives",
         "objects": [
           {
-            "type": "box",
-            "position": [
-              0,
-              2.9,
-              0
-            ],
-            "scale": [
-              3.15,
-              1.85,
-              0.12
-            ],
-            "color": "#0f172a",
-            "roughness": 0.78,
-            "metalness": 0.02,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ],
-            "emissive": "#1e293b",
-            "emissiveIntensity": 0.08
-          },
-          {
-            "type": "box",
-            "position": [
-              0,
-              2.9,
-              0.075
-            ],
-            "scale": [
-              2.78,
-              1.48,
-              0.06
-            ],
-            "color": "#2e1065",
-            "roughness": 0.78,
-            "metalness": 0.02,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ],
-            "emissive": "#2e1065",
-            "emissiveIntensity": 0.07
-          },
-          {
-            "type": "box",
-            "position": [
-              0,
-              3.84,
-              0.13
-            ],
-            "scale": [
-              3.35,
-              0.12,
-              0.16
-            ],
-            "color": "#d6b25e",
-            "roughness": 0.42,
-            "metalness": 0.18,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ]
-          },
-          {
-            "type": "box",
-            "position": [
-              0,
-              1.96,
-              0.13
-            ],
-            "scale": [
-              3.35,
-              0.12,
-              0.16
-            ],
-            "color": "#d6b25e",
-            "roughness": 0.42,
-            "metalness": 0.18,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ]
-          },
-          {
-            "type": "box",
-            "position": [
-              -1.64,
-              2.9,
-              0.13
-            ],
-            "scale": [
-              0.12,
-              1.92,
-              0.16
-            ],
-            "color": "#d6b25e",
-            "roughness": 0.42,
-            "metalness": 0.18,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ]
-          },
-          {
-            "type": "box",
-            "position": [
-              1.64,
-              2.9,
-              0.13
-            ],
-            "scale": [
-              0.12,
-              1.92,
-              0.16
-            ],
-            "color": "#d6b25e",
-            "roughness": 0.42,
-            "metalness": 0.18,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ]
-          },
-          {
-            "type": "sphere",
-            "position": [
-              -0.92,
-              2.98,
-              0.22
-            ],
-            "scale": [
-              0.42,
-              0.42,
-              0.08
-            ],
-            "color": "#c084fc",
-            "roughness": 0.82,
-            "metalness": 0.02,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ],
-            "emissive": "#c084fc",
-            "emissiveIntensity": 0.34,
-            "transparent": true,
-            "opacity": 0.72
-          },
-          {
-            "type": "cylinder",
-            "position": [
-              -0.92,
-              2.98,
-              0.25
-            ],
-            "scale": [
-              0.6,
-              0.035,
-              0.6
-            ],
-            "color": "#f8fafc",
-            "roughness": 0.72,
-            "metalness": 0.02,
-            "rotation": [
-              1.7907963267948965,
-              -1.5707963267948966,
-              0
-            ],
-            "emissive": "#f8fafc",
-            "emissiveIntensity": 0.08
-          },
-          {
-            "type": "box",
-            "position": [
-              -0.92,
-              2.98,
-              0.34
-            ],
-            "scale": [
-              0.52,
-              0.78,
-              0.05
-            ],
-            "color": "#111827",
-            "roughness": 0.78,
-            "metalness": 0.02,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ],
-            "emissive": "#7c3aed",
-            "emissiveIntensity": 0.18
-          },
-          {
-            "type": "box",
-            "position": [
-              -0.92,
-              3.42,
-              0.38
-            ],
-            "scale": [
-              0.68,
-              0.08,
-              0.06
-            ],
-            "color": "#c084fc",
-            "roughness": 0.78,
-            "metalness": 0.02,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ],
-            "emissive": "#c084fc",
-            "emissiveIntensity": 0.22
-          },
-          {
             "type": "text",
-            "text": "The First Gate",
+            "text": "THE FIRST GATE",
             "position": [
-              0.48,
-              3.34,
-              0.24
+              0,
+              2.95,
+              0
             ],
             "scale": [
-              0.22,
-              0.22,
-              0.22
+              0.16,
+              0.16,
+              0.16
             ],
             "color": "#fef3c7",
             "align": "center",
             "emissive": "#fef3c7",
             "emissiveIntensity": 0.16,
             "rotation": [
-              0.22,
+              0,
               -1.5707963267948966,
               0
             ],
-            "fontSize": 0.42
+            "fontSize": 0.34
           },
           {
             "type": "text",
-            "text": "A door is a promise:",
+            "text": "A door is a promise: step through and return.",
             "position": [
-              0.5,
-              2.74,
-              0.24
+              0,
+              2.48,
+              0
             ],
             "scale": [
-              0.16,
-              0.16,
-              0.16
+              0.11,
+              0.11,
+              0.11
             ],
-            "color": "#dbeafe",
+            "color": "#c084fc",
             "align": "center",
-            "emissive": "#dbeafe",
+            "emissive": "#c084fc",
             "emissiveIntensity": 0.16,
             "rotation": [
-              0.22,
+              0,
               -1.5707963267948966,
               0
             ],
-            "fontSize": 0.28
-          },
-          {
-            "type": "text",
-            "text": "step through and return.",
-            "position": [
-              0.5,
-              2.34,
-              0.24
-            ],
-            "scale": [
-              0.14,
-              0.14,
-              0.14
-            ],
-            "color": "#bae6fd",
-            "align": "center",
-            "emissive": "#bae6fd",
-            "emissiveIntensity": 0.16,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ],
-            "fontSize": 0.24
+            "fontSize": 0.23
           }
         ]
       },
       {
-        "id": "rookie-lore-panel-3",
-        "name": "Merlin Lantern",
-        "prompt": "A floating framed lore panel about Merlin Lantern, angled toward the Rookie Wizard path.",
+        "id": "rookie-lore-caption-merlin-lantern",
+        "name": "Merlin Lantern caption",
+        "prompt": "Readable caption beside the Merlin Lantern generated media frame.",
         "position": [
-          4.15,
+          3.72,
           0,
-          -6.9
+          -5.65
         ],
         "createdAt": "2026-05-12T18:00:00.000Z",
         "model": "codex-rookie-wizard-primitives",
         "objects": [
           {
-            "type": "box",
+            "type": "text",
+            "text": "MERLIN LANTERN",
             "position": [
               0,
-              2.9,
+              2.95,
               0
             ],
             "scale": [
-              3.15,
-              1.85,
-              0.12
+              0.16,
+              0.16,
+              0.16
             ],
-            "color": "#0f172a",
-            "roughness": 0.78,
-            "metalness": 0.02,
+            "color": "#fef3c7",
+            "align": "center",
+            "emissive": "#fef3c7",
+            "emissiveIntensity": 0.16,
             "rotation": [
-              0.22,
+              0,
               -1.5707963267948966,
               0
             ],
-            "emissive": "#1e293b",
-            "emissiveIntensity": 0.08
+            "fontSize": 0.34
           },
           {
-            "type": "box",
+            "type": "text",
+            "text": "Guides do not own the spell. They aim it.",
             "position": [
               0,
-              2.9,
-              0.075
-            ],
-            "scale": [
-              2.78,
-              1.48,
-              0.06
-            ],
-            "color": "#422006",
-            "roughness": 0.78,
-            "metalness": 0.02,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
+              2.48,
               0
             ],
-            "emissive": "#422006",
-            "emissiveIntensity": 0.07
-          },
-          {
-            "type": "box",
-            "position": [
-              0,
-              3.84,
-              0.13
-            ],
             "scale": [
-              3.35,
-              0.12,
-              0.16
-            ],
-            "color": "#d6b25e",
-            "roughness": 0.42,
-            "metalness": 0.18,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ]
-          },
-          {
-            "type": "box",
-            "position": [
-              0,
-              1.96,
-              0.13
-            ],
-            "scale": [
-              3.35,
-              0.12,
-              0.16
-            ],
-            "color": "#d6b25e",
-            "roughness": 0.42,
-            "metalness": 0.18,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ]
-          },
-          {
-            "type": "box",
-            "position": [
-              -1.64,
-              2.9,
-              0.13
-            ],
-            "scale": [
-              0.12,
-              1.92,
-              0.16
-            ],
-            "color": "#d6b25e",
-            "roughness": 0.42,
-            "metalness": 0.18,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ]
-          },
-          {
-            "type": "box",
-            "position": [
-              1.64,
-              2.9,
-              0.13
-            ],
-            "scale": [
-              0.12,
-              1.92,
-              0.16
-            ],
-            "color": "#d6b25e",
-            "roughness": 0.42,
-            "metalness": 0.18,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ]
-          },
-          {
-            "type": "sphere",
-            "position": [
-              -0.92,
-              2.98,
-              0.22
-            ],
-            "scale": [
-              0.42,
-              0.42,
-              0.08
+              0.11,
+              0.11,
+              0.11
             ],
             "color": "#fbbf24",
-            "roughness": 0.82,
-            "metalness": 0.02,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ],
+            "align": "center",
             "emissive": "#fbbf24",
-            "emissiveIntensity": 0.34,
-            "transparent": true,
-            "opacity": 0.72
-          },
-          {
-            "type": "cylinder",
-            "position": [
-              -0.92,
-              2.98,
-              0.25
-            ],
-            "scale": [
-              0.6,
-              0.035,
-              0.6
-            ],
-            "color": "#f8fafc",
-            "roughness": 0.72,
-            "metalness": 0.02,
-            "rotation": [
-              1.7907963267948965,
-              -1.5707963267948966,
-              0
-            ],
-            "emissive": "#f8fafc",
-            "emissiveIntensity": 0.08
-          },
-          {
-            "type": "cylinder",
-            "position": [
-              -0.92,
-              2.78,
-              0.34
-            ],
-            "scale": [
-              0.18,
-              0.46,
-              0.18
-            ],
-            "color": "#78350f",
-            "roughness": 0.72,
-            "metalness": 0.02,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ]
-          },
-          {
-            "type": "cone",
-            "position": [
-              -0.92,
-              3.18,
-              0.39
-            ],
-            "scale": [
-              0.3,
-              0.54,
-              0.3
-            ],
-            "color": "#f59e0b",
-            "roughness": 0.7,
-            "metalness": 0.02,
-            "rotation": [
-              0.1,
-              -1.5707963267948966,
-              0
-            ],
-            "emissive": "#f59e0b",
-            "emissiveIntensity": 0.55
-          },
-          {
-            "type": "text",
-            "text": "Merlin Lantern",
-            "position": [
-              0.48,
-              3.34,
-              0.24
-            ],
-            "scale": [
-              0.22,
-              0.22,
-              0.22
-            ],
-            "color": "#fef3c7",
-            "align": "center",
-            "emissive": "#fef3c7",
             "emissiveIntensity": 0.16,
             "rotation": [
-              0.22,
+              0,
               -1.5707963267948966,
               0
             ],
-            "fontSize": 0.42
-          },
-          {
-            "type": "text",
-            "text": "Guides do not own",
-            "position": [
-              0.5,
-              2.74,
-              0.24
-            ],
-            "scale": [
-              0.16,
-              0.16,
-              0.16
-            ],
-            "color": "#dbeafe",
-            "align": "center",
-            "emissive": "#dbeafe",
-            "emissiveIntensity": 0.16,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ],
-            "fontSize": 0.28
-          },
-          {
-            "type": "text",
-            "text": "the spell. They aim it.",
-            "position": [
-              0.5,
-              2.34,
-              0.24
-            ],
-            "scale": [
-              0.14,
-              0.14,
-              0.14
-            ],
-            "color": "#bae6fd",
-            "align": "center",
-            "emissive": "#bae6fd",
-            "emissiveIntensity": 0.16,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ],
-            "fontSize": 0.24
+            "fontSize": 0.23
           }
         ]
       },
       {
-        "id": "rookie-lore-panel-4",
-        "name": "Shared World",
-        "prompt": "A floating framed lore panel about Shared World, angled toward the Rookie Wizard path.",
+        "id": "rookie-lore-caption-shared-world",
+        "name": "Shared World caption",
+        "prompt": "Readable caption beside the Shared World generated media frame.",
         "position": [
-          4.15,
+          3.72,
           0,
-          -2.9
+          -1.65
         ],
         "createdAt": "2026-05-12T18:00:00.000Z",
         "model": "codex-rookie-wizard-primitives",
         "objects": [
           {
-            "type": "box",
-            "position": [
-              0,
-              2.9,
-              0
-            ],
-            "scale": [
-              3.15,
-              1.85,
-              0.12
-            ],
-            "color": "#0f172a",
-            "roughness": 0.78,
-            "metalness": 0.02,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ],
-            "emissive": "#1e293b",
-            "emissiveIntensity": 0.08
-          },
-          {
-            "type": "box",
-            "position": [
-              0,
-              2.9,
-              0.075
-            ],
-            "scale": [
-              2.78,
-              1.48,
-              0.06
-            ],
-            "color": "#14532d",
-            "roughness": 0.78,
-            "metalness": 0.02,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ],
-            "emissive": "#14532d",
-            "emissiveIntensity": 0.07
-          },
-          {
-            "type": "box",
-            "position": [
-              0,
-              3.84,
-              0.13
-            ],
-            "scale": [
-              3.35,
-              0.12,
-              0.16
-            ],
-            "color": "#d6b25e",
-            "roughness": 0.42,
-            "metalness": 0.18,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ]
-          },
-          {
-            "type": "box",
-            "position": [
-              0,
-              1.96,
-              0.13
-            ],
-            "scale": [
-              3.35,
-              0.12,
-              0.16
-            ],
-            "color": "#d6b25e",
-            "roughness": 0.42,
-            "metalness": 0.18,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ]
-          },
-          {
-            "type": "box",
-            "position": [
-              -1.64,
-              2.9,
-              0.13
-            ],
-            "scale": [
-              0.12,
-              1.92,
-              0.16
-            ],
-            "color": "#d6b25e",
-            "roughness": 0.42,
-            "metalness": 0.18,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ]
-          },
-          {
-            "type": "box",
-            "position": [
-              1.64,
-              2.9,
-              0.13
-            ],
-            "scale": [
-              0.12,
-              1.92,
-              0.16
-            ],
-            "color": "#d6b25e",
-            "roughness": 0.42,
-            "metalness": 0.18,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ]
-          },
-          {
-            "type": "sphere",
-            "position": [
-              -0.92,
-              2.98,
-              0.22
-            ],
-            "scale": [
-              0.42,
-              0.42,
-              0.08
-            ],
-            "color": "#86efac",
-            "roughness": 0.82,
-            "metalness": 0.02,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ],
-            "emissive": "#86efac",
-            "emissiveIntensity": 0.34,
-            "transparent": true,
-            "opacity": 0.72
-          },
-          {
-            "type": "cylinder",
-            "position": [
-              -0.92,
-              2.98,
-              0.25
-            ],
-            "scale": [
-              0.6,
-              0.035,
-              0.6
-            ],
-            "color": "#f8fafc",
-            "roughness": 0.72,
-            "metalness": 0.02,
-            "rotation": [
-              1.7907963267948965,
-              -1.5707963267948966,
-              0
-            ],
-            "emissive": "#f8fafc",
-            "emissiveIntensity": 0.08
-          },
-          {
-            "type": "sphere",
-            "position": [
-              -1.12,
-              3.04,
-              0.35
-            ],
-            "scale": [
-              0.18,
-              0.18,
-              0.06
-            ],
-            "color": "#86efac",
-            "roughness": 0.82,
-            "metalness": 0.02,
-            "emissive": "#86efac",
-            "emissiveIntensity": 0.28
-          },
-          {
-            "type": "sphere",
-            "position": [
-              -0.76,
-              2.84,
-              0.35
-            ],
-            "scale": [
-              0.18,
-              0.18,
-              0.06
-            ],
-            "color": "#67e8f9",
-            "roughness": 0.82,
-            "metalness": 0.02,
-            "emissive": "#67e8f9",
-            "emissiveIntensity": 0.22
-          },
-          {
-            "type": "sphere",
-            "position": [
-              -0.76,
-              3.24,
-              0.35
-            ],
-            "scale": [
-              0.18,
-              0.18,
-              0.06
-            ],
-            "color": "#fef3c7",
-            "roughness": 0.82,
-            "metalness": 0.02,
-            "emissive": "#fef3c7",
-            "emissiveIntensity": 0.16
-          },
-          {
             "type": "text",
-            "text": "Shared World",
+            "text": "SHARED WORLD",
             "position": [
-              0.48,
-              3.34,
-              0.24
-            ],
-            "scale": [
-              0.22,
-              0.22,
-              0.22
-            ],
-            "color": "#fef3c7",
-            "align": "center",
-            "emissive": "#fef3c7",
-            "emissiveIntensity": 0.16,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
+              0,
+              2.95,
               0
-            ],
-            "fontSize": 0.42
-          },
-          {
-            "type": "text",
-            "text": "Presence makes stone",
-            "position": [
-              0.5,
-              2.74,
-              0.24
             ],
             "scale": [
               0.16,
               0.16,
               0.16
             ],
-            "color": "#dbeafe",
+            "color": "#fef3c7",
             "align": "center",
-            "emissive": "#dbeafe",
+            "emissive": "#fef3c7",
             "emissiveIntensity": 0.16,
             "rotation": [
-              0.22,
+              0,
               -1.5707963267948966,
               0
             ],
-            "fontSize": 0.28
+            "fontSize": 0.34
           },
           {
             "type": "text",
-            "text": "remember footsteps.",
+            "text": "Presence makes stone remember footsteps.",
             "position": [
-              0.5,
-              2.34,
-              0.24
+              0,
+              2.48,
+              0
             ],
             "scale": [
-              0.14,
-              0.14,
-              0.14
+              0.11,
+              0.11,
+              0.11
             ],
-            "color": "#bae6fd",
+            "color": "#86efac",
             "align": "center",
-            "emissive": "#bae6fd",
+            "emissive": "#86efac",
             "emissiveIntensity": 0.16,
             "rotation": [
-              0.22,
+              0,
               -1.5707963267948966,
               0
             ],
-            "fontSize": 0.24
+            "fontSize": 0.23
           }
         ]
       },
       {
-        "id": "rookie-lore-panel-5",
-        "name": "OpenClaw Signal",
-        "prompt": "A floating framed lore panel about OpenClaw Signal, angled toward the Rookie Wizard path.",
+        "id": "rookie-lore-caption-openclaw-signal",
+        "name": "OpenClaw Signal caption",
+        "prompt": "Readable caption beside the OpenClaw Signal generated media frame.",
         "position": [
-          4.15,
+          3.72,
           0,
-          1.1
+          2.35
         ],
         "createdAt": "2026-05-12T18:00:00.000Z",
         "model": "codex-rookie-wizard-primitives",
         "objects": [
           {
-            "type": "box",
-            "position": [
-              0,
-              2.9,
-              0
-            ],
-            "scale": [
-              3.15,
-              1.85,
-              0.12
-            ],
-            "color": "#0f172a",
-            "roughness": 0.78,
-            "metalness": 0.02,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ],
-            "emissive": "#1e293b",
-            "emissiveIntensity": 0.08
-          },
-          {
-            "type": "box",
-            "position": [
-              0,
-              2.9,
-              0.075
-            ],
-            "scale": [
-              2.78,
-              1.48,
-              0.06
-            ],
-            "color": "#4c0519",
-            "roughness": 0.78,
-            "metalness": 0.02,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ],
-            "emissive": "#4c0519",
-            "emissiveIntensity": 0.07
-          },
-          {
-            "type": "box",
-            "position": [
-              0,
-              3.84,
-              0.13
-            ],
-            "scale": [
-              3.35,
-              0.12,
-              0.16
-            ],
-            "color": "#d6b25e",
-            "roughness": 0.42,
-            "metalness": 0.18,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ]
-          },
-          {
-            "type": "box",
-            "position": [
-              0,
-              1.96,
-              0.13
-            ],
-            "scale": [
-              3.35,
-              0.12,
-              0.16
-            ],
-            "color": "#d6b25e",
-            "roughness": 0.42,
-            "metalness": 0.18,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ]
-          },
-          {
-            "type": "box",
-            "position": [
-              -1.64,
-              2.9,
-              0.13
-            ],
-            "scale": [
-              0.12,
-              1.92,
-              0.16
-            ],
-            "color": "#d6b25e",
-            "roughness": 0.42,
-            "metalness": 0.18,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ]
-          },
-          {
-            "type": "box",
-            "position": [
-              1.64,
-              2.9,
-              0.13
-            ],
-            "scale": [
-              0.12,
-              1.92,
-              0.16
-            ],
-            "color": "#d6b25e",
-            "roughness": 0.42,
-            "metalness": 0.18,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ]
-          },
-          {
-            "type": "sphere",
-            "position": [
-              -0.92,
-              2.98,
-              0.22
-            ],
-            "scale": [
-              0.42,
-              0.42,
-              0.08
-            ],
-            "color": "#fb7185",
-            "roughness": 0.82,
-            "metalness": 0.02,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ],
-            "emissive": "#fb7185",
-            "emissiveIntensity": 0.34,
-            "transparent": true,
-            "opacity": 0.72
-          },
-          {
-            "type": "cylinder",
-            "position": [
-              -0.92,
-              2.98,
-              0.25
-            ],
-            "scale": [
-              0.6,
-              0.035,
-              0.6
-            ],
-            "color": "#f8fafc",
-            "roughness": 0.72,
-            "metalness": 0.02,
-            "rotation": [
-              1.7907963267948965,
-              -1.5707963267948966,
-              0
-            ],
-            "emissive": "#f8fafc",
-            "emissiveIntensity": 0.08
-          },
-          {
-            "type": "cone",
-            "position": [
-              -0.92,
-              3.18,
-              0.35
-            ],
-            "scale": [
-              0.36,
-              0.62,
-              0.36
-            ],
-            "color": "#fb7185",
-            "roughness": 0.7,
-            "metalness": 0.02,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ],
-            "emissive": "#fb7185",
-            "emissiveIntensity": 0.3
-          },
-          {
-            "type": "sphere",
-            "position": [
-              -0.92,
-              2.74,
-              0.37
-            ],
-            "scale": [
-              0.26,
-              0.18,
-              0.08
-            ],
-            "color": "#f8fafc",
-            "roughness": 0.82,
-            "metalness": 0.02,
-            "emissive": "#f8fafc",
-            "emissiveIntensity": 0.12
-          },
-          {
             "type": "text",
-            "text": "OpenClaw Signal",
+            "text": "OPENCLAW SIGNAL",
             "position": [
-              0.48,
-              3.34,
-              0.24
+              0,
+              2.95,
+              0
             ],
             "scale": [
-              0.22,
-              0.22,
-              0.22
+              0.16,
+              0.16,
+              0.16
             ],
             "color": "#fef3c7",
             "align": "center",
             "emissive": "#fef3c7",
             "emissiveIntensity": 0.16,
             "rotation": [
-              0.22,
+              0,
               -1.5707963267948966,
               0
             ],
-            "fontSize": 0.42
+            "fontSize": 0.34
           },
           {
             "type": "text",
-            "text": "The avatar is body.",
+            "text": "The avatar is body. The mind arrives awake.",
             "position": [
-              0.5,
-              2.74,
-              0.24
+              0,
+              2.48,
+              0
             ],
             "scale": [
-              0.16,
-              0.16,
-              0.16
+              0.11,
+              0.11,
+              0.11
             ],
-            "color": "#dbeafe",
+            "color": "#fb7185",
             "align": "center",
-            "emissive": "#dbeafe",
+            "emissive": "#fb7185",
             "emissiveIntensity": 0.16,
             "rotation": [
-              0.22,
+              0,
               -1.5707963267948966,
               0
             ],
-            "fontSize": 0.28
-          },
-          {
-            "type": "text",
-            "text": "The mind arrives awake.",
-            "position": [
-              0.5,
-              2.34,
-              0.24
-            ],
-            "scale": [
-              0.14,
-              0.14,
-              0.14
-            ],
-            "color": "#bae6fd",
-            "align": "center",
-            "emissive": "#bae6fd",
-            "emissiveIntensity": 0.16,
-            "rotation": [
-              0.22,
-              -1.5707963267948966,
-              0
-            ],
-            "fontSize": 0.24
+            "fontSize": 0.23
           }
         ]
       }
     ],
     "conjuredAssetIds": [],
-    "catalogPlacements": [],
+    "catalogPlacements": [
+      {
+        "id": "rookie-lore-media-portal-zero",
+        "catalogId": "generated-image",
+        "name": "Portal Zero",
+        "glbPath": "",
+        "position": [
+          4.2,
+          1.55,
+          -14.9
+        ],
+        "rotation": [
+          0,
+          -1.5707963267948966,
+          0
+        ],
+        "scale": 1.55,
+        "imageUrl": "/generated-images/rookie-lore-portal-zero.jpg",
+        "imageFrameStyle": "gilded",
+        "imageFrameThickness": 1.08,
+        "thumbnail": "/generated-images/rookie-lore-portal-zero.jpg"
+      },
+      {
+        "id": "rookie-lore-media-first-gate",
+        "catalogId": "generated-image",
+        "name": "The First Gate",
+        "glbPath": "",
+        "position": [
+          4.2,
+          1.55,
+          -10.9
+        ],
+        "rotation": [
+          0,
+          -1.5707963267948966,
+          0
+        ],
+        "scale": 1.55,
+        "imageUrl": "/generated-images/rookie-lore-first-gate.jpg",
+        "imageFrameStyle": "baroque",
+        "imageFrameThickness": 1.08,
+        "thumbnail": "/generated-images/rookie-lore-first-gate.jpg"
+      },
+      {
+        "id": "rookie-lore-media-merlin-lantern",
+        "catalogId": "generated-image",
+        "name": "Merlin Lantern",
+        "glbPath": "",
+        "position": [
+          4.2,
+          1.55,
+          -6.9
+        ],
+        "rotation": [
+          0,
+          -1.5707963267948966,
+          0
+        ],
+        "scale": 1.55,
+        "imageUrl": "/generated-images/rookie-lore-merlin-lantern.jpg",
+        "imageFrameStyle": "gilded",
+        "imageFrameThickness": 1.08,
+        "thumbnail": "/generated-images/rookie-lore-merlin-lantern.jpg"
+      },
+      {
+        "id": "rookie-lore-media-shared-world",
+        "catalogId": "generated-image",
+        "name": "Shared World",
+        "glbPath": "",
+        "position": [
+          4.2,
+          1.55,
+          -2.9
+        ],
+        "rotation": [
+          0,
+          -1.5707963267948966,
+          0
+        ],
+        "scale": 1.55,
+        "imageUrl": "/generated-images/rookie-lore-shared-world.jpg",
+        "imageFrameStyle": "baroque",
+        "imageFrameThickness": 1.08,
+        "thumbnail": "/generated-images/rookie-lore-shared-world.jpg"
+      },
+      {
+        "id": "rookie-lore-media-openclaw-signal",
+        "catalogId": "generated-image",
+        "name": "OpenClaw Signal",
+        "glbPath": "",
+        "position": [
+          4.2,
+          1.55,
+          1.1
+        ],
+        "rotation": [
+          0,
+          -1.5707963267948966,
+          0
+        ],
+        "scale": 1.55,
+        "imageUrl": "/generated-images/rookie-lore-openclaw-signal.jpg",
+        "imageFrameStyle": "gilded",
+        "imageFrameThickness": 1.08,
+        "thumbnail": "/generated-images/rookie-lore-openclaw-signal.jpg"
+      }
+    ],
     "portalGates": [
       {
         "id": "rookie-arrival-from-portal-zero",
@@ -4993,6 +3865,7 @@
         "width": 2.35,
         "height": 3.15,
         "direction": "one-way",
+        "hidden": true,
         "sourceWorldId": "world-rookie-wizard-system",
         "action": {
           "type": "create_world",
@@ -5024,6 +3897,7 @@
         "width": 2.45,
         "height": 3.35,
         "direction": "one-way",
+        "hidden": true,
         "sourceWorldId": "world-rookie-wizard-system",
         "targetWorldId": "world-welcome-hub-system",
         "targetWorldName": "Portal Zero",

@@ -18,8 +18,15 @@ vi.mock('../db', () => ({
     world: {
       findFirst: vi.fn(),
       findMany: vi.fn(),
+      findUnique: vi.fn(),
       update: vi.fn(),
       create: vi.fn(),
+    },
+    asset: {
+      findMany: vi.fn().mockResolvedValue([]),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      delete: vi.fn(),
     },
   },
 }))
@@ -1059,10 +1066,10 @@ describe('isScreenshotPending', () => {
       id: 'merlin-tps',
       mode: 'third-person-follow',
       agentType: 'merlin',
-      fov: 72,
-      distance: 4.4,
-      heightOffset: 2.1,
-      lookAhead: 4,
+      fov: 120,
+      distance: 3.8,
+      heightOffset: 2,
+      lookAhead: 3.4,
     })
 
     expect(deliverScreenshot('tps-base64', request?.id)).toBe(true)

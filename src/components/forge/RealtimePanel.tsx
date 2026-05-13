@@ -358,13 +358,16 @@ export function RealtimePanel({
   const [connectionDetail, setConnectionDetail] = useState('Voice line dormant.')
   const [listening, setListening] = useState(false)
   const [speaking, setSpeaking] = useState(false)
+  const [pendingAutoStart, setPendingAutoStart] = useState(false)
 
   const bringPanelToFront = useOasisStore(state => state.bringPanelToFront)
   const panelZIndex = useOasisStore(state => state.getPanelZIndex('realtime', 9998))
   const activeWorldId = useOasisStore(state => state.activeWorldId)
   const activeWorldName = useOasisStore(state => state.worldRegistry.find(world => world.id === state.activeWorldId)?.name || 'Current world')
   const realtimeAvatar = useOasisStore(state => state.placedAgentAvatars.find(entry => entry.agentType === REALTIME_AGENT_TYPE) || null)
+  const merlinAvatar = useOasisStore(state => state.placedAgentAvatars.find(entry => entry.agentType === 'merlin') || null)
   const transforms = useOasisStore(state => state.transforms)
+  const defaultVisionAgentType = realtimeAvatar ? REALTIME_AGENT_TYPE : merlinAvatar ? 'merlin' : 'player'
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const lipSyncRef = useRef<LipSyncController | null>(null)
@@ -1087,11 +1090,17 @@ export function RealtimePanel({
 
             const toolArgs: Record<string, unknown> = withBrowserWorldId(parsedArgs, activeWorldId)
             if (call.name === 'screenshot_viewport') {
-              if (toolArgs.width === undefined) toolArgs.width = 512
-              if (toolArgs.height === undefined) toolArgs.height = 288
+              if (toolArgs.width === undefined) toolArgs.width = 768
+              if (toolArgs.height === undefined) toolArgs.height = 432
               if (toolArgs.format === undefined) toolArgs.format = 'jpeg'
-              if (toolArgs.quality === undefined) toolArgs.quality = 0.65
-              if (toolArgs.mode === undefined && toolArgs.views === undefined) toolArgs.mode = 'current'
+              if (toolArgs.quality === undefined) toolArgs.quality = 0.68
+              if (toolArgs.mode === undefined && toolArgs.views === undefined) toolArgs.mode = 'third-person-follow'
+              if (toolArgs.agentType === undefined && toolArgs.agent === undefined && toolArgs.defaultAgentType === undefined) toolArgs.agentType = defaultVisionAgentType
+              if (toolArgs.defaultAgentType === undefined) toolArgs.defaultAgentType = defaultVisionAgentType
+              if (toolArgs.fov === undefined) toolArgs.fov = 120
+              if (toolArgs.distance === undefined) toolArgs.distance = defaultVisionAgentType === 'player' ? 4.2 : 3.8
+              if (toolArgs.heightOffset === undefined) toolArgs.heightOffset = 2
+              if (toolArgs.lookAhead === undefined) toolArgs.lookAhead = 3.4
             }
             if ((
               call.name === 'set_avatar'
@@ -1126,6 +1135,7 @@ export function RealtimePanel({
                 status: 'done',
                 toolState: toolResponse.ok && result.ok !== false ? 'done' : 'failed',
                 toolOutput: output,
+                toolMedia: screenshotImage ? [screenshotImage] : message.toolMedia,
                 toolDurationMs: Date.now() - (toolStartedAtRef.current.get(call.callId) || Date.now()),
               }))
               if (screenshotImage) {
@@ -1137,7 +1147,7 @@ export function RealtimePanel({
                     content: [
                       {
                         type: 'input_text',
-                        text: `Visual context from the live Oasis viewport (${screenshotImage.label}).`,
+                        text: `Visual context from your embodied Oasis camera (${screenshotImage.label}).`,
                       },
                       {
                         type: 'input_image',
@@ -1382,17 +1392,27 @@ export function RealtimePanel({
       setConnectionDetail(detail)
       appendSystemMessage(detail)
     }
-  }, [activeWorldId, activeWorldName, appendMessage, appendSystemMessage, attachLocalMicLipSync, attachRemotePlaybackStream, config, connectionState, disconnect, ensureOutputAudioContext, markUiFocus, selectedSession, sessionSettings, updateMessage])
+  }, [activeWorldId, activeWorldName, appendMessage, appendSystemMessage, attachLocalMicLipSync, attachRemotePlaybackStream, config, connectionState, defaultVisionAgentType, disconnect, ensureOutputAudioContext, markUiFocus, selectedSession, sessionSettings, updateMessage])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     const handler = () => {
-      if (connectionState === 'connected' || connectionState === 'connecting') return
-      void connect()
+      setPendingAutoStart(true)
     }
     window.addEventListener('oasis:realtime-start-talking', handler)
     return () => window.removeEventListener('oasis:realtime-start-talking', handler)
-  }, [connect, connectionState])
+  }, [])
+
+  useEffect(() => {
+    if (!pendingAutoStart) return
+    if (connectionState === 'connected' || connectionState === 'connecting') {
+      setPendingAutoStart(false)
+      return
+    }
+    if (!isOpen || !config || !config.configured || !sessionSettings || !selectedSession) return
+    setPendingAutoStart(false)
+    void connect()
+  }, [config, connect, connectionState, isOpen, pendingAutoStart, selectedSession, sessionSettings])
 
   const handleSessionChange = useCallback((nextId: string) => {
     if (!nextId) return
@@ -1826,6 +1846,26 @@ export function RealtimePanel({
                         <span>{formatTimestamp(message.timestamp)}</span>
                       </div>
                     </div>
+                    {message.toolMedia && message.toolMedia.length > 0 && (
+                      <div className="mt-3 grid gap-2">
+                        {message.toolMedia.map((media, index) => (
+                          <figure
+                            key={`${media.imageUrl}-${index}`}
+                            className="overflow-hidden rounded-xl border"
+                            style={{ borderColor: 'rgba(125,211,252,0.22)', background: 'rgba(2,6,23,0.5)' }}
+                          >
+                            <img
+                              src={media.imageUrl}
+                              alt={media.label || 'Realtime tool screenshot'}
+                              className="block w-full max-h-56 object-cover"
+                            />
+                            <figcaption className="px-3 py-2 text-[10px] uppercase tracking-[0.16em] text-cyan-100/65">
+                              {media.label || 'Oasis screenshot'}
+                            </figcaption>
+                          </figure>
+                        ))}
+                      </div>
+                    )}
                     {expanded && (
                       <div className="mt-3 space-y-3">
                         <div>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useFrame, useThree } from '@react-three/fiber'
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { getPlayerAvatarPose, requestPlayerAvatarTeleport, type PlayerAvatarPose } from '../../lib/player-avatar-runtime'
 import {
@@ -43,6 +43,15 @@ const PORTAL_ARRIVAL_CAMERA_ELEVATION = Math.PI / 4
 const PORTAL_ARRIVAL_LOOK_AHEAD = 2.1
 const PORTAL_ARRIVAL_LOOK_TARGET_HEIGHT = 1.75
 const PORTAL_ARRIVAL_CAMERA_HEIGHT_OFFSET = 1.85
+export const PORTAL_GATE_REVEAL_EVENT = 'oasis:portal-gate-reveal'
+
+const revealedRuntimePortalIds = new Set<string>()
+
+export function requestPortalGateReveal(gateId: string) {
+  if (typeof window === 'undefined' || !gateId) return
+  revealedRuntimePortalIds.add(gateId)
+  window.dispatchEvent(new CustomEvent(PORTAL_GATE_REVEAL_EVENT, { detail: { gateId } }))
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => window.setTimeout(resolve, ms))
@@ -356,6 +365,7 @@ export function PortalGateLayer() {
   const triggerStatesRef = useRef<Record<string, PortalTriggerState>>({})
   const activePortalActionRef = useRef<string | null>(null)
   const missingTargetRefreshKeyRef = useRef<string | null>(null)
+  const [runtimeRevealVersion, setRuntimeRevealVersion] = useState(0)
 
   const handleTransformChange = useCallback((
     id: string,
@@ -369,6 +379,16 @@ export function PortalGateLayer() {
   useEffect(() => {
     triggerStatesRef.current = {}
   }, [activeWorldId])
+
+  useEffect(() => {
+    const onReveal = (event: Event) => {
+      const gateId = (event as CustomEvent<{ gateId?: string }>).detail?.gateId
+      if (gateId) revealedRuntimePortalIds.add(gateId)
+      setRuntimeRevealVersion(version => version + 1)
+    }
+    window.addEventListener(PORTAL_GATE_REVEAL_EVENT, onReveal)
+    return () => window.removeEventListener(PORTAL_GATE_REVEAL_EVENT, onReveal)
+  }, [])
 
   useEffect(() => {
     if (worldRegistry.length === 0 || portalGates.length === 0) return
@@ -395,8 +415,8 @@ export function PortalGateLayer() {
   )
 
   const visibleGates = useMemo(
-    () => gates.filter(gate => !gate.hidden),
-    [gates],
+    () => gates.filter(gate => !gate.hidden || revealedRuntimePortalIds.has(gate.id)),
+    [gates, runtimeRevealVersion],
   )
 
   const runWorldTransition = useCallback(async (

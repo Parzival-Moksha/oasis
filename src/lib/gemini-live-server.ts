@@ -751,7 +751,7 @@ export function getGeminiLiveToolDeclarations(): GeminiLiveFunctionDeclaration[]
     },
     {
       name: 'screenshot_viewport',
-      description: 'Capture a screenshot of the 3D world when the browser screenshot bridge is available. Use current for the human view, agent-avatar-phantom for Gemini FPS, look-at for explicit camera, external-orbit for overview, third-person-follow for over-shoulder, or avatar-portrait for a headshot.',
+      description: 'Capture a screenshot of the 3D world when the browser screenshot bridge is available. Prefer third-person-follow with a 120 degree FOV for embodied context. Use current only for the human camera, look-at for explicit camera, external-orbit for overview, or avatar-portrait for a headshot.',
       parameters: {
         type: 'object',
         properties: {
@@ -825,7 +825,7 @@ export function buildGeminiLiveSystemInstruction(args: { worldId?: string; world
     'For portals, do not search assets. Use list_worlds to resolve named destinations like Portal Zero, then create_portal_gate with targetWorldName or targetWorldId.',
     'Use add_light and modify_light for scene readability, stage lighting, and dramatic focus.',
     'Use set_avatar, walk_avatar_to, list_avatar_animations, and play_avatar_animation for embodied avatar actions.',
-    'Use screenshot_viewport when the user asks what you can see or asks for a screenshot; say if the screenshot bridge returns an error.',
+    'Use screenshot_viewport when the user asks what you can see or asks for a screenshot. Prefer mode third-person-follow, fov 120, width 768, height 432, jpeg quality 0.68; say if the screenshot bridge returns an error.',
     'Do not remove objects unless the user clearly asks to delete/remove them or has just confirmed the target.',
     'Use search_assets before place_object unless the user gives an exact catalogId. Do not invent catalog IDs.',
     'Use self_craft_scene for exact primitive shapes, colors, and placements. Do not invent craft job IDs; only poll job IDs returned by craft_scene.',

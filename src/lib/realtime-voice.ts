@@ -68,6 +68,7 @@ export interface RealtimeTranscriptMessage {
   toolInput?: unknown
   toolOutput?: unknown
   toolDurationMs?: number
+  toolMedia?: Array<{ imageUrl: string; label: string }>
 }
 
 export interface RealtimeLocalSession {

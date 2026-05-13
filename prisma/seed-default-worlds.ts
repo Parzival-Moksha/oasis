@@ -116,8 +116,8 @@ async function seedWorld(entry: DefaultWorldManifestEntry, rootDir: string): Pro
     },
   })
 
-  const shouldUpdateCore = hasFlag('update-core') && seed.visibility === 'core'
-  const shouldUpdate = Boolean(existing && shouldUpdateCore)
+  const shouldUpdateDefault = hasFlag('update-core') && ['core', 'public'].includes(seed.visibility)
+  const shouldUpdate = Boolean(existing && shouldUpdateDefault)
 
   if (existing && !shouldUpdate) {
     console.log(`[seed:default-worlds] Skipping existing ${seed.slug} (${worldId}).`)

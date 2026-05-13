@@ -1,6 +1,7 @@
 import { writeFileSync } from 'node:fs'
 
 const WORLD_ID = 'world-welcome-hub-system'
+const ROOKIE_WIZARD_WORLD_ID = 'world-rookie-wizard-system'
 const CREATED_AT = '2026-05-09T16:00:00.000Z'
 
 function primitive(type, position, scale, color, extra = {}) {
@@ -150,11 +151,13 @@ const craftedScenes = [
   plinth('pz-public-plinth', 'Public worlds plinth', [18.7, 0, 0], '#92400e'),
   plinth('pz-ffa-plinth', 'FFA worlds plinth', [0, 0, 18.7], '#166534'),
   plinth('pz-private-plinth', 'Private worlds plinth', [-18.7, 0, 0], '#4c1d95'),
+  plinth('pz-rookie-plinth', 'Rookie Wizard plinth', [14, 0, -14], '#1d4ed8', 2.2),
 
   text('pz-conjure-sign', 'CONJURE', [0, 1.25, -14.2], 0, 0.46, '#67e8f9'),
   text('pz-public-sign', 'PUBLIC', [14.2, 1.25, 0], -Math.PI / 2, 0.46, '#fde68a'),
   text('pz-ffa-sign', 'FFA BUILD', [0, 1.25, 14.2], Math.PI, 0.46, '#86efac'),
   text('pz-private-sign', 'PRIVATE', [-14.2, 1.25, 0], Math.PI / 2, 0.46, '#c4b5fd'),
+  text('pz-rookie-sign', 'ROOKIE WIZARD', [10.6, 1.2, -10.6], -Math.PI / 4, 0.35, '#bfdbfe'),
 
   text('pz-public-runway-note', 'public gallery runway', [9.5, 0.95, -2.35], -Math.PI / 2, 0.28, '#fed7aa'),
   text('pz-ffa-runway-note', 'free-build quadrant', [2.35, 0.95, 9.5], Math.PI, 0.28, '#bbf7d0'),
@@ -254,6 +257,22 @@ const portalGates = [
     direction: 'one-way',
     sourceWorldId: WORLD_ID,
     action: { type: 'create_world', visibility: 'private', name: 'Private world', icon: 'R', promptForName: true },
+  },
+  {
+    id: 'portal-zero-to-rookie-wizard',
+    label: 'Rookie Wizard',
+    variant: 'threshold-ring',
+    position: [14.6, 0, -14.6],
+    rotationY: -Math.PI / 4,
+    scale: 0.82,
+    width: 2.15,
+    height: 3.05,
+    direction: 'one-way',
+    sourceWorldId: WORLD_ID,
+    targetWorldId: ROOKIE_WIZARD_WORLD_ID,
+    targetWorldName: 'Rookie Wizard',
+    action: { type: 'load_world', worldId: ROOKIE_WIZARD_WORLD_ID, worldName: 'Rookie Wizard' },
+    spawnPose: { position: [0, 0, -17.6], rotationY: 0 },
   },
 ]
 

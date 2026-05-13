@@ -50,8 +50,6 @@ function text(position, value, color = '#dbeafe', scale = [1, 1, 1], extra = {})
   }
 }
 
-const LORE_PANEL_ROTATION = [0.22, -Math.PI / 2, 0]
-
 function torchScene(index, side, z) {
   const x = side === 'left' ? -2.35 : 2.35
   const lean = side === 'left' ? -0.12 : 0.12
@@ -135,58 +133,6 @@ function pebbleScene(index, x, z, sx, sz) {
   )
 }
 
-function lorePanelScene(index, z, lore) {
-  const panelRotation = LORE_PANEL_ROTATION
-  const glow = lore.accent
-  return crafted(
-    `rookie-lore-panel-${index}`,
-    lore.title,
-    `A floating framed lore panel about ${lore.title}, angled toward the Rookie Wizard path.`,
-    [4.15, 0, z],
-    [
-      box([0, 2.9, 0], [3.15, 1.85, 0.12], '#0f172a', {
-        rotation: panelRotation,
-        emissive: '#1e293b',
-        emissiveIntensity: 0.08,
-      }),
-      box([0, 2.9, 0.075], [2.78, 1.48, 0.06], lore.backdrop, {
-        rotation: panelRotation,
-        emissive: lore.backdrop,
-        emissiveIntensity: 0.07,
-      }),
-      box([0, 3.84, 0.13], [3.35, 0.12, 0.16], '#d6b25e', { rotation: panelRotation, metalness: 0.18, roughness: 0.42 }),
-      box([0, 1.96, 0.13], [3.35, 0.12, 0.16], '#d6b25e', { rotation: panelRotation, metalness: 0.18, roughness: 0.42 }),
-      box([-1.64, 2.9, 0.13], [0.12, 1.92, 0.16], '#d6b25e', { rotation: panelRotation, metalness: 0.18, roughness: 0.42 }),
-      box([1.64, 2.9, 0.13], [0.12, 1.92, 0.16], '#d6b25e', { rotation: panelRotation, metalness: 0.18, roughness: 0.42 }),
-      sphere([-0.92, 2.98, 0.22], [0.42, 0.42, 0.08], glow, {
-        rotation: panelRotation,
-        emissive: glow,
-        emissiveIntensity: 0.34,
-        transparent: true,
-        opacity: 0.72,
-      }),
-      cylinder([-0.92, 2.98, 0.25], [0.6, 0.035, 0.6], '#f8fafc', {
-        rotation: [Math.PI / 2 + panelRotation[0], panelRotation[1], panelRotation[2]],
-        emissive: '#f8fafc',
-        emissiveIntensity: 0.08,
-      }),
-      ...lore.marks,
-      text([0.48, 3.34, 0.24], lore.title, '#fef3c7', [0.22, 0.22, 0.22], {
-        rotation: panelRotation,
-        fontSize: 0.42,
-      }),
-      text([0.5, 2.74, 0.24], lore.line1, '#dbeafe', [0.16, 0.16, 0.16], {
-        rotation: panelRotation,
-        fontSize: 0.28,
-      }),
-      text([0.5, 2.34, 0.24], lore.line2, '#bae6fd', [0.14, 0.14, 0.14], {
-        rotation: panelRotation,
-        fontSize: 0.24,
-      }),
-    ],
-  )
-}
-
 const groundTiles = {}
 for (let z = -18; z <= 15; z += 1) {
   for (let x = -1; x <= 1; x += 1) groundTiles[`${x},${z}`] = 'kn-cobblestone'
@@ -227,64 +173,79 @@ const pathDetails = [
   crystalClusterScene(3, 3.2, 1.6, '#67e8f9'),
 ]
 
-const lorePanels = [
-  lorePanelScene(1, -14.9, {
+const loreGalleryItems = [
+  {
+    id: 'portal-zero',
     title: 'Portal Zero',
-    line1: 'Every shared road',
-    line2: 'starts at the hub.',
+    line: 'Every shared road starts at the hub.',
+    z: -14.9,
+    imageUrl: '/generated-images/rookie-lore-portal-zero.jpg',
     accent: '#38bdf8',
-    backdrop: '#172554',
-    marks: [
-      cylinder([-0.92, 2.98, 0.32], [0.36, 0.04, 0.36], '#0f172a', { rotation: [Math.PI / 2 + LORE_PANEL_ROTATION[0], LORE_PANEL_ROTATION[1], 0] }),
-      sphere([-0.92, 2.98, 0.38], [0.18, 0.18, 0.04], '#38bdf8', { emissive: '#38bdf8', emissiveIntensity: 0.5 }),
-    ],
-  }),
-  lorePanelScene(2, -10.9, {
+  },
+  {
+    id: 'first-gate',
     title: 'The First Gate',
-    line1: 'A door is a promise:',
-    line2: 'step through and return.',
+    line: 'A door is a promise: step through and return.',
+    z: -10.9,
+    imageUrl: '/generated-images/rookie-lore-first-gate.jpg',
     accent: '#c084fc',
-    backdrop: '#2e1065',
-    marks: [
-      box([-0.92, 2.98, 0.34], [0.52, 0.78, 0.05], '#111827', { rotation: LORE_PANEL_ROTATION, emissive: '#7c3aed', emissiveIntensity: 0.18 }),
-      box([-0.92, 3.42, 0.38], [0.68, 0.08, 0.06], '#c084fc', { rotation: LORE_PANEL_ROTATION, emissive: '#c084fc', emissiveIntensity: 0.22 }),
-    ],
-  }),
-  lorePanelScene(3, -6.9, {
+  },
+  {
+    id: 'merlin-lantern',
     title: 'Merlin Lantern',
-    line1: 'Guides do not own',
-    line2: 'the spell. They aim it.',
+    line: 'Guides do not own the spell. They aim it.',
+    z: -6.9,
+    imageUrl: '/generated-images/rookie-lore-merlin-lantern.jpg',
     accent: '#fbbf24',
-    backdrop: '#422006',
-    marks: [
-      cylinder([-0.92, 2.78, 0.34], [0.18, 0.46, 0.18], '#78350f', { rotation: LORE_PANEL_ROTATION }),
-      cone([-0.92, 3.18, 0.39], [0.3, 0.54, 0.3], '#f59e0b', { rotation: [0.1, LORE_PANEL_ROTATION[1], 0], emissive: '#f59e0b', emissiveIntensity: 0.55 }),
-    ],
-  }),
-  lorePanelScene(4, -2.9, {
+  },
+  {
+    id: 'shared-world',
     title: 'Shared World',
-    line1: 'Presence makes stone',
-    line2: 'remember footsteps.',
+    line: 'Presence makes stone remember footsteps.',
+    z: -2.9,
+    imageUrl: '/generated-images/rookie-lore-shared-world.jpg',
     accent: '#86efac',
-    backdrop: '#14532d',
-    marks: [
-      sphere([-1.12, 3.04, 0.35], [0.18, 0.18, 0.06], '#86efac', { emissive: '#86efac', emissiveIntensity: 0.28 }),
-      sphere([-0.76, 2.84, 0.35], [0.18, 0.18, 0.06], '#67e8f9', { emissive: '#67e8f9', emissiveIntensity: 0.22 }),
-      sphere([-0.76, 3.24, 0.35], [0.18, 0.18, 0.06], '#fef3c7', { emissive: '#fef3c7', emissiveIntensity: 0.16 }),
-    ],
-  }),
-  lorePanelScene(5, 1.1, {
+  },
+  {
+    id: 'openclaw-signal',
     title: 'OpenClaw Signal',
-    line1: 'The avatar is body.',
-    line2: 'The mind arrives awake.',
+    line: 'The avatar is body. The mind arrives awake.',
+    z: 1.1,
+    imageUrl: '/generated-images/rookie-lore-openclaw-signal.jpg',
     accent: '#fb7185',
-    backdrop: '#4c0519',
-    marks: [
-      cone([-0.92, 3.18, 0.35], [0.36, 0.62, 0.36], '#fb7185', { rotation: LORE_PANEL_ROTATION, emissive: '#fb7185', emissiveIntensity: 0.3 }),
-      sphere([-0.92, 2.74, 0.37], [0.26, 0.18, 0.08], '#f8fafc', { emissive: '#f8fafc', emissiveIntensity: 0.12 }),
-    ],
-  }),
+  },
 ]
+
+const loreMediaPlacements = loreGalleryItems.map((item, index) => ({
+  id: `rookie-lore-media-${item.id}`,
+  catalogId: 'generated-image',
+  name: item.title,
+  glbPath: '',
+  position: [4.2, 1.55, item.z],
+  rotation: [0, -Math.PI / 2, 0],
+  scale: 1.55,
+  imageUrl: item.imageUrl,
+  imageFrameStyle: index % 2 === 0 ? 'gilded' : 'baroque',
+  imageFrameThickness: 1.08,
+  thumbnail: item.imageUrl,
+}))
+
+const loreCaptions = loreGalleryItems.map((item, index) => crafted(
+  `rookie-lore-caption-${item.id}`,
+  `${item.title} caption`,
+  `Readable caption beside the ${item.title} generated media frame.`,
+  [3.72, 0, item.z + 1.25],
+  [
+    text([0, 2.95, 0], item.title.toUpperCase(), '#fef3c7', [0.16, 0.16, 0.16], {
+      rotation: [0, -Math.PI / 2, 0],
+      fontSize: 0.34,
+    }),
+    text([0, 2.48, 0], item.line, item.accent, [0.11, 0.11, 0.11], {
+      rotation: [0, -Math.PI / 2, 0],
+      fontSize: 0.23,
+    }),
+  ],
+))
 
 const craftedScenes = [
   crafted('rookie-south-threshold', 'South cave threshold', 'The first steps of the apprentice path.', [0, 0, -18.5], [
@@ -330,7 +291,7 @@ const craftedScenes = [
   ...torches,
   ...mounds,
   ...pathDetails,
-  ...lorePanels,
+  ...loreCaptions,
 ]
 
 const seed = {
@@ -340,7 +301,7 @@ const seed = {
   userId: 'local-user',
   name: 'Rookie Wizard',
   icon: 'R',
-  visibility: 'core',
+  visibility: 'public',
   creatorName: 'The Oasis',
   creatorAvatar: null,
   thumbnailUrl: null,
@@ -352,7 +313,7 @@ const seed = {
     groundTiles,
     craftedScenes,
     conjuredAssetIds: [],
-    catalogPlacements: [],
+    catalogPlacements: loreMediaPlacements,
     portalGates: [
       {
         id: 'rookie-arrival-from-portal-zero',
@@ -381,6 +342,7 @@ const seed = {
         width: 2.35,
         height: 3.15,
         direction: 'one-way',
+        hidden: true,
         sourceWorldId: WORLD_ID,
         action: {
           type: 'create_world',
@@ -401,6 +363,7 @@ const seed = {
         width: 2.45,
         height: 3.35,
         direction: 'one-way',
+        hidden: true,
         sourceWorldId: WORLD_ID,
         targetWorldId: PORTAL_ZERO_WORLD_ID,
         targetWorldName: 'Portal Zero',
@@ -451,7 +414,7 @@ const manifest = {
       id: WORLD_ID,
       file: 'rookie-wizard.world.json',
       name: 'Rookie Wizard',
-      visibility: 'core',
+      visibility: 'public',
     },
   ],
 }

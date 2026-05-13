@@ -65,7 +65,7 @@ import { useWorldLoader } from './forge/WorldObjects'
 import { completeQuest } from '@/lib/quests'
 import { useInputManager, useUILayer, getMouseLookDebugState, isPointerLocked } from '@/lib/input-manager'
 import { getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
-import { ROOKIE_WIZARD_WORLD_ID, WELCOME_HUB_WORLD_ID } from '@/lib/portal-gates'
+import { ROOKIE_WIZARD_WORLD_ID } from '@/lib/portal-gates'
 import { CameraController as CameraControllerComponent, sprintRef, FPS_KEYBOARD_MAP } from './CameraController'
 import { useAudioManager, SOUND_OPTIONS, type SoundEvent } from '@/lib/audio-manager'
 import { writeBrowserStorage } from '@/lib/browser-storage'
@@ -75,6 +75,7 @@ import { useIsHostedOasis, useOasisCapabilities } from '@/lib/oasis-mode-client'
 import { installTestHarness } from '@/lib/test-harness'
 import { useWorldEvents } from '@/hooks/useWorldEvents'
 import { AgentWindowPortals } from './forge/AgentWindowPortals'
+import { requestPortalGateReveal } from './forge/PortalGateLayer'
 import { PortalZeroCanonicalButton } from './forge/PortalZeroCanonicalButton'
 import { PortalTransitionOverlay } from './forge/PortalTransitionOverlay'
 import { WorldLoadingBar } from './forge/WorldLoadingBar'
@@ -87,6 +88,8 @@ import { WorldMenu } from './forge/WorldMenu'
 import { PlaceMenu } from './forge/PlaceMenu'
 import { GameMenuButton } from './forge/GameMenuButton'
 import { MobileOasisControls, useIsMobileOasis } from './forge/MobileOasisControls'
+import { FireboltLayer } from './forge/FireboltLayer'
+import { PlayerVitalsHud } from './forge/PlayerVitalsHud'
 
 const SHOW_LEGACY_DEVCRAFT_PANEL = false
 const SHOW_LEGACY_PARZIVAL_PANEL = false
@@ -1315,6 +1318,10 @@ function AgentQuickLauncher({
 
 const ROOKIE_MERLIN_POSITION: [number, number, number] = [0, 0, 10.2]
 const ROOKIE_MERLIN_INTERACTION_RADIUS = 5
+const ROOKIE_PRIVATE_PORTAL_ID = 'rookie-new-private-world'
+const ROOKIE_PORTAL_ZERO_GATE_ID = 'rookie-to-portal-zero'
+const ROOKIE_PRIVATE_PORTAL_POSITION: [number, number, number] = [3.4, 0, 15.4]
+const ROOKIE_PORTAL_ZERO_POSITION: [number, number, number] = [-3.4, 0, 15.4]
 
 function isWorldTypingTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null
@@ -1361,7 +1368,7 @@ function RookieMerlinWorldPrompt() {
   if (!nearby) return null
   return (
     <group position={[ROOKIE_MERLIN_POSITION[0], 3.05, ROOKIE_MERLIN_POSITION[2]]}>
-      <Html transform center distanceFactor={8} style={{ pointerEvents: 'none' }}>
+      <Html transform sprite center distanceFactor={8} style={{ pointerEvents: 'none' }}>
         <div className="rounded-md border border-amber-200/35 bg-black/75 px-3 py-2 text-center shadow-[0_0_22px_rgba(251,191,36,0.18)] backdrop-blur-md">
           <div className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-100">Merlin</div>
           <div className="mt-1 flex gap-1.5 text-[10px] font-mono text-white/90">
@@ -1496,8 +1503,6 @@ export default function Scene() {
   const isViewModeEditable = useOasisStore(s => s.isViewModeEditable)
   const activeWorldId = useOasisStore(s => s.activeWorldId)
   const worldRegistry = useOasisStore(s => s.worldRegistry)
-  const switchWorld = useOasisStore(s => s.switchWorld)
-  const createNewWorld = useOasisStore(s => s.createNewWorld)
   const activeWorldMeta = worldRegistry.find(world => world.id === activeWorldId)
   const activeWorldCanWrite = Boolean(isAdmin || activeWorldMeta?.canWrite || (isViewMode && isViewModeEditable))
   const activeWorldWriteKnown = Boolean(activeWorldMeta) || isViewMode
@@ -1546,15 +1551,14 @@ export default function Scene() {
   }, [])
   const startRookieQuest = useCallback(() => {
     useAudioManager.getState().play('buttonClick')
-    const requestedName = window.prompt('Name your first private spell room', 'First spell room')
-    const name = requestedName?.trim()
-    if (!name) return
-    createNewWorld(name.slice(0, 50), 'R')
-  }, [createNewWorld])
-  const jumpToPortalZero = useCallback(() => {
+    requestPortalGateReveal(ROOKIE_PRIVATE_PORTAL_ID)
+    useOasisStore.getState().spawnPlacementVfx(ROOKIE_PRIVATE_PORTAL_POSITION)
+  }, [])
+  const openPortalZeroGate = useCallback(() => {
     useAudioManager.getState().play('buttonClick')
-    switchWorld(WELCOME_HUB_WORLD_ID)
-  }, [switchWorld])
+    requestPortalGateReveal(ROOKIE_PORTAL_ZERO_GATE_ID)
+    useOasisStore.getState().spawnPlacementVfx(ROOKIE_PORTAL_ZERO_POSITION)
+  }, [])
 
   // WorldMenu's Scene buttons (sky/ground/lights) fire this custom event to
   // ask Scene to open WizCon. Legacy listener — kept so any other dispatcher
@@ -1855,6 +1859,7 @@ export default function Scene() {
           <ForgeRealm />
           <RookieMerlinWorldPrompt />
         </Suspense>
+        <FireboltLayer enabled={effectiveRp1Mode} />
 
         {/* ─═̷─═̷─📸─═̷─═̷─ PANORAMA CAPTURE (Ctrl+Shift+P) ─═̷─═̷─📸─═̷─═̷─ */}
         <PanoramaCapture />
@@ -1872,7 +1877,11 @@ export default function Scene() {
       <KeyboardControls map={FPS_KEYBOARD_MAP}>
         {CanvasContent}
       </KeyboardControls>
-      <MobileOasisControls enabled={mobileOasis && (settings.controlMode === 'noclip' || settings.controlMode === 'third-person')} />
+      <MobileOasisControls
+        enabled={mobileOasis && (settings.controlMode === 'noclip' || settings.controlMode === 'third-person')}
+        spellControlsEnabled={effectiveRp1Mode}
+      />
+      <PlayerVitalsHud visible={effectiveRp1Mode} />
 
       {/* ─═̷─═̷─⚡ FPS DISPLAY ─═̷─═̷─⚡ */}
       <FPSDisplay enabled={settings.fpsCounterEnabled} fontSize={settings.fpsCounterFontSize} />
@@ -1897,7 +1906,7 @@ export default function Scene() {
         activeWorldId={activeWorldId}
         onTalk={startRookieTalk}
         onQuest={startRookieQuest}
-        onPortalZero={jumpToPortalZero}
+        onPortalZero={openPortalZeroGate}
       />
 
       {/* Main game rail */}

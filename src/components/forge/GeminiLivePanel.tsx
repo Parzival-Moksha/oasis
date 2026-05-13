@@ -791,6 +791,17 @@ export function GeminiLivePanel({
 
     for (const call of calls) {
       const toolArgs: Record<string, unknown> = withBrowserWorldId(call.args, activeWorldId)
+      if (call.name === 'screenshot_viewport') {
+        if (toolArgs.mode === undefined && toolArgs.views === undefined) toolArgs.mode = 'third-person-follow'
+        if (toolArgs.width === undefined) toolArgs.width = 768
+        if (toolArgs.height === undefined) toolArgs.height = 432
+        if (toolArgs.format === undefined) toolArgs.format = 'jpeg'
+        if (toolArgs.quality === undefined) toolArgs.quality = 0.68
+        if (toolArgs.fov === undefined) toolArgs.fov = 120
+        if (toolArgs.distance === undefined) toolArgs.distance = 3.8
+        if (toolArgs.heightOffset === undefined) toolArgs.heightOffset = 2
+        if (toolArgs.lookAhead === undefined) toolArgs.lookAhead = 3.4
+      }
       if ((
         call.name === 'set_avatar'
         || call.name === 'walk_avatar_to'

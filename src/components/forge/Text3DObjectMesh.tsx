@@ -66,17 +66,26 @@ function readableTextColor(color: string, toneBias = 0): string {
 
 function Text3DGlyphs({ text, fontUrl, size, depth, color, toneBias, shininess }: Text3DGlyphsProps) {
   const clamped = Math.max(0, Math.min(1, shininess))
-  const displayColor = readableTextColor(color, toneBias)
+  const faceColor = readableTextColor(color, toneBias)
   return (
     <Center>
       <Text3D font={fontUrl} size={size} height={depth} curveSegments={6} bevelEnabled={false}>
         {text}
         <meshStandardMaterial
-          color={displayColor}
+          attach="material-0"
+          color={faceColor}
           metalness={clamped * 0.8}
           roughness={1 - clamped * 0.8}
-          emissive={displayColor}
+          emissive={faceColor}
           emissiveIntensity={clamped * 0.25}
+        />
+        <meshStandardMaterial
+          attach="material-1"
+          color={color}
+          metalness={clamped * 0.8}
+          roughness={1 - clamped * 0.8}
+          emissive={color}
+          emissiveIntensity={clamped * 0.18}
         />
       </Text3D>
     </Center>

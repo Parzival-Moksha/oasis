@@ -3534,7 +3534,7 @@ function normalizeScreenshotMode(
       || (entry.player === true ? 'player' : '')
       || (entry.agent === true ? 'agent' : '')
       || (entry.external === true ? 'external' : ''),
-    defaultAgentType && index === 0 ? 'agent' : index === 0 ? 'current' : '',
+    defaultAgentType && index === 0 ? 'third-person-follow' : index === 0 ? 'current' : '',
   ).toLowerCase()
 
   if (!rawMode) return null
@@ -3600,14 +3600,14 @@ function normalizeScreenshotView(value: unknown, index: number, defaultAgentType
   const defaultFov =
     mode === 'agent-avatar-phantom' ? 100 :
     mode === 'external-orbit' ? 60 :
-    mode === 'third-person-follow' ? 72 :
+    mode === 'third-person-follow' ? 120 :
     mode === 'avatar-portrait' ? 45 :
     75
   const maxDistance = mode === 'external-orbit' ? 40 : mode === 'third-person-follow' ? 18 : mode === 'avatar-portrait' ? 8 : 12
-  const defaultDistance = mode === 'external-orbit' ? 16 : mode === 'third-person-follow' ? 4.4 : mode === 'avatar-portrait' ? 2.75 : 1
+  const defaultDistance = mode === 'external-orbit' ? 16 : mode === 'third-person-follow' ? 3.8 : mode === 'avatar-portrait' ? 2.75 : 1
   const maxHeightOffset = mode === 'external-orbit' ? 30 : mode === 'third-person-follow' ? 6 : mode === 'avatar-portrait' ? 4 : 4
-  const defaultHeightOffset = mode === 'external-orbit' ? 9 : mode === 'third-person-follow' ? 2.1 : mode === 'avatar-portrait' ? 1.55 : 1.55
-  const defaultLookAhead = mode === 'third-person-follow' ? 4 : mode === 'avatar-portrait' ? 0.1 : 5
+  const defaultHeightOffset = mode === 'external-orbit' ? 9 : mode === 'third-person-follow' ? 2 : mode === 'avatar-portrait' ? 1.55 : 1.55
+  const defaultLookAhead = mode === 'third-person-follow' ? 3.4 : mode === 'avatar-portrait' ? 0.1 : 5
   return {
     id: validStr(entry.id, `view-${index + 1}`),
     mode,
@@ -3703,12 +3703,12 @@ function normalizeScreenshotRequest(args: Record<string, unknown>): PendingScree
       ? views
       : [{
           id: 'view-1',
-          mode: defaultAgentType ? 'agent-avatar-phantom' : 'current',
+          mode: defaultAgentType ? 'third-person-follow' : 'current',
           agentType: defaultAgentType || undefined,
-          fov: defaultAgentType ? 100 : 75,
-          distance: 1,
-          heightOffset: 1.55,
-          lookAhead: 5,
+          fov: defaultAgentType ? 120 : 75,
+          distance: defaultAgentType ? 3.8 : 1,
+          heightOffset: defaultAgentType ? 2 : 1.55,
+          lookAhead: defaultAgentType ? 3.4 : 5,
         }],
   }
 }

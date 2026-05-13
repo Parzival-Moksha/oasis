@@ -44,7 +44,13 @@ export function useIsMobileOasis(): boolean {
   return isMobile
 }
 
-export function MobileOasisControls({ enabled }: { enabled: boolean }) {
+export function MobileOasisControls({
+  enabled,
+  spellControlsEnabled = false,
+}: {
+  enabled: boolean
+  spellControlsEnabled?: boolean
+}) {
   const setMove = useMobileControls(s => s.setMove)
   const setSprint = useMobileControls(s => s.setSprint)
   const setLookActive = useMobileControls(s => s.setLookActive)
@@ -243,6 +249,7 @@ export function MobileOasisControls({ enabled }: { enabled: boolean }) {
             {nearbyAction.label}
           </button>
         )}
+        {spellControlsEnabled && <MobileFireboltButton />}
         <button
           type="button"
           className="h-11 min-w-20 touch-none rounded-lg border border-amber-200/35 bg-black/45 px-4 text-[11px] font-black uppercase tracking-[0.14em] text-amber-100 shadow-[0_0_28px_rgba(251,191,36,0.16)] backdrop-blur-sm"
@@ -267,6 +274,22 @@ export function MobileOasisControls({ enabled }: { enabled: boolean }) {
         <MobilePaintHoldButton />
       </div>
     </div>
+  )
+}
+
+function MobileFireboltButton() {
+  return (
+    <button
+      type="button"
+      className="h-14 min-w-24 touch-none rounded-lg border border-orange-200/45 bg-orange-950/72 px-4 text-[11px] font-black uppercase tracking-[0.14em] text-orange-50 shadow-[0_0_34px_rgba(249,115,22,0.24)] backdrop-blur-sm"
+      onPointerDown={event => {
+        event.preventDefault()
+        event.stopPropagation()
+        window.dispatchEvent(new CustomEvent('oasis:cast-firebolt'))
+      }}
+    >
+      Fire
+    </button>
   )
 }
 
