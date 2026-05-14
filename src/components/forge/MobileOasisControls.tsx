@@ -336,8 +336,9 @@ function MobileManaButton() {
 // Hidden in read-only worlds — the wand is a write operation.
 function MobilePaintHoldButton() {
   const setPaintHeldActive = useOasisStore(s => s.setPaintHeldActive)
+  const brushSpellActive = useOasisStore(s => s.paintBrushPanelOpen)
   const isReadOnly = useOasisStore(s => s.isViewMode && !s.isViewModeEditable)
-  if (isReadOnly) return null
+  if (isReadOnly || !brushSpellActive) return null
   return (
     <button
       type="button"
