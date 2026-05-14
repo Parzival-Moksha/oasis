@@ -17,6 +17,20 @@ type FireboltProjectile = {
   damage: number
 }
 
+type FireboltExplosion = {
+  id: string
+  position: [number, number, number]
+  age: number
+  ttl: number
+  seed: number
+}
+
+type CollisionTarget = {
+  id: string
+  position: [number, number, number]
+  radius: number
+}
+
 type FireboltResponse = {
   ok?: boolean
   error?: string
@@ -30,6 +44,7 @@ type FireboltResponse = {
 
 const FIREBOLT_TTL_S = 1.75
 const FIREBOLT_COOLDOWN_MS = 170
+const EXPLOSION_TTL_S = 0.82
 
 function randomId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -59,6 +74,79 @@ function canCastFirebolt(): boolean {
   return true
 }
 
+function resolvePosition(
+  id: string,
+  fallback: [number, number, number] | undefined,
+  transforms: Record<string, { position?: [number, number, number] } | undefined>,
+): [number, number, number] | null {
+  return transforms[id]?.position || fallback || null
+}
+
+function resolveScale(
+  id: string,
+  fallback: number | undefined,
+  transforms: Record<string, { scale?: number | [number, number, number] } | undefined>,
+): number {
+  const scale = transforms[id]?.scale
+  if (typeof scale === 'number') return scale
+  if (Array.isArray(scale)) return Math.max(scale[0] || 1, scale[1] || 1, scale[2] || 1)
+  return fallback || 1
+}
+
+function collectCollisionTargets(): CollisionTarget[] {
+  const state = useOasisStore.getState()
+  const transforms = state.transforms
+  const targets: CollisionTarget[] = []
+
+  for (const asset of state.placedCatalogAssets) {
+    const position = resolvePosition(asset.id, asset.position, transforms)
+    if (!position) continue
+    const scale = resolveScale(asset.id, asset.scale, transforms)
+    targets.push({ id: asset.id, position, radius: Math.max(0.75, scale * 0.9) })
+  }
+
+  for (const scene of state.craftedScenes) {
+    const position = resolvePosition(scene.id, scene.position, transforms)
+    if (!position) continue
+    targets.push({
+      id: scene.id,
+      position,
+      radius: Math.max(1.4, 1.6 + Math.sqrt(scene.objects.length) * 0.28),
+    })
+  }
+
+  for (const text of state.text3dObjects) {
+    const position = resolvePosition(text.id, text.position, transforms)
+    if (!position) continue
+    targets.push({ id: text.id, position, radius: Math.max(0.9, text.size * 1.8) })
+  }
+
+  return targets
+}
+
+function segmentSphereHit(
+  start: THREE.Vector3,
+  end: THREE.Vector3,
+  center: THREE.Vector3,
+  radius: number,
+): THREE.Vector3 | null {
+  const segment = end.clone().sub(start)
+  const lengthSq = segment.lengthSq()
+  if (lengthSq <= 0) return null
+  const t = THREE.MathUtils.clamp(center.clone().sub(start).dot(segment) / lengthSq, 0, 1)
+  const closest = start.clone().addScaledVector(segment, t)
+  return closest.distanceTo(center) <= radius ? closest : null
+}
+
+function groundHit(start: THREE.Vector3, end: THREE.Vector3): THREE.Vector3 | null {
+  if (start.y < 0.05 && end.y < 0.05) return null
+  if (start.y >= 0.05 && end.y <= 0.05) {
+    const t = start.y / Math.max(0.0001, start.y - end.y)
+    return start.clone().lerp(end, THREE.MathUtils.clamp(t, 0, 1))
+  }
+  return null
+}
+
 function FireboltMesh({ projectile }: { projectile: FireboltProjectile }) {
   const direction = useMemo(() => {
     return new THREE.Vector3(...projectile.velocity).normalize()
@@ -67,7 +155,10 @@ function FireboltMesh({ projectile }: { projectile: FireboltProjectile }) {
 
   return (
     <group position={projectile.position}>
-      <pointLight color="#ff9a1f" intensity={2.4 * opacity} distance={5.5} />
+      <mesh>
+        <sphereGeometry args={[0.42, 18, 12]} />
+        <meshBasicMaterial color="#ff7a18" transparent opacity={0.18 * opacity} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </mesh>
       <mesh>
         <sphereGeometry args={[0.18, 18, 12]} />
         <meshStandardMaterial color="#ff5a1f" emissive="#ff7a18" emissiveIntensity={2.7} transparent opacity={opacity} />
@@ -86,9 +177,79 @@ function FireboltMesh({ projectile }: { projectile: FireboltProjectile }) {
   )
 }
 
+function FireboltExplosionMesh({ explosion }: { explosion: FireboltExplosion }) {
+  const particles = useMemo(() => {
+    const count = 18
+    return Array.from({ length: count }, (_, index) => {
+      const angle = (index / count) * Math.PI * 2 + explosion.seed * 0.001
+      return {
+        id: index,
+        angle,
+        speed: 1.4 + ((index * 17 + explosion.seed) % 11) * 0.18,
+        up: 0.5 + ((index * 23 + explosion.seed) % 9) * 0.08,
+        size: 0.08 + (index % 4) * 0.018,
+      }
+    })
+  }, [explosion.seed])
+  const t = Math.max(0, Math.min(1, explosion.age / explosion.ttl))
+  const pop = Math.sin(Math.min(1, t * 1.25) * Math.PI)
+  const flashOpacity = Math.max(0, 0.78 - t * 1.35)
+  const smokeOpacity = Math.max(0, 0.16 - t * 0.15)
+
+  return (
+    <group position={explosion.position}>
+      <mesh scale={1 + t * 5.6}>
+        <sphereGeometry args={[0.42, 18, 14]} />
+        <meshBasicMaterial color="#fff1a4" transparent opacity={flashOpacity} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </mesh>
+      <mesh scale={0.9 + pop * 3.4}>
+        <sphereGeometry args={[0.6, 18, 14]} />
+        <meshBasicMaterial color="#ff7a28" transparent opacity={Math.max(0, 0.44 - t * 0.48)} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} scale={1 + t * 4.4}>
+        <ringGeometry args={[0.46, 0.72, 36]} />
+        <meshBasicMaterial color="#ffd76b" transparent opacity={Math.max(0, 0.74 - t * 0.82)} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </mesh>
+      {particles.map(particle => {
+        const life = t * 1.35
+        const x = Math.cos(particle.angle) * particle.speed * life
+        const z = Math.sin(particle.angle) * particle.speed * life
+        const y = Math.max(0.03, particle.up * life - 1.65 * life * life)
+        return (
+          <mesh key={particle.id} position={[x, y, z]} scale={Math.max(0.15, 1 - t * 0.55)}>
+            <sphereGeometry args={[particle.size, 8, 8]} />
+            <meshBasicMaterial
+              color={particle.id % 3 === 0 ? '#fff1a4' : particle.id % 3 === 1 ? '#ff8d38' : '#ff4a28'}
+              transparent
+              opacity={Math.max(0, 0.92 - t * 1.08)}
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+            />
+          </mesh>
+        )
+      })}
+      {[0, 1, 2, 3].map(index => (
+        <mesh
+          key={index}
+          position={[
+            Math.cos(index * 1.7 + explosion.seed) * (0.3 + t * 0.5),
+            0.35 + t * (0.9 + index * 0.18),
+            Math.sin(index * 1.7 + explosion.seed) * (0.3 + t * 0.5),
+          ]}
+          scale={1 + t * (1.7 + index * 0.35)}
+        >
+          <sphereGeometry args={[0.35, 10, 8]} />
+          <meshBasicMaterial color="#4f3b37" transparent opacity={smokeOpacity} depthWrite={false} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
 export function FireboltLayer({ enabled }: { enabled: boolean }) {
   const { camera, gl } = useThree()
   const [projectiles, setProjectiles] = useState<FireboltProjectile[]>([])
+  const [explosions, setExplosions] = useState<FireboltExplosion[]>([])
   const lastCastAtRef = useRef(0)
   const castingRef = useRef(false)
 
@@ -141,6 +302,7 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
       const damage = typeof data.spell?.damage === 'number' ? data.spell.damage : 14
       spawnProjectile(speed, damage)
       useAudioManager.getState().play('conjureStart')
+      window.dispatchEvent(new CustomEvent('oasis:spell-cast', { detail: { spell: 'firebolt', damage } }))
       if (data.progression) {
         window.dispatchEvent(new CustomEvent('oasis:player-vitals', { detail: data.progression }))
       }
@@ -170,24 +332,66 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
   }, [castFirebolt, enabled, gl])
 
   useFrame((_, delta) => {
-    if (projectiles.length === 0) return
-    setProjectiles(prev => prev
-      .map(projectile => {
+    if (projectiles.length > 0) {
+      const targets = collectCollisionTargets()
+      const spawnedExplosions: FireboltExplosion[] = []
+      const nextProjectiles: FireboltProjectile[] = []
+
+      for (const projectile of projectiles) {
+        const start = new THREE.Vector3(...projectile.position)
+        const velocity = new THREE.Vector3(...projectile.velocity)
+        const end = start.clone().addScaledVector(velocity, delta)
         const nextAge = projectile.age + delta
-        const nextPosition: [number, number, number] = [
-          projectile.position[0] + projectile.velocity[0] * delta,
-          projectile.position[1] + projectile.velocity[1] * delta,
-          projectile.position[2] + projectile.velocity[2] * delta,
-        ]
-        return { ...projectile, age: nextAge, position: nextPosition }
-      })
-      .filter(projectile => projectile.age < projectile.ttl && projectile.position[1] > -8))
+        let impact = groundHit(start, end)
+
+        if (!impact) {
+          for (const target of targets) {
+            const targetCenter = new THREE.Vector3(target.position[0], target.position[1] + Math.min(1.4, target.radius), target.position[2])
+            impact = segmentSphereHit(start, end, targetCenter, target.radius)
+            if (impact) break
+          }
+        }
+
+        const expired = nextAge >= projectile.ttl || end.y <= -8
+        if (impact || expired) {
+          spawnedExplosions.push({
+            id: randomId(),
+            position: impact ? [impact.x, Math.max(0.05, impact.y), impact.z] : [end.x, end.y, end.z],
+            age: 0,
+            ttl: EXPLOSION_TTL_S,
+            seed: Math.floor(Math.random() * 10000),
+          })
+          continue
+        }
+
+        nextProjectiles.push({
+          ...projectile,
+          age: nextAge,
+          position: [end.x, end.y, end.z],
+        })
+      }
+
+      setProjectiles(nextProjectiles)
+      if (spawnedExplosions.length > 0) {
+        useAudioManager.getState().play('conjureDone')
+        setExplosions(prev => [...prev.slice(-10), ...spawnedExplosions])
+      }
+    }
+
+    if (explosions.length > 0) {
+      setExplosions(prev => prev
+        .map(explosion => ({ ...explosion, age: explosion.age + delta }))
+        .filter(explosion => explosion.age < explosion.ttl))
+    }
   })
 
   return (
     <group name="firebolt-layer">
       {projectiles.map(projectile => (
         <FireboltMesh key={projectile.id} projectile={projectile} />
+      ))}
+      {explosions.map(explosion => (
+        <FireboltExplosionMesh key={explosion.id} explosion={explosion} />
       ))}
     </group>
   )

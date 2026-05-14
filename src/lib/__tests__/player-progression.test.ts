@@ -4,6 +4,7 @@ import {
   DEFAULT_PLAYER_SKILLS,
   PLAYER_BASE_STATS,
   buildPlayerProgression,
+  computeManaRechargeTicks,
   computePlayerStats,
   earnedSkillPointsForLevel,
   normalizePlayerSkills,
@@ -42,5 +43,12 @@ describe('player progression', () => {
     expect(stats.maxHp).toBe(125)
     expect(stats.conjureManaCost).toBe(12)
     expect(stats.fireboltManaCost).toBe(PLAYER_BASE_STATS.fireboltManaCost)
+  })
+
+  it('computes Conjure-style whole mana recharge ticks from elapsed time', () => {
+    expect(computeManaRechargeTicks(999, 1)).toBe(0)
+    expect(computeManaRechargeTicks(1000, 1)).toBe(1)
+    expect(computeManaRechargeTicks(1000, 2.05)).toBe(2)
+    expect(computeManaRechargeTicks(10_000, 10)).toBe(50)
   })
 })

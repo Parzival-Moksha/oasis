@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PlayerComputedStats } from '@/lib/player-progression'
 import { PLAYER_BASE_STATS } from '@/lib/player-progression'
 
@@ -22,6 +22,7 @@ type PlayerVitals = {
   level: number
   fireboltCost: number
   fireboltDamage: number
+  manaRegenMultiplier: number
 }
 
 const DEFAULT_VITALS: PlayerVitals = {
@@ -32,6 +33,7 @@ const DEFAULT_VITALS: PlayerVitals = {
   level: 1,
   fireboltCost: PLAYER_BASE_STATS.fireboltManaCost,
   fireboltDamage: 14,
+  manaRegenMultiplier: 1,
 }
 
 function finiteNumber(value: unknown, fallback: number): number {
@@ -50,6 +52,7 @@ function normalizeVitals(source: VitalsSource | null | undefined, fallback = DEF
     level: finiteNumber(source?.level, fallback.level),
     fireboltCost: finiteNumber(stats.fireboltManaCost, fallback.fireboltCost),
     fireboltDamage: finiteNumber(stats.fireboltDamage, fallback.fireboltDamage),
+    manaRegenMultiplier: finiteNumber(stats.manaRegenMultiplier, fallback.manaRegenMultiplier),
   }
 }
 
@@ -92,6 +95,12 @@ function Bar({
 export function PlayerVitalsHud({ visible }: { visible: boolean }) {
   const [vitals, setVitals] = useState<PlayerVitals>(DEFAULT_VITALS)
   const [castError, setCastError] = useState<string | null>(null)
+  const vitalsRef = useRef<PlayerVitals>(DEFAULT_VITALS)
+  const lastRechargeAtRef = useRef<number>(0)
+
+  useEffect(() => {
+    vitalsRef.current = vitals
+  }, [vitals])
 
   const refresh = useCallback(async () => {
     try {
@@ -108,6 +117,37 @@ export function PlayerVitalsHud({ visible }: { visible: boolean }) {
     if (!visible) return
     void refresh()
   }, [refresh, visible])
+
+  useEffect(() => {
+    if (!visible || typeof window === 'undefined') return
+    lastRechargeAtRef.current = performance.now()
+
+    const timer = window.setInterval(async () => {
+      const current = vitalsRef.current
+      const now = performance.now()
+      const elapsedMs = now - lastRechargeAtRef.current
+      lastRechargeAtRef.current = now
+      if (current.mana >= current.maxMana) return
+
+      try {
+        const response = await fetch('/api/profile/mana/recharge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ elapsedMs }),
+        })
+        if (!response.ok) return
+        const data = await response.json()
+        if (data?.progression) {
+          setVitals(prev => normalizeVitals(data.progression, prev))
+          window.dispatchEvent(new CustomEvent('oasis:player-vitals', { detail: data.progression }))
+        }
+      } catch {
+        // Recharge is best-effort; direct profile refresh will recover.
+      }
+    }, 1000)
+
+    return () => window.clearInterval(timer)
+  }, [visible])
 
   useEffect(() => {
     if (typeof window === 'undefined') return

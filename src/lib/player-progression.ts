@@ -106,6 +106,13 @@ export function computePlayerStats(skills: PlayerSkillSet): PlayerComputedStats 
   }
 }
 
+export function computeManaRechargeTicks(elapsedMs: number, manaRegenMultiplier: number): number {
+  const safeElapsedMs = Math.max(0, Math.min(5000, Math.floor(elapsedMs)))
+  const safeMultiplier = Math.max(0.1, Math.min(10, manaRegenMultiplier))
+  const tickIntervalMs = 1000 / safeMultiplier
+  return Math.max(0, Math.floor(safeElapsedMs / tickIntervalMs))
+}
+
 export function summarizeSkill(skill: PlayerSkillKey, skills: PlayerSkillSet): string {
   const stats = computePlayerStats(skills)
   switch (skill) {
