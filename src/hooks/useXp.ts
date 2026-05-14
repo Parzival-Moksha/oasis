@@ -196,6 +196,9 @@ export async function awardXp(action: XpAction, worldId?: string): Promise<XpRes
     const result = await res.json() as XpResult
     if (result.xp > 0) {
       showXpFloat(result.xp, result.leveledUp, result.level)
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('oasis:xp-awarded', { detail: result }))
+      }
     }
     return result
   } catch {

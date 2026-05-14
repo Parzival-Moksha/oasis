@@ -18,7 +18,7 @@ describe('player progression', () => {
     expect(progression.maxHp).toBe(100)
     expect(progression.mana).toBe(20)
     expect(progression.maxMana).toBe(20)
-    expect(progression.stats.fireboltManaCost).toBe(5)
+    expect(progression.stats.fireboltManaCost).toBe(1)
     expect(progression.stats.fireboltSpeedMetersPerSecond).toBe(24)
   })
 

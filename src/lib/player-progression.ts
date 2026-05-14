@@ -3,7 +3,7 @@ export const PLAYER_SKILL_CAP = 5
 export const PLAYER_BASE_STATS = {
   hp: 100,
   mana: 20,
-  fireboltManaCost: 5,
+  fireboltManaCost: 1,
   fireboltSpeedMetersPerSecond: 24,
   conjureManaCost: 20,
 } as const

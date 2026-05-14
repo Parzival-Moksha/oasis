@@ -249,7 +249,12 @@ export function MobileOasisControls({
             {nearbyAction.label}
           </button>
         )}
-        {spellControlsEnabled && <MobileFireboltButton />}
+        {spellControlsEnabled && (
+          <>
+            <MobileFireboltButton />
+            <MobileManaButton />
+          </>
+        )}
         <button
           type="button"
           className="h-11 min-w-20 touch-none rounded-lg border border-amber-200/35 bg-black/45 px-4 text-[11px] font-black uppercase tracking-[0.14em] text-amber-100 shadow-[0_0_28px_rgba(251,191,36,0.16)] backdrop-blur-sm"
@@ -289,6 +294,39 @@ function MobileFireboltButton() {
       }}
     >
       Fire
+    </button>
+  )
+}
+
+function MobileManaButton() {
+  const stop = () => window.dispatchEvent(new CustomEvent('oasis:mana-recharge-stop'))
+  return (
+    <button
+      type="button"
+      className="h-11 min-w-24 touch-none rounded-lg border border-cyan-200/45 bg-cyan-950/70 px-4 text-[11px] font-black uppercase tracking-[0.14em] text-cyan-50 shadow-[0_0_30px_rgba(34,211,238,0.22)] backdrop-blur-sm"
+      onPointerDown={event => {
+        event.preventDefault()
+        event.stopPropagation()
+        try { event.currentTarget.setPointerCapture(event.pointerId) } catch {}
+        window.dispatchEvent(new CustomEvent('oasis:mana-recharge-start'))
+      }}
+      onPointerUp={event => {
+        event.preventDefault()
+        event.stopPropagation()
+        try {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId)
+          }
+        } catch {}
+        stop()
+      }}
+      onPointerCancel={event => {
+        event.preventDefault()
+        event.stopPropagation()
+        stop()
+      }}
+    >
+      Mana
     </button>
   )
 }

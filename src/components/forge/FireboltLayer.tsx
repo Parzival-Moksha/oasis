@@ -15,6 +15,7 @@ type FireboltProjectile = {
   age: number
   ttl: number
   damage: number
+  trailCarry: number
 }
 
 type FireboltExplosion = {
@@ -23,6 +24,15 @@ type FireboltExplosion = {
   age: number
   ttl: number
   seed: number
+}
+
+type FireboltSmokePuff = {
+  id: string
+  position: [number, number, number]
+  age: number
+  ttl: number
+  seed: number
+  size: number
 }
 
 type CollisionTarget = {
@@ -45,6 +55,8 @@ type FireboltResponse = {
 const FIREBOLT_TTL_S = 1.75
 const FIREBOLT_COOLDOWN_MS = 170
 const EXPLOSION_TTL_S = 0.82
+const FIREBOLT_TRAIL_SPACING_M = 0.5
+const FIREBOLT_SMOKE_TTL_S = 1
 
 function randomId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -93,10 +105,22 @@ function resolveScale(
   return fallback || 1
 }
 
+function radiusFromBox(width: number | undefined, height: number | undefined, scale: number): number {
+  return Math.max(0.65, Math.max(width || 1, height || 1) * 0.5 * scale)
+}
+
 function collectCollisionTargets(): CollisionTarget[] {
   const state = useOasisStore.getState()
   const transforms = state.transforms
   const targets: CollisionTarget[] = []
+
+  for (const asset of state.conjuredAssets) {
+    if (!state.worldConjuredAssetIds.includes(asset.id)) continue
+    const position = resolvePosition(asset.id, asset.position, transforms)
+    if (!position) continue
+    const scale = resolveScale(asset.id, asset.scale, transforms)
+    targets.push({ id: asset.id, position, radius: Math.max(0.75, scale * 0.9) })
+  }
 
   for (const asset of state.placedCatalogAssets) {
     const position = resolvePosition(asset.id, asset.position, transforms)
@@ -119,6 +143,39 @@ function collectCollisionTargets(): CollisionTarget[] {
     const position = resolvePosition(text.id, text.position, transforms)
     if (!position) continue
     targets.push({ id: text.id, position, radius: Math.max(0.9, text.size * 1.8) })
+  }
+
+  for (const gate of state.portalGates) {
+    if (gate.hidden || gate.inert) continue
+    const position = resolvePosition(gate.id, gate.position, transforms)
+    if (!position) continue
+    const scale = resolveScale(gate.id, gate.scale, transforms)
+    targets.push({
+      id: gate.id,
+      position: [position[0], position[1] + (gate.height * scale) * 0.45, position[2]],
+      radius: Math.max(1.0, Math.max(gate.width, gate.height) * 0.45 * scale),
+    })
+  }
+
+  for (const object of state.spatialWebObjects) {
+    const position = resolvePosition(object.id, object.position, transforms)
+    if (!position) continue
+    const scale = resolveScale(object.id, typeof object.scale === 'number' ? object.scale : 1, transforms)
+    targets.push({ id: object.id, position, radius: radiusFromBox(object.width, object.height, scale) })
+  }
+
+  for (const win of state.placedAgentWindows) {
+    const position = resolvePosition(win.id, win.position, transforms)
+    if (!position) continue
+    const scale = resolveScale(win.id, win.scale, transforms)
+    targets.push({ id: win.id, position, radius: radiusFromBox(win.width / 260, win.height / 260, scale) })
+  }
+
+  for (const avatar of state.placedAgentAvatars) {
+    const position = resolvePosition(avatar.id, avatar.position, transforms)
+    if (!position) continue
+    const scale = resolveScale(avatar.id, avatar.scale, transforms)
+    targets.push({ id: avatar.id, position: [position[0], position[1] + 0.9 * scale, position[2]], radius: Math.max(0.45, scale * 0.7) })
   }
 
   return targets
@@ -152,14 +209,15 @@ function FireboltMesh({ projectile }: { projectile: FireboltProjectile }) {
     return new THREE.Vector3(...projectile.velocity).normalize()
   }, [projectile.velocity])
   const opacity = Math.max(0, Math.min(1, 1 - projectile.age / projectile.ttl))
+  const pulse = 1 + Math.sin(projectile.age * 54) * 0.07
 
   return (
     <group position={projectile.position}>
-      <mesh>
-        <sphereGeometry args={[0.42, 18, 12]} />
-        <meshBasicMaterial color="#ff7a18" transparent opacity={0.18 * opacity} depthWrite={false} blending={THREE.AdditiveBlending} />
+      <mesh scale={pulse}>
+        <sphereGeometry args={[0.48, 18, 12]} />
+        <meshBasicMaterial color="#ff7a18" transparent opacity={0.24 * opacity} depthWrite={false} blending={THREE.AdditiveBlending} />
       </mesh>
-      <mesh>
+      <mesh scale={pulse}>
         <sphereGeometry args={[0.18, 18, 12]} />
         <meshStandardMaterial color="#ff5a1f" emissive="#ff7a18" emissiveIntensity={2.7} transparent opacity={opacity} />
       </mesh>
@@ -174,6 +232,22 @@ function FireboltMesh({ projectile }: { projectile: FireboltProjectile }) {
         </mesh>
       ))}
     </group>
+  )
+}
+
+function FireboltSmokePuffMesh({ puff }: { puff: FireboltSmokePuff }) {
+  const t = Math.max(0, Math.min(1, puff.age / puff.ttl))
+  const driftX = Math.sin(puff.seed * 0.17 + t * 2.4) * 0.12
+  const driftZ = Math.cos(puff.seed * 0.13 + t * 2.1) * 0.12
+  const lift = t * 0.58
+  const opacity = Math.max(0, 0.24 * Math.pow(1 - t, 1.35))
+  const scale = puff.size * (0.65 + t * 1.75)
+
+  return (
+    <mesh position={[puff.position[0] + driftX, puff.position[1] + lift, puff.position[2] + driftZ]} scale={scale}>
+      <sphereGeometry args={[1, 10, 8]} />
+      <meshBasicMaterial color="#4a3a32" transparent opacity={opacity} depthWrite={false} />
+    </mesh>
   )
 }
 
@@ -250,6 +324,7 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
   const { camera, gl } = useThree()
   const [projectiles, setProjectiles] = useState<FireboltProjectile[]>([])
   const [explosions, setExplosions] = useState<FireboltExplosion[]>([])
+  const [smokePuffs, setSmokePuffs] = useState<FireboltSmokePuff[]>([])
   const lastCastAtRef = useRef(0)
   const castingRef = useRef(false)
 
@@ -279,6 +354,7 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
         age: 0,
         ttl: FIREBOLT_TTL_S,
         damage,
+        trailCarry: 0,
       },
     ])
   }, [camera])
@@ -335,13 +411,34 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
     if (projectiles.length > 0) {
       const targets = collectCollisionTargets()
       const spawnedExplosions: FireboltExplosion[] = []
+      const spawnedPuffs: FireboltSmokePuff[] = []
       const nextProjectiles: FireboltProjectile[] = []
 
       for (const projectile of projectiles) {
         const start = new THREE.Vector3(...projectile.position)
         const velocity = new THREE.Vector3(...projectile.velocity)
         const end = start.clone().addScaledVector(velocity, delta)
+        const segmentLength = start.distanceTo(end)
         const nextAge = projectile.age + delta
+        const oldTrailCarry = projectile.trailCarry || 0
+        const carriedDistance = oldTrailCarry + segmentLength
+        const puffCount = Math.floor(carriedDistance / FIREBOLT_TRAIL_SPACING_M)
+        const nextTrailCarry = carriedDistance % FIREBOLT_TRAIL_SPACING_M
+
+        for (let index = 0; index < puffCount; index += 1) {
+          const distanceAlong = (FIREBOLT_TRAIL_SPACING_M - oldTrailCarry) + index * FIREBOLT_TRAIL_SPACING_M
+          if (segmentLength <= 0 || distanceAlong < 0 || distanceAlong > segmentLength) continue
+          const t = distanceAlong / segmentLength
+          const position = start.clone().lerp(end, t)
+          spawnedPuffs.push({
+            id: randomId(),
+            position: [position.x, position.y, position.z],
+            age: 0,
+            ttl: FIREBOLT_SMOKE_TTL_S,
+            seed: Math.floor(Math.random() * 10000),
+            size: 0.22 + Math.random() * 0.1,
+          })
+        }
         let impact = groundHit(start, end)
 
         if (!impact) {
@@ -368,14 +465,24 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
           ...projectile,
           age: nextAge,
           position: [end.x, end.y, end.z],
+          trailCarry: nextTrailCarry,
         })
       }
 
       setProjectiles(nextProjectiles)
+      if (spawnedPuffs.length > 0) {
+        setSmokePuffs(prev => [...prev.slice(-70), ...spawnedPuffs])
+      }
       if (spawnedExplosions.length > 0) {
         useAudioManager.getState().play('conjureDone')
         setExplosions(prev => [...prev.slice(-10), ...spawnedExplosions])
       }
+    }
+
+    if (smokePuffs.length > 0) {
+      setSmokePuffs(prev => prev
+        .map(puff => ({ ...puff, age: puff.age + delta }))
+        .filter(puff => puff.age < puff.ttl))
     }
 
     if (explosions.length > 0) {
@@ -387,6 +494,9 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
 
   return (
     <group name="firebolt-layer">
+      {smokePuffs.map(puff => (
+        <FireboltSmokePuffMesh key={puff.id} puff={puff} />
+      ))}
       {projectiles.map(projectile => (
         <FireboltMesh key={projectile.id} projectile={projectile} />
       ))}

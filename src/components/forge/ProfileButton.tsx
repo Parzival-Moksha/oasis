@@ -64,7 +64,7 @@ const DEFAULT_PLAYER_STATS: PlayerComputedStats = {
   maxHp: 100,
   maxMana: 20,
   fireboltDamage: 14,
-  fireboltManaCost: 5,
+  fireboltManaCost: 1,
   fireboltSpeedMetersPerSecond: 24,
   manaRegenMultiplier: 1,
   conjureManaCost: 20,

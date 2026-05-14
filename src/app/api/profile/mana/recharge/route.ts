@@ -5,6 +5,8 @@ import { DEFAULT_PROFILE_AVATAR_3D_URL, DEFAULT_PROFILE_DISPLAY_NAME } from '@/l
 import { buildPlayerProgression, computeManaRechargeTicks } from '@/lib/player-progression'
 import { levelFromXp } from '@/lib/xp'
 
+const lastRechargeTickByUser = new Map<string, number>()
+
 async function ensureProfile(userId: string) {
   return prisma.profile.upsert({
     where: { userId },
@@ -32,16 +34,27 @@ export async function POST(request: NextRequest) {
     const profile = await ensureProfile(userId)
     const level = levelFromXp(profile.totalXp)
     const progression = buildPlayerProgression({ ...profile, level })
-    const rechargeTicks = computeManaRechargeTicks(elapsedMs, progression.stats.manaRegenMultiplier)
+    const nowMs = Date.now()
+    const firstServerElapsedMs = Math.min(elapsedMs, 1000)
+    const lastServerTickAt = lastRechargeTickByUser.get(userId) ?? nowMs - firstServerElapsedMs
+    const serverElapsedMs = Math.max(0, nowMs - lastServerTickAt)
+    const trustedElapsedMs = Math.min(elapsedMs, serverElapsedMs)
+    const rechargeTicks = computeManaRechargeTicks(trustedElapsedMs, progression.stats.manaRegenMultiplier)
     const nextMana = Math.min(progression.maxMana, progression.mana + rechargeTicks)
+    const tickIntervalMs = 1000 / Math.max(0.1, Math.min(10, progression.stats.manaRegenMultiplier))
 
     if (rechargeTicks <= 0 || nextMana === progression.mana) {
+      if (nextMana === progression.maxMana || !lastRechargeTickByUser.has(userId)) {
+        lastRechargeTickByUser.set(userId, nowMs)
+      }
       return NextResponse.json({
         ok: true,
         recharged: 0,
         progression,
       })
     }
+
+    lastRechargeTickByUser.set(userId, Math.min(nowMs, lastServerTickAt + rechargeTicks * tickIntervalMs))
 
     const updated = await prisma.profile.update({
       where: { userId },
