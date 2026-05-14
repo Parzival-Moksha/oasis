@@ -25,6 +25,7 @@ import {
   mintSessionCookieValue,
   readBrowserSession,
 } from '@/lib/session'
+import { recordOasisAnalyticsEvent } from '@/lib/oasis-analytics'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -48,6 +49,17 @@ function jsonWithCookie(payload: unknown, cookieValue?: string) {
 export async function GET(request: NextRequest) {
   const existing = readBrowserSession(request)
   if (existing) {
+    await recordOasisAnalyticsEvent({
+      request,
+      eventType: 'return_visit',
+      sessionId: existing.browserSessionId,
+      source: 'session-init',
+      metadata: {
+        mode: getOasisMode(),
+        profile: getOasisProfile(),
+        minted: false,
+      },
+    })
     return jsonWithCookie({
       ok: true,
       browserSessionId: existing.browserSessionId,
@@ -58,6 +70,18 @@ export async function GET(request: NextRequest) {
     })
   }
   const minted = mintSessionCookieValue()
+  await recordOasisAnalyticsEvent({
+    request,
+    eventType: 'new_visit',
+    sessionId: minted.browserSessionId,
+    userId: minted.browserSessionId,
+    source: 'session-init',
+    metadata: {
+      mode: getOasisMode(),
+      profile: getOasisProfile(),
+      minted: true,
+    },
+  })
   return jsonWithCookie(
     {
       ok: true,

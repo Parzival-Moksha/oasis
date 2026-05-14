@@ -353,6 +353,29 @@ model TokenBurn {
 // AGENT SESSION CACHE — durable local-first panel/session state
 // ═══════════════════════════════════════════════════════════════════════════
 
+// OASIS ANALYTICS EVENT - Early product/game KPI event stream
+// Keep this broad while the magic moment is still being discovered.
+model OasisAnalyticsEvent {
+  id         Int      @id @default(autoincrement())
+  sessionId String   @default("")
+  userId    String   @default("hosted-anonymous")
+  eventType String
+  worldId   String?
+  agentType String?
+  source    String?
+  durationMs Int?
+  costUsd   Float?
+  metadata  String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([eventType, createdAt])
+  @@index([sessionId, createdAt])
+  @@index([userId, createdAt])
+  @@index([worldId, createdAt])
+  @@index([agentType, createdAt])
+}
+
 model AgentSessionCache {
   id            String   @id // cache key: agentType:sessionId
   sessionId     String

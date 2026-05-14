@@ -31,6 +31,7 @@ import {
 import { resolvePairingWorldId } from '@/lib/relay/pairing-world'
 import type { Scope } from '@/lib/relay/protocol'
 import { clientKeyFromRequest, consumeRateLimit } from '@/lib/relay/rate-limit'
+import { recordOasisAnalyticsEvent } from '@/lib/oasis-analytics'
 import { getOasisMode, readBrowserSession } from '@/lib/session'
 
 export const dynamic = 'force-dynamic'
@@ -147,6 +148,19 @@ export async function POST(request: NextRequest) {
       agentSlot,
     })
     if (active) {
+      await recordOasisAnalyticsEvent({
+        request,
+        eventType: 'agent_pairing_reused',
+        sessionId: session.browserSessionId,
+        userId: session.browserSessionId,
+        worldId,
+        agentType,
+        source: 'relay-pairings',
+        metadata: {
+          agentSlot,
+          scopes: active.scopes,
+        },
+      })
       return jsonResponse({
         ok: true,
         reused: true,
@@ -169,6 +183,20 @@ export async function POST(request: NextRequest) {
       agentType,
       agentSlot,
       agentLabel,
+    })
+    await recordOasisAnalyticsEvent({
+      request,
+      eventType: 'agent_pairing_created',
+      sessionId: session.browserSessionId,
+      userId: session.browserSessionId,
+      worldId,
+      agentType,
+      source: 'relay-pairings',
+      metadata: {
+        agentSlot,
+        agentLabel,
+        scopes,
+      },
     })
     return jsonResponse({
       ok: true,

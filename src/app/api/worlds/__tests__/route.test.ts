@@ -6,8 +6,13 @@ vi.mock('@/lib/forge/world-server', () => ({
   saveWorld: vi.fn(),
 }))
 
+vi.mock('@/lib/oasis-analytics', () => ({
+  recordOasisAnalyticsEvent: vi.fn(),
+}))
+
 import { GET, POST } from '../route'
 import { getRegistry, createWorld } from '@/lib/forge/world-server'
+import { recordOasisAnalyticsEvent } from '@/lib/oasis-analytics'
 import {
   ADMIN_SESSION_COOKIE_NAME,
   getAdminUserId,
@@ -77,5 +82,32 @@ describe('/api/worlds hosted identity boundary', () => {
 
     expect(response.status).toBe(200)
     expect(getRegistry).toHaveBeenCalledWith(getAdminUserId())
+  })
+
+  it('records world creation as an activation event', async () => {
+    process.env.OASIS_ADMIN_TOKEN = 'admin-token-for-tests'
+    const adminCookie = signAdminSession(getAdminUserId())
+    vi.mocked(createWorld).mockResolvedValue({
+      id: 'world-created-1',
+      name: 'Signal World',
+      icon: 'O',
+      visibility: 'private',
+      createdAt: '',
+      lastSavedAt: '',
+      objectCount: 0,
+      visitCount: 0,
+      canWrite: true,
+      writeDecision: 'write',
+      assetVisibility: 'public',
+    } as never)
+
+    const response = await POST(request('POST', { name: 'Signal World' }, `${ADMIN_SESSION_COOKIE_NAME}=${encodeURIComponent(adminCookie)}`))
+
+    expect(response.status).toBe(201)
+    expect(recordOasisAnalyticsEvent).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'world_created',
+      worldId: 'world-created-1',
+      source: 'worlds-route',
+    }))
   })
 })

@@ -9,6 +9,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextResponse } from 'next/server'
+import { recordOasisAnalyticsEvent } from '@/lib/oasis-analytics'
 import { getRequiredOasisUserId } from '@/lib/session'
 import {
   getRegistry, createWorld, saveWorld,
@@ -74,6 +75,16 @@ export async function POST(request: Request) {
         agentWindows: state.agentWindows || [],
         agentAvatars: state.agentAvatars || [],
       })
+      await recordOasisAnalyticsEvent({
+        request,
+        eventType: 'world_imported',
+        worldId: meta.id,
+        source: 'worlds-route',
+        metadata: {
+          name,
+          objectCount: (state.catalogPlacements?.length || 0) + (state.craftedScenes?.length || 0),
+        },
+      })
       return NextResponse.json(meta, { status: 201 })
     }
 
@@ -83,6 +94,16 @@ export async function POST(request: Request) {
     }
 
     const meta = await createWorld(body.name, body.icon || '🌍', userId)
+    await recordOasisAnalyticsEvent({
+      request,
+      eventType: 'world_created',
+      worldId: meta.id,
+      source: 'worlds-route',
+      metadata: {
+        name: meta.name,
+        visibility: meta.visibility,
+      },
+    })
     return NextResponse.json(meta, { status: 201 })
 
   } catch (err) {

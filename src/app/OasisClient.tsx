@@ -9,6 +9,7 @@ import dynamic from 'next/dynamic'
 import { useOasisStore } from '@/store/oasisStore'
 import { registerStoreHandler } from '@/lib/event-bus'
 import { registerAudioSubscriber } from '@/lib/audio-manager'
+import { trackOasisEvent } from '@/lib/oasis-telemetry-client'
 import {
   DEFAULT_LOCAL_CAPABILITIES,
   OasisModeProvider,
@@ -30,6 +31,13 @@ export default function OasisClient({ initialWorldId }: { initialWorldId?: strin
   const [mode, setMode] = useState<ClientOasisMode>('local')
   const [capabilities, setCapabilities] = useState<ClientOasisCapabilities>(DEFAULT_LOCAL_CAPABILITIES)
   const deepLinkHandledRef = useRef<string | null>(null)
+  const sessionStartedAtRef = useRef<number>(Date.now())
+  const lastVisitedWorldRef = useRef<string | null>(null)
+  const latestSessionContextRef = useRef({
+    activeWorldId: activeWorldId || null,
+    mode,
+    role: capabilities.role,
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -85,6 +93,59 @@ export default function OasisClient({ initialWorldId }: { initialWorldId?: strin
       enterViewMode(initialWorldId, false)
     }
   }, [activeWorldId, enterViewMode, initialWorldId, ready, switchWorld, worldRegistry])
+
+  useEffect(() => {
+    latestSessionContextRef.current = {
+      activeWorldId: activeWorldId || null,
+      mode,
+      role: capabilities.role,
+    }
+  }, [activeWorldId, capabilities.role, mode])
+
+  useEffect(() => {
+    if (!ready) return
+    sessionStartedAtRef.current = Date.now()
+    trackOasisEvent({
+      eventType: 'session_start',
+      worldId: activeWorldId,
+      metadata: {
+        mode,
+        role: capabilities.role,
+      },
+    })
+
+    const endSession = () => {
+      const context = latestSessionContextRef.current
+      trackOasisEvent({
+        eventType: 'session_end',
+        worldId: context.activeWorldId,
+        durationMs: Date.now() - sessionStartedAtRef.current,
+        metadata: {
+          mode: context.mode,
+          role: context.role,
+        },
+      }, { beacon: true })
+    }
+
+    window.addEventListener('pagehide', endSession)
+    return () => {
+      window.removeEventListener('pagehide', endSession)
+      endSession()
+    }
+  }, [ready])
+
+  useEffect(() => {
+    if (!ready || !activeWorldId || lastVisitedWorldRef.current === activeWorldId) return
+    lastVisitedWorldRef.current = activeWorldId
+    trackOasisEvent({
+      eventType: 'world_visit',
+      worldId: activeWorldId,
+      metadata: {
+        mode,
+        role: capabilities.role,
+      },
+    })
+  }, [activeWorldId, capabilities.role, mode, ready])
 
   if (!ready) {
     return <main className="w-full h-screen bg-black" />

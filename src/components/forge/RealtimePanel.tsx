@@ -57,6 +57,7 @@ interface RealtimePanelProps {
 }
 
 type ConnectionState = 'idle' | 'connecting' | 'connected' | 'error'
+type RealtimePanelTab = 'stream' | 'config' | 'settings'
 type AssistantSource = 'audio' | 'text'
 const CANCELLED_CONNECT = '__realtime_connect_cancelled__'
 
@@ -66,6 +67,11 @@ const HEADER_HEIGHT = 56
 const MIN_DRAG_Y = 24
 const RESIZE_HANDLE_SIZE = 22
 const REALTIME_PROMPT_VERSION_MARKER = 'merlin-realtime-v3'
+const LOCAL_MIC_LIPSYNC_TUNING = {
+  minVolume: -1.4,
+  maxVolume: -0.45,
+  smoothness: 0.12,
+}
 const LEGACY_NO_TOOLS_MARKERS = [
   'do **not** have tools',
   "hands aren't wired in yet",
@@ -142,6 +148,22 @@ function recordFrom(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' ? value as Record<string, unknown> : null
 }
 
+function isUsableRealtimeImageUrl(url: string): boolean {
+  const trimmed = url.trim()
+  if (!trimmed) return false
+  return /^data:image\/(?:jpeg|jpg|png|webp);base64,/i.test(trimmed)
+    || /^https?:\/\/\S+/i.test(trimmed)
+    || /^\/(?:generated-images|media|api\/media|screenshots)\//i.test(trimmed)
+    || /^blob:/i.test(trimmed)
+}
+
+function buildRealtimeImageDataUrl(format: unknown, base64: string): string {
+  const cleaned = base64.replace(/\s+/g, '')
+  if (/^data:image\/(?:jpeg|jpg|png|webp);base64,/i.test(cleaned)) return cleaned
+  const mimeFormat = format === 'png' || format === 'webp' ? format : 'jpeg'
+  return `data:image/${mimeFormat};base64,${cleaned}`
+}
+
 function extractRealtimeScreenshotImage(result: unknown): { imageUrl: string; label: string } | null {
   const root = recordFrom(result)
   const data = recordFrom(root?.data)
@@ -152,11 +174,10 @@ function extractRealtimeScreenshotImage(result: unknown): { imageUrl: string; la
     : typeof data?.format === 'string'
       ? data.format
       : 'jpeg'
-  const url = typeof firstCapture?.url === 'string' && firstCapture.url.trim()
-    ? firstCapture.url.trim()
-    : typeof data?.primaryCaptureUrl === 'string' && data.primaryCaptureUrl.trim()
-      ? data.primaryCaptureUrl.trim()
-      : ''
+  const url = [
+    typeof firstCapture?.url === 'string' ? firstCapture.url.trim() : '',
+    typeof data?.primaryCaptureUrl === 'string' ? data.primaryCaptureUrl.trim() : '',
+  ].find(candidate => candidate && isUsableRealtimeImageUrl(candidate)) || ''
   if (url) {
     return { imageUrl: url, label: typeof firstCapture?.viewId === 'string' ? firstCapture.viewId : 'Oasis viewport' }
   }
@@ -167,7 +188,7 @@ function extractRealtimeScreenshotImage(result: unknown): { imageUrl: string; la
       : ''
   if (!base64) return null
   return {
-    imageUrl: `data:image/${format === 'png' || format === 'webp' ? format : 'jpeg'};base64,${base64}`,
+    imageUrl: buildRealtimeImageDataUrl(format, base64),
     label: typeof firstCapture?.viewId === 'string' ? firstCapture.viewId : 'Oasis viewport',
   }
 }
@@ -345,8 +366,7 @@ export function RealtimePanel({
 
   const [config, setConfig] = useState<RealtimeVoiceConfigPayload | null>(null)
   const [configError, setConfigError] = useState('')
-  const [configOpen, setConfigOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<RealtimePanelTab>('stream')
   const [position, setPosition] = useState(() => readRealtimePanelPosition())
   const [size, setSize] = useState<RealtimePanelSize>(() => readRealtimePanelSize())
   const [panelSettings, setPanelSettings] = useState<RealtimePanelSettings>(() => readRealtimePanelSettings())
@@ -355,7 +375,7 @@ export function RealtimePanel({
   const [messages, setMessages] = useState<RealtimeTranscriptMessage[]>([])
   const [sessionSettings, setSessionSettings] = useState<RealtimeSessionSettings | null>(null)
   const [connectionState, setConnectionState] = useState<ConnectionState>('idle')
-  const [connectionDetail, setConnectionDetail] = useState('Voice line dormant.')
+  const [, setConnectionDetail] = useState('Voice line dormant.')
   const [listening, setListening] = useState(false)
   const [speaking, setSpeaking] = useState(false)
   const [pendingAutoStart, setPendingAutoStart] = useState(false)
@@ -367,6 +387,7 @@ export function RealtimePanel({
   const realtimeAvatar = useOasisStore(state => state.placedAgentAvatars.find(entry => entry.agentType === REALTIME_AGENT_TYPE) || null)
   const merlinAvatar = useOasisStore(state => state.placedAgentAvatars.find(entry => entry.agentType === 'merlin') || null)
   const transforms = useOasisStore(state => state.transforms)
+  const realtimeVoiceAvatar = realtimeAvatar || merlinAvatar
   const defaultVisionAgentType = realtimeAvatar ? REALTIME_AGENT_TYPE : merlinAvatar ? 'merlin' : 'player'
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -508,13 +529,13 @@ export function RealtimePanel({
       setAudioOrientation(ctx.listener, listenerSource.forward)
     }
 
-    const liveTransform = realtimeAvatar?.id
-      ? (getLiveObjectTransform(realtimeAvatar.id) || transforms[realtimeAvatar.id])
+    const liveTransform = realtimeVoiceAvatar?.id
+      ? (getLiveObjectTransform(realtimeVoiceAvatar.id) || transforms[realtimeVoiceAvatar.id])
       : null
     const sourcePosition = Array.isArray(liveTransform?.position) && liveTransform.position.length >= 3
       ? [Number(liveTransform.position[0]), Number(liveTransform.position[1]) + 1.45, Number(liveTransform.position[2])] as [number, number, number]
-      : realtimeAvatar
-        ? [realtimeAvatar.position[0], realtimeAvatar.position[1] + 1.45, realtimeAvatar.position[2]] as [number, number, number]
+      : realtimeVoiceAvatar
+        ? [realtimeVoiceAvatar.position[0], realtimeVoiceAvatar.position[1] + 1.45, realtimeVoiceAvatar.position[2]] as [number, number, number]
         : listenerSource?.position || [0, 1.45, 0]
 
     setAudioPosition(panner, sourcePosition)
@@ -526,7 +547,7 @@ export function RealtimePanel({
     panner.coneInnerAngle = 360
     panner.coneOuterAngle = 360
     panner.coneOuterGain = 1
-  }, [panelSettings.spatialAudioEnabled, panelSettings.spatialAudioRange, realtimeAvatar, transforms])
+  }, [panelSettings.spatialAudioEnabled, panelSettings.spatialAudioRange, realtimeVoiceAvatar, transforms])
 
   const attachRemotePlaybackStream = useCallback(async (stream: MediaStream | null) => {
     if (!stream) return
@@ -576,7 +597,7 @@ export function RealtimePanel({
     if (!stream) return
     let ctrl = localMicLipSyncRef.current
     if (!ctrl) {
-      ctrl = createWLipSyncLegacyController()
+      ctrl = createWLipSyncLegacyController(LOCAL_MIC_LIPSYNC_TUNING)
       localMicLipSyncRef.current = ctrl
     }
 
@@ -722,12 +743,12 @@ export function RealtimePanel({
   }, [panelSettings.spatialAudioEnabled, syncSpatialAudioFrame])
 
   useEffect(() => {
-    if (!realtimeAvatar?.id || !audioRef.current) return
+    if (!realtimeVoiceAvatar?.id || !audioRef.current) return
 
     const audioEl = audioRef.current
     const ctrl = createLipSyncController()
     lipSyncRef.current = ctrl
-    registerLipSync(realtimeAvatar.id, ctrl)
+    registerLipSync(realtimeVoiceAvatar.id, ctrl)
 
     const attachCurrentSource = () => {
       void resumeLipSyncContext().then(() => {
@@ -746,13 +767,13 @@ export function RealtimePanel({
 
     return () => {
       audioEl.removeEventListener('play', attachCurrentSource)
-      unregisterLipSync(realtimeAvatar.id, ctrl)
+      unregisterLipSync(realtimeVoiceAvatar.id, ctrl)
       ctrl.detach()
       if (lipSyncRef.current === ctrl) {
         lipSyncRef.current = null
       }
     }
-  }, [realtimeAvatar?.id])
+  }, [realtimeVoiceAvatar?.id])
 
   const markUiFocus = useCallback(() => {
     if (embedded) return
@@ -1499,6 +1520,21 @@ export function RealtimePanel({
   const headerFill = `rgba(${r}, ${g}, ${b}, ${Math.min(1, panelSettings.opacity + 0.08)})`
   const sectionFill = `rgba(${r}, ${g}, ${b}, ${Math.max(0.08, panelSettings.opacity * 0.3)})`
   const fieldFill = `rgba(${Math.max(0, r - 10)}, ${Math.max(0, g - 8)}, ${Math.max(0, b - 8)}, ${Math.max(0.12, panelSettings.opacity * 0.44)})`
+  const visibleMessages = messages.filter(message => message.role !== 'system')
+  const tabButton = (tab: RealtimePanelTab, label: string) => (
+    <button
+      type="button"
+      onClick={() => setActiveTab(tab)}
+      className="rounded-md border px-2.5 py-1 text-[11px] font-mono uppercase tracking-[0.16em]"
+      style={{
+        borderColor: activeTab === tab ? 'rgba(196,181,253,0.38)' : 'rgba(196,181,253,0.18)',
+        background: activeTab === tab ? 'rgba(124,58,237,0.26)' : 'rgba(76,29,149,0.14)',
+        color: activeTab === tab ? '#f5f3ff' : '#e9d5ff',
+      }}
+    >
+      {label}
+    </button>
+  )
 
   const panelBody = (
     <div
@@ -1537,20 +1573,9 @@ export function RealtimePanel({
           <CallStatusBadge state={connectionState} listening={listening} speaking={speaking} />
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setConfigOpen(open => !open)}
-            className="rounded-md border px-2.5 py-1 text-[11px] font-mono uppercase tracking-[0.16em]"
-            style={{ borderColor: 'rgba(196,181,253,0.22)', background: 'rgba(91,33,182,0.14)', color: '#e9d5ff' }}
-          >
-            config
-          </button>
-          <button
-            onClick={() => setSettingsOpen(open => !open)}
-            className="rounded-md border px-2.5 py-1 text-[11px] font-mono uppercase tracking-[0.16em]"
-            style={{ borderColor: 'rgba(196,181,253,0.22)', background: 'rgba(76,29,149,0.14)', color: '#e9d5ff' }}
-          >
-            settings
-          </button>
+          {tabButton('stream', 'stream')}
+          {tabButton('config', 'config')}
+          {tabButton('settings', 'settings')}
           {!hideCloseButton && (
             <button
               onClick={onClose}
@@ -1606,24 +1631,9 @@ export function RealtimePanel({
               delete
             </button>
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-violet-100/65">
-            <span>world: {selectedSession?.worldName || activeWorldName}</span>
-            <span>turns: {selectedSession ? formatSessionCounts(selectedSession) : '0u/0a'}</span>
-            <span>model: {sessionSettings?.model || config?.model || REALTIME_MODELS[0]}</span>
-            <span>voice: {sessionSettings?.voice || config?.defaultVoice || 'marin'}</span>
-            <span>gain: +{panelSettings.gainDb}dB</span>
-            <span>spatial: {panelSettings.spatialAudioEnabled ? `on/${panelSettings.spatialAudioRange}m` : 'off'}</span>
-            <span>
-              vad: {(sessionSettings?.vadMode || config?.defaultVadMode || 'semantic_vad')}
-              {(sessionSettings?.vadMode || config?.defaultVadMode || 'semantic_vad') === 'semantic_vad'
-                ? `/${sessionSettings?.vadEagerness || config?.defaultVadEagerness || REALTIME_VAD_EAGERNESS[0]}`
-                : ''}
-            </span>
-            <span>body: {realtimeAvatar?.label || 'unembodied'}</span>
-          </div>
         </div>
 
-        {configOpen && (
+        {activeTab === 'config' && (
           <div className="px-4 py-3 border-b space-y-3" style={{ borderColor: 'rgba(168,85,247,0.12)', background: sectionFill, flexShrink: 0 }}>
             <div className="grid grid-cols-2 gap-3">
               <label className="text-[11px] uppercase tracking-[0.16em] text-violet-200/75">
@@ -1710,7 +1720,7 @@ export function RealtimePanel({
           </div>
         )}
 
-        {settingsOpen && (
+        {activeTab === 'settings' && (
           <div className="px-4 py-3 border-b space-y-3" style={{ borderColor: 'rgba(168,85,247,0.12)', background: sectionFill, flexShrink: 0 }}>
             <label className="block text-[11px] uppercase tracking-[0.16em] text-violet-200/75">
               background
@@ -1789,17 +1799,17 @@ export function RealtimePanel({
           </div>
         )}
 
-        <div className="px-4 py-3 border-b text-[12px]" style={{ borderColor: 'rgba(168,85,247,0.12)', color: '#ddd6fe', background: sectionFill, flexShrink: 0 }}>
-          <div>{connectionDetail}</div>
-          <div className="mt-1 text-violet-100/55">
-            Voice, transcript, lipsync, and apprentice tools are live: world info, world state, asset search, placing, crafting, and walking.
+        {activeTab === 'stream' && (configError || (config && !config.configured)) && (
+          <div className="px-4 py-3 border-b text-[12px]" style={{ borderColor: 'rgba(168,85,247,0.12)', color: '#ddd6fe', background: sectionFill, flexShrink: 0 }}>
+            {configError && <div className="text-rose-300">{configError}</div>}
+            {config && !config.configured && (
+              <div className="text-amber-300">OPENAI_API_KEY is missing on the server, so the voice line cannot open yet.</div>
+            )}
           </div>
-          {configError && <div className="mt-2 text-rose-300">{configError}</div>}
-          {config && !config.configured && (
-            <div className="mt-2 text-amber-300">OPENAI_API_KEY is missing on the server, so the voice line cannot open yet.</div>
-          )}
-        </div>
+        )}
 
+        {activeTab === 'stream' && (
+          <>
         <div
           ref={transcriptRef}
           onScroll={event => {
@@ -1810,12 +1820,12 @@ export function RealtimePanel({
           }}
           className="relative min-h-0 flex-1 overflow-y-auto px-4 py-4 space-y-3"
         >
-          {messages.length === 0 ? (
+          {visibleMessages.length === 0 ? (
             <div className="rounded-2xl border px-4 py-5 text-sm" style={{ borderColor: 'rgba(196,181,253,0.14)', background: `rgba(${r}, ${g}, ${b}, ${Math.max(0.1, panelSettings.opacity * 0.22)})`, color: '#ddd6fe' }}>
               When you open the call, your voice and Merlin’s voice will both stream into this transcript.
             </div>
           ) : (
-            messages.map(message => {
+            visibleMessages.map(message => {
               if (message.role === 'tool') {
                 const expanded = expandedToolIds.includes(message.id)
                 const state = message.toolState || 'running'
@@ -1953,11 +1963,10 @@ export function RealtimePanel({
             >
               {connectionState === 'connected' ? 'Hang Up' : connectionState === 'connecting' ? 'Opening...' : 'Start Talking'}
             </button>
-            <div className="text-[12px] text-violet-100/55">
-              Audio + text transcript are both live. Keyboard input stays asleep in phase 1.
-            </div>
           </div>
         </div>
+          </>
+        )}
       </div>
 
       {!embedded && (
