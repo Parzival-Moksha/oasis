@@ -1,0 +1,40 @@
+{
+  "negativePrompt": "photorealistic, perspective skew, mockup laptop, phone mockup, baked words, letters, numbers, logo, watermark, blurry edges, unreadable tiny details, drop shadow outside transparent bounds",
+  "notes": [
+    "Generate as transparent PNG atlases when the model supports alpha.",
+    "Keep text out of the image; render all labels in HTML so the UI remains accessible and localizable.",
+    "Ask for 9-slice-safe corners and stretchable centers for every frame, vial, button, and panel."
+  ],
+  "packs": [
+    {
+      "id": "oasis-aaa-vials",
+      "size": "1536x1024",
+      "prompt": "production-quality fantasy sci-fi RPG HUD texture atlas, transparent background, no text, no symbols, no logos, orthographic front view, sharp at 48px and 256px, not a screenshot. Create two large ornate glass vials for health and mana, red liquid vial on the left and blue-cyan liquid vial on the right, each with empty glass shell, full liquid fill, half liquid fill, low liquid fill, glow overlay, and metallic cap pieces. Add a central blank command-console frame inspired by strategy game bottom UI panels, dark obsidian metal with amber circuit-runes and carbon-silicon filigree. Include 9-slice-safe panel edges, corners, button frames, inventory slots, and alert borders. Style should feel like a serious wizard game made by a future AI lab: ancient magic plus precise machine craft, restrained but epic."
+    },
+    {
+      "id": "vibecoder-arcane-terminal",
+      "size": "1536x1024",
+      "prompt": "transparent PNG game UI texture atlas, no text, no letters, no numbers, no logos. Arcane terminal style for a web MMO: black glass, brushed graphite, warm amber runes, cyan mana light, red health light, tiny conductive traces, spellbook brass corners, clean 9-slice-safe borders. Include blank horizontal buttons in normal hover pressed disabled states, blank tab bars, blank spell card frames, circular icon frames, HP and mana vial shells with separate liquid fills, and one large bottom-center object-inspector frame. Must be directly sliceable into web UI textures, all elements separated with transparent padding."
+    },
+    {
+      "id": "rookie-wizard-spellbook",
+      "size": "1536x1024",
+      "prompt": "hand-painted but production-clean wizard RPG spellbook UI atlas, transparent background, no text, no letters, no numbers, no watermark. Seven-page spellbook interface assets: blank page tabs, leather-and-metal panel frame, glowing fire spell card frame, locked spell card frame, completed quest alert frame, parchment tooltip frame, tiny page-turn corner ornaments, and button borders. Palette: ember orange, parchment gold, moonlit cyan, iron black, very small violet accents. Make every center transparent for live HTML content and keep corners 9-slice safe."
+    },
+    {
+      "id": "asi-citadel-hud",
+      "size": "1536x1024",
+      "prompt": "high-end sci-fantasy MMO HUD texture atlas, transparent background, no text, no letters, no numbers, no logo. ASI citadel style: crystalline glass, black chrome, gold edge light, cyan mana channels, red life channels, subtle neural-circuit geometry, ceremonial wizard geometry. Include left and right vertical vials, bottom-center inspector console, spell hotbar slots, quest popup border, NPC speech bubble frame, tooltip frame, and modal panel border. Assets must be cleanly separated, front-facing, and ready for 9-slice slicing."
+    },
+    {
+      "id": "carbon-silicon-coven",
+      "size": "1536x1024",
+      "prompt": "transparent game UI asset atlas, no text, no letters, no numbers. Carbon-silicon symbiosis aesthetic: organic dark stone, luminous circuit veins, amber ember cores, cyan mana reservoirs, red health reservoirs, careful AAA-quality RPG readability. Include HP vial, mana vial, XP bar frame and fill, spell icon frames, achievement popup frame, small mobile-friendly circular buttons, and a wide desktop object-inspector frame. Every element isolated with transparent padding and designed for direct extraction as UI textures."
+    },
+    {
+      "id": "minimal-epic-oasis",
+      "size": "1536x1024",
+      "prompt": "clean premium web game UI texture atlas, transparent background, no text, no letters, no logos. Minimal epic Oasis interface: mostly black glass and aged gold, crisp amber highlights, cyan mana highlights, red health highlights, very restrained ornament. Include 9-slice blank panel frames, compact toolbar buttons, seven spellbook tab frames, spell card frames for available and locked states, quest completion burst frame, HP and mana vial frames with separate fills, and a bottom center inspector frame. Must not look like a website mockup; must look like shipped game interface art."
+    }
+  ]
+}

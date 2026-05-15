@@ -90,7 +90,9 @@ import { GameMenuButton } from './forge/GameMenuButton'
 import { MobileOasisControls, useIsMobileOasis } from './forge/MobileOasisControls'
 import { FireboltLayer } from './forge/FireboltLayer'
 import { PlayerVitalsHud } from './forge/PlayerVitalsHud'
+import { PlayerSpellbookPanel } from './forge/PlayerSpellbookPanel'
 import { QuestProgressTracker } from './forge/QuestProgressTracker'
+import { QuestZeroNpcExclamation } from './forge/QuestZeroNpcExclamation'
 
 const SHOW_LEGACY_DEVCRAFT_PANEL = false
 const SHOW_LEGACY_PARZIVAL_PANEL = false
@@ -1928,6 +1930,7 @@ export default function Scene() {
           <RookieMerlinWorldPrompt />
         </Suspense>
         <FireboltLayer enabled={effectiveRp1Mode} />
+        <QuestZeroNpcExclamation activeWorldId={activeWorldId} />
 
         {/* ─═̷─═̷─📸─═̷─═̷─ PANORAMA CAPTURE (Ctrl+Shift+P) ─═̷─═̷─📸─═̷─═̷─ */}
         <PanoramaCapture />
@@ -1950,6 +1953,7 @@ export default function Scene() {
         spellControlsEnabled={effectiveRp1Mode}
       />
       <PlayerVitalsHud visible={effectiveRp1Mode} />
+      <PlayerSpellbookPanel visible={effectiveRp1Mode} />
       <QuestProgressTracker activeWorldId={activeWorldId} />
 
       {/* ─═̷─═̷─⚡ FPS DISPLAY ─═̷─═̷─⚡ */}

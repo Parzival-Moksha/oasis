@@ -12,12 +12,42 @@ export const SPELL_IDS = [
 
 export type SpellId = typeof SPELL_IDS[number]
 
+export const SPELLBOOK_PAGE_IDS = [
+  'recipe-catalog',
+  'premium',
+  'world-root',
+  'creative',
+  'own-spells',
+  'combat',
+  'agent',
+] as const
+
+export type SpellbookPageId = typeof SPELLBOOK_PAGE_IDS[number]
+
+export interface SpellbookPageDefinition {
+  id: SpellbookPageId
+  name: string
+  shortName: string
+}
+
+export const SPELLBOOK_PAGES: Record<SpellbookPageId, SpellbookPageDefinition> = {
+  'recipe-catalog': { id: 'recipe-catalog', name: 'Recipe Catalog', shortName: 'Recipe' },
+  premium: { id: 'premium', name: 'Premium Craft', shortName: 'Premium' },
+  'world-root': { id: 'world-root', name: 'World Root', shortName: 'World' },
+  creative: { id: 'creative', name: 'Creative', shortName: 'Creative' },
+  'own-spells': { id: 'own-spells', name: 'Own Spells', shortName: 'Own' },
+  combat: { id: 'combat', name: 'Combat', shortName: 'Combat' },
+  agent: { id: 'agent', name: 'Agents', shortName: 'Agents' },
+}
+
 export interface SpellDefinition {
   id: SpellId
   name: string
   tier: number
-  category: 'combat' | 'creation' | 'npc'
+  category: SpellbookPageId
   achievementId: string
+  summary: string
+  stats: string[]
 }
 
 export const SPELL_DEFS: Record<SpellId, SpellDefinition> = {
@@ -27,48 +57,62 @@ export const SPELL_DEFS: Record<SpellId, SpellDefinition> = {
     tier: 1,
     category: 'combat',
     achievementId: 'learn-firebolt',
+    summary: 'A first offensive spell: fast flame, low mana cost, visible impact.',
+    stats: ['1 mana', '24 m/s', 'Left click or Fire button'],
   },
   'brush-wand': {
     id: 'brush-wand',
     name: 'Brush Wand',
     tier: 1,
-    category: 'creation',
+    category: 'creative',
     achievementId: 'learn-brush-wand',
+    summary: 'Paint persistent world-bound curves and marks.',
+    stats: ['Color', 'Thickness', 'World-bound'],
   },
   'catalog-place': {
     id: 'catalog-place',
     name: 'Place',
     tier: 1,
-    category: 'creation',
+    category: 'recipe-catalog',
     achievementId: 'learn-place',
+    summary: 'Place catalog objects into editable worlds.',
+    stats: ['Catalog', 'World allowlist', 'Object inspector'],
   },
   'text-to-3d': {
     id: 'text-to-3d',
     name: 'Text to 3D',
     tier: 2,
-    category: 'creation',
+    category: 'premium',
     achievementId: 'learn-text-to-3d',
+    summary: 'Turn a prompt into a 3D asset or crafted scene.',
+    stats: ['AI craft', 'Generated asset', 'Mana/credit gated'],
   },
   'text-to-pic': {
     id: 'text-to-pic',
     name: 'Text to Pic',
     tier: 2,
-    category: 'creation',
+    category: 'premium',
     achievementId: 'learn-text-to-pic',
+    summary: 'Generate images for framed art and future Conjure-style buildings.',
+    stats: ['Image craft', 'Frames', 'Prompt-first'],
   },
   'portal-create': {
     id: 'portal-create',
     name: 'Portal Craft',
     tier: 2,
-    category: 'creation',
+    category: 'world-root',
     achievementId: 'learn-portal-create',
+    summary: 'Create gates between worlds and publish spatial paths.',
+    stats: ['World link', 'Arrival pose', 'Visibility rules'],
   },
   'summon-djinn': {
     id: 'summon-djinn',
     name: 'Summon Djinn',
     tier: 3,
-    category: 'npc',
+    category: 'agent',
     achievementId: 'learn-summon-djinn',
+    summary: 'Call an embodied guide, familiar, or NPC with scoped tools.',
+    stats: ['NPC', 'Voice', 'Tool allowlist'],
   },
 }
 

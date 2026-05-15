@@ -488,12 +488,23 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
         emitProgressionResultXp(data?.result)
         if (data?.result?.unlockedSpell?.newlyUnlocked || data?.result?.unlockStep?.completionXp) {
           useAudioManager.getState().play('objectiveAchieved')
+          window.dispatchEvent(new CustomEvent('oasis:npc-exclaim', {
+            detail: {
+              npcId: 'quest-zero-fire-guardian',
+              avatarId: 'agent-avatar-npc-fire-guardian',
+              message: 'WELL DONE!',
+              durationMs: 2400,
+            },
+          }))
           window.dispatchEvent(new CustomEvent('oasis:quest-progress-toast', {
             detail: {
               title: 'Firebolt learned',
               message: 'Added to your spellbook',
               tone: 'quest',
             },
+          }))
+          window.dispatchEvent(new CustomEvent('oasis:spellbook-open', {
+            detail: { spellId: 'firebolt' },
           }))
         }
       })
