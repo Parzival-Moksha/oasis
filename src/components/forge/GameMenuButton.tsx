@@ -24,7 +24,7 @@ export function GameMenuButton({
   marker: _marker,
   accent = '#22D3EE',
   active = false,
-  widthClassName = 'min-w-[136px] max-w-[178px] max-[700px]:min-w-[78px] max-[700px]:max-w-[92px]',
+  widthClassName = 'min-w-[110px] max-w-[142px] max-[700px]:min-w-[70px] max-[700px]:max-w-[82px]',
   showCaret = true,
   className = '',
   onMouseEnter: _legacyMouseEnter,

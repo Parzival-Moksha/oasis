@@ -356,7 +356,7 @@ function SettingsContent({
           SYS
         </div>
         <div>
-          <div className="text-[12px] font-black uppercase tracking-[0.18em] text-white">Settings</div>
+          <div className="text-[12px] font-black uppercase tracking-[0.18em] text-white">Config</div>
           <div className="mt-0.5 text-[10px] uppercase tracking-[0.12em] text-white/42">display / control / audio</div>
         </div>
       </div>
@@ -461,7 +461,7 @@ function SettingsContent({
               {/* Panel Opacity — custom div slider, native range unreliable in portals on Windows */}
               <div className="py-1.5">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-gray-300">Settings Opacity</span>
+                  <span className="text-sm text-gray-300">Config Opacity</span>
                   <span className="text-xs text-purple-400 font-mono">{Math.round(menuOpacity * 100)}%</span>
                 </div>
                 <div
@@ -2470,12 +2470,12 @@ function SettingsMenu({ children, opacity }: { children: React.ReactNode; opacit
   return (
     <div ref={menuRef} className="relative select-none">
       <GameMenuButton
-        label="Settings"
+        label="CONFIG"
         marker="SYS"
         accent="#A78BFA"
         active={isOpen}
-        aria-label="Settings menu"
-        data-oasis-tooltip="Settings"
+        aria-label="Config menu"
+        data-oasis-tooltip="Config"
         onClick={() => {
           playClick()
           setIsOpen(open => !open)
