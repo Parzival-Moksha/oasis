@@ -2,6 +2,7 @@ import { writeFileSync } from 'node:fs'
 
 const WORLD_ID = 'world-rookie-wizard-system'
 const PORTAL_ZERO_WORLD_ID = 'world-welcome-hub-system'
+const QUEST_ZERO_WORLD_ID = 'world-quest-zero-system'
 const CREATED_AT = '2026-05-12T18:00:00.000Z'
 
 function v(x, y, z) {
@@ -46,6 +47,25 @@ function text(position, value, color = '#dbeafe', scale = [1, 1, 1], extra = {})
     align: 'center',
     emissive: color,
     emissiveIntensity: 0.16,
+    ...extra,
+  }
+}
+
+function text3d(id, value, position, color, size, extra = {}) {
+  return {
+    id,
+    type: 'text_3d',
+    text: value,
+    fontId: 'helvetiker_regular',
+    size,
+    depth: Math.max(0.055, size * 0.22),
+    color,
+    toneBias: 0.08,
+    shininess: 0.72,
+    position,
+    rotation: [0, Math.PI, 0],
+    authorId: 'local-user',
+    createdAt: Date.parse(CREATED_AT),
     ...extra,
   }
 }
@@ -278,15 +298,13 @@ const craftedScenes = [
       fontSize: 0.42,
     }),
   ]),
-  crafted('rookie-portal-signs', 'Portal lesson signs', 'Small signs naming the first two exits.', [0, 0, 13.2], [
-    text([3.25, 1.45, -0.55], 'Create your first private world', '#dbeafe', [0.24, 0.24, 0.24], {
-      rotation: [0, Math.PI, 0],
-      fontSize: 0.34,
-    }),
-    text([-3.25, 1.45, -0.55], 'Portal Zero', '#bbf7d0', [0.32, 0.32, 0.32], {
-      rotation: [0, Math.PI, 0],
-      fontSize: 0.36,
-    }),
+  crafted('rookie-portal-signs', 'Portal lesson sign posts', 'Low sign posts under the first three exit labels.', [0, 0, 13.2], [
+    cylinder([-3.25, 0.78, -0.58], [0.07, 1.48, 0.07], '#2f2418'),
+    cylinder([0, 0.78, -0.58], [0.07, 1.48, 0.07], '#2f2418'),
+    cylinder([3.25, 0.78, -0.58], [0.07, 1.48, 0.07], '#2f2418'),
+    box([-3.25, 1.45, -0.62], [1.95, 0.12, 0.16], '#5b4632'),
+    box([0, 1.45, -0.62], [1.95, 0.12, 0.16], '#5b4632'),
+    box([3.25, 1.45, -0.62], [2.25, 0.12, 0.16], '#5b4632'),
   ]),
   ...torches,
   ...mounds,
@@ -354,6 +372,23 @@ const seed = {
         spawnPose: { position: [0, 0, -4], rotationY: 0 },
       },
       {
+        id: 'rookie-to-quest-zero',
+        label: 'Quest Zero',
+        variant: 'solar-arch',
+        position: [0, 0, 15.4],
+        rotationY: 0,
+        scale: 0.96,
+        width: 2.45,
+        height: 3.35,
+        direction: 'one-way',
+        hidden: true,
+        sourceWorldId: WORLD_ID,
+        targetWorldId: QUEST_ZERO_WORLD_ID,
+        targetWorldName: 'Quest Zero',
+        action: { type: 'load_world', worldId: QUEST_ZERO_WORLD_ID, worldName: 'Quest Zero' },
+        spawnPose: { position: [0, 0, -17.6], rotationY: 0 },
+      },
+      {
         id: 'rookie-to-portal-zero',
         label: 'Portal Zero',
         variant: 'stargate-vortex',
@@ -373,7 +408,11 @@ const seed = {
     ],
     spatialWebObjects: [],
     paintStrokes: [],
-    text3dObjects: [],
+    text3dObjects: [
+      text3d('rookie-sign-private-world', 'Create your first private world', [3.25, 1.45, 12.65], '#dbeafe', 0.34),
+      text3d('rookie-sign-quest-zero', 'Quest Zero', [0, 1.45, 12.65], '#fed7aa', 0.38),
+      text3d('rookie-sign-portal-zero', 'Portal Zero', [-3.25, 1.45, 12.65], '#bbf7d0', 0.36),
+    ],
     transforms: {},
     behaviors: {},
     lights: [
@@ -383,7 +422,26 @@ const seed = {
       { id: 'rookie-portal-glow', type: 'point', position: [0, 3.2, 15.2], color: '#c084fc', intensity: 1.05, distance: 14 },
     ],
     skyBackgroundId: 'blue_grotto',
-    agentWindows: [],
+    agentWindows: [
+      {
+        id: 'agent-npc-rookie-merlin',
+        agentType: 'npc',
+        npcId: 'rookie-wizard-merlin',
+        linkedAvatarId: 'agent-avatar-merlin',
+        anchorMode: 'next-to',
+        position: [1.8, 2.35, 10.15],
+        rotation: [0, Math.PI, 0],
+        scale: 0.16,
+        width: 470,
+        height: 680,
+        label: 'Merlin',
+        renderMode: 'live-html',
+        frameStyle: 'hologram',
+        frameThickness: 5,
+        windowOpacity: 0.92,
+        windowBlur: 8,
+      },
+    ],
     agentAvatars: [
       {
         id: 'agent-avatar-merlin',
@@ -392,6 +450,7 @@ const seed = {
         position: [0, 0, 10.2],
         rotation: [0, 3.141592653589793, 0],
         scale: 1.08,
+        linkedWindowId: 'agent-npc-rookie-merlin',
         label: 'Merlin',
       },
     ],
@@ -408,6 +467,13 @@ const manifest = {
       file: 'portal-zero.world.json',
       name: 'Portal Zero',
       visibility: 'core',
+    },
+    {
+      slug: 'quest-zero',
+      id: QUEST_ZERO_WORLD_ID,
+      file: 'quest-zero.world.json',
+      name: 'Quest Zero',
+      visibility: 'public',
     },
     {
       slug: 'rookie-wizard',

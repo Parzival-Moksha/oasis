@@ -1,0 +1,2822 @@
+{
+  "seedVersion": 1,
+  "slug": "quest-zero",
+  "id": "world-quest-zero-system",
+  "userId": "local-user",
+  "name": "Quest Zero",
+  "icon": "Q",
+  "visibility": "public",
+  "creatorName": "The Oasis",
+  "creatorAvatar": null,
+  "thumbnailUrl": null,
+  "data": {
+    "version": 1,
+    "terrain": null,
+    "terrainHeights": [],
+    "groundPresetId": "forest",
+    "groundTiles": {
+      "-1,-18": "kn-dirt",
+      "0,-18": "kn-dirt",
+      "1,-18": "kn-dirt",
+      "-1,-17": "kn-dirt",
+      "0,-17": "kn-dirt",
+      "1,-17": "kn-dirt",
+      "-1,-16": "kn-dirt",
+      "0,-16": "kn-dirt",
+      "1,-16": "kn-dirt",
+      "-1,-15": "kn-dirt",
+      "0,-15": "kn-dirt",
+      "1,-15": "kn-dirt",
+      "-1,-14": "kn-dirt",
+      "0,-14": "kn-dirt",
+      "1,-14": "kn-dirt",
+      "-1,-13": "kn-dirt",
+      "0,-13": "kn-dirt",
+      "1,-13": "kn-dirt",
+      "-1,-12": "kn-dirt",
+      "0,-12": "kn-dirt",
+      "1,-12": "kn-dirt",
+      "-1,-11": "kn-dirt",
+      "0,-11": "kn-dirt",
+      "1,-11": "kn-dirt",
+      "-1,-10": "kn-dirt",
+      "0,-10": "kn-dirt",
+      "1,-10": "kn-dirt",
+      "-1,-9": "kn-dirt",
+      "0,-9": "kn-dirt",
+      "1,-9": "kn-dirt",
+      "-1,-8": "kn-dirt",
+      "0,-8": "kn-dirt",
+      "1,-8": "kn-dirt",
+      "-1,-7": "kn-dirt",
+      "0,-7": "kn-dirt",
+      "1,-7": "kn-dirt",
+      "-1,-6": "kn-dirt",
+      "0,-6": "kn-dirt",
+      "1,-6": "kn-dirt",
+      "-1,-5": "kn-dirt",
+      "0,-5": "kn-dirt",
+      "1,-5": "kn-dirt",
+      "-1,-4": "kn-dirt",
+      "0,-4": "kn-dirt",
+      "1,-4": "kn-dirt",
+      "-1,-3": "kn-dirt",
+      "0,-3": "kn-dirt",
+      "1,-3": "kn-dirt",
+      "-1,-2": "kn-dirt",
+      "0,-2": "kn-dirt",
+      "1,-2": "kn-dirt",
+      "-1,-1": "kn-dirt",
+      "0,-1": "kn-dirt",
+      "1,-1": "kn-dirt",
+      "-1,0": "kn-dirt",
+      "0,0": "kn-dirt",
+      "1,0": "kn-dirt",
+      "-1,1": "kn-dirt",
+      "0,1": "kn-dirt",
+      "1,1": "kn-dirt",
+      "-1,2": "kn-dirt",
+      "0,2": "kn-dirt",
+      "1,2": "kn-dirt",
+      "-1,3": "kn-dirt",
+      "0,3": "kn-dirt",
+      "1,3": "kn-dirt",
+      "-1,4": "kn-dirt",
+      "0,4": "kn-dirt",
+      "1,4": "kn-dirt",
+      "-1,5": "kn-dirt",
+      "0,5": "kn-dirt",
+      "1,5": "kn-dirt",
+      "-1,6": "kn-dirt",
+      "0,6": "kn-dirt",
+      "1,6": "kn-dirt",
+      "-1,7": "kn-dirt",
+      "0,7": "kn-dirt",
+      "1,7": "kn-dirt",
+      "-1,8": "kn-rock",
+      "0,8": "kn-rock",
+      "1,8": "kn-rock",
+      "-1,9": "kn-rock",
+      "0,9": "kn-rock",
+      "1,9": "kn-rock",
+      "-1,10": "kn-rock",
+      "0,10": "kn-rock",
+      "1,10": "kn-rock",
+      "-1,11": "kn-cobblestone",
+      "0,11": "kn-cobblestone",
+      "1,11": "kn-cobblestone",
+      "-1,12": "kn-cobblestone",
+      "0,12": "kn-cobblestone",
+      "1,12": "kn-cobblestone",
+      "-1,13": "kn-cobblestone",
+      "0,13": "kn-cobblestone",
+      "1,13": "kn-cobblestone",
+      "-1,14": "kn-cobblestone",
+      "0,14": "kn-cobblestone",
+      "1,14": "kn-cobblestone",
+      "-1,15": "kn-cobblestone",
+      "0,15": "kn-cobblestone",
+      "1,15": "kn-cobblestone",
+      "-1,16": "kn-cobblestone",
+      "0,16": "kn-cobblestone",
+      "1,16": "kn-cobblestone",
+      "-1,17": "kn-cobblestone",
+      "0,17": "kn-cobblestone",
+      "1,17": "kn-cobblestone",
+      "-1,18": "kn-rock",
+      "0,18": "kn-rock",
+      "1,18": "kn-rock",
+      "-1,19": "kn-rock",
+      "0,19": "kn-rock",
+      "1,19": "kn-rock",
+      "-1,20": "kn-rock",
+      "0,20": "kn-rock",
+      "1,20": "kn-rock",
+      "-2,-18": "kn-grass",
+      "2,-18": "kn-grass",
+      "-2,-16": "kn-grass",
+      "2,-16": "kn-grass",
+      "-2,-14": "kn-grass",
+      "2,-14": "kn-grass",
+      "-2,-12": "kn-grass",
+      "2,-12": "kn-grass",
+      "-2,-10": "kn-grass",
+      "2,-10": "kn-grass",
+      "-2,-8": "kn-grass",
+      "2,-8": "kn-grass",
+      "-2,-6": "kn-grass",
+      "2,-6": "kn-grass",
+      "-2,-4": "kn-grass",
+      "2,-4": "kn-grass",
+      "-2,-2": "kn-grass",
+      "2,-2": "kn-grass",
+      "-2,0": "kn-grass",
+      "2,0": "kn-grass",
+      "-2,2": "kn-grass",
+      "2,2": "kn-grass",
+      "-2,4": "kn-grass",
+      "2,4": "kn-grass",
+      "-2,6": "kn-grass",
+      "2,6": "kn-grass",
+      "-2,8": "kn-rock",
+      "2,8": "kn-rock",
+      "-2,10": "kn-rock",
+      "2,10": "kn-rock",
+      "-2,12": "kn-cobblestone",
+      "2,12": "kn-cobblestone",
+      "-2,14": "kn-cobblestone",
+      "2,14": "kn-cobblestone",
+      "-2,16": "kn-cobblestone",
+      "2,16": "kn-cobblestone",
+      "-2,18": "kn-rock",
+      "2,18": "kn-rock",
+      "-2,20": "kn-rock",
+      "2,20": "kn-rock",
+      "-4,8": "kn-rock",
+      "-3,8": "kn-rock",
+      "3,8": "kn-rock",
+      "4,8": "kn-rock",
+      "-5,9": "kn-rock",
+      "-4,9": "kn-rock",
+      "-3,9": "kn-rock",
+      "-2,9": "kn-rock",
+      "2,9": "kn-rock",
+      "3,9": "kn-rock",
+      "4,9": "kn-rock",
+      "5,9": "kn-rock",
+      "-6,10": "kn-rock",
+      "-5,10": "kn-rock",
+      "-4,10": "kn-rock",
+      "-3,10": "kn-rock",
+      "3,10": "kn-rock",
+      "4,10": "kn-rock",
+      "5,10": "kn-rock",
+      "6,10": "kn-rock",
+      "-6,11": "kn-rock",
+      "-5,11": "kn-rock",
+      "-4,11": "kn-rock",
+      "-3,11": "kn-rock",
+      "-2,11": "kn-rock",
+      "2,11": "kn-rock",
+      "3,11": "kn-rock",
+      "4,11": "kn-rock",
+      "5,11": "kn-rock",
+      "6,11": "kn-rock",
+      "-7,12": "kn-rock",
+      "-6,12": "kn-rock",
+      "-5,12": "kn-rock",
+      "-4,12": "kn-rock",
+      "-3,12": "kn-rock",
+      "3,12": "kn-rock",
+      "4,12": "kn-rock",
+      "5,12": "kn-rock",
+      "6,12": "kn-rock",
+      "7,12": "kn-rock",
+      "-7,13": "kn-rock",
+      "-6,13": "kn-rock",
+      "-5,13": "kn-rock",
+      "-4,13": "kn-rock",
+      "-3,13": "kn-cobblestone",
+      "-2,13": "kn-cobblestone",
+      "2,13": "kn-cobblestone",
+      "3,13": "kn-cobblestone",
+      "4,13": "kn-rock",
+      "5,13": "kn-rock",
+      "6,13": "kn-rock",
+      "7,13": "kn-rock",
+      "-7,14": "kn-rock",
+      "-6,14": "kn-rock",
+      "-5,14": "kn-rock",
+      "-4,14": "kn-rock",
+      "-3,14": "kn-cobblestone",
+      "3,14": "kn-cobblestone",
+      "4,14": "kn-rock",
+      "5,14": "kn-rock",
+      "6,14": "kn-rock",
+      "7,14": "kn-rock",
+      "-7,15": "kn-rock",
+      "-6,15": "kn-rock",
+      "-5,15": "kn-rock",
+      "-4,15": "kn-rock",
+      "-3,15": "kn-cobblestone",
+      "-2,15": "kn-cobblestone",
+      "2,15": "kn-cobblestone",
+      "3,15": "kn-cobblestone",
+      "4,15": "kn-rock",
+      "5,15": "kn-rock",
+      "6,15": "kn-rock",
+      "7,15": "kn-rock",
+      "-7,16": "kn-rock",
+      "-6,16": "kn-rock",
+      "-5,16": "kn-rock",
+      "-4,16": "kn-rock",
+      "-3,16": "kn-rock",
+      "3,16": "kn-rock",
+      "4,16": "kn-rock",
+      "5,16": "kn-rock",
+      "6,16": "kn-rock",
+      "7,16": "kn-rock",
+      "-6,17": "kn-rock",
+      "-5,17": "kn-rock",
+      "-4,17": "kn-rock",
+      "-3,17": "kn-rock",
+      "-2,17": "kn-rock",
+      "2,17": "kn-rock",
+      "3,17": "kn-rock",
+      "4,17": "kn-rock",
+      "5,17": "kn-rock",
+      "6,17": "kn-rock",
+      "-6,18": "kn-rock",
+      "-5,18": "kn-rock",
+      "-4,18": "kn-rock",
+      "-3,18": "kn-rock",
+      "3,18": "kn-rock",
+      "4,18": "kn-rock",
+      "5,18": "kn-rock",
+      "6,18": "kn-rock",
+      "-5,19": "kn-rock",
+      "-4,19": "kn-rock",
+      "-3,19": "kn-rock",
+      "-2,19": "kn-rock",
+      "2,19": "kn-rock",
+      "3,19": "kn-rock",
+      "4,19": "kn-rock",
+      "5,19": "kn-rock",
+      "-4,20": "kn-rock",
+      "-3,20": "kn-rock",
+      "3,20": "kn-rock",
+      "4,20": "kn-rock",
+      "-6,-22": "forest",
+      "0,-22": "leaves",
+      "1,-22": "forest",
+      "8,-22": "forest",
+      "-7,-21": "forest",
+      "-4,-21": "leaves",
+      "0,-21": "forest",
+      "7,-21": "forest",
+      "-8,-20": "forest",
+      "-1,-20": "forest",
+      "3,-20": "leaves",
+      "6,-20": "forest",
+      "-9,-19": "forest",
+      "-2,-19": "forest",
+      "-1,-19": "leaves",
+      "5,-19": "forest",
+      "10,-19": "leaves",
+      "-10,-18": "forest",
+      "-5,-18": "leaves",
+      "-3,-18": "forest",
+      "4,-18": "forest",
+      "6,-18": "leaves",
+      "-9,-17": "leaves",
+      "-4,-17": "forest",
+      "2,-17": "leaves",
+      "3,-17": "forest",
+      "10,-17": "forest",
+      "-5,-16": "forest",
+      "9,-16": "forest",
+      "-6,-15": "forest",
+      "5,-15": "leaves",
+      "8,-15": "forest",
+      "-10,-14": "leaves",
+      "-7,-14": "forest",
+      "7,-14": "forest",
+      "-8,-13": "forest",
+      "-3,-13": "leaves",
+      "6,-13": "forest",
+      "8,-13": "leaves",
+      "-9,-12": "forest",
+      "-7,-12": "leaves",
+      "4,-12": "leaves",
+      "5,-12": "forest",
+      "-10,-11": "forest",
+      "-3,-11": "forest",
+      "4,-11": "forest",
+      "-4,-10": "forest",
+      "3,-10": "forest",
+      "7,-10": "leaves",
+      "10,-10": "forest",
+      "-8,-9": "leaves",
+      "-5,-9": "forest",
+      "2,-9": "forest",
+      "3,-9": "leaves",
+      "9,-9": "forest",
+      "-6,-8": "forest",
+      "8,-8": "forest",
+      "10,-8": "leaves",
+      "-7,-7": "forest",
+      "-5,-7": "leaves",
+      "6,-7": "leaves",
+      "7,-7": "forest",
+      "-9,-6": "leaves",
+      "-8,-6": "forest",
+      "6,-6": "forest",
+      "-9,-5": "forest",
+      "-2,-5": "forest",
+      "5,-5": "forest",
+      "9,-5": "leaves",
+      "-10,-4": "forest",
+      "-6,-4": "leaves",
+      "-3,-4": "forest",
+      "4,-4": "forest",
+      "5,-4": "leaves",
+      "-10,-3": "leaves",
+      "-4,-3": "forest",
+      "3,-3": "forest",
+      "10,-3": "forest",
+      "-5,-2": "forest",
+      "-3,-2": "leaves",
+      "8,-2": "leaves",
+      "9,-2": "forest",
+      "-7,-1": "leaves",
+      "-6,-1": "forest",
+      "4,-1": "leaves",
+      "8,-1": "forest",
+      "-7,0": "forest",
+      "7,0": "forest",
+      "-8,1": "forest",
+      "-4,1": "leaves",
+      "6,1": "forest",
+      "7,1": "leaves",
+      "-9,2": "forest",
+      "-8,2": "leaves",
+      "3,2": "leaves",
+      "5,2": "forest",
+      "-10,3": "forest",
+      "-3,3": "forest",
+      "4,3": "forest",
+      "10,3": "leaves",
+      "-5,4": "leaves",
+      "-4,4": "forest",
+      "3,4": "forest",
+      "6,4": "leaves",
+      "10,4": "forest",
+      "-9,5": "leaves",
+      "-5,5": "forest",
+      "2,5": "forest",
+      "9,5": "forest",
+      "-6,6": "forest",
+      "8,6": "forest",
+      "9,6": "leaves",
+      "-7,7": "forest",
+      "-6,7": "leaves",
+      "5,7": "leaves",
+      "7,7": "forest",
+      "-10,8": "leaves",
+      "-8,8": "forest",
+      "6,8": "forest",
+      "-9,9": "forest",
+      "8,9": "leaves",
+      "-10,10": "forest",
+      "-7,10": "leaves",
+      "10,11": "forest",
+      "9,12": "forest",
+      "-8,13": "leaves",
+      "8,13": "forest",
+      "10,14": "leaves",
+      "-8,15": "forest",
+      "-9,16": "forest",
+      "-10,17": "forest",
+      "9,17": "leaves",
+      "10,18": "forest",
+      "-10,19": "leaves",
+      "9,19": "forest",
+      "-6,20": "forest",
+      "8,20": "forest",
+      "-7,21": "forest",
+      "0,21": "forest",
+      "4,21": "leaves",
+      "7,21": "forest",
+      "-8,22": "forest",
+      "-1,22": "forest",
+      "0,22": "leaves",
+      "6,22": "forest",
+      "-9,23": "forest",
+      "-4,23": "leaves",
+      "-2,23": "forest",
+      "5,23": "forest",
+      "7,23": "leaves",
+      "-10,24": "forest",
+      "-8,24": "leaves",
+      "-3,24": "forest",
+      "3,24": "leaves",
+      "4,24": "forest"
+    },
+    "craftedScenes": [
+      {
+        "id": "quest-zero-spawn-circle",
+        "name": "Quest Zero arrival circle",
+        "prompt": "A clear stone arrival circle with a visible path toward the fire shrine.",
+        "position": [
+          0,
+          0,
+          -17.5
+        ],
+        "createdAt": "2026-05-14T12:00:00.000Z",
+        "model": "codex-quest-zero-primitives",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.04,
+              0
+            ],
+            "scale": [
+              2.15,
+              0.08,
+              2.15
+            ],
+            "color": "#334155",
+            "roughness": 0.72,
+            "metalness": 0.02
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.1,
+              0
+            ],
+            "scale": [
+              1.6,
+              0.05,
+              1.6
+            ],
+            "color": "#475569",
+            "roughness": 0.72,
+            "metalness": 0.02
+          },
+          {
+            "type": "text",
+            "text": "Quest Zero",
+            "position": [
+              0,
+              0.45,
+              -1.52
+            ],
+            "scale": [
+              0.34,
+              0.34,
+              0.34
+            ],
+            "color": "#fed7aa",
+            "align": "center",
+            "emissive": "#fed7aa",
+            "emissiveIntensity": 0.18,
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "fontSize": 0.42
+          }
+        ]
+      },
+      {
+        "id": "quest-zero-path-torch-1",
+        "name": "Quest path torch 1",
+        "prompt": "A waist-high trail torch along the road to the Fire Guardian.",
+        "position": [
+          -2.35,
+          0,
+          -12.8
+        ],
+        "createdAt": "2026-05-14T12:00:00.000Z",
+        "model": "codex-quest-zero-primitives",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.62,
+              0
+            ],
+            "scale": [
+              0.09,
+              1.18,
+              0.09
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02
+          },
+          {
+            "type": "cone",
+            "position": [
+              0,
+              1.34,
+              0
+            ],
+            "scale": [
+              0.18,
+              0.48,
+              0.18
+            ],
+            "color": "#f97316",
+            "roughness": 0.7,
+            "metalness": 0.02,
+            "emissive": "#f97316",
+            "emissiveIntensity": 0.4
+          },
+          {
+            "type": "flame",
+            "position": [
+              0,
+              1.48,
+              0
+            ],
+            "scale": [
+              0.28,
+              0.56,
+              0.28
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 1.25,
+            "speed": 1.25
+          }
+        ]
+      },
+      {
+        "id": "quest-zero-path-torch-2",
+        "name": "Quest path torch 2",
+        "prompt": "A waist-high trail torch along the road to the Fire Guardian.",
+        "position": [
+          2.35,
+          0,
+          -9.8
+        ],
+        "createdAt": "2026-05-14T12:00:00.000Z",
+        "model": "codex-quest-zero-primitives",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.62,
+              0
+            ],
+            "scale": [
+              0.09,
+              1.18,
+              0.09
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02
+          },
+          {
+            "type": "cone",
+            "position": [
+              0,
+              1.34,
+              0
+            ],
+            "scale": [
+              0.18,
+              0.48,
+              0.18
+            ],
+            "color": "#f97316",
+            "roughness": 0.7,
+            "metalness": 0.02,
+            "emissive": "#f97316",
+            "emissiveIntensity": 0.4
+          },
+          {
+            "type": "flame",
+            "position": [
+              0,
+              1.48,
+              0
+            ],
+            "scale": [
+              0.28,
+              0.56,
+              0.28
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 1.25,
+            "speed": 1.25
+          }
+        ]
+      },
+      {
+        "id": "quest-zero-path-torch-3",
+        "name": "Quest path torch 3",
+        "prompt": "A waist-high trail torch along the road to the Fire Guardian.",
+        "position": [
+          -2.35,
+          0,
+          -6.4
+        ],
+        "createdAt": "2026-05-14T12:00:00.000Z",
+        "model": "codex-quest-zero-primitives",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.62,
+              0
+            ],
+            "scale": [
+              0.09,
+              1.18,
+              0.09
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02
+          },
+          {
+            "type": "cone",
+            "position": [
+              0,
+              1.34,
+              0
+            ],
+            "scale": [
+              0.18,
+              0.48,
+              0.18
+            ],
+            "color": "#f97316",
+            "roughness": 0.7,
+            "metalness": 0.02,
+            "emissive": "#f97316",
+            "emissiveIntensity": 0.4
+          },
+          {
+            "type": "flame",
+            "position": [
+              0,
+              1.48,
+              0
+            ],
+            "scale": [
+              0.28,
+              0.56,
+              0.28
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 1.25,
+            "speed": 1.25
+          }
+        ]
+      },
+      {
+        "id": "quest-zero-path-torch-4",
+        "name": "Quest path torch 4",
+        "prompt": "A waist-high trail torch along the road to the Fire Guardian.",
+        "position": [
+          2.35,
+          0,
+          -3
+        ],
+        "createdAt": "2026-05-14T12:00:00.000Z",
+        "model": "codex-quest-zero-primitives",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.62,
+              0
+            ],
+            "scale": [
+              0.09,
+              1.18,
+              0.09
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02
+          },
+          {
+            "type": "cone",
+            "position": [
+              0,
+              1.34,
+              0
+            ],
+            "scale": [
+              0.18,
+              0.48,
+              0.18
+            ],
+            "color": "#f97316",
+            "roughness": 0.7,
+            "metalness": 0.02,
+            "emissive": "#f97316",
+            "emissiveIntensity": 0.4
+          },
+          {
+            "type": "flame",
+            "position": [
+              0,
+              1.48,
+              0
+            ],
+            "scale": [
+              0.28,
+              0.56,
+              0.28
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 1.25,
+            "speed": 1.25
+          }
+        ]
+      },
+      {
+        "id": "quest-zero-path-torch-5",
+        "name": "Quest path torch 5",
+        "prompt": "A waist-high trail torch along the road to the Fire Guardian.",
+        "position": [
+          -2.35,
+          0,
+          0.4
+        ],
+        "createdAt": "2026-05-14T12:00:00.000Z",
+        "model": "codex-quest-zero-primitives",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.62,
+              0
+            ],
+            "scale": [
+              0.09,
+              1.18,
+              0.09
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02
+          },
+          {
+            "type": "cone",
+            "position": [
+              0,
+              1.34,
+              0
+            ],
+            "scale": [
+              0.18,
+              0.48,
+              0.18
+            ],
+            "color": "#f97316",
+            "roughness": 0.7,
+            "metalness": 0.02,
+            "emissive": "#f97316",
+            "emissiveIntensity": 0.4
+          },
+          {
+            "type": "flame",
+            "position": [
+              0,
+              1.48,
+              0
+            ],
+            "scale": [
+              0.28,
+              0.56,
+              0.28
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 1.25,
+            "speed": 1.25
+          }
+        ]
+      },
+      {
+        "id": "quest-zero-path-torch-6",
+        "name": "Quest path torch 6",
+        "prompt": "A waist-high trail torch along the road to the Fire Guardian.",
+        "position": [
+          2.35,
+          0,
+          3.8
+        ],
+        "createdAt": "2026-05-14T12:00:00.000Z",
+        "model": "codex-quest-zero-primitives",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.62,
+              0
+            ],
+            "scale": [
+              0.09,
+              1.18,
+              0.09
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02
+          },
+          {
+            "type": "cone",
+            "position": [
+              0,
+              1.34,
+              0
+            ],
+            "scale": [
+              0.18,
+              0.48,
+              0.18
+            ],
+            "color": "#f97316",
+            "roughness": 0.7,
+            "metalness": 0.02,
+            "emissive": "#f97316",
+            "emissiveIntensity": 0.4
+          },
+          {
+            "type": "flame",
+            "position": [
+              0,
+              1.48,
+              0
+            ],
+            "scale": [
+              0.28,
+              0.56,
+              0.28
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 1.25,
+            "speed": 1.25
+          }
+        ]
+      },
+      {
+        "id": "quest-zero-path-torch-7",
+        "name": "Quest path torch 7",
+        "prompt": "A waist-high trail torch along the road to the Fire Guardian.",
+        "position": [
+          -2.35,
+          0,
+          7.2
+        ],
+        "createdAt": "2026-05-14T12:00:00.000Z",
+        "model": "codex-quest-zero-primitives",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.62,
+              0
+            ],
+            "scale": [
+              0.09,
+              1.18,
+              0.09
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02
+          },
+          {
+            "type": "cone",
+            "position": [
+              0,
+              1.34,
+              0
+            ],
+            "scale": [
+              0.18,
+              0.48,
+              0.18
+            ],
+            "color": "#f97316",
+            "roughness": 0.7,
+            "metalness": 0.02,
+            "emissive": "#f97316",
+            "emissiveIntensity": 0.4
+          },
+          {
+            "type": "flame",
+            "position": [
+              0,
+              1.48,
+              0
+            ],
+            "scale": [
+              0.28,
+              0.56,
+              0.28
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 1.25,
+            "speed": 1.25
+          }
+        ]
+      },
+      {
+        "id": "quest-zero-fire-shrine",
+        "name": "Fire Guardian shrine",
+        "prompt": "A tribal stone-and-wood fire shrine where the first combat spell is earned.",
+        "position": [
+          0,
+          0,
+          12.6
+        ],
+        "createdAt": "2026-05-14T12:00:00.000Z",
+        "model": "codex-quest-zero-primitives",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.08,
+              0
+            ],
+            "scale": [
+              3.3,
+              0.16,
+              3.3
+            ],
+            "color": "#2f2a26",
+            "roughness": 0.72,
+            "metalness": 0.02
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.18,
+              0
+            ],
+            "scale": [
+              2.45,
+              0.11,
+              2.45
+            ],
+            "color": "#3f3f46",
+            "roughness": 0.72,
+            "metalness": 0.02
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              0.55,
+              1.45
+            ],
+            "scale": [
+              1.95,
+              0.58,
+              0.72
+            ],
+            "color": "#3a2a1a",
+            "roughness": 0.78,
+            "metalness": 0.02
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              0.9,
+              1.45
+            ],
+            "scale": [
+              1.35,
+              0.22,
+              0.52
+            ],
+            "color": "#21150d",
+            "roughness": 0.78,
+            "metalness": 0.02
+          },
+          {
+            "type": "flame",
+            "position": [
+              0,
+              1.35,
+              1.45
+            ],
+            "scale": [
+              0.58,
+              1.1,
+              0.58
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 1.25,
+            "speed": 1.25
+          },
+          {
+            "type": "glow_orb",
+            "position": [
+              0,
+              1.18,
+              1.45
+            ],
+            "scale": [
+              1.2,
+              1.2,
+              1.2
+            ],
+            "color": "#fb923c",
+            "emissive": "#fb923c",
+            "emissiveIntensity": 0.9,
+            "intensity": 1.15
+          },
+          {
+            "type": "text",
+            "text": "FIRE GUARDIAN",
+            "position": [
+              0,
+              2.55,
+              1.15
+            ],
+            "scale": [
+              0.34,
+              0.34,
+              0.34
+            ],
+            "color": "#fed7aa",
+            "align": "center",
+            "emissive": "#fed7aa",
+            "emissiveIntensity": 0.18,
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "fontSize": 0.38
+          }
+        ]
+      },
+      {
+        "id": "quest-zero-stake-ring",
+        "name": "Fire shrine stake ring",
+        "prompt": "A rough ring of wooden stakes and little flames enclosing the Fire Guardian trial.",
+        "position": [
+          0,
+          0,
+          12.8
+        ],
+        "createdAt": "2026-05-14T12:00:00.000Z",
+        "model": "codex-quest-zero-primitives",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              5.6,
+              0.8,
+              0
+            ],
+            "scale": [
+              0.08,
+              1.6,
+              0.08
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0.12,
+              0,
+              0.05
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              5.6,
+              1.68,
+              0
+            ],
+            "scale": [
+              0.16,
+              0.34,
+              0.16
+            ],
+            "color": "#1c120b",
+            "roughness": 0.7,
+            "metalness": 0.02
+          },
+          {
+            "type": "flame",
+            "position": [
+              5.3759999999999994,
+              1.88,
+              0
+            ],
+            "scale": [
+              0.18,
+              0.42,
+              0.18
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 1.25,
+            "speed": 1.25
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              5.866635031446671,
+              0.8,
+              2.43003979551832
+            ],
+            "scale": [
+              0.08,
+              1.6,
+              0.08
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0.12,
+              0.39269908169872414,
+              0.05
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              5.866635031446671,
+              1.68,
+              2.43003979551832
+            ],
+            "scale": [
+              0.16,
+              0.34,
+              0.16
+            ],
+            "color": "#1c120b",
+            "roughness": 0.7,
+            "metalness": 0.02
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              3.9597979746446663,
+              0.8,
+              3.9597979746446654
+            ],
+            "scale": [
+              0.08,
+              1.6,
+              0.08
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0.12,
+              0.7853981633974483,
+              0.05
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              3.9597979746446663,
+              1.68,
+              3.9597979746446654
+            ],
+            "scale": [
+              0.16,
+              0.34,
+              0.16
+            ],
+            "color": "#1c120b",
+            "roughness": 0.7,
+            "metalness": 0.02
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              2.4300397955183204,
+              0.8,
+              5.866635031446671
+            ],
+            "scale": [
+              0.08,
+              1.6,
+              0.08
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0.12,
+              1.1780972450961724,
+              0.05
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              2.4300397955183204,
+              1.68,
+              5.866635031446671
+            ],
+            "scale": [
+              0.16,
+              0.34,
+              0.16
+            ],
+            "color": "#1c120b",
+            "roughness": 0.7,
+            "metalness": 0.02
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              3.429011037612589e-16,
+              0.8,
+              5.6
+            ],
+            "scale": [
+              0.08,
+              1.6,
+              0.08
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0.12,
+              1.5707963267948966,
+              0.05
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              3.429011037612589e-16,
+              1.68,
+              5.6
+            ],
+            "scale": [
+              0.16,
+              0.34,
+              0.16
+            ],
+            "color": "#1c120b",
+            "roughness": 0.7,
+            "metalness": 0.02
+          },
+          {
+            "type": "flame",
+            "position": [
+              3.291850596108085e-16,
+              1.88,
+              5.3759999999999994
+            ],
+            "scale": [
+              0.18,
+              0.42,
+              0.18
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 1.25,
+            "speed": 1.25
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -2.4300397955183195,
+              0.8,
+              5.866635031446671
+            ],
+            "scale": [
+              0.08,
+              1.6,
+              0.08
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0.12,
+              1.9634954084936207,
+              0.05
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              -2.4300397955183195,
+              1.68,
+              5.866635031446671
+            ],
+            "scale": [
+              0.16,
+              0.34,
+              0.16
+            ],
+            "color": "#1c120b",
+            "roughness": 0.7,
+            "metalness": 0.02
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -3.9597979746446654,
+              0.8,
+              3.9597979746446663
+            ],
+            "scale": [
+              0.08,
+              1.6,
+              0.08
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0.12,
+              2.356194490192345,
+              0.05
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              -3.9597979746446654,
+              1.68,
+              3.9597979746446663
+            ],
+            "scale": [
+              0.16,
+              0.34,
+              0.16
+            ],
+            "color": "#1c120b",
+            "roughness": 0.7,
+            "metalness": 0.02
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -5.866635031446671,
+              0.8,
+              2.430039795518321
+            ],
+            "scale": [
+              0.08,
+              1.6,
+              0.08
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0.12,
+              2.748893571891069,
+              0.05
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              -5.866635031446671,
+              1.68,
+              2.430039795518321
+            ],
+            "scale": [
+              0.16,
+              0.34,
+              0.16
+            ],
+            "color": "#1c120b",
+            "roughness": 0.7,
+            "metalness": 0.02
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -5.6,
+              0.8,
+              6.858022075225178e-16
+            ],
+            "scale": [
+              0.08,
+              1.6,
+              0.08
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0.12,
+              3.141592653589793,
+              0.05
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              -5.6,
+              1.68,
+              6.858022075225178e-16
+            ],
+            "scale": [
+              0.16,
+              0.34,
+              0.16
+            ],
+            "color": "#1c120b",
+            "roughness": 0.7,
+            "metalness": 0.02
+          },
+          {
+            "type": "flame",
+            "position": [
+              -5.3759999999999994,
+              1.88,
+              6.58370119221617e-16
+            ],
+            "scale": [
+              0.18,
+              0.42,
+              0.18
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 1.25,
+            "speed": 1.25
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -5.8666350314466715,
+              0.8,
+              -2.430039795518319
+            ],
+            "scale": [
+              0.08,
+              1.6,
+              0.08
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0.12,
+              3.5342917352885173,
+              0.05
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              -5.8666350314466715,
+              1.68,
+              -2.430039795518319
+            ],
+            "scale": [
+              0.16,
+              0.34,
+              0.16
+            ],
+            "color": "#1c120b",
+            "roughness": 0.7,
+            "metalness": 0.02
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -3.9597979746446668,
+              0.8,
+              -3.9597979746446654
+            ],
+            "scale": [
+              0.08,
+              1.6,
+              0.08
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0.12,
+              3.9269908169872414,
+              0.05
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              -3.9597979746446668,
+              1.68,
+              -3.9597979746446654
+            ],
+            "scale": [
+              0.16,
+              0.34,
+              0.16
+            ],
+            "color": "#1c120b",
+            "roughness": 0.7,
+            "metalness": 0.02
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -2.4300397955183235,
+              0.8,
+              -5.866635031446669
+            ],
+            "scale": [
+              0.08,
+              1.6,
+              0.08
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0.12,
+              4.319689898685965,
+              0.05
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              -2.4300397955183235,
+              1.68,
+              -5.866635031446669
+            ],
+            "scale": [
+              0.16,
+              0.34,
+              0.16
+            ],
+            "color": "#1c120b",
+            "roughness": 0.7,
+            "metalness": 0.02
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -1.0287033112837766e-15,
+              0.8,
+              -5.6
+            ],
+            "scale": [
+              0.08,
+              1.6,
+              0.08
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0.12,
+              4.71238898038469,
+              0.05
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              -1.0287033112837766e-15,
+              1.68,
+              -5.6
+            ],
+            "scale": [
+              0.16,
+              0.34,
+              0.16
+            ],
+            "color": "#1c120b",
+            "roughness": 0.7,
+            "metalness": 0.02
+          },
+          {
+            "type": "flame",
+            "position": [
+              -9.875551788324254e-16,
+              1.88,
+              -5.3759999999999994
+            ],
+            "scale": [
+              0.18,
+              0.42,
+              0.18
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 1.25,
+            "speed": 1.25
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              2.4300397955183213,
+              0.8,
+              -5.86663503144667
+            ],
+            "scale": [
+              0.08,
+              1.6,
+              0.08
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0.12,
+              5.105088062083414,
+              0.05
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              2.4300397955183213,
+              1.68,
+              -5.86663503144667
+            ],
+            "scale": [
+              0.16,
+              0.34,
+              0.16
+            ],
+            "color": "#1c120b",
+            "roughness": 0.7,
+            "metalness": 0.02
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              3.959797974644665,
+              0.8,
+              -3.9597979746446668
+            ],
+            "scale": [
+              0.08,
+              1.6,
+              0.08
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0.12,
+              5.497787143782138,
+              0.05
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              3.959797974644665,
+              1.68,
+              -3.9597979746446668
+            ],
+            "scale": [
+              0.16,
+              0.34,
+              0.16
+            ],
+            "color": "#1c120b",
+            "roughness": 0.7,
+            "metalness": 0.02
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              5.866635031446669,
+              0.8,
+              -2.430039795518324
+            ],
+            "scale": [
+              0.08,
+              1.6,
+              0.08
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0.12,
+              5.890486225480862,
+              0.05
+            ]
+          },
+          {
+            "type": "cone",
+            "position": [
+              5.866635031446669,
+              1.68,
+              -2.430039795518324
+            ],
+            "scale": [
+              0.16,
+              0.34,
+              0.16
+            ],
+            "color": "#1c120b",
+            "roughness": 0.7,
+            "metalness": 0.02
+          }
+        ]
+      },
+      {
+        "id": "quest-zero-campfire-left",
+        "name": "Shrine campfire",
+        "prompt": "A small ritual fire with crossed logs, flame shader, ember glow, and smoke-like sparks.",
+        "position": [
+          -4.4,
+          0,
+          11.4
+        ],
+        "createdAt": "2026-05-14T12:00:00.000Z",
+        "model": "codex-quest-zero-primitives",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              -0.22,
+              0.16,
+              0
+            ],
+            "scale": [
+              0.1,
+              0.72,
+              0.1
+            ],
+            "color": "#3a2518",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              1.5707963267948966,
+              0,
+              1
+            ]
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0.22,
+              0.16,
+              0
+            ],
+            "scale": [
+              0.1,
+              0.72,
+              0.1
+            ],
+            "color": "#3a2518",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              1.5707963267948966,
+              0,
+              -1
+            ]
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.12,
+              0.2
+            ],
+            "scale": [
+              0.08,
+              0.64,
+              0.08
+            ],
+            "color": "#4b2f1f",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              1.5707963267948966,
+              0,
+              0
+            ]
+          },
+          {
+            "type": "flame",
+            "position": [
+              0,
+              0.58,
+              0
+            ],
+            "scale": [
+              0.52,
+              0.95,
+              0.52
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 1.25,
+            "speed": 1.25
+          },
+          {
+            "type": "glow_orb",
+            "position": [
+              0,
+              0.5,
+              0
+            ],
+            "scale": [
+              0.8,
+              0.8,
+              0.8
+            ],
+            "color": "#f97316",
+            "emissive": "#f97316",
+            "emissiveIntensity": 0.9,
+            "intensity": 1.15
+          },
+          {
+            "type": "particle_emitter",
+            "position": [
+              0,
+              0.9,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "color": "#fed7aa",
+            "particleType": "ember",
+            "particleCount": 34,
+            "speed": 0.75
+          }
+        ]
+      },
+      {
+        "id": "quest-zero-campfire-right",
+        "name": "Shrine campfire",
+        "prompt": "A small ritual fire with crossed logs, flame shader, ember glow, and smoke-like sparks.",
+        "position": [
+          4.4,
+          0,
+          11.4
+        ],
+        "createdAt": "2026-05-14T12:00:00.000Z",
+        "model": "codex-quest-zero-primitives",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              -0.22,
+              0.16,
+              0
+            ],
+            "scale": [
+              0.1,
+              0.72,
+              0.1
+            ],
+            "color": "#3a2518",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              1.5707963267948966,
+              0,
+              1
+            ]
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0.22,
+              0.16,
+              0
+            ],
+            "scale": [
+              0.1,
+              0.72,
+              0.1
+            ],
+            "color": "#3a2518",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              1.5707963267948966,
+              0,
+              -1
+            ]
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.12,
+              0.2
+            ],
+            "scale": [
+              0.08,
+              0.64,
+              0.08
+            ],
+            "color": "#4b2f1f",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              1.5707963267948966,
+              0,
+              0
+            ]
+          },
+          {
+            "type": "flame",
+            "position": [
+              0,
+              0.58,
+              0
+            ],
+            "scale": [
+              0.52,
+              0.95,
+              0.52
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 1.25,
+            "speed": 1.25
+          },
+          {
+            "type": "glow_orb",
+            "position": [
+              0,
+              0.5,
+              0
+            ],
+            "scale": [
+              0.8,
+              0.8,
+              0.8
+            ],
+            "color": "#f97316",
+            "emissive": "#f97316",
+            "emissiveIntensity": 0.9,
+            "intensity": 1.15
+          },
+          {
+            "type": "particle_emitter",
+            "position": [
+              0,
+              0.9,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "color": "#fed7aa",
+            "particleType": "ember",
+            "particleCount": 34,
+            "speed": 0.75
+          }
+        ]
+      },
+      {
+        "id": "quest-zero-fire-target-1",
+        "name": "Fire Target 1",
+        "prompt": "A wooden firebolt practice target with a glowing bullseye and non-form input surface.",
+        "position": [
+          -3.4,
+          0,
+          18.2
+        ],
+        "createdAt": "2026-05-14T12:00:00.000Z",
+        "model": "codex-quest-zero-primitives",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.82,
+              0
+            ],
+            "scale": [
+              0.08,
+              1.64,
+              0.08
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0.58,
+              0.72,
+              0
+            ],
+            "scale": [
+              0.06,
+              1.44,
+              0.06
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0,
+              0,
+              0.08
+            ]
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -0.58,
+              0.72,
+              0
+            ],
+            "scale": [
+              0.06,
+              1.44,
+              0.06
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0,
+              0,
+              -0.08
+            ]
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              1.55,
+              0
+            ],
+            "scale": [
+              1.72,
+              1.18,
+              0.12
+            ],
+            "color": "#4b2f1f",
+            "roughness": 0.78,
+            "metalness": 0.02
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              1.55,
+              -0.07
+            ],
+            "scale": [
+              1.46,
+              0.92,
+              0.08
+            ],
+            "color": "#1f130c",
+            "roughness": 0.78,
+            "metalness": 0.02
+          },
+          {
+            "type": "torus",
+            "position": [
+              0,
+              1.55,
+              -0.15
+            ],
+            "scale": [
+              0.92,
+              0.92,
+              0.1
+            ],
+            "color": "#fb923c",
+            "roughness": 0.64,
+            "metalness": 0.04,
+            "rotation": [
+              1.5707963267948966,
+              0,
+              0
+            ],
+            "emissive": "#fb923c",
+            "emissiveIntensity": 0.65
+          },
+          {
+            "type": "torus",
+            "position": [
+              0,
+              1.55,
+              -0.18
+            ],
+            "scale": [
+              0.54,
+              0.54,
+              0.08
+            ],
+            "color": "#fde68a",
+            "roughness": 0.64,
+            "metalness": 0.04,
+            "rotation": [
+              1.5707963267948966,
+              0,
+              0
+            ],
+            "emissive": "#fde68a",
+            "emissiveIntensity": 0.72
+          },
+          {
+            "type": "sphere",
+            "position": [
+              0,
+              1.55,
+              -0.24
+            ],
+            "scale": [
+              0.18,
+              0.18,
+              0.18
+            ],
+            "color": "#fef3c7",
+            "roughness": 0.82,
+            "metalness": 0.02,
+            "emissive": "#f97316",
+            "emissiveIntensity": 1.2,
+            "animation": {
+              "type": "pulse",
+              "speed": 1.8,
+              "amplitude": 0.16
+            }
+          },
+          {
+            "type": "text",
+            "text": "TARGET 1",
+            "position": [
+              0,
+              2.34,
+              -0.17
+            ],
+            "scale": [
+              0.2,
+              0.2,
+              0.2
+            ],
+            "color": "#fed7aa",
+            "align": "center",
+            "emissive": "#fed7aa",
+            "emissiveIntensity": 0.18,
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "fontSize": 0.25
+          }
+        ]
+      },
+      {
+        "id": "quest-zero-fire-target-2",
+        "name": "Fire Target 2",
+        "prompt": "A wooden firebolt practice target with a glowing bullseye and non-form input surface.",
+        "position": [
+          0,
+          0,
+          19.2
+        ],
+        "createdAt": "2026-05-14T12:00:00.000Z",
+        "model": "codex-quest-zero-primitives",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.82,
+              0
+            ],
+            "scale": [
+              0.08,
+              1.64,
+              0.08
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0.58,
+              0.72,
+              0
+            ],
+            "scale": [
+              0.06,
+              1.44,
+              0.06
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0,
+              0,
+              0.08
+            ]
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -0.58,
+              0.72,
+              0
+            ],
+            "scale": [
+              0.06,
+              1.44,
+              0.06
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0,
+              0,
+              -0.08
+            ]
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              1.55,
+              0
+            ],
+            "scale": [
+              1.72,
+              1.18,
+              0.12
+            ],
+            "color": "#4b2f1f",
+            "roughness": 0.78,
+            "metalness": 0.02
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              1.55,
+              -0.07
+            ],
+            "scale": [
+              1.46,
+              0.92,
+              0.08
+            ],
+            "color": "#1f130c",
+            "roughness": 0.78,
+            "metalness": 0.02
+          },
+          {
+            "type": "torus",
+            "position": [
+              0,
+              1.55,
+              -0.15
+            ],
+            "scale": [
+              0.92,
+              0.92,
+              0.1
+            ],
+            "color": "#f97316",
+            "roughness": 0.64,
+            "metalness": 0.04,
+            "rotation": [
+              1.5707963267948966,
+              0,
+              0
+            ],
+            "emissive": "#f97316",
+            "emissiveIntensity": 0.65
+          },
+          {
+            "type": "torus",
+            "position": [
+              0,
+              1.55,
+              -0.18
+            ],
+            "scale": [
+              0.54,
+              0.54,
+              0.08
+            ],
+            "color": "#fde68a",
+            "roughness": 0.64,
+            "metalness": 0.04,
+            "rotation": [
+              1.5707963267948966,
+              0,
+              0
+            ],
+            "emissive": "#fde68a",
+            "emissiveIntensity": 0.72
+          },
+          {
+            "type": "sphere",
+            "position": [
+              0,
+              1.55,
+              -0.24
+            ],
+            "scale": [
+              0.18,
+              0.18,
+              0.18
+            ],
+            "color": "#fef3c7",
+            "roughness": 0.82,
+            "metalness": 0.02,
+            "emissive": "#f97316",
+            "emissiveIntensity": 1.2,
+            "animation": {
+              "type": "pulse",
+              "speed": 1.8,
+              "amplitude": 0.16
+            }
+          },
+          {
+            "type": "text",
+            "text": "TARGET 2",
+            "position": [
+              0,
+              2.34,
+              -0.17
+            ],
+            "scale": [
+              0.2,
+              0.2,
+              0.2
+            ],
+            "color": "#fed7aa",
+            "align": "center",
+            "emissive": "#fed7aa",
+            "emissiveIntensity": 0.18,
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "fontSize": 0.25
+          }
+        ]
+      },
+      {
+        "id": "quest-zero-fire-target-3",
+        "name": "Fire Target 3",
+        "prompt": "A wooden firebolt practice target with a glowing bullseye and non-form input surface.",
+        "position": [
+          3.4,
+          0,
+          18.2
+        ],
+        "createdAt": "2026-05-14T12:00:00.000Z",
+        "model": "codex-quest-zero-primitives",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.82,
+              0
+            ],
+            "scale": [
+              0.08,
+              1.64,
+              0.08
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0.58,
+              0.72,
+              0
+            ],
+            "scale": [
+              0.06,
+              1.44,
+              0.06
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0,
+              0,
+              0.08
+            ]
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -0.58,
+              0.72,
+              0
+            ],
+            "scale": [
+              0.06,
+              1.44,
+              0.06
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02,
+            "rotation": [
+              0,
+              0,
+              -0.08
+            ]
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              1.55,
+              0
+            ],
+            "scale": [
+              1.72,
+              1.18,
+              0.12
+            ],
+            "color": "#4b2f1f",
+            "roughness": 0.78,
+            "metalness": 0.02
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              1.55,
+              -0.07
+            ],
+            "scale": [
+              1.46,
+              0.92,
+              0.08
+            ],
+            "color": "#1f130c",
+            "roughness": 0.78,
+            "metalness": 0.02
+          },
+          {
+            "type": "torus",
+            "position": [
+              0,
+              1.55,
+              -0.15
+            ],
+            "scale": [
+              0.92,
+              0.92,
+              0.1
+            ],
+            "color": "#ef4444",
+            "roughness": 0.64,
+            "metalness": 0.04,
+            "rotation": [
+              1.5707963267948966,
+              0,
+              0
+            ],
+            "emissive": "#ef4444",
+            "emissiveIntensity": 0.65
+          },
+          {
+            "type": "torus",
+            "position": [
+              0,
+              1.55,
+              -0.18
+            ],
+            "scale": [
+              0.54,
+              0.54,
+              0.08
+            ],
+            "color": "#fde68a",
+            "roughness": 0.64,
+            "metalness": 0.04,
+            "rotation": [
+              1.5707963267948966,
+              0,
+              0
+            ],
+            "emissive": "#fde68a",
+            "emissiveIntensity": 0.72
+          },
+          {
+            "type": "sphere",
+            "position": [
+              0,
+              1.55,
+              -0.24
+            ],
+            "scale": [
+              0.18,
+              0.18,
+              0.18
+            ],
+            "color": "#fef3c7",
+            "roughness": 0.82,
+            "metalness": 0.02,
+            "emissive": "#f97316",
+            "emissiveIntensity": 1.2,
+            "animation": {
+              "type": "pulse",
+              "speed": 1.8,
+              "amplitude": 0.16
+            }
+          },
+          {
+            "type": "text",
+            "text": "TARGET 3",
+            "position": [
+              0,
+              2.34,
+              -0.17
+            ],
+            "scale": [
+              0.2,
+              0.2,
+              0.2
+            ],
+            "color": "#fed7aa",
+            "align": "center",
+            "emissive": "#fed7aa",
+            "emissiveIntensity": 0.18,
+            "rotation": [
+              0,
+              3.141592653589793,
+              0
+            ],
+            "fontSize": 0.25
+          }
+        ]
+      }
+    ],
+    "conjuredAssetIds": [],
+    "catalogPlacements": [],
+    "portalGates": [
+      {
+        "id": "quest-zero-to-rookie-wizard",
+        "label": "Rookie Wizard",
+        "variant": "verdant-arch",
+        "position": [
+          0,
+          0,
+          -20.4
+        ],
+        "rotationY": 3.141592653589793,
+        "scale": 0.92,
+        "width": 2.45,
+        "height": 3.35,
+        "direction": "one-way",
+        "sourceWorldId": "world-quest-zero-system",
+        "targetWorldId": "world-rookie-wizard-system",
+        "targetWorldName": "Rookie Wizard",
+        "action": {
+          "type": "load_world",
+          "worldId": "world-rookie-wizard-system",
+          "worldName": "Rookie Wizard"
+        },
+        "spawnPose": {
+          "position": [
+            0,
+            0,
+            -17.6
+          ],
+          "rotationY": 0
+        }
+      }
+    ],
+    "spatialWebObjects": [],
+    "paintStrokes": [],
+    "text3dObjects": [],
+    "transforms": {},
+    "behaviors": {},
+    "lights": [
+      {
+        "id": "quest-zero-ambient",
+        "type": "ambient",
+        "color": "#ffe7bf",
+        "intensity": 0.42
+      },
+      {
+        "id": "quest-zero-fire-shrine-glow",
+        "type": "point",
+        "position": [
+          0,
+          3.4,
+          13.2
+        ],
+        "color": "#fb923c",
+        "intensity": 1.8,
+        "distance": 19
+      },
+      {
+        "id": "quest-zero-target-glow",
+        "type": "point",
+        "position": [
+          0,
+          3.1,
+          18.7
+        ],
+        "color": "#f97316",
+        "intensity": 1.15,
+        "distance": 16
+      },
+      {
+        "id": "quest-zero-spawn-glow",
+        "type": "point",
+        "position": [
+          0,
+          2.7,
+          -17.5
+        ],
+        "color": "#fbbf24",
+        "intensity": 0.8,
+        "distance": 10
+      }
+    ],
+    "skyBackgroundId": "forest",
+    "agentWindows": [
+      {
+        "id": "agent-npc-quest-zero-merlin",
+        "agentType": "npc",
+        "npcId": "quest-zero-merlin",
+        "linkedAvatarId": "agent-avatar-quest-zero-merlin",
+        "anchorMode": "next-to",
+        "position": [
+          2.2,
+          2.35,
+          -14.7
+        ],
+        "rotation": [
+          0,
+          3.141592653589793,
+          0
+        ],
+        "scale": 0.15,
+        "width": 470,
+        "height": 680,
+        "label": "Merlin",
+        "renderMode": "live-html",
+        "frameStyle": "hologram",
+        "frameThickness": 5,
+        "windowOpacity": 0.92,
+        "windowBlur": 8
+      },
+      {
+        "id": "agent-npc-fire-guardian",
+        "agentType": "npc",
+        "npcId": "quest-zero-fire-guardian",
+        "linkedAvatarId": "agent-avatar-npc-fire-guardian",
+        "anchorMode": "next-to",
+        "position": [
+          1.85,
+          2.45,
+          12.35
+        ],
+        "rotation": [
+          0,
+          3.141592653589793,
+          0
+        ],
+        "scale": 0.16,
+        "width": 470,
+        "height": 720,
+        "label": "Fire Guardian",
+        "renderMode": "live-html",
+        "frameStyle": "fire",
+        "frameThickness": 6,
+        "windowOpacity": 0.92,
+        "windowBlur": 8
+      }
+    ],
+    "agentAvatars": [
+      {
+        "id": "agent-avatar-quest-zero-merlin",
+        "agentType": "npc",
+        "avatar3dUrl": "/avatars/gallery/EYE_Diviner.vrm",
+        "position": [
+          1.4,
+          0,
+          -14.7
+        ],
+        "rotation": [
+          0,
+          3.141592653589793,
+          0
+        ],
+        "scale": 1.04,
+        "linkedWindowId": "agent-npc-quest-zero-merlin",
+        "label": "Merlin"
+      },
+      {
+        "id": "agent-avatar-npc-fire-guardian",
+        "agentType": "npc",
+        "avatar3dUrl": "/avatars/gallery/EvilPendra.vrm",
+        "position": [
+          0,
+          0,
+          12.35
+        ],
+        "rotation": [
+          0,
+          3.141592653589793,
+          0
+        ],
+        "scale": 1.08,
+        "linkedWindowId": "agent-npc-fire-guardian",
+        "label": "Fire Guardian"
+      }
+    ],
+    "savedAt": "2026-05-14T12:00:00.000Z"
+  }
+}

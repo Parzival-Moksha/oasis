@@ -2,6 +2,7 @@ import type { WorldMeta } from './forge/world-persistence'
 
 export const WELCOME_HUB_WORLD_ID = 'world-welcome-hub-system'
 export const ROOKIE_WIZARD_WORLD_ID = 'world-rookie-wizard-system'
+export const QUEST_ZERO_WORLD_ID = 'world-quest-zero-system'
 
 export type PortalGateVariant =
   | 'threshold-ring'

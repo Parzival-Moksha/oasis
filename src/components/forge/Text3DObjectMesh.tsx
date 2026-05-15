@@ -107,21 +107,29 @@ export function Text3DObjectMesh({ object }: { object: Text3DObject }) {
 
   const fontUrl = fontUrlFor(object.fontId)
   const styleProps = { text, size: object.size, depth: object.depth, color: object.color, toneBias: object.toneBias, shininess: object.shininess }
+  const proxyWidth = Math.max(object.size * 1.4, Math.min(14, text.length * object.size * 0.62))
+  const proxyHeight = Math.max(object.size * 1.4, object.size * 1.95)
+  const handleSelect = (e: { stopPropagation: () => void }) => {
+    if (isReadOnly) return
+    e.stopPropagation()
+    selectObject(object.id)
+  }
+  const handleInspect = (e: { stopPropagation: () => void }) => {
+    if (isReadOnly) return
+    e.stopPropagation()
+    selectObject(object.id)
+    setInspectedObject(object.id)
+  }
 
   return (
     <group
-      onClick={(e) => {
-        if (isReadOnly) return
-        e.stopPropagation()
-        selectObject(object.id)
-      }}
-      onDoubleClick={(e) => {
-        if (isReadOnly) return
-        e.stopPropagation()
-        selectObject(object.id)
-        setInspectedObject(object.id)
-      }}
+      onClick={handleSelect}
+      onDoubleClick={handleInspect}
     >
+      <mesh position={[0, 0, -Math.max(0.04, object.depth)]} onClick={handleSelect} onDoubleClick={handleInspect}>
+        <boxGeometry args={[proxyWidth, proxyHeight, Math.max(0.08, object.depth * 2)]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
       <FontErrorBoundary
         fallback={
           <Suspense fallback={null}>

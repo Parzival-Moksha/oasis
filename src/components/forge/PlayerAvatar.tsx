@@ -37,7 +37,7 @@ import {
 } from '../../lib/player-avatar-runtime'
 import { SPELL_CAST_ANIMATION_ID, SPELL_CAST_SOUND_URL } from '../../lib/spell-casting'
 import { PORTAL_REVEAL_ROLL_EVENT } from '../../lib/portal-transition-settings'
-import { ROOKIE_WIZARD_WORLD_ID } from '../../lib/portal-gates'
+import { QUEST_ZERO_WORLD_ID, ROOKIE_WIZARD_WORLD_ID } from '../../lib/portal-gates'
 import { sampleTerrainHeightAt } from '../../lib/forge/terrain-brush'
 import { useOasisStore } from '../../store/oasisStore'
 
@@ -213,8 +213,8 @@ export function PlayerAvatar({
   }, [terrainHeights])
 
   useEffect(() => {
-    if (activeWorldId !== ROOKIE_WIZARD_WORLD_ID) {
-      if (defaultSpawnAppliedForWorldRef.current === ROOKIE_WIZARD_WORLD_ID) {
+    if (activeWorldId !== ROOKIE_WIZARD_WORLD_ID && activeWorldId !== QUEST_ZERO_WORLD_ID) {
+      if (defaultSpawnAppliedForWorldRef.current === ROOKIE_WIZARD_WORLD_ID || defaultSpawnAppliedForWorldRef.current === QUEST_ZERO_WORLD_ID) {
         defaultSpawnAppliedForWorldRef.current = null
       }
       return
@@ -222,6 +222,14 @@ export function PlayerAvatar({
     if (!worldReady) return
     if (defaultSpawnAppliedForWorldRef.current === activeWorldId) return
     defaultSpawnAppliedForWorldRef.current = activeWorldId
+    if (activeWorldId === QUEST_ZERO_WORLD_ID) {
+      requestPlayerAvatarTeleport({
+        position: [0, 0, -17.6],
+        yaw: 0,
+        forward: [0, 0, 1],
+      })
+      return
+    }
     requestPlayerAvatarTeleport({
       position: [0, 0, -17.6],
       yaw: 0,

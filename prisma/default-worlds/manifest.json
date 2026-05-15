@@ -9,6 +9,13 @@
       "visibility": "core"
     },
     {
+      "slug": "quest-zero",
+      "id": "world-quest-zero-system",
+      "file": "quest-zero.world.json",
+      "name": "Quest Zero",
+      "visibility": "public"
+    },
+    {
       "slug": "rookie-wizard",
       "id": "world-rookie-wizard-system",
       "file": "rookie-wizard.world.json",

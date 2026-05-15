@@ -2,16 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
+import { Html } from '@react-three/drei'
 import * as THREE from 'three'
 import { PLAYER_BASE_STATS } from '@/lib/player-progression'
 import { useAudioManager } from '@/lib/audio-manager'
 import { useInputManager } from '@/lib/input-manager'
+import { getPlayerAvatarPose, setPlayerSpellCasting } from '@/lib/player-avatar-runtime'
+import { QUEST_ZERO_WORLD_ID } from '@/lib/portal-gates'
 import { useOasisStore } from '@/store/oasisStore'
 
 type FireboltProjectile = {
   id: string
+  origin: [number, number, number]
   position: [number, number, number]
   velocity: [number, number, number]
+  distance: number
   age: number
   ttl: number
   damage: number
@@ -35,6 +40,14 @@ type FireboltSmokePuff = {
   size: number
 }
 
+type FireboltHitMarker = {
+  id: string
+  position: [number, number, number]
+  label: string
+  age: number
+  ttl: number
+}
+
 type CollisionTarget = {
   id: string
   position: [number, number, number]
@@ -54,10 +67,11 @@ type FireboltResponse = {
 
 const FIREBOLT_TTL_S = 1.75
 const FIREBOLT_COOLDOWN_MS = 170
+const FIREBOLT_ARMING_DISTANCE_M = 1.35
 const EXPLOSION_TTL_S = 0.82
 const FIREBOLT_TRAIL_SPACING_M = 0.5
 const FIREBOLT_SMOKE_TTL_S = 1
-const QUEST_ZERO_WORLD_ID = 'world-rookie-wizard-system'
+const FIREBOLT_CAST_ANIMATION_MS = 620
 
 function randomId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -106,10 +120,6 @@ function resolveScale(
   return fallback || 1
 }
 
-function radiusFromBox(width: number | undefined, height: number | undefined, scale: number): number {
-  return Math.max(0.65, Math.max(width || 1, height || 1) * 0.5 * scale)
-}
-
 function collectCollisionTargets(): CollisionTarget[] {
   const state = useOasisStore.getState()
   const transforms = state.transforms
@@ -146,39 +156,6 @@ function collectCollisionTargets(): CollisionTarget[] {
     targets.push({ id: text.id, position, radius: Math.max(0.9, text.size * 1.8) })
   }
 
-  for (const gate of state.portalGates) {
-    if (gate.hidden || gate.inert) continue
-    const position = resolvePosition(gate.id, gate.position, transforms)
-    if (!position) continue
-    const scale = resolveScale(gate.id, gate.scale, transforms)
-    targets.push({
-      id: gate.id,
-      position: [position[0], position[1] + (gate.height * scale) * 0.45, position[2]],
-      radius: Math.max(1.0, Math.max(gate.width, gate.height) * 0.45 * scale),
-    })
-  }
-
-  for (const object of state.spatialWebObjects) {
-    const position = resolvePosition(object.id, object.position, transforms)
-    if (!position) continue
-    const scale = resolveScale(object.id, typeof object.scale === 'number' ? object.scale : 1, transforms)
-    targets.push({ id: object.id, position, radius: radiusFromBox(object.width, object.height, scale) })
-  }
-
-  for (const win of state.placedAgentWindows) {
-    const position = resolvePosition(win.id, win.position, transforms)
-    if (!position) continue
-    const scale = resolveScale(win.id, win.scale, transforms)
-    targets.push({ id: win.id, position, radius: radiusFromBox(win.width / 260, win.height / 260, scale) })
-  }
-
-  for (const avatar of state.placedAgentAvatars) {
-    const position = resolvePosition(avatar.id, avatar.position, transforms)
-    if (!position) continue
-    const scale = resolveScale(avatar.id, avatar.scale, transforms)
-    targets.push({ id: avatar.id, position: [position[0], position[1] + 0.9 * scale, position[2]], radius: Math.max(0.45, scale * 0.7) })
-  }
-
   return targets
 }
 
@@ -207,6 +184,25 @@ function groundHit(start: THREE.Vector3, end: THREE.Vector3): THREE.Vector3 | nu
 
 function isQuestFireboltTarget(id: string): boolean {
   return /(^|-)quest-zero-fire-target-|training|dummy|target/i.test(id)
+}
+
+function labelForFireboltTarget(id: string): string {
+  const match = id.match(/quest-zero-fire-target-(\d+)/i)
+  return match ? `Target ${match[1]} hit` : 'Hit'
+}
+
+function armedSegment(
+  start: THREE.Vector3,
+  end: THREE.Vector3,
+  previousDistance: number,
+  nextDistance: number,
+): { start: THREE.Vector3; end: THREE.Vector3 } | null {
+  if (nextDistance < FIREBOLT_ARMING_DISTANCE_M) return null
+  if (previousDistance >= FIREBOLT_ARMING_DISTANCE_M) return { start, end }
+  const segmentDistance = nextDistance - previousDistance
+  if (segmentDistance <= 0) return null
+  const t = THREE.MathUtils.clamp((FIREBOLT_ARMING_DISTANCE_M - previousDistance) / segmentDistance, 0, 1)
+  return { start: start.clone().lerp(end, t), end }
 }
 
 function FireboltMesh({ projectile }: { projectile: FireboltProjectile }) {
@@ -325,11 +321,28 @@ function FireboltExplosionMesh({ explosion }: { explosion: FireboltExplosion }) 
   )
 }
 
+function FireboltHitMarkerMesh({ marker }: { marker: FireboltHitMarker }) {
+  const t = Math.max(0, Math.min(1, marker.age / marker.ttl))
+  return (
+    <group position={[marker.position[0], marker.position[1] + 1.55 + t * 0.55, marker.position[2]]}>
+      <Html transform sprite center distanceFactor={7} style={{ pointerEvents: 'none' }}>
+        <div
+          className="rounded-md border border-orange-200/50 bg-black/75 px-2.5 py-1 text-center text-[10px] font-black uppercase tracking-[0.18em] text-orange-100 shadow-[0_0_22px_rgba(249,115,22,0.35)]"
+          style={{ opacity: Math.max(0, 1 - t) }}
+        >
+          {marker.label}
+        </div>
+      </Html>
+    </group>
+  )
+}
+
 export function FireboltLayer({ enabled }: { enabled: boolean }) {
   const { camera, gl } = useThree()
   const [projectiles, setProjectiles] = useState<FireboltProjectile[]>([])
   const [explosions, setExplosions] = useState<FireboltExplosion[]>([])
   const [smokePuffs, setSmokePuffs] = useState<FireboltSmokePuff[]>([])
+  const [hitMarkers, setHitMarkers] = useState<FireboltHitMarker[]>([])
   const lastCastAtRef = useRef(0)
   const castingRef = useRef(false)
   const reportedQuestTargetHitsRef = useRef<Set<string>>(new Set())
@@ -340,23 +353,36 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
     const right = new THREE.Vector3()
     const up = new THREE.Vector3()
 
-    camera.getWorldPosition(origin)
     camera.getWorldDirection(direction).normalize()
     right.setFromMatrixColumn(camera.matrixWorld, 0).normalize()
     up.setFromMatrixColumn(camera.matrixWorld, 1).normalize()
 
-    origin
-      .addScaledVector(direction, 0.86)
-      .addScaledVector(right, 0.24)
-      .addScaledVector(up, -0.16)
+    const pose = getPlayerAvatarPose()
+    if (pose && useInputManager.getState().inputState === 'third-person') {
+      const [px, py, pz] = pose.position
+      const [fx, , fz] = pose.forward
+      const poseForward = new THREE.Vector3(fx, 0, fz).normalize()
+      const poseRight = new THREE.Vector3(poseForward.z, 0, -poseForward.x).normalize()
+      origin.set(px, py + 1.22, pz)
+        .addScaledVector(poseForward, 0.62)
+        .addScaledVector(poseRight, 0.28)
+    } else {
+      camera.getWorldPosition(origin)
+      origin
+        .addScaledVector(direction, 0.86)
+        .addScaledVector(right, 0.24)
+        .addScaledVector(up, -0.16)
+    }
 
     const velocity = direction.multiplyScalar(speed)
     setProjectiles(prev => [
       ...prev.slice(-15),
       {
         id: randomId(),
+        origin: [origin.x, origin.y, origin.z],
         position: [origin.x, origin.y, origin.z],
         velocity: [velocity.x, velocity.y, velocity.z],
+        distance: 0,
         age: 0,
         ttl: FIREBOLT_TTL_S,
         damage,
@@ -383,7 +409,11 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
         : PLAYER_BASE_STATS.fireboltSpeedMetersPerSecond
       const damage = typeof data.spell?.damage === 'number' ? data.spell.damage : 14
       spawnProjectile(speed, damage)
-      useAudioManager.getState().play('conjureStart')
+      setPlayerSpellCasting(true)
+      window.setTimeout(() => setPlayerSpellCasting(false), FIREBOLT_CAST_ANIMATION_MS)
+      const audio = useAudioManager.getState()
+      audio.play('fireboltCast')
+      audio.play('fireboltVoice')
       window.dispatchEvent(new CustomEvent('oasis:spell-cast', { detail: { spell: 'firebolt', damage } }))
       if (data.progression) {
         window.dispatchEvent(new CustomEvent('oasis:player-vitals', { detail: data.progression }))
@@ -413,6 +443,15 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
       .then(data => {
         if (data?.progression) {
           window.dispatchEvent(new CustomEvent('oasis:player-progression', { detail: data.progression }))
+        }
+        if (data?.result?.hitCount) {
+          window.dispatchEvent(new CustomEvent('oasis:quest-progress-toast', {
+            detail: {
+              title: labelForFireboltTarget(targetId),
+              message: `${Math.min(3, data.result.hitCount)}/3 fire targets`,
+              tone: 'fire',
+            },
+          }))
         }
         if (data?.result?.hitStep?.xp || data?.result?.hitStep?.completionXp) {
           window.dispatchEvent(new CustomEvent('oasis:xp-awarded', { detail: data.result.hitStep.completionXp || data.result.hitStep.xp }))
@@ -453,6 +492,7 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
         const velocity = new THREE.Vector3(...projectile.velocity)
         const end = start.clone().addScaledVector(velocity, delta)
         const segmentLength = start.distanceTo(end)
+        const nextDistance = (projectile.distance || 0) + segmentLength
         const nextAge = projectile.age + delta
         const oldTrailCarry = projectile.trailCarry || 0
         const carriedDistance = oldTrailCarry + segmentLength
@@ -473,13 +513,16 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
             size: 0.22 + Math.random() * 0.1,
           })
         }
-        let impact = groundHit(start, end)
+        const activeSegment = armedSegment(start, end, projectile.distance || 0, nextDistance)
+        const origin = new THREE.Vector3(...projectile.origin)
+        let impact = activeSegment ? groundHit(activeSegment.start, activeSegment.end) : null
         let impactTarget: CollisionTarget | null = null
 
-        if (!impact) {
+        if (!impact && activeSegment) {
           for (const target of targets) {
             const targetCenter = new THREE.Vector3(target.position[0], target.position[1] + Math.min(1.4, target.radius), target.position[2])
-            impact = segmentSphereHit(start, end, targetCenter, target.radius)
+            if (origin.distanceTo(targetCenter) < target.radius + FIREBOLT_ARMING_DISTANCE_M + 0.2) continue
+            impact = segmentSphereHit(activeSegment.start, activeSegment.end, targetCenter, target.radius)
             if (impact) {
               impactTarget = target
               break
@@ -497,6 +540,18 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
             seed: Math.floor(Math.random() * 10000),
           })
           if (impact && impactTarget) {
+            if (isQuestFireboltTarget(impactTarget.id)) {
+              setHitMarkers(prev => [
+                ...prev.slice(-4),
+                {
+                  id: randomId(),
+                  position: [impact.x, Math.max(0.05, impact.y), impact.z],
+                  label: labelForFireboltTarget(impactTarget.id),
+                  age: 0,
+                  ttl: 1.15,
+                },
+              ])
+            }
             recordQuestTargetHit(impactTarget.id, [impact.x, Math.max(0.05, impact.y), impact.z])
           }
           continue
@@ -506,6 +561,7 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
           ...projectile,
           age: nextAge,
           position: [end.x, end.y, end.z],
+          distance: nextDistance,
           trailCarry: nextTrailCarry,
         })
       }
@@ -515,7 +571,7 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
         setSmokePuffs(prev => [...prev.slice(-70), ...spawnedPuffs])
       }
       if (spawnedExplosions.length > 0) {
-        useAudioManager.getState().play('conjureDone')
+        useAudioManager.getState().play('fireboltHit')
         setExplosions(prev => [...prev.slice(-10), ...spawnedExplosions])
       }
     }
@@ -531,6 +587,12 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
         .map(explosion => ({ ...explosion, age: explosion.age + delta }))
         .filter(explosion => explosion.age < explosion.ttl))
     }
+
+    if (hitMarkers.length > 0) {
+      setHitMarkers(prev => prev
+        .map(marker => ({ ...marker, age: marker.age + delta }))
+        .filter(marker => marker.age < marker.ttl))
+    }
   })
 
   return (
@@ -543,6 +605,9 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
       ))}
       {explosions.map(explosion => (
         <FireboltExplosionMesh key={explosion.id} explosion={explosion} />
+      ))}
+      {hitMarkers.map(marker => (
+        <FireboltHitMarkerMesh key={marker.id} marker={marker} />
       ))}
     </group>
   )

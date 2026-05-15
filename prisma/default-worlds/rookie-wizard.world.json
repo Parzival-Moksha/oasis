@@ -432,8 +432,8 @@
       },
       {
         "id": "rookie-portal-signs",
-        "name": "Portal lesson signs",
-        "prompt": "Small signs naming the first two exits.",
+        "name": "Portal lesson sign posts",
+        "prompt": "Low sign posts under the first three exit labels.",
         "position": [
           0,
           0,
@@ -443,52 +443,100 @@
         "model": "codex-rookie-wizard-primitives",
         "objects": [
           {
-            "type": "text",
-            "text": "Create your first private world",
+            "type": "cylinder",
             "position": [
-              3.25,
-              1.45,
-              -0.55
+              -3.25,
+              0.78,
+              -0.58
             ],
             "scale": [
-              0.24,
-              0.24,
-              0.24
+              0.07,
+              1.48,
+              0.07
             ],
-            "color": "#dbeafe",
-            "align": "center",
-            "emissive": "#dbeafe",
-            "emissiveIntensity": 0.16,
-            "rotation": [
-              0,
-              3.141592653589793,
-              0
-            ],
-            "fontSize": 0.34
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02
           },
           {
-            "type": "text",
-            "text": "Portal Zero",
+            "type": "cylinder",
+            "position": [
+              0,
+              0.78,
+              -0.58
+            ],
+            "scale": [
+              0.07,
+              1.48,
+              0.07
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              3.25,
+              0.78,
+              -0.58
+            ],
+            "scale": [
+              0.07,
+              1.48,
+              0.07
+            ],
+            "color": "#2f2418",
+            "roughness": 0.72,
+            "metalness": 0.02
+          },
+          {
+            "type": "box",
             "position": [
               -3.25,
               1.45,
-              -0.55
+              -0.62
             ],
             "scale": [
-              0.32,
-              0.32,
-              0.32
+              1.95,
+              0.12,
+              0.16
             ],
-            "color": "#bbf7d0",
-            "align": "center",
-            "emissive": "#bbf7d0",
-            "emissiveIntensity": 0.16,
-            "rotation": [
+            "color": "#5b4632",
+            "roughness": 0.78,
+            "metalness": 0.02
+          },
+          {
+            "type": "box",
+            "position": [
               0,
-              3.141592653589793,
-              0
+              1.45,
+              -0.62
             ],
-            "fontSize": 0.36
+            "scale": [
+              1.95,
+              0.12,
+              0.16
+            ],
+            "color": "#5b4632",
+            "roughness": 0.78,
+            "metalness": 0.02
+          },
+          {
+            "type": "box",
+            "position": [
+              3.25,
+              1.45,
+              -0.62
+            ],
+            "scale": [
+              2.25,
+              0.12,
+              0.16
+            ],
+            "color": "#5b4632",
+            "roughness": 0.78,
+            "metalness": 0.02
           }
         ]
       },
@@ -3884,6 +3932,38 @@
         }
       },
       {
+        "id": "rookie-to-quest-zero",
+        "label": "Quest Zero",
+        "variant": "solar-arch",
+        "position": [
+          0,
+          0,
+          15.4
+        ],
+        "rotationY": 0,
+        "scale": 0.96,
+        "width": 2.45,
+        "height": 3.35,
+        "direction": "one-way",
+        "hidden": true,
+        "sourceWorldId": "world-rookie-wizard-system",
+        "targetWorldId": "world-quest-zero-system",
+        "targetWorldName": "Quest Zero",
+        "action": {
+          "type": "load_world",
+          "worldId": "world-quest-zero-system",
+          "worldName": "Quest Zero"
+        },
+        "spawnPose": {
+          "position": [
+            0,
+            0,
+            -17.6
+          ],
+          "rotationY": 0
+        }
+      },
+      {
         "id": "rookie-to-portal-zero",
         "label": "Portal Zero",
         "variant": "stargate-vortex",
@@ -3916,73 +3996,79 @@
         }
       }
     ],
-    "spatialWebObjects": [
+    "spatialWebObjects": [],
+    "paintStrokes": [],
+    "text3dObjects": [
       {
-        "id": "quest-zero-fire-target-1",
-        "type": "text",
-        "label": "Fire Target I",
-        "description": "Hit this target with Firebolt.",
-        "value": "I",
+        "id": "rookie-sign-private-world",
+        "type": "text_3d",
+        "text": "Create your first private world",
+        "fontId": "helvetiker_regular",
+        "size": 0.34,
+        "depth": 0.0748,
+        "color": "#dbeafe",
+        "toneBias": 0.08,
+        "shininess": 0.72,
         "position": [
-          -2.6,
-          1.25,
-          6.6
+          3.25,
+          1.45,
+          12.65
         ],
         "rotation": [
           0,
-          0.28,
+          3.141592653589793,
           0
         ],
-        "width": 1.25,
-        "height": 1.25,
-        "accentColor": "#fb923c",
-        "visualStyle": "terminal-panel"
+        "authorId": "local-user",
+        "createdAt": 1778608800000
       },
       {
-        "id": "quest-zero-fire-target-2",
-        "type": "text",
-        "label": "Fire Target II",
-        "description": "Hit this target with Firebolt.",
-        "value": "II",
+        "id": "rookie-sign-quest-zero",
+        "type": "text_3d",
+        "text": "Quest Zero",
+        "fontId": "helvetiker_regular",
+        "size": 0.38,
+        "depth": 0.08360000000000001,
+        "color": "#fed7aa",
+        "toneBias": 0.08,
+        "shininess": 0.72,
         "position": [
           0,
-          1.25,
-          6.9
+          1.45,
+          12.65
         ],
         "rotation": [
           0,
-          0,
+          3.141592653589793,
           0
         ],
-        "width": 1.25,
-        "height": 1.25,
-        "accentColor": "#f97316",
-        "visualStyle": "terminal-panel"
+        "authorId": "local-user",
+        "createdAt": 1778608800000
       },
       {
-        "id": "quest-zero-fire-target-3",
-        "type": "text",
-        "label": "Fire Target III",
-        "description": "Hit this target with Firebolt.",
-        "value": "III",
+        "id": "rookie-sign-portal-zero",
+        "type": "text_3d",
+        "text": "Portal Zero",
+        "fontId": "helvetiker_regular",
+        "size": 0.36,
+        "depth": 0.07919999999999999,
+        "color": "#bbf7d0",
+        "toneBias": 0.08,
+        "shininess": 0.72,
         "position": [
-          2.6,
-          1.25,
-          6.6
+          -3.25,
+          1.45,
+          12.65
         ],
         "rotation": [
           0,
-          -0.28,
+          3.141592653589793,
           0
         ],
-        "width": 1.25,
-        "height": 1.25,
-        "accentColor": "#ef4444",
-        "visualStyle": "terminal-panel"
+        "authorId": "local-user",
+        "createdAt": 1778608800000
       }
     ],
-    "paintStrokes": [],
-    "text3dObjects": [],
     "transforms": {},
     "behaviors": {},
     "lights": [
@@ -4032,14 +4118,15 @@
     "skyBackgroundId": "blue_grotto",
     "agentWindows": [
       {
-        "id": "agent-npc-fire-guardian",
+        "id": "agent-npc-rookie-merlin",
         "agentType": "npc",
-        "npcId": "quest-zero-fire-guardian",
-        "linkedAvatarId": "agent-avatar-npc-fire-guardian",
+        "npcId": "rookie-wizard-merlin",
+        "linkedAvatarId": "agent-avatar-merlin",
+        "anchorMode": "next-to",
         "position": [
-          0,
+          1.8,
           2.35,
-          5.45
+          10.15
         ],
         "rotation": [
           0,
@@ -4048,33 +4135,16 @@
         ],
         "scale": 0.16,
         "width": 470,
-        "height": 720,
-        "label": "Fire Guardian",
-        "frameStyle": "fire",
-        "frameThickness": 6,
+        "height": 680,
+        "label": "Merlin",
+        "renderMode": "live-html",
+        "frameStyle": "hologram",
+        "frameThickness": 5,
         "windowOpacity": 0.92,
         "windowBlur": 8
       }
     ],
     "agentAvatars": [
-      {
-        "id": "agent-avatar-npc-fire-guardian",
-        "agentType": "npc",
-        "avatar3dUrl": "/avatars/gallery/EvilPendra.vrm",
-        "position": [
-          0,
-          0,
-          5.15
-        ],
-        "rotation": [
-          0,
-          3.141592653589793,
-          0
-        ],
-        "scale": 1.05,
-        "linkedWindowId": "agent-npc-fire-guardian",
-        "label": "Fire Guardian"
-      },
       {
         "id": "agent-avatar-merlin",
         "agentType": "merlin",
@@ -4090,6 +4160,7 @@
           0
         ],
         "scale": 1.08,
+        "linkedWindowId": "agent-npc-rookie-merlin",
         "label": "Merlin"
       }
     ],

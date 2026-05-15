@@ -1,3 +1,5 @@
+export { QUEST_ZERO_WORLD_ID } from './portal-gates'
+
 export const SPELL_IDS = [
   'firebolt',
   'brush-wand',
@@ -74,7 +76,7 @@ export const QUEST_ZERO_ID = 'quest-zero'
 
 export const QUEST_ZERO_STEPS = [
   'meet-merlin',
-  'enter-rookie-wizard',
+  'enter-quest-zero',
   'answer-fire-guardian',
   'unlock-firebolt',
   'hit-firebolt-target-1',
@@ -102,9 +104,9 @@ export const QUEST_ZERO_STEP_DEFS: Record<QuestZeroStepId, QuestStepDefinition> 
     id: 'meet-merlin',
     name: 'Meet Merlin',
   },
-  'enter-rookie-wizard': {
-    id: 'enter-rookie-wizard',
-    name: 'Enter Rookie Wizard',
+  'enter-quest-zero': {
+    id: 'enter-quest-zero',
+    name: 'Enter Quest Zero',
   },
   'answer-fire-guardian': {
     id: 'answer-fire-guardian',

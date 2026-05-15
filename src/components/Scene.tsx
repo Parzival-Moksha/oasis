@@ -90,6 +90,7 @@ import { GameMenuButton } from './forge/GameMenuButton'
 import { MobileOasisControls, useIsMobileOasis } from './forge/MobileOasisControls'
 import { FireboltLayer } from './forge/FireboltLayer'
 import { PlayerVitalsHud } from './forge/PlayerVitalsHud'
+import { QuestProgressTracker } from './forge/QuestProgressTracker'
 
 const SHOW_LEGACY_DEVCRAFT_PANEL = false
 const SHOW_LEGACY_PARZIVAL_PANEL = false
@@ -1318,10 +1319,12 @@ function AgentQuickLauncher({
 
 const ROOKIE_MERLIN_POSITION: [number, number, number] = [0, 0, 10.2]
 const ROOKIE_MERLIN_INTERACTION_RADIUS = 5
-const ROOKIE_PRIVATE_PORTAL_ID = 'rookie-new-private-world'
+const ROOKIE_MERLIN_AVATAR_ID = 'agent-avatar-merlin'
+const ROOKIE_MERLIN_WINDOW_ID = 'agent-npc-rookie-merlin'
 const ROOKIE_PORTAL_ZERO_GATE_ID = 'rookie-to-portal-zero'
-const ROOKIE_PRIVATE_PORTAL_POSITION: [number, number, number] = [3.4, 0, 15.4]
+const ROOKIE_QUEST_ZERO_GATE_ID = 'rookie-to-quest-zero'
 const ROOKIE_PORTAL_ZERO_POSITION: [number, number, number] = [-3.4, 0, 15.4]
+const ROOKIE_QUEST_ZERO_POSITION: [number, number, number] = [0, 0, 15.4]
 
 function isWorldTypingTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null
@@ -1334,22 +1337,36 @@ function isWorldTypingTarget(target: EventTarget | null): boolean {
   return tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
 }
 
-function readRookieMerlinDistance(activeWorldId: string): number | null {
+function readRookieMerlinPosition(activeWorldId: string): [number, number, number] | null {
   if (activeWorldId !== ROOKIE_WIZARD_WORLD_ID) return null
+  const state = useOasisStore.getState()
+  const merlin = state.placedAgentAvatars.find(avatar => avatar.id === ROOKIE_MERLIN_AVATAR_ID)
+    || state.placedAgentAvatars.find(avatar => avatar.agentType === 'merlin')
+  if (!merlin) return ROOKIE_MERLIN_POSITION
+  const transform = state.transforms[merlin.id]
+  return transform?.position || merlin.position || ROOKIE_MERLIN_POSITION
+}
+
+function readRookieMerlinDistance(activeWorldId: string): number | null {
+  const merlinPosition = readRookieMerlinPosition(activeWorldId)
+  if (!merlinPosition) return null
   const pose = getPlayerAvatarPose()
   if (!pose) return null
-  const dx = pose.position[0] - ROOKIE_MERLIN_POSITION[0]
-  const dz = pose.position[2] - ROOKIE_MERLIN_POSITION[2]
+  const dx = pose.position[0] - merlinPosition[0]
+  const dz = pose.position[2] - merlinPosition[2]
   return Math.hypot(dx, dz)
 }
 
-function useRookieMerlinNearby(activeWorldId: string): boolean {
+function useRookieMerlinPresence(activeWorldId: string): { nearby: boolean; position: [number, number, number] } {
   const [nearby, setNearby] = useState(false)
+  const [position, setPosition] = useState<[number, number, number]>(ROOKIE_MERLIN_POSITION)
   useEffect(() => {
     let cancelled = false
     const update = () => {
       if (cancelled) return
       const distance = readRookieMerlinDistance(activeWorldId)
+      const merlinPosition = readRookieMerlinPosition(activeWorldId)
+      if (merlinPosition) setPosition(merlinPosition)
       setNearby(distance !== null && distance <= ROOKIE_MERLIN_INTERACTION_RADIUS)
     }
     update()
@@ -1359,15 +1376,15 @@ function useRookieMerlinNearby(activeWorldId: string): boolean {
       window.clearInterval(interval)
     }
   }, [activeWorldId])
-  return nearby
+  return { nearby, position }
 }
 
 function RookieMerlinWorldPrompt() {
   const activeWorldId = useOasisStore(s => s.activeWorldId)
-  const nearby = useRookieMerlinNearby(activeWorldId)
+  const { nearby, position } = useRookieMerlinPresence(activeWorldId)
   if (!nearby) return null
   return (
-    <group position={[ROOKIE_MERLIN_POSITION[0], 3.05, ROOKIE_MERLIN_POSITION[2]]}>
+    <group position={[position[0], position[1] + 3.05, position[2]]}>
       <Html transform sprite center distanceFactor={8} style={{ pointerEvents: 'none' }}>
         <div className="rounded-md border border-amber-200/35 bg-black/75 px-3 py-2 text-center shadow-[0_0_22px_rgba(251,191,36,0.18)] backdrop-blur-md">
           <div className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-100">Merlin</div>
@@ -1393,7 +1410,7 @@ function RookieMerlinInteractionOverlay({
   onQuest: () => void
   onPortalZero: () => void
 }) {
-  const nearby = useRookieMerlinNearby(activeWorldId)
+  const { nearby } = useRookieMerlinPresence(activeWorldId)
 
   useEffect(() => {
     if (!nearby) return
@@ -1542,18 +1559,69 @@ export default function Scene() {
   // selector, not the whole forge surface.
   const [skyPanelOpen, setSkyPanelOpen] = useState(false)
   const [lightsPanelOpen, setLightsPanelOpen] = useState(false)
+  const focusRookieMerlinWindow = useCallback(() => {
+    const store = useOasisStore.getState()
+    const existing = store.placedAgentWindows.find(window => window.id === ROOKIE_MERLIN_WINDOW_ID)
+    if (!existing) {
+      store.addAgentWindow({
+        id: ROOKIE_MERLIN_WINDOW_ID,
+        agentType: 'npc',
+        npcId: 'rookie-wizard-merlin',
+        linkedAvatarId: ROOKIE_MERLIN_AVATAR_ID,
+        anchorMode: 'next-to',
+        position: [1.8, 2.35, 10.15],
+        rotation: [0, Math.PI, 0],
+        scale: 0.16,
+        width: 470,
+        height: 680,
+        label: 'Merlin',
+        renderMode: 'live-html',
+        frameStyle: 'hologram',
+        frameThickness: 5,
+        windowOpacity: 0.92,
+        windowBlur: 8,
+      })
+    }
+    store.focusAgentWindow(ROOKIE_MERLIN_WINDOW_ID)
+  }, [])
+
+  const recordRookieQuestStep = useCallback((stepId: string) => {
+    void fetch('/api/player/progression', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'complete_step', questId: 'quest-zero', stepId }),
+    })
+      .then(response => response.json().catch(() => null))
+      .then(data => {
+        if (data?.progression) {
+          window.dispatchEvent(new CustomEvent('oasis:player-progression', { detail: data.progression }))
+        }
+        if (data?.result?.xp) {
+          window.dispatchEvent(new CustomEvent('oasis:xp-awarded', { detail: data.result.xp }))
+        }
+      })
+      .catch(() => {})
+  }, [])
+
   const startRookieTalk = useCallback(() => {
     useAudioManager.getState().play('buttonClick')
-    setRealtimeOpen(true)
+    focusRookieMerlinWindow()
+    recordRookieQuestStep('meet-merlin')
     window.setTimeout(() => {
       window.dispatchEvent(new CustomEvent('oasis:realtime-start-talking'))
     }, 80)
-  }, [])
+  }, [focusRookieMerlinWindow, recordRookieQuestStep])
   const startRookieQuest = useCallback(() => {
     useAudioManager.getState().play('buttonClick')
-    requestPortalGateReveal(ROOKIE_PRIVATE_PORTAL_ID)
-    useOasisStore.getState().spawnPlacementVfx(ROOKIE_PRIVATE_PORTAL_POSITION)
-  }, [])
+    void fetch('/api/player/progression', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'start_quest', questId: 'quest-zero' }),
+    }).catch(() => {})
+    recordRookieQuestStep('meet-merlin')
+    requestPortalGateReveal(ROOKIE_QUEST_ZERO_GATE_ID)
+    useOasisStore.getState().spawnPlacementVfx(ROOKIE_QUEST_ZERO_POSITION)
+  }, [recordRookieQuestStep])
   const openPortalZeroGate = useCallback(() => {
     useAudioManager.getState().play('buttonClick')
     requestPortalGateReveal(ROOKIE_PORTAL_ZERO_GATE_ID)
@@ -1882,6 +1950,7 @@ export default function Scene() {
         spellControlsEnabled={effectiveRp1Mode}
       />
       <PlayerVitalsHud visible={effectiveRp1Mode} />
+      <QuestProgressTracker activeWorldId={activeWorldId} />
 
       {/* ─═̷─═̷─⚡ FPS DISPLAY ─═̷─═̷─⚡ */}
       <FPSDisplay enabled={settings.fpsCounterEnabled} fontSize={settings.fpsCounterFontSize} />

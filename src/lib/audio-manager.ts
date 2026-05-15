@@ -27,6 +27,9 @@ export type SoundEvent =
   | 'modeSwitch'    // Camera mode changed
   | 'conjureStart'  // Conjuration started
   | 'conjureDone'   // Conjuration completed
+  | 'fireboltCast'  // Firebolt cast whoosh
+  | 'fireboltHit'   // Firebolt impact
+  | 'fireboltVoice' // Player callout for firebolt
   | 'anorakDone'    // Anorak finished response
   | 'notification'  // DevCraft timer, mission complete
   | 'connected'     // Agent/world link established
@@ -50,6 +53,7 @@ const UI = '/audio/kenney-ui/Audio'
 const RPG = '/audio/kenney-rpg/Audio'
 const INTERFACE = '/audio/kenney_interface-sounds/Audio'
 const FIGHTER = '/audio/kenney_voiceover-pack-fighter'
+const IMPACT = '/audio/kenney_impact-sounds/Audio'
 
 export interface SoundOption {
   id: string
@@ -93,6 +97,20 @@ export const SOUND_OPTIONS: Record<SoundEvent, SoundOption[]> = {
   modeSwitch:   [{ id: 'sw6', label: 'Switch 6', path: `${UI}/switch6.ogg` }, { id: 'sw7', label: 'Switch 7', path: `${UI}/switch7.ogg` }, { id: 'sw8', label: 'Switch 8', path: `${UI}/switch8.ogg` }, { id: 'sw9', label: 'Switch 9', path: `${UI}/switch9.ogg` }],
   conjureStart: [{ id: 'draw1', label: 'Draw Knife 1', path: `${RPG}/drawKnife1.ogg` }, { id: 'draw2', label: 'Draw Knife 2', path: `${RPG}/drawKnife2.ogg` }, { id: 'belt', label: 'Belt Handle', path: `${RPG}/beltHandle1.ogg` }],
   conjureDone:  [{ id: 'latch', label: 'Metal Latch', path: `${RPG}/metalLatch.ogg` }, { id: 'coins', label: 'Coins', path: `${RPG}/handleCoins.ogg` }],
+  fireboltCast: [
+    { id: 'powerUpFemale', label: 'Power Up Female', path: '/audio/kenney_voiceover-pack/Female/power_up.ogg' },
+    { id: 'powerUpMale', label: 'Power Up Male', path: '/audio/kenney_voiceover-pack/Male/power_up.ogg' },
+    { id: 'fight', label: 'Fight', path: `${FIGHTER}/fight.ogg` },
+  ],
+  fireboltHit: [
+    { id: 'genericLight0', label: 'Generic Light 0', path: `${IMPACT}/impactGeneric_light_000.ogg` },
+    { id: 'softMedium0', label: 'Soft Medium 0', path: `${IMPACT}/impactSoft_medium_000.ogg` },
+    { id: 'woodMedium0', label: 'Wood Medium 0', path: `${IMPACT}/impactWood_medium_000.ogg` },
+  ],
+  fireboltVoice: [
+    { id: 'fireInHoleFemale', label: 'Fire Call Female', path: '/audio/kenney_voiceover-pack/Female/war_fire_in_the_hole.ogg' },
+    { id: 'fireInHoleMale', label: 'Fire Call Male', path: '/audio/kenney_voiceover-pack/Male/war_fire_in_the_hole.ogg' },
+  ],
   anorakDone:   [{ id: 'coins', label: 'Coins', path: `${RPG}/handleCoins.ogg` }, { id: 'latch', label: 'Metal Latch', path: `${RPG}/metalLatch.ogg` }, { id: 'book', label: 'Book Close', path: `${RPG}/bookClose.ogg` }],
   notification: [
     { id: 'metal', label: 'Metal Click', path: `${RPG}/metalClick.ogg` }, { id: 'coins2', label: 'Coins 2', path: `${RPG}/handleCoins2.ogg` },
@@ -149,6 +167,9 @@ const DEFAULT_SELECTIONS: Record<SoundEvent, string> = {
   modeSwitch: 'sw6',
   conjureStart: 'draw1',
   conjureDone: 'latch',
+  fireboltCast: 'powerUpFemale',
+  fireboltHit: 'genericLight0',
+  fireboltVoice: 'fireInHoleFemale',
   anorakDone: 'coins',
   notification: 'metal',
   connected: 'fighterReady',
@@ -183,12 +204,15 @@ const lastPlayedAt = new Map<SoundEvent, number>()
 function getSoundCooldownMs(event: SoundEvent): number {
   if (event === 'buttonHover') return 0
   if (event === 'footstep') return 80
+  if (event === 'fireboltVoice') return 900
   return 0
 }
 
 function getSoundVolumeMultiplier(event: SoundEvent): number {
   if (event === 'buttonHover') return 0.08
   if (event === 'buttonClick') return 0.82
+  if (event === 'fireboltVoice') return 0.78
+  if (event === 'fireboltHit') return 0.7
   return 1
 }
 

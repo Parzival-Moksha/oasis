@@ -2,7 +2,7 @@ import type { ObjectBehavior } from './conjure/types'
 
 export const SPELL_CAST_ANIMATION_ID = 'ual-spell-shoot'
 export const SPELL_CAST_BEHAVIOR_CLIP = `lib:${SPELL_CAST_ANIMATION_ID}`
-export const SPELL_CAST_SOUND_URL = '/audio/anaal%20nathrakh%20spell.MP3'
+export const SPELL_CAST_SOUND_URL = '/audio/kenney_voiceover-pack/Female/power_up.ogg'
 export const SPELL_CAST_DURATION_MS = 3000
 
 export function withSpellCastAnimation(behavior?: ObjectBehavior): ObjectBehavior {
