@@ -64,8 +64,10 @@ import { ConsolePanel } from './forge/ConsolePanel'
 import { useWorldLoader } from './forge/WorldObjects'
 import { completeQuest } from '@/lib/quests'
 import { useInputManager, useUILayer, getMouseLookDebugState, isPointerLocked } from '@/lib/input-manager'
-import { getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
-import { ROOKIE_WIZARD_WORLD_ID } from '@/lib/portal-gates'
+import { getPlayerAvatarPose, requestPlayerAvatarTeleport, type PlayerAvatarPose } from '@/lib/player-avatar-runtime'
+import { QUEST_ZERO_WORLD_ID, ROOKIE_WIZARD_WORLD_ID } from '@/lib/portal-gates'
+import { preloadPortalRevealRoll } from '@/lib/portal-transition-settings'
+import { sampleTerrainHeightAt } from '@/lib/forge/terrain-brush'
 import { CameraController as CameraControllerComponent, sprintRef, FPS_KEYBOARD_MAP } from './CameraController'
 import { useAudioManager, SOUND_OPTIONS, type SoundEvent } from '@/lib/audio-manager'
 import { writeBrowserStorage } from '@/lib/browser-storage'
@@ -1325,8 +1327,106 @@ const ROOKIE_MERLIN_AVATAR_ID = 'agent-avatar-merlin'
 const ROOKIE_MERLIN_WINDOW_ID = 'agent-npc-rookie-merlin'
 const ROOKIE_PORTAL_ZERO_GATE_ID = 'rookie-to-portal-zero'
 const ROOKIE_QUEST_ZERO_GATE_ID = 'rookie-to-quest-zero'
-const ROOKIE_PORTAL_ZERO_POSITION: [number, number, number] = [-3.4, 0, 15.4]
-const ROOKIE_QUEST_ZERO_POSITION: [number, number, number] = [0, 0, 15.4]
+const ONBOARDING_PLAYER_SPAWN: PlayerAvatarPose = {
+  position: [0, 0, -17.6],
+  yaw: 0,
+  forward: [0, 0, 1],
+}
+const ONBOARDING_PRELOAD_ASSETS = [
+  '/avatars/gallery/VIPE_Hero__2902.vrm',
+  '/avatars/gallery/EYE_Diviner.vrm',
+  '/avatars/gallery/EvilPendra.vrm',
+]
+
+function isOnboardingWorld(worldId: string): boolean {
+  return worldId === ROOKIE_WIZARD_WORLD_ID || worldId === QUEST_ZERO_WORLD_ID
+}
+
+function scheduleIdleWork(work: () => void): () => void {
+  if (typeof window === 'undefined') return () => {}
+  const idleWindow = window as Window & {
+    requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
+    cancelIdleCallback?: (handle: number) => void
+  }
+  if (idleWindow.requestIdleCallback) {
+    const handle = idleWindow.requestIdleCallback(work, { timeout: 1200 })
+    return () => idleWindow.cancelIdleCallback?.(handle)
+  }
+  const timeout = window.setTimeout(work, 350)
+  return () => window.clearTimeout(timeout)
+}
+
+function preloadOnboardingResources() {
+  void preloadPortalRevealRoll()
+  for (const assetUrl of ONBOARDING_PRELOAD_ASSETS) {
+    const url = OASIS_BASE && assetUrl.startsWith('/') ? `${OASIS_BASE}${assetUrl}` : assetUrl
+    fetch(url, { cache: 'force-cache' }).catch(() => {})
+  }
+}
+
+function frameOnboardingSpawnCamera(
+  camera: THREE.Camera,
+  terrainHeights: number[],
+  pose: PlayerAvatarPose,
+): void {
+  const [x, , z] = pose.position
+  const groundY = sampleTerrainHeightAt(terrainHeights, x, z)
+  const position = new THREE.Vector3(x, groundY, z)
+  const forward = new THREE.Vector3(pose.forward[0], 0, pose.forward[2]).normalize()
+  const distance = 4.2
+  const elevation = Math.PI / 4
+  const horizontalDistance = Math.cos(elevation) * distance
+  const cameraHeight = Math.sin(elevation) * distance + 1.85
+  const cameraPosition = position.clone()
+    .addScaledVector(forward, -horizontalDistance)
+    .add(new THREE.Vector3(0, cameraHeight, 0))
+  const lookTarget = position.clone()
+    .addScaledVector(forward, 2.1)
+    .add(new THREE.Vector3(0, 1.75, 0))
+
+  camera.position.copy(cameraPosition)
+  camera.lookAt(lookTarget)
+  if (camera instanceof THREE.PerspectiveCamera) {
+    camera.updateProjectionMatrix()
+  }
+}
+
+function OnboardingSpawnPrimer({ controlMode }: { controlMode: OasisSettings['controlMode'] }) {
+  const { camera } = useThree()
+  const activeWorldId = useOasisStore(s => s.activeWorldId)
+  const worldReady = useOasisStore(s => s._worldReady)
+  const terrainHeights = useOasisStore(s => s.terrainHeights)
+  const appliedKeyRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!worldReady || !isOnboardingWorld(activeWorldId)) return
+    const key = `${activeWorldId}:${controlMode}:${worldReady ? 1 : 0}`
+    if (appliedKeyRef.current === key) return
+    appliedKeyRef.current = key
+
+    const pose: PlayerAvatarPose = {
+      position: [
+        ONBOARDING_PLAYER_SPAWN.position[0],
+        ONBOARDING_PLAYER_SPAWN.position[1],
+        ONBOARDING_PLAYER_SPAWN.position[2],
+      ],
+      yaw: ONBOARDING_PLAYER_SPAWN.yaw,
+      forward: [
+        ONBOARDING_PLAYER_SPAWN.forward[0],
+        ONBOARDING_PLAYER_SPAWN.forward[1],
+        ONBOARDING_PLAYER_SPAWN.forward[2],
+      ],
+    }
+    requestPlayerAvatarTeleport(pose)
+    if (controlMode !== 'third-person') return
+
+    frameOnboardingSpawnCamera(camera, terrainHeights, pose)
+    window.requestAnimationFrame(() => frameOnboardingSpawnCamera(camera, useOasisStore.getState().terrainHeights, pose))
+    window.setTimeout(() => frameOnboardingSpawnCamera(camera, useOasisStore.getState().terrainHeights, pose), 120)
+  }, [activeWorldId, camera, controlMode, terrainHeights, worldReady])
+
+  return null
+}
 
 function isWorldTypingTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null
@@ -1499,6 +1599,8 @@ export default function Scene() {
     void runLocalStorageAgentCacheMigration()
   }, [])
 
+  useEffect(() => scheduleIdleWork(preloadOnboardingResources), [])
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       writeBrowserStorage('oasis-settings', JSON.stringify(settings))
@@ -1622,12 +1724,10 @@ export default function Scene() {
     }).catch(() => {})
     recordRookieQuestStep('meet-merlin')
     requestPortalGateReveal(ROOKIE_QUEST_ZERO_GATE_ID)
-    useOasisStore.getState().spawnPlacementVfx(ROOKIE_QUEST_ZERO_POSITION)
   }, [recordRookieQuestStep])
   const openPortalZeroGate = useCallback(() => {
     useAudioManager.getState().play('buttonClick')
     requestPortalGateReveal(ROOKIE_PORTAL_ZERO_GATE_ID)
-    useOasisStore.getState().spawnPlacementVfx(ROOKIE_PORTAL_ZERO_POSITION)
   }, [])
 
   // WorldMenu's Scene buttons (sky/ground/lights) fire this custom event to
@@ -1906,6 +2006,7 @@ export default function Scene() {
         {/* ─═̷─═̷─🎮 CAMERA CONTROLLER — ONE owner, ONE useFrame, ZERO fights ─═̷─═̷─🎮 */}
         <CameraControllerComponent />
         <PointerLockRaycaster />
+        <OnboardingSpawnPrimer controlMode={settings.controlMode} />
         {settings.controlMode === 'noclip' && <SprintParticles />}
 
         {settings.showGrid && !effectiveRp1Mode && (

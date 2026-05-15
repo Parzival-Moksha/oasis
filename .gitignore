@@ -59,6 +59,7 @@ public/generated-videos/
 public/generated-voices/
 public/generated-music/
 data/generated-voice-library.json
+public/ui/wizard-textures/generated/
 
 # User-uploaded media (images, videos, audio via /api/media/upload)
 public/images/*

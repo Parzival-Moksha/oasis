@@ -19,6 +19,8 @@ export interface OasisNpcDefinition {
   voice: string
   avatarUrl: string
   questId?: string
+  memoryEnabled: boolean
+  contextModules: string[]
   toolAllowlist: string[]
   firstLine: string
   instructions: string
@@ -42,6 +44,8 @@ export const NPC_DEFS: Record<NpcId, OasisNpcDefinition> = {
     voice: 'marin',
     avatarUrl: '/avatars/gallery/EYE_Diviner.vrm',
     questId: QUEST_ZERO_ID,
+    memoryEnabled: true,
+    contextModules: ['oasis-lore-compact', 'quest-zero-brief', 'player-progression', 'npc-memory'],
     toolAllowlist: ['get_world_info', 'screenshot_viewport', 'npc_judgement'],
     firstLine: 'Come closer, apprentice. The first gate opens only for a willing hand.',
     instructions: [
@@ -61,6 +65,8 @@ export const NPC_DEFS: Record<NpcId, OasisNpcDefinition> = {
     voice: 'marin',
     avatarUrl: '/avatars/gallery/EYE_Diviner.vrm',
     questId: QUEST_ZERO_ID,
+    memoryEnabled: true,
+    contextModules: ['oasis-lore-compact', 'quest-zero-brief', 'player-progression', 'npc-memory'],
     toolAllowlist: ['get_world_info', 'screenshot_viewport', 'walk_avatar_to', 'npc_judgement'],
     firstLine: 'This is the little road before the first flame. Walk it with your eyes open.',
     instructions: [
@@ -80,6 +86,8 @@ export const NPC_DEFS: Record<NpcId, OasisNpcDefinition> = {
     voice: 'cedar',
     avatarUrl: '/avatars/gallery/EvilPendra.vrm',
     questId: QUEST_ZERO_ID,
+    memoryEnabled: true,
+    contextModules: ['oasis-lore-compact', 'firebolt-trial', 'player-progression', 'npc-memory'],
     toolAllowlist: ['npc_judgement'],
     firstLine: 'Name the thief of heaven, little spark. Who carried fire to humankind?',
     instructions: [

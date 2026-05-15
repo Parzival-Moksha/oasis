@@ -13,6 +13,8 @@ import {
   sanitizeTranscriptionModel,
 } from '@/lib/realtime-voice-server'
 import { isRealtimeVadEagerness, isRealtimeVadMode } from '@/lib/realtime-voice'
+import { getNpcDefinition } from '@/lib/npcs'
+import { getOasisUserId } from '@/lib/session'
 import { publishWorldPlayerContext, type RuntimePlayerContext } from '@/lib/world-runtime-context'
 
 export const dynamic = 'force-dynamic'
@@ -101,6 +103,8 @@ export async function POST(request: NextRequest) {
 
   const config = getRealtimeVoiceConfig()
   const npcId = sanitizeNpcId(body.npcId)
+  const npcDefinition = getNpcDefinition(npcId)
+  const userId = await getOasisUserId(request)
   const model = sanitizeRealtimeModel(body.model)
   const voice = sanitizeRealtimeVoice(body.voice)
   const vadMode = isRealtimeVadMode(body.vadMode) ? body.vadMode : config.defaultVadMode
@@ -121,6 +125,8 @@ export async function POST(request: NextRequest) {
     promptTemplate,
     history,
     npcId,
+    npcDefinition,
+    userId,
   })
 
   const sessionBody = {
@@ -128,7 +134,7 @@ export async function POST(request: NextRequest) {
       type: 'realtime',
       model,
       instructions,
-      tools: getRealtimeSessionTools({ npcId }),
+      tools: getRealtimeSessionTools({ npcId, npcDefinition }),
       tool_choice: 'auto',
       audio: {
         input: {

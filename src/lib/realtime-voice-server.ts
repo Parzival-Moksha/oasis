@@ -6,7 +6,7 @@ import path from 'path'
 import { prisma } from '@/lib/db'
 import type { WorldState } from '@/lib/forge/world-persistence'
 import { readWorldPlayerContext } from '@/lib/world-runtime-context'
-import { getNpcDefinition } from '@/lib/npcs'
+import { getNpcDefinition, type OasisNpcDefinition } from '@/lib/npcs'
 import {
   REALTIME_MODELS,
   REALTIME_VAD_EAGERNESS,
@@ -72,8 +72,11 @@ const zVec3Schema = {
   maxItems: 3,
 }
 
-export function getRealtimeSessionTools(options: { npcId?: string | null } = {}): RealtimeSessionTool[] {
-  const npc = getNpcDefinition(options.npcId)
+export function getRealtimeSessionTools(options: {
+  npcId?: string | null
+  npcDefinition?: OasisNpcDefinition | null
+} = {}): RealtimeSessionTool[] {
+  const npc = options.npcDefinition ?? getNpcDefinition(options.npcId)
   const baseTools: RealtimeSessionTool[] = [
     {
       type: 'function',
@@ -391,16 +394,24 @@ export function readRealtimePromptTemplate(): string {
   }
 }
 
-async function buildRuntimeContext(worldId: string, npcId?: string | null) {
-  const npc = getNpcDefinition(npcId)
+async function buildRuntimeContext(args: {
+  worldId: string
+  npcId?: string | null
+  npcDefinition?: OasisNpcDefinition | null
+  userId?: string | null
+}) {
+  const npc = args.npcDefinition ?? getNpcDefinition(args.npcId)
   const context: string[] = [
-    `- Active world ID: ${worldId}`,
+    `- Active world ID: ${args.worldId}`,
     npc
       ? `- You are acting as NPC ${npc.name} (${npc.id}): ${npc.title}.`
       : '- You are embodied as the Oasis realtime sandbox agent when a body exists in the scene.',
     npc
       ? `- Enabled NPC tools: ${npc.toolAllowlist.join(', ')}.`
       : '- You currently have an apprentice spellbook: get_world_info, get_world_state, screenshot_viewport, search_assets, place_object, create_spatial_web_object, get_craft_guide, self_craft_scene, craft_scene, get_craft_job, set_avatar, walk_avatar_to, list_avatar_animations, and play_avatar_animation.',
+    npc?.contextModules?.length
+      ? `- Enabled NPC context modules: ${npc.contextModules.join(', ')}.`
+      : '- No named NPC context modules are attached to this session.',
     '- If the user asks what you see or needs visual grounding, call screenshot_viewport with mode third-person-follow, fov 120, width 768, height 432, format jpeg, and quality 0.68. The browser will send the capture back as realtime vision input, not just text.',
     '- If the user asks you to change your body or presentation, use set_avatar on your own realtime avatar instead of saying you cannot.',
     '- For prompt-based craft_scene in realtime voice, do not wait for completion. Start the job and poll get_craft_job while the world receives progress.',
@@ -408,7 +419,25 @@ async function buildRuntimeContext(worldId: string, npcId?: string | null) {
     '- Keep answers vivid, warm, and spoken-word friendly.',
   ]
 
-  const runtimePlayer = await readWorldPlayerContext(worldId)
+  if (npc?.memoryEnabled && args.userId) {
+    try {
+      const memory = await prisma.npcMemory.findUnique({
+        where: { userId_npcId: { userId: args.userId, npcId: npc.id } },
+        select: { summary: true, updatedAt: true },
+      })
+      const summary = memory?.summary?.trim()
+      if (summary) {
+        const updatedAt = memory?.updatedAt instanceof Date ? memory.updatedAt.toISOString() : 'unknown time'
+        context.push(`- Durable memory for this player, last updated ${updatedAt}: ${summary}`)
+      } else {
+        context.push('- Durable memory for this player is enabled, but no memory has been recorded yet.')
+      }
+    } catch {
+      context.push('- Durable NPC memory is enabled, but memory lookup failed for this session.')
+    }
+  }
+
+  const runtimePlayer = await readWorldPlayerContext(args.worldId)
   if (runtimePlayer?.player?.avatar) {
     context.push(`- The user avatar is currently at ${formatVec3(runtimePlayer.player.avatar.position)}.`)
   }
@@ -418,7 +447,7 @@ async function buildRuntimeContext(worldId: string, npcId?: string | null) {
 
   try {
     const world = await prisma.world.findFirst({
-      where: { id: worldId },
+      where: { id: args.worldId },
       select: { id: true, name: true, data: true },
     })
     if (!world?.data) {
@@ -452,10 +481,17 @@ export async function buildRealtimeInstructions(args: {
   promptTemplate?: string
   history?: RealtimeHistoryTurn[]
   npcId?: string | null
+  npcDefinition?: OasisNpcDefinition | null
+  userId?: string | null
 }): Promise<string> {
-  const npc = getNpcDefinition(args.npcId)
+  const npc = args.npcDefinition ?? getNpcDefinition(args.npcId)
   const template = (npc?.instructions || args.promptTemplate || readRealtimePromptTemplate()).trim()
-  const runtimeContext = await buildRuntimeContext(args.worldId, args.npcId)
+  const runtimeContext = await buildRuntimeContext({
+    worldId: args.worldId,
+    npcId: args.npcId,
+    npcDefinition: args.npcDefinition,
+    userId: args.userId,
+  })
   const historyLines = Array.isArray(args.history)
     ? args.history
         .map(turn => {

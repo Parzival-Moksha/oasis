@@ -16,6 +16,8 @@ describe('Quest Zero NPC pipeline registry', () => {
     expect(guardian.provider).toBe('openai-realtime')
     expect(guardian.model).toBe('gpt-realtime-2')
     expect(guardian.questId).toBe(QUEST_ZERO_ID)
+    expect(guardian.memoryEnabled).toBe(true)
+    expect(guardian.contextModules).toContain('firebolt-trial')
     expect(guardian.toolAllowlist).toEqual(['npc_judgement'])
   })
 

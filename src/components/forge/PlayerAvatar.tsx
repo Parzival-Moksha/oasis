@@ -28,6 +28,7 @@ import { sprintRef } from '../CameraController'
 import { SettingsContext } from '../scene-lib'
 import {
   PLAYER_AVATAR_LIPSYNC_ID,
+  getPlayerAvatarPose,
   getPlayerManaRecharging,
   getPlayerSpellCasting,
   requestPlayerAvatarTeleport,
@@ -36,6 +37,7 @@ import {
   subscribePlayerAvatarTeleport,
   subscribePlayerManaRecharging,
   subscribePlayerSpellCasting,
+  type PlayerAvatarPose,
 } from '../../lib/player-avatar-runtime'
 import { MANA_RECHARGE_ANIMATION_ID, SPELL_CAST_ANIMATION_ID } from '../../lib/spell-casting'
 import { PORTAL_REVEAL_ROLL_EVENT } from '../../lib/portal-transition-settings'
@@ -412,7 +414,7 @@ export function PlayerAvatar({
   }, [])
 
   useEffect(() => {
-    return subscribePlayerAvatarTeleport((pose) => {
+    const applyTeleportPose = (pose: PlayerAvatarPose) => {
       const [x, , z] = pose.position
       positionRef.current.set(x, sampleTerrainHeightAt(terrainHeightsRef.current, x, z), z)
       facingAngle.current = pose.yaw
@@ -428,7 +430,10 @@ export function PlayerAvatar({
         groupRef.current.position.copy(positionRef.current)
         groupRef.current.rotation.y = facingAngle.current
       }
-    })
+    }
+    const latestPose = getPlayerAvatarPose()
+    if (latestPose) applyTeleportPose(latestPose)
+    return subscribePlayerAvatarTeleport(applyTeleportPose)
   }, [])
 
   useEffect(() => {
