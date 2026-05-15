@@ -198,6 +198,9 @@ const OPENCLAW_VOICE_MODELS = ['gpt-realtime-2', 'gpt-realtime-1.5', 'gpt-realti
 const OPENCLAW_VOICE_OPTIONS = ['alloy', 'ash', 'ballad', 'cedar', 'coral', 'echo', 'marin', 'sage', 'shimmer', 'verse'] as const
 const OPENCLAW_AUDIO_SAMPLE_RATE = 8000
 const OPENCLAW_RELAY_SCOPES = ['world.read', 'world.write.safe', 'screenshot.request', 'chat.stream'] as const
+const OPENCLAW_AGENT_TYPE = 'openclaw'
+const OPENCLAW_AGENT_SLOT = 'openclaw:primary'
+const OPENCLAW_AGENT_LABEL = 'OpenClaw'
 const HOSTED_RELAY_COMMAND_ORIGIN = 'https://openclaw.04515.xyz'
 const HOSTED_WELCOME_AUDIO_URL = '/audio/04515/welcome-sam.mp3'
 const HOSTED_WELCOME_TEXT = 'Welcome, traveler. Send this code to your OpenClaw, and the lobster steps into the avatar beside you. Then the world is yours to shape.'
@@ -877,12 +880,18 @@ function buildOpenclawRelayPairingMessage(pairing: RelayPairingResult | null, or
   const command = buildOpenclawRelayPairingCommand(pairing, origin)
   const normalizedOrigin = normalizeCommandOrigin(origin) || 'https://openclaw.04515.xyz'
   return [
-    'Install the 04515 plugin from ClawHub if it is not installed yet.',
-    'Then connect to this Oasis:',
+    'Connect this OpenClaw to the hosted Oasis.',
     '',
+    'If the 04515 plugin is missing or old, update it first:',
+    'openclaw plugins install clawhub:04515 --force',
+    'openclaw gateway restart --safe --skip-deferral',
+    '',
+    'Then pair with this Oasis:',
     command,
     '',
-    `After pairing, keep the bridge running so you can inhabit the lobster body at ${normalizedOrigin} and use Oasis world tools.`,
+    'Keep the bridge process running after it says paired.',
+    'Expected success: Gateway ready, plus OpenClaw MCP server "oasis" pointing at http://127.0.0.1:17890/mcp.',
+    `Then inhabit the lobster body at ${normalizedOrigin} and use Oasis world tools.`,
   ].join('\n')
 }
 
@@ -1919,7 +1928,8 @@ export function OpenclawPanel({
   const relayBridge = useSharedOpenclawRelayBridge({
     enabled: wantsRelayConnection,
     worldId: activeWorldId || '__active__',
-    agentType: 'openclaw',
+    agentType: OPENCLAW_AGENT_TYPE,
+    agentSlot: OPENCLAW_AGENT_SLOT,
     availableTools: OPENCLAW_RELAY_TOOLS,
     onChatAgentDelta: handleRelayChatDelta,
     onChatAgentFinal: handleRelayChatFinal,
@@ -3020,6 +3030,9 @@ export function OpenclawPanel({
         body: JSON.stringify({
           worldId: activeWorldId,
           scopes: OPENCLAW_RELAY_SCOPES,
+          agentType: OPENCLAW_AGENT_TYPE,
+          agentSlot: OPENCLAW_AGENT_SLOT,
+          agentLabel: OPENCLAW_AGENT_LABEL,
         }),
       })
       const json = await response.json().catch(() => null) as
@@ -3554,60 +3567,84 @@ export function OpenclawPanel({
         {activeTab === 'connect' && hostedMode && (
           <div className="space-y-3">
             <div
-              className="rounded-xl border px-4 py-4"
+              className="rounded-xl border px-3 py-3"
               style={{ borderColor: 'rgba(45,212,191,0.22)', background: 'rgba(2,18,24,0.46)' }}
             >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="max-w-[680px]">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-100">Connect OpenClaw</span>
-                  <div className="mt-2 text-sm font-semibold leading-6 text-cyan-50">{HOSTED_WELCOME_TEXT}</div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <StatusBadge label={relayServiceBadgeLabel} tone={relayServiceTone} title={relayServiceTitle} />
-                    <StatusBadge label={bridgePairingBadgeLabel} tone={bridgePairingTone} title={bridgePairingTitle} />
-                    <StatusBadge label={activeWorldLabel} tone={activeWorldId ? 'online' : 'warn'} title={activeWorldId || undefined} />
-                    {relayPairing && (
-                      <StatusBadge
-                        label={relayPairingCountdownLabel}
-                        tone={relayPairingExpiresInS > 0 ? 'warn' : 'offline'}
-                        title="Pairing codes are single-use and expire after 30 minutes."
-                      />
-                    )}
-                  </div>
-                </div>
-                <div className="flex shrink-0 flex-col gap-2">
-                  {relayBridge.status === 'paired' ? (
-                    <button
-                      type="button"
-                      data-no-drag
-                      onClick={() => setActiveTab('stream')}
-                      className="rounded-lg border border-emerald-300/30 bg-emerald-400/14 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-50 transition hover:bg-emerald-400/22"
-                    >
-                      go to stream
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      data-no-drag
-                      onClick={handleConnectOpenclaw}
-                      disabled={relayPairingBusy || !activeWorldId}
-                      className="rounded-lg border border-cyan-300/30 bg-cyan-400/14 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-50 transition hover:bg-cyan-400/22 disabled:cursor-wait disabled:opacity-50"
-                    >
-                      {relayPairingBusy ? 'minting code' : 'connect openclaw'}
-                    </button>
+              <button
+                type="button"
+                data-no-drag
+                onClick={() => {
+                  if (relayBridge.status === 'paired') {
+                    setActiveTab('stream')
+                  } else {
+                    handleConnectOpenclaw()
+                  }
+                }}
+                disabled={relayBridge.status !== 'paired' && (relayPairingBusy || !activeWorldId)}
+                className={`group relative min-h-[144px] w-full overflow-hidden rounded-lg px-5 py-5 text-center transition duration-500 ${
+                  relayBridge.status === 'paired'
+                    ? 'cursor-pointer border border-emerald-200/70 bg-emerald-400/20 shadow-[0_0_68px_rgba(16,185,129,0.34)]'
+                    : 'cursor-pointer border border-cyan-100/50 bg-cyan-300/10 shadow-[0_0_58px_rgba(34,211,238,0.32)] hover:border-white hover:shadow-[0_0_92px_rgba(34,211,238,0.46)]'
+                } disabled:cursor-not-allowed disabled:opacity-45`}
+              >
+                <span
+                  className="absolute inset-0 opacity-95"
+                  style={{
+                    background: relayBridge.status === 'paired'
+                      ? 'linear-gradient(110deg, rgba(16,185,129,0.30), rgba(45,212,191,0.22), rgba(250,204,21,0.18))'
+                      : 'linear-gradient(110deg, rgba(14,165,233,0.30), rgba(45,212,191,0.24), rgba(250,204,21,0.20), rgba(244,114,182,0.22))',
+                  }}
+                />
+                <span
+                  className="absolute inset-[-28%] opacity-70 transition duration-500 group-hover:opacity-95"
+                  style={{
+                    background: 'conic-gradient(from 24deg, transparent, rgba(255,255,255,0.44), transparent, rgba(34,211,238,0.38), transparent)',
+                  }}
+                />
+                <span
+                  className="absolute inset-0 opacity-0 transition duration-200 group-hover:opacity-100"
+                  style={{
+                    background: 'radial-gradient(circle at 50% 42%, rgba(255,255,255,0.55), rgba(255,255,255,0.16) 22%, transparent 52%)',
+                  }}
+                />
+                <span className={`absolute inset-2 rounded-md border ${relayBridge.status === 'paired' ? 'border-emerald-100/32' : 'border-white/24'} shadow-[inset_0_0_34px_rgba(255,255,255,0.16)]`} />
+                <span className={`relative block text-xl font-black uppercase leading-tight sm:text-[25px] ${relayBridge.status === 'paired' ? 'text-emerald-50 drop-shadow-[0_0_18px_rgba(52,211,153,0.95)]' : 'text-white drop-shadow-[0_0_20px_rgba(34,211,238,0.98)]'}`}>
+                  {relayBridge.status === 'paired' ? 'OPENCLAW CONNECTED' : relayPairingBusy ? 'OPENING CLAW GATE' : 'CONNECT OPENCLAW'}
+                </span>
+                <span className="relative mt-3 block text-[11px] font-semibold uppercase leading-snug text-cyan-50/70">
+                  {relayBridge.status === 'paired'
+                    ? 'chat and world tools online'
+                    : activeWorldId
+                      ? 'mint code, copy command, wake the lobster'
+                      : 'load a world first'}
+                </span>
+              </button>
+
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap gap-2">
+                  <StatusBadge label={relayServiceBadgeLabel} tone={relayServiceTone} title={relayServiceTitle} />
+                  <StatusBadge label={bridgePairingBadgeLabel} tone={bridgePairingTone} title={bridgePairingTitle} />
+                  <StatusBadge label={activeWorldLabel} tone={activeWorldId ? 'online' : 'warn'} title={activeWorldId || undefined} />
+                  {relayPairing && (
+                    <StatusBadge
+                      label={relayPairingCountdownLabel}
+                      tone={relayPairingExpiresInS > 0 ? 'warn' : 'offline'}
+                      title="Pairing codes are single-use and expire after 30 minutes."
+                    />
                   )}
-                  <button
-                    type="button"
-                    data-no-drag
-                    onClick={() => void playHostedWelcome()}
-                    className="rounded-lg border border-white/10 px-4 py-2 text-[11px] uppercase tracking-[0.16em] text-cyan-50/70 transition hover:border-cyan-300/25 hover:text-white"
-                  >
-                    replay sam
-                  </button>
                 </div>
+                <button
+                  type="button"
+                  data-no-drag
+                  onClick={() => void playHostedWelcome()}
+                  className="rounded-md border border-white/10 px-3 py-1.5 text-[10px] uppercase text-cyan-50/70 transition hover:border-cyan-300/25 hover:text-white"
+                >
+                  replay sam
+                </button>
               </div>
 
               <div className="mt-3 text-[11px] leading-5 text-cyan-50/58">
-                Click once to mint a single-use pairing code. The code expires in 30 minutes, but the paired bridge can stay connected after the code is redeemed.
+                {HOSTED_WELCOME_TEXT} The code expires in 30 minutes, but the paired bridge can stay connected after the code is redeemed.
               </div>
             </div>
 

@@ -28,6 +28,7 @@ async function runBridge(pairingTarget, options = {}) {
 
   const args = [target]
   if (options.gatewayUrl) args.push(`--gateway-url=${options.gatewayUrl}`)
+  if (options.relayUrl) args.push(`--relay-url=${options.relayUrl}`)
   if (options.mcpPort) args.push(`--mcp-port=${options.mcpPort}`)
   if (options.noMcpConfig) args.push('--no-mcp-config')
 
@@ -192,6 +193,7 @@ export function register04515Cli({ program }) {
     .argument('<pairing-code-or-url>', 'Pairing code like OASIS-ABCD1234 or full 04515 pairing URL')
     .description('Pair this OpenClaw with a hosted 04515 Oasis session')
     .option('--gateway-url <url>', 'Local OpenClaw Gateway WebSocket URL')
+    .option('--relay-url <url>', 'Oasis relay WebSocket URL, for local/dev relay testing')
     .option('--mcp-port <port>', 'Local bridge MCP adapter port', '17890')
     .option('--no-mcp-config', 'Do not update the OpenClaw oasis MCP server entry')
     .action(async (pairingTarget, options) => {
