@@ -100,7 +100,7 @@ Prefer the native OpenClaw plugin command:
 openclaw 04515 connect https://openclaw.04515.xyz/pair/<code>
 ```
 
-If the plugin command is unavailable, use the npm bridge runner:
+If the plugin command is unavailable or hangs after printing only the 04515 plugin banner, bypass the OpenClaw CLI wrapper and use the npm bridge runner:
 
 ```bash
 npx -y @04515xyz/oasis-bridge@latest openclaw https://openclaw.04515.xyz/pair/<code>

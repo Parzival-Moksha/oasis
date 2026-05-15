@@ -878,6 +878,10 @@ function buildOpenclawRelayPairingCommand(pairing: RelayPairingResult | null, or
 function buildOpenclawRelayPairingMessage(pairing: RelayPairingResult | null, origin: string): string {
   if (!pairing) return ''
   const command = buildOpenclawRelayPairingCommand(pairing, origin)
+  const directBridgeCommand = command.replace(
+    /^openclaw 04515 connect /,
+    'npx -y @04515xyz/oasis-bridge@latest openclaw ',
+  )
   const normalizedOrigin = normalizeCommandOrigin(origin) || 'https://openclaw.04515.xyz'
   return [
     'Connect this OpenClaw to the hosted Oasis.',
@@ -888,6 +892,9 @@ function buildOpenclawRelayPairingMessage(pairing: RelayPairingResult | null, or
     '',
     'Then pair with this Oasis:',
     command,
+    '',
+    'If that command hangs after the 04515 plugin banner, run the bridge directly:',
+    directBridgeCommand,
     '',
     'Keep the bridge process running after it says paired.',
     'Expected success: Gateway ready, plus OpenClaw MCP server "oasis" pointing at http://127.0.0.1:17890/mcp.',
