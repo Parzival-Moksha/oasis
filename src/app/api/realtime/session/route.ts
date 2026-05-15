@@ -22,6 +22,10 @@ function sanitizeWorldId(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function sanitizeNpcId(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
 function parseHistory(value: unknown): Array<{ role: 'user' | 'assistant'; content: string }> {
   if (!Array.isArray(value)) return []
   return value
@@ -96,6 +100,7 @@ export async function POST(request: NextRequest) {
   }
 
   const config = getRealtimeVoiceConfig()
+  const npcId = sanitizeNpcId(body.npcId)
   const model = sanitizeRealtimeModel(body.model)
   const voice = sanitizeRealtimeVoice(body.voice)
   const vadMode = isRealtimeVadMode(body.vadMode) ? body.vadMode : config.defaultVadMode
@@ -115,6 +120,7 @@ export async function POST(request: NextRequest) {
     worldId,
     promptTemplate,
     history,
+    npcId,
   })
 
   const sessionBody = {
@@ -122,7 +128,7 @@ export async function POST(request: NextRequest) {
       type: 'realtime',
       model,
       instructions,
-      tools: getRealtimeSessionTools(),
+      tools: getRealtimeSessionTools({ npcId }),
       tool_choice: 'auto',
       audio: {
         input: {

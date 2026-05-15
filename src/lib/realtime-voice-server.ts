@@ -6,6 +6,7 @@ import path from 'path'
 import { prisma } from '@/lib/db'
 import type { WorldState } from '@/lib/forge/world-persistence'
 import { readWorldPlayerContext } from '@/lib/world-runtime-context'
+import { getNpcDefinition } from '@/lib/npcs'
 import {
   REALTIME_MODELS,
   REALTIME_VAD_EAGERNESS,
@@ -71,8 +72,9 @@ const zVec3Schema = {
   maxItems: 3,
 }
 
-export function getRealtimeSessionTools(): RealtimeSessionTool[] {
-  return [
+export function getRealtimeSessionTools(options: { npcId?: string | null } = {}): RealtimeSessionTool[] {
+  const npc = getNpcDefinition(options.npcId)
+  const baseTools: RealtimeSessionTool[] = [
     {
       type: 'function',
       name: 'get_world_info',
@@ -344,7 +346,29 @@ export function getRealtimeSessionTools(): RealtimeSessionTool[] {
         additionalProperties: false,
       },
     },
+    {
+      type: 'function',
+      name: 'npc_judgement',
+      description: 'Report an NPC gate judgement back to Oasis progression. Use this only when the player has clearly passed or failed a configured NPC trial.',
+      parameters: {
+        type: 'object',
+        properties: {
+          npcId: { type: 'string', description: 'NPC definition id, for example quest-zero-fire-guardian.' },
+          questId: { type: 'string', description: 'Quest id, for example quest-zero.' },
+          gateId: { type: 'string', description: 'Configured gate id, for example firebolt-prometheus.' },
+          passed: { type: 'boolean', description: 'Whether the player passed the gate.' },
+          reason: { type: 'string', description: 'Short explanation of the judgement.' },
+          memoryNote: { type: 'string', description: 'Optional durable note this NPC should remember about the player.' },
+        },
+        required: ['npcId', 'gateId', 'passed'],
+        additionalProperties: false,
+      },
+    },
   ]
+
+  if (!npc) return baseTools
+  const allowlist = new Set(npc.toolAllowlist)
+  return baseTools.filter(tool => allowlist.has(tool.name))
 }
 
 export function readRealtimePromptTemplate(): string {
@@ -367,11 +391,16 @@ export function readRealtimePromptTemplate(): string {
   }
 }
 
-async function buildRuntimeContext(worldId: string) {
+async function buildRuntimeContext(worldId: string, npcId?: string | null) {
+  const npc = getNpcDefinition(npcId)
   const context: string[] = [
     `- Active world ID: ${worldId}`,
-    '- You are embodied as the Oasis realtime sandbox agent when a body exists in the scene.',
-    '- You currently have an apprentice spellbook: get_world_info, get_world_state, screenshot_viewport, search_assets, place_object, create_spatial_web_object, get_craft_guide, self_craft_scene, craft_scene, get_craft_job, set_avatar, walk_avatar_to, list_avatar_animations, and play_avatar_animation.',
+    npc
+      ? `- You are acting as NPC ${npc.name} (${npc.id}): ${npc.title}.`
+      : '- You are embodied as the Oasis realtime sandbox agent when a body exists in the scene.',
+    npc
+      ? `- Enabled NPC tools: ${npc.toolAllowlist.join(', ')}.`
+      : '- You currently have an apprentice spellbook: get_world_info, get_world_state, screenshot_viewport, search_assets, place_object, create_spatial_web_object, get_craft_guide, self_craft_scene, craft_scene, get_craft_job, set_avatar, walk_avatar_to, list_avatar_animations, and play_avatar_animation.',
     '- If the user asks what you see or needs visual grounding, call screenshot_viewport with mode third-person-follow, fov 120, width 768, height 432, format jpeg, and quality 0.68. The browser will send the capture back as realtime vision input, not just text.',
     '- If the user asks you to change your body or presentation, use set_avatar on your own realtime avatar instead of saying you cannot.',
     '- For prompt-based craft_scene in realtime voice, do not wait for completion. Start the job and poll get_craft_job while the world receives progress.',
@@ -422,9 +451,11 @@ export async function buildRealtimeInstructions(args: {
   worldId: string
   promptTemplate?: string
   history?: RealtimeHistoryTurn[]
+  npcId?: string | null
 }): Promise<string> {
-  const template = (args.promptTemplate || readRealtimePromptTemplate()).trim()
-  const runtimeContext = await buildRuntimeContext(args.worldId)
+  const npc = getNpcDefinition(args.npcId)
+  const template = (npc?.instructions || args.promptTemplate || readRealtimePromptTemplate()).trim()
+  const runtimeContext = await buildRuntimeContext(args.worldId, args.npcId)
   const historyLines = Array.isArray(args.history)
     ? args.history
         .map(turn => {

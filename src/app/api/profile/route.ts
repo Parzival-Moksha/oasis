@@ -11,6 +11,7 @@ import { levelFromXp, levelProgress, xpToNextLevel, getLevelTitle } from '@/lib/
 import { FREE_CREDITS } from '@/lib/conjure/types'
 import { DEFAULT_PROFILE_AVATAR_3D_URL, DEFAULT_PROFILE_DISPLAY_NAME } from '@/lib/profile-defaults'
 import { buildPlayerProgression } from '@/lib/player-progression'
+import { getPlayerProgressionState } from '@/lib/player-progression-server'
 
 /** Ensure a Profile row exists for the user, return it */
 async function ensureProfile(userId: string) {
@@ -26,12 +27,13 @@ async function ensureProfile(userId: string) {
   return profile.avatar3dUrl ? profile : { ...profile, avatar3dUrl: DEFAULT_PROFILE_AVATAR_3D_URL }
 }
 
-function serializeProfile(p: Awaited<ReturnType<typeof ensureProfile>>) {
+async function serializeProfile(p: Awaited<ReturnType<typeof ensureProfile>>) {
   const level = levelFromXp(p.totalXp)
   const progress = levelProgress(p.totalXp)
   const toNext = xpToNextLevel(level)
   const lt = getLevelTitle(level)
   const player = buildPlayerProgression({ ...p, level })
+  const progression = await getPlayerProgressionState(p.userId)
 
   return {
     credits: FREE_CREDITS,
@@ -56,6 +58,10 @@ function serializeProfile(p: Awaited<ReturnType<typeof ensureProfile>>) {
     unspentSkillPoints: player.unspentSkillPoints,
     skills: player.skills,
     playerStats: player.stats,
+    unlockedSpells: progression.spells,
+    questProgress: progression.quests,
+    achievements: progression.achievements,
+    npcMemories: progression.npcMemories,
   }
 }
 
@@ -67,7 +73,7 @@ export async function GET(request: Request) {
     }
     const p = await ensureProfile(userId)
 
-    return NextResponse.json(serializeProfile(p))
+    return NextResponse.json(await serializeProfile(p))
   } catch (err) {
     console.error('[Profile] GET error:', err)
     // Fallback so the UI never breaks
@@ -104,6 +110,10 @@ export async function GET(request: Request) {
         conjureManaCost: 20,
         moveSpeedMultiplier: 1,
       },
+      unlockedSpells: [],
+      questProgress: [],
+      achievements: [],
+      npcMemories: [],
     })
   }
 }
@@ -139,7 +149,7 @@ export async function PATCH(request: Request) {
       data: update,
     })
 
-    return NextResponse.json(serializeProfile(updated))
+    return NextResponse.json(await serializeProfile(updated))
   } catch (err) {
     console.error('[Profile] PATCH error:', err)
     return NextResponse.json({ error: 'Update failed' }, { status: 500 })

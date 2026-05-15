@@ -322,6 +322,68 @@ model Profile {
   updatedAt     DateTime @updatedAt
 }
 
+// Player progression: durable spell, quest, achievement, and NPC memory state.
+model PlayerSpellUnlock {
+  id            Int      @id @default(autoincrement())
+  userId        String
+  spellId       String
+  level         Int      @default(1)
+  sourceQuestId String?
+  uses          Int      @default(0)
+  metadata      String   @default("{}")
+  unlockedAt    DateTime @default(now())
+  lastUsedAt    DateTime?
+
+  @@unique([userId, spellId])
+  @@index([spellId])
+  @@index([userId, unlockedAt])
+}
+
+model PlayerQuestProgress {
+  id             Int      @id @default(autoincrement())
+  userId         String
+  questId        String
+  status         String   @default("active")
+  currentStepId  String?
+  completedSteps String   @default("[]")
+  metadata       String   @default("{}")
+  startedAt      DateTime @default(now())
+  completedAt    DateTime?
+  updatedAt      DateTime @updatedAt
+
+  @@unique([userId, questId])
+  @@index([questId, status])
+  @@index([userId, updatedAt])
+}
+
+model PlayerAchievement {
+  id            Int      @id @default(autoincrement())
+  userId        String
+  achievementId String
+  source        String?
+  quote         String?
+  metadata      String   @default("{}")
+  unlockedAt    DateTime @default(now())
+
+  @@unique([userId, achievementId])
+  @@index([achievementId])
+  @@index([userId, unlockedAt])
+}
+
+model NpcMemory {
+  id        Int      @id @default(autoincrement())
+  userId    String
+  npcId     String
+  summary   String   @default("")
+  metadata  String   @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, npcId])
+  @@index([npcId])
+  @@index([userId, updatedAt])
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // TOKEN BURN — Per-source aggregated token usage tracking
 // Aggregated by source + time window (hourly buckets)

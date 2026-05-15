@@ -3916,7 +3916,71 @@
         }
       }
     ],
-    "spatialWebObjects": [],
+    "spatialWebObjects": [
+      {
+        "id": "quest-zero-fire-target-1",
+        "type": "text",
+        "label": "Fire Target I",
+        "description": "Hit this target with Firebolt.",
+        "value": "I",
+        "position": [
+          -2.6,
+          1.25,
+          6.6
+        ],
+        "rotation": [
+          0,
+          0.28,
+          0
+        ],
+        "width": 1.25,
+        "height": 1.25,
+        "accentColor": "#fb923c",
+        "visualStyle": "terminal-panel"
+      },
+      {
+        "id": "quest-zero-fire-target-2",
+        "type": "text",
+        "label": "Fire Target II",
+        "description": "Hit this target with Firebolt.",
+        "value": "II",
+        "position": [
+          0,
+          1.25,
+          6.9
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "width": 1.25,
+        "height": 1.25,
+        "accentColor": "#f97316",
+        "visualStyle": "terminal-panel"
+      },
+      {
+        "id": "quest-zero-fire-target-3",
+        "type": "text",
+        "label": "Fire Target III",
+        "description": "Hit this target with Firebolt.",
+        "value": "III",
+        "position": [
+          2.6,
+          1.25,
+          6.6
+        ],
+        "rotation": [
+          0,
+          -0.28,
+          0
+        ],
+        "width": 1.25,
+        "height": 1.25,
+        "accentColor": "#ef4444",
+        "visualStyle": "terminal-panel"
+      }
+    ],
     "paintStrokes": [],
     "text3dObjects": [],
     "transforms": {},
@@ -3966,8 +4030,51 @@
       }
     ],
     "skyBackgroundId": "blue_grotto",
-    "agentWindows": [],
+    "agentWindows": [
+      {
+        "id": "agent-npc-fire-guardian",
+        "agentType": "npc",
+        "npcId": "quest-zero-fire-guardian",
+        "linkedAvatarId": "agent-avatar-npc-fire-guardian",
+        "position": [
+          0,
+          2.35,
+          5.45
+        ],
+        "rotation": [
+          0,
+          3.141592653589793,
+          0
+        ],
+        "scale": 0.16,
+        "width": 470,
+        "height": 720,
+        "label": "Fire Guardian",
+        "frameStyle": "fire",
+        "frameThickness": 6,
+        "windowOpacity": 0.92,
+        "windowBlur": 8
+      }
+    ],
     "agentAvatars": [
+      {
+        "id": "agent-avatar-npc-fire-guardian",
+        "agentType": "npc",
+        "avatar3dUrl": "/avatars/gallery/EvilPendra.vrm",
+        "position": [
+          0,
+          0,
+          5.15
+        ],
+        "rotation": [
+          0,
+          3.141592653589793,
+          0
+        ],
+        "scale": 1.05,
+        "linkedWindowId": "agent-npc-fire-guardian",
+        "label": "Fire Guardian"
+      },
       {
         "id": "agent-avatar-merlin",
         "agentType": "merlin",

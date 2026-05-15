@@ -164,8 +164,8 @@ describe('OasisStore', () => {
     })
 
     it('includes all expected agent types', () => {
-      const types: AgentWindowType[] = ['anorak', 'codex', 'anorak-pro', 'merlin', 'devcraft', 'parzival']
-      expect(types).toHaveLength(6)
+      const types: AgentWindowType[] = ['anorak', 'codex', 'anorak-pro', 'merlin', 'realtime', 'npc', 'devcraft', 'parzival']
+      expect(types).toHaveLength(8)
     })
   })
 
@@ -206,6 +206,7 @@ describe('OasisStore', () => {
         ['codex', '/avatars/gallery/CosmicBot.vrm'],
         ['anorak-pro', '/avatars/gallery/UnicornPerson.vrm'],
         ['merlin', '/avatars/gallery/EYE_Diviner.vrm'],
+        ['npc', '/avatars/gallery/EvilPendra.vrm'],
         ['openclaw', '/avatars/gallery/CaptainLobster.vrm'],
         ['hermes', '/avatars/gallery/Amazonas.vrm'],
       ]

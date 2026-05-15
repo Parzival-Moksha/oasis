@@ -57,6 +57,7 @@ const FIREBOLT_COOLDOWN_MS = 170
 const EXPLOSION_TTL_S = 0.82
 const FIREBOLT_TRAIL_SPACING_M = 0.5
 const FIREBOLT_SMOKE_TTL_S = 1
+const QUEST_ZERO_WORLD_ID = 'world-rookie-wizard-system'
 
 function randomId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -204,6 +205,10 @@ function groundHit(start: THREE.Vector3, end: THREE.Vector3): THREE.Vector3 | nu
   return null
 }
 
+function isQuestFireboltTarget(id: string): boolean {
+  return /(^|-)quest-zero-fire-target-|training|dummy|target/i.test(id)
+}
+
 function FireboltMesh({ projectile }: { projectile: FireboltProjectile }) {
   const direction = useMemo(() => {
     return new THREE.Vector3(...projectile.velocity).normalize()
@@ -327,6 +332,7 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
   const [smokePuffs, setSmokePuffs] = useState<FireboltSmokePuff[]>([])
   const lastCastAtRef = useRef(0)
   const castingRef = useRef(false)
+  const reportedQuestTargetHitsRef = useRef<Set<string>>(new Set())
 
   const spawnProjectile = useCallback((speed: number, damage: number) => {
     const origin = new THREE.Vector3()
@@ -387,6 +393,34 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
     }
   }, [enabled, spawnProjectile])
 
+  const recordQuestTargetHit = useCallback((targetId: string, position: [number, number, number]) => {
+    const activeWorldId = useOasisStore.getState().activeWorldId
+    window.dispatchEvent(new CustomEvent('oasis:firebolt-hit', { detail: { targetId, position, worldId: activeWorldId } }))
+    if (activeWorldId !== QUEST_ZERO_WORLD_ID || !isQuestFireboltTarget(targetId)) return
+    if (reportedQuestTargetHitsRef.current.has(targetId)) return
+    reportedQuestTargetHitsRef.current.add(targetId)
+    void fetch('/api/player/progression', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'record_firebolt_target_hit',
+        targetId,
+        worldId: activeWorldId,
+        position,
+      }),
+    })
+      .then(response => response.json().catch(() => null))
+      .then(data => {
+        if (data?.progression) {
+          window.dispatchEvent(new CustomEvent('oasis:player-progression', { detail: data.progression }))
+        }
+        if (data?.result?.hitStep?.xp || data?.result?.hitStep?.completionXp) {
+          window.dispatchEvent(new CustomEvent('oasis:xp-awarded', { detail: data.result.hitStep.completionXp || data.result.hitStep.xp }))
+        }
+      })
+      .catch(() => {})
+  }, [])
+
   useEffect(() => {
     if (typeof window === 'undefined') return
     const onCast = () => void castFirebolt()
@@ -440,12 +474,16 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
           })
         }
         let impact = groundHit(start, end)
+        let impactTarget: CollisionTarget | null = null
 
         if (!impact) {
           for (const target of targets) {
             const targetCenter = new THREE.Vector3(target.position[0], target.position[1] + Math.min(1.4, target.radius), target.position[2])
             impact = segmentSphereHit(start, end, targetCenter, target.radius)
-            if (impact) break
+            if (impact) {
+              impactTarget = target
+              break
+            }
           }
         }
 
@@ -458,6 +496,9 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
             ttl: EXPLOSION_TTL_S,
             seed: Math.floor(Math.random() * 10000),
           })
+          if (impact && impactTarget) {
+            recordQuestTargetHit(impactTarget.id, [impact.x, Math.max(0.05, impact.y), impact.z])
+          }
           continue
         }
 

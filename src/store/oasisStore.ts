@@ -255,6 +255,7 @@ export interface PlacementPending {
   imageFrameStyle?: string
   /** For agent window placements */
   agentType?: AgentWindowType
+  npcId?: string
   /** Carry over session ID from existing panel */
   agentSessionId?: string
   /** Projection technique used for the 3D window */
@@ -313,7 +314,7 @@ export interface AgentActivity {
 
 // ─═̷─═̷─💻 AGENT WINDOW — placeable interactive panels in 3D ─═̷─═̷─💻
 export type BrowserSurfaceMode = 'live-browser' | 'desktop-capture'
-export type AgentWindowType = 'anorak' | 'codex' | 'gemini' | 'anorak-pro' | 'merlin' | 'realtime' | 'hermes' | 'openclaw' | 'devcraft' | 'parzival' | 'browser' | 'mission'
+export type AgentWindowType = 'anorak' | 'codex' | 'gemini' | 'anorak-pro' | 'merlin' | 'realtime' | 'npc' | 'hermes' | 'openclaw' | 'devcraft' | 'parzival' | 'browser' | 'mission'
 
 export interface AgentWindow {
   id: string                              // e.g. 'agent-anorak-1710859200000'
@@ -327,6 +328,7 @@ export interface AgentWindow {
   width: number                           // px width of HTML content (default 800)
   height: number                          // px height of HTML content (default 600)
   sessionId?: string                      // claude code session ID (anorak only)
+  npcId?: string                          // NPC definition id for reusable scripted/realtime citizens
   label?: string                          // user-assignable name
   browserSurfaceMode?: BrowserSurfaceMode // live iframe now, host capture bridge later
   surfaceUrl?: string                     // URL for browser surfaces / offscreen Chromium targets
@@ -384,6 +386,8 @@ function defaultAgentAvatarLabel(agentType: AgentAvatarType): string {
       return 'Merlin'
     case 'realtime':
       return 'Realtime'
+    case 'npc':
+      return 'NPC'
     case 'devcraft':
       return 'DevCraft'
     case 'parzival':

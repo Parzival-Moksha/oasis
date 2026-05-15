@@ -2359,11 +2359,14 @@ function PlacementOverlay() {
       // ░▒▓ Agent window placement — create 3D interactive panel ▓▒░
       const isHermesAgent = placementPending.agentType === 'hermes'
       const isGeminiAgent = placementPending.agentType === 'gemini'
+      const isNpcAgent = placementPending.agentType === 'npc'
       const defaultWindowScale = 0.15
       const defaultWindowSize = placementPending.agentType === 'anorak-pro'
         ? { width: 960, height: 720 }
         : placementPending.agentType === 'browser'
           ? { width: 1280, height: 820 }
+          : isNpcAgent
+            ? { width: 470, height: 720 }
           : isGeminiAgent
             ? { width: DEFAULT_GEMINI_AGENT_WINDOW_WIDTH, height: DEFAULT_GEMINI_AGENT_WINDOW_HEIGHT }
             : { width: 800, height: 600 }
@@ -2383,10 +2386,11 @@ function PlacementOverlay() {
         width: defaultWindowSize.width,
         height: defaultWindowSize.height,
         sessionId: placementPending.agentSessionId,
+        npcId: placementPending.npcId,
         label: placementPending.name,
         renderMode: placementPending.agentRenderMode,
-        frameStyle: placementPending.agentFrameStyle || (placementPending.agentType === 'browser' ? 'baroque' : isGeminiAgent ? DEFAULT_GEMINI_AGENT_FRAME_STYLE : isHermesAgent ? 'fire' : undefined),
-        frameThickness: placementPending.agentFrameThickness ?? (placementPending.agentType === 'browser' ? 7 : isGeminiAgent ? DEFAULT_GEMINI_AGENT_FRAME_THICKNESS : isHermesAgent ? 6 : undefined),
+        frameStyle: placementPending.agentFrameStyle || (placementPending.agentType === 'browser' ? 'baroque' : isGeminiAgent ? DEFAULT_GEMINI_AGENT_FRAME_STYLE : isHermesAgent || isNpcAgent ? 'fire' : undefined),
+        frameThickness: placementPending.agentFrameThickness ?? (placementPending.agentType === 'browser' ? 7 : isGeminiAgent ? DEFAULT_GEMINI_AGENT_FRAME_THICKNESS : isHermesAgent || isNpcAgent ? 6 : undefined),
         ...browserDefaults,
       }
       dispatch({
@@ -2395,6 +2399,7 @@ function PlacementOverlay() {
           agentType: agentWindow.agentType,
           position: agentWindow.position,
           sessionId: agentWindow.sessionId,
+          npcId: agentWindow.npcId,
           label: agentWindow.label,
           renderMode: agentWindow.renderMode,
           width: agentWindow.width,

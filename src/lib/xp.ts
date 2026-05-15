@@ -43,6 +43,14 @@ export const DEFAULT_XP_AWARDS = {
   // Onboarding quests — 3x multiplier on first-time actions
   QUEST_STEP_COMPLETE: 25,   // per quest step completed (bonus on top of normal XP)
   QUEST_ALL_COMPLETE: 200,   // all 7 quests done — builder is onboarded
+  // Quest Zero v1
+  QUEST_ZERO_STARTED: 10,
+  QUEST_ZERO_FIRE_GUARDIAN_PASSED: 50,
+  QUEST_ZERO_FIREBOLT_UNLOCKED: 100,
+  QUEST_ZERO_TARGET_HIT: 25,
+  QUEST_ZERO_COMPLETE: 150,
+  SPELL_UNLOCK: 50,
+  ACHIEVEMENT_UNLOCK: 25,
 } as const
 
 // Backwards compat — code that imports XP_AWARDS still works

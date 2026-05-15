@@ -34,6 +34,7 @@ export const DEFAULT_AGENT_AVATAR_URL_BY_TYPE: Record<string, string> = {
   'anorak-pro': '/avatars/gallery/UnicornPerson.vrm',
   merlin: '/avatars/gallery/EYE_Diviner.vrm',
   gemini: '/avatars/gallery/CosmicBot.vrm',
+  npc: '/avatars/gallery/EvilPendra.vrm',
   openclaw: '/avatars/gallery/CaptainLobster.vrm',
   hermes: '/avatars/gallery/Amazonas.vrm',
 }

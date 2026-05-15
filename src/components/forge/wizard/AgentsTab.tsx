@@ -12,6 +12,7 @@ const AGENT_TYPES = [
   { type: 'hermes' as const, label: 'Hermes', icon: '☤', color: '#fb7185', desc: 'Embodied co-builder — remote tool agent inside the Oasis' },
   { type: 'merlin' as const, label: 'Merlin', icon: '🧙', color: '#a855f7', desc: 'World-builder agent — place objects, set sky' },
   { type: 'realtime' as const, label: 'Realtime', icon: '🗣️', color: '#c084fc', desc: 'Voice sandbox — WebRTC speech, transcript, lipsync' },
+  { type: 'npc' as const, label: 'Fire Guardian', icon: 'NPC', color: '#fb923c', desc: 'Quest NPC - realtime voice, gated tools, progression hooks' },
   { type: 'devcraft' as const, label: 'DevCraft', icon: '⚡', color: '#22c55e', desc: 'Mission management + gamification' },
   { type: 'parzival' as const, label: 'Parzival', icon: '🧿', color: '#c084fc', desc: 'Autonomous brain — modes, missions, thought stream' },
 ] as const
@@ -38,7 +39,12 @@ export function AgentsTabContent() {
           {AGENT_TYPES.map(agent => (
             <button
               key={agent.type}
-              onClick={() => enterPlacementMode({ type: 'agent', name: agent.label, agentType: agent.type })}
+              onClick={() => enterPlacementMode({
+                type: 'agent',
+                name: agent.label,
+                agentType: agent.type,
+                ...(agent.type === 'npc' ? { npcId: 'quest-zero-fire-guardian' } : {}),
+              })}
               className="rounded-lg border border-gray-700/30 bg-black/40 hover:border-gray-600/50 p-2 text-left transition-all duration-200 group"
             >
               <div className="flex items-center gap-1.5">

@@ -48,12 +48,15 @@ import {
   writeRealtimePanelSettings,
 } from '@/lib/realtime-session-store'
 import { createWLipSyncLegacyController } from '@/lib/wlipsync-driver'
+import { getNpcDefinition, type OasisNpcDefinition } from '@/lib/npcs'
 
 interface RealtimePanelProps {
   isOpen: boolean
   onClose: () => void
   embedded?: boolean
   hideCloseButton?: boolean
+  npcId?: string | null
+  windowId?: string
 }
 
 type ConnectionState = 'idle' | 'connecting' | 'connected' | 'error'
@@ -93,6 +96,7 @@ const REALTIME_TOOL_NAMES = new Set([
   'set_avatar',
   'list_avatar_animations',
   'play_avatar_animation',
+  'npc_judgement',
 ])
 
 function makeId(prefix: string): string {
@@ -296,6 +300,45 @@ function buildNewSession(args: {
   }
 }
 
+function buildNpcSession(args: {
+  worldId: string
+  worldName: string
+  npc: OasisNpcDefinition
+  config: RealtimeVoiceConfigPayload
+  existing?: RealtimeLocalSession | null
+}): RealtimeLocalSession {
+  const now = Date.now()
+  const settings: RealtimeSessionSettings = {
+    model: args.npc.model || args.config.model,
+    voice: args.npc.voice || args.config.defaultVoice,
+    vadMode: args.config.defaultVadMode,
+    vadEagerness: args.config.defaultVadEagerness,
+    instructions: args.npc.instructions,
+  }
+  const messages = args.existing?.messages?.length
+    ? args.existing.messages
+    : [
+        {
+          id: `npc-first-${args.npc.id}`,
+          role: 'assistant' as const,
+          content: args.npc.firstLine,
+          status: 'done' as const,
+          timestamp: now,
+        },
+      ]
+
+  return {
+    id: `npc-${args.npc.id}-${args.worldId}`,
+    title: `NPC: ${args.npc.name}`,
+    createdAt: args.existing?.createdAt || now,
+    updatedAt: args.existing?.updatedAt || now,
+    worldId: args.worldId,
+    worldName: args.worldName,
+    settings,
+    messages,
+  }
+}
+
 function messageTone(role: RealtimeTranscriptMessage['role']) {
   switch (role) {
     case 'assistant':
@@ -361,6 +404,8 @@ export function RealtimePanel({
   onClose,
   embedded = false,
   hideCloseButton = false,
+  npcId = null,
+  windowId,
 }: RealtimePanelProps) {
   useUILayer('realtime', isOpen && !embedded)
 
@@ -379,6 +424,7 @@ export function RealtimePanel({
   const [listening, setListening] = useState(false)
   const [speaking, setSpeaking] = useState(false)
   const [pendingAutoStart, setPendingAutoStart] = useState(false)
+  const npcDefinition = useMemo(() => getNpcDefinition(npcId), [npcId])
 
   const bringPanelToFront = useOasisStore(state => state.bringPanelToFront)
   const panelZIndex = useOasisStore(state => state.getPanelZIndex('realtime', 9998))
@@ -386,9 +432,15 @@ export function RealtimePanel({
   const activeWorldName = useOasisStore(state => state.worldRegistry.find(world => world.id === state.activeWorldId)?.name || 'Current world')
   const realtimeAvatar = useOasisStore(state => state.placedAgentAvatars.find(entry => entry.agentType === REALTIME_AGENT_TYPE) || null)
   const merlinAvatar = useOasisStore(state => state.placedAgentAvatars.find(entry => entry.agentType === 'merlin') || null)
+  const npcAvatar = useOasisStore(state => {
+    if (!npcDefinition) return null
+    return state.placedAgentAvatars.find(entry => entry.linkedWindowId === windowId)
+      || state.placedAgentAvatars.find(entry => entry.agentType === 'npc' && (entry.label === npcDefinition.name || entry.avatar3dUrl === npcDefinition.avatarUrl))
+      || null
+  })
   const transforms = useOasisStore(state => state.transforms)
-  const realtimeVoiceAvatar = realtimeAvatar || merlinAvatar
-  const defaultVisionAgentType = realtimeAvatar ? REALTIME_AGENT_TYPE : merlinAvatar ? 'merlin' : 'player'
+  const realtimeVoiceAvatar = npcAvatar || realtimeAvatar || merlinAvatar
+  const defaultVisionAgentType = npcAvatar ? 'npc' : realtimeAvatar ? REALTIME_AGENT_TYPE : merlinAvatar ? 'merlin' : 'player'
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const lipSyncRef = useRef<LipSyncController | null>(null)
@@ -610,6 +662,22 @@ export function RealtimePanel({
 
   const refreshSessionsFromStorage = useCallback(async (configPayload: RealtimeVoiceConfigPayload | null) => {
     await hydrateRealtimeStore()
+    if (npcDefinition && configPayload) {
+      const npcSessionId = `npc-${npcDefinition.id}-${activeWorldId}`
+      const existingNpcSession = listRealtimeSessions().find(session => session.id === npcSessionId) || null
+      const fresh = buildNpcSession({
+        worldId: activeWorldId,
+        worldName: activeWorldName,
+        npc: npcDefinition,
+        config: configPayload,
+        existing: existingNpcSession,
+      })
+      upsertRealtimeSession(fresh)
+      setSessions([fresh])
+      applySession(fresh)
+      return
+    }
+
     const existing = listRealtimeSessions().map(session => {
       if (!configPayload) return session
       const legacyInstructions = session.settings.instructions || ''
@@ -660,7 +728,7 @@ export function RealtimePanel({
     upsertRealtimeSession(fresh)
     setSessions([fresh])
     applySession(fresh)
-  }, [activeWorldId, activeWorldName, applySession])
+  }, [activeWorldId, activeWorldName, applySession, npcDefinition])
 
   useEffect(() => {
     let cancelled = false
@@ -971,6 +1039,7 @@ export function RealtimePanel({
           instructions: sessionSettings.instructions,
           history,
           playerContext,
+          npcId: npcDefinition?.id,
         }),
       })
       ensureActiveAttempt()
@@ -1128,7 +1197,7 @@ export function RealtimePanel({
               || call.name === 'walk_avatar_to'
               || call.name === 'play_avatar_animation'
             ) && !toolArgs.agentType && !toolArgs.agent && !toolArgs.avatarId) {
-              toolArgs.agentType = REALTIME_AGENT_TYPE
+              toolArgs.agentType = defaultVisionAgentType === 'npc' ? 'npc' : REALTIME_AGENT_TYPE
             }
             if ((
               call.name === 'place_object'
@@ -1138,15 +1207,49 @@ export function RealtimePanel({
               || call.name === 'set_avatar'
               || call.name === 'play_avatar_animation'
             ) && !toolArgs.actorAgentType) {
-              toolArgs.actorAgentType = REALTIME_AGENT_TYPE
+              toolArgs.actorAgentType = defaultVisionAgentType === 'npc' ? 'npc' : REALTIME_AGENT_TYPE
             }
 
             const messageId = ensureToolMessage({ callId: call.callId, name: call.name, input: toolArgs })
 
             try {
-              const toolResponse = await fetchOasisToolFromBrowser(call.name, toolArgs, { worldId: activeWorldId })
+              let result: Record<string, unknown>
+              let toolOk = true
 
-              const result = await readOasisToolJson(toolResponse)
+              if (call.name === 'npc_judgement') {
+                const npcToolArgs = {
+                  ...toolArgs,
+                  npcId: typeof toolArgs.npcId === 'string' && toolArgs.npcId ? toolArgs.npcId : npcDefinition?.id,
+                  questId: typeof toolArgs.questId === 'string' && toolArgs.questId ? toolArgs.questId : npcDefinition?.questId,
+                }
+                const response = await fetch('/api/player/progression', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'npc_judgement', ...npcToolArgs }),
+                })
+                result = await response.json().catch(() => ({ ok: false, error: 'NPC judgement returned invalid JSON.' })) as Record<string, unknown>
+                toolOk = response.ok && result.ok !== false
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('oasis:player-progression', { detail: result.progression || result }))
+                  window.dispatchEvent(new CustomEvent('oasis:npc-judgement', { detail: result }))
+                  const resultRecord = recordFrom(result.result)
+                  const xpRecords = [
+                    recordFrom(recordFrom(resultRecord?.questStart)?.xp),
+                    recordFrom(recordFrom(resultRecord?.guardianStep)?.xp),
+                    recordFrom(recordFrom(resultRecord?.unlockedSpell)?.xp),
+                    recordFrom(recordFrom(resultRecord?.unlockStep)?.xp),
+                  ]
+                  const xpGained = xpRecords.reduce((sum, xp) => sum + (typeof xp?.xpGained === 'number' ? xp.xpGained : 0), 0)
+                  if (xpGained > 0) {
+                    window.dispatchEvent(new CustomEvent('oasis:xp-awarded', { detail: { xpGained, source: 'Fire Guardian' } }))
+                  }
+                }
+              } else {
+                const toolResponse = await fetchOasisToolFromBrowser(call.name, toolArgs, { worldId: activeWorldId })
+                result = await readOasisToolJson(toolResponse)
+                toolOk = toolResponse.ok && result.ok !== false
+              }
+
               const screenshotImage = call.name === 'screenshot_viewport' ? extractRealtimeScreenshotImage(result) : null
               output = screenshotImage
                 ? stripRealtimeScreenshotPayload(result)
@@ -1154,7 +1257,7 @@ export function RealtimePanel({
               updateMessage(messageId, message => ({
                 ...message,
                 status: 'done',
-                toolState: toolResponse.ok && result.ok !== false ? 'done' : 'failed',
+                toolState: toolOk ? 'done' : 'failed',
                 toolOutput: output,
                 toolMedia: screenshotImage ? [screenshotImage] : message.toolMedia,
                 toolDurationMs: Date.now() - (toolStartedAtRef.current.get(call.callId) || Date.now()),
@@ -1413,7 +1516,7 @@ export function RealtimePanel({
       setConnectionDetail(detail)
       appendSystemMessage(detail)
     }
-  }, [activeWorldId, activeWorldName, appendMessage, appendSystemMessage, attachLocalMicLipSync, attachRemotePlaybackStream, config, connectionState, defaultVisionAgentType, disconnect, ensureOutputAudioContext, markUiFocus, selectedSession, sessionSettings, updateMessage])
+  }, [activeWorldId, activeWorldName, appendMessage, appendSystemMessage, attachLocalMicLipSync, attachRemotePlaybackStream, config, connectionState, defaultVisionAgentType, disconnect, ensureOutputAudioContext, markUiFocus, npcDefinition, selectedSession, sessionSettings, updateMessage])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -1567,8 +1670,8 @@ export function RealtimePanel({
       >
         <div className="flex items-center gap-3">
           <div>
-            <div className="text-[18px] font-semibold tracking-[0.24em] text-violet-100">REALTIME</div>
-            <div className="text-[11px] text-violet-200/70">Merlin-flavored voice sandbox</div>
+            <div className="text-[18px] font-semibold tracking-[0.24em] text-violet-100">{npcDefinition?.name || 'REALTIME'}</div>
+            <div className="text-[11px] text-violet-200/70">{npcDefinition?.title || 'Merlin-flavored voice sandbox'}</div>
           </div>
           <CallStatusBadge state={connectionState} listening={listening} speaking={speaking} />
         </div>
@@ -1598,7 +1701,7 @@ export function RealtimePanel({
           <div className="flex items-center gap-2">
             <select
               value={selectedSessionId}
-              disabled={connectionState === 'connected' || connectionState === 'connecting'}
+              disabled={Boolean(npcDefinition) || connectionState === 'connected' || connectionState === 'connecting'}
               onChange={event => handleSessionChange(event.target.value)}
               className="flex-1 rounded-lg border px-3 py-2 text-sm outline-none"
               style={{
@@ -1615,7 +1718,7 @@ export function RealtimePanel({
             </select>
             <button
               onClick={createFreshSession}
-              disabled={!config || connectionState === 'connected' || connectionState === 'connecting'}
+              disabled={Boolean(npcDefinition) || !config || connectionState === 'connected' || connectionState === 'connecting'}
               className="rounded-lg border px-3 py-2 text-xs font-mono uppercase tracking-[0.16em] disabled:opacity-40"
               style={{ borderColor: 'rgba(139,92,246,0.24)', background: `rgba(${r}, ${g}, ${b}, ${Math.max(0.16, panelSettings.opacity * 0.34)})`, color: '#ddd6fe' }}
             >
@@ -1623,7 +1726,7 @@ export function RealtimePanel({
             </button>
             <button
               onClick={removeCurrentSession}
-              disabled={!selectedSession || sessions.length <= 1 || connectionState === 'connected' || connectionState === 'connecting'}
+              disabled={Boolean(npcDefinition) || !selectedSession || sessions.length <= 1 || connectionState === 'connected' || connectionState === 'connecting'}
               className="rounded-lg border px-3 py-2 text-xs font-mono uppercase tracking-[0.16em] disabled:opacity-40"
               style={{ borderColor: 'rgba(244,114,182,0.24)', background: 'rgba(131,24,67,0.14)', color: '#fbcfe8' }}
               title="Delete this saved realtime session"
@@ -1640,7 +1743,7 @@ export function RealtimePanel({
                 model
                 <select
                   value={sessionSettings?.model || config?.model || REALTIME_MODELS[0]}
-                  disabled={!config || connectionState === 'connected' || connectionState === 'connecting'}
+                  disabled={Boolean(npcDefinition) || !config || connectionState === 'connected' || connectionState === 'connecting'}
                   onChange={event => sessionSettings && persistSettings({ ...sessionSettings, model: event.target.value })}
                   className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none disabled:opacity-50"
                   style={{ borderColor: 'rgba(196,181,253,0.18)', background: fieldFill, color: '#f5f3ff' }}
@@ -1654,7 +1757,7 @@ export function RealtimePanel({
                 voice
                 <select
                   value={sessionSettings?.voice || config?.defaultVoice || REALTIME_VOICES[0]}
-                  disabled={!config || connectionState === 'connected' || connectionState === 'connecting'}
+                  disabled={Boolean(npcDefinition) || !config || connectionState === 'connected' || connectionState === 'connecting'}
                   onChange={event => sessionSettings && persistSettings({ ...sessionSettings, voice: event.target.value })}
                   className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none disabled:opacity-50"
                   style={{ borderColor: 'rgba(196,181,253,0.18)', background: fieldFill, color: '#f5f3ff' }}
@@ -1668,7 +1771,7 @@ export function RealtimePanel({
                 vad
                 <select
                   value={sessionSettings?.vadMode || config?.defaultVadMode || REALTIME_VAD_MODES[0]}
-                  disabled={!config || connectionState === 'connected' || connectionState === 'connecting'}
+                  disabled={Boolean(npcDefinition) || !config || connectionState === 'connected' || connectionState === 'connecting'}
                   onChange={event => sessionSettings && persistSettings({ ...sessionSettings, vadMode: event.target.value as RealtimeVadMode })}
                   className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none disabled:opacity-50"
                   style={{ borderColor: 'rgba(196,181,253,0.18)', background: fieldFill, color: '#f5f3ff' }}
@@ -1683,6 +1786,7 @@ export function RealtimePanel({
                   value={sessionSettings?.vadEagerness || config?.defaultVadEagerness || REALTIME_VAD_EAGERNESS[0]}
                   disabled={
                     !config
+                    || Boolean(npcDefinition)
                     || connectionState === 'connected'
                     || connectionState === 'connecting'
                     || (sessionSettings?.vadMode || config?.defaultVadMode || REALTIME_VAD_MODES[0]) !== 'semantic_vad'
@@ -1702,7 +1806,7 @@ export function RealtimePanel({
               instruction scroll
               <textarea
                 value={sessionSettings?.instructions || config?.promptTemplate || ''}
-                disabled={!sessionSettings}
+                disabled={!sessionSettings || Boolean(npcDefinition)}
                 onChange={event => sessionSettings && persistSettings({ ...sessionSettings, instructions: event.target.value })}
                 rows={10}
                 className="mt-1 w-full rounded-xl border px-3 py-3 text-[12px] leading-5 outline-none disabled:opacity-50"

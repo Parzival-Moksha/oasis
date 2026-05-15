@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { getRequiredOasisUserId } from '@/lib/session'
 import { DEFAULT_PROFILE_AVATAR_3D_URL, DEFAULT_PROFILE_DISPLAY_NAME } from '@/lib/profile-defaults'
 import { buildPlayerProgression } from '@/lib/player-progression'
+import { hasSpellUnlocked, recordSpellUse } from '@/lib/player-progression-server'
 import { levelFromXp } from '@/lib/xp'
 
 async function ensureProfile(userId: string) {
@@ -27,7 +28,23 @@ export async function POST(request: NextRequest) {
     const profile = await ensureProfile(userId)
     const level = levelFromXp(profile.totalXp)
     const progression = buildPlayerProgression({ ...profile, level })
+    const unlocked = await hasSpellUnlocked(userId, 'firebolt')
     const cost = progression.stats.fireboltManaCost
+
+    if (!unlocked) {
+      return NextResponse.json({
+        ok: false,
+        error: 'Firebolt locked',
+        progression,
+        spell: {
+          id: 'firebolt',
+          locked: true,
+          cost,
+          damage: progression.stats.fireboltDamage,
+          speedMetersPerSecond: progression.stats.fireboltSpeedMetersPerSecond,
+        },
+      }, { status: 423 })
+    }
 
     if (progression.mana < cost) {
       return NextResponse.json({
@@ -51,6 +68,7 @@ export async function POST(request: NextRequest) {
       },
     })
     const nextProgression = buildPlayerProgression({ ...updated, level })
+    await recordSpellUse(userId, 'firebolt').catch(() => null)
 
     return NextResponse.json({
       ok: true,

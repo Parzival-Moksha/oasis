@@ -151,6 +151,7 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
     : win.agentType === 'openclaw' ? '#22d3ee'
     : win.agentType === 'merlin' ? '#f59e0b'
     : win.agentType === 'realtime' ? '#c084fc'
+    : win.agentType === 'npc' ? '#fb923c'
     : win.agentType === 'parzival' ? '#c084fc'
     : '#22c55e'
 

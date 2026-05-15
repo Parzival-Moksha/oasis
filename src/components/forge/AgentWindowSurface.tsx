@@ -53,6 +53,9 @@ export const AgentWindowSurface = memo(function AgentWindowSurface({ win }: { wi
     case 'realtime':
       content = <RealtimePanel isOpen embedded hideCloseButton onClose={() => {}} />
       break
+    case 'npc':
+      content = <RealtimePanel isOpen embedded hideCloseButton onClose={() => {}} npcId={win.npcId || 'quest-zero-fire-guardian'} windowId={win.id} />
+      break
     case 'devcraft':
       content = (
         <div className="flex items-center justify-center h-full text-green-400 font-mono text-sm">
@@ -95,6 +98,7 @@ export const AgentWindowSurface = memo(function AgentWindowSurface({ win }: { wi
   const b = next.win
   return a.id === b.id
     && a.agentType === b.agentType
+    && a.npcId === b.npcId
     && a.width === b.width
     && a.height === b.height
     && a.sessionId === b.sessionId
