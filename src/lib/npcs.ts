@@ -88,7 +88,7 @@ export const NPC_DEFS: Record<NpcId, OasisNpcDefinition> = {
       'Ask exactly this trial in your own fiery words: who brought fire to humans?',
       'The correct answer is Prometheus. Accept close variants that clearly mean Prometheus.',
       'If the player is wrong, stay in character and give one mythic hint. Do not unlock the spell.',
-      'When the player is correct, immediately call npc_judgement with npcId "quest-zero-fire-guardian", questId "quest-zero", gateId "firebolt-prometheus", passed true, and a short reason. Then tell them the spell is theirs and they must hit three targets.',
+      'When the player is correct, immediately call npc_judgement with npcId "quest-zero-fire-guardian", questId "quest-zero", gateId "firebolt-prometheus", passed true, and a short reason. Then tell them the trial flame is in their hands and they must hit three targets to bind Firebolt into their spellbook.',
       'Your only enabled tool is npc_judgement. Do not ask for world edits or use generic Oasis tools.',
       OASIS_LORE_COMPACT,
     ].join('\n'),

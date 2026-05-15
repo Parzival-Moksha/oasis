@@ -3900,38 +3900,6 @@
         }
       },
       {
-        "id": "rookie-new-private-world",
-        "label": "Create Private World",
-        "variant": "void-door",
-        "position": [
-          3.4,
-          0,
-          15.4
-        ],
-        "rotationY": -0.28,
-        "scale": 0.95,
-        "width": 2.35,
-        "height": 3.15,
-        "direction": "one-way",
-        "hidden": true,
-        "sourceWorldId": "world-rookie-wizard-system",
-        "action": {
-          "type": "create_world",
-          "visibility": "private",
-          "name": "First spell room",
-          "icon": "R",
-          "promptForName": true
-        },
-        "spawnPose": {
-          "position": [
-            0,
-            0,
-            -4
-          ],
-          "rotationY": 0
-        }
-      },
-      {
         "id": "rookie-to-quest-zero",
         "label": "Quest Zero",
         "variant": "solar-arch",
@@ -3999,29 +3967,6 @@
     "spatialWebObjects": [],
     "paintStrokes": [],
     "text3dObjects": [
-      {
-        "id": "rookie-sign-private-world",
-        "type": "text_3d",
-        "text": "Create your first private world",
-        "fontId": "helvetiker_regular",
-        "size": 0.34,
-        "depth": 0.0748,
-        "color": "#dbeafe",
-        "toneBias": 0.08,
-        "shininess": 0.72,
-        "position": [
-          3.25,
-          1.45,
-          12.65
-        ],
-        "rotation": [
-          0,
-          3.141592653589793,
-          0
-        ],
-        "authorId": "local-user",
-        "createdAt": 1778608800000
-      },
       {
         "id": "rookie-sign-quest-zero",
         "type": "text_3d",

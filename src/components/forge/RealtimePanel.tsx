@@ -1243,6 +1243,15 @@ export function RealtimePanel({
                   if (xpGained > 0) {
                     window.dispatchEvent(new CustomEvent('oasis:xp-awarded', { detail: { xpGained, source: 'Fire Guardian' } }))
                   }
+                  if (resultRecord?.trialSpell) {
+                    window.dispatchEvent(new CustomEvent('oasis:quest-progress-toast', {
+                      detail: {
+                        title: 'Trial Firebolt ready',
+                        message: 'Hit three targets to bind it',
+                        tone: 'fire',
+                      },
+                    }))
+                  }
                 }
               } else {
                 const toolResponse = await fetchOasisToolFromBrowser(call.name, toolArgs, { worldId: activeWorldId })

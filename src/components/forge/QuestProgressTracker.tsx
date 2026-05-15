@@ -19,6 +19,7 @@ type QuestProgress = {
 
 type SpellUnlock = {
   spellId: string
+  level?: number
 }
 
 type PlayerProgressionState = {
@@ -153,6 +154,12 @@ export function QuestProgressTracker({ activeWorldId }: { activeWorldId: string 
   const targetHits = QUEST_ZERO_STEPS
     .filter(step => step.startsWith('hit-firebolt-target'))
     .filter(step => completed.has(step as QuestZeroStepId)).length
+  const fireboltSpell = progression?.spells?.find(spell => spell.spellId === 'firebolt') || null
+  const fireboltStatus = fireboltSpell
+    ? `Learned Lv ${fireboltSpell.level || 1}`
+    : completed.has('answer-fire-guardian')
+      ? 'Trial active'
+      : 'Locked'
 
   return (
     <>
@@ -175,6 +182,16 @@ export function QuestProgressTracker({ activeWorldId }: { activeWorldId: string 
               </div>
             )
           })}
+        </div>
+        <div className="mt-3 rounded border border-white/10 bg-white/5 p-2">
+          <div className="mb-1 text-[9px] font-black uppercase tracking-[0.18em] text-white/45">Spellbook</div>
+          <div className={`flex items-center justify-between gap-2 rounded px-2 py-1.5 ${fireboltSpell ? 'bg-orange-400/16 text-orange-100' : completed.has('answer-fire-guardian') ? 'bg-cyan-400/12 text-cyan-100' : 'bg-black/28 text-white/45'}`}>
+            <div className="flex items-center gap-2">
+              <span className="h-2.5 w-2.5 rounded-full bg-orange-300 shadow-[0_0_12px_rgba(251,146,60,0.85)]" />
+              <span className="text-[11px] font-black uppercase tracking-[0.1em]">Firebolt</span>
+            </div>
+            <span className="font-mono text-[10px]">{fireboltStatus}</span>
+          </div>
         </div>
       </div>
       {toast && (

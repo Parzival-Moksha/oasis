@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PlayerComputedStats } from '@/lib/player-progression'
 import { PLAYER_BASE_STATS } from '@/lib/player-progression'
 import { useInputManager } from '@/lib/input-manager'
+import { useAudioManager } from '@/lib/audio-manager'
+import { setPlayerManaRecharging } from '@/lib/player-avatar-runtime'
 
 type VitalsSource = {
   hp?: unknown
@@ -175,6 +177,7 @@ export function PlayerVitalsHud({ visible }: { visible: boolean }) {
   const stopRecharge = useCallback(() => {
     rechargeActiveRef.current = false
     setRecharging(false)
+    setPlayerManaRecharging(false)
     if (rechargeTimerRef.current !== null) {
       window.clearInterval(rechargeTimerRef.current)
       rechargeTimerRef.current = null
@@ -216,6 +219,8 @@ export function PlayerVitalsHud({ visible }: { visible: boolean }) {
     rechargeActiveRef.current = true
     lastRechargeAtRef.current = performance.now()
     setRecharging(true)
+    setPlayerManaRecharging(true)
+    useAudioManager.getState().play('manaRecharge')
     rechargeTimerRef.current = window.setInterval(() => void rechargeTick(), 120)
   }, [rechargeTick, visible])
 

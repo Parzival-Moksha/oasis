@@ -5,6 +5,7 @@ import { awardXpActionToUser, awardXpToUser } from '@/lib/player-xp-server'
 import {
   ACHIEVEMENT_DEFS,
   QUEST_ZERO_ID,
+  QUEST_ZERO_WORLD_ID,
   QUEST_ZERO_TARGET_STEP_IDS,
   SPELL_DEFS,
   isAchievementId,
@@ -93,6 +94,17 @@ export async function hasSpellUnlocked(userId: string, spellId: SpellId): Promis
     select: { id: true },
   })
   return Boolean(row)
+}
+
+export async function canUseFireboltInQuestTrial(userId: string, worldId?: string): Promise<boolean> {
+  if (worldId !== QUEST_ZERO_WORLD_ID) return false
+  const quest = await prisma.playerQuestProgress.findUnique({
+    where: { userId_questId: { userId, questId: QUEST_ZERO_ID } },
+    select: { completedSteps: true, status: true },
+  })
+  if (!quest || quest.status === 'complete') return false
+  const completedSteps = parseJsonArray(quest.completedSteps)
+  return completedSteps.includes('answer-fire-guardian') && !completedSteps.includes('unlock-firebolt')
 }
 
 export async function recordAchievement(args: {
@@ -299,25 +311,17 @@ export async function recordFireGuardianJudgement(args: {
     stepId: 'answer-fire-guardian',
     metadata: { npcId: args.npcId, gateId: args.gateId, reason: args.reason || '' },
   })
-  const unlockedSpell = await unlockSpellForUser({
-    userId: args.userId,
-    spellId: 'firebolt',
-    sourceQuestId: args.questId || QUEST_ZERO_ID,
-    metadata: { npcId: args.npcId, gateId: args.gateId },
-  })
-  const unlockStep = await completeQuestStep({
-    userId: args.userId,
-    questId: args.questId || QUEST_ZERO_ID,
-    stepId: 'unlock-firebolt',
-  })
 
   return {
     ok: true,
     passed: true,
     questStart,
     guardianStep,
-    unlockedSpell,
-    unlockStep,
+    trialSpell: {
+      spellId: 'firebolt',
+      worldId: QUEST_ZERO_WORLD_ID,
+      expiresWhen: 'quest-zero-targets-complete',
+    },
   }
 }
 
@@ -356,6 +360,28 @@ export async function recordFireboltTargetHit(args: {
     source: QUEST_ZERO_ID,
     metadata: { targetId: args.targetId, worldId: args.worldId || null },
   })
+  const shouldUnlockFirebolt = hits.length >= QUEST_ZERO_TARGET_STEP_IDS.length
+  const unlockedSpell = shouldUnlockFirebolt
+    ? await unlockSpellForUser({
+        userId: args.userId,
+        spellId: 'firebolt',
+        sourceQuestId: QUEST_ZERO_ID,
+        metadata: { targetId: args.targetId, worldId: args.worldId || null },
+      })
+    : null
+  const unlockStep = shouldUnlockFirebolt
+    ? await completeQuestStep({
+        userId: args.userId,
+        questId: QUEST_ZERO_ID,
+        stepId: 'unlock-firebolt',
+        metadata: {
+          ...metadata,
+          fireboltTargetHits: hits,
+          lastFireboltTargetHit: args.targetId,
+          lastWorldId: args.worldId || null,
+        },
+      })
+    : null
 
   return {
     ok: true,
@@ -363,5 +389,7 @@ export async function recordFireboltTargetHit(args: {
     targetId: args.targetId,
     hitStep,
     achievement,
+    unlockedSpell,
+    unlockStep,
   }
 }

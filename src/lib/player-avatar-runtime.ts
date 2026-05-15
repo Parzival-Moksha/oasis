@@ -18,7 +18,9 @@ const DEFAULT_GROUND_Y = 0
 
 let latestPlayerAvatarPose: PlayerAvatarPose | null = null
 let playerSpellCasting = false
+let playerManaRecharging = false
 const spellListeners = new Set<() => void>()
+const manaRechargeListeners = new Set<() => void>()
 const teleportListeners = new Set<(pose: PlayerAvatarPose) => void>()
 
 function cloneVec3(value: [number, number, number]): [number, number, number] {
@@ -64,6 +66,29 @@ export function subscribePlayerSpellCasting(listener: () => void): () => void {
   spellListeners.add(listener)
   return () => {
     spellListeners.delete(listener)
+  }
+}
+
+function notifyManaRechargeListeners() {
+  for (const listener of manaRechargeListeners) {
+    listener()
+  }
+}
+
+export function getPlayerManaRecharging(): boolean {
+  return playerManaRecharging
+}
+
+export function setPlayerManaRecharging(active: boolean): void {
+  if (playerManaRecharging === active) return
+  playerManaRecharging = active
+  notifyManaRechargeListeners()
+}
+
+export function subscribePlayerManaRecharging(listener: () => void): () => void {
+  manaRechargeListeners.add(listener)
+  return () => {
+    manaRechargeListeners.delete(listener)
   }
 }
 

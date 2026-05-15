@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { getRequiredOasisUserId } from '@/lib/session'
 import { DEFAULT_PROFILE_AVATAR_3D_URL, DEFAULT_PROFILE_DISPLAY_NAME } from '@/lib/profile-defaults'
 import { buildPlayerProgression } from '@/lib/player-progression'
-import { hasSpellUnlocked, recordSpellUse } from '@/lib/player-progression-server'
+import { canUseFireboltInQuestTrial, hasSpellUnlocked, recordSpellUse } from '@/lib/player-progression-server'
 import { levelFromXp } from '@/lib/xp'
 
 async function ensureProfile(userId: string) {
@@ -25,13 +25,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'oasis_session cookie required' }, { status: 401 })
     }
 
+    const body = await request.json().catch(() => ({})) as { worldId?: unknown }
+    const worldId = typeof body.worldId === 'string' ? body.worldId : undefined
     const profile = await ensureProfile(userId)
     const level = levelFromXp(profile.totalXp)
     const progression = buildPlayerProgression({ ...profile, level })
     const unlocked = await hasSpellUnlocked(userId, 'firebolt')
+    const trialUnlocked = unlocked ? false : await canUseFireboltInQuestTrial(userId, worldId)
     const cost = progression.stats.fireboltManaCost
 
-    if (!unlocked) {
+    if (!unlocked && !trialUnlocked) {
       return NextResponse.json({
         ok: false,
         error: 'Firebolt locked',
@@ -68,7 +71,9 @@ export async function POST(request: NextRequest) {
       },
     })
     const nextProgression = buildPlayerProgression({ ...updated, level })
-    await recordSpellUse(userId, 'firebolt').catch(() => null)
+    if (unlocked) {
+      await recordSpellUse(userId, 'firebolt').catch(() => null)
+    }
 
     return NextResponse.json({
       ok: true,
@@ -76,6 +81,7 @@ export async function POST(request: NextRequest) {
       spell: {
         id: 'firebolt',
         cost,
+        trial: trialUnlocked,
         damage: progression.stats.fireboltDamage,
         speedMetersPerSecond: progression.stats.fireboltSpeedMetersPerSecond,
       },

@@ -78,10 +78,10 @@ export const QUEST_ZERO_STEPS = [
   'meet-merlin',
   'enter-quest-zero',
   'answer-fire-guardian',
-  'unlock-firebolt',
   'hit-firebolt-target-1',
   'hit-firebolt-target-2',
   'hit-firebolt-target-3',
+  'unlock-firebolt',
   'complete',
 ] as const
 

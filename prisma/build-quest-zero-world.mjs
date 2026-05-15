@@ -139,10 +139,8 @@ function stakeRing() {
     objects.push(
       cylinder([x, 0.8, z], [0.08, 1.6, 0.08], '#2f2418', { rotation: [0.12, angle, 0.05] }),
       cone([x, 1.68, z], [0.16, 0.34, 0.16], '#1c120b'),
+      flame([x, 1.92, z], [0.14, 0.34, 0.14], '#fb923c', { intensity: 0.86, speed: 1.05 }),
     )
-    if (i % 4 === 0) {
-      objects.push(flame([x * 0.96, 1.88, z * 0.96], [0.18, 0.42, 0.18], '#fb923c'))
-    }
   }
   return crafted(
     'quest-zero-stake-ring',

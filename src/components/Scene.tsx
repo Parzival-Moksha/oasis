@@ -1318,7 +1318,7 @@ function AgentQuickLauncher({
 }
 
 const ROOKIE_MERLIN_POSITION: [number, number, number] = [0, 0, 10.2]
-const ROOKIE_MERLIN_INTERACTION_RADIUS = 5
+const ROOKIE_MERLIN_INTERACTION_RADIUS = 2.75
 const ROOKIE_MERLIN_AVATAR_ID = 'agent-avatar-merlin'
 const ROOKIE_MERLIN_WINDOW_ID = 'agent-npc-rookie-merlin'
 const ROOKIE_PORTAL_ZERO_GATE_ID = 'rookie-to-portal-zero'
@@ -1342,9 +1342,9 @@ function readRookieMerlinPosition(activeWorldId: string): [number, number, numbe
   const state = useOasisStore.getState()
   const merlin = state.placedAgentAvatars.find(avatar => avatar.id === ROOKIE_MERLIN_AVATAR_ID)
     || state.placedAgentAvatars.find(avatar => avatar.agentType === 'merlin')
-  if (!merlin) return ROOKIE_MERLIN_POSITION
+  if (!merlin) return null
   const transform = state.transforms[merlin.id]
-  return transform?.position || merlin.position || ROOKIE_MERLIN_POSITION
+  return transform?.position || merlin.position || null
 }
 
 function readRookieMerlinDistance(activeWorldId: string): number | null {

@@ -30,6 +30,8 @@ export type SoundEvent =
   | 'fireboltCast'  // Firebolt cast whoosh
   | 'fireboltHit'   // Firebolt impact
   | 'fireboltVoice' // Player callout for firebolt
+  | 'manaRecharge'  // Mana recharge chant/voice
+  | 'objectiveAchieved' // Quest objective completed
   | 'anorakDone'    // Anorak finished response
   | 'notification'  // DevCraft timer, mission complete
   | 'connected'     // Agent/world link established
@@ -108,8 +110,18 @@ export const SOUND_OPTIONS: Record<SoundEvent, SoundOption[]> = {
     { id: 'woodMedium0', label: 'Wood Medium 0', path: `${IMPACT}/impactWood_medium_000.ogg` },
   ],
   fireboltVoice: [
+    { id: 'suppressingFireFemale', label: 'Suppressing Fire Female', path: '/audio/kenney_voiceover-pack/Female/war_supressing_fire.ogg' },
+    { id: 'suppressingFireMale', label: 'Suppressing Fire Male', path: '/audio/kenney_voiceover-pack/Male/war_suppressing_fire.ogg' },
     { id: 'fireInHoleFemale', label: 'Fire Call Female', path: '/audio/kenney_voiceover-pack/Female/war_fire_in_the_hole.ogg' },
     { id: 'fireInHoleMale', label: 'Fire Call Male', path: '/audio/kenney_voiceover-pack/Male/war_fire_in_the_hole.ogg' },
+  ],
+  manaRecharge: [
+    { id: 'manaPowerFemale', label: 'Mana Power Female', path: '/audio/kenney_voiceover-pack/Female/power_up.ogg' },
+    { id: 'manaPowerMale', label: 'Mana Power Male', path: '/audio/kenney_voiceover-pack/Male/power_up.ogg' },
+  ],
+  objectiveAchieved: [
+    { id: 'objectiveFemale', label: 'Objective Achieved Female', path: '/audio/kenney_voiceover-pack/Female/objective_achieved.ogg' },
+    { id: 'missionFemale', label: 'Mission Complete Female', path: '/audio/kenney_voiceover-pack/Female/mission_completed.ogg' },
   ],
   anorakDone:   [{ id: 'coins', label: 'Coins', path: `${RPG}/handleCoins.ogg` }, { id: 'latch', label: 'Metal Latch', path: `${RPG}/metalLatch.ogg` }, { id: 'book', label: 'Book Close', path: `${RPG}/bookClose.ogg` }],
   notification: [
@@ -169,7 +181,9 @@ const DEFAULT_SELECTIONS: Record<SoundEvent, string> = {
   conjureDone: 'latch',
   fireboltCast: 'powerUpFemale',
   fireboltHit: 'genericLight0',
-  fireboltVoice: 'fireInHoleFemale',
+  fireboltVoice: 'suppressingFireFemale',
+  manaRecharge: 'manaPowerFemale',
+  objectiveAchieved: 'objectiveFemale',
   anorakDone: 'coins',
   notification: 'metal',
   connected: 'fighterReady',
@@ -205,6 +219,8 @@ function getSoundCooldownMs(event: SoundEvent): number {
   if (event === 'buttonHover') return 0
   if (event === 'footstep') return 80
   if (event === 'fireboltVoice') return 900
+  if (event === 'manaRecharge') return 1600
+  if (event === 'objectiveAchieved') return 1200
   return 0
 }
 
@@ -213,6 +229,8 @@ function getSoundVolumeMultiplier(event: SoundEvent): number {
   if (event === 'buttonClick') return 0.82
   if (event === 'fireboltVoice') return 0.78
   if (event === 'fireboltHit') return 0.7
+  if (event === 'manaRecharge') return 0.72
+  if (event === 'objectiveAchieved') return 0.9
   return 1
 }
 

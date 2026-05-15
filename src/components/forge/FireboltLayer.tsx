@@ -68,6 +68,7 @@ type FireboltResponse = {
 const FIREBOLT_TTL_S = 1.75
 const FIREBOLT_COOLDOWN_MS = 170
 const FIREBOLT_ARMING_DISTANCE_M = 1.35
+const FIREBOLT_GROUND_ARMING_DISTANCE_M = 3.4
 const EXPLOSION_TTL_S = 0.82
 const FIREBOLT_TRAIL_SPACING_M = 0.5
 const FIREBOLT_SMOKE_TTL_S = 1
@@ -196,13 +197,36 @@ function armedSegment(
   end: THREE.Vector3,
   previousDistance: number,
   nextDistance: number,
+  armingDistance = FIREBOLT_ARMING_DISTANCE_M,
 ): { start: THREE.Vector3; end: THREE.Vector3 } | null {
-  if (nextDistance < FIREBOLT_ARMING_DISTANCE_M) return null
-  if (previousDistance >= FIREBOLT_ARMING_DISTANCE_M) return { start, end }
+  if (nextDistance < armingDistance) return null
+  if (previousDistance >= armingDistance) return { start, end }
   const segmentDistance = nextDistance - previousDistance
   if (segmentDistance <= 0) return null
-  const t = THREE.MathUtils.clamp((FIREBOLT_ARMING_DISTANCE_M - previousDistance) / segmentDistance, 0, 1)
+  const t = THREE.MathUtils.clamp((armingDistance - previousDistance) / segmentDistance, 0, 1)
   return { start: start.clone().lerp(end, t), end }
+}
+
+function emitXpAward(value: unknown) {
+  if (value) window.dispatchEvent(new CustomEvent('oasis:xp-awarded', { detail: value }))
+}
+
+function emitProgressionResultXp(result: unknown) {
+  const record = result as {
+    hitStep?: { xp?: unknown; completionXp?: unknown }
+    achievement?: { xp?: unknown }
+    unlockedSpell?: { xp?: unknown; achievements?: Array<{ xp?: unknown }> }
+    unlockStep?: { xp?: unknown; completionXp?: unknown; completionAchievement?: { xp?: unknown } }
+  } | null
+  if (!record) return
+  emitXpAward(record.hitStep?.xp)
+  emitXpAward(record.hitStep?.completionXp)
+  emitXpAward(record.achievement?.xp)
+  emitXpAward(record.unlockedSpell?.xp)
+  for (const achievement of record.unlockedSpell?.achievements || []) emitXpAward(achievement?.xp)
+  emitXpAward(record.unlockStep?.xp)
+  emitXpAward(record.unlockStep?.completionXp)
+  emitXpAward(record.unlockStep?.completionAchievement?.xp)
 }
 
 function FireboltMesh({ projectile }: { projectile: FireboltProjectile }) {
@@ -358,7 +382,12 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
     up.setFromMatrixColumn(camera.matrixWorld, 1).normalize()
 
     const pose = getPlayerAvatarPose()
-    if (pose && useInputManager.getState().inputState === 'third-person') {
+    const isThirdPerson = Boolean(pose && useInputManager.getState().inputState === 'third-person')
+    if (isThirdPerson) {
+      direction.y = THREE.MathUtils.clamp(direction.y, -0.04, 0.32)
+      direction.normalize()
+    }
+    if (pose && isThirdPerson) {
       const [px, py, pz] = pose.position
       const [fx, , fz] = pose.forward
       const poseForward = new THREE.Vector3(fx, 0, fz).normalize()
@@ -398,7 +427,11 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
     lastCastAtRef.current = now
     castingRef.current = true
     try {
-      const response = await fetch('/api/profile/spells/firebolt', { method: 'POST' })
+      const response = await fetch('/api/profile/spells/firebolt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ worldId: useOasisStore.getState().activeWorldId }),
+      })
       const data = await response.json().catch(() => ({})) as FireboltResponse
       if (!response.ok || !data.ok) {
         window.dispatchEvent(new CustomEvent('oasis:firebolt-failed', { detail: data }))
@@ -412,7 +445,6 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
       setPlayerSpellCasting(true)
       window.setTimeout(() => setPlayerSpellCasting(false), FIREBOLT_CAST_ANIMATION_MS)
       const audio = useAudioManager.getState()
-      audio.play('fireboltCast')
       audio.play('fireboltVoice')
       window.dispatchEvent(new CustomEvent('oasis:spell-cast', { detail: { spell: 'firebolt', damage } }))
       if (data.progression) {
@@ -453,8 +485,16 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
             },
           }))
         }
-        if (data?.result?.hitStep?.xp || data?.result?.hitStep?.completionXp) {
-          window.dispatchEvent(new CustomEvent('oasis:xp-awarded', { detail: data.result.hitStep.completionXp || data.result.hitStep.xp }))
+        emitProgressionResultXp(data?.result)
+        if (data?.result?.unlockedSpell?.newlyUnlocked || data?.result?.unlockStep?.completionXp) {
+          useAudioManager.getState().play('objectiveAchieved')
+          window.dispatchEvent(new CustomEvent('oasis:quest-progress-toast', {
+            detail: {
+              title: 'Firebolt learned',
+              message: 'Added to your spellbook',
+              tone: 'quest',
+            },
+          }))
         }
       })
       .catch(() => {})
@@ -514,8 +554,9 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
           })
         }
         const activeSegment = armedSegment(start, end, projectile.distance || 0, nextDistance)
+        const groundSegment = armedSegment(start, end, projectile.distance || 0, nextDistance, FIREBOLT_GROUND_ARMING_DISTANCE_M)
         const origin = new THREE.Vector3(...projectile.origin)
-        let impact = activeSegment ? groundHit(activeSegment.start, activeSegment.end) : null
+        let impact = groundSegment ? groundHit(groundSegment.start, groundSegment.end) : null
         let impactTarget: CollisionTarget | null = null
 
         if (!impact && activeSegment) {

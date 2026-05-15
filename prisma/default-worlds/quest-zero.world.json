@@ -1164,20 +1164,20 @@
           {
             "type": "flame",
             "position": [
-              5.3759999999999994,
-              1.88,
+              5.6,
+              1.92,
               0
             ],
             "scale": [
-              0.18,
-              0.42,
-              0.18
+              0.14,
+              0.34,
+              0.14
             ],
             "color": "#fb923c",
             "color2": "#fde68a",
             "color3": "#ef4444",
-            "intensity": 1.25,
-            "speed": 1.25
+            "intensity": 0.86,
+            "speed": 1.05
           },
           {
             "type": "cylinder",
@@ -1217,6 +1217,24 @@
             "metalness": 0.02
           },
           {
+            "type": "flame",
+            "position": [
+              5.866635031446671,
+              1.92,
+              2.43003979551832
+            ],
+            "scale": [
+              0.14,
+              0.34,
+              0.14
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 0.86,
+            "speed": 1.05
+          },
+          {
             "type": "cylinder",
             "position": [
               3.9597979746446663,
@@ -1254,6 +1272,24 @@
             "metalness": 0.02
           },
           {
+            "type": "flame",
+            "position": [
+              3.9597979746446663,
+              1.92,
+              3.9597979746446654
+            ],
+            "scale": [
+              0.14,
+              0.34,
+              0.14
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 0.86,
+            "speed": 1.05
+          },
+          {
             "type": "cylinder",
             "position": [
               2.4300397955183204,
@@ -1289,6 +1325,24 @@
             "color": "#1c120b",
             "roughness": 0.7,
             "metalness": 0.02
+          },
+          {
+            "type": "flame",
+            "position": [
+              2.4300397955183204,
+              1.92,
+              5.866635031446671
+            ],
+            "scale": [
+              0.14,
+              0.34,
+              0.14
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 0.86,
+            "speed": 1.05
           },
           {
             "type": "cylinder",
@@ -1330,20 +1384,20 @@
           {
             "type": "flame",
             "position": [
-              3.291850596108085e-16,
-              1.88,
-              5.3759999999999994
+              3.429011037612589e-16,
+              1.92,
+              5.6
             ],
             "scale": [
-              0.18,
-              0.42,
-              0.18
+              0.14,
+              0.34,
+              0.14
             ],
             "color": "#fb923c",
             "color2": "#fde68a",
             "color3": "#ef4444",
-            "intensity": 1.25,
-            "speed": 1.25
+            "intensity": 0.86,
+            "speed": 1.05
           },
           {
             "type": "cylinder",
@@ -1383,6 +1437,24 @@
             "metalness": 0.02
           },
           {
+            "type": "flame",
+            "position": [
+              -2.4300397955183195,
+              1.92,
+              5.866635031446671
+            ],
+            "scale": [
+              0.14,
+              0.34,
+              0.14
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 0.86,
+            "speed": 1.05
+          },
+          {
             "type": "cylinder",
             "position": [
               -3.9597979746446654,
@@ -1420,6 +1492,24 @@
             "metalness": 0.02
           },
           {
+            "type": "flame",
+            "position": [
+              -3.9597979746446654,
+              1.92,
+              3.9597979746446663
+            ],
+            "scale": [
+              0.14,
+              0.34,
+              0.14
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 0.86,
+            "speed": 1.05
+          },
+          {
             "type": "cylinder",
             "position": [
               -5.866635031446671,
@@ -1455,6 +1545,24 @@
             "color": "#1c120b",
             "roughness": 0.7,
             "metalness": 0.02
+          },
+          {
+            "type": "flame",
+            "position": [
+              -5.866635031446671,
+              1.92,
+              2.430039795518321
+            ],
+            "scale": [
+              0.14,
+              0.34,
+              0.14
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 0.86,
+            "speed": 1.05
           },
           {
             "type": "cylinder",
@@ -1496,20 +1604,20 @@
           {
             "type": "flame",
             "position": [
-              -5.3759999999999994,
-              1.88,
-              6.58370119221617e-16
+              -5.6,
+              1.92,
+              6.858022075225178e-16
             ],
             "scale": [
-              0.18,
-              0.42,
-              0.18
+              0.14,
+              0.34,
+              0.14
             ],
             "color": "#fb923c",
             "color2": "#fde68a",
             "color3": "#ef4444",
-            "intensity": 1.25,
-            "speed": 1.25
+            "intensity": 0.86,
+            "speed": 1.05
           },
           {
             "type": "cylinder",
@@ -1549,6 +1657,24 @@
             "metalness": 0.02
           },
           {
+            "type": "flame",
+            "position": [
+              -5.8666350314466715,
+              1.92,
+              -2.430039795518319
+            ],
+            "scale": [
+              0.14,
+              0.34,
+              0.14
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 0.86,
+            "speed": 1.05
+          },
+          {
             "type": "cylinder",
             "position": [
               -3.9597979746446668,
@@ -1586,6 +1712,24 @@
             "metalness": 0.02
           },
           {
+            "type": "flame",
+            "position": [
+              -3.9597979746446668,
+              1.92,
+              -3.9597979746446654
+            ],
+            "scale": [
+              0.14,
+              0.34,
+              0.14
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 0.86,
+            "speed": 1.05
+          },
+          {
             "type": "cylinder",
             "position": [
               -2.4300397955183235,
@@ -1621,6 +1765,24 @@
             "color": "#1c120b",
             "roughness": 0.7,
             "metalness": 0.02
+          },
+          {
+            "type": "flame",
+            "position": [
+              -2.4300397955183235,
+              1.92,
+              -5.866635031446669
+            ],
+            "scale": [
+              0.14,
+              0.34,
+              0.14
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 0.86,
+            "speed": 1.05
           },
           {
             "type": "cylinder",
@@ -1662,20 +1824,20 @@
           {
             "type": "flame",
             "position": [
-              -9.875551788324254e-16,
-              1.88,
-              -5.3759999999999994
+              -1.0287033112837766e-15,
+              1.92,
+              -5.6
             ],
             "scale": [
-              0.18,
-              0.42,
-              0.18
+              0.14,
+              0.34,
+              0.14
             ],
             "color": "#fb923c",
             "color2": "#fde68a",
             "color3": "#ef4444",
-            "intensity": 1.25,
-            "speed": 1.25
+            "intensity": 0.86,
+            "speed": 1.05
           },
           {
             "type": "cylinder",
@@ -1715,6 +1877,24 @@
             "metalness": 0.02
           },
           {
+            "type": "flame",
+            "position": [
+              2.4300397955183213,
+              1.92,
+              -5.86663503144667
+            ],
+            "scale": [
+              0.14,
+              0.34,
+              0.14
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 0.86,
+            "speed": 1.05
+          },
+          {
             "type": "cylinder",
             "position": [
               3.959797974644665,
@@ -1752,6 +1932,24 @@
             "metalness": 0.02
           },
           {
+            "type": "flame",
+            "position": [
+              3.959797974644665,
+              1.92,
+              -3.9597979746446668
+            ],
+            "scale": [
+              0.14,
+              0.34,
+              0.14
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 0.86,
+            "speed": 1.05
+          },
+          {
             "type": "cylinder",
             "position": [
               5.866635031446669,
@@ -1787,6 +1985,24 @@
             "color": "#1c120b",
             "roughness": 0.7,
             "metalness": 0.02
+          },
+          {
+            "type": "flame",
+            "position": [
+              5.866635031446669,
+              1.92,
+              -2.430039795518324
+            ],
+            "scale": [
+              0.14,
+              0.34,
+              0.14
+            ],
+            "color": "#fb923c",
+            "color2": "#fde68a",
+            "color3": "#ef4444",
+            "intensity": 0.86,
+            "speed": 1.05
           }
         ]
       },

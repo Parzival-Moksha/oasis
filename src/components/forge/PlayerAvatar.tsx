@@ -28,14 +28,16 @@ import { sprintRef } from '../CameraController'
 import { SettingsContext } from '../scene-lib'
 import {
   PLAYER_AVATAR_LIPSYNC_ID,
+  getPlayerManaRecharging,
   getPlayerSpellCasting,
   requestPlayerAvatarTeleport,
   setPlayerAvatarPose,
   setPlayerSpellCasting,
   subscribePlayerAvatarTeleport,
+  subscribePlayerManaRecharging,
   subscribePlayerSpellCasting,
 } from '../../lib/player-avatar-runtime'
-import { SPELL_CAST_ANIMATION_ID, SPELL_CAST_SOUND_URL } from '../../lib/spell-casting'
+import { MANA_RECHARGE_ANIMATION_ID, SPELL_CAST_ANIMATION_ID } from '../../lib/spell-casting'
 import { PORTAL_REVEAL_ROLL_EVENT } from '../../lib/portal-transition-settings'
 import { QUEST_ZERO_WORLD_ID, ROOKIE_WIZARD_WORLD_ID } from '../../lib/portal-gates'
 import { sampleTerrainHeightAt } from '../../lib/forge/terrain-brush'
@@ -188,8 +190,8 @@ export function PlayerAvatar({
   // ── Animation Controller (state machine) ──────────────────────────
   const animControllerRef = useRef<AnimationController | null>(null)
   const footstepTimerRef = useRef(0)
-  const spellAudioRef = useRef<HTMLAudioElement | null>(null)
   const spellAnimationActiveRef = useRef(false)
+  const manaRechargeAnimationActiveRef = useRef(false)
   const portalRollTimeoutRef = useRef<number | null>(null)
   // Reveal-roll forward motion: avatar slides 3m in its facing direction during
   // the ual-roll clip so the roll reads as physical forward momentum.
@@ -201,6 +203,7 @@ export function PlayerAvatar({
     durationMs: number
   } | null>(null)
   const [playerSpellCasting, setPlayerSpellCastingState] = useState(() => getPlayerSpellCasting())
+  const [playerManaRecharging, setPlayerManaRechargingState] = useState(() => getPlayerManaRecharging())
 
   // ── IBL one-shot flag ──────────────────────────────────────────────
   const iblAppliedRef = useRef(false)
@@ -265,29 +268,10 @@ export function PlayerAvatar({
   }, [])
 
   useEffect(() => {
-    const audio = new Audio(SPELL_CAST_SOUND_URL)
-    audio.loop = true
-    audio.preload = 'auto'
-    spellAudioRef.current = audio
-    return () => {
-      audio.pause()
-      audio.src = ''
-      spellAudioRef.current = null
-    }
+    return subscribePlayerManaRecharging(() => {
+      setPlayerManaRechargingState(getPlayerManaRecharging())
+    })
   }, [])
-
-  useEffect(() => {
-    const audio = spellAudioRef.current
-    if (!audio) return
-    if (playerSpellCasting) {
-      void audio.play().catch(() => {})
-      return
-    }
-    audio.pause()
-    try {
-      audio.currentTime = 0
-    } catch {}
-  }, [playerSpellCasting])
 
   // ═══════════════════════════════════════════════════════════════════
   // VRM LOADING — same pipeline as VRMCatalogRenderer
@@ -741,6 +725,7 @@ export function PlayerAvatar({
       if (playerSpellCasting) {
         if (!spellAnimationActiveRef.current) {
           spellAnimationActiveRef.current = true
+          manaRechargeAnimationActiveRef.current = false
           animControllerRef.current.preloadClip(SPELL_CAST_ANIMATION_ID).then(ok => {
             if (ok && getPlayerSpellCasting()) {
               animControllerRef.current?.transitionTo('custom', SPELL_CAST_ANIMATION_ID)
@@ -754,10 +739,27 @@ export function PlayerAvatar({
         }
       }
 
+      // Mana recharge borrows the capoeira clip until we have a bespoke ritual animation.
+      if (playerManaRecharging && !playerSpellCasting) {
+        if (!manaRechargeAnimationActiveRef.current) {
+          manaRechargeAnimationActiveRef.current = true
+          animControllerRef.current.preloadClip(MANA_RECHARGE_ANIMATION_ID).then(ok => {
+            if (ok && getPlayerManaRecharging() && !getPlayerSpellCasting()) {
+              animControllerRef.current?.transitionTo('custom', MANA_RECHARGE_ANIMATION_ID)
+            }
+          })
+        }
+      } else if (manaRechargeAnimationActiveRef.current) {
+        manaRechargeAnimationActiveRef.current = false
+        if (speed < 0.05 && !playerSpellCasting) {
+          animControllerRef.current.transitionTo('idle')
+        }
+      }
+
       // ── X key = random dance ──
       if (isThirdPersonActive) {
         const { dance } = getKeys() as Record<string, boolean>
-        if (dance && !playerSpellCasting && animControllerRef.current.state !== 'custom') {
+        if (dance && !playerSpellCasting && !playerManaRecharging && animControllerRef.current.state !== 'custom') {
           const randomDance = DANCE_CLIPS[Math.floor(Math.random() * DANCE_CLIPS.length)]
           animControllerRef.current.preloadClip(randomDance).then(ok => {
             if (ok) animControllerRef.current?.transitionTo('custom', randomDance)
