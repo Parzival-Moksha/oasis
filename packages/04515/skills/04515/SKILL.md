@@ -16,14 +16,20 @@ The goal is simple: the user opens Oasis, clicks the agent connect button, copie
 - OpenClaw: use the native OpenClaw gateway bridge.
 - Hermes Agent: use Hermes's local OpenAI-compatible API server plus an Oasis MCP adapter.
 
-If this skill/plugin is missing or old, tell the user to install or update the 04515 package from npm:
+If this skill/plugin is missing or old, prefer the direct npm bridge runner over forcing an OpenClaw plugin install:
 
 ```bash
-openclaw plugins install npm:@04515xyz/oasis-bridge --force --dangerously-force-unsafe-install
+npx -y @04515xyz/oasis-bridge@latest openclaw https://openclaw.04515.xyz/pair/<code>
+```
+
+If the user explicitly wants the persistent OpenClaw plugin command, install/update from npm and restart the Gateway:
+
+```bash
+openclaw plugins install npm:@04515xyz/oasis-bridge --force
 openclaw gateway restart
 ```
 
-Do not use `clawhub:04515` unless the user explicitly asks for ClawHub; the ClawHub entry may lag behind the npm package during release cutovers.
+If the plugin install trips a scanner warning, do not force it unless the user explicitly reviewed the source and accepted that risk. Use the direct npm bridge runner instead. Do not use `clawhub:04515` unless the user explicitly asks for ClawHub; the ClawHub entry may lag behind the npm package during release cutovers.
 
 If installing the raw skill into Hermes, use the skill name `oasis-04515` because some Hermes builds reject all-numeric skill names. If this skill is active, proceed.
 
@@ -94,13 +100,19 @@ Hermes success logs should include:
 
 ## OpenClaw Path
 
-Prefer the native OpenClaw plugin command:
+Prefer the direct npm bridge runner because it avoids plugin-install scanner friction and works even when the OpenClaw plugin wrapper hangs:
+
+```bash
+npx -y @04515xyz/oasis-bridge@latest openclaw https://openclaw.04515.xyz/pair/<code>
+```
+
+If the persistent 04515 plugin is already installed and current, the native OpenClaw plugin command is also acceptable:
 
 ```bash
 openclaw 04515 connect https://openclaw.04515.xyz/pair/<code>
 ```
 
-If the plugin command is unavailable or hangs after printing only the 04515 plugin banner, bypass the OpenClaw CLI wrapper and use the npm bridge runner:
+If the plugin command is unavailable or hangs after printing only the 04515 plugin banner, use the npm bridge runner:
 
 ```bash
 npx -y @04515xyz/oasis-bridge@latest openclaw https://openclaw.04515.xyz/pair/<code>

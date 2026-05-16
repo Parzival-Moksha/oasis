@@ -37,6 +37,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { readFileSync } from 'node:fs'
 
+import { envFlag, envValue, firstEnvValue } from './bridge-env.mjs'
 import { startBridgeMcpServer } from './openclaw-bridge-mcp.mjs'
 import {
   HERMES_OASIS_MCP_TOOL_INCLUDE,
@@ -70,28 +71,28 @@ const bridgeArgv = Array.isArray(globalThis.__HermesOasisBridgeArgv)
   ? globalThis.__HermesOasisBridgeArgv
   : process.argv.slice(2)
 const argv = parseArgv(bridgeArgv)
-const rawPairing = argv.positional[0] || process.env.OASIS_PAIRING_URL || ''
-const oasisUrlOverride = argv.flags['oasis-url'] || process.env.OASIS_URL || ''
-const explicitRelayUrl = argv.flags['relay-url'] || process.env.OASIS_RELAY_URL || ''
-const label = argv.flags.label || process.env.OASIS_AGENT_LABEL || 'hermes-bridge'
-const agentType = argv.flags['agent-type'] || process.env.OASIS_AGENT_TYPE || 'hermes'
-const agentSlot = argv.flags['agent-slot'] || process.env.OASIS_AGENT_SLOT || 'hermes:primary'
-const apiBase = normalizeApiBase(argv.flags['api-base'] || process.env.HERMES_API_BASE || DEFAULT_HERMES_API_BASE)
-const apiKey = argv.flags['api-key'] || process.env.HERMES_API_KEY || process.env.API_SERVER_KEY || loadHermesEnvValue(['HERMES_API_KEY', 'API_SERVER_KEY'])
-const model = argv.flags.model || process.env.HERMES_MODEL || ''
-const systemPrompt = argv.flags['system-prompt'] || process.env.HERMES_SYSTEM_PROMPT || ''
-const echoMode = argv.flags.echo === 'true' || process.env.HERMES_BRIDGE_ECHO === '1'
-const apiMode = normalizeApiMode(argv.flags['api-mode'] || process.env.HERMES_API_MODE || 'responses')
-const skipMcp = argv.flags['no-mcp'] === 'true' || process.env.HERMES_OASIS_NO_MCP === '1'
-const mcpHost = argv.flags['mcp-host'] || process.env.HERMES_OASIS_MCP_HOST || '127.0.0.1'
-const mcpPort = Number(argv.flags['mcp-port'] || process.env.HERMES_OASIS_MCP_PORT || 17891)
-const toolTimeoutMs = Number(argv.flags['tool-timeout-ms'] || process.env.HERMES_OASIS_TOOL_TIMEOUT_MS || 30_000)
+const rawPairing = argv.positional[0] || envValue('OASIS_PAIRING_URL')
+const oasisUrlOverride = argv.flags['oasis-url'] || envValue('OASIS_URL')
+const explicitRelayUrl = argv.flags['relay-url'] || envValue('OASIS_RELAY_URL')
+const label = argv.flags.label || envValue('OASIS_AGENT_LABEL', 'hermes-bridge')
+const agentType = argv.flags['agent-type'] || envValue('OASIS_AGENT_TYPE', 'hermes')
+const agentSlot = argv.flags['agent-slot'] || envValue('OASIS_AGENT_SLOT', 'hermes:primary')
+const apiBase = normalizeApiBase(argv.flags['api-base'] || envValue('HERMES_API_BASE', DEFAULT_HERMES_API_BASE))
+const apiKey = argv.flags['api-key'] || firstEnvValue(['HERMES_API_KEY', 'API_SERVER_KEY']) || loadHermesEnvValue(['HERMES_API_KEY', 'API_SERVER_KEY'])
+const model = argv.flags.model || envValue('HERMES_MODEL')
+const systemPrompt = argv.flags['system-prompt'] || envValue('HERMES_SYSTEM_PROMPT')
+const echoMode = argv.flags.echo === 'true' || envFlag('HERMES_BRIDGE_ECHO')
+const apiMode = normalizeApiMode(argv.flags['api-mode'] || envValue('HERMES_API_MODE', 'responses'))
+const skipMcp = argv.flags['no-mcp'] === 'true' || envFlag('HERMES_OASIS_NO_MCP')
+const mcpHost = argv.flags['mcp-host'] || envValue('HERMES_OASIS_MCP_HOST', '127.0.0.1')
+const mcpPort = Number(argv.flags['mcp-port'] || envValue('HERMES_OASIS_MCP_PORT', '17891'))
+const toolTimeoutMs = Number(argv.flags['tool-timeout-ms'] || envValue('HERMES_OASIS_TOOL_TIMEOUT_MS', '30000'))
 const mcpConfigMode = argv.flags['no-mcp-config'] === 'true'
   ? 'preserve'
-  : (argv.flags['mcp-config'] || process.env.HERMES_OASIS_MCP_CONFIG || 'auto').toLowerCase()
-const mcpServerName = argv.flags['mcp-server-name'] || process.env.HERMES_OASIS_MCP_SERVER_NAME || 'oasis'
-const hermesConfigPath = argv.flags['hermes-config'] || process.env.HERMES_CONFIG_PATH || resolveDefaultHermesConfigPath()
-const mcpRestoreStatePath = argv.flags['mcp-restore-state'] || process.env.HERMES_OASIS_MCP_RESTORE_STATE || ''
+  : (argv.flags['mcp-config'] || envValue('HERMES_OASIS_MCP_CONFIG', 'auto')).toLowerCase()
+const mcpServerName = argv.flags['mcp-server-name'] || envValue('HERMES_OASIS_MCP_SERVER_NAME', 'oasis')
+const hermesConfigPath = argv.flags['hermes-config'] || envValue('HERMES_CONFIG_PATH') || resolveDefaultHermesConfigPath()
+const mcpRestoreStatePath = argv.flags['mcp-restore-state'] || envValue('HERMES_OASIS_MCP_RESTORE_STATE')
 
 const log = (...args) => console.log('[hermes-bridge]', ...args)
 
