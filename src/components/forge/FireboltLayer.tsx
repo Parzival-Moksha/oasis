@@ -496,6 +496,14 @@ export function FireboltLayer({ enabled }: { enabled: boolean }) {
               durationMs: 2400,
             },
           }))
+          window.setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('oasis:realtime-disconnect-npc', {
+              detail: {
+                npcId: 'quest-zero-fire-guardian',
+                reason: 'Fire Guardian trial complete. Voice line closed.',
+              },
+            }))
+          }, 1800)
           window.dispatchEvent(new CustomEvent('oasis:quest-progress-toast', {
             detail: {
               title: 'Firebolt learned',

@@ -926,6 +926,34 @@ export function RealtimePanel({
     return () => disconnect()
   }, [disconnect])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (connectionState !== 'connected' && connectionState !== 'connecting') return
+    const shutdown = () => {
+      disconnect({ keepDetail: true })
+    }
+    window.addEventListener('pagehide', shutdown)
+    window.addEventListener('beforeunload', shutdown)
+    return () => {
+      window.removeEventListener('pagehide', shutdown)
+      window.removeEventListener('beforeunload', shutdown)
+    }
+  }, [connectionState, disconnect])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ npcId?: string; reason?: string; closePanel?: boolean }>).detail
+      if (!npcDefinition?.id || detail?.npcId !== npcDefinition.id) return
+      disconnect({ keepDetail: true })
+      setConnectionDetail(detail?.reason || 'Quest voice line closed.')
+      appendSystemMessage(detail?.reason || 'Quest voice line closed.')
+      if (detail?.closePanel && !embedded) onClose()
+    }
+    window.addEventListener('oasis:realtime-disconnect-npc', handler)
+    return () => window.removeEventListener('oasis:realtime-disconnect-npc', handler)
+  }, [appendSystemMessage, disconnect, embedded, npcDefinition?.id, onClose])
+
   const createFreshSession = useCallback(() => {
     if (!config) return
     const next = buildNewSession({

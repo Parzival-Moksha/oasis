@@ -20,6 +20,12 @@ export function PlaceMenu() {
   const playClick = () => useAudioManager.getState().play('buttonClick')
 
   useEffect(() => {
+    const openMenu = () => setIsOpen(true)
+    window.addEventListener('oasis:open-place-menu', openMenu)
+    return () => window.removeEventListener('oasis:open-place-menu', openMenu)
+  }, [])
+
+  useEffect(() => {
     if (!isOpen) return
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current?.contains(event.target as Node)) return
@@ -32,12 +38,12 @@ export function PlaceMenu() {
   return (
     <div ref={menuRef} className="relative select-none">
       <GameMenuButton
-        label="Spells"
+        label="Place"
         marker="+"
         accent="#34D399"
         active={isOpen}
-        aria-label="Spells menu"
-        data-oasis-tooltip="Spells"
+        aria-label="Place menu"
+        data-oasis-tooltip="Place"
         onClick={() => {
           playClick()
           setIsOpen(open => !open)
@@ -56,9 +62,9 @@ export function PlaceMenu() {
               +
             </div>
             <div className="min-w-0">
-              <div className="text-[12px] font-black uppercase tracking-[0.16em] text-white max-[700px]:text-[10px]">Spells</div>
+              <div className="text-[12px] font-black uppercase tracking-[0.16em] text-white max-[700px]:text-[10px]">Place</div>
               <div className="mt-0.5 text-[10px] uppercase tracking-[0.12em] text-white/45 max-[700px]:hidden">
-                pick a spell, then click the world
+                pick an object, then click the world
               </div>
             </div>
           </div>

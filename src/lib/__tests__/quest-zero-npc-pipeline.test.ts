@@ -6,7 +6,9 @@ import {
   QUEST_ZERO_ID,
   QUEST_ZERO_STEP_DEFS,
   QUEST_ZERO_TARGET_STEP_IDS,
+  SPELLBOOK_PAGE_IDS,
   SPELL_DEFS,
+  isSpellDefaultUnlocked,
 } from '../spellbook'
 
 describe('Quest Zero NPC pipeline registry', () => {
@@ -23,6 +25,7 @@ describe('Quest Zero NPC pipeline registry', () => {
 
   it('connects Firebolt unlock, targets, and achievements to Quest Zero', () => {
     expect(SPELL_DEFS.firebolt.achievementId).toBe('learn-firebolt')
+    expect(isSpellDefaultUnlocked('firebolt')).toBe(false)
     expect(ACHIEVEMENT_DEFS['learn-firebolt'].name).toBe('Keeper of the First Flame')
     expect(QUEST_ZERO_STEP_DEFS['unlock-firebolt'].unlocksSpellId).toBe('firebolt')
     expect(QUEST_ZERO_TARGET_STEP_IDS).toEqual([
@@ -30,5 +33,23 @@ describe('Quest Zero NPC pipeline registry', () => {
       'hit-firebolt-target-2',
       'hit-firebolt-target-3',
     ])
+  })
+
+  it('keeps the first spellbook pass on the seven Oasis chapters', () => {
+    expect(SPELLBOOK_PAGE_IDS).toEqual([
+      'recipe-catalog',
+      'premium',
+      'world-root',
+      'creative',
+      'own-spells',
+      'combat',
+      'agent',
+    ])
+    expect(SPELL_DEFS['ground-texture'].category).toBe('world-root')
+    expect(SPELL_DEFS['ground-elevation'].category).toBe('world-root')
+    expect(SPELL_DEFS['summon-openclaw'].category).toBe('agent')
+    expect(isSpellDefaultUnlocked('brush-wand')).toBe(true)
+    expect(isSpellDefaultUnlocked('lightning-bolt')).toBe(false)
+    expect(isSpellDefaultUnlocked('ice-bolt')).toBe(false)
   })
 })

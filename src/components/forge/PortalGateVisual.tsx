@@ -545,6 +545,10 @@ function getPortalSkyTexture(): THREE.Texture | null {
   return _portalSkyTexture
 }
 
+export function preloadPortalGateVisualAssets(): void {
+  void getPortalSkyTexture()
+}
+
 function PortalSkyAperture({
   seed,
   shape = 'ellipse',

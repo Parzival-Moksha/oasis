@@ -33,7 +33,7 @@ import {
 import { useInputManager } from '../../lib/input-manager'
 import { useOasisStore } from '../../store/oasisStore'
 import { sampleTerrainHeightAt } from '../../lib/forge/terrain-brush'
-import { PortalGateVisual } from './PortalGateVisual'
+import { PortalGateVisual, preloadPortalGateVisualAssets } from './PortalGateVisual'
 import { SelectableWrapper } from './WorldObjects'
 
 const PORTAL_COOLDOWN_MS = 2500
@@ -47,8 +47,18 @@ export const PORTAL_GATE_REVEAL_EVENT = 'oasis:portal-gate-reveal'
 
 const revealedRuntimePortalIds = new Set<string>()
 
+type PortalRevealBurst = {
+  id: string
+  gateId: string
+  position: [number, number, number]
+  rotationY: number
+  age: number
+  seed: number
+}
+
 export function requestPortalGateReveal(gateId: string) {
   if (typeof window === 'undefined' || !gateId) return
+  preloadPortalGateVisualAssets()
   revealedRuntimePortalIds.add(gateId)
   window.dispatchEvent(new CustomEvent(PORTAL_GATE_REVEAL_EVENT, { detail: { gateId } }))
 }
@@ -350,6 +360,77 @@ async function ensurePortalZeroReturnGateForNewWorld(worldId: string): Promise<P
   return derivePortalArrivalPose(returnGate, targetState.transforms)
 }
 
+function PortalRevealBurstMesh({ burst }: { burst: PortalRevealBurst }) {
+  const t = Math.min(1, burst.age / 1.35)
+  const fade = Math.max(0, 1 - t)
+  const particles = useMemo(() => {
+    return Array.from({ length: 16 }, (_, index) => {
+      const a = burst.seed * 0.017 + index * 2.399
+      const r = 0.42 + ((index * 37 + burst.seed) % 100) / 130
+      return {
+        x: Math.cos(a) * r,
+        y: Math.sin(a * 1.7) * 0.42,
+        z: Math.sin(a) * 0.06,
+        s: 0.035 + ((index * 19 + burst.seed) % 100) / 2200,
+      }
+    })
+  }, [burst.seed])
+
+  return (
+    <group position={burst.position} rotation={[0, burst.rotationY, 0]}>
+      <mesh position={[0, 1.62, 0.08]} scale={[1 + t * 1.2, 1 + t * 1.2, 1]}>
+        <torusGeometry args={[0.78, 0.026, 14, 96]} />
+        <meshBasicMaterial color="#fde68a" transparent opacity={0.52 * fade} depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh position={[0, 1.62, 0.095]} scale={[0.82 + t * 0.82, 1.18 + t * 1.42, 1]}>
+        <ringGeometry args={[0.68, 0.73, 96]} />
+        <meshBasicMaterial color="#38bdf8" transparent opacity={0.24 * fade} depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh position={[0, 1.62, 0.11]} scale={[0.28 + t * 1.45, 1.3 + t * 1.9, 1]}>
+        <circleGeometry args={[1, 72]} />
+        <meshBasicMaterial color="#8b5cf6" transparent opacity={0.16 * fade} depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+      {particles.map((particle, index) => (
+        <mesh
+          key={index}
+          position={[
+            particle.x * (0.8 + t * 1.5),
+            1.62 + particle.y * (1 + t * 1.35) + t * 0.48,
+            0.18 + particle.z,
+          ]}
+          scale={particle.s * (1 + t * 1.8)}
+        >
+          <sphereGeometry args={[1, 8, 8]} />
+          <meshBasicMaterial color={index % 3 === 0 ? '#fbbf24' : index % 3 === 1 ? '#60a5fa' : '#c084fc'} transparent opacity={0.72 * fade} depthWrite={false} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+function PortalGateWarmup({ gates }: { gates: PortalGate[] }) {
+  if (gates.length === 0) return null
+  return (
+    <group name="portal-gate-warmup" position={[0, -90, 0]} scale={0.01} frustumCulled={false}>
+      {gates.slice(0, 6).map((gate, index) => (
+        <PortalGateVisual
+          key={`warmup-${gate.id}`}
+          gate={{
+            ...gate,
+            id: `warmup-${gate.id}`,
+            label: '',
+            position: [index * 4, 0, 0],
+            rotationY: 0,
+            scale: 1,
+            inert: true,
+            hidden: false,
+          }}
+        />
+      ))}
+    </group>
+  )
+}
+
 export function PortalGateLayer() {
   const { camera } = useThree()
   const activeWorldId = useOasisStore(s => s.activeWorldId)
@@ -365,7 +446,9 @@ export function PortalGateLayer() {
   const triggerStatesRef = useRef<Record<string, PortalTriggerState>>({})
   const activePortalActionRef = useRef<string | null>(null)
   const missingTargetRefreshKeyRef = useRef<string | null>(null)
+  const gatesRef = useRef<PortalGate[]>([])
   const [, setRuntimeRevealVersion] = useState(0)
+  const [revealBursts, setRevealBursts] = useState<PortalRevealBurst[]>([])
 
   const handleTransformChange = useCallback((
     id: string,
@@ -377,13 +460,30 @@ export function PortalGateLayer() {
   }, [setObjectTransform])
 
   useEffect(() => {
+    preloadPortalGateVisualAssets()
     triggerStatesRef.current = {}
   }, [activeWorldId])
 
   useEffect(() => {
     const onReveal = (event: Event) => {
       const gateId = (event as CustomEvent<{ gateId?: string }>).detail?.gateId
-      if (gateId) revealedRuntimePortalIds.add(gateId)
+      if (gateId) {
+        revealedRuntimePortalIds.add(gateId)
+        const gate = gatesRef.current.find(candidate => candidate.id === gateId)
+        if (gate) {
+          setRevealBursts(current => [
+            ...current.filter(burst => burst.gateId !== gateId),
+            {
+              id: `${gateId}-${Date.now()}`,
+              gateId,
+              position: [...gate.position],
+              rotationY: gate.rotationY ?? 0,
+              age: 0,
+              seed: Math.abs(Array.from(gateId).reduce((sum, char) => sum + char.charCodeAt(0), 0)),
+            },
+          ])
+        }
+      }
       setRuntimeRevealVersion(version => version + 1)
     }
     window.addEventListener(PORTAL_GATE_REVEAL_EVENT, onReveal)
@@ -414,7 +514,13 @@ export function PortalGateLayer() {
     [portalGates, transforms, worldRegistry],
   )
 
+  useEffect(() => {
+    gatesRef.current = gates
+    preloadPortalGateVisualAssets()
+  }, [gates])
+
   const visibleGates = gates.filter(gate => !gate.hidden || revealedRuntimePortalIds.has(gate.id))
+  const hiddenWarmupGates = gates.filter(gate => gate.hidden && !revealedRuntimePortalIds.has(gate.id))
 
   const runWorldTransition = useCallback(async (
     gate: PortalGate,
@@ -593,10 +699,21 @@ export function PortalGateLayer() {
     }
   })
 
-  if (visibleGates.length === 0) return null
+  useFrame((_, delta) => {
+    if (revealBursts.length === 0) return
+    setRevealBursts(current => current
+      .map(burst => ({ ...burst, age: burst.age + delta }))
+      .filter(burst => burst.age < 1.35))
+  })
+
+  if (visibleGates.length === 0 && hiddenWarmupGates.length === 0 && revealBursts.length === 0) return null
 
   return (
     <group name="portal-gate-layer">
+      <PortalGateWarmup gates={hiddenWarmupGates} />
+      {revealBursts.map(burst => (
+        <PortalRevealBurstMesh key={burst.id} burst={burst} />
+      ))}
       {visibleGates.map(gate => {
         const baseGate = portalGates.find(portal => portal.id === gate.id) || gate
         const childGate: PortalGate = {

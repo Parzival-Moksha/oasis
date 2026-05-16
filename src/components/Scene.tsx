@@ -75,6 +75,7 @@ import { runLocalStorageAgentCacheMigration } from '@/lib/localstorage-agent-cac
 import { isProbablyMobileDevice } from '@/lib/mobile-controls'
 import { useIsHostedOasis, useOasisCapabilities } from '@/lib/oasis-mode-client'
 import { installTestHarness } from '@/lib/test-harness'
+import type { SpellId } from '@/lib/spellbook'
 import { useWorldEvents } from '@/hooks/useWorldEvents'
 import { AgentWindowPortals } from './forge/AgentWindowPortals'
 import { requestPortalGateReveal } from './forge/PortalGateLayer'
@@ -1653,6 +1654,7 @@ export default function Scene() {
   const [geminiOpen, setGeminiOpen] = useState(false)
   const [agentLauncherOpen, setAgentLauncherOpen] = useState(false)
   const [agentLauncherMode, setAgentLauncherMode] = useState<AgentLauncherMode>('3d')
+  const [spellbookOpen, setSpellbookOpen] = useState(false)
   const [realtimeOpen, setRealtimeOpen] = useState(false)
   const [lipSyncLabOpen, setLipSyncLabOpen] = useState(false)
   const [parzivalOpen, setParzivalOpen] = useState(false)
@@ -1833,6 +1835,84 @@ export default function Scene() {
       agentRenderMode: 'live-html',
     })
     setAgentLauncherOpen(false)
+  }
+
+  const handleSpellbookCast = (spellId: SpellId) => {
+    const store = useOasisStore.getState()
+    useAudioManager.getState().play('buttonClick')
+
+    switch (spellId) {
+      case 'firebolt':
+        window.dispatchEvent(new CustomEvent('oasis:cast-firebolt'))
+        setSpellbookOpen(false)
+        return
+      case 'catalog-place':
+        window.dispatchEvent(new CustomEvent('oasis:open-place-menu'))
+        setSpellbookOpen(false)
+        return
+      case 'brush-wand':
+        store.setPaintBrushPanelOpen(true)
+        setSpellbookOpen(false)
+        return
+      case 'sky-background':
+        setSkyPanelOpen(true)
+        setSpellbookOpen(false)
+        return
+      case 'ground-texture':
+        store.setTerrainBrushPanelOpen(true)
+        store.setTerrainBrushMode('texture')
+        setSpellbookOpen(false)
+        return
+      case 'ground-elevation':
+        store.setTerrainBrushPanelOpen(true)
+        store.setTerrainBrushMode('sculpt')
+        setSpellbookOpen(false)
+        return
+      case 'lights':
+        setLightsPanelOpen(true)
+        setSpellbookOpen(false)
+        return
+      case 'text-3d':
+        store.setText3dPanelOpen(true)
+        setSpellbookOpen(false)
+        return
+      case 'summon-djinn':
+        placeQuickAgentWindow('merlin')
+        setSpellbookOpen(false)
+        return
+      case 'summon-openclaw':
+        placeQuickAgentWindow('openclaw')
+        setSpellbookOpen(false)
+        return
+      case 'summon-hermes':
+        placeQuickAgentWindow('hermes')
+        setSpellbookOpen(false)
+        return
+      case 'summon-custom-npc':
+      case 'summon-fighter-npc':
+        setAgentLauncherMode('3d')
+        setAgentLauncherOpen(true)
+        setSpellbookOpen(false)
+        return
+      case 'text-to-3d':
+      case 'text-to-pic':
+      case 'text-to-pic-building':
+      case 'text-to-music':
+      case 'text-to-video':
+      case 'meshy-object':
+      case 'meshy-character':
+      case 'portal-create':
+      case 'own-audio-upload':
+      case 'own-video-upload':
+      case 'own-image-upload':
+        setWizardOpen(true)
+        setSpellbookOpen(false)
+        return
+      case 'lightning-bolt':
+      case 'ice-bolt':
+      default:
+        return
+    }
   }
 
   const updateSetting = <K extends keyof OasisSettings>(key: K, value: OasisSettings[K]) => {
@@ -2054,7 +2134,12 @@ export default function Scene() {
         spellControlsEnabled={effectiveRp1Mode}
       />
       <PlayerVitalsHud visible={effectiveRp1Mode} />
-      <PlayerSpellbookPanel visible={effectiveRp1Mode} />
+      <PlayerSpellbookPanel
+        visible
+        isOpen={spellbookOpen}
+        onOpenChange={setSpellbookOpen}
+        onCastSpell={handleSpellbookCast}
+      />
       <QuestProgressTracker activeWorldId={activeWorldId} />
 
       {/* ─═̷─═̷─⚡ FPS DISPLAY ─═̷─═̷─⚡ */}
@@ -2123,6 +2208,20 @@ export default function Scene() {
               </span>
             </button>
           ) : undefined}
+        />
+
+        <GameMenuButton
+          label="Spells"
+          marker="B"
+          accent="#FBBF24"
+          active={spellbookOpen}
+          aria-label="Spells menu"
+          data-oasis-tooltip="Spells"
+          className="oasis-tooltip"
+          onClick={() => {
+            useAudioManager.getState().play(spellbookOpen ? 'panelClose' : 'panelOpen')
+            setSpellbookOpen(open => !open)
+          }}
         />
 
         {!hideEditTools && <PlaceMenu />}

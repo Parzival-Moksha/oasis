@@ -1,9 +1,13 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useUILayer } from '@/lib/input-manager'
 import {
+  SPELLBOOK_PAGE_IDS,
   SPELLBOOK_PAGES,
   SPELL_DEFS,
+  SPELL_IDS,
+  isSpellDefaultUnlocked,
   isSpellId,
   type SpellDefinition,
   type SpellId,
@@ -26,10 +30,17 @@ type SpellbookOpenDetail = {
 }
 
 type KnownSpell = {
-  id: string
+  id: SpellId
   level: number
   uses: number
   definition: SpellDefinition
+}
+
+type PlayerSpellbookPanelProps = {
+  visible: boolean
+  isOpen: boolean
+  onOpenChange: (open: boolean) => void
+  onCastSpell?: (spellId: SpellId) => void
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -57,10 +68,41 @@ function normalizeSpells(spells: SpellUnlock[] | undefined): KnownSpell[] {
     })
 }
 
-export function PlayerSpellbookPanel({ visible }: { visible: boolean }) {
+function commandLabel(definition: SpellDefinition): string {
+  switch (definition.actionId) {
+    case 'cast-firebolt':
+      return 'Cast'
+    case 'open-place-menu':
+      return 'Open'
+    case 'open-wizard':
+      return 'Craft'
+    case 'open-sky-panel':
+    case 'open-ground-texture':
+    case 'open-ground-elevation':
+    case 'open-lights-panel':
+    case 'open-paint-wand':
+    case 'open-text-3d':
+      return 'Open'
+    case 'open-agent-launcher':
+    case 'place-merlin':
+    case 'place-openclaw':
+    case 'place-hermes':
+      return 'Summon'
+    default:
+      return 'Open'
+  }
+}
+
+export function PlayerSpellbookPanel({
+  visible,
+  isOpen,
+  onOpenChange,
+  onCastSpell,
+}: PlayerSpellbookPanelProps) {
   const [progression, setProgression] = useState<PlayerProgressionState | null>(null)
-  const [open, setOpen] = useState(false)
-  const [highlightSpellId, setHighlightSpellId] = useState<string | null>(null)
+  const [activePage, setActivePage] = useState<SpellbookPageId>('recipe-catalog')
+  const [highlightSpellId, setHighlightSpellId] = useState<SpellId | null>(null)
+  useUILayer('spellbook-menu', Boolean(visible && isOpen))
 
   const refresh = useCallback(async () => {
     try {
@@ -79,6 +121,10 @@ export function PlayerSpellbookPanel({ visible }: { visible: boolean }) {
   }, [refresh, visible])
 
   useEffect(() => {
+    if (isOpen) void refresh()
+  }, [isOpen, refresh])
+
+  useEffect(() => {
     if (typeof window === 'undefined') return
     const onProgression = (event: Event) => {
       const detail = (event as CustomEvent<PlayerProgressionState>).detail
@@ -86,136 +132,180 @@ export function PlayerSpellbookPanel({ visible }: { visible: boolean }) {
     }
     const onOpen = (event: Event) => {
       const detail = (event as CustomEvent<SpellbookOpenDetail>).detail
-      if (detail?.spellId) setHighlightSpellId(detail.spellId)
-      setOpen(true)
+      if (detail?.spellId && isSpellId(detail.spellId)) {
+        setActivePage(SPELL_DEFS[detail.spellId].category)
+        setHighlightSpellId(detail.spellId)
+        window.setTimeout(() => setHighlightSpellId(null), 2600)
+      }
+      onOpenChange(true)
       void refresh()
-      window.setTimeout(() => setHighlightSpellId(null), 2600)
     }
+    window.addEventListener('oasis:player-progression', onProgression)
+    window.addEventListener('oasis:spellbook-open', onOpen)
+    return () => {
+      window.removeEventListener('oasis:player-progression', onProgression)
+      window.removeEventListener('oasis:spellbook-open', onOpen)
+    }
+  }, [onOpenChange, refresh])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
     const onKeyDown = (event: KeyboardEvent) => {
       if (!visible || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return
       if (event.code !== 'KeyB') return
       if (isTypingTarget(event.target)) return
       event.preventDefault()
-      setOpen(value => !value)
+      onOpenChange(!isOpen)
       void refresh()
     }
-    window.addEventListener('oasis:player-progression', onProgression)
-    window.addEventListener('oasis:spellbook-open', onOpen)
     window.addEventListener('keydown', onKeyDown)
-    return () => {
-      window.removeEventListener('oasis:player-progression', onProgression)
-      window.removeEventListener('oasis:spellbook-open', onOpen)
-      window.removeEventListener('keydown', onKeyDown)
-    }
-  }, [refresh, visible])
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isOpen, onOpenChange, refresh, visible])
 
-  const unlockedSpells = useMemo(() => normalizeSpells(progression?.spells), [progression?.spells])
-  const spellsByPage = useMemo(() => {
-    const map = new Map<SpellbookPageId, KnownSpell[]>()
-    for (const spell of unlockedSpells) {
-      const page = spell.definition.category
-      map.set(page, [...(map.get(page) || []), spell])
+  const knownSpellMap = useMemo(() => {
+    const map = new Map<SpellId, KnownSpell>()
+    for (const spell of normalizeSpells(progression?.spells)) {
+      map.set(spell.id, spell)
     }
     return map
-  }, [unlockedSpells])
+  }, [progression?.spells])
 
-  if (!visible) return null
+  const spellsByPage = useMemo(() => {
+    const map = new Map<SpellbookPageId, SpellDefinition[]>()
+    for (const spellId of SPELL_IDS) {
+      const definition = SPELL_DEFS[spellId]
+      const pageSpells = map.get(definition.category) || []
+      pageSpells.push(definition)
+      map.set(definition.category, pageSpells)
+    }
+    return map
+  }, [])
 
-  const hasSpells = unlockedSpells.length > 0
+  if (!visible || !isOpen) return null
+
+  const activeSpells = spellsByPage.get(activePage) || []
 
   return (
-    <>
-      {hasSpells && (
+    <div
+      data-ui-panel
+      data-spellbook-menu-panel
+      className="fixed left-[10.25rem] top-4 z-[285] w-[min(760px,calc(100vw-11.5rem))] max-h-[calc(100vh-2rem)] overflow-hidden rounded-lg border border-amber-200/28 bg-[#050403]/94 font-mono text-white shadow-[0_0_70px_rgba(251,146,60,0.24),0_0_28px_rgba(0,0,0,0.78)] backdrop-blur-md max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:w-auto max-[700px]:max-h-[calc(100vh-70px)]"
+      onMouseDown={event => event.stopPropagation()}
+    >
+      <style>{`
+        @keyframes oasisSpellLearnedPulse {
+          0%, 100% { box-shadow: 0 0 24px rgba(251,146,60,0.26); transform: translateY(0); }
+          35% { box-shadow: 0 0 58px rgba(251,191,36,0.72); transform: translateY(-2px); }
+        }
+      `}</style>
+      <div className="flex items-center justify-between gap-3 border-b border-amber-100/14 px-4 py-3">
+        <div className="min-w-0">
+          <div className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-100/70">Spells</div>
+          <div className="mt-1 truncate text-lg font-black tracking-[0.02em] text-amber-50">Spellbook</div>
+        </div>
         <button
           type="button"
-          className="fixed bottom-[8.1rem] left-4 z-[188] rounded-md border border-amber-200/35 bg-black/68 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-amber-100 shadow-[0_0_28px_rgba(251,191,36,0.16)] backdrop-blur-md max-[700px]:bottom-[9.6rem]"
-          onClick={() => {
-            setOpen(value => !value)
-            void refresh()
-          }}
+          className="rounded-md border border-white/15 bg-white/8 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/80 hover:bg-white/14"
+          onClick={() => onOpenChange(false)}
         >
-          Spellbook
+          Close
         </button>
-      )}
+      </div>
 
-      {open && (
-        <div className="fixed inset-0 z-[240] flex items-center justify-center bg-black/38 px-4 py-4 backdrop-blur-[2px]">
-          <style>{`
-            @keyframes oasisSpellLearnedPulse {
-              0%, 100% { box-shadow: 0 0 24px rgba(251,146,60,0.26); transform: translateY(0); }
-              35% { box-shadow: 0 0 58px rgba(251,191,36,0.72); transform: translateY(-2px); }
-            }
-          `}</style>
-          <div className="w-[min(680px,calc(100vw-1.5rem))] max-h-[min(620px,calc(100vh-2rem))] overflow-hidden rounded-lg border border-amber-200/28 bg-[#050403]/92 text-white shadow-[0_0_70px_rgba(251,146,60,0.22)]">
-            <div className="flex items-center justify-between gap-3 border-b border-amber-100/14 px-4 py-3">
-              <div>
-                <div className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-100/70">Spellbook</div>
-                <div className="mt-1 text-lg font-black tracking-[0.02em] text-amber-50">Learned Spells</div>
-              </div>
-              <button
-                type="button"
-                className="rounded-md border border-white/15 bg-white/8 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/80 hover:bg-white/14"
-                onClick={() => setOpen(false)}
+      <div className="flex gap-1 overflow-x-auto border-b border-white/10 bg-white/[0.035] px-2 py-2">
+        {SPELLBOOK_PAGE_IDS.map(pageId => {
+          const page = SPELLBOOK_PAGES[pageId]
+          const selected = pageId === activePage
+          return (
+            <button
+              key={pageId}
+              type="button"
+              className={[
+                'shrink-0 rounded-md border px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.1em] transition',
+                selected
+                  ? 'border-amber-200/55 bg-amber-200/16 text-amber-50 shadow-[0_0_20px_rgba(251,191,36,0.14)]'
+                  : 'border-white/10 bg-black/24 text-white/48 hover:border-white/24 hover:text-white/72',
+              ].join(' ')}
+              onClick={() => setActivePage(pageId)}
+            >
+              {page.shortName}
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="max-h-[calc(100vh-11rem)] overflow-y-auto p-4 max-[700px]:max-h-[calc(100vh-176px)] max-[700px]:p-2">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-[12px] font-black uppercase tracking-[0.18em] text-amber-100/75">
+              {SPELLBOOK_PAGES[activePage].name}
+            </h3>
+            <p className="mt-1 text-[11px] leading-5 text-white/45">
+              Combat bolts are learned through quests. The other spell paths are available now.
+            </p>
+          </div>
+          <span className="rounded border border-white/10 bg-white/6 px-2 py-1 font-mono text-[10px] text-white/50">
+            {activeSpells.length}
+          </span>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          {activeSpells.map(definition => {
+            const knownSpell = knownSpellMap.get(definition.id)
+            const unlocked = isSpellDefaultUnlocked(definition.id) || Boolean(knownSpell)
+            const highlighted = highlightSpellId === definition.id
+            const actionable = unlocked && Boolean(definition.actionId && onCastSpell)
+            const status = unlocked ? (knownSpell ? `Lv ${knownSpell.level}` : 'Known') : 'Locked'
+            return (
+              <article
+                key={definition.id}
+                className={[
+                  'rounded-lg border p-3 transition',
+                  unlocked
+                    ? 'border-orange-200/28 bg-gradient-to-br from-orange-950/44 via-black/60 to-black/88'
+                    : 'border-white/10 bg-white/[0.035] opacity-72',
+                ].join(' ')}
+                style={highlighted ? { animation: 'oasisSpellLearnedPulse 1300ms ease-in-out 2' } : undefined}
               >
-                Close
-              </button>
-            </div>
-
-            <div className="max-h-[calc(min(620px,100vh-2rem)-74px)] overflow-y-auto p-4">
-              {!hasSpells ? (
-                <div className="rounded-lg border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-                  No spells learned yet.
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className={unlocked ? 'text-[15px] font-black text-orange-50' : 'text-[15px] font-black text-white/45'}>
+                      {definition.name}
+                    </div>
+                    <div className="mt-1 text-xs leading-5 text-white/65">
+                      {unlocked ? definition.summary : definition.lockedSummary || definition.summary}
+                    </div>
+                  </div>
+                  <div className={unlocked
+                    ? 'rounded border border-orange-200/24 bg-orange-300/10 px-2 py-1 font-mono text-[10px] font-black text-orange-100'
+                    : 'rounded border border-white/10 bg-white/6 px-2 py-1 font-mono text-[10px] font-black text-white/45'
+                  }>
+                    {status}
+                  </div>
                 </div>
-              ) : (
-                <div className="space-y-4">
-                  {Array.from(spellsByPage.entries()).map(([pageId, spells]) => (
-                    <section key={pageId}>
-                      <div className="mb-2 flex items-center justify-between gap-3">
-                        <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-amber-100/75">
-                          {SPELLBOOK_PAGES[pageId].name}
-                        </h3>
-                        <span className="font-mono text-[10px] text-white/40">{spells.length}</span>
-                      </div>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        {spells.map(spell => {
-                          const highlighted = highlightSpellId === spell.id
-                          return (
-                            <article
-                              key={spell.id}
-                              className="rounded-lg border border-orange-200/28 bg-gradient-to-br from-orange-950/44 via-black/60 to-black/88 p-3"
-                              style={highlighted ? { animation: 'oasisSpellLearnedPulse 1300ms ease-in-out 2' } : undefined}
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
-                                  <div className="text-[15px] font-black text-orange-50">{spell.definition.name}</div>
-                                  <div className="mt-1 text-xs leading-5 text-white/65">{spell.definition.summary}</div>
-                                </div>
-                                <div className="rounded border border-orange-200/24 bg-orange-300/10 px-2 py-1 font-mono text-[10px] font-black text-orange-100">
-                                  Lv {spell.level}
-                                </div>
-                              </div>
-                              <div className="mt-3 flex flex-wrap gap-1.5">
-                                {spell.definition.stats.map(stat => (
-                                  <span
-                                    key={stat}
-                                    className="rounded border border-white/10 bg-white/7 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-white/64"
-                                  >
-                                    {stat}
-                                  </span>
-                                ))}
-                              </div>
-                            </article>
-                          )
-                        })}
-                      </div>
-                    </section>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {definition.stats.map(stat => (
+                    <span
+                      key={stat}
+                      className="rounded border border-white/10 bg-white/7 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-white/64"
+                    >
+                      {stat}
+                    </span>
                   ))}
                 </div>
-              )}
-            </div>
-          </div>
+                <button
+                  type="button"
+                  disabled={!actionable}
+                  className="mt-3 w-full rounded-md border border-amber-200/26 bg-amber-200/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-amber-50 transition hover:border-amber-100/55 hover:bg-amber-200/18 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.035] disabled:text-white/32"
+                  onClick={() => onCastSpell?.(definition.id)}
+                >
+                  {unlocked ? commandLabel(definition) : 'Locked'}
+                </button>
+              </article>
+            )
+          })}
         </div>
-      )}
-    </>
+      </div>
+    </div>
   )
 }

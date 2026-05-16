@@ -2,15 +2,49 @@ export { QUEST_ZERO_WORLD_ID } from './portal-gates'
 
 export const SPELL_IDS = [
   'firebolt',
+  'lightning-bolt',
+  'ice-bolt',
   'brush-wand',
   'catalog-place',
   'text-to-3d',
   'text-to-pic',
+  'text-to-pic-building',
+  'text-to-music',
+  'text-to-video',
+  'meshy-object',
+  'meshy-character',
   'portal-create',
+  'sky-background',
+  'ground-texture',
+  'ground-elevation',
+  'lights',
+  'text-3d',
+  'own-audio-upload',
+  'own-video-upload',
+  'own-image-upload',
   'summon-djinn',
+  'summon-custom-npc',
+  'summon-fighter-npc',
+  'summon-openclaw',
+  'summon-hermes',
 ] as const
 
 export type SpellId = typeof SPELL_IDS[number]
+
+export type SpellActionId =
+  | 'cast-firebolt'
+  | 'open-place-menu'
+  | 'open-wizard'
+  | 'open-sky-panel'
+  | 'open-ground-texture'
+  | 'open-ground-elevation'
+  | 'open-lights-panel'
+  | 'open-paint-wand'
+  | 'open-text-3d'
+  | 'open-agent-launcher'
+  | 'place-merlin'
+  | 'place-openclaw'
+  | 'place-hermes'
 
 export const SPELLBOOK_PAGE_IDS = [
   'recipe-catalog',
@@ -48,6 +82,9 @@ export interface SpellDefinition {
   achievementId: string
   summary: string
   stats: string[]
+  defaultUnlocked?: boolean
+  actionId?: SpellActionId
+  lockedSummary?: string
 }
 
 export const SPELL_DEFS: Record<SpellId, SpellDefinition> = {
@@ -59,6 +96,31 @@ export const SPELL_DEFS: Record<SpellId, SpellDefinition> = {
     achievementId: 'learn-firebolt',
     summary: 'A first offensive spell: fast flame, low mana cost, visible impact.',
     stats: ['1 mana', '24 m/s', 'Left click or Fire button'],
+    defaultUnlocked: false,
+    actionId: 'cast-firebolt',
+    lockedSummary: 'Learned by completing the Fire Guardian trial in Quest Zero.',
+  },
+  'lightning-bolt': {
+    id: 'lightning-bolt',
+    name: 'Lightning Bolt',
+    tier: 2,
+    category: 'combat',
+    achievementId: 'learn-lightning-bolt',
+    summary: 'A direct shock spell for future fast-hit combat encounters.',
+    stats: ['Locked', 'Burst damage', 'Future trial'],
+    defaultUnlocked: false,
+    lockedSummary: 'Future combat spell. It should be earned, not handed out.',
+  },
+  'ice-bolt': {
+    id: 'ice-bolt',
+    name: 'Ice Bolt',
+    tier: 2,
+    category: 'combat',
+    achievementId: 'learn-ice-bolt',
+    summary: 'A slowing projectile for future monster control and arena fights.',
+    stats: ['Locked', 'Slow', 'Future trial'],
+    defaultUnlocked: false,
+    lockedSummary: 'Future combat spell. It should be earned, not handed out.',
   },
   'brush-wand': {
     id: 'brush-wand',
@@ -68,6 +130,7 @@ export const SPELL_DEFS: Record<SpellId, SpellDefinition> = {
     achievementId: 'learn-brush-wand',
     summary: 'Paint persistent world-bound curves and marks.',
     stats: ['Color', 'Thickness', 'World-bound'],
+    actionId: 'open-paint-wand',
   },
   'catalog-place': {
     id: 'catalog-place',
@@ -77,6 +140,7 @@ export const SPELL_DEFS: Record<SpellId, SpellDefinition> = {
     achievementId: 'learn-place',
     summary: 'Place catalog objects into editable worlds.',
     stats: ['Catalog', 'World allowlist', 'Object inspector'],
+    actionId: 'open-place-menu',
   },
   'text-to-3d': {
     id: 'text-to-3d',
@@ -86,6 +150,7 @@ export const SPELL_DEFS: Record<SpellId, SpellDefinition> = {
     achievementId: 'learn-text-to-3d',
     summary: 'Turn a prompt into a 3D asset or crafted scene.',
     stats: ['AI craft', 'Generated asset', 'Mana/credit gated'],
+    actionId: 'open-wizard',
   },
   'text-to-pic': {
     id: 'text-to-pic',
@@ -95,6 +160,57 @@ export const SPELL_DEFS: Record<SpellId, SpellDefinition> = {
     achievementId: 'learn-text-to-pic',
     summary: 'Generate images for framed art and future Conjure-style buildings.',
     stats: ['Image craft', 'Frames', 'Prompt-first'],
+    actionId: 'open-wizard',
+  },
+  'text-to-pic-building': {
+    id: 'text-to-pic-building',
+    name: 'Text to Pic Building',
+    tier: 2,
+    category: 'premium',
+    achievementId: 'learn-text-to-pic-building',
+    summary: 'Generate a textured in-world image structure in the Conjure building style.',
+    stats: ['Image craft', 'Building', 'Prompt-first'],
+    actionId: 'open-wizard',
+  },
+  'text-to-music': {
+    id: 'text-to-music',
+    name: 'Text to Music',
+    tier: 3,
+    category: 'premium',
+    achievementId: 'learn-text-to-music',
+    summary: 'Generate world music or a loopable ambience from a prompt.',
+    stats: ['Audio craft', 'Loop', 'Premium'],
+    actionId: 'open-wizard',
+  },
+  'text-to-video': {
+    id: 'text-to-video',
+    name: 'Text to Video',
+    tier: 3,
+    category: 'premium',
+    achievementId: 'learn-text-to-video',
+    summary: 'Generate video panels, rituals, and animated lore surfaces.',
+    stats: ['Video craft', 'Panel', 'Premium'],
+    actionId: 'open-wizard',
+  },
+  'meshy-object': {
+    id: 'meshy-object',
+    name: 'Text to Object',
+    tier: 3,
+    category: 'premium',
+    achievementId: 'learn-meshy-object',
+    summary: 'Generate a standalone 3D prop through the external 3D asset pipeline.',
+    stats: ['Meshy/Tripo', 'Prop', 'Generated asset'],
+    actionId: 'open-wizard',
+  },
+  'meshy-character': {
+    id: 'meshy-character',
+    name: 'Text to Character',
+    tier: 3,
+    category: 'premium',
+    achievementId: 'learn-meshy-character',
+    summary: 'Generate character-style assets for future NPCs and avatars.',
+    stats: ['Meshy/Tripo', 'Character', 'Generated asset'],
+    actionId: 'open-wizard',
   },
   'portal-create': {
     id: 'portal-create',
@@ -104,6 +220,87 @@ export const SPELL_DEFS: Record<SpellId, SpellDefinition> = {
     achievementId: 'learn-portal-create',
     summary: 'Create gates between worlds and publish spatial paths.',
     stats: ['World link', 'Arrival pose', 'Visibility rules'],
+    actionId: 'open-wizard',
+  },
+  'sky-background': {
+    id: 'sky-background',
+    name: 'Background',
+    tier: 1,
+    category: 'world-root',
+    achievementId: 'learn-background',
+    summary: 'Change the world sky, panorama, or atmosphere backdrop.',
+    stats: ['World root', 'Sky', 'Theme'],
+    actionId: 'open-sky-panel',
+  },
+  'ground-texture': {
+    id: 'ground-texture',
+    name: 'Ground Texture',
+    tier: 1,
+    category: 'world-root',
+    achievementId: 'learn-ground-texture',
+    summary: 'Paint terrain material and biome surface detail.',
+    stats: ['World root', 'Texture brush', 'Tile-safe'],
+    actionId: 'open-ground-texture',
+  },
+  'ground-elevation': {
+    id: 'ground-elevation',
+    name: 'Ground Elevation',
+    tier: 1,
+    category: 'world-root',
+    achievementId: 'learn-ground-elevation',
+    summary: 'Sculpt hills, depressions, paths, and terrain flow.',
+    stats: ['World root', 'Elevation brush', 'Persistent'],
+    actionId: 'open-ground-elevation',
+  },
+  lights: {
+    id: 'lights',
+    name: 'Lights',
+    tier: 1,
+    category: 'world-root',
+    achievementId: 'learn-lights',
+    summary: 'Place and tune world lights for mood and readability.',
+    stats: ['World root', 'Color', 'Intensity'],
+    actionId: 'open-lights-panel',
+  },
+  'text-3d': {
+    id: 'text-3d',
+    name: '3D Text',
+    tier: 1,
+    category: 'creative',
+    achievementId: 'learn-text-3d',
+    summary: 'Place editable 3D text into the current world.',
+    stats: ['Typography', 'Selectable', 'World-bound'],
+    actionId: 'open-text-3d',
+  },
+  'own-audio-upload': {
+    id: 'own-audio-upload',
+    name: 'Own MP3',
+    tier: 1,
+    category: 'own-spells',
+    achievementId: 'learn-own-audio-upload',
+    summary: 'Bring a sound, chant, or loop into the world library.',
+    stats: ['Upload', 'Audio', 'World media'],
+    actionId: 'open-wizard',
+  },
+  'own-video-upload': {
+    id: 'own-video-upload',
+    name: 'Own MP4',
+    tier: 1,
+    category: 'own-spells',
+    achievementId: 'learn-own-video-upload',
+    summary: 'Bring a video panel or moving memory into the world.',
+    stats: ['Upload', 'Video', 'World media'],
+    actionId: 'open-wizard',
+  },
+  'own-image-upload': {
+    id: 'own-image-upload',
+    name: 'Own Image',
+    tier: 1,
+    category: 'own-spells',
+    achievementId: 'learn-own-image-upload',
+    summary: 'Bring an image, sigil, or texture into the world library.',
+    stats: ['Upload', 'Image', 'World media'],
+    actionId: 'open-wizard',
   },
   'summon-djinn': {
     id: 'summon-djinn',
@@ -113,7 +310,52 @@ export const SPELL_DEFS: Record<SpellId, SpellDefinition> = {
     achievementId: 'learn-summon-djinn',
     summary: 'Call an embodied guide, familiar, or NPC with scoped tools.',
     stats: ['NPC', 'Voice', 'Tool allowlist'],
+    actionId: 'place-merlin',
   },
+  'summon-custom-npc': {
+    id: 'summon-custom-npc',
+    name: 'Summon Custom NPC',
+    tier: 3,
+    category: 'agent',
+    achievementId: 'learn-summon-custom-npc',
+    summary: 'Open the NPC path for a custom personality, model, voice, and context.',
+    stats: ['NPC', 'Personality', 'Context modules'],
+    actionId: 'open-agent-launcher',
+  },
+  'summon-fighter-npc': {
+    id: 'summon-fighter-npc',
+    name: 'Summon Fighter NPC',
+    tier: 3,
+    category: 'agent',
+    achievementId: 'learn-summon-fighter-npc',
+    summary: 'Spawn a future combat-capable agent that will obey arena rules.',
+    stats: ['NPC', 'Combat', 'Future physics'],
+    actionId: 'open-agent-launcher',
+  },
+  'summon-openclaw': {
+    id: 'summon-openclaw',
+    name: 'Summon OpenClaw',
+    tier: 3,
+    category: 'agent',
+    achievementId: 'learn-summon-openclaw',
+    summary: 'Place the OpenClaw agent as an in-world 3D window.',
+    stats: ['Agent', '3D window', 'Embodied tools'],
+    actionId: 'place-openclaw',
+  },
+  'summon-hermes': {
+    id: 'summon-hermes',
+    name: 'Summon Hermes',
+    tier: 3,
+    category: 'agent',
+    achievementId: 'learn-summon-hermes',
+    summary: 'Place Hermes as a spatial assistant for voice and avatar workflows.',
+    stats: ['Agent', 'Voice', '3D window'],
+    actionId: 'place-hermes',
+  },
+}
+
+export function isSpellDefaultUnlocked(spellId: SpellId): boolean {
+  return SPELL_DEFS[spellId].defaultUnlocked !== false
 }
 
 export const QUEST_ZERO_ID = 'quest-zero'
