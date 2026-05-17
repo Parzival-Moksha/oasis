@@ -1,0 +1,686 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-05-17",
+  "summary": {
+    "totalEntries": 26,
+    "thirdPartyProjects": 12,
+    "attributionStrictlyRequired": 0,
+    "notes": "All third-party assets are CC0 or royalty-free with no attribution requirement. Crediting is appreciated by most creators (Kenney, Poly Haven, Quaternius) but not contractually required. AI-generated art (Nano Banana / Seedream) terms are still evolving; commercial use is permitted but copyright protection may be limited."
+  },
+  "categories": {
+    "sound": [
+      {
+        "id": "mixkit-spell-pack",
+        "title": "Mixkit Spell & FX Sound Effects",
+        "author": "Mixkit",
+        "authorUrl": "https://mixkit.co",
+        "sourceUrl": "https://mixkit.co/free-sound-effects/",
+        "license": "Mixkit Sound Effects Free License",
+        "licenseUrl": "https://mixkit.co/license/#sfxFree",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/audio/spells/mixkit-choir-magic-shine-658.wav",
+          "public/audio/spells/mixkit-choir-magic-shine-658.ogg",
+          "public/audio/spells/mixkit-cinematic-swell-stark-transition-2675.wav",
+          "public/audio/spells/mixkit-cinematic-swell-stark-transition-2675.ogg",
+          "public/audio/spells/mixkit-explosion-hit-1704.wav",
+          "public/audio/spells/mixkit-explosion-hit-1704.ogg",
+          "public/audio/spells/mixkit-fairy-glitter-867.wav",
+          "public/audio/spells/mixkit-fairy-glitter-867.ogg",
+          "public/audio/spells/mixkit-fairy-sparkle-whoosh-869.wav",
+          "public/audio/spells/mixkit-fairy-sparkle-whoosh-869.ogg",
+          "public/audio/spells/mixkit-icicles-spell-whoosh-881.wav",
+          "public/audio/spells/mixkit-icicles-spell-whoosh-881.ogg",
+          "public/audio/spells/mixkit-magic-bubbles-spell-2999.wav",
+          "public/audio/spells/mixkit-magic-bubbles-spell-2999.ogg",
+          "public/audio/spells/mixkit-magic-sparkle-whoosh-2350.wav",
+          "public/audio/spells/mixkit-magic-sparkle-whoosh-2350.ogg",
+          "public/audio/spells/mixkit-magic-transition-sweep-presentation-2638.wav",
+          "public/audio/spells/mixkit-magic-transition-sweep-presentation-2638.ogg",
+          "public/audio/spells/mixkit-piano-horror-671.mp3",
+          "public/audio/spells/mixkit-relaxing-harp-sweep-2628.wav",
+          "public/audio/spells/mixkit-relaxing-harp-sweep-2628.ogg",
+          "public/audio/spells/mixkit-spellcaster-fairy-swoosh-1463.wav",
+          "public/audio/spells/mixkit-spellcaster-fairy-swoosh-1463.ogg"
+        ],
+        "notes": "12 spell SFX (cast / impact / ambience). Royalty-free for personal + commercial use, no attribution required, no sub-license restrictions."
+      },
+      {
+        "id": "kenney-rpg-audio",
+        "title": "Kenney RPG Audio",
+        "author": "Kenney Vleugels",
+        "authorUrl": "https://kenney.nl",
+        "sourceUrl": "https://kenney.nl/assets/rpg-audio",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/audio/kenney-rpg/"
+        ],
+        "notes": "RPG Audio pack (5 files including preview + url shortcuts). Kenney says 'Credit would be nice but not mandatory.'"
+      },
+      {
+        "id": "kenney-ui-audio",
+        "title": "Kenney UI SFX Set",
+        "author": "Kenney Vleugels",
+        "authorUrl": "https://kenney.nl",
+        "sourceUrl": "https://kenney.nl/assets/ui-audio",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/audio/kenney-ui/"
+        ],
+        "notes": "UI SFX pack."
+      },
+      {
+        "id": "kenney-impact-sounds",
+        "title": "Kenney Impact Sounds",
+        "author": "Kenney Vleugels",
+        "authorUrl": "https://kenney.nl",
+        "sourceUrl": "https://kenney.nl/assets/impact-sounds",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/audio/kenney_impact-sounds/"
+        ]
+      },
+      {
+        "id": "kenney-interface-sounds",
+        "title": "Kenney Interface Sounds",
+        "author": "Kenney Vleugels",
+        "authorUrl": "https://kenney.nl",
+        "sourceUrl": "https://kenney.nl/assets/interface-sounds",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/audio/kenney_interface-sounds/"
+        ]
+      },
+      {
+        "id": "kenney-voiceover-pack",
+        "title": "Kenney Voiceover Pack (Male/Female)",
+        "author": "Kenney Vleugels",
+        "authorUrl": "https://kenney.nl",
+        "sourceUrl": "https://kenney.nl/assets/voiceover-pack",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/audio/kenney_voiceover-pack/Male/",
+          "public/audio/kenney_voiceover-pack/Female/"
+        ]
+      },
+      {
+        "id": "kenney-voiceover-pack-fighter",
+        "title": "Kenney Voiceover Pack — Fighter",
+        "author": "Kenney Vleugels",
+        "authorUrl": "https://kenney.nl",
+        "sourceUrl": "https://kenney.nl/assets/voiceover-pack-fighter",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/audio/kenney_voiceover-pack-fighter/"
+        ],
+        "notes": "46 ogg grunts / shouts / death cries used for fighter NPCs."
+      }
+    ],
+    "textures": [
+      {
+        "id": "polyhaven-ground",
+        "title": "Poly Haven Ground Textures (1K diffuse JPGs)",
+        "author": "Poly Haven contributors",
+        "authorUrl": "https://polyhaven.com",
+        "sourceUrl": "https://polyhaven.com/textures",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://polyhaven.com/license",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/ground/aerial_beach_01_diff_1k.jpg",
+          "public/ground/aerial_grass_rock_diff_1k.jpg",
+          "public/ground/aerial_rocks_04_diff_1k.jpg",
+          "public/ground/brown_mud_leaves_01_diff_1k.jpg",
+          "public/ground/coast_sand_rocks_02_diff_1k.jpg",
+          "public/ground/cobblestone_floor_13_diff_1k.jpg",
+          "public/ground/concrete_floor_02_diff_1k.jpg",
+          "public/ground/forest_ground_04_diff_1k.jpg",
+          "public/ground/forest_leaves_02_diff_1k.jpg",
+          "public/ground/forest_leaves_03_diff_1k.jpg",
+          "public/ground/ganges_river_pebbles_diff_1k.jpg",
+          "public/ground/gravelly_sand_diff_1k.jpg",
+          "public/ground/marble_01_diff_1k.jpg",
+          "public/ground/metal_plate_diff_1k.jpg",
+          "public/ground/rock_face_diff_1k.jpg",
+          "public/ground/rock_pitted_mossy_diff_1k.jpg",
+          "public/ground/rocky_terrain_02_diff_1k.jpg",
+          "public/ground/snow_03_diff_1k.jpg",
+          "public/ground/snow_field_aerial_diff_1k.jpg"
+        ],
+        "notes": "19 ground diffuse maps. CC0 — attribution appreciated but not required. See src/lib/forge/ground-textures.ts."
+      },
+      {
+        "id": "screaming-brain-tiny-texture-pack-1",
+        "title": "Tiny Texture Pack (sbs1) — 128x128 PNG tiles",
+        "author": "Screaming Brain Studios",
+        "authorUrl": "https://screamingbrainstudios.itch.io",
+        "sourceUrl": "https://opengameart.org/content/tiny-texture-pack",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/ground/sbs1/Bricks/",
+          "public/ground/sbs1/Grass/",
+          "public/ground/sbs1/Roofs/",
+          "public/ground/sbs1/Tile/",
+          "public/ground/sbs1/Wood/"
+        ],
+        "notes": "125 PNG tiles (5 categories x ~25 each). 'sbs' = Screaming Brain Studios. Public domain CC0."
+      },
+      {
+        "id": "screaming-brain-tiny-texture-pack-2",
+        "title": "Tiny Texture Pack 2 (sbs2) — 128x128 PNG tiles",
+        "author": "Screaming Brain Studios",
+        "authorUrl": "https://screamingbrainstudios.itch.io/tiny-texture-pack-2",
+        "sourceUrl": "https://screamingbrainstudios.itch.io/tiny-texture-pack-2",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/ground/sbs2/Brick/",
+          "public/ground/sbs2/Dirt/",
+          "public/ground/sbs2/Elements/",
+          "public/ground/sbs2/Metal/",
+          "public/ground/sbs2/Plaster/",
+          "public/ground/sbs2/Stone/",
+          "public/ground/sbs2/Tile/",
+          "public/ground/sbs2/Wood/"
+        ],
+        "notes": "160 PNG tiles across 8 categories. Pack 2 expansion. CC0."
+      }
+    ],
+    "hdri": [
+      {
+        "id": "polyhaven-hdri",
+        "title": "Poly Haven 2K HDRIs + Tonemapped JPGs",
+        "author": "Poly Haven contributors",
+        "authorUrl": "https://polyhaven.com",
+        "sourceUrl": "https://polyhaven.com/hdris",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://polyhaven.com/license",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/hdri/NightSkyHDRI001_4K_TONEMAPPED.jpg",
+          "public/hdri/NightSkyHDRI004_4K_TONEMAPPED.jpg",
+          "public/hdri/NightSkyHDRI007_4K_TONEMAPPED.jpg",
+          "public/hdri/NightSkyHDRI008_4K_TONEMAPPED.jpg",
+          "public/hdri/alps_field_2k.hdr",
+          "public/hdri/autumn_ground_2k.hdr",
+          "public/hdri/belfast_sunset_puresky_2k.hdr",
+          "public/hdri/blue_grotto_2k.hdr",
+          "public/hdri/evening_road_01_puresky_2k.hdr",
+          "public/hdri/outdoor_umbrellas_2k.hdr",
+          "public/hdri/stadium_01_2k.hdr",
+          "public/hdri/sunny_vondelpark_2k.hdr",
+          "public/hdri/umhlanga_sunrise_2k.hdr"
+        ],
+        "notes": "9 .hdr HDRIs + 4 tonemapped night-sky JPGs. CC0. Used for scene lighting and sky backgrounds via drei <Environment>."
+      }
+    ],
+    "models": [
+      {
+        "id": "kenney-furniture-kit",
+        "title": "Kenney Furniture Kit",
+        "author": "Kenney Vleugels",
+        "authorUrl": "https://kenney.nl",
+        "sourceUrl": "https://kenney.nl/assets/furniture-kit",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/models/kenney-furniture/ (140 .glb files)"
+        ],
+        "notes": "Beds, chairs, tables, kitchen, bathroom, plants, electronics."
+      },
+      {
+        "id": "kenney-animated-characters-1",
+        "title": "Kenney Animated Characters 1",
+        "author": "Kenney Vleugels",
+        "authorUrl": "https://kenney.nl",
+        "sourceUrl": "https://kenney.nl/assets/animated-characters",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/models/kenney-animated-characters/ (9 files)"
+        ]
+      },
+      {
+        "id": "quaternius-cyberpunk-kit",
+        "title": "Cyberpunk Game Kit",
+        "author": "Quaternius",
+        "authorUrl": "https://quaternius.com",
+        "sourceUrl": "https://quaternius.itch.io/",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/models/cyberpunk/Cyberpunk Game Kit - Quaternius/ (Character + Enemies + Pickups + Platforms + Textures)"
+        ],
+        "notes": "Quaternius' Ultimate Platformer / Cyberpunk Game Kit. CC0 — support on Patreon optional."
+      },
+      {
+        "id": "quaternius-modular-scifi-megakit",
+        "title": "Modular Sci-Fi MegaKit",
+        "author": "Quaternius",
+        "authorUrl": "https://quaternius.com",
+        "sourceUrl": "https://quaternius.itch.io/modular-sci-fi-megakit",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/models/scifi-megakit/ (Textures + aliens + columns + decals + platforms + props + walls — ~400 files)"
+        ],
+        "notes": "270+ modular sci-fi pieces. CC0."
+      },
+      {
+        "id": "quaternius-scifi-essentials",
+        "title": "Sci-Fi Essentials Kit",
+        "author": "Quaternius",
+        "authorUrl": "https://quaternius.com",
+        "sourceUrl": "https://quaternius.itch.io/sci-fi-essentials-kit",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/models/scifi-essentials/ (106 files)",
+          "public/models/quaternius-scifi/ (Aliens + Columns + Platforms + Props + Walls — ~377 files)"
+        ]
+      },
+      {
+        "id": "quaternius-medieval-village",
+        "title": "Medieval Village MegaKit",
+        "author": "Quaternius",
+        "authorUrl": "https://quaternius.com",
+        "sourceUrl": "https://quaternius.itch.io/medieval-village-megakit",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/models/quaternius-medieval-village/ (374 gltf+bin files)"
+        ],
+        "notes": "Buildings, walls, corners, balconies. Largest single 3D pack in the repo."
+      },
+      {
+        "id": "quaternius-stylized-nature",
+        "title": "Quaternius Stylized Nature (Trees / Bushes / Flowers / Grass)",
+        "author": "Quaternius",
+        "authorUrl": "https://quaternius.com",
+        "sourceUrl": "https://quaternius.itch.io/",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/models/stylized-nature/ (137 files)"
+        ]
+      },
+      {
+        "id": "quaternius-fantasy-props",
+        "title": "Quaternius Fantasy RPG Pack (props)",
+        "author": "Quaternius",
+        "authorUrl": "https://quaternius.com",
+        "sourceUrl": "https://quaternius.itch.io/",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/models/fantasy-props/ (189 files — anvils, axes, banners, barrels, beds, benches, books, ...)"
+        ]
+      },
+      {
+        "id": "quaternius-base-characters",
+        "title": "Quaternius Ultimate Modular Characters Pack",
+        "author": "Quaternius",
+        "authorUrl": "https://quaternius.com",
+        "sourceUrl": "https://quaternius.itch.io/",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/models/quaternius-base-characters/characters/ (18 files)",
+          "public/models/quaternius-base-characters/hairstyles-rigged/ (20 files)",
+          "public/models/quaternius-base-characters/hairstyles-standalone/ (20 files)"
+        ],
+        "notes": "Modular base characters + hairstyles (rigged + standalone)."
+      },
+      {
+        "id": "quaternius-animations-ual",
+        "title": "Quaternius UAL Universal Animation Library (base meshes)",
+        "author": "Quaternius",
+        "authorUrl": "https://quaternius.com",
+        "sourceUrl": "https://quaternius.itch.io/",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/models/quaternius-animations/UAL1_Standard.glb",
+          "public/models/quaternius-animations-2/UAL2_Standard.glb",
+          "public/models/quaternius-animations-2/Mannequin_F.glb",
+          "public/animations/ual/ (2 .glb)"
+        ],
+        "notes": "Universal Animation Library — bases used to retarget animations onto VRMs/characters."
+      },
+      {
+        "id": "quaternius-train-pack",
+        "title": "Quaternius Train Pack (April 2019)",
+        "author": "Quaternius",
+        "authorUrl": "https://quaternius.com",
+        "sourceUrl": "https://quaternius.itch.io/",
+        "license": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/models/trains/Train Pack - April 2019/"
+        ]
+      },
+      {
+        "id": "visionsmind-highlands-fantasy",
+        "title": "Highlands — Fantasy 3D Buildings Pack",
+        "author": "Visions Mind",
+        "authorUrl": "https://visionsmind.itch.io",
+        "sourceUrl": "https://visionsmind.itch.io/highlands-fantasy-pack-3d",
+        "license": "Free / royalty-free (itch.io 'pay-what-you-want')",
+        "licenseUrl": "https://visionsmind.itch.io/highlands-fantasy-pack-3d",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/models/highlands-fantasy/ (17 .glb — axe, barracks, barrel, cropfield, grass_01, ...)"
+        ],
+        "notes": "Stylized fantasy buildings. Imported via scripts/import-highlands.mjs. License text not bundled — verify against current itch.io terms before commercial release; pack page lists no usage restrictions."
+      },
+      {
+        "id": "random-objects",
+        "title": "Random Low-Poly Objects",
+        "author": "unknown / third-party itch.io pack",
+        "authorUrl": null,
+        "sourceUrl": null,
+        "license": "unknown",
+        "licenseUrl": null,
+        "attributionRequired": false,
+        "usedIn": [
+          "public/models/random-objects/ (12 .glb — bat, batclean, case, floppy, key, mage staff, multimeter, padlock, phone, portable heater, wrench)"
+        ],
+        "notes": "Source not identified in repo. Imported via the megakit/randomobjects pipeline (data/megakit-import.log). Need to track down the original itch.io / opengameart pack before public release."
+      },
+      {
+        "id": "psx-derelict-furniture",
+        "title": "PSX Derelict Furniture (low-poly)",
+        "author": "unknown / third-party itch.io pack",
+        "authorUrl": null,
+        "sourceUrl": null,
+        "license": "unknown",
+        "licenseUrl": null,
+        "attributionRequired": false,
+        "usedIn": [
+          "public/models/psx-derelict-furniture/ (6 .glb — chair, couch, fridge, mattress, shelf, vase)"
+        ],
+        "notes": "PSX-aesthetic furniture pack. Source not identified in repo. Likely an itch.io free pack — verify before release."
+      },
+      {
+        "id": "fixme-characters",
+        "title": "Characters (George / Leela / Mike / Stan)",
+        "author": "unknown / unattributed",
+        "authorUrl": null,
+        "sourceUrl": null,
+        "license": "unknown",
+        "licenseUrl": null,
+        "attributionRequired": false,
+        "usedIn": [
+          "public/models/characters/George.gltf",
+          "public/models/characters/Leela.gltf",
+          "public/models/characters/Mike.gltf",
+          "public/models/characters/Stan.gltf"
+        ],
+        "notes": "Four named character GLTFs (Khronos Blender exporter v1.7.33). Names suggest a Futurama-fan or stylised set; origin not documented in repo. Verify provenance before commercial release."
+      }
+    ],
+    "avatars": [
+      {
+        "id": "open-source-avatars",
+        "title": "Open Source Avatars / 100Avatars VRM Collection",
+        "author": "Polygonal Mind + community contributors (curated by ToxSam)",
+        "authorUrl": "https://www.opensourceavatars.com",
+        "sourceUrl": "https://github.com/ToxSam/open-source-avatars",
+        "license": "CC0 1.0 Universal (per-avatar VRM metadata may further specify)",
+        "licenseUrl": "https://github.com/PolygonalMind/100Avatars",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/avatars/gallery/Amazonas.vrm",
+          "public/avatars/gallery/Anna.vrm",
+          "public/avatars/gallery/Binky_Cranberry.vrm",
+          "public/avatars/gallery/Bruno.vrm",
+          "public/avatars/gallery/CaptainLobster.vrm",
+          "public/avatars/gallery/Cookieman.vrm",
+          "public/avatars/gallery/CoolAlien.vrm",
+          "public/avatars/gallery/CoolCow.vrm",
+          "public/avatars/gallery/CoolCyclops.vrm",
+          "public/avatars/gallery/CoolGuitar.vrm",
+          "public/avatars/gallery/CoolRadish.vrm",
+          "public/avatars/gallery/CoolSpaguetti.vrm",
+          "public/avatars/gallery/CosmicBot.vrm",
+          "public/avatars/gallery/Crustybutt_da_king.vrm",
+          "public/avatars/gallery/CuteMoth.vrm",
+          "public/avatars/gallery/Cyberpal.vrm",
+          "public/avatars/gallery/David.vrm",
+          "public/avatars/gallery/DreamEater.vrm",
+          "public/avatars/gallery/DreamFighter.vrm",
+          "public/avatars/gallery/EYECleric.vrm",
+          "public/avatars/gallery/EYEWizard.vrm",
+          "public/avatars/gallery/EYE_Diviner.vrm",
+          "public/avatars/gallery/Esktix__Magma.vrm",
+          "public/avatars/gallery/Eugenia.vrm",
+          "public/avatars/gallery/EvilPendra.vrm",
+          "public/avatars/gallery/GARY_GRIFTER_1_0.vrm",
+          "public/avatars/gallery/GoodKnight.vrm",
+          "public/avatars/gallery/Grifter_Squaddie__764.vrm",
+          "public/avatars/gallery/Harvester__Summer.vrm",
+          "public/avatars/gallery/HodlerKing.vrm",
+          "public/avatars/gallery/Juanita.vrm",
+          "public/avatars/gallery/King_Mutatio.vrm",
+          "public/avatars/gallery/LadyFawn.vrm",
+          "public/avatars/gallery/Mimic_Slime__Classic.vrm",
+          "public/avatars/gallery/Mocking_Spit__Sea_Sick.vrm",
+          "public/avatars/gallery/Mr.vrm",
+          "public/avatars/gallery/Munch_Gingerbread.vrm",
+          "public/avatars/gallery/MushroomFairy.vrm",
+          "public/avatars/gallery/Mushy.vrm",
+          "public/avatars/gallery/Orion.vrm",
+          "public/avatars/gallery/PitcherDude.vrm",
+          "public/avatars/gallery/RippedJimbo.vrm",
+          "public/avatars/gallery/STEAMBOAT_SUMMER.vrm",
+          "public/avatars/gallery/SportTV.vrm",
+          "public/avatars/gallery/Stingcake.vrm",
+          "public/avatars/gallery/StitchWitch.vrm",
+          "public/avatars/gallery/The_Worm.vrm",
+          "public/avatars/gallery/UnicornPerson.vrm",
+          "public/avatars/gallery/VIPE_Hero__2723.vrm",
+          "public/avatars/gallery/VIPE_Hero__2770.vrm",
+          "public/avatars/gallery/VIPE_Hero__2784.vrm",
+          "public/avatars/gallery/VIPE_Hero__2799.vrm",
+          "public/avatars/gallery/VIPE_Hero__2902.vrm",
+          "public/avatars/gallery/Witch.vrm"
+        ],
+        "notes": "53 VRM avatars. Names match the Polygonal Mind 100Avatars rounds + community contributions on Open Source Avatars (CC0 by default). Per-avatar licenses live inside each .vrm meta block — VRM 1.0 spec allows per-character permissions for redistribution, alterations, sexual / violent expression, commercial use. The 'VIPE_Hero__*' avatars came via VIPE.io which mints VRMs with per-avatar configurable licenses; assume CC0/free unless the in-file VRM metadata says otherwise. Open Source Avatars treats the gallery + metadata as CC0; per-avatar overrides win when present."
+      }
+    ],
+    "animations": [
+      {
+        "id": "mixamo-animations",
+        "title": "Adobe Mixamo Animations (FBX)",
+        "author": "Adobe / Mixamo",
+        "authorUrl": "https://www.mixamo.com",
+        "sourceUrl": "https://www.mixamo.com",
+        "license": "Mixamo End User License (royalty-free for commercial + personal projects; no resale of standalone assets)",
+        "licenseUrl": "https://helpx.adobe.com/creative-cloud/faq/mixamo-faq.html",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/animations/Breakdance 1990.fbx",
+          "public/animations/Breakdance Freeze Var 3.fbx",
+          "public/animations/Breathing Idle.fbx",
+          "public/animations/Butterfly Twirl.fbx",
+          "public/animations/Capoeira.fbx",
+          "public/animations/Catwalk Walk Turn 180 Tight.fbx",
+          "public/animations/Dancing Twerk.fbx",
+          "public/animations/Drunk Walk.fbx",
+          "public/animations/Front Flip.fbx",
+          "public/animations/Front Twist Flip.fbx",
+          "public/animations/Hip Hop Dancing.fbx",
+          "public/animations/Jump.fbx",
+          "public/animations/Low Crawl.fbx",
+          "public/animations/Medium Run.fbx",
+          "public/animations/Mma Kick.fbx",
+          "public/animations/Moonwalk.fbx",
+          "public/animations/Praying.fbx",
+          "public/animations/Running.fbx",
+          "public/animations/Shuffling.fbx",
+          "public/animations/Situps.fbx",
+          "public/animations/Standing Idle To Fight Idle.fbx",
+          "public/animations/Thriller Part 3.fbx",
+          "public/animations/Twist Dance.fbx",
+          "public/animations/Unarmed Walk Forward.fbx"
+        ],
+        "notes": "24 character animations. Mixamo permits royalty-free use in commercial + personal projects; assets must be embedded in the product (cannot be resold standalone) and cannot be bulk-downloaded for ML training. No attribution required. Note: VRM avatars need bone-name retargeting before these can play (see project_vrm_animation_gap.md)."
+      }
+    ],
+    "fonts": [
+      {
+        "id": "helvetiker",
+        "title": "Helvetiker Regular (Three.js bundled typeface)",
+        "author": "Magenta ltd",
+        "authorUrl": "http://www.magenta.gr",
+        "sourceUrl": "https://github.com/mrdoob/three.js/blob/dev/examples/fonts/helvetiker_regular.typeface.json",
+        "license": "MgOpen License (Bitstream Vera-style — modify+commercial OK, must rename if modified)",
+        "licenseUrl": "https://github.com/mrdoob/three.js/blob/dev/examples/fonts/LICENSE",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/fonts/helvetiker_regular.typeface.json"
+        ],
+        "notes": "Default Three.js example font, bundled here for offline TextGeometry. License permits commercial + modification (with rename)."
+      }
+    ],
+    "ai-generated-art": [
+      {
+        "id": "nano-banana-spell-tiles",
+        "title": "Spell Book Tile Icons (Nano Banana / Gemini)",
+        "author": "Generated via Google Gemini 'Nano Banana' (the user) — Google does not claim ownership",
+        "authorUrl": "https://gemini.google.com",
+        "sourceUrl": "https://gemini.google.com",
+        "license": "Google Gemini Generative AI Terms (commercial use permitted, no attribution required)",
+        "licenseUrl": "https://policies.google.com/terms/generative-ai",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/ui/spellbook/tiles/*.gpt2.webp (26 icons)",
+          "public/ui/spellbook/tiles/_alternates/*.nano2.webp (26 alternates)"
+        ],
+        "notes": "Generated by the project owner via Gemini (Nano Banana / Riverflow substitute). Per Google's Generative AI Additional Terms, output content belongs to the user; commercial use is permitted with no attribution requirement. Copyright protection of pure-AI output may be limited in the US — strengthening via human edits is recommended for trademark/copyright concerns. The 'gpt2' filename suffix was a planned GPT-Image-2 pipeline that was substituted for Seedream; 'nano2' suffix was Nano-Banana-2 substituted for Riverflow. See public/ui/spellbook/manifest.json."
+      },
+      {
+        "id": "nano-banana-spellbook-frame",
+        "title": "Spell Book Frame / Page / Tab Embellishments",
+        "author": "Generated via Google Gemini + Seedream (the user)",
+        "authorUrl": "https://gemini.google.com",
+        "sourceUrl": null,
+        "license": "Google Gemini Generative AI Terms + Seedream Terms",
+        "licenseUrl": "https://policies.google.com/terms/generative-ai",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/ui/spellbook/frame/book-corner-{tl,tr,bl,br}.png",
+          "public/ui/spellbook/frame/divider.png",
+          "public/ui/spellbook/frame/tab-embellish-*.png (7 tabs)",
+          "public/ui/spellbook/frame/page-bg-*.jpg (7 page backgrounds)"
+        ],
+        "notes": "Generated via Seedream rendered on white background + offline chroma-key (substitute for gpt-image-1.5 native alpha). Per ByteDance's Seedream ToS, generated outputs may be used commercially. No attribution required for either pipeline."
+      },
+      {
+        "id": "nano-banana-hud",
+        "title": "HUD vials / bars / corners / backdrop",
+        "author": "Generated via Google Gemini + Seedream",
+        "authorUrl": "https://gemini.google.com",
+        "sourceUrl": null,
+        "license": "Google Gemini Generative AI Terms + Seedream Terms",
+        "licenseUrl": "https://policies.google.com/terms/generative-ai",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/ui/hud/vial-{hp,mana,xp}.png",
+          "public/ui/hud/bar-frame-{hp,mana,xp}.png",
+          "public/ui/hud/hud-corner-{tl,tr,bl,br}.png",
+          "public/ui/hud/hud-backdrop.png",
+          "public/ui/hud/iterations/ (variant exploration archive)"
+        ],
+        "notes": "RPG HUD asset atlas. Same AI pipeline as spell-tiles. The iterations/ folder retains design exploration variants tagged .seedream / .geminiflash."
+      },
+      {
+        "id": "wizard-textures-prompts",
+        "title": "Wizard UI texture prompt library + generated samples",
+        "author": "Generated via Google Gemini + Seedream",
+        "authorUrl": "https://gemini.google.com",
+        "sourceUrl": null,
+        "license": "Google Gemini Generative AI Terms + Seedream Terms",
+        "licenseUrl": "https://policies.google.com/terms/generative-ai",
+        "attributionRequired": false,
+        "usedIn": [
+          "public/ui/wizard-textures/prompts/ (negative prompt + 4 prompt packs)",
+          "public/ui/wizard-textures/generated/fresh-batch-2026-05-17/",
+          "public/ui/wizard-textures/generated/oasis-ui-alpha-lab/",
+          "public/ui/wizard-textures/generated/oasis-ui-native-alpha-lab/",
+          "public/ui/wizard-textures/generated/oasis-ui-style-lab/"
+        ],
+        "notes": "Internal exploration library — not all generated images ship in the live UI."
+      }
+    ],
+    "user-generated": [
+      {
+        "id": "user-voice-recordings",
+        "title": "User voice recordings",
+        "author": "Project owner",
+        "authorUrl": null,
+        "sourceUrl": null,
+        "license": "Proprietary / owned by project",
+        "licenseUrl": null,
+        "attributionRequired": false,
+        "usedIn": [
+          "public/audio/spells/voice-1775536220869-8vaxl0.mp3",
+          "public/audio/spells/voice-1775545682433-9wal9b.mp3",
+          "public/audio/04515/welcome-sam.mp3",
+          "public/audio/04515/welcome-sam.json (ElevenLabs alignment data)",
+          "public/audio/anaal nathrakh spell.MP3"
+        ],
+        "notes": "User-generated, not third-party. Voice-* spell incantations + ElevenLabs TTS welcome message + user's personal recording. Not subject to external attribution. ElevenLabs alignment JSON is generated metadata about the user-owned audio."
+      },
+      {
+        "id": "user-generated-media-buckets",
+        "title": "User-generated media buckets (runtime)",
+        "author": "Project owner / end users",
+        "authorUrl": null,
+        "sourceUrl": null,
+        "license": "Proprietary / per-user",
+        "licenseUrl": null,
+        "attributionRequired": false,
+        "usedIn": [
+          "public/generated-images/",
+          "public/generated-music/",
+          "public/generated-videos/",
+          "public/generated-voices/",
+          "public/conjured/",
+          "public/crafted-thumbs/",
+          "public/portal-thumbs/",
+          "public/thumbs/",
+          "public/downloads/",
+          "public/lipsync/"
+        ],
+        "notes": "Runtime-generated buckets. Each item carries the underlying generator's license (Meshy, ElevenLabs, FAL, Replicate, etc.) — track per-asset in data/conjured-registry.json + data/generated-voice-library.json. Not third-party shipped assets."
+      }
+    ]
+  }
+}

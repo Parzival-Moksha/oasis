@@ -19,6 +19,8 @@
     "seed:welcome-hub": "npx tsx prisma/seed-default-worlds.ts --world=portal-zero --update-core --snapshot",
     "world:export-default": "npx tsx prisma/export-default-world.ts",
     "audit:catalog-placements": "node scripts/audit-catalog-placements.mjs",
+    "test": "vitest run --dir src",
+    "test:watch": "vitest --dir src",
     "lint": "eslint src scripts next.config.mjs postcss.config.js tailwind.config.js vitest.config.ts --ext .js,.mjs,.ts,.tsx --report-unused-disable-directives"
   },
   "dependencies": {

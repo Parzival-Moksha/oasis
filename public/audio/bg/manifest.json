@@ -1,0 +1,8 @@
+{
+  "generatedAt": "2026-05-17",
+  "purpose": "Ambient / background loops for the Oasis. Long-running drone or atmosphere tracks. Played via spatialAudio or ambient mixer channel.",
+  "license": "mixkit-*: royalty-free under Mixkit Sound Effects License (free + no attribution required).",
+  "library": [
+    { "id": "mixkit-piano-horror", "file": "/audio/bg/mixkit-piano-horror-671.mp3", "label": "Piano Horror", "vibe": "dark ambience / dread / long" }
+  ]
+}

@@ -19,6 +19,10 @@ export default defineConfig({
       '**/node_modules/**',
       '**/.next/**',
       '**/.codex-logs/**',
+      // Stale agent-worktree snapshots — vitest was scanning duplicate copies
+      // of every test in `src/`, inflating the suite from ~2600 real tests to
+      // ~14,751 and adding ~135 phantom failures. Exclude.
+      '**/.claude/worktrees/**',
       '**/dist/**',
       '**/website/build/**',
     ],
