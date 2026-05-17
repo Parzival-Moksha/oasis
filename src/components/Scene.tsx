@@ -473,10 +473,17 @@ function PostProcessing() {
   const chromaticRef = useRef<any>(null)
   const vignetteRef = useRef<any>(null)
   const _offsetVec = useRef(new THREE.Vector2())
+  // ─═̷─ Mobile devices choke on EffectComposer's extra render passes during
+  // sprint (vignette darkness + chromatic offset boosts). On the user's
+  // phone in particular the FPS drops 60 → 12 the moment Dash fires.
+  // Suppress the sprint-induced boost on mobile so the dash dynamic-vignette
+  // never spins up the postprocessing chain. Static vignette/chromatic stay
+  // user-controllable via settings (toggling them on accepts the cost). ─═̷─
+  const mobileOasis = useIsMobileOasis()
 
   useFrame(() => {
     const si = Math.max(0, sprintRef.current.intensity)
-    const isActive = si > 0.05
+    const isActive = !mobileOasis && si > 0.05
     if (isActive !== sprintActiveRef.current) {
       sprintActiveRef.current = isActive
       setSprintActive(isActive)
@@ -485,13 +492,13 @@ function PostProcessing() {
     // Imperatively update effect uniforms — no re-renders needed
     if (chromaticRef.current) {
       const base = settings.chromaticEnabled ? 0.003 : 0
-      const boost = si * 0.012
+      const boost = mobileOasis ? 0 : si * 0.012
       const val = base + boost
       chromaticRef.current.offset = _offsetVec.current.set(val, val)
     }
     if (vignetteRef.current) {
       const baseDarkness = settings.vignetteEnabled ? 0.7 : 0
-      const boost = si * 0.4
+      const boost = mobileOasis ? 0 : si * 0.4
       const target = baseDarkness + boost
       const u = vignetteRef.current.uniforms?.get?.('darkness')
       if (u) u.value = target

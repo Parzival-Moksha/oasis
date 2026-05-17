@@ -30,6 +30,7 @@ import * as THREE from 'three'
 import { PLAYER_BASE_STATS } from '@/lib/player-progression'
 import { useAudioManager } from '@/lib/audio-manager'
 import { setPlayerSpellCasting } from '@/lib/player-avatar-runtime'
+import { preloadSpellSoundManifest, resolveSpellSoundUrl } from '@/lib/spell-sounds'
 import { useOasisStore } from '@/store/oasisStore'
 import type { OasisSettings } from '@/components/scene-lib/types'
 
@@ -489,10 +490,18 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
       const { origin, direction } = resolveCastOriginAndDirection(camera)
 
       const audio = useAudioManager.getState()
-      // Distinct cast sound per spell.
-      if (spell === 'firebolt') audio.play('fireboltVoice')
-      else if (spell === 'lightning-bolt') audio.play('fireboltCast')
-      else if (spell === 'ice-bolt') audio.play('buttonClick')
+      // Per-spell override from Config → Sound → Spell Sounds takes precedence.
+      // Manifest loads in background on first cast; null on miss → fall through.
+      const overrideId = settings.spellSounds?.[spell]
+      const overrideUrl = resolveSpellSoundUrl(overrideId)
+      if (overrideUrl) {
+        audio.playUrl(overrideUrl, 0.85)
+      } else {
+        // Distinct cast sound per spell (default profile).
+        if (spell === 'firebolt') audio.play('fireboltVoice')
+        else if (spell === 'lightning-bolt') audio.play('fireboltCast')
+        else if (spell === 'ice-bolt') audio.play('buttonClick')
+      }
 
       setPlayerSpellCasting(true)
       window.setTimeout(() => setPlayerSpellCasting(false), BOLT_CAST_ANIMATION_MS)
@@ -522,10 +531,16 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     }
   }, [
     camera, enabled, settings.fireboltDesign, settings.lightningBoltDesign, settings.iceBoltDesign,
+    settings.spellSounds,
     spawnFireboltA, spawnFireboltB, spawnFireboltC,
     spawnLightningA, spawnLightningB, spawnLightningC, spawnLightningD,
     spawnIceA, spawnIceB, spawnIceC,
   ])
+
+  // Preload the spell-sound manifest on mount so per-spell overrides resolve
+  // on the first cast (otherwise the first cast falls back to defaults while
+  // the manifest is still in flight).
+  useEffect(() => { void preloadSpellSoundManifest() }, [])
 
   // ─═̷─═̷─📡 EVENT WIRING ─═̷─═̷─📡
   useEffect(() => {

@@ -264,12 +264,12 @@ describe('createStreamParser', () => {
       duration_ms: 3200,
     }))
 
-    expect(send).toHaveBeenCalledWith('result', {
-      cost_usd: 0.05,
-      total_input_tokens: 1000,
-      total_output_tokens: 500,
-      duration_ms: 3200,
-    })
+    expect(send).toHaveBeenCalledWith('result', expect.objectContaining({
+      costUsd: 0.05,
+      inputTokens: 1000,
+      outputTokens: 500,
+      durationMs: 3200,
+    }))
   })
 
   it('parses result events using total_cost_usd fallback', () => {
@@ -284,7 +284,7 @@ describe('createStreamParser', () => {
     }))
 
     expect(send).toHaveBeenCalledWith('result', expect.objectContaining({
-      cost_usd: 0.12,
+      costUsd: 0.12,
     }))
   })
 
@@ -645,9 +645,9 @@ describe('createStreamParser — onResult callback', () => {
 
     expect(onResult).toHaveBeenCalledTimes(1)
     expect(onResult).toHaveBeenCalledWith(expect.objectContaining({
-      total_input_tokens: 500,
-      total_output_tokens: 200,
-      duration_ms: 1500,
+      inputTokens: 500,
+      outputTokens: 200,
+      durationMs: 1500,
     }))
   })
 
@@ -884,12 +884,12 @@ describe('createStreamParser — token field fallback', () => {
       duration_ms: 2000,
     }))
 
-    expect(send).toHaveBeenCalledWith('result', {
-      cost_usd: 0.02,
-      total_input_tokens: 750,
-      total_output_tokens: 300,
-      duration_ms: 2000,
-    })
+    expect(send).toHaveBeenCalledWith('result', expect.objectContaining({
+      costUsd: 0.02,
+      inputTokens: 750,
+      outputTokens: 300,
+      durationMs: 2000,
+    }))
   })
 
   it('prefers total_input_tokens over usage.input_tokens when both present', () => {
@@ -905,12 +905,12 @@ describe('createStreamParser — token field fallback', () => {
       duration_ms: 3000,
     }))
 
-    expect(send).toHaveBeenCalledWith('result', {
-      cost_usd: 0.05,
-      total_input_tokens: 1000,
-      total_output_tokens: 500,
-      duration_ms: 3000,
-    })
+    expect(send).toHaveBeenCalledWith('result', expect.objectContaining({
+      costUsd: 0.05,
+      inputTokens: 1000,
+      outputTokens: 500,
+      durationMs: 3000,
+    }))
   })
 
   it('prefers total_output_tokens over usage.output_tokens when both present', () => {
@@ -925,8 +925,8 @@ describe('createStreamParser — token field fallback', () => {
     }))
 
     const call = send.mock.calls.find(c => c[0] === 'result')
-    expect(call![1].total_input_tokens).toBe(800)
-    expect(call![1].total_output_tokens).toBe(400)
+    expect(call![1].inputTokens).toBe(800)
+    expect(call![1].outputTokens).toBe(400)
   })
 
   it('defaults tokens to 0 when neither total nor usage fields present', () => {
@@ -940,11 +940,11 @@ describe('createStreamParser — token field fallback', () => {
     }))
 
     const call = send.mock.calls.find(c => c[0] === 'result')
-    expect(call![1].total_input_tokens).toBe(0)
-    expect(call![1].total_output_tokens).toBe(0)
+    expect(call![1].inputTokens).toBe(0)
+    expect(call![1].outputTokens).toBe(0)
   })
 
-  it('calls onResult with the raw event including usage object', () => {
+  it('calls onResult with the normalized token usage payload', () => {
     const send = vi.fn()
     const onResult = vi.fn()
     const parser = createStreamParser({ send, onResult })
@@ -958,7 +958,8 @@ describe('createStreamParser — token field fallback', () => {
 
     expect(onResult).toHaveBeenCalledTimes(1)
     expect(onResult).toHaveBeenCalledWith(expect.objectContaining({
-      usage: { input_tokens: 600, output_tokens: 250 },
+      inputTokens: 600,
+      outputTokens: 250,
     }))
   })
 })

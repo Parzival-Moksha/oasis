@@ -307,6 +307,8 @@ interface AudioManagerState {
   play: (event: SoundEvent) => void
   /** Play a random footstep (for continuous walking) */
   playFootstep: () => void
+  /** Play an arbitrary audio file by URL (for per-spell sound overrides) */
+  playUrl: (url: string, volumeMultiplier?: number) => void
   /** Set volume */
   setVolume: (v: number) => void
   /** Toggle mute */
@@ -393,6 +395,19 @@ export const useAudioManager = create<AudioManagerState>((set, get) => {
           brokenPaths.add(option.path)
           playFallbackBeep(effectiveVolume)
         }
+      })
+    },
+
+    playUrl: (url, volumeMultiplier = 1) => {
+      const { muted, volume } = get()
+      if (muted || volume === 0 || !url) return
+      const effectiveVolume = volume * volumeMultiplier
+      if (brokenPaths.has(url)) { playFallbackBeep(effectiveVolume); return }
+      const audio = getAudio(url)
+      audio.volume = effectiveVolume
+      audio.currentTime = 0
+      audio.play().catch(() => {
+        if (audio.error) { brokenPaths.add(url); playFallbackBeep(effectiveVolume) }
       })
     },
 

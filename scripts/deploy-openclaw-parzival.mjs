@@ -36,6 +36,11 @@ const commands = [
     ? 'echo "[deploy] skipping room-server install"'
     : 'pnpm --dir packages/oasis-room-server install --frozen-lockfile',
   'pnpm --dir packages/oasis-room-server build',
+  skipInstall
+    ? 'echo "[deploy] skipping docs install"'
+    : 'pnpm --dir website install --frozen-lockfile',
+  // Rebuild docusaurus + sync into public/docs-site so /docs on hosted is fresh.
+  'pnpm docs:local',
   'npx prisma generate',
   'pnpm build',
   seedWelcome ? 'pnpm seed:welcome-hub' : 'echo "[deploy] skipping welcome reseed"',

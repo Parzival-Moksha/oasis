@@ -207,31 +207,6 @@ export function MobileOasisControls({
         onPointerCancel={endLook}
       />
 
-      {/* ░▒▓ DASH button — above the WASD ring. Index finger holds it down
-          while thumb steers the joystick. Right thumb stays free for action
-          buttons on the right side. ▓▒░ */}
-      <button
-        type="button"
-        className="pointer-events-auto absolute bottom-40 left-5 h-12 w-28 touch-none rounded-lg border border-amber-200/45 bg-amber-950/72 text-[11px] font-black uppercase tracking-[0.18em] text-amber-100 shadow-[0_0_28px_rgba(251,191,36,0.22)] backdrop-blur-sm"
-        onPointerDown={event => {
-          event.preventDefault()
-          event.stopPropagation()
-          setSprint(true)
-        }}
-        onPointerUp={event => {
-          event.preventDefault()
-          event.stopPropagation()
-          setSprint(false)
-        }}
-        onPointerCancel={event => {
-          event.preventDefault()
-          event.stopPropagation()
-          setSprint(false)
-        }}
-      >
-        Dash
-      </button>
-
       <div
         className="pointer-events-auto absolute bottom-6 left-5 h-28 w-28 touch-none rounded-full border border-cyan-200/24 bg-black/35 shadow-[0_0_30px_rgba(34,211,238,0.16)] backdrop-blur-sm"
         onPointerDown={event => {
@@ -260,10 +235,36 @@ export function MobileOasisControls({
       </div>
 
       <div className="pointer-events-auto absolute bottom-7 right-5 flex touch-none flex-col gap-2">
+        {/* ░▒▓ DASH button — moved to the right column so left thumb steers
+            the WASD ring uninterrupted. Right thumb does SELECT / spells,
+            right index can hold DASH above without thumb conflict. ▓▒░ */}
+        <button
+          type="button"
+          className="h-11 min-w-28 touch-none rounded-lg border border-amber-200/45 bg-amber-950/72 px-4 text-[11px] font-black uppercase tracking-[0.18em] text-amber-100 shadow-[0_0_24px_rgba(251,191,36,0.22)] backdrop-blur-sm"
+          onPointerDown={event => {
+            event.preventDefault()
+            event.stopPropagation()
+            setSprint(true)
+          }}
+          onPointerUp={event => {
+            event.preventDefault()
+            event.stopPropagation()
+            setSprint(false)
+          }}
+          onPointerCancel={event => {
+            event.preventDefault()
+            event.stopPropagation()
+            setSprint(false)
+          }}
+        >
+          Dash
+        </button>
         <MobilePrimaryActionButton nearbyAction={nearbyAction} spellControlsEnabled={spellControlsEnabled} />
         {spellControlsEnabled && <MobileManaButton />}
         <MobilePaintHoldButton />
       </div>
+
+      <MobileTransformHotbar />
     </div>
   )
 }
@@ -392,6 +393,71 @@ function MobilePrimaryActionButton({
         {label}
       </button>
     </>
+  )
+}
+
+// ─═̷─═̷─🛠─═̷─═̷─{ MOBILE TRANSFORM HOTBAR — R/T/Y on selected objects }─═̷─═̷─🛠─═̷─═̷─
+//
+// Desktop has R/T/Y keys (`setTransformMode` in WorldObjects). On mobile
+// there's no keyboard, so this hotbar appears at top-center whenever
+// `selectedObjectId` is set, exposing the same three modes plus a quick
+// deselect. Active mode is highlighted; tap to switch.
+//
+// Hidden on read-only worlds since transforms are write operations.
+// ─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─
+
+function MobileTransformHotbar() {
+  const selectedObjectId = useOasisStore(s => s.selectedObjectId)
+  const transformMode = useOasisStore(s => s.transformMode)
+  const setTransformMode = useOasisStore(s => s.setTransformMode)
+  const selectObject = useOasisStore(s => s.selectObject)
+  const isReadOnly = useOasisStore(s => s.isViewMode && !s.isViewModeEditable)
+
+  if (!selectedObjectId || isReadOnly) return null
+
+  const modes: { mode: 'translate' | 'rotate' | 'scale'; label: string; hint: string }[] = [
+    { mode: 'translate', label: 'Move',   hint: 'R' },
+    { mode: 'rotate',    label: 'Rotate', hint: 'T' },
+    { mode: 'scale',     label: 'Scale',  hint: 'Y' },
+  ]
+
+  return (
+    <div className="pointer-events-auto absolute left-1/2 top-14 flex -translate-x-1/2 touch-none gap-1.5 rounded-lg border border-white/12 bg-black/55 px-1.5 py-1 shadow-[0_0_28px_rgba(168,85,247,0.18)] backdrop-blur-md">
+      {modes.map(({ mode, label, hint }) => {
+        const active = transformMode === mode
+        return (
+          <button
+            key={mode}
+            type="button"
+            className={`min-w-14 rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] transition ${
+              active
+                ? 'border-purple-300/70 bg-purple-700/55 text-purple-50 shadow-[0_0_14px_rgba(168,85,247,0.5)]'
+                : 'border-white/15 bg-white/[0.05] text-white/65'
+            }`}
+            onPointerDown={event => {
+              event.preventDefault()
+              event.stopPropagation()
+              setTransformMode(mode)
+            }}
+          >
+            <span>{label}</span>
+            <span className="ml-1 text-[8px] text-white/40">{hint}</span>
+          </button>
+        )
+      })}
+      <button
+        type="button"
+        className="ml-1 rounded-md border border-white/15 bg-white/[0.05] px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-white/65 transition hover:bg-white/[0.1]"
+        onPointerDown={event => {
+          event.preventDefault()
+          event.stopPropagation()
+          selectObject(null)
+        }}
+        aria-label="Deselect"
+      >
+        ✕
+      </button>
+    </div>
   )
 }
 

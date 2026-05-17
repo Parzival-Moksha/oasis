@@ -144,9 +144,9 @@ export function UploadPanel() {
     } else {
       store.enterPlacementMode({
         type: 'catalog',
-        catalogId: 'kf_speaker',
+        catalogId: 'kf_radio',
         name: uploadedName,
-        path: '/models/kenney-furniture/speaker.glb',
+        path: '/models/kenney-furniture/radio.glb',
         defaultScale: 2,
         audioUrl: uploadedUrl,
       })

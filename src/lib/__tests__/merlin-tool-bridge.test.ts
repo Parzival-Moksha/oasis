@@ -31,6 +31,10 @@ describe('executeMerlinTool', () => {
       rotation: [0, 1, 0],
       scale: 2,
       label: 'Tower',
+    }, {
+      source: 'merlin',
+      worldId: 'world-123',
+      agentType: 'merlin',
     })
   })
 
@@ -43,6 +47,10 @@ describe('executeMerlinTool', () => {
       actorAgentType: 'merlin',
       worldId: 'world-456',
       presetId: 'grass',
+    }, {
+      source: 'merlin',
+      worldId: 'world-456',
+      agentType: 'merlin',
     })
   })
 })

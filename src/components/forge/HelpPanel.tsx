@@ -10,8 +10,9 @@ import { createPortal } from 'react-dom'
 import { QUESTS, QUEST_IDS, getQuestProgress, completedQuestCount } from '@/lib/quests'
 import { useUILayer } from '@/lib/input-manager'
 import type { QuestId } from '@/lib/quests'
+import { CreditsTab } from './CreditsTab'
 
-type Tab = 'controls' | 'guide' | 'glossary'
+type Tab = 'controls' | 'guide' | 'glossary' | 'credits'
 
 const DEFAULT_POS = { x: 244, y: 328 }
 
@@ -336,8 +337,7 @@ function GlossaryTab() {
 export function HelpPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   useUILayer('help', isOpen)
   const [isMobile, setIsMobile] = useState(false)
-  const tab: Tab = 'controls'
-  const setTab = (_tab: Tab) => {}
+  const [tab, setTab] = useState<Tab>('controls')
 
   // Dragging (same pattern as FeedbackPanel)
   const [position, setPosition] = useState(() => {
@@ -396,6 +396,7 @@ export function HelpPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
     { key: 'controls', label: 'Controls', icon: '⌨️' },
     { key: 'guide', label: 'Quests', icon: '⚔️', badge: done < total ? `${done}/${total}` : undefined },
     { key: 'glossary', label: 'Glossary', icon: '📚' },
+    { key: 'credits', label: 'Credits', icon: '📜' },
   ]
 
   return createPortal(
@@ -440,25 +441,25 @@ export function HelpPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
 
         {/* ── Tab bar ── */}
         <div
-          className="hidden"
+          className="flex"
           style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}
         >
           {TABS.map(t => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-t-lg text-xs font-medium transition-all"
+              className="flex-1 flex items-center justify-center gap-1 px-2 py-2 text-[10px] font-medium transition-all"
               style={{
                 background: tab === t.key ? 'rgba(168,85,247,0.15)' : 'transparent',
                 color: tab === t.key ? '#d8b4fe' : '#9ca3af',
                 borderBottom: tab === t.key ? '2px solid #a855f7' : '2px solid transparent',
               }}
             >
-              <span className="text-sm">{t.icon}</span>
+              <span className="text-xs">{t.icon}</span>
               {t.label}
               {t.badge && (
                 <span
-                  className="text-[9px] font-mono px-1 py-0.5 rounded"
+                  className="text-[8px] font-mono px-1 py-0.5 rounded"
                   style={{
                     background: 'rgba(168,85,247,0.2)',
                     color: '#c084fc',
@@ -474,9 +475,12 @@ export function HelpPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
         {/* ── Content ── */}
         <div
           className="overflow-y-auto p-3"
-          style={{ maxHeight: isMobile ? 'calc(100vh - 116px)' : 'min(560px, calc(85vh - 84px))' }}
+          style={{ maxHeight: isMobile ? 'calc(100vh - 156px)' : 'min(560px, calc(85vh - 124px))' }}
         >
-          <ControlsTab />
+          {tab === 'controls' && <ControlsTab />}
+          {tab === 'guide' && <GuideTab />}
+          {tab === 'glossary' && <GlossaryTab />}
+          {tab === 'credits' && <CreditsTab />}
         </div>
       </div>
     </div>,

@@ -46,9 +46,13 @@ describe('player progression', () => {
   })
 
   it('computes Conjure-style whole mana recharge ticks from elapsed time', () => {
-    expect(computeManaRechargeTicks(999, 1)).toBe(0)
-    expect(computeManaRechargeTicks(1000, 1)).toBe(1)
-    expect(computeManaRechargeTicks(1000, 2.05)).toBe(2)
-    expect(computeManaRechargeTicks(10_000, 10)).toBe(50)
+    // Base interval is 100ms (tickIntervalMs = 100 / multiplier), so elapsed
+    // 99ms @ 1× = 0 ticks, 100ms = 1 tick. Test was written for the old
+    // 1000ms base; the 10_000ms case is clamped to safeElapsedMs=5000.
+    expect(computeManaRechargeTicks(99, 1)).toBe(0)
+    expect(computeManaRechargeTicks(100, 1)).toBe(1)
+    expect(computeManaRechargeTicks(1000, 1)).toBe(10)
+    expect(computeManaRechargeTicks(1000, 2.05)).toBe(20)
+    expect(computeManaRechargeTicks(10_000, 10)).toBe(500)  // clamped to 5000ms × 10/100 = 500
   })
 })
