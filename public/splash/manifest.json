@@ -1,0 +1,133 @@
+{
+  "generatedAt": "2026-05-17T23:11:07.584Z",
+  "designs": [
+    {
+      "id": "retrowave-rp1",
+      "label": "Retrowave RP1",
+      "variants": [
+        {
+          "model": "nano2",
+          "modelLabel": "Nano Banana 2",
+          "url": "/splash/retrowave-rp1.nano2.png"
+        },
+        {
+          "model": "gpt2",
+          "modelLabel": "GPT Image 2",
+          "url": "/splash/retrowave-rp1.gpt2.png"
+        }
+      ]
+    },
+    {
+      "id": "wizards-atrium",
+      "label": "Wizards Atrium",
+      "variants": [
+        {
+          "model": "nano2",
+          "modelLabel": "Nano Banana 2",
+          "url": "/splash/wizards-atrium.nano2.jpg"
+        },
+        {
+          "model": "gpt2",
+          "modelLabel": "GPT Image 2",
+          "url": "/splash/wizards-atrium.gpt2.png"
+        }
+      ]
+    },
+    {
+      "id": "agent-console",
+      "label": "Agent Console",
+      "variants": [
+        {
+          "model": "nano2",
+          "modelLabel": "Nano Banana 2",
+          "url": "/splash/agent-console.nano2.jpg"
+        },
+        {
+          "model": "gpt2",
+          "modelLabel": "GPT Image 2",
+          "url": "/splash/agent-console.gpt2.png"
+        }
+      ]
+    },
+    {
+      "id": "carbon-silicon",
+      "label": "Carbon-Silicon Unity",
+      "variants": [
+        {
+          "model": "nano2",
+          "modelLabel": "Nano Banana 2",
+          "url": "/splash/carbon-silicon.nano2.png"
+        },
+        {
+          "model": "gpt2",
+          "modelLabel": "GPT Image 2",
+          "url": "/splash/carbon-silicon.gpt2.png"
+        }
+      ]
+    },
+    {
+      "id": "psychedelic-genesis",
+      "label": "Psychedelic Genesis",
+      "variants": [
+        {
+          "model": "nano2",
+          "modelLabel": "Nano Banana 2",
+          "url": "/splash/psychedelic-genesis.nano2.png"
+        },
+        {
+          "model": "gpt2",
+          "modelLabel": "GPT Image 2",
+          "url": "/splash/psychedelic-genesis.gpt2.png"
+        }
+      ]
+    },
+    {
+      "id": "cyber-datacenter",
+      "label": "Cyberpunk Datacenter",
+      "variants": [
+        {
+          "model": "nano2",
+          "modelLabel": "Nano Banana 2",
+          "url": "/splash/cyber-datacenter.nano2.jpg"
+        },
+        {
+          "model": "gpt2",
+          "modelLabel": "GPT Image 2",
+          "url": "/splash/cyber-datacenter.gpt2.png"
+        }
+      ]
+    },
+    {
+      "id": "halliday-workshop",
+      "label": "Halliday Workshop",
+      "variants": [
+        {
+          "model": "nano2",
+          "modelLabel": "Nano Banana 2",
+          "url": "/splash/halliday-workshop.nano2.jpg"
+        },
+        {
+          "model": "gpt2",
+          "modelLabel": "GPT Image 2",
+          "url": "/splash/halliday-workshop.gpt2.png"
+        }
+      ]
+    },
+    {
+      "id": "living-threejs",
+      "label": "Living Three.js",
+      "variants": [
+        {
+          "model": "nano2",
+          "modelLabel": "Nano Banana 2",
+          "url": "/splash/living-threejs.nano2.png"
+        },
+        {
+          "model": "gpt2",
+          "modelLabel": "GPT Image 2",
+          "url": "/splash/living-threejs.gpt2.png"
+        }
+      ]
+    }
+  ]
+}

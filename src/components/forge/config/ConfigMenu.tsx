@@ -13,6 +13,7 @@ import { ControlsTab } from './tabs/ControlsTab'
 import { BoltsTab } from './tabs/BoltsTab'
 import { WorldVfxTab } from './tabs/WorldVfxTab'
 import { AgentsTab } from './tabs/AgentsTab'
+import { ExperimentsTab } from './tabs/ExperimentsTab'
 import { MiscTab } from './tabs/MiscTab'
 
 export interface ConfigMenuProps {
@@ -78,6 +79,7 @@ export function ConfigMenu({ menuOpacity, onMenuOpacityChange, consoleControl, i
         {activeTab === 'bolts' && <BoltsTab />}
         {activeTab === 'world-vfx' && <WorldVfxTab />}
         {activeTab === 'agents' && <AgentsTab />}
+        {activeTab === 'experiments' && <ExperimentsTab />}
         {activeTab === 'misc' && <MiscTab {...tabProps} />}
       </div>
     </div>

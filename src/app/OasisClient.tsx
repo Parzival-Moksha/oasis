@@ -4,7 +4,7 @@
 // OASIS CLIENT — Local-first. No auth. No routing. Just mount.
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import { useOasisStore } from '@/store/oasisStore'
 import { registerStoreHandler } from '@/lib/event-bus'
@@ -16,6 +16,8 @@ import {
   type ClientOasisCapabilities,
   type ClientOasisMode,
 } from '@/lib/oasis-mode-client'
+import { SplashScreen } from '@/components/forge/splash/SplashScreen'
+import { useSplashPreference } from '@/components/forge/splash/splash-preference'
 
 const Scene = dynamic(() => import('@/components/Scene'), {
   ssr: false,
@@ -55,6 +57,14 @@ export default function OasisClient({ initialWorldId }: { initialWorldId?: strin
       }
       window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash}`)
     }
+
+    // Kick off the Scene chunk download in parallel with session init. The
+    // chunk normally starts fetching only when <Scene /> mounts; preloading
+    // here typically shaves 100-300ms off cold-load time-to-playable.
+    try {
+      const sceneWithPreload = Scene as unknown as { preload?: () => void }
+      sceneWithPreload.preload?.()
+    } catch {}
 
     fetch('/api/session/init', { credentials: 'same-origin', cache: 'no-store' })
       .then(response => response.json().catch(() => null))
@@ -147,15 +157,29 @@ export default function OasisClient({ initialWorldId }: { initialWorldId?: strin
     })
   }, [activeWorldId, capabilities.role, mode, ready])
 
-  if (!ready) {
-    return <main className="w-full h-screen bg-black" />
-  }
+  const splashPref = useSplashPreference()
+  const [splashFaded, setSplashFaded] = useState(false)
+  const onSplashFadeComplete = useCallback(() => setSplashFaded(true), [])
 
   return (
     <OasisModeProvider mode={mode} capabilities={capabilities}>
-    <main className="w-full h-screen bg-black">
-      <Scene />
-    </main>
+      <main className="w-full h-screen bg-black">
+        {/* Splash mounts first; fades out once `ready` flips true and its
+            internal load-progress reaches 100%. Stays out of the React tree
+            after the fade so it doesn't keep timers running. */}
+        {!splashFaded && (
+          <SplashScreen
+            designId={splashPref.design}
+            modelSlug={splashPref.model}
+            ready={ready}
+            holdMs={splashPref.holdMs}
+            onFadeComplete={onSplashFadeComplete}
+          />
+        )}
+        {/* Scene mounts in parallel. Its dynamic chunk + Three.js asset loads
+            are reflected in the splash bar via THREE.DefaultLoadingManager. */}
+        {ready && <Scene />}
+      </main>
     </OasisModeProvider>
   )
 }

@@ -9,6 +9,7 @@ export type ConfigTabId =
   | 'bolts'
   | 'world-vfx'
   | 'agents'
+  | 'experiments'
   | 'misc'
 
 export interface ConfigTabDefinition {
@@ -27,6 +28,7 @@ export const CONFIG_TABS: ConfigTabDefinition[] = [
   { id: 'bolts',     emoji: '⚔',  label: 'Bolts',     tooltip: 'Combat-bolt visual designs',                     accent: '#FB923C' },
   { id: 'world-vfx', emoji: '✨', label: 'World VFX', tooltip: 'Conjuration + placement + portal effects',       accent: '#F472B6' },
   { id: 'agents',    emoji: '🤖', label: 'Agents',    tooltip: 'Agent behavior',                                 accent: '#22D3EE' },
+  { id: 'experiments', emoji: '🧪', label: 'Experiments', tooltip: 'Try-before-shipping toggles (splash screen, …)', accent: '#F0ABFC' },
   { id: 'misc',      emoji: '⚙',  label: 'Misc',      tooltip: 'Anything else / advanced',                       accent: '#D4D4D8' },
 ]
 
