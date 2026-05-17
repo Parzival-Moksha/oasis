@@ -324,7 +324,7 @@ function ReliefGround({ preset, heights }: { preset: GroundPreset; heights: numb
   )
 }
 
-function TileGroupRenderer({ preset, tiles }: { preset: GroundPreset; tiles: [number, number][] }) {
+function TileGroupRenderer({ preset, tiles, stretch = 1 }: { preset: GroundPreset; tiles: [number, number][]; stretch?: number }) {
   const meshRef = useRef<THREE.InstancedMesh>(null)
   const matRef = useRef<THREE.MeshStandardMaterial>(null)
   // Custom textures bypass the Poly Haven path builder
@@ -342,15 +342,23 @@ function TileGroupRenderer({ preset, tiles }: { preset: GroundPreset; tiles: [nu
     let cancelled = false
     loadCachedTexture(urls.diffuse, THREE.SRGBColorSpace).then(tex => {
       if (!cancelled && tex) {
-        // Force synchronous GPU upload before React state update.
-        // InstancedMesh shader already has sampler slot (placeholder), so this
-        // is a data upload, not a recompile. Texture is in VRAM when mat.map swaps.
-        gl.initTexture(tex)
-        setDiffuse(tex)
+        // ░▒▓ STRETCH: per-group UV repeat. stretch=N means each tile shows
+        // 1/N of one full texture sample, so adjacent stretched tiles in the
+        // same group form a continuous zoomed-out lattice. Without cloning,
+        // multiple groups would clobber each other's repeat values. ▓▒░
+        const clone = stretch === 1 ? tex : tex.clone()
+        if (stretch !== 1) {
+          clone.wrapS = THREE.RepeatWrapping
+          clone.wrapT = THREE.RepeatWrapping
+          clone.repeat.set(1 / stretch, 1 / stretch)
+          clone.needsUpdate = true
+        }
+        gl.initTexture(clone)
+        setDiffuse(clone)
       }
     })
     return () => { cancelled = true }
-  }, [urls.diffuse, gl])
+  }, [urls.diffuse, gl, stretch])
 
   // ░▒▓ IMPERATIVE MATERIAL SYNC — R3F declarative updates can miss texture
   // assignment on instancedMesh children. Force the GPU handshake here.
@@ -383,17 +391,21 @@ function TileGroupRenderer({ preset, tiles }: { preset: GroundPreset; tiles: [nu
     if (!mesh) return
     const dummy = new THREE.Object3D()
     const count = Math.min(tiles.length, MAX_TILES_PER_GROUP)
+    const s = Math.max(1, stretch)
     for (let i = 0; i < count; i++) {
       const [x, z] = tiles[i]
-      dummy.position.set(x + 0.5, 0.001, z + 0.5)
+      // ░▒▓ Stretched cells render at sxsm. Position is the cell's lattice
+      // anchor + half-cell offset so the centered InstancedMesh quad lands
+      // exactly on the (x,z)..(x+s, z+s) footprint. ▓▒░
+      dummy.position.set(x + s / 2, 0.001, z + s / 2)
       dummy.rotation.set(-Math.PI / 2, 0, 0)
-      dummy.scale.set(1, 1, 1)
+      dummy.scale.set(s, s, 1)
       dummy.updateMatrix()
       mesh.setMatrixAt(i, dummy.matrix)
     }
     mesh.count = count  // ← only render this many instances
     mesh.instanceMatrix.needsUpdate = true
-  }, [tiles])
+  }, [tiles, stretch])
 
   return (
     <instancedMesh
@@ -700,16 +712,24 @@ export function GroundPlane({ preset, groundTiles, paintMode, customGroundPreset
   const sculptActive = terrainBrushPanelOpen && terrainBrushMode === 'sculpt'
   const showBrushOverlay = paintMode || sculptActive
 
-  // Group tiles by preset ID for instanced rendering
+  // ░▒▓ Tile cell decode — values are either bare `presetId` (legacy/stretch=1)
+  // or `presetId@stretch` (e.g. `grass@4`). Grouping is by `presetId__stretch`
+  // so each stretch tier renders as its own InstancedMesh (uniform scale + UV
+  // repeat per group). ▓▒░
   const tileGroups = useMemo(() => {
-    const groups: Record<string, [number, number][]> = {}
-    for (const [key, presetId] of Object.entries(groundTiles)) {
+    const groups: Record<string, { presetId: string; stretch: number; tiles: [number, number][] }> = {}
+    for (const [key, raw] of Object.entries(groundTiles)) {
       const [xs, zs] = key.split(',')
       const x = parseInt(xs, 10)
       const z = parseInt(zs, 10)
       if (isNaN(x) || isNaN(z)) continue
-      if (!groups[presetId]) groups[presetId] = []
-      groups[presetId].push([x, z])
+      const atIdx = raw.indexOf('@')
+      const presetId = atIdx >= 0 ? raw.slice(0, atIdx) : raw
+      const stretchParsed = atIdx >= 0 ? parseInt(raw.slice(atIdx + 1), 10) : 1
+      const stretch = Number.isFinite(stretchParsed) && stretchParsed > 0 ? stretchParsed : 1
+      const groupKey = `${presetId}__${stretch}`
+      if (!groups[groupKey]) groups[groupKey] = { presetId, stretch, tiles: [] }
+      groups[groupKey].tiles.push([x, z])
     }
     return groups
   }, [groundTiles])
@@ -719,25 +739,25 @@ export function GroundPlane({ preset, groundTiles, paintMode, customGroundPreset
       {/* ░▒▓ Base ground — the default texture for unpainted areas ▓▒░ */}
       {reliefActive ? <ReliefGround preset={preset} heights={terrainHeights} /> : showBase && <BaseGround preset={preset} />}
 
-      {/* ░▒▓ Painted tiles — one stable InstancedMesh per preset ▓▒░ */}
-      {/* Key = presetId only (stable). Tile count changes update buffer, not remount. */}
-      {Object.entries(tileGroups).map(([presetId, tiles]) => {
+      {/* ░▒▓ Painted tiles — one stable InstancedMesh per (preset, stretch) ▓▒░ */}
+      {Object.entries(tileGroups).map(([groupKey, { presetId, stretch, tiles }]) => {
         // Search both built-in and custom presets
         const tilePreset = GROUND_PRESETS.find(p => p.id === presetId)
           || customGroundPresets.find(p => p.id === presetId)
         if (!tilePreset || (!tilePreset.assetName && !tilePreset.customTextureUrl)) return null
         return reliefActive ? (
           <ReliefTileGroupRenderer
-            key={presetId}
+            key={groupKey}
             preset={tilePreset}
             tiles={tiles}
             heights={terrainHeights}
           />
         ) : (
           <TileGroupRenderer
-            key={presetId}
+            key={groupKey}
             preset={tilePreset}
             tiles={tiles}
+            stretch={stretch}
           />
         )
       })}

@@ -162,7 +162,14 @@ function useMouseLook(sensitivity: number) {
     const input = useInputManager.getState()
     const mobile = getMobileInputSnapshot()
     const lookDriven = input.pointerLocked || mobile.lookActive
-    if (!lookDriven || (input.inputState !== 'noclip' && input.inputState !== 'placement' && input.inputState !== 'paint')) {
+    // ─═̷─ Don't drive the camera here when the prior base mode was third-person.
+    // In that case PlayerAvatar owns the camera; running this mouse-look would
+    // flip the player into a noclip-style direct-camera-rotate during placement
+    // or paint, which is jarring. PlayerAvatar's own placement-aware path reads
+    // _previousCameraState and keeps the third-person orbit alive.
+    const prevState = input._previousCameraState
+    const isTransientFromTps = (input.inputState === 'placement' || input.inputState === 'paint') && prevState === 'third-person'
+    if (!lookDriven || isTransientFromTps || (input.inputState !== 'noclip' && input.inputState !== 'placement' && input.inputState !== 'paint')) {
       initializedRef.current = false
       return
     }
@@ -498,14 +505,22 @@ export function CameraController() {
 
       case 'noclip':
       case 'placement':
-      case 'paint':
+      case 'paint': {
         // Disable OrbitControls so it doesn't fight
         if (orbitControlsRef.current) orbitControlsRef.current.enabled = false
+        // ─═̷─ If prev base was third-person, PlayerAvatar owns the camera
+        // during transient placement/paint — don't drive noclip controls here.
+        const prevState = useInputManager.getState()._previousCameraState
+        if ((inputState === 'placement' || inputState === 'paint') && prevState === 'third-person') {
+          // Sprint FOV still wants to be reset; otherwise hands off.
+          break
+        }
         // Mouse look (only when pointer locked)
         updateMouseLook(camera)
         // WASD movement (noclip manages FOV internally for sprint ramp)
         updateNoclip(camera, delta, settings.moveSpeed, settings.fov)
         break
+      }
 
       case 'agent-focus':
         // Disable OrbitControls

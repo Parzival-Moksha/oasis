@@ -10,6 +10,82 @@ import type { PlacementVfxType } from '../../../store/oasisStore'
 import { SettingsContext } from '../../scene-lib/contexts'
 import { PortalTransitionSettingsPanel } from '../PortalTransitionSettingsPanel'
 
+function VolumeSlider({
+  label,
+  accent,
+  value,
+  onChange,
+}: {
+  label: string
+  accent: string
+  value: number
+  onChange: (next: number) => void
+}) {
+  const pct = Math.round(value * 100)
+  return (
+    <label className="block rounded-lg border p-2" style={{ borderColor: `${accent.replace('0.85', '0.3')}`, background: 'rgba(0,0,0,0.35)' }}>
+      <div className="mb-1 flex items-center justify-between text-[10px] font-mono">
+        <span className="text-white/65">{label}</span>
+        <span className="font-bold" style={{ color: accent }}>{pct}%</span>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={1}
+        step={0.05}
+        value={value}
+        onChange={e => onChange(parseFloat(e.target.value))}
+        className="h-1 w-full"
+        style={{ accentColor: accent }}
+      />
+    </label>
+  )
+}
+
+interface BoltDesignOption {
+  value: string
+  label: string
+  desc: string
+}
+
+function BoltDesignSelector({
+  spellLabel,
+  spellIcon,
+  accent,
+  value,
+  onChange,
+  options,
+}: {
+  spellLabel: string
+  spellIcon: string
+  accent: string
+  value: string
+  onChange: (next: string) => void
+  options: BoltDesignOption[]
+}) {
+  const activeOption = options.find(opt => opt.value === value) || options[0]
+  return (
+    <div className="rounded-lg border p-2" style={{ borderColor: `${accent.replace('0.8', '0.35').replace('0.85', '0.35')}`, background: 'rgba(0,0,0,0.35)' }}>
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <span className="text-[11px] font-bold tracking-[0.05em]" style={{ color: accent }}>
+          {spellIcon} {spellLabel}
+        </span>
+        <select
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          className="rounded border bg-black/60 px-2 py-1 font-mono text-[10px] text-white/85 focus:outline-none"
+          style={{ borderColor: `${accent.replace('0.8', '0.45').replace('0.85', '0.45')}` }}
+        >
+          {options.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      </div>
+      <div className="text-[10px] text-white/55 leading-snug">{activeOption.desc}</div>
+    </div>
+  )
+}
+
 export function SettingsTab() {
   const conjureVfxType = useOasisStore(s => s.conjureVfxType)
   const setConjureVfxType = useOasisStore(s => s.setConjureVfxType)
@@ -63,6 +139,103 @@ export function SettingsTab() {
                 <div className="text-[9px] text-gray-400 mt-0.5">{fx.desc}</div>
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* ░▒▓ SOUND LAB — volume mixers + spatial audio toggle ▓▒░ */}
+        {/* Wires up 0-1 floats that AudioManager + future PositionalAudio
+            will read. spatialAudioEnabled gates Three.js PositionalAudio
+            attached to bolts — when off, sounds play 2D at full mix. */}
+        <div>
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">
+            🔊 Sound Lab
+          </div>
+          <div className="space-y-2">
+            <VolumeSlider
+              label="Master"
+              accent="rgba(167,139,250,0.85)"
+              value={settings.masterVolume}
+              onChange={v => updateSetting('masterVolume', v)}
+            />
+            <VolumeSlider
+              label="SFX (spells, UI)"
+              accent="rgba(251,146,60,0.85)"
+              value={settings.sfxVolume}
+              onChange={v => updateSetting('sfxVolume', v)}
+            />
+            <VolumeSlider
+              label="Music"
+              accent="rgba(244,114,182,0.85)"
+              value={settings.musicVolume}
+              onChange={v => updateSetting('musicVolume', v)}
+            />
+            <VolumeSlider
+              label="Ambient (drone, world)"
+              accent="rgba(125,211,252,0.85)"
+              value={settings.ambientVolume}
+              onChange={v => updateSetting('ambientVolume', v)}
+            />
+            <label className="flex items-center gap-2 rounded-lg border border-violet-400/30 bg-violet-500/[0.06] p-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.spatialAudioEnabled}
+                onChange={e => updateSetting('spatialAudioEnabled', e.target.checked)}
+                className="w-3.5 h-3.5 accent-violet-500"
+              />
+              <div className="flex-1">
+                <div className="text-[11px] font-bold text-violet-200">3D spatial audio</div>
+                <div className="text-[10px] text-white/55">Bolts emit positional sound; volume falls off with distance from the camera</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        {/* ░▒▓ BOLT LAB — pick a visual design per combat spell ▓▒░ */}
+        {/* Each design is a separate Three.js VFX implementation built in
+            src/components/forge/bolts/. Switching here changes what the
+            cast pipeline renders on next bolt. ─═̷─═̷─⚔─═̷─═̷─ */}
+        <div>
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">
+            ⚔ Bolt Lab
+          </div>
+          <div className="space-y-2">
+            <BoltDesignSelector
+              spellLabel="Firebolt"
+              spellIcon="🔥"
+              accent="rgba(251,146,60,0.8)"
+              value={settings.fireboltDesign}
+              onChange={v => updateSetting('fireboltDesign', v as 'A' | 'B' | 'C')}
+              options={[
+                { value: 'A', label: 'A — Comet Tail',     desc: 'Classic flame projectile + sparks + smoke trail' },
+                { value: 'B', label: 'B — Solar Flare',    desc: 'Sun-disc with corona prominences + supernova impact' },
+                { value: 'C', label: 'C — Phoenix Feather', desc: 'Gold-crimson feather + ember trail + phoenix-flare impact' },
+              ]}
+            />
+            <BoltDesignSelector
+              spellLabel="Lightning Bolt"
+              spellIcon="⚡"
+              accent="rgba(167,139,250,0.85)"
+              value={settings.lightningBoltDesign}
+              onChange={v => updateSetting('lightningBoltDesign', v as 'A' | 'B' | 'C' | 'D')}
+              options={[
+                { value: 'A', label: 'A — Plasma Filament', desc: 'Jagged forked plasma + recursive branches + grounding chains' },
+                { value: 'B', label: 'B — Tesla Coil',      desc: 'Stacked toroidal rings + leaping arcs + rolling discharge' },
+                { value: 'C', label: 'C — Storm Lance',     desc: 'Stormcloud sleeve around a gold lightning shaft' },
+                { value: 'D', label: 'D — Thunderbolt',     desc: 'Arming arrows + 15m top-down strike + recursive zigzag' },
+              ]}
+            />
+            <BoltDesignSelector
+              spellLabel="Ice Bolt"
+              spellIcon="❄"
+              accent="rgba(125,211,252,0.85)"
+              value={settings.iceBoltDesign}
+              onChange={v => updateSetting('iceBoltDesign', v as 'A' | 'B' | 'C')}
+              options={[
+                { value: 'A', label: 'A — Crystal Spear',  desc: 'Faceted chrome spear + frost crystals + shatter impact' },
+                { value: 'B', label: 'B — Frozen Flame',   desc: 'Cold-fire projectile + freezing snowflakes + frost patch' },
+                { value: 'C', label: 'C — Boreal Spiral',  desc: 'Double-helix around snowflake core + frost-rune impact' },
+              ]}
+            />
           </div>
         </div>
 

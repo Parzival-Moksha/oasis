@@ -1,4 +1,4 @@
-// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+﻿// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 // WIZARD CONSOLE — The Forge's conjuring interface
 // ─═̷─═̷─ॐ─═̷─═̷─{ Speak the spell, choose the forge, cast into being }─═̷─═̷─ॐ─═̷─═̷─
 // Draggable/resizable popup (follows CuratorStreamPopup pattern)
@@ -39,6 +39,8 @@ import { portalThumbPath } from '../../lib/portal-thumbnails'
 import { PortalTransitionSettingsPanel } from './PortalTransitionSettingsPanel'
 import { createSpatialWebObjectFromTemplate, SPATIAL_WEB_ASSET_TEMPLATES } from '../../lib/spatial-web-presets'
 import { useOasisCapabilities } from '@/lib/oasis-mode-client'
+import { MusicBody } from './spelltabs/bodies/MusicBody'
+import { VideoBody } from './spelltabs/bodies/VideoBody'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 
@@ -433,9 +435,19 @@ interface InFlightImage {
   error?: string
 }
 
+// Conjure-style "4-sided building" prompt scaffold. Prepended to the user
+// prompt when buildingMode is ON so the generator returns a façade-style image
+// suitable as a textured building panel. Mirrored from spelltabs/bodies/GeneratePicBody.
+function applyBuildingFraming(rawPrompt: string): string {
+  const base = rawPrompt.trim()
+  if (!base) return base
+  return `4-sided building elevation, orthographic, full façade, centered, no foreground props, no people, no perspective distortion. ${base}. Painted clean texture, even lighting, suitable as a flat architectural panel.`
+}
+
 function ImagineTab({ cols, setLightboxUrl, onRequestDelete }: { cols: number; setLightboxUrl: (url: string | null) => void; onRequestDelete: (image: GeneratedImage, placedCount: number) => void }) {
   const [prompt, setPrompt] = useState('')
   const [selectedModel, setSelectedModel] = useState<string>('gemini-flash')
+  const [buildingMode, setBuildingMode] = useState(false)
   const [inFlight, setInFlight] = useState<InFlightImage[]>([])
   const [error, setError] = useState<string | null>(null)
   const generatedImages = useOasisStore(s => s.generatedImages)
@@ -471,6 +483,8 @@ function ImagineTab({ cols, setLightboxUrl, onRequestDelete }: { cols: number; s
     const flightId = `flight_${Date.now()}`
     const capturedPrompt = prompt.trim()
     const capturedModel = selectedModel
+    const wireBuilding = buildingMode
+    const wirePrompt = wireBuilding ? applyBuildingFraming(capturedPrompt) : capturedPrompt
     setInFlight(prev => [...prev, { id: flightId, prompt: capturedPrompt, model: capturedModel, startedAt: Date.now() }])
     setPrompt('')
     setError(null)
@@ -478,7 +492,7 @@ function ImagineTab({ cols, setLightboxUrl, onRequestDelete }: { cols: number; s
       const res = await fetch(`${OASIS_BASE}/api/imagine`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: capturedPrompt, model: capturedModel }),
+        body: JSON.stringify({ prompt: wirePrompt, model: capturedModel }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({ error: 'Request failed' }))
@@ -500,7 +514,7 @@ function ImagineTab({ cols, setLightboxUrl, onRequestDelete }: { cols: number; s
     }
     // Remove from in-flight on success
     setInFlight(prev => prev.filter(f => f.id !== flightId))
-  }, [prompt, selectedModel, addGeneratedImage])
+  }, [prompt, selectedModel, buildingMode, addGeneratedImage])
 
   const handleUseAsTile = useCallback((imageId: string) => {
     const image = generatedImages.find(i => i.id === imageId)
@@ -526,19 +540,40 @@ function ImagineTab({ cols, setLightboxUrl, onRequestDelete }: { cols: number; s
       <div className="space-y-3">
         {/* Prompt input */}
         <div>
-          <div className="flex items-center justify-between mb-1.5">
+          <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1.5">
             <div className="text-[10px] text-pink-400/60 uppercase tracking-widest font-mono">
               Text to Image
             </div>
-            <select
-              value={selectedModel}
-              onChange={e => setSelectedModel(e.target.value)}
-              className="text-[10px] bg-black/60 border border-pink-500/20 rounded px-1.5 py-0.5 text-pink-300 font-mono focus:outline-none focus:border-pink-500/50 cursor-pointer"
-            >
-              {IMAGINE_MODELS.map(m => (
-                <option key={m.key} value={m.key}>{m.label}</option>
-              ))}
-            </select>
+            <div className="flex items-center gap-2 ml-auto">
+              {/* ░▒▓ 4-sided building toggle — routes the prompt through Conjure-style
+                  façade framing so the image works as a building panel ▓▒░ */}
+              <label
+                className="flex items-center gap-1 cursor-pointer rounded px-1.5 py-0.5"
+                style={{
+                  border: `1px solid ${buildingMode ? 'rgba(245, 158, 11, 0.6)' : 'rgba(120, 120, 120, 0.3)'}`,
+                }}
+                title="Generate as 4-sided building (Conjure-style façade framing)"
+              >
+                <input
+                  type="checkbox"
+                  checked={buildingMode}
+                  onChange={e => setBuildingMode(e.target.checked)}
+                  className="w-3 h-3 rounded accent-amber-500"
+                />
+                <span className="text-[10px] font-mono" style={{ color: buildingMode ? '#FBBF24' : '#9CA3AF' }}>
+                  4-sided building
+                </span>
+              </label>
+              <select
+                value={selectedModel}
+                onChange={e => setSelectedModel(e.target.value)}
+                className="text-[10px] bg-black/60 border border-pink-500/20 rounded px-1.5 py-0.5 text-pink-300 font-mono focus:outline-none focus:border-pink-500/50 cursor-pointer"
+              >
+                {IMAGINE_MODELS.map(m => (
+                  <option key={m.key} value={m.key}>{m.label}</option>
+                ))}
+              </select>
+            </div>
           </div>
           <div className="flex gap-2">
             <input
@@ -546,7 +581,9 @@ function ImagineTab({ cols, setLightboxUrl, onRequestDelete }: { cols: number; s
               value={prompt}
               onChange={e => setPrompt(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') handleGenerate() }}
-              placeholder="Describe what you see..."
+              placeholder={buildingMode
+                ? "describe the building (e.g. wooden tea house, paper screens)..."
+                : "Describe what you see..."}
               className="flex-1 bg-black/60 border border-pink-500/20 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-pink-500/50 font-mono"
             />
             <button
@@ -554,12 +591,15 @@ function ImagineTab({ cols, setLightboxUrl, onRequestDelete }: { cols: number; s
               disabled={!prompt.trim()}
               className="px-4 py-2 rounded-lg text-xs font-bold transition-all disabled:opacity-30"
               style={{
-                background: 'linear-gradient(135deg, rgba(236, 72, 153, 0.3), rgba(168, 85, 247, 0.3))',
-                color: '#F9A8D4',
-                border: '1px solid rgba(236, 72, 153, 0.3)',
+                background: buildingMode
+                  ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.3), rgba(236, 72, 153, 0.3))'
+                  : 'linear-gradient(135deg, rgba(236, 72, 153, 0.3), rgba(168, 85, 247, 0.3))',
+                color: buildingMode ? '#FCD34D' : '#F9A8D4',
+                border: `1px solid ${buildingMode ? 'rgba(245, 158, 11, 0.4)' : 'rgba(236, 72, 153, 0.3)'}`,
               }}
+              title={buildingMode ? 'Generate as 4-sided building façade' : 'Generate image'}
             >
-              {inFlight.length > 0 ? `Imagine (${inFlight.length})` : 'Imagine'}
+              {inFlight.length > 0 ? `Imagine (${inFlight.length})` : (buildingMode ? 'Conjure 🏛️' : 'Imagine')}
               {imagineCost > 0 && (
                 <span className="ml-1 opacity-60 text-[9px]">{imagineCost}cr</span>
               )}
@@ -924,13 +964,17 @@ function MediaTab({ cols, onRequestDelete }: { cols: number; onRequestDelete: (t
 // WIZARD CONSOLE — Main popup component
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Note: settings has been moved to the global Config menu
+// (src/components/forge/config/ConfigMenu.tsx). Do not re-add 'settings' here.
+export type WizardMode = 'conjure' | 'craft' | 'world' | 'assets' | 'placed' | 'agents' | 'media' | 'music' | 'video'
+
 interface WizardConsoleProps {
   isOpen: boolean
   onClose: () => void
   variant?: 'local' | 'hosted'
+  /** Optional initial tab; if set while isOpen flips true, WizCon opens on that tab. */
+  initialTab?: WizardMode
 }
-
-type WizardMode = 'conjure' | 'craft' | 'world' | 'assets' | 'placed' | 'agents' | 'media' | 'settings'
 
 const WIZARD_TABS = [
   { key: 'conjure', label: 'Conjure', icon: '✨', color: 'orange', title: 'Text-to-3D conjuring' },
@@ -940,15 +984,17 @@ const WIZARD_TABS = [
   { key: 'placed', label: 'Placed', icon: '📍', color: 'cyan', title: 'All objects placed in this world' },
   { key: 'agents', label: 'Agents', icon: '💻', color: 'purple', title: '3D agent windows in this world' },
   { key: 'media', label: 'Media', icon: '🎬', color: 'pink', title: 'Images, videos, audio — upload & manage' },
+  { key: 'music', label: 'Music', icon: '🎵', color: 'violet', title: 'Text-to-music generation' },
+  { key: 'video', label: 'Video', icon: '🎞️', color: 'rose', title: 'Text-to-video generation' },
 ] as const satisfies ReadonlyArray<{
   key: WizardMode
   label: string
   icon: string
-  color: 'orange' | 'blue' | 'emerald' | 'yellow' | 'cyan' | 'purple' | 'pink'
+  color: 'orange' | 'blue' | 'emerald' | 'yellow' | 'cyan' | 'purple' | 'pink' | 'violet' | 'rose'
   title: string
 }>
 
-const WIZARD_TAB_ORDER: WizardMode[] = ['world', 'assets', 'media', 'agents', 'craft', 'conjure', 'placed']
+const WIZARD_TAB_ORDER: WizardMode[] = ['world', 'assets', 'media', 'music', 'video', 'agents', 'craft', 'conjure', 'placed']
 const WIZARD_TAB_LABEL_OVERRIDES: Partial<Record<WizardMode, string>> = {
   agents: '3D Agents',
   craft: 'Crafting',
@@ -959,10 +1005,10 @@ const ORDERED_WIZARD_TABS = WIZARD_TAB_ORDER
   .filter((tab): tab is NonNullable<typeof tab> => Boolean(tab))
   .map(tab => ({ ...tab, label: WIZARD_TAB_LABEL_OVERRIDES[tab.key] || tab.label }))
 
-const HOSTED_WIZARD_MODES = new Set<WizardMode>(['world', 'assets', 'placed', 'settings'])
-const ADMIN_WIZARD_MODES = new Set<WizardMode>(['media', 'agents', 'craft', 'conjure'])
+const HOSTED_WIZARD_MODES = new Set<WizardMode>(['world', 'assets', 'placed'])
+const ADMIN_WIZARD_MODES = new Set<WizardMode>(['media', 'music', 'video', 'agents', 'craft', 'conjure'])
 
-export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardConsoleProps) {
+export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }: WizardConsoleProps) {
   useUILayer('wizard-console', isOpen)
   const capabilities = useOasisCapabilities()
   const hostedVariant = variant === 'hosted'
@@ -1010,7 +1056,10 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
   }, [showTabLabels, size.width])
 
   // ─═̷─ Wizard state ─═̷─
-  const [mode, setMode] = useState<WizardMode>('world')
+  const [mode, setMode] = useState<WizardMode>(initialTab || 'world')
+  useEffect(() => {
+    if (initialTab && isOpen) setMode(initialTab)
+  }, [initialTab, isOpen])
   const visibleTabs = ORDERED_WIZARD_TABS.filter(tab => {
     if (canUseAdminTabs) return true
     return HOSTED_WIZARD_MODES.has(tab.key) && !ADMIN_WIZARD_MODES.has(tab.key)
@@ -1022,7 +1071,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!visibleTabs.some(tab => tab.key === mode) && mode !== 'settings') setMode('world')
+    if (!visibleTabs.some(tab => tab.key === mode)) setMode('world')
   }, [mode, visibleTabs])
   // ░▒▓ Character pipeline — A-pose mode for riggable output ▓▒░
   const [characterMode, setCharacterMode] = useState(false)
@@ -1680,9 +1729,9 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
                 }`}
                 title={tab.title}
                 style={mode === tab.key ? {
-                  backgroundColor: `rgba(${tab.color === 'orange' ? '249,115,22' : tab.color === 'blue' ? '59,130,246' : tab.color === 'emerald' ? '16,185,129' : tab.color === 'yellow' ? '234,179,8' : tab.color === 'cyan' ? '6,182,212' : tab.color === 'purple' ? '168,85,247' : '236,72,153'}, 0.2)`,
-                  color: `rgb(${tab.color === 'orange' ? '251,146,60' : tab.color === 'blue' ? '96,165,250' : tab.color === 'emerald' ? '52,211,153' : tab.color === 'yellow' ? '250,204,21' : tab.color === 'cyan' ? '34,211,238' : tab.color === 'purple' ? '192,132,252' : '244,114,182'})`,
-                  borderColor: `rgba(${tab.color === 'orange' ? '249,115,22' : tab.color === 'blue' ? '59,130,246' : tab.color === 'emerald' ? '16,185,129' : tab.color === 'yellow' ? '234,179,8' : tab.color === 'cyan' ? '6,182,212' : tab.color === 'purple' ? '168,85,247' : '236,72,153'}, 0.5)`,
+                  backgroundColor: `rgba(${tab.color === 'orange' ? '249,115,22' : tab.color === 'blue' ? '59,130,246' : tab.color === 'emerald' ? '16,185,129' : tab.color === 'yellow' ? '234,179,8' : tab.color === 'cyan' ? '6,182,212' : tab.color === 'purple' ? '168,85,247' : tab.color === 'violet' ? '139,92,246' : tab.color === 'rose' ? '244,63,94' : '236,72,153'}, 0.2)`,
+                  color: `rgb(${tab.color === 'orange' ? '251,146,60' : tab.color === 'blue' ? '96,165,250' : tab.color === 'emerald' ? '52,211,153' : tab.color === 'yellow' ? '250,204,21' : tab.color === 'cyan' ? '34,211,238' : tab.color === 'purple' ? '192,132,252' : tab.color === 'violet' ? '196,181,253' : tab.color === 'rose' ? '253,164,175' : '244,114,182'})`,
+                  borderColor: `rgba(${tab.color === 'orange' ? '249,115,22' : tab.color === 'blue' ? '59,130,246' : tab.color === 'emerald' ? '16,185,129' : tab.color === 'yellow' ? '234,179,8' : tab.color === 'cyan' ? '6,182,212' : tab.color === 'purple' ? '168,85,247' : tab.color === 'violet' ? '139,92,246' : tab.color === 'rose' ? '244,63,94' : '236,72,153'}, 0.5)`,
                 } : undefined}
               >
                 <span className="flex-shrink-0 text-sm leading-none">{tab.icon}</span>{showTabLabels && <span className="ml-1">{tab.label}</span>}
@@ -1690,18 +1739,9 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
             ))}
           </div>
           {/* ░▒▓ Fixed controls — NEVER shrink, always visible ▓▒░ */}
+          {/* The old gear/settings button moved to the global Config menu
+              (rail "CONFIG" → src/components/forge/config/ConfigMenu.tsx). */}
           <div className="flex items-center gap-1 flex-shrink-0">
-            <button
-              onClick={() => setMode('settings')}
-              className={`text-xs px-2 py-0.5 rounded transition-colors ${
-                mode === 'settings'
-                  ? 'bg-gray-500/20 text-gray-300 border border-gray-500/50'
-                  : 'text-gray-400 border border-transparent hover:text-gray-300'
-              }`}
-              title="VFX + Placement Settings"
-            >
-              &#9881;
-            </button>
             <button
               onClick={onClose}
               className="text-gray-500 hover:text-white transition-colors text-lg leading-none ml-1"
@@ -3269,218 +3309,8 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
             transforms={transforms}
           />
 
-        ) : mode === 'settings' ? (
-          <>
-            {/* ─═̷─═̷─ SETTINGS TAB — VFX, placement, opacity ─═̷─═̷─ */}
-            <div className="space-y-4">
-
-              {/* ░▒▓ Conjuration VFX ▓▒░ */}
-              <div>
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Conjuration Effect</div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {([
-                    { id: 'random' as const, label: 'Random', desc: 'Different effect each time', icon: '\u{1F3B2}' },
-                    { id: 'realitystorm' as const, label: 'Reality Storm', desc: 'Smoke, lightning, shards, morphing core', icon: '\u{1F4A5}' },
-                    { id: 'riftstorm' as const, label: 'Riftstorm', desc: 'Space tear, haze, violet arcs', icon: '\u29C9' },
-                    { id: 'cataclysm' as const, label: 'Cataclysm', desc: 'Explosive forge smoke and shockwaves', icon: '\u2604' },
-                    { id: 'textswirl' as const, label: 'Text Swirl', desc: 'Prompt tokens orbit and collapse', icon: '\u2728' },
-                    { id: 'arcane' as const, label: 'Arcane Circle', desc: 'Sacred geometry + light pillars', icon: '\u26E2' },
-                    { id: 'vortex' as const, label: 'Particle Vortex', desc: 'Atom storm converges into form', icon: '\u{1F300}' },
-                    { id: 'quantumassembly' as const, label: 'Quantum Assembly', desc: 'Cube wireframe morphs to sphere', icon: '\u269B' },
-                    { id: 'primordialcauldron' as const, label: 'Primordial Cauldron', desc: 'Bubbling potion overflows', icon: '\u2697' },
-                    { id: 'stellarnursery' as const, label: 'Stellar Nursery', desc: 'Nebula births a star', icon: '\u2B50' },
-                    { id: 'chronoforge' as const, label: 'Chrono-Forge', desc: 'Hourglass bends time itself', icon: '\u231B' },
-                    { id: 'abyssalemergence' as const, label: 'Abyssal Emergence', desc: 'Dark tentacles from the void', icon: '\u{1F419}' },
-                  ]).map(fx => (
-                    <button
-                      key={fx.id}
-                      onClick={() => { setConjureVfxType(fx.id); startConjurePreview(fx.id) }}
-                      className={`rounded-lg px-2 py-1.5 text-left transition-all duration-200 border ${
-                        conjureVfxType === fx.id
-                          ? 'border-orange-500/50 bg-orange-500/10'
-                          : 'border-gray-700/30 bg-black/40 hover:border-gray-600/50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-1">
-                        <span className="text-sm">{fx.icon}</span>
-                        <span className={`text-[10px] font-medium ${conjureVfxType === fx.id ? 'text-orange-400' : 'text-gray-400'}`}>
-                          {fx.label}
-                        </span>
-                      </div>
-                      <div className="text-[9px] text-gray-400 mt-0.5">{fx.desc}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* ░▒▓ Placement VFX ▓▒░ */}
-              <div>
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Placement Spell Effect</div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {([
-                    { id: 'random' as PlacementVfxType, label: 'Random', desc: 'Different spell each time', icon: '\u{1F3B2}' },
-                    { id: 'realitydetonation' as PlacementVfxType, label: 'Reality Detonation', desc: 'Blast, smoke, shards, lightning flash', icon: '\u{1F4A5}' },
-                    { id: 'dimensionalmaw' as PlacementVfxType, label: 'Dimensional Maw', desc: 'Vertical rift tears the object in', icon: '\u29C9' },
-                    { id: 'hexstorm' as PlacementVfxType, label: 'Hex Storm', desc: 'Impossible glyph rings and polyhedra', icon: '\u26A1' },
-                    { id: 'singularitydrop' as PlacementVfxType, label: 'Singularity Drop', desc: 'Black core impact with gravity smoke', icon: '\u25CF' },
-                    { id: 'runeflash' as PlacementVfxType, label: 'Rune Flash', desc: 'Arcane circle glows on ground', icon: '\u2726' },
-                    { id: 'sparkburst' as PlacementVfxType, label: 'Spark Burst', desc: '200 particles shower outward', icon: '\u2604' },
-                    { id: 'portalring' as PlacementVfxType, label: 'Portal Ring', desc: 'Glowing ring rises through object', icon: '\u25CE' },
-                    { id: 'sigilpulse' as PlacementVfxType, label: 'Sigil Pulse', desc: '3 expanding ripple rings', icon: '\u25C9' },
-                    { id: 'quantumcollapse' as PlacementVfxType, label: 'Quantum Collapse', desc: '500 particles collapse from uncertainty', icon: '\u269B' },
-                    { id: 'phoenixascension' as PlacementVfxType, label: 'Phoenix Ascension', desc: 'Fire column + wings of light', icon: '\u2748' },
-                    { id: 'dimensionalrift' as PlacementVfxType, label: 'Dimensional Rift', desc: 'Void slash tears open space', icon: '\u2301' },
-                    { id: 'crystalgenesis' as PlacementVfxType, label: 'Crystal Genesis', desc: 'Crystals erupt and shatter', icon: '\u2B20' },
-                    { id: 'meteorimpact' as PlacementVfxType, label: 'Meteor Impact', desc: 'Fireball descends + shockwave', icon: '\u2622' },
-                    { id: 'arcanebloom' as PlacementVfxType, label: 'Arcane Bloom', desc: 'Magic flower unfolds with pollen', icon: '\u2740' },
-                    { id: 'voidanchor' as PlacementVfxType, label: 'Void Anchor', desc: 'Dark sphere slams + chains lock', icon: '\u2693' },
-                    { id: 'stellarforge' as PlacementVfxType, label: 'Stellar Forge', desc: 'Nebula spirals birth a star', icon: '\u2605' },
-                  ]).map(fx => (
-                    <button
-                      key={fx.id}
-                      onClick={() => { setPlacementVfxType(fx.id); previewPlacementSpell(fx.id) }}
-                      className={`rounded-lg px-2 py-1.5 text-left transition-all duration-200 border ${
-                        placementVfxType === fx.id
-                          ? 'border-yellow-500/50 bg-yellow-500/10'
-                          : 'border-gray-700/30 bg-black/40 hover:border-gray-600/50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-1">
-                        <span className="text-sm">{fx.icon}</span>
-                        <span className={`text-[10px] font-medium ${placementVfxType === fx.id ? 'text-yellow-400' : 'text-gray-400'}`}>
-                          {fx.label}
-                        </span>
-                      </div>
-                      <div className="text-[9px] text-gray-400 mt-0.5">{fx.desc}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* ░▒▓ Placement duration slider ▓▒░ */}
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-gray-500 uppercase tracking-wider font-mono">Spell Duration</span>
-                  <input
-                    type="range"
-                    min="0.5"
-                    max="4.5"
-                    step="0.1"
-                    value={placementVfxDuration}
-                    onChange={(e) => setPlacementVfxDuration(parseFloat(e.target.value))}
-                    className="flex-1 h-1 accent-yellow-500 cursor-pointer"
-                  />
-                  <span className="text-[10px] text-gray-500 font-mono w-8 text-right">{placementVfxDuration.toFixed(1)}s</span>
-                </div>
-              </div>
-
-              {/* ░▒▓ Grid Columns — per-tab asset library density ▓▒░ */}
-              <PortalTransitionSettingsPanel />
-
-              <div>
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Grid Columns</div>
-                <div className="space-y-1.5">
-                  {([
-                    { key: 'catalog' as const, label: 'Catalog', value: colsCatalog, set: setColsCatalog, accent: 'accent-yellow-500' },
-                    { key: 'crafted' as const, label: 'Crafted', value: colsCrafted, set: setColsCrafted, accent: 'accent-blue-500' },
-                    { key: 'conjured' as const, label: 'Conjured', value: colsConjured, set: setColsConjured, accent: 'accent-orange-500' },
-                    { key: 'media' as const, label: 'Media', value: colsMedia, set: setColsMedia, accent: 'accent-pink-500' },
-                  ] as const).map(col => (
-                    <div key={col.key} className="flex items-center gap-2">
-                      <span className="text-[10px] text-gray-400 font-mono w-16">{col.label}</span>
-                      <input
-                        type="range"
-                        min="1"
-                        max="6"
-                        step="1"
-                        value={col.value}
-                        onChange={(e) => updateCols(col.key, parseInt(e.target.value), col.set)}
-                        className={`flex-1 h-1 ${col.accent} cursor-pointer`}
-                      />
-                      <span className="text-[10px] text-gray-500 font-mono w-4 text-right">{col.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* ░▒▓ Panel opacity — driven by system uiOpacity setting ▓▒░ */}
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-gray-500 uppercase tracking-wider font-mono whitespace-nowrap">Panel Opacity</span>
-                  <div
-                    className="flex-1 h-4 rounded-full bg-gray-800 cursor-pointer relative select-none"
-                    onMouseDown={(e) => {
-                      e.stopPropagation()
-                      const rect = e.currentTarget.getBoundingClientRect()
-                      const update = (clientX: number) => {
-                        const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
-                        const v = Math.round((0.1 + pct * 0.9) * 20) / 20 // 0.1-1.0 in 0.05 steps
-                        updateSetting('uiOpacity', v)
-                      }
-                      update(e.clientX)
-                      const onMove = (ev: MouseEvent) => update(ev.clientX)
-                      const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp) }
-                      document.addEventListener('mousemove', onMove)
-                      document.addEventListener('mouseup', onUp)
-                    }}
-                  >
-                    {/* Track fill */}
-                    <div
-                      className="absolute inset-y-0 left-0 rounded-full bg-orange-500/60"
-                      style={{ width: `${((opacity - 0.1) / 0.9) * 100}%` }}
-                    />
-                    {/* Thumb */}
-                    <div
-                      className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-orange-400 border-2 border-orange-300 shadow-md"
-                      style={{ left: `calc(${((opacity - 0.1) / 0.9) * 100}% - 6px)` }}
-                    />
-                  </div>
-                  <span className="text-[10px] text-gray-500 font-mono w-8 text-right">{Math.round(opacity * 100)}%</span>
-                </div>
-              </div>
-
-              {/* ░▒▓█ CRAFT MODEL SELECTOR — The silicon tongue █▓▒░ */}
-              <div className="hidden">
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Craft / Terrain Model</div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {([
-                    { id: 'google/gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash Lite Preview', desc: 'Fast OpenRouter default', icon: '\u26A1' },
-                    { id: 'google/gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite', desc: 'Fast GA fallback', icon: '\u{1F539}' },
-                    { id: 'anthropic/claude-sonnet-4-6', label: 'Sonnet 4.6', desc: 'Best balance of speed + quality', icon: '\u2728' },
-                    { id: 'anthropic/claude-haiku-4-5', label: 'Haiku 4.5', desc: 'Fast + cheap, good for iteration', icon: '\u26A1' },
-                    { id: 'z-ai/glm-5', label: 'GLM-5', desc: 'ZhipuAI frontier model', icon: '\u{1F30F}' },
-                    { id: 'x-ai/grok-4.20-beta', label: 'Grok 4.20 Beta', desc: 'xAI reasoning beta', icon: '\u{1F916}' },
-                    { id: 'nvidia/nemotron-3-super-120b-a12b:free', label: 'Nemotron 3 Super 120B A12B', desc: 'NVIDIA MoE (free)', icon: '\u{1F7E2}' },
-                    { id: 'qwen/qwen3.5-397b-a17b', label: 'Qwen 3.5 397B A17B', desc: 'Alibaba MoE', icon: '\u{1F300}' },
-                    { id: 'liquid/lfm-2-24b-a2b', label: 'LFM 2 24B A2B', desc: 'Liquid Foundation', icon: '\u{1F4A7}' },
-                    { id: 'openai/gpt-5.4', label: 'GPT-5.4', desc: 'OpenAI frontier model', icon: '\u{1F9E0}' },
-                    { id: 'google/gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview', desc: 'Google multimodal', icon: '\u{1F48E}' },
-                    { id: 'minimax/minimax-m2.7', label: 'Minimax M2.7', desc: 'Minimax frontier model', icon: '\u{1F31F}' },
-                  ] as const).map(m => (
-                    <button
-                      key={m.id}
-                      onClick={() => setCraftModel(m.id)}
-                      className={`rounded-lg px-2 py-1.5 text-left transition-all duration-200 border ${
-                        craftModel === m.id
-                          ? 'border-blue-500/50 bg-blue-500/10'
-                          : 'border-gray-700/30 bg-black/40 hover:border-blue-500/30 hover:bg-blue-500/5'
-                      }`}
-                    >
-                      <div className="flex items-center gap-1">
-                        <span className="text-sm">{m.icon}</span>
-                        <span className={`text-[10px] font-medium ${craftModel === m.id ? 'text-blue-300' : 'text-gray-400'}`}>
-                          {m.label}
-                        </span>
-                      </div>
-                      <div className="text-[9px] text-gray-400 mt-0.5">{m.desc}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-
-            </div>
-          </>
+        /* The 'settings' branch was removed when the global Config menu
+           absorbed it. See src/components/forge/config/ConfigMenu.tsx. */
 
         ) : mode === 'media' ? (
           <MediaTab
@@ -3494,6 +3324,12 @@ export function WizardConsole({ isOpen, onClose, variant = 'local' }: WizardCons
               })
             }}
           />
+
+        ) : mode === 'music' ? (
+          <MusicBody />
+
+        ) : mode === 'video' ? (
+          <VideoBody />
 
         ) : mode === 'conjure' ? previewConjured ? (
           <ModelPreviewPanel

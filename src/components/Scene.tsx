@@ -41,7 +41,7 @@ import { SettingsContext, DragContext } from './scene-lib'
 import { ForgeRealm } from './realms/ForgeRealm'
 import PanoramaCapture from './forge/PanoramaCapture'
 import { ViewportScreenshotBridge } from './forge/ViewportScreenshotBridge'
-import { WizardConsole } from './forge/WizardConsole'
+import { WizardConsole, type WizardMode } from './forge/WizardConsole'
 // AssetExplorerWindow deleted — functionality lives in WizardConsole
 import { ObjectInspector } from './forge/ObjectInspector'
 import { MindcraftMissionWindowBridge } from './forge/MindcraftMissionWindowBridge'
@@ -69,7 +69,7 @@ import { QUEST_ZERO_WORLD_ID, ROOKIE_WIZARD_WORLD_ID } from '@/lib/portal-gates'
 import { preloadPortalRevealRoll } from '@/lib/portal-transition-settings'
 import { sampleTerrainHeightAt } from '@/lib/forge/terrain-brush'
 import { CameraController as CameraControllerComponent, sprintRef, FPS_KEYBOARD_MAP } from './CameraController'
-import { useAudioManager, SOUND_OPTIONS, type SoundEvent } from '@/lib/audio-manager'
+import { useAudioManager } from '@/lib/audio-manager'
 import { writeBrowserStorage } from '@/lib/browser-storage'
 import { runLocalStorageAgentCacheMigration } from '@/lib/localstorage-agent-cache-migration'
 import { isProbablyMobileDevice } from '@/lib/mobile-controls'
@@ -87,15 +87,22 @@ import { SkyPanel } from './forge/SkyPanel'
 import { LightsPanel } from './forge/LightsPanel'
 import { PaintBrushPanel } from './forge/PaintBrushPanel'
 import { Text3DPanel } from './forge/Text3DPanel'
+import { CraftSpellTab } from './forge/spelltabs/CraftSpellTab'
+import { GeneratePicSpellTab } from './forge/spelltabs/GeneratePicSpellTab'
+import { GenerateMusicSpellTab } from './forge/spelltabs/GenerateMusicSpellTab'
+import { GenerateVideoSpellTab } from './forge/spelltabs/GenerateVideoSpellTab'
 import { WorldMenu } from './forge/WorldMenu'
 import { PlaceMenu } from './forge/PlaceMenu'
 import { GameMenuButton } from './forge/GameMenuButton'
+import { useRailMenuExclusion } from '@/hooks/useRailMenuExclusion'
 import { MobileOasisControls, useIsMobileOasis } from './forge/MobileOasisControls'
-import { FireboltLayer } from './forge/FireboltLayer'
+import { CombatBoltLayer } from './forge/CombatBoltLayer'
 import { PlayerVitalsHud } from './forge/PlayerVitalsHud'
 import { PlayerSpellbookPanel } from './forge/PlayerSpellbookPanel'
+import { UploadPanel } from './forge/UploadPanel'
 import { QuestProgressTracker } from './forge/QuestProgressTracker'
 import { QuestZeroNpcExclamation } from './forge/QuestZeroNpcExclamation'
+import { ConfigMenu } from './forge/config/ConfigMenu'
 
 const SHOW_LEGACY_DEVCRAFT_PANEL = false
 const SHOW_LEGACY_PARZIVAL_PANEL = false
@@ -329,407 +336,10 @@ function writeSettingsMenuOpacity(value: number) {
   } catch {}
 }
 
-function SettingsContent({
-  consoleControl,
-  menuOpacity,
-  onMenuOpacityChange,
-}: {
-  consoleControl?: React.ReactNode
-  menuOpacity: number
-  onMenuOpacityChange: (opacity: number) => void
-}) {
-  const { settings, effectiveRp1Mode, rp1Locked, updateSetting } = useContext(SettingsContext)
-
-  const toggles = [
-    { key: 'bloomEnabled' as const, label: 'Bloom', category: 'Post-FX' },
-    { key: 'vignetteEnabled' as const, label: 'Vignette', category: 'Post-FX' },
-    { key: 'chromaticEnabled' as const, label: 'Chromatic Aberration', category: 'Post-FX' },
-    { key: 'fpsCounterEnabled' as const, label: 'FPS Counter', category: 'UI' },
-    { key: 'showGrid' as const, label: 'Helper Grid', category: 'UI' },
-  ]
-
-  const categories = ['Post-FX', 'UI']
-
-  return (
-    <div className="w-[360px] p-4 max-[700px]:w-full max-[700px]:p-2">
-      <div className="mb-3 flex items-center gap-3 border-b border-white/10 pb-3 max-[700px]:mb-2 max-[700px]:pb-2">
-        <div className="flex h-9 w-9 items-center justify-center rounded-md border border-violet-300/35 bg-violet-300/10 text-sm font-black text-violet-100">
-          SYS
-        </div>
-        <div>
-          <div className="text-[12px] font-black uppercase tracking-[0.18em] text-white">Config</div>
-          <div className="mt-0.5 text-[10px] uppercase tracking-[0.12em] text-white/42">display / control / audio</div>
-        </div>
-      </div>
-
-      {consoleControl && (
-        <div className="mb-4 rounded-lg border border-amber-300/15 bg-amber-300/5 p-2">
-          {consoleControl}
-        </div>
-      )}
-
-      {categories.map(category => (
-        <div key={category} className="mb-4 max-[700px]:mb-2">
-          <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-2">{category}</div>
-
-          {category !== 'UI' && toggles.filter(t => t.category === category).map(toggle => (
-            <label key={toggle.key} className="flex items-center gap-3 py-1.5 cursor-pointer group hover:bg-white/5 rounded px-1 -mx-1 transition-colors">
-              <div
-                onClick={() => updateSetting(toggle.key, !settings[toggle.key])}
-                className={`w-10 h-5 rounded-full transition-all cursor-pointer relative flex-shrink-0 ${
-                  settings[toggle.key] ? 'bg-purple-600 shadow-lg shadow-purple-500/30' : 'bg-gray-700'
-                }`}
-              >
-                <div className={`w-4 h-4 rounded-full bg-white mt-0.5 transition-all ${
-                  settings[toggle.key] ? 'translate-x-5' : 'translate-x-0.5'
-                }`} />
-              </div>
-              <span className="text-sm text-gray-300 group-hover:text-white transition-colors whitespace-nowrap">{toggle.label}</span>
-            </label>
-          ))}
-
-          {/* Bloom intensity slider (only when bloom is enabled) */}
-          {category === 'Post-FX' && settings.bloomEnabled && (
-            <div className="px-1 py-1.5">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-gray-400">Bloom Intensity</span>
-                <span className="text-[10px] text-purple-400 font-mono">{(settings.bloomIntensity ?? 0.4).toFixed(2)}</span>
-              </div>
-              <input
-                type="range"
-                min="0.05"
-                max="2.0"
-                step="0.05"
-                value={settings.bloomIntensity ?? 0.4}
-                onChange={(e) => updateSetting('bloomIntensity', parseFloat(e.target.value))}
-                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
-              />
-            </div>
-          )}
-
-          {/* UI-specific settings */}
-          {category === 'UI' && (
-            <>
-              {toggles.filter(t => t.category === 'UI').map(toggle => (
-                <label key={toggle.key} className="flex items-center gap-3 py-1.5 cursor-pointer group hover:bg-white/5 rounded px-1 -mx-1 transition-colors">
-                  <div
-                    onClick={() => updateSetting(toggle.key, !settings[toggle.key])}
-                    className={`w-10 h-5 rounded-full transition-all cursor-pointer relative flex-shrink-0 ${
-                      settings[toggle.key] ? 'bg-purple-600 shadow-lg shadow-purple-500/30' : 'bg-gray-700'
-                    }`}
-                  >
-                    <div className={`w-4 h-4 rounded-full bg-white mt-0.5 transition-all ${
-                      settings[toggle.key] ? 'translate-x-5' : 'translate-x-0.5'
-                    }`} />
-                  </div>
-                  <span className="text-sm text-gray-300 group-hover:text-white transition-colors whitespace-nowrap">{toggle.label}</span>
-                </label>
-              ))}
-
-              {/* FPS Font Size */}
-              <div className="py-1.5">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-gray-300">FPS Font Size</span>
-                  <span className="text-xs text-purple-400 font-mono">{settings.fpsCounterFontSize}px</span>
-                </div>
-                <input
-                  type="range"
-                  min="10"
-                  max="24"
-                  value={settings.fpsCounterFontSize}
-                  onChange={(e) => updateSetting('fpsCounterFontSize', parseInt(e.target.value))}
-                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                />
-              </div>
-
-              {/* Ready Player 1 Mode */}
-              <label className={`flex items-center gap-3 py-1.5 rounded px-1 -mx-1 transition-colors ${rp1Locked ? 'cursor-default opacity-90' : 'cursor-pointer group hover:bg-white/5'}`}>
-                <div
-                  onClick={() => {
-                    if (!rp1Locked) updateSetting('rp1Mode', !settings.rp1Mode)
-                  }}
-                  className={`w-10 h-5 rounded-full transition-all cursor-pointer relative flex-shrink-0 ${
-                    effectiveRp1Mode ? 'bg-teal-600 shadow-lg shadow-teal-500/30' : 'bg-gray-700'
-                  }`}
-                >
-                  <div className={`w-4 h-4 rounded-full bg-white mt-0.5 transition-all ${
-                    effectiveRp1Mode ? 'translate-x-5' : 'translate-x-0.5'
-                  }`} />
-                </div>
-                <span className="text-sm text-gray-300 group-hover:text-white transition-colors whitespace-nowrap">Ready Player 1</span>
-              </label>
-
-              {/* Panel Opacity — custom div slider, native range unreliable in portals on Windows */}
-              <div className="py-1.5">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-gray-300">Config Opacity</span>
-                  <span className="text-xs text-purple-400 font-mono">{Math.round(menuOpacity * 100)}%</span>
-                </div>
-                <div
-                  className="w-full h-4 rounded-full bg-gray-700 cursor-pointer relative select-none"
-                  onMouseDown={(e) => {
-                    e.stopPropagation()
-                    const rect = e.currentTarget.getBoundingClientRect()
-                    const update = (clientX: number) => {
-                      const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
-                      const v = Math.round((0.5 + pct * 0.5) * 20) / 20
-                      onMenuOpacityChange(v)
-                    }
-                    update(e.clientX)
-                    const onMove = (ev: MouseEvent) => update(ev.clientX)
-                    const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp) }
-                    document.addEventListener('mousemove', onMove)
-                    document.addEventListener('mouseup', onUp)
-                  }}
-                >
-                  <div
-                    className="absolute inset-y-0 left-0 rounded-full bg-purple-500/60"
-                    style={{ width: `${((menuOpacity - 0.5) / 0.5) * 100}%` }}
-                  />
-                  <div
-                    className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-purple-400 border-2 border-purple-300 shadow-md"
-                    style={{ left: `calc(${((menuOpacity - 0.5) / 0.5) * 100}% - 6px)` }}
-                  />
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      ))}
-
-      {/* ─═̷─═̷─🎮─═̷─═̷─ CAMERA CONTROLS ─═̷─═̷─🎮─═̷─═̷─ */}
-      <div className="mb-2">
-        <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-2">Camera Controls</div>
-        <select
-          value={settings.controlMode}
-          onChange={(e) => updateSetting('controlMode', e.target.value as 'orbit' | 'noclip' | 'third-person')}
-          className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-300 hover:border-purple-500 focus:border-purple-500 focus:outline-none transition-colors mb-2"
-        >
-          <option value="orbit">Orbit (Classic)</option>
-          <option value="noclip">Noclip (fly)</option>
-          <option value="third-person">Third Person (Avatar)</option>
-        </select>
-
-        {settings.controlMode === 'orbit' && (
-          <label className="flex items-center gap-2 mt-1 mb-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={settings.showOrbitTarget}
-              onChange={(e) => updateSetting('showOrbitTarget', e.target.checked)}
-              className="accent-purple-500"
-            />
-            <span className="text-sm text-gray-300">Show orbit pivot point</span>
-          </label>
-        )}
-
-        {(settings.controlMode === 'noclip' || settings.controlMode === 'third-person') && (
-          <>
-            <div className="py-1.5">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-300">Mouse Sensitivity</span>
-                <span className="text-xs text-purple-400 font-mono">{settings.mouseSensitivity.toFixed(1)}x</span>
-              </div>
-              <input
-                type="range"
-                min="1"
-                max="20"
-                step="1"
-                value={settings.mouseSensitivity * 10}
-                onChange={(e) => updateSetting('mouseSensitivity', parseInt(e.target.value) / 10)}
-                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-green-500"
-              />
-            </div>
-
-            <div className="py-1.5">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-300">Move Speed</span>
-                <span className="text-xs text-purple-400 font-mono">{settings.moveSpeed}</span>
-              </div>
-              <input
-                type="range"
-                min="1"
-                max="20"
-                step="1"
-                value={settings.moveSpeed}
-                onChange={(e) => updateSetting('moveSpeed', parseInt(e.target.value))}
-                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-green-500"
-              />
-            </div>
-
-          </>
-        )}
-
-        {/* ─═̷─═̷─📐─═̷─═̷─ FIELD OF VIEW ─═̷─═̷─📐─═̷─═̷─ */}
-        <div className="py-1.5">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-gray-300">Field of View</span>
-            <span className="text-xs text-purple-400 font-mono">{settings.fov}°</span>
-          </div>
-          <input
-            type="range"
-            min="30"
-            max="120"
-            step="5"
-            value={settings.fov}
-            onChange={(e) => updateSetting('fov', parseInt(e.target.value))}
-            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-green-500"
-          />
-        </div>
-      </div>
-
-      <div className="mb-2 border-t border-white/10 pt-3 max-[700px]:pt-2">
-        <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-2">Agent Embodiment</div>
-
-        <label className="flex items-center gap-3 py-1.5 cursor-pointer group hover:bg-white/5 rounded px-1 -mx-1 transition-colors">
-          <div
-            onClick={() => updateSetting('agentActionMode', settings.agentActionMode === 'embodied' ? 'instant' : 'embodied')}
-            className={`w-10 h-5 rounded-full transition-all cursor-pointer relative flex-shrink-0 ${
-              settings.agentActionMode === 'embodied' ? 'bg-cyan-600 shadow-lg shadow-cyan-500/30' : 'bg-gray-700'
-            }`}
-          >
-            <div className={`w-4 h-4 rounded-full bg-white mt-0.5 transition-all ${
-              settings.agentActionMode === 'embodied' ? 'translate-x-5' : 'translate-x-0.5'
-            }`} />
-          </div>
-          <div className="min-w-0">
-            <div className="text-sm text-gray-300 group-hover:text-white transition-colors whitespace-nowrap">Embodied Agent Actions</div>
-            <div className="text-[10px] text-gray-500">
-              {settings.agentActionMode === 'embodied'
-                ? 'Agents walk, cast, and settle before manifestations visibly land.'
-                : 'Agent world changes apply immediately without slow-mo staging.'}
-            </div>
-          </div>
-        </label>
-
-        <div className="py-1.5">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-gray-300">Agent Walk Speed</span>
-            <span className="text-xs text-cyan-300 font-mono">{settings.agentWalkSpeed.toFixed(1)} m/s</span>
-          </div>
-          <input
-            type="range"
-            min="0.5"
-            max="12"
-            step="0.5"
-            value={settings.agentWalkSpeed}
-            onChange={(e) => updateSetting('agentWalkSpeed', parseFloat(e.target.value))}
-            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-          />
-        </div>
-
-        <div className="py-1.5">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-gray-300">Conjure Duration</span>
-            <span className="text-xs text-cyan-300 font-mono">{(settings.agentConjureDurationMs / 1000).toFixed(1)}s</span>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="12000"
-            step="250"
-            value={settings.agentConjureDurationMs}
-            onChange={(e) => updateSetting('agentConjureDurationMs', parseInt(e.target.value))}
-            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-          />
-        </div>
-
-        <div className="py-1.5">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-gray-300">Screenshot Settle</span>
-            <span className="text-xs text-cyan-300 font-mono">{settings.agentScreenshotSettleMs} ms</span>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="2000"
-            step="20"
-            value={settings.agentScreenshotSettleMs}
-            onChange={(e) => updateSetting('agentScreenshotSettleMs', parseInt(e.target.value))}
-            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-          />
-        </div>
-      </div>
-
-      {/* ─═̷─═̷─🔊 SOUND SETTINGS ─═̷─═̷─🔊 */}
-      <SoundSettings />
-    </div>
-  )
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
-// SOUND SETTINGS — per-event sound selection + volume
+// SettingsContent + SoundSettings — REMOVED. The Config menu is now a tabbed
+// game-style panel in src/components/forge/config/ConfigMenu.tsx.
 // ═══════════════════════════════════════════════════════════════════════════════
-
-function SoundSettings() {
-  const { volume, muted, selections, setVolume, toggleMute, selectSound, preview } = useAudioManager()
-  const [expanded, setExpanded] = useState(true)
-
-  const EVENT_LABELS: Record<string, string> = {
-    select: 'Select Object', deselect: 'Deselect', place: 'Place Object', delete: 'Delete Object',
-    panelOpen: 'Panel Open', panelClose: 'Panel Close', buttonClick: 'Button Click', buttonHover: 'Button Hover',
-    modeSwitch: 'Camera Mode', conjureStart: 'Conjure Start', conjureDone: 'Conjure Done',
-    anorakDone: 'Anorak Done', notification: 'Notification', undo: 'Undo', redo: 'Redo',
-    connected: 'Agent Connected', levelUp: 'Level Up', chooseCharacter: 'Choose Character',
-    agentFocus: 'Agent Focus', agentUnfocus: 'Agent Unfocus', tilePaint: 'Tile Paint',
-    error: 'Error',
-    // footstep excluded — always cycles through all footstep sounds for variety
-  }
-
-  return (
-    <div className="mt-3 border-t border-white/10 pt-3">
-      <div className="flex items-center justify-between mb-2">
-        <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer hover:text-white transition-colors">
-          <span>{expanded ? '▼' : '▸'}</span>
-          <span>Sound Lab</span>
-        </button>
-        <div className="flex items-center gap-2">
-          <button onClick={toggleMute} className="text-xs cursor-pointer px-1.5 py-0.5 rounded" style={{ background: muted ? 'rgba(239,68,68,0.2)' : 'rgba(34,197,94,0.2)', color: muted ? '#ef4444' : '#22c55e' }}>
-            {muted ? '🔇 Muted' : '🔊 On'}
-          </button>
-        </div>
-      </div>
-
-      {/* Volume slider */}
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-[10px] text-gray-500">Vol</span>
-        <input type="range" min="0" max="100" value={Math.round(volume * 100)}
-          onChange={e => setVolume(parseInt(e.target.value) / 100)}
-          className="flex-1 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-sky-500"
-        />
-        <span className="text-[10px] text-gray-400 font-mono w-8 text-right">{Math.round(volume * 100)}%</span>
-      </div>
-
-      {/* Per-event sound selection */}
-      {expanded && (
-        <div className="space-y-1 max-h-[260px] overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#374151 transparent' }}>
-          {Object.entries(EVENT_LABELS).map(([event, label]) => {
-            const options = (SOUND_OPTIONS as Record<string, Array<{ id: string; label: string }>>)[event]
-            if (!options) return null
-            return (
-              <div key={event} className="flex items-center gap-1.5 text-[10px]">
-                <span className="text-gray-500 w-24 truncate flex-shrink-0">{label}</span>
-                <select
-                  value={(selections as Record<string, string>)[event] || options[0]?.id}
-                  onChange={e => {
-                    selectSound(event as SoundEvent, e.target.value)
-                    preview(event as SoundEvent, e.target.value)
-                  }}
-                  className="flex-1 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-300 cursor-pointer outline-none text-[10px]"
-                >
-                  {options.map((opt: { id: string; label: string }) => (
-                    <option key={opt.id} value={opt.id}>{opt.label}</option>
-                  ))}
-                </select>
-                <button onClick={() => preview(event as SoundEvent, (selections as Record<string, string>)[event])}
-                  className="rounded border border-sky-300/15 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.08em] text-gray-500 hover:border-sky-300/45 hover:text-sky-300 cursor-pointer">Test</button>
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SKY BACKGROUND — procedural stars or HDRI panorama
@@ -1244,11 +854,14 @@ function AgentQuickLauncher({
     playClick()
     onMode(nextMode)
   }
+  useRailMenuExclusion('agents', isOpen, onClose)
 
   useEffect(() => {
     if (!isOpen) return
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current?.contains(event.target as Node)) return
+      const target = event.target as HTMLElement | null
+      if (target && target.closest('[data-rail-menu="agents"]')) return
       onClose()
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -1267,7 +880,10 @@ function AgentQuickLauncher({
       />
 
       {isOpen && (
-        <div className="absolute left-full top-0 z-[260] ml-2 max-h-[calc(100vh-224px)] w-[238px] overflow-y-auto rounded-lg border border-white/10 bg-black/[0.92] p-3 shadow-[0_0_54px_rgba(0,0,0,0.65),0_0_38px_rgba(34,211,238,0.18)] backdrop-blur-md max-[700px]:fixed max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:ml-0 max-[700px]:max-h-[calc(100vh-70px)] max-[700px]:w-auto max-[700px]:p-2">
+        <div
+          data-rail-menu="agents"
+          className="fixed left-[10.25rem] top-4 z-[260] max-h-[calc(100vh-2rem)] w-[260px] overflow-y-auto rounded-lg border border-white/10 bg-black/[0.92] p-3 shadow-[0_0_54px_rgba(0,0,0,0.65),0_0_38px_rgba(244,114,182,0.18)] backdrop-blur-md max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:w-auto max-[700px]:max-h-[calc(100vh-70px)] max-[700px]:p-2"
+        >
           <div className="grid grid-cols-2 gap-2">
             {(['2d', '3d'] as const).map(option => (
               <button
@@ -1641,6 +1257,7 @@ export default function Scene() {
 
   // ─═̷─═̷─✨─═̷─═̷─{ WIZARD CONSOLE + ASSET EXPLORER STATE }─═̷─═̷─✨─═̷─═̷─
   const [wizardOpen, setWizardOpen] = useState(false)
+  const [pendingWizardTab, setPendingWizardTab] = useState<WizardMode | undefined>(undefined)
   // Asset Explorer removed — merged into WizardConsole
   const [actionLogOpen, setActionLogOpen] = useState(false)
   const [merlinOpen, setMerlinOpen] = useState(false)
@@ -1840,76 +1457,103 @@ export default function Scene() {
   const handleSpellbookCast = (spellId: SpellId) => {
     const store = useOasisStore.getState()
     useAudioManager.getState().play('buttonClick')
+    store.setSelectedSpellId(spellId)
+    setSpellbookOpen(false)
+
+    // ─═̷─ RP1 exit gate. RP1 hides every edit/creation panel via hideEditTools
+    // (Scene.tsx ~line 1641: hideEditTools = ... || effectiveRp1Mode). If the
+    // player is in RP1 and clicks a creation spell, WizCon / TerrainBrushPanel /
+    // SkyPanel etc would all be invisible → spell appears to "do nothing /
+    // throws you back to third person." Toggle RP1 off here for every
+    // non-combat spell. Combat spells (firebolt/lightning/ice) need RP1 ON
+    // so the LMB cast pipeline fires — those are handled below.
+    const isCombat = spellId === 'firebolt' || spellId === 'lightning-bolt' || spellId === 'ice-bolt'
+    if (!isCombat && settings.rp1Mode && !readOnlyForcesRp1) {
+      updateSetting('rp1Mode', false)
+    }
 
     switch (spellId) {
+      // ─═̷─ Combat: arm the spell + ensure RP1 is on so LMB casts ─═̷─
       case 'firebolt':
-        window.dispatchEvent(new CustomEvent('oasis:cast-firebolt'))
-        setSpellbookOpen(false)
+      case 'lightning-bolt':
+      case 'ice-bolt':
+        if (!settings.rp1Mode && !readOnlyForcesRp1) updateSetting('rp1Mode', true)
         return
+
+      // ─═̷─ Recipe / catalog ─═̷─
       case 'catalog-place':
         window.dispatchEvent(new CustomEvent('oasis:open-place-menu'))
-        setSpellbookOpen(false)
         return
+
+      // ─═̷─ Creative + world-root dedicated panels ─═̷─
       case 'brush-wand':
         store.setPaintBrushPanelOpen(true)
-        setSpellbookOpen(false)
         return
       case 'sky-background':
         setSkyPanelOpen(true)
-        setSpellbookOpen(false)
         return
       case 'ground-texture':
         store.setTerrainBrushPanelOpen(true)
         store.setTerrainBrushMode('texture')
-        setSpellbookOpen(false)
         return
       case 'ground-elevation':
         store.setTerrainBrushPanelOpen(true)
         store.setTerrainBrushMode('sculpt')
-        setSpellbookOpen(false)
         return
       case 'lights':
         setLightsPanelOpen(true)
-        setSpellbookOpen(false)
         return
       case 'text-3d':
         store.setText3dPanelOpen(true)
-        setSpellbookOpen(false)
         return
-      case 'summon-djinn':
-        placeQuickAgentWindow('merlin')
-        setSpellbookOpen(false)
-        return
-      case 'summon-openclaw':
-        placeQuickAgentWindow('openclaw')
-        setSpellbookOpen(false)
-        return
-      case 'summon-hermes':
-        placeQuickAgentWindow('hermes')
-        setSpellbookOpen(false)
-        return
-      case 'summon-custom-npc':
-      case 'summon-fighter-npc':
-        setAgentLauncherMode('3d')
-        setAgentLauncherOpen(true)
-        setSpellbookOpen(false)
-        return
+
+      // ─═̷─ Premium standalone spelltabs (Agent B builds these) ─═̷─
       case 'text-to-3d':
       case 'text-to-pic':
       case 'text-to-pic-building':
       case 'text-to-music':
       case 'text-to-video':
+        window.dispatchEvent(new CustomEvent('oasis:open-spelltab', { detail: { spellId } }))
+        return
+
+      // ─═̷─ Premium routed to WizCon directly ─═̷─
       case 'meshy-object':
       case 'meshy-character':
-      case 'portal-create':
-      case 'own-audio-upload':
-      case 'own-video-upload':
-      case 'own-image-upload':
+        setPendingWizardTab('conjure')
         setWizardOpen(true)
-        setSpellbookOpen(false)
         return
-      case 'lightning-bolt':
-      case 'ice-bolt':
+      case 'portal-create':
+        setPendingWizardTab('world')
+        setWizardOpen(true)
+        return
+
+      // ─═̷─ Own media uploads ─═̷─
+      case 'own-audio-upload':
+        window.dispatchEvent(new CustomEvent('oasis:open-upload-panel', { detail: { kind: 'audio' } }))
+        return
+      case 'own-video-upload':
+        window.dispatchEvent(new CustomEvent('oasis:open-upload-panel', { detail: { kind: 'video' } }))
+        return
+      case 'own-image-upload':
+        window.dispatchEvent(new CustomEvent('oasis:open-upload-panel', { detail: { kind: 'image' } }))
+        return
+
+      // ─═̷─ Agents ─═̷─
+      case 'summon-djinn':
+        placeQuickAgentWindow('merlin')
+        return
+      case 'summon-openclaw':
+        placeQuickAgentWindow('openclaw')
+        return
+      case 'summon-hermes':
+        placeQuickAgentWindow('hermes')
+        return
+      case 'summon-custom-npc':
+      case 'summon-fighter-npc':
+        setAgentLauncherMode('3d')
+        setAgentLauncherOpen(true)
+        return
+
       default:
         return
     }
@@ -2013,10 +1657,11 @@ export default function Scene() {
       const isConjured = store.worldConjuredAssetIds.includes(id)
       const isLight = store.worldLights.some(light => light.id === id)
       const isAgentWindow = store.placedAgentWindows.some(win => win.id === id)
+      const isAgentAvatar = store.placedAgentAvatars.some(av => av.id === id)
       const isSpatialWeb = store.spatialWebObjects.some(object => object.id === id)
       const isPaintStroke = store.paintStrokes.some(stroke => stroke.id === id)
       const isText3D = store.text3dObjects.some(text => text.id === id)
-      if (!isPortal && !isCatalog && !isCrafted && !isConjured && !isLight && !isAgentWindow && !isSpatialWeb && !isPaintStroke && !isText3D) return
+      if (!isPortal && !isCatalog && !isCrafted && !isConjured && !isLight && !isAgentWindow && !isAgentAvatar && !isSpatialWeb && !isPaintStroke && !isText3D) return
 
       event.preventDefault()
       event.stopPropagation()
@@ -2026,6 +1671,7 @@ export default function Scene() {
       else if (isConjured) store.removeConjuredAssetFromWorld(id)
       else if (isLight) store.removeWorldLight(id)
       else if (isAgentWindow) store.removeAgentWindow(id)
+      else if (isAgentAvatar) store.removeAgentAvatar(id)
       else if (isSpatialWeb) store.removeSpatialWebObject(id)
       else if (isPaintStroke) store.removePaintStroke(id)
       else if (isText3D) store.removeText3dObject(id)
@@ -2110,7 +1756,11 @@ export default function Scene() {
           <ForgeRealm />
           <RookieMerlinWorldPrompt />
         </Suspense>
-        <FireboltLayer enabled={effectiveRp1Mode} />
+        {/* ─═̷─═̷─⚔ Combat-bolt dispatcher — replaces the legacy FireboltLayer
+            and routes to the 10 designs in src/components/forge/bolts/ based
+            on settings.{spell}Design. Mounted only when RP1/exploration mode
+            is active. ─═̷─═̷─⚔ */}
+        <CombatBoltLayer enabled={effectiveRp1Mode} settings={settings} />
         <QuestZeroNpcExclamation activeWorldId={activeWorldId} />
 
         {/* ─═̷─═̷─📸─═̷─═̷─ PANORAMA CAPTURE (Ctrl+Shift+P) ─═̷─═̷─📸─═̷─═̷─ */}
@@ -2145,8 +1795,10 @@ export default function Scene() {
       {/* ─═̷─═̷─⚡ FPS DISPLAY ─═̷─═̷─⚡ */}
       <FPSDisplay enabled={settings.fpsCounterEnabled} fontSize={settings.fpsCounterFontSize} />
 
-      {/* ─═̷─═̷─🎯 CROSSHAIR — Noclip + TPS when pointer locked ─═̷─═̷─🎯 */}
-      {(settings.controlMode === 'noclip' || settings.controlMode === 'third-person') && pointerLocked && (
+      {/* ─═̷─═̷─🎯 CROSSHAIR — Noclip + TPS when pointer locked (desktop) OR
+          always on mobile in those modes, since mobile can't pointer-lock but
+          still needs a center target indicator for SELECT / placement / cast. ─═̷─═̷─🎯 */}
+      {(settings.controlMode === 'noclip' || settings.controlMode === 'third-person') && (pointerLocked || mobileOasis) && (
         <div className="fixed inset-0 pointer-events-none z-[99] flex items-center justify-center">
           <div className="relative w-5 h-5">
             <div className="absolute top-1/2 left-0 w-full h-px bg-white/40" />
@@ -2238,7 +1890,7 @@ export default function Scene() {
         />
 
         <SettingsMenu opacity={settingsMenuOpacity}>
-          <SettingsContent
+          <ConfigMenu
             menuOpacity={settingsMenuOpacity}
             onMenuOpacityChange={handleSettingsMenuOpacity}
             consoleControl={(isAdmin || canUseLocalPanels) ? (
@@ -2271,7 +1923,8 @@ export default function Scene() {
       {canShowWizardConsole && (
         <WizardConsole
           isOpen={wizardOpen}
-          onClose={() => setWizardOpen(false)}
+          initialTab={pendingWizardTab}
+          onClose={() => { setWizardOpen(false); setPendingWizardTab(undefined) }}
           variant={canUseFullWizard ? 'local' : 'hosted'}
         />
       )}
@@ -2289,6 +1942,17 @@ export default function Scene() {
       {!hideEditTools && <LightsPanel isOpen={lightsPanelOpen} onClose={() => setLightsPanelOpen(false)} />}
       {!hideEditTools && <PaintBrushPanel />}
       {!hideEditTools && <Text3DPanel />}
+
+      {/* ─═̷─═̷─✨ PREMIUM SPELLTABS — Standalone popups for cast spells ─═̷─═̷─✨
+          Each spelltab listens for `oasis:open-spelltab` { spellId } and only opens
+          for its own spell. Mounted ungated so the spellbook can cast from any
+          mode. Mobile renders them as a top-right strip so the world center
+          (where the user targets) stays unobstructed. ─═̷─═̷─ */}
+      <CraftSpellTab />
+      <GeneratePicSpellTab buildingMode={false} />
+      <GeneratePicSpellTab buildingMode={true} />
+      <GenerateMusicSpellTab />
+      <GenerateVideoSpellTab />
 
       {/* 📋 Mindcraft 3D — Mission Window (outside Canvas, bridged via Zustand) */}
       {canUseLocalPanels && <MindcraftMissionWindowBridge />}
@@ -2440,6 +2104,9 @@ export default function Scene() {
       {/* ░▒▓ IMAGE DROP ZONE — drag & drop images into the world ▓▒░ */}
       {canUseLocalPanels && !hideEditTools && <ImageDropZone />}
 
+      {/* 📤 Upload Panel — focused mp3/mp4/image upload triggered from spellbook */}
+      <UploadPanel />
+
       {/* OnboardingModal nuked — profile setup lives in ProfileButton */}
 
       {/* ░▒▓ ANONYMOUS CTA — conversion hook ▓▒░ */}
@@ -2459,19 +2126,30 @@ function ImageDropZone() {
   const dragCountRef = useRef(0)
 
   useEffect(() => {
+    // Screen-wide dragdrop is suppressed when UploadPanel is open — the panel's
+    // own drop zone is the obvious visible target, so a stray drop here would
+    // be a footgun.
+    const isUploadPanelOpen = () => useInputManager.getState()._uiLayerStack.includes('upload-panel')
+
     // Document-level drag listeners — NO intercepting divs that block clicks
     const handleDragEnter = (e: DragEvent) => {
+      if (isUploadPanelOpen()) return
       e.preventDefault()
       dragCountRef.current++
       if (e.dataTransfer?.types.includes('Files')) setDropping(true)
     }
     const handleDragLeave = (e: DragEvent) => {
+      if (isUploadPanelOpen()) return
       e.preventDefault()
       dragCountRef.current--
       if (dragCountRef.current <= 0) { setDropping(false); dragCountRef.current = 0 }
     }
-    const handleDragOver = (e: DragEvent) => { e.preventDefault() }
+    const handleDragOver = (e: DragEvent) => {
+      if (isUploadPanelOpen()) return
+      e.preventDefault()
+    }
     const handleDrop = async (e: DragEvent) => {
+      if (isUploadPanelOpen()) return
       e.preventDefault()
       setDropping(false)
       dragCountRef.current = 0
@@ -2555,11 +2233,18 @@ function SettingsMenu({ children, opacity }: { children: React.ReactNode; opacit
   const menuRef = useRef<HTMLDivElement>(null)
   useUILayer('settings-menu', isOpen)
   const playClick = () => useAudioManager.getState().play('buttonClick')
+  const close = useCallback(() => setIsOpen(false), [])
+  useRailMenuExclusion('settings', isOpen, close)
 
   useEffect(() => {
     if (!isOpen) return
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current?.contains(event.target as Node)) return
+      // Also include the fixed-position menu body in the "inside" check —
+      // it's a sibling of menuRef on desktop now (fixed-positioned), so a
+      // straight `menuRef.contains` would miss clicks inside the menu.
+      const target = event.target as HTMLElement | null
+      if (target && target.closest('[data-rail-menu="settings"]')) return
       setIsOpen(false)
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -2584,7 +2269,8 @@ function SettingsMenu({ children, opacity }: { children: React.ReactNode; opacit
       {isOpen && (
         <div
           data-ui-panel
-          className="absolute left-full top-0 z-[260] ml-2 max-h-[calc(100vh-272px)] overflow-y-auto rounded-lg border border-white/10 bg-black/[0.92] font-mono text-white shadow-[0_0_54px_rgba(0,0,0,0.68),0_0_38px_rgba(167,139,250,0.14)] backdrop-blur-md max-[700px]:fixed max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:ml-0 max-[700px]:max-h-[calc(100vh-70px)] max-[700px]:w-auto"
+          data-rail-menu="settings"
+          className="fixed left-[10.25rem] top-4 z-[260] max-h-[calc(100vh-2rem)] w-[min(480px,calc(100vw-11.5rem))] overflow-hidden rounded-lg border border-white/10 bg-black/[0.92] font-mono text-white shadow-[0_0_54px_rgba(0,0,0,0.68),0_0_38px_rgba(167,139,250,0.18)] backdrop-blur-md max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:w-auto max-[700px]:max-h-[calc(100vh-70px)]"
           style={{ opacity }}
           onMouseDown={event => event.stopPropagation()}
         >

@@ -8,16 +8,20 @@ import { useOasisStore } from '@/store/oasisStore'
 import { GROUND_PRESETS, getTextureUrls, type GroundPreset } from '@/lib/forge/ground-textures'
 import { hasTerrainRelief } from '@/lib/forge/terrain-brush'
 import { SettingsContext } from '../scene-lib'
-import { DeleteButton } from './DeleteButton'
-import { canMutateLibrary } from '@/lib/library-permissions'
 
 const PANEL_WIDTH = 320
 const PANEL_MARGIN = 12
 const PANEL_POSITION_KEY = 'oasis-terrain-brush-panel-position'
+const MOBILE_VIEWPORT_PX = 700
 
 interface PanelPosition {
   x: number
   y: number
+}
+
+function isMobileViewport(): boolean {
+  if (typeof window === 'undefined') return false
+  return window.innerWidth <= MOBILE_VIEWPORT_PX
 }
 
 function clampPanelPosition(position: PanelPosition): PanelPosition {
@@ -39,13 +43,14 @@ function getInitialPanelPosition(): PanelPosition {
   return clampPanelPosition({ x: window.innerWidth - PANEL_WIDTH - 20, y: 96 })
 }
 
-function GroundTextureThumb({ preset }: { preset: GroundPreset }) {
+function GroundTextureThumb({ preset, size = 12 }: { preset: GroundPreset; size?: 12 | 16 }) {
   const [failed, setFailed] = useState(false)
   const src = preset.customTextureUrl || (preset.assetName ? getTextureUrls(preset.assetName).diffuse : null)
+  const sizeClasses = size === 16 ? 'h-16 w-16' : 'h-12 w-12'
 
   return (
     <div
-      className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-md border border-white/10"
+      className={`relative ${sizeClasses} flex-shrink-0 overflow-hidden rounded-md border border-white/10`}
       style={{ backgroundColor: preset.color }}
     >
       {src && !failed ? (
@@ -84,8 +89,11 @@ export function TerrainBrushPanel() {
   const paintBrushPresetId = useOasisStore(s => s.paintBrushPresetId)
   const paintBrushSize = useOasisStore(s => s.paintBrushSize)
   const setPaintBrushSize = useOasisStore(s => s.setPaintBrushSize)
+  const paintBrushStretch = useOasisStore(s => s.paintBrushStretch)
+  const setPaintBrushStretch = useOasisStore(s => s.setPaintBrushStretch)
   const enterPaintMode = useOasisStore(s => s.enterPaintMode)
   const exitPaintMode = useOasisStore(s => s.exitPaintMode)
+  const setGroundPreset = useOasisStore(s => s.setGroundPreset)
   const clearAllGroundTiles = useOasisStore(s => s.clearAllGroundTiles)
   const customGroundPresets = useOasisStore(s => s.customGroundPresets)
   const bringPanelToFront = useOasisStore(s => s.bringPanelToFront)
@@ -94,23 +102,8 @@ export function TerrainBrushPanel() {
   const [texturesExpanded, setTexturesExpanded] = useState(false)
   const [deletedPresetIds, setDeletedPresetIds] = useState<Set<string>>(() => new Set())
   const [panelPosition, setPanelPosition] = useState<PanelPosition>(getInitialPanelPosition)
+  const [mobileViewport, setMobileViewport] = useState<boolean>(() => isMobileViewport())
 
-  const banishGroundPreset = useCallback(async (id: string) => {
-    setDeletedPresetIds(prev => {
-      const next = new Set(prev)
-      next.add(id)
-      return next
-    })
-    try {
-      await fetch('/api/library/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'ground', id }),
-      })
-    } catch (err) {
-      console.error('[TerrainBrush] Delete failed:', err)
-    }
-  }, [])
   const dragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null)
 
   useUILayer('terrain-brush', isOpen)
@@ -185,6 +178,7 @@ export function TerrainBrushPanel() {
   useEffect(() => {
     if (!isOpen) return
     const onResize = () => {
+      setMobileViewport(isMobileViewport())
       setPanelPosition(current => {
         const clamped = clampPanelPosition(current)
         persistPanelPosition(clamped)
@@ -195,32 +189,55 @@ export function TerrainBrushPanel() {
     return () => window.removeEventListener('resize', onResize)
   }, [isOpen, persistPanelPosition])
 
+  // ─═̷─ Auto-collapse the texture grid whenever paint mode is (re-)entered.
+  // External triggers like "Use as tile" from a text-to-pic spelltab call
+  // enterPaintMode + open this panel; the grid is noise at that moment.
+  useEffect(() => {
+    if (paintMode) setTexturesExpanded(false)
+  }, [paintMode, paintBrushPresetId])
+
   if (!isOpen || typeof document === 'undefined') return null
 
-  return createPortal(
-    <div
-      data-ui-panel
-      data-menu-portal="terrain-brush-panel"
-      className="fixed w-[320px] overflow-hidden rounded-lg border border-emerald-400/25 shadow-2xl"
-      style={{
-        left: panelPosition.x,
-        top: panelPosition.y,
+  const panelStyle: React.CSSProperties = mobileViewport
+    ? {
+        right: 8,
+        top: 64,
+        width: `min(${PANEL_WIDTH}px, calc(100vw - 16px))`,
+        maxHeight: 'calc(100vh - 80px)',
+        overflowY: 'auto',
         zIndex: panelZIndex,
         background: `rgba(7, 12, 10, ${Math.max(0.72, settings.uiOpacity ?? 0.85)})`,
         color: '#d7f7e7',
         backdropFilter: 'blur(16px)',
         boxShadow: '0 18px 60px rgba(0,0,0,0.45), 0 0 28px rgba(16,185,129,0.12)',
-      }}
+      }
+    : {
+        left: panelPosition.x,
+        top: panelPosition.y,
+        width: PANEL_WIDTH,
+        zIndex: panelZIndex,
+        background: `rgba(7, 12, 10, ${Math.max(0.72, settings.uiOpacity ?? 0.85)})`,
+        color: '#d7f7e7',
+        backdropFilter: 'blur(16px)',
+        boxShadow: '0 18px 60px rgba(0,0,0,0.45), 0 0 28px rgba(16,185,129,0.12)',
+      }
+
+  return createPortal(
+    <div
+      data-ui-panel
+      data-menu-portal="terrain-brush-panel"
+      className="fixed overflow-hidden rounded-lg border border-emerald-400/25 shadow-2xl"
+      style={panelStyle}
       onMouseDown={() => bringPanelToFront('terrain-brush')}
       onPointerDown={event => event.stopPropagation()}
       onClick={event => event.stopPropagation()}
     >
       <div
-        className="flex cursor-move select-none items-center justify-between border-b border-emerald-400/15 px-3 py-2"
-        onPointerDown={beginPanelDrag}
-        onPointerMove={dragPanel}
-        onPointerUp={endPanelDrag}
-        onPointerCancel={endPanelDrag}
+        className={`flex select-none items-center justify-between border-b border-emerald-400/15 px-3 py-2 ${mobileViewport ? '' : 'cursor-move'}`}
+        onPointerDown={mobileViewport ? undefined : beginPanelDrag}
+        onPointerMove={mobileViewport ? undefined : dragPanel}
+        onPointerUp={mobileViewport ? undefined : endPanelDrag}
+        onPointerCancel={mobileViewport ? undefined : endPanelDrag}
       >
         <div className="min-w-0">
           <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-200">
@@ -259,16 +276,8 @@ export function TerrainBrushPanel() {
         {mode === 'texture' ? (
           <div className="space-y-3">
             <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 p-2.5">
-              <div className="mb-2 flex items-center justify-between">
-                <div className="text-[10px] font-mono font-bold text-emerald-200">
-                  Paint Mode - {activePreset?.name || 'No Brush'}
-                </div>
-                <button
-                  onClick={exitPaintMode}
-                  className="rounded border border-red-400/25 px-1.5 py-0.5 text-[9px] font-mono text-red-300/80 hover:bg-red-400/10"
-                >
-                  Exit
-                </button>
+              <div className="mb-2 text-[10px] font-mono font-bold text-emerald-200">
+                Paint Mode - {activePreset?.name || 'No Brush'}
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[9px] font-mono text-emerald-100/55">Brush:</span>
@@ -282,8 +291,32 @@ export function TerrainBrushPanel() {
                   </button>
                 ))}
               </div>
+              <div className="mt-1.5 flex items-center gap-2">
+                <span className="text-[9px] font-mono text-emerald-100/55">Stretch:</span>
+                {[1, 2, 4, 8].map(stretch => (
+                  <button
+                    key={stretch}
+                    onClick={() => setPaintBrushStretch(stretch)}
+                    title={`Each tile renders ${stretch}x${stretch}m (texture zoomed ${stretch}x)`}
+                    className={`rounded border px-1.5 py-0.5 text-[9px] font-mono ${paintBrushStretch === stretch ? 'border-amber-300/60 bg-amber-300/20 text-amber-100' : 'border-white/10 text-emerald-100/55 hover:text-emerald-100'}`}
+                  >
+                    {stretch}x
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (paintBrushPresetId) setGroundPreset(paintBrushPresetId)
+                }}
+                disabled={!paintBrushPresetId}
+                className="mt-2 w-full rounded-md border-2 border-amber-300/55 bg-gradient-to-r from-amber-500/25 via-amber-400/30 to-amber-500/25 px-3 py-2.5 text-[12px] font-black uppercase tracking-[0.2em] text-amber-50 shadow-[0_0_22px_rgba(251,191,36,0.3)] transition hover:from-amber-500/40 hover:via-amber-400/45 hover:to-amber-500/40 hover:shadow-[0_0_36px_rgba(251,191,36,0.55)] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.035] disabled:text-white/35 disabled:shadow-none"
+                title="Paint the entire ground with the selected texture"
+              >
+                FULL PAINT
+              </button>
               <div className="mt-1.5 text-[8px] font-mono text-emerald-100/45">
-                L-click: paint | R-click: erase tile | ESC: exit
+                L-click: paint | R-click: erase | ESC: exit
               </div>
             </div>
 
@@ -296,38 +329,22 @@ export function TerrainBrushPanel() {
             </button>
 
             {texturesExpanded && (
-              <div className="space-y-1.5">
-                {allPresets.map(preset => {
+              <div className="grid grid-cols-4 gap-1.5">
+                {allPresets.filter(preset => preset.id !== 'none').map(preset => {
                   const selected = paintMode && paintBrushPresetId === preset.id
                   return (
-                    <div
+                    <button
                       key={preset.id}
-                      className={`relative flex w-full items-center gap-2 rounded-md border p-1.5 text-left transition-colors cursor-pointer ${selected ? 'border-emerald-300/60 bg-emerald-300/15' : 'border-white/10 bg-black/20 hover:border-emerald-400/30'}`}
-                      onClick={(e) => {
-                        if ((e.target as HTMLElement).closest('[data-card-action="delete"]')) return
-                        if (preset.id === 'none') exitPaintMode()
-                        else enterPaintMode(preset.id)
+                      type="button"
+                      title={preset.name}
+                      className={`relative flex items-center justify-center rounded-md border p-1 transition-colors cursor-pointer ${selected ? 'border-emerald-300/70 bg-emerald-300/15 shadow-[0_0_14px_rgba(16,185,129,0.35)]' : 'border-white/10 bg-black/20 hover:border-emerald-400/30'}`}
+                      onClick={() => {
+                        enterPaintMode(preset.id)
+                        setTexturesExpanded(false)
                       }}
                     >
-                      <GroundTextureThumb preset={preset} />
-                      <div className="min-w-0 flex-1">
-                        <div className={`truncate text-[11px] font-medium ${selected ? 'text-emerald-100' : 'text-emerald-100/70'}`}>
-                          {preset.icon} {preset.name}
-                        </div>
-                        <div className="text-[9px] font-mono text-emerald-100/35">
-                          {preset.customTextureUrl ? 'custom' : preset.assetName || 'none'}
-                        </div>
-                      </div>
-                      {preset.id !== 'none' && canMutateLibrary() && (
-                        <DeleteButton
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            void banishGroundPreset(preset.id)
-                          }}
-                          title={`Delete ${preset.name} from ground library`}
-                        />
-                      )}
-                    </div>
+                      <GroundTextureThumb preset={preset} size={16} />
+                    </button>
                   )
                 })}
               </div>

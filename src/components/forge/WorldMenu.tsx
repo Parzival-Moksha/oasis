@@ -135,7 +135,6 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
   const loadWorldState = useOasisStore(s => s.loadWorldState)
   const switchWorld = useOasisStore(s => s.switchWorld)
   const createNewWorld = useOasisStore(s => s.createNewWorld)
-  const setTerrainBrushPanelOpen = useOasisStore(s => s.setTerrainBrushPanelOpen)
   const liveObjectCount = useOasisStore(s => countLiveObjects({
     worldConjuredAssetIds: s.worldConjuredAssetIds,
     placedCatalogAssets: s.placedCatalogAssets,
@@ -635,85 +634,8 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
 
           {worldTab === 'this' && (
           <>
-          {/* SCENE CONTROLS — sky / ground / lights. Visible to:
-              - owner of any world (full edit)
-              - any visitor of an FFA / public_edit world (full sandbox per user)
-              Each button opens its own standalone panel (SkyPanel /
-              TerrainBrushPanel / LightsPanel) — these replaced the old
-              "open WizCon" path so visitors don't see the full forge surface,
-              just the controls they need. Future tiering: each button gates by
-              `unlockedAtLevel` from a per-user level system that doesn't exist
-              yet — default level=1 means all unlocked for now. When the level
-              system lands, plumb the user's level through and disable buttons
-              whose `unlockedAtLevel` is higher. */}
-          {(() => {
-            const sceneKind = (visibility === 'public_edit' || visibility === 'ffa' || visibility === 'unlisted_edit')
-            const canEditScene = canEditSettings || sceneKind
-            type SceneButton = { id: 'sky' | 'ground' | 'lights' | 'paint' | 'text3d'; label: string; icon: string; accent: string; unlockedAtLevel: number }
-            const SCENE_BUTTONS: SceneButton[] = [
-              { id: 'sky',    label: 'Sky',    icon: '🌅', accent: 'rgba(129,140,248,0.85)', unlockedAtLevel: 1 },
-              { id: 'ground', label: 'Ground', icon: '🌿', accent: 'rgba(74,222,128,0.85)',  unlockedAtLevel: 1 },
-              { id: 'lights', label: 'Lights', icon: '💡', accent: 'rgba(250,204,21,0.85)',  unlockedAtLevel: 1 },
-              { id: 'paint',  label: 'Paint',  icon: '🪄', accent: 'rgba(217,70,239,0.85)',  unlockedAtLevel: 1 },
-              { id: 'text3d', label: 'Text 3D',icon: '🔤', accent: 'rgba(245,158,11,0.85)',  unlockedAtLevel: 1 },
-            ]
-            const viewerLevel = 1  // TODO: read from profile when level system ships
-            return (
-              <div className="mb-3 rounded-md border border-white/10 bg-white/5 p-2">
-                <div className="mb-2 text-[10px] font-black uppercase tracking-[0.14em] text-white/55">Scene</div>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {SCENE_BUTTONS.map(btn => {
-                    const levelLocked = viewerLevel < btn.unlockedAtLevel
-                    const disabled = !canEditScene || levelLocked || Boolean(busyLabel)
-                    return (
-                      <button
-                        key={btn.id}
-                        onClick={() => {
-                          playClick()
-                          // Each scene button opens its own standalone panel.
-                          // Ground talks directly to the existing store flag
-                          // that TerrainBrushPanel already watches; Sky and
-                          // Lights fire CustomEvents that Scene.tsx listens for
-                          // and turns into local panel state.
-                          if (btn.id === 'ground') {
-                            setTerrainBrushPanelOpen(true)
-                          } else if (btn.id === 'paint') {
-                            useOasisStore.getState().setPaintBrushPanelOpen(true)
-                          } else if (btn.id === 'text3d') {
-                            useOasisStore.getState().setText3dPanelOpen(true)
-                          } else if (typeof window !== 'undefined') {
-                            const eventName = btn.id === 'sky' ? 'oasis:open-sky-panel' : 'oasis:open-lights-panel'
-                            window.dispatchEvent(new CustomEvent(eventName))
-                          }
-                          setIsOpen(false)
-                        }}
-                        onMouseEnter={() => { if (!disabled) useAudioManager.getState().play('buttonHover') }}
-                        disabled={disabled}
-                        title={levelLocked ? `Unlocks at level ${btn.unlockedAtLevel}` : disabled ? 'Owner or sandbox-visitor only' : `Open ${btn.label.toLowerCase()} controls`}
-                        className="group flex flex-col items-center gap-1 rounded-md border px-2 py-2 transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-45 hover:scale-[1.04] active:scale-[0.97]"
-                        style={{
-                          borderColor: disabled ? 'rgba(255,255,255,0.08)' : btn.accent,
-                          background: disabled ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)',
-                          boxShadow: disabled ? 'none' : `0 0 0 0 ${btn.accent}`,
-                        }}
-                        onMouseDown={e => { if (!disabled) (e.currentTarget as HTMLButtonElement).style.boxShadow = `0 0 14px 2px ${btn.accent}` }}
-                        onMouseUp={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 0 0 ' + btn.accent }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 0 0 ' + btn.accent }}
-                      >
-                        <span className="text-base leading-none transition-transform group-hover:scale-110 group-hover:rotate-3">{btn.icon}</span>
-                        <span className="text-[9px] font-black uppercase tracking-[0.12em]" style={{ color: disabled ? 'rgba(255,255,255,0.4)' : btn.accent }}>{btn.label}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-                {!canEditScene && (
-                  <div className="mt-1.5 text-[9px] text-white/35">
-                    {sceneKind ? 'Scene controls require owner permission.' : 'Only this world\'s owner can change scene. Sandbox visibility lets everyone edit.'}
-                  </div>
-                )}
-              </div>
-            )
-          })()}
+          {/* Scene controls (Sky / Ground / Lights / Paint / 3D Text) live in
+              the Spellbook now — the rail's `Spells` button or `B`. */}
 
           <div className="mb-3 rounded-md border border-white/10 bg-white/5 p-2">
             <div className="mb-2 text-[10px] font-black uppercase tracking-[0.14em] text-white/55">Visibility</div>

@@ -37,10 +37,42 @@ pnpm smoke:relay-hosted        # WSS relay smoke test against hosted
 - Form-to-world altar: `src/lib/google-form-spatial.ts`. Test altar with Gemini tutor scoring is shipped.
 - Mobile: real surface in `src/components/forge/MobileOasisControls.tsx` + `src/lib/mobile-controls.ts`. Per-world overrides supported.
 - Relay sidecar (Hermes/OpenClaw WSS): routes under `/api/relay/`, lib in `src/lib/relay/`. Hosted nginx upgrades exact-match `/relay` to the relay process.
-- The canonical input-state architecture lives in `src/lib/input-manager.ts` and `website/docs/developer/input-system.md`.
+- The canonical input-state architecture lives in `src/lib/input-manager.ts` and `website/docs/developer/input-system.md`. `InputManager` tracks `_previousCameraState` so transient `placement` / `paint` states can yield camera control back to the prior base mode (third-person etc).
 - 3D windows use `drei <Html transform>` and do not participate in the WebGL depth buffer.
 - Asset catalog merges baked-in TS arrays with `data/asset-catalog-extras.json` + `data/ground-presets-extras.json` overrides; UI delete via `/api/library/delete`.
 - Repo naming still mixes `Anorak`, `Anorak Pro`, and `Claude Code`.
+
+## Spellbook + Spelltabs
+
+- `PlayerSpellbookPanel` (`src/components/forge/PlayerSpellbookPanel.tsx`) is the canonical entry for scene tools (sky/ground/lights/paint/text-3d) — the old Scene-controls block was ripped out of `WorldMenu.tsx`.
+- Spell registry: `src/lib/spellbook.ts` (`SPELL_DEFS`, `SpellId`, `SpellbookPageId`). All spells default-unlocked including combat (firebolt / lightning-bolt / ice-bolt); Quest Zero is narrative-only.
+- Store: `selectedSpellId: SpellId | null` in `src/store/oasisStore.ts`, cleared on world switch. `removeAgentAvatar(id)` added to fix djinn deletion.
+- Standalone spelltabs in `src/components/forge/spelltabs/` (`CraftSpellTab`, `GeneratePicSpellTab`, `GenerateMusicSpellTab`, `GenerateVideoSpellTab`) wrap `SpellTabFrame`. Their body components are factored into `spelltabs/bodies/` so `WizardConsole` mounts the same body inside Music/Video tabs.
+- `WizardConsole` accepts `initialTab?: WizardMode` for deep-linked open. `WizardMode` now includes `'music'` and `'video'`. The Generate Image tab has a 4-sided-building toggle that prepends Conjure-style façade framing.
+- Spellbook cards: `grid-cols-2 sm:grid-cols-3 lg:grid-cols-4`, whole-card click, hover scale + select pulse + learned flash.
+- Spell tile art: `/ui/spellbook/tiles/<spell-id>.gpt2.webp` (alt `.nano2.webp` under `_alternates/`). Page backgrounds: `/ui/spellbook/frame/page-bg-<chapter>.jpg`. HUD art in `/ui/hud/` (PNG, palette-compressed). Manifest: `public/ui/spellbook/manifest.json`.
+
+## Custom Events
+
+- `oasis:open-spelltab` — `{ detail: { spellId } }`. Spellbook fires this for premium spells; standalone spelltabs only open for their own id.
+- `oasis:open-upload-panel` — `{ detail: { kind: 'audio' | 'video' | 'image' } }` → `UploadPanel` (`src/components/forge/UploadPanel.tsx`).
+- `oasis:cast-firebolt` / `oasis:cast-lightning-bolt` / `oasis:cast-ice-bolt` — bolt cast events consumed by `CombatBoltLayer`. The mobile primary-action button instead dispatches a synthetic `PointerEvent` on the canvas (treated like a real LMB).
+
+## UploadPanel + Placement
+
+- Image/video uploads enter placement with `imageFrameStyle: 'baroque'`, `imageFrameThickness: 7`. Audio uploads place a `kf_speaker` GLB with `audioUrl` attached.
+- `PlacementPending` + `CatalogPlacement` carry `imageFrameThickness` alongside `imageFrameStyle`.
+- `imageFrameStyle === 'building'` (in `WorldObjects.tsx`) renders the image as a 4-sided textured box with a square footprint — used for generated façade images.
+- Placement transients preserve the player's third-person camera: `CameraController` yields to `PlayerAvatar` when `inputState ∈ {placement, paint}` and `_previousCameraState === 'third-person'`. No noclip-style camera hijack mid-spell.
+- The placement ghost raycasts from the canvas center (crosshair) under pointer-lock, so it follows the cursor lock instead of the last hovered point.
+
+## Mobile
+
+- **One `MobilePrimaryActionButton`** bottom-right — always visible, label morphs by context (`Place` / `Fire` / spatial-web nearbyAction.label / `Select`). On tap it synthesizes a real `pointerdown` + `pointerup` + `click` PointerEvent on the canvas at screen-center coords, so R3F's onClick + the canvas LMB listeners fire natively (no event-bus indirection). Spatial-web actions are the one proximity-based exception.
+- `DASH` button (renamed from Run) sits above the WASD ring on the left side so the index finger can hold it while the thumb steers.
+- `PlayerVitalsHud` is bottom-center on desktop, top-center on mobile (no overlap with thumb-zones).
+- Center crosshair renders in TPS/noclip on mobile too (was pointer-lock-only).
+- `TerrainBrushPanel` on mobile pins top-right (`right: 8, top: 64`), texture grid is `grid-cols-4`, and includes a `FULL PAINT` button.
 
 ## Deploy
 
@@ -64,6 +96,8 @@ pnpm smoke:relay-hosted        # WSS relay smoke test against hosted
 
 - `AGENTS.md`
 - `specs/multiplayer_spec_may4.md`
+- `specs/handoff-may16-spellbook-portal-questzero.md`
+- `specs/openclaw-connect-handoff-may16.md`
 - `website/docs/reference/gotchas.md`
 - `website/docs/developer/input-system.md`
 - `website/docs/developer/phoenix-protocol.md`

@@ -8,6 +8,7 @@ import { getCameraSnapshot } from '@/lib/camera-bridge'
 import { getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
 import {
   connectToWorldRoom,
+  isMultiplayerRoomConfigured,
   type MultiplayerRoomConnection,
   type MultiplayerRoomPlayer,
 } from '@/lib/multiplayer-room-client'
@@ -409,6 +410,16 @@ export function MultiplayerPresenceLayer() {
     }
     const playerId = playerIdRef.current
     if (!playerId) return
+
+    // ░▒▓ Skip entirely when there's no configured room server (typical local
+    // dev). Without this guard the client spams reconnect attempts at
+    // ws://localhost:4519 every few seconds. Hosted has a real endpoint via
+    // window.location.hostname/rooms; local needs explicit
+    // NEXT_PUBLIC_OASIS_ROOM_URL to opt in.
+    if (!isMultiplayerRoomConfigured()) {
+      setPlayers([])
+      return
+    }
 
     let disposed = false
     let connection: MultiplayerRoomConnection | null = null

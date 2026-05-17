@@ -24,6 +24,7 @@ import {
   type WorldMeta,
 } from '../lib/forge/world-persistence'
 import { worldMutationBus } from '../lib/world-mutation-bus'
+import type { SpellId } from '../lib/spellbook'
 
 // Per-client throttle for terrain-brush broadcasts. Module-level (one per
 // browser tab) is correct here — we want this user's brush rate-limited
@@ -253,6 +254,8 @@ export interface PlacementPending {
   audioUrl?: string
   /** Frame style ID for image/video placements */
   imageFrameStyle?: string
+  /** Frame thickness multiplier for image/video placements */
+  imageFrameThickness?: number
   /** For agent window placements */
   agentType?: AgentWindowType
   npcId?: string
@@ -617,8 +620,17 @@ interface OasisState {
   /** Per-stroke playback state — { progress: 0..1, durationSec, startedAt } */
   paintStrokePlayback: Record<string, { progress: number; durationSec: number; startedAt: number }>
 
+  // ─═̷─═̷─📖 SPELLBOOK / ARMED SPELL ─═̷─═̷─📖
+  /** Spell selected from the spellbook. Drives PlayerVitalsHud display + combat cast routing. */
+  selectedSpellId: SpellId | null
+
   // ─═̷─═̷─🎨 PAINT TOOL UI STATE ─═̷─═̷─🎨
   paintBrushPanelOpen: boolean
+  /** Texture stretch for ground paint. 1 = each cell is 1m. 2/4/8 stretches the
+   *  texture and pre-paints a larger footprint (every Nth cell, each rendered
+   *  at NxN meters). Lets manual paint match the agent's set_ground_preset
+   *  zoomed-out look. */
+  paintBrushStretch: number
   text3dPanelOpen: boolean
   /** When true, a held-button is forcing paint mode (mobile or keyboard). */
   paintHeldActive: boolean
@@ -749,8 +761,8 @@ interface OasisState {
   enterPlacementMode: (pending: PlacementPending) => void
   cancelPlacement: () => void
   placeCatalogAssetAt: (catalogId: string, name: string, path: string, defaultScale: number, position: [number, number, number]) => string
-  placeImageAt: (name: string, imageUrl: string, position: [number, number, number], frameStyle?: string) => void
-  placeVideoAt: (name: string, videoUrl: string, position: [number, number, number]) => void
+  placeImageAt: (name: string, imageUrl: string, position: [number, number, number], frameStyle?: string, frameThickness?: number) => void
+  placeVideoAt: (name: string, videoUrl: string, position: [number, number, number], frameStyle?: string, frameThickness?: number) => void
   updateCatalogPlacement: (id: string, updates: Partial<import('../lib/conjure/types').CatalogPlacement>) => void
   placeLibrarySceneAt: (sceneId: string, position: [number, number, number]) => void
   setPlacementVfxType: (type: PlacementVfxType) => void
@@ -833,8 +845,12 @@ interface OasisState {
   applyRemoteText3dAdded: (object: Text3DObject) => void
   applyRemoteText3dUpdated: (id: string, updates: Partial<Text3DObject>) => void
   applyRemoteText3dRemoved: (id: string) => void
+  // ─═̷─═̷─📖 SPELLBOOK ACTIONS ─═̷─═̷─📖
+  setSelectedSpellId: (id: SpellId | null) => void
+
   // ─═̷─═̷─🎨 PAINT TOOL UI ACTIONS ─═̷─═̷─🎨
   setPaintBrushPanelOpen: (open: boolean) => void
+  setPaintBrushStretch: (stretch: number) => void
   setText3dPanelOpen: (open: boolean) => void
   setPaintHeldActive: (active: boolean) => void
   updatePaintBrushSettings: (updates: Partial<OasisState['paintBrushSettings']>) => void
@@ -881,6 +897,7 @@ interface OasisState {
   _preFocusCameraState: { position: [number, number, number]; target: [number, number, number] } | null
   addAgentWindow: (window: AgentWindow) => void
   removeAgentWindow: (id: string) => void
+  removeAgentAvatar: (id: string) => void
   updateAgentWindow: (id: string, partial: Partial<AgentWindow>) => void
   setAgentWindowAnchorMode: (id: string, anchorMode: LinkedWindowAnchorMode) => void
   assignAvatarToAgentWindow: (windowId: string, avatarUrl: string | null) => string | null
@@ -1188,7 +1205,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
   paintStrokes: [],
   text3dObjects: [],
   paintStrokePlayback: {},
+  selectedSpellId: null,
   paintBrushPanelOpen: false,
+  paintBrushStretch: 1,
   text3dPanelOpen: false,
   paintHeldActive: false,
   paintBrushSettings: {
@@ -2160,6 +2179,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
     }))
   },
 
+  // ─═̷─═̷─📖 SPELLBOOK ACTIONS ─═̷─═̷─📖
+  setSelectedSpellId: (id) => set({ selectedSpellId: id }),
+
   // ─═̷─═̷─🎨 PAINT TOOL UI ACTIONS ─═̷─═̷─🎨
   setPaintBrushPanelOpen: (open) => {
     // Mutual exclusion: opening the paint wand retracts the terrain brush
@@ -2396,11 +2418,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
     return placedId
   },
 
-  placeImageAt: (name, imageUrl, position, frameStyle) => {
+  placeImageAt: (name, imageUrl, position, frameStyle, frameThickness) => {
     let placedPlacement: CatalogPlacement | null = null
     withUndo(`Place ${name}`, '🖼️', () => {
       const id = `image-${Date.now()}`
-      const placement: CatalogPlacement = { id, catalogId: 'generated-image', name, glbPath: '', position, scale: 1, imageUrl, ...(frameStyle && { imageFrameStyle: frameStyle }) }
+      const placement: CatalogPlacement = { id, catalogId: 'generated-image', name, glbPath: '', position, scale: 1, imageUrl, ...(frameStyle && { imageFrameStyle: frameStyle }), ...(frameThickness !== undefined && { imageFrameThickness: frameThickness }) }
       placedPlacement = placement
       set(state => ({
         placedCatalogAssets: [...state.placedCatalogAssets, placement],
@@ -2427,11 +2449,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
     awardXp('PLACE_CATALOG_OBJECT', get().activeWorldId)
   },
 
-  placeVideoAt: (name: string, videoUrl: string, position: [number, number, number]) => {
+  placeVideoAt: (name: string, videoUrl: string, position: [number, number, number], frameStyle?: string, frameThickness?: number) => {
     let placedPlacement: CatalogPlacement | null = null
     withUndo(`Place video ${name}`, '🎬', () => {
       const id = `video-${Date.now()}`
-      const placement: CatalogPlacement = { id, catalogId: 'video', name, glbPath: '', position, scale: 2, videoUrl }
+      const placement: CatalogPlacement = { id, catalogId: 'video', name, glbPath: '', position, scale: 2, videoUrl, ...(frameStyle && { imageFrameStyle: frameStyle }), ...(frameThickness !== undefined && { imageFrameThickness: frameThickness }) }
       placedPlacement = placement
       set(state => ({
         placedCatalogAssets: [...state.placedCatalogAssets, placement],
@@ -2715,18 +2737,34 @@ export const useOasisStore = create<OasisState>((set, get) => {
   setPaintBrushSize: (size) => {
     set({ paintBrushSize: Math.max(1, Math.min(5, size)) })
   },
+  setPaintBrushStretch: (stretch) => {
+    // Lock to powers of 2 within 1..8 — matches the UI choices.
+    const valid = [1, 2, 4, 8]
+    const clamped = valid.includes(stretch) ? stretch : 1
+    set({ paintBrushStretch: clamped })
+  },
   paintGroundArea: (cx, cz) => {
-    const { paintBrushPresetId, paintBrushSize, groundTiles } = get()
+    const { paintBrushPresetId, paintBrushSize, paintBrushStretch, groundTiles } = get()
     if (!paintBrushPresetId) return
+    const stretch = Math.max(1, Math.floor(paintBrushStretch || 1))
+    // ─═̷─ Stretched brush stride: each cell renders at stretchxstretch m, so
+    // we paint at stride=stretch and snap the center to that lattice. Brush
+    // footprint expands accordingly: 3x3 brush @ 2x stretch → 3x3 grid of 2m
+    // cells = 6m covered area. ─═̷─
     const half = Math.floor(paintBrushSize / 2)
     const newTiles = { ...groundTiles }
+    // Snap center to the stretch lattice so neighbor tiles align cleanly.
+    const baseX = Math.floor(cx / stretch) * stretch
+    const baseZ = Math.floor(cz / stretch) * stretch
+    // Cell value encoding: bare presetId for stretch=1 (back-compat with all
+    // existing saves), `presetId@stretch` for stretch>1.
+    const cellValue = stretch === 1 ? paintBrushPresetId : `${paintBrushPresetId}@${stretch}`
     for (let dx = -half; dx <= half; dx++) {
       for (let dz = -half; dz <= half; dz++) {
-        const tx = Math.floor(cx) + dx
-        const tz = Math.floor(cz) + dz
-        // Clamp to world bounds: -50 to +49
+        const tx = baseX + dx * stretch
+        const tz = baseZ + dz * stretch
         if (tx < -50 || tx > 49 || tz < -50 || tz > 49) continue
-        newTiles[`${tx},${tz}`] = paintBrushPresetId
+        newTiles[`${tx},${tz}`] = cellValue
       }
     }
     set({ groundTiles: newTiles })
@@ -3175,7 +3213,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
     }
 
     // ░▒▓ Block saves during transition — prevents empty state nuke ▓▒░
-    set({ _worldReady: false })
+    // Also clear the armed spell — it belonged to the previous world's context.
+    set({ _worldReady: false, selectedSpellId: null })
 
     // Switch to new world
     setActiveWorldId(worldId, { publish: true })
@@ -3454,6 +3493,26 @@ export const useOasisStore = create<OasisState>((set, get) => {
     set(state => ({
       placedAgentWindows: state.placedAgentWindows.map(w => w.id === id ? { ...w, ...partial } : w),
     }))
+    setTimeout(() => get().saveWorldState(), 100)
+  },
+  removeAgentAvatar: (id) => {
+    set(state => {
+      const nextTransforms = { ...state.transforms }
+      delete nextTransforms[id]
+      const nextAudio = { ...state.liveAgentAvatarAudio }
+      delete nextAudio[id]
+      return {
+        placedAgentAvatars: state.placedAgentAvatars.filter(a => a.id !== id),
+        placedAgentWindows: state.placedAgentWindows.map(w =>
+          w.linkedAvatarId === id ? { ...w, linkedAvatarId: undefined } : w,
+        ),
+        transforms: nextTransforms,
+        liveAgentAvatarAudio: nextAudio,
+        selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
+        inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
+      }
+    })
+    worldMutationBus.broadcast({ kind: 'object_removed', payload: { id } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   setAgentWindowAnchorMode: (id, anchorMode) => {

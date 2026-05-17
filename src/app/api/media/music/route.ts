@@ -94,6 +94,15 @@ export async function POST(request: NextRequest) {
     })
   } catch (err) {
     console.error('[Media:Music] Error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    const message = err instanceof Error ? err.message : String(err)
+    const cause = err instanceof Error && err.cause ? String(err.cause) : ''
+    return NextResponse.json({
+      error: 'Music generation failed',
+      detail: message,
+      cause,
+      hint: message.includes('fetch failed')
+        ? 'Network reach to api.elevenlabs.io failed. Verify ELEVENLABS_API_KEY is set and the endpoint is reachable.'
+        : undefined,
+    }, { status: 502 })
   }
 }

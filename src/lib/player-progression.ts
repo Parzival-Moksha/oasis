@@ -106,12 +106,23 @@ export function computePlayerStats(skills: PlayerSkillSet): PlayerComputedStats 
   }
 }
 
+// ░▒▓ Mana regen base rate. The multiplier from PlayerComputedStats defaults
+// to 1.0 (focus skill = 0); a base interval of 100ms means default 10
+// mana/sec, matching the test-friendly cadence requested. Focus skill scales
+// from there: multiplier 1.35 (focus 1) → 13.5 mana/sec, multiplier 2.05
+// (focus 3) → 20.5 mana/sec, capped by the 0.1..10 multiplier clamp below
+// at 100 mana/sec max. Cast costs (1 mana/spell) are unchanged.
+const MANA_REGEN_BASE_INTERVAL_MS = 100
+
 export function computeManaRechargeTicks(elapsedMs: number, manaRegenMultiplier: number): number {
   const safeElapsedMs = Math.max(0, Math.min(5000, Math.floor(elapsedMs)))
   const safeMultiplier = Math.max(0.1, Math.min(10, manaRegenMultiplier))
-  const tickIntervalMs = 1000 / safeMultiplier
+  const tickIntervalMs = MANA_REGEN_BASE_INTERVAL_MS / safeMultiplier
   return Math.max(0, Math.floor(safeElapsedMs / tickIntervalMs))
 }
+
+/** Exposed for client-side parity with the server's tick math (PlayerVitalsHud). */
+export const MANA_REGEN_BASE_INTERVAL_MS_EXPORT = MANA_REGEN_BASE_INTERVAL_MS
 
 export function summarizeSkill(skill: PlayerSkillKey, skills: PlayerSkillSet): string {
   const stats = computePlayerStats(skills)

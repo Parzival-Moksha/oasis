@@ -25,7 +25,9 @@ describe('Quest Zero NPC pipeline registry', () => {
 
   it('connects Firebolt unlock, targets, and achievements to Quest Zero', () => {
     expect(SPELL_DEFS.firebolt.achievementId).toBe('learn-firebolt')
-    expect(isSpellDefaultUnlocked('firebolt')).toBe(false)
+    // Combat spells default to unlocked now — Quest Zero is the narrative
+    // intro to Firebolt, not a gate. The unlock achievement still exists.
+    expect(isSpellDefaultUnlocked('firebolt')).toBe(true)
     expect(ACHIEVEMENT_DEFS['learn-firebolt'].name).toBe('Keeper of the First Flame')
     expect(QUEST_ZERO_STEP_DEFS['unlock-firebolt'].unlocksSpellId).toBe('firebolt')
     expect(QUEST_ZERO_TARGET_STEP_IDS).toEqual([
@@ -49,7 +51,8 @@ describe('Quest Zero NPC pipeline registry', () => {
     expect(SPELL_DEFS['ground-elevation'].category).toBe('world-root')
     expect(SPELL_DEFS['summon-openclaw'].category).toBe('agent')
     expect(isSpellDefaultUnlocked('brush-wand')).toBe(true)
-    expect(isSpellDefaultUnlocked('lightning-bolt')).toBe(false)
-    expect(isSpellDefaultUnlocked('ice-bolt')).toBe(false)
+    // All spells default-unlocked under worldbuilder-first onboarding.
+    expect(isSpellDefaultUnlocked('lightning-bolt')).toBe(true)
+    expect(isSpellDefaultUnlocked('ice-bolt')).toBe(true)
   })
 })

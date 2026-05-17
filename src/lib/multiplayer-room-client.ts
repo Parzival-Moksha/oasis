@@ -55,18 +55,26 @@ interface RoomStateSchema {
   }
 }
 
-function resolveRoomEndpoint(): string {
+function resolveRoomEndpoint(): string | null {
   const explicit = process.env.NEXT_PUBLIC_OASIS_ROOM_URL?.trim()
   if (explicit) return explicit
   if (typeof window !== 'undefined') {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = window.location.hostname || 'localhost'
     const isLocal = host === 'localhost' || host === '127.0.0.1'
-    // 4519 locally — 4517 is the OpenClaw/Hermes relay sidecar.
-    if (isLocal) return `${protocol}//${host}:4519`
+    // ░▒▓ Local dev: skip the multiplayer room server unless explicitly opted
+    // in via NEXT_PUBLIC_OASIS_ROOM_URL. Without this guard the client tries
+    // ws://localhost:4519 (the colyseus-style room server that doesn't run
+    // in standard `pnpm dev`), failing with `joinOrCreate failed` on every
+    // reconnect tick and flooding the console.
+    if (isLocal) return null
     return `${protocol}//${host}/rooms`
   }
-  return 'ws://localhost:4519'
+  return null
+}
+
+export function isMultiplayerRoomConfigured(): boolean {
+  return resolveRoomEndpoint() !== null
 }
 
 function snapshotPlayer(sessionId: string, raw: RoomPlayerSchema): MultiplayerRoomPlayer {
@@ -113,6 +121,9 @@ const log = (...args: unknown[]) => {
 
 export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Promise<MultiplayerRoomConnection> {
   const endpoint = resolveRoomEndpoint()
+  if (!endpoint) {
+    throw new Error('Multiplayer room not configured (set NEXT_PUBLIC_OASIS_ROOM_URL to enable)')
+  }
   log('connecting to', endpoint, 'worldId=', args.worldId)
   const client = new Client(endpoint)
 

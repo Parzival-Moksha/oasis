@@ -13,12 +13,17 @@ import { deriveImageTitle } from '@/lib/conjure/derive-image-title'
 import { emitWorldEvent } from '@/lib/mcp/world-events'
 
 const IMAGINE_MODELS: Record<string, { id: string; label: string }> = {
-  'gemini-flash': { id: 'google/gemini-3.1-flash-image-preview', label: 'Gemini Flash' },
-  'riverflow': { id: 'sourceful/riverflow-v2-fast', label: 'Riverflow v2' },
-  'flux-klein': { id: 'black-forest-labs/flux.2-klein-4b', label: 'FLUX Klein' },
-  'seedream': { id: 'bytedance-seed/seedream-4.5', label: 'Seedream 4.5' },
+  'nano-banana-2':   { id: 'google/gemini-3.1-flash-image-preview', label: 'Nano Banana 2' },
+  'nano-banana-pro': { id: 'google/gemini-3-pro-image-preview',     label: 'Nano Banana Pro' },
+  'gpt-image-2':     { id: 'openai/gpt-5.4-image-2',                label: 'GPT Image 2' },
+  'riverflow':       { id: 'sourceful/riverflow-v2-fast',           label: 'Riverflow v2' },
+  'flux-klein':      { id: 'black-forest-labs/flux.2-klein-4b',     label: 'FLUX Klein' },
+  'seedream':        { id: 'bytedance-seed/seedream-4.5',           label: 'Seedream 4.5' },
+  // Legacy key kept so older clients with `model: 'gemini-flash'` cached in
+  // localStorage keep working — points at the same OpenRouter ID.
+  'gemini-flash':    { id: 'google/gemini-3.1-flash-image-preview', label: 'Nano Banana 2' },
 }
-const DEFAULT_MODEL = 'gemini-flash'
+const DEFAULT_MODEL = 'nano-banana-2'
 const IMAGE_DIR = 'generated-images'
 
 // ═══════════════════════════════════════════════════════════════════════════════

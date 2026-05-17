@@ -491,6 +491,21 @@ export function ImagePlaneRenderer({ imageUrl, scale, frameStyle, frameThickness
   const w = scale * aspect
   const h = scale
 
+  // ░▒▓ 4-SIDED BUILDING — image becomes a textured rectangular building ▓▒░
+  // Footprint is a square sized to the image height. All four walls share the
+  // same image (orthographic façade convention). Top/bottom hidden by camera.
+  if (frameStyle === 'building') {
+    const wallSize = h
+    return (
+      <group position={[0, h / 2, 0]}>
+        <mesh>
+          <boxGeometry args={[wallSize, h, wallSize]} />
+          <meshStandardMaterial map={texture} side={THREE.DoubleSide} roughness={0.85} metalness={0.0} />
+        </mesh>
+      </group>
+    )
+  }
+
   return (
     <group position={[0, h / 2, 0]}>
       {/* The image itself — vertical, centered */}
@@ -2313,6 +2328,7 @@ function PlacementOverlay() {
   const placeLightAt = useOasisStore(s => s.placeLightAt)
   const placeSpatialWebObjectAt = useOasisStore(s => s.placeSpatialWebObjectAt)
   const cancelPlacement = useOasisStore(s => s.cancelPlacement)
+  const camera = useThree(s => s.camera)
   const [hoverPos, setHoverPos] = useState<[number, number, number] | null>(null)
 
   const handleClick = useCallback((e: any) => {
@@ -2336,9 +2352,9 @@ function PlacementOverlay() {
       const conjId = `conjured-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
       placeCatalogAssetAt(conjId, placementPending.name, placementPending.path, placementPending.defaultScale || 1, pos)
     } else if (placementPending.type === 'image' && placementPending.imageUrl) {
-      placeImageAt(placementPending.name, placementPending.imageUrl, pos, placementPending.imageFrameStyle)
+      placeImageAt(placementPending.name, placementPending.imageUrl, pos, placementPending.imageFrameStyle, placementPending.imageFrameThickness)
     } else if (placementPending.type === 'video' && placementPending.videoUrl) {
-      placeVideoAt(placementPending.name, placementPending.videoUrl, pos)
+      placeVideoAt(placementPending.name, placementPending.videoUrl, pos, placementPending.imageFrameStyle, placementPending.imageFrameThickness)
     } else if (placementPending.type === 'library' && placementPending.sceneId) {
       placeLibrarySceneAt(placementPending.sceneId, pos)
     } else if (placementPending.type === 'portal' && placementPending.portalVariant) {
@@ -2447,6 +2463,41 @@ function PlacementOverlay() {
     const point = e.point as THREE.Vector3
     setHoverPos([point.x, 0, point.z])
   }, [])
+
+  // ─═̷─ Camera-forward → ground raycast, used by both the mobile PLACE button
+  // and the every-frame ghost-tracking under pointer-lock.
+  const computeCrosshairGroundPos = useCallback((): [number, number, number] => {
+    const camPos = camera.position
+    const forward = new THREE.Vector3()
+    camera.getWorldDirection(forward)
+    if (forward.y < -0.01) {
+      const t = -camPos.y / forward.y
+      return [camPos.x + t * forward.x, 0, camPos.z + t * forward.z]
+    }
+    return [camPos.x + 5 * forward.x, 0, camPos.z + 5 * forward.z]
+  }, [camera])
+
+  // ─═̷─ Note: the old `oasis:place-here-mobile` event listener was removed.
+  // The mobile primary-action button now synthesizes a real PointerEvent
+  // stack on the canvas instead of dispatching a custom event, so R3F's
+  // onClick on the placement overlay fires natively — same code path as
+  // desktop LMB. No event-bus indirection needed.
+
+  // ─═̷─ Ghost-follows-crosshair while pointer-locked. Document-level mousemove
+  // does NOT fire under pointer lock, so the R3F onPointerMove on the invisible
+  // placement plane can't update hoverPos. We sample camera-forward → ground
+  // every frame and keep the ghost glued to where the crosshair is pointing.
+  useFrame(() => {
+    if (!placementPending) return
+    if (!useInputManager.getState().pointerLocked) return
+    const pos = computeCrosshairGroundPos()
+    setHoverPos(current => {
+      if (current && Math.abs(current[0] - pos[0]) < 0.02 && Math.abs(current[2] - pos[2]) < 0.02) {
+        return current
+      }
+      return pos
+    })
+  })
 
   // Right-click = cancel placement mode
   const handleRightClick = useCallback((e: any) => {

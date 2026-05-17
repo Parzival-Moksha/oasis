@@ -154,11 +154,16 @@ export function PlayerAvatar({
 }: PlayerAvatarProps) {
   const { settings } = useContext(SettingsContext)
   const inputState = useInputManager(s => s.inputState)
+  const previousCameraState = useInputManager(s => s._previousCameraState)
   const pointerLocked = useInputManager(s => s.pointerLocked)
   const terrainHeights = useOasisStore(s => s.terrainHeights)
   const activeWorldId = useOasisStore(s => s.activeWorldId)
   const worldReady = useOasisStore(s => s._worldReady)
+  // ─═̷─ Third-person camera logic also runs during transient placement / paint
+  // when the base camera was third-person — otherwise CameraController would
+  // hijack and the player feels like they got teleported to noclip mid-spell.
   const isThirdPersonActive = inputState === 'third-person'
+    || ((inputState === 'placement' || inputState === 'paint') && previousCameraState === 'third-person')
   const groupRef = useRef<THREE.Group>(null)
   const vrmRef = useRef<VRM | null>(null)
   const [vrm, setVrm] = useState<VRM | null>(null)

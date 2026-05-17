@@ -106,7 +106,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No request_id or video in response' }, { status: 502 })
   } catch (err) {
     console.error('[Media:Video] Error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    // Surface the real cause to the UI instead of a generic 500. Most
+    // common: undici "fetch failed" = DNS / TLS / endpoint unreachable
+    // (e.g. queue.fal.run not resolvable, or the LTX-2.3 path is wrong).
+    const message = err instanceof Error ? err.message : String(err)
+    const cause = err instanceof Error && err.cause ? String(err.cause) : ''
+    return NextResponse.json({
+      error: 'Video generation failed',
+      detail: message,
+      cause,
+      hint: message.includes('fetch failed')
+        ? 'Network reach to fal.ai failed. Verify FAL_KEY, check if queue.fal.run is reachable from this host, and confirm fal-ai/ltx-2.3 is the right model path on your fal account.'
+        : undefined,
+    }, { status: 502 })
   }
 }
 

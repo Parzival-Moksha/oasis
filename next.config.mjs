@@ -9,6 +9,14 @@ const nextConfig = {
   // Blue-green builds: NEXT_DIST_DIR=.next-staging for dev:agent mode
   ...(process.env.NEXT_DIST_DIR && { distDir: process.env.NEXT_DIST_DIR }),
 
+  // ─═̷─═̷─🌐─═̷─═̷─ Run instrumentation.ts on Node startup. ─═̷─═̷─🌐─═̷─═̷─
+  // Required on Next 14.x (becomes default in Next 15). Without this flag
+  // the instrumentation hook is silently skipped — the IPv4 DNS-order patch
+  // that fixes ENOTFOUND on half-IPv6 Windows networks would not run.
+  experimental: {
+    instrumentationHook: true,
+  },
+
   // Transpile Three.js packages
   transpilePackages: ['three'],
 

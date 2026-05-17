@@ -60,6 +60,11 @@ public/generated-voices/
 public/generated-music/
 data/generated-voice-library.json
 public/ui/wizard-textures/generated/
+# HUD + spellbook visual iteration workshop (in-flux; only commit final picks
+# into public/ui/hud/ and public/ui/spellbook/frame/ proper, not this folder)
+public/ui/hud/iterations/
+# Screenshot dump from the tester subagent (regenerated on each test run)
+[0-9][0-9]-*.png
 
 # User-uploaded media (images, videos, audio via /api/media/upload)
 public/images/*
@@ -156,6 +161,11 @@ tools/anorak-memory.md
 /tmp-*.png
 /viewport-screenshot.png
 public/viewport-screenshot.png
+# Tester / Playwright screenshots dumped at repo root (vary per run; not artifacts)
+/*.png
+/*.jpg
+# Playwright accessibility snapshots dumped at repo root (e.g. config-snapshot.md)
+/*-snapshot.md
 
 # Personal runtime state
 data/anorak-pro*.local.json

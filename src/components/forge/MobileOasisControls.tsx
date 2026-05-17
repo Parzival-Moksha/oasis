@@ -6,6 +6,7 @@ import { isProbablyMobileDevice, useMobileControls } from '@/lib/mobile-controls
 import { getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
 import { findNearestSpatialWebObject, SPATIAL_WEB_INTERACTION_RADIUS, type SpatialWebObject } from '@/lib/spatial-web'
 import { useOasisStore } from '@/store/oasisStore'
+import type { SpellId } from '@/lib/spellbook'
 
 const PAD_RADIUS = 48
 const MOBILE_LOOK_MULTIPLIER = 2.1
@@ -206,6 +207,31 @@ export function MobileOasisControls({
         onPointerCancel={endLook}
       />
 
+      {/* ░▒▓ DASH button — above the WASD ring. Index finger holds it down
+          while thumb steers the joystick. Right thumb stays free for action
+          buttons on the right side. ▓▒░ */}
+      <button
+        type="button"
+        className="pointer-events-auto absolute bottom-40 left-5 h-12 w-28 touch-none rounded-lg border border-amber-200/45 bg-amber-950/72 text-[11px] font-black uppercase tracking-[0.18em] text-amber-100 shadow-[0_0_28px_rgba(251,191,36,0.22)] backdrop-blur-sm"
+        onPointerDown={event => {
+          event.preventDefault()
+          event.stopPropagation()
+          setSprint(true)
+        }}
+        onPointerUp={event => {
+          event.preventDefault()
+          event.stopPropagation()
+          setSprint(false)
+        }}
+        onPointerCancel={event => {
+          event.preventDefault()
+          event.stopPropagation()
+          setSprint(false)
+        }}
+      >
+        Dash
+      </button>
+
       <div
         className="pointer-events-auto absolute bottom-6 left-5 h-28 w-28 touch-none rounded-full border border-cyan-200/24 bg-black/35 shadow-[0_0_30px_rgba(34,211,238,0.16)] backdrop-blur-sm"
         onPointerDown={event => {
@@ -234,67 +260,138 @@ export function MobileOasisControls({
       </div>
 
       <div className="pointer-events-auto absolute bottom-7 right-5 flex touch-none flex-col gap-2">
-        {nearbyAction && (
-          <button
-            type="button"
-            disabled={nearbyAction.disabled}
-            className="h-12 min-w-28 touch-none rounded-lg border border-cyan-200/45 bg-cyan-950/72 px-4 text-[11px] font-black uppercase tracking-[0.14em] text-cyan-50 shadow-[0_0_32px_rgba(34,211,238,0.22)] backdrop-blur-sm disabled:border-slate-300/20 disabled:bg-slate-950/55 disabled:text-slate-300/70"
-            onPointerDown={event => {
-              event.preventDefault()
-              event.stopPropagation()
-              if (nearbyAction.disabled) return
-              void useOasisStore.getState().interactSpatialWebObject(nearbyAction.id, 'press')
-            }}
-          >
-            {nearbyAction.label}
-          </button>
-        )}
-        {spellControlsEnabled && (
-          <>
-            <MobileFireboltButton />
-            <MobileManaButton />
-          </>
-        )}
-        <button
-          type="button"
-          className="h-11 min-w-20 touch-none rounded-lg border border-amber-200/35 bg-black/45 px-4 text-[11px] font-black uppercase tracking-[0.14em] text-amber-100 shadow-[0_0_28px_rgba(251,191,36,0.16)] backdrop-blur-sm"
-          onPointerDown={event => {
-            event.preventDefault()
-            event.stopPropagation()
-            setSprint(true)
-          }}
-          onPointerUp={event => {
-            event.preventDefault()
-            event.stopPropagation()
-            setSprint(false)
-          }}
-          onPointerCancel={event => {
-            event.preventDefault()
-            event.stopPropagation()
-            setSprint(false)
-          }}
-        >
-          Run
-        </button>
+        <MobilePrimaryActionButton nearbyAction={nearbyAction} spellControlsEnabled={spellControlsEnabled} />
+        {spellControlsEnabled && <MobileManaButton />}
         <MobilePaintHoldButton />
       </div>
     </div>
   )
 }
 
-function MobileFireboltButton() {
+const COMBAT_SPELL_IDS: SpellId[] = ['firebolt', 'lightning-bolt', 'ice-bolt']
+function isCombatSpell(id: SpellId | null): boolean {
+  return id !== null && COMBAT_SPELL_IDS.includes(id)
+}
+
+// ─═̷─═̷─🖱─═̷─═̷─{ MOBILE PRIMARY-ACTION BUTTON — the touch equivalent of LMB }─═̷─═̷─🖱─═̷─═̷─
+//
+// One button, bottom-right, ALWAYS visible. On tap it synthesizes a real
+// PointerEvent stack (pointerdown + pointerup + click) on the canvas DOM
+// element at screen-center coordinates — i.e. exactly where the mobile
+// crosshair points. React Three Fiber's event system handles synthetic
+// events through the normal pipeline: it runs the raycaster against the
+// current camera, finds the hit, and fires the matching `onClick` /
+// `onPointerDown` handler. Means we route through the SAME code paths as
+// desktop LMB — no per-interaction wiring required.
+//
+// Label morphs based on context (PLACE / FIRE / SELECT / spatial-web
+// custom). Spatial-web interactions are the one exception: those fire by
+// proximity, not by aim, so when a nearbyAction is present we call the
+// store helper directly instead of synthesizing a click.
+//
+// Pro-studio precedent: Unity/Unreal/Godot input systems all abstract input
+// source from action. This is the minimal-refactor equivalent.
+// ─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─
+
+function dispatchSyntheticLeftClick(): boolean {
+  if (typeof document === 'undefined') return false
+  const canvas = document.querySelector('canvas') as HTMLCanvasElement | null
+  if (!canvas) return false
+  const rect = canvas.getBoundingClientRect()
+  const clientX = rect.left + rect.width / 2
+  const clientY = rect.top + rect.height / 2
+  const opts: PointerEventInit = {
+    clientX,
+    clientY,
+    button: 0,
+    buttons: 1,
+    bubbles: true,
+    cancelable: true,
+    pointerId: 1,
+    pointerType: 'mouse',
+    isPrimary: true,
+  }
+  canvas.dispatchEvent(new PointerEvent('pointerdown', opts))
+  canvas.dispatchEvent(new PointerEvent('pointerup', { ...opts, buttons: 0 }))
+  canvas.dispatchEvent(new MouseEvent('click', { clientX, clientY, button: 0, bubbles: true, cancelable: true }))
+  return true
+}
+
+function MobilePrimaryActionButton({
+  nearbyAction,
+  spellControlsEnabled,
+}: {
+  nearbyAction: { id: string; label: string; disabled: boolean } | null
+  spellControlsEnabled: boolean
+}) {
+  const placementPending = useOasisStore(s => s.placementPending)
+  const selectedSpellId = useOasisStore(s => s.selectedSpellId)
+  const paintMode = useOasisStore(s => s.paintMode)
+
+  // Compute label + tone + handler from current context.
+  let label = 'Select'
+  let tone: 'amber' | 'amber-pulse' | 'rose' | 'cyan' | 'emerald' = 'amber'
+  let disabled = false
+  let onTap: () => void
+
+  if (nearbyAction) {
+    label = nearbyAction.label
+    tone = 'cyan'
+    disabled = nearbyAction.disabled
+    onTap = () => {
+      if (nearbyAction.disabled) return
+      void useOasisStore.getState().interactSpatialWebObject(nearbyAction.id, 'press')
+    }
+  } else if (placementPending) {
+    label = 'Place'
+    tone = 'amber-pulse'
+    onTap = () => { dispatchSyntheticLeftClick() }
+  } else if (spellControlsEnabled && isCombatSpell(selectedSpellId) && selectedSpellId) {
+    // FIRE button reads the spell name from the registry — works for firebolt
+    // today, ready for lightning/ice once their cast paths land.
+    label = selectedSpellId === 'firebolt' ? 'Fire'
+      : selectedSpellId === 'lightning-bolt' ? 'Bolt'
+      : 'Ice'
+    tone = 'rose'
+    onTap = () => { dispatchSyntheticLeftClick() }
+  } else if (paintMode) {
+    label = 'Paint'
+    tone = 'emerald'
+    onTap = () => { dispatchSyntheticLeftClick() }
+  } else {
+    onTap = () => { dispatchSyntheticLeftClick() }
+  }
+
+  const toneClasses: Record<typeof tone, string> = {
+    'amber':       'border-amber-200/55 bg-amber-900/68 text-amber-50  shadow-[0_0_24px_rgba(251,191,36,0.28)]',
+    'amber-pulse': 'border-amber-200/75 bg-amber-800/80 text-amber-50  shadow-[0_0_24px_rgba(251,191,36,0.4)]',
+    'rose':        'border-rose-300/65  bg-rose-950/78  text-rose-50   shadow-[0_0_28px_rgba(244,63,94,0.35)]',
+    'cyan':        'border-cyan-200/55  bg-cyan-950/72  text-cyan-50   shadow-[0_0_28px_rgba(34,211,238,0.3)]',
+    'emerald':     'border-emerald-200/55 bg-emerald-950/72 text-emerald-50 shadow-[0_0_28px_rgba(16,185,129,0.32)]',
+  }
+
   return (
-    <button
-      type="button"
-      className="h-14 min-w-24 touch-none rounded-lg border border-orange-200/45 bg-orange-950/72 px-4 text-[11px] font-black uppercase tracking-[0.14em] text-orange-50 shadow-[0_0_34px_rgba(249,115,22,0.24)] backdrop-blur-sm"
-      onPointerDown={event => {
-        event.preventDefault()
-        event.stopPropagation()
-        window.dispatchEvent(new CustomEvent('oasis:cast-firebolt'))
-      }}
-    >
-      Fire
-    </button>
+    <>
+      <style>{`
+        @keyframes oasisPrimaryActionPulse {
+          0%, 100% { box-shadow: 0 0 18px rgba(251,191,36,0.4), inset 0 0 4px rgba(251,191,36,0.55); transform: scale(1); }
+          50%      { box-shadow: 0 0 38px rgba(251,191,36,0.85), inset 0 0 8px rgba(251,191,36,0.9); transform: scale(1.04); }
+        }
+      `}</style>
+      <button
+        type="button"
+        disabled={disabled}
+        className={`h-16 min-w-28 touch-none rounded-lg border-2 px-4 text-[12px] font-black uppercase tracking-[0.16em] backdrop-blur-sm transition disabled:cursor-not-allowed disabled:border-white/15 disabled:bg-black/30 disabled:text-white/40 disabled:shadow-none ${toneClasses[tone]}`}
+        style={tone === 'amber-pulse' ? { animation: 'oasisPrimaryActionPulse 1400ms ease-in-out infinite' } : undefined}
+        onPointerDown={event => {
+          event.preventDefault()
+          event.stopPropagation()
+          onTap()
+        }}
+      >
+        {label}
+      </button>
+    </>
   )
 }
 

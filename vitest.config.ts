@@ -9,4 +9,18 @@ export default defineConfig({
       '@': '/src',
     },
   },
+  test: {
+    // ░▒▓ Exclude snapshot-of-other-repos that live under .codex-logs/ (audit
+    // dumps from prior sessions). Vitest was picking up their *.test.* files
+    // and reporting 197 environmental failures (missing jsdom + different
+    // dep tree). .gitignore already excludes .codex-logs/ from git, but
+    // vitest's default include glob still grabs it. ▓▒░
+    exclude: [
+      '**/node_modules/**',
+      '**/.next/**',
+      '**/.codex-logs/**',
+      '**/dist/**',
+      '**/website/build/**',
+    ],
+  },
 })

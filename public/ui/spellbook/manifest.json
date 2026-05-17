@@ -1,0 +1,90 @@
+{
+  "generatedAt": "2026-05-16T17:00:00.000Z",
+  "generator": "visual artist agent (Claude Code)",
+  "modelMapping": {
+    "spellTilesGpt2": "seedream (substitute — gpt-image-2 was not exposed by available MCP servers)",
+    "spellTilesNano2": "riverflow (substitute — nano-banana-2 was not exposed by available MCP servers)",
+    "hudAndFrameAlpha": "seedream rendered on white background + offline chroma-key (substitute — gpt-image-1.5 native alpha was not exposed by available MCP servers)"
+  },
+  "notes": [
+    "Compression pass 2026-05-16: spell tiles 384x576 WebP q80 (.gpt2 in tiles/, .nano2 in tiles/_alternates/).",
+    "HUD vials, bars, corners, and backdrop: 384px PNG palette + zlib lvl 9, alpha preserved.",
+    "Spellbook frame corners, divider, tab embellishments: 384px PNG palette + zlib lvl 9, alpha preserved.",
+    "Page backgrounds: 1024x1024 JPEG q70 mozjpeg (no alpha needed).",
+    "Originals backed up to C:/Users/l/af-oasis-asset-backup-2026-05-16/ outside the repo."
+  ],
+  "tiles": {
+    "firebolt": { "gpt2": "/ui/spellbook/tiles/firebolt.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/firebolt.nano2.webp" },
+    "lightning-bolt": { "gpt2": "/ui/spellbook/tiles/lightning-bolt.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/lightning-bolt.nano2.webp" },
+    "ice-bolt": { "gpt2": "/ui/spellbook/tiles/ice-bolt.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/ice-bolt.nano2.webp" },
+    "brush-wand": { "gpt2": "/ui/spellbook/tiles/brush-wand.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/brush-wand.nano2.webp" },
+    "catalog-place": { "gpt2": "/ui/spellbook/tiles/catalog-place.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/catalog-place.nano2.webp" },
+    "text-to-3d": { "gpt2": "/ui/spellbook/tiles/text-to-3d.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/text-to-3d.nano2.webp" },
+    "text-to-pic": { "gpt2": "/ui/spellbook/tiles/text-to-pic.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/text-to-pic.nano2.webp" },
+    "text-to-pic-building": { "gpt2": "/ui/spellbook/tiles/text-to-pic-building.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/text-to-pic-building.nano2.webp" },
+    "text-to-music": { "gpt2": "/ui/spellbook/tiles/text-to-music.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/text-to-music.nano2.webp" },
+    "text-to-video": { "gpt2": "/ui/spellbook/tiles/text-to-video.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/text-to-video.nano2.webp" },
+    "meshy-object": { "gpt2": "/ui/spellbook/tiles/meshy-object.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/meshy-object.nano2.webp" },
+    "meshy-character": { "gpt2": "/ui/spellbook/tiles/meshy-character.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/meshy-character.nano2.webp" },
+    "portal-create": { "gpt2": "/ui/spellbook/tiles/portal-create.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/portal-create.nano2.webp" },
+    "sky-background": { "gpt2": "/ui/spellbook/tiles/sky-background.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/sky-background.nano2.webp" },
+    "ground-texture": { "gpt2": "/ui/spellbook/tiles/ground-texture.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/ground-texture.nano2.webp" },
+    "ground-elevation": { "gpt2": "/ui/spellbook/tiles/ground-elevation.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/ground-elevation.nano2.webp" },
+    "lights": { "gpt2": "/ui/spellbook/tiles/lights.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/lights.nano2.webp" },
+    "text-3d": { "gpt2": "/ui/spellbook/tiles/text-3d.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/text-3d.nano2.webp" },
+    "own-audio-upload": { "gpt2": "/ui/spellbook/tiles/own-audio-upload.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/own-audio-upload.nano2.webp" },
+    "own-video-upload": { "gpt2": "/ui/spellbook/tiles/own-video-upload.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/own-video-upload.nano2.webp" },
+    "own-image-upload": { "gpt2": "/ui/spellbook/tiles/own-image-upload.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/own-image-upload.nano2.webp" },
+    "summon-djinn": { "gpt2": "/ui/spellbook/tiles/summon-djinn.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/summon-djinn.nano2.webp" },
+    "summon-custom-npc": { "gpt2": "/ui/spellbook/tiles/summon-custom-npc.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/summon-custom-npc.nano2.webp" },
+    "summon-fighter-npc": { "gpt2": "/ui/spellbook/tiles/summon-fighter-npc.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/summon-fighter-npc.nano2.webp" },
+    "summon-openclaw": { "gpt2": "/ui/spellbook/tiles/summon-openclaw.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/summon-openclaw.nano2.webp" },
+    "summon-hermes": { "gpt2": "/ui/spellbook/tiles/summon-hermes.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/summon-hermes.nano2.webp" }
+  },
+  "frame": {
+    "corners": {
+      "tl": "/ui/spellbook/frame/book-corner-tl.png",
+      "tr": "/ui/spellbook/frame/book-corner-tr.png",
+      "bl": "/ui/spellbook/frame/book-corner-bl.png",
+      "br": "/ui/spellbook/frame/book-corner-br.png"
+    },
+    "divider": "/ui/spellbook/frame/divider.png",
+    "tabs": {
+      "recipe-catalog": "/ui/spellbook/frame/tab-embellish-recipe-catalog.png",
+      "premium": "/ui/spellbook/frame/tab-embellish-premium.png",
+      "world-root": "/ui/spellbook/frame/tab-embellish-world-root.png",
+      "creative": "/ui/spellbook/frame/tab-embellish-creative.png",
+      "own-spells": "/ui/spellbook/frame/tab-embellish-own-spells.png",
+      "combat": "/ui/spellbook/frame/tab-embellish-combat.png",
+      "agent": "/ui/spellbook/frame/tab-embellish-agent.png"
+    },
+    "pages": {
+      "recipe-catalog": "/ui/spellbook/frame/page-bg-recipe-catalog.jpg",
+      "premium": "/ui/spellbook/frame/page-bg-premium.jpg",
+      "world-root": "/ui/spellbook/frame/page-bg-world-root.jpg",
+      "creative": "/ui/spellbook/frame/page-bg-creative.jpg",
+      "own-spells": "/ui/spellbook/frame/page-bg-own-spells.jpg",
+      "combat": "/ui/spellbook/frame/page-bg-combat.jpg",
+      "agent": "/ui/spellbook/frame/page-bg-agent.jpg"
+    }
+  },
+  "hud": {
+    "vials": {
+      "hp": "/ui/hud/vial-hp.png",
+      "mana": "/ui/hud/vial-mana.png",
+      "xp": "/ui/hud/vial-xp.png"
+    },
+    "bars": {
+      "hp": "/ui/hud/bar-frame-hp.png",
+      "mana": "/ui/hud/bar-frame-mana.png",
+      "xp": "/ui/hud/bar-frame-xp.png"
+    },
+    "corners": {
+      "tl": "/ui/hud/hud-corner-tl.png",
+      "tr": "/ui/hud/hud-corner-tr.png",
+      "bl": "/ui/hud/hud-corner-bl.png",
+      "br": "/ui/hud/hud-corner-br.png"
+    },
+    "backdrop": "/ui/hud/hud-backdrop.png"
+  }
+}

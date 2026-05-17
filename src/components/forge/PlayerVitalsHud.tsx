@@ -6,6 +6,8 @@ import { PLAYER_BASE_STATS } from '@/lib/player-progression'
 import { useInputManager } from '@/lib/input-manager'
 import { useAudioManager } from '@/lib/audio-manager'
 import { setPlayerManaRecharging } from '@/lib/player-avatar-runtime'
+import { useOasisStore } from '@/store/oasisStore'
+import { SPELL_DEFS } from '@/lib/spellbook'
 
 type VitalsSource = {
   hp?: unknown
@@ -149,6 +151,7 @@ export function PlayerVitalsHud({ visible }: { visible: boolean }) {
   const [castError, setCastError] = useState<string | null>(null)
   const [recharging, setRecharging] = useState(false)
   const [xpFlash, setXpFlash] = useState<{ id: number; amount: number } | null>(null)
+  const selectedSpellId = useOasisStore(s => s.selectedSpellId)
   const vitalsRef = useRef<PlayerVitals>(DEFAULT_VITALS)
   const lastRechargeAtRef = useRef<number>(0)
   const rechargeActiveRef = useRef(false)
@@ -190,7 +193,9 @@ export function PlayerVitalsHud({ visible }: { visible: boolean }) {
     if (current.mana >= current.maxMana) return
     const now = performance.now()
     const elapsedMs = now - lastRechargeAtRef.current
-    const tickIntervalMs = 1000 / Math.max(0.1, current.manaRegenMultiplier)
+    // Keep in sync with server-side computeManaRechargeTicks: base interval
+    // 100ms = 10 mana/sec at multiplier 1. Focus skill scales above that.
+    const tickIntervalMs = 100 / Math.max(0.1, current.manaRegenMultiplier)
     if (elapsedMs < tickIntervalMs) return
 
     try {
@@ -300,14 +305,22 @@ export function PlayerVitalsHud({ visible }: { visible: boolean }) {
   const spellText = useMemo(() => {
     if (castError) return castError
     if (recharging) return `Recharging mana x${vitals.manaRegenMultiplier.toFixed(2)}`
-    return `Firebolt ${vitals.fireboltCost} mana / ${vitals.fireboltDamage} dmg`
-  }, [castError, recharging, vitals.fireboltCost, vitals.fireboltDamage, vitals.manaRegenMultiplier])
+    if (selectedSpellId) {
+      const def = SPELL_DEFS[selectedSpellId]
+      return `${def.name} · 1 mana`
+    }
+    return 'No spell armed'
+  }, [castError, recharging, selectedSpellId, vitals.manaRegenMultiplier])
 
   if (!visible) return null
   const xpFlashPercent = xpFlash ? (xpFlash.amount / vitals.xpToNext) * 100 : undefined
 
   return (
-    <div className="pointer-events-none fixed bottom-5 left-1/2 z-[186] w-[min(520px,calc(100vw-2rem))] -translate-x-1/2 select-none max-[700px]:bottom-4">
+    // ─═̷─ Position: bottom-center on desktop, TOP-center on mobile. Mobile
+    // bottom strip is sacred for the WASD ring + primary-action button —
+    // the HUD lives at the top so it never occludes thumb-zones. Width is
+    // clamped so it never spans into the side controls on narrow viewports.
+    <div className="pointer-events-none fixed bottom-5 left-1/2 z-[186] w-[min(520px,calc(100vw-2rem))] -translate-x-1/2 select-none max-[700px]:bottom-auto max-[700px]:top-2 max-[700px]:w-[min(360px,calc(100vw-1rem))]">
       <style>{`
         @keyframes oasisXpFlash {
           0% { opacity: 0.82; transform: translateX(0) scaleX(1); }

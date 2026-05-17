@@ -38,6 +38,28 @@ export interface OasisSettings {
   // ─═̷─═̷─🔲 VISUAL ─═̷─═̷─🔲
   showGrid: boolean           // Toggle the infinite helper grid
   rp1Mode: boolean            // Ready Player 1 — exploration-only, hide all editing UI
+  // ─═̷─═̷─⚔ BOLT LAB ─═̷─═̷─⚔
+  // Visual design selectors per combat spell. Letters map to design names in
+  // the BoltLayer registry (e.g. firebolt A = "Comet Tail", B = "Solar Flare",
+  // C = "Phoenix Feather"; lightning D = "Thunderbolt"). Players can swap at
+  // runtime via the Lab section in Settings.
+  fireboltDesign: 'A' | 'B' | 'C'
+  lightningBoltDesign: 'A' | 'B' | 'C' | 'D'
+  iceBoltDesign: 'A' | 'B' | 'C'
+  // ─═̷─═̷─🔊 SOUND LAB ─═̷─═̷─🔊
+  // Volume mixers (0-1). spatialAudioEnabled toggles Three.js PositionalAudio
+  // for spell effects — when on, bolts emit 3D sound that falls off with
+  // distance from the camera/listener.
+  masterVolume: number
+  sfxVolume: number
+  musicVolume: number
+  ambientVolume: number
+  spatialAudioEnabled: boolean
+  // ─═̷─ Per-spell sound selection. Key = spell ID (from src/lib/spellbook.ts),
+  // value = the sound `id` from public/audio/spells/manifest.json. Missing
+  // entries fall back to the default cast/impact sounds in useAudioManager.
+  // Lets the player customize "what does Firebolt sound like?" etc. ─═̷─
+  spellSounds: Partial<Record<string, string>>
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

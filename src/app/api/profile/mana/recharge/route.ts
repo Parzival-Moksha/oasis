@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getRequiredOasisUserId } from '@/lib/session'
 import { DEFAULT_PROFILE_AVATAR_3D_URL, DEFAULT_PROFILE_DISPLAY_NAME } from '@/lib/profile-defaults'
-import { buildPlayerProgression, computeManaRechargeTicks } from '@/lib/player-progression'
+import { buildPlayerProgression, computeManaRechargeTicks, MANA_REGEN_BASE_INTERVAL_MS_EXPORT } from '@/lib/player-progression'
 import { levelFromXp } from '@/lib/xp'
 
 const lastRechargeTickByUser = new Map<string, number>()
@@ -41,7 +41,9 @@ export async function POST(request: NextRequest) {
     const trustedElapsedMs = Math.min(elapsedMs, serverElapsedMs)
     const rechargeTicks = computeManaRechargeTicks(trustedElapsedMs, progression.stats.manaRegenMultiplier)
     const nextMana = Math.min(progression.maxMana, progression.mana + rechargeTicks)
-    const tickIntervalMs = 1000 / Math.max(0.1, Math.min(10, progression.stats.manaRegenMultiplier))
+    // Keep in sync with computeManaRechargeTicks's tick math — base is 100ms
+    // for the 10/sec testing-friendly default, multiplier scales above.
+    const tickIntervalMs = MANA_REGEN_BASE_INTERVAL_MS_EXPORT / Math.max(0.1, Math.min(10, progression.stats.manaRegenMultiplier))
 
     if (rechargeTicks <= 0 || nextMana === progression.mana) {
       if (nextMana === progression.maxMana || !lastRechargeTickByUser.has(userId)) {

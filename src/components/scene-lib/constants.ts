@@ -34,6 +34,18 @@ export const defaultSettings: OasisSettings = {
   fov: 75,
   showGrid: true,
   rp1Mode: false,
+  // BOLT LAB — defaults pick the "classic" / drafted-first variant per spell.
+  fireboltDesign: 'A',
+  lightningBoltDesign: 'A',
+  iceBoltDesign: 'A',
+  // SOUND LAB — sensible defaults; sliders go 0-1.
+  masterVolume: 0.8,
+  sfxVolume: 0.85,
+  musicVolume: 0.6,
+  ambientVolume: 0.5,
+  spatialAudioEnabled: true,
+  // No per-spell overrides by default — useAudioManager's hardcoded keys win.
+  spellSounds: {},
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
