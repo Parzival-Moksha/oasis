@@ -42,7 +42,9 @@ const commands = [
   // Rebuild docusaurus + sync into public/docs-site so /docs on hosted is fresh.
   'pnpm docs:local',
   'npx prisma generate',
-  'pnpm build',
+  // Bump Node heap for the Next build — the bolt-design modules + R3F
+  // assets push memory past the 2GB default and OOM the worker on host.
+  'NODE_OPTIONS="--max-old-space-size=4096" pnpm build',
   seedWelcome ? 'pnpm seed:welcome-hub' : 'echo "[deploy] skipping welcome reseed"',
   'PM2=./node_modules/.bin/pm2',
   'if [ ! -x "$PM2" ]; then PM2="$(command -v pm2 || true)"; fi',
