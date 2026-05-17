@@ -1479,6 +1479,17 @@ export default function Scene() {
       updateSetting('rp1Mode', false)
     }
 
+    // ─═̷─ Defer cross-component window events one tick so React's pending
+    // re-render (from updateSetting/setSpellbookOpen above) commits first
+    // and the listening panel — PlaceMenu, UploadPanel, WizardConsole — has
+    // actually mounted before the event fires. Without this, exiting RP1
+    // unmasks a panel via hideEditTools toggling, but the dispatchEvent
+    // races ahead of the panel's useEffect registering its listener and
+    // the event is lost. That's the "click does nothing" complaint.
+    const dispatchNextTick = (event: Event) => {
+      setTimeout(() => window.dispatchEvent(event), 0)
+    }
+
     switch (spellId) {
       // ─═̷─ Combat: arm the spell + ensure RP1 is on so LMB casts ─═̷─
       case 'firebolt':
@@ -1489,7 +1500,7 @@ export default function Scene() {
 
       // ─═̷─ Recipe / catalog ─═̷─
       case 'catalog-place':
-        window.dispatchEvent(new CustomEvent('oasis:open-place-menu'))
+        dispatchNextTick(new CustomEvent('oasis:open-place-menu'))
         return
 
       // ─═̷─ Creative + world-root dedicated panels ─═̷─
@@ -1520,7 +1531,7 @@ export default function Scene() {
       case 'text-to-pic-building':
       case 'text-to-music':
       case 'text-to-video':
-        window.dispatchEvent(new CustomEvent('oasis:open-spelltab', { detail: { spellId } }))
+        dispatchNextTick(new CustomEvent('oasis:open-spelltab', { detail: { spellId } }))
         return
 
       // ─═̷─ Premium routed to WizCon directly ─═̷─
@@ -1536,13 +1547,13 @@ export default function Scene() {
 
       // ─═̷─ Own media uploads ─═̷─
       case 'own-audio-upload':
-        window.dispatchEvent(new CustomEvent('oasis:open-upload-panel', { detail: { kind: 'audio' } }))
+        dispatchNextTick(new CustomEvent('oasis:open-upload-panel', { detail: { kind: 'audio' } }))
         return
       case 'own-video-upload':
-        window.dispatchEvent(new CustomEvent('oasis:open-upload-panel', { detail: { kind: 'video' } }))
+        dispatchNextTick(new CustomEvent('oasis:open-upload-panel', { detail: { kind: 'video' } }))
         return
       case 'own-image-upload':
-        window.dispatchEvent(new CustomEvent('oasis:open-upload-panel', { detail: { kind: 'image' } }))
+        dispatchNextTick(new CustomEvent('oasis:open-upload-panel', { detail: { kind: 'image' } }))
         return
 
       // ─═̷─ Agents ─═̷─
