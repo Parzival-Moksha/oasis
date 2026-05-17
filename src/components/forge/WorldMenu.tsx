@@ -9,6 +9,7 @@ import type { WorldMeta } from '@/lib/forge/world-persistence'
 import { SettingsContext } from '@/components/scene-lib'
 import { getViewerUserIdClient } from '@/lib/viewer-identity-client'
 import { ensureViewerCookie, VIEWER_IDENTITY_EVENT } from '@/lib/viewer-identity-bootstrap'
+import { useClientOasisMode } from '@/lib/oasis-mode-client'
 import { WELCOME_HUB_WORLD_ID } from '@/lib/portal-gates'
 
 import { GameMenuButton } from './GameMenuButton'
@@ -120,6 +121,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
   // Viewer identity may be corrected by /api/viewer/me after mount.
   // In local mode, stale viewer-* cookies collapse back to local-user.
   const [viewerUserId, setViewerUserId] = useState(() => getViewerUserIdClient())
+  const oasisMode = useClientOasisMode()
   const menuRef = useRef<HTMLDivElement>(null)
   useUILayer('world-menu', isOpen)
   const { settings, updateSetting, rp1Locked } = useContext(SettingsContext)
@@ -490,8 +492,17 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
           )}
 
           {/* ░▒▓ MY WORLDS TAB — worlds owned by the viewer ▓▒░ */}
+          {/* In local mode, every world in the registry counts as "mine" —
+              past identity churn (Google-OAuth → local-user collapse,
+              browser-session ids, etc) left orphan owners on otherwise-yours
+              worlds. Filtering by userId would hide them. Hosted still
+              filters strictly so multi-user privacy holds. */}
           {worldTab === 'my' && (() => {
-            const myWorlds = worldRegistry.filter(w => w.id !== WELCOME_HUB_WORLD_ID && w.userId === viewerUserId)
+            const isLocal = oasisMode === 'local'
+            const myWorlds = worldRegistry.filter(w =>
+              w.id !== WELCOME_HUB_WORLD_ID
+              && (isLocal || w.userId === viewerUserId),
+            )
             return (
               <div className="mb-3 rounded-md border border-white/10 bg-white/5 p-2">
                 <div className="mb-2 flex items-center gap-2">

@@ -600,7 +600,6 @@ interface OasisState {
   // ─═̷─═̷─⚙️ VISUAL SETTINGS ─═̷─═̷─⚙️
   fpsCounterEnabled: boolean
   fpsCounterFontSize: number  // px
-  streamOpacity: number       // 0.1-1.0 — ThoughtStream (stashed for Merlin)
 
   // ─═̷─═̷─🧠 AI MODEL SETTINGS ─═̷─═̷─🧠
   craftModel: string                        // OpenRouter model ID for craft + terrain
@@ -725,7 +724,6 @@ interface OasisState {
   // ─═̷─═̷─⚙️ SETTINGS ACTIONS ─═̷─═̷─⚙️
   setFpsCounterEnabled: (enabled: boolean) => void
   setFpsCounterFontSize: (size: number) => void
-  setStreamOpacity: (opacity: number) => void
   setCraftModel: (model: string) => void
   setVoiceModel: (model: string) => void
 
@@ -1187,7 +1185,6 @@ export const useOasisStore = create<OasisState>((set, get) => {
   // ─═̷─═̷─⚙️ VISUAL SETTINGS ─═̷─═̷─⚙️
   fpsCounterEnabled: true,
   fpsCounterFontSize: 14,
-  streamOpacity: 0.85,
 
   // ─═̷─═̷─🧠 AI MODEL SETTINGS ─═̷─═̷─🧠
   craftModel: stored('oasis-craft-model') || 'google/gemini-3.1-flash-lite-preview',
@@ -1304,7 +1301,6 @@ export const useOasisStore = create<OasisState>((set, get) => {
   // ─═̷─═̷─⚙️ SETTINGS ACTIONS ─═̷─═̷─⚙️
   setFpsCounterEnabled: (fpsCounterEnabled) => set({ fpsCounterEnabled }),
   setFpsCounterFontSize: (fpsCounterFontSize) => set({ fpsCounterFontSize }),
-  setStreamOpacity: (streamOpacity) => set({ streamOpacity: Math.max(0.1, Math.min(1, streamOpacity)) }),
   setCraftModel: (craftModel) => {
     persist('oasis-craft-model', craftModel)
     set({ craftModel })

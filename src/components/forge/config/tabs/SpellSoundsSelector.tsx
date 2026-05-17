@@ -29,8 +29,10 @@ function useSpellSoundsManifest() {
 
   useEffect(() => {
     let cancelled = false
-    const base = process.env.NEXT_PUBLIC_BASE_PATH || ''
-    fetch(`${base}${MANIFEST_URL}`)
+    // Absolute URL via window.location.origin avoids "Failed to fetch"
+    // when the env-var path indirection misfires in production bundles.
+    const url = new URL(MANIFEST_URL, window.location.origin).toString()
+    fetch(url, { cache: 'force-cache' })
       .then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
       .then((data: SpellSoundsManifest) => {
         if (cancelled) return
@@ -49,8 +51,7 @@ function useSpellSoundsManifest() {
 function previewSound(file: string) {
   if (typeof window === 'undefined') return
   try {
-    const base = process.env.NEXT_PUBLIC_BASE_PATH || ''
-    const audio = new Audio(`${base}${file}`)
+    const audio = new Audio(new URL(file, window.location.origin).toString())
     audio.volume = 0.7
     audio.play().catch(() => { /* swallow autoplay blocks */ })
   } catch { /* noop */ }

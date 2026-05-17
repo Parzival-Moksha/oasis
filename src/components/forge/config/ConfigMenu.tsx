@@ -8,6 +8,7 @@
 import { useState } from 'react'
 import { CONFIG_TABS, type ConfigTabId } from './types'
 import { GraphicsTab } from './tabs/GraphicsTab'
+import { FontsTab } from './tabs/FontsTab'
 import { SoundTab } from './tabs/SoundTab'
 import { ControlsTab } from './tabs/ControlsTab'
 import { BoltsTab } from './tabs/BoltsTab'
@@ -74,6 +75,7 @@ export function ConfigMenu({ menuOpacity, onMenuOpacityChange, consoleControl, i
       {/* ─═̷─═̷─ CONTENT ─═̷─═̷─ */}
       <div className="p-3 max-[700px]:p-2 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 12rem)' }}>
         {activeTab === 'graphics' && <GraphicsTab {...tabProps} />}
+        {activeTab === 'fonts' && <FontsTab />}
         {activeTab === 'sound' && <SoundTab />}
         {activeTab === 'controls' && <ControlsTab />}
         {activeTab === 'bolts' && <BoltsTab />}

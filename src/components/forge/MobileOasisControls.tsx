@@ -415,24 +415,28 @@ function MobileTransformHotbar() {
 
   if (!selectedObjectId || isReadOnly) return null
 
-  const modes: { mode: 'translate' | 'rotate' | 'scale'; label: string; hint: string }[] = [
-    { mode: 'translate', label: 'Move',   hint: 'R' },
-    { mode: 'rotate',    label: 'Rotate', hint: 'T' },
-    { mode: 'scale',     label: 'Scale',  hint: 'Y' },
+  // Same button vocabulary as DASH / SELECT / Mana — `h-11 min-w-X
+  // rounded-lg border-2 bg-*-950/72 backdrop-blur-sm` with tone-shadow.
+  // Active mode pulses with the same amber-glow tradition; inactive uses
+  // the neutral DASH treatment so the cluster reads as one toolbar.
+  const modes: { mode: 'translate' | 'rotate' | 'scale'; label: string }[] = [
+    { mode: 'translate', label: 'Move' },
+    { mode: 'rotate',    label: 'Rot' },
+    { mode: 'scale',     label: 'Scale' },
   ]
 
   return (
-    <div className="pointer-events-auto absolute left-1/2 top-14 flex -translate-x-1/2 touch-none gap-1.5 rounded-lg border border-white/12 bg-black/55 px-1.5 py-1 shadow-[0_0_28px_rgba(168,85,247,0.18)] backdrop-blur-md">
-      {modes.map(({ mode, label, hint }) => {
+    <div className="pointer-events-auto absolute right-5 top-20 flex touch-none flex-col gap-2">
+      {modes.map(({ mode, label }) => {
         const active = transformMode === mode
         return (
           <button
             key={mode}
             type="button"
-            className={`min-w-14 rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] transition ${
+            className={`h-11 min-w-20 touch-none rounded-lg border-2 px-3 text-[11px] font-black uppercase tracking-[0.14em] backdrop-blur-sm transition ${
               active
-                ? 'border-purple-300/70 bg-purple-700/55 text-purple-50 shadow-[0_0_14px_rgba(168,85,247,0.5)]'
-                : 'border-white/15 bg-white/[0.05] text-white/65'
+                ? 'border-amber-200/75 bg-amber-900/80 text-amber-50 shadow-[0_0_28px_rgba(251,191,36,0.4)]'
+                : 'border-amber-200/30 bg-amber-950/60 text-amber-100/70 shadow-[0_0_18px_rgba(251,191,36,0.14)]'
             }`}
             onPointerDown={event => {
               event.preventDefault()
@@ -440,14 +444,13 @@ function MobileTransformHotbar() {
               setTransformMode(mode)
             }}
           >
-            <span>{label}</span>
-            <span className="ml-1 text-[8px] text-white/40">{hint}</span>
+            {label}
           </button>
         )
       })}
       <button
         type="button"
-        className="ml-1 rounded-md border border-white/15 bg-white/[0.05] px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-white/65 transition hover:bg-white/[0.1]"
+        className="h-11 min-w-20 touch-none rounded-lg border-2 border-rose-300/45 bg-rose-950/60 px-3 text-[11px] font-black uppercase tracking-[0.14em] text-rose-100 shadow-[0_0_18px_rgba(244,63,94,0.18)] backdrop-blur-sm transition"
         onPointerDown={event => {
           event.preventDefault()
           event.stopPropagation()
@@ -455,7 +458,7 @@ function MobileTransformHotbar() {
         }}
         aria-label="Deselect"
       >
-        ✕
+        Drop
       </button>
     </div>
   )

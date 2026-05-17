@@ -25,8 +25,6 @@ export const defaultSettings: OasisSettings = {
   // FPS COUNTER
   fpsCounterEnabled: true,
   fpsCounterFontSize: 14,
-  // WINDOW OPACITY
-  streamOpacity: 0.9,
   // CAMERA MODES
   controlMode: 'third-person',
   mouseSensitivity: 1.0,
@@ -46,6 +44,9 @@ export const defaultSettings: OasisSettings = {
   spatialAudioEnabled: true,
   // No per-spell overrides by default — useAudioManager's hardcoded keys win.
   spellSounds: {},
+  // ─═̷─ Default to Cinzel — fantasy serif suits the spellbook's vibe and
+  // looks dramatically better than the prior system-mono fallback. ─═̷─
+  uiFont: 'cinzel',
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

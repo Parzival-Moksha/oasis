@@ -28,7 +28,6 @@ export interface OasisSettings {
   fpsCounterEnabled: boolean
   fpsCounterFontSize: number  // 10-24px
   // ─═̷─═̷─🪟 WINDOW OPACITY ─═̷─═̷─🪟
-  streamOpacity: number  // 0.1-1.0 — ThoughtStream (stashed for Merlin)
   // ─═̷─═̷─🎮 CAMERA MODES ─═̷─═̷─🎮
   controlMode: 'orbit' | 'noclip' | 'third-person'
   mouseSensitivity: number
@@ -60,6 +59,11 @@ export interface OasisSettings {
   // entries fall back to the default cast/impact sounds in useAudioManager.
   // Lets the player customize "what does Firebolt sound like?" etc. ─═̷─
   spellSounds: Partial<Record<string, string>>
+  // ─═̷─═̷─🅰 FONTS ─═̷─═̷─🅰
+  // Picks the active UI font from src/lib/fonts.ts. Applied via
+  // resolveFontFamily(settings.uiFont) on opt-in panels (spellbook is the
+  // canary). Empty string means "fall back to DEFAULT_FONT".
+  uiFont: string
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

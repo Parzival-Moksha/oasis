@@ -2,13 +2,10 @@
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // WORLD VFX TAB — Conjuration VFX picker, Placement VFX picker, placement
-// duration, and the Portal Transition lab. Also surfaces the agent walk +
-// embodied-action toggles since they affect how spell pipelines play out in
-// world.
+// duration, and the Portal Transition lab. Agent walk + embodied-action
+// toggles moved to AgentsTab — that's where players look for them.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { useContext } from 'react'
-import { SettingsContext } from '@/components/scene-lib/contexts'
 import { useOasisStore } from '@/store/oasisStore'
 import type { PlacementVfxType } from '@/store/oasisStore'
 import { PortalTransitionSettingsPanel } from '../../PortalTransitionSettingsPanel'
@@ -49,7 +46,6 @@ const PLACEMENT_VFX_OPTIONS: Array<{ id: PlacementVfxType; label: string; desc: 
 ]
 
 export function WorldVfxTab() {
-  const { settings, updateSetting } = useContext(SettingsContext)
   const conjureVfxType = useOasisStore(s => s.conjureVfxType)
   const setConjureVfxType = useOasisStore(s => s.setConjureVfxType)
   const placementVfxType = useOasisStore(s => s.placementVfxType)
@@ -127,45 +123,6 @@ export function WorldVfxTab() {
 
       <section>
         <PortalTransitionSettingsPanel />
-      </section>
-
-      <section className="border-t border-white/10 pt-3">
-        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Agent Embodiment</div>
-
-        <label className="flex items-center gap-3 py-1.5 cursor-pointer group hover:bg-white/5 rounded px-1 -mx-1 transition-colors">
-          <div
-            onClick={() => updateSetting('agentActionMode', settings.agentActionMode === 'embodied' ? 'instant' : 'embodied')}
-            className={`w-10 h-5 rounded-full transition-all cursor-pointer relative flex-shrink-0 ${
-              settings.agentActionMode === 'embodied' ? 'bg-cyan-600 shadow-lg shadow-cyan-500/30' : 'bg-gray-700'
-            }`}
-          >
-            <div className={`w-4 h-4 rounded-full bg-white mt-0.5 transition-all ${
-              settings.agentActionMode === 'embodied' ? 'translate-x-5' : 'translate-x-0.5'
-            }`} />
-          </div>
-          <div className="min-w-0">
-            <div className="text-sm text-gray-300 group-hover:text-white transition-colors whitespace-nowrap">Embodied Agent Actions</div>
-            <div className="text-[10px] text-gray-500">
-              {settings.agentActionMode === 'embodied'
-                ? 'Agents walk, cast, and settle before manifestations visibly land.'
-                : 'Agent world changes apply immediately without slow-mo staging.'}
-            </div>
-          </div>
-        </label>
-
-        <div className="py-1.5">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-sm text-gray-300">Agent Walk Speed</span>
-            <span className="text-xs text-cyan-300 font-mono">{settings.agentWalkSpeed.toFixed(1)} m/s</span>
-          </div>
-          <input
-            type="range"
-            min={0.5} max={12} step={0.5}
-            value={settings.agentWalkSpeed}
-            onChange={e => updateSetting('agentWalkSpeed', parseFloat(e.target.value))}
-            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-          />
-        </div>
       </section>
     </div>
   )

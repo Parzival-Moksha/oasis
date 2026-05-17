@@ -1,10 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { useUILayer } from '@/lib/input-manager'
 import { useAudioManager } from '@/lib/audio-manager'
 import { useOasisStore } from '@/store/oasisStore'
 import { useRailMenuExclusion } from '@/hooks/useRailMenuExclusion'
+import { SettingsContext } from '@/components/scene-lib/contexts'
+import { resolveFontFamily } from '@/lib/fonts'
 import {
   SPELLBOOK_PAGE_IDS,
   SPELLBOOK_PAGES,
@@ -51,6 +53,8 @@ export function PlayerSpellbookPanel({
   const [activePage, setActivePage] = useState<SpellbookPageId>('recipe-catalog')
   const [highlightSpellId, setHighlightSpellId] = useState<SpellId | null>(null)
   const selectedSpellId = useOasisStore(s => s.selectedSpellId)
+  const { settings } = useContext(SettingsContext)
+  const spellbookFont = resolveFontFamily(settings.uiFont)
   useUILayer('spellbook-menu', Boolean(visible && isOpen))
   // Rail-menu mutual exclusion: opening any other rail menu (CONFIG/AGENTS/etc)
   // closes the spellbook; opening the spellbook closes them.
@@ -111,7 +115,8 @@ export function PlayerSpellbookPanel({
     <div
       data-ui-panel
       data-spellbook-menu-panel
-      className="fixed left-[10.25rem] top-4 z-[285] w-[min(760px,calc(100vw-11.5rem))] max-h-[calc(100vh-2rem)] overflow-hidden rounded-lg border border-amber-200/28 bg-[#050403]/82 font-mono text-white shadow-[0_0_70px_rgba(251,146,60,0.24),0_0_28px_rgba(0,0,0,0.78)] max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:w-auto max-[700px]:max-h-[calc(100vh-70px)]"
+      className="fixed left-[10.25rem] top-4 z-[285] w-[min(760px,calc(100vw-11.5rem))] max-h-[calc(100vh-2rem)] overflow-hidden rounded-lg border border-amber-200/28 bg-[#050403]/82 text-white shadow-[0_0_70px_rgba(251,146,60,0.24),0_0_28px_rgba(0,0,0,0.78)] max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:w-auto max-[700px]:max-h-[calc(100vh-70px)]"
+      style={{ fontFamily: spellbookFont }}
       onMouseDown={event => event.stopPropagation()}
     >
       <style>{`

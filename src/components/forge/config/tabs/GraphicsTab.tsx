@@ -151,14 +151,6 @@ export function GraphicsTab({ menuOpacity, onMenuOpacityChange }: SharedTabProps
           accent="accent-purple-500"
           onChange={v => onMenuOpacityChange(Math.round(v * 20) / 20)}
         />
-        <Slider
-          label="Stream Opacity"
-          value={settings.streamOpacity}
-          min={0.1} max={1.0} step={0.05}
-          display={`${Math.round(settings.streamOpacity * 100)}%`}
-          accent="accent-sky-500"
-          onChange={v => updateSetting('streamOpacity', Math.round(v * 20) / 20)}
-        />
       </section>
     </div>
   )

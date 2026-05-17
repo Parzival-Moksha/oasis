@@ -23,9 +23,14 @@ let loadPromise: Promise<Map<string, string>> | null = null
 
 function fetchManifest(): Promise<Map<string, string>> {
   if (typeof window === 'undefined') return Promise.resolve(new Map())
-  const base = process.env.NEXT_PUBLIC_BASE_PATH || ''
-  return fetch(`${base}${MANIFEST_URL}`)
-    .then(res => res.ok ? res.json() as Promise<SpellSoundsManifest> : Promise.reject(new Error(`HTTP ${res.status}`)))
+  // Use the absolute origin so the URL never gets misinterpreted as a
+  // relative path on routes that aren't at /. We do NOT prefix with
+  // NEXT_PUBLIC_BASE_PATH because next.config.mjs pins that to '' for the
+  // hosted oasis (root-served), and reading the env var in the client
+  // bundle has been a source of "Failed to fetch" reports.
+  const url = new URL(MANIFEST_URL, window.location.origin).toString()
+  return fetch(url, { cache: 'force-cache' })
+    .then(res => res.ok ? res.json() as Promise<SpellSoundsManifest> : Promise.reject(new Error(`HTTP ${res.status} (${url})`)))
     .then(data => {
       const map = new Map<string, string>()
       for (const entry of data.library ?? []) {
@@ -36,6 +41,9 @@ function fetchManifest(): Promise<Map<string, string>> {
     })
     .catch(err => {
       console.warn('[spell-sounds] manifest load failed:', err)
+      // Reset promise so a later call can retry the fetch (e.g. after the
+      // user opens the Sound tab once the dev server is fully up).
+      loadPromise = null
       cache = new Map()
       return cache
     })
