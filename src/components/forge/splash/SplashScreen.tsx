@@ -331,7 +331,6 @@ export function SplashScreen({ designId, modelSlug, ready, holdMs = 0, onFadeCom
 
       if (ready) {
         // Once Oasis declares ready, we ease the bar to 1.0 unless holdMs requires more time.
-        const heldFor = elapsed - (mountedAtRef.current === 0 ? 0 : 0) // mountedAt baseline; elapsed already covers it
         const minVisible = Math.max(0, holdMs)
         if (elapsed >= minVisible) {
           next = Math.min(1, next + 0.04) // gentle pull-to-100

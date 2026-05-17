@@ -181,7 +181,7 @@ export function ExperimentsTab() {
             className="mt-2 w-full accent-fuchsia-400"
           />
           <p className="mt-1 text-[10px] leading-snug text-white/45">
-            Visit-2 onwards everything's cached and the splash blinks past too fast to read.
+            Visit-2 onwards everything is cached and the splash blinks past too fast to read.
             Crank this up to force it to linger so you can actually look at it.
           </p>
           <button
