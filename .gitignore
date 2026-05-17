@@ -17,6 +17,9 @@ out/
 # Runtime tool artifacts (test-session output, etc.)
 .runtime/
 
+# Subagent / scratch scripts (one-shot DB probes, audits)
+scripts/_tmp_*
+
 # PM2 logs (relay + web)
 logs/
 
