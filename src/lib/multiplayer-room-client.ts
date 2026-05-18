@@ -1,6 +1,16 @@
 'use client'
 
 import { Client, Room } from 'colyseus.js'
+import {
+  notifyDeath,
+  notifyPlayerState,
+  notifyRemoteBolt,
+  notifyRespawn,
+  setPvpSender,
+  type PvpDeathEvent,
+  type PvpPlayerSnapshot,
+  type PvpRespawnEvent,
+} from './pvp-bridge'
 
 export interface MultiplayerRoomPlayer {
   sessionId: string
@@ -22,6 +32,10 @@ export interface MultiplayerRoomJoinOptions {
   avatarUrl?: string
   profileAvatarUrl?: string
   color?: string
+  // PvP join params — passed straight to the Colyseus room.
+  pvpEnabled?: boolean
+  maxHp?: number
+  maxMana?: number
 }
 
 export interface MultiplayerRoomInput {
@@ -46,6 +60,27 @@ interface RoomPlayerSchema {
   yaw: number
   animState: string
   updatedAt: number
+  // PvP fields — present once the server schema is updated.
+  hp?: number
+  maxHp?: number
+  mana?: number
+  maxMana?: number
+  alive?: boolean
+  respawnAt?: number
+  lastKilledBy?: string
+}
+
+interface RoomBoltSchema {
+  id: string
+  casterSessionId: string
+  spell: string
+  design: string
+  ox: number; oy: number; oz: number
+  dx: number; dy: number; dz: number
+  speed: number
+  damage: number
+  spawnedAt: number
+  seed: number
 }
 
 interface RoomStateSchema {
@@ -53,6 +88,11 @@ interface RoomStateSchema {
     forEach(callback: (value: RoomPlayerSchema, key: string) => void): void
     size: number
   }
+  bolts?: {
+    onAdd?: (callback: (bolt: RoomBoltSchema, key: number) => void) => void
+    forEach?: (callback: (value: RoomBoltSchema, key: number) => void) => void
+  }
+  pvpEnabled?: boolean
 }
 
 function resolveRoomEndpoint(): string | null {
@@ -138,6 +178,9 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
       avatarUrl: args.avatarUrl,
       profileAvatarUrl: args.profileAvatarUrl,
       color: args.color,
+      pvpEnabled: args.pvpEnabled === true,
+      maxHp: typeof args.maxHp === 'number' ? args.maxHp : undefined,
+      maxMana: typeof args.maxMana === 'number' ? args.maxMana : undefined,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -156,12 +199,30 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
       return
     }
     const players: MultiplayerRoomPlayer[] = []
+    // Also build a PvP snapshot that includes the local player (HUD needs
+    // its own HP/mana/alive flags from the room when in a PvP world).
+    const pvpPlayers: PvpPlayerSnapshot[] = []
     state.players.forEach((player: RoomPlayerSchema, sessionId: string) => {
-      if (sessionId === room.sessionId) return
-      players.push(snapshotPlayer(sessionId, player))
+      if (sessionId !== room.sessionId) {
+        players.push(snapshotPlayer(sessionId, player))
+      }
+      pvpPlayers.push({
+        sessionId,
+        playerId: player.playerId,
+        displayName: player.displayName,
+        hp: typeof player.hp === 'number' ? player.hp : 100,
+        maxHp: typeof player.maxHp === 'number' ? player.maxHp : 100,
+        mana: typeof player.mana === 'number' ? player.mana : 20,
+        maxMana: typeof player.maxMana === 'number' ? player.maxMana : 20,
+        alive: player.alive !== false,
+        respawnAt: typeof player.respawnAt === 'number' ? player.respawnAt : 0,
+        lastKilledBy: typeof player.lastKilledBy === 'string' ? player.lastKilledBy : '',
+        position: [player.x, player.y, player.z],
+      })
     })
     log('state change, peers=', players.length, 'total=', state.players.size)
     args.onPlayersChanged(players)
+    notifyPlayerState(pvpPlayers)
   }
 
   room.onStateChange((_state) => {
@@ -169,6 +230,64 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
   })
 
   emit()
+
+  // ─═̷─ PvP wiring ─═̷─
+  // Hook the colyseus.js bolts array so peers see remote casts. The onAdd
+  // callback is wrapped in a try because schema-callbacks expose different
+  // shapes between colyseus.js versions; we tolerate either.
+  try {
+    const stateForBolts = room.state as RoomStateSchema | undefined
+    const bolts = stateForBolts?.bolts
+    if (bolts && typeof bolts.onAdd === 'function') {
+      bolts.onAdd((bolt: RoomBoltSchema) => {
+        // Skip echoing our own broadcasts back to ourselves.
+        if (bolt.casterSessionId === room.sessionId) return
+        const spell = (bolt.spell === 'firebolt' || bolt.spell === 'lightning-bolt' || bolt.spell === 'ice-bolt')
+          ? bolt.spell
+          : null
+        if (!spell) return
+        notifyRemoteBolt({
+          id: bolt.id,
+          casterSessionId: bolt.casterSessionId,
+          spell,
+          design: bolt.design,
+          origin: [bolt.ox, bolt.oy, bolt.oz],
+          direction: [bolt.dx, bolt.dy, bolt.dz],
+          speed: bolt.speed,
+          damage: bolt.damage,
+          seed: bolt.seed,
+        })
+      })
+    }
+  } catch (err) {
+    if (DEBUG) console.warn('[oasis-room] bolts.onAdd hookup failed', err)
+  }
+
+  room.onMessage('death', (payload: PvpDeathEvent) => {
+    try { notifyDeath(payload) } catch (err) {
+      if (DEBUG) console.warn('[oasis-room] death handler threw', err)
+    }
+  })
+  room.onMessage('respawn', (payload: PvpRespawnEvent) => {
+    try { notifyRespawn(payload) } catch (err) {
+      if (DEBUG) console.warn('[oasis-room] respawn handler threw', err)
+    }
+  })
+
+  setPvpSender({
+    localSessionId: room.sessionId,
+    pvpEnabled: (room.state as RoomStateSchema | undefined)?.pvpEnabled === true,
+    sendCast: payload => {
+      try { room.send('cast', payload) } catch (err) {
+        if (DEBUG) console.warn('[oasis-room] sendCast failed', err)
+      }
+    },
+    sendReportHit: payload => {
+      try { room.send('reportHit', payload) } catch (err) {
+        if (DEBUG) console.warn('[oasis-room] sendReportHit failed', err)
+      }
+    },
+  })
 
   if (args.onMutation) {
     room.onMessage('mutation', (payload: unknown) => {
@@ -217,6 +336,7 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
     },
     async dispose(): Promise<void> {
       log('disposing room connection')
+      setPvpSender(null)
       try {
         await room.leave(true)
       } catch {

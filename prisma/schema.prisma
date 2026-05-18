@@ -124,6 +124,10 @@ model World {
    *  'public' = anyone visiting sees the owner's user-scope assets.
    *  'private' = only the world owner sees user-scope assets (others fall back). */
   assetVisibility String    @default("public") // public | private
+  /** PvP toggle. Defaults false; auto-opts-in when visibility flips to
+   *  'public_edit' (sandbox) unless the owner has previously toggled it.
+   *  Mirrored into the Colyseus room at join time. */
+  pvpEnabled      Boolean   @default(false)
 
   data            String?   // JSON: full WorldState (catalog objects, crafted scenes, conjured assets, sky, ground)
   creatorName     String?

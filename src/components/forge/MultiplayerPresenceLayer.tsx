@@ -263,6 +263,7 @@ function RemotePresenceAvatar({ player }: { player: MultiplayerRoomPlayer }) {
 
 export function MultiplayerPresenceLayer() {
   const activeWorldId = useOasisStore(s => s.viewingWorldId || s.activeWorldId)
+  const worldRegistry = useOasisStore(s => s.worldRegistry)
   const avatarUrl = useOasisStore(s => s.avatar3dUrl)
   // Latest avatarUrl read at connect time. After connect, we send profile
   // mutations on changes instead of reconnecting the whole room.
@@ -272,6 +273,10 @@ export function MultiplayerPresenceLayer() {
   const playerIdRef = useRef<string>('')
   const playerNameRef = useRef<string>('Visitor')
   const playerColorRef = useRef<string>('#38bdf8')
+  // Latest computed max values from the user's profile. Set by the profile
+  // fetch effect below; used at join time to seed the room's player state.
+  const maxHpRef = useRef<number>(100)
+  const maxManaRef = useRef<number>(20)
   const connectionRef = useRef<MultiplayerRoomConnection | null>(null)
   const lastSentPoseRef = useRef<{ position: [number, number, number]; yaw: number } | null>(null)
   const lastSentAtRef = useRef<number>(0)
@@ -323,8 +328,20 @@ export function MultiplayerPresenceLayer() {
     const refresh = () => {
       fetch('/api/profile', { cache: 'no-store' })
         .then(r => (r.ok ? r.json() : null))
-        .then((data: { displayName?: string; avatar_url?: string | null } | null) => {
-          if (cancelled || !data?.displayName) return
+        .then((data: { displayName?: string; avatar_url?: string | null; maxHp?: number; maxMana?: number; stats?: { maxHp?: number; maxMana?: number } } | null) => {
+          if (cancelled) return
+          // PvP max values — prefer the explicit fields, fall back to stats.
+          // These are used at the next room connect; mid-session changes
+          // require a reconnect to take effect (rare — skills change rarely).
+          const maxHp = typeof data?.maxHp === 'number'
+            ? data.maxHp
+            : (typeof data?.stats?.maxHp === 'number' ? data.stats.maxHp : null)
+          const maxMana = typeof data?.maxMana === 'number'
+            ? data.maxMana
+            : (typeof data?.stats?.maxMana === 'number' ? data.stats.maxMana : null)
+          if (maxHp !== null) maxHpRef.current = maxHp
+          if (maxMana !== null) maxManaRef.current = maxMana
+          if (!data?.displayName) return
           const profileAvatarUrl = data.avatar_url ? `${data.avatar_url}?v=${Date.now()}` : ''
           apply(data.displayName.trim(), profileAvatarUrl)
         })
@@ -439,6 +456,7 @@ export function MultiplayerPresenceLayer() {
       }, delayMs)
     }
 
+    const activeWorld = worldRegistry.find(world => world.id === activeWorldId)
     connectToWorldRoom({
       worldId: activeWorldId,
       playerId,
@@ -446,6 +464,9 @@ export function MultiplayerPresenceLayer() {
       avatarUrl: avatarUrlRef.current || undefined,
       profileAvatarUrl: profileAvatarUrlRef.current || undefined,
       color: playerColorRef.current,
+      pvpEnabled: activeWorld?.pvpEnabled === true,
+      maxHp: maxHpRef.current,
+      maxMana: maxManaRef.current,
       onPlayersChanged: next => {
         if (!disposed) setPlayers(next)
       },

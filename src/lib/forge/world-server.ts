@@ -140,6 +140,7 @@ function toWorldMeta(
     creatorAvatar?: string | null
     visitCount?: number | null
     objectCount?: number | null
+    pvpEnabled?: boolean | null
     createdAt: Date
     updatedAt: Date
   },
@@ -171,6 +172,7 @@ function toWorldMeta(
     ownerAura,
     objectCount: row.objectCount || 0,
     visitCount: row.visitCount || 0,
+    pvpEnabled: row.pvpEnabled ?? false,
     createdAt: row.createdAt.toISOString(),
     lastSavedAt: row.updatedAt.toISOString(),
   }
@@ -203,6 +205,7 @@ export async function getRegistry(userId?: string): Promise<WorldMeta[]> {
       creatorAvatar: true,
       visitCount: true,
       objectCount: true,
+      pvpEnabled: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -393,7 +396,7 @@ export async function setWorldVisibility(
   const ctx = accessContext(userId)
   const world = await prisma.world.findFirst({
     where: { id },
-    select: { id: true, userId: true, visibility: true },
+    select: { id: true, userId: true, visibility: true, pvpEnabled: true },
   })
   if (!world) {
     throw new WorldAccessError('World not found', 'world_not_found', 404)
@@ -405,14 +408,50 @@ export async function setWorldVisibility(
     throw new WorldAccessError('Only system tools can mark core or template worlds', 'system_visibility_forbidden')
   }
 
+  // Sandbox = PvP-by-default. Flipping a non-sandbox world to public_edit
+  // auto-enables PvP unless the owner has already toggled it on/off. We
+  // only flip when the *previous* visibility wasn't already public_edit
+  // (otherwise re-saving visibility would clobber a deliberate off toggle).
+  const becomingSandbox = nextVisibility === 'public_edit' && world.visibility !== 'public_edit'
+  const data: { visibility: string; creatorName: string; updatedAt: Date; pvpEnabled?: boolean } = {
+    visibility: nextVisibility,
+    creatorName: 'Player 1',
+    updatedAt: new Date(),
+  }
+  if (becomingSandbox && !world.pvpEnabled) {
+    data.pvpEnabled = true
+  }
+
   await prisma.world.updateMany({
     where: { id },
-    data: {
-      visibility: nextVisibility,
-      creatorName: 'Player 1',
-      updatedAt: new Date(),
-    },
+    data,
   })
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PVP TOGGLE — owner-controlled, independent of visibility
+// ═══════════════════════════════════════════════════════════════════════════
+
+export async function setWorldPvpEnabled(
+  id: string,
+  userId: string,
+  enabled: boolean,
+): Promise<boolean> {
+  const ctx = accessContext(userId)
+  const world = await prisma.world.findFirst({
+    where: { id },
+    select: { id: true, userId: true, visibility: true },
+  })
+  if (!world) {
+    throw new WorldAccessError('World not found', 'world_not_found', 404)
+  }
+  assertCanEditWorldSettings(ctx, toAccessSubject(world))
+
+  await prisma.world.updateMany({
+    where: { id },
+    data: { pvpEnabled: enabled, updatedAt: new Date() },
+  })
+  return enabled
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

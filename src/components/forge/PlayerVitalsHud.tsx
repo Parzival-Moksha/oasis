@@ -8,6 +8,7 @@ import { useAudioManager } from '@/lib/audio-manager'
 import { setPlayerManaRecharging } from '@/lib/player-avatar-runtime'
 import { useOasisStore } from '@/store/oasisStore'
 import { SPELL_DEFS } from '@/lib/spellbook'
+import { getLocalSessionId, getPvpEnabled, onPlayerState } from '@/lib/pvp-bridge'
 
 type VitalsSource = {
   hp?: unknown
@@ -301,6 +302,30 @@ export function PlayerVitalsHud({ visible }: { visible: boolean }) {
       window.removeEventListener('oasis:xp-awarded', onXpAwarded)
     }
   }, [refresh])
+
+  // ─═̷─ PvP HUD sync ─═̷─
+  // When in a PvP-enabled room the server owns HP/mana. We subscribe to the
+  // room's player state and overwrite the local HUD's hp/mana with the
+  // server-authoritative values. Max values still come from the Profile DB
+  // (computed from skills), so the bars scale correctly.
+  useEffect(() => {
+    if (!visible) return
+    const unsubscribe = onPlayerState(players => {
+      if (!getPvpEnabled()) return
+      const localId = getLocalSessionId()
+      if (!localId) return
+      const me = players.find(player => player.sessionId === localId)
+      if (!me) return
+      setVitals(prev => ({
+        ...prev,
+        hp: Math.max(0, Math.min(me.maxHp || prev.maxHp, me.hp)),
+        maxHp: me.maxHp || prev.maxHp,
+        mana: Math.max(0, Math.min(me.maxMana || prev.maxMana, me.mana)),
+        maxMana: me.maxMana || prev.maxMana,
+      }))
+    })
+    return unsubscribe
+  }, [visible])
 
   const spellText = useMemo(() => {
     if (castError) return castError

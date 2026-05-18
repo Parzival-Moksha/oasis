@@ -98,6 +98,7 @@ import { useRailMenuExclusion } from '@/hooks/useRailMenuExclusion'
 import { MobileOasisControls, useIsMobileOasis } from './forge/MobileOasisControls'
 import { CombatBoltLayer } from './forge/CombatBoltLayer'
 import { PlayerVitalsHud } from './forge/PlayerVitalsHud'
+import { PvPOverlay } from './forge/PvPOverlay'
 import { PlayerSpellbookPanel } from './forge/PlayerSpellbookPanel'
 import { UploadPanel } from './forge/UploadPanel'
 import { QuestProgressTracker } from './forge/QuestProgressTracker'
@@ -1802,6 +1803,7 @@ export default function Scene() {
         spellControlsEnabled={effectiveRp1Mode}
       />
       <PlayerVitalsHud visible={effectiveRp1Mode} />
+      <PvPOverlay visible={effectiveRp1Mode} />
       <PlayerSpellbookPanel
         visible
         isOpen={spellbookOpen}

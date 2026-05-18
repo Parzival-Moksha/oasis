@@ -32,6 +32,7 @@ import { useAudioManager } from '@/lib/audio-manager'
 import { setPlayerSpellCasting } from '@/lib/player-avatar-runtime'
 import { preloadSpellSoundManifest, resolveSpellSoundUrl } from '@/lib/spell-sounds'
 import { useOasisStore } from '@/store/oasisStore'
+import { getPvpEnabled, onRemoteBolt, sendPvpCast, sendPvpReportHit, type PvpRemoteBolt } from '@/lib/pvp-bridge'
 import type { OasisSettings } from '@/components/scene-lib/types'
 
 import {
@@ -202,6 +203,31 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
   const lastCastAtRef = useRef(0)
   const castingRef = useRef(false)
   const reportedQuestTargetHitsRef = useRef<Set<string>>(new Set())
+  // ─═̷─ PvP bolt-id tracking ─═̷─
+  // Bolts cast by THIS client get their clientPredictionId stored here so
+  // that when a hit is detected against a peer player we know we are the
+  // caster and should fire `reportHit`. Bolts that arrived from a remote
+  // caster never make it into this set, so peer-side hit detection
+  // can't double-report them.
+  const localBoltIdsRef = useRef<Set<string>>(new Set())
+
+  // Hit dispatcher. PvP-player targets route to the room; everything else
+  // (objects, NPCs, quest dummies) uses the original quest-progression path.
+  const reportHit = useCallback((boltId: string, target: CollisionTarget, position: [number, number, number], setMarker:
+    | ((updater: (prev: CometTailHitMarker[]) => CometTailHitMarker[]) => void)
+    | null,
+  ) => {
+    if (target.id.startsWith('pvp:')) {
+      // Only the caster reports their own bolt's hits — remote bolts that
+      // happen to pass through a peer capsule on this client should not
+      // generate a reportHit (the originating client will do that).
+      if (localBoltIdsRef.current.has(boltId)) {
+        sendPvpReportHit({ boltId, victimSessionId: target.id.slice(4) })
+      }
+      return
+    }
+    handleTargetHit(target, position, reportedQuestTargetHitsRef.current, setMarker)
+  }, [])
 
   // ─═̷─═̷─📦 PROJECTILE STATE BUCKETS — per design ─═̷─═̷─📦
   // Comet Tail (firebolt A)
@@ -256,10 +282,14 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
   const [borealImpacts, setBorealImpacts] = useState<BorealSpiralImpact[]>([])
 
   // ─═̷─═̷─🚀 SPAWNERS ─═̷─═̷─🚀
-  const spawnFireboltA = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number) => {
+  // Optional boltId lets the PvP cast path thread its clientPredictionId
+  // into the local projectile, so peer-player hit detection can use the
+  // same id when reporting to the server. Falls back to randomId() for
+  // pure single-player casts (no broadcast in flight).
+  const spawnFireboltA = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number, boltId?: string) => {
     const velocity = direction.clone().multiplyScalar(speed)
     setCometProjectiles(prev => [...prev.slice(-15), {
-      id: randomId(),
+      id: boltId ?? randomId(),
       origin: [origin.x, origin.y, origin.z],
       position: [origin.x, origin.y, origin.z],
       velocity: [velocity.x, velocity.y, velocity.z],
@@ -271,10 +301,10 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     }])
   }, [])
 
-  const spawnFireboltB = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number) => {
+  const spawnFireboltB = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number, boltId?: string) => {
     const velocity = direction.clone().multiplyScalar(speed)
     setSolarProjectiles(prev => [...prev.slice(-15), {
-      id: randomId(),
+      id: boltId ?? randomId(),
       origin: [origin.x, origin.y, origin.z],
       position: [origin.x, origin.y, origin.z],
       velocity: [velocity.x, velocity.y, velocity.z],
@@ -286,10 +316,10 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     }])
   }, [])
 
-  const spawnFireboltC = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number) => {
+  const spawnFireboltC = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number, boltId?: string) => {
     const velocity = direction.clone().multiplyScalar(speed)
     setPhoenixProjectiles(prev => [...prev.slice(-15), {
-      id: randomId(),
+      id: boltId ?? randomId(),
       origin: [origin.x, origin.y, origin.z],
       position: [origin.x, origin.y, origin.z],
       velocity: [velocity.x, velocity.y, velocity.z],
@@ -301,7 +331,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     }])
   }, [])
 
-  const spawnLightningA = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, damage: number) => {
+  const spawnLightningA = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, damage: number, boltId?: string) => {
     // Plasma filament: instant geometry; just check collision at cast-line.
     const length = 28
     const seed = Date.now() & 0xffffffff
@@ -315,8 +345,17 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
       const hit = segmentSphereHit(start, end, targetCenter, target.radius)
       if (hit) hits.push({ id: target.id, position: hit })
     }
+    // PvP hit-report for plasma filament: the projectile is instant, so we
+    // resolve here at cast time rather than in the per-frame loop.
+    if (boltId && localBoltIdsRef.current.has(boltId)) {
+      for (const hit of hits) {
+        if (hit.id.startsWith('pvp:')) {
+          sendPvpReportHit({ boltId, victimSessionId: hit.id.slice(4) })
+        }
+      }
+    }
     setPlasmaBolts(prev => [...prev.slice(-6), {
-      id: randomId(),
+      id: boltId ?? randomId(),
       origin: [origin.x, origin.y, origin.z],
       length,
       direction: [direction.x, direction.y, direction.z],
@@ -347,10 +386,10 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     }, 400)
   }, [])
 
-  const spawnLightningB = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number) => {
+  const spawnLightningB = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number, boltId?: string) => {
     const velocity = direction.clone().multiplyScalar(speed)
     setTeslaProjectiles(prev => [...prev.slice(-15), {
-      id: randomId(),
+      id: boltId ?? randomId(),
       origin: [origin.x, origin.y, origin.z],
       position: [origin.x, origin.y, origin.z],
       velocity: [velocity.x, velocity.y, velocity.z],
@@ -362,10 +401,10 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     }])
   }, [])
 
-  const spawnLightningC = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number) => {
+  const spawnLightningC = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number, boltId?: string) => {
     const velocity = direction.clone().multiplyScalar(speed)
     setStormProjectiles(prev => [...prev.slice(-15), {
-      id: randomId(),
+      id: boltId ?? randomId(),
       origin: [origin.x, origin.y, origin.z],
       position: [origin.x, origin.y, origin.z],
       velocity: [velocity.x, velocity.y, velocity.z],
@@ -377,7 +416,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     }])
   }, [])
 
-  const spawnLightningD = useCallback((damage: number) => {
+  const spawnLightningD = useCallback((damage: number, boltId?: string) => {
     const groundPoint = aimedGroundPoint(camera, 35)
     if (!groundPoint) return
     // Telegraph: arrow-loop VFX at the ground point.
@@ -397,8 +436,13 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
           break
         }
       }
+      // PvP hit-report for thunderbolt: ground-point-based; check after the
+      // telegraph delay so the victim's authoritative position is fresh.
+      if (boltId && hitTarget && hitTarget.id.startsWith('pvp:') && localBoltIdsRef.current.has(boltId)) {
+        sendPvpReportHit({ boltId, victimSessionId: hitTarget.id.slice(4) })
+      }
       const strike: ThunderboltStrike = {
-        id: randomId(),
+        id: boltId ?? randomId(),
         groundPoint: [groundPoint.x, groundPoint.y, groundPoint.z],
         age: 0,
         ttl: THUNDERBOLT_TTL_S - THUNDERBOLT_TELEGRAPH_S,
@@ -411,10 +455,10 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     }, THUNDERBOLT_TELEGRAPH_S * 1000)
   }, [camera])
 
-  const spawnIceA = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number) => {
+  const spawnIceA = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number, boltId?: string) => {
     const velocity = direction.clone().multiplyScalar(speed)
     setCrystalProjectiles(prev => [...prev.slice(-15), {
-      id: randomId(),
+      id: boltId ?? randomId(),
       origin: [origin.x, origin.y, origin.z],
       position: [origin.x, origin.y, origin.z],
       velocity: [velocity.x, velocity.y, velocity.z],
@@ -426,10 +470,10 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     }])
   }, [])
 
-  const spawnIceB = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number) => {
+  const spawnIceB = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number, boltId?: string) => {
     const velocity = direction.clone().multiplyScalar(speed)
     setFrozenProjectiles(prev => [...prev.slice(-15), {
-      id: randomId(),
+      id: boltId ?? randomId(),
       origin: [origin.x, origin.y, origin.z],
       position: [origin.x, origin.y, origin.z],
       velocity: [velocity.x, velocity.y, velocity.z],
@@ -441,10 +485,10 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     }])
   }, [])
 
-  const spawnIceC = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number) => {
+  const spawnIceC = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number, boltId?: string) => {
     const velocity = direction.clone().multiplyScalar(speed)
     setBorealProjectiles(prev => [...prev.slice(-15), {
-      id: randomId(),
+      id: boltId ?? randomId(),
       origin: [origin.x, origin.y, origin.z],
       position: [origin.x, origin.y, origin.z],
       velocity: [velocity.x, velocity.y, velocity.z],
@@ -506,20 +550,53 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
       setPlayerSpellCasting(true)
       window.setTimeout(() => setPlayerSpellCasting(false), BOLT_CAST_ANIMATION_MS)
 
+      // ─═̷─ PvP broadcast ─═̷─
+      // Only broadcast when we're in a PvP-enabled room. Outside PvP (or
+      // when there's no room connection at all), the cast is purely local —
+      // no extra network traffic, same as before.
+      let pvpBoltId: string | undefined
+      if (getPvpEnabled()) {
+        pvpBoltId = randomId()
+        const designLetter = spell === 'firebolt' ? settings.fireboltDesign
+          : spell === 'lightning-bolt' ? settings.lightningBoltDesign
+          : settings.iceBoltDesign
+        // Thunderbolt (lightning D) skips the projectile flight loop — but
+        // we still broadcast it so peers see the strike at the same ground
+        // point. The seed reproduces identical geometry on every client.
+        const seed = Math.floor(Math.random() * 0xffffffff)
+        localBoltIdsRef.current.add(pvpBoltId)
+        // Prune the set so it doesn't grow unbounded across a long session.
+        // BOLT_DEFAULT_TTL_S is ~2.5s — keep at most the last 100 bolts.
+        if (localBoltIdsRef.current.size > 100) {
+          const oldest = localBoltIdsRef.current.values().next().value
+          if (oldest) localBoltIdsRef.current.delete(oldest)
+        }
+        sendPvpCast({
+          spell,
+          design: designLetter,
+          ox: origin.x, oy: origin.y, oz: origin.z,
+          dx: direction.x, dy: direction.y, dz: direction.z,
+          speed,
+          damage,
+          seed,
+          clientPredictionId: pvpBoltId,
+        })
+      }
+
       // Dispatch to the correct design.
       if (spell === 'firebolt') {
-        if (settings.fireboltDesign === 'B') spawnFireboltB(origin, direction, speed, damage)
-        else if (settings.fireboltDesign === 'C') spawnFireboltC(origin, direction, speed, damage)
-        else spawnFireboltA(origin, direction, speed, damage)
+        if (settings.fireboltDesign === 'B') spawnFireboltB(origin, direction, speed, damage, pvpBoltId)
+        else if (settings.fireboltDesign === 'C') spawnFireboltC(origin, direction, speed, damage, pvpBoltId)
+        else spawnFireboltA(origin, direction, speed, damage, pvpBoltId)
       } else if (spell === 'lightning-bolt') {
-        if (settings.lightningBoltDesign === 'B') spawnLightningB(origin, direction, speed, damage)
-        else if (settings.lightningBoltDesign === 'C') spawnLightningC(origin, direction, speed, damage)
-        else if (settings.lightningBoltDesign === 'D') spawnLightningD(damage)
-        else spawnLightningA(origin, direction, damage)
+        if (settings.lightningBoltDesign === 'B') spawnLightningB(origin, direction, speed, damage, pvpBoltId)
+        else if (settings.lightningBoltDesign === 'C') spawnLightningC(origin, direction, speed, damage, pvpBoltId)
+        else if (settings.lightningBoltDesign === 'D') spawnLightningD(damage, pvpBoltId)
+        else spawnLightningA(origin, direction, damage, pvpBoltId)
       } else if (spell === 'ice-bolt') {
-        if (settings.iceBoltDesign === 'B') spawnIceB(origin, direction, speed, damage)
-        else if (settings.iceBoltDesign === 'C') spawnIceC(origin, direction, speed, damage)
-        else spawnIceA(origin, direction, speed, damage)
+        if (settings.iceBoltDesign === 'B') spawnIceB(origin, direction, speed, damage, pvpBoltId)
+        else if (settings.iceBoltDesign === 'C') spawnIceC(origin, direction, speed, damage, pvpBoltId)
+        else spawnIceA(origin, direction, speed, damage, pvpBoltId)
       }
 
       window.dispatchEvent(new CustomEvent('oasis:spell-cast', { detail: { spell, damage } }))
@@ -541,6 +618,46 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
   // on the first cast (otherwise the first cast falls back to defaults while
   // the manifest is still in flight).
   useEffect(() => { void preloadSpellSoundManifest() }, [])
+
+  // ─═̷─ PvP remote-bolt receive ─═̷─
+  // Subscribe to incoming bolts from peers. Spawns the same visual designs
+  // as a local cast — no mana cost, no XP (the originating client paid those).
+  // The bolt id is NOT added to localBoltIdsRef, so the hit-detection path
+  // won't try to reportHit on these.
+  useEffect(() => {
+    const unsubscribe = onRemoteBolt((bolt: PvpRemoteBolt) => {
+      const origin = new THREE.Vector3(bolt.origin[0], bolt.origin[1], bolt.origin[2])
+      const direction = new THREE.Vector3(bolt.direction[0], bolt.direction[1], bolt.direction[2]).normalize()
+      const audio = useAudioManager.getState()
+      // Same audio cue as local cast — peers should hear other wizards casting.
+      if (bolt.spell === 'firebolt') audio.play('fireboltVoice')
+      else if (bolt.spell === 'lightning-bolt') audio.play('fireboltCast')
+      else if (bolt.spell === 'ice-bolt') audio.play('buttonClick')
+
+      // Dispatch to the per-design spawner. Design letter is room-validated
+      // upstream so we just defensively fall through to A on garbage values.
+      const design = (bolt.design || 'A').toUpperCase()
+      if (bolt.spell === 'firebolt') {
+        if (design === 'B') spawnFireboltB(origin, direction, bolt.speed, bolt.damage)
+        else if (design === 'C') spawnFireboltC(origin, direction, bolt.speed, bolt.damage)
+        else spawnFireboltA(origin, direction, bolt.speed, bolt.damage)
+      } else if (bolt.spell === 'lightning-bolt') {
+        if (design === 'B') spawnLightningB(origin, direction, bolt.speed, bolt.damage)
+        else if (design === 'C') spawnLightningC(origin, direction, bolt.speed, bolt.damage)
+        else if (design === 'D') spawnLightningD(bolt.damage)
+        else spawnLightningA(origin, direction, bolt.damage)
+      } else if (bolt.spell === 'ice-bolt') {
+        if (design === 'B') spawnIceB(origin, direction, bolt.speed, bolt.damage)
+        else if (design === 'C') spawnIceC(origin, direction, bolt.speed, bolt.damage)
+        else spawnIceA(origin, direction, bolt.speed, bolt.damage)
+      }
+    })
+    return unsubscribe
+  }, [
+    spawnFireboltA, spawnFireboltB, spawnFireboltC,
+    spawnLightningA, spawnLightningB, spawnLightningC, spawnLightningD,
+    spawnIceA, spawnIceB, spawnIceC,
+  ])
 
   // ─═̷─═̷─📡 EVENT WIRING ─═̷─═̷─📡
   useEffect(() => {
@@ -589,7 +706,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
         const result = stepProjectile(p, delta, targets, COMET_TRAIL_SPACING_M)
         if (result.expired) {
           newExplosions.push({ id: randomId(), position: result.endPos, age: 0, ttl: BOLT_EXPLOSION_TTL_S, seed: Math.floor(Math.random() * 10000) })
-          if (result.impactTarget) handleTargetHit(result.impactTarget, result.endPos, reportedQuestTargetHitsRef.current, setCometHitMarkers)
+          if (result.impactTarget) reportHit(p.id, result.impactTarget, result.endPos, setCometHitMarkers)
         } else {
           next.push(result.next as CometTailProjectile)
         }
@@ -615,7 +732,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
         const result = stepProjectile(p, delta, targets, SOLAR_TRAIL_SPACING_M)
         if (result.expired) {
           newExplosions.push({ id: randomId(), position: result.endPos, age: 0, ttl: BOLT_EXPLOSION_TTL_S * 1.2, seed: Math.floor(Math.random() * 10000) })
-          if (result.impactTarget) handleTargetHit(result.impactTarget, result.endPos, reportedQuestTargetHitsRef.current, null)
+          if (result.impactTarget) reportHit(p.id, result.impactTarget, result.endPos, null)
         } else {
           next.push(result.next as SolarFlareProjectile)
         }
@@ -642,7 +759,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
         if (result.expired) {
           const vel = new THREE.Vector3(...p.velocity).normalize()
           newExplosions.push({ id: randomId(), position: result.endPos, age: 0, ttl: 0.95, seed: Math.floor(Math.random() * 10000), upVec: [vel.x, vel.y, vel.z] })
-          if (result.impactTarget) handleTargetHit(result.impactTarget, result.endPos, reportedQuestTargetHitsRef.current, null)
+          if (result.impactTarget) reportHit(p.id, result.impactTarget, result.endPos, null)
         } else {
           next.push(result.next as PhoenixFeatherProjectile)
         }
@@ -680,7 +797,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
         const result = stepProjectile(p, delta, targets, 0.3)
         if (result.expired) {
           newImpacts.push({ id: randomId(), position: result.endPos, age: 0, ttl: 0.85, seed: Math.floor(Math.random() * 10000), normalUp: [0, 1, 0] })
-          if (result.impactTarget) handleTargetHit(result.impactTarget, result.endPos, reportedQuestTargetHitsRef.current, null)
+          if (result.impactTarget) reportHit(p.id, result.impactTarget, result.endPos, null)
         } else {
           next.push(result.next as TeslaCoilProjectile)
         }
@@ -706,7 +823,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
         const result = stepProjectile(p, delta, targets, 0.28)
         if (result.expired) {
           newImpacts.push({ id: randomId(), position: result.endPos, age: 0, ttl: 0.85, seed: Math.floor(Math.random() * 10000), normalUp: [0, 1, 0] })
-          if (result.impactTarget) handleTargetHit(result.impactTarget, result.endPos, reportedQuestTargetHitsRef.current, null)
+          if (result.impactTarget) reportHit(p.id, result.impactTarget, result.endPos, null)
         } else {
           next.push(result.next as StormLanceProjectile)
         }
@@ -746,7 +863,12 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
             seed: s.seed,
           })
           useAudioManager.getState().play('fireboltHit')
-          if (s.target && isQuestFireboltTarget(s.target.id)) {
+          if (s.target?.id.startsWith('pvp:')) {
+            // PvP thunderbolt hit. Only the caster reports it.
+            if (localBoltIdsRef.current.has(s.id)) {
+              sendPvpReportHit({ boltId: s.id, victimSessionId: s.target.id.slice(4) })
+            }
+          } else if (s.target && isQuestFireboltTarget(s.target.id)) {
             recordQuestTargetHit(s.target.id, s.groundPoint, reportedQuestTargetHitsRef.current)
           } else if (s.target) {
             window.dispatchEvent(new CustomEvent('oasis:firebolt-hit', { detail: { targetId: s.target.id, position: s.groundPoint, worldId: useOasisStore.getState().activeWorldId } }))
@@ -778,7 +900,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
         const result = stepProjectile(p, delta, targets, CRYSTAL_TRAIL_SPACING_M)
         if (result.expired) {
           newImpacts.push({ id: randomId(), position: result.endPos, age: 0, ttl: 0.85, seed: Math.floor(Math.random() * 10000) })
-          if (result.impactTarget) handleTargetHit(result.impactTarget, result.endPos, reportedQuestTargetHitsRef.current, null)
+          if (result.impactTarget) reportHit(p.id, result.impactTarget, result.endPos, null)
         } else {
           next.push(result.next as CrystalSpearProjectile)
         }
@@ -805,7 +927,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
         const result = stepProjectile(p, delta, targets, FROZEN_TRAIL_SPACING_M)
         if (result.expired) {
           newImpacts.push({ id: randomId(), position: result.endPos, age: 0, ttl: 2, seed: Math.floor(Math.random() * 10000) })
-          if (result.impactTarget) handleTargetHit(result.impactTarget, result.endPos, reportedQuestTargetHitsRef.current, null)
+          if (result.impactTarget) reportHit(p.id, result.impactTarget, result.endPos, null)
         } else {
           next.push(result.next as FrozenFlameProjectile)
         }
@@ -838,7 +960,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
         const result = stepProjectile(p, delta, targets, BOREAL_TRAIL_SPACING_M)
         if (result.expired) {
           newImpacts.push({ id: randomId(), position: result.endPos, age: 0, ttl: 1.1, seed: Math.floor(Math.random() * 10000) })
-          if (result.impactTarget) handleTargetHit(result.impactTarget, result.endPos, reportedQuestTargetHitsRef.current, null)
+          if (result.impactTarget) reportHit(p.id, result.impactTarget, result.endPos, null)
         } else {
           next.push(result.next as BorealSpiralProjectile)
         }

@@ -156,6 +156,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
   const visibilityLabel = formatVisibility(visibility)
   const isUnlistedVisibility = visibility === 'unlisted' || visibility === 'only-with-link' || visibility === 'unlisted_edit'
   const unlistedFullAccess = visibility === 'unlisted_edit'
+  const pvpEnabled = Boolean(meta?.pvpEnabled)
   const ownerName = meta?.ownerName || meta?.creatorName || meta?.creator_name || 'Player 1'
   const ownerAvatar = meta?.ownerAvatar || meta?.creatorAvatar || meta?.creator_avatar || null
   const ownerLevel = meta?.ownerLevel || 1
@@ -271,6 +272,27 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
       setMenuMessage(`Visibility set to ${formatVisibility(nextVisibility)}.`)
     } catch {
       setMenuMessage('Could not change visibility.')
+    } finally {
+      setBusyLabel(null)
+    }
+  }
+
+  const handlePvpToggle = async (enabled: boolean) => {
+    if (!worldId || !canEditSettings) return
+    setBusyLabel(enabled ? 'Enabling PvP' : 'Disabling PvP')
+    setMenuMessage(null)
+    try {
+      const response = await fetch(`${OASIS_BASE}/api/worlds/${encodeURIComponent(worldId)}/pvp`, {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      refreshWorldRegistry()
+      setMenuMessage(enabled ? 'PvP enabled — combat bolts will damage other players in this world.' : 'PvP disabled — bolts pass through players.')
+    } catch {
+      setMenuMessage('Could not change PvP setting.')
     } finally {
       setBusyLabel(null)
     }
@@ -678,7 +700,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
                 className="mt-2 flex w-full items-center justify-between gap-3 rounded-md border px-2 py-2 text-left transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-45"
                 style={{
                   borderColor: unlistedFullAccess ? 'rgba(74,222,128,0.58)' : 'rgba(255,255,255,0.10)',
-                  background: unlistedFullAccess ? 'rgba(34,197,94,0.13)' : 'rgba(255,255,255,0.04)',
+                  background: unlistedFullAccess ? 'rgba(34,197,94,0.35)' : 'rgba(255,255,255,0.08)',
                 }}
               >
                 <span className="min-w-0">
@@ -699,6 +721,34 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
                 </span>
               </button>
             )}
+            {/* ─═̷─ PvP toggle. Sandbox worlds default-on; others default-off. ─═̷─ */}
+            <button
+              type="button"
+              onClick={() => handlePvpToggle(!pvpEnabled)}
+              disabled={!canEditSettings || Boolean(busyLabel)}
+              className="mt-2 flex w-full items-center justify-between gap-3 rounded-md border px-2 py-2 text-left transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-45"
+              style={{
+                borderColor: pvpEnabled ? 'rgba(248,113,113,0.62)' : 'rgba(255,255,255,0.10)',
+                background: pvpEnabled ? 'rgba(220,38,38,0.16)' : 'rgba(255,255,255,0.04)',
+              }}
+            >
+              <span className="min-w-0">
+                <span className="block text-[10px] font-black uppercase tracking-[0.12em] text-white/85">PvP combat</span>
+                <span className="mt-0.5 block text-[9px] text-white/42">{pvpEnabled ? 'players can hit each other with bolts' : 'bolts pass through other players'}</span>
+              </span>
+              <span
+                className="relative h-5 w-9 shrink-0 rounded-full border transition"
+                style={{
+                  borderColor: pvpEnabled ? 'rgba(252,165,165,0.78)' : 'rgba(255,255,255,0.16)',
+                  background: pvpEnabled ? 'rgba(220,38,38,0.42)' : 'rgba(255,255,255,0.08)',
+                }}
+              >
+                <span
+                  className="absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full bg-white transition"
+                  style={{ left: pvpEnabled ? '18px' : '3px' }}
+                />
+              </span>
+            </button>
           </div>
 
           <div className="rounded-md border border-cyan-300/15 bg-cyan-300/5 p-2">

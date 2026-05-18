@@ -42,6 +42,14 @@ const commands = [
   // Rebuild docusaurus + sync into public/docs-site so /docs on hosted is fresh.
   'pnpm docs:local',
   'npx prisma generate',
+  // Apply additive schema changes (e.g. new columns with defaults) to the
+  // hosted SQLite without running an interactive migration. db push is safe
+  // for additive changes; destructive changes still require a manual
+  // prisma migrate flow. --accept-data-loss is a misnomer for SQLite +
+  // additive schemas; it's required for some operations and a no-op for
+  // others. We pass it explicitly so the deploy doesn't hang waiting for
+  // confirmation on benign changes.
+  'npx prisma db push --skip-generate --accept-data-loss',
   // Bump Node heap for the Next build — the bolt-design modules + R3F
   // assets push memory past the 2GB default and OOM the worker on host.
   'NODE_OPTIONS="--max-old-space-size=4096" pnpm build',

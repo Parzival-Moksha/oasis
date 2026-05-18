@@ -92,6 +92,8 @@ export interface WorldMeta {
   visitCount?: number
   createdAt: string
   lastSavedAt: string
+  /** PvP enabled in this world (room reads this on join). */
+  pvpEnabled?: boolean
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

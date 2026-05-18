@@ -65,6 +65,7 @@ function makeWorldRow(state: Record<string, unknown> = {}, rowOverrides: Record<
     objectCount: 0,
     visibility: 'private',
     assetVisibility: 'public',
+    pvpEnabled: false,
     thumbnailUrl: null,
     creatorName: null,
     creatorAvatar: null,
