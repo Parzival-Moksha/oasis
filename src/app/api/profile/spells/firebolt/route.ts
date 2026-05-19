@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { getRequiredOasisUserId } from '@/lib/session'
 import { DEFAULT_PROFILE_AVATAR_3D_URL, DEFAULT_PROFILE_DISPLAY_NAME } from '@/lib/profile-defaults'
 import { buildPlayerProgression } from '@/lib/player-progression'
-import { canUseFireboltInQuestTrial, hasSpellUnlocked, recordSpellUse } from '@/lib/player-progression-server'
+import { recordSpellUse } from '@/lib/player-progression-server'
 import { levelFromXp } from '@/lib/xp'
 
 async function ensureProfile(userId: string) {
@@ -30,24 +30,17 @@ export async function POST(request: NextRequest) {
     const profile = await ensureProfile(userId)
     const level = levelFromXp(profile.totalXp)
     const progression = buildPlayerProgression({ ...profile, level })
-    const unlocked = await hasSpellUnlocked(userId, 'firebolt')
-    const trialUnlocked = unlocked ? false : await canUseFireboltInQuestTrial(userId, worldId)
     const cost = progression.stats.fireboltManaCost
 
-    if (!unlocked && !trialUnlocked) {
-      return NextResponse.json({
-        ok: false,
-        error: 'Firebolt locked',
-        progression,
-        spell: {
-          id: 'firebolt',
-          locked: true,
-          cost,
-          damage: progression.stats.fireboltDamage,
-          speedMetersPerSecond: progression.stats.fireboltSpeedMetersPerSecond,
-        },
-      }, { status: 423 })
-    }
+    // ─═̷─ Combat unlock gate removed 2026-05-19 for ClawCon.
+    // Firebolt / lightning / ice all route through this endpoint until
+    // their dedicated routes ship. Pre-ClawCon decision: combat is
+    // globally available from spawn — no Quest Zero requirement, no
+    // achievement requirement. Mana cost still applies; PvP still gates
+    // on the room. recordSpellUse() is called unconditionally on success
+    // (was only called if `unlocked`); fine because the DB row gets
+    // upserted with the use counter. ─═̷─
+    void worldId
 
     if (progression.mana < cost) {
       return NextResponse.json({
@@ -71,9 +64,7 @@ export async function POST(request: NextRequest) {
       },
     })
     const nextProgression = buildPlayerProgression({ ...updated, level })
-    if (unlocked) {
-      await recordSpellUse(userId, 'firebolt').catch(() => null)
-    }
+    await recordSpellUse(userId, 'firebolt').catch(() => null)
 
     return NextResponse.json({
       ok: true,
@@ -81,7 +72,6 @@ export async function POST(request: NextRequest) {
       spell: {
         id: 'firebolt',
         cost,
-        trial: trialUnlocked,
         damage: progression.stats.fireboltDamage,
         speedMetersPerSecond: progression.stats.fireboltSpeedMetersPerSecond,
       },
