@@ -2117,6 +2117,37 @@
           ],
           "rotationY": 0
         }
+      },
+      {
+        "id": "portal-zero-to-openclaw-hub",
+        "label": "OpenClaw Hub",
+        "variant": "hologram-gate",
+        "position": [
+          -14.6,
+          0,
+          -14.6
+        ],
+        "rotationY": 0.7853981633974483,
+        "scale": 0.86,
+        "width": 2.25,
+        "height": 3.15,
+        "direction": "one-way",
+        "sourceWorldId": "world-welcome-hub-system",
+        "targetWorldId": "world-openclaw-hub-system",
+        "targetWorldName": "OpenClaw Hub",
+        "action": {
+          "type": "load_world",
+          "worldId": "world-openclaw-hub-system",
+          "worldName": "OpenClaw Hub"
+        },
+        "spawnPose": {
+          "position": [
+            0,
+            1,
+            2
+          ],
+          "rotationY": 3.141592653589793
+        }
       }
     ],
     "spatialWebObjects": [

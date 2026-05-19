@@ -21,6 +21,13 @@
       "file": "rookie-wizard.world.json",
       "name": "Rookie Wizard",
       "visibility": "public"
+    },
+    {
+      "slug": "openclaw-hub",
+      "id": "world-openclaw-hub-system",
+      "file": "openclaw-hub.world.json",
+      "name": "OpenClaw Hub",
+      "visibility": "core"
     }
   ]
 }
