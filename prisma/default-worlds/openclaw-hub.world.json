@@ -1,0 +1,560 @@
+{
+  "seedVersion": 1,
+  "slug": "openclaw-hub",
+  "id": "openclaw-hub-world",
+  "userId": "local-user",
+  "name": "OpenClaw Hub",
+  "icon": "C",
+  "visibility": "core",
+  "creatorName": "OpenClaw",
+  "creatorAvatar": null,
+  "thumbnailUrl": null,
+  "data": {
+    "version": 1,
+    "terrain": null,
+    "terrainHeights": [],
+    "groundPresetId": "grass",
+    "groundTiles": {},
+    "craftedScenes": [
+      {
+        "id": "och-center-dais",
+        "name": "OpenClaw central dais",
+        "prompt": "OpenClaw central dais",
+        "position": [0, 0, 0],
+        "createdAt": "2026-05-19T00:00:00.000Z",
+        "model": "codex-openclaw-hub-primitives",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [0, 0.08, 0],
+            "scale": [4.0, 0.16, 4.0],
+            "color": "#fef3c7",
+            "roughness": 0.74,
+            "metalness": 0.04
+          }
+        ]
+      },
+      {
+        "id": "och-claw-ring",
+        "name": "OpenClaw glow ring",
+        "prompt": "Cyan claw glow ring",
+        "position": [0, 0, 0],
+        "createdAt": "2026-05-19T00:00:00.000Z",
+        "model": "codex-openclaw-hub-primitives",
+        "objects": [
+          {
+            "type": "torus",
+            "position": [0, 0.18, 0],
+            "scale": [4.6, 4.6, 0.12],
+            "color": "#22d3ee",
+            "roughness": 0.36,
+            "metalness": 0.04,
+            "rotation": [1.5707963267948966, 0, 0],
+            "emissive": "#06b6d4",
+            "emissiveIntensity": 0.32
+          }
+        ]
+      },
+      {
+        "id": "och-title",
+        "name": "OPENCLAW HUB title",
+        "prompt": "OPENCLAW HUB sign",
+        "position": [0, 4.2, -4.2],
+        "createdAt": "2026-05-19T00:00:00.000Z",
+        "model": "codex-openclaw-hub-primitives",
+        "objects": [
+          {
+            "type": "text",
+            "position": [0, 0, 0],
+            "scale": [1, 1, 1],
+            "color": "#fef9c3",
+            "roughness": 0.72,
+            "metalness": 0.04,
+            "text": "OPENCLAW HUB",
+            "fontSize": 0.78,
+            "anchorX": "center",
+            "anchorY": "middle",
+            "emissive": "#fde047",
+            "emissiveIntensity": 0.4
+          }
+        ]
+      },
+      {
+        "id": "och-subtitle",
+        "name": "self-hosted, claws out",
+        "prompt": "Tagline",
+        "position": [0, 3.4, -4.2],
+        "createdAt": "2026-05-19T00:00:00.000Z",
+        "model": "codex-openclaw-hub-primitives",
+        "objects": [
+          {
+            "type": "text",
+            "position": [0, 0, 0],
+            "scale": [1, 1, 1],
+            "color": "#a5f3fc",
+            "roughness": 0.72,
+            "metalness": 0.04,
+            "text": "self-hosted, claws out",
+            "fontSize": 0.34,
+            "anchorX": "center",
+            "anchorY": "middle",
+            "emissive": "#22d3ee",
+            "emissiveIntensity": 0.35
+          }
+        ]
+      },
+      {
+        "id": "och-portal-public-sign",
+        "name": "NEW PUBLIC WORLD",
+        "prompt": "Portal sign east",
+        "position": [13.4, 2.2, 0],
+        "createdAt": "2026-05-19T00:00:00.000Z",
+        "model": "codex-openclaw-hub-primitives",
+        "objects": [
+          {
+            "type": "text",
+            "position": [0, 0, 0],
+            "scale": [1, 1, 1],
+            "color": "#fde68a",
+            "roughness": 0.72,
+            "metalness": 0.04,
+            "text": "NEW PUBLIC WORLD",
+            "fontSize": 0.38,
+            "anchorX": "center",
+            "anchorY": "middle",
+            "rotation": [0, -1.5707963267948966, 0],
+            "emissive": "#fbbf24",
+            "emissiveIntensity": 0.4
+          }
+        ]
+      },
+      {
+        "id": "och-portal-ffa-sign",
+        "name": "NEW FFA WORLD",
+        "prompt": "Portal sign south",
+        "position": [0, 2.2, 13.4],
+        "createdAt": "2026-05-19T00:00:00.000Z",
+        "model": "codex-openclaw-hub-primitives",
+        "objects": [
+          {
+            "type": "text",
+            "position": [0, 0, 0],
+            "scale": [1, 1, 1],
+            "color": "#bbf7d0",
+            "roughness": 0.72,
+            "metalness": 0.04,
+            "text": "NEW FFA WORLD",
+            "fontSize": 0.38,
+            "anchorX": "center",
+            "anchorY": "middle",
+            "rotation": [0, 3.141592653589793, 0],
+            "emissive": "#22c55e",
+            "emissiveIntensity": 0.4
+          }
+        ]
+      },
+      {
+        "id": "och-portal-private-sign",
+        "name": "NEW PRIVATE WORLD",
+        "prompt": "Portal sign west",
+        "position": [-13.4, 2.2, 0],
+        "createdAt": "2026-05-19T00:00:00.000Z",
+        "model": "codex-openclaw-hub-primitives",
+        "objects": [
+          {
+            "type": "text",
+            "position": [0, 0, 0],
+            "scale": [1, 1, 1],
+            "color": "#ddd6fe",
+            "roughness": 0.72,
+            "metalness": 0.04,
+            "text": "NEW PRIVATE WORLD",
+            "fontSize": 0.38,
+            "anchorX": "center",
+            "anchorY": "middle",
+            "rotation": [0, 1.5707963267948966, 0],
+            "emissive": "#a78bfa",
+            "emissiveIntensity": 0.4
+          }
+        ]
+      },
+      {
+        "id": "och-cathedral-glow",
+        "name": "CLAW CATHEDRAL sign",
+        "prompt": "Cathedral marker",
+        "position": [0, 6.4, -22],
+        "createdAt": "2026-05-19T00:00:00.000Z",
+        "model": "codex-openclaw-hub-primitives",
+        "objects": [
+          {
+            "type": "text",
+            "position": [0, 0, 0],
+            "scale": [1, 1, 1],
+            "color": "#fef9c3",
+            "roughness": 0.72,
+            "metalness": 0.04,
+            "text": "CLAW CATHEDRAL",
+            "fontSize": 0.52,
+            "anchorX": "center",
+            "anchorY": "middle",
+            "emissive": "#facc15",
+            "emissiveIntensity": 0.55
+          }
+        ]
+      }
+    ],
+    "conjuredAssetIds": [],
+    "catalogPlacements": [
+      {
+        "id": "och-gallery-genesis",
+        "catalogId": "generated-image",
+        "name": "Crustafarian Genesis",
+        "glbPath": "",
+        "position": [-6.0, 1.55, -4.2],
+        "rotation": [0, 0, 0],
+        "scale": 1.55,
+        "imageUrl": "",
+        "imageFrameStyle": "baroque",
+        "imageFrameThickness": 1.0
+      },
+      {
+        "id": "och-gallery-sovereign",
+        "catalogId": "generated-image",
+        "name": "The Self-Hosted Sovereign",
+        "glbPath": "",
+        "position": [-2.0, 1.55, -4.2],
+        "rotation": [0, 0, 0],
+        "scale": 1.55,
+        "imageUrl": "",
+        "imageFrameStyle": "baroque",
+        "imageFrameThickness": 1.0
+      },
+      {
+        "id": "och-gallery-sun",
+        "catalogId": "generated-image",
+        "name": "Agents Walking In Sun",
+        "glbPath": "",
+        "position": [2.0, 1.55, -4.2],
+        "rotation": [0, 0, 0],
+        "scale": 1.55,
+        "imageUrl": "",
+        "imageFrameStyle": "baroque",
+        "imageFrameThickness": 1.0
+      },
+      {
+        "id": "och-gallery-council",
+        "catalogId": "generated-image",
+        "name": "The Claw Council",
+        "glbPath": "",
+        "position": [6.0, 1.55, -4.2],
+        "rotation": [0, 0, 0],
+        "scale": 1.55,
+        "imageUrl": "",
+        "imageFrameStyle": "baroque",
+        "imageFrameThickness": 1.0
+      },
+
+      {
+        "id": "och-cathedral-platform",
+        "catalogId": "platform_4x4",
+        "name": "Cathedral Floor",
+        "glbPath": "/models/cyberpunk/Cyberpunk Game Kit - Quaternius/Platforms/Platform_4x4.gltf",
+        "position": [0, 0, -22],
+        "rotation": [0, 0, 0],
+        "scale": 1.8
+      },
+      {
+        "id": "och-cathedral-tower-base",
+        "catalogId": "km_tower_base",
+        "name": "Cathedral Tower Base",
+        "glbPath": "/models/kenney-medieval/tower-base.glb",
+        "position": [0, 1.5, -22],
+        "rotation": [0, 0, 0],
+        "scale": 3.2
+      },
+      {
+        "id": "och-cathedral-tower-top",
+        "catalogId": "km_tower_top",
+        "name": "Cathedral Spire",
+        "glbPath": "/models/kenney-medieval/tower-top.glb",
+        "position": [0, 4.6, -22],
+        "rotation": [0, 0, 0],
+        "scale": 3.2
+      },
+      {
+        "id": "och-cathedral-column-left",
+        "catalogId": "km_column",
+        "name": "Cathedral Column Left",
+        "glbPath": "/models/kenney-medieval/column.glb",
+        "position": [-3.6, 0, -20.4],
+        "rotation": [0, 0, 0],
+        "scale": 2.4
+      },
+      {
+        "id": "och-cathedral-column-right",
+        "catalogId": "km_column",
+        "name": "Cathedral Column Right",
+        "glbPath": "/models/kenney-medieval/column.glb",
+        "position": [3.6, 0, -20.4],
+        "rotation": [0, 0, 0],
+        "scale": 2.4
+      },
+      {
+        "id": "och-cathedral-banner-left",
+        "catalogId": "qf_banner_1",
+        "name": "Claw Banner Left",
+        "glbPath": "/models/quaternius-fantasy/Banner_1.gltf",
+        "position": [-3.6, 0, -19.2],
+        "rotation": [0, 0, 0],
+        "scale": 2.0
+      },
+      {
+        "id": "och-cathedral-banner-right",
+        "catalogId": "qf_banner_1",
+        "name": "Claw Banner Right",
+        "glbPath": "/models/quaternius-fantasy/Banner_1.gltf",
+        "position": [3.6, 0, -19.2],
+        "rotation": [0, 0, 0],
+        "scale": 2.0
+      },
+      {
+        "id": "och-cathedral-chest",
+        "catalogId": "qf_chest_wood",
+        "name": "Claw Council Coffer",
+        "glbPath": "/models/quaternius-fantasy/Chest_Wood.gltf",
+        "position": [0, 1.5, -23.0],
+        "rotation": [0, 0, 0],
+        "scale": 1.8
+      },
+      {
+        "id": "och-cathedral-torch-left",
+        "catalogId": "qf_torch_metal",
+        "name": "Cathedral Torch Left",
+        "glbPath": "/models/quaternius-fantasy/Torch_Metal.gltf",
+        "position": [-1.8, 0, -19.4],
+        "rotation": [0, 0, 0],
+        "scale": 1.6
+      },
+      {
+        "id": "och-cathedral-torch-right",
+        "catalogId": "qf_torch_metal",
+        "name": "Cathedral Torch Right",
+        "glbPath": "/models/quaternius-fantasy/Torch_Metal.gltf",
+        "position": [1.8, 0, -19.4],
+        "rotation": [0, 0, 0],
+        "scale": 1.6
+      },
+
+      {
+        "id": "och-tree-ne-1",
+        "catalogId": "ku_tree_park",
+        "name": "Hub Tree NE 1",
+        "glbPath": "/models/kenney-urban/tree-park-large.glb",
+        "position": [9.0, 0, -9.0],
+        "rotation": [0, 0.6, 0],
+        "scale": 2.6
+      },
+      {
+        "id": "och-tree-ne-2",
+        "catalogId": "ku_tree_pine_small",
+        "name": "Hub Pine NE",
+        "glbPath": "/models/kenney-urban/tree-pine-small.glb",
+        "position": [12.0, 0, -6.0],
+        "rotation": [0, 1.1, 0],
+        "scale": 2.4
+      },
+      {
+        "id": "och-tree-se-1",
+        "catalogId": "ku_tree_park",
+        "name": "Hub Tree SE 1",
+        "glbPath": "/models/kenney-urban/tree-park-large.glb",
+        "position": [9.0, 0, 9.0],
+        "rotation": [0, -0.6, 0],
+        "scale": 2.6
+      },
+      {
+        "id": "och-tree-se-2",
+        "catalogId": "ku_tree_pine_small",
+        "name": "Hub Pine SE",
+        "glbPath": "/models/kenney-urban/tree-pine-small.glb",
+        "position": [12.0, 0, 6.0],
+        "rotation": [0, 2.1, 0],
+        "scale": 2.4
+      },
+      {
+        "id": "och-tree-sw-1",
+        "catalogId": "ku_tree_park",
+        "name": "Hub Tree SW 1",
+        "glbPath": "/models/kenney-urban/tree-park-large.glb",
+        "position": [-9.0, 0, 9.0],
+        "rotation": [0, 0.4, 0],
+        "scale": 2.6
+      },
+      {
+        "id": "och-tree-sw-2",
+        "catalogId": "ku_tree_pine_small",
+        "name": "Hub Pine SW",
+        "glbPath": "/models/kenney-urban/tree-pine-small.glb",
+        "position": [-12.0, 0, 6.0],
+        "rotation": [0, -0.5, 0],
+        "scale": 2.4
+      },
+      {
+        "id": "och-tree-nw-1",
+        "catalogId": "ku_tree_park",
+        "name": "Hub Tree NW 1",
+        "glbPath": "/models/kenney-urban/tree-park-large.glb",
+        "position": [-9.0, 0, -9.0],
+        "rotation": [0, -0.4, 0],
+        "scale": 2.6
+      },
+      {
+        "id": "och-tree-nw-2",
+        "catalogId": "ku_tree_pine_small",
+        "name": "Hub Pine NW",
+        "glbPath": "/models/kenney-urban/tree-pine-small.glb",
+        "position": [-12.0, 0, -6.0],
+        "rotation": [0, 0.9, 0],
+        "scale": 2.4
+      },
+      {
+        "id": "och-shrub-n-1",
+        "catalogId": "ku_shrub",
+        "name": "Cathedral Path Shrub Left",
+        "glbPath": "/models/kenney-urban/tree-shrub.glb",
+        "position": [-1.8, 0, -14.0],
+        "rotation": [0, 0.3, 0],
+        "scale": 2.0
+      },
+      {
+        "id": "och-shrub-n-2",
+        "catalogId": "ku_shrub",
+        "name": "Cathedral Path Shrub Right",
+        "glbPath": "/models/kenney-urban/tree-shrub.glb",
+        "position": [1.8, 0, -14.0],
+        "rotation": [0, -0.3, 0],
+        "scale": 2.0
+      }
+    ],
+    "portalGates": [
+      {
+        "id": "och-portal-new-public",
+        "label": "New Public World",
+        "variant": "solar-arch",
+        "position": [14.6, 0, 0],
+        "rotationY": -1.5707963267948966,
+        "scale": 0.92,
+        "width": 2.35,
+        "height": 3.15,
+        "direction": "one-way",
+        "sourceWorldId": "openclaw-hub-world",
+        "action": {
+          "type": "create_world",
+          "visibility": "public",
+          "name": "Public world",
+          "icon": "P",
+          "promptForName": true
+        }
+      },
+      {
+        "id": "och-portal-new-ffa",
+        "label": "New FFA World",
+        "variant": "verdant-arch",
+        "position": [0, 0, 14.6],
+        "rotationY": 3.141592653589793,
+        "scale": 0.92,
+        "width": 2.35,
+        "height": 3.15,
+        "direction": "one-way",
+        "sourceWorldId": "openclaw-hub-world",
+        "action": {
+          "type": "create_world",
+          "visibility": "ffa",
+          "name": "Free for all world",
+          "icon": "F",
+          "promptForName": true
+        }
+      },
+      {
+        "id": "och-portal-new-private",
+        "label": "New Private World",
+        "variant": "void-door",
+        "position": [-14.6, 0, 0],
+        "rotationY": 1.5707963267948966,
+        "scale": 0.92,
+        "width": 2.35,
+        "height": 3.15,
+        "direction": "one-way",
+        "sourceWorldId": "openclaw-hub-world",
+        "action": {
+          "type": "create_world",
+          "visibility": "private",
+          "name": "Private world",
+          "icon": "R",
+          "promptForName": true
+        }
+      }
+    ],
+    "spatialWebObjects": [],
+    "transforms": {},
+    "behaviors": {},
+    "lights": [
+      {
+        "id": "och-hemi-sky",
+        "type": "hemisphere",
+        "position": [0, 14, 0],
+        "color": "#fef9c3",
+        "intensity": 0.7
+      },
+      {
+        "id": "och-center-cyan-fill",
+        "type": "point",
+        "position": [0, 3.0, 0],
+        "color": "#22d3ee",
+        "intensity": 1.0,
+        "distance": 22
+      },
+      {
+        "id": "och-cathedral-warm",
+        "type": "point",
+        "position": [0, 3.5, -22],
+        "color": "#fbbf24",
+        "intensity": 1.1,
+        "distance": 16
+      }
+    ],
+    "skyBackgroundId": "sunny_vondelpark",
+    "agentWindows": [
+      {
+        "id": "och-openclaw-window",
+        "agentType": "openclaw",
+        "linkedAvatarId": "och-openclaw-avatar",
+        "anchorMode": "next-to",
+        "position": [1.8, 2.4, -1.8],
+        "rotation": [0, 3.141592653589793, 0],
+        "scale": 0.16,
+        "width": 470,
+        "height": 680,
+        "label": "OpenClaw",
+        "renderMode": "live-html",
+        "frameStyle": "hologram",
+        "frameThickness": 5,
+        "windowOpacity": 0.92,
+        "windowBlur": 8
+      }
+    ],
+    "agentAvatars": [
+      {
+        "id": "och-openclaw-avatar",
+        "agentType": "openclaw",
+        "avatar3dUrl": "/avatars/gallery/CaptainLobster.vrm",
+        "position": [0, 0, -1.8],
+        "rotation": [0, 3.141592653589793, 0],
+        "scale": 1.08,
+        "linkedWindowId": "och-openclaw-window",
+        "label": "OpenClaw"
+      }
+    ],
+    "savedAt": "2026-05-19T00:00:00.000Z"
+  }
+}

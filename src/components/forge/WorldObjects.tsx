@@ -2376,6 +2376,7 @@ function PlacementOverlay() {
       const isHermesAgent = placementPending.agentType === 'hermes'
       const isGeminiAgent = placementPending.agentType === 'gemini'
       const isNpcAgent = placementPending.agentType === 'npc'
+      const isOpenclawAgent = placementPending.agentType === 'openclaw'
       const defaultWindowScale = 0.15
       const defaultWindowSize = placementPending.agentType === 'anorak-pro'
         ? { width: 960, height: 720 }
@@ -2383,6 +2384,8 @@ function PlacementOverlay() {
           ? { width: 1280, height: 820 }
           : isNpcAgent
             ? { width: 470, height: 720 }
+          : isOpenclawAgent
+            ? { width: 750, height: 850 }
           : isGeminiAgent
             ? { width: DEFAULT_GEMINI_AGENT_WINDOW_WIDTH, height: DEFAULT_GEMINI_AGENT_WINDOW_HEIGHT }
             : { width: 800, height: 600 }
@@ -2396,7 +2399,11 @@ function PlacementOverlay() {
       const agentWindow = {
         id: `agent-${placementPending.agentType}-${Date.now()}`,
         agentType: placementPending.agentType as import('../../store/oasisStore').AgentWindowType,
-        position: [pos[0], 1 + (defaultWindowWorldHeight * defaultWindowScale) / 2, pos[2]] as [number, number, number],
+        // ─═̷─ Default agent-window vertical anchor. Was 1.0m of ground
+        // clearance + the half-window-height; that placed the bottom of the
+        // panel comically high (~chest-level for a TPS avatar). 0.5m feels
+        // human-scale: panel bottom sits about waist-high. ─═̷─
+        position: [pos[0], 0.5 + (defaultWindowWorldHeight * defaultWindowScale) / 2, pos[2]] as [number, number, number],
         rotation: [0, 0, 0] as [number, number, number],
         scale: defaultWindowScale,
         width: defaultWindowSize.width,
@@ -2405,8 +2412,8 @@ function PlacementOverlay() {
         npcId: placementPending.npcId,
         label: placementPending.name,
         renderMode: placementPending.agentRenderMode,
-        frameStyle: placementPending.agentFrameStyle || (placementPending.agentType === 'browser' ? 'baroque' : isGeminiAgent ? DEFAULT_GEMINI_AGENT_FRAME_STYLE : isHermesAgent || isNpcAgent ? 'fire' : undefined),
-        frameThickness: placementPending.agentFrameThickness ?? (placementPending.agentType === 'browser' ? 7 : isGeminiAgent ? DEFAULT_GEMINI_AGENT_FRAME_THICKNESS : isHermesAgent || isNpcAgent ? 6 : undefined),
+        frameStyle: placementPending.agentFrameStyle || (placementPending.agentType === 'browser' ? 'baroque' : isOpenclawAgent ? 'void' : isGeminiAgent ? DEFAULT_GEMINI_AGENT_FRAME_STYLE : isHermesAgent || isNpcAgent ? 'fire' : undefined),
+        frameThickness: placementPending.agentFrameThickness ?? (placementPending.agentType === 'browser' ? 7 : isOpenclawAgent ? 7 : isGeminiAgent ? DEFAULT_GEMINI_AGENT_FRAME_THICKNESS : isHermesAgent || isNpcAgent ? 6 : undefined),
         ...browserDefaults,
       }
       dispatch({

@@ -1,0 +1,8 @@
+{
+  "seedVersion": 1,
+  "slug": "openclaw-hub",
+  "id": "openclaw-hub-world",
+  "file": "openclaw-hub.world.json",
+  "name": "OpenClaw Hub",
+  "visibility": "core"
+}
