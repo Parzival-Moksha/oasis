@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { createPortal } from 'react-dom'
 
 import { useSharedOpenclawRelayBridge } from '@/hooks/useOpenclawRelayBridge'
+import { useAgentVoiceInput } from '@/hooks/useAgentVoiceInput'
 import { useInputManager, useUILayer } from '@/lib/input-manager'
 import { writeBrowserStorage } from '@/lib/browser-storage'
 import { useAutoresizeTextarea } from '@/hooks/useAutoresizeTextarea'
@@ -16,6 +17,7 @@ import { renderMarkdown } from '@/lib/anorak-renderers'
 import { collectOpenclawMediaReferences, type OpenclawMediaReference } from '@/lib/openclaw-media-references'
 import { MediaBubble } from './MediaBubble'
 import { AvatarGallery } from './AvatarGallery'
+import { AgentVoiceInputButton } from './AgentVoiceInputButton'
 
 interface HermesHostedRelayPanelProps {
   isOpen: boolean
@@ -646,6 +648,20 @@ export function HermesHostedRelayPanel({
   })
 
   useAutoresizeTextarea(inputRef, input, { minPx: 48, maxPx: 180 })
+
+  // ─═̷─ Voice input via Groq Whisper. Hermes hosted lives on
+  // openclaw.04515.xyz where the local faster-whisper isn't available, so
+  // the route is pinned to groq. Tap mic → record → release → transcript
+  // gets appended to the input box (newline separator if non-empty). ─═̷─
+  const voiceInput = useAgentVoiceInput({
+    enabled: isOpen,
+    transcribeEndpoint: '/api/voice/transcribe?provider=groq',
+    onTranscript: transcript => {
+      setInput(current => current ? `${current}\n${transcript}` : transcript)
+    },
+    focusTargetRef: inputRef as React.RefObject<{ focus: () => void } | null>,
+    enablePlayerLipSync: true,
+  })
 
   useEffect(() => {
     if (!isStreaming) return
@@ -1515,6 +1531,12 @@ export function HermesHostedRelayPanel({
           </button>
         </div>
         <div className="flex items-end gap-2">
+          <AgentVoiceInputButton
+            controller={voiceInput}
+            disabled={isStreaming || relayBridge.status !== 'paired'}
+            className="px-2 py-2 rounded-lg text-[11px] font-mono border border-amber-500/20 text-amber-100 disabled:opacity-30 disabled:cursor-not-allowed"
+            titleReady="Hold to record. Release to drop the Groq Whisper transcript into Hermes's prompt."
+          />
           <textarea
             ref={inputRef}
             data-no-drag

@@ -1354,9 +1354,13 @@ export function OpenclawPanel({
 
   useAutoresizeTextarea(inputRef, composer, { minPx: 42, maxPx: 180 })
 
+  // ─═̷─ Voice input — local faster-whisper on dev, Groq Whisper on
+  // hosted (Ashburn has no whisper binary). Previously `enabled` was
+  // hard-disabled on hosted, meaning ClawCon visitors never saw a mic
+  // button. The endpoint switch + flag drop both happen here. ─═̷─
   const voice = useAgentVoiceInput({
-    enabled: !hostedMode && (embedded || isOpen),
-    transcribeEndpoint: '/api/voice/transcribe',
+    enabled: embedded || isOpen,
+    transcribeEndpoint: hostedMode ? '/api/voice/transcribe?provider=groq' : '/api/voice/transcribe',
     onTranscript: transcript => {
       setComposer(current => current ? `${current}\n${transcript}` : transcript)
     },
@@ -2215,14 +2219,28 @@ export function OpenclawPanel({
     }
   }, [isVisible, loadMcpInfo, loadProfileName, loadSessions, loadStatus])
 
+  // ─═̷─ Stream-end clear bug fix.
+  // Previously this effect re-fired when `sending` flipped true→false at
+  // stream end → loadMessages() refetched server data → server hadn't
+  // persisted the final 'done' state yet → setMessages(stale) wiped the
+  // visible stream. User had to session-switch and back to see the reply.
+  //
+  // Fix: track the last-loaded sessionId in a ref and ONLY reload when the
+  // session itself actually changes. `sending` flipping doesn't trigger a
+  // fetch anymore — we trust the workingMessages → persistMessages →
+  // setMessages chain inside the stream pump. ─═̷─
+  const lastLoadedSessionIdRef = useRef('')
   useEffect(() => {
     if (!isVisible) return
     if (sending) return
     if (!selectedSessionId) {
       setMessages([])
+      lastLoadedSessionIdRef.current = ''
       return
     }
     saveStoredString(SESSION_KEY, selectedSessionId)
+    if (lastLoadedSessionIdRef.current === selectedSessionId) return
+    lastLoadedSessionIdRef.current = selectedSessionId
     void loadMessages(selectedSessionId)
   }, [isVisible, loadMessages, selectedSessionId, sending])
 
@@ -3359,14 +3377,14 @@ export function OpenclawPanel({
         </div>
       </div>
 
-      <div className="flex items-center gap-1 border-b border-white/8 bg-black/18 px-3 py-2">
+      <div className="flex items-center gap-1.5 border-b border-white/8 bg-black/18 px-3 py-2">
         {visibleTabs.map(tab => (
           <button
             key={tab}
             data-no-drag
             type="button"
             onClick={() => setActiveTab(tab)}
-            className={`rounded-md border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] transition ${
+            className={`rounded-md border px-4 py-3 text-[14px] font-semibold uppercase tracking-[0.16em] transition ${
               activeTab === tab
                 ? 'border-cyan-300/30 bg-cyan-400/12 text-cyan-50'
                 : 'border-white/8 text-cyan-50/55 hover:border-cyan-300/22 hover:text-cyan-50'

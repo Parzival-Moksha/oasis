@@ -140,21 +140,42 @@ export function PlayerSpellbookPanel({
           100% { box-shadow: 0 0 18px rgba(251,191,36,0.32); }
         }
       `}</style>
-      <div className="flex items-center justify-between gap-3 border-b border-amber-100/14 px-4 py-3">
-        <div className="min-w-0">
+      <div
+        className="relative flex items-center justify-between gap-3 border-b border-amber-100/14 px-4 py-3"
+        style={{
+          // ─═̷─ Match the page texture so the header doesn't look like
+          // dead chrome above a richly textured page. Same bg as the
+          // content scroll area below. ─═̷─
+          backgroundImage: `url(/ui/spellbook/frame/page-bg-${activePage}.jpg)`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center top',
+          backgroundRepeat: 'no-repeat',
+        }}
+      >
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/30 via-black/20 to-black/40" />
+        <div className="relative min-w-0">
           <div className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-100/70">Spells</div>
           <div className="mt-1 truncate text-lg font-black tracking-[0.02em] text-amber-50">Spellbook</div>
         </div>
         <button
           type="button"
-          className="rounded-md border border-white/15 bg-white/8 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/80 hover:bg-white/14"
+          className="relative rounded-md border border-white/15 bg-black/40 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/80 hover:bg-white/14"
           onClick={() => onOpenChange(false)}
         >
           Close
         </button>
       </div>
 
-      <div className="flex gap-1 overflow-x-auto border-b border-white/10 bg-white/[0.035] px-2 py-2">
+      <div
+        className="relative flex gap-1 overflow-x-auto border-b border-white/10 px-2 py-2"
+        style={{
+          backgroundImage: `url(/ui/spellbook/frame/page-bg-${activePage}.jpg)`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+        }}
+      >
+        <div className="pointer-events-none absolute inset-0 bg-black/45" />
         {SPELLBOOK_PAGE_IDS.map(pageId => {
           const page = SPELLBOOK_PAGES[pageId]
           const selected = pageId === activePage

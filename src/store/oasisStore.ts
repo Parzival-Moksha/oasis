@@ -2538,7 +2538,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
         [objectId]: {
           objectId,
           phase: 'pending',
-          minScale: 0.25,
+          // ─═̷─ Agent avatars used to spawn at 25% size and grow over 1.5s,
+          // which made every agent look like a kid for the first beat. Spawn
+          // at full size; the "reveal" still runs but with no visible scale
+          // change — keeps any downstream phase-aware code happy. ─═̷─
+          minScale: 1.0,
           startedAt: now,
           revealStartedAt: null,
           revealDurationMs: 1500,
