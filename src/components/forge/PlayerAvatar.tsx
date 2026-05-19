@@ -175,6 +175,14 @@ export function PlayerAvatar({
   const cameraZoomTarget = useRef(DEFAULT_TPS_CAMERA_ZOOM)
   const cameraZoom = useRef(DEFAULT_TPS_CAMERA_ZOOM)
   const wasThirdPersonActiveRef = useRef(false)
+  // ─═̷─ When TPS yields to a frozen state ('ui-focused'), the camera position
+  // stays exactly where PlayerAvatar last placed it. On return, re-deriving
+  // azimuth/elevation from the camera-vs-avatar offset is lossy because the
+  // baked-in shoulder shift biases atan2 — yielding a deterministic ~8° azimuth
+  // drift + minor elevation drop on every menu close. Track whether the avatar
+  // owned the camera continuously through the menu so we can skip that
+  // reconstruction and trust the stored azimuth/elevation. ─═̷─
+  const avatarOwnsCameraRef = useRef(false)
   const teleportCameraResetPendingRef = useRef(false)
   const movementSuppressedUntilReleaseRef = useRef(false)
 
@@ -512,7 +520,12 @@ export function PlayerAvatar({
     if (isThirdPersonActive && !wasThirdPersonActiveRef.current) {
       if (teleportCameraResetPendingRef.current) {
         teleportCameraResetPendingRef.current = false
-      } else {
+      } else if (!avatarOwnsCameraRef.current) {
+        // ─═̷─ Re-anchor only when something else moved the camera while we were
+        // away. If the only thing that happened was a 'ui-focused' interlude
+        // (menu open/close), the camera position is byte-identical to the last
+        // TPS frame, but reconstructing azimuth from offset.atan2 introduces a
+        // shoulder-offset bias of ~atan(shoulder/dist) ≈ 8° per close. Skip it.
         const entryOffset = _tempVec.current.copy(state.camera.position).sub(positionRef.current)
         const horizontalDistance = Math.hypot(entryOffset.x, entryOffset.z)
         if (horizontalDistance > 0.001 || Math.abs(entryOffset.y) > 0.001) {
@@ -527,6 +540,15 @@ export function PlayerAvatar({
       teleportCameraResetPendingRef.current = false
     }
     wasThirdPersonActiveRef.current = isThirdPersonActive
+    // Ownership ledger: TPS-active sets the flag; 'ui-focused' (frozen camera)
+    // leaves it alone, so we still trust avatar-stored azimuth on return; any
+    // other state (orbit/noclip/agent-focus) clears it because that state drove
+    // the camera somewhere new and we must re-derive on return.
+    if (isThirdPersonActive) {
+      avatarOwnsCameraRef.current = true
+    } else if (inputState !== 'ui-focused') {
+      avatarOwnsCameraRef.current = false
+    }
 
     const mobile = getMobileInputSnapshot()
 

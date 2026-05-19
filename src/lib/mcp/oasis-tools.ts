@@ -914,6 +914,16 @@ async function loadToolWorld(
   if (intent === 'write') {
     const writeDecision = getWorldWriteDecision(toolAccessContext(context), subject)
     if (writeDecision === 'deny') {
+      console.warn('[oasis-tools] tool_write_forbidden (loadActiveWorld path)', {
+        worldId: world.id,
+        worldOwnerId: subject.userId,
+        visibility: subject.visibility,
+        callerUserId: context.userId,
+        mode: context.mode,
+        system: context.system,
+        admin: context.admin,
+        agentType: context.agentType,
+      })
       throw new WorldAccessError('This tool context cannot mutate that world', 'world_write_forbidden')
     }
     if (writeDecision === 'fork') {
@@ -983,6 +993,16 @@ async function saveWorldState(worldId: string, state: WorldState): Promise<void>
 
   const writeDecision = getWorldWriteDecision(toolAccessContext(context), toToolAccessSubject(target))
   if (writeDecision === 'deny') {
+    console.warn('[oasis-tools] tool_write_forbidden (save path)', {
+      worldId: target.id,
+      worldOwnerId: target.userId,
+      visibility: target.visibility,
+      callerUserId: context.userId,
+      mode: context.mode,
+      system: context.system,
+      admin: context.admin,
+      agentType: context.agentType,
+    })
     throw new WorldAccessError('This tool context cannot mutate that world', 'world_write_forbidden')
   }
   if (writeDecision === 'fork') {

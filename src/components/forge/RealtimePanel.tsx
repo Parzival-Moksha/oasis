@@ -1486,7 +1486,17 @@ export function RealtimePanel({
           const detail = typeof payload.error === 'object' && payload.error
             ? JSON.stringify(payload.error)
             : 'Realtime voice error.'
-          setConnectionState('error')
+          // Treat data-channel `error` events as transient: the OpenAI Realtime API
+          // streams non-fatal errors (rate-limit warnings, empty-buffer commits,
+          // transient decode hiccups) while the WebRTC peer + data channel stay open
+          // and audio keeps flowing. Only `pc.onconnectionstatechange` is the source
+          // of truth for an actually-dead session. Surface the detail + system message
+          // but only flip to 'error' if the transport isn't already live.
+          const peerLive = peerRef.current?.connectionState === 'connected'
+          const channelLive = dataChannelRef.current?.readyState === 'open'
+          if (!peerLive || !channelLive) {
+            setConnectionState('error')
+          }
           setConnectionDetail(detail)
           appendSystemMessage(detail)
         }

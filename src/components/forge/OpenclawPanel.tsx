@@ -13,7 +13,7 @@ import {
 import { useOasisStore } from '@/store/oasisStore'
 import { useInputManager, useUILayer } from '@/lib/input-manager'
 import { useAutoresizeTextarea } from '@/hooks/useAutoresizeTextarea'
-import { useAgentVoiceInput } from '@/hooks/useAgentVoiceInput'
+import { useRealtimeTranscribe } from '@/hooks/useRealtimeTranscribe'
 import { useSharedOpenclawRelayBridge } from '@/hooks/useOpenclawRelayBridge'
 import { base64ToBytes, bytesToBase64, decodeMuLawToFloat32, encodeFloat32ToMuLaw } from '@/lib/audio-mulaw'
 import { renderMarkdown } from '@/lib/anorak-renderers'
@@ -156,7 +156,7 @@ interface LocalRelayStatus {
 type SmokeMode = 'core' | 'live' | 'external'
 type SmokeStatus = 'passed' | 'failed' | 'skipped'
 type SmokeCategory = 'transport' | 'world' | 'avatar' | 'craft' | 'live-bridge' | 'conjure'
-type OpenclawPanelTab = 'connect' | 'stream' | 'voice' | 'config' | 'settings' | 'diagnostics'
+type OpenclawPanelTab = 'connect' | 'stream' | 'voice' | 'config' | 'settings'
 
 interface OpenclawSmokeTestCase {
   name: string
@@ -1354,18 +1354,20 @@ export function OpenclawPanel({
 
   useAutoresizeTextarea(inputRef, composer, { minPx: 42, maxPx: 180 })
 
-  // ─═̷─ Voice input — local faster-whisper on dev, Groq Whisper on
-  // hosted (Ashburn has no whisper binary). Previously `enabled` was
-  // hard-disabled on hosted, meaning ClawCon visitors never saw a mic
-  // button. The endpoint switch + flag drop both happen here. ─═̷─
-  const voice = useAgentVoiceInput({
+  // ─═̷─ Voice input via OpenAI realtime live transcription. Replaces
+  // the batch faster-whisper / Groq path. Mints an ephemeral session
+  // via /api/voice/realtime-session, opens a WebSocket directly to
+  // wss://api.openai.com/v1/realtime?intent=transcription, streams
+  // mic PCM, deltas land in the composer as they arrive. Hold-to-talk
+  // (toggle) so user releases when done.
+  // Note: focusTargetRef typing is slightly different — useRealtimeTranscribe
+  // uses a structural focus.()-only ref, our focusHandleRef satisfies that. ─═̷─
+  const voice = useRealtimeTranscribe({
     enabled: embedded || isOpen,
-    transcribeEndpoint: hostedMode ? '/api/voice/transcribe?provider=groq' : '/api/voice/transcribe',
     onTranscript: transcript => {
       setComposer(current => current ? `${current}\n${transcript}` : transcript)
     },
-    focusTargetRef: focusHandleRef,
-    enablePlayerLipSync: true,
+    focusTargetRef: focusHandleRef as React.RefObject<{ focus: () => void } | null>,
   })
 
   const currentSession = useMemo(
@@ -3286,9 +3288,12 @@ export function OpenclawPanel({
     : 0
   const activeWorldLabel = formatOpenclawWorldLabel(activeWorldId)
   const relayPairingCountdownLabel = formatPairingCountdown(relayPairingExpiresInS)
+  // ─═̷─ Tests/diagnostics tab retired 2026-05-19 — bridge-pairing health is
+  // covered by the relay's diagnostic logging now, the in-panel tab was
+  // mostly stale checks. ─═̷─
   const visibleTabs: readonly OpenclawPanelTab[] = hostedMode
-    ? ['connect', 'stream', 'config', 'settings', 'diagnostics']
-    : ['stream', 'voice', 'config', 'settings', 'diagnostics']
+    ? ['connect', 'stream', 'config', 'settings']
+    : ['stream', 'voice', 'config', 'settings']
 
   const panelBody = (
     <div
@@ -3390,7 +3395,7 @@ export function OpenclawPanel({
                 : 'border-white/8 text-cyan-50/55 hover:border-cyan-300/22 hover:text-cyan-50'
             }`}
           >
-            {tab === 'diagnostics' ? 'tests' : tab}
+            {tab}
           </button>
         ))}
       </div>
@@ -4267,105 +4272,6 @@ export function OpenclawPanel({
               </div>
             </details>
           </div>
-        </div>
-        )}
-
-        {activeTab === 'diagnostics' && (
-        <div
-          className="rounded-xl border px-3 py-3"
-          style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.18)' }}
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100">Tests</span>
-              <div className="mt-1 text-[11px] text-cyan-50/52">
-                Core tests spin up a scratch world, exercise the live MCP surface, then clear the world again.
-              </div>
-            </div>
-            {smokeReport && (
-              <div className="text-right text-[10px] text-cyan-50/45">
-                Last run {formatTimestamp(smokeReport.finishedAt)} â€¢ {formatDuration(smokeReport.durationMs)}
-              </div>
-            )}
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              data-no-drag
-              onClick={() => void handleRunSmoke('core')}
-              disabled={!!runningSmokeMode}
-              className="rounded-lg border border-cyan-300/25 bg-cyan-400/10 px-3 py-2 text-[11px] uppercase tracking-[0.16em] text-cyan-50 transition hover:bg-cyan-400/18 disabled:cursor-wait disabled:opacity-60"
-            >
-              {runningSmokeMode === 'core' ? 'running core' : 'run core tests'}
-            </button>
-            <button
-              data-no-drag
-              onClick={() => void handleRunSmoke('live')}
-              disabled={!!runningSmokeMode}
-              className="rounded-lg border border-white/10 px-3 py-2 text-[11px] uppercase tracking-[0.16em] text-cyan-50/80 transition hover:border-cyan-300/30 hover:text-white disabled:cursor-wait disabled:opacity-60"
-            >
-              {runningSmokeMode === 'live' ? 'running live' : 'run live tests'}
-            </button>
-            <button
-              data-no-drag
-              onClick={() => void handleRunSmoke('external')}
-              disabled={!!runningSmokeMode}
-              className="rounded-lg border border-white/10 px-3 py-2 text-[11px] uppercase tracking-[0.16em] text-cyan-50/80 transition hover:border-cyan-300/30 hover:text-white disabled:cursor-wait disabled:opacity-60"
-            >
-              {runningSmokeMode === 'external' ? 'running external' : 'run external tests'}
-            </button>
-          </div>
-
-          <div className="mt-3 space-y-2 text-[12px] text-cyan-50/68">
-            <div>Core: safe world, avatar, craft, and registry-backed conjure checks.</div>
-            <div>Live: screenshot bridge checks against the world you currently have open in Oasis.</div>
-            <div>External: marks credit-burning craft/conjure surfaces for the next phase.</div>
-          </div>
-
-          {smokeReport && (
-            <div className="mt-3 space-y-3">
-              <div className="flex flex-wrap gap-2">
-                <StatusBadge label={`${smokeReport.counts.passed} passed`} tone="online" />
-                <StatusBadge label={`${smokeReport.counts.failed} failed`} tone={smokeReport.counts.failed > 0 ? 'offline' : 'online'} />
-                <StatusBadge label={`${smokeReport.counts.skipped} skipped`} tone="warn" />
-                {smokeReport.worldId && <StatusBadge label={formatOpenclawWorldLabel(smokeReport.worldId)} tone="warn" />}
-              </div>
-
-              <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-cyan-50/68">
-                Mode: <span className="font-semibold text-cyan-50">{smokeReport.mode}</span> â€¢ endpoint <code>{smokeReport.endpoint}</code>
-                {smokeReport.worldName && (
-                  <>
-                    <br />
-                    Scratch world: <span className="font-semibold text-cyan-50">{smokeReport.worldName}</span>
-                  </>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                {smokeReport.tests.map((test, index) => (
-                  <div
-                    key={`${test.name}-${index}`}
-                    className="rounded-lg border border-white/8 bg-black/18 px-3 py-2"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <StatusBadge label={test.status} tone={smokeTone(test.status)} />
-                          <span className="text-[10px] font-mono uppercase tracking-[0.16em] text-cyan-50/46">{test.category}</span>
-                          {test.toolName && <span className="text-[10px] font-mono text-cyan-50/38">{test.toolName}</span>}
-                        </div>
-                        <div className="mt-2 text-[13px] font-semibold text-cyan-50">{test.name}</div>
-                        <div className="mt-1 text-[12px] text-cyan-50/68">{test.detail}</div>
-                      </div>
-                      {typeof test.durationMs === 'number' && (
-                        <span className="shrink-0 text-[10px] text-cyan-50/40">{formatDuration(test.durationMs)}</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
         )}
 

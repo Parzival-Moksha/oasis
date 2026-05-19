@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { createPortal } from 'react-dom'
 
 import { useSharedOpenclawRelayBridge } from '@/hooks/useOpenclawRelayBridge'
-import { useAgentVoiceInput } from '@/hooks/useAgentVoiceInput'
+import { useRealtimeTranscribe } from '@/hooks/useRealtimeTranscribe'
 import { useInputManager, useUILayer } from '@/lib/input-manager'
 import { writeBrowserStorage } from '@/lib/browser-storage'
 import { useAutoresizeTextarea } from '@/hooks/useAutoresizeTextarea'
@@ -649,18 +649,16 @@ export function HermesHostedRelayPanel({
 
   useAutoresizeTextarea(inputRef, input, { minPx: 48, maxPx: 180 })
 
-  // ─═̷─ Voice input via Groq Whisper. Hermes hosted lives on
-  // openclaw.04515.xyz where the local faster-whisper isn't available, so
-  // the route is pinned to groq. Tap mic → record → release → transcript
-  // gets appended to the input box (newline separator if non-empty). ─═̷─
-  const voiceInput = useAgentVoiceInput({
+  // ─═̷─ Voice input via OpenAI realtime live transcription.
+  // Mints an ephemeral /v1/realtime/transcription_sessions secret on
+  // our server, opens a direct WebSocket to OpenAI from the browser,
+  // streams PCM, drops the final transcript into the composer. ─═̷─
+  const voiceInput = useRealtimeTranscribe({
     enabled: isOpen,
-    transcribeEndpoint: '/api/voice/transcribe?provider=groq',
     onTranscript: transcript => {
       setInput(current => current ? `${current}\n${transcript}` : transcript)
     },
     focusTargetRef: inputRef as React.RefObject<{ focus: () => void } | null>,
-    enablePlayerLipSync: true,
   })
 
   useEffect(() => {

@@ -296,6 +296,18 @@ export async function saveWorld(
 
   const writeDecision = getWorldWriteDecision(ctx, toAccessSubject(target))
   if (writeDecision === 'deny') {
+    // ─═̷─ Diagnostic context for ClawCon-era FFA-delete bug reports.
+    // Reveal which side of the gate failed (mode, userId vs owner,
+    // visibility) without leaking sensitive payload contents. ─═̷─
+    console.warn('[world-server] write_forbidden', {
+      worldId: id,
+      worldOwnerId: target.userId,
+      visibility: target.visibility,
+      callerUserId: ctx.userId,
+      mode: ctx.mode,
+      system: ctx.system,
+      admin: ctx.admin,
+    })
     throw new WorldAccessError('This session cannot mutate that world', 'world_write_forbidden')
   }
 
