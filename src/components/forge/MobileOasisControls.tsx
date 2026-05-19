@@ -264,6 +264,15 @@ export function MobileOasisControls({
         <MobilePaintHoldButton />
       </div>
 
+      {/* ─═̷─ ESC button: bottom-center, just left of the mana cluster.
+          Visible ONLY when in a focus-trap (agent-focus / ui-focused).
+          Pinned bottom-6 so it sits above the WASD ring but below the
+          HUD on mobile — keeps the rest of the UI completely calm
+          until it's needed. ─═̷─ */}
+      <div className="pointer-events-auto absolute bottom-7 left-1/2 -translate-x-1/2 touch-none">
+        <MobileEscButton />
+      </div>
+
       <MobileTransformHotbar />
     </div>
   )
@@ -461,6 +470,39 @@ function MobileTransformHotbar() {
         Drop
       </button>
     </div>
+  )
+}
+
+// ─═̷─🚪─═̷─{ MOBILE ESC BUTTON — the only way out of focus-traps on phone }─═̷─🚪─═̷─
+//
+// Desktop has Escape. Mobile has nothing — when a player hits F to talk to
+// Merlin or wanders into pointer-locked agent-focus, there's literally no
+// way back to the world. This button appears ONLY when input is in a
+// trap state (`agent-focus` or `ui-focused`), pinned to the bottom-center
+// column where thumbs can find it instantly. Tap → handleEscape() →
+// restored to whichever camera mode you came from. Hidden otherwise so it
+// doesn't clutter the normal control rail.
+// ─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─
+
+function MobileEscButton() {
+  const inputState = useInputManager(s => s.inputState)
+  const isTrapped = inputState === 'agent-focus' || inputState === 'ui-focused'
+
+  if (!isTrapped) return null
+
+  return (
+    <button
+      type="button"
+      className="h-11 min-w-24 touch-none rounded-lg border border-rose-300/55 bg-rose-950/82 px-4 text-[11px] font-black uppercase tracking-[0.14em] text-rose-50 shadow-[0_0_30px_rgba(244,63,94,0.36)] backdrop-blur-sm"
+      onPointerDown={event => {
+        event.preventDefault()
+        event.stopPropagation()
+        useInputManager.getState().handleEscape()
+      }}
+      aria-label="Escape focus / agent lock"
+    >
+      Esc
+    </button>
   )
 }
 
