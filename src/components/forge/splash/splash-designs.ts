@@ -15,7 +15,6 @@ export type SplashDesignId =
   | 'agent-console'
   | 'carbon-silicon'
   | 'psychedelic-genesis'
-  | 'cyber-datacenter'
   | 'halliday-workshop'
   | 'living-threejs'
 
@@ -166,24 +165,6 @@ export const SPLASH_DESIGNS: SplashDesign[] = [
     screenBlend: true,
   },
   {
-    id: 'cyber-datacenter',
-    label: 'Cyber Datacenter',
-    blurb: 'Server racks down a neon corridor. Node 01 online.',
-    accent: '#3cdcff',
-    accentAlt: '#ff3df8',
-    fallbackGradient:
-      'radial-gradient(ellipse at 50% 55%, #021627 0%, #02091a 50%, #000208 100%)',
-    overlay: 'neon-rain',
-    bar: 'neon-fill',
-    statusLines: [
-      'Spinning up Node 01…',
-      'Routing through the racks…',
-      'Stabilising the cooling loop…',
-      'Datacenter is live.',
-    ],
-    screenBlend: true,
-  },
-  {
     id: 'halliday-workshop',
     label: "Halliday's Workshop",
     blurb: 'The CRT bedroom where it all began. Post-it 04515.',
@@ -230,15 +211,17 @@ export const DEFAULT_SPLASH_DESIGN: SplashDesignId = 'retrowave-rp1'
 export const DEFAULT_SPLASH_MODEL: SplashModelSlug = 'nano2'
 
 /** Build the URL we'd expect for a given design × model combo. */
-export function splashImageUrl(design: SplashDesignId, model: SplashModelSlug, ext: 'png' | 'webp' | 'jpg' = 'png'): string {
+export function splashImageUrl(design: SplashDesignId, model: SplashModelSlug, ext: 'webp' | 'png' | 'jpg' = 'webp'): string {
   return `/splash/${design}.${model}.${ext}`
 }
 
-/** All known variant URLs to try in order for a given design × model. */
+/** All known variant URLs to try in order for a given design × model.
+ *  WebP first (~95% smaller than the original PNG bakes), with the older
+ *  formats kept as fallback for any future bake that hasn't been compressed. */
 export function splashImageCandidates(design: SplashDesignId, model: SplashModelSlug): string[] {
   return [
-    splashImageUrl(design, model, 'png'),
     splashImageUrl(design, model, 'webp'),
+    splashImageUrl(design, model, 'png'),
     splashImageUrl(design, model, 'jpg'),
   ]
 }

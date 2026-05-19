@@ -273,6 +273,14 @@ function WorldConjuringOverlay({ accent, accentAlt }: { accent: string; accentAl
   )
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────
+
+function formatMB(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`
+}
+
 // ─── Main component ───────────────────────────────────────────────────────
 
 export function SplashScreen({ designId, modelSlug, ready, holdMs = 0, onFadeComplete }: SplashScreenProps) {
@@ -288,6 +296,9 @@ export function SplashScreen({ designId, modelSlug, ready, holdMs = 0, onFadeCom
   const candidateIdxRef = useRef(0)
   const mountedAtRef = useRef<number>(0)
   const worldLoadStartedRef = useRef(false)
+  const progressRef = useRef(0)
+  const playableSignalRef = useRef(false)
+  const [metrics, setMetrics] = useState({ files: 0, bytes: 0 })
 
   // Resolve which image URL to try first whenever design × model changes.
   useEffect(() => {
@@ -315,33 +326,44 @@ export function SplashScreen({ designId, modelSlug, ready, holdMs = 0, onFadeCom
       const sawWorldLoad = world.total > 0 || world.progress < 1
       if (sawWorldLoad) worldLoadStartedRef.current = true
 
-      // Synthetic curve: 0→0.6 over 1500ms, then 0.6→0.9 over next 2500ms.
+      // Synthetic curve: 0→0.55 over 1200ms, then 0.55→0.85 over the next 2000ms.
       let synth: number
-      if (elapsed < 1500) synth = 0.6 * (elapsed / 1500)
-      else if (elapsed < 4000) synth = 0.6 + 0.3 * ((elapsed - 1500) / 2500)
-      else synth = 0.9
+      if (elapsed < 1200) synth = 0.55 * (elapsed / 1200)
+      else if (elapsed < 3200) synth = 0.55 + 0.30 * ((elapsed - 1200) / 2000)
+      else synth = 0.85
 
-      // Real Three.js LoadingManager progress, scaled to the 0.6 → 1.0 window.
+      // Real Three.js LoadingManager progress, scaled into the 0.55 → 0.95 window.
       const realComponent = worldLoadStartedRef.current
-        ? 0.6 + world.progress * 0.4
+        ? 0.55 + world.progress * 0.40
         : 0
 
-      // Take the max so the bar never goes backwards. Cap below 1.0 until ready.
-      let next = Math.max(synth, realComponent)
+      const current = progressRef.current
+      const baseline = Math.max(synth, realComponent, current)
+      const dismissNow = playableSignalRef.current && elapsed >= holdMs
 
-      if (ready) {
-        // Once Oasis declares ready, we ease the bar to 1.0 unless holdMs requires more time.
-        const minVisible = Math.max(0, holdMs)
-        if (elapsed >= minVisible) {
-          next = Math.min(1, next + 0.04) // gentle pull-to-100
-        } else {
-          next = Math.min(0.97, next)
-        }
+      let target: number
+      if (dismissNow) {
+        // World said "I'm playable" — ease the bar to 1.0 fast, no matter what.
+        // current + 0.06 accumulates each frame (this was the bug before: the
+        // old code did baseline+0.04 which doesn't compound because baseline
+        // is recomputed every frame from synth, which plateaus).
+        target = Math.min(1, current + 0.06)
+      } else if (ready && elapsed >= holdMs) {
+        // Ready but no explicit playable signal — crawl the bar to 0.99 only;
+        // hold there until the playable signal fires or the safety timeout
+        // (see effect below) flips dismissNow.
+        target = Math.min(0.99, current + 0.025)
+      } else if (!ready) {
+        target = Math.min(0.95, baseline)
       } else {
-        next = Math.min(0.95, next)
+        target = Math.min(0.97, baseline)
       }
 
-      setProgress(prev => (next > prev ? next : prev))
+      const next = Math.max(current, target)
+      if (next !== current) {
+        progressRef.current = next
+        setProgress(next)
+      }
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
@@ -350,6 +372,54 @@ export function SplashScreen({ designId, modelSlug, ready, holdMs = 0, onFadeCom
       cancelAnimationFrame(raf)
     }
   }, [ready, holdMs, removed])
+
+  // ─── Minimum-playable signal ────────────────────────────────────────────
+  // The Scene component dispatches `oasis:world-playable` from R3F's
+  // <Canvas onCreated> callback (first rendered frame). That's the real
+  // "user can walk around" moment. We also enforce an 8-second hard cap so
+  // a stalled load (or a missing dispatch on some route) can't trap the
+  // user behind the splash forever.
+  useEffect(() => {
+    if (removed) return
+    const fire = () => { playableSignalRef.current = true }
+    const onPlayable = () => fire()
+    window.addEventListener('oasis:world-playable', onPlayable)
+    const hardCap = window.setTimeout(fire, 8000)
+    return () => {
+      window.removeEventListener('oasis:world-playable', onPlayable)
+      window.clearTimeout(hardCap)
+    }
+  }, [removed])
+
+  // ─── Real byte / file metrics via PerformanceObserver ───────────────────
+  // Counts every resource the browser fetched after the splash mounted.
+  // `transferSize` is the gzipped wire size; cached resources report 0,
+  // which is exactly what we want (we don't want to "double-count" hits
+  // that came from disk cache instantly).
+  useEffect(() => {
+    if (removed) return
+    if (typeof PerformanceObserver === 'undefined') return
+    let files = 0
+    let bytes = 0
+    let pending = 0
+    const flush = () => {
+      pending = 0
+      setMetrics({ files, bytes })
+    }
+    const obs = new PerformanceObserver(list => {
+      for (const e of list.getEntries()) {
+        if (e.entryType !== 'resource') continue
+        const r = e as PerformanceResourceTiming
+        if (r.name.includes('/_next/data/')) continue
+        files += 1
+        bytes += r.transferSize || r.encodedBodySize || 0
+      }
+      if (!pending) pending = window.setTimeout(flush, 120)
+    })
+    try { obs.observe({ type: 'resource', buffered: true }) }
+    catch { obs.observe({ entryTypes: ['resource'] }) }
+    return () => { obs.disconnect() }
+  }, [removed])
 
   // Subscribe to Three.js LoadingManager so the bar reacts to real loads
   // (not just our synthetic curve). The fusion above already reads
@@ -426,13 +496,9 @@ export function SplashScreen({ designId, modelSlug, ready, holdMs = 0, onFadeCom
       {/* L3: design-specific overlay */}
       <RenderOverlay design={design} />
 
-      {/* L4: brand */}
-      <div className="oasis-splash-brand" style={{ textShadow: `0 0 18px ${design.accent}88, 0 0 32px ${design.accent}44` }}>
-        <div className="oasis-splash-brand-name" style={{ color: design.accent }}>OASIS</div>
-        <div className="oasis-splash-brand-code">04515</div>
-      </div>
-
-      {/* L5: status + bar */}
+      {/* L4: status + bar.  The image itself contains the "04515" brand,
+          so we no longer paint another OASIS/04515 over the top — that was
+          double-stamping and crowded the centerpiece. */}
       <div className="oasis-splash-foot">
         <div className="oasis-splash-status" style={{ color: design.accent, textShadow: `0 0 6px ${design.accent}66` }}>
           {design.statusLines[statusIdx]}
@@ -442,6 +508,11 @@ export function SplashScreen({ designId, modelSlug, ready, holdMs = 0, onFadeCom
           {design.bar === 'terminal' && <TerminalBar progress={progress} accent={design.accent} />}
           {design.bar === 'mana-ring' && <ManaRingBar progress={progress} accent={design.accent} accentAlt={design.accentAlt} />}
           {design.bar === 'quill-line' && <QuillLineBar progress={progress} accent={design.accent} />}
+        </div>
+        <div className="oasis-splash-metrics" style={{ color: `${design.accent}b0` }}>
+          {metrics.files > 0
+            ? `${metrics.files} file${metrics.files === 1 ? '' : 's'} · ${formatMB(metrics.bytes)}`
+            : 'awaiting first byte…'}
         </div>
       </div>
     </div>
@@ -489,34 +560,32 @@ const SPLASH_CSS = `
         width: 100%; height: 100%;
         object-fit: cover;
         user-select: none;
-        animation: oasisSplashImageDrift 18s ease-in-out infinite alternate;
+        animation:
+          oasisSplashImageDrift 14s ease-in-out infinite alternate,
+          oasisSplashImageBreathe 5.5s ease-in-out infinite alternate;
+        /* Radial mask: image is opaque in the central 55% and feathers to
+           transparent at the edges, so the CSS fallback gradient bleeds in
+           around it instead of a hard rectangle edge. This is the cheap
+           "alpha-melt" — combined with mix-blend-mode: screen on dark
+           designs, dark areas vanish AND the edges fade out. */
+        -webkit-mask-image: radial-gradient(ellipse 70% 70% at 50% 52%, #000 30%, rgba(0,0,0,0.85) 55%, rgba(0,0,0,0.0) 92%);
+                mask-image: radial-gradient(ellipse 70% 70% at 50% 52%, #000 30%, rgba(0,0,0,0.85) 55%, rgba(0,0,0,0.0) 92%);
       }
       @keyframes oasisSplashImageDrift {
-        0%   { transform: scale(1.02) translate(0%, 0%); }
-        100% { transform: scale(1.06) translate(-0.6%, 0.6%); }
+        0%   { transform: scale(1.04) translate(-0.4%, -0.3%); }
+        100% { transform: scale(1.09) translate(0.6%, 0.4%); }
+      }
+      @keyframes oasisSplashImageBreathe {
+        0%   { filter: brightness(0.94) saturate(1.0); }
+        100% { filter: brightness(1.08) saturate(1.12); }
       }
 
-      .oasis-splash-brand {
-        position: absolute;
-        top: 14%;
-        left: 50%;
-        transform: translateX(-50%);
-        text-align: center;
-        letter-spacing: 0.32em;
-        z-index: 5;
-        pointer-events: none;
-      }
-      .oasis-splash-brand-name {
-        font-size: clamp(22px, 3.2vw, 38px);
-        font-weight: 900;
-        letter-spacing: 0.5em;
-      }
-      .oasis-splash-brand-code {
-        font-size: clamp(48px, 8vw, 112px);
-        font-weight: 900;
+      .oasis-splash-metrics {
+        font-size: 10.5px;
+        font-weight: 600;
         letter-spacing: 0.18em;
-        color: #fff;
-        text-shadow: inherit;
+        text-transform: uppercase;
+        opacity: 0.85;
       }
 
       .oasis-splash-foot {

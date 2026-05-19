@@ -1739,6 +1739,19 @@ export default function Scene() {
       id="uploader-canvas"
       camera={{ position: [12, 10, 12], fov: 50, near: 0.1, far: 500 }}
       gl={{ antialias: true, stencil: true }}
+      onCreated={({ gl }) => {
+        // First R3F frame is rendering — this is the real "user can walk"
+        // moment. Splash listens for this event to dismiss itself early
+        // instead of waiting for every async asset (HDRI, NPCs, particles)
+        // to finish streaming. Fires once on initial canvas creation.
+        gl.domElement.addEventListener?.('webglcontextrestored', () => {
+          window.dispatchEvent(new CustomEvent('oasis:world-playable'))
+        }, { once: true })
+        // Fire on the next frame so React has flushed the initial render.
+        requestAnimationFrame(() => {
+          window.dispatchEvent(new CustomEvent('oasis:world-playable'))
+        })
+      }}
       onPointerMissed={() => {
         if (isPointerLocked()) return  // Noclip/TPS mode — click locks pointer, not deselects
         selectObject(null)
