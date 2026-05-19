@@ -260,7 +260,12 @@ export function PlacementPalette({ showConjured = true, columns = 3, onPlace }: 
               // "drop something cool" picks for new players. Then platforms
               // (build surfaces), then anything else, and "all" sinks to the
               // back of the line so it stops being the default-look. ─═̷─
-              const PREFERRED = ['nature', 'fantasy', 'platforms']
+              // ─═̷─ Categories from data/asset-catalog-extras.json (the
+              // runtime-merged extras pack) — `stylized-nature` and
+              // `fantasy-props` are the asset classes the user actually
+              // builds with. The base catalog's `nature` / `fantasy` also
+              // exist (Kenney packs) but get pushed back. ─═̷─
+              const PREFERRED = ['stylized-nature', 'fantasy-props', 'platforms']
               const present = Array.from(new Set(ASSET_CATALOG.map(asset => asset.category)))
               const preferred = PREFERRED.filter(c => present.includes(c))
               const rest = present.filter(c => !PREFERRED.includes(c))

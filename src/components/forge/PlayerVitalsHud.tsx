@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { PlayerComputedStats } from '@/lib/player-progression'
 import { PLAYER_BASE_STATS } from '@/lib/player-progression'
 import { useInputManager } from '@/lib/input-manager'
@@ -9,6 +9,8 @@ import { setPlayerManaRecharging } from '@/lib/player-avatar-runtime'
 import { useOasisStore } from '@/store/oasisStore'
 import { SPELL_DEFS } from '@/lib/spellbook'
 import { getLocalSessionId, getPvpEnabled, onPlayerState } from '@/lib/pvp-bridge'
+import { SettingsContext } from '@/components/scene-lib/contexts'
+import { resolveFontFamily } from '@/lib/fonts'
 
 type VitalsSource = {
   hp?: unknown
@@ -94,6 +96,73 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
 }
 
+// ─═̷─ Textured bars use the May-17 GPT-image-2 alpha atlas (extracted to
+// /ui/textures-extracted/hud/). Three pieces per bar: ornate left end-cap,
+// stretchable middle, ornate right end-cap. The middle has TWO textures
+// stacked — empty (always full-width as the background) and full (clipped
+// to current percent via an overflow-hidden wrapper). XP keeps the
+// original gradient because the atlas doesn't have a gold variant. ─═̷─
+const HUD_TEX_BASE = '/ui/textures-extracted/hud'
+
+function TexturedBar({
+  percent,
+  tone,
+}: {
+  percent: number
+  tone: 'hp' | 'mana'
+}) {
+  // The inner full-bar overlay's width is the inverse of the parent clip:
+  // parent at 25% → inner needs 400% (so it always paints the FULL
+  // texture into the visible window from left, then gets clipped).
+  // At percent=0 we still render a 100% inner but the 0%-width parent
+  // makes it invisible — avoids divide-by-zero.
+  const innerWidth = percent > 0.01 ? `${(100 / percent) * 100}%` : '100%'
+  return (
+    // ─═̷─ Mobile: caps hidden because at 220px HUD width they ate ~120px
+    // of horizontal space and squashed the actual bar to near-zero. The
+    // empty/full middle textures still apply on mobile, just edge-to-edge
+    // without the ornate end ornaments. Desktop keeps the full 3-piece. ─═̷─
+    <div className="relative flex h-8 select-none items-center">
+      <img
+        src={`${HUD_TEX_BASE}/${tone}-cap-left.png`}
+        alt=""
+        className="pointer-events-none h-full w-auto max-[700px]:hidden"
+        draggable={false}
+      />
+      <div className="relative h-full flex-1">
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: `url(${HUD_TEX_BASE}/${tone}-mid-empty.png)`,
+            backgroundSize: '100% 100%',
+            backgroundRepeat: 'no-repeat',
+          }}
+        />
+        <div
+          className="absolute inset-y-0 left-0 overflow-hidden transition-[width] duration-150"
+          style={{ width: `${percent}%` }}
+        >
+          <div
+            className="h-full"
+            style={{
+              width: innerWidth,
+              backgroundImage: `url(${HUD_TEX_BASE}/${tone}-mid-full.png)`,
+              backgroundSize: '100% 100%',
+              backgroundRepeat: 'no-repeat',
+            }}
+          />
+        </div>
+      </div>
+      <img
+        src={`${HUD_TEX_BASE}/${tone}-cap-right.png`}
+        alt=""
+        className="pointer-events-none h-full w-auto max-[700px]:hidden"
+        draggable={false}
+      />
+    </div>
+  )
+}
+
 function Bar({
   label,
   value,
@@ -108,16 +177,22 @@ function Bar({
   flashPercent?: number
 }) {
   const percent = max > 0 ? Math.max(0, Math.min(100, (value / max) * 100)) : 0
-  const fill = tone === 'hp'
-    ? 'linear-gradient(90deg, #7f1d1d, #dc2626 45%, #fb7185)'
-    : tone === 'mana'
-      ? 'linear-gradient(90deg, #075985, #0284c7 45%, #67e8f9)'
-      : 'linear-gradient(90deg, #713f12, #d97706 48%, #fef08a)'
-  const glow = tone === 'hp'
-    ? 'rgba(248,113,113,0.35)'
-    : tone === 'mana'
-      ? 'rgba(103,232,249,0.35)'
-      : 'rgba(250,204,21,0.35)'
+
+  if (tone === 'hp' || tone === 'mana') {
+    return (
+      <div className="min-w-0">
+        <div className="mb-1 flex items-center justify-between gap-2 text-[9px] font-black uppercase tracking-[0.16em] text-white/65">
+          <span>{label}</span>
+          <span className="font-mono text-white/85">{Math.round(value)}/{Math.round(max)}</span>
+        </div>
+        <TexturedBar percent={percent} tone={tone} />
+      </div>
+    )
+  }
+
+  // XP still uses the gradient — atlas has no gold variant.
+  const fill = 'linear-gradient(90deg, #713f12, #d97706 48%, #fef08a)'
+  const glow = 'rgba(250,204,21,0.35)'
   return (
     <div className="min-w-0">
       <div className="mb-1 flex items-center justify-between gap-2 text-[9px] font-black uppercase tracking-[0.16em] text-white/65">
@@ -153,6 +228,8 @@ export function PlayerVitalsHud({ visible }: { visible: boolean }) {
   const [recharging, setRecharging] = useState(false)
   const [xpFlash, setXpFlash] = useState<{ id: number; amount: number } | null>(null)
   const selectedSpellId = useOasisStore(s => s.selectedSpellId)
+  const { settings } = useContext(SettingsContext)
+  const hudFont = resolveFontFamily(settings.uiFont)
   const vitalsRef = useRef<PlayerVitals>(DEFAULT_VITALS)
   const lastRechargeAtRef = useRef<number>(0)
   const rechargeActiveRef = useRef(false)
@@ -345,7 +422,7 @@ export function PlayerVitalsHud({ visible }: { visible: boolean }) {
     // bottom strip is sacred for the WASD ring + primary-action button —
     // the HUD lives at the top so it never occludes thumb-zones. Width is
     // clamped so it never spans into the side controls on narrow viewports.
-    <div className="pointer-events-none fixed bottom-5 left-1/2 z-[300] w-[min(520px,calc(100vw-2rem))] -translate-x-1/2 select-none max-[700px]:bottom-auto max-[700px]:top-2 max-[700px]:w-[min(220px,calc(100vw-1rem))]">
+    <div className="pointer-events-none fixed bottom-5 left-1/2 z-[300] w-[min(520px,calc(100vw-2rem))] -translate-x-1/2 select-none max-[700px]:bottom-auto max-[700px]:top-2 max-[700px]:w-[min(220px,calc(100vw-1rem))]" style={{ fontFamily: hudFont }}>
       <style>{`
         @keyframes oasisXpFlash {
           0% { opacity: 0.82; transform: translateX(0) scaleX(1); }

@@ -1506,11 +1506,16 @@ export default function Scene() {
     }
 
     switch (spellId) {
-      // ─═̷─ Combat: arm the spell + ensure RP1 is on so LMB casts ─═̷─
+      // ─═̷─ Combat: arm the spell + ensure RP1 is on so LMB casts.
+      // ALSO clear any pending placement state — without this, the mobile
+      // primary-action button stays on "Place" because placementPending
+      // never cleared from the prior spell selection, and the FIRE button
+      // never fires. Combat is a click-to-cast pipeline, not placement. ─═̷─
       case 'firebolt':
       case 'lightning-bolt':
       case 'ice-bolt':
         if (!settings.rp1Mode && !readOnlyForcesRp1) updateSetting('rp1Mode', true)
+        store.cancelPlacement()
         return
 
       // ─═̷─ Recipe / catalog ─═̷─

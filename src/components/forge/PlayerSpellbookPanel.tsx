@@ -125,7 +125,7 @@ export function PlayerSpellbookPanel({
     <div
       data-ui-panel
       data-spellbook-menu-panel
-      className="fixed left-[10.25rem] top-4 z-[285] w-[min(760px,calc(100vw-11.5rem))] max-h-[calc(100vh-2rem)] overflow-hidden rounded-lg border border-amber-200/28 bg-[#050403]/82 text-white shadow-[0_0_70px_rgba(251,146,60,0.24),0_0_28px_rgba(0,0,0,0.78)] max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:w-auto max-[700px]:max-h-[calc(100vh-70px)]"
+      className="oasis-fancy-frame fixed left-[10.25rem] top-4 z-[285] w-[min(760px,calc(100vw-11.5rem))] max-h-[calc(100vh-2rem)] overflow-hidden text-white shadow-[0_0_70px_rgba(251,146,60,0.24),0_0_28px_rgba(0,0,0,0.78)] max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:w-auto max-[700px]:max-h-[calc(100vh-70px)]"
       style={{ fontFamily: spellbookFont }}
       onMouseDown={event => event.stopPropagation()}
     >
@@ -157,9 +157,17 @@ export function PlayerSpellbookPanel({
           <div className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-100/70">Spells</div>
           <div className="mt-1 truncate text-lg font-black tracking-[0.02em] text-amber-50">Spellbook</div>
         </div>
+        {/* ─═̷─ Demo: red ornate plate from the GPT-image-2 atlas. Background
+            stretches across the whole button (caps + middle in one png).
+            Tweak texture/sizing here; rest of the app's pattern is the
+            same — `style={{ backgroundImage: ... }}` + size to fit. ─═̷─ */}
         <button
           type="button"
-          className="relative rounded-md border border-white/15 bg-black/40 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/80 hover:bg-white/14"
+          className="relative h-10 min-w-24 bg-no-repeat px-4 text-[11px] font-black uppercase tracking-[0.16em] text-amber-50 transition hover:brightness-110 active:brightness-95"
+          style={{
+            backgroundImage: 'url(/ui/textures-extracted/buttons-red/red-4-rect-lg.png)',
+            backgroundSize: '100% 100%',
+          }}
           onClick={() => onOpenChange(false)}
         >
           Close
