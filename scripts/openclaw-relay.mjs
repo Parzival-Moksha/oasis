@@ -134,31 +134,43 @@ function readSessionCookie(cookieHeader) {
 }
 
 function readBearerToken(authHeader) {
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null
+  // ─═̷─ Diagnostic logging added 2026-05-19 for ClawCon openclaw-bridge
+  // debugging. Previously every failure mode collapsed into the same
+  // "missing/invalid token" line, making it impossible to tell whether the
+  // problem was expiry, signature mismatch, or schema drift. Each `return null`
+  // now emits a specific reason. The reason strings DO NOT leak token contents
+  // to the log. ─═̷─
+  if (!authHeader) { log('token-reject: no-authorization-header'); return null }
+  if (!authHeader.startsWith('Bearer ')) { log('token-reject: not-bearer-scheme'); return null }
   const token = authHeader.slice('Bearer '.length).trim()
-  if (!token) return null
+  if (!token) { log('token-reject: empty-after-bearer'); return null }
+  let payload
   try {
-    const payload = verifyHmacEnvelope(token, SIGNING_KEY)
-    if (typeof payload?.bs !== 'string' || !payload.bs)        return null
-    if (typeof payload?.w  !== 'string' || !payload.w)         return null
-    if (!Array.isArray(payload?.scopes) || payload.scopes.length === 0) return null
-    if (typeof payload?.exp !== 'number')                       return null
-    if (Date.now() >= payload.exp)                              return null
-    // Sanitize scopes — drop anything non-string so subsequent .includes
-    // checks operate on a clean string[].
-    const cleanScopes = payload.scopes.filter(s => typeof s === 'string' && s.length > 0)
-    if (cleanScopes.length === 0) return null
-    return {
-      browserSessionId: payload.bs,
-      worldId:          payload.w,
-      scopes:           cleanScopes,
-      label:            typeof payload.label === 'string' ? payload.label.slice(0, 128) : 'unknown',
-      agentType:        cleanAgentType(payload.agentType),
-      agentSlot:        cleanAgentSlot(payload.agentSlot, cleanAgentType(payload.agentType)),
-      exp:              payload.exp,
-    }
-  } catch {
+    payload = verifyHmacEnvelope(token, SIGNING_KEY)
+  } catch (err) {
+    log('token-reject: hmac-' + (err?.message || 'unknown'))
     return null
+  }
+  if (typeof payload?.bs !== 'string' || !payload.bs)        { log('token-reject: missing-bs'); return null }
+  if (typeof payload?.w  !== 'string' || !payload.w)         { log('token-reject: missing-w'); return null }
+  if (!Array.isArray(payload?.scopes) || payload.scopes.length === 0) { log('token-reject: missing-scopes'); return null }
+  if (typeof payload?.exp !== 'number')                       { log('token-reject: missing-exp'); return null }
+  if (Date.now() >= payload.exp) {
+    log(`token-reject: expired (exp=${new Date(payload.exp).toISOString()}, now=${new Date().toISOString()})`)
+    return null
+  }
+  // Sanitize scopes — drop anything non-string so subsequent .includes
+  // checks operate on a clean string[].
+  const cleanScopes = payload.scopes.filter(s => typeof s === 'string' && s.length > 0)
+  if (cleanScopes.length === 0) { log('token-reject: scopes-not-strings'); return null }
+  return {
+    browserSessionId: payload.bs,
+    worldId:          payload.w,
+    scopes:           cleanScopes,
+    label:            typeof payload.label === 'string' ? payload.label.slice(0, 128) : 'unknown',
+    agentType:        cleanAgentType(payload.agentType),
+    agentSlot:        cleanAgentSlot(payload.agentSlot, cleanAgentType(payload.agentType)),
+    exp:              payload.exp,
   }
 }
 
@@ -251,7 +263,9 @@ const wss = new WebSocketServer({
     if (role === 'agent') {
       const auth = readBearerToken(info.req.headers.authorization)
       if (!auth) {
-        log('reject agent: missing/invalid token')
+        // Specific reason already logged inside readBearerToken — this is the
+        // top-level "we hit this code path" summary.
+        log('reject agent: token rejected (see token-reject line above)')
         return callback(false, 401, 'invalid token')
       }
       info.req.__relayMeta = {
