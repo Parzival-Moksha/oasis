@@ -5,7 +5,7 @@
   "userId": "local-user",
   "name": "OpenClaw Hub",
   "icon": "C",
-  "visibility": "core",
+  "visibility": "public",
   "creatorName": "OpenClaw",
   "creatorAvatar": null,
   "thumbnailUrl": null,

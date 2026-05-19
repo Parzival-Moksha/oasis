@@ -8,7 +8,16 @@ export const runtime = 'nodejs'
 
 type MediaType = 'image' | 'video' | 'audio'
 
-const MAX_SIZE = 250 * 1024 * 1024 // 250MB
+// ─═̷─ Per-type size caps. Keep in sync with the client mirror in
+// src/components/forge/UploadPanel.tsx (MAX_BYTES). nginx body cap on
+// openclaw.04515.xyz is 25 MB, so anything above that is rejected at
+// the proxy before reaching us — bump deploy/openclaw.04515.xyz.nginx.conf
+// in tandem if you raise these. ─═̷─
+const MAX_SIZE_BY_TYPE: Record<MediaType, number> = {
+  image: 2 * 1024 * 1024,   // 2 MB
+  audio: 10 * 1024 * 1024,  // 10 MB
+  video: 20 * 1024 * 1024,  // 20 MB
+}
 
 const EXTENSION_MEDIA_TYPE: Record<string, MediaType> = {
   '.png': 'image',
@@ -66,10 +75,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Unsupported type: ${file.type || 'unknown'}` }, { status: 400 })
     }
 
-    if (file.size > MAX_SIZE) {
+    const maxSize = MAX_SIZE_BY_TYPE[mediaType]
+    if (file.size > maxSize) {
       return NextResponse.json({
-        error: `File too large: ${(file.size / 1024 / 1024).toFixed(1)}MB. Max: 250MB`,
-      }, { status: 400 })
+        error: `File too large: ${(file.size / 1024 / 1024).toFixed(1)} MB. Max for ${mediaType}: ${maxSize / 1024 / 1024} MB.`,
+      }, { status: 413 })
     }
 
     const ext = resolveExtension(file, mediaType)

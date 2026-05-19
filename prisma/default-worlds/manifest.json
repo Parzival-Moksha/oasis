@@ -27,7 +27,7 @@
       "id": "world-openclaw-hub-system",
       "file": "openclaw-hub.world.json",
       "name": "OpenClaw Hub",
-      "visibility": "core"
+      "visibility": "public"
     }
   ]
 }

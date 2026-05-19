@@ -11,22 +11,37 @@ type UploadPanelDetail = {
   kind?: UploadKind
 }
 
+// ─═̷─ Per-kind size caps. Enforced client-side so we fail fast before
+// burning a multi-MB POST that nginx (25M body cap) would only reject
+// at the very end with a confusing 413 HTML page. Numbers chosen to
+// match the openclaw.04515.xyz vhost — bump both if you bump one. ─═̷─
+const MAX_BYTES: Record<UploadKind, number> = {
+  image: 2 * 1024 * 1024,   // 2 MB
+  audio: 10 * 1024 * 1024,  // 10 MB
+  video: 20 * 1024 * 1024,  // 20 MB
+}
+
+function maxSizeLabel(kind: UploadKind): string {
+  const mb = MAX_BYTES[kind] / (1024 * 1024)
+  return `${mb} MB`
+}
+
 const KIND_META: Record<UploadKind, { title: string; subtitle: string; accept: string; emoji: string }> = {
   audio: {
     title: 'Upload MP3',
-    subtitle: 'Drop an audio file to add it to the world library.',
+    subtitle: `Drop an audio file (max ${maxSizeLabel('audio')}) to add it to the world library.`,
     accept: 'audio/*',
     emoji: '🎵',
   },
   video: {
     title: 'Upload MP4',
-    subtitle: 'Drop a video file to place a video panel in the world.',
+    subtitle: `Drop a video file (max ${maxSizeLabel('video')}) to place a video panel in the world.`,
     accept: 'video/*',
     emoji: '🎬',
   },
   image: {
     title: 'Upload Image',
-    subtitle: 'Drop an image to place a framed picture in the world.',
+    subtitle: `Drop an image (max ${maxSizeLabel('image')}) to place a framed picture in the world.`,
     accept: 'image/*',
     emoji: '🖼️',
   },
@@ -36,6 +51,12 @@ function fileMatchesKind(file: File, kind: UploadKind): boolean {
   if (kind === 'audio') return file.type.startsWith('audio/')
   if (kind === 'video') return file.type.startsWith('video/')
   return file.type.startsWith('image/')
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
 export function UploadPanel() {
@@ -90,6 +111,11 @@ export function UploadPanel() {
       return
     }
     const file = files[0]
+    if (file.size > MAX_BYTES[kind]) {
+      setError(`${file.name} is ${formatBytes(file.size)} — ${kind} cap is ${maxSizeLabel(kind)}.`)
+      setStatus(null)
+      return
+    }
     if (files.length > 1) {
       setStatus(`Uploading ${file.name} (extra files ignored — one at a time)…`)
     } else {
