@@ -27,6 +27,15 @@ type PlayerSpellbookPanelProps = {
   isOpen: boolean
   onOpenChange: (open: boolean) => void
   onCastSpell?: (spellId: SpellId) => void
+  /** When true, every non-combat spell shows a 🔒 overlay. The card stays
+   *  clickable — the cast handler shows a notice — so players can read
+   *  the rule, not just see a dead tile. */
+  readOnly?: boolean
+}
+
+const COMBAT_SPELL_IDS = new Set<SpellId>(['firebolt', 'lightning-bolt', 'ice-bolt'])
+function isCombatSpell(spellId: SpellId): boolean {
+  return COMBAT_SPELL_IDS.has(spellId)
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -49,6 +58,7 @@ export function PlayerSpellbookPanel({
   isOpen,
   onOpenChange,
   onCastSpell,
+  readOnly = false,
 }: PlayerSpellbookPanelProps) {
   const [activePage, setActivePage] = useState<SpellbookPageId>('recipe-catalog')
   const [highlightSpellId, setHighlightSpellId] = useState<SpellId | null>(null)
@@ -189,6 +199,7 @@ export function PlayerSpellbookPanel({
           {activeSpells.map(definition => {
             const highlighted = highlightSpellId === definition.id
             const selected = selectedSpellId === definition.id
+            const locked = readOnly && !isCombatSpell(definition.id)
             const animation = highlighted
               ? 'oasisSpellLearnedPulse 1300ms ease-in-out 2'
               : selected
@@ -205,6 +216,7 @@ export function PlayerSpellbookPanel({
                   selected
                     ? 'border-amber-200/75 bg-gradient-to-br from-amber-900/42 via-orange-950/62 to-black/92 shadow-[0_0_22px_rgba(251,191,36,0.42)]'
                     : 'border-orange-200/28 bg-gradient-to-br from-orange-950/44 via-black/60 to-black/88',
+                  locked ? 'opacity-55 grayscale' : '',
                 ].join(' ')}
                 style={animation ? { animation } : undefined}
               >
@@ -224,6 +236,11 @@ export function PlayerSpellbookPanel({
                 <div className="mt-0.5 line-clamp-2 text-[10px] leading-4 text-white/60 sm:text-[11px]">
                   {definition.summary}
                 </div>
+                {locked && (
+                  <div className="pointer-events-none absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-md border border-amber-200/60 bg-black/80 text-[12px] shadow-[0_0_8px_rgba(0,0,0,0.6)]">
+                    🔒
+                  </div>
+                )}
               </article>
             )
           })}

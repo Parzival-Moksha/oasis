@@ -100,6 +100,7 @@ import { CombatBoltLayer } from './forge/CombatBoltLayer'
 import { PlayerVitalsHud } from './forge/PlayerVitalsHud'
 import { PvPOverlay } from './forge/PvPOverlay'
 import { PlayerSpellbookPanel } from './forge/PlayerSpellbookPanel'
+import { GlobalNotice, showNotice } from './forge/GlobalNotice'
 import { UploadPanel } from './forge/UploadPanel'
 import { QuestProgressTracker } from './forge/QuestProgressTracker'
 import { QuestZeroNpcExclamation } from './forge/QuestZeroNpcExclamation'
@@ -1468,6 +1469,20 @@ export default function Scene() {
     store.setSelectedSpellId(spellId)
     setSpellbookOpen(false)
 
+    const isCombat = spellId === 'firebolt' || spellId === 'lightning-bolt' || spellId === 'ice-bolt'
+
+    // ─═̷─ Read-only world gate. When the player can't write to the active
+    // world, every non-combat spell mutates state the world won't accept —
+    // and worse, the spell's panel is unmounted by hideEditTools so it
+    // would just look broken. Block at the spellbook level + flash a
+    // notice instead. Combat still flows (visual-only, no world mutations).
+    // Also short-circuits the elevation-brush-mode-without-panel leak: the
+    // store side-effects don't run at all here. ─═̷─
+    if (readOnlyForcesRp1 && !isCombat) {
+      showNotice("You don't have write access to this world", 'warn')
+      return
+    }
+
     // ─═̷─ RP1 exit gate. RP1 hides every edit/creation panel via hideEditTools
     // (Scene.tsx ~line 1641: hideEditTools = ... || effectiveRp1Mode). If the
     // player is in RP1 and clicks a creation spell, WizCon / TerrainBrushPanel /
@@ -1475,7 +1490,6 @@ export default function Scene() {
     // throws you back to third person." Toggle RP1 off here for every
     // non-combat spell. Combat spells (firebolt/lightning/ice) need RP1 ON
     // so the LMB cast pipeline fires — those are handled below.
-    const isCombat = spellId === 'firebolt' || spellId === 'lightning-bolt' || spellId === 'ice-bolt'
     if (!isCombat && settings.rp1Mode && !readOnlyForcesRp1) {
       updateSetting('rp1Mode', false)
     }
@@ -1822,7 +1836,9 @@ export default function Scene() {
         isOpen={spellbookOpen}
         onOpenChange={setSpellbookOpen}
         onCastSpell={handleSpellbookCast}
+        readOnly={readOnlyForcesRp1}
       />
+      <GlobalNotice />
       <QuestProgressTracker activeWorldId={activeWorldId} />
 
       {/* ─═̷─═̷─⚡ FPS DISPLAY ─═̷─═̷─⚡ */}

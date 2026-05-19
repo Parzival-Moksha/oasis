@@ -254,7 +254,18 @@ export function PlacementPalette({ showConjured = true, columns = 3, onPlace }: 
       {tab === 'catalog' && (
         <>
           <div className="flex flex-wrap items-center gap-1 max-[700px]:max-h-16 max-[700px]:overflow-y-auto">
-            {['all', ...Array.from(new Set(ASSET_CATALOG.map(asset => asset.category)))].map(item => (
+            {(() => {
+              // ─═̷─ Preferred display order. Stylized-nature + fantasy-props
+              // get the front of the rail because they're the highest-velocity
+              // "drop something cool" picks for new players. Then platforms
+              // (build surfaces), then anything else, and "all" sinks to the
+              // back of the line so it stops being the default-look. ─═̷─
+              const PREFERRED = ['nature', 'fantasy', 'platforms']
+              const present = Array.from(new Set(ASSET_CATALOG.map(asset => asset.category)))
+              const preferred = PREFERRED.filter(c => present.includes(c))
+              const rest = present.filter(c => !PREFERRED.includes(c))
+              return [...preferred, ...rest, 'all']
+            })().map(item => (
               <button
                 key={item}
                 onClick={() => setCategory(item)}
