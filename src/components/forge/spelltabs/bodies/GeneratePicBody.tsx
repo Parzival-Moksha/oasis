@@ -30,13 +30,13 @@ const IMAGINE_MODELS = [
   { key: 'flux-klein',      label: 'FLUX Klein',      desc: 'Black Forest Labs — 4B param' },
 ] as const
 
-// Conjure-style "4-sided building" prompt scaffold. Prepended/appended to the
-// user prompt when buildingMode is ON so the generator returns a façade-style
-// image suitable as a textured building panel.
+// ─═̷─ Prompt scaffold disabled 2026-05-20. The wrapping copy was making
+// nano-banana produce 2×2 collage layouts (4 mini-pics on one image) instead
+// of a clean façade. The toggle now only affects how the placed image
+// renders in-world (4-sided cube vs flat plane); the prompt is passed
+// through raw so the image model just generates what the user asks for. ─═̷─
 function applyBuildingFraming(rawPrompt: string): string {
-  const base = rawPrompt.trim()
-  if (!base) return base
-  return `4-sided building elevation, orthographic, full façade, centered, no foreground props, no people, no perspective distortion. ${base}. Painted clean texture, even lighting, suitable as a flat architectural panel.`
+  return rawPrompt.trim()
 }
 
 interface InFlightImage {

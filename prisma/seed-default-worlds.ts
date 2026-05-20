@@ -116,7 +116,11 @@ async function seedWorld(entry: DefaultWorldManifestEntry, rootDir: string): Pro
     },
   })
 
-  const shouldUpdateDefault = hasFlag('update-core') && ['core', 'public'].includes(seed.visibility)
+  // ─═̷─ 'template' visibility added 2026-05-20. Template worlds are the
+  // OpenClaw Hub / future welcome lobbies — visitors fork them on first edit
+  // via getWorldWriteDecision → 'fork' in world-server.ts. The seed needs to
+  // be able to refresh the template body the same way it refreshes core. ─═̷─
+  const shouldUpdateDefault = hasFlag('update-core') && ['core', 'public', 'template'].includes(seed.visibility)
   const shouldUpdate = Boolean(existing && shouldUpdateDefault)
 
   if (existing && !shouldUpdate) {

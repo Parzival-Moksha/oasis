@@ -435,13 +435,14 @@ interface InFlightImage {
   error?: string
 }
 
-// Conjure-style "4-sided building" prompt scaffold. Prepended to the user
-// prompt when buildingMode is ON so the generator returns a façade-style image
-// suitable as a textured building panel. Mirrored from spelltabs/bodies/GeneratePicBody.
+// ─═̷─ Prompt scaffold disabled 2026-05-20. The wrapping text ("4-sided
+// building elevation, orthographic, full façade, …") was confusing nano-banana
+// into producing collage layouts (4 mini-pics tiled on one image) instead of a
+// single textured façade. The toggle now ONLY controls how the result is
+// rendered in-world (cube vs flat plane) — the prompt is passed through raw.
+// Keep the function shape so the call site below doesn't need to change. ─═̷─
 function applyBuildingFraming(rawPrompt: string): string {
-  const base = rawPrompt.trim()
-  if (!base) return base
-  return `4-sided building elevation, orthographic, full façade, centered, no foreground props, no people, no perspective distortion. ${base}. Painted clean texture, even lighting, suitable as a flat architectural panel.`
+  return rawPrompt.trim()
 }
 
 function ImagineTab({ cols, setLightboxUrl, onRequestDelete }: { cols: number; setLightboxUrl: (url: string | null) => void; onRequestDelete: (image: GeneratedImage, placedCount: number) => void }) {

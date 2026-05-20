@@ -2418,7 +2418,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
     let placedPlacement: CatalogPlacement | null = null
     withUndo(`Place ${name}`, '🖼️', () => {
       const id = `image-${Date.now()}`
-      const placement: CatalogPlacement = { id, catalogId: 'generated-image', name, glbPath: '', position, scale: 1, imageUrl, ...(frameStyle && { imageFrameStyle: frameStyle }), ...(frameThickness !== undefined && { imageFrameThickness: frameThickness }) }
+      // ─═̷─ 4-sided building style spawns a textured cube. Default scale 1
+      // produced a 1m³ doll-house. Bump to 5 so the building is human-scale
+      // when a visitor walks up to it. Plain framed images stay at scale 1. ─═̷─
+      const placementScale = frameStyle === 'building' ? 5 : 1
+      const placement: CatalogPlacement = { id, catalogId: 'generated-image', name, glbPath: '', position, scale: placementScale, imageUrl, ...(frameStyle && { imageFrameStyle: frameStyle }), ...(frameThickness !== undefined && { imageFrameThickness: frameThickness }) }
       placedPlacement = placement
       set(state => ({
         placedCatalogAssets: [...state.placedCatalogAssets, placement],

@@ -5,7 +5,7 @@
   "userId": "local-user",
   "name": "OpenClaw Hub",
   "icon": "C",
-  "visibility": "public",
+  "visibility": "template",
   "creatorName": "OpenClaw",
   "creatorAvatar": null,
   "thumbnailUrl": null,
@@ -450,7 +450,7 @@
         "sourceWorldId": "world-openclaw-hub-system",
         "action": {
           "type": "create_world",
-          "visibility": "public",
+          "visibility": "template",
           "name": "Public world",
           "icon": "P",
           "promptForName": true

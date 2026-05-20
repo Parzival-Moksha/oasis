@@ -127,6 +127,16 @@ export function getActiveWorldId(): string {
 export function setActiveWorldId(id: string, options: { publish?: boolean } = {}): void {
   if (typeof window === 'undefined') return
   localStorage.setItem('oasis-active-world', id)
+  // ─═̷─ Reflect the active world in the URL so refresh + share-link land
+  // in the same place. history.replaceState avoids a Next router re-render
+  // (which would re-mount Scene); pure URL-bar update. Only does this for
+  // a real world id, not the empty/default sentinel. ─═̷─
+  if (id && id !== DEFAULT_WORLD_ID && typeof window.history?.replaceState === 'function') {
+    const expectedPath = `/w/${encodeURIComponent(id)}`
+    if (window.location.pathname !== expectedPath) {
+      try { window.history.replaceState({}, '', expectedPath + window.location.search + window.location.hash) } catch { /* noop */ }
+    }
+  }
   if (!options.publish || !id || id === DEFAULT_WORLD_ID || typeof fetch !== 'function') return
   try {
     const request = fetch(`${window.location.origin}${process.env.NEXT_PUBLIC_BASE_PATH || ''}/api/world-active`, {
@@ -252,6 +262,15 @@ export async function saveWorld(state: Omit<WorldState, 'version' | 'savedAt'>, 
       : null
     if (result?.forkedFromWorldId && result.worldId) {
       setActiveWorldId(result.worldId, { publish: true })
+      // ─═̷─ Welcome flash on first mutation-driven fork — gives visitors
+      // a clear "you just got your own world" beat instead of silently
+      // shifting them around. Best-effort dispatch; consumer (GlobalNotice)
+      // mounts the toast for 3s. ─═̷─
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('oasis:notice', {
+          detail: { message: '🦞 Welcome to your own oasis', tone: 'info' },
+        }))
+      }
     }
     return result
   } catch (err) {
