@@ -262,13 +262,18 @@ export async function saveWorld(state: Omit<WorldState, 'version' | 'savedAt'>, 
       : null
     if (result?.forkedFromWorldId && result.worldId) {
       setActiveWorldId(result.worldId, { publish: true })
-      // ─═̷─ Welcome flash on first mutation-driven fork — gives visitors
-      // a clear "you just got your own world" beat instead of silently
-      // shifting them around. Best-effort dispatch; consumer (GlobalNotice)
-      // mounts the toast for 3s. ─═̷─
+      // ─═̷─ Fork welcome — dedicated modal event picked up by
+      // ForkWelcomeModal in Scene.tsx. The lobby was a read-only template;
+      // first mutation forked it into the player's private oasis. The modal
+      // is more prominent than the regular notice toast because visitors
+      // need to UNDERSTAND why they suddenly left the lobby (and why other
+      // visitors aren't there anymore). ─═̷─
       if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('oasis:notice', {
-          detail: { message: '🦞 Welcome to your own oasis', tone: 'info' },
+        window.dispatchEvent(new CustomEvent('oasis:fork-welcome', {
+          detail: {
+            forkedFromWorldId: result.forkedFromWorldId,
+            newWorldId: result.worldId,
+          },
         }))
       }
     }

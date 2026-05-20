@@ -227,6 +227,13 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
     }
   }, [])
 
+  // ─═̷─ Mobile UX divergence 2026-05-20: on touch devices, single-tap on
+  // the agent window used to immediately enter UI focus, locking camera
+  // + freezing avatar movement. Visitors who tapped the window while
+  // browsing got stuck unless they noticed the ESC button. Now mobile
+  // requires a DOUBLE-TAP within 350ms to confirm focus intent. Desktop
+  // (mouse) is unchanged — single click still focuses. ─═̷─
+  const lastMobileTapRef = useRef(0)
   const handleContentPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     stopSceneBridgeEvent(event)
     // Shift-click always selects — the world owner uses this gesture to
@@ -241,6 +248,18 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
     // Non-shift click on a non-owned window: read-only. No focus handoff,
     // no pointer-lock release. The lock pill explains the disabled state.
     if (!ownedByCurrentViewer) return
+
+    // Touch-input gate: require double-tap to focus on mobile. pointerType
+    // === 'touch' means a finger; mouse + pen fall through to the legacy
+    // single-tap path.
+    if (event.pointerType === 'touch') {
+      const now = performance.now()
+      if (now - lastMobileTapRef.current > 350) {
+        lastMobileTapRef.current = now
+        return  // first tap registered, no focus yet
+      }
+      lastMobileTapRef.current = 0
+    }
     handoffToWindowUi()
   }, [handoffToWindowUi, win.id, ownedByCurrentViewer])
 

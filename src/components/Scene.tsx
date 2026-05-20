@@ -101,6 +101,7 @@ import { PlayerVitalsHud } from './forge/PlayerVitalsHud'
 import { PvPOverlay } from './forge/PvPOverlay'
 import { PlayerSpellbookPanel } from './forge/PlayerSpellbookPanel'
 import { GlobalNotice, showNotice } from './forge/GlobalNotice'
+import { ForkWelcomeModal } from './forge/ForkWelcomeModal'
 import { UploadPanel } from './forge/UploadPanel'
 import { QuestProgressTracker } from './forge/QuestProgressTracker'
 import { QuestZeroNpcExclamation } from './forge/QuestZeroNpcExclamation'
@@ -845,6 +846,7 @@ function AgentQuickLauncher({
   onOpen2d,
   onPlace3d,
   canUseLocalAgents,
+  hideRailButton = false,
 }: {
   isOpen: boolean
   mode: AgentLauncherMode
@@ -854,6 +856,8 @@ function AgentQuickLauncher({
   onOpen2d: (agentType: QuickAgentType) => void
   onPlace3d: (agentType: QuickAgentType) => void
   canUseLocalAgents: boolean
+  /** Hide the standalone rail button. Spellbook covers agent summoning now. */
+  hideRailButton?: boolean
 }) {
   const menuRef = useRef<HTMLDivElement>(null)
   useUILayer('agents-menu', isOpen)
@@ -879,14 +883,16 @@ function AgentQuickLauncher({
 
   return (
     <div ref={menuRef} className="relative select-none">
-      <GameMenuButton
-        onClick={() => { playClick(); onToggle() }}
-        label="Agents"
-        marker="AI"
-        accent="#F472B6"
-        active={isOpen}
-        aria-label="Agents menu"
-      />
+      {!hideRailButton && (
+        <GameMenuButton
+          onClick={() => { playClick(); onToggle() }}
+          label="Agents"
+          marker="AI"
+          accent="#F472B6"
+          active={isOpen}
+          aria-label="Agents menu"
+        />
+      )}
 
       {isOpen && (
         <div
@@ -1844,6 +1850,7 @@ export default function Scene() {
         readOnly={readOnlyForcesRp1}
       />
       <GlobalNotice />
+      <ForkWelcomeModal />
       <QuestProgressTracker activeWorldId={activeWorldId} />
 
       {/* ─═̷─═̷─⚡ FPS DISPLAY ─═̷─═̷─⚡ */}
@@ -1932,6 +1939,11 @@ export default function Scene() {
 
         {!hideEditTools && <PlaceMenu />}
 
+        {/* ─═̷─ AgentQuickLauncher rail button retired 2026-05-20.
+            All agent summoning lives in the Spellbook now (B key,
+            "Agents" page). Component kept mounted (open=false) so it
+            can still be opened via legacy event listeners / deep links;
+            its onToggle is wired to the spellbook handler instead. ─═̷─ */}
         <AgentQuickLauncher
           isOpen={agentLauncherOpen}
           mode={agentLauncherMode}
@@ -1941,6 +1953,7 @@ export default function Scene() {
           onOpen2d={openQuickAgentPanel}
           onPlace3d={placeQuickAgentWindow}
           canUseLocalAgents={!hostedMode && canUseAgentPanels && !hideEditTools}
+          hideRailButton
         />
 
         <SettingsMenu opacity={settingsMenuOpacity}>
