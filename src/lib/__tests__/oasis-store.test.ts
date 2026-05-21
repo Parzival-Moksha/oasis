@@ -94,6 +94,7 @@ function resetStore() {
     agentMaterializations: {},
     agentActivity: {},
     focusedImageId: null,
+    activeObjectOverlay: null,
     transforms: {},
     undoStack: [],
     redoStack: [],
@@ -249,7 +250,7 @@ describe('OasisStore', () => {
       expect(getState().agentMaterializations['asset-1']).toMatchObject({
         objectId: 'asset-1',
         phase: 'pending',
-        minScale: 0.25,
+        minScale: 1.0,
         revealDurationMs: 1500,
       })
 
@@ -1110,6 +1111,52 @@ describe('OasisStore', () => {
   })
 
   // ─═̷─═̷─ focusImage / focusAgentWindow mutual exclusion ─═̷─═̷─
+  describe('interactObject()', () => {
+    it('opens and toggles object HTML overlays from behavior hooks', async () => {
+      useOasisStore.setState({
+        placedCatalogAssets: [{
+          id: 'picture-building',
+          catalogId: 'generated-image',
+          name: 'Picture Building',
+          glbPath: '',
+          imageUrl: '/builder/example.webp',
+          position: [4, 0, -2],
+          scale: 2,
+        }],
+        behaviors: {
+          'picture-building': {
+            visible: true,
+            movement: { type: 'static' },
+            interaction: {
+              label: 'Open panel',
+              radius: 5,
+              actions: [
+                { type: 'html_overlay', title: 'Panel', url: '/builder/example.html', opacity: 0.8 },
+                { type: 'spawn_vfx', position: [4, 1, -2], vfxType: 'sparkburst' },
+              ],
+            },
+          },
+        },
+      })
+
+      await getState().interactObject('picture-building')
+
+      expect(getState().activeObjectOverlay).toMatchObject({
+        objectId: 'picture-building',
+        title: 'Panel',
+        url: '/builder/example.html',
+        opacity: 0.8,
+      })
+      expect(getState().activePlacementVfx[0]).toMatchObject({
+        position: [4, 1, -2],
+        type: 'sparkburst',
+      })
+
+      await getState().interactObject('picture-building')
+      expect(getState().activeObjectOverlay).toBeNull()
+    })
+  })
+
   describe('interactSpatialWebObject()', () => {
     it('changes controls through the shared interaction action', async () => {
       const headcount: SpatialWebObject = {
@@ -1226,6 +1273,60 @@ describe('OasisStore', () => {
         value: true,
         lastEvent: 'change',
         interactionCount: 1,
+      })
+    })
+
+    it('mirrors modify_object visibility from spatial world-tool actions', async () => {
+      const originalFetch = globalThis.fetch
+      const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), {
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      globalThis.fetch = fetchMock as unknown as typeof fetch
+      const toggle: SpatialWebObject = {
+        id: 'panel-switch',
+        type: 'toggle',
+        label: 'Panel Switch',
+        position: [0, 1, 0],
+        value: false,
+        action: {
+          type: 'world_tool',
+          tool: 'modify_object',
+          args: { objectId: 'browser-panel' },
+          argsByValue: {
+            true: { visible: true, label: 'Browser Panel' },
+            false: { visible: false, label: 'Browser Panel' },
+          },
+        },
+      }
+      useOasisStore.setState({
+        activeWorldId: 'world-spatial',
+        spatialWebObjects: [toggle],
+        behaviors: {
+          'browser-panel': { visible: false, movement: { type: 'static' } },
+        },
+      })
+
+      try {
+        await getState().interactSpatialWebObject('panel-switch')
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+
+      expect(fetchMock).toHaveBeenCalledWith('/api/oasis-tools', expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          tool: 'modify_object',
+          args: {
+            objectId: 'browser-panel',
+            visible: true,
+            label: 'Browser Panel',
+            worldId: 'world-spatial',
+          },
+        }),
+      }))
+      expect(getState().behaviors['browser-panel']).toMatchObject({
+        visible: true,
+        label: 'Browser Panel',
       })
     })
 

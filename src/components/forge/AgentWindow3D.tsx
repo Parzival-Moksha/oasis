@@ -24,6 +24,7 @@ import {
 import { getOffscreenUIManager } from '../../lib/forge/offscreen-ui-manager'
 import { AgentWindowSurface } from './AgentWindowSurface'
 import { useInputManager } from '../../lib/input-manager'
+import { isProbablyMobileDevice } from '../../lib/mobile-controls'
 import { getViewerUserIdClient } from '../../lib/viewer-identity-client'
 import {
   FourBarFrame,
@@ -249,16 +250,22 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
     // no pointer-lock release. The lock pill explains the disabled state.
     if (!ownedByCurrentViewer) return
 
-    // Touch-input gate: require double-tap to focus on mobile. pointerType
-    // === 'touch' means a finger; mouse + pen fall through to the legacy
-    // single-tap path.
-    if (event.pointerType === 'touch') {
+    // Touch/coarse-input gate: require double-tap to camera-focus on mobile.
+    // Some mobile controls synthesize mouse-like events, so device detection
+    // joins pointerType here.
+    if (event.pointerType === 'touch' || isProbablyMobileDevice()) {
+      const store = useOasisStore.getState()
+      if (store.selectedObjectId !== win.id) {
+        store.selectObject(win.id)
+      }
       const now = performance.now()
       if (now - lastMobileTapRef.current > 350) {
         lastMobileTapRef.current = now
         return  // first tap registered, no focus yet
       }
       lastMobileTapRef.current = 0
+      store.focusAgentWindow(win.id)
+      return
     }
     handoffToWindowUi()
   }, [handoffToWindowUi, win.id, ownedByCurrentViewer])

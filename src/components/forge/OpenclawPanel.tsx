@@ -201,6 +201,7 @@ const OPENCLAW_RELAY_SCOPES = ['world.read', 'world.write.safe', 'screenshot.req
 const OPENCLAW_AGENT_TYPE = 'openclaw'
 const OPENCLAW_AGENT_SLOT = 'openclaw:primary'
 const OPENCLAW_AGENT_LABEL = 'OpenClaw'
+export const OPENCLAW_CONNECTED_KEY = 'oasis-openclaw-connected'
 const HOSTED_RELAY_COMMAND_ORIGIN = 'https://openclaw.04515.xyz'
 const HOSTED_WELCOME_AUDIO_URL = '/audio/04515/welcome-sam.mp3'
 const HOSTED_WELCOME_TEXT = 'Welcome, traveler. Send this code to your OpenClaw, and the lobster steps into the avatar beside you. Then the world is yours to shape.'
@@ -1954,6 +1955,15 @@ export function OpenclawPanel({
   const relayBridgeStatus = relayBridge.status
   const relayBridgeSessionId = relayBridge.relaySessionId
   const requestRelaySessionSync = relayBridge.requestSessionSync
+
+  useEffect(() => {
+    if (!hostedMode || relayBridgeStatus !== 'paired' || typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(OPENCLAW_CONNECTED_KEY, '1')
+    } catch {
+      // Local persistence is best-effort; the bridge remains paired in memory.
+    }
+  }, [hostedMode, relayBridgeStatus])
 
   useEffect(() => {
     if (!hostedMode || relayBridgeStatus !== 'paired') return

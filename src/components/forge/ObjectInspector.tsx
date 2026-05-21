@@ -17,7 +17,7 @@ import { createPortal } from 'react-dom'
 import { useOasisStore } from '../../store/oasisStore'
 import { SettingsContext } from '../scene-lib/contexts'
 import { LIGHT_INTENSITY_MAX, LIGHT_INTENSITY_STEP } from '../../lib/conjure/types'
-import type { MovementPreset, ObjectBehavior, AnimationConfig, ModelStats, VRMExpressionConfig } from '../../lib/conjure/types'
+import type { MovementPreset, ObjectBehavior, AnimationConfig, ModelStats, VRMExpressionConfig, ObjectInteractionAction } from '../../lib/conjure/types'
 import { formatNumber, formatBytes } from './ModelPreview'
 import { ANIMATION_LIBRARY, ANIM_CATEGORIES, LIB_PREFIX, loadAnimationClip, type AnimCategory } from '../../lib/forge/animation-library'
 import { FRAME_STYLES, getAudioElement } from './WorldObjects'
@@ -1424,22 +1424,58 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
         {resolved?.type === 'catalog' && ((resolved.data as any).imageUrl || (resolved.data as any).videoUrl) && (() => {
           const placement = resolved.data as import('../../lib/conjure/types').CatalogPlacement
           const currentFrame = placement.imageFrameStyle
+          const isImage = Boolean(placement.imageUrl)
+          const displayMode = isImage
+            ? (placement.imageDisplayMode || (currentFrame === 'building' ? '3d' : '2d'))
+            : '2d'
+          const noFrameActive = displayMode === '2d' && (!currentFrame || currentFrame === 'building')
           return (
             <>
-              <SectionHeader>&#128444;&#65039; Frame Style</SectionHeader>
+              <SectionHeader>&#128444;&#65039; Picture Shape</SectionHeader>
               <div className="rounded-lg border border-white/5 p-2" style={{ background: 'rgba(20, 20, 20, 0.6)' }}>
+                {isImage && (
+                  <div className="mb-2 grid grid-cols-2 gap-1">
+                    {(['2d', '3d'] as const).map(mode => {
+                      const active = displayMode === mode
+                      return (
+                        <button
+                          key={mode}
+                          onClick={() => updateCatalogPlacement(inspectedObjectId!, mode === '3d'
+                            ? {
+                                imageDisplayMode: '3d',
+                                imageFrameStyle: 'building',
+                                imageBuildingFrameColor: placement.imageBuildingFrameColor || '#f97316',
+                                imageBuildingFrameThickness: placement.imageBuildingFrameThickness ?? 0.16,
+                              }
+                            : {
+                                imageDisplayMode: '2d',
+                                imageFrameStyle: currentFrame === 'building' ? undefined : currentFrame,
+                              })}
+                          className={`rounded border px-2 py-1 text-[10px] font-mono uppercase tracking-[0.08em] transition-colors ${
+                            active
+                              ? 'border-sky-400/50 bg-sky-500/20 text-sky-200'
+                              : 'border-gray-700/40 bg-black/30 text-gray-500 hover:border-gray-500/60 hover:text-gray-300'
+                          }`}
+                        >
+                          {mode}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+                {displayMode === '2d' && (
                 <div className="grid grid-cols-4 gap-1">
                   {/* No frame option */}
                   <button
-                    onClick={() => updateCatalogPlacement(inspectedObjectId!, { imageFrameStyle: undefined })}
+                    onClick={() => updateCatalogPlacement(inspectedObjectId!, { imageDisplayMode: '2d', imageFrameStyle: undefined })}
                     className={`flex flex-col items-center gap-0.5 p-1.5 rounded transition-colors text-center ${
-                      !currentFrame
+                      noFrameActive
                         ? 'bg-sky-500/20 border border-sky-500/40'
                         : 'border border-gray-700/30 hover:border-gray-500/50'
                     }`}
                   >
                     <span className="text-sm">✕</span>
-                    <span className={`text-[8px] font-mono ${!currentFrame ? 'text-sky-300' : 'text-gray-500'}`}>None</span>
+                    <span className={`text-[8px] font-mono ${noFrameActive ? 'text-sky-300' : 'text-gray-500'}`}>None</span>
                   </button>
                   {/* 8 frame styles */}
                   {FRAME_STYLES.map(frame => {
@@ -1447,7 +1483,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                     return (
                       <button
                         key={frame.id}
-                        onClick={() => updateCatalogPlacement(inspectedObjectId!, { imageFrameStyle: frame.id })}
+                        onClick={() => updateCatalogPlacement(inspectedObjectId!, { imageDisplayMode: '2d', imageFrameStyle: frame.id })}
                         className={`flex flex-col items-center gap-0.5 p-1.5 rounded transition-colors text-center ${
                           isActive
                             ? 'bg-sky-500/20 border border-sky-500/40'
@@ -1461,9 +1497,10 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                     )
                   })}
                 </div>
+                )}
               </div>
               {/* Frame thickness slider — only shown when a frame is selected */}
-              {currentFrame && (
+              {displayMode === '2d' && currentFrame && currentFrame !== 'building' && (
                 <div className="flex items-center gap-2 mt-2">
                   <span className="text-[10px] text-gray-400 w-16">Thickness</span>
                   <input
@@ -1476,6 +1513,38 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                     className="flex-1 h-1 accent-sky-500"
                   />
                   <span className="text-[9px] text-gray-500 font-mono w-6 text-right">{(placement.imageFrameThickness ?? 1).toFixed(1)}</span>
+                </div>
+              )}
+              {isImage && displayMode === '3d' && (
+                <div className="mt-2 space-y-2 rounded-lg border border-white/5 p-2" style={{ background: 'rgba(10, 10, 10, 0.45)' }}>
+                  <div className="flex items-center gap-2">
+                    <span className="w-16 shrink-0 text-[10px] text-gray-400">Beams</span>
+                    <input
+                      type="color"
+                      value={placement.imageBuildingFrameColor || '#f97316'}
+                      onChange={e => updateCatalogPlacement(inspectedObjectId!, { imageBuildingFrameColor: e.target.value })}
+                      className="h-7 w-9 rounded border border-white/10 bg-black/60"
+                    />
+                    <input
+                      type="text"
+                      value={placement.imageBuildingFrameColor || '#f97316'}
+                      onChange={e => updateCatalogPlacement(inspectedObjectId!, { imageBuildingFrameColor: e.target.value })}
+                      className="min-w-0 flex-1 rounded border border-white/10 bg-black/60 px-2 py-1 text-[10px] font-mono text-gray-200 focus:border-sky-500/50 focus:outline-none"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-16 shrink-0 text-[10px] text-gray-400">Thickness</span>
+                    <input
+                      type="range"
+                      min="0.03"
+                      max="0.8"
+                      step="0.01"
+                      value={placement.imageBuildingFrameThickness ?? 0.16}
+                      onChange={e => updateCatalogPlacement(inspectedObjectId!, { imageBuildingFrameThickness: parseFloat(e.target.value) })}
+                      className="h-1 flex-1 accent-sky-500"
+                    />
+                    <span className="w-9 text-right font-mono text-[9px] text-gray-500">{(placement.imageBuildingFrameThickness ?? 0.16).toFixed(2)}</span>
+                  </div>
                 </div>
               )}
             </>
@@ -1626,6 +1695,151 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
         })()}
 
         {/* ░▒▓ AGENT WINDOW INFO — session, model, cost, frame ▓▒░ */}
+        {resolved && inspectedObjectId && (() => {
+          const interaction = behavior.interaction
+          const actions = interaction?.actions || []
+          const overlayAction = actions.find((action): action is Extract<ObjectInteractionAction, { type: 'html_overlay' }> => action.type === 'html_overlay')
+          const apiAction = actions.find((action): action is Extract<ObjectInteractionAction, { type: 'api_call' }> => action.type === 'api_call')
+          const vfxAction = actions.find((action): action is Extract<ObjectInteractionAction, { type: 'spawn_vfx' }> => action.type === 'spawn_vfx')
+          const audioAction = actions.find((action): action is Extract<ObjectInteractionAction, { type: 'audio_toggle' }> => action.type === 'audio_toggle')
+          const spellAction = actions.find((action): action is Extract<ObjectInteractionAction, { type: 'spell' }> => action.type === 'spell')
+          const writeActions = (nextActions: ObjectInteractionAction[]) => {
+            setObjectBehavior(inspectedObjectId, {
+              interaction: nextActions.length
+                ? {
+                    label: interaction?.label || `Open ${resolved.name}`,
+                    radius: interaction?.radius ?? 3.2,
+                    actions: nextActions,
+                  }
+                : undefined,
+            })
+          }
+          const upsertAction = (type: ObjectInteractionAction['type'], action: ObjectInteractionAction) => {
+            writeActions([...actions.filter(existing => existing.type !== type), action])
+          }
+          const removeAction = (type: ObjectInteractionAction['type']) => {
+            writeActions(actions.filter(action => action.type !== type))
+          }
+          return (
+            <>
+              <SectionHeader>Interaction Hooks</SectionHeader>
+              <div className="rounded-lg border border-white/5 p-2 space-y-2" style={{ background: 'rgba(20, 20, 20, 0.6)' }}>
+                <div className="grid grid-cols-[1fr_72px] gap-1.5">
+                  <input
+                    type="text"
+                    value={interaction?.label || ''}
+                    onChange={e => setObjectBehavior(inspectedObjectId, {
+                      interaction: {
+                        label: e.target.value || `Open ${resolved.name}`,
+                        radius: interaction?.radius ?? 3.2,
+                        actions: actions.length ? actions : [{ type: 'spawn_vfx' }],
+                      },
+                    })}
+                    placeholder={`Open ${resolved.name}`}
+                    className="rounded border border-gray-700/30 bg-black/40 px-2 py-1 text-[10px] text-gray-200 outline-none focus:border-sky-400/40"
+                  />
+                  <input
+                    type="number"
+                    min={0.5}
+                    max={50}
+                    step={0.1}
+                    value={interaction?.radius ?? 3.2}
+                    onChange={e => setObjectBehavior(inspectedObjectId, {
+                      interaction: {
+                        label: interaction?.label || `Open ${resolved.name}`,
+                        radius: Math.max(0.5, Number(e.target.value) || 3.2),
+                        actions: actions.length ? actions : [{ type: 'spawn_vfx' }],
+                      },
+                    })}
+                    className="rounded border border-gray-700/30 bg-black/40 px-2 py-1 text-[10px] text-gray-200 outline-none focus:border-sky-400/40"
+                    title="Interaction radius"
+                  />
+                </div>
+                <div className="grid grid-cols-[64px_1fr] items-center gap-1.5">
+                  <button
+                    onClick={() => overlayAction ? removeAction('html_overlay') : upsertAction('html_overlay', { type: 'html_overlay', title: resolved.name, url: '', opacity: 0.8 })}
+                    className={`rounded border px-2 py-1 text-[9px] font-black uppercase tracking-[0.08em] ${overlayAction ? 'border-cyan-400/45 bg-cyan-500/18 text-cyan-200' : 'border-gray-700/40 bg-black/30 text-gray-500'}`}
+                  >
+                    Overlay
+                  </button>
+                  <input
+                    type="text"
+                    disabled={!overlayAction}
+                    value={overlayAction?.url || ''}
+                    onChange={e => upsertAction('html_overlay', { type: 'html_overlay', title: overlayAction?.title || resolved.name, url: e.target.value, opacity: overlayAction?.opacity ?? 0.8 })}
+                    placeholder="/builder/page.html"
+                    className="rounded border border-gray-700/30 bg-black/40 px-2 py-1 text-[10px] text-gray-200 outline-none disabled:opacity-40 focus:border-sky-400/40"
+                  />
+                </div>
+                <div className="grid grid-cols-[64px_1fr] items-center gap-1.5">
+                  <button
+                    onClick={() => vfxAction ? removeAction('spawn_vfx') : upsertAction('spawn_vfx', { type: 'spawn_vfx', vfxType: 'sparkburst' })}
+                    className={`rounded border px-2 py-1 text-[9px] font-black uppercase tracking-[0.08em] ${vfxAction ? 'border-fuchsia-400/45 bg-fuchsia-500/18 text-fuchsia-200' : 'border-gray-700/40 bg-black/30 text-gray-500'}`}
+                  >
+                    VFX
+                  </button>
+                  <input
+                    type="text"
+                    disabled={!vfxAction}
+                    value={vfxAction?.vfxType || ''}
+                    onChange={e => upsertAction('spawn_vfx', { type: 'spawn_vfx', vfxType: e.target.value || undefined })}
+                    placeholder="sparkburst"
+                    className="rounded border border-gray-700/30 bg-black/40 px-2 py-1 text-[10px] text-gray-200 outline-none disabled:opacity-40 focus:border-sky-400/40"
+                  />
+                </div>
+                <div className="grid grid-cols-[64px_1fr] items-center gap-1.5">
+                  <button
+                    onClick={() => apiAction ? removeAction('api_call') : upsertAction('api_call', { type: 'api_call', endpoint: '/api/world-events', method: 'POST' })}
+                    className={`rounded border px-2 py-1 text-[9px] font-black uppercase tracking-[0.08em] ${apiAction ? 'border-amber-400/45 bg-amber-500/18 text-amber-200' : 'border-gray-700/40 bg-black/30 text-gray-500'}`}
+                  >
+                    API
+                  </button>
+                  <input
+                    type="text"
+                    disabled={!apiAction}
+                    value={apiAction?.endpoint || ''}
+                    onChange={e => upsertAction('api_call', { type: 'api_call', endpoint: e.target.value, method: apiAction?.method || 'POST' })}
+                    placeholder="/api/..."
+                    className="rounded border border-gray-700/30 bg-black/40 px-2 py-1 text-[10px] text-gray-200 outline-none disabled:opacity-40 focus:border-sky-400/40"
+                  />
+                </div>
+                <div className="grid grid-cols-[64px_1fr] items-center gap-1.5">
+                  <button
+                    onClick={() => audioAction ? removeAction('audio_toggle') : upsertAction('audio_toggle', { type: 'audio_toggle', audioUrl: '', loop: true })}
+                    className={`rounded border px-2 py-1 text-[9px] font-black uppercase tracking-[0.08em] ${audioAction ? 'border-green-400/45 bg-green-500/18 text-green-200' : 'border-gray-700/40 bg-black/30 text-gray-500'}`}
+                  >
+                    MP3
+                  </button>
+                  <input
+                    type="text"
+                    disabled={!audioAction}
+                    value={audioAction?.audioUrl || ''}
+                    onChange={e => upsertAction('audio_toggle', { type: 'audio_toggle', audioUrl: e.target.value, loop: audioAction?.loop ?? true })}
+                    placeholder="/media/audio.mp3"
+                    className="rounded border border-gray-700/30 bg-black/40 px-2 py-1 text-[10px] text-gray-200 outline-none disabled:opacity-40 focus:border-sky-400/40"
+                  />
+                </div>
+                <div className="grid grid-cols-[64px_1fr] items-center gap-1.5">
+                  <button
+                    onClick={() => spellAction ? removeAction('spell') : upsertAction('spell', { type: 'spell', spellId: 'text-to-3d' })}
+                    className={`rounded border px-2 py-1 text-[9px] font-black uppercase tracking-[0.08em] ${spellAction ? 'border-violet-400/45 bg-violet-500/18 text-violet-200' : 'border-gray-700/40 bg-black/30 text-gray-500'}`}
+                  >
+                    Spell
+                  </button>
+                  <input
+                    type="text"
+                    disabled={!spellAction}
+                    value={spellAction?.spellId || ''}
+                    onChange={e => upsertAction('spell', { type: 'spell', spellId: e.target.value })}
+                    placeholder="text-to-3d"
+                    className="rounded border border-gray-700/30 bg-black/40 px-2 py-1 text-[10px] text-gray-200 outline-none disabled:opacity-40 focus:border-sky-400/40"
+                  />
+                </div>
+              </div>
+            </>
+          )
+        })()}
+
         {resolved?.type === 'portal' && (() => {
           const portal = resolved.data as PortalGate
           const targetWorlds = worldRegistry.filter(world =>

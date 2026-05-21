@@ -604,7 +604,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
               if (publicFilter === 'unlisted') return v === 'unlisted' || v === 'only-with-link' || v === 'unlisted_edit'
               return false
             }
-            const publicWorlds = worldRegistry.filter(w => (w.id === WELCOME_HUB_WORLD_ID || w.userId !== viewerUserId) && filterVis(w))
+            const publicWorlds = worldRegistry.filter(w => filterVis(w))
             const PILL: Array<{ key: 'public' | 'sandbox' | 'unlisted'; label: string; tip: string }> = [
               { key: 'public', label: 'Public', tip: 'Visit and look around. Owner edits.' },
               { key: 'sandbox', label: 'Sandbox', tip: 'Anyone can build.' },

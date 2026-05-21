@@ -148,7 +148,7 @@ export function getWorldWriteDecision(
 
   const kind = normalizeWorldKind(world.visibility)
   if (kind === 'core') return 'deny'
-  if (kind === 'template') return 'fork'
+  if (kind === 'template') return 'deny'
   if (kind === 'ffa' || kind === 'link-ffa') return 'write'
   if (isWorldOwner(ctx, world)) return 'write'
   return 'deny'

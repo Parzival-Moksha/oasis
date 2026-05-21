@@ -755,24 +755,14 @@ describe('context-aware hosted world tools', () => {
     expect(vi.mocked(prisma.world.update).mock.calls[0]?.[0]?.where).toEqual({ id: 'ffa-world' })
   })
 
-  it('forks template worlds before a hosted relay mutation', async () => {
+  it('rejects hosted relay mutations against template worlds', async () => {
     const template = makeWorldRow({}, {
       id: 'template-world',
       userId: 'system',
       name: 'Starter Template',
       visibility: 'template',
     })
-    const fork = makeWorldRow({}, {
-      id: 'fork-world',
-      userId: 'session-a',
-      name: 'Starter Template',
-      visibility: 'private',
-    })
-    vi.mocked(prisma.world.findFirst)
-      .mockResolvedValueOnce(template)
-      .mockResolvedValueOnce(fork)
-    vi.mocked(prisma.world.create).mockResolvedValue(fork)
-    vi.mocked(prisma.world.update).mockResolvedValue(fork)
+    vi.mocked(prisma.world.findFirst).mockResolvedValueOnce(template)
     const events: Array<{ type: string; worldId: string; data?: Record<string, unknown> }> = []
     const unsubscribe = subscribe(event => events.push(event))
 
@@ -789,24 +779,11 @@ describe('context-aware hosted world tools', () => {
       unsubscribe()
     }
 
-    expect(result.ok).toBe(true)
-    expect(vi.mocked(prisma.world.create).mock.calls[0]?.[0]?.data).toMatchObject({
-      userId: 'session-a',
-      name: 'Starter Template',
-      visibility: 'private',
-    })
-    expect(vi.mocked(prisma.world.update).mock.calls[0]?.[0]?.where).toEqual({ id: 'fork-world' })
-    expect(events).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        type: 'world_switch',
-        worldId: 'template-world',
-        data: expect.objectContaining({
-          targetWorldId: 'fork-world',
-          forkedFromWorldId: 'template-world',
-          actorAgentType: 'openclaw',
-        }),
-      }),
-    ]))
+    expect(result.ok).toBe(false)
+    expect(result.data).toMatchObject({ code: 'world_write_forbidden' })
+    expect(vi.mocked(prisma.world.create)).not.toHaveBeenCalled()
+    expect(vi.mocked(prisma.world.update)).not.toHaveBeenCalled()
+    expect(events).toEqual([])
   })
 
   it('filters hosted list_worlds to owned and discoverable worlds', async () => {

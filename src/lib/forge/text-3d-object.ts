@@ -43,6 +43,7 @@ export interface Text3DObject {
   shininess: number
   position: [number, number, number]
   rotation: [number, number, number]
+  billboard?: boolean
   authorId?: string
   createdAt: number
 }

@@ -44,6 +44,7 @@ import { ViewportScreenshotBridge } from './forge/ViewportScreenshotBridge'
 import { WizardConsole, type WizardMode } from './forge/WizardConsole'
 // AssetExplorerWindow deleted — functionality lives in WizardConsole
 import { ObjectInspector } from './forge/ObjectInspector'
+import { ObjectHtmlOverlay } from './forge/ObjectHtmlOverlay'
 import { MindcraftMissionWindowBridge } from './forge/MindcraftMissionWindowBridge'
 import { ActionLogPanel } from './forge/ActionLog'
 import { ProfileButton } from './forge/ProfileButton'
@@ -52,7 +53,7 @@ import { AnorakPanel } from './forge/AnorakPanel'
 import { CodexPanel } from './forge/CodexPanel'
 import { AnorakProPanel } from './forge/AnorakProPanel'
 import { HermesPanel } from './forge/HermesPanel'
-import { OpenclawPanel } from './forge/OpenclawPanel'
+import { OpenclawPanel, OPENCLAW_CONNECTED_KEY } from './forge/OpenclawPanel'
 import { ParzivalPanel } from './forge/ParzivalPanel'
 import { RealtimePanel } from './forge/RealtimePanel'
 import { GeminiLivePanel } from './forge/GeminiLivePanel'
@@ -1255,6 +1256,7 @@ export default function Scene() {
   const isViewMode = useOasisStore(s => s.isViewMode)
   const isViewModeEditable = useOasisStore(s => s.isViewModeEditable)
   const activeWorldId = useOasisStore(s => s.activeWorldId)
+  const worldReady = useOasisStore(s => s._worldReady)
   const worldRegistry = useOasisStore(s => s.worldRegistry)
   const activeWorldMeta = worldRegistry.find(world => world.id === activeWorldId)
   const activeWorldCanWrite = Boolean(isAdmin || activeWorldMeta?.canWrite || (isViewMode && isViewModeEditable))
@@ -1322,6 +1324,46 @@ export default function Scene() {
     }
     store.focusAgentWindow(ROOKIE_MERLIN_WINDOW_ID)
   }, [])
+
+  useEffect(() => {
+    if (!hostedMode || !worldReady || !activeWorldCanWrite || typeof window === 'undefined') return
+    let openclawConnected = false
+    try {
+      openclawConnected = window.localStorage.getItem(OPENCLAW_CONNECTED_KEY) === '1'
+    } catch {
+      openclawConnected = false
+    }
+    if (!openclawConnected) return
+
+    const store = useOasisStore.getState()
+    if (store.placedAgentWindows.some(window => window.agentType === 'openclaw')) return
+
+    const pose = getPlayerAvatarPose()
+    const base = pose?.position || [0, 0, 0]
+    const forward = pose?.forward || [0, 0, -1]
+    const length = Math.hypot(forward[0], forward[2]) || 1
+    const fx = forward[0] / length
+    const fz = forward[2] / length
+    const x = base[0] + fx * 5
+    const z = base[2] + fz * 5
+    const yawTowardPlayer = Math.atan2(base[0] - x, base[2] - z)
+
+    store.addAgentWindow({
+      id: `agent-openclaw-${Date.now()}`,
+      agentType: 'openclaw',
+      position: [x, 2.4, z],
+      rotation: [0, yawTowardPlayer, 0],
+      scale: 0.16,
+      width: 750,
+      height: 850,
+      label: 'OpenClaw',
+      renderMode: 'live-html',
+      frameStyle: 'void',
+      frameThickness: 7,
+      windowOpacity: 0.92,
+      windowBlur: 8,
+    })
+  }, [activeWorldCanWrite, activeWorldId, hostedMode, worldReady])
 
   const recordRookieQuestStep = useCallback((stepId: string) => {
     void fetch('/api/player/progression', {
@@ -2129,6 +2171,8 @@ export default function Scene() {
         isOpen={helpOpen}
         onClose={() => setHelpOpen(false)}
       />
+
+      <ObjectHtmlOverlay />
 
       {/* EXIT RP1 — floating escape hatch when Ready Player 1 mode is active */}
       {effectiveRp1Mode && !readOnlyForcesRp1 && (

@@ -4,7 +4,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { create } from 'zustand'
-import type { ConjuredAsset, CraftedScene, CatalogPlacement, RealmId, ObjectBehavior, WorldLight, WorldLightType, GeneratedImage } from '../lib/conjure/types'
+import type { ConjuredAsset, CraftedScene, CatalogPlacement, RealmId, ObjectBehavior, ObjectInteractionAction, WorldLight, WorldLightType, GeneratedImage } from '../lib/conjure/types'
 import { DEFAULT_WORLD_LIGHTS } from '../lib/conjure/types'
 import type { TerrainParams } from '../lib/forge/terrain-generator'
 import {
@@ -75,6 +75,14 @@ import { createPortalZeroGoogleFormsAltar, createPortalZeroGoogleTestAltar } fro
 import { getViewerUserIdClient } from '../lib/viewer-identity-client'
 import type { PaintStroke } from '../lib/forge/paint-stroke'
 import type { Text3DObject } from '../lib/forge/text-3d-object'
+
+export interface ObjectHtmlOverlay {
+  objectId: string
+  title: string
+  url?: string
+  html?: string
+  opacity: number
+}
 
 const SPATIAL_WEB_WORLD_TOOL_ALLOWLIST = new Set([
   'set_sky',
@@ -213,6 +221,44 @@ function upsertWorldRegistryMeta(registry: WorldMeta[], meta: WorldMeta): WorldM
   return registry.map(world => world.id === meta.id ? { ...world, ...meta } : world)
 }
 
+function resolveObjectPosition(state: OasisState, objectId: string): [number, number, number] {
+  const transformPosition = state.transforms[objectId]?.position
+  if (transformPosition) return transformPosition
+  const catalog = state.placedCatalogAssets.find(object => object.id === objectId)
+  if (catalog) return catalog.position
+  const crafted = state.craftedScenes.find(object => object.id === objectId)
+  if (crafted) return crafted.position
+  const conjured = state.conjuredAssets.find(object => object.id === objectId)
+  if (conjured?.position) return conjured.position
+  const portal = state.portalGates.find(object => object.id === objectId)
+  if (portal) return portal.position
+  const spatial = state.spatialWebObjects.find(object => object.id === objectId)
+  if (spatial) return spatial.position
+  const text = state.text3dObjects.find(object => object.id === objectId)
+  if (text) return text.position
+  const agentWindow = state.placedAgentWindows.find(object => object.id === objectId)
+  if (agentWindow) return agentWindow.position
+  const agentAvatar = state.placedAgentAvatars.find(object => object.id === objectId)
+  if (agentAvatar) return agentAvatar.position
+  const light = state.worldLights.find(object => object.id === objectId)
+  if (light) return light.position
+  return [0, 0, 0]
+}
+
+function resolveObjectLabel(state: OasisState, objectId: string): string {
+  const behavior = state.behaviors[objectId]
+  if (behavior?.interaction?.label) return behavior.interaction.label
+  if (behavior?.label) return behavior.label
+  return state.placedCatalogAssets.find(object => object.id === objectId)?.name
+    || state.craftedScenes.find(object => object.id === objectId)?.name
+    || state.portalGates.find(object => object.id === objectId)?.label
+    || state.spatialWebObjects.find(object => object.id === objectId)?.label
+    || state.text3dObjects.find(object => object.id === objectId)?.text
+    || state.placedAgentWindows.find(object => object.id === objectId)?.label
+    || state.placedAgentAvatars.find(object => object.id === objectId)?.label
+    || objectId
+}
+
 type RemoteSubscription = { unsubscribe: () => void }
 type ViewingWorldMeta = Partial<WorldMeta> & { name: string; icon: string }
 const persist = (key: string, value: string): void => { if (isBrowser) localStorage.setItem(key, value) }
@@ -237,7 +283,7 @@ export type PlacementVfxType =
   | 'realitydetonation' | 'dimensionalmaw' | 'hexstorm' | 'singularitydrop'
   | 'random'
 
-const PLACEMENT_VFX_LIST: Exclude<PlacementVfxType, 'random'>[] = ['realitydetonation', 'dimensionalmaw', 'hexstorm', 'singularitydrop', 'quantumcollapse', 'phoenixascension', 'dimensionalrift', 'crystalgenesis', 'meteorimpact', 'arcanebloom', 'voidanchor', 'stellarforge']
+const PLACEMENT_VFX_LIST: Exclude<PlacementVfxType, 'random'>[] = ['runeflash', 'sparkburst', 'portalring', 'sigilpulse', 'realitydetonation', 'dimensionalmaw', 'hexstorm', 'singularitydrop', 'quantumcollapse', 'phoenixascension', 'dimensionalrift', 'crystalgenesis', 'meteorimpact', 'arcanebloom', 'voidanchor', 'stellarforge']
 
 export interface PlacementPending {
   type: 'catalog' | 'conjured' | 'crafted' | 'library' | 'image' | 'video' | 'agent' | 'light' | 'portal' | 'spatialWeb'
@@ -657,6 +703,7 @@ interface OasisState {
   activePlacementVfx: ActivePlacementVfx[]    // currently playing VFX instances
   activeMarchOrderVfx: ActiveMarchOrderVfx[]  // right-click move-order markers
   agentMaterializations: Record<string, AgentMaterialization>
+  activeObjectOverlay: ObjectHtmlOverlay | null
 
   // ─═̷─═̷─🌍 TERRAIN + WORLD STATE ─═̷─═̷─🌍
   terrainParams: TerrainParams | null
@@ -765,8 +812,11 @@ interface OasisState {
   placeLibrarySceneAt: (sceneId: string, position: [number, number, number]) => void
   setPlacementVfxType: (type: PlacementVfxType) => void
   setPlacementVfxDuration: (duration: number) => void
-  spawnPlacementVfx: (position: [number, number, number]) => void
+  spawnPlacementVfx: (position: [number, number, number], typeOverride?: PlacementVfxType) => void
   removePlacementVfx: (id: string) => void
+  openObjectOverlay: (overlay: ObjectHtmlOverlay) => void
+  closeObjectOverlay: () => void
+  interactObject: (id: string) => Promise<void>
   startAgentMaterialization: (objectId: string) => void
   revealAgentMaterialization: (objectId: string) => void
   clearAgentMaterialization: (objectId: string) => void
@@ -1232,6 +1282,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   activePlacementVfx: [],
   activeMarchOrderVfx: [],
   agentMaterializations: {},
+  activeObjectOverlay: null,
   conjurePreview: null,
   craftingInProgress: false,
   craftingPrompt: null,
@@ -1549,6 +1600,22 @@ export const useOasisStore = create<OasisState>((set, get) => {
             }
             return { groundTiles: nextTiles }
           })
+        } else if (tool === 'modify_object' && typeof args.objectId === 'string') {
+          const objectId = args.objectId
+          const behaviorUpdates: Partial<ObjectBehavior> = {}
+          if (typeof args.visible === 'boolean') behaviorUpdates.visible = args.visible
+          if (typeof args.label === 'string') behaviorUpdates.label = args.label
+          if (Object.keys(behaviorUpdates).length > 0) {
+            set(state => ({
+              behaviors: {
+                ...state.behaviors,
+                [objectId]: {
+                  ...(state.behaviors[objectId] || { visible: true, movement: { type: 'static' as const } }),
+                  ...behaviorUpdates,
+                },
+              },
+            }))
+          }
         }
         return true
       } catch {
@@ -2512,11 +2579,14 @@ export const useOasisStore = create<OasisState>((set, get) => {
     set({ placementVfxDuration: clamped })
   },
 
-  spawnPlacementVfx: (position) => {
+  spawnPlacementVfx: (position, typeOverride) => {
     const { placementVfxType, placementVfxDuration } = get()
-    const resolvedType = placementVfxType === 'random'
-      ? PLACEMENT_VFX_LIST[Math.floor(Math.random() * PLACEMENT_VFX_LIST.length)]
+    const requestedType = typeOverride === 'random' || (typeOverride && PLACEMENT_VFX_LIST.includes(typeOverride as Exclude<PlacementVfxType, 'random'>))
+      ? typeOverride
       : placementVfxType
+    const resolvedType = requestedType === 'random'
+      ? PLACEMENT_VFX_LIST[Math.floor(Math.random() * PLACEMENT_VFX_LIST.length)]
+      : requestedType
     const vfx: ActivePlacementVfx = {
       id: `vfx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       position,
@@ -2531,6 +2601,112 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
   removePlacementVfx: (id) => {
     set(state => ({ activePlacementVfx: state.activePlacementVfx.filter(v => v.id !== id) }))
+  },
+
+  openObjectOverlay: (overlay) => {
+    set({
+      activeObjectOverlay: {
+        ...overlay,
+        opacity: Math.max(0.35, Math.min(0.96, overlay.opacity || 0.8)),
+      },
+    })
+    playSpatialWebSound('panelOpen')
+  },
+
+  closeObjectOverlay: () => {
+    if (!get().activeObjectOverlay) return
+    set({ activeObjectOverlay: null })
+    playSpatialWebSound('panelClose')
+  },
+
+  interactObject: async (id) => {
+    const state = get()
+    const behavior = state.behaviors[id]
+    const interaction = behavior?.interaction
+    if (!interaction || !Array.isArray(interaction.actions) || interaction.actions.length === 0) return
+
+    const firstOverlay = interaction.actions.find((action): action is Extract<ObjectInteractionAction, { type: 'html_overlay' }> => action.type === 'html_overlay')
+    if (firstOverlay && state.activeObjectOverlay?.objectId === id) {
+      get().closeObjectOverlay()
+      return
+    }
+
+    const position = resolveObjectPosition(state, id)
+    const title = resolveObjectLabel(state, id)
+    let behaviorChanged = false
+
+    for (const action of interaction.actions) {
+      if (action.type === 'html_overlay') {
+        get().openObjectOverlay({
+          objectId: id,
+          title: action.title || title,
+          url: action.url,
+          html: action.html,
+          opacity: action.opacity ?? 0.8,
+        })
+        continue
+      }
+
+      if (action.type === 'api_call') {
+        try {
+          await fetch(action.endpoint, {
+            method: action.method || 'POST',
+            headers: action.method === 'GET' ? undefined : { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: action.method === 'GET' ? undefined : JSON.stringify(action.body || {}),
+          })
+        } catch {
+          playSpatialWebSound('error')
+        }
+        continue
+      }
+
+      if (action.type === 'spawn_vfx') {
+        get().spawnPlacementVfx(action.position || position, action.vfxType as PlacementVfxType | undefined)
+        continue
+      }
+
+      if (action.type === 'audio_toggle') {
+        set(current => {
+          const existing = current.behaviors[id] || { visible: true, movement: { type: 'static' as const } }
+          const currentAudioUrl = action.audioUrl || existing.audioUrl
+          const nextState = existing.audioState === 'playing' && (!action.audioUrl || action.audioUrl === existing.audioUrl)
+            ? 'paused'
+            : 'playing'
+          return {
+            behaviors: {
+              ...current.behaviors,
+              [id]: {
+                ...existing,
+                ...(currentAudioUrl ? { audioUrl: currentAudioUrl } : {}),
+                ...(typeof action.loop === 'boolean' ? { audioLoop: action.loop } : {}),
+                ...(typeof action.volume === 'number' ? { audioVolume: Math.max(0, Math.min(1, action.volume)) } : {}),
+                audioState: nextState,
+              },
+            },
+          }
+        })
+        behaviorChanged = true
+        continue
+      }
+
+      if (action.type === 'focus_agent_window') {
+        const directWindowId = action.windowId || (state.placedAgentWindows.some(window => window.id === id) ? id : undefined)
+        const linkedWindowId = directWindowId
+          || state.placedAgentAvatars.find(avatar => avatar.id === id)?.linkedWindowId
+        if (linkedWindowId && state.placedAgentWindows.some(window => window.id === linkedWindowId)) {
+          get().focusAgentWindow(linkedWindowId)
+        }
+        continue
+      }
+
+      if (action.type === 'spell' && isBrowser) {
+        window.dispatchEvent(new CustomEvent(`oasis:cast-${action.spellId}`, { detail: { objectId: id } }))
+        window.dispatchEvent(new CustomEvent('oasis:open-spelltab', { detail: { spellId: action.spellId, objectId: id } }))
+      }
+    }
+
+    if (behaviorChanged) setTimeout(() => get().saveWorldState(), 100)
   },
 
   startAgentMaterialization: (objectId) => {
@@ -2830,7 +3006,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   setCameraLookAt: (cameraLookAt) => set({ cameraLookAt }),
   setObjectBehavior: (id, partial) => {
     // Only push undo for meaningful changes (not ephemeral moveTarget/moveSpeed)
-    const isUndoable = partial.movement || partial.animation || partial.visible !== undefined || partial.label !== undefined
+    const isUndoable = partial.movement || partial.animation || Object.prototype.hasOwnProperty.call(partial, 'interaction') || partial.visible !== undefined || partial.label !== undefined
     if (isUndoable) {
       withUndo('Change behavior', '⚙️', () => {
         set((state) => {

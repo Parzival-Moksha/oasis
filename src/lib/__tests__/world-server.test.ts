@@ -133,6 +133,7 @@ describe('world-server access enforcement', () => {
     const createArgs = vi.mocked(prisma.world.create).mock.calls[0]?.[0] as any
     const worldData = JSON.parse(createArgs.data.data) as WorldState
 
+    expect(createArgs.data).toMatchObject({ visibility: 'private', pvpEnabled: false })
     expect(worldData.portalGates).toEqual([
       expect.objectContaining({
         id: 'portal-return-to-portal-zero',
@@ -142,6 +143,32 @@ describe('world-server access enforcement', () => {
         targetWorldName: 'Portal Zero',
       }),
     ])
+  })
+
+  it('creates FFA worlds as PvP-enabled public-edit sandboxes immediately', async () => {
+    vi.mocked(prisma.world.create).mockImplementation((async (args: any) => ({
+      id: args.data.id,
+      userId: args.data.userId,
+      name: args.data.name,
+      icon: args.data.icon,
+      visibility: args.data.visibility,
+      pvpEnabled: args.data.pvpEnabled,
+      data: args.data.data,
+      thumbnailUrl: null,
+      creatorName: null,
+      creatorAvatar: null,
+      visitCount: 0,
+      objectCount: 0,
+      createdAt: args.data.createdAt,
+      updatedAt: args.data.updatedAt,
+    })) as any)
+
+    const meta = await createWorld('Arena', 'F', 'user-a', { visibility: 'ffa' })
+    const createArgs = vi.mocked(prisma.world.create).mock.calls[0]?.[0] as any
+
+    expect(createArgs.data).toMatchObject({ visibility: 'public_edit', pvpEnabled: true })
+    expect(meta.visibility).toBe('public_edit')
+    expect(meta.pvpEnabled).toBe(true)
   })
 
   it('lets hosted admin list every world', async () => {
@@ -214,29 +241,14 @@ describe('world-server access enforcement', () => {
     expect(vi.mocked(prisma.world.update)).not.toHaveBeenCalled()
   })
 
-  it('forks templates on first save instead of mutating the template row', async () => {
+  it('rejects normal hosted saves to template worlds', async () => {
     vi.mocked(prisma.world.findFirst).mockResolvedValue(worldRow({ id: 'template-1', userId: 'system', visibility: 'template', name: 'Starter' }))
-    vi.mocked(prisma.world.create).mockImplementation((async (args: any) => ({
-      id: args.data.id,
-      name: args.data.name,
-      icon: args.data.icon,
-      visibility: args.data.visibility,
-      createdAt: args.data.createdAt,
-      updatedAt: args.data.updatedAt,
-    })) as any)
 
-    const result = await saveWorld('template-1', 'user-a', state({ conjuredAssetIds: ['asset-1'] }))
-
-    expect(result.saved).toBe(true)
-    expect(result.forkedFromWorldId).toBe('template-1')
-    expect(result.worldId).toMatch(/^world-/)
-    expect(vi.mocked(prisma.world.update)).not.toHaveBeenCalled()
-    expect(vi.mocked(prisma.world.create).mock.calls[0]?.[0]?.data).toMatchObject({
-      userId: 'user-a',
-      name: 'Starter',
-      visibility: 'private',
-      objectCount: 1,
+    await expect(saveWorld('template-1', 'user-a', state({ conjuredAssetIds: ['asset-1'] }))).rejects.toMatchObject({
+      code: 'world_write_forbidden',
     })
+    expect(vi.mocked(prisma.world.update)).not.toHaveBeenCalled()
+    expect(vi.mocked(prisma.world.create)).not.toHaveBeenCalled()
   })
 
   it('allows hosted FFA writes by non-owners', async () => {

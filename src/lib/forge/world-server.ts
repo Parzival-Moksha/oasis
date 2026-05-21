@@ -345,9 +345,19 @@ export async function saveWorld(
 // CREATE — New world
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function createWorld(name: string, icon = '🌍', userId: string): Promise<WorldMeta> {
+export async function createWorld(
+  name: string,
+  icon = '🌍',
+  userId: string,
+  options: { visibility?: string; pvpEnabled?: boolean } = {},
+): Promise<WorldMeta> {
   const id = `world-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
   const now = new Date()
+  const requestedVisibility = toStorageVisibility(options.visibility) || 'private'
+  const requestedKind = normalizeWorldKind(requestedVisibility)
+  const visibility = requestedKind === 'core' || requestedKind === 'template' ? 'private' : requestedVisibility
+  const kind = normalizeWorldKind(visibility)
+  const pvpEnabled = options.pvpEnabled ?? (kind === 'ffa' || kind === 'link-ffa')
 
   const emptyState: WorldState = {
     version: 1,
@@ -366,6 +376,8 @@ export async function createWorld(name: string, icon = '🌍', userId: string): 
       userId,
       name,
       icon,
+      visibility,
+      pvpEnabled,
       data: JSON.stringify(emptyState),
       createdAt: now,
       updatedAt: now,

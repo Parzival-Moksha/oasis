@@ -221,7 +221,7 @@ export function PlayerAvatar({
   const [playerManaRecharging, setPlayerManaRechargingState] = useState(() => getPlayerManaRecharging())
 
   // ── IBL one-shot flag ──────────────────────────────────────────────
-  const iblAppliedRef = useRef(false)
+  const appliedEnvRef = useRef<THREE.Texture | null>(null)
 
   // ── Keyboard input (from drei KeyboardControls wrapping Canvas) ────
   const [, getKeys] = useKeyboardControls()
@@ -337,7 +337,7 @@ export function PlayerAvatar({
     vrmRef.current = loadedVrm
     setAvatarPoseReady(false)
     setVrm(loadedVrm)
-    iblAppliedRef.current = false
+    appliedEnvRef.current = null
     console.log(`[PlayerAvatar] Loaded: ${url.split('/').pop()}`)
   }, [gltf, url])
 
@@ -476,7 +476,7 @@ export function PlayerAvatar({
     const delta = Math.min(rawDelta, MAX_DELTA)
 
     // ── IBL one-shot — swap MToon/Basic → Standard so IBL works ──
-    if (!iblAppliedRef.current && state.scene.environment) {
+    if (state.scene.environment && appliedEnvRef.current !== state.scene.environment) {
       v.scene.traverse((child) => {
         if (!(child as THREE.Mesh).isMesh) return
         const mesh = child as THREE.Mesh
@@ -510,7 +510,7 @@ export function PlayerAvatar({
         })
         mesh.material = Array.isArray(mesh.material) ? newMats : newMats[0]
       })
-      iblAppliedRef.current = true
+      appliedEnvRef.current = state.scene.environment
     }
 
     // ── Animation mixer first, THEN VRM (spring bones react to new pose) ──

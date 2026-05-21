@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { pushMouseLookDelta, useInputManager } from '@/lib/input-manager'
 import { isProbablyMobileDevice, useMobileControls } from '@/lib/mobile-controls'
 import { getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
+import { findNearestObjectInteraction } from '@/lib/object-interactions'
 import { findNearestSpatialWebObject, SPATIAL_WEB_INTERACTION_RADIUS, type SpatialWebObject } from '@/lib/spatial-web'
 import { useOasisStore } from '@/store/oasisStore'
 import type { SpellId } from '@/lib/spellbook'
@@ -57,7 +58,7 @@ export function MobileOasisControls({
   const setLookActive = useMobileControls(s => s.setLookActive)
   const reset = useMobileControls(s => s.reset)
   const [thumb, setThumb] = useState({ x: 0, y: 0 })
-  const [nearbyAction, setNearbyAction] = useState<{ id: string; label: string; disabled: boolean } | null>(null)
+  const [nearbyAction, setNearbyAction] = useState<{ id: string; kind: 'object' | 'spatial'; label: string; disabled: boolean } | null>(null)
   const movePointerIdRef = useRef<number | null>(null)
   const moveCenterRef = useRef({ x: 0, y: 0 })
   const lookPointerRef = useRef<{ id: number; x: number; y: number; moved: boolean } | null>(null)
@@ -79,9 +80,29 @@ export function MobileOasisControls({
     const updateNearbyAction = () => {
       const pose = getPlayerAvatarPose()
       const state = useOasisStore.getState()
+      const actorPosition = pose?.position || null
+      const nearestObject = findNearestObjectInteraction({
+        actorPosition,
+        behaviors: state.behaviors,
+        transforms: state.transforms,
+        catalogPlacements: state.placedCatalogAssets,
+        craftedScenes: state.craftedScenes,
+        conjuredAssets: state.conjuredAssets,
+        worldConjuredAssetIds: state.worldConjuredAssetIds,
+        portalGates: state.portalGates,
+        spatialWebObjects: state.spatialWebObjects,
+        text3dObjects: state.text3dObjects,
+        agentWindows: state.placedAgentWindows,
+        agentAvatars: state.placedAgentAvatars,
+        worldLights: state.worldLights,
+      })
+      if (nearestObject) {
+        setNearbyAction({ id: nearestObject.id, kind: 'object', label: nearestObject.label || 'Interact', disabled: false })
+        return
+      }
       const nearest = findNearestSpatialWebObject(
         state.spatialWebObjects,
-        pose?.position || null,
+        actorPosition,
         state.transforms,
         SPATIAL_WEB_INTERACTION_RADIUS,
       )
@@ -90,7 +111,7 @@ export function MobileOasisControls({
         return
       }
       const action = spatialActionLabel(nearest)
-      setNearbyAction({ id: nearest.id, ...action })
+      setNearbyAction({ id: nearest.id, kind: 'spatial', ...action })
     }
 
     updateNearbyAction()
@@ -259,6 +280,7 @@ export function MobileOasisControls({
         >
           Dash
         </button>
+        <MobileFocusAgentButton />
         <MobilePrimaryActionButton nearbyAction={nearbyAction} spellControlsEnabled={spellControlsEnabled} />
         {spellControlsEnabled && <MobileManaButton />}
         <MobilePaintHoldButton />
@@ -285,19 +307,14 @@ function isCombatSpell(id: SpellId | null): boolean {
 
 // ─═̷─═̷─🖱─═̷─═̷─{ MOBILE PRIMARY-ACTION BUTTON — the touch equivalent of LMB }─═̷─═̷─🖱─═̷─═̷─
 //
-// One button, bottom-right, ALWAYS visible. On tap it synthesizes a real
-// PointerEvent stack (pointerdown + pointerup + click) on the canvas DOM
-// element at screen-center coordinates — i.e. exactly where the mobile
-// crosshair points. React Three Fiber's event system handles synthetic
-// events through the normal pipeline: it runs the raycaster against the
-// current camera, finds the hit, and fires the matching `onClick` /
-// `onPointerDown` handler. Means we route through the SAME code paths as
-// desktop LMB — no per-interaction wiring required.
+// One button, bottom-right, ALWAYS visible. For world aim actions it
+// synthesizes a real PointerEvent stack at the screen-center crosshair.
+// Placement is the exception: it dispatches an explicit crosshair event so
+// mobile PLACE cannot be dropped by a missed invisible-plane raycast.
 //
 // Label morphs based on context (PLACE / FIRE / SELECT / spatial-web
-// custom). Spatial-web interactions are the one exception: those fire by
-// proximity, not by aim, so when a nearbyAction is present we call the
-// store helper directly instead of synthesizing a click.
+// custom). Spatial-web interactions also fire by proximity rather than aim,
+// so when a nearbyAction is present we call the store helper directly.
 //
 // Pro-studio precedent: Unity/Unreal/Godot input systems all abstract input
 // source from action. This is the minimal-refactor equivalent.
@@ -331,7 +348,7 @@ function MobilePrimaryActionButton({
   nearbyAction,
   spellControlsEnabled,
 }: {
-  nearbyAction: { id: string; label: string; disabled: boolean } | null
+  nearbyAction: { id: string; kind: 'object' | 'spatial'; label: string; disabled: boolean } | null
   spellControlsEnabled: boolean
 }) {
   const placementPending = useOasisStore(s => s.placementPending)
@@ -350,12 +367,18 @@ function MobilePrimaryActionButton({
     disabled = nearbyAction.disabled
     onTap = () => {
       if (nearbyAction.disabled) return
-      void useOasisStore.getState().interactSpatialWebObject(nearbyAction.id, 'press')
+      if (nearbyAction.kind === 'object') {
+        void useOasisStore.getState().interactObject(nearbyAction.id)
+      } else {
+        void useOasisStore.getState().interactSpatialWebObject(nearbyAction.id, 'press')
+      }
     }
   } else if (placementPending) {
     label = 'Place'
     tone = 'amber-pulse'
-    onTap = () => { dispatchSyntheticLeftClick() }
+    onTap = () => {
+      window.dispatchEvent(new CustomEvent('oasis:place-at-crosshair'))
+    }
   } else if (spellControlsEnabled && isCombatSpell(selectedSpellId) && selectedSpellId) {
     // FIRE button reads the spell name from the registry — works for firebolt
     // today, ready for lightning/ice once their cast paths land.
@@ -414,6 +437,26 @@ function MobilePrimaryActionButton({
 //
 // Hidden on read-only worlds since transforms are write operations.
 // ─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─
+
+function MobileFocusAgentButton() {
+  const agentWindowCount = useOasisStore(s => s.placedAgentWindows.length)
+  if (agentWindowCount === 0) return null
+
+  return (
+    <button
+      type="button"
+      className="h-11 min-w-28 touch-none rounded-lg border border-sky-200/55 bg-sky-950/76 px-4 text-[11px] font-black uppercase tracking-[0.16em] text-sky-50 shadow-[0_0_24px_rgba(56,189,248,0.26)] backdrop-blur-sm"
+      onPointerDown={event => {
+        event.preventDefault()
+        event.stopPropagation()
+        useOasisStore.getState().navigateAgentWindow(1)
+      }}
+      aria-label="Focus next agent window"
+    >
+      Focus
+    </button>
+  )
+}
 
 function MobileTransformHotbar() {
   const selectedObjectId = useOasisStore(s => s.selectedObjectId)

@@ -217,7 +217,7 @@ export async function createWorld(
   const res = await fetch(API_BASE, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, icon }),
+    body: JSON.stringify({ name, icon, visibility: options.visibility }),
   })
   if (!res.ok) throw new Error(`Create world failed: HTTP ${res.status}`)
   const meta = await res.json() as WorldMeta

@@ -39,7 +39,7 @@ export async function GET(request: Request) {
 // ═══════════════════════════════════════════════════════════════════════════
 // POST /api/worlds — Create a new world OR import one
 //
-// Body (create):  { name: string, icon?: string }
+// Body (create):  { name: string, icon?: string, visibility?: string }
 // Body (import):  { import: true, meta?: WorldMeta, state: WorldState }
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -93,7 +93,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing "name" field' }, { status: 400 })
     }
 
-    const meta = await createWorld(body.name, body.icon || '🌍', userId)
+    const meta = await createWorld(body.name, body.icon || '🌍', userId, { visibility: body.visibility })
     await recordOasisAnalyticsEvent({
       request,
       eventType: 'world_created',

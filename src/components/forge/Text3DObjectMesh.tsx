@@ -6,7 +6,9 @@
 'use client'
 
 import { Center, Text3D } from '@react-three/drei'
-import React, { Suspense } from 'react'
+import { useFrame, useThree } from '@react-three/fiber'
+import React, { Suspense, useRef } from 'react'
+import * as THREE from 'three'
 
 import { fontUrlFor, TEXT3D_FONT_OPTIONS, type Text3DObject } from '@/lib/forge/text-3d-object'
 import { useOasisStore } from '@/store/oasisStore'
@@ -102,7 +104,20 @@ export function Text3DObjectMesh({ object }: { object: Text3DObject }) {
   const selectObject = useOasisStore(s => s.selectObject)
   const setInspectedObject = useOasisStore(s => s.setInspectedObject)
   const isReadOnly = useOasisStore(s => s.isViewMode && !s.isViewModeEditable)
+  const groupRef = useRef<THREE.Group>(null)
+  const worldPositionRef = useRef(new THREE.Vector3())
+  const camera = useThree(state => state.camera)
   const text = object.text.trim()
+
+  useFrame(() => {
+    if (!object.billboard || !groupRef.current) return
+    const group = groupRef.current
+    const worldPosition = worldPositionRef.current
+    group.getWorldPosition(worldPosition)
+    const yaw = Math.atan2(camera.position.x - worldPosition.x, camera.position.z - worldPosition.z)
+    group.rotation.set(0, yaw, 0)
+  })
+
   if (!text) return null
 
   const fontUrl = fontUrlFor(object.fontId)
@@ -123,6 +138,7 @@ export function Text3DObjectMesh({ object }: { object: Text3DObject }) {
 
   return (
     <group
+      ref={groupRef}
       onClick={handleSelect}
       onDoubleClick={handleInspect}
     >

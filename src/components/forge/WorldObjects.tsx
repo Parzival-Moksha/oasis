@@ -37,6 +37,7 @@ import { Text3DObjectMesh } from './Text3DObjectMesh'
 import { LiveStrokesLayer } from './LiveStrokesLayer'
 import type { PlacementPending } from '../../store/oasisStore'
 import { consumeRecentPointerLockRightClick, useInputManager } from '../../lib/input-manager'
+import { isProbablyMobileDevice } from '../../lib/mobile-controls'
 import { dispatch } from '../../lib/event-bus'
 import { createLipSyncController, registerLipSync, unregisterLipSync, getLipSync } from '../../lib/lip-sync'
 import { clearAvatarLocomotionReady, setAvatarLocomotionReady } from '../../lib/avatar-locomotion-ready'
@@ -45,6 +46,7 @@ import { sampleTerrainHeightAt } from '../../lib/forge/terrain-brush'
 import { getCameraSnapshot } from '../../lib/camera-bridge'
 import { getPlayerAvatarPose } from '../../lib/player-avatar-runtime'
 import { findNearestSpatialWebObject, SPATIAL_WEB_INTERACTION_RADIUS } from '../../lib/spatial-web'
+import { findNearestObjectInteraction } from '../../lib/object-interactions'
 import {
   deriveAvatarAnchoredWindowPlacement,
   deriveWindowAvatarAnchor,
@@ -482,7 +484,53 @@ function resolveWorldImageUrl(imageUrl: string): string {
   return imageUrl
 }
 
-export function ImagePlaneRenderer({ imageUrl, scale, frameStyle, frameThickness = 1 }: { imageUrl: string; scale: number; frameStyle?: string; frameThickness?: number }) {
+function PictureBuildingEdgeBeams({ size, height, color, thickness }: { size: number; height: number; color: string; thickness: number }) {
+  const half = size / 2
+  const y = height / 2
+  const beam = Math.max(0.03, Math.min(size * 0.2, thickness))
+  const materialProps = { color, roughness: 0.55, metalness: 0.15 }
+
+  return (
+    <group>
+      {[-half, half].map(z => (
+        <React.Fragment key={`x-${z}`}>
+          <mesh position={[0, y, z]}><boxGeometry args={[size + beam, beam, beam]} /><meshStandardMaterial {...materialProps} /></mesh>
+          <mesh position={[0, -y, z]}><boxGeometry args={[size + beam, beam, beam]} /><meshStandardMaterial {...materialProps} /></mesh>
+        </React.Fragment>
+      ))}
+      {[-half, half].map(x => (
+        <React.Fragment key={`z-${x}`}>
+          <mesh position={[x, y, 0]}><boxGeometry args={[beam, beam, size + beam]} /><meshStandardMaterial {...materialProps} /></mesh>
+          <mesh position={[x, -y, 0]}><boxGeometry args={[beam, beam, size + beam]} /><meshStandardMaterial {...materialProps} /></mesh>
+        </React.Fragment>
+      ))}
+      {[-half, half].flatMap(x => [-half, half].map(z => (
+        <mesh key={`y-${x}-${z}`} position={[x, 0, z]}>
+          <boxGeometry args={[beam, height + beam, beam]} />
+          <meshStandardMaterial {...materialProps} />
+        </mesh>
+      )))}
+    </group>
+  )
+}
+
+export function ImagePlaneRenderer({
+  imageUrl,
+  scale,
+  displayMode,
+  frameStyle,
+  frameThickness = 1,
+  buildingFrameColor = '#f97316',
+  buildingFrameThickness = 0.16,
+}: {
+  imageUrl: string
+  scale: number
+  displayMode?: '2d' | '3d'
+  frameStyle?: string
+  frameThickness?: number
+  buildingFrameColor?: string
+  buildingFrameThickness?: number
+}) {
   const resolvedImageUrl = useMemo(() => resolveWorldImageUrl(imageUrl), [imageUrl])
   const texture = useLoader(THREE.TextureLoader, resolvedImageUrl)
   texture.colorSpace = THREE.SRGBColorSpace
@@ -490,11 +538,12 @@ export function ImagePlaneRenderer({ imageUrl, scale, frameStyle, frameThickness
   const aspect = texture.image ? texture.image.width / texture.image.height : 1
   const w = scale * aspect
   const h = scale
+  const isBuilding = displayMode === '3d' || (!displayMode && frameStyle === 'building')
 
   // ░▒▓ 4-SIDED BUILDING — image becomes a textured rectangular building ▓▒░
   // Footprint is a square sized to the image height. All four walls share the
   // same image (orthographic façade convention). Top/bottom hidden by camera.
-  if (frameStyle === 'building') {
+  if (isBuilding) {
     const wallSize = h
     return (
       <group position={[0, h / 2, 0]}>
@@ -502,6 +551,12 @@ export function ImagePlaneRenderer({ imageUrl, scale, frameStyle, frameThickness
           <boxGeometry args={[wallSize, h, wallSize]} />
           <meshStandardMaterial map={texture} side={THREE.DoubleSide} roughness={0.85} metalness={0.0} />
         </mesh>
+        <PictureBuildingEdgeBeams
+          size={wallSize}
+          height={h}
+          color={buildingFrameColor}
+          thickness={buildingFrameThickness}
+        />
       </group>
     )
   }
@@ -1879,9 +1934,30 @@ export function TransformKeyHandler() {
 
       if (!e.ctrlKey && !e.metaKey && !e.altKey && key === 'f') {
         const state = useOasisStore.getState()
+        const actorPosition = getSpatialInteractionActorPosition()
+        const nearestObject = findNearestObjectInteraction({
+          actorPosition,
+          behaviors: state.behaviors,
+          transforms: state.transforms,
+          catalogPlacements: state.placedCatalogAssets,
+          craftedScenes: state.craftedScenes,
+          conjuredAssets: state.conjuredAssets,
+          worldConjuredAssetIds: state.worldConjuredAssetIds,
+          portalGates: state.portalGates,
+          spatialWebObjects: state.spatialWebObjects,
+          text3dObjects: state.text3dObjects,
+          agentWindows: state.placedAgentWindows,
+          agentAvatars: state.placedAgentAvatars,
+          worldLights: state.worldLights,
+        })
+        if (nearestObject) {
+          void state.interactObject(nearestObject.id)
+          e.preventDefault()
+          return
+        }
         const nearest = findNearestSpatialWebObject(
           state.spatialWebObjects,
-          getSpatialInteractionActorPosition(),
+          actorPosition,
           state.transforms,
           SPATIAL_WEB_INTERACTION_RADIUS,
         )
@@ -2331,11 +2407,8 @@ function PlacementOverlay() {
   const camera = useThree(s => s.camera)
   const [hoverPos, setHoverPos] = useState<[number, number, number] | null>(null)
 
-  const handleClick = useCallback((e: any) => {
-    e.stopPropagation()
+  const placeAtPosition = useCallback((pos: [number, number, number]) => {
     if (!placementPending) return
-    const point = e.point as THREE.Vector3
-    const pos: [number, number, number] = [point.x, 0, point.z]
 
     if (placementPending.type === 'catalog' && placementPending.catalogId && placementPending.path) {
       const placedId = placeCatalogAssetAt(placementPending.catalogId, placementPending.name, placementPending.path, placementPending.defaultScale || 1, pos)
@@ -2462,6 +2535,13 @@ function PlacementOverlay() {
     }
   }, [placementPending, placeCatalogAssetAt, placeImageAt, placeLightAt, placePortalGateAt, placeSpatialWebObjectAt, placeVideoAt, placeLibrarySceneAt, cancelPlacement])
 
+  const handleClick = useCallback((e: any) => {
+    e.stopPropagation()
+    if (!placementPending) return
+    const point = e.point as THREE.Vector3
+    placeAtPosition([point.x, 0, point.z])
+  }, [placementPending, placeAtPosition])
+
   const handlePointerMove = useCallback((e: any) => {
     // ░▒▓ FPS CAMERA FIX — skip R3F pointer events during pointer lock ▓▒░
     // R3F raycaster events corrupt PointerLockControls' delta tracking,
@@ -2484,19 +2564,25 @@ function PlacementOverlay() {
     return [camPos.x + 5 * forward.x, 0, camPos.z + 5 * forward.z]
   }, [camera])
 
-  // ─═̷─ Note: the old `oasis:place-here-mobile` event listener was removed.
-  // The mobile primary-action button now synthesizes a real PointerEvent
-  // stack on the canvas instead of dispatching a custom event, so R3F's
-  // onClick on the placement overlay fires natively — same code path as
-  // desktop LMB. No event-bus indirection needed.
+  useEffect(() => {
+    if (!placementPending || typeof window === 'undefined') return
+    const onPlaceAtCrosshair = () => {
+      placeAtPosition(computeCrosshairGroundPos())
+    }
+    window.addEventListener('oasis:place-at-crosshair', onPlaceAtCrosshair)
+    return () => window.removeEventListener('oasis:place-at-crosshair', onPlaceAtCrosshair)
+  }, [computeCrosshairGroundPos, placeAtPosition, placementPending])
 
-  // ─═̷─ Ghost-follows-crosshair while pointer-locked. Document-level mousemove
-  // does NOT fire under pointer lock, so the R3F onPointerMove on the invisible
-  // placement plane can't update hoverPos. We sample camera-forward → ground
-  // every frame and keep the ghost glued to where the crosshair is pointing.
+  // Mobile PLACE uses this explicit event so crosshair placement works even
+  // when the invisible R3F plane misses a synthetic canvas click.
+
+  // Ghost follows the crosshair under pointer lock and on mobile. Mobile has
+  // no reliable hover event, so camera-forward ground sampling is the source
+  // of truth for both the preview ghost and the PLACE button.
   useFrame(() => {
     if (!placementPending) return
-    if (!useInputManager.getState().pointerLocked) return
+    const shouldTrackCrosshair = useInputManager.getState().pointerLocked || isProbablyMobileDevice() || !hoverPos
+    if (!shouldTrackCrosshair) return
     const pos = computeCrosshairGroundPos()
     setHoverPos(current => {
       if (current && Math.abs(current[0] - pos[0]) < 0.02 && Math.abs(current[2] - pos[2]) < 0.02) {
@@ -3046,7 +3132,17 @@ export function WorldObjectsRenderer() {
                 {renderAsset.videoUrl
                   ? <VideoPlaneRenderer objectId={renderAsset.id} videoUrl={renderAsset.videoUrl} scale={renderAsset.scale} frameStyle={renderAsset.imageFrameStyle} frameThickness={renderAsset.imageFrameThickness} />
                   : renderAsset.imageUrl
-                    ? <ImagePlaneRenderer imageUrl={renderAsset.imageUrl} scale={renderAsset.scale} frameStyle={renderAsset.imageFrameStyle} frameThickness={renderAsset.imageFrameThickness} />
+                    ? (
+                      <ImagePlaneRenderer
+                        imageUrl={renderAsset.imageUrl}
+                        scale={renderAsset.scale}
+                        displayMode={renderAsset.imageDisplayMode}
+                        frameStyle={renderAsset.imageFrameStyle}
+                        frameThickness={renderAsset.imageFrameThickness}
+                        buildingFrameColor={renderAsset.imageBuildingFrameColor}
+                        buildingFrameThickness={renderAsset.imageBuildingFrameThickness}
+                      />
+                    )
                     : !renderAsset.glbPath && renderAsset.audioUrl
                       ? <AudioSourceRenderer objectId={renderAsset.id} scale={renderAsset.scale} />
                       : renderAsset.glbPath.endsWith('.vrm')
@@ -3223,7 +3319,7 @@ function Text3DSection() {
             transformMode={transformMode}
             onTransformChange={(id, position, rotation, scale) => setObjectTransform(id, { position, rotation, scale })}
             initialPosition={t?.position || object.position}
-            initialRotation={t?.rotation || object.rotation}
+            initialRotation={object.billboard ? [0, 0, 0] : (t?.rotation || object.rotation)}
             allowTransform={inspectedObjectId === object.id}
           >
             <Text3DObjectMesh object={object} />
@@ -3305,6 +3401,7 @@ function AgentWindowsSection({ selectedObjectId, selectObject, transformMode, on
   const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
   const placedAgentAvatars = useOasisStore(s => s.placedAgentAvatars)
   const transforms = useOasisStore(s => s.transforms)
+  const behaviors = useOasisStore(s => s.behaviors)
   const viewerUserId = getViewerUserIdClient()
 
   const avatarMap = useMemo(
@@ -3316,7 +3413,7 @@ function AgentWindowsSection({ selectedObjectId, selectObject, transformMode, on
 
   return (
     <>
-      {placedAgentWindows.filter(win => canRenderAgentWindowForViewer(win, viewerUserId)).map(win => {
+      {placedAgentWindows.filter(win => behaviors[win.id]?.visible !== false && canRenderAgentWindowForViewer(win, viewerUserId)).map(win => {
         const t = transforms[win.id]
         const linkedAvatar = win.linkedAvatarId
           ? avatarMap.get(win.linkedAvatarId)

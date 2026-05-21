@@ -235,10 +235,16 @@ export interface CatalogPlacement {
   imageUrl?: string
   /** When set, renders as a video plane instead of loading GLB */
   videoUrl?: string
+  /** Display mode for image placements. Defaults from legacy imageFrameStyle === 'building'. */
+  imageDisplayMode?: '2d' | '3d'
   /** Frame style ID — if set, renders a decorative frame around the image/video plane */
   imageFrameStyle?: string
   /** Frame thickness multiplier (default 1, range 0.5-5) */
   imageFrameThickness?: number
+  /** Beam color for 3D picture-building edges */
+  imageBuildingFrameColor?: string
+  /** Beam thickness for 3D picture-building edges, in world units */
+  imageBuildingFrameThickness?: number
   /** Audio URL for loudspeaker objects */
   audioUrl?: string
   /** Audio volume (0-1, default 1) */
@@ -247,6 +253,46 @@ export interface CatalogPlacement {
   audioMaxDistance?: number
   /** Whether audio is muted */
   audioMuted?: boolean
+}
+
+export type ObjectInteractionAction =
+  | {
+      type: 'html_overlay'
+      title?: string
+      url?: string
+      html?: string
+      opacity?: number
+    }
+  | {
+      type: 'api_call'
+      endpoint: string
+      method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+      body?: Record<string, unknown>
+    }
+  | {
+      type: 'spawn_vfx'
+      position?: [number, number, number]
+      vfxType?: string
+    }
+  | {
+      type: 'audio_toggle'
+      audioUrl?: string
+      loop?: boolean
+      volume?: number
+    }
+  | {
+      type: 'spell'
+      spellId: string
+    }
+  | {
+      type: 'focus_agent_window'
+      windowId?: string
+    }
+
+export interface ObjectInteractionConfig {
+  label?: string
+  radius?: number
+  actions: ObjectInteractionAction[]
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -353,6 +399,8 @@ export interface ObjectBehavior {
   movement: MovementPreset
   animation?: AnimationConfig
   visible: boolean
+  /** Generic F/mobile interaction hook shared by catalog, text, windows, avatars, etc. */
+  interaction?: ObjectInteractionConfig
   /** VRM facial expression overrides — set from Joystick panel */
   expressions?: VRMExpressionConfig
   /** RTS-style move-to target. Set by right-clicking ground while object is selected. */

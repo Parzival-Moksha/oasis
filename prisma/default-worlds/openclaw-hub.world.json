@@ -450,7 +450,7 @@
         "sourceWorldId": "world-openclaw-hub-system",
         "action": {
           "type": "create_world",
-          "visibility": "template",
+          "visibility": "public",
           "name": "Public world",
           "icon": "P",
           "promptForName": true
@@ -497,7 +497,32 @@
     ],
     "spatialWebObjects": [],
     "transforms": {},
-    "behaviors": {},
+    "behaviors": {
+      "och-openclaw-avatar": {
+        "interaction": {
+          "label": "Focus Claw",
+          "radius": 5,
+          "actions": [
+            {
+              "type": "focus_agent_window",
+              "windowId": "och-openclaw-window"
+            }
+          ]
+        }
+      },
+      "och-openclaw-window": {
+        "interaction": {
+          "label": "Focus Claw",
+          "radius": 5,
+          "actions": [
+            {
+              "type": "focus_agent_window",
+              "windowId": "och-openclaw-window"
+            }
+          ]
+        }
+      }
+    },
     "lights": [
       {
         "id": "och-hemi-sky",
@@ -549,7 +574,7 @@
         "agentType": "openclaw",
         "avatar3dUrl": "/avatars/gallery/CaptainLobster.vrm",
         "position": [0, 0, -1.8],
-        "rotation": [0, 3.141592653589793, 0],
+        "rotation": [0, 0, 0],
         "scale": 1.08,
         "linkedWindowId": "och-openclaw-window",
         "label": "OpenClaw"

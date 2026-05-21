@@ -58,9 +58,9 @@ describe('world access policy', () => {
     expect(canReadWorld(hostedUser, world('private', 'user-a'))).toBe(true)
   })
 
-  it('denies core mutation and forks templates on normal writes', () => {
+  it('denies core and template mutation on normal hosted writes', () => {
     expect(getWorldWriteDecision(hostedUser, world('core'))).toBe('deny')
-    expect(getWorldWriteDecision(hostedUser, world('template'))).toBe('fork')
+    expect(getWorldWriteDecision(hostedUser, world('template'))).toBe('deny')
   })
 
   it('lets hosted admins mutate core and template worlds deliberately', () => {
