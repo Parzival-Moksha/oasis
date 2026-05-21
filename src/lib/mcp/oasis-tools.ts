@@ -2931,14 +2931,17 @@ tools.walk_avatar_to = async (args) => {
   if (!target) return { ok: false, message: 'position is required as [x, y, z].' }
   const moveSpeed = validNum(args.speed, 3)
 
-  const { worldId, state } = await loadRequestedWorld(args.worldId)
+  const context = currentToolContext()
+  const explicitWorldId = cleanWorldId(args.worldId) || context.worldId || ''
+  const { worldId, state } = explicitWorldId
+    ? await loadToolWorld(explicitWorldId, 'read')
+    : await loadRequestedWorld(args.worldId)
   const { existing: matchedAvatar, avatarId } = resolveAgentAvatarTarget(state, args)
   const avatar = matchedAvatar || ((state.agentAvatars || []).find(entry => entry.id === avatarId) || null)
   if (!avatar || !avatarId) return { ok: false, message: 'No matching avatar found. Call set_avatar first or specify avatarId.' }
 
   const existingBehavior = state.behaviors?.[avatarId] || { visible: true, movement: { type: 'static' as const } }
-  state.behaviors = state.behaviors || {}
-  state.behaviors[avatarId] = {
+  const nextBehavior = {
     ...existingBehavior,
     visible: existingBehavior.visible ?? true,
     // Walking should reclaim locomotion from stale emote loops instead of gliding forever in the old clip.
@@ -2947,15 +2950,42 @@ tools.walk_avatar_to = async (args) => {
     moveSpeed,
   }
 
-  await saveWorldState(worldId, state)
+  state.behaviors = state.behaviors || {}
+  state.behaviors[avatarId] = nextBehavior
+
+  const world = await prisma.world.findFirst({
+    where: { id: worldId },
+    select: { id: true, userId: true, visibility: true },
+  })
+  if (!world) throw new WorldAccessError('World not found', 'world_not_found', 404)
+  const writeDecision = getWorldWriteDecision(toolAccessContext(context), toToolAccessSubject(world))
+  const canEmitTemplateMotion =
+    writeDecision === 'deny' &&
+    world.visibility === 'template' &&
+    isSharedAgentAvatarType(avatar.agentType) &&
+    (!context.agentType || context.agentType === avatar.agentType)
+
+  if (writeDecision === 'write') {
+    await saveWorldState(worldId, state)
+  } else if (!canEmitTemplateMotion) {
+    if (writeDecision === 'fork') {
+      throw new WorldAccessError('Template worlds must be forked before tool writes are saved', 'world_template_fork_required', 409)
+    }
+    throw new WorldAccessError('This tool context cannot mutate that world', 'world_write_forbidden')
+  }
+
   emitWorldEvent('agent_avatar_walk', worldId, {
     avatarId,
     target,
     moveSpeed,
-    behavior: state.behaviors[avatarId],
+    behavior: nextBehavior,
     ...mutationActorData(args),
   })
-  return { ok: true, message: `Avatar ${avatarId} is walking to [${target.join(', ')}].`, data: { avatarId, target, moveSpeed } }
+  return {
+    ok: true,
+    message: `Avatar ${avatarId} is walking to [${target.join(', ')}].`,
+    data: { avatarId, target, moveSpeed, ephemeral: canEmitTemplateMotion },
+  }
 }
 
 tools.list_avatar_animations = async (args) => {
