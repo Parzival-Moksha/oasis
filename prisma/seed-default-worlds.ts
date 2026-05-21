@@ -26,6 +26,7 @@ interface DefaultWorldSeed {
   name: string
   icon?: string
   visibility: string
+  pvpEnabled?: boolean
   creatorName?: string
   creatorAvatar?: string | null
   thumbnailUrl?: string | null
@@ -92,6 +93,7 @@ async function seedWorld(entry: DefaultWorldManifestEntry, rootDir: string): Pro
     name: seed.name,
     icon: seed.icon || '0',
     visibility: seed.visibility,
+    pvpEnabled: seed.pvpEnabled === true,
     data: dataString,
     objectCount,
     creatorName: seed.creatorName || 'The Oasis',
@@ -108,6 +110,7 @@ async function seedWorld(entry: DefaultWorldManifestEntry, rootDir: string): Pro
       name: true,
       icon: true,
       visibility: true,
+      pvpEnabled: true,
       data: true,
       objectCount: true,
       creatorName: true,
@@ -133,6 +136,7 @@ async function seedWorld(entry: DefaultWorldManifestEntry, rootDir: string): Pro
       existing.name === worldData.name &&
       existing.icon === worldData.icon &&
       existing.visibility === worldData.visibility &&
+      existing.pvpEnabled === worldData.pvpEnabled &&
       existing.data === worldData.data &&
       existing.objectCount === worldData.objectCount &&
       (existing.creatorName || null) === (worldData.creatorName || null) &&

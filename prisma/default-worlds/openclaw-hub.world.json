@@ -6,6 +6,7 @@
   "name": "OpenClaw Hub",
   "icon": "C",
   "visibility": "template",
+  "pvpEnabled": true,
   "creatorName": "OpenClaw",
   "creatorAvatar": null,
   "thumbnailUrl": null,
