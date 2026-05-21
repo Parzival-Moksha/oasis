@@ -50,6 +50,7 @@ const commands = [
   // others. We pass it explicitly so the deploy doesn't hang waiting for
   // confirmation on benign changes.
   'npx prisma db push --skip-generate --accept-data-loss',
+  'rm -rf .next',
   // Bump Node heap for the Next build — the bolt-design modules + R3F
   // assets push memory past the 2GB default and OOM the worker on host.
   'NODE_OPTIONS="--max-old-space-size=4096" pnpm build',

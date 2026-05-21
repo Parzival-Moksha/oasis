@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { useUILayer } from '@/lib/input-manager'
 import { useOasisStore } from '@/store/oasisStore'
@@ -15,12 +15,36 @@ function resolveOverlayUrl(url?: string): string | undefined {
   return `${OASIS_BASE}${url}`
 }
 
+function isSameOriginUrl(url: string): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return new URL(url, window.location.href).origin === window.location.origin
+  } catch {
+    return false
+  }
+}
+
+function injectBaseHref(html: string, url: string): string {
+  if (typeof window === 'undefined') return html
+  const href = new URL(url, window.location.href).href
+  const base = `<base href="${href}">`
+  if (/<base\s/i.test(html)) return html
+  if (/<head(\s[^>]*)?>/i.test(html)) {
+    return html.replace(/<head(\s[^>]*)?>/i, match => `${match}${base}`)
+  }
+  return `${base}${html}`
+}
+
 export function ObjectHtmlOverlay() {
   const overlay = useOasisStore(state => state.activeObjectOverlay)
   const closeObjectOverlay = useOasisStore(state => state.closeObjectOverlay)
+  const [sameOriginSrcDoc, setSameOriginSrcDoc] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
   useUILayer('object-html-overlay', Boolean(overlay))
 
   const url = useMemo(() => resolveOverlayUrl(overlay?.url), [overlay?.url])
+  const externalUrl = url && !isSameOriginUrl(url) ? url : undefined
 
   useEffect(() => {
     if (!overlay) return
@@ -32,6 +56,46 @@ export function ObjectHtmlOverlay() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [closeObjectOverlay, overlay])
+
+  useEffect(() => {
+    let cancelled = false
+    setLoadError(null)
+    setLoading(false)
+
+    if (!overlay) {
+      setSameOriginSrcDoc(null)
+      return
+    }
+
+    if (!url) {
+      setSameOriginSrcDoc(overlay.html || '')
+      return
+    }
+
+    if (!isSameOriginUrl(url)) {
+      setSameOriginSrcDoc(null)
+      return
+    }
+
+    setLoading(true)
+    fetch(url, { cache: 'no-store', credentials: 'same-origin' })
+      .then(async response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        const html = await response.text()
+        if (!cancelled) setSameOriginSrcDoc(injectBaseHref(html, url))
+      })
+      .catch(error => {
+        if (!cancelled) {
+          setSameOriginSrcDoc('')
+          setLoadError(error instanceof Error ? error.message : 'Failed to load overlay')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => { cancelled = true }
+  }, [overlay, overlay?.html, url])
 
   if (!overlay) return null
 
@@ -59,18 +123,30 @@ export function ObjectHtmlOverlay() {
             Close
           </button>
         </header>
-        <div className="min-h-0 flex-1 bg-white/95">
-          {url ? (
+        <div className="relative min-h-0 flex-1 bg-white/90">
+          {loading && (
+            <div className="absolute inset-0 z-10 grid place-items-center bg-slate-950/75 text-[11px] font-black uppercase tracking-[0.18em] text-cyan-100">
+              Loading
+            </div>
+          )}
+          {loadError ? (
+            <div className="grid h-full place-items-center bg-slate-950 text-center text-slate-100">
+              <div>
+                <div className="text-sm font-black uppercase tracking-[0.18em] text-rose-200">Overlay failed</div>
+                <div className="mt-2 text-xs text-slate-400">{loadError}</div>
+              </div>
+            </div>
+          ) : externalUrl ? (
             <iframe
               title={overlay.title}
-              src={url}
+              src={externalUrl}
               className="h-full w-full border-0"
               sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
             />
           ) : (
             <iframe
               title={overlay.title}
-              srcDoc={overlay.html || ''}
+              srcDoc={sameOriginSrcDoc || ''}
               className="h-full w-full border-0"
               sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
             />

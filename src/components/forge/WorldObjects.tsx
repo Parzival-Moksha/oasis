@@ -12,7 +12,7 @@
 
 import React, { Suspense, useRef, useState, useEffect, useCallback, useContext, useMemo } from 'react'
 import { useFrame, useLoader, useThree } from '@react-three/fiber'
-import { TransformControls, useGLTF, Html } from '@react-three/drei'
+import { Center, Text3D, TransformControls, useGLTF, Html } from '@react-three/drei'
 import * as THREE from 'three'
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js'
 import { useOasisStore, type AgentWindow, type AgentWindowType, type ConjureVfxType, CONJURE_VFX_LIST } from '../../store/oasisStore'
@@ -46,7 +46,7 @@ import { sampleTerrainHeightAt } from '../../lib/forge/terrain-brush'
 import { getCameraSnapshot } from '../../lib/camera-bridge'
 import { getPlayerAvatarPose } from '../../lib/player-avatar-runtime'
 import { findNearestSpatialWebObject, SPATIAL_WEB_INTERACTION_RADIUS } from '../../lib/spatial-web'
-import { findNearestObjectInteraction } from '../../lib/object-interactions'
+import { findNearestObjectInteraction, type ObjectInteractionCandidate } from '../../lib/object-interactions'
 import {
   deriveAvatarAnchoredWindowPlacement,
   deriveWindowAvatarAnchor,
@@ -67,6 +67,7 @@ import { getViewerUserIdClient } from '../../lib/viewer-identity-client'
 const IDLE_CLIP_PATTERNS = /idle|breathe?|stand|rest|pose|wait/i
 const WALK_CLIP_PATTERNS = /walk|run|move|locomotion|jog/i
 const AGENT_WORK_ANIMATION_ID = 'ual-talking'
+const INTERACTION_HINT_FONT = '/fonts/helvetiker_regular.typeface.json'
 const LOCAL_IMAGE_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
 const PRIVATE_AGENT_WINDOW_TYPES = new Set<AgentWindowType>([
   'anorak',
@@ -657,6 +658,109 @@ export function ImagePlaneRenderer({
 // VIDEO PLANE RENDERER — Video texture on a 3D plane
 // ░▒▓ <video> element → CanvasTexture updated every frame ▓▒░
 // ═══════════════════════════════════════════════════════════════════════════════
+
+type InteractionHintPlacement = {
+  id: string
+  scale?: number
+  imageUrl?: string
+  videoUrl?: string
+}
+
+type InteractionHintStatsMap = Record<string, { dimensions?: { h?: number } } | undefined>
+type InteractionHintTransformMap = Record<string, { scale?: [number, number, number] | number } | undefined>
+
+function resolveInteractionHintPosition(
+  candidate: ObjectInteractionCandidate | null,
+  catalogAssets: InteractionHintPlacement[],
+  objectMeshStats: InteractionHintStatsMap,
+  transforms: InteractionHintTransformMap,
+): [number, number, number] | null {
+  if (!candidate) return null
+  const catalogAsset = catalogAssets.find(asset => asset.id === candidate.id)
+  const transformScale = scalarFromTransformScale(transforms[candidate.id]?.scale, 1)
+  let objectHeight = 0
+
+  if (catalogAsset?.imageUrl || catalogAsset?.videoUrl) {
+    objectHeight = (catalogAsset.scale || 1) * transformScale
+  } else if (catalogAsset) {
+    const statsHeight = objectMeshStats[candidate.id]?.dimensions?.h || 1
+    objectHeight = statsHeight * (catalogAsset.scale || 1) * transformScale
+  } else {
+    objectHeight = (objectMeshStats[candidate.id]?.dimensions?.h || 0) * transformScale
+  }
+
+  return [
+    candidate.position[0],
+    candidate.position[1] + Math.max(0.1, objectHeight) + 1.5,
+    candidate.position[2],
+  ]
+}
+
+function ObjectInteractionHint3D({ candidate, position }: {
+  candidate: ObjectInteractionCandidate | null
+  position: [number, number, number] | null
+}) {
+  const groupRef = useRef<THREE.Group>(null)
+  const worldPositionRef = useRef(new THREE.Vector3())
+  const camera = useThree(state => state.camera)
+
+  useFrame((state) => {
+    if (!groupRef.current) return
+    const group = groupRef.current
+    group.getWorldPosition(worldPositionRef.current)
+    const yaw = Math.atan2(camera.position.x - worldPositionRef.current.x, camera.position.z - worldPositionRef.current.z)
+    group.rotation.set(0, yaw, 0)
+    const pulse = 1 + Math.sin(state.clock.elapsedTime * 4.2) * 0.06
+    group.scale.setScalar(pulse)
+  })
+
+  if (!candidate || !position) return null
+
+  return (
+    <group ref={groupRef} position={position}>
+      <pointLight color="#ffd700" intensity={1.4} distance={4} position={[0, 0.15, 0.2]} />
+      <mesh position={[0, -0.04, -0.04]}>
+        <boxGeometry args={[1.05, 1.05, 0.06]} />
+        <meshBasicMaterial color="#241600" transparent opacity={0.2} depthWrite={false} />
+      </mesh>
+      <Suspense fallback={null}>
+        <Center>
+          <Text3D
+            font={INTERACTION_HINT_FONT}
+            size={0.82}
+            height={0.16}
+            bevelEnabled
+            bevelSize={0.012}
+            bevelThickness={0.018}
+            curveSegments={5}
+          >
+            F
+            <meshStandardMaterial
+              attach="material-0"
+              color="#ffd700"
+              emissive="#ffb700"
+              emissiveIntensity={0.48}
+              metalness={0.75}
+              roughness={0.18}
+            />
+            <meshStandardMaterial
+              attach="material-1"
+              color="#9a5b00"
+              emissive="#7c3f00"
+              emissiveIntensity={0.2}
+              metalness={0.55}
+              roughness={0.32}
+            />
+          </Text3D>
+        </Center>
+      </Suspense>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.44, 0]}>
+        <ringGeometry args={[0.36, 0.48, 48]} />
+        <meshBasicMaterial color="#ffd700" transparent opacity={0.48} depthWrite={false} />
+      </mesh>
+    </group>
+  )
+}
 
 export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, frameThickness = 1 }: {
   objectId?: string; videoUrl: string; scale: number; frameStyle?: string; frameThickness?: number
@@ -2877,14 +2981,21 @@ export function WorldObjectsRenderer() {
   const transformMode = useOasisStore(s => s.transformMode)
   const setObjectTransform = useOasisStore(s => s.setObjectTransform)
   const transforms = useOasisStore(s => s.transforms)
+  const behaviors = useOasisStore(s => s.behaviors)
   const catalogAssets = useOasisStore(s => s.placedCatalogAssets)
+  const portalGates = useOasisStore(s => s.portalGates)
   const spatialWebObjects = useOasisStore(s => s.spatialWebObjects)
+  const text3dObjects = useOasisStore(s => s.text3dObjects)
+  const worldLights = useOasisStore(s => s.worldLights)
   const spawnPlacementVfx = useOasisStore(s => s.spawnPlacementVfx)
   const spawnMarchOrderVfx = useOasisStore(s => s.spawnMarchOrderVfx)
   const hasAgentFocus = useOasisStore(s => !!s.focusedAgentWindowId)
+  const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
   const placedAgentAvatars = useOasisStore(s => s.placedAgentAvatars)
   const [nearestSpatialWebObjectId, setNearestSpatialWebObjectId] = useState<string | null>(null)
+  const [nearestObjectInteraction, setNearestObjectInteraction] = useState<ObjectInteractionCandidate | null>(null)
   const nearestSpatialWebObjectIdRef = useRef<string | null>(null)
+  const nearestObjectInteractionKeyRef = useRef<string | null>(null)
   const spatialInteractionHintTickRef = useRef(0)
 
   // ░▒▓ MINDCRAFT 3D — detect if active world is the Mindcraft mission map ▓▒░
@@ -2925,16 +3036,41 @@ export function WorldObjectsRenderer() {
     if (spatialInteractionHintTickRef.current < 0.15) return
     spatialInteractionHintTickRef.current = 0
 
+    const actorPosition = getSpatialInteractionActorPosition()
     const nearest = findNearestSpatialWebObject(
       spatialWebObjects,
-      getSpatialInteractionActorPosition(),
+      actorPosition,
       transforms,
       SPATIAL_WEB_INTERACTION_RADIUS,
     )
     const nextId = nearest?.id || null
-    if (nearestSpatialWebObjectIdRef.current === nextId) return
-    nearestSpatialWebObjectIdRef.current = nextId
-    setNearestSpatialWebObjectId(nextId)
+    if (nearestSpatialWebObjectIdRef.current !== nextId) {
+      nearestSpatialWebObjectIdRef.current = nextId
+      setNearestSpatialWebObjectId(nextId)
+    }
+
+    const nearestObject = findNearestObjectInteraction({
+      actorPosition,
+      behaviors,
+      transforms,
+      catalogPlacements: catalogAssets,
+      craftedScenes,
+      conjuredAssets: allConjuredAssets,
+      worldConjuredAssetIds,
+      portalGates,
+      spatialWebObjects,
+      text3dObjects,
+      agentWindows: placedAgentWindows,
+      agentAvatars: placedAgentAvatars,
+      worldLights,
+    })
+    const nextObjectKey = nearestObject
+      ? `${nearestObject.id}:${nearestObject.position.map(value => value.toFixed(2)).join(',')}`
+      : null
+    if (nearestObjectInteractionKeyRef.current !== nextObjectKey) {
+      nearestObjectInteractionKeyRef.current = nextObjectKey
+      setNearestObjectInteraction(nearestObject)
+    }
   })
 
   // Persist transform changes to per-world localStorage
@@ -2948,6 +3084,10 @@ export function WorldObjectsRenderer() {
   const paintMode = useOasisStore(s => s.paintMode)
   const placementPending = useOasisStore(s => s.placementPending)
   const objectMeshStats = useOasisStore(s => s.objectMeshStats)
+  const objectInteractionHintPosition = useMemo(
+    () => resolveInteractionHintPosition(nearestObjectInteraction, catalogAssets, objectMeshStats, transforms),
+    [catalogAssets, nearestObjectInteraction, objectMeshStats, transforms],
+  )
   const camera = useThree(s => s.camera)
   const crosshairRaycasterRef = useRef(new THREE.Raycaster())
   const crosshairPlaneRef = useRef(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0))
@@ -3012,6 +3152,7 @@ export function WorldObjectsRenderer() {
       <TransformKeyHandler />
       {/* ░▒▓ "COPIED!" floating 3D toasts ▓▒░ */}
       <CopyToastRenderer />
+      <ObjectInteractionHint3D candidate={nearestObjectInteraction} position={objectInteractionHintPosition} />
 
       {/* ░▒▓ Click-to-place overlay — only active during placement mode ▓▒░ */}
       <PlacementOverlay />
@@ -3204,6 +3345,13 @@ export function WorldObjectsRenderer() {
 
       {/* ░▒▓ 3D text — extruded shiny words ▓▒░ */}
       <Text3DSection />
+
+      {!hasAgentFocus && (
+        <ObjectInteractionHint3D
+          candidate={nearestObjectInteraction}
+          position={objectInteractionHintPosition}
+        />
+      )}
 
       {/* ░▒▓ Live (in-progress) strokes — local + remote, with sparkler tip ▓▒░ */}
       <LiveStrokesLayer />

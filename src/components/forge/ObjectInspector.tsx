@@ -1724,7 +1724,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
             <>
               <SectionHeader>Interaction Hooks</SectionHeader>
               <div className="rounded-lg border border-white/5 p-2 space-y-2" style={{ background: 'rgba(20, 20, 20, 0.6)' }}>
-                <div className="grid grid-cols-[1fr_72px] gap-1.5">
+                <div className="grid grid-cols-[1fr_90px] gap-1.5">
                   <input
                     type="text"
                     value={interaction?.label || ''}
@@ -1738,22 +1738,25 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                     placeholder={`Open ${resolved.name}`}
                     className="rounded border border-gray-700/30 bg-black/40 px-2 py-1 text-[10px] text-gray-200 outline-none focus:border-sky-400/40"
                   />
-                  <input
-                    type="number"
-                    min={0.5}
-                    max={50}
-                    step={0.1}
-                    value={interaction?.radius ?? 3.2}
-                    onChange={e => setObjectBehavior(inspectedObjectId, {
-                      interaction: {
-                        label: interaction?.label || `Open ${resolved.name}`,
-                        radius: Math.max(0.5, Number(e.target.value) || 3.2),
-                        actions: actions.length ? actions : [{ type: 'spawn_vfx' }],
-                      },
-                    })}
-                    className="rounded border border-gray-700/30 bg-black/40 px-2 py-1 text-[10px] text-gray-200 outline-none focus:border-sky-400/40"
-                    title="Interaction radius"
-                  />
+                  <label className="grid grid-cols-[1fr_18px] overflow-hidden rounded border border-gray-700/30 bg-black/40 text-[10px] text-gray-200 focus-within:border-sky-400/40" title="Interaction radius in meters">
+                    <span className="sr-only">Interaction radius in meters</span>
+                    <input
+                      type="number"
+                      min={0.5}
+                      max={50}
+                      step={0.1}
+                      value={interaction?.radius ?? 3.2}
+                      onChange={e => setObjectBehavior(inspectedObjectId, {
+                        interaction: {
+                          label: interaction?.label || `Open ${resolved.name}`,
+                          radius: Math.max(0.5, Number(e.target.value) || 3.2),
+                          actions: actions.length ? actions : [{ type: 'spawn_vfx' }],
+                        },
+                      })}
+                      className="min-w-0 border-0 bg-transparent px-2 py-1 text-[10px] text-gray-200 outline-none"
+                    />
+                    <span className="grid place-items-center border-l border-gray-700/30 text-[8px] font-black uppercase text-cyan-200/70">m</span>
+                  </label>
                 </div>
                 <div className="grid grid-cols-[64px_1fr] items-center gap-1.5">
                   <button

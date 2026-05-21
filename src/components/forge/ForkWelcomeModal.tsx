@@ -53,7 +53,7 @@ export function ForkWelcomeModal() {
         </div>
         <p className="mb-5 text-center text-[12px] leading-relaxed text-amber-100/90">
           The OpenClaw Hub is a read-only museum. Your first edit just spawned
-          you a private copy. Other visitors stay in the lobby — you're the
+          you a private copy. Other visitors stay in the lobby; you are the
           owner here. Build whatever you want.
         </p>
         <button
@@ -61,7 +61,7 @@ export function ForkWelcomeModal() {
           onClick={() => setOpen(false)}
           className="w-full rounded-lg border border-amber-300/55 bg-amber-900/70 px-4 py-3 text-[12px] font-black uppercase tracking-[0.18em] text-amber-50 transition hover:bg-amber-800/80"
         >
-          Let's build
+          Let us build
         </button>
       </div>
     </div>
