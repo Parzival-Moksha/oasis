@@ -3152,7 +3152,6 @@ export function WorldObjectsRenderer() {
       <TransformKeyHandler />
       {/* ░▒▓ "COPIED!" floating 3D toasts ▓▒░ */}
       <CopyToastRenderer />
-      <ObjectInteractionHint3D candidate={nearestObjectInteraction} position={objectInteractionHintPosition} />
 
       {/* ░▒▓ Click-to-place overlay — only active during placement mode ▓▒░ */}
       <PlacementOverlay />

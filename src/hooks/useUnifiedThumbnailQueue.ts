@@ -96,6 +96,7 @@ async function renderModelToBlob(rig: RenderRig, modelUrl: string): Promise<Blob
 export function useUnifiedThumbnailQueue() {
   const cancelledRef = useRef(false)
   const inFlightRef = useRef<Set<string>>(new Set())
+  const failureCountsRef = useRef<Record<string, number>>({})
 
   useEffect(() => {
     // ░▒▓ Global single-instance guard (StrictMode + HMR safe) ▓▒░
@@ -130,6 +131,7 @@ export function useUnifiedThumbnailQueue() {
       try {
         const blob = await renderModelToBlob(rig, modelUrl)
         if (!blob) {
+          failureCountsRef.current[id] = (failureCountsRef.current[id] || 0) + 1
           useThumbnailStore.getState().markFailed(id)
           return false
         }
@@ -138,13 +140,16 @@ export function useUnifiedThumbnailQueue() {
         formData.append('id', id)
         const res = await fetch(putUrl, { method: 'PUT', body: formData })
         if (!res.ok) {
+          failureCountsRef.current[id] = (failureCountsRef.current[id] || 0) + 1
           useThumbnailStore.getState().markFailed(id)
           return false
         }
+        delete failureCountsRef.current[id]
         useThumbnailStore.getState().markReady(id)
         return true
       } catch (err) {
         console.warn(`[ThumbQueue] failed for ${id}:`, err)
+        failureCountsRef.current[id] = (failureCountsRef.current[id] || 0) + 1
         useThumbnailStore.getState().markFailed(id)
         return false
       } finally {
@@ -159,14 +164,14 @@ export function useUnifiedThumbnailQueue() {
         // Catalog scan
         const catalog = ASSET_CATALOG.filter(a => {
           const st = s.status[a.id]
-          return !st || st === 'missing'
+          return !st || st === 'missing' || (st === 'failed' && (failureCountsRef.current[a.id] || 0) < 2)
         })
 
         // Conjured scan
         const conjured = useOasisStore.getState().conjuredAssets.filter(a => {
           if (a.status !== 'ready' || !a.glbPath) return false
           const st = s.status[a.id]
-          return !st || st === 'missing'
+          return !st || st === 'missing' || (st === 'failed' && (failureCountsRef.current[a.id] || 0) < 2)
         })
 
         const allTargets: Array<{ id: string; modelUrl: string; putUrl: string }> = [

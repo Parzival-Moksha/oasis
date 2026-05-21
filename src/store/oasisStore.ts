@@ -3366,6 +3366,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
   // ─═̷─═̷─🌍 MULTI-WORLD ACTIONS ─═̷─═̷─🌍
   switchWorld: (worldId) => {
+    const previousActiveWorldId = get().activeWorldId
     // Exit view mode if active — user clicked one of their own worlds
     if (get().isViewMode) {
       set({ isViewMode: false, isViewModeEditable: false, viewingWorldId: null, viewingWorldMeta: null })
@@ -3399,6 +3400,20 @@ export const useOasisStore = create<OasisState>((set, get) => {
     // Switch to new world
     setActiveWorldId(worldId, { publish: true })
     loadWorld(worldId).then(world => {
+      if (!world) {
+        console.error(`[World] Switch aborted: "${worldId}" did not load. Keeping "${previousActiveWorldId}".`)
+        if (previousActiveWorldId && previousActiveWorldId !== worldId) {
+          setActiveWorldId(previousActiveWorldId, { publish: true })
+          set({
+            _worldReady: true,
+            activeWorldId: previousActiveWorldId,
+            selectedSpellId: null,
+          })
+        } else {
+          set({ _worldReady: true, selectedSpellId: null })
+        }
+        return
+      }
       // Seed defaults for old worlds that never had lights (lights field undefined)
       const defaultLights: WorldLight[] = DEFAULT_WORLD_LIGHTS.map((l, i) => ({ ...l, id: `light-${l.type}-default-${i}`, visible: true } as WorldLight))
       const lights = world?.lights !== undefined ? (world?.lights || []) : defaultLights

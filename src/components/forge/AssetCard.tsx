@@ -23,6 +23,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { DeleteButton } from './DeleteButton'
+import { useThumbnailStore } from '@/lib/thumbnail-store'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 
@@ -88,7 +89,8 @@ const TYPE_CONFIG: Record<AssetCardType, { label: string; color: string; bgColor
 // THUMBNAIL RENDERER — per-type visual (with autoplay hover for video/audio)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function CardThumbnail({ type, thumbnailUrl, mediaUrl, name }: {
+function CardThumbnail({ id, type, thumbnailUrl, mediaUrl, name }: {
+  id: string
   type: AssetCardType
   thumbnailUrl?: string
   mediaUrl?: string
@@ -96,10 +98,16 @@ function CardThumbnail({ type, thumbnailUrl, mediaUrl, name }: {
 }) {
   const [imgFailed, setImgFailed] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const thumbStatus = useThumbnailStore(s => type === 'catalog' ? s.status[id] : undefined)
+  const thumbVersion = useThumbnailStore(s => type === 'catalog' ? (s.versions[id] || 0) : 0)
 
   useEffect(() => {
     setImgFailed(false)
-  }, [thumbnailUrl])
+  }, [thumbnailUrl, thumbStatus, thumbVersion])
+
+  const withThumbVersion = (src: string): string => (
+    thumbVersion > 0 ? `${src}${src.includes('?') ? '&' : '?'}v=${thumbVersion}` : src
+  )
 
   // Image thumbnail (catalog, conjured, crafted, media-image, placed)
   if (type !== 'media-video' && type !== 'media-audio' && thumbnailUrl && !imgFailed) {
@@ -109,7 +117,7 @@ function CardThumbnail({ type, thumbnailUrl, mediaUrl, name }: {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={src}
+        src={withThumbVersion(src)}
         alt={name}
         className="w-full h-full object-cover"
         onError={() => setImgFailed(true)}
@@ -150,7 +158,7 @@ function CardThumbnail({ type, thumbnailUrl, mediaUrl, name }: {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={src}
+        src={withThumbVersion(src)}
         alt={name}
         className="w-full h-full object-cover"
         onError={() => setImgFailed(true)}
@@ -324,6 +332,7 @@ export function AssetCard({
         style={{ background: 'rgba(0, 0, 0, 0.4)' }}
       >
         <CardThumbnail
+          id={id}
           type={type}
           thumbnailUrl={thumbnailUrl}
           mediaUrl={mediaUrl}
