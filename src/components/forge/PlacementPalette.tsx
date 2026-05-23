@@ -39,6 +39,53 @@ function formatSize(bytes: number): string {
     : `${Math.max(1, Math.round(bytes / 1024))}KB`
 }
 
+function CategoryChip({
+  category,
+  active,
+  onClick,
+}: {
+  category: string
+  active: boolean
+  onClick: () => void
+}) {
+  const [imageFailed, setImageFailed] = useState(false)
+  const coverAsset = category === 'all'
+    ? ASSET_CATALOG[0]
+    : ASSET_CATALOG.find(asset => asset.category === category)
+  const label = category.replace(/-/g, ' ')
+  const thumbnailUrl = coverAsset ? `/thumbs/${coverAsset.id}.jpg` : ''
+
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-1.5 rounded border px-1.5 py-1 text-[10px] font-mono uppercase tracking-[0.08em] transition max-[700px]:px-1 max-[700px]:py-0.5 max-[700px]:text-[8px]"
+      style={{
+        borderColor: active ? 'rgba(250,204,21,0.48)' : 'rgba(255,255,255,0.10)',
+        background: active ? 'rgba(250,204,21,0.14)' : 'rgba(255,255,255,0.04)',
+        color: active ? '#FDE047' : 'rgba(255,255,255,0.58)',
+      }}
+    >
+      <span className="relative h-6 w-6 shrink-0 overflow-hidden rounded border border-white/10 bg-white/5 max-[700px]:h-5 max-[700px]:w-5">
+        {thumbnailUrl && !imageFailed ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={`${OASIS_BASE}${thumbnailUrl}`}
+            alt=""
+            className="h-full w-full object-cover"
+            loading="lazy"
+            onError={() => setImageFailed(true)}
+          />
+        ) : (
+          <span className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_35%_25%,rgba(253,224,71,0.24),rgba(16,185,129,0.08),rgba(0,0,0,0.1))] text-[9px] font-black text-yellow-100/70">
+            {label.slice(0, 1)}
+          </span>
+        )}
+      </span>
+      <span className="max-w-28 truncate">{label}</span>
+    </button>
+  )
+}
+
 export function PlacementPalette({ showConjured = true, columns = 3, onPlace }: PlacementPaletteProps) {
   const [tab, setTab] = useState<PaletteTab>('catalog')
   const [category, setCategory] = useState('all')
@@ -271,18 +318,12 @@ export function PlacementPalette({ showConjured = true, columns = 3, onPlace }: 
               const rest = present.filter(c => !PREFERRED.includes(c))
               return [...preferred, ...rest, 'all']
             })().map(item => (
-              <button
+              <CategoryChip
                 key={item}
+                category={item}
+                active={category === item}
                 onClick={() => setCategory(item)}
-                className="rounded border px-2 py-1 text-[10px] font-mono uppercase tracking-[0.08em] transition max-[700px]:px-1.5 max-[700px]:py-0.5 max-[700px]:text-[8px]"
-                style={{
-                  borderColor: category === item ? 'rgba(250,204,21,0.48)' : 'rgba(255,255,255,0.10)',
-                  background: category === item ? 'rgba(250,204,21,0.14)' : 'rgba(255,255,255,0.04)',
-                  color: category === item ? '#FDE047' : 'rgba(255,255,255,0.54)',
-                }}
-              >
-                {item}
-              </button>
+              />
             ))}
             {catalogThumbGen.running && catalogThumbGen.total > 0 && (
               <span className="ml-auto rounded border border-yellow-300/20 px-2 py-1 text-[9px] font-mono text-yellow-100/60">

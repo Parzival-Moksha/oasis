@@ -11,6 +11,7 @@ import { useOasisStore } from '../../store/oasisStore'
 import type { WorldVisibility } from '@/lib/xp'
 import { completeQuest } from '@/lib/quests'
 import { useUILayer } from '@/lib/input-manager'
+import { useOasisCapabilities } from '@/lib/oasis-mode-client'
 
 interface SnapshotMeta {
   id: string
@@ -21,13 +22,19 @@ interface SnapshotMeta {
 }
 
 const WORLD_ICONS = ['🌍', '🌋', '🏔️', '🌊', '🏜️', '🌌', '🪐', '🌙', '🏰', '⛩️']
-const VISIBILITY_OPTIONS: { value: WorldVisibility; icon: string; label: string; desc: string }[] = [
+const BASE_VISIBILITY_OPTIONS: { value: WorldVisibility; icon: string; label: string; desc: string }[] = [
   { value: 'private', icon: '🔒', label: 'Private', desc: 'Only you' },
   { value: 'unlisted', icon: '🔗', label: 'Unlisted', desc: 'Link only' },
   { value: 'unlisted_edit', icon: '🔗', label: 'Link Build', desc: 'Link edits' },
   { value: 'public', icon: '🌐', label: 'Public', desc: 'Read-only' },
   { value: 'public_edit', icon: '✏️', label: 'Open Build', desc: 'Anyone edits' },
 ]
+const CORE_VISIBILITY_OPTION: { value: WorldVisibility; icon: string; label: string; desc: string } = {
+  value: 'core',
+  icon: '◆',
+  label: 'Core',
+  desc: 'Seed JSON',
+}
 const VISIBILITY_ICONS: Record<WorldVisibility, string> = {
   private: '🔒',
   unlisted: '🔗',
@@ -55,6 +62,7 @@ export function RealmSelector({
   const [newIcon, setNewIcon] = useState('🌍')
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const capabilities = useOasisCapabilities()
   const dropdownRef = useRef<HTMLDivElement>(null)
   const nameInputRef = useRef<HTMLInputElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
@@ -206,6 +214,10 @@ export function RealmSelector({
     ? { icon: viewingWorldMeta.icon, name: viewingWorldMeta.name, color: '#A855F7' }  // purple for viewing
     : { icon: currentWorld?.icon || '🔥', name: currentWorld?.name || 'The Forge', color: '#F97316' }
   const toolbarPlacement = placement === 'toolbar'
+  const canUseCoreVisibility = capabilities.mode === 'local' || capabilities.admin
+  const visibilityOptions = canUseCoreVisibility
+    ? [...BASE_VISIBILITY_OPTIONS, CORE_VISIBILITY_OPTION]
+    : BASE_VISIBILITY_OPTIONS
 
   return (
     <div
@@ -389,7 +401,7 @@ export function RealmSelector({
                       style={{ background: 'rgba(15,15,15,0.97)', border: '1px solid rgba(255,255,255,0.12)', minWidth: '160px' }}
                       onClick={e => e.stopPropagation()}
                     >
-                      {VISIBILITY_OPTIONS.map(opt => {
+                      {visibilityOptions.map(opt => {
                         const isActive = worldVisibility === opt.value
                         return (
                           <button

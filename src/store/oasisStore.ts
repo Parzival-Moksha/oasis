@@ -1413,11 +1413,23 @@ export const useOasisStore = create<OasisState>((set, get) => {
     setTimeout(() => get().saveWorldState(), 100)
   },
   removeConjuredAssetFromWorld: (assetId) => {
+    if (!canWriteCurrentWorld()) return
+    if (!get().worldConjuredAssetIds.includes(assetId)) return
     withUndo('Remove conjured', '🗑️', () => {
-      set((state) => ({
-        worldConjuredAssetIds: state.worldConjuredAssetIds.filter(id => id !== assetId),
-      }))
+      set((state) => {
+        const nextTransforms = { ...state.transforms }
+        delete nextTransforms[assetId]
+        const { [assetId]: _removedBehavior, ...behaviors } = state.behaviors
+        return {
+          worldConjuredAssetIds: state.worldConjuredAssetIds.filter(id => id !== assetId),
+          transforms: nextTransforms,
+          behaviors,
+          selectedObjectId: state.selectedObjectId === assetId ? null : state.selectedObjectId,
+          inspectedObjectId: state.inspectedObjectId === assetId ? null : state.inspectedObjectId,
+        }
+      })
     })
+    worldMutationBus.broadcast({ kind: 'object_removed', payload: { id: assetId } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   addCraftedScene: (scene) => {
@@ -1435,12 +1447,16 @@ export const useOasisStore = create<OasisState>((set, get) => {
     setTimeout(() => get().saveWorldState(), 100)
   },
   removeCraftedScene: (id) => {
+    if (!canWriteCurrentWorld()) return
+    if (!get().craftedScenes.some(scene => scene.id === id)) return
     withUndo('Remove crafted', '🗑️', () => {
       set((state) => ({
         craftedScenes: state.craftedScenes.filter(s => s.id !== id),
         selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
+        inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
       }))
     })
+    worldMutationBus.broadcast({ kind: 'object_removed', payload: { id } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   updateCraftedScene: (id, updates) => set((state) => ({
@@ -1477,11 +1493,14 @@ export const useOasisStore = create<OasisState>((set, get) => {
     awardXp('PLACE_CATALOG_OBJECT', get().activeWorldId)
   },
   removeCatalogAsset: (id) => {
+    if (!canWriteCurrentWorld()) return
     const asset = get().placedCatalogAssets.find(a => a.id === id)
+    if (!asset) return
     withUndo(`Delete ${asset?.name || 'object'}`, '🗑️', () => {
       set(state => ({
         placedCatalogAssets: state.placedCatalogAssets.filter(a => a.id !== id),
         selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
+        inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
       }))
     })
     worldMutationBus.broadcast({ kind: 'object_removed', payload: { id } })
@@ -1972,7 +1991,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
     setTimeout(() => get().saveWorldState(), 100)
   },
   removeSpatialWebObject: (id) => {
+    if (!canWriteCurrentWorld()) return
     const object = get().spatialWebObjects.find(entry => entry.id === id)
+    if (!object) return
     withUndo(`Delete ${object?.label || 'spatial web object'}`, 'delete', () => {
       set(state => {
         const nextTransforms = { ...state.transforms }
@@ -1981,9 +2002,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
           spatialWebObjects: state.spatialWebObjects.filter(entry => entry.id !== id),
           transforms: nextTransforms,
           selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
+          inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
         }
       })
     })
+    worldMutationBus.broadcast({ kind: 'object_removed', payload: { id } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   seedSpatialWebRsvpDemo: () => {
@@ -2364,7 +2387,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
   },
 
   removePortalGate: (id) => {
+    if (!canWriteCurrentWorld()) return
     const gate = get().portalGates.find(portal => portal.id === id)
+    if (!gate) return
     withUndo('Delete portal', 'portal', () => {
       set(state => ({
         portalGates: state.portalGates.filter(portal => portal.id !== id),
@@ -2372,6 +2397,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
       }))
     })
+    worldMutationBus.broadcast({ kind: 'object_removed', payload: { id } })
     setTimeout(() => get().saveWorldState(), 100)
 
     if (gate?.direction === 'two-way' && gate.targetWorldId && gate.linkedPortalId) {
@@ -3134,8 +3160,14 @@ export const useOasisStore = create<OasisState>((set, get) => {
     awardXp('ADD_LIGHT', get().activeWorldId)
   },
   removeWorldLight: (id) => {
+    if (!canWriteCurrentWorld()) return
+    if (!get().worldLights.some(light => light.id === id)) return
     withUndo('Remove light', '🗑️', () => {
-      set(s => ({ worldLights: s.worldLights.filter(l => l.id !== id) }))
+      set(s => ({
+        worldLights: s.worldLights.filter(l => l.id !== id),
+        selectedObjectId: s.selectedObjectId === id ? null : s.selectedObjectId,
+        inspectedObjectId: s.inspectedObjectId === id ? null : s.inspectedObjectId,
+      }))
     })
     worldMutationBus.broadcast({ kind: 'light_removed', payload: { id } })
     setTimeout(() => get().saveWorldState(), 100)
@@ -3661,8 +3693,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
     setTimeout(() => get().saveWorldState(), 100)
   },
   removeAgentWindow: (id) => {
+    if (!canWriteCurrentWorld()) return
+    if (!get().placedAgentWindows.some(window => window.id === id)) return
+    let linkedAvatarIds: string[] = []
     set(state => {
-      const linkedAvatarIds = state.placedAgentAvatars
+      linkedAvatarIds = state.placedAgentAvatars
         .filter(entry => entry.linkedWindowId === id)
         .map(entry => entry.id)
       const linkedAvatarIdSet = new Set(linkedAvatarIds)
@@ -3678,10 +3713,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
         liveAgentAvatarAudio: nextAudio,
         transforms: nextTransforms,
         focusedAgentWindowId: state.focusedAgentWindowId === id ? null : state.focusedAgentWindowId,
-        selectedObjectId: linkedAvatarIdSet.has(state.selectedObjectId || '') ? null : state.selectedObjectId,
-        inspectedObjectId: linkedAvatarIdSet.has(state.inspectedObjectId || '') ? null : state.inspectedObjectId,
+        selectedObjectId: state.selectedObjectId === id || linkedAvatarIdSet.has(state.selectedObjectId || '') ? null : state.selectedObjectId,
+        inspectedObjectId: state.inspectedObjectId === id || linkedAvatarIdSet.has(state.inspectedObjectId || '') ? null : state.inspectedObjectId,
       }
     })
+    worldMutationBus.broadcast({ kind: 'object_removed', payload: { id, linkedAvatarIds } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   updateAgentWindow: (id, partial) => {
@@ -3691,6 +3727,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
     setTimeout(() => get().saveWorldState(), 100)
   },
   removeAgentAvatar: (id) => {
+    if (!canWriteCurrentWorld()) return
+    if (!get().placedAgentAvatars.some(avatar => avatar.id === id)) return
     set(state => {
       const nextTransforms = { ...state.transforms }
       delete nextTransforms[id]

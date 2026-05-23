@@ -9,7 +9,7 @@ import type { WorldMeta } from '@/lib/forge/world-persistence'
 import { SettingsContext } from '@/components/scene-lib'
 import { getViewerUserIdClient } from '@/lib/viewer-identity-client'
 import { ensureViewerCookie, VIEWER_IDENTITY_EVENT } from '@/lib/viewer-identity-bootstrap'
-import { useClientOasisMode } from '@/lib/oasis-mode-client'
+import { useClientOasisMode, useOasisCapabilities } from '@/lib/oasis-mode-client'
 import { WELCOME_HUB_WORLD_ID } from '@/lib/portal-gates'
 
 import { GameMenuButton } from './GameMenuButton'
@@ -27,12 +27,18 @@ const SHAREABLE_VISIBILITIES = new Set([
   'template',
 ])
 
-const VISIBILITY_OPTIONS: Array<{ value: WorldMeta['visibility']; label: string; note: string }> = [
+const BASE_VISIBILITY_OPTIONS: Array<{ value: WorldMeta['visibility']; label: string; note: string }> = [
   { value: 'private', label: 'Private', note: 'owner only' },
   { value: 'unlisted', label: 'Unlisted', note: 'anyone with link can enter' },
   { value: 'public', label: 'Public', note: 'discoverable, owner edits' },
   { value: 'public_edit', label: 'Sandbox', note: 'anyone can build' },
 ]
+
+const CORE_VISIBILITY_OPTION: { value: WorldMeta['visibility']; label: string; note: string } = {
+  value: 'core',
+  label: 'Core',
+  note: 'seed-backed system world',
+}
 
 interface SnapshotMeta {
   id: string
@@ -122,6 +128,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
   // In local mode, stale viewer-* cookies collapse back to local-user.
   const [viewerUserId, setViewerUserId] = useState(() => getViewerUserIdClient())
   const oasisMode = useClientOasisMode()
+  const capabilities = useOasisCapabilities()
   const menuRef = useRef<HTMLDivElement>(null)
   useUILayer('world-menu', isOpen)
   const { settings, updateSetting, rp1Locked } = useContext(SettingsContext)
@@ -164,6 +171,11 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
   const objectCount = liveObjectCount
   const visitCount = meta?.visitCount || 0
   const canEditSettings = Boolean(meta?.canEditSettings && !isViewMode)
+  const canUseCoreVisibility = capabilities.mode === 'local' || capabilities.admin
+  const visibilityOptions = useMemo(
+    () => canUseCoreVisibility ? [...BASE_VISIBILITY_OPTIONS, CORE_VISIBILITY_OPTION] : BASE_VISIBILITY_OPTIONS,
+    [canUseCoreVisibility],
+  )
   const canCopyLink = Boolean(worldId && (SHAREABLE_VISIBILITIES.has(visibility || '') || meta?.canEditSettings || meta?.canWrite))
 
   const worldUrl = useMemo(() => {
@@ -673,7 +685,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
           <div className="mb-3 rounded-md border border-white/10 bg-white/5 p-2">
             <div className="mb-2 text-[10px] font-black uppercase tracking-[0.14em] text-white/55">Visibility</div>
             <div className="grid grid-cols-2 gap-1.5">
-              {VISIBILITY_OPTIONS.map(option => {
+              {visibilityOptions.map(option => {
                 const active = option.value === visibility || (option.value === 'unlisted' && isUnlistedVisibility)
                 return (
                   <button

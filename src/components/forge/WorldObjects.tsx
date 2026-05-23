@@ -63,6 +63,7 @@ import {
 import { resolveAgentAvatarUrl } from '../../lib/agent-avatar-catalog'
 import { canReceiveMoveOrder, resolveMoveOrderObjectIds } from '../../lib/march-order'
 import { getViewerUserIdClient } from '../../lib/viewer-identity-client'
+import { LIGHT_INTENSITY_MAX, type WorldLight } from '../../lib/conjure/types'
 
 const IDLE_CLIP_PATTERNS = /idle|breathe?|stand|rest|pose|wait/i
 const WALK_CLIP_PATTERNS = /walk|run|move|locomotion|jog/i
@@ -718,7 +719,6 @@ function ObjectInteractionHint3D({ candidate, position }: {
 
   return (
     <group ref={groupRef} position={position}>
-      <pointLight color="#ffd700" intensity={1.4} distance={4} position={[0, 0.15, 0.2]} />
       <mesh position={[0, -0.04, -0.04]}>
         <boxGeometry args={[1.05, 1.05, 0.06]} />
         <meshBasicMaterial color="#241600" transparent opacity={0.2} depthWrite={false} />
@@ -2845,7 +2845,11 @@ const LIGHT_TYPE_EMOJI: Record<string, string> = {
   point: '💡', spot: '🔦', directional: '☀️', ambient: '🌤️', hemisphere: '🌗',
 }
 
-function LightHelperOrb({ light }: { light: import('../../lib/conjure/types').WorldLight }) {
+function renderLightIntensity(light: WorldLight): number {
+  return Math.min(light.intensity, LIGHT_INTENSITY_MAX[light.type] ?? light.intensity)
+}
+
+function LightHelperOrb({ light }: { light: WorldLight }) {
   const orbRef = useRef<THREE.Mesh>(null)
   const ringRef = useRef<THREE.Mesh>(null)
   const [hovered, setHovered] = useState(false)
@@ -2860,6 +2864,7 @@ function LightHelperOrb({ light }: { light: import('../../lib/conjure/types').Wo
   if (light.visible === false) return null
 
   const orbSize = light.type === 'directional' ? 0.4 : light.type === 'ambient' || light.type === 'hemisphere' ? 0.5 : 0.3
+  const intensity = renderLightIntensity(light)
 
   return (
     <group
@@ -2876,7 +2881,7 @@ function LightHelperOrb({ light }: { light: import('../../lib/conjure/types').Wo
     >
       {/* The actual Three.js light */}
       {light.type === 'point' && (
-        <pointLight color={light.color} intensity={light.intensity} />
+        <pointLight color={light.color} intensity={intensity} />
       )}
       {light.type === 'spot' && (() => {
         const tgt = light.target || [0, -1, 0]
@@ -2890,20 +2895,20 @@ function LightHelperOrb({ light }: { light: import('../../lib/conjure/types').Wo
               }
             }}
             color={light.color}
-            intensity={light.intensity}
+            intensity={intensity}
             angle={(light.angle || 45) * Math.PI / 180}
             penumbra={0.5}
           />
         )
       })()}
       {light.type === 'directional' && (
-        <directionalLight color={light.color} intensity={light.intensity} />
+        <directionalLight color={light.color} intensity={intensity} />
       )}
       {light.type === 'ambient' && (
-        <ambientLight color={light.color} intensity={light.intensity} />
+        <ambientLight color={light.color} intensity={intensity} />
       )}
       {light.type === 'hemisphere' && (
-        <hemisphereLight args={[light.color, light.groundColor || '#3a5f0b', light.intensity]} />
+        <hemisphereLight args={[light.color, light.groundColor || '#3a5f0b', intensity]} />
       )}
 
       {/* Visual helper — cone for spot (shows direction), sphere for others */}
@@ -2955,7 +2960,7 @@ function LightHelperOrb({ light }: { light: import('../../lib/conjure/types').Wo
             }}
           >
             <span className="text-yellow-300">{LIGHT_TYPE_EMOJI[light.type]} {light.type}</span>
-            <span className="text-gray-400 ml-1">int {light.intensity.toFixed(1)}</span>
+            <span className="text-gray-400 ml-1">int {intensity.toFixed(1)}</span>
           </div>
         </Html>
       )}
@@ -3521,13 +3526,13 @@ function WorldLightsSection({ selectedObjectId, selectObject, transformMode }: {
       {sceneLights.map(light => (
         <group key={light.id}>
           {light.visible !== false && light.type === 'ambient' && (
-            <ambientLight color={light.color} intensity={light.intensity} />
+            <ambientLight color={light.color} intensity={renderLightIntensity(light)} />
           )}
           {light.visible !== false && light.type === 'hemisphere' && (
-            <hemisphereLight args={[light.color, light.groundColor || '#3a5f0b', light.intensity]} />
+            <hemisphereLight args={[light.color, light.groundColor || '#3a5f0b', renderLightIntensity(light)]} />
           )}
           {light.visible !== false && light.type === 'directional' && (
-            <directionalLight position={light.position} color={light.color} intensity={light.intensity} />
+            <directionalLight position={light.position} color={light.color} intensity={renderLightIntensity(light)} />
           )}
         </group>
       ))}

@@ -297,25 +297,77 @@ export function recordQuestTargetHit(
 // ─═̷─═̷─🎤 ORIGIN PROBE — same camera/avatar logic FireboltLayer uses ─═̷─═̷─🎤
 import { getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
 
+const BOLT_AIM_MAX_DISTANCE_M = 90
+
+function cameraRaySphereHitDistance(
+  rayOrigin: THREE.Vector3,
+  rayDirection: THREE.Vector3,
+  center: THREE.Vector3,
+  radius: number,
+): number | null {
+  const oc = rayOrigin.clone().sub(center)
+  const b = oc.dot(rayDirection)
+  const c = oc.lengthSq() - radius * radius
+  const discriminant = b * b - c
+  if (discriminant < 0) return null
+  const root = Math.sqrt(discriminant)
+  const near = -b - root
+  const far = -b + root
+  if (near >= 0) return near
+  if (far >= 0) return far
+  return null
+}
+
+function resolveCameraAimPoint(
+  cameraOrigin: THREE.Vector3,
+  cameraDirection: THREE.Vector3,
+  maxDistance = BOLT_AIM_MAX_DISTANCE_M,
+): THREE.Vector3 {
+  let bestDistance = maxDistance
+  let bestPoint = cameraOrigin.clone().addScaledVector(cameraDirection, maxDistance)
+
+  for (const target of collectCollisionTargets()) {
+    const center = new THREE.Vector3(
+      target.position[0],
+      target.position[1] + Math.min(1.4, target.radius),
+      target.position[2],
+    )
+    const hitDistance = cameraRaySphereHitDistance(cameraOrigin, cameraDirection, center, target.radius)
+    if (hitDistance !== null && hitDistance > 0.25 && hitDistance < bestDistance) {
+      bestDistance = hitDistance
+      bestPoint = cameraOrigin.clone().addScaledVector(cameraDirection, hitDistance)
+    }
+  }
+
+  if (cameraDirection.y < -1e-3) {
+    const groundDistance = -cameraOrigin.y / cameraDirection.y
+    if (groundDistance > 0.25 && groundDistance < bestDistance) {
+      bestPoint = cameraOrigin.clone().addScaledVector(cameraDirection, groundDistance).setY(0)
+    }
+  }
+
+  return bestPoint
+}
+
 export function resolveCastOriginAndDirection(camera: THREE.Camera): {
   origin: THREE.Vector3
   direction: THREE.Vector3
 } {
   const origin = new THREE.Vector3()
   const direction = new THREE.Vector3()
+  const cameraOrigin = new THREE.Vector3()
+  const cameraDirection = new THREE.Vector3()
   const right = new THREE.Vector3()
   const up = new THREE.Vector3()
 
-  camera.getWorldDirection(direction).normalize()
+  camera.getWorldPosition(cameraOrigin)
+  camera.getWorldDirection(cameraDirection).normalize()
+  direction.copy(cameraDirection)
   right.setFromMatrixColumn(camera.matrixWorld, 0).normalize()
   up.setFromMatrixColumn(camera.matrixWorld, 1).normalize()
 
   const pose = getPlayerAvatarPose()
   const isThirdPerson = Boolean(pose && useInputManager.getState().inputState === 'third-person')
-  if (isThirdPerson) {
-    direction.y = THREE.MathUtils.clamp(direction.y, -0.04, 0.32)
-    direction.normalize()
-  }
   if (pose && isThirdPerson) {
     const [px, py, pz] = pose.position
     const [fx, , fz] = pose.forward
@@ -325,12 +377,14 @@ export function resolveCastOriginAndDirection(camera: THREE.Camera): {
       .addScaledVector(poseForward, 0.62)
       .addScaledVector(poseRight, 0.28)
   } else {
-    camera.getWorldPosition(origin)
-    origin
+    origin.copy(cameraOrigin)
       .addScaledVector(direction, 0.86)
       .addScaledVector(right, 0.24)
       .addScaledVector(up, -0.16)
   }
+
+  const aimPoint = resolveCameraAimPoint(cameraOrigin, cameraDirection)
+  direction.copy(aimPoint).sub(origin).normalize()
 
   return { origin, direction }
 }
@@ -341,7 +395,10 @@ export function resolveCastOriginAndDirection(camera: THREE.Camera): {
  * Returns null if the aim is parallel-or-up.
  */
 export function aimedGroundPoint(camera: THREE.Camera, maxDistance = 30): THREE.Vector3 | null {
-  const { origin, direction } = resolveCastOriginAndDirection(camera)
+  const origin = new THREE.Vector3()
+  const direction = new THREE.Vector3()
+  camera.getWorldPosition(origin)
+  camera.getWorldDirection(direction).normalize()
   if (Math.abs(direction.y) < 1e-3 || direction.y >= 0) {
     // Aim is upward or parallel — pick a point in front at 8m and drop to y=0.
     const forward = direction.clone()

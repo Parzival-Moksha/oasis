@@ -529,7 +529,7 @@ function ImagineTab({ cols, setLightboxUrl, onRequestDelete }: { cols: number; s
         icon: '\u{1F3A8}',
         color: '#888888',
         assetName: '',
-        tileRepeat: 1,
+        tileRepeat: 8,
         customTextureUrl: image.tileUrl,
       })
     }
@@ -803,7 +803,7 @@ function MediaTab({ cols, onRequestDelete }: { cols: number; onRequestDelete: (t
         icon: '\u{1F3A8}',
         color: '#888888',
         assetName: '',
-        tileRepeat: 1,
+        tileRepeat: 8,
         customTextureUrl: imageUrl,
       })
     }
@@ -2933,7 +2933,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
                                 icon: '\u{1F3A8}',
                                 color: '#888888',
                                 assetName: '',
-                                tileRepeat: 1,
+                                tileRepeat: 8,
                                 customTextureUrl: img.tileUrl,
                               })
                             }

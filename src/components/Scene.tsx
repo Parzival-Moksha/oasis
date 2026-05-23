@@ -150,6 +150,30 @@ function PointerLockRaycaster() {
   return null
 }
 
+// ─═̷─═̷─🌅─═̷─═̷─{ PLAYABLE SCENE SIGNAL }─═̷─═̷─🌅─═̷─═̷─
+// Signals the splash only after world state has painted into the canvas.
+function ScenePlayableSignal({ worldReady, worldId }: { worldReady: boolean; worldId: string }) {
+  const dispatchedKeyRef = useRef<string | null>(null)
+  const readyFrameCountRef = useRef(0)
+
+  useEffect(() => {
+    readyFrameCountRef.current = 0
+  }, [worldId, worldReady])
+
+  useFrame(() => {
+    if (!worldReady) return
+    if (dispatchedKeyRef.current === worldId) return
+    readyFrameCountRef.current += 1
+    if (readyFrameCountRef.current < 2) return
+    dispatchedKeyRef.current = worldId
+    window.dispatchEvent(new CustomEvent('oasis:world-playable', {
+      detail: { worldId },
+    }))
+  })
+
+  return null
+}
+
 // ─═̷─═̷─💨─═̷─═̷─{ SPRINT SPEED LINES }─═̷─═̷─💨─═̷─═̷─
 // Instanced thin streaks that fly past the camera during sprint
 function isMouseLookDebugEnabled(): boolean {
@@ -1242,6 +1266,7 @@ export default function Scene() {
   }, [settings])
 
   const selectObject = useOasisStore(s => s.selectObject)
+  const selectedObjectId = useOasisStore(s => s.selectedObjectId)
   const inspectedObjectId = useOasisStore(s => s.inspectedObjectId)
   const setInspectedObject = useOasisStore(s => s.setInspectedObject)
   const worldSkyBackground = useOasisStore(s => s.worldSkyBackground)
@@ -1255,6 +1280,8 @@ export default function Scene() {
 
   const isViewMode = useOasisStore(s => s.isViewMode)
   const isViewModeEditable = useOasisStore(s => s.isViewModeEditable)
+  const viewingWorldId = useOasisStore(s => s.viewingWorldId)
+  const viewingWorldMeta = useOasisStore(s => s.viewingWorldMeta)
   const activeWorldId = useOasisStore(s => s.activeWorldId)
   const worldReady = useOasisStore(s => s._worldReady)
   const worldRegistry = useOasisStore(s => s.worldRegistry)
@@ -1263,6 +1290,10 @@ export default function Scene() {
   const activeWorldWriteKnown = Boolean(activeWorldMeta) || isViewMode
   const readOnlyForcesRp1 = Boolean(activeWorldWriteKnown && !activeWorldCanWrite)
   const effectiveRp1Mode = settings.rp1Mode || readOnlyForcesRp1
+  const playableWorldId = isViewMode ? (viewingWorldId || activeWorldId) : activeWorldId
+  const playableWorldReady = isViewMode
+    ? Boolean(viewingWorldMeta?.id || (isViewModeEditable && worldReady))
+    : worldReady
   // Hide mutation surfaces unless the active world explicitly says this session can write.
   // Settings stays separate: camera/UI preferences are always available.
   const hideEditTools = Boolean(
@@ -1428,19 +1459,6 @@ export default function Scene() {
       window.removeEventListener('oasis:open-lights-panel', openLights)
     }
   }, [])
-
-  useEffect(() => {
-    if (hostedMode) return
-    if (typeof window === 'undefined') return
-    try {
-      const key = 'oasis-help-first-opened'
-      if (window.localStorage.getItem(key)) return
-      window.localStorage.setItem(key, '1')
-      setHelpOpen(true)
-    } catch {
-      // Ignore storage failures; the Help button remains available.
-    }
-  }, [hostedMode])
 
   useEffect(() => {
     if (!hostedMode) return
@@ -1715,6 +1733,42 @@ export default function Scene() {
     return () => unsubscribe()
   }, [])
 
+  const deleteSelectedObject = useCallback(() => {
+    if (hideEditTools) return false
+
+    const store = useOasisStore.getState()
+    const id = store.selectedObjectId
+    if (!id) return false
+
+    const isPortal = store.portalGates.some(gate => gate.id === id)
+    const isCatalog = store.placedCatalogAssets.some(asset => asset.id === id)
+    const isCrafted = store.craftedScenes.some(scene => scene.id === id)
+    const isConjured = store.worldConjuredAssetIds.includes(id)
+    const isLight = store.worldLights.some(light => light.id === id)
+    const isAgentWindow = store.placedAgentWindows.some(win => win.id === id)
+    const isAgentAvatar = store.placedAgentAvatars.some(av => av.id === id)
+    const isSpatialWeb = store.spatialWebObjects.some(object => object.id === id)
+    const isPaintStroke = store.paintStrokes.some(stroke => stroke.id === id)
+    const isText3D = store.text3dObjects.some(text => text.id === id)
+    if (!isPortal && !isCatalog && !isCrafted && !isConjured && !isLight && !isAgentWindow && !isAgentAvatar && !isSpatialWeb && !isPaintStroke && !isText3D) return false
+
+    if (isPortal) store.removePortalGate(id)
+    else if (isCatalog) store.removeCatalogAsset(id)
+    else if (isCrafted) store.removeCraftedScene(id)
+    else if (isConjured) store.removeConjuredAssetFromWorld(id)
+    else if (isLight) store.removeWorldLight(id)
+    else if (isAgentWindow) store.removeAgentWindow(id)
+    else if (isAgentAvatar) store.removeAgentAvatar(id)
+    else if (isSpatialWeb) store.removeSpatialWebObject(id)
+    else if (isPaintStroke) store.removePaintStroke(id)
+    else if (isText3D) store.removeText3dObject(id)
+
+    store.selectObject(null)
+    store.setInspectedObject(null)
+    useAudioManager.getState().play('delete')
+    return true
+  }, [hideEditTools])
+
   // ─═̷─═̷─🎯─═̷─═̷─{ POINTER LOCK — owned by InputManager }─═̷─═̷─🎯─═̷─═̷─
   useEffect(() => {
     const isTypingTarget = (target: EventTarget | null) => {
@@ -1731,45 +1785,15 @@ export default function Scene() {
       if (event.code !== 'Delete' && event.code !== 'Backspace') return
       if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return
       if (isTypingTarget(event.target)) return
-      if (hideEditTools) return
-
-      const store = useOasisStore.getState()
-      const id = store.selectedObjectId
-      if (!id) return
-
-      const isPortal = store.portalGates.some(gate => gate.id === id)
-      const isCatalog = store.placedCatalogAssets.some(asset => asset.id === id)
-      const isCrafted = store.craftedScenes.some(scene => scene.id === id)
-      const isConjured = store.worldConjuredAssetIds.includes(id)
-      const isLight = store.worldLights.some(light => light.id === id)
-      const isAgentWindow = store.placedAgentWindows.some(win => win.id === id)
-      const isAgentAvatar = store.placedAgentAvatars.some(av => av.id === id)
-      const isSpatialWeb = store.spatialWebObjects.some(object => object.id === id)
-      const isPaintStroke = store.paintStrokes.some(stroke => stroke.id === id)
-      const isText3D = store.text3dObjects.some(text => text.id === id)
-      if (!isPortal && !isCatalog && !isCrafted && !isConjured && !isLight && !isAgentWindow && !isAgentAvatar && !isSpatialWeb && !isPaintStroke && !isText3D) return
+      if (!deleteSelectedObject()) return
 
       event.preventDefault()
       event.stopPropagation()
-      if (isPortal) store.removePortalGate(id)
-      else if (isCatalog) store.removeCatalogAsset(id)
-      else if (isCrafted) store.removeCraftedScene(id)
-      else if (isConjured) store.removeConjuredAssetFromWorld(id)
-      else if (isLight) store.removeWorldLight(id)
-      else if (isAgentWindow) store.removeAgentWindow(id)
-      else if (isAgentAvatar) store.removeAgentAvatar(id)
-      else if (isSpatialWeb) store.removeSpatialWebObject(id)
-      else if (isPaintStroke) store.removePaintStroke(id)
-      else if (isText3D) store.removeText3dObject(id)
-
-      store.selectObject(null)
-      store.setInspectedObject(null)
-      useAudioManager.getState().play('delete')
     }
 
     window.addEventListener('keydown', handleDeleteKey)
     return () => window.removeEventListener('keydown', handleDeleteKey)
-  }, [hideEditTools])
+  }, [deleteSelectedObject])
 
   const pointerLocked = useInputManager(s => s.pointerLocked)
 
@@ -1807,30 +1831,27 @@ export default function Scene() {
       camera={{ position: [12, 10, 12], fov: 50, near: 0.1, far: 500 }}
       gl={{ antialias: true, stencil: true }}
       onCreated={({ gl }) => {
-        // First R3F frame is rendering — this is the real "user can walk"
-        // moment. Splash listens for this event to dismiss itself early
-        // instead of waiting for every async asset (HDRI, NPCs, particles)
-        // to finish streaming. Fires once on initial canvas creation.
+        // Initial startup is signaled by ScenePlayableSignal after
+        // the world state is ready and the canvas has rendered that state.
         gl.domElement.addEventListener?.('webglcontextrestored', () => {
-          window.dispatchEvent(new CustomEvent('oasis:world-playable'))
+          window.dispatchEvent(new CustomEvent('oasis:world-playable', {
+            detail: { worldId: useOasisStore.getState().activeWorldId },
+          }))
         }, { once: true })
-        // Fire on the next frame so React has flushed the initial render.
-        requestAnimationFrame(() => {
-          window.dispatchEvent(new CustomEvent('oasis:world-playable'))
-        })
       }}
       onPointerMissed={() => {
         if (isPointerLocked()) return  // Noclip/TPS mode — click locks pointer, not deselects
         selectObject(null)
       }}
     >
-        <color attach="background" args={['#030303']} />
+        <color attach="background" args={['#07111a']} />
 
         <SkyBackground backgroundId={worldSkyBackground} />
 
         {/* ─═̷─═̷─🎮 CAMERA CONTROLLER — ONE owner, ONE useFrame, ZERO fights ─═̷─═̷─🎮 */}
         <CameraControllerComponent />
         <PointerLockRaycaster />
+        <ScenePlayableSignal worldReady={playableWorldReady} worldId={playableWorldId} />
         <OnboardingSpawnPrimer controlMode={settings.controlMode} />
         {settings.controlMode === 'noclip' && <SprintParticles />}
 
@@ -1881,6 +1902,8 @@ export default function Scene() {
       <MobileOasisControls
         enabled={mobileOasis && (settings.controlMode === 'noclip' || settings.controlMode === 'third-person')}
         spellControlsEnabled={effectiveRp1Mode}
+        canDeleteSelected={Boolean(selectedObjectId && !hideEditTools)}
+        onDeleteSelected={deleteSelectedObject}
       />
       <PlayerVitalsHud visible={effectiveRp1Mode} />
       <PvPOverlay visible={effectiveRp1Mode} />
@@ -1891,6 +1914,7 @@ export default function Scene() {
         onCastSpell={handleSpellbookCast}
         readOnly={readOnlyForcesRp1}
       />
+      {!hideEditTools && <PlaceMenu />}
       <GlobalNotice />
       <ForkWelcomeModal />
       <QuestProgressTracker activeWorldId={activeWorldId} />
@@ -1978,8 +2002,6 @@ export default function Scene() {
             setSpellbookOpen(open => !open)
           }}
         />
-
-        {!hideEditTools && <PlaceMenu />}
 
         {/* ─═̷─ AgentQuickLauncher rail button retired 2026-05-20.
             All agent summoning lives in the Spellbook now (B key,

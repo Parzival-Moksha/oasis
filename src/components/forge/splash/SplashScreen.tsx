@@ -375,21 +375,20 @@ export function SplashScreen({ designId, modelSlug, ready, holdMs = 0, onFadeCom
 
   // ─── Minimum-playable signal ────────────────────────────────────────────
   // The Scene component dispatches `oasis:world-playable` from R3F's
-  // <Canvas onCreated> callback (first rendered frame). That's the real
-  // "user can walk around" moment. We also enforce an 8-second hard cap so
-  // a stalled load (or a missing dispatch on some route) can't trap the
-  // user behind the splash forever.
+  // world-ready render loop. That's the real "user can walk around" moment.
+  // The hard cap starts only after app readiness, so a slow world load cannot
+  // spend the cap before the scene has even mounted.
   useEffect(() => {
     if (removed) return
     const fire = () => { playableSignalRef.current = true }
     const onPlayable = () => fire()
     window.addEventListener('oasis:world-playable', onPlayable)
-    const hardCap = window.setTimeout(fire, 8000)
+    const hardCap = ready ? window.setTimeout(fire, 15000) : null
     return () => {
       window.removeEventListener('oasis:world-playable', onPlayable)
-      window.clearTimeout(hardCap)
+      if (hardCap !== null) window.clearTimeout(hardCap)
     }
-  }, [removed])
+  }, [ready, removed])
 
   // ─── Real byte / file metrics via PerformanceObserver ───────────────────
   // Counts every resource the browser fetched after the splash mounted.

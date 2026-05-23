@@ -324,7 +324,7 @@ export const LIGHT_INTENSITY_MAX: Record<WorldLightType, number> = {
   spot: 5000,
   point: 500,
   directional: 500,
-  ambient: 500,
+  ambient: 20,
   hemisphere: 500,
   environment: 50,
 }

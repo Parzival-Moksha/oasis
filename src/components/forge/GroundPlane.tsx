@@ -38,6 +38,18 @@ const HALF_GROUND_SIZE = GROUND_SIZE / 2
 const TILE_RELIEF_OFFSET = 0.012
 // Max tiles per preset group — covers full 100×100 world (10,000 tiles)
 const MAX_TILES_PER_GROUP = 10000
+const DEFAULT_CUSTOM_FULL_GROUND_REPEAT = 8
+
+function textureUrlsForPreset(preset: GroundPreset): { diffuse: string } | null {
+  if (preset.customTextureUrl) return { diffuse: preset.customTextureUrl }
+  if (preset.assetName) return getTextureUrls(preset.assetName)
+  return null
+}
+
+function fullGroundRepeatForPreset(preset: GroundPreset): number {
+  const repeat = Number.isFinite(preset.tileRepeat) && preset.tileRepeat > 0 ? preset.tileRepeat : 1
+  return preset.customTextureUrl && repeat <= 1 ? DEFAULT_CUSTOM_FULL_GROUND_REPEAT : repeat
+}
 
 function clampGridIndex(value: number): number {
   return Math.max(0, Math.min(TERRAIN_GRID_SEGMENTS, value))
@@ -80,17 +92,18 @@ function buildReliefGroundGeometry(heights: number[]): THREE.BufferGeometry {
   return geometry
 }
 
-function buildReliefTileGeometry(tiles: [number, number][], heights: number[]): THREE.BufferGeometry {
+function buildReliefTileGeometry(tiles: [number, number][], heights: number[], stretch = 1): THREE.BufferGeometry {
   const normalized = normalizeTerrainHeights(heights)
   const positions: number[] = []
   const uvs: number[] = []
   const indices: number[] = []
+  const cellSize = Math.max(1, Math.floor(stretch || 1)) * TILE_SIZE
 
   for (const [x, z] of tiles) {
     const minX = clampGridIndex(x + HALF_GROUND_SIZE)
     const minZ = clampGridIndex(z + HALF_GROUND_SIZE)
-    const maxX = clampGridIndex(x + TILE_SIZE + HALF_GROUND_SIZE)
-    const maxZ = clampGridIndex(z + TILE_SIZE + HALF_GROUND_SIZE)
+    const maxX = clampGridIndex(x + cellSize + HALF_GROUND_SIZE)
+    const maxZ = clampGridIndex(z + cellSize + HALF_GROUND_SIZE)
     const base = positions.length / 3
     const x0 = minX - HALF_GROUND_SIZE
     const x1 = maxX - HALF_GROUND_SIZE
@@ -188,18 +201,24 @@ async function loadCachedTexture(url: string, colorSpace: THREE.ColorSpace): Pro
 function BaseGround({ preset }: { preset: GroundPreset }) {
   const gl = useThree(s => s.gl)
   const matRef = useRef<THREE.MeshStandardMaterial>(null)
-  const urls = useMemo(() => getTextureUrls(preset.assetName), [preset.assetName])
+  const urls = useMemo(() => textureUrlsForPreset(preset), [preset.assetName, preset.customTextureUrl])
+  const tileRepeat = fullGroundRepeatForPreset(preset)
   const [diffuse, setDiffuse] = useState<THREE.Texture | null>(null)
 
   useEffect(() => {
     let cancelled = false
     let activeClone: THREE.Texture | null = null
 
+    if (!urls) {
+      setDiffuse(null)
+      return () => { cancelled = true }
+    }
+
     // BaseGround needs tiled repeat, so we clone + force GPU re-upload
     loadCachedTexture(urls.diffuse, THREE.SRGBColorSpace).then(tex => {
       if (!cancelled && tex) {
         const clone = tex.clone()
-        clone.repeat.set(preset.tileRepeat, preset.tileRepeat)
+        clone.repeat.set(tileRepeat, tileRepeat)
         clone.needsUpdate = true
         // Force synchronous GPU upload BEFORE React re-render.
         // Without this, setDiffuse triggers render with map=clone + color=#ffffff,
@@ -211,7 +230,7 @@ function BaseGround({ preset }: { preset: GroundPreset }) {
     })
 
     return () => { cancelled = true; activeClone?.dispose() }
-  }, [urls, preset.tileRepeat, gl])
+  }, [urls, tileRepeat, gl])
 
   useEffect(() => {
     const mat = matRef.current
@@ -259,13 +278,8 @@ function BaseGround({ preset }: { preset: GroundPreset }) {
 function ReliefGround({ preset, heights }: { preset: GroundPreset; heights: number[] }) {
   const gl = useThree(s => s.gl)
   const matRef = useRef<THREE.MeshStandardMaterial>(null)
-  const urls = useMemo(() => (
-    preset.customTextureUrl
-      ? { diffuse: preset.customTextureUrl }
-      : preset.assetName
-        ? getTextureUrls(preset.assetName)
-        : null
-  ), [preset.assetName, preset.customTextureUrl])
+  const urls = useMemo(() => textureUrlsForPreset(preset), [preset.assetName, preset.customTextureUrl])
+  const tileRepeat = fullGroundRepeatForPreset(preset)
   const [diffuse, setDiffuse] = useState<THREE.Texture | null>(null)
 
   const geometry = useMemo(() => buildReliefGroundGeometry(heights), [heights])
@@ -284,7 +298,7 @@ function ReliefGround({ preset, heights }: { preset: GroundPreset; heights: numb
     loadCachedTexture(urls.diffuse, THREE.SRGBColorSpace).then(tex => {
       if (!cancelled && tex) {
         const clone = tex.clone()
-        clone.repeat.set(preset.tileRepeat, preset.tileRepeat)
+        clone.repeat.set(tileRepeat, tileRepeat)
         clone.needsUpdate = true
         gl.initTexture(clone)
         activeClone = clone
@@ -293,7 +307,7 @@ function ReliefGround({ preset, heights }: { preset: GroundPreset; heights: numb
     })
 
     return () => { cancelled = true; activeClone?.dispose() }
-  }, [urls, preset.tileRepeat, gl])
+  }, [urls, tileRepeat, gl])
 
   useEffect(() => {
     const mat = matRef.current
@@ -340,6 +354,7 @@ function TileGroupRenderer({ preset, tiles, stretch = 1 }: { preset: GroundPrese
   // Load diffuse texture ONCE — shared reference, no clone needed
   useEffect(() => {
     let cancelled = false
+    let activeClone: THREE.Texture | null = null
     loadCachedTexture(urls.diffuse, THREE.SRGBColorSpace).then(tex => {
       if (!cancelled && tex) {
         // ░▒▓ STRETCH: per-group UV repeat. stretch=N means each tile shows
@@ -352,12 +367,13 @@ function TileGroupRenderer({ preset, tiles, stretch = 1 }: { preset: GroundPrese
           clone.wrapT = THREE.RepeatWrapping
           clone.repeat.set(1 / stretch, 1 / stretch)
           clone.needsUpdate = true
+          activeClone = clone
         }
         gl.initTexture(clone)
         setDiffuse(clone)
       }
     })
-    return () => { cancelled = true }
+    return () => { cancelled = true; activeClone?.dispose() }
   }, [urls.diffuse, gl, stretch])
 
   // ░▒▓ IMPERATIVE MATERIAL SYNC — R3F declarative updates can miss texture
@@ -440,10 +456,12 @@ function ReliefTileGroupRenderer({
   preset,
   tiles,
   heights,
+  stretch = 1,
 }: {
   preset: GroundPreset
   tiles: [number, number][]
   heights: number[]
+  stretch?: number
 }) {
   const gl = useThree(s => s.gl)
   const matRef = useRef<THREE.MeshStandardMaterial>(null)
@@ -453,20 +471,29 @@ function ReliefTileGroupRenderer({
       : getTextureUrls(preset.assetName),
     [preset.assetName, preset.customTextureUrl])
   const [diffuse, setDiffuse] = useState<THREE.Texture | null>(null)
-  const geometry = useMemo(() => buildReliefTileGeometry(tiles, heights), [tiles, heights])
+  const geometry = useMemo(() => buildReliefTileGeometry(tiles, heights, stretch), [tiles, heights, stretch])
 
   useEffect(() => () => geometry.dispose(), [geometry])
 
   useEffect(() => {
     let cancelled = false
+    let activeClone: THREE.Texture | null = null
     loadCachedTexture(urls.diffuse, THREE.SRGBColorSpace).then(tex => {
       if (!cancelled && tex) {
-        gl.initTexture(tex)
-        setDiffuse(tex)
+        const clone = stretch === 1 ? tex : tex.clone()
+        if (stretch !== 1) {
+          clone.wrapS = THREE.RepeatWrapping
+          clone.wrapT = THREE.RepeatWrapping
+          clone.repeat.set(1 / stretch, 1 / stretch)
+          clone.needsUpdate = true
+          activeClone = clone
+        }
+        gl.initTexture(clone)
+        setDiffuse(clone)
       }
     })
-    return () => { cancelled = true }
-  }, [urls.diffuse, gl])
+    return () => { cancelled = true; activeClone?.dispose() }
+  }, [urls.diffuse, gl, stretch])
 
   useEffect(() => {
     const mat = matRef.current
@@ -704,7 +731,7 @@ interface GroundPlaneProps {
 }
 
 export function GroundPlane({ preset, groundTiles, paintMode, customGroundPresets = [] }: GroundPlaneProps) {
-  const showBase = preset.id !== 'none' && !!preset.assetName
+  const showBase = preset.id !== 'none' && Boolean(preset.assetName || preset.customTextureUrl)
   const terrainHeights = useOasisStore(s => s.terrainHeights)
   const terrainBrushPanelOpen = useOasisStore(s => s.terrainBrushPanelOpen)
   const terrainBrushMode = useOasisStore(s => s.terrainBrushMode)
@@ -751,6 +778,7 @@ export function GroundPlane({ preset, groundTiles, paintMode, customGroundPreset
             preset={tilePreset}
             tiles={tiles}
             heights={terrainHeights}
+            stretch={stretch}
           />
         ) : (
           <TileGroupRenderer

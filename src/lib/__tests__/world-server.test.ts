@@ -27,6 +27,10 @@ vi.mock('../agent-avatar-world-state', () => ({
   normalizeWorldStateAgentAvatarTransforms: vi.fn((state) => state),
 }))
 
+vi.mock('../default-world-seed-writer', () => ({
+  mirrorDefaultWorldSeed: vi.fn(async () => ({ updated: false })),
+}))
+
 import {
   createWorld,
   createManualSnapshot,
@@ -34,11 +38,13 @@ import {
   getRegistry,
   loadWorld,
   saveWorld,
+  setWorldVisibility,
   type WorldState,
 } from '../forge/world-server'
 import { WorldAccessError } from '../forge/world-access'
 import { prisma } from '../db'
 import { WELCOME_HUB_WORLD_ID } from '../portal-gates'
+import { mirrorDefaultWorldSeed } from '../default-world-seed-writer'
 
 const now = new Date('2026-04-30T12:00:00.000Z')
 
@@ -80,6 +86,7 @@ describe('world-server access enforcement', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(mirrorDefaultWorldSeed).mockResolvedValue({ updated: false })
     vi.mocked(prisma.profile.findMany).mockResolvedValue([])
     delete process.env.OASIS_MODE
     process.env.OASIS_PROFILE = 'hosted-openclaw'
@@ -171,6 +178,64 @@ describe('world-server access enforcement', () => {
     expect(meta.pvpEnabled).toBe(true)
   })
 
+  it('lets local mode create core seed-backed worlds', async () => {
+    process.env.OASIS_PROFILE = 'local'
+    vi.mocked(mirrorDefaultWorldSeed).mockResolvedValue({ updated: true, slug: 'core-lab', file: 'core-lab.world.json' })
+    vi.mocked(prisma.world.create).mockImplementation((async (args: any) => ({
+      id: args.data.id,
+      userId: args.data.userId,
+      name: args.data.name,
+      icon: args.data.icon,
+      visibility: args.data.visibility,
+      pvpEnabled: args.data.pvpEnabled,
+      data: args.data.data,
+      thumbnailUrl: null,
+      creatorName: null,
+      creatorAvatar: null,
+      visitCount: 0,
+      objectCount: 0,
+      createdAt: args.data.createdAt,
+      updatedAt: args.data.updatedAt,
+    })) as any)
+
+    const meta = await createWorld('Core Lab', 'C', 'local-user', { visibility: 'core' })
+    const createArgs = vi.mocked(prisma.world.create).mock.calls[0]?.[0] as any
+
+    expect(createArgs.data.visibility).toBe('core')
+    expect(meta.visibility).toBe('core')
+    expect(mirrorDefaultWorldSeed).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Core Lab',
+      visibility: 'core',
+      data: expect.any(String),
+    }))
+  })
+
+  it('keeps core creation unavailable to normal hosted users', async () => {
+    vi.mocked(prisma.world.create).mockImplementation((async (args: any) => ({
+      id: args.data.id,
+      userId: args.data.userId,
+      name: args.data.name,
+      icon: args.data.icon,
+      visibility: args.data.visibility,
+      pvpEnabled: args.data.pvpEnabled,
+      data: args.data.data,
+      thumbnailUrl: null,
+      creatorName: null,
+      creatorAvatar: null,
+      visitCount: 0,
+      objectCount: 0,
+      createdAt: args.data.createdAt,
+      updatedAt: args.data.updatedAt,
+    })) as any)
+
+    const meta = await createWorld('Hosted Core Try', 'C', 'user-a', { visibility: 'core' })
+    const createArgs = vi.mocked(prisma.world.create).mock.calls[0]?.[0] as any
+
+    expect(createArgs.data.visibility).toBe('private')
+    expect(meta.visibility).toBe('private')
+    expect(mirrorDefaultWorldSeed).not.toHaveBeenCalled()
+  })
+
   it('lets hosted admin list every world', async () => {
     vi.mocked(prisma.world.findMany).mockResolvedValue([
       worldRow({ id: 'owned-private', userId: 'user-a', visibility: 'private' }),
@@ -209,6 +274,11 @@ describe('world-server access enforcement', () => {
 
     expect(result).toMatchObject({ saved: true, worldId: 'welcome' })
     expect(vi.mocked(prisma.world.update)).toHaveBeenCalled()
+    expect(mirrorDefaultWorldSeed).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'welcome',
+      visibility: 'core',
+      data: expect.any(String),
+    }))
   })
 
   it('blocks portal-only overwrites of worlds that already have real content', async () => {
@@ -239,6 +309,35 @@ describe('world-server access enforcement', () => {
     })
     expect(vi.mocked(prisma.worldSnapshot.create)).not.toHaveBeenCalled()
     expect(vi.mocked(prisma.world.update)).not.toHaveBeenCalled()
+  })
+
+  it('lets local mode mark a world core and mirrors the seed artifact', async () => {
+    process.env.OASIS_PROFILE = 'local'
+    vi.mocked(prisma.world.findFirst)
+      .mockResolvedValueOnce(worldRow({ id: 'world-lab', userId: 'local-user', visibility: 'private' }))
+      .mockResolvedValueOnce(worldRow({ id: 'world-lab', userId: 'local-user', visibility: 'core' }))
+    vi.mocked(prisma.world.updateMany).mockResolvedValue({ count: 1 } as any)
+
+    await setWorldVisibility('world-lab', 'local-user', 'core')
+
+    expect(vi.mocked(prisma.world.updateMany)).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'world-lab' },
+      data: expect.objectContaining({ visibility: 'core' }),
+    }))
+    expect(mirrorDefaultWorldSeed).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'world-lab',
+      visibility: 'core',
+    }))
+  })
+
+  it('rejects normal hosted users marking worlds core', async () => {
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(worldRow({ id: 'world-lab', userId: 'user-a', visibility: 'private' }))
+
+    await expect(setWorldVisibility('world-lab', 'user-a', 'core')).rejects.toMatchObject({
+      code: 'system_visibility_forbidden',
+    })
+    expect(vi.mocked(prisma.world.updateMany)).not.toHaveBeenCalled()
+    expect(mirrorDefaultWorldSeed).not.toHaveBeenCalled()
   })
 
   it('rejects normal hosted saves to template worlds', async () => {

@@ -14,7 +14,7 @@ const host = readOption('host', 'parzival-us')
 const remoteDir = readOption('dir', '/home/art3mis/openclaw-oasis')
 const branch = readOption('branch', 'main')
 const reset = args.includes('--reset')
-const seedWelcome = args.includes('--seed-welcome') || args.includes('--seed-portal-zero')
+const skipCoreSeed = args.includes('--skip-core-seed') || args.includes('--skip-default-worlds')
 const skipInstall = args.includes('--skip-install')
 
 function shellQuote(value) {
@@ -54,7 +54,9 @@ const commands = [
   // Bump Node heap for the Next build — the bolt-design modules + R3F
   // assets push memory past the 2GB default and OOM the worker on host.
   'NODE_OPTIONS="--max-old-space-size=4096" pnpm build',
-  seedWelcome ? 'pnpm seed:welcome-hub' : 'echo "[deploy] skipping welcome reseed"',
+  skipCoreSeed
+    ? 'echo "[deploy] skipping default-world reseed"'
+    : 'pnpm seed:default-worlds -- --update-core --snapshot',
   'PM2=./node_modules/.bin/pm2',
   'if [ ! -x "$PM2" ]; then PM2="$(command -v pm2 || true)"; fi',
   'if [ -z "${PM2:-}" ]; then echo "[deploy] pm2 not found" >&2; exit 1; fi',

@@ -7,7 +7,7 @@
 
 'use client'
 
-import { useRef, useCallback, useContext, Suspense } from 'react'
+import { useRef, useCallback, useContext, Suspense, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useOasisStore } from '../../store/oasisStore'
@@ -72,7 +72,6 @@ function EnvironmentIntensitySync({ lights }: { lights: WorldLight[] }) {
 
 export function ForgeRealm() {
   const groundPresetId = useOasisStore(s => s.groundPresetId)
-  const groundPreset = GROUND_PRESETS.find(p => p.id === groundPresetId) || GROUND_PRESETS[0]
   const groundTiles = useOasisStore(s => s.groundTiles)
   const paintMode = useOasisStore(s => s.paintMode)
   const selectObject = useOasisStore(s => s.selectObject)
@@ -80,6 +79,12 @@ export function ForgeRealm() {
   const worldLights = useOasisStore(s => s.worldLights)
   const avatar3dUrl = useOasisStore(s => s.avatar3dUrl)
   const customGroundPresets = useOasisStore(s => s.customGroundPresets)
+  const groundPreset = useMemo(
+    () => GROUND_PRESETS.find(p => p.id === groundPresetId)
+      || customGroundPresets.find(p => p.id === groundPresetId)
+      || GROUND_PRESETS[0],
+    [customGroundPresets, groundPresetId],
+  )
   const terrainParams = useOasisStore(s => s.terrainParams)
   const { settings } = useContext(SettingsContext)
 

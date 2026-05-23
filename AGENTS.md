@@ -55,6 +55,7 @@ If `CLAUDE.md`, old memory notes, or stale comments disagree with current code, 
 - Multiplayer presence: `src/lib/multiplayer-presence.ts`. Spec: `specs/multiplayer_spec_may4.md`.
 - Relay WSS sidecar: routes at `/api/relay/*`, lib in `src/lib/relay/`. PM2 process `openclaw-oasis-relay`. Hosted nginx upgrades exact-match `/relay`.
 - Portal Zero (welcome hub): seeded from `prisma/default-worlds/portal-zero.world.json`, return-gate logic in `src/lib/portal-zero-return-gate.ts`.
+- Core/template seed edits: local mode and hosted admin saves mirror seed-backed worlds back into `prisma/default-worlds/*.world.json` through `src/lib/default-world-seed-writer.ts`; normal hosted users cannot create or mark worlds as `core`.
 - Form-to-world altar: `src/lib/google-form-spatial.ts` + spatial primitives in `src/lib/spatial-web.ts`.
 - Mobile: `src/components/forge/MobileOasisControls.tsx` + `src/lib/mobile-controls.ts`; per-world overrides supported.
 - Asset catalog: merges baked-in TS arrays with `data/asset-catalog-extras.json` + `data/ground-presets-extras.json`; delete via `/api/library/delete`.
@@ -116,9 +117,9 @@ If `CLAUDE.md`, old memory notes, or stale comments disagree with current code, 
 
 ## Deploy (hosted)
 
-- `pnpm deploy:openclaw` — SSH to host, pull main, install, generate, build, optional `--seed-welcome`, PM2 reload (`openclaw-oasis-web` and `openclaw-oasis-relay`).
+- `pnpm deploy:openclaw` — SSH to host, pull main, install, generate, build, reseed default worlds with `--update-core --snapshot` unless `--skip-core-seed` is passed, PM2 reload (`openclaw-oasis-web`, `openclaw-oasis-relay`, and `openclaw-oasis-room`).
 - nginx config: `deploy/openclaw.04515.xyz.nginx.conf`.
-- Deploy does NOT touch the hosted DB unless `--seed-welcome` is passed (which only reseeds Portal Zero) or the operator runs `pnpm seed:default-worlds` manually on the host.
+- Deploy updates hosted seeded world rows from `prisma/default-worlds/` by default and snapshots the previous DB state first.
 
 ## Key Files
 

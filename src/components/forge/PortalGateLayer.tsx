@@ -149,6 +149,14 @@ function transformScaleScalar(scale: number | [number, number, number] | undefin
   return 1
 }
 
+function portalYawFromRotation(rotation: [number, number, number] | undefined, fallback = 0): number {
+  if (!rotation) return fallback
+  const euler = new THREE.Euler(rotation[0], rotation[1], rotation[2], 'XYZ')
+  const forward = new THREE.Vector3(0, 0, 1).applyEuler(euler)
+  if (Math.abs(forward.x) < 0.0001 && Math.abs(forward.z) < 0.0001) return fallback
+  return Math.atan2(forward.x, forward.z)
+}
+
 function applyPortalTransform(
   gate: PortalGate,
   transform: { position?: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number } | undefined,
@@ -157,7 +165,7 @@ function applyPortalTransform(
   return {
     ...gate,
     position: transform?.position || gate.position,
-    rotationY: transform?.rotation?.[1] ?? gate.rotationY ?? 0,
+    rotationY: portalYawFromRotation(transform?.rotation, gate.rotationY ?? 0),
     scale,
     width: gate.width * scale,
     height: gate.height * scale,

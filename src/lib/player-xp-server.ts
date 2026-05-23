@@ -24,9 +24,9 @@ export async function awardXpToUser(userId: string, xpGained: number, awarded = 
   })
 
   const newLevel = levelFromXp(profile.totalXp)
-  const oldLevel = profile.level
+  const oldLevel = Math.max(1, profile.level || 1)
   const updates: Record<string, unknown> = {}
-  if (newLevel !== oldLevel) {
+  if (newLevel !== profile.level) {
     updates.level = newLevel
     if (newLevel > oldLevel) {
       updates.unspentSkillPoints = { increment: newLevel - oldLevel }

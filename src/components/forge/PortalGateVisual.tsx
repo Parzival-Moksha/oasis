@@ -1124,8 +1124,8 @@ function Bolt({ bolt, intensity }: { bolt: BoltDescriptor; intensity: number }) 
   // NOTE: deliberately no per-bolt pointLight. Spawning/disposing 5 lights/sec
   // forces Three.js to recompile every shader in the scene whenever the active
   // light count changes — that's a hard GPU stall (200+ ms freezes). Additive
-  // blending on the line itself is bright enough; if we want bloom we add a
-  // single static light per gate instead, in PortalLightningCrown.
+  // blending on the line itself is bright enough; portal glow stays emissive-only
+  // so adding/removing gates does not mutate the scene light count.
 
   useFrame(() => {
     const elapsed = performance.now() - bolt.bornAt
@@ -1226,17 +1226,7 @@ function PortalLightningCrown({
     }
   }, [inert, seed, radius, yScale, colors.secondary])
 
-  if (inert) {
-    return (
-      <pointLight
-        color={colors.secondary}
-        intensity={0.18}
-        distance={2.4}
-        decay={2}
-        position={[0, 0, 0.42]}
-      />
-    )
-  }
+  if (inert) return null
 
   return (
     <group>
@@ -1305,7 +1295,6 @@ function PortalFlameJets({
           />
         </mesh>
       ))}
-      <pointLight color={colors.primary} intensity={inert ? 0.25 : 1.9 * intensity} distance={4.8} decay={2.1} position={[0, -height * 0.32, 0.5]} />
     </group>
   )
 }

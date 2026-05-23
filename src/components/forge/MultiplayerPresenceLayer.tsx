@@ -33,6 +33,64 @@ const INPUT_SEND_INTERVAL_MS = 33
 const INPUT_POSITION_EPSILON = 0.05
 const INPUT_YAW_EPSILON = 0.04
 const REMOTE_RENDER_DELAY_MS = 120
+
+function countLoadedObjects(state: ReturnType<typeof useOasisStore.getState>): number {
+  return state.placedCatalogAssets.length
+    + state.craftedScenes.length
+    + (state.worldConjuredAssetIds?.length || 0)
+    + (state.portalGates?.length || 0)
+    + (state.spatialWebObjects?.length || 0)
+}
+
+function applyRemoteObjectRemoval(objectId: string, linkedAvatarIds: string[] = []): void {
+  if (!objectId) return
+  const removedAvatarIds = new Set([objectId, ...linkedAvatarIds])
+  useOasisStore.setState(state => {
+    const placedCatalogAssets = state.placedCatalogAssets.filter(entry => entry.id !== objectId)
+    const craftedScenes = state.craftedScenes.filter(entry => entry.id !== objectId)
+    const placedAgentAvatars = state.placedAgentAvatars.filter(entry => !removedAvatarIds.has(entry.id) && entry.linkedWindowId !== objectId)
+    const placedAgentWindows = state.placedAgentWindows.filter(entry => entry.id !== objectId)
+    const portalGates = state.portalGates.filter(entry => entry.id !== objectId)
+    const spatialWebObjects = state.spatialWebObjects.filter(entry => entry.id !== objectId)
+    const worldConjuredAssetIds = state.worldConjuredAssetIds.filter(id => id !== objectId)
+    const worldLights = state.worldLights.filter(light => light.id !== objectId)
+    const paintStrokes = state.paintStrokes.filter(stroke => stroke.id !== objectId)
+    const text3dObjects = state.text3dObjects.filter(text => text.id !== objectId)
+    const transforms = { ...state.transforms }
+    delete transforms[objectId]
+    for (const avatarId of linkedAvatarIds) delete transforms[avatarId]
+    const { [objectId]: _removedBehavior, ...behaviors } = state.behaviors
+    const liveAgentAvatarAudio = { ...state.liveAgentAvatarAudio }
+    delete liveAgentAvatarAudio[objectId]
+    for (const avatarId of linkedAvatarIds) delete liveAgentAvatarAudio[avatarId]
+    return {
+      placedCatalogAssets,
+      craftedScenes,
+      worldConjuredAssetIds,
+      placedAgentAvatars,
+      placedAgentWindows,
+      portalGates,
+      spatialWebObjects,
+      worldLights,
+      paintStrokes,
+      text3dObjects,
+      transforms,
+      behaviors,
+      liveAgentAvatarAudio,
+      focusedAgentWindowId: state.focusedAgentWindowId === objectId ? null : state.focusedAgentWindowId,
+      selectedObjectId: removedAvatarIds.has(state.selectedObjectId || '') ? null : state.selectedObjectId,
+      inspectedObjectId: removedAvatarIds.has(state.inspectedObjectId || '') ? null : state.inspectedObjectId,
+      _loadedObjectCount: countLoadedObjects({
+        ...state,
+        placedCatalogAssets,
+        craftedScenes,
+        worldConjuredAssetIds,
+        portalGates,
+        spatialWebObjects,
+      }),
+    }
+  })
+}
 const REMOTE_SNAPSHOT_BUFFER = 6
 const REMOTE_POSITION_CATCHUP = 9
 const REMOTE_YAW_CATCHUP = 9
@@ -376,7 +434,7 @@ export function MultiplayerPresenceLayer() {
       if (mutation.kind === 'object_added') {
         store.applyRemoteCatalogPlacement(mutation.payload)
       } else if (mutation.kind === 'object_removed') {
-        store.applyRemoteCatalogRemoval(mutation.payload.id)
+        applyRemoteObjectRemoval(mutation.payload.id, mutation.payload.linkedAvatarIds)
       } else if (mutation.kind === 'object_transformed') {
         const { id, position, rotation, scale } = mutation.payload
         store.applyRemoteObjectTransform(id, { position, rotation, scale })

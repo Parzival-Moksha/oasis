@@ -202,6 +202,28 @@ describe('InputManager', () => {
       pushMouseLookDelta(12, -6, 1000)
       expect(consumeMouseLookDelta()).toEqual({ x: 0, y: 0 })
     })
+
+    it('drops desktop mouse movement and clears state when browser lock is stale', () => {
+      const listeners = new Map<string, (event: Event) => void>()
+      vi.stubGlobal('document', {
+        pointerLockElement: null,
+        addEventListener: vi.fn((type: string, listener: EventListener) => {
+          listeners.set(type, listener as (event: Event) => void)
+        }),
+        removeEventListener: vi.fn(),
+        exitPointerLock: vi.fn(),
+      })
+      const cleanup = getState().initGlobalListeners()
+      try {
+        useInputManager.setState({ inputState: 'noclip', pointerLocked: true })
+        listeners.get('mousemove')?.({ movementX: 12, movementY: -6, timeStamp: 1000 } as unknown as MouseEvent)
+        expect(getState().pointerLocked).toBe(false)
+        expect(consumeMouseLookDelta()).toEqual({ x: 0, y: 0 })
+      } finally {
+        cleanup()
+        vi.unstubAllGlobals()
+      }
+    })
   })
 
   describe('full scenario: orbit → focus → escape → orbit', () => {

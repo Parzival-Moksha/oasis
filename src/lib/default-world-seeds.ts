@@ -4,6 +4,7 @@ export interface DefaultWorldSource {
   name: string
   icon: string | null
   visibility: string
+  pvpEnabled?: boolean | null
   creatorName: string | null
   creatorAvatar: string | null
   thumbnailUrl: string | null
@@ -18,6 +19,7 @@ export interface DefaultWorldSeed {
   name: string
   icon: string
   visibility: string
+  pvpEnabled?: boolean
   creatorName: string
   creatorAvatar: string | null
   thumbnailUrl: string | null
@@ -52,7 +54,7 @@ export function buildDefaultWorldSeed(
     throw new Error(`World ${source.id} has no saved data.`)
   }
 
-  return {
+  const seed: DefaultWorldSeed = {
     seedVersion: 1,
     slug: options.slug,
     id: source.id,
@@ -65,6 +67,10 @@ export function buildDefaultWorldSeed(
     thumbnailUrl: source.thumbnailUrl,
     data: JSON.parse(source.data) as unknown,
   }
+  if (source.pvpEnabled === true) {
+    seed.pvpEnabled = true
+  }
+  return seed
 }
 
 export function buildDefaultWorldManifestEntry(

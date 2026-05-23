@@ -6,7 +6,6 @@ import { useAudioManager } from '@/lib/audio-manager'
 import { useUILayer } from '@/lib/input-manager'
 import { useOasisCapabilities } from '@/lib/oasis-mode-client'
 
-import { GameMenuButton } from './GameMenuButton'
 import { useIsMobileOasis } from './MobileOasisControls'
 import { PlacementPalette } from './PlacementPalette'
 
@@ -36,27 +35,26 @@ export function PlaceMenu() {
   }, [isOpen])
 
   return (
-    <div ref={menuRef} className="relative select-none">
-      <GameMenuButton
-        label="Place"
-        marker="+"
-        accent="#34D399"
-        active={isOpen}
-        aria-label="Place menu"
-        data-oasis-tooltip="Place"
-        onClick={() => {
-          playClick()
-          setIsOpen(open => !open)
-        }}
-      />
-
+    <>
       {isOpen && (
         <div
+          ref={menuRef}
           data-ui-panel
           data-place-menu-panel
-          className="absolute left-full top-0 z-[280] ml-2 max-h-[76vh] w-[460px] overflow-y-auto rounded-lg border border-white/10 bg-black/[0.92] p-3 font-mono text-white shadow-[0_0_54px_rgba(0,0,0,0.68),0_0_38px_rgba(52,211,153,0.14)] backdrop-blur-md max-[700px]:fixed max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:ml-0 max-[700px]:max-h-[calc(100vh-70px)] max-[700px]:w-auto max-[700px]:p-1.5"
+          className="fixed left-1/2 top-4 z-[9200] max-h-[min(78vh,720px)] w-[min(92vw,980px)] -translate-x-1/2 overflow-y-auto rounded-lg border border-emerald-200/18 bg-black/[0.92] p-3 font-mono text-white shadow-[0_0_54px_rgba(0,0,0,0.68),0_0_38px_rgba(52,211,153,0.14)] backdrop-blur-md max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:max-h-[calc(100vh-70px)] max-[700px]:w-auto max-[700px]:translate-x-0 max-[700px]:p-1.5"
           onMouseDown={event => event.stopPropagation()}
         >
+          <button
+            type="button"
+            className="absolute right-2 top-2 hidden h-8 w-8 rounded-md border border-white/10 bg-white/5 text-[12px] font-black text-white/65 max-[700px]:block"
+            onClick={() => {
+              playClick()
+              setIsOpen(false)
+            }}
+            aria-label="Close place picker"
+          >
+            X
+          </button>
           <div className="mb-3 flex items-center gap-3 border-b border-white/10 pb-3 max-[700px]:hidden">
             <div className="flex h-10 w-10 items-center justify-center rounded-md border border-emerald-300/35 bg-emerald-300/10 text-lg font-black text-emerald-100">
               +
@@ -67,10 +65,20 @@ export function PlaceMenu() {
                 pick an object, then click the world
               </div>
             </div>
+            <button
+              type="button"
+              className="ml-auto rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-white/60 transition hover:border-white/25 hover:text-white"
+              onClick={() => {
+                playClick()
+                setIsOpen(false)
+              }}
+            >
+              Close
+            </button>
           </div>
           <PlacementPalette
             showConjured={canUseFullWizard}
-            columns={isMobile ? 2 : 3}
+            columns={isMobile ? 2 : 4}
             onPlace={() => {
               playClick()
               setIsOpen(false)
@@ -78,6 +86,6 @@ export function PlaceMenu() {
           />
         </div>
       )}
-    </div>
+    </>
   )
 }

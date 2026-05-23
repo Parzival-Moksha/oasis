@@ -120,6 +120,11 @@ function queueMouseLookDelta(event: Pick<MouseEvent, 'movementX' | 'movementY' |
 function accumulateMouseLookDelta(event: Pick<MouseEvent, 'movementX' | 'movementY' | 'timeStamp'>) {
   const state = useInputManager.getState()
   if (!state.pointerLocked || !state.can().mouseLook) return
+  if (typeof document !== 'undefined' && !document.pointerLockElement) {
+    clearMouseLookAccumulator()
+    useInputManager.setState({ pointerLocked: false })
+    return
+  }
   if (skipNextMouseLookSample) {
     skipNextMouseLookSample = false
     return
@@ -515,6 +520,11 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
       get()._syncPointerLockState()
     }
 
+    const onPointerLockError = () => {
+      clearMouseLookAccumulator()
+      set({ pointerLocked: false })
+    }
+
     const onMouseLookMove = (event: Event) => {
       accumulateMouseLookDelta(event as MouseEvent)
     }
@@ -568,6 +578,7 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     }
 
     document.addEventListener('pointerlockchange', onPointerLockChange)
+    document.addEventListener('pointerlockerror', onPointerLockError)
     document.addEventListener(mouseLookEvent, onMouseLookMove)
     document.addEventListener('keydown', onKeyDown)
     document.addEventListener('contextmenu', onContextMenu)
@@ -576,6 +587,7 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
 
     return () => {
       document.removeEventListener('pointerlockchange', onPointerLockChange)
+      document.removeEventListener('pointerlockerror', onPointerLockError)
       document.removeEventListener(mouseLookEvent, onMouseLookMove)
       document.removeEventListener('keydown', onKeyDown)
       document.removeEventListener('contextmenu', onContextMenu)

@@ -100,7 +100,7 @@ export default function OasisClient({ initialWorldId }: { initialWorldId?: strin
     if (ownedWorld) {
       switchWorld(initialWorldId)
     } else {
-      enterViewMode(initialWorldId, false)
+      enterViewMode(initialWorldId, true)
     }
   }, [activeWorldId, enterViewMode, initialWorldId, ready, switchWorld, worldRegistry])
 

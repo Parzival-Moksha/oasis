@@ -136,7 +136,7 @@ export function GeneratePicBody({
         icon: '\u{1F3A8}',
         color: '#888888',
         assetName: '',
-        tileRepeat: 1,
+        tileRepeat: 8,
         customTextureUrl: image.tileUrl || image.url,
       })
     }

@@ -51,6 +51,7 @@ import { readBrowserAgentAvatarContext } from '../browser-agent-avatar-context'
 import { readBrowserPlayerContext } from '../browser-player-context'
 import { execMediaTool, type MediaToolName } from '../media-tools'
 import { getOasisMode, type OasisMode } from '../oasis-profile'
+import { mirrorDefaultWorldSeed } from '../default-world-seed-writer'
 import {
   DISCOVERABLE_VISIBILITIES,
   WorldAccessError,
@@ -985,7 +986,17 @@ async function saveWorldState(worldId: string, state: WorldState): Promise<void>
   const context = currentToolContext()
   const target = await prisma.world.findFirst({
     where: { id: worldId },
-    select: { id: true, userId: true, visibility: true },
+    select: {
+      id: true,
+      userId: true,
+      name: true,
+      icon: true,
+      visibility: true,
+      pvpEnabled: true,
+      creatorName: true,
+      creatorAvatar: true,
+      thumbnailUrl: true,
+    },
   })
   if (!target) {
     throw new WorldAccessError('World not found', 'world_not_found', 404)
@@ -1013,6 +1024,15 @@ async function saveWorldState(worldId: string, state: WorldState): Promise<void>
     where: { id: worldId },
     data: { data: JSON.stringify(state), objectCount: countWorldObjects(state), updatedAt: new Date() },
   })
+  if ((context.mode === 'local' || context.system || context.admin) && (target.visibility === 'core' || target.visibility === 'template')) {
+    await mirrorDefaultWorldSeed({
+      ...target,
+      data: JSON.stringify(state),
+    }).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`[oasis-tools] Default world seed mirror failed for ${worldId}:`, message)
+    })
+  }
 }
 
 async function upsertCraftedSceneInWorld(

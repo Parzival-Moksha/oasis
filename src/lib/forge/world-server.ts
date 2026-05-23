@@ -14,6 +14,7 @@ import { getOasisMode } from '../oasis-profile'
 import { isAdminUserId } from '../admin-auth'
 import { levelFromXp } from '../xp'
 import { createPortalZeroReturnGate } from '../portal-zero-return-gate'
+import { mirrorDefaultWorldSeed, type DefaultWorldSeedWriteResult } from '../default-world-seed-writer'
 import {
   DISCOVERABLE_VISIBILITIES,
   FFA_VISIBILITIES,
@@ -58,10 +59,12 @@ export interface SaveWorldResult {
   serverUpdatedAt?: string
   worldId?: string
   forkedFromWorldId?: string
+  defaultWorldSeed?: DefaultWorldSeedWriteResult
 }
 
 const MAX_SNAPSHOTS_PER_WORLD = 20
 const SNAPSHOT_THROTTLE_MS = 5 * 60 * 1000
+const DEFAULT_WORLD_SEED_VISIBILITIES = new Set(['core', 'template', 'public'])
 
 function normalizeSavedWorldState(state: WorldState): WorldState {
   return normalizeWorldStateAgentAvatarTransforms(state)
@@ -74,6 +77,53 @@ function accessContext(userId?: string): WorldAccessContext {
     mode: getOasisMode(),
     admin: isAdminUserId(resolvedUserId),
   }
+}
+
+function canMirrorDefaultWorldSeeds(ctx: WorldAccessContext): boolean {
+  return ctx.mode === 'local' || Boolean(ctx.system || ctx.admin)
+}
+
+async function mirrorDefaultWorldSeedForSource(
+  ctx: WorldAccessContext,
+  source: Parameters<typeof mirrorDefaultWorldSeed>[0],
+): Promise<DefaultWorldSeedWriteResult | null> {
+  if (!canMirrorDefaultWorldSeeds(ctx)) return null
+  if (!DEFAULT_WORLD_SEED_VISIBILITIES.has(source.visibility)) return null
+  try {
+    const result = await mirrorDefaultWorldSeed(source)
+    if (result.updated) {
+      console.log(`[WorldServer] Mirrored default world seed ${source.id} -> ${result.file || result.slug || 'manifest'}`)
+    }
+    return result
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error(`[WorldServer] Default world seed mirror failed for ${source.id}:`, message)
+    return { updated: false }
+  }
+}
+
+async function mirrorDefaultWorldSeedById(
+  ctx: WorldAccessContext,
+  worldId: string,
+): Promise<DefaultWorldSeedWriteResult | null> {
+  if (!canMirrorDefaultWorldSeeds(ctx)) return null
+  const world = await prisma.world.findFirst({
+    where: { id: worldId },
+    select: {
+      id: true,
+      userId: true,
+      name: true,
+      icon: true,
+      visibility: true,
+      pvpEnabled: true,
+      creatorName: true,
+      creatorAvatar: true,
+      thumbnailUrl: true,
+      data: true,
+    },
+  })
+  if (!world) return null
+  return mirrorDefaultWorldSeedForSource(ctx, world)
 }
 
 function toAccessSubject(row: WorldAccessSubject): WorldAccessSubject {
@@ -288,7 +338,19 @@ export async function saveWorld(
 
   const target = await prisma.world.findFirst({
     where: { id },
-    select: { id: true, userId: true, name: true, icon: true, visibility: true, updatedAt: true, data: true },
+    select: {
+      id: true,
+      userId: true,
+      name: true,
+      icon: true,
+      visibility: true,
+      pvpEnabled: true,
+      creatorName: true,
+      creatorAvatar: true,
+      thumbnailUrl: true,
+      updatedAt: true,
+      data: true,
+    },
   })
   if (!target) {
     throw new WorldAccessError('World not found', 'world_not_found', 404)
@@ -338,7 +400,16 @@ export async function saveWorld(
     },
   })
 
-  return { saved: true, worldId: id }
+  const defaultWorldSeed = await mirrorDefaultWorldSeedForSource(ctx, {
+    ...target,
+    data: JSON.stringify(worldData),
+  })
+
+  return {
+    saved: true,
+    worldId: id,
+    ...(defaultWorldSeed?.updated ? { defaultWorldSeed } : {}),
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -351,11 +422,14 @@ export async function createWorld(
   userId: string,
   options: { visibility?: string; pvpEnabled?: boolean } = {},
 ): Promise<WorldMeta> {
+  const ctx = accessContext(userId)
   const id = `world-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
   const now = new Date()
   const requestedVisibility = toStorageVisibility(options.visibility) || 'private'
   const requestedKind = normalizeWorldKind(requestedVisibility)
-  const visibility = requestedKind === 'core' || requestedKind === 'template' ? 'private' : requestedVisibility
+  const visibility = (requestedKind === 'core' || requestedKind === 'template') && !canMirrorDefaultWorldSeeds(ctx)
+    ? 'private'
+    : requestedVisibility
   const kind = normalizeWorldKind(visibility)
   const pvpEnabled = options.pvpEnabled ?? (kind === 'ffa' || kind === 'link-ffa')
 
@@ -385,7 +459,19 @@ export async function createWorld(
   })
 
   console.log(`[WorldServer] Created world "${name}" (${id}) for user ${userId}`)
-  return toWorldMeta(world, accessContext(userId))
+  await mirrorDefaultWorldSeedForSource(ctx, {
+    id: world.id,
+    userId: world.userId,
+    name: world.name,
+    icon: world.icon,
+    visibility: world.visibility,
+    pvpEnabled: world.pvpEnabled,
+    creatorName: world.creatorName,
+    creatorAvatar: world.creatorAvatar,
+    thumbnailUrl: world.thumbnailUrl,
+    data: world.data,
+  })
+  return toWorldMeta(world, ctx)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -428,8 +514,8 @@ export async function setWorldVisibility(
   assertCanEditWorldSettings(ctx, toAccessSubject(world))
 
   const nextKind = normalizeWorldKind(nextVisibility)
-  if (!ctx.system && !ctx.admin && (nextKind === 'core' || nextKind === 'template')) {
-    throw new WorldAccessError('Only system tools can mark core or template worlds', 'system_visibility_forbidden')
+  if (!canMirrorDefaultWorldSeeds(ctx) && (nextKind === 'core' || nextKind === 'template')) {
+    throw new WorldAccessError('Only local mode or hosted admin can mark core or template worlds', 'system_visibility_forbidden')
   }
 
   // Sandbox = PvP-by-default. Flipping a non-sandbox world to public_edit
@@ -450,6 +536,7 @@ export async function setWorldVisibility(
     where: { id },
     data,
   })
+  await mirrorDefaultWorldSeedById(ctx, id)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -475,6 +562,7 @@ export async function setWorldPvpEnabled(
     where: { id },
     data: { pvpEnabled: enabled, updatedAt: new Date() },
   })
+  await mirrorDefaultWorldSeedById(ctx, id)
   return enabled
 }
 
@@ -504,6 +592,9 @@ export async function updateWorldMetadata(
     where: { id },
     data,
   })
+  if (result.count > 0) {
+    await mirrorDefaultWorldSeedById(ctx, id)
+  }
   return result.count > 0
 }
 
@@ -777,6 +868,7 @@ export async function restoreSnapshot(
   })
 
   console.log(`[WorldServer] ✅ Restored snapshot ${snapshotId} → world ${worldId}`)
+  await mirrorDefaultWorldSeedById(ctx, worldId)
   return true
 }
 

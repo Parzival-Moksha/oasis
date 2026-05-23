@@ -116,7 +116,7 @@ export function ImagineTab() {
         icon: '🎨',
         color: '#888888',
         assetName: '',
-        tileRepeat: 1,
+        tileRepeat: 8,
         customTextureUrl: image.tileUrl,
       })
     }

@@ -4,7 +4,6 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { pushMouseLookDelta, useInputManager } from '@/lib/input-manager'
 import { isProbablyMobileDevice, useMobileControls } from '@/lib/mobile-controls'
 import { getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
-import { findNearestObjectInteraction } from '@/lib/object-interactions'
 import { findNearestSpatialWebObject, SPATIAL_WEB_INTERACTION_RADIUS, type SpatialWebObject } from '@/lib/spatial-web'
 import { useOasisStore } from '@/store/oasisStore'
 import type { SpellId } from '@/lib/spellbook'
@@ -49,22 +48,28 @@ export function useIsMobileOasis(): boolean {
 export function MobileOasisControls({
   enabled,
   spellControlsEnabled = false,
+  canDeleteSelected = false,
+  onDeleteSelected,
 }: {
   enabled: boolean
   spellControlsEnabled?: boolean
+  canDeleteSelected?: boolean
+  onDeleteSelected?: () => void
 }) {
   const setMove = useMobileControls(s => s.setMove)
   const setSprint = useMobileControls(s => s.setSprint)
   const setLookActive = useMobileControls(s => s.setLookActive)
   const reset = useMobileControls(s => s.reset)
   const [thumb, setThumb] = useState({ x: 0, y: 0 })
-  const [nearbyAction, setNearbyAction] = useState<{ id: string; kind: 'object' | 'spatial'; label: string; disabled: boolean } | null>(null)
+  const [nearbyAction, setNearbyAction] = useState<{ id: string; kind: 'spatial'; label: string; disabled: boolean } | null>(null)
   const movePointerIdRef = useRef<number | null>(null)
   const moveCenterRef = useRef({ x: 0, y: 0 })
   const lookPointerRef = useRef<{ id: number; x: number; y: number; moved: boolean } | null>(null)
   // When paint mode is armed, the look-overlay must hand its events through to
   // the canvas underneath so PaintCursor sees the drag.
   const paintHeldActive = useOasisStore(s => s.paintHeldActive)
+  const selectedObjectId = useOasisStore(s => s.selectedObjectId)
+  const canvasNeedsTouch = paintHeldActive || Boolean(selectedObjectId)
 
   useEffect(() => {
     if (!enabled) {
@@ -81,25 +86,6 @@ export function MobileOasisControls({
       const pose = getPlayerAvatarPose()
       const state = useOasisStore.getState()
       const actorPosition = pose?.position || null
-      const nearestObject = findNearestObjectInteraction({
-        actorPosition,
-        behaviors: state.behaviors,
-        transforms: state.transforms,
-        catalogPlacements: state.placedCatalogAssets,
-        craftedScenes: state.craftedScenes,
-        conjuredAssets: state.conjuredAssets,
-        worldConjuredAssetIds: state.worldConjuredAssetIds,
-        portalGates: state.portalGates,
-        spatialWebObjects: state.spatialWebObjects,
-        text3dObjects: state.text3dObjects,
-        agentWindows: state.placedAgentWindows,
-        agentAvatars: state.placedAgentAvatars,
-        worldLights: state.worldLights,
-      })
-      if (nearestObject) {
-        setNearbyAction({ id: nearestObject.id, kind: 'object', label: nearestObject.label || 'Interact', disabled: false })
-        return
-      }
       const nearest = findNearestSpatialWebObject(
         state.spatialWebObjects,
         actorPosition,
@@ -212,16 +198,17 @@ export function MobileOasisControls({
   }
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-[185] touch-none select-none">
+    <div className="pointer-events-none fixed inset-0 z-[8800] touch-none select-none">
       {/* Full-canvas look surface — covers the entire viewport so any finger
           drag rotates the camera (mobile feel). Joystick + action buttons are
           siblings later in DOM order with their own pointer-events-auto, so
           they sit ABOVE this overlay and keep working. When the user holds
-          the Paint button, this overlay disables its own pointer-events so
-          drags flow through to PaintCursor on the canvas underneath. */}
+          the Paint button or selects an object, this overlay disables its own
+          pointer-events so drags flow through to PaintCursor / TransformControls
+          on the canvas underneath. */}
       <div
         aria-hidden="true"
-        className={`absolute inset-0 touch-none ${paintHeldActive ? 'pointer-events-none' : 'pointer-events-auto'}`}
+        className={`absolute inset-0 touch-none ${canvasNeedsTouch ? 'pointer-events-none' : 'pointer-events-auto'}`}
         onPointerDown={beginLook}
         onPointerMove={updateLook}
         onPointerUp={endLook}
@@ -282,6 +269,20 @@ export function MobileOasisControls({
         </button>
         <MobileFocusAgentButton />
         <MobilePrimaryActionButton nearbyAction={nearbyAction} spellControlsEnabled={spellControlsEnabled} />
+        {canDeleteSelected && (
+          <button
+            type="button"
+            className="h-11 min-w-28 touch-none rounded-lg border border-red-300/60 bg-red-950/82 px-4 text-[11px] font-black uppercase tracking-[0.16em] text-red-50 shadow-[0_0_26px_rgba(248,113,113,0.3)] backdrop-blur-sm"
+            onPointerDown={event => {
+              event.preventDefault()
+              event.stopPropagation()
+              onDeleteSelected?.()
+            }}
+            aria-label="Delete selected object"
+          >
+            Delete
+          </button>
+        )}
         {spellControlsEnabled && <MobileManaButton />}
         <MobilePaintHoldButton />
       </div>
@@ -348,7 +349,7 @@ function MobilePrimaryActionButton({
   nearbyAction,
   spellControlsEnabled,
 }: {
-  nearbyAction: { id: string; kind: 'object' | 'spatial'; label: string; disabled: boolean } | null
+  nearbyAction: { id: string; kind: 'spatial'; label: string; disabled: boolean } | null
   spellControlsEnabled: boolean
 }) {
   const placementPending = useOasisStore(s => s.placementPending)
@@ -361,23 +362,19 @@ function MobilePrimaryActionButton({
   let disabled = false
   let onTap: () => void
 
-  if (nearbyAction) {
+  if (placementPending) {
+    label = 'Place'
+    tone = 'amber-pulse'
+    onTap = () => {
+      window.dispatchEvent(new CustomEvent('oasis:place-at-crosshair'))
+    }
+  } else if (nearbyAction) {
     label = nearbyAction.label
     tone = 'cyan'
     disabled = nearbyAction.disabled
     onTap = () => {
       if (nearbyAction.disabled) return
-      if (nearbyAction.kind === 'object') {
-        void useOasisStore.getState().interactObject(nearbyAction.id)
-      } else {
-        void useOasisStore.getState().interactSpatialWebObject(nearbyAction.id, 'press')
-      }
-    }
-  } else if (placementPending) {
-    label = 'Place'
-    tone = 'amber-pulse'
-    onTap = () => {
-      window.dispatchEvent(new CustomEvent('oasis:place-at-crosshair'))
+      void useOasisStore.getState().interactSpatialWebObject(nearbyAction.id, 'press')
     }
   } else if (spellControlsEnabled && isCombatSpell(selectedSpellId) && selectedSpellId) {
     // FIRE button reads the spell name from the registry — works for firebolt

@@ -393,6 +393,7 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
              * the canvas always; no depth interaction. Ship-critical fix is
              * out of scope for today's Hermes-skill push. */
             distanceFactor={DISTANCE_FACTOR}
+            zIndexRange={[7800, 0]}
             style={{ pointerEvents: 'auto' }}
           >
             <div
