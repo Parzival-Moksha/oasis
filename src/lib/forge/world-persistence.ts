@@ -90,6 +90,8 @@ export interface WorldMeta {
   ownerAura?: number
   objectCount?: number
   visitCount?: number
+  likeCount?: number
+  likedByViewer?: boolean
   createdAt: string
   lastSavedAt: string
   /** PvP enabled in this world (room reads this on join). */

@@ -74,7 +74,8 @@ export function MobileOasisControls({
   // the canvas underneath so PaintCursor sees the drag.
   const paintHeldActive = useOasisStore(s => s.paintHeldActive)
   const selectedObjectId = useOasisStore(s => s.selectedObjectId)
-  const canvasNeedsTouch = paintHeldActive || Boolean(selectedObjectId)
+  const isReadOnly = useOasisStore(s => s.isViewMode && !s.isViewModeEditable)
+  const canvasNeedsTouch = paintHeldActive || (Boolean(selectedObjectId) && !isReadOnly)
 
   useEffect(() => {
     if (!enabled) {
@@ -127,6 +128,7 @@ export function MobileOasisControls({
 
   const canLook = () => {
     const state = useInputManager.getState()
+    if (state.inputState === 'paint' && state.can().mouseLook) return true
     return state.can().mouseLook && !state.hasActiveUILayer()
   }
 
@@ -392,7 +394,7 @@ function MobilePrimaryActionButton({
   } else if (paintMode) {
     label = 'Paint'
     tone = 'emerald'
-    onTap = () => { dispatchSyntheticLeftClick() }
+    onTap = () => { window.dispatchEvent(new CustomEvent('oasis:paint-at-crosshair')) }
   } else {
     onTap = () => { dispatchSyntheticLeftClick() }
   }
@@ -531,7 +533,9 @@ function MobileTransformHotbar() {
 
 function MobileEscButton() {
   const inputState = useInputManager(s => s.inputState)
-  const isTrapped = inputState === 'agent-focus' || inputState === 'ui-focused'
+  const paintMode = useOasisStore(s => s.paintMode)
+  const placementPending = useOasisStore(s => s.placementPending)
+  const isTrapped = inputState === 'agent-focus' || inputState === 'ui-focused' || inputState === 'paint' || inputState === 'placement' || paintMode || Boolean(placementPending)
 
   if (!isTrapped) return null
 
@@ -542,6 +546,21 @@ function MobileEscButton() {
       onPointerDown={event => {
         event.preventDefault()
         event.stopPropagation()
+        const store = useOasisStore.getState()
+        if (store.paintMode) {
+          store.exitPaintMode()
+          store.setTerrainBrushPanelOpen(false)
+          return
+        }
+        if (useInputManager.getState().inputState === 'paint') {
+          store.setTerrainBrushPanelOpen(false)
+          useInputManager.getState().handleEscape()
+          return
+        }
+        if (store.placementPending) {
+          store.cancelPlacement()
+          return
+        }
         useInputManager.getState().handleEscape()
       }}
       aria-label="Escape focus / agent lock"

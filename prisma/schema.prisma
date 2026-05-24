@@ -134,6 +134,7 @@ model World {
   creatorAvatar   String?
 
   visitCount      Int       @default(0)
+  likeCount       Int       @default(0)
   objectCount     Int       @default(0)
   thumbnailUrl    String?
 
@@ -141,9 +142,23 @@ model World {
   updatedAt       DateTime  @updatedAt
 
   snapshots       WorldSnapshot[]
+  likes           WorldLike[]
 
   @@index([userId])
   @@index([visibility])
+}
+
+model WorldLike {
+  id        Int      @id @default(autoincrement())
+  worldId   String
+  userId    String
+  createdAt DateTime @default(now())
+
+  world     World    @relation(fields: [worldId], references: [id], onDelete: Cascade)
+
+  @@unique([worldId, userId])
+  @@index([worldId, createdAt])
+  @@index([userId, createdAt])
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

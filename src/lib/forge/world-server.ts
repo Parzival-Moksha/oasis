@@ -198,6 +198,7 @@ function toWorldMeta(
     creatorName?: string | null
     creatorAvatar?: string | null
     visitCount?: number | null
+    likeCount?: number | null
     objectCount?: number | null
     pvpEnabled?: boolean | null
     createdAt: Date
@@ -205,6 +206,7 @@ function toWorldMeta(
   },
   ctx?: WorldAccessContext,
   ownerProfile?: OwnerProfileSummary | null,
+  likedByViewer = false,
 ): WorldMeta {
   const subject = row.userId ? toAccessSubject(row as WorldAccessSubject) : null
   const writeDecision = ctx && subject ? getWorldWriteDecision(ctx, subject) : undefined
@@ -231,6 +233,8 @@ function toWorldMeta(
     ownerAura,
     objectCount: row.objectCount || 0,
     visitCount: row.visitCount || 0,
+    likeCount: row.likeCount || 0,
+    likedByViewer,
     pvpEnabled: row.pvpEnabled ?? false,
     createdAt: row.createdAt.toISOString(),
     lastSavedAt: row.updatedAt.toISOString(),
@@ -263,6 +267,7 @@ export async function getRegistry(userId?: string): Promise<WorldMeta[]> {
       creatorName: true,
       creatorAvatar: true,
       visitCount: true,
+      likeCount: true,
       objectCount: true,
       pvpEnabled: true,
       createdAt: true,
@@ -284,10 +289,16 @@ export async function getRegistry(userId?: string): Promise<WorldMeta[]> {
     return [defaultWorld]
   }
 
-  const profiles = await getOwnerProfiles(worlds.map(world => world.userId))
-  return worlds
-    .filter(world => canDiscoverWorld(ctx, toAccessSubject(world)))
-    .map(world => toWorldMeta(world, ctx, profiles.get(world.userId)))
+  const visibleWorlds = worlds.filter(world => canDiscoverWorld(ctx, toAccessSubject(world)))
+  const profiles = await getOwnerProfiles(visibleWorlds.map(world => world.userId))
+  const likedRows = visibleWorlds.length > 0
+    ? await prisma.worldLike.findMany({
+        where: { userId: ctx.userId, worldId: { in: visibleWorlds.map(world => world.id) } },
+        select: { worldId: true },
+      })
+    : []
+  const likedWorldIds = new Set(likedRows.map(row => row.worldId))
+  return visibleWorlds.map(world => toWorldMeta(world, ctx, profiles.get(world.userId), likedWorldIds.has(world.id)))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -574,6 +585,54 @@ export async function setWorldPvpEnabled(
   })
   await mirrorDefaultWorldSeedById(ctx, id)
   return enabled
+}
+
+export interface WorldLikeResult {
+  liked: boolean
+  likeCount: number
+}
+
+export async function setWorldLiked(
+  id: string,
+  userId: string,
+  liked: boolean,
+): Promise<WorldLikeResult> {
+  const ctx = accessContext(userId)
+
+  return prisma.$transaction(async tx => {
+    const world = await tx.world.findFirst({
+      where: { id },
+      select: { id: true, userId: true, visibility: true, likeCount: true },
+    })
+    if (!world) {
+      throw new WorldAccessError('World not found', 'world_not_found', 404)
+    }
+    if (!canReadWorld(ctx, toAccessSubject(world))) {
+      throw new WorldAccessError('World not found', 'world_not_found', 404)
+    }
+
+    const existing = await tx.worldLike.findUnique({
+      where: { worldId_userId: { worldId: id, userId } },
+      select: { id: true },
+    })
+
+    if (liked) {
+      if (!existing) {
+        await tx.worldLike.create({ data: { worldId: id, userId } })
+      }
+    } else if (existing) {
+      await tx.worldLike.delete({ where: { id: existing.id } })
+    }
+
+    const likeCount = await tx.worldLike.count({ where: { worldId: id } })
+    await tx.world.update({
+      where: { id },
+      data: { likeCount },
+      select: { id: true },
+    })
+
+    return { liked, likeCount }
+  })
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

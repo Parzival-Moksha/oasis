@@ -10,9 +10,8 @@ interface JoinOptions {
   profileAvatarUrl?: string
   color?: string
   // PvP join params — client passes its own progression-computed max values.
-  // First joiner's pvpEnabled wins for the room; subsequent joiners can't
-  // flip it (room.state.pvpEnabled is set in onCreate from the FIRST
-  // matchmake options bag colyseus hands us).
+  // First join seeds pvpEnabled, and later true joins can promote it if the
+  // browser joined before the world registry finished hydrating.
   pvpEnabled?: boolean
   maxHp?: number
   maxMana?: number
@@ -414,6 +413,12 @@ export class WorldRoom extends Room<WorldRoomState> {
   }
 
   override onJoin(client: Client, options: JoinOptions): void {
+    // Clients can briefly join before the world registry has hydrated. If a
+    // later join carries the DB-backed PvP flag, let true win for the room.
+    if (options.pvpEnabled === true && !this.state.pvpEnabled) {
+      this.state.pvpEnabled = true
+    }
+
     const player = new PlayerState()
     player.playerId = sanitizePlayerId(options.playerId, client.sessionId)
     player.displayName = sanitizeText(options.displayName, `Player ${player.playerId.slice(0, 4)}`)

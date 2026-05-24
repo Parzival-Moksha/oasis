@@ -122,7 +122,8 @@ export function ProfileButton() {
         setProfile(data)
         if ('avatar_3d_url' in data) setAvatar3dUrl(data.avatar_3d_url || DEFAULT_PROFILE_AVATAR_3D_URL)
 
-        // Auto-claim daily login XP silently; first-load onboarding should stay calm.
+        // Auto-claim daily login XP at a low amount; the HUD shows the small
+        // gain, but default first-load no longer jumps straight into level-up.
         if (!dailyBonusTriedRef.current) {
           const today = new Date().toISOString().split('T')[0]
           if (data.lastLoginDate !== today) {
@@ -135,6 +136,9 @@ export function ProfileButton() {
               .then(r => r.json())
               .then(bonus => {
                 if (bonus.xp && bonus.xp > 0) {
+                  if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('oasis:xp-awarded', { detail: bonus }))
+                  }
                   fetch('/api/profile').then(r => r.json()).then(d => setProfile(d)).catch(() => {})
                 }
               })

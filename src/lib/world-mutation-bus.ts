@@ -1,6 +1,6 @@
 'use client'
 
-import type { CatalogPlacement, WorldLight } from '@/lib/conjure/types'
+import type { CatalogPlacement, ObjectBehavior, WorldLight } from '@/lib/conjure/types'
 import type { PaintStroke, PaintStrokeStyle } from '@/lib/forge/paint-stroke'
 import type { Text3DObject } from '@/lib/forge/text-3d-object'
 
@@ -10,8 +10,12 @@ export type WorldMutation =
   | { kind: 'object_transformed'; payload: { id: string; position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number } }
   | { kind: 'sky_changed'; payload: { skyBackgroundId: string } }
   | { kind: 'ground_changed'; payload: { groundPresetId: string } }
+  | { kind: 'ground_painted'; payload: { cx: number; cz: number; presetId: string; size: number; stretch: number } }
+  | { kind: 'ground_tile_erased'; payload: { x: number; z: number } }
+  | { kind: 'ground_tiles_cleared'; payload: Record<string, never> }
   | { kind: 'terrain_brushed'; payload: { x: number; z: number; radius: number; intensity: number; direction: 'up' | 'down'; deltaSeconds: number } }
   | { kind: 'terrain_reset'; payload: Record<string, never> }
+  | { kind: 'behavior_updated'; payload: { id: string; updates: Partial<ObjectBehavior> } }
   | { kind: 'light_added'; payload: { light: WorldLight } }
   | { kind: 'light_removed'; payload: { id: string } }
   | { kind: 'light_updated'; payload: { id: string; updates: Partial<WorldLight> } }

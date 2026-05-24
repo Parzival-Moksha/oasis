@@ -98,13 +98,15 @@ const REMOTE_YAW_CATCHUP = 9
 function makePresenceId(): string {
   if (typeof window !== 'undefined') {
     const key = 'oasis-presence-player-id'
-    const existing = window.sessionStorage.getItem(key)
-    if (existing) return existing
     const randomId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
       ? crypto.randomUUID().replace(/-/g, '').slice(0, 12)
       : Math.random().toString(36).slice(2, 14)
+    try {
+      const existing = window.sessionStorage.getItem(key)
+      if (existing) return existing
+    } catch {}
     const id = `player-${randomId}`
-    window.sessionStorage.setItem(key, id)
+    try { window.sessionStorage.setItem(key, id) } catch {}
     return id
   }
   const randomId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -116,10 +118,12 @@ function makePresenceId(): string {
 function makePresenceName(playerId: string): string {
   if (typeof window === 'undefined') return 'Visitor'
   const key = 'oasis-presence-player-name'
-  const existing = window.localStorage.getItem(key)
-  if (existing) return existing
+  try {
+    const existing = window.localStorage.getItem(key)
+    if (existing) return existing
+  } catch {}
   const name = `Visitor ${playerId.slice(-4).toUpperCase()}`
-  window.localStorage.setItem(key, name)
+  try { window.localStorage.setItem(key, name) } catch {}
   return name
 }
 
@@ -296,7 +300,10 @@ function RemotePresenceAvatar({ player }: { player: MultiplayerRoomPlayer }) {
       }
       const smoothing = 1 - Math.exp(-12 * delta)
       smoothedSpeedRef.current += (targetSpeed - smoothedSpeedRef.current) * smoothing
-      if (Math.abs(smoothedSpeedRef.current - speed) > 0.15) {
+      if (targetSpeed === 0 && smoothedSpeedRef.current < 0.08) {
+        smoothedSpeedRef.current = 0
+        if (speed !== 0) setSpeed(0)
+      } else if (Math.abs(smoothedSpeedRef.current - speed) > 0.15) {
         setSpeed(smoothedSpeedRef.current)
       }
     } else if (speed !== 0) {
@@ -321,7 +328,10 @@ function RemotePresenceAvatar({ player }: { player: MultiplayerRoomPlayer }) {
 
 export function MultiplayerPresenceLayer() {
   const activeWorldId = useOasisStore(s => s.viewingWorldId || s.activeWorldId)
-  const worldRegistry = useOasisStore(s => s.worldRegistry)
+  const activeWorldPvpEnabled = useOasisStore(s => {
+    const id = s.viewingWorldId || s.activeWorldId
+    return s.worldRegistry.find(world => world.id === id)?.pvpEnabled === true
+  })
   const avatarUrl = useOasisStore(s => s.avatar3dUrl)
   // Latest avatarUrl read at connect time. After connect, we send profile
   // mutations on changes instead of reconnecting the whole room.
@@ -442,11 +452,20 @@ export function MultiplayerPresenceLayer() {
         store.applyRemoteSkyChange(mutation.payload.skyBackgroundId)
       } else if (mutation.kind === 'ground_changed') {
         store.applyRemoteGroundChange(mutation.payload.groundPresetId)
+      } else if (mutation.kind === 'ground_painted') {
+        const { cx, cz, presetId, size, stretch } = mutation.payload
+        store.applyRemoteGroundPaint(cx, cz, presetId, size, stretch)
+      } else if (mutation.kind === 'ground_tile_erased') {
+        store.applyRemoteGroundTileErase(mutation.payload.x, mutation.payload.z)
+      } else if (mutation.kind === 'ground_tiles_cleared') {
+        store.applyRemoteGroundTilesClear()
       } else if (mutation.kind === 'terrain_brushed') {
         const { x, z, radius, intensity, direction, deltaSeconds } = mutation.payload
         store.applyRemoteTerrainBrush(x, z, radius, intensity, direction, deltaSeconds)
       } else if (mutation.kind === 'terrain_reset') {
         store.applyRemoteTerrainReset()
+      } else if (mutation.kind === 'behavior_updated') {
+        store.applyRemoteObjectBehavior(mutation.payload.id, mutation.payload.updates)
       } else if (mutation.kind === 'light_added') {
         store.applyRemoteLightAdded(mutation.payload.light)
       } else if (mutation.kind === 'light_removed') {
@@ -514,7 +533,6 @@ export function MultiplayerPresenceLayer() {
       }, delayMs)
     }
 
-    const activeWorld = worldRegistry.find(world => world.id === activeWorldId)
     connectToWorldRoom({
       worldId: activeWorldId,
       playerId,
@@ -522,7 +540,7 @@ export function MultiplayerPresenceLayer() {
       avatarUrl: avatarUrlRef.current || undefined,
       profileAvatarUrl: profileAvatarUrlRef.current || undefined,
       color: playerColorRef.current,
-      pvpEnabled: activeWorld?.pvpEnabled === true,
+      pvpEnabled: activeWorldPvpEnabled,
       maxHp: maxHpRef.current,
       maxMana: maxManaRef.current,
       onPlayersChanged: next => {
@@ -591,7 +609,7 @@ export function MultiplayerPresenceLayer() {
         clearedWorldIdRef.current = activeWorldId
       }
     }
-  }, [activeWorldId, reconnectTick])
+  }, [activeWorldId, activeWorldPvpEnabled, reconnectTick])
 
   // Push avatar/profile changes as a small mutation instead of reconnecting
   // the whole room. This decouples cosmetic changes from session lifecycle.

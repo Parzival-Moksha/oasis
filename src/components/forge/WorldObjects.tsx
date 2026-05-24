@@ -355,13 +355,13 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
   // ─══ॐ══─ Respect visibility toggle from ObjectInspector ─══ॐ══─
   const isVisible = behavior?.visible !== false
   const handleSelect = useCallback((event: { stopPropagation: () => void }, inspectNow: boolean) => {
-    if (isReadOnly || isRp1) return
+    if (isRp1) return
     event.stopPropagation()
     if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
       document.activeElement.blur()
     }
     onSelect(id)
-    if (inspectNow && !useInputManager.getState().pointerLocked) {
+    if (inspectNow && !isReadOnly && !useInputManager.getState().pointerLocked) {
       setInspectedObject(id)
     }
   }, [id, isReadOnly, isRp1, onSelect, setInspectedObject])
@@ -377,16 +377,16 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
         // prop is now ignored for inspector summoning; we keep the same gesture
         // everywhere so muscle memory carries across camera modes. ▓▒░
         onDoubleClick={(e) => {
-          if (isReadOnly || isRp1) return
+          if (isRp1) return
           e.stopPropagation()
           if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
             document.activeElement.blur()
           }
           onSelect(id)
-          setInspectedObject(id)
+          if (!isReadOnly) setInspectedObject(id)
         }}
         onClick={(e) => {
-          if (isReadOnly || isRp1) return
+          if (isRp1) return
           e.stopPropagation()
           if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
             document.activeElement.blur()

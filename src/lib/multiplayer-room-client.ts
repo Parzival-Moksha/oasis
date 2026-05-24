@@ -276,7 +276,7 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
 
   setPvpSender({
     localSessionId: room.sessionId,
-    pvpEnabled: (room.state as RoomStateSchema | undefined)?.pvpEnabled === true,
+    pvpEnabled: args.pvpEnabled === true || (room.state as RoomStateSchema | undefined)?.pvpEnabled === true,
     sendCast: payload => {
       try { room.send('cast', payload) } catch (err) {
         if (DEBUG) console.warn('[oasis-room] sendCast failed', err)

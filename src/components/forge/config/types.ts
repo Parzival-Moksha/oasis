@@ -23,7 +23,7 @@ export interface ConfigTabDefinition {
 }
 
 export const CONFIG_TABS: ConfigTabDefinition[] = [
-  { id: 'graphics',  emoji: '🎨', label: 'Graphics',  tooltip: 'Visuals — bloom, FOV, grid, sky',                accent: '#A78BFA' },
+  { id: 'graphics',  emoji: '🎨', label: 'Graphics',  tooltip: 'Visuals — bloom, FOV, grid',                     accent: '#A78BFA' },
   { id: 'fonts',     emoji: '🅰',  label: 'Fonts',     tooltip: 'UI typography — spellbook + menus',              accent: '#FDE68A' },
   { id: 'sound',     emoji: '🔊', label: 'Sound',     tooltip: 'Audio — volumes, spatial, spell sounds',         accent: '#7DD3FC' },
   { id: 'controls',  emoji: '🎮', label: 'Controls',  tooltip: 'Camera, sensitivity, mode',                      accent: '#34D399' },

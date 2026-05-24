@@ -259,6 +259,36 @@ function resolveObjectLabel(state: OasisState, objectId: string): string {
     || objectId
 }
 
+function encodeGroundTileValue(presetId: string, stretch: number): string {
+  const normalizedStretch = Math.max(1, Math.floor(stretch || 1))
+  return normalizedStretch === 1 ? presetId : `${presetId}@${normalizedStretch}`
+}
+
+function paintGroundTiles(
+  groundTiles: Record<string, string>,
+  cx: number,
+  cz: number,
+  presetId: string,
+  size: number,
+  stretch: number,
+): Record<string, string> {
+  const normalizedStretch = Math.max(1, Math.floor(stretch || 1))
+  const half = Math.floor(Math.max(1, Math.min(5, Math.floor(size || 1))) / 2)
+  const nextTiles = { ...groundTiles }
+  const baseX = Math.floor(cx / normalizedStretch) * normalizedStretch
+  const baseZ = Math.floor(cz / normalizedStretch) * normalizedStretch
+  const cellValue = encodeGroundTileValue(presetId, normalizedStretch)
+  for (let dx = -half; dx <= half; dx++) {
+    for (let dz = -half; dz <= half; dz++) {
+      const tx = baseX + dx * normalizedStretch
+      const tz = baseZ + dz * normalizedStretch
+      if (tx < -50 || tx > 49 || tz < -50 || tz > 49) continue
+      nextTiles[`${tx},${tz}`] = cellValue
+    }
+  }
+  return nextTiles
+}
+
 type RemoteSubscription = { unsubscribe: () => void }
 type ViewingWorldMeta = Partial<WorldMeta> & { name: string; icon: string }
 const persist = (key: string, value: string): void => { if (isBrowser) localStorage.setItem(key, value) }
@@ -859,6 +889,9 @@ interface OasisState {
   paintGroundArea: (cx: number, cz: number) => void
   eraseGroundTile: (x: number, z: number) => void
   clearAllGroundTiles: () => void
+  applyRemoteGroundPaint: (cx: number, cz: number, presetId: string, size: number, stretch: number) => void
+  applyRemoteGroundTileErase: (x: number, z: number) => void
+  applyRemoteGroundTilesClear: () => void
   selectObject: (id: string | null) => void
   setInspectedObject: (id: string | null) => void
   setTransformMode: (mode: 'translate' | 'rotate' | 'scale') => void
@@ -867,6 +900,7 @@ interface OasisState {
   applyRemoteObjectTransform: (id: string, transform: { position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number }) => void
   setAgentAvatarTransform: (id: string, transform: { position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number }) => void
   setObjectBehavior: (id: string, behavior: Partial<ObjectBehavior>) => void
+  applyRemoteObjectBehavior: (id: string, updates: Partial<ObjectBehavior>) => void
   addSpatialWebObject: (object: SpatialWebObject) => void
   placeSpatialWebObjectAt: (object: SpatialWebObject, position: [number, number, number]) => void
   updateSpatialWebObject: (id: string, updates: Partial<SpatialWebObject>) => void
@@ -2663,8 +2697,6 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
     const position = resolveObjectPosition(state, id)
     const title = resolveObjectLabel(state, id)
-    let behaviorChanged = false
-
     for (const action of interaction.actions) {
       if (action.type === 'html_overlay') {
         get().openObjectOverlay({
@@ -2697,26 +2729,17 @@ export const useOasisStore = create<OasisState>((set, get) => {
       }
 
       if (action.type === 'audio_toggle') {
-        set(current => {
-          const existing = current.behaviors[id] || { visible: true, movement: { type: 'static' as const } }
-          const currentAudioUrl = action.audioUrl || existing.audioUrl
-          const nextState = existing.audioState === 'playing' && (!action.audioUrl || action.audioUrl === existing.audioUrl)
-            ? 'paused'
-            : 'playing'
-          return {
-            behaviors: {
-              ...current.behaviors,
-              [id]: {
-                ...existing,
-                ...(currentAudioUrl ? { audioUrl: currentAudioUrl } : {}),
-                ...(typeof action.loop === 'boolean' ? { audioLoop: action.loop } : {}),
-                ...(typeof action.volume === 'number' ? { audioVolume: Math.max(0, Math.min(1, action.volume)) } : {}),
-                audioState: nextState,
-              },
-            },
-          }
+        const existing = get().behaviors[id] || { visible: true, movement: { type: 'static' as const } }
+        const currentAudioUrl = action.audioUrl || existing.audioUrl
+        const nextState = existing.audioState === 'playing' && (!action.audioUrl || action.audioUrl === existing.audioUrl)
+          ? 'paused'
+          : 'playing'
+        get().setObjectBehavior(id, {
+          ...(currentAudioUrl ? { audioUrl: currentAudioUrl } : {}),
+          ...(typeof action.loop === 'boolean' ? { audioLoop: action.loop } : {}),
+          ...(typeof action.volume === 'number' ? { audioVolume: Math.max(0, Math.min(1, action.volume)) } : {}),
+          audioState: nextState,
         })
-        behaviorChanged = true
         continue
       }
 
@@ -2735,8 +2758,6 @@ export const useOasisStore = create<OasisState>((set, get) => {
         window.dispatchEvent(new CustomEvent('oasis:open-spelltab', { detail: { spellId: action.spellId, objectId: id } }))
       }
     }
-
-    if (behaviorChanged) setTimeout(() => get().saveWorldState(), 100)
   },
 
   startAgentMaterialization: (objectId) => {
@@ -2961,23 +2982,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
     // we paint at stride=stretch and snap the center to that lattice. Brush
     // footprint expands accordingly: 3x3 brush @ 2x stretch → 3x3 grid of 2m
     // cells = 6m covered area. ─═̷─
-    const half = Math.floor(paintBrushSize / 2)
-    const newTiles = { ...groundTiles }
-    // Snap center to the stretch lattice so neighbor tiles align cleanly.
-    const baseX = Math.floor(cx / stretch) * stretch
-    const baseZ = Math.floor(cz / stretch) * stretch
-    // Cell value encoding: bare presetId for stretch=1 (back-compat with all
-    // existing saves), `presetId@stretch` for stretch>1.
-    const cellValue = stretch === 1 ? paintBrushPresetId : `${paintBrushPresetId}@${stretch}`
-    for (let dx = -half; dx <= half; dx++) {
-      for (let dz = -half; dz <= half; dz++) {
-        const tx = baseX + dx * stretch
-        const tz = baseZ + dz * stretch
-        if (tx < -50 || tx > 49 || tz < -50 || tz > 49) continue
-        newTiles[`${tx},${tz}`] = cellValue
-      }
-    }
+    const newTiles = paintGroundTiles(groundTiles, cx, cz, paintBrushPresetId, paintBrushSize, stretch)
     set({ groundTiles: newTiles })
+    worldMutationBus.broadcast({
+      kind: 'ground_painted',
+      payload: { cx, cz, presetId: paintBrushPresetId, size: paintBrushSize, stretch },
+    })
     get().saveWorldState()
   },
   eraseGroundTile: (x, z) => {
@@ -2987,15 +2997,34 @@ export const useOasisStore = create<OasisState>((set, get) => {
     const newTiles = { ...groundTiles }
     delete newTiles[key]
     set({ groundTiles: newTiles })
+    worldMutationBus.broadcast({ kind: 'ground_tile_erased', payload: { x, z } })
     get().saveWorldState()
   },
   clearAllGroundTiles: () => {
     withUndo('Clear all tiles', '🧹', () => {
       set({ groundTiles: {} })
     })
+    worldMutationBus.broadcast({ kind: 'ground_tiles_cleared', payload: {} })
     setTimeout(() => get().saveWorldState(), 100)
   },
   // ─═̷─═̷─🖼️ IMAGINE ACTIONS ─═̷─═̷─🖼️
+  applyRemoteGroundPaint: (cx, cz, presetId, size, stretch) => {
+    set(state => ({
+      groundTiles: paintGroundTiles(state.groundTiles, cx, cz, presetId, size, stretch),
+    }))
+  },
+  applyRemoteGroundTileErase: (x, z) => {
+    const key = `${Math.floor(x)},${Math.floor(z)}`
+    set(state => {
+      if (!(key in state.groundTiles)) return state
+      const nextTiles = { ...state.groundTiles }
+      delete nextTiles[key]
+      return { groundTiles: nextTiles }
+    })
+  },
+  applyRemoteGroundTilesClear: () => {
+    set({ groundTiles: {} })
+  },
   addGeneratedImage: (image) => {
     set(s => {
       // Dedupe by id — manual generations call this directly while the SSE
@@ -3050,7 +3079,14 @@ export const useOasisStore = create<OasisState>((set, get) => {
         return { behaviors: { ...state.behaviors, [id]: { ...existing, ...partial } } }
       })
     }
+    worldMutationBus.broadcast({ kind: 'behavior_updated', payload: { id, updates: partial } })
     setTimeout(() => get().saveWorldState(), 100)
+  },
+  applyRemoteObjectBehavior: (id, updates) => {
+    set((state) => {
+      const existing = state.behaviors[id] || { movement: { type: 'static' as const }, visible: true }
+      return { behaviors: { ...state.behaviors, [id]: { ...existing, ...updates } } }
+    })
   },
   setObjectMeshStats: (id, stats) => {
     set((state) => ({ objectMeshStats: { ...state.objectMeshStats, [id]: stats } }))

@@ -38,7 +38,7 @@ const HALF_GROUND_SIZE = GROUND_SIZE / 2
 const TILE_RELIEF_OFFSET = 0.012
 // Max tiles per preset group — covers full 100×100 world (10,000 tiles)
 const MAX_TILES_PER_GROUP = 10000
-const DEFAULT_CUSTOM_FULL_GROUND_REPEAT = 8
+const DEFAULT_CUSTOM_FULL_GROUND_REPEAT = 24
 
 function textureUrlsForPreset(preset: GroundPreset): { diffuse: string } | null {
   if (preset.customTextureUrl) return { diffuse: preset.customTextureUrl }
@@ -48,7 +48,7 @@ function textureUrlsForPreset(preset: GroundPreset): { diffuse: string } | null 
 
 function fullGroundRepeatForPreset(preset: GroundPreset): number {
   const repeat = Number.isFinite(preset.tileRepeat) && preset.tileRepeat > 0 ? preset.tileRepeat : 1
-  return preset.customTextureUrl && repeat <= 1 ? DEFAULT_CUSTOM_FULL_GROUND_REPEAT : repeat
+  return preset.customTextureUrl && repeat <= 4 ? DEFAULT_CUSTOM_FULL_GROUND_REPEAT : repeat
 }
 
 function clampGridIndex(value: number): number {
@@ -598,10 +598,14 @@ function PaintOverlay({ texturePaintActive, sculptActive }: { texturePaintActive
   const beginUndoBatch = useOasisStore(s => s.beginUndoBatch)
   const commitUndoBatch = useOasisStore(s => s.commitUndoBatch)
   const { setIsDragging } = useContext(DragContext)
+  const camera = useThree(s => s.camera)
   const [hoverPos, setHoverPos] = useState<[number, number, number] | null>(null)
   const isPainting = useRef(false)
   const isSculpting = useRef(false)
   const lastSculptPoint = useRef<THREE.Vector3 | null>(null)
+  const crosshairRaycasterRef = useRef(new THREE.Raycaster())
+  const crosshairPlaneRef = useRef(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0))
+  const crosshairHitRef = useRef(new THREE.Vector3())
 
   const brushPreset = useMemo(() =>
     GROUND_PRESETS.find(p => p.id === paintBrushPresetId),
@@ -674,6 +678,21 @@ function PaintOverlay({ texturePaintActive, sculptActive }: { texturePaintActive
   const handlePointerUp = useCallback(() => {
     finishStroke()
   }, [finishStroke])
+
+  useEffect(() => {
+    if (!texturePaintActive) return
+    const handlePaintAtCrosshair = () => {
+      const raycaster = crosshairRaycasterRef.current
+      const hit = crosshairHitRef.current
+      raycaster.setFromCamera(new THREE.Vector2(0, 0), camera)
+      if (!raycaster.ray.intersectPlane(crosshairPlaneRef.current, hit)) return
+      beginUndoBatch('Paint tiles', 'paint')
+      paintGroundArea(hit.x, hit.z)
+      commitUndoBatch()
+    }
+    window.addEventListener('oasis:paint-at-crosshair', handlePaintAtCrosshair)
+    return () => window.removeEventListener('oasis:paint-at-crosshair', handlePaintAtCrosshair)
+  }, [camera, beginUndoBatch, commitUndoBatch, paintGroundArea, texturePaintActive])
 
   const handlePointerMove = useCallback((e: any) => {
     const point = e.point as THREE.Vector3

@@ -32,7 +32,7 @@ export const DEFAULT_XP_AWARDS = {
   WORLD_UPVOTED: 10,         // passive: someone upvotes your world
   VISIT_OTHER_WORLD: 3,      // active: you explore
   UPVOTE_WORLD: 2,           // active: you participate
-  DAILY_LOGIN: 30,
+  DAILY_LOGIN: 10,
 
   // Collaboration
   CO_BUILD: 15,              // build in someone else's world

@@ -120,6 +120,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
   const [newWorldOpen, setNewWorldOpen] = useState(false)
   const [newWorldName, setNewWorldName] = useState('')
   const [newWorldIcon, setNewWorldIcon] = useState('O')
+  const [likeOverride, setLikeOverride] = useState<{ worldId: string; liked: boolean; likeCount: number } | null>(null)
   // ░▒▓ 3-tab world menu: This World / My Worlds / Public Worlds ▓▒░
   const [worldTab, setWorldTab] = useState<'this' | 'my' | 'public'>('this')
   // Within Public Worlds, filter pills for visibility tier.
@@ -170,6 +171,8 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
   const ownerAura = meta?.ownerAura || 0
   const objectCount = liveObjectCount
   const visitCount = meta?.visitCount || 0
+  const likeCount = likeOverride?.worldId === worldId ? likeOverride.likeCount : (meta?.likeCount || 0)
+  const likedByViewer = likeOverride?.worldId === worldId ? likeOverride.liked : Boolean(meta?.likedByViewer)
   const canEditSettings = Boolean(meta?.canEditSettings && !isViewMode)
   const canUseCoreVisibility = capabilities.mode === 'local' || capabilities.admin
   const visibilityOptions = useMemo(
@@ -307,6 +310,34 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
       setMenuMessage('Could not change PvP setting.')
     } finally {
       setBusyLabel(null)
+    }
+  }
+
+  const handleLikeToggle = async () => {
+    if (!worldId) return
+    const nextLiked = !likedByViewer
+    const optimisticCount = Math.max(0, likeCount + (nextLiked ? 1 : -1))
+    setLikeOverride({ worldId, liked: nextLiked, likeCount: optimisticCount })
+    setMenuMessage(null)
+    try {
+      const response = await fetch(`${OASIS_BASE}/api/worlds/${encodeURIComponent(worldId)}/like`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ liked: nextLiked }),
+      })
+      const data = await response.json().catch(() => null) as { liked?: boolean; likeCount?: number; error?: string } | null
+      if (!response.ok || !data) throw new Error(data?.error || `HTTP ${response.status}`)
+      setLikeOverride({
+        worldId,
+        liked: data.liked === true,
+        likeCount: typeof data.likeCount === 'number' ? data.likeCount : optimisticCount,
+      })
+      refreshWorldRegistry()
+      setMenuMessage(data.liked ? 'World liked.' : 'World unliked.')
+    } catch {
+      setLikeOverride(null)
+      setMenuMessage('Could not update like.')
     }
   }
 
@@ -509,7 +540,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
           </div>
 
           {worldTab === 'this' && (
-          <div className="grid grid-cols-3 gap-2 py-3 text-center">
+          <div className="grid grid-cols-4 gap-2 py-3 text-center">
             <div className="rounded-md border border-white/10 bg-white/5 px-2 py-2">
               <div className="text-sm font-black text-cyan-100">{objectCount}</div>
               <div className="mt-0.5 text-[9px] uppercase tracking-[0.12em] text-white/45">objects</div>
@@ -522,6 +553,19 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
               <div className="text-sm font-black text-cyan-100">{ownerAura}</div>
               <div className="mt-0.5 text-[9px] uppercase tracking-[0.12em] text-white/45">aura</div>
             </div>
+            <button
+              type="button"
+              onClick={handleLikeToggle}
+              disabled={!worldId || Boolean(busyLabel)}
+              className="rounded-md border px-2 py-2 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-45"
+              style={{
+                borderColor: likedByViewer ? 'rgba(244,114,182,0.62)' : 'rgba(255,255,255,0.10)',
+                background: likedByViewer ? 'rgba(219,39,119,0.16)' : 'rgba(255,255,255,0.05)',
+              }}
+            >
+              <div className="text-sm font-black text-cyan-100">{likeCount}</div>
+              <div className="mt-0.5 text-[9px] uppercase tracking-[0.12em] text-white/45">{likedByViewer ? 'liked' : 'likes'}</div>
+            </button>
           </div>
           )}
 

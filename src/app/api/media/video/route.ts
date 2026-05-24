@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
+import { getOasisCapabilities } from '@/lib/session'
 
 const TEXT_TO_VIDEO = 'https://queue.fal.run/fal-ai/ltx-2.3/text-to-video'
 const IMG_TO_VIDEO = 'https://queue.fal.run/fal-ai/ltx-2.3/image-to-video'
@@ -44,6 +45,10 @@ function cleanupOldVideos() {
 // POST — submit video generation job
 export async function POST(request: NextRequest) {
   try {
+    if (!getOasisCapabilities(request).canUseFullWizard) {
+      return NextResponse.json({ error: 'Video generation is local/admin only for now' }, { status: 403 })
+    }
+
     const body = await request.json()
     const { prompt, duration = 6, image_url, fast, negative_prompt, resolution, aspect_ratio, num_inference_steps, guidance_scale } = body
 

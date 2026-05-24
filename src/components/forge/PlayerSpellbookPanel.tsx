@@ -31,6 +31,7 @@ type PlayerSpellbookPanelProps = {
    *  clickable — the cast handler shows a notice — so players can read
    *  the rule, not just see a dead tile. */
   readOnly?: boolean
+  lockedSpellIds?: readonly SpellId[]
 }
 
 const COMBAT_SPELL_IDS = new Set<SpellId>(['firebolt', 'lightning-bolt', 'ice-bolt'])
@@ -59,6 +60,7 @@ export function PlayerSpellbookPanel({
   onOpenChange,
   onCastSpell,
   readOnly = false,
+  lockedSpellIds = [],
 }: PlayerSpellbookPanelProps) {
   const [activePage, setActivePage] = useState<SpellbookPageId>('recipe-catalog')
   const [highlightSpellId, setHighlightSpellId] = useState<SpellId | null>(null)
@@ -141,21 +143,27 @@ export function PlayerSpellbookPanel({
         }
       `}</style>
       <div
-        className="relative flex items-center justify-between gap-3 border-b border-amber-100/14 px-4 py-3"
+        className="pointer-events-none absolute inset-0 bg-cover bg-center bg-no-repeat"
+        style={{ backgroundImage: `url(/ui/spellbook/frame/page-bg-${activePage}.jpg)` }}
+      />
+      <div className="pointer-events-none absolute inset-0 bg-black/50" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/16 via-transparent to-black/24" />
+      <div
+        className="relative flex items-center justify-between gap-3 border-b border-amber-100/14 bg-black/18 px-4 py-3"
         style={{
           // ─═̷─ Match the page texture so the header doesn't look like
           // dead chrome above a richly textured page. Same bg as the
           // content scroll area below. ─═̷─
-          backgroundImage: `url(/ui/spellbook/frame/page-bg-${activePage}.jpg)`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center top',
+          backgroundImage: 'none',
+          backgroundSize: 'auto',
+          backgroundPosition: 'center',
           backgroundRepeat: 'no-repeat',
         }}
       >
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/30 via-black/20 to-black/40" />
+        <div className="pointer-events-none absolute inset-0 bg-black/0" />
         <div className="relative min-w-0">
-          <div className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-100/70">Spells</div>
-          <div className="mt-1 truncate text-lg font-black tracking-[0.02em] text-amber-50">Spellbook</div>
+          <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/75">Spells</div>
+          <div className="mt-1 truncate text-lg font-black tracking-[0.02em] text-white">Spellbook</div>
         </div>
         {/* ─═̷─ Demo: red ornate plate from the GPT-image-2 atlas. Background
             stretches across the whole button (caps + middle in one png).
@@ -175,15 +183,15 @@ export function PlayerSpellbookPanel({
       </div>
 
       <div
-        className="relative flex gap-1 overflow-x-auto border-b border-white/10 px-2 py-2"
+        className="relative flex gap-1 overflow-x-auto border-b border-white/10 bg-black/22 px-2 py-2"
         style={{
-          backgroundImage: `url(/ui/spellbook/frame/page-bg-${activePage}.jpg)`,
+          backgroundImage: 'none',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
           backgroundRepeat: 'no-repeat',
         }}
       >
-        <div className="pointer-events-none absolute inset-0 bg-black/45" />
+        <div className="pointer-events-none absolute inset-0 bg-black/0" />
         {SPELLBOOK_PAGE_IDS.map(pageId => {
           const page = SPELLBOOK_PAGES[pageId]
           const selected = pageId === activePage
@@ -194,8 +202,8 @@ export function PlayerSpellbookPanel({
               className={[
                 'shrink-0 rounded-md border px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.1em] transition',
                 selected
-                  ? 'border-amber-200/55 bg-amber-200/16 text-amber-50 shadow-[0_0_20px_rgba(251,191,36,0.14)]'
-                  : 'border-white/10 bg-black/24 text-white/48 hover:border-white/24 hover:text-white/72',
+                  ? 'border-amber-200/55 bg-amber-200/16 text-white shadow-[0_0_20px_rgba(251,191,36,0.14)]'
+                  : 'border-white/10 bg-black/24 text-white/72 hover:border-white/24 hover:text-white',
               ].join(' ')}
               onClick={() => setActivePage(pageId)}
             >
@@ -206,17 +214,17 @@ export function PlayerSpellbookPanel({
       </div>
 
       <div
-        className="relative max-h-[calc(100vh-11rem)] overflow-y-auto p-4 max-[700px]:max-h-[calc(100vh-176px)] max-[700px]:p-2"
+        className="relative max-h-[calc(100vh-11rem)] overflow-y-auto bg-black/8 p-4 max-[700px]:max-h-[calc(100vh-176px)] max-[700px]:p-2"
         style={{
-          backgroundImage: `url(/ui/spellbook/frame/page-bg-${activePage}.jpg)`,
+          backgroundImage: 'none',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
           backgroundRepeat: 'no-repeat',
         }}
       >
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/15 via-black/10 to-black/25" />
+        <div className="pointer-events-none absolute inset-0 bg-black/0" />
         <div className="relative mb-3 flex items-center justify-between gap-3">
-          <h3 className="text-[12px] font-black uppercase tracking-[0.18em] text-amber-100/85">
+          <h3 className="text-[12px] font-black uppercase tracking-[0.18em] text-white/90">
             {SPELLBOOK_PAGES[activePage].name}
           </h3>
           <span className="rounded border border-white/10 bg-white/6 px-2 py-1 font-mono text-[10px] text-white/55">
@@ -228,7 +236,7 @@ export function PlayerSpellbookPanel({
           {activeSpells.map(definition => {
             const highlighted = highlightSpellId === definition.id
             const selected = selectedSpellId === definition.id
-            const locked = readOnly && !isCombatSpell(definition.id)
+            const locked = (readOnly && !isCombatSpell(definition.id)) || lockedSpellIds.includes(definition.id)
             const animation = highlighted
               ? 'oasisSpellLearnedPulse 1300ms ease-in-out 2'
               : selected
@@ -266,7 +274,10 @@ export function PlayerSpellbookPanel({
                   {definition.summary}
                 </div>
                 {locked && (
-                  <div className="pointer-events-none absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-md border border-amber-200/60 bg-black/80 text-[12px] shadow-[0_0_8px_rgba(0,0,0,0.6)]">
+                  <div
+                    className="pointer-events-none absolute right-1.5 top-1.5 rounded-md border border-amber-200/60 bg-black/80 px-1.5 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-amber-100 shadow-[0_0_8px_rgba(0,0,0,0.6)]"
+                    title={definition.lockedSummary || 'Locked'}
+                  >
                     🔒
                   </div>
                 )}

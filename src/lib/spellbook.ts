@@ -31,6 +31,16 @@ export const SPELL_IDS = [
 
 export type SpellId = typeof SPELL_IDS[number]
 
+export const HOSTED_USER_LOCKED_SPELL_IDS = [
+  'text-to-video',
+  'meshy-object',
+  'meshy-character',
+] as const satisfies readonly SpellId[]
+
+export function isHostedUserLockedSpell(id: SpellId): boolean {
+  return (HOSTED_USER_LOCKED_SPELL_IDS as readonly SpellId[]).includes(id)
+}
+
 export type SpellActionId =
   | 'cast-firebolt'
   | 'open-place-menu'
@@ -185,6 +195,7 @@ export const SPELL_DEFS: Record<SpellId, SpellDefinition> = {
     summary: 'Generate video panels, rituals, and animated lore surfaces.',
     stats: ['Video craft', 'Panel', 'Premium'],
     actionId: 'open-wizard',
+    lockedSummary: 'Local/admin only during the public demo.',
   },
   'meshy-object': {
     id: 'meshy-object',
@@ -195,6 +206,7 @@ export const SPELL_DEFS: Record<SpellId, SpellDefinition> = {
     summary: 'Generate a standalone 3D prop through the external 3D asset pipeline.',
     stats: ['Meshy/Tripo', 'Prop', 'Generated asset'],
     actionId: 'open-wizard',
+    lockedSummary: 'Local/admin only during the public demo.',
   },
   'meshy-character': {
     id: 'meshy-character',
@@ -205,6 +217,7 @@ export const SPELL_DEFS: Record<SpellId, SpellDefinition> = {
     summary: 'Generate character-style assets for future NPCs and avatars.',
     stats: ['Meshy/Tripo', 'Character', 'Generated asset'],
     actionId: 'open-wizard',
+    lockedSummary: 'Local/admin only during the public demo.',
   },
   'portal-create': {
     id: 'portal-create',

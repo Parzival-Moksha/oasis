@@ -6,7 +6,6 @@
 
 import { useContext } from 'react'
 import { SettingsContext } from '@/components/scene-lib/contexts'
-import { SKY_BACKGROUNDS } from '@/components/scene-lib'
 import type { SharedTabProps } from '../types'
 
 function Toggle({
@@ -108,19 +107,6 @@ export function GraphicsTab({ menuOpacity, onMenuOpacityChange }: SharedTabProps
         />
         <Toggle label="Helper Grid" active={settings.showGrid} onChange={() => updateSetting('showGrid', !settings.showGrid)} />
         <Toggle label="Show Orbit Pivot" active={settings.showOrbitTarget} onChange={() => updateSetting('showOrbitTarget', !settings.showOrbitTarget)} />
-      </section>
-
-      <section className="border-t border-white/10 pt-3">
-        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Sky</div>
-        <select
-          value={settings.skyBackground}
-          onChange={e => updateSetting('skyBackground', e.target.value)}
-          className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-300 hover:border-purple-500 focus:border-purple-500 focus:outline-none transition-colors"
-        >
-          {SKY_BACKGROUNDS.map(sky => (
-            <option key={sky.id} value={sky.id}>{sky.name}</option>
-          ))}
-        </select>
       </section>
 
       <section className="border-t border-white/10 pt-3">

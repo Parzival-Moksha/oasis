@@ -29,6 +29,7 @@ import { MeshyClient } from '@/lib/conjure/meshy'
 import { TripoClient } from '@/lib/conjure/tripo'
 import { PROVIDERS } from '@/lib/conjure/types'
 import type { ConjureRequest, ConjuredAsset, ProviderName, ConjureStatus, RigResult } from '@/lib/conjure/types'
+import { getOasisCapabilities } from '@/lib/session'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ID GENERATION — every conjured object gets a unique soul-stamp
@@ -569,6 +570,10 @@ async function runAutoAnimatePipeline(
 
 export async function POST(request: Request) {
   try {
+    if (!getOasisCapabilities(request).canUseFullWizard) {
+      return NextResponse.json({ error: 'Text-to-object and text-to-character are local/admin only for now' }, { status: 403 })
+    }
+
     const body = (await request.json()) as ConjureRequest
 
     // ░▒▓ Validate the request ▓▒░

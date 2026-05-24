@@ -70,6 +70,7 @@ function makeWorldRow(state: Record<string, unknown> = {}, rowOverrides: Record<
     creatorName: null,
     creatorAvatar: null,
     visitCount: 0,
+    likeCount: 0,
     updatedAt: new Date(),
     createdAt: new Date(),
     ...rowOverrides,

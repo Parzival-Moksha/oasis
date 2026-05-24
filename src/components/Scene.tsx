@@ -76,7 +76,7 @@ import { runLocalStorageAgentCacheMigration } from '@/lib/localstorage-agent-cac
 import { isProbablyMobileDevice } from '@/lib/mobile-controls'
 import { useIsHostedOasis, useOasisCapabilities } from '@/lib/oasis-mode-client'
 import { installTestHarness } from '@/lib/test-harness'
-import type { SpellId } from '@/lib/spellbook'
+import { HOSTED_USER_LOCKED_SPELL_IDS, isHostedUserLockedSpell, type SpellId } from '@/lib/spellbook'
 import { useWorldEvents } from '@/hooks/useWorldEvents'
 import { AgentWindowPortals } from './forge/AgentWindowPortals'
 import { requestPortalGateReveal } from './forge/PortalGateLayer'
@@ -1538,6 +1538,12 @@ export default function Scene() {
     setSpellbookOpen(false)
 
     const isCombat = spellId === 'firebolt' || spellId === 'lightning-bolt' || spellId === 'ice-bolt'
+    const hostedUserLocked = !canUseFullWizard && isHostedUserLockedSpell(spellId)
+
+    if (hostedUserLocked) {
+      showNotice('That spell is local/admin only for now', 'warn')
+      return
+    }
 
     // ─═̷─ Read-only world gate. When the player can't write to the active
     // world, every non-combat spell mutates state the world won't accept —
@@ -1915,6 +1921,7 @@ export default function Scene() {
         onOpenChange={setSpellbookOpen}
         onCastSpell={handleSpellbookCast}
         readOnly={readOnlyForcesRp1}
+        lockedSpellIds={!canUseFullWizard ? HOSTED_USER_LOCKED_SPELL_IDS : []}
       />
       {!hideEditTools && <PlaceMenu />}
       <GlobalNotice />
