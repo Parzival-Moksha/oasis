@@ -6,7 +6,6 @@ import { createPortal } from 'react-dom'
 import { useUILayer } from '@/lib/input-manager'
 import { useOasisStore } from '@/store/oasisStore'
 import { GROUND_PRESETS, getTextureUrls, type GroundPreset } from '@/lib/forge/ground-textures'
-import { hasTerrainRelief } from '@/lib/forge/terrain-brush'
 import { SettingsContext } from '../scene-lib'
 
 const PANEL_WIDTH = 320
@@ -82,8 +81,6 @@ export function TerrainBrushPanel() {
   const setTerrainBrushIntensity = useOasisStore(s => s.setTerrainBrushIntensity)
   const setTerrainBrushRadius = useOasisStore(s => s.setTerrainBrushRadius)
   const setTerrainBrushDirection = useOasisStore(s => s.setTerrainBrushDirection)
-  const resetTerrainHeights = useOasisStore(s => s.resetTerrainHeights)
-  const terrainHeights = useOasisStore(s => s.terrainHeights)
   const groundTiles = useOasisStore(s => s.groundTiles)
   const paintMode = useOasisStore(s => s.paintMode)
   const paintBrushPresetId = useOasisStore(s => s.paintBrushPresetId)
@@ -113,8 +110,6 @@ export function TerrainBrushPanel() {
     [customGroundPresets, deletedPresetIds],
   )
   const activePreset = allPresets.find(preset => preset.id === paintBrushPresetId)
-  const reliefActive = hasTerrainRelief(terrainHeights)
-
   const close = useCallback(() => setOpen(false), [setOpen])
 
   const persistPanelPosition = useCallback((position: PanelPosition) => {
@@ -190,10 +185,10 @@ export function TerrainBrushPanel() {
   }, [isOpen, persistPanelPosition])
 
   // ─═̷─ Auto-collapse the texture grid whenever paint mode is (re-)entered.
-  // External triggers like "Use as tile" from a text-to-pic spelltab call
-  // enterPaintMode + open this panel; the grid is noise at that moment.
+  // Keep the texture grid open when paint mode is entered, especially on
+  // phones where the panel doubles as the spell's main object picker.
   useEffect(() => {
-    if (paintMode) setTexturesExpanded(false)
+    if (paintMode) setTexturesExpanded(true)
   }, [paintMode, paintBrushPresetId])
 
   if (!isOpen || typeof document === 'undefined') return null
@@ -201,9 +196,9 @@ export function TerrainBrushPanel() {
   const panelStyle: React.CSSProperties = mobileViewport
     ? {
         right: 8,
-        top: 20,
+        top: 10,
         width: `min(${PANEL_WIDTH}px, calc(100vw - 16px))`,
-        maxHeight: 'min(58vh, calc(100vh - 40px))',
+        maxHeight: 'min(52dvh, calc(100dvh - 20px))',
         overflowY: 'auto',
         zIndex: panelZIndex,
         background: `rgba(7, 12, 10, ${Math.max(0.72, settings.uiOpacity ?? 0.85)})`,
@@ -272,10 +267,10 @@ export function TerrainBrushPanel() {
         </button>
       </div>
 
-      <div className={`${mobileViewport ? 'max-h-[44vh]' : 'max-h-[68vh]'} overflow-y-auto p-3`}>
+      <div className={`${mobileViewport ? 'max-h-[42dvh] p-2' : 'max-h-[68vh] p-3'} overflow-y-auto`}>
         {mode === 'texture' ? (
-          <div className="space-y-3">
-            <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 p-2.5">
+          <div className={mobileViewport ? 'space-y-2' : 'space-y-3'}>
+            <div className={`rounded-lg border border-emerald-400/20 bg-emerald-400/10 ${mobileViewport ? 'p-2' : 'p-2.5'}`}>
               <div className="mb-2 text-[10px] font-mono font-bold text-emerald-200">
                 Paint Mode - {activePreset?.name || 'No Brush'}
               </div>
@@ -315,9 +310,11 @@ export function TerrainBrushPanel() {
               >
                 FULL PAINT
               </button>
-              <div className="mt-1.5 text-[8px] font-mono text-emerald-100/45">
-                L-click: paint | R-click: erase | ESC: exit
-              </div>
+              {!mobileViewport && (
+                <div className="mt-1.5 text-[8px] font-mono text-emerald-100/45">
+                  L-click: paint | R-click: erase | ESC: exit
+                </div>
+              )}
             </div>
 
             <button
@@ -360,7 +357,7 @@ export function TerrainBrushPanel() {
             )}
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className={mobileViewport ? 'space-y-2' : 'space-y-3'}>
             <div className="grid grid-cols-2 gap-1.5">
               {(['up', 'down'] as const).map(direction => (
                 <button
@@ -373,8 +370,8 @@ export function TerrainBrushPanel() {
               ))}
             </div>
 
-            <label className="block rounded-lg border border-white/10 bg-black/20 p-2.5">
-              <div className="mb-2 flex items-center justify-between text-[10px] font-mono">
+            <label className={`block rounded-lg border border-white/10 bg-black/20 ${mobileViewport ? 'p-2' : 'p-2.5'}`}>
+              <div className={`${mobileViewport ? 'mb-1' : 'mb-2'} flex items-center justify-between text-[10px] font-mono`}>
                 <span className="text-emerald-100/55">Intensity / second</span>
                 <span className="text-amber-200">{terrainBrushIntensity.toFixed(1)}</span>
               </div>
@@ -389,8 +386,8 @@ export function TerrainBrushPanel() {
               />
             </label>
 
-            <label className="block rounded-lg border border-white/10 bg-black/20 p-2.5">
-              <div className="mb-2 flex items-center justify-between text-[10px] font-mono">
+            <label className={`block rounded-lg border border-white/10 bg-black/20 ${mobileViewport ? 'p-2' : 'p-2.5'}`}>
+              <div className={`${mobileViewport ? 'mb-1' : 'mb-2'} flex items-center justify-between text-[10px] font-mono`}>
                 <span className="text-emerald-100/55">Range radius</span>
                 <span className="text-emerald-200">{terrainBrushRadius.toFixed(1)}m</span>
               </div>
@@ -405,17 +402,11 @@ export function TerrainBrushPanel() {
               />
             </label>
 
-            <div className="rounded-lg border border-amber-400/20 bg-amber-400/10 p-2 text-[9px] font-mono text-amber-100/70">
-              Hold L-click on the ground to sculpt. Release to save the stroke.
-            </div>
-
-            <button
-              onClick={resetTerrainHeights}
-              disabled={!reliefActive}
-              className="w-full rounded-md border border-red-400/25 px-2 py-2 text-[10px] font-mono text-red-200/80 disabled:cursor-not-allowed disabled:opacity-35 enabled:hover:bg-red-400/10"
-            >
-              Reset relief
-            </button>
+            {!mobileViewport && (
+              <div className="rounded-lg border border-amber-400/20 bg-amber-400/10 p-2 text-[9px] font-mono text-amber-100/70">
+                Hold L-click on the ground to sculpt. Release to save the stroke.
+              </div>
+            )}
           </div>
         )}
       </div>

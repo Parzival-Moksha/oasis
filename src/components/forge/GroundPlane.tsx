@@ -599,6 +599,7 @@ function PaintOverlay({ texturePaintActive, sculptActive }: { texturePaintActive
   const commitUndoBatch = useOasisStore(s => s.commitUndoBatch)
   const { setIsDragging } = useContext(DragContext)
   const camera = useThree(s => s.camera)
+  const gl = useThree(s => s.gl)
   const [hoverPos, setHoverPos] = useState<[number, number, number] | null>(null)
   const isPainting = useRef(false)
   const isSculpting = useRef(false)
@@ -606,6 +607,7 @@ function PaintOverlay({ texturePaintActive, sculptActive }: { texturePaintActive
   const crosshairRaycasterRef = useRef(new THREE.Raycaster())
   const crosshairPlaneRef = useRef(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0))
   const crosshairHitRef = useRef(new THREE.Vector3())
+  const crosshairNdcRef = useRef(new THREE.Vector2())
 
   const brushPreset = useMemo(() =>
     GROUND_PRESETS.find(p => p.id === paintBrushPresetId),
@@ -624,6 +626,25 @@ function PaintOverlay({ texturePaintActive, sculptActive }: { texturePaintActive
   const getSculptPreviewPos = useCallback((point: THREE.Vector3): [number, number, number] => {
     return [point.x, sampleTerrainHeightAt(terrainHeights, point.x, point.z) + 0.035, point.z]
   }, [terrainHeights])
+
+  const updateCrosshairNdc = useCallback(() => {
+    const canvasRect = gl.domElement.getBoundingClientRect()
+    const crosshair = typeof document !== 'undefined'
+      ? document.querySelector('[data-oasis-crosshair]')
+      : null
+    const crosshairRect = crosshair?.getBoundingClientRect()
+    const clientX = crosshairRect
+      ? crosshairRect.left + crosshairRect.width / 2
+      : canvasRect.left + canvasRect.width / 2
+    const clientY = crosshairRect
+      ? crosshairRect.top + crosshairRect.height / 2
+      : canvasRect.top + canvasRect.height / 2
+    crosshairNdcRef.current.set(
+      ((clientX - canvasRect.left) / Math.max(1, canvasRect.width)) * 2 - 1,
+      -(((clientY - canvasRect.top) / Math.max(1, canvasRect.height)) * 2 - 1),
+    )
+    return crosshairNdcRef.current
+  }, [gl])
 
   useFrame((_, delta) => {
     if (!isSculpting.current || !lastSculptPoint.current || !sculptActive) return
@@ -680,19 +701,63 @@ function PaintOverlay({ texturePaintActive, sculptActive }: { texturePaintActive
   }, [finishStroke])
 
   useEffect(() => {
-    if (!texturePaintActive) return
-    const handlePaintAtCrosshair = () => {
+    if (!texturePaintActive && !sculptActive) return
+    const paintStrokeActive = { current: false }
+    const sculptStrokeActive = { current: false }
+
+    const raycastCrosshairGround = () => {
       const raycaster = crosshairRaycasterRef.current
       const hit = crosshairHitRef.current
-      raycaster.setFromCamera(new THREE.Vector2(0, 0), camera)
-      if (!raycaster.ray.intersectPlane(crosshairPlaneRef.current, hit)) return
-      beginUndoBatch('Paint tiles', 'paint')
-      paintGroundArea(hit.x, hit.z)
-      commitUndoBatch()
+      raycaster.setFromCamera(updateCrosshairNdc(), camera)
+      if (!raycaster.ray.intersectPlane(crosshairPlaneRef.current, hit)) return null
+      return hit
     }
+
+    const handlePaintAtCrosshair = (event: Event) => {
+      if (!texturePaintActive) return
+      const phase = (event as CustomEvent<{ phase?: string }>).detail?.phase || 'start'
+      if (phase === 'end') {
+        if (paintStrokeActive.current) commitUndoBatch()
+        paintStrokeActive.current = false
+        return
+      }
+      const hit = raycastCrosshairGround()
+      if (!hit) return
+      if (!paintStrokeActive.current) {
+        beginUndoBatch('Paint tiles', 'paint')
+        paintStrokeActive.current = true
+      }
+      paintGroundArea(hit.x, hit.z)
+      setHoverPos(snapToGrid(hit))
+    }
+
+    const handleTerrainBrushAtCrosshair = (event: Event) => {
+      if (!sculptActive) return
+      const phase = (event as CustomEvent<{ phase?: string }>).detail?.phase || 'start'
+      if (phase === 'end') {
+        const shouldSave = sculptStrokeActive.current
+        if (sculptStrokeActive.current) commitUndoBatch()
+        sculptStrokeActive.current = false
+        if (shouldSave) saveWorldState()
+        return
+      }
+      const hit = raycastCrosshairGround()
+      if (!hit) return
+      if (!sculptStrokeActive.current) {
+        beginUndoBatch('Sculpt terrain', 'terrain')
+        sculptStrokeActive.current = true
+      }
+      sculptTerrainAt(hit.x, hit.z, 1 / 18)
+      setHoverPos(getSculptPreviewPos(hit))
+    }
+
     window.addEventListener('oasis:paint-at-crosshair', handlePaintAtCrosshair)
-    return () => window.removeEventListener('oasis:paint-at-crosshair', handlePaintAtCrosshair)
-  }, [camera, beginUndoBatch, commitUndoBatch, paintGroundArea, texturePaintActive])
+    window.addEventListener('oasis:terrain-brush-at-crosshair', handleTerrainBrushAtCrosshair)
+    return () => {
+      window.removeEventListener('oasis:paint-at-crosshair', handlePaintAtCrosshair)
+      window.removeEventListener('oasis:terrain-brush-at-crosshair', handleTerrainBrushAtCrosshair)
+    }
+  }, [camera, beginUndoBatch, commitUndoBatch, getSculptPreviewPos, paintGroundArea, saveWorldState, sculptActive, sculptTerrainAt, snapToGrid, texturePaintActive, updateCrosshairNdc])
 
   const handlePointerMove = useCallback((e: any) => {
     const point = e.point as THREE.Vector3

@@ -12,7 +12,7 @@
 
 'use client'
 
-import { useState, useRef, useCallback, useEffect, useMemo, useContext } from 'react'
+import { createContext, useState, useRef, useCallback, useEffect, useMemo, useContext, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useOasisStore } from '../../store/oasisStore'
 import { SettingsContext } from '../scene-lib/contexts'
@@ -33,6 +33,43 @@ const DEFAULT_POSITION = { x: 16, y: 80 }
 const DEFAULT_WIDTH = 320
 const MIN_WIDTH = 280
 const MAX_WIDTH = 400
+const MOBILE_VIEWPORT_PX = 700
+
+type InspectorCollapseContextValue = {
+  expanded: Record<string, boolean>
+  toggle: (key: string) => void
+}
+
+const InspectorCollapseContext = createContext<InspectorCollapseContextValue | null>(null)
+
+function isMobileInspectorViewport(): boolean {
+  if (typeof window === 'undefined') return false
+  return window.innerWidth <= MOBILE_VIEWPORT_PX
+}
+
+function inspectorSectionKey(node: React.ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(inspectorSectionKey).join('')
+  return 'section'
+}
+
+function getInspectorPanelWidth(mobileViewport: boolean): number {
+  if (typeof window === 'undefined' || !mobileViewport) return DEFAULT_WIDTH
+  return Math.max(232, Math.min(340, window.innerWidth - 88))
+}
+
+function clampInspectorPosition(
+  position: { x: number; y: number },
+  mobileViewport: boolean,
+): { x: number; y: number } {
+  if (typeof window === 'undefined') return position
+  const width = getInspectorPanelWidth(mobileViewport)
+  const bottomReserve = mobileViewport ? 220 : 120
+  return {
+    x: Math.max(8, Math.min(window.innerWidth - width - 8, position.x)),
+    y: Math.max(8, Math.min(window.innerHeight - bottomReserve, position.y)),
+  }
+}
 
 /** ░▒▓ Movement type options — each a different dance ▓▒░ */
 const MOVEMENT_TYPES = ['static', 'spin', 'hover', 'orbit', 'bounce', 'pendulum', 'patrol'] as const
@@ -146,13 +183,21 @@ function PillSelector<T extends string>({ value, options, onChange, labels }: {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
+  const collapse = useContext(InspectorCollapseContext)
+  const key = inspectorSectionKey(children)
+  const expanded = collapse ? collapse.expanded[key] === true : true
   return (
-    <div
-      className="text-[10px] text-gray-200 uppercase tracking-wider font-mono mb-1.5 mt-3 first:mt-0 px-2 py-1 rounded"
+    <button
+      type="button"
+      data-inspector-section
+      data-collapsed={collapse && !expanded ? 'true' : 'false'}
+      onClick={collapse ? (event) => { event.stopPropagation(); collapse.toggle(key) } : undefined}
+      className="flex w-full items-center justify-between text-left text-[10px] text-gray-200 uppercase tracking-wider font-mono mb-1.5 mt-3 first:mt-0 px-2 py-1 rounded"
       style={{ background: 'rgba(30, 20, 40, 0.8)' }}
     >
-      {children}
-    </div>
+      <span>{children}</span>
+      {collapse && <span className="text-gray-400">{expanded ? '-' : '+'}</span>}
+    </button>
   )
 }
 
@@ -547,11 +592,14 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
     if (typeof window === 'undefined') return DEFAULT_POSITION
     try {
       const saved = localStorage.getItem('oasis-inspector-pos')
-      return saved ? JSON.parse(saved) : DEFAULT_POSITION
+      const parsed = saved ? JSON.parse(saved) : DEFAULT_POSITION
+      return clampInspectorPosition(parsed, isMobileInspectorViewport())
     } catch { return DEFAULT_POSITION }
   })
   const [isDragging, setIsDragging] = useState(false)
   const dragStart = useRef({ x: 0, y: 0 })
+  const [mobileViewport, setMobileViewport] = useState(() => isMobileInspectorViewport())
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({})
 
   // ─═̷─ Panel opacity — driven by system uiOpacity setting ─═̷─
   const { settings: inspectorSettings } = useContext(SettingsContext)
@@ -563,6 +611,27 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
       localStorage.setItem('oasis-inspector-pos', JSON.stringify(position))
     }
   }, [isDragging, position])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const updateViewport = () => {
+      const nextMobile = isMobileInspectorViewport()
+      setMobileViewport(nextMobile)
+      setPosition(current => clampInspectorPosition(nextMobile ? { x: 8, y: 64 } : current, nextMobile))
+    }
+    updateViewport()
+    window.addEventListener('resize', updateViewport)
+    window.addEventListener('orientationchange', updateViewport)
+    return () => {
+      window.removeEventListener('resize', updateViewport)
+      window.removeEventListener('orientationchange', updateViewport)
+    }
+  }, [isOpen])
+
+  const collapseContextValue = useMemo<InspectorCollapseContextValue>(() => ({
+    expanded: expandedSections,
+    toggle: (key) => setExpandedSections(current => ({ ...current, [key]: current[key] !== true })),
+  }), [expandedSections])
 
   // ─═̷─ Store slices ─═̷─
   const inspectedObjectId = useOasisStore(s => s.inspectedObjectId)
@@ -587,6 +656,10 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
   const objectMeshStats = useOasisStore(s => s.objectMeshStats)
   const transformMode = useOasisStore(s => s.transformMode)
   const setTransformMode = useOasisStore(s => s.setTransformMode)
+
+  useEffect(() => {
+    setExpandedSections({})
+  }, [inspectedObjectId])
 
   const worldLights = useOasisStore(s => s.worldLights)
   const updateWorldLight = useOasisStore(s => s.updateWorldLight)
@@ -788,34 +861,36 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
   // DRAG HANDLERS (same pattern as WizardConsole / AssetExplorerWindow)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  const handleDragStart = useCallback((e: React.MouseEvent) => {
+  const handleDragStart = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return
     if ((e.target as HTMLElement).closest('button')) return
     if ((e.target as HTMLElement).closest('input')) return
     if ((e.target as HTMLElement).closest('select')) return
     setIsDragging(true)
     dragStart.current = { x: e.clientX - position.x, y: e.clientY - position.y }
+    try { e.currentTarget.setPointerCapture(e.pointerId) } catch {}
     e.preventDefault()
   }, [position])
 
-  const handleDrag = useCallback((e: MouseEvent) => {
+  const handleDrag = useCallback((e: PointerEvent) => {
     if (!isDragging) return
-    setPosition({
-      x: Math.max(0, Math.min(window.innerWidth - DEFAULT_WIDTH, e.clientX - dragStart.current.x)),
-      y: Math.max(0, Math.min(window.innerHeight - 200, e.clientY - dragStart.current.y)),
-    })
-  }, [isDragging])
+    setPosition(clampInspectorPosition({
+      x: e.clientX - dragStart.current.x,
+      y: e.clientY - dragStart.current.y,
+    }, mobileViewport))
+  }, [isDragging, mobileViewport])
 
   const handleDragEnd = useCallback(() => setIsDragging(false), [])
 
   // Global mouse events for drag
   useEffect(() => {
     if (isDragging) {
-      document.addEventListener('mousemove', handleDrag)
-      document.addEventListener('mouseup', handleDragEnd)
+      document.addEventListener('pointermove', handleDrag)
+      document.addEventListener('pointerup', handleDragEnd)
     }
     return () => {
-      document.removeEventListener('mousemove', handleDrag)
-      document.removeEventListener('mouseup', handleDragEnd)
+      document.removeEventListener('pointermove', handleDrag)
+      document.removeEventListener('pointerup', handleDragEnd)
     }
   }, [isDragging, handleDrag, handleDragEnd])
 
@@ -838,18 +913,21 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
 
   // ─═̷─ Mesh stats for this object (if GLB has been loaded) ─═̷─
   const stats: ModelStats | undefined = objectMeshStats[inspectedObjectId]
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // RENDER — The inspector portal opens
-  // ░▒▓█ Every object deserves to be seen █▓▒░
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  return createPortal(
-    <div
-      data-menu-portal="object-inspector"
-      data-ui-panel
-      className="fixed rounded-xl overflow-hidden shadow-2xl flex flex-col"
-      style={{
+  const inspectorWidth = getInspectorPanelWidth(mobileViewport)
+  const inspectorPanelStyle: React.CSSProperties = mobileViewport
+    ? {
+        zIndex: useOasisStore.getState().getPanelZIndex('inspector', 9998),
+        left: position.x,
+        top: position.y,
+        width: inspectorWidth,
+        minWidth: 0,
+        maxWidth: 'calc(100vw - 16px)',
+        maxHeight: 'calc(100dvh - 232px)',
+        backgroundColor: `rgba(0, 0, 0, ${opacity})`,
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        boxShadow: `0 0 30px ${INSPECTOR_COLOR}22, 0 0 60px rgba(0, 0, 0, 0.5)`,
+      }
+    : {
         zIndex: useOasisStore.getState().getPanelZIndex('inspector', 9998),
         left: position.x,
         top: position.y,
@@ -858,17 +936,35 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
         maxWidth: MAX_WIDTH,
         maxHeight: 'calc(100vh - 100px)',
         backgroundColor: `rgba(0, 0, 0, ${opacity})`,
-        border: `1px solid rgba(255, 255, 255, 0.1)`,
+        border: '1px solid rgba(255, 255, 255, 0.1)',
         boxShadow: `0 0 30px ${INSPECTOR_COLOR}22, 0 0 60px rgba(0, 0, 0, 0.5)`,
-      }}
+      }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RENDER — The inspector portal opens
+  // ░▒▓█ Every object deserves to be seen █▓▒░
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  return createPortal(
+    <InspectorCollapseContext.Provider value={collapseContextValue}>
+    <div
+      data-menu-portal="object-inspector"
+      data-ui-panel
+      className="fixed rounded-xl overflow-hidden shadow-2xl flex flex-col"
+      style={inspectorPanelStyle}
       onMouseDown={(e) => { e.stopPropagation(); useOasisStore.getState().bringPanelToFront('inspector') }}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
+      <style>{`
+        [data-menu-portal="object-inspector"] [data-inspector-section][data-collapsed="true"] + * {
+          display: none !important;
+        }
+      `}</style>
       {/* ─═̷─═̷─ HEADER ─═̷─═̷─ draggable, shows name + type badge + close */}
       <div
-        className="px-3 py-2 border-b border-white/5 flex items-center gap-2 cursor-grab select-none flex-shrink-0"
-        onMouseDown={handleDragStart}
+        className={`px-3 py-2 border-b border-white/5 flex items-center gap-2 cursor-grab active:cursor-grabbing select-none flex-shrink-0 ${mobileViewport ? 'py-2.5' : ''}`}
+        onPointerDown={handleDragStart}
         style={{
           background: `linear-gradient(135deg, ${INSPECTOR_COLOR}15 0%, rgba(0,0,0,0) 100%)`,
         }}
@@ -909,14 +1005,15 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
         {/* Close */}
         <button
           onClick={() => { setInspectedObject(null); onClose() }}
-          className="text-gray-500 hover:text-white transition-colors text-lg leading-none ml-1 shrink-0"
+          className="ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-300/35 bg-red-950/30 text-2xl leading-none text-red-100 transition-colors hover:border-red-200/70 hover:bg-red-900/55 hover:text-white"
+          aria-label="Close object inspector"
         >
           &#215;
         </button>
       </div>
 
       {/* ─═̷─═̷─ SCROLLABLE BODY ─═̷─═̷─ */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-1">
+      <div className={`flex-1 min-h-0 overflow-y-auto space-y-1 ${mobileViewport ? 'px-2 py-2' : 'px-3 py-2'}`}>
 
         {/* ░▒▓ TRANSFORM — mode switcher + readout ▓▒░ */}
         <SectionHeader>&#9670; Transform</SectionHeader>
@@ -2278,7 +2375,8 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
 
       {/* ─═̷─═̷─ subtle bottom glow ─═̷─═̷─ */}
       <div className="h-px w-full" style={{ background: `linear-gradient(90deg, transparent, ${INSPECTOR_COLOR}33, transparent)` }} />
-    </div>,
+    </div>
+    </InspectorCollapseContext.Provider>,
     document.body
   )
 }

@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { CollapsibleSection, scrollIntoViewOnFocus } from '../SpellTabFrame'
+import { useOasisStore } from '@/store/oasisStore'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 
@@ -87,6 +88,7 @@ export function MusicBody({ defaultExpandNew = true, defaultExpandGallery = true
   const [error, setError] = useState<string | null>(null)
   const [expandNew, setExpandNew] = useState(defaultExpandNew)
   const [expandGallery, setExpandGallery] = useState(defaultExpandGallery)
+  const enterPlacementMode = useOasisStore(s => s.enterPlacementMode)
 
   // ── Fetch uploaded audio so the gallery shows previously-uploaded MP3s too
   const fetchUploaded = useCallback(async () => {
@@ -161,6 +163,17 @@ export function MusicBody({ defaultExpandNew = true, defaultExpandGallery = true
     })
   }, [])
 
+  const placeAudioTrack = useCallback((track: GeneratedMusic) => {
+    enterPlacementMode({
+      type: 'catalog',
+      catalogId: 'kf_speaker',
+      name: track.prompt.slice(0, 30) || 'Music speaker',
+      path: '/models/kenney-furniture/speaker.glb',
+      defaultScale: 1,
+      audioUrl: track.url,
+    })
+  }, [enterPlacementMode])
+
   // Merge history + previously-uploaded audio (de-duplicated by URL).
   const galleryEntries = [
     ...history,
@@ -185,6 +198,12 @@ export function MusicBody({ defaultExpandNew = true, defaultExpandGallery = true
         onToggle={() => setExpandNew(e => !e)}
         rightSlot={`${MUSIC_MODELS.find(m => m.key === model)?.label || model} / ${(durationMs / 1000).toFixed(0)}s`}
       >
+        <style>{`
+          @keyframes oasisMusicBars {
+            0%, 100% { transform: scaleY(0.35); opacity: 0.45; }
+            50% { transform: scaleY(1); opacity: 1; }
+          }
+        `}</style>
         <div className="flex flex-wrap items-center gap-2">
           <select
             value={model}
@@ -239,7 +258,7 @@ export function MusicBody({ defaultExpandNew = true, defaultExpandGallery = true
               border: '1px solid rgba(167, 139, 250, 0.4)',
             }}
           >
-            {inFlight.length > 0 ? `Generate (${inFlight.length})` : 'Generate 🎵'}
+            {inFlight.length > 0 ? `Generating (${inFlight.length})` : 'Generate 🎵'}
           </button>
         </div>
 
@@ -265,10 +284,18 @@ export function MusicBody({ defaultExpandNew = true, defaultExpandGallery = true
                   </>
                 ) : (
                   <>
-                    <span className="text-base animate-pulse">{'\u{1F3B5}'}</span>
+                    <span className="flex h-5 items-end gap-0.5" aria-hidden="true">
+                      {[0, 1, 2, 3].map(i => (
+                        <span
+                          key={i}
+                          className="block h-4 w-1 rounded-full bg-purple-300"
+                          style={{ animation: `oasisMusicBars 680ms ease-in-out ${i * 90}ms infinite` }}
+                        />
+                      ))}
+                    </span>
                     <span className="text-[10px] text-purple-300 font-mono flex-1 truncate">{f.prompt}</span>
                     <span className="text-[9px] text-purple-400/60 font-mono">
-                      {(f.durationMs / 1000).toFixed(0)}s
+                      generating {(f.durationMs / 1000).toFixed(0)}s
                     </span>
                   </>
                 )}
@@ -301,15 +328,24 @@ export function MusicBody({ defaultExpandNew = true, defaultExpandGallery = true
                   <span className="text-[11px] text-purple-200 font-mono truncate" title={track.prompt}>
                     {track.prompt}
                   </span>
-                  {history.some(h => h.id === track.id) && (
+                  <div className="flex shrink-0 items-center gap-1">
                     <button
-                      onClick={() => handleDelete(track.id)}
-                      className="text-[10px] text-gray-500 hover:text-red-400"
-                      title="Forget from history"
+                      onClick={() => placeAudioTrack(track)}
+                      className="rounded border border-purple-300/35 bg-purple-400/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-purple-100 hover:border-purple-200/60 hover:bg-purple-300/20"
+                      title="Place this track on a speaker"
                     >
-                      &times;
+                      Place
                     </button>
-                  )}
+                    {history.some(h => h.id === track.id) && (
+                      <button
+                        onClick={() => handleDelete(track.id)}
+                        className="text-[10px] text-gray-500 hover:text-red-400"
+                        title="Forget from history"
+                      >
+                        &times;
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <audio controls preload="none" src={track.url} className="w-full" style={{ height: 32 }} />
                 <div className="text-[9px] text-gray-500 font-mono mt-0.5">

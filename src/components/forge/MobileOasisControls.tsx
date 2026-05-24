@@ -5,14 +5,27 @@ import { pushMouseLookDelta, useInputManager } from '@/lib/input-manager'
 import { isProbablyMobileDevice, useMobileControls } from '@/lib/mobile-controls'
 import { getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
 import { findNearestSpatialWebObject, SPATIAL_WEB_INTERACTION_RADIUS, type SpatialWebObject } from '@/lib/spatial-web'
-import { useOasisStore } from '@/store/oasisStore'
+import { useOasisStore, type AgentWindow, type AgentWindowType } from '@/store/oasisStore'
 import type { SpellId } from '@/lib/spellbook'
 import { PLAYER_BASE_STATS } from '@/lib/player-progression'
+import { getViewerUserIdClient } from '@/lib/viewer-identity-client'
 
 const PAD_RADIUS = 48
 const MOBILE_LOOK_MULTIPLIER = 2.1
 const LOOK_DEADZONE_PX = 4
 const PINCH_ZOOM_SENSITIVITY = 0.0028
+const MOBILE_PRIVATE_AGENT_WINDOW_TYPES = new Set<AgentWindowType>([
+  'anorak',
+  'codex',
+  'gemini',
+  'anorak-pro',
+  'merlin',
+  'realtime',
+  'hermes',
+  'openclaw',
+  'devcraft',
+  'parzival',
+])
 
 type TouchPoint = { x: number; y: number }
 type FullscreenTarget = HTMLElement & { webkitRequestFullscreen?: () => Promise<void> | void }
@@ -52,6 +65,11 @@ function firstTwoTouchDistance(points: Map<number, TouchPoint>): number | null {
 function dispatchTpsZoomDelta(delta: number): void {
   if (!Number.isFinite(delta) || delta === 0) return
   window.dispatchEvent(new CustomEvent('oasis:tps-zoom-delta', { detail: { delta } }))
+}
+
+function canFocusAgentWindowOnMobile(window: AgentWindow, viewerUserId: string): boolean {
+  if (window.ownerId && window.ownerId !== viewerUserId && MOBILE_PRIVATE_AGENT_WINDOW_TYPES.has(window.agentType)) return false
+  return true
 }
 
 function getFullscreenDocument(): FullscreenDocument | null {
@@ -128,12 +146,10 @@ export function MobileOasisControls({
   const lookPointerRef = useRef<{ id: number; x: number; y: number; moved: boolean } | null>(null)
   const lookTouchesRef = useRef<Map<number, TouchPoint>>(new Map())
   const pinchRef = useRef<{ distance: number } | null>(null)
-  // When paint mode is armed, the look-overlay must hand its events through to
-  // the canvas underneath so PaintCursor sees the drag.
+  // When the old paint wand is actively held, the look-overlay hands events
+  // through to the canvas underneath so PaintCursor can own the stroke.
   const paintHeldActive = useOasisStore(s => s.paintHeldActive)
-  const selectedObjectId = useOasisStore(s => s.selectedObjectId)
-  const isReadOnly = useOasisStore(s => s.isViewMode && !s.isViewModeEditable)
-  const canvasNeedsTouch = paintHeldActive || (Boolean(selectedObjectId) && !isReadOnly)
+  const canvasNeedsTouch = paintHeldActive
 
   useEffect(() => {
     if (!enabled) {
@@ -298,9 +314,8 @@ export function MobileOasisControls({
           drag rotates the camera (mobile feel). Joystick + action buttons are
           siblings later in DOM order with their own pointer-events-auto, so
           they sit ABOVE this overlay and keep working. When the user holds
-          the Paint button or selects an object, this overlay disables its own
-          pointer-events so drags flow through to PaintCursor / TransformControls
-          on the canvas underneath. */}
+          the Paint button, this overlay disables its own pointer-events so
+          drags flow through to PaintCursor on the canvas underneath. */}
       <div
         aria-hidden="true"
         className={`absolute inset-0 touch-none ${canvasNeedsTouch ? 'pointer-events-none' : 'pointer-events-auto'}`}
@@ -484,12 +499,29 @@ function MobilePrimaryActionButton({
   const placementPending = useOasisStore(s => s.placementPending)
   const selectedSpellId = useOasisStore(s => s.selectedSpellId)
   const paintMode = useOasisStore(s => s.paintMode)
+  const terrainBrushPanelOpen = useOasisStore(s => s.terrainBrushPanelOpen)
+  const terrainBrushMode = useOasisStore(s => s.terrainBrushMode)
+  const terrainBrushDirection = useOasisStore(s => s.terrainBrushDirection)
+  const brushStrokeTimerRef = useRef<number | null>(null)
+
+  const stopBrushStroke = useCallback((eventName?: string) => {
+    if (brushStrokeTimerRef.current !== null) {
+      window.clearInterval(brushStrokeTimerRef.current)
+      brushStrokeTimerRef.current = null
+    }
+    if (eventName) {
+      window.dispatchEvent(new CustomEvent(eventName, { detail: { phase: 'end' } }))
+    }
+  }, [])
+
+  useEffect(() => () => stopBrushStroke(), [stopBrushStroke])
 
   // Compute label + tone + handler from current context.
   let label = 'Select'
   let tone: 'amber' | 'amber-pulse' | 'rose' | 'cyan' | 'emerald' = 'amber'
   let disabled = false
   let onTap: () => void
+  let strokeEventName: string | null = null
 
   if (placementPending) {
     label = 'Place'
@@ -513,10 +545,16 @@ function MobilePrimaryActionButton({
       : 'Ice'
     tone = 'rose'
     onTap = () => { dispatchSyntheticLeftClick() }
+  } else if (terrainBrushPanelOpen && terrainBrushMode === 'sculpt') {
+    label = terrainBrushDirection === 'down' ? 'Lower' : 'Raise'
+    tone = 'emerald'
+    strokeEventName = 'oasis:terrain-brush-at-crosshair'
+    onTap = () => { window.dispatchEvent(new CustomEvent('oasis:terrain-brush-at-crosshair', { detail: { phase: 'start' } })) }
   } else if (paintMode) {
     label = 'Paint'
     tone = 'emerald'
-    onTap = () => { window.dispatchEvent(new CustomEvent('oasis:paint-at-crosshair')) }
+    strokeEventName = 'oasis:paint-at-crosshair'
+    onTap = () => { window.dispatchEvent(new CustomEvent('oasis:paint-at-crosshair', { detail: { phase: 'start' } })) }
   } else {
     onTap = () => { window.dispatchEvent(new CustomEvent('oasis:select-at-crosshair')) }
   }
@@ -545,7 +583,33 @@ function MobilePrimaryActionButton({
         onPointerDown={event => {
           event.preventDefault()
           event.stopPropagation()
+          if (strokeEventName) {
+            try { event.currentTarget.setPointerCapture(event.pointerId) } catch {}
+            stopBrushStroke()
+            window.dispatchEvent(new CustomEvent(strokeEventName, { detail: { phase: 'start' } }))
+            brushStrokeTimerRef.current = window.setInterval(() => {
+              window.dispatchEvent(new CustomEvent(strokeEventName, { detail: { phase: 'move' } }))
+            }, 70)
+            return
+          }
           onTap()
+        }}
+        onPointerUp={event => {
+          if (!strokeEventName) return
+          event.preventDefault()
+          event.stopPropagation()
+          try {
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+              event.currentTarget.releasePointerCapture(event.pointerId)
+            }
+          } catch {}
+          stopBrushStroke(strokeEventName)
+        }}
+        onPointerCancel={event => {
+          if (!strokeEventName) return
+          event.preventDefault()
+          event.stopPropagation()
+          stopBrushStroke(strokeEventName)
         }}
       >
         {label}
@@ -565,8 +629,14 @@ function MobilePrimaryActionButton({
 // ─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─
 
 function MobileFocusAgentButton() {
-  const agentWindowCount = useOasisStore(s => s.placedAgentWindows.length)
-  if (agentWindowCount === 0) return null
+  const focusableAgentWindowCount = useOasisStore(s => {
+    const viewerUserId = getViewerUserIdClient()
+    return s.placedAgentWindows.filter(window =>
+      s.behaviors[window.id]?.visible !== false
+      && canFocusAgentWindowOnMobile(window, viewerUserId)
+    ).length
+  })
+  if (focusableAgentWindowCount === 0) return null
 
   return (
     <button
@@ -589,6 +659,7 @@ function MobileTransformHotbar() {
   const transformMode = useOasisStore(s => s.transformMode)
   const setTransformMode = useOasisStore(s => s.setTransformMode)
   const selectObject = useOasisStore(s => s.selectObject)
+  const setInspectedObject = useOasisStore(s => s.setInspectedObject)
   const isReadOnly = useOasisStore(s => s.isViewMode && !s.isViewModeEditable)
 
   if (!selectedObjectId || isReadOnly) return null
@@ -626,6 +697,18 @@ function MobileTransformHotbar() {
           </button>
         )
       })}
+      <button
+        type="button"
+        className="h-11 min-w-20 touch-none rounded-lg border-2 border-sky-200/45 bg-sky-950/72 px-3 text-[11px] font-black uppercase tracking-[0.14em] text-sky-50 shadow-[0_0_22px_rgba(56,189,248,0.22)] backdrop-blur-sm transition"
+        onPointerDown={event => {
+          event.preventDefault()
+          event.stopPropagation()
+          setInspectedObject(selectedObjectId)
+        }}
+        aria-label="Open selected object inspector"
+      >
+        ⚙ Inspect
+      </button>
       <button
         type="button"
         className="h-11 min-w-20 touch-none rounded-lg border-2 border-rose-300/45 bg-rose-950/60 px-3 text-[11px] font-black uppercase tracking-[0.14em] text-rose-100 shadow-[0_0_18px_rgba(244,63,94,0.18)] backdrop-blur-sm transition"

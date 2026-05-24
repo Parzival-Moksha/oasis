@@ -493,6 +493,24 @@ export interface AgentWindow {
   ownerId?: string
 }
 
+const PRIVATE_AGENT_WINDOW_TYPES = new Set<AgentWindowType>([
+  'anorak',
+  'codex',
+  'gemini',
+  'anorak-pro',
+  'merlin',
+  'realtime',
+  'hermes',
+  'openclaw',
+  'devcraft',
+  'parzival',
+])
+
+function canFocusAgentWindowForViewer(window: AgentWindow, viewerUserId: string): boolean {
+  if (window.ownerId && window.ownerId !== viewerUserId && PRIVATE_AGENT_WINDOW_TYPES.has(window.agentType)) return false
+  return true
+}
+
 export type AgentAvatarType = AgentWindowType | 'hermes'
 
 export interface AgentAvatar {
@@ -4105,8 +4123,13 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
   // Agent window navigation - mirrors slide ordering for 3D windows.
   navigateAgentWindow: (direction) => {
-    const { placedAgentWindows, placedAgentAvatars, transforms, focusedAgentWindowId } = get()
-    if (placedAgentWindows.length === 0) return
+    const { placedAgentWindows, placedAgentAvatars, transforms, behaviors, focusedAgentWindowId } = get()
+    const viewerUserId = getViewerUserIdClient()
+    const focusableWindows = placedAgentWindows.filter(window =>
+      behaviors[window.id]?.visible !== false
+      && canFocusAgentWindowForViewer(window, viewerUserId)
+    )
+    if (focusableWindows.length === 0) return
 
     const positionForWindow = (window: AgentWindow): [number, number, number] => {
       const windowTransform = transforms[window.id]
@@ -4127,7 +4150,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       return windowTransform?.position || window.position
     }
 
-    const sorted = [...placedAgentWindows].sort((a, b) => {
+    const sorted = [...focusableWindows].sort((a, b) => {
       const [ax, ay, az] = positionForWindow(a)
       const [bx, by, bz] = positionForWindow(b)
       if (Math.abs(ax - bx) > 0.5) return ax - bx

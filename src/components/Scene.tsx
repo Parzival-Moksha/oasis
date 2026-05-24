@@ -66,7 +66,7 @@ import { useWorldLoader } from './forge/WorldObjects'
 import { completeQuest } from '@/lib/quests'
 import { useInputManager, useUILayer, getMouseLookDebugState, isPointerLocked } from '@/lib/input-manager'
 import { getPlayerAvatarPose, requestPlayerAvatarTeleport, type PlayerAvatarPose } from '@/lib/player-avatar-runtime'
-import { QUEST_ZERO_WORLD_ID, ROOKIE_WIZARD_WORLD_ID } from '@/lib/portal-gates'
+import { QUEST_ZERO_WORLD_ID, ROOKIE_WIZARD_WORLD_ID, WELCOME_HUB_WORLD_ID } from '@/lib/portal-gates'
 import { preloadPortalRevealRoll } from '@/lib/portal-transition-settings'
 import { sampleTerrainHeightAt } from '@/lib/forge/terrain-brush'
 import { CameraController as CameraControllerComponent, sprintRef, FPS_KEYBOARD_MAP } from './CameraController'
@@ -1292,6 +1292,7 @@ export default function Scene() {
   const activeWorldWriteKnown = Boolean(activeWorldMeta) || isViewMode
   const readOnlyForcesRp1 = Boolean(activeWorldWriteKnown && !activeWorldCanWrite)
   const effectiveRp1Mode = settings.rp1Mode || readOnlyForcesRp1
+  const isPortalZeroWorld = activeWorldId === WELCOME_HUB_WORLD_ID
   const playableWorldId = isViewMode ? (viewingWorldId || activeWorldId) : activeWorldId
   const playableWorldReady = isViewMode
     ? Boolean(viewingWorldMeta?.id || (isViewModeEditable && worldReady))
@@ -1913,8 +1914,8 @@ export default function Scene() {
         canDeleteSelected={Boolean(selectedObjectId && !hideEditTools)}
         onDeleteSelected={deleteSelectedObject}
       />
-      <PlayerVitalsHud visible={effectiveRp1Mode} />
-      <PvPOverlay visible={effectiveRp1Mode} />
+      <PlayerVitalsHud visible={effectiveRp1Mode && !isPortalZeroWorld} />
+      <PvPOverlay visible={effectiveRp1Mode && !isPortalZeroWorld} />
       <PlayerSpellbookPanel
         visible
         isOpen={spellbookOpen}
@@ -1935,7 +1936,7 @@ export default function Scene() {
           always on mobile in those modes, since mobile can't pointer-lock but
           still needs a center target indicator for SELECT / placement / cast. ─═̷─═̷─🎯 */}
       {(settings.controlMode === 'noclip' || settings.controlMode === 'third-person') && (pointerLocked || mobileOasis) && (
-        <div className="fixed inset-0 pointer-events-none z-[99] flex items-center justify-center">
+        <div data-oasis-crosshair className="fixed inset-0 pointer-events-none z-[99] flex items-center justify-center">
           <div className="relative w-5 h-5">
             <div className="absolute top-1/2 left-0 w-full h-px bg-white/40" />
             <div className="absolute left-1/2 top-0 h-full w-px bg-white/40" />
