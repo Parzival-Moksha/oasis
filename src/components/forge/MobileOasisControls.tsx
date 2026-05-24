@@ -174,11 +174,12 @@ export function MobileOasisControls({
     const canvas = document.querySelector('#uploader-canvas') as HTMLElement | null
     if (!canvas) return
     const previousTouchAction = canvas.style.touchAction
+    const trackedTouches = lookTouchesRef.current
     canvas.style.touchAction = 'none'
     return () => {
       canvas.style.touchAction = previousTouchAction
       lookPointerRef.current = null
-      lookTouchesRef.current.clear()
+      trackedTouches.clear()
       pinchRef.current = null
       setLookActive(false)
     }
