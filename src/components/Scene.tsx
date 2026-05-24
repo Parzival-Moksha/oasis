@@ -906,6 +906,8 @@ function AgentQuickLauncher({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [isOpen, onClose])
 
+  if (hideRailButton && !isOpen) return null
+
   return (
     <div ref={menuRef} className="relative select-none">
       {!hideRailButton && (
@@ -2451,6 +2453,8 @@ function formatSpeed(bytesPerSec: number): string {
   return `${(bytesPerSec / 1048576).toFixed(1)} MB/s`
 }
 
+const OASIS_LOADER_FIRST_LOAD_STALL_TIMEOUT_MS = 18000
+
 function OasisLoader() {
   const { progress, active, loaded, total } = useProgress()
   const [show, setShow] = useState(true)
@@ -2524,6 +2528,17 @@ function OasisLoader() {
       XMLHttpRequest.prototype.send = origSend
       cancelAnimationFrame(rafId)
     }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const timer = window.setTimeout(() => {
+      if (hasCompletedFirstLoad.current) return
+      console.warn('[OasisLoader] First load timed out; hiding loader so the world remains usable.')
+      hasCompletedFirstLoad.current = true
+      setShow(false)
+    }, OASIS_LOADER_FIRST_LOAD_STALL_TIMEOUT_MS)
+    return () => window.clearTimeout(timer)
   }, [])
 
   useEffect(() => {

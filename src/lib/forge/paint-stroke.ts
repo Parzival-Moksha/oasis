@@ -35,6 +35,8 @@ export interface PaintStroke extends PaintStrokeStyle {
   type: 'paint_stroke'
   /** Flat [x,y,z, x,y,z, ...] for compact persistence + fast geometry rebuild. */
   points: number[]
+  /** If true, Joystick playback restarts automatically after each reveal. */
+  playbackLoop?: boolean
   authorId?: string
   authorColor?: string
   createdAt: number

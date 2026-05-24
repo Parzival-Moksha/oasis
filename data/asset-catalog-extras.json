@@ -696,13 +696,6 @@
       "defaultScale": 1
     },
     {
-      "id": "scifi-megakit_decals_decal_line_90",
-      "name": "SciFi Decal Line 90 (Decals)",
-      "path": "/models/scifi-megakit/decals/decal_line_90.gltf",
-      "category": "scifi-megakit",
-      "defaultScale": 1
-    },
-    {
       "id": "scifi-megakit_decals_decal_line_90_round",
       "name": "SciFi Decal Line 90 Round (Decals)",
       "path": "/models/scifi-megakit/decals/decal_line_90_round.gltf",

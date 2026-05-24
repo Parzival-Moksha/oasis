@@ -42,6 +42,11 @@ export default function OasisClient({ initialWorldId }: { initialWorldId?: strin
   })
 
   useEffect(() => {
+    if (initialWorldId) window.__oasisPreferredWorldId = initialWorldId
+    else delete window.__oasisPreferredWorldId
+  }, [initialWorldId])
+
+  useEffect(() => {
     let cancelled = false
     // Register EventBus → oasisStore bridge
     // registerStoreHandler() handles its own dedup — safe to call on remount (HMR/StrictMode)

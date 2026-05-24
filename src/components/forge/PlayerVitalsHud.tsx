@@ -244,7 +244,10 @@ export function PlayerVitalsHud({ visible }: { visible: boolean }) {
       const response = await fetch('/api/profile', { cache: 'no-store' })
       if (!response.ok) return
       const data = await response.json()
-      setVitals(prev => normalizeVitals(data, prev))
+      const nextVitals = normalizeVitals(data, vitalsRef.current)
+      vitalsRef.current = nextVitals
+      setVitals(nextVitals)
+      window.dispatchEvent(new CustomEvent('oasis:player-vitals', { detail: nextVitals }))
     } catch {
       // Keep the last known HUD state.
     }
@@ -268,7 +271,10 @@ export function PlayerVitalsHud({ visible }: { visible: boolean }) {
   const rechargeTick = useCallback(async () => {
     if (!rechargeActiveRef.current) return
     const current = vitalsRef.current
-    if (current.mana >= current.maxMana) return
+    if (current.mana >= current.maxMana) {
+      stopRecharge()
+      return
+    }
     const now = performance.now()
     const elapsedMs = now - lastRechargeAtRef.current
     // Keep in sync with server-side computeManaRechargeTicks: base interval
@@ -294,11 +300,13 @@ export function PlayerVitalsHud({ visible }: { visible: boolean }) {
     } catch {
       // Recharge is best-effort; direct profile refresh will recover.
     }
-  }, [])
+  }, [stopRecharge])
 
   const startRecharge = useCallback(() => {
     if (!visible || typeof window === 'undefined' || rechargeActiveRef.current) return
     if (useInputManager.getState().hasActiveUILayer()) return
+    const current = vitalsRef.current
+    if (current.mana >= current.maxMana) return
     rechargeActiveRef.current = true
     lastRechargeAtRef.current = performance.now()
     setRecharging(true)

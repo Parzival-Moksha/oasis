@@ -378,11 +378,13 @@ function AudioSeekSlider({ objectId }: { objectId: string }) {
 // PAINT STROKE PLAYBACK — Play button + duration slider on the Joystick
 // ═══════════════════════════════════════════════════════════════════════════
 
-function PaintStrokePlaybackSection({ strokeId, pointCount, onPlay, onStop }: {
+function PaintStrokePlaybackSection({ strokeId, pointCount, onPlay, onStop, loop, onLoopChange }: {
   strokeId: string
   pointCount: number
   onPlay: (durationSec: number) => void
   onStop: () => void
+  loop: boolean
+  onLoopChange: (loop: boolean) => void
 }) {
   const [duration, setDuration] = useState(4)
   return (
@@ -416,6 +418,15 @@ function PaintStrokePlaybackSection({ strokeId, pointCount, onPlay, onStop }: {
             &#9632;
           </button>
         </div>
+        <label className="flex items-center gap-2 rounded-md border border-white/10 bg-black/25 px-2 py-1.5 text-[10px] font-mono text-fuchsia-100/70">
+          <input
+            type="checkbox"
+            checked={loop}
+            onChange={(e) => onLoopChange(e.target.checked)}
+            className="h-3 w-3 accent-fuchsia-400"
+          />
+          loop playback
+        </label>
       </div>
     </>
   )
@@ -430,7 +441,7 @@ function PaintStrokePlaybackSection({ strokeId, pointCount, onPlay, onStop }: {
 
 function PaintStrokeEditSection({ stroke, onChange }: {
   stroke: import('../../lib/forge/paint-stroke').PaintStroke
-  onChange: (updates: Partial<Pick<import('../../lib/forge/paint-stroke').PaintStroke, 'color' | 'thickness' | 'shininess' | 'mode' | 'varyByVelocity'>>) => void
+  onChange: (updates: Partial<Pick<import('../../lib/forge/paint-stroke').PaintStroke, 'color' | 'thickness' | 'shininess' | 'mode' | 'varyByVelocity' | 'playbackLoop'>>) => void
 }) {
   return (
     <>
@@ -2215,8 +2226,10 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
               <PaintStrokePlaybackSection
                 strokeId={inspectedObjectId}
                 pointCount={Math.floor(stroke.points.length / 3)}
-                onPlay={(durationSec) => playPaintStroke(inspectedObjectId, durationSec)}
+                onPlay={(durationSec) => playPaintStroke(inspectedObjectId, durationSec, Boolean(stroke.playbackLoop))}
                 onStop={() => stopPaintStrokePlayback(inspectedObjectId)}
+                loop={Boolean(stroke.playbackLoop)}
+                onLoopChange={(loop) => updatePaintStroke(inspectedObjectId, { playbackLoop: loop })}
               />
             </>
           )

@@ -93,7 +93,6 @@ export function ProfileButton() {
   const { settings } = useContext(SettingsContext)
 
   const setAvatar3dUrl = useOasisStore(s => s.setAvatar3dUrl)
-  const [dailyBonusToast, setDailyBonusToast] = useState<string | null>(null)
   const dailyBonusTriedRef = useRef(false)
   const [savedFlash, setSavedFlash] = useState(false)
   const [tokenBurn, setTokenBurn] = useState<{
@@ -123,7 +122,7 @@ export function ProfileButton() {
         setProfile(data)
         if ('avatar_3d_url' in data) setAvatar3dUrl(data.avatar_3d_url || DEFAULT_PROFILE_AVATAR_3D_URL)
 
-        // Auto-claim daily login bonus on first successful fetch
+        // Auto-claim daily login XP silently; first-load onboarding should stay calm.
         if (!dailyBonusTriedRef.current) {
           const today = new Date().toISOString().split('T')[0]
           if (data.lastLoginDate !== today) {
@@ -136,10 +135,7 @@ export function ProfileButton() {
               .then(r => r.json())
               .then(bonus => {
                 if (bonus.xp && bonus.xp > 0) {
-                  setDailyBonusToast(`+${bonus.xp} XP Daily Bonus!${bonus.leveledUp ? ` Level up! Lv.${bonus.level}` : ''}`)
-                  // Re-fetch profile to reflect new XP
                   fetch('/api/profile').then(r => r.json()).then(d => setProfile(d)).catch(() => {})
-                  setTimeout(() => setDailyBonusToast(null), 4000)
                 }
               })
               .catch(() => {})
@@ -501,15 +497,6 @@ export function ProfileButton() {
           }}
           onClose={() => setShowAvatarGallery(false)}
         />
-      )}
-      {/* Daily bonus toast */}
-      {dailyBonusToast && (
-        <div
-          className="fixed top-16 left-1/2 -translate-x-1/2 z-[10001] px-5 py-3 rounded-lg border border-yellow-500/40 shadow-lg animate-bounce"
-          style={{ background: 'rgba(20,10,0,0.9)', boxShadow: '0 0 20px rgba(234, 179, 8, 0.3)' }}
-        >
-          <span className="text-yellow-400 font-bold text-sm">{dailyBonusToast}</span>
-        </div>
       )}
     </div>
   )

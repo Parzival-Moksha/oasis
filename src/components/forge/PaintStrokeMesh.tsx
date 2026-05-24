@@ -5,7 +5,7 @@
 // 3D mode: TubeGeometry along a CatmullRomCurve3, MeshStandardMaterial.
 //          When `varyByVelocity` is set, we build the geometry by hand with
 //          per-segment radius pulled from neighbour spacing.
-// 2D mode: drei <Line> at constant screen-space thickness.
+// 2D mode: drei <Line> at constant world-space thickness.
 // Playback: when `progress` is between 0 and 1, only the leading prefix of
 //          points is reconstructed, and a Sparkler rides the leading point.
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
@@ -177,7 +177,8 @@ export function PaintStrokeMesh({
       <Line
         points={visiblePoints as Array<[number, number, number]>}
         color={color}
-        lineWidth={Math.max(1, thickness * 80)}
+        lineWidth={Math.max(0.005, thickness)}
+        worldUnits
         transparent
         opacity={0.95}
       />

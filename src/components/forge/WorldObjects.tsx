@@ -3423,15 +3423,20 @@ function PersistedPaintStroke({ stroke, selected, onSelect }: {
 
 function PaintStrokePlaybackTicker() {
   const setProgress = useOasisStore(s => s.setPaintStrokePlaybackProgress)
+  const playStroke = useOasisStore(s => s.playPaintStroke)
   const stopPlayback = useOasisStore(s => s.stopPaintStrokePlayback)
   useFrame(() => {
     const entries = Object.entries(useOasisStore.getState().paintStrokePlayback || {})
     if (entries.length === 0) return
     const now = performance.now()
-    for (const [id, { startedAt, durationSec, progress }] of entries) {
+    for (const [id, { startedAt, durationSec, progress, loop }] of entries) {
       const elapsed = (now - startedAt) / 1000
       const next = elapsed / Math.max(0.001, durationSec)
       if (next >= 1) {
+        if (loop) {
+          playStroke(id, durationSec, true)
+          continue
+        }
         // Hold "fully revealed" for half a second, then clear. Skip the no-op
         // setProgress write when we're already at 1.0 — otherwise we burn
         // 30+ frames of re-renders for nothing.

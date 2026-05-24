@@ -1239,6 +1239,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
   const paintStrokes = useOasisStore(s => s.paintStrokes)
   const removePaintStroke = useOasisStore(s => s.removePaintStroke)
   const playPaintStroke = useOasisStore(s => s.playPaintStroke)
+  const updatePaintStroke = useOasisStore(s => s.updatePaintStroke)
   const text3dObjects = useOasisStore(s => s.text3dObjects)
   const removeText3dObject = useOasisStore(s => s.removeText3dObject)
   const generatedImages = useOasisStore(s => s.generatedImages)
@@ -3154,11 +3155,18 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
                       </div>
                       <div className="flex items-center gap-1">
                         <button
-                          onClick={(e) => { e.stopPropagation(); playPaintStroke(stroke.id, 4) }}
+                          onClick={(e) => { e.stopPropagation(); playPaintStroke(stroke.id, 4, Boolean(stroke.playbackLoop)) }}
                           className="text-[9px] text-fuchsia-300 hover:text-fuchsia-200 font-mono transition-colors"
                           title="Play back this stroke over 4s"
                         >
                           ▶
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); updatePaintStroke(stroke.id, { playbackLoop: !stroke.playbackLoop }) }}
+                          className={`rounded border px-1 text-[8px] font-mono uppercase transition-colors ${stroke.playbackLoop ? 'border-fuchsia-300/70 text-fuchsia-100' : 'border-white/10 text-gray-500 hover:text-fuchsia-200'}`}
+                          title="Toggle looping playback"
+                        >
+                          Loop
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); removePaintStroke(stroke.id) }}

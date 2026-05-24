@@ -12,6 +12,7 @@ import type { OasisDesktopCaptureBridge } from './lib/desktop-capture'
 declare global {
   interface Window {
     oasisDesktopCapture?: OasisDesktopCaptureBridge
+    __oasisPreferredWorldId?: string
   }
 
   namespace JSX {

@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { pushMouseLookDelta, useInputManager } from '@/lib/input-manager'
 import { isProbablyMobileDevice, useMobileControls } from '@/lib/mobile-controls'
 import { getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
 import { findNearestSpatialWebObject, SPATIAL_WEB_INTERACTION_RADIUS, type SpatialWebObject } from '@/lib/spatial-web'
 import { useOasisStore } from '@/store/oasisStore'
 import type { SpellId } from '@/lib/spellbook'
+import { PLAYER_BASE_STATS } from '@/lib/player-progression'
 
 const PAD_RADIUS = 48
 const MOBILE_LOOK_MULTIPLIER = 2.1
@@ -26,6 +27,10 @@ function spatialActionLabel(object: SpatialWebObject): { label: string; disabled
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
+}
+
+function finiteNumber(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }
 
 export function useIsMobileOasis(): boolean {
@@ -198,7 +203,7 @@ export function MobileOasisControls({
   }
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-[8800] touch-none select-none">
+    <div className="pointer-events-none fixed inset-0 z-[180] touch-none select-none">
       {/* Full-canvas look surface — covers the entire viewport so any finger
           drag rotates the camera (mobile feel). Joystick + action buttons are
           siblings later in DOM order with their own pointer-events-auto, so
@@ -546,8 +551,52 @@ function MobileEscButton() {
   )
 }
 
+type MobileManaSource = {
+  mana?: unknown
+  maxMana?: unknown
+  stats?: { maxMana?: unknown } | null
+  playerStats?: { maxMana?: unknown } | null
+}
+
+function canRechargeMana(source: MobileManaSource | null | undefined): boolean {
+  const stats = source?.stats || source?.playerStats || {}
+  const maxMana = Math.max(1, finiteNumber(source?.maxMana ?? stats.maxMana, PLAYER_BASE_STATS.mana))
+  const mana = Math.max(0, Math.min(maxMana, finiteNumber(source?.mana, maxMana)))
+  return mana < maxMana
+}
+
 function MobileManaButton() {
-  const stop = () => window.dispatchEvent(new CustomEvent('oasis:mana-recharge-stop'))
+  const [visible, setVisible] = useState(false)
+  const stop = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('oasis:mana-recharge-stop'))
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const apply = (source: MobileManaSource | null | undefined) => {
+      if (!cancelled) setVisible(canRechargeMana(source))
+    }
+    fetch('/api/profile', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(apply)
+      .catch(() => {})
+    const onVitals = (event: Event) => apply((event as CustomEvent<MobileManaSource>).detail)
+    window.addEventListener('oasis:player-vitals', onVitals)
+    return () => {
+      cancelled = true
+      window.removeEventListener('oasis:player-vitals', onVitals)
+      stop()
+    }
+  }, [stop])
+
+  useEffect(() => {
+    if (!visible) stop()
+  }, [stop, visible])
+
+  if (!visible) return null
+
   return (
     <button
       type="button"

@@ -136,6 +136,7 @@ export function Text3DPanel() {
       size: settings.size,
       depth: settings.depth,
       color: settings.color,
+      toneBias: settings.toneBias,
       shininess: settings.shininess,
       position,
       rotation,
@@ -211,6 +212,15 @@ export function Text3DPanel() {
         <Slider label="size"  value={settings.size}  min={0.05} max={3} step={0.05} format={v => `${v.toFixed(2)}m`} onChange={v => updateSettings({ size: v })} />
         <Slider label="depth" value={settings.depth} min={0.01} max={1} step={0.01} format={v => `${(v * 100).toFixed(0)}cm`} onChange={v => updateSettings({ depth: v })} />
         <Slider label="shine" value={settings.shininess} min={0} max={1} step={0.05} format={v => `${(v * 100).toFixed(0)}%`} onChange={v => updateSettings({ shininess: v })} />
+        <Slider
+          label="tone"
+          value={settings.toneBias}
+          min={-1}
+          max={1}
+          step={0.05}
+          format={v => v < -0.05 ? `B${Math.round(Math.abs(v) * 100)}` : v > 0.05 ? `W${Math.round(v * 100)}` : 'pick'}
+          onChange={v => updateSettings({ toneBias: v })}
+        />
 
         <div className="flex items-center gap-2">
           <label className="w-16 text-[10px] font-mono text-amber-100/65">color</label>

@@ -353,10 +353,10 @@ export interface WorldLight {
   visible?: boolean
 }
 
-/** Fresh world = just IBL. Clean slate, PBR materials look correct, zero GPU overhead.
- *  Player adds sun/ambient/hemi as they build — intentional lighting is part of world-building. */
+/** Fresh world = soft IBL + ambient. New worlds should be readable immediately. */
 export const DEFAULT_WORLD_LIGHTS: Omit<WorldLight, 'id'>[] = [
   { type: 'environment', color: '#ffffff', intensity: 1.0, position: [0, 0, 0] },
+  { type: 'ambient', color: '#ffffff', intensity: 1.0, position: [0, 0, 0] },
 ]
 
 // ═══════════════════════════════════════════════════════════════════════════════

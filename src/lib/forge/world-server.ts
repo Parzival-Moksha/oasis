@@ -15,6 +15,7 @@ import { isAdminUserId } from '../admin-auth'
 import { levelFromXp } from '../xp'
 import { createPortalZeroReturnGate } from '../portal-zero-return-gate'
 import { mirrorDefaultWorldSeed, type DefaultWorldSeedWriteResult } from '../default-world-seed-writer'
+import { DEFAULT_WORLD_LIGHTS, type WorldLight } from '../conjure/types'
 import {
   DISCOVERABLE_VISIBILITIES,
   FFA_VISIBILITIES,
@@ -65,6 +66,14 @@ export interface SaveWorldResult {
 const MAX_SNAPSHOTS_PER_WORLD = 20
 const SNAPSHOT_THROTTLE_MS = 5 * 60 * 1000
 const DEFAULT_WORLD_SEED_VISIBILITIES = new Set(['core', 'template', 'public'])
+
+function seedDefaultWorldLights(): WorldLight[] {
+  return DEFAULT_WORLD_LIGHTS.map((light, index) => ({
+    ...light,
+    id: `light-${light.type}-default-${index}`,
+    visible: true,
+  } as WorldLight))
+}
 
 function normalizeSavedWorldState(state: WorldState): WorldState {
   return normalizeWorldStateAgentAvatarTransforms(state)
@@ -441,6 +450,7 @@ export async function createWorld(
     catalogPlacements: [],
     portalGates: [createPortalZeroReturnGate(id)],
     transforms: {},
+    lights: seedDefaultWorldLights(),
     savedAt: now.toISOString(),
   }
 

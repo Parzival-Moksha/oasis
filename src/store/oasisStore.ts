@@ -663,7 +663,7 @@ interface OasisState {
   paintStrokes: PaintStroke[]              // wizardry tubes/ribbons drawn in 3-space
   text3dObjects: Text3DObject[]            // extruded 3D text objects placed in 3-space
   /** Per-stroke playback state — { progress: 0..1, durationSec, startedAt } */
-  paintStrokePlayback: Record<string, { progress: number; durationSec: number; startedAt: number }>
+  paintStrokePlayback: Record<string, { progress: number; durationSec: number; startedAt: number; loop?: boolean }>
 
   // ─═̷─═̷─📖 SPELLBOOK / ARMED SPELL ─═̷─═̷─📖
   /** Spell selected from the spellbook. Drives PlayerVitalsHud display + combat cast routing. */
@@ -694,6 +694,7 @@ interface OasisState {
     depth: number
     color: string
     shininess: number
+    toneBias: number
   }
 
   // ─═̷─═̷─🪄 PLACEMENT MODE + VFX ─═̷─═̷─🪄
@@ -875,13 +876,13 @@ interface OasisState {
   seedSpatialWebRsvpDemo: () => void
   // ─═̷─═̷─🎨 PAINT STROKE ACTIONS ─═̷─═̷─🎨
   addPaintStroke: (stroke: PaintStroke) => void
-  updatePaintStroke: (id: string, updates: Partial<Pick<PaintStroke, 'color' | 'thickness' | 'shininess' | 'mode' | 'varyByVelocity'>>) => void
+  updatePaintStroke: (id: string, updates: Partial<Pick<PaintStroke, 'color' | 'thickness' | 'shininess' | 'mode' | 'varyByVelocity' | 'playbackLoop'>>) => void
   removePaintStroke: (id: string) => void
   applyRemotePaintStroke: (stroke: PaintStroke) => void
-  applyRemotePaintStrokeUpdated: (id: string, updates: Partial<Pick<PaintStroke, 'color' | 'thickness' | 'shininess' | 'mode' | 'varyByVelocity'>>) => void
+  applyRemotePaintStrokeUpdated: (id: string, updates: Partial<Pick<PaintStroke, 'color' | 'thickness' | 'shininess' | 'mode' | 'varyByVelocity' | 'playbackLoop'>>) => void
   applyRemotePaintStrokeRemoval: (id: string) => void
   /** Start a playback animation for a stroke; previous state for that id is replaced. */
-  playPaintStroke: (id: string, durationSec: number) => void
+  playPaintStroke: (id: string, durationSec: number, loop?: boolean) => void
   /** Update animated progress for a stroke (called from a useFrame loop). */
   setPaintStrokePlaybackProgress: (id: string, progress: number) => void
   /** Stop/clear a paint stroke playback state. */
@@ -1006,14 +1007,15 @@ export const useOasisStore = create<OasisState>((set, get) => {
   }
 
   const sanitizePaintStrokeUpdates = (
-    updates: Partial<Pick<PaintStroke, 'color' | 'thickness' | 'shininess' | 'mode' | 'varyByVelocity'>>,
-  ): Partial<Pick<PaintStroke, 'color' | 'thickness' | 'shininess' | 'mode' | 'varyByVelocity'>> => {
-    const clean: Partial<Pick<PaintStroke, 'color' | 'thickness' | 'shininess' | 'mode' | 'varyByVelocity'>> = {}
+    updates: Partial<Pick<PaintStroke, 'color' | 'thickness' | 'shininess' | 'mode' | 'varyByVelocity' | 'playbackLoop'>>,
+  ): Partial<Pick<PaintStroke, 'color' | 'thickness' | 'shininess' | 'mode' | 'varyByVelocity' | 'playbackLoop'>> => {
+    const clean: Partial<Pick<PaintStroke, 'color' | 'thickness' | 'shininess' | 'mode' | 'varyByVelocity' | 'playbackLoop'>> = {}
     if (typeof updates.color === 'string') clean.color = updates.color
     if (typeof updates.thickness === 'number' && Number.isFinite(updates.thickness)) clean.thickness = Math.max(0.005, Math.min(0.5, updates.thickness))
     if (typeof updates.shininess === 'number' && Number.isFinite(updates.shininess)) clean.shininess = Math.max(0, Math.min(1, updates.shininess))
     if (updates.mode === '2d' || updates.mode === '3d') clean.mode = updates.mode
     if (typeof updates.varyByVelocity === 'boolean') clean.varyByVelocity = updates.varyByVelocity
+    if (typeof updates.playbackLoop === 'boolean') clean.playbackLoop = updates.playbackLoop
     return clean
   }
 
@@ -1032,6 +1034,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         shininess: prev.shininess !== stroke.shininess ? stroke.shininess : undefined,
         mode: prev.mode !== stroke.mode ? stroke.mode : undefined,
         varyByVelocity: prev.varyByVelocity !== stroke.varyByVelocity ? Boolean(stroke.varyByVelocity) : undefined,
+        playbackLoop: prev.playbackLoop !== stroke.playbackLoop ? Boolean(stroke.playbackLoop) : undefined,
       })
       if (Object.keys(updates).length > 0) {
         worldMutationBus.broadcast({ kind: 'stroke_updated', payload: { id: stroke.id, updates } })
@@ -1272,6 +1275,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     depth: 0.12,
     color: '#ffd166',
     shininess: 0.8,
+    toneBias: 0.5,
   },
   sceneLibrary: [],
 
@@ -2187,11 +2191,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
       inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
     }))
   },
-  playPaintStroke: (id, durationSec) => {
+  playPaintStroke: (id, durationSec, loop = false) => {
     set(state => ({
       paintStrokePlayback: {
         ...state.paintStrokePlayback,
-        [id]: { progress: 0, durationSec: Math.max(0.5, durationSec), startedAt: performance.now() },
+        [id]: { progress: 0, durationSec: Math.max(0.5, durationSec), startedAt: performance.now(), loop },
       },
     }))
   },
@@ -3291,7 +3295,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         placedAgentAvatars: normalizedAgentWorldState.avatars,
         liveAgentAvatarAudio: {},
       })
-      if ((sanitizedAgentAvatars.changed || normalizedAgentWorldState.changed) && !get().isViewMode) {
+      if ((sanitizedAgentAvatars.changed || normalizedAgentWorldState.changed) && !get().isViewMode && canWriteCurrentWorld()) {
         console.warn('[World] Repaired invalid agent avatar URLs while loading the active world.')
         void saveWorld({
           terrain: world.terrain || null,
@@ -3334,6 +3338,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   saveWorldState: () => {
     // Don't save read-only viewed worlds, but do save open-build worlds.
     if (get().isViewMode && !get().isViewModeEditable) return
+    if (!canWriteCurrentWorld()) return
     // Skip saves while applying a remote update — prevents echo loop
     if (get()._isReceivingRemoteUpdate) return
     // ░▒▓ CRITICAL GUARD: never save until world has loaded from server ▓▒░
@@ -3399,6 +3404,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   // ─═̷─═̷─🌍 MULTI-WORLD ACTIONS ─═̷─═̷─🌍
   switchWorld: (worldId) => {
     const previousActiveWorldId = get().activeWorldId
+    const shouldSaveCurrentWorld = get()._worldReady && canWriteCurrentWorld()
     // Exit view mode if active — user clicked one of their own worlds
     if (get().isViewMode) {
       set({ isViewMode: false, isViewModeEditable: false, viewingWorldId: null, viewingWorldMeta: null })
@@ -3411,7 +3417,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     get()._realtimeChannel?.unsubscribe()
     set({ _realtimeChannel: null })
     // Save current world first (immediate, not debounced) — but ONLY if world was loaded
-    if (get()._worldReady) {
+    if (shouldSaveCurrentWorld) {
       const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
       const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
         windows: placedAgentWindows,
@@ -3495,7 +3501,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       persist('oasis-realm', 'forge')
       console.log(`[World] Switched to: ${worldId}`, world ? `(terrain: ${!!world.terrain}, scenes: ${world.craftedScenes?.length || 0}, assets: ${world.conjuredAssetIds?.length || 0}, catalog: ${world.catalogPlacements?.length || 0}, sky: ${world.skyBackgroundId || 'night007'})` : '(empty)')
 
-      if (world && (sanitizedAgentAvatars.changed || normalizedAgentWorldState.changed)) {
+      if (world && (sanitizedAgentAvatars.changed || normalizedAgentWorldState.changed) && canWriteCurrentWorld()) {
         void saveWorld({
           terrain: world.terrain || null,
           terrainHeights: normalizeTerrainHeights(world.terrainHeights),
@@ -3528,7 +3534,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   createNewWorld: (name, icon = '🌍') => {
     // Save current world first — only if world was loaded (prevent empty-state nuke)
     cancelPendingSave()
-    if (get()._worldReady) {
+    if (get()._worldReady && canWriteCurrentWorld()) {
       const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
       const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
         windows: placedAgentWindows,
@@ -3625,7 +3631,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
     const currentId = get().activeWorldId
     const worldExists = registry.some(w => w.id === currentId)
     const serverActiveExists = Boolean(serverActiveWorld?.worldId && registry.some(w => w.id === serverActiveWorld.worldId))
-    if (serverActiveWorld?.authoritative && serverActiveExists) {
+    const preferredWorldId = typeof window !== 'undefined' ? window.__oasisPreferredWorldId : undefined
+    const preferredWorldExists = Boolean(preferredWorldId && registry.some(w => w.id === preferredWorldId))
+    if (preferredWorldId && preferredWorldExists) {
+      setActiveWorldId(preferredWorldId, { publish: true })
+      set({ worldRegistry: registry, sceneLibrary: library, activeWorldId: preferredWorldId })
+    } else if (serverActiveWorld?.authoritative && serverActiveExists) {
       setActiveWorldId(serverActiveWorld.worldId, { publish: true })
       set({ worldRegistry: registry, sceneLibrary: library, activeWorldId: serverActiveWorld.worldId })
     } else if (!worldExists && serverActiveExists && serverActiveWorld?.worldId) {
@@ -4091,7 +4102,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   // ─═̷─═̷─👁️ VIEW MODE — peek into someone else's world (read-only) ─═̷─═̷─👁️
   enterViewMode: (worldId, allowEdit = true) => {
     // Save current world before entering view mode (if not already viewing)
-    if (!get().isViewMode && get()._worldReady) {
+    if (!get().isViewMode && get()._worldReady && canWriteCurrentWorld()) {
       cancelPendingSave()
       const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
       saveWorld({ terrain: terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: placedAgentWindows, agentAvatars: placedAgentAvatars }, activeWorldId)

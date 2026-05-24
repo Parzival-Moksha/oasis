@@ -40,17 +40,7 @@ describe('resolveActiveWorldForUser', () => {
     })
   })
 
-  it('sends fresh hosted sessions to Rookie Wizard first', async () => {
-    vi.mocked(loadWorld).mockImplementation(async (worldId) => worldId === ROOKIE_WIZARD_WORLD_ID ? ({} as any) : null)
-
-    await expect(resolveActiveWorldForUser('browser-session-a')).resolves.toEqual({
-      worldId: ROOKIE_WIZARD_WORLD_ID,
-      source: 'welcome',
-      authoritative: true,
-    })
-  })
-
-  it('falls back to Portal Zero when Rookie Wizard is unavailable', async () => {
+  it('sends fresh hosted sessions to Portal Zero first', async () => {
     vi.mocked(loadWorld).mockImplementation(async (worldId) => worldId === WELCOME_HUB_WORLD_ID ? ({} as any) : null)
 
     await expect(resolveActiveWorldForUser('browser-session-a')).resolves.toEqual({
@@ -60,12 +50,22 @@ describe('resolveActiveWorldForUser', () => {
     })
   })
 
-  it('sends fresh local sessions to Rookie Wizard without making it authoritative', async () => {
-    vi.mocked(getOasisMode).mockReturnValue('local')
+  it('falls back to Rookie Wizard when Portal Zero is unavailable', async () => {
     vi.mocked(loadWorld).mockImplementation(async (worldId) => worldId === ROOKIE_WIZARD_WORLD_ID ? ({} as any) : null)
 
-    await expect(resolveActiveWorldForUser('local-user')).resolves.toEqual({
+    await expect(resolveActiveWorldForUser('browser-session-a')).resolves.toEqual({
       worldId: ROOKIE_WIZARD_WORLD_ID,
+      source: 'welcome',
+      authoritative: true,
+    })
+  })
+
+  it('sends fresh local sessions to Portal Zero without making it authoritative', async () => {
+    vi.mocked(getOasisMode).mockReturnValue('local')
+    vi.mocked(loadWorld).mockImplementation(async (worldId) => worldId === WELCOME_HUB_WORLD_ID ? ({} as any) : null)
+
+    await expect(resolveActiveWorldForUser('local-user')).resolves.toEqual({
+      worldId: WELCOME_HUB_WORLD_ID,
       source: 'welcome',
       authoritative: false,
     })
