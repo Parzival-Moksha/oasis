@@ -32,6 +32,7 @@ const INPUT_SEND_INTERVAL_MS = 33
 // stationary avatar can shift Y by >2cm without any actual movement intent.
 const INPUT_POSITION_EPSILON = 0.05
 const INPUT_YAW_EPSILON = 0.04
+const INPUT_IDLE_SPEED_EPSILON = 0.12
 const REMOTE_RENDER_DELAY_MS = 120
 
 function countLoadedObjects(state: ReturnType<typeof useOasisStore.getState>): number {
@@ -160,6 +161,13 @@ function shortAngle(target: number, current: number): number {
   return diff
 }
 
+function animationStateForSpeed(speed: number): string {
+  if (speed <= INPUT_IDLE_SPEED_EPSILON) return 'idle'
+  if (speed > 6) return 'sprint'
+  if (speed > 2.4) return 'run'
+  return 'walk'
+}
+
 function RemotePresenceAvatar({ player }: { player: MultiplayerRoomPlayer }) {
   const groupRef = useRef<THREE.Group>(null)
   const bufferRef = useRef<RemoteSnapshot[]>([])
@@ -280,6 +288,13 @@ function RemotePresenceAvatar({ player }: { player: MultiplayerRoomPlayer }) {
     // The catch-up lerp is asymptotic so group-displacement is never quite
     // zero, which makes a STATIONARY remote read as perpetually walking.
     // Buffer-derived speed is 0 the instant new snapshots stop arriving.
+    if (player.animState === 'idle') {
+      smoothedSpeedRef.current = 0
+      if (speed !== 0) setSpeed(0)
+      lastPosRef.current.set(group.position.x, group.position.y, group.position.z)
+      return
+    }
+
     if (buffer.length >= 2) {
       const latest = buffer[buffer.length - 1]
       const prev = buffer[buffer.length - 2]
@@ -347,6 +362,8 @@ export function MultiplayerPresenceLayer() {
   const maxManaRef = useRef<number>(20)
   const connectionRef = useRef<MultiplayerRoomConnection | null>(null)
   const lastSentPoseRef = useRef<{ position: [number, number, number]; yaw: number } | null>(null)
+  const previousPoseRef = useRef<{ position: [number, number, number]; yaw: number; time: number } | null>(null)
+  const lastSentAnimStateRef = useRef<string | null>(null)
   const lastSentAtRef = useRef<number>(0)
   const [players, setPlayers] = useState<MultiplayerRoomPlayer[]>([])
   const [reconnectTick, setReconnectTick] = useState(0)
@@ -577,6 +594,8 @@ export function MultiplayerPresenceLayer() {
         connectionRef.current = next
         worldMutationBus.setSender(mutation => next.sendMutation(mutation))
         lastSentPoseRef.current = null
+        previousPoseRef.current = null
+        lastSentAnimStateRef.current = null
         lastSentAtRef.current = 0
       })
       .catch(error => {
@@ -599,6 +618,8 @@ export function MultiplayerPresenceLayer() {
         void connection.dispose()
       }
       lastSentPoseRef.current = null
+      previousPoseRef.current = null
+      lastSentAnimStateRef.current = null
       lastSentAtRef.current = 0
       // Drop any in-progress remote strokes ONLY when the world id actually
       // changes. Reconnects (transient WS drops) bump reconnectTick but the
@@ -627,6 +648,18 @@ export function MultiplayerPresenceLayer() {
     if (!pose) return
 
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    const previousPose = previousPoseRef.current
+    let vx = 0
+    let vz = 0
+    if (previousPose) {
+      const dt = Math.max(0.001, (now - previousPose.time) / 1000)
+      vx = (pose.position[0] - previousPose.position[0]) / dt
+      vz = (pose.position[2] - previousPose.position[2]) / dt
+    }
+    const speed = Math.sqrt(vx * vx + vz * vz)
+    const animState = animationStateForSpeed(speed)
+    previousPoseRef.current = { position: [...pose.position], yaw: pose.yaw, time: now }
+
     if (now - lastSentAtRef.current < INPUT_SEND_INTERVAL_MS) return
 
     const last = lastSentPoseRef.current
@@ -640,16 +673,21 @@ export function MultiplayerPresenceLayer() {
       || Math.abs(pose.position[0] - last.position[0]) > INPUT_POSITION_EPSILON
       || Math.abs(pose.position[2] - last.position[2]) > INPUT_POSITION_EPSILON
       || Math.abs(pose.yaw - last.yaw) > INPUT_YAW_EPSILON
+    const animChanged = lastSentAnimStateRef.current !== animState
 
-    if (!moved) return
+    if (!moved && !animChanged) return
 
     connection.sendInput({
       x: pose.position[0],
       y: pose.position[1],
       z: pose.position[2],
       yaw: pose.yaw,
+      vx,
+      vz,
+      animState,
     })
     lastSentPoseRef.current = { position: [...pose.position], yaw: pose.yaw }
+    lastSentAnimStateRef.current = animState
     lastSentAtRef.current = now
   })
 

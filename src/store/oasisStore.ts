@@ -264,6 +264,74 @@ function encodeGroundTileValue(presetId: string, stretch: number): string {
   return normalizedStretch === 1 ? presetId : `${presetId}@${normalizedStretch}`
 }
 
+function decodeGroundTileValue(raw: string): { presetId: string; stretch: number } {
+  const at = raw.lastIndexOf('@')
+  if (at <= 0) return { presetId: raw, stretch: 1 }
+  const presetId = raw.slice(0, at)
+  const parsedStretch = Number(raw.slice(at + 1))
+  if (!Number.isFinite(parsedStretch) || parsedStretch < 1) {
+    return { presetId, stretch: 1 }
+  }
+  return { presetId, stretch: Math.max(1, Math.floor(parsedStretch)) }
+}
+
+function parseGroundTileKey(key: string): [number, number] | null {
+  const [xRaw, zRaw] = key.split(',')
+  const x = Number(xRaw)
+  const z = Number(zRaw)
+  if (!Number.isFinite(x) || !Number.isFinite(z)) return null
+  return [Math.floor(x), Math.floor(z)]
+}
+
+function rangesOverlap(aMin: number, aMax: number, bMin: number, bMax: number): boolean {
+  return aMin < bMax && bMin < aMax
+}
+
+function removeGroundTilesOverlapping(
+  groundTiles: Record<string, string>,
+  x: number,
+  z: number,
+  stretch: number,
+): void {
+  const nextMaxX = x + stretch
+  const nextMaxZ = z + stretch
+  for (const [key, value] of Object.entries(groundTiles)) {
+    const parsed = parseGroundTileKey(key)
+    if (!parsed) continue
+    const [existingX, existingZ] = parsed
+    const existing = decodeGroundTileValue(value)
+    const existingMaxX = existingX + existing.stretch
+    const existingMaxZ = existingZ + existing.stretch
+    if (
+      rangesOverlap(x, nextMaxX, existingX, existingMaxX)
+      && rangesOverlap(z, nextMaxZ, existingZ, existingMaxZ)
+    ) {
+      delete groundTiles[key]
+    }
+  }
+}
+
+function removeGroundTileContaining(
+  groundTiles: Record<string, string>,
+  x: number,
+  z: number,
+): boolean {
+  const cellX = Math.floor(x)
+  const cellZ = Math.floor(z)
+  let removed = false
+  for (const [key, value] of Object.entries(groundTiles)) {
+    const parsed = parseGroundTileKey(key)
+    if (!parsed) continue
+    const [tileX, tileZ] = parsed
+    const { stretch } = decodeGroundTileValue(value)
+    if (cellX >= tileX && cellX < tileX + stretch && cellZ >= tileZ && cellZ < tileZ + stretch) {
+      delete groundTiles[key]
+      removed = true
+    }
+  }
+  return removed
+}
+
 function paintGroundTiles(
   groundTiles: Record<string, string>,
   cx: number,
@@ -282,7 +350,8 @@ function paintGroundTiles(
     for (let dz = -half; dz <= half; dz++) {
       const tx = baseX + dx * normalizedStretch
       const tz = baseZ + dz * normalizedStretch
-      if (tx < -50 || tx > 49 || tz < -50 || tz > 49) continue
+      if (tx < -50 || tx + normalizedStretch > 50 || tz < -50 || tz + normalizedStretch > 50) continue
+      removeGroundTilesOverlapping(nextTiles, tx, tz, normalizedStretch)
       nextTiles[`${tx},${tz}`] = cellValue
     }
   }
@@ -2992,10 +3061,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
   },
   eraseGroundTile: (x, z) => {
     const { groundTiles } = get()
-    const key = `${Math.floor(x)},${Math.floor(z)}`
-    if (!(key in groundTiles)) return
     const newTiles = { ...groundTiles }
-    delete newTiles[key]
+    if (!removeGroundTileContaining(newTiles, x, z)) return
     set({ groundTiles: newTiles })
     worldMutationBus.broadcast({ kind: 'ground_tile_erased', payload: { x, z } })
     get().saveWorldState()
@@ -3014,11 +3081,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
     }))
   },
   applyRemoteGroundTileErase: (x, z) => {
-    const key = `${Math.floor(x)},${Math.floor(z)}`
     set(state => {
-      if (!(key in state.groundTiles)) return state
       const nextTiles = { ...state.groundTiles }
-      delete nextTiles[key]
+      if (!removeGroundTileContaining(nextTiles, x, z)) return state
       return { groundTiles: nextTiles }
     })
   },

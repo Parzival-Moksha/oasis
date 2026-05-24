@@ -12,6 +12,15 @@ import { PLAYER_BASE_STATS } from '@/lib/player-progression'
 const PAD_RADIUS = 48
 const MOBILE_LOOK_MULTIPLIER = 2.1
 const LOOK_DEADZONE_PX = 4
+const PINCH_ZOOM_SENSITIVITY = 0.0028
+
+type TouchPoint = { x: number; y: number }
+type FullscreenTarget = HTMLElement & { webkitRequestFullscreen?: () => Promise<void> | void }
+type FullscreenDocument = Document & {
+  webkitFullscreenElement?: Element | null
+  webkitFullscreenEnabled?: boolean
+  webkitExitFullscreen?: () => Promise<void> | void
+}
 
 function spatialActionLabel(object: SpatialWebObject): { label: string; disabled: boolean } {
   if (object.visualStyle === 'google-form-altar') {
@@ -31,6 +40,53 @@ function clamp(value: number, min: number, max: number): number {
 
 function finiteNumber(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+function firstTwoTouchDistance(points: Map<number, TouchPoint>): number | null {
+  const values = Array.from(points.values())
+  if (values.length < 2) return null
+  const [a, b] = values
+  return Math.hypot(a.x - b.x, a.y - b.y)
+}
+
+function dispatchTpsZoomDelta(delta: number): void {
+  if (!Number.isFinite(delta) || delta === 0) return
+  window.dispatchEvent(new CustomEvent('oasis:tps-zoom-delta', { detail: { delta } }))
+}
+
+function getFullscreenDocument(): FullscreenDocument | null {
+  if (typeof document === 'undefined') return null
+  return document as FullscreenDocument
+}
+
+function canRequestFullscreen(): boolean {
+  const doc = getFullscreenDocument()
+  if (!doc) return false
+  const target = document.documentElement as FullscreenTarget
+  return Boolean(doc.fullscreenEnabled || doc.webkitFullscreenEnabled || target.requestFullscreen || target.webkitRequestFullscreen)
+}
+
+function isFullscreenActive(): boolean {
+  const doc = getFullscreenDocument()
+  return Boolean(doc?.fullscreenElement || doc?.webkitFullscreenElement)
+}
+
+async function requestMobileFullscreen(): Promise<boolean> {
+  if (typeof document === 'undefined') return false
+  const target = document.documentElement as FullscreenTarget
+  try {
+    if (target.requestFullscreen) {
+      await target.requestFullscreen({ navigationUI: 'hide' })
+      return true
+    }
+    if (target.webkitRequestFullscreen) {
+      await target.webkitRequestFullscreen()
+      return true
+    }
+  } catch {
+    return false
+  }
+  return false
 }
 
 export function useIsMobileOasis(): boolean {
@@ -70,6 +126,8 @@ export function MobileOasisControls({
   const movePointerIdRef = useRef<number | null>(null)
   const moveCenterRef = useRef({ x: 0, y: 0 })
   const lookPointerRef = useRef<{ id: number; x: number; y: number; moved: boolean } | null>(null)
+  const lookTouchesRef = useRef<Map<number, TouchPoint>>(new Map())
+  const pinchRef = useRef<{ distance: number } | null>(null)
   // When paint mode is armed, the look-overlay must hand its events through to
   // the canvas underneath so PaintCursor sees the drag.
   const paintHeldActive = useOasisStore(s => s.paintHeldActive)
@@ -120,6 +178,8 @@ export function MobileOasisControls({
     return () => {
       canvas.style.touchAction = previousTouchAction
       lookPointerRef.current = null
+      lookTouchesRef.current.clear()
+      pinchRef.current = null
       setLookActive(false)
     }
   }, [enabled, setLookActive])
@@ -137,11 +197,34 @@ export function MobileOasisControls({
     event.preventDefault()
     event.stopPropagation()
     try { event.currentTarget.setPointerCapture(event.pointerId) } catch {}
+    if (event.pointerType === 'touch') {
+      lookTouchesRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+      const pinchDistance = firstTwoTouchDistance(lookTouchesRef.current)
+      if (pinchDistance !== null) {
+        pinchRef.current = { distance: pinchDistance }
+        lookPointerRef.current = null
+        setLookActive(false)
+        return
+      }
+    }
     lookPointerRef.current = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false }
     setLookActive(true)
   }
 
   const updateLook = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'touch' && lookTouchesRef.current.has(event.pointerId)) {
+      lookTouchesRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+      if (pinchRef.current) {
+        event.preventDefault()
+        event.stopPropagation()
+        const nextDistance = firstTwoTouchDistance(lookTouchesRef.current)
+        if (nextDistance !== null) {
+          dispatchTpsZoomDelta((pinchRef.current.distance - nextDistance) * PINCH_ZOOM_SENSITIVITY)
+          pinchRef.current = { distance: nextDistance }
+        }
+        return
+      }
+    }
     const active = lookPointerRef.current
     if (!active || active.id !== event.pointerId) return
     event.preventDefault()
@@ -163,7 +246,9 @@ export function MobileOasisControls({
   }
 
   const endLook = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (lookPointerRef.current?.id !== event.pointerId) return
+    const wasTrackedTouch = event.pointerType === 'touch' && lookTouchesRef.current.delete(event.pointerId)
+    if (lookTouchesRef.current.size < 2) pinchRef.current = null
+    if (lookPointerRef.current?.id !== event.pointerId && !wasTrackedTouch) return
     event.preventDefault()
     event.stopPropagation()
     try {
@@ -171,8 +256,10 @@ export function MobileOasisControls({
         event.currentTarget.releasePointerCapture(event.pointerId)
       }
     } catch {}
-    lookPointerRef.current = null
-    setLookActive(false)
+    if (lookPointerRef.current?.id === event.pointerId) {
+      lookPointerRef.current = null
+      setLookActive(false)
+    }
   }
 
   const updateMove = (clientX: number, clientY: number) => {
@@ -304,6 +391,7 @@ export function MobileOasisControls({
       </div>
 
       <MobileTransformHotbar />
+      <MobileFullscreenPrompt />
     </div>
   )
 }
@@ -327,6 +415,39 @@ function isCombatSpell(id: SpellId | null): boolean {
 // Pro-studio precedent: Unity/Unreal/Godot input systems all abstract input
 // source from action. This is the minimal-refactor equivalent.
 // ─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─═̷─
+
+function MobileFullscreenPrompt() {
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    if (!isProbablyMobileDevice() || !canRequestFullscreen() || isFullscreenActive()) return
+    try {
+      if (window.sessionStorage.getItem('oasis-mobile-fullscreen-prompt-seen') === '1') return
+    } catch {}
+    setVisible(true)
+    const timer = window.setTimeout(() => setVisible(false), 14000)
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  if (!visible) return null
+
+  return (
+    <button
+      type="button"
+      className="pointer-events-auto absolute left-1/2 top-24 min-w-52 -translate-x-1/2 touch-none rounded-lg border-2 border-cyan-200/70 bg-slate-950/82 px-4 py-3 text-center text-cyan-50 shadow-[0_0_30px_rgba(34,211,238,0.36)] backdrop-blur-md"
+      onPointerDown={async event => {
+        event.preventDefault()
+        event.stopPropagation()
+        try { window.sessionStorage.setItem('oasis-mobile-fullscreen-prompt-seen', '1') } catch {}
+        await requestMobileFullscreen()
+        setVisible(false)
+      }}
+    >
+      <div className="text-[12px] font-black uppercase tracking-[0.18em]">Go Fullscreen</div>
+      <div className="mt-0.5 text-[10px] font-semibold text-cyan-100/75">for better experience</div>
+    </button>
+  )
+}
 
 function dispatchSyntheticLeftClick(): boolean {
   if (typeof document === 'undefined') return false
@@ -396,7 +517,7 @@ function MobilePrimaryActionButton({
     tone = 'emerald'
     onTap = () => { window.dispatchEvent(new CustomEvent('oasis:paint-at-crosshair')) }
   } else {
-    onTap = () => { dispatchSyntheticLeftClick() }
+    onTap = () => { window.dispatchEvent(new CustomEvent('oasis:select-at-crosshair')) }
   }
 
   const toneClasses: Record<typeof tone, string> = {

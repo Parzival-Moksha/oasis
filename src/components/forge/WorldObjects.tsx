@@ -206,6 +206,16 @@ function PlaceholderBox() {
 // Uses 'dragging-changed' event (the reliable way to coordinate with OrbitControls)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+function findOasisObjectId(object: THREE.Object3D | null): string | null {
+  let current: THREE.Object3D | null = object
+  while (current) {
+    const id = current.userData?.oasisObjectId
+    if (typeof id === 'string' && id.length > 0) return id
+    current = current.parent
+  }
+  return null
+}
+
 export function SelectableWrapper({ id, children, selected, onSelect, transformMode, onTransformChange, initialPosition, initialRotation, initialScale, allowTransform = true, liveTransformResolver, groundToTerrain = false }: {
   id: string
   children: React.ReactNode
@@ -371,6 +381,7 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
       <group
         ref={groupRef}
         visible={isVisible}
+        userData={{ oasisObjectId: id }}
         // ░▒▓ Single-click selects in all camera modes. Double-click summons the
         // Joystick (ObjectInspector) — also in all camera modes, including
         // noclip/TPS where the cursor is pointer-locked. The legacy `inspectOn`
@@ -3094,6 +3105,7 @@ export function WorldObjectsRenderer() {
     [catalogAssets, nearestObjectInteraction, objectMeshStats, transforms],
   )
   const camera = useThree(s => s.camera)
+  const scene = useThree(s => s.scene)
   const crosshairRaycasterRef = useRef(new THREE.Raycaster())
   const crosshairPlaneRef = useRef(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0))
   const crosshairPointRef = useRef(new THREE.Vector3())
@@ -3150,6 +3162,26 @@ export function WorldObjectsRenderer() {
     window.addEventListener('mousedown', handleLockedRightClick, true)
     return () => window.removeEventListener('mousedown', handleLockedRightClick, true)
   }, [camera, moveOrderObjectIds, paintMode, placementPending, setMoveTarget, spawnMarchOrderVfx])
+
+  useEffect(() => {
+    const handleCrosshairSelect = () => {
+      if (paintMode || placementPending) return
+      const raycaster = crosshairRaycasterRef.current
+      raycaster.setFromCamera(new THREE.Vector2(0, 0), camera)
+      const hits = raycaster.intersectObjects(scene.children, true)
+      for (const hit of hits) {
+        const objectId = findOasisObjectId(hit.object)
+        if (!objectId) continue
+        if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur()
+        }
+        selectObject(objectId)
+        return
+      }
+    }
+    window.addEventListener('oasis:select-at-crosshair', handleCrosshairSelect)
+    return () => window.removeEventListener('oasis:select-at-crosshair', handleCrosshairSelect)
+  }, [camera, paintMode, placementPending, scene, selectObject])
 
   return (
     <group>

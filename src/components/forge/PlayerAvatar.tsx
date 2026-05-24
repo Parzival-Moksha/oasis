@@ -256,6 +256,11 @@ export function PlayerAvatar({
   }, [activeWorldId, worldReady])
 
   useEffect(() => {
+    const applyZoomDelta = (delta: number) => {
+      if (!Number.isFinite(delta) || delta === 0) return
+      cameraZoomTarget.current = clamp01(cameraZoomTarget.current + delta)
+    }
+
     const handleWheel = (event: WheelEvent) => {
       const input = useInputManager.getState()
       if (input.inputState !== 'third-person') return
@@ -268,12 +273,24 @@ export function PlayerAvatar({
       const wheelDelta = event.deltaY * deltaScale
       if (!Number.isFinite(wheelDelta) || wheelDelta === 0) return
 
-      cameraZoomTarget.current = clamp01(cameraZoomTarget.current + wheelDelta * TPS_ZOOM_WHEEL_SENSITIVITY)
+      applyZoomDelta(wheelDelta * TPS_ZOOM_WHEEL_SENSITIVITY)
       event.preventDefault()
     }
 
+    const handleMobileZoom = (event: Event) => {
+      const input = useInputManager.getState()
+      if (input.inputState !== 'third-person') return
+      if (input.hasActiveUILayer()) return
+      const detail = (event as CustomEvent<{ delta?: number }>).detail
+      applyZoomDelta(detail?.delta ?? 0)
+    }
+
     window.addEventListener('wheel', handleWheel, { passive: false })
-    return () => window.removeEventListener('wheel', handleWheel)
+    window.addEventListener('oasis:tps-zoom-delta', handleMobileZoom as EventListener)
+    return () => {
+      window.removeEventListener('wheel', handleWheel)
+      window.removeEventListener('oasis:tps-zoom-delta', handleMobileZoom as EventListener)
+    }
   }, [])
 
   useEffect(() => {

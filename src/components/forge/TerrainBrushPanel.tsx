@@ -201,9 +201,9 @@ export function TerrainBrushPanel() {
   const panelStyle: React.CSSProperties = mobileViewport
     ? {
         right: 8,
-        top: 64,
+        top: 20,
         width: `min(${PANEL_WIDTH}px, calc(100vw - 16px))`,
-        maxHeight: 'calc(100vh - 80px)',
+        maxHeight: 'min(58vh, calc(100vh - 40px))',
         overflowY: 'auto',
         zIndex: panelZIndex,
         background: `rgba(7, 12, 10, ${Math.max(0.72, settings.uiOpacity ?? 0.85)})`,
@@ -272,7 +272,7 @@ export function TerrainBrushPanel() {
         </button>
       </div>
 
-      <div className="max-h-[68vh] overflow-y-auto p-3">
+      <div className={`${mobileViewport ? 'max-h-[44vh]' : 'max-h-[68vh]'} overflow-y-auto p-3`}>
         {mode === 'texture' ? (
           <div className="space-y-3">
             <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 p-2.5">
