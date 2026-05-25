@@ -1262,16 +1262,31 @@ export function getAudioElement(objectId: string): HTMLAudioElement | null {
 
 function SpatialAudioFromBehavior({ objectId }: { objectId: string }) {
   const audioUrl = useOasisStore(s => s.behaviors[objectId]?.audioUrl)
+  const placementAudioUrl = useOasisStore(s => s.placedCatalogAssets.find(entry => entry.id === objectId)?.audioUrl)
   const audioVolume = useOasisStore(s => s.behaviors[objectId]?.audioVolume)
+  const placementAudioVolume = useOasisStore(s => s.placedCatalogAssets.find(entry => entry.id === objectId)?.audioVolume)
   const audioMaxDistance = useOasisStore(s => s.behaviors[objectId]?.audioMaxDistance)
+  const placementAudioMaxDistance = useOasisStore(s => s.placedCatalogAssets.find(entry => entry.id === objectId)?.audioMaxDistance)
   const audioMuted = useOasisStore(s => s.behaviors[objectId]?.audioMuted)
+  const placementAudioMuted = useOasisStore(s => s.placedCatalogAssets.find(entry => entry.id === objectId)?.audioMuted)
   const audioState = useOasisStore(s => s.behaviors[objectId]?.audioState)
   const audioLoop = useOasisStore(s => s.behaviors[objectId]?.audioLoop)
   // ░▒▓ FIX: Don't mount audio during placement mode — prevents state corruption
   // when loudspeaker auto-plays before placement is confirmed ▓▒░
   const inputState = useInputManager(s => s.inputState)
-  if (!audioUrl || inputState === 'placement') return null
-  return <SpatialAudioAttachment objectId={objectId} audioUrl={audioUrl} volume={audioVolume} maxDistance={audioMaxDistance} muted={audioMuted} audioState={audioState} loop={audioLoop} />
+  const resolvedAudioUrl = audioUrl || placementAudioUrl
+  if (!resolvedAudioUrl || inputState === 'placement') return null
+  return (
+    <SpatialAudioAttachment
+      objectId={objectId}
+      audioUrl={resolvedAudioUrl}
+      volume={audioVolume ?? placementAudioVolume}
+      maxDistance={audioMaxDistance ?? placementAudioMaxDistance}
+      muted={audioMuted ?? placementAudioMuted}
+      audioState={audioState ?? (placementAudioUrl ? 'playing' : undefined)}
+      loop={audioLoop ?? true}
+    />
+  )
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2526,7 +2541,7 @@ function PlacementOverlay() {
     if (!placementPending) return
 
     if (placementPending.type === 'catalog' && placementPending.catalogId && placementPending.path) {
-      const placedId = placeCatalogAssetAt(placementPending.catalogId, placementPending.name, placementPending.path, placementPending.defaultScale || 1, pos)
+      const placedId = placeCatalogAssetAt(placementPending.catalogId, placementPending.name, placementPending.path, placementPending.defaultScale || 1, pos, placementPending.audioUrl)
       if (placementPending.audioUrl && placedId) {
         useOasisStore.getState().setObjectBehavior(placedId, {
           audioUrl: placementPending.audioUrl,

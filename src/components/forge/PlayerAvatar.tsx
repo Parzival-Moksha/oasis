@@ -32,6 +32,7 @@ import {
   getPlayerManaRecharging,
   getPlayerSpellCasting,
   requestPlayerAvatarTeleport,
+  setPlayerAnimationState,
   setPlayerAvatarPose,
   setPlayerSpellCasting,
   subscribePlayerAvatarTeleport,
@@ -818,6 +819,9 @@ export function PlayerAvatar({
 
       // Footstep sounds — play at intervals when walking/running/sprinting
       const animState = animControllerRef.current.state
+      setPlayerAnimationState(animState === 'custom' && animControllerRef.current.customAnimationId
+        ? `custom:${animControllerRef.current.customAnimationId}`
+        : animState)
       if (animState === 'walk' || animState === 'run' || animState === 'sprint') {
         footstepTimerRef.current += delta
         const interval = animState === 'sprint' ? 0.25 : animState === 'run' ? 0.45 : 0.7

@@ -45,6 +45,8 @@ export interface RemoteVRMAvatarProps {
   color: string
   /** m/s, inferred from position deltas by the parent. */
   speed: number
+  /** Network animation state. Custom clips are encoded as custom:<animation-id>. */
+  animState: string
 }
 
 // Animation thresholds aligned with PlayerAvatar's TPS speeds:
@@ -86,6 +88,39 @@ function PillBody({ color, displayName, profileAvatarUrl }: { color: string; dis
   )
 }
 
+function ProfileAvatarThumb({ src, displayName }: { src: string; displayName: string }) {
+  const [failed, setFailed] = useState(false)
+  useEffect(() => { setFailed(false) }, [src])
+  if (failed) {
+    return (
+      <div
+        style={{
+          width: '100%',
+          height: '100%',
+          display: 'grid',
+          placeItems: 'center',
+          color: '#e0f2fe',
+          fontSize: 10,
+          fontWeight: 900,
+          fontFamily: 'system-ui, sans-serif',
+          background: 'linear-gradient(135deg, rgba(14,165,233,0.5), rgba(168,85,247,0.48))',
+        }}
+      >
+        {(displayName || '?').trim().slice(0, 1).toUpperCase()}
+      </div>
+    )
+  }
+  return (
+    <img
+      src={src}
+      alt=""
+      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+    />
+  )
+}
+
 function NameTag({ displayName, profileAvatarUrl }: { displayName: string; profileAvatarUrl?: string }) {
   return (
     <Billboard position={[0, 1.86, 0]}>
@@ -107,12 +142,7 @@ function NameTag({ displayName, profileAvatarUrl }: { displayName: string; profi
               boxShadow: '0 0 10px rgba(56,189,248,0.35)',
             }}
           >
-            <img
-              src={profileAvatarUrl}
-              alt=""
-              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-              referrerPolicy="no-referrer"
-            />
+            <ProfileAvatarThumb src={profileAvatarUrl} displayName={displayName} />
           </div>
         </Html>
       )}
@@ -144,6 +174,7 @@ function VRMBody({
   profileAvatarUrl,
   color,
   speedRef,
+  animStateRef,
 }: {
   avatarUrl: string
   cacheKey: string
@@ -151,9 +182,11 @@ function VRMBody({
   profileAvatarUrl?: string
   color: string
   speedRef: React.MutableRefObject<number>
+  animStateRef: React.MutableRefObject<string>
 }) {
   const vrmRef = useRef<VRM | null>(null)
   const animControllerRef = useRef<AnimationController | null>(null)
+  const lastCustomAnimRef = useRef<string | null>(null)
   // Tracks which scene.environment was last baked into the materials. Re-runs
   // the IBL pass when the environment identity changes (e.g. mid-session HDRI
   // swap via SkyPanel's now-live sky_changed mutation). Without this, remote
@@ -315,9 +348,26 @@ function VRMBody({
       appliedEnvRef.current = state.scene.environment
     }
 
-    animControllerRef.current?.update(delta)
+    const controller = animControllerRef.current
+    controller?.update(delta)
     v.update(delta)
-    animControllerRef.current?.updateFromVelocity(speedRef.current)
+    const networkAnimState = animStateRef.current || 'idle'
+    if (controller && networkAnimState.startsWith('custom:')) {
+      const animId = networkAnimState.slice('custom:'.length)
+      if (animId && lastCustomAnimRef.current !== animId) {
+        lastCustomAnimRef.current = animId
+        controller.preloadClip(animId).then(ok => {
+          if (ok && animControllerRef.current === controller && animStateRef.current === `custom:${animId}`) {
+            controller.transitionTo('custom', animId)
+          }
+        })
+      } else if (animId && controller.state !== 'custom') {
+        controller.transitionTo('custom', animId)
+      }
+      return
+    }
+    lastCustomAnimRef.current = null
+    controller?.updateFromVelocity(speedRef.current)
   })
 
   if (!vrm) return null
@@ -370,13 +420,15 @@ class VRMErrorBoundary extends React.Component<VRMBoundaryProps, { hasError: boo
 // ═══════════════════════════════════════════════════════════════════════════
 
 export const RemoteVRMAvatar = forwardRef<THREE.Group, RemoteVRMAvatarProps>(function RemoteVRMAvatar(
-  { avatarUrl, profileAvatarUrl, cacheKey, displayName, color, speed },
+  { avatarUrl, profileAvatarUrl, cacheKey, displayName, color, speed, animState },
   ref,
 ) {
   // Speed mirror — the body's useFrame reads from a ref so we don't re-render
   // the entire VRM subtree on every speed change.
   const speedRef = useRef(0)
   speedRef.current = speed
+  const animStateRef = useRef('idle')
+  animStateRef.current = animState || 'idle'
 
   // Empty URL -> straight to pill. No Suspense, no error boundary needed.
   if (!avatarUrl) {
@@ -400,6 +452,7 @@ export const RemoteVRMAvatar = forwardRef<THREE.Group, RemoteVRMAvatarProps>(fun
             profileAvatarUrl={profileAvatarUrl}
             color={color}
             speedRef={speedRef}
+            animStateRef={animStateRef}
           />
         </Suspense>
       </VRMErrorBoundary>

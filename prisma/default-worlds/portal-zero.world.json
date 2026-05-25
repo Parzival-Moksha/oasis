@@ -11150,6 +11150,78 @@
           18.657839750977125
         ],
         "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_pine_2-1779718878717",
+        "catalogId": "stylized-nature_pine_2",
+        "name": "Nature Pine 2",
+        "glbPath": "/models/stylized-nature/pine_2.gltf",
+        "position": [
+          -19.090322965143027,
+          0,
+          -3.081748285849038
+        ],
+        "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_pine_2-1779718884347",
+        "catalogId": "stylized-nature_pine_2",
+        "name": "Nature Pine 2",
+        "glbPath": "/models/stylized-nature/pine_2.gltf",
+        "position": [
+          7.453820732038595,
+          0,
+          -17.027978126757283
+        ],
+        "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_pine_2-1779718889225",
+        "catalogId": "stylized-nature_pine_2",
+        "name": "Nature Pine 2",
+        "glbPath": "/models/stylized-nature/pine_2.gltf",
+        "position": [
+          19.361491591488715,
+          0,
+          -21.27584060187329
+        ],
+        "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_pine_2-1779718898071",
+        "catalogId": "stylized-nature_pine_2",
+        "name": "Nature Pine 2",
+        "glbPath": "/models/stylized-nature/pine_2.gltf",
+        "position": [
+          -10.269714318146468,
+          0,
+          23.517878610642846
+        ],
+        "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_clover_1-1779719283730",
+        "catalogId": "stylized-nature_clover_1",
+        "name": "Nature Clover 1",
+        "glbPath": "/models/stylized-nature/clover_1.gltf",
+        "position": [
+          2.8564469908289762,
+          0,
+          18.573943217111122
+        ],
+        "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_clover_1-1779719324494",
+        "catalogId": "stylized-nature_clover_1",
+        "name": "Nature Clover 1",
+        "glbPath": "/models/stylized-nature/clover_1.gltf",
+        "position": [
+          -3.5535845999855535,
+          0,
+          17.58112892257867
+        ],
+        "scale": 1
       }
     ],
     "portalGates": [
@@ -11277,6 +11349,29 @@
         }
       },
       {
+        "id": "portal-zero-public-world-world-1778338664451-jhcv",
+        "label": "newpublic local",
+        "variant": "solar-arch",
+        "position": [
+          25.2,
+          0,
+          -2.9
+        ],
+        "rotationY": -1.5707963267948966,
+        "scale": 0.78,
+        "width": 2.15,
+        "height": 2.9,
+        "direction": "one-way",
+        "sourceWorldId": "world-welcome-hub-system",
+        "targetWorldId": "world-1778338664451-jhcv",
+        "targetWorldName": "newpublic local",
+        "action": {
+          "type": "load_world",
+          "worldId": "world-1778338664451-jhcv",
+          "worldName": "newpublic local"
+        }
+      },
+      {
         "id": "portal-zero-public-world-world-quest-zero-system",
         "label": "Quest Zero",
         "variant": "hologram-gate",
@@ -11297,6 +11392,52 @@
           "type": "load_world",
           "worldId": "world-quest-zero-system",
           "worldName": "Quest Zero"
+        }
+      },
+      {
+        "id": "portal-zero-public-world-world-1778350696063-1fnd",
+        "label": "pubbb",
+        "variant": "mirror-pool",
+        "position": [
+          25.2,
+          0,
+          -6.8
+        ],
+        "rotationY": -1.5707963267948966,
+        "scale": 0.78,
+        "width": 2.15,
+        "height": 2.9,
+        "direction": "one-way",
+        "sourceWorldId": "world-welcome-hub-system",
+        "targetWorldId": "world-1778350696063-1fnd",
+        "targetWorldName": "pubbb",
+        "action": {
+          "type": "load_world",
+          "worldId": "world-1778350696063-1fnd",
+          "worldName": "pubbb"
+        }
+      },
+      {
+        "id": "portal-zero-ffa-world-world-1778350531464-4kn7",
+        "label": "Free for all world",
+        "variant": "rift-slit",
+        "position": [
+          -2.9,
+          0,
+          25.2
+        ],
+        "rotationY": 3.141592653589793,
+        "scale": 0.78,
+        "width": 2.15,
+        "height": 2.9,
+        "direction": "one-way",
+        "sourceWorldId": "world-welcome-hub-system",
+        "targetWorldId": "world-1778350531464-4kn7",
+        "targetWorldName": "Free for all world",
+        "action": {
+          "type": "load_world",
+          "worldId": "world-1778350531464-4kn7",
+          "worldName": "Free for all world"
         }
       }
     ],
@@ -11704,6 +11845,6 @@
     "skyBackgroundId": "umhlanga_sunrise",
     "agentWindows": [],
     "agentAvatars": [],
-    "savedAt": "2026-05-23T20:20:13.816Z"
+    "savedAt": "2026-05-25T14:28:46.443Z"
   }
 }

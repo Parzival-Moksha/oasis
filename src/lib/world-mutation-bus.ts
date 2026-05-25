@@ -3,11 +3,17 @@
 import type { CatalogPlacement, ObjectBehavior, WorldLight } from '@/lib/conjure/types'
 import type { PaintStroke, PaintStrokeStyle } from '@/lib/forge/paint-stroke'
 import type { Text3DObject } from '@/lib/forge/text-3d-object'
+import type { PortalGate } from '@/lib/portal-gates'
+import type { AgentAvatar, AgentWindow, PlacementVfxType } from '@/store/oasisStore'
 
 export type WorldMutation =
   | { kind: 'object_added'; payload: CatalogPlacement }
   | { kind: 'object_removed'; payload: { id: string; linkedAvatarIds?: string[] } }
   | { kind: 'object_transformed'; payload: { id: string; position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number } }
+  | { kind: 'portal_added'; payload: PortalGate }
+  | { kind: 'agent_window_added'; payload: AgentWindow }
+  | { kind: 'agent_avatar_added'; payload: AgentAvatar }
+  | { kind: 'placement_vfx'; payload: { position: [number, number, number]; typeOverride?: PlacementVfxType } }
   | { kind: 'sky_changed'; payload: { skyBackgroundId: string } }
   | { kind: 'ground_changed'; payload: { groundPresetId: string } }
   | { kind: 'ground_painted'; payload: { cx: number; cz: number; presetId: string; size: number; stretch: number } }
@@ -15,7 +21,7 @@ export type WorldMutation =
   | { kind: 'ground_tiles_cleared'; payload: Record<string, never> }
   | { kind: 'terrain_brushed'; payload: { x: number; z: number; radius: number; intensity: number; direction: 'up' | 'down'; deltaSeconds: number } }
   | { kind: 'terrain_reset'; payload: Record<string, never> }
-  | { kind: 'behavior_updated'; payload: { id: string; updates: Partial<ObjectBehavior> } }
+  | { kind: 'behavior_updated'; payload: { id: string; updates: Partial<ObjectBehavior> & { moveTarget?: [number, number, number] | null } } }
   | { kind: 'light_added'; payload: { light: WorldLight } }
   | { kind: 'light_removed'; payload: { id: string } }
   | { kind: 'light_updated'; payload: { id: string; updates: Partial<WorldLight> } }

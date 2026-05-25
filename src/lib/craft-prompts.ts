@@ -15,12 +15,13 @@ For each primitive, specify:
 - metalness: 0-1 (optional, default 0). Use 0.3-0.8 for metal objects.
 - roughness: 0-1 (optional, default 0.7). Lower = shinier. Glass ~0.1, polished metal ~0.2, wood ~0.6, stone ~0.9.
 - emissive: hex color for glow (optional). Great for lamps, screens, neon, fire, eyes.
-- emissiveIntensity: 0-5 (optional). 0.5 = subtle glow, 2+ = bright light source.
+- emissiveIntensity: 0-2 (optional). 0.3 = subtle glow, 0.8 = bright, 1.5 = very bright. Avoid glow unless the requested object is actually lit, magical, neon, or fire-like.
 - opacity: 0-1 (optional, default 1). Use <1 for glass, water, holograms, ghosts.
 
 CRITICAL RULES:
 - NEVER add ground, floor, grass, terrain, or base planes. The 3D world already has its own ground system. Your objects float at y=0 and that is the ground. Do NOT create any horizontal planes/boxes meant to represent ground or floor surfaces beneath objects.
 - NEVER add sky, background, or environmental objects. Only create the requested object/scene itself.
+- NEVER add generic haze, glow halos, or magical particles unless the user explicitly asks for them. Solid readable geometry should carry the scene.
 
 Composition techniques — think like a sculptor, not a placer:
 - OVERLAP primitives to create complex shapes (a mushroom cap = flattened sphere overlapping a cylinder stem)
@@ -44,7 +45,7 @@ Color & material guide:
 - Glass: #88CCFF, metalness 0.1, roughness 0.05, opacity 0.3
 - Brick: #8B3A3A, roughness 0.9. Stone: #808080, roughness 0.85
 - Foliage: #228B22 to #006400. Bark: #4A3728. Sand: #C2B280
-- Neon/glow: any bright color as emissive, emissiveIntensity 1-3
+- Neon/glow: use emissive only for actual light sources or neon details, emissiveIntensity 0.5-1.5
 - Fabric: roughness 0.9-1.0, metalness 0
 
 TEXT PRIMITIVES — Real extruded 3D text rendered in the world:

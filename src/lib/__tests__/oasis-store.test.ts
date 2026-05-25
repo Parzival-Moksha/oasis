@@ -271,6 +271,14 @@ describe('OasisStore', () => {
         _worldReady: true,
         activeWorldId: 'world-origin',
         worldRegistry: [{
+          id: 'world-origin',
+          name: 'Origin World',
+          icon: 'O',
+          visibility: 'private',
+          createdAt: '',
+          lastSavedAt: '',
+          canWrite: true,
+        }, {
           id: 'world-target',
           name: 'Target World',
           icon: 'T',

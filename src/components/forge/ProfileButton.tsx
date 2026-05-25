@@ -87,6 +87,7 @@ export function ProfileButton() {
   // profile fetch. Avoids the same-day stale-image case where lastLoginDate
   // alone (day granularity) lets the browser keep showing the old pic.
   const [avatarBust, setAvatarBust] = useState<number>(() => Date.now())
+  const [avatarError, setAvatarError] = useState(false)
   const [saving, setSaving] = useState(false)
   const editFileRef = useRef<HTMLInputElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -182,6 +183,7 @@ export function ProfileButton() {
   const avatarSrc = profile.avatar_url
     ? `${profile.avatar_url}?v=${avatarBust}`
     : null
+  useEffect(() => { setAvatarError(false) }, [avatarSrc])
   const initial = (displayName[0] || '?').toUpperCase()
   const playClick = () => useAudioManager.getState().play('buttonClick')
 
@@ -202,8 +204,8 @@ export function ProfileButton() {
       setSaveError('That file is not an image. Use JPEG/PNG/WebP/GIF.')
       return
     }
-    if (file.size > 2 * 1024 * 1024) {
-      setSaveError(`Image is ${(file.size / 1024 / 1024).toFixed(1)} MB — must be under 2 MB.`)
+    if (file.size > 6 * 1024 * 1024) {
+      setSaveError(`Image is ${(file.size / 1024 / 1024).toFixed(1)} MB — must be under 6 MB.`)
       return
     }
     setSaveError(null)
@@ -224,6 +226,8 @@ export function ProfileButton() {
         const errBody = await patchRes.json().catch(() => ({}))
         throw new Error(errBody?.error || `Profile save failed (HTTP ${patchRes.status})`)
       }
+      const patchedProfile = await patchRes.json().catch(() => null) as Partial<ProfileData> | null
+      let uploadedAvatarUrl: string | null = null
       if (editAvatarFile) {
         const fd = new FormData()
         fd.append('avatar', editAvatarFile)
@@ -232,11 +236,21 @@ export function ProfileButton() {
           const errBody = await upRes.json().catch(() => ({}))
           throw new Error(errBody?.error || `Avatar upload failed (HTTP ${upRes.status})`)
         }
+        const uploadBody = await upRes.json().catch(() => ({})) as { avatar_url?: string }
+        uploadedAvatarUrl = typeof uploadBody.avatar_url === 'string' ? uploadBody.avatar_url : null
       }
+      const nextBust = Date.now()
+      setProfile(prev => ({
+        ...prev,
+        ...(patchedProfile || {}),
+        displayName: editName.trim(),
+        bio: editBio.trim() || null,
+        avatar_url: uploadedAvatarUrl || patchedProfile?.avatar_url || prev.avatar_url,
+      }))
       setEditing(false)
       setSaveError(null)
       fetchProfile()
-      setAvatarBust(Date.now())
+      setAvatarBust(nextBust)
       // Notify multiplayer presence layer + other listeners that the profile
       // changed mid-session so they re-pull displayName/avatarUrl/etc.
       if (typeof window !== 'undefined') {
@@ -284,8 +298,8 @@ export function ProfileButton() {
           <div className="p-4 border-b border-white/10">
             {!editing ? (
               <div className="flex items-center gap-3">
-                {avatarSrc ? (
-                  <img src={avatarSrc} alt="" className="w-10 h-10 rounded-full" referrerPolicy="no-referrer" />
+                {avatarSrc && !avatarError ? (
+                  <img src={avatarSrc} alt="" className="w-10 h-10 rounded-full object-cover" referrerPolicy="no-referrer" onError={() => setAvatarError(true)} />
                 ) : (
                   <div className="w-10 h-10 rounded-full bg-purple-900 flex items-center justify-center">
                     <span className="text-lg font-bold text-purple-300">{initial}</span>

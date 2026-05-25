@@ -269,6 +269,7 @@ export class AnimationController {
   // ── GETTERS ──────────────────────────────────────────────────────────
 
   get state(): AnimState { return this.currentState }
+  get customAnimationId(): string | null { return this.customAnimId }
   get isReady(): boolean { return this.ready }
   get loadedClips(): string[] { return Array.from(this.clips.keys()) }
   get getMixer(): THREE.AnimationMixer { return this.mixer }

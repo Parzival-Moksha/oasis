@@ -923,7 +923,7 @@ interface OasisState {
   // ─═̷─═̷─🪄 PLACEMENT + VFX ACTIONS ─═̷─═̷─🪄
   enterPlacementMode: (pending: PlacementPending) => void
   cancelPlacement: () => void
-  placeCatalogAssetAt: (catalogId: string, name: string, path: string, defaultScale: number, position: [number, number, number]) => string
+  placeCatalogAssetAt: (catalogId: string, name: string, path: string, defaultScale: number, position: [number, number, number], audioUrl?: string) => string
   placeImageAt: (name: string, imageUrl: string, position: [number, number, number], frameStyle?: string, frameThickness?: number) => void
   placeVideoAt: (name: string, videoUrl: string, position: [number, number, number], frameStyle?: string, frameThickness?: number) => void
   updateCatalogPlacement: (id: string, updates: Partial<import('../lib/conjure/types').CatalogPlacement>) => void
@@ -1127,6 +1127,23 @@ export const useOasisStore = create<OasisState>((set, get) => {
     return mode !== 'hosted' && state.worldRegistry.length === 0
   }
 
+  const broadcastAgentWindowAndLinkedAvatar = (windowId: string) => {
+    const state = get()
+    const window = state.placedAgentWindows.find(entry => entry.id === windowId)
+    if (!window) return
+    worldMutationBus.broadcast({ kind: 'agent_window_added', payload: window })
+    const avatar = window.linkedAvatarId
+      ? state.placedAgentAvatars.find(entry => entry.id === window.linkedAvatarId)
+      : state.placedAgentAvatars.find(entry => entry.linkedWindowId === window.id)
+    if (avatar) worldMutationBus.broadcast({ kind: 'agent_avatar_added', payload: avatar })
+  }
+
+  const broadcastAgentTypeWindows = (agentType: AgentAvatarType) => {
+    get().placedAgentWindows
+      .filter(entry => entry.agentType === agentType)
+      .forEach(entry => broadcastAgentWindowAndLinkedAvatar(entry.id))
+  }
+
   const sanitizePaintStrokeUpdates = (
     updates: Partial<Pick<PaintStroke, 'color' | 'thickness' | 'shininess' | 'mode' | 'varyByVelocity' | 'playbackLoop'>>,
   ): Partial<Pick<PaintStroke, 'color' | 'thickness' | 'shininess' | 'mode' | 'varyByVelocity' | 'playbackLoop'>> => {
@@ -1273,6 +1290,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
           inspectedObjectId: state.inspectedObjectId === existingAvatar.id ? null : state.inspectedObjectId,
         }
       })
+      worldMutationBus.broadcast({ kind: 'object_removed', payload: { id: existingAvatar.id } })
+      broadcastAgentTypeWindows(agentType)
       setTimeout(() => get().saveWorldState(), 100)
       return null
     }
@@ -1309,6 +1328,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
               : entry,
           ),
       }))
+      const updatedAvatar = get().placedAgentAvatars.find(entry => entry.id === existingAvatar.id)
+      if (updatedAvatar) worldMutationBus.broadcast({ kind: 'agent_avatar_added', payload: updatedAvatar })
+      broadcastAgentTypeWindows(agentType)
       setTimeout(() => get().saveWorldState(), 100)
       return existingAvatar.id
     }
@@ -1351,6 +1373,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
         },
       ],
     }))
+    const createdAvatar = get().placedAgentAvatars.find(entry => entry.id === avatarId)
+    if (createdAvatar) worldMutationBus.broadcast({ kind: 'agent_avatar_added', payload: createdAvatar })
+    broadcastAgentTypeWindows(agentType)
     setTimeout(() => get().saveWorldState(), 100)
     return avatarId
   }
@@ -2471,6 +2496,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     })
     exitPlacementIfActive()
     get().spawnPlacementVfx(position)
+    worldMutationBus.broadcast({ kind: 'portal_added', payload: gate })
     setTimeout(() => get().saveWorldState(), 100)
 
     if (direction === 'two-way' && resolvedTargetWorldId && linkedPortalId) {
@@ -2547,6 +2573,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
         )),
       }))
     })
+    const updatedGate = get().portalGates.find(portal => portal.id === id)
+    if (updatedGate) worldMutationBus.broadcast({ kind: 'portal_added', payload: updatedGate })
     setTimeout(() => get().saveWorldState(), 100)
   },
 
@@ -2610,12 +2638,20 @@ export const useOasisStore = create<OasisState>((set, get) => {
     try { require('../lib/input-manager').useInputManager.getState().returnToPrevious() } catch {}
   },
 
-  placeCatalogAssetAt: (catalogId, name, path, defaultScale, position) => {
+  placeCatalogAssetAt: (catalogId, name, path, defaultScale, position, audioUrl) => {
     let placedId = ''
     let placedPlacement: CatalogPlacement | null = null
     withUndo(`Place ${name}`, '📦', () => {
       placedId = `catalog-${catalogId}-${Date.now()}`
-      const placement: CatalogPlacement = { id: placedId, catalogId, name, glbPath: path, position, scale: defaultScale }
+      const placement: CatalogPlacement = {
+        id: placedId,
+        catalogId,
+        name,
+        glbPath: path,
+        position,
+        scale: defaultScale,
+        ...(audioUrl ? { audioUrl, audioVolume: 1, audioMaxDistance: 15, audioMuted: false } : {}),
+      }
       placedPlacement = placement
       set(state => ({
         placedCatalogAssets: [...state.placedCatalogAssets, placement],
@@ -2811,7 +2847,10 @@ export const useOasisStore = create<OasisState>((set, get) => {
       }
 
       if (action.type === 'spawn_vfx') {
-        get().spawnPlacementVfx(action.position || position, action.vfxType as PlacementVfxType | undefined)
+        const effectPosition = action.position || position
+        const typeOverride = action.vfxType as PlacementVfxType | undefined
+        get().spawnPlacementVfx(effectPosition, typeOverride)
+        worldMutationBus.broadcast({ kind: 'placement_vfx', payload: { position: effectPosition, typeOverride } })
         continue
       }
 
@@ -3168,7 +3207,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
   applyRemoteObjectBehavior: (id, updates) => {
     set((state) => {
       const existing = state.behaviors[id] || { movement: { type: 'static' as const }, visible: true }
-      return { behaviors: { ...state.behaviors, [id]: { ...existing, ...updates } } }
+      const hasMoveTargetUpdate = Object.prototype.hasOwnProperty.call(updates, 'moveTarget')
+      const nextBehavior = { ...existing, ...updates } as ObjectBehavior
+      if (hasMoveTargetUpdate && !Array.isArray((updates as { moveTarget?: unknown }).moveTarget)) {
+        delete nextBehavior.moveTarget
+      }
+      return { behaviors: { ...state.behaviors, [id]: nextBehavior } }
     })
   },
   setObjectMeshStats: (id, stats) => {
@@ -3190,6 +3234,10 @@ export const useOasisStore = create<OasisState>((set, get) => {
       return {
         behaviors: { ...state.behaviors, [id]: rest as ObjectBehavior },
       }
+    })
+    worldMutationBus.broadcast({
+      kind: 'behavior_updated',
+      payload: { id, updates: { moveTarget: null } as Partial<ObjectBehavior> & { moveTarget: null } },
     })
     // Final position is synced by the caller after arrival.
     setTimeout(() => get().saveWorldState(), 100)
@@ -3819,6 +3867,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     if (placedWindow && !placedWindow.linkedAvatarId) {
       get().assignAvatarToAgentWindow(placedWindow.id, getDefaultAgentAvatarUrl(placedWindow.agentType))
     }
+    broadcastAgentWindowAndLinkedAvatar(window.id)
     get().spawnPlacementVfx(window.position)
     setTimeout(() => get().saveWorldState(), 100)
   },
@@ -3827,8 +3876,16 @@ export const useOasisStore = create<OasisState>((set, get) => {
     if (!get().placedAgentWindows.some(window => window.id === id)) return
     let linkedAvatarIds: string[] = []
     set(state => {
+      const removedWindow = state.placedAgentWindows.find(w => w.id === id)
+      const remainingWindows = state.placedAgentWindows.filter(w => w.id !== id)
       linkedAvatarIds = state.placedAgentAvatars
-        .filter(entry => entry.linkedWindowId === id)
+        .filter(entry =>
+          entry.linkedWindowId === id
+          || (
+            removedWindow?.linkedAvatarId === entry.id
+            && !remainingWindows.some(window => window.linkedAvatarId === entry.id)
+          )
+        )
         .map(entry => entry.id)
       const linkedAvatarIdSet = new Set(linkedAvatarIds)
       const nextTransforms = { ...state.transforms }
@@ -3839,7 +3896,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       }
       return {
         placedAgentWindows: state.placedAgentWindows.filter(w => w.id !== id),
-        placedAgentAvatars: state.placedAgentAvatars.filter(entry => entry.linkedWindowId !== id),
+        placedAgentAvatars: state.placedAgentAvatars.filter(entry => !linkedAvatarIdSet.has(entry.id)),
         liveAgentAvatarAudio: nextAudio,
         transforms: nextTransforms,
         focusedAgentWindowId: state.focusedAgentWindowId === id ? null : state.focusedAgentWindowId,
@@ -3854,11 +3911,15 @@ export const useOasisStore = create<OasisState>((set, get) => {
     set(state => ({
       placedAgentWindows: state.placedAgentWindows.map(w => w.id === id ? { ...w, ...partial } : w),
     }))
+    broadcastAgentWindowAndLinkedAvatar(id)
     setTimeout(() => get().saveWorldState(), 100)
   },
   removeAgentAvatar: (id) => {
     if (!canWriteCurrentWorld()) return
     if (!get().placedAgentAvatars.some(avatar => avatar.id === id)) return
+    const affectedWindowIds = get().placedAgentWindows
+      .filter(window => window.linkedAvatarId === id)
+      .map(window => window.id)
     set(state => {
       const nextTransforms = { ...state.transforms }
       delete nextTransforms[id]
@@ -3876,6 +3937,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       }
     })
     worldMutationBus.broadcast({ kind: 'object_removed', payload: { id } })
+    affectedWindowIds.forEach(windowId => broadcastAgentWindowAndLinkedAvatar(windowId))
     setTimeout(() => get().saveWorldState(), 100)
   },
   setAgentWindowAnchorMode: (id, anchorMode) => {
@@ -3914,6 +3976,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         ),
       }
     })
+    broadcastAgentWindowAndLinkedAvatar(id)
     setTimeout(() => get().saveWorldState(), 100)
   },
   assignAvatarToAgentWindow: (windowId, avatarUrl) => {
@@ -3946,6 +4009,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
           inspectedObjectId: state.inspectedObjectId === existingAvatar.id ? null : state.inspectedObjectId,
         }
       })
+      worldMutationBus.broadcast({ kind: 'object_removed', payload: { id: existingAvatar.id } })
+      broadcastAgentWindowAndLinkedAvatar(windowId)
       setTimeout(() => get().saveWorldState(), 100)
       return null
     }
@@ -3980,6 +4045,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
             : entry
         ),
       }))
+      broadcastAgentWindowAndLinkedAvatar(windowId)
       setTimeout(() => get().saveWorldState(), 100)
       return existingAvatar.id
     }
@@ -4013,6 +4079,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         },
       ],
     }))
+    broadcastAgentWindowAndLinkedAvatar(windowId)
     setTimeout(() => get().saveWorldState(), 100)
     return avatarId
   },

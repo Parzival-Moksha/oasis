@@ -9,6 +9,7 @@ import {
   setPvpSender,
   type PvpDeathEvent,
   type PvpPlayerSnapshot,
+  type PvpRemoteBolt,
   type PvpRespawnEvent,
 } from './pvp-bridge'
 
@@ -35,6 +36,7 @@ export interface MultiplayerRoomJoinOptions {
   // PvP join params — passed straight to the Colyseus room.
   pvpEnabled?: boolean
   maxHp?: number
+  mana?: number
   maxMana?: number
 }
 
@@ -82,6 +84,8 @@ interface RoomBoltSchema {
   spawnedAt: number
   seed: number
 }
+
+type RoomBoltPayload = RoomBoltSchema
 
 interface RoomStateSchema {
   players: {
@@ -132,6 +136,25 @@ function snapshotPlayer(sessionId: string, raw: RoomPlayerSchema): MultiplayerRo
   }
 }
 
+function remoteBoltFromRoomBolt(bolt: RoomBoltPayload, localSessionId: string): PvpRemoteBolt | null {
+  if (!bolt || bolt.casterSessionId === localSessionId) return null
+  const spell = (bolt.spell === 'firebolt' || bolt.spell === 'lightning-bolt' || bolt.spell === 'ice-bolt')
+    ? bolt.spell
+    : null
+  if (!spell || !bolt.id) return null
+  return {
+    id: bolt.id,
+    casterSessionId: bolt.casterSessionId,
+    spell,
+    design: bolt.design,
+    origin: [bolt.ox, bolt.oy, bolt.oz],
+    direction: [bolt.dx, bolt.dy, bolt.dz],
+    speed: bolt.speed,
+    damage: bolt.damage,
+    seed: bolt.seed,
+  }
+}
+
 export interface MultiplayerRoomProfile {
   avatarUrl?: string
   profileAvatarUrl?: string
@@ -170,6 +193,13 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
   args.onConnectionState?.('connecting')
 
   let room: Room<RoomStateSchema>
+  const seenRemoteBoltIds = new Set<string>()
+  const handleRemoteBolt = (bolt: RoomBoltPayload) => {
+    const remoteBolt = remoteBoltFromRoomBolt(bolt, room.sessionId)
+    if (!remoteBolt || seenRemoteBoltIds.has(remoteBolt.id)) return
+    seenRemoteBoltIds.add(remoteBolt.id)
+    notifyRemoteBolt(remoteBolt)
+  }
   try {
     room = await client.joinOrCreate<RoomStateSchema>('world', {
       worldId: args.worldId,
@@ -180,6 +210,7 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
       color: args.color,
       pvpEnabled: args.pvpEnabled === true,
       maxHp: typeof args.maxHp === 'number' ? args.maxHp : undefined,
+      mana: typeof args.mana === 'number' ? args.mana : undefined,
       maxMana: typeof args.maxMana === 'number' ? args.maxMana : undefined,
     })
   } catch (error) {
@@ -232,6 +263,12 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
   emit()
 
   // ─═̷─ PvP wiring ─═̷─
+  room.onMessage('cast', (payload: RoomBoltPayload) => {
+    try { handleRemoteBolt(payload) } catch (err) {
+      if (DEBUG) console.warn('[oasis-room] cast handler threw', err)
+    }
+  })
+
   // Hook the colyseus.js bolts array so peers see remote casts. The onAdd
   // callback is wrapped in a try because schema-callbacks expose different
   // shapes between colyseus.js versions; we tolerate either.
@@ -240,23 +277,7 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
     const bolts = stateForBolts?.bolts
     if (bolts && typeof bolts.onAdd === 'function') {
       bolts.onAdd((bolt: RoomBoltSchema) => {
-        // Skip echoing our own broadcasts back to ourselves.
-        if (bolt.casterSessionId === room.sessionId) return
-        const spell = (bolt.spell === 'firebolt' || bolt.spell === 'lightning-bolt' || bolt.spell === 'ice-bolt')
-          ? bolt.spell
-          : null
-        if (!spell) return
-        notifyRemoteBolt({
-          id: bolt.id,
-          casterSessionId: bolt.casterSessionId,
-          spell,
-          design: bolt.design,
-          origin: [bolt.ox, bolt.oy, bolt.oz],
-          direction: [bolt.dx, bolt.dy, bolt.dz],
-          speed: bolt.speed,
-          damage: bolt.damage,
-          seed: bolt.seed,
-        })
+        handleRemoteBolt(bolt)
       })
     }
   } catch (err) {

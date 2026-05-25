@@ -494,6 +494,28 @@ function ModeSwitchLabel() {
 // POST-PROCESSING EFFECTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
+function DesktopKeyHints() {
+  const mobileOasis = useIsMobileOasis()
+  const pointerLocked = useInputManager(s => s.pointerLocked)
+  if (mobileOasis) return null
+
+  return (
+    <div className="fixed right-4 top-4 z-[96] pointer-events-none flex gap-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-100/82 max-[700px]:hidden">
+      <div className="flex items-center gap-1 rounded-md border border-white/10 bg-black/45 px-2 py-1 shadow-[0_8px_24px_rgba(0,0,0,0.35)] backdrop-blur">
+        <span className="rounded bg-white/12 px-1.5 py-0.5 font-mono text-[11px] text-white">C</span>
+        <span>Camera</span>
+      </div>
+      <div
+        className="flex items-center gap-1 rounded-md border border-white/10 bg-black/45 px-2 py-1 shadow-[0_8px_24px_rgba(0,0,0,0.35)] backdrop-blur"
+        style={{ opacity: pointerLocked ? 1 : 0.68 }}
+      >
+        <span className="rounded bg-white/12 px-1.5 py-0.5 font-mono text-[11px] text-white">Esc</span>
+        <span>Mouse</span>
+      </div>
+    </div>
+  )
+}
+
 function PostProcessing() {
   const { settings } = useContext(SettingsContext)
   const sprintActiveRef = useRef(false)
@@ -855,7 +877,7 @@ const QUICK_AGENT_ITEMS: Array<{
   { type: 'hermes', label: 'Hermes', icon: '🧿', accent: '#FACC15', shadow: 'rgba(250,204,21,0.45)' },
   { type: 'openclaw', label: 'OpenClaw', icon: '🦾', accent: '#22D3EE', shadow: 'rgba(34,211,238,0.42)' },
   { type: 'gemini', label: 'Gemini', icon: <GeminiAgentIcon />, accent: '#67E8F9', shadow: 'rgba(103,232,249,0.36)' },
-  { type: 'merlin', label: 'Merlin', icon: '🧙', accent: '#A855F7', shadow: 'rgba(168,85,247,0.36)', localOnly: true },
+  { type: 'merlin', label: 'Merlin', icon: '🧙', accent: '#A855F7', shadow: 'rgba(168,85,247,0.36)' },
   { type: 'anorak', label: 'CC', icon: '💻', accent: '#38BDF8', shadow: 'rgba(56,189,248,0.34)', localOnly: true },
   { type: 'codex', label: 'Codex', icon: <CodexAgentIcon />, accent: '#34D399', shadow: 'rgba(52,211,153,0.34)', localOnly: true },
   { type: 'anorak-pro', label: 'Anorak Pro', icon: '🔮', accent: '#14B8A6', shadow: 'rgba(20,184,166,0.34)', localOnly: true },
@@ -1513,7 +1535,7 @@ export default function Scene() {
     if (agentType === 'hermes') setHermesOpen(true)
     else if (agentType === 'gemini') setGeminiOpen(true)
     else if (agentType === 'openclaw') setOpenclawOpen(true)
-    else if (agentType === 'merlin') setMerlinOpen(true)
+    else if (agentType === 'merlin') setGeminiOpen(true)
     else if (agentType === 'anorak') setClaudeCodeOpen(true)
     else if (agentType === 'codex') setCodexOpen(true)
     else if (agentType === 'anorak-pro') setAnorakProOpen(true)
@@ -1523,10 +1545,11 @@ export default function Scene() {
   const placeQuickAgentWindow = (agentType: QuickAgentType) => {
     useAudioManager.getState().play('place')
     const label = QUICK_AGENT_ITEMS.find(agent => agent.type === agentType)?.label || agentType
+    const placedAgentType = agentType === 'merlin' ? 'gemini' : agentType
     useOasisStore.getState().enterPlacementMode({
       type: 'agent',
       name: label,
-      agentType,
+      agentType: placedAgentType,
       agentRenderMode: 'live-html',
     })
     setAgentLauncherOpen(false)
@@ -1636,8 +1659,9 @@ export default function Scene() {
         setWizardOpen(true)
         return
       case 'portal-create':
-        setPendingWizardTab('world')
+        setPendingWizardTab('assets')
         setWizardOpen(true)
+        dispatchNextTick(new CustomEvent('oasis:open-wizard-assets-tab', { detail: { assetSubTab: 'portals' } }))
         return
 
       // ─═̷─ Own media uploads ─═̷─
@@ -1948,6 +1972,7 @@ export default function Scene() {
       {/* ─═̷─═̷─🎮 MODE SWITCH LABEL ─═̷─═̷─🎮 */}
       <MouseLookDebugOverlay />
       <ModeSwitchLabel />
+      <DesktopKeyHints />
       <PortalTransitionOverlay />
       <WorldLoadingBar />
       <RookieMerlinInteractionOverlay

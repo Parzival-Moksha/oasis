@@ -394,6 +394,14 @@ export function CameraController() {
     }
   }, [camera])
 
+  useEffect(() => {
+    const perspectiveCamera = camera as THREE.PerspectiveCamera
+    if (!perspectiveCamera.isPerspectiveCamera) return
+    if (Math.abs(perspectiveCamera.fov - settings.fov) <= 0.1) return
+    perspectiveCamera.fov = settings.fov
+    perspectiveCamera.updateProjectionMatrix()
+  }, [camera, settings.fov])
+
   // Mode-specific update functions (hooks, called unconditionally)
   const updateNoclip = useNoclipUpdate()
   const updateMouseLook = useMouseLook(settings.mouseSensitivity)

@@ -19,6 +19,7 @@ const DEFAULT_GROUND_Y = 0
 let latestPlayerAvatarPose: PlayerAvatarPose | null = null
 let playerSpellCasting = false
 let playerManaRecharging = false
+let playerAnimationState = 'idle'
 const spellListeners = new Set<() => void>()
 const manaRechargeListeners = new Set<() => void>()
 const teleportListeners = new Set<(pose: PlayerAvatarPose) => void>()
@@ -83,6 +84,14 @@ export function setPlayerManaRecharging(active: boolean): void {
   if (playerManaRecharging === active) return
   playerManaRecharging = active
   notifyManaRechargeListeners()
+}
+
+export function getPlayerAnimationState(): string {
+  return playerAnimationState
+}
+
+export function setPlayerAnimationState(state: string): void {
+  playerAnimationState = state || 'idle'
 }
 
 export function subscribePlayerManaRecharging(listener: () => void): () => void {

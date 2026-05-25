@@ -97,6 +97,14 @@ function notBuiltResponse() {
   )
 }
 
+function docsQuickstartUrl(request: Request) {
+  const url = new URL('/docs/getting-started/quickstart', request.url)
+  if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+    url.protocol = 'http:'
+  }
+  return url
+}
+
 export async function GET(
   request: Request,
   { params }: { params: { slug?: string[] } },
@@ -109,7 +117,7 @@ export async function GET(
   }
 
   if (slug.length === 0 || (slug.length === 1 && slug[0] === 'index.html')) {
-    return NextResponse.redirect(new URL('/docs/getting-started/quickstart', request.url), 307)
+    return NextResponse.redirect(docsQuickstartUrl(request), 307)
   }
 
   const target = await resolveDocsTarget(slug)

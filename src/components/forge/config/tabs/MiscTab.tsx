@@ -4,12 +4,18 @@
 // MISC TAB — RP1 toggle, console control, and any other advanced/odd settings.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { useContext } from 'react'
+import { useContext, useMemo } from 'react'
 import { SettingsContext } from '@/components/scene-lib/contexts'
 import type { SharedTabProps } from '../types'
 
 export function MiscTab({ consoleControl }: SharedTabProps) {
   const { settings, effectiveRp1Mode, rp1Locked, updateSetting } = useContext(SettingsContext)
+  const docsHref = useMemo(() => {
+    if (typeof window === 'undefined') return '/docs/getting-started/quickstart'
+    const host = window.location.host
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    return isLocal ? `http://${host}/docs/getting-started/quickstart` : '/docs/getting-started/quickstart'
+  }, [])
 
   return (
     <div className="space-y-3">
@@ -53,7 +59,7 @@ export function MiscTab({ consoleControl }: SharedTabProps) {
       <section className="border-t border-white/10 pt-3">
         <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Resources</div>
         <a
-          href="/docs"
+          href={docsHref}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-all duration-200 border border-teal-500/30 bg-teal-500/5 hover:border-teal-500/50 hover:bg-teal-500/10 w-full"

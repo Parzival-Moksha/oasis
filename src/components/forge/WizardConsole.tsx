@@ -968,6 +968,13 @@ function MediaTab({ cols, onRequestDelete }: { cols: number; onRequestDelete: (t
 // Note: settings has been moved to the global Config menu
 // (src/components/forge/config/ConfigMenu.tsx). Do not re-add 'settings' here.
 export type WizardMode = 'conjure' | 'craft' | 'world' | 'assets' | 'placed' | 'agents' | 'media' | 'music' | 'video'
+type WizardAssetSubTab = 'catalog' | 'portals' | 'spatial' | 'conjured' | 'crafted' | 'images'
+
+const WIZARD_ASSET_SUBTABS = new Set<WizardAssetSubTab>(['catalog', 'portals', 'spatial', 'conjured', 'crafted', 'images'])
+
+function isWizardAssetSubTab(value: unknown): value is WizardAssetSubTab {
+  return typeof value === 'string' && WIZARD_ASSET_SUBTABS.has(value as WizardAssetSubTab)
+}
 
 interface WizardConsoleProps {
   isOpen: boolean
@@ -1247,7 +1254,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
   const addCustomGroundPreset = useOasisStore(s => s.addCustomGroundPreset)
   const enterPlacementMode = useOasisStore(s => s.enterPlacementMode)
   const [assetCategory, setAssetCategory] = useState<string>('all')
-  const [assetSubTab, setAssetSubTab] = useState<'catalog' | 'portals' | 'spatial' | 'conjured' | 'crafted' | 'images'>('catalog')
+  const [assetSubTab, setAssetSubTab] = useState<WizardAssetSubTab>('catalog')
   const [portalTargetWorldId, setPortalTargetWorldId] = useState('')
   const [portalActionPreset, setPortalActionPreset] = useState<'load_world' | 'create_private' | 'create_public' | 'create_ffa' | 'external_url' | 'locked_message'>('load_world')
   const [portalExternalUrl, setPortalExternalUrl] = useState('https://conjure.04515.xyz/?portal=true&from=oasis')
@@ -1258,6 +1265,18 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
   const [assetsLightboxUrl, setAssetsLightboxUrl] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const savedScrollTop = useRef(0)
+
+  useEffect(() => {
+    const onOpenWizardAssetsTab = (event: Event) => {
+      const detail = (event as CustomEvent<{ assetSubTab?: unknown; subTab?: unknown }>).detail
+      const candidate = detail?.assetSubTab ?? detail?.subTab
+      if (!isWizardAssetSubTab(candidate)) return
+      setMode('assets')
+      setAssetSubTab(candidate)
+    }
+    window.addEventListener('oasis:open-wizard-assets-tab', onOpenWizardAssetsTab as EventListener)
+    return () => window.removeEventListener('oasis:open-wizard-assets-tab', onOpenWizardAssetsTab as EventListener)
+  }, [])
 
   const placeSpatialWebTemplate = useCallback((template: typeof SPATIAL_WEB_ASSET_TEMPLATES[number]) => {
     enterPlacementMode({

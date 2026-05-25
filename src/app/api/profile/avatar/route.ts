@@ -7,8 +7,12 @@ import { getRequiredOasisUserId } from '@/lib/session'
 import { prisma } from '@/lib/db'
 import path from 'path'
 import fs from 'fs/promises'
+import sharp from 'sharp'
 
-const MAX_SIZE = 2 * 1024 * 1024 // 2MB
+const MAX_SIZE = 6 * 1024 * 1024 // 6MB
+const THUMB_SIZE = 160
+const WIDE_MAX_WIDTH = 640
+const WIDE_MAX_HEIGHT = 360
 const EXT_BY_MIME: Record<string, 'jpg' | 'png' | 'webp' | 'gif'> = {
   'image/jpeg': 'jpg',
   'image/jpg': 'jpg',
@@ -44,7 +48,7 @@ export async function POST(request: Request) {
     }
 
     if (file.size > MAX_SIZE) {
-      return NextResponse.json({ error: 'File too large (max 2MB)' }, { status: 400 })
+      return NextResponse.json({ error: 'File too large (max 6MB)' }, { status: 400 })
     }
 
     const buffer = Buffer.from(await file.arrayBuffer())
@@ -55,24 +59,43 @@ export async function POST(request: Request) {
     if (!ext || !magicExt || magicExt !== ext) {
       return NextResponse.json({ error: 'Invalid image. Use JPEG, PNG, WebP, or GIF.' }, { status: 400 })
     }
-    const filename = `${userId}.${ext}`
+    const thumbFilename = `${userId}.webp`
+    const wideFilename = `${userId}-wide.webp`
 
     // Ensure avatars directory exists
     const avatarDir = path.join(process.cwd(), 'public', 'avatars')
     await fs.mkdir(avatarDir, { recursive: true })
 
-    // Clean up any previous avatar with different extension
+    // Clean up previous raw/normalized avatar files for this user.
     for (const e of ['jpg', 'png', 'webp', 'gif']) {
-      if (e !== ext) {
-        const old = path.join(avatarDir, `${userId}.${e}`)
-        await fs.unlink(old).catch(() => {})
-      }
+      await fs.unlink(path.join(avatarDir, `${userId}.${e}`)).catch(() => {})
+    }
+    await fs.unlink(path.join(avatarDir, wideFilename)).catch(() => {})
+    await fs.unlink(path.join(avatarDir, `${userId}-full.webp`)).catch(() => {})
+
+    let thumbBuffer: Buffer
+    let wideBuffer: Buffer
+    try {
+      const image = sharp(buffer, { animated: false }).rotate()
+      thumbBuffer = await image
+        .clone()
+        .resize(THUMB_SIZE, THUMB_SIZE, { fit: 'cover', position: 'attention' })
+        .webp({ quality: 84 })
+        .toBuffer()
+      wideBuffer = await image
+        .clone()
+        .resize(WIDE_MAX_WIDTH, WIDE_MAX_HEIGHT, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 88 })
+        .toBuffer()
+    } catch {
+      return NextResponse.json({ error: 'Invalid image. Use JPEG, PNG, WebP, or GIF.' }, { status: 400 })
     }
 
-    // Write file to disk
-    await fs.writeFile(path.join(avatarDir, filename), buffer)
+    await fs.writeFile(path.join(avatarDir, thumbFilename), thumbBuffer)
+    await fs.writeFile(path.join(avatarDir, wideFilename), wideBuffer)
 
-    const avatarUrl = `/avatars/${filename}`
+    const avatarUrl = `/avatars/${thumbFilename}`
+    const avatarFullUrl = `/avatars/${wideFilename}`
 
     // Persist avatar URL in Profile
     try {
@@ -85,8 +108,8 @@ export async function POST(request: Request) {
       console.error('[Avatar] Profile update failed:', e)
     }
 
-    console.log(`[Avatar] Saved ${filename}`)
-    return NextResponse.json({ avatar_url: avatarUrl })
+    console.log(`[Avatar] Saved ${thumbFilename}`)
+    return NextResponse.json({ avatar_url: avatarUrl, avatar_full_url: avatarFullUrl })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[Avatar] Upload error:', msg)

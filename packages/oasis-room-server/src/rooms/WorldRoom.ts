@@ -14,6 +14,7 @@ interface JoinOptions {
   // browser joined before the world registry finished hydrating.
   pvpEnabled?: boolean
   maxHp?: number
+  mana?: number
   maxMana?: number
 }
 
@@ -118,6 +119,12 @@ function clampHp(value: unknown, fallback: number): number {
   const n = Number(value)
   if (!Number.isFinite(n)) return fallback
   return Math.max(1, Math.min(10_000, Math.floor(n)))
+}
+
+function clampResource(value: unknown, fallback: number, max: number): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return fallback
+  return Math.max(0, Math.min(max, Math.floor(n)))
 }
 
 function clampSpell(value: unknown): string | null {
@@ -284,6 +291,7 @@ export class WorldRoom extends Room<WorldRoomState> {
       // origin/direction at the claimed timestamp.
       const player = this.state.players.get(client.sessionId)
       if (!player) return
+      if (!this.state.pvpEnabled) return
       if (!player.alive) return
       if (!payload || typeof payload !== 'object') return
 
@@ -324,6 +332,22 @@ export class WorldRoom extends Room<WorldRoomState> {
 
       player.mana = Math.max(0, player.mana - cost)
       this.state.bolts.push(bolt)
+      this.broadcast('cast', {
+        id: bolt.id,
+        casterSessionId: bolt.casterSessionId,
+        spell: bolt.spell,
+        design: bolt.design,
+        ox: bolt.ox,
+        oy: bolt.oy,
+        oz: bolt.oz,
+        dx: bolt.dx,
+        dy: bolt.dy,
+        dz: bolt.dz,
+        speed: bolt.speed,
+        damage: bolt.damage,
+        spawnedAt: bolt.spawnedAt,
+        seed: bolt.seed,
+      }, { except: client })
     })
 
     this.onMessage('reportHit', (client, payload: ReportHitMessage) => {
@@ -431,7 +455,7 @@ export class WorldRoom extends Room<WorldRoomState> {
     player.maxHp = clampHp(options.maxHp, 100)
     player.maxMana = clampHp(options.maxMana, 20)
     player.hp = player.maxHp
-    player.mana = player.maxMana
+    player.mana = clampResource(options.mana, player.maxMana, player.maxMana)
     player.alive = true
     player.respawnAt = 0
     this.state.players.set(client.sessionId, player)

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 
 import { getCameraSnapshot } from '@/lib/camera-bridge'
-import { getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
+import { getPlayerAnimationState, getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
 import {
   connectToWorldRoom,
   isMultiplayerRoomConfigured,
@@ -22,15 +22,18 @@ import {
   endLiveStroke,
   startLiveStroke,
 } from '@/lib/forge/live-strokes'
+import { sampleTerrainHeightAt } from '@/lib/forge/terrain-brush'
 
 const INPUT_SEND_INTERVAL_MS = 33
+const INPUT_HEARTBEAT_INTERVAL_MS = 2000
 // Position jitter epsilon for "did the player actually move?" — 5cm is well
 // above VRM spring physics + camera bobbing noise but below any human walk
 // step. Stricter values (2cm before) made stationary remotes get classified
 // as walking on the receive side because their client kept emitting tiny
-// drift positions. Y is ignored separately — terrain sampling under a
-// stationary avatar can shift Y by >2cm without any actual movement intent.
+// drift positions. Height uses its own epsilon so terrain edits still sync
+// without turning tiny ground-sampling noise into locomotion.
 const INPUT_POSITION_EPSILON = 0.05
+const INPUT_HEIGHT_EPSILON = 0.06
 const INPUT_YAW_EPSILON = 0.04
 const INPUT_IDLE_SPEED_EPSILON = 0.12
 const REMOTE_RENDER_DELAY_MS = 120
@@ -50,7 +53,11 @@ function applyRemoteObjectRemoval(objectId: string, linkedAvatarIds: string[] = 
     const placedCatalogAssets = state.placedCatalogAssets.filter(entry => entry.id !== objectId)
     const craftedScenes = state.craftedScenes.filter(entry => entry.id !== objectId)
     const placedAgentAvatars = state.placedAgentAvatars.filter(entry => !removedAvatarIds.has(entry.id) && entry.linkedWindowId !== objectId)
-    const placedAgentWindows = state.placedAgentWindows.filter(entry => entry.id !== objectId)
+    const placedAgentWindows = state.placedAgentWindows
+      .filter(entry => entry.id !== objectId)
+      .map(entry => removedAvatarIds.has(entry.linkedAvatarId || '')
+        ? { ...entry, linkedAvatarId: undefined, anchorMode: 'detached' as const }
+        : entry)
     const portalGates = state.portalGates.filter(entry => entry.id !== objectId)
     const spatialWebObjects = state.spatialWebObjects.filter(entry => entry.id !== objectId)
     const worldConjuredAssetIds = state.worldConjuredAssetIds.filter(id => id !== objectId)
@@ -91,6 +98,37 @@ function applyRemoteObjectRemoval(objectId: string, linkedAvatarIds: string[] = 
       }),
     }
   })
+}
+
+type PortalMutationPayload = Extract<WorldMutation, { kind: 'portal_added' }>['payload']
+type AgentWindowMutationPayload = Extract<WorldMutation, { kind: 'agent_window_added' }>['payload']
+type AgentAvatarMutationPayload = Extract<WorldMutation, { kind: 'agent_avatar_added' }>['payload']
+
+function upsertRemotePortalGate(portal: PortalMutationPayload): void {
+  useOasisStore.setState(state => ({
+    portalGates: state.portalGates.some(entry => entry.id === portal.id)
+      ? state.portalGates.map(entry => entry.id === portal.id ? { ...entry, ...portal, id: entry.id } : entry)
+      : [...state.portalGates, portal],
+    _loadedObjectCount: state.portalGates.some(entry => entry.id === portal.id)
+      ? state._loadedObjectCount
+      : state._loadedObjectCount + 1,
+  }))
+}
+
+function upsertRemoteAgentWindow(window: AgentWindowMutationPayload): void {
+  useOasisStore.setState(state => ({
+    placedAgentWindows: state.placedAgentWindows.some(entry => entry.id === window.id)
+      ? state.placedAgentWindows.map(entry => entry.id === window.id ? { ...entry, ...window, id: entry.id } : entry)
+      : [...state.placedAgentWindows, window],
+  }))
+}
+
+function upsertRemoteAgentAvatar(avatar: AgentAvatarMutationPayload): void {
+  useOasisStore.setState(state => ({
+    placedAgentAvatars: state.placedAgentAvatars.some(entry => entry.id === avatar.id)
+      ? state.placedAgentAvatars.map(entry => entry.id === avatar.id ? { ...entry, ...avatar, id: entry.id } : entry)
+      : [...state.placedAgentAvatars, avatar],
+  }))
 }
 const REMOTE_SNAPSHOT_BUFFER = 6
 const REMOTE_POSITION_CATCHUP = 9
@@ -137,8 +175,13 @@ function getLocalPose(): { position: [number, number, number]; yaw: number } | n
   const camera = getCameraSnapshot()
   if (!camera) return null
   const [fx, , fz] = camera.forward
+  const groundY = sampleTerrainHeightAt(
+    useOasisStore.getState().terrainHeights,
+    camera.position[0],
+    camera.position[2],
+  )
   return {
-    position: [camera.position[0], Math.max(0, camera.position[1] - 1.65), camera.position[2]],
+    position: [camera.position[0], groundY, camera.position[2]],
     yaw: Math.atan2(fx, fz || 1),
   }
 }
@@ -276,6 +319,18 @@ function RemotePresenceAvatar({ player }: { player: MultiplayerRoomPlayer }) {
       }
     }
 
+    const terrainY = sampleTerrainHeightAt(
+      useOasisStore.getState().terrainHeights,
+      target.position[0],
+      target.position[2],
+    )
+    if (Math.abs(target.position[1] - terrainY) > 0.75) {
+      target = {
+        position: [target.position[0], terrainY, target.position[2]],
+        yaw: target.yaw,
+      }
+    }
+
     const catchUp = 1 - Math.exp(-REMOTE_POSITION_CATCHUP * delta)
     group.position.x += (target.position[0] - group.position.x) * catchUp
     group.position.y += (target.position[1] - group.position.y) * catchUp
@@ -337,6 +392,7 @@ function RemotePresenceAvatar({ player }: { player: MultiplayerRoomPlayer }) {
       displayName={player.displayName}
       color={color}
       speed={speed}
+      animState={player.animState}
     />
   )
 }
@@ -359,6 +415,7 @@ export function MultiplayerPresenceLayer() {
   // Latest computed max values from the user's profile. Set by the profile
   // fetch effect below; used at join time to seed the room's player state.
   const maxHpRef = useRef<number>(100)
+  const manaRef = useRef<number>(20)
   const maxManaRef = useRef<number>(20)
   const connectionRef = useRef<MultiplayerRoomConnection | null>(null)
   const lastSentPoseRef = useRef<{ position: [number, number, number]; yaw: number } | null>(null)
@@ -413,7 +470,7 @@ export function MultiplayerPresenceLayer() {
     const refresh = () => {
       fetch('/api/profile', { cache: 'no-store' })
         .then(r => (r.ok ? r.json() : null))
-        .then((data: { displayName?: string; avatar_url?: string | null; maxHp?: number; maxMana?: number; stats?: { maxHp?: number; maxMana?: number } } | null) => {
+        .then((data: { displayName?: string; avatar_url?: string | null; mana?: number; maxHp?: number; maxMana?: number; stats?: { maxHp?: number; maxMana?: number } } | null) => {
           if (cancelled) return
           // PvP max values — prefer the explicit fields, fall back to stats.
           // These are used at the next room connect; mid-session changes
@@ -426,6 +483,9 @@ export function MultiplayerPresenceLayer() {
             : (typeof data?.stats?.maxMana === 'number' ? data.stats.maxMana : null)
           if (maxHp !== null) maxHpRef.current = maxHp
           if (maxMana !== null) maxManaRef.current = maxMana
+          if (typeof data?.mana === 'number') {
+            manaRef.current = Math.max(0, Math.min(maxManaRef.current, data.mana))
+          }
           if (!data?.displayName) return
           const profileAvatarUrl = data.avatar_url ? `${data.avatar_url}?v=${Date.now()}` : ''
           apply(data.displayName.trim(), profileAvatarUrl)
@@ -465,6 +525,14 @@ export function MultiplayerPresenceLayer() {
       } else if (mutation.kind === 'object_transformed') {
         const { id, position, rotation, scale } = mutation.payload
         store.applyRemoteObjectTransform(id, { position, rotation, scale })
+      } else if (mutation.kind === 'portal_added') {
+        upsertRemotePortalGate(mutation.payload)
+      } else if (mutation.kind === 'agent_window_added') {
+        upsertRemoteAgentWindow(mutation.payload)
+      } else if (mutation.kind === 'agent_avatar_added') {
+        upsertRemoteAgentAvatar(mutation.payload)
+      } else if (mutation.kind === 'placement_vfx') {
+        store.spawnPlacementVfx(mutation.payload.position, mutation.payload.typeOverride)
       } else if (mutation.kind === 'sky_changed') {
         store.applyRemoteSkyChange(mutation.payload.skyBackgroundId)
       } else if (mutation.kind === 'ground_changed') {
@@ -559,6 +627,7 @@ export function MultiplayerPresenceLayer() {
       color: playerColorRef.current,
       pvpEnabled: activeWorldPvpEnabled,
       maxHp: maxHpRef.current,
+      mana: manaRef.current,
       maxMana: maxManaRef.current,
       onPlayersChanged: next => {
         if (!disposed) setPlayers(next)
@@ -657,25 +726,26 @@ export function MultiplayerPresenceLayer() {
       vz = (pose.position[2] - previousPose.position[2]) / dt
     }
     const speed = Math.sqrt(vx * vx + vz * vz)
-    const animState = animationStateForSpeed(speed)
+    const runtimeAnimState = getPlayerAnimationState()
+    const animState = runtimeAnimState && runtimeAnimState !== 'idle'
+      ? runtimeAnimState
+      : animationStateForSpeed(speed)
     previousPoseRef.current = { position: [...pose.position], yaw: pose.yaw, time: now }
 
     if (now - lastSentAtRef.current < INPUT_SEND_INTERVAL_MS) return
 
     const last = lastSentPoseRef.current
-    // Only horizontal motion counts as "moved." Y is sampled from the terrain
-    // height field under the avatar and shifts when the brush deforms the
-    // ground nearby — that's not the player walking, and treating it as such
-    // pushed peers' walk animations on perpetually. Y is still SENT (line
-    // below) so portal arrivals + height changes propagate, but it doesn't
-    // trigger the throttled send.
+    // Horizontal motion drives locomotion; Y only forces a pose send when the
+    // terrain under a stationary avatar changes enough to matter.
     const moved = !last
       || Math.abs(pose.position[0] - last.position[0]) > INPUT_POSITION_EPSILON
       || Math.abs(pose.position[2] - last.position[2]) > INPUT_POSITION_EPSILON
       || Math.abs(pose.yaw - last.yaw) > INPUT_YAW_EPSILON
+    const heightChanged = !last || Math.abs(pose.position[1] - last.position[1]) > INPUT_HEIGHT_EPSILON
     const animChanged = lastSentAnimStateRef.current !== animState
+    const heartbeatDue = now - lastSentAtRef.current > INPUT_HEARTBEAT_INTERVAL_MS
 
-    if (!moved && !animChanged) return
+    if (!moved && !heightChanged && !animChanged && !heartbeatDue) return
 
     connection.sendInput({
       x: pose.position[0],
