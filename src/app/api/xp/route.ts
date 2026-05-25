@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getRequiredOasisUserId } from '@/lib/session'
 import type { XpAction } from '@/lib/xp'
-import { awardXpActionToUser } from '@/lib/player-xp-server'
+import { awardXpActionToUser, awardXpToUser } from '@/lib/player-xp-server'
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,6 +17,11 @@ export async function POST(request: NextRequest) {
     }
     const body = await request.json()
     const action = body.action as XpAction | undefined
+    const amount = Number(body.amount ?? body.xpGained ?? body.xp)
+
+    if (Number.isFinite(amount) && amount > 0) {
+      return NextResponse.json(await awardXpToUser(userId, amount, action || 'custom'))
+    }
 
     return NextResponse.json(await awardXpActionToUser(userId, action))
   } catch (err) {

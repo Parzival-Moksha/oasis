@@ -3,11 +3,13 @@
 import { Client, Room } from 'colyseus.js'
 import {
   notifyDeath,
+  notifyHitAward,
   notifyPlayerState,
   notifyRemoteBolt,
   notifyRespawn,
   setPvpSender,
   type PvpDeathEvent,
+  type PvpHitAwardEvent,
   type PvpPlayerSnapshot,
   type PvpRemoteBolt,
   type PvpRespawnEvent,
@@ -294,6 +296,11 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
   room.onMessage('respawn', (payload: PvpRespawnEvent) => {
     try { notifyRespawn(payload) } catch (err) {
       if (DEBUG) console.warn('[oasis-room] respawn handler threw', err)
+    }
+  })
+  room.onMessage('hitAward', (payload: PvpHitAwardEvent) => {
+    try { notifyHitAward(payload) } catch (err) {
+      if (DEBUG) console.warn('[oasis-room] hitAward handler threw', err)
     }
   })
 

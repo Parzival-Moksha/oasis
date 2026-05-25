@@ -27,6 +27,7 @@ export const SPELL_IDS = [
   'summon-fighter-npc',
   'summon-openclaw',
   'summon-hermes',
+  'browser',
 ] as const
 
 export type SpellId = typeof SPELL_IDS[number]
@@ -55,6 +56,7 @@ export type SpellActionId =
   | 'place-merlin'
   | 'place-openclaw'
   | 'place-hermes'
+  | 'place-browser'
 
 export const SPELLBOOK_PAGE_IDS = [
   'recipe-catalog',
@@ -358,6 +360,16 @@ export const SPELL_DEFS: Record<SpellId, SpellDefinition> = {
     summary: 'Place Hermes as a spatial assistant for voice and avatar workflows.',
     stats: ['Agent', 'Voice', '3D window'],
     actionId: 'place-hermes',
+  },
+  browser: {
+    id: 'browser',
+    name: 'Browser',
+    tier: 2,
+    category: 'agent',
+    achievementId: 'learn-browser',
+    summary: 'Place a bare framed browser surface into the world.',
+    stats: ['Browser', '3D window', 'No avatar'],
+    actionId: 'place-browser',
   },
 }
 

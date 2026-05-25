@@ -18,7 +18,7 @@ import { CraftedPreviewPanel, ModelPreviewPanel } from './ModelPreview'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 
-type PaletteTab = 'catalog' | 'portal' | 'spatial' | 'conjured' | 'crafted' | 'media'
+export type PaletteTab = 'catalog' | 'portal' | 'spatial' | 'conjured' | 'crafted' | 'media'
 
 interface MediaItem {
   name: string
@@ -31,6 +31,7 @@ interface MediaItem {
 interface PlacementPaletteProps {
   showConjured?: boolean
   columns?: number
+  initialTab?: PaletteTab
   onPlace?: () => void
 }
 
@@ -87,9 +88,9 @@ function CategoryChip({
   )
 }
 
-export function PlacementPalette({ showConjured = true, columns = 3, onPlace }: PlacementPaletteProps) {
-  const [tab, setTab] = useState<PaletteTab>('catalog')
-  const [category, setCategory] = useState('all')
+export function PlacementPalette({ showConjured = true, columns = 3, initialTab = 'catalog', onPlace }: PlacementPaletteProps) {
+  const [tab, setTab] = useState<PaletteTab>(initialTab)
+  const [category, setCategory] = useState('stylized-nature')
   const [portalActionPreset, setPortalActionPreset] = useState<'load_world' | 'create_private' | 'create_public' | 'create_ffa' | 'external_url' | 'locked_message'>('load_world')
   const [portalTargetWorldId, setPortalTargetWorldId] = useState('')
   const [portalExternalUrl, setPortalExternalUrl] = useState('https://conjure.04515.xyz/?portal=true&from=oasis')
@@ -104,7 +105,6 @@ export function PlacementPalette({ showConjured = true, columns = 3, onPlace }: 
 
   const { conjuredAssets } = useConjure()
   const enterPlacementMode = useOasisStore(s => s.enterPlacementMode)
-  const seedSpatialWebRsvpDemo = useOasisStore(s => s.seedSpatialWebRsvpDemo)
   const worldConjuredAssetIds = useOasisStore(s => s.worldConjuredAssetIds)
   const placedCatalogAssets = useOasisStore(s => s.placedCatalogAssets)
   const craftedScenes = useOasisStore(s => s.craftedScenes)
@@ -133,6 +133,14 @@ export function PlacementPalette({ showConjured = true, columns = 3, onPlace }: 
   useEffect(() => {
     if (!showConjured && tab === 'conjured') setTab('catalog')
   }, [showConjured, tab])
+
+  useEffect(() => {
+    if (!showConjured && initialTab === 'conjured') {
+      setTab('catalog')
+      return
+    }
+    setTab(initialTab)
+  }, [initialTab, showConjured])
 
   const finishPlacement = useCallback(() => {
     onPlace?.()
@@ -442,13 +450,6 @@ export function PlacementPalette({ showConjured = true, columns = 3, onPlace }: 
               <div className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-100 max-[700px]:text-[8px]">Functional controls</div>
               <div className="text-[9px] text-white/36 max-[700px]:hidden">Buttons, sliders, fields, selectors, output panels.</div>
             </div>
-            <button
-              type="button"
-              onClick={() => { seedSpatialWebRsvpDemo(); finishPlacement() }}
-              className="rounded border border-cyan-300/25 bg-cyan-300/10 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-cyan-100"
-            >
-              RSVP demo
-            </button>
           </div>
           <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
             {SPATIAL_WEB_ASSET_TEMPLATES.map(template => (

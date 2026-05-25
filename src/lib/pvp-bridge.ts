@@ -78,6 +78,15 @@ export interface PvpRespawnEvent {
   displayName: string
 }
 
+export interface PvpHitAwardEvent {
+  victimId: string
+  victimName: string
+  damage: number
+  xp: number
+  position: [number, number, number]
+  spell: string
+}
+
 interface PvpSender {
   sendCast(payload: PvpCastPayload): void
   sendReportHit(payload: PvpReportHitPayload): void
@@ -92,12 +101,14 @@ type RemoteBoltListener = (bolt: PvpRemoteBolt) => void
 type PlayerStateListener = (players: PvpPlayerSnapshot[]) => void
 type DeathListener = (event: PvpDeathEvent) => void
 type RespawnListener = (event: PvpRespawnEvent) => void
+type HitAwardListener = (event: PvpHitAwardEvent) => void
 
 let activeSender: PvpSender | null = null
 const remoteBoltListeners = new Set<RemoteBoltListener>()
 const playerStateListeners = new Set<PlayerStateListener>()
 const deathListeners = new Set<DeathListener>()
 const respawnListeners = new Set<RespawnListener>()
+const hitAwardListeners = new Set<HitAwardListener>()
 
 let latestPlayers: PvpPlayerSnapshot[] = []
 
@@ -164,6 +175,12 @@ export function notifyRespawn(event: PvpRespawnEvent): void {
   }
 }
 
+export function notifyHitAward(event: PvpHitAwardEvent): void {
+  for (const listener of hitAwardListeners) {
+    try { listener(event) } catch (err) { console.warn('[pvp-bridge] hit award listener threw', err) }
+  }
+}
+
 // ─═̷─ Subscription (called by HUD / overlays / combat layer) ─═̷─
 
 export function onRemoteBolt(listener: RemoteBoltListener): () => void {
@@ -187,6 +204,11 @@ export function onDeath(listener: DeathListener): () => void {
 export function onRespawn(listener: RespawnListener): () => void {
   respawnListeners.add(listener)
   return () => { respawnListeners.delete(listener) }
+}
+
+export function onHitAward(listener: HitAwardListener): () => void {
+  hitAwardListeners.add(listener)
+  return () => { hitAwardListeners.delete(listener) }
 }
 
 export function getLatestPlayers(): PvpPlayerSnapshot[] {

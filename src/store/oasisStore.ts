@@ -575,6 +575,10 @@ function isSharedAgentAvatarType(agentType: string): agentType is AgentAvatarTyp
   return isSharedAgentAvatarWorldType(agentType)
 }
 
+function shouldAutoAssignAgentAvatar(agentType: string): boolean {
+  return agentType !== 'browser' && agentType !== 'mission'
+}
+
 function scoreSharedAgentAvatarCandidate(avatar: AgentAvatar, transforms: AgentAvatarTransformMap): number {
   let score = 0
   if (!avatar.linkedWindowId) score += 100
@@ -849,7 +853,7 @@ interface OasisState {
   behaviors: Record<string, ObjectBehavior>  // object id → movement/animation/label
   objectMeshStats: Record<string, import('../lib/conjure/types').ModelStats>  // ░▒▓ per-object mesh anatomy — extracted once when GLB loads ▓▒░
   worldLights: WorldLight[]            // per-world placeable light sources
-  worldSkyBackground: string           // per-world sky preset ID (was global in SettingsContext)
+  worldSkyBackground: string           // per-world sky preset ID; empty while a world is still loading
   activeWorldId: string
   worldRegistry: WorldMeta[]
   _worldReady: boolean               // ░▒▓ GUARD: true after first successful world load ▓▒░
@@ -1461,7 +1465,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   behaviors: {},
   objectMeshStats: {},
   worldLights: [],
-  worldSkyBackground: 'night007',
+  worldSkyBackground: '',
   activeWorldId: isBrowser ? getActiveWorldId() : 'forge-default',
   worldRegistry: [],
   _worldReady: false,  // ░▒▓ GUARD: prevents saving empty state before world load completes ▓▒░
@@ -3426,7 +3430,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     // the load starts, overwriting the world we're about to read.
     cancelPendingSave()
     set({
-      ...(keepWorldReady ? {} : { _worldReady: false }),
+      ...(keepWorldReady ? {} : { _worldReady: false, worldSkyBackground: '' }),
       ...(markRemote ? { _isReceivingRemoteUpdate: true } : {}),
     }) // Block saves until load completes unless this is a silent remote refresh
 
@@ -3456,7 +3460,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
           transforms: {},
           behaviors: {},
           worldLights: seedDefaultLights(),
-          worldSkyBackground: 'night007',
+          worldSkyBackground: '',
           placedAgentWindows: [],
           placedAgentAvatars: [],
           liveAgentAvatarAudio: {},
@@ -3783,7 +3787,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
           transforms: {},
           behaviors: {},
           worldLights: defaultLights,
-          worldSkyBackground: 'night007',
+          worldSkyBackground: '',
           selectedObjectId: null,
           paintMode: false,
           paintBrushPresetId: null,
@@ -3908,7 +3912,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     })
     exitPlacementIfActive()
     const placedWindow = get().placedAgentWindows.find(entry => entry.id === window.id)
-    if (placedWindow && !placedWindow.linkedAvatarId) {
+    if (placedWindow && !placedWindow.linkedAvatarId && shouldAutoAssignAgentAvatar(placedWindow.agentType)) {
       get().assignAvatarToAgentWindow(placedWindow.id, getDefaultAgentAvatarUrl(placedWindow.agentType))
     }
     broadcastAgentWindowAndLinkedAvatar(window.id)

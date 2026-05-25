@@ -11074,55 +11074,6 @@
           }
         ],
         "thumbnailUrl": "/crafted-thumbs/pz-crystal-conjure.jpg"
-      },
-      {
-        "id": "pz-planter-ffa",
-        "name": "FFA fern planter",
-        "prompt": "FFA fern planter small plant landmark",
-        "position": [
-          -4.6,
-          0,
-          11.8
-        ],
-        "createdAt": "2026-05-09T16:00:00.000Z",
-        "model": "codex-portal-zero-primitives",
-        "objects": [
-          {
-            "type": "cylinder",
-            "position": [
-              0,
-              0.24,
-              0
-            ],
-            "scale": [
-              0.45,
-              0.48,
-              0.45
-            ],
-            "color": "#5f3b23",
-            "roughness": 0.86,
-            "metalness": 0.02
-          },
-          {
-            "type": "cone",
-            "position": [
-              0,
-              0.9,
-              0
-            ],
-            "scale": [
-              0.7,
-              0.95,
-              0.7
-            ],
-            "color": "#16a34a",
-            "roughness": 0.76,
-            "metalness": 0.02,
-            "emissive": "#16a34a",
-            "emissiveIntensity": 0.04
-          }
-        ],
-        "thumbnailUrl": "/crafted-thumbs/pz-planter-ffa.jpg"
       }
     ],
     "conjuredAssetIds": [],
@@ -11306,6 +11257,18 @@
           -29.178364965150656
         ],
         "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_pine_4-1779734833505",
+        "catalogId": "stylized-nature_pine_4",
+        "name": "Nature Pine 4",
+        "glbPath": "/models/stylized-nature/pine_4.gltf",
+        "position": [
+          2.3682560293848365,
+          0,
+          -0.2475359718061121
+        ],
+        "scale": 1
       }
     ],
     "portalGates": [
@@ -11433,36 +11396,13 @@
         }
       },
       {
-        "id": "portal-zero-public-world-world-1778338664451-jhcv",
-        "label": "newpublic local",
+        "id": "portal-zero-public-world-world-quest-zero-system",
+        "label": "Quest Zero",
         "variant": "solar-arch",
         "position": [
           25.2,
           0,
           -2.9
-        ],
-        "rotationY": -1.5707963267948966,
-        "scale": 0.78,
-        "width": 2.15,
-        "height": 2.9,
-        "direction": "one-way",
-        "sourceWorldId": "world-welcome-hub-system",
-        "targetWorldId": "world-1778338664451-jhcv",
-        "targetWorldName": "newpublic local",
-        "action": {
-          "type": "load_world",
-          "worldId": "world-1778338664451-jhcv",
-          "worldName": "newpublic local"
-        }
-      },
-      {
-        "id": "portal-zero-public-world-world-quest-zero-system",
-        "label": "Quest Zero",
-        "variant": "hologram-gate",
-        "position": [
-          25.2,
-          0,
-          2.9
         ],
         "rotationY": -1.5707963267948966,
         "scale": 0.78,
@@ -11476,6 +11416,29 @@
           "type": "load_world",
           "worldId": "world-quest-zero-system",
           "worldName": "Quest Zero"
+        }
+      },
+      {
+        "id": "portal-zero-public-world-world-1778338664451-jhcv",
+        "label": "newpublic local",
+        "variant": "hologram-gate",
+        "position": [
+          25.2,
+          0,
+          2.9
+        ],
+        "rotationY": -1.5707963267948966,
+        "scale": 0.78,
+        "width": 2.15,
+        "height": 2.9,
+        "direction": "one-way",
+        "sourceWorldId": "world-welcome-hub-system",
+        "targetWorldId": "world-1778338664451-jhcv",
+        "targetWorldName": "newpublic local",
+        "action": {
+          "type": "load_world",
+          "worldId": "world-1778338664451-jhcv",
+          "worldName": "newpublic local"
         }
       },
       {
@@ -11946,7 +11909,7 @@
     "skyBackgroundId": "umhlanga_sunrise",
     "agentWindows": [],
     "agentAvatars": [],
-    "savedAt": "2026-05-25T16:29:24.160Z"
+    "savedAt": "2026-05-25T18:50:06.406Z"
   },
   "pvpEnabled": true
 }

@@ -453,7 +453,7 @@ export function PlayerVitalsHud({ visible }: { visible: boolean }) {
     // bottom strip is sacred for the WASD ring + primary-action button —
     // the HUD lives at the top so it never occludes thumb-zones. Width is
     // clamped so it never spans into the side controls on narrow viewports.
-    <div className="pointer-events-none fixed bottom-5 left-1/2 z-[300] w-[min(520px,calc(100vw-2rem))] -translate-x-1/2 select-none max-[700px]:bottom-auto max-[700px]:top-2 max-[700px]:w-[min(220px,calc(100vw-1rem))]" style={{ fontFamily: hudFont }}>
+    <div className="pointer-events-none fixed bottom-5 left-1/2 z-[120] w-[min(520px,calc(100vw-2rem))] -translate-x-1/2 select-none max-[700px]:bottom-auto max-[700px]:top-2 max-[700px]:w-[min(220px,calc(100vw-1rem))]" style={{ fontFamily: hudFont }}>
       <style>{`
         @keyframes oasisXpFlash {
           0% { opacity: 0.82; transform: translateX(0) scaleX(1); }

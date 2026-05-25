@@ -7,10 +7,13 @@ import { useUILayer } from '@/lib/input-manager'
 import { useOasisCapabilities } from '@/lib/oasis-mode-client'
 
 import { useIsMobileOasis } from './MobileOasisControls'
-import { PlacementPalette } from './PlacementPalette'
+import { PlacementPalette, type PaletteTab } from './PlacementPalette'
+
+const PLACE_MENU_TABS = new Set<PaletteTab>(['catalog', 'portal', 'spatial', 'conjured', 'crafted', 'media'])
 
 export function PlaceMenu() {
   const [isOpen, setIsOpen] = useState(false)
+  const [initialTab, setInitialTab] = useState<PaletteTab>('catalog')
   const menuRef = useRef<HTMLDivElement>(null)
   const { canUseFullWizard } = useOasisCapabilities()
   const isMobile = useIsMobileOasis()
@@ -19,7 +22,12 @@ export function PlaceMenu() {
   const playClick = () => useAudioManager.getState().play('buttonClick')
 
   useEffect(() => {
-    const openMenu = () => setIsOpen(true)
+    const openMenu = (event: Event) => {
+      const tab = (event as CustomEvent<{ tab?: PaletteTab }>).detail?.tab
+      if (tab && PLACE_MENU_TABS.has(tab)) setInitialTab(tab)
+      else setInitialTab('catalog')
+      setIsOpen(true)
+    }
     window.addEventListener('oasis:open-place-menu', openMenu)
     return () => window.removeEventListener('oasis:open-place-menu', openMenu)
   }, [])
@@ -79,6 +87,7 @@ export function PlaceMenu() {
           <PlacementPalette
             showConjured={canUseFullWizard}
             columns={isMobile ? 2 : 4}
+            initialTab={initialTab}
             onPlace={() => {
               playClick()
               setIsOpen(false)

@@ -1239,7 +1239,6 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
   const removePortalGate = useOasisStore(s => s.removePortalGate)
   const spatialWebObjects = useOasisStore(s => s.spatialWebObjects)
   const removeSpatialWebObject = useOasisStore(s => s.removeSpatialWebObject)
-  const seedSpatialWebRsvpDemo = useOasisStore(s => s.seedSpatialWebRsvpDemo)
   const removeCatalogAsset = useOasisStore(s => s.removeCatalogAsset)
   const placedAgentWindows = useOasisStore(s => s.placedAgentWindows)
   const removeAgentWindow = useOasisStore(s => s.removeAgentWindow)
@@ -2790,13 +2789,6 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
                       <div className="text-[10px] text-cyan-300 font-mono uppercase tracking-wider">Functional primitives</div>
                       <div className="text-[9px] text-gray-500">Place 3D form controls for voice-built sites, menus, and kiosks.</div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={seedSpatialWebRsvpDemo}
-                      className="rounded border border-cyan-400/30 bg-cyan-500/10 px-2 py-1 text-[9px] font-mono uppercase tracking-wider text-cyan-100 transition-colors hover:border-cyan-300/60 hover:bg-cyan-400/15"
-                    >
-                      RSVP demo
-                    </button>
                   </div>
                 </div>
                 <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${colsCatalog}, minmax(0, 1fr))` }}>

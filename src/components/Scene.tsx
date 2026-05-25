@@ -835,6 +835,7 @@ function DevcraftMiniBar({ onExpand }: { onExpand: () => void }) {
 
 type AgentLauncherMode = '2d' | '3d'
 type QuickAgentType = 'hermes' | 'openclaw' | 'gemini' | 'merlin' | 'anorak' | 'codex' | 'anorak-pro' | 'realtime'
+type PlaceAgentType = QuickAgentType | 'browser'
 
 function GeminiAgentIcon() {
   return (
@@ -1275,6 +1276,7 @@ export default function Scene() {
     return deviceDefaults
   })
   const controlModeRef = useRef(settings.controlMode)
+  const autoBuildWorldRef = useRef<string | null>(null)
 
   useEffect(() => {
     void runLocalStorageAgentCacheMigration()
@@ -1546,15 +1548,16 @@ export default function Scene() {
     else if (agentType === 'realtime') setRealtimeOpen(true)
     setAgentLauncherOpen(false)
   }
-  const placeQuickAgentWindow = (agentType: QuickAgentType) => {
+  const placeQuickAgentWindow = (agentType: PlaceAgentType) => {
     useAudioManager.getState().play('place')
-    const label = QUICK_AGENT_ITEMS.find(agent => agent.type === agentType)?.label || agentType
+    const label = agentType === 'browser' ? 'Browser' : QUICK_AGENT_ITEMS.find(agent => agent.type === agentType)?.label || agentType
     const placedAgentType = agentType === 'merlin' ? 'gemini' : agentType
     useOasisStore.getState().enterPlacementMode({
       type: 'agent',
       name: label,
       agentType: placedAgentType,
       agentRenderMode: 'live-html',
+      ...(agentType === 'browser' ? { agentBrowserSurfaceMode: 'live-browser' as const, agentFrameStyle: 'baroque', agentFrameThickness: 7 } : {}),
     })
     setAgentLauncherOpen(false)
   }
@@ -1663,9 +1666,7 @@ export default function Scene() {
         setWizardOpen(true)
         return
       case 'portal-create':
-        setPendingWizardTab('assets')
-        setWizardOpen(true)
-        dispatchNextTick(new CustomEvent('oasis:open-wizard-assets-tab', { detail: { assetSubTab: 'portals' } }))
+        dispatchNextTick(new CustomEvent('oasis:open-place-menu', { detail: { tab: 'portal' } }))
         return
 
       // ─═̷─ Own media uploads ─═̷─
@@ -1689,6 +1690,9 @@ export default function Scene() {
       case 'summon-hermes':
         placeQuickAgentWindow('hermes')
         return
+      case 'browser':
+        placeQuickAgentWindow('browser')
+        return
       case 'summon-custom-npc':
       case 'summon-fighter-npc':
         setAgentLauncherMode('3d')
@@ -1707,6 +1711,31 @@ export default function Scene() {
     }
     setSettings(prev => ({ ...prev, [key]: value }))
   }
+
+  useEffect(() => {
+    if (!playableWorldReady || !activeWorldCanWrite || readOnlyForcesRp1) return
+    const worldKey = playableWorldId || activeWorldId
+    if (!worldKey || autoBuildWorldRef.current === worldKey) return
+    autoBuildWorldRef.current = worldKey
+    setSettings(prev => prev.rp1Mode ? { ...prev, rp1Mode: false } : prev)
+  }, [activeWorldCanWrite, activeWorldId, playableWorldId, playableWorldReady, readOnlyForcesRp1])
+
+  useEffect(() => {
+    const handleMobileCameraMode = (event: Event) => {
+      const detail = (event as CustomEvent<{ mode?: string; rp1Mode?: boolean }>).detail
+      const mode = detail?.mode
+      if (mode !== 'orbit' && mode !== 'noclip' && mode !== 'third-person') return
+      useInputManager.getState().syncFromControlMode(mode)
+      controlModeRef.current = mode
+      setSettings(prev => ({
+        ...prev,
+        controlMode: mode,
+        ...(typeof detail?.rp1Mode === 'boolean' ? { rp1Mode: detail.rp1Mode } : {}),
+      }))
+    }
+    window.addEventListener('oasis:set-camera-mode', handleMobileCameraMode)
+    return () => window.removeEventListener('oasis:set-camera-mode', handleMobileCameraMode)
+  }, [])
 
   // ─═̷─═̷─🎮─═̷─═̷─{ CAMERA MODE HOTKEY: C cycles orbit→noclip→third-person }─═̷─═̷─🎮─═̷─═̷─
   // ─═̷─ When the paint wand is armed, orbit is forbidden — the cycle is
@@ -1887,7 +1916,7 @@ export default function Scene() {
     >
         <color attach="background" args={['#07111a']} />
 
-        <SkyBackground backgroundId={worldSkyBackground} />
+        {worldSkyBackground && <SkyBackground backgroundId={worldSkyBackground} />}
 
         {/* ─═̷─═̷─🎮 CAMERA CONTROLLER — ONE owner, ONE useFrame, ZERO fights ─═̷─═̷─🎮 */}
         <CameraControllerComponent />
@@ -1947,8 +1976,6 @@ export default function Scene() {
       <MobileOasisControls
         enabled={mobileOasis && (settings.controlMode === 'noclip' || settings.controlMode === 'third-person')}
         spellControlsEnabled={effectiveRp1Mode}
-        canDeleteSelected={Boolean(selectedObjectId && !hideEditTools)}
-        onDeleteSelected={deleteSelectedObject}
       />
       <PlayerVitalsHud visible={effectiveRp1Mode && !isPortalZeroWorld} />
       <PvPOverlay visible={effectiveRp1Mode && !isPortalZeroWorld} />

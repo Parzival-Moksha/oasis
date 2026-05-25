@@ -133,13 +133,9 @@ export function useIsMobileOasis(): boolean {
 export function MobileOasisControls({
   enabled,
   spellControlsEnabled = false,
-  canDeleteSelected = false,
-  onDeleteSelected,
 }: {
   enabled: boolean
   spellControlsEnabled?: boolean
-  canDeleteSelected?: boolean
-  onDeleteSelected?: () => void
 }) {
   const setMove = useMobileControls(s => s.setMove)
   const setSprint = useMobileControls(s => s.setSprint)
@@ -153,9 +149,11 @@ export function MobileOasisControls({
   const lookTouchesRef = useRef<Map<number, TouchPoint>>(new Map())
   const pinchRef = useRef<{ distance: number } | null>(null)
   // When the old paint wand is actively held, the look-overlay hands events
-  // through to the canvas underneath so PaintCursor can own the stroke.
+  // through to the canvas underneath so PaintCursor can own the stroke. When
+  // an object is selected, the transform gizmo gets first touch priority too.
   const paintHeldActive = useOasisStore(s => s.paintHeldActive)
-  const canvasNeedsTouch = paintHeldActive
+  const selectedObjectId = useOasisStore(s => s.selectedObjectId)
+  const canvasNeedsTouch = paintHeldActive || Boolean(selectedObjectId)
 
   useEffect(() => {
     if (!enabled) {
@@ -319,9 +317,9 @@ export function MobileOasisControls({
       {/* Full-canvas look surface — covers the entire viewport so any finger
           drag rotates the camera (mobile feel). Joystick + action buttons are
           siblings later in DOM order with their own pointer-events-auto, so
-          they sit ABOVE this overlay and keep working. When the user holds
-          the Paint button, this overlay disables its own pointer-events so
-          drags flow through to PaintCursor on the canvas underneath. */}
+          they sit ABOVE this overlay and keep working. During brush strokes
+          and selected-object transforms, the overlay disables pointer events
+          so the canvas/gizmo underneath receives the drag. */}
       <div
         aria-hidden="true"
         className={`absolute inset-0 touch-none ${canvasNeedsTouch ? 'pointer-events-none' : 'pointer-events-auto'}`}
@@ -383,22 +381,9 @@ export function MobileOasisControls({
         >
           Dash
         </button>
+        <MobileCameraMenu />
         <MobileFocusAgentButton />
         <MobilePrimaryActionButton nearbyAction={nearbyAction} spellControlsEnabled={spellControlsEnabled} />
-        {canDeleteSelected && (
-          <button
-            type="button"
-            className="h-11 min-w-28 touch-none rounded-lg border border-red-300/60 bg-red-950/82 px-4 text-[11px] font-black uppercase tracking-[0.16em] text-red-50 shadow-[0_0_26px_rgba(248,113,113,0.3)] backdrop-blur-sm"
-            onPointerDown={event => {
-              event.preventDefault()
-              event.stopPropagation()
-              onDeleteSelected?.()
-            }}
-            aria-label="Delete selected object"
-          >
-            Delete
-          </button>
-        )}
         {spellControlsEnabled && <MobileManaButton />}
         <MobilePaintHoldButton />
       </div>
@@ -481,8 +466,14 @@ function dispatchSyntheticLeftClick(): boolean {
   const canvas = document.querySelector('canvas') as HTMLCanvasElement | null
   if (!canvas) return false
   const rect = canvas.getBoundingClientRect()
-  const clientX = rect.left + rect.width / 2
-  const clientY = rect.top + rect.height / 2
+  const crosshair = document.querySelector('[data-oasis-crosshair]') as HTMLElement | null
+  const crosshairRect = crosshair?.getBoundingClientRect()
+  const clientX = crosshairRect
+    ? crosshairRect.left + crosshairRect.width / 2
+    : rect.left + rect.width / 2
+  const clientY = crosshairRect
+    ? crosshairRect.top + crosshairRect.height / 2
+    : rect.top + rect.height / 2
   const opts: PointerEventInit = {
     clientX,
     clientY,
@@ -498,6 +489,44 @@ function dispatchSyntheticLeftClick(): boolean {
   canvas.dispatchEvent(new PointerEvent('pointerup', { ...opts, buttons: 0 }))
   canvas.dispatchEvent(new MouseEvent('click', { clientX, clientY, button: 0, bubbles: true, cancelable: true }))
   return true
+}
+
+function MobileCameraMenu() {
+  const [open, setOpen] = useState(false)
+  const choose = (mode: 'orbit' | 'noclip' | 'third-person', rp1Mode: boolean) => {
+    window.dispatchEvent(new CustomEvent('oasis:set-camera-mode', { detail: { mode, rp1Mode } }))
+    setOpen(false)
+  }
+
+  return (
+    <div className="relative">
+      {open && (
+        <div className="absolute bottom-full right-0 mb-2 flex min-w-28 flex-col gap-1 rounded-lg border border-cyan-200/25 bg-black/82 p-1.5 shadow-[0_0_26px_rgba(34,211,238,0.18)] backdrop-blur-sm">
+          <button type="button" className="rounded-md border border-emerald-200/35 bg-emerald-950/70 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-emerald-50" onPointerDown={event => { event.preventDefault(); event.stopPropagation(); choose('noclip', false) }}>
+            Build
+          </button>
+          <button type="button" className="rounded-md border border-sky-200/35 bg-sky-950/70 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-sky-50" onPointerDown={event => { event.preventDefault(); event.stopPropagation(); choose('third-person', true) }}>
+            RP1
+          </button>
+          <button type="button" className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-white/80" onPointerDown={event => { event.preventDefault(); event.stopPropagation(); choose('orbit', false) }}>
+            Orbit
+          </button>
+        </div>
+      )}
+      <button
+        type="button"
+        className="h-11 min-w-28 touch-none rounded-lg border border-cyan-200/45 bg-cyan-950/72 px-4 text-[11px] font-black uppercase tracking-[0.16em] text-cyan-50 shadow-[0_0_24px_rgba(34,211,238,0.22)] backdrop-blur-sm"
+        onPointerDown={event => {
+          event.preventDefault()
+          event.stopPropagation()
+          setOpen(value => !value)
+        }}
+        aria-label="Camera menu"
+      >
+        Camera
+      </button>
+    </div>
+  )
 }
 
 function MobilePrimaryActionButton({

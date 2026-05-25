@@ -68,7 +68,22 @@ export async function POST(request: NextRequest) {
         child.stdin.end()
 
         let streamBuffer = ''
-        let previousText = ''
+        let emittedText = ''
+
+        const emitText = (text: string, cumulative = false) => {
+          if (!text) return
+          let delta = text
+          if (cumulative) {
+            if (text.startsWith(emittedText)) {
+              delta = text.slice(emittedText.length)
+            } else if (emittedText.includes(text)) {
+              delta = ''
+            }
+          }
+          if (!delta) return
+          emittedText += delta
+          controller.enqueue(encoder.encode(delta))
+        }
 
         child.stdout.on('data', (chunk: Buffer) => {
           streamBuffer += chunk.toString()
@@ -79,7 +94,29 @@ export async function POST(request: NextRequest) {
             if (!line.trim()) continue
 
             try {
-              const raw = JSON.parse(line) as Record<string, unknown>
+              let raw = JSON.parse(line) as Record<string, unknown>
+              if (raw.type === 'stream_event' && raw.event && typeof raw.event === 'object') {
+                raw = raw.event as Record<string, unknown>
+              }
+
+              if (raw.type === 'content_block_delta') {
+                const delta = raw.delta && typeof raw.delta === 'object'
+                  ? raw.delta as Record<string, unknown>
+                  : null
+                if (delta?.type === 'text_delta' && typeof delta.text === 'string') emitText(delta.text)
+                continue
+              }
+
+              if (raw.type === 'result') {
+                const resultText = typeof raw.result === 'string'
+                  ? raw.result
+                  : typeof raw.output === 'string'
+                    ? raw.output
+                    : ''
+                emitText(resultText, true)
+                continue
+              }
+
               if (raw.type !== 'assistant') continue
 
               const message = (raw.message || {}) as Record<string, unknown>
@@ -92,17 +129,7 @@ export async function POST(request: NextRequest) {
                 }
                 if (block.type !== 'text' || typeof block.text !== 'string') continue
 
-                // Text is cumulative — extract delta
-                if (block.text.startsWith(previousText)) {
-                  const delta = block.text.slice(previousText.length)
-                  if (delta) {
-                    controller.enqueue(encoder.encode(delta))
-                  }
-                } else if (block.text !== previousText) {
-                  // Full replacement — emit entire new text
-                  controller.enqueue(encoder.encode(block.text))
-                }
-                previousText = block.text
+                emitText(block.text, true)
               }
             } catch {
               // Malformed NDJSON line — skip
@@ -124,16 +151,30 @@ export async function POST(request: NextRequest) {
           // Flush remaining buffer
           if (streamBuffer.trim()) {
             try {
-              const raw = JSON.parse(streamBuffer) as Record<string, unknown>
+              let raw = JSON.parse(streamBuffer) as Record<string, unknown>
+              if (raw.type === 'stream_event' && raw.event && typeof raw.event === 'object') {
+                raw = raw.event as Record<string, unknown>
+              }
+              if (raw.type === 'content_block_delta') {
+                const delta = raw.delta && typeof raw.delta === 'object'
+                  ? raw.delta as Record<string, unknown>
+                  : null
+                if (delta?.type === 'text_delta' && typeof delta.text === 'string') emitText(delta.text)
+              }
+              if (raw.type === 'result') {
+                const resultText = typeof raw.result === 'string'
+                  ? raw.result
+                  : typeof raw.output === 'string'
+                    ? raw.output
+                    : ''
+                emitText(resultText, true)
+              }
               if (raw.type === 'assistant') {
                 const message = (raw.message || {}) as Record<string, unknown>
                 const content = Array.isArray(message.content) ? message.content as Array<Record<string, unknown>> : []
                 for (const block of content) {
                   if (block.type === 'text' && typeof block.text === 'string') {
-                    const delta = block.text.startsWith(previousText)
-                      ? block.text.slice(previousText.length)
-                      : block.text
-                    if (delta) controller.enqueue(encoder.encode(delta))
+                    emitText(block.text, true)
                   }
                 }
               }

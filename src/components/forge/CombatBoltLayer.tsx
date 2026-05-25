@@ -32,7 +32,7 @@ import { useAudioManager } from '@/lib/audio-manager'
 import { setPlayerSpellCasting } from '@/lib/player-avatar-runtime'
 import { preloadSpellSoundManifest, resolveSpellSoundUrl } from '@/lib/spell-sounds'
 import { useOasisStore } from '@/store/oasisStore'
-import { getPvpEnabled, onRemoteBolt, sendPvpCast, sendPvpReportHit, type PvpRemoteBolt } from '@/lib/pvp-bridge'
+import { getPvpEnabled, onHitAward, onRemoteBolt, sendPvpCast, sendPvpReportHit, type PvpHitAwardEvent, type PvpRemoteBolt } from '@/lib/pvp-bridge'
 import type { OasisSettings } from '@/components/scene-lib/types'
 
 import {
@@ -202,6 +202,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
   const { camera, gl } = useThree()
   const lastCastAtRef = useRef(0)
   const castingRef = useRef(false)
+  const suppressCastFollowupUntilRef = useRef(0)
   const reportedQuestTargetHitsRef = useRef<Set<string>>(new Set())
   // ─═̷─ PvP bolt-id tracking ─═̷─
   // Bolts cast by THIS client get their clientPredictionId stored here so
@@ -210,6 +211,38 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
   // caster never make it into this set, so peer-side hit detection
   // can't double-report them.
   const localBoltIdsRef = useRef<Set<string>>(new Set())
+  const [xpHitMarkers, setXpHitMarkers] = useState<CometTailHitMarker[]>([])
+
+  const spawnXpHitMarker = useCallback((position: [number, number, number], xp: number) => {
+    const amount = Math.max(0, Math.floor(Number.isFinite(xp) ? xp : 0))
+    if (amount <= 0) return
+    setXpHitMarkers(prev => [
+      ...prev.slice(-7),
+      {
+        id: randomId(),
+        position,
+        label: `+${amount} XP`,
+        age: 0,
+        ttl: 1.2,
+      },
+    ])
+  }, [])
+
+  const awardPvpDamageXp = useCallback((event: PvpHitAwardEvent) => {
+    const amount = Math.max(0, Math.floor(Number.isFinite(event.xp) ? event.xp : event.damage))
+    if (amount <= 0) return
+    spawnXpHitMarker(event.position, amount)
+    void fetch('/api/xp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'PVP_DAMAGE', amount }),
+    })
+      .then(response => response.ok ? response.json().catch(() => null) : null)
+      .then(data => {
+        if (data) window.dispatchEvent(new CustomEvent('oasis:xp-awarded', { detail: data }))
+      })
+      .catch(() => {})
+  }, [spawnXpHitMarker])
 
   // Hit dispatcher. PvP-player targets route to the room; everything else
   // (objects, NPCs, quest dummies) uses the original quest-progression path.
@@ -619,6 +652,8 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
   // the manifest is still in flight).
   useEffect(() => { void preloadSpellSoundManifest() }, [])
 
+  useEffect(() => onHitAward(awardPvpDamageXp), [awardPvpDamageXp])
+
   // ─═̷─ PvP remote-bolt receive ─═̷─
   // Subscribe to incoming bolts from peers. Spawns the same visual designs
   // as a local cast — no mana cost, no XP (the originating client paid those).
@@ -684,14 +719,34 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
   useEffect(() => {
     if (!enabled) return
     const canvas = gl.domElement
+    const isCanvasEvent = (event: Event) => {
+      const target = event.target
+      return target instanceof Node && canvas.contains(target)
+    }
+    const swallowCastFollowup = (event: Event) => {
+      if (Date.now() > suppressCastFollowupUntilRef.current) return
+      if (!isCanvasEvent(event)) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
     const onPointerDown = (event: PointerEvent) => {
       if (event.button !== 0) return
+      if (!isCanvasEvent(event)) return
       if (isTypingTarget(event.target)) return
       if (!canCastBolt()) return
+      suppressCastFollowupUntilRef.current = Date.now() + 700
+      event.preventDefault()
+      event.stopImmediatePropagation()
       void castBolt(undefined)
     }
-    canvas.addEventListener('pointerdown', onPointerDown)
-    return () => canvas.removeEventListener('pointerdown', onPointerDown)
+    window.addEventListener('pointerdown', onPointerDown, { capture: true })
+    window.addEventListener('pointerup', swallowCastFollowup, { capture: true })
+    window.addEventListener('click', swallowCastFollowup, { capture: true })
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown, { capture: true })
+      window.removeEventListener('pointerup', swallowCastFollowup, { capture: true })
+      window.removeEventListener('click', swallowCastFollowup, { capture: true })
+    }
   }, [castBolt, enabled, gl])
 
   // ─═̷─═̷─🔁 ANIMATE EVERYTHING (one frame loop) ─═̷─═̷─🔁
@@ -987,6 +1042,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     if (cometSmoke.length > 0) setCometSmoke(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
     if (cometExplosions.length > 0) setCometExplosions(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
     if (cometHitMarkers.length > 0) setCometHitMarkers(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
+    if (xpHitMarkers.length > 0) setXpHitMarkers(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
     if (solarTrail.length > 0) setSolarTrail(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
     if (solarExplosions.length > 0) setSolarExplosions(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
     if (phoenixEmbers.length > 0) setPhoenixEmbers(prev => prev.map(e => {
@@ -1028,6 +1084,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
         {cometProjectiles.map(p => <CometTailMesh key={p.id} projectile={p} />)}
         {cometExplosions.map(e => <CometTailExplosionMesh key={e.id} explosion={e} />)}
         {cometHitMarkers.map(m => <CometTailHitMarkerMesh key={m.id} marker={m} />)}
+        {xpHitMarkers.map(m => <CometTailHitMarkerMesh key={m.id} marker={m} />)}
 
         {/* Solar Flare (firebolt B) */}
         {solarTrail.map(p => <SolarFlareTrailMesh key={p.id} puff={p} />)}

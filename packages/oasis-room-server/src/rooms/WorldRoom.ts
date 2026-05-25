@@ -423,7 +423,20 @@ export class WorldRoom extends Room<WorldRoomState> {
       const distance = Math.sqrt(dx * dx + dy * dy + dz * dz)
       if (distance > maxPlausibleDistance || distance > MAX_HIT_DISTANCE_M) return
 
+      const previousHp = victim.hp
+      const damageApplied = Math.min(previousHp, bolt.damage)
       victim.hp = Math.max(0, victim.hp - bolt.damage)
+
+      if (damageApplied > 0) {
+        client.send('hitAward', {
+          victimId: victimSessionId,
+          victimName: victim.displayName,
+          damage: damageApplied,
+          xp: damageApplied,
+          position: [victim.x, victim.y, victim.z],
+          spell: bolt.spell,
+        })
+      }
 
       const caster = this.state.players.get(client.sessionId)
       if (victim.hp <= 0) {
