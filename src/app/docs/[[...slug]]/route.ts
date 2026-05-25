@@ -97,11 +97,60 @@ function notBuiltResponse() {
   )
 }
 
-function docsQuickstartUrl(request: Request) {
-  const url = new URL('/docs/getting-started/quickstart', request.url)
-  if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
-    url.protocol = 'http:'
+function firstHeaderValue(value: string | null | undefined) {
+  return (value ?? '').split(',')[0]?.trim() ?? ''
+}
+
+function isLoopbackHost(host: string) {
+  const normalized = host.toLowerCase()
+  return normalized === 'localhost'
+    || normalized.startsWith('localhost:')
+    || normalized === '127.0.0.1'
+    || normalized.startsWith('127.0.0.1:')
+    || normalized === '[::1]'
+    || normalized.startsWith('[::1]:')
+}
+
+function publicOriginFromEnv() {
+  const configured = firstHeaderValue(process.env.NEXT_PUBLIC_OASIS_URL)
+    || firstHeaderValue(process.env.OASIS_PUBLIC_URL)
+
+  if (!configured) {
+    return null
   }
+
+  try {
+    const url = new URL(configured)
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      return url
+    }
+  } catch {
+    return null
+  }
+
+  return null
+}
+
+function docsQuickstartUrl(request: Request) {
+  const requestUrl = new URL(request.url)
+  const forwardedHost = firstHeaderValue(request.headers.get('x-forwarded-host'))
+  const host = forwardedHost
+    || firstHeaderValue(request.headers.get('host'))
+    || requestUrl.host
+  const forwardedProto = firstHeaderValue(request.headers.get('x-forwarded-proto'))
+  const protocol = forwardedProto || requestUrl.protocol.replace(':', '')
+  const envOrigin = publicOriginFromEnv()
+  const base = envOrigin && isLoopbackHost(host) && protocol === 'https'
+    ? envOrigin
+    : new URL(`${protocol || 'http'}://${host}`)
+  const url = new URL('/docs/getting-started/quickstart', base)
+
+  if (isLoopbackHost(url.host)) {
+    url.protocol = 'http:'
+  } else if (url.hostname.endsWith('04515.xyz')) {
+    url.protocol = 'https:'
+  }
+
   return url
 }
 
