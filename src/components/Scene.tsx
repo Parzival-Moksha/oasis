@@ -1280,8 +1280,6 @@ export default function Scene() {
     void runLocalStorageAgentCacheMigration()
   }, [])
 
-  useEffect(() => scheduleIdleWork(preloadOnboardingResources), [])
-
   useEffect(() => {
     if (typeof window !== 'undefined') {
       writeBrowserStorage('oasis-settings', JSON.stringify(settings))
@@ -1309,6 +1307,12 @@ export default function Scene() {
   const activeWorldId = useOasisStore(s => s.activeWorldId)
   const worldReady = useOasisStore(s => s._worldReady)
   const worldRegistry = useOasisStore(s => s.worldRegistry)
+
+  useEffect(() => {
+    if (!isOnboardingWorld(activeWorldId)) return
+    return scheduleIdleWork(preloadOnboardingResources)
+  }, [activeWorldId])
+
   const activeWorldMeta = worldRegistry.find(world => world.id === activeWorldId)
   const activeWorldCanWrite = Boolean(isAdmin || activeWorldMeta?.canWrite || (isViewMode && isViewModeEditable))
   const activeWorldWriteKnown = Boolean(activeWorldMeta) || isViewMode

@@ -120,19 +120,27 @@ function disposeModel(model: THREE.Group) {
 
 export function useThumbnailGenerator() {
   const runningRef = useRef(false)
+  const thumbnailQueueKey = useOasisStore(s => s.worldConjuredAssetIds
+    .filter(id => {
+      const asset = s.conjuredAssets.find(a => a.id === id)
+      return Boolean(asset?.status === 'ready' && asset.glbPath && !asset.thumbnailUrl)
+    })
+    .join('|'))
 
   useEffect(() => {
+    if (!thumbnailQueueKey) return
     if (runningRef.current) return
     runningRef.current = true
 
-    generateConjuredThumbnails().finally(() => { runningRef.current = false })
-  }, [])
+    const worldAssetIds = new Set(thumbnailQueueKey.split('|').filter(Boolean))
+    generateConjuredThumbnails(worldAssetIds).finally(() => { runningRef.current = false })
+  }, [thumbnailQueueKey])
 }
 
-async function generateConjuredThumbnails() {
+async function generateConjuredThumbnails(worldAssetIds: Set<string>) {
   const assets = useOasisStore.getState().conjuredAssets
   const needsThumb = assets.filter(a =>
-    a.status === 'ready' && a.glbPath && !a.thumbnailUrl
+    worldAssetIds.has(a.id) && a.status === 'ready' && a.glbPath && !a.thumbnailUrl
   ).slice(0, MAX_PER_SESSION)
 
   if (needsThumb.length === 0) return
