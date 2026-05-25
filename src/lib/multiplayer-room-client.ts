@@ -11,6 +11,7 @@ import {
   type PvpPlayerSnapshot,
   type PvpRemoteBolt,
   type PvpRespawnEvent,
+  type PvpVitalsPayload,
 } from './pvp-bridge'
 
 export interface MultiplayerRoomPlayer {
@@ -166,6 +167,7 @@ export interface MultiplayerRoomConnection {
   sendInput(input: MultiplayerRoomInput): void
   sendMutation(payload: unknown): void
   sendProfile(profile: MultiplayerRoomProfile): void
+  sendVitals(vitals: PvpVitalsPayload): void
   dispose(): Promise<void>
   readonly sessionId: string
 }
@@ -308,6 +310,11 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
         if (DEBUG) console.warn('[oasis-room] sendReportHit failed', err)
       }
     },
+    sendVitals: payload => {
+      try { room.send('vitals', payload) } catch (err) {
+        if (DEBUG) console.warn('[oasis-room] sendVitals failed', err)
+      }
+    },
   })
 
   if (args.onMutation) {
@@ -353,6 +360,13 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
         room.send('profile', profile)
       } catch (error) {
         if (DEBUG) console.warn('[oasis-room] sendProfile failed', error)
+      }
+    },
+    sendVitals(vitals: PvpVitalsPayload): void {
+      try {
+        room.send('vitals', vitals)
+      } catch (error) {
+        if (DEBUG) console.warn('[oasis-room] sendVitals failed', error)
       }
     },
     async dispose(): Promise<void> {

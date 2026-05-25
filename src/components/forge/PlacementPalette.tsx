@@ -11,6 +11,7 @@ import { portalThumbPath } from '@/lib/portal-thumbnails'
 import { useOasisStore } from '@/store/oasisStore'
 import { ASSET_CATALOG } from '@/components/scene-lib/constants'
 import type { AssetDefinition } from '@/components/scene-lib/types'
+import { FUNCTIONAL_THUMBNAIL_URL, catalogFallbackThumbnail } from '@/lib/catalog-thumbnail-fallbacks'
 
 import { AssetCard } from './AssetCard'
 import { CraftedPreviewPanel, ModelPreviewPanel } from './ModelPreview'
@@ -53,7 +54,7 @@ function CategoryChip({
     ? ASSET_CATALOG[0]
     : ASSET_CATALOG.find(asset => asset.category === category)
   const label = category.replace(/-/g, ' ')
-  const thumbnailUrl = coverAsset ? `/thumbs/${coverAsset.id}.jpg` : ''
+  const thumbnailUrl = catalogFallbackThumbnail(category) || (coverAsset ? `/thumbs/${coverAsset.id}.jpg` : '')
 
   return (
     <button
@@ -123,7 +124,7 @@ export function PlacementPalette({ showConjured = true, columns = 3, onPlace }: 
   const availableTabs = useMemo(() => ([
     { key: 'catalog' as const, label: 'Catalog', count: ASSET_CATALOG.length, color: '#FDE047' },
     { key: 'portal' as const, label: 'Portal', count: PORTAL_GATE_VARIANT_DEFS.length, color: '#67E8F9' },
-    { key: 'spatial' as const, label: 'Spatial', count: SPATIAL_WEB_ASSET_TEMPLATES.length, color: '#A5F3FC' },
+    { key: 'spatial' as const, label: 'Functional', count: SPATIAL_WEB_ASSET_TEMPLATES.length, color: '#A5F3FC' },
     ...(showConjured ? [{ key: 'conjured' as const, label: 'Conjured', count: readyConjured.length, color: '#FB923C' }] : []),
     { key: 'crafted' as const, label: 'Crafted', count: sceneLibrary.length, color: '#93C5FD' },
     { key: 'media' as const, label: 'Media', count: mediaItems.length, color: '#F9A8D4' },
@@ -341,6 +342,7 @@ export function PlacementPalette({ showConjured = true, columns = 3, onPlace }: 
                   name={asset.name}
                   type="catalog"
                   thumbnailUrl={`/thumbs/${asset.id}.jpg`}
+                  fallbackThumbnailUrl={catalogFallbackThumbnail(asset.category)}
                   modelUrl={asset.path}
                   subtitle={asset.category}
                   compact
@@ -437,7 +439,7 @@ export function PlacementPalette({ showConjured = true, columns = 3, onPlace }: 
         <>
           <div className="flex items-center gap-2 rounded-md border border-cyan-300/15 bg-cyan-300/5 p-2 max-[700px]:p-1.5">
             <div className="min-w-0 flex-1">
-              <div className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-100 max-[700px]:text-[8px]">A2UI-ish spatial controls</div>
+              <div className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-100 max-[700px]:text-[8px]">Functional controls</div>
               <div className="text-[9px] text-white/36 max-[700px]:hidden">Buttons, sliders, fields, selectors, output panels.</div>
             </div>
             <button
@@ -455,6 +457,7 @@ export function PlacementPalette({ showConjured = true, columns = 3, onPlace }: 
                 id={template.id}
                 name={template.label}
                 type="spatial"
+                thumbnailUrl={FUNCTIONAL_THUMBNAIL_URL}
                 subtitle={template.subtitle}
                 accentColor={template.accentColor}
                 compact

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Sci-fi megakit thumbnail">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#020617"/>
+      <stop offset=".55" stop-color="#164e63"/>
+      <stop offset="1" stop-color="#a3e635"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#cbd5e1"/>
+      <stop offset="1" stop-color="#334155"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="28" fill="url(#bg)"/>
+  <path d="M30 190h196" stroke="#67e8f9" stroke-opacity=".45" stroke-width="5"/>
+  <path d="M70 91l58-33 58 33v70l-58 33-58-33z" fill="url(#metal)" stroke="#e2e8f0" stroke-width="7" stroke-linejoin="round"/>
+  <path d="M70 91l58 35 58-35M128 126v68" fill="none" stroke="#0f172a" stroke-opacity=".55" stroke-width="6"/>
+  <path d="M96 118h25v23H96zM135 118h25v23h-25z" fill="#22d3ee" stroke="#cffafe" stroke-width="4"/>
+  <path d="M38 63h35M183 58h35M31 89h23M203 88h22" stroke="#bef264" stroke-width="6" stroke-linecap="round"/>
+</svg>

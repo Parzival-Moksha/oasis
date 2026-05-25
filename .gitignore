@@ -112,6 +112,10 @@ public/crafted-thumbs/*
 public/thumbs/*
 # Avatar thumbnails — whitelisted
 !public/thumbs/av_*.jpg
+!public/thumbs/catalog-fallbacks/
+!public/thumbs/catalog-fallbacks/*.svg
+!public/thumbs/functional/
+!public/thumbs/functional/*.svg
 
 # Bulk source archives (blend/gltf zips — only extracted textures needed)
 *.blend.zip

@@ -10,7 +10,7 @@ import fs from 'fs/promises'
 import sharp from 'sharp'
 
 const MAX_SIZE = 6 * 1024 * 1024 // 6MB
-const THUMB_SIZE = 160
+const THUMB_SIZE = 96
 const WIDE_MAX_WIDTH = 640
 const WIDE_MAX_HEIGHT = 360
 const EXT_BY_MIME: Record<string, 'jpg' | 'png' | 'webp' | 'gif'> = {
@@ -80,7 +80,7 @@ export async function POST(request: Request) {
       thumbBuffer = await image
         .clone()
         .resize(THUMB_SIZE, THUMB_SIZE, { fit: 'cover', position: 'attention' })
-        .webp({ quality: 84 })
+        .webp({ quality: 68 })
         .toBuffer()
       wideBuffer = await image
         .clone()
@@ -94,8 +94,8 @@ export async function POST(request: Request) {
     await fs.writeFile(path.join(avatarDir, thumbFilename), thumbBuffer)
     await fs.writeFile(path.join(avatarDir, wideFilename), wideBuffer)
 
-    const avatarUrl = `/avatars/${thumbFilename}`
-    const avatarFullUrl = `/avatars/${wideFilename}`
+    const avatarUrl = `/api/profile/avatar/image/${thumbFilename}`
+    const avatarFullUrl = `/api/profile/avatar/image/${wideFilename}`
 
     // Persist avatar URL in Profile
     try {
@@ -108,7 +108,7 @@ export async function POST(request: Request) {
       console.error('[Avatar] Profile update failed:', e)
     }
 
-    console.log(`[Avatar] Saved ${thumbFilename}`)
+    console.log(`[Avatar] Saved ${thumbFilename} (${Math.round(thumbBuffer.byteLength / 1024)}KB)`)
     return NextResponse.json({ avatar_url: avatarUrl, avatar_full_url: avatarFullUrl })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

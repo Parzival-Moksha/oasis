@@ -64,6 +64,7 @@ import { resolveAgentAvatarUrl } from '../../lib/agent-avatar-catalog'
 import { canReceiveMoveOrder, resolveMoveOrderObjectIds } from '../../lib/march-order'
 import { getViewerUserIdClient } from '../../lib/viewer-identity-client'
 import { LIGHT_INTENSITY_MAX, type WorldLight } from '../../lib/conjure/types'
+import { worldMutationBus } from '../../lib/world-mutation-bus'
 
 const IDLE_CLIP_PATTERNS = /idle|breathe?|stand|rest|pose|wait/i
 const WALK_CLIP_PATTERNS = /walk|run|move|locomotion|jog/i
@@ -233,6 +234,7 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
   const groupRef = useRef<THREE.Group>(null)
   const materializeRef = useRef<THREE.Group>(null)
   const transformDraggingRef = useRef(false)
+  const transformUndoOpenRef = useRef(false)
   const { setIsDragging } = useContext(DragContext)
   const setInspectedObject = useOasisStore(s => s.setInspectedObject)
   const isReadOnly = useOasisStore(s => s.isViewMode && !s.isViewModeEditable)
@@ -247,6 +249,17 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
   useEffect(() => {
     terrainHeightsRef.current = terrainHeights
   }, [terrainHeights])
+
+  useEffect(() => {
+    if (!selected || !allowTransform || typeof document === 'undefined') return
+    const canvas = document.querySelector('canvas') as HTMLElement | null
+    if (!canvas) return
+    const previousTouchAction = canvas.style.touchAction
+    canvas.style.touchAction = 'none'
+    return () => {
+      canvas.style.touchAction = previousTouchAction
+    }
+  }, [selected, allowTransform])
 
   const resolveTerrainHeight = useCallback((x: number, z: number) => {
     return sampleTerrainHeightAt(terrainHeightsRef.current, x, z)
@@ -330,19 +343,29 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
   const commitUndoBatch = useOasisStore(s => s.commitUndoBatch)
   const controlsCallbackRef = useCallback((controls: any) => {
     if (!controls) return
+    if (controls.userData?.oasisSelectableWrapperId === id) return
+    controls.userData = { ...(controls.userData || {}), oasisSelectableWrapperId: id }
     // ░▒▓ Disable three.js built-in W/E/R keyboard handler ▓▒░
     // It conflicts with WASD movement and our R/T/Y hotkeys (R=scale in three.js vs R=translate in ours).
     // Mode is controlled exclusively via React props from the store.
     controls.setMode = () => {}
-    const callback = (event: { value: boolean }) => {
-      transformDraggingRef.current = event.value
-      if (event.value) {
-        // ░▒▓ Drag start — capture world state for undo ▓▒░
-        beginUndoBatch('Transform', '🔄')
+    const startTransformDrag = () => {
+      transformDraggingRef.current = true
+      if (!transformUndoOpenRef.current) {
+        transformUndoOpenRef.current = true
+        beginUndoBatch('Transform', 'T')
       }
-      setIsDragging(event.value)
+      setIsDragging(true)
+    }
+    const callback = (event: { value: boolean }) => {
+      if (event.value) {
+        startTransformDrag()
+        return
+      }
+      transformDraggingRef.current = false
+      setIsDragging(false)
       // When drag ends, sync transform back to store + commit undo
-      if (!event.value && groupRef.current) {
+      if (groupRef.current) {
         const p = groupRef.current.position
         const r = groupRef.current.rotation
         const s = groupRef.current.scale
@@ -356,10 +379,15 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
           scale: [s.x, s.y, s.z],
         })
         // ░▒▓ Drag end — commit the batch undo command ▓▒░
-        setTimeout(() => commitUndoBatch(), 50)  // after setObjectTransform fires
+        if (transformUndoOpenRef.current) {
+          transformUndoOpenRef.current = false
+          setTimeout(() => commitUndoBatch(), 50)  // after setObjectTransform fires
+        }
       }
     }
     controls.addEventListener('dragging-changed', callback)
+    controls.addEventListener('mouseDown', startTransformDrag)
+    controls.addEventListener('mouseUp', callback.bind(null, { value: false }))
   }, [id, setIsDragging, onTransformChange, beginUndoBatch, commitUndoBatch, groundToTerrain, resolveTerrainHeight])
 
   // ─══ॐ══─ Respect visibility toggle from ObjectInspector ─══ॐ══─
@@ -425,6 +453,13 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
           object={groupRef.current}
           mode={transformMode}
           size={0.6}
+          onPointerDown={(event) => {
+            event.stopPropagation()
+            transformDraggingRef.current = true
+            setIsDragging(true)
+          }}
+          onPointerMove={(event) => event.stopPropagation()}
+          onPointerUp={(event) => event.stopPropagation()}
         />
       )}
     </>
@@ -2656,6 +2691,8 @@ function PlacementOverlay() {
           if (inputManager.inputState === 'placement') inputManager.returnToPrevious()
         } catch {}
         dispatch({ type: 'SPAWN_VFX', payload: { position: pos } })
+        worldMutationBus.broadcast({ kind: 'crafted_scene_added', payload: clone })
+        worldMutationBus.broadcast({ kind: 'placement_vfx', payload: { position: pos } })
         setTimeout(() => dispatch({ type: 'SAVE_WORLD' }), 100)
       } else {
         cancelPlacement()

@@ -14,6 +14,7 @@ import {
 } from '@/lib/multiplayer-room-client'
 import { worldMutationBus, type WorldMutation } from '@/lib/world-mutation-bus'
 import { colorForPlayerId as colorForId } from '@/lib/multiplayer-color'
+import { withProfileAvatarBust } from '@/lib/profile-avatar-url'
 import { useOasisStore } from '@/store/oasisStore'
 import { RemoteVRMAvatar } from './RemoteVRMAvatar'
 import {
@@ -487,7 +488,7 @@ export function MultiplayerPresenceLayer() {
             manaRef.current = Math.max(0, Math.min(maxManaRef.current, data.mana))
           }
           if (!data?.displayName) return
-          const profileAvatarUrl = data.avatar_url ? `${data.avatar_url}?v=${Date.now()}` : ''
+          const profileAvatarUrl = withProfileAvatarBust(data.avatar_url, Date.now()) || ''
           apply(data.displayName.trim(), profileAvatarUrl)
         })
         .catch(() => {})
@@ -525,6 +526,10 @@ export function MultiplayerPresenceLayer() {
       } else if (mutation.kind === 'object_transformed') {
         const { id, position, rotation, scale } = mutation.payload
         store.applyRemoteObjectTransform(id, { position, rotation, scale })
+      } else if (mutation.kind === 'crafted_scene_added') {
+        store.applyRemoteCraftedScene(mutation.payload)
+      } else if (mutation.kind === 'crafted_scene_updated') {
+        store.applyRemoteCraftedSceneUpdate(mutation.payload.id, mutation.payload.updates)
       } else if (mutation.kind === 'portal_added') {
         upsertRemotePortalGate(mutation.payload)
       } else if (mutation.kind === 'agent_window_added') {

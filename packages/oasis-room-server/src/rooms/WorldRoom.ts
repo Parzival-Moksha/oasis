@@ -54,6 +54,13 @@ interface ProfileMessage {
   color?: string
 }
 
+interface VitalsMessage {
+  hp?: number
+  maxHp?: number
+  mana?: number
+  maxMana?: number
+}
+
 const MAX_PLAYERS_PER_WORLD = 64
 const SIM_HZ = 30
 const PATCH_HZ = 30
@@ -281,6 +288,33 @@ export class WorldRoom extends Room<WorldRoomState> {
         animState: player.animState,
         updatedAt: player.updatedAt,
       })
+    })
+
+    this.onMessage('vitals', (client, payload: VitalsMessage) => {
+      // The profile DB remains the durable progression source, but clients can
+      // recover/recharge there while the room is already live. Mirror that
+      // fresh local state into the room so PvP HUDs do not stick at stale zero.
+      const player = this.state.players.get(client.sessionId)
+      if (!player || !payload || typeof payload !== 'object') return
+
+      if (payload.maxHp !== undefined) {
+        player.maxHp = clampHp(payload.maxHp, player.maxHp)
+        player.hp = clampResource(player.hp, player.hp, player.maxHp)
+      }
+      if (payload.maxMana !== undefined) {
+        player.maxMana = clampHp(payload.maxMana, player.maxMana)
+        player.mana = clampResource(player.mana, player.mana, player.maxMana)
+      }
+      if (payload.hp !== undefined) {
+        player.hp = clampResource(payload.hp, player.hp, player.maxHp)
+      }
+      if (payload.mana !== undefined) {
+        player.mana = clampResource(payload.mana, player.mana, player.maxMana)
+      }
+      if (player.hp > 0 && !player.alive && player.respawnAt === 0) {
+        player.alive = true
+      }
+      player.updatedAt = Date.now()
     })
 
     this.onMessage('cast', (client, payload: CastMessage) => {

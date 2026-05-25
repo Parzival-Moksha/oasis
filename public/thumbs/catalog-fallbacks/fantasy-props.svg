@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Fantasy props thumbnail">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#312e81"/>
+      <stop offset=".5" stop-color="#7c3aed"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <linearGradient id="gem" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f0abfc"/>
+      <stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="28" fill="url(#bg)"/>
+  <path d="M51 181h154v28H51z" fill="#451a03" stroke="#fcd34d" stroke-width="6"/>
+  <path d="M67 98h122v83H67z" fill="#78350f" stroke="#fbbf24" stroke-width="8"/>
+  <path d="M67 118h122" stroke="#fbbf24" stroke-width="7"/>
+  <path d="M100 98V79h56v19" fill="none" stroke="#fde68a" stroke-width="8" stroke-linecap="round"/>
+  <path d="M128 124l24 19-9 32h-30l-9-32z" fill="url(#gem)" stroke="#ecfeff" stroke-width="5"/>
+  <path d="M205 51l9 18 20 3-15 14 4 20-18-10-18 10 4-20-15-14 20-3zM45 62l5 10 11 2-8 8 2 11-10-5-10 5 2-11-8-8 11-2z" fill="#fde68a"/>
+</svg>

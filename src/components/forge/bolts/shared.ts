@@ -10,7 +10,7 @@ import { useInputManager } from '@/lib/input-manager'
 import { useOasisStore } from '@/store/oasisStore'
 import { QUEST_ZERO_WORLD_ID } from '@/lib/portal-gates'
 import { useAudioManager } from '@/lib/audio-manager'
-import { getLatestPlayers, getLocalSessionId, getPvpEnabled } from '@/lib/pvp-bridge'
+import { getLatestPlayers, getPvpEnabled } from '@/lib/pvp-bridge'
 import type { CollisionTarget } from './types'
 
 // ─═̷─═̷─ⓘ─═̷─═̷─ CONSTANTS — keep aligned with FireboltLayer ─═̷─═̷─ⓘ─═̷─═̷─
@@ -123,14 +123,13 @@ export function collectCollisionTargets(): CollisionTarget[] {
   }
 
   // ─═̷─ PvP: add peer-player capsules so bolts can hit other wizards. ─═̷─
-  // Only in PvP-enabled worlds, only OTHER players (not self), only ALIVE.
+  // Only in PvP-enabled worlds, only ALIVE players. Local is included so
+  // remote casts explode on the victim client too.
   // The id prefix `pvp:` lets CombatBoltLayer route the hit to sendPvpReportHit
   // instead of quest progression / firebolt-hit events.
   if (getPvpEnabled()) {
-    const localSessionId = getLocalSessionId()
     for (const player of getLatestPlayers()) {
       if (!player.alive) continue
-      if (player.sessionId === localSessionId) continue
       // Wizard hitbox: a ~0.6m capsule centered on the avatar's chest
       // (~1.2m above their foot position). Slightly generous to feel fair
       // on shaky home wifi; cheating clients are blocked server-side anyway.

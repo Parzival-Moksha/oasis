@@ -47,6 +47,7 @@ export interface AssetCardProps {
   name: string
   type: AssetCardType
   thumbnailUrl?: string
+  fallbackThumbnailUrl?: string
   modelUrl?: string
   mediaUrl?: string
   isInWorld?: boolean
@@ -81,7 +82,7 @@ const TYPE_CONFIG: Record<AssetCardType, { label: string; color: string; bgColor
   'media-video': { label: 'video',     color: '#F9A8D4', bgColor: 'rgba(236,72,153,0.15)',  borderColor: 'rgba(236,72,153,0.3)' },
   'media-audio': { label: 'audio',     color: '#F9A8D4', bgColor: 'rgba(236,72,153,0.15)',  borderColor: 'rgba(236,72,153,0.3)' },
   portal:        { label: 'portal',    color: '#67E8F9', bgColor: 'rgba(34,211,238,0.15)',  borderColor: 'rgba(34,211,238,0.3)' },
-  spatial:       { label: 'spatial',   color: '#A5F3FC', bgColor: 'rgba(8,145,178,0.16)',   borderColor: 'rgba(34,211,238,0.32)' },
+  spatial:       { label: 'functional', color: '#A5F3FC', bgColor: 'rgba(8,145,178,0.16)',   borderColor: 'rgba(34,211,238,0.32)' },
   placed:        { label: 'placed',    color: '#22D3EE', bgColor: 'rgba(6,182,212,0.15)',   borderColor: 'rgba(6,182,212,0.3)' },
 }
 
@@ -89,10 +90,11 @@ const TYPE_CONFIG: Record<AssetCardType, { label: string; color: string; bgColor
 // THUMBNAIL RENDERER — per-type visual (with autoplay hover for video/audio)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function CardThumbnail({ id, type, thumbnailUrl, mediaUrl, name }: {
+function CardThumbnail({ id, type, thumbnailUrl, fallbackThumbnailUrl, mediaUrl, name }: {
   id: string
   type: AssetCardType
   thumbnailUrl?: string
+  fallbackThumbnailUrl?: string
   mediaUrl?: string
   name: string
 }) {
@@ -168,6 +170,22 @@ function CardThumbnail({ id, type, thumbnailUrl, mediaUrl, name }: {
   }
 
   // Fallback icons per type
+  if (fallbackThumbnailUrl && type !== 'media-video' && type !== 'media-audio') {
+    const src = fallbackThumbnailUrl.startsWith('http') || fallbackThumbnailUrl.startsWith('data:') || fallbackThumbnailUrl.startsWith('blob:')
+      ? fallbackThumbnailUrl
+      : `${OASIS_BASE}${fallbackThumbnailUrl}`
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={src}
+        alt={name}
+        className="w-full h-full object-cover"
+        loading="lazy"
+      />
+    )
+  }
+
+  // Fallback icons per type
   const fallbacks: Record<AssetCardType, { emoji: string; color: string }> = {
     conjured:      { emoji: '\u{1F52E}', color: 'text-orange-400/40' },
     crafted:       { emoji: '\u{1F3A8}', color: 'text-blue-400/40' },
@@ -176,7 +194,7 @@ function CardThumbnail({ id, type, thumbnailUrl, mediaUrl, name }: {
     'media-video': { emoji: '\u{1F3AC}', color: 'text-pink-400/40' },
     'media-audio': { emoji: '\u{1F3B5}', color: 'text-pink-400/40' },
     portal:        { emoji: '\u{1F300}', color: 'text-cyan-400/40' },
-    spatial:       { emoji: 'WWW', color: 'text-cyan-300/60' },
+    spatial:       { emoji: 'FN', color: 'text-cyan-300/60' },
     placed:        { emoji: '\u{1F4CD}', color: 'text-cyan-400/40' },
   }
   const fb = fallbacks[type]
@@ -255,6 +273,7 @@ export function AssetCard({
   name,
   type,
   thumbnailUrl,
+  fallbackThumbnailUrl,
   modelUrl: _modelUrl,
   mediaUrl,
   isInWorld,
@@ -335,6 +354,7 @@ export function AssetCard({
           id={id}
           type={type}
           thumbnailUrl={thumbnailUrl}
+          fallbackThumbnailUrl={fallbackThumbnailUrl}
           mediaUrl={mediaUrl}
           name={name}
         />

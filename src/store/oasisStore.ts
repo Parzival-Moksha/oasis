@@ -903,6 +903,8 @@ interface OasisState {
   addCraftedScene: (scene: CraftedScene) => void
   removeCraftedScene: (id: string) => void
   updateCraftedScene: (id: string, updates: Partial<CraftedScene>) => void
+  applyRemoteCraftedScene: (scene: CraftedScene) => void
+  applyRemoteCraftedSceneUpdate: (id: string, updates: Partial<CraftedScene>) => void
   setConjureVfxType: (type: ConjureVfxType) => void
   placeCatalogAsset: (catalogId: string, name: string, path: string, defaultScale: number) => void
   removeCatalogAsset: (id: string) => void
@@ -1593,6 +1595,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
     )
     // ░▒▓ Spell VFX on materialization ▓▒░
     get().spawnPlacementVfx(scene.position)
+    worldMutationBus.broadcast({ kind: 'crafted_scene_added', payload: scene })
+    worldMutationBus.broadcast({ kind: 'placement_vfx', payload: { position: scene.position } })
     // Auto-save world on scene add
     setTimeout(() => get().saveWorldState(), 100)
   },
@@ -1609,9 +1613,36 @@ export const useOasisStore = create<OasisState>((set, get) => {
     worldMutationBus.broadcast({ kind: 'object_removed', payload: { id } })
     setTimeout(() => get().saveWorldState(), 100)
   },
-  updateCraftedScene: (id, updates) => set((state) => ({
-    craftedScenes: state.craftedScenes.map(s => s.id === id ? { ...s, ...updates } : s),
-  })),
+  updateCraftedScene: (id, updates) => {
+    set((state) => ({
+      craftedScenes: state.craftedScenes.map(s => s.id === id ? { ...s, ...updates } : s),
+    }))
+    worldMutationBus.broadcast({ kind: 'crafted_scene_updated', payload: { id, updates } })
+  },
+  applyRemoteCraftedScene: (scene) => {
+    set(state => {
+      const existed = state.craftedScenes.some(existing => existing.id === scene.id)
+      return {
+        craftedScenes: existed
+          ? state.craftedScenes.map(existing => existing.id === scene.id ? { ...existing, ...scene, id: existing.id } : existing)
+          : [...state.craftedScenes, scene],
+        _loadedObjectCount: existed ? state._loadedObjectCount : state._loadedObjectCount + 1,
+      }
+    })
+  },
+  applyRemoteCraftedSceneUpdate: (id, updates) => {
+    set(state => {
+      const existing = state.craftedScenes.find(scene => scene.id === id)
+      const hadObjects = (existing?.objects?.length || 0) > 0
+      const nextScenes = state.craftedScenes.map(scene => scene.id === id ? { ...scene, ...updates } : scene)
+      const nextScene = nextScenes.find(scene => scene.id === id)
+      const hasObjects = (nextScene?.objects?.length || 0) > 0
+      if (!hadObjects && hasObjects && nextScene?.position && isBrowser) {
+        window.setTimeout(() => get().spawnPlacementVfx(nextScene.position), 0)
+      }
+      return { craftedScenes: nextScenes }
+    })
+  },
   setConjureVfxType: (conjureVfxType) => {
     persist('oasis-vfx', conjureVfxType)
     set({ conjureVfxType })
@@ -3262,12 +3293,25 @@ export const useOasisStore = create<OasisState>((set, get) => {
     id: string,
     transform: { position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number },
   ) => {
-    // Mirror the local-write branch in setObjectTransform: agent-avatar IDs
-    // route through setAgentAvatarTransform; everything else writes to the
-    // transforms map. Without this, remote-moved agent avatars desync —
-    // their `transforms` row updates but their visible position doesn't.
     if (get().placedAgentAvatars.some(avatar => avatar.id === id)) {
-      get().setAgentAvatarTransform(id, transform)
+      set(state => ({
+        placedAgentAvatars: state.placedAgentAvatars.map(avatar => {
+          if (avatar.id !== id) return avatar
+          const rotation = transform.rotation || avatar.rotation
+          const scale = transform.scale !== undefined
+            ? (typeof transform.scale === 'number'
+              ? transform.scale
+              : Math.max(transform.scale[0] || 1, transform.scale[1] || 1, transform.scale[2] || 1))
+            : avatar.scale
+          return {
+            ...avatar,
+            position: transform.position,
+            rotation,
+            scale,
+          }
+        }),
+        transforms: { ...state.transforms, [id]: transform },
+      }))
       return
     }
     set(state => ({ transforms: { ...state.transforms, [id]: transform } }))

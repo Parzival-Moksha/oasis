@@ -1791,7 +1791,11 @@ export default function Scene() {
     else if (isConjured) store.removeConjuredAssetFromWorld(id)
     else if (isLight) store.removeWorldLight(id)
     else if (isAgentWindow) store.removeAgentWindow(id)
-    else if (isAgentAvatar) store.removeAgentAvatar(id)
+    else if (isAgentAvatar) {
+      const linkedWindow = store.placedAgentWindows.find(win => win.linkedAvatarId === id)
+      if (linkedWindow) store.removeAgentWindow(linkedWindow.id)
+      else store.removeAgentAvatar(id)
+    }
     else if (isSpatialWeb) store.removeSpatialWebObject(id)
     else if (isPaintStroke) store.removePaintStroke(id)
     else if (isText3D) store.removeText3dObject(id)
@@ -1925,6 +1929,10 @@ export default function Scene() {
         <FPSTracker />
     </Canvas>
   )
+  const showCenterCrosshair = (
+    ((settings.controlMode === 'noclip' || settings.controlMode === 'third-person') && (pointerLocked || mobileOasis)) ||
+    inputState === 'paint'
+  )
 
   return (
     <SettingsContext.Provider value={{ settings, effectiveRp1Mode, rp1Locked: readOnlyForcesRp1, updateSetting }}>
@@ -1959,7 +1967,7 @@ export default function Scene() {
       {/* ─═̷─═̷─🎯 CROSSHAIR — Noclip + TPS when pointer locked (desktop) OR
           always on mobile in those modes, since mobile can't pointer-lock but
           still needs a center target indicator for SELECT / placement / cast. ─═̷─═̷─🎯 */}
-      {(settings.controlMode === 'noclip' || settings.controlMode === 'third-person') && (pointerLocked || mobileOasis) && (
+      {showCenterCrosshair && (
         <div data-oasis-crosshair className="fixed inset-0 pointer-events-none z-[99] flex items-center justify-center">
           <div className="relative w-5 h-5">
             <div className="absolute top-1/2 left-0 w-full h-px bg-white/40" />

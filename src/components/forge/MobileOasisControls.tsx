@@ -91,18 +91,24 @@ function isFullscreenActive(): boolean {
 
 async function requestMobileFullscreen(): Promise<boolean> {
   if (typeof document === 'undefined') return false
-  const target = document.documentElement as FullscreenTarget
-  try {
+  const targets = [
+    document.documentElement,
+    document.querySelector('canvas'),
+    document.body,
+  ].filter(Boolean) as FullscreenTarget[]
+  for (const target of targets) {
     if (target.requestFullscreen) {
-      await target.requestFullscreen({ navigationUI: 'hide' })
-      return true
+      try {
+        await target.requestFullscreen({ navigationUI: 'hide' })
+        return true
+      } catch {}
     }
     if (target.webkitRequestFullscreen) {
-      await target.webkitRequestFullscreen()
-      return true
+      try {
+        await target.webkitRequestFullscreen()
+        return true
+      } catch {}
     }
-  } catch {
-    return false
   }
   return false
 }
@@ -434,6 +440,7 @@ function isCombatSpell(id: SpellId | null): boolean {
 
 function MobileFullscreenPrompt() {
   const [visible, setVisible] = useState(false)
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     if (!isProbablyMobileDevice() || !canRequestFullscreen() || isFullscreenActive()) return
@@ -454,13 +461,17 @@ function MobileFullscreenPrompt() {
       onPointerDown={async event => {
         event.preventDefault()
         event.stopPropagation()
-        try { window.sessionStorage.setItem('oasis-mobile-fullscreen-prompt-seen', '1') } catch {}
-        await requestMobileFullscreen()
-        setVisible(false)
+        const ok = await requestMobileFullscreen()
+        if (ok || isFullscreenActive()) {
+          try { window.sessionStorage.setItem('oasis-mobile-fullscreen-prompt-seen', '1') } catch {}
+          setVisible(false)
+        } else {
+          setFailed(true)
+        }
       }}
     >
       <div className="text-[12px] font-black uppercase tracking-[0.18em]">Go Fullscreen</div>
-      <div className="mt-0.5 text-[10px] font-semibold text-cyan-100/75">for better experience</div>
+      <div className="mt-0.5 text-[10px] font-semibold text-cyan-100/75">{failed ? 'Browser blocked fullscreen' : 'for better experience'}</div>
     </button>
   )
 }

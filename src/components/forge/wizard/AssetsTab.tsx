@@ -19,6 +19,7 @@ import { portalThumbPath } from '../../../lib/portal-thumbnails'
 import { AssetCard } from '../AssetCard'
 import { DeleteButton } from '../DeleteButton'
 import { canMutateLibrary } from '../../../lib/library-permissions'
+import { catalogFallbackThumbnail } from '../../../lib/catalog-thumbnail-fallbacks'
 
 export function AssetsTab() {
   const { conjuredAssets } = useConjure()
@@ -293,6 +294,7 @@ export function AssetsTab() {
                   <AssetThumb
                     src={`${OASIS_BASE}/thumbs/${asset.id}.jpg`}
                     assetId={asset.id}
+                    fallbackSrc={catalogFallbackThumbnail(asset.category)}
                     fallback={asset.category === 'enemies' ? '\u{1F916}' : asset.category === 'guns' ? '\u{1F52B}' : asset.category === 'pickups' ? '\u{1F48E}' : asset.category === 'character' ? '\u{1F9D1}' : asset.category === 'nature' ? '\u{1F332}' : asset.category === 'props' ? '\u{1F4E6}' : asset.category === 'scifi' ? '\u{1F680}' : asset.category === 'fantasy' ? '\u{1F9D9}' : asset.category === 'village' ? '\u{1F3E0}' : asset.category === 'avatar' ? '\u{1F9D1}' : asset.category === 'psx-derelict' ? '\u{1F6CB}' : asset.category === 'highlands-fantasy' ? '\u{1F3F0}' : asset.category === 'scifi-megakit' ? '\u{1F6F8}' : asset.category === 'fantasy-props' ? '\u{1F9D9}' : asset.category === 'stylized-nature' ? '\u{1F332}' : asset.category === 'random-objects' ? '\u{1F3B2}' : '\u{1F3D7}'}
                     alt={asset.name}
                   />

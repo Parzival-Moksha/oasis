@@ -292,7 +292,7 @@ export function TerrainBrushPanel() {
                   <button
                     key={stretch}
                     onClick={() => setPaintBrushStretch(stretch)}
-                    title={`Each tile renders ${stretch}x${stretch}m (texture zoomed ${stretch}x)`}
+                    title={`Each tile renders ${stretch}x${stretch}m with the full texture stretched over it`}
                     className={`rounded border px-1.5 py-0.5 text-[9px] font-mono ${paintBrushStretch === stretch ? 'border-amber-300/60 bg-amber-300/20 text-amber-100' : 'border-white/10 text-emerald-100/55 hover:text-emerald-100'}`}
                   >
                     {stretch}x

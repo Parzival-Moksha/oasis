@@ -41,6 +41,7 @@ import { createSpatialWebObjectFromTemplate, SPATIAL_WEB_ASSET_TEMPLATES } from 
 import { useOasisCapabilities } from '@/lib/oasis-mode-client'
 import { MusicBody } from './spelltabs/bodies/MusicBody'
 import { VideoBody } from './spelltabs/bodies/VideoBody'
+import { FUNCTIONAL_THUMBNAIL_URL, catalogFallbackThumbnail } from '@/lib/catalog-thumbnail-fallbacks'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 
@@ -2578,7 +2579,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
               {([
                 { key: 'catalog' as const, label: 'Catalog', count: ASSET_CATALOG.length, color: 'yellow' },
                 { key: 'portals' as const, label: 'Portals', count: PORTAL_GATE_VARIANT_DEFS.length, color: 'cyan' },
-                { key: 'spatial' as const, label: 'Spatial', count: SPATIAL_WEB_ASSET_TEMPLATES.length, color: 'cyan' },
+                { key: 'spatial' as const, label: 'Functional', count: SPATIAL_WEB_ASSET_TEMPLATES.length, color: 'cyan' },
                 { key: 'conjured' as const, label: 'Conjured', count: conjuredAssets.filter(a => a.status === 'ready').length, color: 'orange' },
                 { key: 'crafted' as const, label: 'Crafted', count: sceneLibrary.length, color: 'blue' },
                 { key: 'images' as const, label: 'Images', count: generatedImages.length, color: 'pink' },
@@ -2644,6 +2645,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
                       name={asset.name}
                       type="catalog"
                       thumbnailUrl={`/thumbs/${asset.id}.jpg`}
+                      fallbackThumbnailUrl={catalogFallbackThumbnail(asset.category)}
                       modelUrl={asset.path}
                       subtitle={asset.category}
                       onClick={() => {
@@ -2785,7 +2787,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
                 <div className="rounded-lg border border-cyan-500/15 bg-cyan-500/5 p-2 mb-2 space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <div>
-                      <div className="text-[10px] text-cyan-300 font-mono uppercase tracking-wider">Spatial web primitives</div>
+                      <div className="text-[10px] text-cyan-300 font-mono uppercase tracking-wider">Functional primitives</div>
                       <div className="text-[9px] text-gray-500">Place 3D form controls for voice-built sites, menus, and kiosks.</div>
                     </div>
                     <button
@@ -2804,6 +2806,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
                       id={template.id}
                       name={template.label}
                       type="spatial"
+                      thumbnailUrl={FUNCTIONAL_THUMBNAIL_URL}
                       subtitle={template.subtitle}
                       accentColor={template.accentColor}
                       onClick={() => placeSpatialWebTemplate(template)}
@@ -3115,7 +3118,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
 
                 {spatialWebObjects.length > 0 && (
                   <>
-                    <div className="text-[9px] text-cyan-300/70 uppercase tracking-wider font-mono mt-2 mb-0.5">WWW Spatial Web ({spatialWebObjects.length})</div>
+                    <div className="text-[9px] text-cyan-300/70 uppercase tracking-wider font-mono mt-2 mb-0.5">Functional ({spatialWebObjects.length})</div>
                     <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${colsCatalog}, minmax(0, 1fr))` }}>
                       {spatialWebObjects.map(object => (
                         <AssetCard
@@ -3123,6 +3126,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
                           id={object.id}
                           name={object.label}
                           type="placed"
+                          thumbnailUrl={FUNCTIONAL_THUMBNAIL_URL}
                           subtitle={object.type}
                           accentColor={selectedObjectId === object.id ? '#3B82F6' : (object.accentColor || '#22D3EE')}
                           isInWorld

@@ -638,18 +638,18 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
       // upstream so we just defensively fall through to A on garbage values.
       const design = (bolt.design || 'A').toUpperCase()
       if (bolt.spell === 'firebolt') {
-        if (design === 'B') spawnFireboltB(origin, direction, bolt.speed, bolt.damage)
-        else if (design === 'C') spawnFireboltC(origin, direction, bolt.speed, bolt.damage)
-        else spawnFireboltA(origin, direction, bolt.speed, bolt.damage)
+        if (design === 'B') spawnFireboltB(origin, direction, bolt.speed, bolt.damage, bolt.id)
+        else if (design === 'C') spawnFireboltC(origin, direction, bolt.speed, bolt.damage, bolt.id)
+        else spawnFireboltA(origin, direction, bolt.speed, bolt.damage, bolt.id)
       } else if (bolt.spell === 'lightning-bolt') {
-        if (design === 'B') spawnLightningB(origin, direction, bolt.speed, bolt.damage)
-        else if (design === 'C') spawnLightningC(origin, direction, bolt.speed, bolt.damage)
-        else if (design === 'D') spawnLightningD(bolt.damage)
-        else spawnLightningA(origin, direction, bolt.damage)
+        if (design === 'B') spawnLightningB(origin, direction, bolt.speed, bolt.damage, bolt.id)
+        else if (design === 'C') spawnLightningC(origin, direction, bolt.speed, bolt.damage, bolt.id)
+        else if (design === 'D') spawnLightningD(bolt.damage, bolt.id)
+        else spawnLightningA(origin, direction, bolt.damage, bolt.id)
       } else if (bolt.spell === 'ice-bolt') {
-        if (design === 'B') spawnIceB(origin, direction, bolt.speed, bolt.damage)
-        else if (design === 'C') spawnIceC(origin, direction, bolt.speed, bolt.damage)
-        else spawnIceA(origin, direction, bolt.speed, bolt.damage)
+        if (design === 'B') spawnIceB(origin, direction, bolt.speed, bolt.damage, bolt.id)
+        else if (design === 'C') spawnIceC(origin, direction, bolt.speed, bolt.damage, bolt.id)
+        else spawnIceA(origin, direction, bolt.speed, bolt.damage, bolt.id)
       }
     })
     return unsubscribe

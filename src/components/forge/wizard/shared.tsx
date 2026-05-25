@@ -53,22 +53,27 @@ export function StatusBadge({ status, progress }: { status: ConjureStatus; progr
  *  - On 'pending'/'missing' it shows the emoji fallback; once the queue marks
  *    'ready' it triggers a re-render via store-driven version bump and the
  *    img loads fresh (browser-side 404 cache busted by `?v=<n>`). */
-export function AssetThumb({ src, fallback, alt, assetId }: { src: string; fallback: string; alt: string; assetId?: string }) {
+export function AssetThumb({ src, fallback, alt, assetId, fallbackSrc }: { src: string; fallback: string; alt: string; assetId?: string; fallbackSrc?: string }) {
   const [localFailed, setLocalFailed] = useState(false)
   const status = useThumbnailStore(s => assetId ? (s.status[assetId] || 'missing') : 'ready')
   const version = useThumbnailStore(s => assetId ? (s.versions[assetId] || 0) : 0)
 
   // Reset local-fail flag if the version bumps (i.e. queue just rendered it).
   useEffect(() => { setLocalFailed(false) }, [version])
+  const fallbackNode = fallbackSrc ? (
+    <img src={fallbackSrc} alt={alt} className="w-full h-full object-cover" loading="lazy" />
+  ) : (
+    <span className="text-xl opacity-30">{fallback}</span>
+  )
 
   // When the queue knows it's not ready, just show emoji — skip the network request.
   if (!src || localFailed) {
-    return <span className="text-xl opacity-30">{fallback}</span>
+    return fallbackNode
   }
   if (assetId && (status === 'missing' || status === 'pending' || status === 'failed')) {
     return (
-      <span className="relative text-xl opacity-30">
-        {fallback}
+      <span className="relative flex h-full w-full items-center justify-center">
+        {fallbackNode}
         {status === 'pending' && (
           <span className="absolute bottom-0 right-0 text-[7px] opacity-60 leading-none animate-pulse">…</span>
         )}

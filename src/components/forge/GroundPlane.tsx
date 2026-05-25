@@ -357,24 +357,14 @@ function TileGroupRenderer({ preset, tiles, stretch = 1 }: { preset: GroundPrese
     let activeClone: THREE.Texture | null = null
     loadCachedTexture(urls.diffuse, THREE.SRGBColorSpace).then(tex => {
       if (!cancelled && tex) {
-        // ░▒▓ STRETCH: per-group UV repeat. stretch=N means each tile shows
-        // 1/N of one full texture sample, so adjacent stretched tiles in the
-        // same group form a continuous zoomed-out lattice. Without cloning,
-        // multiple groups would clobber each other's repeat values. ▓▒░
-        const clone = stretch === 1 ? tex : tex.clone()
-        if (stretch !== 1) {
-          clone.wrapS = THREE.RepeatWrapping
-          clone.wrapT = THREE.RepeatWrapping
-          clone.repeat.set(1 / stretch, 1 / stretch)
-          clone.needsUpdate = true
-          activeClone = clone
-        }
-        gl.initTexture(clone)
-        setDiffuse(clone)
+        // Stretch comes from the instance matrix; UVs stay 0..1 so the full
+        // texture is visible on the enlarged painted cell.
+        gl.initTexture(tex)
+        setDiffuse(tex)
       }
     })
-    return () => { cancelled = true; activeClone?.dispose() }
-  }, [urls.diffuse, gl, stretch])
+    return () => { cancelled = true }
+  }, [urls.diffuse, gl])
 
   // ░▒▓ IMPERATIVE MATERIAL SYNC — R3F declarative updates can miss texture
   // assignment on instancedMesh children. Force the GPU handshake here.
@@ -477,23 +467,14 @@ function ReliefTileGroupRenderer({
 
   useEffect(() => {
     let cancelled = false
-    let activeClone: THREE.Texture | null = null
     loadCachedTexture(urls.diffuse, THREE.SRGBColorSpace).then(tex => {
       if (!cancelled && tex) {
-        const clone = stretch === 1 ? tex : tex.clone()
-        if (stretch !== 1) {
-          clone.wrapS = THREE.RepeatWrapping
-          clone.wrapT = THREE.RepeatWrapping
-          clone.repeat.set(1 / stretch, 1 / stretch)
-          clone.needsUpdate = true
-          activeClone = clone
-        }
-        gl.initTexture(clone)
-        setDiffuse(clone)
+        gl.initTexture(tex)
+        setDiffuse(tex)
       }
     })
-    return () => { cancelled = true; activeClone?.dispose() }
-  }, [urls.diffuse, gl, stretch])
+    return () => { cancelled = true }
+  }, [urls.diffuse, gl])
 
   useEffect(() => {
     const mat = matRef.current

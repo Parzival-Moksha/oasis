@@ -12,6 +12,7 @@ import { FREE_CREDITS } from '@/lib/conjure/types'
 import { DEFAULT_PROFILE_AVATAR_3D_URL, DEFAULT_PROFILE_DISPLAY_NAME } from '@/lib/profile-defaults'
 import { buildPlayerProgression } from '@/lib/player-progression'
 import { getPlayerProgressionState } from '@/lib/player-progression-server'
+import { normalizeProfileAvatarUrl } from '@/lib/profile-avatar-url'
 
 /** Ensure a Profile row exists for the user, return it */
 async function ensureProfile(userId: string) {
@@ -48,7 +49,7 @@ async function serializeProfile(p: Awaited<ReturnType<typeof ensureProfile>>) {
     needsOnboarding: p.totalXp === 0,
     displayName: p.displayName,
     bio: p.bio,
-    avatar_url: p.avatarUrl,
+    avatar_url: normalizeProfileAvatarUrl(p.avatarUrl),
     avatar_3d_url: p.avatar3dUrl,
     lastLoginDate: p.lastLoginDate,
     hp: player.hp,

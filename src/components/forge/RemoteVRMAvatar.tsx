@@ -28,6 +28,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
 
 import { AnimationController } from '../../lib/animation-state-machine'
+import { normalizeProfileAvatarUrl } from '../../lib/profile-avatar-url'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PROPS
@@ -67,19 +68,19 @@ const CROSSFADE_SECONDS = 0.15
 function PillBody({ color, displayName, profileAvatarUrl }: { color: string; displayName: string; profileAvatarUrl?: string }) {
   return (
     <>
-      <mesh castShadow position={[0, 0.88, 0]}>
+      <mesh castShadow position={[0, 0.88, 0]} raycast={() => null}>
         <cylinderGeometry args={[0.22, 0.28, 0.9, 18]} />
         <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.18} roughness={0.52} metalness={0.12} />
       </mesh>
-      <mesh castShadow position={[0, 1.46, 0]}>
+      <mesh castShadow position={[0, 1.46, 0]} raycast={() => null}>
         <sphereGeometry args={[0.22, 18, 12]} />
         <meshStandardMaterial color="#f8fafc" emissive={color} emissiveIntensity={0.08} roughness={0.48} metalness={0.08} />
       </mesh>
-      <mesh position={[0, 1.15, 0.28]}>
+      <mesh position={[0, 1.15, 0.28]} raycast={() => null}>
         <boxGeometry args={[0.42, 0.08, 0.06]} />
         <meshBasicMaterial color={color} />
       </mesh>
-      <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
         <ringGeometry args={[0.34, 0.42, 32]} />
         <meshBasicMaterial color={color} transparent opacity={0.54} />
       </mesh>
@@ -90,7 +91,8 @@ function PillBody({ color, displayName, profileAvatarUrl }: { color: string; dis
 
 function ProfileAvatarThumb({ src, displayName }: { src: string; displayName: string }) {
   const [failed, setFailed] = useState(false)
-  useEffect(() => { setFailed(false) }, [src])
+  const normalizedSrc = normalizeProfileAvatarUrl(src) || src
+  useEffect(() => { setFailed(false) }, [normalizedSrc])
   if (failed) {
     return (
       <div
@@ -112,7 +114,7 @@ function ProfileAvatarThumb({ src, displayName }: { src: string; displayName: st
   }
   return (
     <img
-      src={src}
+      src={normalizedSrc}
       alt=""
       style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
       referrerPolicy="no-referrer"
@@ -220,6 +222,7 @@ function VRMBody({
     loaded.scene.traverse((child) => {
       if (!(child as THREE.Mesh).isMesh) return
       const mesh = child as THREE.Mesh
+      mesh.raycast = () => {}
       const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
       for (const mat of mats) {
         const m = mat as unknown as Record<string, unknown>
@@ -378,7 +381,7 @@ function VRMBody({
       <NameTag displayName={displayName} profileAvatarUrl={profileAvatarUrl} />
       {/* Foot ring stays — tints the floor under the remote player so they
           read as "another presence" even when crowded. */}
-      <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
         <ringGeometry args={[0.34, 0.42, 32]} />
         <meshBasicMaterial color={color} transparent opacity={0.4} />
       </mesh>

@@ -8,7 +8,7 @@ import { useAudioManager } from '@/lib/audio-manager'
 import { setPlayerManaRecharging } from '@/lib/player-avatar-runtime'
 import { useOasisStore } from '@/store/oasisStore'
 import { SPELL_DEFS } from '@/lib/spellbook'
-import { getLocalSessionId, getPvpEnabled, onPlayerState } from '@/lib/pvp-bridge'
+import { getLocalSessionId, getPvpEnabled, onPlayerState, sendPvpVitals } from '@/lib/pvp-bridge'
 import { SettingsContext } from '@/components/scene-lib/contexts'
 import { resolveFontFamily } from '@/lib/fonts'
 
@@ -83,6 +83,15 @@ function normalizeVitals(source: VitalsSource | null | undefined, fallback = DEF
     fireboltDamage: finiteNumber(stats.fireboltDamage, fallback.fireboltDamage),
     manaRegenMultiplier: finiteNumber(stats.manaRegenMultiplier, fallback.manaRegenMultiplier),
   }
+}
+
+function publishPvpVitals(vitals: PlayerVitals): void {
+  sendPvpVitals({
+    hp: vitals.hp,
+    maxHp: vitals.maxHp,
+    mana: vitals.mana,
+    maxMana: vitals.maxMana,
+  })
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -247,6 +256,7 @@ export function PlayerVitalsHud({ visible }: { visible: boolean }) {
       const nextVitals = normalizeVitals(data, vitalsRef.current)
       vitalsRef.current = nextVitals
       setVitals(nextVitals)
+      publishPvpVitals(nextVitals)
       window.dispatchEvent(new CustomEvent('oasis:player-vitals', { detail: nextVitals }))
     } catch {
       // Keep the last known HUD state.
@@ -294,8 +304,11 @@ export function PlayerVitalsHud({ visible }: { visible: boolean }) {
         lastRechargeAtRef.current = now
       }
       if (data?.progression) {
-        setVitals(prev => normalizeVitals(data.progression, prev))
-        window.dispatchEvent(new CustomEvent('oasis:player-vitals', { detail: data.progression }))
+        const nextVitals = normalizeVitals(data.progression, vitalsRef.current)
+        vitalsRef.current = nextVitals
+        setVitals(nextVitals)
+        publishPvpVitals(nextVitals)
+        window.dispatchEvent(new CustomEvent('oasis:player-vitals', { detail: nextVitals }))
       }
     } catch {
       // Recharge is best-effort; direct profile refresh will recover.
@@ -351,14 +364,20 @@ export function PlayerVitalsHud({ visible }: { visible: boolean }) {
     const onVitals = (event: Event) => {
       const detail = (event as CustomEvent<VitalsSource>).detail
       if (!detail) return
-      setVitals(prev => normalizeVitals(detail, prev))
+      const nextVitals = normalizeVitals(detail, vitalsRef.current)
+      vitalsRef.current = nextVitals
+      setVitals(nextVitals)
+      publishPvpVitals(nextVitals)
       setCastError(null)
     }
     const onProfileUpdated = () => void refresh()
     const onCastFailed = (event: Event) => {
       const detail = (event as CustomEvent<{ error?: string; progression?: VitalsSource }>).detail
       if (detail?.progression) {
-        setVitals(prev => normalizeVitals(detail.progression, prev))
+        const nextVitals = normalizeVitals(detail.progression, vitalsRef.current)
+        vitalsRef.current = nextVitals
+        setVitals(nextVitals)
+        publishPvpVitals(nextVitals)
       }
       setCastError(detail?.error || 'Spell failed')
       window.setTimeout(() => setCastError(null), 1200)
@@ -401,13 +420,17 @@ export function PlayerVitalsHud({ visible }: { visible: boolean }) {
       if (!localId) return
       const me = players.find(player => player.sessionId === localId)
       if (!me) return
-      setVitals(prev => ({
+      setVitals(prev => {
+        const nextVitals = {
         ...prev,
         hp: Math.max(0, Math.min(me.maxHp || prev.maxHp, me.hp)),
         maxHp: me.maxHp || prev.maxHp,
         mana: Math.max(0, Math.min(me.maxMana || prev.maxMana, me.mana)),
         maxMana: me.maxMana || prev.maxMana,
-      }))
+        }
+        vitalsRef.current = nextVitals
+        return nextVitals
+      })
     })
     return unsubscribe
   }, [visible])

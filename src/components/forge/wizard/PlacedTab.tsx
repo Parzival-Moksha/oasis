@@ -201,9 +201,9 @@ export function PlacedTab() {
             )
           })}
 
-          {/* Spatial web */}
+          {/* Functional */}
           {spatialWebObjects.length > 0 && (
-            <div className="text-[9px] text-cyan-300/70 uppercase tracking-wider font-mono mt-2 mb-0.5">WWW Spatial Web ({spatialWebObjects.length})</div>
+            <div className="text-[9px] text-cyan-300/70 uppercase tracking-wider font-mono mt-2 mb-0.5">Functional ({spatialWebObjects.length})</div>
           )}
           {spatialWebObjects.map(object => {
             const isSelected = selectedObjectId === object.id
@@ -224,7 +224,7 @@ export function PlacedTab() {
                 }}
               >
                 <div>
-                  <span className="text-[10px] text-cyan-300 font-mono mr-1">WWW</span>
+                  <span className="text-[10px] text-cyan-300 font-mono mr-1">FN</span>
                   <span className="text-[11px] text-gray-200">{object.label}</span>
                   <span className="text-[9px] text-gray-400 ml-1.5">{object.type}</span>
                 </div>

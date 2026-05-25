@@ -31,6 +31,13 @@ export interface PvpReportHitPayload {
   victimSessionId: string
 }
 
+export interface PvpVitalsPayload {
+  hp?: number
+  maxHp?: number
+  mana?: number
+  maxMana?: number
+}
+
 export interface PvpRemoteBolt {
   id: string
   casterSessionId: string
@@ -74,6 +81,7 @@ export interface PvpRespawnEvent {
 interface PvpSender {
   sendCast(payload: PvpCastPayload): void
   sendReportHit(payload: PvpReportHitPayload): void
+  sendVitals(payload: PvpVitalsPayload): void
   /** Current room's local sessionId — the local player's id in the room. */
   readonly localSessionId: string
   /** Current room's pvpEnabled flag. */
@@ -123,6 +131,10 @@ export function sendPvpCast(payload: PvpCastPayload): void {
 
 export function sendPvpReportHit(payload: PvpReportHitPayload): void {
   activeSender?.sendReportHit(payload)
+}
+
+export function sendPvpVitals(payload: PvpVitalsPayload): void {
+  activeSender?.sendVitals(payload)
 }
 
 // ─═̷─ Incoming events (called by the room client) ─═̷─

@@ -1,6 +1,6 @@
 'use client'
 
-import type { CatalogPlacement, ObjectBehavior, WorldLight } from '@/lib/conjure/types'
+import type { CatalogPlacement, CraftedScene, ObjectBehavior, WorldLight } from '@/lib/conjure/types'
 import type { PaintStroke, PaintStrokeStyle } from '@/lib/forge/paint-stroke'
 import type { Text3DObject } from '@/lib/forge/text-3d-object'
 import type { PortalGate } from '@/lib/portal-gates'
@@ -10,6 +10,8 @@ export type WorldMutation =
   | { kind: 'object_added'; payload: CatalogPlacement }
   | { kind: 'object_removed'; payload: { id: string; linkedAvatarIds?: string[] } }
   | { kind: 'object_transformed'; payload: { id: string; position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number } }
+  | { kind: 'crafted_scene_added'; payload: CraftedScene }
+  | { kind: 'crafted_scene_updated'; payload: { id: string; updates: Partial<CraftedScene> } }
   | { kind: 'portal_added'; payload: PortalGate }
   | { kind: 'agent_window_added'; payload: AgentWindow }
   | { kind: 'agent_avatar_added'; payload: AgentAvatar }

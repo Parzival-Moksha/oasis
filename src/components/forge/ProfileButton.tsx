@@ -32,6 +32,7 @@ import {
   type PlayerSkillKey,
   type PlayerSkillSet,
 } from '@/lib/player-progression'
+import { withProfileAvatarBust } from '@/lib/profile-avatar-url'
 
 interface ProfileData {
   credits: number
@@ -180,9 +181,7 @@ export function ProfileButton() {
   // Profile.avatarUrl always serves the same path (/avatars/<userId>.<ext>)
   // because filenames are keyed by user, not content. Without ?v= the
   // browser cache holds the old (or 404) version after upload.
-  const avatarSrc = profile.avatar_url
-    ? `${profile.avatar_url}?v=${avatarBust}`
-    : null
+  const avatarSrc = withProfileAvatarBust(profile.avatar_url, avatarBust)
   useEffect(() => { setAvatarError(false) }, [avatarSrc])
   const initial = (displayName[0] || '?').toUpperCase()
   const playClick = () => useAudioManager.getState().play('buttonClick')

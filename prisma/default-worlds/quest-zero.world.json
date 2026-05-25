@@ -13106,6 +13106,29 @@
           ],
           "rotationY": 0
         }
+      },
+      {
+        "id": "portal-return-to-portal-zero",
+        "variant": "crystal-cavern",
+        "label": "Portal Zero",
+        "position": [
+          0,
+          0,
+          -6
+        ],
+        "rotationY": 0,
+        "scale": 1,
+        "width": 2.65,
+        "height": 3.35,
+        "direction": "one-way",
+        "sourceWorldId": "world-quest-zero-system",
+        "targetWorldId": "world-welcome-hub-system",
+        "targetWorldName": "Portal Zero",
+        "action": {
+          "type": "load_world",
+          "worldId": "world-welcome-hub-system",
+          "worldName": "Portal Zero"
+        }
       }
     ],
     "spatialWebObjects": [],
@@ -13250,6 +13273,6 @@
         "label": "Fire Guardian"
       }
     ],
-    "savedAt": "2026-05-23T16:58:37.711Z"
+    "savedAt": "2026-05-25T16:29:22.360Z"
   }
 }
