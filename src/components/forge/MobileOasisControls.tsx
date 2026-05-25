@@ -9,6 +9,8 @@ import { useOasisStore, type AgentWindow, type AgentWindowType } from '@/store/o
 import type { SpellId } from '@/lib/spellbook'
 import { PLAYER_BASE_STATS } from '@/lib/player-progression'
 import { getViewerUserIdClient } from '@/lib/viewer-identity-client'
+import { canRequestFullscreen, isFullscreenActive, requestOasisFullscreen } from '@/lib/fullscreen-controls'
+import { dispatch } from '@/lib/event-bus'
 
 const PAD_RADIUS = 48
 const MOBILE_LOOK_MULTIPLIER = 2.1
@@ -28,12 +30,6 @@ const MOBILE_PRIVATE_AGENT_WINDOW_TYPES = new Set<AgentWindowType>([
 ])
 
 type TouchPoint = { x: number; y: number }
-type FullscreenTarget = HTMLElement & { webkitRequestFullscreen?: () => Promise<void> | void }
-type FullscreenDocument = Document & {
-  webkitFullscreenElement?: Element | null
-  webkitFullscreenEnabled?: boolean
-  webkitExitFullscreen?: () => Promise<void> | void
-}
 
 function spatialActionLabel(object: SpatialWebObject): { label: string; disabled: boolean } {
   if (object.visualStyle === 'google-form-altar') {
@@ -70,47 +66,6 @@ function dispatchTpsZoomDelta(delta: number): void {
 function canFocusAgentWindowOnMobile(window: AgentWindow, viewerUserId: string): boolean {
   if (window.ownerId && window.ownerId !== viewerUserId && MOBILE_PRIVATE_AGENT_WINDOW_TYPES.has(window.agentType)) return false
   return true
-}
-
-function getFullscreenDocument(): FullscreenDocument | null {
-  if (typeof document === 'undefined') return null
-  return document as FullscreenDocument
-}
-
-function canRequestFullscreen(): boolean {
-  const doc = getFullscreenDocument()
-  if (!doc) return false
-  const target = document.documentElement as FullscreenTarget
-  return Boolean(doc.fullscreenEnabled || doc.webkitFullscreenEnabled || target.requestFullscreen || target.webkitRequestFullscreen)
-}
-
-function isFullscreenActive(): boolean {
-  const doc = getFullscreenDocument()
-  return Boolean(doc?.fullscreenElement || doc?.webkitFullscreenElement)
-}
-
-async function requestMobileFullscreen(): Promise<boolean> {
-  if (typeof document === 'undefined') return false
-  const targets = [
-    document.documentElement,
-    document.querySelector('canvas'),
-    document.body,
-  ].filter(Boolean) as FullscreenTarget[]
-  for (const target of targets) {
-    if (target.requestFullscreen) {
-      try {
-        await target.requestFullscreen({ navigationUI: 'hide' })
-        return true
-      } catch {}
-    }
-    if (target.webkitRequestFullscreen) {
-      try {
-        await target.webkitRequestFullscreen()
-        return true
-      } catch {}
-    }
-  }
-  return false
 }
 
 export function useIsMobileOasis(): boolean {
@@ -381,7 +336,6 @@ export function MobileOasisControls({
         >
           Dash
         </button>
-        <MobileCameraMenu />
         <MobileFocusAgentButton />
         <MobilePrimaryActionButton nearbyAction={nearbyAction} spellControlsEnabled={spellControlsEnabled} />
         {spellControlsEnabled && <MobileManaButton />}
@@ -446,7 +400,7 @@ function MobileFullscreenPrompt() {
       onPointerDown={async event => {
         event.preventDefault()
         event.stopPropagation()
-        const ok = await requestMobileFullscreen()
+        const ok = await requestOasisFullscreen()
         if (ok || isFullscreenActive()) {
           try { window.sessionStorage.setItem('oasis-mobile-fullscreen-prompt-seen', '1') } catch {}
           setVisible(false)
@@ -489,44 +443,6 @@ function dispatchSyntheticLeftClick(): boolean {
   canvas.dispatchEvent(new PointerEvent('pointerup', { ...opts, buttons: 0 }))
   canvas.dispatchEvent(new MouseEvent('click', { clientX, clientY, button: 0, bubbles: true, cancelable: true }))
   return true
-}
-
-function MobileCameraMenu() {
-  const [open, setOpen] = useState(false)
-  const choose = (mode: 'orbit' | 'noclip' | 'third-person', rp1Mode: boolean) => {
-    window.dispatchEvent(new CustomEvent('oasis:set-camera-mode', { detail: { mode, rp1Mode } }))
-    setOpen(false)
-  }
-
-  return (
-    <div className="relative">
-      {open && (
-        <div className="absolute bottom-full right-0 mb-2 flex min-w-28 flex-col gap-1 rounded-lg border border-cyan-200/25 bg-black/82 p-1.5 shadow-[0_0_26px_rgba(34,211,238,0.18)] backdrop-blur-sm">
-          <button type="button" className="rounded-md border border-emerald-200/35 bg-emerald-950/70 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-emerald-50" onPointerDown={event => { event.preventDefault(); event.stopPropagation(); choose('noclip', false) }}>
-            Build
-          </button>
-          <button type="button" className="rounded-md border border-sky-200/35 bg-sky-950/70 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-sky-50" onPointerDown={event => { event.preventDefault(); event.stopPropagation(); choose('third-person', true) }}>
-            RP1
-          </button>
-          <button type="button" className="rounded-md border border-white/20 bg-white/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-white/80" onPointerDown={event => { event.preventDefault(); event.stopPropagation(); choose('orbit', false) }}>
-            Orbit
-          </button>
-        </div>
-      )}
-      <button
-        type="button"
-        className="h-11 min-w-28 touch-none rounded-lg border border-cyan-200/45 bg-cyan-950/72 px-4 text-[11px] font-black uppercase tracking-[0.16em] text-cyan-50 shadow-[0_0_24px_rgba(34,211,238,0.22)] backdrop-blur-sm"
-        onPointerDown={event => {
-          event.preventDefault()
-          event.stopPropagation()
-          setOpen(value => !value)
-        }}
-        aria-label="Camera menu"
-      >
-        Camera
-      </button>
-    </div>
-  )
 }
 
 function MobilePrimaryActionButton({
@@ -748,6 +664,18 @@ function MobileTransformHotbar() {
         aria-label="Open selected object inspector"
       >
         ⚙ Inspect
+      </button>
+      <button
+        type="button"
+        className="h-11 min-w-20 touch-none rounded-lg border-2 border-red-300/50 bg-red-950/72 px-3 text-[11px] font-black uppercase tracking-[0.14em] text-red-50 shadow-[0_0_24px_rgba(239,68,68,0.26)] backdrop-blur-sm transition"
+        onPointerDown={event => {
+          event.preventDefault()
+          event.stopPropagation()
+          dispatch({ type: 'DELETE_OBJECT', payload: { id: selectedObjectId } })
+        }}
+        aria-label="Delete selected object"
+      >
+        Delete
       </button>
       <button
         type="button"

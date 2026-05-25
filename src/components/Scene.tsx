@@ -2477,7 +2477,7 @@ function SettingsMenu({ children, opacity }: { children: React.ReactNode; opacit
         <div
           data-ui-panel
           data-rail-menu="settings"
-          className="fixed left-[10.25rem] top-4 z-[260] max-h-[calc(100vh-2rem)] w-[min(480px,calc(100vw-11.5rem))] overflow-hidden rounded-lg border border-white/10 bg-black/[0.92] font-mono text-white shadow-[0_0_54px_rgba(0,0,0,0.68),0_0_38px_rgba(167,139,250,0.18)] backdrop-blur-md max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:w-auto max-[700px]:max-h-[calc(100vh-70px)]"
+          className="fixed bottom-4 left-[10.25rem] top-4 z-[260] flex w-[min(480px,calc(100vw-11.5rem))] overflow-hidden rounded-lg border border-white/10 bg-black/[0.92] font-mono text-white shadow-[0_0_54px_rgba(0,0,0,0.68),0_0_38px_rgba(167,139,250,0.18)] backdrop-blur-md max-[700px]:bottom-2 max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:w-auto"
           style={{ opacity }}
           onMouseDown={event => event.stopPropagation()}
         >

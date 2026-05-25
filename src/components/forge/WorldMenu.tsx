@@ -429,6 +429,12 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
           className="absolute left-full top-0 z-[260] ml-2 max-h-[82vh] w-[360px] overflow-y-auto rounded-lg border border-white/10 bg-black/[0.92] p-3 font-mono text-white shadow-[0_0_54px_rgba(0,0,0,0.65),0_0_38px_rgba(34,211,238,0.14)] backdrop-blur-md max-[700px]:fixed max-[700px]:left-2 max-[700px]:right-2 max-[700px]:top-[58px] max-[700px]:ml-0 max-[700px]:max-h-[calc(100vh-70px)] max-[700px]:w-auto max-[700px]:p-2"
           onMouseDown={event => event.stopPropagation()}
         >
+          <style>{`
+            @keyframes oasisLikedButtonPulse {
+              0%, 100% { box-shadow: 0 0 10px rgba(244,114,182,0.20), inset 0 0 0 rgba(244,114,182,0); }
+              50% { box-shadow: 0 0 24px rgba(244,114,182,0.72), inset 0 0 10px rgba(244,114,182,0.20); }
+            }
+          `}</style>
           <div className="flex items-start gap-3 border-b border-white/10 pb-3">
             <button
               type="button"
@@ -451,7 +457,10 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
                       Edit
                     </button>
                   )}
-                  <label className={`flex items-center gap-1.5 text-[9px] font-black uppercase tracking-[0.1em] text-amber-100/75 ${rp1Locked ? 'cursor-not-allowed opacity-55' : 'cursor-pointer'}`}>
+                  <label className={`flex items-center gap-2 text-[15px] font-black uppercase tracking-[0.08em] ${rp1Locked ? 'cursor-not-allowed opacity-55' : 'cursor-pointer'}`}>
+                    <span className={!settings.rp1Mode ? 'text-emerald-200 drop-shadow-[0_0_8px_rgba(16,185,129,0.95)]' : 'text-white/30'}>
+                      Build
+                    </span>
                     <input
                       type="checkbox"
                       checked={settings.rp1Mode}
@@ -459,16 +468,18 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
                       onChange={event => updateSetting('rp1Mode', event.target.checked)}
                       className="sr-only"
                     />
-                    <span className="relative h-4 w-8 rounded-full border border-amber-200/35 bg-stone-950 shadow-inner">
+                    <span className={`relative h-5 w-10 rounded-full border shadow-inner transition ${settings.rp1Mode ? 'border-emerald-200/65 bg-emerald-950/70 shadow-[0_0_14px_rgba(16,185,129,0.34)]' : 'border-emerald-200/45 bg-stone-950'}`}>
                       <span
-                        className="absolute left-0.5 top-0.5 h-3 w-3 rounded-full border border-amber-100/35 bg-stone-700 transition"
+                        className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full border border-emerald-100/40 bg-stone-700 transition"
                         style={{
-                          transform: settings.rp1Mode ? 'translateX(16px)' : 'translateX(0)',
-                          background: settings.rp1Mode ? '#fde68a' : undefined,
+                          transform: settings.rp1Mode ? 'translateX(20px)' : 'translateX(0)',
+                          background: settings.rp1Mode ? '#6ee7b7' : undefined,
                         }}
                       />
                     </span>
-                    RP1
+                    <span className={settings.rp1Mode ? 'text-emerald-200 drop-shadow-[0_0_8px_rgba(16,185,129,0.95)]' : 'text-white/30'}>
+                      Play
+                    </span>
                   </label>
                 </div>
               </div>
@@ -482,6 +493,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
                     {(ownerName[0] || '?').toUpperCase()}
                   </span>
                 )}
+                <span className="shrink-0 text-white/45">Author:</span>
                 <span className="min-w-0 truncate">{ownerName}</span>
                 <span className="shrink-0 text-cyan-200/75">Lv {ownerLevel}</span>
               </div>
@@ -561,6 +573,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
               style={{
                 borderColor: likedByViewer ? 'rgba(244,114,182,0.62)' : 'rgba(255,255,255,0.10)',
                 background: likedByViewer ? 'rgba(219,39,119,0.16)' : 'rgba(255,255,255,0.05)',
+                animation: likedByViewer ? undefined : 'oasisLikedButtonPulse 1.6s ease-in-out infinite',
               }}
             >
               <div className="text-sm font-black text-cyan-100">{likeCount}</div>

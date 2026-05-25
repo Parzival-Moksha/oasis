@@ -4,9 +4,10 @@
 // GRAPHICS TAB — bloom, post-FX toggles, FOV, grid, sky, opacity, FPS counter
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { useContext } from 'react'
+import { useContext, useEffect, useState } from 'react'
 import { SettingsContext } from '@/components/scene-lib/contexts'
 import type { SharedTabProps } from '../types'
+import { canRequestFullscreen, isFullscreenActive, setOasisFullscreen } from '@/lib/fullscreen-controls'
 
 function Toggle({
   label,
@@ -76,10 +77,53 @@ function Slider({
 
 export function GraphicsTab({ menuOpacity, onMenuOpacityChange }: SharedTabProps) {
   const { settings, updateSetting } = useContext(SettingsContext)
+  const [fullscreenActive, setFullscreenActive] = useState(false)
+  const [fullscreenAvailable, setFullscreenAvailable] = useState(false)
+
+  useEffect(() => {
+    const sync = () => setFullscreenActive(isFullscreenActive())
+    setFullscreenAvailable(canRequestFullscreen())
+    sync()
+    document.addEventListener('fullscreenchange', sync)
+    document.addEventListener('webkitfullscreenchange', sync)
+    return () => {
+      document.removeEventListener('fullscreenchange', sync)
+      document.removeEventListener('webkitfullscreenchange', sync)
+    }
+  }, [])
 
   return (
     <div className="space-y-3">
       <section>
+        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Display</div>
+        <Toggle
+          label="Fullscreen"
+          active={fullscreenActive}
+          onChange={() => {
+            void setOasisFullscreen(!fullscreenActive).finally(() => {
+              setFullscreenActive(isFullscreenActive())
+            })
+          }}
+          accent="bg-cyan-600"
+        />
+        {!fullscreenAvailable && (
+          <div className="px-1 pb-1 text-[10px] text-gray-500">This browser may already be in standalone app mode.</div>
+        )}
+        <div className="mt-2">
+          <div className="mb-1.5 text-sm text-gray-300">Camera Mode</div>
+          <select
+            value={settings.controlMode}
+            onChange={e => updateSetting('controlMode', e.target.value as 'orbit' | 'noclip' | 'third-person')}
+            className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-300 hover:border-emerald-500 focus:border-emerald-500 focus:outline-none transition-colors"
+          >
+            <option value="orbit">Orbit (Classic)</option>
+            <option value="noclip">Noclip (fly)</option>
+            <option value="third-person">Third Person (Avatar)</option>
+          </select>
+        </div>
+      </section>
+
+      <section className="border-t border-white/10 pt-3">
         <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Post-FX</div>
         <Toggle label="Bloom" active={settings.bloomEnabled} onChange={() => updateSetting('bloomEnabled', !settings.bloomEnabled)} />
         {settings.bloomEnabled && (

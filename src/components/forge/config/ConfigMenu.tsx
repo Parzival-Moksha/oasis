@@ -33,9 +33,9 @@ export function ConfigMenu({ menuOpacity, onMenuOpacityChange, consoleControl, i
   const tabProps = { menuOpacity, onMenuOpacityChange, consoleControl }
 
   return (
-    <div className="flex flex-col w-full max-[700px]:w-full">
+    <div className="flex min-h-0 w-full max-h-[inherit] flex-col max-[700px]:w-full">
       {/* ─═̷─═̷─ HEADER ─═̷─═̷─ */}
-      <div className="sticky top-0 z-10 bg-black/[0.92] backdrop-blur-md border-b border-white/10 px-3 pt-3 pb-2 max-[700px]:px-2 max-[700px]:pt-2">
+      <div className="shrink-0 bg-black/[0.92] backdrop-blur-md border-b border-white/10 px-3 pt-3 pb-2 max-[700px]:px-2 max-[700px]:pt-2">
         <div className="flex items-center gap-3 mb-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-md border border-violet-300/35 bg-violet-300/10 text-[11px] font-black text-violet-100">
             SYS
@@ -73,7 +73,7 @@ export function ConfigMenu({ menuOpacity, onMenuOpacityChange, consoleControl, i
       </div>
 
       {/* ─═̷─═̷─ CONTENT ─═̷─═̷─ */}
-      <div className="p-3 max-[700px]:p-2 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 12rem)' }}>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 pb-5 max-[700px]:p-2 max-[700px]:pb-[calc(env(safe-area-inset-bottom)+1rem)]" style={{ scrollbarWidth: 'thin' }}>
         {activeTab === 'graphics' && <GraphicsTab {...tabProps} />}
         {activeTab === 'fonts' && <FontsTab />}
         {activeTab === 'sound' && <SoundTab />}

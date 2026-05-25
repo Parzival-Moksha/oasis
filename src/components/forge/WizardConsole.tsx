@@ -1994,10 +1994,8 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
               style={{ backgroundImage: 'none' }}
               title="LLM model for crafting + terrain"
             >
-              <option value="google/gemini-3.1-flash-lite-preview">Gemini 3.1 Flash Lite Preview</option>
               <option value="google/gemini-3.1-flash-lite">Gemini 3.1 Flash Lite</option>
-              <option value="cc-opus">CC Opus</option>
-              <option value="cc-sonnet">CC Sonnet</option>
+              <option value="google/gemini-3.5-flash">Gemini 3.5 Flash</option>
               <option value="anthropic/claude-sonnet-4-6">Sonnet 4.6</option>
               <option value="anthropic/claude-haiku-4-5">Haiku 4.5</option>
               <option value="z-ai/glm-5">GLM-5</option>
@@ -2006,7 +2004,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
               <option value="qwen/qwen3.5-397b-a17b">Qwen 3.5 397B A17B</option>
               <option value="liquid/lfm-2-24b-a2b">LFM 2 24B A2B</option>
               <option value="openai/gpt-5.4">GPT-5.4</option>
-              <option value="google/gemini-3.1-pro-preview">Gemini 3.1 Pro Preview</option>
+              <option value="openai/gpt-5.4-mini">GPT-5.4 Mini</option>
               <option value="minimax/minimax-m2.7">Minimax M2.7</option>
             </select>
           </div>

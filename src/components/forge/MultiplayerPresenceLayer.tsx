@@ -521,6 +521,8 @@ export function MultiplayerPresenceLayer() {
     return worldMutationBus.subscribe(mutation => {
       if (mutation.kind === 'object_added') {
         store.applyRemoteCatalogPlacement(mutation.payload)
+      } else if (mutation.kind === 'object_updated') {
+        store.applyRemoteCatalogUpdate(mutation.payload.id, mutation.payload.updates)
       } else if (mutation.kind === 'object_removed') {
         applyRemoteObjectRemoval(mutation.payload.id, mutation.payload.linkedAvatarIds)
       } else if (mutation.kind === 'object_transformed') {

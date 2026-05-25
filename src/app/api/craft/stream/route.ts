@@ -8,8 +8,8 @@
 import { NextRequest } from 'next/server'
 
 const ALLOWED_MODELS = [
-  'google/gemini-3.1-flash-lite-preview',
   'google/gemini-3.1-flash-lite',
+  'google/gemini-3.5-flash',
   'anthropic/claude-sonnet-4-6',
   'anthropic/claude-haiku-4-5',
   'z-ai/glm-5',
@@ -18,10 +18,10 @@ const ALLOWED_MODELS = [
   'qwen/qwen3.5-397b-a17b',
   'liquid/lfm-2-24b-a2b',
   'openai/gpt-5.4',
-  'google/gemini-3.1-pro-preview',
+  'openai/gpt-5.4-mini',
   'minimax/minimax-m2.7',
 ]
-const DEFAULT_MODEL = 'google/gemini-3.1-flash-lite-preview'
+const DEFAULT_MODEL = 'google/gemini-3.1-flash-lite'
 
 import { CRAFT_SYSTEM_PROMPT } from '../../../../lib/craft-prompt'
 

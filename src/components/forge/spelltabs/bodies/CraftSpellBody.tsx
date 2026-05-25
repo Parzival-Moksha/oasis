@@ -21,10 +21,9 @@ import { CollapsibleSection, scrollIntoViewOnFocus } from '../SpellTabFrame'
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 
 const CRAFT_MODELS = [
-  { id: 'google/gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash Lite Preview' },
   { id: 'google/gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite' },
-  { id: 'cc-opus', label: 'CC Opus' },
-  { id: 'cc-sonnet', label: 'CC Sonnet' },
+  { id: 'google/gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
+  { id: 'openai/gpt-5.4-mini', label: 'GPT-5.4 Mini' },
   { id: 'anthropic/claude-sonnet-4-6', label: 'Sonnet 4.6' },
   { id: 'anthropic/claude-haiku-4-5', label: 'Haiku 4.5' },
 ] as const

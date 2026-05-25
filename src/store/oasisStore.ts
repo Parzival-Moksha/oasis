@@ -195,6 +195,13 @@ const MAX_ACTIVE_MARCH_ORDER_VFX = 8
 // of scattering the guard across every localStorage read/write in the store.
 const isBrowser = typeof window !== 'undefined'
 const stored  = (key: string): string | null => isBrowser ? localStorage.getItem(key) : null
+function storedCraftModel(): string {
+  const value = stored('oasis-craft-model')
+  if (!value || value === 'google/gemini-3.1-flash-lite-preview' || value.startsWith('cc-')) {
+    return 'google/gemini-3.1-flash-lite'
+  }
+  return value
+}
 function playSpatialWebSound(event: SoundEvent): void {
   if (!isBrowser) return
   try {
@@ -913,6 +920,7 @@ interface OasisState {
   placeCatalogAsset: (catalogId: string, name: string, path: string, defaultScale: number) => void
   removeCatalogAsset: (id: string) => void
   applyRemoteCatalogPlacement: (placement: CatalogPlacement) => void
+  applyRemoteCatalogUpdate: (id: string, updates: Partial<CatalogPlacement>) => void
   applyRemoteCatalogRemoval: (id: string) => void
   placePortalGateAt: (args: {
     variant: PortalGateVariant
@@ -1392,7 +1400,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   fpsCounterFontSize: 14,
 
   // ─═̷─═̷─🧠 AI MODEL SETTINGS ─═̷─═̷─🧠
-  craftModel: stored('oasis-craft-model') || 'google/gemini-3.1-flash-lite-preview',
+  craftModel: storedCraftModel(),
   voiceModel: stored('oasis-voice-model') || 'merlin-v1',
 
   // ─═̷─═̷─🔥 REALM STATE ─═̷─═̷─🔥
@@ -1696,6 +1704,13 @@ export const useOasisStore = create<OasisState>((set, get) => {
       if (state.placedCatalogAssets.some(existing => existing.id === placement.id)) return state
       return { placedCatalogAssets: [...state.placedCatalogAssets, placement] }
     })
+  },
+  applyRemoteCatalogUpdate: (id: string, updates: Partial<CatalogPlacement>) => {
+    set(state => ({
+      placedCatalogAssets: state.placedCatalogAssets.map(asset =>
+        asset.id === id ? { ...asset, ...updates } : asset
+      ),
+    }))
   },
   applyRemoteCatalogRemoval: (id: string) => {
     set(state => ({
@@ -2771,6 +2786,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         ca.id === id ? { ...ca, ...updates } : ca
       ),
     }))
+    worldMutationBus.broadcast({ kind: 'object_updated', payload: { id, updates } })
     setTimeout(() => get().saveWorldState(), 100)
   },
 
@@ -3847,7 +3863,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
     const worldExists = registry.some(w => w.id === currentId)
     const serverActiveExists = Boolean(serverActiveWorld?.worldId && registry.some(w => w.id === serverActiveWorld.worldId))
     const preferredWorldId = typeof window !== 'undefined' ? window.__oasisPreferredWorldId : undefined
+    const fallbackWorldId = typeof window !== 'undefined' ? window.__oasisFallbackWorldId : undefined
     const preferredWorldExists = Boolean(preferredWorldId && registry.some(w => w.id === preferredWorldId))
+    const fallbackWorldExists = Boolean(fallbackWorldId && registry.some(w => w.id === fallbackWorldId))
     if (preferredWorldId && preferredWorldExists) {
       setActiveWorldId(preferredWorldId, { publish: true })
       set({ worldRegistry: registry, sceneLibrary: library, activeWorldId: preferredWorldId })
@@ -3857,6 +3875,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
     } else if (!worldExists && serverActiveExists && serverActiveWorld?.worldId) {
       setActiveWorldId(serverActiveWorld.worldId, { publish: true })
       set({ worldRegistry: registry, sceneLibrary: library, activeWorldId: serverActiveWorld.worldId })
+    } else if (!worldExists && fallbackWorldId && fallbackWorldExists) {
+      setActiveWorldId(fallbackWorldId, { publish: true })
+      set({ worldRegistry: registry, sceneLibrary: library, activeWorldId: fallbackWorldId })
     } else if (!worldExists && registry.length > 0) {
       const firstWorld = registry[0]
       setActiveWorldId(firstWorld.id, { publish: true })

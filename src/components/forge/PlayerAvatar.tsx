@@ -725,6 +725,7 @@ export function PlayerAvatar({
       offset.addScaledVector(camRight, shoulderOffset)
 
       const lookTarget = _lookTarget.current.copy(positionRef.current)
+      lookTarget.addScaledVector(camRight, shoulderOffset)
       lookTarget.addScaledVector(camForward, lookAhead)
       lookTarget.y += lookTargetHeight
 

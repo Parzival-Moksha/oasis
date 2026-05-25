@@ -235,7 +235,7 @@ export const OASIS_MCP_TOOL_SPECS = [
   },
   {
     name: 'craft_scene',
-    description: 'Create procedural geometry scenes in the full/local Oasis tool surface. For Hermes, Merlin, and OpenClaw, self-crafted objects are the default. Provide an objects array for direct self-crafting. Use prompt text only when you deliberately set strategy="sculptor". Prompt-mode crafting defaults to cc-opus and may continue asynchronously while primitives appear over time. Hosted 04515 public bridges should use self_craft_scene instead.',
+    description: 'Create procedural geometry scenes in the full/local Oasis tool surface. For Hermes, Merlin, and OpenClaw, self-crafted objects are the default. Provide an objects array for direct self-crafting. Use prompt text only when you deliberately set strategy="sculptor". Prompt-mode crafting defaults to google/gemini-3.1-flash-lite and may continue asynchronously while primitives appear over time. Hosted 04515 public bridges should use self_craft_scene instead.',
     inputSchema: z.object({
       worldId: z.string().optional(),
       name: z.string().optional(),

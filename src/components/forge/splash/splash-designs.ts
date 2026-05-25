@@ -207,7 +207,7 @@ export const SPLASH_MODELS: { slug: SplashModelSlug; label: string }[] = [
   { slug: 'gpt2', label: 'GPT Image 2' },
 ]
 
-export const DEFAULT_SPLASH_DESIGN: SplashDesignId = 'retrowave-rp1'
+export const DEFAULT_SPLASH_DESIGN: SplashDesignId = 'wizards-atrium'
 export const DEFAULT_SPLASH_MODEL: SplashModelSlug = 'nano2'
 
 /** Build the URL we'd expect for a given design × model combo. */

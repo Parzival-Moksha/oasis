@@ -13,21 +13,6 @@ export function ControlsTab() {
   return (
     <div className="space-y-3">
       <section>
-        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Camera Mode</div>
-        <select
-          value={settings.controlMode}
-          onChange={e => updateSetting('controlMode', e.target.value as 'orbit' | 'noclip' | 'third-person')}
-          className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-300 hover:border-emerald-500 focus:border-emerald-500 focus:outline-none transition-colors mb-2"
-        >
-          <option value="orbit">Orbit (Classic)</option>
-          <option value="noclip">Noclip (fly)</option>
-          <option value="third-person">Third Person (Avatar)</option>
-        </select>
-        <div className="text-[10px] text-gray-500">Switch with Ctrl+Alt+C in-world.</div>
-      </section>
-
-      {(settings.controlMode === 'noclip' || settings.controlMode === 'third-person') && (
-        <section className="border-t border-white/10 pt-3">
           <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Free-look</div>
 
           <div className="py-1.5">
@@ -57,8 +42,7 @@ export function ControlsTab() {
               className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
             />
           </div>
-        </section>
-      )}
+      </section>
     </div>
   )
 }

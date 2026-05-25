@@ -2122,7 +2122,7 @@ tools.share_world_link = async (args) => {
 
 function normalizeCraftModel(value: unknown): string {
   const requested = validStr(value, '').toLowerCase()
-  if (!requested) return process.env.OASIS_PROMPT_CRAFT_MODEL?.trim() || 'google/gemini-3.1-flash-lite-preview'
+  if (!requested) return process.env.OASIS_PROMPT_CRAFT_MODEL?.trim() || 'google/gemini-3.1-flash-lite'
   if (requested === 'opus') return 'cc-opus'
   if (requested === 'sonnet') return 'cc-sonnet'
   return requested

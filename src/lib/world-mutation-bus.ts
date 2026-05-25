@@ -8,6 +8,7 @@ import type { AgentAvatar, AgentWindow, PlacementVfxType } from '@/store/oasisSt
 
 export type WorldMutation =
   | { kind: 'object_added'; payload: CatalogPlacement }
+  | { kind: 'object_updated'; payload: { id: string; updates: Partial<CatalogPlacement> } }
   | { kind: 'object_removed'; payload: { id: string; linkedAvatarIds?: string[] } }
   | { kind: 'object_transformed'; payload: { id: string; position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number } }
   | { kind: 'crafted_scene_added'; payload: CraftedScene }

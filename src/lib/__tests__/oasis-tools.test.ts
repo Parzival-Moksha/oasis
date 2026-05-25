@@ -1723,7 +1723,7 @@ describe('craft_scene prompt fallback', () => {
     expect(fetchSpy).toHaveBeenCalledWith(
       expect.stringContaining('/api/craft/stream'),
       expect.objectContaining({
-        body: expect.stringContaining('"model":"google/gemini-3.1-flash-lite-preview"'),
+        body: expect.stringContaining('"model":"google/gemini-3.1-flash-lite"'),
       }),
     )
 

@@ -42,8 +42,13 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: 'Oasis',
   description: 'Text-to-3D world builder',
+  manifest: '/manifest.webmanifest',
   icons: {
     icon: '/favicon.svg',
+  },
+  appleWebApp: {
+    capable: true,
+    title: 'Oasis',
   },
 }
 

@@ -13,6 +13,7 @@ declare global {
   interface Window {
     oasisDesktopCapture?: OasisDesktopCaptureBridge
     __oasisPreferredWorldId?: string
+    __oasisFallbackWorldId?: string
   }
 
   namespace JSX {

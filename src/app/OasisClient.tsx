@@ -24,7 +24,7 @@ const Scene = dynamic(() => import('@/components/Scene'), {
   loading: () => null,
 })
 
-export default function OasisClient({ initialWorldId }: { initialWorldId?: string }) {
+export default function OasisClient({ initialWorldId, fallbackWorldId }: { initialWorldId?: string; fallbackWorldId?: string }) {
   const activeWorldId = useOasisStore(s => s.activeWorldId)
   const worldRegistry = useOasisStore(s => s.worldRegistry)
   const switchWorld = useOasisStore(s => s.switchWorld)
@@ -44,7 +44,9 @@ export default function OasisClient({ initialWorldId }: { initialWorldId?: strin
   useEffect(() => {
     if (initialWorldId) window.__oasisPreferredWorldId = initialWorldId
     else delete window.__oasisPreferredWorldId
-  }, [initialWorldId])
+    if (fallbackWorldId) window.__oasisFallbackWorldId = fallbackWorldId
+    else delete window.__oasisFallbackWorldId
+  }, [fallbackWorldId, initialWorldId])
 
   useEffect(() => {
     let cancelled = false

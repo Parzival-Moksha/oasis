@@ -34,6 +34,7 @@ import { preloadSpellSoundManifest, resolveSpellSoundUrl } from '@/lib/spell-sou
 import { useOasisStore } from '@/store/oasisStore'
 import { getPvpEnabled, onHitAward, onRemoteBolt, sendPvpCast, sendPvpReportHit, type PvpHitAwardEvent, type PvpRemoteBolt } from '@/lib/pvp-bridge'
 import type { OasisSettings } from '@/components/scene-lib/types'
+import { isProbablyMobileDevice } from '@/lib/mobile-controls'
 
 import {
   BOLT_ARMING_DISTANCE_M,
@@ -733,6 +734,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
       if (event.button !== 0) return
       if (!isCanvasEvent(event)) return
       if (isTypingTarget(event.target)) return
+      if (document.pointerLockElement !== canvas && !isProbablyMobileDevice()) return
       if (!canCastBolt()) return
       suppressCastFollowupUntilRef.current = Date.now() + 700
       event.preventDefault()
