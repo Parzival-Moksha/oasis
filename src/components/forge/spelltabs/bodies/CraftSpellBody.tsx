@@ -15,18 +15,11 @@ import { addToSceneLibrary, getSceneLibrary } from '../../../../lib/forge/scene-
 import { generateSingleCraftedThumbnail } from '../../../../hooks/useThumbnailGenerator'
 import { awardXp } from '../../../../hooks/useXp'
 import { derivePlayerCastSpawn } from '../../../../lib/player-avatar-runtime'
+import { CRAFT_MODEL_OPTIONS } from '../../../../lib/craft-models'
 import type { CraftedScene } from '../../../../lib/conjure/types'
 import { CollapsibleSection, scrollIntoViewOnFocus } from '../SpellTabFrame'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
-
-const CRAFT_MODELS = [
-  { id: 'google/gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite' },
-  { id: 'google/gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
-  { id: 'openai/gpt-5.4-mini', label: 'GPT-5.4 Mini' },
-  { id: 'anthropic/claude-sonnet-4-6', label: 'Sonnet 4.6' },
-  { id: 'anthropic/claude-haiku-4-5', label: 'Haiku 4.5' },
-] as const
 
 export interface CraftSpellBodyProps {
   defaultExpandNew?: boolean
@@ -72,8 +65,7 @@ export function CraftSpellBody({ defaultExpandNew = true, defaultExpandGallery =
     }
 
     try {
-      const isCC = craftModel.startsWith('cc-')
-      const res = await fetch(`${OASIS_BASE}/api/craft/${isCC ? 'cc' : 'stream'}`, {
+      const res = await fetch(`${OASIS_BASE}/api/craft/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: text, model: craftModel }),
@@ -149,14 +141,14 @@ export function CraftSpellBody({ defaultExpandNew = true, defaultExpandGallery =
         accentColor="#60A5FA"
         expanded={expandNew}
         onToggle={() => setExpandNew(e => !e)}
-        rightSlot={CRAFT_MODELS.find(m => m.id === craftModel)?.label || craftModel}
+        rightSlot={CRAFT_MODEL_OPTIONS.find(m => m.id === craftModel)?.label || craftModel}
       >
         <select
           value={craftModel}
           onChange={e => setCraftModel(e.target.value)}
           className="w-full text-[10px] bg-black/60 border border-blue-500/30 rounded px-2 py-1 text-blue-200 font-mono focus:outline-none focus:border-blue-400/60 cursor-pointer"
         >
-          {CRAFT_MODELS.map(m => (
+          {CRAFT_MODEL_OPTIONS.map(m => (
             <option key={m.id} value={m.id}>{m.label}</option>
           ))}
         </select>

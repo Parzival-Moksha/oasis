@@ -5,32 +5,18 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { describe, it, expect } from 'vitest'
+import { DEFAULT_CRAFT_MODEL, normalizeCraftModelId } from '../craft-models'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Extract the validation logic from the route for unit testing.
 // The route itself is a Next.js handler — we test the pure logic here.
 // ═══════════════════════════════════════════════════════════════════════════
 
-const ALLOWED_MODELS = [
-  'anthropic/claude-sonnet-4-6',
-  'anthropic/claude-haiku-4-5',
-  'z-ai/glm-5',
-  'x-ai/grok-4.20-beta',
-  'nvidia/nemotron-3-super-120b-a12b:free',
-  'qwen/qwen3.5-397b-a17b',
-  'liquid/lfm-2-24b-a2b',
-  'openai/gpt-5.4',
-  'google/gemini-3.1-pro-preview',
-  'minimax/minimax-m2.7',
-]
-const DEFAULT_MODEL = 'anthropic/claude-haiku-4-5'
 const MAX_MESSAGES = 200
 
 /** Mirrors the model selection logic from the vibecode route */
 function resolveModel(requestedModel: string | undefined): string {
-  return ALLOWED_MODELS.includes(requestedModel as string)
-    ? (requestedModel as string)
-    : DEFAULT_MODEL
+  return normalizeCraftModelId(requestedModel)
 }
 
 /** Mirrors the message validation logic */
@@ -63,36 +49,34 @@ function buildLlmMessages(
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('Vibecode Model Selection', () => {
-  it('accepts claude-sonnet-4-6 as valid model', () => {
-    expect(resolveModel('anthropic/claude-sonnet-4-6')).toBe('anthropic/claude-sonnet-4-6')
-  })
-
-  it('accepts claude-haiku-4-5 as valid model', () => {
-    expect(resolveModel('anthropic/claude-haiku-4-5')).toBe('anthropic/claude-haiku-4-5')
+  it('accepts Gemini Flash models as valid models', () => {
+    expect(resolveModel('google/gemini-3.1-flash-lite')).toBe('google/gemini-3.1-flash-lite')
+    expect(resolveModel('google/gemini-3.5-flash')).toBe('google/gemini-3.5-flash')
   })
 
   it('accepts glm-5 as valid model', () => {
     expect(resolveModel('z-ai/glm-5')).toBe('z-ai/glm-5')
   })
 
-  it('accepts grok-4.20-beta as valid model', () => {
-    expect(resolveModel('x-ai/grok-4.20-beta')).toBe('x-ai/grok-4.20-beta')
+  it('accepts the latest GPT mini model', () => {
+    expect(resolveModel('openai/gpt-5.4-mini')).toBe('openai/gpt-5.4-mini')
   })
 
   it('falls back to default for unknown model', () => {
-    expect(resolveModel('openai/gpt-4')).toBe(DEFAULT_MODEL)
+    expect(resolveModel('openai/gpt-4')).toBe(DEFAULT_CRAFT_MODEL)
   })
 
   it('falls back to default for undefined model', () => {
-    expect(resolveModel(undefined)).toBe(DEFAULT_MODEL)
+    expect(resolveModel(undefined)).toBe(DEFAULT_CRAFT_MODEL)
   })
 
   it('falls back to default for empty string', () => {
-    expect(resolveModel('')).toBe(DEFAULT_MODEL)
+    expect(resolveModel('')).toBe(DEFAULT_CRAFT_MODEL)
   })
 
   it('is case-sensitive — capitalized model is rejected', () => {
-    expect(resolveModel('Anthropic/Claude-Haiku-4-5')).toBe(DEFAULT_MODEL)
+    expect(resolveModel('Anthropic/Claude-Haiku-4-5')).toBe(DEFAULT_CRAFT_MODEL)
+    expect(resolveModel('cc-sonnet')).toBe(DEFAULT_CRAFT_MODEL)
   })
 })
 

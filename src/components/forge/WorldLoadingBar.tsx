@@ -10,7 +10,10 @@ export function WorldLoadingBar() {
 
   if (!state.isLoading && state.progress >= 1) return null
 
-  const estimatedTotal = Math.max(100, state.total, state.loaded)
+  const exactSmallLoad = state.total > 0 && state.total < 25
+  const estimatedTotal = exactSmallLoad
+    ? Math.max(state.total, state.loaded)
+    : Math.max(100, state.total, state.loaded)
   const pct = state.total > 0
     ? Math.max(0, Math.min(1, state.loaded / estimatedTotal))
     : Math.max(0, Math.min(0.95, state.progress))

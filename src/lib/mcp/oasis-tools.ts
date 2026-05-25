@@ -61,6 +61,7 @@ import {
   type WorldAccessContext,
   type WorldAccessSubject,
 } from '../forge/world-access'
+import { DEFAULT_CRAFT_MODEL, normalizeCraftModelId } from '../craft-models'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -2121,11 +2122,9 @@ tools.share_world_link = async (args) => {
 }
 
 function normalizeCraftModel(value: unknown): string {
-  const requested = validStr(value, '').toLowerCase()
-  if (!requested) return process.env.OASIS_PROMPT_CRAFT_MODEL?.trim() || 'google/gemini-3.1-flash-lite'
-  if (requested === 'opus') return 'cc-opus'
-  if (requested === 'sonnet') return 'cc-sonnet'
-  return requested
+  const requested = validStr(value, '')
+  if (requested) return normalizeCraftModelId(requested)
+  return normalizeCraftModelId(process.env.OASIS_PROMPT_CRAFT_MODEL) || DEFAULT_CRAFT_MODEL
 }
 
 const CRAFT_GEOMETRY_TYPES = ['box', 'sphere', 'cylinder', 'cone', 'torus', 'plane', 'capsule', 'text'] as const
@@ -2220,8 +2219,7 @@ async function startPromptCraftJob(
 
       await upsertCraftedSceneInWorld(worldId, placeholderScene, args, 'scene_craft_progress')
 
-      const isCC = model.startsWith('cc-')
-      const response = await fetch(`${INTERNAL_OASIS_BASE_URL}/api/craft/${isCC ? 'cc' : 'stream'}`, {
+      const response = await fetch(`${INTERNAL_OASIS_BASE_URL}/api/craft/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, model }),

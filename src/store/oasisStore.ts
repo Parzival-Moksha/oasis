@@ -25,6 +25,7 @@ import {
 } from '../lib/forge/world-persistence'
 import { worldMutationBus } from '../lib/world-mutation-bus'
 import type { SpellId } from '../lib/spellbook'
+import { normalizeCraftModelId } from '../lib/craft-models'
 
 // Per-client throttle for terrain-brush broadcasts. Module-level (one per
 // browser tab) is correct here — we want this user's brush rate-limited
@@ -196,11 +197,7 @@ const MAX_ACTIVE_MARCH_ORDER_VFX = 8
 const isBrowser = typeof window !== 'undefined'
 const stored  = (key: string): string | null => isBrowser ? localStorage.getItem(key) : null
 function storedCraftModel(): string {
-  const value = stored('oasis-craft-model')
-  if (!value || value === 'google/gemini-3.1-flash-lite-preview' || value.startsWith('cc-')) {
-    return 'google/gemini-3.1-flash-lite'
-  }
-  return value
+  return normalizeCraftModelId(stored('oasis-craft-model'))
 }
 function playSpatialWebSound(event: SoundEvent): void {
   if (!isBrowser) return
@@ -1517,8 +1514,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
   setFpsCounterEnabled: (fpsCounterEnabled) => set({ fpsCounterEnabled }),
   setFpsCounterFontSize: (fpsCounterFontSize) => set({ fpsCounterFontSize }),
   setCraftModel: (craftModel) => {
-    persist('oasis-craft-model', craftModel)
-    set({ craftModel })
+    const normalizedCraftModel = normalizeCraftModelId(craftModel)
+    persist('oasis-craft-model', normalizedCraftModel)
+    set({ craftModel: normalizedCraftModel })
   },
   setVoiceModel: (voiceModel) => {
     persist('oasis-voice-model', voiceModel)
@@ -3862,6 +3860,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     const currentId = get().activeWorldId
     const worldExists = registry.some(w => w.id === currentId)
     const serverActiveExists = Boolean(serverActiveWorld?.worldId && registry.some(w => w.id === serverActiveWorld.worldId))
+    const serverActiveIsStored = serverActiveWorld?.source === 'stored'
     const preferredWorldId = typeof window !== 'undefined' ? window.__oasisPreferredWorldId : undefined
     const fallbackWorldId = typeof window !== 'undefined' ? window.__oasisFallbackWorldId : undefined
     const preferredWorldExists = Boolean(preferredWorldId && registry.some(w => w.id === preferredWorldId))
@@ -3869,15 +3868,21 @@ export const useOasisStore = create<OasisState>((set, get) => {
     if (preferredWorldId && preferredWorldExists) {
       setActiveWorldId(preferredWorldId, { publish: true })
       set({ worldRegistry: registry, sceneLibrary: library, activeWorldId: preferredWorldId })
+    } else if (serverActiveWorld?.authoritative && serverActiveExists && serverActiveIsStored) {
+      setActiveWorldId(serverActiveWorld.worldId, { publish: true })
+      set({ worldRegistry: registry, sceneLibrary: library, activeWorldId: serverActiveWorld.worldId })
+    } else if (!worldExists && serverActiveExists && serverActiveWorld?.worldId && serverActiveIsStored) {
+      setActiveWorldId(serverActiveWorld.worldId, { publish: true })
+      set({ worldRegistry: registry, sceneLibrary: library, activeWorldId: serverActiveWorld.worldId })
+    } else if (!worldExists && fallbackWorldId && fallbackWorldExists) {
+      setActiveWorldId(fallbackWorldId, { publish: true })
+      set({ worldRegistry: registry, sceneLibrary: library, activeWorldId: fallbackWorldId })
     } else if (serverActiveWorld?.authoritative && serverActiveExists) {
       setActiveWorldId(serverActiveWorld.worldId, { publish: true })
       set({ worldRegistry: registry, sceneLibrary: library, activeWorldId: serverActiveWorld.worldId })
     } else if (!worldExists && serverActiveExists && serverActiveWorld?.worldId) {
       setActiveWorldId(serverActiveWorld.worldId, { publish: true })
       set({ worldRegistry: registry, sceneLibrary: library, activeWorldId: serverActiveWorld.worldId })
-    } else if (!worldExists && fallbackWorldId && fallbackWorldExists) {
-      setActiveWorldId(fallbackWorldId, { publish: true })
-      set({ worldRegistry: registry, sceneLibrary: library, activeWorldId: fallbackWorldId })
     } else if (!worldExists && registry.length > 0) {
       const firstWorld = registry[0]
       setActiveWorldId(firstWorld.id, { publish: true })

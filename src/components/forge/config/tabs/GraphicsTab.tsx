@@ -21,9 +21,14 @@ function Toggle({
   accent?: string
 }) {
   return (
-    <label className="flex items-center gap-3 py-1.5 cursor-pointer group hover:bg-white/5 rounded px-1 -mx-1 transition-colors">
+    <button
+      type="button"
+      role="switch"
+      aria-checked={active}
+      onClick={onChange}
+      className="flex w-full items-center gap-3 py-1.5 text-left cursor-pointer group hover:bg-white/5 rounded px-1 -mx-1 transition-colors"
+    >
       <div
-        onClick={onChange}
         className={`w-10 h-5 rounded-full transition-all cursor-pointer relative flex-shrink-0 ${
           active ? `${accent} shadow-lg shadow-purple-500/30` : 'bg-gray-700'
         }`}
@@ -33,7 +38,7 @@ function Toggle({
         }`} />
       </div>
       <span className="text-sm text-gray-300 group-hover:text-white transition-colors whitespace-nowrap">{label}</span>
-    </label>
+    </button>
   )
 }
 

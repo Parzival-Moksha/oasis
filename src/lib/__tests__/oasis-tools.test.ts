@@ -1730,6 +1730,44 @@ describe('craft_scene prompt fallback', () => {
     fetchSpy.mockRestore()
   })
 
+  it('maps removed Claude Code aliases back to the OpenRouter stream model', async () => {
+    const world = makeWorldRow()
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"name":"Ruby Cube","objects":[{"type":"box","position":[0,0.5,0],"scale":[1,1,1],"color":"#ff0000"}]}'))
+          controller.close()
+        },
+      }),
+      { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
+    ))
+
+    const result = await callTool('craft_scene', {
+      actorAgentType: 'merlin',
+      prompt: 'a ruby cube',
+      strategy: 'sculptor',
+      waitForCompletion: true,
+      model: 'sonnet',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('/api/craft/stream'),
+      expect.objectContaining({
+        body: expect.stringContaining('"model":"google/gemini-3.1-flash-lite"'),
+      }),
+    )
+    expect(fetchSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('/api/craft/cc'),
+      expect.anything(),
+    )
+
+    fetchSpy.mockRestore()
+  })
+
   it('accepts self-crafted objects arrays passed as JSON strings', async () => {
     const world = makeWorldRow()
     vi.mocked(prisma.world.findFirst).mockResolvedValue(world)

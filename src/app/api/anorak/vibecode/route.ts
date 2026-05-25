@@ -2,25 +2,13 @@
 // ANORAK 0.1 — Vibecode Chat
 // LLM-assisted bug/feature reporting. Anorak asks clarifying questions,
 // then produces a structured report with Carbon (human) + Silicon (spec).
-// Uses same model pool as crafting. Default: Haiku (cheap, fast).
+// Uses the same normalized OpenRouter model pool as crafting.
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { NextRequest } from 'next/server'
 import { mediaToolsOpenAI, execMediaTool, isMediaTool } from '@/lib/media-tools'
+import { normalizeCraftModelId } from '@/lib/craft-models'
 
-const ALLOWED_MODELS = [
-  'anthropic/claude-sonnet-4-6',
-  'anthropic/claude-haiku-4-5',
-  'z-ai/glm-5',
-  'x-ai/grok-4.20-beta',
-  'nvidia/nemotron-3-super-120b-a12b:free',
-  'qwen/qwen3.5-397b-a17b',
-  'liquid/lfm-2-24b-a2b',
-  'openai/gpt-5.4',
-  'google/gemini-3.1-pro-preview',
-  'minimax/minimax-m2.7',
-]
-const DEFAULT_MODEL = 'anthropic/claude-haiku-4-5'
 const MAX_MESSAGES = 200 // context window is the real limit, not an arbitrary cap
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -112,7 +100,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    const model = ALLOWED_MODELS.includes(requestedModel) ? requestedModel : DEFAULT_MODEL
+    const model = normalizeCraftModelId(requestedModel)
 
     const apiKey = process.env.OPENROUTER_API_KEY
     if (!apiKey) {

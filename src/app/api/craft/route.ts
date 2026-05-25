@@ -9,22 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import type { CraftedScene, CraftedPrimitive, PrimitiveType, CraftAnimation, CraftAnimationType } from '../../../lib/conjure/types'
 import { CRAFT_SYSTEM_PROMPT } from '../../../lib/craft-prompt'
-
-const ALLOWED_MODELS = [
-  'google/gemini-3.1-flash-lite',
-  'google/gemini-3.5-flash',
-  'anthropic/claude-sonnet-4-6',
-  'anthropic/claude-haiku-4-5',
-  'z-ai/glm-5',
-  'x-ai/grok-4.20-beta',
-  'nvidia/nemotron-3-super-120b-a12b:free',
-  'qwen/qwen3.5-397b-a17b',
-  'liquid/lfm-2-24b-a2b',
-  'openai/gpt-5.4',
-  'openai/gpt-5.4-mini',
-  'minimax/minimax-m2.7',
-]
-const DEFAULT_MODEL = 'google/gemini-3.1-flash-lite'
+import { normalizeCraftModelId } from '../../../lib/craft-models'
 
 // System prompt is now shared — see src/lib/craft-prompt.ts
 
@@ -165,7 +150,7 @@ export async function POST(request: NextRequest) {
         'X-Title': 'Oasis Craft',
       },
       body: JSON.stringify({
-        model: (typeof requestedModel === 'string' && ALLOWED_MODELS.includes(requestedModel)) ? requestedModel : DEFAULT_MODEL,
+        model: normalizeCraftModelId(requestedModel),
         messages: [
           { role: 'system', content: CRAFT_SYSTEM_PROMPT },
           { role: 'user', content: `Design a 3D scene for: ${prompt.trim()}` },

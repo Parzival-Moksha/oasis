@@ -13,6 +13,7 @@ import { addToSceneLibrary, getSceneLibrary } from '../../../lib/forge/scene-lib
 import { generateSingleCraftedThumbnail, useCraftedThumbnailGenerator } from '../../../hooks/useThumbnailGenerator'
 import { awardXp } from '../../../hooks/useXp'
 import { derivePlayerCastSpawn } from '../../../lib/player-avatar-runtime'
+import { CRAFT_MODEL_OPTIONS } from '../../../lib/craft-models'
 import { OASIS_BASE } from './shared'
 
 interface CraftTabProps {
@@ -60,11 +61,10 @@ export function CraftTabHeader({ setError }: CraftTabProps) {
     }
 
     try {
-      const isCC = craftModel.startsWith('cc-')
-      const res = await fetch(`${OASIS_BASE}/api/craft/${isCC ? 'cc' : 'stream'}`, {
+      const res = await fetch(`${OASIS_BASE}/api/craft/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: isCC ? iterativePrompt : iterativePrompt, model: craftModel }),
+        body: JSON.stringify({ prompt: iterativePrompt, model: craftModel }),
       })
 
       if (!res.ok) {
@@ -189,18 +189,9 @@ export function CraftTabHeader({ setError }: CraftTabProps) {
             style={{ backgroundImage: 'none' }}
             title="LLM model for crafting + terrain"
           >
-            <option value="google/gemini-3.1-flash-lite">Gemini 3.1 Flash Lite</option>
-            <option value="google/gemini-3.5-flash">Gemini 3.5 Flash</option>
-            <option value="anthropic/claude-sonnet-4-6">Sonnet 4.6</option>
-            <option value="anthropic/claude-haiku-4-5">Haiku 4.5</option>
-            <option value="z-ai/glm-5">GLM-5</option>
-            <option value="x-ai/grok-4.20-beta">Grok 4.20 Beta</option>
-            <option value="nvidia/nemotron-3-super-120b-a12b:free">Nemotron 3 Super 120B A12B</option>
-            <option value="qwen/qwen3.5-397b-a17b">Qwen 3.5 397B A17B</option>
-            <option value="liquid/lfm-2-24b-a2b">LFM 2 24B A2B</option>
-            <option value="openai/gpt-5.4">GPT-5.4</option>
-            <option value="openai/gpt-5.4-mini">GPT-5.4 Mini</option>
-            <option value="minimax/minimax-m2.7">Minimax M2.7</option>
+            {CRAFT_MODEL_OPTIONS.map(model => (
+              <option key={model.id} value={model.id}>{model.label}</option>
+            ))}
           </select>
         </div>
       </div>
