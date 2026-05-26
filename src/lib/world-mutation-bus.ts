@@ -4,6 +4,7 @@ import type { CatalogPlacement, CraftedScene, ObjectBehavior, WorldLight } from 
 import type { PaintStroke, PaintStrokeStyle } from '@/lib/forge/paint-stroke'
 import type { Text3DObject } from '@/lib/forge/text-3d-object'
 import type { PortalGate } from '@/lib/portal-gates'
+import type { SpatialWebEventName, SpatialWebObject, SpatialWebValue } from '@/lib/spatial-web'
 import type { AgentAvatar, AgentWindow, PlacementVfxType } from '@/store/oasisStore'
 
 export type WorldMutation =
@@ -14,6 +15,9 @@ export type WorldMutation =
   | { kind: 'crafted_scene_added'; payload: CraftedScene }
   | { kind: 'crafted_scene_updated'; payload: { id: string; updates: Partial<CraftedScene> } }
   | { kind: 'portal_added'; payload: PortalGate }
+  | { kind: 'spatial_web_added'; payload: SpatialWebObject }
+  | { kind: 'spatial_web_updated'; payload: { id: string; updates: Partial<SpatialWebObject> } }
+  | { kind: 'spatial_web_value_set'; payload: { id: string; value: SpatialWebValue; event?: SpatialWebEventName; lastInteractionAt?: string; interactionCount?: number; statusMessage?: string; errorMessage?: string } }
   | { kind: 'agent_window_added'; payload: AgentWindow }
   | { kind: 'agent_avatar_added'; payload: AgentAvatar }
   | { kind: 'placement_vfx'; payload: { position: [number, number, number]; typeOverride?: PlacementVfxType } }

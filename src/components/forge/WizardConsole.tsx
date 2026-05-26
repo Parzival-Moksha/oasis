@@ -1070,6 +1070,11 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
   useEffect(() => {
     if (initialTab && isOpen) setMode(initialTab)
   }, [initialTab, isOpen])
+  useEffect(() => {
+    if (!isOpen) return
+    if (mode !== 'conjure' && mode !== 'assets' && mode !== 'placed') return
+    window.dispatchEvent(new Event('oasis:load-conjure-registry'))
+  }, [isOpen, mode])
   const visibleTabs = ORDERED_WIZARD_TABS.filter(tab => {
     if (canUseAdminTabs) return true
     return HOSTED_WIZARD_MODES.has(tab.key) && !ADMIN_WIZARD_MODES.has(tab.key)

@@ -48,6 +48,19 @@ interface SnapshotMeta {
   created_at: string
 }
 
+interface WorldWizardEntry {
+  playerId: string
+  sessionId: string
+  displayName: string
+  avatarUrl?: string
+  profileAvatarUrl?: string
+  color: string
+  position?: [number, number, number]
+  yaw?: number
+  animState?: string
+  updatedAt: number
+}
+
 function formatVisibility(visibility?: string): string {
   switch (visibility) {
     case 'public_edit':
@@ -105,6 +118,35 @@ async function copyText(value: string): Promise<void> {
   document.body.removeChild(textarea)
 }
 
+function resolveRoomHttpPath(path: string): string | null {
+  if (typeof window === 'undefined') return null
+  const explicit = process.env.NEXT_PUBLIC_OASIS_ROOM_URL?.trim()
+  if (explicit) {
+    try {
+      const url = new URL(explicit, window.location.origin)
+      const [pathPart, queryPart = ''] = path.replace(/^\/+/, '').split('?', 2)
+      url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:'
+      url.pathname = `${url.pathname.replace(/\/+$/, '')}/${pathPart}`
+      url.search = queryPart ? `?${queryPart}` : ''
+      return url.toString()
+    } catch {
+      return null
+    }
+  }
+
+  const host = window.location.hostname || 'localhost'
+  const isLocal = host === 'localhost' || host === '127.0.0.1'
+  if (isLocal) return null
+  return `${window.location.origin}/rooms/${path.replace(/^\/+/, '')}`
+}
+
+function formatWizardSeenAt(updatedAt: number): string {
+  const ageSeconds = Math.max(0, Math.round((Date.now() - updatedAt) / 1000))
+  if (ageSeconds < 5) return 'now'
+  if (ageSeconds < 60) return `${ageSeconds}s ago`
+  return `${Math.round(ageSeconds / 60)}m ago`
+}
+
 export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -121,6 +163,10 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
   const [newWorldName, setNewWorldName] = useState('')
   const [newWorldIcon, setNewWorldIcon] = useState('O')
   const [likeOverride, setLikeOverride] = useState<{ worldId: string; liked: boolean; likeCount: number } | null>(null)
+  const [worldWizards, setWorldWizards] = useState<WorldWizardEntry[]>([])
+  const [wizardsLoading, setWizardsLoading] = useState(false)
+  const [wizardsError, setWizardsError] = useState<string | null>(null)
+  const [expandedWizardSessionId, setExpandedWizardSessionId] = useState<string | null>(null)
   // ░▒▓ 3-tab world menu: This World / My Worlds / Public Worlds ▓▒░
   const [worldTab, setWorldTab] = useState<'this' | 'my' | 'public'>('this')
   // Within Public Worlds, filter pills for visibility tier.
@@ -217,6 +263,48 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
       window.removeEventListener(VIEWER_IDENTITY_EVENT, handleViewerIdentity)
     }
   }, [])
+
+  useEffect(() => {
+    if (!isOpen || worldTab !== 'this' || !worldId) return
+    let cancelled = false
+    let firstLoad = true
+
+    const loadWizards = async () => {
+      const url = resolveRoomHttpPath(`world-players?worldId=${encodeURIComponent(worldId)}`)
+      if (!url) {
+        if (!cancelled) {
+          setWorldWizards([])
+          setWizardsError('offline')
+          setWizardsLoading(false)
+        }
+        return
+      }
+
+      if (firstLoad) setWizardsLoading(true)
+      try {
+        const res = await fetch(url, { cache: 'no-store' })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const data = await res.json() as { players?: WorldWizardEntry[] }
+        if (cancelled) return
+        setWorldWizards(Array.isArray(data.players) ? data.players : [])
+        setWizardsError(null)
+      } catch (error) {
+        if (!cancelled) {
+          setWizardsError(error instanceof Error ? error.message : 'unavailable')
+        }
+      } finally {
+        firstLoad = false
+        if (!cancelled) setWizardsLoading(false)
+      }
+    }
+
+    void loadWizards()
+    const timer = window.setInterval(loadWizards, 5000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [isOpen, worldId, worldTab])
 
   useEffect(() => {
     if (!meta) return
@@ -580,6 +668,73 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
               <div className="mt-0.5 text-[9px] uppercase tracking-[0.12em] text-white/45">{likedByViewer ? 'liked' : 'likes'}</div>
             </button>
           </div>
+          )}
+
+          {/* ░▒▓ WIZARDS — live room roster for the current world ▓▒░ */}
+          {worldTab === 'this' && (
+            <div className="mb-3 rounded-md border border-white/10 bg-white/5 p-2">
+              <div className="mb-2 flex items-center gap-2">
+                <div className="min-w-0 flex-1 text-[10px] font-black uppercase tracking-[0.14em] text-white/55">
+                  Wizards
+                </div>
+                <div className="rounded border border-cyan-300/20 bg-cyan-300/10 px-2 py-0.5 text-[9px] font-black text-cyan-100">
+                  {wizardsLoading ? '...' : worldWizards.length}
+                </div>
+              </div>
+              {wizardsError === 'offline' ? (
+                <div className="rounded border border-white/10 bg-black/25 px-2 py-2 text-[10px] text-white/40">
+                  Room roster appears when multiplayer is connected.
+                </div>
+              ) : worldWizards.length === 0 ? (
+                <div className="rounded border border-white/10 bg-black/25 px-2 py-2 text-[10px] text-white/40">
+                  {wizardsLoading ? 'Loading roster...' : 'No other wizards visible yet.'}
+                </div>
+              ) : (
+                <div className="max-h-40 space-y-1 overflow-y-auto pr-1">
+                  {worldWizards.map(wizard => {
+                    const expanded = expandedWizardSessionId === wizard.sessionId
+                    const avatar = wizard.profileAvatarUrl || wizard.avatarUrl
+                    return (
+                      <button
+                        key={wizard.sessionId}
+                        type="button"
+                        onClick={() => setExpandedWizardSessionId(expanded ? null : wizard.sessionId)}
+                        className="w-full rounded-md border border-white/10 bg-black/25 px-2 py-1.5 text-left transition hover:bg-white/10"
+                      >
+                        <span className="flex items-center gap-2">
+                          <span
+                            className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded border border-white/10 bg-white/10 text-[10px] font-black uppercase text-white"
+                            style={{ borderColor: wizard.color || 'rgba(255,255,255,0.10)' }}
+                          >
+                            {avatar ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={avatar} alt="" className="h-full w-full object-cover" />
+                            ) : (
+                              wizard.displayName.slice(0, 1) || 'W'
+                            )}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[11px] font-black text-white/80">{wizard.displayName}</span>
+                            <span className="block text-[9px] uppercase tracking-[0.1em] text-white/35">
+                              {wizard.animState || 'idle'} - {formatWizardSeenAt(wizard.updatedAt)}
+                            </span>
+                          </span>
+                        </span>
+                        {expanded && (
+                          <span className="mt-2 block rounded border border-cyan-300/10 bg-cyan-300/5 px-2 py-1.5 text-[9px] leading-4 text-cyan-50/65">
+                            <span className="block truncate">player {wizard.playerId}</span>
+                            <span className="block truncate">session {wizard.sessionId}</span>
+                            {wizard.position && (
+                              <span className="block">pos {wizard.position.map(value => value.toFixed(1)).join(', ')}</span>
+                            )}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           )}
 
           {/* ░▒▓ MY WORLDS TAB — worlds owned by the viewer ▓▒░ */}

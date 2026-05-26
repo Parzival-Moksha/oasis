@@ -20,7 +20,9 @@ export interface MultiplayerPresenceUpdate {
 }
 
 const PRESENCE_TTL_MS = 30000
-const MAX_PLAYERS_PER_WORLD = 64
+const DEFAULT_MAX_PLAYERS_PER_WORLD = 64
+const MAX_CONFIGURABLE_PLAYERS_PER_WORLD = 256
+const MAX_PLAYERS_PER_WORLD = resolveMaxPlayersPerWorld()
 
 const globalState = globalThis as typeof globalThis & {
   __oasisMultiplayerPresence?: Map<string, MultiplayerPresencePlayer>
@@ -31,6 +33,12 @@ if (!globalState.__oasisMultiplayerPresence) {
 }
 
 const players = globalState.__oasisMultiplayerPresence
+
+function resolveMaxPlayersPerWorld(): number {
+  const configured = Number(process.env.NEXT_PUBLIC_OASIS_MAX_PLAYERS_PER_WORLD)
+  if (!Number.isFinite(configured)) return DEFAULT_MAX_PLAYERS_PER_WORLD
+  return Math.max(1, Math.min(MAX_CONFIGURABLE_PLAYERS_PER_WORLD, Math.floor(configured)))
+}
 
 function cleanId(value: unknown, fallback = ''): string {
   if (typeof value !== 'string') return fallback

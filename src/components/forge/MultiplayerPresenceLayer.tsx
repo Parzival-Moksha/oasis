@@ -13,6 +13,8 @@ import {
   type MultiplayerRoomPlayer,
 } from '@/lib/multiplayer-room-client'
 import { worldMutationBus, type WorldMutation } from '@/lib/world-mutation-bus'
+import { legacyMutationToWorldCommand, worldCommandToLegacyMutation } from '@/lib/world-commands/legacy-map'
+import { commandTouchesDurableWorldState } from '@/lib/world-commands/types'
 import { colorForPlayerId as colorForId } from '@/lib/multiplayer-color'
 import { withProfileAvatarBust } from '@/lib/profile-avatar-url'
 import { useOasisStore } from '@/store/oasisStore'
@@ -38,6 +40,18 @@ const INPUT_HEIGHT_EPSILON = 0.06
 const INPUT_YAW_EPSILON = 0.04
 const INPUT_IDLE_SPEED_EPSILON = 0.12
 const REMOTE_RENDER_DELAY_MS = 120
+
+function shouldFallbackToLegacyMutation(error: string | undefined): boolean {
+  if (!error) return true
+  return /unsupported command kind/i.test(error)
+}
+
+function shouldFallbackAfterCommandSendError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  if (/command ack timeout/i.test(message)) return false
+  if (/room left|room disposed|room error/i.test(message)) return false
+  return true
+}
 
 function countLoadedObjects(state: ReturnType<typeof useOasisStore.getState>): number {
   return state.placedCatalogAssets.length
@@ -69,6 +83,14 @@ function applyRemoteObjectRemoval(objectId: string, linkedAvatarIds: string[] = 
     delete transforms[objectId]
     for (const avatarId of linkedAvatarIds) delete transforms[avatarId]
     const { [objectId]: _removedBehavior, ...behaviors } = state.behaviors
+    const audioPlaybackScopes = { ...state.audioPlaybackScopes }
+    const localAudioBehaviors = { ...state.localAudioBehaviors }
+    delete audioPlaybackScopes[objectId]
+    delete localAudioBehaviors[objectId]
+    for (const avatarId of linkedAvatarIds) {
+      delete audioPlaybackScopes[avatarId]
+      delete localAudioBehaviors[avatarId]
+    }
     const liveAgentAvatarAudio = { ...state.liveAgentAvatarAudio }
     delete liveAgentAvatarAudio[objectId]
     for (const avatarId of linkedAvatarIds) delete liveAgentAvatarAudio[avatarId]
@@ -85,6 +107,8 @@ function applyRemoteObjectRemoval(objectId: string, linkedAvatarIds: string[] = 
       text3dObjects,
       transforms,
       behaviors,
+      audioPlaybackScopes,
+      localAudioBehaviors,
       liveAgentAvatarAudio,
       focusedAgentWindowId: state.focusedAgentWindowId === objectId ? null : state.focusedAgentWindowId,
       selectedObjectId: removedAvatarIds.has(state.selectedObjectId || '') ? null : state.selectedObjectId,
@@ -429,6 +453,25 @@ export function MultiplayerPresenceLayer() {
   // Tracks which world we last cleared live-strokes for, so transient WS
   // reconnects (which bump reconnectTick) don't wipe in-progress strokes.
   const clearedWorldIdRef = useRef<string | null>(null)
+  const commandRejectRecoveryTimerRef = useRef<number | null>(null)
+
+  const requestCommandRejectRecovery = () => {
+    if (commandRejectRecoveryTimerRef.current !== null) return
+    const fallbackWorldId = activeWorldId
+    if (!fallbackWorldId) return
+    commandRejectRecoveryTimerRef.current = window.setTimeout(() => {
+      commandRejectRecoveryTimerRef.current = null
+      const store = useOasisStore.getState()
+      if (store.viewingWorldId === fallbackWorldId) {
+        console.warn('[oasis-room] command rejected; reloading viewed world state from server for deterministic recovery')
+        store.enterViewMode(fallbackWorldId, store.isViewModeEditable)
+        return
+      }
+      if (store.activeWorldId !== fallbackWorldId) return
+      console.warn('[oasis-room] command rejected; reloading world state from server for deterministic recovery')
+      store.loadWorldState({ silent: true, remote: true })
+    }, 15)
+  }
 
   useEffect(() => {
     const playerId = makePresenceId()
@@ -534,6 +577,12 @@ export function MultiplayerPresenceLayer() {
         store.applyRemoteCraftedSceneUpdate(mutation.payload.id, mutation.payload.updates)
       } else if (mutation.kind === 'portal_added') {
         upsertRemotePortalGate(mutation.payload)
+      } else if (mutation.kind === 'spatial_web_added') {
+        store.applyRemoteSpatialWebObject(mutation.payload)
+      } else if (mutation.kind === 'spatial_web_updated') {
+        store.applyRemoteSpatialWebUpdate(mutation.payload.id, mutation.payload.updates)
+      } else if (mutation.kind === 'spatial_web_value_set') {
+        store.applyRemoteSpatialWebValue(mutation.payload)
       } else if (mutation.kind === 'agent_window_added') {
         upsertRemoteAgentWindow(mutation.payload)
       } else if (mutation.kind === 'agent_avatar_added') {
@@ -645,6 +694,20 @@ export function MultiplayerPresenceLayer() {
         if (!mutation || typeof mutation !== 'object' || typeof mutation.kind !== 'string') return
         worldMutationBus.applyIncoming(mutation)
       },
+      onWorldEvent: event => {
+        if (disposed || event.kind !== 'command.accepted' || !event.command) return
+        if (event.command.clientId && event.command.clientId === connectionRef.current?.sessionId) return
+        const mutation = worldCommandToLegacyMutation(event.command)
+        if (!mutation) return
+        worldMutationBus.applyIncoming(mutation)
+      },
+      onWorldSnapshot: snapshot => {
+        if (disposed || snapshot.worldId !== activeWorldId) return
+        useOasisStore.getState().applyRoomWorldSnapshot(snapshot.worldId, snapshot.state, {
+          revision: snapshot.revision,
+          reason: snapshot.reason,
+        })
+      },
       onConnectionState: (state, detail) => {
         if (disposed) return
         if (state === 'connected') {
@@ -656,6 +719,7 @@ export function MultiplayerPresenceLayer() {
           if (connection === connectionRef.current) {
             worldMutationBus.setSender(null)
             connectionRef.current = null
+            useOasisStore.getState().setWorldCommandAuthority(null)
           }
           scheduleReconnect()
         }
@@ -668,7 +732,73 @@ export function MultiplayerPresenceLayer() {
         }
         connection = next
         connectionRef.current = next
-        worldMutationBus.setSender(mutation => next.sendMutation(mutation))
+        useOasisStore.getState().setWorldCommandAuthority({
+          worldId: activeWorldId,
+          sessionId: next.sessionId,
+          canWrite: next.canWrite,
+          connectedAt: Date.now(),
+        })
+        worldMutationBus.setSender(mutation => {
+          const command = legacyMutationToWorldCommand(mutation, {
+            worldId: activeWorldId,
+            actorId: playerId,
+            actorDisplayName: playerNameRef.current,
+            clientId: next.sessionId,
+          })
+          if (!command) {
+            next.sendMutation(mutation)
+            return
+          }
+          const commandIsDurable = commandTouchesDurableWorldState(command.kind)
+          if (commandIsDurable) {
+            useOasisStore.getState().markWorldCommandSubmitted(activeWorldId, command.id)
+          }
+          void next.sendCommand(command).then(event => {
+            if (commandIsDurable) {
+              useOasisStore.getState().markWorldCommandSettled(
+                activeWorldId,
+                command.id,
+                event.kind === 'command.accepted' ? 'accepted' : 'rejected',
+              )
+            }
+            if (event.kind === 'command.rejected') {
+              console.warn('[oasis-room] command rejected:', command.kind, event.error || command.id)
+              if (shouldFallbackToLegacyMutation(event.error)) {
+                try {
+                  if (commandIsDurable) {
+                    useOasisStore.getState().markWorldCommandSettled(activeWorldId, command.id, 'legacy')
+                  }
+                  next.sendMutation(mutation)
+                  window.setTimeout(() => useOasisStore.getState().saveWorldState(), 0)
+                } catch (fallbackError) {
+                  console.warn('[oasis-room] legacy mutation fallback failed:', mutation.kind, fallbackError)
+                  requestCommandRejectRecovery()
+                }
+              } else {
+                requestCommandRejectRecovery()
+              }
+            }
+          }).catch(error => {
+            console.warn('[oasis-room] command send failed:', command.kind, error)
+            if (shouldFallbackAfterCommandSendError(error)) {
+              try {
+                if (commandIsDurable) {
+                  useOasisStore.getState().markWorldCommandSettled(activeWorldId, command.id, 'legacy')
+                }
+                next.sendMutation(mutation)
+                window.setTimeout(() => useOasisStore.getState().saveWorldState(), 0)
+              } catch (fallbackError) {
+                console.warn('[oasis-room] legacy mutation fallback failed:', mutation.kind, fallbackError)
+                requestCommandRejectRecovery()
+              }
+            } else {
+              if (commandIsDurable) {
+                useOasisStore.getState().markWorldCommandSettled(activeWorldId, command.id, 'rejected')
+              }
+              requestCommandRejectRecovery()
+            }
+          })
+        })
         lastSentPoseRef.current = null
         previousPoseRef.current = null
         lastSentAnimStateRef.current = null
@@ -689,6 +819,7 @@ export function MultiplayerPresenceLayer() {
       if (connection === connectionRef.current) {
         worldMutationBus.setSender(null)
         connectionRef.current = null
+        useOasisStore.getState().setWorldCommandAuthority(null)
       }
       if (connection) {
         void connection.dispose()
@@ -704,6 +835,10 @@ export function MultiplayerPresenceLayer() {
       if (clearedWorldIdRef.current !== activeWorldId) {
         clearAllLiveStrokes()
         clearedWorldIdRef.current = activeWorldId
+      }
+      if (commandRejectRecoveryTimerRef.current !== null) {
+        window.clearTimeout(commandRejectRecoveryTimerRef.current)
+        commandRejectRecoveryTimerRef.current = null
       }
     }
   }, [activeWorldId, activeWorldPvpEnabled, reconnectTick])

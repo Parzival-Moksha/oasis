@@ -1,10 +1,26 @@
 import { Room, type Client } from 'colyseus'
 import { ActiveBolt, PlayerState, WorldRoomState } from '../schema/RoomSchema.js'
-import { rosterClearWorld, rosterRemove, rosterUpsert } from '../world-roster.js'
+import {
+  fallbackRoomAccess,
+  shouldRequireRoomJoinClaim,
+  verifyRoomJoinClaim,
+  type RoomAccess,
+} from '../room-join-claim.js'
+import {
+  recordWorldCommand,
+  recordWorldMutation,
+  recordWorldRoomCreated,
+  rosterClearWorld,
+  rosterRemove,
+  rosterUpsert,
+} from '../world-roster.js'
+import { applyRoomWorldCommand } from '../world-reducer.js'
 
 interface JoinOptions {
   worldId?: string
   playerId?: string
+  userId?: string
+  joinClaim?: string
   displayName?: string
   avatarUrl?: string
   profileAvatarUrl?: string
@@ -61,7 +77,8 @@ interface VitalsMessage {
   maxMana?: number
 }
 
-const MAX_PLAYERS_PER_WORLD = 64
+const DEFAULT_MAX_PLAYERS_PER_WORLD = 64
+const MAX_CONFIGURABLE_PLAYERS_PER_WORLD = 256
 const SIM_HZ = 30
 const PATCH_HZ = 30
 // Mutation passthrough is unauthenticated by design (no auth yet) — bound
@@ -70,6 +87,94 @@ const PATCH_HZ = 30
 const MUTATION_MAX_BYTES = 16 * 1024  // 16 KiB per mutation envelope
 const MUTATION_TOKENS_PER_SEC = 30    // 30 mutation broadcasts/sec sustained
 const MUTATION_BURST = 60             // allow short bursts for drag streams
+const WORLD_COMMAND_MAX_BYTES = 16 * 1024
+const COMMAND_EVENT_RING_MAX = 256
+const CHECKPOINT_INTERVAL_MS = 5_000
+const CHECKPOINT_EVENT_THRESHOLD = 100
+const INTERNAL_CHECKPOINT_TIMEOUT_MS = 15_000
+const WORLD_MUTATION_KINDS = new Set([
+  'object_added',
+  'object_updated',
+  'object_removed',
+  'object_transformed',
+  'crafted_scene_added',
+  'crafted_scene_updated',
+  'portal_added',
+  'spatial_web_added',
+  'spatial_web_updated',
+  'spatial_web_value_set',
+  'agent_window_added',
+  'agent_avatar_added',
+  'placement_vfx',
+  'sky_changed',
+  'ground_changed',
+  'ground_painted',
+  'ground_tile_erased',
+  'ground_tiles_cleared',
+  'terrain_brushed',
+  'terrain_reset',
+  'behavior_updated',
+  'light_added',
+  'light_removed',
+  'light_updated',
+  'stroke_started',
+  'stroke_pointed',
+  'stroke_ended',
+  'stroke_updated',
+  'stroke_removed',
+  'text3d_added',
+  'text3d_removed',
+  'text3d_updated',
+])
+const WORLD_COMMAND_KINDS = new Set([
+  'object.add',
+  'object.update',
+  'object.remove',
+  'object.transform',
+  'object.behavior.update',
+  'crafted.add',
+  'crafted.update',
+  'crafted.remove',
+  'portal.add',
+  'portal.update',
+  'portal.remove',
+  'spatial.add',
+  'spatial.update',
+  'spatial.remove',
+  'spatial.value.set',
+  'ground.setPreset',
+  'ground.paint',
+  'ground.tile.erase',
+  'ground.tiles.clear',
+  'terrain.brush',
+  'terrain.reset',
+  'light.add',
+  'light.update',
+  'light.remove',
+  'sky.set',
+  'stroke.start',
+  'stroke.point',
+  'stroke.end',
+  'stroke.update',
+  'stroke.remove',
+  'text3d.add',
+  'text3d.update',
+  'text3d.remove',
+  'agent.window.add',
+  'agent.window.update',
+  'agent.window.remove',
+  'agent.avatar.add',
+  'agent.avatar.update',
+  'agent.avatar.remove',
+  'media.playback.set',
+  'placement.vfx',
+])
+const WORLD_LIGHT_TYPES = new Set(['point', 'spot', 'directional', 'ambient', 'hemisphere', 'environment'])
+const TRANSIENT_WORLD_COMMAND_KINDS = new Set([
+  'placement.vfx',
+  'stroke.start',
+  'stroke.point',
+])
 
 // PvP combat constants
 const RESPAWN_DELAY_MS = 5000
@@ -89,9 +194,35 @@ const HIT_REPORT_TOLERANCE_MS = 150
  *  across the map" lies that survive timestamp validation. */
 const MAX_HIT_DISTANCE_M = 80
 
+function resolveInternalOasisBaseUrl(): string {
+  return (process.env.OASIS_WEB_INTERNAL_URL || process.env.OASIS_INTERNAL_URL || 'http://127.0.0.1:4516').replace(/\/+$/, '')
+}
+
+function resolveInternalCommandSecret(): string {
+  const secret = process.env.OASIS_ROOM_INTERNAL_SECRET || process.env.OASIS_ROOM_SIGNING_KEY || process.env.RELAY_SIGNING_KEY
+  if (secret) return secret
+  if (process.env.OASIS_MODE === 'hosted') throw new Error('OASIS_ROOM_INTERNAL_SECRET or RELAY_SIGNING_KEY is required in hosted mode')
+  return 'oasis-room-dev-key-do-not-use-in-production'
+}
+
 function sanitizeWorldId(value: unknown): string {
   if (typeof value !== 'string') return ''
   return value.trim().replace(/[^a-zA-Z0-9_:.-]/g, '').slice(0, 96)
+}
+
+function clampInteger(value: unknown, fallback: number, min: number, max: number): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return fallback
+  return Math.max(min, Math.min(max, Math.floor(n)))
+}
+
+function resolveMaxClients(): number {
+  return clampInteger(
+    process.env.OASIS_ROOM_MAX_CLIENTS,
+    DEFAULT_MAX_PLAYERS_PER_WORLD,
+    1,
+    MAX_CONFIGURABLE_PLAYERS_PER_WORLD,
+  )
 }
 
 function sanitizePlayerId(value: unknown, fallback: string): string {
@@ -152,6 +283,148 @@ function clampId(value: unknown): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64)
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function hasString(record: Record<string, unknown>, key: string): boolean {
+  return typeof record[key] === 'string' && (record[key] as string).trim().length > 0
+}
+
+function hasNumber(record: Record<string, unknown>, key: string): boolean {
+  return Number.isFinite(Number(record[key]))
+}
+
+function isVec3(value: unknown): value is [number, number, number] {
+  return Array.isArray(value)
+    && value.length === 3
+    && value.every(item => Number.isFinite(Number(item)))
+}
+
+function isSpatialValue(value: unknown): boolean {
+  return value === null
+    || typeof value === 'string'
+    || typeof value === 'number'
+    || typeof value === 'boolean'
+    || (Array.isArray(value) && value.every(item => typeof item === 'string'))
+}
+
+function isPositiveScale(value: unknown): boolean {
+  if (typeof value === 'number') return Number.isFinite(value) && value > 0
+  return isVec3(value) && value.every(item => Number(item) > 0)
+}
+
+function validateCatalogPlacement(value: unknown): string | null {
+  if (!isRecord(value)) return 'object.add missing object'
+  if (!hasString(value, 'id')) return 'object.add missing object.id'
+  if (!hasString(value, 'catalogId')) return 'object.add missing object.catalogId'
+  if (!hasString(value, 'name')) return 'object.add missing object.name'
+  if (!isVec3(value.position)) return 'object.add invalid object.position'
+  return isPositiveScale(value.scale) ? null : 'object.add invalid object.scale'
+}
+
+function validateWorldLight(value: unknown): string | null {
+  if (!isRecord(value)) return 'light.add missing light'
+  if (!hasString(value, 'id')) return 'light.add missing light.id'
+  if (typeof value.type !== 'string' || !WORLD_LIGHT_TYPES.has(value.type)) return 'light.add invalid light.type'
+  if (!hasNumber(value, 'intensity')) return 'light.add invalid light.intensity'
+  if (!isVec3(value.position)) return 'light.add invalid light.position'
+  if (value.target !== undefined && !isVec3(value.target)) return 'light.add invalid light.target'
+  return null
+}
+
+function validateCommandPayloadShape(kind: string, payload: unknown): string | null {
+  if (!isRecord(payload)) return 'command payload must be an object'
+
+  if (kind.endsWith('.remove')) {
+    return hasString(payload, 'id') ? null : 'remove command missing id'
+  }
+  if (kind.endsWith('.update')) {
+    if (!hasString(payload, 'id')) return 'update command missing id'
+    return isRecord(payload.updates) ? null : 'update command missing updates object'
+  }
+
+  switch (kind) {
+    case 'object.add':
+      return validateCatalogPlacement(payload.object)
+    case 'object.transform':
+      if (!hasString(payload, 'id')) return 'object.transform missing id'
+      if (payload.position !== undefined && !isVec3(payload.position)) return 'object.transform invalid position'
+      if (payload.rotation !== undefined && !isVec3(payload.rotation)) return 'object.transform invalid rotation'
+      if (payload.scale !== undefined && !isPositiveScale(payload.scale)) return 'object.transform invalid scale'
+      return null
+    case 'object.behavior.update':
+      if (!hasString(payload, 'id')) return 'object.behavior.update missing id'
+      return isRecord(payload.updates) ? null : 'object.behavior.update missing updates object'
+    case 'crafted.add':
+      return isRecord(payload.scene) && hasString(payload.scene, 'id') ? null : 'crafted.add missing scene.id'
+    case 'portal.add':
+      return isRecord(payload.gate) && hasString(payload.gate, 'id') ? null : 'portal.add missing gate.id'
+    case 'spatial.add':
+      return isRecord(payload.object) && hasString(payload.object, 'id') ? null : 'spatial.add missing object.id'
+    case 'spatial.value.set':
+      if (!hasString(payload, 'id')) return 'spatial.value.set missing id'
+      return isSpatialValue(payload.value) ? null : 'spatial.value.set invalid value'
+    case 'ground.setPreset':
+      return hasString(payload, 'groundPresetId') ? null : 'ground.setPreset missing groundPresetId'
+    case 'ground.paint':
+      if (!hasNumber(payload, 'cx') || !hasNumber(payload, 'cz')) return 'ground.paint missing coordinates'
+      if (payload.size !== undefined && !Number.isFinite(Number((payload as Record<string, unknown>).size))) return 'ground.paint invalid size'
+      if (payload.stretch !== undefined && !Number.isFinite(Number((payload as Record<string, unknown>).stretch))) return 'ground.paint invalid stretch'
+      return hasString(payload, 'presetId') ? null : 'ground.paint missing presetId'
+    case 'ground.tile.erase':
+      return hasNumber(payload, 'x') && hasNumber(payload, 'z') ? null : 'ground.tile.erase missing coordinates'
+    case 'ground.tiles.clear':
+    case 'terrain.reset':
+      return null
+    case 'terrain.brush':
+      if (!hasNumber(payload, 'x') || !hasNumber(payload, 'z')) return 'terrain.brush missing coordinates'
+      if (!hasNumber(payload, 'radius') || !hasNumber(payload, 'intensity') || !hasNumber(payload, 'deltaSeconds')) return 'terrain.brush missing numeric brush params'
+      return payload.direction === 'up' || payload.direction === 'down' ? null : 'terrain.brush invalid direction'
+    case 'light.add':
+      return validateWorldLight(payload.light)
+    case 'sky.set':
+      return hasString(payload, 'skyBackgroundId') ? null : 'sky.set missing skyBackgroundId'
+    case 'stroke.start':
+      if (!hasString(payload, 'strokeId') || !hasString(payload, 'authorId')) return 'stroke.start missing id/author'
+      return isRecord(payload.style) ? null : 'stroke.start missing style'
+    case 'stroke.point':
+      if (!hasString(payload, 'strokeId')) return 'stroke.point missing strokeId'
+      return isVec3(payload.point) ? null : 'stroke.point invalid point'
+    case 'stroke.end':
+      if (!hasString(payload, 'strokeId')) return 'stroke.end missing strokeId'
+      return isRecord(payload.finalStroke) && hasString(payload.finalStroke, 'id') ? null : 'stroke.end missing finalStroke.id'
+    case 'text3d.add':
+      return isRecord(payload.object) && hasString(payload.object, 'id') ? null : 'text3d.add missing object.id'
+    case 'agent.window.add':
+      return isRecord(payload.window) && hasString(payload.window, 'id') ? null : 'agent.window.add missing window.id'
+    case 'agent.avatar.add':
+      return isRecord(payload.avatar) && hasString(payload.avatar, 'id') ? null : 'agent.avatar.add missing avatar.id'
+    case 'media.playback.set':
+      if (!hasString(payload, 'objectId')) return 'media.playback.set missing objectId'
+      if (payload.playbackScope !== 'shared' && payload.playbackScope !== 'local') return 'media.playback.set invalid playbackScope'
+      return payload.state === 'playing' || payload.state === 'paused' || payload.state === 'stopped' ? null : 'media.playback.set invalid state'
+    case 'placement.vfx':
+      return isVec3(payload.position) ? null : 'placement.vfx invalid position'
+    default:
+      return null
+  }
+}
+
+function validateRoomScopedCommand(kind: string, payload: unknown): string | null {
+  if (!isRecord(payload)) return null
+  if (kind === 'spatial.value.set') {
+    const scope = payload.stateScope
+    if (scope === 'session' || scope === 'actor') {
+      return 'spatial.value.set is not room-scoped'
+    }
+  }
+  if (kind === 'media.playback.set' && payload.playbackScope === 'local') {
+    return 'media.playback.set local playback is not room-scoped'
+  }
+  return null
+}
+
 interface MutationBucket {
   tokens: number
   lastRefillAt: number
@@ -162,13 +435,284 @@ interface CastBucket {
   lastRefillAt: number
 }
 
+interface WorldCommandMessage {
+  id?: unknown
+  kind?: unknown
+  worldId?: unknown
+  actorId?: unknown
+  actorDisplayName?: unknown
+  clientId?: unknown
+  createdAt?: unknown
+  payload?: unknown
+}
+
+interface WorldEventMessage {
+  id: string
+  kind: 'command.accepted' | 'command.rejected'
+  worldId: string
+  commandId?: string
+  actorId?: string
+  acceptedAt: string
+  revision: number
+  error?: string
+  command?: unknown
+  source?: 'room' | 'http'
+  durable?: boolean
+}
+
+interface WorldSnapshotMessage {
+  worldId: string
+  revision: number
+  savedAt?: string
+  loadedAt: number
+  reason: 'join' | 'refresh' | 'command'
+  state: unknown
+}
+
 export class WorldRoom extends Room<WorldRoomState> {
-  override maxClients = MAX_PLAYERS_PER_WORLD
+  override maxClients = resolveMaxClients()
+  private readonly playerAccess = new Map<string, RoomAccess>()
   private readonly mutationBuckets = new Map<string, MutationBucket>()
   private readonly castBuckets = new Map<string, CastBucket>()
+  private readonly commandEvents = new Map<string, WorldEventMessage>()
+  private readonly commandEventRing: WorldEventMessage[] = []
+  private worldSnapshot: WorldSnapshotMessage | null = null
+  private worldSnapshotPromise: Promise<WorldSnapshotMessage | null> | null = null
+  private checkpointTimer: ReturnType<typeof setTimeout> | null = null
+  private checkpointInFlightPromise: Promise<void> | null = null
+  private checkpointDirtyEvents: WorldEventMessage[] = []
+  private checkpointActorUserId = 'local-user'
+  private checkpointBaseSavedAt: string | null = null
+  private commandQueue: Promise<void> = Promise.resolve()
+  private worldRevision = 0
   /** Tracks which (boltId, victimSessionId) pairs have already been
    *  consumed so a hostile client can't repeatedly report the same hit. */
   private readonly consumedHits = new Set<string>()
+
+  private resolveJoinAccess(options: JoinOptions, expectedWorldId = this.state.worldId): RoomAccess {
+    if (shouldRequireRoomJoinClaim()) {
+      return verifyRoomJoinClaim(options.joinClaim, expectedWorldId)
+    }
+    if (options.joinClaim) {
+      try {
+        return verifyRoomJoinClaim(options.joinClaim, expectedWorldId)
+      } catch (error) {
+        console.warn(`[room ${this.roomId}] ignoring invalid optional join claim:`, error instanceof Error ? error.message : String(error))
+      }
+    }
+    return fallbackRoomAccess({ userId: options.userId, pvpEnabled: options.pvpEnabled })
+  }
+
+  private async fetchWorldSnapshot(actorUserId: string, reason: WorldSnapshotMessage['reason']): Promise<WorldSnapshotMessage | null> {
+    const response = await fetch(`${resolveInternalOasisBaseUrl()}/api/worlds/${encodeURIComponent(this.state.worldId)}`, {
+      headers: {
+        'x-oasis-room-secret': resolveInternalCommandSecret(),
+        'x-oasis-actor-user-id': actorUserId || 'local-user',
+      },
+    })
+    if (!response.ok) return null
+    const latestRevision = Number(response.headers.get('x-oasis-world-revision') || 0)
+    if (Number.isFinite(latestRevision)) {
+      this.worldRevision = Math.max(this.worldRevision, Math.floor(latestRevision))
+    }
+    const state = await response.json().catch(() => null)
+    if (!state || typeof state !== 'object') return null
+    const savedAt = typeof (state as { savedAt?: unknown }).savedAt === 'string'
+      ? (state as { savedAt: string }).savedAt
+      : null
+    this.checkpointBaseSavedAt = savedAt
+    return this.setWorldSnapshot(state, reason)
+  }
+
+  private ensureWorldSnapshot(actorUserId: string, reason: WorldSnapshotMessage['reason']): Promise<WorldSnapshotMessage | null> {
+    if (this.worldSnapshot) return Promise.resolve(this.worldSnapshot)
+    if (!this.worldSnapshotPromise) {
+      this.worldSnapshotPromise = this.fetchWorldSnapshot(actorUserId, reason)
+        .catch(error => {
+          console.warn(`[room ${this.roomId}] snapshot load failed:`, error instanceof Error ? error.message : String(error))
+          return null
+        })
+        .finally(() => {
+          this.worldSnapshotPromise = null
+        })
+    }
+    return this.worldSnapshotPromise
+  }
+
+  private setWorldSnapshot(state: unknown, reason: WorldSnapshotMessage['reason']): WorldSnapshotMessage {
+    const savedAt = state && typeof state === 'object' && typeof (state as { savedAt?: unknown }).savedAt === 'string'
+      ? (state as { savedAt: string }).savedAt
+      : undefined
+    const snapshot: WorldSnapshotMessage = {
+      worldId: this.state.worldId,
+      revision: this.worldRevision,
+      ...(savedAt ? { savedAt } : {}),
+      loadedAt: Date.now(),
+      reason,
+      state,
+    }
+    this.worldSnapshot = snapshot
+    return snapshot
+  }
+
+  private sendWorldSnapshot(client: Client, actorUserId: string, reason: WorldSnapshotMessage['reason']): void {
+    void this.ensureWorldSnapshot(actorUserId, reason).then(snapshot => {
+      if (!snapshot) return
+      client.send('worldSnapshot', snapshot)
+    })
+  }
+
+  private scheduleCheckpoint(actorUserId: string, event: WorldEventMessage): void {
+    this.checkpointActorUserId = actorUserId || this.checkpointActorUserId
+    this.checkpointDirtyEvents.push(event)
+    if (this.checkpointDirtyEvents.length >= CHECKPOINT_EVENT_THRESHOLD) {
+      void this.flushCheckpoint('threshold')
+      return
+    }
+    if (this.checkpointTimer) return
+    this.checkpointTimer = setTimeout(() => {
+      this.checkpointTimer = null
+      void this.flushCheckpoint('timer')
+    }, CHECKPOINT_INTERVAL_MS)
+  }
+
+  private async flushCheckpoint(reason: 'timer' | 'threshold' | 'dispose'): Promise<void> {
+    if (this.checkpointInFlightPromise) {
+      await this.checkpointInFlightPromise
+      if (reason === 'dispose' && this.checkpointDirtyEvents.length > 0) {
+        return this.flushCheckpoint(reason)
+      }
+      return
+    }
+    this.checkpointInFlightPromise = this.doFlushCheckpoint(reason)
+    try {
+      await this.checkpointInFlightPromise
+    } finally {
+      this.checkpointInFlightPromise = null
+    }
+  }
+
+  private async doFlushCheckpoint(reason: 'timer' | 'threshold' | 'dispose'): Promise<void> {
+    const snapshot = this.worldSnapshot
+    if (!snapshot || this.checkpointDirtyEvents.length === 0) return
+    if (this.checkpointTimer) {
+      clearTimeout(this.checkpointTimer)
+      this.checkpointTimer = null
+    }
+
+    const events = this.checkpointDirtyEvents.splice(0)
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), INTERNAL_CHECKPOINT_TIMEOUT_MS)
+    try {
+      const response = await fetch(`${resolveInternalOasisBaseUrl()}/api/worlds/${encodeURIComponent(this.state.worldId)}`, {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          'x-oasis-room-secret': resolveInternalCommandSecret(),
+          'x-oasis-actor-user-id': this.checkpointActorUserId || 'local-user',
+          'x-oasis-room-checkpoint': reason,
+          ...(this.checkpointBaseSavedAt ? { 'x-oasis-client-loaded-at': this.checkpointBaseSavedAt } : {}),
+        },
+        body: JSON.stringify({
+          state: snapshot.state,
+          events,
+          baseSavedAt: this.checkpointBaseSavedAt,
+          revision: this.worldRevision,
+        }),
+        signal: controller.signal,
+      })
+      const body = await response.json().catch(() => null) as {
+        ok?: boolean
+        savedAt?: string
+        serverUpdatedAt?: string
+        conflict?: boolean
+        eventsSaved?: number
+        eventsSkipped?: number
+        error?: string
+      } | null
+      if (!response.ok || body?.ok === false) {
+        this.checkpointDirtyEvents.unshift(...events)
+        if (body?.conflict) {
+          await this.rebaseDirtyCommandsAfterCheckpointConflict(this.checkpointActorUserId || 'local-user', body.serverUpdatedAt)
+        }
+        console.warn(`[room ${this.roomId}] checkpoint failed:`, body?.error || `HTTP ${response.status}`)
+        return
+      }
+      if (body?.savedAt && this.worldSnapshot?.state && typeof this.worldSnapshot.state === 'object') {
+        ;(this.worldSnapshot.state as { savedAt?: string }).savedAt = body.savedAt
+        this.worldSnapshot.savedAt = body.savedAt
+        this.checkpointBaseSavedAt = body.savedAt
+      }
+      console.log(`[room ${this.roomId}] checkpoint ok reason=${reason} events=${events.length} saved=${body?.eventsSaved ?? '?'} skipped=${body?.eventsSkipped ?? '?'} rev=${this.worldRevision}`)
+    } catch (error) {
+      this.checkpointDirtyEvents.unshift(...events)
+      console.warn(`[room ${this.roomId}] checkpoint failed:`, error instanceof Error ? error.message : String(error))
+    } finally {
+      clearTimeout(timeout)
+      if (this.checkpointDirtyEvents.length > 0 && !this.checkpointTimer && reason !== 'dispose') {
+        this.checkpointTimer = setTimeout(() => {
+          this.checkpointTimer = null
+          void this.flushCheckpoint('timer')
+        }, CHECKPOINT_INTERVAL_MS)
+      }
+    }
+  }
+
+  private async rebaseDirtyCommandsAfterCheckpointConflict(actorUserId: string, serverUpdatedAt?: string): Promise<void> {
+    const dirtyEvents = this.checkpointDirtyEvents.slice()
+    if (dirtyEvents.length === 0) return
+    this.worldSnapshot = null
+    this.worldSnapshotPromise = null
+    const snapshot = await this.fetchWorldSnapshot(actorUserId, 'refresh')
+    if (!snapshot) return
+    let current = snapshot.state
+    let changed = false
+    for (const event of dirtyEvents) {
+      const command = event.command
+      if (!command || typeof command !== 'object') continue
+      const applied = applyRoomWorldCommand(current, command)
+      current = applied.state
+      changed = changed || applied.changed
+    }
+    if (changed) {
+      this.setWorldSnapshot(current, 'command')
+      console.warn(`[room ${this.roomId}] rebased ${dirtyEvents.length} dirty events after checkpoint conflict${serverUpdatedAt ? ` serverUpdatedAt=${serverUpdatedAt}` : ''}`)
+    }
+  }
+
+  private enqueueDurableCommandApply<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.commandQueue.then(task, task)
+    this.commandQueue = run.then(() => undefined, () => undefined)
+    return run
+  }
+
+  private async applyDurableCommandInOrder(
+    commandId: string,
+    command: WorldCommandMessage,
+    actorUserId: string,
+  ): Promise<WorldEventMessage> {
+    return this.enqueueDurableCommandApply(async () => {
+      const duplicate = this.commandEvents.get(commandId)
+      if (duplicate) return duplicate
+
+      const snapshot = await this.ensureWorldSnapshot(actorUserId, 'refresh')
+      if (!snapshot) {
+        throw new Error('world snapshot unavailable')
+      }
+
+      const applied = applyRoomWorldCommand(snapshot.state, command)
+      if (applied.changed) {
+        this.worldRevision += 1
+        this.setWorldSnapshot(applied.state, 'command')
+      }
+      const event = this.makeCommandEvent('command.accepted', command, commandId)
+      event.revision = this.worldRevision
+      event.durable = applied.changed
+      if (applied.changed) this.scheduleCheckpoint(actorUserId, event)
+      this.rememberCommandEvent(commandId, event)
+      return event
+    })
+  }
 
   private consumeMutationToken(sessionId: string, now: number): boolean {
     let bucket = this.mutationBuckets.get(sessionId)
@@ -209,6 +753,7 @@ export class WorldRoom extends Room<WorldRoomState> {
   }
 
   override onCreate(options: JoinOptions): void {
+    this.maxClients = resolveMaxClients()
     const worldId = sanitizeWorldId(options.worldId)
     if (!worldId) {
       throw new Error('worldId is required to create a WorldRoom')
@@ -216,19 +761,22 @@ export class WorldRoom extends Room<WorldRoomState> {
 
     const state = new WorldRoomState()
     state.worldId = worldId
+    const firstJoinAccess = this.resolveJoinAccess(options, worldId)
     // First-joiner sets PvP for the room lifetime. Subsequent joiners can
     // NOT flip this — they pass their own value, we just ignore it. The
     // Next.js side is the source of truth via World.pvpEnabled; clients
     // read it before joining and pass it through. v2 will sign this with
     // a server-issued token so clients can't lie.
-    state.pvpEnabled = options.pvpEnabled === true
+    state.pvpEnabled = firstJoinAccess.pvpEnabled
     this.setState(state)
 
     this.setPatchRate(1000 / PATCH_HZ)
     this.setSimulationInterval(deltaMs => this.simulate(deltaMs), 1000 / SIM_HZ)
 
-    this.setMetadata({ worldId }).catch(() => {})
-    console.log(`[room ${this.roomId}] created worldId=${worldId}`)
+    this.setMetadata({ worldId, maxClients: this.maxClients }).catch(() => {})
+    recordWorldRoomCreated(worldId, this.maxClients)
+    void this.ensureWorldSnapshot(firstJoinAccess.userId, 'refresh')
+    console.log(`[room ${this.roomId}] created worldId=${worldId} maxClients=${this.maxClients}`)
 
     this.onMessage('input', (client, payload: InputMessage) => {
       const player = this.state.players.get(client.sessionId)
@@ -243,6 +791,7 @@ export class WorldRoom extends Room<WorldRoomState> {
       player.updatedAt = Date.now()
       rosterUpsert(this.state.worldId, client.sessionId, {
         playerId: player.playerId,
+        userId: player.userId,
         sessionId: client.sessionId,
         displayName: player.displayName,
         avatarUrl: player.avatarUrl,
@@ -278,6 +827,7 @@ export class WorldRoom extends Room<WorldRoomState> {
       player.updatedAt = Date.now()
       rosterUpsert(this.state.worldId, client.sessionId, {
         playerId: player.playerId,
+        userId: player.userId,
         sessionId: client.sessionId,
         displayName: player.displayName,
         avatarUrl: player.avatarUrl,
@@ -454,15 +1004,16 @@ export class WorldRoom extends Room<WorldRoomState> {
     })
 
     this.onMessage('mutation', (client, payload: unknown) => {
-      // v1: server is a passthrough broadcaster. No validation, no persistence.
-      // Persistence still happens client-side via the existing debounced save
-      // path on the originating client. Phase 4 v2 will move persistence into
-      // the room and add baseVersion conflict rules from the spec.
+      // Legacy lane: still exists for old clients, but it must respect the
+      // same room-issued write claim as the command rail.
+      const access = this.playerAccess.get(client.sessionId)
+      if (!access?.canWrite) return
 
       // Defensive caps: shape, payload size, per-client rate.
       if (!payload || typeof payload !== 'object') return
       const env = payload as { kind?: unknown; payload?: unknown }
       if (typeof env.kind !== 'string' || env.kind.length > 64) return
+      if (!WORLD_MUTATION_KINDS.has(env.kind)) return
 
       // Serialized-size cap. JSON.stringify is the cheapest realistic proxy
       // for the wire size of an arbitrary unknown payload here; perfectly
@@ -479,18 +1030,137 @@ export class WorldRoom extends Room<WorldRoomState> {
       // Token-bucket rate limit per session.
       if (!this.consumeMutationToken(client.sessionId, Date.now())) return
 
+      recordWorldMutation(this.state.worldId)
       this.broadcast('mutation', payload, { except: client })
+    })
+
+    this.onMessage('command', async (client, payload: WorldCommandMessage) => {
+      const rejected = (commandId: string | undefined, error: string) => {
+        recordWorldCommand(this.state.worldId, false, payload?.createdAt)
+        const player = this.state.players.get(client.sessionId)
+        const access = this.playerAccess.get(client.sessionId)
+        const rejectionCommand = payload && typeof payload === 'object'
+          ? {
+              ...payload,
+              worldId: this.state.worldId,
+              actorId: access?.userId || client.sessionId,
+              actorDisplayName: player?.displayName,
+              clientId: client.sessionId,
+            }
+          : payload
+        client.send('worldEvent', this.makeCommandEvent('command.rejected', rejectionCommand, commandId, error))
+      }
+
+      if (!payload || typeof payload !== 'object') return
+      const commandId = typeof payload.id === 'string' ? sanitizeText(payload.id, '', 160) : ''
+      if (!commandId) {
+        rejected(undefined, 'missing command id')
+        return
+      }
+
+      const existingEvent = this.commandEvents.get(commandId)
+      if (existingEvent) {
+        client.send('worldEvent', existingEvent)
+        return
+      }
+
+      if (typeof payload.kind !== 'string' || !WORLD_COMMAND_KINDS.has(payload.kind)) {
+        rejected(commandId, 'unsupported command kind')
+        return
+      }
+      if (typeof payload.worldId !== 'string' || sanitizeWorldId(payload.worldId) !== this.state.worldId) {
+        rejected(commandId, 'world id mismatch')
+        return
+      }
+      const player = this.state.players.get(client.sessionId)
+      if (!player) {
+        rejected(commandId, 'missing room player')
+        return
+      }
+      const access = this.playerAccess.get(client.sessionId)
+      if (!access?.canRead) {
+        rejected(commandId, 'missing room access claim')
+        return
+      }
+      if (payload.payload === undefined) {
+        rejected(commandId, 'missing command payload')
+        return
+      }
+
+      let serializedSize = 0
+      try {
+        serializedSize = JSON.stringify(payload).length
+      } catch {
+        rejected(commandId, 'unserializable command')
+        return
+      }
+      if (serializedSize > WORLD_COMMAND_MAX_BYTES) {
+        rejected(commandId, 'command too large')
+        return
+      }
+      const payloadError = validateCommandPayloadShape(payload.kind, payload.payload)
+      if (payloadError) {
+        rejected(commandId, payloadError)
+        return
+      }
+      const scopeError = validateRoomScopedCommand(payload.kind, payload.payload)
+      if (scopeError) {
+        rejected(commandId, scopeError)
+        return
+      }
+      if (!this.consumeMutationToken(client.sessionId, Date.now())) {
+        rejected(commandId, 'command rate limited')
+        return
+      }
+
+      const transient = TRANSIENT_WORLD_COMMAND_KINDS.has(payload.kind)
+      if (!transient && !access.canWrite) {
+        rejected(commandId, 'world write forbidden')
+        return
+      }
+      const canonicalCommand: WorldCommandMessage = {
+        ...payload,
+        id: commandId,
+        kind: payload.kind,
+        worldId: this.state.worldId,
+        actorId: access.userId,
+        actorDisplayName: player.displayName,
+        clientId: client.sessionId,
+        createdAt: typeof payload.createdAt === 'string' ? payload.createdAt : new Date().toISOString(),
+      }
+      try {
+        let event: WorldEventMessage
+        if (transient) {
+          event = this.makeCommandEvent('command.accepted', canonicalCommand, commandId)
+        } else {
+          event = await this.applyDurableCommandInOrder(commandId, canonicalCommand, access.userId)
+        }
+        if (event.kind === 'command.rejected') {
+          recordWorldCommand(this.state.worldId, false, canonicalCommand.createdAt)
+          client.send('worldEvent', event)
+          return
+        }
+        recordWorldCommand(this.state.worldId, true, canonicalCommand.createdAt)
+        if (!this.commandEvents.has(commandId)) this.rememberCommandEvent(commandId, event)
+        this.broadcast('worldEvent', event)
+      } catch (error) {
+        rejected(commandId, error instanceof Error ? error.message : String(error))
+      }
     })
   }
 
   override onJoin(client: Client, options: JoinOptions): void {
-    // Clients can briefly join before the world registry has hydrated. If a
-    // later join carries the DB-backed PvP flag, let true win for the room.
-    if (options.pvpEnabled === true && !this.state.pvpEnabled) {
-      this.state.pvpEnabled = true
+    let access: RoomAccess
+    try {
+      access = this.resolveJoinAccess(options)
+    } catch (error) {
+      console.warn(`[room ${this.roomId}] rejected join ${client.sessionId}:`, error instanceof Error ? error.message : String(error))
+      client.leave(4001)
+      return
     }
-
+    this.playerAccess.set(client.sessionId, access)
     const player = new PlayerState()
+    player.userId = access.userId
     player.playerId = sanitizePlayerId(options.playerId, client.sessionId)
     player.displayName = sanitizeText(options.displayName, `Player ${player.playerId.slice(0, 4)}`)
     player.avatarUrl = (typeof options.avatarUrl === 'string' ? options.avatarUrl.trim() : '').slice(0, 500)
@@ -508,6 +1178,7 @@ export class WorldRoom extends Room<WorldRoomState> {
     this.state.players.set(client.sessionId, player)
     rosterUpsert(this.state.worldId, client.sessionId, {
       playerId: player.playerId,
+      userId: player.userId,
       sessionId: client.sessionId,
       displayName: player.displayName,
       avatarUrl: player.avatarUrl,
@@ -518,6 +1189,7 @@ export class WorldRoom extends Room<WorldRoomState> {
       animState: player.animState,
       updatedAt: player.updatedAt,
     })
+    this.sendWorldSnapshot(client, access.userId, 'join')
     console.log(`[room ${this.roomId}] join ${client.sessionId} (${player.displayName}) total=${this.state.players.size}`)
   }
 
@@ -528,6 +1200,7 @@ export class WorldRoom extends Room<WorldRoomState> {
     // ghosts.
     try {
       this.state.players.delete(client.sessionId)
+      this.playerAccess.delete(client.sessionId)
       this.mutationBuckets.delete(client.sessionId)
       this.castBuckets.delete(client.sessionId)
       // Drop any bolts the leaving player owned — they can't be referenced
@@ -543,7 +1216,8 @@ export class WorldRoom extends Room<WorldRoomState> {
     }
   }
 
-  override onDispose(): void {
+  override async onDispose(): Promise<void> {
+    await this.flushCheckpoint('dispose')
     rosterClearWorld(this.state.worldId)
   }
 
@@ -602,5 +1276,37 @@ export class WorldRoom extends Room<WorldRoomState> {
       if (player === target) found = sessionId
     })
     return found
+  }
+
+  private makeCommandEvent(
+    kind: 'command.accepted' | 'command.rejected',
+    command: WorldCommandMessage,
+    commandId: string | undefined,
+    error?: string,
+  ): WorldEventMessage {
+    const suffix = commandId || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    const actorId = typeof command.actorId === 'string' ? sanitizeText(command.actorId, '', 96) : undefined
+    return {
+      id: `world-event-${kind.replace('.', '-')}-${suffix}`,
+      kind,
+      worldId: this.state.worldId,
+      commandId,
+      actorId,
+      acceptedAt: new Date().toISOString(),
+      revision: this.worldRevision,
+      source: 'room',
+      durable: false,
+      ...(error ? { error } : {}),
+      ...(kind === 'command.accepted' ? { command } : {}),
+    }
+  }
+
+  private rememberCommandEvent(commandId: string, event: WorldEventMessage): void {
+    this.commandEvents.set(commandId, event)
+    this.commandEventRing.push(event)
+    while (this.commandEventRing.length > COMMAND_EVENT_RING_MAX) {
+      const removed = this.commandEventRing.shift()
+      if (removed?.commandId) this.commandEvents.delete(removed.commandId)
+    }
   }
 }

@@ -21,7 +21,9 @@ import {
   createWorld, deleteWorld, exportWorld, importWorld,
   cancelPendingSave,
   loadPublicWorld,
+  type SaveWorldResponse,
   type WorldMeta,
+  type WorldState,
 } from '../lib/forge/world-persistence'
 import { worldMutationBus } from '../lib/world-mutation-bus'
 import type { SpellId } from '../lib/spellbook'
@@ -767,6 +769,19 @@ function captureWorldSnapshot(state: { placedCatalogAssets: CatalogPlacement[]; 
 // STORE
 // ═══════════════════════════════════════════════════════════════════════════════
 
+interface WorldCommandAuthority {
+  worldId: string
+  sessionId: string
+  canWrite: boolean
+  connectedAt: number
+}
+
+interface RoomCommandSaveGuard {
+  pending: Record<string, number>
+  suppressFullSaveUntil: number
+  legacyFallbackUntil: number
+}
+
 interface OasisState {
   // ─═̷─═̷─⚙️ VISUAL SETTINGS ─═̷─═̷─⚙️
   fpsCounterEnabled: boolean
@@ -855,6 +870,8 @@ interface OasisState {
     scale?: [number, number, number] | number
   }>
   behaviors: Record<string, ObjectBehavior>  // object id → movement/animation/label
+  audioPlaybackScopes: Record<string, 'shared' | 'local'>
+  localAudioBehaviors: Record<string, Partial<ObjectBehavior>>
   objectMeshStats: Record<string, import('../lib/conjure/types').ModelStats>  // ░▒▓ per-object mesh anatomy — extracted once when GLB loads ▓▒░
   worldLights: WorldLight[]            // per-world placeable light sources
   worldSkyBackground: string           // per-world sky preset ID; empty while a world is still loading
@@ -864,6 +881,14 @@ interface OasisState {
   _loadedObjectCount: number         // ░▒▓ SANITY CHECK: object count at load time — blocks catastrophic overwrites ▓▒░
   _realtimeChannel: RemoteSubscription | null  // ░▒▓ remote event subscription handle for cleanup ▓▒░
   _isReceivingRemoteUpdate: boolean  // ░▒▓ true while applying remote payload — prevents save loop ▓▒░
+  _worldLoadedAt: string | null       // savedAt from the last snapshot load/save; sent as full-save precondition
+  _worldCommandAuthority: WorldCommandAuthority | null
+  _lastRoomSnapshotRevision: number
+  _roomCommandSaveGuards: Record<string, RoomCommandSaveGuard>
+  setWorldCommandAuthority: (authority: WorldCommandAuthority | null) => void
+  markWorldCommandSubmitted: (worldId: string, commandId: string) => void
+  markWorldCommandSettled: (worldId: string, commandId: string, outcome: 'accepted' | 'rejected' | 'legacy') => void
+  applyRoomWorldSnapshot: (worldId: string, state: WorldState, options?: { revision?: number; reason?: string }) => void
 
   // ─═̷─═̷─📋 MINDCRAFT 3D — mission map selected mission ─═̷─═̷─📋
   mindcraftSelectedMissionId: number | null
@@ -919,6 +944,9 @@ interface OasisState {
   applyRemoteCatalogPlacement: (placement: CatalogPlacement) => void
   applyRemoteCatalogUpdate: (id: string, updates: Partial<CatalogPlacement>) => void
   applyRemoteCatalogRemoval: (id: string) => void
+  applyRemoteSpatialWebObject: (object: SpatialWebObject) => void
+  applyRemoteSpatialWebUpdate: (id: string, updates: Partial<SpatialWebObject>) => void
+  applyRemoteSpatialWebValue: (payload: { id: string; value: SpatialWebValue; event?: SpatialWebEventName; lastInteractionAt?: string; interactionCount?: number; statusMessage?: string; errorMessage?: string }) => void
   placePortalGateAt: (args: {
     variant: PortalGateVariant
     label?: string
@@ -999,6 +1027,8 @@ interface OasisState {
   setAgentAvatarTransform: (id: string, transform: { position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number }) => void
   setObjectBehavior: (id: string, behavior: Partial<ObjectBehavior>) => void
   applyRemoteObjectBehavior: (id: string, updates: Partial<ObjectBehavior>) => void
+  setAudioPlaybackScope: (id: string, scope: 'shared' | 'local') => void
+  setAudioPlaybackBehavior: (id: string, behavior: Partial<Pick<ObjectBehavior, 'audioState' | 'audioMuted' | 'audioLoop' | 'audioVolume' | 'audioMaxDistance' | 'audioPlaybackId' | 'audioStartedAt' | 'audioUpdatedAt'>>) => void
   addSpatialWebObject: (object: SpatialWebObject) => void
   placeSpatialWebObjectAt: (object: SpatialWebObject, position: [number, number, number]) => void
   updateSpatialWebObject: (id: string, updates: Partial<SpatialWebObject>) => void
@@ -1136,6 +1166,35 @@ export const useOasisStore = create<OasisState>((set, get) => {
       ? window.__oasisModeFallback
       : (typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_OASIS_MODE : undefined)
     return mode !== 'hosted' && state.worldRegistry.length === 0
+  }
+
+  const currentLoadedWorldId = () => {
+    const state = get()
+    return state.viewingWorldId || state.activeWorldId
+  }
+
+  const shouldSkipFullSaveForRoomCommandAuthority = () => {
+    const state = get()
+    const worldId = currentLoadedWorldId()
+    const authority = state._worldCommandAuthority
+    if (!authority || authority.worldId !== worldId || !authority.canWrite) return false
+    const guard = state._roomCommandSaveGuards[worldId]
+    if (!guard) return false
+    const now = Date.now()
+    if (guard.legacyFallbackUntil > now) return false
+    const hasPending = Object.values(guard.pending).some(expiresAt => expiresAt > now)
+    return hasPending || guard.suppressFullSaveUntil > now
+  }
+
+  const handleWorldSaveResult = (result: SaveWorldResponse | null) => {
+    if (!result) return
+    if (result.conflict) {
+      console.warn('[World] Full snapshot save rejected by server version guard:', result.serverUpdatedAt || 'newer server state')
+      return
+    }
+    if (result.saved && result.savedAt) {
+      set({ _worldLoadedAt: result.savedAt })
+    }
   }
 
   const broadcastAgentWindowAndLinkedAvatar = (windowId: string) => {
@@ -1468,6 +1527,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
   cameraLookAt: null,
   transforms: {},
   behaviors: {},
+  audioPlaybackScopes: {},
+  localAudioBehaviors: {},
   objectMeshStats: {},
   worldLights: [],
   worldSkyBackground: '',
@@ -1477,8 +1538,133 @@ export const useOasisStore = create<OasisState>((set, get) => {
   _loadedObjectCount: 0,  // ░▒▓ SANITY CHECK: set on load, checked on save — blocks catastrophic nukes ▓▒░
   _realtimeChannel: null,
   _isReceivingRemoteUpdate: false,
+  _worldLoadedAt: null,
+  _worldCommandAuthority: null,
+  _lastRoomSnapshotRevision: 0,
+  _roomCommandSaveGuards: {},
+  setWorldCommandAuthority: (authority) => set({ _worldCommandAuthority: authority }),
+  markWorldCommandSubmitted: (worldId, commandId) => {
+    const now = Date.now()
+    set(state => {
+      const existing = state._roomCommandSaveGuards[worldId] || {
+        pending: {},
+        suppressFullSaveUntil: 0,
+        legacyFallbackUntil: 0,
+      }
+      return {
+        _roomCommandSaveGuards: {
+          ...state._roomCommandSaveGuards,
+          [worldId]: {
+            pending: { ...existing.pending, [commandId]: now + 30_000 },
+            suppressFullSaveUntil: Math.max(existing.suppressFullSaveUntil, now + 30_000),
+            legacyFallbackUntil: existing.legacyFallbackUntil,
+          },
+        },
+      }
+    })
+  },
+  markWorldCommandSettled: (worldId, commandId, outcome) => {
+    const now = Date.now()
+    set(state => {
+      const existing = state._roomCommandSaveGuards[worldId]
+      if (!existing) return {}
+      const pending = { ...existing.pending }
+      delete pending[commandId]
+      const activePending = Object.fromEntries(
+        Object.entries(pending).filter(([, expiresAt]) => expiresAt > now),
+      )
+      const hasPending = Object.keys(activePending).length > 0
+      const legacyFallbackUntil = outcome === 'legacy' ? now + 3_000 : existing.legacyFallbackUntil
+      const suppressFullSaveUntil = outcome === 'legacy'
+        ? 0
+        : hasPending
+          ? Math.max(existing.suppressFullSaveUntil, now + 30_000)
+          : now + (outcome === 'accepted' ? 2_000 : 750)
+      return {
+        _roomCommandSaveGuards: {
+          ...state._roomCommandSaveGuards,
+          [worldId]: {
+            pending: activePending,
+            suppressFullSaveUntil,
+            legacyFallbackUntil,
+          },
+        },
+      }
+    })
+  },
 
   // ─═̷─═̷─📋 MINDCRAFT 3D ─═̷─═̷─📋
+  applyRoomWorldSnapshot: (worldId, world, options = {}) => {
+    const state = get()
+    const currentWorldId = state.viewingWorldId || state.activeWorldId
+    if (!worldId || currentWorldId !== worldId) return
+    const incomingRevision = Number.isFinite(options.revision) ? Math.max(0, Math.floor(options.revision as number)) : 0
+    if (incomingRevision > 0 && incomingRevision < state._lastRoomSnapshotRevision) {
+      console.warn('[World] Ignored stale room snapshot:', worldId, 'rev=', incomingRevision, 'current=', state._lastRoomSnapshotRevision)
+      return
+    }
+    const guard = state._roomCommandSaveGuards[worldId]
+    const now = Date.now()
+    const hasPendingCommand = Boolean(guard && Object.values(guard.pending).some(expiresAt => expiresAt > now))
+    if (hasPendingCommand && incomingRevision > 0 && incomingRevision <= state._lastRoomSnapshotRevision) {
+      console.warn('[World] Deferred room snapshot while local commands are pending:', worldId, 'rev=', incomingRevision)
+      return
+    }
+
+    cancelPendingSave()
+    const defaultLights: WorldLight[] = DEFAULT_WORLD_LIGHTS.map((l, i) => ({ ...l, id: `light-${l.type}-default-${i}`, visible: true } as WorldLight))
+    const lights = world.lights !== undefined ? world.lights : defaultLights
+    const portalGates = resolveDefaultPortalGates(worldId, world.portalGates, world.transforms)
+    const spatialWebObjects = resolveDefaultSpatialWebObjects(worldId, world.spatialWebObjects)
+    const loadedObjCount = (world.conjuredAssetIds?.length || 0)
+      + (world.catalogPlacements?.length || 0)
+      + (world.craftedScenes?.length || 0)
+      + portalGates.length
+      + spatialWebObjects.length
+      + (world.paintStrokes?.length || 0)
+      + (world.text3dObjects?.length || 0)
+    const existingCustomIds = new Set(state.customGroundPresets.map(p => p.id))
+    const newCustom = (world.customGroundPresets || []).filter((p: import('../lib/forge/ground-textures').GroundPreset) => !existingCustomIds.has(p.id))
+    const mergedCustom = [...state.customGroundPresets, ...newCustom]
+    if (newCustom.length > 0) persist('oasis-custom-ground', JSON.stringify(mergedCustom))
+    const sanitizedAgentAvatars = sanitizeAgentAvatarList(world.agentAvatars || [])
+    const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
+      windows: world.agentWindows || [],
+      avatars: sanitizedAgentAvatars.entries,
+      transforms: world.transforms || {},
+    })
+    set({
+      _worldReady: state.isViewMode ? state.isViewModeEditable : true,
+      _isReceivingRemoteUpdate: false,
+      _loadedObjectCount: loadedObjCount,
+      _worldLoadedAt: world.savedAt || null,
+      _lastRoomSnapshotRevision: Math.max(state._lastRoomSnapshotRevision, incomingRevision),
+      terrainParams: world.terrain || null,
+      terrainHeights: normalizeTerrainHeights(world.terrainHeights),
+      groundPresetId: world.groundPresetId || 'none',
+      groundTiles: world.groundTiles || {},
+      craftedScenes: world.craftedScenes || [],
+      worldConjuredAssetIds: world.conjuredAssetIds || [],
+      placedCatalogAssets: world.catalogPlacements || [],
+      portalGates,
+      spatialWebObjects,
+      paintStrokes: world.paintStrokes || [],
+      text3dObjects: world.text3dObjects || [],
+      paintStrokePlayback: {},
+      transforms: normalizedAgentWorldState.transforms,
+      behaviors: world.behaviors || {},
+      worldLights: lights,
+      worldSkyBackground: world.skyBackgroundId || 'night007',
+      customGroundPresets: mergedCustom,
+      placedAgentWindows: normalizedAgentWorldState.windows,
+      placedAgentAvatars: normalizedAgentWorldState.avatars,
+      liveAgentAvatarAudio: {},
+      audioPlaybackScopes: {},
+      localAudioBehaviors: {},
+    })
+    console.info('[World] Applied room snapshot:', worldId, 'rev=', options.revision ?? '?', 'reason=', options.reason || 'room', '| objects:', loadedObjCount)
+  },
+
   mindcraftSelectedMissionId: null as number | null,
   setMindcraftSelectedMissionId: (id: number | null) => set({ mindcraftSelectedMissionId: id }),
 
@@ -1692,6 +1878,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
         placedCatalogAssets: state.placedCatalogAssets.filter(a => a.id !== id),
         selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
         inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
+        audioPlaybackScopes: Object.fromEntries(Object.entries(state.audioPlaybackScopes).filter(([key]) => key !== id)),
+        localAudioBehaviors: Object.fromEntries(Object.entries(state.localAudioBehaviors).filter(([key]) => key !== id)),
       }))
     })
     worldMutationBus.broadcast({ kind: 'object_removed', payload: { id } })
@@ -1716,6 +1904,42 @@ export const useOasisStore = create<OasisState>((set, get) => {
       selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
     }))
   },
+  applyRemoteSpatialWebObject: (object) => {
+    set(state => {
+      const existed = state.spatialWebObjects.some(existing => existing.id === object.id)
+      return {
+        spatialWebObjects: existed
+          ? state.spatialWebObjects.map(existing => existing.id === object.id ? { ...existing, ...object, id: existing.id } : existing)
+          : [...state.spatialWebObjects, object],
+        _loadedObjectCount: existed ? state._loadedObjectCount : state._loadedObjectCount + 1,
+      }
+    })
+  },
+  applyRemoteSpatialWebUpdate: (id, updates) => {
+    set(state => ({
+      spatialWebObjects: state.spatialWebObjects.map(object =>
+        object.id === id ? { ...object, ...updates, id: object.id } : object,
+      ),
+    }))
+  },
+  applyRemoteSpatialWebValue: (payload) => {
+    const { id, value, event, lastInteractionAt, interactionCount, statusMessage, errorMessage } = payload
+    set(state => ({
+      spatialWebObjects: state.spatialWebObjects.map(object =>
+        object.id === id
+          ? {
+              ...object,
+              value,
+              ...(event ? { lastEvent: event } : {}),
+              ...(lastInteractionAt ? { lastInteractionAt } : {}),
+              ...(typeof interactionCount === 'number' ? { interactionCount } : {}),
+              ...(statusMessage !== undefined ? { statusMessage } : {}),
+              ...(errorMessage !== undefined ? { errorMessage } : {}),
+            }
+          : object,
+      ),
+    }))
+  },
 
   // ─═̷─═̷─📚 SCENE LIBRARY ACTIONS ─═̷─═̷─📚
   // Spatial web primitives: the "website as a place" object layer.
@@ -1726,6 +1950,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
       }))
     })
     get().spawnPlacementVfx(object.position)
+    worldMutationBus.broadcast({ kind: 'spatial_web_added', payload: object })
+    worldMutationBus.broadcast({ kind: 'placement_vfx', payload: { position: object.position } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   placeSpatialWebObjectAt: (object, position) => {
@@ -1741,6 +1967,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
     })
     exitPlacementIfActive()
     get().spawnPlacementVfx(placedObject.position)
+    worldMutationBus.broadcast({ kind: 'spatial_web_added', payload: placedObject })
+    worldMutationBus.broadcast({ kind: 'placement_vfx', payload: { position: placedObject.position } })
     setTimeout(() => get().saveWorldState(), 100)
     awardXp('PLACE_CATALOG_OBJECT', get().activeWorldId)
   },
@@ -1750,14 +1978,19 @@ export const useOasisStore = create<OasisState>((set, get) => {
         object.id === id ? { ...object, ...updates } : object,
       ),
     }))
+    worldMutationBus.broadcast({ kind: 'spatial_web_updated', payload: { id, updates } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   setSpatialWebObjectValue: (id, value) => {
+    const now = new Date().toISOString()
+    const existing = get().spatialWebObjects.find(object => object.id === id)
+    const interactionCount = (existing?.interactionCount || 0) + 1
     set(state => ({
       spatialWebObjects: state.spatialWebObjects.map(object =>
-        object.id === id ? { ...object, value, lastEvent: 'change', lastInteractionAt: new Date().toISOString(), interactionCount: (object.interactionCount || 0) + 1 } : object,
+        object.id === id ? { ...object, value, lastEvent: 'change', lastInteractionAt: now, interactionCount } : object,
       ),
     }))
+    worldMutationBus.broadcast({ kind: 'spatial_web_value_set', payload: { id, value, event: 'change', lastInteractionAt: now, interactionCount } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   interactSpatialWebObject: async (id, event = 'press') => {
@@ -1766,20 +1999,28 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
     const now = new Date().toISOString()
     const effectPosition = resolveSpatialWebObjectPosition(object, get().transforms[id])
-    const markInteraction = (updates: Partial<SpatialWebObject> = {}, actualEvent: SpatialWebEventName = event) => {
+    const patchSpatialObject = (targetId: string, updates: Partial<SpatialWebObject>) => {
       set(state => ({
         spatialWebObjects: state.spatialWebObjects.map(entry =>
-          entry.id === id
-            ? {
-                ...entry,
-                ...updates,
-                lastEvent: actualEvent,
-                lastInteractionAt: now,
-                interactionCount: (entry.interactionCount || 0) + 1,
-              }
-            : entry,
+          entry.id === targetId ? { ...entry, ...updates, id: entry.id } : entry,
         ),
       }))
+      worldMutationBus.broadcast({ kind: 'spatial_web_updated', payload: { id: targetId, updates } })
+    }
+    const markInteraction = (updates: Partial<SpatialWebObject> = {}, actualEvent: SpatialWebEventName = event) => {
+      const existing = get().spatialWebObjects.find(entry => entry.id === id)
+      const nextUpdates: Partial<SpatialWebObject> = {
+        ...updates,
+        lastEvent: actualEvent,
+        lastInteractionAt: now,
+        interactionCount: (existing?.interactionCount || 0) + 1,
+      }
+      set(state => ({
+        spatialWebObjects: state.spatialWebObjects.map(entry =>
+          entry.id === id ? { ...entry, ...nextUpdates, id: entry.id } : entry,
+        ),
+      }))
+      worldMutationBus.broadcast({ kind: 'spatial_web_updated', payload: { id, updates: nextUpdates } })
     }
 
     const runWorldToolAction = async (
@@ -1802,9 +2043,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
         if (tool === 'set_sky' && typeof args.presetId === 'string') {
           set({ worldSkyBackground: args.presetId })
+          worldMutationBus.broadcast({ kind: 'sky_changed', payload: { skyBackgroundId: args.presetId } })
         } else if (tool === 'set_ground_preset' && typeof args.presetId === 'string') {
           set({ groundPresetId: args.presetId })
+          worldMutationBus.broadcast({ kind: 'ground_changed', payload: { groundPresetId: args.presetId } })
         } else if (tool === 'paint_ground_tiles' && Array.isArray(args.tiles)) {
+          const paintedTiles: Array<{ x: number; z: number; presetId: string }> = []
           set(state => {
             const nextTiles = { ...state.groundTiles }
             for (const tile of args.tiles as Array<Record<string, unknown>>) {
@@ -1814,9 +2058,16 @@ export const useOasisStore = create<OasisState>((set, get) => {
               const presetId = typeof tile.presetId === 'string' ? tile.presetId : typeof args.presetId === 'string' ? args.presetId : ''
               if (!Number.isFinite(x) || !Number.isFinite(z) || !presetId) continue
               nextTiles[`${x},${z}`] = presetId
+              paintedTiles.push({ x, z, presetId })
             }
             return { groundTiles: nextTiles }
           })
+          for (const tile of paintedTiles) {
+            worldMutationBus.broadcast({
+              kind: 'ground_painted',
+              payload: { cx: tile.x, cz: tile.z, presetId: tile.presetId, size: 1, stretch: 1 },
+            })
+          }
         } else if (tool === 'modify_object' && typeof args.objectId === 'string') {
           const objectId = args.objectId
           const behaviorUpdates: Partial<ObjectBehavior> = {}
@@ -1832,6 +2083,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
                 },
               },
             }))
+            worldMutationBus.broadcast({ kind: 'behavior_updated', payload: { id: objectId, updates: behaviorUpdates } })
           }
         }
         return true
@@ -1880,6 +2132,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
           ],
         }))
         get().spawnPlacementVfx(portalPosition)
+        worldMutationBus.broadcast({ kind: 'portal_added', payload: portalGate })
+        worldMutationBus.broadcast({ kind: 'placement_vfx', payload: { position: portalPosition } })
         if (isBrowser) get().refreshWorldRegistry()
       }, delayMs)
     }
@@ -1923,6 +2177,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
           ],
         }))
         get().spawnPlacementVfx(portalPosition)
+        worldMutationBus.broadcast({ kind: 'portal_added', payload: portalGate })
+        worldMutationBus.broadcast({ kind: 'placement_vfx', payload: { position: portalPosition } })
       }, delayMs)
     }
 
@@ -2072,28 +2328,18 @@ export const useOasisStore = create<OasisState>((set, get) => {
     const action = object.action
     if (action?.type === 'set_value' && action.targetObjectId) {
       playSpatialWebSound('buttonClick')
-      set(state => ({
-        spatialWebObjects: state.spatialWebObjects.map(entry => {
-          if (entry.id === action.targetObjectId) {
-            return {
-              ...entry,
-              value: action.value ?? entry.value ?? null,
-              lastEvent: 'change',
-              lastInteractionAt: now,
-              interactionCount: (entry.interactionCount || 0) + 1,
-            }
-          }
-          if (entry.id === id) {
-            return {
-              ...entry,
-              lastEvent: event,
-              lastInteractionAt: now,
-              interactionCount: (entry.interactionCount || 0) + 1,
-            }
-          }
-          return entry
-        }),
-      }))
+      const target = get().spatialWebObjects.find(entry => entry.id === action.targetObjectId)
+      const targetValue = action.value ?? target?.value ?? null
+      if (target) {
+        const targetUpdates: Partial<SpatialWebObject> = {
+          value: targetValue,
+          lastEvent: 'change',
+          lastInteractionAt: now,
+          interactionCount: (target.interactionCount || 0) + 1,
+        }
+        patchSpatialObject(action.targetObjectId, targetUpdates)
+      }
+      markInteraction({}, event)
       setTimeout(() => get().saveWorldState(), 100)
       return
     }
@@ -2141,23 +2387,13 @@ export const useOasisStore = create<OasisState>((set, get) => {
           ].join('\n')
         : ''
       const receipt = `${status}${gradeLines}\n\n${summarizeSpatialWebSubmission(payload)}`
-      set(state => ({
-        spatialWebObjects: state.spatialWebObjects.map(entry => {
-          if (entry.formId === object.formId && entry.type === 'output' && entry.id !== id) {
-            return { ...entry, value: receipt, submittedAt: payload.submittedAt }
-          }
-          if (entry.id === id) {
-            return {
-              ...entry,
-              submittedAt: submitSucceeded ? payload.submittedAt : entry.submittedAt,
-              lastEvent: 'submit',
-              lastInteractionAt: now,
-              interactionCount: (entry.interactionCount || 0) + 1,
-            }
-          }
-          return entry
-        }),
-      }))
+      const outputIds = get().spatialWebObjects
+        .filter(entry => entry.formId === object.formId && entry.type === 'output' && entry.id !== id)
+        .map(entry => entry.id)
+      for (const outputId of outputIds) {
+        patchSpatialObject(outputId, { value: receipt, submittedAt: payload.submittedAt })
+      }
+      markInteraction({ submittedAt: submitSucceeded ? payload.submittedAt : object.submittedAt }, 'submit')
       if (submitSucceeded) {
         playSpatialWebSound('winner')
         get().spawnPlacementVfx(effectPosition)
@@ -2326,7 +2562,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
         ],
       }))
     })
-    objects.forEach(object => get().spawnPlacementVfx(object.position))
+    objects.forEach(object => {
+      get().spawnPlacementVfx(object.position)
+      worldMutationBus.broadcast({ kind: 'spatial_web_added', payload: object })
+      worldMutationBus.broadcast({ kind: 'placement_vfx', payload: { position: object.position } })
+    })
     setTimeout(() => get().saveWorldState(), 100)
   },
 
@@ -2577,7 +2817,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
             [...existingTargetGates, returnGate],
             targetState.transforms,
           ),
-        }, resolvedTargetWorldId)
+        }, resolvedTargetWorldId, targetState.savedAt ? { clientLoadedAt: targetState.savedAt } : {})
       })()
     }
 
@@ -2607,7 +2847,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         await saveWorld({
           ...targetSaveState,
           portalGates: targetState.portalGates.filter(portal => portal.id !== gate.linkedPortalId),
-        }, gate.targetWorldId)
+        }, gate.targetWorldId, targetState.savedAt ? { clientLoadedAt: targetState.savedAt } : {})
       })()
     }
   },
@@ -3264,6 +3504,40 @@ export const useOasisStore = create<OasisState>((set, get) => {
       return { behaviors: { ...state.behaviors, [id]: nextBehavior } }
     })
   },
+  setAudioPlaybackScope: (id, scope) => {
+    set(state => ({
+      audioPlaybackScopes: { ...state.audioPlaybackScopes, [id]: scope },
+      localAudioBehaviors: scope === 'shared'
+        ? state.localAudioBehaviors
+        : {
+            ...state.localAudioBehaviors,
+            [id]: {
+              ...state.localAudioBehaviors[id],
+              audioState: state.localAudioBehaviors[id]?.audioState ?? state.behaviors[id]?.audioState,
+              audioMuted: state.localAudioBehaviors[id]?.audioMuted ?? state.behaviors[id]?.audioMuted,
+              audioLoop: state.localAudioBehaviors[id]?.audioLoop ?? state.behaviors[id]?.audioLoop,
+              audioVolume: state.localAudioBehaviors[id]?.audioVolume ?? state.behaviors[id]?.audioVolume,
+              audioMaxDistance: state.localAudioBehaviors[id]?.audioMaxDistance ?? state.behaviors[id]?.audioMaxDistance,
+            },
+          },
+    }))
+  },
+  setAudioPlaybackBehavior: (id, partial) => {
+    const scope = get().audioPlaybackScopes[id] || 'shared'
+    if (scope === 'local') {
+      set(state => ({
+        localAudioBehaviors: {
+          ...state.localAudioBehaviors,
+          [id]: {
+            ...state.localAudioBehaviors[id],
+            ...partial,
+          },
+        },
+      }))
+      return
+    }
+    get().setObjectBehavior(id, partial)
+  },
   setObjectMeshStats: (id, stats) => {
     set((state) => ({ objectMeshStats: { ...state.objectMeshStats, [id]: stats } }))
   },
@@ -3459,6 +3733,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
           _worldReady: true,
           _isReceivingRemoteUpdate: false,
           _loadedObjectCount: 0,
+          _worldLoadedAt: null,
           terrainParams: null,
           terrainHeights: createFlatTerrainHeights(),
           groundPresetId: 'none',
@@ -3478,6 +3753,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
           placedAgentWindows: [],
           placedAgentAvatars: [],
           liveAgentAvatarAudio: {},
+          audioPlaybackScopes: {},
+          localAudioBehaviors: {},
         })
         console.log('[World] No data — initialized empty world')
         return
@@ -3503,6 +3780,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         _worldReady: true,
         _isReceivingRemoteUpdate: false,
         _loadedObjectCount: loadedObjCount,
+        _worldLoadedAt: world.savedAt || null,
         terrainParams: world.terrain || null,
         terrainHeights: normalizeTerrainHeights(world.terrainHeights),
         groundPresetId: world.groundPresetId || 'none',
@@ -3523,6 +3801,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
         placedAgentWindows: normalizedAgentWorldState.windows,
         placedAgentAvatars: normalizedAgentWorldState.avatars,
         liveAgentAvatarAudio: {},
+        audioPlaybackScopes: {},
+        localAudioBehaviors: {},
       })
       if ((sanitizedAgentAvatars.changed || normalizedAgentWorldState.changed) && !get().isViewMode && canWriteCurrentWorld()) {
         console.warn('[World] Repaired invalid agent avatar URLs while loading the active world.')
@@ -3545,7 +3825,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
           ...(Array.isArray(world.customGroundPresets) && world.customGroundPresets.length > 0 ? { customGroundPresets: world.customGroundPresets } : {}),
           agentWindows: normalizedAgentWorldState.windows,
           agentAvatars: normalizedAgentWorldState.avatars,
-        }, get().activeWorldId)
+        }, get().activeWorldId, world.savedAt ? { clientLoadedAt: world.savedAt } : {})
+          .then(handleWorldSaveResult)
       }
       console.log('[World] Loaded:', world.savedAt, '| objects:', loadedObjCount, '| preset:', world.groundPresetId || 'none', '| tiles:', Object.keys(world.groundTiles || {}).length, '| catalog:', world.catalogPlacements?.length || 0, '| lights:', lights.length, '| sky:', world.skyBackgroundId || 'night007', '| agents:', (world.agentWindows || []).length, '| avatars:', sanitizedAgentAvatars.entries.length)
     }).catch(error => {
@@ -3575,7 +3856,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
       console.warn('[World] ⚠️ Save blocked — world not loaded yet (preventing empty-state overwrite)')
       return
     }
-    const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms, behaviors, worldLights, worldSkyBackground, viewingWorldId, customGroundPresets, placedAgentWindows, placedAgentAvatars, _loadedObjectCount } = get()
+    if (shouldSkipFullSaveForRoomCommandAuthority()) {
+      console.info('[World] Snapshot save skipped — room command authority owns the pending mutation')
+      return
+    }
+    const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms, behaviors, worldLights, worldSkyBackground, viewingWorldId, customGroundPresets, placedAgentWindows, placedAgentAvatars, _loadedObjectCount, _worldLoadedAt } = get()
     const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
       windows: placedAgentWindows,
       avatars: placedAgentAvatars,
@@ -3623,10 +3908,13 @@ export const useOasisStore = create<OasisState>((set, get) => {
       agentAvatars: normalizedAgentWorldState.avatars,
     }
     // If editing an open-build world, save to THAT world (not user's own).
+    const saveOptions = _worldLoadedAt
+      ? { clientLoadedAt: _worldLoadedAt, onResult: handleWorldSaveResult }
+      : { onResult: handleWorldSaveResult }
     if (get().isViewModeEditable && viewingWorldId) {
-      saveWorld(worldState, viewingWorldId) // direct save to viewed world
+      void saveWorld(worldState, viewingWorldId, saveOptions).then(handleWorldSaveResult) // direct save to viewed world
     } else {
-      debouncedSaveWorld(worldState)
+      debouncedSaveWorld(worldState, 1000, saveOptions)
     }
   },
 
@@ -3647,7 +3935,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     set({ _realtimeChannel: null })
     // Save current world first (immediate, not debounced) — but ONLY if world was loaded
     if (shouldSaveCurrentWorld) {
-      const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
+      const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows, _worldLoadedAt } = get()
       const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
         windows: placedAgentWindows,
         avatars: placedAgentAvatars,
@@ -3657,12 +3945,13 @@ export const useOasisStore = create<OasisState>((set, get) => {
       // the LLM hasn't materialized anything yet. Using objects.length (not name)
       // because the scene name gets updated mid-stream before objects arrive.
       const completedScenes = craftedScenes.filter(s => s.objects.length > 0)
-      saveWorld({ terrain: terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes: completedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms: normalizedAgentWorldState.transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: normalizedAgentWorldState.windows, agentAvatars: normalizedAgentWorldState.avatars }, activeWorldId)
+      void saveWorld({ terrain: terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes: completedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms: normalizedAgentWorldState.transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: normalizedAgentWorldState.windows, agentAvatars: normalizedAgentWorldState.avatars }, activeWorldId, _worldLoadedAt ? { clientLoadedAt: _worldLoadedAt } : {})
+        .then(handleWorldSaveResult)
     }
 
     // ░▒▓ Block saves during transition — prevents empty state nuke ▓▒░
     // Also clear the armed spell — it belonged to the previous world's context.
-    set({ _worldReady: false, selectedSpellId: null })
+    set({ _worldReady: false, selectedSpellId: null, _worldLoadedAt: null, _worldCommandAuthority: null, _lastRoomSnapshotRevision: 0 })
 
     // Switch to new world
     setActiveWorldId(worldId, { publish: true })
@@ -3697,6 +3986,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       set({
         _worldReady: true,
         _loadedObjectCount: switchObjCount,
+        _worldLoadedAt: world.savedAt || null,
         activeWorldId: worldId,
         terrainParams: world?.terrain || null,
         terrainHeights: normalizeTerrainHeights(world?.terrainHeights),
@@ -3717,6 +4007,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
         placedAgentWindows: normalizedAgentWorldState.windows,
         placedAgentAvatars: normalizedAgentWorldState.avatars,
         liveAgentAvatarAudio: {},
+        audioPlaybackScopes: {},
+        localAudioBehaviors: {},
         selectedObjectId: null,
         inspectedObjectId: null,
         paintMode: false,
@@ -3750,7 +4042,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
           ...(Array.isArray(world.customGroundPresets) && world.customGroundPresets.length > 0 ? { customGroundPresets: world.customGroundPresets } : {}),
           agentWindows: normalizedAgentWorldState.windows,
           agentAvatars: normalizedAgentWorldState.avatars,
-        }, worldId)
+        }, worldId, world.savedAt ? { clientLoadedAt: world.savedAt } : {})
+          .then(handleWorldSaveResult)
       }
 
       // Shared SSE world-events fanout handles remote tool updates.
@@ -3764,13 +4057,14 @@ export const useOasisStore = create<OasisState>((set, get) => {
     // Save current world first — only if world was loaded (prevent empty-state nuke)
     cancelPendingSave()
     if (get()._worldReady && canWriteCurrentWorld()) {
-      const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
+      const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows, _worldLoadedAt } = get()
       const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
         windows: placedAgentWindows,
         avatars: placedAgentAvatars,
         transforms,
       })
-      saveWorld({ terrain: terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms: normalizedAgentWorldState.transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: normalizedAgentWorldState.windows, agentAvatars: normalizedAgentWorldState.avatars }, activeWorldId)
+      void saveWorld({ terrain: terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms: normalizedAgentWorldState.transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: normalizedAgentWorldState.windows, agentAvatars: normalizedAgentWorldState.avatars }, activeWorldId, _worldLoadedAt ? { clientLoadedAt: _worldLoadedAt } : {})
+        .then(handleWorldSaveResult)
     }
 
     // Create and switch to new world (async) — seed with default lights so it's not pitch black
@@ -3781,6 +4075,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
         set({
           _worldReady: true,  // New world is "loaded" — it's empty by definition
           _loadedObjectCount: 0,
+          _worldLoadedAt: meta.lastSavedAt || null,
+          _worldCommandAuthority: null,
+          _lastRoomSnapshotRevision: 0,
           activeWorldId: meta.id,
           worldRegistry: registry,
           terrainParams: null,
@@ -4369,12 +4666,13 @@ export const useOasisStore = create<OasisState>((set, get) => {
     // Save current world before entering view mode (if not already viewing)
     if (!get().isViewMode && get()._worldReady && canWriteCurrentWorld()) {
       cancelPendingSave()
-      const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows } = get()
-      saveWorld({ terrain: terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: placedAgentWindows, agentAvatars: placedAgentAvatars }, activeWorldId)
+      const { terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, worldConjuredAssetIds, placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms, behaviors, worldLights, worldSkyBackground, activeWorldId, placedAgentAvatars, placedAgentWindows, _worldLoadedAt } = get()
+      void saveWorld({ terrain: terrainParams, terrainHeights, groundPresetId, groundTiles, craftedScenes, conjuredAssetIds: worldConjuredAssetIds, catalogPlacements: placedCatalogAssets, portalGates, spatialWebObjects, paintStrokes, text3dObjects, transforms, behaviors, lights: worldLights, skyBackgroundId: worldSkyBackground, agentWindows: placedAgentWindows, agentAvatars: placedAgentAvatars }, activeWorldId, _worldLoadedAt ? { clientLoadedAt: _worldLoadedAt } : {})
+        .then(handleWorldSaveResult)
     }
 
     // Set view mode flag IMMEDIATELY — prevents initWorlds/loadWorldState from overwriting
-    set({ isViewMode: true, isViewModeEditable: false, viewingWorldId: worldId, viewingWorldMeta: { name: 'Loading...', icon: '⏳' } })
+    set({ isViewMode: true, isViewModeEditable: false, viewingWorldId: worldId, viewingWorldMeta: { name: 'Loading...', icon: '⏳' }, _worldLoadedAt: null, _worldCommandAuthority: null, _lastRoomSnapshotRevision: 0 })
 
     loadPublicWorld(worldId).then(result => {
       if (!result) {
@@ -4403,6 +4701,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       set({
         _worldReady: isEditable, // Only allow saves for authenticated open-build worlds
         _loadedObjectCount: viewObjCount,
+        _worldLoadedAt: state.savedAt || null,
         isViewModeEditable: isEditable,
         viewingWorldMeta: meta,
         terrainParams: state.terrain || null,
@@ -4435,7 +4734,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
   exitViewMode: () => {
     if (!get().isViewMode) return
-    set({ isViewMode: false, isViewModeEditable: false, viewingWorldId: null, viewingWorldMeta: null })
+    set({ isViewMode: false, isViewModeEditable: false, viewingWorldId: null, viewingWorldMeta: null, _worldLoadedAt: null, _worldCommandAuthority: null, _lastRoomSnapshotRevision: 0 })
     // Reload user's own active world
     get().loadWorldState()
     console.log('[ViewMode] Exited — back to own world')

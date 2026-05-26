@@ -31,6 +31,10 @@ vi.mock('../db', () => ({
   },
 }))
 
+vi.mock('../default-world-seed-writer', () => ({
+  mirrorDefaultWorldSeed: vi.fn().mockResolvedValue({ updated: false }),
+}))
+
 import { callTool, TOOL_NAMES, deliverScreenshot, getPendingScreenshotRequest, isScreenshotPending } from '../mcp/oasis-tools'
 import { subscribe } from '../mcp/world-events'
 import { prisma } from '../db'

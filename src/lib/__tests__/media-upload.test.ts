@@ -76,13 +76,13 @@ describe('/api/media/upload', () => {
     expect(json.error).toMatch(/unsupported type/i)
   })
 
-  it('rejects files over 250MB', async () => {
-    const oversize = 251 * 1024 * 1024 // 251MB
+  it('rejects image files over the 2MB cap', async () => {
+    const oversize = 3 * 1024 * 1024
     const file = makeFile('huge.png', 'image/png', oversize)
     const req = makeRequest(file)
     const res = await POST(req)
     const json = await res.json()
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(413)
     expect(json.error).toMatch(/too large/i)
   })
 
@@ -118,8 +118,8 @@ describe('/api/media/upload', () => {
     expect(json.url).toMatch(/\.webp$/)
   })
 
-  it('accepts files exactly at 250MB limit', async () => {
-    const exactLimit = 250 * 1024 * 1024
+  it('accepts image files exactly at the 2MB limit', async () => {
+    const exactLimit = 2 * 1024 * 1024
     const file = makeFile('big.png', 'image/png', exactLimit)
     const req = makeRequest(file)
     const res = await POST(req)

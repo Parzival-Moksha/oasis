@@ -645,6 +645,10 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
   const conjuredAssets = useOasisStore(s => s.conjuredAssets)
   const worldConjuredAssetIds = useOasisStore(s => s.worldConjuredAssetIds)
   const setObjectBehavior = useOasisStore(s => s.setObjectBehavior)
+  const audioPlaybackScopes = useOasisStore(s => s.audioPlaybackScopes)
+  const localAudioBehaviors = useOasisStore(s => s.localAudioBehaviors)
+  const setAudioPlaybackScope = useOasisStore(s => s.setAudioPlaybackScope)
+  const setAudioPlaybackBehavior = useOasisStore(s => s.setAudioPlaybackBehavior)
   const setInspectedObject = useOasisStore(s => s.setInspectedObject)
   const removeCatalogAsset = useOasisStore(s => s.removeCatalogAsset)
   const removeCraftedScene = useOasisStore(s => s.removeCraftedScene)
@@ -1661,9 +1665,23 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
 
         {/* ░▒▓ AUDIO CONTROLS — any object can become a loudspeaker ▓▒░ */}
         {resolved && (() => {
-          const beh = behaviors[inspectedObjectId!] || {}
+          const objectId = inspectedObjectId!
+          const sharedBeh = behaviors[objectId] || {}
+          const playbackScope = audioPlaybackScopes[objectId] || 'shared'
+          const beh = playbackScope === 'local'
+            ? { ...sharedBeh, ...(localAudioBehaviors[objectId] || {}) }
+            : sharedBeh
+          const writePlayback = (updates: Partial<Pick<ObjectBehavior, 'audioState' | 'audioMuted' | 'audioLoop' | 'audioVolume' | 'audioMaxDistance' | 'audioPlaybackId' | 'audioStartedAt' | 'audioUpdatedAt'>>) => {
+            const now = new Date().toISOString()
+            const enriched = { ...updates, audioUpdatedAt: now }
+            if (updates.audioState === 'playing') {
+              enriched.audioPlaybackId = `audio-playback-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+              enriched.audioStartedAt = now
+            }
+            setAudioPlaybackBehavior(objectId, enriched)
+          }
           const placement = resolved.type === 'catalog' ? resolved.data as import('../../lib/conjure/types').CatalogPlacement : null
-          const hasAudio = !!(beh.audioUrl || placement?.videoUrl || placement?.audioUrl)
+          const hasAudio = !!(sharedBeh.audioUrl || placement?.videoUrl || placement?.audioUrl)
           return (
             <>
               <SectionHeader>&#128266; Audio</SectionHeader>
@@ -1702,19 +1720,35 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                 ) : (
                   <>
                     {/* Audio URL display */}
-                    {beh.audioUrl && (
+                    {sharedBeh.audioUrl && (
                       <div className="flex items-center gap-1">
-                        <span className="text-[9px] text-gray-500 font-mono truncate flex-1">{beh.audioUrl}</span>
+                        <span className="text-[9px] text-gray-500 font-mono truncate flex-1">{sharedBeh.audioUrl}</span>
                         <button
                           onClick={() => setObjectBehavior(inspectedObjectId!, { audioUrl: undefined })}
                           className="text-[9px] text-red-400 hover:text-red-300"
                         >✕</button>
                       </div>
                     )}
+                    <div className="flex items-center gap-1">
+                      {(['shared', 'local'] as const).map(scope => (
+                        <button
+                          key={scope}
+                          onClick={() => setAudioPlaybackScope(objectId, scope)}
+                          className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                            playbackScope === scope
+                              ? 'border-sky-400/55 bg-sky-500/20 text-sky-200'
+                              : 'border-gray-600/30 bg-gray-700/10 text-gray-500 hover:text-gray-300'
+                          }`}
+                          title={scope === 'shared' ? 'Playback changes sync to the room' : 'Playback changes affect only this device'}
+                        >
+                          {scope === 'shared' ? 'Shared' : 'Personal'}
+                        </button>
+                      ))}
+                    </div>
                     {/* Transport: play/pause/stop */}
                     <div className="flex items-center gap-1">
                       <button
-                        onClick={() => setObjectBehavior(inspectedObjectId!, { audioState: 'playing', audioMuted: false })}
+                        onClick={() => writePlayback({ audioState: 'playing', audioMuted: false })}
                         className={`text-xs px-2.5 py-1 rounded border transition-colors ${
                           beh.audioState !== 'paused' && beh.audioState !== 'stopped'
                             ? 'border-green-500/50 bg-green-500/30 text-green-300'
@@ -1723,7 +1757,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                         title="Play"
                       >&#9654;</button>
                       <button
-                        onClick={() => setObjectBehavior(inspectedObjectId!, { audioState: 'paused' })}
+                        onClick={() => writePlayback({ audioState: 'paused' })}
                         className={`text-xs px-2 py-1 rounded border transition-colors ${
                           beh.audioState === 'paused'
                             ? 'border-yellow-500/50 bg-yellow-500/30 text-yellow-300'
@@ -1732,7 +1766,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                         title="Pause"
                       >&#10074;&#10074;</button>
                       <button
-                        onClick={() => setObjectBehavior(inspectedObjectId!, { audioState: 'stopped' })}
+                        onClick={() => writePlayback({ audioState: 'stopped' })}
                         className={`text-xs px-2 py-1 rounded border transition-colors ${
                           beh.audioState === 'stopped'
                             ? 'border-red-500/50 bg-red-500/30 text-red-300'
@@ -1753,7 +1787,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                     {/* Mute toggle (independent of play state) */}
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => setObjectBehavior(inspectedObjectId!, { audioMuted: !beh.audioMuted })}
+                        onClick={() => writePlayback({ audioMuted: !beh.audioMuted })}
                         className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
                           beh.audioMuted
                             ? 'border-red-500/30 bg-red-500/10 text-red-400'
@@ -1763,7 +1797,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                         {beh.audioMuted ? '🔇 Muted' : '🔊 Unmuted'}
                       </button>
                       <button
-                        onClick={() => setObjectBehavior(inspectedObjectId!, { audioLoop: !(beh.audioLoop ?? true) })}
+                        onClick={() => writePlayback({ audioLoop: !(beh.audioLoop ?? true) })}
                         className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
                           (beh.audioLoop ?? true)
                             ? 'border-sky-500/30 bg-sky-500/10 text-sky-400'
@@ -1779,7 +1813,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                       <input
                         type="range" min="0" max="1" step="0.05"
                         value={beh.audioVolume ?? 1}
-                        onChange={e => setObjectBehavior(inspectedObjectId!, { audioVolume: parseFloat(e.target.value) })}
+                        onChange={e => writePlayback({ audioVolume: parseFloat(e.target.value) })}
                         className="flex-1 h-1 accent-sky-500"
                       />
                       <span className="text-[9px] text-gray-500 font-mono w-8 text-right">{((beh.audioVolume ?? 1) * 100).toFixed(0)}%</span>
@@ -1790,7 +1824,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
                       <input
                         type="range" min="1" max="100" step="1"
                         value={beh.audioMaxDistance ?? 15}
-                        onChange={e => setObjectBehavior(inspectedObjectId!, { audioMaxDistance: parseFloat(e.target.value) })}
+                        onChange={e => writePlayback({ audioMaxDistance: parseFloat(e.target.value) })}
                         className="flex-1 h-1 accent-sky-500"
                       />
                       <span className="text-[9px] text-gray-500 font-mono w-8 text-right">{beh.audioMaxDistance ?? 15}m</span>

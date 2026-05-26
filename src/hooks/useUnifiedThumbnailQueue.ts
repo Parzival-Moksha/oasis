@@ -1,5 +1,5 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-// UNIFIED THUMBNAIL QUEUE — Global orchestrator, runs on app mount
+// UNIFIED THUMBNAIL QUEUE — Opt-in thumbnail builder
 // ─═̷─═̷─📸─═̷─═̷─ Replaces the per-tab autoGenTriggered scatter ─═̷─═̷─📸─═̷─═̷─
 //
 // Scans ASSET_CATALOG + conjuredAssets. For every asset without a thumbnail,
@@ -12,7 +12,7 @@
 // (not GLB files) and mounts inside AssetsTab. The two pipelines do not
 // share GPU rigs; both can run concurrently safely.
 //
-// Survives a single mount — runs in Providers, persists for the session.
+// Survives a single mount when explicitly enabled, persists for the session.
 // Cancellation: if the page unloads, in-flight renders are abandoned.
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
@@ -33,6 +33,18 @@ interface RenderRig {
   scene: THREE.Scene
   camera: THREE.PerspectiveCamera
   loader: GLTFLoader
+}
+
+function shouldRunUnifiedThumbnailQueue(): boolean {
+  if (process.env.NEXT_PUBLIC_OASIS_THUMBNAIL_QUEUE === '1') return true
+  if (typeof window === 'undefined') return false
+  try {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('thumbQueue') === '1') return true
+    return window.localStorage.getItem('oasis-thumbnail-queue') === '1'
+  } catch {
+    return false
+  }
 }
 
 function createRig(): RenderRig {
@@ -99,6 +111,8 @@ export function useUnifiedThumbnailQueue() {
   const failureCountsRef = useRef<Record<string, number>>({})
 
   useEffect(() => {
+    if (!shouldRunUnifiedThumbnailQueue()) return
+
     // ░▒▓ Global single-instance guard (StrictMode + HMR safe) ▓▒░
     // useRef is per-component-instance, which React 18 StrictMode double-
     // mounts on purpose and HMR can also double-mount across reloads. Pin
@@ -207,9 +221,7 @@ export function useUnifiedThumbnailQueue() {
     return () => {
       cancelledRef.current = true
       try { rig?.renderer.dispose() } catch {}
-      // Don't clear the global guard — let the singleton survive component
-      // unmount/remount cycles (StrictMode, HMR). Only a full page reload
-      // resets globalThis, which is what we want.
+      delete (globalThis as Record<string, unknown>)[GLOBAL_KEY]
     }
   }, [])
 }

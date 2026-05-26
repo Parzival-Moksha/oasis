@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../db', () => ({
-  prisma: {
+vi.mock('../db', () => {
+  const prisma = {
     world: {
       findMany: vi.fn(),
       findFirst: vi.fn(),
@@ -17,11 +17,21 @@ vi.mock('../db', () => ({
       create: vi.fn(),
       deleteMany: vi.fn(),
     },
+    worldLike: {
+      findMany: vi.fn(),
+    },
+    worldEvent: {
+      create: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+    },
+    $transaction: vi.fn(async (callback: any) => callback(prisma)),
     profile: {
       findMany: vi.fn(),
     },
-  },
-}))
+  }
+  return { prisma }
+})
 
 vi.mock('../agent-avatar-world-state', () => ({
   normalizeWorldStateAgentAvatarTransforms: vi.fn((state) => state),
@@ -38,6 +48,7 @@ import {
   getRegistry,
   loadWorld,
   saveWorld,
+  saveWorldCheckpointWithCommandEvents,
   setWorldVisibility,
   type WorldState,
 } from '../forge/world-server'
@@ -88,6 +99,7 @@ describe('world-server access enforcement', () => {
     vi.clearAllMocks()
     vi.mocked(mirrorDefaultWorldSeed).mockResolvedValue({ updated: false })
     vi.mocked(prisma.profile.findMany).mockResolvedValue([])
+    vi.mocked(prisma.worldLike.findMany).mockResolvedValue([])
     delete process.env.OASIS_MODE
     process.env.OASIS_PROFILE = 'hosted-openclaw'
   })
@@ -365,6 +377,96 @@ describe('world-server access enforcement', () => {
       where: { id: 'ffa-1' },
       data: { objectCount: 1 },
     })
+  })
+
+  it('uses an atomic timestamp guard for full-snapshot saves', async () => {
+    const loadedAt = new Date('2026-04-30T12:00:00.000Z')
+    const current = state({ catalogPlacements: [{ id: 'cat-1' } as any] })
+    vi.mocked(prisma.world.findFirst)
+      .mockResolvedValueOnce(worldRow({ id: 'ffa-1', userId: 'user-b', visibility: 'public_edit', updatedAt: loadedAt }))
+      .mockResolvedValueOnce({ data: JSON.stringify(current) } as any)
+    vi.mocked(prisma.worldSnapshot.findFirst).mockResolvedValue(null)
+    vi.mocked(prisma.world.updateMany).mockResolvedValue({ count: 0 } as any)
+
+    const result = await saveWorld('ffa-1', 'user-a', current, loadedAt.toISOString())
+
+    expect(result).toMatchObject({ saved: false, conflict: true })
+    expect(vi.mocked(prisma.world.updateMany)).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        id: 'ffa-1',
+        updatedAt: { lte: loadedAt },
+      },
+    }))
+    expect(vi.mocked(prisma.world.update)).not.toHaveBeenCalled()
+  })
+
+  it('saves room checkpoints with their command events in one transaction', async () => {
+    const loadedAt = new Date('2026-04-30T12:00:00.000Z')
+    const current = state({ catalogPlacements: [{ id: 'cat-1' } as any] })
+    vi.mocked(prisma.world.findFirst)
+      .mockResolvedValueOnce(worldRow({ id: 'ffa-1', userId: 'user-b', visibility: 'public_edit', updatedAt: loadedAt }))
+      .mockResolvedValueOnce({ data: JSON.stringify(current) } as any)
+    vi.mocked(prisma.worldSnapshot.findFirst).mockResolvedValue(null)
+    vi.mocked(prisma.world.updateMany).mockResolvedValue({ count: 1 } as any)
+    vi.mocked(prisma.worldEvent.findMany).mockResolvedValue([])
+
+    const result = await saveWorldCheckpointWithCommandEvents('ffa-1', 'user-a', current, [{
+      id: 'evt-1',
+      kind: 'command.accepted',
+      worldId: 'ffa-1',
+      commandId: 'cmd-1',
+      actorId: 'user-a',
+      acceptedAt: '2026-04-30T12:00:01.000Z',
+      revision: 7,
+      source: 'room',
+      durable: true,
+      command: {
+        id: 'cmd-1',
+        kind: 'object.add',
+        worldId: 'ffa-1',
+        actorId: 'user-a',
+        clientId: 'session-1',
+        createdAt: '2026-04-30T12:00:01.000Z',
+        payload: { object: { id: 'cat-1' } },
+      } as any,
+    }], loadedAt.toISOString())
+
+    expect(result).toMatchObject({ saved: true, worldId: 'ffa-1', eventsSaved: 1, eventsSkipped: 0 })
+    expect(vi.mocked(prisma.world.updateMany)).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        id: 'ffa-1',
+        updatedAt: { lte: loadedAt },
+      },
+    }))
+    expect(vi.mocked(prisma.worldEvent.create)).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        id: 'evt-1',
+        worldId: 'ffa-1',
+        commandId: 'cmd-1',
+        actorId: 'user-a',
+        sessionId: 'session-1',
+        kind: 'object.add',
+        worldVersion: 7,
+      }),
+    })
+  })
+
+  it('refuses room checkpoints that are based on stale world data', async () => {
+    const loadedAt = new Date('2026-04-30T12:00:00.000Z')
+    const serverUpdatedAt = new Date('2026-04-30T12:00:05.000Z')
+    vi.mocked(prisma.world.findFirst).mockResolvedValueOnce(
+      worldRow({ id: 'ffa-1', userId: 'user-b', visibility: 'public_edit', updatedAt: serverUpdatedAt }),
+    )
+
+    const result = await saveWorldCheckpointWithCommandEvents('ffa-1', 'user-a', state(), [], loadedAt.toISOString())
+
+    expect(result).toMatchObject({
+      saved: false,
+      conflict: true,
+      serverUpdatedAt: serverUpdatedAt.toISOString(),
+    })
+    expect(vi.mocked(prisma.world.updateMany)).not.toHaveBeenCalled()
+    expect(vi.mocked(prisma.worldEvent.create)).not.toHaveBeenCalled()
   })
 
   it('allows hosted link-build writes by non-owners without making them discoverable', async () => {

@@ -14,9 +14,13 @@ import { NextResponse } from 'next/server'
 import { getOasisUserId, getRequiredOasisUserId } from '@/lib/session'
 import {
   loadWorld, saveWorld, deleteWorld, getRegistry, updateWorldMetadata,
+  latestWorldCommandRevision,
+  saveWorldCheckpointWithCommandEvents,
   type WorldState,
 } from '@/lib/forge/world-server'
 import { WorldAccessError } from '@/lib/forge/world-access'
+import { withWorldMutationLock } from '@/lib/world-mutation-lock'
+import { getRoomSigningKey } from '@/lib/room-join-claim'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
@@ -32,22 +36,42 @@ function errorResponse(err: unknown, label: string) {
   return NextResponse.json({ error: msg }, { status: 500 })
 }
 
+function readInternalWorldActor(request: Request): string | null {
+  const provided = request.headers.get('x-oasis-room-secret')
+  if (provided === null) return null
+  let expected = ''
+  try {
+    expected = process.env.OASIS_ROOM_INTERNAL_SECRET || getRoomSigningKey()
+  } catch {
+    return ''
+  }
+  if (!expected || provided !== expected) return ''
+  const actorUserId = request.headers.get('x-oasis-actor-user-id')
+  return actorUserId?.trim() || 'local-user'
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // GET /api/worlds/[id] — Load a single world's full state
 // ═══════════════════════════════════════════════════════════════════════════
 
 export async function GET(request: Request, context: RouteContext) {
   try {
-    const userId = await getOasisUserId(request)
+    const internalActorId = readInternalWorldActor(request)
+    if (internalActorId === '') {
+      return NextResponse.json({ error: 'invalid room command secret' }, { status: 401 })
+    }
+    const userId = internalActorId || await getOasisUserId(request)
 
     const { id } = await context.params
     const world = await loadWorld(id, userId)
     if (!world) {
       return NextResponse.json({ error: 'World not found' }, { status: 404 })
     }
+    const revision = internalActorId ? await latestWorldCommandRevision(id) : undefined
     return NextResponse.json(world, {
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        ...(revision !== undefined ? { 'x-oasis-world-revision': String(revision) } : {}),
       },
     })
   } catch (err) {
@@ -62,18 +86,39 @@ export async function GET(request: Request, context: RouteContext) {
 
 export async function PUT(request: Request, context: RouteContext) {
   try {
-    const userId = getRequiredOasisUserId(request)
+    const internalActorId = readInternalWorldActor(request)
+    if (internalActorId === '') {
+      return NextResponse.json({ error: 'invalid room command secret' }, { status: 401 })
+    }
+    const userId = internalActorId || getRequiredOasisUserId(request)
     if (!userId) {
       return NextResponse.json({ error: 'oasis_session cookie required' }, { status: 401 })
     }
 
     const { id } = await context.params
     const body = await request.json()
+    const checkpointReason = internalActorId ? request.headers.get('x-oasis-room-checkpoint') : null
+    const checkpointBody = checkpointReason && body && typeof body === 'object'
+      ? body as { state?: unknown; events?: unknown; baseSavedAt?: unknown }
+      : null
+    const clientLoadedAt = request.headers.get('x-oasis-client-loaded-at')
+      || (typeof checkpointBody?.baseSavedAt === 'string' ? checkpointBody.baseSavedAt : undefined)
+      || undefined
 
-    const state = body as Omit<WorldState, 'version' | 'savedAt'>
+    const state = (checkpointBody ? checkpointBody.state : body) as Omit<WorldState, 'version' | 'savedAt'>
 
-    const result = await saveWorld(id, userId, state)
-    return NextResponse.json({ ok: true, ...result, savedAt: new Date().toISOString() })
+    const result = await withWorldMutationLock(id, () => {
+      if (checkpointBody) {
+        const events = Array.isArray(checkpointBody.events) ? checkpointBody.events : []
+        return saveWorldCheckpointWithCommandEvents(id, userId, state, events, clientLoadedAt)
+      }
+      return saveWorld(id, userId, state, clientLoadedAt)
+    })
+    return NextResponse.json({
+      ok: result.conflict ? false : true,
+      ...result,
+      savedAt: result.savedAt || new Date().toISOString(),
+    })
   } catch (err) {
     return errorResponse(err, 'PUT [id] error')
   }

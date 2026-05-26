@@ -414,6 +414,10 @@ export interface ObjectBehavior {
   audioMuted?: boolean
   audioState?: 'playing' | 'paused' | 'stopped'  // real playback state
   audioLoop?: boolean  // default true
+  audioPlaybackScope?: 'shared' | 'local'  // local is client-only, shared writes world behavior
+  audioPlaybackId?: string
+  audioStartedAt?: string
+  audioUpdatedAt?: string
   /** ░▒▓ LIP SYNC — auto-ON when audioUrl set on VRM, toggle for edge cases ▓▒░ */
   lipSyncEnabled?: boolean  // default true when audioUrl is set
 }

@@ -143,6 +143,7 @@ model World {
 
   snapshots       WorldSnapshot[]
   likes           WorldLike[]
+  events          WorldEvent[]
 
   @@index([userId])
   @@index([visibility])
@@ -245,6 +246,28 @@ model WorldSnapshot {
 // JOURNAL — Sacred timestamped reflections
 // ═══════════════════════════════════════════════════════════════════════════
 
+// WORLD EVENT LOG - accepted durable command trail
+model WorldEvent {
+  id           String   @id
+  worldId      String
+  world        World    @relation(fields: [worldId], references: [id], onDelete: Cascade)
+  commandId    String
+  actorId      String
+  sessionId    String   @default("")
+  kind         String
+  worldVersion Int
+  payload      String
+  payloadHash  String?
+  createdAt    DateTime @default(now())
+
+  @@index([worldId, worldVersion])
+  @@index([worldId, createdAt])
+  @@unique([worldId, commandId])
+  @@index([commandId])
+  @@index([actorId, createdAt])
+}
+
+// JOURNAL - Sacred timestamped reflections
 model Journal {
   id        Int      @id @default(autoincrement())
   content   String

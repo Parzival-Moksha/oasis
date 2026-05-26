@@ -63,7 +63,7 @@ import {
 import { resolveAgentAvatarUrl } from '../../lib/agent-avatar-catalog'
 import { canReceiveMoveOrder, resolveMoveOrderObjectIds } from '../../lib/march-order'
 import { getViewerUserIdClient } from '../../lib/viewer-identity-client'
-import { LIGHT_INTENSITY_MAX, type WorldLight } from '../../lib/conjure/types'
+import { LIGHT_INTENSITY_MAX, type ConjuredAsset, type WorldLight } from '../../lib/conjure/types'
 import { worldMutationBus } from '../../lib/world-mutation-bus'
 
 const IDLE_CLIP_PATTERNS = /idle|breathe?|stand|rest|pose|wait/i
@@ -818,12 +818,42 @@ export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, fram
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const groupRef = useRef<THREE.Group>(null!)
 
-  // Read audio state from behaviors store (Joystick controls these)
-  const audioState = useOasisStore(s => objectId ? s.behaviors[objectId]?.audioState : undefined) || 'playing'
-  const audioMuted = useOasisStore(s => objectId ? s.behaviors[objectId]?.audioMuted : undefined) || false
-  const audioVolume = useOasisStore(s => objectId ? s.behaviors[objectId]?.audioVolume : undefined) ?? 1
-  const audioMaxDistance = useOasisStore(s => objectId ? s.behaviors[objectId]?.audioMaxDistance : undefined) ?? 15
-  const audioLoop = useOasisStore(s => objectId ? s.behaviors[objectId]?.audioLoop : undefined) ?? true
+  // Read playback from shared world behavior unless the viewer chose local control.
+  const audioState = useOasisStore(s => {
+    if (!objectId) return undefined
+    const scope = s.audioPlaybackScopes[objectId] || 'shared'
+    const shared = s.behaviors[objectId]
+    const local = s.localAudioBehaviors[objectId]
+    return scope === 'local' ? (local?.audioState ?? shared?.audioState) : shared?.audioState
+  }) || 'playing'
+  const audioMuted = useOasisStore(s => {
+    if (!objectId) return undefined
+    const scope = s.audioPlaybackScopes[objectId] || 'shared'
+    const shared = s.behaviors[objectId]
+    const local = s.localAudioBehaviors[objectId]
+    return scope === 'local' ? (local?.audioMuted ?? shared?.audioMuted) : shared?.audioMuted
+  }) || false
+  const audioVolume = useOasisStore(s => {
+    if (!objectId) return undefined
+    const scope = s.audioPlaybackScopes[objectId] || 'shared'
+    const shared = s.behaviors[objectId]
+    const local = s.localAudioBehaviors[objectId]
+    return scope === 'local' ? (local?.audioVolume ?? shared?.audioVolume) : shared?.audioVolume
+  }) ?? 1
+  const audioMaxDistance = useOasisStore(s => {
+    if (!objectId) return undefined
+    const scope = s.audioPlaybackScopes[objectId] || 'shared'
+    const shared = s.behaviors[objectId]
+    const local = s.localAudioBehaviors[objectId]
+    return scope === 'local' ? (local?.audioMaxDistance ?? shared?.audioMaxDistance) : shared?.audioMaxDistance
+  }) ?? 15
+  const audioLoop = useOasisStore(s => {
+    if (!objectId) return undefined
+    const scope = s.audioPlaybackScopes[objectId] || 'shared'
+    const shared = s.behaviors[objectId]
+    const local = s.localAudioBehaviors[objectId]
+    return scope === 'local' ? (local?.audioLoop ?? shared?.audioLoop) : shared?.audioLoop
+  }) ?? true
 
   useEffect(() => {
     const video = document.createElement('video')
@@ -1118,13 +1148,28 @@ export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, fram
 // ░▒▓ Loads audio file + plays with 3D positional falloff ▓▒░
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function SpatialAudioAttachment({ objectId, audioUrl, volume = 1, maxDistance = 15, muted = false, audioState = 'playing', loop = true, lipSyncEnabled = true }: {
-  objectId?: string; audioUrl: string; volume?: number; maxDistance?: number; muted?: boolean; audioState?: 'playing' | 'paused' | 'stopped'; loop?: boolean; lipSyncEnabled?: boolean
+function resolveAudioStartOffset(startedAt: string | undefined, duration: number, loop: boolean): number | null {
+  if (!startedAt || !Number.isFinite(duration) || duration <= 0) return null
+  const startedMs = Date.parse(startedAt)
+  if (!Number.isFinite(startedMs)) return null
+  const elapsedSeconds = Math.max(0, (Date.now() - startedMs) / 1000)
+  return loop ? elapsedSeconds % duration : Math.min(duration, elapsedSeconds)
+}
+
+export function SpatialAudioAttachment({ objectId, audioUrl, volume = 1, maxDistance = 15, muted = false, audioState = 'playing', loop = true, lipSyncEnabled = true, playbackId, startedAt }: {
+  objectId?: string; audioUrl: string; volume?: number; maxDistance?: number; muted?: boolean; audioState?: 'playing' | 'paused' | 'stopped'; loop?: boolean; lipSyncEnabled?: boolean; playbackId?: string; startedAt?: string
 }) {
   const groupRef = useRef<THREE.Group>(null!)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const propsRef = useRef({ volume, maxDistance, muted, audioState })
   propsRef.current = { volume, maxDistance, muted, audioState }
+
+  const syncSharedStartOffset = (audio: HTMLAudioElement) => {
+    if (audioState !== 'playing') return
+    const offset = resolveAudioStartOffset(startedAt, audio.duration, loop)
+    if (offset === null) return
+    if (Math.abs(audio.currentTime - offset) > 0.75) audio.currentTime = offset
+  }
 
   // Create HTML5 Audio element — only on URL change
   useEffect(() => {
@@ -1133,6 +1178,8 @@ export function SpatialAudioAttachment({ objectId, audioUrl, volume = 1, maxDist
     audio.volume = 0 // Will be set by useFrame based on distance
     audioRef.current = audio
     if (objectId) _audioElements.set(objectId, audio)
+    const onLoadedMetadata = () => syncSharedStartOffset(audio)
+    audio.addEventListener('loadedmetadata', onLoadedMetadata)
     // ░▒▓ LIP SYNC — attach analyser to audio element ▓▒░
     let lipSyncCtrl: ReturnType<typeof createLipSyncController> | null = null
     if (objectId && lipSyncEnabled) {
@@ -1142,9 +1189,11 @@ export function SpatialAudioAttachment({ objectId, audioUrl, volume = 1, maxDist
     }
     // Autoplay if state is 'playing'
     if (audioState !== 'stopped' && audioState !== 'paused') {
+      syncSharedStartOffset(audio)
       audio.play().catch(() => {})
     }
     return () => {
+      audio.removeEventListener('loadedmetadata', onLoadedMetadata)
       audio.pause()
       audio.src = ''
       audioRef.current = null
@@ -1163,6 +1212,7 @@ export function SpatialAudioAttachment({ objectId, audioUrl, volume = 1, maxDist
   useEffect(() => {
     if (!audioRef.current) return
     if (audioState === 'playing') {
+      syncSharedStartOffset(audioRef.current)
       audioRef.current.play().catch(() => {})
     } else if (audioState === 'paused') {
       audioRef.current.pause()
@@ -1170,7 +1220,7 @@ export function SpatialAudioAttachment({ objectId, audioUrl, volume = 1, maxDist
       audioRef.current.pause()
       audioRef.current.currentTime = 0
     }
-  }, [audioState])
+  }, [audioState, playbackId, startedAt, loop])
 
   // Loop toggle
   useEffect(() => {
@@ -1206,8 +1256,16 @@ export function SpatialAudioAttachment({ objectId, audioUrl, volume = 1, maxDist
 
 export function AudioSourceRenderer({ objectId, scale }: { objectId?: string; scale: number }) {
   const s = scale
-  const setObjectBehavior = useOasisStore(state => state.setObjectBehavior)
-  const audioState = useOasisStore(state => objectId ? state.behaviors[objectId]?.audioState : undefined) || 'paused'
+  const setAudioPlaybackBehavior = useOasisStore(state => state.setAudioPlaybackBehavior)
+  const audioState = useOasisStore(state => {
+    if (!objectId) return undefined
+    const scope = state.audioPlaybackScopes[objectId] || 'shared'
+    const shared = state.behaviors[objectId]
+    const local = state.localAudioBehaviors[objectId]
+    return scope === 'local'
+      ? (local?.audioState ?? shared?.audioState)
+      : shared?.audioState
+  }) || 'paused'
   const [progress, setProgress] = useState(0)
   const progressTickRef = useRef(0)
 
@@ -1229,7 +1287,7 @@ export function AudioSourceRenderer({ objectId, scale }: { objectId?: string; sc
   const setPlayback = (state: 'playing' | 'paused' | 'stopped', event: { stopPropagation: () => void }) => {
     event.stopPropagation()
     if (!objectId) return
-    setObjectBehavior(objectId, { audioState: state })
+    setAudioPlaybackBehavior(objectId, { audioState: state })
   }
 
   return (
@@ -1306,20 +1364,33 @@ function SpatialAudioFromBehavior({ objectId }: { objectId: string }) {
   const placementAudioMuted = useOasisStore(s => s.placedCatalogAssets.find(entry => entry.id === objectId)?.audioMuted)
   const audioState = useOasisStore(s => s.behaviors[objectId]?.audioState)
   const audioLoop = useOasisStore(s => s.behaviors[objectId]?.audioLoop)
+  const audioPlaybackId = useOasisStore(s => s.behaviors[objectId]?.audioPlaybackId)
+  const audioStartedAt = useOasisStore(s => s.behaviors[objectId]?.audioStartedAt)
+  const playbackScope = useOasisStore(s => s.audioPlaybackScopes[objectId] || 'shared')
+  const localAudio = useOasisStore(s => s.localAudioBehaviors[objectId])
   // ░▒▓ FIX: Don't mount audio during placement mode — prevents state corruption
   // when loudspeaker auto-plays before placement is confirmed ▓▒░
   const inputState = useInputManager(s => s.inputState)
   const resolvedAudioUrl = audioUrl || placementAudioUrl
+  const effectiveVolume = playbackScope === 'local' ? (localAudio?.audioVolume ?? audioVolume) : audioVolume
+  const effectiveMaxDistance = playbackScope === 'local' ? (localAudio?.audioMaxDistance ?? audioMaxDistance) : audioMaxDistance
+  const effectiveMuted = playbackScope === 'local' ? (localAudio?.audioMuted ?? audioMuted) : audioMuted
+  const effectiveState = playbackScope === 'local' ? (localAudio?.audioState ?? audioState) : audioState
+  const effectiveLoop = playbackScope === 'local' ? (localAudio?.audioLoop ?? audioLoop) : audioLoop
+  const effectivePlaybackId = playbackScope === 'local' ? (localAudio?.audioPlaybackId ?? audioPlaybackId) : audioPlaybackId
+  const effectiveStartedAt = playbackScope === 'local' ? (localAudio?.audioStartedAt ?? audioStartedAt) : audioStartedAt
   if (!resolvedAudioUrl || inputState === 'placement') return null
   return (
     <SpatialAudioAttachment
       objectId={objectId}
       audioUrl={resolvedAudioUrl}
-      volume={audioVolume ?? placementAudioVolume}
-      maxDistance={audioMaxDistance ?? placementAudioMaxDistance}
-      muted={audioMuted ?? placementAudioMuted}
-      audioState={audioState ?? (placementAudioUrl ? 'playing' : undefined)}
-      loop={audioLoop ?? true}
+      volume={effectiveVolume ?? placementAudioVolume}
+      maxDistance={effectiveMaxDistance ?? placementAudioMaxDistance}
+      muted={effectiveMuted ?? placementAudioMuted}
+      audioState={effectiveState ?? (placementAudioUrl ? 'playing' : undefined)}
+      loop={effectiveLoop ?? true}
+      playbackId={effectivePlaybackId}
+      startedAt={effectiveStartedAt}
     />
   )
 }
@@ -2249,40 +2320,79 @@ export function TransformKeyHandler() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// WORLD LOADER HOOK — ensures world state + conjured assets are loaded
-// Idempotent: reads from localStorage + fetches from API on mount
-// Also polls active conjurations — this hook lives in ForgeRealm (always mounted),
-// so polling survives even when WizardConsole is closed.
+// WORLD LOADER HOOK — ensures world state is loaded, then syncs conjure
+// metadata only when the active world or an active job actually needs it.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const CONJURE_POLL_MS = 5000
 const TERMINAL_CONJURE_STATES = ['ready', 'failed']
 
+function shouldEagerLoadConjureRegistry(): boolean {
+  if (process.env.NEXT_PUBLIC_OASIS_EAGER_CONJURE_REGISTRY === '1') return true
+  if (typeof window === 'undefined') return false
+  try {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('conjureRegistry') === '1') return true
+    return window.localStorage.getItem('oasis-eager-conjure-registry') === '1'
+  } catch {
+    return false
+  }
+}
+
+async function loadConjureRegistry(setConjuredAssets: (assets: ConjuredAsset[]) => void): Promise<void> {
+  const res = await fetch(`${OASIS_BASE}/api/conjure`)
+  const data = await res.json()
+  const assets = Array.isArray(data) ? data : data.assets
+  if (Array.isArray(assets)) {
+    setConjuredAssets(assets as ConjuredAsset[])
+  }
+}
+
 export function useWorldLoader() {
   const initWorlds = useOasisStore(s => s.initWorlds)
   const setConjuredAssets = useOasisStore(s => s.setConjuredAssets)
+  const worldConjuredAssetIds = useOasisStore(s => s.worldConjuredAssetIds)
+  const hasActiveConjureJobs = useOasisStore(s => s.conjuredAssets.some(asset => !TERMINAL_CONJURE_STATES.includes(asset.status)))
+  const needsAutoPipelineChildDiscovery = useOasisStore(s => {
+    const worldIds = new Set(worldConjuredAssetIds)
+    return s.conjuredAssets.some(asset => {
+      if (!worldIds.has(asset.id)) return false
+      if (!asset.autoRig && !asset.autoAnimate) return false
+      return !s.conjuredAssets.some(child => child.sourceAssetId === asset.id)
+    })
+  })
+  const worldConjuredAssetIdsKey = worldConjuredAssetIds.join('|')
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const discoveryTickRef = useRef(0)
 
-  // ░▒▓ Initial hydration — worlds + conjured assets ▓▒░
+  // ░▒▓ Initial world hydration ▓▒░
   useEffect(() => {
     initWorlds()
+  }, [initWorlds])
 
-    fetch(`${OASIS_BASE}/api/conjure`)
-      .then(r => r.json())
-      .then(data => {
-        const assets = Array.isArray(data) ? data : data.assets
-        if (Array.isArray(assets)) {
-          setConjuredAssets(assets)
-        }
-      })
-      .catch(err => console.error('[World] Failed to load conjured assets:', err))
-  }, [setConjuredAssets, initWorlds])
-
-  // ░▒▓ Poll active conjurations — stable interval, no dependency churn ▓▒░
-  // The interval reads from getState() directly, so it never needs to restart.
-  // Previous bug: [conjuredAssets] dependency killed/restarted interval on every poll update.
   useEffect(() => {
+    if (worldConjuredAssetIds.length === 0 && !shouldEagerLoadConjureRegistry()) return
+    let cancelled = false
+    loadConjureRegistry(assets => {
+      if (!cancelled) setConjuredAssets(assets)
+    })
+      .catch(err => console.error('[World] Failed to load conjured assets:', err))
+    return () => { cancelled = true }
+  }, [setConjuredAssets, worldConjuredAssetIds.length, worldConjuredAssetIdsKey])
+
+  useEffect(() => {
+    const handleDemand = () => {
+      void loadConjureRegistry(setConjuredAssets)
+        .catch(err => console.error('[World] Failed to load requested conjured assets:', err))
+    }
+    window.addEventListener('oasis:load-conjure-registry', handleDemand)
+    return () => window.removeEventListener('oasis:load-conjure-registry', handleDemand)
+  }, [setConjuredAssets])
+
+  // ░▒▓ Poll active conjurations only while there is progress to follow ▓▒░
+  // The interval reads from getState() directly, so it avoids dependency churn.
+  useEffect(() => {
+    if (!hasActiveConjureJobs && !needsAutoPipelineChildDiscovery && !shouldEagerLoadConjureRegistry()) return
     if (pollRef.current) return  // already polling (e.g. from Scene.tsx mount)
 
     pollRef.current = setInterval(async () => {
@@ -2342,7 +2452,7 @@ export function useWorldLoader() {
 
       const active = currentAssets.filter(a => !TERMINAL_CONJURE_STATES.includes(a.status))
 
-      if (active.length === 0) return  // nothing to poll, but keep interval alive for new assets
+      if (active.length === 0) return
 
       for (const asset of active) {
         try {
@@ -2381,7 +2491,7 @@ export function useWorldLoader() {
         pollRef.current = null
       }
     }
-  }, [])  // ░▒▓ STABLE — no deps, reads from getState() inside interval ▓▒░
+  }, [hasActiveConjureJobs, needsAutoPipelineChildDiscovery])
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -1,6 +1,7 @@
 import { Schema, MapSchema, ArraySchema, type } from '@colyseus/schema'
 
 export class PlayerState extends Schema {
+  @type('string') userId = ''
   @type('string') playerId = ''
   @type('string') displayName = ''
   @type('string') avatarUrl = ''

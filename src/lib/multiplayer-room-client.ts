@@ -1,6 +1,8 @@
 'use client'
 
 import { Client, Room } from 'colyseus.js'
+import type { WorldState } from './forge/world-persistence'
+import type { WorldCommandEnvelope, WorldEventEnvelope } from './world-commands'
 import {
   notifyDeath,
   notifyHitAward,
@@ -18,6 +20,7 @@ import {
 
 export interface MultiplayerRoomPlayer {
   sessionId: string
+  userId?: string
   playerId: string
   displayName: string
   avatarUrl?: string
@@ -32,6 +35,7 @@ export interface MultiplayerRoomPlayer {
 export interface MultiplayerRoomJoinOptions {
   worldId: string
   playerId: string
+  userId?: string
   displayName: string
   avatarUrl?: string
   profileAvatarUrl?: string
@@ -41,6 +45,22 @@ export interface MultiplayerRoomJoinOptions {
   maxHp?: number
   mana?: number
   maxMana?: number
+}
+
+interface RoomJoinClaimResponse {
+  claim?: string
+  userId?: string
+  canWrite?: boolean
+  pvpEnabled?: boolean
+}
+
+export interface MultiplayerRoomWorldSnapshot {
+  worldId: string
+  revision: number
+  savedAt?: string
+  loadedAt: number
+  reason: 'join' | 'refresh' | 'command'
+  state: WorldState
 }
 
 export interface MultiplayerRoomInput {
@@ -54,6 +74,7 @@ export interface MultiplayerRoomInput {
 }
 
 interface RoomPlayerSchema {
+  userId?: string
   playerId: string
   displayName: string
   avatarUrl: string
@@ -127,6 +148,7 @@ export function isMultiplayerRoomConfigured(): boolean {
 function snapshotPlayer(sessionId: string, raw: RoomPlayerSchema): MultiplayerRoomPlayer {
   return {
     sessionId,
+    userId: raw.userId || undefined,
     playerId: raw.playerId,
     displayName: raw.displayName,
     avatarUrl: raw.avatarUrl || undefined,
@@ -137,6 +159,18 @@ function snapshotPlayer(sessionId: string, raw: RoomPlayerSchema): MultiplayerRo
     animState: raw.animState || 'idle',
     updatedAt: raw.updatedAt,
   }
+}
+
+async function fetchRoomJoinClaim(worldId: string): Promise<RoomJoinClaimResponse | null> {
+  if (typeof window === 'undefined') return null
+  const response = await fetch(`/api/rooms/join-claim?worldId=${encodeURIComponent(worldId)}`, {
+    credentials: 'same-origin',
+    cache: 'no-store',
+  })
+  if (!response.ok) {
+    throw new Error(`room join claim failed: HTTP ${response.status}`)
+  }
+  return response.json() as Promise<RoomJoinClaimResponse>
 }
 
 function remoteBoltFromRoomBolt(bolt: RoomBoltPayload, localSessionId: string): PvpRemoteBolt | null {
@@ -168,19 +202,25 @@ export interface MultiplayerRoomProfile {
 export interface MultiplayerRoomConnection {
   sendInput(input: MultiplayerRoomInput): void
   sendMutation(payload: unknown): void
+  sendCommand(command: WorldCommandEnvelope): Promise<WorldEventEnvelope>
   sendProfile(profile: MultiplayerRoomProfile): void
   sendVitals(vitals: PvpVitalsPayload): void
   dispose(): Promise<void>
   readonly sessionId: string
+  readonly userId?: string
+  readonly canWrite: boolean
 }
 
 export interface MultiplayerRoomConnectArgs extends MultiplayerRoomJoinOptions {
   onPlayersChanged: (players: MultiplayerRoomPlayer[]) => void
   onConnectionState?: (state: 'connecting' | 'connected' | 'closed' | 'error', detail?: string) => void
   onMutation?: (payload: unknown) => void
+  onWorldEvent?: (event: WorldEventEnvelope) => void
+  onWorldSnapshot?: (snapshot: MultiplayerRoomWorldSnapshot) => void
 }
 
 const DEBUG = typeof window !== 'undefined' && /\bmultiplayer=debug\b/.test(window.location.search)
+const COMMAND_ACK_TIMEOUT_MS = 15000
 const log = (...args: unknown[]) => {
   if (DEBUG) console.debug('[oasis-room]', ...args)
   else console.info('[oasis-room]', ...args)
@@ -197,6 +237,7 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
   args.onConnectionState?.('connecting')
 
   let room: Room<RoomStateSchema>
+  let joinClaim: RoomJoinClaimResponse | null = null
   const seenRemoteBoltIds = new Set<string>()
   const handleRemoteBolt = (bolt: RoomBoltPayload) => {
     const remoteBolt = remoteBoltFromRoomBolt(bolt, room.sessionId)
@@ -205,14 +246,17 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
     notifyRemoteBolt(remoteBolt)
   }
   try {
+    joinClaim = await fetchRoomJoinClaim(args.worldId)
     room = await client.joinOrCreate<RoomStateSchema>('world', {
       worldId: args.worldId,
       playerId: args.playerId,
+      userId: joinClaim?.userId || args.userId,
+      joinClaim: joinClaim?.claim,
       displayName: args.displayName,
       avatarUrl: args.avatarUrl,
       profileAvatarUrl: args.profileAvatarUrl,
       color: args.color,
-      pvpEnabled: args.pvpEnabled === true,
+      pvpEnabled: joinClaim?.pvpEnabled === true || args.pvpEnabled === true,
       maxHp: typeof args.maxHp === 'number' ? args.maxHp : undefined,
       mana: typeof args.mana === 'number' ? args.mana : undefined,
       maxMana: typeof args.maxMana === 'number' ? args.maxMana : undefined,
@@ -334,8 +378,53 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
     })
   }
 
+  const pendingCommands = new Map<string, {
+    resolve: (event: WorldEventEnvelope) => void
+    reject: (error: Error) => void
+    timeout: ReturnType<typeof setTimeout>
+  }>()
+
+  const rejectPendingCommands = (message: string) => {
+    for (const [commandId, pending] of pendingCommands.entries()) {
+      clearTimeout(pending.timeout)
+      pending.reject(new Error(`${message}: ${commandId}`))
+    }
+    pendingCommands.clear()
+  }
+
+  const settleCommand = (event: WorldEventEnvelope) => {
+    const commandId = event.commandId
+    if (!commandId) return
+    const pending = pendingCommands.get(commandId)
+    if (!pending) return
+    clearTimeout(pending.timeout)
+    pendingCommands.delete(commandId)
+    pending.resolve(event)
+  }
+
+  room.onMessage('worldEvent', (payload: unknown) => {
+    const event = payload as WorldEventEnvelope
+    settleCommand(event)
+    try {
+      args.onWorldEvent?.(event)
+    } catch (error) {
+      if (DEBUG) console.warn('[oasis-room] onWorldEvent handler threw', error)
+    }
+  })
+
+  room.onMessage('worldSnapshot', (payload: unknown) => {
+    const snapshot = payload as MultiplayerRoomWorldSnapshot
+    if (!snapshot || snapshot.worldId !== args.worldId || !snapshot.state) return
+    try {
+      args.onWorldSnapshot?.(snapshot)
+    } catch (error) {
+      if (DEBUG) console.warn('[oasis-room] onWorldSnapshot handler threw', error)
+    }
+  })
+
   room.onLeave((code: number) => {
     log('room left, code=', code)
+    rejectPendingCommands(`room left (${code})`)
     args.onConnectionState?.('closed', String(code))
   })
 
@@ -343,11 +432,14 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
   ;(room.onError as unknown as (cb: (...errArgs: unknown[]) => void) => void)((...errArgs: unknown[]) => {
     const detail = errArgs.map(item => (typeof item === 'string' ? item : JSON.stringify(item))).join(':')
     console.error('[oasis-room] room error', detail)
+    rejectPendingCommands(`room error ${detail}`)
     args.onConnectionState?.('error', detail)
   })
 
   return {
     sessionId: room.sessionId,
+    userId: joinClaim?.userId || args.userId,
+    canWrite: joinClaim ? joinClaim.canWrite === true : true,
     sendInput(input: MultiplayerRoomInput): void {
       try {
         room.send('input', input)
@@ -361,6 +453,33 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
       } catch (error) {
         if (DEBUG) console.warn('[oasis-room] sendMutation failed', error)
       }
+    },
+    sendCommand(command: WorldCommandEnvelope): Promise<WorldEventEnvelope> {
+      return new Promise((resolve, reject) => {
+        const commandId = command.id
+        if (!commandId) {
+          reject(new Error('command id required'))
+          return
+        }
+        const previous = pendingCommands.get(commandId)
+        if (previous) {
+          clearTimeout(previous.timeout)
+          previous.reject(new Error(`superseded pending command: ${commandId}`))
+        }
+        const timeout = setTimeout(() => {
+          pendingCommands.delete(commandId)
+          reject(new Error(`command ack timeout: ${commandId}`))
+        }, COMMAND_ACK_TIMEOUT_MS)
+        pendingCommands.set(commandId, { resolve, reject, timeout })
+        try {
+          room.send('command', command)
+        } catch (error) {
+          clearTimeout(timeout)
+          pendingCommands.delete(commandId)
+          reject(error instanceof Error ? error : new Error(String(error)))
+          if (DEBUG) console.warn('[oasis-room] sendCommand failed', error)
+        }
+      })
     },
     sendProfile(profile: MultiplayerRoomProfile): void {
       try {
@@ -379,6 +498,7 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
     async dispose(): Promise<void> {
       log('disposing room connection')
       setPvpSender(null)
+      rejectPendingCommands('room disposed')
       try {
         await room.leave(true)
       } catch {

@@ -245,14 +245,23 @@ export interface SaveWorldResponse {
   saved?: boolean
   worldId?: string
   forkedFromWorldId?: string
+  conflict?: boolean
+  serverUpdatedAt?: string
+  savedAt?: string
 }
 
-export async function saveWorld(state: Omit<WorldState, 'version' | 'savedAt'>, worldId?: string): Promise<SaveWorldResponse | null> {
+export interface SaveWorldOptions {
+  clientLoadedAt?: string | null
+}
+
+export async function saveWorld(state: Omit<WorldState, 'version' | 'savedAt'>, worldId?: string, options: SaveWorldOptions = {}): Promise<SaveWorldResponse | null> {
   const id = worldId || getActiveWorldId()
   try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (options.clientLoadedAt) headers['x-oasis-client-loaded-at'] = options.clientLoadedAt
     const res = await fetch(`${API_BASE}/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(state),
     })
     if (!res.ok) {
@@ -361,16 +370,27 @@ export async function importWorld(json: string): Promise<WorldMeta | null> {
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 let pendingSaveState: Omit<WorldState, 'version' | 'savedAt'> | null = null
+let pendingSaveOptions: (SaveWorldOptions & {
+  onResult?: (result: SaveWorldResponse | null) => void
+}) | null = null
 
-export function debouncedSaveWorld(state: Omit<WorldState, 'version' | 'savedAt'>, delayMs = 1000): void {
+export function debouncedSaveWorld(
+  state: Omit<WorldState, 'version' | 'savedAt'>,
+  delayMs = 1000,
+  options: SaveWorldOptions & { onResult?: (result: SaveWorldResponse | null) => void } = {},
+): void {
   if (saveTimer) clearTimeout(saveTimer)
   pendingSaveState = state
+  pendingSaveOptions = options
   saveTimer = setTimeout(() => {
     const stateToSave = pendingSaveState
+    const optionsToUse = pendingSaveOptions
     pendingSaveState = null
+    pendingSaveOptions = null
     saveTimer = null
     if (stateToSave) {
-      saveWorld(stateToSave) // fire-and-forget async
+      void saveWorld(stateToSave, undefined, optionsToUse || undefined)
+        .then(result => optionsToUse?.onResult?.(result))
     }
   }, delayMs)
 }
@@ -382,8 +402,12 @@ export async function flushPendingSaveWorld(worldId?: string): Promise<SaveWorld
     saveTimer = null
   }
   const stateToSave = pendingSaveState
+  const optionsToUse = pendingSaveOptions
   pendingSaveState = null
-  return saveWorld(stateToSave, worldId)
+  pendingSaveOptions = null
+  const result = await saveWorld(stateToSave, worldId, optionsToUse || undefined)
+  optionsToUse?.onResult?.(result)
+  return result
 }
 
 /** ░▒▓ Cancel any pending debounced save — MUST be called before world switch ▓▒░
@@ -394,6 +418,7 @@ export function cancelPendingSave(): void {
     saveTimer = null
   }
   pendingSaveState = null
+  pendingSaveOptions = null
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

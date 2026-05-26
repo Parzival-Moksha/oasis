@@ -8,6 +8,8 @@
 // SERVER-ONLY — never import from client code.
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
+import { createHash } from 'crypto'
+
 import { prisma } from '../db'
 import { normalizeWorldStateAgentAvatarTransforms } from '../agent-avatar-world-state'
 import { getOasisMode } from '../oasis-profile'
@@ -37,6 +39,7 @@ import {
 // ═══════════════════════════════════════════════════════════════════════════
 
 import type { WorldMeta, WorldState } from './world-persistence'
+import type { WorldEventEnvelope } from '../world-commands/types'
 export type { WorldState, WorldMeta }
 
 interface OwnerProfileSummary {
@@ -60,7 +63,24 @@ export interface SaveWorldResult {
   serverUpdatedAt?: string
   worldId?: string
   forkedFromWorldId?: string
+  savedAt?: string
   defaultWorldSeed?: DefaultWorldSeedWriteResult
+}
+
+export interface AppendWorldCommandEventInput {
+  eventId: string
+  worldId: string
+  commandId: string
+  actorId: string
+  sessionId?: string
+  kind: string
+  worldVersion: number
+  payload: unknown
+  createdAt?: string
+}
+
+export type RoomCheckpointEventInput = Partial<WorldEventEnvelope> & {
+  command?: WorldEventEnvelope['command']
 }
 
 const MAX_SNAPSHOTS_PER_WORLD = 20
@@ -309,12 +329,69 @@ export async function loadWorld(id: string, userId?: string): Promise<WorldState
   const ctx = accessContext(userId)
   const world = await prisma.world.findFirst({
     where: { id },
-    select: { id: true, userId: true, visibility: true, data: true },
+    select: { id: true, userId: true, visibility: true, data: true, updatedAt: true },
   })
   if (!world) return null
   if (!canReadWorld(ctx, toAccessSubject(world))) return null
   if (!world?.data) return null
-  return normalizeSavedWorldState(JSON.parse(world.data) as WorldState)
+  const state = normalizeSavedWorldState(JSON.parse(world.data) as WorldState)
+  return {
+    ...state,
+    savedAt: world.updatedAt?.toISOString() || state.savedAt,
+  }
+}
+
+export async function appendWorldCommandEvent(input: AppendWorldCommandEventInput): Promise<void> {
+  await prisma.worldEvent.create({
+    data: worldCommandEventCreateData(input),
+  })
+}
+
+function worldCommandEventCreateData(input: AppendWorldCommandEventInput) {
+  const payload = JSON.stringify(input.payload)
+  return {
+    id: input.eventId,
+    worldId: input.worldId,
+    commandId: input.commandId,
+    actorId: input.actorId,
+    sessionId: input.sessionId || '',
+    kind: input.kind,
+    worldVersion: Math.max(0, Math.floor(input.worldVersion || 0)),
+    payload,
+    payloadHash: createHash('sha256').update(payload).digest('hex'),
+    createdAt: input.createdAt ? new Date(input.createdAt) : new Date(),
+  }
+}
+
+export async function loadWorldCommandEvent(worldId: string, commandId: string): Promise<WorldEventEnvelope | null> {
+  const row = await prisma.worldEvent.findFirst({
+    where: { worldId, commandId },
+    orderBy: { worldVersion: 'asc' },
+    select: { payload: true },
+  })
+  if (!row?.payload) return null
+  try {
+    const parsed = JSON.parse(row.payload) as Partial<WorldEventEnvelope>
+    if (parsed.kind !== 'command.accepted' && parsed.kind !== 'command.rejected') return null
+    if (parsed.worldId !== worldId || parsed.commandId !== commandId) return null
+    if (typeof parsed.id !== 'string' || typeof parsed.acceptedAt !== 'string') return null
+    return parsed as WorldEventEnvelope
+  } catch {
+    return null
+  }
+}
+
+export async function latestWorldCommandRevision(worldId: string): Promise<number> {
+  const latest = await prisma.worldEvent.findFirst({
+    where: { worldId },
+    orderBy: { worldVersion: 'desc' },
+    select: { worldVersion: true },
+  })
+  return Math.max(0, latest?.worldVersion || 0)
+}
+
+export async function nextWorldCommandRevision(worldId: string): Promise<number> {
+  return Math.max(1, await latestWorldCommandRevision(worldId) + 1)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -395,12 +472,19 @@ export async function saveWorld(
 
   if (writeDecision === 'fork') {
     const fork = await forkTemplateWorld(target, ctx.userId, worldData, now)
-    return { saved: true, worldId: fork.id, forkedFromWorldId: id }
+    return { saved: true, worldId: fork.id, forkedFromWorldId: id, savedAt: now.toISOString() }
   }
 
-  // Optimistic concurrency check
+  // Optimistic concurrency check for full-snapshot saves. The update below
+  // repeats the timestamp guard atomically so concurrent writers cannot slip
+  // between the read and write.
+  let clientLoadedDate: Date | null = null
   if (clientLoadedAt) {
-    if (target.updatedAt && target.updatedAt.toISOString() > clientLoadedAt) {
+    clientLoadedDate = new Date(clientLoadedAt)
+    if (!Number.isFinite(clientLoadedDate.getTime())) {
+      return { saved: false, conflict: true, serverUpdatedAt: target.updatedAt?.toISOString() }
+    }
+    if (target.updatedAt && target.updatedAt > clientLoadedDate) {
       console.warn(`[WorldServer] ⚠️ CONFLICT on ${id}`)
       return { saved: false, conflict: true, serverUpdatedAt: target.updatedAt.toISOString() }
     }
@@ -411,14 +495,28 @@ export async function saveWorld(
   // Auto-snapshot before overwriting
   await snapshotBeforeSave(id)
 
-  await prisma.world.update({
-    where: { id },
-    data: {
-      data: JSON.stringify(worldData),
-      objectCount: countWorldObjects(worldData),
-      updatedAt: now,
-    },
-  })
+  const updateData = {
+    data: JSON.stringify(worldData),
+    objectCount: countWorldObjects(worldData),
+    updatedAt: now,
+  }
+  if (clientLoadedDate) {
+    const updated = await prisma.world.updateMany({
+      where: {
+        id,
+        updatedAt: { lte: clientLoadedDate },
+      },
+      data: updateData,
+    })
+    if (updated.count === 0) {
+      return { saved: false, conflict: true, serverUpdatedAt: target.updatedAt?.toISOString() }
+    }
+  } else {
+    await prisma.world.update({
+      where: { id },
+      data: updateData,
+    })
+  }
 
   const defaultWorldSeed = await mirrorDefaultWorldSeedForSource(ctx, {
     ...target,
@@ -428,6 +526,102 @@ export async function saveWorld(
   return {
     saved: true,
     worldId: id,
+    savedAt: now.toISOString(),
+    ...(defaultWorldSeed?.updated ? { defaultWorldSeed } : {}),
+  }
+}
+
+export async function saveWorldWithCommandEvent(
+  id: string,
+  userId: string,
+  state: Omit<WorldState, 'version' | 'savedAt'>,
+  eventInput: AppendWorldCommandEventInput,
+  clientLoadedAt?: string,
+): Promise<SaveWorldResult> {
+  const ctx = accessContext(userId)
+  const now = new Date()
+  const worldData = normalizeSavedWorldState({ version: 1, ...state, savedAt: now.toISOString() })
+
+  const target = await prisma.world.findFirst({
+    where: { id },
+    select: {
+      id: true,
+      userId: true,
+      name: true,
+      icon: true,
+      visibility: true,
+      pvpEnabled: true,
+      creatorName: true,
+      creatorAvatar: true,
+      thumbnailUrl: true,
+      updatedAt: true,
+      data: true,
+    },
+  })
+  if (!target) {
+    throw new WorldAccessError('World not found', 'world_not_found', 404)
+  }
+
+  const writeDecision = getWorldWriteDecision(ctx, toAccessSubject(target))
+  if (writeDecision === 'deny') {
+    throw new WorldAccessError('This session cannot mutate that world', 'world_write_forbidden')
+  }
+  if (writeDecision === 'fork') {
+    throw new WorldAccessError('Command writes cannot fork template worlds', 'world_command_fork_forbidden')
+  }
+
+  let clientLoadedDate: Date | null = null
+  if (clientLoadedAt) {
+    clientLoadedDate = new Date(clientLoadedAt)
+    if (!Number.isFinite(clientLoadedDate.getTime())) {
+      return { saved: false, conflict: true, serverUpdatedAt: target.updatedAt?.toISOString() }
+    }
+    if (target.updatedAt && target.updatedAt > clientLoadedDate) {
+      return { saved: false, conflict: true, serverUpdatedAt: target.updatedAt.toISOString() }
+    }
+  }
+
+  assertNotPortalOnlyOverwrite(id, target.data, worldData)
+  await snapshotBeforeSave(id)
+
+  const updateData = {
+    data: JSON.stringify(worldData),
+    objectCount: countWorldObjects(worldData),
+    updatedAt: now,
+  }
+  const eventData = worldCommandEventCreateData(eventInput)
+
+  const result = await prisma.$transaction(async tx => {
+    const updated = clientLoadedDate
+      ? await tx.world.updateMany({
+          where: {
+            id,
+            updatedAt: { lte: clientLoadedDate },
+          },
+          data: updateData,
+        })
+      : await tx.world.updateMany({
+          where: { id },
+          data: updateData,
+        })
+    if (updated.count === 0) return { conflict: true }
+    await tx.worldEvent.create({ data: eventData })
+    return { conflict: false }
+  })
+
+  if (result.conflict) {
+    return { saved: false, conflict: true, serverUpdatedAt: target.updatedAt?.toISOString() }
+  }
+
+  const defaultWorldSeed = await mirrorDefaultWorldSeedForSource(ctx, {
+    ...target,
+    data: JSON.stringify(worldData),
+  })
+
+  return {
+    saved: true,
+    worldId: id,
+    savedAt: now.toISOString(),
     ...(defaultWorldSeed?.updated ? { defaultWorldSeed } : {}),
   }
 }
@@ -435,6 +629,151 @@ export async function saveWorld(
 // ═══════════════════════════════════════════════════════════════════════════
 // CREATE — New world
 // ═══════════════════════════════════════════════════════════════════════════
+
+function checkpointEventToInput(worldId: string, event: RoomCheckpointEventInput): AppendWorldCommandEventInput | null {
+  if (!event || event.kind !== 'command.accepted') return null
+  if (event.worldId !== worldId) return null
+  if (typeof event.id !== 'string' || typeof event.commandId !== 'string') return null
+  const command = event.command
+  const actorId = typeof event.actorId === 'string'
+    ? event.actorId
+    : typeof command?.actorId === 'string'
+      ? command.actorId
+      : ''
+  if (!actorId) return null
+  return {
+    eventId: event.id,
+    worldId,
+    commandId: event.commandId,
+    actorId,
+    sessionId: typeof command?.clientId === 'string' ? command.clientId : '',
+    kind: typeof command?.kind === 'string' ? command.kind : 'unknown',
+    worldVersion: Math.max(0, Math.floor(Number(event.revision) || 0)),
+    payload: event,
+    createdAt: typeof event.acceptedAt === 'string' ? event.acceptedAt : undefined,
+  }
+}
+
+export async function saveWorldCheckpointWithCommandEvents(
+  id: string,
+  userId: string,
+  state: Omit<WorldState, 'version' | 'savedAt'>,
+  events: RoomCheckpointEventInput[],
+  clientLoadedAt?: string,
+): Promise<SaveWorldResult & { eventsSaved?: number; eventsSkipped?: number }> {
+  const ctx = accessContext(userId)
+  const now = new Date()
+  const worldData = normalizeSavedWorldState({ version: 1, ...state, savedAt: now.toISOString() })
+  const eventInputs = events
+    .map(event => checkpointEventToInput(id, event))
+    .filter((event): event is AppendWorldCommandEventInput => event !== null)
+
+  const target = await prisma.world.findFirst({
+    where: { id },
+    select: {
+      id: true,
+      userId: true,
+      name: true,
+      icon: true,
+      visibility: true,
+      pvpEnabled: true,
+      creatorName: true,
+      creatorAvatar: true,
+      thumbnailUrl: true,
+      updatedAt: true,
+      data: true,
+    },
+  })
+  if (!target) {
+    throw new WorldAccessError('World not found', 'world_not_found', 404)
+  }
+
+  const writeDecision = getWorldWriteDecision(ctx, toAccessSubject(target))
+  if (writeDecision === 'deny') {
+    throw new WorldAccessError('This session cannot mutate that world', 'world_write_forbidden')
+  }
+  if (writeDecision === 'fork') {
+    throw new WorldAccessError('Room checkpoints cannot fork template worlds', 'world_checkpoint_fork_forbidden')
+  }
+
+  let clientLoadedDate: Date | null = null
+  if (clientLoadedAt) {
+    clientLoadedDate = new Date(clientLoadedAt)
+    if (!Number.isFinite(clientLoadedDate.getTime())) {
+      return { saved: false, conflict: true, serverUpdatedAt: target.updatedAt?.toISOString() }
+    }
+    if (target.updatedAt && target.updatedAt > clientLoadedDate) {
+      return { saved: false, conflict: true, serverUpdatedAt: target.updatedAt.toISOString() }
+    }
+  }
+
+  assertNotPortalOnlyOverwrite(id, target.data, worldData)
+  await snapshotBeforeSave(id)
+
+  const updateData = {
+    data: JSON.stringify(worldData),
+    objectCount: countWorldObjects(worldData),
+    updatedAt: now,
+  }
+
+  const result = await prisma.$transaction(async tx => {
+    const updated = clientLoadedDate
+      ? await tx.world.updateMany({
+          where: {
+            id,
+            updatedAt: { lte: clientLoadedDate },
+          },
+          data: updateData,
+        })
+      : await tx.world.updateMany({
+          where: { id },
+          data: updateData,
+        })
+    if (updated.count === 0) return { conflict: true, eventsSaved: 0, eventsSkipped: 0 }
+
+    const existing = eventInputs.length > 0
+      ? await tx.worldEvent.findMany({
+          where: {
+            worldId: id,
+            commandId: { in: eventInputs.map(event => event.commandId) },
+          },
+          select: { commandId: true },
+        })
+      : []
+    const seen = new Set(existing.map(event => event.commandId))
+    let eventsSaved = 0
+    for (const eventInput of eventInputs) {
+      if (seen.has(eventInput.commandId)) continue
+      await tx.worldEvent.create({ data: worldCommandEventCreateData(eventInput) })
+      seen.add(eventInput.commandId)
+      eventsSaved += 1
+    }
+
+    return {
+      conflict: false,
+      eventsSaved,
+      eventsSkipped: eventInputs.length - eventsSaved,
+    }
+  })
+
+  if (result.conflict) {
+    return { saved: false, conflict: true, serverUpdatedAt: target.updatedAt?.toISOString() }
+  }
+
+  const defaultWorldSeed = await mirrorDefaultWorldSeedForSource(ctx, {
+    ...target,
+    data: JSON.stringify(worldData),
+  })
+
+  return {
+    saved: true,
+    worldId: id,
+    savedAt: now.toISOString(),
+    eventsSaved: result.eventsSaved,
+    eventsSkipped: result.eventsSkipped,
+    ...(defaultWorldSeed?.updated ? { defaultWorldSeed } : {}),
+  }
+}
 
 export async function createWorld(
   name: string,

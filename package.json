@@ -10,6 +10,7 @@
     "dev:agent": "node scripts/dev-agent.js",
     "dev:relay": "node scripts/openclaw-relay-dev.mjs",
     "dev:room": "pnpm --dir packages/oasis-room-server dev",
+    "stress:room": "node scripts/oasis-room-swarm.mjs",
     "docs:local": "node scripts/sync-local-docs.mjs",
     "build": "next build",
     "start": "next start -p 4516",

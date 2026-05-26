@@ -2,7 +2,7 @@ import { Server, matchMaker } from 'colyseus'
 import { WebSocketTransport } from '@colyseus/ws-transport'
 import http from 'node:http'
 import { WorldRoom } from './rooms/WorldRoom.js'
-import { getRosterStats, getWorldPlayers } from './world-roster.js'
+import { getRosterStats, getWorldPlayers, getWorldRoomMetrics } from './world-roster.js'
 
 // 4519 NOT 4517: the OpenClaw/Hermes WSS relay sidecar
 // (scripts/openclaw-relay.mjs, ecosystem.openclaw.config.cjs) already binds
@@ -22,7 +22,13 @@ const httpServer = http.createServer((req, res) => {
         const totalConns = stats.reduce((sum, node) => sum + node.ccu, 0)
         const rosterStats = getRosterStats()
         res.writeHead(200, { 'content-type': 'application/json' })
-        res.end(JSON.stringify({ ok: true, rooms: totalRooms, connections: totalConns, roster: rosterStats }))
+        res.end(JSON.stringify({
+          ok: true,
+          rooms: totalRooms,
+          connections: totalConns,
+          roster: rosterStats,
+          worldMetrics: getWorldRoomMetrics(),
+        }))
       })
       .catch(error => {
         res.writeHead(500, { 'content-type': 'application/json' })
@@ -39,6 +45,19 @@ const httpServer = http.createServer((req, res) => {
       const players = worldId ? getWorldPlayers(worldId) : []
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify({ ok: true, worldId, players }))
+    } catch (error) {
+      res.writeHead(500, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ ok: false, error: String((error as Error)?.message || error) }))
+    }
+    return
+  }
+  // /room-metrics?worldId=X — command/mutation counters for stress calibration.
+  if (url.startsWith('/room-metrics') || url.startsWith('/rooms/room-metrics')) {
+    try {
+      const u = new URL(url, 'http://internal')
+      const worldId = (u.searchParams.get('worldId') || '').trim().replace(/[^a-zA-Z0-9_:.-]/g, '').slice(0, 96)
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, metrics: getWorldRoomMetrics(worldId || undefined) }))
     } catch (error) {
       res.writeHead(500, { 'content-type': 'application/json' })
       res.end(JSON.stringify({ ok: false, error: String((error as Error)?.message || error) }))
