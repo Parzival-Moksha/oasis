@@ -76,6 +76,79 @@ interface KpiDashboard {
   }
 }
 
+interface LiveDashboard {
+  generatedAt: string
+  entry: {
+    shortCodes: Array<{
+      code: string
+      event: string
+      label: string
+      targetCap: number
+      hardCap: number
+      maxShards: number
+      rootUrl: string
+      fallbackUrl: string
+      demoUrl: string
+    }>
+  }
+  totals: {
+    livePlayers: number
+    liveRooms: number
+    commandsAccepted: number
+    commandsRejected: number
+    mutationsRelayed: number
+    maxCommandLatencyMs: number
+    roomConnections: number
+    roomCount: number
+  }
+  processes: {
+    next: {
+      uptimeSec: number
+      memory: {
+        rssMb: number
+        heapUsedMb: number
+        heapTotalMb: number
+      }
+    }
+    room: null | {
+      uptimeSec?: number
+      memory?: {
+        rssMb?: number
+        heapUsedMb?: number
+        heapTotalMb?: number
+      }
+      eventLoopDelayMs?: {
+        mean?: number
+        p95?: number
+        max?: number
+      }
+    }
+  }
+  demoWorlds: Array<{
+    id: string
+    name: string
+    visibility: string
+    pvpEnabled: boolean
+    objectCount: number
+    visitCount: number
+    players: number
+    maxClients: number | null
+    createdAt: string
+    updatedAt: string
+  }>
+  liveRooms: Array<{
+    worldId: string
+    name: string
+    players?: number
+    maxClients?: number
+    commandsAccepted?: number
+    commandsRejected?: number
+    mutationsRelayed?: number
+    commandLatencyAvgMs?: number
+    commandLatencyMaxMs?: number
+  }>
+}
+
 const RANGE_OPTIONS = ['hourly', 'daily', 'weekly', 'alltime']
 
 function formatNumber(value: number): string {
@@ -93,6 +166,10 @@ function formatDuration(ms: number): string {
   const minutes = Math.floor(seconds / 60)
   const rest = seconds % 60
   return rest ? `${minutes}m ${rest}s` : `${minutes}m`
+}
+
+function formatSeconds(seconds: number | undefined): string {
+  return formatDuration((seconds || 0) * 1000)
 }
 
 function formatCost(value: number): string {
@@ -160,6 +237,8 @@ export default function AdminPage() {
   const [range, setRange] = useState('daily')
   const [dashboard, setDashboard] = useState<KpiDashboard | null>(null)
   const [dashboardError, setDashboardError] = useState<string | null>(null)
+  const [live, setLive] = useState<LiveDashboard | null>(null)
+  const [liveError, setLiveError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     const res = await fetch('/api/admin/session', { cache: 'no-store' })
@@ -182,6 +261,17 @@ export default function AdminPage() {
     setDashboard(await res.json())
   }, [range])
 
+  const refreshLive = useCallback(async () => {
+    setLiveError(null)
+    const res = await fetch('/api/admin/live', { cache: 'no-store' })
+    if (!res.ok) {
+      setLive(null)
+      setLiveError(`Could not load live rooms (${res.status})`)
+      return
+    }
+    setLive(await res.json())
+  }, [])
+
   useEffect(() => {
     refresh().catch(() => setMessage('Could not read admin session.'))
   }, [refresh])
@@ -191,6 +281,16 @@ export default function AdminPage() {
     if (!status.admin && status.configured) return
     refreshDashboard().catch(() => setDashboardError('Could not load dashboard.'))
   }, [refreshDashboard, status])
+
+  useEffect(() => {
+    if (!status) return
+    if (!status.admin && status.configured) return
+    refreshLive().catch(() => setLiveError('Could not load live rooms.'))
+    const timer = window.setInterval(() => {
+      refreshLive().catch(() => setLiveError('Could not load live rooms.'))
+    }, 3000)
+    return () => window.clearInterval(timer)
+  }, [refreshLive, status])
 
   const login = async (event: FormEvent) => {
     event.preventDefault()
@@ -214,6 +314,7 @@ export default function AdminPage() {
     await fetch('/api/admin/logout', { method: 'POST' })
     setMessage('Admin session cleared.')
     setDashboard(null)
+    setLive(null)
     await refresh()
   }
 
@@ -295,7 +396,10 @@ export default function AdminPage() {
                 Open Oasis
               </a>
               <button
-                onClick={refreshDashboard}
+                onClick={() => {
+                  refreshDashboard().catch(() => setDashboardError('Could not load dashboard.'))
+                  refreshLive().catch(() => setLiveError('Could not load live rooms.'))
+                }}
                 className="rounded border border-cyan-300/30 px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-cyan-100"
               >
                 Refresh
@@ -315,6 +419,129 @@ export default function AdminPage() {
         {(status?.admin || status?.configured === false) && dashboardError && (
           <div className="mb-6 rounded border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-100">
             {dashboardError}
+          </div>
+        )}
+
+        {(status?.admin || status?.configured === false) && liveError && (
+          <div className="mb-6 rounded border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-100">
+            {liveError}
+          </div>
+        )}
+
+        {live && (
+          <div className="mb-6 space-y-6">
+            <div className="rounded border border-white/10 bg-white/[0.025] p-5">
+              <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-cyan-100">Live Rooms</h2>
+                  <p className="text-sm text-slate-400">Projector-safe shard view for QR demos and hosted load checks.</p>
+                </div>
+                <div className="font-mono text-xs text-slate-500">Updated {new Date(live.generatedAt).toLocaleTimeString()}</div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+                <StatCard label="Live Players" value={formatNumber(live.totals.livePlayers)} detail={`${formatNumber(live.totals.liveRooms)} active world rooms`} />
+                <StatCard label="Room CCU" value={formatNumber(live.totals.roomConnections)} detail={`${formatNumber(live.totals.roomCount)} Colyseus rooms`} />
+                <StatCard label="Commands" value={formatNumber(live.totals.commandsAccepted)} detail={`${formatNumber(live.totals.commandsRejected)} rejected`} />
+                <StatCard label="Mutations" value={formatNumber(live.totals.mutationsRelayed)} detail="Relayed room changes" />
+                <StatCard label="Room RSS" value={`${formatNumber(live.processes.room?.memory?.rssMb || 0)} MB`} detail={`loop p95 ${formatNumber(live.processes.room?.eventLoopDelayMs?.p95 || 0)}ms`} />
+                <StatCard label="Next RSS" value={`${formatNumber(live.processes.next.memory.rssMb)} MB`} detail={`up ${formatSeconds(live.processes.next.uptimeSec)}`} />
+              </div>
+            </div>
+
+            <div className="grid gap-6 xl:grid-cols-[0.85fr_1.15fr]">
+              <div className="rounded border border-white/10 bg-white/[0.025] p-5">
+                <h2 className="mb-4 text-lg font-semibold text-cyan-100">Entry Codes</h2>
+                <div className="space-y-3">
+                  {live.entry.shortCodes.map(entry => (
+                    <div key={entry.code} className="rounded border border-white/10 bg-black/20 p-4">
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <div className="font-mono text-2xl text-cyan-100">/{entry.code}</div>
+                        <div className="font-mono text-xs text-slate-500">{entry.targetCap}/{entry.hardCap} x {entry.maxShards}</div>
+                      </div>
+                      <div className="truncate font-mono text-sm text-slate-200">{entry.rootUrl}</div>
+                      <div className="mt-1 truncate font-mono text-xs text-slate-500">{entry.event}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded border border-white/10 bg-white/[0.025] p-5">
+                <h2 className="mb-4 text-lg font-semibold text-cyan-100">Demo Shards</h2>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[620px] text-left text-sm">
+                    <thead className="text-xs uppercase tracking-[0.14em] text-slate-500">
+                      <tr>
+                        <th className="pb-2">Shard</th>
+                        <th className="pb-2 text-right">Players</th>
+                        <th className="pb-2 text-right">Objects</th>
+                        <th className="pb-2 text-right">Visits</th>
+                        <th className="pb-2">PvP</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/10">
+                      {live.demoWorlds.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="py-5 text-center text-slate-500">No demo shards created yet.</td>
+                        </tr>
+                      ) : live.demoWorlds.map(world => (
+                        <tr key={world.id}>
+                          <td className="py-3">
+                            <div className="font-medium text-slate-200">{world.name}</div>
+                            <div className="font-mono text-xs text-slate-500">{shortId(world.id)}</div>
+                          </td>
+                          <td className="py-3 text-right font-mono text-cyan-100">
+                            {formatNumber(world.players)}{world.maxClients ? ` / ${formatNumber(world.maxClients)}` : ''}
+                          </td>
+                          <td className="py-3 text-right font-mono">{formatNumber(world.objectCount)}</td>
+                          <td className="py-3 text-right font-mono">{formatNumber(world.visitCount)}</td>
+                          <td className="py-3 font-mono text-xs text-cyan-100">{world.pvpEnabled ? 'on' : 'off'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded border border-white/10 bg-white/[0.025] p-5">
+              <h2 className="mb-4 text-lg font-semibold text-cyan-100">Active Worlds</h2>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[760px] text-left text-sm">
+                  <thead className="text-xs uppercase tracking-[0.14em] text-slate-500">
+                    <tr>
+                      <th className="pb-2">World</th>
+                      <th className="pb-2 text-right">Players</th>
+                      <th className="pb-2 text-right">Accepted</th>
+                      <th className="pb-2 text-right">Rejected</th>
+                      <th className="pb-2 text-right">Mutations</th>
+                      <th className="pb-2 text-right">Avg Ack</th>
+                      <th className="pb-2 text-right">Max Ack</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {live.liveRooms.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-5 text-center text-slate-500">No live rooms right now.</td>
+                      </tr>
+                    ) : live.liveRooms.map(room => (
+                      <tr key={room.worldId}>
+                        <td className="py-3">
+                          <div className="font-medium text-slate-200">{room.name}</div>
+                          <div className="font-mono text-xs text-slate-500">{shortId(room.worldId)}</div>
+                        </td>
+                        <td className="py-3 text-right font-mono text-cyan-100">{formatNumber(room.players || 0)}</td>
+                        <td className="py-3 text-right font-mono">{formatNumber(room.commandsAccepted || 0)}</td>
+                        <td className="py-3 text-right font-mono">{formatNumber(room.commandsRejected || 0)}</td>
+                        <td className="py-3 text-right font-mono">{formatNumber(room.mutationsRelayed || 0)}</td>
+                        <td className="py-3 text-right font-mono">{formatNumber(room.commandLatencyAvgMs || 0)}ms</td>
+                        <td className="py-3 text-right font-mono">{formatNumber(room.commandLatencyMaxMs || 0)}ms</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
 

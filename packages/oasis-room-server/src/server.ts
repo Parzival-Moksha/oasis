@@ -1,6 +1,7 @@
 import { Server, matchMaker } from 'colyseus'
 import { WebSocketTransport } from '@colyseus/ws-transport'
 import http from 'node:http'
+import { monitorEventLoopDelay } from 'node:perf_hooks'
 import { WorldRoom } from './rooms/WorldRoom.js'
 import { getRosterStats, getWorldPlayers, getWorldRoomMetrics } from './world-roster.js'
 
@@ -8,6 +9,32 @@ import { getRosterStats, getWorldPlayers, getWorldRoomMetrics } from './world-ro
 // (scripts/openclaw-relay.mjs, ecosystem.openclaw.config.cjs) already binds
 // 4517. The Colyseus room sidecar must not collide with it on hosted PM2.
 const PORT = Number(process.env.OASIS_ROOM_PORT) || 4519
+const eventLoopDelay = monitorEventLoopDelay({ resolution: 20 })
+eventLoopDelay.enable()
+
+function processSnapshot() {
+  const memory = process.memoryUsage()
+  const cpu = process.cpuUsage()
+  return {
+    pid: process.pid,
+    uptimeSec: Math.round(process.uptime()),
+    memory: {
+      rssMb: Math.round(memory.rss / 1024 / 1024),
+      heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024),
+      heapTotalMb: Math.round(memory.heapTotal / 1024 / 1024),
+      externalMb: Math.round(memory.external / 1024 / 1024),
+    },
+    cpu: {
+      userMs: Math.round(cpu.user / 1000),
+      systemMs: Math.round(cpu.system / 1000),
+    },
+    eventLoopDelayMs: {
+      mean: Number.isFinite(eventLoopDelay.mean) ? Math.round(eventLoopDelay.mean / 1e6) : 0,
+      p95: Math.round(eventLoopDelay.percentile(95) / 1e6),
+      max: Math.round(eventLoopDelay.max / 1e6),
+    },
+  }
+}
 
 const httpServer = http.createServer((req, res) => {
   // Match both /health and /rooms/health: locally we serve on root, but on
@@ -24,10 +51,12 @@ const httpServer = http.createServer((req, res) => {
         res.writeHead(200, { 'content-type': 'application/json' })
         res.end(JSON.stringify({
           ok: true,
+          generatedAt: new Date().toISOString(),
           rooms: totalRooms,
           connections: totalConns,
           roster: rosterStats,
           worldMetrics: getWorldRoomMetrics(),
+          process: processSnapshot(),
         }))
       })
       .catch(error => {
