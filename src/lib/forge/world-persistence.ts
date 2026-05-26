@@ -73,6 +73,7 @@ export interface WorldState {
 
 export interface WorldMeta {
   id: string
+  shortCode?: string | null
   userId?: string
   name: string
   icon: string          // emoji icon for the world

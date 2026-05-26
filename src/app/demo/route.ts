@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/db'
 import { createWorld } from '@/lib/forge/world-server'
+import { ensureWorldShortCode } from '@/lib/world-short-codes'
 import {
   SESSION_COOKIE_MAX_AGE_S,
   SESSION_COOKIE_NAME,
@@ -165,6 +166,7 @@ async function assignDemoWorld(request: NextRequest, eventSlug: string, targetCa
     },
     select: {
       id: true,
+      shortCode: true,
       name: true,
       createdAt: true,
     },
@@ -193,6 +195,7 @@ async function assignDemoWorld(request: NextRequest, eventSlug: string, targetCa
     })
     assigned = {
       id: meta.id,
+      shortCode: meta.shortCode || null,
       name: meta.name,
       createdAt: new Date(),
       players: 0,
@@ -202,19 +205,24 @@ async function assignDemoWorld(request: NextRequest, eventSlug: string, targetCa
   if (!assigned) {
     throw new DemoCapacityError(eventSlug, targetCap, hardCap, maxShards)
   }
+  const shortCode = assigned.shortCode || await ensureWorldShortCode(assigned.id)
   reserveDemoWorld(eventSlug, assigned.id)
 
+  const href = shortCode
+    ? `/${encodeURIComponent(shortCode)}?demo=${encodeURIComponent(eventSlug)}`
+    : `/w/${encodeURIComponent(assigned.id)}?demo=${encodeURIComponent(eventSlug)}`
   const payload = {
     ok: true,
     event: eventSlug,
     worldId: assigned.id,
+    shortCode,
     worldName: assigned.name,
     players: assigned.players,
     targetCap,
     hardCap,
     maxShards,
     created,
-    href: `/w/${encodeURIComponent(assigned.id)}?demo=${encodeURIComponent(eventSlug)}`,
+    href,
   }
   return payload
 }

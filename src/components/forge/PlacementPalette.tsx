@@ -17,6 +17,7 @@ import { AssetCard } from './AssetCard'
 import { CraftedPreviewPanel, ModelPreviewPanel } from './ModelPreview'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
+const DEMO_ROUTER_PATH = `${OASIS_BASE}/ab12`.replace(/\/{2,}/g, '/')
 
 export type PaletteTab = 'catalog' | 'portal' | 'spatial' | 'conjured' | 'crafted' | 'media'
 
@@ -91,7 +92,7 @@ function CategoryChip({
 export function PlacementPalette({ showConjured = true, columns = 3, initialTab = 'catalog', onPlace }: PlacementPaletteProps) {
   const [tab, setTab] = useState<PaletteTab>(initialTab)
   const [category, setCategory] = useState('stylized-nature')
-  const [portalActionPreset, setPortalActionPreset] = useState<'load_world' | 'create_private' | 'create_public' | 'create_ffa' | 'external_url' | 'locked_message'>('load_world')
+  const [portalActionPreset, setPortalActionPreset] = useState<'load_world' | 'demo_router' | 'create_private' | 'create_public' | 'create_ffa' | 'external_url' | 'locked_message'>('load_world')
   const [portalTargetWorldId, setPortalTargetWorldId] = useState('')
   const [portalExternalUrl, setPortalExternalUrl] = useState('https://conjure.04515.xyz/?portal=true&from=oasis')
   const [portalLockedMessage, setPortalLockedMessage] = useState('This portal is not open yet.')
@@ -190,6 +191,9 @@ export function PlacementPalette({ showConjured = true, columns = 3, initialTab 
         ? { type: 'load_world', worldId: selectedTarget.id, worldName: selectedTarget.name }
         : undefined
     }
+    if (portalActionPreset === 'demo_router') {
+      return { type: 'external_url', url: DEMO_ROUTER_PATH, label: 'Demo Router', requiresConfirm: false }
+    }
     if (portalActionPreset === 'create_private') {
       return { type: 'create_world', visibility: 'private', promptForName: true, name: 'New Private World' }
     }
@@ -271,7 +275,7 @@ export function PlacementPalette({ showConjured = true, columns = 3, initialTab 
     : portalAction?.type === 'create_world'
       ? `create ${portalAction.visibility || 'private'}`
       : portalAction?.type === 'external_url'
-        ? 'external URL'
+        ? portalAction.label || 'external URL'
         : 'locked'
   const mediaFiltered = mediaItems.filter(item => item.type === mediaKind)
   const countPlacedMedia = (url: string) => {
@@ -375,6 +379,7 @@ export function PlacementPalette({ showConjured = true, columns = 3, initialTab 
                 className="max-w-[160px] rounded border border-cyan-300/25 bg-black/70 px-2 py-1 text-[10px] text-cyan-100 outline-none"
               >
                 <option value="load_world">Existing world</option>
+                <option value="demo_router">Demo router</option>
                 <option value="create_private">Create private</option>
                 <option value="create_public">Create public</option>
                 <option value="create_ffa">Create FFA</option>
@@ -427,7 +432,7 @@ export function PlacementPalette({ showConjured = true, columns = 3, initialTab 
                       : portalAction.type === 'create_world'
                         ? `Portal to create ${portalAction.visibility || 'private'}`
                         : portalAction.type === 'external_url'
-                          ? 'Portal to external URL'
+                          ? `Portal to ${portalAction.label || 'external URL'}`
                           : 'Locked portal',
                     portalVariant: style.id as PortalGateVariant,
                     portalAction,

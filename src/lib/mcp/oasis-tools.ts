@@ -62,6 +62,7 @@ import {
   type WorldAccessSubject,
 } from '../forge/world-access'
 import { DEFAULT_CRAFT_MODEL, normalizeCraftModelId } from '../craft-models'
+import { ensureWorldShortCode, generateWorldShortCode, isWorldShortCodeCollision } from '../world-short-codes'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -125,8 +126,10 @@ function resolveOasisPublicBaseUrl(value?: unknown): string {
   return (requested || envUrl).replace(/\/+$/, '')
 }
 
-function buildWorldUrl(worldId: string, publicBaseUrl?: unknown): string {
-  return `${resolveOasisPublicBaseUrl(publicBaseUrl)}/w/${encodeURIComponent(worldId)}`
+function buildWorldUrl(worldId: string, publicBaseUrl?: unknown, shortCode?: string | null): string {
+  return shortCode
+    ? `${resolveOasisPublicBaseUrl(publicBaseUrl)}/${encodeURIComponent(shortCode)}`
+    : `${resolveOasisPublicBaseUrl(publicBaseUrl)}/w/${encodeURIComponent(worldId)}`
 }
 
 function buildQrCodeUrl(url: string): string {
@@ -2061,21 +2064,36 @@ async function createWorldFromGoogleForm(args: Record<string, unknown>, options:
     savedAt: now.toISOString(),
   }
 
-  await prisma.world.create({
-    data: {
-      id: worldId,
-      userId: currentToolContext().userId || LOCAL_USER_ID,
-      name,
-      icon,
-      visibility,
-      data: JSON.stringify(state),
-      objectCount: countWorldObjects(state),
-      createdAt: now,
-      updatedAt: now,
-    },
-  })
+  let shortCode: string | null = null
+  let created = false
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    try {
+      const candidateShortCode = await generateWorldShortCode()
+      await prisma.world.create({
+        data: {
+          id: worldId,
+          shortCode: candidateShortCode,
+          userId: currentToolContext().userId || LOCAL_USER_ID,
+          name,
+          icon,
+          visibility,
+          data: JSON.stringify(state),
+          objectCount: countWorldObjects(state),
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      shortCode = candidateShortCode
+      created = true
+      break
+    } catch (error) {
+      if (isWorldShortCodeCollision(error)) continue
+      throw error
+    }
+  }
+  if (!created || !shortCode) throw new Error('Could not create world with a unique short code.')
 
-  const worldUrl = buildWorldUrl(worldId, args.publicBaseUrl)
+  const worldUrl = buildWorldUrl(worldId, args.publicBaseUrl, visibility === 'private' ? null : shortCode)
   return {
     ok: true,
     message: `Created shareable spatial ${testMode ? 'test' : 'Google Form'} world "${name}" with ${spec.fields.length} field${spec.fields.length === 1 ? '' : 's'}.`,
@@ -2108,12 +2126,14 @@ tools.share_world_link = async (args) => {
     where: { id: worldId },
     data: { visibility, updatedAt: new Date() },
   })
-  const worldUrl = buildWorldUrl(worldId, args.publicBaseUrl)
+  const shortCode = visibility === 'private' ? null : await ensureWorldShortCode(worldId)
+  const worldUrl = buildWorldUrl(worldId, args.publicBaseUrl, shortCode)
   return {
     ok: true,
     message: `World ${worldId} is ${visibility}. Share ${worldUrl}`,
     data: {
       worldId,
+      shortCode,
       worldUrl,
       qrUrl: buildQrCodeUrl(worldUrl),
       visibility,
@@ -3107,10 +3127,18 @@ tools.create_portal_gate = async (args) => {
     : 'two-way'
   const targetWorldNameQuery = validStr(args.targetWorldName || args.worldName || args.targetName, '')
   const requestedTargetWorldId = validStr(args.targetWorldId || args.destinationWorldId, '')
-  let targetWorld = requestedTargetWorldId ? await readToolWorldRow(requestedTargetWorldId, 'read') : null
-  const matches = !targetWorld && targetWorldNameQuery ? await findToolWorldsByQuery(targetWorldNameQuery, 6) : []
-  if (!targetWorld && matches.length === 1) targetWorld = matches[0]
-  if (!targetWorld) {
+  const routeHint = validStr(args.targetRoute || args.route || args.destination || args.destinationName, '')
+  const targetPhrase = `${targetWorldNameQuery} ${routeHint}`.toLowerCase().replace(/[_-]+/g, ' ')
+  const demoRouterRequested = validBool(args.demoRouter ?? args.demo_router, false)
+    || /\bdemo\s*(router|route|shard|entry)\b/.test(targetPhrase)
+    || targetPhrase.trim() === 'demo'
+  const explicitExternalUrl = validStr(args.externalUrl || args.targetUrl || args.url, '')
+  const externalPortalUrl = demoRouterRequested ? '/ab12' : explicitExternalUrl
+
+  let targetWorld = externalPortalUrl ? null : (requestedTargetWorldId ? await readToolWorldRow(requestedTargetWorldId, 'read') : null)
+  const matches = !externalPortalUrl && !targetWorld && targetWorldNameQuery ? await findToolWorldsByQuery(targetWorldNameQuery, 6) : []
+  if (!externalPortalUrl && !targetWorld && matches.length === 1) targetWorld = matches[0]
+  if (!externalPortalUrl && !targetWorld) {
     return {
       ok: false,
       message: matches.length > 1
@@ -3128,13 +3156,13 @@ tools.create_portal_gate = async (args) => {
   }
 
   const { worldId, state } = await loadRequestedWorld(args.worldId)
-  if (targetWorld.id === worldId) return { ok: false, message: 'Refusing to create a portal from a world to itself.' }
+  if (targetWorld?.id === worldId) return { ok: false, message: 'Refusing to create a portal from a world to itself.' }
 
   const sourceWorld = await readToolWorldRow(worldId, 'read')
   const sourceWorldName = sourceWorld?.name || 'This world'
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
   const gateId = validStr(args.id, '') || `portal-${stamp}-a`
-  const linkedPortalId = direction === 'two-way' ? `portal-${stamp}-b` : undefined
+  const linkedPortalId = targetWorld && direction === 'two-way' ? `portal-${stamp}-b` : undefined
   const explicitPosition = validPos(args.position)
   const actorAgentType = validStr(args.agentType || args.actorAgentType || args.agent, '').toLowerCase()
   const sourceAvatar = actorAgentType
@@ -3158,8 +3186,17 @@ tools.create_portal_gate = async (args) => {
   const width = Math.max(1, Math.min(12, validNum(args.width, 2.4)))
   const height = Math.max(1, Math.min(16, validNum(args.height, 3.2)))
   const scale = validScale(args.scale, 1)
-  const targetWorldName = targetWorld.name || targetWorld.id
-  const action: PortalAction = { type: 'load_world', worldId: targetWorld.id, worldName: targetWorldName }
+  const externalPortalLabel = demoRouterRequested ? 'Demo Router' : validStr(args.externalLabel || args.label, 'External world')
+  const targetWorldName = targetWorld ? (targetWorld.name || targetWorld.id) : externalPortalLabel
+  const action: PortalAction = targetWorld
+    ? { type: 'load_world', worldId: targetWorld.id, worldName: targetWorldName }
+    : {
+        type: 'external_url',
+        url: externalPortalUrl,
+        label: externalPortalLabel,
+        returnUrl: validStr(args.returnUrl, ''),
+        requiresConfirm: demoRouterRequested ? false : validBool(args.requiresConfirm ?? args.requires_confirm, true),
+      }
   const gate: PortalGate = {
     id: gateId,
     variant,
@@ -3169,11 +3206,10 @@ tools.create_portal_gate = async (args) => {
     scale: typeof scale === 'number' ? scale : 1,
     width,
     height,
-    direction,
+    direction: targetWorld ? direction : 'one-way',
     sourceWorldId: worldId,
-    targetWorldId: targetWorld.id,
-    targetWorldName,
     action,
+    ...(targetWorld ? { targetWorldId: targetWorld.id, targetWorldName } : {}),
     ...(linkedPortalId ? { linkedPortalId } : {}),
   }
 
@@ -3192,7 +3228,7 @@ tools.create_portal_gate = async (args) => {
 
   let returnGate: PortalGate | null = null
   let returnGateWarning = ''
-  if (direction === 'two-way' && linkedPortalId) {
+  if (targetWorld && direction === 'two-way' && linkedPortalId) {
     try {
       const targetState = (await loadToolWorld(targetWorld.id, 'write')).state
       if (!(targetState.portalGates || []).some(existing => existing.id === linkedPortalId || existing.linkedPortalId === gateId)) {
@@ -3234,15 +3270,19 @@ tools.create_portal_gate = async (args) => {
 
   return {
     ok: true,
-    message: `Created ${direction} portal "${gate.label}" to ${targetWorldName}.${returnGateWarning ? ` Return portal skipped: ${returnGateWarning}` : ''}`,
+    message: `Created ${gate.direction || direction} portal "${gate.label}" to ${targetWorldName}.${returnGateWarning ? ` Return portal skipped: ${returnGateWarning}` : ''}`,
     data: {
       id: gateId,
       portalGate: gate,
-      targetWorld: {
-        id: targetWorld.id,
-        name: targetWorldName,
-        visibility: targetWorld.visibility,
-      },
+      ...(targetWorld
+        ? {
+            targetWorld: {
+              id: targetWorld.id,
+              name: targetWorldName,
+              visibility: targetWorld.visibility,
+            },
+          }
+        : { targetUrl: externalPortalUrl }),
       ...(returnGate ? { returnGate } : {}),
       ...(returnGateWarning ? { warning: returnGateWarning } : {}),
     },
@@ -3310,12 +3350,26 @@ tools.create_world = async (args) => {
     catalogPlacements: [], agentAvatars: [], transforms: {}, savedAt: now.toISOString(),
   }
 
-  await prisma.world.create({
-    data: { id, userId: context.userId, name, icon, visibility: 'private', data: JSON.stringify(emptyState), createdAt: now, updatedAt: now },
-  })
+  let shortCode: string | null = null
+  let created = false
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    try {
+      const candidateShortCode = await generateWorldShortCode()
+      await prisma.world.create({
+        data: { id, shortCode: candidateShortCode, userId: context.userId, name, icon, visibility: 'private', data: JSON.stringify(emptyState), createdAt: now, updatedAt: now },
+      })
+      shortCode = candidateShortCode
+      created = true
+      break
+    } catch (error) {
+      if (isWorldShortCodeCollision(error)) continue
+      throw error
+    }
+  }
+  if (!created) throw new Error('Could not create world with a unique short code.')
 
   emitWorldEvent('world_switch', id, { targetWorldId: id, ...mutationActorData(args) })
-  return { ok: true, message: `Created world "${name}" (${id}). Browser switching now.`, data: { worldId: id, name } }
+  return { ok: true, message: `Created world "${name}" (${id}). Browser switching now.`, data: { worldId: id, shortCode, name } }
 }
 tools.create_and_load_world = tools.create_world
 

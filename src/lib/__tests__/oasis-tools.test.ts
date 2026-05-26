@@ -20,6 +20,7 @@ vi.mock('../db', () => ({
       findMany: vi.fn(),
       findUnique: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       create: vi.fn(),
     },
     asset: {
@@ -62,6 +63,7 @@ function makeWorldRow(state: Record<string, unknown> = {}, rowOverrides: Record<
   }
   return {
     id: 'test-world-1',
+    shortCode: null,
     name: 'Test World',
     icon: '🌍',
     userId: 'local-user',
