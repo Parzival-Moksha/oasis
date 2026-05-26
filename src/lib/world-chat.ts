@@ -33,7 +33,7 @@ interface WorldChatState {
   clear: () => void
 }
 
-export const useWorldChat = create<WorldChatState>((set, get) => ({
+export const useWorldChat = create<WorldChatState>(set => ({
   worldId: null,
   localSessionId: null,
   connected: false,
