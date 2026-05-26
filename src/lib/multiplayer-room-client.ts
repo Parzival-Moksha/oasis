@@ -73,6 +73,23 @@ export interface MultiplayerRoomInput {
   animState?: string
 }
 
+export interface MultiplayerRoomChatMessage {
+  id: string
+  worldId: string
+  sessionId: string
+  userId?: string
+  playerId?: string
+  displayName: string
+  color: string
+  text: string
+  createdAt: number
+}
+
+export interface MultiplayerRoomChatInput {
+  id?: string
+  text: string
+}
+
 interface RoomPlayerSchema {
   userId?: string
   playerId: string
@@ -201,6 +218,7 @@ export interface MultiplayerRoomProfile {
 
 export interface MultiplayerRoomConnection {
   sendInput(input: MultiplayerRoomInput): void
+  sendChat(input: MultiplayerRoomChatInput): void
   sendMutation(payload: unknown): void
   sendCommand(command: WorldCommandEnvelope): Promise<WorldEventEnvelope>
   sendProfile(profile: MultiplayerRoomProfile): void
@@ -215,6 +233,7 @@ export interface MultiplayerRoomConnectArgs extends MultiplayerRoomJoinOptions {
   onPlayersChanged: (players: MultiplayerRoomPlayer[]) => void
   onConnectionState?: (state: 'connecting' | 'connected' | 'closed' | 'error', detail?: string) => void
   onMutation?: (payload: unknown) => void
+  onChat?: (message: MultiplayerRoomChatMessage) => void
   onWorldEvent?: (event: WorldEventEnvelope) => void
   onWorldSnapshot?: (snapshot: MultiplayerRoomWorldSnapshot) => void
 }
@@ -378,6 +397,16 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
     })
   }
 
+  room.onMessage('chat', (payload: unknown) => {
+    const message = payload as MultiplayerRoomChatMessage
+    if (!message || typeof message.text !== 'string' || message.worldId !== args.worldId) return
+    try {
+      args.onChat?.(message)
+    } catch (error) {
+      if (DEBUG) console.warn('[oasis-room] onChat handler threw', error)
+    }
+  })
+
   const pendingCommands = new Map<string, {
     resolve: (event: WorldEventEnvelope) => void
     reject: (error: Error) => void
@@ -445,6 +474,13 @@ export async function connectToWorldRoom(args: MultiplayerRoomConnectArgs): Prom
         room.send('input', input)
       } catch (error) {
         if (DEBUG) console.warn('[oasis-room] sendInput failed', error)
+      }
+    },
+    sendChat(input: MultiplayerRoomChatInput): void {
+      try {
+        room.send('chat', input)
+      } catch (error) {
+        if (DEBUG) console.warn('[oasis-room] sendChat failed', error)
       }
     },
     sendMutation(payload: unknown): void {

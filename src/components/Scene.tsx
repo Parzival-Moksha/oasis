@@ -100,6 +100,7 @@ import { MobileOasisControls, useIsMobileOasis } from './forge/MobileOasisContro
 import { CombatBoltLayer } from './forge/CombatBoltLayer'
 import { PlayerVitalsHud } from './forge/PlayerVitalsHud'
 import { PvPOverlay } from './forge/PvPOverlay'
+import { WorldChatOverlay } from './forge/WorldChatOverlay'
 import { PlayerSpellbookPanel } from './forge/PlayerSpellbookPanel'
 import { GlobalNotice, showNotice } from './forge/GlobalNotice'
 import { ForkWelcomeModal } from './forge/ForkWelcomeModal'
@@ -1979,6 +1980,7 @@ export default function Scene() {
       />
       <PlayerVitalsHud visible={effectiveRp1Mode && !isPortalZeroWorld} />
       <PvPOverlay visible={effectiveRp1Mode && !isPortalZeroWorld} />
+      <WorldChatOverlay visible={effectiveRp1Mode} />
       <PlayerSpellbookPanel
         visible
         isOpen={spellbookOpen}

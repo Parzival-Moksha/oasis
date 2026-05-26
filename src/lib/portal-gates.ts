@@ -479,6 +479,14 @@ function sortDirectoryWorlds(worlds: WorldMeta[]): WorldMeta[] {
   })
 }
 
+function isPortalZeroDirectorySuppressedWorld(world: WorldMeta): boolean {
+  const name = (world.name || '').trim().toLowerCase()
+  const owner = (world as WorldMeta & { userId?: string | null }).userId || ''
+  return owner === 'oasis-demo-router'
+    || name.startsWith('swarm ')
+    || name.startsWith('demo ai-tinkerers')
+}
+
 function laneOffset(index: number): number {
   const row = Math.floor(index / 2)
   const side = index % 2 === 0 ? -1 : 1
@@ -569,7 +577,7 @@ export function resolveWelcomeHubPortalGates(
 
   const existingTargets = new Set(withConjure.map(gate => gate.targetWorldId).filter(Boolean))
   const eligible = getSafePortalTargetWorlds(worldRegistry, WELCOME_HUB_WORLD_ID)
-    .filter(world => !existingTargets.has(world.id))
+    .filter(world => !existingTargets.has(world.id) && !isPortalZeroDirectorySuppressedWorld(world))
   const publicWorlds = eligible.filter(world => world.visibility === 'public')
   const ffaWorlds = eligible.filter(world => world.visibility === 'ffa' || world.visibility === 'public_edit')
 

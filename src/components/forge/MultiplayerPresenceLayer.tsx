@@ -18,6 +18,7 @@ import { commandTouchesDurableWorldState } from '@/lib/world-commands/types'
 import { colorForPlayerId as colorForId } from '@/lib/multiplayer-color'
 import { withProfileAvatarBust } from '@/lib/profile-avatar-url'
 import { useOasisStore } from '@/store/oasisStore'
+import { appendWorldChatMessage, setWorldChatSender, useWorldChat } from '@/lib/world-chat'
 import { RemoteVRMAvatar } from './RemoteVRMAvatar'
 import {
   appendLiveStrokePoint,
@@ -449,6 +450,8 @@ export function MultiplayerPresenceLayer() {
   const lastSentAtRef = useRef<number>(0)
   const [players, setPlayers] = useState<MultiplayerRoomPlayer[]>([])
   const [reconnectTick, setReconnectTick] = useState(0)
+  const setWorldChatWorldId = useWorldChat(state => state.setWorldId)
+  const setWorldChatLocalSessionId = useWorldChat(state => state.setLocalSessionId)
   const reconnectAttemptRef = useRef(0)
   // Tracks which world we last cleared live-strokes for, so transient WS
   // reconnects (which bump reconnectTick) don't wipe in-progress strokes.
@@ -641,8 +644,12 @@ export function MultiplayerPresenceLayer() {
   useEffect(() => {
     if (!activeWorldId) {
       setPlayers([])
+      setWorldChatWorldId(null)
+      setWorldChatSender(null)
+      setWorldChatLocalSessionId(null)
       return
     }
+    setWorldChatWorldId(activeWorldId)
     const playerId = playerIdRef.current
     if (!playerId) return
 
@@ -653,6 +660,8 @@ export function MultiplayerPresenceLayer() {
     // NEXT_PUBLIC_OASIS_ROOM_URL to opt in.
     if (!isMultiplayerRoomConfigured()) {
       setPlayers([])
+      setWorldChatSender(null)
+      setWorldChatLocalSessionId(null)
       return
     }
 
@@ -694,6 +703,10 @@ export function MultiplayerPresenceLayer() {
         if (!mutation || typeof mutation !== 'object' || typeof mutation.kind !== 'string') return
         worldMutationBus.applyIncoming(mutation)
       },
+      onChat: message => {
+        if (disposed) return
+        appendWorldChatMessage(message)
+      },
       onWorldEvent: event => {
         if (disposed || event.kind !== 'command.accepted' || !event.command) return
         if (event.command.clientId && event.command.clientId === connectionRef.current?.sessionId) return
@@ -718,6 +731,8 @@ export function MultiplayerPresenceLayer() {
           // don't stomp a sender belonging to a newer connection.
           if (connection === connectionRef.current) {
             worldMutationBus.setSender(null)
+            setWorldChatSender(null)
+            setWorldChatLocalSessionId(null)
             connectionRef.current = null
             useOasisStore.getState().setWorldCommandAuthority(null)
           }
@@ -732,6 +747,8 @@ export function MultiplayerPresenceLayer() {
         }
         connection = next
         connectionRef.current = next
+        setWorldChatLocalSessionId(next.sessionId)
+        setWorldChatSender(input => next.sendChat(input))
         useOasisStore.getState().setWorldCommandAuthority({
           worldId: activeWorldId,
           sessionId: next.sessionId,
@@ -806,6 +823,8 @@ export function MultiplayerPresenceLayer() {
       })
       .catch(error => {
         console.warn('[oasis-room] connect rejected:', error)
+        setWorldChatSender(null)
+        setWorldChatLocalSessionId(null)
         scheduleReconnect()
       })
 
@@ -818,6 +837,8 @@ export function MultiplayerPresenceLayer() {
       // newer effect may have already wired its own sender.
       if (connection === connectionRef.current) {
         worldMutationBus.setSender(null)
+        setWorldChatSender(null)
+        setWorldChatLocalSessionId(null)
         connectionRef.current = null
         useOasisStore.getState().setWorldCommandAuthority(null)
       }
@@ -841,7 +862,7 @@ export function MultiplayerPresenceLayer() {
         commandRejectRecoveryTimerRef.current = null
       }
     }
-  }, [activeWorldId, activeWorldPvpEnabled, reconnectTick])
+  }, [activeWorldId, activeWorldPvpEnabled, reconnectTick, setWorldChatLocalSessionId, setWorldChatWorldId])
 
   // Push avatar/profile changes as a small mutation instead of reconnecting
   // the whole room. This decouples cosmetic changes from session lifecycle.

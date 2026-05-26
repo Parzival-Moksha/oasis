@@ -1158,7 +1158,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
                 className="mt-10 aspect-square w-full max-w-[min(68vh,640px)] rounded-lg border border-white/15 bg-white p-3"
               />
             )}
-            <div className="mt-4 w-full break-all rounded-md border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-center font-mono text-sm font-black text-cyan-50 sm:text-lg">
+            <div className="mt-4 w-full break-all rounded-md border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-center font-mono text-2xl font-black leading-tight text-cyan-50 sm:text-4xl">
               {worldUrl}
             </div>
             <div className="mt-3 flex w-full max-w-md gap-2">

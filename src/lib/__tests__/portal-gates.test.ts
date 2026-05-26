@@ -29,7 +29,7 @@ const gate: PortalGate = {
   targetWorldId: 'world-target',
 }
 
-function world(id: string, visibility: WorldMeta['visibility'] = 'private'): WorldMeta {
+function world(id: string, visibility: WorldMeta['visibility'] = 'private', extras: Partial<WorldMeta> = {}): WorldMeta {
   return {
     id,
     name: id,
@@ -37,6 +37,7 @@ function world(id: string, visibility: WorldMeta['visibility'] = 'private'): Wor
     visibility,
     createdAt: '',
     lastSavedAt: '',
+    ...extras,
   }
 }
 
@@ -154,6 +155,21 @@ describe('portal gate trigger helpers', () => {
       url: 'https://conjure.04515.xyz',
       returnUrl: 'https://04515.xyz',
     })
+  })
+
+  it('keeps stress and demo shard worlds out of the Portal Zero directory', () => {
+    const gates = resolveWelcomeHubPortalGates([], [
+      world(WELCOME_HUB_WORLD_ID, 'core'),
+      world('world-real-public', 'public'),
+      world('world-swarm', 'ffa', { name: 'Swarm mpmxul 11 16' }),
+      world('world-demo', 'ffa', { name: 'Demo ai-tinkerers-bogota-may-2026 FFA 1' }),
+      world('world-demo-owner', 'ffa', { name: 'Regular Looking FFA', userId: 'oasis-demo-router' }),
+    ])
+
+    expect(gates.some(item => item.targetWorldId === 'world-real-public')).toBe(true)
+    expect(gates.some(item => item.targetWorldId === 'world-swarm')).toBe(false)
+    expect(gates.some(item => item.targetWorldId === 'world-demo')).toBe(false)
+    expect(gates.some(item => item.targetWorldId === 'world-demo-owner')).toBe(false)
   })
 
   it('places a single live destination in the portal area', () => {

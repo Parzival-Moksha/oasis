@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/db'
 import { createWorld } from '@/lib/forge/world-server'
+import { publicOriginFromRequest } from '@/lib/public-origin'
 import { ensureWorldShortCode } from '@/lib/world-short-codes'
 import {
   SESSION_COOKIE_MAX_AGE_S,
@@ -231,6 +232,7 @@ export async function GET(request: NextRequest) {
   const eventSlug = resolveEventSlug(request)
   const targetCap = clampInt(request.nextUrl.searchParams.get('target'), DEFAULT_TARGET_CAP, 1, 256)
   const hardCap = clampInt(request.nextUrl.searchParams.get('hard'), DEFAULT_HARD_CAP, targetCap, 256)
+  const publicOrigin = publicOriginFromRequest(request)
 
   const existingSession = readBrowserSession(request)
   const minted = existingSession ? null : mintSessionCookieValue()
@@ -253,7 +255,7 @@ export async function GET(request: NextRequest) {
       }
       const response = wantsJson
         ? NextResponse.json(fullPayload, { status: 503 })
-        : NextResponse.redirect(new URL('/', request.url))
+        : NextResponse.redirect(new URL('/', publicOrigin))
       stampSessionCookie(response, minted?.cookieValue)
       return response
     }
@@ -261,7 +263,7 @@ export async function GET(request: NextRequest) {
   }
   const response = wantsJson
     ? NextResponse.json(payload)
-    : NextResponse.redirect(new URL(payload.href, request.url))
+    : NextResponse.redirect(new URL(payload.href, publicOrigin))
   stampSessionCookie(response, minted?.cookieValue)
   return response
 }

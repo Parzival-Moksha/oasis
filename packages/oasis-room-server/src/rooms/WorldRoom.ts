@@ -77,6 +77,11 @@ interface VitalsMessage {
   maxMana?: number
 }
 
+interface ChatMessage {
+  id?: unknown
+  text?: unknown
+}
+
 const DEFAULT_MAX_PLAYERS_PER_WORLD = 64
 const MAX_CONFIGURABLE_PLAYERS_PER_WORLD = 256
 const SIM_HZ = 30
@@ -88,6 +93,8 @@ const MUTATION_MAX_BYTES = 16 * 1024  // 16 KiB per mutation envelope
 const MUTATION_TOKENS_PER_SEC = 30    // 30 mutation broadcasts/sec sustained
 const MUTATION_BURST = 60             // allow short bursts for drag streams
 const WORLD_COMMAND_MAX_BYTES = 16 * 1024
+const CHAT_MAX_TEXT_CHARS = 280
+const CHAT_MAX_BYTES = 1024
 const COMMAND_EVENT_RING_MAX = 256
 const CHECKPOINT_INTERVAL_MS = 5_000
 const CHECKPOINT_EVENT_THRESHOLD = 100
@@ -865,6 +872,40 @@ export class WorldRoom extends Room<WorldRoomState> {
         player.alive = true
       }
       player.updatedAt = Date.now()
+    })
+
+    this.onMessage('chat', (client, payload: ChatMessage) => {
+      const player = this.state.players.get(client.sessionId)
+      const access = this.playerAccess.get(client.sessionId)
+      if (!player || !access?.canRead) return
+      if (!payload || typeof payload !== 'object') return
+
+      const text = sanitizeText(payload.text, '', CHAT_MAX_TEXT_CHARS)
+      if (!text) return
+      const id = typeof payload.id === 'string'
+        ? sanitizeText(payload.id, '', 96)
+        : `chat-${Date.now()}-${client.sessionId}`
+
+      let serializedSize: number
+      try {
+        serializedSize = JSON.stringify({ id, text }).length
+      } catch {
+        return
+      }
+      if (serializedSize > CHAT_MAX_BYTES) return
+      if (!this.consumeMutationToken(client.sessionId, Date.now())) return
+
+      this.broadcast('chat', {
+        id: id || `chat-${Date.now()}-${client.sessionId}`,
+        worldId: this.state.worldId,
+        sessionId: client.sessionId,
+        userId: player.userId || access.userId,
+        playerId: player.playerId,
+        displayName: player.displayName,
+        color: player.color,
+        text,
+        createdAt: Date.now(),
+      })
     })
 
     this.onMessage('cast', (client, payload: CastMessage) => {
