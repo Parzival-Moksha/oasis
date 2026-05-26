@@ -17,6 +17,7 @@ import { isAdminUserId } from '../admin-auth'
 import { levelFromXp } from '../xp'
 import { createPortalZeroReturnGate } from '../portal-zero-return-gate'
 import { mirrorDefaultWorldSeed, type DefaultWorldSeedWriteResult } from '../default-world-seed-writer'
+import { generateWorldShortCode, isWorldShortCodeCollision } from '../world-short-codes'
 import { DEFAULT_WORLD_LIGHTS, type WorldLight } from '../conjure/types'
 import {
   DISCOVERABLE_VISIBILITIES,
@@ -140,6 +141,7 @@ async function mirrorDefaultWorldSeedById(
     where: { id: worldId },
     select: {
       id: true,
+      shortCode: true,
       userId: true,
       name: true,
       icon: true,
@@ -211,6 +213,7 @@ function assertNotPortalOnlyOverwrite(worldId: string, currentData: string | nul
 function toWorldMeta(
   row: {
     id: string
+    shortCode?: string | null
     userId?: string
     name: string
     icon: string
@@ -236,6 +239,7 @@ function toWorldMeta(
   const ownerAura = ownerProfile?.aura
   return {
     id: row.id,
+    shortCode: row.shortCode || null,
     userId: row.userId,
     name: row.name,
     icon: row.icon || '🌍',
@@ -405,19 +409,30 @@ async function forkTemplateWorld(
   now: Date,
 ): Promise<WorldMeta> {
   const id = `world-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
-  const world = await prisma.world.create({
-    data: {
-      id,
-      userId,
-      name: template.name,
-      icon: template.icon,
-      visibility: 'private',
-      data: JSON.stringify(worldData),
-      objectCount: countWorldObjects(worldData),
-      createdAt: now,
-      updatedAt: now,
-    },
-  })
+  let world: Awaited<ReturnType<typeof prisma.world.create>> | null = null
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    try {
+      world = await prisma.world.create({
+        data: {
+          id,
+          shortCode: await generateWorldShortCode(),
+          userId,
+          name: template.name,
+          icon: template.icon,
+          visibility: 'private',
+          data: JSON.stringify(worldData),
+          objectCount: countWorldObjects(worldData),
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      break
+    } catch (error) {
+      if (isWorldShortCodeCollision(error)) continue
+      throw error
+    }
+  }
+  if (!world) throw new Error('Could not create world with a unique short code.')
 
   console.log(`[WorldServer] Forked template ${template.id} -> ${id} for user ${userId}`)
   return toWorldMeta(world, accessContext(userId))
@@ -804,19 +819,30 @@ export async function createWorld(
     savedAt: now.toISOString(),
   }
 
-  const world = await prisma.world.create({
-    data: {
-      id,
-      userId,
-      name,
-      icon,
-      visibility,
-      pvpEnabled,
-      data: JSON.stringify(emptyState),
-      createdAt: now,
-      updatedAt: now,
-    },
-  })
+  let world: Awaited<ReturnType<typeof prisma.world.create>> | null = null
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    try {
+      world = await prisma.world.create({
+        data: {
+          id,
+          shortCode: await generateWorldShortCode(),
+          userId,
+          name,
+          icon,
+          visibility,
+          pvpEnabled,
+          data: JSON.stringify(emptyState),
+          createdAt: now,
+          updatedAt: now,
+        },
+      })
+      break
+    } catch (error) {
+      if (isWorldShortCodeCollision(error)) continue
+      throw error
+    }
+  }
+  if (!world) throw new Error('Could not create world with a unique short code.')
 
   console.log(`[WorldServer] Created world "${name}" (${id}) for user ${userId}`)
   await mirrorDefaultWorldSeedForSource(ctx, {

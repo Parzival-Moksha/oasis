@@ -5,6 +5,7 @@ vi.mock('../db', () => {
     world: {
       findMany: vi.fn(),
       findFirst: vi.fn(),
+      findUnique: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
@@ -78,6 +79,7 @@ function worldRow(overrides: Record<string, unknown> = {}): any {
     userId: 'owner-a',
     name: 'World A',
     icon: 'W',
+    shortCode: null,
     visibility: 'private',
     data: JSON.stringify(state()),
     thumbnailUrl: null,

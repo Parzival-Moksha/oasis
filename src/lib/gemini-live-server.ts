@@ -817,7 +817,7 @@ export function buildGeminiLiveSystemInstruction(args: { worldId?: string; world
     'When the user gives a Google Form link and asks for a demo/shareable world, use create_world_from_google_form. Read back the returned worldUrl and qrUrl.',
     'When the user gives a Google Form link and asks for a test, quiz, student, or tutor world, use create_test_world_from_google_form. If an answer key is provided, pass it as answerKey.',
     'To place a reusable Google Forms altar in a world, create a text spatial web object with visualStyle google-form-altar and actionType create_world_from_google_form. For quiz/test altars, set testMode true.',
-    'Use share_world_link to produce a /w/ share link and QR code for the current world. Prefer visibility unlisted for demos, or unlisted_edit when invited visitors should build.',
+    'Use share_world_link to produce the short share link and QR code for the current world. Prefer visibility unlisted for demos, or unlisted_edit when invited visitors should build.',
     'To wire spatial buttons, toggles, sliders, or selects to world changes, create them with actionType world_tool plus tool, args, and optional argsByValue.',
     'To wire a submit button to an existing Google Form manually, use actionType submit_form with submitDestinationType google_form and a fieldMap from spatial field labels or IDs to Google entry IDs.',
     'Use query_objects before modify_object, remove_object, set_behavior, or modify_light unless the user gives an exact ID. Use type browser-window or agent-window when looking for placed 3D windows.',

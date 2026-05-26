@@ -116,6 +116,7 @@ model Memory {
 
 model World {
   id              String    @id @default(cuid())
+  shortCode       String?   @unique
   userId          String    @default("local-user")
   name            String    @default("The Forge")
   icon            String    @default("🌍")

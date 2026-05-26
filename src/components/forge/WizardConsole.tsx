@@ -45,6 +45,7 @@ import { FUNCTIONAL_THUMBNAIL_URL, catalogFallbackThumbnail } from '@/lib/catalo
 import { CRAFT_MODEL_OPTIONS } from '../../lib/craft-models'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
+const DEMO_ROUTER_PATH = `${OASIS_BASE}/ab12`.replace(/\/{2,}/g, '/')
 
 function readCols(key: string, fallback: number): number {
   try { const v = parseInt(localStorage.getItem(`oasis-wizard-cols-${key}`) || ''); return v >= 1 && v <= 6 ? v : fallback } catch { return fallback }
@@ -1262,7 +1263,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
   const [assetCategory, setAssetCategory] = useState<string>('all')
   const [assetSubTab, setAssetSubTab] = useState<WizardAssetSubTab>('catalog')
   const [portalTargetWorldId, setPortalTargetWorldId] = useState('')
-  const [portalActionPreset, setPortalActionPreset] = useState<'load_world' | 'create_private' | 'create_public' | 'create_ffa' | 'external_url' | 'locked_message'>('load_world')
+  const [portalActionPreset, setPortalActionPreset] = useState<'load_world' | 'demo_router' | 'create_private' | 'create_public' | 'create_ffa' | 'external_url' | 'locked_message'>('load_world')
   const [portalExternalUrl, setPortalExternalUrl] = useState('https://conjure.04515.xyz/?portal=true&from=oasis')
   const [portalLockedMessage, setPortalLockedMessage] = useState('This portal is not open yet.')
   const [previewAsset, setPreviewAsset] = useState<AssetDefinition | null>(null)
@@ -2667,6 +2668,9 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
                     ? { type: 'load_world', worldId: selectedTarget.id, worldName: selectedTarget.name }
                     : undefined
                 }
+                if (portalActionPreset === 'demo_router') {
+                  return { type: 'external_url', url: DEMO_ROUTER_PATH, label: 'Demo Router', requiresConfirm: false }
+                }
                 if (portalActionPreset === 'create_private') {
                   return { type: 'create_world', visibility: 'private', promptForName: true, name: 'New Private World' }
                 }
@@ -2691,7 +2695,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
                 : portalAction?.type === 'create_world'
                   ? `create ${portalAction.visibility || 'private'}`
                   : portalAction?.type === 'external_url'
-                    ? 'external URL'
+                    ? portalAction.label || 'external URL'
                     : 'locked'
               return (
                 <>
@@ -2707,6 +2711,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
                         className="min-w-0 max-w-[160px] rounded border border-cyan-500/25 bg-black/60 px-2 py-1 text-[10px] text-cyan-100 font-mono outline-none"
                       >
                         <option value="load_world">Existing world</option>
+                        <option value="demo_router">Demo router</option>
                         <option value="create_private">Create private</option>
                         <option value="create_public">Create public</option>
                         <option value="create_ffa">Create FFA</option>
@@ -2760,7 +2765,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
                             : portalAction?.type === 'create_world'
                               ? `Portal to create ${portalAction.visibility || 'private'}`
                               : portalAction?.type === 'external_url'
-                                ? 'Portal to external URL'
+                                ? `Portal to ${portalAction.label || 'external URL'}`
                                 : 'Locked portal',
                           portalVariant: style.id as PortalGateVariant,
                           portalAction,

@@ -167,6 +167,8 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
   const [wizardsLoading, setWizardsLoading] = useState(false)
   const [wizardsError, setWizardsError] = useState<string | null>(null)
   const [expandedWizardSessionId, setExpandedWizardSessionId] = useState<string | null>(null)
+  const [shortCodeOverride, setShortCodeOverride] = useState<{ worldId: string; shortCode: string } | null>(null)
+  const [qrExpanded, setQrExpanded] = useState(false)
   // ░▒▓ 3-tab world menu: This World / My Worlds / Public Worlds ▓▒░
   const [worldTab, setWorldTab] = useState<'this' | 'my' | 'public'>('this')
   // Within Public Worlds, filter pills for visibility tier.
@@ -226,14 +228,21 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
     [canUseCoreVisibility],
   )
   const canCopyLink = Boolean(worldId && (SHAREABLE_VISIBILITIES.has(visibility || '') || meta?.canEditSettings || meta?.canWrite))
+  const shortCode = shortCodeOverride?.worldId === worldId ? shortCodeOverride.shortCode : meta?.shortCode
+  const shortLinkEligible = Boolean(worldId && visibility && SHAREABLE_VISIBILITIES.has(visibility))
 
   const worldUrl = useMemo(() => {
     if (typeof window === 'undefined' || !worldId) return ''
+    if (shortLinkEligible && shortCode) return `${window.location.origin}${OASIS_BASE}/${encodeURIComponent(shortCode)}`
     return `${window.location.origin}${OASIS_BASE}/w/${encodeURIComponent(worldId)}`
-  }, [worldId])
+  }, [shortCode, shortLinkEligible, worldId])
   const qrCodeUrl = useMemo(() => {
     if (!worldUrl) return ''
     return `https://api.qrserver.com/v1/create-qr-code/?size=132x132&margin=10&data=${encodeURIComponent(worldUrl)}`
+  }, [worldUrl])
+  const qrCodeLargeUrl = useMemo(() => {
+    if (!worldUrl) return ''
+    return `https://api.qrserver.com/v1/create-qr-code/?size=720x720&margin=18&data=${encodeURIComponent(worldUrl)}`
   }, [worldUrl])
 
   useEffect(() => {
@@ -245,6 +254,32 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen) setQrExpanded(false)
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen || worldTab !== 'this' || !worldId || !shortLinkEligible || shortCode || !canEditSettings) return
+    let cancelled = false
+    void fetch(`${OASIS_BASE}/api/worlds/${encodeURIComponent(worldId)}/short-code`, {
+      method: 'POST',
+      credentials: 'same-origin',
+    })
+      .then(async response => {
+        if (!response.ok) return null
+        return await response.json() as { shortCode?: string }
+      })
+      .then(json => {
+        if (cancelled || !json?.shortCode) return
+        setShortCodeOverride({ worldId, shortCode: json.shortCode })
+        refreshWorldRegistry()
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [canEditSettings, isOpen, refreshWorldRegistry, shortCode, shortLinkEligible, worldId, worldTab])
 
   useEffect(() => {
     let cancelled = false
@@ -978,11 +1013,18 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
           <div className="rounded-md border border-cyan-300/15 bg-cyan-300/5 p-2">
             <div className="flex gap-2">
               {qrCodeUrl && canCopyLink && (
-                <img
-                  src={qrCodeUrl}
-                  alt="World link QR code"
-                  className="h-20 w-20 shrink-0 rounded-md border border-white/10 bg-white p-1"
-                />
+                <button
+                  type="button"
+                  onClick={() => setQrExpanded(true)}
+                  className="h-20 w-20 shrink-0 rounded-md border border-white/10 bg-white p-1 transition hover:scale-[1.02]"
+                  title="Fullscreen QR"
+                >
+                  <img
+                    src={qrCodeUrl}
+                    alt="World link QR code"
+                    className="h-full w-full"
+                  />
+                </button>
               )}
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[10px] text-cyan-50/70">{worldUrl || 'World link unavailable'}</div>
@@ -1003,6 +1045,13 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
                 className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-white/75 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Open
+              </button>
+              <button
+                onClick={() => setQrExpanded(true)}
+                disabled={!canCopyLink || !worldUrl}
+                className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-white/75 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                QR
               </button>
             </div>
           </div>
@@ -1082,6 +1131,53 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
           )}
           </>
           )}
+        </div>
+      )}
+
+      {qrExpanded && worldUrl && (
+        <div
+          className="fixed inset-0 z-[2147483000] flex items-center justify-center bg-black/90 p-4 backdrop-blur-md"
+          onClick={() => setQrExpanded(false)}
+        >
+          <div
+            className="relative flex w-full max-w-[min(92vw,780px)] flex-col items-center rounded-lg border border-cyan-200/30 bg-slate-950 p-4 shadow-2xl"
+            onClick={event => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setQrExpanded(false)}
+              className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-md border border-white/15 bg-white/10 text-lg font-black text-white transition hover:bg-white/20"
+              aria-label="Close QR"
+            >
+              X
+            </button>
+            {qrCodeLargeUrl && (
+              <img
+                src={qrCodeLargeUrl}
+                alt="World link QR code"
+                className="mt-10 aspect-square w-full max-w-[min(68vh,640px)] rounded-lg border border-white/15 bg-white p-3"
+              />
+            )}
+            <div className="mt-4 w-full break-all rounded-md border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-center font-mono text-sm font-black text-cyan-50 sm:text-lg">
+              {worldUrl}
+            </div>
+            <div className="mt-3 flex w-full max-w-md gap-2">
+              <button
+                type="button"
+                onClick={() => { void handleCopy() }}
+                className="flex-1 rounded-md border border-cyan-300/25 bg-cyan-300/10 px-3 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-cyan-100 transition hover:bg-cyan-300/20"
+              >
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+              <button
+                type="button"
+                onClick={() => window.open(worldUrl, '_blank', 'noopener,noreferrer')}
+                className="flex-1 rounded-md border border-white/10 bg-white/5 px-3 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-white/75 transition hover:bg-white/10"
+              >
+                Open
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
