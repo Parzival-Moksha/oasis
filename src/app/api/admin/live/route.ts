@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/db'
 import { demoWorldPrefix, listDemoShortCodes } from '@/lib/demo-short-codes'
+import { publicOriginFromRequest } from '@/lib/public-origin'
 import { getOasisCapabilities } from '@/lib/session'
 
 export const dynamic = 'force-dynamic'
@@ -45,16 +46,6 @@ async function fetchRoomHealth(request: NextRequest): Promise<Record<string, unk
 function readMetrics(roomHealth: Record<string, unknown> | null): RoomMetric[] {
   const metrics = roomHealth?.worldMetrics
   return Array.isArray(metrics) ? metrics as RoomMetric[] : []
-}
-
-function publicOrigin(request: NextRequest): string {
-  const configured = process.env.NEXT_PUBLIC_OASIS_URL || process.env.OASIS_URL
-  if (configured?.trim()) return configured.trim().replace(/\/+$/, '')
-  const forwardedProto = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim()
-  const proto = forwardedProto || request.nextUrl.protocol.replace(/:$/, '') || 'https'
-  const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim()
-  const host = forwardedHost || request.headers.get('host') || request.nextUrl.host
-  return `${proto}://${host}`
 }
 
 function nextProcessSnapshot() {
@@ -145,7 +136,7 @@ export async function GET(request: NextRequest) {
       maxLatencyMs: 0,
     })
 
-    const responseOrigin = publicOrigin(request)
+    const responseOrigin = publicOriginFromRequest(request)
     return NextResponse.json({
       ok: true,
       generatedAt: new Date().toISOString(),

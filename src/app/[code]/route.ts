@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { demoEntryPath, resolveDemoShortCode } from '@/lib/demo-short-codes'
+import { publicOriginFromRequest } from '@/lib/public-origin'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -13,5 +14,5 @@ export async function GET(
   if (!entry) {
     return NextResponse.json({ ok: false, error: 'unknown route' }, { status: 404 })
   }
-  return NextResponse.redirect(new URL(demoEntryPath(entry), request.url))
+  return NextResponse.redirect(new URL(demoEntryPath(entry), publicOriginFromRequest(request)))
 }
