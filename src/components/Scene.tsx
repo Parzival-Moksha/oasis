@@ -1826,7 +1826,8 @@ export default function Scene() {
     else if (isLight) store.removeWorldLight(id)
     else if (isAgentWindow) store.removeAgentWindow(id)
     else if (isAgentAvatar) {
-      const linkedWindow = store.placedAgentWindows.find(win => win.linkedAvatarId === id)
+      const avatar = store.placedAgentAvatars.find(av => av.id === id)
+      const linkedWindow = store.placedAgentWindows.find(win => win.linkedAvatarId === id || win.id === avatar?.linkedWindowId)
       if (linkedWindow) store.removeAgentWindow(linkedWindow.id)
       else store.removeAgentAvatar(id)
     }
@@ -1980,7 +1981,7 @@ export default function Scene() {
       />
       <PlayerVitalsHud visible={effectiveRp1Mode && !isPortalZeroWorld} />
       <PvPOverlay visible={effectiveRp1Mode && !isPortalZeroWorld} />
-      <WorldChatOverlay visible={effectiveRp1Mode} />
+      <WorldChatOverlay visible={Boolean(activeWorldId)} />
       <PlayerSpellbookPanel
         visible
         isOpen={spellbookOpen}
@@ -2278,7 +2279,7 @@ export default function Scene() {
           onClick={() => updateSetting('rp1Mode', false)}
           style={{
             position: 'fixed',
-            bottom: 24,
+            bottom: 88,
             right: 24,
             zIndex: 9999,
             padding: '6px 16px',

@@ -3726,8 +3726,10 @@ export const useOasisStore = create<OasisState>((set, get) => {
     const seedDefaultLights = (): WorldLight[] =>
       DEFAULT_WORLD_LIGHTS.map((l, i) => ({ ...l, id: `light-${l.type}-default-${i}`, visible: true } as WorldLight))
 
-    loadWorld().then(world => {
+    const loadingWorldId = get().activeWorldId
+    loadWorld(loadingWorldId).then(world => {
       if (get().isViewMode) return // check again after async — view mode may have been entered during fetch
+      if (get().activeWorldId !== loadingWorldId) return
       if (!world) {
         set({
           _worldReady: true,
@@ -3767,8 +3769,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
       const newCustom = (world.customGroundPresets || []).filter((p: import('../lib/forge/ground-textures').GroundPreset) => !existingCustomIds.has(p.id))
       const mergedCustom = [...get().customGroundPresets, ...newCustom]
       if (newCustom.length > 0) persist('oasis-custom-ground', JSON.stringify(mergedCustom))
-      const portalGates = resolveDefaultPortalGates(get().activeWorldId, world.portalGates, world.transforms)
-      const spatialWebObjects = resolveDefaultSpatialWebObjects(get().activeWorldId, world.spatialWebObjects)
+      const portalGates = resolveDefaultPortalGates(loadingWorldId, world.portalGates, world.transforms)
+      const spatialWebObjects = resolveDefaultSpatialWebObjects(loadingWorldId, world.spatialWebObjects)
       const loadedObjCount = (world.conjuredAssetIds?.length || 0) + (world.catalogPlacements?.length || 0) + (world.craftedScenes?.length || 0) + portalGates.length + spatialWebObjects.length + (world.paintStrokes?.length || 0) + (world.text3dObjects?.length || 0)
       const sanitizedAgentAvatars = sanitizeAgentAvatarList(world.agentAvatars || [])
       const normalizedAgentWorldState = normalizeSharedAgentAvatarWorldState({
@@ -3825,11 +3827,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
           ...(Array.isArray(world.customGroundPresets) && world.customGroundPresets.length > 0 ? { customGroundPresets: world.customGroundPresets } : {}),
           agentWindows: normalizedAgentWorldState.windows,
           agentAvatars: normalizedAgentWorldState.avatars,
-        }, get().activeWorldId, world.savedAt ? { clientLoadedAt: world.savedAt } : {})
+        }, loadingWorldId, world.savedAt ? { clientLoadedAt: world.savedAt } : {})
           .then(handleWorldSaveResult)
       }
       console.log('[World] Loaded:', world.savedAt, '| objects:', loadedObjCount, '| preset:', world.groundPresetId || 'none', '| tiles:', Object.keys(world.groundTiles || {}).length, '| catalog:', world.catalogPlacements?.length || 0, '| lights:', lights.length, '| sky:', world.skyBackgroundId || 'night007', '| agents:', (world.agentWindows || []).length, '| avatars:', sanitizedAgentAvatars.entries.length)
     }).catch(error => {
+      if (get().isViewMode || get().activeWorldId !== loadingWorldId) return
       console.error('[World] Load failed:', error)
       set({
         _worldReady: true,
@@ -3912,7 +3915,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       ? { clientLoadedAt: _worldLoadedAt, onResult: handleWorldSaveResult }
       : { onResult: handleWorldSaveResult }
     if (get().isViewModeEditable && viewingWorldId) {
-      void saveWorld(worldState, viewingWorldId, saveOptions).then(handleWorldSaveResult) // direct save to viewed world
+      void Promise.resolve(saveWorld(worldState, viewingWorldId, saveOptions)).then(handleWorldSaveResult) // direct save to viewed world
     } else {
       debouncedSaveWorld(worldState, 1000, saveOptions)
     }
@@ -3951,11 +3954,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
     // ░▒▓ Block saves during transition — prevents empty state nuke ▓▒░
     // Also clear the armed spell — it belonged to the previous world's context.
-    set({ _worldReady: false, selectedSpellId: null, _worldLoadedAt: null, _worldCommandAuthority: null, _lastRoomSnapshotRevision: 0 })
+    set({ _worldReady: false, activeWorldId: worldId, selectedSpellId: null, _worldLoadedAt: null, _worldCommandAuthority: null, _lastRoomSnapshotRevision: 0 })
 
     // Switch to new world
     setActiveWorldId(worldId, { publish: true })
     loadWorld(worldId).then(world => {
+      if (get().activeWorldId !== worldId) return
       if (!world) {
         console.error(`[World] Switch aborted: "${worldId}" did not load. Keeping "${previousActiveWorldId}".`)
         if (previousActiveWorldId && previousActiveWorldId !== worldId) {
@@ -4675,6 +4679,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     set({ isViewMode: true, isViewModeEditable: false, viewingWorldId: worldId, viewingWorldMeta: { name: 'Loading...', icon: '⏳' }, _worldLoadedAt: null, _worldCommandAuthority: null, _lastRoomSnapshotRevision: 0 })
 
     loadPublicWorld(worldId).then(result => {
+      if (get().viewingWorldId !== worldId) return
       if (!result) {
         console.error(`[ViewMode] World ${worldId} not found or not public`)
         set({ isViewMode: false, isViewModeEditable: false, viewingWorldId: null, viewingWorldMeta: null })

@@ -135,7 +135,12 @@ export function setActiveWorldId(id: string, options: { publish?: boolean } = {}
   // (which would re-mount Scene); pure URL-bar update. Only does this for
   // a real world id, not the empty/default sentinel. ─═̷─
   if (id && id !== DEFAULT_WORLD_ID && typeof window.history?.replaceState === 'function') {
-    const expectedPath = `/w/${encodeURIComponent(id)}`
+    const knownShortCode = window.__oasisWorldShortCodes?.[id]
+    const preferredShortCode = window.__oasisPreferredWorldId === id ? window.__oasisPreferredShortCode : undefined
+    const shortCode = knownShortCode || preferredShortCode
+    const expectedPath = shortCode && /^\d{4,6}$/.test(shortCode)
+      ? `/${encodeURIComponent(shortCode)}`
+      : `/w/${encodeURIComponent(id)}`
     if (window.location.pathname !== expectedPath) {
       try { window.history.replaceState({}, '', expectedPath + window.location.search + window.location.hash) } catch { /* noop */ }
     }

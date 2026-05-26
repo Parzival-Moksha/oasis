@@ -104,11 +104,9 @@ export function MobileOasisControls({
   const lookTouchesRef = useRef<Map<number, TouchPoint>>(new Map())
   const pinchRef = useRef<{ distance: number } | null>(null)
   // When the old paint wand is actively held, the look-overlay hands events
-  // through to the canvas underneath so PaintCursor can own the stroke. When
-  // an object is selected, the transform gizmo gets first touch priority too.
+  // through to the canvas underneath so PaintCursor can own the stroke.
   const paintHeldActive = useOasisStore(s => s.paintHeldActive)
-  const selectedObjectId = useOasisStore(s => s.selectedObjectId)
-  const canvasNeedsTouch = paintHeldActive || Boolean(selectedObjectId)
+  const canvasNeedsTouch = paintHeldActive
 
   useEffect(() => {
     if (!enabled) {
@@ -222,9 +220,10 @@ export function MobileOasisControls({
   }
 
   const endLook = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const active = lookPointerRef.current
     const wasTrackedTouch = event.pointerType === 'touch' && lookTouchesRef.current.delete(event.pointerId)
     if (lookTouchesRef.current.size < 2) pinchRef.current = null
-    if (lookPointerRef.current?.id !== event.pointerId && !wasTrackedTouch) return
+    if (active?.id !== event.pointerId && !wasTrackedTouch) return
     event.preventDefault()
     event.stopPropagation()
     try {
@@ -232,9 +231,14 @@ export function MobileOasisControls({
         event.currentTarget.releasePointerCapture(event.pointerId)
       }
     } catch {}
-    if (lookPointerRef.current?.id === event.pointerId) {
+    if (active?.id === event.pointerId) {
       lookPointerRef.current = null
       setLookActive(false)
+      if (!active.moved && event.pointerType !== 'mouse' && canLook()) {
+        window.dispatchEvent(new CustomEvent('oasis:select-at-crosshair', {
+          detail: { clientX: event.clientX, clientY: event.clientY },
+        }))
+      }
     }
   }
 

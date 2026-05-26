@@ -181,6 +181,12 @@ export function registerStoreHandler(): () => void {
         else if (store.worldConjuredAssetIds.includes(id)) store.removeConjuredAssetFromWorld(id)
         else if (store.worldLights.some((l: { id: string }) => l.id === id)) store.removeWorldLight(id)
         else if (store.placedAgentWindows.some((w: { id: string }) => w.id === id)) store.removeAgentWindow(id)
+        else if (store.placedAgentAvatars.some((a: { id: string }) => a.id === id)) {
+          const avatar = store.placedAgentAvatars.find((a: { id: string; linkedWindowId?: string }) => a.id === id)
+          const linkedWindow = store.placedAgentWindows.find((w: { id: string; linkedAvatarId?: string }) => w.linkedAvatarId === id || w.id === avatar?.linkedWindowId)
+          if (linkedWindow) store.removeAgentWindow(linkedWindow.id)
+          else store.removeAgentAvatar(id)
+        }
         else if (store.spatialWebObjects.some((o: { id: string }) => o.id === id)) store.removeSpatialWebObject(id)
         else if (store.paintStrokes.some((s: { id: string }) => s.id === id)) store.removePaintStroke(id)
         else if (store.text3dObjects.some((t: { id: string }) => t.id === id)) store.removeText3dObject(id)

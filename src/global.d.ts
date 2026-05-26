@@ -13,6 +13,8 @@ declare global {
   interface Window {
     oasisDesktopCapture?: OasisDesktopCaptureBridge
     __oasisPreferredWorldId?: string
+    __oasisPreferredShortCode?: string
+    __oasisWorldShortCodes?: Record<string, string>
     __oasisFallbackWorldId?: string
   }
 

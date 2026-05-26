@@ -268,7 +268,9 @@ function readPanelSettings(): GeminiLivePanelSettings {
   if (typeof window === 'undefined') return DEFAULT_GEMINI_LIVE_PANEL_SETTINGS
   try {
     const raw = window.localStorage.getItem(GEMINI_LIVE_PANEL_SETTINGS_KEY)
-    return clampGeminiLivePanelSettings(raw ? JSON.parse(raw) as Partial<GeminiLivePanelSettings> : null)
+    const parsed = raw ? JSON.parse(raw) as Partial<GeminiLivePanelSettings> : null
+    const settings = clampGeminiLivePanelSettings(parsed)
+    return parsed?.gainDb === 8 ? { ...settings, gainDb: DEFAULT_GEMINI_LIVE_PANEL_SETTINGS.gainDb } : settings
   } catch {
     return DEFAULT_GEMINI_LIVE_PANEL_SETTINGS
   }

@@ -217,6 +217,15 @@ function findOasisObjectId(object: THREE.Object3D | null): string | null {
   return null
 }
 
+function isOasisSelectionProxy(object: THREE.Object3D | null): boolean {
+  let current: THREE.Object3D | null = object
+  while (current) {
+    if (current.userData?.oasisSelectionProxy === true) return true
+    current = current.parent
+  }
+  return false
+}
+
 export function SelectableWrapper({ id, children, selected, onSelect, transformMode, onTransformChange, initialPosition, initialRotation, initialScale, allowTransform = true, liveTransformResolver, groundToTerrain = false }: {
   id: string
   children: React.ReactNode
@@ -1413,7 +1422,6 @@ export function CatalogModelRenderer({ path, scale, objectId }: { path: string; 
     const clone = SkeletonUtils.clone(scene) as THREE.Group
     clone.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
-        child.raycast = () => {}
         // Enable vertex colors for models that use them (Kenney assets etc.)
         const mesh = child as THREE.Mesh
         if (mesh.geometry.attributes.color) {
@@ -1540,15 +1548,14 @@ export function CatalogModelRenderer({ path, scale, objectId }: { path: string; 
     return { size, center }
   }, [clonedScene])
 
-  // ░▒▓ Paint mode: disable raycasting on proxy so clicks fall through to PaintOverlay ▓▒░
+  // ░▒▓ Precision pick: real mesh raycasts in build/play, disabled only while painting ▓▒░
   useEffect(() => {
-    if (!catalogProxyRef.current) return
-    if (paintMode) {
-      catalogProxyRef.current.raycast = () => {}
-    } else {
-      catalogProxyRef.current.raycast = THREE.Mesh.prototype.raycast
-    }
-  }, [paintMode])
+    clonedScene.traverse((child) => {
+      if (!(child as THREE.Mesh).isMesh) return
+      child.raycast = paintMode ? () => {} : THREE.Mesh.prototype.raycast
+    })
+    if (catalogProxyRef.current) catalogProxyRef.current.raycast = () => {}
+  }, [clonedScene, paintMode])
 
   // ░▒▓ Extract mesh stats once per clone — push to Zustand for ObjectInspector ▓▒░
   const setObjectMeshStats = useOasisStore(s => s.setObjectMeshStats)
@@ -1567,12 +1574,23 @@ export function CatalogModelRenderer({ path, scale, objectId }: { path: string; 
   }, [objectId, clonedScene, animations, path, setObjectMeshStats])
 
   return (
-    <group ref={sceneRef}>
-      {/* Transparent bounding box — cheap raycast target for selection */}
-      {/* NOTE: visible={false} prevents R3F raycasting. opacity=0 keeps it raycastable. */}
-      {/* Paint mode: raycast disabled via useEffect so clicks fall through to PaintOverlay */}
+    <group
+      ref={sceneRef}
+      onPointerOver={(e) => {
+        e.stopPropagation()
+        if (useInputManager.getState().pointerLocked) return
+        setHovered(true)
+      }}
+      onPointerOut={(e) => {
+        e.stopPropagation()
+        if (useInputManager.getState().pointerLocked) return
+        setHovered(false)
+      }}
+    >
+      {/* Legacy proxy kept mounted but raycast-disabled; real meshes own picking now. */}
       <mesh
         ref={catalogProxyRef}
+        userData={{ oasisSelectionProxy: true }}
         position={[bounds.center.x * scale, bounds.center.y * scale, bounds.center.z * scale]}
         onClick={(e) => {
           e.stopPropagation()
@@ -3268,6 +3286,7 @@ export function WorldObjectsRenderer() {
   )
   const camera = useThree(s => s.camera)
   const scene = useThree(s => s.scene)
+  const gl = useThree(s => s.gl)
   const crosshairRaycasterRef = useRef(new THREE.Raycaster())
   const crosshairPlaneRef = useRef(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0))
   const crosshairPointRef = useRef(new THREE.Vector3())
@@ -3326,12 +3345,25 @@ export function WorldObjectsRenderer() {
   }, [camera, moveOrderObjectIds, paintMode, placementPending, setMoveTarget, spawnMarchOrderVfx])
 
   useEffect(() => {
-    const handleCrosshairSelect = () => {
+    const resolvePointerNdc = (event: Event): THREE.Vector2 => {
+      const detail = (event as CustomEvent<{ clientX?: number; clientY?: number }>).detail
+      if (typeof detail?.clientX !== 'number' || typeof detail?.clientY !== 'number') {
+        return new THREE.Vector2(0, 0)
+      }
+      const rect = gl.domElement.getBoundingClientRect()
+      if (rect.width <= 0 || rect.height <= 0) return new THREE.Vector2(0, 0)
+      return new THREE.Vector2(
+        ((detail.clientX - rect.left) / rect.width) * 2 - 1,
+        -(((detail.clientY - rect.top) / rect.height) * 2 - 1),
+      )
+    }
+    const handleCrosshairSelect = (event: Event) => {
       if (paintMode || placementPending) return
       const raycaster = crosshairRaycasterRef.current
-      raycaster.setFromCamera(new THREE.Vector2(0, 0), camera)
+      raycaster.setFromCamera(resolvePointerNdc(event), camera)
       const hits = raycaster.intersectObjects(scene.children, true)
       for (const hit of hits) {
+        if (isOasisSelectionProxy(hit.object)) continue
         const objectId = findOasisObjectId(hit.object)
         if (!objectId) continue
         if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
@@ -3343,7 +3375,7 @@ export function WorldObjectsRenderer() {
     }
     window.addEventListener('oasis:select-at-crosshair', handleCrosshairSelect)
     return () => window.removeEventListener('oasis:select-at-crosshair', handleCrosshairSelect)
-  }, [camera, paintMode, placementPending, scene, selectObject])
+  }, [camera, gl, paintMode, placementPending, scene, selectObject])
 
   return (
     <group>

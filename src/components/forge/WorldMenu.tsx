@@ -207,6 +207,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
   const ownedMeta = worldRegistry.find(world => world.id === activeWorldId)
   const meta = isViewMode && viewingWorldMeta ? viewingWorldMeta : ownedMeta
   const worldName = meta?.name || 'Current world'
+  const displayWorldName = worldName.length > 100 ? `${worldName.slice(0, 100).trimEnd()}...` : worldName
   const worldIcon = meta?.icon || 'O'
   const visibility = meta?.visibility
   const visibilityLabel = formatVisibility(visibility)
@@ -260,7 +261,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
   }, [isOpen])
 
   useEffect(() => {
-    if (!isOpen || worldTab !== 'this' || !worldId || !shortLinkEligible || shortCode || !canEditSettings) return
+    if (!isOpen || worldTab !== 'this' || !worldId || !shortLinkEligible || shortCode) return
     let cancelled = false
     void fetch(`${OASIS_BASE}/api/worlds/${encodeURIComponent(worldId)}/short-code`, {
       method: 'POST',
@@ -273,13 +274,19 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
       .then(json => {
         if (cancelled || !json?.shortCode) return
         setShortCodeOverride({ worldId, shortCode: json.shortCode })
+        window.__oasisWorldShortCodes = { ...(window.__oasisWorldShortCodes || {}), [worldId]: json.shortCode }
+        const longPath = `${OASIS_BASE}/w/${encodeURIComponent(worldId)}`
+        const shortPath = `${OASIS_BASE}/${encodeURIComponent(json.shortCode)}`
+        if (window.location.pathname === longPath && typeof window.history?.replaceState === 'function') {
+          try { window.history.replaceState({}, '', shortPath + window.location.search + window.location.hash) } catch {}
+        }
         refreshWorldRegistry()
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [canEditSettings, isOpen, refreshWorldRegistry, shortCode, shortLinkEligible, worldId, worldTab])
+  }, [isOpen, refreshWorldRegistry, shortCode, shortLinkEligible, worldId, worldTab])
 
   useEffect(() => {
     let cancelled = false
@@ -570,7 +577,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
             </button>
             <div className="min-w-0 flex-1">
               <div className="flex items-start gap-2">
-                <div className="min-w-0 flex-1 truncate text-sm font-black uppercase tracking-[0.12em]">{worldName}</div>
+                <div className="min-w-0 flex-1 whitespace-normal break-words text-sm font-black uppercase leading-5 tracking-[0.12em]" title={worldName}>{displayWorldName}</div>
                 <div className="flex shrink-0 flex-col items-end gap-1">
                   {canEditSettings && (
                     <button
@@ -1027,7 +1034,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
                 </button>
               )}
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[10px] text-cyan-50/70">{worldUrl || 'World link unavailable'}</div>
+                <div className="break-all text-[10px] text-cyan-50/70">{worldUrl || 'World link unavailable'}</div>
                 <div className="mt-1 text-[9px] leading-3 text-cyan-100/42">Shareable when visibility is Unlisted, Public, or Sandbox.</div>
               </div>
             </div>

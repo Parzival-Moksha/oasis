@@ -24,10 +24,10 @@ export const SPELL_IDS = [
   'own-image-upload',
   'summon-djinn',
   'summon-custom-npc',
-  'summon-fighter-npc',
   'summon-openclaw',
   'summon-hermes',
   'browser',
+  'summon-fighter-npc',
 ] as const
 
 export type SpellId = typeof SPELL_IDS[number]
@@ -36,6 +36,7 @@ export const HOSTED_USER_LOCKED_SPELL_IDS = [
   'text-to-video',
   'meshy-object',
   'meshy-character',
+  'summon-fighter-npc',
 ] as const satisfies readonly SpellId[]
 
 export function isHostedUserLockedSpell(id: SpellId): boolean {
@@ -340,6 +341,7 @@ export const SPELL_DEFS: Record<SpellId, SpellDefinition> = {
     summary: 'Spawn a future combat-capable agent that will obey arena rules.',
     stats: ['NPC', 'Combat', 'Future physics'],
     actionId: 'open-agent-launcher',
+    lockedSummary: 'Fighter NPCs are paused until combat AI is wired.',
   },
   'summon-openclaw': {
     id: 'summon-openclaw',

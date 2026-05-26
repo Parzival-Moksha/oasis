@@ -95,7 +95,7 @@ export interface GeminiLiveSessionPayload {
 export const DEFAULT_GEMINI_LIVE_PANEL_SETTINGS: GeminiLivePanelSettings = {
   bgColor: '#06111a',
   opacity: 0.94,
-  gainDb: 8,
+  gainDb: 2,
   spatialAudioEnabled: true,
   spatialAudioRange: 28,
 }

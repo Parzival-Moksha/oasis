@@ -21,6 +21,7 @@ export async function GET(
   if (world) {
     const target = new URL(`/w/${encodeURIComponent(world.id)}`, origin)
     target.search = request.nextUrl.search
+    target.searchParams.set('short', world.shortCode || params.code)
     return NextResponse.redirect(target)
   }
 

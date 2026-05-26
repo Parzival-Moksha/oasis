@@ -23,16 +23,18 @@ const Scene = dynamic(() => import('@/components/Scene'), {
   ssr: false,
   loading: () => null,
 })
+const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 
 export default function OasisClient({ initialWorldId, fallbackWorldId }: { initialWorldId?: string; fallbackWorldId?: string }) {
   const activeWorldId = useOasisStore(s => s.activeWorldId)
+  const viewingWorldId = useOasisStore(s => s.viewingWorldId)
   const worldRegistry = useOasisStore(s => s.worldRegistry)
   const switchWorld = useOasisStore(s => s.switchWorld)
   const enterViewMode = useOasisStore(s => s.enterViewMode)
   const [ready, setReady] = useState(false)
   const [mode, setMode] = useState<ClientOasisMode>('local')
   const [capabilities, setCapabilities] = useState<ClientOasisCapabilities>(DEFAULT_LOCAL_CAPABILITIES)
-  const deepLinkHandledRef = useRef<string | null>(null)
+  const deepLinkAttemptRef = useRef<string | null>(null)
   const sessionStartedAtRef = useRef<number>(Date.now())
   const lastVisitedWorldRef = useRef<string | null>(null)
   const latestSessionContextRef = useRef({
@@ -44,9 +46,20 @@ export default function OasisClient({ initialWorldId, fallbackWorldId }: { initi
   useEffect(() => {
     if (initialWorldId) window.__oasisPreferredWorldId = initialWorldId
     else delete window.__oasisPreferredWorldId
+    const shortCode = new URLSearchParams(window.location.search).get('short')
+    if (initialWorldId && shortCode && /^\d{4,6}$/.test(shortCode)) window.__oasisPreferredShortCode = shortCode
+    else delete window.__oasisPreferredShortCode
     if (fallbackWorldId) window.__oasisFallbackWorldId = fallbackWorldId
     else delete window.__oasisFallbackWorldId
   }, [fallbackWorldId, initialWorldId])
+
+  useEffect(() => {
+    const shortCodes: Record<string, string> = {}
+    for (const world of worldRegistry) {
+      if (world.shortCode) shortCodes[world.id] = world.shortCode
+    }
+    window.__oasisWorldShortCodes = shortCodes
+  }, [worldRegistry])
 
   useEffect(() => {
     let cancelled = false
@@ -96,20 +109,32 @@ export default function OasisClient({ initialWorldId, fallbackWorldId }: { initi
   }, [])
 
   useEffect(() => {
-    if (!ready || !initialWorldId || deepLinkHandledRef.current === initialWorldId || worldRegistry.length === 0) return
-    if (activeWorldId === initialWorldId) {
-      deepLinkHandledRef.current = initialWorldId
+    if (!ready || !initialWorldId || worldRegistry.length === 0) return
+    if (activeWorldId === initialWorldId || viewingWorldId === initialWorldId) {
+      deepLinkAttemptRef.current = null
       return
     }
 
     const ownedWorld = worldRegistry.some(world => world.id === initialWorldId)
-    deepLinkHandledRef.current = initialWorldId
+    const attemptKey = `${initialWorldId}:${activeWorldId || ''}:${viewingWorldId || ''}:${ownedWorld ? 'owned' : 'view'}`
+    if (deepLinkAttemptRef.current === attemptKey) return
+    deepLinkAttemptRef.current = attemptKey
     if (ownedWorld) {
       switchWorld(initialWorldId)
     } else {
       enterViewMode(initialWorldId, true)
     }
-  }, [activeWorldId, enterViewMode, initialWorldId, ready, switchWorld, worldRegistry])
+  }, [activeWorldId, enterViewMode, initialWorldId, ready, switchWorld, viewingWorldId, worldRegistry])
+
+  useEffect(() => {
+    if (!ready || !initialWorldId) return
+    if (activeWorldId !== initialWorldId && viewingWorldId !== initialWorldId) return
+    const shortCode = window.__oasisPreferredShortCode
+    if (!shortCode || !/^\d{4,6}$/.test(shortCode)) return
+    const expectedPath = `${OASIS_BASE}/${encodeURIComponent(shortCode)}`
+    if (window.location.pathname === expectedPath || typeof window.history?.replaceState !== 'function') return
+    try { window.history.replaceState({}, '', expectedPath + window.location.search + window.location.hash) } catch {}
+  }, [activeWorldId, initialWorldId, ready, viewingWorldId])
 
   useEffect(() => {
     latestSessionContextRef.current = {

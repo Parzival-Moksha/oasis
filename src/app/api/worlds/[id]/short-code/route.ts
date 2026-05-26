@@ -3,7 +3,12 @@ import { NextResponse } from 'next/server'
 import { isAdminUserId } from '@/lib/admin-auth'
 import { prisma } from '@/lib/db'
 import { getRequiredOasisUserId } from '@/lib/session'
-import { canEditWorldSettings, type WorldAccessContext } from '@/lib/forge/world-access'
+import {
+  canEditWorldSettings,
+  canReadWorld,
+  PUBLICLY_READABLE_VISIBILITIES,
+  type WorldAccessContext,
+} from '@/lib/forge/world-access'
 import { getOasisMode } from '@/lib/oasis-profile'
 import { ensureWorldShortCode } from '@/lib/world-short-codes'
 
@@ -31,7 +36,8 @@ export async function POST(request: Request, context: RouteContext) {
       mode: getOasisMode(),
       admin: isAdminUserId(userId),
     }
-    if (!canEditWorldSettings(ctx, world)) {
+    const shareable = PUBLICLY_READABLE_VISIBILITIES.some(visibility => visibility === world.visibility)
+    if (!canEditWorldSettings(ctx, world) && !(shareable && canReadWorld(ctx, world))) {
       return NextResponse.json({ error: 'This session cannot change that world' }, { status: 403 })
     }
 
