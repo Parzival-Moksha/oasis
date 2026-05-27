@@ -11830,7 +11830,7 @@
       "pz-crystal-private": {
         "position": [
           -15.519040846945208,
-          3.182574915416267,
+          -0.003987611993966599,
           16.33070102102169
         ],
         "rotation": [
@@ -12298,7 +12298,7 @@
     "skyBackgroundId": "umhlanga_sunrise",
     "agentWindows": [],
     "agentAvatars": [],
-    "savedAt": "2026-05-27T23:20:17.793Z"
+    "savedAt": "2026-05-27T23:30:25.209Z"
   },
   "pvpEnabled": true
 }
