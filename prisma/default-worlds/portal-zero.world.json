@@ -10319,24 +10319,6 @@
       "-1,11": "kn-cobblestone",
       "0,11": "kn-cobblestone",
       "1,11": "kn-cobblestone",
-      "-1,12": "kn-cobblestone",
-      "0,12": "kn-cobblestone",
-      "1,12": "kn-cobblestone",
-      "-1,13": "kn-cobblestone",
-      "0,13": "kn-cobblestone",
-      "1,13": "kn-cobblestone",
-      "-1,14": "kn-cobblestone",
-      "0,14": "kn-cobblestone",
-      "1,14": "kn-cobblestone",
-      "-1,15": "kn-cobblestone",
-      "0,15": "kn-cobblestone",
-      "1,15": "kn-cobblestone",
-      "-1,16": "kn-cobblestone",
-      "0,16": "kn-cobblestone",
-      "1,16": "kn-cobblestone",
-      "-1,17": "kn-cobblestone",
-      "0,17": "kn-cobblestone",
-      "1,17": "kn-cobblestone",
       "-1,18": "kn-cobblestone",
       "0,18": "kn-cobblestone",
       "1,18": "kn-cobblestone",
@@ -10433,42 +10415,6 @@
       "7,-1": "kn-cobblestone",
       "7,0": "kn-cobblestone",
       "7,1": "kn-cobblestone",
-      "8,-1": "kn-cobblestone",
-      "8,0": "kn-cobblestone",
-      "8,1": "kn-cobblestone",
-      "9,-1": "kn-cobblestone",
-      "9,0": "kn-cobblestone",
-      "9,1": "kn-cobblestone",
-      "10,-1": "kn-cobblestone",
-      "10,0": "kn-cobblestone",
-      "10,1": "kn-cobblestone",
-      "11,-1": "kn-cobblestone",
-      "11,0": "kn-cobblestone",
-      "11,1": "kn-cobblestone",
-      "12,-1": "kn-cobblestone",
-      "12,0": "kn-cobblestone",
-      "12,1": "kn-cobblestone",
-      "13,-1": "kn-cobblestone",
-      "13,0": "kn-cobblestone",
-      "13,1": "kn-cobblestone",
-      "14,-1": "kn-cobblestone",
-      "14,0": "kn-cobblestone",
-      "14,1": "kn-cobblestone",
-      "15,-1": "kn-cobblestone",
-      "15,0": "kn-cobblestone",
-      "15,1": "kn-cobblestone",
-      "16,-1": "kn-cobblestone",
-      "16,0": "kn-cobblestone",
-      "16,1": "kn-cobblestone",
-      "17,-1": "kn-cobblestone",
-      "17,0": "kn-cobblestone",
-      "17,1": "kn-cobblestone",
-      "18,-1": "kn-cobblestone",
-      "18,0": "kn-cobblestone",
-      "18,1": "kn-cobblestone",
-      "19,-1": "kn-cobblestone",
-      "19,0": "kn-cobblestone",
-      "19,1": "kn-cobblestone",
       "20,-1": "kn-cobblestone",
       "20,0": "kn-cobblestone",
       "20,1": "kn-cobblestone",
@@ -10477,40 +10423,28 @@
       "21,1": "kn-cobblestone",
       "22,-1": "kn-cobblestone",
       "22,0": "kn-cobblestone",
-      "22,1": "kn-cobblestone"
+      "22,1": "kn-cobblestone",
+      "-2,16": "sbs2_tile_tile_04_128x128@2",
+      "0,16": "sbs2_tile_tile_04_128x128@2",
+      "0,14": "sbs2_tile_tile_04_128x128@2",
+      "-2,14": "sbs2_tile_tile_04_128x128@2",
+      "0,12": "sbs2_tile_tile_04_128x128@2",
+      "-2,12": "sbs2_tile_tile_04_128x128@2",
+      "16,-2": "sbs2_metal_metal_08_128x128@2",
+      "16,0": "sbs2_metal_metal_08_128x128@2",
+      "14,0": "sbs2_metal_metal_08_128x128@2",
+      "14,-2": "sbs2_metal_metal_08_128x128@2",
+      "18,-2": "sbs2_metal_metal_08_128x128@2",
+      "18,0": "sbs2_metal_metal_08_128x128@2",
+      "12,-2": "sbs2_metal_metal_08_128x128@2",
+      "12,0": "sbs2_metal_metal_08_128x128@2",
+      "10,-2": "sbs2_metal_metal_08_128x128@2",
+      "10,0": "sbs2_metal_metal_08_128x128@2",
+      "8,-2": "sbs2_metal_metal_08_128x128@2",
+      "8,0": "sbs2_metal_metal_08_128x128@2",
+      "-17,16": "sbs1_tile_tile_20_128x128"
     },
     "craftedScenes": [
-      {
-        "id": "pz-conjure-plinth",
-        "name": "Conjure portal plinth",
-        "prompt": "Conjure portal plinth lightweight circular platform",
-        "position": [
-          0,
-          0,
-          -18.7
-        ],
-        "createdAt": "2026-05-09T16:00:00.000Z",
-        "model": "codex-portal-zero-primitives",
-        "objects": [
-          {
-            "type": "cylinder",
-            "position": [
-              0,
-              0.07,
-              0
-            ],
-            "scale": [
-              2.8,
-              0.14,
-              2.8
-            ],
-            "color": "#155e75",
-            "roughness": 0.64,
-            "metalness": 0.02
-          }
-        ],
-        "thumbnailUrl": "/crafted-thumbs/pz-conjure-plinth.jpg"
-      },
       {
         "id": "pz-public-plinth",
         "name": "Public worlds plinth",
@@ -10572,37 +10506,6 @@
           }
         ],
         "thumbnailUrl": "/crafted-thumbs/pz-ffa-plinth.jpg"
-      },
-      {
-        "id": "pz-rookie-plinth",
-        "name": "Rookie Wizard plinth",
-        "prompt": "Rookie Wizard plinth lightweight circular platform",
-        "position": [
-          14,
-          0,
-          -14
-        ],
-        "createdAt": "2026-05-09T16:00:00.000Z",
-        "model": "codex-portal-zero-primitives",
-        "objects": [
-          {
-            "type": "cylinder",
-            "position": [
-              0,
-              0.07,
-              0
-            ],
-            "scale": [
-              2.2,
-              0.14,
-              2.2
-            ],
-            "color": "#1d4ed8",
-            "roughness": 0.64,
-            "metalness": 0.02
-          }
-        ],
-        "thumbnailUrl": "/crafted-thumbs/pz-rookie-plinth.jpg"
       },
       {
         "id": "pz-north-runway-left-marker",
@@ -11269,6 +11172,255 @@
           -28.187526583649216
         ],
         "scale": 1
+      },
+      {
+        "id": "image-1779908577175",
+        "catalogId": "generated-image",
+        "name": "AI TINKERERS May 28 ENTER HERE 04515 use these…",
+        "glbPath": "",
+        "position": [
+          -10.320057288384607,
+          0,
+          0.8301851821037074
+        ],
+        "scale": 1,
+        "imageUrl": "/generated-images/img_mpofgsazdcrr.png",
+        "imageDisplayMode": "2d",
+        "imageFrameStyle": "hologram",
+        "imageFrameThickness": 2
+      },
+      {
+        "id": "image-1779909978938",
+        "catalogId": "generated-image",
+        "name": "red vs blue, shooting and conjuring objects, red…",
+        "glbPath": "",
+        "position": [
+          3.4600709884785763,
+          0,
+          -22.092459950405825
+        ],
+        "scale": 1,
+        "imageUrl": "/generated-images/img_mpogfnf984ie.jpg",
+        "imageDisplayMode": "2d",
+        "imageFrameStyle": "brutalist"
+      },
+      {
+        "id": "catalog-stylized-nature_flower_3_group-1779910227667",
+        "catalogId": "stylized-nature_flower_3_group",
+        "name": "Nature Flower 3 Group",
+        "glbPath": "/models/stylized-nature/flower_3_group.gltf",
+        "position": [
+          26.918121207173815,
+          0,
+          31.747494911247173
+        ],
+        "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_flower_4_group-1779910247447",
+        "catalogId": "stylized-nature_flower_4_group",
+        "name": "Nature Flower 4 Group",
+        "glbPath": "/models/stylized-nature/flower_4_group.gltf",
+        "position": [
+          -39.61672723608817,
+          0,
+          49.242713967874955
+        ],
+        "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_flower_4_group-1779910253450",
+        "catalogId": "stylized-nature_flower_4_group",
+        "name": "Nature Flower 4 Group",
+        "glbPath": "/models/stylized-nature/flower_4_group.gltf",
+        "position": [
+          -37.12476597910262,
+          0,
+          49.51269130357173
+        ],
+        "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_flower_4_group-1779910254426",
+        "catalogId": "stylized-nature_flower_4_group",
+        "name": "Nature Flower 4 Group",
+        "glbPath": "/models/stylized-nature/flower_4_group.gltf",
+        "position": [
+          -35.70212921192019,
+          0,
+          49.60329810597694
+        ],
+        "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_flower_4_group-1779910257071",
+        "catalogId": "stylized-nature_flower_4_group",
+        "name": "Nature Flower 4 Group",
+        "glbPath": "/models/stylized-nature/flower_4_group.gltf",
+        "position": [
+          -48.76811056859518,
+          0,
+          34.19442019058432
+        ],
+        "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_flower_4_group-1779910261853",
+        "catalogId": "stylized-nature_flower_4_group",
+        "name": "Nature Flower 4 Group",
+        "glbPath": "/models/stylized-nature/flower_4_group.gltf",
+        "position": [
+          -47.11597129864119,
+          0,
+          -22.23701623499504
+        ],
+        "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_flower_4_group-1779910265123",
+        "catalogId": "stylized-nature_flower_4_group",
+        "name": "Nature Flower 4 Group",
+        "glbPath": "/models/stylized-nature/flower_4_group.gltf",
+        "position": [
+          -12.323797903029169,
+          0,
+          -40.32879524111713
+        ],
+        "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_flower_4_group-1779910265971",
+        "catalogId": "stylized-nature_flower_4_group",
+        "name": "Nature Flower 4 Group",
+        "glbPath": "/models/stylized-nature/flower_4_group.gltf",
+        "position": [
+          -15.36065418949202,
+          0,
+          -38.84328254212151
+        ],
+        "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_flower_4_group-1779910270515",
+        "catalogId": "stylized-nature_flower_4_group",
+        "name": "Nature Flower 4 Group",
+        "glbPath": "/models/stylized-nature/flower_4_group.gltf",
+        "position": [
+          20.576285148104184,
+          0,
+          -4.881054609119733
+        ],
+        "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_rockpath_square_wide-1779910299534",
+        "catalogId": "stylized-nature_rockpath_square_wide",
+        "name": "Nature RockPath Square Wide",
+        "glbPath": "/models/stylized-nature/rockpath_square_wide.gltf",
+        "position": [
+          -14.407421975108257,
+          0,
+          2.9346508917670935
+        ],
+        "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_rockpath_square_wide-1779910307693",
+        "catalogId": "stylized-nature_rockpath_square_wide",
+        "name": "Nature RockPath Square Wide",
+        "glbPath": "/models/stylized-nature/rockpath_square_wide.gltf",
+        "position": [
+          -12.363368299179193,
+          0,
+          2.927369065925927
+        ],
+        "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_rockpath_square_wide-1779910311321",
+        "catalogId": "stylized-nature_rockpath_square_wide",
+        "name": "Nature RockPath Square Wide",
+        "glbPath": "/models/stylized-nature/rockpath_square_wide.gltf",
+        "position": [
+          -10.332656526639816,
+          0,
+          2.872698531897891
+        ],
+        "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_rockpath_round_wide-1779910344984",
+        "catalogId": "stylized-nature_rockpath_round_wide",
+        "name": "Nature RockPath Round Wide",
+        "glbPath": "/models/stylized-nature/rockpath_round_wide.gltf",
+        "position": [
+          -15.868542280223693,
+          0,
+          -11.252717309806473
+        ],
+        "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_rockpath_round_wide-1779910348632",
+        "catalogId": "stylized-nature_rockpath_round_wide",
+        "name": "Nature RockPath Round Wide",
+        "glbPath": "/models/stylized-nature/rockpath_round_wide.gltf",
+        "position": [
+          -13.888149070765046,
+          0,
+          -11.186500141768242
+        ],
+        "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_rockpath_round_wide-1779910351946",
+        "catalogId": "stylized-nature_rockpath_round_wide",
+        "name": "Nature RockPath Round Wide",
+        "glbPath": "/models/stylized-nature/rockpath_round_wide.gltf",
+        "position": [
+          -13.929832789024555,
+          0,
+          -9.152427055645644
+        ],
+        "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_rockpath_round_wide-1779910355917",
+        "catalogId": "stylized-nature_rockpath_round_wide",
+        "name": "Nature RockPath Round Wide",
+        "glbPath": "/models/stylized-nature/rockpath_round_wide.gltf",
+        "position": [
+          -15.884861248096785,
+          0,
+          -9.162959103891357
+        ],
+        "scale": 1
+      },
+      {
+        "id": "image-1779910436061",
+        "catalogId": "generated-image",
+        "name": "red vs blue, shooting and conjuring objects, red…",
+        "glbPath": "",
+        "position": [
+          -10.565724712549152,
+          0,
+          -11.838045634918759
+        ],
+        "scale": 1,
+        "imageUrl": "/generated-images/img_mpogk6cek7m0.png"
+      },
+      {
+        "id": "image-1779910862264",
+        "catalogId": "generated-image",
+        "name": "left: boring 2d white go",
+        "glbPath": "",
+        "position": [
+          -13.67940889043598,
+          0,
+          -5.178892350212336
+        ],
+        "scale": 1,
+        "imageUrl": "/generated-images/img_mpogyvugxdxx.png"
       }
     ],
     "portalGates": [
@@ -11365,150 +11517,26 @@
         }
       },
       {
-        "id": "portal-zero-to-rookie-wizard",
-        "label": "Rookie Wizard",
-        "variant": "rift-slit",
-        "position": [
-          14.6,
-          0,
-          -14.6
-        ],
-        "rotationY": -0.7853981633974483,
-        "scale": 0.82,
-        "width": 2.15,
-        "height": 3.05,
-        "direction": "one-way",
-        "sourceWorldId": "world-welcome-hub-system",
-        "targetWorldId": "world-rookie-wizard-system",
-        "targetWorldName": "Rookie Wizard",
-        "action": {
-          "type": "load_world",
-          "worldId": "world-rookie-wizard-system",
-          "worldName": "Rookie Wizard"
-        },
-        "spawnPose": {
-          "position": [
-            0,
-            0,
-            -17.6
-          ],
-          "rotationY": 0
-        }
-      },
-      {
-        "id": "portal-zero-public-world-world-quest-zero-system",
-        "label": "Quest Zero",
-        "variant": "solar-arch",
-        "position": [
-          25.2,
-          0,
-          -2.9
-        ],
-        "rotationY": -1.5707963267948966,
-        "scale": 0.78,
-        "width": 2.15,
-        "height": 2.9,
-        "direction": "one-way",
-        "sourceWorldId": "world-welcome-hub-system",
-        "targetWorldId": "world-quest-zero-system",
-        "targetWorldName": "Quest Zero",
-        "action": {
-          "type": "load_world",
-          "worldId": "world-quest-zero-system",
-          "worldName": "Quest Zero"
-        }
-      },
-      {
-        "id": "portal-zero-public-world-world-1778338664451-jhcv",
-        "label": "newpublic local",
-        "variant": "hologram-gate",
-        "position": [
-          25.2,
-          0,
-          2.9
-        ],
-        "rotationY": -1.5707963267948966,
-        "scale": 0.78,
-        "width": 2.15,
-        "height": 2.9,
-        "direction": "one-way",
-        "sourceWorldId": "world-welcome-hub-system",
-        "targetWorldId": "world-1778338664451-jhcv",
-        "targetWorldName": "newpublic local",
-        "action": {
-          "type": "load_world",
-          "worldId": "world-1778338664451-jhcv",
-          "worldName": "newpublic local"
-        }
-      },
-      {
-        "id": "portal-zero-public-world-world-1778350696063-1fnd",
-        "label": "pubbb",
-        "variant": "mirror-pool",
-        "position": [
-          25.2,
-          0,
-          -6.8
-        ],
-        "rotationY": -1.5707963267948966,
-        "scale": 0.78,
-        "width": 2.15,
-        "height": 2.9,
-        "direction": "one-way",
-        "sourceWorldId": "world-welcome-hub-system",
-        "targetWorldId": "world-1778350696063-1fnd",
-        "targetWorldName": "pubbb",
-        "action": {
-          "type": "load_world",
-          "worldId": "world-1778350696063-1fnd",
-          "worldName": "pubbb"
-        }
-      },
-      {
-        "id": "portal-zero-ffa-world-world-1779808790089-bbcg",
-        "label": "Leave probe",
-        "variant": "rift-slit",
-        "position": [
-          -4.64,
-          0,
-          25.2
-        ],
-        "rotationY": 3.4033920413889427,
-        "scale": 0.78,
-        "width": 2.15,
-        "height": 2.9,
-        "direction": "one-way",
-        "sourceWorldId": "world-welcome-hub-system",
-        "targetWorldId": "world-1779808790089-bbcg",
-        "targetWorldName": "Leave probe",
-        "action": {
-          "type": "load_world",
-          "worldId": "world-1779808790089-bbcg",
-          "worldName": "Leave probe"
-        }
-      },
-      {
-        "id": "portal-zero-ffa-world-world-1778350531464-4kn7",
-        "label": "Free for all world",
+        "id": "portal-1779907759194-t5dm-a",
         "variant": "crystal-cavern",
         "position": [
-          4.64,
+          -15.874766934950008,
           0,
-          25.2
+          2.706038832806344
         ],
-        "rotationY": 3.4033920413889427,
-        "scale": 0.78,
-        "width": 2.15,
-        "height": 2.9,
+        "rotationY": 0,
+        "scale": 1,
+        "width": 2.4,
+        "height": 3.2,
         "direction": "one-way",
         "sourceWorldId": "world-welcome-hub-system",
-        "targetWorldId": "world-1778350531464-4kn7",
-        "targetWorldName": "Free for all world",
         "action": {
-          "type": "load_world",
-          "worldId": "world-1778350531464-4kn7",
-          "worldName": "Free for all world"
-        }
+          "type": "external_url",
+          "url": "/ab12",
+          "label": "Demo Router",
+          "requiresConfirm": false
+        },
+        "inert": false
       }
     ],
     "spatialWebObjects": [
@@ -11518,7 +11546,7 @@
         "formId": "portal-zero-google-forms-altar",
         "label": "Google Forms Altar",
         "description": "Paste a public Google Form link. The altar builds a shareable Oasis world, then opens a portal.",
-        "value": "http://localhost:4516/2131",
+        "value": "",
         "placeholder": "https://forms.gle/...",
         "position": [
           -6.2,
@@ -11538,15 +11566,7 @@
           "type": "create_world_from_google_form",
           "successMessage": "Oasis world ready."
         },
-        "statusMessage": "FORMS WORLD BUILT! PORTAL OPENING...",
-        "generatedWorldId": "world-1779902190496-6slg",
-        "generatedWorldName": "AI Tinkerers Bogotá",
-        "generatedWorldUrl": "http://localhost:4516/2131",
-        "generatedQrUrl": "https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=http%3A%2F%2Flocalhost%3A4516%2F2131",
-        "lastEvent": "submit",
-        "lastInteractionAt": "2026-05-27T17:16:28.391Z",
-        "interactionCount": 2,
-        "submittedAt": "2026-05-27T17:16:30.533Z"
+        "statusMessage": "PASTE A GOOGLE FORMS URL"
       },
       {
         "id": "spatial-google-test-altar-portal-zero",
@@ -11578,7 +11598,30 @@
       }
     ],
     "paintStrokes": [],
-    "text3dObjects": [],
+    "text3dObjects": [
+      {
+        "id": "text3d-8867fe3e-d80",
+        "type": "text_3d",
+        "text": "Welcome to 7h3 04515 fren",
+        "fontId": "helvetiker_regular",
+        "size": 0.85,
+        "depth": 0.57,
+        "color": "#3be33d",
+        "toneBias": -0.45,
+        "shininess": 1,
+        "position": [
+          -8.996017380935813,
+          1.7883700997483385,
+          2.733725145399301
+        ],
+        "rotation": [
+          0,
+          4.145566240792259,
+          0
+        ],
+        "createdAt": 1779908328597
+      }
+    ],
     "transforms": {
       "pz-google-forms-altar-label": {
         "position": [
@@ -11605,7 +11648,7 @@
         ],
         "rotation": [
           0,
-          0.791824627975705,
+          0.8138893314034251,
           0
         ],
         "scale": [
@@ -11902,6 +11945,261 @@
           1,
           1
         ]
+      },
+      "pz-crystal-ffa": {
+        "position": [
+          -0.21615096209911844,
+          4.581553110845231,
+          19.808224599845897
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "portal-1779907759194-t5dm-a": {
+        "position": [
+          -15.874766934950008,
+          0,
+          2.706038832806344
+        ],
+        "rotation": [
+          -3.141592653589793,
+          1.51676455411733,
+          -3.141592653589793
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "image-1779907888508": {
+        "position": [
+          -15.740056387125215,
+          5.981551488320849,
+          3.3452004412793985
+        ],
+        "rotation": [
+          2.14107757354468,
+          1.1227687958873256,
+          -2.1922527838353214
+        ],
+        "scale": [
+          4.465502561329652,
+          4.465502561329652,
+          4.465502561329652
+        ]
+      },
+      "text3d-8867fe3e-d80": {
+        "position": [
+          0.476975028398233,
+          10.336084324540053,
+          23.97871217936342
+        ],
+        "rotation": [
+          0,
+          3.141592653589793,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "image-1779908577175": {
+        "position": [
+          -15.002974822131016,
+          7.16652069307014,
+          2.530781314743109
+        ],
+        "rotation": [
+          1.7155271099309686,
+          1.2065420453975189,
+          -1.706150807287224
+        ],
+        "scale": [
+          5.274077455493037,
+          5.274077455493037,
+          5.274077455493037
+        ]
+      },
+      "portal-zero-conjure-external": {
+        "position": [
+          6.1275689774886795,
+          0,
+          -27.19103030143532
+        ],
+        "rotation": [
+          0,
+          -0.5666580166553906,
+          0
+        ],
+        "scale": [
+          0.96,
+          0.96,
+          0.96
+        ]
+      },
+      "pz-conjure-plinth": {
+        "position": [
+          5.185497029055536,
+          0,
+          -25.941725795798888
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "image-1779909978938": {
+        "position": [
+          6.256204740863653,
+          5.319891523033828,
+          -27.667134401542487
+        ],
+        "rotation": [
+          0.34138578578515705,
+          -0.5307112683988825,
+          0.170189199293367
+        ],
+        "scale": [
+          4.316757429252437,
+          4.316757429252437,
+          4.316757429252437
+        ]
+      },
+      "catalog-stylized-nature_rockpath_round_wide-1779910344984": {
+        "position": [
+          -15.11769947313905,
+          0,
+          -11.835388317801188
+        ],
+        "rotation": [
+          0,
+          -0.700563331255649,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "catalog-stylized-nature_rockpath_round_wide-1779910348632": {
+        "position": [
+          -13.69828615666247,
+          0,
+          -10.562515205793709
+        ],
+        "rotation": [
+          0,
+          -0.71849149688832,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "catalog-stylized-nature_rockpath_round_wide-1779910351946": {
+        "position": [
+          -14.97251200657578,
+          0,
+          -9.080543339757117
+        ],
+        "rotation": [
+          0,
+          -0.6547663515460349,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "catalog-stylized-nature_rockpath_round_wide-1779910355917": {
+        "position": [
+          -16.46302189438244,
+          0,
+          -10.365291578476917
+        ],
+        "rotation": [
+          0,
+          -0.7032107237810918,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "image-1779910436061": {
+        "position": [
+          3.339456920379094,
+          0.11,
+          -23.29638607271931
+        ],
+        "rotation": [
+          -1.5707963267948963,
+          -5.551115123125783e-17,
+          -0.5962577155676034
+        ],
+        "scale": [
+          4.297358062865376,
+          4.297358062865376,
+          4.297358062865376
+        ]
+      },
+      "image-1779910745016": {
+        "position": [
+          -11.535378142663207,
+          0,
+          -10.556100697605597
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          4.026232332516496,
+          4.026232332516496,
+          4.026232332516496
+        ]
+      },
+      "image-1779910862264": {
+        "position": [
+          -13.991541448372459,
+          4.260341885777901,
+          -16.146490099144916
+        ],
+        "rotation": [
+          0,
+          0.49432811824675427,
+          0
+        ],
+        "scale": [
+          5.5302430184516345,
+          5.5302430184516345,
+          5.5302430184516345
+        ]
       }
     },
     "behaviors": {
@@ -11944,6 +12242,31 @@
           "axis": "xz"
         },
         "visible": true
+      },
+      "image-1779907888508": {
+        "movement": {
+          "type": "hover",
+          "amplitude": 0.1,
+          "speed": 1.5,
+          "offset": 0
+        },
+        "visible": true
+      },
+      "text3d-8867fe3e-d80": {
+        "movement": {
+          "type": "static"
+        },
+        "visible": true,
+        "interaction": {
+          "label": "Open Welcome to 7h3 04515 fren",
+          "radius": 4,
+          "actions": [
+            {
+              "type": "spawn_vfx",
+              "vfxType": "sparkburst"
+            }
+          ]
+        }
       }
     },
     "lights": [
@@ -11975,7 +12298,6 @@
     "skyBackgroundId": "umhlanga_sunrise",
     "agentWindows": [],
     "agentAvatars": [],
-    "savedAt": "2026-05-27T17:16:39.049Z"
-  },
-  "pvpEnabled": true
+    "savedAt": "2026-05-27T19:46:19.451Z"
+  }
 }

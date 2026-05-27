@@ -1386,7 +1386,7 @@ describe('OasisStore', () => {
         }),
       }))
       expect(getState().spatialWebObjects[0]).toMatchObject({
-        value: 'http://localhost:4516/w/world-generated-form',
+        value: 'https://forms.gle/demo',
         generatedWorldId: 'world-generated-form',
         generatedWorldName: 'Hackathon RSVP',
         generatedWorldUrl: 'http://localhost:4516/w/world-generated-form',
@@ -1448,10 +1448,70 @@ describe('OasisStore', () => {
         }),
       ])
       expect(getState().localPortalGates[0].position[2]).toBeLessThan(altar.position[2])
+      expect(getState().activePlacementVfx.some(vfx => vfx.type === 'realitydetonation')).toBe(true)
       expect(getState().spatialWebObjects[0]).toMatchObject({
         generatedWorldId: 'world-generated-form',
         lastEvent: 'submit',
       })
+    })
+
+    it('always prompts Portal Zero Google Forms altars even when old generated metadata exists', async () => {
+      const originalFetch = globalThis.fetch
+      const originalWindow = (globalThis as any).window
+      const prompt = vi.fn().mockReturnValue('https://forms.gle/fresh')
+      const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        ok: true,
+        data: {
+          worldId: 'world-fresh-form',
+          worldName: 'Fresh Form',
+          worldUrl: 'http://localhost:4516/w/world-fresh-form',
+          qrUrl: 'https://qr.example/fresh',
+          visibility: 'unlisted',
+        },
+      }), {
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      globalThis.fetch = fetchMock as unknown as typeof fetch
+      ;(globalThis as any).window = { prompt, setTimeout }
+      const altar = createGoogleFormsAltarObject({
+        id: 'forms-altar',
+        value: 'http://localhost:4516/2131',
+        generatedWorldId: 'world-old-form',
+        generatedWorldName: 'Old Form',
+        generatedWorldUrl: 'http://localhost:4516/2131',
+      })
+      useOasisStore.setState({
+        activeWorldId: WELCOME_HUB_WORLD_ID,
+        spatialWebObjects: [altar],
+        localPortalGates: [],
+      })
+
+      try {
+        await getState().interactSpatialWebObject('forms-altar')
+      } finally {
+        globalThis.fetch = originalFetch
+        ;(globalThis as any).window = originalWindow
+      }
+
+      expect(prompt).toHaveBeenCalledWith(expect.any(String), '')
+      expect(fetchMock).toHaveBeenCalledWith('/api/oasis-tools', expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          tool: 'create_world_from_google_form',
+          args: {
+            formUrl: 'https://forms.gle/fresh',
+            visibility: 'unlisted',
+            publicBaseUrl: undefined,
+          },
+        }),
+      }))
+      expect(getState().spatialWebObjects[0]).toMatchObject({
+        value: 'https://forms.gle/fresh',
+        generatedWorldId: 'world-fresh-form',
+        generatedWorldUrl: 'http://localhost:4516/w/world-fresh-form',
+        lastEvent: 'submit',
+      })
+      expect(getState().localPortalGates).toEqual([])
     })
 
     it('does not submit the same spatial form button twice', async () => {

@@ -179,6 +179,17 @@ function extractFirstUrl(value: string): string {
   return (match?.[0] || value).replace(/[),.;]+$/, '').trim()
 }
 
+function isGoogleFormsInput(value: string): boolean {
+  const url = extractFirstUrl(value)
+  try {
+    const parsed = new URL(url)
+    return parsed.hostname === 'forms.gle'
+      || (parsed.hostname.endsWith('google.com') && parsed.pathname.includes('/forms/'))
+  } catch {
+    return false
+  }
+}
+
 function resolveSpatialWorldToolArgs(
   action: NonNullable<SpatialWebObject['action']>,
   value: SpatialWebValue | undefined,
@@ -209,18 +220,12 @@ function playSpatialWebSound(event: SoundEvent): void {
     useAudioManager.getState().play(event)
   } catch {}
 }
-async function copyTextToClipboard(text: string): Promise<boolean> {
-  if (!isBrowser) return false
+
+function playFormsPortalRevealSound(): void {
+  if (!isBrowser) return
   try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text)
-      return true
-    }
+    useAudioManager.getState().playUrl('/audio/spells/mixkit-spellcaster-fairy-swoosh-1463.ogg', 0.9)
   } catch {}
-  try {
-    window.prompt('Copy Oasis world URL', text)
-  } catch {}
-  return false
 }
 
 function upsertWorldRegistryMeta(registry: WorldMeta[], meta: WorldMeta): WorldMeta[] {
@@ -2215,10 +2220,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
               ],
             }),
         }))
-        get().spawnPlacementVfx(portalPosition)
+        playFormsPortalRevealSound()
+        get().spawnPlacementVfx(portalPosition, 'realitydetonation')
         if (!shouldKeepPortalLocal) {
           worldMutationBus.broadcast({ kind: 'portal_added', payload: portalGate })
-          worldMutationBus.broadcast({ kind: 'placement_vfx', payload: { position: portalPosition } })
+          worldMutationBus.broadcast({ kind: 'placement_vfx', payload: { position: portalPosition, typeOverride: 'realitydetonation' } })
         }
         if (isBrowser) get().refreshWorldRegistry()
       }, delayMs)
@@ -2307,28 +2313,14 @@ export const useOasisStore = create<OasisState>((set, get) => {
     if (object.type === 'text') {
       if (object.action?.type === 'create_world_from_google_form') {
         const isTestAltar = object.action.testMode === true
-        const generatedUrl = typeof object.generatedWorldUrl === 'string' ? object.generatedWorldUrl : ''
-        const generatedWorldId = typeof object.generatedWorldId === 'string' ? object.generatedWorldId : ''
-        if (generatedUrl && generatedWorldId) {
-          playSpatialWebSound('buttonClick')
-          const copied = await copyTextToClipboard(generatedUrl)
-          markInteraction({
-            statusMessage: copied ? 'COPIED. PORTAL OPENING...' : 'WORLD URL READY. PORTAL OPENING...',
-            errorMessage: undefined,
-          }, 'press')
-          get().spawnPlacementVfx(effectPosition)
-          openPortalToWorld(generatedWorldId, object.generatedWorldName || 'Generated form world', 3000)
-          scheduleSpatialInteractionSave()
-          return
-        }
-
         const currentValue = Array.isArray(object.value)
           ? object.value.join(', ')
           : object.value === null || object.value === undefined
             ? ''
             : String(object.value)
+        const promptInitialValue = isGoogleFormsInput(currentValue) ? currentValue : ''
         const promptText = typeof window !== 'undefined'
-          ? window.prompt(object.placeholder || object.label, currentValue)
+          ? window.prompt(object.placeholder || object.label, promptInitialValue)
           : null
         if (promptText === null) return
         const formUrl = extractFirstUrl(promptText)
@@ -2387,7 +2379,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
             }),
           }))
           markInteraction({
-            value: result.data.worldUrl,
+            value: promptText,
             generatedWorldId: result.data.worldId,
             generatedWorldName,
             generatedWorldUrl: result.data.worldUrl,
@@ -2396,8 +2388,6 @@ export const useOasisStore = create<OasisState>((set, get) => {
             errorMessage: undefined,
             submittedAt: new Date().toISOString(),
           }, 'submit')
-          playSpatialWebSound('winner')
-          get().spawnPlacementVfx(effectPosition)
           openPortalToWorld(result.data.worldId, generatedWorldName, 3000)
           if (isBrowser) get().refreshWorldRegistry()
         } catch (error) {
