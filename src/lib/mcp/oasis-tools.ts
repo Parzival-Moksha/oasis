@@ -801,6 +801,29 @@ function overlayLiveAgentAvatars(
   return merged
 }
 
+function safeAgentOwnerIdSegment(ownerId: string): string {
+  const cleaned = ownerId
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 48)
+  return cleaned || 'legacy'
+}
+
+function agentAvatarOwnerId(avatar: AgentAvatarEntry | null | undefined): string {
+  return validStr((avatar as { ownerId?: unknown } | null | undefined)?.ownerId, '')
+}
+
+function findAgentAvatarByTypeForToolContext(state: WorldState, agentType: string): AgentAvatarEntry | null {
+  const avatars = state.agentAvatars || []
+  const ownerId = currentToolContext().userId
+  return avatars.find(avatar => avatar.agentType === agentType && agentAvatarOwnerId(avatar) === ownerId)
+    || avatars.find(avatar => avatar.agentType === agentType && !agentAvatarOwnerId(avatar))
+    || avatars.find(avatar => avatar.agentType === agentType)
+    || null
+}
+
 function resolveAgentAvatarTarget(
   state: WorldState,
   args: Record<string, unknown>,
@@ -826,11 +849,11 @@ function resolveAgentAvatarTarget(
   }
 
   if (!existing && agentType) {
-    existing = (state.agentAvatars || []).find(avatar => avatar.agentType === agentType) || null
+    existing = findAgentAvatarByTypeForToolContext(state, agentType)
     if (existing) {
       avatarId = existing.id
     } else if (!avatarId && isSharedAgentAvatarType(agentType)) {
-      avatarId = `agent-avatar-${agentType}`
+      avatarId = `agent-avatar-${agentType}-${safeAgentOwnerIdSegment(currentToolContext().userId)}`
     }
   }
 
@@ -843,15 +866,39 @@ function resolveAgentAvatarTarget(
 
 // Simple per-world mutex to prevent concurrent read-modify-write races
 const worldLocks = new Map<string, Promise<void>>()
+const worldLockContextStorage = new AsyncLocalStorage<Set<string>>()
+const WORLD_LOCK_WAIT_TIMEOUT_MS = Math.max(0, Number(process.env.OASIS_TOOL_LOCK_WAIT_TIMEOUT_MS) || 2500)
 
 async function withWorldLock<T>(worldId: string, fn: () => Promise<T>): Promise<T> {
+  const heldLocks = worldLockContextStorage.getStore()
+  if (heldLocks?.has(worldId)) {
+    return fn()
+  }
+
+  const runWithHeldLock = () => {
+    const nextHeldLocks = new Set(heldLocks || [])
+    nextHeldLocks.add(worldId)
+    return worldLockContextStorage.run(nextHeldLocks, fn)
+  }
+
   const existing = worldLocks.get(worldId) || Promise.resolve()
   let release: () => void
   const next = new Promise<void>(resolve => { release = resolve })
   worldLocks.set(worldId, next)
-  await existing
+  const acquired = await Promise.race([
+    existing.then(() => true, () => true),
+    new Promise<boolean>(resolve => {
+      setTimeout(() => resolve(false), WORLD_LOCK_WAIT_TIMEOUT_MS)
+    }),
+  ])
+  if (!acquired) {
+    console.warn('[oasis-tools] world lock wait timed out; proceeding without queue', {
+      worldId,
+      waitMs: WORLD_LOCK_WAIT_TIMEOUT_MS,
+    })
+  }
   try {
-    return await fn()
+    return await runWithHeldLock()
   } finally {
     release!()
     if (worldLocks.get(worldId) === next) worldLocks.delete(worldId)
@@ -1817,6 +1864,7 @@ function buildAgentWindowFromArgs(args: Record<string, unknown>, defaultAgentTyp
     width,
     height,
     label,
+    ownerId: validStr(args.ownerId, currentToolContext().userId),
     ...(validStr(args.sessionId, '') ? { sessionId: validStr(args.sessionId, '') } : {}),
     ...(validAgentWindowRenderMode(args.renderMode) ? { renderMode: validAgentWindowRenderMode(args.renderMode) } : { renderMode: 'live-html' as const }),
     ...(isBrowser ? { browserSurfaceMode: validBrowserSurfaceMode(args.browserSurfaceMode || args.surfaceMode), surfaceUrl } : surfaceUrl ? { surfaceUrl } : {}),
@@ -2904,6 +2952,7 @@ tools.set_avatar = async (args) => {
   }
 
   const isSharedAvatarType = isSharedAgentAvatarType(agentType)
+  const ownerId = currentToolContext().userId
   const label = validStr(args.label, '')
   const position = validPos(args.position)
   const rotation = validPos(args.rotation)
@@ -2919,6 +2968,7 @@ tools.set_avatar = async (args) => {
         scale: Number.isFinite(Number(args.scale)) ? scale : existing.scale,
         linkedWindowId: isSharedAvatarType ? undefined : (linkedWindowId || existing.linkedWindowId),
         agentType: validStr(agentType, existing.agentType) as typeof existing.agentType,
+        ...(isSharedAvatarType ? { ownerId: agentAvatarOwnerId(existing) || ownerId } : {}),
       }
     : {
         id: avatarId,
@@ -2928,6 +2978,7 @@ tools.set_avatar = async (args) => {
         rotation: rotation || [0, Math.PI, 0],
         scale,
         ...(!isSharedAvatarType && linkedWindowId ? { linkedWindowId } : {}),
+        ...(isSharedAvatarType ? { ownerId } : {}),
         ...(label ? { label } : {}),
       }
 
@@ -2939,7 +2990,8 @@ tools.set_avatar = async (args) => {
   if (isSharedAvatarType) {
     state.agentAvatars = (state.agentAvatars || []).filter((avatar, index, list) => {
       if (avatar.agentType !== agentType) return true
-      return list.findIndex(entry => entry.agentType === agentType) === index
+      const avatarOwner = agentAvatarOwnerId(avatar)
+      return list.findIndex(entry => entry.agentType === agentType && agentAvatarOwnerId(entry) === avatarOwner) === index
     })
   }
   delete state.transforms[nextAvatar.id]
@@ -3166,7 +3218,7 @@ tools.create_portal_gate = async (args) => {
   const explicitPosition = validPos(args.position)
   const actorAgentType = validStr(args.agentType || args.actorAgentType || args.agent, '').toLowerCase()
   const sourceAvatar = actorAgentType
-    ? (state.agentAvatars || []).find(avatar => avatar.agentType === actorAgentType)
+    ? findAgentAvatarByTypeForToolContext(state, actorAgentType)
     : null
   const distanceAhead = Math.max(1, Math.min(50, validNum(args.distanceAhead ?? args.distance ?? args.metersAhead, 5)))
   const avatarYaw = sourceAvatar?.rotation?.[1] || 0

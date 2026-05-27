@@ -1350,8 +1350,54 @@ describe('agent avatar tools', () => {
     const updatePayload = vi.mocked(prisma.world.update).mock.calls[0]?.[0]
     const savedState = JSON.parse(String(updatePayload?.data?.data || '{}'))
     expect(savedState.agentAvatars[0]).toMatchObject({
-      id: 'agent-avatar-gemini',
+      id: 'agent-avatar-gemini-local-user',
       agentType: 'gemini',
+      avatar3dUrl: '/avatars/gallery/Orion.vrm',
+      ownerId: 'local-user',
+    })
+  })
+
+  it('set_avatar keeps shared Gemini avatars separate per owner', async () => {
+    const world = makeWorldRow({
+      agentAvatars: [
+        {
+          id: 'agent-avatar-gemini-user-a',
+          agentType: 'gemini',
+          avatar3dUrl: '/avatars/gallery/CoolAlien.vrm',
+          position: [0, 0, 0],
+          rotation: [0, 0, 0],
+          scale: 1,
+          ownerId: 'user-a',
+        },
+        {
+          id: 'agent-avatar-gemini-user-b',
+          agentType: 'gemini',
+          avatar3dUrl: '/avatars/gallery/Default.vrm',
+          position: [2, 0, 0],
+          rotation: [0, 0, 0],
+          scale: 1,
+          ownerId: 'user-b',
+        },
+      ],
+    })
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+
+    const result = await callTool('set_avatar', {
+      agentType: 'gemini',
+      avatarUrl: '/avatars/gallery/Orion.vrm',
+    }, { userId: 'user-b' })
+
+    expect(result.ok).toBe(true)
+    const updatePayload = vi.mocked(prisma.world.update).mock.calls[0]?.[0]
+    const savedState = JSON.parse(String(updatePayload?.data?.data || '{}'))
+    expect(savedState.agentAvatars).toHaveLength(2)
+    expect(savedState.agentAvatars.find((avatar: { ownerId?: string }) => avatar.ownerId === 'user-a')).toMatchObject({
+      id: 'agent-avatar-gemini-user-a',
+      avatar3dUrl: '/avatars/gallery/CoolAlien.vrm',
+    })
+    expect(savedState.agentAvatars.find((avatar: { ownerId?: string }) => avatar.ownerId === 'user-b')).toMatchObject({
+      id: 'agent-avatar-gemini-user-b',
       avatar3dUrl: '/avatars/gallery/Orion.vrm',
     })
   })

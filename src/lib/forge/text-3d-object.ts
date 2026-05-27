@@ -61,5 +61,10 @@ export function fontUrlFor(fontId: Text3DFontId): string {
 }
 
 export function clampText3DInput(text: string): string {
-  return text.replace(/\r/g, '').slice(0, TEXT3D_MAX_LENGTH)
+  return text
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\x20-\x7E\n]/g, '')
+    .replace(/\r/g, '')
+    .slice(0, TEXT3D_MAX_LENGTH)
 }

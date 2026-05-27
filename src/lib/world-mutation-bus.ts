@@ -21,6 +21,7 @@ export type WorldMutation =
   | { kind: 'agent_window_added'; payload: AgentWindow }
   | { kind: 'agent_avatar_added'; payload: AgentAvatar }
   | { kind: 'placement_vfx'; payload: { position: [number, number, number]; typeOverride?: PlacementVfxType } }
+  | { kind: 'march_order_vfx'; payload: { position: [number, number, number] } }
   | { kind: 'sky_changed'; payload: { skyBackgroundId: string } }
   | { kind: 'ground_changed'; payload: { groundPresetId: string } }
   | { kind: 'ground_painted'; payload: { cx: number; cz: number; presetId: string; size: number; stretch: number } }

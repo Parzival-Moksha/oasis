@@ -232,17 +232,32 @@ export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps)
       try { dom.releasePointerCapture(event.pointerId) } catch { /* */ }
       finishStroke()
     }
+    const onGlobalPointerUp = () => {
+      if (!strokeIdRef.current) return
+      finishStroke()
+    }
+    const onWindowBlur = () => {
+      if (!strokeIdRef.current) return
+      finishStroke()
+    }
 
     dom.addEventListener('pointerdown', onPointerDown, { capture: true })
     dom.addEventListener('pointermove', onPointerMove, { capture: true })
     dom.addEventListener('pointerup', onPointerUp, { capture: true })
     dom.addEventListener('pointercancel', onPointerCancel, { capture: true })
+    window.addEventListener('pointerup', onGlobalPointerUp, true)
+    window.addEventListener('pointercancel', onGlobalPointerUp, true)
+    window.addEventListener('blur', onWindowBlur)
 
     return () => {
+      if (strokeIdRef.current) finishStroke()
       dom.removeEventListener('pointerdown', onPointerDown, { capture: true } as EventListenerOptions)
       dom.removeEventListener('pointermove', onPointerMove, { capture: true } as EventListenerOptions)
       dom.removeEventListener('pointerup', onPointerUp, { capture: true } as EventListenerOptions)
       dom.removeEventListener('pointercancel', onPointerCancel, { capture: true } as EventListenerOptions)
+      window.removeEventListener('pointerup', onGlobalPointerUp, true)
+      window.removeEventListener('pointercancel', onGlobalPointerUp, true)
+      window.removeEventListener('blur', onWindowBlur)
     }
     // `settings` is intentionally NOT in the dep array — read via the
     // liveSettingsRef inside handlers. Otherwise we'd retear down every
@@ -253,6 +268,8 @@ export function PaintCursor({ active, authorId, authorColor }: PaintCursorProps)
   function finishStroke() {
     const strokeId = strokeIdRef.current
     if (!strokeId) return
+    const finalPoint = projectPointerToWorld(lastPointerRef.current.x, lastPointerRef.current.y)
+    if (finalPoint) sampleIfDue(finalPoint)
     strokeIdRef.current = null
     const points = allPointsRef.current
     const style = styleRef.current

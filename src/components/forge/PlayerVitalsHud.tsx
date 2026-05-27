@@ -304,10 +304,21 @@ export function PlayerVitalsHud({ visible }: { visible: boolean }) {
         lastRechargeAtRef.current = now
       }
       if (data?.progression) {
-        const nextVitals = normalizeVitals(data.progression, vitalsRef.current)
+        const rechargedVitals = normalizeVitals(data.progression, vitalsRef.current)
+        const nextVitals = getPvpEnabled()
+          ? {
+              ...rechargedVitals,
+              hp: vitalsRef.current.hp,
+              maxHp: vitalsRef.current.maxHp,
+            }
+          : rechargedVitals
         vitalsRef.current = nextVitals
         setVitals(nextVitals)
-        publishPvpVitals(nextVitals)
+        sendPvpVitals({
+          mana: nextVitals.mana,
+          maxMana: nextVitals.maxMana,
+          ...(getPvpEnabled() ? {} : { hp: nextVitals.hp, maxHp: nextVitals.maxHp }),
+        })
         window.dispatchEvent(new CustomEvent('oasis:player-vitals', { detail: nextVitals }))
       }
     } catch {

@@ -53,6 +53,7 @@ interface GeminiLivePanelProps {
   onClose: () => void
   embedded?: boolean
   hideCloseButton?: boolean
+  windowId?: string
 }
 
 interface GeminiTranscriptMessage {
@@ -333,6 +334,7 @@ export function GeminiLivePanel({
   onClose,
   embedded = false,
   hideCloseButton = false,
+  windowId,
 }: GeminiLivePanelProps) {
   useUILayer('gemini-live', isOpen && !embedded)
   const playHover = () => useAudioManager.getState().play('buttonHover')
@@ -394,7 +396,16 @@ export function GeminiLivePanel({
   const activeWorldId = useOasisStore(state => state.activeWorldId)
   const activeWorldName = useOasisStore(state => state.worldRegistry.find(world => world.id === state.activeWorldId)?.name || 'Current world')
   const transforms = useOasisStore(state => state.transforms)
-  const geminiAvatar = useOasisStore(state => state.placedAgentAvatars.find(entry => entry.agentType === GEMINI_AGENT_TYPE) || null)
+  const geminiAvatar = useOasisStore(state => {
+    const panelWindow = windowId ? state.placedAgentWindows.find(entry => entry.id === windowId) : null
+    const ownerId = panelWindow?.ownerId
+    const ownedAvatar = state.placedAgentAvatars.find(entry =>
+      entry.agentType === GEMINI_AGENT_TYPE
+      && (ownerId ? entry.ownerId === ownerId : !entry.ownerId)
+    ) || null
+    if (ownerId) return ownedAvatar
+    return ownedAvatar || state.placedAgentAvatars.find(entry => entry.agentType === GEMINI_AGENT_TYPE) || null
+  })
   const assignSharedAgentAvatar = useOasisStore(state => state.assignSharedAgentAvatar)
   const enterPlacementMode = useOasisStore(state => state.enterPlacementMode)
   const startAgentWork = useOasisStore(state => state.startAgentWork)
@@ -1239,6 +1250,18 @@ export function GeminiLivePanel({
     return () => window.removeEventListener('oasis:gemini-live-prompt', handler)
   }, [sendExternalPrompt])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ id?: string; agentType?: string }>).detail
+      if (detail?.agentType !== GEMINI_AGENT_TYPE) return
+      if (windowId && detail.id && detail.id !== windowId) return
+      disconnect()
+    }
+    window.addEventListener('oasis:agent-window-removed', handler)
+    return () => window.removeEventListener('oasis:agent-window-removed', handler)
+  }, [disconnect, windowId])
+
   const placeGeminiWindow = useCallback(() => {
     enterPlacementMode({
       type: 'agent',
@@ -1664,7 +1687,7 @@ export function GeminiLivePanel({
       style={{
         ...containerStyle,
         borderColor: 'rgba(34,211,238,0.22)',
-        background: embedded ? panelSettings.bgColor : rgbaFromHex(panelSettings.bgColor, panelSettings.opacity),
+        background: rgbaFromHex(panelSettings.bgColor, panelSettings.opacity),
         boxShadow: embedded ? 'none' : '0 22px 80px rgba(0,0,0,0.55), 0 0 40px rgba(34,211,238,0.16)',
         color: '#e0f2fe',
         isolation: 'isolate',
@@ -1720,7 +1743,7 @@ export function GeminiLivePanel({
     <AvatarGallery
       currentAvatarUrl={geminiAvatar?.avatar3dUrl || null}
       onSelect={avatarUrl => {
-        assignSharedAgentAvatar(GEMINI_AGENT_TYPE, avatarUrl)
+        assignSharedAgentAvatar(GEMINI_AGENT_TYPE, avatarUrl, { preferredWindowId: windowId || null })
         setShowAvatarGallery(false)
       }}
       onClose={() => setShowAvatarGallery(false)}

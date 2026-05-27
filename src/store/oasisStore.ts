@@ -581,6 +581,28 @@ function isSharedAgentAvatarType(agentType: string): agentType is AgentAvatarTyp
   return isSharedAgentAvatarWorldType(agentType)
 }
 
+function agentOwnerKey(ownerId?: string): string {
+  return ownerId || '__legacy__'
+}
+
+function sameAgentOwner(a?: string, b?: string): boolean {
+  return agentOwnerKey(a) === agentOwnerKey(b)
+}
+
+function sharedAgentAvatarGroupKey(agentType: AgentAvatarType, ownerId?: string): string {
+  return `${agentType}::${agentOwnerKey(ownerId)}`
+}
+
+function safeAgentOwnerIdSegment(ownerId?: string): string {
+  const cleaned = (ownerId || 'legacy')
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 48)
+  return cleaned || 'legacy'
+}
+
 function shouldAutoAssignAgentAvatar(agentType: string): boolean {
   return agentType !== 'browser' && agentType !== 'mission'
 }
@@ -605,21 +627,22 @@ function normalizeSharedAgentAvatarWorldState(args: {
   changed: boolean
 } {
   const { windows, avatars, transforms } = args
-  const sharedGroups = new Map<AgentAvatarType, AgentAvatar[]>()
+  const sharedGroups = new Map<string, { agentType: AgentAvatarType; ownerId?: string; avatars: AgentAvatar[] }>()
 
   for (const avatar of avatars) {
     if (!isSharedAgentAvatarType(avatar.agentType)) continue
-    const group = sharedGroups.get(avatar.agentType) || []
-    group.push(avatar)
-    sharedGroups.set(avatar.agentType, group)
+    const key = sharedAgentAvatarGroupKey(avatar.agentType, avatar.ownerId)
+    const group = sharedGroups.get(key) || { agentType: avatar.agentType, ownerId: avatar.ownerId, avatars: [] }
+    group.avatars.push(avatar)
+    sharedGroups.set(key, group)
   }
 
-  const winnerByType = new Map<AgentAvatarType, AgentAvatar>()
+  const winnerByKey = new Map<string, AgentAvatar>()
   const remappedAvatarIds = new Map<string, string>()
 
-  for (const [agentType, group] of sharedGroups.entries()) {
-    if (group.length === 0) continue
-    const winner = group.reduce((best, candidate) =>
+  for (const [key, group] of sharedGroups.entries()) {
+    if (group.avatars.length === 0) continue
+    const winner = group.avatars.reduce((best, candidate) =>
       scoreSharedAgentAvatarCandidate(candidate, transforms) > scoreSharedAgentAvatarCandidate(best, transforms)
         ? candidate
         : best,
@@ -627,14 +650,15 @@ function normalizeSharedAgentAvatarWorldState(args: {
     const normalizedWinner: AgentAvatar = {
       ...winner,
       linkedWindowId: undefined,
-      label: winner.label || defaultAgentAvatarLabel(agentType),
+      ownerId: winner.ownerId || group.ownerId,
+      label: winner.label || defaultAgentAvatarLabel(group.agentType),
     }
-    winnerByType.set(agentType, normalizedWinner)
-    for (const avatar of group) remappedAvatarIds.set(avatar.id, normalizedWinner.id)
+    winnerByKey.set(key, normalizedWinner)
+    for (const avatar of group.avatars) remappedAvatarIds.set(avatar.id, normalizedWinner.id)
   }
 
   let changed = false
-  const emittedSharedTypes = new Set<AgentAvatarType>()
+  const emittedSharedKeys = new Set<string>()
   const nextAvatars: AgentAvatar[] = []
   const nextTransforms: AgentAvatarTransformMap = { ...transforms }
 
@@ -644,13 +668,14 @@ function normalizeSharedAgentAvatarWorldState(args: {
       continue
     }
 
-    if (emittedSharedTypes.has(avatar.agentType)) {
+    const key = sharedAgentAvatarGroupKey(avatar.agentType, avatar.ownerId)
+    if (emittedSharedKeys.has(key)) {
       changed = true
       continue
     }
 
-    emittedSharedTypes.add(avatar.agentType)
-    const winner = winnerByType.get(avatar.agentType)
+    emittedSharedKeys.add(key)
+    const winner = winnerByKey.get(key)
     if (!winner) continue
     if (winner.id !== avatar.id || avatar.linkedWindowId || winner.label !== avatar.label) changed = true
     const folded = foldTransformIntoAgentAvatar(winner, nextTransforms[winner.id])
@@ -672,7 +697,7 @@ function normalizeSharedAgentAvatarWorldState(args: {
       return window
     }
 
-    const winner = winnerByType.get(window.agentType)
+    const winner = winnerByKey.get(sharedAgentAvatarGroupKey(window.agentType, window.ownerId))
     if (!winner) {
       if (window.linkedAvatarId && remappedAvatarIds.has(window.linkedAvatarId)) {
         changed = true
@@ -1338,7 +1363,13 @@ export const useOasisStore = create<OasisState>((set, get) => {
     avatarUrl: string | null,
     options?: { preferredWindowId?: string | null },
   ): string | null => {
-    const existingAvatar = get().placedAgentAvatars.find(entry => entry.agentType === agentType) || null
+    const preferredWindowOwner = options?.preferredWindowId
+      ? get().placedAgentWindows.find(entry => entry.id === options.preferredWindowId)?.ownerId
+      : undefined
+    const ownerId = preferredWindowOwner || getViewerUserIdClient()
+    const existingAvatar = get().placedAgentAvatars.find(entry =>
+      entry.agentType === agentType && sameAgentOwner(entry.ownerId, ownerId)
+    ) || null
 
     if (!avatarUrl) {
       if (!existingAvatar) return null
@@ -1349,7 +1380,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         delete nextAudio[existingAvatar.id]
         return {
           placedAgentWindows: state.placedAgentWindows.map(entry =>
-            entry.agentType === agentType
+            entry.agentType === agentType && sameAgentOwner(entry.ownerId, ownerId)
               ? { ...entry, linkedAvatarId: undefined, anchorMode: 'detached' }
               : entry,
           ),
@@ -1372,7 +1403,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     if (existingAvatar) {
       set(state => ({
         placedAgentWindows: state.placedAgentWindows.map(entry => {
-          if (entry.agentType !== agentType) return entry
+          if (entry.agentType !== agentType || !sameAgentOwner(entry.ownerId, ownerId)) return entry
           const shouldSnapTarget = options?.preferredWindowId === entry.id
           return {
             ...entry,
@@ -1383,7 +1414,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
           }
         }),
         placedAgentAvatars: state.placedAgentAvatars
-          .filter(entry => entry.id === existingAvatar.id || entry.agentType !== agentType)
+          .filter(entry => entry.id === existingAvatar.id || entry.agentType !== agentType || !sameAgentOwner(entry.ownerId, ownerId))
           .map(entry =>
             entry.id === existingAvatar.id
               ? {
@@ -1394,6 +1425,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
                   position: entry.position || spawn.position,
                   rotation: entry.rotation || spawn.rotation,
                   scale: entry.scale || spawn.scale,
+                  ownerId,
                 }
               : entry,
           ),
@@ -1409,17 +1441,10 @@ export const useOasisStore = create<OasisState>((set, get) => {
     // ░▒▓ their body by this fixed name. A timestamp suffix orphaned older    ▓▒░
     // ░▒▓ bodies instead of replacing them (now handled by existingAvatar     ▓▒░
     // ░▒▓ branch above — but the create path must use the same stable form). ▓▒░
-    const avatarId = `agent-avatar-${agentType}`
-    // Inherit ownerId from the preferred window if one was provided; otherwise
-    // stamp the current viewer. Shared singletons (Hermes/Merlin/etc.) are
-    // claimed by the user who first conjures them.
-    const preferredWindowOwner = options?.preferredWindowId
-      ? get().placedAgentWindows.find(entry => entry.id === options.preferredWindowId)?.ownerId
-      : undefined
-    const newAvatarOwnerId = preferredWindowOwner || getViewerUserIdClient()
+    const avatarId = `agent-avatar-${agentType}-${safeAgentOwnerIdSegment(ownerId)}`
     set(state => ({
       placedAgentWindows: state.placedAgentWindows.map(entry => {
-        if (entry.agentType !== agentType) return entry
+        if (entry.agentType !== agentType || !sameAgentOwner(entry.ownerId, ownerId)) return entry
         const shouldSnapTarget = options?.preferredWindowId === entry.id
         return {
           ...entry,
@@ -1430,7 +1455,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         }
       }),
       placedAgentAvatars: [
-        ...state.placedAgentAvatars.filter(entry => entry.agentType !== agentType),
+        ...state.placedAgentAvatars.filter(entry => entry.agentType !== agentType || !sameAgentOwner(entry.ownerId, ownerId)),
         {
           id: avatarId,
           agentType,
@@ -1439,7 +1464,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
           rotation: spawn.rotation,
           scale: spawn.scale,
           label: defaultAgentAvatarLabel(agentType),
-          ownerId: newAvatarOwnerId,
+          ownerId,
         },
       ],
     }))
@@ -3542,12 +3567,20 @@ export const useOasisStore = create<OasisState>((set, get) => {
     set((state) => ({ objectMeshStats: { ...state.objectMeshStats, [id]: stats } }))
   },
   setMoveTarget: (id, target) => {
+    let moveSpeed = 3
     set((state) => {
       const existing = state.behaviors[id] || { movement: { type: 'static' as const }, visible: true }
+      moveSpeed = existing.moveSpeed || 3
       return {
-        behaviors: { ...state.behaviors, [id]: { ...existing, moveTarget: target, moveSpeed: existing.moveSpeed || 3 } },
+        behaviors: { ...state.behaviors, [id]: { ...existing, moveTarget: target, moveSpeed } },
       }
     })
+    worldMutationBus.broadcast({
+      kind: 'behavior_updated',
+      payload: { id, updates: { moveTarget: target, moveSpeed } as Partial<ObjectBehavior> & { moveTarget: [number, number, number] } },
+    })
+    worldMutationBus.broadcast({ kind: 'march_order_vfx', payload: { position: target } })
+    setTimeout(() => get().saveWorldState(), 100)
   },
   clearMoveTarget: (id) => {
     set((state) => {
@@ -4221,7 +4254,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     const ownerId = window.ownerId || getViewerUserIdClient()
     set(state => {
       const sharedAvatar = isSharedAgentAvatarType(window.agentType)
-        ? state.placedAgentAvatars.find(entry => entry.agentType === window.agentType) || null
+        ? state.placedAgentAvatars.find(entry => entry.agentType === window.agentType && sameAgentOwner(entry.ownerId, ownerId)) || null
         : null
       return ({
       placedAgentWindows: [
@@ -4248,7 +4281,16 @@ export const useOasisStore = create<OasisState>((set, get) => {
   },
   removeAgentWindow: (id) => {
     if (!canWriteCurrentWorld()) return
-    if (!get().placedAgentWindows.some(window => window.id === id)) return
+    const removedWindowBeforeDelete = get().placedAgentWindows.find(window => window.id === id)
+    if (!removedWindowBeforeDelete) return
+    const viewerUserId = getViewerUserIdClient()
+    if (
+      removedWindowBeforeDelete.ownerId
+      && removedWindowBeforeDelete.ownerId !== viewerUserId
+      && PRIVATE_AGENT_WINDOW_TYPES.has(removedWindowBeforeDelete.agentType)
+    ) {
+      return
+    }
     let linkedAvatarIds: string[] = []
     set(state => {
       const removedWindow = state.placedAgentWindows.find(w => w.id === id)
@@ -4279,6 +4321,15 @@ export const useOasisStore = create<OasisState>((set, get) => {
         inspectedObjectId: state.inspectedObjectId === id || linkedAvatarIdSet.has(state.inspectedObjectId || '') ? null : state.inspectedObjectId,
       }
     })
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('oasis:agent-window-removed', {
+        detail: {
+          id,
+          agentType: removedWindowBeforeDelete.agentType,
+          ownerId: removedWindowBeforeDelete.ownerId,
+        },
+      }))
+    }
     worldMutationBus.broadcast({ kind: 'object_removed', payload: { id, linkedAvatarIds } })
     setTimeout(() => get().saveWorldState(), 100)
   },
@@ -4291,7 +4342,16 @@ export const useOasisStore = create<OasisState>((set, get) => {
   },
   removeAgentAvatar: (id) => {
     if (!canWriteCurrentWorld()) return
-    if (!get().placedAgentAvatars.some(avatar => avatar.id === id)) return
+    const removedAvatar = get().placedAgentAvatars.find(avatar => avatar.id === id)
+    if (!removedAvatar) return
+    const viewerUserId = getViewerUserIdClient()
+    if (
+      removedAvatar.ownerId
+      && removedAvatar.ownerId !== viewerUserId
+      && PRIVATE_AGENT_WINDOW_TYPES.has(removedAvatar.agentType)
+    ) {
+      return
+    }
     const affectedWindowIds = get().placedAgentWindows
       .filter(window => window.linkedAvatarId === id)
       .map(window => window.id)

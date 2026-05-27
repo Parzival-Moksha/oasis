@@ -30,7 +30,7 @@ export const AgentWindowSurface = memo(function AgentWindowSurface({ win }: { wi
       content = <CodexWindowContent windowId={win.id} initialSessionId={win.sessionId} windowBlur={win.windowBlur ?? 0} />
       break
     case 'gemini':
-      content = <GeminiLivePanel isOpen embedded hideCloseButton onClose={() => {}} />
+      content = <GeminiLivePanel isOpen embedded hideCloseButton onClose={() => {}} windowId={win.id} />
       break
     case 'anorak-pro':
       content = <AnorakProPanel isOpen embedded hideCloseButton onClose={() => {}} />
@@ -51,7 +51,7 @@ export const AgentWindowSurface = memo(function AgentWindowSurface({ win }: { wi
       content = <MerlinPanel isOpen embedded hideCloseButton onClose={() => {}} />
       break
     case 'realtime':
-      content = <RealtimePanel isOpen embedded hideCloseButton onClose={() => {}} />
+      content = <RealtimePanel isOpen embedded hideCloseButton onClose={() => {}} windowId={win.id} />
       break
     case 'npc':
       content = <RealtimePanel isOpen embedded hideCloseButton onClose={() => {}} npcId={win.npcId || 'quest-zero-fire-guardian'} windowId={win.id} />

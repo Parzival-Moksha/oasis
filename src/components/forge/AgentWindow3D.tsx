@@ -66,7 +66,7 @@ function FocusPrompt({ visible, label }: { visible: boolean; label: string }) {
           animation: 'focusPromptPulse 1.5s ease-in-out infinite',
         }}
       >
-        HIT ENTER · {label}
+        HIT N · {label}
       </div>
       <style>{`
         @keyframes focusPromptPulse {

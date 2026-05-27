@@ -12,7 +12,7 @@
 
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useOasisStore } from '../../../../store/oasisStore'
 import { usePricing } from '../../../../hooks/usePricing'
 import { awardXp } from '../../../../hooks/useXp'
@@ -70,6 +70,7 @@ export function GeneratePicBody({
   const [selectedModel, setSelectedModel] = useState<string>('nano-banana-2')
   const [buildingMode, setBuildingMode] = useState(defaultBuildingMode)
   const [inFlight, setInFlight] = useState<InFlightImage[]>([])
+  const [progressNow, setProgressNow] = useState(() => Date.now())
   const [error, setError] = useState<string | null>(null)
   const [expandNew, setExpandNew] = useState(defaultExpandNew)
   const [expandGallery, setExpandGallery] = useState(defaultExpandGallery)
@@ -84,6 +85,12 @@ export function GeneratePicBody({
   const placedCatalogAssets = useOasisStore(s => s.placedCatalogAssets)
   const { pricing } = usePricing()
   const imagineCost = pricing['imagine'] ?? 0.05
+
+  useEffect(() => {
+    if (inFlight.length === 0) return
+    const id = window.setInterval(() => setProgressNow(Date.now()), 250)
+    return () => window.clearInterval(id)
+  }, [inFlight.length])
 
   const handleGenerate = useCallback(async () => {
     const text = prompt.trim()
@@ -220,7 +227,11 @@ export function GeneratePicBody({
 
         {inFlight.length > 0 && (
           <div className="grid grid-cols-2 gap-1.5">
-            {inFlight.map(f => (
+            {inFlight.map(f => {
+              const progress = Math.max(4, Math.min(99, ((progressNow - f.startedAt) / 15000) * 100))
+              const circumference = 2 * Math.PI * 17
+              const dashOffset = circumference * (1 - progress / 100)
+              return (
               <div key={f.id} className="rounded-md border border-pink-500/20 bg-black/40 p-2">
                 {f.error ? (
                   <div className="flex flex-col items-center text-center">
@@ -233,7 +244,25 @@ export function GeneratePicBody({
                   </div>
                 ) : (
                   <div className="flex flex-col items-center text-center">
-                    <span className="text-xl mb-1 animate-pulse">{'\u{1F3A8}'}</span>
+                    <div className="relative mb-2 flex h-12 w-12 items-center justify-center">
+                      <svg className="absolute inset-0 h-12 w-12 -rotate-90 animate-spin" viewBox="0 0 44 44" aria-hidden="true">
+                        <circle cx="22" cy="22" r="17" fill="none" stroke="rgba(236,72,153,0.16)" strokeWidth="4" />
+                        <circle
+                          cx="22"
+                          cy="22"
+                          r="17"
+                          fill="none"
+                          stroke={accentColor}
+                          strokeWidth="4"
+                          strokeLinecap="round"
+                          strokeDasharray={circumference}
+                          strokeDashoffset={dashOffset}
+                        />
+                      </svg>
+                      <span className="text-[10px] font-black text-pink-100">{Math.round(progress)}%</span>
+                    </div>
+                    <span className="text-[10px] text-pink-100 font-mono">Image generating</span>
+                    <span className="text-[8px] text-pink-300/80 font-mono">hang on tight</span>
                     <span className="text-[9px] text-pink-300 font-mono line-clamp-2">{f.prompt}</span>
                     {f.buildingMode && (
                       <span className="text-[8px] text-amber-400/70 font-mono mt-0.5">building</span>
@@ -241,7 +270,7 @@ export function GeneratePicBody({
                   </div>
                 )}
               </div>
-            ))}
+            )})}
           </div>
         )}
       </CollapsibleSection>

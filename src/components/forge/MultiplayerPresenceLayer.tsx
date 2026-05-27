@@ -592,6 +592,8 @@ export function MultiplayerPresenceLayer() {
         upsertRemoteAgentAvatar(mutation.payload)
       } else if (mutation.kind === 'placement_vfx') {
         store.spawnPlacementVfx(mutation.payload.position, mutation.payload.typeOverride)
+      } else if (mutation.kind === 'march_order_vfx') {
+        store.spawnMarchOrderVfx(mutation.payload.position)
       } else if (mutation.kind === 'sky_changed') {
         store.applyRemoteSkyChange(mutation.payload.skyBackgroundId)
       } else if (mutation.kind === 'ground_changed') {

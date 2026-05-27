@@ -495,9 +495,10 @@ describe('OasisStore', () => {
       const avatarId = getState().assignHermesAvatar('/avatars/gallery/CoolAlien.vrm')
       const avatar = getState().placedAgentAvatars[0]
 
-      expect(avatarId).toBe('agent-avatar-hermes')
+      expect(avatarId).toBe('agent-avatar-hermes-local-user')
       expect(avatar.agentType).toBe('hermes')
       expect(avatar.avatar3dUrl).toBe('/avatars/gallery/CoolAlien.vrm')
+      expect(avatar.ownerId).toBe('local-user')
       expect(avatar.linkedWindowId).toBeUndefined()
     })
 
@@ -505,7 +506,7 @@ describe('OasisStore', () => {
       const avatarId = getState().assignHermesAvatar('/avatars/hermes.glb#vrm')
       const avatar = getState().placedAgentAvatars[0]
 
-      expect(avatarId).toBe('agent-avatar-hermes')
+      expect(avatarId).toBe('agent-avatar-hermes-local-user')
       expect(avatar.avatar3dUrl).toBe('/avatars/gallery/CoolAlien.vrm')
     })
 

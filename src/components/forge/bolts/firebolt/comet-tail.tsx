@@ -167,11 +167,17 @@ export function CometTailExplosionMesh({ explosion }: { explosion: CometTailExpl
 
 export function CometTailHitMarkerMesh({ marker }: { marker: CometTailHitMarker }) {
   const t = Math.max(0, Math.min(1, marker.age / marker.ttl))
+  const isXpMarker = /\bXP\b/i.test(marker.label)
+  const yOffset = isXpMarker ? 2.25 + t * 0.9 : 1.55 + t * 0.55
   return (
-    <group position={[marker.position[0], marker.position[1] + 1.55 + t * 0.55, marker.position[2]]}>
-      <Html transform sprite center distanceFactor={7} style={{ pointerEvents: 'none' }}>
+    <group position={[marker.position[0], marker.position[1] + yOffset, marker.position[2]]}>
+      <Html transform sprite center distanceFactor={isXpMarker ? 5 : 7} style={{ pointerEvents: 'none' }}>
         <div
-          className="rounded-md border border-orange-200/50 bg-black/75 px-2.5 py-1 text-center text-[10px] font-black uppercase tracking-[0.18em] text-orange-100 shadow-[0_0_22px_rgba(249,115,22,0.35)]"
+          className={
+            isXpMarker
+              ? 'rounded-md border border-yellow-100/70 bg-black/80 px-3.5 py-1.5 text-center text-[14px] font-black uppercase tracking-[0.16em] text-yellow-100 shadow-[0_0_30px_rgba(250,204,21,0.5)]'
+              : 'rounded-md border border-orange-200/50 bg-black/75 px-2.5 py-1 text-center text-[10px] font-black uppercase tracking-[0.18em] text-orange-100 shadow-[0_0_22px_rgba(249,115,22,0.35)]'
+          }
           style={{ opacity: Math.max(0, 1 - t) }}
         >
           {marker.label}

@@ -27,6 +27,26 @@ export function createPortalZeroReturnGate(sourceWorldId: string): PortalGate {
   }
 }
 
+function normalizePortalZeroReturnGate(gate: PortalGate, sourceWorldId: string): PortalGate {
+  const canonical = createPortalZeroReturnGate(sourceWorldId)
+  return {
+    ...gate,
+    id: canonical.id,
+    direction: canonical.direction,
+    sourceWorldId: canonical.sourceWorldId,
+    targetWorldId: canonical.targetWorldId,
+    targetWorldName: canonical.targetWorldName,
+    action: canonical.action,
+    label: canonical.label,
+    variant: gate.variant || canonical.variant,
+    position: gate.position || canonical.position,
+    rotationY: gate.rotationY ?? canonical.rotationY,
+    scale: gate.scale ?? canonical.scale,
+    width: gate.width || canonical.width,
+    height: gate.height || canonical.height,
+  }
+}
+
 export function upsertPortalZeroReturnGate(
   portalGates: PortalGate[] | undefined,
   sourceWorldId: string,
@@ -35,12 +55,22 @@ export function upsertPortalZeroReturnGate(
   if (sourceWorldId === WELCOME_HUB_WORLD_ID) return gates
 
   const returnGate = createPortalZeroReturnGate(sourceWorldId)
-  const hasReturnGate = gates.some(gate =>
-    gate.id === PORTAL_ZERO_RETURN_GATE_ID ||
-    gate.targetWorldId === WELCOME_HUB_WORLD_ID ||
-    (gate.action?.type === 'load_world' && gate.action.worldId === WELCOME_HUB_WORLD_ID),
-  )
-  return hasReturnGate
-    ? gates.map(gate => gate.id === PORTAL_ZERO_RETURN_GATE_ID ? { ...returnGate, ...gate } : gate)
+  let normalizedReturnGate = false
+  const nextGates: PortalGate[] = []
+  for (const gate of gates) {
+    const isReturnGate = gate.id === PORTAL_ZERO_RETURN_GATE_ID
+      || gate.targetWorldId === WELCOME_HUB_WORLD_ID
+      || (gate.action?.type === 'load_world' && gate.action.worldId === WELCOME_HUB_WORLD_ID)
+    if (!isReturnGate) {
+      nextGates.push(gate)
+      continue
+    }
+    if (normalizedReturnGate) continue
+    normalizedReturnGate = true
+    nextGates.push(normalizePortalZeroReturnGate(gate, sourceWorldId))
+  }
+
+  return normalizedReturnGate
+    ? nextGates
     : [...gates, returnGate]
 }

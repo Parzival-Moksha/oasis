@@ -430,8 +430,26 @@ export function RealtimePanel({
   const panelZIndex = useOasisStore(state => state.getPanelZIndex('realtime', 9998))
   const activeWorldId = useOasisStore(state => state.activeWorldId)
   const activeWorldName = useOasisStore(state => state.worldRegistry.find(world => world.id === state.activeWorldId)?.name || 'Current world')
-  const realtimeAvatar = useOasisStore(state => state.placedAgentAvatars.find(entry => entry.agentType === REALTIME_AGENT_TYPE) || null)
-  const merlinAvatar = useOasisStore(state => state.placedAgentAvatars.find(entry => entry.agentType === 'merlin') || null)
+  const realtimeAvatar = useOasisStore(state => {
+    const panelWindow = windowId ? state.placedAgentWindows.find(entry => entry.id === windowId) : null
+    const ownerId = panelWindow?.ownerId
+    const ownedAvatar = state.placedAgentAvatars.find(entry =>
+      entry.agentType === REALTIME_AGENT_TYPE
+      && (ownerId ? entry.ownerId === ownerId : !entry.ownerId)
+    ) || null
+    if (ownerId) return ownedAvatar
+    return ownedAvatar || state.placedAgentAvatars.find(entry => entry.agentType === REALTIME_AGENT_TYPE) || null
+  })
+  const merlinAvatar = useOasisStore(state => {
+    const panelWindow = windowId ? state.placedAgentWindows.find(entry => entry.id === windowId) : null
+    const ownerId = panelWindow?.ownerId
+    const ownedAvatar = state.placedAgentAvatars.find(entry =>
+      entry.agentType === 'merlin'
+      && (ownerId ? entry.ownerId === ownerId : !entry.ownerId)
+    ) || null
+    if (ownerId) return ownedAvatar
+    return ownedAvatar || state.placedAgentAvatars.find(entry => entry.agentType === 'merlin') || null
+  })
   const npcAvatar = useOasisStore(state => {
     if (!npcDefinition) return null
     return state.placedAgentAvatars.find(entry => entry.linkedWindowId === windowId)
@@ -953,6 +971,20 @@ export function RealtimePanel({
     window.addEventListener('oasis:realtime-disconnect-npc', handler)
     return () => window.removeEventListener('oasis:realtime-disconnect-npc', handler)
   }, [appendSystemMessage, disconnect, embedded, npcDefinition?.id, onClose])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ id?: string; agentType?: string }>).detail
+      const matchesWindow = windowId && detail?.id === windowId
+      const matchesAgentType = !windowId && (detail?.agentType === REALTIME_AGENT_TYPE || detail?.agentType === 'npc')
+      if (!matchesWindow && !matchesAgentType) return
+      disconnect({ keepDetail: true })
+      appendSystemMessage('Realtime conversation stopped because the agent was deleted.')
+    }
+    window.addEventListener('oasis:agent-window-removed', handler)
+    return () => window.removeEventListener('oasis:agent-window-removed', handler)
+  }, [appendSystemMessage, disconnect, windowId])
 
   const createFreshSession = useCallback(() => {
     if (!config) return
