@@ -487,10 +487,10 @@ function isPortalZeroDirectorySuppressedWorld(world: WorldMeta): boolean {
     || name.startsWith('demo ai-tinkerers')
 }
 
-function laneOffset(index: number): number {
+function laneOffset(index: number, spacingMultiplier = 1): number {
   const row = Math.floor(index / 2)
   const side = index % 2 === 0 ? -1 : 1
-  return side * (2.9 + row * 3.9)
+  return side * (2.9 + row * 3.9) * spacingMultiplier
 }
 
 function directoryPortalPose(kind: 'public' | 'ffa', index: number): { position: Vec3Tuple; rotationY: number } {
@@ -503,9 +503,10 @@ function directoryPortalPose(kind: 'public' | 'ffa', index: number): { position:
   }
 
   const column = Math.floor(index / 4)
+  const spacingMultiplier = 1.6
   return {
-    position: [laneOffset(index % 4), 0, 25.2 + column * 4.4],
-    rotationY: Math.PI,
+    position: [laneOffset(index % 4, spacingMultiplier), 0, 25.2 + column * 4.4 * spacingMultiplier],
+    rotationY: Math.PI + Math.PI / 12,
   }
 }
 

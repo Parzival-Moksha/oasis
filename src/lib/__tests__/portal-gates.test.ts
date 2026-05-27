@@ -106,7 +106,11 @@ describe('portal gate trigger helpers', () => {
 
   it('builds public and FFA directory gates behind the create portals', () => {
     const publicGate = buildWelcomeHubDirectoryPortalGates([world('world-public', 'public')], 'public')[0]
-    const ffaGate = buildWelcomeHubDirectoryPortalGates([world('world-ffa', 'public_edit')], 'ffa')[0]
+    const ffaGates = buildWelcomeHubDirectoryPortalGates([
+      world('world-ffa', 'public_edit'),
+      world('world-ffa-2', 'ffa'),
+    ], 'ffa')
+    const ffaGate = ffaGates[0]
 
     expect(publicGate).toMatchObject({
       id: 'portal-zero-public-world-world-public',
@@ -121,8 +125,10 @@ describe('portal gate trigger helpers', () => {
       targetWorldId: 'world-ffa',
       action: { type: 'load_world', worldId: 'world-ffa' },
     })
+    expect(ffaGate.position[0]).toBeCloseTo(-4.64)
+    expect(ffaGates[1].position[0] - ffaGate.position[0]).toBeCloseTo(9.28)
     expect(ffaGate.position[2]).toBeGreaterThan(19.8)
-    expect(ffaGate.rotationY).toBeCloseTo(Math.PI)
+    expect(ffaGate.rotationY).toBeCloseTo(Math.PI + Math.PI / 12)
   })
 
   it('backfills Conjure and live public/FFA portals into Portal Zero without duplicating existing targets', () => {

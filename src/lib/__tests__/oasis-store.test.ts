@@ -35,6 +35,7 @@ import { useOasisStore } from '../../store/oasisStore'
 import type { AgentWindowType, AgentWindow } from '../../store/oasisStore'
 import { getDefaultAgentAvatarUrl } from '../../lib/agent-avatar-catalog'
 import { debouncedSaveWorld, loadWorld, saveWorld } from '../../lib/forge/world-persistence'
+import { WELCOME_HUB_WORLD_ID } from '../../lib/portal-gates'
 import type { SpatialWebObject } from '../../lib/spatial-web'
 import { createGoogleFormsAltarObject } from '../../lib/spatial-web-presets'
 
@@ -83,6 +84,7 @@ function resetStore() {
     viewingWorldMeta: null,
     placedCatalogAssets: [],
     portalGates: [],
+    localPortalGates: [],
     spatialWebObjects: [],
     paintStrokes: [],
     text3dObjects: [],
@@ -1392,6 +1394,64 @@ describe('OasisStore', () => {
         lastEvent: 'submit',
       })
       expect(getState().worldRegistry.some(world => world.id === 'world-generated-form')).toBe(true)
+    })
+
+    it('opens Portal Zero Google Forms results as personal local portals', async () => {
+      const originalFetch = globalThis.fetch
+      const originalWindow = (globalThis as any).window
+      const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        ok: true,
+        message: 'Oasis world ready.',
+        data: {
+          worldId: 'world-generated-form',
+          worldName: 'Hackathon RSVP',
+          worldUrl: 'http://localhost:4516/w/world-generated-form',
+          qrUrl: 'https://qr.example/form',
+          visibility: 'unlisted',
+        },
+      }), {
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      globalThis.fetch = fetchMock as unknown as typeof fetch
+      ;(globalThis as any).window = {
+        prompt: vi.fn().mockReturnValue('https://forms.gle/demo'),
+        setTimeout,
+      }
+      const altar = createGoogleFormsAltarObject({
+        id: 'forms-altar',
+        position: [-6.2, 1.2, -4.5],
+        rotation: [0, 0.56, 0],
+      })
+      useOasisStore.setState({
+        activeWorldId: WELCOME_HUB_WORLD_ID,
+        spatialWebObjects: [altar],
+        portalGates: [],
+        localPortalGates: [],
+      })
+
+      try {
+        await getState().interactSpatialWebObject('forms-altar')
+        await vi.advanceTimersByTimeAsync(3000)
+      } finally {
+        globalThis.fetch = originalFetch
+        ;(globalThis as any).window = originalWindow
+      }
+
+      expect(getState().portalGates).toEqual([])
+      expect(getState().localPortalGates).toEqual([
+        expect.objectContaining({
+          id: 'local-portal-forms-altar-generated-world',
+          sourceWorldId: WELCOME_HUB_WORLD_ID,
+          targetWorldId: 'world-generated-form',
+          targetWorldName: 'Hackathon RSVP',
+          action: expect.objectContaining({ type: 'load_world', worldId: 'world-generated-form' }),
+        }),
+      ])
+      expect(getState().localPortalGates[0].position[2]).toBeLessThan(altar.position[2])
+      expect(getState().spatialWebObjects[0]).toMatchObject({
+        generatedWorldId: 'world-generated-form',
+        lastEvent: 'submit',
+      })
     })
 
     it('does not submit the same spatial form button twice', async () => {

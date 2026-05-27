@@ -535,6 +535,19 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
   }, [])
 
   // ─═̷─═̷─🎤 CAST ─═̷─═̷─🎤
+  const playCastSound = useCallback((spell: CombatSpellId) => {
+    const audio = useAudioManager.getState()
+    const url = resolveSpellSoundUrl(settings.spellSounds?.[spell])
+    if (url) {
+      audio.playUrl(url, 0.85)
+      return
+    }
+
+    if (spell === 'firebolt') audio.play('fireboltVoice')
+    else if (spell === 'lightning-bolt') audio.play('fireboltCast')
+    else if (spell === 'ice-bolt') audio.play('buttonClick')
+  }, [settings.spellSounds])
+
   const castBolt = useCallback(async (forcedSpell?: CombatSpellId) => {
     if (!enabled || castingRef.current || !canCastBolt()) return
     const now = performance.now()
@@ -567,19 +580,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
 
       const { origin, direction } = resolveCastOriginAndDirection(camera)
 
-      const audio = useAudioManager.getState()
-      // Per-spell override from Config → Sound → Spell Sounds takes precedence.
-      // Manifest loads in background on first cast; null on miss → fall through.
-      const overrideId = settings.spellSounds?.[spell]
-      const overrideUrl = resolveSpellSoundUrl(overrideId)
-      if (overrideUrl) {
-        audio.playUrl(overrideUrl, 0.85)
-      } else {
-        // Distinct cast sound per spell (default profile).
-        if (spell === 'firebolt') audio.play('fireboltVoice')
-        else if (spell === 'lightning-bolt') audio.play('fireboltCast')
-        else if (spell === 'ice-bolt') audio.play('buttonClick')
-      }
+      playCastSound(spell)
 
       setPlayerSpellCasting(true)
       window.setTimeout(() => setPlayerSpellCasting(false), BOLT_CAST_ANIMATION_MS)
@@ -642,7 +643,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     }
   }, [
     camera, enabled, settings.fireboltDesign, settings.lightningBoltDesign, settings.iceBoltDesign,
-    settings.spellSounds,
+    playCastSound,
     spawnFireboltA, spawnFireboltB, spawnFireboltC,
     spawnLightningA, spawnLightningB, spawnLightningC, spawnLightningD,
     spawnIceA, spawnIceB, spawnIceC,
@@ -664,11 +665,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     const unsubscribe = onRemoteBolt((bolt: PvpRemoteBolt) => {
       const origin = new THREE.Vector3(bolt.origin[0], bolt.origin[1], bolt.origin[2])
       const direction = new THREE.Vector3(bolt.direction[0], bolt.direction[1], bolt.direction[2]).normalize()
-      const audio = useAudioManager.getState()
-      // Same audio cue as local cast — peers should hear other wizards casting.
-      if (bolt.spell === 'firebolt') audio.play('fireboltVoice')
-      else if (bolt.spell === 'lightning-bolt') audio.play('fireboltCast')
-      else if (bolt.spell === 'ice-bolt') audio.play('buttonClick')
+      playCastSound(bolt.spell)
 
       // Dispatch to the per-design spawner. Design letter is room-validated
       // upstream so we just defensively fall through to A on garbage values.
@@ -690,6 +687,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     })
     return unsubscribe
   }, [
+    playCastSound,
     spawnFireboltA, spawnFireboltB, spawnFireboltC,
     spawnLightningA, spawnLightningB, spawnLightningC, spawnLightningD,
     spawnIceA, spawnIceB, spawnIceC,

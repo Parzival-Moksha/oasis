@@ -56,7 +56,7 @@ export interface OasisSettings {
   spatialAudioEnabled: boolean
   // ─═̷─ Per-spell sound selection. Key = spell ID (from src/lib/spellbook.ts),
   // value = the sound `id` from public/audio/spells/manifest.json. Missing
-  // entries fall back to the default cast/impact sounds in useAudioManager.
+  // entries are merged with DEFAULT_SPELL_SOUNDS at settings load time.
   // Lets the player customize "what does Firebolt sound like?" etc. ─═̷─
   spellSounds: Partial<Record<string, string>>
   // ─═̷─═̷─🅰 FONTS ─═̷─═̷─🅰

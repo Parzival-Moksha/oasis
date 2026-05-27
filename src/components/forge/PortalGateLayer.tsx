@@ -442,7 +442,8 @@ function PortalGateWarmup({ gates }: { gates: PortalGate[] }) {
 export function PortalGateLayer() {
   const { camera } = useThree()
   const activeWorldId = useOasisStore(s => s.activeWorldId)
-  const portalGates = useOasisStore(s => s.portalGates)
+  const persistentPortalGates = useOasisStore(s => s.portalGates)
+  const localPortalGates = useOasisStore(s => s.localPortalGates)
   const worldRegistry = useOasisStore(s => s.worldRegistry)
   const transforms = useOasisStore(s => s.transforms)
   const selectedObjectId = useOasisStore(s => s.selectedObjectId)
@@ -457,6 +458,11 @@ export function PortalGateLayer() {
   const gatesRef = useRef<PortalGate[]>([])
   const [, setRuntimeRevealVersion] = useState(0)
   const [revealBursts, setRevealBursts] = useState<PortalRevealBurst[]>([])
+
+  const portalGates = useMemo(() => {
+    const activeLocalGates = localPortalGates.filter(gate => !gate.sourceWorldId || gate.sourceWorldId === activeWorldId)
+    return [...persistentPortalGates, ...activeLocalGates]
+  }, [activeWorldId, localPortalGates, persistentPortalGates])
 
   const handleTransformChange = useCallback((
     id: string,
@@ -724,6 +730,7 @@ export function PortalGateLayer() {
       ))}
       {visibleGates.map(gate => {
         const baseGate = portalGates.find(portal => portal.id === gate.id) || gate
+        const isLocalGate = localPortalGates.some(portal => portal.id === gate.id)
         const childGate: PortalGate = {
           ...gate,
           position: [0, 0, 0],
@@ -743,6 +750,7 @@ export function PortalGateLayer() {
             initialPosition={gate.position}
             initialRotation={[0, gate.rotationY ?? 0, 0]}
             initialScale={gate.scale ?? 1}
+            allowTransform={!isLocalGate}
           >
             <PortalGateVisual gate={childGate} />
           </SelectableWrapper>

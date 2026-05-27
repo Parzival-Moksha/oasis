@@ -10,6 +10,19 @@ import catalogExtras from '../../../data/asset-catalog-extras.json'
 // DEFAULT SETTINGS
 // ═══════════════════════════════════════════════════════════════════════════════
 
+export const DEFAULT_SPELL_SOUNDS: NonNullable<OasisSettings['spellSounds']> = {
+  firebolt: 'mixkit-explosion-hit',
+  'lightning-bolt': 'mixkit-spellcaster-fairy-swoosh',
+  'ice-bolt': 'mixkit-icicles-spell-whoosh',
+  'brush-wand': 'mixkit-fairy-glitter',
+  'catalog-place': 'mixkit-spellcaster-fairy-swoosh',
+  'text-to-3d': 'mixkit-explosion-hit',
+  'text-3d': 'mixkit-explosion-hit',
+  'text-to-pic': 'mixkit-magic-sparkle-whoosh',
+  'text-to-pic-building': 'mixkit-magic-sparkle-whoosh',
+  'text-to-music': 'mixkit-choir-magic-shine',
+}
+
 export const defaultSettings: OasisSettings = {
   bloomEnabled: true,
   bloomIntensity: 0.4,
@@ -42,8 +55,8 @@ export const defaultSettings: OasisSettings = {
   musicVolume: 0.6,
   ambientVolume: 0.5,
   spatialAudioEnabled: true,
-  // No per-spell overrides by default — useAudioManager's hardcoded keys win.
-  spellSounds: {},
+  // Default sound IDs come from public/audio/spells/manifest.json.
+  spellSounds: { ...DEFAULT_SPELL_SOUNDS },
   // ─═̷─ Default to Cinzel — fantasy serif suits the spellbook's vibe and
   // looks dramatically better than the prior system-mono fallback. ─═̷─
   uiFont: 'cinzel',

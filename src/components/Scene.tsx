@@ -36,7 +36,7 @@ installWorldLoadProgress()
 import { useOasisStore } from '../store/oasisStore'
 
 import type { OasisSettings } from './scene-lib'
-import { defaultSettings, SKY_BACKGROUNDS } from './scene-lib'
+import { defaultSettings, DEFAULT_SPELL_SOUNDS, SKY_BACKGROUNDS } from './scene-lib'
 import { SettingsContext, DragContext } from './scene-lib'
 import { ForgeRealm } from './realms/ForgeRealm'
 import PanoramaCapture from './forge/PanoramaCapture'
@@ -71,6 +71,7 @@ import { preloadPortalRevealRoll } from '@/lib/portal-transition-settings'
 import { sampleTerrainHeightAt } from '@/lib/forge/terrain-brush'
 import { CameraController as CameraControllerComponent, sprintRef, FPS_KEYBOARD_MAP } from './CameraController'
 import { useAudioManager } from '@/lib/audio-manager'
+import { preloadSpellSoundManifest, resolveSpellSoundUrl } from '@/lib/spell-sounds'
 import { writeBrowserStorage } from '@/lib/browser-storage'
 import { runLocalStorageAgentCacheMigration } from '@/lib/localstorage-agent-cache-migration'
 import { isProbablyMobileDevice } from '@/lib/mobile-controls'
@@ -348,6 +349,20 @@ function getDeviceDefaultSettings(): OasisSettings {
     bloomEnabled: false,
     vignetteEnabled: false,
     ...hostedDefaults,
+  }
+}
+
+function mergeSettingsWithDefaults(deviceDefaults: OasisSettings, saved: Partial<OasisSettings>): OasisSettings {
+  const savedSpellSounds = saved.spellSounds && typeof saved.spellSounds === 'object'
+    ? saved.spellSounds
+    : {}
+  return {
+    ...deviceDefaults,
+    ...saved,
+    spellSounds: {
+      ...DEFAULT_SPELL_SOUNDS,
+      ...savedSpellSounds,
+    },
   }
 }
 
@@ -1261,8 +1276,8 @@ export default function Scene() {
       const saved = localStorage.getItem('oasis-settings')
       if (saved) {
         try {
-          const parsed = JSON.parse(saved)
-          const next = { ...deviceDefaults, ...parsed }
+          const parsed = JSON.parse(saved) as Partial<OasisSettings>
+          const next = mergeSettingsWithDefaults(deviceDefaults, parsed)
           if (isProbablyMobileDevice() && localStorage.getItem(MOBILE_POSTFX_DEFAULTS_KEY) !== '1') {
             next.bloomEnabled = false
             next.vignetteEnabled = false
@@ -1281,6 +1296,7 @@ export default function Scene() {
 
   useEffect(() => {
     void runLocalStorageAgentCacheMigration()
+    void preloadSpellSoundManifest()
   }, [])
 
   useEffect(() => {
@@ -1563,9 +1579,20 @@ export default function Scene() {
     setAgentLauncherOpen(false)
   }
 
+  const playSpellbookSound = (spellId: SpellId) => {
+    const audio = useAudioManager.getState()
+    if (spellId === 'firebolt' || spellId === 'lightning-bolt' || spellId === 'ice-bolt') {
+      audio.play('buttonClick')
+      return
+    }
+    const url = resolveSpellSoundUrl(settings.spellSounds?.[spellId])
+    if (url) audio.playUrl(url, 0.82)
+    else audio.play('buttonClick')
+  }
+
   const handleSpellbookCast = (spellId: SpellId) => {
     const store = useOasisStore.getState()
-    useAudioManager.getState().play('buttonClick')
+    playSpellbookSound(spellId)
     store.setSelectedSpellId(spellId)
     setSpellbookOpen(false)
 

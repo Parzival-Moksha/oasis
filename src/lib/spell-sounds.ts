@@ -17,6 +17,15 @@ interface SpellSoundsManifest {
 }
 
 const MANIFEST_URL = '/audio/spells/manifest.json'
+const FALLBACK_SOUND_FILES: Record<string, string> = {
+  'mixkit-choir-magic-shine': '/audio/spells/mixkit-choir-magic-shine-658.ogg',
+  'mixkit-explosion-hit': '/audio/spells/mixkit-explosion-hit-1704.ogg',
+  'mixkit-fairy-glitter': '/audio/spells/mixkit-fairy-glitter-867.ogg',
+  'mixkit-fairy-sparkle-whoosh': '/audio/spells/mixkit-fairy-sparkle-whoosh-869.ogg',
+  'mixkit-icicles-spell-whoosh': '/audio/spells/mixkit-icicles-spell-whoosh-881.ogg',
+  'mixkit-magic-sparkle-whoosh': '/audio/spells/mixkit-magic-sparkle-whoosh-2350.ogg',
+  'mixkit-spellcaster-fairy-swoosh': '/audio/spells/mixkit-spellcaster-fairy-swoosh-1463.ogg',
+}
 
 let cache: Map<string, string> | null = null
 let loadPromise: Promise<Map<string, string>> | null = null
@@ -64,9 +73,10 @@ export function preloadSpellSoundManifest(): Promise<Map<string, string>> {
  */
 export function resolveSpellSoundUrl(soundId: string | undefined | null): string | null {
   if (!soundId) return null
+  const fallback = FALLBACK_SOUND_FILES[soundId] ?? null
   if (!cache) {
     void preloadSpellSoundManifest()
-    return null
+    return fallback
   }
-  return cache.get(soundId) ?? null
+  return cache.get(soundId) ?? fallback
 }

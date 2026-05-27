@@ -2,12 +2,12 @@
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SPELL SOUNDS SELECTOR — pick a custom sound per spell from manifest.json
-// Wires into settings.spellSounds[spellId]; actual playback hookup is a
-// follow-up task (see CLAUDE notes).
+// Wires into settings.spellSounds[spellId]; playback reads the same settings.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { useContext, useEffect, useMemo, useState } from 'react'
 import { SettingsContext } from '@/components/scene-lib/contexts'
+import { DEFAULT_SPELL_SOUNDS } from '@/components/scene-lib/constants'
 import { SPELL_IDS, SPELL_DEFS, SPELLBOOK_PAGES, type SpellbookPageId, type SpellId } from '@/lib/spellbook'
 
 interface ManifestEntry {
@@ -89,7 +89,9 @@ export function SpellSoundsSelector() {
       if (typeof v === 'string') next[k] = v
     }
     if (!soundId) {
-      delete next[spellId]
+      const defaultSound = DEFAULT_SPELL_SOUNDS[spellId]
+      if (defaultSound) next[spellId] = defaultSound
+      else delete next[spellId]
     } else {
       next[spellId] = soundId
     }
@@ -124,7 +126,7 @@ export function SpellSoundsSelector() {
                 <div className="space-y-1 px-2 pb-2 pt-0.5">
                   {spellIds.map(spellId => {
                     const def = SPELL_DEFS[spellId]
-                    const selected = settings.spellSounds?.[spellId] || ''
+                    const selected = settings.spellSounds?.[spellId] || DEFAULT_SPELL_SOUNDS[spellId] || ''
                     const selectedEntry = entries.find(e => e.id === selected)
                     return (
                       <div key={spellId} className="flex items-center gap-1.5">
