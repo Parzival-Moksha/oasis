@@ -513,21 +513,37 @@ function ModeSwitchLabel() {
 function DesktopKeyHints() {
   const mobileOasis = useIsMobileOasis()
   const pointerLocked = useInputManager(s => s.pointerLocked)
+  const selectedObjectId = useOasisStore(s => s.selectedObjectId)
+  const hasAgentWindows = useOasisStore(s => s.placedAgentWindows.length > 0)
+  const hasSlides = useOasisStore(s => s.placedCatalogAssets.some(asset => Boolean(asset.imageUrl || asset.videoUrl)))
   if (mobileOasis) return null
 
+  const hint = (key: string, label: string, options: { dim?: boolean } = {}) => (
+    <div
+      key={`${key}-${label}`}
+      className="flex items-center justify-between gap-3 rounded-md border border-white/10 bg-black/45 px-2.5 py-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.35)] backdrop-blur"
+      style={{ opacity: options.dim ? 0.62 : 1 }}
+    >
+      <span className="rounded bg-white/12 px-1.5 py-0.5 font-mono text-[11px] text-white">{key}</span>
+      <span className="text-right">{label}</span>
+    </div>
+  )
+
   return (
-    <div className="fixed right-4 top-4 z-[96] pointer-events-none flex gap-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-100/82 max-[700px]:hidden">
-      <div className="flex items-center gap-1 rounded-md border border-white/10 bg-black/45 px-2 py-1 shadow-[0_8px_24px_rgba(0,0,0,0.35)] backdrop-blur">
-        <span className="rounded bg-white/12 px-1.5 py-0.5 font-mono text-[11px] text-white">C</span>
-        <span>Camera</span>
-      </div>
-      <div
-        className="flex items-center gap-1 rounded-md border border-white/10 bg-black/45 px-2 py-1 shadow-[0_8px_24px_rgba(0,0,0,0.35)] backdrop-blur"
-        style={{ opacity: pointerLocked ? 1 : 0.68 }}
-      >
-        <span className="rounded bg-white/12 px-1.5 py-0.5 font-mono text-[11px] text-white">Esc</span>
-        <span>Mouse</span>
-      </div>
+    <div className="fixed right-4 top-4 z-[96] pointer-events-none flex w-[154px] flex-col gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-100/82 max-[700px]:hidden">
+      {selectedObjectId && (
+        <div className="mb-1 rounded-md border border-cyan-200/15 bg-cyan-950/35 px-2 py-1 text-[9px] text-cyan-100/82 shadow-[0_8px_24px_rgba(0,0,0,0.32)] backdrop-blur">
+          Selected
+        </div>
+      )}
+      {selectedObjectId && hint('R', 'Move')}
+      {selectedObjectId && hint('T', 'Rotate')}
+      {selectedObjectId && hint('Y', 'Size')}
+      {hint('C', 'Camera')}
+      {hint('Esc', 'Mouse', { dim: !pointerLocked })}
+      {hint('X', 'Dance')}
+      {hint('N', 'Focus Agent', { dim: !hasAgentWindows })}
+      {hint('PgDn', 'Next Pic', { dim: !hasSlides })}
     </div>
   )
 }

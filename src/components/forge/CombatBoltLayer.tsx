@@ -31,6 +31,7 @@ import { PLAYER_BASE_STATS } from '@/lib/player-progression'
 import { useAudioManager } from '@/lib/audio-manager'
 import { setPlayerSpellCasting } from '@/lib/player-avatar-runtime'
 import { preloadSpellSoundManifest, resolveSpellSoundUrl } from '@/lib/spell-sounds'
+import { getAudioListener } from '@/components/CameraController'
 import { useOasisStore } from '@/store/oasisStore'
 import { getPvpEnabled, onHitAward, onRemoteBolt, sendPvpCast, sendPvpReportHit, type PvpHitAwardEvent, type PvpRemoteBolt } from '@/lib/pvp-bridge'
 import type { OasisSettings } from '@/components/scene-lib/types'
@@ -199,6 +200,81 @@ type ActiveDesignTag =
   | 'ice-C'
 
 // ─═̷─═̷─🎯 COMBAT BOLT LAYER COMPONENT ─═̷─═̷─🎯
+const BOLT_SPATIAL_RANGE_M = 20
+const EXPLOSION_SPATIAL_RANGE_M = 30
+const SPATIAL_CAST_SOUND_TTL_S = 1.6
+const SPATIAL_EXPLOSION_SOUND_TTL_S = 2.4
+const EXPLOSION_SOUND_ID = 'mixkit-explosion-hit'
+
+interface SpatialSoundEvent {
+  id: string
+  url: string
+  position: [number, number, number]
+  age: number
+  ttl: number
+  maxDistance: number
+  volumeMultiplier: number
+  followId?: string
+}
+
+const spatialAudioBufferCache = new Map<string, Promise<AudioBuffer | null>>()
+
+function loadSpatialAudioBuffer(url: string): Promise<AudioBuffer | null> {
+  const existing = spatialAudioBufferCache.get(url)
+  if (existing) return existing
+  const promise = new Promise<AudioBuffer | null>((resolve) => {
+    new THREE.AudioLoader().load(
+      url,
+      buffer => resolve(buffer),
+      undefined,
+      () => resolve(null),
+    )
+  })
+  spatialAudioBufferCache.set(url, promise)
+  return promise
+}
+
+function SpatialSoundSource({ sound }: { sound: SpatialSoundEvent }) {
+  const groupRef = useRef<THREE.Group>(null)
+
+  useEffect(() => {
+    const listener = getAudioListener()
+    const group = groupRef.current
+    const audioState = useAudioManager.getState()
+    if (!listener || !group || audioState.muted || audioState.volume <= 0) return
+
+    let cancelled = false
+    let positional: THREE.PositionalAudio | null = null
+
+    void listener.context.resume().catch(() => {})
+    void loadSpatialAudioBuffer(sound.url).then(buffer => {
+      if (cancelled || !buffer || !groupRef.current) return
+      positional = new THREE.PositionalAudio(listener)
+      positional.setBuffer(buffer)
+      positional.setDistanceModel('linear')
+      positional.setRefDistance(0.01)
+      positional.setMaxDistance(sound.maxDistance)
+      positional.setRolloffFactor(1)
+      positional.setVolume(audioState.volume * sound.volumeMultiplier)
+      groupRef.current.add(positional)
+      positional.play()
+    })
+
+    return () => {
+      cancelled = true
+      if (positional) {
+        try {
+          if (positional.isPlaying) positional.stop()
+        } catch {}
+        group.remove(positional)
+        positional.disconnect()
+      }
+    }
+  }, [sound.id, sound.maxDistance, sound.url, sound.volumeMultiplier])
+
+  return <group ref={groupRef} position={sound.position} />
+}
+
 export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; settings: OasisSettings }) {
   const { camera, gl } = useThree()
   const lastCastAtRef = useRef(0)
@@ -213,6 +289,10 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
   // can't double-report them.
   const localBoltIdsRef = useRef<Set<string>>(new Set())
   const [xpHitMarkers, setXpHitMarkers] = useState<CometTailHitMarker[]>([])
+  const [spatialSounds, setSpatialSounds] = useState<SpatialSoundEvent[]>([])
+  const playSpatialExplosionSoundRef = useRef<(position: [number, number, number]) => void>(() => {
+    useAudioManager.getState().play('fireboltHit')
+  })
 
   const spawnXpHitMarker = useCallback((position: [number, number, number], xp: number) => {
     const amount = Math.max(0, Math.floor(Number.isFinite(xp) ? xp : 0))
@@ -411,7 +491,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
         seed,
         groundingTargets,
       }])
-      useAudioManager.getState().play('fireboltHit')
+      playSpatialExplosionSoundRef.current([impactPosition.x, Math.max(0.05, impactPosition.y), impactPosition.z])
       if (hits[0] && isQuestFireboltTarget(hits[0].id)) {
         recordQuestTargetHit(hits[0].id, [impactPosition.x, impactPosition.y, impactPosition.z], reportedQuestTargetHitsRef.current)
       } else if (hits[0]) {
@@ -535,18 +615,65 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
   }, [])
 
   // ─═̷─═̷─🎤 CAST ─═̷─═̷─🎤
-  const playCastSound = useCallback((spell: CombatSpellId) => {
-    const audio = useAudioManager.getState()
+  const queueSpatialSound = useCallback((
+    url: string | null,
+    position: [number, number, number],
+    maxDistance: number,
+    volumeMultiplier: number,
+    ttl: number,
+    followId?: string,
+  ) => {
+    if (!url) return false
+    setSpatialSounds(prev => [
+      ...prev.slice(-23),
+      {
+        id: randomId(),
+        url,
+        position,
+        age: 0,
+        ttl,
+        maxDistance,
+        volumeMultiplier,
+        followId,
+      },
+    ])
+    return true
+  }, [])
+
+  const playSpatialCastSound = useCallback((spell: CombatSpellId, boltId: string, origin: THREE.Vector3) => {
     const url = resolveSpellSoundUrl(settings.spellSounds?.[spell])
     if (url) {
-      audio.playUrl(url, 0.85)
+      queueSpatialSound(
+        url,
+        [origin.x, origin.y, origin.z],
+        BOLT_SPATIAL_RANGE_M,
+        0.85,
+        SPATIAL_CAST_SOUND_TTL_S,
+        boltId,
+      )
       return
     }
 
+    const audio = useAudioManager.getState()
     if (spell === 'firebolt') audio.play('fireboltVoice')
     else if (spell === 'lightning-bolt') audio.play('fireboltCast')
     else if (spell === 'ice-bolt') audio.play('buttonClick')
-  }, [settings.spellSounds])
+  }, [queueSpatialSound, settings.spellSounds])
+
+  const playSpatialExplosionSound = useCallback((position: [number, number, number]) => {
+    const played = queueSpatialSound(
+      resolveSpellSoundUrl(EXPLOSION_SOUND_ID),
+      position,
+      EXPLOSION_SPATIAL_RANGE_M,
+      0.9,
+      SPATIAL_EXPLOSION_SOUND_TTL_S,
+    )
+    if (!played) useAudioManager.getState().play('fireboltHit')
+  }, [queueSpatialSound])
+
+  useEffect(() => {
+    playSpatialExplosionSoundRef.current = playSpatialExplosionSound
+  }, [playSpatialExplosionSound])
 
   const castBolt = useCallback(async (forcedSpell?: CombatSpellId) => {
     if (!enabled || castingRef.current || !canCastBolt()) return
@@ -579,8 +706,9 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
       const damage = typeof data.spell?.damage === 'number' ? data.spell.damage : 14
 
       const { origin, direction } = resolveCastOriginAndDirection(camera)
+      const visualBoltId = randomId()
 
-      playCastSound(spell)
+      playSpatialCastSound(spell, visualBoltId, origin)
 
       setPlayerSpellCasting(true)
       window.setTimeout(() => setPlayerSpellCasting(false), BOLT_CAST_ANIMATION_MS)
@@ -589,9 +717,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
       // Only broadcast when we're in a PvP-enabled room. Outside PvP (or
       // when there's no room connection at all), the cast is purely local —
       // no extra network traffic, same as before.
-      let pvpBoltId: string | undefined
       if (getPvpEnabled()) {
-        pvpBoltId = randomId()
         const designLetter = spell === 'firebolt' ? settings.fireboltDesign
           : spell === 'lightning-bolt' ? settings.lightningBoltDesign
           : settings.iceBoltDesign
@@ -599,7 +725,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
         // we still broadcast it so peers see the strike at the same ground
         // point. The seed reproduces identical geometry on every client.
         const seed = Math.floor(Math.random() * 0xffffffff)
-        localBoltIdsRef.current.add(pvpBoltId)
+        localBoltIdsRef.current.add(visualBoltId)
         // Prune the set so it doesn't grow unbounded across a long session.
         // BOLT_DEFAULT_TTL_S is ~2.5s — keep at most the last 100 bolts.
         if (localBoltIdsRef.current.size > 100) {
@@ -614,24 +740,24 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
           speed,
           damage,
           seed,
-          clientPredictionId: pvpBoltId,
+          clientPredictionId: visualBoltId,
         })
       }
 
       // Dispatch to the correct design.
       if (spell === 'firebolt') {
-        if (settings.fireboltDesign === 'B') spawnFireboltB(origin, direction, speed, damage, pvpBoltId)
-        else if (settings.fireboltDesign === 'C') spawnFireboltC(origin, direction, speed, damage, pvpBoltId)
-        else spawnFireboltA(origin, direction, speed, damage, pvpBoltId)
+        if (settings.fireboltDesign === 'B') spawnFireboltB(origin, direction, speed, damage, visualBoltId)
+        else if (settings.fireboltDesign === 'C') spawnFireboltC(origin, direction, speed, damage, visualBoltId)
+        else spawnFireboltA(origin, direction, speed, damage, visualBoltId)
       } else if (spell === 'lightning-bolt') {
-        if (settings.lightningBoltDesign === 'B') spawnLightningB(origin, direction, speed, damage, pvpBoltId)
-        else if (settings.lightningBoltDesign === 'C') spawnLightningC(origin, direction, speed, damage, pvpBoltId)
-        else if (settings.lightningBoltDesign === 'D') spawnLightningD(damage, pvpBoltId)
-        else spawnLightningA(origin, direction, damage, pvpBoltId)
+        if (settings.lightningBoltDesign === 'B') spawnLightningB(origin, direction, speed, damage, visualBoltId)
+        else if (settings.lightningBoltDesign === 'C') spawnLightningC(origin, direction, speed, damage, visualBoltId)
+        else if (settings.lightningBoltDesign === 'D') spawnLightningD(damage, visualBoltId)
+        else spawnLightningA(origin, direction, damage, visualBoltId)
       } else if (spell === 'ice-bolt') {
-        if (settings.iceBoltDesign === 'B') spawnIceB(origin, direction, speed, damage, pvpBoltId)
-        else if (settings.iceBoltDesign === 'C') spawnIceC(origin, direction, speed, damage, pvpBoltId)
-        else spawnIceA(origin, direction, speed, damage, pvpBoltId)
+        if (settings.iceBoltDesign === 'B') spawnIceB(origin, direction, speed, damage, visualBoltId)
+        else if (settings.iceBoltDesign === 'C') spawnIceC(origin, direction, speed, damage, visualBoltId)
+        else spawnIceA(origin, direction, speed, damage, visualBoltId)
       }
 
       window.dispatchEvent(new CustomEvent('oasis:spell-cast', { detail: { spell, damage } }))
@@ -643,7 +769,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     }
   }, [
     camera, enabled, settings.fireboltDesign, settings.lightningBoltDesign, settings.iceBoltDesign,
-    playCastSound,
+    playSpatialCastSound,
     spawnFireboltA, spawnFireboltB, spawnFireboltC,
     spawnLightningA, spawnLightningB, spawnLightningC, spawnLightningD,
     spawnIceA, spawnIceB, spawnIceC,
@@ -665,7 +791,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     const unsubscribe = onRemoteBolt((bolt: PvpRemoteBolt) => {
       const origin = new THREE.Vector3(bolt.origin[0], bolt.origin[1], bolt.origin[2])
       const direction = new THREE.Vector3(bolt.direction[0], bolt.direction[1], bolt.direction[2]).normalize()
-      playCastSound(bolt.spell)
+      playSpatialCastSound(bolt.spell, bolt.id, origin)
 
       // Dispatch to the per-design spawner. Design letter is room-validated
       // upstream so we just defensively fall through to A on garbage values.
@@ -687,7 +813,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     })
     return unsubscribe
   }, [
-    playCastSound,
+    playSpatialCastSound,
     spawnFireboltA, spawnFireboltB, spawnFireboltC,
     spawnLightningA, spawnLightningB, spawnLightningC, spawnLightningD,
     spawnIceA, spawnIceB, spawnIceC,
@@ -772,7 +898,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
       setCometProjectiles(next)
       if (newPuffs.length > 0) setCometSmoke(prev => [...prev.slice(-70), ...newPuffs])
       if (newExplosions.length > 0) {
-        useAudioManager.getState().play('fireboltHit')
+        newExplosions.forEach(e => playSpatialExplosionSound(e.position))
         setCometExplosions(prev => [...prev.slice(-10), ...newExplosions])
       }
     }
@@ -798,7 +924,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
       setSolarProjectiles(next)
       if (newPuffs.length > 0) setSolarTrail(prev => [...prev.slice(-90), ...newPuffs])
       if (newExplosions.length > 0) {
-        useAudioManager.getState().play('fireboltHit')
+        newExplosions.forEach(e => playSpatialExplosionSound(e.position))
         setSolarExplosions(prev => [...prev.slice(-10), ...newExplosions])
       }
     }
@@ -832,7 +958,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
       setPhoenixProjectiles(next)
       if (newEmbers.length > 0) setPhoenixEmbers(prev => [...prev.slice(-150), ...newEmbers])
       if (newExplosions.length > 0) {
-        useAudioManager.getState().play('fireboltHit')
+        newExplosions.forEach(e => playSpatialExplosionSound(e.position))
         setPhoenixExplosions(prev => [...prev.slice(-10), ...newExplosions])
       }
     }
@@ -863,7 +989,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
       setTeslaProjectiles(next)
       if (newTrail.length > 0) setTeslaTrail(prev => [...prev.slice(-100), ...newTrail])
       if (newImpacts.length > 0) {
-        useAudioManager.getState().play('fireboltHit')
+        newImpacts.forEach(i => playSpatialExplosionSound(i.position))
         setTeslaImpacts(prev => [...prev.slice(-10), ...newImpacts])
       }
     }
@@ -889,7 +1015,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
       setStormProjectiles(next)
       if (newDroplets.length > 0) setStormDroplets(prev => [...prev.slice(-120), ...newDroplets])
       if (newImpacts.length > 0) {
-        useAudioManager.getState().play('fireboltHit')
+        newImpacts.forEach(i => playSpatialExplosionSound(i.position))
         setStormImpacts(prev => [...prev.slice(-10), ...newImpacts])
       }
     }
@@ -917,7 +1043,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
             ttl: 0.85,
             seed: s.seed,
           })
-          useAudioManager.getState().play('fireboltHit')
+          playSpatialExplosionSound(s.groundPoint)
           if (s.target?.id.startsWith('pvp:')) {
             // PvP thunderbolt hit. Only the caster reports it.
             if (localBoltIdsRef.current.has(s.id)) {
@@ -967,7 +1093,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
       setCrystalProjectiles(next)
       if (newFlakes.length > 0) setCrystalFlakes(prev => [...prev.slice(-120), ...newFlakes])
       if (newImpacts.length > 0) {
-        useAudioManager.getState().play('fireboltHit')
+        newImpacts.forEach(i => playSpatialExplosionSound(i.position))
         setCrystalImpacts(prev => [...prev.slice(-10), ...newImpacts])
       }
     }
@@ -1000,7 +1126,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
       setFrozenProjectiles(next)
       if (newFlakes.length > 0) setFrozenFlakes(prev => [...prev.slice(-120), ...newFlakes])
       if (newImpacts.length > 0) {
-        useAudioManager.getState().play('fireboltHit')
+        newImpacts.forEach(i => playSpatialExplosionSound(i.position))
         setFrozenImpacts(prev => [...prev.slice(-10), ...newImpacts])
       }
     }
@@ -1033,7 +1159,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
       setBorealProjectiles(next)
       if (newGlyphs.length > 0) setBorealGlyphs(prev => [...prev.slice(-60), ...newGlyphs])
       if (newImpacts.length > 0) {
-        useAudioManager.getState().play('fireboltHit')
+        newImpacts.forEach(i => playSpatialExplosionSound(i.position))
         setBorealImpacts(prev => [...prev.slice(-10), ...newImpacts])
       }
     }
@@ -1069,6 +1195,37 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     if (frozenImpacts.length > 0) setFrozenImpacts(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
     if (borealGlyphs.length > 0) setBorealGlyphs(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
     if (borealImpacts.length > 0) setBorealImpacts(prev => prev.map(p => ({ ...p, age: p.age + delta })).filter(p => p.age < p.ttl))
+    if (spatialSounds.length > 0) {
+      const projectilePositionFor = (id: string): [number, number, number] | null => {
+        const findMoving = (items: Array<{ id: string; position: [number, number, number] }>) => {
+          for (const item of items) if (item.id === id) return item.position
+          return null
+        }
+        const moving = findMoving(cometProjectiles)
+          ?? findMoving(solarProjectiles)
+          ?? findMoving(phoenixProjectiles)
+          ?? findMoving(teslaProjectiles)
+          ?? findMoving(stormProjectiles)
+          ?? findMoving(crystalProjectiles)
+          ?? findMoving(frozenProjectiles)
+          ?? findMoving(borealProjectiles)
+        if (moving) return moving
+        const thunder = thunderStrikes.find(strike => strike.id === id)
+        if (thunder) return thunder.groundPoint
+        return null
+      }
+
+      setSpatialSounds(prev => prev
+        .map(sound => {
+          const followed = sound.followId ? projectilePositionFor(sound.followId) : null
+          return {
+            ...sound,
+            age: sound.age + delta,
+            position: followed ?? sound.position,
+          }
+        })
+        .filter(sound => sound.age < sound.ttl))
+    }
   })
 
   // Reveal trigger of thunderbolt: capture spike of strike moment for the screen flash.
@@ -1128,6 +1285,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
         {borealGlyphs.map(g => <BorealSpiralGlyphMesh key={g.id} glyph={g} />)}
         {borealProjectiles.map(p => <BorealSpiralMesh key={p.id} projectile={p} />)}
         {borealImpacts.map(i => <BorealSpiralImpactMesh key={i.id} impact={i} />)}
+        {spatialSounds.map(sound => <SpatialSoundSource key={sound.id} sound={sound} />)}
       </group>
       {/* Thunderbolt screen flash — DOM overlay driven via a side-effect that
           owns a singleton <div> attached to document.body. Stays outside the

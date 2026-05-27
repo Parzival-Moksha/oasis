@@ -229,6 +229,23 @@ function readAgentWindow(value: unknown): AgentWindow | null {
   }
 }
 
+function remoteAgentOwnerKey(ownerId?: string): string {
+  return ownerId?.trim() || 'legacy'
+}
+
+function sameRemoteAgentOwner(a?: string, b?: string): boolean {
+  return remoteAgentOwnerKey(a) === remoteAgentOwnerKey(b)
+}
+
+function isSharedRemoteAgentAvatarType(agentType: string): boolean {
+  return agentType === 'anorak-pro'
+    || agentType === 'merlin'
+    || agentType === 'realtime'
+    || agentType === 'hermes'
+    || agentType === 'openclaw'
+    || agentType === 'gemini'
+}
+
 function readSpatialWebObject(value: unknown): SpatialWebObject | null {
   const record = asRecord(value)
   const position = readEventPosition(record || undefined)
@@ -704,13 +721,14 @@ export function useWorldEvents() {
         case 'agent_avatar_set': {
           const avatar = readAgentAvatar(data.avatar)
           if (!avatar) return false
-      const isSharedAvatarType = avatar.agentType === 'anorak-pro' || avatar.agentType === 'merlin' || avatar.agentType === 'realtime' || avatar.agentType === 'hermes' || avatar.agentType === 'openclaw'
+          const isSharedAvatarType = isSharedRemoteAgentAvatarType(avatar.agentType)
           useOasisStore.setState(state => {
             const { [avatar.id]: _removedAvatarTransform, ...transforms } = state.transforms
             return {
               placedAgentAvatars: [
                 ...state.placedAgentAvatars.filter(entry =>
-                  entry.id !== avatar.id && (!isSharedAvatarType || entry.agentType !== avatar.agentType),
+                  entry.id !== avatar.id
+                  && (!isSharedAvatarType || entry.agentType !== avatar.agentType || !sameRemoteAgentOwner(entry.ownerId, avatar.ownerId)),
                 ),
                 cloneValue(avatar),
               ],
@@ -722,10 +740,16 @@ export function useWorldEvents() {
           // Auto-spawn 3D window for agent avatars that don't have one yet
           if (isSharedAvatarType) {
             const store = useOasisStore.getState()
-            const hasWindow = store.placedAgentWindows.some(w => w.agentType === avatar.agentType)
+            const hasWindow = store.placedAgentWindows.some(w =>
+              w.linkedAvatarId === avatar.id
+              || (w.agentType === avatar.agentType && sameRemoteAgentOwner(w.ownerId, avatar.ownerId))
+            )
             if (!hasWindow) {
               const windowId = `agent-${avatar.agentType}-${Date.now()}`
-              store.addAgentWindow({
+              useOasisStore.setState(state => ({
+                placedAgentWindows: [
+                  ...state.placedAgentWindows,
+                  {
                 id: windowId,
                 agentType: avatar.agentType as import('@/store/oasisStore').AgentWindowType,
                 position: avatar.position,
@@ -738,7 +762,10 @@ export function useWorldEvents() {
                 frameThickness: avatar.agentType === 'hermes' ? 6 : undefined,
                 linkedAvatarId: avatar.id,
                 anchorMode: 'next-to',
-              })
+                    ownerId: avatar.ownerId,
+                  },
+                ],
+              }))
             }
           }
           return true

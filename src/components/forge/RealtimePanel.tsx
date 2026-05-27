@@ -49,6 +49,7 @@ import {
 } from '@/lib/realtime-session-store'
 import { createWLipSyncLegacyController } from '@/lib/wlipsync-driver'
 import { getNpcDefinition, type OasisNpcDefinition } from '@/lib/npcs'
+import { AvatarGallery } from './AvatarGallery'
 
 interface RealtimePanelProps {
   isOpen: boolean
@@ -510,10 +511,12 @@ export function RealtimePanel({
   const [speaking, setSpeaking] = useState(false)
   const [pendingAutoStart, setPendingAutoStart] = useState(false)
   const [textInput, setTextInput] = useState('')
+  const [showAvatarGallery, setShowAvatarGallery] = useState(false)
   const npcDefinition = useMemo(() => getNpcDefinition(npcId), [npcId])
 
   const bringPanelToFront = useOasisStore(state => state.bringPanelToFront)
   const panelZIndex = useOasisStore(state => state.getPanelZIndex('realtime', 9998))
+  const assignSharedAgentAvatar = useOasisStore(state => state.assignSharedAgentAvatar)
   const activeWorldId = useOasisStore(state => state.activeWorldId)
   const activeWorldName = useOasisStore(state => state.worldRegistry.find(world => world.id === state.activeWorldId)?.name || 'Current world')
   const realtimeAvatar = useOasisStore(state => {
@@ -2049,6 +2052,24 @@ export function RealtimePanel({
 
         {activeTab === 'settings' && (
           <div className="px-4 py-3 border-b space-y-3" style={{ borderColor: 'rgba(168,85,247,0.12)', background: sectionFill, flexShrink: 0 }}>
+            {!npcDefinition && (
+              <div className="rounded-xl border px-3 py-3" style={{ borderColor: 'rgba(196,181,253,0.18)', background: fieldFill }}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-violet-200/75">avatar</div>
+                    <div className="mt-1 truncate text-[12px] text-violet-50/82">{realtimeAvatar?.avatar3dUrl || 'Default realtime avatar'}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAvatarGallery(true)}
+                    className="shrink-0 rounded-lg border px-3 py-2 text-[10px] font-mono uppercase tracking-[0.14em] transition hover:-translate-y-0.5"
+                    style={{ borderColor: 'rgba(34,211,238,0.28)', background: 'rgba(14,116,144,0.22)', color: '#cffafe' }}
+                  >
+                    choose
+                  </button>
+                </div>
+              </div>
+            )}
             <label className="block text-[11px] uppercase tracking-[0.16em] text-violet-200/75">
               background
               <input
@@ -2339,7 +2360,18 @@ export function RealtimePanel({
     </div>
   )
 
-  if (embedded) return panelBody
+  const avatarGallery = showAvatarGallery ? (
+    <AvatarGallery
+      currentAvatarUrl={realtimeAvatar?.avatar3dUrl || null}
+      onSelect={avatarUrl => {
+        assignSharedAgentAvatar(REALTIME_AGENT_TYPE, avatarUrl, { preferredWindowId: windowId || null })
+        setShowAvatarGallery(false)
+      }}
+      onClose={() => setShowAvatarGallery(false)}
+    />
+  ) : null
+
+  if (embedded) return <>{panelBody}{avatarGallery}</>
   if (!isOpen || typeof document === 'undefined') return null
-  return createPortal(panelBody, document.body)
+  return createPortal(<>{panelBody}{avatarGallery}</>, document.body)
 }

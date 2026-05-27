@@ -1,11 +1,11 @@
 'use client'
 
-import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 
 import { useOasisStore } from '@/store/oasisStore'
 import { useAudioManager } from '@/lib/audio-manager'
 import { useUILayer } from '@/lib/input-manager'
-import type { WorldMeta } from '@/lib/forge/world-persistence'
+import { exportWorld, importWorld, type WorldMeta } from '@/lib/forge/world-persistence'
 import { SettingsContext } from '@/components/scene-lib'
 import { getViewerUserIdClient } from '@/lib/viewer-identity-client'
 import { ensureViewerCookie, VIEWER_IDENTITY_EVENT } from '@/lib/viewer-identity-bootstrap'
@@ -118,6 +118,11 @@ async function copyText(value: string): Promise<void> {
   document.body.removeChild(textarea)
 }
 
+function filenameSafeWorldName(value: string): string {
+  const safe = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  return safe || 'oasis-world'
+}
+
 function resolveRoomHttpPath(path: string): string | null {
   if (typeof window === 'undefined') return null
   const explicit = process.env.NEXT_PUBLIC_OASIS_ROOM_URL?.trim()
@@ -179,6 +184,7 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
   const oasisMode = useClientOasisMode()
   const capabilities = useOasisCapabilities()
   const menuRef = useRef<HTMLDivElement>(null)
+  const importInputRef = useRef<HTMLInputElement>(null)
   useUILayer('world-menu', isOpen)
   const { settings, updateSetting, rp1Locked } = useContext(SettingsContext)
   const playClick = () => useAudioManager.getState().play('buttonClick')
@@ -537,6 +543,51 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
     setIsOpen(false)
   }
 
+  const handleExportWorld = async (world: WorldMeta) => {
+    playClick()
+    setBusyLabel('Exporting')
+    setMenuMessage(null)
+    try {
+      const json = await exportWorld(world.id)
+      if (!json) throw new Error('empty export')
+      const blob = new Blob([json], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `${filenameSafeWorldName(world.name || world.id)}.oasis-world.json`
+      document.body.appendChild(anchor)
+      anchor.click()
+      document.body.removeChild(anchor)
+      URL.revokeObjectURL(url)
+      setMenuMessage('World JSON exported.')
+    } catch {
+      setMenuMessage('Could not export world.')
+    } finally {
+      setBusyLabel(null)
+    }
+  }
+
+  const handleImportWorldFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    playClick()
+    setBusyLabel('Importing')
+    setMenuMessage(null)
+    try {
+      const imported = await importWorld(await file.text())
+      if (!imported?.id) throw new Error('import failed')
+      await refreshWorldRegistry()
+      switchWorld(imported.id)
+      setWorldTab('this')
+      setIsOpen(false)
+    } catch {
+      setMenuMessage('Could not import world JSON.')
+    } finally {
+      setBusyLabel(null)
+    }
+  }
+
   return (
     <div ref={menuRef} className="relative select-none">
       <GameMenuButton
@@ -795,6 +846,19 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
               <div className="mb-3 rounded-md border border-white/10 bg-white/5 p-2">
                 <div className="mb-2 flex items-center gap-2">
                   <div className="min-w-0 flex-1 text-[10px] font-black uppercase tracking-[0.14em] text-white/55">{myWorlds.length} worlds</div>
+                  <input
+                    ref={importInputRef}
+                    type="file"
+                    accept=".json,application/json"
+                    className="hidden"
+                    onChange={handleImportWorldFile}
+                  />
+                  <button
+                    onClick={() => importInputRef.current?.click()}
+                    className="rounded border border-fuchsia-300/20 bg-fuchsia-300/10 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-fuchsia-100 transition hover:bg-fuchsia-300/20"
+                  >
+                    Import
+                  </button>
                   {!isViewMode && (
                     <button
                       onClick={() => setNewWorldOpen(open => !open)}
@@ -835,23 +899,31 @@ export function WorldMenu({ actionLogControl }: { actionLogControl?: ReactNode }
                   ) : myWorlds.map(world => {
                     const active = world.id === activeWorldId
                     return (
-                      <button
-                        key={world.id}
-                        onClick={() => handleSwitchWorld(world.id)}
-                        disabled={active}
-                        className="flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left transition hover:bg-white/10 disabled:cursor-default"
-                        style={{
-                          borderColor: active ? 'rgba(103,232,249,0.46)' : 'rgba(255,255,255,0.08)',
-                          background: active ? 'rgba(34,211,238,0.12)' : 'rgba(0,0,0,0.22)',
-                        }}
-                      >
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-white/10 bg-white/10 text-sm">{world.icon || 'O'}</span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[11px] font-black uppercase tracking-[0.1em] text-white/80">{world.name}</span>
-                          <span className="mt-0.5 block text-[9px] uppercase tracking-[0.1em] text-white/35">{formatVisibility(world.visibility)}</span>
-                        </span>
-                        {active && <span className="text-[9px] font-black uppercase tracking-[0.12em] text-cyan-100/70">here</span>}
-                      </button>
+                      <div key={world.id} className="flex items-stretch gap-1">
+                        <button
+                          onClick={() => handleSwitchWorld(world.id)}
+                          disabled={active}
+                          className="flex min-w-0 flex-1 items-center gap-2 rounded-md border px-2 py-1.5 text-left transition hover:bg-white/10 disabled:cursor-default"
+                          style={{
+                            borderColor: active ? 'rgba(103,232,249,0.46)' : 'rgba(255,255,255,0.08)',
+                            background: active ? 'rgba(34,211,238,0.12)' : 'rgba(0,0,0,0.22)',
+                          }}
+                        >
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-white/10 bg-white/10 text-sm">{world.icon || 'O'}</span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[11px] font-black uppercase tracking-[0.1em] text-white/80">{world.name}</span>
+                            <span className="mt-0.5 block text-[9px] uppercase tracking-[0.1em] text-white/35">{formatVisibility(world.visibility)}</span>
+                          </span>
+                          {active && <span className="text-[9px] font-black uppercase tracking-[0.12em] text-cyan-100/70">here</span>}
+                        </button>
+                        <button
+                          onClick={() => handleExportWorld(world)}
+                          className="rounded-md border border-amber-200/18 bg-amber-200/8 px-2 text-[9px] font-black uppercase tracking-[0.12em] text-amber-100/80 transition hover:bg-amber-200/16 hover:text-amber-50"
+                          title={`Export ${world.name}`}
+                        >
+                          Export
+                        </button>
+                      </div>
                     )
                   })}
                 </div>

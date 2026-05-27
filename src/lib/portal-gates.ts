@@ -482,9 +482,22 @@ function sortDirectoryWorlds(worlds: WorldMeta[]): WorldMeta[] {
 function isPortalZeroDirectorySuppressedWorld(world: WorldMeta): boolean {
   const name = (world.name || '').trim().toLowerCase()
   const owner = (world as WorldMeta & { userId?: string | null }).userId || ''
-  return owner === 'oasis-demo-router'
+  return world.id === ROOKIE_WIZARD_WORLD_ID
+    || world.id === QUEST_ZERO_WORLD_ID
+    || name.includes('rookie wizard')
+    || name.includes('quest zero')
+    || owner === 'oasis-demo-router'
     || name.startsWith('swarm ')
     || name.startsWith('demo ai-tinkerers')
+}
+
+function isDeprecatedWelcomeHubTutorialGate(gate: PortalGate): boolean {
+  const action = gate.action?.type === 'load_world' ? gate.action : undefined
+  const targetWorldId = gate.targetWorldId || action?.worldId
+  if (targetWorldId === ROOKIE_WIZARD_WORLD_ID || targetWorldId === QUEST_ZERO_WORLD_ID) return true
+
+  const label = `${gate.label || ''} ${gate.targetWorldName || ''} ${action?.worldName || ''}`.toLowerCase()
+  return label.includes('rookie wizard') || label.includes('quest zero')
 }
 
 function laneOffset(index: number, spacingMultiplier = 1): number {
@@ -571,6 +584,7 @@ export function resolveWelcomeHubPortalGates(
   const base = Array.isArray(storedGates) ? storedGates : []
   const withoutDirectory = base
     .filter(gate => !isWelcomeHubDirectoryGate(gate))
+    .filter(gate => !isDeprecatedWelcomeHubTutorialGate(gate))
     .map(normalizeWelcomeHubConjureGate)
   const withConjure = withoutDirectory.some(gate => gate.id === WELCOME_HUB_CONJURE_PORTAL_GATE.id)
     ? withoutDirectory

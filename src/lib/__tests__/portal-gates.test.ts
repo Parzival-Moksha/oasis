@@ -178,6 +178,28 @@ describe('portal gate trigger helpers', () => {
     expect(gates.some(item => item.targetWorldId === 'world-demo-owner')).toBe(false)
   })
 
+  it('keeps deprecated tutorial worlds out of Portal Zero', () => {
+    const gates = resolveWelcomeHubPortalGates([{
+      id: 'legacy-rookie-gate',
+      label: 'Rookie Wizard',
+      variant: 'threshold-ring',
+      position: [30, 0, 0],
+      width: 2.4,
+      height: 3.2,
+      targetWorldId: 'world-rookie-wizard-system',
+      action: { type: 'load_world', worldId: 'world-rookie-wizard-system', worldName: 'Rookie Wizard' },
+    }], [
+      world(WELCOME_HUB_WORLD_ID, 'core'),
+      world('world-rookie-wizard-system', 'public', { name: 'Rookie Wizard' }),
+      world('world-quest-zero-system', 'public', { name: 'Quest Zero' }),
+      world('world-real-public', 'public'),
+    ])
+
+    expect(gates.some(item => item.targetWorldId === 'world-rookie-wizard-system')).toBe(false)
+    expect(gates.some(item => item.targetWorldId === 'world-quest-zero-system')).toBe(false)
+    expect(gates.some(item => item.targetWorldId === 'world-real-public')).toBe(true)
+  })
+
   it('places a single live destination in the portal area', () => {
     const [singleGate] = buildWelcomeHubPortalGates([world('world-safe')])
 

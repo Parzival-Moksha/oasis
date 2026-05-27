@@ -194,6 +194,70 @@ function resolvePortalAvailability(gate: PortalGate, worldRegistry: Array<{ id?:
   }
 }
 
+interface DemoAssignmentPayload {
+  ok?: boolean
+  worldId?: string
+  worldName?: string
+  shortCode?: string | null
+  href?: string
+  error?: string
+}
+
+function normalizePathname(pathname: string): string {
+  const normalized = pathname.replace(/\/+$/, '')
+  return normalized || '/'
+}
+
+function isSameOriginDemoRouterUrl(url: URL): boolean {
+  if (typeof window === 'undefined') return false
+  if (url.origin !== window.location.origin) return false
+  const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || '').replace(/\/+$/, '')
+  const candidates = ['/ab12', '/ai', '/demo'].map(path => normalizePathname(`${basePath}${path}`.replace(/\/{2,}/g, '/')))
+  return candidates.includes(normalizePathname(url.pathname))
+}
+
+async function fetchDemoAssignment(url: URL): Promise<DemoAssignmentPayload | null> {
+  const requestUrl = new URL(url.toString())
+  requestUrl.searchParams.set('json', '1')
+  const response = await fetch(requestUrl.toString(), {
+    cache: 'no-store',
+    credentials: 'same-origin',
+    headers: { accept: 'application/json' },
+  })
+  const payload = await response.json().catch(() => null) as DemoAssignmentPayload | null
+  if (!response.ok || !payload?.ok || !payload.worldId) {
+    throw new Error(payload?.error || `Demo router failed (${response.status}).`)
+  }
+  return payload
+}
+
+function rememberAssignedWorldShortCode(worldId: string, shortCode?: string | null): void {
+  if (typeof window === 'undefined' || !shortCode || !/^\d{4,6}$/.test(shortCode)) return
+  const scopedWindow = window as typeof window & { __oasisWorldShortCodes?: Record<string, string> }
+  scopedWindow.__oasisWorldShortCodes = {
+    ...(scopedWindow.__oasisWorldShortCodes || {}),
+    [worldId]: shortCode,
+  }
+}
+
+function resolvePortalDisplayLabel(
+  gate: PortalGate,
+  worldRegistry: Array<{ id?: string; name?: string }>,
+): string {
+  const action = resolvePortalGateAction(gate)
+  if (action.type === 'load_world') {
+    const registryName = worldRegistry.find(world => world.id === action.worldId)?.name
+    return registryName || action.worldName || gate.targetWorldName || gate.label || 'Portal'
+  }
+  if (action.type === 'external_url') {
+    return action.label || gate.label || 'Portal'
+  }
+  if (action.type === 'create_world') {
+    return action.name || gate.label || 'New World'
+  }
+  return gate.label || 'Portal'
+}
+
 function derivePortalArrivalPose(
   gate: PortalGate,
   transforms?: Record<string, { position?: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number } | undefined>,
@@ -674,6 +738,19 @@ export function PortalGateLayer() {
           nextUrl.searchParams.set('returnUrl', returnUrl)
         }
         if (action.requiresConfirm && !window.confirm(`Open ${action.label || nextUrl.hostname}?`)) return
+        if (isSameOriginDemoRouterUrl(nextUrl)) {
+          const assignment = await fetchDemoAssignment(nextUrl)
+          if (assignment?.worldId) {
+            rememberAssignedWorldShortCode(assignment.worldId, assignment.shortCode)
+            await runWorldTransition(gate, assignment.worldName || 'Demo world', () => {
+              switchWorld(assignment.worldId!)
+              return assignment.worldId!
+            }, {
+              targetWorldId: assignment.worldId,
+            })
+            return
+          }
+        }
         window.location.assign(nextUrl.toString())
         return
       }
@@ -731,8 +808,10 @@ export function PortalGateLayer() {
       {visibleGates.map(gate => {
         const baseGate = portalGates.find(portal => portal.id === gate.id) || gate
         const isLocalGate = localPortalGates.some(portal => portal.id === gate.id)
+        const label = resolvePortalDisplayLabel(gate, worldRegistry)
         const childGate: PortalGate = {
           ...gate,
+          label,
           position: [0, 0, 0],
           rotationY: 0,
           width: baseGate.width,

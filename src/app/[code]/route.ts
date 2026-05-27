@@ -14,7 +14,11 @@ export async function GET(
   const entry = resolveDemoShortCode(params.code)
   const origin = publicOriginFromRequest(request)
   if (entry) {
-    return NextResponse.redirect(new URL(demoEntryPath(entry), origin))
+    const target = new URL(demoEntryPath(entry), origin)
+    request.nextUrl.searchParams.forEach((value, key) => {
+      target.searchParams.set(key, value)
+    })
+    return NextResponse.redirect(target)
   }
 
   const world = await findReadableWorldByShortCode(params.code)

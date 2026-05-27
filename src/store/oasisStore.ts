@@ -2306,7 +2306,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
             portalGate,
           ],
         }))
-        get().spawnPlacementVfx(portalPosition)
+        playFormsPortalRevealSound()
+        get().spawnPlacementVfx(portalPosition, 'realitydetonation')
       }, delayMs)
     }
 
@@ -2459,6 +2460,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
     if (action?.type === 'submit_form' && object.formId) {
       if (object.submittedAt) {
         playSpatialWebSound('modeSwitch')
+        if (action.destination?.type === 'google_form' || spatialObjectBelongsToGoogleForm(object)) {
+          openLocalPortalToDemoRouter(250)
+        }
         return
       }
       playSpatialWebSound('buttonClick')
@@ -2509,7 +2513,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       if (submitSucceeded) {
         playSpatialWebSound('winner')
         get().spawnPlacementVfx(effectPosition)
-        if (action.destination?.type === 'google_form') {
+        if (action.destination?.type === 'google_form' || spatialObjectBelongsToGoogleForm(object)) {
           openLocalPortalToDemoRouter(2500)
         } else {
           openLocalPortalToPortalZero(5000)
@@ -2974,10 +2978,32 @@ export const useOasisStore = create<OasisState>((set, get) => {
   updatePortalGate: (id, updates) => {
     const gate = get().portalGates.find(portal => portal.id === id)
     if (!gate) return
+    const mergedGate = { ...gate, ...updates }
+    const mergedAction = mergedGate.action?.type === 'load_world' ? mergedGate.action : null
+    const shouldNormalizeLoadWorld = updates.action?.type === 'load_world'
+      || (!updates.action && (mergedGate.action?.type === 'load_world' || Boolean(updates.targetWorldId || gate.targetWorldId)))
+    const targetWorldId = shouldNormalizeLoadWorld
+      ? (updates.targetWorldId || mergedAction?.worldId || gate.targetWorldId)
+      : undefined
+    const targetWorldName = targetWorldId
+      ? get().worldRegistry.find(world => world.id === targetWorldId)?.name
+        || updates.targetWorldName
+        || mergedAction?.worldName
+        || gate.targetWorldName
+      : undefined
+    const normalizedUpdates: Partial<PortalGate> = targetWorldId && targetWorldName
+      ? {
+        ...updates,
+        label: targetWorldName,
+        targetWorldId,
+        targetWorldName,
+        action: { type: 'load_world', worldId: targetWorldId, worldName: targetWorldName },
+      }
+      : updates
     withUndo('Update portal', 'portal', () => {
       set(state => ({
         portalGates: state.portalGates.map(portal => (
-          portal.id === id ? { ...portal, ...updates, id: portal.id } : portal
+          portal.id === id ? { ...portal, ...normalizedUpdates, id: portal.id } : portal
         )),
       }))
     })

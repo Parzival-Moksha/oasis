@@ -1,12 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 
 import { useUILayer } from '@/lib/input-manager'
+import { useOasisStore } from '@/store/oasisStore'
 import { CreditsTab } from './CreditsTab'
 
-type Tab = 'controls' | 'glossary' | 'credits'
+type Tab = 'controls' | 'feedback' | 'credits'
 
 const DEFAULT_POS = { x: 244, y: 328 }
 
@@ -104,6 +105,85 @@ function ControlsTab() {
         </div>
       ))}
     </div>
+  )
+}
+
+function FeedbackTab() {
+  const activeWorldId = useOasisStore(state => state.activeWorldId)
+  const [text, setText] = useState('')
+  const [sending, setSending] = useState(false)
+  const [status, setStatus] = useState<'idle' | 'sent' | 'error'>('idle')
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    const trimmed = text.trim()
+    if (!trimmed || sending) return
+    setSending(true)
+    setStatus('idle')
+    try {
+      const response = await fetch('/api/analytics/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventType: 'user_feedback',
+          worldId: activeWorldId,
+          source: 'help_panel',
+          metadata: {
+            text: trimmed.slice(0, 2000),
+            path: typeof window !== 'undefined' ? window.location.pathname : '',
+            userAgent: typeof window !== 'undefined' ? window.navigator.userAgent.slice(0, 220) : '',
+          },
+        }),
+      })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      setText('')
+      setStatus('sent')
+    } catch {
+      setStatus('error')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-3">
+      <div className="text-[11px] leading-relaxed text-gray-300">
+        Let us know about bugs you find, features you would appreciate, or just a note for carbondev.
+      </div>
+      <textarea
+        value={text}
+        onChange={event => {
+          setText(event.target.value)
+          if (status !== 'idle') setStatus('idle')
+        }}
+        rows={7}
+        maxLength={2000}
+        placeholder="What happened? What would make this better?"
+        className="w-full resize-none rounded-lg border px-3 py-2 text-xs leading-5 outline-none"
+        style={{
+          borderColor: 'rgba(168,85,247,0.22)',
+          background: 'rgba(15,23,42,0.72)',
+          color: '#f8fafc',
+        }}
+      />
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[10px] text-gray-500">{text.length}/2000</span>
+        <button
+          type="submit"
+          disabled={!text.trim() || sending}
+          className="rounded-lg border px-3 py-2 text-[10px] font-bold uppercase tracking-[0.14em] transition disabled:opacity-45"
+          style={{
+            borderColor: 'rgba(34,211,238,0.28)',
+            background: 'rgba(8,51,68,0.32)',
+            color: '#cffafe',
+          }}
+        >
+          {sending ? 'Sending' : 'Send'}
+        </button>
+      </div>
+      {status === 'sent' && <div className="text-[11px] text-emerald-300">Sent. Thank you.</div>}
+      {status === 'error' && <div className="text-[11px] text-rose-300">Could not send. Try again in a moment.</div>}
+    </form>
   )
 }
 
@@ -232,7 +312,7 @@ export function HelpPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'controls', label: 'Controls' },
-    { key: 'glossary', label: 'Glossary' },
+    { key: 'feedback', label: 'Feedback' },
     { key: 'credits', label: 'Credits' },
   ]
 
@@ -296,7 +376,7 @@ export function HelpPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
           style={{ maxHeight: isMobile ? 'calc(100vh - 156px)' : 'min(560px, calc(85vh - 124px))' }}
         >
           {tab === 'controls' && <ControlsTab />}
-          {tab === 'glossary' && <GlossaryTab />}
+          {tab === 'feedback' && <FeedbackTab />}
           {tab === 'credits' && <CreditsTab />}
         </div>
       </div>

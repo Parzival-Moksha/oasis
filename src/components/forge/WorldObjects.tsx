@@ -3835,6 +3835,14 @@ function AgentWindowsSection({ selectedObjectId, selectObject, transformMode, on
   )
 }
 
+function agentAvatarOwnerKey(ownerId?: string): string {
+  return ownerId?.trim() || 'legacy'
+}
+
+function agentAvatarRenderGroupKey(avatar: { agentType: string; ownerId?: string }): string {
+  return `${avatar.agentType}::${agentAvatarOwnerKey(avatar.ownerId)}`
+}
+
 function AgentAvatarsSection({ selectedObjectId, selectObject, transformMode, onTransformChange }: {
   selectedObjectId: string | null
   selectObject: (id: string | null) => void
@@ -3859,17 +3867,18 @@ function AgentAvatarsSection({ selectedObjectId, selectObject, transformMode, on
     () => new Map(placedAgentWindows.map(window => [window.id, window])),
     [placedAgentWindows],
   )
-  const sharedAvatarWinnerByType = useMemo(() => {
+  const sharedAvatarWinnerByGroup = useMemo(() => {
     const winners = new Map<string, string>()
     const scores = new Map<string, number>()
     for (const avatar of placedAgentAvatars) {
       const isSharedAvatarType = isSharedAgentAvatarType(avatar.agentType)
       if (!isSharedAvatarType) continue
+      const key = agentAvatarRenderGroupKey(avatar)
       const score = (avatar.linkedWindowId ? 0 : 100) + (transforms[avatar.id] ? 20 : 0)
-      const currentScore = scores.get(avatar.agentType) ?? Number.NEGATIVE_INFINITY
+      const currentScore = scores.get(key) ?? Number.NEGATIVE_INFINITY
       if (score > currentScore) {
-        scores.set(avatar.agentType, score)
-        winners.set(avatar.agentType, avatar.id)
+        scores.set(key, score)
+        winners.set(key, avatar.id)
       }
     }
     return winners
@@ -3881,7 +3890,7 @@ function AgentAvatarsSection({ selectedObjectId, selectObject, transformMode, on
     <>
       {placedAgentAvatars.map(avatar => {
         const isSharedAvatarType = isSharedAgentAvatarType(avatar.agentType)
-        if (isSharedAvatarType && sharedAvatarWinnerByType.get(avatar.agentType) !== avatar.id) return null
+        if (isSharedAvatarType && sharedAvatarWinnerByGroup.get(agentAvatarRenderGroupKey(avatar)) !== avatar.id) return null
         if (!avatar.avatar3dUrl) return null
         const renderAvatarUrl = resolveAgentAvatarUrl(avatar.avatar3dUrl).url
 
