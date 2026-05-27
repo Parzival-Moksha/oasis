@@ -17,12 +17,16 @@ describe('craft model normalization', () => {
     expect(normalizeCraftModelId('sonnet')).toBe(DEFAULT_CRAFT_MODEL)
     expect(normalizeCraftModelId('google/gemini-3.1-pro-preview')).toBe(DEFAULT_CRAFT_MODEL)
     expect(normalizeCraftModelId('anthropic/claude-haiku-4-5')).toBe(DEFAULT_CRAFT_MODEL)
+    expect(normalizeCraftModelId('z-ai/glm-5')).toBe(DEFAULT_CRAFT_MODEL)
+    expect(normalizeCraftModelId('nvidia/nemotron-3-super-120b-a12b:free')).toBe(DEFAULT_CRAFT_MODEL)
     expect(normalizeCraftModelId('not-a-real-model')).toBe(DEFAULT_CRAFT_MODEL)
   })
 
   it('only exposes normalized models in the shared allowlist', () => {
     expect(ALLOWED_CRAFT_MODELS).not.toContain('cc-sonnet')
     expect(ALLOWED_CRAFT_MODELS).not.toContain('anthropic/claude-sonnet-4-6')
+    expect(ALLOWED_CRAFT_MODELS).not.toContain('z-ai/glm-5')
+    expect(ALLOWED_CRAFT_MODELS).not.toContain('nvidia/nemotron-3-super-120b-a12b:free')
     expect(ALLOWED_CRAFT_MODELS).toContain(DEFAULT_CRAFT_MODEL)
   })
 })

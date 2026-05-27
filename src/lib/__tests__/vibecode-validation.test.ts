@@ -54,8 +54,9 @@ describe('Vibecode Model Selection', () => {
     expect(resolveModel('google/gemini-3.5-flash')).toBe('google/gemini-3.5-flash')
   })
 
-  it('accepts glm-5 as valid model', () => {
-    expect(resolveModel('z-ai/glm-5')).toBe('z-ai/glm-5')
+  it('falls back for removed dead craft models', () => {
+    expect(resolveModel('z-ai/glm-5')).toBe(DEFAULT_CRAFT_MODEL)
+    expect(resolveModel('nvidia/nemotron-3-super-120b-a12b:free')).toBe(DEFAULT_CRAFT_MODEL)
   })
 
   it('accepts the latest GPT mini model', () => {

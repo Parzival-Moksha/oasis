@@ -251,31 +251,23 @@ export async function POST(request: NextRequest) {
     forwardResult = await forwardToWebhook(payload, payload.destination)
   }
 
-  if (forwardResult && !forwardResult.ok) {
-    return NextResponse.json({
-      ok: false,
-      error: forwardResult.message,
-      data: {
-        formId: payload.formId,
-        submittedAt: payload.submittedAt,
-        fieldCount: payload.fields.length,
-        forwardStatus: forwardResult.status,
-      },
-    }, { status: 502 })
-  }
-
   const grade = gradeSubmission(payload, payload.destination)
   const geminiPrompt = payload.destination?.geminiReview ? buildGeminiReviewPrompt(payload, grade) : ''
   const scoreMessage = grade ? ` Score: ${grade.correctCount}/${grade.totalCount} (${grade.percent}%).` : ''
+  const forwardWarning = forwardResult && !forwardResult.ok ? forwardResult.message : ''
+  const baseMessage = forwardResult?.ok
+    ? forwardResult.message
+    : `Saved ${payload.fields.length} spatial web fields.`
 
   return NextResponse.json({
     ok: true,
-    message: `${forwardResult?.message || `Saved ${payload.fields.length} spatial web fields.`}${scoreMessage}`,
+    message: `${baseMessage}${forwardWarning ? ` Google Forms warning: ${forwardWarning}` : ''}${scoreMessage}`,
     data: {
       formId: payload.formId,
       submittedAt: payload.submittedAt,
       fieldCount: payload.fields.length,
       forwardStatus: forwardResult?.status,
+      forwardWarning,
       mappedCount: forwardResult?.mappedCount,
       grade,
       geminiPrompt,

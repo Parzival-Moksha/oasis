@@ -22,7 +22,8 @@ import { formatNumber, formatBytes } from './ModelPreview'
 import { ANIMATION_LIBRARY, ANIM_CATEGORIES, LIB_PREFIX, loadAnimationClip, type AnimCategory } from '../../lib/forge/animation-library'
 import { FRAME_STYLES, getAudioElement } from './WorldObjects'
 import { useUILayer } from '@/lib/input-manager'
-import { PORTAL_GATE_VARIANT_DEFS, resolvePortalGateAction, type PortalAction, type PortalGate, type PortalGateVariant } from '../../lib/portal-gates'
+import { PORTAL_GATE_VARIANT_DEFS, WELCOME_HUB_WORLD_ID, resolvePortalGateAction, type PortalAction, type PortalGate, type PortalGateVariant } from '../../lib/portal-gates'
+import { clampText3DInput } from '../../lib/forge/text-3d-object'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS — The inspector's visual DNA
@@ -536,13 +537,13 @@ function Text3DEditSection({ object, onChange }: {
   object: import('../../lib/forge/text-3d-object').Text3DObject
   onChange: (updates: Partial<import('../../lib/forge/text-3d-object').Text3DObject>) => void
 }) {
-  const [draftText, setDraftText] = useState(object.text)
+  const [draftText, setDraftText] = useState(() => clampText3DInput(object.text))
   // Re-sync the draft when the inspector swaps to a different text object.
-  useEffect(() => { setDraftText(object.text) }, [object.id])
+  useEffect(() => { setDraftText(clampText3DInput(object.text)) }, [object.id, object.text])
   // Trailing-edge debounce on text only — flushes when the user pauses.
   useEffect(() => {
     if (draftText === object.text) return
-    const handle = window.setTimeout(() => onChange({ text: draftText.slice(0, 240) }), 220)
+    const handle = window.setTimeout(() => onChange({ text: clampText3DInput(draftText) }), 220)
     return () => window.clearTimeout(handle)
     // onChange is a fresh closure per render; omit to avoid retrigger churn.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -554,8 +555,8 @@ function Text3DEditSection({ object, onChange }: {
       <div className="rounded-lg border border-amber-400/15 p-2 space-y-2" style={{ background: 'rgba(24, 18, 8, 0.6)' }}>
         <textarea
           value={draftText}
-          onChange={(e) => setDraftText(e.target.value.slice(0, 240))}
-          onBlur={() => { if (draftText !== object.text) onChange({ text: draftText.slice(0, 240) }) }}
+          onChange={(e) => setDraftText(clampText3DInput(e.target.value))}
+          onBlur={() => { if (draftText !== object.text) onChange({ text: clampText3DInput(draftText) }) }}
           rows={2}
           className="w-full resize-none rounded border border-white/10 bg-black/40 px-2 py-1 text-[12px] text-amber-50"
         />
@@ -1989,7 +1990,7 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
           const portal = resolved.data as PortalGate
           const targetWorlds = worldRegistry.filter(world =>
             world.id !== activeWorldId &&
-            world.visibility !== 'core' &&
+            (world.id === WELCOME_HUB_WORLD_ID || world.visibility !== 'core') &&
             world.visibility !== 'template'
           )
           const action = resolvePortalGateAction(portal)

@@ -124,7 +124,15 @@ export function derivePlayerCastSpawn(distance = DEFAULT_CAST_DISTANCE): CastSpa
   const pose = getPlayerAvatarPose()
   if (pose) {
     const [px, py, pz] = pose.position
-    const [fx, , fz] = pose.forward
+    let [fx, , fz] = pose.forward
+    const forwardLength = Math.hypot(fx, fz)
+    if (forwardLength > 0.0001) {
+      fx /= forwardLength
+      fz /= forwardLength
+    } else {
+      fx = Math.sin(pose.yaw)
+      fz = Math.cos(pose.yaw)
+    }
     return {
       position: [px + fx * distance, py, pz + fz * distance],
       rotation: [0, pose.yaw, 0],
@@ -134,7 +142,15 @@ export function derivePlayerCastSpawn(distance = DEFAULT_CAST_DISTANCE): CastSpa
   const camera = getCameraSnapshot()
   if (camera) {
     const [cx, , cz] = camera.position
-    const [fx, , fz] = camera.forward
+    let [fx, , fz] = camera.forward
+    const forwardLength = Math.hypot(fx, fz)
+    if (forwardLength > 0.0001) {
+      fx /= forwardLength
+      fz /= forwardLength
+    } else {
+      fx = 0
+      fz = 1
+    }
     const yaw = Math.atan2(fx, fz || 1)
     return {
       position: [cx + fx * distance, DEFAULT_GROUND_Y, cz + fz * distance],

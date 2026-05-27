@@ -124,8 +124,8 @@ export const DEFAULT_REALTIME_PANEL_POS = {
 }
 
 export const DEFAULT_REALTIME_PANEL_SIZE: RealtimePanelSize = {
-  w: 470,
-  h: 760,
+  w: 700,
+  h: 800,
 }
 
 export function isRealtimeVadMode(value: unknown): value is RealtimeVadMode {

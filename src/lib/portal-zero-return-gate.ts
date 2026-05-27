@@ -10,8 +10,8 @@ export function createPortalZeroReturnGate(sourceWorldId: string): PortalGate {
     id: PORTAL_ZERO_RETURN_GATE_ID,
     variant: 'crystal-cavern',
     label: 'Portal Zero',
-    position: [0, 0, -6],
-    rotationY: 0,
+    position: [0, 0, 16],
+    rotationY: Math.PI,
     scale: 1,
     width: 2.65,
     height: 3.35,
@@ -27,8 +27,17 @@ export function createPortalZeroReturnGate(sourceWorldId: string): PortalGate {
   }
 }
 
+function isLegacyFrontReturnGate(gate: PortalGate): boolean {
+  const position = gate.position
+  return Array.isArray(position)
+    && Math.abs(Number(position[0])) < 0.001
+    && Math.abs(Number(position[1])) < 0.001
+    && Math.abs(Number(position[2]) + 6) < 0.001
+}
+
 function normalizePortalZeroReturnGate(gate: PortalGate, sourceWorldId: string): PortalGate {
   const canonical = createPortalZeroReturnGate(sourceWorldId)
+  const useCanonicalPlacement = !gate.position || isLegacyFrontReturnGate(gate)
   return {
     ...gate,
     id: canonical.id,
@@ -39,8 +48,8 @@ function normalizePortalZeroReturnGate(gate: PortalGate, sourceWorldId: string):
     action: canonical.action,
     label: canonical.label,
     variant: gate.variant || canonical.variant,
-    position: gate.position || canonical.position,
-    rotationY: gate.rotationY ?? canonical.rotationY,
+    position: useCanonicalPlacement ? canonical.position : gate.position,
+    rotationY: useCanonicalPlacement ? canonical.rotationY : gate.rotationY ?? canonical.rotationY,
     scale: gate.scale ?? canonical.scale,
     width: gate.width || canonical.width,
     height: gate.height || canonical.height,

@@ -16,6 +16,7 @@ import { extractModelStats } from './ModelPreview'
 import { useInputManager } from '../../lib/input-manager'
 import { FlameShader, FlagShader, CrystalShader, WaterShader, ParticleEmitterShader, GlowOrbShader, AuroraShader } from './ShaderPrimitives'
 import { getCraftTexturePreset, computeAutoTiling, canHaveTexture } from '../../lib/forge/craft-textures'
+import { clampText3DInput } from '../../lib/forge/text-3d-object'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PRIMITIVE GEOMETRY — maps type string to Three.js geometry
@@ -197,6 +198,7 @@ function CraftedTextMesh({ primitive }: { primitive: CraftedPrimitive }) {
   useAnimation(groupRef, primitive)
 
   const fontSize = primitive.fontSize ?? 1
+  const safeText = clampText3DInput(primitive.text || '').trim() || '?'
   // Extrusion depth proportional to font size — looks solid without being comically thick
   const depth = fontSize * 0.2
 
@@ -219,7 +221,7 @@ function CraftedTextMesh({ primitive }: { primitive: CraftedPrimitive }) {
           castShadow={!hasOpacity}
           receiveShadow
         >
-          {primitive.text || '?'}
+          {safeText}
           <meshStandardMaterial
             color={primitive.color}
             emissive={primitive.emissive || '#000000'}

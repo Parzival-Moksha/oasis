@@ -839,6 +839,16 @@ describe('set_sky', () => {
     expect(result.ok).toBe(true)
     expect(result.message).toContain('sunset')
   })
+
+  it('accepts realtime skyBackgroundId alias', async () => {
+    const world = makeWorldRow()
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+
+    const result = await callTool('set_sky', { skyBackgroundId: 'forest-glade' })
+    expect(result.ok).toBe(true)
+    expect(result.message).toContain('forest-glade')
+  })
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -874,6 +884,24 @@ describe('paint_ground_tiles', () => {
       '1,2': 'kn-cobblestone',
       '2,2': 'kn-cobblestone',
     })
+  })
+
+  it('accepts realtime center-brush shorthand', async () => {
+    const world = makeWorldRow()
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+
+    const result = await callTool('paint_ground_tiles', {
+      groundPresetId: 'kn-moss',
+      cx: 4,
+      cz: 5,
+      size: 1,
+    })
+
+    expect(result.ok).toBe(true)
+    const updatePayload = vi.mocked(prisma.world.update).mock.calls[0]?.[0]
+    const savedState = JSON.parse(String(updatePayload?.data?.data || '{}'))
+    expect(savedState.groundTiles).toMatchObject({ '4,5': 'kn-moss' })
   })
 })
 
@@ -1316,6 +1344,61 @@ describe('remove_object', () => {
     const result = await callTool('remove_object', { objectId: 'nonexistent-id' })
     expect(result.ok).toBe(false)
     expect(result.message).toContain('not found')
+  })
+
+  it('accepts id as an objectId alias', async () => {
+    const world = makeWorldRow({
+      catalogPlacements: [
+        { id: 'tree-1', catalogId: 'tree', name: 'Tree', path: '/tree.glb', position: [0, 0, 0], scale: 1 },
+      ],
+    })
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+
+    const result = await callTool('remove_object', { id: 'tree-1' })
+    expect(result.ok).toBe(true)
+    const updatePayload = vi.mocked(prisma.world.update).mock.calls[0]?.[0]
+    const savedState = JSON.parse(String(updatePayload?.data?.data || '{}'))
+    expect(savedState.catalogPlacements).toEqual([])
+  })
+})
+
+describe('set_behavior', () => {
+  it('accepts id alias and movement object shorthand', async () => {
+    const world = makeWorldRow()
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+
+    const result = await callTool('set_behavior', {
+      id: 'tree-1',
+      movement: { type: 'hover', speed: 2, amplitude: 0.75 },
+    })
+
+    expect(result.ok).toBe(true)
+    const updatePayload = vi.mocked(prisma.world.update).mock.calls[0]?.[0]
+    const savedState = JSON.parse(String(updatePayload?.data?.data || '{}'))
+    expect(savedState.behaviors['tree-1'].movement).toMatchObject({
+      type: 'hover',
+      speed: 2,
+      amplitude: 0.75,
+    })
+  })
+
+  it('honors visible when setting behavior', async () => {
+    const world = makeWorldRow()
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+    vi.mocked(prisma.world.update).mockResolvedValue(world)
+
+    const result = await callTool('set_behavior', {
+      id: 'tree-1',
+      movement: 'static',
+      visible: false,
+    })
+
+    expect(result.ok).toBe(true)
+    const updatePayload = vi.mocked(prisma.world.update).mock.calls[0]?.[0]
+    const savedState = JSON.parse(String(updatePayload?.data?.data || '{}'))
+    expect(savedState.behaviors['tree-1'].visible).toBe(false)
   })
 })
 

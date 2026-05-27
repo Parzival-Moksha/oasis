@@ -35,6 +35,7 @@ export default function OasisClient({ initialWorldId, fallbackWorldId }: { initi
   const [mode, setMode] = useState<ClientOasisMode>('local')
   const [capabilities, setCapabilities] = useState<ClientOasisCapabilities>(DEFAULT_LOCAL_CAPABILITIES)
   const deepLinkAttemptRef = useRef<string | null>(null)
+  const deepLinkCompletedRef = useRef(false)
   const sessionStartedAtRef = useRef<number>(Date.now())
   const lastVisitedWorldRef = useRef<string | null>(null)
   const latestSessionContextRef = useRef({
@@ -44,6 +45,7 @@ export default function OasisClient({ initialWorldId, fallbackWorldId }: { initi
   })
 
   useEffect(() => {
+    deepLinkCompletedRef.current = false
     if (initialWorldId) window.__oasisPreferredWorldId = initialWorldId
     else delete window.__oasisPreferredWorldId
     const shortCode = new URLSearchParams(window.location.search).get('short')
@@ -110,8 +112,10 @@ export default function OasisClient({ initialWorldId, fallbackWorldId }: { initi
 
   useEffect(() => {
     if (!ready || !initialWorldId || worldRegistry.length === 0) return
+    if (deepLinkCompletedRef.current) return
     if (activeWorldId === initialWorldId || viewingWorldId === initialWorldId) {
       deepLinkAttemptRef.current = null
+      deepLinkCompletedRef.current = true
       return
     }
 
@@ -119,6 +123,7 @@ export default function OasisClient({ initialWorldId, fallbackWorldId }: { initi
     const attemptKey = `${initialWorldId}:${activeWorldId || ''}:${viewingWorldId || ''}:${ownedWorld ? 'owned' : 'view'}`
     if (deepLinkAttemptRef.current === attemptKey) return
     deepLinkAttemptRef.current = attemptKey
+    deepLinkCompletedRef.current = true
     if (ownedWorld) {
       switchWorld(initialWorldId)
     } else {

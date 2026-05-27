@@ -129,6 +129,10 @@ export function getActiveWorldId(): string {
 
 export function setActiveWorldId(id: string, options: { publish?: boolean } = {}): void {
   if (typeof window === 'undefined') return
+  if (window.__oasisPreferredWorldId && window.__oasisPreferredWorldId !== id) {
+    delete window.__oasisPreferredWorldId
+    delete window.__oasisPreferredShortCode
+  }
   localStorage.setItem('oasis-active-world', id)
   // ─═̷─ Reflect the active world in the URL so refresh + share-link land
   // in the same place. history.replaceState avoids a Next router re-render

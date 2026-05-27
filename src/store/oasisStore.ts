@@ -77,7 +77,7 @@ import {
 import { createPortalZeroGoogleFormsAltar, createPortalZeroGoogleTestAltar } from '../lib/spatial-web-presets'
 import { getViewerUserIdClient } from '../lib/viewer-identity-client'
 import type { PaintStroke } from '../lib/forge/paint-stroke'
-import type { Text3DObject } from '../lib/forge/text-3d-object'
+import { clampText3DInput, type Text3DObject } from '../lib/forge/text-3d-object'
 
 export interface ObjectHtmlOverlay {
   objectId: string
@@ -104,6 +104,8 @@ const SPATIAL_WEB_WORLD_TOOL_ALLOWLIST = new Set([
   'create_portal_gate',
   'self_craft_scene',
 ])
+const OASIS_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || ''
+const DEMO_ROUTER_PATH = `${OASIS_BASE_PATH}/ab12`.replace(/\/{2,}/g, '/')
 
 type SpatialSubmitResponse = {
   ok?: boolean
@@ -1216,6 +1218,15 @@ export const useOasisStore = create<OasisState>((set, get) => {
     ]
   }
 
+  const spatialObjectBelongsToGoogleForm = (object?: SpatialWebObject | null) => {
+    if (!object?.formId) return false
+    return get().spatialWebObjects.some(entry =>
+      entry.formId === object.formId &&
+      entry.action?.type === 'submit_form' &&
+      entry.action.destination?.type === 'google_form'
+    )
+  }
+
   const shouldSkipFullSaveForRoomCommandAuthority = () => {
     const state = get()
     const worldId = currentLoadedWorldId()
@@ -2029,13 +2040,16 @@ export const useOasisStore = create<OasisState>((set, get) => {
     const now = new Date().toISOString()
     const existing = get().spatialWebObjects.find(object => object.id === id)
     const interactionCount = (existing?.interactionCount || 0) + 1
+    const keepLocal = spatialObjectBelongsToGoogleForm(existing)
     set(state => ({
       spatialWebObjects: state.spatialWebObjects.map(object =>
         object.id === id ? { ...object, value, lastEvent: 'change', lastInteractionAt: now, interactionCount } : object,
       ),
     }))
-    worldMutationBus.broadcast({ kind: 'spatial_web_value_set', payload: { id, value, event: 'change', lastInteractionAt: now, interactionCount } })
-    setTimeout(() => get().saveWorldState(), 100)
+    if (!keepLocal) {
+      worldMutationBus.broadcast({ kind: 'spatial_web_value_set', payload: { id, value, event: 'change', lastInteractionAt: now, interactionCount } })
+      setTimeout(() => get().saveWorldState(), 100)
+    }
   },
   interactSpatialWebObject: async (id, event = 'press') => {
     const object = get().spatialWebObjects.find(entry => entry.id === id)
@@ -2044,8 +2058,10 @@ export const useOasisStore = create<OasisState>((set, get) => {
     const now = new Date().toISOString()
     const effectPosition = resolveSpatialWebObjectPosition(object, get().transforms[id])
     const loadedWorldId = currentLoadedWorldId()
-    const keepInteractionLocal = isWelcomeHubWorld(loadedWorldId)
+    const keepInteractionLocal = (
+      isWelcomeHubWorld(loadedWorldId)
       && object.action?.type === 'create_world_from_google_form'
+    ) || spatialObjectBelongsToGoogleForm(object)
     const scheduleSpatialInteractionSave = () => {
       if (keepInteractionLocal) return
       setTimeout(() => get().saveWorldState(), 100)
@@ -2056,7 +2072,10 @@ export const useOasisStore = create<OasisState>((set, get) => {
           entry.id === targetId ? { ...entry, ...updates, id: entry.id } : entry,
         ),
       }))
-      worldMutationBus.broadcast({ kind: 'spatial_web_updated', payload: { id: targetId, updates } })
+      const target = get().spatialWebObjects.find(entry => entry.id === targetId)
+      if (!keepInteractionLocal && !spatialObjectBelongsToGoogleForm(target)) {
+        worldMutationBus.broadcast({ kind: 'spatial_web_updated', payload: { id: targetId, updates } })
+      }
     }
     const markInteraction = (updates: Partial<SpatialWebObject> = {}, actualEvent: SpatialWebEventName = event) => {
       const existing = get().spatialWebObjects.find(entry => entry.id === id)
@@ -2249,6 +2268,42 @@ export const useOasisStore = create<OasisState>((set, get) => {
       }, delayMs)
     }
 
+    const openLocalPortalToDemoRouter = (delayMs: number) => {
+      if (typeof window === 'undefined') return
+      const sourceWorldId = get().viewingWorldId || get().activeWorldId
+      if (!sourceWorldId) return
+      const portalPosition: [number, number, number] = [effectPosition[0] + 3, 0, effectPosition[2]]
+      const schedule = window.setTimeout || globalThis.setTimeout
+      schedule(() => {
+        const portalGate: PortalGate = {
+          id: `local-portal-${id}-demo-router`,
+          variant: 'stargate-vortex',
+          label: 'Demo Router',
+          position: portalPosition,
+          rotationY: portalRotationTowardCenter(portalPosition),
+          scale: 1,
+          width: 2.8,
+          height: 3.4,
+          direction: 'one-way',
+          sourceWorldId,
+          action: {
+            type: 'external_url',
+            url: DEMO_ROUTER_PATH,
+            label: 'Demo Router',
+            returnUrl: 'current',
+            requiresConfirm: false,
+          },
+        }
+        set(state => ({
+          localPortalGates: [
+            ...state.localPortalGates.filter(gate => gate.id !== portalGate.id),
+            portalGate,
+          ],
+        }))
+        get().spawnPlacementVfx(portalPosition)
+      }, delayMs)
+    }
+
     if (object.type === 'text') {
       if (object.action?.type === 'create_world_from_google_form') {
         const isTestAltar = object.action.testMode === true
@@ -2368,7 +2423,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         playSpatialWebSound('buttonClick')
         markInteraction({ value: nextText }, 'change')
         get().spawnPlacementVfx(effectPosition)
-        setTimeout(() => get().saveWorldState(), 100)
+        scheduleSpatialInteractionSave()
       }
       return
     }
@@ -2381,14 +2436,14 @@ export const useOasisStore = create<OasisState>((set, get) => {
         const ok = await runWorldToolAction(object.action, nextValue)
         if (ok) get().spawnPlacementVfx(effectPosition)
       }
-      setTimeout(() => get().saveWorldState(), 100)
+      scheduleSpatialInteractionSave()
       return
     }
 
     if (object.type !== 'button') {
       playSpatialWebSound('buttonClick')
       markInteraction()
-      setTimeout(() => get().saveWorldState(), 100)
+      scheduleSpatialInteractionSave()
       return
     }
 
@@ -2407,7 +2462,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
         patchSpatialObject(action.targetObjectId, targetUpdates)
       }
       markInteraction({}, event)
-      setTimeout(() => get().saveWorldState(), 100)
+      scheduleSpatialInteractionSave()
       return
     }
 
@@ -2464,7 +2519,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
       if (submitSucceeded) {
         playSpatialWebSound('winner')
         get().spawnPlacementVfx(effectPosition)
-        openLocalPortalToPortalZero(5000)
+        if (action.destination?.type === 'google_form') {
+          openLocalPortalToDemoRouter(2500)
+        } else {
+          openLocalPortalToPortalZero(5000)
+        }
         if (isBrowser && submitResult?.data?.geminiPrompt) {
           window.dispatchEvent(new CustomEvent('oasis:gemini-live-prompt', {
             detail: { prompt: submitResult.data.geminiPrompt, source: 'spatial-test-submit' },
@@ -2473,7 +2532,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       } else {
         playSpatialWebSound('error')
       }
-      setTimeout(() => get().saveWorldState(), 100)
+      scheduleSpatialInteractionSave()
       return
     }
 
@@ -2482,14 +2541,14 @@ export const useOasisStore = create<OasisState>((set, get) => {
       markInteraction()
       const ok = await runWorldToolAction(action, object.value)
       if (ok) get().spawnPlacementVfx(effectPosition)
-      setTimeout(() => get().saveWorldState(), 100)
+      scheduleSpatialInteractionSave()
       return
     }
 
     playSpatialWebSound('buttonClick')
     markInteraction()
     get().spawnPlacementVfx(effectPosition)
-    setTimeout(() => get().saveWorldState(), 100)
+    scheduleSpatialInteractionSave()
   },
   removeSpatialWebObject: (id) => {
     if (!canWriteCurrentWorld()) return
@@ -2721,21 +2780,25 @@ export const useOasisStore = create<OasisState>((set, get) => {
   // ─═̷─═̷─📜 TEXT 3D ACTIONS ─═̷─═̷─📜
   addText3dObject: (object) => {
     if (!canWriteCurrentWorld()) return
+    const normalizedObject: Text3DObject = { ...object, text: clampText3DInput(object.text) }
     withUndo('Place 3D text', 'text', () => {
-      set(state => ({ text3dObjects: [...state.text3dObjects, object] }))
+      set(state => ({ text3dObjects: [...state.text3dObjects, normalizedObject] }))
     })
-    worldMutationBus.broadcast({ kind: 'text3d_added', payload: object })
-    get().spawnPlacementVfx(object.position)
+    worldMutationBus.broadcast({ kind: 'text3d_added', payload: normalizedObject })
+    get().spawnPlacementVfx(normalizedObject.position)
     setTimeout(() => get().saveWorldState(), 100)
   },
   updateText3dObject: (id, updates) => {
     if (!canWriteCurrentWorld()) return
+    const sanitizedUpdates = updates.text !== undefined
+      ? { ...updates, text: clampText3DInput(updates.text) }
+      : updates
     withUndo('Update 3D text', 'text', () => {
       set(state => ({
-        text3dObjects: state.text3dObjects.map(t => t.id === id ? { ...t, ...updates } : t),
+        text3dObjects: state.text3dObjects.map(t => t.id === id ? { ...t, ...sanitizedUpdates } : t),
       }))
     })
-    worldMutationBus.broadcast({ kind: 'text3d_updated', payload: { id, updates } })
+    worldMutationBus.broadcast({ kind: 'text3d_updated', payload: { id, updates: sanitizedUpdates } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   removeText3dObject: (id) => {

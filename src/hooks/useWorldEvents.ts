@@ -1069,6 +1069,7 @@ export function useWorldEvents() {
 
           // ═══ world_switch — bypass queue entirely, execute immediately ═══
           if (parsed.type === 'world_switch') {
+            if (parsed.worldId && parsed.worldId !== activeWorldId) return
             const targetWorldId = parsed.data?.targetWorldId as string | undefined
             console.warn(`[WorldEvents] 🌍 world_switch! target=${targetWorldId} current=${activeWorldId}`)
             if (targetWorldId && targetWorldId !== activeWorldId) {

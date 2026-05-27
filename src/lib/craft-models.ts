@@ -5,8 +5,6 @@ export const CRAFT_MODEL_OPTIONS = [
   { id: 'google/gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
   { id: 'openai/gpt-5.4-mini', label: 'GPT-5.4 Mini' },
   { id: 'openai/gpt-5.4', label: 'GPT-5.4' },
-  { id: 'z-ai/glm-5', label: 'GLM-5' },
-  { id: 'nvidia/nemotron-3-super-120b-a12b:free', label: 'Nemotron 3 Super 120B A12B' },
   { id: 'qwen/qwen3.5-397b-a17b', label: 'Qwen 3.5 397B A17B' },
   { id: 'minimax/minimax-m2.7', label: 'Minimax M2.7' },
 ] as const
@@ -22,6 +20,8 @@ const REMOVED_CRAFT_MODELS = new Set([
   'anthropic/claude-haiku-4-5',
   'x-ai/grok-4.20-beta',
   'liquid/lfm-2-24b-a2b',
+  'z-ai/glm-5',
+  'nvidia/nemotron-3-super-120b-a12b:free',
   'cc-opus',
   'cc-sonnet',
   'opus',
@@ -35,4 +35,3 @@ export function normalizeCraftModelId(value: unknown): string {
   }
   return ALLOWED_CRAFT_MODELS.includes(requested) ? requested : DEFAULT_CRAFT_MODEL
 }
-

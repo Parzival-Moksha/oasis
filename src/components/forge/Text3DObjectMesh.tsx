@@ -10,7 +10,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import React, { Suspense, useRef } from 'react'
 import * as THREE from 'three'
 
-import { fontUrlFor, TEXT3D_FONT_OPTIONS, type Text3DObject } from '@/lib/forge/text-3d-object'
+import { clampText3DInput, fontUrlFor, TEXT3D_FONT_OPTIONS, type Text3DObject } from '@/lib/forge/text-3d-object'
 import { useOasisStore } from '@/store/oasisStore'
 
 // drei <Text3D> uses useLoader(FontLoader) which throws into Suspense on
@@ -107,7 +107,7 @@ export function Text3DObjectMesh({ object }: { object: Text3DObject }) {
   const groupRef = useRef<THREE.Group>(null)
   const worldPositionRef = useRef(new THREE.Vector3())
   const camera = useThree(state => state.camera)
-  const text = object.text.trim()
+  const text = clampText3DInput(object.text).trim()
 
   useFrame(() => {
     if (!object.billboard || !groupRef.current) return

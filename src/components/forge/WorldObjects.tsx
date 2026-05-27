@@ -2741,6 +2741,7 @@ function PlacementOverlay() {
       // ░▒▓ Agent window placement — create 3D interactive panel ▓▒░
       const isHermesAgent = placementPending.agentType === 'hermes'
       const isGeminiAgent = placementPending.agentType === 'gemini'
+      const isRealtimeAgent = placementPending.agentType === 'realtime'
       const isNpcAgent = placementPending.agentType === 'npc'
       const isOpenclawAgent = placementPending.agentType === 'openclaw'
       const defaultWindowScale = 0.15
@@ -2754,6 +2755,8 @@ function PlacementOverlay() {
             ? { width: 750, height: 850 }
           : isGeminiAgent
             ? { width: DEFAULT_GEMINI_AGENT_WINDOW_WIDTH, height: DEFAULT_GEMINI_AGENT_WINDOW_HEIGHT }
+          : isRealtimeAgent
+            ? { width: 700, height: 800 }
             : { width: 800, height: 600 }
       const defaultWindowWorldHeight = defaultWindowSize.height * (8 / 400)
       const browserDefaults = placementPending.agentType === 'browser'
@@ -2778,8 +2781,8 @@ function PlacementOverlay() {
         npcId: placementPending.npcId,
         label: placementPending.name,
         renderMode: placementPending.agentRenderMode,
-        frameStyle: placementPending.agentFrameStyle || (placementPending.agentType === 'browser' ? 'baroque' : isOpenclawAgent ? 'void' : isGeminiAgent ? DEFAULT_GEMINI_AGENT_FRAME_STYLE : isHermesAgent || isNpcAgent ? 'fire' : undefined),
-        frameThickness: placementPending.agentFrameThickness ?? (placementPending.agentType === 'browser' ? 7 : isOpenclawAgent ? 7 : isGeminiAgent ? DEFAULT_GEMINI_AGENT_FRAME_THICKNESS : isHermesAgent || isNpcAgent ? 6 : undefined),
+        frameStyle: placementPending.agentFrameStyle || (placementPending.agentType === 'browser' ? 'baroque' : isOpenclawAgent ? 'void' : isGeminiAgent ? DEFAULT_GEMINI_AGENT_FRAME_STYLE : isRealtimeAgent ? 'void' : isHermesAgent || isNpcAgent ? 'fire' : undefined),
+        frameThickness: placementPending.agentFrameThickness ?? (placementPending.agentType === 'browser' ? 7 : isOpenclawAgent ? 7 : isGeminiAgent ? DEFAULT_GEMINI_AGENT_FRAME_THICKNESS : isRealtimeAgent ? 8 : isHermesAgent || isNpcAgent ? 6 : undefined),
         ...browserDefaults,
       }
       dispatch({

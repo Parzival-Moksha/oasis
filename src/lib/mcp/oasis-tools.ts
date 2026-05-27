@@ -1817,6 +1817,7 @@ function defaultAgentWindowSize(agentType: AgentWindowEntry['agentType']): { wid
   if (agentType === 'browser') return { width: DEFAULT_BROWSER_WINDOW_WIDTH, height: DEFAULT_BROWSER_WINDOW_HEIGHT }
   if (agentType === 'anorak-pro') return { width: 960, height: 720 }
   if (agentType === 'gemini') return { width: 740, height: 960 }
+  if (agentType === 'realtime') return { width: 700, height: 800 }
   return { width: 800, height: 600 }
 }
 
@@ -1828,6 +1829,7 @@ function defaultAgentWindowFrame(agentType: AgentWindowEntry['agentType']): { fr
     }
   }
   if (agentType === 'gemini') return { frameStyle: 'void', frameThickness: 7 }
+  if (agentType === 'realtime') return { frameStyle: 'void', frameThickness: 8 }
   if (agentType === 'hermes') return { frameStyle: 'fire', frameThickness: 6 }
   return {}
 }
@@ -2548,7 +2550,7 @@ tools.get_craft_guide = async () => ({
 })
 
 tools.modify_object = async (args) => {
-  const objectId = validStr(args.objectId, '')
+  const objectId = validStr(args.objectId || args.id, '')
   if (!objectId) return { ok: false, message: 'objectId is required.' }
 
   const { worldId, state } = await loadRequestedWorld(args.worldId)
@@ -2708,7 +2710,7 @@ tools.modify_object = async (args) => {
 }
 
 tools.remove_object = async (args) => {
-  const objectId = validStr(args.objectId, '')
+  const objectId = validStr(args.objectId || args.id, '')
   if (!objectId) return { ok: false, message: 'objectId is required.' }
 
   const { worldId, state } = await loadRequestedWorld(args.worldId)
@@ -2758,7 +2760,7 @@ tools.remove_object = async (args) => {
 }
 
 tools.set_sky = async (args) => {
-  const presetId = validStr(args.presetId, '')
+  const presetId = validStr(args.presetId || args.skyBackgroundId, '')
   if (!presetId) return { ok: false, message: 'presetId is required.' }
 
   const { worldId, state } = await loadRequestedWorld(args.worldId)
@@ -2769,7 +2771,7 @@ tools.set_sky = async (args) => {
 }
 
 tools.set_ground_preset = async (args) => {
-  const presetId = validStr(args.presetId, '')
+  const presetId = validStr(args.presetId || args.groundPresetId, '')
   if (!presetId) return { ok: false, message: 'presetId is required (none, grass, sand, dirt, stone, snow, water).' }
 
   const { worldId, state } = await loadRequestedWorld(args.worldId)
@@ -2780,9 +2782,22 @@ tools.set_ground_preset = async (args) => {
 }
 
 tools.paint_ground_tiles = async (args) => {
-  const tiles = parseLooseObjectArray(args.tiles)
+  let tiles = parseLooseObjectArray(args.tiles)
+  const fallbackPresetId = validStr(args.presetId || args.groundPresetId, '')
+  if (tiles.length === 0) {
+    const cx = Math.floor(validNum(args.cx, NaN))
+    const cz = Math.floor(validNum(args.cz, NaN))
+    if (Number.isFinite(cx) && Number.isFinite(cz) && fallbackPresetId) {
+      const radius = Math.max(0, Math.min(4, Math.floor(validNum(args.size, 1) / 2)))
+      tiles = []
+      for (let dx = -radius; dx <= radius; dx += 1) {
+        for (let dz = -radius; dz <= radius; dz += 1) {
+          tiles.push({ x: cx + dx, z: cz + dz, presetId: fallbackPresetId })
+        }
+      }
+    }
+  }
   if (tiles.length === 0) return { ok: false, message: 'tiles array is required: [{x, z, presetId}]' }
-  const fallbackPresetId = validStr(args.presetId, '')
 
   const { worldId, state } = await loadRequestedWorld(args.worldId)
   if (!state.groundTiles) state.groundTiles = {}
@@ -2839,7 +2854,7 @@ tools.add_light = async (args) => {
 }
 
 tools.modify_light = async (args) => {
-  const lightId = validStr(args.lightId, '')
+  const lightId = validStr(args.lightId || args.id, '')
   if (!lightId) return { ok: false, message: 'lightId is required.' }
 
   const { worldId, state } = await loadRequestedWorld(args.worldId)
@@ -2866,24 +2881,25 @@ tools.modify_light = async (args) => {
 }
 
 tools.set_behavior = async (args) => {
-  const objectId = validStr(args.objectId, '')
+  const objectId = validStr(args.objectId || args.id, '')
   if (!objectId) return { ok: false, message: 'objectId is required.' }
-  const movement = validStr(args.movement, 'static')
+  const movementConfig = parseLooseObject(args.movement)
+  const movement = validStr(movementConfig.type || args.movement, 'static')
 
   const { worldId, state } = await loadRequestedWorld(args.worldId)
   if (!state.behaviors) state.behaviors = {}
 
   const movementPreset =
-    movement === 'spin' ? { type: 'spin' as const, axis: 'y' as const, speed: validNum(args.speed, 1) } :
-    movement === 'hover' ? { type: 'hover' as const, amplitude: validNum(args.amplitude, 0.5), speed: validNum(args.speed, 1), offset: 0 } :
-    movement === 'orbit' ? { type: 'orbit' as const, radius: validNum(args.radius, 2), speed: validNum(args.speed, 1), axis: 'xz' as const } :
-    movement === 'bounce' ? { type: 'bounce' as const, height: validNum(args.height, 1), speed: validNum(args.speed, 1) } :
-    movement === 'patrol' ? { type: 'patrol' as const, radius: validNum(args.radius, 3), speed: validNum(args.speed, 1) } :
+    movement === 'spin' ? { type: 'spin' as const, axis: 'y' as const, speed: validNum(args.speed ?? movementConfig.speed, 1) } :
+    movement === 'hover' ? { type: 'hover' as const, amplitude: validNum(args.amplitude ?? movementConfig.amplitude, 0.5), speed: validNum(args.speed ?? movementConfig.speed, 1), offset: 0 } :
+    movement === 'orbit' ? { type: 'orbit' as const, radius: validNum(args.radius ?? movementConfig.radius, 2), speed: validNum(args.speed ?? movementConfig.speed, 1), axis: 'xz' as const } :
+    movement === 'bounce' ? { type: 'bounce' as const, height: validNum(args.height ?? movementConfig.height, 1), speed: validNum(args.speed ?? movementConfig.speed, 1) } :
+    movement === 'patrol' ? { type: 'patrol' as const, radius: validNum(args.radius ?? movementConfig.radius, 3), speed: validNum(args.speed ?? movementConfig.speed, 1) } :
     { type: 'static' as const }
 
   const existing = state.behaviors[objectId]
   state.behaviors[objectId] = {
-    visible: existing?.visible ?? true,
+    visible: args.visible !== undefined ? Boolean(args.visible) : existing?.visible ?? true,
     movement: movementPreset,
     ...(args.label ? { label: validStr(args.label, '') } : existing?.label ? { label: existing.label } : {}),
   }

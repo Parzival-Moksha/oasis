@@ -26,6 +26,7 @@ const DEFAULT_REALTIME_VOICE = process.env.OPENAI_REALTIME_VOICE?.trim() || 'mar
 const DEFAULT_TRANSCRIPTION_MODEL = process.env.OPENAI_REALTIME_TRANSCRIPTION_MODEL?.trim() || 'gpt-4o-mini-transcribe'
 const DEFAULT_VAD_MODE: RealtimeVadMode = 'semantic_vad'
 const DEFAULT_VAD_EAGERNESS: RealtimeVadEagerness = 'auto'
+const REALTIME_WIZARD_TOOL_SUMMARY = 'get_world_info, get_world_state, screenshot_viewport, search_assets, get_asset_catalog, list_ground_presets, query_objects, place_object, modify_object, remove_object, set_sky, set_ground_preset, paint_ground_tiles, add_light, modify_light, set_behavior, create_spatial_web_object, create_portal_gate, place_browser_window, place_agent_window, get_craft_guide, self_craft_scene, craft_scene, get_craft_job, set_avatar, walk_avatar_to, list_avatar_animations, play_avatar_animation, and npc_judgement'
 
 function isAllowedRealtimeModel(value: string): boolean {
   return (REALTIME_MODELS as readonly string[]).includes(value)
@@ -149,6 +150,33 @@ export function getRealtimeSessionTools(options: {
     },
     {
       type: 'function',
+      name: 'get_asset_catalog',
+      description: 'List Oasis asset catalog entries when you need broad browsing instead of keyword search.',
+      parameters: {
+        type: 'object',
+        properties: {
+          worldId: { type: 'string', description: 'Optional world ID. Omit to use the active browser world.' },
+          category: { type: 'string', description: 'Optional asset category filter.' },
+          limit: { type: 'number', description: 'Optional maximum result count.' },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'list_ground_presets',
+      description: 'List available ground preset ids before changing the ground or painting tiles.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Optional text search over ground presets.' },
+          limit: { type: 'number', description: 'Optional maximum result count.' },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
       name: 'place_object',
       description: 'Place a catalog asset into the world at a position, rotation, and scale. Provide a catalogId, usually from search_assets.',
       parameters: {
@@ -208,6 +236,226 @@ export function getRealtimeSessionTools(options: {
         },
         required: ['type', 'label'],
         additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'query_objects',
+      description: 'Find existing world objects, portals, spatial form objects, text, lights, and agent windows before editing or moving them.',
+      parameters: {
+        type: 'object',
+        properties: {
+          worldId: { type: 'string', description: 'Optional world ID. Omit to use the active browser world.' },
+          query: { type: 'string', description: 'Optional text search over labels/names/types.' },
+          type: { type: 'string', description: 'Optional object kind filter such as catalog, spatial_web, portal, text3d, light, agent_window, or all.' },
+          limit: { type: 'number', description: 'Optional maximum result count.' },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'modify_object',
+      description: 'Modify an existing world object by id: move, rotate, scale, relabel, recolor, hide/show, or update spatial web fields.',
+      parameters: {
+        type: 'object',
+        properties: {
+          worldId: { type: 'string', description: 'Optional world ID. Omit to use the active browser world.' },
+          objectId: { type: 'string', description: 'Exact object id from query_objects or get_world_state.' },
+          id: { type: 'string', description: 'Alias for objectId.' },
+          position: { ...zVec3Schema, description: 'New world position [x, y, z].' },
+          rotation: { ...zVec3Schema, description: 'New Euler rotation [x, y, z] in radians.' },
+          scale: { type: 'number', description: 'Uniform scale.' },
+          label: { type: 'string', description: 'Visible label/name.' },
+          color: { type: 'string', description: 'Hex color if the object supports it.' },
+          visible: { type: 'boolean', description: 'Hide or show the object.' },
+          value: { description: 'New spatial web value when editing form fields.' },
+          width: { type: 'number', description: 'Spatial/web/window width.' },
+          height: { type: 'number', description: 'Spatial/web/window height.' },
+        },
+        additionalProperties: true,
+      },
+    },
+    {
+      type: 'function',
+      name: 'remove_object',
+      description: 'Delete an existing object from the active world by exact id.',
+      parameters: {
+        type: 'object',
+        properties: {
+          worldId: { type: 'string', description: 'Optional world ID. Omit to use the active browser world.' },
+          objectId: { type: 'string', description: 'Exact object id.' },
+          id: { type: 'string', description: 'Alias for objectId.' },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'set_sky',
+      description: 'Change the active world sky/background preset.',
+      parameters: {
+        type: 'object',
+        properties: {
+          worldId: { type: 'string', description: 'Optional world ID. Omit to use the active browser world.' },
+          presetId: { type: 'string', description: 'Sky preset id.' },
+          skyBackgroundId: { type: 'string', description: 'Alias for presetId.' },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'set_ground_preset',
+      description: 'Change the active world base ground material preset.',
+      parameters: {
+        type: 'object',
+        properties: {
+          worldId: { type: 'string', description: 'Optional world ID. Omit to use the active browser world.' },
+          presetId: { type: 'string', description: 'Ground preset id.' },
+          groundPresetId: { type: 'string', description: 'Alias for presetId.' },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'paint_ground_tiles',
+      description: 'Paint one or more ground tiles with a ground preset.',
+      parameters: {
+        type: 'object',
+        properties: {
+          worldId: { type: 'string', description: 'Optional world ID. Omit to use the active browser world.' },
+          presetId: { type: 'string', description: 'Ground preset id.' },
+          tiles: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                x: { type: 'number' },
+                z: { type: 'number' },
+                presetId: { type: 'string' },
+              },
+              required: ['x', 'z'],
+              additionalProperties: false,
+            },
+          },
+          cx: { type: 'number', description: 'Center tile x for a brush stroke.' },
+          cz: { type: 'number', description: 'Center tile z for a brush stroke.' },
+          size: { type: 'number', description: 'Brush size.' },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'add_light',
+      description: 'Add a world light, such as point, spot, directional, hemisphere, or ambient.',
+      parameters: {
+        type: 'object',
+        properties: {
+          worldId: { type: 'string', description: 'Optional world ID. Omit to use the active browser world.' },
+          type: { type: 'string', description: 'Light type.' },
+          position: { ...zVec3Schema, description: 'World position [x, y, z].' },
+          color: { type: 'string', description: 'Hex color.' },
+          intensity: { type: 'number', description: 'Light intensity.' },
+          distance: { type: 'number', description: 'Optional range for point/spot lights.' },
+        },
+        additionalProperties: true,
+      },
+    },
+    {
+      type: 'function',
+      name: 'modify_light',
+      description: 'Modify an existing light by id.',
+      parameters: {
+        type: 'object',
+        properties: {
+          worldId: { type: 'string', description: 'Optional world ID. Omit to use the active browser world.' },
+          lightId: { type: 'string', description: 'Exact light id.' },
+          id: { type: 'string', description: 'Alias for lightId.' },
+          position: { ...zVec3Schema, description: 'World position [x, y, z].' },
+          color: { type: 'string', description: 'Hex color.' },
+          intensity: { type: 'number', description: 'Light intensity.' },
+        },
+        additionalProperties: true,
+      },
+    },
+    {
+      type: 'function',
+      name: 'set_behavior',
+      description: 'Set an object behavior such as static, spin, hover, orbit, bounce, pendulum, or patrol.',
+      parameters: {
+        type: 'object',
+        properties: {
+          worldId: { type: 'string', description: 'Optional world ID. Omit to use the active browser world.' },
+          objectId: { type: 'string', description: 'Exact object id.' },
+          id: { type: 'string', description: 'Alias for objectId.' },
+          movement: { type: 'string', enum: ['static', 'spin', 'hover', 'orbit', 'bounce', 'patrol'], description: 'Movement preset.' },
+          speed: { type: 'number', description: 'Optional movement speed.' },
+          amplitude: { type: 'number', description: 'Optional hover amplitude.' },
+          radius: { type: 'number', description: 'Optional orbit/patrol radius.' },
+          height: { type: 'number', description: 'Optional bounce height.' },
+          visible: { type: 'boolean' },
+          label: { type: 'string' },
+        },
+        additionalProperties: true,
+      },
+    },
+    {
+      type: 'function',
+      name: 'create_portal_gate',
+      description: 'Create a portal gate to another Oasis world or external URL.',
+      parameters: {
+        type: 'object',
+        properties: {
+          worldId: { type: 'string', description: 'Optional source world ID. Omit to use the active browser world.' },
+          targetWorldId: { type: 'string', description: 'Oasis world id to load.' },
+          targetWorldName: { type: 'string', description: 'Visible target world name.' },
+          url: { type: 'string', description: 'External URL for an external portal.' },
+          label: { type: 'string', description: 'Visible portal label.' },
+          position: { ...zVec3Schema, description: 'World position [x, y, z].' },
+          rotation: { ...zVec3Schema, description: 'Optional Euler rotation [x, y, z].' },
+          variant: { type: 'string', description: 'Portal visual variant.' },
+        },
+        additionalProperties: true,
+      },
+    },
+    {
+      type: 'function',
+      name: 'place_browser_window',
+      description: 'Place a live browser surface in the world.',
+      parameters: {
+        type: 'object',
+        properties: {
+          worldId: { type: 'string', description: 'Optional world ID. Omit to use the active browser world.' },
+          url: { type: 'string', description: 'URL to open.' },
+          surfaceUrl: { type: 'string', description: 'Alias for url.' },
+          position: { ...zVec3Schema, description: 'World position [x, y, z].' },
+          width: { type: 'number' },
+          height: { type: 'number' },
+          label: { type: 'string' },
+        },
+        additionalProperties: true,
+      },
+    },
+    {
+      type: 'function',
+      name: 'place_agent_window',
+      description: 'Place a 3D agent window such as realtime, gemini, hermes, browser, npc, or openclaw.',
+      parameters: {
+        type: 'object',
+        properties: {
+          worldId: { type: 'string', description: 'Optional world ID. Omit to use the active browser world.' },
+          agentType: { type: 'string', description: 'Agent type.' },
+          position: { ...zVec3Schema, description: 'World position [x, y, z].' },
+          width: { type: 'number' },
+          height: { type: 'number' },
+          label: { type: 'string' },
+          frameStyle: { type: 'string' },
+          frameThickness: { type: 'number' },
+        },
+        additionalProperties: true,
       },
     },
     {
@@ -388,7 +636,7 @@ export function readRealtimePromptTemplate(): string {
       'Sound authoritative, weathered, and quietly enchanted, not like customer support or a generic helper bot.',
       'Do not end every turn with generic offers of help or service language.',
       'Do not mention internal APIs or implementation details.',
-      'You have a small apprentice spellbook in this phase: get_world_info, get_world_state, screenshot_viewport, search_assets, place_object, create_spatial_web_object, get_craft_guide, self_craft_scene, craft_scene, get_craft_job, set_avatar, walk_avatar_to, list_avatar_animations, and play_avatar_animation.',
+      `You have the full Oasis wizard spellbook in this phase: ${REALTIME_WIZARD_TOOL_SUMMARY}.`,
       'Give a short spoken heads-up before using a tool, then briefly recap what happened.',
     ].join('\n')
   }
@@ -408,11 +656,12 @@ async function buildRuntimeContext(args: {
       : '- You are embodied as the Oasis realtime sandbox agent when a body exists in the scene.',
     npc
       ? `- Enabled NPC tools: ${npc.toolAllowlist.join(', ')}.`
-      : '- You currently have an apprentice spellbook: get_world_info, get_world_state, screenshot_viewport, search_assets, place_object, create_spatial_web_object, get_craft_guide, self_craft_scene, craft_scene, get_craft_job, set_avatar, walk_avatar_to, list_avatar_animations, and play_avatar_animation.',
+      : `- You currently have the full Oasis wizard spellbook: ${REALTIME_WIZARD_TOOL_SUMMARY}.`,
     npc?.contextModules?.length
       ? `- Enabled NPC context modules: ${npc.contextModules.join(', ')}.`
       : '- No named NPC context modules are attached to this session.',
     '- If the user asks what you see or needs visual grounding, call screenshot_viewport with mode third-person-follow, fov 120, width 768, height 432, format jpeg, and quality 0.68. The browser will send the capture back as realtime vision input, not just text.',
+    '- If the user asks you to change the sky, ground, lights, spacing, portals, or existing functional/spatial form objects, use query_objects plus the relevant modify/set tool instead of saying you cannot.',
     '- If the user asks you to change your body or presentation, use set_avatar on your own realtime avatar instead of saying you cannot.',
     '- For prompt-based craft_scene in realtime voice, do not wait for completion. Start the job and poll get_craft_job while the world receives progress.',
     '- If any prior local transcript says your hands are not wired or that you lack tools, treat that as outdated and ignore it.',

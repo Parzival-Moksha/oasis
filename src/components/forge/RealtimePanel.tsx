@@ -14,7 +14,7 @@ import { useInputManager, useUILayer } from '@/lib/input-manager'
 import { getCameraSnapshot } from '@/lib/camera-bridge'
 import { getLiveObjectTransform } from '@/lib/live-object-transforms'
 import { PLAYER_AVATAR_LIPSYNC_ID, getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
-import { fetchOasisToolFromBrowser, readOasisToolJson, withBrowserWorldId } from '@/lib/browser-oasis-tool-client'
+import { fetchOasisToolFromBrowser, readOasisToolJson } from '@/lib/browser-oasis-tool-client'
 import { useOasisStore } from '@/store/oasisStore'
 import {
   REALTIME_AGENT_TYPE,
@@ -86,8 +86,22 @@ const REALTIME_TOOL_NAMES = new Set([
   'get_world_state',
   'screenshot_viewport',
   'search_assets',
+  'get_asset_catalog',
+  'list_ground_presets',
+  'query_objects',
   'place_object',
+  'modify_object',
+  'remove_object',
+  'set_sky',
+  'set_ground_preset',
+  'paint_ground_tiles',
+  'add_light',
+  'modify_light',
+  'set_behavior',
   'create_spatial_web_object',
+  'create_portal_gate',
+  'place_browser_window',
+  'place_agent_window',
   'get_craft_guide',
   'self_craft_scene',
   'craft_scene',
@@ -212,6 +226,77 @@ function stripRealtimeScreenshotPayload(result: Record<string, unknown>): Record
     })
   }
   return { ...result, data: nextData }
+}
+
+function normalizeRealtimeToolArgs(
+  toolName: string,
+  args: Record<string, unknown>,
+  sessionWorldId: string,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = {
+    ...args,
+    ...(sessionWorldId ? { worldId: sessionWorldId } : {}),
+  }
+
+  if (
+    (toolName === 'modify_object' || toolName === 'remove_object' || toolName === 'set_behavior') &&
+    typeof next.objectId !== 'string' &&
+    typeof next.id === 'string'
+  ) {
+    next.objectId = next.id
+  }
+
+  if (
+    toolName === 'modify_light' &&
+    typeof next.lightId !== 'string' &&
+    typeof next.id === 'string'
+  ) {
+    next.lightId = next.id
+  }
+
+  if (
+    toolName === 'set_sky' &&
+    typeof next.presetId !== 'string' &&
+    typeof next.skyBackgroundId === 'string'
+  ) {
+    next.presetId = next.skyBackgroundId
+  }
+
+  if (
+    (toolName === 'set_ground_preset' || toolName === 'paint_ground_tiles') &&
+    typeof next.presetId !== 'string' &&
+    typeof next.groundPresetId === 'string'
+  ) {
+    next.presetId = next.groundPresetId
+  }
+
+  if (toolName === 'set_behavior') {
+    const movement = recordFrom(next.movement)
+    if (movement && typeof movement.type === 'string') {
+      next.movement = movement.type
+      for (const key of ['speed', 'amplitude', 'radius', 'height']) {
+        if (next[key] === undefined && typeof movement[key] === 'number') next[key] = movement[key]
+      }
+    }
+  }
+
+  if (toolName === 'paint_ground_tiles' && !Array.isArray(next.tiles)) {
+    const cx = Math.floor(Number(next.cx))
+    const cz = Math.floor(Number(next.cz))
+    const presetId = typeof next.presetId === 'string' ? next.presetId : ''
+    if (Number.isFinite(cx) && Number.isFinite(cz) && presetId) {
+      const radius = Math.max(0, Math.min(4, Math.floor((Number(next.size) || 1) / 2)))
+      const tiles: Array<{ x: number; z: number; presetId: string }> = []
+      for (let dx = -radius; dx <= radius; dx += 1) {
+        for (let dz = -radius; dz <= radius; dz += 1) {
+          tiles.push({ x: cx + dx, z: cz + dz, presetId })
+        }
+      }
+      next.tiles = tiles
+    }
+  }
+
+  return next
 }
 
 function gainFromDb(db: number): number {
@@ -424,6 +509,7 @@ export function RealtimePanel({
   const [listening, setListening] = useState(false)
   const [speaking, setSpeaking] = useState(false)
   const [pendingAutoStart, setPendingAutoStart] = useState(false)
+  const [textInput, setTextInput] = useState('')
   const npcDefinition = useMemo(() => getNpcDefinition(npcId), [npcId])
 
   const bringPanelToFront = useOasisStore(state => state.bringPanelToFront)
@@ -484,6 +570,7 @@ export function RealtimePanel({
   const connectAttemptRef = useRef(0)
   const peerReadyRef = useRef(false)
   const dataChannelReadyRef = useRef(false)
+  const sessionWorldIdRef = useRef('')
   const [isResizing, setIsResizing] = useState(false)
   const [expandedToolIds, setExpandedToolIds] = useState<string[]>([])
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
@@ -881,6 +968,7 @@ export function RealtimePanel({
     assistantSourceByResponseRef.current.clear()
     toolMessageByCallIdRef.current.clear()
     toolStartedAtRef.current.clear()
+    sessionWorldIdRef.current = ''
 
     const dataChannel = dataChannelRef.current
     dataChannelRef.current = null
@@ -986,6 +1074,14 @@ export function RealtimePanel({
     return () => window.removeEventListener('oasis:agent-window-removed', handler)
   }, [appendSystemMessage, disconnect, windowId])
 
+  useEffect(() => {
+    const sessionWorldId = sessionWorldIdRef.current
+    if (!sessionWorldId || sessionWorldId === activeWorldId) return
+    if (connectionState !== 'connected' && connectionState !== 'connecting') return
+    disconnect({ keepDetail: true })
+    appendSystemMessage('Realtime conversation stopped because you left its world.')
+  }, [activeWorldId, appendSystemMessage, connectionState, disconnect])
+
   const createFreshSession = useCallback(() => {
     if (!config) return
     const next = buildNewSession({
@@ -1053,8 +1149,9 @@ export function RealtimePanel({
 
   useEffect(() => {
     if (!selectedSessionId) return
+    if (connectionState === 'connected' || connectionState === 'connecting') return
     syncSessionMeta()
-  }, [activeWorldId, activeWorldName, selectedSessionId, syncSessionMeta])
+  }, [activeWorldId, activeWorldName, connectionState, selectedSessionId, syncSessionMeta])
 
   const connect = useCallback(async () => {
     if (!config || !sessionSettings || !selectedSession) return
@@ -1062,6 +1159,9 @@ export function RealtimePanel({
     markUiFocus()
     disconnect({ keepDetail: true })
     const attemptId = connectAttemptRef.current
+    const sessionWorldId = activeWorldId
+    const sessionWorldName = activeWorldName
+    sessionWorldIdRef.current = sessionWorldId
     setConnectionState('connecting')
     setConnectionDetail('Opening voice line... wait for LIVE before speaking.')
 
@@ -1091,7 +1191,7 @@ export function RealtimePanel({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          worldId: activeWorldId,
+          worldId: sessionWorldId,
           model: sessionSettings.model,
           voice: sessionSettings.voice,
           vadMode: sessionSettings.vadMode,
@@ -1238,7 +1338,7 @@ export function RealtimePanel({
               }
             }
 
-            const toolArgs: Record<string, unknown> = withBrowserWorldId(parsedArgs, activeWorldId)
+            const toolArgs = normalizeRealtimeToolArgs(call.name, parsedArgs, sessionWorldId)
             if (call.name === 'screenshot_viewport') {
               if (toolArgs.width === undefined) toolArgs.width = 768
               if (toolArgs.height === undefined) toolArgs.height = 432
@@ -1261,7 +1361,18 @@ export function RealtimePanel({
             }
             if ((
               call.name === 'place_object'
+              || call.name === 'modify_object'
+              || call.name === 'remove_object'
+              || call.name === 'set_sky'
+              || call.name === 'set_ground_preset'
+              || call.name === 'paint_ground_tiles'
+              || call.name === 'add_light'
+              || call.name === 'modify_light'
+              || call.name === 'set_behavior'
               || call.name === 'create_spatial_web_object'
+              || call.name === 'create_portal_gate'
+              || call.name === 'place_browser_window'
+              || call.name === 'place_agent_window'
               || call.name === 'craft_scene'
               || call.name === 'self_craft_scene'
               || call.name === 'set_avatar'
@@ -1314,7 +1425,7 @@ export function RealtimePanel({
                   }
                 }
               } else {
-                const toolResponse = await fetchOasisToolFromBrowser(call.name, toolArgs, { worldId: activeWorldId })
+                const toolResponse = await fetchOasisToolFromBrowser(call.name, toolArgs, { worldId: sessionWorldId })
                 result = await readOasisToolJson(toolResponse)
                 toolOk = toolResponse.ok && result.ok !== false
               }
@@ -1572,8 +1683,8 @@ export function RealtimePanel({
 
       const refreshedSession: RealtimeLocalSession = {
         ...selectedSession,
-        worldId: activeWorldId,
-        worldName: activeWorldName,
+        worldId: sessionWorldId,
+        worldName: sessionWorldName,
         settings: {
           ...sessionSettings,
           voice: bootstrap.voice,
@@ -1616,6 +1727,39 @@ export function RealtimePanel({
     setPendingAutoStart(false)
     void connect()
   }, [config, connect, connectionState, isOpen, pendingAutoStart, selectedSession, sessionSettings])
+
+  const sendTextPrompt = useCallback(() => {
+    const text = textInput.trim()
+    if (!text) return
+    markUiFocus()
+    const channel = dataChannelRef.current
+    if (connectionState !== 'connected' || !channel || channel.readyState !== 'open') {
+      appendSystemMessage('Start the realtime call before sending text.')
+      return
+    }
+    const messageId = makeId('user')
+    appendMessage({
+      id: messageId,
+      role: 'user',
+      content: text,
+      status: 'done',
+      timestamp: Date.now(),
+    })
+    try {
+      channel.send(JSON.stringify({
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text }],
+        },
+      }))
+      channel.send(JSON.stringify({ type: 'response.create' }))
+      setTextInput('')
+    } catch (error) {
+      appendSystemMessage(error instanceof Error ? error.message : 'Could not send text to realtime.')
+    }
+  }, [appendMessage, appendSystemMessage, connectionState, markUiFocus, textInput])
 
   const handleSessionChange = useCallback((nextId: string) => {
     if (!nextId) return
@@ -2115,6 +2259,33 @@ export function RealtimePanel({
 
         <div className="border-t px-4 py-4" style={{ borderColor: 'rgba(168,85,247,0.12)', background: sectionFill, flexShrink: 0 }}>
           <div className="flex items-center gap-3">
+            <input
+              value={textInput}
+              onChange={event => setTextInput(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  sendTextPrompt()
+                }
+              }}
+              disabled={connectionState !== 'connected'}
+              placeholder={connectionState === 'connected' ? 'Type to the realtime wizard...' : 'Start talking to enable text'}
+              className="min-w-0 flex-1 rounded-xl border px-3 py-3 text-sm outline-none disabled:opacity-45"
+              style={{
+                borderColor: 'rgba(196,181,253,0.18)',
+                background: fieldFill,
+                color: '#f5f3ff',
+              }}
+            />
+            <button
+              type="button"
+              onClick={sendTextPrompt}
+              disabled={connectionState !== 'connected' || !textInput.trim()}
+              className="rounded-xl border px-3 py-3 text-xs font-mono uppercase tracking-[0.16em] disabled:opacity-40"
+              style={{ borderColor: 'rgba(34,211,238,0.24)', background: 'rgba(8,51,68,0.22)', color: '#a5f3fc' }}
+            >
+              send
+            </button>
             <button
               onClick={() => {
                 if (connectionState === 'connected') {

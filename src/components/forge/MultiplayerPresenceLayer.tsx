@@ -429,6 +429,12 @@ export function MultiplayerPresenceLayer() {
     const id = s.viewingWorldId || s.activeWorldId
     return s.worldRegistry.find(world => world.id === id)?.pvpEnabled === true
   })
+  const activeWorldIsGoogleForm = useOasisStore(s =>
+    s.spatialWebObjects.some(object =>
+      object.action?.type === 'submit_form' &&
+      object.action.destination?.type === 'google_form',
+    ),
+  )
   const avatarUrl = useOasisStore(s => s.avatar3dUrl)
   // Latest avatarUrl read at connect time. After connect, we send profile
   // mutations on changes instead of reconnecting the whole room.
@@ -651,6 +657,13 @@ export function MultiplayerPresenceLayer() {
       setWorldChatLocalSessionId(null)
       return
     }
+    if (activeWorldIsGoogleForm) {
+      setPlayers([])
+      setWorldChatWorldId(null)
+      setWorldChatSender(null)
+      setWorldChatLocalSessionId(null)
+      return
+    }
     setWorldChatWorldId(activeWorldId)
     const playerId = playerIdRef.current
     if (!playerId) return
@@ -864,7 +877,7 @@ export function MultiplayerPresenceLayer() {
         commandRejectRecoveryTimerRef.current = null
       }
     }
-  }, [activeWorldId, activeWorldPvpEnabled, reconnectTick, setWorldChatLocalSessionId, setWorldChatWorldId])
+  }, [activeWorldId, activeWorldIsGoogleForm, activeWorldPvpEnabled, reconnectTick, setWorldChatLocalSessionId, setWorldChatWorldId])
 
   // Push avatar/profile changes as a small mutation instead of reconnecting
   // the whole room. This decouples cosmetic changes from session lifecycle.
