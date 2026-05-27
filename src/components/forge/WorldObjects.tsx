@@ -217,15 +217,6 @@ function findOasisObjectId(object: THREE.Object3D | null): string | null {
   return null
 }
 
-function isOasisSelectionProxy(object: THREE.Object3D | null): boolean {
-  let current: THREE.Object3D | null = object
-  while (current) {
-    if (current.userData?.oasisSelectionProxy === true) return true
-    current = current.parent
-  }
-  return false
-}
-
 export function SelectableWrapper({ id, children, selected, onSelect, transformMode, onTransformChange, initialPosition, initialRotation, initialScale, allowTransform = true, liveTransformResolver, groundToTerrain = false }: {
   id: string
   children: React.ReactNode
@@ -1409,6 +1400,8 @@ function SpatialAudioFromBehavior({ objectId }: { objectId: string }) {
 // ░▒▓ Clone once + kill raycasting — SelectableWrapper handles pointer events ▓▒░
 // ═══════════════════════════════════════════════════════════════════════════════
 
+const NOOP_RAYCAST = () => {}
+
 export function CatalogModelRenderer({ path, scale, objectId }: { path: string; scale: number; objectId?: string; displayName?: string }) {
   const { scene, animations } = useGLTF(path)
   const sceneRef = useRef<THREE.Group>(null)
@@ -1422,6 +1415,7 @@ export function CatalogModelRenderer({ path, scale, objectId }: { path: string; 
     const clone = SkeletonUtils.clone(scene) as THREE.Group
     clone.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
+        child.raycast = NOOP_RAYCAST
         // Enable vertex colors for models that use them (Kenney assets etc.)
         const mesh = child as THREE.Mesh
         if (mesh.geometry.attributes.color) {
@@ -1548,13 +1542,15 @@ export function CatalogModelRenderer({ path, scale, objectId }: { path: string; 
     return { size, center }
   }, [clonedScene])
 
-  // ░▒▓ Precision pick: real mesh raycasts in build/play, disabled only while painting ▓▒░
+  // Cheap pick: proxy raycasts stay fast even when the GLB has massive meshes.
   useEffect(() => {
     clonedScene.traverse((child) => {
       if (!(child as THREE.Mesh).isMesh) return
-      child.raycast = paintMode ? () => {} : THREE.Mesh.prototype.raycast
+      child.raycast = NOOP_RAYCAST
     })
-    if (catalogProxyRef.current) catalogProxyRef.current.raycast = () => {}
+    if (catalogProxyRef.current) {
+      catalogProxyRef.current.raycast = paintMode ? NOOP_RAYCAST : THREE.Mesh.prototype.raycast
+    }
   }, [clonedScene, paintMode])
 
   // ░▒▓ Extract mesh stats once per clone — push to Zustand for ObjectInspector ▓▒░
@@ -1574,20 +1570,8 @@ export function CatalogModelRenderer({ path, scale, objectId }: { path: string; 
   }, [objectId, clonedScene, animations, path, setObjectMeshStats])
 
   return (
-    <group
-      ref={sceneRef}
-      onPointerOver={(e) => {
-        e.stopPropagation()
-        if (useInputManager.getState().pointerLocked) return
-        setHovered(true)
-      }}
-      onPointerOut={(e) => {
-        e.stopPropagation()
-        if (useInputManager.getState().pointerLocked) return
-        setHovered(false)
-      }}
-    >
-      {/* Legacy proxy kept mounted but raycast-disabled; real meshes own picking now. */}
+    <group ref={sceneRef}>
+      {/* Transparent bounding proxy: cheap selection target for huge GLBs. */}
       <mesh
         ref={catalogProxyRef}
         userData={{ oasisSelectionProxy: true }}
@@ -3366,7 +3350,6 @@ export function WorldObjectsRenderer() {
       raycaster.setFromCamera(resolvePointerNdc(event), camera)
       const hits = raycaster.intersectObjects(scene.children, true)
       for (const hit of hits) {
-        if (isOasisSelectionProxy(hit.object)) continue
         const objectId = findOasisObjectId(hit.object)
         if (!objectId) continue
         if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {

@@ -131,6 +131,7 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
   const renderMode = resolveAgentWindowRenderMode(win.renderMode)
   const rendererMeta = getAgentWindowRendererMeta(renderMode)
   const isHybrid = isHybridAgentWindowRenderMode(renderMode)
+  const shouldRenderLiveHtmlSurface = renderMode === 'live-html' && (isSelected || isFocused)
 
   const committedWidth = win.width || 800
   const committedHeight = win.height || 600
@@ -385,7 +386,7 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
   return (
     <group ref={groupRef}>
       <group scale={[winScale, winScale, winScale]}>
-        {renderMode === 'live-html' ? (
+        {shouldRenderLiveHtmlSurface ? (
           <Html
             transform
             /* Occlusion parked — see carbondir/occlusionspec.md for the full
