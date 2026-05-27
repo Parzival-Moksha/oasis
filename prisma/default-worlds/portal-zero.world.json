@@ -11594,7 +11594,8 @@
           "type": "create_world_from_google_form",
           "testMode": true,
           "successMessage": "Oasis world ready."
-        }
+        },
+        "statusMessage": "PASTE A GOOGLE FORMS URL"
       }
     ],
     "paintStrokes": [],
@@ -12298,7 +12299,7 @@
     "skyBackgroundId": "umhlanga_sunrise",
     "agentWindows": [],
     "agentAvatars": [],
-    "savedAt": "2026-05-27T23:30:25.209Z"
+    "savedAt": "2026-05-27T23:32:19.639Z"
   },
   "pvpEnabled": true
 }

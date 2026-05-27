@@ -66,6 +66,57 @@ describe('default world seed writer', () => {
     expect(seed.data.catalogPlacements).toEqual([{ id: 'changed' }])
   })
 
+  it('keeps Portal Zero runtime-only fields out of the seed', async () => {
+    const root = join(tempDir, 'prisma', 'default-worlds')
+    await writeFile(join(root, 'manifest.json'), `${JSON.stringify({
+      seedVersion: 1,
+      worlds: [
+        {
+          slug: 'portal-zero',
+          id: 'world-welcome-hub-system',
+          file: 'portal-zero.world.json',
+          name: 'Portal Zero',
+          visibility: 'core',
+        },
+      ],
+    }, null, 2)}\n`)
+
+    await mirrorDefaultWorldSeed(worldSource({
+      data: JSON.stringify({
+        version: 1,
+        catalogPlacements: [
+          { id: 'demo-card', imageUrl: '/generated-images/img_mpogyvugxdxx.png' },
+        ],
+        portalGates: [
+          { id: 'portal-zero-new-ffa-world' },
+          { id: 'portal-zero-ffa-world-world-local' },
+          { id: 'portal-zero-public-world-world-local' },
+        ],
+        spatialWebObjects: [
+          {
+            id: 'spatial-google-forms-altar-portal-zero',
+            formId: 'portal-zero-google-forms-altar',
+            value: 'http://localhost:4516/2131',
+            statusMessage: 'COPIED. PORTAL OPENING...',
+            generatedWorldUrl: 'http://localhost:4516/2131',
+            submittedAt: '2026-05-27T17:16:30.533Z',
+          },
+        ],
+      }),
+    }))
+
+    const seed = JSON.parse(await readFile(join(root, 'portal-zero.world.json'), 'utf8'))
+    expect(seed.data.catalogPlacements[0].imageUrl).toBe('/generated-images/img_mpogyvugxdxx.png?v=pz-may28-images-2')
+    expect(seed.data.portalGates).toEqual([{ id: 'portal-zero-new-ffa-world' }])
+    expect(seed.data.spatialWebObjects[0]).toMatchObject({
+      id: 'spatial-google-forms-altar-portal-zero',
+      value: '',
+      statusMessage: 'PASTE A GOOGLE FORMS URL',
+    })
+    expect(seed.data.spatialWebObjects[0].generatedWorldUrl).toBeUndefined()
+    expect(seed.data.spatialWebObjects[0].submittedAt).toBeUndefined()
+  })
+
   it('creates a new seed and manifest entry when a world becomes core', async () => {
     const root = join(tempDir, 'prisma', 'default-worlds')
     await writeFile(join(root, 'manifest.json'), `${JSON.stringify({ seedVersion: 1, worlds: [] }, null, 2)}\n`)

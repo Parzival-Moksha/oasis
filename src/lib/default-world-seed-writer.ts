@@ -13,6 +13,28 @@ import {
 
 const DEFAULT_WORLDS_ROOT = ['prisma', 'default-worlds']
 const NEW_SEED_VISIBILITIES = new Set(['core', 'template'])
+const PORTAL_ZERO_WORLD_ID = 'world-welcome-hub-system'
+const PORTAL_ZERO_SLUG = 'portal-zero'
+const PORTAL_ZERO_RUNTIME_PORTAL_PREFIXES = [
+  'portal-zero-public-world-',
+  'portal-zero-ffa-world-',
+]
+const PORTAL_ZERO_GENERATED_IMAGE_CACHE_KEYS: Record<string, string> = {
+  '/generated-images/img_mpofgsazdcrr.png': '/generated-images/img_mpofgsazdcrr.png?v=pz-may28-images-2',
+  '/generated-images/img_mpogfnf984ie.jpg': '/generated-images/img_mpogfnf984ie.jpg?v=pz-may28-images-2',
+  '/generated-images/img_mpogk6cek7m0.png': '/generated-images/img_mpogk6cek7m0.png?v=pz-may28-images-2',
+  '/generated-images/img_mpogyvugxdxx.png': '/generated-images/img_mpogyvugxdxx.png?v=pz-may28-images-2',
+}
+const PORTAL_ZERO_FORM_RUNTIME_KEYS = [
+  'generatedWorldId',
+  'generatedWorldName',
+  'generatedWorldUrl',
+  'generatedQrUrl',
+  'lastEvent',
+  'lastInteractionAt',
+  'interactionCount',
+  'submittedAt',
+]
 
 export interface DefaultWorldSeedWriteResult {
   updated: boolean
@@ -92,6 +114,67 @@ function selectManifestEntry(
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function sanitizePortalZeroSeedData(data: unknown): unknown {
+  if (!isRecord(data)) return data
+  const next: Record<string, unknown> = { ...data }
+
+  if (Array.isArray(next.catalogPlacements)) {
+    next.catalogPlacements = next.catalogPlacements.map(item => {
+      if (!isRecord(item)) return item
+      const imageUrl = typeof item.imageUrl === 'string' ? item.imageUrl : ''
+      return {
+        ...item,
+        ...(PORTAL_ZERO_GENERATED_IMAGE_CACHE_KEYS[imageUrl]
+          ? { imageUrl: PORTAL_ZERO_GENERATED_IMAGE_CACHE_KEYS[imageUrl] }
+          : {}),
+      }
+    })
+  }
+
+  if (Array.isArray(next.portalGates)) {
+    next.portalGates = next.portalGates.filter(gate => {
+      if (!isRecord(gate) || typeof gate.id !== 'string') return true
+      const gateId = gate.id
+      return !PORTAL_ZERO_RUNTIME_PORTAL_PREFIXES.some(prefix => gateId.startsWith(prefix))
+    })
+  }
+
+  if (Array.isArray(next.spatialWebObjects)) {
+    next.spatialWebObjects = next.spatialWebObjects.map(object => {
+      if (!isRecord(object)) return object
+      const id = typeof object.id === 'string' ? object.id : ''
+      const formId = typeof object.formId === 'string' ? object.formId : ''
+      if (id !== 'spatial-google-forms-altar-portal-zero' && id !== 'spatial-google-test-altar-portal-zero' && !formId.startsWith('portal-zero-google-')) {
+        return object
+      }
+      const clean: Record<string, unknown> = {
+        ...object,
+        value: '',
+        statusMessage: 'PASTE A GOOGLE FORMS URL',
+      }
+      for (const key of PORTAL_ZERO_FORM_RUNTIME_KEYS) {
+        delete clean[key]
+      }
+      return clean
+    })
+  }
+
+  return next
+}
+
+function sanitizeSourceForSeed(source: DefaultWorldSource, entry: DefaultWorldManifestEntry): DefaultWorldSource {
+  if (source.id !== PORTAL_ZERO_WORLD_ID && entry.slug !== PORTAL_ZERO_SLUG) return source
+  if (!source.data) return source
+  return {
+    ...source,
+    data: JSON.stringify(sanitizePortalZeroSeedData(JSON.parse(source.data) as unknown)),
+  }
+}
+
 export async function mirrorDefaultWorldSeed(
   source: DefaultWorldSource,
 ): Promise<DefaultWorldSeedWriteResult> {
@@ -105,7 +188,7 @@ export async function mirrorDefaultWorldSeed(
 
   const outPath = resolveUnderRoot(rootDir, entry.file)
   const file = relative(rootDir, outPath).replace(/\\/g, '/')
-  const seed = buildDefaultWorldSeed(source, { slug: entry.slug })
+  const seed = buildDefaultWorldSeed(sanitizeSourceForSeed(source, entry), { slug: entry.slug })
   const seedText = `${JSON.stringify(seed, null, 2)}\n`
   const currentSeedText = await readOptionalText(outPath)
   const seedChanged = currentSeedText !== seedText
