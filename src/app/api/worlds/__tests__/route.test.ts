@@ -11,7 +11,7 @@ vi.mock('@/lib/oasis-analytics', () => ({
 }))
 
 import { GET, POST } from '../route'
-import { getRegistry, createWorld } from '@/lib/forge/world-server'
+import { getRegistry, createWorld, saveWorld } from '@/lib/forge/world-server'
 import { recordOasisAnalyticsEvent } from '@/lib/oasis-analytics'
 import {
   ADMIN_SESSION_COOKIE_NAME,
@@ -108,6 +108,64 @@ describe('/api/worlds hosted identity boundary', () => {
       eventType: 'world_created',
       worldId: 'world-created-1',
       source: 'worlds-route',
+    }))
+  })
+
+  it('preserves full world state fields when importing world JSON', async () => {
+    process.env.OASIS_ADMIN_TOKEN = 'admin-token-for-tests'
+    const adminCookie = signAdminSession(getAdminUserId())
+    vi.mocked(createWorld).mockResolvedValue({
+      id: 'world-imported-1',
+      name: 'Imported Full World',
+      icon: 'I',
+      visibility: 'private',
+      createdAt: '',
+      lastSavedAt: '',
+      objectCount: 0,
+      visitCount: 0,
+      canWrite: true,
+      writeDecision: 'write',
+      assetVisibility: 'public',
+    } as never)
+
+    const state = {
+      version: 1,
+      terrain: null,
+      terrainHeights: [0, 0.5, 1],
+      craftedScenes: [{ id: 'craft-1' }],
+      conjuredAssetIds: ['conj-1'],
+      catalogPlacements: [{ id: 'catalog-1' }],
+      portalGates: [{ id: 'portal-1' }],
+      spatialWebObjects: [{ id: 'spatial-1' }],
+      transforms: { 'catalog-1': { position: [1, 2, 3] } },
+      behaviors: { 'catalog-1': { visible: true } },
+      groundPresetId: 'grass',
+      groundTiles: { '0,0': 'sand' },
+      lights: [{ id: 'light-1' }],
+      skyBackgroundId: 'warehouse',
+      customGroundPresets: [{ id: 'custom-ground-1' }],
+      agentWindows: [{ id: 'agent-window-1' }],
+      agentAvatars: [{ id: 'agent-avatar-1' }],
+      paintStrokes: [{ id: 'stroke-1' }],
+      text3dObjects: [{ id: 'text-1' }],
+      savedAt: '2026-05-27T00:00:00.000Z',
+    }
+
+    const response = await POST(request(
+      'POST',
+      { import: true, meta: { name: 'Imported Full World', icon: 'I' }, state },
+      `${ADMIN_SESSION_COOKIE_NAME}=${encodeURIComponent(adminCookie)}`,
+    ))
+
+    expect(response.status).toBe(201)
+    expect(saveWorld).toHaveBeenCalledWith('world-imported-1', getAdminUserId(), expect.objectContaining({
+      portalGates: state.portalGates,
+      spatialWebObjects: state.spatialWebObjects,
+      customGroundPresets: state.customGroundPresets,
+      paintStrokes: state.paintStrokes,
+      text3dObjects: state.text3dObjects,
+      agentWindows: state.agentWindows,
+      agentAvatars: state.agentAvatars,
     }))
   })
 })
