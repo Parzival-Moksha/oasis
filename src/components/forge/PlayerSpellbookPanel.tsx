@@ -73,6 +73,15 @@ export function PlayerSpellbookPanel({
   const closeSpellbook = useCallback(() => onOpenChange(false), [onOpenChange])
   useRailMenuExclusion('spellbook', isOpen, closeSpellbook)
 
+  const playMenuHover = useCallback(() => {
+    useAudioManager.getState().play('buttonHover')
+  }, [])
+
+  const handlePageClick = useCallback((pageId: SpellbookPageId) => {
+    useAudioManager.getState().play('buttonClick')
+    setActivePage(pageId)
+  }, [])
+
   const handleCardClick = useCallback((spellId: SpellId) => {
     useAudioManager.getState().play('buttonClick')
     onCastSpell?.(spellId)
@@ -141,6 +150,107 @@ export function PlayerSpellbookPanel({
           50% { box-shadow: 0 0 38px rgba(251,191,36,0.65); }
           100% { box-shadow: 0 0 18px rgba(251,191,36,0.32); }
         }
+        @keyframes oasisChapterShimmer {
+          0% { transform: translateX(-125%) skewX(-18deg); opacity: 0; }
+          18% { opacity: 0.95; }
+          100% { transform: translateX(132%) skewX(-18deg); opacity: 0; }
+        }
+        @keyframes oasisChapterRune {
+          0% { opacity: 0; transform: translate(-50%, -50%) scale(0.35) rotate(0deg); }
+          42% { opacity: 0.95; transform: translate(-50%, -50%) scale(1.16) rotate(64deg); }
+          100% { opacity: 0; transform: translate(-50%, -50%) scale(1.82) rotate(112deg); }
+        }
+        @keyframes oasisChapterSelectedPulse {
+          0%, 100% { opacity: 0.52; transform: scaleX(0.72); }
+          50% { opacity: 1; transform: scaleX(1); }
+        }
+        .oasis-spellbook-chapter {
+          position: relative;
+          isolation: isolate;
+          transform: translateZ(0);
+          transition: border-color 180ms ease, color 180ms ease, background 180ms ease, box-shadow 180ms ease, transform 180ms ease, filter 180ms ease;
+        }
+        .oasis-spellbook-chapter::before {
+          content: '';
+          position: absolute;
+          inset: -1px;
+          z-index: -1;
+          opacity: 0;
+          border-radius: inherit;
+          background:
+            radial-gradient(circle at 18% 10%, rgba(255,255,255,0.45), transparent 22%),
+            radial-gradient(circle at 82% 82%, rgba(45,212,191,0.34), transparent 24%),
+            linear-gradient(135deg, rgba(251,191,36,0.24), rgba(236,72,153,0.15) 46%, rgba(14,165,233,0.18));
+          transition: opacity 180ms ease;
+        }
+        .oasis-spellbook-chapter::after {
+          content: '';
+          position: absolute;
+          inset: -35% -55%;
+          z-index: 1;
+          pointer-events: none;
+          opacity: 0;
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.58), rgba(251,191,36,0.5), transparent);
+          mix-blend-mode: screen;
+        }
+        .oasis-spellbook-chapter:hover {
+          transform: translateY(-1px) scale(1.035);
+          filter: saturate(1.14);
+        }
+        .oasis-spellbook-chapter:hover::before {
+          opacity: 1;
+        }
+        .oasis-spellbook-chapter:hover::after {
+          animation: oasisChapterShimmer 760ms cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .oasis-spellbook-chapter:active {
+          transform: translateY(1px) scale(0.972);
+        }
+        .oasis-spellbook-chapter[data-selected="true"] {
+          border-color: rgba(251,191,36,0.78);
+          box-shadow: 0 0 0 1px rgba(251,191,36,0.18), 0 0 26px rgba(251,191,36,0.28), inset 0 0 20px rgba(251,191,36,0.08);
+        }
+        .oasis-spellbook-chapter[data-selected="true"]::before {
+          opacity: 0.82;
+        }
+        .oasis-chapter-rune {
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          z-index: 2;
+          width: 2.25rem;
+          height: 2.25rem;
+          pointer-events: none;
+          opacity: 0;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.65);
+          box-shadow: 0 0 18px rgba(251,191,36,0.66), inset 0 0 14px rgba(14,165,233,0.26);
+        }
+        .oasis-chapter-rune::before,
+        .oasis-chapter-rune::after {
+          content: '';
+          position: absolute;
+          inset: 50% auto auto 50%;
+          width: 1.45rem;
+          height: 1px;
+          background: rgba(255,255,255,0.8);
+          transform-origin: center;
+        }
+        .oasis-chapter-rune::before { transform: translate(-50%, -50%) rotate(45deg); }
+        .oasis-chapter-rune::after { transform: translate(-50%, -50%) rotate(-45deg); }
+        .oasis-spellbook-chapter:active .oasis-chapter-rune {
+          animation: oasisChapterRune 420ms cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .oasis-chapter-bar {
+          transform-origin: center;
+        }
+        .oasis-spellbook-chapter:hover .oasis-chapter-bar {
+          opacity: 0.82;
+          transform: scaleX(1);
+        }
+        .oasis-spellbook-chapter[data-selected="true"] .oasis-chapter-bar {
+          animation: oasisChapterSelectedPulse 1500ms ease-in-out infinite;
+        }
       `}</style>
       <div
         className="pointer-events-none absolute inset-0 bg-cover bg-center bg-no-repeat"
@@ -176,6 +286,7 @@ export function PlayerSpellbookPanel({
             backgroundImage: 'url(/ui/textures-extracted/buttons-red/red-4-rect-lg.png)',
             backgroundSize: '100% 100%',
           }}
+          onPointerEnter={playMenuHover}
           onClick={() => onOpenChange(false)}
         >
           Close
@@ -200,14 +311,18 @@ export function PlayerSpellbookPanel({
               key={pageId}
               type="button"
               className={[
-                'shrink-0 rounded-md border px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.1em] transition',
+                'oasis-spellbook-chapter shrink-0 overflow-hidden rounded-md border px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.1em]',
                 selected
                   ? 'border-amber-200/55 bg-amber-200/16 text-white shadow-[0_0_20px_rgba(251,191,36,0.14)]'
                   : 'border-white/10 bg-black/24 text-white/72 hover:border-white/24 hover:text-white',
               ].join(' ')}
-              onClick={() => setActivePage(pageId)}
+              data-selected={selected ? 'true' : 'false'}
+              onPointerEnter={playMenuHover}
+              onClick={() => handlePageClick(pageId)}
             >
-              {page.shortName}
+              <span className="oasis-chapter-rune" />
+              <span className="relative z-[3]">{page.shortName}</span>
+              <span className="oasis-chapter-bar pointer-events-none absolute bottom-1 left-2 right-2 z-[3] h-px origin-center scale-x-0 bg-gradient-to-r from-transparent via-amber-200 to-transparent opacity-0 transition duration-200" />
             </button>
           )
         })}
@@ -245,6 +360,7 @@ export function PlayerSpellbookPanel({
             return (
               <article
                 key={definition.id}
+                onPointerEnter={playMenuHover}
                 onClick={() => handleCardClick(definition.id)}
                 className={[
                   'group relative cursor-pointer overflow-hidden rounded-lg border p-2 transition-all duration-200',

@@ -1342,6 +1342,12 @@ export default function Scene() {
   const activeWorldId = useOasisStore(s => s.activeWorldId)
   const worldReady = useOasisStore(s => s._worldReady)
   const worldRegistry = useOasisStore(s => s.worldRegistry)
+  const activeWorldIsGoogleForm = useOasisStore(s =>
+    s.spatialWebObjects.some(object =>
+      object.action?.type === 'submit_form' &&
+      object.action.destination?.type === 'google_form',
+    ),
+  )
 
   useEffect(() => {
     if (!isOnboardingWorld(activeWorldId)) return
@@ -2024,7 +2030,7 @@ export default function Scene() {
       />
       <PlayerVitalsHud visible={effectiveRp1Mode && !isPortalZeroWorld} />
       <PvPOverlay visible={effectiveRp1Mode && !isPortalZeroWorld} />
-      <WorldChatOverlay visible={Boolean(activeWorldId)} />
+      <WorldChatOverlay visible={Boolean(activeWorldId) && !activeWorldIsGoogleForm} />
       <PlayerSpellbookPanel
         visible
         isOpen={spellbookOpen}

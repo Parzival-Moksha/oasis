@@ -197,7 +197,7 @@ function initialValue(field: GoogleFormFieldSpec) {
   return ''
 }
 
-const JOURNEY_TITLE_Z = -3.15
+const JOURNEY_TITLE_Z = 1.85
 const JOURNEY_FIRST_FIELD_Z = -5.7
 const JOURNEY_FIELD_STEP = -4
 const JOURNEY_SIDE_X = 3.05
@@ -281,7 +281,7 @@ export function googleFormSpecToSpatialWebObjects(
       position: [0, 2.85, JOURNEY_TITLE_Z],
       rotation: [Math.PI / 6, 0, 0],
       width: 7.2,
-      height: 1.35,
+      height: 1.65,
       accentColor: '#38bdf8',
       visualStyle: 'terminal-panel',
     },
@@ -349,7 +349,7 @@ export function googleFormSpecToSpatialWebObjects(
       position: [0, 1.3, sendZ - 2.25],
       rotation: [0, 0, 0],
       width: 6.6,
-      height: 1.45,
+      height: 1.95,
       accentColor: '#34d399',
       visualStyle: 'terminal-panel',
     },

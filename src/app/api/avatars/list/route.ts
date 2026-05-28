@@ -13,6 +13,7 @@ export interface DiskAvatarEntry {
   id: string
   file: string
   name: string
+  sizeBytes: number
 }
 
 function fileToId(filename: string): string {
@@ -36,15 +37,17 @@ export async function GET() {
     try { await fs.promises.access(GALLERY_DIR) } catch { return NextResponse.json([]) }
     const dirents = await fs.promises.readdir(GALLERY_DIR, { withFileTypes: true })
     // Reject symlinks — static file serving would follow them and leak adjacent files.
-    const entries: DiskAvatarEntry[] = dirents
+    const entries = await Promise.all(dirents
       .filter(d => d.isFile() && !d.isSymbolicLink() && d.name.toLowerCase().endsWith('.vrm'))
-      .map(d => ({
+      .map(async d => ({
         id: fileToId(d.name),
         file: d.name,
         name: fileToDisplayName(d.name),
-      }))
+        sizeBytes: (await fs.promises.stat(path.join(GALLERY_DIR, d.name))).size,
+      })))
+    const sortedEntries: DiskAvatarEntry[] = entries
       .sort((a, b) => a.name.localeCompare(b.name))
-    return NextResponse.json(entries)
+    return NextResponse.json(sortedEntries)
   } catch {
     return NextResponse.json([])
   }

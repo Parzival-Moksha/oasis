@@ -28,7 +28,13 @@ export function WorldChatOverlay({ visible = true }: { visible?: boolean }) {
   const inputRef = useRef<HTMLInputElement | null>(null)
   const lastSoundIdRef = useRef<string | null>(null)
 
-  useUILayer('world-chat', open)
+  useUILayer('world-chat', visible && open)
+
+  useEffect(() => {
+    if (visible || !open) return
+    setOpen(false)
+    setDraft('')
+  }, [open, setOpen, visible])
 
   useEffect(() => {
     if (!visible) return
@@ -109,6 +115,14 @@ export function WorldChatOverlay({ visible = true }: { visible?: boolean }) {
           onSubmit={submit}
           className="fixed bottom-4 right-4 z-[320] flex w-[min(420px,calc(100vw-2rem))] items-center gap-2 rounded-lg border border-cyan-200/25 bg-black/90 p-2 font-mono text-white shadow-[0_0_40px_rgba(34,211,238,0.18)] backdrop-blur-md max-[700px]:bottom-[178px] max-[700px]:left-2 max-[700px]:right-2 max-[700px]:w-auto"
         >
+          <button
+            type="button"
+            aria-label="Close chat"
+            onClick={() => setOpen(false)}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-white/10 bg-white/[0.08] text-sm font-black text-white/80 transition hover:bg-white/[0.14]"
+          >
+            x
+          </button>
           <div className={`h-2 w-2 shrink-0 rounded-full ${connected ? 'bg-emerald-300' : 'bg-red-300'}`} />
           <input
             ref={inputRef}

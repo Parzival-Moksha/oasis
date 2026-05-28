@@ -2220,7 +2220,8 @@ const SELF_CRAFT_GUIDE = {
   animationFields: ['type', 'speed', 'axis', 'amplitude'],
   rules: [
     'Do not add terrain, floor planes, sky domes, or background walls; Oasis already provides the world ground and sky.',
-    'Use shader primitives aggressively for fire, cloth, crystals, water, particles, glow, and aurora effects.',
+    'Use shader primitives for fire, cloth, crystals, water, particles, glow, and aurora effects, but keep glow_orb as a subtle accent.',
+    'For glow_orb, prefer intensity 0.12-0.35 and avoid oversized emissive centerpiece orbs unless the user explicitly asks for a beacon.',
     'Use many overlapping primitives for richer silhouettes instead of one oversized primitive.',
     'Keep flames physically small and pair fire with particle_emitter embers.',
     'Crystal clusters should use 3+ crystals with varied seeds, scales, and rotations.',
@@ -4051,6 +4052,8 @@ tools.generate_video = async (args) => {
   return runMediaTool('generate_video', { ...args, prompt }, 'video')
 }
 
+tools.text_to_video = async (args) => tools.generate_video(args)
+
 // ─═̷─═̷─🎵 TEXT-TO-MUSIC (ElevenLabs Music API) 🎵─═̷─═̷─
 
 tools.text_to_music = async (args) => {
@@ -4065,7 +4068,7 @@ tools.text_to_music = async (args) => {
 
 const FRAME_STYLE_IDS = new Set([
   'gilded', 'neon', 'thin', 'baroque', 'hologram', 'rustic', 'ice',
-  'void', 'spaghetti', 'fire', 'matrix', 'plasma', 'brutalist',
+  'void', 'spaghetti', 'fire', 'matrix', 'plasma', 'brutalist', 'building',
 ])
 
 function detectMediaKindFromUrl(url: string): 'image' | 'video' | 'audio' | null {
@@ -4085,7 +4088,7 @@ tools.conjure_framed_picture = async (args) => {
 
   const requestedFrame = validStr(args.frameStyle, 'baroque').toLowerCase()
   const frameStyle = FRAME_STYLE_IDS.has(requestedFrame) ? requestedFrame : 'baroque'
-  const frameThickness = Math.max(0.5, Math.min(5, validNum(args.frameThickness, 1)))
+  const frameThickness = Math.max(0.5, Math.min(8, validNum(args.frameThickness, 1)))
   // Default y=1 so the bottom of the frame clears the ground plane.
   const position = validPos(args.position) || [0, 1, 0]
   const rotation = validPos(args.rotation) || [0, 0, 0]
@@ -4145,6 +4148,24 @@ tools.conjure_framed_picture = async (args) => {
 
 // ─═̷─═̷─🎬 PLACE_MEDIA — drop an existing image/video/audio URL into the world 🎬─═̷─═̷─
 
+tools.text_to_pic = async (args) => {
+  return tools.conjure_framed_picture({
+    frameStyle: 'baroque',
+    frameThickness: 1,
+    ...args,
+  })
+}
+
+tools.text_to_pic_building = async (args) => {
+  return tools.conjure_framed_picture({
+    ...args,
+    frameStyle: 'building',
+    frameThickness: validNum(args.frameThickness, 7),
+    scale: validNum(args.scale, 4),
+    name: validStr(args.name, validStr(args.prompt, 'Building picture').slice(0, 60)),
+  })
+}
+
 tools.place_media = async (args) => {
   const url = validStr(args.url, '')
   if (!url) return { ok: false, message: 'url is required.' }
@@ -4163,7 +4184,7 @@ tools.place_media = async (args) => {
   const scale = validNum(args.scale, kind === 'audio' ? 0.6 : 2)
   const requestedFrame = validStr(args.frameStyle, '').toLowerCase()
   const frameStyle = requestedFrame && FRAME_STYLE_IDS.has(requestedFrame) ? requestedFrame : ''
-  const frameThickness = Math.max(0.5, Math.min(5, validNum(args.frameThickness, 1)))
+  const frameThickness = Math.max(0.5, Math.min(8, validNum(args.frameThickness, 1)))
   const audioVolume = Math.max(0, Math.min(1, validNum(args.audioVolume, 1)))
   const audioMaxDistance = Math.max(1, validNum(args.audioMaxDistance, 15))
   const audioLoop = typeof args.audioLoop === 'boolean' ? args.audioLoop : true
@@ -4640,7 +4661,7 @@ const MUTATING_TOOLS = new Set([
   'play_avatar_animation', 'create_portal_gate', 'clear_world',
   'create_world', 'create_and_load_world', 'create_world_from_google_form', 'create_test_world_from_google_form', 'share_world_link',
   'conjure_asset', 'process_conjured_asset', 'place_conjured_asset', 'delete_conjured_asset',
-  'conjure_framed_picture', 'place_media',
+  'conjure_framed_picture', 'text_to_pic', 'text_to_pic_building', 'place_media',
 ])
 
 export async function callTool(

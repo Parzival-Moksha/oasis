@@ -13,11 +13,13 @@ vi.mock('fs', () => ({
     promises: {
       access: vi.fn(),
       readdir: vi.fn(),
+      stat: vi.fn(),
     },
   },
   promises: {
     access: vi.fn(),
     readdir: vi.fn(),
+    stat: vi.fn(),
   },
 }))
 
@@ -56,6 +58,7 @@ function makeDirent(name: string, kind: 'file' | 'dir' | 'symlink'): FakeDirent 
 
 const mockAccess = fs.promises.access as unknown as ReturnType<typeof vi.fn>
 const mockReaddir = fs.promises.readdir as unknown as ReturnType<typeof vi.fn>
+const mockStat = fs.promises.stat as unknown as ReturnType<typeof vi.fn>
 
 async function callRoute(): Promise<DiskAvatarEntry[]> {
   const res = await GET()
@@ -67,6 +70,8 @@ describe('GET /api/avatars/list', () => {
   beforeEach(() => {
     mockAccess.mockReset()
     mockReaddir.mockReset()
+    mockStat.mockReset()
+    mockStat.mockResolvedValue({ size: 12_345 })
   })
 
   it('returns [] when the gallery directory does not exist', async () => {
@@ -176,7 +181,7 @@ describe('GET /api/avatars/list', () => {
     expect(body).toEqual([])
   })
 
-  it('returns objects with exactly { id, file, name } shape', async () => {
+  it('returns objects with id, file, name, and sizeBytes shape', async () => {
     mockAccess.mockResolvedValueOnce(undefined)
     mockReaddir.mockResolvedValueOnce([
       makeDirent('Witch.vrm', 'file'),
@@ -185,6 +190,7 @@ describe('GET /api/avatars/list', () => {
     const body = await callRoute()
     expect(body).toHaveLength(1)
     const keys = Object.keys(body[0]).sort()
-    expect(keys).toEqual(['file', 'id', 'name'])
+    expect(keys).toEqual(['file', 'id', 'name', 'sizeBytes'])
+    expect(body[0].sizeBytes).toBe(12_345)
   })
 })

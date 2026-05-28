@@ -1601,6 +1601,82 @@ describe('OasisStore', () => {
         }),
       ])
     })
+
+    it('opens a personal Demo Router portal after a Google Forms submit', async () => {
+      const originalFetch = globalThis.fetch
+      const originalWindow = (globalThis as any).window
+      const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        ok: true,
+        message: 'Submitted 2 mapped fields to Google Forms.',
+      }), {
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      globalThis.fetch = fetchMock as unknown as typeof fetch
+      ;(globalThis as any).window = {
+        setTimeout,
+      }
+      const nameInput: SpatialWebObject = {
+        id: 'name-field',
+        type: 'text',
+        formId: 'form-world',
+        label: 'Name',
+        value: 'Lev',
+        position: [0, 1, 0],
+      }
+      const receipt: SpatialWebObject = {
+        id: 'receipt',
+        type: 'output',
+        formId: 'form-world',
+        label: 'Receipt',
+        value: 'Waiting for submit.',
+        position: [0, 1, -4],
+      }
+      const submitButton: SpatialWebObject = {
+        id: 'submit-form',
+        type: 'button',
+        formId: 'form-world',
+        label: 'Send',
+        position: [4, 1, 8],
+        action: {
+          type: 'submit_form',
+          endpoint: '/api/hackathon/spatial-submit',
+          destination: {
+            type: 'google_form',
+            formUrl: 'https://docs.google.com/forms/d/e/demo/viewform',
+            responseUrl: 'https://docs.google.com/forms/d/e/demo/formResponse',
+            fieldMap: { Name: 'entry.123' },
+          },
+        },
+      }
+      useOasisStore.setState({
+        activeWorldId: 'world-owner-home',
+        isViewMode: true,
+        viewingWorldId: 'world-generated-form',
+        spatialWebObjects: [nameInput, receipt, submitButton],
+        portalGates: [],
+        localPortalGates: [],
+      })
+
+      try {
+        await getState().interactSpatialWebObject('submit-form')
+        await vi.advanceTimersByTimeAsync(3000)
+      } finally {
+        globalThis.fetch = originalFetch
+        ;(globalThis as any).window = originalWindow
+      }
+
+      expect(getState().portalGates).toEqual([])
+      expect(getState().localPortalGates).toEqual([
+        expect.objectContaining({
+          id: 'local-portal-submit-form-demo-router',
+          label: 'Demo Router',
+          sourceWorldId: 'world-generated-form',
+          action: expect.objectContaining({ type: 'external_url', url: '/ab12' }),
+        }),
+      ])
+      expect(getState().spatialWebObjects.find(object => object.id === 'receipt')?.value).toContain('Name: Lev')
+      expect(getState().spatialWebObjects.find(object => object.id === 'submit-form')?.submittedAt).toBeTruthy()
+    })
   })
 
   describe('focusImage ↔ focusAgentWindow mutual exclusion', () => {

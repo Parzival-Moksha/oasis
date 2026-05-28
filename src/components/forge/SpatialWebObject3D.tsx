@@ -61,29 +61,56 @@ function splitLongWord(word: string, maxChars: number): string[] {
 }
 
 function wrapText(value: string, maxChars: number, maxLines: number, truncate = true): string[] {
-  const words = value.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean)
-  if (words.length === 0) return ['']
   const lines: string[] = []
-  let line = ''
-  for (const word of words) {
-    const chunks = word.length > maxChars ? splitLongWord(word, maxChars) : [word]
-    for (const chunk of chunks) {
-      const candidate = line ? `${line} ${chunk}` : chunk
-      if (candidate.length <= maxChars) {
-        line = candidate
+  let consumedAll = true
+  const paragraphs = value.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+
+  outer:
+  for (const paragraph of paragraphs) {
+    const words = paragraph.replace(/[ \t\f\v]+/g, ' ').trim().split(' ').filter(Boolean)
+    if (words.length === 0) {
+      if (lines.length < maxLines) {
+        lines.push('')
         continue
       }
-      if (line) lines.push(line)
-      line = chunk
-      if (lines.length >= maxLines) break
+      consumedAll = false
+      break
     }
-    if (lines.length >= maxLines) break
+
+    let line = ''
+    for (const word of words) {
+      const chunks = word.length > maxChars ? splitLongWord(word, maxChars) : [word]
+      for (const chunk of chunks) {
+        const candidate = line ? `${line} ${chunk}` : chunk
+        if (candidate.length <= maxChars) {
+          line = candidate
+          continue
+        }
+        if (line) lines.push(line)
+        line = chunk
+        if (lines.length >= maxLines) {
+          consumedAll = false
+          break outer
+        }
+      }
+      if (lines.length >= maxLines) {
+        consumedAll = false
+        break outer
+      }
+    }
+    if (line) {
+      if (lines.length < maxLines) {
+        lines.push(line)
+      } else {
+        consumedAll = false
+        break
+      }
+    }
   }
-  if (line && lines.length < maxLines) lines.push(line)
-  if (lines.length > maxLines) lines.length = maxLines
-  const original = value.replace(/\s+/g, ' ').trim()
-  const joined = lines.join(' ')
-  if (truncate && joined.length < original.length && lines.length > 0) {
+
+  while (lines.length > 1 && lines[lines.length - 1] === '') lines.pop()
+  if (lines.length === 0) return ['']
+  if (truncate && !consumedAll && lines.length > 0) {
     lines[lines.length - 1] = clampText(lines[lines.length - 1], Math.max(4, maxChars - 3)) + '...'
   }
   return lines
@@ -518,9 +545,13 @@ export function SpatialWebObject3D({
   const labelText = isSubmittedButton ? 'Sent' : busy ? 'Sending...' : object.label
   const valueText = object.type === 'text' && !object.value ? object.placeholder || 'Empty' : labelValue
   const labelMaxChars = isWidePanel ? 36 : 30
-  const valueMaxChars = isWidePanel ? 42 : 26
+  const valueMaxChars = object.type === 'output' ? 56 : isWidePanel ? 42 : 26
+  const valueLineLimit = object.type === 'output'
+    ? Math.min(14, Math.max(6, Math.ceil(valueText.length / Math.max(1, valueMaxChars)) + 2))
+    : isWidePanel ? 5 : 3
+  const valueFontSize = object.type === 'output' ? 0.082 : isWidePanel ? 0.095 : 0.18
   const labelLines = wrapText(labelText, labelMaxChars, 3)
-  const valueLines = object.type === 'button' || hasSelectorRows ? [] : wrapText(valueText, valueMaxChars, isWidePanel ? 5 : 3)
+  const valueLines = object.type === 'button' || hasSelectorRows ? [] : wrapText(valueText, valueMaxChars, valueLineLimit, object.type !== 'output')
   const height = Math.max(
     baseHeight,
     baseHeight + Math.max(0, labelLines.length - 1) * 0.18 + Math.max(0, valueLines.length - 1) * (isWidePanel ? 0.18 : 0.24),
@@ -548,8 +579,7 @@ export function SpatialWebObject3D({
 
   const runInteraction = () => {
     if (busy) return
-    if (isSubmittedButton) return
-    const waitsForNetwork = (object.type === 'button' && object.action?.type === 'submit_form')
+    const waitsForNetwork = (object.type === 'button' && object.action?.type === 'submit_form' && !object.submittedAt)
       || (object.action?.type === 'create_world_from_google_form' && !object.generatedWorldUrl)
     if (waitsForNetwork) setBusy(true)
     void interactSpatialWebObject(object.id).finally(() => {
@@ -826,10 +856,11 @@ export function SpatialWebObject3D({
             isWidePanel ? 0 : object.type === 'slider' || object.type === 'toggle' ? height * 0.05 : -height * 0.02,
             depth * 0.78,
           ]}
-          fontSize={isWidePanel ? 0.095 : 0.18}
+          fontSize={valueFontSize}
           maxChars={valueMaxChars}
-          maxLines={isWidePanel ? 5 : 3}
+          maxLines={valueLineLimit}
           color="#e2e8f0"
+          truncate={object.type !== 'output'}
         >
           {valueText}
         </EmbossedText>

@@ -27,7 +27,7 @@ export const OASIS_MCP_INSTRUCTIONS = [
   'Use get_world_state first when you need rich context.',
   'Use screenshot_viewport and avatar screenshot tools for visual grounding when a live Oasis browser is connected.',
   'Avatar and world mutations may execute as embodied sequences rather than instantaneous teleports, so allow time for completion.',
-  'Use generate_image, generate_voice, and generate_video when media would help the conversation; Oasis can render the returned URLs in the agent panel.',
+  'Use text_to_pic, text_to_video, text_to_music, generate_voice, conjure_framed_picture, text_to_pic_building, and place_media when media or placed media would help the conversation.',
   'For Hermes, Merlin, and OpenClaw, self-crafted objects are the default. Call get_craft_guide for the schema and use self_craft_scene with explicit primitive objects in hosted 04515 mode. Use create_spatial_web_object for 3D form controls and website primitives. Use place_browser_window for live 3D browser surfaces with a predefined URL. Use craft_scene strategy:"sculptor" only in trusted local/full-tool contexts when you intentionally want fallback prompt crafting.',
 ].join(' ')
 
@@ -525,6 +525,23 @@ export const OASIS_MCP_TOOL_SPECS = [
     injectActorAgentType: true,
   },
   {
+    name: 'text_to_pic',
+    description: 'Generate an image from a prompt and place it in the world as a framed picture. Friendly spell alias for conjure_framed_picture.',
+    inputSchema: z.object({
+      worldId: z.string().optional(),
+      prompt: z.string(),
+      position: zVec3Like.optional(),
+      rotation: zVec3Like.optional(),
+      scale: zNumberish.optional(),
+      frameStyle: z.string().optional(),
+      frameThickness: zNumberish.optional(),
+      model: z.string().optional(),
+      name: z.string().optional(),
+    }).passthrough(),
+    injectWorldId: true,
+    injectActorAgentType: true,
+  },
+  {
     name: 'generate_voice',
     description: 'Generate a voice note from text. Returns an audio URL that Oasis can play and lip-sync through the OpenClaw avatar.',
     inputSchema: z.object({
@@ -537,6 +554,16 @@ export const OASIS_MCP_TOOL_SPECS = [
   {
     name: 'generate_video',
     description: 'Generate a short video clip from a text prompt. Returns a media URL that Oasis can display in the OpenClaw stream.',
+    inputSchema: z.object({
+      prompt: z.string(),
+      duration: zNumberish.optional(),
+      image_url: z.string().optional(),
+    }).passthrough(),
+    injectActorAgentType: true,
+  },
+  {
+    name: 'text_to_video',
+    description: 'Generate a short video clip from a text prompt. Friendly spell alias for generate_video.',
     inputSchema: z.object({
       prompt: z.string(),
       duration: zNumberish.optional(),
@@ -558,8 +585,8 @@ export const OASIS_MCP_TOOL_SPECS = [
     name: 'conjure_framed_picture',
     description: [
       'Generate an image from a prompt and place it in the world as a framed picture in one shot.',
-      'Frame styles: gilded | neon | thin | baroque | hologram | rustic | ice | void | spaghetti | fire | matrix | plasma | brutalist (default: baroque).',
-      'frameThickness: 0.5–5 multiplier (default 1).',
+      'Frame styles: gilded | neon | thin | baroque | hologram | rustic | ice | void | spaghetti | fire | matrix | plasma | brutalist | building (default: baroque).',
+      'frameThickness: 0.5-8 multiplier (default 1).',
       'scale: picture height in meters (default 2). Width auto-fits image aspect.',
       'rotation: euler radians [x, y, z] (default [0, 0, 0]). Set y to face the picture toward viewers.',
     ].join(' '),
@@ -578,15 +605,31 @@ export const OASIS_MCP_TOOL_SPECS = [
     injectActorAgentType: true,
   },
   {
+    name: 'text_to_pic_building',
+    description: 'Generate a square-ish image from a prompt and place it as a four-sided textured building facade in the 3D world. Use for text-to-3D picture buildings, storefronts, towers, kiosks, and facade props.',
+    inputSchema: z.object({
+      worldId: z.string().optional(),
+      prompt: z.string(),
+      position: zVec3Like.optional(),
+      rotation: zVec3Like.optional(),
+      scale: zNumberish.optional(),
+      frameThickness: zNumberish.optional(),
+      model: z.string().optional(),
+      name: z.string().optional(),
+    }).passthrough(),
+    injectWorldId: true,
+    injectActorAgentType: true,
+  },
+  {
     name: 'place_media',
     description: [
       'Place an existing media URL (image, video, or audio) into the world.',
       'kind: "image" → framed picture; "video" → framed video screen; "audio" → loudspeaker box.',
       'If kind is omitted, it is auto-detected from the URL extension.',
-      'frameStyle (image/video only): gilded | neon | thin | baroque | hologram | rustic | ice | void | spaghetti | fire | matrix | plasma | brutalist.',
-      'frameThickness: 0.5–5 (default 1).',
+      'frameStyle (image/video only): gilded | neon | thin | baroque | hologram | rustic | ice | void | spaghetti | fire | matrix | plasma | brutalist | building.',
+      'frameThickness: 0.5-8 (default 1).',
       'For audio, use audioVolume (0–1, default 1) and audioMaxDistance (meters, default 15).',
-      'Use this when the asset already lives at a URL. To generate from a prompt instead, use conjure_framed_picture or text_to_music.',
+      'Use this when the asset already lives at a URL. To generate from a prompt instead, use text_to_pic, text_to_pic_building, text_to_video, or text_to_music.',
     ].join(' '),
     inputSchema: z.object({
       worldId: z.string().optional(),
@@ -751,6 +794,12 @@ export function prepareOasisToolArgs(name, args = {}, context = {}) {
     if (!validString(next.browserSurfaceMode || next.surfaceMode)) next.browserSurfaceMode = 'live-browser'
     if (!validString(next.frameStyle || next.frame)) next.frameStyle = 'baroque'
     if (next.frameThickness === undefined) next.frameThickness = 7
+  }
+
+  if (name === 'text_to_pic_building') {
+    next.frameStyle = 'building'
+    if (next.frameThickness === undefined) next.frameThickness = 7
+    if (next.scale === undefined) next.scale = 4
   }
 
   if (name === 'modify_object') {

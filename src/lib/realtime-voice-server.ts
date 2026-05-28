@@ -26,7 +26,7 @@ const DEFAULT_REALTIME_VOICE = process.env.OPENAI_REALTIME_VOICE?.trim() || 'mar
 const DEFAULT_TRANSCRIPTION_MODEL = process.env.OPENAI_REALTIME_TRANSCRIPTION_MODEL?.trim() || 'gpt-4o-mini-transcribe'
 const DEFAULT_VAD_MODE: RealtimeVadMode = 'semantic_vad'
 const DEFAULT_VAD_EAGERNESS: RealtimeVadEagerness = 'auto'
-const REALTIME_WIZARD_TOOL_SUMMARY = 'get_world_info, get_world_state, screenshot_viewport, search_assets, get_asset_catalog, list_ground_presets, query_objects, place_object, modify_object, remove_object, set_sky, set_ground_preset, paint_ground_tiles, add_light, modify_light, set_behavior, create_spatial_web_object, create_portal_gate, place_browser_window, place_agent_window, get_craft_guide, self_craft_scene, craft_scene, get_craft_job, set_avatar, walk_avatar_to, list_avatar_animations, play_avatar_animation, and npc_judgement'
+const REALTIME_WIZARD_TOOL_SUMMARY = 'get_world_info, get_world_state, screenshot_viewport, search_assets, get_asset_catalog, list_ground_presets, query_objects, place_object, modify_object, remove_object, set_sky, set_ground_preset, paint_ground_tiles, add_light, modify_light, set_behavior, create_spatial_web_object, create_portal_gate, place_browser_window, place_agent_window, text_to_pic, text_to_pic_building, text_to_video, text_to_music, place_media, get_craft_guide, self_craft_scene, craft_scene, get_craft_job, set_avatar, walk_avatar_to, list_avatar_animations, play_avatar_animation, and npc_judgement'
 
 function isAllowedRealtimeModel(value: string): boolean {
   return (REALTIME_MODELS as readonly string[]).includes(value)
@@ -456,6 +456,100 @@ export function getRealtimeSessionTools(options: {
           frameThickness: { type: 'number' },
         },
         additionalProperties: true,
+      },
+    },
+    {
+      type: 'function',
+      name: 'text_to_pic',
+      description: 'Generate an image from a prompt and place it into the world as a framed picture.',
+      parameters: {
+        type: 'object',
+        properties: {
+          worldId: { type: 'string', description: 'Optional world ID. Omit to use the active browser world.' },
+          prompt: { type: 'string', description: 'Image prompt.' },
+          position: { ...zVec3Schema, description: 'World position [x, y, z].' },
+          rotation: { ...zVec3Schema, description: 'Optional Euler rotation [x, y, z].' },
+          scale: { type: 'number', description: 'Picture height in meters. Default 2.' },
+          frameStyle: { type: 'string', description: 'Frame style such as baroque, gilded, neon, void, or fire.' },
+          frameThickness: { type: 'number', description: 'Frame thickness, 0.5 to 8.' },
+          model: { type: 'string', description: 'Optional image model override.' },
+          name: { type: 'string', description: 'Optional visible name.' },
+        },
+        required: ['prompt'],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'text_to_pic_building',
+      description: 'Generate an image and place it as a four-sided textured building facade in the 3D world.',
+      parameters: {
+        type: 'object',
+        properties: {
+          worldId: { type: 'string', description: 'Optional world ID. Omit to use the active browser world.' },
+          prompt: { type: 'string', description: 'Building facade or picture-building prompt.' },
+          position: { ...zVec3Schema, description: 'World position [x, y, z].' },
+          rotation: { ...zVec3Schema, description: 'Optional Euler rotation [x, y, z].' },
+          scale: { type: 'number', description: 'Building footprint/height scale. Default 4.' },
+          frameThickness: { type: 'number', description: 'Building wall thickness/frame depth. Default 7.' },
+          model: { type: 'string', description: 'Optional image model override.' },
+          name: { type: 'string', description: 'Optional visible name.' },
+        },
+        required: ['prompt'],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'text_to_video',
+      description: 'Generate a short video clip from a prompt and return the media URL.',
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: { type: 'string', description: 'Video prompt.' },
+          duration: { type: 'number', description: 'Optional duration in seconds.' },
+          image_url: { type: 'string', description: 'Optional reference image URL.' },
+        },
+        required: ['prompt'],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'text_to_music',
+      description: 'Generate a music clip or song from a text prompt. Use place_media kind audio to drop the result into the world.',
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: { type: 'string', description: 'Music prompt.' },
+          durationMs: { type: 'number', description: 'Length in milliseconds, default 30000.' },
+          instrumental: { type: 'boolean', description: 'If true, generate instrumental music.' },
+        },
+        required: ['prompt'],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'place_media',
+      description: 'Place an existing image, video, or audio URL into the world as a framed picture/video screen or speaker.',
+      parameters: {
+        type: 'object',
+        properties: {
+          worldId: { type: 'string', description: 'Optional world ID. Omit to use the active browser world.' },
+          url: { type: 'string', description: 'Media URL.' },
+          kind: { type: 'string', enum: ['image', 'video', 'audio'], description: 'Media type. Omit only when URL extension is obvious.' },
+          position: { ...zVec3Schema, description: 'World position [x, y, z].' },
+          rotation: { ...zVec3Schema, description: 'Optional Euler rotation [x, y, z].' },
+          scale: { type: 'number', description: 'Object scale.' },
+          frameStyle: { type: 'string', description: 'Image/video frame style.' },
+          frameThickness: { type: 'number', description: 'Image/video frame thickness, 0.5 to 8.' },
+          audioVolume: { type: 'number', description: 'Audio volume 0 to 1.' },
+          audioMaxDistance: { type: 'number', description: 'Audio max distance in meters.' },
+          name: { type: 'string', description: 'Optional visible name.' },
+        },
+        required: ['url'],
+        additionalProperties: false,
       },
     },
     {

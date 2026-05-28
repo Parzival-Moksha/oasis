@@ -131,7 +131,8 @@ export const AgentWindow3D = memo(function AgentWindow3D({ window: win }: { wind
   const renderMode = resolveAgentWindowRenderMode(win.renderMode)
   const rendererMeta = getAgentWindowRendererMeta(renderMode)
   const isHybrid = isHybridAgentWindowRenderMode(renderMode)
-  const shouldRenderLiveHtmlSurface = renderMode === 'live-html' && (isSelected || isFocused)
+  const keepsLiveSessionMounted = win.agentType === 'gemini' || win.agentType === 'realtime' || win.agentType === 'npc'
+  const shouldRenderLiveHtmlSurface = renderMode === 'live-html' && (isSelected || isFocused || keepsLiveSessionMounted)
 
   const committedWidth = win.width || 800
   const committedHeight = win.height || 600

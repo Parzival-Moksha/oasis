@@ -15,6 +15,7 @@ import type { CraftedPrimitive } from '../../lib/conjure/types'
 
 // Hard cap on intensity to prevent GPU blowout regardless of LLM output
 const clampIntensity = (v: number) => Math.min(v, 2.0)
+const GLOW_ORB_LUMINOSITY_SCALE = 0.125
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SHARED GLSL — FBM noise + output safety clamp
@@ -445,7 +446,7 @@ void main() {
   vec3 col = mix(uColor1, uColor2, fresnel);
   col += internal * uColor2 * 0.2 + filament * uColor1 * 0.15;
   col *= pulse * uIntensity;
-  float alpha = 0.4 + fresnel * 0.4;
+  float alpha = 0.22 + fresnel * 0.18;
   gl_FragColor = clamp(vec4(col, alpha), 0.0, 1.0);
 }
 `
@@ -455,7 +456,7 @@ export function GlowOrbShader({ primitive }: { primitive: CraftedPrimitive }) {
   const uniforms = useMemo(() => ({
     uTime: { value: 0 },
     uSpeed: { value: primitive.speed ?? 1 },
-    uIntensity: { value: clampIntensity(primitive.intensity ?? 1.0) },
+    uIntensity: { value: clampIntensity(primitive.intensity ?? 1.0) * GLOW_ORB_LUMINOSITY_SCALE },
     uColor1: { value: new THREE.Color(primitive.color || '#00FFAA') },
     uColor2: { value: new THREE.Color(primitive.color2 || '#00AAFF') },
   }), []) // eslint-disable-line react-hooks/exhaustive-deps

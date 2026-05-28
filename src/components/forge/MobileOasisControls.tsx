@@ -106,7 +106,16 @@ export function MobileOasisControls({
   // When the old paint wand is actively held, the look-overlay hands events
   // through to the canvas underneath so PaintCursor can own the stroke.
   const paintHeldActive = useOasisStore(s => s.paintHeldActive)
-  const canvasNeedsTouch = paintHeldActive
+  const selectedObjectCanTransform = useOasisStore(s => Boolean(s.selectedObjectId) && !(s.isViewMode && !s.isViewModeEditable))
+  const canvasNeedsTouch = paintHeldActive || selectedObjectCanTransform
+
+  useEffect(() => {
+    if (!canvasNeedsTouch) return
+    lookPointerRef.current = null
+    lookTouchesRef.current.clear()
+    pinchRef.current = null
+    setLookActive(false)
+  }, [canvasNeedsTouch, setLookActive])
 
   useEffect(() => {
     if (!enabled) {

@@ -39,7 +39,8 @@
     "summon-custom-npc": { "gpt2": "/ui/spellbook/tiles/summon-custom-npc.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/summon-custom-npc.nano2.webp" },
     "summon-fighter-npc": { "gpt2": "/ui/spellbook/tiles/summon-fighter-npc.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/summon-fighter-npc.nano2.webp" },
     "summon-openclaw": { "gpt2": "/ui/spellbook/tiles/summon-openclaw.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/summon-openclaw.nano2.webp" },
-    "summon-hermes": { "gpt2": "/ui/spellbook/tiles/summon-hermes.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/summon-hermes.nano2.webp" }
+    "summon-hermes": { "gpt2": "/ui/spellbook/tiles/summon-hermes.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/summon-hermes.nano2.webp" },
+    "browser": { "gpt2": "/ui/spellbook/tiles/browser.gpt2.webp" }
   },
   "frame": {
     "corners": {

@@ -505,7 +505,7 @@ function PortalGateWarmup({ gates }: { gates: PortalGate[] }) {
 
 export function PortalGateLayer() {
   const { camera } = useThree()
-  const activeWorldId = useOasisStore(s => s.activeWorldId)
+  const activeWorldId = useOasisStore(s => s.viewingWorldId || s.activeWorldId)
   const persistentPortalGates = useOasisStore(s => s.portalGates)
   const localPortalGates = useOasisStore(s => s.localPortalGates)
   const worldRegistry = useOasisStore(s => s.worldRegistry)

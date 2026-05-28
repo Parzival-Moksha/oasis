@@ -369,8 +369,8 @@ export const SPELL_DEFS: Record<SpellId, SpellDefinition> = {
     tier: 2,
     category: 'agent',
     achievementId: 'learn-browser',
-    summary: 'Place a bare framed browser surface into the world.',
-    stats: ['Browser', '3D window', 'No avatar'],
+    summary: 'Open a living web scrying pane for docs, dashboards, maps, and shared references.',
+    stats: ['Agent spell', 'Live web pane', 'Baroque frame'],
     actionId: 'place-browser',
   },
 }

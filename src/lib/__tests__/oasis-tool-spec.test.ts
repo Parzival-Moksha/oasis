@@ -126,4 +126,23 @@ describe('prepareOasisToolArgs', () => {
       actorAgentType: 'openclaw',
     })
   })
+
+  it('normalizes text-to-picture building defaults', () => {
+    const result = prepareOasisToolArgs(
+      'text_to_pic_building',
+      { prompt: 'a candy storefront' },
+      {
+        worldId: 'world-123',
+        agentType: 'gemini',
+      },
+    )
+
+    expect(result).toMatchObject({
+      worldId: 'world-123',
+      actorAgentType: 'gemini',
+      frameStyle: 'building',
+      frameThickness: 7,
+      scale: 4,
+    })
+  })
 })

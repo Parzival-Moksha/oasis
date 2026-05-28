@@ -41,6 +41,7 @@ export interface AvatarEntry {
   id: string
   file: string
   name: string
+  sizeBytes?: number
 }
 
 const CATALOG_AVATARS: AvatarEntry[] = AGENT_AVATAR_CATALOG.map(a => ({
@@ -48,6 +49,12 @@ const CATALOG_AVATARS: AvatarEntry[] = AGENT_AVATAR_CATALOG.map(a => ({
   file: a.path.split('/').pop() || '',
   name: a.name,
 }))
+
+function formatVrmSize(sizeBytes: number | undefined): string {
+  if (!Number.isFinite(sizeBytes)) return '-'
+  const mb = Number(sizeBytes) / (1024 * 1024)
+  return `${mb >= 10 ? mb.toFixed(1) : mb.toFixed(2)} MB`
+}
 
 // ░▒▓ Hyperstition payload — 3 pre-baked voices, random per press ▓▒░
 const VOICE_LINE = 'Moksha, please help us find each other.'
@@ -317,14 +324,19 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
   const [diskScanCompleted, setDiskScanCompleted] = useState(false)
   const allAvatars = useMemo<AvatarEntry[]>(() => {
     const diskFiles = new Set(diskAvatars.map(d => d.file))
+    const diskByFile = new Map(diskAvatars.map(d => [d.file, d]))
     // After scan resolves, hide catalog entries whose VRMs aren't on disk
     // (renamed/deleted). Before scan resolves, show full catalog to avoid flash.
     const usableCatalog = diskScanCompleted
       ? CATALOG_AVATARS.filter(c => diskFiles.has(c.file))
       : CATALOG_AVATARS
+    const enrichedCatalog = usableCatalog.map(c => ({
+      ...c,
+      sizeBytes: diskByFile.get(c.file)?.sizeBytes ?? c.sizeBytes,
+    }))
     const catalogFiles = new Set(usableCatalog.map(a => a.file))
     const extras = diskAvatars.filter(d => !catalogFiles.has(d.file))
-    return [...usableCatalog, ...extras]
+    return [...enrichedCatalog, ...extras]
   }, [diskAvatars, diskScanCompleted])
 
   const [previewAvatar, setPreviewAvatar] = useState<AvatarEntry | null>(null)
@@ -509,6 +521,7 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
   if (typeof document === 'undefined') return null
 
   const filteredAnims = ANIMATION_LIBRARY.filter(a => a.category === animCategory)
+  const previewSizeBytes = allAvatars.find(avatar => avatar.file === previewAvatar?.file)?.sizeBytes ?? previewAvatar?.sizeBytes
 
   return createPortal(
     <div
@@ -729,12 +742,34 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
                   <Canvas
                     camera={{ fov: 45, near: 0.01, far: 1000 }}
                     style={{ width: '100%', height: '100%' }}
+                    onCreated={({ gl }) => {
+                      gl.domElement.style.touchAction = 'none'
+                    }}
                   >
                     <StudioBackdrop imageUrl={backdropImage} />
                     <ambientLight intensity={0.7} />
                     <directionalLight position={[3, 5, 2]} intensity={1.0} />
                     <directionalLight position={[-3, 2, -1]} intensity={0.3} color="#b4c6e0" />
-                    <OrbitControls enablePan={false} autoRotate={autoRotate} autoRotateSpeed={1.5} minDistance={0.1} maxDistance={100} />
+                    <OrbitControls
+                      makeDefault
+                      enableRotate
+                      enablePan={false}
+                      autoRotate={autoRotate}
+                      autoRotateSpeed={1.5}
+                      rotateSpeed={0.85}
+                      minDistance={0.1}
+                      maxDistance={100}
+                      mouseButtons={{
+                        LEFT: THREE.MOUSE.ROTATE,
+                        MIDDLE: THREE.MOUSE.DOLLY,
+                        RIGHT: THREE.MOUSE.ROTATE,
+                      }}
+                      touches={{
+                        ONE: THREE.TOUCH.ROTATE,
+                        TWO: THREE.TOUCH.DOLLY_PAN,
+                      }}
+                      onStart={() => setAutoRotate(false)}
+                    />
                     <Suspense fallback={null}>
                       <VRMPreview
                         key={previewAvatar.id}
@@ -801,7 +836,7 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
                         /avatars/gallery/{previewAvatar.file}
                       </p>
 
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: mobileLayout ? 4 : 8, marginBottom: mobileLayout ? 8 : 14, marginTop: mobileLayout ? 6 : 0 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: mobileLayout ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))', gap: mobileLayout ? 4 : 8, marginBottom: mobileLayout ? 8 : 14, marginTop: mobileLayout ? 6 : 0 }}>
                         <div style={{ padding: mobileLayout ? '5px 6px' : '8px 10px', borderRadius: mobileLayout ? 7 : 10, background: 'rgba(15,23,42,0.68)', border: '1px solid rgba(148,163,184,0.14)' }}>
                           <div style={{ fontSize: mobileLayout ? 7 : 9, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Triangles</div>
                           <div style={{ marginTop: mobileLayout ? 2 : 4, fontSize: mobileLayout ? 10 : 13, color: '#f8fafc', fontWeight: 600 }}>{previewStats?.triangles?.toLocaleString() || '—'}</div>
@@ -814,6 +849,12 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
                           <div style={{ fontSize: mobileLayout ? 7 : 9, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Size</div>
                           <div style={{ marginTop: mobileLayout ? 2 : 4, fontSize: mobileLayout ? 10 : 13, color: '#f8fafc', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {previewStats ? `${previewStats.dimensions.w} × ${previewStats.dimensions.h} × ${previewStats.dimensions.d}` : '—'}
+                          </div>
+                        </div>
+                        <div style={{ padding: mobileLayout ? '5px 6px' : '8px 10px', borderRadius: mobileLayout ? 7 : 10, background: 'rgba(15,23,42,0.68)', border: '1px solid rgba(148,163,184,0.14)' }}>
+                          <div style={{ fontSize: mobileLayout ? 7 : 9, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>VRM</div>
+                          <div style={{ marginTop: mobileLayout ? 2 : 4, fontSize: mobileLayout ? 10 : 13, color: '#f8fafc', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {formatVrmSize(previewSizeBytes)}
                           </div>
                         </div>
                       </div>
@@ -845,6 +886,7 @@ export function AvatarGallery({ currentAvatarUrl, onSelect, onClose }: AvatarGal
                         ['Materials', previewStats?.materialCount],
                         ['Bones', previewStats?.boneCount],
                         ['Clips', previewStats?.clips?.length ?? 0],
+                        ['VRM', formatVrmSize(previewSizeBytes)],
                       ].map(([label, value]) => (
                         <div key={label} style={{ padding: '10px 12px', borderRadius: 12, background: 'rgba(15,23,42,0.68)', border: '1px solid rgba(148,163,184,0.14)' }}>
                           <div style={{ fontSize: 9, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
