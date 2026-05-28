@@ -63,6 +63,7 @@ import {
 } from '../forge/world-access'
 import { DEFAULT_CRAFT_MODEL, normalizeCraftModelId } from '../craft-models'
 import { ensureWorldShortCode, generateWorldShortCode, isWorldShortCodeCollision } from '../world-short-codes'
+import { formatAgentSkyPresetGuide, resolveSkyBackgroundToolPreset } from '../sky-backgrounds'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -2761,14 +2762,32 @@ tools.remove_object = async (args) => {
 }
 
 tools.set_sky = async (args) => {
-  const presetId = validStr(args.presetId || args.skyBackgroundId, '')
-  if (!presetId) return { ok: false, message: 'presetId is required.' }
+  const requestedPresetId = validStr(args.presetId || args.skyBackgroundId, '')
+  if (!requestedPresetId) return { ok: false, message: 'presetId is required.' }
+  const resolvedPreset = resolveSkyBackgroundToolPreset(requestedPresetId)
+  if (!resolvedPreset) {
+    return {
+      ok: false,
+      message: `Unknown sky preset "${requestedPresetId}". ${formatAgentSkyPresetGuide()}`,
+    }
+  }
+  const presetId = resolvedPreset.id
 
   const { worldId, state } = await loadRequestedWorld(args.worldId)
   state.skyBackgroundId = presetId
   await saveWorldState(worldId, state)
   emitWorldEvent('sky_changed', worldId, { presetId, ...mutationActorData(args) })
-  return { ok: true, message: `Sky set to ${presetId}.` }
+  return {
+    ok: true,
+    message: resolvedPreset.normalizedId === presetId
+      ? `Sky set to ${presetId}.`
+      : `Sky set to ${presetId} (resolved from "${requestedPresetId}").`,
+    data: {
+      presetId,
+      skyBackgroundId: presetId,
+      requestedPresetId,
+    },
+  }
 }
 
 tools.set_ground_preset = async (args) => {

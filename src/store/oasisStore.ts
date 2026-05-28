@@ -78,6 +78,7 @@ import { createPortalZeroGoogleFormsAltar, createPortalZeroGoogleTestAltar } fro
 import { getViewerUserIdClient } from '../lib/viewer-identity-client'
 import type { PaintStroke } from '../lib/forge/paint-stroke'
 import { clampText3DInput, type Text3DObject } from '../lib/forge/text-3d-object'
+import { resolveSkyBackgroundToolPreset } from '../lib/sky-backgrounds'
 
 export interface ObjectHtmlOverlay {
   objectId: string
@@ -2118,9 +2119,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
         const result = await response.json().catch(() => null) as { ok?: boolean } | null
         if (!response.ok || result?.ok === false) return false
 
-        if (tool === 'set_sky' && typeof args.presetId === 'string') {
-          set({ worldSkyBackground: args.presetId })
-          worldMutationBus.broadcast({ kind: 'sky_changed', payload: { skyBackgroundId: args.presetId } })
+        if (tool === 'set_sky' && (typeof args.presetId === 'string' || typeof args.skyBackgroundId === 'string')) {
+          const resolvedSky = resolveSkyBackgroundToolPreset(args.presetId || args.skyBackgroundId)
+          if (resolvedSky) {
+            set({ worldSkyBackground: resolvedSky.id })
+            worldMutationBus.broadcast({ kind: 'sky_changed', payload: { skyBackgroundId: resolvedSky.id } })
+          }
         } else if (tool === 'set_ground_preset' && typeof args.presetId === 'string') {
           set({ groundPresetId: args.presetId })
           worldMutationBus.broadcast({ kind: 'ground_changed', payload: { groundPresetId: args.presetId } })

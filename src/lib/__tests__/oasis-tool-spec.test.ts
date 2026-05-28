@@ -145,4 +145,24 @@ describe('prepareOasisToolArgs', () => {
       scale: 4,
     })
   })
+
+  it('normalizes set_sky aliases to stable local HDRI ids', () => {
+    const result = prepareOasisToolArgs(
+      'set_sky',
+      {
+        skyBackgroundId: 'sunset',
+      },
+      {
+        worldId: 'world-123',
+        agentType: 'realtime',
+      },
+    )
+
+    expect(result).toMatchObject({
+      worldId: 'world-123',
+      actorAgentType: 'realtime',
+      presetId: 'belfast_sunset',
+    })
+    expect(Object.prototype.hasOwnProperty.call(result, 'skyBackgroundId')).toBe(false)
+  })
 })

@@ -5,6 +5,7 @@
 
 import type { OasisSettings, AssetDefinition } from './types'
 import catalogExtras from '../../../data/asset-catalog-extras.json'
+export { SKY_BACKGROUNDS } from '../../lib/sky-backgrounds'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DEFAULT SETTINGS
@@ -36,7 +37,7 @@ export const defaultSettings: OasisSettings = {
   agentConjureDurationMs: 3000,
   agentScreenshotSettleMs: 220,
   // FPS COUNTER
-  fpsCounterEnabled: true,
+  fpsCounterEnabled: false,
   fpsCounterFontSize: 14,
   // CAMERA MODES
   controlMode: 'third-person',
@@ -65,36 +66,6 @@ export const defaultSettings: OasisSettings = {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SKY BACKGROUNDS — Night panoramas + Poly Haven HDRIs + drei presets
 // ═══════════════════════════════════════════════════════════════════════════════
-
-export const SKY_BACKGROUNDS = [
-  { id: 'stars', name: 'Procedural Stars', path: null },
-  // Local night sky JPGs (4K tonemapped)
-  { id: 'night001', name: 'Night Sky 001', path: '/hdri/NightSkyHDRI001_4K_TONEMAPPED.jpg' },
-  { id: 'night004', name: 'Night Sky 004', path: '/hdri/NightSkyHDRI004_4K_TONEMAPPED.jpg' },
-  { id: 'night007', name: 'Night Sky 007', path: '/hdri/NightSkyHDRI007_4K_TONEMAPPED.jpg' },
-  { id: 'night008', name: 'Night Sky 008', path: '/hdri/NightSkyHDRI008_4K_TONEMAPPED.jpg' },
-  // Poly Haven HDRIs (2K .hdr — true HDR lighting + background)
-  { id: 'alps_field', name: 'Alps Field', path: '/hdri/alps_field_2k.hdr' },
-  { id: 'autumn_ground', name: 'Autumn Ground', path: '/hdri/autumn_ground_2k.hdr' },
-  { id: 'belfast_sunset', name: 'Belfast Sunset', path: '/hdri/belfast_sunset_puresky_2k.hdr' },
-  { id: 'blue_grotto', name: 'Blue Grotto', path: '/hdri/blue_grotto_2k.hdr' },
-  { id: 'evening_road', name: 'Evening Road', path: '/hdri/evening_road_01_puresky_2k.hdr' },
-  { id: 'outdoor_umbrellas', name: 'Outdoor Umbrellas', path: '/hdri/outdoor_umbrellas_2k.hdr' },
-  { id: 'stadium', name: 'Stadium', path: '/hdri/stadium_01_2k.hdr' },
-  { id: 'sunny_vondelpark', name: 'Sunny Vondelpark', path: '/hdri/sunny_vondelpark_2k.hdr' },
-  { id: 'umhlanga_sunrise', name: 'Umhlanga Sunrise', path: '/hdri/umhlanga_sunrise_2k.hdr' },
-  // drei built-in presets (CDN-hosted 1k HDRIs — may fail in production)
-  { id: 'city', name: 'City (Potsdamer Platz)', path: null, preset: 'city' },
-  { id: 'dawn', name: 'Dawn', path: null, preset: 'dawn' },
-  { id: 'forest', name: 'Forest', path: null, preset: 'forest' },
-  { id: 'sunset', name: 'Sunset (Venice)', path: null, preset: 'sunset' },
-  { id: 'park', name: 'Park', path: null, preset: 'park' },
-  { id: 'night_preset', name: 'Night (Dikhololo)', path: null, preset: 'night' },
-  { id: 'studio', name: 'Studio', path: null, preset: 'studio' },
-  { id: 'warehouse', name: 'Warehouse', path: null, preset: 'warehouse' },
-  { id: 'apartment', name: 'Apartment (Lobby)', path: null, preset: 'apartment' },
-  { id: 'lobby', name: 'Lobby (St Fagans)', path: null, preset: 'lobby' },
-] as const
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ASSET CATALOG — All available 3D models for the explorer

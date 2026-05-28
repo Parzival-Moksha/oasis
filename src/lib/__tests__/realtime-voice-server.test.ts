@@ -81,6 +81,14 @@ describe('realtime voice server guardrails', () => {
     expect(selfCraftTool?.parameters).toMatchObject({
       required: ['objects'],
     })
+    expect(tools.find(tool => tool.name === 'set_sky')?.parameters).toMatchObject({
+      required: ['presetId'],
+      properties: {
+        presetId: expect.objectContaining({
+          enum: expect.arrayContaining(['umhlanga_sunrise', 'belfast_sunset', 'sunny_vondelpark']),
+        }),
+      },
+    })
     expect(JSON.stringify(selfCraftTool)).toContain('worldId')
     expect(readRealtimePromptTemplate()).toContain('self_craft_scene')
     expect(readRealtimePromptTemplate()).toContain('text_to_pic_building')

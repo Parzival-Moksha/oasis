@@ -10,9 +10,67 @@ const zLooseArrayOrString = z.union([z.array(zLooseObject), z.string()])
 const zNumberish = z.union([z.number(), z.string()])
 const zLoopMode = z.union([z.enum(['repeat', 'once', 'pingpong']), z.boolean()])
 const zSpatialWebValue = z.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()])
+const AGENT_SKY_BACKGROUND_IDS = [
+  'stars',
+  'night001',
+  'night004',
+  'night007',
+  'night008',
+  'alps_field',
+  'autumn_ground',
+  'belfast_sunset',
+  'blue_grotto',
+  'evening_road',
+  'outdoor_umbrellas',
+  'stadium',
+  'sunny_vondelpark',
+  'umhlanga_sunrise',
+]
+const SKY_TOOL_ALIASES = {
+  morning: 'umhlanga_sunrise',
+  sunrise: 'umhlanga_sunrise',
+  dawn: 'umhlanga_sunrise',
+  sunset: 'belfast_sunset',
+  dusk: 'belfast_sunset',
+  golden_hour: 'belfast_sunset',
+  evening: 'evening_road',
+  forest: 'sunny_vondelpark',
+  green: 'sunny_vondelpark',
+  nature: 'sunny_vondelpark',
+  park: 'sunny_vondelpark',
+  city: 'stadium',
+  urban: 'stadium',
+  arena: 'stadium',
+  studio: 'outdoor_umbrellas',
+  warehouse: 'stadium',
+  apartment: 'outdoor_umbrellas',
+  lobby: 'outdoor_umbrellas',
+  night: 'night007',
+  night_preset: 'night007',
+  stars: 'stars',
+  starfield: 'stars',
+}
+const SKY_TOOL_PRESET_IDS = [
+  ...AGENT_SKY_BACKGROUND_IDS,
+  ...Object.keys(SKY_TOOL_ALIASES).filter(key => !AGENT_SKY_BACKGROUND_IDS.includes(key)),
+]
 
 function validString(value, fallback = '') {
   return typeof value === 'string' ? value.trim() || fallback : fallback
+}
+
+function normalizeSkyToken(value) {
+  return validString(value)
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+    .replace(/[^a-z0-9_]/g, '')
+}
+
+function resolveSkyToolPreset(value) {
+  const normalized = normalizeSkyToken(value)
+  if (!normalized) return ''
+  if (AGENT_SKY_BACKGROUND_IDS.includes(normalized)) return normalized
+  return SKY_TOOL_ALIASES[normalized] || ''
 }
 
 function normalizeLoopMode(value) {
@@ -275,13 +333,11 @@ export const OASIS_MCP_TOOL_SPECS = [
     name: 'set_sky',
     description: [
       'Change the world sky background (also drives HDRI lighting).',
-      'Valid presetId values:',
-      'stars, night001, night004, night007, night008,',
-      'alps_field, autumn_ground, belfast_sunset, blue_grotto, evening_road, outdoor_umbrellas, stadium, sunny_vondelpark,',
-      'city, dawn, forest, sunset, park, night_preset, studio, warehouse, apartment, lobby.',
-      'Quick guide: blue_grotto = cyan underwater cave; dawn = warm sunrise; belfast_sunset = orange dusk; alps_field = bright daylight; sunset = venice golden hour; forest = green canopy; stars = procedural starfield (no HDRI lighting). Use the exact id, not the display name.',
+      `Stable presetId values: ${AGENT_SKY_BACKGROUND_IDS.join(', ')}.`,
+      'Accepted aliases: dawn/sunrise -> umhlanga_sunrise; sunset/dusk -> belfast_sunset; forest/park -> sunny_vondelpark; city/arena -> stadium; night -> night007.',
+      'Use stable local HDRI ids when possible; CDN-only drei presets are intentionally not exposed to agents because failures render as procedural stars.',
     ].join(' '),
-    inputSchema: z.object({ worldId: z.string().optional(), presetId: z.string() }).passthrough(),
+    inputSchema: z.object({ worldId: z.string().optional(), presetId: z.enum(SKY_TOOL_PRESET_IDS) }).passthrough(),
     injectWorldId: true,
     injectActorAgentType: true,
   },
@@ -800,6 +856,13 @@ export function prepareOasisToolArgs(name, args = {}, context = {}) {
     next.frameStyle = 'building'
     if (next.frameThickness === undefined) next.frameThickness = 7
     if (next.scale === undefined) next.scale = 4
+  }
+
+  if (name === 'set_sky') {
+    const requestedSky = validString(next.presetId || next.skyBackgroundId)
+    const resolvedSky = resolveSkyToolPreset(requestedSky)
+    if (resolvedSky) next.presetId = resolvedSky
+    delete next.skyBackgroundId
   }
 
   if (name === 'modify_object') {

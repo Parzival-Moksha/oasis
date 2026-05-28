@@ -835,24 +835,35 @@ describe('set_sky', () => {
     expect(result.message).toContain('presetId is required')
   })
 
-  it('succeeds with valid presetId and world', async () => {
+  it('succeeds with valid stable presetId and world', async () => {
     const world = makeWorldRow()
     vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
     vi.mocked(prisma.world.update).mockResolvedValue(world)
 
-    const result = await callTool('set_sky', { presetId: 'sunset' })
+    const result = await callTool('set_sky', { presetId: 'umhlanga_sunrise' })
     expect(result.ok).toBe(true)
-    expect(result.message).toContain('sunset')
+    expect(result.message).toContain('umhlanga_sunrise')
   })
 
-  it('accepts realtime skyBackgroundId alias', async () => {
+  it('normalizes realtime skyBackgroundId aliases to stable local HDRIs', async () => {
     const world = makeWorldRow()
     vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
     vi.mocked(prisma.world.update).mockResolvedValue(world)
 
-    const result = await callTool('set_sky', { skyBackgroundId: 'forest-glade' })
+    const result = await callTool('set_sky', { skyBackgroundId: 'sunset' })
     expect(result.ok).toBe(true)
-    expect(result.message).toContain('forest-glade')
+    expect(result.message).toContain('belfast_sunset')
+    expect(result.message).toContain('resolved from')
+  })
+
+  it('rejects unknown sky presets instead of saving a starfield fallback', async () => {
+    const world = makeWorldRow()
+    vi.mocked(prisma.world.findFirst).mockResolvedValue(world)
+
+    const result = await callTool('set_sky', { presetId: 'forest-glade' })
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('Unknown sky preset')
+    expect(prisma.world.update).not.toHaveBeenCalled()
   })
 })
 

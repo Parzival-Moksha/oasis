@@ -13,6 +13,7 @@ import {
   type GeminiLiveSessionPayload,
 } from '@/lib/gemini-live'
 import { PORTAL_GATE_VARIANTS } from '@/lib/portal-gates'
+import { SKY_TOOL_PRESET_IDS, formatAgentSkyPresetGuide } from '@/lib/sky-backgrounds'
 
 export const GEMINI_LIVE_WEBSOCKET_ENDPOINT =
   'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained'
@@ -528,39 +529,15 @@ export function getGeminiLiveToolDeclarations(): GeminiLiveFunctionDeclaration[]
     },
     {
       name: 'set_sky',
-      description: 'Change the active world sky or environment background. Use this when the user asks for mood, time of day, stars, sunset, forest, studio, city, or other background changes.',
+      description: `Change the active world sky or environment background. Use this when the user asks for mood, time of day, stars, sunset, forest, studio, city, or other background changes. ${formatAgentSkyPresetGuide()}`,
       parameters: {
         type: 'object',
         properties: {
           worldId: { type: 'string', description: 'Optional world ID. Omit to use the active browser world.' },
           presetId: {
             type: 'string',
-            enum: [
-              'stars',
-              'night001',
-              'night004',
-              'night007',
-              'night008',
-              'alps_field',
-              'autumn_ground',
-              'belfast_sunset',
-              'blue_grotto',
-              'evening_road',
-              'outdoor_umbrellas',
-              'stadium',
-              'sunny_vondelpark',
-              'city',
-              'dawn',
-              'forest',
-              'sunset',
-              'park',
-              'night_preset',
-              'studio',
-              'warehouse',
-              'apartment',
-              'lobby',
-            ],
-            description: 'Sky preset ID. Good defaults: stars, dawn, sunset, forest, city, studio, blue_grotto, night007.',
+            enum: [...SKY_TOOL_PRESET_IDS],
+            description: 'Sky preset ID or accepted alias. Prefer stable local HDRI ids such as umhlanga_sunrise, belfast_sunset, sunny_vondelpark, blue_grotto, night007.',
           },
         },
         required: ['presetId'],

@@ -14,6 +14,7 @@ import {
   type RealtimeVadEagerness,
   type RealtimeVadMode,
 } from '@/lib/realtime-voice'
+import { SKY_TOOL_PRESET_IDS, formatAgentSkyPresetGuide } from '@/lib/sky-backgrounds'
 
 const OASIS_ROOT = process.env.OASIS_ROOT || process.cwd()
 const REALTIME_PROMPT_PATH = path.join(OASIS_ROOT, '.claude', 'agents', 'merlin-realtime.md')
@@ -293,14 +294,18 @@ export function getRealtimeSessionTools(options: {
     {
       type: 'function',
       name: 'set_sky',
-      description: 'Change the active world sky/background preset.',
+      description: `Change the active world sky/background preset. ${formatAgentSkyPresetGuide()}`,
       parameters: {
         type: 'object',
         properties: {
           worldId: { type: 'string', description: 'Optional world ID. Omit to use the active browser world.' },
-          presetId: { type: 'string', description: 'Sky preset id.' },
-          skyBackgroundId: { type: 'string', description: 'Alias for presetId.' },
+          presetId: {
+            type: 'string',
+            enum: [...SKY_TOOL_PRESET_IDS],
+            description: 'Sky preset id or accepted alias. Prefer stable local HDRI ids such as umhlanga_sunrise, belfast_sunset, sunny_vondelpark, blue_grotto, night007.',
+          },
         },
+        required: ['presetId'],
         additionalProperties: false,
       },
     },
