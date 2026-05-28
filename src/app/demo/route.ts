@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { prisma } from '@/lib/db'
+import { chooseDemoShardAssignment } from '@/lib/demo-shard-assignment'
 import { createWorld } from '@/lib/forge/world-server'
 import { publicOriginFromRequest } from '@/lib/public-origin'
 import { ensureWorldShortCode } from '@/lib/world-short-codes'
@@ -180,15 +181,11 @@ async function assignDemoWorld(request: NextRequest, eventSlug: string, targetCa
     players: (playerCounts.get(world.id) || 0) + (reservationCounts.get(world.id) || 0),
   }))
 
-  const chooseFrom = (items: typeof candidates) => items
-    .slice()
-    .sort((a, b) => a.players - b.players || a.createdAt.getTime() - b.createdAt.getTime())[0]
-
-  let assigned = chooseFrom(candidates.filter(world => world.players < targetCap))
-    || chooseFrom(candidates.filter(world => world.players < hardCap))
+  const choice = chooseDemoShardAssignment(candidates, { targetCap, hardCap, maxShards })
+  let assigned = choice.type === 'existing' ? choice.candidate : null
   let created = false
 
-  if (!assigned && worlds.length < maxShards) {
+  if (choice.type === 'create') {
     const shardNumber = worlds.length + 1
     const meta = await createWorld(`${prefix} ${shardNumber}`, 'D', DEMO_WORLD_OWNER_ID, {
       visibility: 'ffa',
