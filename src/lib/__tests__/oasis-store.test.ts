@@ -1191,6 +1191,52 @@ describe('OasisStore', () => {
       })
     })
 
+    it('does not reopen a spatial text prompt from the same mobile tap loop', async () => {
+      const originalWindow = (globalThis as any).window
+      const prompt = vi.fn()
+        .mockReturnValueOnce('16')
+        .mockReturnValueOnce('24')
+      ;(globalThis as any).window = { prompt }
+      const field: SpatialWebObject = {
+        id: 'weekly-vibecoding-hours',
+        type: 'text',
+        formId: 'demo-form',
+        label: 'Weekly number of hours vibecoding',
+        value: '',
+        position: [0, 1, 0],
+      }
+      useOasisStore.setState({
+        spatialWebObjects: [field],
+        selectedObjectId: field.id,
+        inspectedObjectId: field.id,
+      })
+
+      try {
+        await getState().interactSpatialWebObject(field.id, 'press')
+        await getState().interactSpatialWebObject(field.id, 'press')
+
+        expect(prompt).toHaveBeenCalledTimes(1)
+        expect(getState().spatialWebObjects[0]).toMatchObject({
+          value: '16',
+          lastEvent: 'change',
+          interactionCount: 1,
+        })
+        expect(getState().selectedObjectId).toBeNull()
+        expect(getState().inspectedObjectId).toBeNull()
+
+        await vi.advanceTimersByTimeAsync(1801)
+        await getState().interactSpatialWebObject(field.id, 'press')
+      } finally {
+        ;(globalThis as any).window = originalWindow
+      }
+
+      expect(prompt).toHaveBeenCalledTimes(2)
+      expect(getState().spatialWebObjects[0]).toMatchObject({
+        value: '24',
+        interactionCount: 2,
+      })
+    })
+
     it('lets a button set another spatial object value', async () => {
       const button: SpatialWebObject = {
         id: 'rsvp-yes',
