@@ -45,6 +45,7 @@ Options:
   --paint-size <n>            Ground paint brush size for paint/chaos scenarios. Default: 3
   --paint-stretch <n>         Ground paint stretch for paint/chaos scenarios. Default: 1
   --max-objects-per-bot <n>   Object spam ring size before bots transform/remove old objects. Default: 40
+  --no-state-bytes            Skip full state JSON byte accounting on every patch.
   --join-timeout <ms|s>       Per-user join timeout. Default: 10s
   --drain-timeout <ms|s>      Wait for in-flight command acks before leaving. Default: 3s
   --json <path>               Write JSON summary to a file in addition to stdout.
@@ -133,6 +134,10 @@ function readArgs(argv) {
       out.ensureWorlds = true
       continue
     }
+    if (key === 'noStateBytes') {
+      out.measureStateBytes = false
+      continue
+    }
     const value = inlineValue ?? argv[++i]
     if (value === undefined || value.startsWith('--')) throw new Error(`Missing value for --${rawKey}`)
     out[key] = value
@@ -195,6 +200,7 @@ function resolveConfig(argv, env) {
     paintSize: parseNumber(args.paintSize ?? env.OASIS_SWARM_PAINT_SIZE, 3, { min: 1, max: 5 }),
     paintStretch: parseNumber(args.paintStretch ?? env.OASIS_SWARM_PAINT_STRETCH, 1, { min: 1, max: 8 }),
     maxObjectsPerBot: parseNumber(args.maxObjectsPerBot ?? env.OASIS_SWARM_MAX_OBJECTS_PER_BOT, 40, { min: 1, max: 2_000 }),
+    measureStateBytes: parseBool(args.measureStateBytes ?? env.OASIS_SWARM_MEASURE_STATE_BYTES, true),
     joinTimeoutMs: parseDuration(args.joinTimeout ?? env.OASIS_SWARM_JOIN_TIMEOUT_MS, 10_000),
     drainTimeoutMs: parseDuration(args.drainTimeout ?? env.OASIS_SWARM_DRAIN_TIMEOUT_MS, 3_000),
     jsonPath: args.json ? String(args.json) : '',
@@ -726,10 +732,12 @@ async function startBot(bot, config, metrics, stopSignal) {
     const size = typeof state?.players?.size === 'number' ? state.players.size : 0
     metrics.byWorld[bot.worldId].peakPlayersSeen = Math.max(metrics.byWorld[bot.worldId].peakPlayersSeen, size)
     metrics.stateChanges += 1
-    try {
-      const json = typeof state?.toJSON === 'function' ? state.toJSON() : state
-      metrics.approxStateBytesReceived += Buffer.byteLength(JSON.stringify(json))
-    } catch {}
+    if (config.measureStateBytes) {
+      try {
+        const json = typeof state?.toJSON === 'function' ? state.toJSON() : state
+        metrics.approxStateBytesReceived += Buffer.byteLength(JSON.stringify(json))
+      } catch {}
+    }
   })
 
   sendSafe(room, 'profile', {
@@ -854,6 +862,7 @@ function publicConfig(config) {
     paintSize: config.paintSize,
     paintStretch: config.paintStretch,
     maxObjectsPerBot: config.maxObjectsPerBot,
+    measureStateBytes: config.measureStateBytes,
     joinTimeoutMs: config.joinTimeoutMs,
     drainTimeoutMs: config.drainTimeoutMs,
   }
