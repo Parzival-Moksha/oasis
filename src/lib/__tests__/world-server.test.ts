@@ -96,6 +96,8 @@ function worldRow(overrides: Record<string, unknown> = {}): any {
 describe('world-server access enforcement', () => {
   const originalMode = process.env.OASIS_MODE
   const originalProfile = process.env.OASIS_PROFILE
+  const originalCheckpointEvents = process.env.OASIS_ROOM_CHECKPOINT_EVENTS
+  const originalCheckpointSnapshots = process.env.OASIS_ROOM_CHECKPOINT_SNAPSHOTS
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -103,6 +105,8 @@ describe('world-server access enforcement', () => {
     vi.mocked(prisma.profile.findMany).mockResolvedValue([])
     vi.mocked(prisma.worldLike.findMany).mockResolvedValue([])
     delete process.env.OASIS_MODE
+    delete process.env.OASIS_ROOM_CHECKPOINT_EVENTS
+    delete process.env.OASIS_ROOM_CHECKPOINT_SNAPSHOTS
     process.env.OASIS_PROFILE = 'hosted-openclaw'
   })
 
@@ -111,6 +115,10 @@ describe('world-server access enforcement', () => {
     else process.env.OASIS_MODE = originalMode
     if (originalProfile === undefined) delete process.env.OASIS_PROFILE
     else process.env.OASIS_PROFILE = originalProfile
+    if (originalCheckpointEvents === undefined) delete process.env.OASIS_ROOM_CHECKPOINT_EVENTS
+    else process.env.OASIS_ROOM_CHECKPOINT_EVENTS = originalCheckpointEvents
+    if (originalCheckpointSnapshots === undefined) delete process.env.OASIS_ROOM_CHECKPOINT_SNAPSHOTS
+    else process.env.OASIS_ROOM_CHECKPOINT_SNAPSHOTS = originalCheckpointSnapshots
   })
 
   it('filters hosted registry to owned and discoverable worlds', async () => {
@@ -451,6 +459,43 @@ describe('world-server access enforcement', () => {
         worldVersion: 7,
       }),
     })
+  })
+
+  it('can skip room checkpoint command-event persistence for hosted stress paths', async () => {
+    process.env.OASIS_ROOM_CHECKPOINT_EVENTS = '0'
+    process.env.OASIS_ROOM_CHECKPOINT_SNAPSHOTS = '0'
+    const loadedAt = new Date('2026-04-30T12:00:00.000Z')
+    const current = state({ catalogPlacements: [{ id: 'cat-1' } as any] })
+    vi.mocked(prisma.world.findFirst).mockResolvedValueOnce(
+      worldRow({ id: 'ffa-1', userId: 'user-b', visibility: 'public_edit', updatedAt: loadedAt }),
+    )
+    vi.mocked(prisma.world.updateMany).mockResolvedValue({ count: 1 } as any)
+
+    const result = await saveWorldCheckpointWithCommandEvents('ffa-1', 'user-a', current, [{
+      id: 'evt-1',
+      kind: 'command.accepted',
+      worldId: 'ffa-1',
+      commandId: 'cmd-1',
+      actorId: 'user-a',
+      acceptedAt: '2026-04-30T12:00:01.000Z',
+      revision: 7,
+      source: 'room',
+      durable: true,
+      command: {
+        id: 'cmd-1',
+        kind: 'object.add',
+        worldId: 'ffa-1',
+        actorId: 'user-a',
+        clientId: 'session-1',
+        createdAt: '2026-04-30T12:00:01.000Z',
+        payload: { object: { id: 'cat-1' } },
+      } as any,
+    }], loadedAt.toISOString())
+
+    expect(result).toMatchObject({ saved: true, worldId: 'ffa-1', eventsSaved: 0, eventsSkipped: 1 })
+    expect(vi.mocked(prisma.worldSnapshot.findFirst)).not.toHaveBeenCalled()
+    expect(vi.mocked(prisma.worldEvent.findMany)).not.toHaveBeenCalled()
+    expect(vi.mocked(prisma.worldEvent.create)).not.toHaveBeenCalled()
   })
 
   it('refuses room checkpoints that are based on stale world data', async () => {

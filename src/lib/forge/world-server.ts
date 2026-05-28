@@ -669,6 +669,20 @@ function checkpointEventToInput(worldId: string, event: RoomCheckpointEventInput
   }
 }
 
+function envFlag(name: string, fallback: boolean): boolean {
+  const raw = process.env[name]
+  if (raw === undefined) return fallback
+  return ['1', 'true', 'yes', 'on'].includes(raw.trim().toLowerCase())
+}
+
+function shouldPersistRoomCheckpointEvents(): boolean {
+  return envFlag('OASIS_ROOM_CHECKPOINT_EVENTS', process.env.NODE_ENV === 'test')
+}
+
+function shouldSnapshotRoomCheckpoints(): boolean {
+  return envFlag('OASIS_ROOM_CHECKPOINT_SNAPSHOTS', process.env.NODE_ENV === 'test')
+}
+
 export async function saveWorldCheckpointWithCommandEvents(
   id: string,
   userId: string,
@@ -679,9 +693,10 @@ export async function saveWorldCheckpointWithCommandEvents(
   const ctx = accessContext(userId)
   const now = new Date()
   const worldData = normalizeSavedWorldState({ version: 1, ...state, savedAt: now.toISOString() })
-  const eventInputs = events
+  const eventInputs = shouldPersistRoomCheckpointEvents() ? events
     .map(event => checkpointEventToInput(id, event))
-    .filter((event): event is AppendWorldCommandEventInput => event !== null)
+    .filter((event): event is AppendWorldCommandEventInput => event !== null) : []
+  const skippedByPolicy = Math.max(0, events.length - eventInputs.length)
 
   const target = await prisma.world.findFirst({
     where: { id },
@@ -723,7 +738,9 @@ export async function saveWorldCheckpointWithCommandEvents(
   }
 
   assertNotPortalOnlyOverwrite(id, target.data, worldData)
-  await snapshotBeforeSave(id)
+  if (shouldSnapshotRoomCheckpoints()) {
+    await snapshotBeforeSave(id)
+  }
 
   const updateData = {
     data: JSON.stringify(worldData),
@@ -767,7 +784,7 @@ export async function saveWorldCheckpointWithCommandEvents(
     return {
       conflict: false,
       eventsSaved,
-      eventsSkipped: eventInputs.length - eventsSaved,
+      eventsSkipped: skippedByPolicy + eventInputs.length - eventsSaved,
     }
   })
 
