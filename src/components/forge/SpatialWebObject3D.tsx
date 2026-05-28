@@ -11,6 +11,8 @@ import { useAudioManager } from '@/lib/audio-manager'
 import {
   SPATIAL_WEB_OPTION_WRAP_CHARS,
   getSpatialWebOptionLetter,
+  spatialObjectBelongsToGoogleFormSubmit,
+  spatialTextFieldHasAnswer,
   type SpatialWebObject,
   type SpatialWebValue,
 } from '@/lib/spatial-web'
@@ -523,7 +525,12 @@ export function SpatialWebObject3D({
   const interactSpatialWebObject = useOasisStore(s => s.interactSpatialWebObject)
   const setSpatialWebObjectValue = useOasisStore(s => s.setSpatialWebObjectValue)
   const isReadOnly = useOasisStore(s => s.isViewMode && !s.isViewModeEditable)
+  const spatialWebObjects = useOasisStore(s => s.spatialWebObjects)
   const canClickInteract = effectiveRp1Mode || isReadOnly
+  const suppressAnsweredFormTextMeshClick = object.type === 'text'
+    && spatialTextFieldHasAnswer(object)
+    && spatialObjectBelongsToGoogleFormSubmit(object, spatialWebObjects)
+  const canRunDirectMeshInteraction = canClickInteract && !suppressAnsweredFormTextMeshClick
 
   const accent = normalizeHex(object.accentColor, '#38bdf8')
   const isSelectorPanel = object.type === 'select' || object.type === 'multiselect'
@@ -588,7 +595,7 @@ export function SpatialWebObject3D({
   }
 
   const handleInteractClick = (event: { stopPropagation: () => void }) => {
-    if (!canClickInteract || object.type === 'slider') return
+    if (!canRunDirectMeshInteraction || object.type === 'slider') return
     event.stopPropagation()
     runInteraction()
   }
@@ -631,7 +638,7 @@ export function SpatialWebObject3D({
         object={object}
         busy={busy}
         accent={accent}
-        canClickInteract={canClickInteract}
+        canClickInteract={canRunDirectMeshInteraction}
         interactionHint={interactionHint}
         runInteraction={runInteraction}
       />
@@ -647,7 +654,7 @@ export function SpatialWebObject3D({
       <group
         ref={groupRef}
         onClick={(event) => {
-          if (!canClickInteract) return
+          if (!canRunDirectMeshInteraction) return
           event.stopPropagation()
           runInteraction()
         }}
@@ -661,16 +668,16 @@ export function SpatialWebObject3D({
           <meshStandardMaterial
             color={buttonColor}
             emissive={emissive}
-            emissiveIntensity={isSubmittedButton ? 0.12 : canClickInteract || busy ? 0.65 : 0.28}
+            emissiveIntensity={isSubmittedButton ? 0.12 : canRunDirectMeshInteraction || busy ? 0.65 : 0.28}
             roughness={0.32}
             metalness={0.18}
           />
         </mesh>
         <mesh position={[0, 0.07, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[0.52, 0.58, 64]} />
-          <meshBasicMaterial color={buttonColor} transparent opacity={isSubmittedButton ? 0.28 : canClickInteract ? 0.78 : 0.4} />
+          <meshBasicMaterial color={buttonColor} transparent opacity={isSubmittedButton ? 0.28 : canRunDirectMeshInteraction ? 0.78 : 0.4} />
         </mesh>
-        <pointLight color={buttonColor} intensity={isSubmittedButton ? 0.18 : canClickInteract ? 1.2 : 0.45} distance={4} position={[0, 0.55, 0]} />
+        <pointLight color={buttonColor} intensity={isSubmittedButton ? 0.18 : canRunDirectMeshInteraction ? 1.2 : 0.45} distance={4} position={[0, 0.55, 0]} />
         <SubmitConfetti trigger={object.submittedAt} accent={accent} />
         <EmbossedText
           position={[0, 0.68, 0.36]}

@@ -5,6 +5,8 @@ import {
   findNearestSpatialWebObject,
   getNextSpatialWebValue,
   getSpatialWebOptionLetter,
+  spatialObjectBelongsToGoogleFormSubmit,
+  spatialTextFieldHasAnswer,
   type SpatialWebObject,
 } from '../spatial-web'
 
@@ -99,5 +101,38 @@ describe('findNearestSpatialWebObject', () => {
 
   it('returns null when nothing is close enough', () => {
     expect(findNearestSpatialWebObject([spatial({ position: [5, 1, 0] })], [0, 1, 0], {}, 2)).toBeNull()
+  })
+})
+
+describe('spatial text field helpers', () => {
+  it('detects answered text fields without treating blanks as answers', () => {
+    expect(spatialTextFieldHasAnswer(spatial({ type: 'text', value: '16' }))).toBe(true)
+    expect(spatialTextFieldHasAnswer(spatial({ type: 'text', value: '   ' }))).toBe(false)
+    expect(spatialTextFieldHasAnswer(spatial({ type: 'select', value: '16' }))).toBe(false)
+  })
+
+  it('detects fields that belong to a Google Forms submit flow', () => {
+    const textField = spatial({
+      id: 'hours',
+      type: 'text',
+      formId: 'demo-form',
+      value: '16',
+    })
+    const submit = spatial({
+      id: 'send',
+      type: 'button',
+      formId: 'demo-form',
+      action: {
+        type: 'submit_form',
+        destination: {
+          type: 'google_form',
+          responseUrl: 'https://docs.google.com/forms/d/e/demo/formResponse',
+          fieldMap: { hours: 'entry.123' },
+        },
+      },
+    })
+
+    expect(spatialObjectBelongsToGoogleFormSubmit(textField, [textField, submit])).toBe(true)
+    expect(spatialObjectBelongsToGoogleFormSubmit(textField, [textField])).toBe(false)
   })
 })

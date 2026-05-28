@@ -69,6 +69,7 @@ import {
   buildSpatialWebSubmission,
   getNextSpatialWebValue,
   resolveSpatialWebObjectPosition,
+  spatialObjectBelongsToGoogleFormSubmit,
   summarizeSpatialWebSubmission,
   type SpatialWebEventName,
   type SpatialWebObject,
@@ -107,7 +108,6 @@ const SPATIAL_WEB_WORLD_TOOL_ALLOWLIST = new Set([
 ])
 const OASIS_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || ''
 const DEMO_ROUTER_PATH = `${OASIS_BASE_PATH}/ab12`.replace(/\/{2,}/g, '/')
-const SPATIAL_TEXT_PROMPT_REOPEN_GUARD_MS = 1800
 
 type SpatialSubmitResponse = {
   ok?: boolean
@@ -228,14 +228,6 @@ function playFormsPortalRevealSound(): void {
   try {
     useAudioManager.getState().playUrl('/audio/spells/mixkit-spellcaster-fairy-swoosh-1463.ogg', 0.9)
   } catch {}
-}
-
-function isSpatialTextPromptReentry(object: SpatialWebObject, nowMs = Date.now()): boolean {
-  if (!object.lastInteractionAt) return false
-  const lastInteractionMs = Date.parse(object.lastInteractionAt)
-  if (!Number.isFinite(lastInteractionMs)) return false
-  const elapsed = nowMs - lastInteractionMs
-  return elapsed >= 0 && elapsed < SPATIAL_TEXT_PROMPT_REOPEN_GUARD_MS
 }
 
 function upsertWorldRegistryMeta(registry: WorldMeta[], meta: WorldMeta): WorldMeta[] {
@@ -1234,12 +1226,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   }
 
   const spatialObjectBelongsToGoogleForm = (object?: SpatialWebObject | null) => {
-    if (!object?.formId) return false
-    return get().spatialWebObjects.some(entry =>
-      entry.formId === object.formId &&
-      entry.action?.type === 'submit_form' &&
-      entry.action.destination?.type === 'google_form'
-    )
+    return spatialObjectBelongsToGoogleFormSubmit(object, get().spatialWebObjects)
   }
 
   const shouldSkipFullSaveForRoomCommandAuthority = () => {
@@ -2331,8 +2318,6 @@ export const useOasisStore = create<OasisState>((set, get) => {
     }
 
     if (object.type === 'text') {
-      if (event === 'press' && isSpatialTextPromptReentry(object)) return
-
       if (object.action?.type === 'create_world_from_google_form') {
         const isTestAltar = object.action.testMode === true
         const currentValue = Array.isArray(object.value)

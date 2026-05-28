@@ -126,6 +126,28 @@ export function buildSpatialWebSubmission(
   }
 }
 
+export function spatialTextFieldHasAnswer(
+  object: Pick<SpatialWebObject, 'type' | 'value'>,
+): boolean {
+  if (object.type !== 'text') return false
+  if (Array.isArray(object.value)) return object.value.length > 0
+  return object.value !== null
+    && object.value !== undefined
+    && String(object.value).trim().length > 0
+}
+
+export function spatialObjectBelongsToGoogleFormSubmit(
+  object: Pick<SpatialWebObject, 'formId'> | null | undefined,
+  objects: Array<Pick<SpatialWebObject, 'formId' | 'action'>>,
+): boolean {
+  if (!object?.formId) return false
+  return objects.some(entry =>
+    entry.formId === object.formId &&
+    entry.action?.type === 'submit_form' &&
+    entry.action.destination?.type === 'google_form'
+  )
+}
+
 export function summarizeSpatialWebSubmission(payload: SpatialWebSubmissionPayload): string {
   const summary = payload.fields
     .map(field => {
