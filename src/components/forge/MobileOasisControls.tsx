@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import { pushMouseLookDelta, useInputManager } from '@/lib/input-manager'
 import { isProbablyMobileDevice, useMobileControls } from '@/lib/mobile-controls'
 import { getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
-import { findNearestSpatialWebObject, SPATIAL_WEB_INTERACTION_RADIUS, type SpatialWebObject } from '@/lib/spatial-web'
+import { findNearestSpatialWebObject, isAnsweredGoogleFormsTextField, SPATIAL_WEB_INTERACTION_RADIUS, type SpatialWebObject } from '@/lib/spatial-web'
 import { useOasisStore, type AgentWindow, type AgentWindowType } from '@/store/oasisStore'
 import type { SpellId } from '@/lib/spellbook'
 import { PLAYER_BASE_STATS } from '@/lib/player-progression'
@@ -132,8 +132,11 @@ export function MobileOasisControls({
       const pose = getPlayerAvatarPose()
       const state = useOasisStore.getState()
       const actorPosition = pose?.position || null
+      const spatialCandidates = state.spatialWebObjects.filter(object =>
+        !isAnsweredGoogleFormsTextField(object, state.spatialWebObjects)
+      )
       const nearest = findNearestSpatialWebObject(
-        state.spatialWebObjects,
+        spatialCandidates,
         actorPosition,
         state.transforms,
         SPATIAL_WEB_INTERACTION_RADIUS,

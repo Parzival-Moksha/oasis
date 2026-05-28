@@ -5,6 +5,7 @@ import {
   findNearestSpatialWebObject,
   getNextSpatialWebValue,
   getSpatialWebOptionLetter,
+  isAnsweredGoogleFormsTextField,
   spatialObjectBelongsToGoogleFormSubmit,
   spatialTextFieldHasAnswer,
   type SpatialWebObject,
@@ -134,5 +135,7 @@ describe('spatial text field helpers', () => {
 
     expect(spatialObjectBelongsToGoogleFormSubmit(textField, [textField, submit])).toBe(true)
     expect(spatialObjectBelongsToGoogleFormSubmit(textField, [textField])).toBe(false)
+    expect(isAnsweredGoogleFormsTextField(textField, [textField, submit])).toBe(true)
+    expect(isAnsweredGoogleFormsTextField({ ...textField, value: '' }, [textField, submit])).toBe(false)
   })
 })

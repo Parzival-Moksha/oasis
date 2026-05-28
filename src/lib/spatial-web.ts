@@ -148,6 +148,15 @@ export function spatialObjectBelongsToGoogleFormSubmit(
   )
 }
 
+export function isAnsweredGoogleFormsTextField(
+  object: Pick<SpatialWebObject, 'type' | 'value' | 'formId'> | null | undefined,
+  objects: Array<Pick<SpatialWebObject, 'formId' | 'action'>>,
+): boolean {
+  if (!object) return false
+  return spatialTextFieldHasAnswer(object)
+    && spatialObjectBelongsToGoogleFormSubmit(object, objects)
+}
+
 export function summarizeSpatialWebSubmission(payload: SpatialWebSubmissionPayload): string {
   const summary = payload.fields
     .map(field => {

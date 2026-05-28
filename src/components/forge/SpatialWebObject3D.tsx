@@ -11,8 +11,7 @@ import { useAudioManager } from '@/lib/audio-manager'
 import {
   SPATIAL_WEB_OPTION_WRAP_CHARS,
   getSpatialWebOptionLetter,
-  spatialObjectBelongsToGoogleFormSubmit,
-  spatialTextFieldHasAnswer,
+  isAnsweredGoogleFormsTextField,
   type SpatialWebObject,
   type SpatialWebValue,
 } from '@/lib/spatial-web'
@@ -527,9 +526,7 @@ export function SpatialWebObject3D({
   const isReadOnly = useOasisStore(s => s.isViewMode && !s.isViewModeEditable)
   const spatialWebObjects = useOasisStore(s => s.spatialWebObjects)
   const canClickInteract = effectiveRp1Mode || isReadOnly
-  const suppressAnsweredFormTextMeshClick = object.type === 'text'
-    && spatialTextFieldHasAnswer(object)
-    && spatialObjectBelongsToGoogleFormSubmit(object, spatialWebObjects)
+  const suppressAnsweredFormTextMeshClick = isAnsweredGoogleFormsTextField(object, spatialWebObjects)
   const canRunDirectMeshInteraction = canClickInteract && !suppressAnsweredFormTextMeshClick
 
   const accent = normalizeHex(object.accentColor, '#38bdf8')

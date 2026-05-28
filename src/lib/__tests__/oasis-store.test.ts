@@ -1225,6 +1225,47 @@ describe('OasisStore', () => {
       expect(getState().inspectedObjectId).toBeNull()
     })
 
+    it('does not reopen answered Google Forms text fields through ambient interactions', async () => {
+      const originalWindow = (globalThis as any).window
+      const prompt = vi.fn().mockReturnValue('32')
+      ;(globalThis as any).window = { prompt }
+      const field: SpatialWebObject = {
+        id: 'weekly-vibecoding-hours',
+        type: 'text',
+        formId: 'demo-form',
+        label: 'Weekly number of hours vibecoding',
+        value: '16',
+        position: [0, 1, 0],
+      }
+      const submit: SpatialWebObject = {
+        id: 'send',
+        type: 'button',
+        formId: 'demo-form',
+        label: 'Send',
+        position: [0, 1, 2],
+        action: {
+          type: 'submit_form',
+          destination: {
+            type: 'google_form',
+            responseUrl: 'https://docs.google.com/forms/d/e/demo/formResponse',
+            fieldMap: { 'weekly-vibecoding-hours': 'entry.123' },
+          },
+        },
+      }
+      useOasisStore.setState({ spatialWebObjects: [field, submit] })
+
+      try {
+        await getState().interactSpatialWebObject(field.id, 'press')
+      } finally {
+        ;(globalThis as any).window = originalWindow
+      }
+
+      expect(prompt).not.toHaveBeenCalled()
+      const storedField = getState().spatialWebObjects.find(object => object.id === field.id)
+      expect(storedField?.value).toBe('16')
+      expect(storedField?.interactionCount).toBeUndefined()
+    })
+
     it('lets a button set another spatial object value', async () => {
       const button: SpatialWebObject = {
         id: 'rsvp-yes',

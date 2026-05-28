@@ -68,6 +68,7 @@ import {
   SPATIAL_WEB_DEFAULT_SUBMIT_ENDPOINT,
   buildSpatialWebSubmission,
   getNextSpatialWebValue,
+  isAnsweredGoogleFormsTextField,
   resolveSpatialWebObjectPosition,
   spatialObjectBelongsToGoogleFormSubmit,
   summarizeSpatialWebSubmission,
@@ -2056,6 +2057,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   interactSpatialWebObject: async (id, event = 'press') => {
     const object = get().spatialWebObjects.find(entry => entry.id === id)
     if (!object) return
+    if (isAnsweredGoogleFormsTextField(object, get().spatialWebObjects)) return
 
     const now = new Date().toISOString()
     const effectPosition = resolveSpatialWebObjectPosition(object, get().transforms[id])
