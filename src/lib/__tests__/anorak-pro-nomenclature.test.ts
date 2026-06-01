@@ -14,23 +14,17 @@ import * as path from 'path'
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('AgentWindowType', () => {
-  it('oasisStore exports type that includes anorak-pro', () => {
-    // Read the actual source to verify the type definition
+  it('oasisStore re-exports the shared agent window type', () => {
     const storePath = path.resolve(__dirname, '../../store/oasisStore.ts')
     const content = fs.readFileSync(storePath, 'utf-8')
 
-    // AgentWindowType should include 'anorak-pro'
-    expect(content).toContain("'anorak-pro'")
-
-    // Verify it's part of the AgentWindowType union
-    const typeMatch = content.match(/export type AgentWindowType\s*=\s*([^;]+)/)
-    expect(typeMatch).not.toBeNull()
-    expect(typeMatch![1]).toContain('anorak-pro')
+    expect(content).toContain('AgentWindowType')
+    expect(content).toContain("from '../lib/agent-window-types'")
   })
 
   it('AgentWindowType includes all expected agent types', () => {
-    const storePath = path.resolve(__dirname, '../../store/oasisStore.ts')
-    const content = fs.readFileSync(storePath, 'utf-8')
+    const typePath = path.resolve(__dirname, '../agent-window-types.ts')
+    const content = fs.readFileSync(typePath, 'utf-8')
 
     const typeMatch = content.match(/export type AgentWindowType\s*=\s*([^;]+)/)
     expect(typeMatch).not.toBeNull()

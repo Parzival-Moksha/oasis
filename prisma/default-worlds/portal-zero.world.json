@@ -11596,6 +11596,32 @@
           "successMessage": "Oasis world ready."
         },
         "statusMessage": "PASTE A GOOGLE FORMS URL"
+      },
+      {
+        "id": "spatial-spellbook-pickup-portal-zero",
+        "type": "button",
+        "formId": "portal-zero-onboarding",
+        "label": "Spellbook",
+        "description": "Pick up the book to open your first spell menu.",
+        "position": [
+          3.9,
+          1.1,
+          -4.9
+        ],
+        "rotation": [
+          0,
+          -0.42,
+          0
+        ],
+        "width": 2.5,
+        "height": 1,
+        "accentColor": "#facc15",
+        "visualStyle": "spellbook-pickup",
+        "action": {
+          "type": "spawn_vfx",
+          "successMessage": "Spellbook awakened."
+        },
+        "statusMessage": "HIT F TO PICK UP"
       }
     ],
     "paintStrokes": [],
@@ -12299,7 +12325,7 @@
     "skyBackgroundId": "umhlanga_sunrise",
     "agentWindows": [],
     "agentAvatars": [],
-    "savedAt": "2026-05-27T23:49:13.506Z"
+    "savedAt": "2026-06-01T14:14:27.017Z"
   },
   "pvpEnabled": true
 }

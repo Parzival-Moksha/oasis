@@ -24,6 +24,7 @@ import { FRAME_STYLES, getAudioElement } from './WorldObjects'
 import { useUILayer } from '@/lib/input-manager'
 import { PORTAL_GATE_VARIANT_DEFS, WELCOME_HUB_WORLD_ID, resolvePortalGateAction, type PortalAction, type PortalGate, type PortalGateVariant } from '../../lib/portal-gates'
 import { clampText3DInput } from '../../lib/forge/text-3d-object'
+import { normalizeMediaOpacity } from '../../lib/forge/placement-builders'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS — The inspector's visual DNA
@@ -1542,10 +1543,22 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
             ? (placement.imageDisplayMode || (currentFrame === 'building' ? '3d' : '2d'))
             : '2d'
           const noFrameActive = displayMode === '2d' && (!currentFrame || currentFrame === 'building')
+          const mediaOpacity = normalizeMediaOpacity(placement.mediaOpacity)
           return (
             <>
               <SectionHeader>&#128444;&#65039; Picture Shape</SectionHeader>
               <div className="rounded-lg border border-white/5 p-2" style={{ background: 'rgba(20, 20, 20, 0.6)' }}>
+                <div className="mb-2">
+                  <ParamSlider
+                    label="opacity"
+                    value={mediaOpacity}
+                    min={0.05}
+                    max={1}
+                    step={0.05}
+                    format={value => `${Math.round(value * 100)}%`}
+                    onChange={value => updateCatalogPlacement(inspectedObjectId!, { mediaOpacity: value })}
+                  />
+                </div>
                 {isImage && (
                   <div className="mb-2 grid grid-cols-2 gap-1">
                     {(['2d', '3d'] as const).map(mode => {

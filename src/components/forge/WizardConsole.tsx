@@ -12,7 +12,7 @@ import { createPortal } from 'react-dom'
 import { useConjure } from '../../hooks/useConjure'
 import { useOasisStore } from '../../store/oasisStore'
 import { PROVIDERS, REMESH_PRESETS, LIGHT_INTENSITY_MAX, LIGHT_INTENSITY_STEP, type ProviderName, type ConjuredAsset, type ConjureStatus, type CraftedScene, type RemeshQuality, type WorldLightType, type GeneratedImage } from '../../lib/conjure/types'
-import type { PlacementVfxType } from '../../store/oasisStore'
+import type { PlacementPending, PlacementVfxType } from '../../lib/forge/placement-types'
 import { dispatch } from '../../lib/event-bus'
 import { useContext } from 'react'
 import { ASSET_CATALOG, SKY_BACKGROUNDS } from '../scene-lib/constants'
@@ -34,8 +34,17 @@ import { DeleteButton } from './DeleteButton'
 import { getAgentWindowRendererMeta } from '../../lib/agent-window-renderers'
 import { deriveAvatarAnchoredWindowPlacement } from '../../lib/agent-avatar-utils'
 import { getLiveObjectTransform } from '../../lib/live-object-transforms'
-import { PORTAL_GATE_VARIANT_DEFS, type PortalAction, type PortalGateVariant } from '../../lib/portal-gates'
+import { PORTAL_GATE_VARIANT_DEFS, type PortalGateVariant } from '../../lib/portal-gates'
 import { portalThumbPath } from '../../lib/portal-thumbnails'
+import {
+  buildAudioPlacementPending,
+  buildImagePlacementPending,
+  buildPortalActionForPreset,
+  buildPortalPlacementPending,
+  buildVideoPlacementPending,
+  portalPlacementSubtitle,
+  type PortalActionPreset,
+} from '../../lib/forge/placement-builders'
 import { PortalTransitionSettingsPanel } from './PortalTransitionSettingsPanel'
 import { createSpatialWebObjectFromTemplate, SPATIAL_WEB_ASSET_TEMPLATES } from '../../lib/spatial-web-presets'
 import { useOasisCapabilities } from '@/lib/oasis-mode-client'
@@ -674,7 +683,7 @@ function ImagineTab({ cols, setLightboxUrl, onRequestDelete }: { cols: number; s
                     isInWorld={isPlaced}
                     accentColor="#EC4899"
                     subtitle={new Date(img.createdAt).toLocaleDateString()}
-                    onClick={() => enterPlacementMode({ type: 'image', name: img.prompt.slice(0, 24), imageUrl: img.url })}
+                    onClick={() => enterPlacementMode(buildImagePlacementPending({ name: img.prompt.slice(0, 24), imageUrl: img.url }))}
                     onDelete={() => onRequestDelete(img, placedCount)}
                     onDownload={(_, url) => {
                       const a = document.createElement('a')
@@ -684,7 +693,7 @@ function ImagineTab({ cols, setLightboxUrl, onRequestDelete }: { cols: number; s
                     }}
                     onUseAsTile={() => handleUseAsTile(img.id)}
                     onViewFullscreen={() => setLightboxUrl(img.url)}
-                    onPlaceWithFrame={() => enterPlacementMode({ type: 'image', name: img.prompt.slice(0, 24), imageUrl: img.url, imageFrameStyle: 'gilded' })}
+                    onPlaceWithFrame={() => enterPlacementMode(buildImagePlacementPending({ name: img.prompt.slice(0, 24), imageUrl: img.url, frameStyle: 'gilded' }))}
                   />
                 )
               })}
@@ -913,19 +922,16 @@ function MediaTab({ cols, onRequestDelete }: { cols: number; onRequestDelete: (t
                   onClick={() => {
                     if (item.type === 'image') {
                       // Click = placement mode (NOT lightbox)
-                      enterPlacementMode({ type: 'image', name: item.name, imageUrl: item.url })
+                      enterPlacementMode(buildImagePlacementPending({ name: item.name, imageUrl: item.url }))
                     } else if (item.type === 'video') {
                       // Click on video = placement mode
-                      enterPlacementMode({ type: 'video', name: item.name, videoUrl: item.url })
+                      enterPlacementMode(buildVideoPlacementPending({ name: item.name, videoUrl: item.url }))
                     } else if (item.type === 'audio') {
-                      enterPlacementMode({
-                        type: 'catalog',
-                        catalogId: 'kf_speaker',
+                      enterPlacementMode(buildAudioPlacementPending({
                         name: item.name.replace(/\.[^.]+$/, '') || 'Loudspeaker',
-                        path: '/models/kenney-furniture/speaker.glb',
-                        defaultScale: 2,
                         audioUrl: item.url,
-                      })
+                        defaultScale: 2,
+                      }))
                     }
                   }}
                   onDelete={() => {
@@ -942,7 +948,7 @@ function MediaTab({ cols, onRequestDelete }: { cols: number; onRequestDelete: (t
                   } : undefined}
                   onUseAsTile={item.type === 'image' ? () => handleUseAsTile(item.url) : undefined}
                   onViewFullscreen={item.type === 'image' ? () => setLightboxUrl(item.url) : undefined}
-                  onPlaceWithFrame={item.type === 'image' ? () => enterPlacementMode({ type: 'image', name: item.name, imageUrl: item.url, imageFrameStyle: 'gilded' }) : undefined}
+                  onPlaceWithFrame={item.type === 'image' ? () => enterPlacementMode(buildImagePlacementPending({ name: item.name, imageUrl: item.url, frameStyle: 'gilded' })) : undefined}
                   badges={placedCount > 0 ? (
                     <span className="text-[8px] text-sky-400 font-mono">{placedCount} placed</span>
                   ) : undefined}
@@ -1263,7 +1269,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
   const [assetCategory, setAssetCategory] = useState<string>('all')
   const [assetSubTab, setAssetSubTab] = useState<WizardAssetSubTab>('catalog')
   const [portalTargetWorldId, setPortalTargetWorldId] = useState('')
-  const [portalActionPreset, setPortalActionPreset] = useState<'load_world' | 'demo_router' | 'create_private' | 'create_public' | 'create_ffa' | 'external_url' | 'locked_message'>('load_world')
+  const [portalActionPreset, setPortalActionPreset] = useState<PortalActionPreset>('load_world')
   const [portalExternalUrl, setPortalExternalUrl] = useState('https://conjure.04515.xyz/?portal=true&from=oasis')
   const [portalLockedMessage, setPortalLockedMessage] = useState('This portal is not open yet.')
   const [previewAsset, setPreviewAsset] = useState<AssetDefinition | null>(null)
@@ -2662,41 +2668,14 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
               const selectedTarget = portalTargetWorldId
                 ? targetWorlds.find(world => world.id === portalTargetWorldId)
                 : undefined
-              const buildPortalAction = (): PortalAction | undefined => {
-                if (portalActionPreset === 'load_world') {
-                  return selectedTarget
-                    ? { type: 'load_world', worldId: selectedTarget.id, worldName: selectedTarget.name }
-                    : undefined
-                }
-                if (portalActionPreset === 'demo_router') {
-                  return { type: 'external_url', url: DEMO_ROUTER_PATH, label: 'Demo Router', requiresConfirm: false }
-                }
-                if (portalActionPreset === 'create_private') {
-                  return { type: 'create_world', visibility: 'private', promptForName: true, name: 'New Private World' }
-                }
-                if (portalActionPreset === 'create_public') {
-                  return { type: 'create_world', visibility: 'public', promptForName: true, name: 'New Public World' }
-                }
-                if (portalActionPreset === 'create_ffa') {
-                  return { type: 'create_world', visibility: 'ffa', promptForName: true, name: 'New FFA World' }
-                }
-                if (portalActionPreset === 'external_url') {
-                  const url = portalExternalUrl.trim()
-                  return url
-                    ? { type: 'external_url', url, label: 'External world', returnUrl: 'current', requiresConfirm: true }
-                    : undefined
-                }
-                return { type: 'locked_message', message: portalLockedMessage.trim() || 'This portal is not open yet.' }
-              }
-              const portalAction = buildPortalAction()
-              const canPlacePortal = Boolean(portalAction)
-              const portalSubtitle = portalAction?.type === 'load_world'
-                ? selectedTarget?.name || 'choose target'
-                : portalAction?.type === 'create_world'
-                  ? `create ${portalAction.visibility || 'private'}`
-                  : portalAction?.type === 'external_url'
-                    ? portalAction.label || 'external URL'
-                    : 'locked'
+              const portalAction = buildPortalActionForPreset({
+                preset: portalActionPreset,
+                selectedTarget,
+                externalUrl: portalExternalUrl,
+                lockedMessage: portalLockedMessage,
+                demoRouterPath: DEMO_ROUTER_PATH,
+              })
+              const portalSubtitle = portalPlacementSubtitle(portalAction, selectedTarget)
               return (
                 <>
                   <div className="rounded-lg border border-cyan-500/15 bg-cyan-500/5 p-2 mb-2 space-y-2">
@@ -2758,21 +2737,14 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
                         thumbnailUrl={`${portalThumbPath(style.id)}?v=${portalThumbVersion}`}
                         accentColor={style.accent}
                         subtitle={portalSubtitle}
-                        onClick={() => canPlacePortal && enterPlacementMode({
-                          type: 'portal',
-                          name: portalAction?.type === 'load_world'
-                            ? `Portal to ${selectedTarget?.name || 'world'}`
-                            : portalAction?.type === 'create_world'
-                              ? `Portal to create ${portalAction.visibility || 'private'}`
-                              : portalAction?.type === 'external_url'
-                                ? `Portal to ${portalAction.label || 'external URL'}`
-                                : 'Locked portal',
-                          portalVariant: style.id as PortalGateVariant,
-                          portalAction,
-                          portalTargetWorldId: selectedTarget?.id,
-                          portalTargetWorldName: selectedTarget?.name,
-                          portalDirection: portalAction?.type === 'load_world' ? 'two-way' : 'one-way',
-                        })}
+                        onClick={() => {
+                          if (!portalAction) return
+                          enterPlacementMode(buildPortalPlacementPending({
+                            variant: style.id as PortalGateVariant,
+                            action: portalAction,
+                            selectedTarget,
+                          }))
+                        }}
                       />
                     ))}
                   </div>
@@ -2923,7 +2895,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
                             isInWorld={isPlaced}
                             accentColor="#EC4899"
                             subtitle={new Date(img.createdAt).toLocaleDateString()}
-                            onClick={() => enterPlacementMode({ type: 'image', name: img.prompt.slice(0, 24), imageUrl: img.url })}
+                            onClick={() => enterPlacementMode(buildImagePlacementPending({ name: img.prompt.slice(0, 24), imageUrl: img.url }))}
                             onDelete={() => {
                               requestPermanentDelete({
                                 itemName: img.prompt.slice(0, 30) || 'generated image',
@@ -2954,7 +2926,7 @@ export function WizardConsole({ isOpen, onClose, variant = 'local', initialTab }
                             enterPaintMode(presetId)
                           }}
                           onViewFullscreen={() => setAssetsLightboxUrl(img.url)}
-                          onPlaceWithFrame={() => enterPlacementMode({ type: 'image', name: img.prompt.slice(0, 24), imageUrl: img.url, imageFrameStyle: 'gilded' })}
+                          onPlaceWithFrame={() => enterPlacementMode(buildImagePlacementPending({ name: img.prompt.slice(0, 24), imageUrl: img.url, frameStyle: 'gilded' }))}
                         />
                       )
                     })}
@@ -3630,7 +3602,7 @@ const DEPLOYABLE_AGENT_TYPES = [
 ] as const
 
 function AgentsTabContent({ enterPlacementMode, selectObject, setInspectedObject, setCameraLookAt, selectedObjectId, transforms }: {
-  enterPlacementMode: (pending: import('../../store/oasisStore').PlacementPending) => void
+  enterPlacementMode: (pending: PlacementPending) => void
   selectObject: (id: string | null) => void
   setInspectedObject: (id: string | null) => void
   setCameraLookAt: (pos: [number, number, number]) => void

@@ -5,7 +5,8 @@ import { pushMouseLookDelta, useInputManager } from '@/lib/input-manager'
 import { isProbablyMobileDevice, useMobileControls } from '@/lib/mobile-controls'
 import { getPlayerAvatarPose } from '@/lib/player-avatar-runtime'
 import { findNearestSpatialWebObject, isAnsweredGoogleFormsTextField, SPATIAL_WEB_INTERACTION_RADIUS, type SpatialWebObject } from '@/lib/spatial-web'
-import { useOasisStore, type AgentWindow, type AgentWindowType } from '@/store/oasisStore'
+import { useOasisStore } from '@/store/oasisStore'
+import { canFocusAgentWindowForViewer, type AgentWindow } from '@/lib/agent-window-types'
 import type { SpellId } from '@/lib/spellbook'
 import { PLAYER_BASE_STATS } from '@/lib/player-progression'
 import { getViewerUserIdClient } from '@/lib/viewer-identity-client'
@@ -16,22 +17,12 @@ const PAD_RADIUS = 48
 const MOBILE_LOOK_MULTIPLIER = 2.1
 const LOOK_DEADZONE_PX = 4
 const PINCH_ZOOM_SENSITIVITY = 0.0028
-const MOBILE_PRIVATE_AGENT_WINDOW_TYPES = new Set<AgentWindowType>([
-  'anorak',
-  'codex',
-  'gemini',
-  'anorak-pro',
-  'merlin',
-  'realtime',
-  'hermes',
-  'openclaw',
-  'devcraft',
-  'parzival',
-])
-
 type TouchPoint = { x: number; y: number }
 
 function spatialActionLabel(object: SpatialWebObject): { label: string; disabled: boolean } {
+  if (object.visualStyle === 'spellbook-pickup') {
+    return { label: object.submittedAt ? 'Open' : 'Take', disabled: false }
+  }
   if (object.visualStyle === 'google-form-altar') {
     return { label: object.generatedWorldUrl ? 'Copy text' : 'Create', disabled: false }
   }
@@ -64,8 +55,7 @@ function dispatchTpsZoomDelta(delta: number): void {
 }
 
 function canFocusAgentWindowOnMobile(window: AgentWindow, viewerUserId: string): boolean {
-  if (window.ownerId && window.ownerId !== viewerUserId && MOBILE_PRIVATE_AGENT_WINDOW_TYPES.has(window.agentType)) return false
-  return true
+  return canFocusAgentWindowForViewer(window, viewerUserId)
 }
 
 export function useIsMobileOasis(): boolean {

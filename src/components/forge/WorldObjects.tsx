@@ -15,7 +15,8 @@ import { useFrame, useLoader, useThree } from '@react-three/fiber'
 import { Center, Text3D, TransformControls, useGLTF, Html } from '@react-three/drei'
 import * as THREE from 'three'
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js'
-import { useOasisStore, type AgentWindow, type AgentWindowType, type ConjureVfxType, CONJURE_VFX_LIST } from '../../store/oasisStore'
+import { useOasisStore, type ConjureVfxType, CONJURE_VFX_LIST } from '../../store/oasisStore'
+import type { AgentWindow, AgentWindowType } from '../../lib/agent-window-types'
 import { ConjuredObjectSafe } from './ConjuredObject'
 import { CraftedSceneRenderer, PrimitiveGeometry } from './CraftedSceneRenderer'
 import { ConjureVFX } from './ConjureVFX'
@@ -36,7 +37,7 @@ import { SpatialWebObject3D } from './SpatialWebObject3D'
 import { PaintStrokeMesh } from './PaintStrokeMesh'
 import { Text3DObjectMesh } from './Text3DObjectMesh'
 import { LiveStrokesLayer } from './LiveStrokesLayer'
-import type { PlacementPending } from '../../store/oasisStore'
+import type { PlacementPending } from '../../lib/forge/placement-types'
 import { consumeRecentPointerLockRightClick, useInputManager } from '../../lib/input-manager'
 import { isProbablyMobileDevice } from '../../lib/mobile-controls'
 import { createLipSyncController, registerLipSync, unregisterLipSync, getLipSync } from '../../lib/lip-sync'
@@ -65,6 +66,12 @@ import { canReceiveMoveOrder, resolveMoveOrderObjectIds } from '../../lib/march-
 import { getViewerUserIdClient } from '../../lib/viewer-identity-client'
 import { LIGHT_INTENSITY_MAX, type ConjuredAsset, type WorldLight } from '../../lib/conjure/types'
 import { worldMutationBus } from '../../lib/world-mutation-bus'
+import { normalizeMediaOpacity } from '../../lib/forge/placement-builders'
+import {
+  markVideoTextureNeedsUpload,
+  shouldContinueVideoTextureWarmup,
+  shouldCreateVideoTexture,
+} from '../../lib/forge/video-texture-lifecycle'
 
 const IDLE_CLIP_PATTERNS = /idle|breathe?|stand|rest|pose|wait/i
 const WALK_CLIP_PATTERNS = /walk|run|move|locomotion|jog/i
@@ -568,6 +575,7 @@ export function ImagePlaneRenderer({
   displayMode,
   frameStyle,
   frameThickness = 1,
+  mediaOpacity = 1,
   buildingFrameColor = '#f97316',
   buildingFrameThickness = 0.16,
 }: {
@@ -576,12 +584,14 @@ export function ImagePlaneRenderer({
   displayMode?: '2d' | '3d'
   frameStyle?: string
   frameThickness?: number
+  mediaOpacity?: number
   buildingFrameColor?: string
   buildingFrameThickness?: number
 }) {
   const resolvedImageUrl = useMemo(() => resolveWorldImageUrl(imageUrl), [imageUrl])
   const texture = useLoader(THREE.TextureLoader, resolvedImageUrl)
   texture.colorSpace = THREE.SRGBColorSpace
+  const opacity = normalizeMediaOpacity(mediaOpacity)
 
   const aspect = texture.image ? texture.image.width / texture.image.height : 1
   const w = scale * aspect
@@ -597,7 +607,7 @@ export function ImagePlaneRenderer({
       <group position={[0, h / 2, 0]}>
         <mesh>
           <boxGeometry args={[wallSize, h, wallSize]} />
-          <meshStandardMaterial map={texture} side={THREE.DoubleSide} roughness={0.85} metalness={0.0} />
+          <meshStandardMaterial map={texture} side={THREE.DoubleSide} roughness={0.85} metalness={0.0} transparent={opacity < 1} opacity={opacity} depthWrite={opacity >= 1} />
         </mesh>
         <PictureBuildingEdgeBeams
           size={wallSize}
@@ -614,7 +624,7 @@ export function ImagePlaneRenderer({
       {/* The image itself — vertical, centered */}
       <mesh>
         <planeGeometry args={[w, h]} />
-        <meshStandardMaterial map={texture} side={THREE.DoubleSide} roughness={0.8} metalness={0.0} />
+        <meshStandardMaterial map={texture} side={THREE.DoubleSide} roughness={0.8} metalness={0.0} transparent={opacity < 1} opacity={opacity} depthWrite={opacity >= 1} />
       </mesh>
 
       {/* ░▒▓ FRAME STYLES — each one a different vibe ▓▒░ */}
@@ -808,10 +818,11 @@ function ObjectInteractionHint3D({ candidate, position }: {
   )
 }
 
-export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, frameThickness = 1 }: {
-  objectId?: string; videoUrl: string; scale: number; frameStyle?: string; frameThickness?: number
+export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, frameThickness = 1, mediaOpacity = 1 }: {
+  objectId?: string; videoUrl: string; scale: number; frameStyle?: string; frameThickness?: number; mediaOpacity?: number
 }) {
   const [texture, setTexture] = useState<THREE.VideoTexture | null>(null)
+  const [materialVersion, setMaterialVersion] = useState(0)
   const textureRef = useRef<THREE.VideoTexture | null>(null)
   const [aspect, setAspect] = useState(16 / 9)
   const [progress, setProgress] = useState(0)
@@ -875,16 +886,24 @@ export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, fram
     const supportsFrameCallback = typeof (video as HTMLVideoElement & {
       requestVideoFrameCallback?: unknown
     }).requestVideoFrameCallback === 'function'
-    let firstPresentedFrame = false
+    let presentedFrameCount = 0
+
+    const kickTextureUpload = () => {
+      if (!tex || disposed) return
+      markVideoTextureNeedsUpload(tex)
+      setMaterialVersion(version => version + 1)
+    }
 
     const watchPresentedFrame = () => {
       if (disposed || !supportsFrameCallback) return
       ;(video as HTMLVideoElement & {
         requestVideoFrameCallback: (callback: () => void) => number
       }).requestVideoFrameCallback(() => {
-        firstPresentedFrame = true
+        if (disposed) return
+        presentedFrameCount += 1
         createTexture('requestVideoFrameCallback')
-        if (!tex) watchPresentedFrame()
+        kickTextureUpload()
+        if (!tex || shouldContinueVideoTextureWarmup(presentedFrameCount)) watchPresentedFrame()
       })
     }
 
@@ -894,7 +913,7 @@ export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, fram
         console.warn(`[VideoPlane] ${trigger} fired but videoWidth=0, deferring:`, videoUrl)
         return
       }
-      if (supportsFrameCallback && !firstPresentedFrame) return
+      if (!shouldCreateVideoTexture({ video, supportsFrameCallback, presentedFrameCount })) return
       console.log(`[VideoPlane] Texture created via "${trigger}" for:`, videoUrl,
         `readyState=${video.readyState}, videoWidth=${video.videoWidth}`)
       tex = new THREE.VideoTexture(video)
@@ -904,6 +923,7 @@ export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, fram
       tex.generateMipmaps = false
       setTexture(tex)
       textureRef.current = tex
+      kickTextureUpload()
       if (fallbackInterval) { clearInterval(fallbackInterval); fallbackInterval = null }
     }
 
@@ -1049,7 +1069,7 @@ export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, fram
         setProgress(videoRef.current.currentTime / videoRef.current.duration)
       }
     }
-    if (textureRef.current) textureRef.current.needsUpdate = true
+    markVideoTextureNeedsUpload(textureRef.current)
 
     // Spatial volume: log falloff, hard zero at maxDist
     if (audioMuted || audioState !== 'playing') { videoRef.current.volume = 0; return }
@@ -1072,6 +1092,7 @@ export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, fram
   const h = scale
   const barW = w * 0.9
   const barH = 0.03 * scale
+  const opacity = normalizeMediaOpacity(mediaOpacity)
 
   return (
     <group ref={groupRef} position={[0, h / 2, 0]}>
@@ -1079,9 +1100,9 @@ export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, fram
       <mesh key={aspect}>
         <planeGeometry args={[w, h]} />
         {texture ? (
-          <meshBasicMaterial map={texture} side={THREE.DoubleSide} toneMapped={false} />
+          <meshBasicMaterial key={`${texture.uuid}-${materialVersion}`} map={texture} side={THREE.DoubleSide} toneMapped={false} transparent={opacity < 1} opacity={opacity} depthWrite={opacity >= 1} />
         ) : (
-          <meshBasicMaterial color="#111" side={THREE.DoubleSide} />
+          <meshBasicMaterial key={`placeholder-${materialVersion}`} color="#111" side={THREE.DoubleSide} transparent={opacity < 1} opacity={opacity} depthWrite={opacity >= 1} />
         )}
       </mesh>
 
@@ -2261,7 +2282,18 @@ export function TransformKeyHandler() {
         const objPos = state.transforms[id]?.position || [0, 0, 0]
         const catalog = state.placedCatalogAssets.find(a => a.id === id)
         if (catalog) {
-          _clipboard = { type: catalog.imageUrl ? 'image' : 'catalog', catalogId: catalog.catalogId, name: catalog.name, path: catalog.glbPath, defaultScale: catalog.scale, imageUrl: catalog.imageUrl, imageFrameStyle: catalog.imageFrameStyle }
+          _clipboard = {
+            type: catalog.videoUrl ? 'video' : catalog.imageUrl ? 'image' : 'catalog',
+            catalogId: catalog.catalogId,
+            name: catalog.name,
+            path: catalog.glbPath,
+            defaultScale: catalog.scale,
+            imageUrl: catalog.imageUrl,
+            videoUrl: catalog.videoUrl,
+            imageFrameStyle: catalog.imageFrameStyle,
+            imageFrameThickness: catalog.imageFrameThickness,
+            mediaOpacity: catalog.mediaOpacity,
+          }
           spawnCopyToast(catalog.position || objPos as [number, number, number])
           e.preventDefault()
           return
@@ -2702,9 +2734,9 @@ function PlacementOverlay() {
       const conjId = `conjured-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
       placeCatalogAssetAt(conjId, placementPending.name, placementPending.path, placementPending.defaultScale || 1, pos)
     } else if (placementPending.type === 'image' && placementPending.imageUrl) {
-      placeImageAt(placementPending.name, placementPending.imageUrl, pos, placementPending.imageFrameStyle, placementPending.imageFrameThickness)
+      placeImageAt(placementPending.name, placementPending.imageUrl, pos, placementPending.imageFrameStyle, placementPending.imageFrameThickness, placementPending.mediaOpacity)
     } else if (placementPending.type === 'video' && placementPending.videoUrl) {
-      placeVideoAt(placementPending.name, placementPending.videoUrl, pos, placementPending.imageFrameStyle, placementPending.imageFrameThickness)
+      placeVideoAt(placementPending.name, placementPending.videoUrl, pos, placementPending.imageFrameStyle, placementPending.imageFrameThickness, placementPending.mediaOpacity)
     } else if (placementPending.type === 'library' && placementPending.sceneId) {
       placeLibrarySceneAt(placementPending.sceneId, pos)
     } else if (placementPending.type === 'portal' && placementPending.portalVariant) {
@@ -3487,7 +3519,7 @@ export function WorldObjectsRenderer() {
             <CatalogModelErrorBoundary path={renderAsset.imageUrl || renderAsset.glbPath} name={renderAsset.name}>
               <Suspense fallback={<PlaceholderBox />}>
                 {renderAsset.videoUrl
-                  ? <VideoPlaneRenderer objectId={renderAsset.id} videoUrl={renderAsset.videoUrl} scale={renderAsset.scale} frameStyle={renderAsset.imageFrameStyle} frameThickness={renderAsset.imageFrameThickness} />
+                  ? <VideoPlaneRenderer objectId={renderAsset.id} videoUrl={renderAsset.videoUrl} scale={renderAsset.scale} frameStyle={renderAsset.imageFrameStyle} frameThickness={renderAsset.imageFrameThickness} mediaOpacity={renderAsset.mediaOpacity} />
                   : renderAsset.imageUrl
                     ? (
                       <ImagePlaneRenderer
@@ -3496,6 +3528,7 @@ export function WorldObjectsRenderer() {
                         displayMode={renderAsset.imageDisplayMode}
                         frameStyle={renderAsset.imageFrameStyle}
                         frameThickness={renderAsset.imageFrameThickness}
+                        mediaOpacity={renderAsset.mediaOpacity}
                         buildingFrameColor={renderAsset.imageBuildingFrameColor}
                         buildingFrameThickness={renderAsset.imageBuildingFrameThickness}
                       />

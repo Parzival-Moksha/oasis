@@ -6,7 +6,7 @@
 
 import { useContext, useMemo } from 'react'
 import { useOasisStore } from '../../../store/oasisStore'
-import type { PlacementVfxType } from '../../../store/oasisStore'
+import type { PlacementVfxType } from '../../../lib/forge/placement-types'
 import { SettingsContext } from '../../scene-lib/contexts'
 import { PortalTransitionSettingsPanel } from '../PortalTransitionSettingsPanel'
 

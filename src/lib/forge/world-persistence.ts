@@ -14,7 +14,7 @@ import type { CraftedScene, CatalogPlacement, ObjectBehavior, WorldLight } from 
 import type { GroundPreset } from './ground-textures'
 import type { TerrainParams } from './terrain-generator'
 import type { PortalGate } from '../portal-gates'
-import type { AgentWindow, AgentAvatar } from '../../store/oasisStore'
+import type { AgentAvatar, AgentWindow } from '../agent-window-types'
 import type { WorldWriteDecision } from './world-access'
 import type { SpatialWebObject } from '../spatial-web'
 import type { PaintStroke } from './paint-stroke'

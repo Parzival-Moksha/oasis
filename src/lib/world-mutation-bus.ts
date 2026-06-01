@@ -5,7 +5,8 @@ import type { PaintStroke, PaintStrokeStyle } from '@/lib/forge/paint-stroke'
 import type { Text3DObject } from '@/lib/forge/text-3d-object'
 import type { PortalGate } from '@/lib/portal-gates'
 import type { SpatialWebEventName, SpatialWebObject, SpatialWebValue } from '@/lib/spatial-web'
-import type { AgentAvatar, AgentWindow, PlacementVfxType } from '@/store/oasisStore'
+import type { AgentAvatar, AgentWindow } from '@/lib/agent-window-types'
+import type { PlacementVfxType } from '@/lib/forge/placement-types'
 
 export type WorldMutation =
   | { kind: 'object_added'; payload: CatalogPlacement }

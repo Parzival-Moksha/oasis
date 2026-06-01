@@ -9,7 +9,7 @@
 
 import { memo } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
-import type { AgentWindow } from '../../store/oasisStore'
+import type { AgentWindow } from '../../lib/agent-window-types'
 import { resolveAgentWindowRenderMode, isHybridAgentWindowRenderMode } from '../../lib/agent-window-renderers'
 import { OffscreenPortal } from './OffscreenPortal'
 import { AgentWindowSurface } from './AgentWindowSurface'

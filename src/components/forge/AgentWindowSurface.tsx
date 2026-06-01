@@ -1,7 +1,7 @@
 'use client'
 
 import { memo } from 'react'
-import type { AgentWindow } from '../../store/oasisStore'
+import type { AgentWindow } from '../../lib/agent-window-types'
 import { resolveAgentWindowRenderMode } from '../../lib/agent-window-renderers'
 import { AnorakWindowContent } from './AnorakWindowContent'
 import { AnorakProPanel } from './AnorakProPanel'

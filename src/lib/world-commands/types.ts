@@ -4,7 +4,8 @@ import type { PaintStroke, PaintStrokeStyle } from '@/lib/forge/paint-stroke'
 import type { Text3DObject } from '@/lib/forge/text-3d-object'
 import type { PortalGate } from '@/lib/portal-gates'
 import type { SpatialWebObject, SpatialWebValue } from '@/lib/spatial-web'
-import type { AgentAvatar, AgentWindow, PlacementVfxType } from '@/store/oasisStore'
+import type { AgentAvatar, AgentWindow } from '@/lib/agent-window-types'
+import type { PlacementVfxType } from '@/lib/forge/placement-types'
 
 export type Vec3 = [number, number, number]
 export type ScalarOrVec3 = number | Vec3

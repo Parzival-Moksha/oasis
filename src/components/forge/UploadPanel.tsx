@@ -4,6 +4,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useUILayer } from '@/lib/input-manager'
 import { useAudioManager } from '@/lib/audio-manager'
 import { useOasisStore } from '@/store/oasisStore'
+import {
+  buildAudioPlacementPending,
+  buildImagePlacementPending,
+  buildVideoPlacementPending,
+} from '@/lib/forge/placement-builders'
 
 export type UploadKind = 'audio' | 'video' | 'image'
 
@@ -152,30 +157,27 @@ export function UploadPanel() {
 
     const store = useOasisStore.getState()
     if (kind === 'image') {
-      store.enterPlacementMode({
-        type: 'image',
+      store.enterPlacementMode(buildImagePlacementPending({
         name: uploadedName,
         imageUrl: uploadedUrl,
-        imageFrameStyle: 'baroque',
-        imageFrameThickness: 7,
-      })
+        frameStyle: 'baroque',
+        frameThickness: 7,
+      }))
     } else if (kind === 'video') {
-      store.enterPlacementMode({
-        type: 'video',
+      store.enterPlacementMode(buildVideoPlacementPending({
         name: uploadedName,
         videoUrl: uploadedUrl,
-        imageFrameStyle: 'baroque',
-        imageFrameThickness: 7,
-      })
+        frameStyle: 'baroque',
+        frameThickness: 7,
+      }))
     } else {
-      store.enterPlacementMode({
-        type: 'catalog',
+      store.enterPlacementMode(buildAudioPlacementPending({
         catalogId: 'kf_radio',
         name: uploadedName,
         path: '/models/kenney-furniture/radio.glb',
         defaultScale: 2,
         audioUrl: uploadedUrl,
-      })
+      }))
     }
 
     // Close the panel — placement happens via tap/click in the world.

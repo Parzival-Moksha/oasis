@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type SyntheticEvent } from 'react'
-import type { AgentWindow } from '../../store/oasisStore'
+import type { AgentWindow } from '../../lib/agent-window-types'
 import { useOasisStore } from '../../store/oasisStore'
 import { normalizeBrowserSurfaceUrl } from '../../lib/browser-surface'
 

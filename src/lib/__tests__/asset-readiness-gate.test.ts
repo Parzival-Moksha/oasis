@@ -5,6 +5,11 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { describe, it, expect, vi } from 'vitest'
+import {
+  markVideoTextureNeedsUpload,
+  shouldContinueVideoTextureWarmup,
+  shouldCreateVideoTexture,
+} from '@/lib/forge/video-texture-lifecycle'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GROUND PLANE — gl.initTexture() ordering tests
@@ -383,5 +388,42 @@ describe('createTexture gate logic', () => {
 
     createTexture()
     expect(tex).toBeNull()
+  })
+})
+
+describe('video texture lifecycle warmup', () => {
+  it('waits for a presented frame when requestVideoFrameCallback is available', () => {
+    const video = { videoWidth: 1920, videoHeight: 1080, readyState: 4 }
+
+    expect(shouldCreateVideoTexture({
+      video,
+      supportsFrameCallback: true,
+      presentedFrameCount: 0,
+    })).toBe(false)
+
+    expect(shouldCreateVideoTexture({
+      video,
+      supportsFrameCallback: true,
+      presentedFrameCount: 1,
+    })).toBe(true)
+  })
+
+  it('allows event-driven creation on browsers without requestVideoFrameCallback', () => {
+    expect(shouldCreateVideoTexture({
+      video: { videoWidth: 1280, videoHeight: 720, readyState: 2 },
+      supportsFrameCallback: false,
+      presentedFrameCount: 0,
+    })).toBe(true)
+  })
+
+  it('keeps a short warmup window for automatic material refreshes', () => {
+    expect(shouldContinueVideoTextureWarmup(1)).toBe(true)
+    expect(shouldContinueVideoTextureWarmup(4)).toBe(false)
+  })
+
+  it('marks a video texture for GPU upload', () => {
+    const texture = { needsUpdate: false }
+    expect(markVideoTextureNeedsUpload(texture)).toBe(texture)
+    expect(texture.needsUpdate).toBe(true)
   })
 })

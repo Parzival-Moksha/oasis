@@ -15,7 +15,7 @@ import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import { useOasisStore } from '../../store/oasisStore'
-import type { AgentWindow } from '../../store/oasisStore'
+import type { AgentWindow } from '../../lib/agent-window-types'
 import {
   getAgentWindowRendererMeta,
   isHybridAgentWindowRenderMode,

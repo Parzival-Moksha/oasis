@@ -4,7 +4,8 @@ import { useEffect, useRef } from 'react'
 import type { CatalogPlacement, ConjuredAsset, CraftedScene, ObjectBehavior, WorldLight } from '@/lib/conjure/types'
 import { cancelPendingSave, getActiveWorldId, getWorldRegistry } from '@/lib/forge/world-persistence'
 import type { WorldEvent } from '@/lib/mcp/world-events'
-import { useOasisStore, type AgentAvatar, type AgentWindow } from '@/store/oasisStore'
+import { useOasisStore } from '@/store/oasisStore'
+import type { AgentAvatar, AgentWindow, AgentWindowType } from '@/lib/agent-window-types'
 import type { SpatialWebObject } from '@/lib/spatial-web'
 import type { PortalGate } from '@/lib/portal-gates'
 import { readEmbodiedAgentSettingsFromStorage, type EmbodiedAgentSettings } from '@/lib/agent-action-settings'
@@ -751,7 +752,7 @@ export function useWorldEvents() {
                   ...state.placedAgentWindows,
                   {
                 id: windowId,
-                agentType: avatar.agentType as import('@/store/oasisStore').AgentWindowType,
+                agentType: avatar.agentType as AgentWindowType,
                 position: avatar.position,
                 rotation: [0, 0, 0],
                 scale: 0.15,

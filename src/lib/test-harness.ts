@@ -7,7 +7,7 @@
 import { useOasisStore } from '../store/oasisStore'
 import { useInputManager } from './input-manager'
 import { dispatch } from './event-bus'
-import type { AgentWindowType } from '../store/oasisStore'
+import type { AgentWindowType } from './agent-window-types'
 
 declare global {
   interface Window {

@@ -245,6 +245,8 @@ export interface CatalogPlacement {
   imageBuildingFrameColor?: string
   /** Beam thickness for 3D picture-building edges, in world units */
   imageBuildingFrameThickness?: number
+  /** Opacity for image/video placements. Defaults to 1. */
+  mediaOpacity?: number
   /** Audio URL for loudspeaker objects */
   audioUrl?: string
   /** Audio volume (0-1, default 1) */

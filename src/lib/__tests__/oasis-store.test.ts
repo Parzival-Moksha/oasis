@@ -32,12 +32,16 @@ vi.mock('../../hooks/useXp', () => ({
 
 // Must import AFTER mocks are set up
 import { useOasisStore } from '../../store/oasisStore'
-import type { AgentWindowType, AgentWindow } from '../../store/oasisStore'
+import type { AgentWindow, AgentWindowType } from '../agent-window-types'
 import { getDefaultAgentAvatarUrl } from '../../lib/agent-avatar-catalog'
 import { debouncedSaveWorld, loadWorld, saveWorld } from '../../lib/forge/world-persistence'
 import { WELCOME_HUB_WORLD_ID } from '../../lib/portal-gates'
 import type { SpatialWebObject } from '../../lib/spatial-web'
-import { createGoogleFormsAltarObject } from '../../lib/spatial-web-presets'
+import {
+  PORTAL_ZERO_SPELLBOOK_PICKUP_ID,
+  createGoogleFormsAltarObject,
+  createPortalZeroSpellbookPickup,
+} from '../../lib/spatial-web-presets'
 
 // Cast the mocked imports for easy access
 const mockDebouncedSave = debouncedSaveWorld as ReturnType<typeof vi.fn>
@@ -1312,6 +1316,32 @@ describe('OasisStore', () => {
       await getState().interactSpatialWebObject('spark-button')
 
       expect(getState().activePlacementVfx[0]?.position).toEqual([5, 2, -4])
+    })
+
+    it('runs the Portal Zero spellbook pickup as a local ritual', async () => {
+      const spellbook = createPortalZeroSpellbookPickup()
+      useOasisStore.setState({
+        activeWorldId: WELCOME_HUB_WORLD_ID,
+        spatialWebObjects: [spellbook],
+        transforms: {
+          [PORTAL_ZERO_SPELLBOOK_PICKUP_ID]: { position: [3, 1.2, -4] },
+        },
+      })
+
+      await getState().interactSpatialWebObject(PORTAL_ZERO_SPELLBOOK_PICKUP_ID)
+
+      expect(getState().spatialWebObjects[0]).toMatchObject({
+        id: PORTAL_ZERO_SPELLBOOK_PICKUP_ID,
+        statusMessage: 'SPELLBOOK AWAKENED',
+        lastEvent: 'press',
+        interactionCount: 1,
+      })
+      expect(getState().spatialWebObjects[0].submittedAt).toEqual(expect.any(String))
+      expect(getState().activePlacementVfx[0]).toMatchObject({
+        position: [3, 1.2, -4],
+        type: 'arcanebloom',
+      })
+      expect(mockDebouncedSave).not.toHaveBeenCalled()
     })
 
     it('runs world-tool actions when a spatial control changes', async () => {

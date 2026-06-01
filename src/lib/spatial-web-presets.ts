@@ -40,6 +40,8 @@ export const SPATIAL_WEB_ASSET_TEMPLATES: SpatialWebAssetTemplate[] = [
   },
 ]
 
+export const PORTAL_ZERO_SPELLBOOK_PICKUP_ID = 'spatial-spellbook-pickup-portal-zero'
+
 export function createGoogleFormsAltarObject(
   overrides: Partial<SpatialWebObject> = {},
   options: { testMode?: boolean } = {},
@@ -99,6 +101,27 @@ export function createPortalZeroGoogleTestAltar(): SpatialWebObject {
     rotation: [0, 0.18, 0],
     accentColor: '#a78bfa',
   }, { testMode: true })
+}
+
+export function createPortalZeroSpellbookPickup(): SpatialWebObject {
+  return {
+    id: PORTAL_ZERO_SPELLBOOK_PICKUP_ID,
+    type: 'button',
+    formId: 'portal-zero-onboarding',
+    label: 'Spellbook',
+    description: 'Pick up the book to open your first spell menu.',
+    position: [3.9, 1.1, -4.9],
+    rotation: [0, -0.42, 0],
+    width: 2.5,
+    height: 1,
+    accentColor: '#facc15',
+    visualStyle: 'spellbook-pickup',
+    action: {
+      type: 'spawn_vfx',
+      successMessage: 'Spellbook awakened.',
+    },
+    statusMessage: 'HIT F TO PICK UP',
+  }
 }
 
 export function createSpatialWebObjectFromTemplate(template: SpatialWebAssetTemplate): SpatialWebObject {

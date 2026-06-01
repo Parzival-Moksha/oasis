@@ -8,7 +8,7 @@ import type { PaintStroke } from '@/lib/forge/paint-stroke'
 import type { Text3DObject } from '@/lib/forge/text-3d-object'
 import type { PortalGate } from '@/lib/portal-gates'
 import type { SpatialWebObject } from '@/lib/spatial-web'
-import type { AgentAvatar, AgentWindow } from '@/store/oasisStore'
+import type { AgentAvatar, AgentWindow } from '@/lib/agent-window-types'
 import type {
   ScopedSpatialWebObject,
   WorldCommandApplyResult,

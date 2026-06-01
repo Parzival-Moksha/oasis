@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { CollapsibleSection, scrollIntoViewOnFocus } from '../SpellTabFrame'
 import { useOasisStore } from '@/store/oasisStore'
+import { buildAudioPlacementPending } from '../../../../lib/forge/placement-builders'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
 
@@ -164,14 +165,11 @@ export function MusicBody({ defaultExpandNew = true, defaultExpandGallery = true
   }, [])
 
   const placeAudioTrack = useCallback((track: GeneratedMusic) => {
-    enterPlacementMode({
-      type: 'catalog',
-      catalogId: 'kf_speaker',
+    enterPlacementMode(buildAudioPlacementPending({
       name: track.prompt.slice(0, 30) || 'Music speaker',
-      path: '/models/kenney-furniture/speaker.glb',
       defaultScale: 1,
       audioUrl: track.url,
-    })
+    }))
   }, [enterPlacementMode])
 
   // Merge history + previously-uploaded audio (de-duplicated by URL).

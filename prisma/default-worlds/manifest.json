@@ -2,6 +2,13 @@
   "seedVersion": 1,
   "worlds": [
     {
+      "slug": "aitinkerers-bogota-intro",
+      "id": "world-aitinkerers-bogota-intro",
+      "file": "aitinkerers-bogota-intro.world.json",
+      "name": "AI Tinkerers Bogota Intro",
+      "visibility": "public"
+    },
+    {
       "slug": "openclaw-hub",
       "id": "world-openclaw-hub-system",
       "file": "openclaw-hub.world.json",

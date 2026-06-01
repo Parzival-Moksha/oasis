@@ -17,7 +17,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import type { AgentWindowRenderMode } from './agent-window-renderers'
-import type { AgentWindowType, BrowserSurfaceMode } from '../store/oasisStore'
+import type { AgentWindowType, BrowserSurfaceMode } from './agent-window-types'
 
 export type OasisCommand =
   // Object management

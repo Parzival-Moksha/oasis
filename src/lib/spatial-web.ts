@@ -18,6 +18,7 @@ export type SpatialWebVisualStyle =
   | 'terminal-panel'
   | 'portal-zero-button'
   | 'google-form-altar'
+  | 'spellbook-pickup'
 
 export const SPATIAL_WEB_INTERACTION_RADIUS = 3
 export const SPATIAL_WEB_OPTION_WRAP_CHARS = 40

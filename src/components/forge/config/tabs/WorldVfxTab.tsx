@@ -7,7 +7,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { useOasisStore } from '@/store/oasisStore'
-import type { PlacementVfxType } from '@/store/oasisStore'
+import type { PlacementVfxType } from '@/lib/forge/placement-types'
 import { PortalTransitionSettingsPanel } from '../../PortalTransitionSettingsPanel'
 
 const CONJURE_VFX_OPTIONS = [

@@ -26,8 +26,39 @@ import {
   type WorldState,
 } from '../lib/forge/world-persistence'
 import { worldMutationBus } from '../lib/world-mutation-bus'
+import { applyStoreWorldCommand } from '../lib/world-commands/store-adapter'
+import type { WorldCommandKind, WorldCommandPayloadByKind } from '../lib/world-commands/types'
 import type { SpellId } from '../lib/spellbook'
 import { normalizeCraftModelId } from '../lib/craft-models'
+import {
+  canFocusAgentWindowForViewer,
+  defaultAgentAvatarLabel,
+  PRIVATE_AGENT_WINDOW_TYPES,
+  type AgentAvatar,
+  type AgentAvatarAudioState,
+  type AgentAvatarType,
+  type AgentWindow,
+} from '../lib/agent-window-types'
+import {
+  type PlacementPending,
+  type PlacementVfxType,
+} from '../lib/forge/placement-types'
+import { createPlacementSlice } from './slices/placementSlice'
+import { createPanelZSlice } from './slices/panelZSlice'
+
+export type {
+  AgentAvatar,
+  AgentAvatarAudioState,
+  AgentAvatarType,
+  AgentWindow,
+  AgentWindowType,
+  BrowserSurfaceMode,
+} from '../lib/agent-window-types'
+
+export type {
+  PlacementPending,
+  PlacementVfxType,
+} from '../lib/forge/placement-types'
 
 // Per-client throttle for terrain-brush broadcasts. Module-level (one per
 // browser tab) is correct here — we want this user's brush rate-limited
@@ -62,7 +93,7 @@ import {
   normalizeAgentAvatarTransforms,
   type AgentAvatarTransformMap,
 } from '../lib/agent-avatar-world-state'
-import { DEFAULT_AGENT_WINDOW_RENDER_MODE, type AgentWindowRenderMode } from '../lib/agent-window-renderers'
+import { DEFAULT_AGENT_WINDOW_RENDER_MODE } from '../lib/agent-window-renderers'
 import { useAudioManager, type SoundEvent } from '../lib/audio-manager'
 import {
   SPATIAL_WEB_DEFAULT_SUBMIT_ENDPOINT,
@@ -76,7 +107,12 @@ import {
   type SpatialWebObject,
   type SpatialWebValue,
 } from '../lib/spatial-web'
-import { createPortalZeroGoogleFormsAltar, createPortalZeroGoogleTestAltar } from '../lib/spatial-web-presets'
+import {
+  PORTAL_ZERO_SPELLBOOK_PICKUP_ID,
+  createPortalZeroGoogleFormsAltar,
+  createPortalZeroGoogleTestAltar,
+  createPortalZeroSpellbookPickup,
+} from '../lib/spatial-web-presets'
 import { getViewerUserIdClient } from '../lib/viewer-identity-client'
 import type { PaintStroke } from '../lib/forge/paint-stroke'
 import { clampText3DInput, type Text3DObject } from '../lib/forge/text-3d-object'
@@ -391,54 +427,6 @@ export type ConjureVfxType =
 
 export const CONJURE_VFX_LIST: Exclude<ConjureVfxType, 'random'>[] = ['realitystorm', 'riftstorm', 'cataclysm', 'vortex', 'quantumassembly', 'stellarnursery', 'chronoforge', 'abyssalemergence']
 
-export type PlacementVfxType =
-  | 'runeflash' | 'sparkburst' | 'portalring' | 'sigilpulse'
-  | 'quantumcollapse' | 'phoenixascension' | 'dimensionalrift' | 'crystalgenesis'
-  | 'meteorimpact' | 'arcanebloom' | 'voidanchor' | 'stellarforge'
-  | 'realitydetonation' | 'dimensionalmaw' | 'hexstorm' | 'singularitydrop'
-  | 'random'
-
-const PLACEMENT_VFX_LIST: Exclude<PlacementVfxType, 'random'>[] = ['runeflash', 'sparkburst', 'portalring', 'sigilpulse', 'realitydetonation', 'dimensionalmaw', 'hexstorm', 'singularitydrop', 'quantumcollapse', 'phoenixascension', 'dimensionalrift', 'crystalgenesis', 'meteorimpact', 'arcanebloom', 'voidanchor', 'stellarforge']
-
-export interface PlacementPending {
-  type: 'catalog' | 'conjured' | 'crafted' | 'library' | 'image' | 'video' | 'agent' | 'light' | 'portal' | 'spatialWeb'
-  catalogId?: string
-  name: string
-  path?: string
-  defaultScale?: number
-  sceneId?: string
-  /** For image placements — URL to the generated image texture */
-  imageUrl?: string
-  /** For video placements */
-  videoUrl?: string
-  /** For speaker placements sourced from uploaded audio */
-  audioUrl?: string
-  /** Frame style ID for image/video placements */
-  imageFrameStyle?: string
-  /** Frame thickness multiplier for image/video placements */
-  imageFrameThickness?: number
-  /** For agent window placements */
-  agentType?: AgentWindowType
-  npcId?: string
-  /** Carry over session ID from existing panel */
-  agentSessionId?: string
-  /** Projection technique used for the 3D window */
-  agentRenderMode?: AgentWindowRenderMode
-  /** Initial URL for browser agent windows */
-  agentSurfaceUrl?: string
-  agentBrowserSurfaceMode?: BrowserSurfaceMode
-  agentFrameStyle?: string
-  agentFrameThickness?: number
-  /** For light placements — which placeable light type */
-  lightType?: 'point' | 'spot'
-  portalVariant?: PortalGateVariant
-  portalTargetWorldId?: string
-  portalTargetWorldName?: string
-  portalAction?: PortalAction
-  portalDirection?: 'one-way' | 'two-way'
-  spatialWebObject?: SpatialWebObject
-}
-
 export interface ActivePlacementVfx {
   id: string
   position: [number, number, number]
@@ -477,116 +465,6 @@ export interface AgentActivity {
 }
 
 // ─═̷─═̷─💻 AGENT WINDOW — placeable interactive panels in 3D ─═̷─═̷─💻
-export type BrowserSurfaceMode = 'live-browser' | 'desktop-capture'
-export type AgentWindowType = 'anorak' | 'codex' | 'gemini' | 'anorak-pro' | 'merlin' | 'realtime' | 'npc' | 'hermes' | 'openclaw' | 'devcraft' | 'parzival' | 'browser' | 'mission'
-
-export interface AgentWindow {
-  id: string                              // e.g. 'agent-anorak-1710859200000'
-  agentType: AgentWindowType
-  renderMode?: AgentWindowRenderMode
-  linkedAvatarId?: string
-  anchorMode?: LinkedWindowAnchorMode
-  position: [number, number, number]
-  rotation: [number, number, number]      // euler angles
-  scale: number                           // uniform scale (default 1)
-  width: number                           // px width of HTML content (default 800)
-  height: number                          // px height of HTML content (default 600)
-  sessionId?: string                      // claude code session ID (anorak only)
-  npcId?: string                          // NPC definition id for reusable scripted/realtime citizens
-  label?: string                          // user-assignable name
-  browserSurfaceMode?: BrowserSurfaceMode // live iframe now, host capture bridge later
-  surfaceUrl?: string                     // URL for browser surfaces / offscreen Chromium targets
-  captureSourceId?: string                // host-provided native/browser surface ID
-  captureSourceName?: string              // last selected host source name
-  captureFps?: number                     // preferred host capture rate (1-60)
-  frameStyle?: string                     // picture frame style id (gilded, neon, hologram, etc.)
-  frameThickness?: number                 // frame thickness multiplier (default 1, range 0.2-150)
-  windowOpacity?: number                  // window background opacity (default 1, range 0-1, dims to black)
-  windowBlur?: number                     // backdrop blur in px (default 0, range 0-20)
-  /** Viewer cookie id of the user who placed this window. Optional during the
-   *  migration: legacy world snapshots have no ownerId and are treated as
-   *  "open" (any visitor may interact). Stamped at placement time only. */
-  ownerId?: string
-}
-
-const PRIVATE_AGENT_WINDOW_TYPES = new Set<AgentWindowType>([
-  'anorak',
-  'codex',
-  'gemini',
-  'anorak-pro',
-  'merlin',
-  'realtime',
-  'hermes',
-  'openclaw',
-  'devcraft',
-  'parzival',
-])
-
-function canFocusAgentWindowForViewer(window: AgentWindow, viewerUserId: string): boolean {
-  if (window.ownerId && window.ownerId !== viewerUserId && PRIVATE_AGENT_WINDOW_TYPES.has(window.agentType)) return false
-  return true
-}
-
-export type AgentAvatarType = AgentWindowType | 'hermes'
-
-export interface AgentAvatar {
-  id: string
-  agentType: AgentAvatarType
-  avatar3dUrl: string
-  position: [number, number, number]
-  rotation: [number, number, number]
-  scale: number
-  linkedWindowId?: string
-  label?: string
-  /** Viewer cookie id of the user who placed this avatar. Optional during the
-   *  migration: legacy world snapshots have no ownerId. Stamped at placement
-   *  time only. Mirrors AgentWindow.ownerId. */
-  ownerId?: string
-}
-
-export interface AgentAvatarAudioState {
-  url: string
-  volume?: number
-  maxDistance?: number
-  muted?: boolean
-  state?: 'playing' | 'paused' | 'stopped'
-  loop?: boolean
-  playbackId?: string
-}
-
-function defaultAgentAvatarLabel(agentType: AgentAvatarType): string {
-  switch (agentType) {
-    case 'anorak':
-      return 'Anorak'
-    case 'codex':
-      return 'Codex'
-    case 'gemini':
-      return 'Gemini'
-    case 'anorak-pro':
-      return 'Anorak Pro'
-    case 'merlin':
-      return 'Merlin'
-    case 'realtime':
-      return 'Realtime'
-    case 'npc':
-      return 'NPC'
-    case 'devcraft':
-      return 'DevCraft'
-    case 'parzival':
-      return 'Parzival'
-    case 'browser':
-      return 'Browser'
-    case 'mission':
-      return 'Mission'
-    case 'hermes':
-      return 'Hermes'
-    case 'openclaw':
-      return 'OpenClaw'
-    default:
-      return 'Agent'
-  }
-}
-
 function isSharedAgentAvatarType(agentType: string): agentType is AgentAvatarType {
   return isSharedAgentAvatarWorldType(agentType)
 }
@@ -1001,8 +879,8 @@ interface OasisState {
   enterPlacementMode: (pending: PlacementPending) => void
   cancelPlacement: () => void
   placeCatalogAssetAt: (catalogId: string, name: string, path: string, defaultScale: number, position: [number, number, number], audioUrl?: string) => string
-  placeImageAt: (name: string, imageUrl: string, position: [number, number, number], frameStyle?: string, frameThickness?: number) => void
-  placeVideoAt: (name: string, videoUrl: string, position: [number, number, number], frameStyle?: string, frameThickness?: number) => void
+  placeImageAt: (name: string, imageUrl: string, position: [number, number, number], frameStyle?: string, frameThickness?: number, mediaOpacity?: number) => void
+  placeVideoAt: (name: string, videoUrl: string, position: [number, number, number], frameStyle?: string, frameThickness?: number, mediaOpacity?: number) => void
   updateCatalogPlacement: (id: string, updates: Partial<import('../lib/conjure/types').CatalogPlacement>) => void
   placeLibrarySceneAt: (sceneId: string, position: [number, number, number]) => void
   setPlacementVfxType: (type: PlacementVfxType) => void
@@ -1350,9 +1228,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
     if (!isWelcomeHubWorld(worldId)) return existing
     const altar = createPortalZeroGoogleFormsAltar()
     const testAltar = createPortalZeroGoogleTestAltar()
+    const spellbookPickup = createPortalZeroSpellbookPickup()
     const next = [...existing]
     if (!next.some(object => object.id === altar.id)) next.push(altar)
     if (!next.some(object => object.id === testAltar.id)) next.push(testAltar)
+    if (!next.some(object => object.id === spellbookPickup.id)) next.push(spellbookPickup)
     return next
   }
 
@@ -1361,6 +1241,19 @@ export const useOasisStore = create<OasisState>((set, get) => {
       const inputManager = require('../lib/input-manager').useInputManager.getState()
       if (inputManager.inputState === 'placement') inputManager.returnToPrevious()
     } catch {}
+  }
+
+  const runLocalWorldCommand = <K extends WorldCommandKind>(
+    kind: K,
+    payload: WorldCommandPayloadByKind[K],
+  ) => {
+    const result = applyStoreWorldCommand(get(), kind, payload, {
+      worldId: currentLoadedWorldId(),
+      actorId: 'local-user',
+    })
+    if (result.changed) set(result.patch)
+    if (result.legacyMutation) worldMutationBus.broadcast(result.legacyMutation)
+    return result
   }
 
   const deriveSharedAvatarSpawn = (
@@ -1822,26 +1715,18 @@ export const useOasisStore = create<OasisState>((set, get) => {
     if (!canWriteCurrentWorld()) return
     if (!get().worldConjuredAssetIds.includes(assetId)) return
     withUndo('Remove conjured', '🗑️', () => {
-      set((state) => {
-        const nextTransforms = { ...state.transforms }
-        delete nextTransforms[assetId]
-        const { [assetId]: _removedBehavior, ...behaviors } = state.behaviors
-        return {
-          worldConjuredAssetIds: state.worldConjuredAssetIds.filter(id => id !== assetId),
-          transforms: nextTransforms,
-          behaviors,
-          selectedObjectId: state.selectedObjectId === assetId ? null : state.selectedObjectId,
-          inspectedObjectId: state.inspectedObjectId === assetId ? null : state.inspectedObjectId,
-        }
-      })
+      runLocalWorldCommand('object.remove', { id: assetId })
+      set((state) => ({
+        selectedObjectId: state.selectedObjectId === assetId ? null : state.selectedObjectId,
+        inspectedObjectId: state.inspectedObjectId === assetId ? null : state.inspectedObjectId,
+      }))
     })
-    worldMutationBus.broadcast({ kind: 'object_removed', payload: { id: assetId } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   addCraftedScene: (scene) => {
     // ░▒▓ Spawn at the position already set on the scene (derived from avatar forward) ▓▒░
     withUndo('Add crafted', '🔮', () => {
-      set((state) => ({ craftedScenes: [...state.craftedScenes, scene] }))
+      runLocalWorldCommand('crafted.add', { scene })
     })
     // Persist to library — survives deletion from world
     addToSceneLibrary(scene).then(() =>
@@ -1849,7 +1734,6 @@ export const useOasisStore = create<OasisState>((set, get) => {
     )
     // ░▒▓ Spell VFX on materialization ▓▒░
     get().spawnPlacementVfx(scene.position)
-    worldMutationBus.broadcast({ kind: 'crafted_scene_added', payload: scene })
     worldMutationBus.broadcast({ kind: 'placement_vfx', payload: { position: scene.position } })
     // Auto-save world on scene add
     setTimeout(() => get().saveWorldState(), 100)
@@ -1858,20 +1742,16 @@ export const useOasisStore = create<OasisState>((set, get) => {
     if (!canWriteCurrentWorld()) return
     if (!get().craftedScenes.some(scene => scene.id === id)) return
     withUndo('Remove crafted', '🗑️', () => {
+      runLocalWorldCommand('crafted.remove', { id })
       set((state) => ({
-        craftedScenes: state.craftedScenes.filter(s => s.id !== id),
         selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
         inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
       }))
     })
-    worldMutationBus.broadcast({ kind: 'object_removed', payload: { id } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   updateCraftedScene: (id, updates) => {
-    set((state) => ({
-      craftedScenes: state.craftedScenes.map(s => s.id === id ? { ...s, ...updates } : s),
-    }))
-    worldMutationBus.broadcast({ kind: 'crafted_scene_updated', payload: { id, updates } })
+    runLocalWorldCommand('crafted.update', { id, updates })
   },
   applyRemoteCraftedScene: (scene) => {
     set(state => {
@@ -1904,43 +1784,33 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
   // ─═̷─═̷─📦 CATALOG ASSET ACTIONS ─═̷─═̷─📦
   placeCatalogAsset: (catalogId, name, path, defaultScale) => {
-    let placedPlacement: CatalogPlacement | null = null
-    withUndo(`Place ${name}`, '📦', () => {
-      const id = `catalog-${catalogId}-${Date.now()}`
+    withUndo(`Place ${name}`, 'place', () => {
       const placement: CatalogPlacement = {
-        id,
+        id: `catalog-${catalogId}-${Date.now()}`,
         catalogId,
         name,
         glbPath: path,
         position: [(Math.random() - 0.5) * 8, 0, (Math.random() - 0.5) * 8],
         scale: defaultScale,
       }
-      placedPlacement = placement
-      set(state => ({
-        placedCatalogAssets: [...state.placedCatalogAssets, placement],
-      }))
+      runLocalWorldCommand('object.add', { object: placement })
     })
-    if (placedPlacement) {
-      worldMutationBus.broadcast({ kind: 'object_added', payload: placedPlacement })
-    }
     setTimeout(() => get().saveWorldState(), 100)
-    // XP for placing objects
     awardXp('PLACE_CATALOG_OBJECT', get().activeWorldId)
   },
   removeCatalogAsset: (id) => {
     if (!canWriteCurrentWorld()) return
     const asset = get().placedCatalogAssets.find(a => a.id === id)
     if (!asset) return
-    withUndo(`Delete ${asset?.name || 'object'}`, '🗑️', () => {
+    withUndo(`Delete ${asset?.name || 'object'}`, 'delete', () => {
+      runLocalWorldCommand('object.remove', { id })
       set(state => ({
-        placedCatalogAssets: state.placedCatalogAssets.filter(a => a.id !== id),
         selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
         inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
         audioPlaybackScopes: Object.fromEntries(Object.entries(state.audioPlaybackScopes).filter(([key]) => key !== id)),
         localAudioBehaviors: Object.fromEntries(Object.entries(state.localAudioBehaviors).filter(([key]) => key !== id)),
       }))
     })
-    worldMutationBus.broadcast({ kind: 'object_removed', payload: { id } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   applyRemoteCatalogPlacement: (placement: CatalogPlacement) => {
@@ -2003,12 +1873,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
   // Spatial web primitives: the "website as a place" object layer.
   addSpatialWebObject: (object) => {
     withUndo(`Add ${object.label}`, 'WWW', () => {
-      set(state => ({
-        spatialWebObjects: [...state.spatialWebObjects, object],
-      }))
+      runLocalWorldCommand('spatial.add', { object })
     })
     get().spawnPlacementVfx(object.position)
-    worldMutationBus.broadcast({ kind: 'spatial_web_added', payload: object })
     worldMutationBus.broadcast({ kind: 'placement_vfx', payload: { position: object.position } })
     setTimeout(() => get().saveWorldState(), 100)
   },
@@ -2018,25 +1885,17 @@ export const useOasisStore = create<OasisState>((set, get) => {
       position: [position[0], object.position?.[1] ?? 1.15, position[2]],
     }
     withUndo(`Place ${object.label}`, 'WWW', () => {
-      set(state => ({
-        spatialWebObjects: [...state.spatialWebObjects, placedObject],
-        placementPending: null,
-      }))
+      runLocalWorldCommand('spatial.add', { object: placedObject })
+      set({ placementPending: null })
     })
     exitPlacementIfActive()
     get().spawnPlacementVfx(placedObject.position)
-    worldMutationBus.broadcast({ kind: 'spatial_web_added', payload: placedObject })
     worldMutationBus.broadcast({ kind: 'placement_vfx', payload: { position: placedObject.position } })
     setTimeout(() => get().saveWorldState(), 100)
     awardXp('PLACE_CATALOG_OBJECT', get().activeWorldId)
   },
   updateSpatialWebObject: (id, updates) => {
-    set(state => ({
-      spatialWebObjects: state.spatialWebObjects.map(object =>
-        object.id === id ? { ...object, ...updates } : object,
-      ),
-    }))
-    worldMutationBus.broadcast({ kind: 'spatial_web_updated', payload: { id, updates } })
+    runLocalWorldCommand('spatial.update', { id, updates })
     setTimeout(() => get().saveWorldState(), 100)
   },
   setSpatialWebObjectValue: (id, value) => {
@@ -2065,7 +1924,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
     const keepInteractionLocal = (
       isWelcomeHubWorld(loadedWorldId)
       && object.action?.type === 'create_world_from_google_form'
-    ) || spatialObjectBelongsToGoogleForm(object)
+    ) || object.id === PORTAL_ZERO_SPELLBOOK_PICKUP_ID || spatialObjectBelongsToGoogleForm(object)
     const scheduleSpatialInteractionSave = () => {
       if (keepInteractionLocal) return
       setTimeout(() => get().saveWorldState(), 100)
@@ -2319,6 +2178,24 @@ export const useOasisStore = create<OasisState>((set, get) => {
       }, delayMs)
     }
 
+    if (object.id === PORTAL_ZERO_SPELLBOOK_PICKUP_ID) {
+      playSpatialWebSound('winner')
+      markInteraction({
+        statusMessage: 'SPELLBOOK AWAKENED',
+        submittedAt: now,
+        errorMessage: undefined,
+      }, event)
+      clearSpatialPromptSelection()
+      get().spawnPlacementVfx(effectPosition, 'arcanebloom')
+      if (isBrowser) {
+        window.dispatchEvent(new CustomEvent('oasis:spellbook-open', {
+          detail: { spellId: 'catalog-place', source: 'portal-zero-spellbook-pickup' },
+        }))
+      }
+      scheduleSpatialInteractionSave()
+      return
+    }
+
     if (object.type === 'text') {
       if (object.action?.type === 'create_world_from_google_form') {
         const isTestAltar = object.action.testMode === true
@@ -2559,18 +2436,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
     const object = get().spatialWebObjects.find(entry => entry.id === id)
     if (!object) return
     withUndo(`Delete ${object?.label || 'spatial web object'}`, 'delete', () => {
-      set(state => {
-        const nextTransforms = { ...state.transforms }
-        delete nextTransforms[id]
-        return {
-          spatialWebObjects: state.spatialWebObjects.filter(entry => entry.id !== id),
-          transforms: nextTransforms,
-          selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
-          inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
-        }
-      })
+      runLocalWorldCommand('spatial.remove', { id })
+      set(state => ({
+        selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
+        inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
+      }))
     })
-    worldMutationBus.broadcast({ kind: 'object_removed', payload: { id } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   seedSpatialWebRsvpDemo: () => {
@@ -2715,24 +2586,20 @@ export const useOasisStore = create<OasisState>((set, get) => {
     const clean = sanitizePaintStrokeUpdates(updates)
     if (Object.keys(clean).length === 0) return
     withUndo('Update stroke', 'paint', () => {
-      set(state => ({
-        paintStrokes: state.paintStrokes.map(stroke => stroke.id === id ? { ...stroke, ...clean } : stroke),
-      }))
+      runLocalWorldCommand('stroke.update', { id, updates: clean })
     })
-    worldMutationBus.broadcast({ kind: 'stroke_updated', payload: { id, updates: clean } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   removePaintStroke: (id) => {
     if (!canWriteCurrentWorld()) return
     if (!get().paintStrokes.some(stroke => stroke.id === id)) return
     withUndo('Delete stroke', 'delete', () => {
+      runLocalWorldCommand('stroke.remove', { id })
       set(state => ({
-        paintStrokes: state.paintStrokes.filter(s => s.id !== id),
         selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
         inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
       }))
     })
-    worldMutationBus.broadcast({ kind: 'stroke_removed', payload: { id } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   applyRemotePaintStroke: (stroke) => {
@@ -2786,9 +2653,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
     if (!canWriteCurrentWorld()) return
     const normalizedObject: Text3DObject = { ...object, text: clampText3DInput(object.text) }
     withUndo('Place 3D text', 'text', () => {
-      set(state => ({ text3dObjects: [...state.text3dObjects, normalizedObject] }))
+      runLocalWorldCommand('text3d.add', { object: normalizedObject })
     })
-    worldMutationBus.broadcast({ kind: 'text3d_added', payload: normalizedObject })
     get().spawnPlacementVfx(normalizedObject.position)
     setTimeout(() => get().saveWorldState(), 100)
   },
@@ -2798,24 +2664,20 @@ export const useOasisStore = create<OasisState>((set, get) => {
       ? { ...updates, text: clampText3DInput(updates.text) }
       : updates
     withUndo('Update 3D text', 'text', () => {
-      set(state => ({
-        text3dObjects: state.text3dObjects.map(t => t.id === id ? { ...t, ...sanitizedUpdates } : t),
-      }))
+      runLocalWorldCommand('text3d.update', { id, updates: sanitizedUpdates })
     })
-    worldMutationBus.broadcast({ kind: 'text3d_updated', payload: { id, updates: sanitizedUpdates } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   removeText3dObject: (id) => {
     if (!canWriteCurrentWorld()) return
     if (!get().text3dObjects.some(object => object.id === id)) return
     withUndo('Delete 3D text', 'delete', () => {
+      runLocalWorldCommand('text3d.remove', { id })
       set(state => ({
-        text3dObjects: state.text3dObjects.filter(t => t.id !== id),
         selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
         inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
       }))
     })
-    worldMutationBus.broadcast({ kind: 'text3d_removed', payload: { id } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   applyRemoteText3dAdded: (object) => {
@@ -2911,14 +2773,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
     }
 
     withUndo(`Place portal${resolvedTargetWorldName ? ` to ${resolvedTargetWorldName}` : ''}`, 'portal', () => {
-      set(state => ({
-        portalGates: [...state.portalGates, gate],
-        placementPending: null,
-      }))
+      runLocalWorldCommand('portal.add', { gate })
+      set({ placementPending: null })
     })
     exitPlacementIfActive()
     get().spawnPlacementVfx(position)
-    worldMutationBus.broadcast({ kind: 'portal_added', payload: gate })
     setTimeout(() => get().saveWorldState(), 100)
 
     if (direction === 'two-way' && resolvedTargetWorldId && linkedPortalId) {
@@ -2964,13 +2823,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
     const gate = get().portalGates.find(portal => portal.id === id)
     if (!gate) return
     withUndo('Delete portal', 'portal', () => {
+      runLocalWorldCommand('portal.remove', { id })
       set(state => ({
-        portalGates: state.portalGates.filter(portal => portal.id !== id),
         selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
         inspectedObjectId: state.inspectedObjectId === id ? null : state.inspectedObjectId,
       }))
     })
-    worldMutationBus.broadcast({ kind: 'object_removed', payload: { id } })
     setTimeout(() => get().saveWorldState(), 100)
 
     if (gate?.direction === 'two-way' && gate.targetWorldId && gate.linkedPortalId) {
@@ -3010,14 +2868,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
         action: { type: 'load_world', worldId: targetWorldId, worldName: targetWorldName },
       }
       : updates
+    let updatedGate: PortalGate | undefined
     withUndo('Update portal', 'portal', () => {
-      set(state => ({
-        portalGates: state.portalGates.map(portal => (
-          portal.id === id ? { ...portal, ...normalizedUpdates, id: portal.id } : portal
-        )),
-      }))
+      const result = runLocalWorldCommand('portal.update', { id, updates: normalizedUpdates })
+      updatedGate = result.patch.portalGates?.find(portal => portal.id === id) || get().portalGates.find(portal => portal.id === id)
     })
-    const updatedGate = get().portalGates.find(portal => portal.id === id)
     if (updatedGate) worldMutationBus.broadcast({ kind: 'portal_added', payload: updatedGate })
     setTimeout(() => get().saveWorldState(), 100)
   },
@@ -3062,193 +2917,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
   // ─═̷─═̷─🪄 PLACEMENT + VFX ACTIONS ─═̷─═̷─🪄
   // ░▒▓ The ritual of placing objects into the world ▓▒░
-  enterPlacementMode: (pending) => {
-    // ░▒▓ Preload GLB while user picks a spot — kills Suspense flash ▓▒░
-    if (pending.path && pending.type !== 'image') {
-      import('@react-three/drei').then(drei => drei.useGLTF.preload(pending.path!))
-    }
-    set({ placementPending: pending })
-    // ░▒▓ FIX: Clear ALL UI layers before transitioning — can't be in a panel AND placing objects.
-    // This ensures _uiLayerStack is empty so pointer lock isn't blocked on placement exit. ▓▒░
-    try {
-      const im = require('../lib/input-manager').useInputManager.getState()
-      const stack = [...im._uiLayerStack]
-      for (const id of stack) im.popUILayer(id)
-      im.transition('placement')
-      // ░▒▓ EAGER POINTER-LOCK ON PLACEMENT ENTRY (Approach A) ▓▒░
-      // Lock the cursor NOW, while we're still inside the user-gesture
-      // stack from the originating "Place" click. Without this, the lock
-      // would race with the user's first canvas click and the click would
-      // land at screen-center (where the crosshair appears) instead of
-      // wherever they thought they were clicking.
-      //
-      // CRITICAL: only lock if the PRE-placement camera mode supported
-      // pointer-lock (TPS / noclip). For orbit users, lock would surprise
-      // them — they expect to keep their mouse cursor visible. transition()
-      // already stashed the prior mode in _previousCameraState; we read that
-      // here (NOT im.can() which now reads placement's capabilities).
-      const prevCameraState = im._previousCameraState
-      const prevAllowedLock = prevCameraState === 'noclip' || prevCameraState === 'third-person'
-      if (!im.pointerLocked && prevAllowedLock) im.requestPointerLock()
-    } catch {}
-  },
-  cancelPlacement: () => {
-    set({ placementPending: null })
-    try { require('../lib/input-manager').useInputManager.getState().returnToPrevious() } catch {}
-  },
-
-  placeCatalogAssetAt: (catalogId, name, path, defaultScale, position, audioUrl) => {
-    let placedId = ''
-    let placedPlacement: CatalogPlacement | null = null
-    withUndo(`Place ${name}`, '📦', () => {
-      placedId = `catalog-${catalogId}-${Date.now()}`
-      const placement: CatalogPlacement = {
-        id: placedId,
-        catalogId,
-        name,
-        glbPath: path,
-        position,
-        scale: defaultScale,
-        ...(audioUrl ? { audioUrl, audioVolume: 1, audioMaxDistance: 15, audioMuted: false } : {}),
-      }
-      placedPlacement = placement
-      set(state => ({
-        placedCatalogAssets: [...state.placedCatalogAssets, placement],
-        placementPending: null,
-      }))
-    })
-    if (placedPlacement) {
-      worldMutationBus.broadcast({ kind: 'object_added', payload: placedPlacement })
-    }
-    exitPlacementIfActive()
-    get().spawnPlacementVfx(position)
-    setTimeout(() => get().saveWorldState(), 100)
-    awardXp('PLACE_CATALOG_OBJECT', get().activeWorldId)
-    return placedId
-  },
-
-  placeImageAt: (name, imageUrl, position, frameStyle, frameThickness) => {
-    let placedPlacement: CatalogPlacement | null = null
-    withUndo(`Place ${name}`, '🖼️', () => {
-      const id = `image-${Date.now()}`
-      // ─═̷─ 4-sided building style spawns a textured cube. Default scale 1
-      // produced a 1m³ doll-house. Bump to 5 so the building is human-scale
-      // when a visitor walks up to it. Plain framed images stay at scale 1. ─═̷─
-      const placementScale = frameStyle === 'building' ? 5 : 1
-      const placement: CatalogPlacement = { id, catalogId: 'generated-image', name, glbPath: '', position, scale: placementScale, imageUrl, ...(frameStyle && { imageFrameStyle: frameStyle }), ...(frameThickness !== undefined && { imageFrameThickness: frameThickness }) }
-      placedPlacement = placement
-      set(state => ({
-        placedCatalogAssets: [...state.placedCatalogAssets, placement],
-        placementPending: null,
-      }))
-    })
-    if (placedPlacement) {
-      // Skip broadcast if the imageUrl is a local-only `blob:` URL (peers
-      // can't resolve it) or an oversized `data:` URL (~hundreds of KB of
-      // base64 over the WS for every peer). Stripping the URL would render
-      // a broken frame on peers; skipping the broadcast entirely lets peers
-      // pick it up on next world reload via the normal save.
-      const url = (placedPlacement as CatalogPlacement).imageUrl || ''
-      const isLocalOnly = url.startsWith('blob:') || (url.startsWith('data:') && url.length > 16 * 1024)
-      if (!isLocalOnly) {
-        worldMutationBus.broadcast({ kind: 'object_added', payload: placedPlacement })
-      } else {
-        console.info('[oasis-bus] skipping image broadcast (local-only URL): kind=', url.startsWith('blob:') ? 'blob' : 'oversize-data')
-      }
-    }
-    exitPlacementIfActive()
-    get().spawnPlacementVfx(position)
-    setTimeout(() => get().saveWorldState(), 100)
-    awardXp('PLACE_CATALOG_OBJECT', get().activeWorldId)
-  },
-
-  placeVideoAt: (name: string, videoUrl: string, position: [number, number, number], frameStyle?: string, frameThickness?: number) => {
-    let placedPlacement: CatalogPlacement | null = null
-    withUndo(`Place video ${name}`, '🎬', () => {
-      const id = `video-${Date.now()}`
-      const placement: CatalogPlacement = { id, catalogId: 'video', name, glbPath: '', position, scale: 2, videoUrl, ...(frameStyle && { imageFrameStyle: frameStyle }), ...(frameThickness !== undefined && { imageFrameThickness: frameThickness }) }
-      placedPlacement = placement
-      set(state => ({
-        placedCatalogAssets: [...state.placedCatalogAssets, placement],
-        placementPending: null,
-      }))
-    })
-    if (placedPlacement) {
-      // Same local-only URL guard as placeImageAt.
-      const url = (placedPlacement as CatalogPlacement).videoUrl || ''
-      const isLocalOnly = url.startsWith('blob:') || (url.startsWith('data:') && url.length > 16 * 1024)
-      if (!isLocalOnly) {
-        worldMutationBus.broadcast({ kind: 'object_added', payload: placedPlacement })
-      } else {
-        console.info('[oasis-bus] skipping video broadcast (local-only URL)')
-      }
-    }
-    exitPlacementIfActive()
-    get().spawnPlacementVfx(position)
-    setTimeout(() => get().saveWorldState(), 100)
-    awardXp('PLACE_CATALOG_OBJECT', get().activeWorldId)
-  },
-
-  updateCatalogPlacement: (id, updates) => {
-    set(state => ({
-      placedCatalogAssets: state.placedCatalogAssets.map(ca =>
-        ca.id === id ? { ...ca, ...updates } : ca
-      ),
-    }))
-    worldMutationBus.broadcast({ kind: 'object_updated', payload: { id, updates } })
-    setTimeout(() => get().saveWorldState(), 100)
-  },
-
-  placeLibrarySceneAt: (sceneId, position) => {
-    const library = get().sceneLibrary
-    const scene = library.find(s => s.id === sceneId)
-    if (!scene) return
-    withUndo('Place scene', '🎭', () => {
-      const clone: CraftedScene = { ...scene, id: `${scene.id}-${Date.now()}`, position }
-      set(state => ({
-        craftedScenes: [...state.craftedScenes, clone],
-        placementPending: null,
-      }))
-    })
-    exitPlacementIfActive()
-    get().spawnPlacementVfx(position)
-    setTimeout(() => get().saveWorldState(), 100)
-  },
-
-  setPlacementVfxType: (type) => {
-    persist('oasis-placement-vfx', type)
-    set({ placementVfxType: type })
-  },
-
-  setPlacementVfxDuration: (duration) => {
-    const clamped = Math.max(0.5, Math.min(4.5, duration))
-    persist('oasis-placement-duration', String(clamped))
-    set({ placementVfxDuration: clamped })
-  },
-
-  spawnPlacementVfx: (position, typeOverride) => {
-    const { placementVfxType, placementVfxDuration } = get()
-    const requestedType = typeOverride === 'random' || (typeOverride && PLACEMENT_VFX_LIST.includes(typeOverride as Exclude<PlacementVfxType, 'random'>))
-      ? typeOverride
-      : placementVfxType
-    const resolvedType = requestedType === 'random'
-      ? PLACEMENT_VFX_LIST[Math.floor(Math.random() * PLACEMENT_VFX_LIST.length)]
-      : requestedType
-    const vfx: ActivePlacementVfx = {
-      id: `vfx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      position,
-      type: resolvedType,
-      startedAt: performance.now(),
-      duration: placementVfxDuration,
-    }
-    set(state => ({ activePlacementVfx: [...state.activePlacementVfx, vfx] }))
-    // Play placement sound
-    try { require('../lib/audio-manager').useAudioManager.getState().play('place') } catch {}
-  },
-
-  removePlacementVfx: (id) => {
-    set(state => ({ activePlacementVfx: state.activePlacementVfx.filter(v => v.id !== id) }))
-  },
+  ...createPlacementSlice({ set, get, withUndo, persist, exitPlacementIfActive }),
 
   openObjectOverlay: (overlay) => {
     set({
@@ -3414,20 +3083,6 @@ export const useOasisStore = create<OasisState>((set, get) => {
   },
 
   // ─═̷─═̷─👁 SPELL PREVIEW — see the magic before you commit ─═̷─═̷─👁
-  previewPlacementSpell: (type) => {
-    const { placementVfxDuration } = get()
-    const resolvedType = type === 'random'
-      ? PLACEMENT_VFX_LIST[Math.floor(Math.random() * PLACEMENT_VFX_LIST.length)]
-      : type
-    const vfx: ActivePlacementVfx = {
-      id: `preview-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      position: [0, 0, 0],
-      type: resolvedType,
-      startedAt: performance.now(),
-      duration: placementVfxDuration,
-    }
-    set(state => ({ activePlacementVfx: [...state.activePlacementVfx, vfx] }))
-  },
   startConjurePreview: (type) => {
     set({ conjurePreview: { type, startedAt: Date.now() } })
   },
@@ -3527,16 +3182,14 @@ export const useOasisStore = create<OasisState>((set, get) => {
     }))
   },
   resetTerrainHeights: () => {
-    withUndo('Reset relief', 'terrain', () => set({ terrainHeights: createFlatTerrainHeights() }))
-    worldMutationBus.broadcast({ kind: 'terrain_reset', payload: {} })
+    withUndo('Reset relief', 'terrain', () => runLocalWorldCommand('terrain.reset', {}))
     setTimeout(() => get().saveWorldState(), 100)
   },
   applyRemoteTerrainReset: () => {
     set({ terrainHeights: createFlatTerrainHeights() })
   },
   setGroundPreset: (groundPresetId) => {
-    set({ groundPresetId })
-    worldMutationBus.broadcast({ kind: 'ground_changed', payload: { groundPresetId } })
+    runLocalWorldCommand('ground.setPreset', { groundPresetId })
     setTimeout(() => get().saveWorldState(), 100)
   },
   applyRemoteGroundChange: (groundPresetId: string) => {
@@ -3568,27 +3221,20 @@ export const useOasisStore = create<OasisState>((set, get) => {
     // we paint at stride=stretch and snap the center to that lattice. Brush
     // footprint expands accordingly: 3x3 brush @ 2x stretch → 3x3 grid of 2m
     // cells = 6m covered area. ─═̷─
-    const newTiles = paintGroundTiles(groundTiles, cx, cz, paintBrushPresetId, paintBrushSize, stretch)
-    set({ groundTiles: newTiles })
-    worldMutationBus.broadcast({
-      kind: 'ground_painted',
-      payload: { cx, cz, presetId: paintBrushPresetId, size: paintBrushSize, stretch },
-    })
+    runLocalWorldCommand('ground.paint', { cx, cz, presetId: paintBrushPresetId, size: paintBrushSize, stretch })
     get().saveWorldState()
   },
   eraseGroundTile: (x, z) => {
     const { groundTiles } = get()
     const newTiles = { ...groundTiles }
     if (!removeGroundTileContaining(newTiles, x, z)) return
-    set({ groundTiles: newTiles })
-    worldMutationBus.broadcast({ kind: 'ground_tile_erased', payload: { x, z } })
+    runLocalWorldCommand('ground.tile.erase', { x, z })
     get().saveWorldState()
   },
   clearAllGroundTiles: () => {
-    withUndo('Clear all tiles', '🧹', () => {
-      set({ groundTiles: {} })
+    withUndo('Clear all tiles', 'clear', () => {
+      runLocalWorldCommand('ground.tiles.clear', {})
     })
-    worldMutationBus.broadcast({ kind: 'ground_tiles_cleared', payload: {} })
     setTimeout(() => get().saveWorldState(), 100)
   },
   // ─═̷─═̷─🖼️ IMAGINE ACTIONS ─═̷─═̷─🖼️
@@ -3650,18 +3296,11 @@ export const useOasisStore = create<OasisState>((set, get) => {
     const isUndoable = partial.movement || partial.animation || Object.prototype.hasOwnProperty.call(partial, 'interaction') || partial.visible !== undefined || partial.label !== undefined
     if (isUndoable) {
       withUndo('Change behavior', '⚙️', () => {
-        set((state) => {
-          const existing = state.behaviors[id] || { movement: { type: 'static' as const }, visible: true }
-          return { behaviors: { ...state.behaviors, [id]: { ...existing, ...partial } } }
-        })
+        runLocalWorldCommand('object.behavior.update', { id, updates: partial })
       })
     } else {
-      set((state) => {
-        const existing = state.behaviors[id] || { movement: { type: 'static' as const }, visible: true }
-        return { behaviors: { ...state.behaviors, [id]: { ...existing, ...partial } } }
-      })
+      runLocalWorldCommand('object.behavior.update', { id, updates: partial })
     }
-    worldMutationBus.broadcast({ kind: 'behavior_updated', payload: { id, updates: partial } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   applyRemoteObjectBehavior: (id, updates) => {
@@ -3750,13 +3389,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
       return
     }
 
-    set((state) => ({
-      transforms: { ...state.transforms, [id]: transform },
-    }))
-    worldMutationBus.broadcast({
-      kind: 'object_transformed',
-      payload: { id, position: transform.position, rotation: transform.rotation, scale: transform.scale },
-    })
+    runLocalWorldCommand('object.transform', { id, position: transform.position, rotation: transform.rotation, scale: transform.scale })
     // Use the canonical saveWorldState — never assemble payload manually
     setTimeout(() => get().saveWorldState(), 100)
   },
@@ -3789,8 +3422,7 @@ export const useOasisStore = create<OasisState>((set, get) => {
   },
   // ─═̷─═̷─🌅 SKY — per-world sky preset ─═̷─═̷─🌅
   setWorldSkyBackground: (id) => {
-    set({ worldSkyBackground: id })
-    worldMutationBus.broadcast({ kind: 'sky_changed', payload: { skyBackgroundId: id } })
+    runLocalWorldCommand('sky.set', { skyBackgroundId: id })
     setTimeout(() => get().saveWorldState(), 100)
   },
   applyRemoteSkyChange: (skyBackgroundId: string) => {
@@ -3806,7 +3438,6 @@ export const useOasisStore = create<OasisState>((set, get) => {
       get().enterPlacementMode({ type: 'light', name: `${type} light`, lightType: type })
       return
     }
-    let addedLight: WorldLight | null = null
     withUndo(`Add ${type} light`, '💡', () => {
       const light: WorldLight = {
         id: `light-${type}-${Date.now()}`,
@@ -3817,15 +3448,12 @@ export const useOasisStore = create<OasisState>((set, get) => {
         ...(type === 'hemisphere' ? { groundColor: '#3a5f0b' } : {}),
         visible: true,
       }
-      addedLight = light
-      set(s => ({ worldLights: [...s.worldLights, light] }))
+      runLocalWorldCommand('light.add', { light })
     })
-    if (addedLight) worldMutationBus.broadcast({ kind: 'light_added', payload: { light: addedLight } })
     setTimeout(() => get().saveWorldState(), 100)
     awardXp('ADD_LIGHT', get().activeWorldId)
   },
   placeLightAt: (type, position) => {
-    let addedLight: WorldLight | null = null
     withUndo(`Place ${type} light`, '💡', () => {
       const light: WorldLight = {
         id: `light-${type}-${Date.now()}`,
@@ -3836,10 +3464,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
         ...(type === 'spot' ? { angle: 45, target: [position[0], 0, position[2]] } : {}),
         visible: true,
       }
-      addedLight = light
-      set(s => ({ worldLights: [...s.worldLights, light], placementPending: null }))
+      runLocalWorldCommand('light.add', { light })
+      set({ placementPending: null })
     })
-    if (addedLight) worldMutationBus.broadcast({ kind: 'light_added', payload: { light: addedLight } })
     exitPlacementIfActive()
     get().spawnPlacementVfx(position)
     setTimeout(() => get().saveWorldState(), 100)
@@ -3849,27 +3476,20 @@ export const useOasisStore = create<OasisState>((set, get) => {
     if (!canWriteCurrentWorld()) return
     if (!get().worldLights.some(light => light.id === id)) return
     withUndo('Remove light', '🗑️', () => {
+      runLocalWorldCommand('light.remove', { id })
       set(s => ({
-        worldLights: s.worldLights.filter(l => l.id !== id),
         selectedObjectId: s.selectedObjectId === id ? null : s.selectedObjectId,
         inspectedObjectId: s.inspectedObjectId === id ? null : s.inspectedObjectId,
       }))
     })
-    worldMutationBus.broadcast({ kind: 'light_removed', payload: { id } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   updateWorldLight: (id, updates) => {
-    set(s => ({
-      worldLights: s.worldLights.map(l => l.id === id ? { ...l, ...updates } : l),
-    }))
-    worldMutationBus.broadcast({ kind: 'light_updated', payload: { id, updates } })
+    runLocalWorldCommand('light.update', { id, updates })
     setTimeout(() => get().saveWorldState(), 100)
   },
   setWorldLightTransform: (id, position) => {
-    set(s => ({
-      worldLights: s.worldLights.map(l => l.id === id ? { ...l, position } : l),
-    }))
-    worldMutationBus.broadcast({ kind: 'light_updated', payload: { id, updates: { position } } })
+    runLocalWorldCommand('light.update', { id, updates: { position } })
     setTimeout(() => get().saveWorldState(), 100)
   },
   applyRemoteLightAdded: (light: WorldLight) => {
@@ -4378,20 +3998,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
   setAvatar3dUrl: (url) => set({ avatar3dUrl: url || DEFAULT_PROFILE_AVATAR_3D_URL }),
 
   // ─═̷─═̷─🪟 PANEL Z-ORDERING ─═̷─═̷─🪟
-  _panelZCounter: 0,
-  _panelZMap: {},
-  bringPanelToFront: (panelName) => {
-    const next = get()._panelZCounter + 1
-    set({ _panelZCounter: next, _panelZMap: { ...get()._panelZMap, [panelName]: next } })
-  },
-  getPanelZIndex: (panelName, defaultZ) => {
-    const order = get()._panelZMap[panelName]
-    if (!order) return defaultZ
-    // Keep focused panels above their declared base layer.
-    return Math.max(defaultZ, 9990) + order
-  },
+  ...createPanelZSlice({ set, get }),
 
-  // ─═̷─═̷─💻 3D AGENT WINDOWS — place, focus, interact ─═̷─═̷─💻
   addAgentWindow: (window) => {
     // ░▒▓ Agent ownership stamp — the viewer who placed this window claims it. ▓▒░
     // Legacy snapshots may have no ownerId (treated as "open"). Future-placed

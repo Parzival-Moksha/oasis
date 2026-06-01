@@ -17,6 +17,7 @@ import { useOasisStore } from '../../../../store/oasisStore'
 import { usePricing } from '../../../../hooks/usePricing'
 import { awardXp } from '../../../../hooks/useXp'
 import { deriveImageTitle } from '../../../../lib/conjure/derive-image-title'
+import { buildImagePlacementPending } from '../../../../lib/forge/placement-builders'
 import { CollapsibleSection, scrollIntoViewOnFocus } from '../SpellTabFrame'
 
 const OASIS_BASE = process.env.NEXT_PUBLIC_BASE_PATH || ''
@@ -310,7 +311,7 @@ export function GeneratePicBody({
                   <div className="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-stretch justify-center gap-1 p-2">
                     <button
                       onClick={() => {
-                        enterPlacementMode({ type: 'image', name: placementName, imageUrl: img.url })
+                        enterPlacementMode(buildImagePlacementPending({ name: placementName, imageUrl: img.url }))
                         if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('oasis:close-spelltabs'))
                       }}
                       className="text-[10px] py-1 rounded font-mono"
@@ -320,7 +321,7 @@ export function GeneratePicBody({
                     </button>
                     <button
                       onClick={() => {
-                        enterPlacementMode({ type: 'image', name: placementName, imageUrl: img.url, imageFrameStyle: 'building' })
+                        enterPlacementMode(buildImagePlacementPending({ name: placementName, imageUrl: img.url, frameStyle: 'building' }))
                         if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('oasis:close-spelltabs'))
                       }}
                       className="text-[10px] py-1 rounded bg-amber-500/20 text-amber-200 border border-amber-500/30 font-mono"

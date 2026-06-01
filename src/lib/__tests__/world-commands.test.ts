@@ -110,6 +110,28 @@ describe('world command reducer', () => {
     expect(removed.behaviors?.['linked-avatar']).toBeUndefined()
   })
 
+  it('updates media opacity through the catalog object command path', () => {
+    const next = applyWorldCommand(baseWorld({
+      catalogPlacements: [{
+        id: 'image-1',
+        catalogId: 'generated-image',
+        name: 'Image',
+        glbPath: '',
+        position: [0, 0, 0],
+        scale: 1,
+        imageUrl: '/generated-images/image.png',
+      }],
+    }), command('object.update', {
+      id: 'image-1',
+      updates: { mediaOpacity: 0.35 },
+    })).state
+
+    expect(next.catalogPlacements?.[0]).toMatchObject({
+      id: 'image-1',
+      mediaOpacity: 0.35,
+    })
+  })
+
   it('persists spatial-web values as first-class world commands', () => {
     const world = baseWorld({
       spatialWebObjects: [{

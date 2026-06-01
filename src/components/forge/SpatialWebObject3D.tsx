@@ -8,6 +8,7 @@ import * as THREE from 'three'
 
 import { useOasisStore } from '@/store/oasisStore'
 import { useAudioManager } from '@/lib/audio-manager'
+import { PORTAL_ZERO_SPELLBOOK_PICKUP_ID } from '@/lib/spatial-web-presets'
 import {
   SPATIAL_WEB_OPTION_WRAP_CHARS,
   getSpatialWebOptionLetter,
@@ -510,6 +511,107 @@ function GoogleFormsAltar({
   )
 }
 
+function SpellbookPickup3D({
+  object,
+  accent,
+  canClickInteract,
+  interactionHint,
+  runInteraction,
+}: {
+  object: SpatialWebObject
+  accent: string
+  canClickInteract: boolean
+  interactionHint: boolean
+  runInteraction: () => void
+}) {
+  const rootRef = useRef<THREE.Group>(null)
+  const bookRef = useRef<THREE.Group>(null)
+  const glowRef = useRef<THREE.Mesh>(null)
+  const awakened = Boolean(object.submittedAt)
+  const promptText = awakened ? 'HIT F TO OPEN' : 'HIT F TO PICK UP'
+  const statusText = awakened ? object.statusMessage || 'SPELLBOOK AWAKENED' : object.statusMessage || 'HIT F TO PICK UP'
+
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime
+    if (rootRef.current) rootRef.current.position.y = Math.sin(t * 1.6) * 0.025
+    if (bookRef.current) {
+      bookRef.current.rotation.z = Math.sin(t * 1.1) * 0.035
+      bookRef.current.position.y = 0.62 + Math.sin(t * 1.35) * 0.035
+    }
+    if (glowRef.current) {
+      const pulse = 1 + Math.sin(t * 4.1) * 0.08
+      glowRef.current.scale.setScalar(pulse)
+    }
+  })
+
+  return (
+    <group
+      ref={rootRef}
+      onClick={(event) => {
+        if (!canClickInteract) return
+        event.stopPropagation()
+        runInteraction()
+      }}
+    >
+      <mesh castShadow receiveShadow position={[0, -0.58, 0]} scale={[1.55, 0.18, 1.15]}>
+        <cylinderGeometry args={[1, 1.08, 1, 48]} />
+        <meshStandardMaterial color="#1f2937" roughness={0.56} metalness={0.32} emissive="#4a2d0a" emissiveIntensity={0.18} />
+      </mesh>
+      <mesh castShadow receiveShadow position={[0, -0.16, 0]} rotation={[0, 0, 0]}>
+        <cylinderGeometry args={[0.36, 0.46, 0.74, 6]} />
+        <meshStandardMaterial color="#3f2a17" roughness={0.62} metalness={0.08} emissive="#1f1207" emissiveIntensity={0.12} />
+      </mesh>
+      <mesh castShadow receiveShadow position={[0, 0.28, 0.08]} rotation={[-0.32, 0, 0]}>
+        <boxGeometry args={[1.72, 0.18, 1.04]} />
+        <meshStandardMaterial color="#5b3517" roughness={0.5} metalness={0.16} emissive="#2d1608" emissiveIntensity={0.16} />
+      </mesh>
+
+      <group ref={bookRef} position={[0, 0.62, 0.2]} rotation={[-0.42, 0, 0]}>
+        <mesh castShadow position={[-0.36, 0, 0]}>
+          <boxGeometry args={[0.72, 0.08, 0.92]} />
+          <meshStandardMaterial color="#7f1d1d" roughness={0.42} metalness={0.12} emissive={accent} emissiveIntensity={awakened ? 0.32 : 0.12} />
+        </mesh>
+        <mesh castShadow position={[0.36, 0, 0]}>
+          <boxGeometry args={[0.72, 0.08, 0.92]} />
+          <meshStandardMaterial color="#7f1d1d" roughness={0.42} metalness={0.12} emissive={accent} emissiveIntensity={awakened ? 0.32 : 0.12} />
+        </mesh>
+        <mesh position={[0, 0.055, 0]}>
+          <boxGeometry args={[1.28, 0.035, 0.78]} />
+          <meshStandardMaterial color="#fff7d6" roughness={0.7} metalness={0.02} emissive="#fff1a8" emissiveIntensity={0.12} />
+        </mesh>
+        <mesh position={[0, 0.09, 0.01]} rotation={[0, 0, Math.PI / 2]}>
+          <boxGeometry args={[0.72, 0.025, 0.035]} />
+          <meshBasicMaterial color="#92400e" />
+        </mesh>
+        <mesh ref={glowRef} position={[0, 0.16, 0.02]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.22, 0.28, 48]} />
+          <meshBasicMaterial color={accent} transparent opacity={awakened ? 0.92 : 0.58} side={THREE.DoubleSide} />
+        </mesh>
+        <pointLight color={accent} intensity={awakened ? 2.2 : canClickInteract ? 1.35 : 0.65} distance={5} position={[0, 0.55, 0.35]} />
+      </group>
+
+      <EmbossedText position={[0, 1.42, 0.48]} fontSize={0.14} maxChars={18} maxLines={2} color="#fff7ed" sideColor="#3b1020">
+        {object.label}
+      </EmbossedText>
+      <EmbossedText position={[0, 1.1, 0.5]} fontSize={0.07} maxChars={30} maxLines={2} color="#fde68a" sideColor="#451a03">
+        {statusText}
+      </EmbossedText>
+
+      {interactionHint && (
+        <group position={[0, 1.82, 0.54]}>
+          <mesh>
+            <boxGeometry args={[1.8, 0.28, 0.06]} />
+            <meshStandardMaterial color="#020617" emissive={accent} emissiveIntensity={0.42} roughness={0.45} metalness={0.2} />
+          </mesh>
+          <EmbossedText position={[0, 0, 0.08]} fontSize={0.068} maxChars={16} color="#ffffff" sideColor="#111827">
+            {promptText}
+          </EmbossedText>
+        </group>
+      )}
+    </group>
+  )
+}
+
 export function SpatialWebObject3D({
   object,
   interactionHint = false,
@@ -544,6 +646,7 @@ export function SpatialWebObject3D({
           : 'neon-panel')
   const isPortalButton = visualStyle === 'portal-zero-button'
   const isGoogleFormsAltar = visualStyle === 'google-form-altar'
+  const isSpellbookPickup = visualStyle === 'spellbook-pickup' || object.id === PORTAL_ZERO_SPELLBOOK_PICKUP_ID
   const isSubmittedButton = object.type === 'button' && object.action?.type === 'submit_form' && Boolean(object.submittedAt)
   const depth = isPortalButton ? 0.34 : isGoogleFormsAltar ? 0.5 : visualStyle === 'arcade-button' ? 0.42 : visualStyle === 'terminal-panel' ? 0.18 : 0.24
   const labelText = isSubmittedButton ? 'Sent' : busy ? 'Sending...' : object.label
@@ -634,6 +737,18 @@ export function SpatialWebObject3D({
       <GoogleFormsAltar
         object={object}
         busy={busy}
+        accent={accent}
+        canClickInteract={canRunDirectMeshInteraction}
+        interactionHint={interactionHint}
+        runInteraction={runInteraction}
+      />
+    )
+  }
+
+  if (isSpellbookPickup) {
+    return (
+      <SpellbookPickup3D
+        object={object}
         accent={accent}
         canClickInteract={canRunDirectMeshInteraction}
         interactionHint={interactionHint}
