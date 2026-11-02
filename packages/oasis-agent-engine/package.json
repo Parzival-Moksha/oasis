@@ -1,0 +1,15 @@
+{
+  "name": "@04515xyz/oasis-agent-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Claude Code sessions as Oasis agents: long-lived stream-json processes, session discovery, read-only observers and hooks, bridged to the Oasis over one WebSocket on 127.0.0.1:4530.",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/index.js",
+    "smoke": "node scripts/smoke.mjs basic"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

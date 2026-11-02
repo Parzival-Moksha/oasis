@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "http", "url": "http://127.0.0.1:4530/hook", "timeout": 3 }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "http", "url": "http://127.0.0.1:4530/hook", "timeout": 3 }] }],
+    "PreToolUse": [{ "matcher": "*", "hooks": [{ "type": "http", "url": "http://127.0.0.1:4530/hook", "timeout": 3 }] }],
+    "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "http", "url": "http://127.0.0.1:4530/hook", "timeout": 3 }] }],
+    "PermissionRequest": [{ "matcher": "*", "hooks": [{ "type": "http", "url": "http://127.0.0.1:4530/hook", "timeout": 3 }] }],
+    "Notification": [{ "hooks": [{ "type": "http", "url": "http://127.0.0.1:4530/hook", "timeout": 3 }] }],
+    "SubagentStart": [{ "hooks": [{ "type": "http", "url": "http://127.0.0.1:4530/hook", "timeout": 3 }] }],
+    "SubagentStop": [{ "hooks": [{ "type": "http", "url": "http://127.0.0.1:4530/hook", "timeout": 3 }] }],
+    "Stop": [{ "hooks": [{ "type": "http", "url": "http://127.0.0.1:4530/hook", "timeout": 3 }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "http", "url": "http://127.0.0.1:4530/hook", "timeout": 3 }] }]
+  }
+}
