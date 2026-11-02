@@ -10,8 +10,12 @@ import {
   normalizeTopMissionCount,
   resolveContextModulesForLobe,
 } from '@/lib/anorak-context-modules'
+import { guardAgentRoute } from '@/lib/local-request-guard'
 
 export async function POST(request: NextRequest) {
+  const denied = guardAgentRoute(request)
+  if (denied) return denied
+
   let body: {
     lobe?: string
     contextModules?: LegacyContextModules

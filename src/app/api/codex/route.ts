@@ -8,6 +8,7 @@ import { buildCodexOasisPrompt } from '@/lib/codex-oasis-prompt'
 import { describeCodexTool, humanizeCodexItemType } from '@/lib/codex-presentation'
 import { recordTokenBurn } from '@/lib/token-burn'
 import { extractCodexTokenUsage, hasTokenUsage } from '@/lib/token-usage'
+import { guardAgentRoute } from '@/lib/local-request-guard'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -255,6 +256,9 @@ function terminateChild(child: ChildProcessWithoutNullStreams | null) {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = guardAgentRoute(request)
+  if (denied) return denied
+
   let body: CodexRequestBody
   try {
     body = await request.json()
@@ -396,6 +400,7 @@ export async function POST(request: NextRequest) {
           cwd: OASIS_ROOT,
           env: buildCodexCliEnv(),
           shell: true,
+          windowsHide: true,
         })
       } catch (error) {
         clearInterval(keepAlive)

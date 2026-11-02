@@ -40,6 +40,7 @@ import {
   hasTokenUsage,
   type TokenUsagePayload,
 } from '@/lib/token-usage'
+import { guardAgentRoute } from '@/lib/local-request-guard'
 
 const OASIS_ROOT = process.env.OASIS_ROOT || process.cwd()
 
@@ -202,6 +203,9 @@ const TOOL_ICONS: Record<string, string> = {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = guardAgentRoute(request)
+  if (denied) return denied
+
   // ── Local mode: always admin ──────────────────────────────
 
   // ── PARSE REQUEST ─────────────────────────────────────────
@@ -313,6 +317,7 @@ export async function POST(request: NextRequest) {
         cwd: OASIS_ROOT,
         shell: true,
         env: buildClaudeCliEnv(),
+        windowsHide: true,
       })
 
       child.stdin.write(fullPrompt)

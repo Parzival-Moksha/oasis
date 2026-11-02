@@ -35,7 +35,7 @@ let building = false
 
 function startServer() {
   log('🟢', 'Starting production server...')
-  serverProcess = spawn('npx', ['next', 'start', '-p', String(PORT)], {
+  serverProcess = spawn('npx', ['next', 'start', '-p', String(PORT), '-H', '127.0.0.1'], {
     stdio: 'inherit',
     shell: true,
     cwd: ROOT,

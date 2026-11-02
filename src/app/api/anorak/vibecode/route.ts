@@ -8,6 +8,7 @@
 import { NextRequest } from 'next/server'
 import { mediaToolsOpenAI, execMediaTool, isMediaTool } from '@/lib/media-tools'
 import { normalizeCraftModelId } from '@/lib/craft-models'
+import { guardAgentRoute } from '@/lib/local-request-guard'
 
 const MAX_MESSAGES = 200 // context window is the real limit, not an arbitrary cap
 
@@ -81,6 +82,9 @@ MEDIA TOOLS: You can generate media to help explain concepts or illustrate repor
 Do NOT use tools unless the conversation genuinely benefits from media. Max 3 media calls per conversation.`
 
 export async function POST(request: NextRequest) {
+  const denied = guardAgentRoute(request)
+  if (denied) return denied
+
   console.log('[Anorak] Vibecode POST hit')
   try {
     const body = await request.json()

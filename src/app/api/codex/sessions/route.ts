@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { getAgentSessionCache, listAgentSessionCaches } from '@/lib/agent-session-cache'
 import { listCodexSessionFileSummaries, readCodexSessionFileDetail } from '@/lib/codex-session-files'
+import { guardAgentRoute } from '@/lib/local-request-guard'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -11,6 +12,9 @@ function clean(value: unknown): string {
 }
 
 export async function GET(request: NextRequest) {
+  const denied = guardAgentRoute(request)
+  if (denied) return denied
+
   try {
     const limitParam = Number(request.nextUrl.searchParams.get('limit') || 50)
     const limit = Number.isFinite(limitParam) ? limitParam : 50

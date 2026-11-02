@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import * as fs from 'fs/promises'
 import * as path from 'path'
+import { guardAgentRoute } from '@/lib/local-request-guard'
 
 const VALID_LOBES = ['curator', 'coder', 'reviewer', 'tester', 'gamer', 'merlin', 'anorak-pro'] as const
 const AGENTS_DIR = path.resolve(process.cwd(), '.claude', 'agents')
@@ -16,6 +17,9 @@ function lobePath(lobe: string): string {
 }
 
 export async function GET(request: NextRequest) {
+  const denied = guardAgentRoute(request)
+  if (denied) return denied
+
   const lobe = request.nextUrl.searchParams.get('lobe')
   if (!lobe || !VALID_LOBES.includes(lobe as typeof VALID_LOBES[number])) {
     return NextResponse.json({ error: `Invalid lobe. Must be one of: ${VALID_LOBES.join(', ')}` }, { status: 400 })
@@ -30,6 +34,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
+  const denied = guardAgentRoute(request)
+  if (denied) return denied
+
   let body: { lobe: string; content: string }
   try { body = await request.json() } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })

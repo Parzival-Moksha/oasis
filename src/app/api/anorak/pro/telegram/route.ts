@@ -21,6 +21,7 @@ import {
   writeStoredAnorakProTelegramConfig,
   writeStoredAnorakProTelegramPollingState,
 } from '@/lib/telegram'
+import { guardAgentRoute } from '@/lib/local-request-guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -172,6 +173,9 @@ async function handleTelegramWebhook(request: NextRequest, update: TelegramUpdat
 }
 
 export async function GET(request: NextRequest) {
+  const denied = guardAgentRoute(request)
+  if (denied) return denied
+
   if (!isAllowedOrigin(request)) {
     return NextResponse.json({ error: 'Forbidden origin' }, { status: 403 })
   }
@@ -201,6 +205,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
+  const denied = guardAgentRoute(request)
+  if (denied) return denied
+
   if (!isAllowedOrigin(request)) {
     return NextResponse.json({ error: 'Forbidden origin' }, { status: 403 })
   }
@@ -262,6 +269,9 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = guardAgentRoute(request)
+  if (denied) return denied
+
   const body = await request.json().catch(() => null) as Record<string, unknown> | TelegramUpdate | null
 
   if (isTelegramUpdate(body)) {
@@ -317,6 +327,9 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const denied = guardAgentRoute(request)
+  if (denied) return denied
+
   if (!isAllowedOrigin(request)) {
     return NextResponse.json({ error: 'Forbidden origin' }, { status: 403 })
   }

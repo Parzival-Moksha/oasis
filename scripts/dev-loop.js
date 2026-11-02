@@ -16,7 +16,7 @@ function start() {
   console.log(`\x1b[35m║  Port ${PORT} · Auto-restart enabled    ║\x1b[0m`)
   console.log(`\x1b[35m╚══════════════════════════════════════╝\x1b[0m\n`)
 
-  const child = spawn('npx', ['next', 'dev', '-p', String(PORT)], {
+  const child = spawn('npx', ['next', 'dev', '-p', String(PORT), '-H', '127.0.0.1'], {
     stdio: 'inherit',
     shell: true,
     cwd: process.cwd(),

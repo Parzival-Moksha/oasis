@@ -26,6 +26,9 @@ import {
 } from '@/lib/anorak-context-modules'
 import { recordTokenBurn } from '@/lib/token-burn'
 import { hasTokenUsage } from '@/lib/token-usage'
+import { guardAgentRoute } from '@/lib/local-request-guard'
+import { buildClaudeCliEnv } from '@/lib/claude-cli-env'
+import { resolveClaudeCli } from '@/lib/claude-bin'
 const OASIS_ROOT = process.env.OASIS_ROOT || process.cwd()
 const AGENT_TIMEOUT_MS = 10 * 60 * 1000
 
@@ -333,7 +336,7 @@ function spawnAgent(
   usageSource?: string,
 ): Promise<{ exitCode: number; stdout: string }> {
   return new Promise((resolve) => {
-    const claudePath = process.platform === 'win32' ? 'claude.cmd' : 'claude'
+    const claudeCli = resolveClaudeCli()
     const agentCwd = cwd || OASIS_ROOT
 
     // Explicitly pass --mcp-config to guarantee MCP tools are available in worktree
@@ -346,9 +349,11 @@ function spawnAgent(
 
     send('status', { content: `⚡ spawning ${lobe}${cwd ? ' (worktree)' : ''}...`, lobe })
 
-    const child: ChildProcess = spawn(claudePath, args, {
+    const child: ChildProcess = spawn(claudeCli.command, [...claudeCli.prefixArgs, ...args], {
       cwd: agentCwd,
-      env: { ...process.env },
+      env: buildClaudeCliEnv(),
+      shell: claudeCli.shell,
+      windowsHide: true,
     })
 
     child.stdin!.write(prompt)
@@ -451,6 +456,9 @@ function spawnAgent(
 // ═══════════════════════════════════════════════════════════════════════════
 
 export async function POST(request: NextRequest) {
+  const denied = guardAgentRoute(request)
+  if (denied) return denied
+
   let body: {
     missionId: number
     coderModel?: string

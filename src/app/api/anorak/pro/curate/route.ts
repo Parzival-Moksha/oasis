@@ -13,6 +13,9 @@ import {
 } from '@/lib/anorak-stream-parser'
 import { recordTokenBurn } from '@/lib/token-burn'
 import { hasTokenUsage } from '@/lib/token-usage'
+import { guardAgentRoute } from '@/lib/local-request-guard'
+import { buildClaudeCliEnv } from '@/lib/claude-cli-env'
+import { resolveClaudeCli } from '@/lib/claude-bin'
 const OASIS_ROOT = process.env.OASIS_ROOT || process.cwd()
 
 interface ContextModuleConfig {
@@ -75,6 +78,9 @@ ${missionBlock}${customBlock ? `\n\n---\n\n${customBlock}` : ''}`
 }
 
 export async function POST(request: NextRequest) {
+  const denied = guardAgentRoute(request)
+  if (denied) return denied
+
   let body: {
     missionIds?: number[]
     batchSize?: number
@@ -141,7 +147,7 @@ export async function POST(request: NextRequest) {
   })
 
   const fullPrompt = buildCuratorPrompt(missions, contextModules, customModules)
-  const claudePath = process.platform === 'win32' ? 'claude.cmd' : 'claude'
+  const claudeCli = resolveClaudeCli()
 
   // SSE stream
   const encoder = new TextEncoder()
@@ -168,9 +174,11 @@ export async function POST(request: NextRequest) {
         '--dangerously-skip-permissions',
       ]
 
-      const child = spawn(claudePath, args, {
+      const child = spawn(claudeCli.command, [...claudeCli.prefixArgs, ...args], {
         cwd: OASIS_ROOT,
-        env: { ...process.env },
+        env: buildClaudeCliEnv(),
+        shell: claudeCli.shell,
+        windowsHide: true,
       })
 
       child.stdin.write(fullPrompt)

@@ -9,6 +9,9 @@
 import { NextRequest } from 'next/server'
 import { spawn } from 'child_process'
 import { createStreamParser } from '@/lib/anorak-stream-parser'
+import { guardAgentRoute } from '@/lib/local-request-guard'
+import { buildClaudeCliEnv } from '@/lib/claude-cli-env'
+import { resolveClaudeCli } from '@/lib/claude-bin'
 
 const OASIS_ROOT = process.env.OASIS_ROOT || process.cwd()
 
@@ -44,6 +47,9 @@ ${extraContext ? `## EXTRA CONTEXT FROM DEV\n${extraContext}\n` : ''}
 }
 
 export async function POST(request: NextRequest) {
+  const denied = guardAgentRoute(request)
+  if (denied) return denied
+
   console.log('[Anorak Agent] POST hit')
 
   // ── Local mode: always admin ──────────────────────────────
@@ -81,7 +87,7 @@ export async function POST(request: NextRequest) {
 
   // ── VERIFY CLAUDE CLI EXISTS ──────────────────────────────
   // Check that we can find the claude binary
-  const claudePath = process.platform === 'win32' ? 'claude.cmd' : 'claude'
+  const claudeCli = resolveClaudeCli()
 
   // ── SSE STREAM ────────────────────────────────────────────
   const encoder = new TextEncoder()
@@ -119,9 +125,11 @@ export async function POST(request: NextRequest) {
       // Windows: pipe prompt via stdin (avoids command line length limits)
       // Claude Code accepts prompt on stdin when not passed as arg
 
-      const child = spawn(claudePath, args, {
+      const child = spawn(claudeCli.command, [...claudeCli.prefixArgs, ...args], {
         cwd: OASIS_ROOT,
-        env: { ...process.env },
+        env: buildClaudeCliEnv(),
+        shell: claudeCli.shell,
+        windowsHide: true,
       })
 
       // Pipe prompt to stdin

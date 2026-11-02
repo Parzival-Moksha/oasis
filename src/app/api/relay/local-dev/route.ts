@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'child_process'
 import net from 'net'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { guardAgentRoute } from '@/lib/local-request-guard'
 
 export const runtime = 'nodejs'
 
@@ -59,6 +60,9 @@ async function relayStatus() {
 }
 
 export async function GET(request: NextRequest) {
+  const denied = guardAgentRoute(request)
+  if (denied) return denied
+
   if (!canControlLocalRelay(request)) {
     return NextResponse.json({ ok: false, error: 'Local relay control is localhost-only.' }, { status: 403 })
   }
@@ -66,6 +70,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = guardAgentRoute(request)
+  if (denied) return denied
+
   if (!canControlLocalRelay(request)) {
     return NextResponse.json({ ok: false, error: 'Local relay control is localhost-only.' }, { status: 403 })
   }

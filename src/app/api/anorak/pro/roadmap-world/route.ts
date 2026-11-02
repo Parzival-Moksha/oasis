@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { getRequiredOasisUserId } from '@/lib/session'
 import { createWorld, saveWorld } from '@/lib/forge/world-server'
 import { DEFAULT_WORLD_LIGHTS, type CraftedScene, type WorldLight } from '@/lib/conjure/types'
+import { guardAgentRoute } from '@/lib/local-request-guard'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -192,6 +193,9 @@ async function resolveRoadmapWorldId(userId: string): Promise<{ worldId: string;
 }
 
 export async function POST(request: NextRequest) {
+  const denied = guardAgentRoute(request)
+  if (denied) return denied
+
   try {
     const userId = getRequiredOasisUserId(request)
     if (!userId) {

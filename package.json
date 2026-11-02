@@ -4,7 +4,8 @@
   "private": true,
   "description": "The Oasis — 3D world builder with AI text-to-3D conjuring",
   "scripts": {
-    "dev": "next dev -p 4516",
+    "dev": "next dev -p 4516 -H 127.0.0.1",
+    "dev:lan": "node scripts/dev-lan.mjs",
     "dev:docs": "pnpm docs:local && pnpm dev",
     "dev:loop": "node scripts/dev-loop.js",
     "dev:agent": "node scripts/dev-agent.js",

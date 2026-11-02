@@ -17,6 +17,7 @@ import {
   publishWorldPlayerContext,
   type RuntimePlayerContext as PromptPlayerContext,
 } from '@/lib/world-runtime-context'
+import { guardAgentRoute } from '@/lib/local-request-guard'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -363,6 +364,9 @@ function collectMediaUrls(value: unknown, urls = new Set<string>()): string[] {
 
 
 export async function POST(request: NextRequest) {
+  const denied = guardAgentRoute(request)
+  if (denied) return denied
+
   let body: { worldId?: unknown; prompt?: unknown; sessionId?: unknown; model?: unknown; playerContext?: unknown }
   try {
     body = await request.json()
@@ -461,6 +465,7 @@ export async function POST(request: NextRequest) {
         cwd: OASIS_ROOT,
         shell: true,
         env: buildClaudeCliEnv(),
+        windowsHide: true,
       })
 
       child.stdin.write(fullPrompt)

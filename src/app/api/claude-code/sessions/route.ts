@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { readdir, readFile, stat } from 'fs/promises'
 import { join } from 'path'
 import { homedir } from 'os'
+import { guardAgentRoute } from '@/lib/local-request-guard'
 
 // Claude Code stores sessions as JSONL files in ~/.claude/projects/<project-hash>/
 function getProjectSessionDir(): string {
@@ -36,6 +37,9 @@ interface ConversationMessage {
 }
 
 export async function GET(req: NextRequest) {
+  const denied = guardAgentRoute(req)
+  if (denied) return denied
+
   const sessionId = req.nextUrl.searchParams.get('id')
 
   if (sessionId) {

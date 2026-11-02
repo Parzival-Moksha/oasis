@@ -10,6 +10,7 @@ import { spawn } from 'child_process'
 import path from 'path'
 import { CRAFT_SYSTEM_PROMPT } from '../../../../lib/craft-prompt'
 import { buildClaudeCliEnv } from '../../../../lib/claude-cli-env'
+import { guardAgentRoute } from '@/lib/local-request-guard'
 
 const OASIS_ROOT = path.resolve(process.cwd())
 const VALID_MODELS: Record<string, string> = {
@@ -18,6 +19,9 @@ const VALID_MODELS: Record<string, string> = {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = guardAgentRoute(request)
+  if (denied) return denied
+
   try {
     const body = await request.json()
     const { prompt, model: requestedModel } = body
@@ -62,6 +66,7 @@ export async function POST(request: NextRequest) {
           cwd: OASIS_ROOT,
           shell: true,
           env: buildClaudeCliEnv(),
+          windowsHide: true,
         })
 
         child.stdin.write(fullPrompt)

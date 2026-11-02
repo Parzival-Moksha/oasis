@@ -55,7 +55,8 @@ const nextConfig = {
   // ─═̷─═̷─🔒─═̷─═̷─ Security headers ─═̷─═̷─🔒─═̷─═̷─
   async headers() {
     const securityHeaders = [
-      { key: 'X-Frame-Options', value: 'DENY' },
+      // SAMEORIGIN, not DENY: the in-world browser frames the Oasis's own pages (builder, artifacts).
+      { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
       { key: 'X-Content-Type-Options', value: 'nosniff' },
       { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
       // Allow first-party mic/camera features on Oasis itself while keeping geolocation off.

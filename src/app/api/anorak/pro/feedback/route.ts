@@ -6,8 +6,12 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { guardAgentRoute } from '@/lib/local-request-guard'
 
 export async function POST(request: NextRequest) {
+  const denied = guardAgentRoute(request)
+  if (denied) return denied
+
   let body: {
     missionId: number
     mature: boolean        // true=bump maturity, false=refine (re-curate)
