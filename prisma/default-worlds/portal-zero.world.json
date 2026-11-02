@@ -11408,19 +11408,6 @@
         ],
         "scale": 1,
         "imageUrl": "/generated-images/img_mpogk6cek7m0.png?v=pz-may28-images-2"
-      },
-      {
-        "id": "image-1779910862264",
-        "catalogId": "generated-image",
-        "name": "left: boring 2d white go",
-        "glbPath": "",
-        "position": [
-          -13.67940889043598,
-          0,
-          -5.178892350212336
-        ],
-        "scale": 1,
-        "imageUrl": "/generated-images/img_mpogyvugxdxx.png?v=pz-may28-images-2"
       }
     ],
     "portalGates": [
@@ -12210,23 +12197,6 @@
           4.026232332516496,
           4.026232332516496
         ]
-      },
-      "image-1779910862264": {
-        "position": [
-          -13.732050484214607,
-          1.0133578943195722,
-          -16.146490099144916
-        ],
-        "rotation": [
-          0,
-          0.49432811824675427,
-          0
-        ],
-        "scale": [
-          5.5302430184516345,
-          5.5302430184516345,
-          5.5302430184516345
-        ]
       }
     },
     "behaviors": {
@@ -12325,7 +12295,7 @@
     "skyBackgroundId": "umhlanga_sunrise",
     "agentWindows": [],
     "agentAvatars": [],
-    "savedAt": "2026-06-01T14:14:27.017Z"
+    "savedAt": "2026-06-29T10:23:59.380Z"
   },
   "pvpEnabled": true
 }
