@@ -206,6 +206,8 @@ export type EngineNoticeEvent = EngineEventEnvelope<'notice'> & { subtype?: stri
 export type EngineErrorEvent = EngineEventEnvelope<'error'> & { message?: string; retrying?: boolean }
 export type EngineExitEvent = EngineEventEnvelope<'exit'> & { code?: number | null; signal?: string | null; stderr?: string[] }
 export type EngineModelEvent = EngineEventEnvelope<'model'> & { model?: string; resolved?: string; applied?: string }
+/** Permission mode switched for an owned agent (setPermissionMode). */
+export type EngineModeEvent = EngineEventEnvelope<'mode'> & { permissionMode: string; applied?: string }
 export type EngineHookEvent = EngineEventEnvelope<'hook'> & { event?: string; toolName?: string | null }
 export type EngineRemovedEvent = EngineEventEnvelope<'removed'>
 
@@ -234,6 +236,7 @@ export type KnownEngineEvent =
   | EngineErrorEvent
   | EngineExitEvent
   | EngineModelEvent
+  | EngineModeEvent
   | EngineHookEvent
   | EngineRemovedEvent
 

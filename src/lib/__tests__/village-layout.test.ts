@@ -81,6 +81,12 @@ describe('station transforms', () => {
     expect(findNearestStation([10, 0, 0], anchors, 3)).toBeNull()
     expect(findNearestStation(null, anchors, 3)).toBeNull()
   })
+
+  it('ignores stations far below a flying (noclip) actor so E stays "down" up there', () => {
+    const anchors = { a: [0, 0, 0] as Vec3 }
+    expect(findNearestStation([1, 1.7, 0], anchors, 3, 2.5)).toBe('a')
+    expect(findNearestStation([1, 6, 0], anchors, 3, 2.5)).toBeNull()
+  })
 })
 
 describe('assignVillageAvatars', () => {

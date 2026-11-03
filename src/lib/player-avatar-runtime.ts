@@ -101,6 +101,24 @@ export function subscribePlayerManaRecharging(listener: () => void): () => void 
   }
 }
 
+let thirdPersonCameraRestored = false
+
+/**
+ * Someone (the village camera rig) moved the camera away from third-person and then put it back
+ * exactly where third-person left it. PlayerAvatar should keep its stored azimuth / elevation on
+ * return instead of re-deriving them from the camera offset (shoulder bias of ~8° per visit).
+ */
+export function markThirdPersonCameraRestored(): void {
+  thirdPersonCameraRestored = true
+}
+
+/** One-shot read of markThirdPersonCameraRestored(), used by PlayerAvatar on third-person entry. */
+export function consumeThirdPersonCameraRestored(): boolean {
+  const restored = thirdPersonCameraRestored
+  thirdPersonCameraRestored = false
+  return restored
+}
+
 export function requestPlayerAvatarTeleport(pose: PlayerAvatarPose): void {
   const next: PlayerAvatarPose = {
     position: cloneVec3(pose.position),

@@ -8,6 +8,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
 import { useUILayer } from '../../lib/input-manager'
+import { isProbablyMobileDevice } from '../../lib/mobile-controls'
+import { effectiveStatus } from '../../store/slices/agentEngineSlice'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
 import { showNotice } from '../forge/GlobalNotice'
 import { AgentSessionView, StatusPill } from './AgentSessionView'
@@ -51,7 +53,9 @@ function Composer({ agentId }: { agentId: string }) {
   const working = status === 'working' || status === 'needs-decision'
 
   // Focus the composer right after the agent is focused (after the E keydown has finished).
+  // Not on touch devices: the on-screen keyboard would cover most of the transcript.
   useEffect(() => {
+    if (isProbablyMobileDevice()) return
     const timer = window.setTimeout(() => {
       textareaRef.current?.focus({ preventScroll: true })
       focusedAtRef.current = performance.now()
@@ -145,7 +149,8 @@ export function AgentSessionPanel() {
 
   if (!agentId || !agent) return null
   const geometry = getSessionPanelGeometry(viewport.width, viewport.height)
-  const color = statusColor(agent.status)
+  const shownStatus = effectiveStatus(agent)
+  const color = statusColor(shownStatus)
   const models = agent.models?.length ? agent.models : FALLBACK_MODELS
   const currentModel = agent.model || 'default'
   const style = geometry.side === 'right'
@@ -177,7 +182,10 @@ export function AgentSessionPanel() {
           <div className="flex items-center gap-2">
             <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color, boxShadow: `0 0 10px ${color}` }} />
             <span className="truncate text-[15px] font-black tracking-wide">{agentDisplayName(agent)}</span>
-            <StatusPill status={agent.status} label={agent.readOnly ? `${statusLabel(agent)} · read-only` : statusLabel(agent)} />
+            <StatusPill
+              status={shownStatus}
+              label={`${statusLabel({ status: shownStatus, unseen: agent.unseen })}${agent.readOnly ? ' · read-only' : ''}`}
+            />
           </div>
           <div className="mt-0.5 truncate text-[10.5px] text-white/45" title={`${agent.cwd || ''}\nsession ${agent.sessionId || '?'}`}>
             {cwdLabel(agent.cwd) || 'unknown folder'} · {agent.sessionId ? agent.sessionId.slice(0, 8) : 'new session'}

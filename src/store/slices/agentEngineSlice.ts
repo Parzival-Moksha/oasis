@@ -208,6 +208,8 @@ export interface AgentEngineState {
   pickerOpen: boolean
   rateLimit: EngineRateLimit | null
   sessions: EngineSessionsState
+  /** Decisions answered from this page and not yet resolved by the engine (requestId -> sent at). */
+  inflightDecisions: Record<string, number>
 }
 
 export type AgentEngineAction =
@@ -234,6 +236,7 @@ export type AgentEngineAction =
   | { type: 'sessions/loading' }
   | { type: 'sessions/loaded'; items: EngineSessionMeta[]; at: number }
   | { type: 'sessions/error'; error: string }
+  | { type: 'decision/pending'; requestId: string; pending: boolean; at?: number }
   | { type: 'reset' }
 
 export function createInitialAgentEngineState(): AgentEngineState {
@@ -247,6 +250,7 @@ export function createInitialAgentEngineState(): AgentEngineState {
     pickerOpen: false,
     rateLimit: null,
     sessions: { status: 'idle', items: [], error: null, loadedAt: null },
+    inflightDecisions: {},
   }
 }
 
@@ -367,12 +371,27 @@ function normalizeContext(ctx: Partial<EngineContextUsage>): EngineContextUsage 
   return { usedTokens, maxTokens, percent, model: str(ctx.model) }
 }
 
-/** 0 = needs a decision, 1 = errored, 2 = finished while unseen. null = no attention needed. */
-export function attentionRank(agent: Pick<EngineAgentState, 'status' | 'unseen'>): number | null {
-  if (agent.status === 'needs-decision') return 0
+/**
+ * 0 = needs a decision, 1 = errored, 2 = finished while unseen. null = no attention needed.
+ * An open permission / question / plan wins over the status: a mid-turn message makes the
+ * engine report `working`, but the CLI is still blocked on the owner.
+ */
+export function attentionRank(agent: Pick<EngineAgentState, 'status' | 'unseen' | 'decisions'>): number | null {
+  if (agent.status === 'needs-decision' || agent.decisions.length > 0) return 0
   if (agent.status === 'error') return 1
-  if (agent.status === 'waiting' && agent.unseen) return 2
+  // idle too: a restarted engine resumes a finished agent as a fresh, idle process.
+  if (agent.unseen && (agent.status === 'waiting' || agent.status === 'idle')) return 2
   return null
+}
+
+/**
+ * The status to show (ring, label, chips): an open decision always reads as needs-decision, and
+ * a finished agent the owner hasn't seen reads as waiting even after an engine restart (idle).
+ */
+export function effectiveStatus(agent: Pick<EngineAgentState, 'status' | 'decisions' | 'unseen'>): EngineAgentStatus {
+  if (agent.decisions.length > 0) return 'needs-decision'
+  if (agent.status === 'idle' && agent.unseen) return 'waiting'
+  return agent.status
 }
 
 /** Keep `attentionSince` consistent with the agent's attention rank. */
@@ -446,7 +465,7 @@ interface FoldContext {
 const FOLDED_KINDS = new Set<string>([
   'init', 'meta', 'status', 'user.sent', 'user.consumed', 'user', 'text.delta', 'text', 'tool.start', 'tool.end',
   'todo', 'subagent.start', 'subagent.progress', 'subagent.end', 'permission.request', 'permission.resolved',
-  'permission.denied', 'turn.end', 'context', 'notice', 'error', 'exit', 'model',
+  'permission.denied', 'turn.end', 'context', 'notice', 'error', 'exit', 'model', 'mode',
 ])
 
 /** Fold one engine event into one agent. Pure; returns the same object for kinds it ignores. */
@@ -622,7 +641,7 @@ export function foldAgentEvent(agent: EngineAgentState, event: EngineEvent, ctx:
       const decision = toDecision(e, ts)
       if (decision && !a.decisions.some(d => d.requestId === decision.requestId)) {
         const decisions = [...a.decisions, decision]
-        a = { ...a, decisions, pendingDecision: decisions[0] }
+        a = withAttention({ ...a, decisions, pendingDecision: decisions[0] }, ts)
       }
       if (e.requestId) key = `p:${e.requestId}`
       else [key, a] = nextKey(a, 'p')
@@ -634,7 +653,7 @@ export function foldAgentEvent(agent: EngineAgentState, event: EngineEvent, ctx:
     case 'permission.resolved': {
       if (!e.requestId) return a
       const decisions = a.decisions.filter(d => d.requestId !== e.requestId)
-      a = { ...a, decisions, pendingDecision: decisions[0] || null }
+      a = withAttention({ ...a, decisions, pendingDecision: decisions[0] || null }, ts)
       return updateLog(a, `p:${e.requestId}`, entry => (entry.type === 'decision' ? { ...entry, resolved: e.behavior || 'resolved' } : entry))
     }
 
@@ -752,6 +771,19 @@ export function foldAgentEvent(agent: EngineAgentState, event: EngineEvent, ctx:
       })
     }
 
+    case 'mode': {
+      if (!e.permissionMode) return a
+      a = { ...a, permissionMode: e.permissionMode, effectivePermissionMode: e.permissionMode }
+      ;[key, a] = nextKey(a, 'o')
+      return pushLog(a, {
+        type: 'notice',
+        key,
+        ts,
+        level: 'info',
+        text: `Permission mode -> ${e.permissionMode}${e.applied ? ` (${e.applied})` : ''}`,
+      })
+    }
+
     default:
       return a
   }
@@ -780,6 +812,14 @@ function applyEvent(state: AgentEngineState, event: EngineEvent, live: boolean):
   if (state.removed[event.agentId]) return state // e.g. the `exit` of an agent that was just removed
 
   let next = state
+  if (event.kind === 'permission.resolved') {
+    const requestId = (event as KnownEngineEvent & { requestId?: string | null }).requestId
+    if (requestId && next.inflightDecisions[requestId]) {
+      const inflightDecisions = { ...next.inflightDecisions }
+      delete inflightDecisions[requestId]
+      next = { ...next, inflightDecisions }
+    }
+  }
   if (event.kind === 'rate_limit') {
     const { v: _v, agentId: _agentId, ts: _ts, kind: _kind, ...rate } = event as KnownEngineEvent & EngineRateLimit
     next = { ...state, rateLimit: rate as EngineRateLimit }
@@ -822,12 +862,18 @@ export function agentEngineReducer(state: AgentEngineState, action: AgentEngineA
         const prev = state.agents[snap.id]
         // Keep the first-seen time across reconnects so slots and attention order stay stable.
         let agent = createAgentState(snap.id, prev?.firstSeenAt ?? action.at)
+        let newestTurnEnd = 0
         for (const event of action.backlog?.[snap.id] || []) {
           agent = foldAgentEvent(agent, event, { focused: false, live: false })
+          if (event.kind === 'turn.end' && !event.history && typeof event.ts === 'number') newestTurnEnd = Math.max(newestTurnEnd, event.ts)
         }
         agent = applySnapshot(agent, snap, action.at)
-        agents[snap.id] = { ...agent, unseen: false }
-        agents[snap.id] = withAttention(agents[snap.id], action.at)
+        // A reconnect (sleep, engine restart, HMR) keeps "finished while unseen", and a turn that
+        // ended while we were disconnected counts as unseen too. A fresh page load starts clean.
+        const focused = state.focusedAgentId === snap.id
+        const unseen = Boolean(prev) && !focused && (prev.unseen || newestTurnEnd > prev.lastEventAt)
+        agent = { ...agent, unseen, attentionSince: prev && unseen ? prev.attentionSince : agent.attentionSince }
+        agents[snap.id] = withAttention(agent, action.at)
         order.push(snap.id)
       }
       // Keep the previous slot order for agents that survived a reconnect.
@@ -847,6 +893,7 @@ export function agentEngineReducer(state: AgentEngineState, action: AgentEngineA
         agents,
         order: [...kept, ...fresh],
         removed: {},
+        inflightDecisions: {},
         focusedAgentId: state.focusedAgentId && agents[state.focusedAgentId] ? state.focusedAgentId : null,
         nearbyAgentId: state.nearbyAgentId && agents[state.nearbyAgentId] ? state.nearbyAgentId : null,
       }
@@ -855,8 +902,15 @@ export function agentEngineReducer(state: AgentEngineState, action: AgentEngineA
     case 'agents': {
       const agents: Record<string, EngineAgentState> = {}
       const seen = new Set<string>()
+      let removed = state.removed
       for (const snap of action.agents || []) {
-        if (!snap?.id || state.removed[snap.id]) continue
+        if (!snap?.id) continue
+        if (removed[snap.id]) {
+          // Snapshots go out after the `removed` event, so one listing the id again means the
+          // engine re-created it (a hook agent whose session fired again): stop ignoring it.
+          removed = { ...removed }
+          delete removed[snap.id]
+        }
         seen.add(snap.id)
         const prev = state.agents[snap.id]
         agents[snap.id] = prev ? applySnapshot(prev, snap, action.at) : createAgentState(snap.id, action.at, snap)
@@ -866,6 +920,7 @@ export function agentEngineReducer(state: AgentEngineState, action: AgentEngineA
         ...state,
         agents,
         order,
+        removed,
         focusedAgentId: state.focusedAgentId && agents[state.focusedAgentId] ? state.focusedAgentId : null,
         nearbyAgentId: state.nearbyAgentId && agents[state.nearbyAgentId] ? state.nearbyAgentId : null,
       }
@@ -899,6 +954,15 @@ export function agentEngineReducer(state: AgentEngineState, action: AgentEngineA
 
     case 'sessions/error':
       return { ...state, sessions: { ...state.sessions, status: 'error', error: action.error } }
+
+    case 'decision/pending': {
+      const has = Boolean(state.inflightDecisions[action.requestId])
+      if (action.pending === has) return state
+      const inflightDecisions = { ...state.inflightDecisions }
+      if (action.pending) inflightDecisions[action.requestId] = action.at ?? Date.now()
+      else delete inflightDecisions[action.requestId]
+      return { ...state, inflightDecisions }
+    }
 
     case 'reset':
       return { ...createInitialAgentEngineState(), connection: state.connection }
@@ -940,6 +1004,10 @@ export function selectNextAgentForN(state: Pick<AgentEngineState, 'agents' | 'or
   const index = ids.indexOf(current)
   const next = ids[(index + 1) % ids.length]
   return next === current ? null : next
+}
+
+export function isDecisionInFlight(state: Pick<AgentEngineState, 'inflightDecisions'>, requestId: string | null | undefined): boolean {
+  return Boolean(requestId && state.inflightDecisions[requestId])
 }
 
 export function selectAgentList(state: Pick<AgentEngineState, 'agents' | 'order'>): EngineAgentState[] {

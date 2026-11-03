@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
-import { selectAttentionQueue } from '../../store/slices/agentEngineSlice'
+import { effectiveStatus, selectAttentionQueue } from '../../store/slices/agentEngineSlice'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
 import { focusVillageAgent, openVillagePicker } from './village-actions'
 import { VILLAGE_OBSERVED_COLOR, statusColor } from './village-status'
@@ -61,7 +61,7 @@ export function VillageHud() {
   const chipsKey = useOasisStore(s => s.agentEngine.order.map(id => {
     const agent = s.agentEngine.agents[id]
     if (!agent) return ''
-    return [id, agent.name, agent.status, agent.unseen ? 1 : 0, agent.kind].join('\u0001')
+    return [id, agent.name, effectiveStatus(agent), agent.unseen ? 1 : 0, agent.kind].join('\u0001')
   }).filter(Boolean).join('\u0002'))
   const attentionKey = useOasisStore(s => selectAttentionQueue(s.agentEngine).join(','))
   const focusedId = useOasisStore(s => s.agentEngine.focusedAgentId)

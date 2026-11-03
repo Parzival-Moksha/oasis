@@ -28,6 +28,7 @@ import { sprintRef } from '../CameraController'
 import { SettingsContext } from '../scene-lib'
 import {
   PLAYER_AVATAR_LIPSYNC_ID,
+  consumeThirdPersonCameraRestored,
   getPlayerAvatarPose,
   getPlayerManaRecharging,
   getPlayerSpellCasting,
@@ -536,9 +537,11 @@ export function PlayerAvatar({
     v.update(delta)
 
     if (isThirdPersonActive && !wasThirdPersonActiveRef.current) {
+      // The village rig restores the exact pre-focus pose: trust the stored azimuth like a menu close.
+      const cameraRestored = consumeThirdPersonCameraRestored()
       if (teleportCameraResetPendingRef.current) {
         teleportCameraResetPendingRef.current = false
-      } else if (!avatarOwnsCameraRef.current) {
+      } else if (!avatarOwnsCameraRef.current && !cameraRestored) {
         // ─═̷─ Re-anchor only when something else moved the camera while we were
         // away. If the only thing that happened was a 'ui-focused' interlude
         // (menu open/close), the camera position is byte-identical to the last

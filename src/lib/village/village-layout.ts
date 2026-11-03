@@ -134,11 +134,14 @@ export function findNearestStation(
   actor: Vec3 | null | undefined,
   anchors: Record<string, Vec3>,
   radius: number,
+  /** Ignore stations this far above / below the actor (a noclip camera flying over the village). */
+  maxHeightDelta = Infinity,
 ): string | null {
   if (!actor) return null
   let best: string | null = null
   let bestDistance = radius
   for (const [id, anchor] of Object.entries(anchors)) {
+    if (Math.abs(actor[1] - anchor[1]) > maxHeightDelta) continue
     const distance = Math.hypot(actor[0] - anchor[0], actor[2] - anchor[2])
     if (distance <= bestDistance) {
       best = id

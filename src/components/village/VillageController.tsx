@@ -9,9 +9,11 @@ import { useOasisStore } from '../../store/oasisStore'
 import {
   VILLAGE_SESSION_LAYER,
   discardVillageCameraPose,
+  focusVillageAgent,
   handleVillageKeyDown,
   isFocusInputState,
   leaveVillageFocus,
+  releaseVillageFocusInput,
   restoreVillageCameraPose,
   updateVillageProximity,
 } from './village-actions'
@@ -63,6 +65,23 @@ export function VillageController() {
     discardVillageCameraPose()
     state.agentEngineDispatch({ type: 'focus', agentId: null })
   }), [])
+
+  // Focus can also end without the input state changing: the agent was dismissed elsewhere, or an
+  // observer vanished on reconnect. Hand movement, mouse look and the camera back right away.
+  useEffect(() => useOasisStore.subscribe((state, prev) => {
+    if (!prev.agentEngine.focusedAgentId || state.agentEngine.focusedAgentId) return
+    releaseVillageFocusInput()
+  }), [])
+
+  // Phones: the primary action button says "Talk" next to an agent (MobileOasisControls).
+  useEffect(() => {
+    const onTalk = () => {
+      const nearby = useOasisStore.getState().agentEngine.nearbyAgentId
+      if (nearby) focusVillageAgent(nearby)
+    }
+    window.addEventListener('oasis:village-talk', onTalk)
+    return () => window.removeEventListener('oasis:village-talk', onTalk)
+  }, [])
 
   // "E talk" hint: nearest agent within reach of the avatar (or the camera in noclip).
   useEffect(() => {

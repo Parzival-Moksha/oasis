@@ -4,7 +4,7 @@
 // Mounted inside the R3F <Canvas> when the village profile is on. Nothing here is saved to the
 // world: the roster comes from the agent engine, positions from village-layout.ts.
 
-import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Component, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import * as THREE from 'three'
@@ -27,12 +27,15 @@ import {
 import { getPlayerAvatarPose } from '../../lib/player-avatar-runtime'
 import { getCameraSnapshot } from '../../lib/camera-bridge'
 import { VRMCatalogRenderer } from '../forge/WorldObjects'
+import { useIsMobileOasis } from '../forge/MobileOasisControls'
+import { effectiveStatus } from '../../store/slices/agentEngineSlice'
 import { AgentSessionView, SessionWindowHeader } from './AgentSessionView'
 import {
   focusVillageAgent,
   getSessionPanelGeometry,
   getVillageStation,
   isFocusInputState,
+  isVillageFocusBlocked,
   openVillagePicker,
   registerVillageCamera,
   setVillageStations,
@@ -42,8 +45,14 @@ import { VILLAGE_OBSERVED_COLOR, agentDisplayName, statusColor, statusLabel } fr
 
 const WORK_ANIMATION_ID = 'ual-talking'
 const WINDOW_DISTANCE = 26
+const MAX_DESK_WINDOWS = 6
 /** Village overlays stay under the HUD and panels (drei's default z-range is ~16M). */
 const OVERLAY_Z: [number, number] = [80, 0]
+/**
+ * Phones: MobileOasisControls lays a full-screen look surface at z 180 over the canvas. Desk windows
+ * and the plaza sign go just above it so they can be tapped (still under the rail at 190).
+ */
+const OVERLAY_Z_MOBILE: [number, number] = [186, 181]
 
 /** Humanoid bodies that read well at a desk; the rest of the gallery is the fallback pool. */
 const PREFERRED_BODIES = [
@@ -202,11 +211,25 @@ function stopDomEvent(event: { stopPropagation: () => void; nativeEvent?: Event 
   native?.stopImmediatePropagation?.()
 }
 
+/** Label fields only, as one string, so streaming text doesn't re-render every label. */
+function useLabelInfo(agentId: string): { name: string; status: string; label: string; readOnly: boolean } | null {
+  const key = useOasisStore(s => {
+    const agent = s.agentEngine.agents[agentId]
+    if (!agent) return ''
+    return [agentDisplayName(agent), effectiveStatus(agent), agent.readOnly ? 'observing' : statusLabel({ status: effectiveStatus(agent), unseen: agent.unseen }), agent.readOnly ? '1' : ''].join('\u0001')
+  })
+  return useMemo(() => {
+    if (!key) return null
+    const [name, status, label, readOnly] = key.split('\u0001')
+    return { name, status, label, readOnly: readOnly === '1' }
+  }, [key])
+}
+
 function StationLabel({ agentId, nearby }: { agentId: string; nearby: boolean }) {
-  const agent = useOasisStore(s => s.agentEngine.agents[agentId])
-  if (!agent) return null
-  const color = statusColor(agent.status)
-  const alarm = agent.status === 'needs-decision'
+  const info = useLabelInfo(agentId)
+  if (!info) return null
+  const color = statusColor(info.status)
+  const alarm = info.status === 'needs-decision'
   return (
     <div className="pointer-events-none flex select-none flex-col items-center gap-1" style={{ transform: 'translateY(-50%)' }}>
       {alarm && (
@@ -216,8 +239,8 @@ function StationLabel({ agentId, nearby }: { agentId: string; nearby: boolean })
       )}
       <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full border bg-slate-950/80 px-2.5 py-1 text-[11px] font-bold text-white shadow-[0_6px_18px_rgba(0,0,0,0.45)] backdrop-blur" style={{ borderColor: `${color}aa` }}>
         <span className="h-2 w-2 rounded-full" style={{ background: color, boxShadow: `0 0 8px ${color}` }} />
-        <span className="max-w-[160px] truncate">{agentDisplayName(agent)}</span>
-        <span className="font-normal text-white/55">{agent.readOnly ? 'observing' : statusLabel(agent)}</span>
+        <span className="max-w-[160px] truncate">{info.name}</span>
+        <span className="font-normal text-white/55">{info.label}</span>
       </div>
       {nearby && (
         <div className="rounded-md border border-white/25 bg-black/75 px-2 py-0.5 font-mono text-[11px] font-bold text-white">
@@ -232,7 +255,7 @@ function StationLabel({ agentId, nearby }: { agentId: string; nearby: boolean })
 function DeskWindow({ agentId, nearby }: { agentId: string; nearby: boolean }) {
   const agent = useOasisStore(s => s.agentEngine.agents[agentId])
   if (!agent) return null
-  const color = agent.readOnly ? VILLAGE_OBSERVED_COLOR : statusColor(agent.status)
+  const color = agent.readOnly ? VILLAGE_OBSERVED_COLOR : statusColor(effectiveStatus(agent))
   return (
     <div
       data-ui-panel="village-desk-window"
@@ -254,26 +277,42 @@ function DeskWindow({ agentId, nearby }: { agentId: string; nearby: boolean }) {
   )
 }
 
-function VillageStation({ agentId, placement, avatarUrl }: { agentId: string; placement: VillageStationPlacement; avatarUrl: string }) {
-  const status = useOasisStore(s => s.agentEngine.agents[agentId]?.status || 'idle')
+/** One VRM that fails to load (404, bad file) shows a placeholder instead of taking the scene down. */
+class VillageBodyBoundary extends Component<{ color: string; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+  componentDidCatch(error: Error) {
+    console.warn(`[village] agent body failed to load: ${error.message}`)
+  }
+  render() {
+    return this.state.failed ? <AvatarPlaceholder color={this.props.color} /> : this.props.children
+  }
+}
+
+const NO_RAYCAST = () => {}
+
+function VillageStation({ agentId, placement, avatarUrl, windowVisible, overlayZ }: {
+  agentId: string
+  placement: VillageStationPlacement
+  avatarUrl: string
+  windowVisible: boolean
+  overlayZ: [number, number]
+}) {
+  const status = useOasisStore(s => {
+    const agent = s.agentEngine.agents[agentId]
+    return agent ? effectiveStatus(agent) : 'idle'
+  })
   const kind = useOasisStore(s => s.agentEngine.agents[agentId]?.kind || 'owned')
   const unseen = useOasisStore(s => Boolean(s.agentEngine.agents[agentId]?.unseen))
   const name = useOasisStore(s => s.agentEngine.agents[agentId]?.name || agentId)
   const focused = useOasisStore(s => s.agentEngine.focusedAgentId === agentId)
   const nearby = useOasisStore(s => s.agentEngine.nearbyAgentId === agentId)
+  // While placing or painting, the desk must not swallow the clicks meant for the ground plane.
+  const blocked = useInputManager(s => isVillageFocusBlocked(s.inputState))
   const color = statusColor(status)
   const observed = kind !== 'owned'
-  const [windowVisible, setWindowVisible] = useState(true)
-  const frame = useRef(0)
-  const worldWindow = useMemo(() => new THREE.Vector3(...stationLocalToWorld(placement, STATION.window)), [placement])
-
-  useFrame(({ camera }) => {
-    frame.current = (frame.current + 1) % 15
-    if (frame.current !== 0) return
-    const distance = camera.position.distanceTo(worldWindow)
-    const next = windowVisible ? distance < WINDOW_DISTANCE + 2 : distance < WINDOW_DISTANCE
-    if (next !== windowVisible) setWindowVisible(next)
-  })
 
   const onClick = (event: ThreeEvent<MouseEvent>) => {
     event.stopPropagation()
@@ -287,19 +326,22 @@ function VillageStation({ agentId, placement, avatarUrl }: { agentId: string; pl
       <group position={STATION.avatar}>
         <StatusRing color={color} status={status} observed={observed} unseen={unseen} />
         {observed && <HologramField />}
-        <Suspense fallback={<AvatarPlaceholder color={color} />}>
-          <VRMCatalogRenderer
-            key={avatarUrl}
-            path={avatarUrl}
-            scale={1}
-            displayName={name}
-            activityAnimationId={status === 'working' ? WORK_ANIMATION_ID : null}
-          />
-        </Suspense>
+        <VillageBodyBoundary key={avatarUrl} color={color}>
+          <Suspense fallback={<AvatarPlaceholder color={color} />}>
+            {/* Own cache entry (#village): a world NPC on the same VRM keeps its own scene and mixer. */}
+            <VRMCatalogRenderer
+              path={`${avatarUrl}#village`}
+              scale={1}
+              displayName={name}
+              activityAnimationId={status === 'working' ? WORK_ANIMATION_ID : null}
+            />
+          </Suspense>
+        </VillageBodyBoundary>
       </group>
       {/* Click target enclosing desk + avatar (in front of the VRM's own proxy box). */}
       <mesh
         position={STATION.hitCenter}
+        raycast={blocked ? NO_RAYCAST : THREE.Mesh.prototype.raycast}
         onClick={onClick}
         onPointerDown={(event) => {
           event.stopPropagation()
@@ -314,11 +356,11 @@ function VillageStation({ agentId, placement, avatarUrl }: { agentId: string; pl
         <boxGeometry args={STATION.hitSize} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
-      <Html position={STATION.label} center distanceFactor={9} zIndexRange={OVERLAY_Z} style={{ pointerEvents: 'none' }}>
+      <Html position={STATION.label} center distanceFactor={9} zIndexRange={overlayZ} style={{ pointerEvents: 'none' }}>
         <StationLabel agentId={agentId} nearby={nearby && !focused} />
       </Html>
       {windowVisible && !focused && (
-        <Html transform position={STATION.window} distanceFactor={1.8} zIndexRange={OVERLAY_Z} style={{ pointerEvents: 'auto' }}>
+        <Html transform position={STATION.window} distanceFactor={1.8} zIndexRange={overlayZ} style={{ pointerEvents: 'auto' }}>
           <DeskWindow agentId={agentId} nearby={nearby} />
         </Html>
       )}
@@ -326,11 +368,42 @@ function VillageStation({ agentId, placement, avatarUrl }: { agentId: string; pl
   )
 }
 
+/**
+ * Live desk windows are full DOM trees under a CSS 3D transform: keep only the nearest few, and
+ * only within reading distance (re-evaluated a few times per second, with hysteresis).
+ */
+function useVisibleDeskWindows(placements: Map<string, VillageStationPlacement>): Set<string> {
+  const [key, setKey] = useState('')
+  const frame = useRef(0)
+  const keyRef = useRef('')
+  const point = useMemo(() => new THREE.Vector3(), [])
+  useFrame(({ camera }) => {
+    frame.current = (frame.current + 1) % 15
+    if (frame.current !== 0) return
+    const visible = new Set(keyRef.current ? keyRef.current.split('|') : [])
+    const ranked: Array<[string, number]> = []
+    for (const [id, placement] of placements) {
+      point.set(...stationLocalToWorld(placement, STATION.window))
+      const distance = camera.position.distanceTo(point)
+      const limit = visible.has(id) ? WINDOW_DISTANCE + 2 : WINDOW_DISTANCE
+      if (distance < limit) ranked.push([id, distance])
+    }
+    ranked.sort((a, b) => a[1] - b[1])
+    const next = ranked.slice(0, MAX_DESK_WINDOWS).map(([id]) => id).sort().join('|')
+    if (next !== keyRef.current) {
+      keyRef.current = next
+      setKey(next)
+    }
+  })
+  return useMemo(() => new Set(key ? key.split('|') : []), [key])
+}
+
 // ─── plaza + empty state ────────────────────────────────────────────────────
 
 function PlazaSign({ position, children }: { position: Vec3; children: ReactNode }) {
+  const mobile = useIsMobileOasis()
   return (
-    <Html position={position} center distanceFactor={10} zIndexRange={OVERLAY_Z}>
+    <Html position={position} center distanceFactor={10} zIndexRange={mobile ? OVERLAY_Z_MOBILE : OVERLAY_Z}>
       <div
         data-ui-panel="village-sign"
         className="flex w-[280px] flex-col items-center gap-2 rounded-xl border border-emerald-300/30 bg-slate-950/85 px-4 py-3 text-center text-white shadow-[0_0_40px_rgba(16,185,129,0.18)]"
@@ -508,13 +581,26 @@ export function VillageWorld() {
 
   useEffect(() => () => setVillageStations(new Map()), [])
 
+  const visibleWindows = useVisibleDeskWindows(placements)
+  const mobile = useIsMobileOasis()
+  const overlayZ = mobile ? OVERLAY_Z_MOBILE : OVERLAY_Z
+
   return (
     <group name="oasis-village">
       <VillagePlaza empty={roster.length === 0} origin={origin} />
       {roster.map(agent => {
         const placement = placements.get(agent.id)
         if (!placement) return null
-        return <VillageStation key={agent.id} agentId={agent.id} placement={placement} avatarUrl={avatars[agent.id]} />
+        return (
+          <VillageStation
+            key={agent.id}
+            agentId={agent.id}
+            placement={placement}
+            avatarUrl={avatars[agent.id]}
+            windowVisible={visibleWindows.has(agent.id)}
+            overlayZ={overlayZ}
+          />
+        )
       })}
       <VillageCameraRig />
     </group>

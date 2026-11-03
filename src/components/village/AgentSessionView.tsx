@@ -4,12 +4,10 @@
 // Mounted in the 2D session panel and in each desk's 3D window. Shows text, tool cards, todos,
 // subagents, turn outcomes, the context meter and permission / question / plan cards.
 
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { memo, useMemo, useState, type ReactNode } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
-import type { AgentLogEntry, EngineAgentState, EngineDecisionState } from '../../store/slices/agentEngineSlice'
-import type { EngineQuestion } from '../../lib/agent-engine-types'
-import { getAgentEngineClient } from '../../lib/agent-engine-client'
-import { showNotice } from '../forge/GlobalNotice'
+import { effectiveStatus, type AgentLogEntry, type EngineAgentState } from '../../store/slices/agentEngineSlice'
+import { DecisionCard } from './DecisionCards'
 import {
   VILLAGE_STATUS_COLOR,
   formatCost,
@@ -19,12 +17,6 @@ import {
 } from './village-status'
 
 export type SessionViewVariant = '2d' | '3d'
-
-function run(promise: Promise<unknown>, failure: string) {
-  promise.catch((error: unknown) => {
-    showNotice(`${failure}: ${error instanceof Error ? error.message : String(error)}`, 'error')
-  })
-}
 
 // ─── small pieces ───────────────────────────────────────────────────────────
 
@@ -82,196 +74,6 @@ function Clip({ text, limit, className = '' }: { text: string; limit: number; cl
           {open ? 'less' : `more (${text.length} chars)`}
         </button>
       )}
-    </div>
-  )
-}
-
-const BUTTON = 'rounded-md border px-2.5 py-1 text-[11px] font-bold transition disabled:cursor-not-allowed disabled:opacity-40'
-const ALLOW = `${BUTTON} border-emerald-300/40 bg-emerald-400/15 text-emerald-100 hover:bg-emerald-400/30`
-const NEUTRAL = `${BUTTON} border-sky-300/35 bg-sky-400/10 text-sky-100 hover:bg-sky-400/25`
-const DENY = `${BUTTON} border-rose-300/40 bg-rose-400/10 text-rose-100 hover:bg-rose-400/25`
-
-// ─── decisions ──────────────────────────────────────────────────────────────
-
-function inputPreview(decision: Pick<EngineDecisionState, 'toolName' | 'input'>): string {
-  const input = (decision.input || {}) as Record<string, unknown>
-  if (typeof input.command === 'string') return input.command
-  if (typeof input.file_path === 'string') {
-    const content = typeof input.content === 'string' ? `\n\n${input.content}` : typeof input.new_string === 'string' ? `\n\n${input.new_string}` : ''
-    return `${input.file_path}${content}`
-  }
-  if (typeof input.url === 'string') return input.url
-  try {
-    return JSON.stringify(input, null, 2)
-  } catch {
-    return ''
-  }
-}
-
-function QuestionForm({ agentId, decision, compact }: { agentId: string; decision: EngineDecisionState; compact: boolean }) {
-  const questions = useMemo(() => {
-    const raw = (decision.input as { questions?: EngineQuestion[] } | undefined)?.questions
-    return Array.isArray(raw) ? raw.filter(q => q && typeof q.question === 'string') : []
-  }, [decision.input])
-  const [picked, setPicked] = useState<Record<string, string[]>>({})
-  const [other, setOther] = useState<Record<string, string>>({})
-  const [busy, setBusy] = useState(false)
-  const client = getAgentEngineClient()
-
-  const submit = (answers: Record<string, string>) => {
-    setBusy(true)
-    client.answerQuestion(agentId, decision.requestId, answers)
-      .catch((error: unknown) => showNotice(`Answer failed: ${error instanceof Error ? error.message : String(error)}`, 'error'))
-      .finally(() => setBusy(false))
-  }
-  const single = questions.length === 1 && !questions[0].multiSelect
-  const answerFor = (q: EngineQuestion) => {
-    const text = (other[q.question] || '').trim()
-    if (text) return text
-    return (picked[q.question] || []).join(', ')
-  }
-  const complete = questions.length > 0 && questions.every(q => answerFor(q))
-
-  if (!questions.length) {
-    return (
-      <div className="flex flex-wrap gap-1.5">
-        <button type="button" className={ALLOW} disabled={busy} onClick={() => run(client.respondPermission(agentId, decision.requestId, { allow: true }), 'Allow failed')}>allow</button>
-        <button type="button" className={DENY} disabled={busy} onClick={() => run(client.dismissQuestion(agentId, decision.requestId), 'Dismiss failed')}>dismiss</button>
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex flex-col gap-2">
-      {questions.map(q => (
-        <div key={q.question} className="flex flex-col gap-1">
-          {q.header && <div className="text-[9px] font-black uppercase tracking-[0.16em] text-amber-200/70">{q.header}</div>}
-          <div className={`${compact ? 'text-[12px]' : 'text-[13px]'} font-semibold text-white`}>{q.question}</div>
-          <div className="flex flex-wrap gap-1.5">
-            {(q.options || []).map(option => {
-              const chosen = (picked[q.question] || []).includes(option.label)
-              return (
-                <button
-                  key={option.label}
-                  type="button"
-                  disabled={busy}
-                  title={option.description}
-                  className={chosen ? ALLOW : NEUTRAL}
-                  onClick={() => {
-                    if (single) {
-                      submit({ [q.question]: option.label })
-                      return
-                    }
-                    setPicked(prev => {
-                      const current = prev[q.question] || []
-                      const next = q.multiSelect
-                        ? (current.includes(option.label) ? current.filter(label => label !== option.label) : [...current, option.label])
-                        : [option.label]
-                      return { ...prev, [q.question]: next }
-                    })
-                  }}
-                >
-                  {option.label}
-                </button>
-              )
-            })}
-          </div>
-          {!compact && (
-            <input
-              value={other[q.question] || ''}
-              onChange={event => setOther(prev => ({ ...prev, [q.question]: event.target.value }))}
-              onKeyDown={event => {
-                event.stopPropagation()
-                if (event.key === 'Enter' && single && event.currentTarget.value.trim()) submit({ [q.question]: event.currentTarget.value.trim() })
-              }}
-              placeholder="or type your own answer"
-              className="rounded-md border border-white/10 bg-black/40 px-2 py-1 text-[12px] text-white placeholder:text-white/30 focus:border-amber-300/50 focus:outline-none"
-            />
-          )}
-        </div>
-      ))}
-      <div className="flex flex-wrap gap-1.5">
-        {!single && (
-          <button type="button" className={ALLOW} disabled={busy || !complete} onClick={() => submit(Object.fromEntries(questions.map(q => [q.question, answerFor(q)])))}>
-            send answers
-          </button>
-        )}
-        <button type="button" className={DENY} disabled={busy} onClick={() => run(client.dismissQuestion(agentId, decision.requestId), 'Dismiss failed')}>dismiss</button>
-      </div>
-    </div>
-  )
-}
-
-function PlanForm({ agentId, decision, compact }: { agentId: string; decision: EngineDecisionState; compact: boolean }) {
-  const plan = String((decision.input as { plan?: unknown } | undefined)?.plan || '')
-  const [feedback, setFeedback] = useState('')
-  const client = getAgentEngineClient()
-  return (
-    <div className="flex flex-col gap-2">
-      {plan && (
-        <div className={`${compact ? 'max-h-28' : 'max-h-64'} overflow-y-auto rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-[12px] leading-snug text-white/85`}>
-          <RichText text={plan} />
-        </div>
-      )}
-      {!compact && (
-        <input
-          value={feedback}
-          onChange={event => setFeedback(event.target.value)}
-          onKeyDown={event => event.stopPropagation()}
-          placeholder="feedback if you send it back to planning"
-          className="rounded-md border border-white/10 bg-black/40 px-2 py-1 text-[12px] text-white placeholder:text-white/30 focus:border-amber-300/50 focus:outline-none"
-        />
-      )}
-      <div className="flex flex-wrap gap-1.5">
-        <button type="button" className={ALLOW} onClick={() => run(client.respondPlan(agentId, decision.requestId, { approve: true }), 'Approve failed')}>approve plan</button>
-        {Boolean(decision.suggestions?.length) && (
-          <button type="button" className={NEUTRAL} title={JSON.stringify(decision.suggestions)} onClick={() => run(client.respondPlan(agentId, decision.requestId, { approve: true, always: true }), 'Approve failed')}>
-            approve + auto-accept edits
-          </button>
-        )}
-        <button type="button" className={DENY} onClick={() => run(client.respondPlan(agentId, decision.requestId, { approve: false, message: feedback.trim() || undefined }), 'Reply failed')}>
-          keep planning
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function PermissionForm({ agentId, decision, compact }: { agentId: string; decision: EngineDecisionState; compact: boolean }) {
-  const client = getAgentEngineClient()
-  const preview = inputPreview(decision)
-  return (
-    <div className="flex flex-col gap-2">
-      {decision.description && decision.description !== decision.summary && <div className="text-[12px] text-white/70">{decision.description}</div>}
-      {preview && <Clip text={preview} limit={compact ? 140 : 600} className="rounded-md border border-white/10 bg-black/40 px-2 py-1" />}
-      {decision.blockedPath && <div className="text-[11px] text-amber-200/80">outside the project: {decision.blockedPath}</div>}
-      <div className="flex flex-wrap gap-1.5">
-        <button type="button" className={ALLOW} onClick={() => run(client.respondPermission(agentId, decision.requestId, { allow: true }), 'Allow failed')}>allow</button>
-        {Boolean(decision.suggestions?.length) && (
-          <button type="button" className={NEUTRAL} title={JSON.stringify(decision.suggestions)} onClick={() => run(client.respondPermission(agentId, decision.requestId, { allow: true, always: true }), 'Allow failed')}>
-            allow always
-          </button>
-        )}
-        <button type="button" className={DENY} onClick={() => run(client.respondPermission(agentId, decision.requestId, { allow: false }), 'Deny failed')}>deny</button>
-      </div>
-    </div>
-  )
-}
-
-export function DecisionCard({ agentId, decision, compact }: { agentId: string; decision: EngineDecisionState; compact: boolean }) {
-  const title = decision.requestKind === 'question' ? 'Question for you' : decision.requestKind === 'plan' ? 'Plan ready for approval' : 'Permission needed'
-  return (
-    <div className="rounded-lg border border-amber-300/50 bg-amber-500/10 px-2.5 py-2 shadow-[0_0_24px_rgba(245,158,11,0.18)]">
-      <div className="mb-1.5 flex items-center justify-between gap-2">
-        <span className="text-[10px] font-black uppercase tracking-[0.16em] text-amber-200">{title}</span>
-        <span className="truncate font-mono text-[10px] text-amber-100/60">{decision.toolName}</span>
-      </div>
-      {decision.requestKind === 'permission' && <div className="mb-1.5 text-[12px] font-semibold text-white">{decision.summary || decision.toolName}</div>}
-      {decision.requestKind === 'question'
-        ? <QuestionForm agentId={agentId} decision={decision} compact={compact} />
-        : decision.requestKind === 'plan'
-          ? <PlanForm agentId={agentId} decision={decision} compact={compact} />
-          : <PermissionForm agentId={agentId} decision={decision} compact={compact} />}
     </div>
   )
 }
@@ -426,20 +228,12 @@ export interface AgentSessionViewProps {
 export function AgentSessionView({ agentId, variant, header }: AgentSessionViewProps) {
   const agent = useOasisStore(s => s.agentEngine.agents[agentId])
   const compact = variant === '3d'
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const stickRef = useRef(true)
+  const log = agent?.log
   const entries = useMemo(() => {
-    if (!agent) return []
-    const log = agent.log
-    if (!compact) return log.slice(-160)
+    if (!log) return []
     // The desk window shows the recent conversation, without tool noise from long ago.
-    return log.slice(-8)
-  }, [agent, compact])
-
-  useEffect(() => {
-    const el = scrollRef.current
-    if (el && stickRef.current) el.scrollTop = el.scrollHeight
-  }, [entries, agent?.live?.text, agent?.decisions.length])
+    return compact ? log.slice(-8) : log.slice(-160)
+  }, [log, compact])
 
   if (!agent) return null
   const decisions = agent.owned ? agent.decisions : []
@@ -453,14 +247,10 @@ export function AgentSessionView({ agentId, variant, header }: AgentSessionViewP
         <TodoList agent={agent} compact={compact} />
         <SubagentList agent={agent} compact={compact} />
       </div>
-      <div
-        ref={scrollRef}
-        onScroll={event => {
-          const el = event.currentTarget
-          stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
-        }}
-        className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-1 [scrollbar-width:thin]"
-      >
+      {/* column-reverse keeps the view pinned to the newest line without measuring on every
+          streamed delta; scrolling up still works and is not yanked back. */}
+      <div className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto pr-1 [scrollbar-width:thin]">
+      <div className="flex flex-col gap-1.5">
         {entries.length === 0 && !agent.live && (
           <div className="py-3 text-center text-[11px] text-white/35">
             {agent.owned ? 'No messages yet. Say hello.' : 'Waiting for the session to do something.'}
@@ -475,18 +265,20 @@ export function AgentSessionView({ agentId, variant, header }: AgentSessionViewP
         )}
         {!compact && decisions.map(decision => <DecisionCard key={decision.requestId} agentId={agent.id} decision={decision} compact={false} />)}
       </div>
+      </div>
     </div>
   )
 }
 
 /** Compact header for the 3D window (name, status, model, context, cost). */
 export function SessionWindowHeader({ agent, nearby }: { agent: EngineAgentState; nearby: boolean }) {
-  const color = statusColor(agent.status)
+  const status = effectiveStatus(agent)
+  const color = statusColor(status)
   return (
     <div className="flex shrink-0 flex-col gap-1 border-b pb-1.5" style={{ borderColor: `${color}55` }}>
       <div className="flex items-center justify-between gap-2">
         <span className="truncate text-[14px] font-black tracking-wide text-white">{agent.name}</span>
-        <StatusPill status={agent.status} label={agent.status === 'needs-decision' ? 'needs you' : agent.status} />
+        <StatusPill status={status} label={status === 'needs-decision' ? 'needs you' : status} />
       </div>
       <div className="flex items-center justify-between gap-2 text-[10px] text-white/50">
         <span className="truncate">{agent.readOnly ? `${agent.kind} · read-only` : modelLabel(agent)}{agent.statusReason ? ` · ${agent.statusReason}` : ''}</span>

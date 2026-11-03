@@ -122,6 +122,30 @@ describe('AgentEngineClient', () => {
     ])
   })
 
+  it('rejects a reply whose command result says ok:false (control requests that failed)', async () => {
+    const { client, sockets } = setup()
+    client.start()
+    sockets[0].serverOpen()
+    const mode = client.setPermissionMode('agent-a', 'plan')
+    sockets[0].serverSend({ type: 'reply', id: 1, ok: true, data: { ok: false, error: 'agent process not running' } })
+    await expect(mode).rejects.toThrow('agent process not running')
+  })
+
+  it('marks an answer in flight until the engine resolves it, and clears it when sending fails', async () => {
+    const { client, sockets, actions } = setup()
+    client.start()
+    sockets[0].serverOpen()
+    const ok = client.respondPermission('agent-a', 'req-1', { allow: true })
+    expect(actions.at(-1)).toMatchObject({ type: 'decision/pending', requestId: 'req-1', pending: true })
+    sockets[0].serverSend({ type: 'reply', id: 1, ok: true, data: { ok: true } })
+    await ok
+    expect(actions.filter(a => a.type === 'decision/pending')).toHaveLength(1) // the engine's permission.resolved clears it
+    const failed = client.answerQuestion('agent-a', 'req-2', { q: 'a' })
+    sockets[0].serverSend({ type: 'reply', id: 2, ok: false, error: 'no pending request req-2' })
+    await expect(failed).rejects.toThrow('no pending request')
+    expect(actions.at(-1)).toMatchObject({ type: 'decision/pending', requestId: 'req-2', pending: false })
+  })
+
   it('rejects commands while offline instead of queueing them', async () => {
     const { client } = setup()
     await expect(client.listSessions()).rejects.toThrow(/offline/)

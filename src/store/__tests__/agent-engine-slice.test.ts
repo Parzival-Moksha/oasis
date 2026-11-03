@@ -4,6 +4,8 @@ import {
   agentEngineReducer,
   createAgentEngineSlice,
   createInitialAgentEngineState,
+  effectiveStatus,
+  isDecisionInFlight,
   selectAttentionQueue,
   selectNextAgentForN,
   type AgentEngineAction,
@@ -332,6 +334,99 @@ describe('agentEngineReducer: snapshots, focus, sessions', () => {
     expect(agentEngineReducer(state, { type: 'picker', open: false })).toBe(state)
     expect(agentEngineReducer(state, { type: 'nearby', agentId: null })).toBe(state)
     expect(agentEngineReducer(state, { type: 'focus', agentId: null })).toBe(state)
+  })
+})
+
+describe('review fixes (2026-11-03)', () => {
+  const question = {
+    requestId: 'req-q',
+    requestKind: 'question',
+    toolName: 'AskUserQuestion',
+    summary: 'Question: tea or coffee?',
+  }
+
+  it('#2 keeps an agent with an open decision first in line even after a mid-turn message flips it to working', () => {
+    let state = hello([snap('agent-a', { status: 'working' }), snap('agent-b', { status: 'working' })])
+    state = events(state,
+      ev('agent-a', 'turn.end', { outcome: 'done-waiting' }),
+      ev('agent-a', 'status', { status: 'waiting' }),
+      ev('agent-b', 'permission.request', question),
+      ev('agent-b', 'status', { status: 'needs-decision', reason: 'question' }),
+      ev('agent-b', 'user.sent', { uuid: 'u9', text: 'also this', midTurn: true }),
+      ev('agent-b', 'status', { status: 'working', reason: 'message queued mid-turn' }),
+    )
+    expect(selectAttentionQueue(state)).toEqual(['agent-b', 'agent-a'])
+    expect(selectNextAgentForN(state)).toBe('agent-b')
+    expect(effectiveStatus(state.agents['agent-b'])).toBe('needs-decision')
+    expect(effectiveStatus(state.agents['agent-a'])).toBe('waiting')
+  })
+
+  it('#3 keeps "finished while unseen" across a reconnect and flags turns that ended while disconnected', () => {
+    let state = hello([snap('agent-a', { status: 'working' }), snap('agent-b', { status: 'working' }), snap('agent-c', { status: 'working' })])
+    state = events(state,
+      ev('agent-a', 'turn.end', { outcome: 'done-waiting' }),
+      ev('agent-a', 'status', { status: 'waiting' }),
+    )
+    state = run(state, { type: 'focus', agentId: 'agent-c' })
+    const before = state
+    const later = clock + 1000
+    const backlogB = [ev('agent-b', 'status', { status: 'working' }), { ...ev('agent-b', 'turn.end', { outcome: 'done-waiting' }), ts: later }, { ...ev('agent-b', 'status', { status: 'waiting' }), ts: later + 1 }]
+    const backlogC = [{ ...ev('agent-c', 'turn.end', { outcome: 'done-waiting' }), ts: later }]
+    state = agentEngineReducer(before, {
+      type: 'hello',
+      at: later + 5,
+      agents: [snap('agent-a', { status: 'waiting' }), snap('agent-b', { status: 'waiting' }), snap('agent-c', { status: 'waiting' })],
+      backlog: { 'agent-b': backlogB as EngineEvent[], 'agent-c': backlogC as EngineEvent[] },
+    })
+    expect(state.agents['agent-a'].unseen).toBe(true) // kept
+    expect(state.agents['agent-b'].unseen).toBe(true) // finished while we were away
+    expect(state.agents['agent-c'].unseen).toBe(false) // the owner is looking at it
+    expect(selectAttentionQueue(state)).toEqual(['agent-a', 'agent-b'])
+  })
+
+  it('#3 keeps an unseen agent in the N queue after an engine restart reports it idle', () => {
+    let state = hello([snap('agent-a', { status: 'working' })])
+    state = events(state, ev('agent-a', 'turn.end', { outcome: 'done-waiting' }), ev('agent-a', 'status', { status: 'waiting' }))
+    // The restarted engine resumes the session as a fresh process: status idle, backlog has no turn.
+    state = agentEngineReducer(state, { type: 'hello', at: clock + 5000, agents: [snap('agent-a', { status: 'idle', statusReason: 'ready' })], backlog: { 'agent-a': [ev('agent-a', 'status', { status: 'idle', reason: 'ready' })] } })
+    expect(state.agents['agent-a']).toMatchObject({ status: 'idle', unseen: true })
+    expect(effectiveStatus(state.agents['agent-a'])).toBe('waiting')
+    expect(selectAttentionQueue(state)).toEqual(['agent-a'])
+    // Working again (a new turn) clears it as usual.
+    state = events(state, ev('agent-a', 'status', { status: 'working' }))
+    expect(selectAttentionQueue(state)).toEqual([])
+  })
+
+  it('#3 still starts a fresh page load with nothing marked unseen', () => {
+    const state = hello([snap('agent-a', { status: 'waiting' })], { 'agent-a': [ev('agent-a', 'turn.end', { outcome: 'done-waiting' })] })
+    expect(state.agents['agent-a'].unseen).toBe(false)
+  })
+
+  it('#12 lets a dismissed hook agent come back when the engine lists it again', () => {
+    let state = hello([snap('hook-1234', { kind: 'hook' })])
+    state = events(state, ev('hook-1234', 'removed'))
+    expect(state.agents['hook-1234']).toBeUndefined()
+    state = agentEngineReducer(state, { type: 'agents', at: clock, agents: [snap('hook-1234', { kind: 'hook', status: 'working' })] })
+    expect(state.agents['hook-1234']).toMatchObject({ status: 'working' })
+    state = events(state, ev('hook-1234', 'tool.start', { toolUseId: 't1', name: 'Bash', summary: 'Bash: ls' }))
+    expect(state.agents['hook-1234'].log.at(-1)).toMatchObject({ type: 'tool', key: 't:t1' })
+  })
+
+  it('#13 tracks answers in flight so every card can disable itself', () => {
+    let state = hello([snap('agent-b', { status: 'needs-decision', permissions: [{ ...question, requestKind: 'question' }] })])
+    state = run(state, { type: 'decision/pending', requestId: 'req-q', pending: true })
+    expect(isDecisionInFlight(state, 'req-q')).toBe(true)
+    state = run(state, { type: 'decision/pending', requestId: 'req-q', pending: false })
+    expect(isDecisionInFlight(state, 'req-q')).toBe(false)
+    state = run(state, { type: 'decision/pending', requestId: 'req-q', pending: true })
+    state = events(state, ev('agent-b', 'permission.resolved', { requestId: 'req-q', behavior: 'allow' }))
+    expect(isDecisionInFlight(state, 'req-q')).toBe(false)
+  })
+
+  it('#8 folds a permission-mode change so the picker does not snap back', () => {
+    let state = hello([snap('agent-a', { permissionMode: 'default' })])
+    state = events(state, ev('agent-a', 'mode', { permissionMode: 'plan' }))
+    expect(state.agents['agent-a']).toMatchObject({ permissionMode: 'plan', effectivePermissionMode: 'plan' })
   })
 })
 

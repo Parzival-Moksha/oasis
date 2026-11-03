@@ -464,6 +464,8 @@ function MobilePrimaryActionButton({
   const terrainBrushPanelOpen = useOasisStore(s => s.terrainBrushPanelOpen)
   const terrainBrushMode = useOasisStore(s => s.terrainBrushMode)
   const terrainBrushDirection = useOasisStore(s => s.terrainBrushDirection)
+  // Village profile: next to an agent the button talks to it (always null outside the village).
+  const villageTalkReady = useOasisStore(s => Boolean(s.agentEngine.nearbyAgentId && !s.agentEngine.focusedAgentId))
   const brushStrokeTimerRef = useRef<number | null>(null)
 
   const stopBrushStroke = useCallback((eventName?: string) => {
@@ -499,6 +501,10 @@ function MobilePrimaryActionButton({
       if (nearbyAction.disabled) return
       void useOasisStore.getState().interactSpatialWebObject(nearbyAction.id, 'press')
     }
+  } else if (villageTalkReady) {
+    label = 'Talk'
+    tone = 'cyan'
+    onTap = () => { window.dispatchEvent(new CustomEvent('oasis:village-talk')) }
   } else if (spellControlsEnabled && isCombatSpell(selectedSpellId) && selectedSpellId) {
     // FIRE button reads the spell name from the registry — works for firebolt
     // today, ready for lightning/ice once their cast paths land.

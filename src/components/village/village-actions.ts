@@ -9,13 +9,16 @@ import { useOasisStore } from '../../store/oasisStore'
 import { useInputManager, type InputState } from '../../lib/input-manager'
 import { selectNextAgentForN } from '../../store/slices/agentEngineSlice'
 import { getCameraSnapshot } from '../../lib/camera-bridge'
-import { getPlayerAvatarPose, requestPlayerAvatarTeleport } from '../../lib/player-avatar-runtime'
+import { getPlayerAvatarPose, markThirdPersonCameraRestored, requestPlayerAvatarTeleport } from '../../lib/player-avatar-runtime'
+import { showNotice } from '../forge/GlobalNotice'
 import { findNearestStation, type Vec3 } from '../../lib/village/village-layout'
 
 export const VILLAGE_SESSION_LAYER = 'village-session'
 export const VILLAGE_PICKER_LAYER = 'village-picker'
 /** Walk this close (meters, ground plane) to an agent to get the "E talk" hint. */
 export const VILLAGE_TALK_RADIUS = 3.4
+/** ...and within this height (the avatar stands on the ground; a noclip camera may fly above). */
+export const VILLAGE_TALK_HEIGHT = 2.5
 
 // ─── station registry (VillageWorld writes, proximity + camera rig read) ─────
 
@@ -106,6 +109,9 @@ export function restoreVillageCameraPose(): void {
   rigCamera.quaternion.copy(savedPose.quaternion)
   rigCamera.updateMatrixWorld()
   savedPose = null
+  // Exactly the pose third-person left behind: tell PlayerAvatar to keep its own azimuth instead
+  // of re-deriving it from the camera offset (that adds ~8° of shoulder bias per visit).
+  if (useInputManager.getState().inputState === 'third-person') markThirdPersonCameraRestored()
 }
 
 export function discardVillageCameraPose(): void {
@@ -118,9 +124,19 @@ export function isFocusInputState(state: InputState): boolean {
   return state === 'agent-focus' || state === 'ui-focused'
 }
 
-export function focusVillageAgent(agentId: string): void {
+/** Placing an object or painting owns the pointer and the camera's way back: don't take over. */
+export function isVillageFocusBlocked(state: InputState = useInputManager.getState().inputState): boolean {
+  return state === 'placement' || state === 'paint'
+}
+
+export function focusVillageAgent(agentId: string): boolean {
   const store = useOasisStore.getState()
-  if (!store.agentEngine.agents[agentId]) return
+  if (!store.agentEngine.agents[agentId]) return false
+  if (isVillageFocusBlocked()) {
+    // enterAgentFocus would remember `placement` as the camera to return to (noclip after Esc).
+    showNotice('Finish or cancel what you are placing first (Esc)', 'warn')
+    return false
+  }
   // One camera owner at a time: drop any world agent-window / picture zoom first.
   if (store.focusedAgentWindowId) store.focusAgentWindow(null)
   if (store.focusedImageId) store.focusImage(null)
@@ -128,18 +144,29 @@ export function focusVillageAgent(agentId: string): void {
   store.agentEngineDispatch({ type: 'focus', agentId })
   const input = useInputManager.getState()
   if (input.inputState !== 'agent-focus') input.enterAgentFocus()
+  return true
+}
+
+/**
+ * Hand input and camera back after the village focus ended, whoever ended it (Esc, a dismissed
+ * agent, an observer that vanished on reconnect). Idempotent.
+ */
+export function releaseVillageFocusInput(): void {
+  const input = useInputManager.getState()
+  input.popUILayer(VILLAGE_SESSION_LAYER)
+  const store = useOasisStore.getState()
+  if (store.focusedAgentWindowId || store.focusedImageId) return // a world window owns agent-focus now
+  const after = useInputManager.getState()
+  if (isFocusInputState(after.inputState) && after._uiLayerStack.length === 0) after.returnToPrevious()
+  // If another panel keeps the UI focused we still hand the camera back.
+  restoreVillageCameraPose()
 }
 
 /** Back out of the session view: clears focus, returns the input state and restores the camera. */
 export function leaveVillageFocus(): void {
   const store = useOasisStore.getState()
   if (store.agentEngine.focusedAgentId) store.agentEngineDispatch({ type: 'focus', agentId: null })
-  const input = useInputManager.getState()
-  input.popUILayer(VILLAGE_SESSION_LAYER)
-  const after = useInputManager.getState()
-  if (isFocusInputState(after.inputState) && after._uiLayerStack.length === 0) after.returnToPrevious()
-  // If another panel keeps the UI focused we still hand the camera back.
-  restoreVillageCameraPose()
+  releaseVillageFocusInput()
 }
 
 export function openVillagePicker(open = true): void {
@@ -161,7 +188,7 @@ export function getVillageActorPosition(): Vec3 | null {
 
 export function updateVillageProximity(): void {
   const store = useOasisStore.getState()
-  const nearby = findNearestStation(getVillageActorPosition(), getVillageAnchors(), VILLAGE_TALK_RADIUS)
+  const nearby = findNearestStation(getVillageActorPosition(), getVillageAnchors(), VILLAGE_TALK_RADIUS, VILLAGE_TALK_HEIGHT)
   if (nearby !== store.agentEngine.nearbyAgentId) store.agentEngineDispatch({ type: 'nearby', agentId: nearby })
 }
 
@@ -184,6 +211,11 @@ export function handleVillageKeyDown(event: KeyboardEvent): boolean {
   if (event.ctrlKey || event.metaKey || event.altKey || event.repeat) return false
   if (isTypingTarget(event.target)) return false
   const village = useOasisStore.getState().agentEngine
+  // Same gate as the world's own N key, plus the village session view itself (ui-focused while
+  // its panel is open). Placement, paint and other panels keep their keys (E is noclip "down").
+  const input = useInputManager.getState()
+  const inSessionView = input.inputState === 'ui-focused' && Boolean(village.focusedAgentId)
+  if (!input.can().enterFocuses && input.inputState !== 'agent-focus' && !inSessionView) return false
   if (event.code === 'KeyE') {
     const target = village.nearbyAgentId
     if (!target || village.focusedAgentId === target) return false

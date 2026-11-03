@@ -234,7 +234,7 @@ export class AgentEngineClient {
   }
 
   respondPermission(agentId: string, requestId: string, decision: { allow: boolean; always?: boolean; message?: string }) {
-    return this.cmd('respond', {
+    return this.respond({
       agentId,
       requestId,
       behavior: decision.allow ? 'allow' : 'deny',
@@ -245,21 +245,33 @@ export class AgentEngineClient {
 
   /** AskUserQuestion: `answers` maps each question's text to the chosen label(s). */
   answerQuestion(agentId: string, requestId: string, answers: Record<string, string>) {
-    return this.cmd('respond', { agentId, requestId, behavior: 'allow', answers })
+    return this.respond({ agentId, requestId, behavior: 'allow', answers })
   }
 
   dismissQuestion(agentId: string, requestId: string, message = 'The owner dismissed the question.') {
-    return this.cmd('respond', { agentId, requestId, behavior: 'deny', message })
+    return this.respond({ agentId, requestId, behavior: 'deny', message })
   }
 
   /** ExitPlanMode: approve (optionally applying the CLI's suggested mode), or send it back to planning. */
   respondPlan(agentId: string, requestId: string, decision: { approve: boolean; always?: boolean; message?: string }) {
-    return this.cmd('respond', {
+    return this.respond({
       agentId,
       requestId,
       behavior: decision.approve ? 'allow' : 'deny',
       ...(decision.approve && decision.always ? { always: true } : {}),
       ...(!decision.approve ? { message: decision.message || 'Keep planning. The owner did not approve this plan yet.' } : {}),
+    })
+  }
+
+  /**
+   * One answer per request: the slice marks it in flight (every card for it disables) until the
+   * engine's permission.resolved arrives, or until sending fails.
+   */
+  private respond(args: EngineCommandMap['respond']['args']) {
+    this.dispatch({ type: 'decision/pending', requestId: args.requestId, pending: true, at: this.now() })
+    return this.cmd('respond', args).catch((error: unknown) => {
+      this.dispatch({ type: 'decision/pending', requestId: args.requestId, pending: false, at: this.now() })
+      throw error
     })
   }
 
@@ -350,8 +362,12 @@ export class AgentEngineClient {
         if (!pending) return
         this.pending.delete(id)
         this.clearTimer(pending.timer)
-        if (message.ok) pending.resolve(message.data)
-        else pending.reject(new Error(message.error || `${pending.cmd} failed`))
+        // Control requests (setModel, setPermissionMode, interrupt) resolve to {ok:false, error}
+        // inside a successful reply on older engines: treat those as failures too.
+        const data = message.data as { ok?: unknown; error?: unknown } | null | undefined
+        const failedInside = Boolean(data && typeof data === 'object' && !Array.isArray(data) && data.ok === false)
+        if (message.ok && !failedInside) pending.resolve(message.data)
+        else pending.reject(new Error(message.error || (failedInside && data?.error ? String(data.error) : `${pending.cmd} failed`)))
         return
       }
       default:
