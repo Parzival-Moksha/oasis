@@ -6,6 +6,8 @@ import { useEffect } from 'react'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
 import { useInputManager } from '../../lib/input-manager'
 import { useOasisStore } from '../../store/oasisStore'
+import { effectiveStatus, selectAttentionQueue } from '../../store/slices/agentEngineSlice'
+import { playVillageChime, unlockVillageAudio } from './village-sound'
 import {
   VILLAGE_SESSION_LAYER,
   discardVillageCameraPose,
@@ -89,5 +91,35 @@ export function VillageController() {
     return () => window.clearInterval(timer)
   }, [])
 
+  // An agent starts needing you: a chime (heard from a background tab too) and "(2) " in the tab
+  // title. Browsers allow sound only after a click or key press, so every gesture (re)unlocks it.
+  useEffect(() => {
+    window.addEventListener('pointerdown', unlockVillageAudio, { capture: true })
+    window.addEventListener('keydown', unlockVillageAudio, { capture: true })
+    let known = new Set(selectAttentionQueue(useOasisStore.getState().agentEngine))
+    setAttentionTitle(known.size)
+    const unsubscribe = useOasisStore.subscribe((state, prev) => {
+      if (state.agentEngine === prev.agentEngine) return
+      const engine = state.agentEngine
+      const queue = selectAttentionQueue(engine)
+      if (queue.length !== known.size) setAttentionTitle(queue.length)
+      const fresh = queue.find(id => !known.has(id) && !(id === engine.focusedAgentId && document.visibilityState === 'visible'))
+      known = new Set(queue)
+      const agent = fresh ? engine.agents[fresh] : null
+      if (agent) playVillageChime(effectiveStatus(agent))
+    })
+    return () => {
+      window.removeEventListener('pointerdown', unlockVillageAudio, { capture: true })
+      window.removeEventListener('keydown', unlockVillageAudio, { capture: true })
+      unsubscribe()
+      setAttentionTitle(0)
+    }
+  }, [])
+
   return null
+}
+
+function setAttentionTitle(count: number): void {
+  const base = document.title.replace(/^\(\d+\) /, '')
+  document.title = count > 0 ? `(${count}) ${base}` : base
 }

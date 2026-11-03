@@ -10,7 +10,6 @@ import { useUILayer } from '../../lib/input-manager'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
 import type { EngineSessionMeta, SpawnAgentArgs } from '../../lib/agent-engine-types'
 import { DEFAULT_ANORAK_PRO_CWD, filterSessions, pickSuggestions } from '../../lib/village/village-sessions'
-import { showNotice } from '../forge/GlobalNotice'
 import { VILLAGE_PICKER_LAYER, focusVillageAgent, openVillagePicker } from './village-actions'
 import { cwdLabel, formatAgo, formatBytes } from './village-status'
 
@@ -24,6 +23,14 @@ const MODES = ['', 'default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions'
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
+
+/** Shown inside the picker: the global notice toast sits underneath this overlay. */
+interface PickerError {
+  message: string
+  action?: { label: string; run: () => void }
+}
+
+type ErrorSink = (error: PickerError | null) => void
 
 function useSessionLoader(open: boolean) {
   const dispatch = useOasisStore(s => s.agentEngineDispatch)
@@ -58,7 +65,7 @@ interface SpawnDefaults {
   permissionMode: string
 }
 
-function SessionRow({ session, defaults, onDone }: { session: EngineSessionMeta; defaults: SpawnDefaults; onDone: (agentId: string) => void }) {
+function SessionRow({ session, defaults, onDone, onError }: { session: EngineSessionMeta; defaults: SpawnDefaults; onDone: (agentId: string) => void; onError: ErrorSink }) {
   const [busy, setBusy] = useState<'spawn' | 'observe' | null>(null)
   const client = getAgentEngineClient()
   const name = (session.title || cwdLabel(session.cwd) || 'agent').slice(0, 32)
@@ -78,17 +85,19 @@ function SessionRow({ session, defaults, onDone }: { session: EngineSessionMeta;
     if (defaults.model) args.model = defaults.model
     if (defaults.permissionMode) args.permissionMode = defaults.permissionMode
     setBusy('spawn')
+    onError(null)
     client.spawnAgent(args)
       .then(agent => onDone(agent.id))
-      .catch(error => showNotice(`Spawn failed: ${describeError(error)}`, 'error'))
+      .catch(error => onError({ message: `Spawn failed: ${describeError(error)}` }))
       .finally(() => setBusy(null))
   }
 
   const observe = () => {
     setBusy('observe')
+    onError(null)
     client.observe(session.path, name)
       .then(agent => onDone(agent.id))
-      .catch(error => showNotice(`Observe failed: ${describeError(error)}`, 'error'))
+      .catch(error => onError({ message: `Observe failed: ${describeError(error)}` }))
       .finally(() => setBusy(null))
   }
 
@@ -145,20 +154,29 @@ function SessionRow({ session, defaults, onDone }: { session: EngineSessionMeta;
   )
 }
 
-function NewAgentForm({ defaults, onDone, initialCwd = '' }: { defaults: SpawnDefaults; onDone: (agentId: string) => void; initialCwd?: string }) {
+function NewAgentForm({ defaults, onDone, onError, initialCwd = '' }: { defaults: SpawnDefaults; onDone: (agentId: string) => void; onError: ErrorSink; initialCwd?: string }) {
   const [name, setName] = useState('')
   const [cwd, setCwd] = useState(initialCwd)
   const [busy, setBusy] = useState(false)
-  const submit = () => {
+  const submit = (createCwd = false) => {
     const folder = cwd.trim()
     if (!folder) return
     const args: SpawnAgentArgs = { name: name.trim() || cwdLabel(folder), cwd: folder }
+    if (createCwd) args.createCwd = true
     if (defaults.model) args.model = defaults.model
     if (defaults.permissionMode) args.permissionMode = defaults.permissionMode
     setBusy(true)
+    onError(null)
     getAgentEngineClient().spawnAgent(args)
       .then(agent => onDone(agent.id))
-      .catch(error => showNotice(`Spawn failed: ${describeError(error)}`, 'error'))
+      .catch(error => {
+        const message = describeError(error)
+        if (!createCwd && message.startsWith('cwd does not exist')) {
+          onError({ message: `The folder ${folder} does not exist yet.`, action: { label: 'create it and spawn', run: () => submit(true) } })
+        } else {
+          onError({ message: `Spawn failed: ${message}` })
+        }
+      })
       .finally(() => setBusy(false))
   }
   return (
@@ -175,7 +193,8 @@ function NewAgentForm({ defaults, onDone, initialCwd = '' }: { defaults: SpawnDe
   )
 }
 
-function Suggestions({ sessions, defaults, onDone }: { sessions: EngineSessionMeta[]; defaults: SpawnDefaults; onDone: (agentId: string) => void }) {
+/** Anorak Pro is always on offer; the 5 most recent sessions only while the village is empty. */
+function Suggestions({ sessions, defaults, onDone, onError, showRecent }: { sessions: EngineSessionMeta[]; defaults: SpawnDefaults; onDone: (agentId: string) => void; onError: ErrorSink; showRecent: boolean }) {
   const { anorak, recent } = useMemo(() => pickSuggestions(sessions, ANORAK_PRO_CWD), [sessions])
   const [busy, setBusy] = useState(false)
   const newAnorak = () => {
@@ -183,9 +202,10 @@ function Suggestions({ sessions, defaults, onDone }: { sessions: EngineSessionMe
     if (defaults.model) args.model = defaults.model
     if (defaults.permissionMode) args.permissionMode = defaults.permissionMode
     setBusy(true)
+    onError(null)
     getAgentEngineClient().spawnAgent(args)
       .then(agent => onDone(agent.id))
-      .catch(error => showNotice(`Spawn failed: ${describeError(error)}`, 'error'))
+      .catch(error => onError({ message: `Spawn failed: ${describeError(error)}` }))
       .finally(() => setBusy(false))
   }
   return (
@@ -201,10 +221,10 @@ function Suggestions({ sessions, defaults, onDone }: { sessions: EngineSessionMe
             {busy ? '…' : 'new session'}
           </button>
         </div>
-        {anorak && <div className="mt-2"><SessionRow session={{ ...anorak, title: `Anorak Pro: ${anorak.title}` }} defaults={defaults} onDone={onDone} /></div>}
+        {anorak && <div className="mt-2"><SessionRow session={{ ...anorak, title: `Anorak Pro: ${anorak.title}` }} defaults={defaults} onDone={onDone} onError={onError} /></div>}
       </div>
-      {recent.length > 0 && <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/45">Most recent</div>}
-      {recent.map(session => <SessionRow key={session.path} session={session} defaults={defaults} onDone={onDone} />)}
+      {showRecent && recent.length > 0 && <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/45">Most recent</div>}
+      {showRecent && recent.map(session => <SessionRow key={session.path} session={session} defaults={defaults} onDone={onDone} onError={onError} />)}
     </div>
   )
 }
@@ -217,10 +237,13 @@ export function SessionPicker() {
   const [query, setQuery] = useState('')
   const [shown, setShown] = useState(PAGE)
   const [defaults, setDefaults] = useState<SpawnDefaults>({ model: '', permissionMode: '' })
+  const [error, setError] = useState<PickerError | null>(null)
   useUILayer(VILLAGE_PICKER_LAYER, open)
   const { reload, loadOlder, limit } = useSessionLoader(open)
 
   const close = useCallback(() => openVillagePicker(false), [])
+
+  useEffect(() => { if (!open) setError(null) }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -282,11 +305,27 @@ export function SessionPicker() {
               <span className="text-white/35">apply to spawns below</span>
             </div>
 
-            <NewAgentForm defaults={defaults} onDone={onDone} />
+            <NewAgentForm defaults={defaults} onDone={onDone} onError={setError} />
+
+            {error && (
+              <div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg border border-red-300/35 bg-red-500/15 px-3 py-2 text-[12px] text-red-50">
+                <span className="min-w-0 flex-1 break-words">{error.message}</span>
+                {error.action && (
+                  <button
+                    type="button"
+                    onClick={() => { const run = error.action?.run; setError(null); run?.() }}
+                    className="rounded-md border border-red-200/40 bg-red-400/20 px-2 py-1 text-[11px] font-bold hover:bg-red-400/35"
+                  >
+                    {error.action.label}
+                  </button>
+                )}
+                <button type="button" aria-label="dismiss" onClick={() => setError(null)} className="rounded-md px-1.5 py-0.5 text-[12px] font-bold text-red-100/70 hover:bg-white/10">✕</button>
+              </div>
+            )}
 
             <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1 [scrollbar-width:thin]">
-              {rosterEmpty && !query && sessions.status === 'ready' && (
-                <Suggestions sessions={sessions.items} defaults={defaults} onDone={onDone} />
+              {!query && sessions.status === 'ready' && (
+                <Suggestions sessions={sessions.items} defaults={defaults} onDone={onDone} onError={setError} showRecent={rosterEmpty} />
               )}
               <div className="sticky top-0 z-10 flex items-center gap-2 bg-slate-950/95 py-1">
                 <input
@@ -303,7 +342,7 @@ export function SessionPicker() {
                 {sessions.status === 'loading' ? 'reading session metadata…' : sessions.status === 'error' ? `could not list sessions: ${sessions.error}` : `${filtered.length} of ${sessions.items.length} newest sessions${filtered.length > shown ? ` · showing ${shown}` : ''}`}
               </div>
               {filtered.slice(0, shown).map(session => (
-                <SessionRow key={session.path} session={session} defaults={defaults} onDone={onDone} />
+                <SessionRow key={session.path} session={session} defaults={defaults} onDone={onDone} onError={setError} />
               ))}
               {filtered.length > shown && (
                 <button type="button" onClick={() => setShown(n => n + PAGE)} className="rounded-md border border-white/10 bg-white/5 py-1.5 text-[11px] font-bold text-white/70 hover:bg-white/10">

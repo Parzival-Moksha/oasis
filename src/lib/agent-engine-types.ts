@@ -298,6 +298,8 @@ export interface SpawnAgentArgs {
   effort?: string
   /** Resume as a copy (`--fork-session`). Required when the session is open in another process. */
   fork?: boolean
+  /** New agents only: create the working folder if it does not exist yet. */
+  createCwd?: boolean
 }
 
 export type RespondBehavior = 'allow' | 'deny'

@@ -2,11 +2,12 @@
 
 // ░▒▓ VILLAGE HUD — engine status, the roster as chips, "E talk" / "N next" hints ▓▒░
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
 import { effectiveStatus, selectAttentionQueue } from '../../store/slices/agentEngineSlice'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
-import { focusVillageAgent, openVillagePicker } from './village-actions'
+import { focusVillageAgent, isInVillagePlaza, openVillagePicker, subscribeVillagePlaza } from './village-actions'
+import { isVillageSoundOn, setVillageSoundOn, subscribeVillageSound } from './village-sound'
 import { VILLAGE_OBSERVED_COLOR, statusColor } from './village-status'
 
 interface ChipInfo {
@@ -68,6 +69,8 @@ export function VillageHud() {
   const nearbyId = useOasisStore(s => s.agentEngine.nearbyAgentId)
   const nearbyName = useOasisStore(s => (s.agentEngine.nearbyAgentId ? s.agentEngine.agents[s.agentEngine.nearbyAgentId]?.name : null))
   const connected = useOasisStore(s => s.agentEngine.connection.status === 'open')
+  const inPlaza = useSyncExternalStore(subscribeVillagePlaza, isInVillagePlaza, () => false)
+  const soundOn = useSyncExternalStore(subscribeVillageSound, isVillageSoundOn, () => true)
 
   const chips: ChipInfo[] = chipsKey ? chipsKey.split('\u0002').map(item => {
     const [id, name, status, unseen, kind] = item.split('\u0001')
@@ -112,6 +115,15 @@ export function VillageHud() {
         )}
         <button
           type="button"
+          onClick={() => setVillageSoundOn(!soundOn)}
+          className="shrink-0 rounded-md border border-white/10 bg-black/30 px-1.5 py-1 text-[12px] leading-none transition hover:bg-white/10"
+          title={soundOn ? 'A chime plays when an agent needs you (click to mute)' : 'Muted: click for a chime when an agent needs you'}
+          aria-label={soundOn ? 'Mute agent chimes' : 'Unmute agent chimes'}
+        >
+          {soundOn ? '🔔' : '🔕'}
+        </button>
+        <button
+          type="button"
           disabled={!connected}
           onClick={() => openVillagePicker(true)}
           className="shrink-0 rounded-md border border-emerald-300/40 bg-emerald-400/15 px-2.5 py-1 text-[11px] font-black text-emerald-50 transition hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-40"
@@ -125,6 +137,13 @@ export function VillageHud() {
         <div className="pointer-events-none fixed bottom-6 left-1/2 z-[170] -translate-x-1/2 rounded-lg border border-white/15 bg-slate-950/85 px-3 py-2 text-[12px] font-bold text-white shadow-[0_10px_30px_rgba(0,0,0,0.45)] backdrop-blur max-[700px]:bottom-28">
           <span className="mr-2 rounded bg-white/20 px-1.5 py-0.5 font-mono">E</span>
           Talk to {nearbyName || 'agent'}
+        </div>
+      )}
+
+      {inPlaza && !nearbyId && !focusedId && (
+        <div className="pointer-events-none fixed bottom-6 left-1/2 z-[170] -translate-x-1/2 rounded-lg border border-emerald-300/30 bg-slate-950/85 px-3 py-2 text-[12px] font-bold text-white shadow-[0_10px_30px_rgba(0,0,0,0.45)] backdrop-blur max-[700px]:bottom-28">
+          <span className="mr-2 rounded bg-white/20 px-1.5 py-0.5 font-mono">E</span>
+          Summon an agent
         </div>
       )}
     </>

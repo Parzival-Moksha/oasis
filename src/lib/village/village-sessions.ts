@@ -26,7 +26,7 @@ export function filterSessions(sessions: EngineSessionMeta[], query: string): En
   })
 }
 
-/** Empty-roster suggestions: Anorak Pro (newest session in its folder) and the 5 most recent sessions. */
+/** Picker suggestions: Anorak Pro (newest session in its folder) and the 5 most recent sessions. */
 export function pickSuggestions(
   sessions: EngineSessionMeta[],
   anorakCwd: string = DEFAULT_ANORAK_PRO_CWD,

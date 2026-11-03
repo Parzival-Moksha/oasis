@@ -100,10 +100,14 @@ const commands = {
     return sessions.map((s) => ({ ...s, ownedBy: owned.get(s.sessionId) || null, observedBy: observed.get(String(s.path).toLowerCase()) || null }));
   },
 
-  spawnAgent({ name, cwd, sessionId, model, permissionMode, effort, fork, force } = {}) {
+  spawnAgent({ name, cwd, sessionId, model, permissionMode, effort, fork, force, createCwd } = {}) {
     if (!cwd) throw new Error('cwd is required');
     cwd = path.resolve(cwd);
-    if (!fs.existsSync(cwd)) throw new Error(`cwd does not exist: ${cwd}`);
+    if (!fs.existsSync(cwd)) {
+      // Only on an explicit ask (the picker's "create it" button): a typo should not leave folders behind.
+      if (!createCwd || sessionId) throw new Error(`cwd does not exist: ${cwd}`);
+      fs.mkdirSync(cwd, { recursive: true });
+    }
     if (sessionId && !fork) {
       const dup = ownedAgents().find((a) => a.sessionId === sessionId);
       if (dup) throw new Error(`session ${sessionId} is already driven by agent ${dup.name}; use fork:true for a copy`);

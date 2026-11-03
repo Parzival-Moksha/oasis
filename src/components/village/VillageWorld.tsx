@@ -38,6 +38,7 @@ import {
   isVillageFocusBlocked,
   openVillagePicker,
   registerVillageCamera,
+  setVillagePlaza,
   setVillageStations,
   type VillageStationPlacement,
 } from './village-actions'
@@ -132,64 +133,6 @@ function VillageDesk({ color, working, observed }: { color: string; working: boo
   )
 }
 
-function StatusRing({ color, status, observed, unseen }: { color: string; status: string; observed: boolean; unseen: boolean }) {
-  const ringRef = useRef<THREE.Mesh>(null)
-  const beamRef = useRef<THREE.Mesh>(null)
-  const alarm = status === 'needs-decision' || status === 'error'
-  useFrame(({ clock }) => {
-    const t = clock.getElapsedTime()
-    if (ringRef.current) {
-      const pulse = alarm ? 1 + Math.sin(t * 5) * 0.12 : unseen ? 1 + Math.sin(t * 2.5) * 0.06 : status === 'working' ? 1 + Math.sin(t * 3) * 0.03 : 1
-      ringRef.current.scale.setScalar(pulse)
-    }
-    if (beamRef.current) {
-      const material = beamRef.current.material as THREE.MeshBasicMaterial
-      material.opacity = 0.1 + (Math.sin(t * 4) + 1) * 0.06
-    }
-  })
-  return (
-    <group>
-      <mesh ref={ringRef} rotation-x={-Math.PI / 2} position={[0, 0.03, 0]}>
-        <torusGeometry args={[0.56, 0.045, 12, 56]} />
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={1.8} toneMapped={false} />
-      </mesh>
-      <mesh rotation-x={-Math.PI / 2} position={[0, 0.02, 0]}>
-        <circleGeometry args={[0.52, 40]} />
-        <meshBasicMaterial color={color} transparent opacity={0.16} depthWrite={false} />
-      </mesh>
-      {observed && (
-        <mesh rotation-x={-Math.PI / 2} position={[0, 0.025, 0]}>
-          <ringGeometry args={[0.7, 0.74, 48, 1, 0, Math.PI * 2]} />
-          <meshBasicMaterial color={VILLAGE_OBSERVED_COLOR} transparent opacity={0.8} depthWrite={false} />
-        </mesh>
-      )}
-      {alarm && (
-        // A beacon you can see from across the village: this agent needs you.
-        <mesh ref={beamRef} position={[0, 3.2, 0]}>
-          <cylinderGeometry args={[0.3, 0.42, 6.4, 24, 1, true]} />
-          <meshBasicMaterial color={color} transparent opacity={0.16} depthWrite={false} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} />
-        </mesh>
-      )}
-    </group>
-  )
-}
-
-/** Observed sessions stand in a projection field: present, but not yours to drive. */
-function HologramField() {
-  const ref = useRef<THREE.Mesh>(null)
-  useFrame(({ clock }) => {
-    if (!ref.current) return
-    const material = ref.current.material as THREE.MeshBasicMaterial
-    material.opacity = 0.1 + Math.sin(clock.getElapsedTime() * 2) * 0.03
-  })
-  return (
-    <mesh ref={ref} position={[0, 1.0, 0]}>
-      <cylinderGeometry args={[0.5, 0.58, 2.05, 28, 1, true]} />
-      <meshBasicMaterial color={VILLAGE_OBSERVED_COLOR} transparent opacity={0.1} depthWrite={false} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} />
-    </mesh>
-  )
-}
-
 function AvatarPlaceholder({ color }: { color: string }) {
   return (
     <group>
@@ -212,29 +155,35 @@ function stopDomEvent(event: { stopPropagation: () => void; nativeEvent?: Event 
 }
 
 /** Label fields only, as one string, so streaming text doesn't re-render every label. */
-function useLabelInfo(agentId: string): { name: string; status: string; label: string; readOnly: boolean } | null {
+function useLabelInfo(agentId: string): { name: string; status: string; label: string; readOnly: boolean; unseen: boolean } | null {
   const key = useOasisStore(s => {
     const agent = s.agentEngine.agents[agentId]
     if (!agent) return ''
-    return [agentDisplayName(agent), effectiveStatus(agent), agent.readOnly ? 'observing' : statusLabel({ status: effectiveStatus(agent), unseen: agent.unseen }), agent.readOnly ? '1' : ''].join('\u0001')
+    return [agentDisplayName(agent), effectiveStatus(agent), agent.readOnly ? 'observing' : statusLabel({ status: effectiveStatus(agent), unseen: agent.unseen }), agent.readOnly ? '1' : '', agent.unseen ? '1' : ''].join('\u0001')
   })
   return useMemo(() => {
     if (!key) return null
-    const [name, status, label, readOnly] = key.split('\u0001')
-    return { name, status, label, readOnly: readOnly === '1' }
+    const [name, status, label, readOnly, unseen] = key.split('\u0001')
+    return { name, status, label, readOnly: readOnly === '1', unseen: unseen === '1' }
   }, [key])
 }
+
+/** The sign over an agent that wants you: amber needs a decision, blue finished work, red stuck. */
+const ATTENTION_SIGN: Record<string, string> = { 'needs-decision': '!', waiting: '✓', error: '!' }
 
 function StationLabel({ agentId, nearby }: { agentId: string; nearby: boolean }) {
   const info = useLabelInfo(agentId)
   if (!info) return null
   const color = statusColor(info.status)
-  const alarm = info.status === 'needs-decision'
+  const sign = info.status === 'waiting' && !info.unseen ? null : ATTENTION_SIGN[info.status]
   return (
     <div className="pointer-events-none flex select-none flex-col items-center gap-1" style={{ transform: 'translateY(-50%)' }}>
-      {alarm && (
-        <div className="flex h-6 w-6 items-center justify-center rounded-full text-[15px] font-black text-black shadow-[0_0_18px_rgba(245,158,11,0.8)]" style={{ background: color, animation: 'villageBob 1.1s ease-in-out infinite' }}>
-          !
+      {sign && (
+        <div
+          className="flex h-6 w-6 items-center justify-center rounded-full text-[15px] font-black"
+          style={{ background: color, color: info.status === 'needs-decision' ? '#000' : '#fff', boxShadow: `0 0 18px ${color}cc`, animation: 'villageBob 1.1s ease-in-out infinite' }}
+        >
+          {sign}
         </div>
       )}
       <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full border bg-slate-950/80 px-2.5 py-1 text-[11px] font-bold text-white shadow-[0_6px_18px_rgba(0,0,0,0.45)] backdrop-blur" style={{ borderColor: `${color}aa` }}>
@@ -305,7 +254,6 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, overlayZ
     return agent ? effectiveStatus(agent) : 'idle'
   })
   const kind = useOasisStore(s => s.agentEngine.agents[agentId]?.kind || 'owned')
-  const unseen = useOasisStore(s => Boolean(s.agentEngine.agents[agentId]?.unseen))
   const name = useOasisStore(s => s.agentEngine.agents[agentId]?.name || agentId)
   const focused = useOasisStore(s => s.agentEngine.focusedAgentId === agentId)
   const nearby = useOasisStore(s => s.agentEngine.nearbyAgentId === agentId)
@@ -324,8 +272,6 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, overlayZ
     <group position={placement.position} rotation-y={placement.rotationY}>
       <VillageDesk color={color} working={status === 'working'} observed={observed} />
       <group position={STATION.avatar}>
-        <StatusRing color={color} status={status} observed={observed} unseen={unseen} />
-        {observed && <HologramField />}
         <VillageBodyBoundary key={avatarUrl} color={color}>
           <Suspense fallback={<AvatarPlaceholder color={color} />}>
             {/* Own cache entry (#village): a world NPC on the same VRM keeps its own scene and mixer. */}
@@ -447,6 +393,10 @@ function VillagePlaza({ empty, origin }: { empty: boolean; origin: VillageOrigin
   const terrainHeights = useOasisStore(s => s.terrainHeights)
   const center = plazaCenter({ origin })
   const y = sampleTerrainHeightAt(terrainHeights, center.x, center.z)
+  useEffect(() => {
+    setVillagePlaza([center.x, y, center.z])
+    return () => setVillagePlaza(null)
+  }, [center.x, center.z, y])
   return (
     <group position={[center.x, y, center.z]}>
       <mesh rotation-x={-Math.PI / 2} position={[0, 0.015, 0]}>
@@ -463,6 +413,7 @@ function VillagePlaza({ empty, origin }: { empty: boolean; origin: VillageOrigin
             <>
               <div className="text-[11px] font-black uppercase tracking-[0.2em] text-emerald-200">The village is empty</div>
               <div className="text-[12px] text-white/70">Summon a Claude Code session as an agent, or observe one read-only.</div>
+              <div className="text-[11px] text-white/50">Stand in the circle and press <span className="rounded bg-white/20 px-1 font-mono font-bold text-white">E</span>, or click:</div>
               <button
                 type="button"
                 className="rounded-md border border-emerald-300/40 bg-emerald-400/15 px-3 py-1.5 text-[12px] font-bold text-emerald-100 hover:bg-emerald-400/30"

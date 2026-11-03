@@ -12,6 +12,7 @@ import { getCameraSnapshot } from '../../lib/camera-bridge'
 import { getPlayerAvatarPose, markThirdPersonCameraRestored, requestPlayerAvatarTeleport } from '../../lib/player-avatar-runtime'
 import { showNotice } from '../forge/GlobalNotice'
 import { findNearestStation, type Vec3 } from '../../lib/village/village-layout'
+import { getVillageSoundDebug } from './village-sound'
 
 export const VILLAGE_SESSION_LAYER = 'village-session'
 export const VILLAGE_PICKER_LAYER = 'village-picker'
@@ -19,6 +20,8 @@ export const VILLAGE_PICKER_LAYER = 'village-picker'
 export const VILLAGE_TALK_RADIUS = 3.4
 /** ...and within this height (the avatar stands on the ground; a noclip camera may fly above). */
 export const VILLAGE_TALK_HEIGHT = 2.5
+/** Stand this close to the plaza center (the summoning circle) for E to open the picker. */
+export const VILLAGE_PLAZA_RADIUS = 2.4
 
 // ─── station registry (VillageWorld writes, proximity + camera rig read) ─────
 
@@ -43,6 +46,25 @@ export function getVillageAnchors(): Record<string, Vec3> {
   const out: Record<string, Vec3> = {}
   for (const [id, station] of stations) out[id] = station.anchor
   return out
+}
+
+// ─── plaza (the summoning circle; VillagePlaza writes, proximity + HUD read) ──
+
+let plaza: Vec3 | null = null
+let inPlaza = false
+const plazaListeners = new Set<() => void>()
+
+export function setVillagePlaza(center: Vec3 | null): void {
+  plaza = center
+}
+
+export function isInVillagePlaza(): boolean {
+  return inPlaza
+}
+
+export function subscribeVillagePlaza(listener: () => void): () => void {
+  plazaListeners.add(listener)
+  return () => { plazaListeners.delete(listener) }
 }
 
 // ─── session panel geometry (shared by the panel CSS and the camera framing) ──
@@ -92,6 +114,14 @@ if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
       requestPlayerAvatarTeleport({ position, yaw, forward: [Math.sin(yaw), 0, Math.cos(yaw)] })
       return true
     },
+    /** Put the player avatar in the middle of the summoning circle. */
+    teleportToPlaza: () => {
+      if (!plaza) return false
+      requestPlayerAvatarTeleport({ position: plaza, yaw: 0, forward: [0, 0, 1] })
+      return true
+    },
+    inPlaza: () => inPlaza,
+    sound: () => getVillageSoundDebug(),
   }
 }
 
@@ -188,8 +218,15 @@ export function getVillageActorPosition(): Vec3 | null {
 
 export function updateVillageProximity(): void {
   const store = useOasisStore.getState()
-  const nearby = findNearestStation(getVillageActorPosition(), getVillageAnchors(), VILLAGE_TALK_RADIUS, VILLAGE_TALK_HEIGHT)
+  const actor = getVillageActorPosition()
+  const nearby = findNearestStation(actor, getVillageAnchors(), VILLAGE_TALK_RADIUS, VILLAGE_TALK_HEIGHT)
   if (nearby !== store.agentEngine.nearbyAgentId) store.agentEngineDispatch({ type: 'nearby', agentId: nearby })
+  // An agent within reach wins the E key; otherwise standing in the circle makes E summon.
+  const nextInPlaza = !nearby && Boolean(plaza && findNearestStation(actor, { plaza }, VILLAGE_PLAZA_RADIUS, VILLAGE_TALK_HEIGHT))
+  if (nextInPlaza !== inPlaza) {
+    inPlaza = nextInPlaza
+    plazaListeners.forEach(listener => listener())
+  }
 }
 
 // ─── keys ───────────────────────────────────────────────────────────────────
@@ -218,7 +255,13 @@ export function handleVillageKeyDown(event: KeyboardEvent): boolean {
   if (!input.can().enterFocuses && input.inputState !== 'agent-focus' && !inSessionView) return false
   if (event.code === 'KeyE') {
     const target = village.nearbyAgentId
-    if (!target || village.focusedAgentId === target) return false
+    if (!target) {
+      // Outside the circle E stays the world's own key (noclip "down").
+      if (!inPlaza || village.focusedAgentId) return false
+      openVillagePicker(true)
+      return true
+    }
+    if (village.focusedAgentId === target) return false
     focusVillageAgent(target)
     return true
   }
