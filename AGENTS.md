@@ -109,6 +109,15 @@ If `CLAUDE.md`, old memory notes, or stale comments disagree with current code, 
 - `selectedSpellId`, `setSelectedSpellId(id)` — cleared on world switch.
 - `removeAgentAvatar(id)` — added to fix broken djinn / agent-avatar deletion.
 - `enterPlacementMode` accepts `audioUrl` for catalog placements (speaker GLB + audio attachment).
+- `agentEngine` + `agentEngineDispatch(action)` (`src/store/slices/agentEngineSlice.ts`): engine agents keyed by id, focus / nearby agent, attention queue (`selectAttentionQueue`, `selectNextAgentForN`), session list. The reducer is pure and unit-tested.
+
+## Agent Village (profile `village`)
+
+- Switch: `?profile=village` on the Oasis URL (per tab, remembered in sessionStorage; `?profile=local` turns it off), or `NEXT_PUBLIC_OASIS_PROFILE=village` in `.env.local` (always on, restart `pnpm dev`). Local mode only; hosted always wins. Logic: `src/lib/oasis-profile.ts` (`resolveVillageProfile`, `isVillageProfileClient`).
+- Agents come from the engine sidecar: `pnpm dev:engine` (ws://127.0.0.1:4530/ws, `NEXT_PUBLIC_AGENT_ENGINE_URL` to override). Client: `src/lib/agent-engine-client.ts` (one socket, backoff reconnect, typed commands). Engine offline = the village shows "engine offline", nothing else changes.
+- UI lives in `src/components/village/`: `VillageWorld` (desks, VRM bodies, status rings, desk windows, camera rig; inside the Canvas), `AgentSessionView` (the one renderer for engine schema v1, used by the desk windows and the 2D panel), `AgentSessionPanel` (composer, interrupt, model / mode), `SessionPicker` (spawn or observe sessions), `VillageHud`, `VillageController` (socket, keys, proximity, focus hand-off). Layout math: `src/lib/village/`.
+- Keys: E talks to the nearest agent, N jumps to the next agent needing you (decision > error > finished-unseen), Esc leaves the text box and then the agent. Focus uses the InputManager `agent-focus` state; the composer stops keydown so typing never moves the avatar.
+- Not mounted in the village: combat / PvP / vitals, quests and Rookie Merlin, realtime-NPC and Gemini panels, the old Merlin / Anorak / Codex / Anorak Pro / Hermes / OpenClaw panels, multiplayer presence and chat, Mindcraft bridge, Portal Zero canonical button. Nothing village-side is saved into the world.
 
 ## Anthropic Integration Notes
 

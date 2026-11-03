@@ -76,6 +76,12 @@ import { writeBrowserStorage } from '@/lib/browser-storage'
 import { runLocalStorageAgentCacheMigration } from '@/lib/localstorage-agent-cache-migration'
 import { isProbablyMobileDevice } from '@/lib/mobile-controls'
 import { useIsHostedOasis, useOasisCapabilities } from '@/lib/oasis-mode-client'
+import { isVillageProfileClient } from '@/lib/oasis-profile'
+import { VillageWorld } from './village/VillageWorld'
+import { VillageController } from './village/VillageController'
+import { VillageHud } from './village/VillageHud'
+import { AgentSessionPanel } from './village/AgentSessionPanel'
+import { SessionPicker } from './village/SessionPicker'
 import { installTestHarness } from '@/lib/test-harness'
 import { HOSTED_USER_LOCKED_SPELL_IDS, isHostedUserLockedSpell, type SpellId } from '@/lib/spellbook'
 import { useWorldEvents } from '@/hooks/useWorldEvents'
@@ -510,11 +516,13 @@ function ModeSwitchLabel() {
 // POST-PROCESSING EFFECTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function DesktopKeyHints() {
+function DesktopKeyHints({ village = false }: { village?: boolean }) {
   const mobileOasis = useIsMobileOasis()
   const pointerLocked = useInputManager(s => s.pointerLocked)
   const selectedObjectId = useOasisStore(s => s.selectedObjectId)
   const hasAgentWindows = useOasisStore(s => s.placedAgentWindows.length > 0)
+  const villageNearby = useOasisStore(s => Boolean(s.agentEngine.nearbyAgentId))
+  const villageAgents = useOasisStore(s => s.agentEngine.order.length > 0)
   const hasSlides = useOasisStore(s => s.placedCatalogAssets.some(asset => Boolean(asset.imageUrl || asset.videoUrl)))
   if (mobileOasis) return null
 
@@ -540,9 +548,12 @@ function DesktopKeyHints() {
       {selectedObjectId && hint('T', 'Rotate')}
       {selectedObjectId && hint('Y', 'Size')}
       {hint('C', 'Camera')}
-      {hint('Esc', 'Mouse', { dim: !pointerLocked })}
-      {hint('X', 'Dance')}
-      {hint('N', 'Focus Agent', { dim: !hasAgentWindows })}
+      {hint('Esc', village ? 'Back' : 'Mouse', { dim: !village && !pointerLocked })}
+      {village && hint('E', 'Talk', { dim: !villageNearby })}
+      {!village && hint('X', 'Dance')}
+      {village
+        ? hint('N', 'Next Agent', { dim: !villageAgents })
+        : hint('N', 'Focus Agent', { dim: !hasAgentWindows })}
       {hint('PgDn', 'Next Pic', { dim: !hasSlides })}
     </div>
   )
@@ -695,8 +706,9 @@ function FPSDisplay({ enabled, fontSize }: { enabled: boolean; fontSize: number 
 // QUEST TRACKER — subscribes to store, auto-completes onboarding quests
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function useQuestTracker() {
+function useQuestTracker(enabled = true) {
   useEffect(() => {
+    if (!enabled) return
     const unsub = useOasisStore.subscribe((state, prev) => {
       // Quest: Place an object
       if (state.placedCatalogAssets.length > prev.placedCatalogAssets.length) {
@@ -723,7 +735,7 @@ function useQuestTracker() {
       }
     })
     return unsub
-  }, [])
+  }, [enabled])
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1270,6 +1282,9 @@ function RookieMerlinInteractionOverlay({
 
 export default function Scene() {
   const hostedMode = useIsHostedOasis()
+  // ─═̷─ Village profile (?profile=village or NEXT_PUBLIC_OASIS_PROFILE=village): engine agents at
+  // desks; hosted / combat / quest / realtime-NPC / forms / multiplayer layers stay unmounted. ─═̷─
+  const villageProfile = !hostedMode && isVillageProfileClient()
   const capabilities = useOasisCapabilities()
   const mobileOasis = useIsMobileOasis()
   const isAdmin = capabilities.admin
@@ -1281,7 +1296,7 @@ export default function Scene() {
   useWorldEvents()
 
   // ─═̷─═̷─⚔️─═̷─═̷─{ QUEST TRACKER — auto-detect onboarding actions }─═̷─═̷─⚔️─═̷─═̷─
-  useQuestTracker()
+  useQuestTracker(!villageProfile)
 
   // ─═̷─═̷─💾─═̷─═̷─{ SETTINGS PERSISTENCE }─═̷─═̷─💾─═̷─═̷─
   const [settings, setSettings] = useState<OasisSettings>(() => {
@@ -1973,7 +1988,7 @@ export default function Scene() {
         <CameraControllerComponent />
         <PointerLockRaycaster />
         <ScenePlayableSignal worldReady={playableWorldReady} worldId={playableWorldId} />
-        <OnboardingSpawnPrimer controlMode={settings.controlMode} />
+        {!villageProfile && <OnboardingSpawnPrimer controlMode={settings.controlMode} />}
         {settings.controlMode === 'noclip' && <SprintParticles />}
 
         {settings.showGrid && !effectiveRp1Mode && (
@@ -1995,19 +2010,21 @@ export default function Scene() {
         {/* ─═̷─═̷─🌍─═̷─═̷─ THE FORGE ─═̷─═̷─🌍─═̷─═̷─ */}
         <Suspense fallback={null}>
           <ForgeRealm />
-          <RookieMerlinWorldPrompt />
+          {!villageProfile && <RookieMerlinWorldPrompt />}
         </Suspense>
+        {/* ─═̷─═̷─🏘 VILLAGE — engine agents at desks around the spawn point ─═̷─═̷─🏘 */}
+        {villageProfile && <VillageWorld />}
         {/* ─═̷─═̷─⚔ Combat-bolt dispatcher — replaces the legacy FireboltLayer
             and routes to the 10 designs in src/components/forge/bolts/ based
             on settings.{spell}Design. Mounted only when RP1/exploration mode
             is active. ─═̷─═̷─⚔ */}
-        <CombatBoltLayer enabled={effectiveRp1Mode} settings={settings} />
-        <QuestZeroNpcExclamation activeWorldId={activeWorldId} />
+        {!villageProfile && <CombatBoltLayer enabled={effectiveRp1Mode} settings={settings} />}
+        {!villageProfile && <QuestZeroNpcExclamation activeWorldId={activeWorldId} />}
 
         {/* ─═̷─═̷─📸─═̷─═̷─ PANORAMA CAPTURE (Ctrl+Shift+P) ─═̷─═̷─📸─═̷─═̷─ */}
         <PanoramaCapture />
         <ViewportScreenshotBridge />
-        {!hostedMode && <PortalZeroCanonicalButton />}
+        {!hostedMode && !villageProfile && <PortalZeroCanonicalButton />}
 
         <PostProcessing />
         <FPSTracker />
@@ -2028,9 +2045,17 @@ export default function Scene() {
         enabled={mobileOasis && (settings.controlMode === 'noclip' || settings.controlMode === 'third-person')}
         spellControlsEnabled={effectiveRp1Mode}
       />
-      <PlayerVitalsHud visible={effectiveRp1Mode && !isPortalZeroWorld} />
-      <PvPOverlay visible={effectiveRp1Mode && !isPortalZeroWorld} />
-      <WorldChatOverlay visible={Boolean(activeWorldId) && !activeWorldIsGoogleForm} />
+      {!villageProfile && <PlayerVitalsHud visible={effectiveRp1Mode && !isPortalZeroWorld} />}
+      {!villageProfile && <PvPOverlay visible={effectiveRp1Mode && !isPortalZeroWorld} />}
+      {!villageProfile && <WorldChatOverlay visible={Boolean(activeWorldId) && !activeWorldIsGoogleForm} />}
+      {villageProfile && (
+        <>
+          <VillageController />
+          <VillageHud />
+          <AgentSessionPanel />
+          <SessionPicker />
+        </>
+      )}
       <PlayerSpellbookPanel
         visible
         isOpen={spellbookOpen}
@@ -2042,7 +2067,7 @@ export default function Scene() {
       {!hideEditTools && <PlaceMenu />}
       <GlobalNotice />
       <ForkWelcomeModal />
-      <QuestProgressTracker activeWorldId={activeWorldId} />
+      {!villageProfile && <QuestProgressTracker activeWorldId={activeWorldId} />}
 
       {/* ─═̷─═̷─⚡ FPS DISPLAY ─═̷─═̷─⚡ */}
       <FPSDisplay enabled={settings.fpsCounterEnabled} fontSize={settings.fpsCounterFontSize} />
@@ -2063,15 +2088,17 @@ export default function Scene() {
       {/* ─═̷─═̷─🎮 MODE SWITCH LABEL ─═̷─═̷─🎮 */}
       <MouseLookDebugOverlay />
       <ModeSwitchLabel />
-      <DesktopKeyHints />
+      <DesktopKeyHints village={villageProfile} />
       <PortalTransitionOverlay />
       <WorldLoadingBar />
-      <RookieMerlinInteractionOverlay
-        activeWorldId={activeWorldId}
-        onTalk={startRookieTalk}
-        onQuest={startRookieQuest}
-        onPortalZero={openPortalZeroGate}
-      />
+      {!villageProfile && (
+        <RookieMerlinInteractionOverlay
+          activeWorldId={activeWorldId}
+          onTalk={startRookieTalk}
+          onQuest={startRookieQuest}
+          onPortalZero={openPortalZeroGate}
+        />
+      )}
 
       {/* Main game rail */}
       <div className="fixed left-4 top-4 z-[190] flex flex-col gap-2 select-none max-[700px]:left-2 max-[700px]:top-2 max-[700px]:gap-1.5">
@@ -2134,17 +2161,19 @@ export default function Scene() {
             "Agents" page). Component kept mounted (open=false) so it
             can still be opened via legacy event listeners / deep links;
             its onToggle is wired to the spellbook handler instead. ─═̷─ */}
-        <AgentQuickLauncher
-          isOpen={agentLauncherOpen}
-          mode={agentLauncherMode}
-          onToggle={() => setAgentLauncherOpen(open => !open)}
-          onClose={() => setAgentLauncherOpen(false)}
-          onMode={mode => setAgentLauncherMode(mode)}
-          onOpen2d={openQuickAgentPanel}
-          onPlace3d={placeQuickAgentWindow}
-          canUseLocalAgents={!hostedMode && canUseAgentPanels && !hideEditTools}
-          hideRailButton
-        />
+        {!villageProfile && (
+          <AgentQuickLauncher
+            isOpen={agentLauncherOpen}
+            mode={agentLauncherMode}
+            onToggle={() => setAgentLauncherOpen(open => !open)}
+            onClose={() => setAgentLauncherOpen(false)}
+            onMode={mode => setAgentLauncherMode(mode)}
+            onOpen2d={openQuickAgentPanel}
+            onPlace3d={placeQuickAgentWindow}
+            canUseLocalAgents={!hostedMode && canUseAgentPanels && !hideEditTools}
+            hideRailButton
+          />
+        )}
 
         <SettingsMenu opacity={settingsMenuOpacity}>
           <ConfigMenu
@@ -2212,7 +2241,7 @@ export default function Scene() {
       <GenerateVideoSpellTab />
 
       {/* 📋 Mindcraft 3D — Mission Window (outside Canvas, bridged via Zustand) */}
-      {canUseLocalPanels && <MindcraftMissionWindowBridge />}
+      {canUseLocalPanels && !villageProfile && <MindcraftMissionWindowBridge />}
 
       {/* ⏪ Action Log */}
       {canUseLocalPanels && (
@@ -2224,7 +2253,9 @@ export default function Scene() {
 
 
       {/* 🧙 Merlin — AI World Builder — hidden in view mode */}
-      {canUseAgentPanels && !hideEditTools && (
+      {/* ─═̷─ The village replaces the per-turn Claude Code panels (Merlin / Anorak / Codex /
+          Anorak Pro) and the realtime-NPC / bridge panels with engine agents. Not deleted yet. ─═̷─ */}
+      {canUseAgentPanels && !hideEditTools && !villageProfile && (
         <MerlinPanel
           isOpen={merlinOpen}
           onClose={() => setMerlinOpen(false)}
@@ -2232,20 +2263,20 @@ export default function Scene() {
       )}
 
       {/* 💻 Anorak — Claude Code Agent — admin only */}
-      {canUseAgentPanels && (
+      {canUseAgentPanels && !villageProfile && (
         <AnorakPanel
           isOpen={claudeCodeOpen}
           onClose={() => setClaudeCodeOpen(false)}
         />
       )}
       {/* 🔮 Anorak Pro — Autonomous dev pipeline — admin only */}
-      {canUseAgentPanels && (
+      {canUseAgentPanels && !villageProfile && (
         <CodexPanel
           isOpen={codexOpen}
           onClose={() => setCodexOpen(false)}
         />
       )}
-      {canUseAgentPanels && (
+      {canUseAgentPanels && !villageProfile && (
         <AnorakProPanel
           isOpen={anorakProOpen}
           onClose={() => setAnorakProOpen(false)}
@@ -2253,25 +2284,31 @@ export default function Scene() {
       )}
 
       {/* 🧿 Parzival — Autonomous Brain */}
-      {canUseHermesPanel && (
+      {canUseHermesPanel && !villageProfile && (
         <HermesPanel
           isOpen={hermesOpen}
           onClose={() => setHermesOpen(false)}
         />
       )}
-      <OpenclawPanel
-        isOpen={openclawOpen}
-        onClose={closeOpenclawPanel}
-      />
-      <GeminiLivePanel
-        isOpen={geminiOpen}
-        onClose={() => setGeminiOpen(false)}
-      />
-      <RealtimePanel
-        isOpen={realtimeOpen}
-        onClose={() => setRealtimeOpen(false)}
-      />
-      {canUseLocalPanels && (
+      {!villageProfile && (
+        <OpenclawPanel
+          isOpen={openclawOpen}
+          onClose={closeOpenclawPanel}
+        />
+      )}
+      {!villageProfile && (
+        <GeminiLivePanel
+          isOpen={geminiOpen}
+          onClose={() => setGeminiOpen(false)}
+        />
+      )}
+      {!villageProfile && (
+        <RealtimePanel
+          isOpen={realtimeOpen}
+          onClose={() => setRealtimeOpen(false)}
+        />
+      )}
+      {canUseLocalPanels && !villageProfile && (
         <LipSyncLabPanel
           isOpen={lipSyncLabOpen}
           onClose={() => setLipSyncLabOpen(false)}

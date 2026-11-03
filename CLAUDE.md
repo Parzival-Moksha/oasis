@@ -74,6 +74,12 @@ pnpm smoke:relay-hosted        # WSS relay smoke test against hosted
 - Center crosshair renders in TPS/noclip on mobile too (was pointer-lock-only).
 - `TerrainBrushPanel` on mobile pins top-right (`right: 8, top: 64`), texture grid is `grid-cols-4`, and includes a `FULL PAINT` button.
 
+## Agent Village
+
+- Open `http://localhost:4516/?profile=village` (per tab) or set `NEXT_PUBLIC_OASIS_PROFILE=village` (always on, restart `pnpm dev`). Run `pnpm dev:engine` next to `pnpm dev` for the agents.
+- Store: `agentEngine` slice (`src/store/slices/agentEngineSlice.ts`, pure reducer + tests). Socket: `src/lib/agent-engine-client.ts`. UI: `src/components/village/`. Keys: E talk, N next agent needing you, Esc back.
+- Details and what the profile leaves unmounted: `AGENTS.md` → "Agent Village".
+
 ## Deploy
 
 - `pnpm deploy:openclaw` — SSH to host (`parzival-us` by default), `git pull --ff-only origin main`, `pnpm install --frozen-lockfile`, `npx prisma generate`, `pnpm build`, optional `pnpm seed:welcome-hub`, PM2 reload.

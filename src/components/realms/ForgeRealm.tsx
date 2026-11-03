@@ -23,6 +23,7 @@ import { PaintCursor } from '../forge/PaintCursor'
 import { colorForPlayerId } from '../../lib/multiplayer-color'
 import { SettingsContext } from '../scene-lib'
 import { useClientOasisMode, useOasisCapabilities } from '../../lib/oasis-mode-client'
+import { isVillageProfileClient } from '../../lib/oasis-profile'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // FORGE GROUND — shows when no terrain is loaded (the original conjuring circle)
@@ -87,6 +88,7 @@ export function ForgeRealm() {
   )
   const terrainParams = useOasisStore(s => s.terrainParams)
   const { settings } = useContext(SettingsContext)
+  const villageProfile = useClientOasisMode() !== 'hosted' && isVillageProfileClient()
 
   // ░▒▓ Background thumbnail gen — renders missing thumbnails offscreen ▓▒░
   useThumbnailGenerator()
@@ -115,7 +117,8 @@ export function ForgeRealm() {
       <WorldObjectsRenderer />
 
       <PortalGateLayer />
-      <MultiplayerPresenceLayer />
+      {/* The village profile is single-player for now: no room connection, no remote avatars. */}
+      {!villageProfile && <MultiplayerPresenceLayer />}
 
       {/* ░▒▓ PAINT CURSOR — wand-tip raycaster + sparkler when paint mode active ▓▒░ */}
       <ForgePaintCursor />
