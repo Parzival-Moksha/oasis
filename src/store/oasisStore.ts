@@ -45,6 +45,7 @@ import {
 } from '../lib/forge/placement-types'
 import { createPlacementSlice } from './slices/placementSlice'
 import { createPanelZSlice } from './slices/panelZSlice'
+import { createAgentEngineSlice, type AgentEngineSlice } from './slices/agentEngineSlice'
 
 export type {
   AgentAvatar,
@@ -832,6 +833,10 @@ interface OasisState {
   _panelZMap: Record<string, number>
   bringPanelToFront: (panelName: string) => void
   getPanelZIndex: (panelName: string, defaultZ: number) => number
+
+  // ─═̷─═̷─🏘 AGENT ENGINE — Claude Code agents for the village (slices/agentEngineSlice.ts) ─═̷─═̷─🏘
+  agentEngine: AgentEngineSlice['agentEngine']
+  agentEngineDispatch: AgentEngineSlice['agentEngineDispatch']
 
   // ─═̷─═̷─⚙️ SETTINGS ACTIONS ─═̷─═̷─⚙️
   setFpsCounterEnabled: (enabled: boolean) => void
@@ -3999,6 +4004,9 @@ export const useOasisStore = create<OasisState>((set, get) => {
 
   // ─═̷─═̷─🪟 PANEL Z-ORDERING ─═̷─═̷─🪟
   ...createPanelZSlice({ set, get }),
+
+  // ─═̷─═̷─🏘 AGENT ENGINE — engine agents, attention queue, session list ─═̷─═̷─🏘
+  ...createAgentEngineSlice({ set, get }),
 
   addAgentWindow: (window) => {
     // ░▒▓ Agent ownership stamp — the viewer who placed this window claims it. ▓▒░
