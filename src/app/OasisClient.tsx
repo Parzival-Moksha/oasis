@@ -10,6 +10,7 @@ import { useOasisStore } from '@/store/oasisStore'
 import { registerStoreHandler } from '@/lib/event-bus'
 import { registerAudioSubscriber } from '@/lib/audio-manager'
 import { trackOasisEvent } from '@/lib/oasis-telemetry-client'
+import { rememberClientProfileOverride } from '@/lib/oasis-profile'
 import {
   DEFAULT_LOCAL_CAPABILITIES,
   OasisModeProvider,
@@ -77,7 +78,10 @@ export default function OasisClient({ initialWorldId, fallbackWorldId }: { initi
       if (mobileOverride === '1' || mobileOverride === '0') {
         window.localStorage.setItem('oasis-mobile-override', mobileOverride)
       }
-      window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash}`)
+      // ?profile=village|local is a per-tab switch: remember it and keep it visible in the URL.
+      const profileOverride = rememberClientProfileOverride(window.location.search)
+      const keptSearch = profileOverride ? `?profile=${profileOverride}` : ''
+      window.history.replaceState({}, '', `${window.location.pathname}${keptSearch}${window.location.hash}`)
     }
 
     // Kick off the Scene chunk download in parallel with session init. The
