@@ -17,6 +17,7 @@ export const STATUS = Object.freeze({
 const DECISION_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode']);
 const AGENT_TOOLS = new Set(['Agent', 'Task']);
 const MAX_STR = 2000;
+const MAX_TODOS = 100;
 
 export function clip(s, n = MAX_STR) {
   if (typeof s !== 'string') return s;
@@ -221,6 +222,11 @@ export class Normalizer {
   onTaskTool(b) {
     if (b.name === 'TaskCreate') {
       this.taskTodos.set(b.id, { content: b.input?.subject || '', status: 'pending', activeForm: b.input?.activeForm });
+      // Bounded: drop the oldest completed tasks first, then the oldest of any kind.
+      while (this.taskTodos.size > MAX_TODOS) {
+        const done = [...this.taskTodos].find(([, t]) => t.status === 'completed');
+        this.taskTodos.delete(done ? done[0] : this.taskTodos.keys().next().value);
+      }
     } else {
       const t = this.taskTodos.get(b.input?.taskId);
       if (t) {
@@ -243,6 +249,9 @@ export class Normalizer {
     if (!c || c.ended) return;
     c.ended = true;
     this.emit('subagent.end', { toolUseId, taskId: c.taskId || null, status: status || 'completed', summary: clip(summary || '', 600), usage: usage || null });
+    // Ended: later task_progress / task_notification for it are ignored, so the bookkeeping can go.
+    this.agentCalls.delete(toolUseId);
+    if (c.taskId) this.taskToTool.delete(c.taskId);
   }
 
   onUser(msg) {
@@ -277,6 +286,8 @@ export class Normalizer {
       const backgroundAck = toolUseResult && typeof toolUseResult === 'object' && /async|background/i.test(String(toolUseResult.status || ''));
       if (!backgroundAck) this.endSubagent(b.tool_use_id, { status: b.is_error ? 'failed' : (toolUseResult?.status || 'completed'), summary: output, usage: toolUseResult?.usage || null });
     }
+    // The name was only needed until the result; long sessions would otherwise keep every id forever.
+    this.toolNames.delete(b.tool_use_id);
   }
 
   /** Derive the turn outcome. `ctx` comes from the owner (pending permission prompts, interrupt). */
@@ -309,19 +320,23 @@ export class Normalizer {
     if (cw) this.contextWindow = cw;
     // ownerCtx (set by the live Agent): { interrupted, pendingPermissions, permissionMode, hostDenied: Set }
     const ctx = this.ownerCtx ? this.ownerCtx() : {};
+    // The result itself says when a turn was aborted (interrupt during generation or a tool), even if
+    // the owner's flag was raised for another turn. An interrupt is not an error.
+    const interrupted = !!ctx.interrupted || /^aborted/.test(String(r.terminal_reason || ''));
     const allDenials = (r.permission_denials || []).map((d) => ({ toolName: d.tool_name, toolUseId: d.tool_use_id }));
     // A denial the owner clicked in the Oasis is already decided; only auto-denials still need the owner.
     const openDenials = allDenials.filter((d) => !ctx.hostDenied?.has(d.toolUseId));
     const derived = this.outcome({
       ...ctx,
-      isError: !!r.is_error && !ctx.interrupted,
+      interrupted,
+      isError: !!r.is_error && !interrupted,
       errorReason: r.subtype,
       denials: openDenials,
     });
     if (!openDenials.length) this.turn.denials = this.turn.denials.filter((d) => !ctx.hostDenied?.has(d.toolUseId));
     const ev = {
       subtype: r.subtype,
-      isError: !!r.is_error,
+      isError: !!r.is_error && !interrupted,
       ...derived,
       result: clip(r.result || '', 2000),
       durationMs: r.duration_ms,

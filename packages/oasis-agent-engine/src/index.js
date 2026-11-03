@@ -33,6 +33,18 @@ let snapshotTimer = null;
 const hub = {
   emit(agentId, kind, payload = {}) {
     const event = { ...payload, v: 1, agentId, ts: Date.now(), kind }; // envelope fields always win
+    if (kind === 'removed') {
+      // The agent is gone: drop its backlog and announce it once.
+      backlog.delete(agentId);
+      broadcast({ type: 'event', event });
+      return;
+    }
+    // Late events of a removed agent (a killed process exiting) would recreate its backlog forever.
+    // Hook markers for a just-killed session (recentlyRemoved) still go out, but are never stored.
+    if (!agents.has(agentId)) {
+      if (kind === 'hook') broadcast({ type: 'event', event });
+      return;
+    }
     if (kind !== 'text.delta') {
       let list = backlog.get(agentId);
       if (!list) backlog.set(agentId, (list = []));
@@ -40,7 +52,7 @@ const hub = {
       if (list.length > BACKLOG) list.splice(0, list.length - BACKLOG);
     }
     broadcast({ type: 'event', event });
-    if (/^(status|init|meta|model|context|exit|permission\.)/.test(kind)) scheduleSnapshot();
+    if (/^(status|init|meta|model|mode|context|exit|permission\.)/.test(kind)) scheduleSnapshot();
   },
   persist() {
     saveRoster(ROSTER_FILE, ownedAgents().map((a) => a.rosterEntry()));
@@ -167,6 +179,11 @@ async function runCommand(msg) {
   return await fn(msg);
 }
 
+/** Control requests resolve to {ok:false, error} instead of throwing; report those as failed replies. */
+function failedResult(data) {
+  return Boolean(data && typeof data === 'object' && !Array.isArray(data) && data.ok === false);
+}
+
 // ------------------------------------------------------------------ hooks
 const recentlyRemoved = new Map(); // sessionId -> agentId (hooks keep arriving while a killed process exits)
 
@@ -246,7 +263,9 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'POST' && url.pathname === '/api/cmd') {
       const msg = JSON.parse(await readBody(req));
-      return sendJson(res, 200, { ok: true, data: await runCommand(msg) });
+      const data = await runCommand(msg);
+      if (failedResult(data)) return sendJson(res, 400, { ok: false, error: data.error || `${msg.cmd} failed`, data });
+      return sendJson(res, 200, { ok: true, data });
     }
     sendJson(res, 404, { error: 'not found' });
   } catch (e) {
@@ -275,6 +294,10 @@ wss.on('connection', (ws) => {
     try { msg = JSON.parse(String(raw)); } catch { return; }
     try {
       const data = await runCommand(msg);
+      if (failedResult(data)) {
+        ws.send(JSON.stringify({ type: 'reply', id: msg.id ?? null, cmd: msg.cmd, ok: false, error: data.error || `${msg.cmd} failed`, data }));
+        return;
+      }
       ws.send(JSON.stringify({ type: 'reply', id: msg.id ?? null, cmd: msg.cmd, ok: true, data }));
     } catch (e) {
       ws.send(JSON.stringify({ type: 'reply', id: msg.id ?? null, cmd: msg.cmd, ok: false, error: e.message }));

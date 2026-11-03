@@ -18,8 +18,28 @@ import { fileURLToPath } from 'node:url';
 import { spawnClaude, onLines } from './claude.js';
 import { Normalizer, STATUS, clipDeep, summarizeTool } from './normalize.js';
 import { findSessionFile } from './sessions.js';
+import { droppedAfterInterrupt, expiredAtResult, interruptApplies, matchReplay } from './pending.js';
 
 const SANDBOX_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'sandbox');
+const REVIEW_INPUT_MAX = 256 * 1024;
+
+/**
+ * Permission prompts show the owner exactly what will run, so the input is not clipped the way
+ * feed events are. Only a pathological input (over 256 KB of JSON) gets clipped, and then the
+ * clip marker ("… [+N chars]") stays visible to the reviewer.
+ */
+function reviewInput(input) {
+  try {
+    if (JSON.stringify(input ?? null).length <= REVIEW_INPUT_MAX) return input;
+  } catch { /* fall through */ }
+  return clipDeep(input, 20000);
+}
+
+function echoText(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) return content.filter((b) => b?.type === 'text').map((b) => b.text).join('\n');
+  return '';
+}
 
 export class Agent {
   /**
@@ -46,7 +66,7 @@ export class Agent {
     this.pendingUser = new Map(); // uuid -> {text, sentAt, turnWasRunning}
     this.hostDenied = new Set();
     this.turnRunning = false;
-    this.interruptRequested = false;
+    this.interruptTurn = null; // turn index an interrupt was sent in (it never applies to a later turn)
     this.reqN = 0;
     this.stderrTail = [];
     this.meta = {}; // from initialize: models, account, version
@@ -54,7 +74,7 @@ export class Agent {
     this.killing = false;
     this.norm = new Normalizer(this.id, (kind, payload) => this.onEvent(kind, payload), { mode: 'live' });
     this.norm.ownerCtx = () => ({
-      interrupted: this.interruptRequested,
+      interrupted: interruptApplies(this.interruptTurn, this.turnIndex || 0),
       pendingPermissions: this.permissions.size,
       permissionMode: this.permissionMode,
       hostDenied: this.hostDenied,
@@ -276,28 +296,36 @@ export class Agent {
     const requestKind = r.tool_name === 'AskUserQuestion' ? 'question' : r.tool_name === 'ExitPlanMode' ? 'plan' : 'permission';
     return {
       requestId: r.requestId, requestKind, toolName: r.tool_name, toolUseId: r.tool_use_id,
-      input: clipDeep(r.input), summary: summarizeTool(r.tool_name, r.input), description: r.description || null,
+      input: reviewInput(r.input), summary: summarizeTool(r.tool_name, r.input), description: r.description || null,
       suggestions: r.permission_suggestions || [], blockedPath: r.blocked_path || null,
       decisionReason: r.decision_reason || null,
     };
   }
 
   onReplay(msg) {
-    // Match the echo to a message we sent (same uuid; fall back to text/FIFO).
-    let key = msg.uuid && this.pendingUser.has(msg.uuid) ? msg.uuid : null;
-    const text = typeof msg.message?.content === 'string' ? msg.message.content : '';
-    if (!key) for (const [k, p] of this.pendingUser) if (p.text === text) { key = k; break; }
-    if (!key) return; // CLI-generated echo (e.g. set_model's local-command-stdout)
+    // Match the echo to the message(s) we sent: same uuid, else every pending text it contains
+    // (the CLI can merge queued messages). No match = a CLI-generated echo (e.g. set_model's).
+    for (const key of matchReplay(this.pendingUser, { uuid: msg.uuid, text: echoText(msg.message?.content) })) {
+      const p = this.pendingUser.get(key);
+      this.pendingUser.delete(key);
+      // folded = taken into the turn that was already running when we sent it (not a new turn).
+      const folded = p.turnWasRunning && p.turnIndex === this.turnIndex;
+      this.emit('user.consumed', { uuid: key, folded, waitedMs: Date.now() - p.sentAt });
+    }
+  }
+
+  /** Forget a pending message that will never be echoed, so the agent cannot stay `working` forever. */
+  dropPending(key, reason) {
     const p = this.pendingUser.get(key);
+    if (!p) return;
     this.pendingUser.delete(key);
-    // folded = taken into the turn that was already running when we sent it (not a new turn).
-    const folded = p.turnWasRunning && p.turnIndex === this.turnIndex;
-    this.emit('user.consumed', { uuid: key, folded, waitedMs: Date.now() - p.sentAt });
+    this.emit('user.consumed', { uuid: key, folded: false, waitedMs: Date.now() - p.sentAt, dropped: reason });
   }
 
   afterResult() {
     this.turnRunning = false;
-    this.interruptRequested = false;
+    for (const key of expiredAtResult(this.pendingUser, this.turnIndex || 0)) this.dropPending(key, 'expired');
+    this.interruptTurn = null;
     this.hostDenied.clear();
     // Zero-cost context meter after each turn.
     this.refreshContext();
@@ -350,16 +378,22 @@ export class Agent {
     this.write(msg);
     this.norm.openTurn();
     this.emit('user.sent', { uuid, text, midTurn: turnWasRunning, priority: msg.priority || 'next' });
-    this.setStatus(STATUS.WORKING, turnWasRunning ? 'message queued mid-turn' : 'message sent');
+    // An open permission / question / plan still blocks the CLI: talking to it doesn't resolve that.
+    if (this.permissions.size) this.recomputeStatus();
+    else this.setStatus(STATUS.WORKING, turnWasRunning ? 'message queued mid-turn' : 'message sent');
     return { uuid, midTurn: turnWasRunning };
   }
 
   async interrupt({ cancelQueued = false } = {}) {
     if (!this.proc) return { ok: false, error: 'not running' };
-    this.interruptRequested = true;
+    // Flag the running turn only: a turn that starts after this one is not interrupted by it.
+    this.interruptTurn = this.turnRunning ? (this.turnIndex || 0) : null;
     const r = await this.request('interrupt', cancelQueued ? { cancel_queued: true } : {});
-    if (!this.turnRunning) this.interruptRequested = false;
-    if (r.ok && cancelQueued) this.pendingUser.clear();
+    if (r.ok) {
+      const drop = cancelQueued ? [...this.pendingUser.keys()] : droppedAfterInterrupt(this.pendingUser, r.data?.still_queued);
+      for (const key of drop) this.dropPending(key, cancelQueued ? 'cancelled' : 'dropped by interrupt');
+      this.recomputeStatus();
+    }
     this.emit('notice', { subtype: 'interrupt', text: r.ok ? `Interrupt sent${r.data?.still_queued?.length ? `, ${r.data.still_queued.length} message(s) still queued` : ''}` : `Interrupt failed: ${r.error}` });
     return r;
   }
@@ -376,9 +410,15 @@ export class Agent {
   }
 
   async setPermissionMode(mode) {
-    if (!this.proc) { this.permissionMode = mode; this.persist(); return { ok: true }; }
+    // `mode` events trigger a snapshot (index.js), so every client's picker follows the change.
+    if (!this.proc) { this.permissionMode = mode; this.persist(); this.emit('mode', { permissionMode: mode, applied: 'on next start' }); return { ok: true }; }
     const r = await this.request('set_permission_mode', { mode });
-    if (r.ok) { this.permissionMode = mode; this.persist(); this.emit('notice', { subtype: 'permission-mode', text: `Permission mode: ${mode}` }); }
+    if (r.ok) {
+      this.permissionMode = mode;
+      this.effectivePermissionMode = mode;
+      this.persist();
+      this.emit('mode', { permissionMode: mode });
+    }
     return r;
   }
 
