@@ -11,7 +11,7 @@ import { isProbablyMobileDevice } from '../../lib/mobile-controls'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
 import { useAgentVoiceInput } from '../../hooks/useAgentVoiceInput'
 import { showNotice } from '../forge/GlobalNotice'
-import { subscribeVillageVoiceToggle } from './village-actions'
+import { subscribeVillageSend, subscribeVillageVoiceToggle } from './village-actions'
 
 const MOVEMENT_CODES = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight'])
 
@@ -36,9 +36,12 @@ export function VillageComposer({ agentId, large = false }: { agentId: string; l
   /** What was in the box when the mic started; live words go after it. */
   const voiceBaseRef = useRef<string | null>(null)
   const working = status === 'working' || status === 'needs-decision'
+  // On the zoomed-in screen (F) talking comes first: the box doesn't take the keyboard, so T starts and
+  // stops the mic and Enter sends without clicking anything. Click the box to type instead.
+  const voiceFirst = large
 
   const voice = useAgentVoiceInput({
-    focusTargetRef: textareaRef,
+    focusTargetRef: voiceFirst ? undefined : textareaRef,
     enablePlayerLipSync: true,
     onLiveText: (spoken) => {
       if (voiceBaseRef.current === null) voiceBaseRef.current = textareaRef.current?.value ?? ''
@@ -68,13 +71,13 @@ export function VillageComposer({ agentId, large = false }: { agentId: string; l
   // Focus the composer right after the agent is focused (after the E keydown has finished).
   // Not on touch devices: the on-screen keyboard would cover most of the transcript.
   useEffect(() => {
-    if (isProbablyMobileDevice()) return
+    if (isProbablyMobileDevice() || voiceFirst) return
     const timer = window.setTimeout(() => {
       textareaRef.current?.focus({ preventScroll: true })
       focusedAtRef.current = performance.now()
     }, 60)
     return () => window.clearTimeout(timer)
-  }, [agentId])
+  }, [agentId, voiceFirst])
 
   const send = () => {
     const message = text.trim()
@@ -92,6 +95,11 @@ export function VillageComposer({ agentId, large = false }: { agentId: string; l
       .finally(() => setSending(false))
   }
 
+  // Enter on the screen (box not focused) sends what you dictated.
+  const sendRef = useRef(send)
+  sendRef.current = send
+  useEffect(() => subscribeVillageSend(() => sendRef.current()), [])
+
   const onKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     // Ctrl+Space (dictate) goes on to the village key handler; everything else stays in the box.
     if (event.ctrlKey && event.code === 'Space') return
@@ -100,6 +108,12 @@ export function VillageComposer({ agentId, large = false }: { agentId: string; l
     // A movement key still held from walking up to the desk auto-repeats into the box: drop it.
     if (event.repeat && MOVEMENT_CODES.has(event.nativeEvent.code) && performance.now() - focusedAtRef.current < 1500) {
       event.preventDefault()
+      return
+    }
+    // While dictating, T stops the mic even inside the box (nobody types while talking).
+    if (voice.listening && event.code === 'KeyT' && !event.ctrlKey && !event.altKey && !event.metaKey) {
+      event.preventDefault()
+      voiceStopRef.current()
       return
     }
     if (event.key === 'Escape') {
@@ -138,7 +152,7 @@ export function VillageComposer({ agentId, large = false }: { agentId: string; l
             if (voice.listening) voiceBaseRef.current = event.target.value
           }}
           onKeyDown={onKeyDown}
-          placeholder={working ? 'Talk to it while it works: folds into the running turn…' : 'Message… (T or Ctrl+Space to talk)'}
+          placeholder={working ? 'Talk to it while it works: folds into the running turn…' : voiceFirst ? 'Press T and talk, or click here to type…' : 'Message… (Ctrl+Space to talk)'}
           className={`w-full resize-none rounded-lg border bg-black/45 px-2.5 py-2 pr-11 leading-snug text-white placeholder:text-white/30 focus:outline-none ${large ? 'min-h-[96px] text-[15px]' : 'min-h-[64px] text-[13px]'} ${voice.listening ? 'border-rose-300/60' : 'border-white/15 focus:border-emerald-300/50'}`}
         />
         <button
@@ -192,7 +206,9 @@ export function VillageComposer({ agentId, large = false }: { agentId: string; l
         </div>
       </div>
       <div className="text-[9.5px] uppercase tracking-[0.12em] text-white/30 max-[700px]:hidden">
-        Enter send · T or Ctrl+Space talk · F {large ? 'back to the side panel' : 'zoom into the screen'} · Esc leave box, Esc again back · N next agent
+        {voiceFirst
+          ? 'T talk, T again to stop · Enter send · click the box to type · F or Esc back to the side panel · N next agent'
+          : 'Enter send · Ctrl+Space talk (T once you leave the box) · F zoom into the screen · Esc leave box, Esc again back · N next agent'}
       </div>
     </div>
   )

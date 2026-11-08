@@ -118,13 +118,27 @@ export function toggleVillageScreen(): boolean {
   return true
 }
 
-// ─── voice (T / Ctrl+Space): the mounted composer listens ────────────────────
+// ─── voice (T / Ctrl+Space) and send (Enter on the screen): the mounted composer listens ─
 
 const voiceListeners = new Set<() => void>()
 
 export function subscribeVillageVoiceToggle(listener: () => void): () => void {
   voiceListeners.add(listener)
   return () => { voiceListeners.delete(listener) }
+}
+
+const sendListeners = new Set<() => void>()
+
+export function subscribeVillageSend(listener: () => void): () => void {
+  sendListeners.add(listener)
+  return () => { sendListeners.delete(listener) }
+}
+
+/** Send what is in the focused agent's text box. False when no box is mounted. */
+export function triggerVillageSend(): boolean {
+  if (!sendListeners.size) return false
+  sendListeners.forEach(listener => listener())
+  return true
 }
 
 /** Start or stop live dictation into the focused agent's text box. False when no box is mounted. */
@@ -303,6 +317,8 @@ export function handleVillageKeyDown(event: KeyboardEvent): boolean {
   if (village.focusedAgentId) {
     if (event.code === 'KeyF') return toggleVillageScreen()
     if (event.code === 'KeyT') return toggleVillageVoice()
+    // On the screen the box doesn't hold the keyboard: Enter sends what you dictated.
+    if (event.code === 'Enter' && !event.shiftKey && screenAgentId === village.focusedAgentId) return triggerVillageSend()
     if (event.code === 'Escape' && screenAgentId) {
       setVillageScreen(null)
       return true
