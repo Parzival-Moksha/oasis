@@ -4,12 +4,15 @@
 //   node scripts/smoke.mjs turns     [3 turns]  mid-turn message + todo, interrupt, AskUserQuestion via host
 //   node scripts/smoke.mjs restore   [0 turns]  after a server restart: roster restored + resumed, then cleanup
 //   node scripts/smoke.mjs world     [1 turn]   the Oasis MCP server loads and its free tools run without a card
+//   node scripts/smoke.mjs handoff   [3 turns]  move here + let go between two engines (OASIS_WS and OASIS_WS2)
 //
 // Only touches packages/oasis-agent-engine/sandbox/* scratch agents. Uses haiku and tiny prompts.
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
+import { findSessionFile } from '../src/sessions.js';
+import { spawnClaude, onLines } from '../src/claude.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.resolve(HERE, '..');
@@ -18,9 +21,9 @@ const B = path.join(PKG, 'sandbox', 'agent-b');
 const URL_ = process.env.OASIS_WS || 'ws://127.0.0.1:4530/ws';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function connect() {
+function connect(url = URL_) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(URL_);
+    const ws = new WebSocket(url);
     const events = [];
     const waiters = [];
     const pending = new Map();
@@ -189,6 +192,67 @@ const phases = {
     check('the agent called get_world_info', used, JSON.stringify(first?.end?.result || '').slice(0, 160));
     await c.cmd('kill', { agentId: a.id });
     c.close();
+  },
+
+  // [3 turns] One writer per session. X (OASIS_WS) holds a session, Y (OASIS_WS2) is the Oasis and moves it over
+  // (same id, X's process stops, X lets go). Then a plain `claude` process opens it again, like the desktop app
+  // would, and Y lets go and watches.
+  async handoff() {
+    const X = await connect(URL_);
+    const Y = await connect(process.env.OASIS_WS2 || 'ws://127.0.0.1:4533/ws');
+    const opts = { cwd: A, model: 'haiku', permissionMode: 'bypassPermissions', worldTools: false };
+    const turnEnd = (c, id) => c.next((e) => e.agentId === id && e.kind === 'turn.end', 120000).catch(() => null);
+    const a = (await X.cmd('spawnAgent', { name: 'holder', ...opts })).data;
+    await X.next((e) => e.agentId === a.id && e.kind === 'meta', 30000);
+    let endX = turnEnd(X, a.id);
+    await X.cmd('send', { agentId: a.id, text: 'Remember the word PAPAYA. Reply only: OK' });
+    await endX;
+    const sid = a.sessionId;
+
+    const refused = await Y.cmd('spawnAgent', { name: 'mover', sessionId: sid, ...opts });
+    check('a session held elsewhere is refused without move', !refused.ok, refused.error);
+    const exitP = X.next((e) => e.agentId === a.id && e.kind === 'exit', 15000).catch(() => null);
+    const moved = await Y.cmd('spawnAgent', { name: 'mover', sessionId: sid, move: true, ...opts });
+    check('move: same session id', moved.ok && moved.data.sessionId === sid, moved.ok ? moved.data.sessionId : moved.error);
+    check('move: the other holder stopped', !!(await exitP));
+    const b = moved.data;
+    const endY = turnEnd(Y, b.id);
+    await Y.cmd('send', { agentId: b.id, text: 'What word did I ask you to remember? Reply with the word only.' });
+    const e2 = await endY;
+    check('the moved session remembers the turn made before the move', /papaya/i.test(e2?.result || ''), JSON.stringify(e2?.result));
+
+    const xAgents = (await X.cmd('listAgents')).data;
+    check('X let go of the moved session and watches it', !xAgents.some((x) => x.id === a.id) && xAgents.some((x) => x.kind === 'observer' && x.name === 'holder'));
+
+    // "The desktop app": a plain claude process resumes the session and asks something.
+    const letGo = Y.next((e) => e.agentId === b.id && e.kind === 'removed', 30000).catch(() => null);
+    const desk = spawnClaude(['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--model', 'haiku', '--permission-mode', 'bypassPermissions', '--resume', sid], { cwd: A });
+    const deskResult = new Promise((res) => {
+      onLines(desk.stdout, (line) => { try { const m = JSON.parse(line); if (m.type === 'result') res(m.result); } catch { /* ignore */ } });
+      setTimeout(() => res(null), 120000);
+    });
+    desk.stdin.write(JSON.stringify({ type: 'user', message: { role: 'user', content: 'What did I ask you in my last message, and what did you answer? One short line.' }, parent_tool_use_id: null, session_id: '' }) + '\n');
+    check('the Oasis let go when the session was opened elsewhere again', !!(await letGo));
+    await sleep(500);
+    const obs = (await Y.cmd('listAgents')).data.find((x) => x.kind === 'observer' && x.name === 'mover');
+    check('and watches it instead', !!obs);
+    const r3 = await deskResult;
+    desk.stdin.end();
+    check('the reopened session sees the turn made in the Oasis', /papaya/i.test(r3 || ''), JSON.stringify(r3));
+
+    // The transcript must stay one line of conversation: no message with two children.
+    const file = findSessionFile(sid, A);
+    const kids = new Map();
+    for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+      let m; try { m = JSON.parse(line); } catch { continue; }
+      if ((m.type !== 'user' && m.type !== 'assistant') || m.isSidechain || !m.parentUuid) continue;
+      kids.set(m.parentUuid, (kids.get(m.parentUuid) || 0) + 1);
+    }
+    const branches = [...kids.values()].filter((n) => n > 1).length;
+    check('the transcript did not branch', branches === 0, `${branches} branch point(s) in ${path.basename(file)}`);
+
+    for (const c of [X, Y]) for (const x of (await c.cmd('listAgents')).data) await c.cmd('kill', { agentId: x.id });
+    X.close(); Y.close();
   },
 
   // [0 turns] Spawn agent-a on an existing sandbox session id (resume, no message sent).

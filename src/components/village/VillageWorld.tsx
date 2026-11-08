@@ -258,7 +258,7 @@ function DeskWindow({ agentId, nearby, mode }: { agentId: string; nearby: boolea
       </div>
       {screen && (agent.owned
         ? <VillageComposer agentId={agentId} large />
-        : <div className="shrink-0 border-t border-white/10 pt-2 text-[12px] text-cyan-100/75">Watching only: this session runs somewhere else. Press F to go back, then &ldquo;Talk to it here&rdquo; to take it over.</div>)}
+        : <div className="shrink-0 border-t border-white/10 pt-2 text-[12px] text-cyan-100/75">Watching only: this session runs somewhere else. Press F to go back, then &ldquo;Move it here&rdquo; to talk to it.</div>)}
     </div>
   )
 }

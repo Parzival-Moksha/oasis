@@ -142,23 +142,32 @@ async function describe(f) {
 // (<pid>.<hash>.key files next to them hold peer tokens: never read them.)
 export const LIVE_DIR = path.join(CLAUDE_DIR, 'sessions');
 
-function pidAlive(pid) {
+export function pidAlive(pid) {
   try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
 }
 
-/** @returns {Map<string, {pid:number, status:string, kind:string, entrypoint:string, name:string, cwd:string, statusUpdatedAt:number}>} */
-export function readLiveRegistry() {
-  const out = new Map();
+/** Every live process with a session open, one entry per process (two can hold the same session). */
+export function readLiveEntries() {
+  const out = [];
   let files = [];
   try { files = fs.readdirSync(LIVE_DIR).filter((f) => /^\d+\.json$/.test(f)); } catch { return out; }
   for (const f of files) {
     try {
       const r = JSON.parse(fs.readFileSync(path.join(LIVE_DIR, f), 'utf8'));
       if (!r.sessionId || !pidAlive(r.pid)) continue;
-      const prev = out.get(r.sessionId);
-      if (prev && prev.statusUpdatedAt > (r.statusUpdatedAt || 0)) continue;
-      out.set(r.sessionId, { pid: r.pid, status: r.status, kind: r.kind, entrypoint: r.entrypoint, name: r.name, cwd: r.cwd, statusUpdatedAt: r.statusUpdatedAt || r.updatedAt || 0 });
+      out.push({ sessionId: r.sessionId, pid: r.pid, status: r.status, kind: r.kind, entrypoint: r.entrypoint, name: r.name, cwd: r.cwd, statusUpdatedAt: r.statusUpdatedAt || r.updatedAt || 0 });
     } catch { /* partial write; skip */ }
+  }
+  return out;
+}
+
+/** @returns {Map<string, {pid:number, status:string, kind:string, entrypoint:string, name:string, cwd:string, statusUpdatedAt:number}>} newest holder per session */
+export function readLiveRegistry() {
+  const out = new Map();
+  for (const { sessionId, ...r } of readLiveEntries()) {
+    const prev = out.get(sessionId);
+    if (prev && prev.statusUpdatedAt > r.statusUpdatedAt) continue;
+    out.set(sessionId, r);
   }
   return out;
 }

@@ -6,6 +6,8 @@
 //
 // Every event: { v: 1, agentId, ts, kind, ...payload }. Schema: packages/oasis-agent-engine/README.md.
 
+import { attachmentsFromResult } from './files.js';
+
 export const STATUS = Object.freeze({
   WORKING: 'working',
   WAITING: 'waiting',
@@ -274,7 +276,12 @@ export class Normalizer {
   onToolResult(b, toolUseResult, parentToolUseId) {
     const name = this.toolNames.get(b.tool_use_id);
     const output = toolResultText(b.content);
-    this.emit('tool.end', { toolUseId: b.tool_use_id, name: name || null, isError: !!b.is_error, output: clip(output, 1500), parentToolUseId });
+    // SendUserFile: the files the agent showed the owner, each with an id for GET /file/<id> (files.js).
+    const attachments = name === 'SendUserFile' && !b.is_error ? attachmentsFromResult(toolUseResult) : [];
+    this.emit('tool.end', {
+      toolUseId: b.tool_use_id, name: name || null, isError: !!b.is_error, output: clip(output, 1500), parentToolUseId,
+      ...(attachments.length ? { attachments } : {}),
+    });
     if (this.turn.decisionPending.has(b.tool_use_id)) this.turn.decisionPending.delete(b.tool_use_id);
     if (name === 'TaskCreate' && toolUseResult?.task?.id) {
       const t = this.taskTodos.get(b.tool_use_id);

@@ -42,8 +42,9 @@ function describeError(error: unknown): string {
 }
 
 /**
- * Watching a session that runs somewhere else. "Talk here" makes it yours: a fork (a copy that continues
- * here) while it is still open elsewhere, or the session itself once it is closed there.
+ * Watching a session that runs somewhere else. "Move it here" makes it yours: the same session, not a copy.
+ * If it is still open elsewhere (the desktop app, a terminal), the engine stops that idle process first; when the
+ * owner types there again, the engine lets go and the Oasis goes back to watching.
  */
 function ObservedFooter({ agentId }: { agentId: string }) {
   const agent = useOasisStore(s => s.agentEngine.agents[agentId])
@@ -60,17 +61,18 @@ function ObservedFooter({ agentId }: { agentId: string }) {
       const live = await client.listLive().catch(() => [])
       const openElsewhere = live.some(entry => entry.sessionId === agent.sessionId)
       if (openElsewhere && !window.confirm(
-        `"${agentDisplayName(agent)}" is still open somewhere else (the desktop app or a terminal).
+        `Move "${agentDisplayName(agent)}" here?
 
 ` +
-        'OK makes a copy that continues here, with the whole conversation so far. From then on, talk to it only here: ' +
-        'the other window will not see what you say in the Oasis.',
+        'Same conversation, not a copy. It is open in the desktop app or a terminal, so that window stops holding it. ' +
+        'When you type there again, it moves back and the Oasis goes to watching. ' +
+        'The desktop app may only show what you said here after you reopen the session there.',
       )) return
-      const spawned = await client.spawnAgent({ name: agentDisplayName(agent).slice(0, 32), cwd: agent.cwd, sessionId: agent.sessionId, fork: openElsewhere })
+      const spawned = await client.spawnAgent({ name: agentDisplayName(agent).slice(0, 32), cwd: agent.cwd, sessionId: agent.sessionId, move: openElsewhere })
       await client.unobserve(agent.id).catch(() => {})
       focusVillageAgent(spawned.id)
     } catch (error) {
-      showNotice(`Could not take it over: ${describeError(error)}`, 'error')
+      showNotice(`Could not move it here: ${describeError(error)}`, 'error')
     } finally {
       setBusy(false)
     }
@@ -86,7 +88,7 @@ function ObservedFooter({ agentId }: { agentId: string }) {
         onClick={() => { void takeOver() }}
         className="self-start rounded-md border border-emerald-300/45 bg-emerald-400/20 px-3 py-1 text-[11.5px] font-black text-emerald-50 transition hover:bg-emerald-400/35 disabled:opacity-40"
       >
-        {busy ? 'taking it over…' : 'Talk to it here'}
+        {busy ? 'moving it here…' : 'Move it here'}
       </button>
     </div>
   )

@@ -57,6 +57,7 @@ export class Agent {
     this.permissionMode = spec.permissionMode || null;
     this.effort = spec.effort || null;
     this.fork = !!spec.fork;
+    this.forkedFrom = spec.fork ? spec.sessionId || null : null; // until the fork's first turn, sessionId is still the original's
     this.worldTools = spec.worldTools !== false; // the Oasis MCP server (worldtools.js); on unless the roster says false
     this.hub = hub;
     this.proc = null;
@@ -141,7 +142,9 @@ export class Agent {
     this.fork = false; // only fork on the first start
     // Note: with 5.x models TodoWrite is not offered in -p mode (CLAUDE_CODE_ENABLE_TODO_TOOLS=1 did not
     // change that in 2.1.316). Todos arrive as TaskCreate/TaskUpdate calls, which the normalizer maps.
-    const env = {};
+    // SendUserFile is off in -p mode unless the host shows files by path; the Oasis does (files.js, /file/<id>).
+    // Checked with 2.1.318: the init tool list gains SendUserFile, and its result lists each validated path.
+    const env = { CLAUDE_CODE_ATTACHMENTS_BY_PATH: '1' };
     // Scratch agents live inside the 7c_oasis repo: keep them off the owner's auto-memory.
     if (path.resolve(this.cwd).toLowerCase().startsWith(SANDBOX_ROOT.toLowerCase())) env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '1';
     this.hub.log(`[${this.name}] spawn claude ${args.join(' ')} (cwd ${this.cwd})`);
@@ -450,10 +453,15 @@ export class Agent {
     return { ok: true };
   }
 
-  kill() {
+  /** A fork that hasn't had its first turn yet still carries the original session id: someone else may hold that one. */
+  forkPending() { return !!this.forkedFrom && this.forkedFrom === this.sessionId; }
+
+  /** now: stop at once (letting go of a session someone else opened), instead of closing stdin and waiting 3 s. */
+  kill({ now = false } = {}) {
     if (!this.proc) { this.setStatus(STATUS.IDLE, 'stopped'); return; }
     this.killing = true;
     const proc = this.proc;
+    if (now) { proc.kill(); return; }
     try { proc.stdin.end(); } catch { /* ignore */ }
     setTimeout(() => { if (this.proc === proc) proc.kill(); }, 3000);
   }

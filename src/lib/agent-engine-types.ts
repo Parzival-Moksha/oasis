@@ -143,11 +143,21 @@ export type EngineToolStartEvent = EngineEventEnvelope<'tool.start'> & {
   summary?: string
   parentToolUseId?: string | null
 }
+/** A file an agent sent with SendUserFile; the engine serves it at GET /file/<id>. */
+export interface EngineAttachment {
+  id: string
+  name: string
+  size: number | null
+  isImage: boolean
+  mediaType: string | null
+}
 export type EngineToolEndEvent = EngineEventEnvelope<'tool.end'> & {
   toolUseId?: string | null
   name?: string | null
   isError?: boolean
   output?: string
+  /** SendUserFile only: the files the agent showed you. */
+  attachments?: EngineAttachment[]
   parentToolUseId?: string | null
 }
 export type EngineTodoEvent = EngineEventEnvelope<'todo'> & { source?: 'TodoWrite' | 'Task' | string; todos: EngineTodo[] }
@@ -296,8 +306,11 @@ export interface SpawnAgentArgs {
   model?: string
   permissionMode?: string
   effort?: string
-  /** Resume as a copy (`--fork-session`). Required when the session is open in another process. */
+  /** Resume as a copy (`--fork-session`), leaving the original where it is open. */
   fork?: boolean
+  /** Same session, moved here: the engine stops the other (idle) process that has it open, then resumes it.
+   *  When it is opened there again, the engine lets go and watches it instead. */
+  move?: boolean
   /** New agents only: create the working folder if it does not exist yet. */
   createCwd?: boolean
 }

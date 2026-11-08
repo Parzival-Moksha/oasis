@@ -5,6 +5,7 @@
 //   POST /api/cmd            same commands as the socket, for curl/debugging
 //   ws://127.0.0.1:4530/listen  live dictation (Moonshine, see ears.js)
 //   GET  /api/agents, /api/sessions, /health
+//   GET  /file/<id>          a file an agent sent with SendUserFile (files.js; only those, by random id)
 import http from 'node:http';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -13,10 +14,12 @@ import { WebSocketServer } from 'ws';
 import { Agent } from './agent.js';
 import { Observer } from './observe.js';
 import { HookObserver } from './hooks.js';
-import { listSessions, isTranscriptPath, readLiveRegistry } from './sessions.js';
+import { listSessions, isTranscriptPath, readLiveRegistry, readLiveEntries, pidAlive, findSessionFile } from './sessions.js';
+import { execFileSync } from 'node:child_process';
 import { loadRoster, saveRoster, saveRosterNow } from './roster.js';
 import { resolveClaude } from './claude.js';
 import { listen as earsListen, warmEars, earsStatus, stopEars } from './ears.js';
+import { serveAttachment } from './files.js';
 import fs from 'node:fs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -103,7 +106,7 @@ const commands = {
     return sessions.map((s) => ({ ...s, ownedBy: owned.get(s.sessionId) || null, observedBy: observed.get(String(s.path).toLowerCase()) || null }));
   },
 
-  spawnAgent({ name, cwd, sessionId, model, permissionMode, effort, fork, force, createCwd, worldTools } = {}) {
+  async spawnAgent({ name, cwd, sessionId, model, permissionMode, effort, fork, force, move, createCwd, worldTools } = {}) {
     if (!cwd) throw new Error('cwd is required');
     cwd = path.resolve(cwd);
     if (!fs.existsSync(cwd)) {
@@ -118,7 +121,8 @@ const commands = {
       const live = readLiveRegistry().get(sessionId);
       const ours = new Set(ownedAgents().map((a) => a.proc?.pid).filter(Boolean));
       if (live && !ours.has(live.pid) && !force) {
-        throw new Error(`session is open in pid ${live.pid} (${live.entrypoint || live.kind}, ${live.status}); close it there, or spawn with fork:true (copy) or force:true`);
+        if (!move) throw new Error(`session is open in pid ${live.pid} (${live.entrypoint || live.kind}, ${live.status}); close it there, or spawn with move:true (same session, the other process stops), fork:true (copy) or force:true`);
+        await stopOtherHolders(sessionId, ours);
       }
     }
     const agent = new Agent({ id: newId('agent'), name: name || path.basename(cwd), cwd, sessionId, model, permissionMode, effort, fork, worldTools }, hub);
@@ -138,10 +142,10 @@ const commands = {
   },
   contextUsage({ agentId }) { return getAgent(agentId, { owned: true }).refreshContext(); },
 
-  kill({ agentId, keep = false }) {
+  kill({ agentId, keep = false, now = false }) {
     const a = getAgent(agentId);
     if (a.kind === 'owned') {
-      a.kill();
+      a.kill({ now });
       if (a.sessionId) {
         recentlyRemoved.set(a.sessionId, a.id);
         setTimeout(() => recentlyRemoved.delete(a.sessionId), 30000).unref();
@@ -179,6 +183,73 @@ const commands = {
   // Graceful stop that works on Windows too (signals from another process can't be caught there).
   shutdown() { setTimeout(() => shutdown('shutdown command'), 50); return { ok: true }; },
 };
+
+// ------------------------------------------------------------------ one writer per session
+// A session is its transcript; whichever process has it open holds the pen. Two holders each keep their own copy of
+// the conversation in memory and branch the transcript. "Move here" stops the other (idle) holder and resumes the
+// same session here; when the session is opened somewhere else again (the owner types in the desktop app), the
+// Oasis lets go and watches the transcript instead. Both sides resume from the file, so neither loses a turn.
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const where = (e) => (e.entrypoint === 'claude-desktop' ? 'the desktop app' : e.entrypoint === 'cli' ? 'a terminal' : `${e.entrypoint || e.kind || 'another process'}`);
+
+function isClaudeProcess(pid) {
+  try {
+    const out = process.platform === 'win32'
+      ? execFileSync('tasklist', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'], { encoding: 'utf8', windowsHide: true })
+      : execFileSync('ps', ['-p', String(pid), '-o', 'comm='], { encoding: 'utf8' });
+    return /(^|[\\/",])(claude|node)(\.exe)?"?(,|\s|$)/im.test(out);
+  } catch { return false; }
+}
+
+async function stopOtherHolders(sessionId, ours) {
+  // The registry flips to idle a moment after a turn ends, so give a busy holder a few seconds first.
+  const patience = Date.now() + 6000;
+  let others;
+  for (;;) {
+    others = readLiveEntries().filter((e) => e.sessionId === sessionId && !ours.has(e.pid));
+    const busy = others.find((e) => e.status && e.status !== 'idle');
+    if (!busy) break;
+    if (Date.now() > patience) throw new Error(`it is working in ${where(busy)} right now (${busy.status}); move it when it is done`);
+    await sleep(300);
+  }
+  for (const e of others) {
+    if (!isClaudeProcess(e.pid)) throw new Error(`pid ${e.pid} does not look like a claude process; not stopping it`);
+    hub.log(`move: stopping ${where(e)} (pid ${e.pid}), which holds session ${sessionId.slice(0, 8)}`);
+    try { process.kill(e.pid); } catch (err) { if (err.code !== 'ESRCH') throw err; }
+  }
+  const until = Date.now() + 8000;
+  while (others.some((e) => pidAlive(e.pid))) {
+    if (Date.now() > until) throw new Error('the other process did not stop');
+    await sleep(150);
+  }
+}
+
+const releasing = new Set();
+async function letGoOfSessionsOpenElsewhere() {
+  const owned = ownedAgents();
+  if (!owned.length) return;
+  const ours = new Set(owned.map((a) => a.proc?.pid).filter(Boolean));
+  const entries = readLiveEntries();
+  for (const a of owned) {
+    if (!a.sessionId || a.forkPending() || releasing.has(a.id)) continue;
+    const other = entries.find((e) => e.sessionId === a.sessionId && !ours.has(e.pid));
+    if (!other) continue;
+    releasing.add(a.id);
+    try {
+      hub.log(`[${a.name}] session ${a.sessionId.slice(0, 8)} was opened in ${where(other)} (pid ${other.pid}): letting go, watching it instead`);
+      const sessionPath = findSessionFile(a.sessionId, a.cwd);
+      commands.kill({ agentId: a.id, now: true });
+      if (sessionPath) await commands.observe({ sessionPath, name: a.name });
+    } catch (e) {
+      hub.log(`[${a.name}] letting go failed: ${e.message}`);
+    } finally {
+      releasing.delete(a.id);
+    }
+  }
+}
+// Only when spawns are direct: through the cmd.exe fallback our own claude pid is unknown and would look foreign.
+if (!resolveClaude().shell) setInterval(() => { void letGoOfSessionsOpenElsewhere(); }, 2000).unref();
+else hub.log('claude runs through cmd.exe: the one-writer watch is off');
 
 async function runCommand(msg) {
   const fn = commands[msg.cmd];
@@ -260,6 +331,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   if (!requestAllowed(req)) return sendJson(res, 403, { error: 'origin not allowed' });
   try {
+    if (req.method === 'GET' && url.pathname.startsWith('/file/')) return serveAttachment(url.pathname.slice('/file/'.length), res);
     if (req.method === 'GET' && url.pathname === '/health') return sendJson(res, 200, { ok: true, agents: agents.size, claude: resolveClaude(), ears: earsStatus() });
     if (req.method === 'GET' && url.pathname === '/api/agents') return sendJson(res, 200, snapshots());
     if (req.method === 'GET' && url.pathname === '/api/sessions') return sendJson(res, 200, await commands.listSessions({}));
