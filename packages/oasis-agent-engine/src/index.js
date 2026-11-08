@@ -103,7 +103,7 @@ const commands = {
     return sessions.map((s) => ({ ...s, ownedBy: owned.get(s.sessionId) || null, observedBy: observed.get(String(s.path).toLowerCase()) || null }));
   },
 
-  spawnAgent({ name, cwd, sessionId, model, permissionMode, effort, fork, force, createCwd } = {}) {
+  spawnAgent({ name, cwd, sessionId, model, permissionMode, effort, fork, force, createCwd, worldTools } = {}) {
     if (!cwd) throw new Error('cwd is required');
     cwd = path.resolve(cwd);
     if (!fs.existsSync(cwd)) {
@@ -121,7 +121,7 @@ const commands = {
         throw new Error(`session is open in pid ${live.pid} (${live.entrypoint || live.kind}, ${live.status}); close it there, or spawn with fork:true (copy) or force:true`);
       }
     }
-    const agent = new Agent({ id: newId('agent'), name: name || path.basename(cwd), cwd, sessionId, model, permissionMode, effort, fork }, hub);
+    const agent = new Agent({ id: newId('agent'), name: name || path.basename(cwd), cwd, sessionId, model, permissionMode, effort, fork, worldTools }, hub);
     addAgent(agent);
     agent.start();
     hub.persist();

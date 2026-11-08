@@ -19,6 +19,7 @@ import { spawnClaude, onLines } from './claude.js';
 import { Normalizer, STATUS, clipDeep, summarizeTool } from './normalize.js';
 import { findSessionFile } from './sessions.js';
 import { droppedAfterInterrupt, expiredAtResult, interruptApplies, matchReplay } from './pending.js';
+import { worldToolsArgs } from './worldtools.js';
 
 const SANDBOX_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'sandbox');
 const REVIEW_INPUT_MAX = 256 * 1024;
@@ -43,7 +44,7 @@ function echoText(content) {
 
 export class Agent {
   /**
-   * @param {{id:string,name:string,cwd:string,sessionId?:string,model?:string,permissionMode?:string,effort?:string,fork?:boolean}} spec
+   * @param {{id:string,name:string,cwd:string,sessionId?:string,model?:string,permissionMode?:string,effort?:string,fork?:boolean,worldTools?:boolean}} spec
    * @param {{emit:(agentId:string, kind:string, payload?:object)=>void, persist:()=>void, log:(...a:any[])=>void}} hub
    */
   constructor(spec, hub) {
@@ -56,6 +57,7 @@ export class Agent {
     this.permissionMode = spec.permissionMode || null;
     this.effort = spec.effort || null;
     this.fork = !!spec.fork;
+    this.worldTools = spec.worldTools !== false; // the Oasis MCP server (worldtools.js); on unless the roster says false
     this.hub = hub;
     this.proc = null;
     this.status = STATUS.IDLE;
@@ -96,7 +98,7 @@ export class Agent {
   }
 
   rosterEntry() {
-    return { id: this.id, name: this.name, cwd: this.cwd, sessionId: this.sessionId, model: this.model, permissionMode: this.permissionMode, effort: this.effort };
+    return { id: this.id, name: this.name, cwd: this.cwd, sessionId: this.sessionId, model: this.model, permissionMode: this.permissionMode, effort: this.effort, ...(this.worldTools ? {} : { worldTools: false }) };
   }
 
   // ------------------------------------------------------------------ process
@@ -109,6 +111,7 @@ export class Agent {
     if (this.model) args.push('--model', this.model);
     if (this.permissionMode) args.push('--permission-mode', this.permissionMode);
     if (this.effort) args.push('--effort', this.effort);
+    if (this.worldTools) args.push(...worldToolsArgs());
     if (this.sessionId) {
       // --resume finds a session by id even from another cwd (verified), so look in every project dir.
       const exists = !!findSessionFile(this.sessionId, this.cwd);

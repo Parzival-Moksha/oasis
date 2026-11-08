@@ -18,6 +18,8 @@ claude.exe -p --input-format stream-json --output-format stream-json --verbose
   --forward-subagent-text         # subagent text too, tagged with parent_tool_use_id
   --permission-prompt-tool stdio  # permission prompts, AskUserQuestion, ExitPlanMode -> host
   [--model haiku|sonnet|opus|<id>] [--permission-mode ...] [--effort ...]
+  --mcp-config <tmp>/oasis-agent-engine-mcp-*.json  # world tools: the Oasis MCP server (worldtools.js)
+  --allowedTools mcp__oasis__place_object,...       # its free tools run without a card
   --resume <id> [--fork-session]  # existing session (found in any project dir)
   | --session-id <new uuid>       # new agent: the id is known before the first turn
 ```
@@ -26,6 +28,7 @@ claude.exe -p --input-format stream-json --output-format stream-json --verbose
 - **Env:** every `CLAUDECODE` / `CLAUDE*` variable is dropped, except `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_GIT_BASH_PATH`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK/VERTEX` and `CLAUDE_CODE_MAX_OUTPUT_TOKENS`. The desktop app injects about 30 of these (session id, messaging socket and token, entrypoint, effort...). With them stripped, the children ran as normal `sdk-cli` sessions on the subscription (`apiKeySource:"none"`).
 - **Sandbox agents** also get `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`. `spike/sandbox` sits inside the 7c_oasis git repo, so without it a scratch agent loads the repo's `CLAUDE.md` **and the owner's 7c_oasis auto-memory**. `get_context_usage` listed `memory_files` = repo CLAUDE.md, the sandbox CLAUDE.md, and `~/.claude/projects/C--7c-oasis/memory/MEMORY.md`.
 - The owner's global hooks (agentcraft) also run in every child. That's expected, since these are real Claude Code sessions.
+- **World tools** (2026-11-08): every agent gets the Oasis MCP server (`http://127.0.0.1:4516/api/mcp/oasis`, override with `OASIS_WEB_URL`) through `--mcp-config`, so Anorak Pro in 7c_oasis, Rick and Tyler can see and build in the world, not only sessions started in af_oasis. Before this, only folders with af_oasis's `.mcp.json` had it. Looking, placing, lighting and screenshot tools are pre-allowed. Tools that spend credits (`generate_*`, `conjure_*`, `craft_scene`), switch or wipe the owner's world (`load_world`, `create_*world`, `clear_world`) or delete library files still ask. Opt out per agent with `worldTools: false` in the spawn command or roster. The Oasis page server must be up when the agent starts, or the server shows as `failed`. `node scripts/smoke.mjs world` checks it (1 haiku turn). The CLI also accepts `control_request {subtype:"mcp_set_servers", servers:{...}}` on a live process (found in the binary, used by the SDK's `setMcpServers`). Not used yet; it would toggle the tools without a respawn.
 
 ## Event schema v1
 

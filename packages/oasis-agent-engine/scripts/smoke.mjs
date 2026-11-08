@@ -3,6 +3,7 @@
 //   node scripts/smoke.mjs basic     [0 turns]  hello, sessions, spawn + initialize, setModel, observe, hook
 //   node scripts/smoke.mjs turns     [3 turns]  mid-turn message + todo, interrupt, AskUserQuestion via host
 //   node scripts/smoke.mjs restore   [0 turns]  after a server restart: roster restored + resumed, then cleanup
+//   node scripts/smoke.mjs world     [1 turn]   the Oasis MCP server loads and its free tools run without a card
 //
 // Only touches packages/oasis-agent-engine/sandbox/* scratch agents. Uses haiku and tiny prompts.
 import path from 'node:path';
@@ -164,6 +165,29 @@ const phases = {
     const end3 = await c.next((e) => e.agentId === b.id && e.kind === 'turn.end', 90000).catch(() => null);
     check('answer reached the model', /tea/i.test(end3?.result || ''), JSON.stringify(end3?.result));
     console.log('roster now:', fs.readFileSync(path.join(PKG, '..', '..', 'data', 'agent-engine.local.json'), 'utf8').replace(/\s+/g, ' ').slice(0, 400));
+    c.close();
+  },
+
+  // [1 turn] World tools (worldtools.js): a fresh agent gets the Oasis MCP server and may use its free tools
+  // without a permission card. Needs the Oasis page server (pnpm dev, port 4516) running.
+  async world() {
+    const c = await connect();
+    const a = (await c.cmd('spawnAgent', { name: 'smoke-world', cwd: A, model: 'haiku', permissionMode: 'default' })).data;
+    await c.next((e) => e.agentId === a.id && e.kind === 'meta', 30000);
+    const initP = c.next((e) => e.agentId === a.id && e.kind === 'init', 60000).catch(() => null);
+    const permP = c.next((e) => e.agentId === a.id && e.kind === 'permission.request', 120000).then((e) => ({ perm: e })).catch(() => null);
+    const endP = c.next((e) => e.agentId === a.id && e.kind === 'turn.end', 120000).then((e) => ({ end: e })).catch(() => null);
+    await c.cmd('send', { agentId: a.id, text: 'Call the mcp__oasis__get_world_info tool once, then reply with only the world name it returned.' });
+    const init = await initP;
+    const oasis = (init?.mcpServers || []).filter((s) => s.name === 'oasis');
+    check('one oasis MCP server, connected', oasis.length === 1 && oasis[0].status === 'connected', JSON.stringify(init?.mcpServers));
+    const worldTools = (init?.tools || []).filter((t) => t.startsWith('mcp__oasis__'));
+    check('world tools offered', worldTools.includes('mcp__oasis__place_object') && worldTools.includes('mcp__oasis__screenshot_viewport'), `${worldTools.length} oasis tools`);
+    const first = await Promise.race([permP, endP]);
+    check('get_world_info ran without a permission card', !!first?.end, first?.perm ? `asked for ${first.perm.toolName}` : first?.end ? `turn took ${first.end.durationMs} ms` : 'no turn.end');
+    const used = c.events.some((e) => e.agentId === a.id && JSON.stringify(e).includes('mcp__oasis__get_world_info'));
+    check('the agent called get_world_info', used, JSON.stringify(first?.end?.result || '').slice(0, 160));
+    await c.cmd('kill', { agentId: a.id });
     c.close();
   },
 
