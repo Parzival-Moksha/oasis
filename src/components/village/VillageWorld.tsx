@@ -4,7 +4,7 @@
 // Mounted inside the R3F <Canvas> when the village profile is on. Nothing here is saved to the
 // world: the roster comes from the agent engine, positions from village-layout.ts.
 
-import { Component, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Component, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import * as THREE from 'three'
@@ -16,7 +16,11 @@ import {
   STATION,
   VILLAGE_SPAWN,
   assignVillageAvatars,
+  DESK_WINDOW_PX,
+  DESK_WINDOW_TILT,
   computeFocusPose,
+  computeScreenPose,
+  deskWindowDistanceFactor,
   layoutVillageStations,
   plazaCenter,
   resolveVillageOrigin,
@@ -30,9 +34,12 @@ import { VRMCatalogRenderer } from '../forge/WorldObjects'
 import { useIsMobileOasis } from '../forge/MobileOasisControls'
 import { effectiveStatus } from '../../store/slices/agentEngineSlice'
 import { AgentSessionView, SessionWindowHeader } from './AgentSessionView'
+import { VillageComposer } from './VillageComposer'
 import {
   focusVillageAgent,
   getSessionPanelGeometry,
+  getVillageScreen,
+  subscribeVillageScreen,
   getVillageStation,
   isFocusInputState,
   isVillageFocusBlocked,
@@ -201,27 +208,57 @@ function StationLabel({ agentId, nearby }: { agentId: string; nearby: boolean })
   )
 }
 
-function DeskWindow({ agentId, nearby }: { agentId: string; nearby: boolean }) {
+/**
+ * The glass screen above an agent's desk, the same kind of see-through HTML-in-3D as Anorak Pro's
+ * windows. "desk": the recent conversation, readable as you walk by. "screen" (F while talking to the
+ * agent): the camera fills the view with it, and the whole conversation and the text box live on it.
+ */
+function DeskWindow({ agentId, nearby, mode }: { agentId: string; nearby: boolean; mode: 'desk' | 'screen' }) {
   const agent = useOasisStore(s => s.agentEngine.agents[agentId])
   if (!agent) return null
   const color = agent.readOnly ? VILLAGE_OBSERVED_COLOR : statusColor(effectiveStatus(agent))
+  const size = DESK_WINDOW_PX[mode]
+  const screen = mode === 'screen'
   return (
     <div
       data-ui-panel="village-desk-window"
-      className="flex h-[330px] w-[440px] flex-col rounded-xl border-2 bg-slate-950/90 p-2.5 text-white shadow-[0_0_40px_rgba(0,0,0,0.5)]"
-      style={{ borderColor: `${color}cc`, boxShadow: `0 0 34px ${color}33` }}
+      className="relative flex flex-col overflow-hidden rounded-2xl text-white"
+      style={{
+        width: size.width,
+        height: size.height,
+        padding: screen ? 18 : 14,
+        // See-through at the desk; nearly solid when it fills the view, so a bright world behind can't drown the text.
+        background: screen
+          ? 'linear-gradient(160deg, rgba(8,13,26,0.9) 0%, rgba(3,6,14,0.94) 100%)'
+          : 'linear-gradient(160deg, rgba(10,16,30,0.72) 0%, rgba(4,8,18,0.84) 100%)',
+        border: `1px solid ${color}aa`,
+        boxShadow: `0 0 0 1px rgba(255,255,255,0.04) inset, 0 0 46px ${color}38, 0 0 120px rgba(0,0,0,0.35)`,
+        backdropFilter: 'blur(8px)',
+      }}
       onPointerDown={stopDomEvent}
       onPointerUp={stopDomEvent}
       onWheel={stopDomEvent}
       onDoubleClick={stopDomEvent}
       onClick={(event) => {
         stopDomEvent(event)
+        if (screen) return
         const target = event.target as HTMLElement
-        if (target.closest('button, input, textarea, select')) return
+        if (target.closest('button, input, textarea, select, a')) return
         focusVillageAgent(agentId)
       }}
     >
-      <AgentSessionView agentId={agentId} variant="3d" header={<SessionWindowHeader agent={agent} nearby={nearby} />} />
+      {/* the status color as a thin light along the top edge */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: `linear-gradient(90deg, transparent, ${color}, transparent)` }} />
+      <div className="flex min-h-0 flex-1 flex-col gap-2">
+        <AgentSessionView
+          agentId={agentId}
+          variant={screen ? 'screen' : '3d'}
+          header={<SessionWindowHeader agent={agent} nearby={nearby} screen={screen} />}
+        />
+      </div>
+      {screen && (agent.owned
+        ? <VillageComposer agentId={agentId} large />
+        : <div className="shrink-0 border-t border-white/10 pt-2 text-[12px] text-cyan-100/75">Watching only: this session runs somewhere else. Press F to go back, then &ldquo;Talk to it here&rdquo; to take it over.</div>)}
     </div>
   )
 }
@@ -257,6 +294,7 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, overlayZ
   const name = useOasisStore(s => s.agentEngine.agents[agentId]?.name || agentId)
   const focused = useOasisStore(s => s.agentEngine.focusedAgentId === agentId)
   const nearby = useOasisStore(s => s.agentEngine.nearbyAgentId === agentId)
+  const onScreen = useSyncExternalStore(subscribeVillageScreen, () => getVillageScreen() === agentId, () => false)
   // While placing or painting, the desk must not swallow the clicks meant for the ground plane.
   const blocked = useInputManager(s => isVillageFocusBlocked(s.inputState))
   const color = statusColor(status)
@@ -305,9 +343,18 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, overlayZ
       <Html position={STATION.label} center distanceFactor={9} zIndexRange={overlayZ} style={{ pointerEvents: 'none' }}>
         <StationLabel agentId={agentId} nearby={nearby && !focused} />
       </Html>
-      {windowVisible && !focused && (
-        <Html transform position={STATION.window} distanceFactor={1.8} zIndexRange={overlayZ} style={{ pointerEvents: 'auto' }}>
-          <DeskWindow agentId={agentId} nearby={nearby} />
+      {/* Talking to this agent: the side panel replaces the desk window, unless F put you on its screen. */}
+      {(focused ? onScreen : windowVisible) && (
+        <Html
+          key={onScreen ? 'screen' : 'desk'}
+          transform
+          position={STATION.window}
+          rotation-x={onScreen ? 0 : DESK_WINDOW_TILT}
+          distanceFactor={deskWindowDistanceFactor(onScreen ? 'screen' : 'desk')}
+          zIndexRange={overlayZ}
+          style={{ pointerEvents: 'auto' }}
+        >
+          <DeskWindow agentId={agentId} nearby={nearby && !focused} mode={onScreen ? 'screen' : 'desk'} />
         </Html>
       )}
     </group>
@@ -440,7 +487,7 @@ function VillagePlaza({ empty, origin }: { empty: boolean; origin: VillageOrigin
 function VillageCameraRig() {
   const camera = useThree(s => s.camera)
   const size = useThree(s => s.size)
-  const flight = useRef<{ agentId: string; from: THREE.Vector3; fromQuat: THREE.Quaternion; startedAt: number } | null>(null)
+  const flight = useRef<{ key: string; from: THREE.Vector3; fromQuat: THREE.Quaternion; startedAt: number } | null>(null)
   const goal = useMemo(() => ({ position: new THREE.Vector3(), target: new THREE.Vector3(), quaternion: new THREE.Quaternion(), matrix: new THREE.Matrix4() }), [])
 
   useEffect(() => {
@@ -459,21 +506,26 @@ function VillageCameraRig() {
     const station = getVillageStation(agentId)
     if (!station) return
     const perspective = cam as THREE.PerspectiveCamera
+    const onScreen = getVillageScreen() === agentId
+    const aspect = size.width / Math.max(1, size.height)
     const panel = getSessionPanelGeometry(size.width, size.height)
-    const pose = computeFocusPose({
-      anchor: station.anchor,
-      rotationY: station.rotationY,
-      fov: perspective.fov || 50,
-      aspect: size.width / Math.max(1, size.height),
-      panel: panel.side,
-      panelFraction: panel.fraction,
-    })
+    const pose = onScreen
+      ? computeScreenPose({ center: stationLocalToWorld(station, STATION.window), rotationY: station.rotationY, fov: perspective.fov || 50, aspect })
+      : computeFocusPose({
+        anchor: station.anchor,
+        rotationY: station.rotationY,
+        fov: perspective.fov || 50,
+        aspect,
+        panel: panel.side,
+        panelFraction: panel.fraction,
+      })
     goal.position.set(...pose.position)
     goal.target.set(...pose.target)
     goal.matrix.lookAt(goal.position, goal.target, cam.up)
     goal.quaternion.setFromRotationMatrix(goal.matrix)
-    if (!flight.current || flight.current.agentId !== agentId) {
-      flight.current = { agentId, from: cam.position.clone(), fromQuat: cam.quaternion.clone(), startedAt: clock.getElapsedTime() }
+    const key = `${agentId}:${onScreen ? 'screen' : 'panel'}`
+    if (!flight.current || flight.current.key !== key) {
+      flight.current = { key, from: cam.position.clone(), fromQuat: cam.quaternion.clone(), startedAt: clock.getElapsedTime() }
     }
     const t = Math.min(1, (clock.getElapsedTime() - flight.current.startedAt) / 0.9)
     const ease = 1 - Math.pow(1 - t, 3)

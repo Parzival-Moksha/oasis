@@ -5,15 +5,15 @@
 // on phones. Typing never reaches the world: keydown stops here, keyup still bubbles so no
 // movement key can get stuck (the WASD-stuck bug class).
 
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
 import { useUILayer } from '../../lib/input-manager'
-import { isProbablyMobileDevice } from '../../lib/mobile-controls'
 import { effectiveStatus } from '../../store/slices/agentEngineSlice'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
 import { showNotice } from '../forge/GlobalNotice'
 import { AgentSessionView, StatusPill } from './AgentSessionView'
-import { VILLAGE_SESSION_LAYER, getSessionPanelGeometry, leaveVillageFocus } from './village-actions'
+import { VILLAGE_SESSION_LAYER, getSessionPanelGeometry, focusVillageAgent, getVillageScreen, leaveVillageFocus, subscribeVillageScreen, toggleVillageScreen } from './village-actions'
+import { VillageComposer } from './VillageComposer'
 import { agentDisplayName, cwdLabel, formatCost, modelLabel, statusColor, statusLabel } from './village-status'
 
 const FALLBACK_MODELS = [
@@ -23,7 +23,6 @@ const FALLBACK_MODELS = [
   { value: 'haiku', displayName: 'Haiku' },
 ]
 const PERMISSION_MODES = ['default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions']
-const MOVEMENT_CODES = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight'])
 
 function useViewport() {
   const [size, setSize] = useState(() => ({
@@ -42,98 +41,53 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-function Composer({ agentId }: { agentId: string }) {
-  const status = useOasisStore(s => s.agentEngine.agents[agentId]?.status || 'idle')
-  const pendingUser = useOasisStore(s => s.agentEngine.agents[agentId]?.pendingUser || 0)
-  const [text, setText] = useState('')
-  const [urgent, setUrgent] = useState(false)
-  const [sending, setSending] = useState(false)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const focusedAtRef = useRef(0)
-  const working = status === 'working' || status === 'needs-decision'
-
-  // Focus the composer right after the agent is focused (after the E keydown has finished).
-  // Not on touch devices: the on-screen keyboard would cover most of the transcript.
-  useEffect(() => {
-    if (isProbablyMobileDevice()) return
-    const timer = window.setTimeout(() => {
-      textareaRef.current?.focus({ preventScroll: true })
-      focusedAtRef.current = performance.now()
-    }, 60)
-    return () => window.clearTimeout(timer)
-  }, [agentId])
-
-  const send = () => {
-    const message = text.trim()
-    if (!message || sending) return
-    setSending(true)
-    getAgentEngineClient()
-      .send(agentId, message, urgent ? 'now' : undefined)
-      .then(() => {
-        setText('')
-        setUrgent(false)
-      })
-      .catch(error => showNotice(`Send failed: ${describeError(error)}`, 'error'))
-      .finally(() => setSending(false))
-  }
-
-  const onKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-    // Never let typing reach KeyboardControls / world shortcuts. keyup is left alone on purpose.
-    event.stopPropagation()
-    // A movement key still held from walking up to the desk auto-repeats into the box: drop it.
-    if (event.repeat && MOVEMENT_CODES.has(event.nativeEvent.code) && performance.now() - focusedAtRef.current < 1500) {
-      event.preventDefault()
+/**
+ * Watching a session that runs somewhere else. "Talk here" makes it yours: a fork (a copy that continues
+ * here) while it is still open elsewhere, or the session itself once it is closed there.
+ */
+function ObservedFooter({ agentId }: { agentId: string }) {
+  const agent = useOasisStore(s => s.agentEngine.agents[agentId])
+  const [busy, setBusy] = useState(false)
+  if (!agent) return null
+  const takeOver = async () => {
+    if (!agent.cwd || !agent.sessionId) {
+      showNotice('This session has no folder or id to resume from.', 'error')
       return
     }
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      // First Esc leaves the text box (N works again), the next one leaves the agent.
-      event.currentTarget.blur()
-      return
-    }
-    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-      event.preventDefault()
-      send()
+    setBusy(true)
+    const client = getAgentEngineClient()
+    try {
+      const live = await client.listLive().catch(() => [])
+      const openElsewhere = live.some(entry => entry.sessionId === agent.sessionId)
+      if (openElsewhere && !window.confirm(
+        `"${agentDisplayName(agent)}" is still open somewhere else (the desktop app or a terminal).
+
+` +
+        'OK makes a copy that continues here, with the whole conversation so far. From then on, talk to it only here: ' +
+        'the other window will not see what you say in the Oasis.',
+      )) return
+      const spawned = await client.spawnAgent({ name: agentDisplayName(agent).slice(0, 32), cwd: agent.cwd, sessionId: agent.sessionId, fork: openElsewhere })
+      await client.unobserve(agent.id).catch(() => {})
+      focusVillageAgent(spawned.id)
+    } catch (error) {
+      showNotice(`Could not take it over: ${describeError(error)}`, 'error')
+    } finally {
+      setBusy(false)
     }
   }
-
   return (
-    <div className="flex shrink-0 flex-col gap-1.5 border-t border-white/10 pt-2">
-      <textarea
-        ref={textareaRef}
-        value={text}
-        rows={3}
-        onChange={event => setText(event.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder={working ? 'Talk to it while it works: folds into the running turn…' : 'Message…'}
-        className="min-h-[64px] w-full resize-none rounded-lg border border-white/15 bg-black/45 px-2.5 py-2 text-[13px] leading-snug text-white placeholder:text-white/30 focus:border-emerald-300/50 focus:outline-none"
-      />
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <label className="flex cursor-pointer items-center gap-1.5 text-[10.5px] text-white/55" title='priority "now": stop at the next model request and answer this'>
-          <input type="checkbox" checked={urgent} onChange={event => setUrgent(event.target.checked)} className="accent-amber-400" />
-          urgent
-        </label>
-        <div className="flex items-center gap-1.5">
-          {pendingUser > 0 && <span className="text-[10px] text-white/45">{pendingUser} queued</span>}
-          <button
-            type="button"
-            disabled={!working}
-            onClick={() => getAgentEngineClient().interrupt(agentId).catch(error => showNotice(`Interrupt failed: ${describeError(error)}`, 'error'))}
-            className="rounded-md border border-rose-300/35 bg-rose-400/10 px-2.5 py-1 text-[11px] font-bold text-rose-100 transition hover:bg-rose-400/25 disabled:cursor-not-allowed disabled:opacity-35"
-          >
-            interrupt
-          </button>
-          <button
-            type="button"
-            disabled={!text.trim() || sending}
-            onClick={send}
-            className="rounded-md border border-emerald-300/40 bg-emerald-400/20 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-emerald-50 transition hover:bg-emerald-400/35 disabled:cursor-not-allowed disabled:opacity-35"
-          >
-            send
-          </button>
-        </div>
+    <div className="flex shrink-0 flex-col gap-1.5 border-t border-white/10 pt-2 text-[11.5px] leading-snug text-cyan-100/75">
+      <div>
+        Watching only: this session runs somewhere else (desktop app, terminal), so you can read along but not type here.
       </div>
-      <div className="text-[9.5px] uppercase tracking-[0.12em] text-white/30 max-[700px]:hidden">Enter send · Shift+Enter newline · Esc leave box, Esc again back to the world · N next agent</div>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => { void takeOver() }}
+        className="self-start rounded-md border border-emerald-300/45 bg-emerald-400/20 px-3 py-1 text-[11.5px] font-black text-emerald-50 transition hover:bg-emerald-400/35 disabled:opacity-40"
+      >
+        {busy ? 'taking it over…' : 'Talk to it here'}
+      </button>
     </div>
   )
 }
@@ -146,8 +100,10 @@ export function AgentSessionPanel() {
   const viewport = useViewport()
   useUILayer(VILLAGE_SESSION_LAYER, Boolean(agentId))
   const [busy, setBusy] = useState(false)
+  const screenAgentId = useSyncExternalStore(subscribeVillageScreen, getVillageScreen, () => null)
 
-  if (!agentId || !agent) return null
+  // F: the agent's own screen took over (camera + composer in the world); the layer above stays pushed.
+  if (!agentId || !agent || screenAgentId === agentId) return null
   const geometry = getSessionPanelGeometry(viewport.width, viewport.height)
   const shownStatus = effectiveStatus(agent)
   const color = statusColor(shownStatus)
@@ -205,6 +161,14 @@ export function AgentSessionPanel() {
           </button>
           <button
             type="button"
+            onClick={() => toggleVillageScreen()}
+            title="Zoom into the agent's screen and talk there (F)"
+            className="rounded-md border border-white/15 bg-white/5 px-2 py-1 font-mono text-[10.5px] font-bold text-white/70 transition hover:bg-white/15"
+          >
+            F screen
+          </button>
+          <button
+            type="button"
             onClick={() => leaveVillageFocus()}
             title="Back to the world (Esc)"
             className="rounded-md border border-white/15 bg-white/5 px-2 py-1 text-[12px] font-bold text-white/70 transition hover:bg-white/15"
@@ -257,17 +221,14 @@ export function AgentSessionPanel() {
       </div>
 
       {agent.owned ? (
-        agent.alive || agent.status !== 'error' ? <Composer agentId={agent.id} /> : (
+        agent.alive || agent.status !== 'error' ? <VillageComposer agentId={agent.id} /> : (
           <div className="shrink-0 border-t border-white/10 pt-2 text-[11.5px] text-rose-100/80">
             The process stopped. Sending a message restarts it.
-            <Composer agentId={agent.id} />
+            <VillageComposer agentId={agent.id} />
           </div>
         )
       ) : (
-        <div className="shrink-0 border-t border-white/10 pt-2 text-[11.5px] leading-snug text-cyan-100/70">
-          Read-only: this session runs somewhere else (desktop app, terminal). Answer prompts there, or summon it
-          as an agent from the picker once it is closed.
-        </div>
+        <ObservedFooter agentId={agent.id} />
       )}
     </div>
   )

@@ -232,3 +232,7 @@ public/docs-site/
 public/audio/anaal nathrakh*
 
 /src/generated/prisma
+
+# Live dictation helper: its Python folder and models stay local
+packages/oasis-agent-engine/ears/.venv/
+packages/oasis-agent-engine/ears/.cache/

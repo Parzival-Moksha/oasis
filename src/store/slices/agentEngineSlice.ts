@@ -66,6 +66,8 @@ export type AgentLogEntry =
       name: string
       summary: string
       status: 'running' | 'done' | 'error'
+      /** The tool's input, clipped by the engine (shown when the card is expanded). */
+      input?: Record<string, unknown>
       output?: string
       parentToolUseId: string | null
     })
@@ -576,6 +578,7 @@ export function foldAgentEvent(agent: EngineAgentState, event: EngineEvent, ctx:
         toolUseId: e.toolUseId || null,
         name: e.name,
         summary: e.summary || e.name,
+        input: e.input && typeof e.input === 'object' && !Array.isArray(e.input) ? e.input as Record<string, unknown> : undefined,
         status: history ? 'done' : 'running',
         parentToolUseId: e.parentToolUseId || null,
         history,

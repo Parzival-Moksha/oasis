@@ -2,16 +2,33 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 
 import { registerLipSync, unregisterLipSync, resumeLipSyncContext, type LipSyncController } from '@/lib/lip-sync'
 import { PLAYER_AVATAR_LIPSYNC_ID } from '@/lib/player-avatar-runtime'
-import type { VoiceBackendState } from '@/lib/voice/local-stt'
 import { createWLipSyncLegacyController } from '@/lib/wlipsync-driver'
+import {
+  isLiveDictationSupported,
+  joinDictation,
+  startLiveDictation,
+  type DictationLine,
+  type LiveDictation,
+} from '@/lib/voice/live-dictation'
+
+// ░▒▓ The mic on every agent text box: live dictation (Moonshine Medium Streaming in the agent engine). ▓▒░
+// Words arrive while you talk (onLiveText); the whole dictation goes to onTranscript once it has settled.
+// Replaced the record-then-transcribe faster-whisper path (2026-11-08): that one waited for the whole
+// clip and took ~20 s to load and read it.
+
+export type VoiceBackendState = 'idle' | 'loading' | 'ready' | 'error'
 
 export interface UseAgentVoiceInputOptions {
   enabled?: boolean
-  transcribeEndpoint: string
+  /** Kept for old call sites; live dictation goes to the agent engine instead. */
+  transcribeEndpoint?: string
   statusEndpoint?: string
   onTranscript: (transcript: string) => void
+  /** The dictation so far, every time a line grows or settles (empty string when it starts). */
+  onLiveText?: (text: string) => void
   focusTargetRef?: RefObject<{ focus: () => void } | null>
   enablePlayerLipSync?: boolean
+  lang?: string
 }
 
 export interface AgentVoiceInputController {
@@ -22,62 +39,38 @@ export interface AgentVoiceInputController {
   backendMessage: string
   listening: boolean
   transcribing: boolean
+  /** Mic loudness 0..1, for a level meter (live dictation only). */
+  level?: number
   error: string
   clearError: () => void
   stop: () => void
   toggle: () => Promise<void>
 }
 
-interface VoiceBackendRefreshResult {
-  state: VoiceBackendState
-  message: string
-}
-
-const RECORDER_MIME_TYPES = [
-  'audio/webm;codecs=opus',
-  'audio/webm',
-  'audio/ogg;codecs=opus',
-  'audio/ogg',
-]
-
-function isVoiceInputSupported(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof navigator !== 'undefined' &&
-    typeof navigator.mediaDevices?.getUserMedia === 'function' &&
-    typeof MediaRecorder !== 'undefined'
-  )
-}
-
-function preferredRecorderMimeType(): string {
-  if (typeof MediaRecorder === 'undefined') return ''
-  return RECORDER_MIME_TYPES.find(type => MediaRecorder.isTypeSupported(type)) || ''
-}
-
 export function useAgentVoiceInput({
   enabled = true,
-  transcribeEndpoint,
-  statusEndpoint = transcribeEndpoint,
   onTranscript,
+  onLiveText,
   focusTargetRef,
   enablePlayerLipSync = false,
+  lang = 'en',
 }: UseAgentVoiceInputOptions): AgentVoiceInputController {
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const recordingStreamRef = useRef<MediaStream | null>(null)
-  const recordedChunksRef = useRef<Blob[]>([])
+  const dictationRef = useRef<LiveDictation | null>(null)
+  const startingRef = useRef(false)
+  const linesRef = useRef(new Map<number, DictationLine>())
   const lipSyncRef = useRef<LipSyncController | null>(null)
+  const onTranscriptRef = useRef(onTranscript)
+  const onLiveTextRef = useRef(onLiveText)
+  onTranscriptRef.current = onTranscript
+  onLiveTextRef.current = onLiveText
 
   const [supported, setSupported] = useState(false)
   const [backendState, setBackendState] = useState<VoiceBackendState>('idle')
   const [backendMessage, setBackendMessage] = useState('')
   const [listening, setListening] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
+  const [level, setLevel] = useState(0)
   const [error, setError] = useState('')
-
-  const stopRecordingStream = useCallback(() => {
-    recordingStreamRef.current?.getTracks().forEach(track => track.stop())
-    recordingStreamRef.current = null
-  }, [])
 
   const stopPlayerLipSync = useCallback(() => {
     const ctrl = lipSyncRef.current
@@ -89,250 +82,121 @@ export function useAgentVoiceInput({
 
   const startPlayerLipSync = useCallback(async (stream: MediaStream) => {
     if (!enablePlayerLipSync) return
-
     let ctrl = lipSyncRef.current
     if (!ctrl) {
       ctrl = createWLipSyncLegacyController()
       lipSyncRef.current = ctrl
     }
-
     registerLipSync(PLAYER_AVATAR_LIPSYNC_ID, ctrl)
     await resumeLipSyncContext().catch(() => null)
     if (lipSyncRef.current !== ctrl) return
     ctrl.attachStream(stream)
   }, [enablePlayerLipSync])
 
-  const clearError = useCallback(() => {
-    setError('')
-  }, [])
+  const clearError = useCallback(() => setError(''), [])
 
   const stop = useCallback(() => {
-    mediaRecorderRef.current?.stop()
-  }, [])
-
-  const transcribeRecordedAudio = useCallback(async (audioBlob: Blob, fileName: string) => {
+    const dictation = dictationRef.current
+    if (!dictation) return
+    setListening(false)
     setTranscribing(true)
-    setError('')
-
-    try {
-      const form = new FormData()
-      form.append('audio', audioBlob, fileName)
-
-      const response = await fetch(transcribeEndpoint, {
-        method: 'POST',
-        body: form,
-      })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok) {
-        throw new Error(typeof data?.error === 'string' ? data.error : `HTTP ${response.status}`)
-      }
-
-      const transcript = typeof data?.transcript === 'string' ? data.transcript.trim() : ''
-      if (!transcript) {
-        throw new Error('The transcription backend returned an empty transcript.')
-      }
-
-      onTranscript(transcript)
-      window.setTimeout(() => focusTargetRef?.current?.focus(), 80)
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Voice transcription failed.')
-    } finally {
-      setTranscribing(false)
-    }
-  }, [focusTargetRef, onTranscript, transcribeEndpoint])
-
-  const refreshBackendStatus = useCallback(async (options?: { warm?: boolean }): Promise<VoiceBackendRefreshResult> => {
-    if (!enabled || !isVoiceInputSupported()) {
-      setBackendState('idle')
-      setBackendMessage('')
-      return {
-        state: 'idle',
-        message: '',
-      }
-    }
-
-    if (options?.warm) {
-      setBackendState(current => current === 'ready' ? current : 'loading')
-    }
-
-    try {
-      const url = new URL(statusEndpoint, window.location.origin)
-      if (options?.warm) {
-        url.searchParams.set('warm', '1')
-      }
-
-      const response = await fetch(url.toString(), {
-        method: 'GET',
-        cache: 'no-store',
-      })
-      const data = await response.json().catch(() => ({}))
-
-      if (!response.ok) {
-        throw new Error(typeof data?.error === 'string' ? data.error : `HTTP ${response.status}`)
-      }
-
-      const nextState = data?.state === 'ready' || data?.state === 'loading' || data?.state === 'error'
-        ? data.state as VoiceBackendState
-        : 'idle'
-      const nextMessage = typeof data?.message === 'string' ? data.message : ''
-
-      setBackendState(nextState)
-      setBackendMessage(nextMessage)
-      if (nextState === 'ready') {
-        setError(current => (
-          current === 'Voice model is still loading. Wait for mic ready and try again.'
-            ? ''
-            : current
-        ))
-      }
-      return {
-        state: nextState,
-        message: nextMessage,
-      }
-    } catch (nextError) {
-      const message = nextError instanceof Error ? nextError.message : 'Unable to load the voice model.'
-      setBackendState('error')
-      setBackendMessage(message)
-      return {
-        state: 'error',
-        message,
-      }
-    }
-  }, [enabled, statusEndpoint])
+    stopPlayerLipSync()
+    dictation.stop()
+  }, [stopPlayerLipSync])
 
   const toggle = useCallback(async () => {
     if (!enabled) return
-
-    if (listening) {
-      mediaRecorderRef.current?.stop()
+    if (dictationRef.current) {
+      stop()
       return
     }
-
+    if (startingRef.current) return
     if (typeof window !== 'undefined' && !window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
       setError('Mic input needs localhost or HTTPS. Open Oasis locally or behind HTTPS and try again.')
       return
     }
-
-    if (!isVoiceInputSupported()) {
+    if (!isLiveDictationSupported()) {
       setError('Browser microphone capture is unavailable here.')
       return
     }
-
-    const statusResult = backendState === 'ready'
-      ? { state: 'ready' as const, message: backendMessage }
-      : await refreshBackendStatus({ warm: true })
-    if (statusResult.state !== 'ready') {
-      setError(statusResult.message || 'Voice model is still loading. Wait for mic ready and try again.')
-      return
-    }
-
     setError('')
-
+    linesRef.current = new Map()
+    startingRef.current = true
+    setBackendState('loading')
+    setBackendMessage('Connecting to the voice helper…')
+    onLiveTextRef.current?.('')
+    let finished = false
     try {
-      const permissionStatus = typeof navigator.permissions?.query === 'function'
-        ? await navigator.permissions.query({ name: 'microphone' as PermissionName })
-        : null
-      if (permissionStatus?.state === 'denied') {
-        setError('Microphone access is blocked in the browser. In Brave, click the lock icon in the address bar and allow the microphone for this site.')
-        return
+      const dictation = await startLiveDictation({
+        lang,
+        onStream: stream => { void startPlayerLipSync(stream) },
+        onStatus: text => { setBackendState('loading'); setBackendMessage(text) },
+        onReady: () => { setBackendState('ready'); setBackendMessage('') },
+        onLevel: value => setLevel(value),
+        onError: text => { setError(text); setBackendState('error'); setBackendMessage(text) },
+        onLine: line => {
+          linesRef.current.set(line.line, line)
+          if (line.text) setBackendState('ready')
+          onLiveTextRef.current?.(joinDictation(linesRef.current))
+        },
+        onDone: () => {
+          finished = true
+          dictationRef.current = null
+          setListening(false)
+          setTranscribing(false)
+          setLevel(0)
+          stopPlayerLipSync()
+          setBackendState(current => (current === 'error' ? current : 'idle'))
+          setBackendMessage('')
+          const transcript = joinDictation(linesRef.current)
+          if (transcript) {
+            onTranscriptRef.current(transcript)
+            window.setTimeout(() => focusTargetRef?.current?.focus(), 80)
+          }
+        },
+      })
+      if (!finished) {
+        dictationRef.current = dictation
+        setListening(true)
       }
-    } catch {
-      // Permissions API is optional.
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      recordingStreamRef.current = stream
-
-      const recorderMimeType = preferredRecorderMimeType()
-      const recorder = recorderMimeType
-        ? new MediaRecorder(stream, { mimeType: recorderMimeType })
-        : new MediaRecorder(stream)
-
-      recordedChunksRef.current = []
-      mediaRecorderRef.current = recorder
-
-      recorder.ondataavailable = event => {
-        if (event.data && event.data.size > 0) {
-          recordedChunksRef.current.push(event.data)
-        }
-      }
-
-      recorder.onerror = () => {
-        setListening(false)
-        stopPlayerLipSync()
-        stopRecordingStream()
-        setError('Microphone recording failed.')
-      }
-
-      recorder.onstop = () => {
-        const mimeType = recorder.mimeType || recorderMimeType || 'audio/webm'
-        const extension = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('wav') ? 'wav' : 'webm'
-        const audioBlob = new Blob(recordedChunksRef.current, { type: mimeType })
-        recordedChunksRef.current = []
-        mediaRecorderRef.current = null
-        setListening(false)
-        stopPlayerLipSync()
-        stopRecordingStream()
-        if (audioBlob.size > 0) {
-          void transcribeRecordedAudio(audioBlob, `oasis-voice.${extension}`)
-        }
-      }
-
-      recorder.start()
-      await startPlayerLipSync(stream)
-      setListening(true)
     } catch (nextError) {
       stopPlayerLipSync()
-      stopRecordingStream()
-      const message = nextError instanceof Error ? nextError.message : 'Unable to access the microphone.'
       setListening(false)
-      setError(message)
+      setBackendState('error')
+      setError(nextError instanceof Error ? nextError.message : 'Unable to access the microphone.')
+    } finally {
+      startingRef.current = false
     }
-  }, [backendMessage, backendState, enabled, listening, refreshBackendStatus, startPlayerLipSync, stopPlayerLipSync, stopRecordingStream, transcribeRecordedAudio])
+  }, [enabled, focusTargetRef, lang, startPlayerLipSync, stop, stopPlayerLipSync])
 
   useEffect(() => {
-    setSupported(isVoiceInputSupported())
+    setSupported(isLiveDictationSupported())
   }, [enabled])
 
   useEffect(() => {
-    if (!enabled || !supported) {
-      setBackendState('idle')
-      setBackendMessage('')
-      return
-    }
-
-    void refreshBackendStatus()
-  }, [enabled, refreshBackendStatus, supported])
-
-  useEffect(() => {
     if (enabled) return
-    recordedChunksRef.current = []
-    mediaRecorderRef.current?.stop()
-    mediaRecorderRef.current = null
+    dictationRef.current?.cancel()
+    dictationRef.current = null
     stopPlayerLipSync()
-    stopRecordingStream()
     setListening(false)
-  }, [enabled, stopPlayerLipSync, stopRecordingStream])
+  }, [enabled, stopPlayerLipSync])
 
-  useEffect(() => {
-    return () => {
-      recordedChunksRef.current = []
-      mediaRecorderRef.current?.stop()
-      mediaRecorderRef.current = null
-      stopPlayerLipSync()
-      stopRecordingStream()
-    }
-  }, [stopPlayerLipSync, stopRecordingStream])
+  useEffect(() => () => {
+    dictationRef.current?.cancel()
+    dictationRef.current = null
+    stopPlayerLipSync()
+  }, [stopPlayerLipSync])
 
   return {
     supported,
-    ready: backendState === 'ready',
-    warming: backendState === 'loading',
+    // The helper wakes on the first press; the button is always usable.
+    ready: supported,
+    warming: false,
     backendState,
     backendMessage,
     listening,
     transcribing,
+    level,
     error,
     clearError,
     stop,

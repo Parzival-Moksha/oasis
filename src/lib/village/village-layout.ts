@@ -109,10 +109,59 @@ export function layoutVillageStations(count: number, options: VillageLayoutOptio
 export const STATION = {
   avatar: [0, 0, -0.55] as Vec3,
   label: [0, 2.12, -0.55] as Vec3,
-  window: [0, 3.1, -0.95] as Vec3,
+  /** Center of the desk window (its bottom edge clears the status sign over the agent's head). */
+  window: [0, 3.3, -0.95] as Vec3,
   /** Hit volume for clicks: encloses the desk and the avatar. */
   hitCenter: [0, 1.0, -0.12] as Vec3,
   hitSize: [2.0, 2.0, 1.5] as Vec3,
+}
+
+/**
+ * The desk window, a glass screen above each agent. Both modes cover the same patch of world
+ * (DESK_WINDOW_WORLD meters); the zoomed-in screen (F) just packs more pixels into it, so the
+ * camera can fill the view with it and the text stays sharp.
+ */
+export const DESK_WINDOW_WORLD = { width: 2.7, height: 1.78 }
+/** At the desk the window leans back a little, like a monitor on a stand, toward someone walking up. */
+export const DESK_WINDOW_TILT = 0.2
+export const DESK_WINDOW_PX = {
+  desk: { width: 760, height: 500 },
+  screen: { width: 1140, height: 750 },
+}
+/** drei <Html transform>: one CSS pixel spans distanceFactor / 400 meters. */
+export function deskWindowDistanceFactor(mode: keyof typeof DESK_WINDOW_PX): number {
+  return (DESK_WINDOW_WORLD.width * 400) / DESK_WINDOW_PX[mode].width
+}
+
+export interface ScreenFramingInput {
+  /** World center of the window. */
+  center: Vec3
+  /** Station yaw; the window faces the station's forward (+Z local). */
+  rotationY: number
+  fov: number
+  aspect: number
+  /** Share of the view the window should fill (0..1, default 0.84). */
+  fill?: number
+}
+
+/** Camera square in front of the desk window, close enough that it fills the view. */
+export function computeScreenPose(input: ScreenFramingInput): FocusPose {
+  // 0.84 leaves the HUD buttons at the screen edges clear of the window.
+  const fill = Math.min(1, Math.max(0.3, input.fill ?? 0.84))
+  const tanV = Math.tan(((input.fov || 50) * Math.PI) / 360)
+  const tanH = tanV * Math.max(0.2, input.aspect || 1)
+  const distance = Math.max(
+    DESK_WINDOW_WORLD.height / 2 / tanV / fill,
+    DESK_WINDOW_WORLD.width / 2 / tanH / fill,
+  )
+  const { forward } = stationAxes(input.rotationY)
+  const target: Vec3 = [...input.center]
+  const position: Vec3 = [
+    input.center[0] + forward[0] * distance,
+    input.center[1],
+    input.center[2] + forward[2] * distance,
+  ]
+  return { position, target }
 }
 
 export function stationLocalToWorld(station: { position: Vec3; rotationY: number }, local: Vec3): Vec3 {

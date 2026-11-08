@@ -90,6 +90,50 @@ export function getSessionPanelGeometry(viewportWidth: number, viewportHeight: n
 
 // ─── camera save / restore ──────────────────────────────────────────────────
 
+// ─── screen mode (F): the camera fills the view with the focused agent's desk window ─────
+
+let screenAgentId: string | null = null
+const screenListeners = new Set<() => void>()
+
+export function getVillageScreen(): string | null {
+  return screenAgentId
+}
+
+export function setVillageScreen(agentId: string | null): void {
+  if (agentId === screenAgentId) return
+  screenAgentId = agentId
+  screenListeners.forEach(listener => listener())
+}
+
+export function subscribeVillageScreen(listener: () => void): () => void {
+  screenListeners.add(listener)
+  return () => { screenListeners.delete(listener) }
+}
+
+/** F while an agent is focused: zoom into its screen, or back out to the side panel. */
+export function toggleVillageScreen(): boolean {
+  const focused = useOasisStore.getState().agentEngine.focusedAgentId
+  if (!focused) return false
+  setVillageScreen(screenAgentId === focused ? null : focused)
+  return true
+}
+
+// ─── voice (T / Ctrl+Space): the mounted composer listens ────────────────────
+
+const voiceListeners = new Set<() => void>()
+
+export function subscribeVillageVoiceToggle(listener: () => void): () => void {
+  voiceListeners.add(listener)
+  return () => { voiceListeners.delete(listener) }
+}
+
+/** Start or stop live dictation into the focused agent's text box. False when no box is mounted. */
+export function toggleVillageVoice(): boolean {
+  if (!voiceListeners.size) return false
+  voiceListeners.forEach(listener => listener())
+  return true
+}
+
 let rigCamera: THREE.Camera | null = null
 let savedPose: { position: THREE.Vector3; quaternion: THREE.Quaternion } | null = null
 
@@ -104,12 +148,12 @@ if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
     camera: () => (rigCamera ? rigCamera.position.toArray().map(v => Number(v.toFixed(2))) : null),
     savedPose: () => (savedPose ? savedPose.position.toArray().map(v => Number(v.toFixed(2))) : null),
     stations: () => Object.fromEntries([...stations].map(([id, s]) => [id, s.anchor.map(v => Number(v.toFixed(2)))])),
-    /** Put the player avatar 2.4 m in front of an agent's desk, facing it (the "walk up" shortcut). */
-    teleportNear: (agentId: string) => {
+    /** Put the player avatar `meters` (default 2.4) in front of an agent's desk, facing it (the "walk up" shortcut). */
+    teleportNear: (agentId: string, meters = 2.4) => {
       const station = stations.get(agentId)
       if (!station) return false
       const forward: Vec3 = [Math.sin(station.rotationY), 0, Math.cos(station.rotationY)]
-      const position: Vec3 = [station.anchor[0] + forward[0] * 2.4, station.anchor[1], station.anchor[2] + forward[2] * 2.4]
+      const position: Vec3 = [station.anchor[0] + forward[0] * meters, station.anchor[1], station.anchor[2] + forward[2] * meters]
       const yaw = station.rotationY + Math.PI
       requestPlayerAvatarTeleport({ position, yaw, forward: [Math.sin(yaw), 0, Math.cos(yaw)] })
       return true
@@ -122,6 +166,9 @@ if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
     },
     inPlaza: () => inPlaza,
     sound: () => getVillageSoundDebug(),
+    /** The agent whose screen fills the view (F), or null. */
+    screen: () => screenAgentId,
+    toggleScreen: () => toggleVillageScreen(),
   }
 }
 
@@ -194,6 +241,7 @@ export function releaseVillageFocusInput(): void {
 
 /** Back out of the session view: clears focus, returns the input state and restores the camera. */
 export function leaveVillageFocus(): void {
+  setVillageScreen(null)
   const store = useOasisStore.getState()
   if (store.agentEngine.focusedAgentId) store.agentEngineDispatch({ type: 'focus', agentId: null })
   releaseVillageFocusInput()
@@ -245,9 +293,21 @@ export function isTypingTarget(target: EventTarget | null): boolean {
  * (N cycles world agent windows, E is noclip "down"). Returns true when the key was consumed.
  */
 export function handleVillageKeyDown(event: KeyboardEvent): boolean {
+  const village = useOasisStore.getState().agentEngine
+  // Ctrl+Space dictates into the focused agent's box, even while typing in it.
+  if (event.ctrlKey && !event.altKey && !event.metaKey && event.code === 'Space' && !event.repeat && village.focusedAgentId) {
+    return toggleVillageVoice()
+  }
   if (event.ctrlKey || event.metaKey || event.altKey || event.repeat) return false
   if (isTypingTarget(event.target)) return false
-  const village = useOasisStore.getState().agentEngine
+  if (village.focusedAgentId) {
+    if (event.code === 'KeyF') return toggleVillageScreen()
+    if (event.code === 'KeyT') return toggleVillageVoice()
+    if (event.code === 'Escape' && screenAgentId) {
+      setVillageScreen(null)
+      return true
+    }
+  }
   // Same gate as the world's own N key, plus the village session view itself (ui-focused while
   // its panel is open). Placement, paint and other panels keep their keys (E is noclip "down").
   const input = useInputManager.getState()

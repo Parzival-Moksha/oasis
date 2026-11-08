@@ -12,11 +12,13 @@ import {
   VILLAGE_SESSION_LAYER,
   discardVillageCameraPose,
   focusVillageAgent,
+  getVillageScreen,
   handleVillageKeyDown,
   isFocusInputState,
   leaveVillageFocus,
   releaseVillageFocusInput,
   restoreVillageCameraPose,
+  setVillageScreen,
   updateVillageProximity,
 } from './village-actions'
 
@@ -66,6 +68,13 @@ export function VillageController() {
     if (!tookCamera || !state.agentEngine.focusedAgentId) return
     discardVillageCameraPose()
     state.agentEngineDispatch({ type: 'focus', agentId: null })
+  }), [])
+
+  // The screen (F) follows the focus: N to the next agent keeps you on screens, leaving ends it.
+  useEffect(() => useOasisStore.subscribe((state, prev) => {
+    const next = state.agentEngine.focusedAgentId
+    if (next === prev.agentEngine.focusedAgentId || !getVillageScreen()) return
+    setVillageScreen(next)
   }), [])
 
   // Focus can also end without the input state changing: the agent was dismissed elsewhere, or an

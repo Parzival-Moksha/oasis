@@ -8,6 +8,8 @@ import { memo, useMemo, useState, type ReactNode } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
 import { effectiveStatus, type AgentLogEntry, type EngineAgentState } from '../../store/slices/agentEngineSlice'
 import { DecisionCard } from './DecisionCards'
+import { ToolCallCard, renderMarkdown } from '../../lib/anorak-renderers'
+import { TOOL_ICONS_MAP } from '../../lib/anorak-engine'
 import {
   VILLAGE_STATUS_COLOR,
   formatCost,
@@ -15,8 +17,10 @@ import {
   modelLabel,
   statusColor,
 } from './village-status'
+import { toggleVillageScreen } from './village-actions'
 
-export type SessionViewVariant = '2d' | '3d'
+/** 2d: the side panel · 3d: the desk window (recent lines) · screen: the desk window zoomed in with F */
+export type SessionViewVariant = '2d' | '3d' | 'screen'
 
 // ─── small pieces ───────────────────────────────────────────────────────────
 
@@ -60,6 +64,12 @@ function RichText({ text, className = '' }: { text: string; className?: string }
         : <span key={index}>{part}</span>))}
     </div>
   )
+}
+
+/** Claude's markdown (headings, lists, bold, code, tables), the same renderer as Anorak Pro's window. */
+function Markdown({ text, className = '' }: { text: string; className?: string }) {
+  const rendered = useMemo(() => renderMarkdown(text), [text])
+  return <div className={`break-words ${className}`}>{rendered}</div>
 }
 
 function Clip({ text, limit, className = '' }: { text: string; limit: number; className?: string }) {
@@ -113,21 +123,28 @@ const LogEntryView = memo(function LogEntryView({ entry, compact }: { entry: Age
       return (
         <div className={`${entry.parentToolUseId ? 'ml-3 border-l border-violet-300/30 pl-2 text-white/65' : 'text-white/90'} text-[12.5px] leading-relaxed ${dim}`}>
           {entry.parentToolUseId && <span className="mr-1 text-[9px] font-black uppercase tracking-[0.12em] text-violet-200/70">subagent</span>}
-          <RichText text={compact && entry.text.length > 420 ? `${entry.text.slice(0, 420)}…` : entry.text} />
+          <Markdown text={compact && entry.text.length > 600 ? `${entry.text.slice(0, 600)}…` : entry.text} />
         </div>
       )
-    case 'tool': {
-      const color = entry.status === 'running' ? '#38bdf8' : entry.status === 'error' ? '#f87171' : '#64748b'
+    case 'tool':
       return (
-        <div className={`${entry.parentToolUseId ? 'ml-3' : ''} rounded-md border bg-black/30 px-2 py-1 ${dim}`} style={{ borderColor: `${color}55` }}>
-          <div className="flex items-center gap-1.5 font-mono text-[11px] text-white/80">
-            <span style={{ color }}>{entry.status === 'running' ? '…' : entry.status === 'error' ? '✕' : '✓'}</span>
-            <span className="truncate">{entry.summary || entry.name}</span>
-          </div>
-          {!compact && entry.output && <Clip text={entry.output} limit={220} className="mt-0.5" />}
+        <div className={`${entry.parentToolUseId ? 'ml-3' : ''} ${dim}`}>
+          <ToolCallCard
+            name={entry.name}
+            icon={TOOL_ICONS_MAP[entry.name] || (entry.name.startsWith('mcp__') ? '🔌' : '🔧')}
+            display={entry.summary || entry.name}
+            input={entry.input}
+            result={entry.status === 'running' ? undefined : {
+              preview: entry.output || '',
+              isError: entry.status === 'error',
+              length: entry.output?.length || 0,
+              fullResult: entry.output,
+            }}
+            compact={compact}
+            suppressMedia
+          />
         </div>
       )
-    }
     case 'subagent':
       return (
         <div className={`rounded-md border border-violet-300/30 bg-violet-500/10 px-2 py-1 ${dim}`}>
@@ -232,7 +249,7 @@ export function AgentSessionView({ agentId, variant, header }: AgentSessionViewP
   const entries = useMemo(() => {
     if (!log) return []
     // The desk window shows the recent conversation, without tool noise from long ago.
-    return compact ? log.slice(-8) : log.slice(-160)
+    return compact ? log.slice(-14) : log.slice(-200)
   }, [log, compact])
 
   if (!agent) return null
@@ -259,7 +276,7 @@ export function AgentSessionView({ agentId, variant, header }: AgentSessionViewP
         {entries.map(entry => <LogEntryView key={entry.key} entry={entry} compact={compact} />)}
         {agent.live?.text && (
           <div className="text-[12.5px] leading-relaxed text-white/90">
-            <RichText text={compact && agent.live.text.length > 420 ? `…${agent.live.text.slice(-420)}` : agent.live.text} />
+            <Markdown text={compact && agent.live.text.length > 600 ? `…${agent.live.text.slice(-600)}` : agent.live.text} />
             <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-emerald-300/80 align-middle" />
           </div>
         )}
@@ -271,14 +288,28 @@ export function AgentSessionView({ agentId, variant, header }: AgentSessionViewP
 }
 
 /** Compact header for the 3D window (name, status, model, context, cost). */
-export function SessionWindowHeader({ agent, nearby }: { agent: EngineAgentState; nearby: boolean }) {
+export function SessionWindowHeader({ agent, nearby, screen = false }: { agent: EngineAgentState; nearby: boolean; screen?: boolean }) {
   const status = effectiveStatus(agent)
   const color = statusColor(status)
   return (
     <div className="flex shrink-0 flex-col gap-1 border-b pb-1.5" style={{ borderColor: `${color}55` }}>
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-[14px] font-black tracking-wide text-white">{agent.name}</span>
-        <StatusPill status={status} label={status === 'needs-decision' ? 'needs you' : status} />
+        <div className="flex min-w-0 items-center gap-2">
+          {screen && (
+            <button
+              type="button"
+              onClick={() => toggleVillageScreen()}
+              title="Back to the side panel (F or Esc)"
+              className="shrink-0 rounded-md border border-white/20 bg-white/10 px-2 py-0.5 font-mono text-[11px] font-bold text-white/80 hover:bg-white/20"
+            >
+              ← F
+            </button>
+          )}
+          <span className={`truncate font-black tracking-wide text-white ${screen ? 'text-[17px]' : 'text-[15px]'}`}>{agent.name}</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <StatusPill status={status} label={status === 'needs-decision' ? 'needs you' : status} />
+        </div>
       </div>
       <div className="flex items-center justify-between gap-2 text-[10px] text-white/50">
         <span className="truncate">{agent.readOnly ? `${agent.kind} · read-only` : modelLabel(agent)}{agent.statusReason ? ` · ${agent.statusReason}` : ''}</span>

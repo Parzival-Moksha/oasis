@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   ANORAK_PRO_AVATAR,
   assignVillageAvatars,
+  DESK_WINDOW_PX,
+  DESK_WINDOW_WORLD,
   computeFocusPose,
+  computeScreenPose,
+  deskWindowDistanceFactor,
   findNearestStation,
   layoutVillageStations,
   plazaCenter,
@@ -135,5 +139,42 @@ describe('computeFocusPose', () => {
     const free = computeFocusPose({ ...base, aspect: 9 / 19, panel: 'none', panelFraction: 0 })
     const sheet = computeFocusPose({ ...base, aspect: 9 / 19, panel: 'bottom', panelFraction: 0.55 })
     expect(sheet.target[1]).toBeLessThan(free.target[1])
+  })
+})
+
+describe('desk window and screen mode (F)', () => {
+  it('covers the same patch of world in both modes', () => {
+    for (const mode of ['desk', 'screen'] as const) {
+      const metersPerPx = deskWindowDistanceFactor(mode) / 400
+      expect(DESK_WINDOW_PX[mode].width * metersPerPx).toBeCloseTo(DESK_WINDOW_WORLD.width, 5)
+      expect(DESK_WINDOW_PX[mode].height * metersPerPx).toBeCloseTo(DESK_WINDOW_WORLD.height, 1)
+    }
+  })
+
+  it('puts the camera square in front of the window, close enough to fill the view', () => {
+    const center: Vec3 = [4, 3.4, -2]
+    const fov = 50
+    const aspect = 16 / 9
+    for (const rotationY of [0, Math.PI / 2, 2.4]) {
+      const pose = computeScreenPose({ center, rotationY, fov, aspect })
+      expect(pose.target).toEqual(center)
+      // Straight on: same height, displaced along the station's forward.
+      expect(pose.position[1]).toBeCloseTo(center[1], 6)
+      const { forward } = stationAxes(rotationY)
+      const d = Math.hypot(pose.position[0] - center[0], pose.position[2] - center[2])
+      expect((pose.position[0] - center[0]) / d).toBeCloseTo(forward[0], 6)
+      expect((pose.position[2] - center[2]) / d).toBeCloseTo(forward[2], 6)
+      // The window takes ~84% of the tighter side of the view, never more.
+      const tanV = Math.tan((fov * Math.PI) / 360)
+      const shownH = DESK_WINDOW_WORLD.height / (2 * d * tanV)
+      const shownW = DESK_WINDOW_WORLD.width / (2 * d * tanV * aspect)
+      expect(Math.max(shownH, shownW)).toBeCloseTo(0.84, 2)
+    }
+  })
+
+  it('backs off on a tall phone screen so the width still fits', () => {
+    const wide = computeScreenPose({ center: [0, 3, 0], rotationY: 0, fov: 50, aspect: 16 / 9 })
+    const tall = computeScreenPose({ center: [0, 3, 0], rotationY: 0, fov: 50, aspect: 9 / 19 })
+    expect(tall.position[2]).toBeGreaterThan(wide.position[2])
   })
 })

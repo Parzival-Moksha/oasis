@@ -3,6 +3,7 @@
 //   ws://127.0.0.1:4530/ws   events out, commands in
 //   POST /hook               Claude Code `type:"http"` hooks (optional observation path)
 //   POST /api/cmd            same commands as the socket, for curl/debugging
+//   ws://127.0.0.1:4530/listen  live dictation (Moonshine, see ears.js)
 //   GET  /api/agents, /api/sessions, /health
 import http from 'node:http';
 import path from 'node:path';
@@ -15,6 +16,7 @@ import { HookObserver } from './hooks.js';
 import { listSessions, isTranscriptPath, readLiveRegistry } from './sessions.js';
 import { loadRoster, saveRoster, saveRosterNow } from './roster.js';
 import { resolveClaude } from './claude.js';
+import { listen as earsListen, warmEars, earsStatus, stopEars } from './ears.js';
 import fs from 'node:fs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -90,6 +92,7 @@ function getAgent(id, { owned = false } = {}) {
 
 // ------------------------------------------------------------------ commands
 const commands = {
+  warmEars() { return warmEars((m) => hub.log(m)); },
   listAgents: () => snapshots(),
   listLive: () => [...readLiveRegistry()].map(([sessionId, r]) => ({ sessionId, ...r })),
 
@@ -257,7 +260,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   if (!requestAllowed(req)) return sendJson(res, 403, { error: 'origin not allowed' });
   try {
-    if (req.method === 'GET' && url.pathname === '/health') return sendJson(res, 200, { ok: true, agents: agents.size, claude: resolveClaude() });
+    if (req.method === 'GET' && url.pathname === '/health') return sendJson(res, 200, { ok: true, agents: agents.size, claude: resolveClaude(), ears: earsStatus() });
     if (req.method === 'GET' && url.pathname === '/api/agents') return sendJson(res, 200, snapshots());
     if (req.method === 'GET' && url.pathname === '/api/sessions') return sendJson(res, 200, await commands.listSessions({}));
     if (req.method === 'POST' && url.pathname === '/hook') {
@@ -278,8 +281,15 @@ const server = http.createServer(async (req, res) => {
 });
 
 const wss = new WebSocketServer({ noServer: true });
+const earsWss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.pathname === '/listen' && requestAllowed(req)) {
+    earsWss.handleUpgrade(req, socket, head, (ws) => {
+      earsListen(ws, url, (m) => hub.log(m)).catch((e) => { try { ws.send(JSON.stringify({ t: 'error', text: e.message })); ws.close(); } catch { /* gone */ } });
+    });
+    return;
+  }
   if (url.pathname !== '/ws' || !requestAllowed(req)) {
     socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
     socket.destroy();
@@ -328,6 +338,7 @@ function shutdown(sig) {
   shuttingDown = true;
   hub.log(`${sig}: stopping ${ownedAgents().length} agent(s)`);
   saveRosterNow(ROSTER_FILE, ownedAgents().map((a) => a.rosterEntry()));
+  stopEars();
   for (const a of agents.values()) { if (a.kind === 'owned') a.kill(); else a.stop?.(); }
   setTimeout(() => {
     for (const a of ownedAgents()) a.proc?.kill();

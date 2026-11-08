@@ -192,6 +192,16 @@ export class AgentEngineClient {
     return this.cmd('listSessions', { limit })
   }
 
+  /** Sessions open right now in the desktop app or a terminal (~/.claude/sessions). */
+  listLive() {
+    return this.cmd('listLive', {})
+  }
+
+  /** Wakes the dictation model (Moonshine) so the first words come fast. */
+  warmEars() {
+    return this.cmd('warmEars', {})
+  }
+
   spawnAgent(args: SpawnAgentArgs): Promise<EngineAgentSnapshot> {
     return this.cmd('spawnAgent', args)
   }
