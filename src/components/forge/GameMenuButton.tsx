@@ -6,7 +6,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { useAudioManager } from '@/lib/audio-manager'
 import { holdUIFocusForMenuTransition } from '@/lib/input-manager'
 
-const GAME_MENU_FONT = '"Arial Black", Impact, "Segoe UI Black", "Trebuchet MS", system-ui, sans-serif'
+export const GAME_MENU_FONT ='"Arial Black", Impact, "Segoe UI Black", "Trebuchet MS", system-ui, sans-serif'
 
 interface GameMenuButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   label: string

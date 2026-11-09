@@ -9,7 +9,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { KeyboardControls, Stars, Grid, Environment, Html, useProgress } from '@react-three/drei'
 import { EffectComposer, Bloom, Vignette, ChromaticAberration } from '@react-three/postprocessing'
 import { BlendFunction } from 'postprocessing'
-import React, { Suspense, useState, useRef, useContext, useEffect, useTransition, useCallback } from 'react'
+import React, { Fragment, Suspense, useState, useRef, useContext, useEffect, useTransition, useCallback } from 'react'
 import * as THREE from 'three'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -102,6 +102,7 @@ import { GenerateVideoSpellTab } from './forge/spelltabs/GenerateVideoSpellTab'
 import { WorldMenu } from './forge/WorldMenu'
 import { PlaceMenu } from './forge/PlaceMenu'
 import { GameMenuButton } from './forge/GameMenuButton'
+import { GAME_HUD_TEXT, GameKeycap } from './forge/GameKeycap'
 import { useRailMenuExclusion } from '@/hooks/useRailMenuExclusion'
 import { MobileOasisControls, useIsMobileOasis } from './forge/MobileOasisControls'
 import { CombatBoltLayer } from './forge/CombatBoltLayer'
@@ -541,23 +542,27 @@ function DesktopKeyHints({ village = false }: { village?: boolean }) {
   const hasSlides = useOasisStore(s => s.placedCatalogAssets.some(asset => Boolean(asset.imageUrl || asset.videoUrl)))
   if (mobileOasis) return null
 
-  const hint = (key: string, label: string, options: { dim?: boolean } = {}) => (
-    <div
-      key={`${key}-${label}`}
-      className="flex items-center justify-between gap-3 rounded-md border border-white/10 bg-black/45 px-2.5 py-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.35)] backdrop-blur"
-      style={{ opacity: options.dim ? 0.62 : 1 }}
-    >
-      <span className="rounded bg-white/12 px-1.5 py-0.5 font-mono text-[11px] text-white">{key}</span>
-      <span className="text-right">{label}</span>
-    </div>
+  // Game-style key prompts: a chunky keycap and an outlined label, no boxes. Dim = not usable here.
+  const hint = (key: string, label: string, options: { dim?: boolean; accent?: string } = {}) => (
+    <Fragment key={`${key}-${label}`}>
+      <span className="text-right text-[9.5px] leading-[19px]" style={{ ...GAME_HUD_TEXT, opacity: options.dim ? 0.45 : 0.92 }}>
+        {label}
+      </span>
+      <span className="justify-self-start" style={{ opacity: options.dim ? 0.55 : 1 }}>
+        <GameKeycap dim={options.dim} accent={options.accent}>{key}</GameKeycap>
+      </span>
+    </Fragment>
   )
 
   return (
-    <div className="fixed right-4 top-4 z-[96] pointer-events-none flex w-[154px] flex-col gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-100/82 max-[700px]:hidden">
+    <div
+      className="fixed right-2 top-2 z-[96] pointer-events-none grid grid-cols-[auto_auto] items-center gap-x-1.5 gap-y-[5px] rounded-bl-2xl py-2 pl-5 pr-2 max-[700px]:hidden"
+      style={{ background: 'radial-gradient(120% 100% at 100% 0%, rgba(2,6,23,0.55), rgba(2,6,23,0.25) 55%, transparent 80%)' }}
+    >
       {selectedObjectId && (
-        <div className="mb-1 rounded-md border border-cyan-200/15 bg-cyan-950/35 px-2 py-1 text-[9px] text-cyan-100/82 shadow-[0_8px_24px_rgba(0,0,0,0.32)] backdrop-blur">
+        <span className="col-span-2 mb-0.5 text-right text-[8.5px]" style={{ ...GAME_HUD_TEXT, color: '#a5f3fc' }}>
           Selected
-        </div>
+        </span>
       )}
       {selectedObjectId && hint('R', 'Move')}
       {selectedObjectId && hint('T', 'Rotate')}
