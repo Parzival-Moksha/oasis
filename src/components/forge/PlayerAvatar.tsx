@@ -69,12 +69,14 @@ const TPS_MAX_CAMERA_DISTANCE = 100
 const TPS_ZOOM_CURVE = 1.35
 const TPS_ZOOM_WHEEL_SENSITIVITY = 0.0012
 const TPS_ZOOM_SMOOTHING = 10
-const TPS_CLOSE_CAMERA_HEIGHT_OFFSET = 1.5
-const TPS_CLOSE_SHOULDER_OFFSET = 0.32
-const TPS_CLOSE_LOOK_AHEAD = 0.25
-const TPS_CLOSE_LOOK_TARGET_HEIGHT = 1.45
+const TPS_CLOSE_CAMERA_HEIGHT_OFFSET = 1.65
+// No over-the-shoulder shift: it put the avatar left of the crosshair, which read as a bug (owner
+// feedback 2026-11-09). Centered, the crosshair floats just above the avatar's head instead.
+const TPS_CLOSE_SHOULDER_OFFSET = 0
+const TPS_CLOSE_LOOK_AHEAD = 0.45
+const TPS_CLOSE_LOOK_TARGET_HEIGHT = 1.8
 const CAMERA_HEIGHT_OFFSET = 1.85
-const CAMERA_SHOULDER_OFFSET = 0.58
+const CAMERA_SHOULDER_OFFSET = 0
 const CAMERA_LOOK_AHEAD = 0.5
 const CAMERA_LOOK_TARGET_HEIGHT = 1.75
 const MIN_ELEVATION = -1.2 // Near ground level
