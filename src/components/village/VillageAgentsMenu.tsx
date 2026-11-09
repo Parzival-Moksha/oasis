@@ -21,6 +21,15 @@ const MARGIN = 16
 const WIDTH = 272
 const FALLBACK_TOP = 336
 const ACCENT = '#34D399'
+/** "Needs you": the amber of the attention badge. */
+const ATTENTION = '#fbbf24'
+/** Same width as the rail's buttons (GameMenuButton max-w-[142px]) when they can't be measured. */
+const FALLBACK_RAIL_WIDTH = 126
+/** Desktop: the list opens to the right of the rail, like the other menus (their carets point right). */
+const LIST_WIDTH = 252
+const LIST_GAP = 10
+/** Pulses opacity only (compositor-cheap); reduced motion gets a steady glow. */
+const ATTENTION_GLOW_CSS = `@keyframes oasisAttnGlow{0%,100%{opacity:.3}50%{opacity:1}}.oasis-attn-glow{animation:oasisAttnGlow 1.4s ease-in-out infinite}@media (prefers-reduced-motion: reduce){.oasis-attn-glow{animation:none;opacity:.8}}`
 /** The rail's own face (GameMenuButton). */
 const GAME_MENU_FONT = '"Arial Black", Impact, "Segoe UI Black", "Trebuchet MS", system-ui, sans-serif'
 const CUT_CORNER = 'polygon(0 0, calc(100% - 13px) 0, 100% 13px, 100% 100%, 0 100%)'
@@ -92,6 +101,24 @@ function useRailBottom(): number {
     }
   }, [])
   return bottom
+}
+
+/** Width of the rail's buttons, so the Agents tab and list line up with Profile … Help. */
+function useRailButtonWidth(): number {
+  const [width, setWidth] = useState(FALLBACK_RAIL_WIDTH)
+  useLayoutEffect(() => {
+    const button = document.querySelector('[aria-label="Spells menu"]')
+    if (!button) return
+    const measure = () => {
+      const next = Math.round(button.getBoundingClientRect().width)
+      if (next > 0) setWidth(next)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(button)
+    return () => observer.disconnect()
+  }, [])
+  return width
 }
 
 function useCollapsed(defaultValue: boolean): [boolean, (next: boolean) => void] {
@@ -177,6 +204,7 @@ export function VillageAgentsMenu() {
   const screenAgentId = useSyncExternalStore(subscribeVillageScreen, getVillageScreen, () => null)
   const viewport = useViewport()
   const railBottom = useRailBottom()
+  const railWidth = useRailButtonWidth()
   const phone = viewport.width < 700
   const [collapsed, setCollapsed] = useCollapsed(phone)
 
@@ -191,7 +219,11 @@ export function VillageAgentsMenu() {
   // A phone's session sheet covers the bottom of the screen: stop above it.
   const bottomGap = phone && focusedId ? geometry.height + geometry.margin * 2 + 8 : MARGIN
   const maxHeight = Math.max(120, viewport.height - top - bottomGap)
-  const width = phone ? Math.min(WIDTH, viewport.width - MARGIN * 2) : WIDTH
+  // Desktop: the tab is as wide as the rail's buttons above it and the list opens to its right.
+  // A phone's rail is too narrow for that: tab and list stack under it, full width.
+  const width = phone ? Math.min(WIDTH, viewport.width - MARGIN * 2) : railWidth
+  const left = phone ? 8 : MARGIN
+  const listWidth = phone ? width : Math.min(LIST_WIDTH, viewport.width - left - railWidth - LIST_GAP - MARGIN)
   const summary = [
     `${rows.length} in the village`,
     attention.size ? `${attention.size} need${attention.size === 1 ? 's' : ''} you` : '',
@@ -201,18 +233,23 @@ export function VillageAgentsMenu() {
   return (
     <div
       data-ui-panel="village-agents"
-      className="fixed z-[185] flex select-none flex-col gap-2"
-      style={{ left: phone ? 8 : MARGIN, top, width, maxHeight: collapsed ? undefined : maxHeight }}
+      className={`pointer-events-none fixed z-[185] flex select-none ${phone ? 'flex-col gap-2' : 'flex-row items-start'}`}
+      style={{ left, top, width: phone ? width : undefined, maxHeight: collapsed ? undefined : maxHeight, gap: phone ? undefined : LIST_GAP }}
       onPointerDown={event => event.stopPropagation()}
       onWheel={event => event.stopPropagation()}
     >
-      {/* the header, like the rail's buttons */}
+      <style>{ATTENTION_GLOW_CSS}</style>
+      {/* the header, like the rail's buttons; it glows amber while an agent needs you */}
+      <div className="pointer-events-auto relative shrink-0" style={{ width }}>
+      {attention.size > 0 && (
+        <span className="oasis-attn-glow pointer-events-none absolute inset-0 rounded-lg" style={{ boxShadow: `0 0 18px 2px ${ATTENTION}, inset 0 0 14px ${ATTENTION}88`, border: `1px solid ${ATTENTION}` }} />
+      )}
       <button
         type="button"
         onClick={() => setCollapsed(!collapsed)}
         aria-expanded={!collapsed}
-        title={collapsed ? 'Show the agents' : 'Fold the list up'}
-        className="group relative min-h-[44px] w-full shrink-0 overflow-hidden rounded-lg border bg-black/80 px-3 py-1.5 text-left text-white transition hover:border-white/70"
+        title={`${summary}. ${collapsed ? 'Show the agents' : 'Hide the list'}.`}
+        className="group relative h-11 w-full shrink-0 overflow-hidden rounded-lg border bg-black/80 px-3 text-left text-white transition hover:border-white/70"
         style={{
           borderColor: collapsed ? `${ACCENT}4d` : `${ACCENT}aa`,
           clipPath: CUT_CORNER,
@@ -227,22 +264,24 @@ export function VillageAgentsMenu() {
         <span className="absolute inset-0 opacity-0 transition group-hover:opacity-100" style={{ background: `radial-gradient(circle at 18% 22%, ${ACCENT}66, transparent 35%)` }} />
         <span className="relative flex h-full items-center gap-2">
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[12px] font-black uppercase tracking-[0.12em]">
-              Agents
-              {attention.size > 0 && <span className="ml-2 rounded-sm bg-amber-400 px-1 text-[10px] text-black" style={{ textShadow: 'none' }}>{attention.size}</span>}
+            <span className="block truncate text-[12px] font-black uppercase tracking-[0.12em]">Agents</span>
+            {/* like the rail's sublabels: one short line, the full summary is in the tooltip */}
+            <span className="mt-0.5 block truncate text-[9px] uppercase tracking-[0.04em]" style={{ color: attention.size ? ATTENTION : 'rgba(255,255,255,0.55)' }}>
+              {attention.size ? (attention.size === 1 ? 'needs you' : `${attention.size} need you`) : `${rows.length} here`}
             </span>
-            <span className="mt-0.5 block whitespace-normal text-[10px] uppercase leading-snug tracking-[0.12em] text-white/55">{summary}</span>
           </span>
           <span
             className="h-0 w-0 shrink-0 border-b-[4px] border-l-[6px] border-t-[4px] border-b-transparent border-t-transparent transition-transform"
-            style={{ borderLeftColor: `${ACCENT}aa`, transform: collapsed ? 'none' : 'rotate(90deg)' }}
+            style={{ borderLeftColor: collapsed ? `${ACCENT}aa` : ACCENT, transform: phone && !collapsed ? 'rotate(90deg)' : 'none' }}
           />
         </span>
       </button>
+      </div>
 
       {!collapsed && (
         <div
-          className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-lg border border-white/10 bg-black/[0.92] p-1.5 text-white shadow-[0_0_54px_rgba(0,0,0,0.65),0_0_38px_rgba(52,211,153,0.14)] backdrop-blur-md [scrollbar-width:thin]"
+          className="pointer-events-auto min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-lg border border-white/10 bg-black/[0.92] p-1.5 text-white shadow-[0_0_54px_rgba(0,0,0,0.65),0_0_38px_rgba(52,211,153,0.14)] backdrop-blur-md [scrollbar-width:thin]"
+          style={{ width: listWidth, maxHeight, flex: phone ? undefined : '0 0 auto' }}
         >
           {rows.length === 0 && (
             <div className="px-2 py-2 text-[11px] leading-snug text-white/55">No agents yet. Stand in the circle and press E, or use + Summon.</div>
@@ -252,6 +291,10 @@ export function VillageAgentsMenu() {
             const needs = attention.has(row.id)
             return (
               <div key={row.id} className="mb-1.5 last:mb-0">
+                <div className="relative">
+                {needs && (
+                  <span className="oasis-attn-glow pointer-events-none absolute inset-0 rounded-md" style={{ boxShadow: `0 0 12px 1px ${ATTENTION}, inset 0 0 10px ${ATTENTION}66`, border: `1px solid ${ATTENTION}` }} />
+                )}
                 <button
                   type="button"
                   onClick={() => focusVillageAgent(row.id)}
@@ -272,6 +315,7 @@ export function VillageAgentsMenu() {
                     {row.observed && <span className="text-cyan-200/60">· watched</span>}
                   </span>
                 </button>
+                </div>
                 {row.helpers.length > 0 && (
                   <div className="ml-2 mt-0.5 border-l pl-1" style={{ borderColor: `${VILLAGE_HELPERS_COLOR}55` }}>
                     {row.helpers.map(helper => (
