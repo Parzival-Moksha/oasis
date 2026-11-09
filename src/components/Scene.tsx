@@ -417,6 +417,21 @@ function SkyBackgroundInner({ backgroundId }: { backgroundId: string }) {
     return <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={0.3} />
   }
 
+  // Generated sky: sharp jpg for the background, small linear .hdr for lighting
+  if ('envPath' in skyConfig && skyConfig.envPath) {
+    return (
+      <>
+        <Environment
+          files={`${OASIS_BASE}${skyConfig.path}`}
+          background="only"
+          backgroundBlurriness={0}
+          backgroundIntensity={1}
+        />
+        <Environment files={`${OASIS_BASE}${skyConfig.envPath}`} />
+      </>
+    )
+  }
+
   // Local HDRI file — sets both background AND environment (IBL)
   return (
     <Environment

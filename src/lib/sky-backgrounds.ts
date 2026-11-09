@@ -1,5 +1,12 @@
+// Generated skies (scripts/generate-skies.py, files in public/skies/): a jpg
+// background drawn as-is, plus a small linear .hdr that lights the scene.
 export const SKY_BACKGROUNDS = [
   { id: 'stars', name: 'Procedural Stars', path: null },
+  { id: 'oasis_dusk', name: 'Oasis Dusk', path: '/skies/oasis_dusk.jpg', envPath: '/skies/oasis_dusk_env.hdr' },
+  { id: 'aurora_night', name: 'Aurora Night', path: '/skies/aurora_night.jpg', envPath: '/skies/aurora_night_env.hdr' },
+  { id: 'pastel_dawn', name: 'Pastel Dawn', path: '/skies/pastel_dawn.jpg', envPath: '/skies/pastel_dawn_env.hdr' },
+  { id: 'cyber_dusk', name: 'Cyber Dusk', path: '/skies/cyber_dusk.jpg', envPath: '/skies/cyber_dusk_env.hdr' },
+  { id: 'clear_day', name: 'Clear Day', path: '/skies/clear_day.jpg', envPath: '/skies/clear_day_env.hdr' },
   { id: 'night001', name: 'Night Sky 001', path: '/hdri/NightSkyHDRI001_4K_TONEMAPPED.jpg' },
   { id: 'night004', name: 'Night Sky 004', path: '/hdri/NightSkyHDRI004_4K_TONEMAPPED.jpg' },
   { id: 'night007', name: 'Night Sky 007', path: '/hdri/NightSkyHDRI007_4K_TONEMAPPED.jpg' },
@@ -27,6 +34,11 @@ export const SKY_BACKGROUNDS = [
 
 export const AGENT_SKY_BACKGROUND_IDS = [
   'stars',
+  'oasis_dusk',
+  'aurora_night',
+  'pastel_dawn',
+  'cyber_dusk',
+  'clear_day',
   'night001',
   'night004',
   'night007',
@@ -74,6 +86,27 @@ const SKY_TOOL_ALIASES: Record<string, (typeof AGENT_SKY_BACKGROUND_IDS)[number]
   night_preset: 'night007',
   stars: 'stars',
   starfield: 'stars',
+  desert: 'oasis_dusk',
+  desert_sunset: 'oasis_dusk',
+  dunes: 'oasis_dusk',
+  oasis: 'oasis_dusk',
+  aurora: 'aurora_night',
+  northern_lights: 'aurora_night',
+  aurora_borealis: 'aurora_night',
+  pastel: 'pastel_dawn',
+  pink_dawn: 'pastel_dawn',
+  synthwave: 'cyber_dusk',
+  retrowave: 'cyber_dusk',
+  vaporwave: 'cyber_dusk',
+  cyberpunk: 'cyber_dusk',
+  neon: 'cyber_dusk',
+  day: 'clear_day',
+  daytime: 'clear_day',
+  noon: 'clear_day',
+  clear: 'clear_day',
+  sunny: 'clear_day',
+  blue_sky: 'clear_day',
+  clouds: 'clear_day',
 }
 
 export const SKY_TOOL_PRESET_IDS = [
@@ -110,6 +143,7 @@ export function resolveSkyBackgroundToolPreset(value: unknown): {
 export function formatAgentSkyPresetGuide(): string {
   return [
     `Stable presetId values: ${AGENT_SKY_BACKGROUND_IDS.join(', ')}.`,
-    'Useful aliases accepted by the server: dawn/sunrise -> umhlanga_sunrise; sunset/dusk -> belfast_sunset; forest/park -> sunny_vondelpark; city/arena -> stadium; night -> night007.',
+    'Generated Oasis skies: oasis_dusk (desert sunset over dunes), aurora_night (northern lights, stars), pastel_dawn (pink and lavender dawn, misty hills), cyber_dusk (synthwave moon, neon grid), clear_day (blue sky, cumulus).',
+    'Useful aliases accepted by the server: dawn/sunrise -> umhlanga_sunrise; sunset/dusk -> belfast_sunset; forest/park -> sunny_vondelpark; city/arena -> stadium; night -> night007; desert -> oasis_dusk; aurora -> aurora_night; synthwave -> cyber_dusk; day/sunny -> clear_day.',
   ].join(' ')
 }
