@@ -1,0 +1,5086 @@
+{
+  "seedVersion": 1,
+  "slug": "floating-isle",
+  "id": "world-1794211873437-g1or",
+  "userId": "local-user",
+  "name": "Floating Isle",
+  "icon": "🏝️",
+  "visibility": "private",
+  "creatorName": "The Oasis",
+  "creatorAvatar": null,
+  "thumbnailUrl": null,
+  "data": {
+    "version": 1,
+    "terrain": null,
+    "craftedScenes": [
+      {
+        "id": "crafted-mcp-1794213679057-ep0z",
+        "name": "Rune circle",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              -0.009,
+              0
+            ],
+            "scale": [
+              11.2,
+              0.02,
+              11.2
+            ],
+            "color": "#3a3550",
+            "roughness": 0.8
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              -0.008,
+              0
+            ],
+            "scale": [
+              10.8,
+              0.02,
+              10.8
+            ],
+            "color": "#9ad8ff",
+            "emissive": "#46b8ff",
+            "emissiveIntensity": 1.4,
+            "roughness": 0.8
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              -0.007,
+              0
+            ],
+            "scale": [
+              10.5,
+              0.02,
+              10.5
+            ],
+            "color": "#c7c3d6",
+            "texturePresetId": "marble",
+            "textureRepeat": 5,
+            "roughness": 0.8
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              -0.006,
+              0
+            ],
+            "scale": [
+              6.7,
+              0.02,
+              6.7
+            ],
+            "color": "#c8a8ff",
+            "emissive": "#9a6bff",
+            "emissiveIntensity": 1.5,
+            "roughness": 0.8
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              -0.005,
+              0
+            ],
+            "scale": [
+              6.4,
+              0.02,
+              6.4
+            ],
+            "color": "#b9b4cc",
+            "texturePresetId": "marble",
+            "textureRepeat": 3,
+            "roughness": 0.8
+          },
+          {
+            "type": "box",
+            "position": [
+              1.646,
+              -0.006,
+              3.973
+            ],
+            "scale": [
+              0.42,
+              0.02,
+              0.42
+            ],
+            "color": "#a8f0ff",
+            "rotation": [
+              0,
+              1.1780972450961724,
+              0
+            ],
+            "emissive": "#3fd0ff",
+            "emissiveIntensity": 1.3
+          },
+          {
+            "type": "box",
+            "position": [
+              3.973,
+              -0.006,
+              1.646
+            ],
+            "scale": [
+              0.42,
+              0.02,
+              0.42
+            ],
+            "color": "#a8f0ff",
+            "rotation": [
+              0,
+              1.9634954084936207,
+              0
+            ],
+            "emissive": "#3fd0ff",
+            "emissiveIntensity": 1.3
+          },
+          {
+            "type": "box",
+            "position": [
+              3.973,
+              -0.006,
+              -1.646
+            ],
+            "scale": [
+              0.42,
+              0.02,
+              0.42
+            ],
+            "color": "#a8f0ff",
+            "rotation": [
+              0,
+              2.748893571891069,
+              0
+            ],
+            "emissive": "#3fd0ff",
+            "emissiveIntensity": 1.3
+          },
+          {
+            "type": "box",
+            "position": [
+              1.646,
+              -0.006,
+              -3.973
+            ],
+            "scale": [
+              0.42,
+              0.02,
+              0.42
+            ],
+            "color": "#a8f0ff",
+            "rotation": [
+              0,
+              3.5342917352885173,
+              0
+            ],
+            "emissive": "#3fd0ff",
+            "emissiveIntensity": 1.3
+          },
+          {
+            "type": "box",
+            "position": [
+              -1.646,
+              -0.006,
+              -3.973
+            ],
+            "scale": [
+              0.42,
+              0.02,
+              0.42
+            ],
+            "color": "#a8f0ff",
+            "rotation": [
+              0,
+              4.319689898685965,
+              0
+            ],
+            "emissive": "#3fd0ff",
+            "emissiveIntensity": 1.3
+          },
+          {
+            "type": "box",
+            "position": [
+              -3.973,
+              -0.006,
+              -1.646
+            ],
+            "scale": [
+              0.42,
+              0.02,
+              0.42
+            ],
+            "color": "#a8f0ff",
+            "rotation": [
+              0,
+              5.105088062083414,
+              0
+            ],
+            "emissive": "#3fd0ff",
+            "emissiveIntensity": 1.3
+          },
+          {
+            "type": "box",
+            "position": [
+              -3.973,
+              -0.006,
+              1.646
+            ],
+            "scale": [
+              0.42,
+              0.02,
+              0.42
+            ],
+            "color": "#a8f0ff",
+            "rotation": [
+              0,
+              5.8904862254808625,
+              0
+            ],
+            "emissive": "#3fd0ff",
+            "emissiveIntensity": 1.3
+          },
+          {
+            "type": "box",
+            "position": [
+              -1.646,
+              -0.006,
+              3.973
+            ],
+            "scale": [
+              0.42,
+              0.02,
+              0.42
+            ],
+            "color": "#a8f0ff",
+            "rotation": [
+              0,
+              6.675884388878311,
+              0
+            ],
+            "emissive": "#3fd0ff",
+            "emissiveIntensity": 1.3
+          }
+        ],
+        "position": [
+          0,
+          0,
+          7.5
+        ],
+        "createdAt": "2026-11-09T08:41:19.057Z"
+      },
+      {
+        "id": "crafted-mcp-1794213679188-qpd0",
+        "name": "Stepping stones",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              -0.007,
+              1.1
+            ],
+            "scale": [
+              1.107,
+              0.02,
+              0.941
+            ],
+            "color": "#bdb7cf",
+            "rotation": [
+              0,
+              2.8868851075031485,
+              0
+            ],
+            "texturePresetId": "marble",
+            "textureRepeat": 1,
+            "roughness": 0.8
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0.274,
+              -0.007,
+              -0.35
+            ],
+            "scale": [
+              1.082,
+              0.02,
+              0.919
+            ],
+            "color": "#bdb7cf",
+            "rotation": [
+              0,
+              2.114450768614824,
+              0
+            ],
+            "texturePresetId": "marble",
+            "textureRepeat": 1,
+            "roughness": 0.8
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0.341,
+              -0.007,
+              -1.8
+            ],
+            "scale": [
+              1.071,
+              0.02,
+              0.911
+            ],
+            "color": "#bdb7cf",
+            "rotation": [
+              0,
+              0.7423229547872552,
+              0
+            ],
+            "texturePresetId": "marble",
+            "textureRepeat": 1,
+            "roughness": 0.8
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0.15,
+              -0.007,
+              -3.25
+            ],
+            "scale": [
+              1.3,
+              0.02,
+              1.105
+            ],
+            "color": "#bdb7cf",
+            "rotation": [
+              0,
+              0.6281928956667384,
+              0
+            ],
+            "texturePresetId": "marble",
+            "textureRepeat": 1,
+            "roughness": 0.8
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -0.155,
+              -0.007,
+              -4.7
+            ],
+            "scale": [
+              1.21,
+              0.02,
+              1.029
+            ],
+            "color": "#bdb7cf",
+            "rotation": [
+              0,
+              1.37740128831719,
+              0
+            ],
+            "texturePresetId": "marble",
+            "textureRepeat": 1,
+            "roughness": 0.8
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -0.342,
+              -0.007,
+              -6.15
+            ],
+            "scale": [
+              1.163,
+              0.02,
+              0.989
+            ],
+            "color": "#bdb7cf",
+            "rotation": [
+              0,
+              1.4849480816675331,
+              0
+            ],
+            "texturePresetId": "marble",
+            "textureRepeat": 1,
+            "roughness": 0.8
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -0.27,
+              -0.007,
+              -7.6
+            ],
+            "scale": [
+              1.098,
+              0.02,
+              0.933
+            ],
+            "color": "#bdb7cf",
+            "rotation": [
+              0,
+              2.4915638208989153,
+              0
+            ],
+            "texturePresetId": "marble",
+            "textureRepeat": 1,
+            "roughness": 0.8
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0.006,
+              -0.007,
+              -9.05
+            ],
+            "scale": [
+              1.072,
+              0.02,
+              0.912
+            ],
+            "color": "#bdb7cf",
+            "rotation": [
+              0,
+              0.7025488784691161,
+              0
+            ],
+            "texturePresetId": "marble",
+            "textureRepeat": 1,
+            "roughness": 0.8
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0.278,
+              -0.007,
+              -10.5
+            ],
+            "scale": [
+              1.055,
+              0.02,
+              0.897
+            ],
+            "color": "#bdb7cf",
+            "rotation": [
+              0,
+              0.8003023830095934,
+              0
+            ],
+            "texturePresetId": "marble",
+            "textureRepeat": 1,
+            "roughness": 0.8
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0.339,
+              -0.007,
+              -11.95
+            ],
+            "scale": [
+              1.152,
+              0.02,
+              0.979
+            ],
+            "color": "#bdb7cf",
+            "rotation": [
+              0,
+              2.706192901234885,
+              0
+            ],
+            "texturePresetId": "marble",
+            "textureRepeat": 1,
+            "roughness": 0.8
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0.144,
+              -0.007,
+              -13.4
+            ],
+            "scale": [
+              1.145,
+              0.02,
+              0.973
+            ],
+            "color": "#bdb7cf",
+            "rotation": [
+              0,
+              0.34119278184239976,
+              0
+            ],
+            "texturePresetId": "marble",
+            "textureRepeat": 1,
+            "roughness": 0.8
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -0.16,
+              -0.007,
+              -14.85
+            ],
+            "scale": [
+              1.115,
+              0.02,
+              0.947
+            ],
+            "color": "#bdb7cf",
+            "rotation": [
+              0,
+              2.9748071912132037,
+              0
+            ],
+            "texturePresetId": "marble",
+            "textureRepeat": 1,
+            "roughness": 0.8
+          }
+        ],
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "createdAt": "2026-11-09T08:41:19.188Z"
+      },
+      {
+        "id": "crafted-mcp-1794213679518-50hs",
+        "name": "Crystal cluster",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "sphere",
+            "position": [
+              0,
+              0.1,
+              0
+            ],
+            "scale": [
+              2.4,
+              0.9,
+              2
+            ],
+            "color": "#4d465a",
+            "texturePresetId": "rock",
+            "textureRepeat": 1,
+            "roughness": 1
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0,
+              1.271,
+              0
+            ],
+            "scale": [
+              0.969,
+              3.027,
+              0.969
+            ],
+            "color": "#b28cff",
+            "rotation": [
+              0.10423012108116977,
+              2.398252303586568,
+              0
+            ],
+            "color2": "#ff6ad5",
+            "seed": 7,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0.7,
+              0.856,
+              0.3
+            ],
+            "scale": [
+              0.652,
+              2.038,
+              0.652
+            ],
+            "color": "#b28cff",
+            "rotation": [
+              0.2086305261275823,
+              1.4114019434366378,
+              0.35
+            ],
+            "color2": "#ff6ad5",
+            "seed": 8,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              -0.6,
+              0.746,
+              0.4
+            ],
+            "scale": [
+              0.569,
+              1.777,
+              0.569
+            ],
+            "color": "#b28cff",
+            "rotation": [
+              -0.15338299465934604,
+              0.29471910247109756,
+              -0.4
+            ],
+            "color2": "#ff6ad5",
+            "seed": 9,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0.2,
+              0.469,
+              -0.7
+            ],
+            "scale": [
+              0.357,
+              1.116,
+              0.357
+            ],
+            "color": "#b28cff",
+            "rotation": [
+              0.4007295311759609,
+              1.3588885932218677,
+              0.5
+            ],
+            "color2": "#ff6ad5",
+            "seed": 10,
+            "intensity": 1.2
+          }
+        ],
+        "position": [
+          -10.25,
+          0,
+          -10.254
+        ],
+        "createdAt": "2026-11-09T08:41:19.518Z"
+      },
+      {
+        "id": "crafted-mcp-1794213679764-mykz",
+        "name": "Crystal cluster",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "sphere",
+            "position": [
+              0,
+              0.1,
+              0
+            ],
+            "scale": [
+              3,
+              1.125,
+              2.5
+            ],
+            "color": "#4d465a",
+            "texturePresetId": "rock",
+            "textureRepeat": 1,
+            "roughness": 1
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0,
+              2.029,
+              0
+            ],
+            "scale": [
+              1.546,
+              4.831,
+              1.546
+            ],
+            "color": "#5effc8",
+            "rotation": [
+              0.1343482461178048,
+              0.17757129466217927,
+              0
+            ],
+            "color2": "#2ab7ff",
+            "seed": 14,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0.875,
+              1.011,
+              0.375
+            ],
+            "scale": [
+              0.77,
+              2.408,
+              0.77
+            ],
+            "color": "#5effc8",
+            "rotation": [
+              0.3106496634388349,
+              2.310945765675163,
+              0.35
+            ],
+            "color2": "#2ab7ff",
+            "seed": 15,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              -0.75,
+              0.938,
+              0.5
+            ],
+            "scale": [
+              0.715,
+              2.233,
+              0.715
+            ],
+            "color": "#5effc8",
+            "rotation": [
+              -0.2975590627232567,
+              1.9026646802303722,
+              -0.4
+            ],
+            "color2": "#2ab7ff",
+            "seed": 16,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0.25,
+              0.704,
+              -0.875
+            ],
+            "scale": [
+              0.537,
+              1.677,
+              0.537
+            ],
+            "color": "#5effc8",
+            "rotation": [
+              0.3243612051336009,
+              0.4973222126000895,
+              0.5
+            ],
+            "color2": "#2ab7ff",
+            "seed": 17,
+            "intensity": 1.2
+          }
+        ],
+        "position": [
+          -18.08,
+          0,
+          0.195
+        ],
+        "createdAt": "2026-11-09T08:41:19.764Z"
+      },
+      {
+        "id": "crafted-mcp-1794213679972-2pom",
+        "name": "Crystal cluster",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "sphere",
+            "position": [
+              0,
+              0.1,
+              0
+            ],
+            "scale": [
+              2.16,
+              0.81,
+              1.8
+            ],
+            "color": "#4d465a",
+            "texturePresetId": "rock",
+            "textureRepeat": 1,
+            "roughness": 1
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0,
+              1.184,
+              0
+            ],
+            "scale": [
+              0.902,
+              2.819,
+              0.902
+            ],
+            "color": "#8fa2ff",
+            "rotation": [
+              0.013268767588785563,
+              1.1616592229609688,
+              0
+            ],
+            "color2": "#d07bff",
+            "seed": 21,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0.63,
+              0.858,
+              0.27
+            ],
+            "scale": [
+              0.653,
+              2.042,
+              0.653
+            ],
+            "color": "#8fa2ff",
+            "rotation": [
+              0.2477160912324162,
+              0.20576061801301318,
+              0.35
+            ],
+            "color2": "#d07bff",
+            "seed": 22,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              -0.54,
+              0.549,
+              0.36
+            ],
+            "scale": [
+              0.418,
+              1.307,
+              0.418
+            ],
+            "color": "#8fa2ff",
+            "rotation": [
+              -0.138759275371062,
+              0.814371604989944,
+              -0.4
+            ],
+            "color2": "#d07bff",
+            "seed": 23,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0.18,
+              0.452,
+              -0.63
+            ],
+            "scale": [
+              0.345,
+              1.077,
+              0.345
+            ],
+            "color": "#8fa2ff",
+            "rotation": [
+              0.4486934506531388,
+              1.4766274136204867,
+              0.5
+            ],
+            "color2": "#d07bff",
+            "seed": 24,
+            "intensity": 1.2
+          }
+        ],
+        "position": [
+          -19.264,
+          0,
+          14.511
+        ],
+        "createdAt": "2026-11-09T08:41:19.972Z"
+      },
+      {
+        "id": "crafted-mcp-1794213680098-luw2",
+        "name": "Crystal cluster",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "sphere",
+            "position": [
+              0,
+              0.1,
+              0
+            ],
+            "scale": [
+              3.24,
+              1.215,
+              2.7
+            ],
+            "color": "#4d465a",
+            "texturePresetId": "rock",
+            "textureRepeat": 1,
+            "roughness": 1
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0,
+              1.775,
+              0
+            ],
+            "scale": [
+              1.352,
+              4.227,
+              1.352
+            ],
+            "color": "#3fe0ff",
+            "rotation": [
+              -0.11905018973078525,
+              1.2436228817975383,
+              0
+            ],
+            "color2": "#2a7bff",
+            "seed": 28,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0.945,
+              1.118,
+              0.405
+            ],
+            "scale": [
+              0.852,
+              2.663,
+              0.852
+            ],
+            "color": "#3fe0ff",
+            "rotation": [
+              0.07995452870387698,
+              1.260995785483135,
+              0.35
+            ],
+            "color2": "#2a7bff",
+            "seed": 29,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              -0.81,
+              1.085,
+              0.54
+            ],
+            "scale": [
+              0.826,
+              2.583,
+              0.826
+            ],
+            "color": "#3fe0ff",
+            "rotation": [
+              -0.14986429455125744,
+              2.402610571867077,
+              -0.4
+            ],
+            "color2": "#2a7bff",
+            "seed": 30,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0.27,
+              0.676,
+              -0.945
+            ],
+            "scale": [
+              0.515,
+              1.609,
+              0.515
+            ],
+            "color": "#3fe0ff",
+            "rotation": [
+              0.3110040024524441,
+              0.8687835004061537,
+              0.5
+            ],
+            "color2": "#2a7bff",
+            "seed": 31,
+            "intensity": 1.2
+          }
+        ],
+        "position": [
+          -9.859,
+          0,
+          26.042
+        ],
+        "createdAt": "2026-11-09T08:41:20.098Z"
+      },
+      {
+        "id": "crafted-mcp-1794213680351-oyl1",
+        "name": "Crystal cluster",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "sphere",
+            "position": [
+              0,
+              0.1,
+              0
+            ],
+            "scale": [
+              2.64,
+              0.99,
+              2.2
+            ],
+            "color": "#4d465a",
+            "texturePresetId": "rock",
+            "textureRepeat": 1,
+            "roughness": 1
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0,
+              1.629,
+              0
+            ],
+            "scale": [
+              1.241,
+              3.878,
+              1.241
+            ],
+            "color": "#b28cff",
+            "rotation": [
+              0.07253609677821882,
+              2.4969077958762878,
+              0
+            ],
+            "color2": "#ff6ad5",
+            "seed": 35,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0.77,
+              1.151,
+              0.33
+            ],
+            "scale": [
+              0.877,
+              2.741,
+              0.877
+            ],
+            "color": "#b28cff",
+            "rotation": [
+              0.2819695724219792,
+              2.8961004895294096,
+              0.35
+            ],
+            "color2": "#ff6ad5",
+            "seed": 36,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              -0.66,
+              0.674,
+              0.44
+            ],
+            "scale": [
+              0.514,
+              1.606,
+              0.514
+            ],
+            "color": "#b28cff",
+            "rotation": [
+              -0.2503132036865684,
+              2.962140091374705,
+              -0.4
+            ],
+            "color2": "#ff6ad5",
+            "seed": 37,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0.22,
+              0.627,
+              -0.77
+            ],
+            "scale": [
+              0.478,
+              1.494,
+              0.478
+            ],
+            "color": "#b28cff",
+            "rotation": [
+              0.42027014752518677,
+              0.35546672901087334,
+              0.5
+            ],
+            "color2": "#ff6ad5",
+            "seed": 38,
+            "intensity": 1.2
+          }
+        ],
+        "position": [
+          9.859,
+          0,
+          26.042
+        ],
+        "createdAt": "2026-11-09T08:41:20.351Z"
+      },
+      {
+        "id": "crafted-mcp-1794213680473-s3pz",
+        "name": "Crystal cluster",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "sphere",
+            "position": [
+              0,
+              0.1,
+              0
+            ],
+            "scale": [
+              3.12,
+              1.17,
+              2.6
+            ],
+            "color": "#4d465a",
+            "texturePresetId": "rock",
+            "textureRepeat": 1,
+            "roughness": 1
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0,
+              2.02,
+              0
+            ],
+            "scale": [
+              1.539,
+              4.809,
+              1.539
+            ],
+            "color": "#5effc8",
+            "rotation": [
+              0.09658621269591802,
+              1.5230087317031684,
+              0
+            ],
+            "color2": "#2ab7ff",
+            "seed": 42,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0.91,
+              1.115,
+              0.39
+            ],
+            "scale": [
+              0.85,
+              2.655,
+              0.85
+            ],
+            "color": "#5effc8",
+            "rotation": [
+              0.06013551446552129,
+              2.0812502874550303,
+              0.35
+            ],
+            "color2": "#2ab7ff",
+            "seed": 43,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              -0.78,
+              0.92,
+              0.52
+            ],
+            "scale": [
+              0.701,
+              2.19,
+              0.701
+            ],
+            "color": "#5effc8",
+            "rotation": [
+              -0.16208080947063208,
+              1.1717235683118625,
+              -0.4
+            ],
+            "color2": "#2ab7ff",
+            "seed": 44,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0.26,
+              0.767,
+              -0.91
+            ],
+            "scale": [
+              0.585,
+              1.827,
+              0.585
+            ],
+            "color": "#5effc8",
+            "rotation": [
+              0.23180942570159122,
+              2.5180146171305755,
+              0.5
+            ],
+            "color2": "#2ab7ff",
+            "seed": 45,
+            "intensity": 1.2
+          }
+        ],
+        "position": [
+          18.08,
+          0,
+          14.805
+        ],
+        "createdAt": "2026-11-09T08:41:20.473Z"
+      },
+      {
+        "id": "crafted-mcp-1794213680690-ndpb",
+        "name": "Crystal cluster",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "sphere",
+            "position": [
+              0,
+              0.1,
+              0
+            ],
+            "scale": [
+              2.4,
+              0.9,
+              2
+            ],
+            "color": "#4d465a",
+            "texturePresetId": "rock",
+            "textureRepeat": 1,
+            "roughness": 1
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0,
+              1.353,
+              0
+            ],
+            "scale": [
+              1.03,
+              3.22,
+              1.03
+            ],
+            "color": "#8fa2ff",
+            "rotation": [
+              -0.10474524782264942,
+              2.043934245345141,
+              0
+            ],
+            "color2": "#d07bff",
+            "seed": 49,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0.7,
+              0.805,
+              0.3
+            ],
+            "scale": [
+              0.614,
+              1.918,
+              0.614
+            ],
+            "color": "#8fa2ff",
+            "rotation": [
+              0.22076460129200676,
+              1.1482631991055186,
+              0.35
+            ],
+            "color2": "#d07bff",
+            "seed": 50,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              -0.6,
+              0.619,
+              0.4
+            ],
+            "scale": [
+              0.472,
+              1.475,
+              0.472
+            ],
+            "color": "#8fa2ff",
+            "rotation": [
+              -0.2377692800431739,
+              0.11773636750783253,
+              -0.4
+            ],
+            "color2": "#d07bff",
+            "seed": 51,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0.2,
+              0.535,
+              -0.7
+            ],
+            "scale": [
+              0.408,
+              1.274,
+              0.408
+            ],
+            "color": "#8fa2ff",
+            "rotation": [
+              0.17095662707238568,
+              0.2848388618997363,
+              0.5
+            ],
+            "color2": "#d07bff",
+            "seed": 52,
+            "intensity": 1.2
+          }
+        ],
+        "position": [
+          19.264,
+          0,
+          0.489
+        ],
+        "createdAt": "2026-11-09T08:41:20.690Z"
+      },
+      {
+        "id": "crafted-mcp-1794213680787-cbfk",
+        "name": "Crystal cluster",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "sphere",
+            "position": [
+              0,
+              0.1,
+              0
+            ],
+            "scale": [
+              2.88,
+              1.08,
+              2.4
+            ],
+            "color": "#4d465a",
+            "texturePresetId": "rock",
+            "textureRepeat": 1,
+            "roughness": 1
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0,
+              1.573,
+              0
+            ],
+            "scale": [
+              1.199,
+              3.745,
+              1.199
+            ],
+            "color": "#3fe0ff",
+            "rotation": [
+              0.13868851075031483,
+              0.396679021763699,
+              0
+            ],
+            "color2": "#2a7bff",
+            "seed": 56,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0.84,
+              1.177,
+              0.36
+            ],
+            "scale": [
+              0.897,
+              2.802,
+              0.897
+            ],
+            "color": "#3fe0ff",
+            "rotation": [
+              0.08555558041522579,
+              0.7769646926773272,
+              0.35
+            ],
+            "color2": "#2a7bff",
+            "seed": 57,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              -0.72,
+              0.985,
+              0.48
+            ],
+            "scale": [
+              0.751,
+              2.345,
+              0.751
+            ],
+            "color": "#3fe0ff",
+            "rotation": [
+              -0.32718071043332614,
+              2.0154668861264162,
+              -0.4
+            ],
+            "color2": "#2a7bff",
+            "seed": 58,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0.24,
+              0.647,
+              -0.84
+            ],
+            "scale": [
+              0.493,
+              1.541,
+              0.493
+            ],
+            "color": "#3fe0ff",
+            "rotation": [
+              0.28593972934144285,
+              1.5542456588120181,
+              0.5
+            ],
+            "color2": "#2a7bff",
+            "seed": 59,
+            "intensity": 1.2
+          }
+        ],
+        "position": [
+          9.389,
+          0,
+          -10.159
+        ],
+        "createdAt": "2026-11-09T08:41:20.787Z"
+      },
+      {
+        "id": "crafted-mcp-1794213683083-firf",
+        "name": "Wisps",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "sphere",
+            "position": [
+              -4.819,
+              3.66,
+              -20.387
+            ],
+            "scale": [
+              0.16,
+              0.16,
+              0.16
+            ],
+            "color": "#fff1c8",
+            "emissive": "#ffc46b",
+            "emissiveIntensity": 3
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -19.655,
+              3.379,
+              -8.811
+            ],
+            "scale": [
+              0.16,
+              0.16,
+              0.16
+            ],
+            "color": "#fff1c8",
+            "emissive": "#ffc46b",
+            "emissiveIntensity": 3
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -19.355,
+              3.546,
+              0.021
+            ],
+            "scale": [
+              0.16,
+              0.16,
+              0.16
+            ],
+            "color": "#fff1c8",
+            "emissive": "#ffc46b",
+            "emissiveIntensity": 3
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -13.279,
+              2.297,
+              13.115
+            ],
+            "scale": [
+              0.16,
+              0.16,
+              0.16
+            ],
+            "color": "#fff1c8",
+            "emissive": "#ffc46b",
+            "emissiveIntensity": 3
+          },
+          {
+            "type": "sphere",
+            "position": [
+              2.686,
+              2.278,
+              20.403
+            ],
+            "scale": [
+              0.16,
+              0.16,
+              0.16
+            ],
+            "color": "#fff1c8",
+            "emissive": "#ffc46b",
+            "emissiveIntensity": 3
+          },
+          {
+            "type": "sphere",
+            "position": [
+              11.9,
+              3.047,
+              18.812
+            ],
+            "scale": [
+              0.16,
+              0.16,
+              0.16
+            ],
+            "color": "#fff1c8",
+            "emissive": "#ffc46b",
+            "emissiveIntensity": 3
+          },
+          {
+            "type": "sphere",
+            "position": [
+              21.115,
+              3.242,
+              6.658
+            ],
+            "scale": [
+              0.16,
+              0.16,
+              0.16
+            ],
+            "color": "#fff1c8",
+            "emissive": "#ffc46b",
+            "emissiveIntensity": 3
+          },
+          {
+            "type": "sphere",
+            "position": [
+              16.014,
+              2.285,
+              -9.132
+            ],
+            "scale": [
+              0.16,
+              0.16,
+              0.16
+            ],
+            "color": "#fff1c8",
+            "emissive": "#ffc46b",
+            "emissiveIntensity": 3
+          },
+          {
+            "type": "sphere",
+            "position": [
+              4.61,
+              4.428,
+              -17.961
+            ],
+            "scale": [
+              0.16,
+              0.16,
+              0.16
+            ],
+            "color": "#fff1c8",
+            "emissive": "#ffc46b",
+            "emissiveIntensity": 3
+          }
+        ],
+        "position": [
+          0,
+          0,
+          7.5
+        ],
+        "createdAt": "2026-11-09T08:41:23.083Z"
+      },
+      {
+        "id": "crafted-mcp-1794213784542-e3i3",
+        "name": "Spring and waterfall",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              -0.006,
+              0
+            ],
+            "scale": [
+              5.6,
+              0.02,
+              4.6
+            ],
+            "color": "#5a5468",
+            "roughness": 0.9
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              0.01,
+              0
+            ],
+            "scale": [
+              4.8,
+              0.04,
+              3.8
+            ],
+            "color": "#1c3f66",
+            "metalness": 0.3,
+            "roughness": 0.05
+          },
+          {
+            "type": "box",
+            "position": [
+              3.198,
+              -0.006,
+              0.112
+            ],
+            "scale": [
+              1.9,
+              0.02,
+              6.4
+            ],
+            "color": "#5a5468",
+            "rotation": [
+              0,
+              1.53588974175501,
+              0
+            ],
+            "roughness": 0.9
+          },
+          {
+            "type": "water",
+            "position": [
+              3.198,
+              0.03,
+              0.112
+            ],
+            "scale": [
+              1.4,
+              0.02,
+              6.4
+            ],
+            "color": "#2a8fd0",
+            "rotation": [
+              -1.5708,
+              0,
+              1.5359
+            ],
+            "color2": "#8fe6ff",
+            "speed": 1.6,
+            "intensity": 1.2
+          },
+          {
+            "type": "water",
+            "position": [
+              6.496,
+              -9,
+              0.227
+            ],
+            "scale": [
+              1.5,
+              0.02,
+              18
+            ],
+            "color": "#3aa0e0",
+            "rotation": [
+              0,
+              1.53588974175501,
+              0
+            ],
+            "color2": "#c8f4ff",
+            "speed": 2.5,
+            "intensity": 1.4
+          },
+          {
+            "type": "water",
+            "position": [
+              6.846,
+              -11.5,
+              0.239
+            ],
+            "scale": [
+              2.3,
+              0.02,
+              23
+            ],
+            "color": "#2a7fc8",
+            "rotation": [
+              0,
+              1.53588974175501,
+              0
+            ],
+            "color2": "#9ee8ff",
+            "speed": 2,
+            "intensity": 1
+          }
+        ],
+        "position": [
+          18.189,
+          0,
+          8.135
+        ],
+        "createdAt": "2026-11-09T08:43:04.542Z"
+      },
+      {
+        "id": "crafted-mcp-1794213882101-3y1j",
+        "name": "Island",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              -0.505,
+              0
+            ],
+            "scale": [
+              46,
+              1,
+              46
+            ],
+            "color": "#a9cfa0",
+            "texturePresetId": "grass",
+            "textureRepeat": 14,
+            "roughness": 0.95
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              11.185,
+              -0.535,
+              15.973
+            ],
+            "scale": [
+              15,
+              1,
+              15
+            ],
+            "color": "#a9cfa0",
+            "texturePresetId": "grass",
+            "textureRepeat": 5,
+            "roughness": 0.95
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              17.321,
+              -0.535,
+              -10
+            ],
+            "scale": [
+              17,
+              1,
+              17
+            ],
+            "color": "#a9cfa0",
+            "texturePresetId": "grass",
+            "textureRepeat": 5,
+            "roughness": 0.95
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -8.03,
+              -0.535,
+              -17.22
+            ],
+            "scale": [
+              14,
+              1,
+              14
+            ],
+            "color": "#a9cfa0",
+            "texturePresetId": "grass",
+            "textureRepeat": 5,
+            "roughness": 0.95
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -19.801,
+              -0.535,
+              5.306
+            ],
+            "scale": [
+              16,
+              1,
+              16
+            ],
+            "color": "#a9cfa0",
+            "texturePresetId": "grass",
+            "textureRepeat": 5,
+            "roughness": 0.95
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              -2.3,
+              0
+            ],
+            "scale": [
+              45.7,
+              2.6,
+              45.7
+            ],
+            "color": "#7a5c48",
+            "texturePresetId": "dirt",
+            "textureRepeat": 10,
+            "roughness": 1,
+            "emissive": "#241a30",
+            "emissiveIntensity": 0.5
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              11.185,
+              -2.3,
+              15.973
+            ],
+            "scale": [
+              14.7,
+              2.6,
+              14.7
+            ],
+            "color": "#7a5c48",
+            "texturePresetId": "dirt",
+            "textureRepeat": 4,
+            "roughness": 1,
+            "emissive": "#241a30",
+            "emissiveIntensity": 0.5
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              17.321,
+              -2.3,
+              -10
+            ],
+            "scale": [
+              16.7,
+              2.6,
+              16.7
+            ],
+            "color": "#7a5c48",
+            "texturePresetId": "dirt",
+            "textureRepeat": 4,
+            "roughness": 1,
+            "emissive": "#241a30",
+            "emissiveIntensity": 0.5
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -8.03,
+              -2.3,
+              -17.22
+            ],
+            "scale": [
+              13.7,
+              2.6,
+              13.7
+            ],
+            "color": "#7a5c48",
+            "texturePresetId": "dirt",
+            "textureRepeat": 4,
+            "roughness": 1,
+            "emissive": "#241a30",
+            "emissiveIntensity": 0.5
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -19.801,
+              -2.3,
+              5.306
+            ],
+            "scale": [
+              15.7,
+              2.6,
+              15.7
+            ],
+            "color": "#7a5c48",
+            "texturePresetId": "dirt",
+            "textureRepeat": 4,
+            "roughness": 1,
+            "emissive": "#241a30",
+            "emissiveIntensity": 0.5
+          },
+          {
+            "type": "cone",
+            "position": [
+              0,
+              -17.4,
+              0
+            ],
+            "scale": [
+              44.62,
+              28,
+              44.62
+            ],
+            "color": "#5a5268",
+            "rotation": [
+              3.141592653589793,
+              0,
+              0
+            ],
+            "textureRepeat": 8,
+            "texturePresetId": "rock",
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "cone",
+            "position": [
+              11.185,
+              -8.408,
+              15.973
+            ],
+            "scale": [
+              14.25,
+              10.416,
+              14.25
+            ],
+            "color": "#544c62",
+            "rotation": [
+              3.141592653589793,
+              0,
+              0
+            ],
+            "textureRepeat": 4,
+            "texturePresetId": "rock",
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "cone",
+            "position": [
+              17.321,
+              -8.009,
+              -10
+            ],
+            "scale": [
+              16.15,
+              9.619,
+              16.15
+            ],
+            "color": "#544c62",
+            "rotation": [
+              3.141592653589793,
+              0,
+              0
+            ],
+            "textureRepeat": 4,
+            "texturePresetId": "rock",
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "cone",
+            "position": [
+              -8.03,
+              -8.888,
+              -17.22
+            ],
+            "scale": [
+              13.3,
+              11.376,
+              13.3
+            ],
+            "color": "#544c62",
+            "rotation": [
+              3.141592653589793,
+              0,
+              0
+            ],
+            "textureRepeat": 4,
+            "texturePresetId": "rock",
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "cone",
+            "position": [
+              -19.801,
+              -8.165,
+              5.306
+            ],
+            "scale": [
+              15.2,
+              9.93,
+              15.2
+            ],
+            "color": "#544c62",
+            "rotation": [
+              3.141592653589793,
+              0,
+              0
+            ],
+            "textureRepeat": 4,
+            "texturePresetId": "rock",
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "cone",
+            "position": [
+              -2.163,
+              -21.59,
+              9.368
+            ],
+            "scale": [
+              8.202,
+              19.18,
+              8.202
+            ],
+            "color": "#4d465a",
+            "rotation": [
+              3.1946251740908806,
+              0,
+              -0.05561436486193647
+            ],
+            "textureRepeat": 3,
+            "texturePresetId": "rock",
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "cone",
+            "position": [
+              6.738,
+              -17.863,
+              5.165
+            ],
+            "scale": [
+              5.425,
+              11.727,
+              5.425
+            ],
+            "color": "#4d465a",
+            "rotation": [
+              3.0844727401055763,
+              0,
+              0.0854951262856121
+            ],
+            "textureRepeat": 3,
+            "texturePresetId": "rock",
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "cone",
+            "position": [
+              12.231,
+              -21.002,
+              -5.122
+            ],
+            "scale": [
+              5.774,
+              18.004,
+              5.774
+            ],
+            "color": "#4d465a",
+            "rotation": [
+              3.1035626450497,
+              0,
+              0.025395120482626016
+            ],
+            "textureRepeat": 3,
+            "texturePresetId": "rock",
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "cone",
+            "position": [
+              4.403,
+              -21.4,
+              -12.965
+            ],
+            "scale": [
+              5.347,
+              18.801,
+              5.347
+            ],
+            "color": "#4d465a",
+            "rotation": [
+              3.1627630303337693,
+              0,
+              0.03434029130329466
+            ],
+            "textureRepeat": 3,
+            "texturePresetId": "rock",
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "cone",
+            "position": [
+              -3.319,
+              -19.368,
+              -6.837
+            ],
+            "scale": [
+              5.357,
+              14.736,
+              5.357
+            ],
+            "color": "#4d465a",
+            "rotation": [
+              3.2285103263697748,
+              0,
+              0.07309683403701667
+            ],
+            "textureRepeat": 3,
+            "texturePresetId": "rock",
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "cone",
+            "position": [
+              -8.53,
+              -21.544,
+              -1.724
+            ],
+            "scale": [
+              7.289,
+              19.089,
+              7.289
+            ],
+            "color": "#4d465a",
+            "rotation": [
+              3.2180561015655513,
+              0,
+              0.06960881764472693
+            ],
+            "textureRepeat": 3,
+            "texturePresetId": "rock",
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "cone",
+            "position": [
+              -7.577,
+              -19.995,
+              6.097
+            ],
+            "scale": [
+              6.724,
+              15.989,
+              6.724
+            ],
+            "color": "#4d465a",
+            "rotation": [
+              3.073856774814115,
+              0,
+              -0.0389776807134522
+            ],
+            "textureRepeat": 3,
+            "texturePresetId": "rock",
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "crystal",
+            "position": [
+              2.664,
+              -5.884,
+              12.011
+            ],
+            "scale": [
+              1,
+              2.6,
+              1
+            ],
+            "color": "#3fe0ff",
+            "rotation": [
+              3.2679433991296967,
+              0.8412996348486561,
+              0.034621794879422185
+            ],
+            "color2": "#8a5cff",
+            "seed": 1,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              12.324,
+              -3.507,
+              7.449
+            ],
+            "scale": [
+              1,
+              2.6,
+              1
+            ],
+            "color": "#3fe0ff",
+            "rotation": [
+              2.8371661479231083,
+              1.2383839692219751,
+              -0.29732938382760365
+            ],
+            "color2": "#8a5cff",
+            "seed": 2,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              11.371,
+              -5.11,
+              -8.053
+            ],
+            "scale": [
+              1,
+              2.6,
+              1
+            ],
+            "color": "#3fe0ff",
+            "rotation": [
+              3.3885353345802556,
+              0.9620067097492259,
+              0.05852898358339209
+            ],
+            "color2": "#8a5cff",
+            "seed": 3,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              -3.539,
+              -5.846,
+              -12.204
+            ],
+            "scale": [
+              1,
+              2.6,
+              1
+            ],
+            "color": "#3fe0ff",
+            "rotation": [
+              2.870462093828558,
+              2.2954867239788275,
+              0.11543207512869713
+            ],
+            "color2": "#8a5cff",
+            "seed": 4,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              -10.887,
+              -5.556,
+              -9.299
+            ],
+            "scale": [
+              1,
+              2.6,
+              1
+            ],
+            "color": "#3fe0ff",
+            "rotation": [
+              3.100611405759969,
+              0.12843356334605893,
+              0.19729188146151844
+            ],
+            "color2": "#8a5cff",
+            "seed": 5,
+            "intensity": 1.2
+          },
+          {
+            "type": "crystal",
+            "position": [
+              -13.017,
+              -4.163,
+              13.403
+            ],
+            "scale": [
+              1,
+              2.6,
+              1
+            ],
+            "color": "#3fe0ff",
+            "rotation": [
+              3.601460245202744,
+              0.054562575879922415,
+              -0.2110035320991568
+            ],
+            "color2": "#8a5cff",
+            "seed": 6,
+            "intensity": 1.2
+          }
+        ],
+        "position": [
+          0,
+          0,
+          7.5
+        ],
+        "createdAt": "2026-11-09T08:44:42.101Z"
+      },
+      {
+        "id": "crafted-mcp-1794213892453-kj91",
+        "name": "Glow mushrooms",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              -12.062,
+              0.147,
+              -13.248
+            ],
+            "scale": [
+              0.07,
+              0.295,
+              0.07
+            ],
+            "color": "#e8e2d0",
+            "roughness": 0.8
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -12.062,
+              0.295,
+              -13.248
+            ],
+            "scale": [
+              0.406,
+              0.203,
+              0.406
+            ],
+            "color": "#9ff6ff",
+            "emissive": "#3fd8ff",
+            "emissiveIntensity": 1.6,
+            "roughness": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -11.274,
+              0.178,
+              -14.026
+            ],
+            "scale": [
+              0.07,
+              0.355,
+              0.07
+            ],
+            "color": "#e8e2d0",
+            "roughness": 0.8
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -11.274,
+              0.355,
+              -14.026
+            ],
+            "scale": [
+              0.403,
+              0.201,
+              0.403
+            ],
+            "color": "#d9b8ff",
+            "emissive": "#a46bff",
+            "emissiveIntensity": 1.6,
+            "roughness": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -11.521,
+              0.186,
+              -13.923
+            ],
+            "scale": [
+              0.07,
+              0.372,
+              0.07
+            ],
+            "color": "#e8e2d0",
+            "roughness": 0.8
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -11.521,
+              0.372,
+              -13.923
+            ],
+            "scale": [
+              0.402,
+              0.201,
+              0.402
+            ],
+            "color": "#d9b8ff",
+            "emissive": "#a46bff",
+            "emissiveIntensity": 1.6,
+            "roughness": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -21.078,
+              0.131,
+              -3.493
+            ],
+            "scale": [
+              0.07,
+              0.262,
+              0.07
+            ],
+            "color": "#e8e2d0",
+            "roughness": 0.8
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -21.078,
+              0.262,
+              -3.493
+            ],
+            "scale": [
+              0.324,
+              0.162,
+              0.324
+            ],
+            "color": "#9ff6ff",
+            "emissive": "#3fd8ff",
+            "emissiveIntensity": 1.6,
+            "roughness": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -21.65,
+              0.195,
+              -4.403
+            ],
+            "scale": [
+              0.07,
+              0.389,
+              0.07
+            ],
+            "color": "#e8e2d0",
+            "roughness": 0.8
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -21.65,
+              0.389,
+              -4.403
+            ],
+            "scale": [
+              0.318,
+              0.159,
+              0.318
+            ],
+            "color": "#d9b8ff",
+            "emissive": "#a46bff",
+            "emissiveIntensity": 1.6,
+            "roughness": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -21.988,
+              0.237,
+              -3.818
+            ],
+            "scale": [
+              0.07,
+              0.474,
+              0.07
+            ],
+            "color": "#e8e2d0",
+            "roughness": 0.8
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -21.988,
+              0.474,
+              -3.818
+            ],
+            "scale": [
+              0.313,
+              0.157,
+              0.313
+            ],
+            "color": "#9ff6ff",
+            "emissive": "#3fd8ff",
+            "emissiveIntensity": 1.6,
+            "roughness": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -14.688,
+              0.249,
+              9.976
+            ],
+            "scale": [
+              0.07,
+              0.499,
+              0.07
+            ],
+            "color": "#e8e2d0",
+            "roughness": 0.8
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -14.688,
+              0.499,
+              9.976
+            ],
+            "scale": [
+              0.298,
+              0.149,
+              0.298
+            ],
+            "color": "#d9b8ff",
+            "emissive": "#a46bff",
+            "emissiveIntensity": 1.6,
+            "roughness": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -14.808,
+              0.155,
+              10.044
+            ],
+            "scale": [
+              0.07,
+              0.311,
+              0.07
+            ],
+            "color": "#e8e2d0",
+            "roughness": 0.8
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -14.808,
+              0.311,
+              10.044
+            ],
+            "scale": [
+              0.36,
+              0.18,
+              0.36
+            ],
+            "color": "#9ff6ff",
+            "emissive": "#3fd8ff",
+            "emissiveIntensity": 1.6,
+            "roughness": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -14.916,
+              0.191,
+              10.274
+            ],
+            "scale": [
+              0.07,
+              0.382,
+              0.07
+            ],
+            "color": "#e8e2d0",
+            "roughness": 0.8
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -14.916,
+              0.382,
+              10.274
+            ],
+            "scale": [
+              0.331,
+              0.166,
+              0.331
+            ],
+            "color": "#9ff6ff",
+            "emissive": "#3fd8ff",
+            "emissiveIntensity": 1.6,
+            "roughness": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              10.832,
+              0.249,
+              15.171
+            ],
+            "scale": [
+              0.07,
+              0.498,
+              0.07
+            ],
+            "color": "#e8e2d0",
+            "roughness": 0.8
+          },
+          {
+            "type": "sphere",
+            "position": [
+              10.832,
+              0.498,
+              15.171
+            ],
+            "scale": [
+              0.38,
+              0.19,
+              0.38
+            ],
+            "color": "#9ff6ff",
+            "emissive": "#3fd8ff",
+            "emissiveIntensity": 1.6,
+            "roughness": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              10.318,
+              0.137,
+              15.098
+            ],
+            "scale": [
+              0.07,
+              0.274,
+              0.07
+            ],
+            "color": "#e8e2d0",
+            "roughness": 0.8
+          },
+          {
+            "type": "sphere",
+            "position": [
+              10.318,
+              0.274,
+              15.098
+            ],
+            "scale": [
+              0.29,
+              0.145,
+              0.29
+            ],
+            "color": "#d9b8ff",
+            "emissive": "#a46bff",
+            "emissiveIntensity": 1.6,
+            "roughness": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              10.197,
+              0.138,
+              14.632
+            ],
+            "scale": [
+              0.07,
+              0.275,
+              0.07
+            ],
+            "color": "#e8e2d0",
+            "roughness": 0.8
+          },
+          {
+            "type": "sphere",
+            "position": [
+              10.197,
+              0.275,
+              14.632
+            ],
+            "scale": [
+              0.35,
+              0.175,
+              0.35
+            ],
+            "color": "#d9b8ff",
+            "emissive": "#a46bff",
+            "emissiveIntensity": 1.6,
+            "roughness": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              21.536,
+              0.164,
+              5.254
+            ],
+            "scale": [
+              0.07,
+              0.329,
+              0.07
+            ],
+            "color": "#e8e2d0",
+            "roughness": 0.8
+          },
+          {
+            "type": "sphere",
+            "position": [
+              21.536,
+              0.329,
+              5.254
+            ],
+            "scale": [
+              0.34,
+              0.17,
+              0.34
+            ],
+            "color": "#d9b8ff",
+            "emissive": "#a46bff",
+            "emissiveIntensity": 1.6,
+            "roughness": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              21.21,
+              0.196,
+              5.843
+            ],
+            "scale": [
+              0.07,
+              0.392,
+              0.07
+            ],
+            "color": "#e8e2d0",
+            "roughness": 0.8
+          },
+          {
+            "type": "sphere",
+            "position": [
+              21.21,
+              0.392,
+              5.843
+            ],
+            "scale": [
+              0.31,
+              0.155,
+              0.31
+            ],
+            "color": "#d9b8ff",
+            "emissive": "#a46bff",
+            "emissiveIntensity": 1.6,
+            "roughness": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              21.009,
+              0.221,
+              5.457
+            ],
+            "scale": [
+              0.07,
+              0.441,
+              0.07
+            ],
+            "color": "#e8e2d0",
+            "roughness": 0.8
+          },
+          {
+            "type": "sphere",
+            "position": [
+              21.009,
+              0.441,
+              5.457
+            ],
+            "scale": [
+              0.449,
+              0.225,
+              0.449
+            ],
+            "color": "#d9b8ff",
+            "emissive": "#a46bff",
+            "emissiveIntensity": 1.6,
+            "roughness": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              14.205,
+              0.26,
+              -10.271
+            ],
+            "scale": [
+              0.07,
+              0.521,
+              0.07
+            ],
+            "color": "#e8e2d0",
+            "roughness": 0.8
+          },
+          {
+            "type": "sphere",
+            "position": [
+              14.205,
+              0.521,
+              -10.271
+            ],
+            "scale": [
+              0.281,
+              0.14,
+              0.281
+            ],
+            "color": "#d9b8ff",
+            "emissive": "#a46bff",
+            "emissiveIntensity": 1.6,
+            "roughness": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              14.672,
+              0.174,
+              -10.455
+            ],
+            "scale": [
+              0.07,
+              0.348,
+              0.07
+            ],
+            "color": "#e8e2d0",
+            "roughness": 0.8
+          },
+          {
+            "type": "sphere",
+            "position": [
+              14.672,
+              0.348,
+              -10.455
+            ],
+            "scale": [
+              0.37,
+              0.185,
+              0.37
+            ],
+            "color": "#d9b8ff",
+            "emissive": "#a46bff",
+            "emissiveIntensity": 1.6,
+            "roughness": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              14.138,
+              0.224,
+              -10.107
+            ],
+            "scale": [
+              0.07,
+              0.448,
+              0.07
+            ],
+            "color": "#e8e2d0",
+            "roughness": 0.8
+          },
+          {
+            "type": "sphere",
+            "position": [
+              14.138,
+              0.448,
+              -10.107
+            ],
+            "scale": [
+              0.426,
+              0.213,
+              0.426
+            ],
+            "color": "#9ff6ff",
+            "emissive": "#3fd8ff",
+            "emissiveIntensity": 1.6,
+            "roughness": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -4.733,
+              0.23,
+              22.714
+            ],
+            "scale": [
+              0.07,
+              0.46,
+              0.07
+            ],
+            "color": "#e8e2d0",
+            "roughness": 0.8
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -4.733,
+              0.46,
+              22.714
+            ],
+            "scale": [
+              0.356,
+              0.178,
+              0.356
+            ],
+            "color": "#d9b8ff",
+            "emissive": "#a46bff",
+            "emissiveIntensity": 1.6,
+            "roughness": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -5.37,
+              0.209,
+              23.08
+            ],
+            "scale": [
+              0.07,
+              0.418,
+              0.07
+            ],
+            "color": "#e8e2d0",
+            "roughness": 0.8
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -5.37,
+              0.418,
+              23.08
+            ],
+            "scale": [
+              0.381,
+              0.191,
+              0.381
+            ],
+            "color": "#d9b8ff",
+            "emissive": "#a46bff",
+            "emissiveIntensity": 1.6,
+            "roughness": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -5.164,
+              0.225,
+              22.151
+            ],
+            "scale": [
+              0.07,
+              0.451,
+              0.07
+            ],
+            "color": "#e8e2d0",
+            "roughness": 0.8
+          },
+          {
+            "type": "sphere",
+            "position": [
+              -5.164,
+              0.451,
+              22.151
+            ],
+            "scale": [
+              0.442,
+              0.221,
+              0.442
+            ],
+            "color": "#d9b8ff",
+            "emissive": "#a46bff",
+            "emissiveIntensity": 1.6,
+            "roughness": 0.6
+          }
+        ],
+        "position": [
+          0,
+          0,
+          7.5
+        ],
+        "createdAt": "2026-11-09T08:44:52.453Z"
+      },
+      {
+        "id": "crafted-mcp-1794213952064-uxj1",
+        "name": "Floating islet",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              -0.3,
+              0
+            ],
+            "scale": [
+              12,
+              0.6,
+              10.2
+            ],
+            "color": "#9fc795",
+            "texturePresetId": "grass",
+            "textureRepeat": 3,
+            "roughness": 0.95
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              -1,
+              0
+            ],
+            "scale": [
+              11.7,
+              1,
+              9.9
+            ],
+            "color": "#7a5c48",
+            "roughness": 1,
+            "emissive": "#241a30",
+            "emissiveIntensity": 0.5
+          },
+          {
+            "type": "cone",
+            "position": [
+              0,
+              -6.9,
+              0
+            ],
+            "scale": [
+              11.4,
+              10.8,
+              9.6
+            ],
+            "color": "#5a5268",
+            "rotation": [
+              3.141592653589793,
+              0,
+              0
+            ],
+            "texturePresetId": "rock",
+            "textureRepeat": 2,
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "crystal",
+            "position": [
+              1.8,
+              1.68,
+              0
+            ],
+            "scale": [
+              1.08,
+              3.6,
+              1.08
+            ],
+            "color": "#3fe0ff",
+            "rotation": [
+              0.1,
+              0.4,
+              0.15
+            ],
+            "color2": "#2a7bff",
+            "seed": 9,
+            "intensity": 1.3
+          },
+          {
+            "type": "crystal",
+            "position": [
+              -1.5,
+              1.02,
+              1.2
+            ],
+            "scale": [
+              0.72,
+              2.16,
+              0.72
+            ],
+            "color": "#3fe0ff",
+            "rotation": [
+              -0.2,
+              1,
+              -0.3
+            ],
+            "color2": "#2a7bff",
+            "seed": 19,
+            "intensity": 1.3
+          }
+        ],
+        "position": [
+          -39.837,
+          6,
+          30.5
+        ],
+        "createdAt": "2026-11-09T08:45:52.064Z"
+      },
+      {
+        "id": "crafted-mcp-1794213952510-im3x",
+        "name": "Floating islet",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              -0.3,
+              0
+            ],
+            "scale": [
+              16,
+              0.6,
+              13.6
+            ],
+            "color": "#9fc795",
+            "texturePresetId": "grass",
+            "textureRepeat": 3,
+            "roughness": 0.95
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              -1,
+              0
+            ],
+            "scale": [
+              15.6,
+              1,
+              13.2
+            ],
+            "color": "#7a5c48",
+            "roughness": 1,
+            "emissive": "#241a30",
+            "emissiveIntensity": 0.5
+          },
+          {
+            "type": "cone",
+            "position": [
+              0,
+              -8.7,
+              0
+            ],
+            "scale": [
+              15.2,
+              14.4,
+              12.8
+            ],
+            "color": "#5a5268",
+            "rotation": [
+              3.141592653589793,
+              0,
+              0
+            ],
+            "texturePresetId": "rock",
+            "textureRepeat": 2,
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "crystal",
+            "position": [
+              2.4,
+              2.24,
+              0
+            ],
+            "scale": [
+              1.44,
+              4.8,
+              1.44
+            ],
+            "color": "#b28cff",
+            "rotation": [
+              0.1,
+              0.4,
+              0.15
+            ],
+            "color2": "#ff6ad5",
+            "seed": 10,
+            "intensity": 1.3
+          }
+        ],
+        "position": [
+          19.837,
+          -6,
+          62.002
+        ],
+        "createdAt": "2026-11-09T08:45:52.510Z"
+      },
+      {
+        "id": "crafted-mcp-1794213952831-e5dx",
+        "name": "Floating islet",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              -0.3,
+              0
+            ],
+            "scale": [
+              10,
+              0.6,
+              8.5
+            ],
+            "color": "#9fc795",
+            "texturePresetId": "grass",
+            "textureRepeat": 3,
+            "roughness": 0.95
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              -1,
+              0
+            ],
+            "scale": [
+              9.75,
+              1,
+              8.25
+            ],
+            "color": "#7a5c48",
+            "roughness": 1,
+            "emissive": "#241a30",
+            "emissiveIntensity": 0.5
+          },
+          {
+            "type": "cone",
+            "position": [
+              0,
+              -6,
+              0
+            ],
+            "scale": [
+              9.5,
+              9,
+              8
+            ],
+            "color": "#5a5268",
+            "rotation": [
+              3.141592653589793,
+              0,
+              0
+            ],
+            "texturePresetId": "rock",
+            "textureRepeat": 2,
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "crystal",
+            "position": [
+              1.5,
+              1.4,
+              0
+            ],
+            "scale": [
+              0.9,
+              3,
+              0.9
+            ],
+            "color": "#5effc8",
+            "rotation": [
+              0.1,
+              0.4,
+              0.15
+            ],
+            "color2": "#2ab7ff",
+            "seed": 11,
+            "intensity": 1.3
+          },
+          {
+            "type": "crystal",
+            "position": [
+              -1.25,
+              0.85,
+              1
+            ],
+            "scale": [
+              0.6,
+              1.8,
+              0.6
+            ],
+            "color": "#5effc8",
+            "rotation": [
+              -0.2,
+              1,
+              -0.3
+            ],
+            "color2": "#2ab7ff",
+            "seed": 21,
+            "intensity": 1.3
+          }
+        ],
+        "position": [
+          49.81,
+          12,
+          3.142
+        ],
+        "createdAt": "2026-11-09T08:45:52.831Z"
+      },
+      {
+        "id": "crafted-mcp-1794213953136-8l13",
+        "name": "Floating islet",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              -0.3,
+              0
+            ],
+            "scale": [
+              13,
+              0.6,
+              11.05
+            ],
+            "color": "#9fc795",
+            "texturePresetId": "grass",
+            "textureRepeat": 3,
+            "roughness": 0.95
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              -1,
+              0
+            ],
+            "scale": [
+              12.675,
+              1,
+              10.725
+            ],
+            "color": "#7a5c48",
+            "roughness": 1,
+            "emissive": "#241a30",
+            "emissiveIntensity": 0.5
+          },
+          {
+            "type": "cone",
+            "position": [
+              0,
+              -7.35,
+              0
+            ],
+            "scale": [
+              12.35,
+              11.7,
+              10.4
+            ],
+            "color": "#5a5268",
+            "rotation": [
+              3.141592653589793,
+              0,
+              0
+            ],
+            "texturePresetId": "rock",
+            "textureRepeat": 2,
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "crystal",
+            "position": [
+              1.95,
+              1.82,
+              0
+            ],
+            "scale": [
+              1.17,
+              3.9,
+              1.17
+            ],
+            "color": "#8fa2ff",
+            "rotation": [
+              0.1,
+              0.4,
+              0.15
+            ],
+            "color2": "#d07bff",
+            "seed": 12,
+            "intensity": 1.3
+          }
+        ],
+        "position": [
+          11.388,
+          -2,
+          -35.001
+        ],
+        "createdAt": "2026-11-09T08:45:53.136Z"
+      },
+      {
+        "id": "crafted-mcp-1794213953456-ygv3",
+        "name": "Floating islet",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              -0.3,
+              0
+            ],
+            "scale": [
+              9,
+              0.6,
+              7.65
+            ],
+            "color": "#9fc795",
+            "texturePresetId": "grass",
+            "textureRepeat": 3,
+            "roughness": 0.95
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              0,
+              -1,
+              0
+            ],
+            "scale": [
+              8.775,
+              1,
+              7.425
+            ],
+            "color": "#7a5c48",
+            "roughness": 1,
+            "emissive": "#241a30",
+            "emissiveIntensity": 0.5
+          },
+          {
+            "type": "cone",
+            "position": [
+              0,
+              -5.55,
+              0
+            ],
+            "scale": [
+              8.55,
+              8.1,
+              7.2
+            ],
+            "color": "#5a5268",
+            "rotation": [
+              3.141592653589793,
+              0,
+              0
+            ],
+            "texturePresetId": "rock",
+            "textureRepeat": 2,
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "crystal",
+            "position": [
+              1.35,
+              1.26,
+              0
+            ],
+            "scale": [
+              0.81,
+              2.7,
+              0.81
+            ],
+            "color": "#3fe0ff",
+            "rotation": [
+              0.1,
+              0.4,
+              0.15
+            ],
+            "color2": "#2a7bff",
+            "seed": 13,
+            "intensity": 1.3
+          },
+          {
+            "type": "crystal",
+            "position": [
+              -1.125,
+              0.765,
+              0.9
+            ],
+            "scale": [
+              0.54,
+              1.62,
+              0.54
+            ],
+            "color": "#3fe0ff",
+            "rotation": [
+              -0.2,
+              1,
+              -0.3
+            ],
+            "color2": "#2a7bff",
+            "seed": 23,
+            "intensity": 1.3
+          }
+        ],
+        "position": [
+          -57.341,
+          27,
+          -32.65
+        ],
+        "createdAt": "2026-11-09T08:45:53.456Z"
+      },
+      {
+        "id": "crafted-mcp-1794213953768-2mo9",
+        "name": "Crystal spire",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "sphere",
+            "position": [
+              0,
+              0.2,
+              0
+            ],
+            "scale": [
+              4.2,
+              1.6,
+              3.6
+            ],
+            "color": "#4d465a",
+            "texturePresetId": "rock",
+            "textureRepeat": 2,
+            "roughness": 1
+          },
+          {
+            "type": "sphere",
+            "position": [
+              1.4,
+              0.3,
+              0.6
+            ],
+            "scale": [
+              2,
+              1.2,
+              1.8
+            ],
+            "color": "#575066",
+            "texturePresetId": "rock",
+            "textureRepeat": 1,
+            "roughness": 1
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0,
+              5.4,
+              0
+            ],
+            "scale": [
+              2.1,
+              10.8,
+              2.1
+            ],
+            "color": "#5ff2ff",
+            "rotation": [
+              0.03,
+              0.4,
+              -0.04
+            ],
+            "color2": "#8a5cff",
+            "seed": 41,
+            "intensity": 1.5
+          },
+          {
+            "type": "crystal",
+            "position": [
+              1.5,
+              2.4,
+              0.6
+            ],
+            "scale": [
+              1,
+              4.6,
+              1
+            ],
+            "color": "#b28cff",
+            "rotation": [
+              0.2,
+              1.2,
+              -0.35
+            ],
+            "color2": "#ff6ad5",
+            "seed": 42,
+            "intensity": 1.3
+          },
+          {
+            "type": "crystal",
+            "position": [
+              -1.4,
+              2,
+              0.3
+            ],
+            "scale": [
+              0.9,
+              3.8,
+              0.9
+            ],
+            "color": "#5effc8",
+            "rotation": [
+              -0.15,
+              0.3,
+              0.4
+            ],
+            "color2": "#2ab7ff",
+            "seed": 43,
+            "intensity": 1.3
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0.3,
+              1.2,
+              -1.2
+            ],
+            "scale": [
+              0.55,
+              2.2,
+              0.55
+            ],
+            "color": "#8fa2ff",
+            "rotation": [
+              0.45,
+              2,
+              0.1
+            ],
+            "color2": "#d07bff",
+            "seed": 44,
+            "intensity": 1.3
+          },
+          {
+            "type": "crystal",
+            "position": [
+              -0.6,
+              0.9,
+              1.3
+            ],
+            "scale": [
+              0.45,
+              1.6,
+              0.45
+            ],
+            "color": "#5ff2ff",
+            "rotation": [
+              -0.4,
+              0.8,
+              -0.3
+            ],
+            "color2": "#8a5cff",
+            "seed": 45,
+            "intensity": 1.3
+          }
+        ],
+        "position": [
+          0,
+          0,
+          29
+        ],
+        "createdAt": "2026-11-09T08:45:53.768Z"
+      },
+      {
+        "id": "crafted-mcp-1794213999514-033v",
+        "name": "Moon arch",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "box",
+            "position": [
+              -2.4,
+              2.3,
+              0
+            ],
+            "scale": [
+              0.9,
+              4.6,
+              0.9
+            ],
+            "color": "#bcb6cc",
+            "roughness": 0.85,
+            "texturePresetId": "marble",
+            "textureRepeat": 1
+          },
+          {
+            "type": "box",
+            "position": [
+              -2.4,
+              0.15,
+              0
+            ],
+            "scale": [
+              1.3,
+              0.3,
+              1.3
+            ],
+            "color": "#a39db4",
+            "roughness": 0.9
+          },
+          {
+            "type": "box",
+            "position": [
+              2.4,
+              2.3,
+              0
+            ],
+            "scale": [
+              0.9,
+              4.6,
+              0.9
+            ],
+            "color": "#bcb6cc",
+            "roughness": 0.85,
+            "texturePresetId": "marble",
+            "textureRepeat": 1
+          },
+          {
+            "type": "box",
+            "position": [
+              2.4,
+              0.15,
+              0
+            ],
+            "scale": [
+              1.3,
+              0.3,
+              1.3
+            ],
+            "color": "#a39db4",
+            "roughness": 0.9
+          },
+          {
+            "type": "box",
+            "position": [
+              -2.34,
+              4.956,
+              0
+            ],
+            "scale": [
+              1.25,
+              0.6,
+              0.9
+            ],
+            "color": "#bcb6cc",
+            "rotation": [
+              0,
+              0,
+              -1.3463968515384828
+            ],
+            "roughness": 0.85,
+            "texturePresetId": "marble",
+            "textureRepeat": 1
+          },
+          {
+            "type": "box",
+            "position": [
+              -1.876,
+              5.598,
+              0
+            ],
+            "scale": [
+              1.25,
+              0.6,
+              0.9
+            ],
+            "color": "#bcb6cc",
+            "rotation": [
+              0,
+              0,
+              -0.8975979010256552
+            ],
+            "roughness": 0.85,
+            "texturePresetId": "marble",
+            "textureRepeat": 1
+          },
+          {
+            "type": "box",
+            "position": [
+              -1.041,
+              6.042,
+              0
+            ],
+            "scale": [
+              1.25,
+              0.6,
+              0.9
+            ],
+            "color": "#bcb6cc",
+            "rotation": [
+              0,
+              0,
+              -0.4487989505128276
+            ],
+            "roughness": 0.85,
+            "texturePresetId": "marble",
+            "textureRepeat": 1
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              6.2,
+              0
+            ],
+            "scale": [
+              1.25,
+              0.6,
+              0.9
+            ],
+            "color": "#bcb6cc",
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "roughness": 0.85,
+            "texturePresetId": "marble",
+            "textureRepeat": 1
+          },
+          {
+            "type": "box",
+            "position": [
+              1.041,
+              6.042,
+              0
+            ],
+            "scale": [
+              1.25,
+              0.6,
+              0.9
+            ],
+            "color": "#bcb6cc",
+            "rotation": [
+              0,
+              0,
+              0.4487989505128276
+            ],
+            "roughness": 0.85,
+            "texturePresetId": "marble",
+            "textureRepeat": 1
+          },
+          {
+            "type": "box",
+            "position": [
+              1.876,
+              5.598,
+              0
+            ],
+            "scale": [
+              1.25,
+              0.6,
+              0.9
+            ],
+            "color": "#bcb6cc",
+            "rotation": [
+              0,
+              0,
+              0.8975979010256547
+            ],
+            "roughness": 0.85,
+            "texturePresetId": "marble",
+            "textureRepeat": 1
+          },
+          {
+            "type": "box",
+            "position": [
+              2.34,
+              4.956,
+              0
+            ],
+            "scale": [
+              1.25,
+              0.6,
+              0.9
+            ],
+            "color": "#bcb6cc",
+            "rotation": [
+              0,
+              0,
+              1.3463968515384832
+            ],
+            "roughness": 0.85,
+            "texturePresetId": "marble",
+            "textureRepeat": 1
+          },
+          {
+            "type": "crystal",
+            "position": [
+              0,
+              6.75,
+              0
+            ],
+            "scale": [
+              0.95,
+              1.7,
+              0.95
+            ],
+            "color": "#7ff0ff",
+            "color2": "#b28cff",
+            "seed": 3,
+            "intensity": 1.5
+          },
+          {
+            "type": "crystal",
+            "position": [
+              -3.25,
+              0.55,
+              0.5
+            ],
+            "scale": [
+              0.45,
+              1.1,
+              0.45
+            ],
+            "color": "#b28cff",
+            "rotation": [
+              0.1,
+              0.5,
+              -0.3
+            ],
+            "color2": "#5ff2ff",
+            "seed": 4,
+            "intensity": 1.3
+          },
+          {
+            "type": "crystal",
+            "position": [
+              3.25,
+              0.55,
+              0.5
+            ],
+            "scale": [
+              0.45,
+              1.1,
+              0.45
+            ],
+            "color": "#b28cff",
+            "rotation": [
+              0.1,
+              0.5,
+              0.3
+            ],
+            "color2": "#5ff2ff",
+            "seed": 6,
+            "intensity": 1.3
+          },
+          {
+            "type": "box",
+            "position": [
+              0,
+              0.05,
+              0.6
+            ],
+            "scale": [
+              3.6,
+              0.1,
+              2
+            ],
+            "color": "#a39db4",
+            "roughness": 0.9
+          }
+        ],
+        "position": [
+          0,
+          0,
+          -15.2
+        ],
+        "createdAt": "2026-11-09T08:46:39.514Z"
+      },
+      {
+        "id": "crafted-mcp-1794214055233-6t2f",
+        "name": "Floating rocks",
+        "prompt": "mcp-tool",
+        "objects": [
+          {
+            "type": "cylinder",
+            "position": [
+              -0.293,
+              1.031,
+              29.335
+            ],
+            "scale": [
+              2.58,
+              0.43,
+              2.408
+            ],
+            "color": "#8fbf86",
+            "texturePresetId": "grass",
+            "textureRepeat": 1,
+            "roughness": 0.95
+          },
+          {
+            "type": "cone",
+            "position": [
+              -0.293,
+              -0.224,
+              29.335
+            ],
+            "scale": [
+              2.494,
+              2.236,
+              2.322
+            ],
+            "color": "#5a5268",
+            "rotation": [
+              3.141592653589793,
+              0.050554861206809854,
+              0
+            ],
+            "texturePresetId": "rock",
+            "textureRepeat": 1,
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              23.284,
+              3.211,
+              18.387
+            ],
+            "scale": [
+              2.405,
+              0.401,
+              2.244
+            ],
+            "color": "#8fbf86",
+            "texturePresetId": "grass",
+            "textureRepeat": 1,
+            "roughness": 0.95
+          },
+          {
+            "type": "cone",
+            "position": [
+              23.284,
+              2.04,
+              18.387
+            ],
+            "scale": [
+              2.325,
+              2.084,
+              2.164
+            ],
+            "color": "#5a5268",
+            "rotation": [
+              3.141592653589793,
+              0.6041013456580964,
+              0
+            ],
+            "texturePresetId": "rock",
+            "textureRepeat": 1,
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              22.606,
+              3.461,
+              -15.06
+            ],
+            "scale": [
+              1.86,
+              0.31,
+              1.736
+            ],
+            "color": "#8fbf86",
+            "texturePresetId": "grass",
+            "textureRepeat": 1,
+            "roughness": 0.95
+          },
+          {
+            "type": "cone",
+            "position": [
+              22.606,
+              2.555,
+              -15.06
+            ],
+            "scale": [
+              1.798,
+              1.612,
+              1.674
+            ],
+            "color": "#5a5268",
+            "rotation": [
+              3.141592653589793,
+              2.1638657977717433,
+              0
+            ],
+            "texturePresetId": "rock",
+            "textureRepeat": 1,
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              14.775,
+              -1.315,
+              -25.6
+            ],
+            "scale": [
+              1.296,
+              0.216,
+              1.209
+            ],
+            "color": "#8fbf86",
+            "texturePresetId": "grass",
+            "textureRepeat": 1,
+            "roughness": 0.95
+          },
+          {
+            "type": "cone",
+            "position": [
+              14.775,
+              -1.946,
+              -25.6
+            ],
+            "scale": [
+              1.253,
+              1.123,
+              1.166
+            ],
+            "color": "#5a5268",
+            "rotation": [
+              3.141592653589793,
+              0.3162379544980013,
+              0
+            ],
+            "texturePresetId": "rock",
+            "textureRepeat": 1,
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -24.299,
+              -0.127,
+              -12.848
+            ],
+            "scale": [
+              2.422,
+              0.404,
+              2.261
+            ],
+            "color": "#8fbf86",
+            "texturePresetId": "grass",
+            "textureRepeat": 1,
+            "roughness": 0.95
+          },
+          {
+            "type": "cone",
+            "position": [
+              -24.299,
+              -1.306,
+              -12.848
+            ],
+            "scale": [
+              2.342,
+              2.099,
+              2.18
+            ],
+            "color": "#5a5268",
+            "rotation": [
+              3.141592653589793,
+              2.3090392975146714,
+              0
+            ],
+            "texturePresetId": "rock",
+            "textureRepeat": 1,
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -27.225,
+              2.826,
+              3.598
+            ],
+            "scale": [
+              2.025,
+              0.337,
+              1.89
+            ],
+            "color": "#8fbf86",
+            "texturePresetId": "grass",
+            "textureRepeat": 1,
+            "roughness": 0.95
+          },
+          {
+            "type": "cone",
+            "position": [
+              -27.225,
+              1.841,
+              3.598
+            ],
+            "scale": [
+              1.957,
+              1.755,
+              1.822
+            ],
+            "color": "#5a5268",
+            "rotation": [
+              3.141592653589793,
+              1.0764602313015283,
+              0
+            ],
+            "texturePresetId": "rock",
+            "textureRepeat": 1,
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          },
+          {
+            "type": "cylinder",
+            "position": [
+              -19.769,
+              1.353,
+              20.025
+            ],
+            "scale": [
+              1.468,
+              0.245,
+              1.371
+            ],
+            "color": "#8fbf86",
+            "texturePresetId": "grass",
+            "textureRepeat": 1,
+            "roughness": 0.95
+          },
+          {
+            "type": "cone",
+            "position": [
+              -19.769,
+              0.639,
+              20.025
+            ],
+            "scale": [
+              1.419,
+              1.273,
+              1.322
+            ],
+            "color": "#5a5268",
+            "rotation": [
+              3.141592653589793,
+              0.00492315511099406,
+              0
+            ],
+            "texturePresetId": "rock",
+            "textureRepeat": 1,
+            "roughness": 1,
+            "emissive": "#2a1f4a",
+            "emissiveIntensity": 0.6
+          }
+        ],
+        "position": [
+          0,
+          0,
+          7.5
+        ],
+        "createdAt": "2026-11-09T08:47:35.233Z"
+      }
+    ],
+    "conjuredAssetIds": [],
+    "catalogPlacements": [
+      {
+        "id": "catalog-stylized-nature_commontree_2-1794213948927-als2",
+        "catalogId": "stylized-nature_commontree_2",
+        "name": "Nature CommonTree 2",
+        "glbPath": "/models/stylized-nature/commontree_2.gltf",
+        "position": [
+          -14.12,
+          0,
+          -5.213
+        ],
+        "rotation": [
+          0,
+          2.9803,
+          0
+        ],
+        "scale": 1.1
+      },
+      {
+        "id": "catalog-stylized-nature_pine_3-1794213949094-4w4r",
+        "catalogId": "stylized-nature_pine_3",
+        "name": "Nature Pine 3",
+        "glbPath": "/models/stylized-nature/pine_3.gltf",
+        "position": [
+          -20.5,
+          0,
+          7.5
+        ],
+        "rotation": [
+          0,
+          4.1289,
+          0
+        ],
+        "scale": 1.3
+      },
+      {
+        "id": "catalog-stylized-nature_pine_2-1794213949251-n01f",
+        "catalogId": "stylized-nature_pine_2",
+        "name": "Nature Pine 2",
+        "glbPath": "/models/stylized-nature/pine_2.gltf",
+        "position": [
+          -14.491,
+          0,
+          20.548
+        ],
+        "rotation": [
+          0,
+          4.1851,
+          0
+        ],
+        "scale": 1.2
+      },
+      {
+        "id": "catalog-stylized-nature_commontree_4-1794213949407-525r",
+        "catalogId": "stylized-nature_commontree_4",
+        "name": "Nature CommonTree 4",
+        "glbPath": "/models/stylized-nature/commontree_4.gltf",
+        "position": [
+          8.745,
+          0,
+          27.141
+        ],
+        "rotation": [
+          0,
+          0.8955,
+          0
+        ],
+        "scale": 1.25
+      },
+      {
+        "id": "catalog-stylized-nature_commontree_3-1794213949561-b2hm",
+        "catalogId": "stylized-nature_commontree_3",
+        "name": "Nature CommonTree 3",
+        "glbPath": "/models/stylized-nature/commontree_3.gltf",
+        "position": [
+          14.12,
+          0,
+          20.213
+        ],
+        "rotation": [
+          0,
+          0.0682,
+          0
+        ],
+        "scale": 1.1
+      },
+      {
+        "id": "catalog-stylized-nature_pine_1-1794213949720-4r00",
+        "catalogId": "stylized-nature_pine_1",
+        "name": "Nature Pine 1",
+        "glbPath": "/models/stylized-nature/pine_1.gltf",
+        "position": [
+          14.938,
+          0,
+          -5.034
+        ],
+        "rotation": [
+          0,
+          2.3535,
+          0
+        ],
+        "scale": 1.2
+      },
+      {
+        "id": "catalog-stylized-nature_pine_4-1794213949878-gyol",
+        "catalogId": "stylized-nature_pine_4",
+        "name": "Nature Pine 4",
+        "glbPath": "/models/stylized-nature/pine_4.gltf",
+        "position": [
+          9.75,
+          0,
+          -9.387
+        ],
+        "rotation": [
+          0,
+          1.721,
+          0
+        ],
+        "scale": 1.1
+      },
+      {
+        "id": "catalog-stylized-nature_commontree_1-1794213950129-jtuf",
+        "catalogId": "stylized-nature_commontree_1",
+        "name": "Nature CommonTree 1",
+        "glbPath": "/models/stylized-nature/commontree_1.gltf",
+        "position": [
+          -10.25,
+          0,
+          -10.254
+        ],
+        "rotation": [
+          0,
+          5.089,
+          0
+        ],
+        "scale": 1
+      },
+      {
+        "id": "catalog-stylized-nature_mushroom_common-1794213950283-7pzj",
+        "catalogId": "stylized-nature_mushroom_common",
+        "name": "Nature Mushroom Common",
+        "glbPath": "/models/stylized-nature/mushroom_common.gltf",
+        "position": [
+          -13.79,
+          0,
+          -3.274
+        ],
+        "rotation": [
+          0,
+          4.3369,
+          0
+        ],
+        "scale": 1.6
+      },
+      {
+        "id": "catalog-stylized-nature_mushroom_laetiporus-1794213950444-gy6j",
+        "catalogId": "stylized-nature_mushroom_laetiporus",
+        "name": "Nature Mushroom Laetiporus",
+        "glbPath": "/models/stylized-nature/mushroom_laetiporus.gltf",
+        "position": [
+          -17.757,
+          0,
+          8.742
+        ],
+        "rotation": [
+          0,
+          3.7772,
+          0
+        ],
+        "scale": 1.5
+      },
+      {
+        "id": "catalog-stylized-nature_flower_3_group-1794213950599-c4bt",
+        "catalogId": "stylized-nature_flower_3_group",
+        "name": "Nature Flower 3 Group",
+        "glbPath": "/models/stylized-nature/flower_3_group.gltf",
+        "position": [
+          -11.185,
+          0,
+          20.829
+        ],
+        "rotation": [
+          0,
+          3.5054,
+          0
+        ],
+        "scale": 1.8
+      },
+      {
+        "id": "catalog-stylized-nature_flower_4_group-1794213950780-kseo",
+        "catalogId": "stylized-nature_flower_4_group",
+        "name": "Nature Flower 4 Group",
+        "glbPath": "/models/stylized-nature/flower_4_group.gltf",
+        "position": [
+          11.313,
+          0,
+          20.982
+        ],
+        "rotation": [
+          0,
+          4.1531,
+          0
+        ],
+        "scale": 1.8
+      },
+      {
+        "id": "catalog-stylized-nature_fern_1-1794213950950-2shn",
+        "catalogId": "stylized-nature_fern_1",
+        "name": "Nature Fern 1",
+        "glbPath": "/models/stylized-nature/fern_1.gltf",
+        "position": [
+          17.4,
+          0,
+          7.5
+        ],
+        "rotation": [
+          0,
+          0.9125,
+          0
+        ],
+        "scale": 1.6
+      },
+      {
+        "id": "catalog-stylized-nature_flower_3_group-1794213951117-64jm",
+        "catalogId": "stylized-nature_flower_3_group",
+        "name": "Nature Flower 3 Group",
+        "glbPath": "/models/stylized-nature/flower_3_group.gltf",
+        "position": [
+          11.056,
+          0,
+          -5.676
+        ],
+        "rotation": [
+          0,
+          2.7635,
+          0
+        ],
+        "scale": 1.7
+      },
+      {
+        "id": "catalog-stylized-nature_bush_common_flowers-1794213951271-8a5u",
+        "catalogId": "stylized-nature_bush_common_flowers",
+        "name": "Nature Bush Common Flowers",
+        "glbPath": "/models/stylized-nature/bush_common_flowers.gltf",
+        "position": [
+          -7.524,
+          0,
+          -13.173
+        ],
+        "rotation": [
+          0,
+          1.019,
+          0
+        ],
+        "scale": 1.6
+      },
+      {
+        "id": "catalog-stylized-nature_grass_wispy_tall-1794213951425-t6eo",
+        "catalogId": "stylized-nature_grass_wispy_tall",
+        "name": "Nature Grass Wispy Tall",
+        "glbPath": "/models/stylized-nature/grass_wispy_tall.gltf",
+        "position": [
+          7.524,
+          0,
+          -13.173
+        ],
+        "rotation": [
+          0,
+          5.6895,
+          0
+        ],
+        "scale": 2
+      },
+      {
+        "id": "catalog-stylized-nature_bush_common_flowers-1794213951586-56rp",
+        "catalogId": "stylized-nature_bush_common_flowers",
+        "name": "Nature Bush Common Flowers",
+        "glbPath": "/models/stylized-nature/bush_common_flowers.gltf",
+        "position": [
+          5.953,
+          0,
+          29.716
+        ],
+        "rotation": [
+          0,
+          0.3694,
+          0
+        ],
+        "scale": 1.5
+      },
+      {
+        "id": "catalog-stylized-nature_grass_wispy_tall-1794213951741-ufl5",
+        "catalogId": "stylized-nature_grass_wispy_tall",
+        "name": "Nature Grass Wispy Tall",
+        "glbPath": "/models/stylized-nature/grass_wispy_tall.gltf",
+        "position": [
+          -5.823,
+          0,
+          29.233
+        ],
+        "rotation": [
+          0,
+          5.1422,
+          0
+        ],
+        "scale": 2
+      },
+      {
+        "id": "catalog-stylized-nature_flower_4_group-1794214055321-q1qp",
+        "catalogId": "stylized-nature_flower_4_group",
+        "name": "Nature Flower 4 Group",
+        "glbPath": "/models/stylized-nature/flower_4_group.gltf",
+        "position": [
+          -6.327,
+          0,
+          24.884
+        ],
+        "rotation": [
+          0,
+          2.9229,
+          0
+        ],
+        "scale": 1.7
+      },
+      {
+        "id": "catalog-stylized-nature_flower_3_group-1794214055422-phzi",
+        "catalogId": "stylized-nature_flower_3_group",
+        "name": "Nature Flower 3 Group",
+        "glbPath": "/models/stylized-nature/flower_3_group.gltf",
+        "position": [
+          15.893,
+          0,
+          15.95
+        ],
+        "rotation": [
+          0,
+          1.3407,
+          0
+        ],
+        "scale": 1.7
+      },
+      {
+        "id": "catalog-stylized-nature_flower_4_group-1794214055536-owjs",
+        "catalogId": "stylized-nature_flower_4_group",
+        "name": "Nature Flower 4 Group",
+        "glbPath": "/models/stylized-nature/flower_4_group.gltf",
+        "position": [
+          17.924,
+          0,
+          4.34
+        ],
+        "rotation": [
+          0,
+          0.3516,
+          0
+        ],
+        "scale": 1.6
+      },
+      {
+        "id": "catalog-stylized-nature_flower_3_group-1794214055657-9r8n",
+        "catalogId": "stylized-nature_flower_3_group",
+        "name": "Nature Flower 3 Group",
+        "glbPath": "/models/stylized-nature/flower_3_group.gltf",
+        "position": [
+          -19.053,
+          0,
+          18.5
+        ],
+        "rotation": [
+          0,
+          1.7632,
+          0
+        ],
+        "scale": 1.8
+      },
+      {
+        "id": "catalog-stylized-nature_flower_4_group-1794214055749-ysrb",
+        "catalogId": "stylized-nature_flower_4_group",
+        "name": "Nature Flower 4 Group",
+        "glbPath": "/models/stylized-nature/flower_4_group.gltf",
+        "position": [
+          -18.62,
+          0,
+          -3.25
+        ],
+        "rotation": [
+          0,
+          4.225,
+          0
+        ],
+        "scale": 1.6
+      },
+      {
+        "id": "catalog-stylized-nature_flower_3_group-1794214055821-fu0q",
+        "catalogId": "stylized-nature_flower_3_group",
+        "name": "Nature Flower 3 Group",
+        "glbPath": "/models/stylized-nature/flower_3_group.gltf",
+        "position": [
+          7.182,
+          0,
+          -12.234
+        ],
+        "rotation": [
+          0,
+          5.2089,
+          0
+        ],
+        "scale": 1.6
+      }
+    ],
+    "agentAvatars": [],
+    "transforms": {
+      "crafted-mcp-1794213679057-ep0z": {
+        "position": [
+          0,
+          0,
+          7.5
+        ]
+      },
+      "crafted-mcp-1794213679518-50hs": {
+        "position": [
+          -10.25,
+          0,
+          -10.254
+        ]
+      },
+      "crafted-mcp-1794213679764-mykz": {
+        "position": [
+          -18.08,
+          0,
+          0.195
+        ]
+      },
+      "crafted-mcp-1794213679972-2pom": {
+        "position": [
+          -19.264,
+          0,
+          14.511
+        ]
+      },
+      "crafted-mcp-1794213680098-luw2": {
+        "position": [
+          -9.859,
+          0,
+          26.042
+        ]
+      },
+      "crafted-mcp-1794213680351-oyl1": {
+        "position": [
+          9.859,
+          0,
+          26.042
+        ]
+      },
+      "crafted-mcp-1794213680473-s3pz": {
+        "position": [
+          18.08,
+          0,
+          14.805
+        ]
+      },
+      "crafted-mcp-1794213680690-ndpb": {
+        "position": [
+          19.264,
+          0,
+          0.489
+        ]
+      },
+      "crafted-mcp-1794213680787-cbfk": {
+        "position": [
+          9.389,
+          0,
+          -10.159
+        ]
+      },
+      "crafted-mcp-1794213683083-firf": {
+        "position": [
+          0,
+          0,
+          7.5
+        ]
+      },
+      "crafted-mcp-1794213784542-e3i3": {
+        "position": [
+          18.189,
+          0,
+          8.135
+        ]
+      },
+      "crafted-mcp-1794213882101-3y1j": {
+        "position": [
+          0,
+          0,
+          7.5
+        ]
+      },
+      "crafted-mcp-1794213892453-kj91": {
+        "position": [
+          0,
+          0,
+          7.5
+        ]
+      },
+      "crafted-mcp-1794213952064-uxj1": {
+        "position": [
+          -39.837,
+          6,
+          30.5
+        ]
+      },
+      "crafted-mcp-1794213952510-im3x": {
+        "position": [
+          19.837,
+          -6,
+          62.002
+        ]
+      },
+      "crafted-mcp-1794213952831-e5dx": {
+        "position": [
+          49.81,
+          12,
+          3.142
+        ]
+      },
+      "crafted-mcp-1794213953136-8l13": {
+        "position": [
+          11.388,
+          -2,
+          -35.001
+        ]
+      },
+      "crafted-mcp-1794213953456-ygv3": {
+        "position": [
+          -57.341,
+          27,
+          -32.65
+        ]
+      },
+      "crafted-mcp-1794213953768-2mo9": {
+        "position": [
+          0,
+          0,
+          29
+        ]
+      },
+      "crafted-mcp-1794213999514-033v": {
+        "position": [
+          0,
+          0,
+          -15.2
+        ]
+      },
+      "crafted-mcp-1794214055233-6t2f": {
+        "position": [
+          0,
+          0,
+          7.5
+        ]
+      }
+    },
+    "savedAt": "2026-11-09T08:47:35.821Z",
+    "behaviors": {},
+    "portalGates": [],
+    "spatialWebObjects": [],
+    "agentWindows": [],
+    "lights": [
+      {
+        "id": "light-mcp-1794213678495-gvzi",
+        "type": "directional",
+        "color": "#aac0ff",
+        "intensity": 1.1,
+        "position": [
+          -30,
+          45,
+          -20
+        ],
+        "visible": true
+      },
+      {
+        "id": "light-mcp-1794213678591-nfvk",
+        "type": "ambient",
+        "color": "#34407a",
+        "intensity": 0.7,
+        "position": [
+          0,
+          5,
+          0
+        ],
+        "visible": true
+      },
+      {
+        "id": "light-mcp-1794213678711-vtqo",
+        "type": "hemisphere",
+        "color": "#6a7cc8",
+        "intensity": 0.6,
+        "position": [
+          0,
+          20,
+          0
+        ],
+        "visible": true
+      },
+      {
+        "id": "light-mcp-1794213678837-7vsv",
+        "type": "environment",
+        "color": "#ffffff",
+        "intensity": 0.9,
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "visible": true
+      },
+      {
+        "id": "light-mcp-1794213679653-p6w4",
+        "type": "point",
+        "color": "#b28cff",
+        "intensity": 18,
+        "position": [
+          -10.249999999999998,
+          1.4,
+          -10.253520777580995
+        ],
+        "visible": true
+      },
+      {
+        "id": "light-mcp-1794213679858-41i3",
+        "type": "point",
+        "color": "#5effc8",
+        "intensity": 30,
+        "position": [
+          -18.080085164052356,
+          1.75,
+          0.19517142838971502
+        ],
+        "visible": true
+      },
+      {
+        "id": "light-mcp-1794213680235-52qc",
+        "type": "point",
+        "color": "#3fe0ff",
+        "intensity": 30,
+        "position": [
+          -9.858902818503706,
+          1.89,
+          26.041899450037466
+        ],
+        "visible": true
+      },
+      {
+        "id": "light-mcp-1794213680582-rhqc",
+        "type": "point",
+        "color": "#5effc8",
+        "intensity": 30,
+        "position": [
+          18.080085164052356,
+          1.8199999999999998,
+          14.804828571610283
+        ],
+        "visible": true
+      },
+      {
+        "id": "light-mcp-1794213680898-zywe",
+        "type": "point",
+        "color": "#3fe0ff",
+        "intensity": 18,
+        "position": [
+          9.389431255717813,
+          1.68,
+          -10.15895185717854
+        ],
+        "visible": true
+      },
+      {
+        "id": "light-mcp-1794213892296-spuv",
+        "type": "point",
+        "color": "#7fe8ff",
+        "intensity": 60,
+        "position": [
+          0,
+          4,
+          29
+        ],
+        "visible": true
+      },
+      {
+        "id": "light-mcp-1794213999684-lg96",
+        "type": "point",
+        "color": "#a8e8ff",
+        "intensity": 35,
+        "position": [
+          0,
+          6.75,
+          -15.2
+        ],
+        "visible": true
+      }
+    ],
+    "groundTiles": {},
+    "groundPresetId": "none",
+    "skyBackgroundId": "night007"
+  }
+}
