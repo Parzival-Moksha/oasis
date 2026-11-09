@@ -4,9 +4,9 @@
 // Mounted in the 2D session panel and in each desk's 3D window. Shows text, tool cards, todos,
 // subagents, turn outcomes, the context meter and permission / question / plan cards.
 
-import { memo, useMemo, useState, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
-import { effectiveStatus, type AgentLogEntry, type EngineAgentState } from '../../store/slices/agentEngineSlice'
+import { effectiveStatus, selectHistoryCursor, type AgentLogEntry, type EngineAgentState } from '../../store/slices/agentEngineSlice'
 import { DecisionCard } from './DecisionCards'
 import { ToolCallCard, renderMarkdown } from '../../lib/anorak-renderers'
 import { TOOL_ICONS_MAP } from '../../lib/anorak-engine'
@@ -19,6 +19,8 @@ import {
 } from './village-status'
 import { toggleVillageScreen } from './village-actions'
 import { agentEngineFileUrl } from '../../lib/agent-engine-client'
+import { groupThread, toolRunShape, type ThreadItem } from '../../lib/village/village-thread'
+import { getOlderHistoryState, loadOlderHistory, retryOlderHistory, subscribeOlderHistory } from './village-history'
 
 /** 2d: the side panel · 3d: the desk window (recent lines) · screen: the desk window zoomed in with F */
 
@@ -330,15 +332,114 @@ export interface AgentSessionViewProps {
   header?: ReactNode
 }
 
+/** A finished run of tool calls, folded into one row; a little taller with more calls (stacked cards, last calls). */
+function ToolRunRow({ item, compact }: { item: Extract<ThreadItem, { kind: 'tools' }>; compact: boolean }) {
+  const [open, setOpen] = useState(false)
+  const calls = item.entries.length
+  const failedNote = item.failed ? <span className="shrink-0 text-rose-300">· {item.failed} failed</span> : null
+  if (open) {
+    return (
+      <div className="flex flex-col gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] p-1.5">
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="flex items-center gap-2 rounded px-1 text-left text-[11.5px] text-slate-100 hover:bg-white/5"
+        >
+          <span aria-hidden className="text-[9px] text-white/60">▼</span>
+          <span className="min-w-0 flex-1 break-words font-semibold">{item.summary}</span>
+          {failedNote}
+        </button>
+        {item.entries.map(entry => <LogEntryView key={entry.key} entry={entry} compact={compact} />)}
+      </div>
+    )
+  }
+  const shape = toolRunShape(calls)
+  const preview = shape.previewLines ? item.entries.slice(-shape.previewLines) : []
+  const dim = item.entries.every(entry => entry.history) ? 'opacity-90' : ''
+  return (
+    <button
+      type="button"
+      onClick={() => setOpen(true)}
+      title={`${calls} tool call${calls === 1 ? '' : 's'}: click to see them`}
+      className={`relative block w-full text-left ${dim}`}
+      style={{ paddingTop: shape.stackLayers * 4 }}
+    >
+      {Array.from({ length: shape.stackLayers }, (_, i) => {
+        const depth = shape.stackLayers - i // the farthest card peeks out the most
+        return (
+          <span
+            key={depth}
+            aria-hidden
+            className="absolute h-6 rounded-lg border border-white/10 bg-slate-800/60"
+            style={{ top: i * 4, left: depth * 6, right: depth * 6 }}
+          />
+        )
+      })}
+      <span className="relative block rounded-lg border border-white/15 bg-slate-900/85 px-2.5 py-1.5 transition hover:border-white/30 hover:bg-slate-800/90">
+        <span className="flex items-start gap-2 text-[11.5px]">
+          <span aria-hidden className="text-[9px] text-white/60">▶</span>
+          <span className="min-w-0 flex-1 break-words font-semibold text-slate-100">{item.summary}</span>
+          {failedNote}
+        </span>
+        {preview.map(entry => (
+          <span key={entry.key} className="mt-0.5 block truncate pl-4 font-mono text-[10.5px] leading-[14px] text-white/65">
+            {entry.summary || entry.name}
+          </span>
+        ))}
+      </span>
+    </button>
+  )
+}
+
+/** The top of a long thread: older history loading, an error to retry, or the start of the session. */
+function HistoryTop({ agentId, start }: { agentId: string; start: boolean }) {
+  const state = useSyncExternalStore(subscribeOlderHistory, () => getOlderHistoryState(agentId), () => getOlderHistoryState(agentId))
+  if (state.error) {
+    return (
+      <button type="button" onClick={() => retryOlderHistory(agentId)} className="py-1 text-center text-[10.5px] text-amber-200 hover:text-amber-100">
+        Older history: {state.error} (click to retry)
+      </button>
+    )
+  }
+  if (state.loading) return <div className="py-1 text-center text-[10.5px] text-white/65">loading older history…</div>
+  if (!start) return null
+  return (
+    <div className="flex items-center gap-2 py-1 text-[9.5px] font-black uppercase tracking-[0.16em] text-white/55">
+      <span className="h-px flex-1 bg-white/15" />
+      start of the session
+      <span className="h-px flex-1 bg-white/15" />
+    </div>
+  )
+}
+
+/** Within this many pixels of the top, the next older piece loads. */
+const LOAD_OLDER_MARGIN_PX = 320
+
 export function AgentSessionView({ agentId, variant, header }: AgentSessionViewProps) {
   const agent = useOasisStore(s => s.agentEngine.agents[agentId])
   const compact = variant === '3d'
   const log = agent?.log
-  const entries = useMemo(() => {
+  const items = useMemo(() => {
     if (!log) return []
-    // The desk window shows the recent conversation, without tool noise from long ago.
-    return compact ? log.slice(-14) : log.slice(-200)
+    // The desk window shows the recent conversation; the side panel and the screen show all of it.
+    const grouped = groupThread(compact ? log.slice(-60) : log)
+    return compact ? grouped.slice(-10) : grouped
   }, [log, compact])
+  const canLoadOlder = Boolean(agent && !compact && selectHistoryCursor(agent))
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  // Scrolled near the top: load the piece before. The list is column-reverse, so what is added above leaves the view
+  // where it is (scrollTop counts from the bottom).
+  const maybeLoadOlder = useCallback(() => {
+    const el = scrollRef.current
+    if (!el || !canLoadOlder) return
+    const fromTop = el.scrollHeight - el.clientHeight + el.scrollTop
+    const short = el.scrollHeight <= el.clientHeight + 40
+    if (short || fromTop < LOAD_OLDER_MARGIN_PX) void loadOlderHistory(agentId)
+  }, [agentId, canLoadOlder])
+  // A thread too short to scroll fills itself up from the past (and finds the start of the session).
+  const historyFrom = agent?.historyFrom ?? null
+  useEffect(() => { maybeLoadOlder() }, [maybeLoadOlder, items.length, historyFrom])
 
   if (!agent) return null
   const decisions = agent.owned ? agent.decisions : []
@@ -354,14 +455,21 @@ export function AgentSessionView({ agentId, variant, header }: AgentSessionViewP
       </div>
       {/* column-reverse keeps the view pinned to the newest line without measuring on every
           streamed delta; scrolling up still works and is not yanked back. */}
-      <div className={`flex min-h-0 flex-1 flex-col-reverse overflow-y-auto pr-1 [scrollbar-width:thin] ${BRIGHT_GRAYS}`}>
+      <div
+        ref={scrollRef}
+        onScroll={compact ? undefined : maybeLoadOlder}
+        className={`flex min-h-0 flex-1 flex-col-reverse overflow-y-auto pr-1 [scrollbar-width:thin] ${BRIGHT_GRAYS}`}
+      >
       <div className="flex flex-col gap-1.5">
-        {entries.length === 0 && !agent.live && (
+        {!compact && <HistoryTop agentId={agent.id} start={agent.historyStart} />}
+        {items.length === 0 && !agent.live && (
           <div className="py-3 text-center text-[11px] text-white/60">
             {agent.owned || agent.bridged ? 'No messages yet. Say hello.' : 'Waiting for the session to do something.'}
           </div>
         )}
-        {entries.map(entry => <LogEntryView key={entry.key} entry={entry} compact={compact} />)}
+        {items.map(item => (item.kind === 'tools'
+          ? <ToolRunRow key={item.key} item={item} compact={compact} />
+          : <LogEntryView key={item.key} entry={item.entry} compact={compact} />))}
         {agent.live?.text && (
           <div className="text-[12.5px] leading-relaxed text-slate-100">
             <Markdown text={compact && agent.live.text.length > 600 ? `…${agent.live.text.slice(-600)}` : agent.live.text} />
