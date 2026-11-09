@@ -9,6 +9,9 @@
 // - control_request {subtype:"interrupt"} stops the turn: result error_during_execution,
 //   terminal_reason aborted_streaming / aborted_tools. Process stays usable.
 // - control_request {subtype:"set_model", model} switches the model for the next turn.
+// - control_request {subtype:"apply_flag_settings", settings:{effortLevel}} switches the thinking
+//   effort live (null = back to the default). An unknown level is acknowledged but ignored, so
+//   the engine reads the result back with {subtype:"get_settings"} (applied.effort). 2.1.318.
 // - --permission-prompt-tool stdio routes permission prompts, AskUserQuestion and
 //   ExitPlanMode to us as control_request {subtype:"can_use_tool"}.
 import { randomUUID } from 'node:crypto';
@@ -23,6 +26,8 @@ import { worldToolsArgs } from './worldtools.js';
 
 const SANDBOX_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'sandbox');
 const REVIEW_INPUT_MAX = 256 * 1024;
+/** `claude --effort` levels (2.1.318). Each model lists the ones it takes in initialize's models[].supportedEffortLevels. */
+export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 /**
  * Permission prompts show the owner exactly what will run, so the input is not clipped the way
@@ -56,6 +61,7 @@ export class Agent {
     this.model = spec.model || null;
     this.permissionMode = spec.permissionMode || null;
     this.effort = spec.effort || null;
+    this.resolvedEffort = null; // what the CLI actually runs with (get_settings applied.effort), e.g. the default when effort is null
     this.fork = !!spec.fork;
     this.forkedFrom = spec.fork ? spec.sessionId || null : null; // until the fork's first turn, sessionId is still the original's
     this.worldTools = spec.worldTools !== false; // the Oasis MCP server (worldtools.js); on unless the roster says false
@@ -91,7 +97,7 @@ export class Agent {
       id: this.id, kind: this.kind, name: this.name, cwd: this.cwd, sessionId: this.sessionId,
       model: this.model, resolvedModel: this.norm.model, permissionMode: this.permissionMode,
       effectivePermissionMode: this.effectivePermissionMode || null, effort: this.effort,
-      status: this.status, statusReason: this.statusReason, alive: !!this.proc,
+      resolvedEffort: this.resolvedEffort, status: this.status, statusReason: this.statusReason, alive: !!this.proc,
       pid: this.proc?.pid || null, pendingUser: this.pendingUser.size,
       permissions: [...this.permissions.values()].map((r) => this.describePermission(r)),
       context: this.lastContext, models: this.meta.models || null,
@@ -167,19 +173,31 @@ export class Agent {
     proc.on('exit', (code, signal) => this.onExit(code, signal));
     this.setStatus(STATUS.IDLE, 'ready');
     // Zero-cost handshake: returns models, account, commands. No API turn is spent.
-    this.request('initialize', {}).then((r) => {
+    this.request('initialize', {}).then(async (r) => {
       if (r?.ok) {
         const d = r.data || {};
         this.meta = {
-          models: (d.models || []).map((m) => ({ value: m.value, resolvedModel: m.resolvedModel, displayName: m.displayName })),
+          models: (d.models || []).map((m) => ({
+            value: m.value, resolvedModel: m.resolvedModel, displayName: m.displayName,
+            ...(m.supportsEffort ? { supportsEffort: true, supportedEffortLevels: m.supportedEffortLevels || [] } : {}),
+          })),
           subscription: d.account?.subscriptionType || null,
           version: d.claude_code_version,
           permissionMode: d.current_permission_mode,
         };
         if (!this.permissionMode && d.current_permission_mode) this.effectivePermissionMode = d.current_permission_mode;
-        this.emit('meta', { models: this.meta.models, subscription: this.meta.subscription, claudeCodeVersion: this.meta.version, permissionMode: d.current_permission_mode });
+        await this.readEffort();
+        this.emit('meta', { models: this.meta.models, subscription: this.meta.subscription, claudeCodeVersion: this.meta.version, permissionMode: d.current_permission_mode, resolvedEffort: this.resolvedEffort });
       }
     });
+  }
+
+  /** The effort the process runs with right now (zero cost). undefined when the CLI could not say. */
+  async readEffort() {
+    const s = await this.request('get_settings', {}, 10000);
+    if (!s.ok) return undefined;
+    this.resolvedEffort = s.data?.applied?.effort ?? null;
+    return this.resolvedEffort;
   }
 
   /** Show the resumed conversation's recent past in the feed (read from the transcript, no API call). */
@@ -410,9 +428,37 @@ export class Agent {
     if (r.ok) {
       this.model = model;
       this.persist();
-      this.emit('model', { model, resolved: r.data?.model });
+      // Another model can run the same effort setting at another level (or none): report what it runs with now.
+      await this.readEffort();
+      this.emit('model', { model, resolved: r.data?.model, resolvedEffort: this.resolvedEffort });
     }
     return r;
+  }
+
+  /**
+   * Thinking effort: low | medium | high | xhigh | max, or null / 'default' for the CLI's default.
+   * Live through apply_flag_settings (no restart, no turn), also while a turn runs: the next model
+   * request uses it. The CLI acknowledges levels it ignores, so the result is read back.
+   */
+  async setEffort(effort) {
+    const level = effort && effort !== 'default' ? String(effort) : null;
+    if (level && !EFFORT_LEVELS.includes(level)) return { ok: false, error: `unknown effort "${level}" (use ${EFFORT_LEVELS.join(', ')} or default)` };
+    if (!this.proc) {
+      this.effort = level;
+      this.persist();
+      this.emit('effort', { effort: level, applied: 'on next start' });
+      return { ok: true, data: { effort: level } };
+    }
+    const r = await this.request('apply_flag_settings', { settings: { effortLevel: level } });
+    if (!r.ok) return r;
+    const resolved = await this.readEffort();
+    if (level && resolved !== undefined && resolved !== level) {
+      return { ok: false, error: `the CLI kept effort ${resolved || 'default'}: ${this.norm.model || this.model || 'this model'} may not take "${level}"` };
+    }
+    this.effort = level;
+    this.persist();
+    this.emit('effort', { effort: level, resolvedEffort: this.resolvedEffort });
+    return { ok: true, data: { effort: level, resolvedEffort: this.resolvedEffort } };
   }
 
   async setPermissionMode(mode) {

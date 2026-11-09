@@ -58,7 +58,7 @@ const hub = {
       if (list.length > BACKLOG) list.splice(0, list.length - BACKLOG);
     }
     broadcast({ type: 'event', event });
-    if (/^(status|init|meta|model|mode|context|exit|permission\.)/.test(kind)) scheduleSnapshot();
+    if (/^(status|init|meta|model|mode|effort|context|exit|permission\.)/.test(kind)) scheduleSnapshot();
   },
   persist() {
     saveRoster(ROSTER_FILE, ownedAgents().map((a) => a.rosterEntry()));
@@ -151,6 +151,7 @@ const commands = {
   interrupt({ agentId, cancelQueued }) { return getAgent(agentId, { owned: true }).interrupt({ cancelQueued }); },
   setModel({ agentId, model }) { return getAgent(agentId, { owned: true }).setModel(model); },
   setPermissionMode({ agentId, mode }) { return getAgent(agentId, { owned: true }).setPermissionMode(mode); },
+  setEffort({ agentId, effort }) { return getAgent(agentId, { owned: true }).setEffort(effort); },
   respond({ agentId, requestId, behavior, message, answers, always, updatedInput }) {
     return getAgent(agentId, { owned: true }).respond(requestId, { behavior, message, answers, always, updatedInput });
   },

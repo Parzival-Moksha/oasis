@@ -231,6 +231,11 @@ export class AgentEngineClient {
     return this.cmd('setPermissionMode', { agentId, mode })
   }
 
+  /** Thinking effort (low … max), or null for the CLI default. Applies live; a stopped agent gets it on its next start. */
+  setEffort(agentId: string, effort: string | null) {
+    return this.cmd('setEffort', { agentId, effort })
+  }
+
   /** Owned agents: stop the process and drop it from the roster. Observers: stop tailing. */
   kill(agentId: string) {
     return this.cmd('kill', { agentId })

@@ -5,6 +5,7 @@
 //   node scripts/smoke.mjs restore   [0 turns]  after a server restart: roster restored + resumed, then cleanup
 //   node scripts/smoke.mjs world     [1 turn]   the Oasis MCP server loads and its free tools run without a card
 //   node scripts/smoke.mjs handoff   [3 turns]  move here + let go between two engines (OASIS_WS and OASIS_WS2)
+//   node scripts/smoke.mjs effort    [0 turns]  --effort at spawn, live setEffort (apply_flag_settings), roster keeps it
 //
 // Only touches packages/oasis-agent-engine/sandbox/* scratch agents. Uses haiku and tiny prompts.
 import path from 'node:path';
@@ -168,6 +169,58 @@ const phases = {
     const end3 = await c.next((e) => e.agentId === b.id && e.kind === 'turn.end', 90000).catch(() => null);
     check('answer reached the model', /tea/i.test(end3?.result || ''), JSON.stringify(end3?.result));
     console.log('roster now:', fs.readFileSync(path.join(PKG, '..', '..', 'data', 'agent-engine.local.json'), 'utf8').replace(/\s+/g, ' ').slice(0, 400));
+    c.close();
+  },
+
+  // [0 turns] Thinking effort per agent: the spawn flag, then live switches through apply_flag_settings,
+  // read back with get_settings. OASIS_ROSTER (a test engine's roster file) adds the persistence check.
+  async effort() {
+    const c = await connect();
+    const sp = await c.cmd('spawnAgent', { name: 'smoke-effort', cwd: A, model: 'haiku', permissionMode: 'bypassPermissions', effort: 'low', worldTools: false });
+    check('spawn with effort low', sp.ok, sp.ok ? sp.data.id : sp.error);
+    const id = sp.data.id;
+    const meta = await c.next((e) => e.agentId === id && e.kind === 'meta', 30000).catch(() => null);
+    const haiku = meta?.models?.find((m) => m.value === 'haiku');
+    check('meta lists effort levels per model', Array.isArray(haiku?.supportedEffortLevels) && haiku.supportedEffortLevels.includes('low'), JSON.stringify(haiku));
+    check('--effort low is what the process runs with', meta?.resolvedEffort === 'low', `resolvedEffort=${meta?.resolvedEffort}`);
+
+    const evP = c.next((e) => e.agentId === id && e.kind === 'effort', 10000).catch(() => null);
+    const hi = await c.cmd('setEffort', { agentId: id, effort: 'high' });
+    check('setEffort high, live (no restart, no turn)', hi.ok && hi.data?.data?.resolvedEffort === 'high', JSON.stringify(hi.data ?? hi.error));
+    const ev = await evP;
+    check('effort event', ev?.effort === 'high' && ev?.resolvedEffort === 'high', ev ? brief(ev) : 'none');
+    await sleep(200);
+    const snap = (await c.cmd('listAgents')).data.find((x) => x.id === id);
+    check('snapshot carries the effort, same process', snap?.effort === 'high' && snap?.resolvedEffort === 'high' && snap?.pid === sp.data.pid, `effort=${snap?.effort} resolved=${snap?.resolvedEffort} pid ${sp.data.pid} -> ${snap?.pid}`);
+
+    const bad = await c.cmd('setEffort', { agentId: id, effort: 'turbo' });
+    check('refuses an unknown level', !bad.ok, bad.error);
+    const max = await c.cmd('setEffort', { agentId: id, effort: 'max' });
+    check('setEffort max', max.ok && max.data?.data?.resolvedEffort === 'max', JSON.stringify(max.data ?? max.error));
+    const def = await c.cmd('setEffort', { agentId: id, effort: 'default' });
+    check('setEffort default goes back to the CLI default', def.ok && def.data?.data?.effort === null && typeof def.data?.data?.resolvedEffort === 'string', JSON.stringify(def.data ?? def.error));
+    const modelEvP = c.next((e) => e.agentId === id && e.kind === 'model', 10000).catch(() => null);
+    await c.cmd('setModel', { agentId: id, model: 'sonnet' });
+    const modelEv = await modelEvP;
+    check('a model switch reports the effort the new model runs at', typeof modelEv?.resolvedEffort === 'string', modelEv ? brief(modelEv) : 'none');
+
+    // A stopped process: the level waits for the next start, which passes it as --effort.
+    const exitP = c.next((e) => e.agentId === id && e.kind === 'exit', 10000).catch(() => null);
+    await c.cmd('kill', { agentId: id, keep: true });
+    await exitP;
+    const off = await c.cmd('setEffort', { agentId: id, effort: 'xhigh' });
+    check('setEffort on a stopped agent is kept for its next start', off.ok && off.data?.data?.effort === 'xhigh', JSON.stringify(off.data ?? off.error));
+    if (process.env.OASIS_ROSTER) {
+      await sleep(400); // the roster write is debounced
+      const roster = JSON.parse(fs.readFileSync(process.env.OASIS_ROSTER, 'utf8'));
+      const entry = roster.agents.find((x) => x.id === id);
+      check('roster keeps the effort', entry?.effort === 'xhigh', JSON.stringify(entry));
+    }
+    const meta2P = c.next((e) => e.agentId === id && e.kind === 'meta', 30000).catch(() => null);
+    await c.cmd('restart', { agentId: id });
+    const meta2 = await meta2P;
+    check('the restarted process runs at that effort', meta2?.resolvedEffort === 'xhigh', `resolvedEffort=${meta2?.resolvedEffort}`);
+    await c.cmd('kill', { agentId: id });
     c.close();
   },
 

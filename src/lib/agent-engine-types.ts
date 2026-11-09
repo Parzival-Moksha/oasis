@@ -12,7 +12,14 @@ export interface EngineModelInfo {
   value: string
   resolvedModel?: string | null
   displayName?: string | null
+  /** From the CLI's initialize: whether this model takes a thinking effort, and which levels. */
+  supportsEffort?: boolean
+  supportedEffortLevels?: EngineEffortLevel[]
 }
+
+/** `claude --effort` levels (Claude Code 2.1.318). A model may take only some (initialize models[].supportedEffortLevels). */
+export const ENGINE_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+export type EngineEffortLevel = (typeof ENGINE_EFFORT_LEVELS)[number]
 
 export interface EngineContextUsage {
   usedTokens: number | null
@@ -62,6 +69,8 @@ export interface EngineAgentSnapshot {
   permissionMode?: string | null
   effectivePermissionMode?: string | null
   effort?: string | null
+  /** The effort the process runs with (the CLI default when `effort` is null); from get_settings. */
+  resolvedEffort?: string | null
   status: EngineAgentStatus
   statusReason?: string | null
   alive?: boolean
@@ -119,6 +128,7 @@ export type EngineMetaEvent = EngineEventEnvelope<'meta'> & {
   claudeCodeVersion?: string
   permissionMode?: string
   title?: string
+  resolvedEffort?: string | null
 }
 export type EngineStatusEvent = EngineEventEnvelope<'status'> & { status: EngineAgentStatus; reason?: string | null }
 export type EngineUserSentEvent = EngineEventEnvelope<'user.sent'> & { uuid: string; text: string; midTurn?: boolean; priority?: string }
@@ -215,7 +225,9 @@ export type EngineRateLimitEvent = EngineEventEnvelope<'rate_limit'> & EngineRat
 export type EngineNoticeEvent = EngineEventEnvelope<'notice'> & { subtype?: string; text?: string; model?: string }
 export type EngineErrorEvent = EngineEventEnvelope<'error'> & { message?: string; retrying?: boolean }
 export type EngineExitEvent = EngineEventEnvelope<'exit'> & { code?: number | null; signal?: string | null; stderr?: string[] }
-export type EngineModelEvent = EngineEventEnvelope<'model'> & { model?: string; resolved?: string; applied?: string }
+export type EngineModelEvent = EngineEventEnvelope<'model'> & { model?: string; resolved?: string; applied?: string; resolvedEffort?: string | null }
+/** Thinking effort switched for an owned agent (setEffort): live, or `applied: 'on next start'` when its process is down. */
+export type EngineEffortEvent = EngineEventEnvelope<'effort'> & { effort: string | null; resolvedEffort?: string | null; applied?: string }
 /** Permission mode switched for an owned agent (setPermissionMode). */
 export type EngineModeEvent = EngineEventEnvelope<'mode'> & { permissionMode: string; applied?: string }
 export type EngineHookEvent = EngineEventEnvelope<'hook'> & { event?: string; toolName?: string | null }
@@ -247,6 +259,7 @@ export type KnownEngineEvent =
   | EngineExitEvent
   | EngineModelEvent
   | EngineModeEvent
+  | EngineEffortEvent
   | EngineHookEvent
   | EngineRemovedEvent
 
@@ -338,6 +351,8 @@ export interface EngineCommandMap {
   interrupt: { args: { agentId: string; cancelQueued?: boolean }; result: { ok: boolean; data?: unknown; error?: string } }
   setModel: { args: { agentId: string; model: string }; result: { ok: boolean; data?: { model?: string }; error?: string } }
   setPermissionMode: { args: { agentId: string; mode: string }; result: { ok: boolean; error?: string } }
+  /** effort: a level, or null / 'default' for the CLI default. Live, no restart and no turn. */
+  setEffort: { args: { agentId: string; effort: string | null }; result: { ok: boolean; data?: { effort: string | null; resolvedEffort?: string | null }; error?: string } }
   respond: { args: RespondArgs; result: { ok: boolean } }
   contextUsage: { args: { agentId: string }; result: unknown }
   kill: { args: { agentId: string; keep?: boolean }; result: { ok: boolean } }

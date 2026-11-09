@@ -166,6 +166,8 @@ export interface EngineAgentState {
   permissionMode: string | null
   effectivePermissionMode: string | null
   effort: string | null
+  /** The effort the process runs with (the CLI default when `effort` is null). */
+  resolvedEffort: string | null
   status: EngineAgentStatus
   statusReason: string | null
   statusSince: number
@@ -301,6 +303,7 @@ export function createAgentState(
     permissionMode: null,
     effectivePermissionMode: null,
     effort: null,
+    resolvedEffort: null,
     status: 'idle',
     statusReason: null,
     statusSince: at,
@@ -354,7 +357,9 @@ export function applySnapshot(agent: EngineAgentState, snap: EngineAgentSnapshot
     resolvedModel: agent.resolvedModel ?? snap.resolvedModel ?? null,
     permissionMode: snap.permissionMode !== undefined ? snap.permissionMode : agent.permissionMode,
     effectivePermissionMode: snap.effectivePermissionMode ?? agent.effectivePermissionMode,
-    effort: snap.effort ?? agent.effort,
+    // null is a real value ("back to the default"); only a missing field keeps the old one.
+    effort: snap.effort !== undefined ? snap.effort : agent.effort,
+    resolvedEffort: snap.resolvedEffort !== undefined ? snap.resolvedEffort : agent.resolvedEffort,
     status,
     statusReason: snap.statusReason ?? (status === agent.status ? agent.statusReason : null),
     statusSince: status === agent.status ? agent.statusSince : at,
@@ -470,7 +475,7 @@ interface FoldContext {
 const FOLDED_KINDS = new Set<string>([
   'init', 'meta', 'status', 'user.sent', 'user.consumed', 'user', 'text.delta', 'text', 'tool.start', 'tool.end',
   'todo', 'subagent.start', 'subagent.progress', 'subagent.end', 'permission.request', 'permission.resolved',
-  'permission.denied', 'turn.end', 'context', 'notice', 'error', 'exit', 'model', 'mode',
+  'permission.denied', 'turn.end', 'context', 'notice', 'error', 'exit', 'model', 'mode', 'effort',
 ])
 
 /** Fold one engine event into one agent. Pure; returns the same object for kinds it ignores. */
@@ -511,6 +516,7 @@ export function foldAgentEvent(agent: EngineAgentState, event: EngineEvent, ctx:
         ...a,
         models: e.models && e.models.length ? e.models : a.models,
         title: e.title || a.title,
+        resolvedEffort: e.resolvedEffort !== undefined ? e.resolvedEffort : a.resolvedEffort,
         effectivePermissionMode: a.effectivePermissionMode || e.permissionMode || null,
       }
 
@@ -771,7 +777,12 @@ export function foldAgentEvent(agent: EngineAgentState, event: EngineEvent, ctx:
     }
 
     case 'model': {
-      a = { ...a, model: e.model || a.model, resolvedModel: e.resolved || a.resolvedModel }
+      a = {
+        ...a,
+        model: e.model || a.model,
+        resolvedModel: e.resolved || a.resolvedModel,
+        resolvedEffort: e.resolvedEffort !== undefined ? e.resolvedEffort : a.resolvedEffort,
+      }
       ;[key, a] = nextKey(a, 'm')
       return pushLog(a, {
         type: 'notice',
@@ -792,6 +803,19 @@ export function foldAgentEvent(agent: EngineAgentState, event: EngineEvent, ctx:
         ts,
         level: 'info',
         text: `Permission mode -> ${e.permissionMode}${e.applied ? ` (${e.applied})` : ''}`,
+      })
+    }
+
+    case 'effort': {
+      a = { ...a, effort: e.effort ?? null, resolvedEffort: e.resolvedEffort !== undefined ? e.resolvedEffort : a.resolvedEffort }
+      ;[key, a] = nextKey(a, 'f')
+      const shown = e.effort || `default${e.resolvedEffort ? ` (${e.resolvedEffort})` : ''}`
+      return pushLog(a, {
+        type: 'notice',
+        key,
+        ts,
+        level: 'info',
+        text: `Thinking effort -> ${shown}${e.applied ? ` (${e.applied})` : ''}`,
       })
     }
 
