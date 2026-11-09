@@ -27,6 +27,7 @@ import {
 } from './village-actions'
 import { VillageComposer } from './VillageComposer'
 import { EffortSelect } from './EffortSelect'
+import { VillageAvatarButton } from './VillageAvatarButton'
 import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY, VILLAGE_TYPE_CLASS, agentDisplayName, canTalkTo, cwdLabel, formatCost, modelLabel, statusColor, statusLabel } from './village-status'
 
 const FALLBACK_MODELS = [
@@ -200,6 +201,7 @@ export function AgentSessionPanel() {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          <VillageAvatarButton agentId={agent.id} sessionId={agent.sessionId} />
           <button
             type="button"
             disabled={busy}

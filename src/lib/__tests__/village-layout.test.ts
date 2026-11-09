@@ -122,6 +122,36 @@ function visit(agents: VillageRosterAgent[], memory: VillageMemory, now: number,
   return { seats: seated.seats, avatars: dressed.avatars, memory: dressed.memory }
 }
 
+describe('village memory: a body the owner picked', () => {
+  const rick = { id: 'agent-r', name: 'Rick', sessionId: 'sess-rick' }
+  const tyler = { id: 'agent-t', name: 'Tyler', sessionId: 'sess-tyler' }
+  const catalog = ['/a.vrm', '/b.vrm', '/c.vrm']
+
+  it('is worn even when it is a drop-in outside the catalog', () => {
+    const memory = { 'sess-rick': { skin: '/gallery/DropIn.vrm', picked: true, seenAt: 1 } }
+    const out = assignVillageAvatars([rick], catalog, [], memory, 10)
+    expect(out.avatars['agent-r']).toBe('/gallery/DropIn.vrm')
+    expect(out.memory['sess-rick'].picked).toBe(true)
+  })
+
+  it('an unknown skin that was not picked is replaced (an avatar removed from the catalog)', () => {
+    const memory = { 'sess-rick': { skin: '/gone.vrm', seenAt: 1 } }
+    const out = assignVillageAvatars([rick], catalog, [], memory, 10)
+    expect(catalog).toContain(out.avatars['agent-r'])
+  })
+
+  it('two agents may wear the same picked body: the second gets its own copy', () => {
+    const memory = {
+      'sess-rick': { skin: '/b.vrm', picked: true, seenAt: 1 },
+      'sess-tyler': { skin: '/b.vrm', picked: true, seenAt: 1 },
+    }
+    const out = assignVillageAvatars([rick, tyler], catalog, [], memory, 10)
+    expect(out.avatars['agent-r'].replace(/\?.*$/, '')).toBe('/b.vrm')
+    expect(out.avatars['agent-t'].replace(/\?.*$/, '')).toBe('/b.vrm')
+    expect(out.avatars['agent-r']).not.toBe(out.avatars['agent-t'])
+  })
+})
+
 describe('village memory: seats', () => {
   const rick = { id: 'agent-r', name: 'Rick', sessionId: 'sess-rick' }
   const tyler = { id: 'agent-t', name: 'Tyler', sessionId: 'sess-tyler' }

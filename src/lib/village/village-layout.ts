@@ -110,6 +110,8 @@ export function layoutVillageStations(count: number, options: VillageLayoutOptio
 export interface VillageMemoryEntry {
   seat?: number
   skin?: string
+  /** The owner chose this skin (agent panel → Avatar): kept even when it is not in the built-in catalog. */
+  picked?: boolean
   /** Last time this agent was in the village (ms). */
   seenAt: number
 }
@@ -336,8 +338,9 @@ export function assignVillageAvatars(
   const worn = new Set<string>()
   // Remembered bodies first, so a newcomer never takes one from an agent that already wears it.
   for (const agent of agents) {
-    const skin = next[villageAgentKey(agent)]?.skin
-    if (skin && known.has(skin)) {
+    const entry = next[villageAgentKey(agent)]
+    const skin = entry?.skin
+    if (skin && (known.has(skin) || entry?.picked)) {
       bases[agent.id] = skin
       worn.add(skin)
     }

@@ -33,3 +33,34 @@ export function saveVillageMemory(next: VillageMemory): void {
     // Storage full or blocked: the village still works, it just forgets on reload.
   }
 }
+
+// ─── the owner picks a body (agent panel → Avatar) ─────────────────────────
+// Only this bumps the version: VillageWorld re-dresses on it. Its own saves don't, so no loop.
+
+const listeners = new Set<() => void>()
+let version = 0
+
+export function subscribeVillageMemory(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => { listeners.delete(listener) }
+}
+
+export function getVillageMemoryVersion(): number {
+  return version
+}
+
+/** The skin an agent wears now (its session key, villageAgentKey), and whether the owner chose it. */
+export function getVillageAgentSkin(key: string): { skin: string | null; picked: boolean } {
+  const entry = getVillageMemory()[key]
+  return { skin: entry?.skin || null, picked: Boolean(entry?.picked) }
+}
+
+/** Dress an agent in `skin` and keep it; null hands the choice back to the village. */
+export function setVillageAgentSkin(key: string, skin: string | null): void {
+  const memory = getVillageMemory()
+  const { skin: _old, picked: _picked, ...rest } = memory[key] || { seenAt: Date.now() }
+  const entry = skin ? { ...rest, skin, picked: true } : rest
+  saveVillageMemory({ ...memory, [key]: { ...entry, seenAt: entry.seenAt ?? Date.now() } })
+  version += 1
+  listeners.forEach(listener => listener())
+}

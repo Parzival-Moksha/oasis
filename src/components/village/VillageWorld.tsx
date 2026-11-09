@@ -30,7 +30,7 @@ import {
   type VillageOrigin,
   type VillageRosterAgent,
 } from '../../lib/village/village-layout'
-import { getVillageMemory, saveVillageMemory } from '../../lib/village/village-memory'
+import { getVillageMemory, getVillageMemoryVersion, saveVillageMemory, subscribeVillageMemory } from '../../lib/village/village-memory'
 import { VRMCatalogRenderer } from '../forge/WorldObjects'
 import { useIsMobileOasis } from '../forge/MobileOasisControls'
 import { effectiveStatus } from '../../store/slices/agentEngineSlice'
@@ -554,7 +554,8 @@ export function VillageWorld() {
   }) : []), [rosterKey])
 
   // Desks and bodies are remembered per session (village-memory.ts): a reload, a newcomer or a world
-  // switch moves and re-dresses nobody.
+  // switch moves and re-dresses nobody. A body picked in the agent panel bumps memoryVersion.
+  const memoryVersion = useSyncExternalStore(subscribeVillageMemory, getVillageMemoryVersion, () => 0)
   const village = useMemo(() => {
     const exclude = [playerBody || '', ...worldBodiesKey.split('|')]
       .filter((path): path is string => Boolean(path))
@@ -564,7 +565,7 @@ export function VillageWorld() {
     const seated = assignVillageSeats(roster, seen, now)
     const dressed = assignVillageAvatars(roster, pool, exclude, seated.memory, now)
     return { seats: seated.seats, avatars: dressed.avatars, memory: dressed.memory }
-  }, [roster, pool, playerBody, worldBodiesKey])
+  }, [roster, pool, playerBody, worldBodiesKey, memoryVersion])
   useEffect(() => {
     saveVillageMemory(village.memory)
   }, [village])
