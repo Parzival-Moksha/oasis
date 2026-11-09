@@ -31,6 +31,7 @@ export class Observer {
     this.cwd = null;
     this.title = null;
     this.reading = false;
+    this.lineAt = null;
     this.norm = new Normalizer(this.id, (kind, payload) => this.onEvent(kind, payload), { mode: 'observe' });
   }
 
@@ -78,19 +79,24 @@ export class Observer {
       } finally {
         await fh.close();
       }
+      // File offset of data[0]: where the carried-over partial line began.
+      const base = this.offset - this.partial.length;
       this.offset += buf.length;
       // Split on '\n' at the byte level: it never occurs inside a UTF-8 multi-byte sequence.
       let data = Buffer.concat([this.partial, buf]);
       let start = 0;
       for (let i = 0; i < data.length; i++) {
         if (data[i] !== 0x0a) continue;
+        const lineAt = base + start;
         const line = data.subarray(start, i).toString('utf8');
         start = i + 1;
         if (this.skipPartialFirst) { this.skipPartialFirst = false; continue; }
         if (!line.trim()) continue;
         let rec;
         try { rec = JSON.parse(line); } catch { continue; }
-        this.onRecord(rec);
+        // Events from this record carry where its line starts (`at`): the page loads what lies before (history.js).
+        this.lineAt = lineAt;
+        try { this.onRecord(rec); } finally { this.lineAt = null; }
       }
       this.partial = Buffer.from(data.subarray(start));
     } finally {
@@ -116,7 +122,7 @@ export class Observer {
   onEvent(kind, payload) {
     if (kind === 'meta' && payload.title) this.title = payload.title;
     if (kind === 'user') this.norm.openTurn();
-    this.hub.emit(this.id, kind, payload);
+    this.hub.emit(this.id, kind, typeof this.lineAt === 'number' ? { ...payload, at: this.lineAt } : payload);
     if (kind === 'turn.end') {
       const map = { 'done-waiting': STATUS.WAITING, 'needs-decision': STATUS.DECISION, error: STATUS.ERROR };
       this.setStatus(map[payload.outcome] || STATUS.WAITING, payload.reason);

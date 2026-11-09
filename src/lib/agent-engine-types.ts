@@ -112,6 +112,8 @@ interface EngineEventEnvelope<K extends string> {
   kind: K
   /** Replayed from a resumed transcript (owned agents) rather than seen live. */
   history?: boolean
+  /** Byte offset of the transcript line this came from (observers, replayed or older history). */
+  at?: number
 }
 
 export type EngineInitEvent = EngineEventEnvelope<'init'> & {
@@ -362,6 +364,11 @@ export interface EngineCommandMap {
   observe: { args: { sessionPath: string; name?: string }; result: EngineAgentSnapshot }
   unobserve: { args: { agentId: string }; result: { ok: boolean } }
   history: { args: { agentId: string }; result: EngineEvent[] }
+  /** The session's past before a transcript offset (or before tool use `anchor`), read from its transcript. */
+  olderHistory: {
+    args: { agentId: string; before?: number | null; anchor?: string | null; minEvents?: number; maxBytes?: number }
+    result: { events: EngineEvent[]; from: number; done: boolean }
+  }
 }
 
 export type EngineCommandName = keyof EngineCommandMap

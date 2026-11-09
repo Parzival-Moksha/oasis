@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnClaude, onLines } from './claude.js';
 import { Normalizer, STATUS, clipDeep, summarizeTool } from './normalize.js';
 import { findSessionFile } from './sessions.js';
+import { readHistoryTail } from './history.js';
 import { droppedAfterInterrupt, expiredAtResult, interruptApplies, matchReplay } from './pending.js';
 import { worldToolsArgs } from './worldtools.js';
 
@@ -206,25 +207,10 @@ export class Agent {
     const file = findSessionFile(this.sessionId, this.cwd);
     if (!file) return;
     try {
-      const size = fs.statSync(file).size;
-      const len = Math.min(size, 256 * 1024);
-      const fd = fs.openSync(file, 'r');
-      const buf = Buffer.alloc(len);
-      fs.readSync(fd, buf, 0, len, size - len);
-      fs.closeSync(fd);
-      const lines = buf.toString('utf8').split('\n');
-      if (size > len) lines.shift(); // partial first line
-      const hist = new Normalizer(this.id, (kind, payload) => {
-        if (kind === 'status' || kind === 'init') return;
-        this.emit(kind, { ...payload, history: true });
-      }, { mode: 'observe' });
-      for (const l of lines) {
-        if (!l.trim()) continue;
-        try {
-          const rec = JSON.parse(l);
-          if (rec.type === 'user' && !rec.isMeta) hist.openTurn();
-          hist.handleRecord(rec);
-        } catch { /* skip */ }
+      // The last 256 KB. Each event keeps its line's offset (`at`), so the page can load what came before (history.js).
+      for (const event of readHistoryTail(file, this.id, 256 * 1024)) {
+        const { v: _v, agentId: _agentId, ts: _ts, kind, ...payload } = event;
+        this.emit(kind, payload);
       }
       this.emit('notice', { subtype: 'history', text: `resumed ${this.sessionId.slice(0, 8)}: history above is from the transcript` });
     } catch (e) {

@@ -17,6 +17,7 @@ import { HookObserver } from './hooks.js';
 import { listSessions, isTranscriptPath, readLiveRegistry, readLiveEntries, pidAlive, findSessionFile } from './sessions.js';
 import { execFileSync } from 'node:child_process';
 import { checkIn, isBridged, queueForBridge, aliveBridges } from './bridge.js';
+import { readOlderHistory } from './history.js';
 import { loadRoster, saveRoster, saveRosterNow } from './roster.js';
 import { resolveClaude } from './claude.js';
 import { listen as earsListen, warmEars, earsStatus, stopEars } from './ears.js';
@@ -194,6 +195,23 @@ const commands = {
   unobserve({ agentId }) { return commands.kill({ agentId }); },
 
   history({ agentId }) { return backlog.get(agentId) || []; },
+
+  /**
+   * The session's past before `before` (a transcript byte offset from an event's `at`; null = the end of the file), or
+   * before the line of tool use `anchor` (owned agents' live entries have no offset). Read from the transcript, no API
+   * call. -> {events (history: true, each with `at`), from (where the next piece ends), done (reached the first line)}
+   */
+  olderHistory({ agentId, before = null, anchor = null, minEvents, maxBytes }) {
+    const a = getAgent(agentId);
+    const file = a.sessionPath || a.transcriptPath || (a.sessionId ? findSessionFile(a.sessionId, a.cwd) : null);
+    if (!file || !fs.existsSync(file)) throw new Error('no transcript for this agent yet');
+    return readOlderHistory(file, a.id, {
+      before: typeof before === 'number' ? before : null,
+      anchor: typeof anchor === 'string' ? anchor : null,
+      minEvents: Math.max(1, Math.min(Number(minEvents) || 150, 2000)),
+      maxBytes: Math.max(64 * 1024, Math.min(Number(maxBytes) || 4 * 1024 * 1024, 32 * 1024 * 1024)),
+    });
+  },
 
   // Graceful stop that works on Windows too (signals from another process can't be caught there).
   shutdown() { setTimeout(() => shutdown('shutdown command'), 50); return { ok: true }; },

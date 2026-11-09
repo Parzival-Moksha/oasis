@@ -23,6 +23,8 @@ import type {
 } from '../../lib/agent-engine-types'
 
 export const AGENT_LOG_LIMIT = 300
+/** Once the owner scrolled back for older history, the log may grow this far before the oldest goes again. */
+export const AGENT_LOG_HISTORY_LIMIT = 6000
 export const AGENT_SUBAGENT_LIMIT = 24
 /** An observer replays the transcript tail when it attaches; turns ending in that burst are old news. */
 export const OBSERVER_REPLAY_GRACE_MS = 4000
@@ -49,6 +51,8 @@ interface LogBase {
   key: string
   ts: number
   history?: boolean
+  /** Byte offset of the transcript line it came from, when known: older history loads from before the oldest. */
+  at?: number
 }
 
 export type AgentLogEntry =
@@ -196,6 +200,10 @@ export interface EngineAgentState {
   seq: number
   /** Metadata came from an engine snapshot (not only from events). */
   hydrated: boolean
+  /** Transcript offset the loaded older history starts at (null: none loaded yet). */
+  historyFrom: number | null
+  /** The thread reaches back to the session's first line. */
+  historyStart: boolean
 }
 
 export interface EngineSessionsState {
@@ -246,6 +254,8 @@ export type AgentEngineAction =
   | { type: 'sessions/loaded'; items: EngineSessionMeta[]; at: number }
   | { type: 'sessions/error'; error: string }
   | { type: 'decision/pending'; requestId: string; pending: boolean; at?: number }
+  /** Older history the owner scrolled back for (olderHistory): prepended to the agent's log. */
+  | { type: 'history/older'; agentId: string; events: EngineEvent[]; from: number; done: boolean; anchor?: string | null }
   | { type: 'reset' }
 
 export function createInitialAgentEngineState(): AgentEngineState {
@@ -329,6 +339,8 @@ export function createAgentState(
     lastEventAt: at,
     seq: 0,
     hydrated: false,
+    historyFrom: null,
+    historyStart: false,
   }
   return snapshot ? applySnapshot(base, snapshot, at) : base
 }
@@ -417,10 +429,12 @@ function withAttention(agent: EngineAgentState, at: number): EngineAgentState {
 }
 
 function pushLog(agent: EngineAgentState, entry: AgentLogEntry): EngineAgentState {
-  const log = agent.log.length >= AGENT_LOG_LIMIT
-    ? [...agent.log.slice(agent.log.length - AGENT_LOG_LIMIT + 1), entry]
-    : [...agent.log, entry]
-  return { ...agent, log }
+  // History the owner scrolled back for stays; the plain cap only bounds what came in live.
+  const limit = agent.historyFrom === null ? AGENT_LOG_LIMIT : AGENT_LOG_HISTORY_LIMIT
+  if (agent.log.length < limit) return { ...agent, log: [...agent.log, entry] }
+  const log = [...agent.log.slice(agent.log.length - limit + 1), entry]
+  // The oldest entries went: the loaded range no longer reaches `historyFrom`.
+  return agent.historyFrom === null ? { ...agent, log } : { ...agent, log, historyFrom: null, historyStart: false }
 }
 
 function updateLog(
@@ -485,6 +499,16 @@ const FOLDED_KINDS = new Set<string>([
 
 /** Fold one engine event into one agent. Pure; returns the same object for kinds it ignores. */
 export function foldAgentEvent(agent: EngineAgentState, event: EngineEvent, ctx: FoldContext): EngineAgentState {
+  const next = foldAgentEventInner(agent, event, ctx)
+  // An entry made from a transcript record remembers where that record is (`at`).
+  const at = (event as { at?: unknown }).at
+  if (typeof at !== 'number' || next === agent || !next.log.length) return next
+  const last = next.log[next.log.length - 1]
+  if (last === agent.log[agent.log.length - 1] || last.at !== undefined) return next
+  return { ...next, log: [...next.log.slice(0, -1), { ...last, at }] }
+}
+
+function foldAgentEventInner(agent: EngineAgentState, event: EngineEvent, ctx: FoldContext): EngineAgentState {
   if (!FOLDED_KINDS.has(event.kind)) return agent
   const e = event as KnownEngineEvent
   const ts = typeof e.ts === 'number' ? e.ts : agent.lastEventAt
@@ -969,6 +993,13 @@ export function agentEngineReducer(state: AgentEngineState, action: AgentEngineA
     case 'event':
       return applyEvent(state, action.event, true)
 
+    case 'history/older': {
+      const agent = state.agents[action.agentId]
+      if (!agent) return state
+      const next = prependHistory(agent, action.events, action.from, action.done, action.anchor ?? null)
+      return { ...state, agents: { ...state.agents, [agent.id]: next } }
+    }
+
     case 'focus': {
       const id = action.agentId && state.agents[action.agentId] ? action.agentId : null
       if (id === state.focusedAgentId && (!id || !state.agents[id].unseen)) return state
@@ -1009,6 +1040,75 @@ export function agentEngineReducer(state: AgentEngineState, action: AgentEngineA
 
     default:
       return state
+  }
+}
+
+// ─── older history (scrolling up in the thread) ──────────────────────────────
+
+/** Where the next piece of older history ends: a transcript offset, or the line of a tool call. null: nothing older. */
+export interface HistoryCursor {
+  /** Transcript byte offset (null: the end of the file, for an empty thread). */
+  before: number | null
+  /** Tool use id of the oldest tool call, when the oldest entries have no offset (an owned agent's live turns). */
+  anchor?: string
+}
+
+export function selectHistoryCursor(agent: Pick<EngineAgentState, 'log' | 'historyFrom' | 'historyStart'>): HistoryCursor | null {
+  if (agent.historyStart) return null
+  if (agent.historyFrom !== null) return { before: agent.historyFrom }
+  const body = agent.log.filter(entry => entry.type !== 'session')
+  if (!body.length) return { before: null }
+  if (typeof body[0].at === 'number') {
+    let min = body[0].at
+    for (const entry of body) if (typeof entry.at === 'number' && entry.at < min) min = entry.at
+    return { before: min }
+  }
+  for (const entry of body) {
+    if ((entry.type === 'tool' || entry.type === 'subagent') && entry.toolUseId) return { before: null, anchor: entry.toolUseId }
+  }
+  return null
+}
+
+/**
+ * Put an older piece of history above the agent's log. The piece is folded on its own (tool calls find their results
+ * inside it); tool cards keep their `t:<id>` keys so one already shown is not shown twice, other keys get the piece's
+ * offset as a prefix. With an anchor, the entries above the anchor's tool card are dropped first: the piece re-reads
+ * them from the transcript. The session line stays on top.
+ */
+export function prependHistory(
+  agent: EngineAgentState,
+  events: EngineEvent[],
+  from: number,
+  done: boolean,
+  anchor: string | null = null,
+): EngineAgentState {
+  let piece = createAgentState(agent.id, agent.firstSeenAt)
+  // historyFrom set: the piece folds under the history cap, not the live one.
+  piece = { ...piece, kind: agent.kind, owned: agent.owned, historyFrom: from }
+  for (const event of events) piece = foldAgentEvent(piece, { ...event, history: true } as EngineEvent, { focused: false, live: false })
+  let log = agent.log
+  if (anchor) {
+    const index = log.findIndex(entry => (entry.type === 'tool' || entry.type === 'subagent') && entry.toolUseId === anchor)
+    if (index > 0) log = [...log.slice(0, index).filter(entry => entry.type === 'session'), ...log.slice(index)]
+  }
+  let head = 0
+  while (head < log.length && log[head].type === 'session') head++
+  const shown = new Set(log.map(entry => entry.key))
+  const older: AgentLogEntry[] = []
+  for (const entry of piece.log) {
+    if (entry.type === 'session') continue
+    const key = entry.key.startsWith('t:') ? entry.key : `h${from}:${entry.key}`
+    if (shown.has(key)) continue
+    shown.add(key)
+    // The past is finished: a call whose result lies in a newer piece is done, not running.
+    const settled = entry.type === 'tool' && entry.status === 'running' ? { ...entry, status: 'done' as const } : entry
+    older.push({ ...settled, key, history: true })
+  }
+  return {
+    ...agent,
+    log: [...log.slice(0, head), ...older, ...log.slice(head)],
+    historyFrom: from,
+    historyStart: done,
   }
 }
 
