@@ -54,6 +54,16 @@ export function attachmentsFromResult(result) {
     });
 }
 
+/** A picture the agent opened with Read: served like a sent picture (images only; anything else stays unreachable). */
+export function attachmentForReadImage(filePath) {
+  const p = path.resolve(String(filePath));
+  const ext = path.extname(p).toLowerCase();
+  if (!(ext in IMAGE_TYPES)) return [];
+  let size = null;
+  try { size = fs.statSync(p).size; } catch { return []; }
+  return [{ id: registerAttachment(p, IMAGE_TYPES[ext], true), name: path.basename(p), size, isImage: true, mediaType: IMAGE_TYPES[ext] }];
+}
+
 export function serveAttachment(id, res) {
   const f = byId.get(id);
   if (!f) {

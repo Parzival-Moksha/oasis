@@ -6,7 +6,7 @@
 //
 // Every event: { v: 1, agentId, ts, kind, ...payload }. Schema: packages/oasis-agent-engine/README.md.
 
-import { attachmentsFromResult } from './files.js';
+import { attachmentsFromResult, attachmentForReadImage } from './files.js';
 
 export const STATUS = Object.freeze({
   WORKING: 'working',
@@ -117,6 +117,7 @@ export class Normalizer {
     this.taskToTool = new Map(); // taskId -> toolUseId (Agent tasks)
     this.taskTodos = new Map(); // TaskCreate/TaskUpdate todo list (id -> item)
     this.toolNames = new Map(); // toolUseId -> tool name
+    this.readPaths = new Map(); // toolUseId -> file_path of a Read (an image Read shows the picture)
     this.model = null;
     this.contextTokens = null;
     this.contextWindow = null;
@@ -233,6 +234,7 @@ export class Normalizer {
         this.emit('text', { messageId: message.id || null, text: b.text, parentToolUseId, model: message.model });
       } else if (b.type === 'tool_use') {
         this.toolNames.set(b.id, b.name);
+        if (b.name === 'Read' && typeof b.input?.file_path === 'string') this.readPaths.set(b.id, b.input.file_path);
         this.emit('tool.start', { toolUseId: b.id, name: b.name, input: clipDeep(b.input), summary: summarizeTool(b.name, b.input), parentToolUseId });
         if (b.name === 'TodoWrite' && Array.isArray(b.input?.todos)) {
           this.emit('todo', { source: 'TodoWrite', todos: b.input.todos.map((t) => ({ content: t.content, status: t.status, activeForm: t.activeForm })), parentToolUseId });
@@ -365,7 +367,11 @@ export class Normalizer {
     const name = this.toolNames.get(b.tool_use_id);
     const output = toolResultText(b.content);
     // SendUserFile: the files the agent showed the owner, each with an id for GET /file/<id> (files.js).
-    const attachments = name === 'SendUserFile' && !b.is_error ? attachmentsFromResult(toolUseResult) : [];
+    // Read of a picture: its result is an image block ("[image]" as text), so the file itself is shown.
+    const readPath = this.readPaths.get(b.tool_use_id);
+    const readImage = name === 'Read' && !b.is_error && readPath && Array.isArray(b.content) && b.content.some((x) => x?.type === 'image');
+    const attachments = name === 'SendUserFile' && !b.is_error ? attachmentsFromResult(toolUseResult)
+      : readImage ? attachmentForReadImage(readPath) : [];
     this.emit('tool.end', {
       toolUseId: b.tool_use_id, name: name || null, isError: !!b.is_error, output: clip(output, 1500), parentToolUseId,
       ...(attachments.length ? { attachments } : {}),
@@ -383,6 +389,7 @@ export class Normalizer {
     }
     // The name was only needed until the result; long sessions would otherwise keep every id forever.
     this.toolNames.delete(b.tool_use_id);
+    this.readPaths.delete(b.tool_use_id);
   }
 
   /** Derive the turn outcome. `ctx` comes from the owner (pending permission prompts, interrupt). */
