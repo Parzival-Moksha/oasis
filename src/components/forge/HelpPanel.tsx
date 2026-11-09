@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 
+import { getAgentEngineClient } from '@/lib/agent-engine-client'
+import { relayFeedbackToDebugger } from '@/lib/feedback-relay'
 import { useUILayer } from '@/lib/input-manager'
 import { useOasisStore } from '@/store/oasisStore'
 import { CreditsTab } from './CreditsTab'
@@ -108,11 +110,19 @@ function ControlsTab() {
   )
 }
 
+/** The feedback box keeps what you typed when you switch tabs or close Help. */
+let feedbackDraft = ''
+
 function FeedbackTab() {
   const activeWorldId = useOasisStore(state => state.activeWorldId)
-  const [text, setText] = useState('')
+  const [text, setTextState] = useState(() => feedbackDraft)
+  const setText = (next: string) => {
+    feedbackDraft = next
+    setTextState(next)
+  }
   const [sending, setSending] = useState(false)
   const [status, setStatus] = useState<'idle' | 'sent' | 'error'>('idle')
+  const [relayed, setRelayed] = useState(false)
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -120,6 +130,8 @@ function FeedbackTab() {
     if (!trimmed || sending) return
     setSending(true)
     setStatus('idle')
+    setRelayed(false)
+    const path = typeof window !== 'undefined' ? window.location.pathname : ''
     try {
       const response = await fetch('/api/analytics/events', {
         method: 'POST',
@@ -130,7 +142,7 @@ function FeedbackTab() {
           source: 'help_panel',
           metadata: {
             text: trimmed.slice(0, 2000),
-            path: typeof window !== 'undefined' ? window.location.pathname : '',
+            path,
             userAgent: typeof window !== 'undefined' ? window.navigator.userAgent.slice(0, 220) : '',
           },
         }),
@@ -138,6 +150,16 @@ function FeedbackTab() {
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       setText('')
       setStatus('sent')
+      // Saved. If the village has a Debugger agent, hand it the same words.
+      const client = getAgentEngineClient()
+      void relayFeedbackToDebugger(
+        { worldId: activeWorldId, path, text: trimmed.slice(0, 2000) },
+        {
+          agents: Object.values(useOasisStore.getState().agentEngine.agents),
+          isOpen: client.isOpen,
+          send: (agentId, message) => client.send(agentId, message),
+        },
+      ).then(result => setRelayed(result === 'sent'))
     } catch {
       setStatus('error')
     } finally {
@@ -181,7 +203,9 @@ function FeedbackTab() {
           {sending ? 'Sending' : 'Send'}
         </button>
       </div>
-      {status === 'sent' && <div className="text-[11px] text-emerald-300">Sent. Thank you.</div>}
+      {status === 'sent' && (
+        <div className="text-[11px] text-emerald-300">{relayed ? 'Sent. The Debugger is on it.' : 'Sent. Thank you.'}</div>
+      )}
       {status === 'error' && <div className="text-[11px] text-rose-300">Could not send. Try again in a moment.</div>}
     </form>
   )
