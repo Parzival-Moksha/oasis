@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   ANORAK_PRO_AVATAR,
+  VILLAGE_MEMORY_KEEP_MS,
+  VILLAGE_SEAT_HOLD_MS,
+  VILLAGE_SPAWN,
   assignVillageAvatars,
+  assignVillageSeats,
   DESK_WINDOW_PX,
   DESK_WINDOW_WORLD,
   computeFocusPose,
@@ -10,16 +14,21 @@ import {
   findNearestStation,
   layoutVillageStations,
   plazaCenter,
+  rememberVillageAgents,
   resolveVillageOrigin,
   ringCapacity,
   stationAxes,
   stationLocalToWorld,
+  villageAgentKey,
+  villageSeatStation,
   type Vec3,
+  type VillageMemory,
+  type VillageRosterAgent,
 } from '../village/village-layout'
 
 const dist = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[2] - b[2])
 
-describe('layoutVillageStations', () => {
+describe('layoutVillageStations / villageSeatStation', () => {
   it('puts a single desk straight ahead of the spawn, facing back toward it', () => {
     const [only] = layoutVillageStations(1)
     const center = plazaCenter()
@@ -48,25 +57,33 @@ describe('layoutVillageStations', () => {
     }
   })
 
+  it('places a seat the same way whatever else is taken, filling the ring from the middle outward', () => {
+    for (const count of [2, 5, 12]) {
+      layoutVillageStations(count).forEach((station, seat) => expect(station).toEqual(villageSeatStation(seat)))
+    }
+    const xs = [0, 1, 2, 3, 4].map(seat => villageSeatStation(seat).position[0])
+    expect(xs[0]).toBeCloseTo(0)
+    expect(Math.sign(xs[1])).toBe(-Math.sign(xs[2])) // one to each side
+    expect(Math.abs(xs[3])).toBeGreaterThan(Math.abs(xs[1]))
+  })
+
   it('returns nothing for an empty roster', () => {
     expect(layoutVillageStations(0)).toEqual([])
   })
 })
 
 describe('resolveVillageOrigin', () => {
-  it('opens the village in the direction the camera looks', () => {
-    const origin = resolveVillageOrigin({ position: [0, 0, 3], forward: [0, 0, 1] }, { position: [0, 2, 7], forward: [0, -0.2, -0.98] })
-    expect(origin.x).toBe(0)
-    expect(origin.z).toBe(3)
-    expect(Math.abs(origin.yaw)).toBeCloseTo(Math.PI)
-    const [first] = layoutVillageStations(1, { origin })
-    expect(first.position[2]).toBeLessThan(3) // ahead of the player, toward -Z
+  it('is the spawn point unless the world says where the village is', () => {
+    expect(resolveVillageOrigin()).toEqual(VILLAGE_SPAWN)
+    expect(resolveVillageOrigin(null)).toEqual({ x: 0, z: 3, yaw: 0 })
+    expect(resolveVillageOrigin({ x: 10, z: -4, yaw: Math.PI })).toEqual({ x: 10, z: -4, yaw: Math.PI })
+    expect(resolveVillageOrigin({ x: 10, z: -4 })).toEqual({ x: 10, z: -4, yaw: 0 })
+    expect(resolveVillageOrigin({ x: Number.NaN, z: 2 })).toEqual(VILLAGE_SPAWN)
   })
 
-  it('falls back to the avatar facing, then to +Z', () => {
-    expect(resolveVillageOrigin({ position: [1, 0, 1], forward: [1, 0, 0] }, { position: [1, 9, 1], forward: [0, -1, 0] }).yaw).toBeCloseTo(Math.PI / 2)
-    expect(resolveVillageOrigin({ position: [1, 0, 1] }, null)).toEqual({ x: 1, z: 1, yaw: 0 })
-    expect(resolveVillageOrigin(null, null)).toEqual({ x: 0, z: 3, yaw: 0 })
+  it("opens the plaza in the world's direction", () => {
+    const [first] = layoutVillageStations(1, { origin: resolveVillageOrigin({ x: 0, z: 0, yaw: Math.PI }) })
+    expect(first.position[2]).toBeLessThan(-6) // toward -Z
   })
 })
 
@@ -93,26 +110,122 @@ describe('station transforms', () => {
   })
 })
 
-describe('assignVillageAvatars', () => {
+const HOUR = 3600 * 1000
+const DAY = 24 * HOUR
+
+/** One page load: remember who is here, seat them, dress them (what VillageWorld does). */
+function visit(agents: VillageRosterAgent[], memory: VillageMemory, now: number, catalog: string[] = [], exclude: string[] = []) {
+  const seen = rememberVillageAgents(agents, memory, now)
+  const seated = assignVillageSeats(agents, seen, now)
+  const dressed = assignVillageAvatars(agents, catalog, exclude, seated.memory, now)
+  return { seats: seated.seats, avatars: dressed.avatars, memory: dressed.memory }
+}
+
+describe('village memory: seats', () => {
+  const rick = { id: 'agent-r', name: 'Rick', sessionId: 'sess-rick' }
+  const tyler = { id: 'agent-t', name: 'Tyler', sessionId: 'sess-tyler' }
+  const anorak = { id: 'obs-a', name: 'Anorak', sessionId: 'sess-anorak' }
+
+  it('keeps every desk across reloads, whatever order the engine lists agents in', () => {
+    const first = visit([rick, tyler, anorak], {}, 1000)
+    expect(first.seats).toEqual({ 'agent-r': 0, 'agent-t': 1, 'obs-a': 2 })
+    // Reload: new agent ids (the engine restarted), another order, the same sessions.
+    const again = visit([{ ...anorak, id: 'obs-b' }, { ...tyler, id: 'agent-t2' }, { ...rick, id: 'agent-r2' }], first.memory, 2000)
+    expect(again.seats).toEqual({ 'obs-b': 2, 'agent-t2': 1, 'agent-r2': 0 })
+  })
+
+  it("seats a newcomer without moving anyone, and holds a leaver's desk for its return", () => {
+    const start = visit([rick, tyler, anorak], {}, 1000)
+    const tylerLeft = visit([rick, anorak], start.memory, 2000)
+    expect(tylerLeft.seats).toEqual({ 'agent-r': 0, 'obs-a': 2 })
+    const newcomer = { id: 'agent-n', name: 'Sandbox', sessionId: 'sess-new' }
+    const arrived = visit([rick, anorak, newcomer], tylerLeft.memory, 3000)
+    expect(arrived.seats).toEqual({ 'agent-r': 0, 'obs-a': 2, 'agent-n': 3 }) // seat 1 is still Tyler's
+    const back = visit([rick, anorak, newcomer, tyler], arrived.memory, 4000)
+    expect(back.seats['agent-t']).toBe(1)
+    // Long gone: the hold lapses and the next newcomer may sit there.
+    const later = visit([rick, anorak, newcomer], back.memory, 5000)
+    const zed = { id: 'agent-z', name: 'Z', sessionId: 'sess-z' }
+    const muchLater = visit([rick, anorak, newcomer, zed], later.memory, 5000 + VILLAGE_SEAT_HOLD_MS + HOUR)
+    expect(muchLater.seats['agent-z']).toBe(1)
+  })
+
+  it("moves a brand-new agent's seat from its id to its session once it has one", () => {
+    const fresh = { id: 'agent-f', name: 'Fresh', sessionId: null }
+    const first = visit([rick, fresh], {}, 1000)
+    expect(first.seats['agent-f']).toBe(1)
+    expect(first.memory['agent-f']?.seat).toBe(1)
+    const withSession = visit([rick, { ...fresh, sessionId: 'sess-f' }], first.memory, 1100)
+    expect(withSession.seats['agent-f']).toBe(1)
+    expect(withSession.memory['sess-f']?.seat).toBe(1)
+    expect(withSession.memory['agent-f']).toBeUndefined()
+  })
+
+  it('"Move it here": the moved agent borrows a seat while the watcher is still there, then takes over its desk', () => {
+    const watching = visit([rick, anorak], {}, 1000)
+    const owned = { id: 'agent-a', name: 'Anorak', sessionId: 'sess-anorak' }
+    const both = visit([rick, anorak, owned], watching.memory, 2000)
+    expect(both.seats).toEqual({ 'agent-r': 0, 'obs-a': 1, 'agent-a': 2 })
+    expect(both.memory['sess-anorak']?.seat).toBe(1)
+    const after = visit([rick, owned], both.memory, 2100)
+    expect(after.seats).toEqual({ 'agent-r': 0, 'agent-a': 1 })
+  })
+
+  it('forgets agents not seen for a long time', () => {
+    const first = visit([rick, tyler], {}, 1000)
+    const later = visit([rick], first.memory, 1000 + VILLAGE_MEMORY_KEEP_MS + DAY)
+    expect(Object.keys(later.memory)).toEqual(['sess-rick'])
+    expect(villageAgentKey({ id: 'agent-x', sessionId: null })).toBe('agent-x')
+  })
+})
+
+describe('village memory: bodies', () => {
   const catalog = ['/a.vrm', '/b.vrm', '/c.vrm', ANORAK_PRO_AVATAR]
+  const agents = [{ id: '1', name: 'Rick', sessionId: 's1' }, { id: '2', name: 'Tyler', sessionId: 's2' }, { id: '3', name: 'Sysadmin', sessionId: 's3' }]
 
-  it('gives each agent a distinct body, never the excluded (player) one, stable per name', () => {
-    const agents = [{ id: '1', name: 'Rick' }, { id: '2', name: 'Tyler' }, { id: '3', name: 'Sysadmin' }]
-    const first = assignVillageAvatars(agents, catalog, ['/b.vrm'])
-    expect(new Set(Object.values(first)).size).toBe(3)
-    expect(Object.values(first)).not.toContain('/b.vrm')
-    expect(assignVillageAvatars(agents, catalog, ['/b.vrm'])).toEqual(first)
+  it("gives newcomers distinct bodies, never the player's, and Anorak Pro its unicorn", () => {
+    const { avatars } = visit(agents, {}, 1000, catalog, ['/b.vrm'])
+    expect(new Set(Object.values(avatars)).size).toBe(3)
+    expect(Object.values(avatars)).not.toContain('/b.vrm')
+    expect(Object.values(avatars)).not.toContain(ANORAK_PRO_AVATAR) // kept for Anorak
+    expect(visit([{ id: 'x', name: 'Anorak Pro', sessionId: 'sx' }], {}, 1000, catalog).avatars).toEqual({ x: ANORAK_PRO_AVATAR })
   })
 
-  it('dresses Anorak Pro as Anorak Pro', () => {
-    expect(assignVillageAvatars([{ id: 'x', name: 'Anorak Pro' }], catalog)).toEqual({ x: ANORAK_PRO_AVATAR })
+  it("keeps each agent's body when the player changes avatar or switches worlds", () => {
+    const first = visit(agents, {}, 1000, catalog, ['/b.vrm'])
+    const rickBody = first.avatars['1']
+    // The player now wears Rick's body, and another world places an NPC in Tyler's.
+    const next = visit(agents, first.memory, 2000, catalog, [rickBody, first.avatars['2']])
+    expect(next.avatars['1'].startsWith(`${rickBody}?copy=`)).toBe(true)
+    expect(next.avatars['2'].startsWith(`${first.avatars['2']}?copy=`)).toBe(true)
+    expect(next.avatars['3']).toBe(first.avatars['3'])
+    expect(next.memory.s1.skin).toBe(rickBody)
   })
 
-  it('makes distinct URLs when there are more agents than bodies', () => {
-    const agents = Array.from({ length: 6 }, (_, i) => ({ id: `id${i}`, name: `agent ${i}` }))
-    const paths = Object.values(assignVillageAvatars(agents, catalog))
+  it('Anorak keeps the unicorn even when the player wears it', () => {
+    const anorak = [{ id: 'x', name: 'Anorakdev', sessionId: 'sx' }]
+    expect(visit(anorak, {}, 1000, catalog, [ANORAK_PRO_AVATAR]).avatars.x).toMatch(/UnicornPerson\.vrm\?copy=\d+$/)
+  })
+
+  it('makes distinct URLs when there are more agents than bodies, and copies keep their URL when others leave', () => {
+    const many = Array.from({ length: 6 }, (_, i) => ({ id: `id${i}`, name: `agent ${i}`, sessionId: `s${i}` }))
+    const first = visit(many, {}, 1000, catalog)
+    const paths = Object.values(first.avatars)
     expect(new Set(paths).size).toBe(6)
-    expect(paths.filter(path => path.includes('?copy='))).toHaveLength(2)
+    expect(paths.filter(path => path.includes('?copy='))).toHaveLength(3)
+    const fewer = visit(many.slice(1), first.memory, 2000, catalog)
+    for (const agent of many.slice(1)) {
+      // Same body as before; a copy only turns plain when the agent that wore it plain left.
+      expect(fewer.avatars[agent.id].replace(/\?copy=\d+$/, '')).toBe(first.avatars[agent.id].replace(/\?copy=\d+$/, ''))
+      if (fewer.avatars[agent.id].includes('?copy=')) expect(fewer.avatars[agent.id]).toBe(first.avatars[agent.id])
+    }
+  })
+
+  it('re-dresses an agent whose remembered body left the catalog', () => {
+    const memory: VillageMemory = { s1: { skin: '/gone.vrm', seenAt: 1000 } }
+    const { avatars, memory: next } = visit([agents[0]], memory, 2000, catalog)
+    expect(catalog).toContain(avatars['1'])
+    expect(next.s1.skin).toBe(avatars['1'])
   })
 })
 

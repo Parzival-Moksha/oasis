@@ -68,7 +68,8 @@ interface SpawnDefaults {
 function SessionRow({ session, defaults, onDone, onError }: { session: EngineSessionMeta; defaults: SpawnDefaults; onDone: (agentId: string) => void; onError: ErrorSink }) {
   const [busy, setBusy] = useState<'spawn' | 'observe' | null>(null)
   const client = getAgentEngineClient()
-  const name = (session.title || cwdLabel(session.cwd) || 'agent').slice(0, 32)
+  // The whole title: the agents menu shows names in full (it only caps runaway ones).
+  const name = (session.title || cwdLabel(session.cwd) || 'agent').slice(0, 120)
 
   const spawn = () => {
     if (!session.cwd) return

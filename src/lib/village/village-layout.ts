@@ -14,23 +14,19 @@ export interface VillageOrigin {
 }
 
 /**
- * Where the village goes: in front of what the player sees when the world loads. The camera's
- * horizontal forward wins (third-person looks past the avatar); the avatar's facing is the
- * fallback when the camera looks straight down; +Z from the spawn point is the last resort.
+ * Where the village stands in a world: fixed, so desks are where you left them after a reload,
+ * wherever the camera happens to look. A world may say where (`village: {x, z, yaw}`); otherwise
+ * the plaza opens in front of the spawn point.
+ *
+ * TODO: no world carries `village` yet. WorldState is rebuilt field by field on every save
+ * (oasisStore.ts: three saveWorld calls + the loader), so the field has to be threaded there first.
  */
-export function resolveVillageOrigin(
-  avatar: { position: Vec3; forward?: Vec3 } | null | undefined,
-  camera: { position: Vec3; forward: Vec3 } | null | undefined,
-): VillageOrigin {
-  const base = avatar?.position || camera?.position
-  if (!base) return { ...VILLAGE_SPAWN }
-  const candidates: Array<Vec3 | undefined> = [camera?.forward, avatar?.forward]
-  for (const forward of candidates) {
-    if (!forward) continue
-    if (Math.hypot(forward[0], forward[2]) < 0.2) continue
-    return { x: base[0], z: base[2], yaw: Math.atan2(forward[0], forward[2]) }
+export function resolveVillageOrigin(worldVillage?: Partial<VillageOrigin> | null): VillageOrigin {
+  const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
+  if (worldVillage && finite(worldVillage.x) && finite(worldVillage.z)) {
+    return { x: worldVillage.x, z: worldVillage.z, yaw: finite(worldVillage.yaw) ? worldVillage.yaw : 0 }
   }
-  return { x: base[0], z: base[2], yaw: 0 }
+  return { ...VILLAGE_SPAWN }
 }
 
 export interface VillageLayoutOptions {
@@ -79,30 +75,134 @@ export function ringCapacity(ring: number, options: VillageLayoutOptions = {}): 
 }
 
 /**
- * Desks on arcs around a plaza in front of the spawn point, on the far side so the player
- * walks toward them. The first ring fills from the middle outward; extra agents go to wider rings.
+ * Desk number `seat` on arcs around a plaza in front of the village origin, on the far side so the
+ * player walks toward them. Seat 0 is straight ahead, then the ring fills alternately to either side
+ * (0, +1, -1, +2, -2 ...); full rings spill into wider ones. A seat's place never depends on how many
+ * other seats are taken, so an arrival or a departure moves nobody.
  */
-export function layoutVillageStations(count: number, options: VillageLayoutOptions = {}): VillageStationLayout[] {
+export function villageSeatStation(seat: number, options: VillageLayoutOptions = {}): VillageStationLayout {
   const origin = options.origin || VILLAGE_SPAWN
   const center = plazaCenter(options)
   const spacing = options.spacing ?? DEFAULTS.spacing
-  const out: VillageStationLayout[] = []
-  let remaining = Math.max(0, Math.floor(count))
+  let slot = Math.max(0, Math.floor(seat))
   let ring = 0
-  while (remaining > 0) {
-    const radius = (options.radius ?? DEFAULTS.radius) + ring * (options.ringGap ?? DEFAULTS.ringGap)
-    const step = 2 * Math.asin(Math.min(1, spacing / 2 / radius))
-    const onRing = Math.min(remaining, ringCapacity(ring, options))
-    for (let slot = 0; slot < onRing; slot += 1) {
-      const angle = origin.yaw + (slot - (onRing - 1) / 2) * step
-      const x = center.x + Math.sin(angle) * radius
-      const z = center.z + Math.cos(angle) * radius
-      out.push({ position: [x, 0, z], rotationY: Math.atan2(center.x - x, center.z - z), ring, slot })
-    }
-    remaining -= onRing
+  while (slot >= ringCapacity(ring, options)) {
+    slot -= ringCapacity(ring, options)
     ring += 1
   }
-  return out
+  const radius = (options.radius ?? DEFAULTS.radius) + ring * (options.ringGap ?? DEFAULTS.ringGap)
+  const step = 2 * Math.asin(Math.min(1, spacing / 2 / radius))
+  const offset = slot % 2 === 1 ? (slot + 1) / 2 : -slot / 2
+  const angle = origin.yaw + offset * step
+  const x = center.x + Math.sin(angle) * radius
+  const z = center.z + Math.cos(angle) * radius
+  return { position: [x, 0, z], rotationY: Math.atan2(center.x - x, center.z - z), ring, slot }
+}
+
+/** Seats 0 .. count-1. */
+export function layoutVillageStations(count: number, options: VillageLayoutOptions = {}): VillageStationLayout[] {
+  return Array.from({ length: Math.max(0, Math.floor(count)) }, (_, seat) => villageSeatStation(seat, options))
+}
+
+// ─── memory: each agent keeps its desk and its body ─────────────────────────
+
+/** What the village remembers per agent: its desk number and its body (a base VRM path). */
+export interface VillageMemoryEntry {
+  seat?: number
+  skin?: string
+  /** Last time this agent was in the village (ms). */
+  seenAt: number
+}
+export type VillageMemory = Record<string, VillageMemoryEntry>
+
+export interface VillageRosterAgent {
+  id: string
+  name: string
+  sessionId?: string | null
+}
+
+/** A seat held by an agent that left stays its own this long, so it gets its desk back when it returns. */
+export const VILLAGE_SEAT_HOLD_MS = 3 * 24 * 3600 * 1000
+/** Bodies are remembered longer: keeping a face is cheap, a seat gap is not. */
+export const VILLAGE_MEMORY_KEEP_MS = 60 * 24 * 3600 * 1000
+const VILLAGE_MEMORY_MAX = 300
+
+/** The session is the agent (an observer moved here, a resumed one); brand-new agents go by id until they have one. */
+export function villageAgentKey(agent: { id: string; sessionId?: string | null }): string {
+  return agent.sessionId || agent.id
+}
+
+/**
+ * Bring the memory up to date with who is here: move an agent's entry from its id to its session once
+ * it has one, stamp everyone present as seen, forget long-gone agents.
+ */
+export function rememberVillageAgents(agents: VillageRosterAgent[], memory: VillageMemory, now: number): VillageMemory {
+  const next: VillageMemory = { ...memory }
+  for (const agent of agents) {
+    if (!agent.sessionId || agent.sessionId === agent.id) continue
+    const byId = next[agent.id]
+    if (!byId) continue
+    if (!next[agent.sessionId]) next[agent.sessionId] = byId
+    delete next[agent.id]
+  }
+  const present = new Set(agents.map(villageAgentKey))
+  for (const key of present) next[key] = { ...next[key], seenAt: now }
+  for (const [key, entry] of Object.entries(next)) {
+    if (!present.has(key) && !(now - (entry.seenAt || 0) < VILLAGE_MEMORY_KEEP_MS)) delete next[key]
+  }
+  const keys = Object.keys(next)
+  if (keys.length > VILLAGE_MEMORY_MAX) {
+    keys
+      .filter(key => !present.has(key))
+      .sort((a, b) => (next[a].seenAt || 0) - (next[b].seenAt || 0))
+      .slice(0, keys.length - VILLAGE_MEMORY_MAX)
+      .forEach(key => { delete next[key] })
+  }
+  return next
+}
+
+/**
+ * A desk per agent. Agents keep the seat they had; a newcomer takes the lowest seat nobody here sits
+ * in and nobody who left recently holds. Two agents on one session (a moment during "Move it here"):
+ * the first keeps the seat, the second sits elsewhere until the first is gone. Call after
+ * rememberVillageAgents (it reads `seenAt`).
+ */
+export function assignVillageSeats(
+  agents: VillageRosterAgent[],
+  memory: VillageMemory,
+  now: number,
+): { seats: Record<string, number>; memory: VillageMemory } {
+  const next: VillageMemory = { ...memory }
+  const present = new Set(agents.map(villageAgentKey))
+  const seats: Record<string, number> = {}
+  const occupied = new Set<number>()
+  const seatedKeys = new Set<string>()
+  for (const agent of agents) {
+    const key = villageAgentKey(agent)
+    const seat = next[key]?.seat
+    if (seatedKeys.has(key) || typeof seat !== 'number' || occupied.has(seat)) continue
+    seats[agent.id] = seat
+    occupied.add(seat)
+    seatedKeys.add(key)
+  }
+  const held = new Set<number>()
+  for (const [key, entry] of Object.entries(next)) {
+    if (!present.has(key) && typeof entry.seat === 'number' && now - (entry.seenAt || 0) < VILLAGE_SEAT_HOLD_MS) held.add(entry.seat)
+  }
+  let cursor = 0
+  for (const agent of agents) {
+    if (agent.id in seats) continue
+    while (occupied.has(cursor) || held.has(cursor)) cursor += 1
+    seats[agent.id] = cursor
+    occupied.add(cursor)
+    const key = villageAgentKey(agent)
+    // The second agent on a session borrows a seat; the session's own seat stays with the first.
+    if (!seatedKeys.has(key)) {
+      next[key] = { ...next[key], seat: cursor, seenAt: next[key]?.seenAt ?? now }
+      seatedKeys.add(key)
+    }
+  }
+  return { seats, memory: next }
 }
 
 /** Station-local offsets (local +Z faces the plaza). */
@@ -214,39 +314,68 @@ function hashString(value: string): number {
 }
 
 /**
- * Give every agent its own VRM. One loaded VRM scene can only be on screen once, so two agents
- * (or an agent and the player) must never share a URL. Assignment is stable per name and order.
+ * Give every agent a body and let it keep that body: once picked, the skin is remembered per session,
+ * so switching worlds or putting on another avatar never re-dresses the village. A newcomer gets a
+ * body nobody here wears (the player's and the world's included); the first Anorak gets UnicornPerson.
+ * One loaded VRM scene can only be on screen once, so when two agents, or an agent and the player,
+ * wear the same body, the later one gets its own `?copy=` URL (a second cache entry in the loader).
  */
 export function assignVillageAvatars(
-  agents: Array<{ id: string; name: string }>,
+  agents: VillageRosterAgent[],
   catalog: string[],
   exclude: Iterable<string> = [],
-): Record<string, string> {
+  memory: VillageMemory = {},
+  now = 0,
+): { avatars: Record<string, string>; memory: VillageMemory } {
+  const next: VillageMemory = { ...memory }
   const excluded = new Set(exclude)
-  const pool = catalog.filter(path => !excluded.has(path))
-  const taken = new Set<string>()
-  const out: Record<string, string> = {}
-  let duplicates = 0
+  const known = new Set(catalog)
+  const bases: Record<string, string> = {}
+  const worn = new Set<string>()
+  // Remembered bodies first, so a newcomer never takes one from an agent that already wears it.
   for (const agent of agents) {
+    const skin = next[villageAgentKey(agent)]?.skin
+    if (skin && known.has(skin)) {
+      bases[agent.id] = skin
+      worn.add(skin)
+    }
+  }
+  const pool = catalog.filter(path => !excluded.has(path) && path !== ANORAK_PRO_AVATAR)
+  for (const agent of agents) {
+    if (bases[agent.id]) continue
     let pick: string | null = null
-    if (/anorak/i.test(agent.name) && pool.includes(ANORAK_PRO_AVATAR) && !taken.has(ANORAK_PRO_AVATAR)) pick = ANORAK_PRO_AVATAR
+    if (/anorak/i.test(agent.name) && known.has(ANORAK_PRO_AVATAR) && !worn.has(ANORAK_PRO_AVATAR)) pick = ANORAK_PRO_AVATAR
     if (!pick && pool.length) {
       const start = hashString(agent.name || agent.id) % pool.length
       for (let i = 0; i < pool.length && !pick; i += 1) {
         const candidate = pool[(start + i) % pool.length]
-        if (!taken.has(candidate)) pick = candidate
+        if (!worn.has(candidate)) pick = candidate
       }
     }
-    if (!pick) {
-      // More agents than bodies: reuse one under a distinct URL so the loader caches a second copy.
-      const base = pool[hashString(agent.id) % Math.max(1, pool.length)] || catalog[0] || ''
-      duplicates += 1
-      pick = `${base}?copy=${duplicates}`
-    }
-    taken.add(pick)
-    out[agent.id] = pick
+    // More agents than bodies: share one (it gets its own URL below).
+    if (!pick) pick = pool[hashString(agent.id) % Math.max(1, pool.length)] || catalog[0] || ''
+    bases[agent.id] = pick
+    worn.add(pick)
+    const key = villageAgentKey(agent)
+    if (pick) next[key] = { ...next[key], skin: pick, seenAt: next[key]?.seenAt ?? now }
   }
-  return out
+  // URLs: the first wearer of a body gets it plain, later ones (and anyone in the player's) a copy.
+  // The copy number comes from the agent's key, so it doesn't shift when others come and go.
+  const avatars: Record<string, string> = {}
+  const used = new Set<string>()
+  for (const agent of agents) {
+    const base = bases[agent.id]
+    let url = base
+    if (excluded.has(base) || used.has(base)) {
+      let copy = (hashString(villageAgentKey(agent)) % 9000) + 1
+      while (used.has(`${base}?copy=${copy}`)) copy += 1
+      url = `${base}?copy=${copy}`
+    }
+    used.add(url)
+    used.add(base)
+    avatars[agent.id] = url
+  }
+  return { avatars, memory: next }
 }
 
 // ─── camera framing for the session view ────────────────────────────────────
