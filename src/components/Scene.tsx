@@ -2039,8 +2039,8 @@ export default function Scene() {
         {/* ─═̷─═̷─⚔ Combat-bolt dispatcher — replaces the legacy FireboltLayer
             and routes to the 10 designs in src/components/forge/bolts/ based
             on settings.{spell}Design. Mounted only when RP1/exploration mode
-            is active. ─═̷─═̷─⚔ */}
-        {!villageProfile && <CombatBoltLayer enabled={effectiveRp1Mode} settings={settings} />}
+            is active. In the village too: bolts hit the agents there (cosmetic HP, village-combat.ts). ─═̷─═̷─⚔ */}
+        <CombatBoltLayer enabled={effectiveRp1Mode} settings={settings} />
         {!villageProfile && <QuestZeroNpcExclamation activeWorldId={activeWorldId} />}
 
         {/* ─═̷─═̷─📸─═̷─═̷─ PANORAMA CAPTURE (Ctrl+Shift+P) ─═̷─═̷─📸─═̷─═̷─ */}

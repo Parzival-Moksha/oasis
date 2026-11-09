@@ -12,6 +12,8 @@ import { QUEST_ZERO_WORLD_ID } from '@/lib/portal-gates'
 import { useAudioManager } from '@/lib/audio-manager'
 import { getLatestPlayers, getPvpEnabled } from '@/lib/pvp-bridge'
 import type { CollisionTarget } from './types'
+import { getVillageAnchors } from '@/components/village/village-actions'
+import { VILLAGE_TARGET_HEIGHT, VILLAGE_TARGET_PREFIX, VILLAGE_TARGET_RADIUS, canHitVillageAgent } from '@/lib/village/village-combat'
 
 // ─═̷─═̷─ⓘ─═̷─═̷─ CONSTANTS — keep aligned with FireboltLayer ─═̷─═̷─ⓘ─═̷─═̷─
 export const BOLT_DEFAULT_TTL_S = 1.75
@@ -139,6 +141,19 @@ export function collectCollisionTargets(): CollisionTarget[] {
         radius: 0.7,
       })
     }
+  }
+
+  // ─═̷─ Village agents (?profile=village): chest-high spheres at their desks, for fun. A hit only
+  // costs cosmetic HP (village-combat.ts); a knocked-out agent is skipped until it is back up. ─═̷─
+  const now = Date.now()
+  for (const [agentId, anchor] of Object.entries(getVillageAnchors())) {
+    if (!canHitVillageAgent(agentId, now)) continue
+    // Targets are placed by their base: the hit tests add min(1.4, radius) to find the centre.
+    targets.push({
+      id: `${VILLAGE_TARGET_PREFIX}${agentId}`,
+      position: [anchor[0], anchor[1] + VILLAGE_TARGET_HEIGHT - VILLAGE_TARGET_RADIUS, anchor[2]],
+      radius: VILLAGE_TARGET_RADIUS,
+    })
   }
 
   return targets

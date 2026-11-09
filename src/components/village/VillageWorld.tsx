@@ -37,6 +37,7 @@ import { effectiveStatus } from '../../store/slices/agentEngineSlice'
 import { AgentSessionView, SessionWindowHeader } from './AgentSessionView'
 import { VillageComposer } from './VillageComposer'
 import { GAME_HUD_TEXT, GameKeycap } from '../forge/GameKeycap'
+import { VillageHpBar, useVillageCombatPose } from './VillageCombatHud'
 import {
   focusVillageAgent,
   getSessionPanelGeometry,
@@ -192,6 +193,7 @@ function StationLabel({ agentId, nearby }: { agentId: string; nearby: boolean })
   const sign = info.status === 'waiting' && !info.unseen ? null : ATTENTION_SIGN[info.status]
   return (
     <div className="pointer-events-none flex select-none flex-col items-center gap-1" style={{ transform: 'translateY(-50%)' }}>
+      <VillageHpBar agentId={agentId} />
       {sign && (
         <div
           className="flex h-6 w-6 items-center justify-center rounded-full text-[15px] font-black"
@@ -305,6 +307,8 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, overlayZ
   const focused = useOasisStore(s => s.agentEngine.focusedAgentId === agentId)
   const nearby = useOasisStore(s => s.agentEngine.nearbyAgentId === agentId)
   const onScreen = useSyncExternalStore(subscribeVillageScreen, () => getVillageScreen() === agentId, () => false)
+  // Shot by the player's bolts (village-combat.ts, cosmetic): flinch, or the knockout clip.
+  const combatPose = useVillageCombatPose(agentId)
   // While placing or painting, the desk must not swallow the clicks meant for the ground plane.
   const blocked = useInputManager(s => isVillageFocusBlocked(s.inputState))
   const color = statusColor(status)
@@ -327,7 +331,8 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, overlayZ
               path={`${avatarUrl}#village`}
               scale={1}
               displayName={name}
-              activityAnimationId={status === 'working' ? WORK_ANIMATION_ID : null}
+              activityAnimationId={combatPose ? combatPose.animationId : status === 'working' ? WORK_ANIMATION_ID : null}
+              activityOnce={Boolean(combatPose)}
             />
           </Suspense>
         </VillageBodyBoundary>

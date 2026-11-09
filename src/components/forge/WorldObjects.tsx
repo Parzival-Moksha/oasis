@@ -1647,7 +1647,7 @@ export function CatalogModelRenderer({ path, scale, objectId }: { path: string; 
 // frozen mannequins. With it, they LIVE — blink, sway, smile.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function VRMCatalogRenderer({ path, scale, objectId, displayName, activityAnimationId }: { path: string; scale: number; objectId?: string; displayName?: string; activityAnimationId?: string | null }) {
+export function VRMCatalogRenderer({ path, scale, objectId, displayName, activityAnimationId, activityOnce = false }: { path: string; scale: number; objectId?: string; displayName?: string; activityAnimationId?: string | null; /** Play the activity clip once and hold its last frame (a death, a flinch). */ activityOnce?: boolean }) {
   const groupRef = useRef<THREE.Group>(null)
   const vrmRef = useRef<VRM | null>(null)
   const [vrm, setVrm] = useState<VRM | null>(null)
@@ -1909,7 +1909,9 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
         action.clampWhenFinished = loop === 'once'
         action.timeScale = animConfig?.speed || 1
       } else {
-        action.setLoop(THREE.LoopRepeat, Infinity)
+        const once = target === 'activity' && activityOnce
+        action.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, once ? 1 : Infinity)
+        action.clampWhenFinished = once
         // Walk anim sped up 2x — feet were lagging behind translation (oasisspec3 fix)
         if (target === 'walk') action.timeScale = 2
         if (target === 'activity') action.timeScale = 1
@@ -1921,7 +1923,7 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
     activeAnimRef.current = target
     activeClipRef.current = targetClip
     console.log(`[VRM:NPC] ${displayName || objectId} → anim: ${target}`)
-  }, [isMoving, walkClip, idleClip, behaviorClip, activityClip, animConfig?.loop, animConfig?.speed, displayName, objectId])
+  }, [isMoving, walkClip, idleClip, behaviorClip, activityClip, activityOnce, animConfig?.loop, animConfig?.speed, displayName, objectId])
 
   useEffect(() => {
     const mixer = mixerRef.current

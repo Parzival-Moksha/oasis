@@ -34,6 +34,7 @@ import { preloadSpellSoundManifest, resolveSpellSoundUrl } from '@/lib/spell-sou
 import { getAudioListener } from '@/components/CameraController'
 import { useOasisStore } from '@/store/oasisStore'
 import { getPvpEnabled, onHitAward, onRemoteBolt, sendPvpCast, sendPvpReportHit, type PvpHitAwardEvent, type PvpRemoteBolt } from '@/lib/pvp-bridge'
+import { VILLAGE_TARGET_PREFIX, damageVillageAgent } from '@/lib/village/village-combat'
 import type { OasisSettings } from '@/components/scene-lib/types'
 import { isProbablyMobileDevice } from '@/lib/mobile-controls'
 
@@ -331,6 +332,11 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
     | ((updater: (prev: CometTailHitMarker[]) => CometTailHitMarker[]) => void)
     | null,
   ) => {
+    if (target.id.startsWith(VILLAGE_TARGET_PREFIX)) {
+      // A village agent: cosmetic HP only, never anything sent to its Claude Code process.
+      damageVillageAgent(target.id.slice(VILLAGE_TARGET_PREFIX.length))
+      return
+    }
     if (target.id.startsWith('pvp:')) {
       // Only the caster reports their own bolt's hits — remote bolts that
       // happen to pass through a peer capsule on this client should not

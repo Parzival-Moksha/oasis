@@ -117,7 +117,8 @@ If `CLAUDE.md`, old memory notes, or stale comments disagree with current code, 
 - Agents come from the engine sidecar: `pnpm dev:engine` (ws://127.0.0.1:4530/ws, `NEXT_PUBLIC_AGENT_ENGINE_URL` to override). Client: `src/lib/agent-engine-client.ts` (one socket, backoff reconnect, typed commands). Engine offline = the village shows "engine offline", nothing else changes.
 - UI lives in `src/components/village/`: `VillageWorld` (desks, VRM bodies, status rings, desk windows, camera rig; inside the Canvas), `AgentSessionView` (the one renderer for engine schema v1, used by the desk windows and the 2D panel), `AgentSessionPanel` (composer, interrupt, model / mode), `SessionPicker` (spawn or observe sessions), `VillageHud`, `VillageController` (socket, keys, proximity, focus hand-off). Layout math: `src/lib/village/`.
 - Keys: E talks to the nearest agent, N jumps to the next agent needing you (decision > error > finished-unseen), Esc leaves the text box and then the agent. Focus uses the InputManager `agent-focus` state; the composer stops keydown so typing never moves the avatar.
-- Not mounted in the village: combat / PvP / vitals, quests and Rookie Merlin, realtime-NPC and Gemini panels, the old Merlin / Anorak / Codex / Anorak Pro / Hermes / OpenClaw panels, multiplayer presence and chat, Mindcraft bridge, Portal Zero canonical button. Nothing village-side is saved into the world.
+- Combat bolts are mounted in the village: they hit the agents at their desks for cosmetic HP (`src/lib/village/village-combat.ts`; a K.O. is a fall-down animation and a respawn, never an engine command).
+- Not mounted in the village: PvP / vitals, quests and Rookie Merlin, realtime-NPC and Gemini panels, the old Merlin / Anorak / Codex / Anorak Pro / Hermes / OpenClaw panels, multiplayer presence and chat, Mindcraft bridge, Portal Zero canonical button. Nothing village-side is saved into the world.
 
 ## Anthropic Integration Notes
 
