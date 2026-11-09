@@ -1,19 +1,21 @@
 'use client'
 
-// ░▒▓ VILLAGE COMPOSER — the text box under a focused agent, in the side panel or on its screen (F) ▓▒░
-// Typing never reaches the world: keydown stops here, keyup still bubbles so no movement key can get
-// stuck (the WASD-stuck bug class). The mic (button, T, Ctrl+Space) dictates live: your words appear
-// in the box while you talk (Moonshine in the agent engine), and Enter sends as usual.
+// ░▒▓ VILLAGE COMPOSER — the text box under an open agent, in the side panel or on its screen (F) ▓▒░
+// Talking comes first: the box never grabs the keyboard when it opens, so T starts and stops the mic,
+// Enter sends and F / N / Esc keep working. Click the box to type. Typing never reaches the world:
+// keydown stops here, keyup still bubbles so no movement key can get stuck (the WASD-stuck bug class).
+// The mic dictates live: your words appear while you talk (Moonshine in the agent engine).
+// The box grows with what is in it up to about 450 px, then scrolls, and keeps the newest words in view.
+// Drag the grip above it to make it taller or shorter (double-click the grip: automatic again).
 
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
-import { isProbablyMobileDevice } from '../../lib/mobile-controls'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
 import { useAgentVoiceInput } from '../../hooks/useAgentVoiceInput'
+import { DESK_WINDOW_PX } from '../../lib/village/village-layout'
+import { composerHeight, composerMaxHeight } from '../../lib/village/village-keys'
 import { showNotice } from '../forge/GlobalNotice'
-import { subscribeVillageSend, subscribeVillageVoiceToggle } from './village-actions'
-
-const MOVEMENT_CODES = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight'])
+import { subscribeVillageSend, subscribeVillageVoiceStop, subscribeVillageVoiceToggle, takeVillageVoiceRequest } from './village-actions'
 
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -25,23 +27,51 @@ function joinText(base: string, spoken: string): string {
   return /\s$/.test(base) ? `${base}${spoken}` : `${base} ${spoken}`
 }
 
-export function VillageComposer({ agentId, large = false }: { agentId: string; large?: boolean }) {
+/** What is in each agent's box, kept when the box remounts (F to the screen and back, N, leaving and coming back). */
+const drafts = new Map<string, string>()
+/** Height the owner dragged the box to, per place (null: automatic). */
+const manualHeights: Record<'panel' | 'screen', number | null> = { panel: null, screen: null }
+
+function useViewportHeight(): number {
+  const [height, setHeight] = useState(() => (typeof window === 'undefined' ? 800 : window.innerHeight))
+  useEffect(() => {
+    const onResize = () => setHeight(window.innerHeight)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  return height
+}
+
+export function VillageComposer({ agentId, large = false, containerHeight }: {
+  agentId: string
+  /** On the agent's screen (F): bigger type. */
+  large?: boolean
+  /** Height of what holds the box (side panel, screen): the box takes at most half of it. */
+  containerHeight?: number
+}) {
   const status = useOasisStore(s => s.agentEngine.agents[agentId]?.status || 'idle')
   const pendingUser = useOasisStore(s => s.agentEngine.agents[agentId]?.pendingUser || 0)
-  const [text, setText] = useState('')
+  // A desktop-app session reached through the Oasis plugin: the app owns interrupt and priorities.
+  const owned = useOasisStore(s => Boolean(s.agentEngine.agents[agentId]?.owned))
+  const [text, setTextState] = useState(() => drafts.get(agentId) || '')
+  const setText = useCallback((next: string) => {
+    if (next) drafts.set(agentId, next)
+    else drafts.delete(agentId)
+    setTextState(next)
+  }, [agentId])
   const [urgent, setUrgent] = useState(false)
   const [sending, setSending] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const focusedAtRef = useRef(0)
   /** What was in the box when the mic started; live words go after it. */
   const voiceBaseRef = useRef<string | null>(null)
   const working = status === 'working' || status === 'needs-decision'
-  // On the zoomed-in screen (F) talking comes first: the box doesn't take the keyboard, so T starts and
-  // stops the mic and Enter sends without clicking anything. Click the box to type instead.
-  const voiceFirst = large
+  const viewportHeight = useViewportHeight()
+  const minHeight = large ? 96 : 64
+  const maxHeight = composerMaxHeight(containerHeight ?? (large ? DESK_WINDOW_PX.screen.height : viewportHeight))
+  const place = large ? 'screen' : 'panel'
 
   const voice = useAgentVoiceInput({
-    focusTargetRef: voiceFirst ? undefined : textareaRef,
+    // No focusTargetRef: the box stays out of the keyboard's way after dictation too (T, Enter keep working).
     enablePlayerLipSync: true,
     onLiveText: (spoken) => {
       if (voiceBaseRef.current === null) voiceBaseRef.current = textareaRef.current?.value ?? ''
@@ -56,28 +86,75 @@ export function VillageComposer({ agentId, large = false }: { agentId: string; l
   voiceToggleRef.current = voice.toggle
   const voiceStopRef = useRef(voice.stop)
   voiceStopRef.current = voice.stop
+  const listeningRef = useRef(voice.listening)
+  listeningRef.current = voice.listening
 
-  // T / Ctrl+Space from anywhere in the village toggle this box's mic.
-  useEffect(() => subscribeVillageVoiceToggle(() => {
-    if (!voice.listening) voiceBaseRef.current = textareaRef.current?.value ?? ''
+  const toggleVoice = useCallback(() => {
+    if (!listeningRef.current) voiceBaseRef.current = textareaRef.current?.value ?? ''
     void voiceToggleRef.current()
-  }), [voice.listening])
+  }, [])
+
+  // T / Ctrl+Space from anywhere in the village toggle this box's mic; Esc stops it first.
+  useEffect(() => subscribeVillageVoiceToggle(toggleVoice), [toggleVoice])
+  useEffect(() => subscribeVillageVoiceStop(() => {
+    if (!listeningRef.current) return false
+    voiceStopRef.current()
+    return true
+  }), [])
+
+  // T next to the agent opened this window: the mic starts right away.
+  useEffect(() => {
+    if (takeVillageVoiceRequest(agentId)) toggleVoice()
+  }, [agentId, toggleVoice])
 
   // Wake the voice model while you are with an agent, so the first words come fast.
   useEffect(() => {
     getAgentEngineClient().warmEars().catch(() => {})
   }, [agentId])
 
-  // Focus the composer right after the agent is focused (after the E keydown has finished).
-  // Not on touch devices: the on-screen keyboard would cover most of the transcript.
-  useEffect(() => {
-    if (isProbablyMobileDevice() || voiceFirst) return
-    const timer = window.setTimeout(() => {
-      textareaRef.current?.focus({ preventScroll: true })
-      focusedAtRef.current = performance.now()
-    }, 60)
-    return () => window.clearTimeout(timer)
-  }, [agentId, voiceFirst])
+  // Grow with the text (up to the cap, then scroll) and keep the newest words in view.
+  const fitHeight = useCallback(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    const borders = el.offsetHeight - el.clientHeight
+    el.style.height = `${composerHeight({ content: el.scrollHeight + borders, min: minHeight, max: maxHeight, manual: manualHeights[place] })}px`
+  }, [minHeight, maxHeight, place])
+
+  useLayoutEffect(() => {
+    fitHeight()
+    const el = textareaRef.current
+    if (!el) return
+    // Dictation appends at the end; so does typing at the end. Editing in the middle keeps its place.
+    if (document.activeElement !== el || el.selectionEnd === el.value.length) el.scrollTop = el.scrollHeight
+  }, [text, fitHeight])
+
+  const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const el = textareaRef.current
+    if (!el || event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    const handle = event.currentTarget
+    // The screen (F) is scaled in 3D: turn screen pixels into the box's own pixels.
+    const scale = el.getBoundingClientRect().height / Math.max(1, el.offsetHeight) || 1
+    const startY = event.clientY
+    const startHeight = el.offsetHeight
+    handle.setPointerCapture(event.pointerId)
+    const onMove = (move: PointerEvent) => {
+      const next = Math.round(Math.min(maxHeight, Math.max(minHeight, startHeight + (startY - move.clientY) / scale)))
+      manualHeights[place] = next
+      el.style.height = `${next}px`
+    }
+    const onUp = () => {
+      handle.removeEventListener('pointermove', onMove)
+      handle.removeEventListener('pointerup', onUp)
+      handle.removeEventListener('pointercancel', onUp)
+      fitHeight()
+    }
+    handle.addEventListener('pointermove', onMove)
+    handle.addEventListener('pointerup', onUp)
+    handle.addEventListener('pointercancel', onUp)
+  }
 
   const send = () => {
     const message = text.trim()
@@ -86,7 +163,7 @@ export function VillageComposer({ agentId, large = false }: { agentId: string; l
     voiceBaseRef.current = null
     setSending(true)
     getAgentEngineClient()
-      .send(agentId, message, urgent ? 'now' : undefined)
+      .send(agentId, message, urgent && owned ? 'now' : undefined)
       .then(() => {
         setText('')
         setUrgent(false)
@@ -95,7 +172,7 @@ export function VillageComposer({ agentId, large = false }: { agentId: string; l
       .finally(() => setSending(false))
   }
 
-  // Enter on the screen (box not focused) sends what you dictated.
+  // Enter while the box doesn't have the keyboard sends what you dictated.
   const sendRef = useRef(send)
   sendRef.current = send
   useEffect(() => subscribeVillageSend(() => sendRef.current()), [])
@@ -105,11 +182,6 @@ export function VillageComposer({ agentId, large = false }: { agentId: string; l
     if (event.ctrlKey && event.code === 'Space') return
     // Never let typing reach KeyboardControls / world shortcuts. keyup is left alone on purpose.
     event.stopPropagation()
-    // A movement key still held from walking up to the desk auto-repeats into the box: drop it.
-    if (event.repeat && MOVEMENT_CODES.has(event.nativeEvent.code) && performance.now() - focusedAtRef.current < 1500) {
-      event.preventDefault()
-      return
-    }
     // While dictating, T stops the mic even inside the box (nobody types while talking).
     if (voice.listening && event.code === 'KeyT' && !event.ctrlKey && !event.altKey && !event.metaKey) {
       event.preventDefault()
@@ -122,7 +194,7 @@ export function VillageComposer({ agentId, large = false }: { agentId: string; l
         voiceStopRef.current()
         return
       }
-      // First Esc leaves the text box (N works again), the next one leaves the agent.
+      // First Esc leaves the text box (T, F, N work again), the next one leaves the agent.
       event.currentTarget.blur()
       return
     }
@@ -136,31 +208,42 @@ export function VillageComposer({ agentId, large = false }: { agentId: string; l
   const voiceNote = voice.error
     ? voice.error
     : voice.listening
-      ? (voice.backendState === 'loading' && voice.backendMessage ? voice.backendMessage : 'listening… pause and your words settle; Enter sends')
+      ? (voice.backendState === 'loading' && voice.backendMessage ? voice.backendMessage : 'listening… pause and your words settle · T stops · Enter sends')
       : voice.transcribing ? 'settling the last words…' : ''
 
   return (
-    <div className="flex shrink-0 flex-col gap-1.5 border-t border-white/10 pt-2">
+    <div className="flex shrink-0 flex-col gap-1.5 border-t border-white/10 pt-1">
+      {!owned && (
+        <div className={`pt-1 leading-snug text-cyan-100/90 ${large ? 'text-[13px]' : 'text-[11.5px]'}`}>
+          Live in the desktop app too: what you say here goes to the same session.
+        </div>
+      )}
+      <div
+        onPointerDown={startResize}
+        onDoubleClick={() => { manualHeights[place] = null; fitHeight() }}
+        title="Drag to make the box taller or shorter (double-click: automatic)"
+        className="group -mb-1 flex h-3 cursor-ns-resize touch-none items-center justify-center"
+      >
+        <span className="h-1 w-12 rounded-full bg-white/20 transition group-hover:bg-white/55" />
+      </div>
       <div className="relative">
         <textarea
           ref={textareaRef}
           value={text}
-          rows={large ? 4 : 3}
+          rows={1}
           onChange={event => {
             setText(event.target.value)
             // Typing while the mic is on: live words go after what you typed.
             if (voice.listening) voiceBaseRef.current = event.target.value
           }}
           onKeyDown={onKeyDown}
-          placeholder={working ? 'Talk to it while it works: folds into the running turn…' : voiceFirst ? 'Press T and talk, or click here to type…' : 'Message… (Ctrl+Space to talk)'}
-          className={`w-full resize-none rounded-lg border bg-black/45 px-2.5 py-2 pr-11 leading-snug text-white placeholder:text-white/30 focus:outline-none ${large ? 'min-h-[96px] text-[15px]' : 'min-h-[64px] text-[13px]'} ${voice.listening ? 'border-rose-300/60' : 'border-white/15 focus:border-emerald-300/50'}`}
+          placeholder={working ? 'Talk to it while it works: folds into the running turn… (T talks, click to type)' : 'Press T and talk, or click here to type…'}
+          style={{ minHeight, maxHeight }}
+          className={`block w-full resize-none overflow-y-auto rounded-lg border bg-black/45 px-2.5 py-2 pr-11 leading-snug text-slate-50 [scrollbar-width:thin] placeholder:text-white/45 focus:outline-none ${large ? 'text-[15px]' : 'text-[13.5px]'} ${voice.listening ? 'border-rose-300/60' : 'border-white/20 focus:border-emerald-300/50'}`}
         />
         <button
           type="button"
-          onClick={() => {
-            if (!voice.listening) voiceBaseRef.current = textareaRef.current?.value ?? ''
-            void voice.toggle()
-          }}
+          onClick={toggleVoice}
           disabled={!voice.supported}
           title={voice.listening ? 'Stop dictating (T, Ctrl+Space, Esc)' : 'Dictate: words appear while you talk (T, Ctrl+Space)'}
           className="absolute right-1.5 top-1.5 flex h-8 w-8 items-center justify-center rounded-md border transition disabled:opacity-30"
@@ -178,23 +261,27 @@ export function VillageComposer({ agentId, large = false }: { agentId: string; l
         </button>
       </div>
       {voiceNote && (
-        <div className={`text-[10.5px] leading-snug ${voice.error ? 'text-amber-200/85' : 'text-rose-100/70'}`}>{voiceNote}</div>
+        <div className={`text-[11px] leading-snug ${voice.error ? 'text-amber-200' : 'text-rose-100/90'}`}>{voiceNote}</div>
       )}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <label className="flex cursor-pointer items-center gap-1.5 text-[10.5px] text-white/55" title='priority "now": stop at the next model request and answer this'>
-          <input type="checkbox" checked={urgent} onChange={event => setUrgent(event.target.checked)} className="accent-amber-400" />
-          urgent
-        </label>
+        {owned ? (
+          <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-white/75" title='priority "now": stop at the next model request and answer this'>
+            <input type="checkbox" checked={urgent} onChange={event => setUrgent(event.target.checked)} className="accent-amber-400" />
+            urgent
+          </label>
+        ) : <span />}
         <div className="flex items-center gap-1.5">
-          {pendingUser > 0 && <span className="text-[10px] text-white/45">{pendingUser} queued</span>}
-          <button
-            type="button"
-            disabled={!working}
-            onClick={() => getAgentEngineClient().interrupt(agentId).catch(error => showNotice(`Interrupt failed: ${describeError(error)}`, 'error'))}
-            className="rounded-md border border-rose-300/35 bg-rose-400/10 px-2.5 py-1 text-[11px] font-bold text-rose-100 transition hover:bg-rose-400/25 disabled:cursor-not-allowed disabled:opacity-35"
-          >
-            interrupt
-          </button>
+          {pendingUser > 0 && <span className="text-[10.5px] text-white/70">{pendingUser} queued</span>}
+          {owned && (
+            <button
+              type="button"
+              disabled={!working}
+              onClick={() => getAgentEngineClient().interrupt(agentId).catch(error => showNotice(`Interrupt failed: ${describeError(error)}`, 'error'))}
+              className="rounded-md border border-rose-300/35 bg-rose-400/10 px-2.5 py-1 text-[11px] font-bold text-rose-100 transition hover:bg-rose-400/25 disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              interrupt
+            </button>
+          )}
           <button
             type="button"
             disabled={!text.trim() || sending}
@@ -205,10 +292,10 @@ export function VillageComposer({ agentId, large = false }: { agentId: string; l
           </button>
         </div>
       </div>
-      <div className="text-[9.5px] uppercase tracking-[0.12em] text-white/30 max-[700px]:hidden">
-        {voiceFirst
+      <div className="text-[9.5px] uppercase tracking-[0.12em] text-white/55 max-[700px]:hidden">
+        {large
           ? 'T talk, T again to stop · Enter send · click the box to type · F or Esc back to the side panel · N next agent'
-          : 'Enter send · Ctrl+Space talk (T once you leave the box) · F zoom into the screen · Esc leave box, Esc again back · N next agent'}
+          : 'T talk, T again to stop · Enter send · click the box to type · F zoom into the screen · Esc back · N next agent'}
       </div>
     </div>
   )

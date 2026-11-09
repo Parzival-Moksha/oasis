@@ -80,6 +80,8 @@ export interface EngineAgentSnapshot {
   context?: EngineContextUsage | null
   models?: EngineModelInfo[] | null
   readOnly?: boolean
+  /** A watched session running the Oasis plugin's mod (plugins/oasis): `send` reaches it through the bridge. */
+  bridged?: boolean
   lastWriteAt?: number
 }
 

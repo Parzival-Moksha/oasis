@@ -1,6 +1,6 @@
 'use client'
 
-// ░▒▓ VILLAGE HUD — engine status, the roster as chips, "E talk" / "N next" hints ▓▒░
+// ░▒▓ VILLAGE HUD — engine status, the roster as chips, "T talk" / "N next" hints ▓▒░
 
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
@@ -135,8 +135,11 @@ export function VillageHud() {
 
       {nearbyId && !focusedId && (
         <div className="pointer-events-none fixed bottom-6 left-1/2 z-[170] -translate-x-1/2 rounded-lg border border-white/15 bg-slate-950/85 px-3 py-2 text-[12px] font-bold text-white shadow-[0_10px_30px_rgba(0,0,0,0.45)] backdrop-blur max-[700px]:bottom-28">
-          <span className="mr-2 rounded bg-white/20 px-1.5 py-0.5 font-mono">E</span>
+          <span className="mr-2 rounded bg-white/20 px-1.5 py-0.5 font-mono">T</span>
           Talk to {nearbyName || 'agent'}
+          <span className="ml-3 font-normal text-white/65 max-[700px]:hidden">
+            <span className="mr-1 rounded bg-white/15 px-1 py-0.5 font-mono">E</span>open without the mic
+          </span>
         </div>
       )}
 

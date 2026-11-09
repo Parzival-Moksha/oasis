@@ -12,11 +12,12 @@ import { getCameraSnapshot } from '../../lib/camera-bridge'
 import { getPlayerAvatarPose, markThirdPersonCameraRestored, requestPlayerAvatarTeleport } from '../../lib/player-avatar-runtime'
 import { showNotice } from '../forge/GlobalNotice'
 import { findNearestStation, type Vec3 } from '../../lib/village/village-layout'
+import { villageKeyAction } from '../../lib/village/village-keys'
 import { getVillageSoundDebug } from './village-sound'
 
 export const VILLAGE_SESSION_LAYER = 'village-session'
 export const VILLAGE_PICKER_LAYER = 'village-picker'
-/** Walk this close (meters, ground plane) to an agent to get the "E talk" hint. */
+/** Walk this close (meters, ground plane) to an agent to get the "T talk" hint. */
 export const VILLAGE_TALK_RADIUS = 3.4
 /** ...and within this height (the avatar stands on the ground; a noclip camera may fly above). */
 export const VILLAGE_TALK_HEIGHT = 2.5
@@ -146,6 +147,45 @@ export function toggleVillageVoice(): boolean {
   if (!voiceListeners.size) return false
   voiceListeners.forEach(listener => listener())
   return true
+}
+
+/** The mounted box answers true when it stopped a running dictation. */
+const voiceStopListeners = new Set<() => boolean>()
+
+export function subscribeVillageVoiceStop(listener: () => boolean): () => void {
+  voiceStopListeners.add(listener)
+  return () => { voiceStopListeners.delete(listener) }
+}
+
+/** Stop the mic if it is on. True when it was. */
+export function stopVillageVoice(): boolean {
+  let stopped = false
+  voiceStopListeners.forEach(listener => { if (listener()) stopped = true })
+  return stopped
+}
+
+// T next to an agent: the talk window opens, and its box starts the mic as soon as it is mounted.
+const VOICE_REQUEST_TTL_MS = 4000
+let voiceRequest: { agentId: string; at: number } | null = null
+
+export function requestVillageVoiceOnOpen(agentId: string | null): void {
+  voiceRequest = agentId ? { agentId, at: Date.now() } : null
+}
+
+/** For the box that just mounted: should it start the mic? Answers true once. */
+export function takeVillageVoiceRequest(agentId: string): boolean {
+  const request = voiceRequest
+  if (!request || request.agentId !== agentId) return false
+  voiceRequest = null
+  return Date.now() - request.at < VOICE_REQUEST_TTL_MS
+}
+
+/** T next to an agent: open its talk window with the mic on (E opens it without). */
+export function talkToVillageAgent(agentId: string): boolean {
+  requestVillageVoiceOnOpen(agentId)
+  const focused = focusVillageAgent(agentId)
+  if (!focused) requestVillageVoiceOnOpen(null)
+  return focused
 }
 
 let rigCamera: THREE.Camera | null = null
@@ -304,48 +344,54 @@ export function isTypingTarget(target: EventTarget | null): boolean {
 
 /**
  * Village keys, run in the window capture phase so they win over the generic world bindings
- * (N cycles world agent windows, E is noclip "down"). Returns true when the key was consumed.
+ * (N cycles world agent windows, E is noclip "down", T the rotate gizmo). Returns true when the
+ * key was consumed. What each key means lives in village-keys.ts.
  */
 export function handleVillageKeyDown(event: KeyboardEvent): boolean {
   const village = useOasisStore.getState().agentEngine
-  // Ctrl+Space dictates into the focused agent's box, even while typing in it.
-  if (event.ctrlKey && !event.altKey && !event.metaKey && event.code === 'Space' && !event.repeat && village.focusedAgentId) {
-    return toggleVillageVoice()
-  }
-  if (event.ctrlKey || event.metaKey || event.altKey || event.repeat) return false
-  if (isTypingTarget(event.target)) return false
-  if (village.focusedAgentId) {
-    if (event.code === 'KeyF') return toggleVillageScreen()
-    if (event.code === 'KeyT') return toggleVillageVoice()
-    // On the screen the box doesn't hold the keyboard: Enter sends what you dictated.
-    if (event.code === 'Enter' && !event.shiftKey && screenAgentId === village.focusedAgentId) return triggerVillageSend()
-    if (event.code === 'Escape' && screenAgentId) {
+  const input = useInputManager.getState()
+  // Same gate as the world's own N key, plus the village session view itself (ui-focused while its panel is open).
+  const inSessionView = input.inputState === 'ui-focused' && Boolean(village.focusedAgentId)
+  const action = villageKeyAction({
+    code: event.code,
+    ctrl: event.ctrlKey,
+    meta: event.metaKey,
+    alt: event.altKey,
+    shift: event.shiftKey,
+    repeat: event.repeat,
+    typing: isTypingTarget(event.target),
+    focusedAgentId: village.focusedAgentId,
+    nearbyAgentId: village.nearbyAgentId,
+    worldKeysFree: input.can().enterFocuses || input.inputState === 'agent-focus' || inSessionView,
+    inPlaza,
+    agentCount: village.order.length,
+  })
+  switch (action) {
+    case 'toggle-voice': return toggleVillageVoice()
+    case 'toggle-screen': return toggleVillageScreen()
+    // The box doesn't hold the keyboard until you click it: Enter sends what you dictated.
+    case 'send': return triggerVillageSend()
+    case 'escape':
+      if (stopVillageVoice()) return true
+      if (!screenAgentId) return false // the input manager's Esc leaves the agent
       setVillageScreen(null)
       return true
-    }
-  }
-  // Same gate as the world's own N key, plus the village session view itself (ui-focused while
-  // its panel is open). Placement, paint and other panels keep their keys (E is noclip "down").
-  const input = useInputManager.getState()
-  const inSessionView = input.inputState === 'ui-focused' && Boolean(village.focusedAgentId)
-  if (!input.can().enterFocuses && input.inputState !== 'agent-focus' && !inSessionView) return false
-  if (event.code === 'KeyE') {
-    const target = village.nearbyAgentId
-    if (!target) {
-      // Outside the circle E stays the world's own key (noclip "down").
-      if (!inPlaza || village.focusedAgentId) return false
+    case 'talk':
+      if (village.nearbyAgentId) talkToVillageAgent(village.nearbyAgentId)
+      return true
+    case 'open':
+      requestVillageVoiceOnOpen(null) // E is the quiet way in
+      if (village.nearbyAgentId) focusVillageAgent(village.nearbyAgentId)
+      return true
+    case 'picker':
       openVillagePicker(true)
       return true
+    case 'next': {
+      const next = selectNextAgentForN(village)
+      if (next) focusVillageAgent(next)
+      return true
     }
-    if (village.focusedAgentId === target) return false
-    focusVillageAgent(target)
-    return true
+    default:
+      return false
   }
-  if (event.code === 'KeyN' && !event.shiftKey) {
-    if (!village.order.length) return false // nothing in the village: keep the world's own N binding
-    const next = selectNextAgentForN(village)
-    if (next) focusVillageAgent(next)
-    return true
-  }
-  return false
 }

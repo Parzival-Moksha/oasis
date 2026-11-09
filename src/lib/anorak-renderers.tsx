@@ -144,6 +144,7 @@ export function ToolCallCard({
   audioTargetAvatarId = null,
   autoPlayAudio = false,
   suppressMedia = false,
+  bright = false,
 }: {
   name: string
   icon: string
@@ -154,6 +155,8 @@ export function ToolCallCard({
   audioTargetAvatarId?: string | null
   autoPlayAudio?: boolean
   suppressMedia?: boolean
+  /** Lighter result text, for glass windows over a bright world (the village threads). */
+  bright?: boolean
 }) {
   // Match both unprefixed names (Anorak route/direct callTool) and namespaced
   // names (Claude Code MCP subprocess uses mcp__<server>__<tool>).
@@ -337,7 +340,7 @@ export function ToolCallCard({
         <div
           className={`px-3 py-2 ${detailSize} font-mono border-t border-white/5 max-h-[200px] overflow-y-auto whitespace-pre-wrap`}
           style={{
-            color: result.isError ? '#fca5a5' : '#94a3b8',
+            color: result.isError ? '#fca5a5' : bright ? '#d5dde8' : '#94a3b8',
             background: 'rgba(0,0,0,0.2)',
             scrollbarWidth: 'thin',
             scrollbarColor: '#374151 transparent',

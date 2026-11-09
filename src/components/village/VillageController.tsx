@@ -30,11 +30,11 @@ export function VillageController() {
     return () => client.stop()
   }, [])
 
-  // E (talk to the nearest agent) and N (next agent needing attention) win over world bindings.
+  // T / E (talk to the nearest agent) and N (next agent needing attention) win over world bindings.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!handleVillageKeyDown(event)) return
-      // preventDefault also stops the "e" from being typed into the composer we are about to focus.
+      // preventDefault also keeps the letter out of any text field that is about to take focus.
       event.preventDefault()
       event.stopImmediatePropagation()
     }
@@ -94,7 +94,7 @@ export function VillageController() {
     return () => window.removeEventListener('oasis:village-talk', onTalk)
   }, [])
 
-  // "E talk" hint: nearest agent within reach of the avatar (or the camera in noclip).
+  // "T talk" hint: nearest agent within reach of the avatar (or the camera in noclip).
   useEffect(() => {
     const timer = window.setInterval(updateVillageProximity, 150)
     return () => window.clearInterval(timer)

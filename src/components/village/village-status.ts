@@ -29,6 +29,11 @@ export function statusLabel(agent: Pick<EngineAgentState, 'status' | 'unseen'>):
   return VILLAGE_STATUS_LABEL[agent.status] || agent.status
 }
 
+/** Agents the Oasis runs, and desktop-app sessions running the Oasis plugin (bridged), get a text box. */
+export function canTalkTo(agent: Pick<EngineAgentState, 'owned' | 'bridged'> | null | undefined): boolean {
+  return Boolean(agent && (agent.owned || agent.bridged))
+}
+
 export function agentDisplayName(agent: Pick<EngineAgentState, 'name' | 'title' | 'id'>): string {
   const name = (agent.name || '').trim()
   if (name && !/^observe [0-9a-f]{8}$/i.test(name) && !/^hook [0-9a-f]{8}$/i.test(name)) return name

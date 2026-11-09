@@ -200,7 +200,7 @@ function StationLabel({ agentId, nearby }: { agentId: string; nearby: boolean })
       </div>
       {nearby && (
         <div className="rounded-md border border-white/25 bg-black/75 px-2 py-0.5 font-mono text-[11px] font-bold text-white">
-          <span className="mr-1 rounded bg-white/20 px-1">E</span>talk
+          <span className="mr-1 rounded bg-white/20 px-1">T</span>talk
         </div>
       )}
       <style>{'@keyframes villageBob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-4px) } }'}</style>
@@ -256,9 +256,9 @@ function DeskWindow({ agentId, nearby, mode }: { agentId: string; nearby: boolea
           header={<SessionWindowHeader agent={agent} nearby={nearby} screen={screen} />}
         />
       </div>
-      {screen && (agent.owned
-        ? <VillageComposer agentId={agentId} large />
-        : <div className="shrink-0 border-t border-white/10 pt-2 text-[12px] text-cyan-100/75">Watching only: this session runs somewhere else. Press F to go back, then &ldquo;Move it here&rdquo; to talk to it.</div>)}
+      {screen && (agent.owned || agent.bridged
+        ? <VillageComposer key={agentId} agentId={agentId} large />
+        : <div className="shrink-0 border-t border-white/10 pt-2 text-[12px] text-cyan-100/90">Watching only: this session runs somewhere else. Press F to go back, then &ldquo;Move it here&rdquo; to talk to it.</div>)}
     </div>
   )
 }

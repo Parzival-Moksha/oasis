@@ -14,6 +14,7 @@ import { showNotice } from '../forge/GlobalNotice'
 import { AgentSessionView, StatusPill } from './AgentSessionView'
 import { VILLAGE_SESSION_LAYER, getSessionPanelGeometry, focusVillageAgent, getVillageScreen, leaveVillageFocus, subscribeVillageScreen, toggleVillageScreen } from './village-actions'
 import { VillageComposer } from './VillageComposer'
+import { EffortSelect } from './EffortSelect'
 import { agentDisplayName, cwdLabel, formatCost, modelLabel, statusColor, statusLabel } from './village-status'
 
 const FALLBACK_MODELS = [
@@ -214,6 +215,7 @@ export function AgentSessionPanel() {
               {PERMISSION_MODES.map(mode => <option key={mode} value={mode}>{mode}</option>)}
             </select>
           </label>
+          <EffortSelect agent={agent} />
           <span className="ml-auto truncate text-white/40">{modelLabel(agent)}</span>
         </div>
       )}

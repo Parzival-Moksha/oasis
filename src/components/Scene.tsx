@@ -549,7 +549,7 @@ function DesktopKeyHints({ village = false }: { village?: boolean }) {
       {selectedObjectId && hint('Y', 'Size')}
       {hint('C', 'Camera')}
       {hint('Esc', village ? 'Back' : 'Mouse', { dim: !village && !pointerLocked })}
-      {village && hint('E', 'Talk', { dim: !villageNearby })}
+      {village && hint('T', 'Talk', { dim: !villageNearby })}
       {!village && hint('X', 'Dance')}
       {village
         ? hint('N', 'Next Agent', { dim: !villageAgents })

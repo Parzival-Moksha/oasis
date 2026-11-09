@@ -156,6 +156,8 @@ export interface EngineAgentState {
   /** Owned = the Oasis drives this Claude Code process. Everything else is read-only. */
   owned: boolean
   readOnly: boolean
+  /** Watched, but its session runs the Oasis plugin's mod: you can talk to it (send goes through the bridge). */
+  bridged: boolean
   name: string
   title: string | null
   cwd: string | null
@@ -293,6 +295,7 @@ export function createAgentState(
     kind,
     owned: kind === 'owned',
     readOnly: kind !== 'owned',
+    bridged: false,
     name: id,
     title: null,
     cwd: null,
@@ -346,7 +349,9 @@ export function applySnapshot(agent: EngineAgentState, snap: EngineAgentSnapshot
     ...agent,
     kind,
     owned: kind === 'owned',
-    readOnly: kind !== 'owned' || Boolean(snap.readOnly),
+    // Every snapshot says whether the bridge is alive right now; a quiet one makes it read-only again.
+    bridged: kind !== 'owned' && snap.bridged === true,
+    readOnly: kind !== 'owned' ? snap.bridged !== true : Boolean(snap.readOnly),
     name: snap.name || agent.name,
     title: snap.title ?? agent.title,
     cwd: snap.cwd ?? agent.cwd,
