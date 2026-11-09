@@ -176,10 +176,10 @@ export const OASIS_MCP_TOOL_SPECS = [
     description: [
       'Change the world sky background (also drives HDRI lighting).',
       'Valid presetId values:',
-      'stars, oasis_dusk, aurora_night, pastel_dawn, cyber_dusk, clear_day, night001, night004, night007, night008,',
+      'stars, oasis_dusk, aurora_night, pastel_dawn, cyber_dusk, clear_day, aurora_night_sky, clear_day_sky, night001, night004, night007, night008,',
       'alps_field, autumn_ground, belfast_sunset, blue_grotto, evening_road, outdoor_umbrellas, stadium, sunny_vondelpark,',
       'city, dawn, forest, sunset, park, night_preset, studio, warehouse, apartment, lobby.',
-      'Quick guide: blue_grotto = cyan underwater cave; dawn = warm sunrise; belfast_sunset = orange dusk; alps_field = bright daylight; sunset = venice golden hour; forest = green canopy; stars = procedural starfield (no HDRI lighting). Generated Oasis skies: oasis_dusk = desert sunset over dunes; aurora_night = northern lights; pastel_dawn = pink lavender dawn; cyber_dusk = synthwave moon and neon grid; clear_day = blue sky with cumulus. Use the exact id, not the display name.',
+      'Quick guide: blue_grotto = cyan underwater cave; dawn = warm sunrise; belfast_sunset = orange dusk; alps_field = bright daylight; sunset = venice golden hour; forest = green canopy; stars = procedural starfield (no HDRI lighting). Generated Oasis skies: oasis_dusk = desert sunset over dunes; aurora_night = northern lights; pastel_dawn = pink lavender dawn; cyber_dusk = synthwave moon and neon grid; clear_day = blue sky with cumulus; aurora_night_sky / clear_day_sky = same with open sky below the horizon for floating worlds. Use the exact id, not the display name.',
     ].join(' '),
     inputSchema: z.object({ worldId: z.string().optional(), presetId: z.string() }).passthrough(),
     injectWorldId: true,

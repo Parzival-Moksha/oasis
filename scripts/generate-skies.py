@@ -285,9 +285,11 @@ class Sky:
     sun_irradiance = 0.0  # light the sun adds to the env map (normal incidence)
     env_mean = 1.0        # mean upper-sky radiance of the env map (bundled HDRIs: ~1.0-1.4)
     sun_sigma_deg = 0.8
+    ground = True         # False: the sky continues below the horizon (no land)
+    seed_id = ""          # variants reuse their parent's noise so they match
 
     def __init__(self):
-        self.p = Perlin(zlib.crc32(self.id.encode()))
+        self.p = Perlin(zlib.crc32((self.seed_id or self.id).encode()))
 
     def prepare(self, W, H):
         pass
@@ -323,7 +325,7 @@ class DuneField:
     viewer standing in a flat basin (the oasis): gentle windward slopes,
     steep slip faces, soft long shadows from a low sun."""
 
-    def __init__(self, per, sun_lon, extent=10000.0, n=4096, eye=4.0):
+    def __init__(self, per, sun_lon, extent=10000.0, n=4096, eye=30.0):
         self.ext, self.n, self.eye = extent, n, eye
         self.cell = 2 * extent / n
         c = (np.arange(n) + 0.5) * self.cell - extent
@@ -335,19 +337,19 @@ class DuneField:
             zz, xx = np.meshgrid(c[r0:r0 + 128], c, indexing="ij")
             u = xx * wx + zz * wz
             v = -xx * wz + zz * wx
-            warp = 150.0 * per.fbm2(u / 1300.0 + 3, v / 1300.0 - 5, 3) + 40.0 * per.fbm2(u / 350.0, v / 350.0 + 9, 2)
-            lam = 520.0 * (1.0 + 0.25 * per.fbm2(u / 4000.0 - 2, v / 4000.0, 2))
+            warp = 130.0 * per.fbm2(u / 1100.0 + 3, v / 1100.0 - 5, 3) + 30.0 * per.fbm2(u / 300.0, v / 300.0 + 9, 2)
+            lam = 300.0 * (1.0 + 0.25 * per.fbm2(u / 4000.0 - 2, v / 4000.0, 2))
             f = ((u + warp) / lam) % 1.0
             rise = 0.8
             wind = np.sin(np.clip(f / rise, 0, 1) * math.pi / 2) ** 1.35  # windward slope up to the crest
             slip = (1.0 - np.clip((f - rise) / (1 - rise), 0, 1)) ** 1.7    # steep lee face
             prof = np.where(f < rise, wind, slip)
-            amp = 48.0 + 22.0 * per.fbm2(u / 1800.0 + 11, v / 900.0, 3)
+            amp = 34.0 + 14.0 * per.fbm2(u / 1800.0 + 11, v / 900.0, 3)
             amp *= 0.75 + 0.25 * np.sin(v / 520.0 + 0.004 * warp)  # crests rise and fall along their length
             r = np.hypot(xx, zz)
             cosphi = (xx * sx + zz * sz) / np.maximum(r, 1e-6)
-            amp *= 1.0 - 0.72 * smoothstep(0.72, 0.97, cosphi)  # keep the low sun clear
-            amp *= smoothstep(150.0, 340.0, r)  # flat oasis basin around the viewer
+            amp *= 1.0 - 0.3 * smoothstep(0.8, 0.98, cosphi)  # a little lower under the sun
+            amp *= smoothstep(110.0, 260.0, r)  # flat oasis basin around the viewer
             und = 14.0 * per.fbm2(xx / 2600.0 - 4, zz / 2600.0 + 6, 2) * smoothstep(150.0, 900.0, r)
             Hm[r0:r0 + 128] = np.maximum(amp * prof + und, 0.0)
         self.H = Hm
@@ -426,13 +428,17 @@ class DuneField:
         for _ in range(28):
             hx, hz = x + sdir[0] * tt, z + sdir[2] * tt
             hh = Hs + 0.5 + sdir[1] * tt
-            sh = np.minimum(sh, 9.0 * (hh - self.sample(hx, hz)) / tt)
+            sh = np.minimum(sh, 18.0 * (hh - self.sample(hx, hz)) / tt)
             tt = tt + np.maximum(4.0, 0.12 * tt)
         sh = np.clip(sh, 0, 1) ** 1.5
         ndl = np.clip(nrm @ sdir, 0, None)
         sun = (ndl * sh)[:, None] * sun_col[None]
         amb = amb_up[None] * (0.55 + 0.45 * nrm[:, 1:2]) + amb_side[None] * 0.35
         c = albedo[None] * (sun + amb)
+        # crests and grazing slopes glow when they stand between viewer and sun
+        gam = np.arccos(np.clip(dd @ sdir, -1, 1))
+        graze = (1.0 - np.clip(-(nrm * dd).sum(1), 0, 1)) ** 3
+        c = c + (sun_col[None] * 0.22 * (np.exp(-gam / 0.3) * graze)[:, None])
         col[idx] = c.astype(F)
         dist[idx] = th * np.sqrt(np.maximum(1 - yy * yy, 0))
         return cov.astype(F), col, dist
@@ -514,11 +520,11 @@ class OasisDusk(Sky):
         if m.any():
             cov, col, dist = self.dunes.trace(
                 d[m], px, sdir,
-                sun_col=np.array([2.9, 1.95, 1.25], F),
-                amb_up=np.array([0.17, 0.15, 0.36], F),
-                amb_side=np.array([0.16, 0.08, 0.07], F),
-                albedo=np.array([0.55, 0.36, 0.22], F))
-            fog = (1.0 - np.exp(-dist / 3000.0)) * (0.82 + 0.18 * az[m])
+                sun_col=np.array([3.5, 1.9, 0.95], F),
+                amb_up=np.array([0.11, 0.10, 0.28], F),
+                amb_side=np.array([0.16, 0.07, 0.06], F),
+                albedo=np.array([0.58, 0.34, 0.18], F))
+            fog = (1.0 - np.exp(-dist / 6500.0)) * (0.8 + 0.2 * az[m])
             col = mix(col, hz_az[m], fog)
             out[m] = over(out[m], col, cov)
         return out
@@ -551,7 +557,7 @@ class AuroraNight(Sky):
         specs = [
             # x range, base distance (z, toward north), wobble, brightness
             dict(x0=-1500, x1=1500, z=300, wob=120, fold=0.0, bright=1.0, seed=1),
-            dict(x0=-700, x1=800, z=105, wob=45, fold=40.0, bright=0.8, seed=2),
+            dict(x0=-600, x1=700, z=110, wob=55, fold=0.0, bright=0.8, seed=2),
             dict(x0=-900, x1=600, z=620, wob=80, fold=0.0, bright=0.6, seed=3),
         ]
         north = math.radians(-60.0)  # the aurora hangs over this azimuth
@@ -601,10 +607,11 @@ class AuroraNight(Sky):
     def shade(self, d, lon, el, px):
         y = d[:, 1]
         eld = np.degrees(el)
-        sky = ramp(eld, [(-90, C(10, 14, 20)), (-3, C(16, 22, 30)), (0, C(30, 52, 74)), (2, C(26, 46, 70)),
-                         (8, C(18, 34, 60)), (20, C(12, 24, 50)), (45, C(8, 16, 38)), (90, C(6, 11, 30))])
+        eh = eld if self.ground else np.abs(eld)  # sky-only: mirror the gradient below the horizon
+        sky = ramp(eh, [(-90, C(10, 14, 20)), (-3, C(16, 22, 30)), (0, C(30, 52, 74)), (2, C(26, 46, 70)),
+                        (8, C(18, 34, 60)), (20, C(12, 24, 50)), (45, C(8, 16, 38)), (90, C(6, 11, 30))])
         # airglow band
-        sky += (C(30, 60, 50) * (0.35 * np.exp(-((eld - 9.0) / 6.0) ** 2))[:, None]).astype(F)
+        sky += (C(30, 60, 50) * (0.35 * np.exp(-((eh - 9.0) / 6.0) ** 2))[:, None]).astype(F)
         # milky way: noisy band around a tilted great circle
         nrm = np.array([0.42, 0.62, -0.66])
         nrm /= np.linalg.norm(nrm)
@@ -614,8 +621,10 @@ class AuroraNight(Sky):
         dust = self.p.fbm3(d[:, 0] * 9, d[:, 1] * 9, d[:, 2] * 9, 5)
         clumps = self.p.fbm3(d[:, 0] * 30 + 3, d[:, 1] * 30, d[:, 2] * 30, 4)
         lane = smoothstep(0.0, 0.35, dust + 0.8 * (0.06 - np.abs(b)))
-        mw = band * np.clip(0.5 + 0.8 * clumps, 0, 1.3) * (1 - 0.8 * lane) * smoothstep(-2, 25, eld)
-        sky += (C(150, 160, 190) * (0.16 * np.clip(mw, 0, None))[:, None]).astype(F)
+        mw = band * np.clip(0.5 + 0.8 * clumps, 0, 1.3) * (1 - 0.8 * lane)
+        if self.ground:
+            mw = mw * smoothstep(-2, 25, eld)
+        sky += (C(160, 172, 205) * (0.1 * np.clip(mw, 0, None))[:, None]).astype(F)
 
         # aurora
         aur = np.zeros((len(y), 3), F)
@@ -642,8 +651,11 @@ class AuroraNight(Sky):
                     rays = 0.45 + 0.55 * np.clip(0.5 + 0.9 * pr.fbm2(s * 0.09, np.full_like(s, 7.0), 3), 0, 1)
                     envl = np.clip(0.55 + 0.9 * pr.fbm2(s * 0.003, np.full_like(s, 11.0), 3), 0.05, 1.3)
                     path = 1.0 / np.maximum(sinang * np.cos(el), 0.11)
-                    path = np.minimum(path, 9.0) * 0.16
-                    taper = smoothstep(c["s0"], c["s0"] + 350, s) * smoothstep(c["s1"], c["s1"] - 350, s)
+                    # fade where the sight line grazes a fold: the sheet's edge dissolves
+                    # instead of ending in a hard bright line
+                    path = np.minimum(path, 3.0) * 0.22 * smoothstep(0.02, 0.35, sinang)
+                    span = c["s1"] - c["s0"]
+                    taper = (smoothstep(c["s0"], c["s0"] + 0.4 * span, s) * smoothstep(c["s1"], c["s1"] - 0.4 * span, s)) ** 2
                     amt = (c["bright"] * rays * envl * path * taper)[:, None]
                     emis = (C(70, 255, 150) * green[:, None] + C(190, 60, 170) * red[:, None]
                             + C(255, 90, 170) * fringe[:, None]) * amt
@@ -651,6 +663,8 @@ class AuroraNight(Sky):
         self._aur_chunk = aur
         sky = sky + aur * 1.5
 
+        if not self.ground:
+            return sky
         # treeline: spiky conifers on a low ridge
         hill = 0.25 + 0.9 * circle_noise(self.p, lon, 2.5, 3) + 0.4
         spikes = self._trees(lon)
@@ -693,6 +707,8 @@ class AuroraNight(Sky):
         dirs, rgb, peak = star_field(rng, 11000, max_peak=1.4, min_peak=0.014)
         alt = np.clip((dirs[:, 1] - 0.01) / 0.12, 0, 1)
         dim = (alt * (1 - 0.6 * np.exp(-dirs[:, 1] / 0.08)))[:, None].astype(F)
+        if not self.ground:
+            dim = np.ones_like(dim)
         # milky way gets extra faint stars
         nrm = np.array([0.42, 0.62, -0.66])
         nrm /= np.linalg.norm(nrm)
@@ -701,6 +717,8 @@ class AuroraNight(Sky):
         d2 = d2[keep]
         rgb2 = np.full((len(d2), 3), 0.03, F) * rng.random((len(d2), 1)).astype(F)
         alt2 = np.clip((d2[:, 1] - 0.01) / 0.12, 0, 1)[:, None].astype(F)
+        if not self.ground:
+            alt2 = np.ones_like(alt2)
         splat(add, dirs, rgb * dim, 0.55)
         splat(add, d2, rgb2 * alt2, 0.5)
         bright = peak > 0.5
@@ -845,12 +863,14 @@ class CyberDusk(Sky):
                 fa = np.abs(((a + 0.5) % 1.0) - 0.5)
                 cov = np.clip((w * 0.5 + fw * 0.5 - fa) / fw, 0, 1) * np.minimum(w / fw, 1.0)
                 return cov
-            gl = np.maximum(lines(gx * 0.5, foot * 0.5), lines(gz * 0.5, foot * 0.5))
+            # viewer stands mid-cell, so no line runs right under the camera
+            gl = np.maximum(lines(gx * 0.5 + 0.5, foot * 0.5), lines(gz * 0.5 + 0.5, foot * 0.5))
             fade = np.exp(-np.maximum(foot - 0.15, 0) * 2.5)
             dist_fade = smoothstep(0.0, 0.08, dy) * (1.0 - smoothstep(0.25, 0.6, dy))
             floor = ramp(np.degrees(np.arcsin(dy)), [(0, C(70, 18, 70)), (2, C(36, 8, 50)), (10, C(18, 4, 34)), (90, C(10, 2, 22))])
             neon = C(255, 50, 210) * 1.35
-            fc = floor + (neon * (gl * fade * (0.45 + 0.55 * dist_fade))[:, None]).astype(F)
+            near_fade = 1.0 - smoothstep(0.3, 0.75, dy)  # nothing glaring straight down
+            fc = floor + (neon * (gl * fade * near_fade * (0.45 + 0.55 * dist_fade))[:, None]).astype(F)
             fc += (C(255, 120, 120) * (0.35 * np.exp(-np.degrees(np.arcsin(dy)) / 1.2))[:, None]).astype(F)
             out[gm] = fc
         # mountains: far range in haze, near range dark with a neon rim
@@ -909,7 +929,7 @@ class CumulusField:
         lump = np.empty((n, n), F)
         for r0 in range(0, n, 128):
             zz, xx = np.meshgrid(c[r0:r0 + 128], c, indexing="ij")
-            lump[r0:r0 + 128] = 1.0 - np.abs(per.fbm2(xx * 3.2 - 7, zz * 3.2 + 2, 3))
+            lump[r0:r0 + 128] = 1.0 - np.abs(per.fbm2(xx * 1.7 - 7, zz * 1.7 + 2, 3))
         top = tmax * np.clip((cs - 0.06) / 0.7, 0, 1) ** 0.55 * (0.62 + 0.5 * lump)
         sharp = np.stack([cov, top.astype(F)], -1)
         far = np.stack([ndimage.gaussian_filter(cov, 4.0), ndimage.gaussian_filter(top, 4.0)], -1).astype(F)
@@ -944,9 +964,10 @@ class CumulusField:
         c, top = ct[:, 0], ct[:, 1]
         # noise whose pattern drifts with height, so the sides bulge instead of
         # looking like extruded columns (fades out far away where it would alias)
-        wob = self.per.n2(x * 2.4 + h * 2.2, z * 2.4 - h * 1.9) * (1 - w_far)
+        wob = (self.per.n2(x * 2.4 + h * 2.2, z * 2.4 - h * 1.9)
+               + 0.5 * self.per.n2(x * 5.3 - h * 4.4, z * 5.3 + h * 3.6)) * (1 - w_far)
         return (smoothstep(0.0, 0.1, top * (0.9 + 0.22 * wob) - h) * smoothstep(-0.03, 0.05, h)
-                * smoothstep(0.03, 0.3, c + 0.1 * wob)).astype(F)
+                * smoothstep(0.03, 0.3, c + 0.17 * wob)).astype(F)
 
     def trace(self, d, sdir, sun_col, amb_top, amb_bot):
         N = len(d)
@@ -1026,7 +1047,8 @@ class ClearDay(Sky):
         eld = np.degrees(el)
         cosg = d @ sdir
         gam = np.arccos(np.clip(cosg, -1, 1))
-        sky = ramp(eld, [(-2, C(206, 218, 230)), (0, C(222, 232, 242)), (2, C(204, 222, 242)), (6, C(170, 202, 240)),
+        eh = eld if self.ground else np.abs(eld)
+        sky = ramp(eh, [(-2, C(206, 218, 230)), (0, C(222, 232, 242)), (2, C(204, 222, 242)), (6, C(170, 202, 240)),
                          (14, C(126, 174, 234)), (28, C(84, 142, 226)), (50, C(56, 114, 212)), (90, C(40, 94, 198))])
         # Rayleigh: darker ~90deg from the sun, brighter around it
         sky = sky * (0.88 + 0.12 * cosg[:, None] ** 2).astype(F)
@@ -1046,6 +1068,10 @@ class ClearDay(Sky):
             alpha = alpha * smoothstep(0.012, 0.04, y[upm])
             sky[upm] = over(hz, ccol.astype(F), alpha.astype(F))
 
+        if not self.ground:
+            # open sky below: a little paler, as if looking down through more air
+            below = smoothstep(0.0, -3.0, eld)[:, None].astype(F)
+            return sky * (1 - 0.25 * below) + C(222, 232, 242) * (0.25 * below)
         out = sky
         for base, amp, rad, seed, col, hz in [(0.2, 1.3, 2.6, 4.0, C(150, 172, 200), 0.55),
                                               (-0.5, 1.2, 4.0, 9.0, C(104, 128, 136), 0.3)]:
@@ -1060,7 +1086,23 @@ class ClearDay(Sky):
         return out
 
 
-SKIES = {cls.id: cls for cls in [OasisDusk, AuroraNight, PastelDawn, CyberDusk, ClearDay]}
+class AuroraNightSky(AuroraNight):
+    id = "aurora_night_sky"
+    seed_id = "aurora_night"
+    name = "Aurora Night, sky only (generated)"
+    blurb = "aurora_night with no land: stars and Milky Way continue below the horizon (floating islands, no ground plane)."
+    ground = False
+
+
+class ClearDaySky(ClearDay):
+    id = "clear_day_sky"
+    seed_id = "clear_day"
+    name = "Clear Day, sky only (generated)"
+    blurb = "clear_day with no land: open blue sky below the horizon (floating islands, no ground plane)."
+    ground = False
+
+
+SKIES = {cls.id: cls for cls in [OasisDusk, AuroraNight, PastelDawn, CyberDusk, ClearDay, AuroraNightSky, ClearDaySky]}
 
 
 # ─── rendering + files ───────────────────────────────────────────────────────
@@ -1093,6 +1135,7 @@ def render(sky: Sky, W, H, chunk_rows=64):
         img[r0:r1] = rgb.reshape(r1 - r0, W, 3)
         if isinstance(sky, AuroraNight):
             sky._aur_full[r0:r1] = sky._aur_chunk.reshape(r1 - r0, W, 3)
+        if isinstance(sky, AuroraNight) and sky.ground:
             eld = np.degrees(el)
             hill = 0.25 + 0.9 * circle_noise(sky.p, lon, 2.5, 3) + 0.4
             h = hill + sky._trees(lon)
@@ -1230,10 +1273,13 @@ def main():
     ap.add_argument("--out", default=str(OUT_DIR))
     ap.add_argument("--views", default="", help="also save perspective previews to this folder")
     ap.add_argument("--quality", type=int, default=92)
+    ap.add_argument("--size", type=int, default=0, help="equirect width (default 4096, preview 1024)")
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     W, H = (1024, 512) if args.preview else (4096, 2048)
+    if args.size:
+        W, H = args.size, args.size // 2
     for sid in args.ids:
         sky = SKIES[sid]()
         img = render(sky, W, H)

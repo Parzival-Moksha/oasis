@@ -7,6 +7,9 @@ export const SKY_BACKGROUNDS = [
   { id: 'pastel_dawn', name: 'Pastel Dawn', path: '/skies/pastel_dawn.jpg', envPath: '/skies/pastel_dawn_env.hdr' },
   { id: 'cyber_dusk', name: 'Cyber Dusk', path: '/skies/cyber_dusk.jpg', envPath: '/skies/cyber_dusk_env.hdr' },
   { id: 'clear_day', name: 'Clear Day', path: '/skies/clear_day.jpg', envPath: '/skies/clear_day_env.hdr' },
+  // sky-only variants: no land below the horizon, for floating worlds without a ground plane
+  { id: 'aurora_night_sky', name: 'Aurora Night (sky only)', path: '/skies/aurora_night_sky.jpg', envPath: '/skies/aurora_night_sky_env.hdr' },
+  { id: 'clear_day_sky', name: 'Clear Day (sky only)', path: '/skies/clear_day_sky.jpg', envPath: '/skies/clear_day_sky_env.hdr' },
   { id: 'night001', name: 'Night Sky 001', path: '/hdri/NightSkyHDRI001_4K_TONEMAPPED.jpg' },
   { id: 'night004', name: 'Night Sky 004', path: '/hdri/NightSkyHDRI004_4K_TONEMAPPED.jpg' },
   { id: 'night007', name: 'Night Sky 007', path: '/hdri/NightSkyHDRI007_4K_TONEMAPPED.jpg' },
@@ -39,6 +42,8 @@ export const AGENT_SKY_BACKGROUND_IDS = [
   'pastel_dawn',
   'cyber_dusk',
   'clear_day',
+  'aurora_night_sky',
+  'clear_day_sky',
   'night001',
   'night004',
   'night007',
@@ -143,7 +148,7 @@ export function resolveSkyBackgroundToolPreset(value: unknown): {
 export function formatAgentSkyPresetGuide(): string {
   return [
     `Stable presetId values: ${AGENT_SKY_BACKGROUND_IDS.join(', ')}.`,
-    'Generated Oasis skies: oasis_dusk (desert sunset over dunes), aurora_night (northern lights, stars), pastel_dawn (pink and lavender dawn, misty hills), cyber_dusk (synthwave moon, neon grid), clear_day (blue sky, cumulus).',
+    'Generated Oasis skies: oasis_dusk (desert sunset over dunes), aurora_night (northern lights, stars), pastel_dawn (pink and lavender dawn, misty hills), cyber_dusk (synthwave moon, neon grid), clear_day (blue sky, cumulus); aurora_night_sky and clear_day_sky are the same skies with open sky instead of land below the horizon, for floating worlds.',
     'Useful aliases accepted by the server: dawn/sunrise -> umhlanga_sunrise; sunset/dusk -> belfast_sunset; forest/park -> sunny_vondelpark; city/arena -> stadium; night -> night007; desert -> oasis_dusk; aurora -> aurora_night; synthwave -> cyber_dusk; day/sunny -> clear_day.',
   ].join(' ')
 }

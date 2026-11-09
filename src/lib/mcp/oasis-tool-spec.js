@@ -17,6 +17,8 @@ const AGENT_SKY_BACKGROUND_IDS = [
   'pastel_dawn',
   'cyber_dusk',
   'clear_day',
+  'aurora_night_sky',
+  'clear_day_sky',
   'night001',
   'night004',
   'night007',
@@ -360,7 +362,7 @@ export const OASIS_MCP_TOOL_SPECS = [
     description: [
       'Change the world sky background (also drives HDRI lighting).',
       `Stable presetId values: ${AGENT_SKY_BACKGROUND_IDS.join(', ')}.`,
-      'Generated Oasis skies: oasis_dusk = desert sunset over dunes; aurora_night = northern lights over a pine treeline; pastel_dawn = pink and lavender dawn with misty hills; cyber_dusk = synthwave moon, neon mountains and grid; clear_day = bright blue sky with cumulus.',
+      'Generated Oasis skies: oasis_dusk = desert sunset over dunes; aurora_night = northern lights over a pine treeline; pastel_dawn = pink and lavender dawn with misty hills; cyber_dusk = synthwave moon, neon mountains and grid; clear_day = bright blue sky with cumulus; aurora_night_sky / clear_day_sky = the same with open sky instead of land below the horizon (floating islands, no ground plane).',
       'Accepted aliases: dawn/sunrise -> umhlanga_sunrise; sunset/dusk -> belfast_sunset; forest/park -> sunny_vondelpark; city/arena -> stadium; night -> night007; desert -> oasis_dusk; aurora -> aurora_night; synthwave/neon -> cyber_dusk; day/sunny -> clear_day.',
       'Use stable local HDRI ids when possible; CDN-only drei presets are intentionally not exposed to agents because failures render as procedural stars.',
     ].join(' '),
