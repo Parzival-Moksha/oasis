@@ -440,11 +440,12 @@ function VillagePlaza({ empty, origin }: { empty: boolean; origin: VillageOrigin
   }, [center.x, center.z, y])
   return (
     <group position={[center.x, y, center.z]}>
-      <mesh rotation-x={-Math.PI / 2} position={[0, 0.015, 0]}>
+      {/* A few cm up: worlds lay floor mosaics here (Oasis Dusk's tops out at 3.5 cm). */}
+      <mesh rotation-x={-Math.PI / 2} position={[0, 0.052, 0]}>
         <ringGeometry args={[2.1, 2.22, 72]} />
         <meshBasicMaterial color="#34d399" transparent opacity={0.35} depthWrite={false} />
       </mesh>
-      <mesh rotation-x={-Math.PI / 2} position={[0, 0.012, 0]}>
+      <mesh rotation-x={-Math.PI / 2} position={[0, 0.048, 0]}>
         <circleGeometry args={[2.1, 72]} />
         <meshBasicMaterial color="#0f172a" transparent opacity={0.22} depthWrite={false} />
       </mesh>
