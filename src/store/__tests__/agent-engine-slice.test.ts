@@ -116,6 +116,17 @@ describe('agentEngineReducer: events', () => {
     expect(tools[0]).toMatchObject({ key: 't:t1', status: 'done', output: 'a.txt', summary: 'Bash: ls' })
   })
 
+  it('keeps the files a SendUserFile call delivered on its tool card', () => {
+    const attachments = [{ id: 'f1', name: 'corner.jpg', size: 126692, isImage: true, mediaType: 'image/jpeg' }]
+    let state = hello([snap('agent-a', { status: 'working' })])
+    state = events(state,
+      ev('agent-a', 'tool.start', { toolUseId: 's1', name: 'SendUserFile', input: { files: ['corner.jpg'], caption: 'hi' } }),
+      ev('agent-a', 'tool.end', { toolUseId: 's1', name: 'SendUserFile', isError: false, output: '1 file delivered to user.', attachments }),
+    )
+    const card = state.agents['agent-a'].log.find(entry => entry.key === 't:s1')
+    expect(card).toMatchObject({ type: 'tool', status: 'done', attachments, input: { caption: 'hi' } })
+  })
+
   it('replaces todos and follows a subagent from start to end', () => {
     let state = hello([snap('agent-a', { status: 'working' })])
     state = events(state,

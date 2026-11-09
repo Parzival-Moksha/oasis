@@ -18,6 +18,7 @@ import {
   statusColor,
 } from './village-status'
 import { toggleVillageScreen } from './village-actions'
+import { agentEngineFileUrl } from '../../lib/agent-engine-client'
 
 /** 2d: the side panel · 3d: the desk window (recent lines) · screen: the desk window zoomed in with F */
 export type SessionViewVariant = '2d' | '3d' | 'screen'
@@ -99,6 +100,78 @@ function userStateLabel(entry: Extract<AgentLogEntry, { type: 'user' }>): string
   }
 }
 
+function formatBytes(n: number | null): string {
+  if (n === null) return ''
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
+}
+
+/** SendUserFile: a little postcard. Pictures as tilted polaroids (click for full size), other files as chips. */
+function SentFilesCard({ entry, compact }: { entry: Extract<AgentLogEntry, { type: 'tool' }>; compact: boolean }) {
+  const files = entry.attachments || []
+  const caption = typeof entry.input?.caption === 'string' ? entry.input.caption.trim() : ''
+  const images = files.filter(file => file.isImage)
+  const others = files.filter(file => !file.isImage)
+  const what = images.length && !others.length
+    ? `${images.length === 1 ? 'a picture' : `${images.length} pictures`}`
+    : `${files.length === 1 ? 'a file' : `${files.length} files`}`
+  return (
+    <div className="rounded-2xl p-[1.5px]" style={{ background: 'linear-gradient(135deg, #22d3ee, #a78bfa 55%, #f472b6)' }}>
+      <div className="rounded-[14px] bg-slate-950/90 px-3 py-2.5">
+        <div className="mb-2 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-cyan-200/80">
+          <span aria-hidden>📬</span>
+          <span>{entry.status === 'running' ? 'sending you something…' : `sent you ${what}`}</span>
+        </div>
+        {images.length > 0 && (
+          <div className={`flex flex-wrap gap-3 px-1 pb-1 ${images.length === 1 ? 'justify-center' : ''}`}>
+            {images.map((file, i) => {
+              const url = agentEngineFileUrl(file.id)
+              return (
+                <a
+                  key={file.id}
+                  href={url}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={`${file.name} · open full size`}
+                  className={`block rounded-md bg-white p-1.5 pb-1 shadow-[0_8px_22px_rgba(34,211,238,0.28)] transition-transform duration-300 hover:z-10 hover:rotate-0 hover:scale-[1.03] ${i % 2 ? 'rotate-1' : '-rotate-1'}`}
+                  style={{ width: images.length === 1 ? '100%' : compact ? 128 : 'calc(50% - 8px)' }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element -- served by the local engine, not optimizable */}
+                  <img src={url} alt={file.name} loading="lazy" className="block w-full rounded-sm object-cover" style={{ maxHeight: compact ? 130 : 280 }} />
+                  <div className="mt-1 truncate text-center text-[9px] text-slate-500">{file.name}</div>
+                </a>
+              )
+            })}
+          </div>
+        )}
+        {others.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {others.map(file => (
+              <a
+                key={file.id}
+                href={agentEngineFileUrl(file.id)}
+                download={file.name}
+                className="rounded-full border border-cyan-300/30 bg-cyan-400/10 px-2.5 py-1 text-[11px] text-cyan-100 hover:bg-cyan-400/20"
+              >
+                📄 {file.name}{file.size !== null ? ` · ${formatBytes(file.size)}` : ''}
+              </a>
+            ))}
+          </div>
+        )}
+        {caption && (
+          <div
+            className="mt-2.5 text-center text-[13px] italic leading-snug text-pink-100/90"
+            style={{ fontFamily: '"Segoe Print", "Bradley Hand", "Comic Sans MS", cursive' }}
+          >
+            {compact && caption.length > 160 ? `${caption.slice(0, 160)}…` : caption}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 const LogEntryView = memo(function LogEntryView({ entry, compact }: { entry: AgentLogEntry; compact: boolean }) {
   const dim = entry.history ? 'opacity-60' : ''
   switch (entry.type) {
@@ -127,6 +200,13 @@ const LogEntryView = memo(function LogEntryView({ entry, compact }: { entry: Age
         </div>
       )
     case 'tool':
+      if (entry.name === 'SendUserFile' && entry.status !== 'error' && (entry.attachments?.length || entry.status === 'running')) {
+        return (
+          <div className={`${entry.parentToolUseId ? 'ml-3' : ''} ${dim}`}>
+            <SentFilesCard entry={entry} compact={compact} />
+          </div>
+        )
+      }
       return (
         <div className={`${entry.parentToolUseId ? 'ml-3' : ''} ${dim}`}>
           <ToolCallCard

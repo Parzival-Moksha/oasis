@@ -8,6 +8,7 @@
 import type {
   EngineAgentKind,
   EngineAgentSnapshot,
+  EngineAttachment,
   EngineAgentStatus,
   EngineContextUsage,
   EngineEvent,
@@ -69,6 +70,8 @@ export type AgentLogEntry =
       /** The tool's input, clipped by the engine (shown when the card is expanded). */
       input?: Record<string, unknown>
       output?: string
+      /** SendUserFile: the files it delivered (shown as a picture card). */
+      attachments?: EngineAttachment[]
       parentToolUseId: string | null
     })
   | (LogBase & {
@@ -588,7 +591,12 @@ export function foldAgentEvent(agent: EngineAgentState, event: EngineEvent, ctx:
     case 'tool.end': {
       if (!e.toolUseId) return a
       return updateLog(a, `t:${e.toolUseId}`, entry => (entry.type === 'tool'
-        ? { ...entry, status: e.isError ? 'error' : 'done', output: e.output || entry.output }
+        ? {
+            ...entry,
+            status: e.isError ? 'error' : 'done',
+            output: e.output || entry.output,
+            ...(Array.isArray(e.attachments) && e.attachments.length ? { attachments: e.attachments } : {}),
+          }
         : entry))
     }
 

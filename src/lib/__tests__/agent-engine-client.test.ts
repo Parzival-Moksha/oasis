@@ -6,6 +6,7 @@ vi.mock('../../store/oasisStore', () => ({ useOasisStore: { getState: () => ({ a
 import {
   AgentEngineClient,
   DEFAULT_AGENT_ENGINE_URL,
+  agentEngineFileUrl,
   computeBackoffDelay,
   resolveAgentEngineUrl,
   type WebSocketLike,
@@ -65,6 +66,11 @@ describe('agent engine client helpers', () => {
     expect(resolveAgentEngineUrl('  ')).toBe(DEFAULT_AGENT_ENGINE_URL)
     expect(resolveAgentEngineUrl('http://evil.example')).toBe(DEFAULT_AGENT_ENGINE_URL)
     expect(resolveAgentEngineUrl('ws://127.0.0.1:4999/ws')).toBe('ws://127.0.0.1:4999/ws')
+  })
+
+  it('turns the engine socket URL into the file link for a sent file', () => {
+    expect(agentEngineFileUrl('abc-123', 'ws://127.0.0.1:4530/ws')).toBe('http://127.0.0.1:4530/file/abc-123')
+    expect(agentEngineFileUrl('a/b?c', 'wss://engine.local:9/ws?x=1')).toBe('https://engine.local:9/file/a%2Fb%3Fc')
   })
 
   it('backs off exponentially with a cap and bounded jitter', () => {

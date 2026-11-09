@@ -25,6 +25,15 @@ export function resolveAgentEngineUrl(value: string | undefined = process.env.NE
   return /^wss?:\/\//i.test(url) ? url : DEFAULT_AGENT_ENGINE_URL
 }
 
+/** HTTP link to a file an agent sent with SendUserFile (the engine's GET /file/<id>). */
+export function agentEngineFileUrl(id: string, engineUrl: string = resolveAgentEngineUrl()): string {
+  const base = new URL(engineUrl)
+  base.protocol = base.protocol === 'wss:' ? 'https:' : 'http:'
+  base.pathname = `/file/${encodeURIComponent(id)}`
+  base.search = ''
+  return base.toString()
+}
+
 export interface BackoffOptions {
   initialMs: number
   maxMs: number
