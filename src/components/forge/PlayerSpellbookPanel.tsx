@@ -34,7 +34,7 @@ type PlayerSpellbookPanelProps = {
   lockedSpellIds?: readonly SpellId[]
 }
 
-const COMBAT_SPELL_IDS = new Set<SpellId>(['firebolt', 'lightning-bolt', 'ice-bolt'])
+const COMBAT_SPELL_IDS = new Set<SpellId>(['firebolt', 'lightning-bolt', 'ice-bolt', 'machine-gun'])
 function isCombatSpell(spellId: SpellId): boolean {
   return COMBAT_SPELL_IDS.has(spellId)
 }

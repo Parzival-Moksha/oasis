@@ -108,6 +108,7 @@ import { PerfHeartbeat } from './forge/PerfHeartbeat'
 import { useRailMenuExclusion } from '@/hooks/useRailMenuExclusion'
 import { MobileOasisControls, useIsMobileOasis } from './forge/MobileOasisControls'
 import { CombatBoltLayer } from './forge/CombatBoltLayer'
+import { MachineGunLayer } from './forge/MachineGunLayer'
 import { PlayerVitalsHud } from './forge/PlayerVitalsHud'
 import { PvPOverlay } from './forge/PvPOverlay'
 import { WorldChatOverlay } from './forge/WorldChatOverlay'
@@ -1655,7 +1656,7 @@ export default function Scene() {
     store.setSelectedSpellId(spellId)
     setSpellbookOpen(false)
 
-    const isCombat = spellId === 'firebolt' || spellId === 'lightning-bolt' || spellId === 'ice-bolt'
+    const isCombat = spellId === 'firebolt' || spellId === 'lightning-bolt' || spellId === 'ice-bolt' || spellId === 'machine-gun'
     const hostedUserLocked = !canUseFullWizard && isHostedUserLockedSpell(spellId)
 
     if (hostedUserLocked) {
@@ -1706,6 +1707,7 @@ export default function Scene() {
       case 'firebolt':
       case 'lightning-bolt':
       case 'ice-bolt':
+      case 'machine-gun':
         if (!settings.rp1Mode && !readOnlyForcesRp1) updateSetting('rp1Mode', true)
         store.cancelPlacement()
         return
@@ -2041,6 +2043,8 @@ export default function Scene() {
             on settings.{spell}Design. Mounted only when RP1/exploration mode
             is active. In the village too: bolts hit the agents there (cosmetic HP, village-combat.ts). ─═̷─═̷─⚔ */}
         <CombatBoltLayer enabled={effectiveRp1Mode} settings={settings} />
+        {/* Hold-to-fire hitscan gun (spellbook → Combat → Machine Gun). */}
+        <MachineGunLayer enabled={effectiveRp1Mode} />
         {!villageProfile && <QuestZeroNpcExclamation activeWorldId={activeWorldId} />}
 
         {/* ─═̷─═̷─📸─═̷─═̷─ PANORAMA CAPTURE (Ctrl+Shift+P) ─═̷─═̷─📸─═̷─═̷─ */}

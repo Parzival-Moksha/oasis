@@ -117,7 +117,8 @@ export function VillageGore() {
       else _dir.set(0, 0, 1)
       if (_dir.lengthSq() < 1e-4) _dir.set(0, 0, 1)
       _dir.normalize()
-      const count = event.lethal ? 240 : 90
+      const bullet = event.amount < 20
+      const count = event.lethal ? 240 : bullet ? 28 : 90
       for (let i = 0; i < count; i++) {
         const d = sim.drops[sim.nextDrop]
         sim.nextDrop = (sim.nextDrop + 1) % MAX_DROPS
@@ -132,7 +133,7 @@ export function VillageGore() {
         d.ground = ground
         d.alive = true
       }
-      for (let i = 0; i < (event.lethal ? 3 : 1); i++) {
+      for (let i = 0; i < (event.lethal ? 3 : bullet ? 0 : 1); i++) {
         const puff = sim.puffs[sim.nextPuff]
         sim.nextPuff = (sim.nextPuff + 1) % MAX_PUFFS
         puff.alive = true
@@ -141,7 +142,7 @@ export function VillageGore() {
         puff.p.copy(at).addScaledVector(_dir, 0.15 + i * 0.25)
       }
       // A splash right under the wound, and on a knockout a pool spreading under the body.
-      addSplat(at.x + _dir.x * 0.5, ground, at.z + _dir.z * 0.5, event.lethal ? 0.7 : 0.38)
+      if (!bullet || event.lethal || Math.random() < 0.35) addSplat(at.x + _dir.x * 0.5, ground, at.z + _dir.z * 0.5, event.lethal ? 0.7 : bullet ? 0.18 : 0.38)
       if (event.lethal) {
         const dirX = _dir.x
         const dirZ = _dir.z

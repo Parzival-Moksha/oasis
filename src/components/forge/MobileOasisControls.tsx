@@ -363,7 +363,7 @@ export function MobileOasisControls({
   )
 }
 
-const COMBAT_SPELL_IDS: SpellId[] = ['firebolt', 'lightning-bolt', 'ice-bolt']
+const COMBAT_SPELL_IDS: SpellId[] = ['firebolt', 'lightning-bolt', 'ice-bolt', 'machine-gun']
 function isCombatSpell(id: SpellId | null): boolean {
   return id !== null && COMBAT_SPELL_IDS.includes(id)
 }
@@ -510,6 +510,7 @@ function MobilePrimaryActionButton({
     // today, ready for lightning/ice once their cast paths land.
     label = selectedSpellId === 'firebolt' ? 'Fire'
       : selectedSpellId === 'lightning-bolt' ? 'Bolt'
+      : selectedSpellId === 'machine-gun' ? 'Shoot'
       : 'Ice'
     tone = 'rose'
     onTap = () => { dispatchSyntheticLeftClick() }

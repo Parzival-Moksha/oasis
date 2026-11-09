@@ -883,6 +883,8 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
       if (isTypingTarget(event.target)) return
       if (document.pointerLockElement !== canvas && !isProbablyMobileDevice()) return
       if (!canCastBolt()) return
+      // Only a bolt spell takes the click: another armed weapon (the machine gun) or no spell keeps it.
+      if (!resolveActiveSpell()) return
       suppressCastFollowupUntilRef.current = Date.now() + 700
       event.preventDefault()
       event.stopImmediatePropagation()

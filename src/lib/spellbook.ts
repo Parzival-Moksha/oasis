@@ -4,6 +4,7 @@ export const SPELL_IDS = [
   'firebolt',
   'lightning-bolt',
   'ice-bolt',
+  'machine-gun',
   'brush-wand',
   'catalog-place',
   'text-to-3d',
@@ -128,6 +129,15 @@ export const SPELL_DEFS: Record<SpellId, SpellDefinition> = {
     achievementId: 'learn-ice-bolt',
     summary: 'A slowing projectile for monster control and arena fights.',
     stats: ['1 mana', 'Slow', 'Left click or Fire button'],
+  },
+  'machine-gun': {
+    id: 'machine-gun',
+    name: 'Machine Gun',
+    tier: 2,
+    category: 'combat',
+    achievementId: 'learn-machine-gun',
+    summary: 'Hold left click: a hail of bullets, tracers and all. No mana, endless ammo.',
+    stats: ['11 rounds/s', 'Hitscan', 'Hold left click or Fire'],
   },
   'brush-wand': {
     id: 'brush-wand',

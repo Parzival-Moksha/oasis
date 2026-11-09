@@ -103,6 +103,8 @@ export interface VillageHitEvent {
   /** Where the bolt struck (world), if known. */
   at: [number, number, number] | null
   lethal: boolean
+  /** Damage dealt: a bullet (8) sprays less than a bolt (25). */
+  amount: number
 }
 
 const hitListeners = new Set<(event: VillageHitEvent) => void>()
@@ -125,7 +127,7 @@ export function damageVillageAgent(
   vitals.set(agentId, result.vitals)
   scheduleWake(agentId, result.lethal ? VILLAGE_DOWN_MS + 20 : VILLAGE_FLINCH_MS)
   notify()
-  hitListeners.forEach(listener => listener({ agentId, at, lethal: result.lethal }))
+  hitListeners.forEach(listener => listener({ agentId, at, lethal: result.lethal, amount: damage }))
   return { landed: true, lethal: result.lethal, hp: result.vitals.hp }
 }
 
