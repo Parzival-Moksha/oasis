@@ -4,7 +4,9 @@
 // State lives in lib/village/village-combat.ts (cosmetic, this tab only). A knocked-out agent plays
 // the Death clip once and lies there, then gets up with full HP; its Claude Code process never notices.
 
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useFrame } from '@react-three/fiber'
+import * as THREE from 'three'
 
 import { loadAnimationClip } from '@/lib/forge/animation-library'
 import {
@@ -13,6 +15,7 @@ import {
   getVillageCombatVersion,
   getVillageVitals,
   isFlinching,
+  setVillageCorpseCenter,
   subscribeVillageCombat,
 } from '@/lib/village/village-combat'
 
@@ -86,4 +89,57 @@ export function VillageHpBar({ agentId }: { agentId: string }) {
       )}
     </div>
   )
+}
+
+const _bone = new THREE.Vector3()
+const _ground = new THREE.Vector3()
+/** Joints sit inside the body: the lowest one rests this far above the ground when lying down. */
+const BODY_HALF_THICKNESS = 0.09
+
+/**
+ * Keeps a knocked-out body on the ground. The retargeted Death clip lays the skeleton flat but leaves
+ * the hips near standing height, so the corpse floated about a metre up. While the agent is down this
+ * sinks the whole body until its lowest bone rests on the ground, eased so it reads as the fall.
+ */
+export function VillageCorpseDrop({ agentId, children }: { agentId: string; children: ReactNode }) {
+  const ref = useRef<THREE.Group>(null)
+  const vitals = useVitals(agentId)
+  const down = vitals.downAt !== null
+  const bones = useRef<THREE.Object3D[] | null>(null)
+  useFrame((_, delta) => {
+    const group = ref.current
+    if (!group) return
+    let target = 0
+    if (down) {
+      // Bones are found once per knockout (the VRM loads lazily under Suspense).
+      if (!bones.current || bones.current.length === 0) {
+        const found: THREE.Object3D[] = []
+        group.traverse(object => { if ((object as THREE.Bone).isBone) found.push(object) })
+        bones.current = found
+      }
+      if (bones.current.length) {
+        group.updateWorldMatrix(true, true)
+        let minY = Infinity
+        let sx = 0
+        let sz = 0
+        for (const bone of bones.current) {
+          bone.getWorldPosition(_bone)
+          if (_bone.y < minY) minY = _bone.y
+          sx += _bone.x
+          sz += _bone.z
+        }
+        group.parent?.getWorldPosition(_ground)
+        // How far the lowest joint sits above where it should rest, measured with the current offset applied.
+        const excess = minY - (_ground.y + BODY_HALF_THICKNESS)
+        target = Math.min(0, group.position.y - excess)
+        setVillageCorpseCenter(agentId, [sx / bones.current.length, _ground.y, sz / bones.current.length])
+      }
+    } else if (bones.current) {
+      bones.current = null
+      setVillageCorpseCenter(agentId, null)
+    }
+    const next = group.position.y + (target - group.position.y) * (1 - Math.exp(-(down ? 7 : 5) * Math.min(delta, 0.1)))
+    group.position.y = Math.abs(next) < 1e-4 ? 0 : next
+  })
+  return <group ref={ref}>{children}</group>
 }

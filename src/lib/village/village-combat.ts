@@ -98,13 +98,34 @@ function scheduleWake(agentId: string, inMs: number): void {
   }, Math.max(0, inMs)))
 }
 
+export interface VillageHitEvent {
+  agentId: string
+  /** Where the bolt struck (world), if known. */
+  at: [number, number, number] | null
+  lethal: boolean
+}
+
+const hitListeners = new Set<(event: VillageHitEvent) => void>()
+
+/** Every landed hit (the gore layer sprays from here). */
+export function onVillageHit(listener: (event: VillageHitEvent) => void): () => void {
+  hitListeners.add(listener)
+  return () => { hitListeners.delete(listener) }
+}
+
 /** A bolt hit agent `agentId`. Returns what happened, for the hit marker. */
-export function damageVillageAgent(agentId: string, damage = VILLAGE_BOLT_DAMAGE, now = Date.now()): { landed: boolean; lethal: boolean; hp: number } {
+export function damageVillageAgent(
+  agentId: string,
+  damage = VILLAGE_BOLT_DAMAGE,
+  now = Date.now(),
+  at: [number, number, number] | null = null,
+): { landed: boolean; lethal: boolean; hp: number } {
   const result = applyVillageHit(vitals.get(agentId) || FULL_VITALS, damage, now)
   if (!result.landed) return { landed: false, lethal: false, hp: result.vitals.hp }
   vitals.set(agentId, result.vitals)
   scheduleWake(agentId, result.lethal ? VILLAGE_DOWN_MS + 20 : VILLAGE_FLINCH_MS)
   notify()
+  hitListeners.forEach(listener => listener({ agentId, at, lethal: result.lethal }))
   return { landed: true, lethal: result.lethal, hp: result.vitals.hp }
 }
 
@@ -117,3 +138,16 @@ export const VILLAGE_TARGET_PREFIX = 'village:'
 /** Chest height above the avatar's feet (the hit sphere's centre), and the sphere's radius. */
 export const VILLAGE_TARGET_HEIGHT = 1.05
 export const VILLAGE_TARGET_RADIUS = 0.7
+
+// ─── where a knocked-out body lies (VillageCorpseDrop writes, the gore layer pools blood there) ──
+
+const corpseCenters = new Map<string, [number, number, number]>()
+
+export function setVillageCorpseCenter(agentId: string, center: [number, number, number] | null): void {
+  if (center) corpseCenters.set(agentId, center)
+  else corpseCenters.delete(agentId)
+}
+
+export function getVillageCorpseCenter(agentId: string): [number, number, number] | null {
+  return corpseCenters.get(agentId) || null
+}

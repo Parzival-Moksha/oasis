@@ -404,6 +404,27 @@ export function resolveCastOriginAndDirection(camera: THREE.Camera): {
 }
 
 /**
+ * The target under the crosshair, if the camera ray meets one before the ground, with the ground point
+ * right under it (strike designs like Thunderbolt hit the target, not the ground behind it).
+ */
+export function aimedTargetGroundPoint(camera: THREE.Camera, maxDistance = 35): { point: THREE.Vector3; target: CollisionTarget } | null {
+  const origin = new THREE.Vector3()
+  const direction = new THREE.Vector3()
+  camera.getWorldPosition(origin)
+  camera.getWorldDirection(direction).normalize()
+  let best: { distance: number; target: CollisionTarget } | null = null
+  for (const target of collectCollisionTargets()) {
+    const center = new THREE.Vector3(target.position[0], target.position[1] + Math.min(1.4, target.radius), target.position[2])
+    const distance = cameraRaySphereHitDistance(origin, direction, center, target.radius)
+    if (distance !== null && distance > 0.25 && distance < maxDistance && (!best || distance < best.distance)) best = { distance, target }
+  }
+  if (!best) return null
+  const groundDistance = direction.y < -1e-3 ? -origin.y / direction.y : Infinity
+  if (groundDistance < best.distance) return null
+  return { point: new THREE.Vector3(best.target.position[0], 0, best.target.position[2]), target: best.target }
+}
+
+/**
  * Ray-cast the player's aim down to the ground plane (y=0). Used by the
  * Thunderbolt (D) design to telegraph its strike point and place its trunk.
  * Returns null if the aim is parallel-or-up.

@@ -37,7 +37,8 @@ import { effectiveStatus } from '../../store/slices/agentEngineSlice'
 import { AgentSessionView, SessionWindowHeader } from './AgentSessionView'
 import { VillageComposer } from './VillageComposer'
 import { GAME_HUD_TEXT, GameKeycap } from '../forge/GameKeycap'
-import { VillageHpBar, useVillageCombatPose } from './VillageCombatHud'
+import { VillageCorpseDrop, VillageHpBar, useVillageCombatPose } from './VillageCombatHud'
+import { VillageGore } from './VillageGore'
 import {
   focusVillageAgent,
   getSessionPanelGeometry,
@@ -324,6 +325,7 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, overlayZ
     <group position={placement.position} rotation-y={placement.rotationY}>
       <VillageDesk color={color} working={status === 'working'} observed={observed} />
       <group position={STATION.avatar}>
+        <VillageCorpseDrop agentId={agentId}>
         <VillageBodyBoundary key={avatarUrl} color={color}>
           <Suspense fallback={<AvatarPlaceholder color={color} />}>
             {/* Own cache entry (#village): a world NPC on the same VRM keeps its own scene and mixer. */}
@@ -336,6 +338,7 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, overlayZ
             />
           </Suspense>
         </VillageBodyBoundary>
+        </VillageCorpseDrop>
       </group>
       {/* Its helpers (subagents): half-size copies of it, in a semicircle behind it. */}
       <VillageSubagentMinis agentId={agentId} placement={placement} avatarUrl={avatarUrl} labelsVisible={windowVisible} overlayZ={overlayZ} />
@@ -603,6 +606,8 @@ export function VillageWorld() {
   return (
     <group name="oasis-village">
       <VillagePlaza empty={roster.length === 0} origin={origin} />
+      {/* Blood when the player's bolts hit an agent (VillageGore, village-combat.ts). */}
+      <VillageGore />
       {roster.map(agent => {
         const placement = placements.get(agent.id)
         if (!placement) return null

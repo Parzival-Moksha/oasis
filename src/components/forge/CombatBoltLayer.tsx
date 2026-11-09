@@ -46,6 +46,7 @@ import {
   BOLT_EXPLOSION_TTL_S,
   BOLT_GROUND_ARMING_DISTANCE_M,
   aimedGroundPoint,
+  aimedTargetGroundPoint,
   armedSegment,
   canCastBolt,
   collectCollisionTargets,
@@ -334,7 +335,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
   ) => {
     if (target.id.startsWith(VILLAGE_TARGET_PREFIX)) {
       // A village agent: cosmetic HP only, never anything sent to its Claude Code process.
-      damageVillageAgent(target.id.slice(VILLAGE_TARGET_PREFIX.length))
+      damageVillageAgent(target.id.slice(VILLAGE_TARGET_PREFIX.length), undefined, undefined, position)
       return
     }
     if (target.id.startsWith('pvp:')) {
@@ -474,6 +475,18 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
         }
       }
     }
+    // Village agents it touched (nearest first, up to three: it chains) take the hit. Quest targets keep
+    // their own delayed path below; this one used to report PvP players only.
+    const byId = new Map(targets.map(target => [target.id, target]))
+    const origin0 = origin.clone()
+    hits
+      .filter(hit => hit.id.startsWith(VILLAGE_TARGET_PREFIX))
+      .sort((a, b) => a.position.distanceTo(origin0) - b.position.distanceTo(origin0))
+      .slice(0, 3)
+      .forEach(hit => {
+        const target = byId.get(hit.id)
+        if (target) reportHit(boltId ?? '', target, [hit.position.x, hit.position.y, hit.position.z], null)
+      })
     setPlasmaBolts(prev => [...prev.slice(-6), {
       id: boltId ?? randomId(),
       origin: [origin.x, origin.y, origin.z],
@@ -504,7 +517,7 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
         window.dispatchEvent(new CustomEvent('oasis:firebolt-hit', { detail: { targetId: hits[0].id, position: [impactPosition.x, impactPosition.y, impactPosition.z], worldId: useOasisStore.getState().activeWorldId } }))
       }
     }, 400)
-  }, [])
+  }, [reportHit])
 
   const spawnLightningB = useCallback((origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number, boltId?: string) => {
     const velocity = direction.clone().multiplyScalar(speed)
@@ -537,7 +550,9 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
   }, [])
 
   const spawnLightningD = useCallback((damage: number, boltId?: string) => {
-    const groundPoint = aimedGroundPoint(camera, 35)
+    // Crosshair on a target: strike at its feet (not on the ground behind it, where the aim ray lands).
+    const aimed = aimedTargetGroundPoint(camera, 35)
+    const groundPoint = aimed?.point ?? aimedGroundPoint(camera, 35)
     if (!groundPoint) return
     // Telegraph: arrow-loop VFX at the ground point.
     useOasisStore.getState().spawnMarchOrderVfx([groundPoint.x, groundPoint.y, groundPoint.z])
@@ -549,11 +564,13 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
       // Match ground-point against targets (so the bolt's impact can credit
       // them like other bolts do).
       let hitTarget: CollisionTarget | null = null
+      // Horizontal distance: a target's centre is chest-high, the strike point is on the ground.
+      let best = Infinity
       for (const target of targets) {
-        const center = new THREE.Vector3(target.position[0], target.position[1] + Math.min(1.4, target.radius), target.position[2])
-        if (center.distanceTo(groundPoint) <= target.radius + 0.4) {
+        const flat = Math.hypot(target.position[0] - groundPoint.x, target.position[2] - groundPoint.z)
+        if (flat <= target.radius + 0.5 && flat < best) {
+          best = flat
           hitTarget = target
-          break
         }
       }
       // PvP hit-report for thunderbolt: ground-point-based; check after the
@@ -1050,7 +1067,10 @@ export function CombatBoltLayer({ enabled, settings }: { enabled: boolean; setti
             seed: s.seed,
           })
           playSpatialExplosionSound(s.groundPoint)
-          if (s.target?.id.startsWith('pvp:')) {
+          if (s.target?.id.startsWith(VILLAGE_TARGET_PREFIX)) {
+            const [tx, ty, tz] = s.target.position
+            damageVillageAgent(s.target.id.slice(VILLAGE_TARGET_PREFIX.length), undefined, undefined, [tx, ty + Math.min(1.4, s.target.radius), tz])
+          } else if (s.target?.id.startsWith('pvp:')) {
             // PvP thunderbolt hit. Only the caster reports it.
             if (localBoltIdsRef.current.has(s.id)) {
               sendPvpReportHit({ boltId: s.id, victimSessionId: s.target.id.slice(4) })
