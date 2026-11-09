@@ -354,6 +354,8 @@ export class Normalizer {
       const toolUseId = this.runAliases.get(note.toolUseId) || note.toolUseId || this.agentRuns.get(note.taskId)?.toolUseId;
       if (toolUseId && this.agentCalls.has(toolUseId)) this.endSubagent(toolUseId, { status: note.status, summary: note.summary || note.result });
       this.openTurn();
+      // Still in the thread: the Oasis folds it into a closed "Subagent finished" pill (village-thread.ts).
+      this.emit('user', { text: clip(text, 4000), uuid: msg.uuid || null, replay: !!msg.isReplay });
       return;
     }
     if (/^\[Request interrupted by user/.test(text)) return this.emit('notice', { subtype: 'interrupted', text });

@@ -46,7 +46,7 @@ const notification = (taskId: string, toolUseId: string, status = 'completed') =
 })
 
 describe('engine: background subagents in a transcript', () => {
-  it('runs until its <task-notification>, which is not shown as the owner talking', () => {
+  it('runs until its <task-notification>, which reaches the thread only as that notification (a pill)', () => {
     const { norm, kinds } = setup()
     norm.handleRecord(agentCall('toolu_A', 'Village talk fixes'))
     norm.handleRecord(agentResult('toolu_A', { isAsync: true, status: 'async_launched', agentId: 'af0074' }))
@@ -54,7 +54,8 @@ describe('engine: background subagents in a transcript', () => {
     expect(kinds('subagent.end')).toEqual([]) // "launched" is not "done"
     norm.handleRecord(notification('af0074', 'toolu_A', 'failed'))
     expect(kinds('subagent.end')).toEqual([expect.objectContaining({ toolUseId: 'toolu_A', status: 'failed', summary: 'Agent "x" finished' })])
-    expect(kinds('user')).toEqual([])
+    // It still reaches the thread, as the notification itself: the Oasis folds it into a "Subagent finished" pill.
+    expect(kinds('user').map((e) => String(e.text).startsWith('<task-notification>'))).toEqual([true])
   })
 
   it('SendMessage resumes a finished subagent under its old entry; the next notification (with the SendMessage id) ends it', () => {
@@ -124,7 +125,8 @@ describe('engine: live subagents', () => {
     norm.handleStream({ type: 'system', subtype: 'task_notification', task_id: 'a111', tool_use_id: 'toolu_A', status: 'completed' })
     norm.handleStream({ ...notification('a111', 'toolu_A'), isReplay: true })
     expect(kinds('subagent.end')).toHaveLength(1)
-    expect(kinds('user')).toEqual([])
+    // It still reaches the thread, as the notification itself: the Oasis folds it into a "Subagent finished" pill.
+    expect(kinds('user').map((e) => String(e.text).startsWith('<task-notification>'))).toEqual([true])
   })
 })
 
