@@ -16,6 +16,7 @@ import { Observer } from './observe.js';
 import { HookObserver } from './hooks.js';
 import { listSessions, isTranscriptPath, readLiveRegistry, readLiveEntries, pidAlive, findSessionFile } from './sessions.js';
 import { execFileSync } from 'node:child_process';
+import { checkIn, isBridged, queueForBridge, aliveBridges } from './bridge.js';
 import { loadRoster, saveRoster, saveRosterNow } from './roster.js';
 import { resolveClaude } from './claude.js';
 import { listen as earsListen, warmEars, earsStatus, stopEars } from './ears.js';
@@ -68,7 +69,12 @@ const hub = {
 };
 
 function ownedAgents() { return [...agents.values()].filter((a) => a.kind === 'owned'); }
-function snapshots() { return [...agents.values()].map((a) => a.snapshot()); }
+function snapshots() { return [...agents.values()].map((a) => withBridge(a.snapshot())); }
+/** A watched session whose mod is checking in can be talked to: what you say goes through the bridge (bridge.js). */
+function withBridge(s) {
+  if (s.kind === 'owned' || !isBridged(s.sessionId)) return s;
+  return { ...s, bridged: true, readOnly: false };
+}
 function broadcast(obj) {
   const s = JSON.stringify(obj);
   for (const ws of clients) if (ws.readyState === 1) ws.send(s);
@@ -133,7 +139,15 @@ const commands = {
     return agent.snapshot();
   },
 
-  send({ agentId, text, priority }) { return getAgent(agentId, { owned: true }).send(text, { priority }); },
+  send({ agentId, text, priority }) {
+    const a = getAgent(agentId);
+    if (a.kind === 'owned') return a.send(text, { priority });
+    // A watched session: only if it runs the Oasis mod, which submits it there as a prompt of that same session.
+    if (!text || !text.trim()) throw new Error('empty message');
+    if (!isBridged(a.sessionId)) throw new Error('watching only: this session runs somewhere else without the Oasis plugin; use Move it here to talk to it');
+    queueForBridge(a.sessionId, text);
+    return { queued: true, viaBridge: true };
+  },
   interrupt({ agentId, cancelQueued }) { return getAgent(agentId, { owned: true }).interrupt({ cancelQueued }); },
   setModel({ agentId, model }) { return getAgent(agentId, { owned: true }).setModel(model); },
   setPermissionMode({ agentId, mode }) { return getAgent(agentId, { owned: true }).setPermissionMode(mode); },
@@ -250,6 +264,13 @@ async function letGoOfSessionsOpenElsewhere() {
 // Only when spawns are direct: through the cmd.exe fallback our own claude pid is unknown and would look foreign.
 if (!resolveClaude().shell) setInterval(() => { void letGoOfSessionsOpenElsewhere(); }, 2000).unref();
 else hub.log('claude runs through cmd.exe: the one-writer watch is off');
+// A bridged session that stops checking in (closed, or the mod was removed) goes back to read-only in the Oasis.
+let bridgedBefore = new Set();
+setInterval(() => {
+  const now = aliveBridges();
+  if (now.size !== bridgedBefore.size || [...now].some((id) => !bridgedBefore.has(id))) scheduleSnapshot();
+  bridgedBefore = now;
+}, 2000).unref();
 
 async function runCommand(msg) {
   const fn = commands[msg.cmd];
@@ -339,6 +360,20 @@ const server = http.createServer(async (req, res) => {
       const body = JSON.parse((await readBody(req)) || '{}');
       try { onHook(body); } catch (e) { hub.log('hook error', e.message); }
       return sendJson(res, 200, {}); // {} = no decision; never block the hooked session
+    }
+    if (req.method === 'POST' && url.pathname === '/bridge/poll') {
+      const body = JSON.parse((await readBody(req, 64 * 1024)) || '{}');
+      const { messages, cameAlive } = checkIn(body);
+      if (cameAlive) { hub.log(`bridge: session ${body.sessionId.slice(0, 8)} connected (${body.surface || 'no surface'}, ${body.cwd || '?'})`); scheduleSnapshot(); }
+      return sendJson(res, 200, { messages });
+    }
+    if (req.method === 'POST' && url.pathname === '/bridge/event') {
+      const body = JSON.parse((await readBody(req, 256 * 1024)) || '{}');
+      const watcher = [...agents.values()].find((a) => a.kind !== 'owned' && a.sessionId === body.sessionId);
+      if (watcher && body.kind === 'text' && typeof body.text === 'string') {
+        hub.emit(watcher.id, 'text.delta', { messageId: null, index: Number(body.index) || 0, text: body.text, parentToolUseId: null });
+      }
+      return sendJson(res, 200, {});
     }
     if (req.method === 'POST' && url.pathname === '/api/cmd') {
       const msg = JSON.parse(await readBody(req));
