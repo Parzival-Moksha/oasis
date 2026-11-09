@@ -12,6 +12,7 @@ import type { EngineSessionMeta, SpawnAgentArgs } from '../../lib/agent-engine-t
 import { DEFAULT_ANORAK_PRO_CWD, filterSessions, pickSuggestions } from '../../lib/village/village-sessions'
 import { VILLAGE_PICKER_LAYER, focusVillageAgent, openVillagePicker } from './village-actions'
 import { cwdLabel, formatAgo, formatBytes } from './village-status'
+import { FolderBrowser } from './FolderBrowser'
 
 /** Anorak Pro's home folder (override with NEXT_PUBLIC_ANORAK_PRO_CWD). */
 const ANORAK_PRO_CWD = process.env.NEXT_PUBLIC_ANORAK_PRO_CWD || DEFAULT_ANORAK_PRO_CWD
@@ -155,9 +156,10 @@ function SessionRow({ session, defaults, onDone, onError }: { session: EngineSes
   )
 }
 
-function NewAgentForm({ defaults, onDone, onError, initialCwd = '' }: { defaults: SpawnDefaults; onDone: (agentId: string) => void; onError: ErrorSink; initialCwd?: string }) {
+function NewAgentForm({ defaults, onDone, onError, initialCwd = '', recentFolders = [] }: { defaults: SpawnDefaults; onDone: (agentId: string) => void; onError: ErrorSink; initialCwd?: string; recentFolders?: string[] }) {
   const [name, setName] = useState('')
   const [cwd, setCwd] = useState(initialCwd)
+  const [browsing, setBrowsing] = useState(false)
   const [busy, setBusy] = useState(false)
   const submit = (createCwd = false) => {
     const folder = cwd.trim()
@@ -187,6 +189,17 @@ function NewAgentForm({ defaults, onDone, onError, initialCwd = '' }: { defaults
     >
       <input value={name} onChange={event => setName(event.target.value)} onKeyDown={event => event.stopPropagation()} placeholder="name" className="w-32 rounded-md border border-white/15 bg-black/45 px-2 py-1 text-[12px] text-white placeholder:text-white/30 focus:outline-none max-[700px]:w-full" />
       <input value={cwd} onChange={event => setCwd(event.target.value)} onKeyDown={event => event.stopPropagation()} placeholder="working folder, e.g. C:\7p_nocrastination" className="min-w-[200px] flex-1 rounded-md border border-white/15 bg-black/45 px-2 py-1 text-[12px] text-white placeholder:text-white/30 focus:outline-none" />
+      <button type="button" onClick={() => setBrowsing(true)} title="Pick the folder from this machine's drives" className="rounded-md border border-white/20 bg-white/5 px-2.5 py-1 text-[11px] font-bold text-white/85 hover:bg-white/15">
+        Browse…
+      </button>
+      {browsing && (
+        <FolderBrowser
+          initialPath={cwd.trim()}
+          recent={recentFolders}
+          onPick={folder => { setCwd(folder); setBrowsing(false) }}
+          onClose={() => setBrowsing(false)}
+        />
+      )}
       <button type="submit" disabled={busy || !cwd.trim()} className="rounded-md border border-emerald-300/40 bg-emerald-400/15 px-3 py-1 text-[11px] font-bold text-emerald-50 hover:bg-emerald-400/30 disabled:opacity-40">
         {busy ? '…' : 'new agent'}
       </button>
@@ -233,6 +246,15 @@ function Suggestions({ sessions, defaults, onDone, onError, showRecent }: { sess
 export function SessionPicker() {
   const open = useOasisStore(s => s.agentEngine.pickerOpen)
   const sessions = useOasisStore(s => s.agentEngine.sessions)
+  // Folders your sessions ran in, newest first: one tap away in the folder browser.
+  const recentFolders = useMemo(() => {
+    const seen = new Set<string>()
+    return [...sessions.items]
+      .sort((a, b) => (b.mtime || 0) - (a.mtime || 0))
+      .map(session => session.cwd || '')
+      .filter(dir => Boolean(dir) && !seen.has(dir) && Boolean(seen.add(dir)))
+      .slice(0, 8)
+  }, [sessions.items])
   const rosterEmpty = useOasisStore(s => s.agentEngine.order.length === 0)
   const connected = useOasisStore(s => s.agentEngine.connection.status === 'open')
   const [query, setQuery] = useState('')
@@ -306,7 +328,7 @@ export function SessionPicker() {
               <span className="text-white/35">apply to spawns below</span>
             </div>
 
-            <NewAgentForm defaults={defaults} onDone={onDone} onError={setError} />
+            <NewAgentForm defaults={defaults} onDone={onDone} onError={setError} recentFolders={recentFolders} />
 
             {error && (
               <div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg border border-red-300/35 bg-red-500/15 px-3 py-2 text-[12px] text-red-50">
