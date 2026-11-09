@@ -158,20 +158,68 @@ function mouthWeightsToLegacyState(weights: MouthShapeWeights): LipSyncState {
   }
 }
 
+// ─── node pool ──────────────────────────────────────────────────────────────
+// A wLipSync node is an AudioWorklet whose processor never finishes (process() returns true), so a
+// node that is only disconnected keeps running on the audio thread for the life of the page. The old
+// controller built a fresh node for every dictation and left the previous one wired to the speakers:
+// one more per "T talk". Controllers now borrow a node while attached and give it back on detach, so
+// the page holds as many nodes as mics live at the same time (normally one).
+
+interface PooledNode {
+  node: WLipSyncAudioNodeLike
+  sink: GainNode
+  ctx: AudioContext
+}
+
+const idleNodes: PooledNode[] = []
+let nodesCreated = 0
+
+async function acquireNode(): Promise<PooledNode> {
+  const ctx = await resumeLipSyncContext()
+  if (!ctx) throw new Error('AudioContext unavailable')
+  while (idleNodes.length) {
+    const entry = idleNodes.pop() as PooledNode
+    if (entry.ctx === ctx && ctx.state !== 'closed') return entry
+  }
+  const [mod, profile] = await Promise.all([loadWLipSyncModule(), loadWLipSyncProfile()])
+  const node = await mod.createWLipSyncNode(ctx, profile)
+  const sink = ctx.createGain()
+  sink.gain.value = 0
+  node.connect(sink)
+  sink.connect(ctx.destination)
+  nodesCreated += 1
+  return { node, sink, ctx }
+}
+
+function releaseNode(entry: PooledNode): void {
+  // Start the next borrower from a closed mouth.
+  entry.node.volume = 0
+  for (const key of Object.keys(entry.node.weights)) entry.node.weights[key] = 0
+  idleNodes.push(entry)
+}
+
+/** How many wLipSync nodes this page has built, and how many sit idle in the pool (tests, debugging). */
+export function getWLipSyncNodeStats(): { created: number; idle: number } {
+  return { created: nodesCreated, idle: idleNodes.length }
+}
+
 export function createWLipSyncController(initialTuning?: Partial<WLipSyncTuning>): WLipSyncController {
   let tuning = normalizeTuning(initialTuning)
   let active = false
   let source: MediaStreamAudioSourceNode | null = null
-  let node: WLipSyncAudioNodeLike | null = null
-  let sink: GainNode | null = null
+  let pooled: PooledNode | null = null
+  let acquiring: Promise<PooledNode> | null = null
+  /** Bumped by every attach and detach, so a slow attach can tell it was overtaken. */
+  let attachToken = 0
+  /** The latest call was an attach (true) or a detach (false). */
+  let wantAttached = false
   let lastWeights = { ...ZERO_WEIGHTS }
-  let nodeSetupPromise: Promise<WLipSyncAudioNodeLike> | null = null
 
   const applyNodeTuning = () => {
-    if (!node) return
-    node.minVolume = tuning.minVolume
-    node.maxVolume = tuning.maxVolume
-    node.smoothness = tuning.smoothness
+    if (!pooled) return
+    pooled.node.minVolume = tuning.minVolume
+    pooled.node.maxVolume = tuning.maxVolume
+    pooled.node.smoothness = tuning.smoothness
   }
 
   const disconnectSource = () => {
@@ -181,39 +229,43 @@ export function createWLipSyncController(initialTuning?: Partial<WLipSyncTuning>
     }
   }
 
-  const ensureNode = async () => {
-    if (node) return node
-    if (!nodeSetupPromise) {
-      nodeSetupPromise = (async () => {
-        const ctx = await resumeLipSyncContext()
-        if (!ctx) throw new Error('AudioContext unavailable')
-        const [mod, profile] = await Promise.all([
-          loadWLipSyncModule(),
-          loadWLipSyncProfile(),
-        ])
-        node = await mod.createWLipSyncNode(ctx, profile)
-        sink = ctx.createGain()
-        sink.gain.value = 0
-        node.connect(sink)
-        sink.connect(ctx.destination)
-        applyNodeTuning()
-        return node
-      })().catch(error => {
-        nodeSetupPromise = null
-        throw error
-      })
-    }
+  const giveBack = () => {
+    if (!pooled) return
+    releaseNode(pooled)
+    pooled = null
+  }
 
-    return nodeSetupPromise
+  const ensureNode = async (): Promise<PooledNode> => {
+    if (pooled) return pooled
+    if (!acquiring) {
+      acquiring = acquireNode().then(
+        entry => {
+          acquiring = null
+          pooled = entry
+          applyNodeTuning()
+          return entry
+        },
+        error => {
+          acquiring = null
+          throw error
+        },
+      )
+    }
+    return acquiring
   }
 
   const connectStream = async (stream: MediaStream) => {
     disconnectSource()
-    const ctx = await resumeLipSyncContext()
-    if (!ctx) throw new Error('AudioContext unavailable')
-    const nextNode = await ensureNode()
-    source = ctx.createMediaStreamSource(stream)
-    source.connect(nextNode)
+    const token = ++attachToken
+    wantAttached = true
+    const entry = await ensureNode()
+    if (token !== attachToken) {
+      // Overtaken while the node was on its way: a newer attach uses it, a detach hands it back.
+      if (!wantAttached) giveBack()
+      return
+    }
+    source = entry.ctx.createMediaStreamSource(stream)
+    source.connect(entry.node)
     active = true
   }
 
@@ -222,7 +274,7 @@ export function createWLipSyncController(initialTuning?: Partial<WLipSyncTuning>
       return active
     },
     get isReady() {
-      return Boolean(node)
+      return Boolean(pooled)
     },
     async attachAudio(el: HTMLMediaElement) {
       await connectStream(captureElementStream(el))
@@ -241,13 +293,16 @@ export function createWLipSyncController(initialTuning?: Partial<WLipSyncTuning>
       return { ...tuning }
     },
     update() {
-      lastWeights = normalizeWeightSet(node)
+      lastWeights = normalizeWeightSet(pooled?.node ?? null)
       return { ...lastWeights }
     },
     detach() {
+      attachToken += 1
+      wantAttached = false
       disconnectSource()
       active = false
       lastWeights = { ...ZERO_WEIGHTS }
+      giveBack()
     },
   }
 }
