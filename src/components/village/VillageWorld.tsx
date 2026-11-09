@@ -36,6 +36,7 @@ import { useIsMobileOasis } from '../forge/MobileOasisControls'
 import { effectiveStatus } from '../../store/slices/agentEngineSlice'
 import { AgentSessionView, SessionWindowHeader } from './AgentSessionView'
 import { VillageComposer } from './VillageComposer'
+import { GAME_HUD_TEXT, GameKeycap } from '../forge/GameKeycap'
 import {
   focusVillageAgent,
   getSessionPanelGeometry,
@@ -200,8 +201,10 @@ function StationLabel({ agentId, nearby }: { agentId: string; nearby: boolean })
         <span className="font-normal text-white/55">{info.label}</span>
       </div>
       {nearby && (
-        <div className="rounded-md border border-white/25 bg-black/75 px-2 py-0.5 font-mono text-[11px] font-bold text-white">
-          <span className="mr-1 rounded bg-white/20 px-1">T</span>talk
+        <div className="flex items-center gap-2 whitespace-nowrap rounded-md bg-black/55 px-2 py-1 text-[10px]" style={GAME_HUD_TEXT}>
+          <span className="flex items-center gap-1"><GameKeycap accent="#34d399">T</GameKeycap>talk</span>
+          <span className="flex items-center gap-1"><GameKeycap accent="#38bdf8">E</GameKeycap>write</span>
+          <span className="flex items-center gap-1"><GameKeycap accent="#c084fc">F</GameKeycap>full</span>
         </div>
       )}
       <style>{'@keyframes villageBob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-4px) } }'}</style>

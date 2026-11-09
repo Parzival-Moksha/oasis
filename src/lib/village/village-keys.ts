@@ -1,6 +1,7 @@
 // ░▒▓ VILLAGE KEYS — what a key press means in the village (pure, so it can be tested) ▓▒░
 //
-// Next to an agent: T opens its talk window with the mic on, E opens it quietly.
+// Next to an agent: T opens its talk window with the mic on, E opens it quietly (to write), F opens it
+// straight on its full screen.
 // With an agent open (side panel or its screen, the text box not focused): T starts / stops the mic,
 // Enter sends what is in the box, F zooms onto its screen and back, Esc stops the mic first, then
 // leaves the screen (one more Esc leaves the agent, through the input manager).
@@ -13,6 +14,7 @@ export type VillageKeyAction =
   | 'escape'
   | 'talk'
   | 'open'
+  | 'screen'
   | 'picker'
   | 'next'
 
@@ -45,11 +47,11 @@ export function villageKeyAction(c: VillageKeyContext): VillageKeyAction | null 
   }
   // Placement, paint and other panels keep their keys (E is noclip "down", T the rotate gizmo).
   if (!c.worldKeysFree) return null
-  if (c.code === 'KeyE' || c.code === 'KeyT') {
+  if (c.code === 'KeyE' || c.code === 'KeyT' || c.code === 'KeyF') {
     const target = c.nearbyAgentId
     if (!target) return c.code === 'KeyE' && c.inPlaza && !c.focusedAgentId ? 'picker' : null
     if (target === c.focusedAgentId) return null
-    return c.code === 'KeyT' ? 'talk' : 'open'
+    return c.code === 'KeyT' ? 'talk' : c.code === 'KeyE' ? 'open' : 'screen'
   }
   if (c.code === 'KeyN' && !c.shift) return c.agentCount > 0 ? 'next' : null
   return null

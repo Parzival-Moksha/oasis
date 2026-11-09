@@ -383,6 +383,10 @@ export function handleVillageKeyDown(event: KeyboardEvent): boolean {
       requestVillageVoiceOnOpen(null) // E is the quiet way in
       if (village.nearbyAgentId) focusVillageAgent(village.nearbyAgentId)
       return true
+    case 'screen': // F next to an agent: open it straight on its full screen
+      requestVillageVoiceOnOpen(null)
+      if (village.nearbyAgentId && focusVillageAgent(village.nearbyAgentId)) setVillageScreen(village.nearbyAgentId)
+      return true
     case 'picker':
       openVillagePicker(true)
       return true

@@ -25,9 +25,15 @@ describe('villageKeyAction: walking up to an agent', () => {
     expect(keys('KeyE', { nearbyAgentId: 'rick' })).toBe('open')
   })
 
-  it('leaves T and E to the world when nobody is near (rotate gizmo, noclip down)', () => {
+  it('F next to an agent opens it straight on its full screen', () => {
+    expect(keys('KeyF', { nearbyAgentId: 'rick' })).toBe('screen')
+  })
+
+  it('leaves T, E and F to the world when nobody is near (rotate gizmo, noclip down, interact)', () => {
     expect(keys('KeyT')).toBeNull()
     expect(keys('KeyE')).toBeNull()
+    expect(keys('KeyF')).toBeNull()
+    expect(keys('KeyF', { inPlaza: true })).toBeNull()
   })
 
   it('E in the summoning circle opens the picker, T there does nothing', () => {
@@ -38,6 +44,8 @@ describe('villageKeyAction: walking up to an agent', () => {
   it('stays out of the way while placing, painting or typing in another panel', () => {
     expect(keys('KeyT', { nearbyAgentId: 'rick', worldKeysFree: false })).toBeNull()
     expect(keys('KeyE', { nearbyAgentId: 'rick', worldKeysFree: false })).toBeNull()
+    expect(keys('KeyF', { nearbyAgentId: 'rick', worldKeysFree: false })).toBeNull()
+    expect(keys('KeyF', { nearbyAgentId: 'rick', typing: true })).toBeNull()
     expect(keys('KeyT', { nearbyAgentId: 'rick', typing: true })).toBeNull()
   })
 
@@ -66,6 +74,8 @@ describe('villageKeyAction: with an agent open', () => {
     expect(keys('KeyT', { focusedAgentId: 'rick', nearbyAgentId: 'tyler' })).toBe('toggle-voice')
     // E still switches to the nearest one
     expect(keys('KeyE', { focusedAgentId: 'rick', nearbyAgentId: 'tyler' })).toBe('open')
+    // F toggles the open agent's screen, it does not jump to the nearest one
+    expect(keys('KeyF', { focusedAgentId: 'rick', nearbyAgentId: 'tyler' })).toBe('toggle-screen')
   })
 
   it('keys typed into the box stay in the box, except Ctrl+Space', () => {
