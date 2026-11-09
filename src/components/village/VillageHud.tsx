@@ -1,24 +1,14 @@
 'use client'
 
-// ░▒▓ VILLAGE HUD — engine status, the roster as chips, "T talk" / "N next" hints ▓▒░
+// ░▒▓ VILLAGE HUD — engine status, summon, the Agents menu (VillageAgentsMenu), "T talk" / "N next" hints ▓▒░
 
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
-import { effectiveStatus, selectAttentionQueue } from '../../store/slices/agentEngineSlice'
+import { selectAttentionQueue } from '../../store/slices/agentEngineSlice'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
-import { focusVillageAgent, isInVillagePlaza, openVillagePicker, subscribeVillagePlaza } from './village-actions'
+import { isInVillagePlaza, openVillagePicker, subscribeVillagePlaza } from './village-actions'
 import { isVillageSoundOn, setVillageSoundOn, subscribeVillageSound } from './village-sound'
-import { VILLAGE_OBSERVED_COLOR, statusColor } from './village-status'
-
-interface ChipInfo {
-  id: string
-  name: string
-  status: string
-  unseen: boolean
-  observed: boolean
-}
-
-const MAX_CHIPS = 9
+import { VillageAgentsMenu } from './VillageAgentsMenu'
 
 function useNow(active: boolean, everyMs = 1000): number {
   const [now, setNow] = useState(() => Date.now())
@@ -59,11 +49,6 @@ function EngineStatus() {
 }
 
 export function VillageHud() {
-  const chipsKey = useOasisStore(s => s.agentEngine.order.map(id => {
-    const agent = s.agentEngine.agents[id]
-    if (!agent) return ''
-    return [id, agent.name, effectiveStatus(agent), agent.unseen ? 1 : 0, agent.kind].join('\u0001')
-  }).filter(Boolean).join('\u0002'))
   const attentionKey = useOasisStore(s => selectAttentionQueue(s.agentEngine).join(','))
   const focusedId = useOasisStore(s => s.agentEngine.focusedAgentId)
   const nearbyId = useOasisStore(s => s.agentEngine.nearbyAgentId)
@@ -72,42 +57,18 @@ export function VillageHud() {
   const inPlaza = useSyncExternalStore(subscribeVillagePlaza, isInVillagePlaza, () => false)
   const soundOn = useSyncExternalStore(subscribeVillageSound, isVillageSoundOn, () => true)
 
-  const chips: ChipInfo[] = chipsKey ? chipsKey.split('\u0002').map(item => {
-    const [id, name, status, unseen, kind] = item.split('\u0001')
-    return { id, name, status, unseen: unseen === '1', observed: kind !== 'owned' }
-  }) : []
   const attention = attentionKey ? attentionKey.split(',') : []
-  const shown = chips.slice(0, MAX_CHIPS)
 
   return (
     <>
+      {/* The roster lives in the Agents menu on the left: full names, status, model and thinking. */}
+      <VillageAgentsMenu />
       <div
         data-ui-panel="village-hud"
         className="fixed left-1/2 top-3 z-[180] flex max-w-[min(820px,calc(100vw-400px))] -translate-x-1/2 items-center gap-1.5 rounded-xl border border-white/10 bg-slate-950/75 px-2 py-1.5 text-white shadow-[0_10px_30px_rgba(0,0,0,0.4)] backdrop-blur-md max-[700px]:left-[84px] max-[700px]:right-2 max-[700px]:top-2 max-[700px]:max-w-none max-[700px]:translate-x-0 max-[700px]:flex-wrap"
       >
         <span className="shrink-0 pl-1 pr-0.5 text-[10px] font-black uppercase tracking-[0.22em] text-emerald-200/90 max-[700px]:hidden">Village</span>
         <EngineStatus />
-        <div className="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
-          {shown.map(chip => {
-            const color = statusColor(chip.status)
-            const needs = attention.includes(chip.id)
-            return (
-              <button
-                key={chip.id}
-                type="button"
-                onClick={() => focusVillageAgent(chip.id)}
-                title={`${chip.name}: ${chip.status}${chip.observed ? ' (observed, read-only)' : ''}`}
-                className={`flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-bold transition hover:bg-white/10 ${focusedId === chip.id ? 'bg-white/15' : 'bg-black/30'}`}
-                style={{ borderColor: chip.observed ? `${VILLAGE_OBSERVED_COLOR}88` : `${color}66` }}
-              >
-                <span className={`h-2 w-2 rounded-full ${needs ? 'animate-pulse' : ''}`} style={{ background: color, boxShadow: `0 0 6px ${color}` }} />
-                <span className="max-w-[110px] truncate">{chip.name}</span>
-                {chip.observed && <span className="text-[9px] font-normal text-cyan-200/80">obs</span>}
-              </button>
-            )
-          })}
-          {chips.length > shown.length && <span className="shrink-0 px-1 text-[10px] text-white/50">+{chips.length - shown.length}</span>}
-        </div>
         {attention.length > 0 && (
           <span className="shrink-0 rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] font-bold text-amber-100" title="N jumps to the next agent that needs you">
             <span className="mr-1 rounded bg-black/40 px-1 font-mono">N</span>{attention.length} need{attention.length === 1 ? 's' : ''} you

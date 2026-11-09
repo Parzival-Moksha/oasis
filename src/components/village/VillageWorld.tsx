@@ -14,22 +14,23 @@ import { sampleTerrainHeightAt } from '../../lib/forge/terrain-brush'
 import { AGENT_AVATAR_CATALOG } from '../../lib/agent-avatar-catalog'
 import {
   STATION,
-  VILLAGE_SPAWN,
   assignVillageAvatars,
+  assignVillageSeats,
   DESK_WINDOW_PX,
   DESK_WINDOW_TILT,
   computeFocusPose,
   computeScreenPose,
   deskWindowDistanceFactor,
-  layoutVillageStations,
   plazaCenter,
+  rememberVillageAgents,
   resolveVillageOrigin,
   stationLocalToWorld,
+  villageSeatStation,
   type Vec3,
   type VillageOrigin,
+  type VillageRosterAgent,
 } from '../../lib/village/village-layout'
-import { getPlayerAvatarPose } from '../../lib/player-avatar-runtime'
-import { getCameraSnapshot } from '../../lib/camera-bridge'
+import { getVillageMemory, saveVillageMemory } from '../../lib/village/village-memory'
 import { VRMCatalogRenderer } from '../forge/WorldObjects'
 import { useIsMobileOasis } from '../forge/MobileOasisControls'
 import { effectiveStatus } from '../../store/slices/agentEngineSlice'
@@ -409,30 +410,12 @@ function PlazaSign({ position, children }: { position: Vec3; children: ReactNode
   )
 }
 
-/** Per world: captured once, so desks don't wander when the player walks around. */
-const villageOrigins = new Map<string, VillageOrigin>()
-
+/**
+ * Fixed per world, never where the camera happened to look at load, so desks stay put across reloads.
+ * Worlds don't carry their own `village` spot yet (see resolveVillageOrigin): every world uses the spawn.
+ */
 function useVillageOrigin(): VillageOrigin {
-  const worldId = useOasisStore(s => s.activeWorldId)
-  const worldReady = useOasisStore(s => s._worldReady)
-  const [origin, setOrigin] = useState<VillageOrigin | null>(() => villageOrigins.get(worldId) || null)
-  useEffect(() => {
-    const cached = villageOrigins.get(worldId)
-    if (cached) {
-      setOrigin(cached)
-      return
-    }
-    setOrigin(null)
-    if (!worldReady) return
-    // Give the spawn / third-person camera a moment to settle before reading where the player looks.
-    const timer = window.setTimeout(() => {
-      const next = resolveVillageOrigin(getPlayerAvatarPose(), getCameraSnapshot())
-      villageOrigins.set(worldId, next)
-      setOrigin(next)
-    }, 1500)
-    return () => window.clearTimeout(timer)
-  }, [worldId, worldReady])
-  return origin || VILLAGE_SPAWN
+  return useMemo(() => resolveVillageOrigin(null), [])
 }
 
 function VillagePlaza({ empty, origin }: { empty: boolean; origin: VillageOrigin }) {
@@ -543,7 +526,7 @@ export function VillageWorld() {
   const rosterKey = useOasisStore(s => s.agentEngine.order
     .map(id => {
       const agent = s.agentEngine.agents[id]
-      return agent ? `${id}\u0001${agent.name}` : ''
+      return agent ? `${id}\u0001${agent.name}\u0001${agent.sessionId || ''}` : ''
     })
     .filter(Boolean)
     .join('\u0002'))
@@ -553,30 +536,41 @@ export function VillageWorld() {
   const pool = useBodyPool()
   const origin = useVillageOrigin()
 
-  const roster = useMemo(() => (rosterKey ? rosterKey.split('\u0002').map(item => {
-    const [id, name] = item.split('\u0001')
-    return { id, name }
+  const roster = useMemo<VillageRosterAgent[]>(() => (rosterKey ? rosterKey.split('\u0002').map(item => {
+    const [id, name, sessionId] = item.split('\u0001')
+    return { id, name, sessionId: sessionId || null }
   }) : []), [rosterKey])
 
-  const avatars = useMemo(() => {
+  // Desks and bodies are remembered per session (village-memory.ts): a reload, a newcomer or a world
+  // switch moves and re-dresses nobody.
+  const village = useMemo(() => {
     const exclude = [playerBody || '', ...worldBodiesKey.split('|')]
       .filter((path): path is string => Boolean(path))
       .map(path => path.replace(/[?#].*$/, ''))
-    return assignVillageAvatars(roster, pool, exclude)
+    const now = Date.now()
+    const seen = rememberVillageAgents(roster, getVillageMemory(), now)
+    const seated = assignVillageSeats(roster, seen, now)
+    const dressed = assignVillageAvatars(roster, pool, exclude, seated.memory, now)
+    return { seats: seated.seats, avatars: dressed.avatars, memory: dressed.memory }
   }, [roster, pool, playerBody, worldBodiesKey])
+  useEffect(() => {
+    saveVillageMemory(village.memory)
+  }, [village])
+  const avatars = village.avatars
+  const seatsKey = roster.map(agent => `${agent.id}:${village.seats[agent.id] ?? 0}`).join('|')
 
   const placements = useMemo(() => {
-    const layout = layoutVillageStations(roster.length, { origin })
     const map = new Map<string, VillageStationPlacement>()
-    roster.forEach((agent, index) => {
-      const slot = layout[index]
+    for (const entry of seatsKey ? seatsKey.split('|') : []) {
+      const split = entry.lastIndexOf(':')
+      const slot = villageSeatStation(Number(entry.slice(split + 1)), { origin })
       const ground = sampleTerrainHeightAt(terrainHeights, slot.position[0], slot.position[2])
       const station = { position: [slot.position[0], ground, slot.position[2]] as Vec3, rotationY: slot.rotationY }
       const anchor = stationLocalToWorld(station, STATION.avatar)
-      map.set(agent.id, { ...station, anchor })
-    })
+      map.set(entry.slice(0, split), { ...station, anchor })
+    }
     return map
-  }, [roster, terrainHeights, origin])
+  }, [seatsKey, terrainHeights, origin])
 
   useLayoutEffect(() => {
     setVillageStations(placements)
