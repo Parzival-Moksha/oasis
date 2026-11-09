@@ -15,7 +15,7 @@ import { AgentSessionView, StatusPill } from './AgentSessionView'
 import { VILLAGE_SESSION_LAYER, getSessionPanelGeometry, focusVillageAgent, getVillageScreen, leaveVillageFocus, subscribeVillageScreen, toggleVillageScreen } from './village-actions'
 import { VillageComposer } from './VillageComposer'
 import { EffortSelect } from './EffortSelect'
-import { agentDisplayName, cwdLabel, formatCost, modelLabel, statusColor, statusLabel } from './village-status'
+import { agentDisplayName, canTalkTo, cwdLabel, formatCost, modelLabel, statusColor, statusLabel } from './village-status'
 
 const FALLBACK_MODELS = [
   { value: 'default', displayName: 'Default' },
@@ -79,7 +79,7 @@ function ObservedFooter({ agentId }: { agentId: string }) {
     }
   }
   return (
-    <div className="flex shrink-0 flex-col gap-1.5 border-t border-white/10 pt-2 text-[11.5px] leading-snug text-cyan-100/75">
+    <div className="flex shrink-0 flex-col gap-1.5 border-t border-white/10 pt-2 text-[11.5px] leading-snug text-cyan-100/90">
       <div>
         Watching only: this session runs somewhere else (desktop app, terminal), so you can read along but not type here.
       </div>
@@ -116,6 +116,8 @@ export function AgentSessionPanel() {
     ? { top: geometry.margin, right: geometry.margin, bottom: geometry.margin, width: geometry.width, zIndex }
     : { left: geometry.margin, right: geometry.margin, bottom: geometry.margin, height: geometry.height, zIndex }
 
+  const composer = <VillageComposer key={agent.id} agentId={agent.id} containerHeight={geometry.height} />
+
   const dismiss = () => {
     const owned = agent.owned
     const label = agentDisplayName(agent)
@@ -143,10 +145,10 @@ export function AgentSessionPanel() {
             <span className="truncate text-[15px] font-black tracking-wide">{agentDisplayName(agent)}</span>
             <StatusPill
               status={shownStatus}
-              label={`${statusLabel({ status: shownStatus, unseen: agent.unseen })}${agent.readOnly ? ' · read-only' : ''}`}
+              label={`${statusLabel({ status: shownStatus, unseen: agent.unseen })}${agent.bridged ? ' · desktop app' : agent.readOnly ? ' · read-only' : ''}`}
             />
           </div>
-          <div className="mt-0.5 truncate text-[10.5px] text-white/45" title={`${agent.cwd || ''}\nsession ${agent.sessionId || '?'}`}>
+          <div className="mt-0.5 truncate text-[10.5px] text-white/70" title={`${agent.cwd || ''}\nsession ${agent.sessionId || '?'}`}>
             {cwdLabel(agent.cwd) || 'unknown folder'} · {agent.sessionId ? agent.sessionId.slice(0, 8) : 'new session'}
             {agent.statusReason ? ` · ${agent.statusReason}` : ''}
             {agent.usage.sessionCostUsd > 0 ? ` · ${formatCost(agent.usage.sessionCostUsd)} here` : ''}
@@ -158,7 +160,7 @@ export function AgentSessionPanel() {
             disabled={busy}
             onClick={dismiss}
             title={agent.owned ? 'Stop this agent and remove it from the village' : 'Stop observing'}
-            className="rounded-md border border-white/15 bg-white/5 px-2 py-1 text-[10.5px] font-bold text-white/70 transition hover:bg-rose-400/20 hover:text-rose-100"
+            className="rounded-md border border-white/15 bg-white/5 px-2 py-1 text-[10.5px] font-bold text-white/85 transition hover:bg-rose-400/20 hover:text-rose-100"
           >
             {agent.owned ? 'dismiss' : 'unobserve'}
           </button>
@@ -166,7 +168,7 @@ export function AgentSessionPanel() {
             type="button"
             onClick={() => toggleVillageScreen()}
             title="Zoom into the agent's screen and talk there (F)"
-            className="rounded-md border border-white/15 bg-white/5 px-2 py-1 font-mono text-[10.5px] font-bold text-white/70 transition hover:bg-white/15"
+            className="rounded-md border border-white/15 bg-white/5 px-2 py-1 font-mono text-[10.5px] font-bold text-white/85 transition hover:bg-white/15"
           >
             F screen
           </button>
@@ -174,7 +176,7 @@ export function AgentSessionPanel() {
             type="button"
             onClick={() => leaveVillageFocus()}
             title="Back to the world (Esc)"
-            className="rounded-md border border-white/15 bg-white/5 px-2 py-1 text-[12px] font-bold text-white/70 transition hover:bg-white/15"
+            className="rounded-md border border-white/15 bg-white/5 px-2 py-1 text-[12px] font-bold text-white/85 transition hover:bg-white/15"
           >
             ✕
           </button>
@@ -182,7 +184,7 @@ export function AgentSessionPanel() {
       </div>
 
       {agent.owned && (
-        <div className="flex shrink-0 flex-wrap items-center gap-2 text-[10.5px] text-white/60">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 text-[10.5px] text-white/75">
           <label className="flex items-center gap-1">
             model
             <select
@@ -216,7 +218,7 @@ export function AgentSessionPanel() {
             </select>
           </label>
           <EffortSelect agent={agent} />
-          <span className="ml-auto truncate text-white/40">{modelLabel(agent)}</span>
+          <span className="ml-auto truncate text-white/60">{modelLabel(agent)}</span>
         </div>
       )}
 
@@ -224,14 +226,15 @@ export function AgentSessionPanel() {
         <AgentSessionView agentId={agent.id} variant="2d" />
       </div>
 
+      {/* Keyed by agent: N to the next agent gets a fresh box, and T's "mic on" request finds it. */}
       {agent.owned ? (
-        agent.alive || agent.status !== 'error' ? <VillageComposer agentId={agent.id} /> : (
-          <div className="shrink-0 border-t border-white/10 pt-2 text-[11.5px] text-rose-100/80">
+        agent.alive || agent.status !== 'error' ? composer : (
+          <div className="shrink-0 border-t border-white/10 pt-2 text-[11.5px] text-rose-100/90">
             The process stopped. Sending a message restarts it.
-            <VillageComposer agentId={agent.id} />
+            {composer}
           </div>
         )
-      ) : (
+      ) : canTalkTo(agent) ? composer : (
         <ObservedFooter agentId={agent.id} />
       )}
     </div>
