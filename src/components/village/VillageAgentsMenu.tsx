@@ -1,22 +1,39 @@
 'use client'
 
-// ░▒▓ VILLAGE AGENTS MENU — every agent on the left: full name, status colour, model, thinking ▓▒░
-// Sits under the game rail (Profile … Help), scrolls, folds up to its header. Clicking an agent walks
-// the camera to it (focusVillageAgent). It stays clear of the session panel on the right: on a
-// desktop the two never share a column, on a phone it stops above the bottom sheet.
+// ░▒▓ VILLAGE AGENTS MENU — every agent on the left, in the game rail's style ▓▒░
+// Under the rail (Profile … Help): a header like the rail's buttons, then each agent with its session
+// name, its repo (the cwd's folder) and its status colour, and under it the helpers (subagents) at work
+// with how long each has been at it. A click walks the camera to the agent, or opens a helper's work.
+// It scrolls, folds up, and stays clear of the talk panel on the right (on a phone, of the bottom sheet).
 
 import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
-import { effectiveStatus, selectAttentionQueue, type EngineAgentState } from '../../store/slices/agentEngineSlice'
+import { selectAttentionQueue, type EngineAgentState } from '../../store/slices/agentEngineSlice'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
-import { focusVillageAgent, getSessionPanelGeometry, getVillageScreen, subscribeVillageScreen } from './village-actions'
-import { VILLAGE_OBSERVED_COLOR, modelLabel, statusColor, statusLabel } from './village-status'
-import { CUT_NAME_LENGTH, fullAgentName, sessionTitles, thinkingLabel } from './village-agent-labels'
+import { formatElapsed, subagentLook, visibleSubagents, type SubagentLook } from '../../lib/village/village-subagents'
+import { focusVillageAgent, focusVillageSubagent, getSessionPanelGeometry, getVillageScreen, subscribeVillageScreen } from './village-actions'
+import { VILLAGE_HELPERS_COLOR, VILLAGE_OBSERVED_COLOR, cwdLabel, statusColor, villageAgentLook } from './village-status'
+import { CUT_NAME_LENGTH, fullAgentName, sessionTitles } from './village-agent-labels'
+import { SUBAGENT_LOOK_COLOR } from './VillageSubagentMinis'
 
 const COLLAPSED_KEY = 'oasis.village.agentsMenu.collapsed'
 const MARGIN = 16
-const WIDTH = 264
+const WIDTH = 272
 const FALLBACK_TOP = 336
+const ACCENT = '#34D399'
+/** The rail's own face (GameMenuButton). */
+const GAME_MENU_FONT = '"Arial Black", Impact, "Segoe UI Black", "Trebuchet MS", system-ui, sans-serif'
+const CUT_CORNER = 'polygon(0 0, calc(100% - 13px) 0, 100% 13px, 100% 100%, 0 100%)'
+/** Helper descriptions are sentences: a plain readable sans, not the wide mono of the status lines. */
+const HELPER_FONT = '"Segoe UI", system-ui, sans-serif'
+const LOOK_WORD: Record<SubagentLook, string> = { running: '', done: 'done', failed: 'failed', stopped: 'stopped' }
+
+interface HelperRow {
+  key: string
+  look: SubagentLook
+  description: string
+  startedAt: number
+}
 
 interface Row {
   id: string
@@ -25,19 +42,26 @@ interface Row {
   label: string
   color: string
   observed: boolean
-  model: string
-  thinking: string
+  repo: string
+  helpers: HelperRow[]
 }
 
-function rowKey(agent: EngineAgentState, titles: Map<string, string>): string {
-  const status = effectiveStatus(agent)
-  const label = statusLabel({ status, unseen: agent.unseen })
-  return [agent.id, fullAgentName(agent, titles), status, label, agent.owned ? '' : '1', modelLabel(agent), thinkingLabel(agent)].join('\u0001')
+function rowKey(agent: EngineAgentState, titles: Map<string, string>, now: number): string {
+  const look = villageAgentLook(agent, now)
+  const helpers = visibleSubagents(agent, now).map(sub => [sub.key, subagentLook(sub), sub.description, sub.startedAt].join('\u0003')).join('\u0004')
+  return [agent.id, fullAgentName(agent, titles), look.status, look.label, agent.owned ? '' : '1', cwdLabel(agent.cwd), helpers].join('\u0001')
 }
 
 function parseRow(item: string): Row {
-  const [id, name, status, label, observed, model, thinking] = item.split('\u0001')
-  return { id, name, status, label, color: statusColor(status), observed: observed === '1', model, thinking }
+  const [id, name, status, label, observed, repo, helpers] = item.split('\u0001')
+  return {
+    id, name, status, label, repo, observed: observed === '1',
+    color: statusColor(status),
+    helpers: helpers ? helpers.split('\u0004').map(part => {
+      const [key, subLook, description, startedAt] = part.split('\u0003')
+      return { key, look: subLook as SubagentLook, description, startedAt: Number(startedAt) }
+    }) : [],
+  }
 }
 
 function useViewport() {
@@ -85,6 +109,18 @@ function useCollapsed(defaultValue: boolean): [boolean, (next: boolean) => void]
   return [collapsed ?? defaultValue, set]
 }
 
+/** A clock for the helpers' elapsed times; it only ticks while some are listed. */
+function useClock(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!active) return
+    setNow(Date.now())
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [active])
+  return now
+}
+
 /** Agents summoned with a cut name get their full title back from the session list (one cheap engine call). */
 function useSessionTitlesWhenNamesAreCut() {
   const needed = useOasisStore(s => s.agentEngine.connection.status === 'open'
@@ -104,17 +140,40 @@ function useSessionTitlesWhenNamesAreCut() {
   }, [needed])
 }
 
+function HelperLine({ agentId, helper, now, focused }: { agentId: string; helper: HelperRow; now: number; focused: boolean }) {
+  const color = SUBAGENT_LOOK_COLOR[helper.look]
+  const running = helper.look === 'running'
+  return (
+    <button
+      type="button"
+      onClick={() => focusVillageSubagent(agentId, helper.key)}
+      title={`${helper.description}: ${running ? 'working' : helper.look}. Click to see its work.`}
+      className={`flex w-full items-start gap-1.5 rounded px-1.5 py-1 text-left transition hover:bg-white/10 ${focused ? 'bg-white/15' : ''}`}
+    >
+      <span className="mt-[5px] text-[9px] leading-none text-white/35">↳</span>
+      <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${running ? 'animate-pulse' : ''}`} style={{ background: color, boxShadow: `0 0 6px ${color}` }} />
+      <span className="min-w-0 flex-1 whitespace-normal break-words text-[11px] leading-snug text-white/90" style={{ fontFamily: HELPER_FONT }}>{helper.description || 'helper'}</span>
+      <span className="mt-[1px] shrink-0 text-[9.5px] uppercase tracking-[0.08em] tabular-nums" style={{ color: running ? 'rgba(255,255,255,0.55)' : color }}>
+        {running ? formatElapsed(now - helper.startedAt) : LOOK_WORD[helper.look]}
+      </span>
+    </button>
+  )
+}
+
 export function VillageAgentsMenu() {
   useSessionTitlesWhenNamesAreCut()
+  const hasHelpers = useOasisStore(s => s.agentEngine.order.some(id => (s.agentEngine.agents[id]?.subagents.length || 0) > 0))
+  const now = useClock(hasHelpers)
   const rowsKey = useOasisStore(s => {
     const titles = sessionTitles(s.agentEngine.sessions.items)
     return s.agentEngine.order.map(id => {
       const agent = s.agentEngine.agents[id]
-      return agent ? rowKey(agent, titles) : ''
+      return agent ? rowKey(agent, titles, now) : ''
     }).filter(Boolean).join('\u0002')
   })
   const attentionKey = useOasisStore(s => selectAttentionQueue(s.agentEngine).join(','))
   const focusedId = useOasisStore(s => s.agentEngine.focusedAgentId)
+  const focusedHelper = useOasisStore(s => (s.agentEngine.focusedSubagent ? `${s.agentEngine.focusedSubagent.agentId}\u0001${s.agentEngine.focusedSubagent.key}` : ''))
   const screenAgentId = useSyncExternalStore(subscribeVillageScreen, getVillageScreen, () => null)
   const viewport = useViewport()
   const railBottom = useRailBottom()
@@ -126,71 +185,101 @@ export function VillageAgentsMenu() {
 
   const rows = rowsKey ? rowsKey.split('\u0002').map(parseRow) : []
   const attention = new Set(attentionKey ? attentionKey.split(',') : [])
+  const helpersWorking = rows.reduce((sum, row) => sum + row.helpers.filter(helper => helper.look === 'running').length, 0)
   const geometry = getSessionPanelGeometry(viewport.width, viewport.height)
   const top = railBottom + 12
   // A phone's session sheet covers the bottom of the screen: stop above it.
   const bottomGap = phone && focusedId ? geometry.height + geometry.margin * 2 + 8 : MARGIN
   const maxHeight = Math.max(120, viewport.height - top - bottomGap)
   const width = phone ? Math.min(WIDTH, viewport.width - MARGIN * 2) : WIDTH
+  const summary = [
+    `${rows.length} in the village`,
+    attention.size ? `${attention.size} need${attention.size === 1 ? 's' : ''} you` : '',
+    helpersWorking ? `${helpersWorking} helper${helpersWorking === 1 ? '' : 's'} at work` : '',
+  ].filter(Boolean).join(' · ')
 
   return (
     <div
       data-ui-panel="village-agents"
-      className="fixed z-[185] flex flex-col overflow-hidden rounded-xl border border-white/10 bg-slate-950/80 text-white shadow-[0_10px_30px_rgba(0,0,0,0.4)] backdrop-blur-md"
+      className="fixed z-[185] flex select-none flex-col gap-2"
       style={{ left: phone ? 8 : MARGIN, top, width, maxHeight: collapsed ? undefined : maxHeight }}
       onPointerDown={event => event.stopPropagation()}
       onWheel={event => event.stopPropagation()}
     >
+      {/* the header, like the rail's buttons */}
       <button
         type="button"
         onClick={() => setCollapsed(!collapsed)}
         aria-expanded={!collapsed}
         title={collapsed ? 'Show the agents' : 'Fold the list up'}
-        className="flex shrink-0 items-center gap-2 px-3 py-2 text-left transition hover:bg-white/5"
+        className="group relative min-h-[44px] w-full shrink-0 overflow-hidden rounded-lg border bg-black/80 px-3 py-1.5 text-left text-white transition hover:border-white/70"
+        style={{
+          borderColor: collapsed ? `${ACCENT}4d` : `${ACCENT}aa`,
+          clipPath: CUT_CORNER,
+          fontFamily: GAME_MENU_FONT,
+          boxShadow: collapsed ? `0 0 24px ${ACCENT}22, inset 0 0 0 1px rgba(255,255,255,0.05)` : `0 0 36px ${ACCENT}44, inset 0 0 0 1px rgba(255,255,255,0.08)`,
+          textShadow: '0 1px 0 rgba(0,0,0,0.95), 0 0 10px rgba(255,255,255,0.18)',
+        }}
       >
-        <span className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-200/90">Agents</span>
-        <span className="rounded-full bg-white/10 px-1.5 text-[10px] font-bold text-white/70">{rows.length}</span>
-        {attention.size > 0 && (
-          <span className="rounded-full bg-amber-400/20 px-1.5 text-[10px] font-bold text-amber-100" title="Agents that need you (N jumps to the next)">
-            {attention.size} need{attention.size === 1 ? 's' : ''} you
+        <span className="absolute inset-0 opacity-90" style={{ background: `linear-gradient(105deg, ${ACCENT}28, rgba(255,255,255,0.045) 48%, rgba(250,204,21,0.10))` }} />
+        <span className="absolute inset-x-0 top-0 h-px" style={{ background: `linear-gradient(90deg, transparent, ${ACCENT}, transparent)` }} />
+        <span className="absolute bottom-0 left-0 top-0 w-1" style={{ background: `linear-gradient(180deg, ${ACCENT}, rgba(255,255,255,0.18))` }} />
+        <span className="absolute inset-0 opacity-0 transition group-hover:opacity-100" style={{ background: `radial-gradient(circle at 18% 22%, ${ACCENT}66, transparent 35%)` }} />
+        <span className="relative flex h-full items-center gap-2">
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[12px] font-black uppercase tracking-[0.12em]">
+              Agents
+              {attention.size > 0 && <span className="ml-2 rounded-sm bg-amber-400 px-1 text-[10px] text-black" style={{ textShadow: 'none' }}>{attention.size}</span>}
+            </span>
+            <span className="mt-0.5 block whitespace-normal text-[10px] uppercase leading-snug tracking-[0.12em] text-white/55">{summary}</span>
           </span>
-        )}
-        <span className="ml-auto text-[11px] text-white/50">{collapsed ? '▸' : '▾'}</span>
+          <span
+            className="h-0 w-0 shrink-0 border-b-[4px] border-l-[6px] border-t-[4px] border-b-transparent border-t-transparent transition-transform"
+            style={{ borderLeftColor: `${ACCENT}aa`, transform: collapsed ? 'none' : 'rotate(90deg)' }}
+          />
+        </span>
       </button>
 
       {!collapsed && (
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-white/10 px-1.5 py-1.5 [scrollbar-width:thin]">
+        <div
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-lg border border-white/10 bg-black/[0.92] p-1.5 text-white shadow-[0_0_54px_rgba(0,0,0,0.65),0_0_38px_rgba(52,211,153,0.14)] backdrop-blur-md [scrollbar-width:thin]"
+        >
           {rows.length === 0 && (
-            <div className="px-2 py-2 text-[11px] leading-snug text-white/50">No agents yet. Summon one from the circle (E) or with + Summon.</div>
+            <div className="px-2 py-2 text-[11px] leading-snug text-white/55">No agents yet. Stand in the circle and press E, or use + Summon.</div>
           )}
           {rows.map(row => {
             const focused = row.id === focusedId
             const needs = attention.has(row.id)
             return (
-              <button
-                key={row.id}
-                type="button"
-                onClick={() => focusVillageAgent(row.id)}
-                title={`${row.name}: ${row.label}${row.observed ? ' (watching, read-only)' : ''}`}
-                className={`mb-1 flex w-full items-start gap-2 rounded-lg border px-2 py-1.5 text-left transition last:mb-0 hover:bg-white/10 ${focused ? 'bg-white/15' : 'bg-black/25'}`}
-                style={{ borderColor: focused ? `${row.color}cc` : row.observed ? `${VILLAGE_OBSERVED_COLOR}40` : 'rgba(255,255,255,0.06)' }}
-              >
-                <span
-                  className={`mt-[5px] h-2.5 w-2.5 shrink-0 rounded-full ${needs ? 'animate-pulse' : ''}`}
-                  style={{ background: row.color, boxShadow: `0 0 8px ${row.color}` }}
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block whitespace-normal break-words text-[12.5px] font-bold leading-snug text-white">{row.name}</span>
-                  <span className="mt-0.5 block text-[10.5px] leading-snug" style={{ color: needs || row.status === 'error' ? row.color : 'rgba(255,255,255,0.55)' }}>
-                    {row.label}
+              <div key={row.id} className="mb-1.5 last:mb-0">
+                <button
+                  type="button"
+                  onClick={() => focusVillageAgent(row.id)}
+                  title={`${row.name}${row.repo ? ` (${row.repo})` : ''}: ${row.label}${row.observed ? ', watched (runs elsewhere)' : ''}`}
+                  className={`relative w-full overflow-hidden rounded-md border py-1.5 pl-3 pr-2 text-left transition hover:bg-white/10 ${focused ? 'bg-white/[0.12]' : 'bg-white/[0.04]'}`}
+                  style={{ borderColor: focused ? `${row.color}cc` : row.observed ? `${VILLAGE_OBSERVED_COLOR}40` : 'rgba(255,255,255,0.08)' }}
+                >
+                  <span className={`absolute bottom-0 left-0 top-0 w-[3px] ${needs ? 'animate-pulse' : ''}`} style={{ background: row.color, boxShadow: `0 0 10px ${row.color}` }} />
+                  <span
+                    className="block whitespace-normal break-words text-[11.5px] font-black uppercase leading-[1.3] tracking-[0.05em] text-white"
+                    style={{ fontFamily: GAME_MENU_FONT, textShadow: '0 1px 0 rgba(0,0,0,0.9)' }}
+                  >
+                    {row.name}
                   </span>
-                  <span className="block break-words text-[10.5px] leading-snug text-white/45">
-                    {row.model}
-                    {row.thinking ? <> · thinking <span className="text-white/70">{row.thinking}</span></> : null}
-                    {row.observed ? <span className="text-cyan-200/70"> · watching</span> : null}
+                  <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 font-mono text-[10px] uppercase tracking-[0.1em]">
+                    <span style={{ color: row.color }}>{row.label}</span>
+                    {row.repo && <span className="text-cyan-100/60">· {row.repo}</span>}
+                    {row.observed && <span className="text-cyan-200/60">· watched</span>}
                   </span>
-                </span>
-              </button>
+                </button>
+                {row.helpers.length > 0 && (
+                  <div className="ml-2 mt-0.5 border-l pl-1" style={{ borderColor: `${VILLAGE_HELPERS_COLOR}55` }}>
+                    {row.helpers.map(helper => (
+                      <HelperLine key={helper.key} agentId={row.id} helper={helper} now={now} focused={focusedHelper === `${row.id}\u0001${helper.key}`} />
+                    ))}
+                  </div>
+                )}
+              </div>
             )
           })}
         </div>

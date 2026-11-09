@@ -181,6 +181,8 @@ export type EngineSubagentStartEvent = EngineEventEnvelope<'subagent.start'> & {
   description?: string
   subagentType?: string | null
   prompt?: string
+  /** SendMessage woke a finished subagent up: the same subagent runs again. */
+  resumed?: boolean
 }
 export type EngineSubagentProgressEvent = EngineEventEnvelope<'subagent.progress'> & {
   toolUseId?: string | null

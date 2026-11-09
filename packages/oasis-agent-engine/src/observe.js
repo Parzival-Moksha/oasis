@@ -139,6 +139,8 @@ export class Observer {
       if (live.status === 'idle' && this.status === STATUS.WORKING) return this.setStatus(STATUS.WAITING, `idle (pid ${live.pid})`);
       return undefined;
     }
+    // No process holds the session: subagents still open in the transcript died with the one that did.
+    if (this.norm.agentCalls.size) this.norm.endOpenSubagents('stopped', 'no process holds this session any more');
     const idleFor = Date.now() - this.lastWriteAt;
     if (this.status === STATUS.WORKING && idleFor > WORKING_STALE_MS) this.setStatus(STATUS.IDLE, 'no writes for 10+ min');
     else if ((this.status === STATUS.WAITING || this.status === STATUS.DECISION) && idleFor > WAITING_STALE_MS) this.setStatus(STATUS.IDLE, 'quiet for 1h+');

@@ -18,6 +18,7 @@ export const STATUS = Object.freeze({
 
 const DECISION_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode']);
 const AGENT_TOOLS = new Set(['Agent', 'Task']);
+const MAX_AGENT_RUNS = 200;
 const MAX_STR = 2000;
 const MAX_TODOS = 100;
 
@@ -79,7 +80,28 @@ function contextFromUsage(u) {
   return (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
 }
 
+/**
+ * `<task-notification><task-id>…</task-id><tool-use-id>…</tool-use-id><status>completed</status>
+ * <summary>…</summary><result>…</result></task-notification>`, the user-role message that reports a
+ * background subagent's end (Claude Code 2.1.318). null for any other text.
+ */
+export function parseTaskNotification(text) {
+  if (typeof text !== 'string' || !text.trimStart().startsWith('<task-notification>')) return null;
+  const tag = (name) => {
+    const m = text.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`));
+    return m ? m[1].trim() : null;
+  };
+  return { taskId: tag('task-id'), toolUseId: tag('tool-use-id'), status: tag('status') || 'completed', summary: tag('summary'), result: tag('result') };
+}
+
 export class Normalizer {
+  // Subagent runs by their agent id (the Agent result's agentId, a background task's task_id), kept after
+  // a run ends so SendMessage can resume it: {toolUseId, taskId, description, subagentType}. Bounded.
+  agentRuns = new Map();
+  // SendMessage tool_use id -> the Agent tool_use id of the subagent it resumed. A resumed run's
+  // <task-notification> (and live task events) carry the SendMessage id; the Oasis keeps one entry per subagent.
+  runAliases = new Map();
+
   /**
    * @param {string} agentId
    * @param {(kind: string, payload?: object) => void} emit
@@ -118,7 +140,9 @@ export class Normalizer {
   handleStream(msg) {
     switch (msg.type) {
       case 'system': return this.onSystem(msg);
-      case 'assistant': return this.onAssistant(msg.message, msg.parent_tool_use_id || null);
+      case 'assistant':
+        this.noteResumes(msg.message, msg.parent_tool_use_id || null);
+        return this.onAssistant(msg.message, msg.parent_tool_use_id || null);
       case 'user': return this.onUser(msg);
       case 'stream_event': return this.onStreamEvent(msg);
       case 'result': return this.onResult(msg);
@@ -152,20 +176,22 @@ export class Normalizer {
       }
       case 'task_started': {
         if (msg.task_type === 'local_agent' && msg.tool_use_id) {
-          this.taskToTool.set(msg.task_id, msg.tool_use_id);
-          const c = this.agentCalls.get(msg.tool_use_id) || {};
-          this.agentCalls.set(msg.tool_use_id, { ...c, taskId: msg.task_id, background: !!msg.is_backgrounded });
-          if (!c.started) this.startSubagent(msg.tool_use_id, { description: msg.description, subagent_type: msg.subagent_type, prompt: msg.prompt }, msg.task_id);
+          const toolUseId = this.runAliases.get(msg.tool_use_id) || msg.tool_use_id; // a resumed run: its subagent
+          this.taskToTool.set(msg.task_id, toolUseId);
+          const c = this.agentCalls.get(toolUseId) || {};
+          this.agentCalls.set(toolUseId, { ...c, taskId: msg.task_id, background: !!msg.is_backgrounded });
+          if (!c.started) this.startSubagent(toolUseId, { description: msg.description, subagent_type: msg.subagent_type, prompt: msg.prompt }, msg.task_id);
+          this.rememberRun(msg.task_id, toolUseId);
         }
         return undefined;
       }
       case 'task_progress': {
-        const toolUseId = msg.tool_use_id || this.taskToTool.get(msg.task_id);
+        const toolUseId = this.runAliases.get(msg.tool_use_id) || msg.tool_use_id || this.taskToTool.get(msg.task_id);
         if (!toolUseId || !this.agentCalls.has(toolUseId)) return undefined;
         return this.emit('subagent.progress', { toolUseId, taskId: msg.task_id, description: msg.description, lastToolName: msg.last_tool_name, usage: msg.usage });
       }
       case 'task_notification': {
-        const toolUseId = msg.tool_use_id || this.taskToTool.get(msg.task_id);
+        const toolUseId = this.runAliases.get(msg.tool_use_id) || msg.tool_use_id || this.taskToTool.get(msg.task_id);
         if (toolUseId && this.agentCalls.has(toolUseId)) this.endSubagent(toolUseId, { status: msg.status, summary: msg.summary, usage: msg.usage });
         return undefined;
       }
@@ -242,8 +268,10 @@ export class Normalizer {
   startSubagent(toolUseId, input, taskId) {
     const c = this.agentCalls.get(toolUseId) || {};
     if (c.started) return;
-    this.agentCalls.set(toolUseId, { ...c, started: true, taskId: taskId || c.taskId, background: c.background ?? input.run_in_background !== false });
-    this.emit('subagent.start', { toolUseId, taskId: taskId || c.taskId || null, description: input.description || '', subagentType: input.subagent_type || 'general-purpose', prompt: clip(input.prompt || '', 600), model: input.model || null });
+    const description = input.description || c.description || '';
+    const subagentType = input.subagent_type || c.subagentType || 'general-purpose';
+    this.agentCalls.set(toolUseId, { ...c, started: true, taskId: taskId || c.taskId, background: c.background ?? input.run_in_background !== false, description, subagentType });
+    this.emit('subagent.start', { toolUseId, taskId: taskId || c.taskId || null, description, subagentType, prompt: clip(input.prompt || '', 600), model: input.model || null });
   }
 
   endSubagent(toolUseId, { status, summary, usage }) {
@@ -252,20 +280,80 @@ export class Normalizer {
     c.ended = true;
     this.emit('subagent.end', { toolUseId, taskId: c.taskId || null, status: status || 'completed', summary: clip(summary || '', 600), usage: usage || null });
     // Ended: later task_progress / task_notification for it are ignored, so the bookkeeping can go.
+    // (agentRuns keeps what a SendMessage needs to resume it.)
     this.agentCalls.delete(toolUseId);
     if (c.taskId) this.taskToTool.delete(c.taskId);
+    for (const [alias, target] of this.runAliases) if (target === toolUseId) this.runAliases.delete(alias);
+  }
+
+  /** The process is gone (stopped, restarted, moved away): its subagents went with it. */
+  endOpenSubagents(status = 'stopped', summary = '') {
+    for (const [toolUseId, c] of [...this.agentCalls]) if (c.started && !c.ended) this.endSubagent(toolUseId, { status, summary });
+  }
+
+  /** Remember a subagent run by its agent id (= a background task's id), so SendMessage {to: id} can resume it. */
+  rememberRun(agentId, toolUseId) {
+    if (!agentId || !toolUseId) return;
+    const c = this.agentCalls.get(toolUseId) || {};
+    const known = this.agentRuns.get(agentId) || {};
+    this.agentRuns.delete(agentId); // re-insert: the map's order is recency, for the bound below
+    this.agentRuns.set(agentId, {
+      toolUseId, taskId: c.taskId || known.taskId || agentId,
+      description: c.description || known.description || '', subagentType: c.subagentType || known.subagentType || null,
+    });
+    while (this.agentRuns.size > MAX_AGENT_RUNS) this.agentRuns.delete(this.agentRuns.keys().next().value);
+  }
+
+  /** Agent tool results name the subagent: {agentId, status:"async_launched"|"completed", ...}. */
+  noteAgentResults(content, toolUseResult) {
+    if (!toolUseResult || typeof toolUseResult !== 'object' || !toolUseResult.agentId) return;
+    const block = content.find((b) => b?.type === 'tool_result' && this.agentCalls.has(b.tool_use_id));
+    if (block) this.rememberRun(String(toolUseResult.agentId), block.tool_use_id);
+  }
+
+  /**
+   * SendMessage {to: <agent id>} wakes a subagent up again. A finished one runs again under its old entry
+   * (subagent.start with resumed:true); a running one just gets the message. Either way its next
+   * notification carries the SendMessage's id, which runAliases maps back to the subagent.
+   */
+  noteResumes(message, parentToolUseId) {
+    if (parentToolUseId || !Array.isArray(message?.content)) return;
+    for (const b of message.content) {
+      if (b?.type !== 'tool_use' || b.name !== 'SendMessage') continue;
+      const run = this.agentRuns.get(String(b.input?.to || ''));
+      if (!run) continue;
+      this.runAliases.set(b.id, run.toolUseId);
+      while (this.runAliases.size > MAX_AGENT_RUNS) this.runAliases.delete(this.runAliases.keys().next().value);
+      if (this.agentCalls.get(run.toolUseId)?.started) continue; // still running
+      this.agentCalls.set(run.toolUseId, { started: true, taskId: run.taskId, background: true, description: run.description, subagentType: run.subagentType });
+      if (run.taskId) this.taskToTool.set(run.taskId, run.toolUseId);
+      this.emit('subagent.start', {
+        toolUseId: run.toolUseId, taskId: run.taskId || null, description: run.description, subagentType: run.subagentType || 'general-purpose',
+        prompt: clip(typeof b.input?.message === 'string' ? b.input.message : '', 600), resumed: true,
+      });
+    }
   }
 
   onUser(msg) {
     const content = msg.message?.content;
     const parentToolUseId = msg.parent_tool_use_id || null;
     if (Array.isArray(content) && content.some((b) => b?.type === 'tool_result')) {
+      if (!parentToolUseId) this.noteAgentResults(content, msg.tool_use_result ?? msg.toolUseResult);
       for (const b of content) if (b?.type === 'tool_result') this.onToolResult(b, msg.tool_use_result ?? msg.toolUseResult, parentToolUseId);
       return;
     }
     if (parentToolUseId) return; // subagent's own prompt; already in subagent.start
     const text = textOfUserContent(content);
     if (!text) return;
+    // A background subagent finished (or a resumed one stopped again): the CLI tells the model with a
+    // user-role <task-notification>. Not the owner talking: it ends the subagent, and the model takes a turn on it.
+    const note = parseTaskNotification(text);
+    if (note) {
+      const toolUseId = this.runAliases.get(note.toolUseId) || note.toolUseId || this.agentRuns.get(note.taskId)?.toolUseId;
+      if (toolUseId && this.agentCalls.has(toolUseId)) this.endSubagent(toolUseId, { status: note.status, summary: note.summary || note.result });
+      this.openTurn();
+      return;
+    }
     if (/^\[Request interrupted by user/.test(text)) return this.emit('notice', { subtype: 'interrupted', text });
     if (text.startsWith('<local-command-stdout>')) return this.emit('notice', { subtype: 'local-command', text: text.replace(/<\/?local-command-stdout>/g, '') });
     if (msg.isMeta || text.startsWith('<command-') || text.startsWith('<system-reminder>')) return;
@@ -380,6 +468,7 @@ export class Normalizer {
       }
       case 'assistant':
         if (rec.message?.model === '<synthetic>') return undefined;
+        this.noteResumes(rec.message, null);
         return this.onAssistant(rec.message, null);
       case 'system':
         if (rec.subtype === 'stop_hook_summary' || rec.subtype === 'turn_duration') return this.recordTurnEnd(rec);

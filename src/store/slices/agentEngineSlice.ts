@@ -227,6 +227,8 @@ export interface AgentEngineState {
   sessions: EngineSessionsState
   /** Decisions answered from this page and not yet resolved by the engine (requestId -> sent at). */
   inflightDecisions: Record<string, number>
+  /** A subagent whose work the open panel shows alone (its mini avatar was clicked); `key` is its key in `subagents`. */
+  focusedSubagent: { agentId: string; key: string } | null
 }
 
 export type AgentEngineAction =
@@ -254,6 +256,8 @@ export type AgentEngineAction =
   | { type: 'sessions/loaded'; items: EngineSessionMeta[]; at: number }
   | { type: 'sessions/error'; error: string }
   | { type: 'decision/pending'; requestId: string; pending: boolean; at?: number }
+  /** Show one subagent's work in its parent's panel (agentId and key set), or the whole thread again (null). */
+  | { type: 'subagent/focus'; agentId: string | null; key?: string | null }
   /** Older history the owner scrolled back for (olderHistory): prepended to the agent's log. */
   | { type: 'history/older'; agentId: string; events: EngineEvent[]; from: number; done: boolean; anchor?: string | null }
   | { type: 'reset' }
@@ -270,6 +274,7 @@ export function createInitialAgentEngineState(): AgentEngineState {
     rateLimit: null,
     sessions: { status: 'idle', items: [], error: null, loadedAt: null },
     inflightDecisions: {},
+    focusedSubagent: null,
   }
 }
 
@@ -403,11 +408,22 @@ function normalizeContext(ctx: Partial<EngineContextUsage>): EngineContextUsage 
  * An open permission / question / plan wins over the status: a mid-turn message makes the
  * engine report `working`, but the CLI is still blocked on the owner.
  */
-export function attentionRank(agent: Pick<EngineAgentState, 'status' | 'unseen' | 'decisions'>): number | null {
+/** A subagent with no end counts as running for this long at most, so a lost notification can't hold an agent forever. */
+export const SUBAGENT_STALE_MS = 12 * 3600 * 1000
+
+/** Subagents (helpers) still working, judged at `now` (default: the agent's last event, which keeps reducers pure). */
+export function runningSubagentCount(agent: { subagents?: EngineSubagentState[]; lastEventAt?: number }, now = agent.lastEventAt ?? 0): number {
+  let count = 0
+  for (const sub of agent.subagents || []) if (sub.status === 'running' && !(now - sub.startedAt > SUBAGENT_STALE_MS)) count += 1
+  return count
+}
+
+export function attentionRank(agent: Pick<EngineAgentState, 'status' | 'unseen' | 'decisions'> & { subagents?: EngineSubagentState[]; lastEventAt?: number }): number | null {
   if (agent.status === 'needs-decision' || agent.decisions.length > 0) return 0
   if (agent.status === 'error') return 1
-  // idle too: a restarted engine resumes a finished agent as a fresh, idle process.
-  if (agent.unseen && (agent.status === 'waiting' || agent.status === 'idle')) return 2
+  // idle too: a restarted engine resumes a finished agent as a fresh, idle process. Not while its helpers
+  // still work: there is nothing to do yet, and their reports start its next turn by themselves.
+  if (agent.unseen && (agent.status === 'waiting' || agent.status === 'idle')) return runningSubagentCount(agent) > 0 ? null : 2
   return null
 }
 
@@ -642,6 +658,13 @@ function foldAgentEventInner(agent: EngineAgentState, event: EngineEvent, ctx: F
     case 'subagent.start': {
       const id = subagentId(e.toolUseId, e.taskId)
       if (!id || history) return a
+      const known = a.subagents.find(s => s.key === id || (e.taskId && s.taskId === e.taskId))
+      if (known && known.status !== 'running') {
+        // Resumed (SendMessage): the same subagent works again, so it shows as running from now on.
+        a = upsertSubagent(a, known.key, { status: 'running', startedAt: ts, endedAt: undefined, summary: undefined, lastToolName: undefined })
+        a = updateLog(a, `s:${known.key}`, entry => (entry.type === 'subagent' ? { ...entry, status: 'running', summary: undefined } : entry))
+        return withAttention(a, ts)
+      }
       a = upsertSubagent(a, id, { taskId: e.taskId ?? null }, () => ({
         key: id,
         toolUseId: e.toolUseId || null,
@@ -652,8 +675,9 @@ function foldAgentEventInner(agent: EngineAgentState, event: EngineEvent, ctx: F
         startedAt: ts,
       }))
       key = `s:${id}`
-      if (hasLog(a, key)) return a
-      return pushLog(a, {
+      // Helpers working change what the agent's own waiting means (attentionRank).
+      if (hasLog(a, key)) return withAttention(a, ts)
+      return withAttention(pushLog(a, {
         type: 'subagent',
         key,
         ts,
@@ -661,7 +685,7 @@ function foldAgentEventInner(agent: EngineAgentState, event: EngineEvent, ctx: F
         description: e.description || 'subagent',
         subagentType: e.subagentType || null,
         status: 'running',
-      })
+      }), ts)
     }
 
     case 'subagent.progress': {
@@ -679,7 +703,7 @@ function foldAgentEventInner(agent: EngineAgentState, event: EngineEvent, ctx: F
       if (!id) return a
       const status = e.status || 'completed'
       a = upsertSubagent(a, id, { status, summary: e.summary, endedAt: ts })
-      return updateLog(a, `s:${id}`, entry => (entry.type === 'subagent' ? { ...entry, status, summary: e.summary } : entry))
+      return withAttention(updateLog(a, `s:${id}`, entry => (entry.type === 'subagent' ? { ...entry, status, summary: e.summary } : entry)), ts)
     }
 
     case 'permission.request': {
@@ -993,6 +1017,13 @@ export function agentEngineReducer(state: AgentEngineState, action: AgentEngineA
     case 'event':
       return applyEvent(state, action.event, true)
 
+    case 'subagent/focus': {
+      const next = action.agentId && action.key ? { agentId: action.agentId, key: action.key } : null
+      const prev = state.focusedSubagent
+      if (prev === next || (prev && next && prev.agentId === next.agentId && prev.key === next.key)) return state
+      return { ...state, focusedSubagent: next }
+    }
+
     case 'history/older': {
       const agent = state.agents[action.agentId]
       if (!agent) return state
@@ -1003,10 +1034,12 @@ export function agentEngineReducer(state: AgentEngineState, action: AgentEngineA
     case 'focus': {
       const id = action.agentId && state.agents[action.agentId] ? action.agentId : null
       if (id === state.focusedAgentId && (!id || !state.agents[id].unseen)) return state
-      if (!id) return { ...state, focusedAgentId: null }
+      // A subagent view belongs to its parent's panel: it ends when that panel closes or another agent opens.
+      const focusedSubagent = state.focusedSubagent && state.focusedSubagent.agentId === id ? state.focusedSubagent : null
+      if (!id) return { ...state, focusedAgentId: null, focusedSubagent }
       const agent = state.agents[id]
       const seen = withAttention({ ...agent, unseen: false }, agent.lastEventAt)
-      return { ...state, focusedAgentId: id, agents: { ...state.agents, [id]: seen } }
+      return { ...state, focusedAgentId: id, focusedSubagent, agents: { ...state.agents, [id]: seen } }
     }
 
     case 'nearby': {

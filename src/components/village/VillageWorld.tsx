@@ -51,7 +51,8 @@ import {
   setVillageStations,
   type VillageStationPlacement,
 } from './village-actions'
-import { VILLAGE_OBSERVED_COLOR, agentDisplayName, statusColor, statusLabel } from './village-status'
+import { VILLAGE_OBSERVED_COLOR, agentDisplayName, statusColor, villageAgentLook } from './village-status'
+import { VillageSubagentMinis } from './VillageSubagentMinis'
 
 const WORK_ANIMATION_ID = 'ual-talking'
 const WINDOW_DISTANCE = 26
@@ -168,7 +169,11 @@ function useLabelInfo(agentId: string): { name: string; status: string; label: s
   const key = useOasisStore(s => {
     const agent = s.agentEngine.agents[agentId]
     if (!agent) return ''
-    return [agentDisplayName(agent), effectiveStatus(agent), agent.readOnly ? 'observing' : statusLabel({ status: effectiveStatus(agent), unseen: agent.unseen }), agent.readOnly ? '1' : '', agent.unseen ? '1' : ''].join('\u0001')
+    // Helpers: violet "helpers working (3)" once its own turn is over, "×3" next to its status while it works too.
+    const look = villageAgentLook(agent)
+    const helpers = look.helpers && look.status !== 'helpers' ? ` ×${look.helpers}` : ''
+    const label = agent.readOnly ? (look.status === 'helpers' ? `observing · ${look.label}` : `observing${helpers}`) : `${look.label}${helpers}`
+    return [agentDisplayName(agent), look.status, label, agent.readOnly ? '1' : '', agent.unseen ? '1' : ''].join('\u0001')
   })
   return useMemo(() => {
     if (!key) return null
@@ -290,9 +295,10 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, overlayZ
   windowVisible: boolean
   overlayZ: [number, number]
 }) {
+  // 'helpers' (violet) when only its subagents still work.
   const status = useOasisStore(s => {
     const agent = s.agentEngine.agents[agentId]
-    return agent ? effectiveStatus(agent) : 'idle'
+    return agent ? villageAgentLook(agent).status : 'idle'
   })
   const kind = useOasisStore(s => s.agentEngine.agents[agentId]?.kind || 'owned')
   const name = useOasisStore(s => s.agentEngine.agents[agentId]?.name || agentId)
@@ -326,6 +332,8 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, overlayZ
           </Suspense>
         </VillageBodyBoundary>
       </group>
+      {/* Its helpers (subagents): half-size copies of it, in a semicircle behind it. */}
+      <VillageSubagentMinis agentId={agentId} placement={placement} avatarUrl={avatarUrl} labelsVisible={windowVisible} overlayZ={overlayZ} />
       {/* Click target enclosing desk + avatar (in front of the VRM's own proxy box). */}
       <mesh
         position={STATION.hitCenter}

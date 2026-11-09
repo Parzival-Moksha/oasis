@@ -227,6 +227,8 @@ export class Agent {
     this.permissions.clear();
     this.pendingUser.clear();
     this.turnRunning = false;
+    // Background subagents live inside this process: they stopped with it.
+    this.norm.endOpenSubagents('stopped', 'the agent process stopped');
     this.emit('exit', { code, signal, stderr: wasKilling ? undefined : this.stderrTail.slice(-5) });
     if (wasKilling || code === 0) this.setStatus(STATUS.IDLE, wasKilling ? 'stopped' : 'exited');
     else this.setStatus(STATUS.ERROR, `claude exited (code ${code}${signal ? ', ' + signal : ''})`);

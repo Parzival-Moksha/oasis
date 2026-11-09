@@ -1,5 +1,5 @@
 import type { EngineAgentStatus } from '../../lib/agent-engine-types'
-import type { EngineAgentState } from '../../store/slices/agentEngineSlice'
+import { effectiveStatus, runningSubagentCount, type EngineAgentState } from '../../store/slices/agentEngineSlice'
 
 /** Ring / pill colours: green working, blue finished-waiting, amber needs-decision, red error, gray idle. */
 export const VILLAGE_STATUS_COLOR: Record<EngineAgentStatus, string> = {
@@ -21,12 +21,35 @@ export const VILLAGE_STATUS_LABEL: Record<EngineAgentStatus, string> = {
 }
 
 export function statusColor(status: string | null | undefined): string {
+  if (status === 'helpers') return VILLAGE_HELPERS_COLOR
   return VILLAGE_STATUS_COLOR[(status || 'idle') as EngineAgentStatus] || VILLAGE_STATUS_COLOR.idle
 }
 
 export function statusLabel(agent: Pick<EngineAgentState, 'status' | 'unseen'>): string {
   if (agent.status === 'waiting' && !agent.unseen) return 'waiting'
   return VILLAGE_STATUS_LABEL[agent.status] || agent.status
+}
+
+/** Violet: the agent itself waits or idles, but its helpers (subagents) are still working. */
+export const VILLAGE_HELPERS_COLOR = '#a855f7'
+
+export interface VillageAgentLook {
+  /** An engine status, or 'helpers' (its own turn is over, its subagents still work). */
+  status: string
+  color: string
+  label: string
+  /** Subagents working right now: "×3" on a working agent's sign, the count in "helpers working (3)". */
+  helpers: number
+}
+
+/** What an agent's sign, desk and menu row show: its own status, unless only its helpers are still at it. */
+export function villageAgentLook(agent: Pick<EngineAgentState, 'status' | 'unseen' | 'decisions' | 'subagents' | 'lastEventAt'>, now?: number): VillageAgentLook {
+  const status = effectiveStatus(agent)
+  const helpers = runningSubagentCount(agent, now)
+  if (helpers > 0 && (status === 'waiting' || status === 'idle')) {
+    return { status: 'helpers', color: VILLAGE_HELPERS_COLOR, label: `helpers working (${helpers})`, helpers }
+  }
+  return { status, color: statusColor(status), label: statusLabel({ status, unseen: agent.unseen }), helpers }
 }
 
 /** Agents the Oasis runs, and desktop-app sessions running the Oasis plugin (bridged), get a text box. */

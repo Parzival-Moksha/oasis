@@ -49,6 +49,69 @@ export function getVillageAnchors(): Record<string, Vec3> {
   return out
 }
 
+// ─── helpers (subagent minis; VillageSubagentMinis writes, proximity + E + HUD read) ──
+
+/** Stand this close to a helper (a parent's subagent mini) for E to open its work. */
+export const VILLAGE_MINI_RADIUS = 1.3
+
+export interface VillageSubagentRef {
+  agentId: string
+  key: string
+  description: string
+}
+
+/** World positions of every mini on screen, per parent agent. */
+const minis = new Map<string, Array<VillageSubagentRef & { position: Vec3 }>>()
+let nearbyMini: VillageSubagentRef | null = null
+const nearbyMiniListeners = new Set<() => void>()
+
+export function setVillageMinis(agentId: string, next: Array<VillageSubagentRef & { position: Vec3 }> | null): void {
+  if (next && next.length) minis.set(agentId, next)
+  else minis.delete(agentId)
+}
+
+/** Every mini on screen, with its world position (dev helpers, tests). */
+export function getVillageMiniList(): Array<VillageSubagentRef & { position: Vec3 }> {
+  return [...minis.values()].flat()
+}
+
+/** The helper within E's reach, if any (it wins E over its parent). */
+export function getNearbyVillageMini(): VillageSubagentRef | null {
+  return nearbyMini
+}
+
+export function subscribeNearbyVillageMini(listener: () => void): () => void {
+  nearbyMiniListeners.add(listener)
+  return () => { nearbyMiniListeners.delete(listener) }
+}
+
+function updateNearbyMini(actor: Vec3 | null): void {
+  let best: VillageSubagentRef | null = null
+  if (actor) {
+    const anchors: Record<string, Vec3> = {}
+    const refs = new Map<string, VillageSubagentRef>()
+    for (const list of minis.values()) {
+      for (const mini of list) {
+        const id = `${mini.agentId}\u0001${mini.key}`
+        anchors[id] = mini.position
+        refs.set(id, mini)
+      }
+    }
+    const id = findNearestStation(actor, anchors, VILLAGE_MINI_RADIUS, VILLAGE_TALK_HEIGHT)
+    best = id ? refs.get(id) || null : null
+  }
+  if (best?.agentId === nearbyMini?.agentId && best?.key === nearbyMini?.key && best?.description === nearbyMini?.description) return
+  nearbyMini = best
+  nearbyMiniListeners.forEach(listener => listener())
+}
+
+/** Open the parent's panel on one helper's work (the panel offers "back" to the whole thread). */
+export function focusVillageSubagent(agentId: string, key: string): boolean {
+  if (!focusVillageAgent(agentId)) return false
+  useOasisStore.getState().agentEngineDispatch({ type: 'subagent/focus', agentId, key })
+  return true
+}
+
 // ─── plaza (the summoning circle; VillagePlaza writes, proximity + HUD read) ──
 
 let plaza: Vec3 | null = null
@@ -323,6 +386,7 @@ export function updateVillageProximity(): void {
   const actor = getVillageActorPosition()
   const nearby = findNearestStation(actor, getVillageAnchors(), VILLAGE_TALK_RADIUS, VILLAGE_TALK_HEIGHT)
   if (nearby !== store.agentEngine.nearbyAgentId) store.agentEngineDispatch({ type: 'nearby', agentId: nearby })
+  updateNearbyMini(actor)
   // An agent within reach wins the E key; otherwise standing in the circle makes E summon.
   const nextInPlaza = !nearby && Boolean(plaza && findNearestStation(actor, { plaza }, VILLAGE_PLAZA_RADIUS, VILLAGE_TALK_HEIGHT))
   if (nextInPlaza !== inPlaza) {
@@ -366,6 +430,13 @@ export function handleVillageKeyDown(event: KeyboardEvent): boolean {
     inPlaza,
     agentCount: village.order.length,
   })
+  // E next to a helper (a subagent mini) opens its work in the parent's panel; it wins over the parent.
+  const mini = nearbyMini
+  if (mini && event.code === 'KeyE' && (action === 'open' || (action === null && !event.ctrlKey && !event.metaKey && !event.altKey
+    && !event.repeat && !isTypingTarget(event.target) && (input.can().enterFocuses || input.inputState === 'agent-focus' || inSessionView)))) {
+    focusVillageSubagent(mini.agentId, mini.key)
+    return true
+  }
   switch (action) {
     case 'toggle-voice': return toggleVillageVoice()
     case 'toggle-screen': return toggleVillageScreen()
