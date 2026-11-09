@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentLogEntry } from '../../store/slices/agentEngineSlice'
-import { TOOL_RUN_BASE_PX, groupThread, summarizeToolRun, toolRunHeight, toolRunShape, type ToolLogEntry } from '../village/village-thread'
+import { TOOL_RUN_BASE_PX, groupThread, summarizeToolRun, threadImages, toolRunHeight, toolRunShape, type ToolLogEntry } from '../village/village-thread'
 
 let n = 0
 const text = (t: string, parentToolUseId: string | null = null): AgentLogEntry => ({ type: 'text', key: `x:${++n}`, ts: n, text: t, parentToolUseId })
@@ -108,5 +108,17 @@ describe('folded run height', () => {
       expect(h).toBeGreaterThanOrEqual(last)
       last = h
     }
+  })
+})
+
+describe('threadImages', () => {
+  it('lists every picture of the thread once, oldest first, skipping non-images', () => {
+    const sent = { ...tool('SendUserFile'), attachments: [
+      { id: 'a', name: 'a.png', size: 1, isImage: true, mediaType: 'image/png' },
+      { id: 'doc', name: 'notes.pdf', size: 1, isImage: false, mediaType: 'application/pdf' },
+    ] }
+    const read = { ...tool('Read'), attachments: [{ id: 'b', name: 'b.jpg', size: 1, isImage: true, mediaType: 'image/jpeg' }] }
+    const again = { ...tool('Read'), attachments: [{ id: 'a', name: 'a.png', size: 1, isImage: true, mediaType: 'image/png' }] }
+    expect(threadImages([text('x'), sent, tool('Bash'), read, again])).toEqual([{ id: 'a', name: 'a.png' }, { id: 'b', name: 'b.jpg' }])
   })
 })

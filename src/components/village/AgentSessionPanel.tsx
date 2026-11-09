@@ -5,17 +5,29 @@
 // on phones. Typing never reaches the world: keydown stops here, keyup still bubbles so no
 // movement key can get stuck (the WASD-stuck bug class).
 
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
 import { useUILayer } from '../../lib/input-manager'
 import { effectiveStatus } from '../../store/slices/agentEngineSlice'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
 import { showNotice } from '../forge/GlobalNotice'
 import { AgentSessionView, StatusPill } from './AgentSessionView'
-import { VILLAGE_SESSION_LAYER, getSessionPanelGeometry, focusVillageAgent, getVillageScreen, leaveVillageFocus, subscribeVillageScreen, toggleVillageScreen } from './village-actions'
+import {
+  VILLAGE_SESSION_LAYER,
+  focusVillageAgent,
+  getSessionPanelGeometry,
+  getSessionPanelWidth,
+  getVillageScreen,
+  leaveVillageFocus,
+  sessionPanelMaxWidth,
+  setSessionPanelWidth,
+  subscribeSessionPanelWidth,
+  subscribeVillageScreen,
+  toggleVillageScreen,
+} from './village-actions'
 import { VillageComposer } from './VillageComposer'
 import { EffortSelect } from './EffortSelect'
-import { agentDisplayName, canTalkTo, cwdLabel, formatCost, modelLabel, statusColor, statusLabel } from './village-status'
+import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY, VILLAGE_TYPE_CLASS, agentDisplayName, canTalkTo, cwdLabel, formatCost, modelLabel, statusColor, statusLabel } from './village-status'
 
 const FALLBACK_MODELS = [
   { value: 'default', displayName: 'Default' },
@@ -104,6 +116,8 @@ export function AgentSessionPanel() {
   useUILayer(VILLAGE_SESSION_LAYER, Boolean(agentId))
   const [busy, setBusy] = useState(false)
   const screenAgentId = useSyncExternalStore(subscribeVillageScreen, getVillageScreen, () => null)
+  // The remembered width (the owner drags the left edge); geometry reads it, this re-renders on a change.
+  useSyncExternalStore(subscribeSessionPanelWidth, getSessionPanelWidth, () => null)
 
   // F: the agent's own screen took over (camera + composer in the world); the layer above stays pushed.
   if (!agentId || !agent || screenAgentId === agentId) return null
@@ -131,18 +145,49 @@ export function AgentSessionPanel() {
       .finally(() => setBusy(false))
   }
 
+  // Drag the left edge: wider to the left (remembered); double-click: the automatic width again.
+  const startWidthDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    const handle = event.currentTarget
+    const startX = event.clientX
+    const startWidth = geometry.width
+    const max = sessionPanelMaxWidth(viewport.width)
+    handle.setPointerCapture(event.pointerId)
+    const onMove = (move: PointerEvent) => setSessionPanelWidth(Math.min(max, startWidth + (startX - move.clientX)))
+    const onUp = () => {
+      handle.removeEventListener('pointermove', onMove)
+      handle.removeEventListener('pointerup', onUp)
+      handle.removeEventListener('pointercancel', onUp)
+    }
+    handle.addEventListener('pointermove', onMove)
+    handle.addEventListener('pointerup', onUp)
+    handle.addEventListener('pointercancel', onUp)
+  }
+
   return (
     <div
       data-ui-panel="village-session"
-      className="fixed flex flex-col gap-2 rounded-xl border bg-slate-950/95 p-3 text-white shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-xl"
-      style={{ ...style, borderColor: `${color}88` }}
+      className={`fixed flex flex-col gap-2 rounded-xl border bg-slate-950/95 p-3 text-white shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-xl ${VILLAGE_TYPE_CLASS}`}
+      style={{ ...style, borderColor: `${color}88`, fontFamily: VILLAGE_FONT_BODY }}
       onPointerDown={() => bringToFront('village-session')}
     >
+      {geometry.side === 'right' && (
+        <div
+          onPointerDown={startWidthDrag}
+          onDoubleClick={() => setSessionPanelWidth(null)}
+          title="Drag to make the panel wider or narrower (double-click: automatic)"
+          className="group absolute -left-1.5 bottom-6 top-6 z-10 flex w-3 cursor-ew-resize touch-none items-center justify-center"
+        >
+          <span className="h-16 w-1 rounded-full bg-white/15 transition group-hover:bg-white/50" />
+        </div>
+      )}
       <div className="flex shrink-0 items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color, boxShadow: `0 0 10px ${color}` }} />
-            <span className="truncate text-[15px] font-black tracking-wide">{agentDisplayName(agent)}</span>
+            <span className="min-w-0 break-words text-[17px] font-bold leading-tight tracking-wide" style={{ fontFamily: VILLAGE_FONT_DISPLAY }}>{agentDisplayName(agent)}</span>
             <StatusPill
               status={shownStatus}
               label={`${statusLabel({ status: shownStatus, unseen: agent.unseen })}${agent.bridged ? ' · desktop app' : agent.readOnly ? ' · read-only' : ''}`}

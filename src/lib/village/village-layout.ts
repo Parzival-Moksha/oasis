@@ -240,14 +240,16 @@ export interface ScreenFramingInput {
   rotationY: number
   fov: number
   aspect: number
-  /** Share of the view the window should fill (0..1, default 0.84). */
+  /** Share of the view the window should fill (0..1, default SCREEN_FILL). */
   fill?: number
 }
 
 /** Camera square in front of the desk window, close enough that it fills the view. */
+/** The F screen fills this much of the view: 4% margins each side (the owner: "half the margins" of the old 0.84). */
+export const SCREEN_FILL = 0.92
+
 export function computeScreenPose(input: ScreenFramingInput): FocusPose {
-  // 0.84 leaves the HUD buttons at the screen edges clear of the window.
-  const fill = Math.min(1, Math.max(0.3, input.fill ?? 0.84))
+  const fill = Math.min(1, Math.max(0.3, input.fill ?? SCREEN_FILL))
   const tanV = Math.tan(((input.fov || 50) * Math.PI) / 360)
   const tanH = tanV * Math.max(0.2, input.aspect || 1)
   const distance = Math.max(

@@ -102,3 +102,22 @@ export function cwdLabel(cwd: string | null | undefined): string {
   const parts = cwd.split(/[\\/]+/).filter(Boolean)
   return parts[parts.length - 1] || cwd
 }
+
+// ─── type: readable yet epic (the owner: the old Courier was "too wide, too lame") ─────────────────
+
+/** Body text: Space Grotesk (self-hosted by next/font), a geometric sans with character that stays readable in long threads. */
+export const VILLAGE_FONT_BODY = 'var(--font-space-grotesk), "Space Grotesk", "Segoe UI", system-ui, sans-serif'
+/** Names and labels: Bahnschrift, the condensed DIN that ships with Windows (road signs, game HUDs). */
+export const VILLAGE_FONT_DISPLAY = 'Bahnschrift, "Barlow Condensed", var(--font-space-grotesk), sans-serif'
+
+/**
+ * On a panel's root: small caps labels (every `uppercase`) in the condensed display face, code in JetBrains Mono
+ * (not the browser's Courier). Names get VILLAGE_FONT_DISPLAY directly.
+ */
+export const VILLAGE_TYPE_CLASS = [
+  '[&_.uppercase]:[font-family:Bahnschrift,var(--font-space-grotesk),sans-serif]',
+  '[&_.uppercase]:[font-stretch:semi-condensed]',
+  '[&_.font-mono]:[font-family:var(--font-jetbrains-mono),Consolas,monospace]',
+  '[&_code]:[font-family:var(--font-jetbrains-mono),Consolas,monospace]',
+  '[&_pre]:[font-family:var(--font-jetbrains-mono),Consolas,monospace]',
+].join(' ')

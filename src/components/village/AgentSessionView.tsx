@@ -4,7 +4,7 @@
 // Mounted in the 2D session panel and in each desk's 3D window. Shows text, tool cards, todos,
 // subagents, turn outcomes, the context meter and permission / question / plan cards.
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
 import { effectiveStatus, selectHistoryCursor, type AgentLogEntry, type EngineAgentState } from '../../store/slices/agentEngineSlice'
 import { DecisionCard } from './DecisionCards'
@@ -16,10 +16,14 @@ import {
   formatTokens,
   modelLabel,
   statusColor,
+  VILLAGE_FONT_BODY,
+  VILLAGE_FONT_DISPLAY,
+  VILLAGE_TYPE_CLASS,
 } from './village-status'
-import { toggleVillageScreen } from './village-actions'
+import { openVillageImages, toggleVillageScreen } from './village-actions'
 import { agentEngineFileUrl } from '../../lib/agent-engine-client'
-import { groupThread, toolRunShape, type ThreadItem } from '../../lib/village/village-thread'
+import { groupThread, threadImages, toolRunShape, type ThreadItem } from '../../lib/village/village-thread'
+import { hasInjectedText, parseInjectedUserText, type TaskNotice } from '../../lib/village/village-injected'
 import { getOlderHistoryState, loadOlderHistory, retryOlderHistory, subscribeOlderHistory } from './village-history'
 
 /** 2d: the side panel · 3d: the desk window (recent lines) · screen: the desk window zoomed in with F */
@@ -76,6 +80,79 @@ function RichText({ text, className = '' }: { text: string; className?: string }
   )
 }
 
+/** Opens a picture of this thread in the full-screen viewer, which steps through all of the thread's pictures. */
+const ThreadImagesContext = createContext<(fileId: string, name: string) => void>((fileId, name) => {
+  openVillageImages([{ url: agentEngineFileUrl(fileId), name }], 0)
+})
+
+/** A Read of a picture: the picture itself, under the open card. */
+function ReadImages({ files }: { files: Array<{ id: string; name: string }> }) {
+  const openImage = useContext(ThreadImagesContext)
+  return (
+    <div className="flex flex-wrap gap-2">
+      {files.map(file => (
+        <button
+          key={file.id}
+          type="button"
+          onClick={() => openImage(file.id, file.name)}
+          title={`${file.name} · open`}
+          className="overflow-hidden rounded-md border border-white/15 transition-transform duration-300 hover:scale-[1.02] hover:border-cyan-300/60"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- served by the local engine, not optimizable */}
+          <img src={agentEngineFileUrl(file.id)} alt={file.name} loading="lazy" className="block max-h-[220px] max-w-full object-contain" />
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** Screenshots inside a tool card open in the viewer too. */
+function openCaptures(urls: string[], index: number): void {
+  openVillageImages(urls.map((url, i) => ({ url, name: `capture ${i + 1}` })), index)
+}
+
+// ─── what Claude Code injects on the user side: quiet pills, not raw XML ────
+
+/** A background subagent or command finished: one line, opening to what it reported. */
+function TaskPill({ task }: { task: TaskNotice }) {
+  const [open, setOpen] = useState(false)
+  const tone = task.failed ? 'border-rose-300/30 bg-rose-500/10 text-rose-100' : 'border-violet-300/30 bg-violet-500/10 text-violet-50'
+  return (
+    <div className={`rounded-lg border ${tone}`}>
+      <button
+        type="button"
+        onClick={() => setOpen(value => !value)}
+        className="flex w-full items-start gap-2 px-2.5 py-1.5 text-left text-[12px] hover:bg-white/5"
+        title={open ? 'Fold it up' : 'What it reported'}
+      >
+        <span aria-hidden className="mt-[3px] text-[9px] text-white/60">{open ? '▼' : '▶'}</span>
+        <span aria-hidden>{task.failed ? '✗' : '✓'}</span>
+        <span className="min-w-0 flex-1 break-words font-semibold">{task.label}</span>
+      </button>
+      {open && task.body && (
+        <div className="border-t border-white/10 px-2.5 py-2 text-[12.5px] leading-relaxed text-slate-100">
+          <Markdown text={task.body} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** <system-reminder> blocks added to a message: folded away, one quiet line. */
+function ReminderPill({ reminders }: { reminders: string[] }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="text-[10.5px] text-white/55">
+      <button type="button" onClick={() => setOpen(value => !value)} className="hover:text-white/80">
+        {open ? '▼' : '▶'} {reminders.length === 1 ? 'a system note' : `${reminders.length} system notes`} came with this message
+      </button>
+      {open && reminders.map((reminder, i) => (
+        <pre key={i} className="mt-1 max-h-[240px] overflow-y-auto whitespace-pre-wrap break-words rounded bg-black/30 px-2 py-1 text-[10.5px] text-white/70">{reminder}</pre>
+      ))}
+    </div>
+  )
+}
+
 /** Claude's markdown (headings, lists, bold, code, tables), the same renderer as Anorak Pro's window. */
 function Markdown({ text, className = '' }: { text: string; className?: string }) {
   const rendered = useMemo(() => renderMarkdown(text), [text])
@@ -118,6 +195,7 @@ function formatBytes(n: number | null): string {
 
 /** SendUserFile: a little postcard. Pictures as tilted polaroids (click for full size), other files as chips. */
 function SentFilesCard({ entry, compact }: { entry: Extract<AgentLogEntry, { type: 'tool' }>; compact: boolean }) {
+  const openImage = useContext(ThreadImagesContext)
   const files = entry.attachments || []
   const caption = typeof entry.input?.caption === 'string' ? entry.input.caption.trim() : ''
   const images = files.filter(file => file.isImage)
@@ -137,19 +215,18 @@ function SentFilesCard({ entry, compact }: { entry: Extract<AgentLogEntry, { typ
             {images.map((file, i) => {
               const url = agentEngineFileUrl(file.id)
               return (
-                <a
+                <button
                   key={file.id}
-                  href={url}
-                  target="_blank"
-                  rel="noreferrer"
+                  type="button"
+                  onClick={() => openImage(file.id, file.name)}
                   title={`${file.name} · open full size`}
-                  className={`block rounded-md bg-white p-1.5 pb-1 shadow-[0_8px_22px_rgba(34,211,238,0.28)] transition-transform duration-300 hover:z-10 hover:rotate-0 hover:scale-[1.03] ${i % 2 ? 'rotate-1' : '-rotate-1'}`}
+                  className={`block rounded-md bg-white p-1.5 pb-1 text-left shadow-[0_8px_22px_rgba(34,211,238,0.28)] transition-transform duration-300 hover:z-10 hover:rotate-0 hover:scale-[1.03] ${i % 2 ? 'rotate-1' : '-rotate-1'}`}
                   style={{ width: images.length === 1 ? '100%' : compact ? 128 : 'calc(50% - 8px)' }}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element -- served by the local engine, not optimizable */}
                   <img src={url} alt={file.name} loading="lazy" className="block w-full rounded-sm object-cover" style={{ maxHeight: compact ? 130 : 280 }} />
                   <div className="mt-1 truncate text-center text-[9px] text-slate-500">{file.name}</div>
-                </a>
+                </button>
               )
             })}
           </div>
@@ -192,12 +269,21 @@ const LogEntryView = memo(function LogEntryView({ entry, compact }: { entry: Age
       )
     case 'user': {
       const state = userStateLabel(entry)
+      // Task notifications and system reminders are Claude Code talking, not the owner: pills, not a prompt.
+      const injected = hasInjectedText(entry.text) ? parseInjectedUserText(entry.text) : null
+      const text = injected ? injected.text : entry.text
       return (
-        <div className={`ml-6 rounded-lg border border-sky-300/20 bg-sky-400/10 px-2.5 py-1.5 ${dim}`}>
-          <div className="mb-0.5 text-[9px] font-black uppercase tracking-[0.14em] text-sky-200/90">
-            {entry.state === 'seen' ? 'prompt' : 'you'}{state ? ` · ${state}` : ''}{entry.priority === 'now' ? ' · urgent' : ''}
-          </div>
-          <RichText text={compact && entry.text.length > 280 ? `${entry.text.slice(0, 280)}…` : entry.text} className="text-[12.5px] text-slate-50" />
+        <div className={`flex flex-col gap-1.5 ${dim}`}>
+          {text && (
+            <div className="ml-6 rounded-lg border border-sky-300/20 bg-sky-400/10 px-2.5 py-1.5">
+              <div className="mb-0.5 text-[9px] font-black uppercase tracking-[0.14em] text-sky-200/90">
+                {entry.state === 'seen' ? 'prompt' : 'you'}{state ? ` · ${state}` : ''}{entry.priority === 'now' ? ' · urgent' : ''}
+              </div>
+              <RichText text={compact && text.length > 280 ? `${text.slice(0, 280)}…` : text} className="text-[12.5px] text-slate-50" />
+            </div>
+          )}
+          {injected && injected.reminders.length > 0 && <div className="ml-6"><ReminderPill reminders={injected.reminders} /></div>}
+          {injected?.tasks.map((task, i) => <TaskPill key={`${task.taskId || 'task'}-${i}`} task={task} />)}
         </div>
       )
     }
@@ -216,25 +302,32 @@ const LogEntryView = memo(function LogEntryView({ entry, compact }: { entry: Age
           </div>
         )
       }
-      return (
-        <div className={`${entry.parentToolUseId ? 'ml-3' : ''} ${dim}`}>
-          <ToolCallCard
-            name={entry.name}
-            icon={TOOL_ICONS_MAP[entry.name] || (entry.name.startsWith('mcp__') ? '🔌' : '🔧')}
-            display={entry.summary || entry.name}
-            input={entry.input}
-            result={entry.status === 'running' ? undefined : {
-              preview: entry.output || '',
-              isError: entry.status === 'error',
-              length: entry.output?.length || 0,
-              fullResult: entry.output,
-            }}
-            compact={compact}
-            suppressMedia
-            bright
-          />
-        </div>
-      )
+      {
+        // A Read of a picture: the picture instead of "[image]".
+        const pictures = (entry.attachments || []).filter(file => file.isImage)
+        const output = pictures.length && (entry.output || '').trim() === '[image]' ? '' : entry.output || ''
+        return (
+          <div className={`${entry.parentToolUseId ? 'ml-3' : ''} ${dim}`}>
+            <ToolCallCard
+              name={entry.name}
+              icon={TOOL_ICONS_MAP[entry.name] || (entry.name.startsWith('mcp__') ? '🔌' : '🔧')}
+              display={entry.summary || entry.name}
+              input={entry.input}
+              result={entry.status === 'running' ? undefined : {
+                preview: output,
+                isError: entry.status === 'error',
+                length: output.length,
+                fullResult: output,
+              }}
+              compact={compact}
+              suppressMedia
+              bright
+              extra={pictures.length ? <ReadImages files={pictures} /> : undefined}
+              onImageClick={openCaptures}
+            />
+          </div>
+        )
+      }
     case 'subagent':
       return (
         <div className={`rounded-md border border-violet-300/30 bg-violet-500/10 px-2 py-1 ${dim}`}>
@@ -415,17 +508,57 @@ function HistoryTop({ agentId, start }: { agentId: string; start: boolean }) {
 /** Within this many pixels of the top, the next older piece loads. */
 const LOAD_OLDER_MARGIN_PX = 320
 
+/** One subagent's work alone (its mini avatar was clicked): a header naming it and the way back. */
+function SubagentHeader({ agent, subagent }: { agent: EngineAgentState; subagent: EngineAgentState['subagents'][number] }) {
+  const back = () => useOasisStore.getState().agentEngineDispatch({ type: 'subagent/focus', agentId: null })
+  const running = subagent.status === 'running'
+  return (
+    <div className="flex shrink-0 items-start gap-2 rounded-lg border border-violet-300/30 bg-violet-500/10 px-2.5 py-1.5">
+      <div className="min-w-0 flex-1">
+        <div className="text-[9.5px] font-black uppercase tracking-[0.14em] text-violet-200">
+          subagent · {subagent.subagentType || 'agent'} · {subagent.status}{running && subagent.lastToolName ? ` · ${subagent.lastToolName}` : ''}
+        </div>
+        <div className="break-words text-[13px] font-semibold text-slate-50" style={{ fontFamily: VILLAGE_FONT_DISPLAY }}>{subagent.description || 'subagent'}</div>
+      </div>
+      <button
+        type="button"
+        onClick={back}
+        className="shrink-0 rounded-md border border-white/20 bg-white/10 px-2 py-1 text-[11px] font-bold text-white/90 transition hover:bg-white/20"
+      >
+        ← back to {agent.name}
+      </button>
+    </div>
+  )
+}
+
 export function AgentSessionView({ agentId, variant, header }: AgentSessionViewProps) {
   const agent = useOasisStore(s => s.agentEngine.agents[agentId])
+  const focusedSubagent = useOasisStore(s => s.agentEngine.focusedSubagent)
   const compact = variant === '3d'
   const log = agent?.log
+  // The village's subagent mini avatars: clicking one shows only that subagent's work in its parent's panel.
+  const subagent = !compact && agent && focusedSubagent?.agentId === agentId
+    ? agent.subagents.find(sub => sub.key === focusedSubagent.key) || null
+    : null
+  const subagentId = subagent ? subagent.toolUseId || subagent.key : null
   const items = useMemo(() => {
     if (!log) return []
+    if (subagentId) {
+      // Its own text counts as "the last text" here, so its finished tool runs fold like the main thread's.
+      const own = log.filter(entry => (entry.type === 'text' || entry.type === 'tool') && entry.parentToolUseId === subagentId)
+      return groupThread(own.map(entry => ({ ...entry, parentToolUseId: null })))
+    }
     // The desk window shows the recent conversation; the side panel and the screen show all of it.
     const grouped = groupThread(compact ? log.slice(-60) : log)
     return compact ? grouped.slice(-10) : grouped
-  }, [log, compact])
-  const canLoadOlder = Boolean(agent && !compact && selectHistoryCursor(agent))
+  }, [log, compact, subagentId])
+  const canLoadOlder = Boolean(agent && !compact && !subagentId && selectHistoryCursor(agent))
+  const openImage = useCallback((fileId: string, name: string) => {
+    const images = threadImages(useOasisStore.getState().agentEngine.agents[agentId]?.log || [])
+    const index = images.findIndex(image => image.id === fileId)
+    const list = index === -1 ? [{ id: fileId, name }] : images
+    openVillageImages(list.map(image => ({ url: agentEngineFileUrl(image.id), name: image.name })), Math.max(0, index))
+  }, [agentId])
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Scrolled near the top: load the piece before. The list is column-reverse, so what is added above leaves the view
@@ -445,8 +578,10 @@ export function AgentSessionView({ agentId, variant, header }: AgentSessionViewP
   const decisions = agent.owned ? agent.decisions : []
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-2">
+    <ThreadImagesContext.Provider value={openImage}>
+    <div className={`flex h-full min-h-0 flex-col gap-2 ${VILLAGE_TYPE_CLASS}`} style={{ fontFamily: VILLAGE_FONT_BODY }}>
       {header}
+      {subagent && <SubagentHeader agent={agent} subagent={subagent} />}
       {compact && decisions[0] && <DecisionCard agentId={agent.id} decision={decisions[0]} compact />}
       <div className="flex shrink-0 flex-col gap-1.5">
         {!compact && <ContextMeter agent={agent} />}
@@ -457,20 +592,21 @@ export function AgentSessionView({ agentId, variant, header }: AgentSessionViewP
           streamed delta; scrolling up still works and is not yanked back. */}
       <div
         ref={scrollRef}
+        data-village-thread
         onScroll={compact ? undefined : maybeLoadOlder}
         className={`flex min-h-0 flex-1 flex-col-reverse overflow-y-auto pr-1 [scrollbar-width:thin] ${BRIGHT_GRAYS}`}
       >
       <div className="flex flex-col gap-1.5">
-        {!compact && <HistoryTop agentId={agent.id} start={agent.historyStart} />}
-        {items.length === 0 && !agent.live && (
+        {!compact && !subagent && <HistoryTop agentId={agent.id} start={agent.historyStart} />}
+        {items.length === 0 && (subagent || !agent.live) && (
           <div className="py-3 text-center text-[11px] text-white/60">
-            {agent.owned || agent.bridged ? 'No messages yet. Say hello.' : 'Waiting for the session to do something.'}
+            {subagent ? 'Nothing from this subagent in the thread yet.' : agent.owned || agent.bridged ? 'No messages yet. Say hello.' : 'Waiting for the session to do something.'}
           </div>
         )}
         {items.map(item => (item.kind === 'tools'
           ? <ToolRunRow key={item.key} item={item} compact={compact} />
           : <LogEntryView key={item.key} entry={item.entry} compact={compact} />))}
-        {agent.live?.text && (
+        {!subagent && agent.live?.text && (
           <div className="text-[12.5px] leading-relaxed text-slate-100">
             <Markdown text={compact && agent.live.text.length > 600 ? `…${agent.live.text.slice(-600)}` : agent.live.text} />
             <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-emerald-300/80 align-middle" />
@@ -480,6 +616,7 @@ export function AgentSessionView({ agentId, variant, header }: AgentSessionViewP
       </div>
       </div>
     </div>
+    </ThreadImagesContext.Provider>
   )
 }
 
@@ -501,7 +638,7 @@ export function SessionWindowHeader({ agent, nearby, screen = false }: { agent: 
               ← F
             </button>
           )}
-          <span className={`truncate font-black tracking-wide text-white ${screen ? 'text-[17px]' : 'text-[15px]'}`}>{agent.name}</span>
+          <span className={`truncate font-bold tracking-wide text-white ${screen ? 'text-[19px]' : 'text-[16px]'}`} style={{ fontFamily: VILLAGE_FONT_DISPLAY }}>{agent.name}</span>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <StatusPill status={status} label={status === 'needs-decision' ? 'needs you' : status} />

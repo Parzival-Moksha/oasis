@@ -64,14 +64,23 @@ export interface ComposerHeightInput {
   content: number
   min: number
   max: number
-  /** Height the owner dragged the box to; it becomes the new floor. */
+  /** Height the owner dragged the box to: it sticks (dictation scrolls inside it) until a double-click on the grip. */
   manual?: number | null
 }
 
 export function composerHeight({ content, min, max, manual }: ComposerHeightInput): number {
   const cap = Math.max(min, max)
-  const floor = Math.min(cap, Math.max(min, manual || 0))
-  return Math.round(Math.max(floor, Math.min(content, cap)))
+  if (manual) return Math.round(Math.min(cap, Math.max(min, manual)))
+  return Math.round(Math.max(min, Math.min(content, cap)))
+}
+
+/** Thread the box always leaves visible above it, so the header and the latest lines stay readable. */
+export const COMPOSER_MIN_THREAD_PX = 140
+
+/** The cap where the box is now: its height plus the thread's, minus the thread's minimum. */
+export function composerRoom(boxHeight: number, threadHeight: number | null, min: number, max: number): number {
+  const room = threadHeight === null ? Infinity : boxHeight + threadHeight - COMPOSER_MIN_THREAD_PX
+  return Math.round(Math.max(min, Math.min(max, room)))
 }
 
 /** The tallest the box may get: about 450 px, but under half of what holds it, so the thread stays readable. */

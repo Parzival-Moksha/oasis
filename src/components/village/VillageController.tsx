@@ -1,6 +1,6 @@
 'use client'
 
-// Non-visual wiring for the village profile: engine connection, keys, proximity, focus hand-off.
+// Wiring for the village profile: engine connection, keys, proximity, focus hand-off, and the picture viewer.
 
 import { useEffect } from 'react'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
@@ -8,6 +8,7 @@ import { useInputManager } from '../../lib/input-manager'
 import { useOasisStore } from '../../store/oasisStore'
 import { effectiveStatus, selectAttentionQueue } from '../../store/slices/agentEngineSlice'
 import { playVillageChime, unlockVillageAudio } from './village-sound'
+import { VillageImageViewer } from './VillageImageViewer'
 import {
   VILLAGE_SESSION_LAYER,
   discardVillageCameraPose,
@@ -125,7 +126,8 @@ export function VillageController() {
     }
   }, [])
 
-  return null
+  // The one full-screen picture viewer (it portals itself into <body>).
+  return <VillageImageViewer />
 }
 
 function setAttentionTitle(count: number): void {

@@ -13,7 +13,8 @@ import { useOasisStore } from '../../store/oasisStore'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
 import { useAgentVoiceInput } from '../../hooks/useAgentVoiceInput'
 import { DESK_WINDOW_PX } from '../../lib/village/village-layout'
-import { composerHeight, composerMaxHeight } from '../../lib/village/village-keys'
+import { composerHeight, composerMaxHeight, composerRoom } from '../../lib/village/village-keys'
+import { VILLAGE_FONT_BODY, VILLAGE_TYPE_CLASS } from './village-status'
 import { showNotice } from '../forge/GlobalNotice'
 import { subscribeVillageSend, subscribeVillageVoiceStop, subscribeVillageVoiceToggle, takeVillageVoiceRequest } from './village-actions'
 
@@ -112,14 +113,22 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
     getAgentEngineClient().warmEars().catch(() => {})
   }, [agentId])
 
-  // Grow with the text (up to the cap, then scroll) and keep the newest words in view.
+  /** The cap right now: about 450 px, and never so tall that the thread above drops under its minimum. */
+  const capNow = useCallback((el: HTMLTextAreaElement) => {
+    const thread = el.closest('[data-ui-panel]')?.querySelector<HTMLElement>('[data-village-thread]') || null
+    return composerRoom(el.offsetHeight, thread ? thread.clientHeight : null, minHeight, maxHeight)
+  }, [minHeight, maxHeight])
+
+  // Grow with the text (up to the cap, then scroll) and keep the newest words in view. A dragged height sticks.
   const fitHeight = useCallback(() => {
     const el = textareaRef.current
     if (!el) return
+    const cap = capNow(el) // measured before 'auto' collapses the box
+    el.style.maxHeight = `${cap}px`
     el.style.height = 'auto'
     const borders = el.offsetHeight - el.clientHeight
-    el.style.height = `${composerHeight({ content: el.scrollHeight + borders, min: minHeight, max: maxHeight, manual: manualHeights[place] })}px`
-  }, [minHeight, maxHeight, place])
+    el.style.height = `${composerHeight({ content: el.scrollHeight + borders, min: minHeight, max: cap, manual: manualHeights[place] })}px`
+  }, [capNow, minHeight, place])
 
   useLayoutEffect(() => {
     fitHeight()
@@ -139,9 +148,10 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
     const scale = el.getBoundingClientRect().height / Math.max(1, el.offsetHeight) || 1
     const startY = event.clientY
     const startHeight = el.offsetHeight
+    const cap = capNow(el)
     handle.setPointerCapture(event.pointerId)
     const onMove = (move: PointerEvent) => {
-      const next = Math.round(Math.min(maxHeight, Math.max(minHeight, startHeight + (startY - move.clientY) / scale)))
+      const next = Math.round(Math.min(cap, Math.max(minHeight, startHeight + (startY - move.clientY) / scale)))
       manualHeights[place] = next
       el.style.height = `${next}px`
     }
@@ -212,7 +222,7 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
       : voice.transcribing ? 'settling the last words…' : ''
 
   return (
-    <div className="flex shrink-0 flex-col gap-1.5 border-t border-white/10 pt-1">
+    <div className={`flex shrink-0 flex-col gap-1.5 border-t border-white/10 pt-1 ${VILLAGE_TYPE_CLASS}`} style={{ fontFamily: VILLAGE_FONT_BODY }}>
       {!owned && (
         <div className={`pt-1 leading-snug text-cyan-100/90 ${large ? 'text-[13px]' : 'text-[11.5px]'}`}>
           Live in the desktop app too: what you say here goes to the same session.
@@ -238,7 +248,7 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
           }}
           onKeyDown={onKeyDown}
           placeholder={working ? 'Talk to it while it works: folds into the running turn… (T talks, click to type)' : 'Press T and talk, or click here to type…'}
-          style={{ minHeight, maxHeight }}
+          style={{ minHeight }}
           className={`block w-full resize-none overflow-y-auto rounded-lg border bg-black/45 px-2.5 py-2 pr-11 leading-snug text-slate-50 [scrollbar-width:thin] placeholder:text-white/45 focus:outline-none ${large ? 'text-[15px]' : 'text-[13.5px]'} ${voice.listening ? 'border-rose-300/60' : 'border-white/20 focus:border-emerald-300/50'}`}
         />
         <button

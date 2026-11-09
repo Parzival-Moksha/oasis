@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { composerHeight, composerMaxHeight, villageKeyAction, type VillageKeyContext } from '../village/village-keys'
+import { composerHeight, composerMaxHeight, composerRoom, villageKeyAction, type VillageKeyContext } from '../village/village-keys'
 
 function keys(code: string, patch: Partial<VillageKeyContext> = {}): ReturnType<typeof villageKeyAction> {
   return villageKeyAction({
@@ -103,11 +103,20 @@ describe('composerHeight', () => {
     expect(composerHeight({ content: 1200, min: 64, max: 450 })).toBe(450)
   })
 
-  it('a height dragged by hand is the new floor, still under the cap', () => {
+  it('a height dragged by hand sticks, even with more text than fits (it scrolls), within min and cap', () => {
     expect(composerHeight({ content: 30, min: 64, max: 450, manual: 220 })).toBe(220)
-    expect(composerHeight({ content: 300, min: 64, max: 450, manual: 220 })).toBe(300)
+    expect(composerHeight({ content: 900, min: 64, max: 450, manual: 120 })).toBe(120) // shrunk after a long dictation
     expect(composerHeight({ content: 30, min: 64, max: 450, manual: 900 })).toBe(450)
+    expect(composerHeight({ content: 30, min: 64, max: 450, manual: 10 })).toBe(64)
     expect(composerHeight({ content: 30, min: 64, max: 450, manual: null })).toBe(64)
+  })
+
+  it('leaves the thread its minimum: the header never gets squeezed', () => {
+    // box 300 + thread 200 = 500 of room; 140 stays thread
+    expect(composerRoom(300, 200, 64, 450)).toBe(360)
+    expect(composerRoom(64, 900, 64, 450)).toBe(450)
+    expect(composerRoom(100, 50, 64, 450)).toBe(64)
+    expect(composerRoom(100, null, 64, 450)).toBe(450)
   })
 
   it('never ends up below the minimum, even with a tiny cap', () => {

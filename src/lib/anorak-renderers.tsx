@@ -145,6 +145,8 @@ export function ToolCallCard({
   autoPlayAudio = false,
   suppressMedia = false,
   bright = false,
+  extra,
+  onImageClick,
 }: {
   name: string
   icon: string
@@ -157,6 +159,10 @@ export function ToolCallCard({
   suppressMedia?: boolean
   /** Lighter result text, for glass windows over a bright world (the village threads). */
   bright?: boolean
+  /** More to show when the card is open (the village puts a Read picture here); opens the card by itself. */
+  extra?: React.ReactNode
+  /** Screenshots open here (an in-app viewer) instead of in a new browser tab. */
+  onImageClick?: (urls: string[], index: number) => void
 }) {
   // Match both unprefixed names (Anorak route/direct callTool) and namespaced
   // names (Claude Code MCP subprocess uses mcp__<server>__<tool>).
@@ -192,13 +198,14 @@ export function ToolCallCard({
   const hasScreenshots = screenshotUrls.length > 0
   const mediaRefs = suppressMedia || isScreenshotTool ? [] : extractToolResultMediaReferences(result)
   const hasMedia = mediaRefs.length > 0
-  const canExpand = hasDetails || hasScreenshots || hasMedia
+  const hasExtra = Boolean(extra)
+  const canExpand = hasDetails || hasScreenshots || hasMedia || hasExtra
 
   React.useEffect(() => {
-    if ((isScreenshotTool && hasScreenshots) || hasMedia) {
+    if ((isScreenshotTool && hasScreenshots) || hasMedia || hasExtra) {
       setExpanded(true)
     }
-  }, [hasMedia, hasScreenshots, isScreenshotTool])
+  }, [hasMedia, hasScreenshots, isScreenshotTool, hasExtra])
 
   return (
     <div className="rounded-lg overflow-hidden" style={{
@@ -294,7 +301,18 @@ export function ToolCallCard({
           className="px-3 py-2 flex flex-wrap gap-2 border-t border-white/5"
           style={{ background: 'rgba(0,0,0,0.25)' }}
         >
-          {screenshotUrls.map((url, i) => (
+          {screenshotUrls.map((url, i) => onImageClick ? (
+            <button
+              key={i}
+              type="button"
+              onClick={() => onImageClick(screenshotUrls, i)}
+              className="rounded overflow-hidden border border-white/10 hover:border-cyan-400/60 transition-colors"
+              style={{ maxWidth: 280 }}
+              title={`Open capture ${i + 1}`}
+            >
+              <img src={url} alt={`capture ${i + 1}`} loading="lazy" className="block" style={{ maxWidth: 280, maxHeight: 200, objectFit: 'contain' }} />
+            </button>
+          ) : (
             <a
               key={i}
               href={url}
@@ -313,6 +331,12 @@ export function ToolCallCard({
               />
             </a>
           ))}
+        </div>
+      )}
+
+      {expanded && extra && (
+        <div className="px-3 py-2 border-t border-white/5" style={{ background: 'rgba(0,0,0,0.25)' }}>
+          {extra}
         </div>
       )}
 

@@ -142,13 +142,61 @@ export interface SessionPanelGeometry {
   margin: number
 }
 
-export function getSessionPanelGeometry(viewportWidth: number, viewportHeight: number): SessionPanelGeometry {
+// The owner drags the panel's left edge to make it wider; the width is remembered (this browser).
+export const SESSION_PANEL_MIN_WIDTH = 360
+const PANEL_WIDTH_KEY = 'oasis-village-panel-width'
+let panelWidth: number | null | undefined
+const panelWidthListeners = new Set<() => void>()
+
+/** The widest the panel may get: the world keeps at least 300 px (and the left menus) beside it. */
+export function sessionPanelMaxWidth(viewportWidth: number): number {
+  return Math.max(SESSION_PANEL_MIN_WIDTH, Math.min(1400, viewportWidth - 300))
+}
+
+export function getSessionPanelWidth(): number | null {
+  if (panelWidth === undefined) {
+    let stored: number | null = null
+    try {
+      const raw = typeof window === 'undefined' ? null : window.localStorage.getItem(PANEL_WIDTH_KEY)
+      stored = raw && Number.isFinite(Number(raw)) ? Number(raw) : null
+    } catch { /* storage off */ }
+    panelWidth = stored
+  }
+  return panelWidth
+}
+
+/** null: back to the automatic width. */
+export function setSessionPanelWidth(width: number | null): void {
+  const next = width === null ? null : Math.round(Math.max(SESSION_PANEL_MIN_WIDTH, width))
+  if (next === getSessionPanelWidth()) return
+  panelWidth = next
+  try {
+    if (next === null) window.localStorage.removeItem(PANEL_WIDTH_KEY)
+    else window.localStorage.setItem(PANEL_WIDTH_KEY, String(next))
+  } catch { /* storage off */ }
+  panelWidthListeners.forEach(listener => listener())
+}
+
+export function subscribeSessionPanelWidth(listener: () => void): () => void {
+  panelWidthListeners.add(listener)
+  return () => { panelWidthListeners.delete(listener) }
+}
+
+export function getSessionPanelGeometry(
+  viewportWidth: number,
+  viewportHeight: number,
+  /** The width the owner dragged it to (default: the remembered one); ignored on phones. */
+  preferredWidth: number | null = getSessionPanelWidth(),
+): SessionPanelGeometry {
   const margin = 12
   if (viewportWidth < 700) {
     const height = Math.round(Math.min(viewportHeight * 0.58, viewportHeight - 120))
     return { side: 'bottom', fraction: (height + margin) / Math.max(1, viewportHeight), width: viewportWidth - margin * 2, height, margin }
   }
-  const width = Math.round(Math.min(520, Math.max(360, viewportWidth * 0.36)))
+  const auto = Math.min(520, Math.max(SESSION_PANEL_MIN_WIDTH, viewportWidth * 0.36))
+  const width = Math.round(preferredWidth === null
+    ? auto
+    : Math.min(sessionPanelMaxWidth(viewportWidth), Math.max(SESSION_PANEL_MIN_WIDTH, preferredWidth)))
   return { side: 'right', fraction: (width + margin * 2) / Math.max(1, viewportWidth), width, height: viewportHeight - margin * 2, margin }
 }
 
@@ -251,6 +299,45 @@ export function talkToVillageAgent(agentId: string): boolean {
   return focused
 }
 
+// ─── image viewer: pictures open full-screen in the Oasis (VillageImageViewer), not in a new tab ─────
+
+export interface VillageViewerImage {
+  url: string
+  name: string
+}
+
+let viewer: { images: VillageViewerImage[]; index: number } | null = null
+const viewerListeners = new Set<() => void>()
+
+export function getVillageImageViewer(): { images: VillageViewerImage[]; index: number } | null {
+  return viewer
+}
+
+export function subscribeVillageImageViewer(listener: () => void): () => void {
+  viewerListeners.add(listener)
+  return () => { viewerListeners.delete(listener) }
+}
+
+export function openVillageImages(images: VillageViewerImage[], index = 0): void {
+  if (!images.length) return
+  viewer = { images, index: Math.max(0, Math.min(images.length - 1, index)) }
+  viewerListeners.forEach(listener => listener())
+}
+
+export function closeVillageImages(): void {
+  if (!viewer) return
+  viewer = null
+  viewerListeners.forEach(listener => listener())
+}
+
+/** ← / → : the previous or next picture, wrapping around. */
+export function stepVillageImages(delta: number): void {
+  if (!viewer || viewer.images.length < 2) return
+  const n = viewer.images.length
+  viewer = { ...viewer, index: (viewer.index + delta + n) % n }
+  viewerListeners.forEach(listener => listener())
+}
+
 let rigCamera: THREE.Camera | null = null
 let savedPose: { position: THREE.Vector3; quaternion: THREE.Quaternion } | null = null
 
@@ -286,6 +373,13 @@ if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
     /** The agent whose screen fills the view (F), or null. */
     screen: () => screenAgentId,
     toggleScreen: () => toggleVillageScreen(),
+    /** Show one subagent's work alone in its parent's panel (key: its key in `subagents`); null agentId: the whole thread. */
+    focusSubagent: (agentId: string | null, key?: string) => {
+      useOasisStore.getState().agentEngineDispatch({ type: 'subagent/focus', agentId, key: key ?? null })
+      if (agentId) focusVillageAgent(agentId)
+    },
+    /** The open picture viewer: index and count, or null. */
+    viewer: () => (viewer ? { index: viewer.index, count: viewer.images.length } : null),
   }
 }
 
@@ -412,6 +506,8 @@ export function isTypingTarget(target: EventTarget | null): boolean {
  * key was consumed. What each key means lives in village-keys.ts.
  */
 export function handleVillageKeyDown(event: KeyboardEvent): boolean {
+  // The image viewer has the keyboard (Esc, arrows) while it is open.
+  if (viewer) return false
   const village = useOasisStore.getState().agentEngine
   const input = useInputManager.getState()
   // Same gate as the world's own N key, plus the village session view itself (ui-focused while its panel is open).

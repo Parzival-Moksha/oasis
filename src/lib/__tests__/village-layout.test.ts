@@ -10,6 +10,7 @@ import {
   DESK_WINDOW_WORLD,
   computeFocusPose,
   computeScreenPose,
+  SCREEN_FILL,
   deskWindowDistanceFactor,
   findNearestStation,
   layoutVillageStations,
@@ -281,7 +282,7 @@ describe('desk window and screen mode (F)', () => {
       const tanV = Math.tan((fov * Math.PI) / 360)
       const shownH = DESK_WINDOW_WORLD.height / (2 * d * tanV)
       const shownW = DESK_WINDOW_WORLD.width / (2 * d * tanV * aspect)
-      expect(Math.max(shownH, shownW)).toBeCloseTo(0.84, 2)
+      expect(Math.max(shownH, shownW)).toBeCloseTo(SCREEN_FILL, 2)
     }
   })
 

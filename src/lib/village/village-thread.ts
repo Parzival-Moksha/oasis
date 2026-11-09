@@ -109,3 +109,25 @@ export function toolRunHeight(calls: number): number {
   const shape = toolRunShape(calls)
   return TOOL_RUN_BASE_PX + shape.previewLines * TOOL_RUN_LINE_PX + shape.stackLayers * TOOL_RUN_LAYER_PX
 }
+
+// ─── the thread's pictures (the viewer steps through all of them) ────────────
+
+export interface ThreadImage {
+  id: string
+  name: string
+}
+
+/** Every picture the agent sent or opened, oldest first, each once. */
+export function threadImages(entries: readonly AgentLogEntry[]): ThreadImage[] {
+  const seen = new Set<string>()
+  const out: ThreadImage[] = []
+  for (const entry of entries) {
+    if (entry.type !== 'tool' || !entry.attachments) continue
+    for (const file of entry.attachments) {
+      if (!file.isImage || seen.has(file.id)) continue
+      seen.add(file.id)
+      out.push({ id: file.id, name: file.name })
+    }
+  }
+  return out
+}
