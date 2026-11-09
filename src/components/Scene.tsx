@@ -103,6 +103,7 @@ import { WorldMenu } from './forge/WorldMenu'
 import { PlaceMenu } from './forge/PlaceMenu'
 import { GameMenuButton } from './forge/GameMenuButton'
 import { GAME_HUD_TEXT, GameKeycap } from './forge/GameKeycap'
+import { VoiceTypeMic } from './forge/VoiceTypeMic'
 import { useRailMenuExclusion } from '@/hooks/useRailMenuExclusion'
 import { MobileOasisControls, useIsMobileOasis } from './forge/MobileOasisControls'
 import { CombatBoltLayer } from './forge/CombatBoltLayer'
@@ -2376,6 +2377,9 @@ export default function Scene() {
         isOpen={helpOpen}
         onClose={() => setHelpOpen(false)}
       />
+
+      {/* 🎙 Voice typing: a small mic on whichever text field has focus (needs the local agent engine). */}
+      {!hostedMode && <VoiceTypeMic />}
 
       <ObjectHtmlOverlay />
 

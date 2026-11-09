@@ -51,6 +51,7 @@ export function AgentVoiceInputButton({
 
   return (
     <button
+      data-voice-mic=""
       {...buttonProps}
       onClick={() => void controller.toggle()}
       disabled={isDisabled}
