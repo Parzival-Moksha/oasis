@@ -12,7 +12,7 @@ import path from 'node:path'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { guardAgentRoute } from '@/lib/local-request-guard'
-import { isMissionFile, parseMission, rankMissions } from '@/lib/village/village-missions'
+import { isMissionFile, isMissionPicture, parseMission, rankMissions } from '@/lib/village/village-missions'
 import { appendMissionLog, missionFileName, newMissionMarkdown, setMissionHeader, type MissionHeaderPatch } from '@/lib/village/village-mission-edit'
 
 export const dynamic = 'force-dynamic'
@@ -55,9 +55,22 @@ export async function GET(request: NextRequest) {
     // No folder on this machine: an empty wall, not an error.
     return NextResponse.json({ dir, missions: [], error: 'missions folder not found' })
   }
+  // Pictures: `pictures/<name>` from the mission's `picture:` line, or one named like the mission file.
+  const pictures = new Map<string, number>()
+  try {
+    for (const name of (await fs.readdir(path.join(dir, 'pictures'))).filter(isMissionPicture)) {
+      pictures.set(name.toLowerCase(), Math.round((await fs.stat(path.join(dir, 'pictures', name))).mtimeMs))
+    }
+  } catch { /* no pictures yet */ }
+  const pictureUrl = (file: string, named: string): string | null => {
+    const stem = file.replace(/\.md$/i, '').toLowerCase()
+    const found = [named, `${stem}.jpg`, `${stem}.png`, `${stem}.webp`, `${stem}.jpeg`].find(name => name && pictures.has(name.toLowerCase()))
+    return found ? `/api/village/missions/picture?name=${encodeURIComponent(found)}&v=${pictures.get(found.toLowerCase())}` : null
+  }
   const missions = (await Promise.all(names.map(async name => {
     try {
-      return parseMission(name, await fs.readFile(path.join(dir, name), 'utf8'))
+      const mission = parseMission(name, await fs.readFile(path.join(dir, name), 'utf8'))
+      return { ...mission, pictureUrl: pictureUrl(name, mission.picture) }
     } catch {
       return null // deleted between the listing and the read
     }

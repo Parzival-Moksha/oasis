@@ -26,6 +26,7 @@ import {
   missionAtlasGrid,
   missionAtlasTile,
   missionPanelScale,
+  missionPosterWords,
   wrapByWidth,
   type Mission,
   type MissionAtlasGrid,
@@ -82,7 +83,62 @@ function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number):
   return `${cut.trimEnd()}…`
 }
 
-/** One panel's face at (x, y) in the texture: the typographic card on top, the TL;DR caption under it. */
+// Pictures, loaded once per URL (the URL carries the file's modified time).
+const pictureCache = new Map<string, HTMLImageElement | null>()
+
+function loadPicture(url: string): Promise<void> {
+  if (pictureCache.has(url)) return Promise.resolve()
+  return new Promise(resolve => {
+    const image = new Image()
+    image.onload = () => { pictureCache.set(url, image); resolve() }
+    image.onerror = () => { pictureCache.set(url, null); resolve() }
+    image.src = url
+  })
+}
+
+function drawPicture(ctx: CanvasRenderingContext2D, panel: WallPanel, x: number, y: number, width: number, height: number, m: number): void {
+  const { mission, dimmed } = panel
+  const image = mission.pictureUrl ? pictureCache.get(mission.pictureUrl) : null
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(x, y, width, height)
+  ctx.clip()
+  if (image) {
+    // Cover the 16:9 slot, centred.
+    const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight)
+    const w = image.naturalWidth * scale
+    const h = image.naturalHeight * scale
+    ctx.fillStyle = '#05070d'
+    ctx.fillRect(x, y, width, height)
+    ctx.globalAlpha = dimmed ? 0.45 : 1
+    ctx.drawImage(image, x + (width - w) / 2, y + (height - h) / 2, w, h)
+  } else {
+    const color = MISSION_COLUMN_COLOR[mission.column]
+    const fill = ctx.createLinearGradient(x, y, x + width, y + height)
+    fill.addColorStop(0, CARD_TINT[mission.column])
+    fill.addColorStop(1, '#05070d')
+    ctx.fillStyle = fill
+    ctx.fillRect(x, y, width, height)
+    const words = missionPosterWords(mission.title)
+    const lines = words.length === 3 ? [words[0], `${words[1]} ${words[2]}`] : words.length === 2 ? words : [words[0] || '?']
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = color
+    ctx.globalAlpha = dimmed ? 0.4 : 0.95
+    // As big as fits: the widest line fills the width, up to what the height holds.
+    let size = Math.floor((height * 0.8) / lines.length)
+    ctx.font = `700 ${size}px ${FONT_DISPLAY}`
+    const widest = Math.max(...lines.map(line => ctx.measureText(line).width))
+    if (widest > width * 0.9) size = Math.floor(size * (width * 0.9) / widest)
+    ctx.font = `700 ${size}px ${FONT_DISPLAY}`
+    const top = y + height / 2 - ((lines.length - 1) * size * 1.02) / 2
+    lines.forEach((line, index) => ctx.fillText(line, x + width / 2, top + index * size * 1.02 + size * 0.04))
+  }
+  ctx.restore()
+  void m
+}
+
+/** One panel's face at (x, y) in the texture: the picture, the card with the numbers, the TL;DR caption. */
 function drawFace(ctx: CanvasRenderingContext2D, panel: WallPanel, x: number, y: number, grid: MissionAtlasGrid, body: string): void {
   const { mission, dimmed } = panel
   const m = grid.pxPerMeter
@@ -97,7 +153,13 @@ function drawFace(ctx: CanvasRenderingContext2D, panel: WallPanel, x: number, y:
   ctx.fillStyle = FRAME_COLOR
   ctx.fillRect(x, y, width, grid.tileHeight)
 
-  // The card. A picture goes here later; until then the priority is the picture.
+  // The picture: what you recognise from across the plaza. No picture yet: the title's big words.
+  const pictureHeight = Math.round(MISSION_PANEL.pictureHeight * m)
+  const tileBottom = y + grid.tileHeight
+  drawPicture(ctx, panel, x, y, width, pictureHeight, m)
+  y += pictureHeight + gap
+
+  // The card: the numbers.
   ctx.fillStyle = CARD_TINT[mission.column]
   ctx.fillRect(x, y, width, cardHeight)
   const strip = Math.round(0.2 * m)
@@ -117,22 +179,22 @@ function drawFace(ctx: CanvasRenderingContext2D, panel: WallPanel, x: number, y:
   ctx.textAlign = 'center'
   ctx.globalAlpha = dimmed ? 0.5 : 1
   ctx.fillStyle = color
-  ctx.font = `700 ${Math.round(0.52 * m)}px ${FONT_DISPLAY}`
-  ctx.fillText(mission.priority === null ? '–' : mission.priority.toFixed(2), x + width / 2, y + strip + (cardHeight - strip) * 0.4)
+  ctx.font = `700 ${Math.round(0.36 * m)}px ${FONT_DISPLAY}`
+  ctx.fillText(mission.priority === null ? '–' : mission.priority.toFixed(2), x + width / 2, y + strip + 0.2 * m)
   ctx.fillStyle = '#e2e8f0'
   ctx.globalAlpha = dimmed ? 0.45 : 0.85
   ctx.font = `500 ${Math.round(0.082 * m)}px ${body}`
   const score = mission.ease !== null && mission.impact !== null && mission.urgency !== null
     ? `ease ${mission.ease}  ·  impact ${mission.impact}  ·  urgency ${mission.urgency}`
     : 'no score yet'
-  ctx.fillText(score, x + width / 2, y + cardHeight - 0.27 * m)
+  ctx.fillText(score, x + width / 2, y + cardHeight - 0.2 * m)
   ctx.globalAlpha = dimmed ? 0.4 : 0.65
   ctx.font = `500 ${Math.round(0.072 * m)}px ${body}`
-  ctx.fillText(fitText(ctx, mission.who || 'nobody yet', width - 0.2 * m), x + width / 2, y + cardHeight - 0.13 * m)
+  ctx.fillText(fitText(ctx, mission.who || 'nobody yet', width - 0.2 * m), x + width / 2, y + cardHeight - 0.08 * m)
 
   // The caption plate: the TL;DR, printed under the card.
   const captionTop = y + cardHeight + gap
-  const captionHeight = grid.tileHeight - cardHeight - gap
+  const captionHeight = tileBottom - captionTop
   ctx.globalAlpha = 1
   ctx.fillStyle = '#0a0f1c'
   ctx.fillRect(x, captionTop, width, captionHeight)
@@ -216,6 +278,9 @@ function WallFaces({ panels }: { panels: WallPanel[] }) {
       atlas.texture.needsUpdate = true
       invalidate()
     }
+    // Pictures arrive later: one more print when all of them are in (or failed).
+    const urls = panels.map(panel => panel.mission.pictureUrl).filter((url): url is string => Boolean(url) && !pictureCache.has(url as string))
+    if (urls.length) void Promise.all(urls.map(loadPicture)).then(print)
     const fonts = document.fonts
     const wanted = [`500 32px ${body}`, `700 32px ${FONT_DISPLAY}`]
     let ready = true

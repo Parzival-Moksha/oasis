@@ -255,3 +255,22 @@ describe('missionKeyAction', () => {
     expect(keys('Escape')).toBeNull()
   })
 })
+
+describe('pictures', () => {
+  it('reads the picture line', async () => {
+    const { parseMission: parse } = await import('../village/village-missions')
+    expect(parse('a.md', 'state: idea\npicture: a-b.jpg\n\n# A').picture).toBe('a-b.jpg')
+    expect(parse('a.md', 'state: idea\n\n# A').picture).toBe('')
+  })
+  it('takes only plain image names', async () => {
+    const { isMissionPicture } = await import('../village/village-missions')
+    expect(['a.jpg', 'a-b_c.PNG', 'x.webp', '../a.jpg', 'a.gif', '.hidden.jpg', 'a/b.jpg', 'a.jpg.exe'].filter(isMissionPicture)).toEqual(['a.jpg', 'a-b_c.PNG', 'x.webp'])
+  })
+  it('picks up to three big words for a mission with no picture', async () => {
+    const { missionPosterWords } = await import('../village/village-missions')
+    expect(missionPosterWords('Wind down the Ashburn server (04515.xyz)')).toEqual(['WIND', 'DOWN', 'ASHBURN'])
+    expect(missionPosterWords('Agents that speak')).toEqual(['AGENTS', 'THAT', 'SPEAK'])
+    expect(missionPosterWords('The')).toEqual(['THE'])
+    expect(missionPosterWords('')).toEqual([])
+  })
+})

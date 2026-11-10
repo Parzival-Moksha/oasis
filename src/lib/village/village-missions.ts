@@ -28,6 +28,10 @@ export interface Mission {
   priority: number | null
   /** The `done when` line, or the first paragraph. */
   tldr: string
+  /** The `picture:` header line: an image file in the missions folder's `pictures/`. */
+  picture: string
+  /** Where the Oasis loads the picture from (set by the API when the file exists). */
+  pictureUrl?: string | null
   /** The whole file. */
   markdown: string
 }
@@ -97,6 +101,7 @@ export function parseMission(file: string, text: string): Mission {
     urgency: nums.urgency ?? null,
     priority: complete ? Math.round((nums.ease * nums.impact * nums.urgency / 125) * 100) / 100 : null,
     tldr: plainText(doneWhen) || firstParagraph(lines, bodyStart),
+    picture: head.picture || '',
     markdown,
   }
 }
@@ -109,6 +114,22 @@ export function rankMissions<T extends Pick<Mission, 'file' | 'column' | 'priori
     || (a.file < b.file ? -1 : a.file > b.file ? 1 : 0))
 }
 
+/** Picture files the wall shows. */
+export function isMissionPicture(name: string): boolean {
+  return /^[\w][\w.-]*\.(jpe?g|png|webp)$/i.test(name)
+}
+
+/**
+ * The words a panel shows, huge, where a mission has no picture yet: the title without its small
+ * words, at most three, so it reads from across the plaza.
+ */
+export function missionPosterWords(title: string): string[] {
+  const small = new Set(['the', 'a', 'an', 'of', 'to', 'in', 'on', 'for', 'and', 'my', 'as', 'with', 'over', 'is', 'gets'])
+  const words = title.replace(/\([^)]*\)/g, ' ').split(/[^\p{L}\p{N}']+/u).filter(Boolean)
+  const strong = words.filter(word => !small.has(word.toLowerCase()))
+  return (strong.length ? strong : words).slice(0, 3).map(word => word.toUpperCase())
+}
+
 /** Is this a mission file? Every .md in the folder but the README. */
 export function isMissionFile(name: string): boolean {
   return /\.md$/i.test(name) && name.toLowerCase() !== 'readme.md'
@@ -117,13 +138,15 @@ export function isMissionFile(name: string): boolean {
 // ─── the wall ───────────────────────────────────────────────────────────────
 
 /**
- * A panel, in meters: a frame that holds the card (the future picture) and, under it, a caption
- * plate with the TL;DR. The title stands on top in 3D letters.
+ * A panel, in meters: a frame that holds, top to bottom, the picture (16:9, what you recognise from
+ * far away), the card with the numbers, and a caption plate with the TL;DR. The title stands on top
+ * in 3D letters.
  */
 export const MISSION_PANEL = {
   width: 1.9,
-  cardHeight: 1.15,
-  /** The frame's bar between the card and the caption. */
+  pictureHeight: (1.9 * 9) / 16,
+  cardHeight: 0.85,
+  /** The frame's bars between the picture, the card and the caption. */
   gap: 0.06,
   captionHeight: 0.6,
   border: 0.07,
@@ -131,10 +154,10 @@ export const MISSION_PANEL = {
   /** The frame's lower edge above the ground. */
   bottomY: 0.72,
 }
-/** The printed face (card + bar + caption) inside the frame. */
+/** The printed face (picture + bar + card + bar + caption) inside the frame. */
 export const MISSION_FACE = {
   width: MISSION_PANEL.width,
-  height: MISSION_PANEL.cardHeight + MISSION_PANEL.gap + MISSION_PANEL.captionHeight,
+  height: MISSION_PANEL.pictureHeight + MISSION_PANEL.cardHeight + MISSION_PANEL.captionHeight + MISSION_PANEL.gap * 2,
   bottomY: MISSION_PANEL.bottomY + MISSION_PANEL.border,
 }
 
@@ -192,7 +215,7 @@ const WALL = {
   /** The widest an arc gets, in radians. */
   maxSpread: (110 * Math.PI) / 180,
   /** Each arc further back stands this much higher, so it shows over the one in front. */
-  rowLift: 0.8,
+  rowLift: 1.2,
   rows: 8,
 }
 

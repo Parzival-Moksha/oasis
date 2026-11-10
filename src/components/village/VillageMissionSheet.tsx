@@ -249,6 +249,10 @@ export function MissionSheet({ mission, mode }: { mission: Mission; mode: 'side'
               tabIndex={-1}
               className={`min-h-0 flex-1 overflow-y-auto break-words pr-2 leading-relaxed text-white/90 outline-none ${full ? 'text-[15px]' : 'text-[12.5px]'}`}
             >
+              {mission.pictureUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={mission.pictureUrl} alt="" className="mb-3 aspect-video w-full rounded-lg border border-white/10 object-cover" />
+              )}
               {text}
               <div className="mb-2 mt-4 flex items-center gap-2 text-[9.5px] uppercase tracking-[0.26em] text-white/45">
                 <span>Log</span>
