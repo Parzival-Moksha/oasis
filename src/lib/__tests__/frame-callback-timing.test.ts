@@ -46,13 +46,23 @@ describe('FrameCallbackTimer', () => {
     expect(report.top[0].calls).toBe(2)
   })
 
-  it('a newer timer takes over refs an older one wrapped (hot reload), without stacking wrappers', () => {
+  it('leaves the ref object in place, so R3F can still remove the subscriber by its ref', () => {
+    const timer = new FrameCallbackTimer(() => 0, 1)
+    const ref = { current: (() => {}) as (...args: unknown[]) => unknown }
+    const sub = { ref }
+    timer.instrument([sub])
+    expect(sub.ref).toBe(ref)
+    // What R3F's unsubscribe does.
+    expect([sub].filter(s => s.ref !== ref)).toEqual([])
+  })
+
+  it('a newer timer takes over refs an older one set up (hot reload), without stacking wrappers', () => {
     let clock = 0
     const older = new FrameCallbackTimer(() => clock, 1)
     const newer = new FrameCallbackTimer(() => clock, 1)
     const work = function work() { clock += 7 }
-    const original = { current: work as (...args: unknown[]) => unknown }
-    const sub = { ref: original }
+    const ref = { current: work as (...args: unknown[]) => unknown }
+    const sub = { ref }
     older.instrument([sub])
     expect(newer.instrument([sub])).toBe(1)
     expect(newer.instrument([sub])).toBe(0)
@@ -60,10 +70,12 @@ describe('FrameCallbackTimer', () => {
     sub.ref.current()
     expect(newer.flush().top).toEqual([{ who: 'work', ms: 7, calls: 1 }])
     expect(older.flush().top).toEqual([])
-    // Still one layer over the real ref: a write lands on it.
+    // A later write from the component is the one that runs, and is timed under its own name.
     const next = function next() { clock += 1 }
-    sub.ref.current = next
-    expect(original.current).toBe(next)
+    ref.current = next
+    newer.tick()
+    sub.ref.current()
+    expect(newer.flush().top).toEqual([{ who: 'next', ms: 1, calls: 1 }])
   })
 
   it('labels anonymous callbacks by their source', () => {

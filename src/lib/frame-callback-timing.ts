@@ -24,6 +24,17 @@ export interface FrameCallbackReport {
 
 const LABELS = new WeakMap<object, string>()
 
+interface TimedSlot {
+  /** The callback the component last wrote into its ref. */
+  fn: (...args: unknown[]) => unknown
+  owner: FrameCallbackTimer
+  timed: (...args: unknown[]) => unknown
+  timedFor: unknown
+  timedBy: FrameCallbackTimer | null
+}
+
+type TimedRef = { current: (...args: unknown[]) => unknown; __perfSlot?: TimedSlot }
+
 /** A short, stable name for a callback: its function name, or the first line of its source. */
 export function callbackLabel(fn: (...args: unknown[]) => unknown): string {
   const known = LABELS.get(fn)
@@ -63,37 +74,50 @@ export class FrameCallbackTimer {
   }
 
   /**
-   * Replaces each subscriber's `ref` with one that hands out timed callbacks. Idempotent per subscriber.
-   * A ref wrapped by another timer (a hot reload makes a new one) is taken over, so the newest timer
-   * is always the one that counts.
+   * Makes each subscriber's `ref.current` hand out a timed callback. Idempotent per subscriber.
+   * The ref object itself stays in place (R3F removes a subscriber by comparing its `ref`, so
+   * swapping the object would leave every unmounted component's callback running forever).
+   * A ref set up by another timer (a hot reload makes a new one) is taken over, so the newest
+   * timer is always the one that counts.
    */
   instrument(subscribers: readonly FrameSubscriberLike[]): number {
     let wrapped = 0
     for (const sub of subscribers) {
-      type Ref = { current: (...args: unknown[]) => unknown; __perfTimed?: unknown; __perfOriginal?: Ref }
-      const ref = sub.ref as Ref
-      if (!ref || ref.__perfTimed === this) continue
-      const original = ref.__perfTimed && ref.__perfOriginal ? ref.__perfOriginal : ref
-      const timed = { __perfTimed: this, __perfOriginal: original } as unknown as Ref
-      let lastFn: unknown = null
-      let lastTimed: (...args: unknown[]) => unknown = original.current
-      Object.defineProperty(timed, 'current', {
-        configurable: true,
-        enumerable: true,
-        get: () => {
-          const fn = original.current
-          if (fn !== lastFn) { lastFn = fn; lastTimed = this.timedVersion(fn) }
-          return lastTimed
-        },
-        set: (next: (...args: unknown[]) => unknown) => { original.current = next },
-      })
-      sub.ref = timed
+      const ref = sub.ref as TimedRef
+      if (!ref) continue
+      const existing = ref.__perfSlot
+      if (existing) {
+        if (existing.owner === this) continue
+        existing.owner = this
+        wrapped += 1
+        continue
+      }
+      const slot: TimedSlot = { fn: ref.current, owner: this, timed: ref.current, timedFor: null, timedBy: null }
+      try {
+        Object.defineProperty(ref, 'current', {
+          configurable: true,
+          enumerable: true,
+          get: () => {
+            if (slot.timedFor !== slot.fn || slot.timedBy !== slot.owner) {
+              slot.timed = slot.owner.timedVersion(slot.fn)
+              slot.timedFor = slot.fn
+              slot.timedBy = slot.owner
+            }
+            return slot.timed
+          },
+          set: (next: (...args: unknown[]) => unknown) => { slot.fn = next },
+        })
+        Object.defineProperty(ref, '__perfSlot', { value: slot, enumerable: false })
+      } catch {
+        continue // a sealed ref: leave it untimed rather than break the callback
+      }
       wrapped += 1
     }
     return wrapped
   }
 
-  private timedVersion(fn: (...args: unknown[]) => unknown): (...args: unknown[]) => unknown {
+  /** @internal */
+  timedVersion(fn: (...args: unknown[]) => unknown): (...args: unknown[]) => unknown {
     if (typeof fn !== 'function') return fn
     const cached = this.timedFns.get(fn)
     if (cached) return cached
