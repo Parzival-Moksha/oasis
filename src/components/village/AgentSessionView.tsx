@@ -25,6 +25,7 @@ import { agentEngineFileUrl } from '../../lib/agent-engine-client'
 import { groupThread, threadImages, toolRunShape, type ThreadItem } from '../../lib/village/village-thread'
 import { hasInjectedText, parseInjectedUserText, type TaskNotice } from '../../lib/village/village-injected'
 import { getOlderHistoryState, loadOlderHistory, retryOlderHistory, subscribeOlderHistory } from './village-history'
+import { formatMessageTime, fullMessageTime } from '../../lib/village/message-time'
 
 /** 2d: the side panel · 3d: the desk window (recent lines) · screen: the desk window zoomed in with F */
 
@@ -258,6 +259,13 @@ function SentFilesCard({ entry, compact }: { entry: Extract<AgentLogEntry, { typ
   )
 }
 
+/** When a message was written (E side panel and F screen; the desk screens stay clean). */
+function MessageTime({ ts }: { ts: number }) {
+  const label = formatMessageTime(ts)
+  if (!label) return null
+  return <span className="shrink-0 font-mono text-[9.5px] font-normal normal-case tracking-normal text-white/45" title={fullMessageTime(ts)}>{label}</span>
+}
+
 const LogEntryView = memo(function LogEntryView({ entry, compact }: { entry: AgentLogEntry; compact: boolean }) {
   const dim = entry.history ? 'opacity-90' : ''
   switch (entry.type) {
@@ -276,8 +284,9 @@ const LogEntryView = memo(function LogEntryView({ entry, compact }: { entry: Age
         <div className={`flex flex-col gap-1.5 ${dim}`}>
           {text && (
             <div className="ml-6 rounded-lg border border-sky-300/20 bg-sky-400/10 px-2.5 py-1.5">
-              <div className="mb-0.5 text-[9px] font-black uppercase tracking-[0.14em] text-sky-200/90">
-                {entry.state === 'seen' ? 'prompt' : 'you'}{state ? ` · ${state}` : ''}{entry.priority === 'now' ? ' · urgent' : ''}
+              <div className="mb-0.5 flex items-baseline justify-between gap-2 text-[9px] font-black uppercase tracking-[0.14em] text-sky-200/90">
+                <span>{entry.state === 'seen' ? 'prompt' : 'you'}{state ? ` · ${state}` : ''}{entry.priority === 'now' ? ' · urgent' : ''}</span>
+                {!compact && <MessageTime ts={entry.ts} />}
               </div>
               <RichText text={compact && text.length > 280 ? `${text.slice(0, 280)}…` : text} className="text-[12.5px] text-slate-50" />
             </div>
@@ -291,6 +300,7 @@ const LogEntryView = memo(function LogEntryView({ entry, compact }: { entry: Age
       return (
         <div className={`${entry.parentToolUseId ? 'ml-3 border-l border-violet-300/30 pl-2 text-slate-200' : 'text-slate-100'} text-[12.5px] leading-relaxed ${dim}`}>
           {entry.parentToolUseId && <span className="mr-1 text-[9px] font-black uppercase tracking-[0.12em] text-violet-200/90">subagent</span>}
+          {!compact && !entry.parentToolUseId && <div className="-mb-0.5 text-right"><MessageTime ts={entry.ts} /></div>}
           <Markdown text={compact && entry.text.length > 600 ? `${entry.text.slice(0, 600)}…` : entry.text} />
         </div>
       )
