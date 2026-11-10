@@ -475,10 +475,28 @@ export function getVillageActorPosition(): Vec3 | null {
   return getPlayerAvatarPose()?.position || camera
 }
 
+/**
+ * Something else the owner can walk up to (the mission wall). Asked on every proximity tick with where
+ * the owner stands and how far the agent within reach is (null: none); true means it is nearer and
+ * takes the keys and the prompt, so no agent counts as nearby.
+ */
+let proximityRival: ((actor: Vec3 | null, agentDistance: number | null) => boolean) | null = null
+
+export function setVillageProximityRival(rival: typeof proximityRival): void {
+  proximityRival = rival
+}
+
 export function updateVillageProximity(): void {
   const store = useOasisStore.getState()
   const actor = getVillageActorPosition()
-  const nearby = findNearestStation(actor, getVillageAnchors(), VILLAGE_TALK_RADIUS, VILLAGE_TALK_HEIGHT)
+  const anchors = getVillageAnchors()
+  let nearby = findNearestStation(actor, anchors, VILLAGE_TALK_RADIUS, VILLAGE_TALK_HEIGHT)
+  if (proximityRival) {
+    const at = nearby ? anchors[nearby] : null
+    const agentDistance = actor && at ? Math.hypot(actor[0] - at[0], actor[2] - at[2]) : null
+    // While an agent is open the wall stays quiet.
+    if (proximityRival(store.agentEngine.focusedAgentId ? null : actor, agentDistance)) nearby = null
+  }
   if (nearby !== store.agentEngine.nearbyAgentId) store.agentEngineDispatch({ type: 'nearby', agentId: nearby })
   updateNearbyMini(actor)
   // An agent within reach wins the E key; otherwise standing in the circle makes E summon.

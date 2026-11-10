@@ -12,7 +12,7 @@ import { VillageAgentsMenu } from './VillageAgentsMenu'
 import { GAME_HUD_TEXT, GameKeycap } from '../forge/GameKeycap'
 
 /** Bottom-centre game prompt: a chamfered banner, a title, and key prompts in a row. */
-function PromptBanner({ accent, title, children }: { accent: string; title: string; children: ReactNode }) {
+export function PromptBanner({ accent, title, children }: { accent: string; title: string; children: ReactNode }) {
   return (
     <div className="pointer-events-none fixed bottom-7 left-1/2 z-[170] -translate-x-1/2 max-[700px]:bottom-28" style={{ filter: `drop-shadow(0 8px 18px rgba(0,0,0,0.55)) drop-shadow(0 0 14px ${accent}33)` }}>
       <div
@@ -31,7 +31,7 @@ function PromptBanner({ accent, title, children }: { accent: string; title: stri
   )
 }
 
-function KeyPrompt({ k, label, accent, primary = false, className = '' }: { k: string; label: string; accent: string; primary?: boolean; className?: string }) {
+export function KeyPrompt({ k, label, accent, primary = false, className = '' }: { k: string; label: string; accent: string; primary?: boolean; className?: string }) {
   return (
     <span className={`flex items-center gap-2 ${className}`}>
       <GameKeycap size="md" accent={accent} pulse={primary}>{k}</GameKeycap>

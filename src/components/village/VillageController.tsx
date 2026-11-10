@@ -9,6 +9,7 @@ import { useOasisStore } from '../../store/oasisStore'
 import { effectiveStatus, selectAttentionQueue } from '../../store/slices/agentEngineSlice'
 import { playVillageChime, unlockVillageAudio } from './village-sound'
 import { VillageImageViewer } from './VillageImageViewer'
+import { VillageMissionReader } from './VillageMissionReader'
 import {
   VILLAGE_SESSION_LAYER,
   discardVillageCameraPose,
@@ -126,8 +127,13 @@ export function VillageController() {
     }
   }, [])
 
-  // The one full-screen picture viewer (it portals itself into <body>).
-  return <VillageImageViewer />
+  // The one full-screen picture viewer (it portals itself into <body>), and the mission wall's prompt and reader.
+  return (
+    <>
+      <VillageImageViewer />
+      <VillageMissionReader />
+    </>
+  )
 }
 
 function setAttentionTitle(count: number): void {

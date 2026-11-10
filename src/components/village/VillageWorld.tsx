@@ -56,6 +56,7 @@ import {
 import { VILLAGE_OBSERVED_COLOR, agentDisplayName, statusColor, villageAgentLook } from './village-status'
 import { VillageSubagentMinis } from './VillageSubagentMinis'
 import { VillageEyes } from './VillageEyes'
+import { VillageMissionWall } from './VillageMissionWall'
 
 const WORK_ANIMATION_ID = 'ual-talking'
 const WINDOW_DISTANCE = 26
@@ -623,6 +624,8 @@ export function VillageWorld() {
           />
         )
       })}
+      {/* The owner's missions as framed panels behind Anorak's desk (VillageMissionWall). */}
+      <VillageMissionWall roster={roster} placements={placements} origin={origin} />
       <VillageCameraRig />
       <VillageEyes />
     </group>
