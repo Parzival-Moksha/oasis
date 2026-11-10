@@ -51,6 +51,8 @@ export function VoiceTypeMic() {
     if (document.activeElement === s.el) {
       try { s.el.setSelectionRange(caret, caret) } catch { /* some input types have no selection */ }
     }
+    // Keep the newest words in view while talking (a long dictation scrolled out of sight).
+    if (!s.after) s.el.scrollTop = s.el.scrollHeight
   }, [])
 
   const voice = useAgentVoiceInput({

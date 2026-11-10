@@ -110,6 +110,9 @@ function ControlsTab() {
   )
 }
 
+/** Long dictated feedback fits (it used to stop at 2,000 characters, mid-sentence). */
+const FEEDBACK_MAX_CHARS = 50_000
+
 /** The feedback box keeps what you typed when you switch tabs or close Help. */
 let feedbackDraft = ''
 
@@ -141,7 +144,7 @@ function FeedbackTab() {
           worldId: activeWorldId,
           source: 'help_panel',
           metadata: {
-            text: trimmed.slice(0, 2000),
+            text: trimmed.slice(0, FEEDBACK_MAX_CHARS),
             path,
             userAgent: typeof window !== 'undefined' ? window.navigator.userAgent.slice(0, 220) : '',
           },
@@ -153,7 +156,7 @@ function FeedbackTab() {
       // Saved. If the village has a Debugger agent, hand it the same words.
       const client = getAgentEngineClient()
       void relayFeedbackToDebugger(
-        { worldId: activeWorldId, path, text: trimmed.slice(0, 2000) },
+        { worldId: activeWorldId, path, text: trimmed.slice(0, FEEDBACK_MAX_CHARS) },
         {
           agents: Object.values(useOasisStore.getState().agentEngine.agents),
           isOpen: client.isOpen,
@@ -179,7 +182,7 @@ function FeedbackTab() {
           if (status !== 'idle') setStatus('idle')
         }}
         rows={7}
-        maxLength={2000}
+        maxLength={FEEDBACK_MAX_CHARS}
         placeholder="What happened? What would make this better?"
         className="w-full resize-none rounded-lg border px-3 py-2 text-xs leading-5 outline-none"
         style={{
@@ -189,7 +192,7 @@ function FeedbackTab() {
         }}
       />
       <div className="flex items-center justify-between gap-3">
-        <span className="text-[10px] text-gray-500">{text.length}/2000</span>
+        <span className="text-[10px] text-gray-500">{text.length.toLocaleString()}/{FEEDBACK_MAX_CHARS.toLocaleString()}</span>
         <button
           type="submit"
           disabled={!text.trim() || sending}

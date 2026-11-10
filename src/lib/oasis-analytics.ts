@@ -131,11 +131,17 @@ function cleanNumber(value: number | null | undefined): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
 }
 
-function safeJson(value: unknown): string | undefined {
+/** Feedback can be a long dictated message: room for ~100k characters. Everything else stays small. */
+export const FEEDBACK_METADATA_MAX = 120_000
+const METADATA_MAX = 8000
+
+export function safeJson(value: unknown, max = METADATA_MAX): string | undefined {
   if (value === undefined || value === null) return undefined
   try {
     const serialized = JSON.stringify(value)
-    return serialized.length > 8000 ? serialized.slice(0, 8000) : serialized
+    if (serialized.length <= max) return serialized
+    // Never cut the JSON itself (that left rows nobody could parse): keep a valid, marked preview.
+    return JSON.stringify({ truncated: true, length: serialized.length, preview: serialized.slice(0, Math.max(0, max - 200)) })
   } catch {
     return JSON.stringify({ unserializable: true })
   }
@@ -181,7 +187,7 @@ export async function recordOasisAnalyticsEvent(input: RecordOasisAnalyticsEvent
         source: cleanString(input.source ?? null, 80),
         durationMs: cleanNumber(input.durationMs),
         costUsd: cleanNumber(input.costUsd),
-        metadata: safeJson(input.metadata),
+        metadata: safeJson(input.metadata, eventType === 'user_feedback' ? FEEDBACK_METADATA_MAX : METADATA_MAX),
         createdAt: input.occurredAt ?? new Date(),
       },
     })
