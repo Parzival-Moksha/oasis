@@ -28,6 +28,7 @@ import { useOasisStore } from '../store/oasisStore'
 import { useInputManager, getInputCapabilities, consumeMouseLookDelta, wasUILayerClosedRecently } from '../lib/input-manager'
 import { getMobileInputSnapshot, isProbablyMobileDevice } from '../lib/mobile-controls'
 import { setCameraSnapshot } from '../lib/camera-bridge'
+import { guardAudioListener } from '../lib/audio-listener-guard'
 import { deriveAvatarAnchoredWindowPlacement, resolveAgentWindowRenderScale } from '../lib/agent-avatar-utils'
 import { getLiveObjectTransform } from '../lib/live-object-transforms'
 import { SettingsContext, DragContext } from './scene-lib'
@@ -386,9 +387,25 @@ export function CameraController() {
   useEffect(() => {
     if (_audioListener) return // Already created (HMR safe)
     const listener = new THREE.AudioListener()
+    // Without this, every camera.updateMatrixWorld() (drei <Html> does one per element per frame)
+    // queues nine Web Audio ramps, and a suspended context never drains them: the frame rate
+    // decayed to ~20 fps over 20 minutes until a reload (fps-decay mission, 2026-11-10).
+    guardAudioListener(listener, THREE.Object3D.prototype.updateMatrixWorld, THREE.AudioListener.prototype.updateMatrixWorld)
     camera.add(listener)
     _audioListener = listener
+    // Browsers start the context suspended until a gesture; the first key or click turns spatial audio on.
+    const resumeAudio = () => {
+      if (listener.context.state === 'suspended') void listener.context.resume().catch(() => {})
+      if (listener.context.state === 'running') {
+        window.removeEventListener('pointerdown', resumeAudio, true)
+        window.removeEventListener('keydown', resumeAudio, true)
+      }
+    }
+    window.addEventListener('pointerdown', resumeAudio, true)
+    window.addEventListener('keydown', resumeAudio, true)
     return () => {
+      window.removeEventListener('pointerdown', resumeAudio, true)
+      window.removeEventListener('keydown', resumeAudio, true)
       camera.remove(listener)
       _audioListener = null
     }

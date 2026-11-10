@@ -6,19 +6,36 @@
 // frame-loop callbacks, DOM size, long tasks. Rows land in OasisAnalyticsEvent as eventType
 // 'perf_sample' (local mode only; Scene mounts this outside hosted mode).
 
-import { useEffect, useRef } from 'react'
-import { useThree } from '@react-three/fiber'
+import { useEffect, useMemo, useRef } from 'react'
+import { useFrame, useThree } from '@react-three/fiber'
 
 import { getInputState } from '@/lib/input-manager'
 import { getWLipSyncNodeStats } from '@/lib/wlipsync-driver'
+import { FrameCallbackTimer, type FrameSubscriberLike } from '@/lib/frame-callback-timing'
+import { summarizeLongFrames, type LongFrameEntry } from '@/lib/perf-long-frames'
 import { useOasisStore } from '@/store/oasisStore'
 
 const SAMPLE_EVERY_MS = 5 * 60 * 1000
+/** Long frames kept between samples (at 10 a second, 5 minutes would be 3000: enough to see the shape). */
+const LONG_FRAME_KEEP = 3000
 
 export function PerfHeartbeat({ readFps }: { readFps: () => number | null }) {
   const get = useThree(state => state.get)
   const longTaskMs = useRef(0)
   const longTasks = useRef(0)
+
+  const longFrames = useRef<LongFrameEntry[]>([])
+  const visibleMs = useRef(0)
+  const visibleSince = useRef<number | null>(null)
+  // Which useFrame callbacks the frames go to (long-frame attribution stops at the fiber loop).
+  const frameTimer = useMemo(() => new FrameCallbackTimer(), [])
+  const frameCount = useRef(0)
+  useFrame(() => {
+    frameTimer.tick()
+    // New subscribers appear as the scene changes: pick them up now and then, not every frame.
+    frameCount.current += 1
+    if (frameCount.current % 120 === 1) frameTimer.instrument(get().internal.subscribers as unknown as FrameSubscriberLike[])
+  }, -1000)
 
   useEffect(() => {
     let observer: PerformanceObserver | null = null
@@ -33,6 +50,48 @@ export function PerfHeartbeat({ readFps }: { readFps: () => number | null }) {
     } catch {
       observer = null
     }
+    // Long animation frames (Chromium 123+): which scripts a slow frame ran, and how much of it
+    // was style and layout. Kept as a bounded list, summarized per sample.
+    let frameObserver: PerformanceObserver | null = null
+    try {
+      frameObserver = new PerformanceObserver(list => {
+        const bucket = longFrames.current
+        for (const entry of list.getEntries() as unknown as LongFrameEntry[]) {
+          if (bucket.length >= LONG_FRAME_KEEP) break
+          bucket.push({
+            startTime: entry.startTime,
+            duration: entry.duration,
+            blockingDuration: entry.blockingDuration,
+            renderStart: entry.renderStart,
+            styleAndLayoutStart: entry.styleAndLayoutStart,
+            scripts: (entry.scripts || []).map(script => ({
+              invoker: script.invoker,
+              invokerType: script.invokerType,
+              sourceURL: script.sourceURL,
+              sourceFunctionName: script.sourceFunctionName,
+              sourceCharPosition: script.sourceCharPosition,
+              duration: script.duration,
+              forcedStyleAndLayoutDuration: script.forcedStyleAndLayoutDuration,
+            })),
+          })
+        }
+      })
+      frameObserver.observe({ type: 'long-animation-frame', buffered: false })
+    } catch {
+      frameObserver = null
+    }
+    // Visible time, so "decays after N minutes on screen" can be read off the samples.
+    const onVisibility = () => {
+      const now = performance.now()
+      if (document.visibilityState === 'visible') {
+        if (visibleSince.current === null) visibleSince.current = now
+      } else if (visibleSince.current !== null) {
+        visibleMs.current += now - visibleSince.current
+        visibleSince.current = null
+      }
+    }
+    onVisibility()
+    document.addEventListener('visibilitychange', onVisibility)
 
     const sample = () => {
       const { gl, scene, internal } = get()
@@ -42,9 +101,16 @@ export function PerfHeartbeat({ readFps }: { readFps: () => number | null }) {
       const store = useOasisStore.getState()
       const engine = store.agentEngine
       const agents = Object.values(engine.agents)
+      const now = performance.now()
+      const visibleNow = visibleMs.current + (visibleSince.current === null ? 0 : now - visibleSince.current)
+      const frames = summarizeLongFrames(longFrames.current)
+      longFrames.current = []
       const metadata = {
-        uptimeMin: Math.round(performance.now() / 60000),
+        uptimeMin: Math.round(now / 60000),
+        visibleMin: Math.round(visibleNow / 60000),
         visible: document.visibilityState === 'visible',
+        longFrames: frames,
+        frameLoop: frameTimer.flush(),
         fps: readFps(),
         heapMB: memory ? Math.round(memory.usedJSHeapSize / 1048576) : null,
         geometries: gl.info.memory.geometries,
@@ -76,8 +142,10 @@ export function PerfHeartbeat({ readFps }: { readFps: () => number | null }) {
     return () => {
       window.clearInterval(timer)
       observer?.disconnect()
+      frameObserver?.disconnect()
+      document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [get, readFps])
+  }, [get, readFps, frameTimer])
 
   return null
 }
