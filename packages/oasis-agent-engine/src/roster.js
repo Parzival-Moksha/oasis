@@ -1,4 +1,4 @@
-// Roster persistence: data/agent-engine.local.json = [{id, name, cwd, sessionId, model, permissionMode, effort}]
+// Roster persistence: data/agent-engine.local.json = [{id, name, cwd, sessionId, model, permissionMode, effort, eyes}]
 import fs from 'node:fs';
 import path from 'node:path';
 

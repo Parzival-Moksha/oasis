@@ -69,9 +69,11 @@ export function toolResultText(content) {
   return JSON.stringify(content);
 }
 
+/** The engine's note next to an eyes picture (agent.js EYES_CAPTION): for the model, not for the thread. */
+const EYES_NOTE = /^\[Oasis eyes: [^\]]*\]$/;
 function textOfUserContent(content) {
   if (typeof content === 'string') return content;
-  if (Array.isArray(content)) return content.filter((b) => b?.type === 'text').map((b) => b.text).join('\n');
+  if (Array.isArray(content)) return content.filter((b) => b?.type === 'text' && !EYES_NOTE.test(b.text || '')).map((b) => b.text).join('\n');
   return '';
 }
 

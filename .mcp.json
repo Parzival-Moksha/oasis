@@ -18,7 +18,7 @@
     },
     "oasis": {
       "type": "http",
-      "url": "http://localhost:4516/api/mcp/oasis"
+      "url": "http://127.0.0.1:4516/api/mcp/oasis"
     },
     "mission": {
       "type": "stdio",

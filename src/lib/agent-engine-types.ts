@@ -71,6 +71,8 @@ export interface EngineAgentSnapshot {
   effort?: string | null
   /** The effort the process runs with (the CLI default when `effort` is null); from get_settings. */
   resolvedEffort?: string | null
+  /** Eyes: each message the owner sends carries a picture from this agent's avatar. Missing on older engines. */
+  eyes?: boolean
   status: EngineAgentStatus
   statusReason?: string | null
   alive?: boolean
@@ -314,6 +316,8 @@ export type EngineServerMessage =
   | { type: 'hello'; agents: EngineAgentSnapshot[]; backlog?: Record<string, EngineEvent[]>; server?: EngineServerInfo }
   | { type: 'agents'; agents: EngineAgentSnapshot[] }
   | { type: 'event'; event: EngineEvent }
+  /** The engine wants a picture from this agent's avatar for a message being sent (answer with the eyesFrame command). */
+  | { type: 'eyes.request'; requestId: string; agentId: string }
   | { type: 'reply'; id: number | string | null; cmd?: string; ok: boolean; data?: unknown; error?: string }
 
 // ─── commands (browser → engine) ────────────────────────────────────────────
@@ -359,6 +363,12 @@ export interface EngineCommandMap {
   setPermissionMode: { args: { agentId: string; mode: string }; result: { ok: boolean; error?: string } }
   /** effort: a level, or null / 'default' for the CLI default. Live, no restart and no turn. */
   setEffort: { args: { agentId: string; effort: string | null }; result: { ok: boolean; data?: { effort: string | null; resolvedEffort?: string | null }; error?: string } }
+  /** Eyes on or off for an owned agent; kept in the roster. */
+  setEyes: { args: { agentId: string; on: boolean }; result: { ok: boolean; data?: { eyes: boolean } } }
+  /** This page can take eyes pictures (once per connection). */
+  canSee: { args: { on: boolean }; result: { ok: boolean } }
+  /** The answer to an eyes.request: the picture, or no data when this page has no view of that agent. */
+  eyesFrame: { args: { requestId: string; data?: string; mediaType?: string }; result: { ok: boolean } }
   respond: { args: RespondArgs; result: { ok: boolean } }
   contextUsage: { args: { agentId: string }; result: unknown }
   kill: { args: { agentId: string; keep?: boolean }; result: { ok: boolean } }

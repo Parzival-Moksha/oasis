@@ -59,8 +59,9 @@ const hub = {
       if (list.length > BACKLOG) list.splice(0, list.length - BACKLOG);
     }
     broadcast({ type: 'event', event });
-    if (/^(status|init|meta|model|mode|effort|context|exit|permission\.)/.test(kind)) scheduleSnapshot();
+    if (/^(status|init|meta|model|mode|effort|eyes|context|exit|permission\.)/.test(kind)) scheduleSnapshot();
   },
+  eyes: (agentId) => captureEyes(agentId),
   persist() {
     saveRoster(ROSTER_FILE, ownedAgents().map((a) => a.rosterEntry()));
   },
@@ -89,6 +90,26 @@ function addAgent(a) {
   agents.set(a.id, a);
   clearTimeout(snapshotTimer);
   broadcast({ type: 'agents', agents: snapshots() });
+}
+
+// ------------------------------------------------------------------ eyes
+// A picture from an agent's own avatar, taken by an Oasis page (VillageEyes.tsx renders the scene once from the
+// desk and answers over this socket). Pages that can do it say so with the `canSee` command. The first picture
+// wins; no page, no picture, or EYES_MS without an answer resolves null and the message goes out as text.
+const EYES_MS = Number(process.env.OASIS_EYES_MS || 1500);
+const EYES_MAX = 1024 * 1024; // base64 chars; an 800x450 jpeg is about 100 KB
+const eyesWaiting = new Map(); // requestId -> {done, left}
+function captureEyes(agentId) {
+  const pages = [...clients].filter((ws) => ws.readyState === 1 && ws.canSee);
+  if (!pages.length) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const requestId = randomUUID();
+    const done = (picture) => { clearTimeout(timer); eyesWaiting.delete(requestId); resolve(picture); };
+    const timer = setTimeout(() => done(null), EYES_MS);
+    eyesWaiting.set(requestId, { done, left: pages.length });
+    const ask = JSON.stringify({ type: 'eyes.request', requestId, agentId });
+    for (const ws of pages) ws.send(ask);
+  });
 }
 
 function newId(prefix) { return `${prefix}-${randomUUID().slice(0, 8)}`; }
@@ -139,6 +160,18 @@ const commands = {
     scheduleSnapshot();
     return agent.snapshot();
   },
+
+  /** An Oasis page that can take eyes pictures says so once per connection. */
+  canSee({ on = true } = {}, ws) { if (ws) ws.canSee = !!on; return { ok: true }; },
+  /** A page's answer to eyes.request: {requestId, data (base64), mediaType}, or no data when it has no view of that agent. */
+  eyesFrame({ requestId, data, mediaType }) {
+    const w = eyesWaiting.get(requestId);
+    if (!w) return { ok: true, late: true };
+    if (typeof data === 'string' && data && data.length <= EYES_MAX && /^image\/(jpeg|png|webp)$/.test(mediaType || '')) w.done({ data, mediaType });
+    else if (--w.left <= 0) w.done(null);
+    return { ok: true };
+  },
+  setEyes({ agentId, on }) { return getAgent(agentId, { owned: true }).setEyes(on); },
 
   send({ agentId, text, priority }) {
     const a = getAgent(agentId);
@@ -291,10 +324,10 @@ setInterval(() => {
   bridgedBefore = now;
 }, 2000).unref();
 
-async function runCommand(msg) {
+async function runCommand(msg, ws = null) {
   const fn = commands[msg.cmd];
   if (!fn) throw new Error(`unknown command ${msg.cmd}`);
-  return await fn(msg);
+  return await fn(msg, ws);
 }
 
 /** Control requests resolve to {ok:false, error} instead of throwing; report those as failed replies. */
@@ -433,7 +466,7 @@ wss.on('connection', (ws) => {
     let msg;
     try { msg = JSON.parse(String(raw)); } catch { return; }
     try {
-      const data = await runCommand(msg);
+      const data = await runCommand(msg, ws);
       if (failedResult(data)) {
         ws.send(JSON.stringify({ type: 'reply', id: msg.id ?? null, cmd: msg.cmd, ok: false, error: data.error || `${msg.cmd} failed`, data }));
         return;

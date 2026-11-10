@@ -1,7 +1,7 @@
 {
   "name": "oasis",
-  "version": "0.1.0",
-  "description": "The Oasis as a live second window onto this session: the 3D village shows it, and what you say there arrives here.",
+  "version": "0.2.0",
+  "description": "The Oasis as a live second window onto this session: the 3D village shows it, what you say there arrives here, and the session gets the Oasis world tools.",
   "author": {
     "name": "Parzival-Moksha"
   }

@@ -55,6 +55,7 @@ import {
 } from './village-actions'
 import { VILLAGE_OBSERVED_COLOR, agentDisplayName, statusColor, villageAgentLook } from './village-status'
 import { VillageSubagentMinis } from './VillageSubagentMinis'
+import { VillageEyes } from './VillageEyes'
 
 const WORK_ANIMATION_ID = 'ual-talking'
 const WINDOW_DISTANCE = 26
@@ -623,6 +624,7 @@ export function VillageWorld() {
         )
       })}
       <VillageCameraRig />
+      <VillageEyes />
     </group>
   )
 }

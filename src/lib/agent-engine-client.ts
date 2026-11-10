@@ -88,6 +88,14 @@ interface PendingCommand {
 
 type TextDeltaEvent = Extract<EngineEvent, { kind: 'text.delta' }>
 
+/** A picture from an agent's avatar: base64 without the data: prefix. */
+export interface EyesPicture {
+  data: string
+  mediaType: 'image/jpeg' | 'image/png' | 'image/webp'
+}
+/** Takes the picture for one agent, or null when this page has no view of it. Must not throw for long: it is synchronous work. */
+export type EyesCapturer = (agentId: string) => EyesPicture | null
+
 const LONG_COMMANDS: Partial<Record<EngineCommandName, number>> = { listSessions: 60000, spawnAgent: 45000, observe: 45000 }
 
 export class AgentEngineClient {
@@ -110,6 +118,7 @@ export class AgentEngineClient {
   private readonly pending = new Map<number, PendingCommand>()
   private readonly deltas = new Map<string, TextDeltaEvent>()
   private deltaTimer: unknown = null
+  private eyesCapturer: EyesCapturer | null = null
 
   constructor(options: AgentEngineClientOptions) {
     this.url = options.url || resolveAgentEngineUrl()
@@ -229,6 +238,42 @@ export class AgentEngineClient {
 
   setPermissionMode(agentId: string, mode: string) {
     return this.cmd('setPermissionMode', { agentId, mode })
+  }
+
+  /** Eyes on or off: with it on, each message you send carries a picture from the agent's avatar. */
+  setEyes(agentId: string, on: boolean) {
+    return this.cmd('setEyes', { agentId, on })
+  }
+
+  /**
+   * The village scene registers how to take an eyes picture (VillageEyes.tsx); the engine then asks this page
+   * for one with each message to an agent whose eyes are on. Returns the unregister function.
+   */
+  setEyesCapturer(capturer: EyesCapturer): () => void {
+    this.eyesCapturer = capturer
+    this.announceEyes()
+    return () => {
+      if (this.eyesCapturer !== capturer) return
+      this.eyesCapturer = null
+      this.announceEyes()
+    }
+  }
+
+  private announceEyes(): void {
+    if (!this.isOpen) return
+    // An engine older than eyes answers "unknown command": nothing to do then.
+    this.cmd('canSee', { on: Boolean(this.eyesCapturer) }).catch(() => {})
+  }
+
+  private answerEyes(requestId: string, agentId: string): void {
+    let picture: EyesPicture | null = null
+    try {
+      picture = this.eyesCapturer ? this.eyesCapturer(agentId) : null
+    } catch {
+      picture = null
+    }
+    // Always answer, also with nothing: the engine then stops waiting and sends the text alone.
+    this.cmd('eyesFrame', picture ? { requestId, data: picture.data, mediaType: picture.mediaType } : { requestId }).catch(() => {})
   }
 
   /** Thinking effort (low … max), or null for the CLI default. Applies live; a stopped agent gets it on its next start. */
@@ -364,6 +409,10 @@ export class AgentEngineClient {
         this.attempts = 0
         this.flushDeltas()
         this.dispatch({ type: 'hello', agents: message.agents || [], backlog: message.backlog || {}, server: message.server, at: this.now() })
+        if (this.eyesCapturer) this.announceEyes()
+        return
+      case 'eyes.request':
+        if (typeof message.requestId === 'string' && typeof message.agentId === 'string') this.answerEyes(message.requestId, message.agentId)
         return
       case 'agents':
         this.flushDeltas()

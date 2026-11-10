@@ -6,10 +6,12 @@
 //   node scripts/smoke.mjs world     [1 turn]   the Oasis MCP server loads and its free tools run without a card
 //   node scripts/smoke.mjs handoff   [3 turns]  move here + let go between two engines (OASIS_WS and OASIS_WS2)
 //   node scripts/smoke.mjs effort    [0 turns]  --effort at spawn, live setEffort (apply_flag_settings), roster keeps it
+//   node scripts/smoke.mjs eyes      [2 turns]  a message carries a picture from the agent's avatar (this script plays the page)
 //
 // Only touches packages/oasis-agent-engine/sandbox/* scratch agents. Uses haiku and tiny prompts.
 import path from 'node:path';
 import fs from 'node:fs';
+import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
 import { findSessionFile } from '../src/sessions.js';
@@ -233,17 +235,72 @@ const phases = {
     const initP = c.next((e) => e.agentId === a.id && e.kind === 'init', 60000).catch(() => null);
     const permP = c.next((e) => e.agentId === a.id && e.kind === 'permission.request', 120000).then((e) => ({ perm: e })).catch(() => null);
     const endP = c.next((e) => e.agentId === a.id && e.kind === 'turn.end', 120000).then((e) => ({ end: e })).catch(() => null);
-    await c.cmd('send', { agentId: a.id, text: 'Call the mcp__oasis__get_world_info tool once, then reply with only the world name it returned.' });
+    await c.cmd('send', { agentId: a.id, text: 'Call the Oasis MCP tool get_world_info once (its name ends in __get_world_info; look it up with ToolSearch if you have to), then reply with only the world name it returned.' });
     const init = await initP;
-    const oasis = (init?.mcpServers || []).filter((s) => s.name === 'oasis');
-    check('one oasis MCP server, connected', oasis.length === 1 && oasis[0].status === 'connected', JSON.stringify(init?.mcpServers));
-    const worldTools = (init?.tools || []).filter((t) => t.startsWith('mcp__oasis__'));
-    check('world tools offered', worldTools.includes('mcp__oasis__place_object') && worldTools.includes('mcp__oasis__screenshot_viewport'), `${worldTools.length} oasis tools`);
+    // The server comes from the engine's --mcp-config ("oasis", tools mcp__oasis__*) or, when the Oasis plugin is
+    // installed, from the plugin ("plugin:oasis:oasis", tools mcp__plugin_oasis_oasis__*). Never both.
+    const oasis = (init?.mcpServers || []).filter((s) => s.name === 'oasis' || s.name === 'plugin:oasis:oasis');
+    check('one oasis MCP server', oasis.length === 1 && oasis[0].status !== 'failed', JSON.stringify(oasis));
     const first = await Promise.race([permP, endP]);
     check('get_world_info ran without a permission card', !!first?.end, first?.perm ? `asked for ${first.perm.toolName}` : first?.end ? `turn took ${first.end.durationMs} ms` : 'no turn.end');
-    const used = c.events.some((e) => e.agentId === a.id && JSON.stringify(e).includes('mcp__oasis__get_world_info'));
-    check('the agent called get_world_info', used, JSON.stringify(first?.end?.result || '').slice(0, 160));
+    const calls = c.events.filter((e) => e.agentId === a.id && e.kind === 'tool.start' && /^mcp__(plugin_oasis_)?oasis__/.test(e.name || '')).map((e) => e.name);
+    check('the agent called get_world_info', calls.some((n) => n.endsWith('__get_world_info')), `${calls.join(', ') || 'no oasis tool call'} -> ${JSON.stringify(first?.end?.result || '').slice(0, 120)}`);
+    const prefixes = new Set(calls.map((n) => n.slice(0, n.lastIndexOf('__'))));
+    check('its tools come from one server only', prefixes.size === 1, [...prefixes].join(', '));
     await c.cmd('kill', { agentId: a.id });
+    c.close();
+  },
+
+  // [2 turns] Eyes: a message to an agent with eyes on carries a picture from its avatar, as an image block of the
+  // same user message. This script plays the Oasis page: it says canSee and answers eyes.request with a plain
+  // red picture, then asks the agent what colour it sees.
+  async eyes() {
+    const c = await connect();
+    const sp = await c.cmd('spawnAgent', { name: 'smoke-eyes', cwd: A, model: 'haiku', permissionMode: 'bypassPermissions', worldTools: false });
+    const id = sp.data.id;
+    await c.next((e) => e.agentId === id && e.kind === 'meta', 30000);
+    check('eyes are off by default (the name is not Anorak)', sp.data.eyes === false, `eyes=${sp.data.eyes}`);
+
+    const on = await c.cmd('setEyes', { agentId: id, on: true });
+    check('setEyes on', on.ok && on.data?.data?.eyes === true, JSON.stringify(on.data ?? on.error));
+    await sleep(200);
+    check('snapshot carries eyes', (await c.cmd('listAgents')).data.find((x) => x.id === id)?.eyes === true);
+    if (process.env.OASIS_ROSTER) {
+      await sleep(300);
+      const entry = JSON.parse(fs.readFileSync(process.env.OASIS_ROSTER, 'utf8')).agents.find((x) => x.id === id);
+      check('roster keeps eyes', entry?.eyes === true, JSON.stringify(entry));
+    }
+
+    // A page that can see but never answers: the message still goes out, after about 1.5 s, as text.
+    await c.cmd('canSee', { on: true });
+    let asked = 0;
+    let answer = false;
+    c.ws.on('message', (raw) => {
+      const m = JSON.parse(String(raw));
+      if (m.type !== 'eyes.request') return;
+      asked += 1;
+      if (answer) c.cmd('eyesFrame', { requestId: m.requestId, data: redPng(64, 64).toString('base64'), mediaType: 'image/png' });
+    });
+    let t0 = Date.now();
+    const end1 = c.next((e) => e.agentId === id && e.kind === 'turn.end', 120000).catch(() => null);
+    const slow = await c.cmd('send', { agentId: id, text: 'Remember the word PAPAYA. Reply only: OK' });
+    const waited = Date.now() - t0;
+    const sent1 = c.events.find((e) => e.agentId === id && e.kind === 'user.sent' && e.uuid === slow.data?.uuid);
+    check('a page that never answers: the text goes out alone after the timeout', slow.ok && asked === 1 && !sent1?.eyes && waited >= 1300 && waited < 3000, `asked=${asked} waited ${waited} ms eyes=${sent1?.eyes}`);
+    await end1;
+
+    answer = true;
+    t0 = Date.now();
+    const end2 = c.next((e) => e.agentId === id && e.kind === 'turn.end', 120000).catch(() => null);
+    const fast = await c.cmd('send', { agentId: id, text: 'A picture is attached to this message. Reply with two words only: the main colour of the picture, then the word I asked you to remember.' });
+    const took = Date.now() - t0;
+    const sent2 = c.events.find((e) => e.agentId === id && e.kind === 'user.sent' && e.uuid === fast.data?.uuid);
+    check('a page that answers: the picture rides with the message', fast.ok && sent2?.eyes === true && took < 1000, `eyes=${sent2?.eyes} in ${took} ms`);
+    const e2 = await end2;
+    check('the model saw the picture in that same turn', /red/i.test(e2?.result || '') && /papaya/i.test(e2?.result || ''), JSON.stringify(e2?.result));
+    const shown = c.events.filter((e) => e.agentId === id && e.kind === 'user').map((e) => e.text);
+    check('the thread shows only what the owner said', shown.length > 0 && !shown.some((t) => /Oasis eyes/.test(t)), JSON.stringify(shown.map((t) => t.slice(0, 40))));
+    await c.cmd('kill', { agentId: id });
     c.close();
   },
 
@@ -337,6 +394,25 @@ const phases = {
     c.close();
   },
 };
+
+/** A plain red PNG (zlib is all it takes), standing in for the picture a page would take. */
+function redPng(width, height) {
+  const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+  const crc = (buf) => { let c = 0xffffffff; for (const b of buf) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const out = Buffer.alloc(8 + data.length + 4);
+    out.writeUInt32BE(data.length, 0); body.copy(out, 4); out.writeUInt32BE(crc(body), 8 + data.length);
+    return out;
+  };
+  const head = Buffer.alloc(13);
+  head.writeUInt32BE(width, 0); head.writeUInt32BE(height, 4); head[8] = 8; head[9] = 2; // 8-bit RGB
+  const row = Buffer.alloc(1 + width * 3, 20);
+  row[0] = 0; // filter: none
+  for (let x = 0; x < width; x += 1) row[1 + x * 3] = 230;
+  const raw = Buffer.concat(Array.from({ length: height }, () => row));
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', head), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+}
 
 const phase = process.argv[2] || 'basic';
 if (!phases[phase]) { console.log('phases:', Object.keys(phases).join(', ')); process.exit(1); }

@@ -28,6 +28,7 @@ import {
 } from './village-actions'
 import { VillageComposer } from './VillageComposer'
 import { EffortSelect } from './EffortSelect'
+import { EyesToggle } from './EyesToggle'
 import { VillageAvatarButton } from './VillageAvatarButton'
 import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY, VILLAGE_TYPE_CLASS, agentDisplayName, canTalkTo, cwdLabel, formatCost, modelLabel, statusColor, statusLabel } from './village-status'
 
@@ -268,6 +269,7 @@ export function AgentSessionPanel() {
             </select>
           </label>
           <EffortSelect agent={agent} />
+          <EyesToggle agent={agent} />
           <span className="ml-auto truncate text-white/60">{modelLabel(agent)}</span>
         </div>
       )}

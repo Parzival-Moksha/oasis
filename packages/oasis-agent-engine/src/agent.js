@@ -27,6 +27,10 @@ import { worldToolsArgs } from './worldtools.js';
 
 const SANDBOX_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'sandbox');
 const REVIEW_INPUT_MAX = 256 * 1024;
+/** Eyes: agents whose name says Anorak see by default; the owner switches it per agent (session panel). */
+export const EYES_DEFAULT = /anorak/i;
+/** Said next to the picture, so the model knows what it is. Kept out of the thread (normalize.js strips it). */
+export const EYES_CAPTION = '[Oasis eyes: what your avatar sees from its desk in the village as the owner says this.]';
 /** `claude --effort` levels (2.1.318). Each model lists the ones it takes in initialize's models[].supportedEffortLevels. */
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
@@ -50,8 +54,8 @@ function echoText(content) {
 
 export class Agent {
   /**
-   * @param {{id:string,name:string,cwd:string,sessionId?:string,model?:string,permissionMode?:string,effort?:string,fork?:boolean,worldTools?:boolean}} spec
-   * @param {{emit:(agentId:string, kind:string, payload?:object)=>void, persist:()=>void, log:(...a:any[])=>void}} hub
+   * @param {{id:string,name:string,cwd:string,sessionId?:string,model?:string,permissionMode?:string,effort?:string,fork?:boolean,worldTools?:boolean,eyes?:boolean}} spec
+   * @param {{emit:(agentId:string, kind:string, payload?:object)=>void, persist:()=>void, log:(...a:any[])=>void, eyes?:(agentId:string)=>Promise<{data:string,mediaType:string}|null>}} hub
    */
   constructor(spec, hub) {
     this.kind = 'owned';
@@ -66,6 +70,9 @@ export class Agent {
     this.fork = !!spec.fork;
     this.forkedFrom = spec.fork ? spec.sessionId || null : null; // until the fork's first turn, sessionId is still the original's
     this.worldTools = spec.worldTools !== false; // the Oasis MCP server (worldtools.js); on unless the roster says false
+    // Eyes: each message from the owner carries a picture from this agent's avatar (send()). Kept in the roster.
+    this.eyes = typeof spec.eyes === 'boolean' ? spec.eyes : EYES_DEFAULT.test(this.name || '');
+    this.sendChain = Promise.resolve(); // messages go out in the order they were sent, also while one waits for its picture
     this.hub = hub;
     this.proc = null;
     this.status = STATUS.IDLE;
@@ -98,7 +105,7 @@ export class Agent {
       id: this.id, kind: this.kind, name: this.name, cwd: this.cwd, sessionId: this.sessionId,
       model: this.model, resolvedModel: this.norm.model, permissionMode: this.permissionMode,
       effectivePermissionMode: this.effectivePermissionMode || null, effort: this.effort,
-      resolvedEffort: this.resolvedEffort, status: this.status, statusReason: this.statusReason, alive: !!this.proc,
+      resolvedEffort: this.resolvedEffort, eyes: this.eyes, status: this.status, statusReason: this.statusReason, alive: !!this.proc,
       pid: this.proc?.pid || null, pendingUser: this.pendingUser.size,
       permissions: [...this.permissions.values()].map((r) => this.describePermission(r)),
       context: this.lastContext, models: this.meta.models || null,
@@ -106,7 +113,7 @@ export class Agent {
   }
 
   rosterEntry() {
-    return { id: this.id, name: this.name, cwd: this.cwd, sessionId: this.sessionId, model: this.model, permissionMode: this.permissionMode, effort: this.effort, ...(this.worldTools ? {} : { worldTools: false }) };
+    return { id: this.id, name: this.name, cwd: this.cwd, sessionId: this.sessionId, model: this.model, permissionMode: this.permissionMode, effort: this.effort, eyes: this.eyes, ...(this.worldTools ? {} : { worldTools: false }) };
   }
 
   // ------------------------------------------------------------------ process
@@ -119,7 +126,7 @@ export class Agent {
     if (this.model) args.push('--model', this.model);
     if (this.permissionMode) args.push('--permission-mode', this.permissionMode);
     if (this.effort) args.push('--effort', this.effort);
-    if (this.worldTools) args.push(...worldToolsArgs());
+    if (this.worldTools) args.push(...worldToolsArgs({ cwd: this.cwd }));
     if (this.sessionId) {
       // --resume finds a session by id even from another cwd (verified), so look in every project dir.
       const exists = !!findSessionFile(this.sessionId, this.cwd);
@@ -378,18 +385,41 @@ export class Agent {
   }
 
   // ------------------------------------------------------------------ commands
+  /**
+   * A message from the owner. With eyes on, the Oasis page is first asked for a picture from this agent's avatar
+   * (hub.eyes: about 1.5 s at most, null when no page answers) and it rides in the same user message as an image
+   * block. The text always goes out, with or without the picture, and in the order it was sent.
+   */
   send(text, { priority } = {}) {
-    if (!text || !text.trim()) throw new Error('empty message');
+    if (!text || !text.trim()) return Promise.reject(new Error('empty message'));
+    const run = this.sendChain.then(() => this.sendNow(text, { priority }));
+    this.sendChain = run.catch(() => {});
+    return run;
+  }
+
+  async sendNow(text, { priority } = {}) {
     if (!this.proc) this.start();
     if (!this.proc) throw new Error(this.statusReason);
+    let picture = null;
+    if (this.eyes && this.hub.eyes) {
+      try { picture = await this.hub.eyes(this.id); } catch { picture = null; }
+      if (!this.proc) throw new Error(this.statusReason || 'agent process not running');
+    }
     const uuid = randomUUID();
     const turnWasRunning = this.turnRunning;
     this.pendingUser.set(uuid, { text, sentAt: Date.now(), turnWasRunning, turnIndex: this.turnIndex || 0 });
-    const msg = { type: 'user', message: { role: 'user', content: text }, parent_tool_use_id: null, session_id: '', uuid };
+    const content = picture?.data
+      ? [
+        { type: 'text', text },
+        { type: 'image', source: { type: 'base64', media_type: picture.mediaType || 'image/jpeg', data: picture.data } },
+        { type: 'text', text: EYES_CAPTION },
+      ]
+      : text;
+    const msg = { type: 'user', message: { role: 'user', content }, parent_tool_use_id: null, session_id: '', uuid };
     if (priority === 'now' || priority === 'later') msg.priority = priority;
-    this.write(msg);
+    try { this.write(msg); } catch (e) { this.pendingUser.delete(uuid); throw e; }
     this.norm.openTurn();
-    this.emit('user.sent', { uuid, text, midTurn: turnWasRunning, priority: msg.priority || 'next' });
+    this.emit('user.sent', { uuid, text, midTurn: turnWasRunning, priority: msg.priority || 'next', ...(picture?.data ? { eyes: true } : {}) });
     // An open permission / question / plan still blocks the CLI: talking to it doesn't resolve that.
     if (this.permissions.size) this.recomputeStatus();
     else this.setStatus(STATUS.WORKING, turnWasRunning ? 'message queued mid-turn' : 'message sent');
@@ -447,6 +477,14 @@ export class Agent {
     this.persist();
     this.emit('effort', { effort: level, resolvedEffort: this.resolvedEffort });
     return { ok: true, data: { effort: level, resolvedEffort: this.resolvedEffort } };
+  }
+
+  /** Eyes on or off (kept in the roster). Applies to the next message. */
+  setEyes(on) {
+    this.eyes = !!on;
+    this.persist();
+    this.emit('eyes', { eyes: this.eyes });
+    return { ok: true, data: { eyes: this.eyes } };
   }
 
   async setPermissionMode(mode) {

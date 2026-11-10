@@ -1,6 +1,14 @@
 // World tools: every Oasis agent gets the Oasis MCP server (see and touch the world it lives in).
-// The server is the Next app's /api/mcp/oasis route (src/app/api/mcp/oasis/route.ts). It is passed with
-// --mcp-config, so it loads without the project-.mcp.json approval step, whatever folder the agent works in.
+// The server is the Next app's /api/mcp/oasis route (src/app/api/mcp/oasis/route.ts).
+//
+// Two ways it reaches an agent (verified with Claude Code 2.1.318):
+// - The Oasis plugin (plugins/oasis/.mcp.json) ships it to every session on the machine, the desktop app
+//   included. A plugin's server is named `plugin:<plugin>:<server>`, so its tools are
+//   `mcp__plugin_oasis_oasis__<tool>`. When that plugin is installed and enabled, the engine passes nothing.
+// - Otherwise the engine passes it with --mcp-config (tools `mcp__oasis__<tool>`), which loads without the
+//   project-.mcp.json approval step, whatever folder the agent works in.
+// A plugin server with the same URL as a server from --mcp-config or a project .mcp.json is dropped by the CLI
+// (the other one wins, tools stay `mcp__oasis__*`), so both tool names are pre-allowed either way.
 // If the Oasis page server is down when an agent starts, the server shows as failed and the agent works without it.
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -22,10 +30,45 @@ const FREE_TOOLS = [
   'screenshot_viewport', 'screenshot_avatar',
   'list_conjured_assets', 'get_conjured_asset', 'place_conjured_asset', 'place_media',
 ];
-export const WORLD_TOOLS_ALLOWED = FREE_TOOLS.map((t) => `mcp__${WORLD_SERVER}__${t}`);
+export const PLUGIN = 'oasis';
+/** How the CLI names the plugin's copy of the server: mcp__plugin_<plugin>_<server>__<tool>. */
+export const PLUGIN_TOOL_PREFIX = `mcp__plugin_${PLUGIN}_${WORLD_SERVER}__`;
+export const WORLD_TOOLS_ALLOWED = [
+  ...FREE_TOOLS.map((t) => `mcp__${WORLD_SERVER}__${t}`),
+  ...FREE_TOOLS.map((t) => `${PLUGIN_TOOL_PREFIX}${t}`),
+];
+export const worldToolsUrl = () => `${WEB}/api/mcp/oasis`;
+
+function readJson(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+}
+
+/**
+ * Does the installed Oasis plugin bring the world tools to a session started in `cwd`?
+ * True when a plugin named "oasis" is installed (~/.claude/plugins/installed_plugins.json), not switched off
+ * (enabledPlugins in the user's settings, or the folder's .claude/settings*.json), and its installed copy has
+ * an .mcp.json with this same server URL. Read at each spawn: an install or update needs no engine restart.
+ * @param {string} [cwd]
+ * @param {string} [configDir] the Claude config folder (tests)
+ */
+export function pluginShipsWorldTools(cwd, configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')) {
+  const installed = readJson(path.join(configDir, 'plugins', 'installed_plugins.json'))?.plugins || {};
+  const settings = [path.join(configDir, 'settings.json')];
+  if (cwd) settings.push(path.join(cwd, '.claude', 'settings.json'), path.join(cwd, '.claude', 'settings.local.json'));
+  const enabled = {};
+  for (const file of settings) Object.assign(enabled, readJson(file)?.enabledPlugins || {});
+  for (const [key, installs] of Object.entries(installed)) {
+    if (key.split('@')[0] !== PLUGIN || enabled[key] !== true) continue;
+    for (const install of Array.isArray(installs) ? installs : []) {
+      const server = install?.installPath && readJson(path.join(install.installPath, '.mcp.json'))?.mcpServers?.[WORLD_SERVER];
+      if (server?.url && String(server.url).replace(/\/+$/, '') === worldToolsUrl()) return true;
+    }
+  }
+  return false;
+}
 
 export function worldToolsConfig() {
-  return { mcpServers: { [WORLD_SERVER]: { type: 'http', url: `${WEB}/api/mcp/oasis` } } };
+  return { mcpServers: { [WORLD_SERVER]: { type: 'http', url: worldToolsUrl() } } };
 }
 
 let file = null;
@@ -39,7 +82,7 @@ export function worldToolsConfigFile() {
   return file;
 }
 
-/** Spawn args that give an agent the world tools. */
-export function worldToolsArgs() {
-  return ['--mcp-config', worldToolsConfigFile(), '--allowedTools', WORLD_TOOLS_ALLOWED.join(',')];
+/** Spawn args that give an agent the world tools: the server unless the plugin brings it, and its free tools pre-allowed. */
+export function worldToolsArgs({ cwd, viaPlugin = pluginShipsWorldTools(cwd) } = {}) {
+  return [...(viaPlugin ? [] : ['--mcp-config', worldToolsConfigFile()]), '--allowedTools', WORLD_TOOLS_ALLOWED.join(',')];
 }

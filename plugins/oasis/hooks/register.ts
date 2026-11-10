@@ -9,7 +9,36 @@
 //   while replying POST <engine>/bridge/event {sessionId, kind: 'text', index, text}
 //
 // When the Oasis isn't running the polls fail quietly. OASIS_ENGINE_URL overrides the engine address.
+//
+// The session also learns where it is: when the engine answers, one short section is added to the system
+// prompt (prompt.compose). The world tools themselves come from this plugin's .mcp.json (the Oasis MCP server).
 import type { Register, EngineInterface } from 'claude-code'
+
+/** Where the owner keeps the mission board; OASIS_MISSIONS_DIR overrides it. */
+const MISSIONS_DIR = 'C:\\7c_oasis\\docs\\missions'
+
+/** Facts only, under 150 tokens: it changes nothing about how the session does its work. */
+function oasisNote(missions: string): string {
+  return [
+    '# The Oasis',
+    "This session is also an agent in the owner's Oasis, a 3D village on this machine where each Claude Code session has an avatar at a desk.",
+    'The owner may talk to this session there, by voice or text; what they say arrives here as an ordinary prompt.',
+    'The Oasis MCP server (tools named oasis) can look at that world, place and change things in it, and take screenshots.',
+    `The mission board is the folder ${missions}.`,
+  ].join('\n')
+}
+
+/** The section, or null when the Oasis engine doesn't answer (then the session is told nothing). */
+async function oasisSection($: EngineInterface, fallback: string): Promise<string | null> {
+  try {
+    const at = ((await $.env.get('OASIS_ENGINE_URL')) || fallback).replace(/\/+$/, '')
+    const health = await $.http.fetch(`${at}/health`)
+    if (!health.ok) return null
+    return oasisNote((await $.env.get('OASIS_MISSIONS_DIR')) || MISSIONS_DIR)
+  } catch {
+    return null
+  }
+}
 
 const POLL_MS = 1000
 const FLUSH_MS = 120
@@ -25,6 +54,17 @@ function post($: EngineInterface, engine: string, path: string, body: object) {
 export const register: Register = on => {
   let engine = 'http://127.0.0.1:4530'
   let sessionId = ''
+
+  // Asked once per load of the mod: a system prompt section has to answer the same way for a whole thread.
+  let note: Promise<string | null> | undefined
+
+  on('prompt.compose', async ($, e, next) => {
+    const composed = await next(e)
+    if (e.traits.includes('bare') || e.traits.includes('teammate')) return composed
+    const text = await (note ??= oasisSection($, engine))
+    if (!text) return composed
+    return { sections: [...composed.sections, { id: 'oasis:village', text, scope: 'session' }] }
+  })
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)

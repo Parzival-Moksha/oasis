@@ -174,6 +174,8 @@ export interface EngineAgentState {
   effort: string | null
   /** The effort the process runs with (the CLI default when `effort` is null). */
   resolvedEffort: string | null
+  /** Eyes: each message you send carries a picture from this agent's avatar. null = the engine is older than eyes. */
+  eyes: boolean | null
   status: EngineAgentStatus
   statusReason: string | null
   statusSince: number
@@ -322,6 +324,7 @@ export function createAgentState(
     effectivePermissionMode: null,
     effort: null,
     resolvedEffort: null,
+    eyes: null,
     status: 'idle',
     statusReason: null,
     statusSince: at,
@@ -382,6 +385,7 @@ export function applySnapshot(agent: EngineAgentState, snap: EngineAgentSnapshot
     // null is a real value ("back to the default"); only a missing field keeps the old one.
     effort: snap.effort !== undefined ? snap.effort : agent.effort,
     resolvedEffort: snap.resolvedEffort !== undefined ? snap.resolvedEffort : agent.resolvedEffort,
+    eyes: typeof snap.eyes === 'boolean' ? snap.eyes : agent.eyes,
     status,
     statusReason: snap.statusReason ?? (status === agent.status ? agent.statusReason : null),
     statusSince: status === agent.status ? agent.statusSince : at,
