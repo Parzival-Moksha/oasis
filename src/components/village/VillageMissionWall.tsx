@@ -211,12 +211,14 @@ function WallFaces({ panels }: { panels: WallPanel[] }) {
       atlas.texture.needsUpdate = true
       invalidate()
     }
-    print()
     const fonts = document.fonts
-    if (fonts?.load) {
-      Promise.all([fonts.load(`500 32px ${body}`), fonts.load(`700 32px ${FONT_DISPLAY}`)]).then(loaded => {
-        if (loaded.some(list => list.length)) print()
-      }).catch(() => {})
+    const wanted = [`500 32px ${body}`, `700 32px ${FONT_DISPLAY}`]
+    let ready = true
+    try { ready = !fonts?.check || wanted.every(font => fonts.check(font)) } catch { /* unknown family: print with what there is */ }
+    print()
+    // Printed before the page's fonts were in: once more when they are (one upload otherwise).
+    if (!ready && fonts?.load) {
+      Promise.all(wanted.map(font => fonts.load(font))).then(print).catch(() => {})
     }
     return () => { cancelled = true }
   }, [atlas, grid, panels, invalidate])

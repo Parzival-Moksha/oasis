@@ -40,13 +40,17 @@ export function subscribeMissions(listener: () => void): () => void {
 
 let lastBody = ''
 let inFlight: Promise<void> | null = null
+/** The route refused (hosted, shared on the network): no point asking again. */
+let refused = false
 
 /** Re-read the folder. Nothing re-renders when nothing changed on disk. */
 export function refreshMissions(): Promise<void> {
   if (inFlight) return inFlight
+  if (refused) return Promise.resolve()
   inFlight = (async () => {
     try {
       const response = await fetch('/api/village/missions', { cache: 'no-store' })
+      if (response.status === 403 || response.status === 404) refused = true
       if (!response.ok) return
       const body = await response.text()
       if (body === lastBody) return

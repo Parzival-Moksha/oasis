@@ -9,7 +9,7 @@ import { useOasisStore } from '../../store/oasisStore'
 import { useInputManager, useUILayer } from '../../lib/input-manager'
 import { renderMarkdown } from '../../lib/anorak-renderers'
 import { MISSION_COLUMN_COLOR, missionKeyAction, type Mission } from '../../lib/village/village-missions'
-import { getSessionPanelGeometry, isTypingTarget, setVillageProximityRival } from './village-actions'
+import { getNearbyVillageMini, getSessionPanelGeometry, isTypingTarget, setVillageProximityRival, subscribeNearbyVillageMini } from './village-actions'
 import {
   VILLAGE_MISSION_LAYER,
   closeMissionReader,
@@ -123,6 +123,7 @@ function Reader({ mission, mode }: { mission: Mission; mode: 'side' | 'full' }) 
 export function VillageMissionReader() {
   const { missions, nearby, reader } = useSyncExternalStore(subscribeMissions, getMissionState, getMissionState)
   const focusedAgentId = useOasisStore(s => s.agentEngine.focusedAgentId)
+  const nearMini = useSyncExternalStore(subscribeNearbyVillageMini, getNearbyVillageMini, () => null)
   const open = reader ? missions.find(mission => mission.file === reader.file) || null : null
   const near = nearby ? missions.find(mission => mission.file === nearby) || null : null
   useUILayer(VILLAGE_MISSION_LAYER, Boolean(open))
@@ -136,6 +137,8 @@ export function VillageMissionReader() {
     return () => {
       setVillageProximityRival(null)
       updateMissionProximity(null, null)
+      // Leaving the village closes the reader: coming back must not reopen it by itself.
+      closeMissionReader()
     }
   }, [])
 
@@ -168,7 +171,8 @@ export function VillageMissionReader() {
         typing: isTypingTarget(event.target),
         reader: current.reader?.mode || null,
         nearby: Boolean(current.nearby),
-        agent: Boolean(village.focusedAgentId || village.nearbyAgentId),
+        // A helper (subagent mini) within reach keeps its E, like an agent does.
+        agent: Boolean(village.focusedAgentId || village.nearbyAgentId || getNearbyVillageMini()),
         worldKeysFree: useInputManager.getState().can().enterFocuses,
       })
       if (!action) return
@@ -185,7 +189,7 @@ export function VillageMissionReader() {
   if (focusedAgentId) return null
   return (
     <>
-      {near && !open && (
+      {near && !open && !nearMini && (
         <PromptBanner accent={MISSION_COLUMN_COLOR[near.column]} title={near.title}>
           <KeyPrompt k="E" label="Read" accent="#38bdf8" primary />
           <KeyPrompt k="F" label="Full screen" accent="#c084fc" className="max-[700px]:hidden" />
