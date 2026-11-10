@@ -442,15 +442,25 @@ export function SplashScreen({ designId, modelSlug, ready, holdMs = 0, onFadeCom
   }, [progress, statusIdx])
 
   // Trigger fade once progress hits 1 and we're ready.
+  // The removal timer lives in a ref: with `fading` as a dependency, setting it re-ran this
+  // effect, whose cleanup cancelled the timer, so the faded splash stayed mounted forever,
+  // invisible, with its ~30 CSS animations and a per-frame tick still running (about 0.9 ms of
+  // main-thread work every frame).
+  const fadeTimerRef = useRef<number | null>(null)
+  const onFadeCompleteRef = useRef(onFadeComplete)
+  useEffect(() => { onFadeCompleteRef.current = onFadeComplete }, [onFadeComplete])
   useEffect(() => {
-    if (!ready || progress < 1 || fading) return
+    if (!ready || progress < 1 || fadeTimerRef.current !== null) return
     setFading(true)
-    const t = window.setTimeout(() => {
+    fadeTimerRef.current = window.setTimeout(() => {
       setRemoved(true)
-      onFadeComplete?.()
+      onFadeCompleteRef.current?.()
     }, 650)
-    return () => window.clearTimeout(t)
-  }, [ready, progress, fading, onFadeComplete])
+  }, [ready, progress])
+  useEffect(() => () => {
+    if (fadeTimerRef.current !== null) window.clearTimeout(fadeTimerRef.current)
+    fadeTimerRef.current = null
+  }, [])
 
   if (removed) return null
 
