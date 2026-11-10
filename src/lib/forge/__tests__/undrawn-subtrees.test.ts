@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 
-import { hideUndrawnSubtrees } from '../undrawn-subtrees'
+import { hideUndrawnSubtrees, skipMatrixPass } from '../undrawn-subtrees'
 
 /** A small body: root → [skinned mesh, hips bone → spine bone → head bone, rig group → rig node]. */
 function body() {
@@ -80,5 +80,25 @@ describe('hideUndrawnSubtrees', () => {
     hideUndrawnSubtrees(b.root)
     const copy = b.root.clone(true)
     expect(walked(copy)).toBe(2)
+  })
+})
+
+describe('skipMatrixPass', () => {
+  it('the scene pass no longer reaches the subtree, but an explicit world-matrix request still does', () => {
+    const scene = new THREE.Scene()
+    const body = new THREE.Group()
+    const rig = new THREE.Object3D(), hips = new THREE.Object3D()
+    rig.add(hips); body.add(rig); scene.add(body)
+    body.position.set(5, 0, 0)
+    hips.position.set(0, 1, 0)
+    skipMatrixPass(rig)
+    scene.updateMatrixWorld(true)
+    expect(hips.matrixWorld.elements[12]).toBe(0) // untouched by the pass
+    // What three-vrm does for the hips each frame.
+    const world = hips.getWorldPosition(new THREE.Vector3())
+    expect(world.toArray()).toEqual([5, 1, 0])
+    body.position.set(7, 0, 0)
+    hips.position.set(0, 2, 0)
+    expect(hips.getWorldPosition(new THREE.Vector3()).toArray()).toEqual([7, 2, 0])
   })
 })

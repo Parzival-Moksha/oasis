@@ -25,7 +25,7 @@ import { PlacementVFXRenderer } from './PlacementVFX'
 import { useMovement } from '../../hooks/useMovement'
 import { staticMatrixKeeper, wakeStaticMatrix } from '../../lib/static-matrix'
 import { useFrameWhen } from '../../lib/use-frame-when'
-import { hideUndrawnSubtrees } from '../../lib/forge/undrawn-subtrees'
+import { hideUndrawnSubtrees, skipMatrixPass } from '../../lib/forge/undrawn-subtrees'
 import { BackgroundStepper, isVrmBudgetEnabled, noteVrmMode, refreshVrmView, vrmUpdateMode, vrmViewOf, VRM_SPRING_RESET_M } from '../../lib/forge/vrm-update-budget'
 // drei useAnimations removed — manual AnimationMixer for proper SkeletonUtils support
 import { DragContext, SettingsContext } from '../scene-lib'
@@ -1763,6 +1763,9 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
     })
     // Bones and rig nodes draw nothing: keep the renderer's per-frame walk out of them.
     hideUndrawnSubtrees(loadedVrm.scene)
+    // The normalized rig is animated through local rotations only; three-vrm fetches the one world position it needs itself.
+    const rigRoot = loadedVrm.humanoid?.normalizedHumanBonesRoot
+    if (rigRoot) skipMatrixPass(rigRoot)
 
     vrmRef.current = loadedVrm
     setVrm(loadedVrm)

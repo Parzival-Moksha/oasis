@@ -52,3 +52,13 @@ export function hideUndrawnSubtrees(root: Object3D): number {
   visit(root)
   return skipped
 }
+
+/**
+ * Takes a subtree out of three's per-frame matrix pass. Only for nodes whose world matrices
+ * nobody reads from the scene pass: three-vrm's normalized rig (~50 nodes a body) is driven by
+ * the animation mixer through local rotations, and three-vrm asks for the one world position it
+ * needs (the hips) with its own `updateWorldMatrix` call, which still works.
+ */
+export function skipMatrixPass(node: Object3D): void {
+  node.updateMatrixWorld = () => {}
+}
