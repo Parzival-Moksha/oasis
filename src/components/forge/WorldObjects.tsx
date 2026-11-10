@@ -25,6 +25,7 @@ import { PlacementVFXRenderer } from './PlacementVFX'
 import { useMovement } from '../../hooks/useMovement'
 import { staticMatrixKeeper, wakeStaticMatrix } from '../../lib/static-matrix'
 import { useFrameWhen } from '../../lib/use-frame-when'
+import { BackgroundStepper, isVrmBudgetEnabled, noteVrmMode, refreshVrmView, vrmUpdateMode, vrmViewOf, VRM_SPRING_RESET_M } from '../../lib/forge/vrm-update-budget'
 // drei useAnimations removed — manual AnimationMixer for proper SkeletonUtils support
 import { DragContext, SettingsContext } from '../scene-lib'
 import { resolveCatalogAssetDefinition } from '../scene-lib/constants'
@@ -1975,6 +1976,8 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
     }
   }, [objectId])
 
+  const vrmBudgetRef = useRef({ stepper: new BackgroundStepper(), background: false, center: new THREE.Vector3(), restAt: new THREE.Vector3() })
+
   // Animation tick — expressions + spring bones + mixer (drives idle/walk/behavior)
   useFrame((state, delta) => {
     const v = vrmRef.current
@@ -2015,6 +2018,38 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
         mesh.material = Array.isArray(mesh.material) ? newMats : newMats[0]
       })
       iblAppliedRef.current = true
+    }
+
+    // ░▒▓ Budget: a body out of the camera's view runs its mixer ~10x a second and nothing else
+    // (src/lib/forge/vrm-update-budget.ts). In view, speaking, or mid once-clip: everything, every frame. ▓▒░
+    const budget = vrmBudgetRef.current
+    if (isVrmBudgetEnabled()) {
+      refreshVrmView(state.camera, state.clock.elapsedTime)
+      const world = v.scene.matrixWorld.elements
+      budget.center.set(world[12], world[13] + 0.85 * scale, world[14])
+      const view = vrmViewOf(budget.center, 1.2 * Math.max(scale, 0.1))
+      const speaking = objectId ? !!getLipSync(objectId)?.isActive : false
+      const mode = vrmUpdateMode({ inView: view.inView, distance: view.distance, speaking, onceClip: activityOnce && !!activityAnimationId })
+      noteVrmMode(mode, state.clock.elapsedTime)
+      if (mode === 'background') {
+        if (!budget.background) {
+          budget.background = true
+          budget.restAt.copy(budget.center)
+        }
+        const step = budget.stepper.add(delta)
+        if (step > 0) {
+          mixerRef.current?.update(step)
+          v.humanoid?.update()
+        }
+        return
+      }
+      if (budget.background) {
+        budget.background = false
+        const pending = budget.stepper.take()
+        if (pending > 0) mixerRef.current?.update(pending)
+        // It moved while its hair and cloth were not simulated: start them from rest, not with a whip.
+        if (budget.restAt.distanceTo(budget.center) > VRM_SPRING_RESET_M) v.springBoneManager?.reset()
+      }
     }
 
     v.update(delta)
