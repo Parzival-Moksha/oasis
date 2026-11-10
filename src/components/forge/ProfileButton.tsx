@@ -13,6 +13,7 @@ import { AvatarGallery } from './AvatarGallery'
 import { useUILayer } from '@/lib/input-manager'
 import { useAudioManager } from '@/lib/audio-manager'
 import { fmtTokens } from '@/lib/anorak-engine'
+import { ClaudeTokenScore } from './ClaudeTokenScore'
 import {
   type ProfileTokenBurnSummaryData,
   formatProfileTokenCost,
@@ -437,6 +438,9 @@ export function ProfileButton() {
               </div>
             </div>
           </div>
+
+          {/* The real counter: every token Claude Code spent on this machine (local only: hosted, the route 404s and it hides). */}
+          <ClaudeTokenScore />
 
           {/* Token Burn */}
           {tokenBurn && hasProfileTokenUsage(tokenBurn.alltime.grand) && (
