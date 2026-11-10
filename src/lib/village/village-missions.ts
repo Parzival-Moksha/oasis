@@ -163,6 +163,15 @@ export function missionAtlasGrid(count: number, maxSize = 4096, density = 420): 
   return { cols, rows, tileWidth, tileHeight, width: cols * tileWidth, height: rows * tileHeight, pxPerMeter }
 }
 
+/**
+ * How big a panel stands: the top priority on the wall is the biggest, a mission with no score the
+ * smallest. Scales the whole panel about its foot.
+ */
+export function missionPanelScale(priority: number | null, topPriority: number): number {
+  const share = topPriority > 0 ? Math.min(1, Math.max(0, (priority || 0) / topPriority)) : 0
+  return Math.round((0.72 + 0.43 * share) * 1000) / 1000
+}
+
 /** Tile `index`'s place in the texture, in pixels from the top left. */
 export function missionAtlasTile(grid: MissionAtlasGrid, index: number): { x: number; y: number } {
   return { x: (index % grid.cols) * grid.tileWidth, y: Math.floor(index / grid.cols) * grid.tileHeight }
@@ -356,9 +365,10 @@ export interface MissionKeyContext {
 
 /** Next to a panel: E reads it beside the world, F over the whole screen. Reading: F switches, Esc (or E) closes. */
 export function missionKeyAction(c: MissionKeyContext): MissionKeyAction | null {
+  // Esc leaves the reader from a text field too (the reader first drops an edit in progress).
+  if (c.reader && c.code === 'Escape' && !c.ctrl && !c.meta && !c.alt && !c.repeat) return 'close'
   if (c.ctrl || c.meta || c.alt || c.repeat || c.typing) return null
   if (c.reader) {
-    if (c.code === 'Escape') return 'close'
     if (c.code === 'KeyF') return 'toggle-full'
     if (c.code === 'KeyE') return 'close'
     return null

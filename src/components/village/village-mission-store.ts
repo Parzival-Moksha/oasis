@@ -134,6 +134,42 @@ export function closeMissionReader(): void {
   if (state.reader) set({ reader: null })
 }
 
+// ─── editing (the reader writes through the API, then re-reads) ─────────────
+
+/** A text edit is open in the reader: Esc drops it first, then closes. */
+let editing: (() => void) | null = null
+
+export function setMissionEditing(cancel: (() => void) | null): void {
+  editing = cancel
+}
+
+/** Esc: true when an edit was dropped instead of the reader closing. */
+export function cancelMissionEditing(): boolean {
+  if (!editing) return false
+  const cancel = editing
+  editing = null
+  cancel()
+  return true
+}
+
+async function write(method: 'PATCH' | 'POST' | 'PUT', body: unknown): Promise<{ ok: boolean; error?: string; file?: string }> {
+  try {
+    const response = await fetch('/api/village/missions', { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const data = await response.json().catch(() => ({})) as { error?: string; file?: string }
+    await refreshMissions()
+    return response.ok ? { ok: true, file: data.file } : { ok: false, error: data.error || `HTTP ${response.status}` }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+export interface MissionPatch { state?: string; who?: string; doneWhen?: string; ease?: number; impact?: number; urgency?: number }
+
+export const patchMission = (file: string, patch: MissionPatch, by = 'owner') => write('PATCH', { file, patch, by })
+export const logMission = (file: string, text: string, who = 'owner') => write('POST', { file, text, who })
+export const saveMissionText = (file: string, markdown: string, expected: string) => write('PUT', { file, markdown, expected })
+export const createMission = (title: string, who = 'owner') => write('POST', { create: title, who })
+
 export function toggleMissionReaderMode(): void {
   if (state.reader) set({ reader: { file: state.reader.file, mode: state.reader.mode === 'full' ? 'side' : 'full' } })
 }

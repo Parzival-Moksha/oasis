@@ -25,6 +25,7 @@ import {
   layoutMissionWall,
   missionAtlasGrid,
   missionAtlasTile,
+  missionPanelScale,
   wrapByWidth,
   type Mission,
   type MissionAtlasGrid,
@@ -51,10 +52,14 @@ interface WallPanel extends MissionPanelLayout {
   mission: Mission
   /** Foot of the panel, terrain included. */
   ground: Vec3
+  /** Bigger for a higher priority (missionPanelScale). */
+  scale: number
 }
 
+const SCALE = new THREE.Vector3()
+
 function panelMatrix(panel: WallPanel, target = new THREE.Matrix4()): THREE.Matrix4 {
-  return target.makeRotationY(panel.rotationY).setPosition(panel.ground[0], panel.ground[1] + panel.lift, panel.ground[2])
+  return target.makeRotationY(panel.rotationY).scale(SCALE.setScalar(panel.scale)).setPosition(panel.ground[0], panel.ground[1] + panel.lift, panel.ground[2])
 }
 
 // ─── the faces: every card and caption printed into one texture ─────────────
@@ -320,7 +325,7 @@ function NearbyGlow({ panels }: { panels: WallPanel[] }) {
   const panel = nearby ? panels.find(item => item.file === nearby) : null
   if (!panel) return null
   return (
-    <group position={[panel.ground[0], panel.ground[1] + panel.lift, panel.ground[2]]} rotation-y={panel.rotationY}>
+    <group position={[panel.ground[0], panel.ground[1] + panel.lift, panel.ground[2]]} rotation-y={panel.rotationY} scale={panel.scale}>
       <mesh position={[0, FRAME_CENTER_Y, 0]} raycast={NO_RAYCAST}>
         <boxGeometry args={[MISSION_FACE.width + MISSION_PANEL.border * 2 + 0.07, FRAME_HEIGHT + 0.07, MISSION_PANEL.depth * 0.6]} />
         <meshBasicMaterial color={MISSION_COLUMN_COLOR[panel.mission.column]} toneMapped={false} />
@@ -350,11 +355,12 @@ export function VillageMissionWall({ roster, placements, origin }: {
       desks: [...placements.values()].map(station => ({ x: station.position[0], z: station.position[2] })),
     })
     const byFile = new Map(missions.map(mission => [mission.file, mission]))
+    const top = Math.max(0, ...missions.map(mission => mission.priority || 0))
     return layout.flatMap(item => {
       const mission = byFile.get(item.file)
       if (!mission) return []
       const ground: Vec3 = [item.position[0], sampleTerrainHeightAt(terrainHeights, item.position[0], item.position[2]), item.position[2]]
-      return [{ ...item, mission, ground }]
+      return [{ ...item, mission, ground, scale: missionPanelScale(mission.priority, top) }]
     })
   }, [missions, roster, placements, origin, terrainHeights])
 
