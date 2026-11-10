@@ -16,6 +16,7 @@ import { DESK_WINDOW_PX } from '../../lib/village/village-layout'
 import { composerHeight, composerMaxHeight, composerRoom } from '../../lib/village/village-keys'
 import { VILLAGE_FONT_BODY, VILLAGE_TYPE_CLASS } from './village-status'
 import { showNotice } from '../forge/GlobalNotice'
+import { canInterrupt } from '../../lib/village/village-interrupt'
 import { subscribeVillageSend, subscribeVillageVoiceStop, subscribeVillageVoiceToggle, takeVillageVoiceRequest } from './village-actions'
 
 function describeError(error: unknown): string {
@@ -54,6 +55,8 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
   const pendingUser = useOasisStore(s => s.agentEngine.agents[agentId]?.pendingUser || 0)
   // A desktop-app session reached through the Oasis plugin: the app owns interrupt and priorities.
   const owned = useOasisStore(s => Boolean(s.agentEngine.agents[agentId]?.owned))
+  // Only while a turn runs (village-interrupt.ts): not for a finished agent with a leftover status.
+  const interruptible = useOasisStore(s => canInterrupt(s.agentEngine.agents[agentId]))
   const [text, setTextState] = useState(() => drafts.get(agentId) || '')
   const setText = useCallback((next: string) => {
     if (next) drafts.set(agentId, next)
@@ -65,6 +68,8 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   /** What was in the box when the mic started; live words go after it. */
   const voiceBaseRef = useRef<string | null>(null)
+  /** A send took what was in the box: whatever that dictation still settles is dropped, until the mic starts again. */
+  const discardDictationRef = useRef(false)
   const working = status === 'working' || status === 'needs-decision'
   const viewportHeight = useViewportHeight()
   const minHeight = large ? 96 : 64
@@ -75,11 +80,12 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
     // No focusTargetRef: the box stays out of the keyboard's way after dictation too (T, Enter keep working).
     enablePlayerLipSync: true,
     onLiveText: (spoken) => {
+      if (discardDictationRef.current) return
       if (voiceBaseRef.current === null) voiceBaseRef.current = textareaRef.current?.value ?? ''
       setText(joinText(voiceBaseRef.current, spoken))
     },
     onTranscript: (spoken) => {
-      setText(joinText(voiceBaseRef.current ?? '', spoken))
+      if (!discardDictationRef.current) setText(joinText(voiceBaseRef.current ?? '', spoken))
       voiceBaseRef.current = null
     },
   })
@@ -89,9 +95,15 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
   voiceStopRef.current = voice.stop
   const listeningRef = useRef(voice.listening)
   listeningRef.current = voice.listening
+  const transcribingRef = useRef(voice.transcribing)
+  transcribingRef.current = voice.transcribing
 
   const toggleVoice = useCallback(() => {
-    if (!listeningRef.current) voiceBaseRef.current = textareaRef.current?.value ?? ''
+    // A fresh dictation (not one still settling after a send) writes into the box again.
+    if (!listeningRef.current && !transcribingRef.current) {
+      discardDictationRef.current = false
+      voiceBaseRef.current = textareaRef.current?.value ?? ''
+    }
     void voiceToggleRef.current()
   }, [])
 
@@ -169,6 +181,9 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
   const send = () => {
     const message = text.trim()
     if (!message || sending) return
+    // The message is what the box holds now. The mic stops, and the words it is still settling are
+    // dropped: they used to land back in the box after it was cleared (owner, 2026-11-10).
+    discardDictationRef.current = true
     if (voice.listening) voiceStopRef.current()
     voiceBaseRef.current = null
     setSending(true)
@@ -285,9 +300,10 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
           {owned && (
             <button
               type="button"
-              disabled={!working}
+              disabled={!interruptible}
               onClick={() => getAgentEngineClient().interrupt(agentId).catch(error => showNotice(`Interrupt failed: ${describeError(error)}`, 'error'))}
-              className="rounded-md border border-rose-300/35 bg-rose-400/10 px-2.5 py-1 text-[11px] font-bold text-rose-100 transition hover:bg-rose-400/25 disabled:cursor-not-allowed disabled:opacity-35"
+              title={interruptible ? 'Stop the running turn' : 'Nothing to interrupt: no turn is running'}
+              className="rounded-md border border-rose-300/35 bg-rose-400/10 px-2.5 py-1 text-[11px] font-bold text-rose-100 transition hover:bg-rose-400/25 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-transparent disabled:text-white/30 disabled:hover:bg-transparent"
             >
               interrupt
             </button>
