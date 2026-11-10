@@ -67,6 +67,8 @@ import { getViewerUserIdClient } from '../../lib/viewer-identity-client'
 import { LIGHT_INTENSITY_MAX, type ConjuredAsset, type WorldLight } from '../../lib/conjure/types'
 import { worldMutationBus } from '../../lib/world-mutation-bus'
 import { normalizeMediaOpacity } from '../../lib/forge/placement-builders'
+import { isCrossOrigin, localMediaUrl } from '../../lib/local-media-url'
+import { onFirstUserGesture, pageHasUserActivation } from '../../lib/user-activation'
 import {
   markVideoTextureNeedsUpload,
   shouldContinueVideoTextureWarmup,
@@ -77,7 +79,6 @@ const IDLE_CLIP_PATTERNS = /idle|breathe?|stand|rest|pose|wait/i
 const WALK_CLIP_PATTERNS = /walk|run|move|locomotion|jog/i
 const AGENT_WORK_ANIMATION_ID = 'ual-talking'
 const INTERACTION_HINT_FONT = '/fonts/helvetiker_regular.typeface.json'
-const LOCAL_IMAGE_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
 const PRIVATE_AGENT_WINDOW_TYPES = new Set<AgentWindowType>([
   'anorak',
   'codex',
@@ -523,20 +524,9 @@ export { FourBarFrame, NeonFrame, HologramFrame, VoidFrame, SpaghettiFrame, Tria
 export const FRAME_STYLES = _FRAME_STYLES
 export type { FrameStyleDef } from './FrameComponents'
 
+/** localhost vs 127.0.0.1 is another origin: same-origin path for this server's media (local-media-url.ts). */
 function resolveWorldImageUrl(imageUrl: string): string {
-  if (typeof window === 'undefined') return imageUrl
-  if (!/^https?:\/\//i.test(imageUrl)) return imageUrl
-
-  try {
-    const parsed = new URL(imageUrl)
-    if (LOCAL_IMAGE_HOSTS.has(parsed.hostname) && parsed.pathname.startsWith('/generated-images/')) {
-      return `${window.location.origin}${parsed.pathname}${parsed.search}${parsed.hash}`
-    }
-  } catch {
-    return imageUrl
-  }
-
-  return imageUrl
+  return localMediaUrl(imageUrl)
 }
 
 function PictureBuildingEdgeBeams({ size, height, color, thickness }: { size: number; height: number; color: string; thickness: number }) {
@@ -868,7 +858,11 @@ export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, fram
 
   useEffect(() => {
     const video = document.createElement('video')
-    video.crossOrigin = 'anonymous'
+    // An agent may have saved http://127.0.0.1:4516/... while this tab is http://localhost:4516: another
+    // origin, refused without CORS (error 4, no picture). Load it same-origin; ask for CORS only when
+    // the video really lives elsewhere (WebGL needs it then).
+    const src = localMediaUrl(videoUrl)
+    if (isCrossOrigin(src, window.location.origin)) video.crossOrigin = 'anonymous'
     video.loop = true
     video.playsInline = true
     video.autoplay = true
@@ -956,7 +950,7 @@ export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, fram
 
     watchPresentedFrame()
 
-    video.src = videoUrl
+    video.src = src
 
     requestAnimationFrame(() => {
       if (!supportsFrameCallback && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0) {
@@ -1036,15 +1030,29 @@ export function VideoPlaneRenderer({ objectId, videoUrl, scale, frameStyle, fram
 
   // React to audioState changes from Joystick
   useEffect(() => {
-    if (!videoRef.current) return
+    const video = videoRef.current
+    if (!video) return
     if (audioState === 'playing') {
-      videoRef.current.muted = false // User already interacted via Joystick
-      videoRef.current.play().catch(() => {})
+      // Browsers pause a muted autoplay video that is unmuted before the page has had a click or key
+      // press: it froze on its first frame after a fresh load and played after a click (the 50/50).
+      // Keep playing muted until the first gesture, then turn the sound on.
+      if (pageHasUserActivation()) {
+        video.muted = false
+        video.play().catch(() => { video.muted = true; video.play().catch(() => {}) })
+      } else {
+        video.muted = true
+        video.play().catch(() => {})
+        return onFirstUserGesture(() => {
+          if (videoRef.current !== video) return
+          video.muted = false
+          video.play().catch(() => {})
+        })
+      }
     } else if (audioState === 'paused') {
-      videoRef.current.pause()
+      video.pause()
     } else if (audioState === 'stopped') {
-      videoRef.current.pause()
-      videoRef.current.currentTime = 0
+      video.pause()
+      video.currentTime = 0
     }
   }, [audioState])
 
@@ -1194,7 +1202,7 @@ export function SpatialAudioAttachment({ objectId, audioUrl, volume = 1, maxDist
 
   // Create HTML5 Audio element — only on URL change
   useEffect(() => {
-    const audio = new Audio(audioUrl)
+    const audio = new Audio(localMediaUrl(audioUrl))
     audio.loop = loop
     audio.volume = 0 // Will be set by useFrame based on distance
     audioRef.current = audio

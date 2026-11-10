@@ -1698,7 +1698,8 @@ export function ObjectInspector({ isOpen, onClose }: ObjectInspectorProps) {
           const hasAudio = !!(sharedBeh.audioUrl || placement?.videoUrl || placement?.audioUrl)
           return (
             <>
-              <SectionHeader>&#128266; Audio</SectionHeader>
+              {/* One playback widget for videos and sound files alike. */}
+              <SectionHeader>&#9654; Playback</SectionHeader>
               <div className="rounded-lg border border-white/5 p-2 space-y-2" style={{ background: 'rgba(20, 20, 20, 0.6)' }}>
                 {!hasAudio ? (
                   <>
