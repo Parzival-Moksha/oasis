@@ -4,7 +4,7 @@
 // Mounted inside the R3F <Canvas> when the village profile is on. Nothing here is saved to the
 // world: the roster comes from the agent engine, positions from village-layout.ts.
 
-import { Component, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { Component, Suspense, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import * as THREE from 'three'
@@ -57,10 +57,12 @@ import { VILLAGE_OBSERVED_COLOR, agentDisplayName, statusColor, villageAgentLook
 import { VillageSubagentMinis } from './VillageSubagentMinis'
 import { VillageEyes } from './VillageEyes'
 import { VillageMissionWall } from './VillageMissionWall'
+import { SettingsContext } from '../scene-lib/contexts'
+import { DESK_SCREENS_DEFAULT, DESK_SCREEN_LIMIT, isDeskScreensMode, pickDeskScreens, type DeskDistance } from '../../lib/village/desk-screens'
 
 const WORK_ANIMATION_ID = 'ual-talking'
-const WINDOW_DISTANCE = 26
-const MAX_DESK_WINDOWS = 6
+/** Helper labels show for the agents near the camera (the rule desk screens had before the setting). */
+const NEAR_AGENTS_MAX = 6
 /** Village overlays stay under the HUD and panels (drei's default z-range is ~16M). */
 const OVERLAY_Z: [number, number] = [80, 0]
 /**
@@ -293,11 +295,14 @@ class VillageBodyBoundary extends Component<{ color: string; children: ReactNode
 
 const NO_RAYCAST = () => {}
 
-function VillageStation({ agentId, placement, avatarUrl, windowVisible, overlayZ }: {
+function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLabelsVisible, overlayZ }: {
   agentId: string
   placement: VillageStationPlacement
   avatarUrl: string
+  /** Its desk screen shows (the "Desk screens" setting). */
   windowVisible: boolean
+  /** It is among the agents near the camera: its helpers show their labels. */
+  helperLabelsVisible: boolean
   overlayZ: [number, number]
 }) {
   // 'helpers' (violet) when only its subagents still work.
@@ -343,7 +348,7 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, overlayZ
         </VillageCorpseDrop>
       </group>
       {/* Its helpers (subagents): half-size copies of it, in a semicircle behind it. */}
-      <VillageSubagentMinis agentId={agentId} placement={placement} avatarUrl={avatarUrl} labelsVisible={windowVisible} overlayZ={overlayZ} />
+      <VillageSubagentMinis agentId={agentId} placement={placement} avatarUrl={avatarUrl} labelsVisible={helperLabelsVisible} overlayZ={overlayZ} />
       {/* Click target enclosing desk + avatar (in front of the VRM's own proxy box). */}
       <mesh
         position={STATION.hitCenter}
@@ -384,33 +389,41 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, overlayZ
 }
 
 /**
- * Live desk windows are full DOM trees under a CSS 3D transform: keep only the nearest few, and
- * only within reading distance (re-evaluated a few times per second, with hysteresis).
+ * Live desk windows are full DOM trees under a CSS 3D transform: which ones show is the owner's
+ * "Desk screens" setting (off / nearest / all, src/lib/village/desk-screens.ts), re-evaluated a few
+ * times per second. `near`: the agents close to the camera, whose helpers show their labels.
  */
-function useVisibleDeskWindows(placements: Map<string, VillageStationPlacement>): Set<string> {
-  const [key, setKey] = useState('')
+function useVisibleDeskWindows(placements: Map<string, VillageStationPlacement>): { windows: Set<string>; near: Set<string> } {
+  const { settings } = useContext(SettingsContext)
+  const mode = isDeskScreensMode(settings.villageDeskScreens) ? settings.villageDeskScreens : DESK_SCREENS_DEFAULT
+  const [key, setKey] = useState('|')
   const frame = useRef(0)
-  const keyRef = useRef('')
+  const keyRef = useRef('|')
+  const modeRef = useRef(mode)
   const point = useMemo(() => new THREE.Vector3(), [])
   useFrame(({ camera }) => {
     frame.current = (frame.current + 1) % 15
-    if (frame.current !== 0) return
-    const visible = new Set(keyRef.current ? keyRef.current.split('|') : [])
-    const ranked: Array<[string, number]> = []
+    // A changed setting applies on the next frame, not up to 15 frames later.
+    if (frame.current !== 0 && modeRef.current === mode) return
+    modeRef.current = mode
+    const [windowsKey, nearKey] = keyRef.current.split('|')
+    const desks: DeskDistance[] = []
     for (const [id, placement] of placements) {
       point.set(...stationLocalToWorld(placement, STATION.window))
-      const distance = camera.position.distanceTo(point)
-      const limit = visible.has(id) ? WINDOW_DISTANCE + 2 : WINDOW_DISTANCE
-      if (distance < limit) ranked.push([id, distance])
+      desks.push({ id, distance: camera.position.distanceTo(point) })
     }
-    ranked.sort((a, b) => a[1] - b[1])
-    const next = ranked.slice(0, MAX_DESK_WINDOWS).map(([id]) => id).sort().join('|')
+    const windows = pickDeskScreens(desks, DESK_SCREEN_LIMIT[mode], new Set(windowsKey ? windowsKey.split(',') : []))
+    const near = pickDeskScreens(desks, NEAR_AGENTS_MAX, new Set(nearKey ? nearKey.split(',') : []))
+    const next = `${windows.join(',')}|${near.join(',')}`
     if (next !== keyRef.current) {
       keyRef.current = next
       setKey(next)
     }
   })
-  return useMemo(() => new Set(key ? key.split('|') : []), [key])
+  return useMemo(() => {
+    const [windowsKey, nearKey] = key.split('|')
+    return { windows: new Set(windowsKey ? windowsKey.split(',') : []), near: new Set(nearKey ? nearKey.split(',') : []) }
+  }, [key])
 }
 
 // ─── plaza + empty state ────────────────────────────────────────────────────
@@ -601,7 +614,7 @@ export function VillageWorld() {
 
   useEffect(() => () => setVillageStations(new Map()), [])
 
-  const visibleWindows = useVisibleDeskWindows(placements)
+  const visible = useVisibleDeskWindows(placements)
   const mobile = useIsMobileOasis()
   const overlayZ = mobile ? OVERLAY_Z_MOBILE : OVERLAY_Z
 
@@ -619,7 +632,8 @@ export function VillageWorld() {
             agentId={agent.id}
             placement={placement}
             avatarUrl={avatars[agent.id]}
-            windowVisible={visibleWindows.has(agent.id)}
+            windowVisible={visible.windows.has(agent.id)}
+            helperLabelsVisible={visible.near.has(agent.id)}
             overlayZ={overlayZ}
           />
         )

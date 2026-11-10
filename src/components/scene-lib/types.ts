@@ -24,6 +24,8 @@ export interface OasisSettings {
   agentWalkSpeed: number
   agentConjureDurationMs: number
   agentScreenshotSettleMs: number
+  /** Village: which agents show the glass screen above their desk (src/lib/village/desk-screens.ts). */
+  villageDeskScreens: 'off' | 'nearest' | 'all'
   // ─═̷─═̷─⚡ FPS COUNTER ─═̷─═̷─⚡
   fpsCounterEnabled: boolean
   fpsCounterFontSize: number  // 10-24px

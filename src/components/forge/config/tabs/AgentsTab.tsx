@@ -8,13 +8,49 @@
 
 import { useContext } from 'react'
 import { SettingsContext } from '@/components/scene-lib/contexts'
+import { DESK_SCREEN_LIMIT, isDeskScreensMode, type DeskScreensMode } from '@/lib/village/desk-screens'
+
+const DESK_SCREEN_CHOICES: Array<{ mode: DeskScreensMode; label: string; hint: string }> = [
+  { mode: 'off', label: 'Off', hint: 'No screen above the desks. E or F next to an agent still opens its panel or screen at once.' },
+  { mode: 'nearest', label: 'Nearest', hint: `The ${DESK_SCREEN_LIMIT.nearest} closest agents show their screen.` },
+  { mode: 'all', label: 'All', hint: `Every agent near you shows its screen (up to ${DESK_SCREEN_LIMIT.all}). Costs the most per frame.` },
+]
 
 export function AgentsTab() {
   const { settings, updateSetting } = useContext(SettingsContext)
 
+  const deskScreens: DeskScreensMode = isDeskScreensMode(settings.villageDeskScreens) ? settings.villageDeskScreens : 'off'
+
   return (
     <div className="space-y-4">
       <section>
+        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Village</div>
+        <div className="py-1.5">
+          <div className="flex items-center justify-between gap-3 mb-1.5">
+            <span className="text-sm text-gray-300">Desk screens</span>
+            <div className="flex overflow-hidden rounded-md border border-white/15" role="radiogroup" aria-label="Desk screens">
+              {DESK_SCREEN_CHOICES.map(choice => (
+                <button
+                  key={choice.mode}
+                  type="button"
+                  role="radio"
+                  aria-checked={deskScreens === choice.mode}
+                  data-desk-screens={choice.mode}
+                  onClick={() => updateSetting('villageDeskScreens', choice.mode)}
+                  className={`px-3 py-1 text-xs font-semibold transition-colors ${deskScreens === choice.mode ? 'bg-cyan-600 text-white' : 'bg-transparent text-gray-400 hover:bg-white/10 hover:text-white'}`}
+                >
+                  {choice.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="text-[10px] text-gray-500">
+            {DESK_SCREEN_CHOICES.find(choice => choice.mode === deskScreens)?.hint} Name labels and status signs always show.
+          </div>
+        </div>
+      </section>
+
+      <section className="border-t border-white/10 pt-3">
         <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Agent Embodiment</div>
 
         <label className="flex items-center gap-3 py-1.5 cursor-pointer group hover:bg-white/5 rounded px-1 -mx-1 transition-colors">
