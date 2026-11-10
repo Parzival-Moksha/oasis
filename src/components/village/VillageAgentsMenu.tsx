@@ -167,13 +167,13 @@ function useSessionTitlesWhenNamesAreCut() {
   }, [needed])
 }
 
-function HelperLine({ agentId, helper, now, focused }: { agentId: string; helper: HelperRow; now: number; focused: boolean }) {
+function HelperLine({ agentId, helper, now, focused, onPicked }: { agentId: string; helper: HelperRow; now: number; focused: boolean; onPicked: () => void }) {
   const color = SUBAGENT_LOOK_COLOR[helper.look]
   const running = helper.look === 'running'
   return (
     <button
       type="button"
-      onClick={() => focusVillageSubagent(agentId, helper.key)}
+      onClick={() => { if (focusVillageSubagent(agentId, helper.key)) onPicked() }}
       title={`${helper.description}: ${running ? 'working' : helper.look}. Click to see its work.`}
       className={`flex w-full items-start gap-1.5 rounded px-1.5 py-1 text-left transition hover:bg-white/10 ${focused ? 'bg-white/15' : ''}`}
     >
@@ -297,7 +297,7 @@ export function VillageAgentsMenu() {
                 )}
                 <button
                   type="button"
-                  onClick={() => focusVillageAgent(row.id)}
+                  onClick={() => { if (focusVillageAgent(row.id)) setCollapsed(true) }}
                   title={`${row.name}${row.repo ? ` (${row.repo})` : ''}: ${row.label}${row.observed ? ', watched (runs elsewhere)' : ''}`}
                   className={`relative w-full overflow-hidden rounded-md border py-1.5 pl-3 pr-2 text-left transition hover:bg-white/10 ${focused ? 'bg-white/[0.12]' : 'bg-white/[0.04]'}`}
                   style={{ borderColor: focused ? `${row.color}cc` : row.observed ? `${VILLAGE_OBSERVED_COLOR}40` : 'rgba(255,255,255,0.08)' }}
@@ -319,7 +319,7 @@ export function VillageAgentsMenu() {
                 {row.helpers.length > 0 && (
                   <div className="ml-2 mt-0.5 border-l pl-1" style={{ borderColor: `${VILLAGE_HELPERS_COLOR}55` }}>
                     {row.helpers.map(helper => (
-                      <HelperLine key={helper.key} agentId={row.id} helper={helper} now={now} focused={focusedHelper === `${row.id}\u0001${helper.key}`} />
+                      <HelperLine key={helper.key} agentId={row.id} helper={helper} now={now} focused={focusedHelper === `${row.id}\u0001${helper.key}`} onPicked={() => setCollapsed(true)} />
                     ))}
                   </div>
                 )}
