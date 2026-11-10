@@ -22,7 +22,6 @@ export interface FrameCallbackReport {
   top: FrameCallbackTotal[]
 }
 
-const TIMED = new WeakMap<object, (...args: unknown[]) => unknown>()
 const LABELS = new WeakMap<object, string>()
 
 /** A short, stable name for a callback: its function name, or the first line of its source. */
@@ -43,6 +42,7 @@ export class FrameCallbackTimer {
   private frames = 0
   private ticks = 0
   private active = false
+  private timedFns = new WeakMap<object, (...args: unknown[]) => unknown>()
   private now: () => number
   private sampleEvery: number
 
@@ -62,14 +62,19 @@ export class FrameCallbackTimer {
     if (this.active) this.frames += 1
   }
 
-  /** Replaces each subscriber's `ref` with one that hands out timed callbacks. Idempotent per subscriber. */
+  /**
+   * Replaces each subscriber's `ref` with one that hands out timed callbacks. Idempotent per subscriber.
+   * A ref wrapped by another timer (a hot reload makes a new one) is taken over, so the newest timer
+   * is always the one that counts.
+   */
   instrument(subscribers: readonly FrameSubscriberLike[]): number {
     let wrapped = 0
     for (const sub of subscribers) {
-      const ref = sub.ref as { current: (...args: unknown[]) => unknown; __perfTimed?: boolean }
-      if (!ref || ref.__perfTimed) continue
-      const original = ref
-      const timed = { __perfTimed: true } as { current: (...args: unknown[]) => unknown; __perfTimed: boolean }
+      type Ref = { current: (...args: unknown[]) => unknown; __perfTimed?: unknown; __perfOriginal?: Ref }
+      const ref = sub.ref as Ref
+      if (!ref || ref.__perfTimed === this) continue
+      const original = ref.__perfTimed && ref.__perfOriginal ? ref.__perfOriginal : ref
+      const timed = { __perfTimed: this, __perfOriginal: original } as unknown as Ref
       let lastFn: unknown = null
       let lastTimed: (...args: unknown[]) => unknown = original.current
       Object.defineProperty(timed, 'current', {
@@ -90,7 +95,7 @@ export class FrameCallbackTimer {
 
   private timedVersion(fn: (...args: unknown[]) => unknown): (...args: unknown[]) => unknown {
     if (typeof fn !== 'function') return fn
-    const cached = TIMED.get(fn)
+    const cached = this.timedFns.get(fn)
     if (cached) return cached
     const now = this.now
     const timed = (...args: unknown[]) => {
@@ -111,7 +116,7 @@ export class FrameCallbackTimer {
         }
       }
     }
-    TIMED.set(fn, timed)
+    this.timedFns.set(fn, timed)
     return timed
   }
 

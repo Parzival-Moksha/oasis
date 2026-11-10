@@ -37,6 +37,14 @@ export function PerfHeartbeat({ readFps }: { readFps: () => number | null }) {
     if (frameCount.current % 120 === 1) frameTimer.instrument(get().internal.subscribers as unknown as FrameSubscriberLike[])
   }, -1000)
 
+  // Dev handle for before/after measurements (the perf harness reads the same numbers the samples carry).
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'production') return
+    const host = window as unknown as { __oasisFrameLoop?: { flush: (topN?: number) => unknown; subscribers: () => number } }
+    host.__oasisFrameLoop = { flush: topN => frameTimer.flush(topN), subscribers: () => get().internal.subscribers.length }
+    return () => { delete host.__oasisFrameLoop }
+  }, [frameTimer, get])
+
   useEffect(() => {
     let observer: PerformanceObserver | null = null
     try {

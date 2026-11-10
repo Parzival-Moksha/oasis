@@ -46,6 +46,26 @@ describe('FrameCallbackTimer', () => {
     expect(report.top[0].calls).toBe(2)
   })
 
+  it('a newer timer takes over refs an older one wrapped (hot reload), without stacking wrappers', () => {
+    let clock = 0
+    const older = new FrameCallbackTimer(() => clock, 1)
+    const newer = new FrameCallbackTimer(() => clock, 1)
+    const work = function work() { clock += 7 }
+    const original = { current: work as (...args: unknown[]) => unknown }
+    const sub = { ref: original }
+    older.instrument([sub])
+    expect(newer.instrument([sub])).toBe(1)
+    expect(newer.instrument([sub])).toBe(0)
+    older.tick(); newer.tick()
+    sub.ref.current()
+    expect(newer.flush().top).toEqual([{ who: 'work', ms: 7, calls: 1 }])
+    expect(older.flush().top).toEqual([])
+    // Still one layer over the real ref: a write lands on it.
+    const next = function next() { clock += 1 }
+    sub.ref.current = next
+    expect(original.current).toBe(next)
+  })
+
   it('labels anonymous callbacks by their source', () => {
     const label = callbackLabel(() => { /* nothing */ })
     expect(label.startsWith('()')).toBe(true)
