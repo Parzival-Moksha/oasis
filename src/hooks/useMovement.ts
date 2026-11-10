@@ -15,7 +15,7 @@
 // ▓▓▓▓【M̸O̸T̸I̸O̸N̸】▓▓▓▓ॐ▓▓▓▓【F̸O̸R̸G̸E̸】▓▓▓▓
 
 import { useEffect, useRef } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useFrameWhen } from '../lib/use-frame-when'
 import type { Group } from 'three'
 import type { MovementPreset } from '../lib/conjure/types'
 import { useOasisStore } from '../store/oasisStore'
@@ -68,7 +68,9 @@ export function useMovement(
     }
   }, [objectId])
 
-  useFrame((_, rawDelta) => {
+  // In the frame loop only while there is something to move (a walk order, or a non-static preset).
+  const active = Boolean(moveTarget && objectId) || Boolean(movement && movement.type !== 'static')
+  useFrameWhen(active, (_, rawDelta) => {
     const group = groupRef.current
     if (!group) return
 

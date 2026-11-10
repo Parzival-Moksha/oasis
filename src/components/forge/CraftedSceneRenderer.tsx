@@ -7,7 +7,7 @@
 'use client'
 
 import { useRef, useState, useEffect, useMemo } from 'react'
-import { useFrame, useThree } from '@react-three/fiber'
+import { useThree } from '@react-three/fiber'
 import { Text3D, Center } from '@react-three/drei'
 import * as THREE from 'three'
 import type { CraftedScene, CraftedPrimitive } from '../../lib/conjure/types'
@@ -17,6 +17,8 @@ import { useInputManager } from '../../lib/input-manager'
 import { FlameShader, FlagShader, CrystalShader, WaterShader, ParticleEmitterShader, GlowOrbShader, AuroraShader } from './ShaderPrimitives'
 import { getCraftTexturePreset, computeAutoTiling, canHaveTexture } from '../../lib/forge/craft-textures'
 import { clampText3DInput } from '../../lib/forge/text-3d-object'
+import { applyCraftAnimation } from '../../lib/forge/craft-animation'
+import { useFrameWhen } from '../../lib/use-frame-when'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PRIMITIVE GEOMETRY — maps type string to Three.js geometry
@@ -125,64 +127,19 @@ function useCraftTexture(primitive: CraftedPrimitive): THREE.Texture | null {
 // SINGLE PRIMITIVE — one atomic piece of a crafted scene
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Shared animation hook — applies to both mesh and text primitives
+// Shared animation hook — applies to both mesh and text primitives.
+// Only a primitive that has an animation joins the frame loop (most have none).
 function useAnimation(ref: React.RefObject<THREE.Object3D | null>, primitive: CraftedPrimitive) {
   const anim = primitive.animation
-  const basePos = useRef(primitive.position)
-  const baseScale = useRef(primitive.scale)
-  const baseRot = useRef(primitive.rotation || [0, 0, 0] as [number, number, number])
+  const base = useRef({
+    position: primitive.position,
+    rotation: primitive.rotation || [0, 0, 0] as [number, number, number],
+    scale: primitive.scale,
+  })
 
-  useFrame((state) => {
+  useFrameWhen(!!anim, (state) => {
     if (!ref.current || !anim) return
-    const t = state.clock.elapsedTime
-    const speed = anim.speed ?? 1
-    const amp = anim.amplitude ?? 0.5
-    const axisIdx = anim.axis === 'x' ? 0 : anim.axis === 'z' ? 2 : 1
-
-    switch (anim.type) {
-      case 'rotate': {
-        const rot = [baseRot.current[0], baseRot.current[1], baseRot.current[2]]
-        rot[axisIdx] = baseRot.current[axisIdx] + t * speed
-        ref.current.rotation.set(rot[0], rot[1], rot[2])
-        break
-      }
-      case 'bob': {
-        const pos = [basePos.current[0], basePos.current[1], basePos.current[2]]
-        pos[axisIdx] = basePos.current[axisIdx] + Math.sin(t * speed * 2) * amp
-        ref.current.position.set(pos[0], pos[1], pos[2])
-        break
-      }
-      case 'pulse': {
-        const pulseFactor = 1 + Math.sin(t * speed * 3) * amp * 0.3
-        ref.current.scale.set(
-          baseScale.current[0] * pulseFactor,
-          baseScale.current[1] * pulseFactor,
-          baseScale.current[2] * pulseFactor,
-        )
-        break
-      }
-      case 'swing': {
-        const swingRot = [baseRot.current[0], baseRot.current[1], baseRot.current[2]]
-        swingRot[axisIdx] = baseRot.current[axisIdx] + Math.sin(t * speed * 2) * amp
-        ref.current.rotation.set(swingRot[0], swingRot[1], swingRot[2])
-        break
-      }
-      case 'orbit': {
-        const orbitPos = [basePos.current[0], basePos.current[1], basePos.current[2]]
-        if (axisIdx === 1) {
-          orbitPos[0] = basePos.current[0] + Math.cos(t * speed) * amp
-          orbitPos[2] = basePos.current[2] + Math.sin(t * speed) * amp
-        } else if (axisIdx === 0) {
-          orbitPos[1] = basePos.current[1] + Math.cos(t * speed) * amp
-          orbitPos[2] = basePos.current[2] + Math.sin(t * speed) * amp
-        } else {
-          orbitPos[0] = basePos.current[0] + Math.cos(t * speed) * amp
-          orbitPos[1] = basePos.current[1] + Math.sin(t * speed) * amp
-        }
-        ref.current.position.set(orbitPos[0], orbitPos[1], orbitPos[2])
-        break
-      }
-    }
+    applyCraftAnimation(ref.current, anim, base.current, state.clock.elapsedTime)
   })
 }
 
@@ -309,6 +266,7 @@ export function CraftedSceneRenderer({ scene, onDelete: _onDelete }: CraftedScen
   const [hovered, setHovered] = useState(false)
   const spawnProgress = useRef(0)
   const spawnDone = useRef(false)
+  const [spawning, setSpawning] = useState(true)
 
   // ░▒▓ Mesh stats — push to Zustand so ObjectInspector can display ▓▒░
   const setObjectMeshStats = useOasisStore(s => s.setObjectMeshStats)
@@ -327,7 +285,8 @@ export function CraftedSceneRenderer({ scene, onDelete: _onDelete }: CraftedScen
 
   // Spawn animation — scales up then YIELDS to TransformControls
   // Position is managed by parent SelectableWrapper, NOT here
-  useFrame((_, delta) => {
+  // (Leaves the frame loop once the spawn is over.)
+  useFrameWhen(spawning, (_, delta) => {
     if (!groupRef.current || spawnDone.current) return
     if (spawnProgress.current < 1) {
       spawnProgress.current = Math.min(1, spawnProgress.current + delta * 3)
@@ -337,6 +296,7 @@ export function CraftedSceneRenderer({ scene, onDelete: _onDelete }: CraftedScen
     } else {
       groupRef.current.scale.setScalar(1)
       spawnDone.current = true // Never touch scale again — TransformControls owns it now
+      setSpawning(false)
     }
   })
 

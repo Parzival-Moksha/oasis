@@ -24,6 +24,7 @@ import { MarchOrderVFXRenderer } from './MarchOrderVFX'
 import { PlacementVFXRenderer } from './PlacementVFX'
 import { useMovement } from '../../hooks/useMovement'
 import { staticMatrixKeeper, wakeStaticMatrix } from '../../lib/static-matrix'
+import { useFrameWhen } from '../../lib/use-frame-when'
 // drei useAnimations removed — manual AnimationMixer for proper SkeletonUtils support
 import { DragContext, SettingsContext } from '../scene-lib'
 import { resolveCatalogAssetDefinition } from '../scene-lib/constants'
@@ -321,7 +322,8 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
     }
   }, [initialPosition, initialRotation, initialScale, groundToTerrain, resolveTerrainHeight])
 
-  useFrame(() => {
+  // These three join the frame loop only while they have work (most objects never do).
+  useFrameWhen(!!liveTransformResolver, () => {
     if (!groupRef.current || !liveTransformResolver) return
     const next = liveTransformResolver()
     if (!next) return
@@ -329,7 +331,7 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
     if (next.rotation) groupRef.current.rotation.set(...next.rotation)
   })
 
-  useFrame(() => {
+  useFrameWhen(groundToTerrain, () => {
     if (!groundToTerrain || transformDraggingRef.current || !groupRef.current) return
     const group = groupRef.current
     const p = group.position
@@ -344,14 +346,16 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
     })
   })
 
-  useFrame(() => {
+  // No materialization (or one that just ended): full size.
+  useEffect(() => {
+    if (materialization) return
     const target = materializeRef.current
-    if (!target) return
+    if (target && Math.abs(target.scale.x - 1) > 0.001) target.scale.setScalar(1)
+  }, [materialization])
 
-    if (!materialization) {
-      if (Math.abs(target.scale.x - 1) > 0.001) target.scale.setScalar(1)
-      return
-    }
+  useFrameWhen(!!materialization, () => {
+    const target = materializeRef.current
+    if (!target || !materialization) return
 
     if (materialization.phase === 'pending' || !materialization.revealStartedAt) {
       target.scale.setScalar(materialization.minScale)
@@ -1578,7 +1582,8 @@ export function CatalogModelRenderer({ path, scale, objectId }: { path: string; 
   }, [objectId])
 
   // ░▒▓ Tick the mixer every frame — drives all active animations ▓▒░
-  useFrame((_, delta) => {
+  // (A model without clips has nothing to tick.)
+  useFrameWhen(animations.length > 0, (_, delta) => {
     mixerRef.current?.update(delta)
   })
 
