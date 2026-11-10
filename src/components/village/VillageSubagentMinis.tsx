@@ -9,7 +9,7 @@
 // Click one (or press E next to it) for its work in the parent's panel.
 
 import { Component, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { useFrame, useLoader, type ThreeEvent } from '@react-three/fiber'
+import { useLoader, type ThreeEvent } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import * as THREE from 'three'
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js'
@@ -17,6 +17,9 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin } from '@pixiv/three-vrm'
 import { useOasisStore } from '../../store/oasisStore'
 import { useInputManager } from '../../lib/input-manager'
+import { useFrameWhen } from '../../lib/use-frame-when'
+import { staticMatrixKeeper } from '../../lib/static-matrix'
+import { hideUndrawnSubtrees } from '../../lib/forge/undrawn-subtrees'
 import { stationLocalToWorld } from '../../lib/village/village-layout'
 import { miniSeats, subagentLook, visibleSubagents, type SubagentLook } from '../../lib/village/village-subagents'
 import { requestPlayerAvatarTeleport } from '../../lib/player-avatar-runtime'
@@ -96,7 +99,11 @@ function MiniBody({ avatarUrl }: { avatarUrl: string }) {
       mesh.castShadow = false
       mesh.receiveShadow = false
     })
+    // A mini stands still (~140 skeleton nodes): no culling walk through its bones, and no
+    // matrix updates while nothing under it moves (it still follows the bob of its parent).
+    hideUndrawnSubtrees(copy)
     setClone(copy)
+    return staticMatrixKeeper.register(copy)
   }, [gltf])
   return clone ? <primitive object={clone} /> : null
 }
@@ -163,11 +170,15 @@ function Mini({ agentId, info, position, avatarUrl, labelVisible, near, overlayZ
   const running = info.look === 'running'
   const blocked = useInputManager(s => isVillageFocusBlocked(s.inputState))
   const color = SUBAGENT_LOOK_COLOR[info.look]
-  useFrame(({ clock }) => {
+  // Only a working helper bobs; a finished one rests on the ground and leaves the frame loop.
+  useFrameWhen(running, ({ clock }) => {
     const group = bob.current
     if (!group) return
-    group.position.y = running ? Math.abs(Math.sin(clock.getElapsedTime() * 2.6 + phase)) * 0.05 : 0
+    group.position.y = Math.abs(Math.sin(clock.getElapsedTime() * 2.6 + phase)) * 0.05
   })
+  useEffect(() => {
+    if (!running && bob.current) bob.current.position.y = 0
+  }, [running])
   const onClick = (event: ThreeEvent<MouseEvent>) => {
     event.stopPropagation()
     // After the canvas click has finished dismissing other panels (as with the desks).
