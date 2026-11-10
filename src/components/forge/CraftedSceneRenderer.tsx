@@ -6,7 +6,7 @@
 
 'use client'
 
-import { useRef, useState, useEffect, useMemo } from 'react'
+import { useRef, useState, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { useThree } from '@react-three/fiber'
 import { Text3D, Center } from '@react-three/drei'
 import * as THREE from 'three'
@@ -19,6 +19,7 @@ import { getCraftTexturePreset, computeAutoTiling, canHaveTexture } from '../../
 import { clampText3DInput } from '../../lib/forge/text-3d-object'
 import { applyCraftAnimation } from '../../lib/forge/craft-animation'
 import { useFrameWhen } from '../../lib/use-frame-when'
+import { buildCraftBatchGeometry, craftBatchMaterialOf, isCraftMergeEnabled, planCraftBatches, subscribeCraftMerge } from '../../lib/forge/craft-merge'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PRIMITIVE GEOMETRY — maps type string to Three.js geometry
@@ -253,6 +254,39 @@ export function CraftedPrimitiveMesh({ primitive }: { primitive: CraftedPrimitiv
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// BATCH — a scene's still, solid primitives that share a material, drawn as one mesh
+// (src/lib/forge/craft-merge.ts: same triangles and material values, colour on the vertices)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function CraftedBatchMesh({ primitives }: { primitives: CraftedPrimitive[] }) {
+  const geometry = useMemo(() => buildCraftBatchGeometry(primitives), [primitives])
+  useEffect(() => () => geometry.dispose(), [geometry])
+
+  const material = craftBatchMaterialOf(primitives[0])
+  // The batch's texture repeats once; each primitive's own repeat is in its UVs.
+  const texturePrimitive = useMemo<CraftedPrimitive>(
+    () => ({ ...primitives[0], textureRepeat: 1 }),
+    [primitives],
+  )
+  const craftTexture = useCraftTexture(texturePrimitive)
+  const textureMap = craftTexture || (material.texturePresetId ? getCraftPlaceholder() : null)
+
+  return (
+    <mesh geometry={geometry} castShadow receiveShadow>
+      <meshStandardMaterial
+        vertexColors
+        color="#ffffff"
+        metalness={material.metalness}
+        roughness={material.roughness}
+        emissive={material.emissive}
+        emissiveIntensity={material.emissiveIntensity}
+        map={textureMap}
+      />
+    </mesh>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // CRAFTED SCENE — the full composition
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -267,6 +301,14 @@ export function CraftedSceneRenderer({ scene, onDelete: _onDelete }: CraftedScen
   const spawnProgress = useRef(0)
   const spawnDone = useRef(false)
   const [spawning, setSpawning] = useState(true)
+
+  // Still, solid primitives that share a material draw as one mesh; the rest as before.
+  const mergeEnabled = useSyncExternalStore(subscribeCraftMerge, isCraftMergeEnabled, isCraftMergeEnabled)
+  const plan = useMemo(() => {
+    if (!mergeEnabled) return { loose: scene.objects.map((_, i) => i), batches: [] as Array<{ key: string; primitives: CraftedPrimitive[] }> }
+    const planned = planCraftBatches(scene.objects)
+    return { loose: planned.loose, batches: planned.batches.map(batch => ({ key: batch.key, primitives: batch.indexes.map(i => scene.objects[i]) })) }
+  }, [scene.objects, mergeEnabled])
 
   // ░▒▓ Mesh stats — push to Zustand so ObjectInspector can display ▓▒░
   const setObjectMeshStats = useOasisStore(s => s.setObjectMeshStats)
@@ -314,8 +356,11 @@ export function CraftedSceneRenderer({ scene, onDelete: _onDelete }: CraftedScen
         setHovered(false)
       }}
     >
-      {scene.objects.map((primitive, i) => (
-        <CraftedPrimitiveMesh key={`${scene.id}-${i}`} primitive={primitive} />
+      {plan.loose.map(i => (
+        <CraftedPrimitiveMesh key={`${scene.id}-${i}`} primitive={scene.objects[i]} />
+      ))}
+      {plan.batches.map(batch => (
+        <CraftedBatchMesh key={`${scene.id}-batch-${batch.key}`} primitives={batch.primitives} />
       ))}
 
       {/* Hover glow base */}
