@@ -5,7 +5,8 @@
 // on phones. Typing never reaches the world: keydown stops here, keyup still bubbles so no
 // movement key can get stuck (the WASD-stuck bug class).
 
-import { useEffect, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react'
+import { CUSTOM_MODEL_VALUE, cleanModelId, mergeModelLists, type ModelOption } from '../../lib/village/village-models'
 import { useOasisStore } from '../../store/oasisStore'
 import { useUILayer } from '../../lib/input-manager'
 import { effectiveStatus } from '../../store/slices/agentEngineSlice'
@@ -30,12 +31,6 @@ import { EffortSelect } from './EffortSelect'
 import { VillageAvatarButton } from './VillageAvatarButton'
 import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY, VILLAGE_TYPE_CLASS, agentDisplayName, canTalkTo, cwdLabel, formatCost, modelLabel, statusColor, statusLabel } from './village-status'
 
-const FALLBACK_MODELS = [
-  { value: 'default', displayName: 'Default' },
-  { value: 'opus', displayName: 'Opus' },
-  { value: 'sonnet', displayName: 'Sonnet' },
-  { value: 'haiku', displayName: 'Haiku' },
-]
 const PERMISSION_MODES = ['default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions']
 
 function useViewport() {
@@ -119,13 +114,16 @@ export function AgentSessionPanel() {
   const screenAgentId = useSyncExternalStore(subscribeVillageScreen, getVillageScreen, () => null)
   // The remembered width (the owner drags the left edge); geometry reads it, this re-renders on a change.
   useSyncExternalStore(subscribeSessionPanelWidth, getSessionPanelWidth, () => null)
+  // Every agent's model list merged (village-models.ts): an agent started before a release still offers the new model.
+  const mergedModelsKey = useOasisStore(s => JSON.stringify(mergeModelLists(Object.values(s.agentEngine.agents).map(a => a.models))))
+  const mergedModels = useMemo(() => JSON.parse(mergedModelsKey) as ModelOption[], [mergedModelsKey])
 
   // F: the agent's own screen took over (camera + composer in the world); the layer above stays pushed.
   if (!agentId || !agent || screenAgentId === agentId) return null
   const geometry = getSessionPanelGeometry(viewport.width, viewport.height)
   const shownStatus = effectiveStatus(agent)
   const color = statusColor(shownStatus)
-  const models = agent.models?.length ? agent.models : FALLBACK_MODELS
+  const models = mergeModelLists([agent.models, mergedModels])
   const currentModel = agent.model || 'default'
   const style = geometry.side === 'right'
     ? { top: geometry.margin, right: geometry.margin, bottom: geometry.margin, width: geometry.width, zIndex }
@@ -237,8 +235,12 @@ export function AgentSessionPanel() {
             <select
               value={models.some(m => m.value === currentModel) ? currentModel : '__current'}
               onChange={event => {
-                const model = event.target.value
+                let model: string | null = event.target.value
                 if (!model || model === '__current') return
+                if (model === CUSTOM_MODEL_VALUE) {
+                  model = cleanModelId(window.prompt('Model id (any the Claude Code CLI takes, e.g. claude-fable-5-2)', ''))
+                  if (!model) return
+                }
                 getAgentEngineClient().setModel(agent.id, model).catch(error => showNotice(`Model switch failed: ${describeError(error)}`, 'error'))
               }}
               onKeyDown={event => event.stopPropagation()}
@@ -246,6 +248,7 @@ export function AgentSessionPanel() {
             >
               {!models.some(m => m.value === currentModel) && <option value="__current">{modelLabel(agent)}</option>}
               {models.map(model => <option key={model.value} value={model.value}>{model.displayName || model.value}</option>)}
+              <option value={CUSTOM_MODEL_VALUE}>Other model id…</option>
             </select>
           </label>
           <label className="flex items-center gap-1">

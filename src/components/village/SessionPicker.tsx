@@ -13,12 +13,12 @@ import { DEFAULT_ANORAK_PRO_CWD, filterSessions, pickSuggestions } from '../../l
 import { VILLAGE_PICKER_LAYER, focusVillageAgent, openVillagePicker } from './village-actions'
 import { cwdLabel, formatAgo, formatBytes } from './village-status'
 import { FolderBrowser } from './FolderBrowser'
+import { CUSTOM_MODEL_VALUE, cleanModelId, mergeModelLists, type ModelOption } from '../../lib/village/village-models'
 
 /** Anorak Pro's home folder (override with NEXT_PUBLIC_ANORAK_PRO_CWD). */
 const ANORAK_PRO_CWD = process.env.NEXT_PUBLIC_ANORAK_PRO_CWD || DEFAULT_ANORAK_PRO_CWD
 const PAGE = 60
 const FETCH_STEP = 300
-const MODELS = ['', 'haiku', 'sonnet', 'opus']
 const MODES = ['', 'default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions']
 
 function describeError(error: unknown): string {
@@ -246,6 +246,9 @@ function Suggestions({ sessions, defaults, onDone, onError, showRecent }: { sess
 export function SessionPicker() {
   const open = useOasisStore(s => s.agentEngine.pickerOpen)
   const sessions = useOasisStore(s => s.agentEngine.sessions)
+  // The models the running agents know, merged (a newer agent brings new models to the menu).
+  const spawnModelsKey = useOasisStore(s => JSON.stringify(mergeModelLists(Object.values(s.agentEngine.agents).map(a => a.models)).filter(model => model.value !== 'default')))
+  const spawnModels = useMemo(() => JSON.parse(spawnModelsKey) as ModelOption[], [spawnModelsKey])
   // Folders your sessions ran in, newest first: one tap away in the folder browser.
   const recentFolders = useMemo(() => {
     const seen = new Set<string>()
@@ -315,8 +318,22 @@ export function SessionPicker() {
             <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/60">
               <label className="flex items-center gap-1">
                 model
-                <select value={defaults.model} onChange={event => setDefaults(d => ({ ...d, model: event.target.value }))} className="rounded border border-white/15 bg-black/50 px-1 py-0.5 text-white">
-                  {MODELS.map(model => <option key={model} value={model}>{model || '(from settings)'}</option>)}
+                <select
+                  value={defaults.model}
+                  onChange={event => {
+                    let model: string | null = event.target.value
+                    if (model === CUSTOM_MODEL_VALUE) {
+                      model = cleanModelId(window.prompt('Model id (any the Claude Code CLI takes, e.g. claude-fable-5-2)', ''))
+                      if (!model) return
+                    }
+                    setDefaults(d => ({ ...d, model: model || '' }))
+                  }}
+                  className="max-w-[170px] rounded border border-white/15 bg-black/50 px-1 py-0.5 text-white"
+                >
+                  <option value="">(from settings)</option>
+                  {spawnModels.map(model => <option key={model.value} value={model.value}>{model.displayName || model.value}</option>)}
+                  {defaults.model && !spawnModels.some(model => model.value === defaults.model) && <option value={defaults.model}>{defaults.model}</option>}
+                  <option value={CUSTOM_MODEL_VALUE}>Other model id…</option>
                 </select>
               </label>
               <label className="flex items-center gap-1">
