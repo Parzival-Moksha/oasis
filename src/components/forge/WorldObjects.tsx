@@ -10,7 +10,7 @@
 
 'use client'
 
-import React, { Suspense, useRef, useState, useEffect, useCallback, useContext, useMemo } from 'react'
+import React, { Suspense, useRef, useState, useEffect, useLayoutEffect, useCallback, useContext, useMemo } from 'react'
 import { useFrame, useLoader, useThree } from '@react-three/fiber'
 import { Center, Text3D, TransformControls, useGLTF, Html } from '@react-three/drei'
 import * as THREE from 'three'
@@ -23,6 +23,7 @@ import { ConjureVFX } from './ConjureVFX'
 import { MarchOrderVFXRenderer } from './MarchOrderVFX'
 import { PlacementVFXRenderer } from './PlacementVFX'
 import { useMovement } from '../../hooks/useMovement'
+import { staticMatrixKeeper, wakeStaticMatrix } from '../../lib/static-matrix'
 // drei useAnimations removed — manual AnimationMixer for proper SkeletonUtils support
 import { DragContext, SettingsContext } from '../scene-lib'
 import { resolveCatalogAssetDefinition } from '../scene-lib/constants'
@@ -215,6 +216,12 @@ function PlaceholderBox() {
 // Uses 'dragging-changed' event (the reliable way to coordinate with OrbitControls)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/** Ticks the static-matrix keeper once a frame (before the render, which runs at a later priority). */
+function StaticMatrixDriver() {
+  useFrame((state) => { staticMatrixKeeper.tick(state.clock.elapsedTime) })
+  return null
+}
+
 function findOasisObjectId(object: THREE.Object3D | null): string | null {
   let current: THREE.Object3D | null = object
   while (current) {
@@ -273,6 +280,18 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
     return sampleTerrainHeightAt(terrainHeightsRef.current, x, z)
   }, [])
 
+  // ░▒▓ Still objects skip three's per-frame matrix pass (src/lib/static-matrix.ts). The keeper
+  // watches the subtree and wakes it on any move; a selected object (gizmo) stays awake. ▓▒░
+  useLayoutEffect(() => {
+    const group = groupRef.current
+    if (!group) return
+    return staticMatrixKeeper.register(group)
+  }, [])
+  useLayoutEffect(() => {
+    if (!selected) return
+    return staticMatrixKeeper.hold(groupRef.current)
+  }, [selected])
+
   // ░▒▓ Movement system — reads behavior from store, applies every frame ▓▒░
   const behavior = useOasisStore(s => s.behaviors[id])
   useMovement(
@@ -287,6 +306,7 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
   // Apply initial transforms from stored overrides (position + rotation + scale)
   useEffect(() => {
     if (!groupRef.current) return
+    wakeStaticMatrix(groupRef.current)
     if (initialPosition) {
       const [x, y, z] = initialPosition
       groupRef.current.position.set(x, groundToTerrain ? resolveTerrainHeight(x, z) : y, z)
@@ -359,6 +379,7 @@ export function SelectableWrapper({ id, children, selected, onSelect, transformM
     controls.setMode = () => {}
     const startTransformDrag = () => {
       transformDraggingRef.current = true
+      wakeStaticMatrix(groupRef.current)
       if (!transformUndoOpenRef.current) {
         transformUndoOpenRef.current = true
         beginUndoBatch('Transform', 'T')
@@ -3409,6 +3430,7 @@ export function WorldObjectsRenderer() {
     <group>
       {/* W/E/R keyboard shortcuts for transform modes + ESC for placement cancel */}
       <TransformKeyHandler />
+      <StaticMatrixDriver />
       {/* ░▒▓ "COPIED!" floating 3D toasts ▓▒░ */}
       <CopyToastRenderer />
 
