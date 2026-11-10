@@ -19,6 +19,7 @@ import { getCraftTexturePreset, computeAutoTiling, canHaveTexture } from '../../
 import { clampText3DInput } from '../../lib/forge/text-3d-object'
 import { applyCraftAnimation } from '../../lib/forge/craft-animation'
 import { useFrameWhen } from '../../lib/use-frame-when'
+import { SharedMaterials } from '../../lib/forge/shared-materials'
 import { buildCraftBatchGeometry, craftBatchMaterialOf, isCraftMergeEnabled, planCraftBatches, subscribeCraftMerge } from '../../lib/forge/craft-merge'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -125,6 +126,21 @@ function useCraftTexture(primitive: CraftedPrimitive): THREE.Texture | null {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// SHARED MATERIALS — primitives with the same material values use one material object
+// (three re-sends a material's uniforms each time it changes between draws)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const craftMaterials = new SharedMaterials()
+
+/** The shared material for `signature` (null: none wanted). `create` runs only for a signature nobody holds. */
+function useSharedCraftMaterial(signature: string | null, create: () => THREE.MeshStandardMaterial): THREE.MeshStandardMaterial | null {
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the signature says everything `create` reads
+  const material = useMemo(() => (signature === null ? null : craftMaterials.get(signature, create)), [signature])
+  useEffect(() => (signature === null ? undefined : craftMaterials.retain(signature)), [signature, material])
+  return material
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // SINGLE PRIMITIVE — one atomic piece of a crafted scene
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -210,6 +226,25 @@ export function CraftedPrimitiveMesh({ primitive }: { primitive: CraftedPrimitiv
   // Use placeholder when texture is loading (prevents shader recompile flash)
   const textureMap = craftTexture || (wantsTexture ? getCraftPlaceholder() : null)
 
+  const isPlainMesh = primitive.type !== 'text' && !SHADER_TYPES.has(primitive.type)
+  const material = useSharedCraftMaterial(
+    isPlainMesh
+      ? ['mesh', primitive.color, primitive.metalness ?? 0, primitive.roughness ?? 0.7, primitive.emissive || '#000000',
+        primitive.emissiveIntensity ?? 0, hasOpacity ? primitive.opacity : 1, textureMap ? textureMap.uuid : ''].join('|')
+      : null,
+    () => new THREE.MeshStandardMaterial({
+      color: primitive.color,
+      metalness: primitive.metalness ?? 0,
+      roughness: primitive.roughness ?? 0.7,
+      emissive: primitive.emissive || '#000000',
+      emissiveIntensity: primitive.emissiveIntensity ?? 0,
+      transparent: hasOpacity,
+      opacity: primitive.opacity ?? 1,
+      depthWrite: !hasOpacity,
+      map: textureMap,
+    }),
+  )
+
   // Text primitives use a separate component
   if (primitive.type === 'text') {
     return <CraftedTextMesh primitive={primitive} />
@@ -236,19 +271,9 @@ export function CraftedPrimitiveMesh({ primitive }: { primitive: CraftedPrimitiv
       scale={primitive.scale}
       castShadow={!hasOpacity}
       receiveShadow
+      material={material ?? undefined}
     >
       <PrimitiveGeometry type={primitive.type} />
-      <meshStandardMaterial
-        color={primitive.color}
-        metalness={primitive.metalness ?? 0}
-        roughness={primitive.roughness ?? 0.7}
-        emissive={primitive.emissive || '#000000'}
-        emissiveIntensity={primitive.emissiveIntensity ?? 0}
-        transparent={hasOpacity}
-        opacity={primitive.opacity ?? 1}
-        depthWrite={!hasOpacity}
-        map={textureMap}
-      />
     </mesh>
   )
 }
@@ -271,19 +296,20 @@ function CraftedBatchMesh({ primitives }: { primitives: CraftedPrimitive[] }) {
   const craftTexture = useCraftTexture(texturePrimitive)
   const textureMap = craftTexture || (material.texturePresetId ? getCraftPlaceholder() : null)
 
-  return (
-    <mesh geometry={geometry} castShadow receiveShadow>
-      <meshStandardMaterial
-        vertexColors
-        color="#ffffff"
-        metalness={material.metalness}
-        roughness={material.roughness}
-        emissive={material.emissive}
-        emissiveIntensity={material.emissiveIntensity}
-        map={textureMap}
-      />
-    </mesh>
+  const shared = useSharedCraftMaterial(
+    ['batch', material.metalness, material.roughness, material.emissive, material.emissiveIntensity, textureMap ? textureMap.uuid : ''].join('|'),
+    () => new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      color: '#ffffff',
+      metalness: material.metalness,
+      roughness: material.roughness,
+      emissive: material.emissive,
+      emissiveIntensity: material.emissiveIntensity,
+      map: textureMap,
+    }),
   )
+
+  return <mesh geometry={geometry} material={shared ?? undefined} castShadow receiveShadow />
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

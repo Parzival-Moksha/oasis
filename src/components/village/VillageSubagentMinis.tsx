@@ -215,7 +215,7 @@ function Mini({ agentId, info, position, avatarUrl, labelVisible, near, overlayZ
         onPointerOut={() => { document.body.style.cursor = '' }}
       >
         <boxGeometry args={[0.7, 0.96, 0.7]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} visible={false} />
       </mesh>
       {(labelVisible || near) && (
         <Html position={[0, 1.08, 0]} center distanceFactor={6} zIndexRange={overlayZ} style={{ pointerEvents: 'none' }}>

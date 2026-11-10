@@ -1660,7 +1660,7 @@ export function CatalogModelRenderer({ path, scale, objectId }: { path: string; 
           Math.max(bounds.size.y * scale, 1),
           Math.max(bounds.size.z * scale, 1),
         ]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} visible={false} />
       </mesh>
       <primitive object={clonedScene} scale={scale} />
 
@@ -2193,7 +2193,7 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
         }}
       >
         <boxGeometry args={[bounds.size.x * scale, bounds.size.y * scale, bounds.size.z * scale]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} visible={false} />
       </mesh>
       <primitive object={renderScene} scale={scale} />
 

@@ -360,7 +360,7 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, overlayZ
         onPointerOut={() => { document.body.style.cursor = '' }}
       >
         <boxGeometry args={STATION.hitSize} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} visible={false} />
       </mesh>
       <Html position={STATION.label} center distanceFactor={9} zIndexRange={overlayZ} style={{ pointerEvents: 'none' }}>
         <StationLabel agentId={agentId} nearby={nearby && !focused} />
