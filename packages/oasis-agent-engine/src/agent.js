@@ -24,6 +24,7 @@ import { findSessionFile } from './sessions.js';
 import { readHistoryTail } from './history.js';
 import { droppedAfterInterrupt, expiredAtResult, interruptApplies, matchReplay } from './pending.js';
 import { worldToolsArgs } from './worldtools.js';
+import { chromeArgs } from './chrome.js';
 
 const SANDBOX_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'sandbox');
 const REVIEW_INPUT_MAX = 256 * 1024;
@@ -70,6 +71,9 @@ export class Agent {
     this.fork = !!spec.fork;
     this.forkedFrom = spec.fork ? spec.sessionId || null : null; // until the fork's first turn, sessionId is still the original's
     this.worldTools = spec.worldTools !== false; // the Oasis MCP server (worldtools.js); on unless the roster says false
+    // Claude in Chrome (chrome.js): the owner's real browser, every call asking first. Off unless the roster says true.
+    this.chrome = spec.chrome === true;
+    this.restartPending = false;
     // Eyes: each message from the owner carries a picture from this agent's avatar (send()). Kept in the roster.
     this.eyes = typeof spec.eyes === 'boolean' ? spec.eyes : EYES_DEFAULT.test(this.name || '');
     this.sendChain = Promise.resolve(); // messages go out in the order they were sent, also while one waits for its picture
@@ -105,7 +109,7 @@ export class Agent {
       id: this.id, kind: this.kind, name: this.name, cwd: this.cwd, sessionId: this.sessionId,
       model: this.model, resolvedModel: this.norm.model, permissionMode: this.permissionMode,
       effectivePermissionMode: this.effectivePermissionMode || null, effort: this.effort,
-      resolvedEffort: this.resolvedEffort, eyes: this.eyes, status: this.status, statusReason: this.statusReason, alive: !!this.proc,
+      resolvedEffort: this.resolvedEffort, eyes: this.eyes, chrome: this.chrome, status: this.status, statusReason: this.statusReason, alive: !!this.proc,
       pid: this.proc?.pid || null, pendingUser: this.pendingUser.size,
       permissions: [...this.permissions.values()].map((r) => this.describePermission(r)),
       context: this.lastContext, models: this.meta.models || null,
@@ -113,7 +117,7 @@ export class Agent {
   }
 
   rosterEntry() {
-    return { id: this.id, name: this.name, cwd: this.cwd, sessionId: this.sessionId, model: this.model, permissionMode: this.permissionMode, effort: this.effort, eyes: this.eyes, ...(this.worldTools ? {} : { worldTools: false }) };
+    return { id: this.id, name: this.name, cwd: this.cwd, sessionId: this.sessionId, model: this.model, permissionMode: this.permissionMode, effort: this.effort, eyes: this.eyes, ...(this.worldTools ? {} : { worldTools: false }), ...(this.chrome ? { chrome: true } : {}) };
   }
 
   // ------------------------------------------------------------------ process
@@ -127,6 +131,7 @@ export class Agent {
     if (this.permissionMode) args.push('--permission-mode', this.permissionMode);
     if (this.effort) args.push('--effort', this.effort);
     if (this.worldTools) args.push(...worldToolsArgs({ cwd: this.cwd }));
+    if (this.chrome) args.push(...chromeArgs());
     if (this.sessionId) {
       // --resume finds a session by id even from another cwd (verified), so look in every project dir.
       const exists = !!findSessionFile(this.sessionId, this.cwd);
@@ -239,6 +244,11 @@ export class Agent {
     this.emit('exit', { code, signal, stderr: wasKilling ? undefined : this.stderrTail.slice(-5) });
     if (wasKilling || code === 0) this.setStatus(STATUS.IDLE, wasKilling ? 'stopped' : 'exited');
     else this.setStatus(STATUS.ERROR, `claude exited (code ${code}${signal ? ', ' + signal : ''})`);
+    // A switch that changes the start arguments (Chrome): come back with them, same session.
+    if (this.restartPending) {
+      this.restartPending = false;
+      setTimeout(() => { if (!this.proc) this.start(); }, 300);
+    }
   }
 
   write(obj) {
@@ -349,6 +359,8 @@ export class Agent {
     // Zero-cost context meter after each turn.
     this.refreshContext();
     this.recomputeStatus();
+    // Chrome was switched during the turn: restart now that it is over (unless more messages wait).
+    if (this.restartPending && !this.pendingUser.size) this.kill();
   }
 
   onEvent(kind, payload) {
@@ -477,6 +489,26 @@ export class Agent {
     this.persist();
     this.emit('effort', { effort: level, resolvedEffort: this.resolvedEffort });
     return { ok: true, data: { effort: level, resolvedEffort: this.resolvedEffort } };
+  }
+
+  /**
+   * Claude in Chrome on or off (kept in the roster). The CLI only reads --chrome at start, so the
+   * process restarts with the same session: now when idle, after the turn when one runs, and on the
+   * next start when it is not running.
+   */
+  setChrome(on) {
+    const chrome = !!on;
+    if (chrome === this.chrome && !this.restartPending) return { ok: true, data: { chrome, applied: 'unchanged' } };
+    this.chrome = chrome;
+    this.persist();
+    let applied = 'on next start';
+    if (this.proc) {
+      this.restartPending = true;
+      if (this.turnRunning || this.pendingUser.size) applied = 'after this turn';
+      else { applied = 'now'; this.kill(); }
+    }
+    this.emit('chrome', { chrome, applied });
+    return { ok: true, data: { chrome, applied } };
   }
 
   /** Eyes on or off (kept in the roster). Applies to the next message. */

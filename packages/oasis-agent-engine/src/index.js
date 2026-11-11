@@ -63,7 +63,7 @@ const hub = {
     }
     broadcast({ type: 'event', event });
     telegram?.onEvent(event);
-    if (/^(status|init|meta|model|mode|effort|eyes|context|exit|permission\.)/.test(kind)) scheduleSnapshot();
+    if (/^(status|init|meta|model|mode|effort|eyes|chrome|context|exit|permission\.)/.test(kind)) scheduleSnapshot();
   },
   eyes: (agentId) => captureEyes(agentId),
   persist() {
@@ -138,7 +138,7 @@ const commands = {
     return sessions.map((s) => ({ ...s, ownedBy: owned.get(s.sessionId) || null, observedBy: observed.get(String(s.path).toLowerCase()) || null }));
   },
 
-  async spawnAgent({ name, cwd, sessionId, model, permissionMode, effort, fork, force, move, createCwd, worldTools } = {}) {
+  async spawnAgent({ name, cwd, sessionId, model, permissionMode, effort, fork, force, move, createCwd, worldTools, chrome } = {}) {
     if (!cwd) throw new Error('cwd is required');
     cwd = path.resolve(cwd);
     if (!fs.existsSync(cwd)) {
@@ -157,7 +157,7 @@ const commands = {
         await stopOtherHolders(sessionId, ours);
       }
     }
-    const agent = new Agent({ id: newId('agent'), name: name || path.basename(cwd), cwd, sessionId, model, permissionMode, effort, fork, worldTools }, hub);
+    const agent = new Agent({ id: newId('agent'), name: name || path.basename(cwd), cwd, sessionId, model, permissionMode, effort, fork, worldTools, chrome: chrome === true }, hub);
     addAgent(agent);
     agent.start();
     hub.persist();
@@ -190,6 +190,8 @@ const commands = {
   setModel({ agentId, model }) { return getAgent(agentId, { owned: true }).setModel(model); },
   setPermissionMode({ agentId, mode }) { return getAgent(agentId, { owned: true }).setPermissionMode(mode); },
   setEffort({ agentId, effort }) { return getAgent(agentId, { owned: true }).setEffort(effort); },
+  /** Claude in Chrome for an agent (chrome.js): restarts its process with the same session. */
+  setChrome({ agentId, chrome }) { return getAgent(agentId, { owned: true }).setChrome(chrome); },
   respond({ agentId, requestId, behavior, message, answers, always, updatedInput }) {
     return getAgent(agentId, { owned: true }).respond(requestId, { behavior, message, answers, always, updatedInput });
   },

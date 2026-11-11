@@ -73,6 +73,8 @@ export interface EngineAgentSnapshot {
   resolvedEffort?: string | null
   /** Eyes: each message the owner sends carries a picture from this agent's avatar. Missing on older engines. */
   eyes?: boolean
+  /** Claude in Chrome: the owner's real browser, each call asking first (engine chrome.js). */
+  chrome?: boolean
   status: EngineAgentStatus
   statusReason?: string | null
   alive?: boolean
@@ -336,6 +338,8 @@ export interface SpawnAgentArgs {
   move?: boolean
   /** New agents only: create the working folder if it does not exist yet. */
   createCwd?: boolean
+  /** Start with Claude in Chrome (off by default). */
+  chrome?: boolean
 }
 
 export type RespondBehavior = 'allow' | 'deny'
@@ -365,6 +369,8 @@ export interface EngineCommandMap {
   setEffort: { args: { agentId: string; effort: string | null }; result: { ok: boolean; data?: { effort: string | null; resolvedEffort?: string | null }; error?: string } }
   /** Eyes on or off for an owned agent; kept in the roster. */
   setEyes: { args: { agentId: string; on: boolean }; result: { ok: boolean; data?: { eyes: boolean } } }
+  /** Claude in Chrome on or off: the agent's process restarts with the same session (now, after the turn, or at its next start). */
+  setChrome: { args: { agentId: string; chrome: boolean }; result: { ok: boolean; data?: { chrome: boolean; applied: string } } }
   /** This page can take eyes pictures (once per connection). */
   canSee: { args: { on: boolean }; result: { ok: boolean } }
   /** The answer to an eyes.request: the picture, or no data when this page has no view of that agent. */

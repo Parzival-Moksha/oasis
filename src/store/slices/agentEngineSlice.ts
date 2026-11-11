@@ -176,6 +176,8 @@ export interface EngineAgentState {
   resolvedEffort: string | null
   /** Eyes: each message you send carries a picture from this agent's avatar. null = the engine is older than eyes. */
   eyes: boolean | null
+  /** Claude in Chrome on (engine chrome.js). null = the engine is older than the switch. */
+  chrome: boolean | null
   status: EngineAgentStatus
   statusReason: string | null
   statusSince: number
@@ -325,6 +327,7 @@ export function createAgentState(
     effort: null,
     resolvedEffort: null,
     eyes: null,
+    chrome: null,
     status: 'idle',
     statusReason: null,
     statusSince: at,
@@ -386,6 +389,7 @@ export function applySnapshot(agent: EngineAgentState, snap: EngineAgentSnapshot
     effort: snap.effort !== undefined ? snap.effort : agent.effort,
     resolvedEffort: snap.resolvedEffort !== undefined ? snap.resolvedEffort : agent.resolvedEffort,
     eyes: typeof snap.eyes === 'boolean' ? snap.eyes : agent.eyes,
+    chrome: typeof snap.chrome === 'boolean' ? snap.chrome : agent.chrome,
     status,
     statusReason: snap.statusReason ?? (status === agent.status ? agent.statusReason : null),
     statusSince: status === agent.status ? agent.statusSince : at,

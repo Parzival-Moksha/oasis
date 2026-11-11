@@ -241,6 +241,11 @@ export class AgentEngineClient {
   }
 
   /** Eyes on or off: with it on, each message you send carries a picture from the agent's avatar. */
+  /** Claude in Chrome for an agent: restarts its process with the same session. */
+  setChrome(agentId: string, chrome: boolean) {
+    return this.cmd('setChrome', { agentId, chrome })
+  }
+
   setEyes(agentId: string, on: boolean) {
     return this.cmd('setEyes', { agentId, on })
   }
