@@ -15,6 +15,9 @@ interface Line {
   onEvent: (e: Record<string, unknown>) => void
   command: (a?: Record<string, unknown>) => Record<string, unknown>
   state: { offset: number; pings: boolean }
+  cfg: { ok: boolean; token: string }
+  refreshConfig: () => void
+  sweepBridge: (now?: number) => void
 }
 const tg = tgModule as unknown as {
   parseRoute: (text: string, agents: Agent[]) => Route
@@ -66,7 +69,10 @@ describe('telegram: routing', () => {
 
   it('answers an unknown or unclear name with the list', () => {
     expect(route('@nobody hi')).toMatchObject({ kind: 'unknown', name: 'nobody' })
-    expect(route('Tylr: hi')).toMatchObject({ kind: 'unknown', name: 'Tylr' })
+    // "Word: ..." with no such agent is a sentence: it goes to Anorak. Only "@name" bounces.
+    expect(route('Tylr: hi')).toMatchObject({ kind: 'default', text: 'Tylr: hi' })
+    expect(route('Note: build is red')).toMatchObject({ kind: 'default' })
+    expect(route('PS: one more thing')).toMatchObject({ kind: 'default' })
     expect(route('@t hi')).toMatchObject({ kind: 'ambiguous' })
     expect(route('@t hi').matches?.map(a => a.name)).toEqual(['Tyler', 'Telegram'])
   })
@@ -153,6 +159,7 @@ let nextUpdateId = 1000
 let server: http.Server
 let base = ''
 let scribeText = 'Tyler, check the lights.'
+let flakyFailed = false
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'oasis-telegram-'))
 const logs: string[] = []
 
@@ -186,6 +193,10 @@ beforeAll(async () => {
       }
       calls.push({ method, body, raw })
       if (method === 'getFile') return json({ ok: true, result: { file_id: body.file_id, file_path: 'voice/file_7.oga' } })
+      if (method === 'sendMessage' && String(body.text).includes('FLAKY') && !flakyFailed) {
+        flakyFailed = true
+        res.writeHead(502, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: false, error_code: 502, description: 'Bad Gateway' })); return
+      }
       if (method === 'sendMessage' && body.parse_mode === 'HTML' && String(body.text).includes('BROKEN-HTML')) {
         return json({ ok: false, error_code: 400, description: "Bad Request: can't parse entities" })
       }
@@ -317,12 +328,81 @@ describe('telegram: the line, against a fake Bot API', () => {
     expect(texts()[1]).toContain('🔵 Anorakdev · waiting')
     expect(delivered[0]).toEqual({ agentId: 'obs-2', text: '[Telegram] hello' })
     // The bridged session: a turn that was already running ends first (not ours), then our prompt shows up.
+    line.onEvent({ agentId: 'obs-2', kind: 'user', text: 'typed at the desk meanwhile' })
+    line.onEvent({ agentId: 'obs-2', kind: 'user', text: '<task-notification> a background task finished' })
     line.onEvent({ agentId: 'obs-2', kind: 'turn.end', outcome: 'done-waiting', result: 'old turn' })
     line.onEvent({ agentId: 'obs-2', kind: 'user', text: 'The oasis plugin sent a message: [Telegram] hello' })
     line.onEvent({ agentId: 'obs-2', kind: 'text', text: 'Hi from the desk', parentToolUseId: null })
     line.onEvent({ agentId: 'obs-2', kind: 'turn.end', outcome: 'done-waiting', result: 'Hi from the desk' })
     await until(() => texts().some(t => t.includes('Hi from the desk')))
     expect(texts().some(t => t.includes('old turn'))).toBe(false)
+  })
+
+  it('says so when a bridged session goes away before taking the message', async () => {
+    const rick: Agent = { id: 'obs-2', kind: 'observer', name: 'Rick', status: 'waiting', bridged: true }
+    const { line, delivered } = makeLine([...village.map(a => ({ ...a })), rick])
+    current = line
+    push({ text: 'Rick: hello' })
+    await until(() => delivered.length === 1)
+    line.sweepBridge(Date.now() + 70_000) // still connected: keep waiting
+    rick.bridged = false
+    line.sweepBridge(Date.now() + 30_000) // gone, but the bridge may still hand it over
+    await sleep(50)
+    expect(texts()).toEqual([])
+    line.sweepBridge(Date.now() + 70_000)
+    await until(() => texts().length === 1)
+    expect(texts()[0]).toBe('Rick never picked up your message (the session went away).')
+    // Nothing armed afterwards: a later desk turn does not go to the phone.
+    line.onEvent({ agentId: 'obs-2', kind: 'user', text: 'The oasis plugin sent a message: [Telegram] hello' })
+    line.onEvent({ agentId: 'obs-2', kind: 'turn.end', outcome: 'done-waiting', result: 'desk turn' })
+    await sleep(100)
+    expect(texts()).toHaveLength(1)
+  })
+
+  it('says so when the agent is removed before answering', async () => {
+    const { line, delivered } = makeLine(village.map(a => ({ ...a })))
+    current = line
+    push({ text: 'Tyler: long job' })
+    await until(() => delivered.length === 1)
+    line.onEvent({ agentId: 'a-tyler', kind: 'user.consumed', uuid: 'u1' })
+    line.onEvent({ agentId: 'a-tyler', kind: 'removed' })
+    await until(() => texts().length === 1)
+    expect(texts()[0]).toBe('Tyler was stopped or moved before answering your message.')
+  })
+
+  it('tries a reply again after a network or server error', async () => {
+    const { line, delivered } = makeLine(village.map(a => ({ ...a })))
+    current = line
+    flakyFailed = false
+    push({ text: 'Tyler: go' })
+    await until(() => delivered.length === 1)
+    line.onEvent({ agentId: 'a-tyler', kind: 'user.consumed', uuid: 'u1' })
+    line.onEvent({ agentId: 'a-tyler', kind: 'turn.end', outcome: 'done-waiting', reason: 'end_turn', result: 'FLAKY answer' })
+    await until(() => texts().some(t => t.includes('FLAKY')), 6000)
+    expect(flakyFailed).toBe(true)
+    expect(texts().filter(t => t.includes('FLAKY'))).toHaveLength(1)
+  }, 10_000)
+
+  it('keeps the last good config through a half-written file, and sends nothing while it is off', async () => {
+    const { line } = makeLine(village.map(a => ({ ...a })))
+    current = line
+    const file = path.join(dir, 'config.json')
+    const good = fs.readFileSync(file, 'utf8')
+    try {
+      fs.writeFileSync(file, '{"enabled": true, "botTok')
+      line.refreshConfig()
+      expect(line.cfg).toMatchObject({ ok: true, token: TOKEN })
+      fs.writeFileSync(file, JSON.stringify({ enabled: false, botToken: TOKEN, chatId: CHAT }))
+      line.refreshConfig()
+      expect(line.cfg.ok).toBe(false)
+      line.onEvent({ agentId: 'a-tyler', kind: 'status', status: 'error', reason: 'x' })
+      push({ text: '/agents' })
+      await sleep(400)
+      expect(texts()).toEqual([])
+    } finally {
+      fs.writeFileSync(file, good)
+      line.refreshConfig()
+    }
   })
 
   it('pings once per state change after the wait, and not when the state passes or pings are off', async () => {

@@ -80,11 +80,11 @@ export function parseRoute(raw, agents) {
   // "@tyler fix the intro" (also "@tyler: ..." and "@tyler, ...")
   let m = text.match(/^@([^\s:,]+)[:,]?\s*([\s\S]*)$/);
   if (m) return pick(m[1], m[2], { strict: true });
-  // "Tyler: fix the intro". A colon needs a space after it, so "https://..." and "10:30" are not names. An unknown
-  // one-word name gets the list back; an unknown longer one ("Here's the thing: ...") is just a sentence for Anorak.
+  // "Tyler: fix the intro". A colon needs a space after it, so "https://..." and "10:30" are not names. No agent by
+  // that name ("Note: build is red", "PS: ...") and it is just a sentence for Anorak; only "@name" gets the list back.
   m = text.match(/^([^:\n]{1,40}):\s+([\s\S]+)$/);
   if (m) {
-    const r = pick(m[1], m[2], { strict: /^\S+$/.test(m[1].trim()) });
+    const r = pick(m[1], m[2], { strict: false });
     if (r) return r;
   }
   // "Tyler, fix the intro" / "Hey Tyler, ..." (how a voice note comes out): only a known name, at least 3 letters.
@@ -209,8 +209,10 @@ export function readScribeKey(file = process.env.OASIS_SCRIBE_ENV || SCRIBE_ENV)
 }
 
 const sleep = (ms, signal) => new Promise((resolve) => {
-  const t = setTimeout(resolve, ms);
-  signal?.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
+  if (signal?.aborted) return resolve();
+  const onAbort = () => { clearTimeout(t); resolve(); };
+  const t = setTimeout(() => { signal?.removeEventListener('abort', onAbort); resolve(); }, ms);
+  signal?.addEventListener('abort', onAbort, { once: true });
 });
 const stripBom = (s) => s.replace(/^\uFEFF/, '');
 const hhmm = (ms) => new Date(ms).toTimeString().slice(0, 5);
@@ -238,9 +240,11 @@ export class TelegramLine {
     this.scribeApi = o.scribeApi || process.env.OASIS_SCRIBE_API || SCRIBE_API;
     this.scribeKey = o.scribeKey || (() => readScribeKey());
     this.rawLog = o.log || ((...a) => console.log(...a));
+    this.tokens = new Set(); // every token seen, for redact()
+    this.cfg = null;
+    this.refreshConfig();
     this.state = this.loadState(); // {offset, pings}
-    this.cfg = this.readConfig();
-    this.turns = new Map(); // agentId -> {expect:Set<text>, uuids:Set, bridgeQueuedAt, armed, finalText, files[], captions:Map, repliedAt, since}
+    this.turns = new Map(); // agentId -> {name, expect:Set<text>, uuids:Set, bridge:[{text,at}], armed, finalText, files[], captions:Map, repliedAt, since}
     this.pings = new Map(); // agentId -> {status, since, timer}
     this.lastText = new Map(); // agentId -> last main-thread text (ping summaries)
     this.lastTurnEnd = new Map();
@@ -254,8 +258,7 @@ export class TelegramLine {
   // ---------------------------------------------------------------- plumbing
   redact(s) {
     let out = String(s ?? '');
-    const t = this.cfg?.token;
-    if (t) out = out.split(t).join('<token>').split(encodeURIComponent(t)).join('<token>');
+    for (const t of this.tokens || []) out = out.split(t).join('<token>').split(encodeURIComponent(t)).join('<token>');
     return out;
   }
 
@@ -270,6 +273,15 @@ export class TelegramLine {
     } catch (e) {
       return { ok: false, token: '', chatId: '', error: e.code === 'ENOENT' ? 'no config file' : 'unreadable config' };
     }
+  }
+
+  /** Re-read the config. A file caught mid-write (the Next app writes it in place) keeps the last good one. */
+  refreshConfig() {
+    const next = this.readConfig();
+    if (next.token) this.tokens.add(next.token);
+    if (next.error === 'unreadable config' && this.cfg?.token) return this.cfg;
+    this.cfg = next;
+    return next;
   }
 
   loadState() {
@@ -323,9 +335,14 @@ export class TelegramLine {
   /** Everything outgoing goes through one queue, so messages arrive in the order they were made. */
   queue(job) {
     const run = this.outbox.then(async () => {
-      try { return await job(); } catch (e) {
-        if (e.code === 429 && e.retryAfter) { await sleep(e.retryAfter * 1000); return await job(); }
-        throw e;
+      if (!this.cfg.ok) throw new Error('not sent: the bot config is off (enabled, botToken, chatId)');
+      for (let attempt = 1; ; attempt++) {
+        try { return await job(); } catch (e) {
+          if (e.code === 429 && e.retryAfter && attempt <= 3) { await sleep(e.retryAfter * 1000); continue; }
+          // No code = the network or a timeout; 5xx = Telegram's side. A reply is worth two more tries.
+          if ((!e.code || e.code >= 500) && attempt < 3) { await sleep(attempt * 2000); continue; }
+          throw e;
+        }
       }
     });
     this.outbox = run.catch((e) => this.log(`send failed: ${e.message}`));
@@ -397,7 +414,7 @@ export class TelegramLine {
     let said409 = false;
     this.log(`polling (pings ${this.state.pings ? 'on' : 'off'}, offset ${this.state.offset || 'none'})`);
     while (this.running) {
-      this.cfg = this.readConfig();
+      this.refreshConfig();
       if (!this.cfg.ok) {
         this.stats.lastError = this.cfg.error || 'disabled in the config (enabled, botToken, chatId)';
         await sleep(30_000, this.abort.signal);
@@ -519,7 +536,7 @@ export class TelegramLine {
         return this.say(`Pings are ${this.state.pings ? 'on' : 'off'}: ${this.state.pings ? 'I write when an agent waits for you (amber) or is stuck (red) for 2 minutes.' : 'nothing unless you write first.'}`);
       }
       case 'stop': {
-        const target = arg ? findAgents(arg, agents).filter((a) => a.kind === 'owned') : [defaultAgent(agents)].filter(Boolean);
+        const target = (arg ? findAgents(arg, agents) : [defaultAgent(agents)]).filter((a) => a?.kind === 'owned');
         if (target.length !== 1) return this.say(arg ? `No single agent called "${arg}" that I can stop.` : 'Stop whom? /stop <name>');
         if (!this.interruptAgent) return this.say('Interrupting is not wired here.');
         try {
@@ -533,7 +550,7 @@ export class TelegramLine {
 
   turn(agentId) {
     let t = this.turns.get(agentId);
-    if (!t) this.turns.set(agentId, (t = { expect: new Set(), uuids: new Set(), bridgeQueuedAt: 0, armed: false, finalText: '', files: [], captions: new Map(), repliedAt: 0, since: 0 }));
+    if (!t) this.turns.set(agentId, (t = { name: agentId, expect: new Set(), uuids: new Set(), bridge: [], armed: false, finalText: '', files: [], captions: new Map(), repliedAt: 0, since: 0 }));
     return t;
   }
 
@@ -542,11 +559,12 @@ export class TelegramLine {
     const tag = `[Telegram${voice ? ' voice note' : ''}${late ? `, sent ${hhmm(late)}` : ''}]`;
     const tagged = `${tag} ${text}`;
     const t = this.turn(agent.id);
+    t.name = agent.name;
     t.expect.add(tagged);
     try {
       const res = await this.sendToAgent(agent.id, tagged);
       if (res?.uuid && t.expect.has(tagged)) { t.expect.delete(tagged); t.uuids.add(res.uuid); }
-      if (res?.viaBridge) { t.expect.delete(tagged); t.bridgeQueuedAt = Date.now(); }
+      if (res?.viaBridge) { t.expect.delete(tagged); t.bridge.push({ text: tagged, at: Date.now() }); }
       t.since = Date.now();
       this.log(`-> ${agent.name}: ${text.length} chars${voice ? ' (voice)' : ''}`);
       this.typing();
@@ -558,12 +576,28 @@ export class TelegramLine {
 
   /** "typing…" in the chat while an agent works on a Telegram message (Telegram shows it for about 5 s per call). */
   typing() {
-    const busy = () => [...this.turns.values()].some((t) => (t.armed || t.uuids.size || t.bridgeQueuedAt) && Date.now() - t.since < TYPING_MAX_MS);
+    const busy = () => [...this.turns.values()].some((t) => (t.armed || t.uuids.size || t.bridge.length) && Date.now() - t.since < TYPING_MAX_MS);
     const tick = () => {
+      this.sweepBridge();
       if (!busy() || !this.running) { clearInterval(this.typingTimer); this.typingTimer = null; return; }
       void this.api('sendChatAction', { chat_id: this.cfg.chatId, action: 'typing' }).catch(() => {});
     };
     if (!this.typingTimer && busy()) { tick(); this.typingTimer = setInterval(tick, 4500); this.typingTimer.unref?.(); }
+  }
+
+  /**
+   * Messages for a bridged session wait in bridge.js until its mod collects them (dropped after a minute there). One the
+   * session went away from is lost: say so. One still unseen after TYPING_MAX_MS is forgotten the same way.
+   */
+  sweepBridge(now = Date.now()) {
+    for (const [id, t] of this.turns) {
+      if (!t.bridge.length) continue;
+      const a = this.listAgents().find((x) => x.id === id);
+      const lost = t.bridge.filter((b) => (now - b.at > 65_000 && !a?.bridged) || now - b.at > TYPING_MAX_MS);
+      if (!lost.length) continue;
+      t.bridge = t.bridge.filter((b) => !lost.includes(b));
+      this.say(`${t.name} never picked up your message${lost.length > 1 ? 's' : ''} (the session went away).`);
+    }
   }
 
   // ---------------------------------------------------------------- engine events
@@ -576,6 +610,8 @@ export class TelegramLine {
     if (!e || e.history || e.kind === 'text.delta') return;
     const id = e.agentId;
     if (e.kind === 'removed') {
+      const gone = this.turns.get(id);
+      if (gone && (gone.armed || gone.uuids.size || gone.bridge.length)) this.say(`${gone.name} was stopped or moved before answering your message.`);
       clearTimeout(this.pings.get(id)?.timer);
       this.pings.delete(id); this.turns.delete(id); this.lastText.delete(id); this.lastTurnEnd.delete(id);
       return;
@@ -591,13 +627,19 @@ export class TelegramLine {
         return;
       case 'user.consumed':
         if (!t.uuids.delete(e.uuid)) return;
-        if (e.dropped) this.say(`${this.nameOf(id)} never took your message (${e.dropped}).`);
+        if (e.dropped) this.say(`${t.name} never took your message (${e.dropped}).`);
         else if (!t.armed) { t.armed = true; t.finalText = ''; t.files = []; }
         return;
-      case 'user':
-        // A bridged session: its transcript shows the prompt once the mod has submitted it.
-        if (t.bridgeQueuedAt && !t.armed) { t.bridgeQueuedAt = 0; t.armed = true; t.finalText = ''; t.files = []; }
+      case 'user': {
+        // A bridged session: its transcript shows our prompt once the mod has submitted it. Other prompts (the owner
+        // typing at the desk, a task notification) don't arm; ours folded into a turn that is already armed just
+        // leaves the queue.
+        const seen = t.bridge.find((b) => typeof e.text === 'string' && e.text.includes(b.text.slice(0, 120)));
+        if (!seen) return;
+        t.bridge = t.bridge.filter((b) => b !== seen);
+        if (!t.armed) { t.armed = true; t.finalText = ''; t.files = []; }
         return;
+      }
       case 'text':
         if (t.armed && !e.parentToolUseId) t.finalText = e.text || '';
         return;
@@ -616,7 +658,7 @@ export class TelegramLine {
         return;
       case 'exit':
         if (t.armed || t.uuids.size) {
-          this.say(`${this.nameOf(id)} stopped before answering${e.code != null ? ` (exit code ${e.code})` : ''}.`);
+          this.say(`${t.name} stopped before answering${e.code != null ? ` (exit code ${e.code})` : ''}.`);
           t.armed = false; t.uuids.clear(); t.repliedAt = Date.now();
         }
         return;
