@@ -20,7 +20,7 @@ import { clampText3DInput } from '../../lib/forge/text-3d-object'
 import { applyCraftAnimation } from '../../lib/forge/craft-animation'
 import { useFrameWhen } from '../../lib/use-frame-when'
 import { SharedMaterials } from '../../lib/forge/shared-materials'
-import { buildCraftBatchGeometry, craftBatchMaterialOf, isCraftMergeEnabled, planCraftBatches, subscribeCraftMerge } from '../../lib/forge/craft-merge'
+import { buildCraftBatchGeometry, craftBaseGeometry, craftBatchMaterialOf, isCraftMergeEnabled, planCraftBatches, raycastCraftBatch, subscribeCraftMerge } from '../../lib/forge/craft-merge'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PRIMITIVE GEOMETRY — maps type string to Three.js geometry
@@ -272,9 +272,10 @@ export function CraftedPrimitiveMesh({ primitive }: { primitive: CraftedPrimitiv
       castShadow={!hasOpacity}
       receiveShadow
       material={material ?? undefined}
-    >
-      <PrimitiveGeometry type={primitive.type} />
-    </mesh>
+      // One shared geometry per shape, with its bounding box ready: a hover ray rejects a
+      // long thin primitive by its box instead of walking its triangles.
+      geometry={craftBaseGeometry(primitive.type)}
+    />
   )
 }
 
@@ -309,7 +310,8 @@ function CraftedBatchMesh({ primitives }: { primitives: CraftedPrimitive[] }) {
     }),
   )
 
-  return <mesh geometry={geometry} material={shared ?? undefined} castShadow receiveShadow />
+  // Pointer rays test only the primitives whose box they enter (raycastCraftBatch), not every triangle of the batch.
+  return <mesh geometry={geometry} material={shared ?? undefined} raycast={raycastCraftBatch} castShadow receiveShadow />
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

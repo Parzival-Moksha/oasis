@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 
-import { buildCraftBatchGeometry, craftBatchKey, craftTextureRepeatOf, planCraftBatches } from '../craft-merge'
+import { buildCraftBatchGeometry, craftBatchKey, craftTextureRepeatOf, planCraftBatches, raycastCraftBatch } from '../craft-merge'
 import type { CraftedPrimitive } from '../../conjure/types'
 
 const prim = (over: Partial<CraftedPrimitive> = {}): CraftedPrimitive => ({
@@ -145,5 +145,75 @@ describe('buildCraftBatchGeometry: the baked mesh is the same triangles in the s
   it('an unknown shape is a box, as in the single-mesh renderer', () => {
     const merged = buildCraftBatchGeometry([prim({ type: 'pyramid' as CraftedPrimitive['type'] }), prim()])
     expect(merged.attributes.position.count).toBe(48)
+  })
+})
+
+describe('raycastCraftBatch: same hits as three, without walking every triangle', () => {
+  // A small town: 60 primitives of every shape, some long and thin, scattered and rotated.
+  const types = ['box', 'sphere', 'cylinder', 'cone', 'torus', 'plane', 'capsule'] as const
+  let seed = 7
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647 }
+  const primitives = Array.from({ length: 60 }, (_, i) => prim({
+    type: types[i % types.length],
+    position: [rnd() * 40 - 20, rnd() * 6, rnd() * 40 - 20],
+    rotation: [rnd() * 3, rnd() * 3, rnd() * 3],
+    scale: i % 5 === 0 ? [12, 0.2, 0.3] : [0.5 + rnd() * 3, 0.5 + rnd() * 3, 0.5 + rnd() * 3],
+  }))
+  const geometry = buildCraftBatchGeometry(primitives)
+  const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.FrontSide }))
+  mesh.position.set(3, 1, -2)
+  mesh.rotation.y = 0.4
+  mesh.updateMatrixWorld(true)
+
+  const rays = Array.from({ length: 300 }, () => {
+    const origin = new THREE.Vector3(rnd() * 80 - 40, 2 + rnd() * 20, rnd() * 80 - 40)
+    const target = new THREE.Vector3(rnd() * 40 - 20, rnd() * 4, rnd() * 40 - 20)
+    return new THREE.Raycaster(origin, target.sub(origin).normalize())
+  })
+  const summary = (hits: THREE.Intersection[]) => hits.map(h => h.distance.toFixed(4)).sort()
+
+  it('finds exactly the hits three finds, for 300 rays through a 60-primitive batch', () => {
+    let total = 0
+    for (const raycaster of rays) {
+      const reference: THREE.Intersection[] = []
+      THREE.Mesh.prototype.raycast.call(mesh, raycaster, reference)
+      const fast: THREE.Intersection[] = []
+      raycastCraftBatch.call(mesh, raycaster, fast)
+      expect(summary(fast)).toEqual(summary(reference))
+      total += reference.length
+    }
+    expect(total).toBeGreaterThan(50) // the rays do hit things
+  })
+
+  it('leaves the draw range as it was, and tests far fewer triangles', () => {
+    const tested = { fast: 0, reference: 0 }
+    const original = THREE.Triangle.getInterpolation
+    for (const raycaster of rays.slice(0, 40)) {
+      const fast: THREE.Intersection[] = []
+      raycastCraftBatch.call(mesh, raycaster, fast)
+    }
+    expect(geometry.drawRange.start).toBe(0)
+    expect(geometry.drawRange.count).toBe(Infinity)
+    expect(THREE.Triangle.getInterpolation).toBe(original)
+    // Count triangle tests through the index reads each path makes.
+    const index = geometry.index!
+    const getX = index.getX.bind(index)
+    let reads = 0
+    index.getX = (i: number) => { reads += 1; return getX(i) }
+    for (const raycaster of rays.slice(0, 40)) THREE.Mesh.prototype.raycast.call(mesh, raycaster, [])
+    tested.reference = reads
+    reads = 0
+    for (const raycaster of rays.slice(0, 40)) raycastCraftBatch.call(mesh, raycaster, [])
+    tested.fast = reads
+    index.getX = getX
+    expect(tested.fast).toBeLessThan(tested.reference / 5)
+  })
+
+  it('a batch without its part list falls back to three', () => {
+    const plain = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1))
+    plain.updateMatrixWorld(true)
+    const hits: THREE.Intersection[] = []
+    raycastCraftBatch.call(plain, new THREE.Raycaster(new THREE.Vector3(0, 0, 5), new THREE.Vector3(0, 0, -1)), hits)
+    expect(hits.length).toBe(2)
   })
 })

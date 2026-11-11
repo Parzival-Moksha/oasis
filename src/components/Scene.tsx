@@ -134,6 +134,17 @@ const SHOW_LEGACY_PARZIVAL_PANEL = false
 // position from before lock was acquired. This forces raycasting from screen center (0,0)
 // so selection/highlighting aligns with the crosshair, not an arbitrary offset.
 
+/** A plain mouse-look move under pointer lock: no button held, no crosshair tool (paint, terrain brush, placement) open. */
+function lockedPointerMoveNeedsNoRay(event: PointerEvent): boolean {
+  if (event.type !== 'pointermove' || event.buttons !== 0) return false
+  // Dev switch for before/after measurements: window.__oasisKeepLockedHoverRays = true
+  if ((window as unknown as { __oasisKeepLockedHoverRays?: boolean }).__oasisKeepLockedHoverRays) return false
+  const store = useOasisStore.getState()
+  if (store.paintMode || store.terrainBrushPanelOpen || store.placementPending) return false
+  const input = useInputManager.getState().inputState
+  return input === 'third-person' || input === 'noclip'
+}
+
 function PointerLockRaycaster() {
   const get = useThree(s => s.get)
   const set = useThree(s => s.set)
@@ -145,6 +156,14 @@ function PointerLockRaycaster() {
         compute: (event, state) => {
           // When pointer is locked, force raycasting from screen center (crosshair)
           if (document.pointerLockElement) {
+            // Mouse-look: every mouse move is a pointermove, and R3F answers each with a ray
+            // through every hoverable object. Under the lock every hover handler returns at
+            // once, so the ray is wasted; skip it (a null camera makes R3F skip the raycast)
+            // unless a tool that follows the crosshair is open or a button is held.
+            if (lockedPointerMoveNeedsNoRay(event as PointerEvent)) {
+              state.raycaster.camera = null as unknown as THREE.Camera
+              return
+            }
             state.pointer.set(0, 0)
           } else {
             // Default R3F behavior — compute NDC from event offset

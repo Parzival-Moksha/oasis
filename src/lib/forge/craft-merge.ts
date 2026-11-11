@@ -124,8 +124,29 @@ function baseGeometry(type: string): THREE.BufferGeometry {
     case 'capsule': geometry = new THREE.CapsuleGeometry(0.3, 0.5, 8, 16); break
     default: geometry = new THREE.BoxGeometry(1, 1, 1)
   }
+  geometry.computeBoundingBox()
   BASE_GEOMETRY.set(type, geometry)
   return geometry
+}
+
+/** The shared, never-disposed geometry of a primitive shape (for single meshes: one GPU buffer per shape, bounds ready for ray tests). */
+export function craftBaseGeometry(type: string): THREE.BufferGeometry {
+  return baseGeometry(type)
+}
+
+/**
+ * Where each primitive sits inside a batch geometry, for ray tests: a ray is first tested against
+ * each primitive's own box (in the primitive's unit space, so a long thin wall is a tight box,
+ * not a huge sphere), and only the triangles of the primitives it enters are tested.
+ */
+export interface CraftBatchParts {
+  /** World-of-the-batch → the primitive's unit space. */
+  inverse: THREE.Matrix4[]
+  /** The primitive's shape bounds in its unit space. */
+  box: THREE.Box3[]
+  /** Its triangles: a range of the batch's index buffer. */
+  start: number[]
+  count: number[]
 }
 
 const _matrix = new THREE.Matrix4()
@@ -141,13 +162,21 @@ const _color = new THREE.Color()
  */
 export function buildCraftBatchGeometry(primitives: readonly CraftedPrimitive[]): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = []
+  const rayParts: CraftBatchParts = { inverse: [], box: [], start: [], count: [] }
+  let indexAt = 0
   for (const primitive of primitives) {
-    const part = baseGeometry(primitive.type).clone()
+    const base = baseGeometry(primitive.type)
+    const part = base.clone()
     const rotation = primitive.rotation || [0, 0, 0]
     _position.set(primitive.position[0], primitive.position[1], primitive.position[2])
     _quaternion.setFromEuler(_euler.set(rotation[0], rotation[1], rotation[2]))
     _scale.set(primitive.scale[0], primitive.scale[1], primitive.scale[2])
     part.applyMatrix4(_matrix.compose(_position, _quaternion, _scale))
+    rayParts.inverse.push(_matrix.clone().invert())
+    rayParts.box.push(base.boundingBox!.clone().expandByScalar(1e-4))
+    rayParts.start.push(indexAt)
+    rayParts.count.push(base.index!.count)
+    indexAt += base.index!.count
 
     const count = part.attributes.position.count
     _color.set('#ffffff').set(primitive.color)
@@ -171,7 +200,47 @@ export function buildCraftBatchGeometry(primitives: readonly CraftedPrimitive[])
   if (!merged) throw new Error('craft-merge: the batch could not be merged')
   merged.computeBoundingBox()
   merged.computeBoundingSphere()
+  merged.userData.craftParts = rayParts
   return merged
+}
+
+/** Off: three's own every-triangle test (for before/after measurements). */
+let fastRaycast = true
+
+const _sphere = new THREE.Sphere()
+const _inverse = new THREE.Matrix4()
+const _localRay = new THREE.Ray()
+const _partRay = new THREE.Ray()
+
+/**
+ * `raycast` for a batch mesh. Same hits as three's own (it runs three's triangle test), but only
+ * over the primitives whose box the ray enters. three's own test would walk every triangle of
+ * the batch on every pointer move: a hover ray cost tens of milliseconds in a big world.
+ */
+export function raycastCraftBatch(this: THREE.Mesh, raycaster: THREE.Raycaster, intersects: THREE.Intersection[]): void {
+  const geometry = this.geometry
+  const parts = geometry.userData.craftParts as CraftBatchParts | undefined
+  if (!parts || !fastRaycast) {
+    THREE.Mesh.prototype.raycast.call(this, raycaster, intersects)
+    return
+  }
+  if (geometry.boundingSphere === null) geometry.computeBoundingSphere()
+  _sphere.copy(geometry.boundingSphere!).applyMatrix4(this.matrixWorld)
+  if (!raycaster.ray.intersectsSphere(_sphere)) return
+  _localRay.copy(raycaster.ray).applyMatrix4(_inverse.copy(this.matrixWorld).invert())
+  const range = geometry.drawRange
+  const keepStart = range.start, keepCount = range.count
+  try {
+    for (let i = 0; i < parts.start.length; i++) {
+      if (!_partRay.copy(_localRay).applyMatrix4(parts.inverse[i]).intersectsBox(parts.box[i])) continue
+      range.start = parts.start[i]
+      range.count = parts.count[i]
+      THREE.Mesh.prototype.raycast.call(this, raycaster, intersects)
+    }
+  } finally {
+    range.start = keepStart
+    range.count = keepCount
+  }
 }
 
 // ── On/off, for before/after measurements and as an escape hatch ────────────────────────────────
@@ -198,5 +267,6 @@ if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
   ;(window as unknown as Record<string, unknown>).__oasisCraftMerge = {
     enabled: () => mergeEnabled,
     setEnabled: (enabled: boolean) => setCraftMergeEnabled(enabled),
+    setFastRaycast: (enabled: boolean) => { fastRaycast = enabled },
   }
 }
