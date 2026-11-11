@@ -22,6 +22,7 @@ import { loadRoster, saveRoster, saveRosterNow } from './roster.js';
 import { resolveClaude } from './claude.js';
 import { listen as earsListen, warmEars, earsStatus, stopEars } from './ears.js';
 import { serveAttachment } from './files.js';
+import { startTelegram } from './telegram.js';
 import fs from 'node:fs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -36,6 +37,7 @@ const agents = new Map(); // id -> Agent | Observer | HookObserver
 const backlog = new Map(); // id -> events[]
 const clients = new Set();
 let snapshotTimer = null;
+let telegram = null; // the owner's Telegram line (telegram.js), only in the real engine
 
 const hub = {
   emit(agentId, kind, payload = {}) {
@@ -44,6 +46,7 @@ const hub = {
       // The agent is gone: drop its backlog and announce it once.
       backlog.delete(agentId);
       broadcast({ type: 'event', event });
+      telegram?.onEvent(event);
       return;
     }
     // Late events of a removed agent (a killed process exiting) would recreate its backlog forever.
@@ -59,6 +62,7 @@ const hub = {
       if (list.length > BACKLOG) list.splice(0, list.length - BACKLOG);
     }
     broadcast({ type: 'event', event });
+    telegram?.onEvent(event);
     if (/^(status|init|meta|model|mode|effort|eyes|context|exit|permission\.)/.test(kind)) scheduleSnapshot();
   },
   eyes: (agentId) => captureEyes(agentId),
@@ -228,6 +232,8 @@ const commands = {
   unobserve({ agentId }) { return commands.kill({ agentId }); },
 
   history({ agentId }) { return backlog.get(agentId) || []; },
+  /** The Telegram line's state; {pings: true|false} switches pings. */
+  telegram(args) { return telegram ? telegram.command(args) : { enabled: false }; },
 
   /**
    * The session's past before `before` (a transcript byte offset from an event's `at`; null = the end of the file), or
@@ -498,6 +504,7 @@ function shutdown(sig) {
   hub.log(`${sig}: stopping ${ownedAgents().length} agent(s)`);
   saveRosterNow(ROSTER_FILE, ownedAgents().map((a) => a.rosterEntry()));
   stopEars();
+  telegram?.stop();
   for (const a of agents.values()) { if (a.kind === 'owned') a.kill(); else a.stop?.(); }
   setTimeout(() => {
     for (const a of ownedAgents()) a.proc?.kill();
@@ -512,4 +519,5 @@ process.on('exit', () => { for (const a of ownedAgents()) { try { a.proc?.kill()
 server.listen(PORT, HOST, () => {
   hub.log(`Oasis agent engine on http://${HOST}:${PORT}  (ws /ws)  claude: ${resolveClaude().how}`);
   restoreRoster();
+  telegram = startTelegram({ port: PORT, root: ROOT, log: hub.log, listAgents: snapshots, send: (agentId, text) => commands.send({ agentId, text }), interrupt: (agentId) => commands.interrupt({ agentId }) });
 });

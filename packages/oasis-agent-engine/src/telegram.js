@@ -1,0 +1,704 @@
+// Telegram: the owner's phone line to the village, through the bot in data/anorak-pro-telegram.local.json (@anorakprobot).
+// The engine is the bot's one getUpdates consumer (Telegram allows only one); the Next app keeps `pollingEnabled: false`
+// in that file and only sends. Our own offset and settings: data/agent-engine-telegram.local.json.
+//
+//   in   only the owner's chat (chatId); everything else is ignored.
+//        "Tyler: fix the intro" or "@tyler fix the intro" -> the agent whose name starts with that (case-insensitive);
+//        "Tyler, fix the intro" too when the name is known (voice notes come out like that). No name -> Anorak.
+//        /agents (names + status), /pings on|off, /stop [name], /help. Voice notes -> ElevenLabs Scribe -> like text.
+//   out  when a turn that a Telegram message started ends: its final text (name first unless it's Anorak, split at 4096)
+//        and the files it sent with SendUserFile (photos or documents).
+//        Pings: an agent at needs-decision (amber) or error (red) for PING_MS (2 min) gets one short message per state.
+//
+// Runs only in the real engine (port 4530) unless OASIS_TELEGRAM=1; OASIS_TELEGRAM=0 turns it off. Test engines on other
+// ports never touch the bot. The token never reaches a log line, a message or an error text (redact()).
+import fs from 'node:fs';
+import fsp from 'node:fs/promises';
+import path from 'node:path';
+import { attachmentFile } from './files.js';
+
+export const TG_MAX = 4096;
+export const PING_MS = 2 * 60_000;
+const CHUNK = 3800; // markdown source per message; HTML tags and escapes need some room under 4096
+const PHOTO_MAX = 10 * 1024 * 1024;
+const DOC_MAX = 50 * 1024 * 1024;
+const VOICE_MAX = 20 * 1024 * 1024; // the Bot API's getFile limit
+const TYPING_MAX_MS = 30 * 60_000;
+const SCRIBE_API = 'https://api.elevenlabs.io/v1/speech-to-text';
+const SCRIBE_ENV = 'C:/cb_video/claude/.env'; // where C:/8f_dirk/scribe.py reads ELEVENLABS_API_KEY
+
+export const STATUS_EMOJI = { working: '🟢', waiting: '🔵', 'needs-decision': '🟠', error: '🔴', idle: '⚪' };
+
+// ------------------------------------------------------------------ pure helpers (unit-tested)
+/** "Og's ward" -> "ogsward", "WG kereső" -> "wgkereso": what a typed or spoken name is compared on. */
+export function normName(s) {
+  return String(s || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+/** Agents the owner can write to: owned ones, and watched sessions whose Oasis mod is connected (bridge.js). */
+export function canTalk(a) { return !!a && (a.kind === 'owned' || a.bridged === true); }
+
+export function isAnorak(a) { return /anorak/i.test(a?.name || ''); }
+
+/** Anorak: the talkable agent whose name says Anorak (an owned one, and a plain "Anorak", first). */
+export function defaultAgent(agents) {
+  const list = agents.filter((a) => isAnorak(a) && canTalk(a));
+  list.sort((a, b) => Number(b.kind === 'owned') - Number(a.kind === 'owned') || Number(normName(b.name) === 'anorak') - Number(normName(a.name) === 'anorak'));
+  return list[0] || null;
+}
+
+/** Exact name first, else every agent whose name starts with it; talkable ones win a tie. */
+export function findAgents(token, agents) {
+  const t = normName(token);
+  if (!t) return [];
+  const exact = agents.filter((a) => normName(a.name) === t);
+  const found = exact.length ? exact : agents.filter((a) => normName(a.name).startsWith(t));
+  if (found.length > 1) {
+    const talk = found.filter(canTalk);
+    if (talk.length) return talk;
+  }
+  return found;
+}
+
+/**
+ * Where a message goes.
+ * -> {kind:'command', command, arg} | {kind:'agent', agent, text} | {kind:'default', text}
+ *  | {kind:'unknown', name} | {kind:'ambiguous', name, matches} | {kind:'empty'}
+ */
+export function parseRoute(raw, agents) {
+  const text = String(raw || '').trim();
+  if (!text) return { kind: 'empty' };
+  const cmd = text.match(/^\/([a-z_]+)(?:@\w+)?(?:\s+([\s\S]*))?$/i);
+  if (cmd) return { kind: 'command', command: cmd[1].toLowerCase(), arg: (cmd[2] || '').trim() };
+  const pick = (name, rest, { strict, minLen = 1 }) => {
+    if (normName(name).length < minLen) return null;
+    const found = findAgents(name, agents);
+    if (found.length === 1) return rest.trim() ? { kind: 'agent', agent: found[0], text: rest.trim() } : { kind: 'empty' };
+    if (!strict) return null;
+    return found.length ? { kind: 'ambiguous', name: name.trim(), matches: found } : { kind: 'unknown', name: name.trim() };
+  };
+  // "@tyler fix the intro" (also "@tyler: ..." and "@tyler, ...")
+  let m = text.match(/^@([^\s:,]+)[:,]?\s*([\s\S]*)$/);
+  if (m) return pick(m[1], m[2], { strict: true });
+  // "Tyler: fix the intro". A colon needs a space after it, so "https://..." and "10:30" are not names. An unknown
+  // one-word name gets the list back; an unknown longer one ("Here's the thing: ...") is just a sentence for Anorak.
+  m = text.match(/^([^:\n]{1,40}):\s+([\s\S]+)$/);
+  if (m) {
+    const r = pick(m[1], m[2], { strict: /^\S+$/.test(m[1].trim()) });
+    if (r) return r;
+  }
+  // "Tyler, fix the intro" / "Hey Tyler, ..." (how a voice note comes out): only a known name, at least 3 letters.
+  m = text.match(/^(?:(?:hey|hi|hello|ok|okay|so)[,\s]+)?([^,.!?:\n]{1,40})[,.!?]\s+([\s\S]+)$/i);
+  if (m) {
+    const r = pick(m[1], m[2], { strict: false, minLen: 3 });
+    if (r) return r;
+  }
+  return { kind: 'default', text };
+}
+
+/** One line per agent: colour dot, name, status. */
+export function agentListText(agents) {
+  if (!agents.length) return 'Nobody in the village right now.';
+  const line = (a) => {
+    const st = a.status === 'needs-decision' ? `needs you${a.statusReason ? ` (${a.statusReason})` : ''}` : a.status || 'idle';
+    return `${STATUS_EMOJI[a.status] || '⚪'} ${a.name || a.id} · ${st}${canTalk(a) ? '' : ' · watching only'}`;
+  };
+  return agents.map(line).join('\n');
+}
+
+export const HELP = [
+  'Write anything: it goes to Anorak.',
+  '"Tyler: fix the intro" or "@tyler fix the intro" goes to that agent.',
+  'Voice notes work the same way.',
+  '/agents  who is in the village',
+  '/stop [name]  interrupt a turn (Anorak without a name)',
+  '/pings on|off  messages when an agent waits for you for 2 minutes',
+].join('\n');
+
+/** Split for Telegram: at a blank line, else a line break, else a space; a ``` block cut in two is closed and reopened. */
+export function chunkText(text, max = CHUNK) {
+  const out = [];
+  let rest = String(text || '');
+  let reopen = '';
+  while (rest.length) {
+    rest = reopen + rest;
+    reopen = '';
+    if (rest.length <= max) { out.push(rest); break; }
+    const room = max - 8; // space for a closing fence
+    let cut = rest.lastIndexOf('\n\n', room);
+    if (cut < room * 0.5) cut = rest.lastIndexOf('\n', room);
+    if (cut < room * 0.5) cut = rest.lastIndexOf(' ', room);
+    if (cut < room * 0.5) cut = room;
+    let piece = rest.slice(0, cut).replace(/\s+$/, '');
+    rest = rest.slice(cut).replace(/^\s+/, '');
+    if ((piece.match(/```/g) || []).length % 2 === 1) { piece += '\n```'; reopen = '```\n'; }
+    out.push(piece);
+  }
+  return out.filter((s) => s.trim());
+}
+
+export function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function inlineHtml(s) {
+  return s.split(/(`[^`\n]+`)/).map((part) => {
+    if (/^`[^`\n]+`$/.test(part)) return `<code>${escapeHtml(part.slice(1, -1))}</code>`;
+    return escapeHtml(part)
+      .replace(/^#{1,6}\s+(.+)$/gm, '<b>$1</b>')
+      .replace(/^(\s*)[-*]\s+/gm, '$1• ')
+      .replace(/\*\*([^*\n]+?)\*\*/g, '<b>$1</b>')
+      .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2">$1</a>');
+  }).join('');
+}
+
+/** The bits of an agent's markdown that Telegram's HTML mode shows well: code, code blocks, bold, headings, links. */
+export function mdToHtml(md) {
+  return String(md || '').split('```').map((part, i) => (i % 2
+    ? `<pre>${escapeHtml(part.replace(/^[\w+.-]*\n/, '').replace(/\n$/, ''))}</pre>`
+    : inlineHtml(part))).join('');
+}
+
+const plainMd = (s) => String(s || '').replace(/\*\*/g, '').replace(/`/g, '').replace(/\s+/g, ' ').trim();
+const clipLine = (s, n) => { const t = plainMd(s); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
+
+/** The last question in a text (a line ending in "?", its last sentence), else its end. */
+export function lastQuestion(text) {
+  const lines = String(text || '').split(/\n+/).map((s) => s.trim()).filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].replace(/\*+\s*$/, '');
+    if (!/\?\s*$/.test(line)) continue;
+    const sentences = line.match(/[^.!?]+[.!?]+/g) || [line];
+    let q = sentences[sentences.length - 1];
+    // Keep the sentence before when the question is short or a question too ("Push it? Or wait?" reads better whole)
+    const before = sentences[sentences.length - 2];
+    if (before && (q.length < 20 || /\?\s*$/.test(before))) q = sentences.slice(-2).join('');
+    return q.trim();
+  }
+  const all = lines.join(' ');
+  return all.length > 300 ? `…${all.slice(-300)}` : all;
+}
+
+/** "🟠 Tyler needs you: allow Bash: npm test?" / "🔴 Tyler is stuck: claude exited (code 1)". */
+export function pingText(a, { lastText = '', lastTurnEnd = null } = {}) {
+  const name = a.name || a.id;
+  if (a.status === 'error') return `🔴 ${name} is stuck: ${clipLine(a.statusReason || 'an error', 300)}`;
+  const req = a.permissions?.[0];
+  let what;
+  if (req?.requestKind === 'question') what = req.input?.questions?.[0]?.question || 'it has a question';
+  else if (req?.requestKind === 'plan') what = 'a plan to approve';
+  else if (req) {
+    // summarizeTool already starts with the tool's name ("Write src/x.ts", "Bash: npm test")
+    const s = String(req.summary || '');
+    what = `allow ${s && req.toolName && s.startsWith(req.toolName) ? s : `${req.toolName || 'a tool'}${s ? `: ${s}` : ''}`}?`;
+  }
+  else if (a.statusReason === 'permission-denied') {
+    const d = lastTurnEnd?.permissionDenials?.[0];
+    what = d?.toolName ? `${d.toolName} was blocked and needs your OK` : 'a blocked tool needs your OK';
+  } else what = lastText ? lastQuestion(lastText) : (a.statusReason || 'a decision');
+  return `🟠 ${name} needs you: ${clipLine(what, 400)}`;
+}
+
+/** ELEVENLABS_API_KEY from the environment, else from the file scribe.py reads. Never logged. */
+export function readScribeKey(file = process.env.OASIS_SCRIBE_ENV || SCRIBE_ENV) {
+  if (process.env.ELEVENLABS_API_KEY) return process.env.ELEVENLABS_API_KEY.trim();
+  try {
+    const m = fs.readFileSync(file, 'utf8').match(/^\s*ELEVENLABS_API_KEY\s*=\s*(.*)$/m);
+    return m ? m[1].trim().replace(/^["']|["']$/g, '') : '';
+  } catch { return ''; }
+}
+
+const sleep = (ms, signal) => new Promise((resolve) => {
+  const t = setTimeout(resolve, ms);
+  signal?.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
+});
+const stripBom = (s) => s.replace(/^\uFEFF/, '');
+const hhmm = (ms) => new Date(ms).toTimeString().slice(0, 5);
+
+// ------------------------------------------------------------------ the bot
+export class TelegramLine {
+  /**
+   * @param {{
+   *   configFile: string, stateFile: string, apiBase?: string, pollTimeoutS?: number, pingMs?: number,
+   *   listAgents: () => any[], send: (agentId: string, text: string) => Promise<any>|any,
+   *   interrupt?: (agentId: string) => Promise<any>|any, fileFor?: (id: string) => ({path:string,isImage:boolean}|null),
+   *   scribeApi?: string, scribeKey?: () => string, log?: (...a: any[]) => void,
+   * }} o
+   */
+  constructor(o) {
+    this.configFile = o.configFile;
+    this.stateFile = o.stateFile;
+    this.apiBase = (o.apiBase || 'https://api.telegram.org').replace(/\/$/, '');
+    this.pollTimeoutS = o.pollTimeoutS ?? 25;
+    this.pingMs = o.pingMs ?? PING_MS;
+    this.listAgents = o.listAgents;
+    this.sendToAgent = o.send;
+    this.interruptAgent = o.interrupt || null;
+    this.fileFor = o.fileFor || attachmentFile;
+    this.scribeApi = o.scribeApi || process.env.OASIS_SCRIBE_API || SCRIBE_API;
+    this.scribeKey = o.scribeKey || (() => readScribeKey());
+    this.rawLog = o.log || ((...a) => console.log(...a));
+    this.state = this.loadState(); // {offset, pings}
+    this.cfg = this.readConfig();
+    this.turns = new Map(); // agentId -> {expect:Set<text>, uuids:Set, bridgeQueuedAt, armed, finalText, files[], captions:Map, repliedAt, since}
+    this.pings = new Map(); // agentId -> {status, since, timer}
+    this.lastText = new Map(); // agentId -> last main-thread text (ping summaries)
+    this.lastTurnEnd = new Map();
+    this.outbox = Promise.resolve();
+    this.running = false;
+    this.abort = null;
+    this.typingTimer = null;
+    this.stats = { lastPollAt: null, lastOkAt: null, lastError: null, received: 0, pinged: 0 };
+  }
+
+  // ---------------------------------------------------------------- plumbing
+  redact(s) {
+    let out = String(s ?? '');
+    const t = this.cfg?.token;
+    if (t) out = out.split(t).join('<token>').split(encodeURIComponent(t)).join('<token>');
+    return out;
+  }
+
+  log(...a) { this.rawLog(this.redact(`telegram: ${a.join(' ')}`)); }
+
+  readConfig() {
+    try {
+      const c = JSON.parse(stripBom(fs.readFileSync(this.configFile, 'utf8')));
+      const token = String(c.botToken || '').trim();
+      const chatId = String(c.chatId || '').trim();
+      return { ok: c.enabled !== false && !!token && !!chatId, token, chatId, nextPolls: c.pollingEnabled === true };
+    } catch (e) {
+      return { ok: false, token: '', chatId: '', error: e.code === 'ENOENT' ? 'no config file' : 'unreadable config' };
+    }
+  }
+
+  loadState() {
+    try {
+      const s = JSON.parse(stripBom(fs.readFileSync(this.stateFile, 'utf8')));
+      return { offset: Number(s.offset) || 0, pings: s.pings !== false };
+    } catch { return { offset: 0, pings: true }; }
+  }
+
+  saveState() {
+    try {
+      fs.mkdirSync(path.dirname(this.stateFile), { recursive: true });
+      const tmp = `${this.stateFile}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify({ offset: this.state.offset, pings: this.state.pings, updatedAt: new Date().toISOString() }, null, 2));
+      fs.renameSync(tmp, this.stateFile);
+    } catch (e) { this.log(`saving ${this.stateFile} failed: ${e.message}`); }
+  }
+
+  async api(method, params = {}, { timeoutMs = 30_000, signal } = {}) {
+    const url = `${this.apiBase}/bot${this.cfg.token}/${method}`;
+    const signals = [AbortSignal.timeout(timeoutMs), signal].filter(Boolean);
+    let res;
+    try {
+      res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(params), signal: AbortSignal.any(signals) });
+    } catch (e) {
+      throw new Error(this.redact(`${method}: ${e.name === 'TimeoutError' ? 'timed out' : e.name === 'AbortError' ? 'stopped' : e.cause?.code || e.message}`));
+    }
+    return this.parse(method, res);
+  }
+
+  async parse(method, res) {
+    const data = await res.json().catch(() => ({ ok: false, description: `HTTP ${res.status}` }));
+    if (data.ok) return data.result;
+    const err = new Error(this.redact(`${method}: ${data.description || `HTTP ${res.status}`}`));
+    err.code = data.error_code || res.status;
+    err.retryAfter = data.parameters?.retry_after || 0;
+    throw err;
+  }
+
+  async upload(method, field, filePath, extra = {}) {
+    const form = new FormData();
+    for (const [k, v] of Object.entries(extra)) if (v != null && v !== '') form.append(k, String(v));
+    form.append(field, new Blob([await fsp.readFile(filePath)]), path.basename(filePath));
+    let res;
+    try {
+      res = await fetch(`${this.apiBase}/bot${this.cfg.token}/${method}`, { method: 'POST', body: form, signal: AbortSignal.timeout(120_000) });
+    } catch (e) { throw new Error(this.redact(`${method}: ${e.message}`)); }
+    return this.parse(method, res);
+  }
+
+  /** Everything outgoing goes through one queue, so messages arrive in the order they were made. */
+  queue(job) {
+    const run = this.outbox.then(async () => {
+      try { return await job(); } catch (e) {
+        if (e.code === 429 && e.retryAfter) { await sleep(e.retryAfter * 1000); return await job(); }
+        throw e;
+      }
+    });
+    this.outbox = run.catch((e) => this.log(`send failed: ${e.message}`));
+    return run;
+  }
+
+  /** Plain text to the owner, split if long. */
+  say(text) {
+    for (const piece of chunkText(text, TG_MAX)) {
+      void this.queue(() => this.api('sendMessage', { chat_id: this.cfg.chatId, text: piece, link_preview_options: { is_disabled: true } }));
+    }
+  }
+
+  /** An agent's markdown: HTML mode where it parses, plain text where it doesn't. `head` (a name) goes in front, bold. */
+  sayMarkdown(md, head = '') {
+    chunkText(md, CHUNK).forEach((piece, i) => {
+      const lead = i === 0 && head;
+      const html = `${lead ? `<b>${escapeHtml(head)}</b>\n` : ''}${mdToHtml(piece)}`;
+      const plain = `${lead ? `${head}:\n` : ''}${piece}`;
+      void this.queue(async () => {
+        const base = { chat_id: this.cfg.chatId, link_preview_options: { is_disabled: true } };
+        if (html.length <= TG_MAX) {
+          try { return await this.api('sendMessage', { ...base, text: html, parse_mode: 'HTML' }); } catch (e) {
+            if (e.code !== 400) throw e;
+          }
+        }
+        return this.api('sendMessage', { ...base, text: plain.slice(0, TG_MAX) });
+      });
+    });
+  }
+
+  /** A file an agent sent: pictures as photos (a document if Telegram refuses the photo), the rest as documents. */
+  sendFile(f) {
+    return this.queue(async () => {
+      const known = this.fileFor(f.id);
+      if (!known) return this.api('sendMessage', { chat_id: this.cfg.chatId, text: `(file no longer available: ${f.name})` });
+      let size = 0;
+      try { size = (await fsp.stat(known.path)).size; } catch { return this.api('sendMessage', { chat_id: this.cfg.chatId, text: `(file is gone: ${f.name})` }); }
+      const caption = f.caption ? String(f.caption).slice(0, 1000) : undefined;
+      if (known.isImage && size <= PHOTO_MAX) {
+        try { return await this.upload('sendPhoto', 'photo', known.path, { chat_id: this.cfg.chatId, caption }); } catch (e) {
+          if (e.code !== 400) throw e;
+        }
+      }
+      if (size > DOC_MAX) return this.api('sendMessage', { chat_id: this.cfg.chatId, text: `(${f.name} is ${Math.round(size / 1e6)} MB, too big for Telegram)` });
+      return this.upload('sendDocument', 'document', known.path, { chat_id: this.cfg.chatId, caption });
+    });
+  }
+
+  // ---------------------------------------------------------------- polling
+  start() {
+    if (this.running) return this;
+    this.running = true;
+    this.abort = new AbortController();
+    void this.loop();
+    return this;
+  }
+
+  stop() {
+    this.running = false;
+    this.abort?.abort();
+    clearInterval(this.typingTimer);
+    this.typingTimer = null;
+    for (const p of this.pings.values()) clearTimeout(p.timer);
+  }
+
+  async loop() {
+    let backoff = 1000;
+    let said409 = false;
+    this.log(`polling (pings ${this.state.pings ? 'on' : 'off'}, offset ${this.state.offset || 'none'})`);
+    while (this.running) {
+      this.cfg = this.readConfig();
+      if (!this.cfg.ok) {
+        this.stats.lastError = this.cfg.error || 'disabled in the config (enabled, botToken, chatId)';
+        await sleep(30_000, this.abort.signal);
+        continue;
+      }
+      try {
+        this.stats.lastPollAt = Date.now();
+        const params = { timeout: this.pollTimeoutS, allowed_updates: ['message'] };
+        if (this.state.offset) params.offset = this.state.offset;
+        const updates = await this.api('getUpdates', params, { timeoutMs: (this.pollTimeoutS + 15) * 1000, signal: this.abort.signal });
+        this.stats.lastOkAt = Date.now();
+        this.stats.lastError = null;
+        backoff = 1000;
+        said409 = false;
+        for (const u of updates || []) {
+          // Confirm first: a message that crashes its handler is not handled again at every restart.
+          this.state.offset = u.update_id + 1;
+          this.saveState();
+          try { await this.onUpdate(u); } catch (e) { this.log(`update ${u.update_id} failed: ${e.message}`); }
+        }
+      } catch (e) {
+        if (!this.running) break;
+        this.stats.lastError = e.message;
+        if (e.code === 409) {
+          // Another getUpdates consumer (the Next app with pollingEnabled, the old sidecar) or a webhook.
+          if (!said409) this.log(`${e.message}: another poller or a webhook holds this bot${this.cfg.nextPolls ? ' (pollingEnabled is true in the config: the Next app polls too)' : ''}; retrying every 30 s`);
+          said409 = true;
+          await sleep(30_000, this.abort.signal);
+        } else {
+          this.log(`poll error: ${e.message}; retry in ${Math.round(backoff / 1000)} s`);
+          await sleep(backoff, this.abort.signal);
+          backoff = Math.min(backoff * 2, 60_000);
+        }
+      }
+    }
+  }
+
+  async onUpdate(u) {
+    const m = u.message;
+    if (!m) return;
+    if (String(m.chat?.id) !== this.cfg.chatId) {
+      this.log(`ignored a message from chat ${m.chat?.id} (${m.from?.username || 'no username'})`);
+      return;
+    }
+    this.stats.received++;
+    const sentAt = (m.date || 0) * 1000;
+    const late = sentAt && Date.now() - sentAt > 10 * 60_000 ? sentAt : 0;
+    if (m.voice || m.audio || m.video_note) return this.onVoice(m, late);
+    const text = m.text ?? m.caption;
+    if (!text) { this.say('I can take text and voice notes for now.'); return; }
+    return this.handleText(text, { late });
+  }
+
+  async onVoice(m, late) {
+    const v = m.voice || m.audio || m.video_note;
+    const key = this.scribeKey();
+    if (!key) { this.say("Voice notes aren't wired yet (no ElevenLabs key)."); return; }
+    if (v.file_size > VOICE_MAX) { this.say('That voice note is too long for me (20 MB at most).'); return; }
+    let text;
+    try {
+      const file = await this.api('getFile', { file_id: v.file_id });
+      const res = await fetch(`${this.apiBase}/file/bot${this.cfg.token}/${file.file_path}`, { signal: AbortSignal.timeout(60_000) });
+      if (!res.ok) throw new Error(`download: HTTP ${res.status}`);
+      const audio = Buffer.from(await res.arrayBuffer());
+      text = await this.transcribe(audio, path.basename(file.file_path || 'voice.ogg'), v.mime_type || 'audio/ogg', key);
+    } catch (e) {
+      this.log(`voice note failed: ${e.message}`);
+      this.say(`I couldn't transcribe that voice note (${this.redact(e.message).slice(0, 200)}).`);
+      return;
+    }
+    if (!text) { this.say("Heard nothing I could make out."); return; }
+    this.say(`heard: ${text.length > 300 ? `${text.slice(0, 299)}…` : text}`);
+    return this.handleText(text, { voice: true, late });
+  }
+
+  /** ElevenLabs Scribe (scribe_v2, as in C:/8f_dirk/scribe.py), with the village's names as key terms. */
+  async transcribe(audio, name, mime, key) {
+    const form = new FormData();
+    form.append('model_id', 'scribe_v2');
+    form.append('tag_audio_events', 'false');
+    const terms = new Set(['Anorak', 'Oasis']);
+    for (const a of this.listAgents()) if (a.name && a.name.length <= 40) terms.add(a.name);
+    for (const t of [...terms].slice(0, 40)) form.append('keyterms', t);
+    form.append('file', new Blob([audio], { type: mime }), name);
+    const res = await fetch(this.scribeApi, { method: 'POST', headers: { 'xi-api-key': key }, body: form, signal: AbortSignal.timeout(120_000) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(`Scribe ${res.status}: ${String(data?.detail?.message || data?.detail || '').slice(0, 160)}`);
+    return String(data.text || '').trim();
+  }
+
+  // ---------------------------------------------------------------- routing
+  async handleText(text, { voice = false, late = 0 } = {}) {
+    const agents = this.listAgents();
+    const r = parseRoute(text, agents);
+    switch (r.kind) {
+      case 'empty': return undefined;
+      case 'command': return this.onCommand(r.command, r.arg, agents);
+      case 'unknown': return this.say(`No agent called "${r.name}". Here's who's around:\n${agentListText(agents)}`);
+      case 'ambiguous': return this.say(`"${r.name}" could be ${r.matches.map((a) => a.name).join(' or ')}. Here's who's around:\n${agentListText(agents)}`);
+      case 'agent': return this.deliver(r.agent, r.text, { voice, late });
+      default: {
+        const anorak = defaultAgent(agents);
+        if (!anorak) return this.say(`Anorak isn't in the village right now. Name someone ("Tyler: ...").\n${agentListText(agents)}`);
+        return this.deliver(anorak, r.text, { voice, late });
+      }
+    }
+  }
+
+  async onCommand(command, arg, agents) {
+    switch (command) {
+      case 'agents': return this.say(agentListText(agents));
+      case 'start': case 'help': return this.say(HELP);
+      case 'pings': {
+        if (/^(on|off|yes|no|1|0)$/i.test(arg)) {
+          this.state.pings = /^(on|yes|1)$/i.test(arg);
+          this.saveState();
+          this.log(`pings ${this.state.pings ? 'on' : 'off'} (from Telegram)`);
+        }
+        return this.say(`Pings are ${this.state.pings ? 'on' : 'off'}: ${this.state.pings ? 'I write when an agent waits for you (amber) or is stuck (red) for 2 minutes.' : 'nothing unless you write first.'}`);
+      }
+      case 'stop': {
+        const target = arg ? findAgents(arg, agents).filter((a) => a.kind === 'owned') : [defaultAgent(agents)].filter(Boolean);
+        if (target.length !== 1) return this.say(arg ? `No single agent called "${arg}" that I can stop.` : 'Stop whom? /stop <name>');
+        if (!this.interruptAgent) return this.say('Interrupting is not wired here.');
+        try {
+          const r = await this.interruptAgent(target[0].id);
+          return this.say(r?.ok === false ? `Could not interrupt ${target[0].name}: ${r.error}` : `Interrupted ${target[0].name}.`);
+        } catch (e) { return this.say(`Could not interrupt ${target[0].name}: ${e.message}`); }
+      }
+      default: return this.say(`Unknown command /${command}.\n\n${HELP}`);
+    }
+  }
+
+  turn(agentId) {
+    let t = this.turns.get(agentId);
+    if (!t) this.turns.set(agentId, (t = { expect: new Set(), uuids: new Set(), bridgeQueuedAt: 0, armed: false, finalText: '', files: [], captions: new Map(), repliedAt: 0, since: 0 }));
+    return t;
+  }
+
+  async deliver(agent, text, { voice = false, late = 0 } = {}) {
+    if (!canTalk(agent)) return this.say(`${agent.name} runs somewhere else without the Oasis plugin; I can only watch it.`);
+    const tag = `[Telegram${voice ? ' voice note' : ''}${late ? `, sent ${hhmm(late)}` : ''}]`;
+    const tagged = `${tag} ${text}`;
+    const t = this.turn(agent.id);
+    t.expect.add(tagged);
+    try {
+      const res = await this.sendToAgent(agent.id, tagged);
+      if (res?.uuid && t.expect.has(tagged)) { t.expect.delete(tagged); t.uuids.add(res.uuid); }
+      if (res?.viaBridge) { t.expect.delete(tagged); t.bridgeQueuedAt = Date.now(); }
+      t.since = Date.now();
+      this.log(`-> ${agent.name}: ${text.length} chars${voice ? ' (voice)' : ''}`);
+      this.typing();
+    } catch (e) {
+      t.expect.delete(tagged);
+      this.say(`Not delivered to ${agent.name}: ${e.message}`);
+    }
+  }
+
+  /** "typing…" in the chat while an agent works on a Telegram message (Telegram shows it for about 5 s per call). */
+  typing() {
+    const busy = () => [...this.turns.values()].some((t) => (t.armed || t.uuids.size || t.bridgeQueuedAt) && Date.now() - t.since < TYPING_MAX_MS);
+    const tick = () => {
+      if (!busy() || !this.running) { clearInterval(this.typingTimer); this.typingTimer = null; return; }
+      void this.api('sendChatAction', { chat_id: this.cfg.chatId, action: 'typing' }).catch(() => {});
+    };
+    if (!this.typingTimer && busy()) { tick(); this.typingTimer = setInterval(tick, 4500); this.typingTimer.unref?.(); }
+  }
+
+  // ---------------------------------------------------------------- engine events
+  /** Every hub event passes through here (index.js). Never throws. */
+  onEvent(e) {
+    try { this.handleEvent(e); } catch (err) { this.log(`event ${e?.kind} failed: ${err.message}`); }
+  }
+
+  handleEvent(e) {
+    if (!e || e.history || e.kind === 'text.delta') return;
+    const id = e.agentId;
+    if (e.kind === 'removed') {
+      clearTimeout(this.pings.get(id)?.timer);
+      this.pings.delete(id); this.turns.delete(id); this.lastText.delete(id); this.lastTurnEnd.delete(id);
+      return;
+    }
+    if (e.kind === 'status') return this.onStatus(id, e.status);
+    if (e.kind === 'text' && !e.parentToolUseId) this.lastText.set(id, e.text || '');
+    if (e.kind === 'turn.end') this.lastTurnEnd.set(id, e);
+    const t = this.turns.get(id);
+    if (!t) return;
+    switch (e.kind) {
+      case 'user.sent':
+        if (t.expect.delete(e.text)) t.uuids.add(e.uuid);
+        return;
+      case 'user.consumed':
+        if (!t.uuids.delete(e.uuid)) return;
+        if (e.dropped) this.say(`${this.nameOf(id)} never took your message (${e.dropped}).`);
+        else if (!t.armed) { t.armed = true; t.finalText = ''; t.files = []; }
+        return;
+      case 'user':
+        // A bridged session: its transcript shows the prompt once the mod has submitted it.
+        if (t.bridgeQueuedAt && !t.armed) { t.bridgeQueuedAt = 0; t.armed = true; t.finalText = ''; t.files = []; }
+        return;
+      case 'text':
+        if (t.armed && !e.parentToolUseId) t.finalText = e.text || '';
+        return;
+      case 'tool.start':
+        if (t.armed && e.name === 'SendUserFile' && e.input?.caption) t.captions.set(e.toolUseId, String(e.input.caption));
+        return;
+      case 'tool.end':
+        if (t.armed && e.name === 'SendUserFile' && Array.isArray(e.attachments)) {
+          const caption = t.captions.get(e.toolUseId);
+          t.captions.delete(e.toolUseId);
+          for (const f of e.attachments) t.files.push({ ...f, caption });
+        }
+        return;
+      case 'turn.end':
+        if (t.armed) this.reply(id, e, t);
+        return;
+      case 'exit':
+        if (t.armed || t.uuids.size) {
+          this.say(`${this.nameOf(id)} stopped before answering${e.code != null ? ` (exit code ${e.code})` : ''}.`);
+          t.armed = false; t.uuids.clear(); t.repliedAt = Date.now();
+        }
+        return;
+      default:
+    }
+  }
+
+  nameOf(id) { return this.listAgents().find((a) => a.id === id)?.name || id; }
+
+  reply(id, end, t) {
+    const name = this.nameOf(id);
+    let body = t.finalText || end.result || '';
+    if (end.reason === 'interrupted') body = `${body ? `${body}\n\n` : ''}(interrupted)`;
+    else if (end.outcome === 'error') body = `${body ? `${body}\n\n` : ''}⚠ the turn ended with an error: ${end.reason || end.subtype || 'error'}`;
+    const files = t.files;
+    t.armed = false; t.finalText = ''; t.files = []; t.captions.clear();
+    t.repliedAt = Date.now();
+    if (!body.trim() && !files.length) body = '(done, no text)';
+    const head = isAnorak({ name }) ? '' : name;
+    if (body.trim()) this.sayMarkdown(body, head);
+    else if (head) this.say(`${head}:`);
+    for (const f of files) void this.sendFile(f).catch(() => {});
+    this.log(`<- ${name}: ${body.length} chars${files.length ? `, ${files.length} file(s)` : ''}`);
+  }
+
+  // ---------------------------------------------------------------- pings
+  onStatus(id, status) {
+    const prev = this.pings.get(id);
+    if (prev && prev.status === status) return; // same state (the reason may change): the timer keeps running
+    clearTimeout(prev?.timer);
+    const p = { status, since: Date.now(), timer: null };
+    if (status === 'needs-decision' || status === 'error') {
+      p.timer = setTimeout(() => this.firePing(id, p), this.pingMs);
+      p.timer.unref?.();
+    }
+    this.pings.set(id, p);
+  }
+
+  firePing(id, p) {
+    if (this.pings.get(id) !== p) return;
+    p.timer = null;
+    const a = this.listAgents().find((x) => x.id === id);
+    if (!a || a.status !== p.status) return;
+    const why = `${a.name} (${a.status}${a.statusReason ? `: ${a.statusReason}` : ''})`;
+    if (!this.state.pings) return this.log(`no ping for ${why}: pings are off`);
+    if (!this.cfg.ok) return this.log(`no ping for ${why}: no bot config`);
+    // A watched transcript replays its past when the Oasis starts watching it: an old question is not news.
+    if (a.kind === 'observer' && a.lastWriteAt && a.lastWriteAt < p.since - 60_000) return this.log(`no ping for ${why}: from old transcript lines`);
+    // The answer to the owner's Telegram message already went out and ended there (a question, or the error).
+    const t = this.turns.get(id);
+    if (t?.repliedAt && t.repliedAt >= p.since - 15_000 && !a.permissions?.length) return this.log(`no ping for ${why}: the reply is already on Telegram`);
+    const text = pingText(a, { lastText: this.lastText.get(id), lastTurnEnd: this.lastTurnEnd.get(id) });
+    this.stats.pinged++;
+    this.log(`ping: ${why}`);
+    this.say(text);
+  }
+
+  // ---------------------------------------------------------------- engine command
+  /** `{cmd:"telegram"}`: status; `{cmd:"telegram", pings:true|false}` switches pings. */
+  command({ pings } = {}) {
+    if (typeof pings === 'boolean') { this.state.pings = pings; this.saveState(); this.log(`pings ${pings ? 'on' : 'off'}`); }
+    return {
+      enabled: true, polling: this.running, configOk: this.cfg.ok, chatId: this.cfg.chatId || null,
+      nextAppAlsoPolls: !!this.cfg.nextPolls, pings: this.state.pings, offset: this.state.offset, ...this.stats,
+    };
+  }
+}
+
+/**
+ * The engine's Telegram line, or null when it should stay off: test engines (any port but 4530) unless OASIS_TELEGRAM=1,
+ * OASIS_TELEGRAM=0, or no usable bot config. Paths and the API base can be overridden for tests.
+ */
+export function startTelegram({ port, root, log, listAgents, send, interrupt }) {
+  const flag = process.env.OASIS_TELEGRAM;
+  if (flag === '0' || (flag !== '1' && Number(port) !== 4530)) return null;
+  const line = new TelegramLine({
+    configFile: process.env.OASIS_TELEGRAM_CONFIG || path.join(root, 'data', 'anorak-pro-telegram.local.json'),
+    stateFile: process.env.OASIS_TELEGRAM_STATE || path.join(root, 'data', 'agent-engine-telegram.local.json'),
+    apiBase: process.env.OASIS_TELEGRAM_API,
+    pingMs: Number(process.env.OASIS_TELEGRAM_PING_MS) || PING_MS,
+    listAgents, send, interrupt, log,
+  });
+  if (!line.cfg.ok) { line.log(`off: ${line.cfg.error || 'the bot config lacks enabled, botToken or chatId'}`); return null; }
+  return line.start();
+}

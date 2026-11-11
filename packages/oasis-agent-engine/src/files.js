@@ -64,6 +64,12 @@ export function attachmentForReadImage(filePath) {
   return [{ id: registerAttachment(p, IMAGE_TYPES[ext], true), name: path.basename(p), size, isImage: true, mediaType: IMAGE_TYPES[ext] }];
 }
 
+/** Where a registered file lives (telegram.js uploads what an agent sent). Only ids handed out above resolve. */
+export function attachmentFile(id) {
+  const f = byId.get(id);
+  return f ? { path: f.path, isImage: f.isImage, mediaType: f.mediaType } : null;
+}
+
 export function serveAttachment(id, res) {
   const f = byId.get(id);
   if (!f) {
