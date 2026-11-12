@@ -1683,7 +1683,7 @@ export function CatalogModelRenderer({ path, scale, objectId }: { path: string; 
 // frozen mannequins. With it, they LIVE — blink, sway, smile.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function VRMCatalogRenderer({ path, scale, objectId, displayName, activityAnimationId, activityOnce = false }: { path: string; scale: number; objectId?: string; displayName?: string; activityAnimationId?: string | null; /** Play the activity clip once and hold its last frame (a death, a flinch). */ activityOnce?: boolean }) {
+export function VRMCatalogRenderer({ path, scale, objectId, displayName, activityAnimationId, activityOnce = false, still = false }: { path: string; scale: number; objectId?: string; displayName?: string; activityAnimationId?: string | null; /** Play the activity clip once and hold its last frame (a death, a flinch). */ activityOnce?: boolean; /** Hold the pose it has (the Academy's stone trainees): no mixer, blink or spring bones. */ still?: boolean }) {
   const groupRef = useRef<THREE.Group>(null)
   const vrmRef = useRef<VRM | null>(null)
   const [vrm, setVrm] = useState<VRM | null>(null)
@@ -1982,6 +1982,7 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
     }
   }, [objectId])
 
+  const stillForRef = useRef(0)
   const vrmBudgetRef = useRef({ stepper: new BackgroundStepper(), background: false, center: new THREE.Vector3(), restAt: new THREE.Vector3() })
 
   // Animation tick — expressions + spring bones + mixer (drives idle/walk/behavior)
@@ -2025,6 +2026,12 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
       })
       iblAppliedRef.current = true
     }
+
+    // Stone (Academy): once the idle clip has had a moment to take it out of the T-pose, it stops moving.
+    if (still && currentActionRef.current) {
+      stillForRef.current += delta
+      if (stillForRef.current > 0.9) return
+    } else if (!still) stillForRef.current = 0
 
     // ░▒▓ Budget: a body out of the camera's view runs its mixer ~10x a second and nothing else
     // (src/lib/forge/vrm-update-budget.ts). In view, speaking, or mid once-clip: everything, every frame. ▓▒░

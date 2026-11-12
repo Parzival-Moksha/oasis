@@ -59,6 +59,8 @@ import { VillageSubagentMinis } from './VillageSubagentMinis'
 import { VillageShow } from './VillageShow'
 import { VillageEyes } from './VillageEyes'
 import { VillageMissionWall } from './VillageMissionWall'
+import { VillageAcademyTree } from './VillageAcademyTree'
+import { AcademyLevelTag, AcademyVillageBody } from './VillageAcademyTrainee'
 import { SettingsContext } from '../scene-lib/contexts'
 import { DESK_SCREENS_DEFAULT, DESK_SCREEN_LIMIT, isDeskScreensMode, pickDeskScreens, type DeskDistance } from '../../lib/village/desk-screens'
 
@@ -214,6 +216,7 @@ function StationLabel({ agentId, nearby }: { agentId: string; nearby: boolean })
         <span className="max-w-[160px] truncate">{info.name}</span>
         <span className="font-normal text-white/55">{info.label}</span>
       </div>
+      <AcademyLevelTag agentId={agentId} />
       {nearby && (
         <div className="flex items-center gap-2 whitespace-nowrap rounded-md bg-black/55 px-2 py-1 text-[10px]" style={GAME_HUD_TEXT}>
           <span className="flex items-center gap-1"><GameKeycap accent="#34d399">T</GameKeycap>talk</span>
@@ -340,7 +343,8 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
         <VillageBodyBoundary key={avatarUrl} color={color}>
           <Suspense fallback={<AvatarPlaceholder color={color} />}>
             {/* Own cache entry (#village): a world NPC on the same VRM keeps its own scene and mixer. */}
-            <VRMCatalogRenderer
+            <AcademyVillageBody
+              agentId={agentId}
               path={`${avatarUrl}#village`}
               scale={1}
               displayName={name}
@@ -644,6 +648,8 @@ export function VillageWorld() {
       })}
       {/* The owner's missions as framed panels behind Anorak's desk (VillageMissionWall). */}
       <VillageMissionWall roster={roster} placements={placements} origin={origin} />
+      {/* The Academy's skill tree, across the plaza from the desks (VillageAcademyTree). */}
+      <VillageAcademyTree origin={origin} />
       <VillageCameraRig />
       <VillageEyes />
       <VillageShow />

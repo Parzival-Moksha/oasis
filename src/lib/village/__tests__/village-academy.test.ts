@@ -240,14 +240,14 @@ describe('picking a node', () => {
 
   it('the node under the crosshair, however high', () => {
     const actor: [number, number, number] = [0, 0, 4]
-    expect(pickAcademyNode({ actor, camera: look([0, 2, 6], [0, 5.2, -3]), nodes })?.id).toBe('high')
+    expect(pickAcademyNode({ actor, camera: look([0, 2, 6], [0, 5.2, -3]), nodes })).toMatchObject({ id: 'high', looked: true })
     expect(pickAcademyNode({ actor, camera: look([0, 2, 6], [2.6, 1.6, 0]), nodes })?.id).toBe('side')
   })
 
   it('looking elsewhere: only the node whose foot you stand at', () => {
     const away = look([0, 2, 6], [0, 2, 60])
     expect(pickAcademyNode({ actor: [0, 0, 4], camera: away, nodes })).toBeNull()
-    expect(pickAcademyNode({ actor: [0.4, 0, 0.5], camera: away, nodes })).toMatchObject({ id: 'low' })
+    expect(pickAcademyNode({ actor: [0.4, 0, 0.5], camera: away, nodes })).toMatchObject({ id: 'low', looked: false })
   })
 
   it('out of reach: nothing, even when looked at', () => {

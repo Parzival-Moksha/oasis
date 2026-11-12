@@ -48,6 +48,29 @@ export function AgentsTab() {
             {DESK_SCREEN_CHOICES.find(choice => choice.mode === deskScreens)?.hint} Name labels and status signs always show.
           </div>
         </div>
+        <label className="flex items-center gap-3 py-1.5 cursor-pointer group hover:bg-white/5 rounded px-1 -mx-1 transition-colors">
+          <div
+            role="switch"
+            aria-checked={settings.villageAcademy !== false}
+            data-village-academy={settings.villageAcademy !== false ? 'on' : 'off'}
+            onClick={() => updateSetting('villageAcademy', settings.villageAcademy === false)}
+            className={`w-10 h-5 rounded-full transition-all cursor-pointer relative flex-shrink-0 ${
+              settings.villageAcademy !== false ? 'bg-amber-500 shadow-lg shadow-amber-500/30' : 'bg-gray-700'
+            }`}
+          >
+            <div className={`w-4 h-4 rounded-full bg-white mt-0.5 transition-all ${
+              settings.villageAcademy !== false ? 'translate-x-5' : 'translate-x-0.5'
+            }`} />
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm text-gray-300 group-hover:text-white transition-colors whitespace-nowrap">Academy</div>
+            <div className="text-[10px] text-gray-500">
+              {settings.villageAcademy !== false
+                ? 'The skill tree stands by the plaza, and agents in training are stone until they have Spirit and Body.'
+                : 'No skill tree and no stone agents. Progress is kept.'}
+            </div>
+          </div>
+        </label>
       </section>
 
       <section className="border-t border-white/10 pt-3">

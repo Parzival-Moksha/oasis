@@ -37,6 +37,7 @@ export const defaultSettings: OasisSettings = {
   agentConjureDurationMs: 3000,
   agentScreenshotSettleMs: 220,
   villageDeskScreens: 'off',
+  villageAcademy: true,
   // FPS COUNTER
   fpsCounterEnabled: false,
   fpsCounterFontSize: 14,

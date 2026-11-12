@@ -435,10 +435,10 @@ export interface AcademyPickInput {
 }
 
 /**
- * The node the owner means: the one nearest to the crosshair among those within reach, or else the
- * one whose foot they stand at. `distance` is on the ground, to compare with an agent within reach.
+ * The node the owner means: the one nearest to the crosshair among those within reach (`looked`), or
+ * else the one whose foot they stand at. `distance` is on the ground, to compare with an agent within reach.
  */
-export function pickAcademyNode(input: AcademyPickInput): { id: string; distance: number } | null {
+export function pickAcademyNode(input: AcademyPickInput): { id: string; distance: number; looked: boolean } | null {
   const { actor, camera, nodes } = input
   if (!actor) return null
   const { reach, lookAngle, touch } = ACADEMY_TREE
@@ -458,8 +458,8 @@ export function pickAcademyNode(input: AcademyPickInput): { id: string; distance
     const dot = (dx * camera.forward[0] + dy * camera.forward[1] + dz * camera.forward[2]) / length
     if (dot >= minDot && (!looked || dot > looked.dot)) looked = { id: node.id, distance, dot }
   }
-  if (looked) return { id: looked.id, distance: looked.distance }
-  return touched
+  if (looked) return { id: looked.id, distance: looked.distance, looked: true }
+  return touched ? { ...touched, looked: false } : null
 }
 
 // ─── colours ────────────────────────────────────────────────────────────────

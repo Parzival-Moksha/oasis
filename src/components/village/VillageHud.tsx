@@ -9,6 +9,7 @@ import { getAgentEngineClient } from '../../lib/agent-engine-client'
 import { isInVillagePlaza, openVillagePicker, subscribeVillagePlaza } from './village-actions'
 import { isVillageSoundOn, setVillageSoundOn, subscribeVillageSound } from './village-sound'
 import { VillageAgentsMenu } from './VillageAgentsMenu'
+import { VillageAcademyReader } from './VillageAcademyReader'
 import { GAME_HUD_TEXT, GameKeycap } from '../forge/GameKeycap'
 
 /** Bottom-centre game prompt: a chamfered banner, a title, and key prompts in a row. */
@@ -93,6 +94,8 @@ export function VillageHud() {
     <>
       {/* The roster lives in the Agents menu on the left: full names, status, model and thinking. */}
       <VillageAgentsMenu />
+      {/* The Academy: the prompt at a node of the skill tree, and the node's sheet. */}
+      <VillageAcademyReader />
       <div
         data-ui-panel="village-hud"
         className="fixed left-1/2 top-3 z-[180] flex max-w-[min(820px,calc(100vw-400px))] -translate-x-1/2 items-center gap-1.5 rounded-xl border border-white/10 bg-slate-950/75 px-2 py-1.5 text-white shadow-[0_10px_30px_rgba(0,0,0,0.4)] backdrop-blur-md max-[700px]:left-[84px] max-[700px]:right-2 max-[700px]:top-2 max-[700px]:max-w-none max-[700px]:translate-x-0 max-[700px]:flex-wrap"

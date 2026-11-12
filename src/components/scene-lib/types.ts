@@ -26,6 +26,8 @@ export interface OasisSettings {
   agentScreenshotSettleMs: number
   /** Village: which agents show the glass screen above their desk (src/lib/village/desk-screens.ts). */
   villageDeskScreens: 'off' | 'nearest' | 'all'
+  /** Village: the Academy (the skill tree and stone trainees). */
+  villageAcademy: boolean
   // ─═̷─═̷─⚡ FPS COUNTER ─═̷─═̷─⚡
   fpsCounterEnabled: boolean
   fpsCounterFontSize: number  // 10-24px

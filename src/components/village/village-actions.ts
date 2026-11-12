@@ -486,6 +486,15 @@ export function setVillageProximityRival(rival: typeof proximityRival): void {
   proximityRival = rival
 }
 
+/** More things to walk up to (the Academy's skill tree): asked the same way, after the mission wall. */
+type ProximityRival = (actor: Vec3 | null, agentDistance: number | null) => boolean
+const moreProximityRivals = new Set<ProximityRival>()
+
+export function addVillageProximityRival(rival: ProximityRival): () => void {
+  moreProximityRivals.add(rival)
+  return () => { moreProximityRivals.delete(rival) }
+}
+
 export function updateVillageProximity(): void {
   const store = useOasisStore.getState()
   const actor = getVillageActorPosition()
@@ -496,6 +505,13 @@ export function updateVillageProximity(): void {
     const agentDistance = actor && at ? Math.hypot(actor[0] - at[0], actor[2] - at[2]) : null
     // While an agent is open the wall stays quiet.
     if (proximityRival(store.agentEngine.focusedAgentId ? null : actor, agentDistance)) nearby = null
+  }
+  if (moreProximityRivals.size) {
+    const at = nearby ? anchors[nearby] : null
+    const agentDistance = actor && at ? Math.hypot(actor[0] - at[0], actor[2] - at[2]) : null
+    for (const rival of moreProximityRivals) {
+      if (rival(store.agentEngine.focusedAgentId ? null : actor, agentDistance)) nearby = null
+    }
   }
   if (nearby !== store.agentEngine.nearbyAgentId) store.agentEngineDispatch({ type: 'nearby', agentId: nearby })
   updateNearbyMini(actor)
