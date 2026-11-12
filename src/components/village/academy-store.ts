@@ -3,6 +3,7 @@
 // GET /api/academy and is re-read every few seconds, so a skill Anorak verifies from his own session
 // (a POST from his terminal) lights up on the tree without anyone touching the page.
 
+import { useContext, useSyncExternalStore } from 'react'
 import type { Vec3 } from '../../lib/village/village-layout'
 import { villageAgentKey } from '../../lib/village/village-layout'
 import {
@@ -15,6 +16,7 @@ import {
 import { getCameraSnapshot } from '../../lib/camera-bridge'
 import { requestPlayerAvatarTeleport } from '../../lib/player-avatar-runtime'
 import { useOasisStore } from '../../store/oasisStore'
+import { SettingsContext } from '../scene-lib/contexts'
 
 export const ACADEMY_REFRESH_MS = 2500
 export const VILLAGE_ACADEMY_LAYER = 'village-academy'
@@ -30,6 +32,8 @@ export interface AcademyStoreState {
   nearby: string | null
   /** The node open in the reader. */
   reader: string | null
+  /** Dev: switched off from the console (an A/B measurement in one page). */
+  devOff: boolean
 }
 
 function storedSelection(): string | null {
@@ -40,7 +44,7 @@ function storedSelection(): string | null {
   }
 }
 
-let state: AcademyStoreState = { content: null, trainees: [], selected: storedSelection(), nearby: null, reader: null }
+let state: AcademyStoreState = { content: null, trainees: [], selected: storedSelection(), nearby: null, reader: null, devOff: false }
 const listeners = new Set<() => void>()
 
 function set(patch: Partial<AcademyStoreState>): void {
@@ -55,6 +59,13 @@ export function getAcademyState(): AcademyStoreState {
 export function subscribeAcademy(listener: () => void): () => void {
   listeners.add(listener)
   return () => { listeners.delete(listener) }
+}
+
+/** Config → Agents → Academy (on unless switched off). Off hides the tree and the stone look. */
+export function useAcademyEnabled(): boolean {
+  const { settings } = useContext(SettingsContext)
+  const devOff = useSyncExternalStore(subscribeAcademy, () => state.devOff, () => false)
+  return settings.villageAcademy !== false && !devOff
 }
 
 /** The trainee the tree shows: the one last picked, else the first one in training. */
@@ -218,6 +229,8 @@ if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
     nodes: () => Object.fromEntries(nodes.map(node => [node.id, node.position.map(v => Number(v.toFixed(2)))])),
     foot: () => treeFoot,
     refresh: () => refreshAcademy(),
+    /** Off and on again without touching the setting: `__oasisAcademy.setEnabled(false)`. */
+    setEnabled: (on: boolean) => set({ devOff: !on }),
     select: (key: string | null) => selectAcademyTrainee(key),
     open: (skillId: string) => openAcademyReader(skillId),
     close: () => closeAcademyReader(),

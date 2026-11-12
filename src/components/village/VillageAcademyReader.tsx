@@ -6,7 +6,7 @@
 // buttons: "I did it" (claim) and "Ask Anorak to check" (he looks and marks it through /api/academy).
 // It also keeps the academy's data fresh and tells the tree which trainee you last picked.
 
-import { useContext, useEffect, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
 import { useInputManager, useUILayer } from '../../lib/input-manager'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
@@ -21,7 +21,6 @@ import {
   type AcademySkill,
   type AcademyTraineeView,
 } from '../../lib/village/village-academy'
-import { SettingsContext } from '../scene-lib/contexts'
 import { showNotice } from '../forge/GlobalNotice'
 import { addVillageProximityRival, getNearbyVillageMini, getSessionPanelGeometry, isTypingTarget, subscribeNearbyVillageMini } from './village-actions'
 import {
@@ -36,6 +35,7 @@ import {
   startAcademyRefresh,
   subscribeAcademy,
   updateAcademyProximity,
+  useAcademyEnabled,
 } from './academy-store'
 import { KeyPrompt, PromptBanner } from './VillageHud'
 import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY, VILLAGE_TYPE_CLASS, canTalkTo } from './village-status'
@@ -282,8 +282,7 @@ function AcademySheet({ skill, content, trainee, trainees }: { skill: AcademySki
 }
 
 export function VillageAcademyReader() {
-  const { settings } = useContext(SettingsContext)
-  const enabled = settings.villageAcademy !== false
+  const enabled = useAcademyEnabled()
   const { content, trainees, nearby, reader } = useSyncExternalStore(subscribeAcademy, getAcademyState, getAcademyState)
   const trainee = useSyncExternalStore(subscribeAcademy, () => selectedTrainee(), () => null)
   const focusedAgentId = useOasisStore(s => s.agentEngine.focusedAgentId)

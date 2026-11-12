@@ -1,18 +1,18 @@
 'use client'
 
 // ░▒▓ VILLAGE ACADEMY TREE — the skill tree, standing across the plaza from the desks ▓▒░
-// One medallion per skill on a column; tiers rise and step back; beams join a skill to what it needs.
-// Locked: grey and small. Available: its ring pulses. Claimed: the lower half of its face is lit.
-// Verified: the whole face is lit, with a glow. The skill's keys sit on the rim as small gems
-// (subscriptions gold, API keys blue). A banner on top says whose progress this is, and its level.
+// Dark terraces rising away from the plaza, one per tier; on each, a medallion per skill; beams join a
+// skill to what it needs. Locked: grey and small. Available: its ring pulses. Claimed: the lower half of
+// its face is lit. Verified: the whole face is lit, with a glow. The skill's keys sit on its name plate as
+// small gems (subscriptions gold, API keys blue). A banner on top says whose progress this is, and its level.
 //
 // The Oasis is main-thread bound (docs/missions/fps-ceiling.md), so whatever the number of skills the
-// tree is eight draw calls: columns, rings, glows, beams, gems (one instanced mesh each), every face and
+// tree is eight draw calls: terraces, rings, glows, beams, gems (one instanced mesh each), every face and
 // name plate printed into one texture on one mesh, the banner, and a ring around the node you look at.
 // No drei <Html>, no text objects, no click targets, and one frame callback, subscribed only while a
 // node pulses or flashes.
 
-import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useOasisStore } from '../../store/oasisStore'
@@ -31,12 +31,12 @@ import {
   type AcademySkill,
   type AcademyTraineeView,
 } from '../../lib/village/village-academy'
-import { SettingsContext } from '../scene-lib/contexts'
-import { getAcademyState, selectedTrainee, setAcademyNodes, subscribeAcademy } from './academy-store'
+import { getAcademyState, selectedTrainee, setAcademyNodes, subscribeAcademy, useAcademyEnabled } from './academy-store'
 
 const R = ACADEMY_TREE.medallionRadius
-const PLATE = { width: 2.3, height: 0.56, gap: 0.16 }
-const BANNER = { width: 6.6, height: 1.55, px: 200 }
+/** The name plate stands over its medallion: a beam arriving from below never crosses it. */
+const PLATE = { width: 2.3, height: 0.5, gap: 0.14 }
+const BANNER = { width: 8.4, height: 1.97, px: 160 }
 /** Texture pixels per meter of face and plate. */
 const PX = 256
 const FACE_PX = Math.round(2 * R * PX)
@@ -45,7 +45,7 @@ const PLATE_H = Math.round(PLATE.height * PX)
 const TILE_PAD = 4
 const TILE_W = PLATE_W + TILE_PAD * 2
 const TILE_H = FACE_PX + PLATE_H + TILE_PAD * 3
-const LOCKED_SCALE = 0.72
+const LOCKED_SCALE = 0.8
 const FLASH_MS = 1600
 const FONT_DISPLAY = 'Bahnschrift, "Barlow Condensed", "Segoe UI", system-ui, sans-serif'
 const GREY = '#4b5563'
@@ -58,10 +58,6 @@ interface TreeNode {
   color: string
   look: AcademyNodeLook
   scale: number
-}
-
-function isEnabled(value: unknown): boolean {
-  return value !== false
 }
 
 // ─── printing: every face and name plate into one texture ───────────────────
@@ -171,7 +167,7 @@ function labelGeometry(nodes: TreeNode[]): THREE.BufferGeometry {
     const faceX = tx + (TILE_W - FACE_PX) / 2
     quad(x, y, z + 0.02, 2 * R * s, 2 * R * s, u(faceX), v(ty + TILE_PAD + FACE_PX), u(faceX + FACE_PX), v(ty + TILE_PAD))
     const plateTop = ty + TILE_PAD * 2 + FACE_PX
-    quad(x, y - (R + PLATE.gap + PLATE.height / 2) * s, z + 0.02, PLATE.width * s, PLATE.height * s, u(tx + TILE_PAD), v(plateTop + PLATE_H), u(tx + TILE_PAD + PLATE_W), v(plateTop))
+    quad(x, y + (R + PLATE.gap + PLATE.height / 2) * s, z + 0.02, PLATE.width * s, PLATE.height * s, u(tx + TILE_PAD), v(plateTop + PLATE_H), u(tx + TILE_PAD + PLATE_W), v(plateTop))
   })
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
@@ -317,6 +313,38 @@ function Banner({ trainee, content, position }: { trainee: AcademyTraineeView | 
 // ─── the instanced parts ────────────────────────────────────────────────────
 
 interface Edge { from: number; to: number }
+/** One dark block per tier: its front face stands behind that tier's row, its top is the next tier's floor. */
+interface Terrace { center: Vec3; size: Vec3 }
+
+/** How far a row's block face stands behind its medallions. */
+const TERRACE_BACK = 0.26
+/** From a medallion's centre down to the floor its row stands on. */
+const ROW_FOOT = R + 0.16
+/** From a medallion's centre up to the top of its plate and its gems. */
+const ROW_HEAD = R + PLATE.gap + PLATE.height + 0.3
+
+function layoutTerraces(nodes: TreeNode[]): { terraces: Terrace[]; top: number; back: number } {
+  const rows = [...new Map(nodes.map(node => [node.local[2], node.local[1]])).entries()]
+    .map(([z, y]) => ({ z, y }))
+    .sort((a, b) => a.y - b.y)
+  const xs = nodes.map(node => node.local[0])
+  const width = Math.max(...xs) - Math.min(...xs) + PLATE.width + 1
+  const centerX = (Math.max(...xs) + Math.min(...xs)) / 2
+  const last = rows[rows.length - 1]
+  // Every block reaches back to one wall behind the top row.
+  const wall = last.z - TERRACE_BACK - 0.9
+  const terraces = rows.map((row, index) => {
+    const next = rows[index + 1]
+    // Up to the next row's floor; the last block clears its own medallions and carries the banner.
+    const top = next ? next.y - ROW_FOOT : row.y + ROW_HEAD + 0.1
+    const blockDepth = row.z - TERRACE_BACK - wall
+    return {
+      center: [centerX, top / 2 - 0.2, row.z - TERRACE_BACK - blockDepth / 2] as Vec3,
+      size: [width, top + 0.4, blockDepth] as Vec3,
+    }
+  })
+  return { terraces, top: last.y + ROW_HEAD + 0.1, back: last.z - TERRACE_BACK - 0.45 }
+}
 interface Gem { node: number; index: number; of: number; color: string }
 
 function glowTexture(): THREE.CanvasTexture {
@@ -339,8 +367,8 @@ function glowTexture(): THREE.CanvasTexture {
 const RING_GLOW: Record<AcademyNodeLook, number> = { locked: 1, available: 1.1, claimed: 0.85, verified: 2.2 }
 const HALO_GLOW: Record<AcademyNodeLook, number> = { locked: 0, available: 0.25, claimed: 0.3, verified: 1 }
 
-function Parts({ nodes, edges, gems, flashKey }: { nodes: TreeNode[]; edges: Edge[]; gems: Gem[]; flashKey: string }) {
-  const columns = useRef<THREE.InstancedMesh>(null)
+function Parts({ nodes, terraces, edges, gems, flashKey }: { nodes: TreeNode[]; terraces: Terrace[]; edges: Edge[]; gems: Gem[]; flashKey: string }) {
+  const steps = useRef<THREE.InstancedMesh>(null)
   const rings = useRef<THREE.InstancedMesh>(null)
   const halos = useRef<THREE.InstancedMesh>(null)
   const beams = useRef<THREE.InstancedMesh>(null)
@@ -352,6 +380,9 @@ function Parts({ nodes, edges, gems, flashKey }: { nodes: TreeNode[]; edges: Edg
   }), [])
   const glow = useMemo(() => glowTexture(), [])
   useEffect(() => () => glow.dispose(), [glow])
+  // Rings, beams and gems: one material, coloured per instance.
+  const lit = useMemo(() => new THREE.MeshBasicMaterial({ toneMapped: false }), [])
+  useEffect(() => () => lit.dispose(), [lit])
 
   // Looks that changed for the same trainee flash for a moment: the camera can catch a skill lighting up.
   const previous = useRef<{ key: string; looks: Map<string, AcademyNodeLook> }>({ key: '', looks: new Map() })
@@ -399,21 +430,24 @@ function Parts({ nodes, edges, gems, flashKey }: { nodes: TreeNode[]; edges: Edg
     nodes.forEach((node, index) => {
       setRing(index, 1, RING_GLOW[node.look])
       setHalo(index, 1, HALO_GLOW[node.look])
-      if (columns.current) {
-        const [x, y, z] = node.local
-        const height = y + 0.4
-        scratch.matrix.compose(scratch.position.set(x, y - height / 2, z - 0.16), scratch.identity, scratch.scale.set(1, height, 1))
-        columns.current.setMatrixAt(index, scratch.matrix)
-      }
     })
+    if (steps.current) {
+      terraces.forEach((terrace, index) => {
+        scratch.matrix.compose(scratch.position.set(...terrace.center), scratch.identity, scratch.scale.set(...terrace.size))
+        steps.current!.setMatrixAt(index, scratch.matrix)
+      })
+    }
     if (beams.current) {
       edges.forEach((edge, index) => {
         const from = nodes[edge.from]
         const to = nodes[edge.to]
+        // From behind the medallion it leaves to the rim of the one it reaches.
         scratch.a.set(from.local[0], from.local[1], from.local[2] - 0.1)
         scratch.b.set(to.local[0], to.local[1], to.local[2] - 0.1)
+        scratch.position.copy(scratch.b).sub(scratch.a).normalize()
+        scratch.b.addScaledVector(scratch.position, -R * to.scale)
         const length = scratch.a.distanceTo(scratch.b)
-        scratch.quaternion.setFromUnitVectors(scratch.axis, scratch.position.copy(scratch.b).sub(scratch.a).normalize())
+        scratch.quaternion.setFromUnitVectors(scratch.axis, scratch.position)
         scratch.matrix.compose(scratch.position.copy(scratch.a).add(scratch.b).multiplyScalar(0.5), scratch.quaternion, scratch.scale.set(length, 1, 1))
         beams.current!.setMatrixAt(index, scratch.matrix)
         // Lit once what it needs is done: bright when verified, half when only claimed.
@@ -424,10 +458,11 @@ function Parts({ nodes, edges, gems, flashKey }: { nodes: TreeNode[]; edges: Edg
     if (gemMesh.current) {
       gems.forEach((gem, index) => {
         const node = nodes[gem.node]
-        const angle = Math.PI / 2 - (gem.index - (gem.of - 1) / 2) * 0.3
-        const reach = (R + 0.15) * node.scale
+        // A row of studs on top of the name plate.
+        const across = (gem.index - (gem.of - 1) / 2) * 0.21 * node.scale
+        const up = (R + PLATE.gap + PLATE.height + 0.11) * node.scale
         scratch.matrix.compose(
-          scratch.position.set(node.local[0] + Math.cos(angle) * reach, node.local[1] + Math.sin(angle) * reach, node.local[2] + 0.03),
+          scratch.position.set(node.local[0] + across, node.local[1] + up, node.local[2] + 0.03),
           scratch.identity,
           scratch.scale.setScalar(node.scale),
         )
@@ -435,12 +470,12 @@ function Parts({ nodes, edges, gems, flashKey }: { nodes: TreeNode[]; edges: Edg
         gemMesh.current!.setColorAt(index, scratch.color.set(gem.color).multiplyScalar(node.look === 'locked' ? 0.6 : 1.25))
       })
     }
-    const all = [columns.current, rings.current, halos.current, beams.current, gemMesh.current]
+    const all = [steps.current, rings.current, halos.current, beams.current, gemMesh.current]
     flush(...all)
     for (const mesh of all) mesh?.computeBoundingSphere()
     invalidate()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, edges, gems, flashKey])
+  }, [nodes, terraces, edges, gems, flashKey])
 
   const pulsing = useMemo(() => nodes.flatMap((node, index) => (node.look === 'available' ? [index] : [])), [nodes])
 
@@ -476,28 +511,25 @@ function Parts({ nodes, edges, gems, flashKey }: { nodes: TreeNode[]; edges: Edg
 
   return (
     <>
-      <instancedMesh key={`columns-${nodes.length}`} ref={columns} args={[undefined, undefined, nodes.length]} raycast={NO_RAYCAST}>
-        <cylinderGeometry args={[0.06, 0.1, 1, 8]} />
-        <meshStandardMaterial color="#2b3140" roughness={0.6} metalness={0.4} />
+      <instancedMesh key={`steps-${terraces.length}`} ref={steps} args={[undefined, undefined, terraces.length]} raycast={NO_RAYCAST} receiveShadow>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial color="#111726" roughness={0.82} metalness={0.25} />
       </instancedMesh>
-      <instancedMesh key={`rings-${nodes.length}`} ref={rings} args={[undefined, undefined, nodes.length]} raycast={NO_RAYCAST}>
+      <instancedMesh key={`rings-${nodes.length}`} ref={rings} args={[undefined, undefined, nodes.length]} material={lit} raycast={NO_RAYCAST}>
         <torusGeometry args={[R, 0.055, 10, 48]} />
-        <meshBasicMaterial toneMapped={false} />
       </instancedMesh>
       <instancedMesh key={`halos-${nodes.length}`} ref={halos} args={[undefined, undefined, nodes.length]} raycast={NO_RAYCAST} renderOrder={-1}>
         <planeGeometry args={[1, 1]} />
         <meshBasicMaterial map={glow} transparent depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
       </instancedMesh>
       {edges.length > 0 && (
-        <instancedMesh key={`beams-${edges.length}`} ref={beams} args={[undefined, undefined, edges.length]} raycast={NO_RAYCAST}>
+        <instancedMesh key={`beams-${edges.length}`} ref={beams} args={[undefined, undefined, edges.length]} material={lit} raycast={NO_RAYCAST}>
           <boxGeometry args={[1, 0.07, 0.07]} />
-          <meshBasicMaterial toneMapped={false} />
         </instancedMesh>
       )}
       {gems.length > 0 && (
-        <instancedMesh key={`gems-${gems.length}`} ref={gemMesh} args={[undefined, undefined, gems.length]} raycast={NO_RAYCAST}>
+        <instancedMesh key={`gems-${gems.length}`} ref={gemMesh} args={[undefined, undefined, gems.length]} material={lit} raycast={NO_RAYCAST}>
           <sphereGeometry args={[0.085, 12, 8]} />
-          <meshBasicMaterial toneMapped={false} />
         </instancedMesh>
       )}
     </>
@@ -511,7 +543,7 @@ function PickedRing({ nodes }: { nodes: TreeNode[] }) {
   if (!node) return null
   return (
     <mesh position={[node.local[0], node.local[1], node.local[2] + 0.04]} scale={node.scale} raycast={NO_RAYCAST}>
-      <torusGeometry args={[R + 0.3, 0.03, 8, 56]} />
+      <torusGeometry args={[R + 0.11, 0.028, 8, 56]} />
       <meshBasicMaterial color="#ffffff" toneMapped={false} />
     </mesh>
   )
@@ -520,8 +552,7 @@ function PickedRing({ nodes }: { nodes: TreeNode[] }) {
 // ─── the tree ───────────────────────────────────────────────────────────────
 
 export function VillageAcademyTree({ origin }: { origin: VillageOrigin }) {
-  const { settings } = useContext(SettingsContext)
-  const enabled = isEnabled(settings.villageAcademy)
+  const enabled = useAcademyEnabled()
   const content = useSyncExternalStore(subscribeAcademy, () => getAcademyState().content, () => null)
   const trainee = useSyncExternalStore(subscribeAcademy, () => selectedTrainee(), () => null)
   const terrainHeights = useOasisStore(s => s.terrainHeights)
@@ -574,14 +605,14 @@ export function VillageAcademyTree({ origin }: { origin: VillageOrigin }) {
   }, [enabled, layout, station])
   useEffect(() => () => setAcademyNodes([], null), [])
 
-  if (!enabled || !content || !nodes.length) return null
-  const top = Math.max(...nodes.map(node => node.local[1]))
-  const back = Math.min(...nodes.map(node => node.local[2]))
+  const steps = useMemo(() => (nodes.length ? layoutTerraces(nodes) : null), [nodes])
+
+  if (!enabled || !content || !nodes.length || !steps) return null
   return (
     <group name="oasis-village-academy" position={station.position} rotation-y={station.rotationY}>
-      <Parts nodes={nodes} edges={edges} gems={gems} flashKey={trainee?.key || ''} />
+      <Parts nodes={nodes} terraces={steps.terraces} edges={edges} gems={gems} flashKey={trainee?.key || ''} />
       <Labels nodes={nodes} />
-      <Banner trainee={trainee} content={content} position={[0, top + R + 1.55, back]} />
+      <Banner trainee={trainee} content={content} position={[0, steps.top + 0.25 + BANNER.height / 2, steps.back]} />
       <PickedRing nodes={nodes} />
     </group>
   )

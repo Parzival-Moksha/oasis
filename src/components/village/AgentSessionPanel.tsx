@@ -239,6 +239,8 @@ export function AgentSessionPanel() {
         </div>
       </div>
 
+      {/* An agent you only watch can be a trainee too. */}
+      {!agent.owned && <div className="flex shrink-0"><AcademyTrainToggle agent={agent} /></div>}
       {agent.owned && (
         <div className="flex shrink-0 flex-wrap items-center gap-2 text-[10.5px] text-white/75">
           <label className="flex items-center gap-1">
@@ -281,6 +283,7 @@ export function AgentSessionPanel() {
           <EffortSelect agent={agent} />
           <EyesToggle agent={agent} />
           <ChromeToggle agent={agent} />
+          <AcademyTrainToggle agent={agent} />
           <FollowToggle agent={agent} />
           <VoiceToggle agent={agent} />
           <span className="ml-auto truncate text-white/60">{modelLabel(agent)}</span>

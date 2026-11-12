@@ -366,7 +366,7 @@ export function academyCheckMessage(input: { name: string; key: string; cwd: str
 
 /**
  * The tree stands behind the spawn point, across the plaza from the desks, facing the plaza. Tiers
- * rise and step back, so from the plaza every row shows over the one in front. Meters.
+ * rise and step back a little, like a steep stair. Meters.
  */
 export const ACADEMY_TREE = {
   /** From the plaza centre to the first row. */
@@ -375,8 +375,9 @@ export const ACADEMY_TREE = {
   spacing: 2.6,
   /** Centre of a tier-0 medallion above the ground. */
   baseHeight: 1.6,
-  tierRise: 1.8,
-  tierDepth: 1.5,
+  tierRise: 2.15,
+  /** Each tier stands this much further back: little, so a row is not hidden behind the step in front of it. */
+  tierDepth: 0.55,
   medallionRadius: 0.5,
   /** Stand within this (ground distance) of a node and look at it. */
   reach: 8,

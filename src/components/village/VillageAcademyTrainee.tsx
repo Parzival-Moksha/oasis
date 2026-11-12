@@ -13,26 +13,20 @@
 // session and helpers are clones of this body (they share its materials): a helper cloned while its
 // parent is stone is stone too, and leaves like any helper.
 
-import { useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps, type ReactNode } from 'react'
 import { useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useOasisStore } from '../../store/oasisStore'
 import { useFrameWhen } from '../../lib/use-frame-when'
 import type { AcademyTraineeView } from '../../lib/village/village-academy'
 import type { EngineAgentState } from '../../store/slices/agentEngineSlice'
-import { SettingsContext } from '../scene-lib/contexts'
 import { showNotice } from '../forge/GlobalNotice'
 import { VRMCatalogRenderer } from '../forge/WorldObjects'
-import { academyKeyOf, getAcademyState, setAgentTraining, subscribeAcademy, traineeByKey } from './academy-store'
+import { academyKeyOf, getAcademyState, setAgentTraining, subscribeAcademy, traineeByKey, useAcademyEnabled } from './academy-store'
 
 const PEDESTAL_HEIGHT = 0.22
 const WAKE_S = 2.2
 const NO_RAYCAST = () => {}
-
-function useAcademyEnabled(): boolean {
-  const { settings } = useContext(SettingsContext)
-  return settings.villageAcademy !== false
-}
 
 /** The agent's record in the Academy (null: never trained). */
 export function useAcademyTrainee(agentId: string): AcademyTraineeView | null {
@@ -84,7 +78,7 @@ function stoneTwin(original: THREE.Material, uniforms: StoneUniforms): THREE.Mes
       .replace('#include <common>', '#include <common>\nuniform float uStone;\nuniform float uFlash;')
       .replace('#include <color_fragment>', `#include <color_fragment>
         float academyGrey = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.15, 0.16, 0.18) + vec3(0.34, 0.35, 0.37) * academyGrey, uStone);`)
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.1, 0.105, 0.12) + vec3(0.27, 0.28, 0.3) * academyGrey, uStone);`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         totalEmissiveRadiance += vec3(1.0, 0.84, 0.5) * uFlash;`)
   }
@@ -180,7 +174,7 @@ export function AcademyStoneBody({ agentId, children }: { agentId: string; child
     const t = (performance.now() - wakeStart.current) / 1000
     const k = Math.min(1, t / WAKE_S)
     // Light gathers in the stone, then colour runs back while the light fades.
-    uniforms.uFlash.value = k < 0.18 ? (k / 0.18) * 1.5 : 1.5 * Math.max(0, 1 - (k - 0.18) / 0.6)
+    uniforms.uFlash.value = k < 0.18 ? (k / 0.18) * 0.55 : 0.55 * Math.max(0, 1 - (k - 0.18) / 0.6)
     const colour = Math.min(1, Math.max(0, (k - 0.15) / 0.55))
     uniforms.uStone.value = 1 - colour * colour * (3 - 2 * colour)
     const sink = Math.min(1, Math.max(0, (k - 0.2) / 0.6))
@@ -249,7 +243,7 @@ export function AcademyLevelTag({ agentId }: { agentId: string }) {
   )
 }
 
-/** "Train": puts the agent in or out of training (the header of its session panel). */
+/** "Train": puts the agent in or out of training (next to the other switches in its session panel). */
 export function AcademyTrainToggle({ agent }: { agent: EngineAgentState }) {
   const enabled = useAcademyEnabled()
   const trainee = useAcademyTrainee(agent.id)
@@ -274,9 +268,9 @@ export function AcademyTrainToggle({ agent }: { agent: EngineAgentState }) {
           .finally(() => setBusy(false))
       }}
       onKeyDown={event => event.stopPropagation()}
-      className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[10.5px] font-bold transition disabled:opacity-50 ${on
+      className={`flex h-[22px] items-center gap-1 rounded border px-1.5 text-[10.5px] disabled:opacity-50 ${on
         ? 'border-amber-300/60 bg-amber-400/20 text-amber-100'
-        : 'border-white/15 bg-white/5 text-white/85 hover:bg-white/15'}`}
+        : 'border-white/15 bg-black/50 text-white/45 hover:text-white/80'}`}
     >
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
         <path d="M2 9l10-5 10 5-10 5z" fill={on ? 'currentColor' : 'none'} />
