@@ -50,6 +50,7 @@ import {
   isVillageFocusBlocked,
   openVillagePicker,
   registerVillageCamera,
+  setVillageLiveStation,
   setVillagePlaza,
   setVillageStations,
   type VillageStationPlacement,
@@ -60,7 +61,20 @@ import { VillageShow } from './VillageShow'
 import { VillageEyes } from './VillageEyes'
 import { VillageMissionWall } from './VillageMissionWall'
 import { VillageAcademyTree } from './VillageAcademyTree'
-import { AcademyLevelTag, AcademyVillageBody } from './VillageAcademyTrainee'
+import { AcademyLevelTag, AcademyVillageBody, useAcademyStone } from './VillageAcademyTrainee'
+import { VillageVoice } from './VillageVoice'
+import { useFrameWhen } from '../../lib/use-frame-when'
+import { getPlayerAvatarPose } from '../../lib/player-avatar-runtime'
+import { createFollowState, stepFollow, type FollowState, type FollowTarget } from '../../lib/village/village-follow'
+import {
+  getVillageFollowVersion,
+  getVillageSpeech,
+  isVillageFollowOn,
+  registerVillageHead,
+  subscribeVillageFollow,
+  subscribeVillageSpeech,
+  villageLipSyncId,
+} from './village-companion'
 import { SettingsContext } from '../scene-lib/contexts'
 import { DESK_SCREENS_DEFAULT, DESK_SCREEN_LIMIT, isDeskScreensMode, pickDeskScreens, type DeskDistance } from '../../lib/village/desk-screens'
 
@@ -302,6 +316,111 @@ class VillageBodyBoundary extends Component<{ color: string; children: ReactNode
 
 const NO_RAYCAST = () => {}
 
+/** Where the avatar's voice comes from, above the ground it stands on. */
+const HEAD_HEIGHT = 1.5
+
+/**
+ * The part of a station that can leave its desk: the body, its label, its helpers. `mover` is that group.
+ * At home it sits exactly on the station. With "Follow me" on it walks beside the owner (village-follow.ts)
+ * and its live place is published (setVillageLiveStation), so the T/E/F prompts, the camera for E and F,
+ * the eyes picture and the helpers go with it. Off again, it walks back and sits down.
+ * Cost: one small callback per frame while it is away from its desk, none while it is home.
+ */
+function useVillageFollower(agentId: string, placement: VillageStationPlacement, wanted: boolean, frozen: boolean) {
+  const mover = useRef<THREE.Group>(null)
+  const home = useMemo(() => ({ x: placement.anchor[0], z: placement.anchor[2], yaw: placement.rotationY }), [placement])
+  const state = useRef<FollowState | null>(null)
+  if (!state.current) state.current = createFollowState(home)
+  const live = useRef<VillageStationPlacement | null>(null)
+  const target = useRef<FollowTarget>({ x: 0, z: 0, forwardX: 0, forwardZ: 1 })
+  const frozenRef = useRef(frozen)
+  frozenRef.current = frozen
+  const walkingRef = useRef(false)
+  const [away, setAway] = useState(false)
+  const [walking, setWalking] = useState(false)
+
+  const sitAtDesk = () => {
+    const group = mover.current
+    if (!group) return
+    group.position.set(placement.position[0], placement.position[1], placement.position[2])
+    group.rotation.set(0, placement.rotationY, 0)
+  }
+
+  /** The mover and the published station, from where the avatar stands now. */
+  const writePose = (follow: FollowState, resample: boolean) => {
+    const group = mover.current
+    const station = live.current
+    if (!group || !station) return
+    const y = resample ? sampleTerrainHeightAt(useOasisStore.getState().terrainHeights, follow.x, follow.z) : station.position[1]
+    // A station whose avatar spot (STATION.avatar, behind its origin) is where the avatar stands.
+    const ox = follow.x - STATION.avatar[2] * Math.sin(follow.yaw)
+    const oz = follow.z - STATION.avatar[2] * Math.cos(follow.yaw)
+    group.position.set(ox, y, oz)
+    group.rotation.set(0, follow.yaw, 0)
+    station.position[0] = ox
+    station.position[1] = y
+    station.position[2] = oz
+    station.rotationY = follow.yaw
+    station.anchor[0] = follow.x
+    station.anchor[1] = y
+    station.anchor[2] = follow.z
+  }
+
+  // The desk itself moved (another seat, the ground was sculpted) or the switch changed.
+  useLayoutEffect(() => {
+    const follow = state.current as FollowState
+    if (follow.mode === 'home') {
+      follow.x = home.x
+      follow.z = home.z
+      follow.yaw = home.yaw
+    }
+    if (wanted && follow.mode !== 'follow') follow.mode = 'follow'
+    else if (!wanted && follow.mode === 'follow') follow.mode = 'return'
+    if (follow.mode === 'home') {
+      live.current = null
+      setVillageLiveStation(agentId, null)
+      sitAtDesk()
+    } else {
+      if (!live.current) {
+        live.current = { position: [...placement.position], rotationY: placement.rotationY, anchor: [...placement.anchor] }
+        setVillageLiveStation(agentId, live.current)
+      }
+      writePose(follow, true)
+    }
+    setAway(follow.mode !== 'home')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId, placement, home, wanted])
+
+  useEffect(() => () => setVillageLiveStation(agentId, null), [agentId])
+
+  useFrameWhen(away, (_, delta) => {
+    const follow = state.current as FollowState
+    const pose = getPlayerAvatarPose()
+    const to = target.current
+    if (pose) {
+      to.x = pose.position[0]
+      to.z = pose.position[2]
+      to.forwardX = pose.forward[0]
+      to.forwardZ = pose.forward[2]
+    }
+    const result = stepFollow(follow, pose ? to : null, home, delta, frozenRef.current)
+    if (result.moved || result.turned) writePose(follow, result.moved)
+    const nowWalking = follow.act !== 'stand'
+    if (nowWalking !== walkingRef.current) {
+      walkingRef.current = nowWalking
+      setWalking(nowWalking)
+    }
+    if (result.arrivedHome) {
+      live.current = null
+      setVillageLiveStation(agentId, null)
+      sitAtDesk()
+      setAway(false)
+    }
+  })
+
+  return { mover, away, walking }
+}
+
 function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLabelsVisible, overlayZ }: {
   agentId: string
   placement: VillageStationPlacement
@@ -328,6 +447,23 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
   const blocked = useInputManager(s => isVillageFocusBlocked(s.inputState))
   const color = statusColor(status)
   const observed = kind !== 'owned'
+  // "Follow me" (the agent panel's switch, remembered per session; on by default for Anorak).
+  const followKey = useOasisStore(s => s.agentEngine.agents[agentId]?.sessionId || agentId)
+  useSyncExternalStore(subscribeVillageFollow, getVillageFollowVersion, () => 0)
+  // It stays put while you talk to it (the camera frames it) and while it is hit or knocked out.
+  // A trainee that is still stone (the Academy) stands at its desk whatever the switch says.
+  const stone = useAcademyStone(agentId)
+  const follower = useVillageFollower(agentId, placement, isVillageFollowOn(followKey, name) && !stone, focused || Boolean(combatPose))
+  // Its voice (village-companion.ts): the clip plays from its head, and it gestures while it talks.
+  const speaking = useSyncExternalStore(subscribeVillageSpeech, () => {
+    const speech = getVillageSpeech()
+    return speech?.agentId === agentId && speech.phase === 'speaking'
+  }, () => false)
+  const head = useRef<THREE.Group>(null)
+  useEffect(() => {
+    registerVillageHead(agentId, head.current)
+    return () => registerVillageHead(agentId, null)
+  }, [agentId])
 
   const onClick = (event: ThreeEvent<MouseEvent>) => {
     event.stopPropagation()
@@ -335,64 +471,91 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
     window.setTimeout(() => focusVillageAgent(agentId), 0)
   }
 
+  const hitHandlers = {
+    raycast: blocked ? NO_RAYCAST : THREE.Mesh.prototype.raycast,
+    onClick,
+    onPointerDown: (event: ThreeEvent<PointerEvent>) => {
+      event.stopPropagation()
+      if (!useInputManager.getState().pointerLocked) event.nativeEvent.stopImmediatePropagation()
+    },
+    onPointerOver: (event: ThreeEvent<PointerEvent>) => {
+      event.stopPropagation()
+      if (!useInputManager.getState().pointerLocked) document.body.style.cursor = 'pointer'
+    },
+    onPointerOut: () => { document.body.style.cursor = '' },
+  }
+
   return (
-    <group position={placement.position} rotation-y={placement.rotationY}>
-      <VillageDesk color={color} working={status === 'working'} observed={observed} />
-      <group position={STATION.avatar}>
-        <VillageCorpseDrop agentId={agentId}>
-        <VillageBodyBoundary key={avatarUrl} color={color}>
-          <Suspense fallback={<AvatarPlaceholder color={color} />}>
-            {/* Own cache entry (#village): a world NPC on the same VRM keeps its own scene and mixer. */}
-            <AcademyVillageBody
-              agentId={agentId}
-              path={`${avatarUrl}#village`}
-              scale={1}
-              displayName={name}
-              activityAnimationId={combatPose ? combatPose.animationId : status === 'working' ? WORK_ANIMATION_ID : null}
-              activityOnce={Boolean(combatPose)}
-            />
-          </Suspense>
-        </VillageBodyBoundary>
-        </VillageCorpseDrop>
+    <>
+      {/* The desk: it and its screen stay where they are, also while the agent walks with you. */}
+      <group position={placement.position} rotation-y={placement.rotationY}>
+        <VillageDesk color={color} working={status === 'working'} observed={observed} />
+        {/* Click target enclosing the desk and the avatar's place at it (in front of the VRM's own proxy box). */}
+        <mesh position={STATION.hitCenter} {...hitHandlers}>
+          <boxGeometry args={STATION.hitSize} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} visible={false} />
+        </mesh>
+        {!focused && windowVisible && (
+          <Html
+            transform
+            position={STATION.window}
+            rotation-x={DESK_WINDOW_TILT}
+            distanceFactor={deskWindowDistanceFactor('desk')}
+            zIndexRange={overlayZ}
+            style={{ pointerEvents: 'auto' }}
+          >
+            <DeskWindow agentId={agentId} nearby={nearby && !focused} mode="desk" />
+          </Html>
+        )}
       </group>
-      {/* Its helpers (subagents): half-size copies of it, in a semicircle behind it. */}
-      <VillageSubagentMinis agentId={agentId} placement={placement} avatarUrl={avatarUrl} labelsVisible={helperLabelsVisible} overlayZ={overlayZ} />
-      {/* Click target enclosing desk + avatar (in front of the VRM's own proxy box). */}
-      <mesh
-        position={STATION.hitCenter}
-        raycast={blocked ? NO_RAYCAST : THREE.Mesh.prototype.raycast}
-        onClick={onClick}
-        onPointerDown={(event) => {
-          event.stopPropagation()
-          if (!useInputManager.getState().pointerLocked) event.nativeEvent.stopImmediatePropagation()
-        }}
-        onPointerOver={(event) => {
-          event.stopPropagation()
-          if (!useInputManager.getState().pointerLocked) document.body.style.cursor = 'pointer'
-        }}
-        onPointerOut={() => { document.body.style.cursor = '' }}
-      >
-        <boxGeometry args={STATION.hitSize} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} visible={false} />
-      </mesh>
-      <Html position={STATION.label} center distanceFactor={9} zIndexRange={overlayZ} style={{ pointerEvents: 'none' }}>
-        <StationLabel agentId={agentId} nearby={nearby && !focused} />
-      </Html>
-      {/* Talking to this agent: the side panel replaces the desk window, unless F put you on its screen. */}
-      {(focused ? onScreen : windowVisible) && (
-        <Html
-          key={onScreen ? 'screen' : 'desk'}
-          transform
-          position={STATION.window}
-          rotation-x={onScreen ? 0 : DESK_WINDOW_TILT}
-          distanceFactor={deskWindowDistanceFactor(onScreen ? 'screen' : 'desk')}
-          zIndexRange={overlayZ}
-          style={{ pointerEvents: 'auto' }}
-        >
-          <DeskWindow agentId={agentId} nearby={nearby && !focused} mode={onScreen ? 'screen' : 'desk'} />
+      {/* The agent: on its station at home, beside you when it follows (useVillageFollower moves this group). */}
+      <group ref={follower.mover}>
+        <group position={STATION.avatar}>
+          <VillageCorpseDrop agentId={agentId}>
+          <VillageBodyBoundary key={avatarUrl} color={color}>
+            <Suspense fallback={<AvatarPlaceholder color={color} />}>
+              {/* Own cache entry (#village): a world NPC on the same VRM keeps its own scene and mixer. */}
+              <AcademyVillageBody
+              agentId={agentId}
+                path={`${avatarUrl}#village`}
+                scale={1}
+                displayName={name}
+                activityAnimationId={combatPose ? combatPose.animationId : status === 'working' || speaking ? WORK_ANIMATION_ID : null}
+                activityOnce={Boolean(combatPose)}
+                moving={follower.walking && !combatPose}
+                lipSyncId={villageLipSyncId(agentId)}
+              />
+            </Suspense>
+          </VillageBodyBoundary>
+          </VillageCorpseDrop>
+          <group ref={head} position={[0, HEAD_HEIGHT, 0]} />
+        </group>
+        {/* Its helpers (subagents): half-size copies of it, in a semicircle behind it. */}
+        <VillageSubagentMinis agentId={agentId} placement={placement} avatarUrl={avatarUrl} labelsVisible={helperLabelsVisible} overlayZ={overlayZ} />
+        {/* Away from the desk, the body is its own click target. */}
+        {follower.away && (
+          <mesh position={[STATION.avatar[0], 0.9, STATION.avatar[2]]} {...hitHandlers}>
+            <boxGeometry args={[0.8, 1.8, 0.8]} />
+            <meshBasicMaterial transparent opacity={0} depthWrite={false} visible={false} />
+          </mesh>
+        )}
+        <Html position={STATION.label} center distanceFactor={9} zIndexRange={overlayZ} style={{ pointerEvents: 'none' }}>
+          <StationLabel agentId={agentId} nearby={nearby && !focused} />
         </Html>
-      )}
-    </group>
+        {/* F: its screen fills the view, where the agent is. (E: the side panel shows the thread instead.) */}
+        {focused && onScreen && (
+          <Html
+            transform
+            position={STATION.window}
+            distanceFactor={deskWindowDistanceFactor('screen')}
+            zIndexRange={overlayZ}
+            style={{ pointerEvents: 'auto' }}
+          >
+            <DeskWindow agentId={agentId} nearby={false} mode="screen" />
+          </Html>
+        )}
+      </group>
+    </>
   )
 }
 
@@ -652,6 +815,7 @@ export function VillageWorld() {
       <VillageAcademyTree origin={origin} />
       <VillageCameraRig />
       <VillageEyes />
+      <VillageVoice />
       <VillageShow />
     </group>
   )

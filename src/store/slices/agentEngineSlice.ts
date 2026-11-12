@@ -180,6 +180,8 @@ export interface EngineAgentState {
   eyes: boolean | null
   /** Claude in Chrome on (engine chrome.js). null = the engine is older than the switch. */
   chrome: boolean | null
+  /** Voice: its avatar says the <spoken> line of each reply out loud. null = the engine is older than the switch. */
+  speak: boolean | null
   /** When its last turn ended (engine snapshot): after a reload, unseen if after your last look (village-seen.ts). */
   lastOutcomeAt: number | null
   status: EngineAgentStatus
@@ -334,6 +336,7 @@ export function createAgentState(
     resolvedEffort: null,
     eyes: null,
     chrome: null,
+    speak: null,
     lastOutcomeAt: null,
     status: 'idle',
     statusReason: null,
@@ -397,6 +400,7 @@ export function applySnapshot(agent: EngineAgentState, snap: EngineAgentSnapshot
     resolvedEffort: snap.resolvedEffort !== undefined ? snap.resolvedEffort : agent.resolvedEffort,
     eyes: typeof snap.eyes === 'boolean' ? snap.eyes : agent.eyes,
     chrome: typeof snap.chrome === 'boolean' ? snap.chrome : agent.chrome,
+    speak: typeof snap.speak === 'boolean' ? snap.speak : agent.speak,
     lastOutcomeAt: typeof snap.lastOutcome?.at === 'number' ? snap.lastOutcome.at : agent.lastOutcomeAt,
     status,
     statusReason: snap.statusReason ?? (status === agent.status ? agent.statusReason : null),

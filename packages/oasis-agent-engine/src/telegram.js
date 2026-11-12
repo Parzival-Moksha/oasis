@@ -16,6 +16,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { attachmentFile } from './files.js';
+import { stripSpoken } from './voice.js';
 
 export const TG_MAX = 4096;
 export const PING_MS = 2 * 60_000;
@@ -617,7 +618,7 @@ export class TelegramLine {
       return;
     }
     if (e.kind === 'status') return this.onStatus(id, e.status);
-    if (e.kind === 'text' && !e.parentToolUseId) this.lastText.set(id, e.text || '');
+    if (e.kind === 'text' && !e.parentToolUseId) this.lastText.set(id, stripSpoken(e.text || ''));
     if (e.kind === 'turn.end') this.lastTurnEnd.set(id, e);
     const t = this.turns.get(id);
     if (!t) return;
@@ -641,7 +642,7 @@ export class TelegramLine {
         return;
       }
       case 'text':
-        if (t.armed && !e.parentToolUseId) t.finalText = e.text || '';
+        if (t.armed && !e.parentToolUseId) t.finalText = stripSpoken(e.text || '');
         return;
       case 'tool.start':
         if (t.armed && e.name === 'SendUserFile' && e.input?.caption) t.captions.set(e.toolUseId, String(e.input.caption));

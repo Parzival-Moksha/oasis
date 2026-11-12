@@ -256,6 +256,11 @@ export class AgentEngineClient {
     return this.cmd('setEyes', { agentId, on })
   }
 
+  /** Voice on or off: with it on, each reply ends with a short line the agent's avatar says out loud. */
+  setSpeak(agentId: string, on: boolean) {
+    return this.cmd('setSpeak', { agentId, on })
+  }
+
   /**
    * The village scene registers how to take an eyes picture (VillageEyes.tsx); the engine then asks this page
    * for one with each message to an agent whose eyes are on. Returns the unregister function.

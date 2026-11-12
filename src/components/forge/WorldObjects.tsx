@@ -1683,7 +1683,7 @@ export function CatalogModelRenderer({ path, scale, objectId }: { path: string; 
 // frozen mannequins. With it, they LIVE — blink, sway, smile.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function VRMCatalogRenderer({ path, scale, objectId, displayName, activityAnimationId, activityOnce = false, still = false }: { path: string; scale: number; objectId?: string; displayName?: string; activityAnimationId?: string | null; /** Play the activity clip once and hold its last frame (a death, a flinch). */ activityOnce?: boolean; /** Hold the pose it has (the Academy's stone trainees): no mixer, blink or spring bones. */ still?: boolean }) {
+export function VRMCatalogRenderer({ path, scale, objectId, displayName, activityAnimationId, activityOnce = false, still = false, moving = false, lipSyncId }: { path: string; scale: number; objectId?: string; displayName?: string; activityAnimationId?: string | null; /** Play the activity clip once and hold its last frame (a death, a flinch). */ activityOnce?: boolean; /** Hold the pose it has (the Academy's stone trainees): no mixer, blink or spring bones. */ still?: boolean; /** Its owner is moving it (a village agent following the player): play the walk clip. */ moving?: boolean; /** Lip-sync registry key for a body that is not a world object (village agents). */ lipSyncId?: string }) {
   const groupRef = useRef<THREE.Group>(null)
   const vrmRef = useRef<VRM | null>(null)
   const [vrm, setVrm] = useState<VRM | null>(null)
@@ -1777,7 +1777,9 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
   const currentActionRef = useRef<THREE.AnimationAction | null>(null)
   const activeAnimRef = useRef<'none' | 'idle' | 'walk' | 'behavior' | 'activity'>('none')
   const activeClipRef = useRef<THREE.AnimationClip | null>(null)
-  const isMoving = useOasisStore(s => objectId ? !!s.behaviors[objectId]?.moveTarget : false)
+  const behaviorMoving = useOasisStore(s => objectId ? !!s.behaviors[objectId]?.moveTarget : false)
+  const isMoving = behaviorMoving || moving
+  const lipKey = objectId || lipSyncId
   const animConfig = useOasisStore(s => objectId ? s.behaviors[objectId]?.animation : undefined)
   const clipCacheKey = useMemo(() => `${objectId || 'vrm-npc'}::${path}`, [objectId, path])
 
@@ -2041,7 +2043,7 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
       const world = v.scene.matrixWorld.elements
       budget.center.set(world[12], world[13] + 0.85 * scale, world[14])
       const view = vrmViewOf(budget.center, 1.2 * Math.max(scale, 0.1))
-      const speaking = objectId ? !!getLipSync(objectId)?.isActive : false
+      const speaking = lipKey ? !!getLipSync(lipKey)?.isActive : false
       const mode = vrmUpdateMode({ inView: view.inView, distance: view.distance, speaking, onceClip: activityOnce && !!activityAnimationId })
       noteVrmMode(mode, state.clock.elapsedTime)
       if (mode === 'background') {
@@ -2077,7 +2079,7 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
       setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.blink, (blinkPhase > 3.7 && blinkPhase < 3.9) ? 1 : 0)
 
       // ░▒▓ LIP SYNC — call controller.update() every frame, apply visemes directly ▓▒░
-      const lipCtrl = objectId ? getLipSync(objectId) : null
+      const lipCtrl = lipKey ? getLipSync(lipKey) : null
       const lipState = lipCtrl?.isActive ? lipCtrl.update() : null
       const clearLipVisemes = () => {
         setVrmExpressionValue(expr, VRM_EXPRESSION_ALIASES.aa, 0)

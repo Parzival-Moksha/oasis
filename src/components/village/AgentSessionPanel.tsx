@@ -30,6 +30,7 @@ import { VillageComposer } from './VillageComposer'
 import { EffortSelect } from './EffortSelect'
 import { EyesToggle } from './EyesToggle'
 import { ChromeToggle } from './ChromeToggle'
+import { FollowToggle, VoiceToggle } from './CompanionToggles'
 import { VillageAvatarButton } from './VillageAvatarButton'
 import { AcademyTrainToggle } from './VillageAcademyTrainee'
 import { PanelLookButton, usePanelLook } from './PanelLook'
@@ -207,6 +208,8 @@ export function AgentSessionPanel() {
         <div className="flex shrink-0 items-center gap-1">
           <PanelLookButton agentKey={agent.sessionId || agent.id} agentName={agentDisplayName(agent)} />
           <AcademyTrainToggle agent={agent} />
+          {/* Watched sessions have no settings row: their Follow me switch sits here. */}
+          {!agent.owned && <FollowToggle agent={agent} />}
           <VillageAvatarButton agentId={agent.id} sessionId={agent.sessionId} />
           <button
             type="button"
@@ -278,6 +281,8 @@ export function AgentSessionPanel() {
           <EffortSelect agent={agent} />
           <EyesToggle agent={agent} />
           <ChromeToggle agent={agent} />
+          <FollowToggle agent={agent} />
+          <VoiceToggle agent={agent} />
           <span className="ml-auto truncate text-white/60">{modelLabel(agent)}</span>
         </div>
       )}

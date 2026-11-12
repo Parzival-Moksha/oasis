@@ -25,6 +25,7 @@ import { readHistoryTail } from './history.js';
 import { droppedAfterInterrupt, expiredAtResult, interruptApplies, matchReplay } from './pending.js';
 import { worldToolsArgs } from './worldtools.js';
 import { chromeArgs } from './chrome.js';
+import { VOICE_DEFAULT, VOICE_NOTE, VOICE_OFF_NOTE } from './voice.js';
 import { outcomeForRoster, restoreOutcome, statusForOutcome } from './outcome.js';
 
 const SANDBOX_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'sandbox');
@@ -77,6 +78,8 @@ export class Agent {
     this.restartPending = false;
     // Eyes: each message from the owner carries a picture from this agent's avatar (send()). Kept in the roster.
     this.eyes = typeof spec.eyes === 'boolean' ? spec.eyes : EYES_DEFAULT.test(this.name || '');
+    // Voice: each reply ends with a <spoken> line its avatar says out loud (voice.js). Kept in the roster.
+    this.speak = typeof spec.speak === 'boolean' ? spec.speak : VOICE_DEFAULT.test(this.name || '');
     this.sendChain = Promise.resolve(); // messages go out in the order they were sent, also while one waits for its picture
     this.hub = hub;
     this.proc = null;
@@ -118,7 +121,7 @@ export class Agent {
       id: this.id, kind: this.kind, name: this.name, cwd: this.cwd, sessionId: this.sessionId,
       model: this.model, resolvedModel: this.norm.model, permissionMode: this.permissionMode,
       effectivePermissionMode: this.effectivePermissionMode || null, effort: this.effort,
-      resolvedEffort: this.resolvedEffort, eyes: this.eyes, chrome: this.chrome, status: this.status, statusReason: this.statusReason, alive: !!this.proc,
+      resolvedEffort: this.resolvedEffort, eyes: this.eyes, chrome: this.chrome, speak: this.speak, status: this.status, statusReason: this.statusReason, alive: !!this.proc,
       pid: this.proc?.pid || null, pendingUser: this.pendingUser.size,
       permissions: [...this.permissions.values()].map((r) => this.describePermission(r)),
       context: this.lastContext, models: this.meta.models || null,
@@ -127,7 +130,7 @@ export class Agent {
   }
 
   rosterEntry() {
-    return { id: this.id, name: this.name, cwd: this.cwd, sessionId: this.sessionId, model: this.model, permissionMode: this.permissionMode, effort: this.effort, eyes: this.eyes, ...(this.worldTools ? {} : { worldTools: false }), ...(this.chrome ? { chrome: true } : {}), ...(this.lastOutcome ? { lastOutcome: outcomeForRoster(this.lastOutcome) } : {}), ...(this.turnOpenAt ? { turnOpenAt: this.turnOpenAt } : {}) };
+    return { id: this.id, name: this.name, cwd: this.cwd, sessionId: this.sessionId, model: this.model, permissionMode: this.permissionMode, effort: this.effort, eyes: this.eyes, speak: this.speak, ...(this.worldTools ? {} : { worldTools: false }), ...(this.chrome ? { chrome: true } : {}), ...(this.lastOutcome ? { lastOutcome: outcomeForRoster(this.lastOutcome) } : {}), ...(this.turnOpenAt ? { turnOpenAt: this.turnOpenAt } : {}) };
   }
 
   // ------------------------------------------------------------------ process
@@ -440,13 +443,17 @@ export class Agent {
     this.sentSinceStart = true;
     const turnWasRunning = this.turnRunning;
     this.pendingUser.set(uuid, { text, sentAt: Date.now(), turnWasRunning, turnIndex: this.turnIndex || 0 });
-    const content = picture?.data
+    let content = picture?.data
       ? [
         { type: 'text', text },
         { type: 'image', source: { type: 'base64', media_type: picture.mediaType || 'image/jpeg', data: picture.data } },
         { type: 'text', text: EYES_CAPTION },
       ]
       : text;
+    // Voice on: the note that asks for a <spoken> line rides along (voice.js); the thread never shows it.
+    const voiceNote = this.speak ? VOICE_NOTE : this.speakWentOff ? VOICE_OFF_NOTE : null;
+    this.speakWentOff = false;
+    if (voiceNote) content = [...(Array.isArray(content) ? content : [{ type: 'text', text }]), { type: 'text', text: voiceNote }];
     const msg = { type: 'user', message: { role: 'user', content }, parent_tool_use_id: null, session_id: '', uuid };
     if (priority === 'now' || priority === 'later') msg.priority = priority;
     try { this.write(msg); } catch (e) { this.pendingUser.delete(uuid); throw e; }
@@ -529,6 +536,16 @@ export class Agent {
     }
     this.emit('chrome', { chrome, applied });
     return { ok: true, data: { chrome, applied } };
+  }
+
+  /** Voice on or off (kept in the roster). Applies to the next message: no restart, the note rides with it (voice.js). */
+  setSpeak(on) {
+    // Switched off after being on: the next message says so once (the agent has the habit by then).
+    this.speakWentOff = this.speak && !on;
+    this.speak = !!on;
+    this.persist();
+    this.emit('speak', { speak: this.speak });
+    return { ok: true, data: { speak: this.speak } };
   }
 
   /** Eyes on or off (kept in the roster). Applies to the next message. */

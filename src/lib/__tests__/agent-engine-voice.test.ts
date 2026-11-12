@@ -1,0 +1,114 @@
+// Voice: the engine's side (packages/oasis-agent-engine/src/voice.js and the send path in agent.js) and the
+// slice's `speak` flag. The engine is plain ESM JS; these pieces run without spawning a process.
+import { describe, expect, it } from 'vitest'
+import { applySnapshot, createAgentState } from '../../store/slices/agentEngineSlice'
+import type { EngineAgentSnapshot } from '../agent-engine-types'
+import { splitSpoken } from '../village/village-spoken'
+import * as agentModule from '../../../packages/oasis-agent-engine/src/agent.js'
+import * as normalizeModule from '../../../packages/oasis-agent-engine/src/normalize.js'
+import * as voiceModule from '../../../packages/oasis-agent-engine/src/voice.js'
+
+interface AgentLike {
+  speak: boolean
+  proc: unknown
+  send: (text: string) => Promise<{ uuid: string }>
+  setSpeak: (on: boolean) => { ok: boolean; data: { speak: boolean } }
+  rosterEntry: () => { speak?: boolean }
+  snapshot: () => { speak?: boolean }
+}
+const { Agent, EYES_CAPTION } = agentModule as unknown as {
+  Agent: new (spec: Record<string, unknown>, hub: Record<string, unknown>) => AgentLike
+  EYES_CAPTION: string
+}
+const { Normalizer } = normalizeModule as unknown as {
+  Normalizer: new (agentId: string, emit: (kind: string, payload: Record<string, unknown>) => void, opts: { mode: string }) => { handleStream: (msg: unknown) => void }
+}
+const { VOICE_NOTE, VOICE_OFF_NOTE, ENGINE_NOTE, stripSpoken } = voiceModule as unknown as { VOICE_NOTE: string; VOICE_OFF_NOTE: string; ENGINE_NOTE: RegExp; stripSpoken: (text: string) => string }
+
+function makeAgent(spec: Record<string, unknown>, eyes?: () => Promise<{ data: string; mediaType: string } | null>) {
+  const written: Array<{ message: { content: unknown } }> = []
+  const events: Array<{ kind: string; payload: Record<string, unknown> }> = []
+  const hub = { emit: (_id: string, kind: string, payload: Record<string, unknown>) => events.push({ kind, payload }), persist: () => {}, log: () => {}, eyes }
+  const agent = new Agent({ id: 'agent-1', cwd: process.cwd(), eyes: false, ...spec }, hub)
+  agent.proc = { pid: 1, stdin: { write: (line: string) => written.push(JSON.parse(line)) } }
+  return { agent, written, events }
+}
+
+describe('engine: voice', () => {
+  it('is on by default for Anorak only, and the roster keeps the choice', () => {
+    expect(makeAgent({ name: 'Anorak Pro' }).agent.speak).toBe(true)
+    expect(makeAgent({ name: 'Rick' }).agent.speak).toBe(false)
+    expect(makeAgent({ name: 'Anorak', speak: false }).agent.speak).toBe(false)
+    const { agent, events } = makeAgent({ name: 'Rick' })
+    expect(agent.setSpeak(true)).toEqual({ ok: true, data: { speak: true } })
+    expect(agent.rosterEntry().speak).toBe(true)
+    expect(agent.snapshot().speak).toBe(true)
+    expect(events.some(e => e.kind === 'speak' && e.payload.speak === true)).toBe(true)
+  })
+
+  it('adds the note to each message of a voiced agent, and nothing to the others', async () => {
+    const voiced = makeAgent({ name: 'Anorak' })
+    await voiced.agent.send('hello there')
+    expect(voiced.written[0].message.content).toEqual([{ type: 'text', text: 'hello there' }, { type: 'text', text: VOICE_NOTE }])
+    // The thread and the pending bookkeeping see the owner's own words.
+    expect(voiced.events.find(e => e.kind === 'user.sent')?.payload).toMatchObject({ text: 'hello there' })
+    const quiet = makeAgent({ name: 'Rick' })
+    await quiet.agent.send('hello there')
+    expect(quiet.written[0].message.content).toBe('hello there')
+    // Switched off: the very next message says so once (no restart), and after that messages go out plain.
+    voiced.agent.setSpeak(false)
+    await voiced.agent.send('again')
+    expect(voiced.written[1].message.content).toEqual([{ type: 'text', text: 'again' }, { type: 'text', text: VOICE_OFF_NOTE }])
+    await voiced.agent.send('and again')
+    expect(voiced.written[2].message.content).toBe('and again')
+    expect(ENGINE_NOTE.test(VOICE_OFF_NOTE)).toBe(true)
+  })
+
+  it('rides after the eyes picture when both are on', async () => {
+    const { agent, written } = makeAgent({ name: 'Anorak', eyes: true }, async () => ({ data: 'QUJD', mediaType: 'image/jpeg' }))
+    await agent.send('look')
+    expect(written[0].message.content).toEqual([
+      { type: 'text', text: 'look' },
+      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'QUJD' } },
+      { type: 'text', text: EYES_CAPTION },
+      { type: 'text', text: VOICE_NOTE },
+    ])
+  })
+
+  it('the note stays out of the thread', () => {
+    expect(ENGINE_NOTE.test(VOICE_NOTE)).toBe(true)
+    expect(ENGINE_NOTE.test(EYES_CAPTION)).toBe(true)
+    expect(ENGINE_NOTE.test('[Oasis voice: x] and more')).toBe(false)
+    const seen: string[] = []
+    const norm = new Normalizer('agent-1', (kind, payload) => { if (kind === 'user') seen.push(String(payload.text)) }, { mode: 'live' })
+    norm.handleStream({ type: 'user', isReplay: true, uuid: 'u1', message: { role: 'user', content: [{ type: 'text', text: 'hello there' }, { type: 'text', text: VOICE_NOTE }] } })
+    expect(seen).toEqual(['hello there'])
+  })
+
+  it('asks for a line the page can find', () => {
+    expect(VOICE_NOTE).toContain('<spoken>')
+    expect(VOICE_NOTE).toContain('40 words')
+    expect(splitSpoken('Done.\n<spoken>All done.</spoken>').spoken).toBe('All done.')
+  })
+
+  it('takes the spoken line out of text for Telegram', () => {
+    expect(stripSpoken('Done.\n\n<spoken>All done.</spoken>')).toBe('Done.')
+    expect(stripSpoken('Done.\n<spoken>clipped')).toBe('Done.')
+    expect(stripSpoken('No tag.')).toBe('No tag.')
+  })
+})
+
+describe('Voice switch in the agent slice', () => {
+  const snap = (fields: Partial<EngineAgentSnapshot>): EngineAgentSnapshot => ({ id: 'agent-1', kind: 'owned', name: 'Anorak', status: 'idle', ...fields })
+
+  it('follows the engine snapshot, and an engine older than the switch reads as null (voice off)', () => {
+    let agent = createAgentState('agent-1', 1000)
+    expect(agent.speak).toBeNull()
+    agent = applySnapshot(agent, snap({}), 1050)
+    expect(agent.speak).toBeNull()
+    agent = applySnapshot(agent, snap({ speak: true }), 1100)
+    expect(agent.speak).toBe(true)
+    agent = applySnapshot(agent, snap({ speak: false }), 1200)
+    expect(agent.speak).toBe(false)
+  })
+})

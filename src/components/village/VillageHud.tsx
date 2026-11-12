@@ -8,6 +8,7 @@ import { selectAttentionQueue } from '../../store/slices/agentEngineSlice'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
 import { isInVillagePlaza, openVillagePicker, subscribeVillagePlaza } from './village-actions'
 import { isVillageSoundOn, setVillageSoundOn, subscribeVillageSound } from './village-sound'
+import { isVillageVoiceOn, setVillageVoiceOn, subscribeVillageVoice } from './village-companion'
 import { VillageAgentsMenu } from './VillageAgentsMenu'
 import { VillageAcademyReader } from './VillageAcademyReader'
 import { GAME_HUD_TEXT, GameKeycap } from '../forge/GameKeycap'
@@ -87,6 +88,7 @@ export function VillageHud() {
   const connected = useOasisStore(s => s.agentEngine.connection.status === 'open')
   const inPlaza = useSyncExternalStore(subscribeVillagePlaza, isInVillagePlaza, () => false)
   const soundOn = useSyncExternalStore(subscribeVillageSound, isVillageSoundOn, () => true)
+  const voiceOn = useSyncExternalStore(subscribeVillageVoice, isVillageVoiceOn, () => true)
 
   const attention = attentionKey ? attentionKey.split(',') : []
 
@@ -115,6 +117,16 @@ export function VillageHud() {
           aria-label={soundOn ? 'Mute agent chimes' : 'Unmute agent chimes'}
         >
           {soundOn ? '🔔' : '🔕'}
+        </button>
+        <button
+          type="button"
+          data-village-voice-mute={voiceOn ? 'on' : 'muted'}
+          onClick={() => setVillageVoiceOn(!voiceOn)}
+          className="shrink-0 rounded-md border border-white/10 bg-black/30 px-1.5 py-1 text-[12px] leading-none transition hover:bg-white/10"
+          title={voiceOn ? 'Agents with Voice on say a short version of each reply out loud (click to mute)' : 'Agent voices muted: nothing is spoken or generated (click to unmute)'}
+          aria-label={voiceOn ? 'Mute agent voices' : 'Unmute agent voices'}
+        >
+          {voiceOn ? '🔊' : '🔇'}
         </button>
         <button
           type="button"

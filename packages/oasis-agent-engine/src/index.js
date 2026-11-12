@@ -65,7 +65,7 @@ const hub = {
     }
     broadcast({ type: 'event', event });
     telegram?.onEvent(event);
-    if (/^(status|init|meta|model|mode|effort|eyes|chrome|context|exit|permission\.)/.test(kind)) scheduleSnapshot();
+    if (/^(status|init|meta|model|mode|effort|eyes|speak|chrome|context|exit|permission\.)/.test(kind)) scheduleSnapshot();
   },
   eyes: (agentId) => captureEyes(agentId),
   persist() {
@@ -178,6 +178,8 @@ const commands = {
     return { ok: true };
   },
   setEyes({ agentId, on }) { return getAgent(agentId, { owned: true }).setEyes(on); },
+  /** Voice for an agent (voice.js): its replies end with a <spoken> line the page says out loud. */
+  setSpeak({ agentId, on }) { return getAgent(agentId, { owned: true }).setSpeak(on); },
 
   send({ agentId, text, priority }) {
     const a = getAgent(agentId);

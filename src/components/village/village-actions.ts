@@ -11,7 +11,7 @@ import { selectNextAgentForN } from '../../store/slices/agentEngineSlice'
 import { getCameraSnapshot } from '../../lib/camera-bridge'
 import { getPlayerAvatarPose, markThirdPersonCameraRestored, requestPlayerAvatarTeleport } from '../../lib/player-avatar-runtime'
 import { showNotice } from '../forge/GlobalNotice'
-import { findNearestStation, type Vec3 } from '../../lib/village/village-layout'
+import { findNearestStation, stationLocalToWorld, type Vec3 } from '../../lib/village/village-layout'
 import { villageKeyAction } from '../../lib/village/village-keys'
 import { getVillageSoundDebug } from './village-sound'
 
@@ -39,13 +39,31 @@ export function setVillageStations(next: Map<string, VillageStationPlacement>): 
   stations = next
 }
 
+/**
+ * Agents away from their desk (following the owner, village-follow.ts): where the avatar is right now,
+ * as a station of its own (position and rotationY such that the station's avatar spot is the avatar).
+ * VillageStation writes it every frame it moves, changing the same object in place.
+ */
+const liveStations = new Map<string, VillageStationPlacement>()
+
+export function setVillageLiveStation(agentId: string, live: VillageStationPlacement | null): void {
+  if (live) liveStations.set(agentId, live)
+  else liveStations.delete(agentId)
+}
+
+/** Where the agent is: beside the owner when it follows, else its desk. Proximity, the camera and the eyes read this. */
 export function getVillageStation(agentId: string): VillageStationPlacement | null {
+  return liveStations.get(agentId) || stations.get(agentId) || null
+}
+
+/** The agent's desk, wherever the agent itself is. */
+export function getVillageDesk(agentId: string): VillageStationPlacement | null {
   return stations.get(agentId) || null
 }
 
 export function getVillageAnchors(): Record<string, Vec3> {
   const out: Record<string, Vec3> = {}
-  for (const [id, station] of stations) out[id] = station.anchor
+  for (const [id, station] of stations) out[id] = (liveStations.get(id) || station).anchor
   return out
 }
 
@@ -60,19 +78,25 @@ export interface VillageSubagentRef {
   description: string
 }
 
-/** World positions of every mini on screen, per parent agent. */
-const minis = new Map<string, Array<VillageSubagentRef & { position: Vec3 }>>()
+/** World positions of every mini on screen, per parent agent (`local`: its place in the parent's station). */
+const minis = new Map<string, Array<VillageSubagentRef & { position: Vec3; local?: Vec3 }>>()
 let nearbyMini: VillageSubagentRef | null = null
 const nearbyMiniListeners = new Set<() => void>()
 
-export function setVillageMinis(agentId: string, next: Array<VillageSubagentRef & { position: Vec3 }> | null): void {
+export function setVillageMinis(agentId: string, next: Array<VillageSubagentRef & { position: Vec3; local?: Vec3 }> | null): void {
   if (next && next.length) minis.set(agentId, next)
   else minis.delete(agentId)
 }
 
 /** Every mini on screen, with its world position (dev helpers, tests). */
 export function getVillageMiniList(): Array<VillageSubagentRef & { position: Vec3 }> {
-  return [...minis.values()].flat()
+  return [...minis.values()].flat().map(mini => ({ ...mini, position: miniPosition(mini) }))
+}
+
+/** A helper stands behind its parent: next to the owner too, when the parent follows them. */
+function miniPosition(mini: VillageSubagentRef & { position: Vec3; local?: Vec3 }): Vec3 {
+  const live = mini.local ? liveStations.get(mini.agentId) : null
+  return live && mini.local ? stationLocalToWorld(live, mini.local) : mini.position
 }
 
 /** The helper within E's reach, if any (it wins E over its parent). */
@@ -93,7 +117,7 @@ function updateNearbyMini(actor: Vec3 | null): void {
     for (const list of minis.values()) {
       for (const mini of list) {
         const id = `${mini.agentId}\u0001${mini.key}`
-        anchors[id] = mini.position
+        anchors[id] = miniPosition(mini)
         refs.set(id, mini)
       }
     }

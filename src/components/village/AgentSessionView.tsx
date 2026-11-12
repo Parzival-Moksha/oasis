@@ -26,6 +26,8 @@ import { groupThread, threadImages, toolRunShape, type ThreadItem } from '../../
 import { hasInjectedText, parseInjectedUserText, type TaskNotice } from '../../lib/village/village-injected'
 import { getOlderHistoryState, loadOlderHistory, retryOlderHistory, subscribeOlderHistory } from './village-history'
 import { formatMessageTime, fullMessageTime } from '../../lib/village/message-time'
+import { hideSpokenLive, splitSpoken } from '../../lib/village/village-spoken'
+import { SpokenAgentContext, SpokenReply } from './CompanionToggles'
 import { VoiceClip } from './VoiceMessage'
 
 /** 2d: the side panel · 3d: the desk window (recent lines) · screen: the desk window zoomed in with F */
@@ -298,14 +300,18 @@ const LogEntryView = memo(function LogEntryView({ entry, compact }: { entry: Age
         </div>
       )
     }
-    case 'text':
+    case 'text': {
+      // A voiced agent's reply ends with <spoken>…</spoken>: the tag is hidden, the line gets a play button.
+      const said = splitSpoken(entry.text)
       return (
         <div className={`${entry.parentToolUseId ? 'ml-3 border-l border-violet-300/30 pl-2 text-slate-200' : 'text-slate-100'} text-[12.5px] leading-relaxed ${dim}`}>
           {entry.parentToolUseId && <span className="mr-1 text-[9px] font-black uppercase tracking-[0.12em] text-violet-200/90">subagent</span>}
           {!compact && !entry.parentToolUseId && <div className="-mb-0.5 text-right"><MessageTime ts={entry.ts} /></div>}
-          <Markdown text={compact && entry.text.length > 600 ? `${entry.text.slice(0, 600)}…` : entry.text} />
+          <Markdown text={compact && said.text.length > 600 ? `${said.text.slice(0, 600)}…` : said.text} />
+          {said.spoken && !compact && !entry.parentToolUseId && <SpokenReply spoken={said.spoken} />}
         </div>
       )
+    }
     case 'tool':
       if (entry.name === 'SendUserFile' && entry.status !== 'error' && (entry.attachments?.length || entry.status === 'running')) {
         return (
@@ -591,6 +597,7 @@ export function AgentSessionView({ agentId, variant, header }: AgentSessionViewP
 
   return (
     <ThreadImagesContext.Provider value={openImage}>
+    <SpokenAgentContext.Provider value={agent.id}>
     <div className={`flex h-full min-h-0 flex-col gap-2 ${VILLAGE_TYPE_CLASS}`} style={{ fontFamily: VILLAGE_FONT_BODY }}>
       {header}
       {subagent && <SubagentHeader agent={agent} subagent={subagent} />}
@@ -620,7 +627,7 @@ export function AgentSessionView({ agentId, variant, header }: AgentSessionViewP
           : <LogEntryView key={item.key} entry={item.entry} compact={compact} />))}
         {!subagent && agent.live?.text && (
           <div className="text-[12.5px] leading-relaxed text-slate-100">
-            <Markdown text={compact && agent.live.text.length > 600 ? `…${agent.live.text.slice(-600)}` : agent.live.text} />
+            <Markdown text={compact && agent.live.text.length > 600 ? `…${hideSpokenLive(agent.live.text).slice(-600)}` : hideSpokenLive(agent.live.text)} />
             <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-emerald-300/80 align-middle" />
           </div>
         )}
@@ -628,6 +635,7 @@ export function AgentSessionView({ agentId, variant, header }: AgentSessionViewP
       </div>
       </div>
     </div>
+    </SpokenAgentContext.Provider>
     </ThreadImagesContext.Provider>
   )
 }

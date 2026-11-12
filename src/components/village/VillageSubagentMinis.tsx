@@ -258,6 +258,8 @@ export function VillageSubagentMinis({ agentId, placement, avatarUrl, labelsVisi
       key: infos[index].key,
       description: infos[index].description,
       position: stationLocalToWorld(placement, [seat.x, 0, seat.z]),
+      // Its place behind the parent: the proximity check follows a parent that walks with the owner.
+      local: [seat.x, 0, seat.z] as [number, number, number],
     })))
     return () => setVillageMinis(agentId, null)
   }, [agentId, infos, layout, placement])

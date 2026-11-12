@@ -7,6 +7,7 @@
 // Every event: { v: 1, agentId, ts, kind, ...payload }. Schema: packages/oasis-agent-engine/README.md.
 
 import { attachmentsFromResult, attachmentForReadImage } from './files.js';
+import { ENGINE_NOTE } from './voice.js';
 
 export const STATUS = Object.freeze({
   WORKING: 'working',
@@ -69,8 +70,8 @@ export function toolResultText(content) {
   return JSON.stringify(content);
 }
 
-/** The engine's note next to an eyes picture (agent.js EYES_CAPTION): for the model, not for the thread. */
-const EYES_NOTE = /^\[Oasis eyes: [^\]]*\]$/;
+/** The engine's own notes in a user message (the eyes caption, the voice note: voice.js): for the model, not for the thread. */
+const EYES_NOTE = ENGINE_NOTE;
 function textOfUserContent(content) {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) return content.filter((b) => b?.type === 'text' && !EYES_NOTE.test(b.text || '')).map((b) => b.text).join('\n');
