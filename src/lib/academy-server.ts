@@ -55,12 +55,25 @@ export async function loadAcademyContent(): Promise<AcademyContent> {
   }
 }
 
+/**
+ * No file yet is an empty Academy. A file that cannot be read or is not JSON is an error: answering
+ * "nobody" would let the next write replace everyone's progress with one record.
+ */
 async function readState(): Promise<AcademyFile> {
+  let text: string
   try {
-    return parseAcademyFile(await fs.readFile(academyStatePath(), 'utf8'))
-  } catch {
-    return { v: 1, trainees: {} }
+    text = await fs.readFile(academyStatePath(), 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { v: 1, trainees: {} }
+    throw error
   }
+  text = text.replace(/^\uFEFF/, '')
+  try {
+    JSON.parse(text)
+  } catch {
+    throw new Error('data/academy.local.json is not valid JSON: fix it or move it away (nothing was written)')
+  }
+  return parseAcademyFile(text)
 }
 
 async function writeState(file: AcademyFile): Promise<void> {
@@ -68,7 +81,20 @@ async function writeState(file: AcademyFile): Promise<void> {
   await fs.mkdir(path.dirname(target), { recursive: true })
   const temp = `${target}.${process.pid}.tmp`
   await fs.writeFile(temp, `${JSON.stringify(file, null, 2)}\n`, 'utf8')
-  await fs.rename(temp, target)
+  // Windows refuses a rename over a file another request is reading: try again a few times.
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await fs.rename(temp, target)
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (attempt >= 4 || (code !== 'EPERM' && code !== 'EBUSY' && code !== 'EACCES')) {
+        await fs.unlink(temp).catch(() => {})
+        throw error
+      }
+      await new Promise(resolve => setTimeout(resolve, 40 * (attempt + 1)))
+    }
+  }
 }
 
 export async function academySnapshot(): Promise<AcademySnapshot> {

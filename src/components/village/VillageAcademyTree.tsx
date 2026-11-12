@@ -480,7 +480,10 @@ function Parts({ nodes, terraces, edges, gems, flashKey }: { nodes: TreeNode[]; 
   const pulsing = useMemo(() => nodes.flatMap((node, index) => (node.look === 'available' ? [index] : [])), [nodes])
 
   // The one frame callback of the tree: available nodes breathe, a node that just lit up flashes.
-  useFrameWhen(pulsing.length > 0 || flashing, ({ clock }) => {
+  useFrameWhen(pulsing.length > 0 || flashing, ({ clock, camera }) => {
+    // Too far to see a ring breathe: nothing to do.
+    const at = rings.current?.matrixWorld.elements
+    if (at && !flashes.current.size && Math.hypot(camera.position.x - at[12], camera.position.z - at[14]) > 70) return
     const wave = 0.5 + 0.5 * Math.sin(clock.elapsedTime * 3.4)
     for (const index of pulsing) {
       setRing(index, 1 + 0.07 * wave, 0.6 + 1.3 * wave)

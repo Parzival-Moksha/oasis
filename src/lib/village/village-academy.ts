@@ -268,6 +268,7 @@ export function resolveTraineeKey(file: AcademyFile, trainee: string): string {
 export function applyAcademyUpdate(file: AcademyFile, skills: AcademySkill[], update: AcademyUpdate, now: number): AcademyUpdateResult {
   const asked = str(update.trainee, 200)
   if (!asked) return { ok: false, status: 400, error: 'trainee is required: the agent\'s session id (or its name)' }
+  if (asked === '__proto__' || asked === 'constructor' || asked === 'prototype') return { ok: false, status: 400, error: 'not a trainee key' }
   const key = resolveTraineeKey(file, asked)
   const trainees = { ...file.trainees }
   const existing = trainees[key]
@@ -289,6 +290,10 @@ export function applyAcademyUpdate(file: AcademyFile, skills: AcademySkill[], up
     return { ok: true, file: { v: 1, trainees }, key: rekey }
   }
 
+  // A skill mark for someone the Academy has never heard of is a typo or an old key, not a new trainee.
+  if (!existing && update.skill !== undefined && typeof update.training !== 'boolean' && !name) {
+    return { ok: false, status: 404, error: `no trainee ${asked}: use its session id or its name, or send training: true to enrol it` }
+  }
   const record: AcademyTraineeRecord = existing
     ? { ...existing, skills: { ...existing.skills } }
     : { name: name || asked, training: false, skills: {}, updatedAt: now }

@@ -123,7 +123,8 @@ export function AcademyStoneBody({ agentId, children }: { agentId: string; child
   useEffect(() => {
     if (phase === 'flesh') {
       giveBack()
-      uniforms.uStone.value = 1
+      // Left at "colour": a helper cloned while this was stone still wears a twin, and stays as it woke.
+      uniforms.uStone.value = 0
       uniforms.uFlash.value = 0
       if (body.current) {
         body.current.position.y = 0
@@ -132,11 +133,13 @@ export function AcademyStoneBody({ agentId, children }: { agentId: string; child
       invalidate()
       return
     }
+    const began = performance.now()
     const dress = () => {
       const root = body.current
       if (!root) return
       // Bodies whose toon materials are still to be swapped for lit ones (once the sky's light is in): wait for that.
-      const waitForLit = Boolean(scene.environment)
+      // No sky light after a while: go ahead with what it wears.
+      const waitForLit = Boolean(scene.environment) || performance.now() - began < 8000
       root.traverse(object => {
         const mesh = object as THREE.Mesh
         if (!mesh.isMesh || worn.current.has(mesh)) return
@@ -159,7 +162,15 @@ export function AcademyStoneBody({ agentId, children }: { agentId: string; child
     if (phase === 'stone') {
       uniforms.uStone.value = 1
       uniforms.uFlash.value = 0
-      if (body.current) body.current.position.y = PEDESTAL_HEIGHT
+      // Also after a wake that was cut short (a reset for another take).
+      if (body.current) {
+        body.current.position.y = PEDESTAL_HEIGHT
+        body.current.scale.setScalar(1)
+      }
+      if (pedestal.current) {
+        pedestal.current.scale.y = 1
+        pedestal.current.position.y = PEDESTAL_HEIGHT / 2
+      }
     } else wakeStart.current = performance.now()
     const timer = window.setInterval(dress, 400)
     return () => window.clearInterval(timer)

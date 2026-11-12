@@ -116,7 +116,7 @@ function AcademySheet({ skill, content, trainee, trainees }: { skill: AcademySki
     if (!trainee) return
     const engine = useOasisStore.getState().agentEngine
     const agents = engine.order.map(id => engine.agents[id]).filter(Boolean)
-    const anorak = agents.filter(agent => /anorak/i.test(agent.name) && canTalkTo(agent)).sort((a, b) => Number(b.owned) - Number(a.owned))[0]
+    const anorak = agents.filter(agent => /anorak/i.test(agent.name) && canTalkTo(agent) && academyKeyOf(agent) !== trainee.key).sort((a, b) => Number(b.owned) - Number(a.owned))[0]
     if (!anorak) {
       showNotice('No Anorak in the village to ask. Summon one (an agent named Anorak) first.', 'error')
       return

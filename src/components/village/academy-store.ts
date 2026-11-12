@@ -97,7 +97,10 @@ let inFlight: Promise<void> | null = null
 let refused = false
 
 function take(body: string): void {
-  if (body === lastBody) return
+  if (body === lastBody) {
+    rekeyTrainees()
+    return
+  }
   const data = JSON.parse(body) as AcademySnapshot
   if (!Array.isArray(data.skills) || !Array.isArray(data.trainees)) return
   lastBody = body
@@ -149,6 +152,8 @@ export async function postAcademy(update: AcademyUpdate): Promise<{ ok: boolean;
   try {
     const response = await fetch('/api/academy', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(update) })
     const data = await response.json().catch(() => ({})) as { error?: string; warning?: string }
+    // A poll already on its way may have been answered before this write: wait for it, then read again.
+    if (inFlight) await inFlight
     await refreshAcademy()
     return response.ok ? { ok: true, warning: data.warning } : { ok: false, error: data.error || `HTTP ${response.status}` }
   } catch (error) {
@@ -166,7 +171,8 @@ function rekeyTrainees(): void {
     if (!state.trainees.some(trainee => trainee.key === agent.id)) continue
     rekeyed.add(agent.id)
     if (state.selected === agent.id) selectAcademyTrainee(agent.sessionId)
-    void postAcademy({ trainee: agent.id, rekey: agent.sessionId })
+    const from = agent.id
+    void postAcademy({ trainee: from, rekey: agent.sessionId }).then(result => { if (!result.ok) rekeyed.delete(from) })
   }
 }
 

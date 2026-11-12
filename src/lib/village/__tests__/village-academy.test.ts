@@ -35,9 +35,11 @@ const RAW = [
 const LEVELS = { levels: [{ name: 'Egg', xp: 0 }, { name: 'Hatchling', xp: 100 }, { name: 'Intern', xp: 250 }] }
 const content = normalizeAcademyContent(RAW, LEVELS, 'folder') as AcademyContent
 const empty: AcademyFile = { v: 1, trainees: {} }
+/** s1 is known to the Academy, not in training, nothing done. */
+const enrolled: AcademyFile = { v: 1, trainees: { s1: { name: 's1', training: false, skills: {}, updatedAt: 0 } } }
 
 function after(...updates: Array<Record<string, unknown>>): AcademyFile {
-  let file = empty
+  let file = enrolled
   updates.forEach((update, index) => {
     const result = applyAcademyUpdate(file, content.skills, { trainee: 's1', ...update }, 1000 + index)
     if (!result.ok) throw new Error(result.error)
@@ -158,14 +160,22 @@ describe('writes', () => {
 
   it('refuses what it cannot place', () => {
     expect(applyAcademyUpdate(empty, content.skills, { skill: 'spirit', state: 'claimed' }, 1)).toMatchObject({ ok: false, status: 400 })
-    expect(applyAcademyUpdate(empty, content.skills, { trainee: 's1', skill: 'nope', state: 'claimed' }, 1)).toMatchObject({ ok: false, status: 400 })
-    expect(applyAcademyUpdate(empty, content.skills, { trainee: 's1', skill: 'spirit', state: 'done' }, 1)).toMatchObject({ ok: false, status: 400 })
+    expect(applyAcademyUpdate(enrolled, content.skills, { trainee: 's1', skill: 'nope', state: 'claimed' }, 1)).toMatchObject({ ok: false, status: 400 })
+    expect(applyAcademyUpdate(enrolled, content.skills, { trainee: 's1', skill: 'spirit', state: 'done' }, 1)).toMatchObject({ ok: false, status: 400 })
+    expect(applyAcademyUpdate(empty, content.skills, { trainee: '__proto__', training: true }, 1)).toMatchObject({ ok: false, status: 400 })
     expect(applyAcademyUpdate(empty, content.skills, { trainee: 's1' }, 1)).toMatchObject({ ok: false, status: 400 })
   })
 
   it('marks a skill whose needs are missing, with a warning (the checker decides)', () => {
-    const result = applyAcademyUpdate(empty, content.skills, { trainee: 's1', skill: 'ships', state: 'verified' }, 1)
+    const result = applyAcademyUpdate(enrolled, content.skills, { trainee: 's1', skill: 'ships', state: 'verified' }, 1)
     expect(result).toMatchObject({ ok: true, warning: expect.stringContaining('website') })
+  })
+
+  it('a skill mark for a trainee nobody enrolled is refused, not kept under a new name', () => {
+    expect(applyAcademyUpdate(empty, content.skills, { trainee: 'typo', skill: 'spirit', state: 'verified' }, 1)).toMatchObject({ ok: false, status: 404 })
+    // Enrolling and marking in one go is fine: the Train switch and a first claim with a name.
+    expect(applyAcademyUpdate(empty, content.skills, { trainee: 's9', name: 'Rick', skill: 'spirit', state: 'claimed' }, 1)).toMatchObject({ ok: true, key: 's9' })
+    expect(applyAcademyUpdate(empty, content.skills, { trainee: 's9', training: true, skill: 'spirit', state: 'claimed' }, 1)).toMatchObject({ ok: true })
   })
 
   it('training on and off, rekey to the session id, remove', () => {

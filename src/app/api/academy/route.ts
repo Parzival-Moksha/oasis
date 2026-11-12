@@ -19,7 +19,11 @@ export const runtime = 'nodejs'
 export async function GET(request: NextRequest) {
   const denied = guardAgentRoute(request)
   if (denied) return denied
-  return NextResponse.json(await academySnapshot())
+  try {
+    return NextResponse.json(await academySnapshot())
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })
+  }
 }
 
 export async function POST(request: NextRequest) {
