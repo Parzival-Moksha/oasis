@@ -315,7 +315,9 @@ export interface EngineServerInfo {
 }
 
 export type EngineServerMessage =
-  | { type: 'hello'; agents: EngineAgentSnapshot[]; backlog?: Record<string, EngineEvent[]>; server?: EngineServerInfo }
+  | { type: 'hello'; agents: EngineAgentSnapshot[]; backlog?: Record<string, EngineEvent[]>; server?: EngineServerInfo; show?: string }
+  /** /oasis was typed in that agent's Claude Code session: walk the camera to it (VillageShow.tsx). */
+  | { type: 'show'; agentId: string }
   | { type: 'agents'; agents: EngineAgentSnapshot[] }
   | { type: 'event'; event: EngineEvent }
   /** The engine wants a picture from this agent's avatar for a message being sent (answer with the eyesFrame command). */

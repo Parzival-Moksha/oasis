@@ -36,6 +36,7 @@ const BACKLOG = 400;
 const agents = new Map(); // id -> Agent | Observer | HookObserver
 const backlog = new Map(); // id -> events[]
 const clients = new Set();
+let pendingShow = null; // { agentId, at }: the agent /oasis asked to show, for the page that is about to connect
 let snapshotTimer = null;
 let telegram = null; // the owner's Telegram line (telegram.js), only in the real engine
 
@@ -413,7 +414,7 @@ const server = http.createServer(async (req, res) => {
   if (!requestAllowed(req)) return sendJson(res, 403, { error: 'origin not allowed' });
   try {
     if (req.method === 'GET' && url.pathname.startsWith('/file/')) return serveAttachment(url.pathname.slice('/file/'.length), res);
-    if (req.method === 'GET' && url.pathname === '/health') return sendJson(res, 200, { ok: true, agents: agents.size, claude: resolveClaude(), ears: earsStatus() });
+    if (req.method === 'GET' && url.pathname === '/health') return sendJson(res, 200, { ok: true, agents: agents.size, clients: clients.size, claude: resolveClaude(), ears: earsStatus() });
     if (req.method === 'GET' && url.pathname === '/api/agents') return sendJson(res, 200, snapshots());
     if (req.method === 'GET' && url.pathname === '/api/sessions') return sendJson(res, 200, await commands.listSessions({}));
     if (req.method === 'POST' && url.pathname === '/hook') {
@@ -426,6 +427,22 @@ const server = http.createServer(async (req, res) => {
       const { messages, cameAlive } = checkIn(body);
       if (cameAlive) { hub.log(`bridge: session ${body.sessionId.slice(0, 8)} connected (${body.surface || 'no surface'}, ${body.cwd || '?'})`); scheduleSnapshot(); }
       return sendJson(res, 200, { messages });
+    }
+    // /oasis in a Claude Code session (plugins/oasis): make sure that session stands in the village (watch its
+    // transcript if nothing has it yet) and ask the open Oasis pages to walk the camera to it. A page that connects
+    // in the next 90 s (the browser /oasis just opened) is told in its hello.
+    if (req.method === 'POST' && url.pathname === '/bridge/open') {
+      const body = JSON.parse((await readBody(req, 64 * 1024)) || '{}');
+      if (typeof body.sessionId !== 'string' || !/^[0-9a-f-]{36}$/i.test(body.sessionId)) return sendJson(res, 400, { ok: false, error: 'sessionId must be a session uuid' });
+      let agent = [...agents.values()].find((a) => a.sessionId === body.sessionId);
+      if (!agent) {
+        const file = findSessionFile(body.sessionId, typeof body.cwd === 'string' ? body.cwd : undefined);
+        if (file) agent = await commands.observe({ sessionPath: file });
+      }
+      const agentId = agent?.id || null;
+      pendingShow = agentId ? { agentId, at: Date.now() } : null;
+      if (agentId) broadcast({ type: 'show', agentId });
+      return sendJson(res, 200, { ok: true, agentId, clients: clients.size });
     }
     if (req.method === 'POST' && url.pathname === '/bridge/event') {
       const body = JSON.parse((await readBody(req, 256 * 1024)) || '{}');
@@ -469,7 +486,9 @@ wss.on('connection', (ws) => {
   clients.add(ws);
   const bl = {};
   for (const [id, list] of backlog) if (agents.has(id)) bl[id] = list;
-  ws.send(JSON.stringify({ type: 'hello', agents: snapshots(), backlog: bl, server: { port: PORT, claude: resolveClaude().how } }));
+  const show = pendingShow && Date.now() - pendingShow.at < 90000 && agents.has(pendingShow.agentId) ? pendingShow.agentId : undefined;
+  pendingShow = null;
+  ws.send(JSON.stringify({ type: 'hello', agents: snapshots(), backlog: bl, server: { port: PORT, claude: resolveClaude().how }, ...(show ? { show } : {}) }));
   ws.on('message', async (raw) => {
     let msg;
     try { msg = JSON.parse(String(raw)); } catch { return; }

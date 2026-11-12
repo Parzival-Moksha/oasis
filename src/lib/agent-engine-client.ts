@@ -119,6 +119,7 @@ export class AgentEngineClient {
   private readonly deltas = new Map<string, TextDeltaEvent>()
   private deltaTimer: unknown = null
   private eyesCapturer: EyesCapturer | null = null
+  private showListeners = new Set<(agentId: string) => void>()
 
   constructor(options: AgentEngineClientOptions) {
     this.url = options.url || resolveAgentEngineUrl()
@@ -254,6 +255,18 @@ export class AgentEngineClient {
    * The village scene registers how to take an eyes picture (VillageEyes.tsx); the engine then asks this page
    * for one with each message to an agent whose eyes are on. Returns the unregister function.
    */
+  /** The engine asks to show an agent (someone typed /oasis in its session). Returns the unsubscribe function. */
+  onShow(listener: (agentId: string) => void): () => void {
+    this.showListeners.add(listener)
+    return () => { this.showListeners.delete(listener) }
+  }
+
+  private emitShow(agentId: string): void {
+    for (const listener of this.showListeners) {
+      try { listener(agentId) } catch { /* a listener's problem is not the socket's */ }
+    }
+  }
+
   setEyesCapturer(capturer: EyesCapturer): () => void {
     this.eyesCapturer = capturer
     this.announceEyes()
@@ -415,6 +428,10 @@ export class AgentEngineClient {
         this.flushDeltas()
         this.dispatch({ type: 'hello', agents: message.agents || [], backlog: message.backlog || {}, server: message.server, at: this.now() })
         if (this.eyesCapturer) this.announceEyes()
+        if (typeof message.show === 'string') this.emitShow(message.show)
+        return
+      case 'show':
+        if (typeof message.agentId === 'string') this.emitShow(message.agentId)
         return
       case 'eyes.request':
         if (typeof message.requestId === 'string' && typeof message.agentId === 'string') this.answerEyes(message.requestId, message.agentId)

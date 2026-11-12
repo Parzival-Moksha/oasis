@@ -55,6 +55,7 @@ import {
 } from './village-actions'
 import { VILLAGE_OBSERVED_COLOR, agentDisplayName, statusColor, villageAgentLook } from './village-status'
 import { VillageSubagentMinis } from './VillageSubagentMinis'
+import { VillageShow } from './VillageShow'
 import { VillageEyes } from './VillageEyes'
 import { VillageMissionWall } from './VillageMissionWall'
 import { SettingsContext } from '../scene-lib/contexts'
@@ -642,6 +643,7 @@ export function VillageWorld() {
       <VillageMissionWall roster={roster} placements={placements} origin={origin} />
       <VillageCameraRig />
       <VillageEyes />
+      <VillageShow />
     </group>
   )
 }

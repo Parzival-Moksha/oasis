@@ -10,6 +10,10 @@
 //
 // When the Oasis isn't running the polls fail quietly. OASIS_ENGINE_URL overrides the engine address.
 //
+// /oasis (a slash command this mod registers) opens the Oasis on this session: it starts the two servers when they
+// aren't running (scripts/oasis-launch.ps1, Windows), opens the village in the browser, and has the camera walk to
+// this session's avatar. With the Oasis already open in a tab, it only walks the camera. /oasis status reports.
+//
 // The session also learns where it is: when the engine answers, one short section is added to the system
 // prompt (prompt.compose). The world tools themselves come from this plugin's .mcp.json (the Oasis MCP server).
 import type { Register, EngineInterface } from 'claude-code'
@@ -37,6 +41,55 @@ async function oasisSection($: EngineInterface, fallback: string): Promise<strin
     return oasisNote((await $.env.get('OASIS_MISSIONS_DIR')) || MISSIONS_DIR)
   } catch {
     return null
+  }
+}
+
+const WORLD_URL = 'http://localhost:4516/?profile=village'
+const LAUNCH_TIMEOUT_MS = 150_000
+
+/** /oasis status: what is running, in two lines. */
+async function oasisStatus($: EngineInterface, engine: string): Promise<string> {
+  try {
+    const health = await $.http.fetch(`${engine}/health`)
+    if (!health.ok) return 'The Oasis engine is not running. /oasis starts it.'
+    const { agents, clients } = JSON.parse(health.text) as { agents?: number; clients?: number }
+    const pages = clients === undefined ? '' : clients ? `, open in ${clients} browser tab${clients === 1 ? '' : 's'}` : ', not open in any browser tab'
+    return `The Oasis engine is running: ${agents ?? 0} agent${agents === 1 ? '' : 's'} in the village${pages}.`
+  } catch {
+    return 'The Oasis engine is not running. /oasis starts it.'
+  }
+}
+
+/** /oasis: show this session in the Oasis, starting and opening it when needed. Returns the line to print. */
+async function openOasis($: EngineInterface, engine: string, sessionId: string, cwd: string): Promise<string> {
+  // Already open in a tab? Then the engine walks that tab's camera here; no second tab.
+  try {
+    const res = await post($, engine, '/bridge/open', { sessionId, cwd })
+    if (res.ok) {
+      const { agentId, clients } = JSON.parse(res.text) as { agentId?: string | null; clients?: number }
+      if (clients && agentId) return 'The Oasis is open. This session is in front of you there.'
+      if (clients) return 'The Oasis is open. This session has no transcript yet: send a message here first, then /oasis again.'
+    }
+  } catch {
+    // The engine is down, or an older one without /bridge/open: the launcher below handles both.
+  }
+  if ((await $.env.get('OS')) !== 'Windows_NT') {
+    return `The /oasis launcher is Windows-only for now. Start the Oasis by hand (pnpm dev:engine and pnpm dev in its folder), then open ${WORLD_URL}&session=${sessionId}`
+  }
+  const home = (await $.env.get('OASIS_HOME')) || ''
+  const script = `${$.plugin.root}\\scripts\\oasis-launch.ps1`
+  const argv = ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Url', `${WORLD_URL}&session=${sessionId}`]
+  if (home) argv.push('-OasisHome', home)
+  try {
+    const ran = await $.process.run(argv, { timeoutMs: LAUNCH_TIMEOUT_MS })
+    const said = ran.stdout.trim().split(/\r?\n/).filter(Boolean).join(' ')
+    if (ran.exitCode === 0) {
+      const started = said.includes('started in its own window')
+      return `${started ? 'Started the Oasis (its ENGINE and WORLD windows) and opened it' : 'Opened the Oasis'} in your browser. This session will be in front of you there.`
+    }
+    return said || `The Oasis launcher failed (exit ${ran.exitCode}).`
+  } catch {
+    return 'The Oasis launcher could not run. Start the Oasis with its desktop shortcut, then /oasis again.'
   }
 }
 
@@ -70,6 +123,7 @@ export const register: Register = on => {
     const started = await next(e)
     engine = ((await $.env.get('OASIS_ENGINE_URL')) || engine).replace(/\/+$/, '')
     sessionId = await $.session.id()
+    await $.command.register({ name: 'oasis', description: 'Open the Oasis on this session (starts it if needed); /oasis status' })
     let polling = false
     $.clock.every(POLL_MS, () => {
       if (polling) return
@@ -91,6 +145,11 @@ export const register: Register = on => {
       })()
     })
     return started
+  })
+
+  on('command.run', { command: 'oasis' }, async ($, e) => {
+    if (e.args.trim().toLowerCase() === 'status') return { text: await oasisStatus($, engine) }
+    return { text: await openOasis($, engine, await $.session.id(), await $.session.cwd()) }
   })
 
   // The reply as it streams, so the Oasis shows it word by word like this window does.
