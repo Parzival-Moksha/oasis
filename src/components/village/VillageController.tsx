@@ -8,6 +8,7 @@ import { useInputManager } from '../../lib/input-manager'
 import { useOasisStore } from '../../store/oasisStore'
 import { effectiveStatus, selectAttentionQueue } from '../../store/slices/agentEngineSlice'
 import { playVillageChime, unlockVillageAudio } from './village-sound'
+import { loadSeen, markSeen, planUnseenRestore, saveSeen } from '../../lib/village/village-seen'
 import { VillageImageViewer } from './VillageImageViewer'
 import { VillageMissionReader } from './VillageMissionReader'
 import {
@@ -31,6 +32,27 @@ export function VillageController() {
     client.start()
     return () => client.stop()
   }, [])
+
+  // "Finished while you weren't looking" survives a reload or an engine restart (village-seen.ts): after
+  // each hello, agents whose last turn ended after your last look are unseen again; opening one marks it seen.
+  useEffect(() => useOasisStore.subscribe((state, prev) => {
+    const engine = state.agentEngine
+    const before = prev.agentEngine
+    if (engine === before) return
+    const keyOf = (id: string) => engine.agents[id]?.sessionId || id
+    if (engine.connection.status === 'open' && before.connection.status !== 'open') {
+      const agents = engine.order.map(id => engine.agents[id]).filter(Boolean).filter(agent => agent.owned)
+        .map(agent => ({ id: agent.id, key: agent.sessionId || agent.id, status: agent.status, lastOutcomeAt: agent.lastOutcomeAt }))
+      const plan = planUnseenRestore(agents, loadSeen(), Date.now(), engine.focusedAgentId)
+      saveSeen(plan.seen)
+      if (plan.unseenIds.length) state.agentEngineDispatch({ type: 'unseen/restore', agentIds: plan.unseenIds, at: Date.now() })
+      return
+    }
+    if (engine.focusedAgentId && engine.focusedAgentId !== before.focusedAgentId) markSeen(keyOf(engine.focusedAgentId))
+    for (const id of engine.order) {
+      if (before.agents[id]?.unseen && engine.agents[id] && !engine.agents[id].unseen) markSeen(keyOf(id))
+    }
+  }), [])
 
   // T / E (talk to the nearest agent) and N (next agent needing attention) win over world bindings.
   useEffect(() => {

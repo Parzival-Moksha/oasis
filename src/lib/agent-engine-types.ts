@@ -75,6 +75,8 @@ export interface EngineAgentSnapshot {
   eyes?: boolean
   /** Claude in Chrome: the owner's real browser, each call asking first (engine chrome.js). */
   chrome?: boolean
+  /** What the last turn came to, kept across engine restarts (engine outcome.js). */
+  lastOutcome?: { outcome: string; reason?: string | null; at?: number | null } | null
   status: EngineAgentStatus
   statusReason?: string | null
   alive?: boolean

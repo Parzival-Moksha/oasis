@@ -178,6 +178,8 @@ export interface EngineAgentState {
   eyes: boolean | null
   /** Claude in Chrome on (engine chrome.js). null = the engine is older than the switch. */
   chrome: boolean | null
+  /** When its last turn ended (engine snapshot): after a reload, unseen if after your last look (village-seen.ts). */
+  lastOutcomeAt: number | null
   status: EngineAgentStatus
   statusReason: string | null
   statusSince: number
@@ -254,6 +256,8 @@ export type AgentEngineAction =
   | { type: 'agents'; agents: EngineAgentSnapshot[]; at: number }
   | { type: 'event'; event: EngineEvent }
   | { type: 'focus'; agentId: string | null }
+  /** After a reload: these agents finished while you weren't looking (village-seen.ts). */
+  | { type: 'unseen/restore'; agentIds: string[]; at: number }
   | { type: 'nearby'; agentId: string | null }
   | { type: 'picker'; open: boolean }
   | { type: 'sessions/loading' }
@@ -328,6 +332,7 @@ export function createAgentState(
     resolvedEffort: null,
     eyes: null,
     chrome: null,
+    lastOutcomeAt: null,
     status: 'idle',
     statusReason: null,
     statusSince: at,
@@ -390,6 +395,7 @@ export function applySnapshot(agent: EngineAgentState, snap: EngineAgentSnapshot
     resolvedEffort: snap.resolvedEffort !== undefined ? snap.resolvedEffort : agent.resolvedEffort,
     eyes: typeof snap.eyes === 'boolean' ? snap.eyes : agent.eyes,
     chrome: typeof snap.chrome === 'boolean' ? snap.chrome : agent.chrome,
+    lastOutcomeAt: typeof snap.lastOutcome?.at === 'number' ? snap.lastOutcome.at : agent.lastOutcomeAt,
     status,
     statusReason: snap.statusReason ?? (status === agent.status ? agent.statusReason : null),
     statusSince: status === agent.status ? agent.statusSince : at,
@@ -1048,6 +1054,16 @@ export function agentEngineReducer(state: AgentEngineState, action: AgentEngineA
       const agent = state.agents[id]
       const seen = withAttention({ ...agent, unseen: false }, agent.lastEventAt)
       return { ...state, focusedAgentId: id, focusedSubagent, agents: { ...state.agents, [id]: seen } }
+    }
+
+    case 'unseen/restore': {
+      let agents = state.agents
+      for (const id of action.agentIds) {
+        const agent = agents[id]
+        if (!agent || agent.unseen || id === state.focusedAgentId) continue
+        agents = { ...agents, [id]: withAttention({ ...agent, unseen: true }, action.at) }
+      }
+      return agents === state.agents ? state : { ...state, agents }
     }
 
     case 'nearby': {

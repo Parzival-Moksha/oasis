@@ -25,6 +25,7 @@ import { readHistoryTail } from './history.js';
 import { droppedAfterInterrupt, expiredAtResult, interruptApplies, matchReplay } from './pending.js';
 import { worldToolsArgs } from './worldtools.js';
 import { chromeArgs } from './chrome.js';
+import { outcomeForRoster, restoreOutcome, statusForOutcome } from './outcome.js';
 
 const SANDBOX_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'sandbox');
 const REVIEW_INPUT_MAX = 256 * 1024;
@@ -81,7 +82,15 @@ export class Agent {
     this.proc = null;
     this.status = STATUS.IDLE;
     this.statusReason = 'not started';
-    this.lastOutcome = null;
+    // The last turn's outcome survives engine restarts (outcome.js): waiting / needs-you / cut off, not all idle.
+    this.lastOutcome = restoreOutcome(spec);
+    /** When the running turn started (kept in the roster: a restart mid-turn reads as "stopped mid-turn"). */
+    this.turnOpenAt = null;
+    if (this.lastOutcome) {
+      const shown = statusForOutcome(this.lastOutcome);
+      this.status = shown.status;
+      this.statusReason = shown.reason;
+    }
     this.control = new Map(); // request_id -> {resolve, timer}
     this.permissions = new Map(); // request_id -> request (from CLI)
     this.pendingUser = new Map(); // uuid -> {text, sentAt, turnWasRunning}
@@ -113,11 +122,12 @@ export class Agent {
       pid: this.proc?.pid || null, pendingUser: this.pendingUser.size,
       permissions: [...this.permissions.values()].map((r) => this.describePermission(r)),
       context: this.lastContext, models: this.meta.models || null,
+      lastOutcome: this.lastOutcome ? outcomeForRoster(this.lastOutcome) : null,
     };
   }
 
   rosterEntry() {
-    return { id: this.id, name: this.name, cwd: this.cwd, sessionId: this.sessionId, model: this.model, permissionMode: this.permissionMode, effort: this.effort, eyes: this.eyes, ...(this.worldTools ? {} : { worldTools: false }), ...(this.chrome ? { chrome: true } : {}) };
+    return { id: this.id, name: this.name, cwd: this.cwd, sessionId: this.sessionId, model: this.model, permissionMode: this.permissionMode, effort: this.effort, eyes: this.eyes, ...(this.worldTools ? {} : { worldTools: false }), ...(this.chrome ? { chrome: true } : {}), ...(this.lastOutcome ? { lastOutcome: outcomeForRoster(this.lastOutcome) } : {}), ...(this.turnOpenAt ? { turnOpenAt: this.turnOpenAt } : {}) };
   }
 
   // ------------------------------------------------------------------ process
@@ -170,6 +180,7 @@ export class Agent {
     const proc = spawnClaude(args, { cwd: this.cwd, env });
     this.proc = proc;
     this.killing = false;
+    this.sentSinceStart = false;
     this.stderrTail = [];
     this.turnRunning = false;
     this.pendingUser.clear();
@@ -184,7 +195,8 @@ export class Agent {
       this.emit('error', { message: `spawn failed: ${err.message}` });
     });
     proc.on('exit', (code, signal) => this.onExit(code, signal));
-    this.setStatus(STATUS.IDLE, 'ready');
+    // Back from a restart: show what the last turn came to (waiting / needs you / cut off), not "ready".
+    this.recomputeStatus();
     // Zero-cost handshake: returns models, account, commands. No API turn is spent.
     this.request('initialize', {}).then(async (r) => {
       if (r?.ok) {
@@ -280,6 +292,7 @@ export class Agent {
     }
     if (msg.type === 'system' && msg.subtype === 'init') {
       this.turnRunning = true;
+      if (!this.turnOpenAt) { this.turnOpenAt = Date.now(); this.persist(); }
       this.turnIndex = (this.turnIndex || 0) + 1;
       if (msg.session_id && msg.session_id !== this.sessionId) { this.sessionId = msg.session_id; this.persist(); }
       this.effectivePermissionMode = msg.permissionMode;
@@ -353,6 +366,9 @@ export class Agent {
 
   afterResult() {
     this.turnRunning = false;
+    this.turnOpenAt = null;
+    if (this.lastOutcome && typeof this.lastOutcome.at !== 'number') this.lastOutcome = { ...this.lastOutcome, at: Date.now() };
+    this.persist();
     for (const key of expiredAtResult(this.pendingUser, this.turnIndex || 0)) this.dropPending(key, 'expired');
     this.interruptTurn = null;
     this.hostDenied.clear();
@@ -364,7 +380,9 @@ export class Agent {
   }
 
   onEvent(kind, payload) {
-    if (kind === 'turn.end') this.lastOutcome = payload;
+    // A resumed session whose last turn was cut off makes the CLI close that turn by itself at start
+    // (init + turn.end, no API call): that must not hide "stopped mid-turn" before anyone wrote to it.
+    if (kind === 'turn.end' && (this.sentSinceStart || !this.lastOutcome)) this.lastOutcome = payload;
     this.emit(kind, payload);
   }
 
@@ -418,6 +436,7 @@ export class Agent {
       if (!this.proc) throw new Error(this.statusReason || 'agent process not running');
     }
     const uuid = randomUUID();
+    this.sentSinceStart = true;
     const turnWasRunning = this.turnRunning;
     this.pendingUser.set(uuid, { text, sentAt: Date.now(), turnWasRunning, turnIndex: this.turnIndex || 0 });
     const content = picture?.data
