@@ -31,6 +31,7 @@ import { EffortSelect } from './EffortSelect'
 import { EyesToggle } from './EyesToggle'
 import { ChromeToggle } from './ChromeToggle'
 import { VillageAvatarButton } from './VillageAvatarButton'
+import { PanelLookButton, usePanelLook } from './PanelLook'
 import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY, VILLAGE_TYPE_CLASS, agentDisplayName, canTalkTo, cwdLabel, formatCost, modelLabel, statusColor, statusLabel } from './village-status'
 
 const PERMISSION_MODES = ['default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions']
@@ -119,6 +120,8 @@ export function AgentSessionPanel() {
   // Every agent's model list merged (village-models.ts): an agent started before a release still offers the new model.
   const mergedModelsKey = useOasisStore(s => JSON.stringify(mergeModelLists(Object.values(s.agentEngine.agents).map(a => a.models))))
   const mergedModels = useMemo(() => JSON.parse(mergedModelsKey) as ModelOption[], [mergedModelsKey])
+  // Transparency + blur for all agent chats, this agent's colour (PanelLook.tsx).
+  const panelLook = usePanelLook(agent?.sessionId || agentId || '')
 
   // F: the agent's own screen took over (camera + composer in the world); the layer above stays pushed.
   if (!agentId || !agent || screenAgentId === agentId) return null
@@ -171,7 +174,7 @@ export function AgentSessionPanel() {
     <div
       data-ui-panel="village-session"
       className={`fixed flex flex-col gap-2 rounded-xl border bg-slate-950/95 p-3 text-white shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-xl ${VILLAGE_TYPE_CLASS}`}
-      style={{ ...style, borderColor: `${color}88`, fontFamily: VILLAGE_FONT_BODY }}
+      style={{ ...style, ...panelLook, borderColor: `${color}88`, fontFamily: VILLAGE_FONT_BODY }}
       onPointerDown={() => bringToFront('village-session')}
     >
       {geometry.side === 'right' && (
@@ -201,6 +204,7 @@ export function AgentSessionPanel() {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          <PanelLookButton agentKey={agent.sessionId || agent.id} agentName={agentDisplayName(agent)} />
           <VillageAvatarButton agentId={agent.id} sessionId={agent.sessionId} />
           <button
             type="button"

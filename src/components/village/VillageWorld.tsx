@@ -39,6 +39,7 @@ import { VillageComposer } from './VillageComposer'
 import { GAME_HUD_TEXT, GameKeycap } from '../forge/GameKeycap'
 import { VillageCorpseDrop, VillageHpBar, useVillageCombatPose } from './VillageCombatHud'
 import { VillageGore } from './VillageGore'
+import { usePanelLook } from './PanelLook'
 import {
   focusVillageAgent,
   getSessionPanelGeometry,
@@ -232,6 +233,8 @@ function StationLabel({ agentId, nearby }: { agentId: string; nearby: boolean })
  */
 function DeskWindow({ agentId, nearby, mode }: { agentId: string; nearby: boolean; mode: 'desk' | 'screen' }) {
   const agent = useOasisStore(s => s.agentEngine.agents[agentId])
+  // The full screen (F) follows the chat look: transparency + blur for all, this agent's colour (PanelLook.tsx).
+  const look = usePanelLook(agent?.sessionId || agentId)
   if (!agent) return null
   const color = agent.readOnly ? VILLAGE_OBSERVED_COLOR : statusColor(effectiveStatus(agent))
   const size = DESK_WINDOW_PX[mode]
@@ -246,11 +249,11 @@ function DeskWindow({ agentId, nearby, mode }: { agentId: string; nearby: boolea
         padding: screen ? 18 : 14,
         // See-through at the desk; nearly solid when it fills the view, so a bright world behind can't drown the text.
         background: screen
-          ? 'linear-gradient(160deg, rgba(8,13,26,0.9) 0%, rgba(3,6,14,0.94) 100%)'
+          ? look.background
           : 'linear-gradient(160deg, rgba(10,16,30,0.72) 0%, rgba(4,8,18,0.84) 100%)',
         border: `1px solid ${color}aa`,
         boxShadow: `0 0 0 1px rgba(255,255,255,0.04) inset, 0 0 46px ${color}38, 0 0 120px rgba(0,0,0,0.35)`,
-        backdropFilter: 'blur(8px)',
+        backdropFilter: screen ? look.backdropFilter : 'blur(8px)',
       }}
       onPointerDown={stopDomEvent}
       onPointerUp={stopDomEvent}
