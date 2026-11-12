@@ -127,7 +127,7 @@ export function SpokenPlayButton({ agentId, agentName, spoken }: { agentId: stri
           stopVillageSpeech()
           return
         }
-        void speakVillageAgent(agentId, spoken, villageVoiceFor(agentName)).then(played => {
+        void speakVillageAgent(agentId, spoken, villageVoiceFor(agentName), true).then(played => {
           if (!played) showNotice('Could not play the spoken reply (see the console).', 'warn')
         })
       }}

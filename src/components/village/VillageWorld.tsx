@@ -381,17 +381,16 @@ function useVillageFollower(agentId: string, placement: VillageStationPlacement,
       setVillageLiveStation(agentId, null)
       sitAtDesk()
     } else {
-      if (!live.current) {
-        live.current = { position: [...placement.position], rotationY: placement.rotationY, anchor: [...placement.anchor] }
-        setVillageLiveStation(agentId, live.current)
-      }
+      if (!live.current) live.current = { position: [...placement.position], rotationY: placement.rotationY, anchor: [...placement.anchor] }
+      // Every run, not only the first: an effect cleanup (unmount, StrictMode's second pass) takes it out of the registry.
+      setVillageLiveStation(agentId, live.current)
       writePose(follow, true)
     }
     setAway(follow.mode !== 'home')
+    // Out of the registry on every cleanup (unmount, a hot reload); the next run puts it back.
+    return () => setVillageLiveStation(agentId, null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentId, placement, home, wanted])
-
-  useEffect(() => () => setVillageLiveStation(agentId, null), [agentId])
 
   useFrameWhen(away, (_, delta) => {
     const follow = state.current as FollowState

@@ -22,7 +22,7 @@ export function VillageVoice() {
       ;(window as unknown as Record<string, unknown>).__oasisVillageVoice = {
         say: (agentId: string, text: string, voice?: string) => {
           const agent = useOasisStore.getState().agentEngine.agents[agentId]
-          return speakVillageAgent(agentId, text, voice || villageVoiceFor(agent?.name))
+          return speakVillageAgent(agentId, text, voice || villageVoiceFor(agent?.name), true)
         },
         stop: () => stopVillageSpeech(),
         debug: () => getVillageSpeechDebug(),

@@ -52,15 +52,18 @@ describe('engine: voice', () => {
     expect(voiced.written[0].message.content).toEqual([{ type: 'text', text: 'hello there' }, { type: 'text', text: VOICE_NOTE }])
     // The thread and the pending bookkeeping see the owner's own words.
     expect(voiced.events.find(e => e.kind === 'user.sent')?.payload).toMatchObject({ text: 'hello there' })
+    // A slash command goes out as plain text, or the CLI would not take it as a command.
+    await voiced.agent.send('/compact')
+    expect(voiced.written[1].message.content).toBe('/compact')
     const quiet = makeAgent({ name: 'Rick' })
     await quiet.agent.send('hello there')
     expect(quiet.written[0].message.content).toBe('hello there')
     // Switched off: the very next message says so once (no restart), and after that messages go out plain.
     voiced.agent.setSpeak(false)
     await voiced.agent.send('again')
-    expect(voiced.written[1].message.content).toEqual([{ type: 'text', text: 'again' }, { type: 'text', text: VOICE_OFF_NOTE }])
+    expect(voiced.written[2].message.content).toEqual([{ type: 'text', text: 'again' }, { type: 'text', text: VOICE_OFF_NOTE }])
     await voiced.agent.send('and again')
-    expect(voiced.written[2].message.content).toBe('and again')
+    expect(voiced.written[3].message.content).toBe('and again')
     expect(ENGINE_NOTE.test(VOICE_OFF_NOTE)).toBe(true)
   })
 

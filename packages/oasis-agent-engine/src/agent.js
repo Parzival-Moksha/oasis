@@ -451,8 +451,10 @@ export class Agent {
       ]
       : text;
     // Voice on: the note that asks for a <spoken> line rides along (voice.js); the thread never shows it.
-    const voiceNote = this.speak ? VOICE_NOTE : this.speakWentOff ? VOICE_OFF_NOTE : null;
-    this.speakWentOff = false;
+    // Not on a slash command (/compact, /clear): the CLI only takes those as plain text.
+    const command = /^\s*\/[a-z]/i.test(text);
+    const voiceNote = command ? null : this.speak ? VOICE_NOTE : this.speakWentOff ? VOICE_OFF_NOTE : null;
+    if (!command) this.speakWentOff = false;
     if (voiceNote) content = [...(Array.isArray(content) ? content : [{ type: 'text', text }]), { type: 'text', text: voiceNote }];
     const msg = { type: 'user', message: { role: 'user', content }, parent_tool_use_id: null, session_id: '', uuid };
     if (priority === 'now' || priority === 'later') msg.priority = priority;

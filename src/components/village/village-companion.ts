@@ -141,7 +141,7 @@ interface Clip {
 
 let speech: VillageSpeech | null = null
 let speechToken = 0
-let playing: { audio: THREE.PositionalAudio; lipId: string; lip: LipSyncController | null } | null = null
+let playing: { audio: THREE.PositionalAudio; lipId: string; lip: LipSyncController | null; release: () => void } | null = null
 let lastSpeech: { agentId: string; text: string; at: number; result: string } | null = null
 const speechListeners = new Set<() => void>()
 /** Fetched clips (metadata) and decoded audio for this page: a replay neither asks the server nor decodes again. */
@@ -173,6 +173,7 @@ function endPlayback(): void {
   const current = playing
   if (!current) return
   playing = null
+  current.release()
   unregisterLipSync(current.lipId, current.lip || undefined)
   try {
     if (current.audio.isPlaying) current.audio.stop()
@@ -190,8 +191,10 @@ export function stopVillageSpeech(): void {
   if (speech) setSpeech(null)
 }
 
+const clipKey = (text: string, voice: string) => `${voice}\n${text}`
+
 function fetchClip(text: string, voice: string): Promise<Clip> {
-  const key = `${voice}\n${text}`
+  const key = clipKey(text, voice)
   let job = clips.get(key)
   if (!job) {
     job = fetch('/api/village/speak', {
@@ -223,9 +226,10 @@ async function loadBuffer(clip: Clip, context: AudioContext): Promise<AudioBuffe
 /**
  * Say `text` from the agent's avatar. A new line stops the one before it. Resolves true once it plays.
  * Needs sound to be allowed on the page (any click or key press does that); without it nothing is
- * fetched, so a silent tab costs nothing.
+ * fetched, so a silent tab costs nothing. `byHand`: the owner clicked play, so the click itself may
+ * unlock sound; a reply that speaks on its own never waits for that (it would be said much later).
  */
-export async function speakVillageAgent(agentId: string, rawText: string, voice: string): Promise<boolean> {
+export async function speakVillageAgent(agentId: string, rawText: string, voice: string, byHand = false): Promise<boolean> {
   const text = cleanSpoken(rawText, SPOKEN_MAX_CHARS)
   stopVillageSpeech()
   const token = speechToken
@@ -238,6 +242,7 @@ export async function speakVillageAgent(agentId: string, rawText: string, voice:
   if (!text || !listener) return fail(text ? 'no audio listener' : 'nothing to say')
   const context = listener.context
   if (context.state !== 'running') {
+    if (!byHand) return fail('audio locked until a click or key press')
     try { await context.resume() } catch { /* stays suspended until a gesture */ }
     if ((context.state as AudioContextState) !== 'running') return fail('audio locked until a click or key press')
   }
@@ -250,14 +255,17 @@ export async function speakVillageAgent(agentId: string, rawText: string, voice:
     if (token !== speechToken) return false
     buffer = await loadBuffer(clip, context)
   } catch (error) {
+    // Forget the clip: the server may have pruned its file, and the next try should ask again.
+    clips.delete(clipKey(text, voice))
     console.warn(`[village] speech failed: ${error instanceof Error ? error.message : String(error)}`)
     return fail('fetch failed')
   }
   if (token !== speechToken) return false
   if ((context.state as AudioContextState) !== 'running') return fail('audio suspended')
 
-  // From the avatar's head; an agent without a body in this scene speaks from where the listener is.
-  const head = speechSource(agentId) || listener
+  // From the avatar's head. (Never on the listener itself: it hangs on the camera, whose matrix every label updates.)
+  const head = speechSource(agentId)
+  if (!head) return fail('no avatar in the scene')
   const audio = new THREE.PositionalAudio(listener)
   audio.setBuffer(buffer)
   // Full volume within 3 m, about half at 7 m, a murmur across the plaza.
@@ -290,7 +298,22 @@ export async function speakVillageAgent(agentId: string, rawText: string, voice:
     endPlayback()
     if (token === speechToken) setSpeech(null)
   }
-  playing = { audio, lipId, lip }
+  // The clip must never outlive a running context: a suspended one (a device change, the OS) fires no "ended",
+  // and an audio object left playing would queue Web Audio ramps every frame (the fps-decay mission).
+  const stop = () => {
+    live = false
+    if (playing?.audio !== audio) return
+    endPlayback()
+    if (token === speechToken) setSpeech(null)
+  }
+  const onState = () => { if ((context.state as AudioContextState) !== 'running') stop() }
+  context.addEventListener('statechange', onState)
+  const timeout = window.setTimeout(stop, (buffer.duration + 1.5) * 1000)
+  const release = () => {
+    context.removeEventListener('statechange', onState)
+    window.clearTimeout(timeout)
+  }
+  playing = { audio, lipId, lip, release }
   if (lip) registerLipSync(lipId, lip)
   audio.play()
   startedAt = context.currentTime
