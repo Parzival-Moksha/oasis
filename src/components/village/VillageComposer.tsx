@@ -17,6 +17,7 @@ import { composerHeight, composerMaxHeight, composerRoom } from '../../lib/villa
 import { VILLAGE_FONT_BODY, VILLAGE_TYPE_CLASS } from './village-status'
 import { showNotice } from '../forge/GlobalNotice'
 import { canInterrupt } from '../../lib/village/village-interrupt'
+import { VoiceMessageButton } from './VoiceMessage'
 import { subscribeVillageSend, subscribeVillageVoiceStop, subscribeVillageVoiceToggle, takeVillageVoiceRequest } from './village-actions'
 
 function describeError(error: unknown): string {
@@ -297,6 +298,8 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
         ) : <span />}
         <div className="flex items-center gap-1.5">
           {pendingUser > 0 && <span className="text-[10.5px] text-white/70">{pendingUser} queued</span>}
+          {/* A recorded voice message (ElevenLabs Scribe transcript), next to the live mic's typing. */}
+          {owned && <VoiceMessageButton agentId={agentId} priority={urgent ? 'now' : undefined} large={large} />}
           {owned && (
             <button
               type="button"

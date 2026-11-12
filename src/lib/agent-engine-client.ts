@@ -242,6 +242,11 @@ export class AgentEngineClient {
   }
 
   /** Eyes on or off: with it on, each message you send carries a picture from the agent's avatar. */
+  /** A recorded voice message: the engine keeps it, Scribe transcribes it, the agent gets the transcript. Can take a while. */
+  voiceMessage(agentId: string, audio: string, mime: string, durationMs?: number, priority?: 'now' | 'later') {
+    return this.cmd('voiceMessage', { agentId, audio, mime, ...(durationMs ? { durationMs } : {}), ...(priority ? { priority } : {}) }, { timeoutMs: 150_000 })
+  }
+
   /** Claude in Chrome for an agent: restarts its process with the same session. */
   setChrome(agentId: string, chrome: boolean) {
     return this.cmd('setChrome', { agentId, chrome })

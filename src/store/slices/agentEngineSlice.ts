@@ -63,6 +63,8 @@ export type AgentLogEntry =
       state: 'sent' | 'queued' | 'folded' | 'taken' | 'seen'
       midTurn?: boolean
       priority?: string
+      /** A voice message: its recording (play widget); `text` is the transcript. */
+      voice?: { fileId: string; mime?: string; durationMs?: number }
     })
   | (LogBase & { type: 'text'; text: string; parentToolUseId: string | null })
   | (LogBase & {
@@ -604,6 +606,7 @@ function foldAgentEventInner(agent: EngineAgentState, event: EngineEvent, ctx: F
         state: e.midTurn ? 'queued' : 'sent',
         midTurn: Boolean(e.midTurn),
         priority: e.priority,
+        ...(e.voice?.fileId ? { voice: e.voice } : {}),
       })
     }
 

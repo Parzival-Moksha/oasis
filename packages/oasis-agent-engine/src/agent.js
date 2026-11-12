@@ -420,14 +420,15 @@ export class Agent {
    * (hub.eyes: about 1.5 s at most, null when no page answers) and it rides in the same user message as an image
    * block. The text always goes out, with or without the picture, and in the order it was sent.
    */
-  send(text, { priority } = {}) {
+  /** voice: a voice message's recording ({ fileId, mime, durationMs }, scribe.js): its transcript is `text`. */
+  send(text, { priority, voice } = {}) {
     if (!text || !text.trim()) return Promise.reject(new Error('empty message'));
-    const run = this.sendChain.then(() => this.sendNow(text, { priority }));
+    const run = this.sendChain.then(() => this.sendNow(text, { priority, voice }));
     this.sendChain = run.catch(() => {});
     return run;
   }
 
-  async sendNow(text, { priority } = {}) {
+  async sendNow(text, { priority, voice } = {}) {
     if (!this.proc) this.start();
     if (!this.proc) throw new Error(this.statusReason);
     let picture = null;
@@ -450,7 +451,7 @@ export class Agent {
     if (priority === 'now' || priority === 'later') msg.priority = priority;
     try { this.write(msg); } catch (e) { this.pendingUser.delete(uuid); throw e; }
     this.norm.openTurn();
-    this.emit('user.sent', { uuid, text, midTurn: turnWasRunning, priority: msg.priority || 'next', ...(picture?.data ? { eyes: true } : {}) });
+    this.emit('user.sent', { uuid, text, midTurn: turnWasRunning, priority: msg.priority || 'next', ...(picture?.data ? { eyes: true } : {}), ...(voice ? { voice } : {}) });
     // An open permission / question / plan still blocks the CLI: talking to it doesn't resolve that.
     if (this.permissions.size) this.recomputeStatus();
     else this.setStatus(STATUS.WORKING, turnWasRunning ? 'message queued mid-turn' : 'message sent');

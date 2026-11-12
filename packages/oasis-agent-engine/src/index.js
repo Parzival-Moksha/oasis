@@ -19,6 +19,7 @@ import { execFileSync } from 'node:child_process';
 import { checkIn, isBridged, queueForBridge, aliveBridges } from './bridge.js';
 import { readOlderHistory } from './history.js';
 import { loadRoster, saveRoster, saveRosterNow } from './roster.js';
+import { takeVoiceMessage } from './scribe.js';
 import { resolveClaude } from './claude.js';
 import { listen as earsListen, warmEars, earsStatus, stopEars } from './ears.js';
 import { serveAttachment } from './files.js';
@@ -186,6 +187,19 @@ const commands = {
     if (!isBridged(a.sessionId)) throw new Error('watching only: this session runs somewhere else without the Oasis plugin; use Move it here to talk to it');
     queueForBridge(a.sessionId, text);
     return { queued: true, viaBridge: true };
+  },
+  /**
+   * A voice message recorded in the Oasis: kept as a playable file, transcribed by ElevenLabs Scribe
+   * (scribe.js, the Telegram module's key and request), and the transcript sent like a typed message.
+   */
+  async voiceMessage({ agentId, audio, mime, durationMs, priority }) {
+    const a = getAgent(agentId, { owned: true });
+    const names = [...agents.values()].map((x) => x.name).filter(Boolean);
+    const { fileId, mime: type, transcript } = await takeVoiceMessage({ audioBase64: audio, mime, keyterms: names });
+    if (!transcript) return { ok: false, error: 'Scribe heard no words in that recording.' };
+    const voice = { fileId, mime: type, ...(typeof durationMs === 'number' ? { durationMs: Math.round(durationMs) } : {}) };
+    const sent = await a.send(transcript, { priority, voice });
+    return { ok: true, data: { transcript, fileId, uuid: sent?.uuid } };
   },
   interrupt({ agentId, cancelQueued }) { return getAgent(agentId, { owned: true }).interrupt({ cancelQueued }); },
   setModel({ agentId, model }) { return getAgent(agentId, { owned: true }).setModel(model); },

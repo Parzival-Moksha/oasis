@@ -26,6 +26,7 @@ import { groupThread, threadImages, toolRunShape, type ThreadItem } from '../../
 import { hasInjectedText, parseInjectedUserText, type TaskNotice } from '../../lib/village/village-injected'
 import { getOlderHistoryState, loadOlderHistory, retryOlderHistory, subscribeOlderHistory } from './village-history'
 import { formatMessageTime, fullMessageTime } from '../../lib/village/message-time'
+import { VoiceClip } from './VoiceMessage'
 
 /** 2d: the side panel · 3d: the desk window (recent lines) · screen: the desk window zoomed in with F */
 
@@ -288,6 +289,7 @@ const LogEntryView = memo(function LogEntryView({ entry, compact }: { entry: Age
                 <span>{entry.state === 'seen' ? 'prompt' : 'you'}{state ? ` · ${state}` : ''}{entry.priority === 'now' ? ' · urgent' : ''}</span>
                 {!compact && <MessageTime ts={entry.ts} />}
               </div>
+              {entry.voice && !compact && <VoiceClip fileId={entry.voice.fileId} durationMs={entry.voice.durationMs} />}
               <RichText text={compact && text.length > 280 ? `${text.slice(0, 280)}…` : text} className="text-[12.5px] text-slate-50" />
             </div>
           )}

@@ -141,7 +141,9 @@ export type EngineMetaEvent = EngineEventEnvelope<'meta'> & {
   resolvedEffort?: string | null
 }
 export type EngineStatusEvent = EngineEventEnvelope<'status'> & { status: EngineAgentStatus; reason?: string | null }
-export type EngineUserSentEvent = EngineEventEnvelope<'user.sent'> & { uuid: string; text: string; midTurn?: boolean; priority?: string }
+/** A voice message's recording: the engine serves it at GET /file/<fileId>; the message text is its Scribe transcript. */
+export interface EngineVoiceClip { fileId: string; mime?: string; durationMs?: number }
+export type EngineUserSentEvent = EngineEventEnvelope<'user.sent'> & { uuid: string; text: string; midTurn?: boolean; priority?: string; voice?: EngineVoiceClip }
 export type EngineUserConsumedEvent = EngineEventEnvelope<'user.consumed'> & { uuid: string; folded?: boolean; waitedMs?: number }
 export type EngineUserEvent = EngineEventEnvelope<'user'> & { text: string; uuid?: string | null; replay?: boolean }
 export type EngineTextDeltaEvent = EngineEventEnvelope<'text.delta'> & {
@@ -375,6 +377,8 @@ export interface EngineCommandMap {
   setEyes: { args: { agentId: string; on: boolean }; result: { ok: boolean; data?: { eyes: boolean } } }
   /** Claude in Chrome on or off: the agent's process restarts with the same session (now, after the turn, or at its next start). */
   setChrome: { args: { agentId: string; chrome: boolean }; result: { ok: boolean; data?: { chrome: boolean; applied: string } } }
+  /** A recorded voice message (base64 audio): kept, transcribed by ElevenLabs Scribe, the transcript sent to the agent. */
+  voiceMessage: { args: { agentId: string; audio: string; mime: string; durationMs?: number; priority?: 'now' | 'later' }; result: { ok: boolean; data?: { transcript: string; fileId: string; uuid?: string }; error?: string } }
   /** This page can take eyes pictures (once per connection). */
   canSee: { args: { on: boolean }; result: { ok: boolean } }
   /** The answer to an eyes.request: the picture, or no data when this page has no view of that agent. */

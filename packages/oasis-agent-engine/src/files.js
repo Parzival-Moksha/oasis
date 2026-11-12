@@ -14,6 +14,11 @@ const MAX_FILES = 2000;
 const byId = new Map(); // id -> { path, mediaType, isImage }
 const byPath = new Map(); // path -> id (replayed history reuses ids)
 
+/** Voice messages recorded in the Oasis (scribe.js): played inline by the page's <audio>. */
+const AUDIO_TYPES = {
+  '.webm': 'audio/webm', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.mp3': 'audio/mpeg', '.wav': 'audio/wav',
+};
+
 const IMAGE_TYPES = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
   '.webp': 'image/webp', '.bmp': 'image/bmp', '.avif': 'image/avif',
@@ -83,10 +88,12 @@ export function serveAttachment(id, res) {
     }
     const ext = path.extname(f.path).toLowerCase();
     const name = path.basename(f.path).replace(/["\r\n]/g, '_');
+    // Audio registered as audio (voice messages) plays inline; anything else that isn't an image downloads.
+    const audio = (f.mediaType || '').startsWith('audio/') && AUDIO_TYPES[ext] ? AUDIO_TYPES[ext] : null;
     res.writeHead(200, {
-      'content-type': f.isImage ? IMAGE_TYPES[ext] : 'application/octet-stream',
+      'content-type': f.isImage ? IMAGE_TYPES[ext] : audio || 'application/octet-stream',
       'content-length': st.size,
-      'content-disposition': `${f.isImage ? 'inline' : 'attachment'}; filename="${name}"`,
+      'content-disposition': `${f.isImage || audio ? 'inline' : 'attachment'}; filename="${name}"`,
       'content-security-policy': "default-src 'none'; img-src 'self'; sandbox",
       'x-content-type-options': 'nosniff',
       'cache-control': 'private, max-age=3600',
