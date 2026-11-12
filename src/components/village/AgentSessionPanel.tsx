@@ -207,7 +207,6 @@ export function AgentSessionPanel() {
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <PanelLookButton agentKey={agent.sessionId || agent.id} agentName={agentDisplayName(agent)} />
-          <AcademyTrainToggle agent={agent} />
           {/* Watched sessions have no settings row: their Follow me switch sits here. */}
           {!agent.owned && <FollowToggle agent={agent} />}
           <VillageAvatarButton agentId={agent.id} sessionId={agent.sessionId} />
