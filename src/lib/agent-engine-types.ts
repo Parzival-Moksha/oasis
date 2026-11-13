@@ -366,7 +366,7 @@ export interface EngineCommandMap {
   listAgents: { args: Record<string, never>; result: EngineAgentSnapshot[] }
   listSessions: { args: { limit?: number }; result: EngineSessionMeta[] }
   /** Load the dictation model ahead of the first mic press (never installs or downloads). */
-  warmEars: { args: Record<string, never>; result: { warming: boolean; ready?: boolean; model?: string } }
+  warmEars: { args: { engine?: 'elevenlabs' | 'local' }; result: { warming: boolean; ready?: boolean; model?: string } }
   listLive: { args: Record<string, never>; result: Array<EngineLiveRegistryEntry & { sessionId: string }> }
   spawnAgent: { args: SpawnAgentArgs; result: EngineAgentSnapshot }
   send: { args: { agentId: string; text: string; priority?: 'now' | 'later' }; result: { uuid: string; midTurn: boolean } }

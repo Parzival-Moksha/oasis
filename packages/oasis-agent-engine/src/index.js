@@ -3,7 +3,7 @@
 //   ws://127.0.0.1:4530/ws   events out, commands in
 //   POST /hook               Claude Code `type:"http"` hooks (optional observation path)
 //   POST /api/cmd            same commands as the socket, for curl/debugging
-//   ws://127.0.0.1:4530/listen  live dictation (Moonshine, see ears.js)
+//   ws://127.0.0.1:4530/listen  live dictation (Moonshine, see ears.js; ?engine=elevenlabs: scribe-live.js)
 //   GET  /api/agents, /api/sessions, /health
 //   GET  /file/<id>          a file an agent sent with SendUserFile (files.js; only those, by random id)
 import http from 'node:http';
@@ -22,6 +22,7 @@ import { loadRoster, saveRoster, saveRosterNow } from './roster.js';
 import { takeVoiceMessage } from './scribe.js';
 import { resolveClaude } from './claude.js';
 import { listen as earsListen, warmEars, earsStatus, stopEars } from './ears.js';
+import { listenScribe, hasLiveScribe, LIVE_SCRIBE_MODEL } from './scribe-live.js';
 import { serveAttachment } from './files.js';
 import { startTelegram } from './telegram.js';
 import fs from 'node:fs';
@@ -129,7 +130,11 @@ function getAgent(id, { owned = false } = {}) {
 
 // ------------------------------------------------------------------ commands
 const commands = {
-  warmEars() { return warmEars((m) => hub.log(m)); },
+  // Voice typing through ElevenLabs has nothing to warm; Moonshine (chosen, or no ElevenLabs key) loads its model.
+  warmEars({ engine } = {}) {
+    if (engine === 'elevenlabs' && hasLiveScribe()) return { warming: false, ready: true, model: `elevenlabs ${LIVE_SCRIBE_MODEL}` };
+    return warmEars((m) => hub.log(m));
+  },
   listAgents: () => snapshots(),
   listLive: () => [...readLiveRegistry()].map(([sessionId, r]) => ({ sessionId, ...r })),
 
@@ -429,8 +434,8 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   if (!requestAllowed(req)) return sendJson(res, 403, { error: 'origin not allowed' });
   try {
-    if (req.method === 'GET' && url.pathname.startsWith('/file/')) return serveAttachment(url.pathname.slice('/file/'.length), res);
-    if (req.method === 'GET' && url.pathname === '/health') return sendJson(res, 200, { ok: true, agents: agents.size, clients: clients.size, claude: resolveClaude(), ears: earsStatus() });
+    if (req.method === 'GET' && url.pathname.startsWith('/file/')) return serveAttachment(url.pathname.slice('/file/'.length), res, req);
+    if (req.method === 'GET' && url.pathname === '/health') return sendJson(res, 200, { ok: true, agents: agents.size, clients: clients.size, claude: resolveClaude(), ears: earsStatus(), liveScribe: { model: LIVE_SCRIBE_MODEL, ready: hasLiveScribe() } });
     if (req.method === 'GET' && url.pathname === '/api/agents') return sendJson(res, 200, snapshots());
     if (req.method === 'GET' && url.pathname === '/api/sessions') return sendJson(res, 200, await commands.listSessions({}));
     if (req.method === 'POST' && url.pathname === '/hook') {
@@ -486,6 +491,8 @@ server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   if (url.pathname === '/listen' && requestAllowed(req)) {
     earsWss.handleUpgrade(req, socket, head, (ws) => {
+      // Voice typing through ElevenLabs when the page asks for it and there is a key; local Moonshine otherwise.
+      if (url.searchParams.get('engine') === 'elevenlabs' && hasLiveScribe()) return listenScribe(ws, url, (m) => hub.log(m));
       earsListen(ws, url, (m) => hub.log(m)).catch((e) => { try { ws.send(JSON.stringify({ t: 'error', text: e.message })); ws.close(); } catch { /* gone */ } });
     });
     return;

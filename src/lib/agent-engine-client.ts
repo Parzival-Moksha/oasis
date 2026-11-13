@@ -216,9 +216,9 @@ export class AgentEngineClient {
     return this.cmd('listLive', {})
   }
 
-  /** Wakes the dictation model (Moonshine) so the first words come fast. */
-  warmEars() {
-    return this.cmd('warmEars', {})
+  /** Wakes the dictation model (Moonshine) so the first words come fast; ElevenLabs voice typing needs no warming. */
+  warmEars(engine?: 'elevenlabs' | 'local') {
+    return this.cmd('warmEars', engine ? { engine } : {})
   }
 
   spawnAgent(args: SpawnAgentArgs): Promise<EngineAgentSnapshot> {
@@ -244,7 +244,9 @@ export class AgentEngineClient {
   /** Eyes on or off: with it on, each message you send carries a picture from the agent's avatar. */
   /** A recorded voice message: the engine keeps it, Scribe transcribes it, the agent gets the transcript. Can take a while. */
   voiceMessage(agentId: string, audio: string, mime: string, durationMs?: number, priority?: 'now' | 'later') {
-    return this.cmd('voiceMessage', { agentId, audio, mime, ...(durationMs ? { durationMs } : {}), ...(priority ? { priority } : {}) }, { timeoutMs: 150_000 })
+    // Long recordings take longer to transcribe: 2.5 minutes, plus a tenth of the recording's length.
+    const timeoutMs = 150_000 + Math.round((durationMs || 0) / 10)
+    return this.cmd('voiceMessage', { agentId, audio, mime, ...(durationMs ? { durationMs } : {}), ...(priority ? { priority } : {}) }, { timeoutMs })
   }
 
   /** Claude in Chrome for an agent: restarts its process with the same session. */

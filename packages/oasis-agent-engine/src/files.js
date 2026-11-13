@@ -75,7 +75,23 @@ export function attachmentFile(id) {
   return f ? { path: f.path, isImage: f.isImage, mediaType: f.mediaType } : null;
 }
 
-export function serveAttachment(id, res) {
+/** "bytes=a-b" against a file of `size` bytes: {start, end} (inclusive), 'bad' when it can't be served, null for none. */
+export function parseRange(header, size) {
+  const m = /^bytes=(\d*)-(\d*)$/.exec(String(header || '').trim());
+  if (!m || (!m[1] && !m[2])) return null;
+  let start;
+  let end;
+  if (!m[1]) {
+    start = Math.max(0, size - Number(m[2]));
+    end = size - 1;
+  } else {
+    start = Number(m[1]);
+    end = m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+  }
+  return start > end || start >= size ? 'bad' : { start, end };
+}
+
+export function serveAttachment(id, res, req = null) {
   const f = byId.get(id);
   if (!f) {
     res.writeHead(404, { 'content-type': 'text/plain' });
@@ -90,14 +106,24 @@ export function serveAttachment(id, res) {
     const name = path.basename(f.path).replace(/["\r\n]/g, '_');
     // Audio registered as audio (voice messages) plays inline; anything else that isn't an image downloads.
     const audio = (f.mediaType || '').startsWith('audio/') && AUDIO_TYPES[ext] ? AUDIO_TYPES[ext] : null;
-    res.writeHead(200, {
+    const headers = {
       'content-type': f.isImage ? IMAGE_TYPES[ext] : audio || 'application/octet-stream',
-      'content-length': st.size,
       'content-disposition': `${f.isImage || audio ? 'inline' : 'attachment'}; filename="${name}"`,
       'content-security-policy': "default-src 'none'; img-src 'self'; sandbox",
       'x-content-type-options': 'nosniff',
       'cache-control': 'private, max-age=3600',
-    });
+    };
+    // Audio answers byte ranges, so the player in the thread can jump around a voice message.
+    const range = audio ? parseRange(req?.headers?.range, st.size) : null;
+    if (range === 'bad') {
+      res.writeHead(416, { 'content-range': `bytes */${st.size}` });
+      return res.end();
+    }
+    if (range) {
+      res.writeHead(206, { ...headers, 'accept-ranges': 'bytes', 'content-range': `bytes ${range.start}-${range.end}/${st.size}`, 'content-length': range.end - range.start + 1 });
+      return fs.createReadStream(f.path, { start: range.start, end: range.end }).on('error', () => res.destroy()).pipe(res);
+    }
+    res.writeHead(200, { ...headers, ...(audio ? { 'accept-ranges': 'bytes' } : {}), 'content-length': st.size });
     fs.createReadStream(f.path).on('error', () => res.destroy()).pipe(res);
   });
 }

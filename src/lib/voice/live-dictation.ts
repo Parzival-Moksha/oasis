@@ -1,10 +1,12 @@
 // ░▒▓ LIVE DICTATION — words while you talk ▓▒░
 // The mic goes to the agent engine (ws://127.0.0.1:4530/listen) in ~100 ms pieces of 16 kHz 16-bit mono
-// (public/voice/ears-worklet.js cuts them). Moonshine Medium Streaming runs there on the CPU and sends back
-// "partial" lines that can still change and a "final" line once you pause. One dictation at a time.
+// (public/voice/ears-worklet.js cuts them). The engine streams them to ElevenLabs Scribe Realtime, or runs Moonshine
+// Medium Streaming on the CPU (Settings → Sound → Voice typing), and sends back "partial" lines that can still change
+// and a "final" line once you pause. One dictation at a time.
 // Ported from Tyler (C:/7f_Tyler/Tyler/public/js/ears.js).
 
 import { resolveAgentEngineUrl } from '../agent-engine-client'
+import { getVoiceTypingEngine, type VoiceTypingEngine } from './voice-typing-engine'
 
 export interface DictationLine {
   line: number
@@ -33,11 +35,11 @@ export interface LiveDictation {
   cancel: () => void
 }
 
-export function dictationUrl(lang = 'en'): string {
+export function dictationUrl(lang = 'en', typing: VoiceTypingEngine = getVoiceTypingEngine()): string {
   const engine = resolveAgentEngineUrl()
   const url = new URL(engine.replace(/^ws/i, 'http'))
   url.pathname = '/listen'
-  url.search = `?lang=${encodeURIComponent(lang)}`
+  url.search = `?lang=${encodeURIComponent(lang)}&engine=${typing}`
   return url.toString().replace(/^http/i, 'ws')
 }
 

@@ -5,10 +5,17 @@
 // Lab, and the per-spell Spell Sounds selector.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { useContext, useState } from 'react'
+import { useContext, useState, useSyncExternalStore } from 'react'
 import { SettingsContext } from '@/components/scene-lib/contexts'
 import { useAudioManager, SOUND_OPTIONS, type SoundEvent } from '@/lib/audio-manager'
 import { SpellSoundsSelector } from './SpellSoundsSelector'
+import {
+  DEFAULT_VOICE_TYPING_ENGINE,
+  getVoiceTypingEngine,
+  setVoiceTypingEngine,
+  subscribeVoiceTypingEngine,
+  type VoiceTypingEngine,
+} from '@/lib/voice/voice-typing-engine'
 
 function VolumeSlider({
   label,
@@ -106,11 +113,48 @@ function PerEventSoundLab() {
   )
 }
 
+const VOICE_TYPING_CHOICES: Array<{ id: VoiceTypingEngine; label: string; detail: string }> = [
+  { id: 'elevenlabs', label: 'ElevenLabs', detail: 'Scribe Realtime in the cloud: best quality, words after about a second' },
+  { id: 'local', label: 'Local', detail: 'Moonshine on this computer: free and offline, a bit rougher' },
+]
+
+/** Who types what you say (T, and the mic on text fields). */
+function VoiceTypingSection() {
+  const engine = useSyncExternalStore(subscribeVoiceTypingEngine, getVoiceTypingEngine, () => DEFAULT_VOICE_TYPING_ENGINE)
+  return (
+    <section>
+      <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Voice typing</div>
+      <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Voice typing">
+        {VOICE_TYPING_CHOICES.map(choice => {
+          const active = engine === choice.id
+          return (
+            <button
+              key={choice.id}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => setVoiceTypingEngine(choice.id)}
+              className={`rounded-lg border p-2 text-left transition ${active ? 'border-emerald-300/60 bg-emerald-500/15' : 'border-white/10 bg-black/30 hover:bg-white/5'}`}
+            >
+              <div className={`text-[11px] font-bold ${active ? 'text-emerald-200' : 'text-white/80'}`}>{active ? '● ' : '○ '}{choice.label}</div>
+              <div className="mt-0.5 text-[10px] leading-snug text-white/50">{choice.detail}</div>
+            </button>
+          )
+        })}
+      </div>
+      <div className="mt-1 text-[10px] leading-snug text-white/40">
+        Used by T and the mic on text fields. Without an ElevenLabs key the agent engine types with Moonshine.
+      </div>
+    </section>
+  )
+}
+
 export function SoundTab() {
   const { settings, updateSetting } = useContext(SettingsContext)
 
   return (
     <div className="space-y-3">
+      <VoiceTypingSection />
       <section>
         <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">Volume Mixers</div>
         <div className="space-y-2">

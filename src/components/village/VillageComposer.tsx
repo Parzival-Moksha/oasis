@@ -18,6 +18,7 @@ import { VILLAGE_FONT_BODY, VILLAGE_TYPE_CLASS } from './village-status'
 import { showNotice } from '../forge/GlobalNotice'
 import { canInterrupt } from '../../lib/village/village-interrupt'
 import { VoiceMessageButton } from './VoiceMessage'
+import { getVoiceTypingEngine } from '../../lib/voice/voice-typing-engine'
 import { subscribeVillageSend, subscribeVillageVoiceStop, subscribeVillageVoiceToggle, takeVillageVoiceRequest } from './village-actions'
 
 function describeError(error: unknown): string {
@@ -123,7 +124,7 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
 
   // Wake the voice model while you are with an agent, so the first words come fast.
   useEffect(() => {
-    getAgentEngineClient().warmEars().catch(() => {})
+    getAgentEngineClient().warmEars(getVoiceTypingEngine()).catch(() => {})
   }, [agentId])
 
   /** The cap right now: about 450 px, and never so tall that the thread above drops under its minimum. */
