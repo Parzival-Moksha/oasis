@@ -4,7 +4,7 @@
 // Mounted in the 2D session panel and in each desk's 3D window. Shows text, tool cards, todos,
 // subagents, turn outcomes, the context meter and permission / question / plan cards.
 
-import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
 import { effectiveStatus, selectHistoryCursor, type AgentLogEntry, type EngineAgentState } from '../../store/slices/agentEngineSlice'
 import { DecisionCard } from './DecisionCards'
@@ -591,6 +591,16 @@ export function AgentSessionView({ agentId, variant, header }: AgentSessionViewP
   // A thread too short to scroll fills itself up from the past (and finds the start of the session).
   const historyFrom = agent?.historyFrom ?? null
   useEffect(() => { maybeLoadOlder() }, [maybeLoadOlder, items.length, historyFrom])
+  // A piece of older history just landed above. Chrome aims a smooth (wheel) scroll at a point counted from the top,
+  // so a scroll still running would carry on up through everything that landed, to the top of the new text (and load
+  // the next piece, and fly through that too). Stop it where the view is: setting scrollTop cancels the animation.
+  const landedFromRef = useRef(historyFrom)
+  useLayoutEffect(() => {
+    if (landedFromRef.current === historyFrom) return
+    landedFromRef.current = historyFrom
+    const el = scrollRef.current
+    if (el && historyFrom !== null) el.scrollTop = el.scrollTop // eslint-disable-line no-self-assign
+  }, [historyFrom])
 
   if (!agent) return null
   const decisions = agent.owned ? agent.decisions : []
