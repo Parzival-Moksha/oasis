@@ -6,7 +6,7 @@
 
 import * as THREE from 'three'
 import { useOasisStore } from '../../store/oasisStore'
-import { useInputManager, type InputState } from '../../lib/input-manager'
+import { markConversationLayer, useInputManager, type InputState } from '../../lib/input-manager'
 import { selectNextAgentForN } from '../../store/slices/agentEngineSlice'
 import { getCameraSnapshot } from '../../lib/camera-bridge'
 import { getPlayerAvatarPose, markThirdPersonCameraRestored, requestPlayerAvatarTeleport } from '../../lib/player-avatar-runtime'
@@ -16,6 +16,8 @@ import { villageKeyAction } from '../../lib/village/village-keys'
 import { getVillageSoundDebug } from './village-sound'
 
 export const VILLAGE_SESSION_LAYER = 'village-session'
+// Esc out of an agent's panel hands mouse-look straight back (third-person / noclip), no click on the scene needed.
+markConversationLayer(VILLAGE_SESSION_LAYER)
 export const VILLAGE_PICKER_LAYER = 'village-picker'
 /** Walk this close (meters, ground plane) to an agent to get the "T talk" hint. */
 export const VILLAGE_TALK_RADIUS = 3.4
@@ -229,6 +231,8 @@ export function getSessionPanelGeometry(
 // ─── screen mode (F): the camera fills the view with the focused agent's desk window ─────
 
 let screenAgentId: string | null = null
+/** F next to an agent opened its screen straight from the world: one Esc goes all the way back out. */
+let screenFromWorld = false
 const screenListeners = new Set<() => void>()
 
 export function getVillageScreen(): string | null {
@@ -238,6 +242,7 @@ export function getVillageScreen(): string | null {
 export function setVillageScreen(agentId: string | null): void {
   if (agentId === screenAgentId) return
   screenAgentId = agentId
+  if (!agentId) screenFromWorld = false
   screenListeners.forEach(listener => listener())
 }
 
@@ -251,6 +256,7 @@ export function toggleVillageScreen(): boolean {
   const focused = useOasisStore.getState().agentEngine.focusedAgentId
   if (!focused) return false
   setVillageScreen(screenAgentId === focused ? null : focused)
+  screenFromWorld = false // zoomed in from the side panel: Esc goes back to the panel
   return true
 }
 
@@ -599,6 +605,11 @@ export function handleVillageKeyDown(event: KeyboardEvent): boolean {
     case 'escape':
       if (stopVillageVoice()) return true
       if (!screenAgentId) return false // the input manager's Esc leaves the agent
+      // Opened with F straight from the world: this Esc leaves the agent too (the input manager's, below).
+      if (screenFromWorld) {
+        setVillageScreen(null)
+        return false
+      }
       setVillageScreen(null)
       return true
     case 'talk':
@@ -610,7 +621,10 @@ export function handleVillageKeyDown(event: KeyboardEvent): boolean {
       return true
     case 'screen': // F next to an agent: open it straight on its full screen
       requestVillageVoiceOnOpen(null)
-      if (village.nearbyAgentId && focusVillageAgent(village.nearbyAgentId)) setVillageScreen(village.nearbyAgentId)
+      if (village.nearbyAgentId && focusVillageAgent(village.nearbyAgentId)) {
+        setVillageScreen(village.nearbyAgentId)
+        screenFromWorld = true
+      }
       return true
     case 'picker':
       openVillagePicker(true)

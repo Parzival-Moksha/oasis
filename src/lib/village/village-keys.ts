@@ -4,7 +4,8 @@
 // straight on its full screen.
 // With an agent open (side panel or its screen, the text box not focused): T starts / stops the mic,
 // Enter sends what is in the box, F zooms onto its screen and back, Esc stops the mic first, then
-// leaves the screen (one more Esc leaves the agent, through the input manager).
+// leaves the screen (one more Esc leaves the agent, through the input manager; a screen opened with F
+// straight from the world leaves in one). Leaving with Esc hands mouse-look back in third-person / noclip.
 // N jumps to the next agent that needs you. In the summoning circle E opens the picker.
 
 export type VillageKeyAction =

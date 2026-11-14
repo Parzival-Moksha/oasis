@@ -31,6 +31,16 @@ The input manager is the current source of truth for:
 
 That means other parts of the app should ask the input manager what is allowed instead of re-deriving input behavior ad hoc.
 
+## Pointer lock: when mouse-look comes back by itself
+
+Mouse-look (pointer lock) normally starts only on a click on the scene: closing a menu or switching camera modes never
+grabs the pointer. One exception: **Escape out of a conversation with an agent** hands mouse-look straight back in
+third-person and noclip, so the owner doesn't have to click (and risk clicking another agent). A conversation is
+`agent-focus` (village agents, 3D agent windows, picture zoom) or `ui-focused` with only conversation layers open
+(`markConversationLayer`, e.g. the village session view). Opening the conversation released the pointer from the page
+itself, which is what lets the browser re-lock without a click. `requestPointerLock` stays a no-op while another panel
+is open, in orbit, and on phones.
+
 ## Important files
 
 | File | Responsibility |
