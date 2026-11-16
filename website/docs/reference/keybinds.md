@@ -47,7 +47,7 @@ title: Keybinds
 | Click brush icon | Enter Paint mode |
 | Click 3D agent window | Enter Agent Focus mode |
 | Focus text input | Enter UI Focus mode |
-| Escape | Return to previous camera mode (out of an agent conversation in noclip / TPS: mouse-look comes back without a click) |
+| Escape | Return to previous camera mode |
 
 ## Camera Modes
 

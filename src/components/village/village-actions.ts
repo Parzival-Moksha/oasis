@@ -6,7 +6,7 @@
 
 import * as THREE from 'three'
 import { useOasisStore } from '../../store/oasisStore'
-import { markConversationLayer, useInputManager, type InputState } from '../../lib/input-manager'
+import { useInputManager, type InputState } from '../../lib/input-manager'
 import { selectNextAgentForN } from '../../store/slices/agentEngineSlice'
 import { getCameraSnapshot } from '../../lib/camera-bridge'
 import { getPlayerAvatarPose, markThirdPersonCameraRestored, requestPlayerAvatarTeleport } from '../../lib/player-avatar-runtime'
@@ -16,8 +16,6 @@ import { villageKeyAction } from '../../lib/village/village-keys'
 import { getVillageSoundDebug } from './village-sound'
 
 export const VILLAGE_SESSION_LAYER = 'village-session'
-// Esc out of an agent's panel hands mouse-look straight back (third-person / noclip), no click on the scene needed.
-markConversationLayer(VILLAGE_SESSION_LAYER)
 export const VILLAGE_PICKER_LAYER = 'village-picker'
 /** Walk this close (meters, ground plane) to an agent to get the "T talk" hint. */
 export const VILLAGE_TALK_RADIUS = 3.4

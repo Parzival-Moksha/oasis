@@ -3,7 +3,7 @@
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { consumeMouseLookDelta, escapeEndsConversation, markConversationLayer, pushMouseLookDelta, useInputManager } from '../input-manager'
+import { consumeMouseLookDelta, pushMouseLookDelta, useInputManager } from '../input-manager'
 
 function getState() { return useInputManager.getState() }
 const originalRequestPointerLock = useInputManager.getState().requestPointerLock
@@ -125,39 +125,19 @@ describe('InputManager', () => {
     })
   })
 
-  describe('Escape out of a conversation with an agent', () => {
-    markConversationLayer('test-agent-chat')
-
-    const escapeFrom = (state: 'agent-focus' | 'ui-focused', previous: 'third-person' | 'noclip' | 'orbit', layers: string[]) => {
-      const requestPointerLock = vi.fn()
-      useInputManager.setState({ inputState: state, _previousCameraState: previous, pointerLocked: false, _uiLayerStack: layers, requestPointerLock })
-      expect(getState().handleEscape()).toBe(true)
-      return requestPointerLock
-    }
-
-    it('hands mouse-look back in third-person and noclip, no click needed', () => {
-      expect(escapeFrom('agent-focus', 'third-person', [])).toHaveBeenCalledTimes(1)
-      expect(getState().inputState).toBe('third-person')
-      expect(escapeFrom('agent-focus', 'noclip', [])).toHaveBeenCalledTimes(1)
-      expect(escapeFrom('ui-focused', 'third-person', ['test-agent-chat'])).toHaveBeenCalledTimes(1)
-    })
-
-    it('orbit has no mouse-look to hand back', () => {
-      expect(escapeFrom('agent-focus', 'orbit', [])).not.toHaveBeenCalled()
-    })
-
-    it('menus and other panels still wait for a click', () => {
-      expect(escapeFrom('ui-focused', 'third-person', ['settings'])).not.toHaveBeenCalled()
-      expect(escapeFrom('ui-focused', 'third-person', ['test-agent-chat', 'settings'])).not.toHaveBeenCalled()
-      expect(escapeFrom('ui-focused', 'third-person', [])).not.toHaveBeenCalled()
-    })
-
-    it('knows what counts as a conversation', () => {
-      expect(escapeEndsConversation('agent-focus', [])).toBe(true)
-      expect(escapeEndsConversation('ui-focused', ['test-agent-chat'])).toBe(true)
-      expect(escapeEndsConversation('ui-focused', ['spellbook'])).toBe(false)
-      expect(escapeEndsConversation('placement', [])).toBe(false)
-      expect(escapeEndsConversation('paint', [])).toBe(false)
+  describe('Escape never re-locks the pointer (it confined the owner\'s cursor, 2026-11-16)', () => {
+    it('not out of an agent, not out of the village panel, in third-person or noclip', () => {
+      for (const [state, previous, layers] of [
+        ['agent-focus', 'third-person', []],
+        ['agent-focus', 'noclip', []],
+        ['ui-focused', 'third-person', ['village-session']],
+      ] as const) {
+        const requestPointerLock = vi.fn()
+        useInputManager.setState({ inputState: state, _previousCameraState: previous, pointerLocked: false, _uiLayerStack: [...layers], requestPointerLock })
+        expect(getState().handleEscape()).toBe(true)
+        expect(getState().inputState).toBe(previous)
+        expect(requestPointerLock).not.toHaveBeenCalled()
+      }
     })
   })
 

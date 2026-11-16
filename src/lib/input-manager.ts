@@ -270,23 +270,6 @@ const STATE_CAPABILITIES: Record<InputState, StateCapabilities> = {
 // ESCAPE TRANSITIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
-/**
- * UI layers that are a conversation with an agent (the village's session view). Escape out of one of them, or out of
- * agent-focus, hands mouse-look straight back in third-person / noclip: no click needed, so no stray click lands on an
- * agent. Every other panel and menu still waits for a click on the scene before taking the pointer.
- */
-const conversationLayers = new Set<string>()
-
-export function markConversationLayer(id: string): void {
-  conversationLayers.add(id)
-}
-
-/** Escape from `state` with these UI layers open ends a conversation with an agent. */
-export function escapeEndsConversation(state: InputState, layers: readonly string[]): boolean {
-  if (state === 'agent-focus') return true
-  return state === 'ui-focused' && layers.length > 0 && layers.every(id => conversationLayers.has(id))
-}
-
 function escapeTransition(current: InputState): InputState | null {
   switch (current) {
     case 'agent-focus': return 'orbit'  // overridden by _previousCameraState
@@ -411,19 +394,15 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     const current = get().inputState
     const fallback = escapeTransition(current)
     if (!fallback) return false
-    const conversation = escapeEndsConversation(current, get()._uiLayerStack)
     clearMouseLookAccumulator()
     const prev = get()._previousCameraState || fallback
-    // Subscribers run inside this set: the village drops its focus, pops its session layer and puts the camera back.
     set({ inputState: prev, _previousCameraState: null })
     if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
       document.activeElement.blur()
     }
-    // Escape out of a conversation with an agent hands mouse-look straight back. Starting the conversation released
-    // the pointer from the page itself, so the browser re-locks without a click. Anything else (menus, panels,
-    // placement, paint) still waits for a click on the scene, and requestPointerLock stays a no-op while another
-    // panel is open, in orbit, or on a phone.
-    if (conversation && (prev === 'third-person' || prev === 'noclip')) get().requestPointerLock()
+    // Escape returns to the previous mode, but never re-locks the pointer: browser pointer lock is opt-in again on the
+    // next canvas click. (A re-lock from the Escape key, 2026-11-14 to 16, left the owner's cursor confined to the
+    // upper-left two thirds of the screen: keep pointer lock to clicks.)
     return true
   },
 
