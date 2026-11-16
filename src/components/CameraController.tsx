@@ -28,6 +28,8 @@ import { useOasisStore } from '../store/oasisStore'
 import { useInputManager, getInputCapabilities, consumeMouseLookDelta, wasUILayerClosedRecently } from '../lib/input-manager'
 import { getMobileInputSnapshot, isProbablyMobileDevice } from '../lib/mobile-controls'
 import { setCameraSnapshot } from '../lib/camera-bridge'
+import { setPointerReleaseNotifier } from '../lib/pointer-release'
+import { showNotice } from './forge/GlobalNotice'
 import { guardAudioListener } from '../lib/audio-listener-guard'
 import { deriveAvatarAnchoredWindowPlacement, resolveAgentWindowRenderScale } from '../lib/agent-avatar-utils'
 import { getLiveObjectTransform } from '../lib/live-object-transforms'
@@ -451,10 +453,10 @@ export function CameraController() {
       }
     }
 
-    const onPointerDown = (e: PointerEvent) => {
-      if (e.pointerType === 'mouse' && e.button !== 0) return
-      maybeRequestLock(e.target)
-    }
+    // The lock is asked for on click only. It used to be asked on pointerdown too: two requests a click, and a
+    // click on an agent locked on pointerdown and was unlocked a moment later when the agent took focus. Rapid
+    // lock / unlock is where the browser can leave the cursor confined (owner, 2026-11-16). On click, the
+    // scene's own handlers have run: a click that focused an agent is no longer in a lockable state.
 
     const onClick = (e: MouseEvent) => {
       const state = useInputManager.getState()
@@ -484,11 +486,12 @@ export function CameraController() {
       // Standard path: lock pointer in states that support it
       maybeRequestLock(e.target)
     }
-    canvas.addEventListener('pointerdown', onPointerDown)
     canvas.addEventListener('click', onClick)
+    // When Escape had to stop a drag or a late lock, say so (lib/pointer-release.ts).
+    setPointerReleaseNotifier(text => showNotice(text, 'info'))
     return () => {
-      canvas.removeEventListener('pointerdown', onPointerDown)
       canvas.removeEventListener('click', onClick)
+      setPointerReleaseNotifier(null)
     }
   }, [])
 

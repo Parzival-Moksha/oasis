@@ -8,6 +8,7 @@
 
 import { create } from 'zustand'
 import { useEffect } from 'react'
+import { installPointerRelease, lockRequestPending, noteLockRequested } from './pointer-release'
 
 interface MouseLookDebugState {
   droppedSampleCount: number
@@ -489,6 +490,9 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     }
 
     if (!stillNeedsLock()) return
+    // One request at a time: a second one while the first is on its way made the browser lock twice in a row.
+    if (lockRequestPending()) return
+    noteLockRequested()
     try {
       const result = (canvas as HTMLElement).requestPointerLock() as unknown
       if (result && typeof (result as Promise<void>).then === 'function') {
@@ -578,6 +582,8 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
       }
     }
 
+    // Escape (key up) always gives the mouse back: lock, a lock on its way, pointer captures and their drags.
+    const uninstallPointerRelease = installPointerRelease()
     document.addEventListener('pointerlockchange', onPointerLockChange)
     document.addEventListener('pointerlockerror', onPointerLockError)
     document.addEventListener(mouseLookEvent, onMouseLookMove)
@@ -587,6 +593,7 @@ export const useInputManager = create<InputManagerState>((set, get) => ({
     document.addEventListener('focusout', onFocusOut)
 
     return () => {
+      uninstallPointerRelease()
       document.removeEventListener('pointerlockchange', onPointerLockChange)
       document.removeEventListener('pointerlockerror', onPointerLockError)
       document.removeEventListener(mouseLookEvent, onMouseLookMove)
