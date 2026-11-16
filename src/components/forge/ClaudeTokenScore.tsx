@@ -9,11 +9,17 @@
 
 import { useEffect, useState } from 'react'
 
+import { ClaudePlanLimits } from './ClaudePlanLimits'
+import { TokenDailyChart, type ChartDay } from './TokenDailyChart'
+
 interface Counts { input: number; cacheWrite: number; cacheRead: number; output: number }
 interface Summary {
   today: Counts
   week: Counts
   allTime: Counts
+  /** The last 7 days and every day of this month, split by model family (days end at 04:20). */
+  days7?: ChartDay[]
+  month?: { label: string; days: ChartDay[] }
   firstDay: string | null
   indexing: boolean
   progress: { done: number; total: number }
@@ -69,10 +75,13 @@ export function ClaudeTokenScore() {
     }
   }, [])
 
-  if (!summary || (!anything(summary.allTime) && !summary.indexing)) return null
+  // The plan limits show even before (or without) the counted tokens.
+  if (!summary || (!anything(summary.allTime) && !summary.indexing)) return <ClaudePlanLimits />
   const since = summary.firstDay ? new Date(`${summary.firstDay}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : null
 
   return (
+    <>
+    <ClaudePlanLimits />
     <div className="border-b border-white/10 px-4 py-3">
       <div className="flex items-baseline justify-between">
         <p className="text-[10px] font-bold uppercase tracking-wider text-amber-300">Tokens · Claude Code</p>
@@ -95,10 +104,14 @@ export function ClaudeTokenScore() {
           </div>
         ))}
       </div>
+      {summary.days7 && <TokenDailyChart title="Last 7 days" days={summary.days7} style="week" />}
+      {summary.month && <TokenDailyChart title={summary.month.label} days={summary.month.days} style="month" height={56} />}
       <p className="mt-2 text-[9.5px] leading-snug text-white/45">
         Written: what the models wrote, thinking included. Fresh input: new text they read. Context cached: input
-        stored for reuse. Context re-read: the same context read again each turn, so it dwarfs the rest.
+        stored for reuse. Context re-read: the same context read again each turn, so it dwarfs the rest. The bars are
+        written + fresh input per day (a day ends at 04:20).
       </p>
     </div>
+    </>
   )
 }

@@ -12,6 +12,8 @@ import { createReadStream, promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
+import { localDay as workDay } from './village/work-vow'
+
 export interface TokenCounts {
   input: number
   cacheWrite: number
@@ -39,12 +41,22 @@ export function addCounts(a: TokenCounts, b: TokenCounts): TokenCounts {
   return { input: a.input + b.input, cacheWrite: a.cacheWrite + b.cacheWrite, cacheRead: a.cacheRead + b.cacheRead, output: a.output + b.output }
 }
 
-/** Local calendar day, YYYY-MM-DD. */
+/** The day a reply belongs to: like the work counter, a day runs from 04:20 to 04:20 local (work-vow.ts). */
 export function localDay(at: Date): string {
-  const y = at.getFullYear()
-  const m = String(at.getMonth() + 1).padStart(2, '0')
-  const d = String(at.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
+  return workDay(at.getTime())
+}
+
+/** Model families Anorak balances: Opus, Fable (Mythos with it), Sonnet, Haiku; anything else is other. */
+export const MODEL_FAMILIES = ['opus', 'fable', 'sonnet', 'haiku', 'other'] as const
+export type ModelFamily = typeof MODEL_FAMILIES[number]
+
+export function modelFamily(model: string): ModelFamily {
+  const m = model.toLowerCase()
+  if (m.includes('opus')) return 'opus'
+  if (m.includes('fable') || m.includes('mythos')) return 'fable'
+  if (m.includes('sonnet')) return 'sonnet'
+  if (m.includes('haiku')) return 'haiku'
+  return 'other'
 }
 
 export interface UsageLine {
@@ -91,17 +103,19 @@ export interface FileState {
   keys: string[]
   days: Record<string, TokenCounts>
   models: Record<string, TokenCounts>
+  /** day -> model family -> [output, fresh input]: the daily charts. */
+  families?: Record<string, Partial<Record<ModelFamily, [number, number]>>>
   /** Claude Code deleted the transcript: its counts stay. */
   gone?: boolean
 }
 
 export interface UsageIndex {
-  version: 2
+  version: 3
   files: Record<string, FileState>
   scannedAt: number
 }
 
-const INDEX_VERSION = 2
+const INDEX_VERSION = 3
 
 /** A reply's key as 16 hex digits (two 32-bit FNV-1a hashes): small enough to keep every reply's. */
 export function hashKey(key: string): string {
@@ -153,6 +167,12 @@ export function applyLines(state: FileState, text: string, seen: Set<string>): n
     seen.add(key)
     state.keys.push(key)
     state.days[usage.day] = addCounts(state.days[usage.day] || ZERO_COUNTS, usage.counts)
+    if (usage.model !== '<synthetic>') {
+      const day = (state.families ||= {})[usage.day] ||= {}
+      const family = modelFamily(usage.model)
+      const [output, input] = day[family] || [0, 0]
+      day[family] = [output + usage.counts.output, input + usage.counts.input]
+    }
     state.models[usage.model] = addCounts(state.models[usage.model] || ZERO_COUNTS, usage.counts)
   }
   return Buffer.byteLength(text.slice(0, end + 1), 'utf8')
@@ -221,7 +241,7 @@ export function refreshUsageIndex(): Promise<UsageIndex> {
       // A file that shrank was rewritten: count it again from the start (its replies are free to count again).
       if (!state || size < state.offset) {
         for (const key of state?.keys || []) seenKeys.delete(key)
-        state = index.files[file] = { size: 0, offset: 0, keys: [], days: {}, models: {} }
+        state = index.files[file] = { size: 0, offset: 0, keys: [], days: {}, models: {}, families: {} }
       }
       state.gone = undefined
       if (size === state.offset) continue
@@ -243,10 +263,24 @@ export function refreshUsageIndex(): Promise<UsageIndex> {
   return scanning
 }
 
+/** One day of the charts: output and fresh input per model family. */
+export interface UsageDay {
+  day: string
+  families: Record<ModelFamily, { output: number; input: number }>
+  /** output + fresh input, all families */
+  total: number
+  /** a day of the month still ahead */
+  future?: boolean
+}
+
 export interface UsageSummary {
   today: TokenCounts
   week: TokenCounts
   allTime: TokenCounts
+  /** The last 7 days, oldest first (today last). */
+  days7: UsageDay[]
+  /** Every day of this month (work days), the ones still ahead marked future. */
+  month: { label: string; days: UsageDay[] }
   byModel: Array<{ model: string; counts: TokenCounts }>
   firstDay: string | null
   scannedAt: number
@@ -254,10 +288,43 @@ export interface UsageSummary {
   progress: { done: number; total: number }
 }
 
-/** Totals for today, the last 7 days (today included) and all time. */
+function emptyDay(day: string): UsageDay {
+  const families = Object.fromEntries(MODEL_FAMILIES.map(f => [f, { output: 0, input: 0 }])) as UsageDay['families']
+  return { day, families, total: 0 }
+}
+
+function shiftDay(day: string, by: number): string {
+  const d = new Date(`${day}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + by)
+  return d.toISOString().slice(0, 10)
+}
+
+/** Totals for today, the last 7 days (today included) and all time, and the days for the charts. */
 export function summarizeUsage(index: UsageIndex, now = new Date()): Omit<UsageSummary, 'indexing' | 'progress'> {
   const today = localDay(now)
-  const weekStart = localDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6))
+  const weekStart = shiftDay(today, -6)
+  const monthPrefix = today.slice(0, 8)
+  const byDay = new Map<string, UsageDay>()
+  for (const state of Object.values(index.files)) {
+    for (const [day, families] of Object.entries(state.families || {})) {
+      if (day < weekStart && !day.startsWith(monthPrefix)) continue
+      const entry = byDay.get(day) || emptyDay(day)
+      for (const [family, pair] of Object.entries(families) as Array<[ModelFamily, [number, number]]>) {
+        entry.families[family].output += pair[0]
+        entry.families[family].input += pair[1]
+        entry.total += pair[0] + pair[1]
+      }
+      byDay.set(day, entry)
+    }
+  }
+  const days7 = Array.from({ length: 7 }, (_, i) => byDay.get(shiftDay(weekStart, i)) || emptyDay(shiftDay(weekStart, i)))
+  const [year, month] = today.split('-').map(Number)
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  const monthDays = Array.from({ length: daysInMonth }, (_, i) => {
+    const day = `${monthPrefix}${String(i + 1).padStart(2, '0')}`
+    return { ...(byDay.get(day) || emptyDay(day)), ...(day > today ? { future: true } : {}) }
+  })
+  const label = new Date(Date.UTC(year, month - 1, 15)).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
   let t = ZERO_COUNTS
   let w = ZERO_COUNTS
   let all = ZERO_COUNTS
@@ -276,7 +343,7 @@ export function summarizeUsage(index: UsageIndex, now = new Date()): Omit<UsageS
     .filter(([model]) => model !== '<synthetic>')
     .map(([model, counts]) => ({ model, counts }))
     .sort((a, b) => headlineTokens(b.counts) - headlineTokens(a.counts))
-  return { today: t, week: w, allTime: all, byModel, firstDay, scannedAt: index.scannedAt }
+  return { today: t, week: w, allTime: all, byModel, firstDay, scannedAt: index.scannedAt, days7, month: { label, days: monthDays } }
 }
 
 /** Current totals; starts a refresh in the background when the last one is older than `maxAgeMs`. */
