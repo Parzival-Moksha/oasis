@@ -65,10 +65,10 @@ describe('the book', () => {
     expect(book.days['2026-11-16'].freeSeconds).toBe(60)
     expect(dayXp(book.days['2026-11-16'])).toBe(0.7)
   })
-  it('mission time: valor 1 and the mission\'s priority; stopping goes back to free time', () => {
+  it('mission time: valor 1, a minute is 1 XP (the priority is the agents\' multiplier); stopping goes back to free time', () => {
     let book = setWorkMission(emptyWorkFile(), { file: 'vow.md', title: 'The vow', priority: 0.5 }, at('09:00:00'))
     book = run(book, 'a', at('09:00:00'), 4)
-    expect(book.days['2026-11-16'].missions['vow.md']).toMatchObject({ title: 'The vow', seconds: 60, xp: 1.5 })
+    expect(book.days['2026-11-16'].missions['vow.md']).toMatchObject({ title: 'The vow', seconds: 60, xp: 1 })
     book = setWorkMission(book, null, at('09:01:00'))
     book = applyWorkBeat(book, { tab: 'a', seq: 6, seconds: 15 }, at('09:01:15'), TZ).file
     expect(book.days['2026-11-16'].freeSeconds).toBe(15)
@@ -185,7 +185,7 @@ describe('the server book (a temp file)', () => {
     const days = Object.values(disk.days)
     expect(days.reduce((sum, day) => sum + daySeconds(day), 0)).toBe(90)
     expect(days.reduce((sum, day) => sum + (day.missions['vow.md']?.seconds || 0), 0)).toBe(75)
-    expect(readFileSync(path.join(dir, 'vow.md'), 'utf8')).toMatch(/## Log\n- \d{4}-\d\d-\d\d \d\d:\d\d · owner: Worked on this in the Oasis: 0:01:15 so far today, 2\.5 XP\./)
+    expect(readFileSync(path.join(dir, 'vow.md'), 'utf8')).toMatch(/## Log\n- \d{4}-\d\d-\d\d \d\d:\d\d · owner: Worked on this in the Oasis: 0:01:15 so far today, 1\.3 XP\./)
     expect((await server.switchWorkMission('../x.md', t0)).ok).toBe(false)
     expect((await server.switchWorkMission('nope.md', t0)).ok).toBe(false)
     // A closing page lets go: the next tab counts at once.
@@ -256,11 +256,11 @@ describe('what the time is counted on', () => {
     book = step(book, 5, { agent, mission: card })
     const day = book.days['2026-11-16']
     expect(day).toMatchObject({ freeSeconds: 60, freeXp: 0.7, agentSeconds: 60, agentXp: 1 })
-    expect(day.missions['a.md']).toMatchObject({ seconds: 120, xp: 3 })
+    expect(day.missions['a.md']).toMatchObject({ seconds: 120, xp: 2 })
     // With Anorak open for two of the four minutes: one earned as agent time, one as mission time.
-    expect(day.agents).toEqual({ 's-anorak': { name: 'Anorak', seconds: 120, xp: 2.5 } })
+    expect(day.agents).toEqual({ 's-anorak': { name: 'Anorak', seconds: 120, xp: 2 } })
     expect(daySeconds(day)).toBe(240)
-    expect(dayXp(day)).toBe(4.7)
+    expect(dayXp(day)).toBe(3.7)
   })
   it('"work on this" wins over the card that is open', () => {
     let book = setWorkMission(emptyWorkFile(), { file: 'vow.md', title: 'Vow', priority: 1 }, at('09:00:00'))
@@ -288,7 +288,8 @@ describe('agent hours', () => {
     expect(again).toBe(book)
     book = applyAgentWork(book, { key: 's1', name: 'Anorak', ts: ts - 5000, kind: 'helper', ms: 200_000 }, TZ)
     book = applyAgentWork(book, { key: 's1', name: 'Anorak', ts: ts - 4000, kind: 'helper', ms: 150_000 }, TZ)
-    book = applyAgentWork(book, { key: 's2', name: 'Morrow', ts: ts + 1000, kind: 'turn', ms: 60_000 }, TZ)
+    // Morrow is on a mission of priority 0.5: one minute earns 0.5 XP. Anorak is on none: hours, no XP.
+    book = applyAgentWork(book, { key: 's2', name: 'Morrow', ts: ts + 1000, kind: 'turn', ms: 60_000, mission: { title: 'The vow', priority: 0.5 } }, TZ)
     // An older event replayed after a reload: ignored.
     expect(applyAgentWork(book, { key: 's1', name: 'Anorak', ts: ts - 9000, kind: 'helper', ms: 99_000 }, TZ)).toBe(book)
     // After local midnight: the next day.
@@ -296,8 +297,8 @@ describe('agent hours', () => {
     const day = daySummary(book, '2026-11-16', '2026-11-16')
     expect(day.agentHours.totalSeconds).toBe(660)
     expect(day.agentHours.agents).toEqual([
-      { key: 's1', name: 'Anorak', ownSeconds: 250, helperSeconds: 350, turns: 1, helpers: 2, totalSeconds: 600 },
-      { key: 's2', name: 'Morrow', ownSeconds: 60, helperSeconds: 0, turns: 1, helpers: 0, totalSeconds: 60 },
+      { key: 's1', name: 'Anorak', ownSeconds: 250, helperSeconds: 350, turns: 1, helpers: 2, xp: 0, totalSeconds: 600 },
+      { key: 's2', name: 'Morrow', ownSeconds: 60, helperSeconds: 0, turns: 1, helpers: 0, xp: 0.5, mission: 'The vow', totalSeconds: 60 },
     ])
     expect(daySummary(book, '2026-11-17', '2026-11-17').agentHours.totalSeconds).toBe(30)
     // Agent hours are not the owner's time: the vow does not move.

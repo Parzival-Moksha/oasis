@@ -76,7 +76,7 @@ function WhereTimeWent({ snapshot }: { snapshot: WorkSnapshot }) {
     <div className="mt-2">
       <div className="mb-1 text-[9.5px] uppercase tracking-[0.2em] text-white/45">Where your time went</div>
       {day.missions.map(mission => (
-        <Bar key={mission.file} label={`${mission.title} ×${(1 + mission.priority).toFixed(2)}`} seconds={mission.seconds} total={day.seconds} color="#38bdf8" right={`${formatClock(mission.seconds)} · ${mission.xp} XP`} />
+        <Bar key={mission.file} label={`${mission.title} ×${WORK_VALOR.mission}`} seconds={mission.seconds} total={day.seconds} color="#38bdf8" right={`${formatClock(mission.seconds)} · ${mission.xp} XP`} />
       ))}
       {day.agentSeconds > 0 && <Bar label={`With agents ×${WORK_VALOR.agent}`} seconds={day.agentSeconds} total={day.seconds} color="#c084fc" />}
       <Bar label={`In the Oasis ×${WORK_VALOR.free}`} seconds={day.freeSeconds} total={day.seconds} color="#34d399" />
@@ -87,12 +87,12 @@ function WhereTimeWent({ snapshot }: { snapshot: WorkSnapshot }) {
         </div>
       )}
       <div className="mt-1.5">
-        <Bar label="Agent hours (the Oasis worked)" seconds={hours.totalSeconds} total={Math.max(hours.totalSeconds, 1)} color="#fbbf24" right={formatClock(hours.totalSeconds)} onClick={() => setHoursOpen(value => !value)} open={hoursOpen} />
+        <Bar label="Agent hours (the Oasis worked)" seconds={hours.totalSeconds} total={Math.max(hours.totalSeconds, 1)} color="#fbbf24" right={`${formatClock(hours.totalSeconds)} · ${hours.xp} XP`} onClick={() => setHoursOpen(value => !value)} open={hoursOpen} />
         {hoursOpen && (
           <div className="ml-3">
             {hours.agents.length === 0 && <div className="text-white/45">No finished turns yet today.</div>}
             {hours.agents.map(agent => (
-              <Bar key={agent.key} label={`${agent.name}${agent.helperSeconds ? ` (own ${formatClock(agent.ownSeconds)} + helpers ${formatClock(agent.helperSeconds)})` : ''}`} seconds={agent.totalSeconds} total={hours.totalSeconds} color="#fcd34d" />
+              <Bar key={agent.key} label={`${agent.name}${agent.helperSeconds ? ` (own ${formatClock(agent.ownSeconds)} + helpers ${formatClock(agent.helperSeconds)})` : ''}`} seconds={agent.totalSeconds} total={hours.totalSeconds} color="#fcd34d" right={`${formatClock(agent.totalSeconds)} · ${agent.xp} XP`} />
             ))}
           </div>
         )}
@@ -184,9 +184,9 @@ export function WorkVowHud() {
   const color = done ? GREEN : AMBER
   const openMission = missionFocus ? getMissionState().missions.find(mission => mission.file === missionFocus) : null
   const kind = snapshot.active
-    ? `${snapshot.active.title} ×${(1 + snapshot.active.priority).toFixed(2)}`
+    ? `${snapshot.active.title} ×${WORK_VALOR.mission}`
     : openMission
-      ? `${openMission.title} ×${(1 + (openMission.priority || 0)).toFixed(2)}`
+      ? `${openMission.title} ×${WORK_VALOR.mission}`
       : agentFocus
         ? `with ${agentFocus.split('\u0001')[1]} ×${WORK_VALOR.agent}`
         : `in the Oasis ×${WORK_VALOR.free}`

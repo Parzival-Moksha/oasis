@@ -35,6 +35,7 @@ import {
 } from '../../lib/village/village-missions'
 import type { VillageStationPlacement } from './village-actions'
 import { getMissionState, setMissionPanels, subscribeMissions, type MissionPanelPlacement } from './village-mission-store'
+import { WorkVowClock3D } from './WorkVowClock3D'
 
 const TITLE_FONT = '/fonts/helvetiker_regular.typeface.json'
 const TITLE_SIZE = 0.16
@@ -439,6 +440,8 @@ export function VillageMissionWall({ roster, placements, origin }: {
   if (!panels.length) return null
   return (
     <group name="oasis-village-missions">
+      {/* Today's time toward the vow, big, over the middle of the first arc. */}
+      <WorkVowClock3D position={panels[0].ground} rotationY={panels[0].rotationY} />
       <WallFrames panels={panels} />
       <WallFaces panels={panels} />
       <NearbyGlow panels={panels} />

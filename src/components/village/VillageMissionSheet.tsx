@@ -9,6 +9,9 @@ import { useOasisStore } from '../../store/oasisStore'
 import { renderMarkdown } from '../../lib/anorak-renderers'
 import { MISSION_COLUMN_COLOR, type Mission } from '../../lib/village/village-missions'
 import { MISSION_STATES, parseMissionLog, splitMissionLog, type MissionLogEntry } from '../../lib/village/village-mission-edit'
+import { useAgentVoiceInput } from '../../hooks/useAgentVoiceInput'
+import { getAgentEngineClient } from '../../lib/agent-engine-client'
+import { findMissionAgent, formatMissionNote } from '../../lib/village/mission-dispatch'
 import { showNotice } from '../forge/GlobalNotice'
 import { getSessionPanelGeometry } from './village-actions'
 import {
@@ -78,6 +81,8 @@ export function MissionSheet({ mission, mode }: { mission: Mission; mode: 'side'
   const [viewport, setViewport] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }))
   const scroller = useRef<HTMLDivElement>(null)
   const [draft, setDraft] = useState('')
+  const draftRef = useRef('')
+  draftRef.current = draft
   const [busy, setBusy] = useState(false)
   /** The whole file open in a text box: what it was when opened, and what it is now. */
   const [raw, setRaw] = useState<{ expected: string; text: string } | null>(null)
@@ -124,10 +129,47 @@ export function MissionSheet({ mission, mode }: { mission: Mission; mode: 'side'
     return result.ok
   }
   const patch = (change: MissionPatch) => { void run(patchMission(mission.file, change)) }
+  // Talking is the way in: the mic writes into the box, like the agents' boxes.
+  const voiceBase = useRef<string | null>(null)
+  const join = (base: string, spoken: string) => (base.trim() && spoken.trim() ? `${base.trim()} ${spoken.trim()}` : `${base}${spoken}`)
+  const voice = useAgentVoiceInput({
+    onLiveText: spoken => {
+      if (voiceBase.current === null) voiceBase.current = draftRef.current
+      setDraft(join(voiceBase.current, spoken))
+    },
+    onTranscript: spoken => {
+      setDraft(join(voiceBase.current ?? draftRef.current, spoken))
+      voiceBase.current = null
+    },
+  })
   const send = async () => {
     const message = draft.trim()
     if (!message || busy) return
-    if (await run(logMission(mission.file, message))) setDraft('')
+    if (voice.listening) voice.stop()
+    if (!(await run(logMission(mission.file, message)))) return
+    setDraft('')
+    // A note on a card is a job for someone: it goes to the mission agent (or the agent the mission
+    // names), who does it or passes it on. The card says who got it.
+    const engine = useOasisStore.getState().agentEngine
+    const agents = engine.order.map(id => engine.agents[id]).filter(Boolean)
+    const target = engine.connection.status === 'open' ? findMissionAgent(agents, mission.who) : null
+    if (!target) {
+      showNotice('Logged. No agent in the village to take it: the note waits in the log of the mission.', 'warn')
+      return
+    }
+    try {
+      await getAgentEngineClient().send(target.agent.id, formatMissionNote({
+        file: mission.file,
+        title: mission.title,
+        who: mission.who,
+        text: message,
+        villageAgents: agents.filter(agent => agent.owned && agent.id !== target.agent.id).map(agent => agent.name),
+      }))
+      await logMission(mission.file, `Handed to ${target.agent.name}.`, 'Mindcraft')
+      showNotice(`Sent to ${target.agent.name}`, 'info')
+    } catch (error) {
+      showNotice(`Logged, but not sent to ${target.agent.name}: ${error instanceof Error ? error.message : String(error)}`, 'error')
+    }
   }
   const saveRaw = async () => {
     if (raw && await run(saveMissionText(mission.file, raw.text, raw.expected))) setRaw(null)
@@ -169,7 +211,7 @@ export function MissionSheet({ mission, mode }: { mission: Mission; mode: 'side'
             <button
               type="button"
               className={`${button} ${working ? 'border-amber-300/50 bg-amber-400/20 text-amber-50' : 'border-emerald-300/45 bg-emerald-400/20 text-emerald-50'}`}
-              title={working ? 'Stop: time goes back to “in the Oasis” (×0.7)' : 'Count your time on this mission (valor 1, plus its priority) until you stop'}
+              title={working ? 'Stop: your time is counted on what you have open again' : 'Keep counting your time on this mission after you close the card, until you stop'}
               onClick={() => { void setWorkMission(working ? null : mission.file) }}
             >
               {working ? '■ stop work' : '▶ work on this'}
@@ -284,9 +326,19 @@ export function MissionSheet({ mission, mode }: { mission: Mission; mode: 'side'
                     void send()
                   }
                 }}
-                placeholder="Say something on this mission: it goes into its log (Enter sends)"
+                placeholder="Say or type a note: it goes into the log and to an agent, who starts on it (Enter sends)"
                 className="min-w-0 flex-1 resize-none rounded-lg border border-white/15 bg-black/40 px-2.5 py-1.5 text-[12.5px] text-white outline-none placeholder:text-white/35 focus:border-emerald-300/60"
               />
+              {voice.supported && (
+                <button
+                  type="button"
+                  className={`${button} px-2.5 py-2 ${voice.listening ? 'border-rose-300/60 bg-rose-500/30 text-rose-50' : ''}`}
+                  title={voice.listening ? 'Stop the mic' : 'Talk: your words appear in the box'}
+                  onClick={() => voice.toggle()}
+                >
+                  {voice.listening ? '■ mic' : '🎙'}
+                </button>
+              )}
               <button type="button" className={`${button} border-emerald-300/45 bg-emerald-400/20 px-3 py-2 text-emerald-50`} disabled={busy || !draft.trim()} onClick={() => { void send() }}>log it</button>
             </div>
           </>

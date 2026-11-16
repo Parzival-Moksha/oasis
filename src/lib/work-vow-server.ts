@@ -7,7 +7,8 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 
 import { appendMissionLog } from './village/village-mission-edit'
-import { isMissionFile, parseMission } from './village/village-missions'
+import { missionForAgent } from './village/mission-dispatch'
+import { isMissionFile, parseMission, type Mission } from './village/village-missions'
 import {
   applyAgentWork,
   applyWorkBeat,
@@ -19,8 +20,6 @@ import {
   releaseWorkHolder,
   setWorkMission,
   workSnapshot,
-  xpFor,
-  WORK_VALOR,
   type AgentWorkReport,
   type WorkBeat,
   type WorkDaySummary,
@@ -85,14 +84,34 @@ export function workDaySummary(date: string, now = Date.now()): Promise<WorkDayS
   return serial(async () => daySummary(await readBook(), date, localDay(now)))
 }
 
+let missionCache: { at: number; missions: Mission[] } | null = null
+
+/** Every mission, re-read at most every 30 s (agent XP looks up whose mission a turn counts on). */
+async function allMissions(now: number): Promise<Mission[]> {
+  if (missionCache && now - missionCache.at < 30_000) return missionCache.missions
+  let missions: Mission[] = []
+  try {
+    const dir = missionsDir()
+    const names = (await fs.readdir(dir)).filter(isMissionFile)
+    missions = (await Promise.all(names.map(async name => {
+      try { return parseMission(name, await fs.readFile(path.join(dir, name), 'utf8')) } catch { return null }
+    }))).filter((mission): mission is Mission => mission !== null)
+  } catch { /* no folder: no missions, no agent XP */ }
+  missionCache = { at: now, missions }
+  return missions
+}
+
 /** Finished turns and helpers, from the page that heard the engine say so. */
 export function reportAgentWork(reports: AgentWorkReport[]): Promise<{ booked: number }> {
   return serial(async () => {
     const before = await readBook()
     let book = before
     let booked = 0
+    const missions = reports.length ? await allMissions(Date.now()) : []
     for (const report of reports.slice(0, 200)) {
-      const next = applyAgentWork(book, report)
+      // The agent's minutes count on the mission whose `who` names it: XP = minutes × that priority.
+      const mission = missionForAgent(missions, report.name)
+      const next = applyAgentWork(book, { ...report, mission: mission ? { title: mission.title, priority: mission.priority || 0 } : null })
       if (next !== book) booked += 1
       book = next
     }
@@ -142,7 +161,7 @@ export function switchWorkMission(file: string | null, now = Date.now()): Promis
           const two = (n: number) => String(n).padStart(2, '0')
           const at = new Date(now)
           const stamp = `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(at.getDate())} ${two(at.getHours())}:${two(at.getMinutes())}`
-          const xp = Math.round(xpFor(today.seconds, WORK_VALOR.mission, today.priority) * 10) / 10
+          const xp = today.xp
           await fs.writeFile(target, appendMissionLog(text, { at: stamp, who: 'owner', text: `Worked on this in the Oasis: ${formatClock(today.seconds)} so far today, ${xp} XP.` }), 'utf8')
         } catch { /* the mission file is gone: the time is still in the book */ }
       }

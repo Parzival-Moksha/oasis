@@ -2,11 +2,10 @@
 // Pure: no fs, no DOM. The server keeps the file (work-vow-server.ts), the page reports in small
 // steps (work-vow-client.ts).
 //
-// The rule, in one sentence: every active minute earns valor × (1 + priority) XP, where time on a
-// mission has valor 1 and that mission's priority, and time just being in the Oasis has valor 0.7
-// and no priority.
-// (The old Mindcraft score was minutes × valor × priority with priority 0 to 8; priority is 0 to 1
-// now, so the "1 +" keeps a mission minute worth more than a free one, never less.)
+// The rule (the owner, 2026-11-16: "one minute equals one XP, with valor equals one"):
+//   the owner earns minutes × valor: valor 1 with an agent or a mission card open, 0.7 just being in the Oasis;
+//   an agent earns its working minutes × the priority (0 to 1) of the mission it is on.
+// The missions' priority is the agents' multiplier, not the owner's: "I don't even do them. You do the missions."
 
 export const WORK_VALOR = { mission: 1, agent: 1, free: 0.7 }
 /** No key, mouse, walking or dictation for this long: the counter stops. */
@@ -15,7 +14,7 @@ export const WORK_IDLE_MS = 3 * 60 * 1000
 export const WORK_BEAT_MS = 15_000
 /** A tab that hasn't reported for this long has gone: another tab may count. */
 export const WORK_HOLDER_STALE_MS = 50_000
-export const WORK_RULE = 'Every active minute earns valor × (1 + priority) XP: on a mission valor 1 and that mission\'s priority, with an agent open valor 1, just being in the Oasis valor 0.7. A committed day that is hit counts double; a committed day that is missed costs 7 XP for every missing minute.'
+export const WORK_RULE = 'You earn 1 XP a minute with an agent or a mission open, 0.7 just being in the Oasis. An agent earns its working minutes × its mission\'s priority. A committed day that is hit counts double; a committed day that is missed costs 7 XP for every missing minute.'
 
 /**
  * A commitment, the first Mindcraft's way (v0.1, 2025): what you commit to counts double, and what
@@ -64,6 +63,10 @@ export interface AgentHours {
   helperSeconds: number
   turns: number
   helpers: number
+  /** Working minutes × the priority of the mission it was on. */
+  xp: number
+  /** The mission its latest minutes counted on. */
+  mission?: string
 }
 
 export interface WorkDay {
@@ -147,7 +150,7 @@ export function parseWorkFile(value: unknown): WorkFile {
       if (a && typeof a === 'object') (parsed.agents ||= {})[key] = { name: String(a.name || key), seconds: num(a.seconds), xp: num(a.xp) }
     }
     for (const [key, h] of Object.entries(day.hours || {})) {
-      if (h && typeof h === 'object') (parsed.hours ||= {})[key] = { name: String(h.name || key), ownSeconds: num(h.ownSeconds), helperSeconds: num(h.helperSeconds), turns: num(h.turns), helpers: num(h.helpers) }
+      if (h && typeof h === 'object') (parsed.hours ||= {})[key] = { name: String(h.name || key), ownSeconds: num(h.ownSeconds), helperSeconds: num(h.helperSeconds), turns: num(h.turns), helpers: num(h.helpers), xp: num(h.xp), ...(typeof h.mission === 'string' && h.mission ? { mission: h.mission } : {}) }
     }
     file.days[date] = parsed
   }
@@ -254,7 +257,8 @@ function addSeconds(file: WorkFile, date: string, seconds: number, focus?: WorkF
   let xp: number
   if (on) {
     const mission = day.missions[on.file] || (day.missions[on.file] = { title: on.title, priority: on.priority, seconds: 0, xp: 0 })
-    xp = xpFor(seconds, WORK_VALOR.mission, on.priority)
+    // The mission's priority multiplies the agents' minutes, not the owner's.
+    xp = xpFor(seconds, WORK_VALOR.mission, 0)
     mission.title = on.title
     mission.priority = on.priority
     mission.seconds += seconds
@@ -355,6 +359,8 @@ export interface AgentWorkReport {
   kind: 'turn' | 'helper'
   /** turn: the agent's own time (ownTurnMs). helper: how long the helper ran. */
   ms: number
+  /** The mission these minutes count on (the server looks it up from the missions' `who`). */
+  mission?: { title: string; priority: number } | null
 }
 
 /** Book one finished turn or helper. The same event again (a second tab, a replay after a reload) is ignored. */
@@ -367,8 +373,12 @@ export function applyAgentWork(input: WorkFile, report: AgentWorkReport, offsetM
   const seconds = Math.min(86_400, report.ms / 1000)
   const date = localDay(report.ts, offsetMinutes)
   const day = file.days[date] || (file.days[date] = { freeSeconds: 0, freeXp: 0, missions: {} })
-  const hours = (day.hours ||= {})[report.key] || (day.hours[report.key] = { name: report.name, ownSeconds: 0, helperSeconds: 0, turns: 0, helpers: 0 })
+  const hours = (day.hours ||= {})[report.key] || (day.hours[report.key] = { name: report.name, ownSeconds: 0, helperSeconds: 0, turns: 0, helpers: 0, xp: 0 })
   hours.name = report.name || hours.name
+  if (report.mission) {
+    hours.xp = (hours.xp || 0) + (seconds / 60) * Math.max(0, report.mission.priority)
+    hours.mission = report.mission.title
+  }
   if (report.kind === 'turn') {
     hours.ownSeconds += seconds
     hours.turns += 1
@@ -494,7 +504,7 @@ export interface WorkDaySummary {
   /** Where the XP came from, most first: each mission, "With agents", "In the Oasis". */
   topXp: Array<{ label: string; xp: number; seconds: number; kind: 'mission' | 'agents' | 'free' }>
   /** The agents' own working hours this day, and the whole Oasis. */
-  agentHours: { totalSeconds: number; agents: Array<AgentHours & { key: string; totalSeconds: number }> }
+  agentHours: { totalSeconds: number; xp: number; agents: Array<AgentHours & { key: string; totalSeconds: number }> }
 }
 
 /** One day, ready to tell: for the detail view and for the 21:00 message. */
@@ -519,7 +529,7 @@ export function daySummary(file: WorkFile, date: string, today: string): WorkDay
     { label: 'In the Oasis', xp: round1(day?.freeXp || 0), seconds: day?.freeSeconds || 0, kind: 'free' as const },
   ].filter(item => item.seconds > 0).sort((a, b) => b.xp - a.xp)
   const hours = Object.entries(day?.hours || {})
-    .map(([key, h]) => ({ key, ...h, ownSeconds: Math.round(h.ownSeconds), helperSeconds: Math.round(h.helperSeconds), totalSeconds: Math.round(h.ownSeconds + h.helperSeconds) }))
+    .map(([key, h]) => ({ key, ...h, xp: round1(h.xp || 0), ownSeconds: Math.round(h.ownSeconds), helperSeconds: Math.round(h.helperSeconds), totalSeconds: Math.round(h.ownSeconds + h.helperSeconds) }))
     .sort((a, b) => b.totalSeconds - a.totalSeconds)
   const xp = dayXp(day)
   return {
@@ -539,7 +549,7 @@ export function daySummary(file: WorkFile, date: string, today: string): WorkDay
     missions,
     agents,
     topXp,
-    agentHours: { totalSeconds: hours.reduce((sum, h) => sum + h.totalSeconds, 0), agents: hours },
+    agentHours: { totalSeconds: hours.reduce((sum, h) => sum + h.totalSeconds, 0), xp: round1(hours.reduce((sum, h) => sum + h.xp, 0)), agents: hours },
   }
 }
 
