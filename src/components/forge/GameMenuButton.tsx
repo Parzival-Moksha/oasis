@@ -56,8 +56,9 @@ function PixelLabel({ text }: { text: string }) {
 const RAIL_LOOK_CSS = `
 .orb { position: relative; display: flex; align-items: center; gap: 7px; height: 44px; min-width: 142px; padding: 0 9px 0 7px; text-align: left; cursor: pointer; color: #fff; outline: none; -webkit-tap-highlight-color: transparent; transition: transform 140ms cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 140ms ease-out, border-color 140ms ease-out, background 140ms ease-out, filter 140ms ease-out; }
 .orb:disabled { cursor: default; opacity: 0.5; }
-.orb:hover:not(:disabled) { transform: translateX(4px); }
-.orb:active:not(:disabled) { transform: translateX(4px) scale(0.96); }
+/* Hover: towards you (a little larger, in place), not sideways. */
+.orb:hover:not(:disabled) { transform: scale(1.08); z-index: 1; }
+.orb:active:not(:disabled) { transform: scale(0.97); }
 .orb:focus-visible { box-shadow: 0 0 0 2px #fff; }
 .orb-icon { flex: none; display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; }
 .orb-icon svg { width: 17px; height: 17px; display: block; }
@@ -65,14 +66,14 @@ const RAIL_LOOK_CSS = `
 .orb-label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.05; }
 .orb-sub { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; line-height: 1; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.55); }
 .orb-caret { flex: none; width: 0; height: 0; border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 6px solid var(--orb-accent); opacity: 0.75; transition: transform 140ms ease-out; }
-.orb:hover .orb-caret { transform: translateX(2px); opacity: 1; }
+.orb:hover .orb-caret { opacity: 1; }
 @media (max-width: 700px) { .orb { height: 30px; min-width: 82px; gap: 5px; padding: 0 7px 0 5px; } .orb-icon { width: 18px; height: 18px; } .orb-icon svg { width: 13px; height: 13px; } .orb-sub { display: none; } }
 
 /* Forged: the spell book's material. A painted stone plate in gem-set iron (public/ui/rail/plate-*.png), the label carved in gold. */
-.orb[data-look="forged"] { height: 58px; padding: 0 20px; justify-content: center; border: 0; background: var(--orb-plate) center / 100% 100% no-repeat; font-family: 'Palatino Linotype', Palatino, 'Book Antiqua', 'URW Palladio L', 'Iowan Old Style', Georgia, serif; filter: drop-shadow(0 5px 7px rgba(0,0,0,0.55)); }
+.orb[data-look="forged"] { height: 58px; padding: 0 20px; justify-content: center; border: 0; background: var(--orb-plate) center / 100% 100% no-repeat; font-family: var(--font-cinzel), 'Palatino Linotype', Palatino, 'Book Antiqua', 'URW Palladio L', 'Iowan Old Style', Georgia, serif; filter: drop-shadow(0 5px 7px rgba(0,0,0,0.55)); }
 .orb[data-look="forged"] .orb-icon, .orb[data-look="forged"] .orb-caret { display: none; }
 .orb[data-look="forged"] .orb-text { align-items: center; text-align: center; gap: 1px; }
-.orb[data-look="forged"] .orb-label { font-size: 15.5px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #f1dca8; background: linear-gradient(180deg, #fff3cf 0%, #e9c877 55%, #b98a3a 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; filter: drop-shadow(0 1px 0 rgba(0,0,0,0.95)) drop-shadow(0 0 5px rgba(0,0,0,0.8)); }
+.orb[data-look="forged"] .orb-label { font-size: 14.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #f1dca8; background: linear-gradient(180deg, #fff3cf 0%, #e9c877 55%, #b98a3a 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; filter: drop-shadow(0 1px 0 rgba(0,0,0,0.95)) drop-shadow(0 0 5px rgba(0,0,0,0.8)); }
 .orb[data-look="forged"] .orb-sub { font-size: 8.5px; letter-spacing: 0.14em; color: rgba(236,222,190,0.72); text-shadow: 0 1px 2px #000; }
 .orb[data-look="forged"]:hover:not(:disabled) { filter: drop-shadow(0 6px 9px rgba(0,0,0,0.6)) drop-shadow(0 0 9px var(--orb-accent)) brightness(1.22); }
 .orb[data-look="forged"][data-active="1"] { filter: drop-shadow(0 6px 9px rgba(0,0,0,0.6)) drop-shadow(0 0 12px var(--orb-accent)) brightness(1.38) saturate(1.2); }
@@ -112,8 +113,8 @@ const RAIL_LOOK_CSS = `
 .orb[data-look="arcade"] .orb-icon svg { stroke-linecap: square; stroke-linejoin: miter; }
 .orb[data-look="arcade"] .orb-sub { font-size: 8.5px; font-weight: 700; }
 .orb[data-look="arcade"] .orb-caret { border-left-color: #fff; }
-.orb[data-look="arcade"]:hover:not(:disabled) { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--orb-accent); }
-.orb[data-look="arcade"]:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: 1px 1px 0 var(--orb-accent); }
+.orb[data-look="arcade"]:hover:not(:disabled) { transform: scale(1.08); box-shadow: 6px 6px 0 var(--orb-accent); }
+.orb[data-look="arcade"]:active:not(:disabled) { transform: scale(0.97); box-shadow: 1px 1px 0 var(--orb-accent); }
 .orb[data-look="arcade"][data-active="1"] { background: var(--orb-accent); color: #0b0b12; }
 .orb[data-look="arcade"][data-active="1"] .orb-icon, .orb[data-look="arcade"][data-active="1"] .orb-sub { color: #0b0b12; }
 .orb[data-look="arcade"][data-active="1"] .orb-caret { border-left-color: #0b0b12; }

@@ -111,6 +111,7 @@ import { GameMenu, OPEN_CONFIG_EVENT, OPEN_HELP_EVENT } from './game-menu/GameMe
 import { GameMenuRailButton } from './game-menu/GameMenuRailButton'
 import { GameMenuCameraDrift } from './game-menu/GameMenuCameraDrift'
 import { AgentSelectionLayer } from './village/AgentSelectionLayer'
+import { GameTooltip } from './forge/GameTooltip'
 import { useRailMenuExclusion } from '@/hooks/useRailMenuExclusion'
 import { MobileOasisControls, useIsMobileOasis } from './forge/MobileOasisControls'
 import { CombatBoltLayer } from './forge/CombatBoltLayer'
@@ -2473,6 +2474,8 @@ export default function Scene() {
 
       {/* Main menu: Esc when nothing else is open. Renders nothing while closed. */}
       <GameMenu />
+      {/* Every `title` tooltip in the Oasis's own material instead of the browser's grey box. */}
+      <GameTooltip />
 
       {/* OnboardingModal nuked — profile setup lives in ProfileButton */}
 
