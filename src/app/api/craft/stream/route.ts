@@ -7,7 +7,9 @@
 
 import { NextRequest } from 'next/server'
 import { CRAFT_SYSTEM_PROMPT } from '../../../../lib/craft-prompt'
-import { normalizeCraftModelId } from '../../../../lib/craft-models'
+import { claudeCodeCraftModel, normalizeCraftModelId } from '../../../../lib/craft-models'
+import { claudeCodeCraftResponse } from '../../../../lib/craft-claude-code'
+import { guardAgentRoute } from '@/lib/local-request-guard'
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,6 +22,11 @@ export async function POST(request: NextRequest) {
     if (prompt.length > 2000) {
       return new Response(JSON.stringify({ error: 'Prompt too long' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
     }
+
+    // Claude Code (Opus 5.5 / Fable 5.2) crafts through the owner's own CLI login, on this machine only. A hosted
+    // visitor's Claude Code choice crafts with the OpenRouter default below.
+    const cliModel = claudeCodeCraftModel(requestedModel)
+    if (cliModel && !guardAgentRoute(request)) return claudeCodeCraftResponse(prompt, cliModel, request.signal)
 
     // Local mode — no credits. Bring your own API keys.
 

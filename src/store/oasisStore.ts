@@ -29,7 +29,7 @@ import { worldMutationBus } from '../lib/world-mutation-bus'
 import { applyStoreWorldCommand } from '../lib/world-commands/store-adapter'
 import type { WorldCommandKind, WorldCommandPayloadByKind } from '../lib/world-commands/types'
 import type { SpellId } from '../lib/spellbook'
-import { normalizeCraftModelId } from '../lib/craft-models'
+import { normalizeCraftChoice } from '../lib/craft-models'
 import {
   canFocusAgentWindowForViewer,
   defaultAgentAvatarLabel,
@@ -252,7 +252,8 @@ const MAX_ACTIVE_MARCH_ORDER_VFX = 8
 const isBrowser = typeof window !== 'undefined'
 const stored  = (key: string): string | null => isBrowser ? localStorage.getItem(key) : null
 function storedCraftModel(): string {
-  return normalizeCraftModelId(stored('oasis-craft-model'))
+  // v2 (2026-11-16): the picker starts on Claude Code · Opus 5.5 once, whatever the old list had saved.
+  return normalizeCraftChoice(stored('oasis-craft-model.v2'))
 }
 function playSpatialWebSound(event: SoundEvent): void {
   if (!isBrowser) return
@@ -1656,8 +1657,8 @@ export const useOasisStore = create<OasisState>((set, get) => {
   setFpsCounterEnabled: (fpsCounterEnabled) => set({ fpsCounterEnabled }),
   setFpsCounterFontSize: (fpsCounterFontSize) => set({ fpsCounterFontSize }),
   setCraftModel: (craftModel) => {
-    const normalizedCraftModel = normalizeCraftModelId(craftModel)
-    persist('oasis-craft-model', normalizedCraftModel)
+    const normalizedCraftModel = normalizeCraftChoice(craftModel)
+    persist('oasis-craft-model.v2', normalizedCraftModel)
     set({ craftModel: normalizedCraftModel })
   },
   setVoiceModel: (voiceModel) => {
