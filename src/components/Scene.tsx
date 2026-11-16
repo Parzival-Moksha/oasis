@@ -108,6 +108,7 @@ import { VoiceTypeMic } from './forge/VoiceTypeMic'
 import { PerfHeartbeat } from './forge/PerfHeartbeat'
 import { SunShadows } from './forge/SunShadows'
 import { GameMenu, OPEN_CONFIG_EVENT, OPEN_HELP_EVENT } from './game-menu/GameMenu'
+import { GameMenuRailButton } from './game-menu/GameMenuRailButton'
 import { GameMenuCameraDrift } from './game-menu/GameMenuCameraDrift'
 import { useRailMenuExclusion } from '@/hooks/useRailMenuExclusion'
 import { MobileOasisControls, useIsMobileOasis } from './forge/MobileOasisControls'
@@ -2180,26 +2181,11 @@ export default function Scene() {
 
       {/* Main game rail */}
       <div className="fixed left-4 top-4 z-[190] flex flex-col gap-2 select-none max-[700px]:left-2 max-[700px]:top-2 max-[700px]:gap-1.5">
-        <ProfileButton />
+        {/* Always on screen: Menu, World, Spells, Agents. Profile, Settings and Help open from the main menu. */}
+        <GameMenuRailButton />
+        <ProfileButton hideRailButton />
 
-        {canShowWizardConsole && (
-          <GameMenuButton
-            label="Wizard"
-            accent="#F97316"
-            active={wizardOpen}
-            aria-label={hostedMode ? 'World Console' : 'Wizard Console'}
-            data-oasis-tooltip={hostedMode ? 'World Console' : 'Wizard Console'}
-            className="oasis-tooltip"
-            onClick={() => {
-              useAudioManager.getState().play('buttonClick')
-              setWizardOpen(prev => {
-                if (!prev) completeQuest('open-wizard')
-                return !prev
-              })
-            }}
-          />
-        )}
-
+        {/* The Wizard button left the rail: the console opens from Spells (and `oasis:open-wizard`). */}
         <WorldMenu
           actionLogControl={canUseLocalPanels && !hideEditTools ? (
             <button
@@ -2277,10 +2263,6 @@ export default function Scene() {
           />
         </SettingsMenu>
 
-        <HelpMenu
-          isOpen={helpOpen}
-          onToggle={() => togglePanel(setHelpOpen)}
-        />
       </div>
 
       {/* ✨ Wizard Console — hidden in view mode */}
@@ -2612,7 +2594,6 @@ function SettingsMenu({ children, opacity }: { children: React.ReactNode; opacit
   const [isOpen, setIsOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   useUILayer('settings-menu', isOpen)
-  const playClick = () => useAudioManager.getState().play('buttonClick')
   const close = useCallback(() => setIsOpen(false), [])
   useRailMenuExclusion('settings', isOpen, close)
   // The main menu's Config tile.
@@ -2638,20 +2619,7 @@ function SettingsMenu({ children, opacity }: { children: React.ReactNode; opacit
   }, [isOpen])
 
   return (
-    <div ref={menuRef} className="relative select-none">
-      <GameMenuButton
-        label="CONFIG"
-        marker="SYS"
-        accent="#A78BFA"
-        active={isOpen}
-        aria-label="Config menu"
-        data-oasis-tooltip="Config"
-        onClick={() => {
-          playClick()
-          setIsOpen(open => !open)
-        }}
-      />
-
+    <div ref={menuRef} className="absolute left-0 top-0 select-none">
       {isOpen && (
         <div
           data-ui-panel
@@ -2663,27 +2631,6 @@ function SettingsMenu({ children, opacity }: { children: React.ReactNode; opacit
           {children}
         </div>
       )}
-    </div>
-  )
-}
-
-function HelpMenu({ isOpen, onToggle }: { isOpen: boolean; onToggle: () => void }) {
-  const playClick = () => useAudioManager.getState().play('buttonClick')
-
-  return (
-    <div className="relative select-none">
-      <GameMenuButton
-        label="Help"
-        marker="?"
-        accent="#60A5FA"
-        active={isOpen}
-        aria-label="Help menu"
-        data-oasis-tooltip="Help"
-        onClick={() => {
-          playClick()
-          onToggle()
-        }}
-      />
     </div>
   )
 }

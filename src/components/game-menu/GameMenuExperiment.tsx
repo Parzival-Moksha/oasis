@@ -1,6 +1,6 @@
 'use client'
 
-// Config > Experiments > Main menu: how the tiles answer the mouse, which sounds they make, and
+// Settings > Experiments > Main menu: how the tiles answer the mouse, which sounds they make, and
 // the camera and Escape options. Every pick is saved at once and is live the next time the menu opens.
 
 import { FEEL_STYLES } from '@/lib/game-menu/menu-feel'

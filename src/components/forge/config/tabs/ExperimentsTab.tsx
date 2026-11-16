@@ -8,10 +8,12 @@
 
 import { IntroOverlayExperiment } from '@/components/forge/splash/IntroOverlayExperiment'
 import { GameMenuExperiment } from '@/components/game-menu/GameMenuExperiment'
+import { RailLookExperiment } from '@/components/game-menu/RailLookExperiment'
 
 export function ExperimentsTab() {
   return (
     <div className="space-y-6 text-white">
+      <RailLookExperiment />
       <GameMenuExperiment />
       <IntroOverlayExperiment />
     </div>

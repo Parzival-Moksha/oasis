@@ -252,7 +252,7 @@ export function GraphicsTab({ menuOpacity, onMenuOpacityChange }: SharedTabProps
           onChange={v => updateSetting('uiOpacity', Math.round(v * 20) / 20)}
         />
         <Slider
-          label="Config Menu Opacity"
+          label="Settings Menu Opacity"
           value={menuOpacity}
           min={0.5} max={1.0} step={0.05}
           display={`${Math.round(menuOpacity * 100)}%`}

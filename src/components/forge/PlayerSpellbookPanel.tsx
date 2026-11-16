@@ -279,6 +279,21 @@ export function PlayerSpellbookPanel({
             stretches across the whole button (caps + middle in one png).
             Tweak texture/sizing here; rest of the app's pattern is the
             same — `style={{ backgroundImage: ... }}` + size to fit. ─═̷─ */}
+        {/* The Wizard console left the rail (2026-11-16): it opens from here. */}
+        <button
+          type="button"
+          data-spellbook-action="wizard-console"
+          title="The Wizard console: conjure, craft and the asset library"
+          className="relative ml-auto mr-2 h-10 rounded-md border border-orange-300/40 bg-black/40 px-3 text-[11px] font-black uppercase tracking-[0.16em] text-orange-100 transition hover:border-orange-200/80 hover:bg-orange-300/15"
+          onPointerEnter={playMenuHover}
+          onClick={() => {
+            useAudioManager.getState().play('buttonClick')
+            onOpenChange(false)
+            window.dispatchEvent(new CustomEvent('oasis:open-wizard'))
+          }}
+        >
+          Wizard
+        </button>
         <button
           type="button"
           className="relative h-10 min-w-24 bg-no-repeat px-4 text-[11px] font-black uppercase tracking-[0.16em] text-amber-50 transition hover:brightness-110 active:brightness-95"

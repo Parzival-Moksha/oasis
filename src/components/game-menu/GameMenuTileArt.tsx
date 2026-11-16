@@ -15,7 +15,7 @@ export interface MenuTileDef {
 export const MENU_TILES: MenuTileDef[] = [
   { id: 'mindcraft', label: 'Mindcraft', sub: 'Your days, missions and XP', accent: '#5ef0a8' },
   { id: 'profile', label: 'Profile', sub: 'Who you are here', accent: '#c59bff' },
-  { id: 'config', label: 'Config', sub: 'Settings and experiments', accent: '#6fe3ff' },
+  { id: 'config', label: 'Settings', sub: 'Graphics, sound, controls', accent: '#6fe3ff' },
   { id: 'help', label: 'Help', sub: 'Keys, guide, glossary', accent: '#8fb4ff' },
   { id: 'invite', label: 'Invite a friend', sub: 'One paragraph to send', accent: '#ff9d7a' },
   { id: 'continue', label: 'Continue', sub: 'Back to the world', accent: '#ffd66b' },

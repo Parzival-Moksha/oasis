@@ -1,6 +1,6 @@
 'use client'
 
-// Config > Experiments > Intro overlay: pick one of the drawn variants or Off. Clicking a card
+// Settings > Experiments > Intro overlay: pick one of the drawn variants or Off. Clicking a card
 // saves it and plays it once over the world, without a reload.
 
 import { useState } from 'react'

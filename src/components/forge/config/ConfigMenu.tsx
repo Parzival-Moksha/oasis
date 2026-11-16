@@ -41,7 +41,7 @@ export function ConfigMenu({ menuOpacity, onMenuOpacityChange, consoleControl, i
             SYS
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-[12px] font-black uppercase tracking-[0.18em] text-white">Config</div>
+            <div className="text-[12px] font-black uppercase tracking-[0.18em] text-white">Settings</div>
             <div className="mt-0.5 text-[10px] uppercase tracking-[0.12em] text-white/42 truncate">
               {CONFIG_TABS.find(t => t.id === activeTab)?.tooltip}
             </div>

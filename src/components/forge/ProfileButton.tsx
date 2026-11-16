@@ -65,7 +65,7 @@ const DEFAULT_PLAYER_STATS: PlayerComputedStats = {
   moveSpeedMultiplier: 1,
 }
 
-export function ProfileButton() {
+export function ProfileButton({ hideRailButton = false }: { hideRailButton?: boolean } = {}) {
   const [isOpen, setIsOpen] = useState(false)
   const [showAvatarGallery, setShowAvatarGallery] = useState(false)
   useUILayer('profile', isOpen || showAvatarGallery)
@@ -244,20 +244,23 @@ export function ProfileButton() {
   }
 
   return (
-    <div ref={panelRef} className="relative select-none">
-      <GameMenuButton
-        onClick={() => {
-          playClick()
-          setIsOpen(!isOpen)
-        }}
-        aria-label={displayName}
-        data-oasis-tooltip={displayName}
-        className="oasis-tooltip"
-        label="Profile"
-        marker={initial}
-        accent="#C084FC"
-        active={isOpen || showAvatarGallery}
-      />
+    <div ref={panelRef} className={hideRailButton ? 'absolute left-0 top-0 w-full select-none' : 'relative select-none'}>
+      {/* On the rail the Profile button is gone: the main menu's Profile tile opens this panel. */}
+      {!hideRailButton && (
+        <GameMenuButton
+          onClick={() => {
+            playClick()
+            setIsOpen(!isOpen)
+          }}
+          aria-label={displayName}
+          data-oasis-tooltip={displayName}
+          className="oasis-tooltip"
+          label="Profile"
+          marker={initial}
+          accent="#C084FC"
+          active={isOpen || showAvatarGallery}
+        />
+      )}
 
       {/* Dropdown panel */}
       {isOpen && (

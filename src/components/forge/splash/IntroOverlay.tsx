@@ -286,7 +286,7 @@ export function IntroOverlay() {
     if (choice !== 'off') setRun({ key: nextKeyRef.current++, variant: choice, phase: 'showing' })
   }, [])
 
-  // The picker in Config plays a variant again without reloading the page.
+  // The picker in Settings plays a variant again without reloading the page.
   useEffect(() => {
     const onPreview = (event: Event) => {
       const choice = (event as CustomEvent<{ choice?: IntroChoice }>).detail?.choice

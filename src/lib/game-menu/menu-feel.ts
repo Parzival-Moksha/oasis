@@ -3,7 +3,7 @@
 // A tile has a handful of springs (scale, squash, a punch tilt, the mouse-follow tilt). Hover moves
 // the scale spring's target to about 1.15; pressing pushes it in; letting go gives the springs a
 // kick, and the under-damped ones wobble out in well under a second. A "feel" is one set of spring
-// numbers. The owner picks between them in Config > Experiments.
+// numbers. The owner picks between them in Settings > Experiments.
 
 export interface Spring { x: number; v: number }
 
