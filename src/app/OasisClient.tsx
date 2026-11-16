@@ -17,8 +17,7 @@ import {
   type ClientOasisCapabilities,
   type ClientOasisMode,
 } from '@/lib/oasis-mode-client'
-import { SplashScreen } from '@/components/forge/splash/SplashScreen'
-import { useSplashPreference } from '@/components/forge/splash/splash-preference'
+import { IntroOverlay } from '@/components/forge/splash/IntroOverlay'
 
 const Scene = dynamic(() => import('@/components/Scene'), {
   ssr: false,
@@ -198,27 +197,12 @@ export default function OasisClient({ initialWorldId, fallbackWorldId }: { initi
     })
   }, [activeWorldId, capabilities.role, mode, ready])
 
-  const splashPref = useSplashPreference()
-  const [splashFaded, setSplashFaded] = useState(false)
-  const onSplashFadeComplete = useCallback(() => setSplashFaded(true), [])
-
   return (
     <OasisModeProvider mode={mode} capabilities={capabilities}>
       <main className="w-full h-screen bg-black">
-        {/* Splash mounts first; fades out once `ready` flips true and its
-            internal load-progress reaches 100%. Stays out of the React tree
-            after the fade so it doesn't keep timers running. */}
-        {!splashFaded && (
-          <SplashScreen
-            designId={splashPref.design}
-            modelSlug={splashPref.model}
-            ready={ready}
-            holdMs={splashPref.holdMs}
-            onFadeComplete={onSplashFadeComplete}
-          />
-        )}
-        {/* Scene mounts in parallel. Its dynamic chunk + Three.js asset loads
-            are reflected in the splash bar via THREE.DefaultLoadingManager. */}
+        {/* The world shows at once and loads in view. The intro overlay is a see-through title
+            on top of it for about three seconds; it takes no input and then leaves the page. */}
+        <IntroOverlay />
         {ready && <Scene />}
       </main>
     </OasisModeProvider>
