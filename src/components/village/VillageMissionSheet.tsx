@@ -4,7 +4,7 @@
 // The 2D window the mission wall opens (E beside the world, F over all of it). Everything written
 // here goes to the mission's markdown file through /api/village/missions, then the wall re-reads.
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
 import { renderMarkdown } from '../../lib/anorak-renderers'
 import { MISSION_COLUMN_COLOR, type Mission } from '../../lib/village/village-missions'
@@ -21,6 +21,7 @@ import {
   type MissionPatch,
 } from './village-mission-store'
 import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY, VILLAGE_TYPE_CLASS } from './village-status'
+import { getWorkVowState, setWorkMission, subscribeWorkVow } from './work-vow-client'
 
 const FIELD = 'rounded border border-white/15 bg-black/50 px-1 py-0.5 text-[11.5px] text-white outline-none focus:border-sky-300/70'
 
@@ -82,6 +83,8 @@ export function MissionSheet({ mission, mode }: { mission: Mission; mode: 'side'
   const [raw, setRaw] = useState<{ expected: string; text: string } | null>(null)
   const [who, setWho] = useState(mission.who)
   const [doneWhen, setDoneWhen] = useState(mission.doneWhen)
+  // The work counter: is this the mission being worked on?
+  const working = useSyncExternalStore(subscribeWorkVow, () => getWorkVowState().snapshot?.active?.file === mission.file, () => false)
 
   useEffect(() => {
     const onResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight })
@@ -163,6 +166,14 @@ export function MissionSheet({ mission, mode }: { mission: Mission; mode: 'side'
             <div className={`break-words font-bold leading-tight tracking-wide ${full ? 'text-[26px]' : 'text-[18px]'}`} style={{ fontFamily: VILLAGE_FONT_DISPLAY }}>{mission.title}</div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              className={`${button} ${working ? 'border-amber-300/50 bg-amber-400/20 text-amber-50' : 'border-emerald-300/45 bg-emerald-400/20 text-emerald-50'}`}
+              title={working ? 'Stop: time goes back to “in the Oasis” (×0.7)' : 'Count your time on this mission (valor 1, plus its priority) until you stop'}
+              onClick={() => { void setWorkMission(working ? null : mission.file) }}
+            >
+              {working ? '■ stop work' : '▶ work on this'}
+            </button>
             <button type="button" className={button} disabled={busy} title="Edit the whole file as text" onClick={() => setRaw(raw ? null : { expected: mission.markdown, text: mission.markdown })}>
               {raw ? 'cancel edit' : 'edit text'}
             </button>

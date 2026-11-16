@@ -8,6 +8,7 @@
 // The box grows with what is in it up to about 450 px, then scrolls, and keeps the newest words in view.
 // Drag the grip above it to make it taller or shorter (double-click the grip: automatic again).
 
+import { markWorkActivity } from './work-vow-client'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
@@ -95,6 +96,13 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
   voiceToggleRef.current = voice.toggle
   const voiceStopRef = useRef(voice.stop)
   voiceStopRef.current = voice.stop
+  // Dictating is working: no key is pressed while talking, so tell the work counter (Mindcraft vow).
+  useEffect(() => {
+    if (!voice.listening) return
+    markWorkActivity()
+    const timer = window.setInterval(markWorkActivity, 20_000)
+    return () => window.clearInterval(timer)
+  }, [voice.listening])
   const listeningRef = useRef(voice.listening)
   listeningRef.current = voice.listening
   const transcribingRef = useRef(voice.transcribing)

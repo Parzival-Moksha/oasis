@@ -1,0 +1,201 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import {
+  activeMsBetween,
+  applyWorkBeat,
+  daySeconds,
+  dayXp,
+  emptyWorkFile,
+  formatClock,
+  localDay,
+  localMidnight,
+  parseWorkFile,
+  releaseWorkHolder,
+  setWorkMission,
+  workSnapshot,
+  xpFor,
+  WORK_HOLDER_STALE_MS,
+  WORK_IDLE_MS,
+  type WorkFile,
+} from '../village/work-vow'
+
+// Vienna in November: UTC+1.
+const TZ = 60
+/** Local wall time on 2026-11-16 as a UTC ms. */
+const at = (time: string, date = '2026-11-16') => Date.parse(`${date}T${time}Z`) - TZ * 60_000
+
+/** A tab reporting `seconds` every `every` seconds, starting from a claimed book. */
+function run(file: WorkFile, tab: string, start: number, reports: number, seconds = 15, every = 15, seqFrom = 1): WorkFile {
+  let book = applyWorkBeat(file, { tab, seq: seqFrom, seconds: 0 }, start, TZ).file
+  for (let i = 1; i <= reports; i += 1) book = applyWorkBeat(book, { tab, seq: seqFrom + i, seconds }, start + i * every * 1000, TZ).file
+  return book
+}
+
+describe('the idle cutoff', () => {
+  it('counts while the tab is visible and the last input is under three minutes old', () => {
+    expect(activeMsBetween(0, 1000, 0, true)).toBe(1000)
+    expect(activeMsBetween(100_000, 101_000, 0, true)).toBe(1000)
+    // The slice that straddles the cutoff counts up to the cutoff.
+    expect(activeMsBetween(WORK_IDLE_MS - 400, WORK_IDLE_MS + 600, 0, true)).toBe(400)
+    expect(activeMsBetween(WORK_IDLE_MS + 1, WORK_IDLE_MS + 1001, 0, true)).toBe(0)
+  })
+  it('counts nothing while hidden, or before any input', () => {
+    expect(activeMsBetween(0, 1000, 0, false)).toBe(0)
+    expect(activeMsBetween(0, 1000, null, true)).toBe(0)
+    expect(activeMsBetween(1000, 1000, 0, true)).toBe(0)
+  })
+})
+
+describe('local days', () => {
+  it('the day turns at local midnight, not UTC midnight', () => {
+    expect(localDay(at('23:59:59'), TZ)).toBe('2026-11-16')
+    expect(localDay(at('00:00:00', '2026-11-17'), TZ)).toBe('2026-11-17')
+    // 23:30 UTC on the 16th is already 00:30 on the 17th in Vienna.
+    expect(localDay(Date.parse('2026-11-16T23:30:00Z'), TZ)).toBe('2026-11-17')
+    expect(localMidnight(at('14:20:00'), TZ)).toBe(at('00:00:00'))
+    expect(localMidnight(at('00:00:00'), TZ)).toBe(at('00:00:00'))
+  })
+})
+
+describe('the book', () => {
+  it('free time: seconds and XP at valor 0.7', () => {
+    const book = run(emptyWorkFile(), 'a', at('09:00:00'), 4)
+    expect(book.days['2026-11-16'].freeSeconds).toBe(60)
+    expect(dayXp(book.days['2026-11-16'])).toBe(0.7)
+  })
+  it('mission time: valor 1 and the mission\'s priority; stopping goes back to free time', () => {
+    let book = setWorkMission(emptyWorkFile(), { file: 'vow.md', title: 'The vow', priority: 0.5 }, at('09:00:00'))
+    book = run(book, 'a', at('09:00:00'), 4)
+    expect(book.days['2026-11-16'].missions['vow.md']).toMatchObject({ title: 'The vow', seconds: 60, xp: 1.5 })
+    book = setWorkMission(book, null, at('09:01:00'))
+    book = applyWorkBeat(book, { tab: 'a', seq: 6, seconds: 15 }, at('09:01:15'), TZ).file
+    expect(book.days['2026-11-16'].freeSeconds).toBe(15)
+    expect(daySeconds(book.days['2026-11-16'])).toBe(75)
+    expect(xpFor(60, 1, 0.5)).toBe(1.5)
+  })
+  it('a repeated report is not counted twice', () => {
+    const book = run(emptyWorkFile(), 'a', at('09:00:00'), 2)
+    const again = applyWorkBeat(book, { tab: 'a', seq: 3, seconds: 15 }, at('09:00:31'), TZ)
+    expect(again.credited).toBe(0)
+    expect(again.file).toBe(book)
+  })
+  it('never books more seconds than the clock moved', () => {
+    const book = run(emptyWorkFile(), 'a', at('09:00:00'), 1)
+    const greedy = applyWorkBeat(book, { tab: 'a', seq: 3, seconds: 3600 }, at('09:00:20'), TZ)
+    expect(greedy.credited).toBe(5)
+    expect(applyWorkBeat(book, { tab: 'a', seq: 3, seconds: -5 }, at('09:00:20'), TZ).credited).toBe(0)
+    expect(applyWorkBeat(book, { tab: 'a', seq: 3, seconds: Number.NaN }, at('09:00:20'), TZ).credited).toBe(0)
+  })
+  it('a second tab is turned away while the first one reports: no double counting', () => {
+    let book = run(emptyWorkFile(), 'a', at('09:00:00'), 4)
+    const second = applyWorkBeat(book, { tab: 'b', seq: 1, seconds: 15 }, at('09:01:05'), TZ)
+    expect(second).toMatchObject({ counting: false, credited: 0 })
+    expect(second.file).toBe(book)
+    book = applyWorkBeat(book, { tab: 'a', seq: 6, seconds: 15 }, at('09:01:15'), TZ).file
+    expect(daySeconds(book.days['2026-11-16'])).toBe(75)
+  })
+  it('a silent tab loses its place; the new tab starts from zero, and the old one is turned away', () => {
+    let book = run(emptyWorkFile(), 'a', at('09:00:00'), 4)
+    const takeover = applyWorkBeat(book, { tab: 'b', seq: 1, seconds: 15 }, at('09:01:00') + WORK_HOLDER_STALE_MS, TZ)
+    expect(takeover).toMatchObject({ counting: true, credited: 0 })
+    book = takeover.file
+    expect(applyWorkBeat(book, { tab: 'a', seq: 9, seconds: 15 }, at('09:02:00'), TZ).counting).toBe(false)
+    expect(daySeconds(book.days['2026-11-16'])).toBe(60)
+  })
+  it('a reload: the closing page lets go, the new one counts at once', () => {
+    let book = run(emptyWorkFile(), 'a', at('09:00:00'), 2)
+    book = releaseWorkHolder(book, 'a')
+    expect(releaseWorkHolder(book, 'zzz')).toBe(book)
+    const fresh = applyWorkBeat(book, { tab: 'b', seq: 1, seconds: 1 }, at('09:00:32'), TZ)
+    expect(fresh.counting).toBe(true)
+    book = applyWorkBeat(fresh.file, { tab: 'b', seq: 2, seconds: 15 }, at('09:00:47'), TZ).file
+    expect(daySeconds(book.days['2026-11-16'])).toBe(45)
+  })
+  it('seconds across local midnight are split between the two days', () => {
+    let book = applyWorkBeat(emptyWorkFile(), { tab: 'a', seq: 1, seconds: 0 }, at('23:59:50'), TZ).file
+    book = applyWorkBeat(book, { tab: 'a', seq: 2, seconds: 15 }, at('00:00:05', '2026-11-17'), TZ).file
+    expect(book.days['2026-11-16'].freeSeconds).toBe(10)
+    expect(book.days['2026-11-17'].freeSeconds).toBe(5)
+  })
+  it('a long idle gap books only what the page reports', () => {
+    let book = run(emptyWorkFile(), 'a', at('09:00:00'), 1)
+    book = applyWorkBeat(book, { tab: 'a', seq: 3, seconds: 15 }, at('11:00:00'), TZ).file
+    expect(daySeconds(book.days['2026-11-16'])).toBe(30)
+  })
+})
+
+describe('the snapshot', () => {
+  it('today, and each day of the vow: hit, missed, open, ahead', () => {
+    const book = emptyWorkFile()
+    book.days['2026-11-16'] = { freeSeconds: 10_800, freeXp: 126, missions: {} }
+    book.days['2026-11-17'] = { freeSeconds: 600, freeXp: 7, missions: {} }
+    book.days['2026-11-18'] = { freeSeconds: 100, freeXp: 1.17, missions: { 'a.md': { title: 'A', priority: 0.5, seconds: 3000, xp: 75 } } }
+    const snap = workSnapshot(book, at('10:00:00', '2026-11-18'), TZ)
+    expect(snap.week.map(day => day.status)).toEqual(['hit', 'missed', 'open', 'ahead', 'ahead', 'ahead', 'ahead'])
+    expect(snap.today).toMatchObject({ seconds: 3100, freeSeconds: 100, missionSeconds: 3000, xp: 76.2, done: false, remainingSeconds: 7700 })
+    expect(snap.today.missions[0]).toMatchObject({ file: 'a.md', seconds: 3000 })
+    expect(snap.date).toBe('2026-11-18')
+    // Today turns to hit the moment the hours are in.
+    book.days['2026-11-18'].freeSeconds = 7800
+    expect(workSnapshot(book, at('20:00:00', '2026-11-18'), TZ).week[2].status).toBe('hit')
+    expect(workSnapshot(book, at('20:00:00', '2026-11-18'), TZ).today.done).toBe(true)
+  })
+  it('formats a clock', () => {
+    expect(formatClock(0)).toBe('0:00:00')
+    expect(formatClock(3 * 3600)).toBe('3:00:00')
+    expect(formatClock(5025.9)).toBe('1:23:45')
+  })
+  it('a damaged file keeps the days that are fine', () => {
+    const file = parseWorkFile({ days: { '2026-11-16': { freeSeconds: 50, freeXp: 'x', missions: { 'a.md': { seconds: 5 } } }, nonsense: 4, '2026-11-17': null }, holder: 7, active: { file: 3 } })
+    expect(file.days).toEqual({ '2026-11-16': { freeSeconds: 50, freeXp: 0, missions: { 'a.md': { title: 'a.md', priority: 0, seconds: 5, xp: 0 } } } })
+    expect(file.holder).toBeNull()
+    expect(file.active).toBeNull()
+    expect(parseWorkFile(null).vow.dailySeconds).toBe(10_800)
+  })
+})
+
+describe('the server book (a temp file)', () => {
+  let dir = ''
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(os.tmpdir(), 'work-vow-'))
+    process.env.OASIS_WORK_VOW_STATE = path.join(dir, 'book.json')
+    process.env.OASIS_MISSIONS_DIR = dir
+    writeFileSync(path.join(dir, 'vow.md'), 'state: doing\nwho: owner\ndone when: x\nscore: ease 5 · impact 5 · urgency 5\n\n# The vow\n', 'utf8')
+  })
+  afterEach(() => {
+    delete process.env.OASIS_WORK_VOW_STATE
+    delete process.env.OASIS_MISSIONS_DIR
+    rmSync(dir, { recursive: true, force: true })
+  })
+  it('reports, switches mission, survives a reload of the module state, and logs the work in the mission', async () => {
+    const server = await import('../work-vow-server')
+    const t0 = Date.now()
+    expect((await server.reportWorkBeat({ tab: 'a', seq: 1, seconds: 0 }, t0)).counting).toBe(true)
+    expect((await server.reportWorkBeat({ tab: 'a', seq: 2, seconds: 15 }, t0 + 15_000)).credited).toBe(15)
+    expect((await server.reportWorkBeat({ tab: 'b', seq: 1, seconds: 15 }, t0 + 16_000)).counting).toBe(false)
+    const started = await server.switchWorkMission('vow.md', t0 + 16_000)
+    expect(started.ok && started.snapshot.active).toMatchObject({ file: 'vow.md', title: 'The vow', priority: 1 })
+    for (let i = 3; i <= 7; i += 1) await server.reportWorkBeat({ tab: 'a', seq: i, seconds: 15 }, t0 + i * 15_000 - 15_000)
+    const stopped = await server.switchWorkMission(null, t0 + 100_000)
+    expect(stopped.ok && stopped.snapshot.active).toBeNull()
+    // The book on disk is the truth.
+    const disk = parseWorkFile(JSON.parse(readFileSync(process.env.OASIS_WORK_VOW_STATE as string, 'utf8')))
+    const days = Object.values(disk.days)
+    expect(days.reduce((sum, day) => sum + daySeconds(day), 0)).toBe(90)
+    expect(days.reduce((sum, day) => sum + (day.missions['vow.md']?.seconds || 0), 0)).toBe(75)
+    expect(readFileSync(path.join(dir, 'vow.md'), 'utf8')).toMatch(/## Log\n- \d{4}-\d\d-\d\d \d\d:\d\d · owner: Worked on this in the Oasis: 0:01:15 today, 2\.5 XP\./)
+    expect((await server.switchWorkMission('../x.md', t0)).ok).toBe(false)
+    expect((await server.switchWorkMission('nope.md', t0)).ok).toBe(false)
+    // A closing page lets go: the next tab counts at once.
+    await server.reportWorkBeat({ tab: 'a', seq: 8, seconds: 0, release: true }, t0 + 101_000)
+    expect((await server.reportWorkBeat({ tab: 'c', seq: 1, seconds: 0 }, t0 + 102_000)).counting).toBe(true)
+  })
+  it('refuses to overwrite a book it cannot read', async () => {
+    const server = await import('../work-vow-server')
+    writeFileSync(process.env.OASIS_WORK_VOW_STATE as string, '{ not json', 'utf8')
+    await expect(server.reportWorkBeat({ tab: 'a', seq: 1, seconds: 0 })).rejects.toThrow()
+    expect(readFileSync(process.env.OASIS_WORK_VOW_STATE as string, 'utf8')).toBe('{ not json')
+  })
+})

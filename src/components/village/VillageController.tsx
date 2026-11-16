@@ -11,6 +11,7 @@ import { playVillageChime, unlockVillageAudio } from './village-sound'
 import { loadSeen, markSeen, planUnseenRestore, saveSeen } from '../../lib/village/village-seen'
 import { VillageImageViewer } from './VillageImageViewer'
 import { VillageMissionReader } from './VillageMissionReader'
+import { WorkVowHud } from './WorkVowHud'
 import {
   VILLAGE_SESSION_LAYER,
   discardVillageCameraPose,
@@ -154,6 +155,8 @@ export function VillageController() {
     <>
       <VillageImageViewer />
       <VillageMissionReader />
+      {/* The Mindcraft work counter: today's time toward the vow, bottom left. */}
+      <WorkVowHud />
     </>
   )
 }

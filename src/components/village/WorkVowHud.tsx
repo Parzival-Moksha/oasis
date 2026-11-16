@@ -1,0 +1,141 @@
+'use client'
+
+// ░▒▓ WORK VOW HUD — today's time toward three hours, what is being counted, the week of the vow ▓▒░
+// Plain DOM, bottom left, always there in the village. It re-renders when the shown second changes
+// (work-vow-client ticks once a second), never per frame. A click opens the detail.
+
+import { useEffect, useState, useSyncExternalStore } from 'react'
+import { formatClock, WORK_VALOR, type WorkDayView, type WorkSnapshot } from '../../lib/village/work-vow'
+import { GAME_HUD_TEXT } from '../forge/GameKeycap'
+import { getWorkVowState, setWorkMission, startWorkVow, subscribeWorkVow } from './work-vow-client'
+import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY } from './village-status'
+
+const GREEN = '#34d399'
+const AMBER = '#fbbf24'
+const RED = '#f87171'
+const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+
+function Ring({ share, color, size = 38 }: { share: number; color: string; size?: number }) {
+  const radius = size / 2 - 4
+  const length = 2 * Math.PI * radius
+  return (
+    <svg width={size} height={size} className="shrink-0 -rotate-90">
+      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth={4} />
+      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={color} strokeWidth={4} strokeLinecap="round" strokeDasharray={`${length * Math.min(1, share)} ${length}`} />
+    </svg>
+  )
+}
+
+function DayPip({ day, today, target, liveSeconds }: { day: WorkDayView; today: boolean; target: number; liveSeconds: number }) {
+  const seconds = today ? liveSeconds : day.seconds
+  const status = seconds >= target ? 'hit' : day.status
+  const color = status === 'hit' ? GREEN : status === 'missed' ? RED : status === 'open' ? AMBER : 'rgba(255,255,255,0.3)'
+  const weekday = WEEKDAYS[new Date(`${day.date}T12:00:00Z`).getUTCDay()]
+  return (
+    <span className="flex flex-col items-center gap-0.5" title={`${day.date}: ${formatClock(seconds)} · ${status}`}>
+      <span
+        className="flex h-[15px] w-[15px] items-center justify-center rounded-[4px] text-[9px] font-black leading-none"
+        style={{
+          border: `1.5px solid ${color}`,
+          background: status === 'hit' ? color : status === 'missed' ? `${RED}33` : 'transparent',
+          color: status === 'hit' ? '#04130d' : color,
+          boxShadow: today ? `0 0 8px ${color}99` : undefined,
+        }}
+      >
+        {status === 'hit' ? '✓' : status === 'missed' ? '×' : ''}
+      </span>
+      <span className="text-[8px] leading-none" style={{ color: today ? '#fff' : 'rgba(255,255,255,0.5)' }}>{weekday}</span>
+    </span>
+  )
+}
+
+function Detail({ snapshot, liveSeconds, onClose }: { snapshot: WorkSnapshot; liveSeconds: number; onClose: () => void }) {
+  const row = 'flex items-baseline justify-between gap-3'
+  return (
+    <div
+      data-ui-panel="village-work-vow"
+      className="fixed bottom-[92px] left-3 z-[9300] w-[330px] rounded-xl border border-white/15 bg-slate-950/95 p-3 text-[12px] text-white shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-xl max-[700px]:bottom-auto max-[700px]:top-[120px]"
+      style={{ fontFamily: VILLAGE_FONT_BODY }}
+    >
+      <div className="mb-2 flex items-start justify-between">
+        <div>
+          <div className="text-[9.5px] uppercase tracking-[0.26em] text-emerald-200/90">Mindcraft · the vow</div>
+          <div className="text-[16px] font-bold" style={{ fontFamily: VILLAGE_FONT_DISPLAY }}>{formatClock(snapshot.targetSeconds).replace(/:00$/, '')} hours a day, {snapshot.vow.from.slice(5)} to {snapshot.vow.to.slice(5)}</div>
+        </div>
+        <button type="button" onClick={onClose} className="rounded-md border border-white/15 bg-white/5 px-2 py-0.5 text-[12px] font-bold hover:bg-white/15">✕</button>
+      </div>
+      <div className={row}><span className="text-white/60">Today</span><span className="font-bold">{formatClock(liveSeconds)} · {snapshot.today.xp} XP</span></div>
+      <div className={`${row} text-white/75`}><span>In the Oasis ×{WORK_VALOR.free}</span><span>{formatClock(snapshot.today.freeSeconds)}</span></div>
+      {snapshot.today.missions.map(mission => (
+        <div key={mission.file} className={`${row} text-white/75`}>
+          <span className="min-w-0 truncate">{mission.title} ×{(1 + mission.priority).toFixed(2)}</span>
+          <span className="shrink-0">{formatClock(mission.seconds)} · {mission.xp} XP</span>
+        </div>
+      ))}
+      {snapshot.active && (
+        <button type="button" onClick={() => { void setWorkMission(null) }} className="mt-2 w-full rounded-md border border-amber-300/40 bg-amber-400/15 px-2 py-1 text-[11px] font-bold text-amber-50 hover:bg-amber-400/30">
+          ■ stop working on “{snapshot.active.title}”
+        </button>
+      )}
+      <div className="mb-1 mt-3 text-[9.5px] uppercase tracking-[0.2em] text-white/45">The week</div>
+      {snapshot.week.map(day => {
+        const seconds = day.date === snapshot.date ? liveSeconds : day.seconds
+        const status = seconds >= snapshot.targetSeconds ? 'hit' : day.status
+        return (
+          <div key={day.date} className={row} style={{ color: status === 'hit' ? GREEN : status === 'missed' ? RED : status === 'open' ? '#fff' : 'rgba(255,255,255,0.4)' }}>
+            <span>{new Date(`${day.date}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })}</span>
+            <span>{status === 'ahead' ? '–' : `${formatClock(seconds)} · ${day.xp} XP · ${status === 'open' ? 'open' : status}`}</span>
+          </div>
+        )
+      })}
+      <div className="mt-3 border-t border-white/10 pt-2 text-[10.5px] leading-snug text-white/50">
+        {snapshot.rule} Time counts while this tab is visible and you did something in the last 3 minutes. To count a mission, open its panel and press “work on this”.
+      </div>
+    </div>
+  )
+}
+
+export function WorkVowHud() {
+  const state = useSyncExternalStore(subscribeWorkVow, getWorkVowState, getWorkVowState)
+  const [open, setOpen] = useState(false)
+  useEffect(() => startWorkVow(), [])
+
+  const snapshot = state.snapshot
+  if (!snapshot) return null
+  const liveSeconds = snapshot.today.seconds + state.pendingSeconds
+  const done = liveSeconds >= snapshot.targetSeconds
+  const color = done ? GREEN : AMBER
+  const kind = snapshot.active
+    ? `${snapshot.active.title} ×${(1 + snapshot.active.priority).toFixed(2)}`
+    : `in the Oasis ×${WORK_VALOR.free}`
+  const status = state.otherTab ? 'another tab is counting' : state.running ? kind : `paused · ${kind}`
+
+  return (
+    <>
+      <button
+        type="button"
+        data-ui-panel="village-work-vow"
+        onClick={() => setOpen(value => !value)}
+        title="Your work vow: click for the detail"
+        className="fixed bottom-3 left-3 z-[170] flex items-center gap-2.5 rounded-xl border bg-slate-950/80 py-1.5 pl-2 pr-3 text-left text-white shadow-[0_10px_30px_rgba(0,0,0,0.45)] backdrop-blur-md transition hover:bg-slate-900/90 max-[700px]:bottom-auto max-[700px]:left-2 max-[700px]:top-[64px]"
+        style={{ borderColor: `${color}66`, boxShadow: done ? `0 0 22px ${GREEN}44` : undefined }}
+      >
+        <span className="relative flex items-center justify-center">
+          <Ring share={liveSeconds / snapshot.targetSeconds} color={color} />
+          <span className="absolute text-[11px] font-black" style={{ color }}>{done ? '✓' : state.running ? '▶' : '❙❙'}</span>
+        </span>
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <span className="flex items-baseline gap-1.5">
+            <span className="text-[17px] font-bold leading-none tabular-nums" style={{ fontFamily: VILLAGE_FONT_DISPLAY, color: done ? GREEN : '#fff' }}>{formatClock(liveSeconds)}</span>
+            <span className="text-[10px] text-white/50">/ {formatClock(snapshot.targetSeconds)}</span>
+          </span>
+          <span className="max-w-[190px] truncate text-[9.5px]" style={{ ...GAME_HUD_TEXT, color: state.running ? (snapshot.active ? '#7dd3fc' : '#a7f3d0') : 'rgba(255,255,255,0.5)' }}>{status}</span>
+        </span>
+        <span className="ml-1 flex items-start gap-1">
+          {snapshot.week.map(day => <DayPip key={day.date} day={day} today={day.date === snapshot.date} target={snapshot.targetSeconds} liveSeconds={liveSeconds} />)}
+        </span>
+      </button>
+      {open && <Detail snapshot={snapshot} liveSeconds={liveSeconds} onClose={() => setOpen(false)} />}
+    </>
+  )
+}
