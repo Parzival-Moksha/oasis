@@ -127,7 +127,7 @@ function isQuiet(): boolean {
   return Date.now() < quietUntil
 }
 
-async function post(body: unknown): Promise<{ counting?: boolean; credited?: number; snapshot?: WorkSnapshot } | null> {
+async function post(body: unknown): Promise<{ counting?: boolean; credited?: number; otherTab?: boolean; snapshot?: WorkSnapshot } | null> {
   try {
     const response = await fetch('/api/village/work', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), keepalive: true, signal: AbortSignal.timeout(10_000) })
     if (!response.ok) quietUntil = Date.now() + 60_000
@@ -153,9 +153,17 @@ async function sendBeat(): Promise<void> {
   if (!answer) return // offline or mid-reload: the seconds stay pending and go with the next report
   letGoHidden = false
   if (answer.counting === false) {
-    // Another tab counts: what was counted here is theirs to count, not ours.
-    pendingMs = 0
-    set({ snapshot: answer.snapshot || state.snapshot, pendingSeconds: 0, otherTab: true, running: false })
+    if (answer.otherTab) {
+      // A different tab reported within the last minute: it counts, what was counted here is its to count.
+      pendingMs = 0
+      set({ snapshot: answer.snapshot || state.snapshot, pendingSeconds: 0, otherTab: true, running: false })
+      return
+    }
+    // Turned away for another reason (a report that crossed this tab's own letting-go): nobody else
+    // counts, so say "back" with the next report and keep the seconds.
+    letGoHidden = true
+    lastBeatAt = 0
+    set({ snapshot: answer.snapshot || state.snapshot, otherTab: false })
     return
   }
   // The server took what the clock allows; anything it did not take is dropped, never sent twice.

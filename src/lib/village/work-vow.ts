@@ -258,6 +258,8 @@ export interface WorkBeatResult {
   counting: boolean
   /** Seconds that went into the book. */
   credited: number
+  /** Turned away because a different tab reported within the last 50 s (the only case to call "another tab"). */
+  otherTab?: boolean
 }
 
 /**
@@ -306,7 +308,7 @@ export function applyWorkBeat(input: WorkFile, beat: WorkBeat, now: number, offs
   const file: WorkFile = JSON.parse(JSON.stringify(input))
   const holder = file.holder
   const mine = holder?.tab === beat.tab
-  if (holder && !mine && now - holder.at < WORK_HOLDER_STALE_MS) return { file: input, counting: false, credited: 0 }
+  if (holder && !mine && now - holder.at < WORK_HOLDER_STALE_MS) return { file: input, counting: false, credited: 0, otherTab: true }
   // A report that was still on its way when its page let go: too late, the page is gone. A report numbered after
   // the letting-go comes from a page that is still there (it was only hidden, or its HUD remounted): it counts again.
   // Without this, a tab that let go and stayed was turned away for good ("another tab is counting", with no other tab).

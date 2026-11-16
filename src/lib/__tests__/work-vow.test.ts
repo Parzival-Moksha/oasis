@@ -388,3 +388,22 @@ describe('Mindcraft: days of work units, the free-time valor setting', () => {
     expect(m.totals).toEqual({ owner: { seconds: 5460, xp: 87.7 }, oasis: { seconds: 2520, xp: 16 } })
   })
 })
+
+describe('"another tab" is only said when another tab really reported', () => {
+  it('a fresh different holder: otherTab; a report that crossed its own letting-go: turned away, but not "another tab"', () => {
+    const book = run(emptyWorkFile(), 'a', at('09:00:00'), 2)
+    expect(applyWorkBeat(book, { tab: 'b', seq: 1, seconds: 5 }, at('09:00:40'), TZ)).toMatchObject({ counting: false, otherTab: true })
+    const released = releaseWorkHolder(book, 'a')
+    const late = applyWorkBeat(released, { tab: 'a', seq: 3, seconds: 5 }, at('09:00:40'), TZ)
+    expect(late.counting).toBe(false)
+    expect(late.otherTab).toBeUndefined()
+  })
+  it('a tab that let go and stayed (a remount) counts again with its next report, with or without "back"', () => {
+    let book = run(emptyWorkFile(), 'a', at('09:00:00'), 2)
+    book = releaseWorkHolder(book, 'a')
+    const next = applyWorkBeat(book, { tab: 'a', seq: 4, seconds: 5 }, at('09:00:45'), TZ)
+    expect(next.counting).toBe(true)
+    const after = applyWorkBeat(next.file, { tab: 'a', seq: 5, seconds: 15 }, at('09:01:00'), TZ)
+    expect(after.credited).toBe(15)
+  })
+})

@@ -13,6 +13,8 @@ import { MindcraftWindow, openMindcraft } from './MindcraftView'
 import { getWorkVowState, setWorkFocus, setWorkMission, startWorkVow, subscribeWorkVow } from './work-vow-client'
 import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY } from './village-status'
 
+/** Between an agent's key and its name in the focus selector's string. */
+const SEP = String.fromCharCode(1)
 const GREEN = '#34d399'
 const AMBER = '#fbbf24'
 const RED = '#f87171'
@@ -187,15 +189,25 @@ export function WorkVowHud() {
   const done = liveSeconds >= snapshot.targetSeconds
   const color = done ? GREEN : AMBER
   const openMission = missionFocus ? getMissionState().missions.find(mission => mission.file === missionFocus) : null
-  const kind = snapshot.active
-    ? `${snapshot.active.title} ×${WORK_VALOR.mission}`
+  // What is being counted right now, and what a minute of it is worth.
+  const free = snapshot.settings?.freeValor ?? WORK_VALOR.free
+  const [what, rate]: [string, number] = snapshot.active
+    ? [snapshot.active.title, WORK_VALOR.mission]
     : openMission
-      ? `${openMission.title} ×${WORK_VALOR.mission}`
+      ? [openMission.title, WORK_VALOR.mission]
       : agentFocus
-        ? `with ${agentFocus.split('\u0001')[1]} ×${WORK_VALOR.agent}`
-        : `in the Oasis ×${snapshot.settings?.freeValor ?? WORK_VALOR.free}`
+        ? [`with ${agentFocus.split(SEP)[1]}`, WORK_VALOR.agent]
+        : ['in the Oasis', free]
   const vow = snapshot.commitments?.[0]
-  const status = state.unsaved ? 'not saved: server unreachable' : state.otherTab ? 'another tab is counting' : state.running ? kind : `paused · ${kind}`
+  const hidden = typeof document !== 'undefined' && document.visibilityState !== 'visible'
+  const status = state.unsaved
+    ? 'not saved: server unreachable'
+    : state.otherTab
+      ? 'another Oasis tab is counting'
+      : state.running
+        ? `counting: ${what} · ${rate} XP/min`
+        : hidden ? 'paused: tab hidden' : 'paused: move, type or talk to count'
+  const statusColor = state.unsaved ? RED : state.running ? (rate >= 1 ? '#7dd3fc' : '#a7f3d0') : 'rgba(255,255,255,0.55)'
 
   return (
     <>
@@ -216,7 +228,10 @@ export function WorkVowHud() {
             <span className="text-[17px] font-bold leading-none tabular-nums" style={{ fontFamily: VILLAGE_FONT_DISPLAY, color: done ? GREEN : '#fff' }}>{formatClock(liveSeconds)}</span>
             <span className="text-[10px] text-white/50">/ {formatClock(snapshot.targetSeconds)}</span>
           </span>
-          <span className="max-w-[190px] truncate text-[9.5px]" style={{ ...GAME_HUD_TEXT, color: state.running ? (snapshot.active ? '#7dd3fc' : '#a7f3d0') : 'rgba(255,255,255,0.5)' }}>{status}</span>
+          <span className="flex max-w-[250px] items-center gap-1.5 text-[9.5px]" style={{ ...GAME_HUD_TEXT, color: statusColor }} title={state.running ? `Every minute like this earns ${rate} XP. With nothing open it is ${free}; with an agent or a mission open it is 1.` : 'Nothing is being counted right now'}>
+            {state.running && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full" style={{ background: statusColor, boxShadow: `0 0 6px ${statusColor}` }} />}
+            <span className="truncate">{status}</span>
+          </span>
         </span>
         <span className="ml-1 flex flex-col items-center gap-1">
           <span className="flex items-start gap-1">
