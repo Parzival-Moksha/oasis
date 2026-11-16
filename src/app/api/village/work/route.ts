@@ -1,5 +1,8 @@
 // /api/village/work — the Mindcraft work counter (the owner's vow: three hours a day in the Oasis).
 //   GET   ?day=YYYY-MM-DD: that day's `summary` alone (time, XP, kept or not, per agent, per mission, top XP, agent hours).
+//   GET   ?mindcraft=1: every day as lists of work units (the owner's, each agent's, the whole Oasis').
+//   POST  { settings: { freeValor: 0.7 } }  valor for time with nothing in focus.
+//   A day runs from 04:20 to 04:20 local.
 //   GET   today and the week of the vow: seconds, XP, each day hit / missed / open / ahead, the mission
 //         being worked on. For the HUD, for Anorak, for the Telegram pings.
 //   POST  { tab, seq, seconds, release? }  a page reports active seconds since its last report (one tab counts
@@ -12,7 +15,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { guardAgentRoute } from '@/lib/local-request-guard'
-import { reportAgentWork, reportWorkBeat, switchWorkMission, workDaySummary, workVowSnapshot } from '@/lib/work-vow-server'
+import { reportAgentWork, reportWorkBeat, setWorkSettings, switchWorkMission, workDaySummary, workMindcraft, workVowSnapshot } from '@/lib/work-vow-server'
 import type { AgentWorkReport } from '@/lib/village/work-vow'
 
 export const dynamic = 'force-dynamic'
@@ -28,6 +31,8 @@ export async function GET(request: NextRequest) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return NextResponse.json({ error: 'day is YYYY-MM-DD' }, { status: 400 })
       return NextResponse.json({ summary: await workDaySummary(day) })
     }
+    // ?mindcraft=1: every day in the book as lists (the owner's, each agent's, the whole Oasis').
+    if (new URL(request.url).searchParams.get('mindcraft')) return NextResponse.json(await workMindcraft())
     return NextResponse.json(await workVowSnapshot())
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })
@@ -37,9 +42,13 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const denied = guardAgentRoute(request)
   if (denied) return denied
-  const body = await request.json().catch(() => null) as { tab?: unknown; seq?: unknown; seconds?: unknown; mission?: unknown; release?: unknown; back?: unknown; focus?: { agent?: { key?: unknown; name?: unknown } | null; mission?: unknown } | null; agentWork?: unknown } | null
+  const body = await request.json().catch(() => null) as { tab?: unknown; seq?: unknown; seconds?: unknown; mission?: unknown; release?: unknown; back?: unknown; focus?: { agent?: { key?: unknown; name?: unknown } | null; mission?: unknown } | null; agentWork?: unknown; settings?: { freeValor?: unknown } } | null
   if (!body || typeof body !== 'object') return NextResponse.json({ error: 'body must be a JSON object' }, { status: 400 })
   try {
+    if (body.settings && typeof body.settings === 'object') {
+      if (typeof body.settings.freeValor !== 'number' || !(body.settings.freeValor >= 0 && body.settings.freeValor <= 1)) return NextResponse.json({ error: 'freeValor is a number from 0 to 1' }, { status: 400 })
+      return NextResponse.json({ ok: true, snapshot: await setWorkSettings({ freeValor: body.settings.freeValor }) })
+    }
     if (Array.isArray(body.agentWork)) {
       const reports = (body.agentWork as Array<Partial<AgentWorkReport>>).filter((r): r is AgentWorkReport =>
         Boolean(r) && typeof r.key === 'string' && r.key.length > 0 && r.key.length <= 120 && typeof r.ts === 'number' && typeof r.ms === 'number' && (r.kind === 'turn' || r.kind === 'helper'))

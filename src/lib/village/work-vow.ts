@@ -104,6 +104,8 @@ export interface WorkFile {
   holder: { tab: string; seq: number; at: number } | null
   /** The tab that last let go (it was closing): a late report from it must not take the place back. */
   released?: string
+  /** What the owner can change in Mindcraft. */
+  settings?: { freeValor?: number }
   /** Agent hours: the latest event booked per agent and kind, so a replayed or doubled event is not booked twice. */
   marks?: Record<string, number>
 }
@@ -158,6 +160,7 @@ export function parseWorkFile(value: unknown): WorkFile {
     file.active = { file: raw.active.file, title: String(raw.active.title || raw.active.file), priority: num(raw.active.priority), startedAt: num(raw.active.startedAt) }
   }
   if (typeof raw.released === 'string') file.released = raw.released
+  if (raw.settings && typeof raw.settings.freeValor === 'number' && raw.settings.freeValor >= 0 && raw.settings.freeValor <= 1) file.settings = { freeValor: raw.settings.freeValor }
   if (raw.marks && typeof raw.marks === 'object') {
     for (const [key, ts] of Object.entries(raw.marks)) if (num(ts)) (file.marks ||= {})[key] = ts as number
   }
@@ -172,15 +175,18 @@ export function localOffsetMinutes(ms: number): number {
   return -new Date(ms).getTimezoneOffset()
 }
 
-/** The local date of a moment: `2026-11-16`. */
+/** A day ends at 04:20 local, not at midnight (the owner: "I usually work past midnight"). */
+export const DAY_START_MS = (4 * 60 + 20) * 60_000
+
+/** The day a moment belongs to: `2026-11-16` runs from 04:20 on the 16th to 04:20 on the 17th, local time. */
 export function localDay(ms: number, offsetMinutes = localOffsetMinutes(ms)): string {
-  return new Date(ms + offsetMinutes * 60_000).toISOString().slice(0, 10)
+  return new Date(ms + offsetMinutes * 60_000 - DAY_START_MS).toISOString().slice(0, 10)
 }
 
-/** The first moment of the local day that `ms` falls in. */
+/** The first moment of the day that `ms` falls in (04:20 local). */
 export function localMidnight(ms: number, offsetMinutes = localOffsetMinutes(ms)): number {
-  const shifted = ms + offsetMinutes * 60_000
-  return shifted - (((shifted % 86_400_000) + 86_400_000) % 86_400_000) - offsetMinutes * 60_000
+  const shifted = ms + offsetMinutes * 60_000 - DAY_START_MS
+  return shifted - (((shifted % 86_400_000) + 86_400_000) % 86_400_000) - offsetMinutes * 60_000 + DAY_START_MS
 }
 
 export function addDays(date: string, days: number): string {
@@ -199,6 +205,12 @@ function rawDayXp(day: WorkDay | undefined): number {
 
 export function dayXp(day: WorkDay | undefined): number {
   return Math.round(rawDayXp(day) * 10) / 10
+}
+
+/** Valor for time with nothing in focus: 0.7 unless the owner set another (Mindcraft setting). */
+export function freeValor(file: Pick<WorkFile, 'settings'>): number {
+  const value = file.settings?.freeValor
+  return typeof value === 'number' && value >= 0 && value <= 1 ? value : WORK_VALOR.free
 }
 
 /** XP for seconds of one kind of time. */
@@ -268,7 +280,7 @@ function addSeconds(file: WorkFile, date: string, seconds: number, focus?: WorkF
     day.agentSeconds = (day.agentSeconds || 0) + seconds
     day.agentXp = (day.agentXp || 0) + xp
   } else {
-    xp = xpFor(seconds, WORK_VALOR.free, 0)
+    xp = xpFor(seconds, freeValor(file), 0)
     day.freeSeconds += seconds
     day.freeXp += xp
   }
@@ -285,7 +297,7 @@ function addSeconds(file: WorkFile, date: string, seconds: number, focus?: WorkF
  * One report from a page. One tab counts at a time: another tab is turned away until the counting
  * one has been silent for WORK_HOLDER_STALE_MS. A tab can never put more seconds in the book than
  * the clock moved since its last report, so a reload, a retry or a second tab cannot double-count.
- * Seconds that straddle local midnight are split between the two days.
+ * Seconds that straddle the day's end (04:20 local) are split between the two days.
  */
 export function applyWorkBeat(input: WorkFile, beat: WorkBeat, now: number, offsetMinutes = localOffsetMinutes(now)): WorkBeatResult {
   const file: WorkFile = JSON.parse(JSON.stringify(input))
@@ -420,7 +432,9 @@ export interface CommitmentView {
   today: { remainingSeconds: number; bonusIfHit: number; penaltyIfStopped: number } | null
 }
 
-const round1 = (value: number) => Math.round(value * 10) / 10
+function round1(value: number): number {
+  return Math.round(value * 10) / 10
+}
 
 /**
  * One commitment against the book. A day that reached its seconds is hit: the XP of the counted time
@@ -430,7 +444,7 @@ const round1 = (value: number) => Math.round(value * 10) / 10
 export function evaluateCommitment(file: WorkFile, commitment: WorkVow, today: string): CommitmentView {
   const multiplier = commitment.multiplier ?? COMMIT_MULTIPLIER
   const penaltyFactor = commitment.penaltyFactor ?? COMMIT_PENALTY_FACTOR
-  const perMinute = penaltyFactor * WORK_VALOR.free
+  const perMinute = penaltyFactor * freeValor(file)
   const days: CommitmentDay[] = []
   let bonusXp = 0
   let penaltyXp = 0
@@ -448,7 +462,7 @@ export function evaluateCommitment(file: WorkFile, commitment: WorkVow, today: s
     penaltyXp += penalty
     if (status === 'open') {
       // Finishing at the rate of the time so far (free rate when nothing is counted yet).
-      const rate = seconds > 0 ? xp / seconds : xpFor(1, WORK_VALOR.free, 0)
+      const rate = seconds > 0 ? xp / seconds : xpFor(1, freeValor(file), 0)
       stake = { remainingSeconds: commitment.dailySeconds - seconds, bonusIfHit: round1((xp + rate * (commitment.dailySeconds - seconds)) * (multiplier - 1)), penaltyIfStopped: round1(missing * perMinute) }
     }
     days.push({ date: d, seconds, status, bonusXp: round1(status === 'open' && stake ? stake.bonusIfHit : bonus), penaltyXp: round1(status === 'open' && stake ? stake.penaltyIfStopped : penalty) })
@@ -467,6 +481,78 @@ export function evaluateCommitment(file: WorkFile, commitment: WorkVow, today: s
     penaltyXp: round1(penaltyXp),
     today: stake,
   }
+}
+
+// ─── Mindcraft: the list of days ────────────────────────────────────────────
+
+/** One unit of work: one per mission, per agent, and one for "in the Oasis", each day. Never a single turn. */
+export interface WorkUnit {
+  kind: 'mission' | 'agent' | 'free'
+  label: string
+  seconds: number
+  xp: number
+  /** A mission the unit's minutes counted on (agents). */
+  mission?: string
+}
+
+export interface MindcraftDay {
+  date: string
+  seconds: number
+  xp: number
+  units: WorkUnit[]
+}
+
+export interface MindcraftBook {
+  /** The owner's days, newest first: units are his missions, his time with agents, and in the Oasis. */
+  owner: MindcraftDay[]
+  /** Each agent's days: one unit a day (own time plus helpers, XP on its mission). */
+  agents: Array<{ key: string; name: string; seconds: number; xp: number; days: MindcraftDay[] }>
+  /** All agents together, per day: one unit per agent. */
+  oasis: MindcraftDay[]
+  totals: { owner: { seconds: number; xp: number }; oasis: { seconds: number; xp: number } }
+}
+
+/** Everything in the book as day lists: the owner's Mindcraft, each agent's, and the whole Oasis'. */
+export function mindcraftBook(file: WorkFile): MindcraftBook {
+  const dates = Object.keys(file.days).sort().reverse()
+  const owner: MindcraftDay[] = []
+  const oasis: MindcraftDay[] = []
+  const byAgent = new Map<string, { key: string; name: string; seconds: number; xp: number; days: MindcraftDay[] }>()
+  const valor = freeValor(file)
+  for (const date of dates) {
+    const day = file.days[date]
+    const units: WorkUnit[] = [
+      ...Object.values(day.missions).map(m => ({ kind: 'mission' as const, label: m.title, seconds: m.seconds, xp: round1(m.xp) })),
+      // Time with agents and no mission, one unit per agent would double the seconds: the agents' split is in the summary.
+      ...(day.agentSeconds ? [{ kind: 'agent' as const, label: `With agents${agentNames(day)}`, seconds: day.agentSeconds, xp: round1(day.agentXp || 0) }] : []),
+      ...(day.freeSeconds ? [{ kind: 'free' as const, label: `In the Oasis ×${valor}`, seconds: day.freeSeconds, xp: round1(day.freeXp) }] : []),
+    ].sort((a, b) => b.xp - a.xp)
+    if (units.length) owner.push({ date, seconds: daySeconds(day), xp: dayXp(day), units })
+    const agentUnits: WorkUnit[] = []
+    for (const [key, h] of Object.entries(day.hours || {})) {
+      const seconds = Math.round(h.ownSeconds + h.helperSeconds)
+      if (!seconds) continue
+      const unit: WorkUnit = { kind: 'agent', label: h.name, seconds, xp: round1(h.xp || 0), ...(h.mission ? { mission: h.mission } : {}) }
+      agentUnits.push(unit)
+      const agent = byAgent.get(key) || { key, name: h.name, seconds: 0, xp: 0, days: [] }
+      byAgent.set(key, agent)
+      agent.name = agent.days.length ? agent.name : h.name
+      agent.seconds += seconds
+      agent.xp = round1(agent.xp + (h.xp || 0))
+      agent.days.push({ date, seconds, xp: unit.xp, units: [{ ...unit, label: h.mission ? h.mission : 'No mission', ...(h.helperSeconds ? { mission: `own ${formatClock(h.ownSeconds)} + helpers ${formatClock(h.helperSeconds)}` } : {}) }] })
+    }
+    if (agentUnits.length) {
+      agentUnits.sort((a, b) => b.seconds - a.seconds)
+      oasis.push({ date, seconds: agentUnits.reduce((sum, u) => sum + u.seconds, 0), xp: round1(agentUnits.reduce((sum, u) => sum + u.xp, 0)), units: agentUnits })
+    }
+  }
+  const sum = (days: MindcraftDay[]) => ({ seconds: days.reduce((t, d) => t + d.seconds, 0), xp: round1(days.reduce((t, d) => t + d.xp, 0)) })
+  return { owner, agents: [...byAgent.values()].sort((a, b) => b.seconds - a.seconds), oasis, totals: { owner: sum(owner), oasis: sum(oasis) } }
+}
+
+function agentNames(day: WorkDay): string {
+  const names = Object.values(day.agents || {}).sort((a, b) => b.seconds - a.seconds).slice(0, 3).map(agent => agent.name)
+  return names.length ? ` (${names.join(', ')})` : ''
 }
 
 // ─── what the HUD and Anorak read ───────────────────────────────────────────
@@ -571,6 +657,8 @@ export interface WorkSnapshot {
   active: WorkActive | null
   /** A page reported within the last minute. */
   counting: boolean
+  /** Valor with nothing in focus (the owner's setting, 0.7 by default) and when a day ends. */
+  settings: { freeValor: number; dayStartsAt: string }
   rule: string
 }
 
@@ -613,6 +701,7 @@ export function workSnapshot(file: WorkFile, now: number, offsetMinutes = localO
     totals: { xp: baseXp, bonusXp, penaltyXp, netXp: round1(baseXp + bonusXp - penaltyXp) },
     active: file.active,
     counting: Boolean(file.holder && now - file.holder.at < 60_000),
+    settings: { freeValor: freeValor(file), dayStartsAt: '04:20' },
     rule: WORK_RULE,
   }
 }

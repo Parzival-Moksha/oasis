@@ -9,6 +9,7 @@ import { formatClock, WORK_VALOR, type WorkDayView, type WorkSnapshot } from '..
 import { GAME_HUD_TEXT } from '../forge/GameKeycap'
 import { useOasisStore } from '../../store/oasisStore'
 import { getMissionState, subscribeMissions } from './village-mission-store'
+import { MindcraftWindow, openMindcraft } from './MindcraftView'
 import { getWorkVowState, setWorkFocus, setWorkMission, startWorkVow, subscribeWorkVow } from './work-vow-client'
 import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY } from './village-status'
 
@@ -79,7 +80,7 @@ function WhereTimeWent({ snapshot }: { snapshot: WorkSnapshot }) {
         <Bar key={mission.file} label={`${mission.title} ×${WORK_VALOR.mission}`} seconds={mission.seconds} total={day.seconds} color="#38bdf8" right={`${formatClock(mission.seconds)} · ${mission.xp} XP`} />
       ))}
       {day.agentSeconds > 0 && <Bar label={`With agents ×${WORK_VALOR.agent}`} seconds={day.agentSeconds} total={day.seconds} color="#c084fc" />}
-      <Bar label={`In the Oasis ×${WORK_VALOR.free}`} seconds={day.freeSeconds} total={day.seconds} color="#34d399" />
+      <Bar label={`In the Oasis ×${snapshot.settings?.freeValor ?? WORK_VALOR.free}`} seconds={day.freeSeconds} total={day.seconds} color="#34d399" />
       {withAgents > 0 && (
         <div className="mt-1.5">
           <Bar label="Daily agent work (you, with an agent open)" seconds={withAgents} total={day.seconds} color="#c084fc" onClick={() => setAgentsOpen(value => !value)} open={agentsOpen} />
@@ -124,6 +125,9 @@ function Detail({ snapshot, liveSeconds, onClose }: { snapshot: WorkSnapshot; li
         <button type="button" onClick={onClose} className="rounded-md border border-white/15 bg-white/5 px-2 py-0.5 text-[12px] font-bold hover:bg-white/15">✕</button>
       </div>
       <div className={row}><span className="text-white/60">Today</span><span className="font-bold">{formatClock(liveSeconds)} · {snapshot.today.xp} XP</span></div>
+      <button type="button" onClick={() => { onClose(); openMindcraft() }} className="mt-2 w-full rounded-md border border-emerald-300/40 bg-emerald-400/15 px-2 py-1 text-[11px] font-bold text-emerald-50 hover:bg-emerald-400/30">
+        Open Mindcraft: every day, mine and the agents&rsquo;
+      </button>
       <WhereTimeWent snapshot={snapshot} />
       {snapshot.active && (
         <button type="button" onClick={() => { void setWorkMission(null) }} className="mt-2 w-full rounded-md border border-amber-300/40 bg-amber-400/15 px-2 py-1 text-[11px] font-bold text-amber-50 hover:bg-amber-400/30">
@@ -189,7 +193,7 @@ export function WorkVowHud() {
       ? `${openMission.title} ×${WORK_VALOR.mission}`
       : agentFocus
         ? `with ${agentFocus.split('\u0001')[1]} ×${WORK_VALOR.agent}`
-        : `in the Oasis ×${WORK_VALOR.free}`
+        : `in the Oasis ×${snapshot.settings?.freeValor ?? WORK_VALOR.free}`
   const vow = snapshot.commitments?.[0]
   const status = state.unsaved ? 'not saved: server unreachable' : state.otherTab ? 'another tab is counting' : state.running ? kind : `paused · ${kind}`
 
@@ -226,6 +230,7 @@ export function WorkVowHud() {
         </span>
       </button>
       {open && <Detail snapshot={snapshot} liveSeconds={liveSeconds} onClose={() => setOpen(false)} />}
+      <MindcraftWindow />
     </>
   )
 }

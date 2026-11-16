@@ -14,6 +14,7 @@ import {
   applyWorkBeat,
   daySummary,
   localDay,
+  mindcraftBook,
   emptyWorkFile,
   formatClock,
   parseWorkFile,
@@ -22,6 +23,7 @@ import {
   workSnapshot,
   type AgentWorkReport,
   type WorkBeat,
+  type MindcraftBook,
   type WorkDaySummary,
   type WorkFile,
   type WorkSnapshot,
@@ -77,6 +79,23 @@ async function missionMeta(file: string): Promise<{ file: string; title: string;
   } catch {
     return null
   }
+}
+
+/** Every day in the book as lists: the owner's Mindcraft, each agent's, the whole Oasis'. */
+export function workMindcraft(): Promise<MindcraftBook> {
+  return serial(async () => mindcraftBook(await readBook()))
+}
+
+/** The owner's settings: valor with nothing in focus (0 to 1). */
+export function setWorkSettings(settings: { freeValor?: number }, now = Date.now()): Promise<WorkSnapshot> {
+  return serial(async () => {
+    const book = await readBook()
+    if (typeof settings.freeValor === 'number' && settings.freeValor >= 0 && settings.freeValor <= 1) {
+      book.settings = { ...book.settings, freeValor: Math.round(settings.freeValor * 100) / 100 }
+      await writeBook(book)
+    }
+    return workSnapshot(book, now)
+  })
 }
 
 /** One day, ready to tell (the 21:00 message reads this). */
