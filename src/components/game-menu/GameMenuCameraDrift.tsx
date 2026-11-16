@@ -12,9 +12,9 @@
 // so the camera lands exactly on the character's own camera. In the free cameras nothing writes the
 // camera, so it lands exactly on home, and only then does input come back.
 
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
-import type { RootState } from '@react-three/fiber'
+import { useThree, type RootState } from '@react-three/fiber'
 import { useFrameWhen } from '@/lib/use-frame-when'
 import { useInputManager } from '@/lib/input-manager'
 import { useOasisStore } from '@/store/oasisStore'
@@ -78,6 +78,43 @@ export function GameMenuCameraDrift() {
     to: new THREE.Vector3(),
     dir: new THREE.Vector3(),
   })
+
+  const camera = useThree(s => s.camera)
+  const cameraRef = useRef(camera)
+  cameraRef.current = camera
+
+  /** Nobody else is moving the camera: put it back where the menu found it. */
+  const snapHome = () => {
+    const session = sessionRef.current
+    if (!session || session.openCount <= 0 || session.drift.s === 0) return
+    const cam = cameraRef.current
+    if (cam.position.equals(wroteRef.current)) {
+      cam.position.copy(session.homePos)
+      cam.quaternion.copy(session.homeQuat)
+      cam.updateMatrixWorld()
+    }
+    session.drift = { ...session.drift, s: 0, v: 0 }
+    wroteRef.current.set(Number.NaN, 0, 0)
+    returnRef.current = null
+  }
+
+  // The close finished without the way back (a hidden tab, the store's fallback timer).
+  useEffect(() => {
+    if (phase === 'closed') snapHome()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase])
+
+  // Another world: its camera is not ours to move. Forget the drift and close.
+  useEffect(() => useOasisStore.subscribe((state, prev) => {
+    if (state.activeWorldId === prev.activeWorldId) return
+    const menu = useGameMenu.getState()
+    if (menu.phase === 'closed') return
+    if (sessionRef.current) sessionRef.current.drift = { ...sessionRef.current.drift, s: 0, v: 0 }
+    wroteRef.current.set(Number.NaN, 0, 0)
+    returnRef.current = null
+    menu.closeMenu()
+    menu.finishClose()
+  }), [])
 
   /** Camera = base turned by the drift at arc distance `s` about the pivot, a little higher, above ground. */
   const writeCamera = (state: RootState, session: Session, base: { pos: THREE.Vector3; quat: THREE.Quaternion }, pivot: THREE.Vector3, s: number, bobScale: number) => {
@@ -188,7 +225,12 @@ export function GameMenuCameraDrift() {
     // Whoever owns the camera now (the character in third person) has written it this frame: that
     // is the base. If nobody has, the camera still holds what was written here last frame, and the
     // base is home.
-    const untouched = cam.position.equals(wroteRef.current)
+    // Only third person writes the camera each frame from its own state; a free camera that was
+    // nudged must not become the base, or the leftover turn would be applied on top of itself.
+    const input = useInputManager.getState()
+    const avatarOwns = input.inputState === 'third-person'
+      || ((input.inputState === 'placement' || input.inputState === 'paint') && input._previousCameraState === 'third-person')
+    const untouched = !avatarOwns || cam.position.equals(wroteRef.current)
     if (untouched) {
       tmp.basePos.copy(session.homePos)
       tmp.baseQuat.copy(session.homeQuat)

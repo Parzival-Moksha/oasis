@@ -290,9 +290,9 @@ describe('Escape opens the menu only when nothing else is open', () => {
     }
   })
   it('stays shut when Escape had something else to do', () => {
-    expect(menuShouldOpenOnEscape({ ...free, inputState: 'placement' })).toBe(false)
-    expect(menuShouldOpenOnEscape({ ...free, inputState: 'agent-focus' })).toBe(false)
-    expect(menuShouldOpenOnEscape({ ...free, inputState: 'ui-focused' })).toBe(false)
+    for (const inputState of ['placement', 'paint', 'agent-focus', 'ui-focused'] as const) {
+      expect(menuShouldOpenOnEscape({ ...free, inputState, inputStateAfter: inputState })).toBe(false)
+    }
     expect(menuShouldOpenOnEscape({ ...free, uiLayers: 1 })).toBe(false)
     expect(menuShouldOpenOnEscape({ ...free, typing: true })).toBe(false)
     expect(menuShouldOpenOnEscape({ ...free, selectedObject: true })).toBe(false)

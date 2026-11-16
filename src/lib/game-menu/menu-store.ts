@@ -65,25 +65,23 @@ interface GameMenuState {
   prefs: MenuPrefs
   openMenu: (options?: { fromMouseLook?: boolean }) => void
   /** Start closing: the tiles fade and the camera comes back. */
-  closeMenu: () => void
+  closeMenu: (options?: { relock?: boolean }) => void
   /** The camera is back (or there was nothing to bring back): the menu is fully closed. */
   finishClose: () => void
   setPrefs: (patch: Partial<MenuPrefs>) => void
 }
 
 let closeFallback: ReturnType<typeof setTimeout> | null = null
-let layerHeld = false
+/** Continue from mouse-look: ask for the pointer lock once the layer is gone. */
+let relockWhenClosed = false
 
+// Push and pop are idempotent in the input manager, so no flag of our own to go stale.
 function holdLayer() {
-  if (layerHeld) return
-  layerHeld = true
   useInputManager.getState().pushUILayer(LAYER_ID)
 }
 
 function dropLayer() {
-  if (!layerHeld) return
-  layerHeld = false
-  useInputManager.getState().popUILayer(LAYER_ID)
+  if (useInputManager.getState()._uiLayerStack.includes(LAYER_ID)) useInputManager.getState().popUILayer(LAYER_ID)
 }
 
 export const useGameMenu = create<GameMenuState>((set, get) => ({
@@ -100,8 +98,9 @@ export const useGameMenu = create<GameMenuState>((set, get) => ({
     set(s => ({ phase: 'open', openCount: s.openCount + 1, openedFromMouseLook: fromMouseLook }))
   },
 
-  closeMenu: () => {
+  closeMenu: (options) => {
     if (get().phase !== 'open') return
+    relockWhenClosed = Boolean(options?.relock)
     set({ phase: 'returning' })
     // In third person the character gets its controls back at once and the camera glides home
     // around it. In the free cameras the camera itself is the state, so input waits for it.
@@ -115,6 +114,10 @@ export const useGameMenu = create<GameMenuState>((set, get) => ({
     if (closeFallback) { clearTimeout(closeFallback); closeFallback = null }
     dropLayer()
     if (get().phase === 'returning') set({ phase: 'closed' })
+    if (relockWhenClosed) {
+      relockWhenClosed = false
+      useInputManager.getState().requestPointerLock()
+    }
   },
 
   setPrefs: (patch) => {

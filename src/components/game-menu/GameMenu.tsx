@@ -90,6 +90,12 @@ function useMenuTriggers() {
         menu.closeMenu()
         return
       }
+      if (menu.phase === 'returning') {
+        // The camera is on its way back: this key must not reach the handlers that change camera mode.
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        return
+      }
       const before = nothingOpen()
       const typing = isTypingTarget(event.target)
       const wasLocked = useInputManager.getState().pointerLocked
@@ -281,7 +287,12 @@ function GameMenuScreen({ closing }: { closing: boolean }) {
     return () => { if (raf.raf) cancelAnimationFrame(raf.raf); raf.raf = 0 }
   }, [kick])
 
-  useEffect(() => { playMenuSound(prefsRef.current.sound, 'open') }, [])
+  const rootRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    playMenuSound(prefsRef.current.sound, 'open')
+    // Take the keyboard so the arrow keys reach the tiles without tabbing through the rail first.
+    rootRef.current?.focus({ preventScroll: true })
+  }, [])
 
   const onStageMove = (event: React.PointerEvent) => {
     pointer.current.x = (event.clientX / Math.max(1, size.w)) * 2 - 1
@@ -306,14 +317,12 @@ function GameMenuScreen({ closing }: { closing: boolean }) {
   const run = useCallback((id: MenuTileId) => {
     const menu = useGameMenu.getState()
     if (id === 'invite') { setView('invite'); setCopied(false); return }
-    const lockAgain = id === 'continue' && menu.openedFromMouseLook
-    menu.closeMenu()
+    // Continue from mouse-look gives the mouse back to the camera once the menu is gone.
+    menu.closeMenu({ relock: id === 'continue' && menu.openedFromMouseLook })
     if (id === 'mindcraft') openMindcraft()
     if (id === 'profile') window.dispatchEvent(new CustomEvent(OPEN_PROFILE_EVENT))
     if (id === 'config') window.dispatchEvent(new CustomEvent(OPEN_CONFIG_EVENT))
     if (id === 'help') window.dispatchEvent(new CustomEvent(OPEN_HELP_EVENT))
-    // Continue from mouse-look gives the mouse back to the camera (a click may ask for the lock).
-    if (lockAgain) useInputManager.getState().requestPointerLock()
   }, [])
 
   const pressedBy = useRef<number | null>(null)
@@ -406,6 +415,8 @@ function GameMenuScreen({ closing }: { closing: boolean }) {
 
   return (
     <div
+      ref={rootRef}
+      tabIndex={-1}
       className="ogm-root"
       data-closing={closing ? '1' : '0'}
       data-game-menu="open"
@@ -472,6 +483,7 @@ function GameMenuScreen({ closing }: { closing: boolean }) {
 export function GameMenu() {
   useMenuTriggers()
   const phase = useGameMenu(s => s.phase)
+  const openCount = useGameMenu(s => s.openCount)
   // Keep the screen for the short fade while the camera comes back.
   const [shown, setShown] = useState(false)
   useLayoutEffect(() => {
@@ -480,11 +492,11 @@ export function GameMenu() {
     return () => window.clearTimeout(timer)
   }, [phase])
   if (!shown && phase !== 'open') return null
-  return <GameMenuScreen closing={phase !== 'open'} />
+  return <GameMenuScreen key={openCount} closing={phase !== 'open'} />
 }
 
 const MENU_CSS = `
-.ogm-root { position: fixed; inset: 0; z-index: 150; font-family: inherit; color: #fff; user-select: none; }
+.ogm-root { position: fixed; inset: 0; z-index: 150; outline: none; font-family: inherit; color: #fff; user-select: none; }
 .ogm-root[data-closing="1"] { pointer-events: none; }
 .ogm-backdrop {
   position: absolute; inset: 0;
