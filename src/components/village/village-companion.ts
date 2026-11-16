@@ -392,6 +392,25 @@ export function whenVillageSpeechEnds(): Promise<void> {
   return new Promise(resolve => { endWaiters.push(resolve) })
 }
 
+/** A Council is on (village-council.ts sets it): only the Council's own lines play, so nothing talks over a speaker. */
+let councilOnly = false
+
+export function setVillageSpeechCouncilOnly(on: boolean): void {
+  councilOnly = on
+}
+
+/**
+ * Is sound unlocked on this page? Tries to unlock it, but never waits long: without a click or key press the
+ * browser leaves that request pending for good.
+ */
+export async function ensureVillageAudio(waitMs = 1500): Promise<boolean> {
+  const context = getAudioListener()?.context
+  if (!context) return false
+  if (context.state === 'running') return true
+  await Promise.race([context.resume().catch(() => {}), new Promise(resolve => window.setTimeout(resolve, waitMs))])
+  return (context.state as AudioContextState) === 'running'
+}
+
 export interface PreparedSpeech {
   /** The line as it will be said (cleaned, 400 characters at most). */
   text: string
@@ -411,7 +430,11 @@ export async function prepareVillageSpeech(rawText: string, settings: AgentVoice
   const text = cleanSpoken(rawText, SPOKEN_MAX_CHARS)
   if (!text) throw new Error('nothing to say')
   const plan = speechSpeedPlan(settings.speed)
-  const clip = await fetchClip(text, settings.voice, plan.modelSpeed)
+  // Never wait for ever on a stalled request: a scene is waiting behind this.
+  const clip = await Promise.race([
+    fetchClip(text, settings.voice, plan.modelSpeed),
+    new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error('the voice clip took more than 40 s to make')), 40_000)),
+  ])
   const clipSeconds = buildVisemeTimeline(clip.alignment).duration
   const playbackRate = playbackRateFor(settings.speed, clip.modelSpeed)
   return { text, clipSeconds, seconds: Math.round((clipSeconds / playbackRate) * 100) / 100, playbackRate, voice: settings.voice }
@@ -476,9 +499,14 @@ function fetchClip(text: string, voice: string, modelSpeed: number): Promise<Cli
  * file is still arriving, keeps the pitch when it plays faster or slower than the clip was made, and its
  * clock (in the clip's own seconds, whatever the rate) drives the mouth.
  */
-export async function speakVillageAgent(agentId: string, rawText: string, settings: AgentVoiceSettings, byHand = false): Promise<boolean> {
+export async function speakVillageAgent(agentId: string, rawText: string, settings: AgentVoiceSettings, byHand = false, fromCouncil = false): Promise<boolean> {
   const { voice } = settings
   const text = cleanSpoken(rawText, SPOKEN_MAX_CHARS)
+  // During a Council only its own lines play (a play button or "hear it" would cut the speaker off).
+  if (councilOnly && !fromCouncil) {
+    lastSpeech = { agentId, text, at: Date.now(), result: 'a Council is on: only its speakers talk' }
+    return false
+  }
   stopVillageSpeech()
   const token = speechToken
   const askedAt = performance.now()
@@ -495,7 +523,8 @@ export async function speakVillageAgent(agentId: string, rawText: string, settin
   const context = listener.context
   if (context.state !== 'running') {
     if (!byHand) return fail('audio locked until a click or key press')
-    try { await context.resume() } catch { /* stays suspended until a gesture */ }
+    // Not for ever: without a gesture the browser never settles this.
+    await Promise.race([context.resume().catch(() => {}), new Promise(resolve => window.setTimeout(resolve, 1500))])
     if ((context.state as AudioContextState) !== 'running') return fail('audio locked until a click or key press')
   }
   if (token !== speechToken) return false

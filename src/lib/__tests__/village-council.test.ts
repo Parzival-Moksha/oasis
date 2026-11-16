@@ -117,6 +117,7 @@ describe('walking on the stage', () => {
 interface StageApi {
   request: (msg: Record<string, unknown>) => Promise<{ ok: boolean; data?: Record<string, unknown>; error?: string }>
   result: (msg: Record<string, unknown>) => { ok: boolean; late?: boolean }
+  pageClosed: (page: unknown) => void
   waiting: () => number
 }
 const { createStage, resolveStageAgent } = stageModule as unknown as {
@@ -146,6 +147,8 @@ describe('engine: the council command', () => {
     expect(resolveStageAgent('agent-2', AGENTS)?.name).toBe('Debugger')
     expect(resolveStageAgent('debugger', AGENTS)?.id).toBe('agent-2')
     expect(resolveStageAgent('tyler', AGENTS)?.id).toBe('agent-3')
+    // The start of a name only when it means one agent.
+    expect(resolveStageAgent('de', [...AGENTS, { id: 'agent-4', name: 'Designer' }])).toBeNull()
     expect(resolveStageAgent('nobody', AGENTS)).toBeNull()
     expect(resolveStageAgent('', AGENTS)).toBeNull()
   })
@@ -173,6 +176,31 @@ describe('engine: the council command', () => {
     expect(sent[1].request).toEqual({ action: 'turn', agentId: 'agent-2', next: true, waitMs: 5000 })
     stage.result({ requestId: sent[1].requestId, ok: true, data: { seconds: 6.2 } })
     expect((await next).data).toEqual({ seconds: 6.2 })
+  })
+
+  it('keeps a running scene on the page that started it, and tells the caller at once when that page goes away', async () => {
+    const sentA: Array<{ requestId: string }> = []
+    const sentB: Array<{ requestId: string }> = []
+    const a = { readyState: 1, canStage: true, stageAt: 1, send: (raw: string) => sentA.push(JSON.parse(raw)) }
+    const b = { readyState: 1, canStage: true, stageAt: 0, send: (raw: string) => sentB.push(JSON.parse(raw)) }
+    const pages = [a, b]
+    const stage = createStage({ pages: () => pages, agents: () => AGENTS })
+    const started = stage.request({ action: 'start', agents: ['Anorak'] })
+    stage.result({ requestId: sentA[0].requestId, ok: true })
+    await started
+    // Another tab announces itself later: the scene stays where it is.
+    b.stageAt = 99
+    const forward = stage.request({ action: 'forward', agent: 'Anorak' })
+    expect(sentA).toHaveLength(2)
+    expect(sentB).toHaveLength(0)
+    // The page reloads in the middle of the step.
+    pages.splice(0, 1)
+    stage.pageClosed(a)
+    expect(await forward).toMatchObject({ ok: false, error: expect.stringMatching(/went away/) })
+    expect(stage.waiting()).toBe(0)
+    // The next step goes to the page that is left.
+    void stage.request({ action: 'status' })
+    expect(sentB).toHaveLength(1)
   })
 
   it('refuses what makes no sense, before any page is asked', () => {

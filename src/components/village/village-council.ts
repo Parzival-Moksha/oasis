@@ -21,7 +21,7 @@ import { getPlayerAvatarPose } from '../../lib/player-avatar-runtime'
 import { COUNCIL, councilAngle, councilFront, councilPlaces, councilRadius, type CouncilPlace, type CouncilPoint } from '../../lib/village/village-council'
 import { useOasisStore } from '../../store/oasisStore'
 import { getVillageDesk } from './village-actions'
-import { getAgentVoiceSettings, prepareVillageSpeech, speakVillageAgent, stopVillageSpeech, whenVillageSpeechEnds, type AgentVoiceSettings } from './village-companion'
+import { ensureVillageAudio, getAgentVoiceSettings, prepareVillageSpeech, setVillageSpeechCouncilOnly, speakVillageAgent, stopVillageSpeech, whenVillageSpeechEnds, type AgentVoiceSettings } from './village-companion'
 
 export interface CouncilRequest {
   action: string
@@ -191,6 +191,8 @@ async function start(req: CouncilRequest): Promise<Record<string, unknown>> {
   ids.forEach((id, index) => places.set(id, spots[index]))
   for (const id of council ? council.members : []) if (!places.has(id)) goals.delete(id)
   council = { center, radius, step: req.step && req.step > 0 ? req.step : COUNCIL.step, members: [...ids], places, front: null }
+  // From now on only the Council's own lines play (village-companion.ts).
+  setVillageSpeechCouncilOnly(true)
   lines.clear()
   const mine = run
   // Everyone walks to their place at once.
@@ -239,10 +241,9 @@ async function back(req: CouncilRequest): Promise<Record<string, unknown>> {
 
 function nextLine(agentId: string, waitMs: number): Promise<string | null> {
   const kept = lines.get(agentId)
-  if (kept) {
-    lines.delete(agentId)
-    return Promise.resolve(kept.text)
-  }
+  lines.delete(agentId)
+  // A kept line counts unless the agent is working on a new reply right now: then that one is meant.
+  if (kept && agentOf(agentId)?.status !== 'working') return Promise.resolve(kept.text)
   return new Promise(resolve => {
     const timer = window.setTimeout(() => {
       if (lineWaiters.get(agentId) === done) lineWaiters.delete(agentId)
@@ -275,21 +276,25 @@ async function speak(req: CouncilRequest, play: boolean): Promise<Record<string,
   const info = { agentId: id, text: prepared.text, seconds: prepared.seconds, voice: prepared.voice, speed: settings.speed }
   if (!play) return info
   lines.delete(id)
-  const startedAt = performance.now()
-  const playing = await speakVillageAgent(id, prepared.text, settings, true)
+  if (!(await ensureVillageAudio())) throw new CouncilError('sound is locked on the Oasis page: click once in it (or press a key), then try again')
   if (mine !== run) return { ...info, stopped: true }
-  if (!playing) throw new CouncilError('the voice could not play (sound is locked until the page gets a click or key press, or the avatar is not in the scene)')
+  const startedAt = performance.now()
+  const playing = await speakVillageAgent(id, prepared.text, settings, true, true)
+  if (mine !== run) return { ...info, stopped: true }
+  if (!playing) throw new CouncilError('the voice could not play (is the avatar in the scene?)')
   await whenVillageSpeechEnds()
   const took = round((performance.now() - startedAt) / 1000)
-  return mine !== run ? { ...info, took, stopped: true } : { ...info, took }
+  if (mine !== run) return { ...info, took, stopped: true }
+  // Ended well before its length: something cut it off (the voices were muted, the page lost its sound).
+  return took < prepared.seconds - 1 ? { ...info, took, cut: true } : { ...info, took }
 }
 
 async function turn(req: CouncilRequest): Promise<Record<string, unknown>> {
   const mine = run
-  await forward(req)
-  if (mine !== run) return { stopped: true }
   let said: Record<string, unknown>
   try {
+    await forward(req)
+    if (mine !== run) return { stopped: true }
     said = await speak(req, true)
   } finally {
     // Whatever happened to the line, nobody is left standing in front.
@@ -320,6 +325,7 @@ function end(): Record<string, unknown> {
   const was = council
   stop()
   council = null
+  setVillageSpeechCouncilOnly(false)
   for (const waiter of settledWaiters.values()) {
     window.clearTimeout(waiter.timer)
     waiter.resolve(false)

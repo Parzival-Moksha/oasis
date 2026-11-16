@@ -73,7 +73,7 @@ const hub = {
   },
   eyes: (agentId) => captureEyes(agentId),
   /** Where this engine listens: agents get it as OASIS_ENGINE_URL. */
-  url: `http://${HOST}:${PORT}`,
+  url: `http://${HOST === '0.0.0.0' || HOST === '::' ? '127.0.0.1' : HOST}:${PORT}`,
   persist() {
     saveRoster(ROSTER_FILE, ownedAgents().map((a) => a.rosterEntry()));
   },
@@ -552,7 +552,7 @@ wss.on('connection', (ws) => {
       ws.send(JSON.stringify({ type: 'reply', id: msg.id ?? null, cmd: msg.cmd, ok: false, error: e.message }));
     }
   });
-  ws.on('close', () => clients.delete(ws));
+  ws.on('close', () => { clients.delete(ws); stage.pageClosed(ws); });
 });
 
 // ------------------------------------------------------------------ boot + shutdown

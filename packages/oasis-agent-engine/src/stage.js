@@ -25,26 +25,42 @@ export const STAGE_TIMEOUT = { start: 90000, end: 15000, forward: 45000, back: 4
 /** Waiting for an agent's own next reply can take as long as its turn. */
 export const STAGE_NEXT_EXTRA = 300000;
 
-/** An agent by id, or by name (case-insensitive; the first whose name starts with it when no name is equal). */
+/** An agent by id, or by name (case-insensitive), or by the start of its name when only one agent's name starts so. */
 export function resolveStageAgent(ref, agents) {
   if (typeof ref !== 'string' || !ref.trim()) return null;
   const want = ref.trim().toLowerCase();
   const list = [...agents];
-  return (list.find((a) => a.id === ref)
-    || list.find((a) => (a.name || '').toLowerCase() === want)
-    || list.find((a) => (a.name || '').toLowerCase().startsWith(want))
-    || null);
+  const exact = list.find((a) => a.id === ref) || list.find((a) => (a.name || '').toLowerCase() === want);
+  if (exact) return exact;
+  const starts = list.filter((a) => (a.name || '').toLowerCase().startsWith(want));
+  return starts.length === 1 ? starts[0] : null;
 }
 
 /**
  * @param {{pages: () => Array<{readyState:number, send:(s:string)=>void, canStage?:boolean, stageAt?:number}>, agents: () => Iterable<{id:string,name:string}>, log?: (...a:any[]) => void}} deps
  */
 export function createStage(deps) {
-  const waiting = new Map(); // requestId -> {resolve, timer}
+  const waiting = new Map(); // requestId -> {resolve, timer, page, action}
+  /** The page a running Council is staged on: it keeps the scene until it ends or that page goes away. */
+  let scenePage = null;
 
-  /** The page that stages: the one that said so last. */
+  /** The page that stages: the one holding the running scene, else the one that said so last. */
   function stagePage() {
-    return deps.pages().filter((ws) => ws.readyState === 1 && ws.canStage).sort((a, b) => (b.stageAt || 0) - (a.stageAt || 0))[0] || null;
+    const open = deps.pages().filter((ws) => ws.readyState === 1 && ws.canStage);
+    if (scenePage && open.includes(scenePage)) return scenePage;
+    scenePage = null;
+    return open.sort((a, b) => (b.stageAt || 0) - (a.stageAt || 0))[0] || null;
+  }
+
+  /** A page's socket closed: its scene is gone, and whoever waits for it hears so now, not after the timeout. */
+  function pageClosed(ws) {
+    if (scenePage === ws) scenePage = null;
+    for (const [requestId, w] of waiting) {
+      if (w.page !== ws) continue;
+      clearTimeout(w.timer);
+      waiting.delete(requestId);
+      w.resolve({ ok: false, error: `council ${w.action}: the Oasis page went away (reloaded or closed) before it was done; the scene has to be started again` });
+    }
   }
 
   function request(msg = {}) {
@@ -52,6 +68,8 @@ export function createStage(deps) {
     if (!STAGE_ACTIONS.includes(action)) throw new Error(`council: unknown action "${action}" (use ${STAGE_ACTIONS.join(', ')})`);
     const page = stagePage();
     if (!page) throw new Error('council: no Oasis page is open that can stage (open the Oasis in the village; an older page needs a reload)');
+    if (action === 'start') scenePage = page;
+    if (action === 'end') scenePage = null;
     const req = { action };
     const all = [...deps.agents()];
     if (action === 'start') {
@@ -86,7 +104,7 @@ export function createStage(deps) {
         waiting.delete(requestId);
         resolve({ ok: false, error: `council ${action}: the page did not answer in ${Math.round(timeoutMs / 1000)} s` });
       }, timeoutMs);
-      waiting.set(requestId, { resolve, timer });
+      waiting.set(requestId, { resolve, timer, page, action });
       try {
         page.send(JSON.stringify({ type: 'stage.request', requestId, request: req }));
       } catch (e) {
@@ -107,5 +125,5 @@ export function createStage(deps) {
     return { ok: true };
   }
 
-  return { request, result, stagePage, waiting: () => waiting.size };
+  return { request, result, stagePage, pageClosed, waiting: () => waiting.size };
 }
