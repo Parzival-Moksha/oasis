@@ -8,7 +8,7 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 
 import type { ElevenLabsAlignment } from '@/lib/lip-sync-lab'
-import { SPOKEN_MAX_CHARS, cleanSpoken } from '@/lib/village/village-spoken'
+import { SPOKEN_MAX_CHARS, clampModelSpeed, cleanSpoken } from '@/lib/village/village-spoken'
 
 /** The repo's voices (same ids as /api/media/voice). */
 const VOICES: Record<string, string> = {
@@ -25,6 +25,8 @@ export interface SpokenClip {
   text: string
   voiceId: string
   alignment: ElevenLabsAlignment | null
+  /** ElevenLabs' `speed` voice setting the clip was made with (1 = its default). */
+  modelSpeed: number
   /** Served from the cache: no ElevenLabs call was made. */
   cached: boolean
 }
@@ -50,9 +52,9 @@ export function speechModel(env: EnvLike = process.env): string {
   return env.OASIS_VILLAGE_VOICE_MODEL || 'eleven_multilingual_v2'
 }
 
-/** The clip's name: what is said, by which voice and model. */
-export function speechClipId(text: string, voiceId: string, model: string): string {
-  return createHash('sha1').update(`${model}\n${voiceId}\n${text}`).digest('hex').slice(0, 24)
+/** The clip's name: what is said, by which voice and model, at which model speed (1 keeps the names clips had before speeds). */
+export function speechClipId(text: string, voiceId: string, model: string, modelSpeed = 1): string {
+  return createHash('sha1').update(`${model}\n${voiceId}\n${text}${modelSpeed === 1 ? '' : `\nspeed=${modelSpeed.toFixed(2)}`}`).digest('hex').slice(0, 24)
 }
 
 export function isSpeechClipId(id: unknown): id is string {
@@ -68,7 +70,7 @@ async function readCached(dir: string, id: string): Promise<SpokenClip | null> {
   try {
     const meta = JSON.parse(await fs.readFile(path.join(dir, `${id}.json`), 'utf8')) as Partial<SpokenClip>
     await fs.access(path.join(dir, `${id}.mp3`))
-    return { id, text: String(meta.text || ''), voiceId: String(meta.voiceId || ''), alignment: isAlignment(meta.alignment) ? meta.alignment : null, cached: true }
+    return { id, text: String(meta.text || ''), voiceId: String(meta.voiceId || ''), alignment: isAlignment(meta.alignment) ? meta.alignment : null, modelSpeed: clampModelSpeed(meta.modelSpeed), cached: true }
   } catch {
     return null
   }
@@ -101,14 +103,16 @@ export class SpeechError extends Error {
 /**
  * The clip for `text` in `voice`: from the cache, else one ElevenLabs call. The text is cleaned and
  * capped at SPOKEN_MAX_CHARS first, so a long or marked-up line can never cost more than that.
+ * `speed`: ElevenLabs' own voice speed (0.7 to 1.2; the page plays the rest of a faster setting itself).
  */
-export async function speak(rawText: unknown, voice: unknown, options: { env?: EnvLike; fetcher?: typeof fetch } = {}): Promise<SpokenClip> {
+export async function speak(rawText: unknown, voice: unknown, options: { env?: EnvLike; fetcher?: typeof fetch; speed?: unknown } = {}): Promise<SpokenClip> {
   const env = options.env || process.env
   const text = typeof rawText === 'string' ? cleanSpoken(rawText, SPOKEN_MAX_CHARS) : ''
   if (!text) throw new SpeechError('Nothing to say', 400)
   const voiceId = resolveSpeechVoice(voice, env)
   const model = speechModel(env)
-  const id = speechClipId(text, voiceId, model)
+  const modelSpeed = clampModelSpeed(options.speed)
+  const id = speechClipId(text, voiceId, model, modelSpeed)
   const dir = speechDir(env)
   const cached = await readCached(dir, id)
   if (cached) return cached
@@ -124,7 +128,7 @@ export async function speak(rawText: unknown, voice: unknown, options: { env?: E
       body: JSON.stringify({
         text,
         model_id: model,
-        voice_settings: { stability: 0.42, similarity_boost: 0.78, style: 0.18, use_speaker_boost: true },
+        voice_settings: { stability: 0.42, similarity_boost: 0.78, style: 0.18, use_speaker_boost: true, ...(modelSpeed === 1 ? {} : { speed: modelSpeed }) },
       }),
     })
     if (!response.ok) {
@@ -137,9 +141,9 @@ export async function speak(rawText: unknown, voice: unknown, options: { env?: E
     const alignment = isAlignment(payload.normalized_alignment) ? payload.normalized_alignment : isAlignment(payload.alignment) ? payload.alignment : null
     await fs.mkdir(dir, { recursive: true })
     await fs.writeFile(path.join(dir, `${id}.mp3`), Buffer.from(payload.audio_base64, 'base64'))
-    await fs.writeFile(path.join(dir, `${id}.json`), JSON.stringify({ id, text, voiceId, model, createdAt: Date.now(), alignment }), 'utf8')
+    await fs.writeFile(path.join(dir, `${id}.json`), JSON.stringify({ id, text, voiceId, model, modelSpeed, createdAt: Date.now(), alignment }), 'utf8')
     void prune(dir)
-    return { id, text, voiceId, alignment, cached: false }
+    return { id, text, voiceId, alignment, modelSpeed, cached: false }
   })()
   inflight.set(id, job)
   try {

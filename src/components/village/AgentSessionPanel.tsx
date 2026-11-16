@@ -30,7 +30,7 @@ import { VillageComposer } from './VillageComposer'
 import { EffortSelect } from './EffortSelect'
 import { EyesToggle } from './EyesToggle'
 import { ChromeToggle } from './ChromeToggle'
-import { FollowToggle, VoiceToggle } from './CompanionToggles'
+import { FollowToggle, VoiceSpeedSelect, VoiceToggle } from './CompanionToggles'
 import { VillageAvatarButton } from './VillageAvatarButton'
 import { AcademyTrainToggle } from './VillageAcademyTrainee'
 import { PanelLookButton, usePanelLook } from './PanelLook'
@@ -285,6 +285,7 @@ export function AgentSessionPanel() {
           <AcademyTrainToggle agent={agent} />
           <FollowToggle agent={agent} />
           <VoiceToggle agent={agent} />
+          <VoiceSpeedSelect agent={agent} />
           <span className="ml-auto truncate text-white/60">{modelLabel(agent)}</span>
         </div>
       )}

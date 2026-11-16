@@ -11,17 +11,20 @@ import { createContext, useContext, useState, useSyncExternalStore } from 'react
 import { useOasisStore } from '../../store/oasisStore'
 import type { EngineAgentState } from '../../store/slices/agentEngineSlice'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
-import { villageVoiceFor } from '../../lib/village/village-spoken'
+import { SPEECH_SPEED, villageVoiceFor } from '../../lib/village/village-spoken'
 import { showNotice } from '../forge/GlobalNotice'
 import {
   getVillageFollowVersion,
   getVillageSpeech,
+  getVillageSpeechSpeed,
   isVillageFollowOn,
   setVillageFollow,
+  setVillageSpeechSpeed,
   speakVillageAgent,
   stopVillageSpeech,
   subscribeVillageFollow,
   subscribeVillageSpeech,
+  subscribeVillageSpeechSpeed,
 } from './village-companion'
 
 const SWITCH_CLASS = 'flex h-[22px] items-center gap-1 rounded border px-1.5 text-[10.5px] disabled:opacity-50'
@@ -95,6 +98,51 @@ export function VoiceToggle({ agent }: { agent: EngineAgentState }) {
       </svg>
       voice
     </button>
+  )
+}
+
+/** 0.8, 0.9 … 1.6 */
+const SPEED_STEPS = Array.from({ length: Math.round((SPEECH_SPEED.max - SPEECH_SPEED.min) / SPEECH_SPEED.step) + 1 }, (_, i) => Math.round((SPEECH_SPEED.min + i * SPEECH_SPEED.step) * 10) / 10)
+const speedLabel = (speed: number) => `${speed.toFixed(1)}×`
+const SPEED_TITLE = 'How fast agents talk (all spoken replies, remembered). 1.0× is the voice as ElevenLabs reads it; the pitch stays natural at every speed. Changes the clip that is playing too.'
+
+/** How fast the spoken replies are, next to the Voice switch. One setting for every agent, remembered in this browser. */
+export function VoiceSpeedSelect({ agent }: { agent: EngineAgentState }) {
+  const speed = useSyncExternalStore(subscribeVillageSpeechSpeed, getVillageSpeechSpeed, () => SPEECH_SPEED.default)
+  if (!agent.owned || agent.speak !== true) return null
+  return (
+    <select
+      value={String(speed)}
+      title={SPEED_TITLE}
+      aria-label="Speech speed"
+      data-village-voice-speed={speed}
+      onChange={event => setVillageSpeechSpeed(Number(event.target.value))}
+      onKeyDown={event => event.stopPropagation()}
+      className="h-[22px] rounded border border-fuchsia-300/40 bg-black/50 px-0.5 text-[10.5px] text-fuchsia-100"
+    >
+      {!SPEED_STEPS.includes(speed) && <option value={String(speed)}>{speedLabel(speed)}</option>}
+      {SPEED_STEPS.map(step => <option key={step} value={String(step)}>{speedLabel(step)}</option>)}
+    </select>
+  )
+}
+
+/** The same setting as a slider, in the panel's settings (PanelLook.tsx). */
+export function VoiceSpeedSlider() {
+  const speed = useSyncExternalStore(subscribeVillageSpeechSpeed, getVillageSpeechSpeed, () => SPEECH_SPEED.default)
+  return (
+    <label className="mb-3 block" title={SPEED_TITLE}>
+      <span className="flex justify-between"><span>Voice speed</span><span className="text-white/55">{speedLabel(speed)}</span></span>
+      <input
+        type="range"
+        min={SPEECH_SPEED.min}
+        max={SPEECH_SPEED.max}
+        step={SPEECH_SPEED.step}
+        value={speed}
+        data-village-voice-speed-slider={speed}
+        onChange={event => setVillageSpeechSpeed(Number(event.target.value))}
+        className="w-full accent-fuchsia-300"
+      />
+    </label>
   )
 }
 

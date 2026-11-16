@@ -1,5 +1,6 @@
 // /api/village/speak — a village agent's spoken line (the <spoken> tag of its reply) as an ElevenLabs clip.
-//   POST { text, voice? }  -> { id, url, text, alignment, cached }   (text capped at 400 characters; cached by text)
+//   POST { text, voice?, speed? }  -> { id, url, text, alignment, modelSpeed, cached }   (text capped at 400 characters; cached by text;
+//        speed: ElevenLabs' voice speed, 0.7 to 1.2)
 //   GET  ?id=<clip id>     -> the mp3
 // Local requests only: each new line costs ElevenLabs credits on the owner's key.
 
@@ -14,14 +15,14 @@ export const runtime = 'nodejs'
 export async function POST(request: NextRequest) {
   const denied = guardAgentRoute(request)
   if (denied) return denied
-  let body: { text?: unknown; voice?: unknown }
+  let body: { text?: unknown; voice?: unknown; speed?: unknown }
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
   try {
-    const clip = await speak(body.text, body.voice)
+    const clip = await speak(body.text, body.voice, { speed: body.speed })
     return NextResponse.json({ ...clip, url: `/api/village/speak?id=${clip.id}` })
   } catch (error) {
     if (error instanceof SpeechError) return NextResponse.json({ error: error.message }, { status: error.status })

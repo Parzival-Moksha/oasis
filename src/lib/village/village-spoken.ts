@@ -107,6 +107,56 @@ export function spokenForLastTurn(log: readonly SpokenLogEntry[]): string | null
   return null
 }
 
+/**
+ * The spoken line as soon as it is complete in the text still streaming in (its closing tag has arrived):
+ * the clip can be made while the turn winds down. null until then.
+ */
+export function spokenInStream(liveText: string | null | undefined): string | null {
+  if (typeof liveText !== 'string' || !/<\/spoken>/i.test(liveText)) return null
+  return splitSpoken(liveText).spoken
+}
+
+// ─── how fast it talks ──────────────────────────────────────────────────────
+
+/**
+ * The owner's speed setting, 1 = the voice as ElevenLabs reads it by default. Two things make the speed:
+ * ElevenLabs' own `speed` voice setting (0.7 to 1.2, the model talks faster or slower, natural) and, for
+ * what that cannot reach, the player's rate with the pitch kept. ElevenLabs' setting is not one to one:
+ * measured on eleven_multilingual_v2 (2026-11-16), speed 1.2 made a 12.3 s clip 10.9 s long, 1.13x, so its
+ * effect is taken as 65% of what it says.
+ */
+export const SPEECH_SPEED = { min: 0.8, max: 1.6, step: 0.1, default: 1.2, modelMin: 0.7, modelMax: 1.2, modelGain: 0.65 } as const
+
+export function clampSpeechSpeed(value: unknown): number {
+  const n = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN
+  if (!Number.isFinite(n)) return SPEECH_SPEED.default
+  return Math.round(Math.min(SPEECH_SPEED.max, Math.max(SPEECH_SPEED.min, n)) * 20) / 20
+}
+
+/** ElevenLabs' `speed` as it may be sent: inside its range, in steps of 0.05 (few distinct clips per line). */
+export function clampModelSpeed(value: unknown): number {
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : 1
+  return Math.round(Math.min(SPEECH_SPEED.modelMax, Math.max(SPEECH_SPEED.modelMin, n)) * 20) / 20
+}
+
+/** How much faster a clip made at `modelSpeed` really is than one made at 1. */
+export function modelSpeedEffect(modelSpeed: number): number {
+  return 1 + (modelSpeed - 1) * SPEECH_SPEED.modelGain
+}
+
+/** The player's rate that brings a clip made at `modelSpeed` to the speed the owner set. */
+export function playbackRateFor(speed: number, modelSpeed: number): number {
+  const rate = clampSpeechSpeed(speed) / modelSpeedEffect(modelSpeed)
+  return Math.round(Math.min(2, Math.max(0.5, rate)) * 1000) / 1000
+}
+
+/** For a speed setting: what to ask ElevenLabs for, and the player's rate for the rest. */
+export function speechSpeedPlan(speed: unknown): { speed: number; modelSpeed: number; playbackRate: number } {
+  const target = clampSpeechSpeed(speed)
+  const modelSpeed = clampModelSpeed(1 + (target - 1) / SPEECH_SPEED.modelGain)
+  return { speed: target, modelSpeed, playbackRate: playbackRateFor(target, modelSpeed) }
+}
+
 // ─── voices ─────────────────────────────────────────────────────────────────
 
 /** The voice an agent speaks with: Anorak is the wizard (the repo's Merlin voice), everyone else Adam. */

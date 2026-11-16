@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { applySnapshot, createAgentState } from '../../store/slices/agentEngineSlice'
 import type { EngineAgentSnapshot } from '../agent-engine-types'
 import { splitSpoken } from '../village/village-spoken'
+import { speak, speechClipId } from '../village/village-speech-server'
 import * as agentModule from '../../../packages/oasis-agent-engine/src/agent.js'
 import * as normalizeModule from '../../../packages/oasis-agent-engine/src/normalize.js'
 import * as voiceModule from '../../../packages/oasis-agent-engine/src/voice.js'
@@ -113,5 +114,34 @@ describe('Voice switch in the agent slice', () => {
     expect(agent.speak).toBe(true)
     agent = applySnapshot(agent, snap({ speak: false }), 1200)
     expect(agent.speak).toBe(false)
+  })
+})
+
+describe('speech route: the voice speed', () => {
+  const env = { ELEVENLABS_API_KEY: 'test-key', OASIS_VILLAGE_SPEECH_DIR: `${process.env.TEMP || '/tmp'}/oasis-speech-test-${Date.now()}` }
+  const fetcher = (bodies: Array<Record<string, any>>) => (async (_url: unknown, init?: { body?: unknown }) => {
+    bodies.push(JSON.parse(String(init?.body)))
+    return new Response(JSON.stringify({ audio_base64: 'QUJD', alignment: { characters: ['a'], character_start_times_seconds: [0], character_end_times_seconds: [0.1] } }), { status: 200 })
+  }) as unknown as typeof fetch
+
+  it('sends ElevenLabs its speed setting, clamped to what it takes, and keeps one clip per speed', async () => {
+    const bodies: Array<Record<string, any>> = []
+    const fast = await speak('Hello there.', 'merlin', { env, fetcher: fetcher(bodies), speed: 1.2 })
+    expect(bodies[0].voice_settings.speed).toBe(1.2)
+    expect(fast.modelSpeed).toBe(1.2)
+    const again = await speak('Hello there.', 'merlin', { env, fetcher: fetcher(bodies), speed: 1.2 })
+    expect(again).toMatchObject({ id: fast.id, cached: true, modelSpeed: 1.2 })
+    expect(bodies).toHaveLength(1)
+    const plain = await speak('Hello there.', 'merlin', { env, fetcher: fetcher(bodies) })
+    expect(bodies[1].voice_settings.speed).toBeUndefined()
+    expect(plain.id).not.toBe(fast.id)
+    const tooFast = await speak('Hello there.', 'merlin', { env, fetcher: fetcher(bodies), speed: 3 })
+    expect(tooFast.id).toBe(fast.id)
+    expect(bodies).toHaveLength(2)
+  })
+
+  it('names a clip made at the default speed as it did before speeds existed', () => {
+    expect(speechClipId('x', 'v', 'm', 1)).toBe(speechClipId('x', 'v', 'm'))
+    expect(speechClipId('x', 'v', 'm', 1.2)).not.toBe(speechClipId('x', 'v', 'm'))
   })
 })

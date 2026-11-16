@@ -3,9 +3,16 @@ import {
   SPOKEN_MAX_CHARS,
   cleanSpoken,
   hasSpoken,
+  SPEECH_SPEED,
+  clampModelSpeed,
+  clampSpeechSpeed,
   hideSpokenLive,
+  modelSpeedEffect,
+  playbackRateFor,
+  speechSpeedPlan,
   splitSpoken,
   spokenForLastTurn,
+  spokenInStream,
   villageVoiceFor,
 } from '../village/village-spoken'
 
@@ -98,5 +105,62 @@ describe('voices', () => {
   it('gives Anorak the wizard voice', () => {
     expect(villageVoiceFor('Anorak')).toBe('merlin')
     expect(villageVoiceFor('Debugger')).toBe('adam')
+  })
+})
+
+describe('the line as it streams in', () => {
+  it('is there the moment its closing tag arrives, not before', () => {
+    expect(spokenInStream('Done.\n<spoken>All go')).toBeNull()
+    expect(spokenInStream('Done.\n<spoken>All good.</spo')).toBeNull()
+    expect(spokenInStream('Done.\n<spoken>All good.</spoken>')).toBe('All good.')
+    expect(spokenInStream('Done.\n<SPOKEN>All good.</SPOKEN>\n')).toBe('All good.')
+    expect(spokenInStream('No tag yet')).toBeNull()
+    expect(spokenInStream(null)).toBeNull()
+  })
+})
+
+describe('speech speed', () => {
+  it('defaults to 1.2x and stays between 0.8x and 1.6x', () => {
+    expect(SPEECH_SPEED.default).toBe(1.2)
+    expect(clampSpeechSpeed(undefined)).toBe(1.2)
+    expect(clampSpeechSpeed('junk')).toBe(1.2)
+    expect(clampSpeechSpeed('1.4')).toBe(1.4)
+    expect(clampSpeechSpeed(0.3)).toBe(0.8)
+    expect(clampSpeechSpeed(9)).toBe(1.6)
+    expect(clampSpeechSpeed(1.234)).toBe(1.25)
+  })
+
+  it('never asks ElevenLabs for a speed outside 0.7 to 1.2', () => {
+    for (let speed = 0.8; speed <= 1.61; speed += 0.05) {
+      const plan = speechSpeedPlan(speed)
+      expect(plan.modelSpeed).toBeGreaterThanOrEqual(0.7)
+      expect(plan.modelSpeed).toBeLessThanOrEqual(1.2)
+    }
+    expect(clampModelSpeed(1.5)).toBe(1.2)
+    expect(clampModelSpeed(0.1)).toBe(0.7)
+    expect(clampModelSpeed('x')).toBe(1)
+  })
+
+  it('lets the voice itself do what it can and the player the rest, adding up to the setting', () => {
+    for (const speed of [0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]) {
+      const plan = speechSpeedPlan(speed)
+      expect(modelSpeedEffect(plan.modelSpeed) * plan.playbackRate).toBeCloseTo(speed, 2)
+    }
+    expect(speechSpeedPlan(1)).toEqual({ speed: 1, modelSpeed: 1, playbackRate: 1 })
+    // 1.2x (the default): the voice at its fastest, the player a little on top.
+    const fast = speechSpeedPlan(1.2)
+    expect(fast.modelSpeed).toBe(1.2)
+    expect(fast.playbackRate).toBeGreaterThan(1)
+    expect(fast.playbackRate).toBeLessThan(1.1)
+    // Up to about 1.1x the player does next to nothing.
+    expect(Math.abs(speechSpeedPlan(1.1).playbackRate - 1)).toBeLessThan(0.02)
+    expect(Math.abs(speechSpeedPlan(0.8).playbackRate - 1)).toBeLessThan(0.02)
+    // 1.6x: the player's share stays moderate, where keeping the pitch still sounds right.
+    expect(speechSpeedPlan(1.6).playbackRate).toBeLessThan(1.45)
+  })
+
+  it('plays an older clip, made at another voice speed, at the speed now set', () => {
+    expect(playbackRateFor(1.2, 1)).toBeCloseTo(1.2, 3)
+    expect(playbackRateFor(1, 1.2)).toBeCloseTo(1 / 1.13, 3)
   })
 })

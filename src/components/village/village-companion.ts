@@ -2,10 +2,11 @@
 // Two things live here, both local to this tab:
 //   1. The "Follow me" choice per agent (remembered per session in this browser; Anorak follows by default).
 //      The walking itself is VillageStation's (VillageWorld.tsx) with the rules in lib/village/village-follow.ts.
-//   2. Speech: a voiced agent's reply ends with <spoken>…</spoken> (lib/village/village-spoken.ts). When its
-//      turn ends, the line is fetched as an ElevenLabs clip (/api/village/speak, cached by text) and played from
-//      the avatar's head through three's PositionalAudio: louder when close, with the mouth moving
-//      (the clip's character timings drive the same lip-sync registry the world's NPCs use).
+//   2. Speech: a voiced agent's reply ends with <spoken>…</spoken> (lib/village/village-spoken.ts). As soon as
+//      that line is complete (VillageVoice.tsx), it is fetched as an ElevenLabs clip (/api/village/speak, cached
+//      by text) and played from the avatar's head through three's PositionalAudio: louder when close, with the
+//      mouth moving (the clip's character timings drive the same lip-sync registry the world's NPCs use), at
+//      the speed the owner set (0.8x to 1.6x, pitch kept).
 //
 // Frame-rate note (fps-decay mission): a PositionalAudio schedules Web Audio ramps every frame while it
 // plays. It is only in the scene while a clip plays, and a clip only starts on a running AudioContext, so
@@ -17,7 +18,7 @@ import { registerLipSync, unregisterLipSync, type LipSyncController } from '../.
 import { buildCharacterMouthTimeline, type ElevenLabsAlignment } from '../../lib/lip-sync-lab'
 import { createTimedLipSyncController } from '../../lib/hosted-welcome-lipsync'
 import { parseFollowPrefs, wantsFollow, withFollowChoice, type FollowPrefs } from '../../lib/village/village-follow'
-import { SPOKEN_MAX_CHARS, cleanSpoken } from '../../lib/village/village-spoken'
+import { SPEECH_SPEED, SPOKEN_MAX_CHARS, clampSpeechSpeed, cleanSpoken, playbackRateFor, speechSpeedPlan } from '../../lib/village/village-spoken'
 
 // ─── follow ─────────────────────────────────────────────────────────────────
 
@@ -124,6 +125,42 @@ export function subscribeVillageVoice(listener: () => void): () => void {
   return () => { voiceListeners.delete(listener) }
 }
 
+// ─── how fast it talks (the "1.2×" next to the Voice switch) ────────────────
+
+const SPEED_KEY = 'oasis.village.voiceSpeed'
+let speechSpeed: number | null = null
+const speedListeners = new Set<() => void>()
+
+/** The owner's speed for every spoken reply (0.8 to 1.6, 1.2 unless they chose another), remembered in this browser. */
+export function getVillageSpeechSpeed(): number {
+  if (speechSpeed === null) {
+    try {
+      const raw = typeof window === 'undefined' ? null : window.localStorage.getItem(SPEED_KEY)
+      speechSpeed = raw ? clampSpeechSpeed(raw) : SPEECH_SPEED.default
+    } catch {
+      speechSpeed = SPEECH_SPEED.default
+    }
+  }
+  return speechSpeed
+}
+
+/** Applies to the clip that is playing too (its rate changes at once; the next clip is made at the new speed). */
+export function setVillageSpeechSpeed(value: number): void {
+  speechSpeed = clampSpeechSpeed(value)
+  try {
+    window.localStorage.setItem(SPEED_KEY, String(speechSpeed))
+  } catch {
+    // Storage blocked: the choice lasts for this page only.
+  }
+  if (playing) playing.element.playbackRate = playbackRateFor(speechSpeed, playing.modelSpeed)
+  speedListeners.forEach(listener => listener())
+}
+
+export function subscribeVillageSpeechSpeed(listener: () => void): () => void {
+  speedListeners.add(listener)
+  return () => { speedListeners.delete(listener) }
+}
+
 // ─── speech ─────────────────────────────────────────────────────────────────
 
 export interface VillageSpeech {
@@ -137,17 +174,26 @@ interface Clip {
   id: string
   url: string
   alignment: ElevenLabsAlignment | null
+  /** ElevenLabs' voice speed the clip was made with. */
+  modelSpeed: number
+}
+
+interface Playback {
+  audio: THREE.PositionalAudio
+  element: HTMLAudioElement
+  modelSpeed: number
+  lipId: string
+  lip: LipSyncController | null
+  release: () => void
 }
 
 let speech: VillageSpeech | null = null
 let speechToken = 0
-let playing: { audio: THREE.PositionalAudio; lipId: string; lip: LipSyncController | null; release: () => void } | null = null
-let lastSpeech: { agentId: string; text: string; at: number; result: string } | null = null
+let playing: Playback | null = null
+let lastSpeech: { agentId: string; text: string; at: number; result: string; waitMs?: number } | null = null
 const speechListeners = new Set<() => void>()
-/** Fetched clips (metadata) and decoded audio for this page: a replay neither asks the server nor decodes again. */
+/** Clips asked for on this page: a replay does not ask the server again (the mp3 itself sits in the browser's cache). */
 const clips = new Map<string, Promise<Clip>>()
-const buffers = new Map<string, AudioBuffer>()
-const BUFFER_KEEP = 6
 
 function setSpeech(next: VillageSpeech | null): void {
   speech = next
@@ -163,10 +209,18 @@ export function subscribeVillageSpeech(listener: () => void): () => void {
   return () => { speechListeners.delete(listener) }
 }
 
-/** For window.__oasisVillage.speech() (dev) and the playtest. */
+/** For window.__oasisVillageVoice.debug() (dev) and the playtest. */
 export function getVillageSpeechDebug() {
   const listener = getAudioListener()
-  return { on: isVillageVoiceOn(), audio: listener?.context.state || 'none', speech, last: lastSpeech, heads: [...heads.keys()] }
+  return {
+    on: isVillageVoiceOn(),
+    audio: listener?.context.state || 'none',
+    speed: getVillageSpeechSpeed(),
+    speech,
+    last: lastSpeech,
+    playing: playing ? { rate: playing.element.playbackRate, modelSpeed: playing.modelSpeed, time: playing.element.currentTime, duration: playing.element.duration, preservesPitch: (playing.element as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch !== false } : null,
+    heads: [...heads.keys()],
+  }
 }
 
 function endPlayback(): void {
@@ -176,8 +230,10 @@ function endPlayback(): void {
   current.release()
   unregisterLipSync(current.lipId, current.lip || undefined)
   try {
-    if (current.audio.isPlaying) current.audio.stop()
-  } catch { /* already stopped */ }
+    current.element.pause()
+    current.element.removeAttribute('src')
+    current.element.load()
+  } catch { /* already gone */ }
   try {
     current.audio.disconnect()
   } catch { /* never connected */ }
@@ -191,20 +247,20 @@ export function stopVillageSpeech(): void {
   if (speech) setSpeech(null)
 }
 
-const clipKey = (text: string, voice: string) => `${voice}\n${text}`
+const clipKey = (text: string, voice: string, modelSpeed: number) => `${voice}\n${modelSpeed}\n${text}`
 
-function fetchClip(text: string, voice: string): Promise<Clip> {
-  const key = clipKey(text, voice)
+function fetchClip(text: string, voice: string, modelSpeed: number): Promise<Clip> {
+  const key = clipKey(text, voice, modelSpeed)
   let job = clips.get(key)
   if (!job) {
     job = fetch('/api/village/speak', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voice }),
+      body: JSON.stringify({ text, voice, speed: modelSpeed }),
     }).then(async response => {
       const data = await response.json().catch(() => ({})) as Partial<Clip> & { error?: string }
       if (!response.ok || !data.id || !data.url) throw new Error(data.error || `speech failed (${response.status})`)
-      return { id: data.id, url: data.url, alignment: data.alignment || null }
+      return { id: data.id, url: data.url, alignment: data.alignment || null, modelSpeed: typeof data.modelSpeed === 'number' ? data.modelSpeed : 1 }
     })
     clips.set(key, job)
     job.catch(() => { clips.delete(key) })
@@ -212,27 +268,21 @@ function fetchClip(text: string, voice: string): Promise<Clip> {
   return job
 }
 
-async function loadBuffer(clip: Clip, context: AudioContext): Promise<AudioBuffer> {
-  const known = buffers.get(clip.id)
-  if (known) return known
-  const response = await fetch(clip.url)
-  if (!response.ok) throw new Error(`speech audio failed (${response.status})`)
-  const buffer = await context.decodeAudioData(await response.arrayBuffer())
-  buffers.set(clip.id, buffer)
-  while (buffers.size > BUFFER_KEEP) buffers.delete(buffers.keys().next().value as string)
-  return buffer
-}
-
 /**
- * Say `text` from the agent's avatar. A new line stops the one before it. Resolves true once it plays.
- * Needs sound to be allowed on the page (any click or key press does that); without it nothing is
- * fetched, so a silent tab costs nothing. `byHand`: the owner clicked play, so the click itself may
+ * Say `text` from the agent's avatar, at the owner's speed. A new line stops the one before it. Resolves true
+ * once it plays. Needs sound to be allowed on the page (any click or key press does that); without it nothing
+ * is fetched, so a silent tab costs nothing. `byHand`: the owner clicked play, so the click itself may
  * unlock sound; a reply that speaks on its own never waits for that (it would be said much later).
+ *
+ * The clip plays through an <audio> element feeding three's PositionalAudio: the element starts while the
+ * file is still arriving, keeps the pitch when it plays faster or slower than the clip was made, and its
+ * clock (in the clip's own seconds, whatever the rate) drives the mouth.
  */
 export async function speakVillageAgent(agentId: string, rawText: string, voice: string, byHand = false): Promise<boolean> {
   const text = cleanSpoken(rawText, SPOKEN_MAX_CHARS)
   stopVillageSpeech()
   const token = speechToken
+  const askedAt = performance.now()
   const fail = (result: string) => {
     lastSpeech = { agentId, text, at: Date.now(), result }
     if (token === speechToken) setSpeech(null)
@@ -248,15 +298,11 @@ export async function speakVillageAgent(agentId: string, rawText: string, voice:
   }
   if (token !== speechToken) return false
   setSpeech({ agentId, text, phase: 'loading' })
-  let buffer: AudioBuffer
+  const plan = speechSpeedPlan(getVillageSpeechSpeed())
   let clip: Clip
   try {
-    clip = await fetchClip(text, voice)
-    if (token !== speechToken) return false
-    buffer = await loadBuffer(clip, context)
+    clip = await fetchClip(text, voice, plan.modelSpeed)
   } catch (error) {
-    // Forget the clip: the server may have pruned its file, and the next try should ask again.
-    clips.delete(clipKey(text, voice))
     console.warn(`[village] speech failed: ${error instanceof Error ? error.message : String(error)}`)
     return fail('fetch failed')
   }
@@ -266,58 +312,77 @@ export async function speakVillageAgent(agentId: string, rawText: string, voice:
   // From the avatar's head. (Never on the listener itself: it hangs on the camera, whose matrix every label updates.)
   const head = speechSource(agentId)
   if (!head) return fail('no avatar in the scene')
+  const element = new Audio()
+  element.preload = 'auto'
+  ;(element as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch = true
+  element.src = clip.url
+  // After src: setting the source resets the rate to the element's default.
+  element.defaultPlaybackRate = playbackRateFor(getVillageSpeechSpeed(), clip.modelSpeed)
+  element.playbackRate = element.defaultPlaybackRate
   const audio = new THREE.PositionalAudio(listener)
-  audio.setBuffer(buffer)
+  audio.setMediaElementSource(element)
   // Full volume within 3 m, about half at 7 m, a murmur across the plaza.
   audio.setDistanceModel('inverse')
   audio.setRefDistance(3)
   audio.setRolloffFactor(1.3)
   audio.setVolume(1)
-  head.add(audio)
 
-  let startedAt = 0
-  let live = true
   const timeline = buildCharacterMouthTimeline(clip.alignment)
   let lip: LipSyncController | null = null
   if (timeline.cues.length) {
     lip = createTimedLipSyncController(timeline)
-    // The controller reads a media element's clock; this is the clip's, on the AudioContext.
-    const clock = {
-      get paused() { return !live },
-      get ended() { return !live },
-      get currentTime() { return context.currentTime - startedAt },
-    }
-    lip.attachAudio(clock as unknown as HTMLMediaElement)
+    lip.attachAudio(element)
   }
   const lipId = villageLipSyncId(agentId)
-  const onEnded = audio.onEnded.bind(audio)
-  audio.onEnded = () => {
-    onEnded()
-    live = false
-    if (playing?.audio !== audio) return
-    endPlayback()
-    if (token === speechToken) setSpeech(null)
-  }
-  // The clip must never outlive a running context: a suspended one (a device change, the OS) fires no "ended",
-  // and an audio object left playing would queue Web Audio ramps every frame (the fps-decay mission).
+  // The clip must never outlive a running context: a suspended one (a device change, the OS) plays on in silence,
+  // and an audio object left in the scene would queue Web Audio ramps every frame (the fps-decay mission).
   const stop = () => {
-    live = false
     if (playing?.audio !== audio) return
     endPlayback()
     if (token === speechToken) setSpeech(null)
   }
   const onState = () => { if ((context.state as AudioContextState) !== 'running') stop() }
+  let timeout = 0
+  const armTimeout = () => {
+    window.clearTimeout(timeout)
+    const seconds = Number.isFinite(element.duration) && element.duration > 0 ? element.duration : timeline.duration || 60
+    const left = Math.max(0, seconds - element.currentTime) / Math.max(0.5, element.playbackRate)
+    timeout = window.setTimeout(stop, (left + 2) * 1000)
+  }
+  element.addEventListener('ended', stop)
+  element.addEventListener('error', stop)
+  element.addEventListener('ratechange', armTimeout)
+  element.addEventListener('durationchange', armTimeout)
   context.addEventListener('statechange', onState)
-  const timeout = window.setTimeout(stop, (buffer.duration + 1.5) * 1000)
   const release = () => {
+    element.removeEventListener('ended', stop)
+    element.removeEventListener('error', stop)
+    element.removeEventListener('ratechange', armTimeout)
+    element.removeEventListener('durationchange', armTimeout)
     context.removeEventListener('statechange', onState)
     window.clearTimeout(timeout)
   }
-  playing = { audio, lipId, lip, release }
+  // In the scene only from here on (it schedules audio work every frame it is there).
+  head.add(audio)
+  playing = { audio, element, modelSpeed: clip.modelSpeed, lipId, lip, release }
+  armTimeout()
+  try {
+    await element.play()
+  } catch (error) {
+    if (playing?.audio === audio) endPlayback()
+    if (token !== speechToken) return false
+    // The file may have been pruned on the server: ask again next time.
+    clips.delete(clipKey(text, voice, plan.modelSpeed))
+    console.warn(`[village] speech failed: ${error instanceof Error ? error.message : String(error)}`)
+    return fail('playback failed')
+  }
+  if (token !== speechToken || playing?.audio !== audio) return false
   if (lip) registerLipSync(lipId, lip)
-  audio.play()
-  startedAt = context.currentTime
-  lastSpeech = { agentId, text, at: Date.now(), result: `playing ${buffer.duration.toFixed(1)}s, ${timeline.cues.length} mouth cues` }
+  const seconds = Number.isFinite(element.duration) ? element.duration : timeline.duration
+  lastSpeech = {
+    agentId, text, at: Date.now(), waitMs: Math.round(performance.now() - askedAt),
+    result: `playing ${seconds.toFixed(1)}s clip at ${element.playbackRate}x (voice speed ${clip.modelSpeed}, setting ${getVillageSpeechSpeed()}x), ${timeline.cues.length} mouth cues`,
+  }
   setSpeech({ agentId, text, phase: 'speaking' })
   return true
 }

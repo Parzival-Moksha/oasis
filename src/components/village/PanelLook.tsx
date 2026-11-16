@@ -18,6 +18,7 @@ import {
   setPanelLook,
   subscribePanelLook,
 } from '../../lib/village/panel-look'
+import { VoiceSpeedSlider } from './CompanionToggles'
 
 /** Background and blur for an agent's chat surface. */
 export function usePanelLook(agentKey: string) {
@@ -68,6 +69,8 @@ export function PanelLookButton({ agentKey, agentName }: { agentKey: string; age
             <span className="flex justify-between"><span>Blur</span><span className="text-white/55">{look.blur}px</span></span>
             <input type="range" min={0} max={24} value={look.blur} onChange={event => setPanelLook({ blur: Number(event.target.value) })} className="w-full accent-sky-300" />
           </label>
+          {/* How fast agents talk (village-companion.ts): the same setting as the select next to the Voice switch. */}
+          <VoiceSpeedSlider />
           <div className="mb-1 truncate text-[10px] font-bold uppercase tracking-[0.14em] text-white/55">Colour · {agentName}</div>
           <div className="flex flex-wrap items-center gap-1.5">
             {PANEL_SWATCHES.map(swatch => (
