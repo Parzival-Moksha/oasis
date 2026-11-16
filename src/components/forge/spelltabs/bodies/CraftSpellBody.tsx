@@ -16,6 +16,7 @@ import { generateSingleCraftedThumbnail } from '../../../../hooks/useThumbnailGe
 import { awardXp } from '../../../../hooks/useXp'
 import { derivePlayerCastSpawn } from '../../../../lib/player-avatar-runtime'
 import { CRAFT_MODEL_OPTIONS } from '../../../../lib/craft-models'
+import { CraftedGallery, galleryScenes } from '../../CraftedGallery'
 import type { CraftedScene } from '../../../../lib/conjure/types'
 import { CollapsibleSection, scrollIntoViewOnFocus } from '../SpellTabFrame'
 
@@ -31,8 +32,6 @@ export function CraftSpellBody({ defaultExpandNew = true, defaultExpandGallery =
   const sceneLibrary = useOasisStore(s => s.sceneLibrary)
   const addCraftedScene = useOasisStore(s => s.addCraftedScene)
   const updateCraftedScene = useOasisStore(s => s.updateCraftedScene)
-  const removeCraftedScene = useOasisStore(s => s.removeCraftedScene)
-  const enterPlacementMode = useOasisStore(s => s.enterPlacementMode)
   const craftModel = useOasisStore(s => s.craftModel)
   const setCraftModel = useOasisStore(s => s.setCraftModel)
   const setCraftingState = useOasisStore(s => s.setCraftingState)
@@ -186,72 +185,13 @@ export function CraftSpellBody({ defaultExpandNew = true, defaultExpandGallery =
       </CollapsibleSection>
 
       <CollapsibleSection
-        label={`Gallery (${craftedScenes.length})`}
+        label={`Gallery (${galleryScenes(craftedScenes, sceneLibrary).length})`}
         accentColor="#60A5FA"
         expanded={expandGallery}
         onToggle={() => setExpandGallery(e => !e)}
       >
-        {craftedScenes.length === 0 && sceneLibrary.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-6 text-gray-400">
-            <div className="text-2xl mb-1">{'⚙'}</div>
-            <div className="text-xs">No crafted scenes yet</div>
-            <div className="text-[10px] mt-1 text-gray-500">Describe a scene and hit Craft</div>
-          </div>
-        ) : (
-          <div className="space-y-1.5">
-            {craftedScenes.map(scene => (
-              <div
-                key={scene.id}
-                className="rounded-md border border-blue-500/20 bg-black/40 px-2.5 py-1.5 flex items-center justify-between"
-              >
-                <div className="min-w-0">
-                  <div className="text-[11px] text-blue-200 font-mono truncate" title={scene.prompt}>
-                    {scene.name}
-                  </div>
-                  <div className="text-[9px] text-gray-500 font-mono">
-                    {scene.objects.length} obj{scene.objects.length !== 1 ? 's' : ''}
-                  </div>
-                </div>
-                <button
-                  onClick={() => removeCraftedScene(scene.id)}
-                  className="text-[10px] text-gray-500 hover:text-red-400"
-                  title="Remove from world"
-                >
-                  &times;
-                </button>
-              </div>
-            ))}
-            {sceneLibrary.length > 0 && (
-              <>
-                <div className="text-[10px] text-purple-400/70 uppercase tracking-widest font-mono mt-2 mb-1">
-                  Library ({sceneLibrary.length})
-                </div>
-                {sceneLibrary.map(scene => (
-                  <div
-                    key={scene.id}
-                    className="rounded-md border border-purple-500/20 bg-black/40 px-2.5 py-1.5 flex items-center justify-between"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-[11px] text-purple-200 font-mono truncate" title={scene.prompt}>
-                        {scene.name}
-                      </div>
-                      <div className="text-[9px] text-gray-500 font-mono">
-                        {scene.objects.length} obj{scene.objects.length !== 1 ? 's' : ''}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => enterPlacementMode({ type: 'library', sceneId: scene.id, name: scene.name })}
-                      className="text-[10px] text-emerald-400/80 hover:text-emerald-300 font-mono border border-emerald-500/30 rounded px-1.5 py-0.5"
-                      title="Place a copy"
-                    >
-                      + place
-                    </button>
-                  </div>
-                ))}
-              </>
-            )}
-          </div>
-        )}
+        {/* Thumbnails, not names: click places, ⓘ opens the rotating preview (CraftedGallery). */}
+        <CraftedGallery defaultColumns={3} />
       </CollapsibleSection>
     </div>
   )

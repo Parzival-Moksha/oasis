@@ -894,8 +894,9 @@ export function CraftedPreviewPanel({ scene, onBack, onPlace, accentColor = '#3B
       </div>
 
       {/* ░▒▓ MESH STATS ▓▒░ */}
+      {/* File: the scene's own data (its primitives as JSON), like a model's GLB size. */}
       {modelStats && (
-        <StatsPanel stats={modelStats} fileSize={null} accentColor={accentColor} />
+        <StatsPanel stats={modelStats} fileSize={new Blob([JSON.stringify(scene.objects)]).size} accentColor={accentColor} />
       )}
 
       {/* ░▒▓ Prompt that birthed this scene ▓▒░ */}

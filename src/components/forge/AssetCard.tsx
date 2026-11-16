@@ -68,6 +68,10 @@ export interface AssetCardProps {
   accentColor?: string
   /** Extra badge elements (rig/anim pills, placed count, etc.) */
   badges?: React.ReactNode
+  /** A small ⓘ on the thumbnail: opens the detail view (the card's own click does something else, e.g. place). */
+  onInfo?: (id: string) => void
+  /** Tooltip of the × (default: "Delete <name>"). */
+  deleteTitle?: string
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -288,6 +292,8 @@ export function AssetCard({
   subtitle,
   accentColor,
   badges,
+  onInfo,
+  deleteTitle,
 }: AssetCardProps) {
   const config = TYPE_CONFIG[type]
   const highlighted = isInWorld && accentColor
@@ -329,6 +335,11 @@ export function AssetCard({
     if (onPlaceWithFrame) onPlaceWithFrame(id)
   }, [id, onPlaceWithFrame])
 
+  const handleInfo = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (onInfo) onInfo(id)
+  }, [id, onInfo])
+
   const hasBottomActions = onDownload || onUseAsTile || onViewFullscreen || onPlaceWithFrame
 
   return (
@@ -363,9 +374,23 @@ export function AssetCard({
         {onDelete && (
           <DeleteButton
             onClick={handleDelete}
-            title={`Delete ${name}`}
+            title={deleteTitle || `Delete ${name}`}
             className="z-10"
           />
+        )}
+
+        {/* Details — top-left, opens the parent's detail view */}
+        {onInfo && (
+          <button
+            type="button"
+            data-card-action="info"
+            onClick={handleInfo}
+            aria-label={`Details of ${name}`}
+            title="Details: rotating preview, triangles, size"
+            className="absolute left-0.5 top-0.5 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-white/25 bg-black/70 font-serif text-[11px] font-bold italic text-sky-200 opacity-80 transition hover:opacity-100 hover:text-white"
+          >
+            i
+          </button>
         )}
 
         {/* Bottom-right action row: download, tile, view, frame */}

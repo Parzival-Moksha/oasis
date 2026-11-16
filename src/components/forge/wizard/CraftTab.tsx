@@ -10,7 +10,8 @@ import type { CraftedScene } from '../../../lib/conjure/types'
 import { dispatch } from '../../../lib/event-bus'
 import { extractPartialCraftData } from '../../../lib/craft-stream'
 import { addToSceneLibrary, getSceneLibrary } from '../../../lib/forge/scene-library'
-import { generateSingleCraftedThumbnail, useCraftedThumbnailGenerator } from '../../../hooks/useThumbnailGenerator'
+import { generateSingleCraftedThumbnail } from '../../../hooks/useThumbnailGenerator'
+import { CraftedGallery, galleryScenes } from '../CraftedGallery'
 import { awardXp } from '../../../hooks/useXp'
 import { derivePlayerCastSpawn } from '../../../lib/player-avatar-runtime'
 import { CRAFT_MODEL_OPTIONS } from '../../../lib/craft-models'
@@ -222,110 +223,18 @@ export function CraftTabHeader({ setError }: CraftTabProps) {
 
 export function CraftTabContent() {
   const craftedScenes = useOasisStore(s => s.craftedScenes)
-  const removeCraftedScene = useOasisStore(s => s.removeCraftedScene)
   const sceneLibrary = useOasisStore(s => s.sceneLibrary)
-  const enterPlacementMode = useOasisStore(s => s.enterPlacementMode)
-  const deleteFromLibrary = useOasisStore(s => s.deleteFromLibrary)
+  const count = galleryScenes(craftedScenes, sceneLibrary).length
 
-  useCraftedThumbnailGenerator()
-
-  // Craft history is local to the header — we render a placeholder here
-  // The actual craft history display lives in the header component
-
+  // Thumbnails, not names: click places a copy, ⓘ opens the rotating preview, × removes / deletes (CraftedGallery).
   return (
     <>
       <div className="flex items-center justify-between mb-2">
         <span className="text-[10px] text-gray-500 uppercase tracking-widest font-mono">
-          ── Crafted Scenes ({craftedScenes.length}) ──
+          ── Crafted Scenes ({count}) ──
         </span>
       </div>
-
-      {craftedScenes.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-8 text-gray-400">
-          <div className="text-3xl mb-2">&#9881;</div>
-          <div className="text-xs">No crafted scenes placed here yet</div>
-          <div className="text-[10px] mt-1 text-gray-500">Craft a new scene above, or place one from the library below.</div>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {craftedScenes.map(scene => (
-            <div
-              key={scene.id}
-              className="rounded-lg border p-2 group transition-all duration-200 hover:border-blue-500/30"
-              style={{
-                background: 'rgba(20, 20, 20, 0.8)',
-                borderColor: 'rgba(59, 130, 246, 0.15)',
-              }}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-blue-300 font-medium">{scene.name}</span>
-                <button
-                  onClick={() => removeCraftedScene(scene.id)}
-                  className="text-gray-400 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                  title="Remove from world (stays in library)"
-                >
-                  &#10005;
-                </button>
-              </div>
-              <div className="text-[10px] text-gray-500 mt-0.5">
-                {scene.objects.length} primitive{scene.objects.length !== 1 ? 's' : ''}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* ─═̷─═̷─ SCENE LIBRARY — The permanent archive ─═̷─═̷─ */}
-      {sceneLibrary.length > 0 && (
-        <>
-          <div className="flex items-center justify-between mt-4 mb-2">
-            <span className="text-[10px] text-gray-500 uppercase tracking-widest font-mono">
-              ── Library ({sceneLibrary.length}) ──
-            </span>
-          </div>
-          <div className="space-y-1.5">
-            {sceneLibrary.map(scene => {
-              const isInWorld = craftedScenes.some(s => s.id === scene.id)
-              return (
-                <div
-                  key={scene.id}
-                  className="rounded-lg border p-2 group transition-all duration-200 hover:border-purple-500/30 flex items-center justify-between"
-                  style={{
-                    background: 'rgba(15, 15, 20, 0.8)',
-                    borderColor: isInWorld ? 'rgba(59, 130, 246, 0.2)' : 'rgba(128, 90, 213, 0.15)',
-                  }}
-                >
-                  <div>
-                    <span className="text-[11px] text-purple-300/80 font-medium">{scene.name}</span>
-                    <span className="text-[9px] text-gray-400 ml-2">
-                      {scene.objects.length} obj{scene.objects.length !== 1 ? 's' : ''}
-                    </span>
-                    {isInWorld && (
-                      <span className="text-[8px] text-blue-400/50 ml-1.5">in world</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => enterPlacementMode({ type: 'library', sceneId: scene.id, name: scene.name })}
-                      className="text-[9px] text-emerald-400/70 hover:text-emerald-300 font-mono border border-emerald-500/20 rounded px-1.5 py-0.5"
-                      title="Place a copy in current world (click-to-place)"
-                    >
-                      + place
-                    </button>
-                    <button
-                      onClick={() => deleteFromLibrary(scene.id)}
-                      className="text-[9px] text-red-400/50 hover:text-red-400 font-mono"
-                      title="Delete permanently from library"
-                    >
-                      &#10005;
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </>
-      )}
+      <CraftedGallery defaultColumns={3} />
     </>
   )
 }
