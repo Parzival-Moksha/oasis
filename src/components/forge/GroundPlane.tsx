@@ -31,6 +31,9 @@ import {
 } from '../../lib/forge/terrain-brush'
 import { useOasisStore } from '../../store/oasisStore'
 import { DragContext } from '../scene-lib/contexts'
+import { useGraphicsPrefs } from '../../lib/use-graphics-prefs'
+import type { GroundSharpness } from '../../lib/graphics-prefs'
+import { GROUND_DETAIL_MAP_FRAGMENT, GROUND_DETAIL_STRENGTH, groundAnisotropy, groundDetailScale, paintedCellRepeat } from '../../lib/forge/ground-sharpness'
 
 const GROUND_SIZE = 100
 const TILE_SIZE = 1
@@ -193,6 +196,68 @@ async function loadCachedTexture(url: string, colorSpace: THREE.ColorSpace): Pro
   return null
 }
 
+// ░▒▓ SHARPNESS (Config → Graphics → Ground sharpness, src/lib/forge/ground-sharpness.ts) ▓▒░
+
+/** Sets the texture's anisotropy for the chosen sharpness (a change makes three re-send its sampler settings). */
+function applyGroundAnisotropy(texture: THREE.Texture, gl: THREE.WebGLRenderer, sharpness: GroundSharpness): void {
+  const wanted = groundAnisotropy(sharpness, gl.capabilities.getMaxAnisotropy())
+  if (texture.anisotropy === wanted) return
+  texture.anisotropy = wanted
+  texture.needsUpdate = true
+}
+
+/**
+ * The base ground's detail layer: patches the material's shader once and returns the uniform to
+ * drive (1: no detail layer, the look from before).
+ */
+function useGroundDetail(matRef: React.RefObject<THREE.MeshStandardMaterial>, sharpness: GroundSharpness): void {
+  const uniforms = useMemo(() => ({ uGroundDetail: { value: 1 }, uGroundDetailStrength: { value: GROUND_DETAIL_STRENGTH } }), [])
+  useEffect(() => {
+    const material = matRef.current
+    if (!material) return
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.uGroundDetail = uniforms.uGroundDetail
+      shader.uniforms.uGroundDetailStrength = uniforms.uGroundDetailStrength
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform float uGroundDetail;\nuniform float uGroundDetailStrength;')
+        .replace('#include <map_fragment>', GROUND_DETAIL_MAP_FRAGMENT)
+    }
+    material.customProgramCacheKey = () => 'oasis-ground-detail'
+    material.needsUpdate = true
+  }, [matRef, uniforms])
+  useEffect(() => {
+    uniforms.uGroundDetail.value = groundDetailScale(sharpness)
+  }, [uniforms, sharpness])
+}
+
+/** A painted group's texture: the shared one, or a clone that repeats inside a stretched cell. */
+function usePaintedTexture(url: string, stretch: number): THREE.Texture | null {
+  const gl = useThree(s => s.gl)
+  const { groundSharpness } = useGraphicsPrefs()
+  const repeat = paintedCellRepeat(stretch, groundSharpness)
+  const [texture, setTexture] = useState<THREE.Texture | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    let clone: THREE.Texture | null = null
+    loadCachedTexture(url, THREE.SRGBColorSpace).then(tex => {
+      if (cancelled || !tex) return
+      let use = tex
+      if (repeat > 1) {
+        clone = tex.clone()
+        clone.repeat.set(repeat, repeat)
+        clone.needsUpdate = true
+        use = clone
+      }
+      applyGroundAnisotropy(use, gl, groundSharpness)
+      // Upload before the first draw that uses it (no white frame).
+      gl.initTexture(use)
+      setTexture(use)
+    })
+    return () => { cancelled = true; clone?.dispose() }
+  }, [url, repeat, groundSharpness, gl])
+  return texture
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // BASE GROUND — The default texture, full 100x100m plane
 // ░▒▓ Shows on unpainted tiles (skipped when preset = 'none') ▓▒░
@@ -204,6 +269,8 @@ function BaseGround({ preset }: { preset: GroundPreset }) {
   const urls = useMemo(() => textureUrlsForPreset(preset), [preset.assetName, preset.customTextureUrl])
   const tileRepeat = fullGroundRepeatForPreset(preset)
   const [diffuse, setDiffuse] = useState<THREE.Texture | null>(null)
+  const { groundSharpness } = useGraphicsPrefs()
+  useGroundDetail(matRef, groundSharpness)
 
   useEffect(() => {
     let cancelled = false
@@ -219,6 +286,7 @@ function BaseGround({ preset }: { preset: GroundPreset }) {
       if (!cancelled && tex) {
         const clone = tex.clone()
         clone.repeat.set(tileRepeat, tileRepeat)
+        clone.anisotropy = groundAnisotropy(groundSharpness, gl.capabilities.getMaxAnisotropy())
         clone.needsUpdate = true
         // Force synchronous GPU upload BEFORE React re-render.
         // Without this, setDiffuse triggers render with map=clone + color=#ffffff,
@@ -230,7 +298,7 @@ function BaseGround({ preset }: { preset: GroundPreset }) {
     })
 
     return () => { cancelled = true; activeClone?.dispose() }
-  }, [urls, tileRepeat, gl])
+  }, [urls, tileRepeat, gl, groundSharpness])
 
   useEffect(() => {
     const mat = matRef.current
@@ -246,7 +314,7 @@ function BaseGround({ preset }: { preset: GroundPreset }) {
   }, [diffuse, preset.color])
 
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]} receiveShadow>
       <planeGeometry args={[GROUND_SIZE, GROUND_SIZE]} />
       <meshStandardMaterial
         ref={matRef}
@@ -281,6 +349,8 @@ function ReliefGround({ preset, heights }: { preset: GroundPreset; heights: numb
   const urls = useMemo(() => textureUrlsForPreset(preset), [preset.assetName, preset.customTextureUrl])
   const tileRepeat = fullGroundRepeatForPreset(preset)
   const [diffuse, setDiffuse] = useState<THREE.Texture | null>(null)
+  const { groundSharpness } = useGraphicsPrefs()
+  useGroundDetail(matRef, groundSharpness)
 
   const geometry = useMemo(() => buildReliefGroundGeometry(heights), [heights])
 
@@ -299,6 +369,7 @@ function ReliefGround({ preset, heights }: { preset: GroundPreset; heights: numb
       if (!cancelled && tex) {
         const clone = tex.clone()
         clone.repeat.set(tileRepeat, tileRepeat)
+        clone.anisotropy = groundAnisotropy(groundSharpness, gl.capabilities.getMaxAnisotropy())
         clone.needsUpdate = true
         gl.initTexture(clone)
         activeClone = clone
@@ -307,7 +378,7 @@ function ReliefGround({ preset, heights }: { preset: GroundPreset; heights: numb
     })
 
     return () => { cancelled = true; activeClone?.dispose() }
-  }, [urls, tileRepeat, gl])
+  }, [urls, tileRepeat, gl, groundSharpness])
 
   useEffect(() => {
     const mat = matRef.current
@@ -323,7 +394,7 @@ function ReliefGround({ preset, heights }: { preset: GroundPreset; heights: numb
   }, [diffuse, preset.color])
 
   return (
-    <mesh geometry={geometry}>
+    <mesh geometry={geometry} receiveShadow>
       <meshStandardMaterial
         ref={matRef}
         color={preset.color}
@@ -347,24 +418,9 @@ function TileGroupRenderer({ preset, tiles, stretch = 1 }: { preset: GroundPrese
       ? { diffuse: preset.customTextureUrl }
       : getTextureUrls(preset.assetName),
     [preset.assetName, preset.customTextureUrl])
-  const [diffuse, setDiffuse] = useState<THREE.Texture | null>(null)
-
-  const gl = useThree(s => s.gl)
-
-  // Load diffuse texture ONCE — shared reference, no clone needed
-  useEffect(() => {
-    let cancelled = false
-    let activeClone: THREE.Texture | null = null
-    loadCachedTexture(urls.diffuse, THREE.SRGBColorSpace).then(tex => {
-      if (!cancelled && tex) {
-        // Stretch comes from the instance matrix; UVs stay 0..1 so the full
-        // texture is visible on the enlarged painted cell.
-        gl.initTexture(tex)
-        setDiffuse(tex)
-      }
-    })
-    return () => { cancelled = true }
-  }, [urls.diffuse, gl])
+  // Loaded once and shared; a stretched cell may repeat it (Ground sharpness), then it is a clone.
+  // Stretch itself comes from the instance matrix; UVs stay 0..1 across the cell.
+  const diffuse = usePaintedTexture(urls.diffuse, stretch)
 
   // ░▒▓ IMPERATIVE MATERIAL SYNC — R3F declarative updates can miss texture
   // assignment on instancedMesh children. Force the GPU handshake here.
@@ -418,6 +474,7 @@ function TileGroupRenderer({ preset, tiles, stretch = 1 }: { preset: GroundPrese
       ref={meshRef}
       args={[undefined, undefined, MAX_TILES_PER_GROUP]}
       frustumCulled={false}
+      receiveShadow
     >
       <planeGeometry args={[TILE_SIZE, TILE_SIZE]} />
       {/* ░▒▓ Placeholder texture on mount ensures shader always has sampler slot ▓▒░ */}
@@ -460,21 +517,10 @@ function ReliefTileGroupRenderer({
       ? { diffuse: preset.customTextureUrl }
       : getTextureUrls(preset.assetName),
     [preset.assetName, preset.customTextureUrl])
-  const [diffuse, setDiffuse] = useState<THREE.Texture | null>(null)
+  const diffuse = usePaintedTexture(urls.diffuse, stretch)
   const geometry = useMemo(() => buildReliefTileGeometry(tiles, heights, stretch), [tiles, heights, stretch])
 
   useEffect(() => () => geometry.dispose(), [geometry])
-
-  useEffect(() => {
-    let cancelled = false
-    loadCachedTexture(urls.diffuse, THREE.SRGBColorSpace).then(tex => {
-      if (!cancelled && tex) {
-        gl.initTexture(tex)
-        setDiffuse(tex)
-      }
-    })
-    return () => { cancelled = true }
-  }, [urls.diffuse, gl])
 
   useEffect(() => {
     const mat = matRef.current
@@ -490,7 +536,7 @@ function ReliefTileGroupRenderer({
   }, [diffuse, preset.color])
 
   return (
-    <mesh geometry={geometry} frustumCulled={false}>
+    <mesh geometry={geometry} frustumCulled={false} receiveShadow>
       <meshStandardMaterial
         ref={matRef}
         color={preset.color}

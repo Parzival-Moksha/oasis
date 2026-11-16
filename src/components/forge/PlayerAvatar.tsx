@@ -355,6 +355,7 @@ export function PlayerAvatar({
       }
     })
 
+    loadedVrm.scene.userData.oasisAvatar = true // casts in "Shadows: Avatars only" (SunShadows)
     vrmRef.current = loadedVrm
     setAvatarPoseReady(false)
     setVrm(loadedVrm)

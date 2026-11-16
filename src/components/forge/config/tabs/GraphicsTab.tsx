@@ -8,6 +8,58 @@ import { useContext, useEffect, useState } from 'react'
 import { SettingsContext } from '@/components/scene-lib/contexts'
 import type { SharedTabProps } from '../types'
 import { canRequestFullscreen, isFullscreenActive, setOasisFullscreen } from '@/lib/fullscreen-controls'
+import { setGraphicsPref, type GroundSharpness, type ShadowMode } from '@/lib/graphics-prefs'
+import { useGraphicsPrefs } from '@/lib/use-graphics-prefs'
+
+function Choice<T extends string | number>({ label, hint, value, options, name, onChange }: {
+  label: string
+  hint: string
+  value: T
+  options: Array<{ value: T; label: string }>
+  name: string
+  onChange: (value: T) => void
+}) {
+  return (
+    <div className="py-1.5">
+      <div className="flex items-center justify-between gap-3 mb-1">
+        <span className="text-sm text-gray-300">{label}</span>
+        <div className="flex overflow-hidden rounded-md border border-white/15" role="radiogroup" aria-label={label}>
+          {options.map(option => (
+            <button
+              key={String(option.value)}
+              type="button"
+              role="radio"
+              aria-checked={value === option.value}
+              data-graphics-choice={`${name}:${option.value}`}
+              onClick={() => onChange(option.value)}
+              className={`px-3 py-1 text-xs font-semibold transition-colors ${value === option.value ? 'bg-purple-600 text-white' : 'bg-transparent text-gray-400 hover:bg-white/10 hover:text-white'}`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="text-[10px] text-gray-500">{hint}</div>
+    </div>
+  )
+}
+
+const SHARPNESS_OPTIONS: Array<{ value: GroundSharpness; label: string }> = [
+  { value: 1, label: 'Standard' }, { value: 2, label: '2x' }, { value: 4, label: '4x' },
+]
+const SHARPNESS_HINT: Record<GroundSharpness, string> = {
+  1: 'The ground as it was: one soft texture, blurry at a low angle.',
+  2: 'Twice the detail and sharp at a low angle. Free: the graphics card does it.',
+  4: 'Four times the detail. Still free; up close the ground looks busier.',
+}
+const SHADOW_OPTIONS: Array<{ value: ShadowMode; label: string }> = [
+  { value: 'off', label: 'Off' }, { value: 'avatars', label: 'Avatars' }, { value: 'all', label: 'All' },
+]
+const SHADOW_HINT: Record<ShadowMode, string> = {
+  off: 'No shadows.',
+  avatars: 'You and the agents cast soft shadows from the world\'s sun. Cheap.',
+  all: 'World objects cast shadows too. Costs the most per frame.',
+}
 
 function Toggle({
   label,
@@ -82,6 +134,7 @@ function Slider({
 
 export function GraphicsTab({ menuOpacity, onMenuOpacityChange }: SharedTabProps) {
   const { settings, updateSetting } = useContext(SettingsContext)
+  const graphics = useGraphicsPrefs()
   const [fullscreenActive, setFullscreenActive] = useState(false)
   const [fullscreenAvailable, setFullscreenAvailable] = useState(false)
 
@@ -156,6 +209,26 @@ export function GraphicsTab({ menuOpacity, onMenuOpacityChange }: SharedTabProps
         />
         <Toggle label="Helper Grid" active={settings.showGrid} onChange={() => updateSetting('showGrid', !settings.showGrid)} />
         <Toggle label="Show Orbit Pivot" active={settings.showOrbitTarget} onChange={() => updateSetting('showOrbitTarget', !settings.showOrbitTarget)} />
+      </section>
+
+      <section className="border-t border-white/10 pt-3">
+        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-mono">World</div>
+        <Choice
+          label="Ground sharpness"
+          name="groundSharpness"
+          value={graphics.groundSharpness}
+          options={SHARPNESS_OPTIONS}
+          hint={SHARPNESS_HINT[graphics.groundSharpness]}
+          onChange={value => setGraphicsPref('groundSharpness', value)}
+        />
+        <Choice
+          label="Shadows"
+          name="shadows"
+          value={graphics.shadows}
+          options={SHADOW_OPTIONS}
+          hint={`${SHADOW_HINT[graphics.shadows]} Needs a directional light in the world (the sun).`}
+          onChange={value => setGraphicsPref('shadows', value)}
+        />
       </section>
 
       <section className="border-t border-white/10 pt-3">

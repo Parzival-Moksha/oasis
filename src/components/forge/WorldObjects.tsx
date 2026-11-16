@@ -26,6 +26,7 @@ import { useMovement } from '../../hooks/useMovement'
 import { staticMatrixKeeper, wakeStaticMatrix } from '../../lib/static-matrix'
 import { useFrameWhen } from '../../lib/use-frame-when'
 import { hideUndrawnSubtrees, skipMatrixPass } from '../../lib/forge/undrawn-subtrees'
+import { AVATAR_FLAG, WORLD_SUN_FLAG } from './SunShadows'
 import { BackgroundStepper, isVrmBudgetEnabled, noteVrmMode, refreshVrmView, vrmUpdateMode, vrmViewOf, VRM_SPRING_RESET_M } from '../../lib/forge/vrm-update-budget'
 // drei useAnimations removed — manual AnimationMixer for proper SkeletonUtils support
 import { DragContext, SettingsContext } from '../scene-lib'
@@ -1763,6 +1764,7 @@ export function VRMCatalogRenderer({ path, scale, objectId, displayName, activit
     })
     // Bones and rig nodes draw nothing: keep the renderer's per-frame walk out of them.
     hideUndrawnSubtrees(loadedVrm.scene)
+    loadedVrm.scene.userData[AVATAR_FLAG] = true // casts in "Shadows: Avatars only"
     // The normalized rig is animated through local rotations only; three-vrm fetches the one world position it needs itself.
     const rigRoot = loadedVrm.humanoid?.normalizedHumanBonesRoot
     if (rigRoot) skipMatrixPass(rigRoot)
@@ -3869,7 +3871,8 @@ function WorldLightsSection({ selectedObjectId, selectObject, transformMode }: {
             <hemisphereLight args={[light.color, light.groundColor || '#3a5f0b', renderLightIntensity(light)]} />
           )}
           {light.visible !== false && light.type === 'directional' && (
-            <directionalLight position={light.position} color={light.color} intensity={renderLightIntensity(light)} />
+            // userData: SunShadows casts the world's shadows from this light (and needs its stored position).
+            <directionalLight position={light.position} color={light.color} intensity={renderLightIntensity(light)} userData={{ [WORLD_SUN_FLAG]: light.position }} />
           )}
         </group>
       ))}

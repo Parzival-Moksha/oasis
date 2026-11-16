@@ -106,6 +106,7 @@ import { GameMenuButton } from './forge/GameMenuButton'
 import { GAME_HUD_TEXT, GameKeycap } from './forge/GameKeycap'
 import { VoiceTypeMic } from './forge/VoiceTypeMic'
 import { PerfHeartbeat } from './forge/PerfHeartbeat'
+import { SunShadows } from './forge/SunShadows'
 import { useRailMenuExclusion } from '@/hooks/useRailMenuExclusion'
 import { MobileOasisControls, useIsMobileOasis } from './forge/MobileOasisControls'
 import { CombatBoltLayer } from './forge/CombatBoltLayer'
@@ -2083,6 +2084,8 @@ export default function Scene() {
         <PostProcessing />
         <FPSTracker />
         {!hostedMode && <PerfHeartbeat readFps={readLatestFps} />}
+        {/* Soft shadows from the world's sun (Config → Graphics → Shadows) */}
+        <SunShadows />
     </Canvas>
   )
   const showCenterCrosshair = (
