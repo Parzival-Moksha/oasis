@@ -14,6 +14,7 @@ import { useOasisStore } from '@/store/oasisStore'
 import { openMindcraft } from '@/components/village/MindcraftView'
 import { cellsPath, textCells, textWidth } from '@/components/forge/splash/intro-overlay'
 import { useGameMenu } from '@/lib/game-menu/menu-store'
+import { getSelectedVillageAgent, selectVillageAgent } from '@/lib/village/agent-selection'
 import { menuShouldOpenOnEscape } from '@/lib/game-menu/menu-escape'
 import { menuLayout, type MenuRect } from '@/lib/game-menu/menu-layout'
 import { playMenuSound } from '@/lib/game-menu/menu-sounds'
@@ -120,6 +121,8 @@ function useMenuTriggers() {
         })
         // Something reacted to this key just before it reached here (a panel closing itself).
         if (!open || lastInputChangeAt >= startedAt - 250) return
+        // An agent is selected: this Escape lets go of it; the next one opens the menu.
+        if (getSelectedVillageAgent()) { selectVillageAgent(null); return }
         useGameMenu.getState().openMenu({ fromMouseLook: wasLocked })
       }, 0)
     }

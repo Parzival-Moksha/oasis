@@ -110,6 +110,7 @@ import { SunShadows } from './forge/SunShadows'
 import { GameMenu, OPEN_CONFIG_EVENT, OPEN_HELP_EVENT } from './game-menu/GameMenu'
 import { GameMenuRailButton } from './game-menu/GameMenuRailButton'
 import { GameMenuCameraDrift } from './game-menu/GameMenuCameraDrift'
+import { AgentSelectionLayer } from './village/AgentSelectionLayer'
 import { useRailMenuExclusion } from '@/hooks/useRailMenuExclusion'
 import { MobileOasisControls, useIsMobileOasis } from './forge/MobileOasisControls'
 import { CombatBoltLayer } from './forge/CombatBoltLayer'
@@ -2107,6 +2108,8 @@ export default function Scene() {
         <SunShadows />
         {/* The camera's slow drift behind the main menu (Esc). No frame callback while the menu is closed. */}
         <GameMenuCameraDrift />
+        {/* The selected agent's effect and right-click-to-send. Nothing mounted while no agent is selected. */}
+        <AgentSelectionLayer />
     </Canvas>
   )
   const showCenterCrosshair = (

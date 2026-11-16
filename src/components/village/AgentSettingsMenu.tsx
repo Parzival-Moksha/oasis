@@ -11,6 +11,7 @@
 //   All chats transparency and blur, for every agent.
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { AgentSelectionSection } from './AgentSelectionSection'
 
 import { AGENT_AVATAR_CATALOG } from '../../lib/agent-avatar-catalog'
 import { villageAgentKey } from '../../lib/village/village-layout'
@@ -194,6 +195,7 @@ export function AgentSettingsButton({ agent, large = false }: { agent: Pick<Engi
         <div data-agent-settings-menu className="absolute right-0 top-9 z-50 w-[280px] rounded-lg border border-white/15 bg-slate-950/95 p-3 text-left text-[11px] font-normal normal-case tracking-normal text-white shadow-[0_18px_50px_rgba(0,0,0,0.6)]">
           {agent.owned && <VoiceSection agent={agent} agentKey={agentKey} />}
           <WalkingSection agentKey={agentKey} name={agent.name} />
+          <AgentSelectionSection agentId={agent.id} agentKey={agentKey} name={agent.name} />
 
           <div className={HEADING}>Avatar · {name}</div>
           <button

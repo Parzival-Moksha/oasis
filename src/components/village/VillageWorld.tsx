@@ -68,6 +68,7 @@ import { getPlayerAvatarPose } from '../../lib/player-avatar-runtime'
 import { createFollowState, pickVisitSpot, stepFollow, stepStage, stepVisit, type FollowState, type FollowTarget, type VisitSpot } from '../../lib/village/village-follow'
 import { COUNCIL } from '../../lib/village/village-council'
 import { getCouncilGoal, getCouncilVersion, isCouncilMember, isCouncilOn, reportCouncilSettled, subscribeCouncil } from './village-council'
+import { clickVillageAgent, getSentGoal, getSentGoalSeq, subscribeAgentSelection } from '@/lib/village/agent-selection'
 import {
   dropVillageArrivalLine,
   getVillageFollowVersion,
@@ -442,7 +443,8 @@ function useVillageFollower(agentId: string, placement: VillageStationPlacement,
     }
     let result
     if (follow.mode === 'stage') {
-      const goal = getCouncilGoal(agentId)
+      // A Council mark, or the spot the owner sent it to with a right-click (agent-selection.ts).
+      const goal = getCouncilGoal(agentId) ?? getSentGoal(agentId)
       if (goal && goal.seq !== stageSeq.current) {
         stageSeq.current = goal.seq
         stageSettled.current = false
@@ -542,7 +544,11 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
   const visiting = isVillageComeOn(followKey) && needsSince !== null && needsSince !== heardFor && !stone && !isCouncilOn()
   // The owner is talking to another agent (its panel or its full screen): wait a few metres back, don't interrupt.
   const ownerBusy = useOasisStore(s => s.agentEngine.focusedAgentId !== null && s.agentEngine.focusedAgentId !== agentId)
-  const follower = useVillageFollower(agentId, placement, isVillageFollowOn(followKey, name) && !stone, visiting, staged ? Boolean(combatPose) : focused || Boolean(combatPose), ownerBusy, staged)
+  // Sent somewhere with a right-click while selected: it walks there and stays (an order beats "Follow me"),
+  // until it is sent back to its desk. When it needs the owner it still comes, and goes back to that spot after.
+  const sentSeq = useSyncExternalStore(subscribeAgentSelection, () => getSentGoalSeq(agentId), () => 0)
+  const sent = sentSeq !== 0 && !staged && !visiting && !stone && !isCouncilOn()
+  const follower = useVillageFollower(agentId, placement, isVillageFollowOn(followKey, name) && !stone, visiting, staged ? Boolean(combatPose) : focused || Boolean(combatPose), ownerBusy, staged || sent)
   // Its voice (village-companion.ts): the clip plays from its head, and it gestures while it talks.
   const speaking = useSyncExternalStore(subscribeVillageSpeech, () => {
     const speech = getVillageSpeech()
@@ -557,7 +563,9 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
   const onClick = (event: ThreeEvent<MouseEvent>) => {
     event.stopPropagation()
     // After the canvas click has finished dismissing other panels.
-    window.setTimeout(() => focusVillageAgent(agentId), 0)
+    // The first click selects it (its selection effect shows, a right-click on the ground sends it there);
+    // a click on the selected agent opens it.
+    window.setTimeout(() => { if (clickVillageAgent(agentId)) focusVillageAgent(agentId) }, 0)
   }
 
   const hitHandlers = {
