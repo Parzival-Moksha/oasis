@@ -6,7 +6,7 @@
 // with how long each has been at it. A click walks the camera to the agent, or opens a helper's work.
 // It scrolls, folds up, and stays clear of the talk panel on the right (on a phone, of the bottom sheet).
 
-import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
 import { selectAttentionQueue, type EngineAgentState } from '../../store/slices/agentEngineSlice'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
@@ -28,6 +28,8 @@ const FALLBACK_RAIL_WIDTH = 126
 /** Desktop: the list opens to the right of the rail, like the other menus (their carets point right). */
 const LIST_WIDTH = 252
 const LIST_GAP = 10
+/** The open list's border and padding around its rows (p-1.5, border). */
+const LIST_CHROME = 14
 /** Pulses opacity only (compositor-cheap); reduced motion gets a steady glow. */
 const ATTENTION_GLOW_CSS = `@keyframes oasisAttnGlow{0%,100%{opacity:.3}50%{opacity:1}}.oasis-attn-glow{animation:oasisAttnGlow 1.4s ease-in-out infinite}@media (prefers-reduced-motion: reduce){.oasis-attn-glow{animation:none;opacity:.8}}`
 /** The rail's own face (GameMenuButton). */
@@ -207,6 +209,18 @@ export function VillageAgentsMenu() {
   const railWidth = useRailButtonWidth()
   const phone = viewport.width < 700
   const [collapsed, setCollapsed] = useCollapsed(phone)
+  // The rows' own height, so the open list can rise above its tab instead of scrolling (desktop).
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [contentHeight, setContentHeight] = useState(0)
+  useLayoutEffect(() => {
+    const content = contentRef.current
+    if (!content) return
+    const measure = () => setContentHeight(Math.ceil(content.getBoundingClientRect().height))
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [collapsed, screenAgentId])
 
   // F: the agent's screen fills the view; the menu would sit on top of it.
   if (screenAgentId) return null
@@ -219,6 +233,11 @@ export function VillageAgentsMenu() {
   // A phone's session sheet covers the bottom of the screen: stop above it.
   const bottomGap = phone && focusedId ? geometry.height + geometry.margin * 2 + 8 : MARGIN
   const maxHeight = Math.max(120, viewport.height - top - bottomGap)
+  // Desktop: the list opens beside the rail. When the rows don't fit below the tab's top it rises (up to the top
+  // margin), so it only scrolls when the whole screen height isn't enough (owner, 2026-11-16).
+  const naturalHeight = contentHeight ? contentHeight + LIST_CHROME : 0
+  const lift = phone || !naturalHeight ? 0 : Math.max(0, Math.min(naturalHeight - maxHeight, top - MARGIN))
+  const listMaxHeight = maxHeight + lift
   // Desktop: the tab is as wide as the rail's buttons above it and the list opens to its right.
   // A phone's rail is too narrow for that: tab and list stack under it, full width.
   const width = phone ? Math.min(WIDTH, viewport.width - MARGIN * 2) : railWidth
@@ -281,8 +300,10 @@ export function VillageAgentsMenu() {
       {!collapsed && (
         <div
           className="pointer-events-auto min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-lg border border-white/10 bg-black/[0.92] p-1.5 text-white shadow-[0_0_54px_rgba(0,0,0,0.65),0_0_38px_rgba(52,211,153,0.14)] backdrop-blur-md [scrollbar-width:thin]"
-          style={{ width: listWidth, maxHeight, flex: phone ? undefined : '0 0 auto' }}
+          style={{ width: listWidth, maxHeight: listMaxHeight, marginTop: lift ? -lift : undefined, flex: phone ? undefined : '0 0 auto' }}
+          data-agents-list
         >
+          <div ref={contentRef}>
           {rows.length === 0 && (
             <div className="px-2 py-2 text-[11px] leading-snug text-white/55">No agents yet. Stand in the circle and press E, or use + Summon.</div>
           )}
@@ -326,6 +347,7 @@ export function VillageAgentsMenu() {
               </div>
             )
           })}
+          </div>
         </div>
       )}
     </div>

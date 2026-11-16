@@ -86,7 +86,7 @@ export interface SpellbookPageDefinition {
 }
 
 export const SPELLBOOK_PAGES: Record<SpellbookPageId, SpellbookPageDefinition> = {
-  'recipe-catalog': { id: 'recipe-catalog', name: 'Recipe Catalog', shortName: 'Recipe' },
+  'recipe-catalog': { id: 'recipe-catalog', name: 'Place', shortName: 'Place' },
   premium: { id: 'premium', name: 'Premium Craft', shortName: 'Premium' },
   'world-root': { id: 'world-root', name: 'World Root', shortName: 'World' },
   creative: { id: 'creative', name: 'Creative', shortName: 'Creative' },
