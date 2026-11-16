@@ -5,26 +5,24 @@
 //     Remembered per session in this browser; on by default for Anorak. Off sends it back to its desk.
 //   Voice: each reply ends with a short line the avatar says out loud with an ElevenLabs voice
 //     (lib/village/village-spoken.ts). Kept per agent in the engine's roster; on by default for Anorak
-//     only, because every new line costs ElevenLabs credits.
+//     only, because every new line costs ElevenLabs credits. Which voice and how fast: the agent's settings
+//     menu (AgentSettingsMenu.tsx).
 
 import { createContext, useContext, useState, useSyncExternalStore } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
 import type { EngineAgentState } from '../../store/slices/agentEngineSlice'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
-import { SPEECH_SPEED, villageVoiceFor } from '../../lib/village/village-spoken'
 import { showNotice } from '../forge/GlobalNotice'
 import {
   getVillageFollowVersion,
+  getAgentVoiceSettings,
   getVillageSpeech,
-  getVillageSpeechSpeed,
   isVillageFollowOn,
   setVillageFollow,
-  setVillageSpeechSpeed,
   speakVillageAgent,
   stopVillageSpeech,
   subscribeVillageFollow,
   subscribeVillageSpeech,
-  subscribeVillageSpeechSpeed,
 } from './village-companion'
 
 const SWITCH_CLASS = 'flex h-[22px] items-center gap-1 rounded border px-1.5 text-[10.5px] disabled:opacity-50'
@@ -101,51 +99,6 @@ export function VoiceToggle({ agent }: { agent: EngineAgentState }) {
   )
 }
 
-/** 0.8, 0.9 … 1.6 */
-const SPEED_STEPS = Array.from({ length: Math.round((SPEECH_SPEED.max - SPEECH_SPEED.min) / SPEECH_SPEED.step) + 1 }, (_, i) => Math.round((SPEECH_SPEED.min + i * SPEECH_SPEED.step) * 10) / 10)
-const speedLabel = (speed: number) => `${speed.toFixed(1)}×`
-const SPEED_TITLE = 'How fast agents talk (all spoken replies, remembered). 1.0× is the voice as ElevenLabs reads it; the pitch stays natural at every speed. Changes the clip that is playing too.'
-
-/** How fast the spoken replies are, next to the Voice switch. One setting for every agent, remembered in this browser. */
-export function VoiceSpeedSelect({ agent }: { agent: EngineAgentState }) {
-  const speed = useSyncExternalStore(subscribeVillageSpeechSpeed, getVillageSpeechSpeed, () => SPEECH_SPEED.default)
-  if (!agent.owned || agent.speak !== true) return null
-  return (
-    <select
-      value={String(speed)}
-      title={SPEED_TITLE}
-      aria-label="Speech speed"
-      data-village-voice-speed={speed}
-      onChange={event => setVillageSpeechSpeed(Number(event.target.value))}
-      onKeyDown={event => event.stopPropagation()}
-      className="h-[22px] rounded border border-fuchsia-300/40 bg-black/50 px-0.5 text-[10.5px] text-fuchsia-100"
-    >
-      {!SPEED_STEPS.includes(speed) && <option value={String(speed)}>{speedLabel(speed)}</option>}
-      {SPEED_STEPS.map(step => <option key={step} value={String(step)}>{speedLabel(step)}</option>)}
-    </select>
-  )
-}
-
-/** The same setting as a slider, in the panel's settings (PanelLook.tsx). */
-export function VoiceSpeedSlider() {
-  const speed = useSyncExternalStore(subscribeVillageSpeechSpeed, getVillageSpeechSpeed, () => SPEECH_SPEED.default)
-  return (
-    <label className="mb-3 block" title={SPEED_TITLE}>
-      <span className="flex justify-between"><span>Voice speed</span><span className="text-white/55">{speedLabel(speed)}</span></span>
-      <input
-        type="range"
-        min={SPEECH_SPEED.min}
-        max={SPEECH_SPEED.max}
-        step={SPEECH_SPEED.step}
-        value={speed}
-        data-village-voice-speed-slider={speed}
-        onChange={event => setVillageSpeechSpeed(Number(event.target.value))}
-        className="w-full accent-fuchsia-300"
-      />
-    </label>
-  )
-}
-
 /** The agent whose thread is being drawn (AgentSessionView provides it), so a reply knows whose voice it is. */
 export const SpokenAgentContext = createContext<string | null>(null)
 
@@ -153,12 +106,13 @@ export const SpokenAgentContext = createContext<string | null>(null)
 export function SpokenReply({ spoken }: { spoken: string }) {
   const agentId = useContext(SpokenAgentContext)
   const name = useOasisStore(s => (agentId ? s.agentEngine.agents[agentId]?.name ?? null : null))
+  const sessionId = useOasisStore(s => (agentId ? s.agentEngine.agents[agentId]?.sessionId ?? null : null))
   if (!agentId) return null
-  return <div><SpokenPlayButton agentId={agentId} agentName={name} spoken={spoken} /></div>
+  return <div><SpokenPlayButton agentId={agentId} agentKey={sessionId || agentId} agentName={name} spoken={spoken} /></div>
 }
 
 /** Under a reply that has a spoken line: hear it (again). Cached by its text, so a replay costs nothing. */
-export function SpokenPlayButton({ agentId, agentName, spoken }: { agentId: string; agentName: string | null; spoken: string }) {
+export function SpokenPlayButton({ agentId, agentKey, agentName, spoken }: { agentId: string; agentKey: string; agentName: string | null; spoken: string }) {
   const speech = useSyncExternalStore(subscribeVillageSpeech, getVillageSpeech, () => null)
   const mine = speech?.agentId === agentId && speech.text === spoken
   const loading = mine && speech?.phase === 'loading'
@@ -175,7 +129,7 @@ export function SpokenPlayButton({ agentId, agentName, spoken }: { agentId: stri
           stopVillageSpeech()
           return
         }
-        void speakVillageAgent(agentId, spoken, villageVoiceFor(agentName), true).then(played => {
+        void speakVillageAgent(agentId, spoken, getAgentVoiceSettings(agentKey, agentName), true).then(played => {
           if (!played) showNotice('Could not play the spoken reply (see the console).', 'warn')
         })
       }}

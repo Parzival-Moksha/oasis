@@ -30,10 +30,10 @@ import { VillageComposer } from './VillageComposer'
 import { EffortSelect } from './EffortSelect'
 import { EyesToggle } from './EyesToggle'
 import { ChromeToggle } from './ChromeToggle'
-import { FollowToggle, VoiceSpeedSelect, VoiceToggle } from './CompanionToggles'
-import { VillageAvatarButton } from './VillageAvatarButton'
+import { FollowToggle, VoiceToggle } from './CompanionToggles'
+import { AgentSettingsButton } from './AgentSettingsMenu'
 import { AcademyTrainToggle } from './VillageAcademyTrainee'
-import { PanelLookButton, usePanelLook } from './PanelLook'
+import { usePanelLook } from './PanelLook'
 import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY, VILLAGE_TYPE_CLASS, agentDisplayName, canTalkTo, cwdLabel, formatCost, modelLabel, statusColor, statusLabel } from './village-status'
 
 const PERMISSION_MODES = ['default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions']
@@ -206,10 +206,10 @@ export function AgentSessionPanel() {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <PanelLookButton agentKey={agent.sessionId || agent.id} agentName={agentDisplayName(agent)} />
+          {/* One settings menu per agent: voice and speed, avatar, colour, and the look of all chats. */}
+          <AgentSettingsButton agent={agent} />
           {/* Watched sessions have no settings row: their Follow me switch sits here. */}
           {!agent.owned && <FollowToggle agent={agent} />}
-          <VillageAvatarButton agentId={agent.id} sessionId={agent.sessionId} />
           <button
             type="button"
             disabled={busy}
@@ -285,7 +285,6 @@ export function AgentSessionPanel() {
           <AcademyTrainToggle agent={agent} />
           <FollowToggle agent={agent} />
           <VoiceToggle agent={agent} />
-          <VoiceSpeedSelect agent={agent} />
           <span className="ml-auto truncate text-white/60">{modelLabel(agent)}</span>
         </div>
       )}

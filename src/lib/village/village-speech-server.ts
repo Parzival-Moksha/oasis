@@ -8,16 +8,16 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 
 import type { ElevenLabsAlignment } from '@/lib/lip-sync-lab'
-import { SPOKEN_MAX_CHARS, clampModelSpeed, cleanSpoken } from '@/lib/village/village-spoken'
+import { SPOKEN_MAX_CHARS, cleanSpoken } from '@/lib/village/village-spoken'
+import { VILLAGE_VOICES, clampModelSpeed, villageVoice } from '@/lib/village/village-voices'
 
-/** The repo's voices (same ids as /api/media/voice). */
-const VOICES: Record<string, string> = {
+/** Voices from before each agent had its own (same ids as /api/media/voice): clips asked for by these names still resolve. */
+const OLDER_VOICES: Record<string, string> = {
   rachel: '21m00Tcm4TlvDq8ikWAM',
   adam: 'pNInz6obpgDQGcFmaJgB',
   sam: 'yoZ06aMxZJJ28mfd3POQ',
   elli: 'MF3mGyEYCl7XYWbV9V6O',
 }
-const MERLIN_DEFAULT_VOICE_ID = '6sFKzaJr574YWVu4UuJF'
 const MAX_CLIPS = 300
 
 export interface SpokenClip {
@@ -40,12 +40,13 @@ export function speechDir(env: EnvLike = process.env): string {
 
 export function resolveSpeechVoice(voice: unknown, env: EnvLike = process.env): string {
   const key = typeof voice === 'string' ? voice.trim() : ''
-  // One voice for every speaking agent, if the owner sets it.
-  if (env.OASIS_VILLAGE_VOICE_ID && /^[A-Za-z0-9]{20,32}$/.test(env.OASIS_VILLAGE_VOICE_ID)) return env.OASIS_VILLAGE_VOICE_ID
-  if (key === 'merlin') return env.OASIS_MERLIN_ELEVENLABS_VOICE_ID || MERLIN_DEFAULT_VOICE_ID
-  if (VOICES[key]) return VOICES[key]
+  // One of the village's ten (village-voices.ts); the Merlin voice can be swapped in .env as before.
+  if (key === 'merlin' && env.OASIS_MERLIN_ELEVENLABS_VOICE_ID) return env.OASIS_MERLIN_ELEVENLABS_VOICE_ID
+  const known = villageVoice(key)
+  if (known) return known.id
+  if (OLDER_VOICES[key]) return OLDER_VOICES[key]
   if (/^[A-Za-z0-9]{20,32}$/.test(key)) return key
-  return VOICES.adam
+  return VILLAGE_VOICES[1].id
 }
 
 export function speechModel(env: EnvLike = process.env): string {

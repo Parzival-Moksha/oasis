@@ -10,8 +10,8 @@
 
 import { useEffect } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
-import { splitSpoken, spokenForLastTurn, spokenInStream, villageVoiceFor } from '../../lib/village/village-spoken'
-import { getVillageSpeechDebug, isVillageVoiceOn, speakVillageAgent, stopVillageSpeech } from './village-companion'
+import { splitSpoken, spokenForLastTurn, spokenInStream } from '../../lib/village/village-spoken'
+import { getAgentVoiceSettings, getVillageSpeechDebug, isVillageVoiceOn, speakVillageAgent, stopVillageSpeech } from './village-companion'
 
 /** A reply older than this is the past (backlog after a reload), not something to say now. */
 const FRESH_MS = 20_000
@@ -25,7 +25,8 @@ export function VillageVoice() {
       ;(window as unknown as Record<string, unknown>).__oasisVillageVoice = {
         say: (agentId: string, text: string, voice?: string) => {
           const agent = useOasisStore.getState().agentEngine.agents[agentId]
-          return speakVillageAgent(agentId, text, voice || villageVoiceFor(agent?.name), true)
+          const settings = getAgentVoiceSettings(agent?.sessionId || agentId, agent?.name)
+          return speakVillageAgent(agentId, text, voice ? { ...settings, voice } : settings, true)
         },
         stop: () => stopVillageSpeech(),
         debug: () => getVillageSpeechDebug(),
@@ -59,7 +60,7 @@ export function VillageVoice() {
         if (earlier && earlier.text === spoken && now - earlier.at < SAME_LINE_MS) continue
         if (!isVillageVoiceOn() || document.visibilityState !== 'visible') continue
         said.set(id, { text: spoken, at: now })
-        void speakVillageAgent(id, spoken, villageVoiceFor(agent.name))
+        void speakVillageAgent(id, spoken, getAgentVoiceSettings(agent.sessionId || id, agent.name))
       }
     })
     return () => {

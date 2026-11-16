@@ -5,8 +5,9 @@
 //   2. Speech: a voiced agent's reply ends with <spoken>…</spoken> (lib/village/village-spoken.ts). As soon as
 //      that line is complete (VillageVoice.tsx), it is fetched as an ElevenLabs clip (/api/village/speak, cached
 //      by text) and played from the avatar's head through three's PositionalAudio: louder when close, with the
-//      mouth moving (the clip's character timings drive the same lip-sync registry the world's NPCs use), at
-//      the speed the owner set (0.8x to 1.6x, pitch kept).
+//      mouth moving (the clip's character timings, read as the sounds they spell: lib/village/village-visemes.ts),
+//      in the agent's own voice and at its own speed (lib/village/village-voices.ts: ten voices, 0.5x to 3x,
+//      pitch kept; both set in the agent's settings menu and remembered per session).
 //
 // Frame-rate note (fps-decay mission): a PositionalAudio schedules Web Audio ramps every frame while it
 // plays. It is only in the scene while a clip plays, and a clip only starts on a running AudioContext, so
@@ -15,10 +16,11 @@
 import * as THREE from 'three'
 import { getAudioListener } from '../CameraController'
 import { registerLipSync, unregisterLipSync, type LipSyncController } from '../../lib/lip-sync'
-import { buildCharacterMouthTimeline, type ElevenLabsAlignment } from '../../lib/lip-sync-lab'
-import { createTimedLipSyncController } from '../../lib/hosted-welcome-lipsync'
+import type { ElevenLabsAlignment } from '../../lib/lip-sync-lab'
+import { buildVisemeTimeline, createVisemeLipSync } from '../../lib/village/village-visemes'
 import { parseFollowPrefs, wantsFollow, withFollowChoice, type FollowPrefs } from '../../lib/village/village-follow'
-import { SPEECH_SPEED, SPOKEN_MAX_CHARS, clampSpeechSpeed, cleanSpoken, playbackRateFor, speechSpeedPlan } from '../../lib/village/village-spoken'
+import { SPOKEN_MAX_CHARS, cleanSpoken } from '../../lib/village/village-spoken'
+import { dealVoice, parseVoicePrefs, playbackRateFor, speechSpeedPlan, speedOf, voiceOf, withVoicePrefs, type VoicePrefs } from '../../lib/village/village-voices'
 
 // ─── follow ─────────────────────────────────────────────────────────────────
 
@@ -125,40 +127,76 @@ export function subscribeVillageVoice(listener: () => void): () => void {
   return () => { voiceListeners.delete(listener) }
 }
 
-// ─── how fast it talks (the "1.2×" next to the Voice switch) ────────────────
+// ─── each agent's voice and speed (its settings menu; remembered per session in this browser) ──
 
-const SPEED_KEY = 'oasis.village.voiceSpeed'
-let speechSpeed: number | null = null
-const speedListeners = new Set<() => void>()
+const VOICES_KEY = 'oasis.village.voices'
+let voicePrefs: VoicePrefs | null = null
+let voicePrefsVersion = 0
+const voicePrefsListeners = new Set<() => void>()
 
-/** The owner's speed for every spoken reply (0.8 to 1.6, 1.2 unless they chose another), remembered in this browser. */
-export function getVillageSpeechSpeed(): number {
-  if (speechSpeed === null) {
+function loadVoicePrefs(): VoicePrefs {
+  if (voicePrefs === null) {
     try {
-      const raw = typeof window === 'undefined' ? null : window.localStorage.getItem(SPEED_KEY)
-      speechSpeed = raw ? clampSpeechSpeed(raw) : SPEECH_SPEED.default
+      voicePrefs = parseVoicePrefs(typeof window === 'undefined' ? null : window.localStorage.getItem(VOICES_KEY))
     } catch {
-      speechSpeed = SPEECH_SPEED.default
+      voicePrefs = {}
     }
   }
-  return speechSpeed
+  return voicePrefs
 }
 
-/** Applies to the clip that is playing too (its rate changes at once; the next clip is made at the new speed). */
-export function setVillageSpeechSpeed(value: number): void {
-  speechSpeed = clampSpeechSpeed(value)
+function saveVoicePrefs(next: VoicePrefs, announce: boolean): void {
+  voicePrefs = next
   try {
-    window.localStorage.setItem(SPEED_KEY, String(speechSpeed))
+    window.localStorage.setItem(VOICES_KEY, JSON.stringify(next))
   } catch {
     // Storage blocked: the choice lasts for this page only.
   }
-  if (playing) playing.element.playbackRate = playbackRateFor(speechSpeed, playing.modelSpeed)
-  speedListeners.forEach(listener => listener())
+  if (!announce) return
+  voicePrefsVersion += 1
+  voicePrefsListeners.forEach(listener => listener())
 }
 
-export function subscribeVillageSpeechSpeed(listener: () => void): () => void {
-  speedListeners.add(listener)
-  return () => { speedListeners.delete(listener) }
+export interface AgentVoiceSettings {
+  /** The agent's session key (villageAgentKey). */
+  key: string
+  /** A VILLAGE_VOICES key. */
+  voice: string
+  speed: number
+}
+
+/**
+ * The voice and speed of an agent (`key`: its session id, or its agent id before it has one). An agent
+ * without a voice is dealt a random one of the ten here, once, and keeps it; Anorak has his own.
+ */
+export function getAgentVoiceSettings(key: string, name: string | null | undefined): AgentVoiceSettings {
+  const prefs = loadVoicePrefs()
+  let voice = voiceOf(prefs, key, name)
+  if (!voice) {
+    voice = dealVoice(prefs)
+    // Quietly: this can run while a component reads it, and nothing on screen changes by it.
+    saveVoicePrefs(withVoicePrefs(prefs, key, { voice }), false)
+  }
+  return { key, voice, speed: speedOf(loadVoicePrefs(), key) }
+}
+
+export function setAgentVoice(key: string, voice: string): void {
+  saveVoicePrefs(withVoicePrefs(loadVoicePrefs(), key, { voice, picked: true }), true)
+}
+
+/** Applies to the clip this agent is saying too (its rate changes at once; the next clip is made at the new speed). */
+export function setAgentVoiceSpeed(key: string, speed: number): void {
+  saveVoicePrefs(withVoicePrefs(loadVoicePrefs(), key, { speed }), true)
+  if (playing && playing.key === key) playing.element.playbackRate = playbackRateFor(speedOf(loadVoicePrefs(), key), playing.modelSpeed)
+}
+
+export function subscribeVoiceSettings(listener: () => void): () => void {
+  voicePrefsListeners.add(listener)
+  return () => { voicePrefsListeners.delete(listener) }
+}
+
+export function getVoiceSettingsVersion(): number {
+  return voicePrefsVersion
 }
 
 // ─── speech ─────────────────────────────────────────────────────────────────
@@ -179,9 +217,12 @@ interface Clip {
 }
 
 interface Playback {
+  /** Whose clip: its session key (a speed change for that agent reaches the playing clip). */
+  key: string
   audio: THREE.PositionalAudio
   element: HTMLAudioElement
   modelSpeed: number
+  voice: string
   lipId: string
   lip: LipSyncController | null
   release: () => void
@@ -215,10 +256,9 @@ export function getVillageSpeechDebug() {
   return {
     on: isVillageVoiceOn(),
     audio: listener?.context.state || 'none',
-    speed: getVillageSpeechSpeed(),
     speech,
     last: lastSpeech,
-    playing: playing ? { rate: playing.element.playbackRate, modelSpeed: playing.modelSpeed, time: playing.element.currentTime, duration: playing.element.duration, preservesPitch: (playing.element as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch !== false } : null,
+    playing: playing ? { key: playing.key, voice: playing.voice, rate: playing.element.playbackRate, modelSpeed: playing.modelSpeed, time: playing.element.currentTime, duration: playing.element.duration, preservesPitch: (playing.element as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch !== false } : null,
     heads: [...heads.keys()],
   }
 }
@@ -269,7 +309,7 @@ function fetchClip(text: string, voice: string, modelSpeed: number): Promise<Cli
 }
 
 /**
- * Say `text` from the agent's avatar, at the owner's speed. A new line stops the one before it. Resolves true
+ * Say `text` from the agent's avatar, in its voice and at its speed (getAgentVoiceSettings). A new line stops the one before it. Resolves true
  * once it plays. Needs sound to be allowed on the page (any click or key press does that); without it nothing
  * is fetched, so a silent tab costs nothing. `byHand`: the owner clicked play, so the click itself may
  * unlock sound; a reply that speaks on its own never waits for that (it would be said much later).
@@ -278,7 +318,8 @@ function fetchClip(text: string, voice: string, modelSpeed: number): Promise<Cli
  * file is still arriving, keeps the pitch when it plays faster or slower than the clip was made, and its
  * clock (in the clip's own seconds, whatever the rate) drives the mouth.
  */
-export async function speakVillageAgent(agentId: string, rawText: string, voice: string, byHand = false): Promise<boolean> {
+export async function speakVillageAgent(agentId: string, rawText: string, settings: AgentVoiceSettings, byHand = false): Promise<boolean> {
+  const { voice } = settings
   const text = cleanSpoken(rawText, SPOKEN_MAX_CHARS)
   stopVillageSpeech()
   const token = speechToken
@@ -298,7 +339,7 @@ export async function speakVillageAgent(agentId: string, rawText: string, voice:
   }
   if (token !== speechToken) return false
   setSpeech({ agentId, text, phase: 'loading' })
-  const plan = speechSpeedPlan(getVillageSpeechSpeed())
+  const plan = speechSpeedPlan(settings.speed)
   let clip: Clip
   try {
     clip = await fetchClip(text, voice, plan.modelSpeed)
@@ -317,7 +358,9 @@ export async function speakVillageAgent(agentId: string, rawText: string, voice:
   ;(element as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch = true
   element.src = clip.url
   // After src: setting the source resets the rate to the element's default.
-  element.defaultPlaybackRate = playbackRateFor(getVillageSpeechSpeed(), clip.modelSpeed)
+  // The speed as it is set now (it may have been changed while the clip was being made).
+  const speedNow = () => speedOf(loadVoicePrefs(), settings.key)
+  element.defaultPlaybackRate = playbackRateFor(speedNow(), clip.modelSpeed)
   element.playbackRate = element.defaultPlaybackRate
   const audio = new THREE.PositionalAudio(listener)
   audio.setMediaElementSource(element)
@@ -327,10 +370,11 @@ export async function speakVillageAgent(agentId: string, rawText: string, voice:
   audio.setRolloffFactor(1.3)
   audio.setVolume(1)
 
-  const timeline = buildCharacterMouthTimeline(clip.alignment)
+  // The mouth follows the element's clock (the clip's own seconds, whatever the rate), so it stays in step at any speed.
+  const timeline = buildVisemeTimeline(clip.alignment)
   let lip: LipSyncController | null = null
   if (timeline.cues.length) {
-    lip = createTimedLipSyncController(timeline)
+    lip = createVisemeLipSync(timeline)
     lip.attachAudio(element)
   }
   const lipId = villageLipSyncId(agentId)
@@ -364,7 +408,7 @@ export async function speakVillageAgent(agentId: string, rawText: string, voice:
   }
   // In the scene only from here on (it schedules audio work every frame it is there).
   head.add(audio)
-  playing = { audio, element, modelSpeed: clip.modelSpeed, lipId, lip, release }
+  playing = { key: settings.key, audio, element, modelSpeed: clip.modelSpeed, voice, lipId, lip, release }
   armTimeout()
   try {
     await element.play()
@@ -381,7 +425,7 @@ export async function speakVillageAgent(agentId: string, rawText: string, voice:
   const seconds = Number.isFinite(element.duration) ? element.duration : timeline.duration
   lastSpeech = {
     agentId, text, at: Date.now(), waitMs: Math.round(performance.now() - askedAt),
-    result: `playing ${seconds.toFixed(1)}s clip at ${element.playbackRate}x (voice speed ${clip.modelSpeed}, setting ${getVillageSpeechSpeed()}x), ${timeline.cues.length} mouth cues`,
+    result: `playing ${seconds.toFixed(1)}s clip at ${element.playbackRate}x (${voice}, voice speed ${clip.modelSpeed}, setting ${speedNow()}x), ${timeline.cues.length} mouth cues`,
   }
   setSpeech({ agentId, text, phase: 'speaking' })
   return true
