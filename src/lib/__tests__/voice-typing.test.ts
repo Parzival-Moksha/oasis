@@ -128,17 +128,55 @@ describe('ElevenLabs voice typing in the engine', () => {
     expect(got[got.length - 1].t).toBe('stopped')
   })
 
-  it('keeps words heard but not committed when ElevenLabs goes away mid-sentence', async () => {
-    const { page, got, closed } = await rig(socket => {
-      socket.send(JSON.stringify({ message_type: 'session_started', session_id: 's2', config: {} }))
-      socket.on('message', () => {
-        socket.send(JSON.stringify({ message_type: 'partial_transcript', text: 'half a thought' }))
-        setTimeout(() => socket.close(), 30)
+  it('ElevenLabs going away mid-sentence keeps the words and opens a new session: the dictation goes on', async () => {
+    let connections = 0
+    const { page, got, closed } = await rig((socket, seenNow) => {
+      connections += 1
+      const mine = connections
+      socket.send(JSON.stringify({ message_type: 'session_started', session_id: `s${mine}`, config: {} }))
+      socket.on('message', raw => {
+        const m = JSON.parse(String(raw))
+        if (mine === 1 && m.audio_base_64) {
+          socket.send(JSON.stringify({ message_type: 'partial_transcript', text: 'half a thought' }))
+          setTimeout(() => socket.close(), 30)
+        }
+        if (mine === 2 && m.audio_base_64) socket.send(JSON.stringify({ message_type: 'partial_transcript', text: 'and the rest' }))
+        if (mine === 2 && m.commit) socket.send(JSON.stringify({ message_type: 'committed_transcript', text: 'And the rest.' }))
+        void seenNow
       })
     })
     await new Promise(r => setTimeout(r, 100))
     page.send(Buffer.alloc(3200, 1))
+    await new Promise(r => setTimeout(r, 600)) // the first session drops, a second one opens
+    page.send(Buffer.alloc(3200, 2))
+    await new Promise(r => setTimeout(r, 150))
+    page.send(JSON.stringify({ t: 'stop' }))
     await closed
-    expect(got.filter(m => m.t === 'final').map(m => m.text)).toEqual(['half a thought'])
+    expect(connections).toBe(2)
+    expect(got.filter(m => m.t === 'final').map(m => `${m.line}:${m.text}`)).toEqual(['0:half a thought', '1:And the rest.'])
+    expect(got.filter(m => m.t === 'ready')).toHaveLength(1)
+    expect(got.some(m => m.t === 'error')).toBe(false)
+  })
+
+  it('a throttled commit or a warning is not the end of the dictation', async () => {
+    const { page, got, closed } = await rig(socket => {
+      socket.send(JSON.stringify({ message_type: 'session_started', session_id: 's1', config: {} }))
+      socket.on('message', raw => {
+        const m = JSON.parse(String(raw))
+        if (m.audio_base_64) {
+          socket.send(JSON.stringify({ message_type: 'commit_throttled', error: 'too many commits' }))
+          socket.send(JSON.stringify({ message_type: 'warning', warning: 'slow down' }))
+          socket.send(JSON.stringify({ message_type: 'partial_transcript', text: 'still here' }))
+        }
+        if (m.commit) socket.send(JSON.stringify({ message_type: 'committed_transcript', text: 'Still here.' }))
+      })
+    })
+    await new Promise(r => setTimeout(r, 100))
+    page.send(Buffer.alloc(3200, 1))
+    await new Promise(r => setTimeout(r, 150))
+    page.send(JSON.stringify({ t: 'stop' }))
+    await closed
+    expect(got.some(m => m.t === 'error')).toBe(false)
+    expect(got.filter(m => m.t === 'final').map(m => m.text)).toEqual(['Still here.'])
   })
 })

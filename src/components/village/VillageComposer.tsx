@@ -4,15 +4,26 @@
 // Talking comes first: the box never grabs the keyboard when it opens, so T starts and stops the mic,
 // Enter sends and F / N / Esc keep working. Click the box to type. Typing never reaches the world:
 // keydown stops here, keyup still bubbles so no movement key can get stuck (the WASD-stuck bug class).
-// The mic dictates live: your words appear while you talk (Moonshine in the agent engine).
+// The mic dictates live: your words appear while you talk (ElevenLabs or Moonshine through the agent engine).
+// The draft and the mic session live outside this component (lib/voice/village-dictation.ts): the side panel and
+// the screen show the same ones, and F, N or a hot reload never stop the mic or lose a word.
 // The box grows with what is in it up to about 450 px, then scrolls, and keeps the newest words in view.
 // Drag the grip above it to make it taller or shorter (double-click the grip: automatic again).
 
 import { markWorkActivity } from './work-vow-client'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
-import { useAgentVoiceInput } from '../../hooks/useAgentVoiceInput'
+import {
+  clearDictationError,
+  dictationVersion,
+  dictationView,
+  setDraftText,
+  stopDictation,
+  subscribeDictation,
+  takeDraftForSend,
+  toggleDictation,
+} from '../../lib/voice/village-dictation'
 import { DESK_WINDOW_PX } from '../../lib/village/village-layout'
 import { composerHeight, composerMaxHeight, composerRoom } from '../../lib/village/village-keys'
 import { VILLAGE_FONT_BODY, VILLAGE_TYPE_CLASS } from './village-status'
@@ -27,14 +38,11 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-function joinText(base: string, spoken: string): string {
-  if (!spoken) return base
-  if (!base) return spoken
-  return /\s$/.test(base) ? `${base}${spoken}` : `${base} ${spoken}`
+/** The agent's draft and mic, from village-dictation (outside React: they outlive this box). */
+function useVillageDictation(agentId: string) {
+  useSyncExternalStore(subscribeDictation, dictationVersion, dictationVersion)
+  return dictationView(agentId)
 }
-
-/** What is in each agent's box, kept when the box remounts (F to the screen and back, N, leaving and coming back). */
-const drafts = new Map<string, string>()
 /** Height the owner dragged the box to, per place (null: automatic). */
 const manualHeights: Record<'panel' | 'screen', number | null> = { panel: null, screen: null }
 
@@ -61,44 +69,31 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
   const owned = useOasisStore(s => Boolean(s.agentEngine.agents[agentId]?.owned))
   // Only while a turn runs (village-interrupt.ts): not for a finished agent with a leftover status.
   const interruptible = useOasisStore(s => canInterrupt(s.agentEngine.agents[agentId]))
-  const [text, setTextState] = useState(() => drafts.get(agentId) || '')
-  const setText = useCallback((next: string) => {
-    if (next) drafts.set(agentId, next)
-    else drafts.delete(agentId)
-    setTextState(next)
-  }, [agentId])
+  const dictation = useVillageDictation(agentId)
+  const text = dictation.text
+  const setText = useCallback((next: string) => setDraftText(agentId, next), [agentId])
   const [urgent, setUrgent] = useState(false)
   const [sending, setSending] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   // Pictures pasted (Ctrl+V, box focused or not) or dropped: chips above the box, sent with the next message.
   const pictures = useComposerPictures(agentId, useCallback(() => textareaRef.current, []))
-  /** What was in the box when the mic started; live words go after it. */
-  const voiceBaseRef = useRef<string | null>(null)
-  /** A send took what was in the box: whatever that dictation still settles is dropped, until the mic starts again. */
-  const discardDictationRef = useRef(false)
   const working = status === 'working' || status === 'needs-decision'
   const viewportHeight = useViewportHeight()
   const minHeight = large ? 96 : 64
   const maxHeight = composerMaxHeight(containerHeight ?? (large ? DESK_WINDOW_PX.screen.height : viewportHeight))
   const place = large ? 'screen' : 'panel'
 
-  const voice = useAgentVoiceInput({
-    // No focusTargetRef: the box stays out of the keyboard's way after dictation too (T, Enter keep working).
-    enablePlayerLipSync: true,
-    onLiveText: (spoken) => {
-      if (discardDictationRef.current) return
-      if (voiceBaseRef.current === null) voiceBaseRef.current = textareaRef.current?.value ?? ''
-      setText(joinText(voiceBaseRef.current, spoken))
-    },
-    onTranscript: (spoken) => {
-      if (!discardDictationRef.current) setText(joinText(voiceBaseRef.current ?? '', spoken))
-      voiceBaseRef.current = null
-    },
-  })
-  const voiceToggleRef = useRef(voice.toggle)
-  voiceToggleRef.current = voice.toggle
-  const voiceStopRef = useRef(voice.stop)
-  voiceStopRef.current = voice.stop
+  // The box stays out of the keyboard's way after dictation too (T, Enter keep working).
+  const voice = {
+    supported: dictation.supported,
+    listening: dictation.listening,
+    transcribing: dictation.settling,
+    level: dictation.level,
+    error: dictation.error,
+    backendMessage: dictation.status,
+  }
+  const voiceStopRef = useRef(() => { stopDictation(agentId) })
+  voiceStopRef.current = () => { stopDictation(agentId) }
   // Dictating is working: no key is pressed while talking, so tell the work counter (Mindcraft vow).
   useEffect(() => {
     if (!voice.listening) return
@@ -108,17 +103,11 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
   }, [voice.listening])
   const listeningRef = useRef(voice.listening)
   listeningRef.current = voice.listening
-  const transcribingRef = useRef(voice.transcribing)
-  transcribingRef.current = voice.transcribing
 
   const toggleVoice = useCallback(() => {
-    // A fresh dictation (not one still settling after a send) writes into the box again.
-    if (!listeningRef.current && !transcribingRef.current) {
-      discardDictationRef.current = false
-      voiceBaseRef.current = textareaRef.current?.value ?? ''
-    }
-    void voiceToggleRef.current()
-  }, [])
+    clearDictationError(agentId)
+    toggleDictation(agentId)
+  }, [agentId])
 
   // T / Ctrl+Space from anywhere in the village toggle this box's mic; Esc stops it first.
   useEffect(() => subscribeVillageVoiceToggle(toggleVoice), [toggleVoice])
@@ -195,16 +184,14 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
     const message = text.trim()
     const images = pictures.list.length ? pictures.payload() : undefined
     if ((!message && !images) || sending) return
-    // The message is what the box holds now. The mic stops, and the words it is still settling are
-    // dropped: they used to land back in the box after it was cleared (owner, 2026-11-10).
-    discardDictationRef.current = true
-    if (voice.listening) voiceStopRef.current()
-    voiceBaseRef.current = null
+    // The message is what the box holds now. The mic stops, and the words it is still settling are not added
+    // again (they are in the message). A failed send leaves the box as it was (village-dictation takeDraftForSend).
+    const take = takeDraftForSend(agentId)
     setSending(true)
     getAgentEngineClient()
       .send(agentId, message, urgent && owned ? 'now' : undefined, images)
       .then(() => {
-        setText('')
+        take.sent()
         if (images) pictures.clear()
         setUrgent(false)
       })
@@ -248,7 +235,7 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
   const voiceNote = voice.error
     ? voice.error
     : voice.listening
-      ? (voice.backendState === 'loading' && voice.backendMessage ? voice.backendMessage : 'listening… pause and your words settle · T stops · Enter sends')
+      ? (voice.backendMessage || 'listening… pause and your words settle · T stops · Enter sends')
       : voice.transcribing ? 'settling the last words…' : ''
 
   return (
@@ -273,9 +260,8 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
           value={text}
           rows={1}
           onChange={event => {
+            // Typing while the mic is on: what is in the box is kept, and new words go after it.
             setText(event.target.value)
-            // Typing while the mic is on: live words go after what you typed.
-            if (voice.listening) voiceBaseRef.current = event.target.value
           }}
           onKeyDown={onKeyDown}
           placeholder={working ? 'Talk to it while it works: folds into the running turn… (T talks, click to type)' : 'Press T and talk, or click here to type…'}

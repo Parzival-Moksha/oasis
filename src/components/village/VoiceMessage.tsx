@@ -6,8 +6,10 @@
 // The thread shows a small player with the transcript under it.
 //   Click: start, click again: stop and send. Hold (over half a second): records until you let go.
 //   Esc while recording: throw it away. No real limit (a forgotten recording stops after three hours).
+// The recording belongs to the agent, not to the button: F (panel <-> screen) and a hot reload don't stop it,
+// and one that fails to send stays as an unsent draft (click: send again).
 
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react'
 
 import { agentEngineFileUrl, getAgentEngineClient } from '../../lib/agent-engine-client'
 import { showNotice } from '../forge/GlobalNotice'
@@ -40,132 +42,197 @@ function blobToBase64(blob: Blob): Promise<string> {
   })
 }
 
-type Phase = 'idle' | 'recording' | 'sending'
+type Phase = 'idle' | 'recording' | 'sending' | 'unsent'
+
+// ─── the recording, per agent, outside React ─────────────────────────────────
+// The side panel (E) and the screen (F) each have a voice button; F unmounts one and mounts the other. The
+// recording belongs to the agent, not to a button: it keeps recording through F, N and a hot reload of this code
+// (the state sits on globalThis), and a send that fails keeps the recording as an unsent draft to send again.
+
+interface Recording {
+  phase: Phase
+  recorder: MediaRecorder | null
+  stream: MediaStream | null
+  chunks: Blob[]
+  mime: string
+  startedAt: number
+  durationMs: number
+  cancelled: boolean
+  priority?: 'now' | 'later'
+  blob: Blob | null
+  timer: number
+}
+
+interface VoiceStore { recordings: Map<string, Recording>; listeners: Set<() => void>; version: number; escape: ((event: KeyboardEvent) => void) | null }
+const gv = globalThis as unknown as { __oasisVoiceMessages?: VoiceStore }
+const voiceStore: VoiceStore = gv.__oasisVoiceMessages ??= { recordings: new Map(), listeners: new Set(), version: 0, escape: null }
+
+function changed() {
+  voiceStore.version += 1
+  voiceStore.listeners.forEach(listener => listener())
+}
+
+function freeMic(r: Recording) {
+  window.clearInterval(r.timer)
+  r.stream?.getTracks().forEach(track => track.stop())
+  r.stream = null
+}
+
+/** Esc throws away the recording in progress (any agent's), while one is recording. */
+function watchEscape() {
+  const recording = [...voiceStore.recordings.values()].some(r => r.phase === 'recording')
+  if (recording && !voiceStore.escape) {
+    voiceStore.escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      const entry = [...voiceStore.recordings.entries()].find(([, r]) => r.phase === 'recording')
+      if (!entry) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      stopRecording(entry[0], true)
+    }
+    window.addEventListener('keydown', voiceStore.escape, { capture: true })
+  } else if (!recording && voiceStore.escape) {
+    window.removeEventListener('keydown', voiceStore.escape, { capture: true })
+    voiceStore.escape = null
+  }
+}
+
+async function sendRecording(agentId: string, r: Recording) {
+  if (!r.blob) return
+  r.phase = 'sending'
+  changed()
+  try {
+    const audio = await blobToBase64(r.blob)
+    await getAgentEngineClient().voiceMessage(agentId, audio, r.blob.type, r.durationMs, r.priority)
+    if (voiceStore.recordings.get(agentId) === r) voiceStore.recordings.delete(agentId)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    showNotice(/unknown command/i.test(message)
+      ? 'This agent engine is older than voice messages: restart it (pnpm dev:engine). The recording is kept: send it again.'
+      : `Voice message not sent: ${message}. The recording is kept: click it to send again.`, 'error')
+    r.phase = 'unsent'
+  }
+  changed()
+}
+
+export async function startRecording(agentId: string, priority?: 'now' | 'later'): Promise<void> {
+  if (voiceStore.recordings.has(agentId)) return
+  if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+    showNotice('This browser cannot record audio.', 'error')
+    return
+  }
+  const r: Recording = { phase: 'recording', recorder: null, stream: null, chunks: [], mime: pickMime(), startedAt: Date.now(), durationMs: 0, cancelled: false, priority, blob: null, timer: 0 }
+  voiceStore.recordings.set(agentId, r)
+  changed()
+  try {
+    r.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
+  } catch {
+    voiceStore.recordings.delete(agentId)
+    changed()
+    showNotice('No microphone, or the browser is not allowed to use it.', 'error')
+    return
+  }
+  if (voiceStore.recordings.get(agentId) !== r || r.cancelled) { freeMic(r); return }
+  const recorder = new MediaRecorder(r.stream, { ...(r.mime ? { mimeType: r.mime } : {}), audioBitsPerSecond: AUDIO_BITS_PER_SECOND })
+  r.recorder = recorder
+  recorder.ondataavailable = event => { if (event.data.size) r.chunks.push(event.data) }
+  recorder.onstop = () => {
+    freeMic(r)
+    r.durationMs = Date.now() - r.startedAt
+    if (r.cancelled || !r.chunks.length || r.durationMs < 400) {
+      if (voiceStore.recordings.get(agentId) === r) voiceStore.recordings.delete(agentId)
+      changed()
+      watchEscape()
+      return
+    }
+    r.blob = new Blob(r.chunks, { type: recorder.mimeType || r.mime || 'audio/webm' })
+    watchEscape()
+    void sendRecording(agentId, r)
+  }
+  recorder.start(1000)
+  // The clock on the buttons, and the runaway guard.
+  r.timer = window.setInterval(() => {
+    if (Date.now() - r.startedAt >= MAX_MS) stopRecording(agentId)
+    changed()
+  }, 250)
+  watchEscape()
+}
+
+/** Stop and send (cancel: throw it away). */
+export function stopRecording(agentId: string, cancel = false): void {
+  const r = voiceStore.recordings.get(agentId)
+  if (!r || r.phase !== 'recording') return
+  r.cancelled = cancel
+  if (r.recorder && r.recorder.state !== 'inactive') r.recorder.stop()
+  else if (!r.recorder) { voiceStore.recordings.delete(agentId); changed(); watchEscape() } // still asking for the mic
+}
+
+function discardUnsent(agentId: string) {
+  const r = voiceStore.recordings.get(agentId)
+  if (r?.phase === 'unsent') { voiceStore.recordings.delete(agentId); changed() }
+}
+
+function useRecording(agentId: string): Recording | null {
+  useSyncExternalStore(
+    listener => { voiceStore.listeners.add(listener); return () => { voiceStore.listeners.delete(listener) } },
+    () => voiceStore.version,
+    () => 0,
+  )
+  return voiceStore.recordings.get(agentId) || null
+}
 
 export function VoiceMessageButton({ agentId, priority, large = false }: { agentId: string; priority?: 'now' | 'later'; large?: boolean }) {
-  const [phase, setPhase] = useState<Phase>('idle')
-  const [elapsed, setElapsed] = useState(0)
-  const rec = useRef<{ recorder: MediaRecorder; stream: MediaStream; chunks: Blob[]; startedAt: number; cancelled: boolean } | null>(null)
+  const r = useRecording(agentId)
+  const phase: Phase = r?.phase || 'idle'
   /** The press that started a recording: held past HOLD_MS, letting go sends it. */
   const press = useRef<number | null>(null)
 
-  const release = () => {
-    rec.current?.stream.getTracks().forEach(track => track.stop())
-  }
-
-  const stop = (cancel = false) => {
-    const r = rec.current
-    if (!r || r.recorder.state === 'inactive') return
-    r.cancelled = cancel
-    r.recorder.stop()
-  }
-
-  const start = async () => {
-    if (phase !== 'idle') return
-    if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      showNotice('This browser cannot record audio.', 'error')
-      return
-    }
-    let stream: MediaStream
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
-    } catch {
-      showNotice('No microphone, or the browser is not allowed to use it.', 'error')
-      return
-    }
-    const mimeType = pickMime()
-    const recorder = new MediaRecorder(stream, { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: AUDIO_BITS_PER_SECOND })
-    const r = { recorder, stream, chunks: [] as Blob[], startedAt: Date.now(), cancelled: false }
-    rec.current = r
-    recorder.ondataavailable = event => { if (event.data.size) r.chunks.push(event.data) }
-    recorder.onstop = async () => {
-      release()
-      const durationMs = Date.now() - r.startedAt
-      rec.current = null
-      if (r.cancelled || !r.chunks.length || durationMs < 400) {
-        setPhase('idle')
-        return
-      }
-      setPhase('sending')
-      try {
-        const blob = new Blob(r.chunks, { type: recorder.mimeType || mimeType || 'audio/webm' })
-        const audio = await blobToBase64(blob)
-        await getAgentEngineClient().voiceMessage(agentId, audio, blob.type, durationMs, priority)
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        showNotice(/unknown command/i.test(message)
-          ? 'This agent engine is older than voice messages: restart it (pnpm dev:engine).'
-          : `Voice message not sent: ${message}`, 'error')
-      } finally {
-        setPhase('idle')
-      }
-    }
-    recorder.start(1000)
-    setElapsed(0)
-    setPhase('recording')
-  }
-
-  // Timer, the runaway guard, and Esc to throw the recording away.
-  useEffect(() => {
-    if (phase !== 'recording') return
-    const timer = window.setInterval(() => {
-      const r = rec.current
-      if (!r) return
-      const ms = Date.now() - r.startedAt
-      setElapsed(ms)
-      if (ms >= MAX_MS) stop()
-    }, 250)
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      stop(true)
-    }
-    window.addEventListener('keydown', onKey, { capture: true })
-    return () => {
-      window.clearInterval(timer)
-      window.removeEventListener('keydown', onKey, { capture: true })
-    }
-  }, [phase])
-
-  // Unmount while recording: drop it and free the microphone.
-  useEffect(() => () => { if (rec.current) { rec.current.cancelled = true; try { rec.current.recorder.stop() } catch { /* already */ } release() } }, [])
-
   const recording = phase === 'recording'
+  const unsent = phase === 'unsent'
+  const elapsed = r ? (recording ? Date.now() - r.startedAt : r.durationMs) : 0
   const title = recording
     ? 'Recording a voice message: click (or let go) to send, Esc to throw it away'
-    : phase === 'sending' ? 'Transcribing with ElevenLabs Scribe…' : 'Voice message: click to record (or hold), sent as a recording with its Scribe transcript'
+    : phase === 'sending' ? 'Transcribing with ElevenLabs Scribe…'
+      : unsent ? 'This voice message was not sent: click to send it again (x throws it away)'
+        : 'Voice message: click to record (or hold), sent as a recording with its Scribe transcript'
   return (
-    <button
-      type="button"
-      title={title}
-      aria-label={title}
-      aria-pressed={recording}
-      disabled={phase === 'sending'}
-      onPointerDown={event => {
-        if (event.button !== 0 || phase === 'sending') return
-        if (rec.current) { press.current = null; stop(); return } // second click: send
-        press.current = Date.now()
-        void start()
-      }}
-      onPointerUp={() => {
-        // Held down: letting go sends it. A short click keeps recording until the next click.
-        const at = press.current
-        press.current = null
-        if (at !== null && Date.now() - at > HOLD_MS && rec.current) stop()
-      }}
-      onKeyDown={event => event.stopPropagation()}
-      className={`flex items-center gap-1 rounded-md border px-2 py-1 font-bold transition disabled:opacity-60 ${large ? 'text-[12px]' : 'text-[11px]'} ${recording
-        ? 'border-rose-300/70 bg-rose-500/25 text-rose-50'
-        : 'border-white/20 bg-white/5 text-white/80 hover:bg-white/15'}`}
-    >
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
-        {recording
-          ? <circle cx="12" cy="12" r="6" fill="currentColor" className="animate-pulse" />
-          : <path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4" />}
-      </svg>
-      {recording ? formatClip(elapsed) : phase === 'sending' ? 'scribing…' : 'voice'}
-    </button>
+    <span className="flex items-center gap-0.5">
+      <button
+        type="button"
+        title={title}
+        aria-label={title}
+        aria-pressed={recording}
+        disabled={phase === 'sending'}
+        onPointerDown={event => {
+          if (event.button !== 0 || phase === 'sending') return
+          if (unsent && r) { void sendRecording(agentId, r); return }
+          if (recording) { press.current = null; stopRecording(agentId); return } // second click: send
+          press.current = Date.now()
+          void startRecording(agentId, priority)
+        }}
+        onPointerUp={() => {
+          // Held down: letting go sends it. A short click keeps recording until the next click.
+          const at = press.current
+          press.current = null
+          if (at !== null && Date.now() - at > HOLD_MS && voiceStore.recordings.get(agentId)?.phase === 'recording') stopRecording(agentId)
+        }}
+        onKeyDown={event => event.stopPropagation()}
+        className={`flex items-center gap-1 rounded-md border px-2 py-1 font-bold transition disabled:opacity-60 ${large ? 'text-[12px]' : 'text-[11px]'} ${recording
+          ? 'border-rose-300/70 bg-rose-500/25 text-rose-50'
+          : unsent ? 'border-amber-300/70 bg-amber-500/20 text-amber-50'
+            : 'border-white/20 bg-white/5 text-white/80 hover:bg-white/15'}`}
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+          {recording
+            ? <circle cx="12" cy="12" r="6" fill="currentColor" className="animate-pulse" />
+            : <path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4" />}
+        </svg>
+        {recording ? formatClip(elapsed) : phase === 'sending' ? 'scribing…' : unsent ? `send ${formatClip(elapsed)} again` : 'voice'}
+      </button>
+      {unsent && (
+        <button type="button" onClick={() => discardUnsent(agentId)} aria-label="Throw the unsent voice message away" title="Throw it away" className="rounded px-1 text-[11px] text-white/55 hover:text-white">x</button>
+      )}
+    </span>
   )
 }
 
