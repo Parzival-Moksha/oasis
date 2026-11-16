@@ -59,6 +59,8 @@ export async function loadAcademySets(): Promise<LoadedSet[]> {
   const found = names
     .map(name => /^skills(?:-([a-z0-9][a-z0-9_]{0,30}))?\.json$/i.exec(name))
     .filter((match): match is RegExpExecArray => Boolean(match))
+    // `skills-main.json` would claim the main set's id.
+    .filter(match => (match[1] || '').toLowerCase() !== ACADEMY_MAIN_SET)
     .map(match => ({ id: (match[1] || ACADEMY_MAIN_SET).toLowerCase(), suffix: match[1] ? `-${match[1]}` : '' }))
     .sort((a, b) => (a.suffix ? 1 : 0) - (b.suffix ? 1 : 0) || (a.id < b.id ? -1 : 1))
   const sets: LoadedSet[] = []
@@ -84,7 +86,10 @@ export async function loadAcademySets(): Promise<LoadedSet[]> {
       cached.set(key, loaded)
       sets.push(loaded)
     } catch {
-      // One broken set does not take the others down.
+      // A file caught mid-save, or broken: keep serving the last good reading of this set, and
+      // never let one broken set take the others down.
+      const last = cached.get(`${dir}|${id}`)
+      if (last) sets.push(last)
     }
   }
   return sets.length ? sets : [{ id: ACADEMY_MAIN_SET, rev: 'sample', content: SAMPLE }]

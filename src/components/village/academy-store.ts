@@ -17,6 +17,7 @@ import {
 import { getCameraSnapshot } from '../../lib/camera-bridge'
 import { requestPlayerAvatarTeleport } from '../../lib/player-avatar-runtime'
 import { useOasisStore } from '../../store/oasisStore'
+import { leaveVillageFocus } from './village-actions'
 import { SettingsContext } from '../scene-lib/contexts'
 
 export const ACADEMY_REFRESH_MS = 2500
@@ -148,6 +149,8 @@ function take(setKey: string, body: string): void {
   if (body === slot.body) return
   const data = JSON.parse(body) as AcademyResponse
   if (!Array.isArray(data.trainees)) return
+  // The server answers with another set when the one asked for is gone: that is not this set's content.
+  if (setKey ? data.set !== setKey : Boolean(data.sets?.length && data.sets[0].id !== data.set)) return
   // The content travels only when its revision changed (`have`): otherwise keep the object we hold.
   const content: AcademyContent | null = Array.isArray(data.skills)
     ? { skills: data.skills, keys: data.keys || [], levels: data.levels || [], source: data.source || 'folder', lanes: data.lanes || [], title: data.title || '' }
@@ -159,7 +162,9 @@ function take(setKey: string, body: string): void {
     const keep = (current: AcademyContent | null) => Boolean(state.reader && current?.skills.some(skill => skill.id === state.reader))
     set({ content, trainees: data.trainees, sets, reader: state.readerMap || keep(content) ? state.reader : null })
   } else if (setKey === state.mapSet) {
-    set({ mapContent: content, mapTrainees: data.trainees, sets })
+    // A sheet open on a skill this set no longer has closes.
+    const gone = state.readerMap && !content.skills.some(skill => skill.id === state.reader)
+    set({ mapContent: content, mapTrainees: data.trainees, sets, ...(gone ? { reader: null, readerMap: false } : {}) })
   }
 }
 
@@ -293,6 +298,8 @@ export function closeAcademyReader(): void {
 
 export function openAcademyMap(): void {
   if (state.mapOpen) return
+  // An open agent panel would lie over the map and keep the sheet from showing: leave it first.
+  if (useOasisStore.getState().agentEngine.focusedAgentId) leaveVillageFocus()
   set({ mapOpen: true, reader: null, readerMap: false })
   void refreshAcademy()
 }
@@ -307,9 +314,14 @@ export function setAcademyMapSet(id: string): void {
   if (id === mapSetId()) return
   try { window.localStorage.setItem(MAP_SET_KEY, id) } catch { /* storage off */ }
   const own = held.get(id)
-  set({ mapSet: id, mapContent: own?.content || null, mapTrainees: [], ...(state.readerMap ? { reader: null, readerMap: false } : {}) })
+  // The trainees keep the progress they show until this set's own view of them arrives (same keys, same skills by id).
+  const trainees = state.mapTrainees.length ? state.mapTrainees : state.trainees
+  set({ mapSet: id, mapContent: own?.content || null, mapTrainees: trainees, ...(state.readerMap ? { reader: null, readerMap: false } : {}) })
   if (own) held.set(id, { ...own, body: '' }) // the trainees of that set are read again
-  void refreshAcademy()
+  // A poll already under way may be past this set: read once more after it.
+  const running = inFlight
+  if (running) void running.then(() => refreshAcademy())
+  else void refreshAcademy()
 }
 
 // Dev-only console helpers (playtests): window.__oasisAcademy.

@@ -401,6 +401,8 @@ export class AcademyMapEngine {
   private looksKey = ''
   private flashKey = ''
   private flashes = new Map<number, number>()
+  /** The look each node's tile was last printed with. */
+  private printed: AcademyNodeLook[] = []
 
   private atlas: { canvas: HTMLCanvasElement; texture: THREE.CanvasTexture; cols: number; u: number; tileW: number; tileH: number } | null = null
   private tiles: THREE.Mesh | null = null
@@ -546,6 +548,7 @@ export class AcademyMapEngine {
     this.stars = null
     this.atlas?.texture.dispose()
     this.atlas = null
+    this.printed = []
   }
 
   private specOf(id: string): MapNodeSpec | undefined {
@@ -563,12 +566,14 @@ export class AcademyMapEngine {
     const tiles = count + laneCount
     let u = 48
     let cols = 1
+    // ...and no bigger than about 8 million pixels: it is printed and uploaded when a skill changes.
     for (const candidate of [176, 144, 128, 112, 96, 80, 64, 48]) {
       const tileW = Math.ceil(TILE.width * candidate) + 4
       const tileH = Math.ceil(TILE.height * candidate) + 4
       cols = Math.max(1, Math.floor(max / tileW))
       u = candidate
-      if (Math.ceil(tiles / cols) * tileH <= max) break
+      const rows = Math.ceil(tiles / cols)
+      if (rows * tileH <= max && Math.min(cols, tiles) * tileW * rows * tileH <= 8_400_000) break
     }
     const tileW = Math.ceil(TILE.width * u) + 4
     const tileH = Math.ceil(TILE.height * u) + 4
@@ -690,24 +695,27 @@ export class AcademyMapEngine {
     // The page's display font may arrive after the first print.
     const wanted = `700 32px ${FONT}`
     try {
-      if (document.fonts?.check && !document.fonts.check(wanted)) void document.fonts.load(wanted).then(() => { if (!this.disposed && this.layout === layout) { this.print(); this.wake() } }).catch(() => {})
+      if (document.fonts?.check && !document.fonts.check(wanted)) void document.fonts.load(wanted).then(() => { if (!this.disposed && this.layout === layout) { this.print(true); this.wake() } }).catch(() => {})
     } catch { /* unknown family: print with what there is */ }
   }
 
-  private print(): void {
+  private print(all_ = false): void {
     const atlas = this.atlas
     const layout = this.layout
     if (!atlas || !layout) return
     const ctx = atlas.canvas.getContext('2d')
     if (!ctx) return
     const place = (index: number) => ({ x: (index % atlas.cols) * atlas.tileW + 2, y: Math.floor(index / atlas.cols) * atlas.tileH + 2 })
+    // Only what changed is drawn again: one skill lighting up is one tile.
+    const all = this.printed.length !== layout.nodes.length || all_
     layout.nodes.forEach((node, index) => {
       const spec = this.specOf(node.id)
-      if (!spec) return
+      if (!spec || (!all && this.printed[index] === spec.look)) return
       const { x, y } = place(index)
       drawNodeTile(ctx, spec, x, y, atlas.u)
+      this.printed[index] = spec.look
     })
-    layout.lanes.forEach((lane, index) => {
+    if (all) layout.lanes.forEach((lane, index) => {
       const { x, y } = place(layout.nodes.length + index)
       const color = this.specs.find(spec => layout.nodes.find(node => node.id === spec.id)?.lane === lane.id)?.color || '#94a3b8'
       drawLaneTile(ctx, lane.name, color, x, y, atlas.u)
@@ -733,7 +741,8 @@ export class AcademyMapEngine {
       pos.setXYZ(index, node.x, node.y, z)
       bright.setX(index, LOOK_BRIGHT[look])
       glowPos.setXYZ(index, node.x, node.y, z - 0.05)
-      color.set(spec?.color || '#94a3b8')
+      // The glow shader writes its colour as it is (no conversion): hand it the colour as the screen means it.
+      color.set(spec?.color || '#94a3b8').convertLinearToSRGB()
       glowColor.setXYZ(index, color.r, color.g, color.b)
       const [size, steady, pulse] = LOOK_GLOW[look]
       glow.setXYZW(index, size, steady, pulse, 0)
@@ -807,7 +816,8 @@ export class AcademyMapEngine {
   }
 
   private onPointerDown = (event: PointerEvent): void => {
-    if (event.button !== 0) return
+    // One pointer drags; a second finger does not take the board from the first.
+    if (event.button !== 0 || this.drag) return
     this.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false, at: performance.now() }
     this.velocity = { x: 0, y: 0 }
     try { this.canvas.setPointerCapture(event.pointerId) } catch { /* a synthetic pointer */ }
