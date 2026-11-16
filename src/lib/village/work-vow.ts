@@ -104,6 +104,8 @@ export interface WorkFile {
   holder: { tab: string; seq: number; at: number } | null
   /** The tab that last let go (it was closing): a late report from it must not take the place back. */
   released?: string
+  /** The last report number that tab had sent when it let go: anything newer proves the page is still there. */
+  releasedSeq?: number
   /** What the owner can change in Mindcraft. */
   settings?: { freeValor?: number }
   /** Agent hours: the latest event booked per agent and kind, so a replayed or doubled event is not booked twice. */
@@ -160,6 +162,7 @@ export function parseWorkFile(value: unknown): WorkFile {
     file.active = { file: raw.active.file, title: String(raw.active.title || raw.active.file), priority: num(raw.active.priority), startedAt: num(raw.active.startedAt) }
   }
   if (typeof raw.released === 'string') file.released = raw.released
+  if (typeof raw.releasedSeq === 'number') file.releasedSeq = raw.releasedSeq
   if (raw.settings && typeof raw.settings.freeValor === 'number' && raw.settings.freeValor >= 0 && raw.settings.freeValor <= 1) file.settings = { freeValor: raw.settings.freeValor }
   if (raw.marks && typeof raw.marks === 'object') {
     for (const [key, ts] of Object.entries(raw.marks)) if (num(ts)) (file.marks ||= {})[key] = ts as number
@@ -304,10 +307,13 @@ export function applyWorkBeat(input: WorkFile, beat: WorkBeat, now: number, offs
   const holder = file.holder
   const mine = holder?.tab === beat.tab
   if (holder && !mine && now - holder.at < WORK_HOLDER_STALE_MS) return { file: input, counting: false, credited: 0 }
-  // A report that was still on its way when its page let go: too late, the page is gone.
-  if (!holder && file.released === beat.tab && !beat.back) return { file: input, counting: false, credited: 0 }
+  // A report that was still on its way when its page let go: too late, the page is gone. A report numbered after
+  // the letting-go comes from a page that is still there (it was only hidden, or its HUD remounted): it counts again.
+  // Without this, a tab that let go and stayed was turned away for good ("another tab is counting", with no other tab).
+  if (!holder && file.released === beat.tab && !beat.back && beat.seq <= (file.releasedSeq ?? 0)) return { file: input, counting: false, credited: 0 }
   if (!holder || !mine) {
     delete file.released
+    delete file.releasedSeq
     // Taking over (or the first tab ever): the clock starts now, nothing reported before counts.
     file.holder = { tab: beat.tab, seq: beat.seq, at: now }
     return { file, counting: true, credited: 0 }
@@ -330,7 +336,7 @@ export function applyWorkBeat(input: WorkFile, beat: WorkBeat, now: number, offs
 /** A page that is closing lets go, so the next one (a reload) counts at once. */
 export function releaseWorkHolder(input: WorkFile, tab: string): WorkFile {
   if (input.holder?.tab !== tab) return input
-  return { ...input, holder: null, released: tab }
+  return { ...input, holder: null, released: tab, releasedSeq: input.holder.seq }
 }
 
 /** Start working on a mission (stops the one before), or stop: `mission` null. */

@@ -243,10 +243,25 @@ describe('commitments (the first Mindcraft: committed counts double, a miss cost
   })
   it('a late report from a page that let go does not take the place back; coming back from hidden does', () => {
     let file = run(emptyWorkFile(), 'a', at('09:00:00'), 1)
+    const lastSeq = file.holder!.seq
     file = releaseWorkHolder(file, 'a')
-    expect(applyWorkBeat(file, { tab: 'a', seq: 9, seconds: 5 }, at('09:00:20'), TZ).counting).toBe(false)
-    expect(applyWorkBeat(file, { tab: 'a', seq: 9, seconds: 5, back: true }, at('09:00:20'), TZ).counting).toBe(true)
+    // Sent before the letting-go, arriving after it: too late.
+    expect(applyWorkBeat(file, { tab: 'a', seq: lastSeq, seconds: 5 }, at('09:00:20'), TZ).counting).toBe(false)
+    expect(applyWorkBeat(file, { tab: 'a', seq: lastSeq, seconds: 5, back: true }, at('09:00:20'), TZ).counting).toBe(true)
     expect(applyWorkBeat(file, { tab: 'b', seq: 1, seconds: 0 }, at('09:00:20'), TZ).file.released).toBeUndefined()
+  })
+  it('a tab that let go and stayed (its HUD remounted) counts again with its next report, without saying "back"', () => {
+    let file = run(emptyWorkFile(), 'a', at('09:00:00'), 1)
+    const lastSeq = file.holder!.seq
+    file = releaseWorkHolder(file, 'a')
+    const again = applyWorkBeat(file, { tab: 'a', seq: lastSeq + 1, seconds: 3 }, at('09:00:20'), TZ)
+    expect(again.counting).toBe(true)
+    expect(again.file.holder?.tab).toBe('a')
+    expect(again.file.released).toBeUndefined()
+    // A book written before releasedSeq existed must not keep that tab out either.
+    const legacy = { ...file }
+    delete legacy.releasedSeq
+    expect(applyWorkBeat(legacy, { tab: 'a', seq: 1, seconds: 0 }, at('09:00:20'), TZ).counting).toBe(true)
   })
 })
 

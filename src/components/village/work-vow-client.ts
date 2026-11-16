@@ -180,6 +180,10 @@ function tick(): void {
 /** The page is going away (reload, close): send what is left and let the next page count at once. */
 function letGo(): void {
   if (state.otherTab) return
+  // Whoever lets go must say "back" with its next report, or the server keeps turning this same tab away
+  // ("another tab is counting" with no other tab). That covers every way of letting go that the page survives:
+  // hidden and shown again, the HUD remounting (a hot reload, React's dev double-mount), a page restored from cache.
+  letGoHidden = true
   seq += 1
   const body = JSON.stringify({ tab, seq, seconds: Math.floor(pendingMs / 1000), focus, release: true })
   pendingMs = 0
@@ -209,7 +213,6 @@ function onVisibility(): void {
   if (document.visibilityState === 'hidden') {
     if (state.otherTab) return
     letGo()
-    letGoHidden = true
   } else {
     void refreshWorkVow()
   }
