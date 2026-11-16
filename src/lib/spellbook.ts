@@ -23,6 +23,8 @@ export const SPELL_IDS = [
   'own-audio-upload',
   'own-video-upload',
   'own-image-upload',
+  'summon-claude-code',
+  'summon-codex',
   'summon-djinn',
   'summon-custom-npc',
   'summon-openclaw',
@@ -38,6 +40,9 @@ export const HOSTED_USER_LOCKED_SPELL_IDS = [
   'meshy-object',
   'meshy-character',
   'summon-fighter-npc',
+  // Claude Code and Codex run on the owner's machine (the agent engine, the Codex CLI).
+  'summon-claude-code',
+  'summon-codex',
 ] as const satisfies readonly SpellId[]
 
 export function isHostedUserLockedSpell(id: SpellId): boolean {
@@ -59,6 +64,8 @@ export type SpellActionId =
   | 'place-openclaw'
   | 'place-hermes'
   | 'place-browser'
+  | 'open-village-picker'
+  | 'place-codex'
 
 export const SPELLBOOK_PAGE_IDS = [
   'recipe-catalog',
@@ -321,6 +328,28 @@ export const SPELL_DEFS: Record<SpellId, SpellDefinition> = {
     summary: 'Bring an image, sigil, or texture into the world library.',
     stats: ['Upload', 'Image', 'World media'],
     actionId: 'open-wizard',
+  },
+  'summon-claude-code': {
+    id: 'summon-claude-code',
+    name: 'Summon Claude Code',
+    tier: 3,
+    category: 'agent',
+    achievementId: 'learn-summon-claude-code',
+    summary: 'Open the summoning circle: a new Claude Code agent with its own desk in the village, working in a folder you pick.',
+    stats: ['Agent', 'Claude Code', 'Village desk'],
+    actionId: 'open-village-picker',
+    lockedSummary: 'Claude Code agents run on your own machine (local Oasis only).',
+  },
+  'summon-codex': {
+    id: 'summon-codex',
+    name: 'Summon Codex',
+    tier: 3,
+    category: 'agent',
+    achievementId: 'learn-summon-codex',
+    summary: 'Place the Codex coding agent as an in-world 3D window.',
+    stats: ['Agent', 'Codex', '3D window'],
+    actionId: 'place-codex',
+    lockedSummary: 'Codex runs on your own machine (local Oasis only).',
   },
   'summon-djinn': {
     id: 'summon-djinn',

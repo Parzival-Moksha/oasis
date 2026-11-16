@@ -82,6 +82,7 @@ import { VillageController } from './village/VillageController'
 import { VillageHud } from './village/VillageHud'
 import { AgentSessionPanel } from './village/AgentSessionPanel'
 import { SessionPicker } from './village/SessionPicker'
+import { openVillagePicker } from './village/village-actions'
 import { installTestHarness } from '@/lib/test-harness'
 import { HOSTED_USER_LOCKED_SPELL_IDS, isHostedUserLockedSpell, type SpellId } from '@/lib/spellbook'
 import { useWorldEvents } from '@/hooks/useWorldEvents'
@@ -1789,6 +1790,14 @@ export default function Scene() {
         return
 
       // ─═̷─ Agents ─═̷─
+      case 'summon-claude-code':
+        // The village's summoning circle (a Claude Code agent with its own desk); outside the village, the CC window.
+        if (villageProfile) openVillagePicker(true)
+        else placeQuickAgentWindow('anorak')
+        return
+      case 'summon-codex':
+        placeQuickAgentWindow('codex')
+        return
       case 'summon-djinn':
         placeQuickAgentWindow('merlin')
         return

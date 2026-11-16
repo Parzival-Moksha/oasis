@@ -35,6 +35,8 @@
     "own-audio-upload": { "gpt2": "/ui/spellbook/tiles/own-audio-upload.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/own-audio-upload.nano2.webp" },
     "own-video-upload": { "gpt2": "/ui/spellbook/tiles/own-video-upload.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/own-video-upload.nano2.webp" },
     "own-image-upload": { "gpt2": "/ui/spellbook/tiles/own-image-upload.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/own-image-upload.nano2.webp" },
+    "summon-claude-code": { "gpt2": "/ui/spellbook/tiles/summon-claude-code.gpt2.webp" },
+    "summon-codex": { "gpt2": "/ui/spellbook/tiles/summon-codex.gpt2.webp" },
     "summon-djinn": { "gpt2": "/ui/spellbook/tiles/summon-djinn.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/summon-djinn.nano2.webp" },
     "summon-custom-npc": { "gpt2": "/ui/spellbook/tiles/summon-custom-npc.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/summon-custom-npc.nano2.webp" },
     "summon-fighter-npc": { "gpt2": "/ui/spellbook/tiles/summon-fighter-npc.gpt2.webp", "nano2": "/ui/spellbook/tiles/_alternates/summon-fighter-npc.nano2.webp" },
