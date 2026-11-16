@@ -4,7 +4,9 @@
 // the book; the page only ever shows the server's total plus the seconds it has not sent yet. One
 // tick a second drives it all: no per-frame work.
 
-import { activeMsBetween, WORK_BEAT_MS, type WorkSnapshot } from '../../lib/village/work-vow'
+import { onEngineEvent } from '../../lib/agent-engine-client'
+import { activeMsBetween, ownTurnMs, WORK_BEAT_MS, type AgentWorkReport, type WorkSnapshot } from '../../lib/village/work-vow'
+import { useOasisStore } from '../../store/oasisStore'
 
 export interface WorkVowState {
   /** The server's last answer (null until the first one). */
@@ -47,6 +49,67 @@ export function markWorkActivity(): void {
   lastInputAt = Date.now()
 }
 
+// ─── focus: what the owner has open (an agent, a mission card), so each second lands in the right place ───
+
+export interface WorkFocusNow {
+  agent: { key: string; name: string } | null
+  /** A mission file. */
+  mission: string | null
+}
+
+let focus: WorkFocusNow = { agent: null, mission: null }
+
+/** The owner opened or left an agent or a mission card: book the seconds so far under what was open, then switch. */
+export function setWorkFocus(next: WorkFocusNow): void {
+  if ((next.agent?.key || '') === (focus.agent?.key || '') && next.mission === focus.mission) return
+  if (pendingMs >= 1000) void beat()
+  focus = next
+}
+
+// ─── agent hours: finished turns and helpers, as the engine reports them ────
+
+const helperSpans = new Map<string, Map<string, { start: number; end: number | null }>>()
+let workQueue: AgentWorkReport[] = []
+let workTimer: number | null = null
+
+function queueAgentWork(report: AgentWorkReport): void {
+  workQueue.push(report)
+  if (workTimer !== null) return
+  workTimer = window.setTimeout(() => {
+    workTimer = null
+    const batch = workQueue
+    workQueue = []
+    void post({ agentWork: batch })
+  }, 2000)
+}
+
+function onEngine(event: { kind: string; agentId: string; ts: number } & Record<string, unknown>): void {
+  if (event.kind !== 'turn.end' && event.kind !== 'subagent.start' && event.kind !== 'subagent.end') return
+  const agent = useOasisStore.getState().agentEngine.agents[event.agentId]
+  if (!agent || typeof event.ts !== 'number') return
+  const who = { key: agent.sessionId || agent.id, name: agent.name || agent.id }
+  const spans = helperSpans.get(event.agentId) || new Map<string, { start: number; end: number | null }>()
+  helperSpans.set(event.agentId, spans)
+  const ids = [event.toolUseId, event.taskId].filter((id): id is string => typeof id === 'string' && id.length > 0)
+  if (event.kind === 'subagent.start') {
+    if (ids[0]) spans.set(ids[0], { start: event.ts, end: null })
+    return
+  }
+  if (event.kind === 'subagent.end') {
+    const id = ids.find(candidate => spans.has(candidate))
+    const span = id ? spans.get(id) : null
+    if (!span || span.end !== null) return
+    span.end = event.ts
+    // A helper counts in full, under its parent.
+    queueAgentWork({ ...who, ts: event.ts, kind: 'helper', ms: event.ts - span.start })
+    return
+  }
+  if (typeof event.durationMs !== 'number' || !(event.durationMs > 0)) return
+  // The agent's own time: the turn minus the time it only waited on helpers.
+  queueAgentWork({ ...who, ts: event.ts, kind: 'turn', ms: ownTurnMs(event.durationMs, event.ts, [...spans.values()]) })
+  for (const [id, span] of spans) if (span.end !== null && span.end <= event.ts) spans.delete(id)
+}
+
 // ─── the loop ───────────────────────────────────────────────────────────────
 
 const tab = `tab-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`
@@ -86,7 +149,7 @@ async function sendBeat(): Promise<void> {
   const seconds = Math.floor(pendingMs / 1000)
   seq += 1
   const back = letGoHidden
-  const answer = await post({ tab, seq, seconds, ...(back ? { back: true } : {}) })
+  const answer = await post({ tab, seq, seconds, focus, ...(back ? { back: true } : {}) })
   if (!answer) return // offline or mid-reload: the seconds stay pending and go with the next report
   letGoHidden = false
   if (answer.counting === false) {
@@ -118,7 +181,7 @@ function tick(): void {
 function letGo(): void {
   if (state.otherTab) return
   seq += 1
-  const body = JSON.stringify({ tab, seq, seconds: Math.floor(pendingMs / 1000), release: true })
+  const body = JSON.stringify({ tab, seq, seconds: Math.floor(pendingMs / 1000), focus, release: true })
   pendingMs = 0
   try {
     navigator.sendBeacon('/api/village/work', new Blob([body], { type: 'application/json' }))
@@ -163,12 +226,14 @@ export function startWorkVow(): () => void {
   const timer = window.setInterval(tick, 1000)
   window.addEventListener('pagehide', letGo)
   document.addEventListener('visibilitychange', onVisibility)
+  const stopEngine = onEngineEvent(onEngine)
   void refreshWorkVow()
   return () => {
     window.clearInterval(timer)
     for (const type of INPUTS) window.removeEventListener(type, markWorkActivity, { capture: true })
     window.removeEventListener('pagehide', letGo)
     document.removeEventListener('visibilitychange', onVisibility)
+    stopEngine()
     letGo()
   }
 }

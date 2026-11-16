@@ -9,7 +9,10 @@ import path from 'node:path'
 import { appendMissionLog } from './village/village-mission-edit'
 import { isMissionFile, parseMission } from './village/village-missions'
 import {
+  applyAgentWork,
   applyWorkBeat,
+  daySummary,
+  localDay,
   emptyWorkFile,
   formatClock,
   parseWorkFile,
@@ -18,7 +21,9 @@ import {
   workSnapshot,
   xpFor,
   WORK_VALOR,
+  type AgentWorkReport,
   type WorkBeat,
+  type WorkDaySummary,
   type WorkFile,
   type WorkSnapshot,
 } from './village/work-vow'
@@ -64,8 +69,42 @@ export function workVowSnapshot(now = Date.now()): Promise<WorkSnapshot> {
   return serial(async () => workSnapshot(await readBook(), now))
 }
 
-export function reportWorkBeat(beat: WorkBeat & { release?: boolean }, now = Date.now()): Promise<{ counting: boolean; credited: number; snapshot: WorkSnapshot }> {
+/** A mission's title and priority, for time on a card that is merely open. Null: no such mission. */
+async function missionMeta(file: string): Promise<{ file: string; title: string; priority: number } | null> {
+  if (!isMissionFile(file) || file !== path.basename(file)) return null
+  try {
+    const parsed = parseMission(file, await fs.readFile(path.join(missionsDir(), file), 'utf8'))
+    return { file, title: parsed.title, priority: parsed.priority || 0 }
+  } catch {
+    return null
+  }
+}
+
+/** One day, ready to tell (the 21:00 message reads this). */
+export function workDaySummary(date: string, now = Date.now()): Promise<WorkDaySummary> {
+  return serial(async () => daySummary(await readBook(), date, localDay(now)))
+}
+
+/** Finished turns and helpers, from the page that heard the engine say so. */
+export function reportAgentWork(reports: AgentWorkReport[]): Promise<{ booked: number }> {
   return serial(async () => {
+    const before = await readBook()
+    let book = before
+    let booked = 0
+    for (const report of reports.slice(0, 200)) {
+      const next = applyAgentWork(book, report)
+      if (next !== book) booked += 1
+      book = next
+    }
+    if (book !== before) await writeBook(book)
+    return { booked }
+  })
+}
+
+export function reportWorkBeat(input: Omit<WorkBeat, 'focus'> & { release?: boolean; focus?: { agent?: { key: string; name: string } | null; mission?: string | null } }, now = Date.now()): Promise<{ counting: boolean; credited: number; snapshot: WorkSnapshot }> {
+  return serial(async () => {
+    const mission = input.focus?.mission ? await missionMeta(input.focus.mission) : null
+    const beat: WorkBeat & { release?: boolean } = { ...input, focus: { agent: input.focus?.agent || null, mission } }
     const before = await readBook()
     const result = applyWorkBeat(before, beat, now)
     // A closing page reports its last seconds and lets go.

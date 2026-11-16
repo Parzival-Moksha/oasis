@@ -7,7 +7,9 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { formatClock, WORK_VALOR, type WorkDayView, type WorkSnapshot } from '../../lib/village/work-vow'
 import { GAME_HUD_TEXT } from '../forge/GameKeycap'
-import { getWorkVowState, setWorkMission, startWorkVow, subscribeWorkVow } from './work-vow-client'
+import { useOasisStore } from '../../store/oasisStore'
+import { getMissionState, subscribeMissions } from './village-mission-store'
+import { getWorkVowState, setWorkFocus, setWorkMission, startWorkVow, subscribeWorkVow } from './work-vow-client'
 import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY } from './village-status'
 
 const GREEN = '#34d399'
@@ -49,6 +51,56 @@ function DayPip({ day, today, target, liveSeconds }: { day: WorkDayView; today: 
   )
 }
 
+function Bar({ label, seconds, total, color, right, onClick, open }: { label: string; seconds: number; total: number; color: string; right?: string; onClick?: () => void; open?: boolean }) {
+  const share = total > 0 ? seconds / total : 0
+  return (
+    <div className={onClick ? 'cursor-pointer' : undefined} onClick={onClick}>
+      <div className="flex items-baseline justify-between gap-2 text-white/80">
+        <span className="min-w-0 truncate">{onClick ? (open ? '▾ ' : '▸ ') : ''}{label}</span>
+        <span className="shrink-0 tabular-nums">{right ?? formatClock(seconds)} · {Math.round(share * 100)}%</span>
+      </div>
+      <div className="mb-1 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full" style={{ width: `${Math.min(100, share * 100)}%`, background: color }} /></div>
+    </div>
+  )
+}
+
+/** Today's time by what was open (agents fold out into each agent), and the agents' own working hours. */
+function WhereTimeWent({ snapshot }: { snapshot: WorkSnapshot }) {
+  const [agentsOpen, setAgentsOpen] = useState(false)
+  const [hoursOpen, setHoursOpen] = useState(false)
+  const day = snapshot.summary
+  if (!day) return null
+  const withAgents = day.agents.reduce((sum, agent) => sum + agent.seconds, 0)
+  const hours = day.agentHours
+  return (
+    <div className="mt-2">
+      <div className="mb-1 text-[9.5px] uppercase tracking-[0.2em] text-white/45">Where your time went</div>
+      {day.missions.map(mission => (
+        <Bar key={mission.file} label={`${mission.title} ×${(1 + mission.priority).toFixed(2)}`} seconds={mission.seconds} total={day.seconds} color="#38bdf8" right={`${formatClock(mission.seconds)} · ${mission.xp} XP`} />
+      ))}
+      {day.agentSeconds > 0 && <Bar label={`With agents ×${WORK_VALOR.agent}`} seconds={day.agentSeconds} total={day.seconds} color="#c084fc" />}
+      <Bar label={`In the Oasis ×${WORK_VALOR.free}`} seconds={day.freeSeconds} total={day.seconds} color="#34d399" />
+      {withAgents > 0 && (
+        <div className="mt-1.5">
+          <Bar label="Daily agent work (you, with an agent open)" seconds={withAgents} total={day.seconds} color="#c084fc" onClick={() => setAgentsOpen(value => !value)} open={agentsOpen} />
+          {agentsOpen && <div className="ml-3">{day.agents.map(agent => <Bar key={agent.key} label={agent.name} seconds={agent.seconds} total={withAgents} color="#a78bfa" />)}</div>}
+        </div>
+      )}
+      <div className="mt-1.5">
+        <Bar label="Agent hours (the Oasis worked)" seconds={hours.totalSeconds} total={Math.max(hours.totalSeconds, 1)} color="#fbbf24" right={formatClock(hours.totalSeconds)} onClick={() => setHoursOpen(value => !value)} open={hoursOpen} />
+        {hoursOpen && (
+          <div className="ml-3">
+            {hours.agents.length === 0 && <div className="text-white/45">No finished turns yet today.</div>}
+            {hours.agents.map(agent => (
+              <Bar key={agent.key} label={`${agent.name}${agent.helperSeconds ? ` (own ${formatClock(agent.ownSeconds)} + helpers ${formatClock(agent.helperSeconds)})` : ''}`} seconds={agent.totalSeconds} total={hours.totalSeconds} color="#fcd34d" />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function Detail({ snapshot, liveSeconds, onClose }: { snapshot: WorkSnapshot; liveSeconds: number; onClose: () => void }) {
   const row = 'flex items-baseline justify-between gap-3'
   // What the commitment did to a day: the bonus of a hit, the cost of a miss.
@@ -61,7 +113,7 @@ function Detail({ snapshot, liveSeconds, onClose }: { snapshot: WorkSnapshot; li
   return (
     <div
       data-ui-panel="village-work-vow"
-      className="fixed bottom-[92px] left-3 z-[9300] w-[330px] rounded-xl border border-white/15 bg-slate-950/95 p-3 text-[12px] text-white shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-xl max-[700px]:bottom-auto max-[700px]:top-[120px]"
+      className="fixed bottom-[92px] left-3 z-[9300] max-h-[calc(100vh-110px)] w-[350px] overflow-y-auto rounded-xl border border-white/15 bg-slate-950/95 p-3 text-[12px] text-white shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-xl max-[700px]:bottom-auto max-[700px]:top-[120px]"
       style={{ fontFamily: VILLAGE_FONT_BODY }}
     >
       <div className="mb-2 flex items-start justify-between">
@@ -72,13 +124,7 @@ function Detail({ snapshot, liveSeconds, onClose }: { snapshot: WorkSnapshot; li
         <button type="button" onClick={onClose} className="rounded-md border border-white/15 bg-white/5 px-2 py-0.5 text-[12px] font-bold hover:bg-white/15">✕</button>
       </div>
       <div className={row}><span className="text-white/60">Today</span><span className="font-bold">{formatClock(liveSeconds)} · {snapshot.today.xp} XP</span></div>
-      <div className={`${row} text-white/75`}><span>In the Oasis ×{WORK_VALOR.free}</span><span>{formatClock(snapshot.today.freeSeconds)}</span></div>
-      {snapshot.today.missions.map(mission => (
-        <div key={mission.file} className={`${row} text-white/75`}>
-          <span className="min-w-0 truncate">{mission.title} ×{(1 + mission.priority).toFixed(2)}</span>
-          <span className="shrink-0">{formatClock(mission.seconds)} · {mission.xp} XP</span>
-        </div>
-      ))}
+      <WhereTimeWent snapshot={snapshot} />
       {snapshot.active && (
         <button type="button" onClick={() => { void setWorkMission(null) }} className="mt-2 w-full rounded-md border border-amber-300/40 bg-amber-400/15 px-2 py-1 text-[11px] font-bold text-amber-50 hover:bg-amber-400/30">
           ■ stop working on “{snapshot.active.title}”
@@ -120,15 +166,30 @@ export function WorkVowHud() {
   const state = useSyncExternalStore(subscribeWorkVow, getWorkVowState, getWorkVowState)
   const [open, setOpen] = useState(false)
   useEffect(() => startWorkVow(), [])
+  // What is open decides where the seconds go: an agent, a mission card, or just the Oasis.
+  const agentFocus = useOasisStore(s => {
+    const agent = s.agentEngine.focusedAgentId ? s.agentEngine.agents[s.agentEngine.focusedAgentId] : null
+    return agent ? `${agent.sessionId || agent.id}\u0001${agent.name || agent.id}` : ''
+  })
+  const missionFocus = useSyncExternalStore(subscribeMissions, () => getMissionState().reader?.file || null, () => null)
+  useEffect(() => {
+    const [key, name] = agentFocus.split('\u0001')
+    setWorkFocus({ agent: key ? { key, name } : null, mission: missionFocus })
+  }, [agentFocus, missionFocus])
 
   const snapshot = state.snapshot
   if (!snapshot) return null
   const liveSeconds = snapshot.today.seconds + state.pendingSeconds
   const done = liveSeconds >= snapshot.targetSeconds
   const color = done ? GREEN : AMBER
+  const openMission = missionFocus ? getMissionState().missions.find(mission => mission.file === missionFocus) : null
   const kind = snapshot.active
     ? `${snapshot.active.title} ×${(1 + snapshot.active.priority).toFixed(2)}`
-    : `in the Oasis ×${WORK_VALOR.free}`
+    : openMission
+      ? `${openMission.title} ×${(1 + (openMission.priority || 0)).toFixed(2)}`
+      : agentFocus
+        ? `with ${agentFocus.split('\u0001')[1]} ×${WORK_VALOR.agent}`
+        : `in the Oasis ×${WORK_VALOR.free}`
   const vow = snapshot.commitments?.[0]
   const status = state.unsaved ? 'not saved: server unreachable' : state.otherTab ? 'another tab is counting' : state.running ? kind : `paused · ${kind}`
 

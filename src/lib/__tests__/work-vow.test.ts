@@ -242,3 +242,88 @@ describe('commitments (the first Mindcraft: committed counts double, a miss cost
     expect(applyWorkBeat(file, { tab: 'b', seq: 1, seconds: 0 }, at('09:00:20'), TZ).file.released).toBeUndefined()
   })
 })
+
+describe('what the time is counted on', () => {
+  const agent = { key: 's-anorak', name: 'Anorak' }
+  const card = { file: 'a.md', title: 'A', priority: 0.5 }
+  const step = (file: WorkFile, seq: number, focus: Parameters<typeof applyWorkBeat>[1]['focus']) =>
+    applyWorkBeat(file, { tab: 'a', seq, seconds: 60, focus }, at('09:00:00') + (seq - 1) * 60_000, TZ).file
+  it('an open agent: valor 1, tallied under that agent; a mission card: that mission; neither: free at 0.7', () => {
+    let book = applyWorkBeat(emptyWorkFile(), { tab: 'a', seq: 1, seconds: 0 }, at('09:00:00'), TZ).file
+    book = step(book, 2, { agent })
+    book = step(book, 3, { mission: card })
+    book = step(book, 4, {})
+    book = step(book, 5, { agent, mission: card })
+    const day = book.days['2026-11-16']
+    expect(day).toMatchObject({ freeSeconds: 60, freeXp: 0.7, agentSeconds: 60, agentXp: 1 })
+    expect(day.missions['a.md']).toMatchObject({ seconds: 120, xp: 3 })
+    // With Anorak open for two of the four minutes: one earned as agent time, one as mission time.
+    expect(day.agents).toEqual({ 's-anorak': { name: 'Anorak', seconds: 120, xp: 2.5 } })
+    expect(daySeconds(day)).toBe(240)
+    expect(dayXp(day)).toBe(4.7)
+  })
+  it('"work on this" wins over the card that is open', () => {
+    let book = setWorkMission(emptyWorkFile(), { file: 'vow.md', title: 'Vow', priority: 1 }, at('09:00:00'))
+    book = applyWorkBeat(book, { tab: 'a', seq: 1, seconds: 0 }, at('09:00:00'), TZ).file
+    book = step(book, 2, { mission: card, agent })
+    expect(Object.keys(book.days['2026-11-16'].missions)).toEqual(['vow.md'])
+  })
+})
+
+describe('agent hours', () => {
+  it('an agent\'s own time is its turn minus the waiting on helpers; helpers at once are one wait', async () => {
+    const { ownTurnMs } = await import('../village/work-vow')
+    expect(ownTurnMs(600_000, 1_000_000, [])).toBe(600_000)
+    // Turn 400 s..1000 s. One helper 500..700, one 650..800 (overlap), one still running since 950.
+    expect(ownTurnMs(600_000, 1_000_000, [{ start: 500_000, end: 700_000 }, { start: 650_000, end: 800_000 }, { start: 950_000, end: null }])).toBe(250_000)
+    // A helper from before the turn counts only for its part inside it; one after it not at all.
+    expect(ownTurnMs(100_000, 1_000_000, [{ start: 0, end: 950_000 }, { start: 1_000_000, end: 1_100_000 }])).toBe(50_000)
+    expect(ownTurnMs(100_000, 1_000_000, [{ start: 0, end: null }])).toBe(0)
+  })
+  it('books turns and helpers per agent and day; the same event twice is booked once', async () => {
+    const { applyAgentWork, daySummary } = await import('../village/work-vow')
+    const ts = at('10:00:00')
+    let book = applyAgentWork(emptyWorkFile(), { key: 's1', name: 'Anorak', ts, kind: 'turn', ms: 250_000 }, TZ)
+    const again = applyAgentWork(book, { key: 's1', name: 'Anorak', ts, kind: 'turn', ms: 250_000 }, TZ)
+    expect(again).toBe(book)
+    book = applyAgentWork(book, { key: 's1', name: 'Anorak', ts: ts - 5000, kind: 'helper', ms: 200_000 }, TZ)
+    book = applyAgentWork(book, { key: 's1', name: 'Anorak', ts: ts - 4000, kind: 'helper', ms: 150_000 }, TZ)
+    book = applyAgentWork(book, { key: 's2', name: 'Morrow', ts: ts + 1000, kind: 'turn', ms: 60_000 }, TZ)
+    // An older event replayed after a reload: ignored.
+    expect(applyAgentWork(book, { key: 's1', name: 'Anorak', ts: ts - 9000, kind: 'helper', ms: 99_000 }, TZ)).toBe(book)
+    // After local midnight: the next day.
+    book = applyAgentWork(book, { key: 's2', name: 'Morrow', ts: at('00:10:00', '2026-11-17'), kind: 'turn', ms: 30_000 }, TZ)
+    const day = daySummary(book, '2026-11-16', '2026-11-16')
+    expect(day.agentHours.totalSeconds).toBe(660)
+    expect(day.agentHours.agents).toEqual([
+      { key: 's1', name: 'Anorak', ownSeconds: 250, helperSeconds: 350, turns: 1, helpers: 2, totalSeconds: 600 },
+      { key: 's2', name: 'Morrow', ownSeconds: 60, helperSeconds: 0, turns: 1, helpers: 0, totalSeconds: 60 },
+    ])
+    expect(daySummary(book, '2026-11-17', '2026-11-17').agentHours.totalSeconds).toBe(30)
+    // Agent hours are not the owner's time: the vow does not move.
+    expect(day.seconds).toBe(0)
+  })
+})
+
+describe('the day summary (the 21:00 message reads this)', () => {
+  it('time and XP against the vow, per agent, per mission, top XP, kept or not', async () => {
+    const { daySummary } = await import('../village/work-vow')
+    const book = emptyWorkFile()
+    book.days['2026-11-16'] = {
+      freeSeconds: 1800, freeXp: 21, agentSeconds: 3600, agentXp: 60,
+      missions: { 'a.md': { title: 'A', priority: 0.5, seconds: 3600, xp: 90 } },
+      agents: { s1: { name: 'Anorak', seconds: 4500, xp: 90 }, s2: { name: 'Morrow', seconds: 1500, xp: 30 } },
+    }
+    const missed = daySummary(book, '2026-11-16', '2026-11-17')
+    expect(missed).toMatchObject({ seconds: 9000, targetSeconds: 10_800, remainingSeconds: 1800, xp: 171, kept: false, open: false, bonusXp: 0, penaltyXp: 210, netXp: -39, freeSeconds: 1800, agentSeconds: 3600, missionSeconds: 3600 })
+    expect(missed.agents).toEqual([{ key: 's1', name: 'Anorak', seconds: 4500, xp: 90, share: 0.75 }, { key: 's2', name: 'Morrow', seconds: 1500, xp: 30, share: 0.25 }])
+    expect(missed.topXp.map(item => [item.label, item.xp, item.kind])).toEqual([['A', 90, 'mission'], ['With agents', 60, 'agents'], ['In the Oasis', 21, 'free']])
+    // The same day while it is still running: open, nothing lost yet.
+    expect(daySummary(book, '2026-11-16', '2026-11-16')).toMatchObject({ kept: false, open: true, penaltyXp: 0 })
+    book.days['2026-11-16'].freeSeconds = 3600
+    book.days['2026-11-16'].freeXp = 42
+    expect(daySummary(book, '2026-11-16', '2026-11-17')).toMatchObject({ kept: true, open: false, bonusXp: 192, penaltyXp: 0, netXp: 384 })
+    expect(workSnapshot(book, at('12:00:00'), TZ).today.topXp[0].label).toBe('A')
+    expect(daySummary(book, '2026-12-01', '2026-12-01')).toMatchObject({ seconds: 0, kept: false, bonusXp: 0, penaltyXp: 0 })
+  })
+})

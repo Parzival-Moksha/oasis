@@ -18,6 +18,15 @@ import type {
 import type { AgentEngineAction } from '../store/slices/agentEngineSlice'
 import { useOasisStore } from '../store/oasisStore'
 
+type EngineEventTap = (event: { kind: string; agentId: string; ts: number } & Record<string, unknown>) => void
+const engineEventTaps = new Set<EngineEventTap>()
+
+/** Hear every engine event (not the text deltas) as it arrives. Returns the unsubscribe function. */
+export function onEngineEvent(tap: EngineEventTap): () => void {
+  engineEventTaps.add(tap)
+  return () => { engineEventTaps.delete(tap) }
+}
+
 export const DEFAULT_AGENT_ENGINE_URL = 'ws://127.0.0.1:4530/ws'
 
 export function resolveAgentEngineUrl(value: string | undefined = process.env.NEXT_PUBLIC_AGENT_ENGINE_URL): string {
@@ -461,6 +470,8 @@ export class AgentEngineClient {
         }
         this.flushDeltas()
         this.dispatch({ type: 'event', event })
+        // Listeners outside the store (the Mindcraft work counter books agent hours from turn and helper ends).
+        for (const tap of engineEventTaps) tap(event as { kind: string; agentId: string; ts: number } & Record<string, unknown>)
         return
       }
       case 'reply': {
