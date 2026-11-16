@@ -22,6 +22,8 @@ import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
 import { useInputManager, consumeMouseLookDelta } from '../../lib/input-manager'
 import { AnimationController } from '../../lib/animation-state-machine'
 import { useAudioManager } from '../../lib/audio-manager'
+import { localToWorldXZ } from '../../lib/forge/hips-motion'
+import { startDanceMusic, stopDanceMusic, currentDanceMusic } from '../../lib/dance-music'
 import { getMobileInputSnapshot } from '../../lib/mobile-controls'
 import { getLipSync } from '../../lib/lip-sync'
 import { sprintRef } from '../CameraController'
@@ -209,6 +211,11 @@ export function PlayerAvatar({
   // ── Animation Controller (state machine) ──────────────────────────
   const animControllerRef = useRef<AnimationController | null>(null)
   const footstepTimerRef = useRef(0)
+  // The camera follows a dance's hand-over of position softly instead of in the same instant.
+  const cameraLagRef = useRef(new THREE.Vector3())
+  const danceKeyDownRef = useRef(false)
+  const rootFacingRef = useRef<number | null>(null)
+  useEffect(() => () => stopDanceMusic(), [])
   const spellAnimationActiveRef = useRef(false)
   const manaRechargeAnimationActiveRef = useRef(false)
   const portalRollTimeoutRef = useRef<number | null>(null)
@@ -537,6 +544,20 @@ export function PlayerAvatar({
 
     // ── Animation mixer first, THEN VRM (spring bones react to new pose) ──
     animControllerRef.current?.update(delta)
+    // Root motion: a dance carries the character, and a dance cut short leaves it where it stands.
+    const rootMotion = animControllerRef.current?.consumeRootMotion(delta)
+    if (rootMotion && (rootMotion.x !== 0 || rootMotion.z !== 0)) {
+      const moved = localToWorldXZ(rootMotion.x, rootMotion.z, facingAngle.current)
+      positionRef.current.x += moved.x
+      positionRef.current.z += moved.z
+      if (rootMotion.shiftX !== 0 || rootMotion.shiftZ !== 0) {
+        const shift = localToWorldXZ(rootMotion.shiftX, rootMotion.shiftZ, facingAngle.current)
+        cameraLagRef.current.x -= shift.x
+        cameraLagRef.current.z -= shift.z
+      }
+    }
+    if (cameraLagRef.current.lengthSq() > 1e-8) cameraLagRef.current.multiplyScalar(Math.exp(-delta / 0.3))
+    else cameraLagRef.current.set(0, 0, 0)
     v.update(delta)
 
     if (isThirdPersonActive && !wasThirdPersonActiveRef.current) {
@@ -730,12 +751,12 @@ export function PlayerAvatar({
       )
       offset.addScaledVector(camRight, shoulderOffset)
 
-      const lookTarget = _lookTarget.current.copy(positionRef.current)
+      const lookTarget = _lookTarget.current.copy(positionRef.current).add(cameraLagRef.current)
       lookTarget.addScaledVector(camRight, shoulderOffset)
       lookTarget.addScaledVector(camForward, lookAhead)
       lookTarget.y += lookTargetHeight
 
-      state.camera.position.copy(positionRef.current).add(offset)
+      state.camera.position.copy(positionRef.current).add(cameraLagRef.current).add(offset)
       state.camera.lookAt(lookTarget)
 
       // ── Sprint VFX: FOV ramp + camera shake (same feel as noclip) ──
@@ -766,6 +787,19 @@ export function PlayerAvatar({
     }
 
     // ── Sync group transform to position ref ─────────────────────
+    // While a cut-short dance is still handing its place over, a turn must pivot about the hips,
+    // in the same frame as the turn,
+    // not about the character's origin (a half turn would throw the body a metre in one frame).
+    const residual = animControllerRef.current?.getRootResidual()
+    if (residual && rootFacingRef.current !== null && rootFacingRef.current !== facingAngle.current && (residual.x !== 0 || residual.z !== 0)) {
+      const before = localToWorldXZ(residual.x, residual.z, rootFacingRef.current)
+      const after = localToWorldXZ(residual.x, residual.z, facingAngle.current)
+      positionRef.current.x += before.x - after.x
+      positionRef.current.z += before.z - after.z
+      cameraLagRef.current.x -= before.x - after.x
+      cameraLagRef.current.z -= before.z - after.z
+    }
+    rootFacingRef.current = facingAngle.current
     group.position.copy(positionRef.current)
     group.rotation.y = facingAngle.current
     setPlayerAvatarPose({
@@ -816,12 +850,26 @@ export function PlayerAvatar({
       // ── X key = random dance ──
       if (isThirdPersonActive) {
         const { dance } = getKeys() as Record<string, boolean>
-        if (dance && !playerSpellCasting && !playerManaRecharging && animControllerRef.current.state !== 'custom') {
-          const randomDance = DANCE_CLIPS[Math.floor(Math.random() * DANCE_CLIPS.length)]
+        // One dance per press: X while dancing picks another one.
+        const pressed = Boolean(dance) && !danceKeyDownRef.current
+        danceKeyDownRef.current = Boolean(dance)
+        const current = animControllerRef.current.state === 'custom' ? animControllerRef.current.customAnimationId : null
+        const dancing = current !== null && DANCE_CLIPS.includes(current)
+        if (pressed && !playerSpellCasting && !playerManaRecharging && (current === null || dancing)) {
+          const choices = DANCE_CLIPS.filter(id => id !== current)
+          const randomDance = choices[Math.floor(Math.random() * choices.length)]
           animControllerRef.current.preloadClip(randomDance).then(ok => {
             if (ok) animControllerRef.current?.transitionTo('custom', randomDance)
           })
         }
+      }
+
+      // Music for the dance, for as long as it lasts.
+      const dancingNow = animControllerRef.current.state === 'custom' ? animControllerRef.current.customAnimationId : null
+      const musicFor = dancingNow && DANCE_CLIPS.includes(dancingNow) ? dancingNow : null
+      if (musicFor !== currentDanceMusic()) {
+        if (musicFor) startDanceMusic(musicFor)
+        else stopDanceMusic()
       }
 
       // Footstep sounds — play at intervals when walking/running/sprinting

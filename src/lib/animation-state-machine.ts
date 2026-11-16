@@ -17,7 +17,7 @@
 
 import * as THREE from 'three'
 import type { VRM } from '@pixiv/three-vrm'
-import { loadAnimationClip, retargetClipForVRM, retargetUALClipForVRM, isUALAnimation } from './forge/animation-library'
+import { loadAnimationClip, retargetClipForVRM, retargetUALClipForVRM, isUALAnimation, getClipTravel } from './forge/animation-library'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -62,6 +62,9 @@ export class AnimationController {
   private currentAction: THREE.AnimationAction | null = null
   private customAnimId: string | null = null
   private disposed = false
+  // Root motion (see consumeRootMotion): the hips' place when a dance was cut short, handed over
+  // to the character's position as that dance fades out.
+  private rootAbsorb: { x: number; z: number; givenX: number; givenZ: number; age: number } | null = null
   private transitionGeneration = 0  // increments on each transition, prevents stale async callbacks
 
   // Ready flag — true when at least idle clip is loaded
@@ -180,6 +183,8 @@ export class AnimationController {
     this.customAnimId = state === 'custom' ? (customAnimId || null) : null
     this.transitionGeneration++
 
+    this.beginRootAbsorb()
+
     // Crossfade
     const newAction = this.mixer.clipAction(clip)
     newAction.reset()
@@ -201,6 +206,77 @@ export class AnimationController {
 
     this.currentAction = newAction
     this.currentState = state
+  }
+
+  // ── ROOT MOTION ──────────────────────────────────────────────────────
+
+  /** Where the animation holds the hips right now, relative to the character, in its own axes (x right, z forward). */
+  private hipsOffset(): { x: number; z: number } {
+    const node = this.vrm.humanoid.getNormalizedBoneNode('hips' as any)
+    const rest = (this.vrm.humanoid as unknown as { normalizedRestPose?: { hips?: { position?: number[] } } }).normalizedRestPose?.hips?.position
+    if (!node || !rest || rest.length < 3) return { x: 0, z: 0 }
+    // VRM 0.x scenes are turned half round, so the rig's x and z run the other way.
+    const sign = (this.vrm.meta as any)?.metaVersion === '0' ? -1 : 1
+    return { x: sign * (node.position.x - rest[0]), z: sign * (node.position.z - rest[2]) }
+  }
+
+  /** A custom clip (a dance) is being left: its hips' place is to become the character's place. */
+  private beginRootAbsorb(): void {
+    if (this.rootAbsorb) {
+      // Already handing over (walk turning into run a moment later): the same hand-over goes on.
+      this.rootAbsorb.age = 0
+      return
+    }
+    if (this.currentState !== 'custom' || !this.currentAction) return
+    const now = this.hipsOffset()
+    if (Math.hypot(now.x, now.z) < 0.01) return
+    this.rootAbsorb = { x: now.x, z: now.z, givenX: 0, givenZ: 0, age: 0 }
+  }
+
+  /**
+   * How far the animation moved the character since the last call, in the character's own axes
+   * (x to its right, z forward), metres. Add it to the character's position.
+   *   - A dance with steady travel in it carries the character along.
+   *   - When a dance is cut short, the place its hips had reached becomes the character's place:
+   *     every frame the character takes exactly what the fading dance has let go of, so the body
+   *     neither snaps back nor slides, whatever the blend does. That part is also returned as
+   *     `shift`, for a camera that wants to follow it softly.
+   */
+  consumeRootMotion(delta: number): { x: number; z: number; shiftX: number; shiftZ: number } {
+    let x = 0
+    let z = 0
+    if (this.currentState === 'custom' && this.currentAction) {
+      const travel = getClipTravel(this.currentAction.getClip())
+      if (travel.x !== 0 || travel.z !== 0) {
+        const amount = delta * this.currentAction.getEffectiveWeight() * this.currentAction.getEffectiveTimeScale()
+        x += travel.x * amount
+        z += travel.z * amount
+      }
+    }
+    let shiftX = 0
+    let shiftZ = 0
+    const absorb = this.rootAbsorb
+    if (absorb) {
+      const now = this.hipsOffset()
+      shiftX = absorb.x - now.x - absorb.givenX
+      shiftZ = absorb.z - now.z - absorb.givenZ
+      absorb.givenX += shiftX
+      absorb.givenZ += shiftZ
+      absorb.age += delta
+      // The fade is over a moment after the crossfade time; what the new clip does with the hips is its own.
+      if (absorb.age > this.config.crossfadeDuration * 1.5) this.rootAbsorb = null
+    }
+    return { x: x + shiftX, z: z + shiftZ, shiftX, shiftZ }
+  }
+
+  /**
+   * Where the hips are held away from the character while a dance plays or is being handed over.
+   * While this is not zero, turning the character would swing the body around its origin; the
+   * owner of the position turns it about the hips instead.
+   */
+  getRootResidual(): { x: number; z: number } {
+    if (this.currentState !== 'custom' && !this.rootAbsorb) return { x: 0, z: 0 }
+    return this.hipsOffset()
   }
 
   getClipDuration(animId: string): number | null {

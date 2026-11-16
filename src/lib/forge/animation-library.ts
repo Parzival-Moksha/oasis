@@ -15,6 +15,7 @@
 
 import * as THREE from 'three'
 import type { VRM } from '@pixiv/three-vrm'
+import { captureHipsDeltas, detrendTravel, hipsTrackValues, travelVelocity, type HipsMotion } from './hips-motion'
 
 const OASIS_BASE = typeof window !== 'undefined'
   ? (process.env.NEXT_PUBLIC_BASE_PATH || '')
@@ -280,7 +281,7 @@ export function retargetClipForVRM(
   vrm: VRM,
   cacheKey: string,
 ): THREE.AnimationClip {
-  const fullKey = `vrm4__${clip.name}__${cacheKey}`
+  const fullKey = `vrm5__${clip.name}__${cacheKey}__${hipsCacheTag(vrm)}`
   if (retargetCache.has(fullKey)) {
     return retargetCache.get(fullKey)!
   }
@@ -365,7 +366,9 @@ export function retargetClipForVRM(
     tracks.push(t)
   }
 
+  const travel = addHipsTrack(tracks, animId, vrm, isVRM0)
   const retargeted = new THREE.AnimationClip(clip.name, clip.duration, tracks)
+  if (travel) clipTravel.set(retargeted, travel)
   retargetCache.set(fullKey, retargeted)
   if (ANIMLIB_DEBUG) console.log(`[AnimLib:VRM] Retargeted "${clip.name}" (${cacheKey}): ${remapped} mapped, ${compensated} compensated, ${unmapped} unmapped`)
   return retargeted
@@ -527,6 +530,73 @@ interface MixamoRestData {
 const mixamoRestCache = new Map<string, Map<string, MixamoRestData>>()
 const mixamoHipsHeightCache = new Map<string, number>()
 
+// ░▒▓ HIPS MOVEMENT — kept beside the clip, used only by the VRM retargets (see hips-motion.ts) ▓▒░
+// The clips themselves stay without a hips position track, so non-VRM rigs see no change.
+const hipsMotionCache = new Map<string, HipsMotion>()
+/** Steady travel of a retargeted clip for the avatar it was made for: metres a second, x right, z forward. */
+const clipTravel = new WeakMap<THREE.AnimationClip, { x: number; z: number }>()
+/** Offsets larger than this many hips heights mean the rig's units were misread: leave the hips alone. */
+const HIPS_SANITY_LIMIT = 4
+
+export function getHipsMotion(animId: string): HipsMotion | null {
+  return hipsMotionCache.get(animId) ?? null
+}
+
+/** How fast the clip carries the character along, once per retargeted clip. Zero for clips that stay put. */
+export function getClipTravel(clip: THREE.AnimationClip): { x: number; z: number } {
+  return clipTravel.get(clip) ?? { x: 0, z: 0 }
+}
+
+function rememberHipsMotion(animId: string, track: THREE.KeyframeTrack, bone: THREE.Object3D | null, duration: number): void {
+  if (!bone || hipsMotionCache.has(animId)) return
+  try {
+    bone.updateWorldMatrix(true, false)
+    const basis = bone.parent ? new THREE.Matrix3().setFromMatrix4(bone.parent.matrixWorld).elements : [1, 0, 0, 0, 1, 0, 0, 0, 1]
+    const restHeight = bone.getWorldPosition(new THREE.Vector3()).y
+    const captured = captureHipsDeltas(track.times, track.values, [bone.position.x, bone.position.y, bone.position.z], basis, restHeight)
+    if (!captured) return
+    const { deltas, travel } = detrendTravel(captured.times, captured.deltas)
+    for (let i = 0; i < deltas.length; i++) {
+      if (Math.abs(deltas[i]) > HIPS_SANITY_LIMIT) {
+        if (ANIMLIB_DEBUG) console.warn(`[AnimLib] ${animId}: hips offsets out of range, hips stay at rest`)
+        return
+      }
+    }
+    hipsMotionCache.set(animId, { times: captured.times, deltas, travel, duration })
+  } catch (err) {
+    if (ANIMLIB_DEBUG) console.warn(`[AnimLib] ${animId}: could not read hips movement`, err)
+  }
+}
+
+/** Off switch for comparing: localStorage 'oasis-hips-motion' = 'off', then reload. */
+function hipsMotionEnabled(): boolean {
+  try { return typeof window === 'undefined' || window.localStorage.getItem('oasis-hips-motion') !== 'off' } catch { return true }
+}
+
+/** The avatar's hips at rest in its normalized rig (not the live node, which a playing clip has moved). */
+function vrmHipsRest(vrm: VRM): [number, number, number] | null {
+  const rest = (vrm.humanoid as unknown as { normalizedRestPose?: { hips?: { position?: number[] } } }).normalizedRestPose?.hips?.position
+  if (rest && rest.length >= 3 && Number.isFinite(rest[1]) && rest[1] > 0.05) return [rest[0], rest[1], rest[2]]
+  return null
+}
+
+/** Adds the hips position track for this avatar to `tracks`, and returns the clip's steady travel. */
+function addHipsTrack(tracks: THREE.KeyframeTrack[], animId: string, vrm: VRM, isVRM0: boolean): { x: number; z: number } | null {
+  const motion = hipsMotionCache.get(animId)
+  const rest = vrmHipsRest(vrm)
+  const node = vrm.humanoid.getNormalizedBoneNode('hips' as Parameters<typeof vrm.humanoid.getNormalizedBoneNode>[0])
+  if (!motion || !rest || !node || !hipsMotionEnabled()) return null
+  const name = `${node.name}.position`
+  if (tracks.some(t => t.name === name)) return null
+  tracks.push(new THREE.VectorKeyframeTrack(name, Array.from(motion.times), Array.from(hipsTrackValues(motion.deltas, rest, rest[1], isVRM0))))
+  return travelVelocity(motion, rest[1])
+}
+
+function hipsCacheTag(vrm: VRM): string {
+  const rest = vrmHipsRest(vrm)
+  return rest && hipsMotionEnabled() ? `h${rest[1].toFixed(3)}` : 'h0'
+}
+
 /** The lib: prefix indicates a library animation in behavior config */
 export const LIB_PREFIX = 'lib:'
 
@@ -584,6 +654,7 @@ export async function loadAnimationClip(animId: string): Promise<THREE.Animation
       fbx.updateWorldMatrix(true, true)
       const restRotations = new Map<string, MixamoRestData>()
       let hipsHeight = 1
+      let hipsBone: THREE.Object3D | null = null
       const restWorldQuat = new THREE.Quaternion()
       const parentRestWorldQuat = new THREE.Quaternion()
       fbx.traverse((child) => {
@@ -602,6 +673,7 @@ export async function loadAnimationClip(animId: string): Promise<THREE.Animation
           // Capture hips height for position track scaling
           if (name === 'mixamorigHips' || name === 'Hips') {
             hipsHeight = child.position.y
+            hipsBone = child
           }
         }
       })
@@ -651,6 +723,8 @@ export async function loadAnimationClip(animId: string): Promise<THREE.Animation
           // model this teleports it. Stripping the whole track is safest — the skeleton
           // rest pose already positions the hips correctly, and rotation tracks handle
           // the body movement. Keeping Y-bob caused -infinity teleports on Tripo.
+          // The movement is kept beside the clip for VRM avatars (hips-motion.ts), not in it.
+          rememberHipsMotion(animId, track, hipsBone, rawClip.duration)
           if (ANIMLIB_DEBUG) console.log(`[AnimLib] ${animId}: stripped root position track entirely (prevents teleport)`)
           continue  // skip this track
         }
@@ -762,8 +836,9 @@ async function loadUALClip(entry: LocalAnimation): Promise<THREE.AnimationClip |
       const boneName = track.name.substring(0, dotIdx)
       const property = track.name.substring(dotIdx)
 
-      // Strip pelvis/root position tracks
+      // Strip pelvis/root position tracks (the movement is kept beside the clip for VRM avatars)
       if (boneName === 'pelvis' && property === '.position') {
+        rememberHipsMotion(entry.id, track, pack.scene.getObjectByName('pelvis') ?? null, rawClip.duration)
         continue
       }
 
@@ -797,7 +872,7 @@ export function retargetUALClipForVRM(
   vrm: VRM,
   cacheKey: string,
 ): THREE.AnimationClip {
-  const fullKey = `vrm4ual__${clip.name}__${cacheKey}`
+  const fullKey = `vrm5ual__${clip.name}__${cacheKey}__${hipsCacheTag(vrm)}`
   if (retargetCache.has(fullKey)) {
     return retargetCache.get(fullKey)!
   }
@@ -871,7 +946,9 @@ export function retargetUALClipForVRM(
     tracks.push(t)
   }
 
+  const travel = addHipsTrack(tracks, clip.name.replace(LIB_PREFIX, ''), vrm, isVRM0)
   const retargeted = new THREE.AnimationClip(clip.name, clip.duration, tracks)
+  if (travel) clipTravel.set(retargeted, travel)
   retargetCache.set(fullKey, retargeted)
   if (ANIMLIB_DEBUG) console.log(`[AnimLib:UAL→VRM] Retargeted "${clip.name}" (${cacheKey}): ${remapped} mapped, ${compensated} compensated, ${unmapped} unmapped`)
   return retargeted
