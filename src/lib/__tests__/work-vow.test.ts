@@ -407,3 +407,33 @@ describe('"another tab" is only said when another tab really reported', () => {
     expect(after.credited).toBe(15)
   })
 })
+
+describe('time added by hand', () => {
+  it('counts toward the day and its XP, and stays marked as manual', async () => {
+    const { addManualTime, removeManualTime, daySummary, mindcraftBook } = await import('../village/work-vow')
+    let book = run(emptyWorkFile(), 'a', at('17:00:00'), 4)
+    book = addManualTime(book, { date: '2026-11-16', seconds: 2 * 3600, reason: '  the counter was broken   until 17:00 ' }, at('18:00:00'))
+    const day = daySummary(book, '2026-11-16', '2026-11-16')
+    expect(day).toMatchObject({ seconds: 7260, xp: 120.7, manualSeconds: 7200, freeSeconds: 60 })
+    expect(day.manual).toEqual([{ seconds: 7200, xp: 120, reason: 'the counter was broken until 17:00', at: at('18:00:00') }])
+    expect(day.topXp[0]).toEqual({ label: 'Added by hand: the counter was broken until 17:00', xp: 120, seconds: 7200, kind: 'manual' })
+    expect(mindcraftBook(book).owner[0].units[0]).toMatchObject({ kind: 'manual', seconds: 7200, xp: 120 })
+    // It counts for the vow: one more hour makes the day.
+    book = addManualTime(book, { date: '2026-11-16', seconds: 3600, reason: 'call', valor: 0.5 }, at('19:00:00'))
+    expect(daySummary(book, '2026-11-16', '2026-11-16')).toMatchObject({ kept: true, xp: 150.7 })
+    // Taking one back.
+    book = removeManualTime(book, '2026-11-16', 0)
+    expect(daySummary(book, '2026-11-16', '2026-11-16')).toMatchObject({ seconds: 3660, manualSeconds: 3600, kept: false })
+    expect(removeManualTime(book, '2026-11-16', 5)).toBe(book)
+    // It survives the file.
+    expect(parseWorkFile(JSON.parse(JSON.stringify(book))).days['2026-11-16'].manual).toHaveLength(1)
+  })
+  it('needs a reason, a real day and a sane length', async () => {
+    const { addManualTime } = await import('../village/work-vow')
+    const book = emptyWorkFile()
+    expect(addManualTime(book, { date: '2026-11-16', seconds: 600, reason: ' ' }, 1)).toBe(book)
+    expect(addManualTime(book, { date: 'yesterday', seconds: 600, reason: 'x' }, 1)).toBe(book)
+    expect(addManualTime(book, { date: '2026-11-16', seconds: 0, reason: 'x' }, 1)).toBe(book)
+    expect(addManualTime(book, { date: '2026-11-16', seconds: 90_000, reason: 'x' }, 1)).toBe(book)
+  })
+})

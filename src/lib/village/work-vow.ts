@@ -81,6 +81,16 @@ export interface WorkDay {
   agents?: Record<string, WorkAgentTime>
   /** The agents' own working hours, by agent. */
   hours?: Record<string, AgentHours>
+  /** Time added by hand (the counter was broken, work away from the Oasis), each with its reason. */
+  manual?: WorkManualEntry[]
+}
+
+export interface WorkManualEntry {
+  seconds: number
+  xp: number
+  reason: string
+  /** When it was entered (ms). */
+  at: number
 }
 
 export interface WorkActive {
@@ -156,6 +166,9 @@ export function parseWorkFile(value: unknown): WorkFile {
     for (const [key, h] of Object.entries(day.hours || {})) {
       if (h && typeof h === 'object') (parsed.hours ||= {})[key] = { name: String(h.name || key), ownSeconds: num(h.ownSeconds), helperSeconds: num(h.helperSeconds), turns: num(h.turns), helpers: num(h.helpers), xp: num(h.xp), ...(typeof h.mission === 'string' && h.mission ? { mission: h.mission } : {}) }
     }
+    for (const m of Array.isArray(day.manual) ? day.manual : []) {
+      if (m && typeof m === 'object' && num(m.seconds)) (parsed.manual ||= []).push({ seconds: num(m.seconds), xp: num(m.xp), reason: String(m.reason || ''), at: num(m.at) })
+    }
     file.days[date] = parsed
   }
   if (raw.active && typeof raw.active.file === 'string') {
@@ -196,14 +209,42 @@ export function addDays(date: string, days: number): string {
   return new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10)
 }
 
+function manualSeconds(day: WorkDay | undefined): number {
+  return (day?.manual || []).reduce((sum, m) => sum + m.seconds, 0)
+}
+
+/**
+ * Add time to a day by hand, with a reason; it counts like counted time (valor 1 unless given) and
+ * stays marked as manual everywhere it shows. At most a day's worth per entry.
+ */
+export function addManualTime(input: WorkFile, entry: { date: string; seconds: number; reason: string; valor?: number }, now: number): WorkFile {
+  const seconds = Math.floor(entry.seconds)
+  const reason = entry.reason.replace(/\s+/g, ' ').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(entry.date) || !(seconds > 0) || seconds > 86_400 || !reason) return input
+  const valor = typeof entry.valor === 'number' && entry.valor >= 0 && entry.valor <= 2 ? entry.valor : 1
+  const file: WorkFile = JSON.parse(JSON.stringify(input))
+  const day = file.days[entry.date] || (file.days[entry.date] = { freeSeconds: 0, freeXp: 0, missions: {} })
+  ;(day.manual ||= []).push({ seconds, xp: xpFor(seconds, valor, 0), reason: reason.slice(0, 200), at: now })
+  return file
+}
+
+/** Take a manual entry back (by its place in the day's list). */
+export function removeManualTime(input: WorkFile, date: string, index: number): WorkFile {
+  if (!input.days[date]?.manual?.[index]) return input
+  const file: WorkFile = JSON.parse(JSON.stringify(input))
+  file.days[date].manual?.splice(index, 1)
+  if (!file.days[date].manual?.length) delete file.days[date].manual
+  return file
+}
+
 export function daySeconds(day: WorkDay | undefined): number {
   if (!day) return 0
-  return day.freeSeconds + (day.agentSeconds || 0) + Object.values(day.missions).reduce((sum, mission) => sum + mission.seconds, 0)
+  return day.freeSeconds + (day.agentSeconds || 0) + manualSeconds(day) + Object.values(day.missions).reduce((sum, mission) => sum + mission.seconds, 0)
 }
 
 function rawDayXp(day: WorkDay | undefined): number {
   if (!day) return 0
-  return day.freeXp + (day.agentXp || 0) + Object.values(day.missions).reduce((sum, mission) => sum + mission.xp, 0)
+  return day.freeXp + (day.agentXp || 0) + (day.manual || []).reduce((sum, m) => sum + m.xp, 0) + Object.values(day.missions).reduce((sum, mission) => sum + mission.xp, 0)
 }
 
 export function dayXp(day: WorkDay | undefined): number {
@@ -495,7 +536,7 @@ export function evaluateCommitment(file: WorkFile, commitment: WorkVow, today: s
 
 /** One unit of work: one per mission, per agent, and one for "in the Oasis", each day. Never a single turn. */
 export interface WorkUnit {
-  kind: 'mission' | 'agent' | 'free'
+  kind: 'mission' | 'agent' | 'free' | 'manual'
   label: string
   seconds: number
   xp: number
@@ -534,6 +575,7 @@ export function mindcraftBook(file: WorkFile): MindcraftBook {
       // Time with agents and no mission, one unit per agent would double the seconds: the agents' split is in the summary.
       ...(day.agentSeconds ? [{ kind: 'agent' as const, label: `With agents${agentNames(day)}`, seconds: day.agentSeconds, xp: round1(day.agentXp || 0) }] : []),
       ...(day.freeSeconds ? [{ kind: 'free' as const, label: `In the Oasis ×${valor}`, seconds: day.freeSeconds, xp: round1(day.freeXp) }] : []),
+      ...(day.manual || []).map(m => ({ kind: 'manual' as const, label: `Added by hand: ${m.reason}`, seconds: m.seconds, xp: round1(m.xp) })),
     ].sort((a, b) => b.xp - a.xp)
     if (units.length) owner.push({ date, seconds: daySeconds(day), xp: dayXp(day), units })
     const agentUnits: WorkUnit[] = []
@@ -596,7 +638,10 @@ export interface WorkDaySummary {
   /** The owner's time by agent, most first; `share` of all time with agents. */
   agents: Array<WorkAgentTime & { key: string; share: number }>
   /** Where the XP came from, most first: each mission, "With agents", "In the Oasis". */
-  topXp: Array<{ label: string; xp: number; seconds: number; kind: 'mission' | 'agents' | 'free' }>
+  topXp: Array<{ label: string; xp: number; seconds: number; kind: 'mission' | 'agents' | 'free' | 'manual' }>
+  /** Time added by hand this day (already inside `seconds` and `xp`), with each reason. */
+  manualSeconds: number
+  manual: WorkManualEntry[]
   /** The agents' own working hours this day, and the whole Oasis. */
   agentHours: { totalSeconds: number; xp: number; agents: Array<AgentHours & { key: string; totalSeconds: number }> }
 }
@@ -621,6 +666,7 @@ export function daySummary(file: WorkFile, date: string, today: string): WorkDay
     ...missions.map(mission => ({ label: mission.title, xp: mission.xp, seconds: mission.seconds, kind: 'mission' as const })),
     { label: 'With agents', xp: round1(day?.agentXp || 0), seconds: day?.agentSeconds || 0, kind: 'agents' as const },
     { label: 'In the Oasis', xp: round1(day?.freeXp || 0), seconds: day?.freeSeconds || 0, kind: 'free' as const },
+    ...(day?.manual || []).map(m => ({ label: `Added by hand: ${m.reason}`, xp: round1(m.xp), seconds: m.seconds, kind: 'manual' as const })),
   ].filter(item => item.seconds > 0).sort((a, b) => b.xp - a.xp)
   const hours = Object.entries(day?.hours || {})
     .map(([key, h]) => ({ key, ...h, xp: round1(h.xp || 0), ownSeconds: Math.round(h.ownSeconds), helperSeconds: Math.round(h.helperSeconds), totalSeconds: Math.round(h.ownSeconds + h.helperSeconds) }))
@@ -643,6 +689,8 @@ export function daySummary(file: WorkFile, date: string, today: string): WorkDay
     missions,
     agents,
     topXp,
+    manualSeconds: manualSeconds(day),
+    manual: (day?.manual || []).map(m => ({ ...m, xp: round1(m.xp) })),
     agentHours: { totalSeconds: hours.reduce((sum, h) => sum + h.totalSeconds, 0), xp: round1(hours.reduce((sum, h) => sum + h.xp, 0)), agents: hours },
   }
 }

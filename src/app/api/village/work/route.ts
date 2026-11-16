@@ -1,6 +1,7 @@
 // /api/village/work — the Mindcraft work counter (the owner's vow: three hours a day in the Oasis).
 //   GET   ?day=YYYY-MM-DD: that day's `summary` alone (time, XP, kept or not, per agent, per mission, top XP, agent hours).
 //   GET   ?mindcraft=1: every day as lists of work units (the owner's, each agent's, the whole Oasis').
+//   POST  { manual: { date, minutes, reason, valor? } }  add time to a day by hand (shown as manual) · { manual: { date, remove: 0 } }
 //   POST  { settings: { freeValor: 0.7 } }  valor for time with nothing in focus.
 //   A day runs from 04:20 to 04:20 local.
 //   GET   today and the week of the vow: seconds, XP, each day hit / missed / open / ahead, the mission
@@ -15,7 +16,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { guardAgentRoute } from '@/lib/local-request-guard'
-import { reportAgentWork, reportWorkBeat, setWorkSettings, switchWorkMission, workDaySummary, workMindcraft, workVowSnapshot } from '@/lib/work-vow-server'
+import { editManualTime, reportAgentWork, reportWorkBeat, setWorkSettings, switchWorkMission, workDaySummary, workMindcraft, workVowSnapshot } from '@/lib/work-vow-server'
 import type { AgentWorkReport } from '@/lib/village/work-vow'
 
 export const dynamic = 'force-dynamic'
@@ -42,9 +43,23 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const denied = guardAgentRoute(request)
   if (denied) return denied
-  const body = await request.json().catch(() => null) as { tab?: unknown; seq?: unknown; seconds?: unknown; mission?: unknown; release?: unknown; back?: unknown; focus?: { agent?: { key?: unknown; name?: unknown } | null; mission?: unknown } | null; agentWork?: unknown; settings?: { freeValor?: unknown } } | null
+  const body = await request.json().catch(() => null) as { tab?: unknown; seq?: unknown; seconds?: unknown; mission?: unknown; release?: unknown; back?: unknown; focus?: { agent?: { key?: unknown; name?: unknown } | null; mission?: unknown } | null; agentWork?: unknown; settings?: { freeValor?: unknown }; manual?: { date?: unknown; seconds?: unknown; minutes?: unknown; reason?: unknown; valor?: unknown; remove?: unknown } } | null
   if (!body || typeof body !== 'object') return NextResponse.json({ error: 'body must be a JSON object' }, { status: 400 })
   try {
+    if (body.manual && typeof body.manual === 'object') {
+      const m = body.manual
+      if (typeof m.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(m.date)) return NextResponse.json({ error: 'manual.date is YYYY-MM-DD' }, { status: 400 })
+      const seconds = typeof m.seconds === 'number' ? m.seconds : typeof m.minutes === 'number' ? m.minutes * 60 : 0
+      const result = await editManualTime({
+        date: m.date,
+        seconds,
+        reason: typeof m.reason === 'string' ? m.reason : '',
+        valor: typeof m.valor === 'number' ? m.valor : undefined,
+        remove: typeof m.remove === 'number' ? m.remove : undefined,
+      })
+      if (!result.ok) return NextResponse.json({ error: 'nothing changed: an entry needs minutes (up to a day) and a reason; remove needs an existing place' }, { status: 400 })
+      return NextResponse.json(result)
+    }
     if (body.settings && typeof body.settings === 'object') {
       if (typeof body.settings.freeValor !== 'number' || !(body.settings.freeValor >= 0 && body.settings.freeValor <= 1)) return NextResponse.json({ error: 'freeValor is a number from 0 to 1' }, { status: 400 })
       return NextResponse.json({ ok: true, snapshot: await setWorkSettings({ freeValor: body.settings.freeValor }) })

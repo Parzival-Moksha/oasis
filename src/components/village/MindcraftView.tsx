@@ -10,11 +10,11 @@
 // for just being in the Oasis. Never a row per turn.
 
 import { useCallback, useEffect, useState } from 'react'
+import { useMindcraftLook } from './mindcraft-look'
+import { ManualTimeForm } from './ManualTimeForm'
 import { formatClock, type MindcraftBook, type MindcraftDay, type WorkSnapshot } from '../../lib/village/work-vow'
 
-const FONT_BODY = 'var(--font-space-grotesk), "Space Grotesk", "Segoe UI", system-ui, sans-serif'
-const FONT_DISPLAY = 'Bahnschrift, "Barlow Condensed", var(--font-space-grotesk), sans-serif'
-const UNIT_COLOR = { mission: '#38bdf8', agent: '#c084fc', free: '#34d399' }
+const UNIT_COLOR = { mission: '#38bdf8', agent: '#c084fc', free: '#34d399', manual: '#f59e0b' }
 
 export const MINDCRAFT_EVENT = 'oasis:open-mindcraft'
 
@@ -37,12 +37,12 @@ function DayList({ days, today, target, empty }: { days: MindcraftDay[]; today: 
         const isOpen = open[day.date] ?? day.date === today
         const hit = target !== null && day.seconds >= target
         return (
-          <div key={day.date} className="rounded-lg border border-white/10 bg-white/[0.04]">
+          <div key={day.date} className="mc-card">
             <button type="button" onClick={() => setOpen(value => ({ ...value, [day.date]: !isOpen }))} className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-white/5">
               <span className="w-3 text-white/50">{isOpen ? '▾' : '▸'}</span>
-              <span className="w-[104px] shrink-0 font-bold">{dayLabel(day.date)}{day.date === today ? ' · today' : ''}</span>
-              <span className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-white/10">
-                <span className="block h-full rounded-full" style={{ width: `${(day.seconds / (target ? Math.max(target, top) : top)) * 100}%`, background: hit ? '#34d399' : '#fbbf24' }} />
+              <span className="mc-strong w-[124px] shrink-0 text-[13px]">{dayLabel(day.date)}{day.date === today ? ' · today' : ''}</span>
+              <span className="mc-track min-w-0 flex-1">
+                <span className="block h-full" style={{ width: `${(day.seconds / (target ? Math.max(target, top) : top)) * 100}%`, background: hit ? '#34d399' : '#fbbf24' }} />
               </span>
               <span className="w-[66px] shrink-0 text-right tabular-nums">{formatClock(day.seconds)}</span>
               <span className="w-[72px] shrink-0 text-right font-bold tabular-nums" style={{ color: hit ? '#34d399' : '#fde68a' }}>{day.xp} XP</span>
@@ -67,6 +67,7 @@ function DayList({ days, today, target, empty }: { days: MindcraftDay[]; today: 
 }
 
 export function MindcraftView() {
+  useMindcraftLook() // the look (textures, typefaces) lives in mindcraft-look.tsx; this file carries its class names
   const [book, setBook] = useState<MindcraftBook | null>(null)
   const [snapshot, setSnapshot] = useState<WorkSnapshot | null>(null)
   const [tab, setTab] = useState<string>('mine')
@@ -109,20 +110,20 @@ export function MindcraftView() {
   ]
   const vow = snapshot.commitments[0]
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 text-[13px] text-white" style={{ fontFamily: FONT_BODY }}>
+    <div className="mc-scope flex h-full min-h-0 flex-col gap-3">
       <div className="flex shrink-0 flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.3em] text-emerald-200/90">Mindcraft</div>
-          <div className="text-[24px] font-bold leading-tight" style={{ fontFamily: FONT_DISPLAY }}>
+          <div className="mc-eyebrow">Mindcraft</div>
+          <div className="mc-title text-[26px] leading-tight">
             Today {formatClock(snapshot.today.seconds)} <span className="text-white/45">/ {formatClock(snapshot.targetSeconds)}</span> · {snapshot.today.xp} XP
           </div>
           {vow && (
-            <div className="text-[11.5px] text-white/60">
+            <div className="mc-note">
               {vow.label}: a day hit <span className="text-emerald-300">×{vow.multiplier}</span>, a missing minute <span className="text-rose-300">−{vow.penaltyPerMinute} XP</span>. So far {snapshot.totals.xp} + {snapshot.totals.bonusXp} − {snapshot.totals.penaltyXp} = <span className="font-bold text-white">{snapshot.totals.netXp} XP</span>.
             </div>
           )}
         </div>
-        <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11.5px] text-white/70" title="What a minute is worth when no agent and no mission is open">
+        <label className="mc-field flex items-center gap-2 px-2.5 py-1.5" title="What a minute is worth when no agent and no mission is open">
           Valor with nothing in focus
           <select
             value={String(snapshot.settings.freeValor)}
@@ -134,16 +135,17 @@ export function MindcraftView() {
           </select>
         </label>
       </div>
-      <div className="flex shrink-0 flex-wrap gap-1.5">
+      <div className="flex shrink-0 flex-wrap gap-2.5 px-1 pb-1">
         {tabs.map(item => (
           <button
             key={item.id}
             type="button"
             onClick={() => setTab(item.id)}
-            className={`rounded-lg border px-3 py-1.5 text-left transition ${tab === item.id ? 'border-emerald-300/60 bg-emerald-400/15' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}
+            className="mc-tab"
+            data-on={tab === item.id ? '1' : '0'}
           >
-            <div className="font-bold" style={{ fontFamily: FONT_DISPLAY }}>{item.label}</div>
-            <div className="text-[10.5px] text-white/55">{item.sub}</div>
+            <div>{item.label}</div>
+            <div>{item.sub}</div>
           </button>
         ))}
       </div>
@@ -152,7 +154,8 @@ export function MindcraftView() {
         {tab === 'oasis' && <DayList days={book.oasis} today={snapshot.date} target={null} empty="No agent has finished a turn yet while an Oasis page was listening." />}
         {agent && <DayList days={agent.days} today={snapshot.date} target={null} empty="Nothing yet." />}
       </div>
-      <div className="shrink-0 border-t border-white/10 pt-2 text-[10.5px] leading-snug text-white/45">
+      {tab === 'mine' && <ManualTimeForm today={snapshot.date} onSaved={() => { void load() }} />}
+      <div className="mc-foot shrink-0 pt-2 leading-snug">
         {snapshot.rule} A day runs from {snapshot.settings.dayStartsAt} to {snapshot.settings.dayStartsAt}. One row per mission, per agent and for the Oasis each day, never one per turn.
       </div>
     </div>
@@ -195,7 +198,7 @@ export function MindcraftWindow() {
           boxShadow: '0 24px 70px rgba(0,0,0,0.6)',
         }}
       >
-        <button type="button" onClick={() => setOpen(false)} title="Close (Esc)" className="absolute right-3 top-3 rounded-md border border-white/15 bg-white/5 px-2 py-0.5 text-[12px] font-bold text-white hover:bg-white/15">✕</button>
+        <button type="button" onClick={() => setOpen(false)} title="Close (Esc)" className="mc-scope absolute right-1 top-1 z-10"><span className="mc-close flex items-center justify-center">✕</span></button>
         <MindcraftView />
       </div>
     </>

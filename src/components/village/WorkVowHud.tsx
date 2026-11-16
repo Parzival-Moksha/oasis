@@ -59,7 +59,7 @@ function Bar({ label, seconds, total, color, right, onClick, open }: { label: st
   return (
     <div className={onClick ? 'cursor-pointer' : undefined} onClick={onClick}>
       <div className="flex items-baseline justify-between gap-2 text-white/80">
-        <span className="min-w-0 truncate">{onClick ? (open ? '▾ ' : '▸ ') : ''}{label}</span>
+        <span className="min-w-0 break-words">{onClick ? (open ? '▾ ' : '▸ ') : ''}{label}</span>
         <span className="shrink-0 tabular-nums">{right ?? formatClock(seconds)} · {Math.round(share * 100)}%</span>
       </div>
       <div className="mb-1 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full" style={{ width: `${Math.min(100, share * 100)}%`, background: color }} /></div>
@@ -150,7 +150,12 @@ function Detail({ snapshot, liveSeconds, onClose }: { snapshot: WorkSnapshot; li
       {snapshot.totals && (
         <div className={`${row} mt-2`}><span className="text-white/60">The vow so far</span><span className="font-bold">{snapshot.totals.xp} + {snapshot.totals.bonusXp} − {snapshot.totals.penaltyXp} = {snapshot.totals.netXp} XP</span></div>
       )}
-      <div className="mb-1 mt-3 text-[9.5px] uppercase tracking-[0.2em] text-white/45">The week</div>
+      <div className="mb-1 mt-3 flex items-center justify-between text-[9.5px] uppercase tracking-[0.2em] text-white/45">
+        <span>The week</span>
+        <span className="flex items-start gap-1 normal-case tracking-normal">
+          {snapshot.week.map(day => <DayPip key={day.date} day={day} today={day.date === snapshot.date} target={snapshot.targetSeconds} liveSeconds={liveSeconds} />)}
+        </span>
+      </div>
       {snapshot.week.map(day => {
         const seconds = day.date === snapshot.date ? liveSeconds : day.seconds
         const status = seconds >= snapshot.targetSeconds ? 'hit' : day.status
@@ -198,7 +203,6 @@ export function WorkVowHud() {
       : agentFocus
         ? [`with ${agentFocus.split(SEP)[1]}`, WORK_VALOR.agent]
         : ['in the Oasis', free]
-  const vow = snapshot.commitments?.[0]
   const hidden = typeof document !== 'undefined' && document.visibilityState !== 'visible'
   const status = state.unsaved
     ? 'not saved: server unreachable'
@@ -228,20 +232,11 @@ export function WorkVowHud() {
             <span className="text-[17px] font-bold leading-none tabular-nums" style={{ fontFamily: VILLAGE_FONT_DISPLAY, color: done ? GREEN : '#fff' }}>{formatClock(liveSeconds)}</span>
             <span className="text-[10px] text-white/50">/ {formatClock(snapshot.targetSeconds)}</span>
           </span>
-          <span className="flex max-w-[250px] items-center gap-1.5 text-[9.5px]" style={{ ...GAME_HUD_TEXT, color: statusColor }} title={state.running ? `Every minute like this earns ${rate} XP. With nothing open it is ${free}; with an agent or a mission open it is 1.` : 'Nothing is being counted right now'}>
-            {state.running && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full" style={{ background: statusColor, boxShadow: `0 0 6px ${statusColor}` }} />}
-            <span className="truncate">{status}</span>
+          <span className="flex max-w-[min(420px,calc(100vw-120px))] items-start gap-1.5 text-[9.5px] leading-snug" style={{ ...GAME_HUD_TEXT, color: statusColor }} title={state.running ? `Every minute like this earns ${rate} XP. With nothing open it is ${free}; with an agent or a mission open it is 1.` : 'Nothing is being counted right now'}>
+            {state.running && <span className="mt-[3px] h-1.5 w-1.5 shrink-0 animate-pulse rounded-full" style={{ background: statusColor, boxShadow: `0 0 6px ${statusColor}` }} />}
+            {/* Never cut off: a long agent or mission name wraps and the counter grows. */}
+            <span className="whitespace-normal break-words text-left">{status}</span>
           </span>
-        </span>
-        <span className="ml-1 flex flex-col items-center gap-1">
-          <span className="flex items-start gap-1">
-            {snapshot.week.map(day => <DayPip key={day.date} day={day} today={day.date === snapshot.date} target={snapshot.targetSeconds} liveSeconds={liveSeconds} />)}
-          </span>
-          {vow && (
-            <span className="whitespace-nowrap text-[8.5px] leading-none text-white/60" title="Your commitment: a day you hit counts double, a day you miss costs XP for every missing minute">
-              <span style={{ color: GREEN }}>hit ×{vow.multiplier}</span> · <span style={{ color: RED }}>miss −{vow.penaltyPerMinute} XP/min</span>
-            </span>
-          )}
         </span>
       </button>
       {open && <Detail snapshot={snapshot} liveSeconds={liveSeconds} onClose={() => setOpen(false)} />}

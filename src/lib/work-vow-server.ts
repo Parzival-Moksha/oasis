@@ -10,6 +10,8 @@ import { appendMissionLog } from './village/village-mission-edit'
 import { missionForAgent } from './village/mission-dispatch'
 import { isMissionFile, parseMission, type Mission } from './village/village-missions'
 import {
+  addManualTime,
+  removeManualTime,
   applyAgentWork,
   applyWorkBeat,
   daySummary,
@@ -95,6 +97,18 @@ export function setWorkSettings(settings: { freeValor?: number }, now = Date.now
       await writeBook(book)
     }
     return workSnapshot(book, now)
+  })
+}
+
+/** Add time to a day by hand (with a reason), or take an entry back. */
+export function editManualTime(edit: { date: string; seconds?: number; reason?: string; valor?: number; remove?: number }, now = Date.now()): Promise<{ ok: boolean; summary: WorkDaySummary }> {
+  return serial(async () => {
+    const before = await readBook()
+    const next = typeof edit.remove === 'number'
+      ? removeManualTime(before, edit.date, edit.remove)
+      : addManualTime(before, { date: edit.date, seconds: edit.seconds || 0, reason: edit.reason || '', valor: edit.valor }, now)
+    if (next !== before) await writeBook(next)
+    return { ok: next !== before, summary: daySummary(next, edit.date, localDay(now)) }
   })
 }
 
