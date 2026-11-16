@@ -5,13 +5,15 @@
 // earliest of three moments: its closing tag arrives in the text still streaming in; the finished reply lands in
 // the thread; the turn ends (the fallback). The clip is asked for right then (village-companion.ts), so the voice
 // starts about as long after the line as ElevenLabs takes to make it, instead of waiting for the turn to close.
-// Nothing is said, or generated, when: the agent's Voice switch is off, the HUD's speaker is muted, the tab is
+// An agent that comes to the owner when it needs them ("Come to me", on by default) carries the line with it
+// and says it on arrival. Nothing is said, or generated, when: the agent's Voice switch is off, the HUD's speaker is muted, the tab is
 // hidden, or the reply is older than a moment (a reload or a reconnect must not replay old replies).
 
 import { useEffect } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
 import { splitSpoken, spokenForLastTurn, spokenInStream } from '../../lib/village/village-spoken'
-import { getAgentVoiceSettings, getVillageSpeechDebug, isVillageVoiceOn, speakVillageAgent, stopVillageSpeech } from './village-companion'
+import { getAgentVoiceSettings, getVillageSpeechDebug, holdVillageArrivalLine, isVillageArrived, isVillageComeOn, isVillageFollowOn, isVillageVoiceOn, speakVillageAgent, stopVillageSpeech } from './village-companion'
+import { getPlayerAvatarPose } from '../../lib/player-avatar-runtime'
 
 /** A reply older than this is the past (backlog after a reload), not something to say now. */
 const FRESH_MS = 20_000
@@ -60,7 +62,14 @@ export function VillageVoice() {
         if (earlier && earlier.text === spoken && now - earlier.at < SAME_LINE_MS) continue
         if (!isVillageVoiceOn() || document.visibilityState !== 'visible') continue
         said.set(id, { text: spoken, at: now })
-        void speakVillageAgent(id, spoken, getAgentVoiceSettings(agent.sessionId || id, agent.name))
+        const key = agent.sessionId || id
+        const settings = getAgentVoiceSettings(key, agent.name)
+        // An agent that walks up to the owner when it needs them says its line when it gets there, not from
+        // its desk: the line waits (and its clip is made) while it walks. Said at once when the agent is with
+        // the owner already (it follows them, it stands in front of them, its panel is open).
+        const withOwner = isVillageFollowOn(key, agent.name) || isVillageArrived(id) || engine.focusedAgentId === id
+        if (!withOwner && isVillageComeOn(key) && getPlayerAvatarPose()) holdVillageArrivalLine(id, spoken, settings)
+        else void speakVillageAgent(id, spoken, settings)
       }
     })
     return () => {

@@ -2,6 +2,8 @@
 // Two things live here, both local to this tab:
 //   1. The "Follow me" choice per agent (remembered per session in this browser; Anorak follows by default).
 //      The walking itself is VillageStation's (VillageWorld.tsx) with the rules in lib/village/village-follow.ts.
+//      "Come to me when you need me" (on for every agent): an agent that needs the owner walks up to them,
+//      waits its turn beside the others, says its line when it gets there, and goes home once it was heard.
 //   2. Speech: a voiced agent's reply ends with <spoken>…</spoken> (lib/village/village-spoken.ts). As soon as
 //      that line is complete (VillageVoice.tsx), it is fetched as an ElevenLabs clip (/api/village/speak, cached
 //      by text) and played from the avatar's head through three's PositionalAudio: louder when close, with the
@@ -18,7 +20,7 @@ import { getAudioListener } from '../CameraController'
 import { registerLipSync, unregisterLipSync, type LipSyncController } from '../../lib/lip-sync'
 import type { ElevenLabsAlignment } from '../../lib/lip-sync-lab'
 import { buildVisemeTimeline, createVisemeLipSync } from '../../lib/village/village-visemes'
-import { parseFollowPrefs, wantsFollow, withFollowChoice, type FollowPrefs } from '../../lib/village/village-follow'
+import { parseFollowPrefs, wantsCome, wantsFollow, withComeChoice, withFollowChoice, type FollowPrefs, type VisitSpot } from '../../lib/village/village-follow'
 import { SPOKEN_MAX_CHARS, cleanSpoken } from '../../lib/village/village-spoken'
 import { dealVoice, parseVoicePrefs, playbackRateFor, speechSpeedPlan, speedOf, voiceOf, withVoicePrefs, type VoicePrefs } from '../../lib/village/village-voices'
 
@@ -63,6 +65,104 @@ export function subscribeVillageFollow(listener: () => void): () => void {
 
 export function getVillageFollowVersion(): number {
   return followVersion
+}
+
+// ─── come to me when you need me (on for every agent; the agent's settings menu) ──
+
+const COME_KEY = 'oasis.village.come'
+let comePrefs: FollowPrefs | null = null
+
+function loadComePrefs(): FollowPrefs {
+  if (comePrefs === null) {
+    try {
+      comePrefs = parseFollowPrefs(typeof window === 'undefined' ? null : window.localStorage.getItem(COME_KEY))
+    } catch {
+      comePrefs = {}
+    }
+  }
+  return comePrefs
+}
+
+/** Does this agent walk up to the owner when it needs them? `key`: its session key. On unless switched off. */
+export function isVillageComeOn(key: string): boolean {
+  return wantsCome(loadComePrefs(), key)
+}
+
+/** Shares the Follow me listeners: both are read by the same components. */
+export function setVillageCome(key: string, on: boolean): void {
+  comePrefs = withComeChoice(loadComePrefs(), key, on)
+  try {
+    window.localStorage.setItem(COME_KEY, JSON.stringify(comePrefs))
+  } catch {
+    // Storage blocked: the choice lasts for this page only.
+  }
+  followVersion += 1
+  followListeners.forEach(listener => listener())
+}
+
+// Where the agents that are away from their desks stand or are headed (VillageStation writes it), so that
+// the ones who come to the owner queue up side by side instead of on top of each other.
+const awaySpots = new Map<string, VisitSpot>()
+/** Agents that came to the owner and stand in front of them now. */
+const arrivedAgents = new Set<string>()
+
+export function setVillageAwaySpot(agentId: string, spot: VisitSpot | null): void {
+  if (spot) awaySpots.set(agentId, spot)
+  else awaySpots.delete(agentId)
+}
+
+/** Everyone else's spot, for pickVisitSpot. */
+export function otherVillageAwaySpots(agentId: string): VisitSpot[] {
+  const out: VisitSpot[] = []
+  for (const [id, spot] of awaySpots) if (id !== agentId) out.push(spot)
+  return out
+}
+
+// What an agent says when it gets to the owner: its reply's spoken line waits here while it walks
+// (VillageVoice hands it over), and VillageStation asks for it on arrival.
+const ARRIVAL_LINE_MS = 5 * 60_000
+const arrivalLines = new Map<string, { text: string; settings: AgentVoiceSettings; at: number }>()
+
+/** Keep `text` for when the agent arrives; the clip is made meanwhile so it can start at once. */
+export function holdVillageArrivalLine(agentId: string, text: string, settings: AgentVoiceSettings): void {
+  arrivalLines.set(agentId, { text, settings, at: Date.now() })
+  if (arrivedAgents.has(agentId)) {
+    sayVillageArrivalLine(agentId)
+    return
+  }
+  // Only when it could be played right now: a muted, hidden or silent tab makes no clip.
+  const listener = getAudioListener()
+  const clean = cleanSpoken(text, SPOKEN_MAX_CHARS)
+  if (clean && listener?.context.state === 'running' && isVillageVoiceOn() && document.visibilityState === 'visible') {
+    fetchClip(clean, settings.voice, speechSpeedPlan(settings.speed).modelSpeed).catch(() => {})
+  }
+}
+
+/** The agent stands in front of the owner (true) or left again (false). On arrival it says the line it carried. */
+export function setVillageArrived(agentId: string, arrived: boolean): void {
+  if (!arrived) {
+    arrivedAgents.delete(agentId)
+    return
+  }
+  arrivedAgents.add(agentId)
+  sayVillageArrivalLine(agentId)
+}
+
+export function isVillageArrived(agentId: string): boolean {
+  return arrivedAgents.has(agentId)
+}
+
+function sayVillageArrivalLine(agentId: string): void {
+  const line = arrivalLines.get(agentId)
+  if (!line) return
+  arrivalLines.delete(agentId)
+  if (Date.now() - line.at > ARRIVAL_LINE_MS || !isVillageVoiceOn() || document.visibilityState !== 'visible') return
+  void speakVillageAgent(agentId, line.text, line.settings)
+}
+
+/** The agent went home without getting to the owner (answered meanwhile, switched off): nothing left to say. */
+export function dropVillageArrivalLine(agentId: string): void {
+  arrivalLines.delete(agentId)
 }
 
 // ─── the avatar's head (VillageStation registers it; speech plays from there) ─
@@ -260,6 +360,8 @@ export function getVillageSpeechDebug() {
     last: lastSpeech,
     playing: playing ? { key: playing.key, voice: playing.voice, rate: playing.element.playbackRate, modelSpeed: playing.modelSpeed, time: playing.element.currentTime, duration: playing.element.duration, preservesPitch: (playing.element as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch !== false } : null,
     heads: [...heads.keys()],
+    arrived: [...arrivedAgents],
+    waitingToSay: [...arrivalLines.keys()],
   }
 }
 

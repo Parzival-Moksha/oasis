@@ -4,6 +4,8 @@
 // The gear in the agent window's header, on the side panel (E) and on the agent's full screen (F).
 //   Voice     one of ten ElevenLabs voices and how fast it talks (0.5x to 3x), per agent, remembered per session
 //             (village-companion.ts, lib/village/village-voices.ts). "Hear it" says one line in that voice.
+//   Walking   "Come to me when you need me" (on for every agent: it walks up when it needs a decision or has
+//             finished, and goes home once you answered or looked) and "Follow me" (on for Anorak only).
 //   Avatar    the body it wears in the village (the Oasis avatar gallery; kept in village memory).
 //   Colour    this agent's chat background (lib/village/panel-look.ts).
 //   All chats transparency and blur, for every agent.
@@ -30,10 +32,16 @@ import { AvatarGallery } from '../forge/AvatarGallery'
 import { showNotice } from '../forge/GlobalNotice'
 import {
   getAgentVoiceSettings,
+  getVillageFollowVersion,
   getVillageSpeech,
   getVoiceSettingsVersion,
+  isVillageComeOn,
+  isVillageFollowOn,
   setAgentVoice,
   setAgentVoiceSpeed,
+  setVillageCome,
+  setVillageFollow,
+  subscribeVillageFollow,
   speakVillageAgent,
   stopVillageSpeech,
   subscribeVillageSpeech,
@@ -113,6 +121,26 @@ function VoiceSection({ agent, agentKey }: { agent: Pick<EngineAgentState, 'id' 
   )
 }
 
+/** When this agent leaves its desk. */
+function WalkingSection({ agentKey, name }: { agentKey: string; name: string }) {
+  useSyncExternalStore(subscribeVillageFollow, getVillageFollowVersion, () => 0)
+  const come = isVillageComeOn(agentKey)
+  const follow = isVillageFollowOn(agentKey, name)
+  return (
+    <div className="mb-3">
+      <div className={HEADING}>Walking · {name}</div>
+      <label className="mb-1 flex cursor-pointer items-start gap-2" title="When it needs a decision from you, has finished, or is stuck, it walks from its desk to you and waits in front of you. With its voice on it says its line when it arrives. It goes back once you answered it, or opened its panel and closed it again. While you talk to another agent it waits a few metres back.">
+        <input type="checkbox" checked={come} data-agent-come={come ? 'on' : 'off'} onChange={event => setVillageCome(agentKey, event.target.checked)} className="mt-[2px] accent-amber-300" />
+        <span>Come to me when you need me</span>
+      </label>
+      <label className="flex cursor-pointer items-start gap-2" title="It walks beside you all the time (the same switch as “follow” in the panel).">
+        <input type="checkbox" checked={follow} data-agent-follow={follow ? 'on' : 'off'} onChange={event => setVillageFollow(agentKey, name, event.target.checked)} className="mt-[2px] accent-amber-300" />
+        <span>Follow me</span>
+      </label>
+    </div>
+  )
+}
+
 export function AgentSettingsButton({ agent, large = false }: { agent: Pick<EngineAgentState, 'id' | 'name' | 'sessionId' | 'owned' | 'speak' | 'title' | 'cwd' | 'kind'>; large?: boolean }) {
   const [open, setOpen] = useState(false)
   const [gallery, setGallery] = useState(false)
@@ -143,7 +171,7 @@ export function AgentSettingsButton({ agent, large = false }: { agent: Pick<Engi
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        title="Settings for this agent: voice and speed, avatar, colour; transparency and blur for all agent chats"
+        title="Settings for this agent: voice and speed, when it walks to you, avatar, colour; transparency and blur for all agent chats"
         aria-label="Agent settings"
         aria-expanded={open}
         data-agent-settings
@@ -157,6 +185,7 @@ export function AgentSettingsButton({ agent, large = false }: { agent: Pick<Engi
       {open && (
         <div data-agent-settings-menu className="absolute right-0 top-9 z-50 w-[280px] rounded-lg border border-white/15 bg-slate-950/95 p-3 text-left text-[11px] font-normal normal-case tracking-normal text-white shadow-[0_18px_50px_rgba(0,0,0,0.6)]">
           {agent.owned && <VoiceSection agent={agent} agentKey={agentKey} />}
+          <WalkingSection agentKey={agentKey} name={agent.name} />
 
           <div className={HEADING}>Avatar · {name}</div>
           <button

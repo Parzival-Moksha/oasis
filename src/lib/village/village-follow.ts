@@ -30,8 +30,8 @@ export const FOLLOW = {
   turnDeadband: 0.06,
 } as const
 
-/** home: at its desk. follow: beside the owner. return: walking back to the desk. */
-export type FollowMode = 'home' | 'follow' | 'return'
+/** home: at its desk. follow: beside the owner. visit: it came to the owner because it needs them. return: walking back to the desk. */
+export type FollowMode = 'home' | 'follow' | 'visit' | 'return'
 export type FollowAct = 'stand' | 'walk' | 'aside'
 
 export interface FollowState {
@@ -47,6 +47,11 @@ export interface FollowState {
   asideZ: number
   /** Standing and turning toward the owner (a turn, once begun, is finished). */
   turning: boolean
+  /** A visit's spot in front of the owner (stepVisit), once it has one, and whether it is the held-back one. */
+  hasGoal: boolean
+  goalX: number
+  goalZ: number
+  goalHold: boolean
 }
 
 export interface FollowTarget {
@@ -73,7 +78,7 @@ export interface FollowStepResult {
 }
 
 export function createFollowState(home: FollowHome): FollowState {
-  return { mode: 'home', act: 'stand', x: home.x, z: home.z, yaw: home.yaw, asideX: 0, asideZ: 0, turning: false }
+  return { mode: 'home', act: 'stand', x: home.x, z: home.z, yaw: home.yaw, asideX: 0, asideZ: 0, turning: false, hasGoal: false, goalX: 0, goalZ: 0, goalHold: false }
 }
 
 function wrapAngle(angle: number): number {
@@ -146,7 +151,7 @@ export function stepFollow(
   RESULT.moved = false
   RESULT.turned = false
   RESULT.arrivedHome = false
-  if (state.mode === 'home') return RESULT
+  if (state.mode === 'home' || state.mode === 'visit') return RESULT
   if (frozen || !(dt > 0)) {
     if (state.act !== 'stand') state.act = 'stand'
     return RESULT
@@ -309,4 +314,193 @@ export function parseFollowPrefs(raw: string | null | undefined): FollowPrefs {
   } catch {
     return {}
   }
+}
+
+// ─── come to me when you need me ────────────────────────────────────────────
+// An agent that needs the owner (a decision, finished work, stuck) walks from its desk to a spot in front
+// of them and waits there, facing them. Several queue up side by side. While the owner is busy with someone
+// else (another agent's panel, a full screen) it keeps a few metres back instead. When it is no longer
+// needed it walks home (mode 'return'). Same walking, turning and stepping aside as following.
+
+export const VISIT = {
+  /** Where it waits: this far in front of the owner. */
+  distance: 2.5,
+  /** While the owner is busy with someone else: this far back. */
+  holdDistance: 5.5,
+  /** Agents waiting side by side stand this far apart. */
+  spacing: 1.3,
+  /** A spot is free when nobody else stands or is headed closer than this to it. */
+  clearance: 1.1,
+  /** Close enough to the spot to count as arrived. */
+  arriveDistance: 0.1,
+} as const
+
+export interface VisitSpot {
+  x: number
+  z: number
+}
+
+/**
+ * A free spot `distance` in front of the owner: straight ahead first, then alternately to their right and
+ * left, `VISIT.spacing` apart. `others`: where the other agents near the owner stand or are headed.
+ */
+export function pickVisitSpot(owner: FollowTarget, distance: number, others: readonly VisitSpot[] = []): VisitSpot {
+  let fx = owner.forwardX ?? 0
+  let fz = owner.forwardZ ?? 0
+  const length = Math.hypot(fx, fz)
+  if (length < 1e-4) {
+    fx = 0
+    fz = 1
+  } else {
+    fx /= length
+    fz /= length
+  }
+  // The owner's right-hand side.
+  const rx = fz
+  const rz = -fx
+  let spot: VisitSpot = { x: owner.x + fx * distance, z: owner.z + fz * distance }
+  for (let n = 0; n < 9; n += 1) {
+    const offset = (n % 2 === 1 ? (n + 1) / 2 : -n / 2) * VISIT.spacing
+    spot = { x: owner.x + fx * distance + rx * offset, z: owner.z + fz * distance + rz * offset }
+    const x = spot.x
+    const z = spot.z
+    if (others.every(other => Math.hypot(other.x - x, other.z - z) >= VISIT.clearance)) return spot
+  }
+  return spot
+}
+
+export interface VisitStepResult extends FollowStepResult {
+  /** It reached its spot in front of the owner this step (not the held-back one): time to speak. */
+  arrived: boolean
+  /** It chose a new spot this step (state.goalX / goalZ). */
+  picked: boolean
+}
+
+const VISIT_RESULT: VisitStepResult = { moved: false, turned: false, arrivedHome: false, arrived: false, picked: false }
+
+function turnTo(state: FollowState, want: number, step: number, result: FollowStepResult): void {
+  const yaw = turnToward(state.yaw, want, FOLLOW.turnRate * step)
+  if (yaw !== state.yaw) {
+    state.yaw = yaw
+    result.turned = true
+  }
+}
+
+/**
+ * One frame of an agent that came to the owner (mode 'visit'). Changes `state` in place; the result object is
+ * reused. `hold`: the owner is busy with someone else, so it waits further back. `pick(distance)` returns a
+ * free spot that far in front of the owner (the caller knows where the others are).
+ */
+export function stepVisit(
+  state: FollowState,
+  target: FollowTarget | null,
+  dt: number,
+  frozen: boolean,
+  hold: boolean,
+  pick: (distance: number) => VisitSpot,
+): VisitStepResult {
+  const result = VISIT_RESULT
+  result.moved = false
+  result.turned = false
+  result.arrivedHome = false
+  result.arrived = false
+  result.picked = false
+  if (state.mode !== 'visit') return result
+  if (frozen || !(dt > 0) || !target) {
+    if (state.act !== 'stand') state.act = 'stand'
+    return result
+  }
+  const step = Math.min(dt, 0.1)
+  const dx = target.x - state.x
+  const dz = target.z - state.z
+  const distance = Math.hypot(dx, dz)
+
+  if (state.act === 'stand') {
+    if (distance < FOLLOW.asideDistance) {
+      const aside = asideDirection(state, target)
+      state.asideX = aside.x
+      state.asideZ = aside.z
+      state.act = 'aside'
+    } else if (!state.hasGoal || state.goalHold !== hold || distance > FOLLOW.startDistance) {
+      // First time, the owner became free or busy, or they walked off: (re)take a spot and go there.
+      const spot = pick(hold ? VISIT.holdDistance : VISIT.distance)
+      state.goalX = spot.x
+      state.goalZ = spot.z
+      state.goalHold = hold
+      state.hasGoal = true
+      state.act = 'walk'
+      result.picked = true
+    }
+  }
+
+  if (state.act === 'walk') {
+    // The owner moved on while it was walking: the spot is stale.
+    if (Math.hypot(target.x - state.goalX, target.z - state.goalZ) > FOLLOW.startDistance || state.goalHold !== hold) {
+      const spot = pick(hold ? VISIT.holdDistance : VISIT.distance)
+      state.goalX = spot.x
+      state.goalZ = spot.z
+      state.goalHold = hold
+      result.picked = true
+    }
+    const gx = state.goalX - state.x
+    const gz = state.goalZ - state.z
+    const left = Math.hypot(gx, gz)
+    const reach = followSpeed(left + FOLLOW.stopDistance) * step
+    if (left <= Math.max(VISIT.arriveDistance, reach)) {
+      if (left > 0) {
+        state.x = state.goalX
+        state.z = state.goalZ
+        result.moved = true
+      }
+      state.act = 'stand'
+      state.turning = true
+      result.arrived = !hold
+    } else {
+      state.x += (gx / left) * reach
+      state.z += (gz / left) * reach
+      result.moved = true
+      turnTo(state, Math.atan2(gx, gz), step, result)
+      return result
+    }
+  }
+
+  if (state.act === 'aside') {
+    if (distance >= FOLLOW.asideClear) {
+      state.act = 'stand'
+      // It stays where the step aside took it.
+      state.goalX = state.x
+      state.goalZ = state.z
+      result.picked = true
+    } else {
+      const reach = FOLLOW.walkSpeed * step
+      state.x += state.asideX * reach
+      state.z += state.asideZ * reach
+      result.moved = true
+      turnTo(state, Math.atan2(state.asideX, state.asideZ), step, result)
+      return result
+    }
+  }
+
+  // Standing: face the owner.
+  if (distance > 1e-3) {
+    const want = Math.atan2(dx, dz)
+    const off = Math.abs(wrapAngle(want - state.yaw))
+    if (off > FOLLOW.turnDeadband) state.turning = true
+    else if (off < 1e-3) state.turning = false
+    if (state.turning) turnTo(state, want, step, result)
+  }
+  return result
+}
+
+/** "Come to me when you need me": on for every agent unless the owner switched it off for that one. */
+export function wantsCome(prefs: FollowPrefs, key: string): boolean {
+  return prefs[key] !== false
+}
+
+/** The prefs with this agent's choice set; "on" is the default and is not stored. */
+export function withComeChoice(prefs: FollowPrefs, key: string, on: boolean): FollowPrefs {
+  const next = { ...prefs }
+  if (on) delete next[key]
+  else next[key] = false
+  return next
 }
