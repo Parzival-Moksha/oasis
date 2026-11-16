@@ -25,10 +25,12 @@ import { readHistoryTail } from './history.js';
 import { droppedAfterInterrupt, expiredAtResult, interruptApplies, matchReplay } from './pending.js';
 import { worldToolsArgs } from './worldtools.js';
 import { chromeArgs } from './chrome.js';
-import { VOICE_DEFAULT, VOICE_NOTE, VOICE_OFF_NOTE } from './voice.js';
+import { VOICE_DEFAULT, VOICE_NOTE, VOICE_OFF_NOTE, isVoiceKey, voicePickNote } from './voice.js';
 import { outcomeForRoster, restoreOutcome, statusForOutcome } from './outcome.js';
 
 const SANDBOX_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'sandbox');
+/** The helper an agent runs to pick its own voice. */
+const VOICE_SCRIPT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'voice.mjs').replace(/\\/g, '/');
 const REVIEW_INPUT_MAX = 256 * 1024;
 /** Eyes: agents whose name says Anorak see by default; the owner switches it per agent (session panel). */
 export const EYES_DEFAULT = /anorak/i;
@@ -80,6 +82,10 @@ export class Agent {
     this.eyes = typeof spec.eyes === 'boolean' ? spec.eyes : EYES_DEFAULT.test(this.name || '');
     // Voice: each reply ends with a <spoken> line its avatar says out loud (voice.js). Kept in the roster.
     this.speak = typeof spec.speak === 'boolean' ? spec.speak : VOICE_DEFAULT.test(this.name || '');
+    // The voice the agent picked for itself (a key of the village's list, voice.js); the owner's pick on the page wins over it.
+    this.voiceChoice = isVoiceKey(spec.voiceChoice) ? spec.voiceChoice : null;
+    // It has been told once that it may pick one.
+    this.voiceOffered = spec.voiceOffered === true;
     this.sendChain = Promise.resolve(); // messages go out in the order they were sent, also while one waits for its picture
     this.hub = hub;
     this.proc = null;
@@ -121,7 +127,7 @@ export class Agent {
       id: this.id, kind: this.kind, name: this.name, cwd: this.cwd, sessionId: this.sessionId,
       model: this.model, resolvedModel: this.norm.model, permissionMode: this.permissionMode,
       effectivePermissionMode: this.effectivePermissionMode || null, effort: this.effort,
-      resolvedEffort: this.resolvedEffort, eyes: this.eyes, chrome: this.chrome, speak: this.speak, status: this.status, statusReason: this.statusReason, alive: !!this.proc,
+      resolvedEffort: this.resolvedEffort, eyes: this.eyes, chrome: this.chrome, speak: this.speak, voiceChoice: this.voiceChoice, status: this.status, statusReason: this.statusReason, alive: !!this.proc,
       pid: this.proc?.pid || null, pendingUser: this.pendingUser.size,
       permissions: [...this.permissions.values()].map((r) => this.describePermission(r)),
       context: this.lastContext, models: this.meta.models || null,
@@ -130,7 +136,7 @@ export class Agent {
   }
 
   rosterEntry() {
-    return { id: this.id, name: this.name, cwd: this.cwd, sessionId: this.sessionId, model: this.model, permissionMode: this.permissionMode, effort: this.effort, eyes: this.eyes, speak: this.speak, ...(this.worldTools ? {} : { worldTools: false }), ...(this.chrome ? { chrome: true } : {}), ...(this.lastOutcome ? { lastOutcome: outcomeForRoster(this.lastOutcome) } : {}), ...(this.turnOpenAt ? { turnOpenAt: this.turnOpenAt } : {}) };
+    return { id: this.id, name: this.name, cwd: this.cwd, sessionId: this.sessionId, model: this.model, permissionMode: this.permissionMode, effort: this.effort, eyes: this.eyes, speak: this.speak, ...(this.voiceChoice ? { voiceChoice: this.voiceChoice } : {}), ...(this.voiceOffered ? { voiceOffered: true } : {}), ...(this.worldTools ? {} : { worldTools: false }), ...(this.chrome ? { chrome: true } : {}), ...(this.lastOutcome ? { lastOutcome: outcomeForRoster(this.lastOutcome) } : {}), ...(this.turnOpenAt ? { turnOpenAt: this.turnOpenAt } : {}) };
   }
 
   // ------------------------------------------------------------------ process
@@ -176,7 +182,8 @@ export class Agent {
     // change that in 2.1.316). Todos arrive as TaskCreate/TaskUpdate calls, which the normalizer maps.
     // SendUserFile is off in -p mode unless the host shows files by path; the Oasis does (files.js, /file/<id>).
     // Checked with 2.1.318: the init tool list gains SendUserFile, and its result lists each validated path.
-    const env = { CLAUDE_CODE_ATTACHMENTS_BY_PATH: '1' };
+    // OASIS_AGENT_ID / OASIS_ENGINE_URL: who it is in the village and where the engine listens (scripts/voice.mjs reads them).
+    const env = { CLAUDE_CODE_ATTACHMENTS_BY_PATH: '1', OASIS_AGENT_ID: this.id, ...(this.hub.url ? { OASIS_ENGINE_URL: this.hub.url } : {}) };
     // Scratch agents live inside the 7c_oasis repo: keep them off the owner's auto-memory.
     if (path.resolve(this.cwd).toLowerCase().startsWith(SANDBOX_ROOT.toLowerCase())) env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '1';
     this.hub.log(`[${this.name}] spawn claude ${args.join(' ')} (cwd ${this.cwd})`);
@@ -461,6 +468,12 @@ export class Agent {
     const voiceNote = command ? null : this.speak ? VOICE_NOTE : this.speakWentOff ? VOICE_OFF_NOTE : null;
     if (!command) this.speakWentOff = false;
     if (voiceNote) content = [...(Array.isArray(content) ? content : [{ type: 'text', text }]), { type: 'text', text: voiceNote }];
+    // Once: a voiced agent that has no voice of its own yet learns how to pick one.
+    if (voiceNote === VOICE_NOTE && !this.voiceChoice && !this.voiceOffered) {
+      this.voiceOffered = true;
+      this.persist();
+      content.push({ type: 'text', text: voicePickNote(VOICE_SCRIPT) });
+    }
     const msg = { type: 'user', message: { role: 'user', content }, parent_tool_use_id: null, session_id: '', uuid };
     if (priority === 'now' || priority === 'later') msg.priority = priority;
     try { this.write(msg); } catch (e) { this.pendingUser.delete(uuid); throw e; }
@@ -544,6 +557,16 @@ export class Agent {
     }
     this.emit('chrome', { chrome, applied });
     return { ok: true, data: { chrome, applied } };
+  }
+
+  /** The agent's own voice (a key of the village's list), kept in the roster; null: none, back to the dealt one. */
+  setVoiceChoice(voice) {
+    if (voice != null && !isVoiceKey(voice)) return { ok: false, error: `unknown voice "${voice}" (run scripts/voice.mjs list)` };
+    this.voiceChoice = voice || null;
+    this.voiceOffered = true;
+    this.persist();
+    this.emit('voice', { voiceChoice: this.voiceChoice });
+    return { ok: true, data: { voiceChoice: this.voiceChoice } };
   }
 
   /** Voice on or off (kept in the roster). Applies to the next message: no restart, the note rides with it (voice.js). */

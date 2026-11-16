@@ -1,7 +1,9 @@
-// ░▒▓ VILLAGE VOICES — the ten voices an agent can speak with, and each agent's own voice and speed ▓▒░
+// ░▒▓ VILLAGE VOICES — the voices an agent can speak with, and each agent's own voice and speed ▓▒░
 // Pure: the list, who gets which voice, and the per-agent settings as they are stored (this browser,
 // keyed by session like an agent's skin). The page side is village-companion.ts, the ElevenLabs call
 // village-speech-server.ts.
+
+import voiceList from './village-voices.json'
 
 export interface VillageVoice {
   /** What is stored and sent to /api/village/speak. */
@@ -14,22 +16,14 @@ export interface VillageVoice {
 }
 
 /**
- * Ten voices, picked to differ: deep and bright, men and women, narrators and characters. Nine are
- * ElevenLabs' own premade voices (every account has them); "merlin" is the wise-sage voice Anorak has
- * spoken with from the start (a library voice in the owner's account, also the repo's Merlin voice).
+ * The voices an agent can have (village-voices.json, read by the agent engine too: an agent can pick its own,
+ * packages/oasis-agent-engine/scripts/voice.mjs). Picked to differ and to fit avatars that look like they walked
+ * out of a video game: narrators, a wizard, a warrior, a Texan, a movie-trailer voice, cartoon kids, a bear.
+ * The first ten are ElevenLabs' premade voices plus "merlin", the wise-sage voice Anorak has spoken with from
+ * the start; the rest are voices in the owner's ElevenLabs account (the cartoon ones were made for German and
+ * speak English with that colour). All answered the API on 2026-11-16.
  */
-export const VILLAGE_VOICES: readonly VillageVoice[] = [
-  { key: 'merlin', id: '6sFKzaJr574YWVu4UuJF', name: 'Cornelius', sound: 'old wise sage, deep, British' },
-  { key: 'brian', id: 'nPczCjzI2devNBz1zQrb', name: 'Brian', sound: 'deep, resonant, calm man' },
-  { key: 'george', id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George', sound: 'warm storyteller, British man' },
-  { key: 'daniel', id: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel', sound: 'steady newsreader, British man' },
-  { key: 'charlie', id: 'IKne3meq5aSn9XLyUdCD', name: 'Charlie', sound: 'energetic young man, Australian' },
-  { key: 'callum', id: 'N2lVS1w4EtoT3dr4eOWO', name: 'Callum', sound: 'husky trickster, a character' },
-  { key: 'sarah', id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah', sound: 'mature, reassuring woman' },
-  { key: 'jessica', id: 'cgSgspJ2msm6clMCkdW9', name: 'Jessica', sound: 'playful, bright young woman' },
-  { key: 'lily', id: 'pFZP5JQG7iQjIQuC4Bku', name: 'Lily', sound: 'velvety actress, British woman' },
-  { key: 'laura', id: 'FGY2WhTYpPnrIDTdsKH5', name: 'Laura', sound: 'quirky, sassy young woman' },
-]
+export const VILLAGE_VOICES: readonly VillageVoice[] = voiceList as VillageVoice[]
 
 /** Anorak's voice unless the owner picks another. */
 export const ANORAK_VOICE = 'merlin'
@@ -85,7 +79,7 @@ export function speechSpeedPlan(speed: unknown): { speed: number; modelSpeed: nu
 export interface AgentVoicePrefs {
   /** A VILLAGE_VOICES key. */
   voice?: string
-  /** The owner chose the voice (it was not dealt at random). */
+  /** The owner chose the voice in the settings menu (it was not dealt at random): it wins over the agent's own choice. */
   picked?: boolean
   speed?: number
 }
@@ -121,16 +115,30 @@ export function speedOf(prefs: VoicePrefs, key: string): number {
   return typeof speed === 'number' ? clampSpeechSpeed(speed) : SPEECH_SPEED.default
 }
 
-/** The voice the agent has, if it has one already: its stored one, or Anorak's for an Anorak. null: none dealt yet. */
-export function voiceOf(prefs: VoicePrefs, key: string, name: string | null | undefined): string | null {
-  const stored = prefs[key]?.voice
-  if (villageVoice(stored)) return stored as string
+/**
+ * The voice the agent has, if it has one already. In this order: the owner's pick in the settings menu; the
+ * voice the agent chose for itself (`own`, kept by the engine); the one it was dealt; Anorak's for an Anorak.
+ * null: none dealt yet.
+ */
+export function voiceOf(prefs: VoicePrefs, key: string, name: string | null | undefined, own?: string | null): string | null {
+  const entry = prefs[key]
+  const stored = villageVoice(entry?.voice) ? (entry?.voice as string) : null
+  if (stored && entry?.picked) return stored
+  if (villageVoice(own)) return own as string
+  if (stored) return stored
   return /anorak/i.test(name || '') ? ANORAK_VOICE : null
 }
 
+/** Who decided the voice the agent has: the owner, the agent itself, or nobody (dealt, or Anorak's default). */
+export function voiceChosenBy(prefs: VoicePrefs, key: string, own?: string | null): 'owner' | 'agent' | 'nobody' {
+  const entry = prefs[key]
+  if (villageVoice(entry?.voice) && entry?.picked) return 'owner'
+  return villageVoice(own) ? 'agent' : 'nobody'
+}
+
 /**
- * Deal a voice to an agent that has none: a random one of the ten, preferring voices nobody has yet
- * (so a village of ten sounds like ten). `random` is Math.random in the app, fixed in tests.
+ * Deal a voice to an agent that has none: a random one of the list, preferring voices nobody has yet
+ * (so every agent in the village sounds different). `random` is Math.random in the app, fixed in tests.
  */
 export function dealVoice(prefs: VoicePrefs, random: () => number = Math.random): string {
   const taken = new Map<string, number>()
@@ -147,6 +155,7 @@ export function withVoicePrefs(prefs: VoicePrefs, key: string, patch: AgentVoice
   const entry: AgentVoicePrefs = { ...prefs[key], ...patch }
   if (entry.speed !== undefined) entry.speed = clampSpeechSpeed(entry.speed)
   if (entry.speed === SPEECH_SPEED.default) delete entry.speed
+  if (!entry.picked) delete entry.picked
   if (!villageVoice(entry.voice)) {
     delete entry.voice
     delete entry.picked

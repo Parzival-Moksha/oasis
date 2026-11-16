@@ -1,0 +1,22 @@
+[
+  { "key": "merlin", "id": "6sFKzaJr574YWVu4UuJF", "name": "Cornelius", "sound": "old wise sage, deep, British" },
+  { "key": "brian", "id": "nPczCjzI2devNBz1zQrb", "name": "Brian", "sound": "deep, resonant, calm man" },
+  { "key": "george", "id": "JBFqnCBsd6RMkjVDRZzb", "name": "George", "sound": "warm storyteller, British man" },
+  { "key": "daniel", "id": "onwK4e9ZLuTAKqWW03F9", "name": "Daniel", "sound": "steady newsreader, British man" },
+  { "key": "charlie", "id": "IKne3meq5aSn9XLyUdCD", "name": "Charlie", "sound": "energetic young man, Australian" },
+  { "key": "callum", "id": "N2lVS1w4EtoT3dr4eOWO", "name": "Callum", "sound": "husky trickster, a character" },
+  { "key": "sarah", "id": "EXAVITQu4vr4xnSDxMaL", "name": "Sarah", "sound": "mature, reassuring woman" },
+  { "key": "jessica", "id": "cgSgspJ2msm6clMCkdW9", "name": "Jessica", "sound": "playful, bright young woman" },
+  { "key": "lily", "id": "pFZP5JQG7iQjIQuC4Bku", "name": "Lily", "sound": "velvety actress, British woman" },
+  { "key": "laura", "id": "FGY2WhTYpPnrIDTdsKH5", "name": "Laura", "sound": "quirky, sassy young woman" },
+  { "key": "harry", "id": "SOYHLrjzK2X1ezoPC6cr", "name": "Harry", "sound": "fierce warrior, rough, a game character" },
+  { "key": "austin", "id": "Bj9UqZbhQsanLzgalpEG", "name": "Austin", "sound": "good ol' Texas boy, deep drawl" },
+  { "key": "spuds", "id": "NOpBlnGInO9m6vDvFkFC", "name": "Grandpa Spuds", "sound": "gentle old grandpa, folksy" },
+  { "key": "don", "id": "JJCR1UICgHnHljtvu5uF", "name": "Don", "sound": "movie-trailer voice, very deep" },
+  { "key": "guy", "id": "QTGiyJvep6bcx4WD1qAq", "name": "Guy", "sound": "serious radio announcer" },
+  { "key": "lolo", "id": "vTJTqNHBdjAKhdigDXCC", "name": "Lolo", "sound": "cute little kid (German voice)" },
+  { "key": "hopsi", "id": "ygoBNrnmTEdu5NtDTmAY", "name": "Hopsi", "sound": "cute cartoon boy (German voice)" },
+  { "key": "skittle", "id": "xLCJR8xcZX2YjImGFyGw", "name": "Skittle Bee", "sound": "anxious little cartoon girl (German voice)" },
+  { "key": "bruno", "id": "pfvZahoGcT3NdpxRuNkg", "name": "Bruno the Bear", "sound": "calm old fairy-tale bear (German voice)" },
+  { "key": "milly", "id": "VD1if7jDVYtAKs4P0FIY", "name": "Milly Maple", "sound": "excited cartoon girl (German voice)" }
+]

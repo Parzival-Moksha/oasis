@@ -2,7 +2,7 @@
 
 // ░▒▓ AGENT SETTINGS — one menu per agent: its voice and speed, its avatar, its colour, and the look of all chats ▓▒░
 // The gear in the agent window's header, on the side panel (E) and on the agent's full screen (F).
-//   Voice     one of ten ElevenLabs voices and how fast it talks (0.5x to 3x), per agent, remembered per session
+//   Voice     one of twenty ElevenLabs voices (or the one the agent picked for itself) and how fast it talks (0.5x to 3x), per agent, remembered per session
 //             (village-companion.ts, lib/village/village-voices.ts). "Hear it" says one line in that voice.
 //   Walking   "Come to me when you need me" (on for every agent: it walks up when it needs a decision or has
 //             finished, and goes home once you answered or looked) and "Follow me" (on for Anorak only).
@@ -31,6 +31,8 @@ import type { EngineAgentState } from '../../store/slices/agentEngineSlice'
 import { AvatarGallery } from '../forge/AvatarGallery'
 import { showNotice } from '../forge/GlobalNotice'
 import {
+  agentVoiceChosenBy,
+  clearAgentVoicePick,
   getAgentVoiceSettings,
   getVillageFollowVersion,
   getVillageSpeech,
@@ -60,10 +62,11 @@ function avatarLabel(path: string | null): { name: string; thumb: string | null 
 }
 
 /** Voice and speed of one agent. */
-function VoiceSection({ agent, agentKey }: { agent: Pick<EngineAgentState, 'id' | 'name' | 'speak'>; agentKey: string }) {
+function VoiceSection({ agent, agentKey }: { agent: Pick<EngineAgentState, 'id' | 'name' | 'speak' | 'voiceChoice'>; agentKey: string }) {
   useSyncExternalStore(subscribeVoiceSettings, getVoiceSettingsVersion, () => 0)
   const speech = useSyncExternalStore(subscribeVillageSpeech, getVillageSpeech, () => null)
-  const settings = getAgentVoiceSettings(agentKey, agent.name)
+  const settings = getAgentVoiceSettings(agentKey, agent.name, agent.voiceChoice)
+  const chosenBy = agentVoiceChosenBy(agentKey, agent.voiceChoice)
   const sample = `Hello, I am ${agent.name}. This is how I sound.`
   const sampling = speech?.agentId === agent.id && speech.text === sample
   return (
@@ -89,7 +92,7 @@ function VoiceSection({ agent, agentKey }: { agent: Pick<EngineAgentState, 'id' 
               stopVillageSpeech()
               return
             }
-            void speakVillageAgent(agent.id, sample, getAgentVoiceSettings(agentKey, agent.name), true).then(played => {
+            void speakVillageAgent(agent.id, sample, getAgentVoiceSettings(agentKey, agent.name, agent.voiceChoice), true).then(played => {
               if (!played) showNotice('Could not play the voice (see the console).', 'warn')
             })
           }}
@@ -97,6 +100,11 @@ function VoiceSection({ agent, agentKey }: { agent: Pick<EngineAgentState, 'id' 
         >
           {sampling ? (speech?.phase === 'loading' ? '…' : '■ stop') : '▶ hear it'}
         </button>
+      </div>
+      <div className="-mt-1 mb-2 text-[10px] leading-snug text-white/45" data-agent-voice-by={chosenBy}>
+        {chosenBy === 'owner' ? (
+          <>your pick{' · '}<button type="button" onClick={() => clearAgentVoicePick(agentKey)} className="underline-offset-2 hover:text-white hover:underline">{agent.voiceChoice ? `back to its own choice (${villageVoice(agent.voiceChoice)?.name || agent.voiceChoice})` : 'let it choose'}</button></>
+        ) : chosenBy === 'agent' ? 'it chose this voice itself; pick another and yours counts' : 'dealt at random until it picks its own, or you do'}
       </div>
       <label className="block" title="How fast this agent talks. 1.0× is the voice as ElevenLabs reads it; the pitch stays natural. Changes the clip that is playing too.">
         <span className="flex justify-between"><span>Speed</span><span className="text-white/55">{settings.speed.toFixed(1)}×</span></span>
@@ -141,7 +149,7 @@ function WalkingSection({ agentKey, name }: { agentKey: string; name: string }) 
   )
 }
 
-export function AgentSettingsButton({ agent, large = false }: { agent: Pick<EngineAgentState, 'id' | 'name' | 'sessionId' | 'owned' | 'speak' | 'title' | 'cwd' | 'kind'>; large?: boolean }) {
+export function AgentSettingsButton({ agent, large = false }: { agent: Pick<EngineAgentState, 'id' | 'name' | 'sessionId' | 'owned' | 'speak' | 'voiceChoice' | 'title' | 'cwd' | 'kind'>; large?: boolean }) {
   const [open, setOpen] = useState(false)
   const [gallery, setGallery] = useState(false)
   const [thumbFailed, setThumbFailed] = useState(false)

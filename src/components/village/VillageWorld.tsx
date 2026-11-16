@@ -65,7 +65,9 @@ import { AcademyLevelTag, AcademyVillageBody, useAcademyStone } from './VillageA
 import { VillageVoice } from './VillageVoice'
 import { useFrameWhen } from '../../lib/use-frame-when'
 import { getPlayerAvatarPose } from '../../lib/player-avatar-runtime'
-import { createFollowState, pickVisitSpot, stepFollow, stepVisit, type FollowState, type FollowTarget, type VisitSpot } from '../../lib/village/village-follow'
+import { createFollowState, pickVisitSpot, stepFollow, stepStage, stepVisit, type FollowState, type FollowTarget, type VisitSpot } from '../../lib/village/village-follow'
+import { COUNCIL } from '../../lib/village/village-council'
+import { getCouncilGoal, getCouncilVersion, isCouncilMember, isCouncilOn, reportCouncilSettled, subscribeCouncil } from './village-council'
 import {
   dropVillageArrivalLine,
   getVillageFollowVersion,
@@ -332,9 +334,10 @@ const HEAD_HEIGHT = 1.5
  * With "Come to me when you need me" it walks up to the owner when it needs them (`visiting`), takes a free
  * spot in front of them beside the others, and goes home when it is no longer needed; `hold` (the owner is
  * busy with another agent) keeps it a few metres back meanwhile.
+ * In a Council (`staged`, village-council.ts) it stands where the scene puts it: its place on the circle, or in front.
  * Cost: one small callback per frame while it is away from its desk, none while it is home.
  */
-function useVillageFollower(agentId: string, placement: VillageStationPlacement, wanted: boolean, visiting: boolean, frozen: boolean, hold: boolean) {
+function useVillageFollower(agentId: string, placement: VillageStationPlacement, wanted: boolean, visiting: boolean, frozen: boolean, hold: boolean, staged = false) {
   const mover = useRef<THREE.Group>(null)
   const home = useMemo(() => ({ x: placement.anchor[0], z: placement.anchor[2], yaw: placement.rotationY }), [placement])
   const state = useRef<FollowState | null>(null)
@@ -348,6 +351,9 @@ function useVillageFollower(agentId: string, placement: VillageStationPlacement,
   /** Where it stands (following) or is headed (visiting), for the others' choice of spot. One object, changed in place. */
   const spot = useRef<VisitSpot>({ x: home.x, z: home.z })
   const pick = useRef((distance: number) => pickVisitSpot(target.current, distance, otherVillageAwaySpots(agentId)))
+  /** The Council mark it is headed for or stands on (CouncilGoal.seq), and whether it said it got there. */
+  const stageSeq = useRef(-1)
+  const stageSettled = useRef(false)
   const walkingRef = useRef(false)
   const [away, setAway] = useState(false)
   const [walking, setWalking] = useState(false)
@@ -387,12 +393,13 @@ function useVillageFollower(agentId: string, placement: VillageStationPlacement,
       follow.z = home.z
       follow.yaw = home.yaw
     }
-    const want = wanted ? 'follow' : visiting ? 'visit' : null
+    const want = staged ? 'stage' : wanted ? 'follow' : visiting ? 'visit' : null
     if (want && follow.mode !== want) {
       follow.mode = want
       follow.act = 'stand'
       follow.hasGoal = false
-    } else if (!want && (follow.mode === 'follow' || follow.mode === 'visit')) follow.mode = 'return'
+      stageSeq.current = -1
+    } else if (!want && (follow.mode === 'follow' || follow.mode === 'visit' || follow.mode === 'stage')) follow.mode = 'return'
     if (follow.mode !== 'visit') {
       // Not (or no longer) on a visit: it is not standing in front of the owner, and has nothing left to say there.
       setVillageArrived(agentId, false)
@@ -419,7 +426,7 @@ function useVillageFollower(agentId: string, placement: VillageStationPlacement,
       setVillageAwaySpot(agentId, null)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentId, placement, home, wanted, visiting])
+  }, [agentId, placement, home, wanted, visiting, staged])
 
   useEffect(() => () => setVillageArrived(agentId, false), [agentId])
 
@@ -434,7 +441,22 @@ function useVillageFollower(agentId: string, placement: VillageStationPlacement,
       to.forwardZ = pose.forward[2]
     }
     let result
-    if (follow.mode === 'visit') {
+    if (follow.mode === 'stage') {
+      const goal = getCouncilGoal(agentId)
+      if (goal && goal.seq !== stageSeq.current) {
+        stageSeq.current = goal.seq
+        stageSettled.current = false
+        follow.goalX = goal.x
+        follow.goalZ = goal.z
+        follow.hasGoal = true
+      }
+      const stage = stepStage(follow, delta, frozenRef.current, goal?.calm ? COUNCIL.walkSpeed : 0, goal ? goal.faceX : follow.x, goal ? goal.faceZ : follow.z)
+      if (goal && stage.settled && !stageSettled.current) {
+        stageSettled.current = true
+        reportCouncilSettled(agentId, goal.seq)
+      }
+      result = stage
+    } else if (follow.mode === 'visit') {
       const visit = stepVisit(follow, pose ? to : null, delta, frozenRef.current, holdRef.current, pick.current)
       if (visit.picked) {
         spot.current.x = follow.goalX
@@ -514,10 +536,13 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
     if (wasFocused.current && !focused && needsSince !== null) setHeardFor(needsSince)
     wasFocused.current = focused
   }, [focused, needsSince])
-  const visiting = isVillageComeOn(followKey) && needsSince !== null && needsSince !== heardFor && !stone
+  // In a Council (village-council.ts) a member stands where the scene puts it, and nobody walks up to the owner.
+  useSyncExternalStore(subscribeCouncil, getCouncilVersion, () => 0)
+  const staged = isCouncilMember(agentId) && !stone
+  const visiting = isVillageComeOn(followKey) && needsSince !== null && needsSince !== heardFor && !stone && !isCouncilOn()
   // The owner is talking to another agent (its panel or its full screen): wait a few metres back, don't interrupt.
   const ownerBusy = useOasisStore(s => s.agentEngine.focusedAgentId !== null && s.agentEngine.focusedAgentId !== agentId)
-  const follower = useVillageFollower(agentId, placement, isVillageFollowOn(followKey, name) && !stone, visiting, focused || Boolean(combatPose), ownerBusy)
+  const follower = useVillageFollower(agentId, placement, isVillageFollowOn(followKey, name) && !stone, visiting, staged ? Boolean(combatPose) : focused || Boolean(combatPose), ownerBusy, staged)
   // Its voice (village-companion.ts): the clip plays from its head, and it gestures while it talks.
   const speaking = useSyncExternalStore(subscribeVillageSpeech, () => {
     const speech = getVillageSpeech()

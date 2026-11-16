@@ -30,7 +30,8 @@ function makeAgent(spec: Record<string, unknown>, eyes?: () => Promise<{ data: s
   const written: Array<{ message: { content: unknown } }> = []
   const events: Array<{ kind: string; payload: Record<string, unknown> }> = []
   const hub = { emit: (_id: string, kind: string, payload: Record<string, unknown>) => events.push({ kind, payload }), persist: () => {}, log: () => {}, eyes }
-  const agent = new Agent({ id: 'agent-1', cwd: process.cwd(), eyes: false, ...spec }, hub)
+  // voiceOffered: the one-time "you may pick your own voice" note is tested with the Council (village-council.test.ts).
+  const agent = new Agent({ id: 'agent-1', cwd: process.cwd(), eyes: false, voiceOffered: true, ...spec }, hub)
   agent.proc = { pid: 1, stdin: { write: (line: string) => written.push(JSON.parse(line)) } }
   return { agent, written, events }
 }

@@ -77,6 +77,8 @@ export interface EngineAgentSnapshot {
   chrome?: boolean
   /** Voice: its replies end with a <spoken> line that its avatar says out loud (engine agent.js VOICE_NOTE). Missing on older engines. */
   speak?: boolean
+  /** The voice the agent picked for itself (a key of village-voices.json); the owner's pick on the page wins. */
+  voiceChoice?: string | null
   /** What the last turn came to, kept across engine restarts (engine outcome.js). */
   lastOutcome?: { outcome: string; reason?: string | null; at?: number | null } | null
   status: EngineAgentStatus
@@ -332,6 +334,8 @@ export type EngineServerMessage =
   | { type: 'event'; event: EngineEvent }
   /** The engine wants a picture from this agent's avatar for a message being sent (answer with the eyesFrame command). */
   | { type: 'eyes.request'; requestId: string; agentId: string }
+  /** A step of the Council's scene for this page to do (engine stage.js); answer with the stageResult command. */
+  | { type: 'stage.request'; requestId: string; request: { action: string } & Record<string, unknown> }
   | { type: 'reply'; id: number | string | null; cmd?: string; ok: boolean; data?: unknown; error?: string }
 
 // ─── commands (browser → engine) ────────────────────────────────────────────
@@ -385,6 +389,10 @@ export interface EngineCommandMap {
   setChrome: { args: { agentId: string; chrome: boolean }; result: { ok: boolean; data?: { chrome: boolean; applied: string } } }
   /** Voice on or off for an owned agent (a spoken line at the end of each reply); kept in the roster, applies to the next message. */
   setSpeak: { args: { agentId: string; on: boolean }; result: { ok: boolean; data?: { speak: boolean } } }
+  /** This page can stage the Council (walk and speak the agents on request); the last page to say so does it. */
+  canStage: { args: { on: boolean }; result: { ok: boolean } }
+  /** The answer to a stage.request. */
+  stageResult: { args: { requestId: string; ok: boolean; data?: unknown; error?: string }; result: { ok: boolean } }
   /** A recorded voice message (base64 audio): kept, transcribed by ElevenLabs Scribe, the transcript sent to the agent. */
   voiceMessage: { args: { agentId: string; audio: string; mime: string; durationMs?: number; priority?: 'now' | 'later' }; result: { ok: boolean; data?: { transcript: string; fileId: string; uuid?: string }; error?: string } }
   /** This page can take eyes pictures (once per connection). */

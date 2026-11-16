@@ -22,7 +22,7 @@ import type { ElevenLabsAlignment } from '../../lib/lip-sync-lab'
 import { buildVisemeTimeline, createVisemeLipSync } from '../../lib/village/village-visemes'
 import { parseFollowPrefs, wantsCome, wantsFollow, withComeChoice, withFollowChoice, type FollowPrefs, type VisitSpot } from '../../lib/village/village-follow'
 import { SPOKEN_MAX_CHARS, cleanSpoken } from '../../lib/village/village-spoken'
-import { dealVoice, parseVoicePrefs, playbackRateFor, speechSpeedPlan, speedOf, voiceOf, withVoicePrefs, type VoicePrefs } from '../../lib/village/village-voices'
+import { dealVoice, parseVoicePrefs, playbackRateFor, speechSpeedPlan, speedOf, voiceChosenBy, voiceOf, withVoicePrefs, type VoicePrefs } from '../../lib/village/village-voices'
 
 // ─── follow ─────────────────────────────────────────────────────────────────
 
@@ -266,12 +266,14 @@ export interface AgentVoiceSettings {
 }
 
 /**
- * The voice and speed of an agent (`key`: its session id, or its agent id before it has one). An agent
- * without a voice is dealt a random one of the ten here, once, and keeps it; Anorak has his own.
+ * The voice and speed of an agent (`key`: its session id, or its agent id before it has one). The owner's pick
+ * in the settings menu comes first, then the voice the agent chose for itself (`own`: the engine's
+ * `voiceChoice`), then the one it was dealt. An agent without any is dealt a random one here, once, and keeps
+ * it; Anorak has his own.
  */
-export function getAgentVoiceSettings(key: string, name: string | null | undefined): AgentVoiceSettings {
+export function getAgentVoiceSettings(key: string, name: string | null | undefined, own?: string | null): AgentVoiceSettings {
   const prefs = loadVoicePrefs()
-  let voice = voiceOf(prefs, key, name)
+  let voice = voiceOf(prefs, key, name, own)
   if (!voice) {
     voice = dealVoice(prefs)
     // Quietly: this can run while a component reads it, and nothing on screen changes by it.
@@ -282,6 +284,16 @@ export function getAgentVoiceSettings(key: string, name: string | null | undefin
 
 export function setAgentVoice(key: string, voice: string): void {
   saveVoicePrefs(withVoicePrefs(loadVoicePrefs(), key, { voice, picked: true }), true)
+}
+
+/** Who decided this agent's voice: the owner (settings menu), the agent itself, or nobody (dealt, or Anorak's own). */
+export function agentVoiceChosenBy(key: string, own?: string | null): 'owner' | 'agent' | 'nobody' {
+  return voiceChosenBy(loadVoicePrefs(), key, own)
+}
+
+/** Take the owner's pick back: the agent's own choice (or the dealt voice) counts again. */
+export function clearAgentVoicePick(key: string): void {
+  saveVoicePrefs(withVoicePrefs(loadVoicePrefs(), key, { picked: false }), true)
 }
 
 /** Applies to the clip this agent is saying too (its rate changes at once; the next clip is made at the new speed). */
@@ -365,9 +377,52 @@ export function getVillageSpeechDebug() {
   }
 }
 
+/** Called once each when whatever is being said has ended or was stopped (whenVillageSpeechEnds). */
+let endWaiters: Array<() => void> = []
+
+function flushEndWaiters(): void {
+  const waiters = endWaiters
+  endWaiters = []
+  waiters.forEach(done => done())
+}
+
+/** Resolves when the clip that is playing (or being fetched) has ended or was stopped; at once when nothing is. */
+export function whenVillageSpeechEnds(): Promise<void> {
+  if (!speech && !playing) return Promise.resolve()
+  return new Promise(resolve => { endWaiters.push(resolve) })
+}
+
+export interface PreparedSpeech {
+  /** The line as it will be said (cleaned, 400 characters at most). */
+  text: string
+  /** The clip's own length. */
+  clipSeconds: number
+  /** How long it takes to say at the agent's speed. */
+  seconds: number
+  playbackRate: number
+  voice: string
+}
+
+/**
+ * Make the clip for a line without playing it, and say how long it will take: a scene (the Council) can be
+ * timed before anyone opens their mouth, and the line then starts at once. Costs what saying it would.
+ */
+export async function prepareVillageSpeech(rawText: string, settings: AgentVoiceSettings): Promise<PreparedSpeech> {
+  const text = cleanSpoken(rawText, SPOKEN_MAX_CHARS)
+  if (!text) throw new Error('nothing to say')
+  const plan = speechSpeedPlan(settings.speed)
+  const clip = await fetchClip(text, settings.voice, plan.modelSpeed)
+  const clipSeconds = buildVisemeTimeline(clip.alignment).duration
+  const playbackRate = playbackRateFor(settings.speed, clip.modelSpeed)
+  return { text, clipSeconds, seconds: Math.round((clipSeconds / playbackRate) * 100) / 100, playbackRate, voice: settings.voice }
+}
+
 function endPlayback(): void {
   const current = playing
-  if (!current) return
+  if (!current) {
+    flushEndWaiters()
+    return
+  }
   playing = null
   current.release()
   unregisterLipSync(current.lipId, current.lip || undefined)
@@ -380,6 +435,7 @@ function endPlayback(): void {
     current.audio.disconnect()
   } catch { /* never connected */ }
   current.audio.removeFromParent()
+  flushEndWaiters()
 }
 
 /** Stop whatever is being said (or fetched). */
@@ -428,7 +484,10 @@ export async function speakVillageAgent(agentId: string, rawText: string, settin
   const askedAt = performance.now()
   const fail = (result: string) => {
     lastSpeech = { agentId, text, at: Date.now(), result }
-    if (token === speechToken) setSpeech(null)
+    if (token === speechToken) {
+      setSpeech(null)
+      flushEndWaiters()
+    }
     return false
   }
   const listener = getAudioListener()

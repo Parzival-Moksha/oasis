@@ -30,8 +30,8 @@ export const FOLLOW = {
   turnDeadband: 0.06,
 } as const
 
-/** home: at its desk. follow: beside the owner. visit: it came to the owner because it needs them. return: walking back to the desk. */
-export type FollowMode = 'home' | 'follow' | 'visit' | 'return'
+/** home: at its desk. follow: beside the owner. visit: it came to the owner because it needs them. stage: it stands where a scene puts it (the Council). return: walking back to the desk. */
+export type FollowMode = 'home' | 'follow' | 'visit' | 'stage' | 'return'
 export type FollowAct = 'stand' | 'walk' | 'aside'
 
 export interface FollowState {
@@ -151,7 +151,7 @@ export function stepFollow(
   RESULT.moved = false
   RESULT.turned = false
   RESULT.arrivedHome = false
-  if (state.mode === 'home' || state.mode === 'visit') return RESULT
+  if (state.mode === 'home' || state.mode === 'visit' || state.mode === 'stage') return RESULT
   if (frozen || !(dt > 0)) {
     if (state.act !== 'stand') state.act = 'stand'
     return RESULT
@@ -503,4 +503,65 @@ export function withComeChoice(prefs: FollowPrefs, key: string, on: boolean): Fo
   if (on) delete next[key]
   else next[key] = false
   return next
+}
+
+// ─── on a stage (the Council) ───────────────────────────────────────────────
+// The agent is told where to stand and where to look (village-council.ts): it walks to its mark
+// (state.goalX / goalZ), then turns to face a point, and reports when it stands settled.
+
+export interface StageStepResult extends FollowStepResult {
+  /** On its mark and facing where it should: nothing left to do. */
+  settled: boolean
+}
+
+const STAGE_RESULT: StageStepResult = { moved: false, turned: false, arrivedHome: false, settled: false }
+
+/**
+ * One frame of an agent on a stage (mode 'stage'). `speed`: metres a second for the walk (0: the usual pace,
+ * faster from far away). `faceX`, `faceZ`: the point it looks at once it stands.
+ */
+export function stepStage(state: FollowState, dt: number, frozen: boolean, speed: number, faceX: number, faceZ: number): StageStepResult {
+  const result = STAGE_RESULT
+  result.moved = false
+  result.turned = false
+  result.arrivedHome = false
+  result.settled = false
+  if (state.mode !== 'stage' || !state.hasGoal) return result
+  if (frozen || !(dt > 0)) {
+    if (state.act !== 'stand') state.act = 'stand'
+    return result
+  }
+  const step = Math.min(dt, 0.1)
+  const gx = state.goalX - state.x
+  const gz = state.goalZ - state.z
+  const left = Math.hypot(gx, gz)
+  if (left > 1e-4) {
+    // A calm walk for a few steps; from further away (gathering from the desks) the pace of following.
+    const pace = speed > 0 && left < 6 ? speed : followSpeed(left + FOLLOW.stopDistance)
+    const reach = pace * step
+    if (left <= reach) {
+      state.x = state.goalX
+      state.z = state.goalZ
+      state.act = 'stand'
+    } else {
+      state.act = 'walk'
+      state.x += (gx / left) * reach
+      state.z += (gz / left) * reach
+      turnTo(state, Math.atan2(gx, gz), step, result)
+    }
+    result.moved = true
+    return result
+  }
+  if (state.act !== 'stand') state.act = 'stand'
+  const fx = faceX - state.x
+  const fz = faceZ - state.z
+  if (Math.hypot(fx, fz) > 1e-3) {
+    const want = Math.atan2(fx, fz)
+    if (Math.abs(wrapAngle(want - state.yaw)) > 1e-3) {
+      turnTo(state, want, step, result)
+      return result
+    }
+  }
+  result.settled = true
+  return result
 }

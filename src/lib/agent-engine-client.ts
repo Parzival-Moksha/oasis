@@ -105,6 +105,8 @@ export interface EyesPicture {
 }
 /** Takes the picture for one agent, or null when this page has no view of it. Must not throw for long: it is synchronous work. */
 export type EyesCapturer = (agentId: string) => EyesPicture | null
+/** Does one step of the Council's scene and resolves with what to tell the moderator (rejects with why not). */
+export type StageHandler = (request: { action: string } & Record<string, unknown>) => Promise<unknown>
 
 const LONG_COMMANDS: Partial<Record<EngineCommandName, number>> = { listSessions: 60000, spawnAgent: 45000, observe: 45000 }
 
@@ -129,6 +131,7 @@ export class AgentEngineClient {
   private readonly deltas = new Map<string, TextDeltaEvent>()
   private deltaTimer: unknown = null
   private eyesCapturer: EyesCapturer | null = null
+  private stageHandler: StageHandler | null = null
   private showListeners = new Set<(agentId: string) => void>()
 
   constructor(options: AgentEngineClientOptions) {
@@ -300,6 +303,38 @@ export class AgentEngineClient {
     }
   }
 
+  /**
+   * The village registers how to do a step of the Council's scene (village-council.ts); the engine then sends
+   * this page the moderator's requests. Returns the unregister function.
+   */
+  setStageHandler(handler: StageHandler): () => void {
+    this.stageHandler = handler
+    this.announceStage()
+    return () => {
+      if (this.stageHandler !== handler) return
+      this.stageHandler = null
+      this.announceStage()
+    }
+  }
+
+  private announceStage(): void {
+    if (!this.isOpen) return
+    // An engine older than the Council answers "unknown command": nothing to do then.
+    this.cmd('canStage', { on: Boolean(this.stageHandler) }).catch(() => {})
+  }
+
+  private answerStage(requestId: string, request: { action: string } & Record<string, unknown>): void {
+    const handler = this.stageHandler
+    const done = (ok: boolean, data?: unknown, error?: string) => { this.cmd('stageResult', { requestId, ok, ...(ok ? { data } : { error }) }).catch(() => {}) }
+    if (!handler) {
+      done(false, undefined, 'this page has no stage')
+      return
+    }
+    Promise.resolve()
+      .then(() => handler(request))
+      .then(data => done(true, data), error => done(false, undefined, error instanceof Error ? error.message : String(error)))
+  }
+
   private announceEyes(): void {
     if (!this.isOpen) return
     // An engine older than eyes answers "unknown command": nothing to do then.
@@ -451,10 +486,14 @@ export class AgentEngineClient {
         this.flushDeltas()
         this.dispatch({ type: 'hello', agents: message.agents || [], backlog: message.backlog || {}, server: message.server, at: this.now() })
         if (this.eyesCapturer) this.announceEyes()
+        if (this.stageHandler) this.announceStage()
         if (typeof message.show === 'string') this.emitShow(message.show)
         return
       case 'show':
         if (typeof message.agentId === 'string') this.emitShow(message.agentId)
+        return
+      case 'stage.request':
+        if (typeof message.requestId === 'string' && message.request && typeof message.request.action === 'string') this.answerStage(message.requestId, message.request)
         return
       case 'eyes.request':
         if (typeof message.requestId === 'string' && typeof message.agentId === 'string') this.answerEyes(message.requestId, message.agentId)

@@ -26,6 +26,8 @@ import { listen as earsListen, warmEars, earsStatus, stopEars } from './ears.js'
 import { listenScribe, hasLiveScribe, LIVE_SCRIBE_MODEL } from './scribe-live.js';
 import { serveAttachment } from './files.js';
 import { startTelegram } from './telegram.js';
+import { listVoices } from './voice.js';
+import { createStage, resolveStageAgent } from './stage.js';
 import fs from 'node:fs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -67,9 +69,11 @@ const hub = {
     }
     broadcast({ type: 'event', event });
     telegram?.onEvent(event);
-    if (/^(status|init|meta|model|mode|effort|eyes|speak|chrome|context|exit|permission\.)/.test(kind)) scheduleSnapshot();
+    if (/^(status|init|meta|model|mode|effort|eyes|speak|voice|chrome|context|exit|permission\.)/.test(kind)) scheduleSnapshot();
   },
   eyes: (agentId) => captureEyes(agentId),
+  /** Where this engine listens: agents get it as OASIS_ENGINE_URL. */
+  url: `http://${HOST}:${PORT}`,
   persist() {
     saveRoster(ROSTER_FILE, ownedAgents().map((a) => a.rosterEntry()));
   },
@@ -119,6 +123,8 @@ function captureEyes(agentId) {
     for (const ws of pages) ws.send(ask);
   });
 }
+
+const stage = createStage({ pages: () => [...clients], agents: () => agents.values(), log: (...a) => hub.log(...a) });
 
 function newId(prefix) { return `${prefix}-${randomUUID().slice(0, 8)}`; }
 
@@ -186,6 +192,20 @@ const commands = {
   setEyes({ agentId, on }) { return getAgent(agentId, { owned: true }).setEyes(on); },
   /** Voice for an agent (voice.js): its replies end with a <spoken> line the page says out loud. */
   setSpeak({ agentId, on }) { return getAgent(agentId, { owned: true }).setSpeak(on); },
+  /** The voices an agent can have (the page's list, voice.js). */
+  listVoices: () => listVoices(),
+  /** An agent picks its own voice (scripts/voice.mjs); `agent`: its id or name. voice: a key of the list, or null to give it up. */
+  chooseVoice({ agentId, agent, voice }) {
+    const a = resolveStageAgent(agentId ?? agent, ownedAgents());
+    if (!a) throw new Error(`unknown agent ${agentId ?? agent ?? ''}`);
+    return a.setVoiceChoice(voice ?? null);
+  },
+  // The Council's stage (stage.js): the moderator's calls go to the Oasis page that walks and speaks the agents.
+  council(msg) { return stage.request(msg); },
+  /** An Oasis page that can stage says so once per connection (the last one to say so stages). */
+  canStage({ on = true } = {}, ws) { if (ws) { ws.canStage = !!on; ws.stageAt = Date.now(); } return { ok: true }; },
+  /** A page's answer to stage.request. */
+  stageResult(msg) { return stage.result(msg); },
 
   /** images: pictures pasted or dropped in the Oasis ([{ data: base64, mediaType, name }], pictures.js). */
   send({ agentId, text, priority, images }) {

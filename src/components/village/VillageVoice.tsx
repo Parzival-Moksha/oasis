@@ -14,6 +14,8 @@ import { useOasisStore } from '../../store/oasisStore'
 import { splitSpoken, spokenForLastTurn, spokenInStream } from '../../lib/village/village-spoken'
 import { getAgentVoiceSettings, getVillageSpeechDebug, holdVillageArrivalLine, isVillageArrived, isVillageComeOn, isVillageFollowOn, isVillageVoiceOn, speakVillageAgent, stopVillageSpeech } from './village-companion'
 import { getPlayerAvatarPose } from '../../lib/player-avatar-runtime'
+import { getAgentEngineClient } from '../../lib/agent-engine-client'
+import { getCouncilStatus, isCouncilMember, isCouncilOn, offerCouncilLine, runCouncilRequest, type CouncilRequest } from './village-council'
 
 /** A reply older than this is the past (backlog after a reload), not something to say now. */
 const FRESH_MS = 20_000
@@ -27,12 +29,18 @@ export function VillageVoice() {
       ;(window as unknown as Record<string, unknown>).__oasisVillageVoice = {
         say: (agentId: string, text: string, voice?: string) => {
           const agent = useOasisStore.getState().agentEngine.agents[agentId]
-          const settings = getAgentVoiceSettings(agent?.sessionId || agentId, agent?.name)
+          const settings = getAgentVoiceSettings(agent?.sessionId || agentId, agent?.name, agent?.voiceChoice)
           return speakVillageAgent(agentId, text, voice ? { ...settings, voice } : settings, true)
         },
         stop: () => stopVillageSpeech(),
         debug: () => getVillageSpeechDebug(),
       }
+    }
+    // The Council's stage: the engine sends this page the moderator's steps (village-council.ts).
+    const unstage = getAgentEngineClient().setStageHandler(request => runCouncilRequest(request as CouncilRequest))
+    if (process.env.NODE_ENV !== 'production') {
+      // Dev: window.__oasisCouncil.run({ action: 'start', agentIds: ['a0', 'a1'] }) without an engine; .status()
+      ;(window as unknown as Record<string, unknown>).__oasisCouncil = { run: (request: CouncilRequest) => runCouncilRequest(request), status: () => getCouncilStatus() }
     }
     const said = new Map<string, { text: string; at: number }>()
     const unsubscribe = useOasisStore.subscribe((state, prev) => {
@@ -60,10 +68,17 @@ export function VillageVoice() {
         if (!spoken) continue
         const earlier = said.get(id)
         if (earlier && earlier.text === spoken && now - earlier.at < SAME_LINE_MS) continue
+        // A Council is on: one voice at a time, and the moderator says whose. A member's line is kept for its
+        // turn (`speak next`); nobody else speaks until it is over.
+        if (isCouncilOn()) {
+          said.set(id, { text: spoken, at: now })
+          if (isCouncilMember(id)) offerCouncilLine(id, spoken)
+          continue
+        }
         if (!isVillageVoiceOn() || document.visibilityState !== 'visible') continue
         said.set(id, { text: spoken, at: now })
         const key = agent.sessionId || id
-        const settings = getAgentVoiceSettings(key, agent.name)
+        const settings = getAgentVoiceSettings(key, agent.name, agent.voiceChoice)
         // An agent that walks up to the owner when it needs them says its line when it gets there, not from
         // its desk: the line waits (and its clip is made) while it walks. Said at once when the agent is with
         // the owner already (it follows them, it stands in front of them, its panel is open).
@@ -74,6 +89,7 @@ export function VillageVoice() {
     })
     return () => {
       unsubscribe()
+      unstage()
       stopVillageSpeech()
     }
   }, [])

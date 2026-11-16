@@ -12,17 +12,19 @@ import {
   speechSpeedPlan,
   speedOf,
   villageVoice,
+  voiceChosenBy,
   voiceOf,
   withVoicePrefs,
   type VoicePrefs,
 } from '../village/village-voices'
 import { resolveSpeechVoice } from '../village/village-speech-server'
 
-describe('the ten voices', () => {
-  it('are ten different ElevenLabs voices, Anorak’s among them', () => {
-    expect(VILLAGE_VOICES).toHaveLength(10)
-    expect(new Set(VILLAGE_VOICES.map(voice => voice.key)).size).toBe(10)
-    expect(new Set(VILLAGE_VOICES.map(voice => voice.id)).size).toBe(10)
+describe('the voices', () => {
+  it('are twenty different ElevenLabs voices, Anorak’s among them, with characters as well as narrators', () => {
+    expect(VILLAGE_VOICES).toHaveLength(20)
+    expect(new Set(VILLAGE_VOICES.map(voice => voice.key)).size).toBe(20)
+    expect(new Set(VILLAGE_VOICES.map(voice => voice.id)).size).toBe(20)
+    for (const key of ['harry', 'austin', 'spuds', 'don', 'lolo', 'bruno']) expect(villageVoice(key)).not.toBeNull()
     for (const voice of VILLAGE_VOICES) expect(voice.id).toMatch(/^[A-Za-z0-9]{20}$/)
     expect(villageVoice(ANORAK_VOICE)?.id).toBe('6sFKzaJr574YWVu4UuJF')
     expect(villageVoice('nobody')).toBeNull()
@@ -45,6 +47,23 @@ describe('each agent’s voice', () => {
     expect(voiceOf(picked, 's-anorak', 'Anorak')).toBe('george')
   })
 
+  it('the owner’s pick wins over the agent’s own choice, which wins over the dealt one and over Anorak’s default', () => {
+    const dealt = withVoicePrefs({}, 's1', { voice: 'lily' })
+    expect(voiceOf(dealt, 's1', 'Rick', 'harry')).toBe('harry')
+    expect(voiceChosenBy(dealt, 's1', 'harry')).toBe('agent')
+    expect(voiceChosenBy(dealt, 's1', null)).toBe('nobody')
+    const picked = withVoicePrefs(dealt, 's1', { voice: 'george', picked: true })
+    expect(voiceOf(picked, 's1', 'Rick', 'harry')).toBe('george')
+    expect(voiceChosenBy(picked, 's1', 'harry')).toBe('owner')
+    // The owner takes the pick back: the agent's own choice counts again.
+    const back = withVoicePrefs(picked, 's1', { picked: false })
+    expect(voiceOf(back, 's1', 'Rick', 'harry')).toBe('harry')
+    expect(back.s1.picked).toBeUndefined()
+    expect(voiceOf({}, 's-anorak', 'Anorak', 'don')).toBe('don')
+    // A choice that is not on the list (an older engine, a typo) is ignored.
+    expect(voiceOf(dealt, 's1', 'Rick', 'nobody')).toBe('lily')
+  })
+
   it('a new agent has none until one is dealt, then keeps it', () => {
     expect(voiceOf({}, 's1', 'Rick')).toBeNull()
     const voice = dealVoice({}, () => 0.5)
@@ -56,14 +75,14 @@ describe('each agent’s voice', () => {
   it('deals a random voice nobody has yet, and never Anorak’s while others are free', () => {
     let prefs: VoicePrefs = {}
     const dealt: string[] = []
-    for (let i = 0; i < 9; i += 1) {
+    for (let i = 0; i < 19; i += 1) {
       const voice = dealVoice(prefs, () => (i * 0.37) % 1)
       dealt.push(voice)
       prefs = withVoicePrefs(prefs, `s${i}`, { voice })
     }
-    expect(new Set(dealt).size).toBe(9)
+    expect(new Set(dealt).size).toBe(19)
     expect(dealt).not.toContain(ANORAK_VOICE)
-    // The eleventh agent shares: every voice is taken once.
+    // One more agent shares: every voice is taken once.
     expect(villageVoice(dealVoice(prefs, () => 0.99))).not.toBeNull()
     // Random means random: another roll, another voice.
     expect(dealVoice({}, () => 0)).not.toBe(dealVoice({}, () => 0.99))
