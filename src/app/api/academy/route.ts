@@ -1,5 +1,6 @@
 // /api/academy — the Oasis Academy: a skill tree in the village where the owner trains agents.
-//   GET   skills, keys, levels, and every trainee: per-skill state (none | claimed | verified, proof, by, at),
+//   GET   ?set=<id> (default: the main set) &have=<rev> (leave the content out when the caller holds this revision)
+//         skills, keys, levels, lanes, the sets there are, and every trainee: per-skill state (none | claimed | verified, proof, by, at),
 //         XP, level, the skills it can do now, and whether it still stands as stone.
 //   POST  { trainee, name?, skill, state: 'none' | 'claimed' | 'verified', proof?, by? }   mark a skill
 //         { trainee, name?, training: true | false }                                      in or out of training
@@ -20,7 +21,8 @@ export async function GET(request: NextRequest) {
   const denied = guardAgentRoute(request)
   if (denied) return denied
   try {
-    return NextResponse.json(await academySnapshot())
+    const query = request.nextUrl.searchParams
+    return NextResponse.json(await academySnapshot(query.get('set'), query.get('have')))
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })
   }

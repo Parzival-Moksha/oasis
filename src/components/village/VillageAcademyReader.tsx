@@ -30,6 +30,8 @@ import {
   getAcademyState,
   openAcademyReader,
   postAcademy,
+  readerContent,
+  readerTrainee,
   selectAcademyTrainee,
   selectedTrainee,
   startAcademyRefresh,
@@ -38,6 +40,7 @@ import {
   useAcademyEnabled,
 } from './academy-store'
 import { KeyPrompt, PromptBanner } from './VillageHud'
+import { VillageAcademyMap } from './VillageAcademyMap'
 import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY, VILLAGE_TYPE_CLASS, canTalkTo } from './village-status'
 
 const LOOK_WORD: Record<AcademyNodeLook, string> = { locked: 'locked', available: 'ready', claimed: 'claimed', verified: 'verified' }
@@ -236,7 +239,7 @@ function AcademySheet({ skill, content, trainee, trainees }: { skill: AcademySki
               {needs.map(item => {
                 const state = trainee?.skills[item.id]?.state || 'none'
                 return (
-                  <button key={item.id} type="button" className={button} onClick={() => openAcademyReader(item.id)} title="Open this skill">
+                  <button key={item.id} type="button" className={button} onClick={() => openAcademyReader(item.id, getAcademyState().readerMap)} title="Open this skill">
                     {item.name} · {state === 'none' ? 'not yet' : state}
                   </button>
                 )
@@ -283,12 +286,15 @@ function AcademySheet({ skill, content, trainee, trainees }: { skill: AcademySki
 
 export function VillageAcademyReader() {
   const enabled = useAcademyEnabled()
-  const { content, trainees, nearby, reader } = useSyncExternalStore(subscribeAcademy, getAcademyState, getAcademyState)
+  const { content, trainees, nearby, reader, mapOpen } = useSyncExternalStore(subscribeAcademy, getAcademyState, getAcademyState)
+  // The open sheet reads the set it was opened from: the map's, or the world's.
+  const sheetContent = useSyncExternalStore(subscribeAcademy, () => readerContent(), () => null)
+  const sheetTrainee = useSyncExternalStore(subscribeAcademy, () => readerTrainee(), () => null)
   const trainee = useSyncExternalStore(subscribeAcademy, () => selectedTrainee(), () => null)
   const focusedAgentId = useOasisStore(s => s.agentEngine.focusedAgentId)
   const nearMini = useSyncExternalStore(subscribeNearbyVillageMini, getNearbyVillageMini, () => null)
-  const open = enabled && reader ? content?.skills.find(skill => skill.id === reader) || null : null
-  const near = enabled && nearby ? content?.skills.find(skill => skill.id === nearby) || null : null
+  const open = enabled && reader ? sheetContent?.skills.find(skill => skill.id === reader) || null : null
+  const near = enabled && nearby && !mapOpen ? content?.skills.find(skill => skill.id === nearby) || null : null
   useUILayer(VILLAGE_ACADEMY_LAYER, Boolean(open))
 
   // Progress: every few seconds and when the window is looked at again.
@@ -338,7 +344,7 @@ export function VillageAcademyReader() {
         repeat: event.repeat,
         typing: isTypingTarget(event.target),
         readerOpen: Boolean(current.reader),
-        nearby: Boolean(current.nearby),
+        nearby: Boolean(current.nearby) && !current.mapOpen,
         agent: Boolean(village.focusedAgentId || village.nearbyAgentId || getNearbyVillageMini()),
         worldKeysFree: useInputManager.getState().can().enterFocuses,
       })
@@ -352,15 +358,17 @@ export function VillageAcademyReader() {
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true })
   }, [enabled])
 
-  if (!enabled || !content || focusedAgentId) return null
+  const shown = enabled && Boolean(content) && !focusedAgentId
   return (
     <>
-      {near && !open && !nearMini && (
+      {/* The skill map: K, or the HUD's Skills button. */}
+      <VillageAcademyMap />
+      {shown && near && !open && !nearMini && (
         <PromptBanner accent={academyLaneColor(near.lane)} title={`${near.name} · ${LOOK_WORD[nodeLook(trainee, near)]}`}>
           <KeyPrompt k="E" label="Open skill" accent="#38bdf8" primary />
         </PromptBanner>
       )}
-      {open && <AcademySheet skill={open} content={content} trainee={trainee} trainees={trainees} />}
+      {shown && open && sheetContent && <AcademySheet skill={open} content={sheetContent} trainee={sheetTrainee} trainees={trainees} />}
     </>
   )
 }

@@ -12,7 +12,7 @@
 // No drei <Html>, no text objects, no click targets, and one frame callback, subscribed only while a
 // node pulses or flashes.
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useOasisStore } from '../../store/oasisStore'
@@ -31,6 +31,7 @@ import {
   type AcademySkill,
   type AcademyTraineeView,
 } from '../../lib/village/village-academy'
+import { SettingsContext } from '../scene-lib/contexts'
 import { getAcademyState, selectedTrainee, setAcademyNodes, subscribeAcademy, useAcademyEnabled } from './academy-store'
 
 const R = ACADEMY_TREE.medallionRadius
@@ -555,7 +556,9 @@ function PickedRing({ nodes }: { nodes: TreeNode[] }) {
 // ─── the tree ───────────────────────────────────────────────────────────────
 
 export function VillageAcademyTree({ origin }: { origin: VillageOrigin }) {
-  const enabled = useAcademyEnabled()
+  // Off unless asked for (Config → Agents → Skill tree in the world): the skill map is the main way in.
+  const { settings } = useContext(SettingsContext)
+  const enabled = useAcademyEnabled() && settings.villageAcademyTree === true
   const content = useSyncExternalStore(subscribeAcademy, () => getAcademyState().content, () => null)
   const trainee = useSyncExternalStore(subscribeAcademy, () => selectedTrainee(), () => null)
   const terrainHeights = useOasisStore(s => s.terrainHeights)

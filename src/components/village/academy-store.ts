@@ -9,7 +9,8 @@ import { villageAgentKey } from '../../lib/village/village-layout'
 import {
   pickAcademyNode,
   type AcademyContent,
-  type AcademySnapshot,
+  type AcademyResponse,
+  type AcademySetInfo,
   type AcademyTraineeView,
   type AcademyUpdate,
 } from '../../lib/village/village-academy'
@@ -20,7 +21,9 @@ import { SettingsContext } from '../scene-lib/contexts'
 
 export const ACADEMY_REFRESH_MS = 2500
 export const VILLAGE_ACADEMY_LAYER = 'village-academy'
+export const VILLAGE_ACADEMY_MAP_LAYER = 'village-academy-map'
 const SELECTED_KEY = 'oasis-academy-trainee'
+const MAP_SET_KEY = 'oasis-academy-map-set'
 
 export interface AcademyStoreState {
   /** Skills, keys, levels: the same object until the content itself changes. */
@@ -34,17 +37,31 @@ export interface AcademyStoreState {
   reader: string | null
   /** Dev: switched off from the console (an A/B measurement in one page). */
   devOff: boolean
+  /** The sets of skills there are (the film's 13, the full tree). The first is the main one: the world shows it. */
+  sets: AcademySetInfo[]
+  /** The skill map (the overlay) is open. */
+  mapOpen: boolean
+  /** The set the map shows, as last picked (null: the main one). */
+  mapSet: string | null
+  /** That set's content and progress, when it is not the main set. */
+  mapContent: AcademyContent | null
+  mapTrainees: AcademyTraineeView[]
+  /** The open sheet was opened from the map: it reads the map's set. */
+  readerMap: boolean
 }
 
-function storedSelection(): string | null {
+function stored(key: string): string | null {
   try {
-    return typeof window === 'undefined' ? null : window.localStorage.getItem(SELECTED_KEY)
+    return typeof window === 'undefined' ? null : window.localStorage.getItem(key)
   } catch {
     return null
   }
 }
 
-let state: AcademyStoreState = { content: null, trainees: [], selected: storedSelection(), nearby: null, reader: null, devOff: false }
+let state: AcademyStoreState = {
+  content: null, trainees: [], selected: stored(SELECTED_KEY), nearby: null, reader: null, devOff: false,
+  sets: [], mapOpen: false, mapSet: stored(MAP_SET_KEY), mapContent: null, mapTrainees: [], readerMap: false,
+}
 const listeners = new Set<() => void>()
 
 function set(patch: Partial<AcademyStoreState>): void {
@@ -70,9 +87,39 @@ export function useAcademyEnabled(): boolean {
 
 /** The trainee the tree shows: the one last picked, else the first one in training. */
 export function selectedTrainee(current: AcademyStoreState = state): AcademyTraineeView | null {
-  return current.trainees.find(trainee => trainee.key === current.selected)
-    || current.trainees.find(trainee => trainee.training)
-    || null
+  return pickTrainee(current.trainees, current.selected)
+}
+
+function pickTrainee(trainees: AcademyTraineeView[], selected: string | null): AcademyTraineeView | null {
+  return trainees.find(trainee => trainee.key === selected) || trainees.find(trainee => trainee.training) || null
+}
+
+/** Is the map on a set of its own (not the main one the world shows)? */
+function mapHasOwnSet(current: AcademyStoreState = state): boolean {
+  return Boolean(current.mapSet && current.sets.length && current.mapSet !== current.sets[0].id && current.sets.some(item => item.id === current.mapSet))
+}
+
+/** What the skill map shows: its set's skills and that set's view of every trainee. */
+export function mapContent(current: AcademyStoreState = state): AcademyContent | null {
+  return mapHasOwnSet(current) ? current.mapContent : current.content
+}
+
+export function mapTrainee(current: AcademyStoreState = state): AcademyTraineeView | null {
+  return pickTrainee(mapHasOwnSet(current) ? current.mapTrainees : current.trainees, current.selected)
+}
+
+/** The id of the set the map is on. */
+export function mapSetId(current: AcademyStoreState = state): string | null {
+  return mapHasOwnSet(current) ? current.mapSet : current.sets[0]?.id || null
+}
+
+/** What the open sheet reads: the map's set when it was opened there, else the world's. */
+export function readerContent(current: AcademyStoreState = state): AcademyContent | null {
+  return current.readerMap ? mapContent(current) : current.content
+}
+
+export function readerTrainee(current: AcademyStoreState = state): AcademyTraineeView | null {
+  return current.readerMap ? mapTrainee(current) : selectedTrainee(current)
 }
 
 export function traineeByKey(key: string | null | undefined, current: AcademyStoreState = state): AcademyTraineeView | null {
@@ -90,26 +137,39 @@ export function selectAcademyTrainee(key: string | null): void {
 
 // ─── the data ───────────────────────────────────────────────────────────────
 
-let lastBody = ''
-let lastContent = ''
+/** Per set ('' = the main one): the last answer's text, and the content held with its revision. */
+const held = new Map<string, { body: string; rev: string; content: AcademyContent | null }>()
 let inFlight: Promise<void> | null = null
 /** The route refused (hosted, shared on the network): no point asking again. */
 let refused = false
 
-function take(body: string): void {
-  if (body === lastBody) {
-    rekeyTrainees()
-    return
+function take(setKey: string, body: string): void {
+  const slot = held.get(setKey) || { body: '', rev: '', content: null }
+  if (body === slot.body) return
+  const data = JSON.parse(body) as AcademyResponse
+  if (!Array.isArray(data.trainees)) return
+  // The content travels only when its revision changed (`have`): otherwise keep the object we hold.
+  const content: AcademyContent | null = Array.isArray(data.skills)
+    ? { skills: data.skills, keys: data.keys || [], levels: data.levels || [], source: data.source || 'folder', lanes: data.lanes || [], title: data.title || '' }
+    : slot.content
+  if (!content) return
+  held.set(setKey, { body, rev: data.rev || '', content })
+  const sets = Array.isArray(data.sets) && JSON.stringify(data.sets) !== JSON.stringify(state.sets) ? data.sets : state.sets
+  if (setKey === '') {
+    const keep = (current: AcademyContent | null) => Boolean(state.reader && current?.skills.some(skill => skill.id === state.reader))
+    set({ content, trainees: data.trainees, sets, reader: state.readerMap || keep(content) ? state.reader : null })
+  } else if (setKey === state.mapSet) {
+    set({ mapContent: content, mapTrainees: data.trainees, sets })
   }
-  const data = JSON.parse(body) as AcademySnapshot
-  if (!Array.isArray(data.skills) || !Array.isArray(data.trainees)) return
-  lastBody = body
-  const contentText = JSON.stringify([data.skills, data.keys, data.levels, data.source])
-  const content = contentText === lastContent && state.content ? state.content : { skills: data.skills, keys: data.keys, levels: data.levels, source: data.source }
-  lastContent = contentText
-  const reader = state.reader && content.skills.some(skill => skill.id === state.reader) ? state.reader : null
-  set({ content, trainees: data.trainees, reader })
-  rekeyTrainees()
+}
+
+async function fetchSet(setKey: string): Promise<void> {
+  const have = held.get(setKey)?.rev
+  const query = [setKey ? `set=${encodeURIComponent(setKey)}` : '', have ? `have=${encodeURIComponent(have)}` : ''].filter(Boolean).join('&')
+  const response = await fetch(`/api/academy${query ? `?${query}` : ''}`, { cache: 'no-store' })
+  if (response.status === 403 || response.status === 404) refused = true
+  if (!response.ok) return
+  take(setKey, await response.text())
 }
 
 export function refreshAcademy(): Promise<void> {
@@ -117,10 +177,10 @@ export function refreshAcademy(): Promise<void> {
   if (refused) return Promise.resolve()
   inFlight = (async () => {
     try {
-      const response = await fetch('/api/academy', { cache: 'no-store' })
-      if (response.status === 403 || response.status === 404) refused = true
-      if (!response.ok) return
-      take(await response.text())
+      await fetchSet('')
+      // The map's own set: only while the map is open.
+      if (state.mapOpen && state.mapSet && mapHasOwnSet()) await fetchSet(state.mapSet)
+      rekeyTrainees()
     } catch {
       // Offline or mid-reload: keep what we have, the next tick tries again.
     } finally {
@@ -218,14 +278,38 @@ export function updateAcademyProximity(actor: Vec3 | null, agentDistance: number
 
 // ─── the reader ─────────────────────────────────────────────────────────────
 
-export function openAcademyReader(skillId: string): boolean {
-  if (!state.content?.skills.some(skill => skill.id === skillId)) return false
-  set({ reader: skillId })
+export function openAcademyReader(skillId: string, fromMap = false): boolean {
+  const content = fromMap ? mapContent() : state.content
+  if (!content?.skills.some(skill => skill.id === skillId)) return false
+  set({ reader: skillId, readerMap: fromMap })
   return true
 }
 
 export function closeAcademyReader(): void {
-  if (state.reader) set({ reader: null })
+  if (state.reader) set({ reader: null, readerMap: false })
+}
+
+// ─── the skill map (the overlay) ────────────────────────────────────────────
+
+export function openAcademyMap(): void {
+  if (state.mapOpen) return
+  set({ mapOpen: true, reader: null, readerMap: false })
+  void refreshAcademy()
+}
+
+export function closeAcademyMap(): void {
+  if (!state.mapOpen) return
+  set({ mapOpen: false, ...(state.readerMap ? { reader: null, readerMap: false } : {}) })
+}
+
+/** Switch the map to another set of skills (remembered in this browser). */
+export function setAcademyMapSet(id: string): void {
+  if (id === mapSetId()) return
+  try { window.localStorage.setItem(MAP_SET_KEY, id) } catch { /* storage off */ }
+  const own = held.get(id)
+  set({ mapSet: id, mapContent: own?.content || null, mapTrainees: [], ...(state.readerMap ? { reader: null, readerMap: false } : {}) })
+  if (own) held.set(id, { ...own, body: '' }) // the trainees of that set are read again
+  void refreshAcademy()
 }
 
 // Dev-only console helpers (playtests): window.__oasisAcademy.
@@ -238,7 +322,10 @@ if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
     /** Off and on again without touching the setting: `__oasisAcademy.setEnabled(false)`. */
     setEnabled: (on: boolean) => set({ devOff: !on }),
     select: (key: string | null) => selectAcademyTrainee(key),
-    open: (skillId: string) => openAcademyReader(skillId),
+    open: (skillId: string, fromMap = false) => openAcademyReader(skillId, fromMap),
+    openMap: () => openAcademyMap(),
+    closeMap: () => closeAcademyMap(),
+    setMapSet: (id: string) => setAcademyMapSet(id),
     close: () => closeAcademyReader(),
     /** Stand `meters` in front of the tree, facing it. */
     teleportToTree: (meters = 6, side = 0) => {

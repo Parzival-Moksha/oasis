@@ -11,6 +11,7 @@ import { isVillageSoundOn, setVillageSoundOn, subscribeVillageSound } from './vi
 import { isVillageVoiceOn, setVillageVoiceOn, subscribeVillageVoice } from './village-companion'
 import { VillageAgentsMenu } from './VillageAgentsMenu'
 import { VillageAcademyReader } from './VillageAcademyReader'
+import { AcademyMapButton } from './VillageAcademyMap'
 import { GAME_HUD_TEXT, GameKeycap } from '../forge/GameKeycap'
 
 /** Bottom-centre game prompt: a chamfered banner, a title, and key prompts in a row. */
@@ -137,6 +138,8 @@ export function VillageHud() {
         >
           + Summon
         </button>
+        {/* The Academy's skill map (K). */}
+        <AcademyMapButton />
       </div>
 
       {nearbyId && !focusedId && (

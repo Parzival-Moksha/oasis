@@ -28,6 +28,8 @@ export interface OasisSettings {
   villageDeskScreens: 'off' | 'nearest' | 'all'
   /** Village: the Academy (the skill tree and stone trainees). */
   villageAcademy: boolean
+  /** Village: the Academy's skill tree standing in the world (the skill map overlay is the main way in). */
+  villageAcademyTree: boolean
   // ─═̷─═̷─⚡ FPS COUNTER ─═̷─═̷─⚡
   fpsCounterEnabled: boolean
   fpsCounterFontSize: number  // 10-24px

@@ -66,11 +66,36 @@ export function AgentsTab() {
             <div className="text-sm text-gray-300 group-hover:text-white transition-colors whitespace-nowrap">Academy</div>
             <div className="text-[10px] text-gray-500">
               {settings.villageAcademy !== false
-                ? 'The skill tree stands by the plaza, and agents in training are stone until they have Spirit and Body.'
-                : 'No skill tree and no stone agents. Progress is kept.'}
+                ? 'The skill map opens with K, and agents in training are stone until they have Spirit and Body.'
+                : 'No skill map and no stone agents. Progress is kept.'}
             </div>
           </div>
         </label>
+        {settings.villageAcademy !== false && (
+          <label className="flex items-center gap-3 py-1.5 cursor-pointer group hover:bg-white/5 rounded px-1 -mx-1 transition-colors">
+            <div
+              role="switch"
+              aria-checked={settings.villageAcademyTree === true}
+              data-village-academy-tree={settings.villageAcademyTree === true ? 'on' : 'off'}
+              onClick={() => updateSetting('villageAcademyTree', settings.villageAcademyTree !== true)}
+              className={`w-10 h-5 rounded-full transition-all cursor-pointer relative flex-shrink-0 ${
+                settings.villageAcademyTree === true ? 'bg-amber-500 shadow-lg shadow-amber-500/30' : 'bg-gray-700'
+              }`}
+            >
+              <div className={`w-4 h-4 rounded-full bg-white mt-0.5 transition-all ${
+                settings.villageAcademyTree === true ? 'translate-x-5' : 'translate-x-0.5'
+              }`} />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm text-gray-300 group-hover:text-white transition-colors whitespace-nowrap">Skill tree in the world</div>
+              <div className="text-[10px] text-gray-500">
+                {settings.villageAcademyTree === true
+                  ? 'The tree also stands behind the spawn point, as a stair of terraces.'
+                  : 'Off: the skill map (K) is the way in.'}
+              </div>
+            </div>
+          </label>
+        )}
       </section>
 
       <section className="border-t border-white/10 pt-3">

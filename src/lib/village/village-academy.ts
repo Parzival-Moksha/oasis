@@ -30,6 +30,28 @@ export interface AcademySkill {
   way: string | null
   /** Skill ids that come first. */
   needs: string[]
+  /** A shorter name for its label on the skill map. */
+  short?: string
+  /** Its icon, drawn on a 24 by 24 grid (the skill map shows its number when it has none). */
+  icon?: AcademyIconPart[]
+  /** An optional side skill; a flagship checkpoint. */
+  perk?: boolean
+  flag?: boolean
+}
+
+/** One shape of an icon: a path (`d`), a circle (`cx cy r`) or a rect (`x y width height rx`), stroked. */
+export type AcademyIconPart = ['path' | 'circle' | 'rect', Record<string, string>]
+
+export interface AcademyLane {
+  id: string
+  name: string
+}
+
+/** One set of skills the Academy can show (the film's 13, the full tree...). */
+export interface AcademySetInfo {
+  id: string
+  title: string
+  count: number
 }
 
 export type AcademyKeyKind = 'subscription' | 'api' | 'account' | 'hardware'
@@ -54,6 +76,9 @@ export interface AcademyContent {
   levels: AcademyLevel[]
   /** `folder`: the private content folder; `sample`: the three skills this repo ships. */
   source: 'folder' | 'sample'
+  /** Every lane a skill is in, in the content's order (or the order the skills name them). */
+  lanes: AcademyLane[]
+  title: string
 }
 
 export interface AcademyProgress {
@@ -102,12 +127,42 @@ export interface AcademySnapshot extends AcademyContent {
   trainees: AcademyTraineeView[]
 }
 
+/**
+ * What GET /api/academy answers: the trainees always; the content (skills, keys, levels, lanes) only
+ * when the caller doesn't already hold this `rev` of it (`?have=<rev>`), so a poll stays small.
+ */
+export interface AcademyResponse extends Partial<AcademyContent> {
+  set: string
+  rev: string
+  sets: AcademySetInfo[]
+  trainees: AcademyTraineeView[]
+}
+
 // ─── content ────────────────────────────────────────────────────────────────
 
 const str = (value: unknown, max = 2000): string => (typeof value === 'string' ? value.trim().slice(0, max) : '')
 const num = (value: unknown, fallback = 0): number => (typeof value === 'number' && Number.isFinite(value) ? value : fallback)
 const ids = (value: unknown): string[] => (Array.isArray(value) ? value.map(item => str(item, 80)).filter(Boolean) : [])
 const KEY_KINDS: AcademyKeyKind[] = ['subscription', 'api', 'account', 'hardware']
+
+const ICON_ATTRS: Record<string, string[]> = { path: ['d'], circle: ['cx', 'cy', 'r'], rect: ['x', 'y', 'width', 'height', 'rx'] }
+
+/** An icon as data only: known shapes, known attributes, numbers and path letters, nothing else. */
+function iconParts(value: unknown): AcademyIconPart[] {
+  if (!Array.isArray(value)) return []
+  const out: AcademyIconPart[] = []
+  for (const part of value.slice(0, 16)) {
+    if (!Array.isArray(part) || typeof part[0] !== 'string' || !ICON_ATTRS[part[0]] || !part[1] || typeof part[1] !== 'object') continue
+    const attrs: Record<string, string> = {}
+    for (const name of ICON_ATTRS[part[0]]) {
+      const raw = (part[1] as Record<string, unknown>)[name]
+      const text = typeof raw === 'number' ? String(raw) : str(raw, 1500)
+      if (text && /^[\d\s.,eE+\-a-zA-Z]+$/.test(text)) attrs[name] = text
+    }
+    if (Object.keys(attrs).length) out.push([part[0] as AcademyIconPart[0], attrs])
+  }
+  return out
+}
 
 /** Whatever the JSON files hold, as content the tree can trust: unknown ids dropped, tiers and XP sane. */
 export function normalizeAcademyContent(rawSkills: unknown, rawKeys: unknown, source: AcademyContent['source']): AcademyContent | null {
@@ -134,6 +189,10 @@ export function normalizeAcademyContent(rawSkills: unknown, rawKeys: unknown, so
       keys: ids(item.keys),
       way: str(item.way, 200) || null,
       needs: ids(item.needs),
+      ...(str(item.short, 40) ? { short: str(item.short, 40) } : {}),
+      ...(iconParts(item.icon).length ? { icon: iconParts(item.icon) } : {}),
+      ...(item.perk === true ? { perk: true } : {}),
+      ...(item.flag === true ? { flag: true } : {}),
     })
   })
   if (!skills.length) return null
@@ -160,7 +219,20 @@ export function normalizeAcademyContent(rawSkills: unknown, rawKeys: unknown, so
   }
   levels.sort((a, b) => a.xp - b.xp)
   if (!levels.length || levels[0].xp > 0) levels.unshift({ name: 'Level 0', xp: 0 })
-  return { skills, keys, levels, source }
+
+  // Lanes: the file's list first (it carries names and an order), then any lane a skill names.
+  const lanes: AcademyLane[] = []
+  const named = (file as { lanes?: unknown }).lanes
+  for (const raw of Array.isArray(named) ? named : []) {
+    if (!raw || typeof raw !== 'object') continue
+    const id = str((raw as Record<string, unknown>).id, 40)
+    if (id && !lanes.some(lane => lane.id === id) && skills.some(skill => skill.lane === id)) lanes.push({ id, name: str((raw as Record<string, unknown>).name, 40) || id })
+  }
+  for (const skill of skills) {
+    if (!lanes.some(lane => lane.id === skill.lane)) lanes.push({ id: skill.lane, name: skill.lane.charAt(0).toUpperCase() + skill.lane.slice(1) })
+  }
+  const title = str((file as { title?: unknown }).title, 80) || `${skills.length} skills`
+  return { skills, keys, levels, source, lanes, title }
 }
 
 // ─── a trainee's progress ───────────────────────────────────────────────────
@@ -478,7 +550,10 @@ export const ACADEMY_KEY_COLOR: Record<AcademyKeyKind, string> = {
   hardware: '#c2703d',
 }
 
-const LANE_COLOR: Record<string, string> = { core: '#a78bfa', ears: '#2dd4bf', builder: '#34d399', sally: '#fb7185' }
+const LANE_COLOR: Record<string, string> = {
+  core: '#a78bfa', ears: '#2dd4bf', voice: '#38bdf8', reach: '#60a5fa', synapse: '#c084fc', initiative: '#fb923c', knows: '#f9a8d4',
+  sales: '#facc15', builder: '#34d399', money: '#fbbf24', sally: '#fb7185', creator: '#e879f9', tyler: '#f87171', hands: '#a3e635',
+}
 const LANE_SPARE = ['#f472b6', '#38bdf8', '#a3e635', '#fb923c', '#e879f9', '#22d3ee']
 
 /** A colour per lane; lanes this file doesn't know get a steady one from the spare list. */
