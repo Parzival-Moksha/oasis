@@ -13,6 +13,7 @@ import { getPlayerAvatarPose, markThirdPersonCameraRestored, requestPlayerAvatar
 import { showNotice } from '../forge/GlobalNotice'
 import { findNearestStation, stationLocalToWorld, type Vec3 } from '../../lib/village/village-layout'
 import { villageKeyAction } from '../../lib/village/village-keys'
+import { awayAgentWinsPrompt } from '../../lib/village/village-follow'
 import { getVillageSoundDebug } from './village-sound'
 
 export const VILLAGE_SESSION_LAYER = 'village-session'
@@ -311,6 +312,11 @@ export function requestVillageVoiceOnOpen(agentId: string | null): void {
   voiceRequest = agentId ? { agentId, at: Date.now() } : null
 }
 
+/** T opened this agent with the microphone on (asked a moment ago, not yet taken by its box). */
+export function isVillageVoiceRequested(agentId: string): boolean {
+  return Boolean(voiceRequest && voiceRequest.agentId === agentId && Date.now() - voiceRequest.at < VOICE_REQUEST_TTL_MS)
+}
+
 /** For the box that just mounted: should it start the mic? Answers true once. */
 export function takeVillageVoiceRequest(agentId: string): boolean {
   const request = voiceRequest
@@ -528,17 +534,22 @@ export function updateVillageProximity(): void {
   const actor = getVillageActorPosition()
   const anchors = getVillageAnchors()
   let nearby = findNearestStation(actor, anchors, VILLAGE_TALK_RADIUS, VILLAGE_TALK_HEIGHT)
+  // An agent that walked up to the owner and stands close keeps the keys: the wall and the tree stay quiet
+  // (as they do while an agent is open). Further off, whatever is nearer gets them, as before.
+  const reached = nearby ? anchors[nearby] : null
+  const reachedDistance = actor && reached ? Math.hypot(actor[0] - reached[0], actor[2] - reached[2]) : null
+  const quiet = Boolean(store.agentEngine.focusedAgentId) || awayAgentWinsPrompt(Boolean(nearby && liveStations.has(nearby)), reachedDistance)
   if (proximityRival) {
     const at = nearby ? anchors[nearby] : null
     const agentDistance = actor && at ? Math.hypot(actor[0] - at[0], actor[2] - at[2]) : null
     // While an agent is open the wall stays quiet.
-    if (proximityRival(store.agentEngine.focusedAgentId ? null : actor, agentDistance)) nearby = null
+    if (proximityRival(quiet ? null : actor, agentDistance)) nearby = null
   }
   if (moreProximityRivals.size) {
     const at = nearby ? anchors[nearby] : null
     const agentDistance = actor && at ? Math.hypot(actor[0] - at[0], actor[2] - at[2]) : null
     for (const rival of moreProximityRivals) {
-      if (rival(store.agentEngine.focusedAgentId ? null : actor, agentDistance)) nearby = null
+      if (rival(quiet ? null : actor, agentDistance)) nearby = null
     }
   }
   if (nearby !== store.agentEngine.nearbyAgentId) store.agentEngineDispatch({ type: 'nearby', agentId: nearby })

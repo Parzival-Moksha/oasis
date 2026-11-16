@@ -83,7 +83,11 @@ export class Agent {
     // Eyes: each message from the owner carries a picture from this agent's avatar (send()). Kept in the roster.
     this.eyes = typeof spec.eyes === 'boolean' ? spec.eyes : EYES_DEFAULT.test(this.name || '');
     // Voice: each reply ends with a <spoken> line its avatar says out loud (voice.js). Kept in the roster.
-    this.speak = typeof spec.speak === 'boolean' ? spec.speak : VOICE_DEFAULT.test(this.name || '');
+    // On for every agent (the owner, 2026-11-16: each reply has a spoken line; the page plays it when he opens the
+    // agent). Off only where the owner switched it off himself (`speakSet`): a `speak: false` saved before this
+    // default existed was the old default, not his choice.
+    this.speakSet = spec.speakSet === true;
+    this.speak = this.speakSet && typeof spec.speak === 'boolean' ? spec.speak : VOICE_DEFAULT.test(this.name || '');
     // The voice the agent picked for itself (a key of the village's list, voice.js); the owner's pick on the page wins over it.
     this.voiceChoice = isVoiceKey(spec.voiceChoice) ? spec.voiceChoice : null;
     // It has been told once that it may pick one.
@@ -143,7 +147,7 @@ export class Agent {
   }
 
   rosterEntry() {
-    return { id: this.id, name: this.name, cwd: this.cwd, sessionId: this.sessionId, model: this.model, permissionMode: this.permissionMode, effort: this.effort, eyes: this.eyes, speak: this.speak, ...(this.voiceChoice ? { voiceChoice: this.voiceChoice } : {}), ...(this.voiceOffered ? { voiceOffered: true } : {}), ...(this.worldTools ? {} : { worldTools: false }), ...(this.chrome ? { chrome: true } : {}), ...(this.lastOutcome ? { lastOutcome: outcomeForRoster(this.lastOutcome) } : {}), ...(this.turnOpenAt ? { turnOpenAt: this.turnOpenAt } : {}), ...(this.proc?.pid ? { pid: this.proc.pid } : {}) };
+    return { id: this.id, name: this.name, cwd: this.cwd, sessionId: this.sessionId, model: this.model, permissionMode: this.permissionMode, effort: this.effort, eyes: this.eyes, speak: this.speak, ...(this.speakSet ? { speakSet: true } : {}), ...(this.voiceChoice ? { voiceChoice: this.voiceChoice } : {}), ...(this.voiceOffered ? { voiceOffered: true } : {}), ...(this.worldTools ? {} : { worldTools: false }), ...(this.chrome ? { chrome: true } : {}), ...(this.lastOutcome ? { lastOutcome: outcomeForRoster(this.lastOutcome) } : {}), ...(this.turnOpenAt ? { turnOpenAt: this.turnOpenAt } : {}), ...(this.proc?.pid ? { pid: this.proc.pid } : {}) };
   }
 
   // ------------------------------------------------------------------ process
@@ -673,6 +677,7 @@ export class Agent {
     // Switched off after being on: the next message says so once (the agent has the habit by then).
     this.speakWentOff = this.speak && !on;
     this.speak = !!on;
+    this.speakSet = true;
     this.persist();
     this.emit('speak', { speak: this.speak });
     return { ok: true, data: { speak: this.speak } };

@@ -19,7 +19,7 @@ import {
   DESK_WINDOW_PX,
   DESK_WINDOW_TILT,
   computeFocusPose,
-  computeScreenPose,
+  faceScreenLayout,
   deskWindowDistanceFactor,
   plazaCenter,
   rememberVillageAgents,
@@ -52,6 +52,7 @@ import {
   registerVillageCamera,
   setVillageLiveStation,
   setVillagePlaza,
+  getVillageAnchors,
   setVillageStations,
   type VillageStationPlacement,
 } from './village-actions'
@@ -65,16 +66,17 @@ import { AcademyLevelTag, AcademyVillageBody, useAcademyStone } from './VillageA
 import { VillageVoice } from './VillageVoice'
 import { useFrameWhen } from '../../lib/use-frame-when'
 import { getPlayerAvatarPose } from '../../lib/player-avatar-runtime'
-import { createFollowState, pickVisitSpot, stepFollow, stepStage, stepVisit, type FollowState, type FollowTarget, type VisitSpot } from '../../lib/village/village-follow'
+import { SPACE, createFollowState, pickVisitSpot, stepApart, stepFollow, stepStage, stepVisit, type FollowState, type FollowTarget, type VisitSpot } from '../../lib/village/village-follow'
 import { COUNCIL } from '../../lib/village/village-council'
 import { getCouncilGoal, getCouncilVersion, isCouncilMember, isCouncilOn, reportCouncilSettled, subscribeCouncil } from './village-council'
 import { clickVillageAgent, getSentGoal, getSentGoalSeq, subscribeAgentSelection } from '@/lib/village/agent-selection'
 import {
-  dropVillageArrivalLine,
+  getVillageFaceHeight,
   getVillageFollowVersion,
   getVillageSpeech,
   isVillageComeOn,
   isVillageFollowOn,
+  measureVillageFace,
   otherVillageAwaySpots,
   registerVillageHead,
   setVillageArrived,
@@ -324,6 +326,44 @@ class VillageBodyBoundary extends Component<{ color: string; children: ReactNode
 
 const NO_RAYCAST = () => {}
 
+/**
+ * Where everyone else is, for an agent choosing where to stand: the spots the other walking agents hold or are
+ * headed for, where every other agent stands right now (at its desk or away), and the owner.
+ */
+function otherAvatars(agentId: string, owner: VisitSpot | null): VisitSpot[] {
+  const out = otherVillageAwaySpots(agentId)
+  const anchors = getVillageAnchors()
+  for (const id in anchors) if (id !== agentId) out.push({ x: anchors[id][0], z: anchors[id][2] })
+  if (owner) out.push({ x: owner.x, z: owner.z })
+  return out
+}
+
+/** How every agent that is away from its desk moves right now (useVillageFollower keeps it). */
+const followStates = new Map<string, FollowState>()
+
+/**
+ * Who an agent that stands has to keep its distance from: everyone else who stands (at a desk or away), and the
+ * owner. Not the ones walking: they pass, and whoever stands should not jump aside for a passer-by.
+ */
+function standingAvatars(agentId: string, owner: VisitSpot | null): VisitSpot[] {
+  const out: VisitSpot[] = []
+  const anchors = getVillageAnchors()
+  for (const id in anchors) {
+    if (id === agentId) continue
+    const moving = followStates.get(id)
+    if (moving && moving.mode !== 'home' && moving.act !== 'stand') continue
+    out.push({ x: anchors[id][0], z: anchors[id][2] })
+  }
+  if (owner) out.push({ x: owner.x, z: owner.z })
+  return out
+}
+
+function agentSeed(agentId: string): number {
+  let sum = 0
+  for (let i = 0; i < agentId.length; i += 1) sum += agentId.charCodeAt(i)
+  return sum
+}
+
 /** Where the avatar's voice comes from, above the ground it stands on. */
 const HEAD_HEIGHT = 1.5
 
@@ -351,7 +391,10 @@ function useVillageFollower(agentId: string, placement: VillageStationPlacement,
   holdRef.current = hold
   /** Where it stands (following) or is headed (visiting), for the others' choice of spot. One object, changed in place. */
   const spot = useRef<VisitSpot>({ x: home.x, z: home.z })
-  const pick = useRef((distance: number) => pickVisitSpot(target.current, distance, otherVillageAwaySpots(agentId)))
+  const pick = useRef((distance: number) => pickVisitSpot(target.current, distance, otherAvatars(agentId, null)))
+  /** Stepping apart from an avatar it stands too close to (personal space, village-follow.ts stepApart). */
+  const apart = useRef(false)
+  const spaceTick = useRef(0)
   /** The Council mark it is headed for or stands on (CouncilGoal.seq), and whether it said it got there. */
   const stageSeq = useRef(-1)
   const stageSettled = useRef(false)
@@ -402,9 +445,8 @@ function useVillageFollower(agentId: string, placement: VillageStationPlacement,
       stageSeq.current = -1
     } else if (!want && (follow.mode === 'follow' || follow.mode === 'visit' || follow.mode === 'stage')) follow.mode = 'return'
     if (follow.mode !== 'visit') {
-      // Not (or no longer) on a visit: it is not standing in front of the owner, and has nothing left to say there.
+      // Not (or no longer) on a visit: it is not standing in front of the owner.
       setVillageArrived(agentId, false)
-      if (follow.mode !== 'follow') dropVillageArrivalLine(agentId)
     }
     if (follow.mode === 'home') {
       live.current = null
@@ -430,6 +472,19 @@ function useVillageFollower(agentId: string, placement: VillageStationPlacement,
   }, [agentId, placement, home, wanted, visiting, staged])
 
   useEffect(() => () => setVillageArrived(agentId, false), [agentId])
+
+  useEffect(() => {
+    followStates.set(agentId, state.current as FollowState)
+    return () => { followStates.delete(agentId) }
+  }, [agentId])
+
+  // Dev: window.__oasisVillageFollow[agentId] is this agent's movement state (tests and debugging read it).
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'production') return
+    const all = ((window as unknown as { __oasisVillageFollow?: Record<string, unknown> }).__oasisVillageFollow ||= {})
+    all[agentId] = { state: state.current, frozen: frozenRef, hold: holdRef }
+    return () => { delete all[agentId] }
+  }, [agentId])
 
   useFrameWhen(away, (_, delta) => {
     const follow = state.current as FollowState
@@ -466,7 +521,7 @@ function useVillageFollower(agentId: string, placement: VillageStationPlacement,
         // Setting off again (the owner walked on, or got busy): it is not in front of them any more.
         if (follow.act === 'walk') setVillageArrived(agentId, false)
       }
-      // In front of the owner: now it says what it came to say (village-companion.ts).
+      // In front of the owner: it waits there in silence; its line plays when they open it (VillageVoice.tsx).
       if (visit.arrived) setVillageArrived(agentId, true)
       result = visit
     } else {
@@ -476,8 +531,30 @@ function useVillageFollower(agentId: string, placement: VillageStationPlacement,
         spot.current.z = follow.z
       }
     }
-    if (result.moved || result.turned) writePose(follow, result.moved)
-    const nowWalking = follow.act !== 'stand'
+    // Personal space: standing, it never shares a spot with another avatar (an agent at its desk, one that
+    // was sent or came here too, the owner). Looked at four times a second; every frame while it steps apart.
+    let stepped = false
+    if (follow.act === 'stand' && follow.mode !== 'home' && follow.mode !== 'return' && !frozenRef.current && !getCouncilGoal(agentId)) {
+      spaceTick.current += delta
+      if (apart.current || spaceTick.current >= 0.25) {
+        spaceTick.current = 0
+        const away = stepApart(follow, standingAvatars(agentId, pose ? to : null), apart.current, agentSeed(agentId))
+        apart.current = away !== null
+        if (away) {
+          const reach = SPACE.speed * Math.min(delta, 0.1)
+          follow.x += away.x * reach
+          follow.z += away.z * reach
+          // Where it ends up is where it stays: its mark moves with it.
+          follow.goalX = follow.x
+          follow.goalZ = follow.z
+          spot.current.x = follow.x
+          spot.current.z = follow.z
+          stepped = true
+        }
+      }
+    } else if (apart.current) apart.current = false
+    if (result.moved || result.turned || stepped) writePose(follow, result.moved || stepped)
+    const nowWalking = follow.act !== 'stand' || stepped
     if (nowWalking !== walkingRef.current) {
       walkingRef.current = nowWalking
       setWalking(nowWalking)
@@ -514,6 +591,14 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
   const focused = useOasisStore(s => s.agentEngine.focusedAgentId === agentId)
   const nearby = useOasisStore(s => s.agentEngine.nearbyAgentId === agentId)
   const onScreen = useSyncExternalStore(subscribeVillageScreen, () => getVillageScreen() === agentId, () => false)
+  // F: the camera sits at this avatar's eye height with its face in the left quarter of the view; its screen
+  // takes the rest, further back (village-layout.ts faceScreenLayout). Measured from its skeleton when F opens.
+  const viewSize = useThree(s => s.size)
+  const viewFov = useThree(s => (s.camera as THREE.PerspectiveCamera).fov || 50)
+  const screenLayout = useMemo(
+    () => (onScreen ? faceScreenLayout({ faceHeight: measureVillageFace(agentId), fov: viewFov, aspect: viewSize.width / Math.max(1, viewSize.height) }) : null),
+    [onScreen, agentId, avatarUrl, viewFov, viewSize.width, viewSize.height],
+  )
   // Shot by the player's bolts (village-combat.ts, cosmetic): flinch, or the knockout clip.
   const combatPose = useVillageCombatPose(agentId)
   // While placing or painting, the desk must not swallow the clicks meant for the ground plane.
@@ -607,7 +692,8 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
       </group>
       {/* The agent: on its station at home, beside you when it follows (useVillageFollower moves this group). */}
       <group ref={follower.mover}>
-        <group position={STATION.avatar}>
+        {/* In the F view it turns to look into the camera (its face is left of where the camera looks). */}
+        <group position={STATION.avatar} rotation-y={focused && onScreen && screenLayout ? screenLayout.faceTurn : 0}>
           <VillageCorpseDrop agentId={agentId}>
           <VillageBodyBoundary key={avatarUrl} color={color}>
             <Suspense fallback={<AvatarPlaceholder color={color} />}>
@@ -617,7 +703,8 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
                 path={`${avatarUrl}#village`}
                 scale={1}
                 displayName={name}
-                activityAnimationId={combatPose ? combatPose.animationId : status === 'working' || speaking ? WORK_ANIMATION_ID : null}
+                // In the F view it stands still and looks at you while it talks (the gesturing clip turns the head away from the camera).
+                activityAnimationId={combatPose ? combatPose.animationId : (status === 'working' || speaking) && !(focused && onScreen) ? WORK_ANIMATION_ID : null}
                 activityOnce={Boolean(combatPose)}
                 moving={follower.walking && !combatPose}
                 lipSyncId={villageLipSyncId(agentId)}
@@ -636,14 +723,17 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
             <meshBasicMaterial transparent opacity={0} depthWrite={false} visible={false} />
           </mesh>
         )}
-        <Html position={STATION.label} center distanceFactor={9} zIndexRange={overlayZ} style={{ pointerEvents: 'none' }}>
-          <StationLabel agentId={agentId} nearby={nearby && !focused} />
-        </Html>
-        {/* F: its screen fills the view, where the agent is. (E: the side panel shows the thread instead.) */}
+        {/* Not in the F view: there its face fills the left of the picture, and the sign would sit on it. */}
+        {!(focused && onScreen) && (
+          <Html position={STATION.label} center distanceFactor={9} zIndexRange={overlayZ} style={{ pointerEvents: 'none' }}>
+            <StationLabel agentId={agentId} nearby={nearby && !focused} />
+          </Html>
+        )}
+        {/* F: its face on the left, its screen with the thread in the rest, where the agent is. (E: the side panel.) */}
         {focused && onScreen && (
           <Html
             transform
-            position={STATION.window}
+            position={screenLayout ? screenLayout.window : STATION.window}
             distanceFactor={deskWindowDistanceFactor('screen')}
             zIndexRange={overlayZ}
             style={{ pointerEvents: 'auto' }}
@@ -795,8 +885,10 @@ function VillageCameraRig() {
     const onScreen = getVillageScreen() === agentId
     const aspect = size.width / Math.max(1, size.height)
     const panel = getSessionPanelGeometry(size.width, size.height)
-    const pose = onScreen
-      ? computeScreenPose({ center: stationLocalToWorld(station, STATION.window), rotationY: station.rotationY, fov: perspective.fov || 50, aspect })
+    // F: at the avatar's eye height, its face in the left quarter, its screen in the rest (faceScreenLayout).
+    const screen = onScreen ? faceScreenLayout({ faceHeight: getVillageFaceHeight(agentId), fov: perspective.fov || 50, aspect }) : null
+    const pose = screen
+      ? { position: stationLocalToWorld(station, screen.camera), target: stationLocalToWorld(station, screen.target) }
       : computeFocusPose({
         anchor: station.anchor,
         rotationY: station.rotationY,

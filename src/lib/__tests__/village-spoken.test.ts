@@ -4,6 +4,7 @@ import {
   cleanSpoken,
   hasSpoken,
   hideSpokenLive,
+  pendingSpoken,
   splitSpoken,
   spokenForLastTurn,
   spokenInStream,
@@ -102,5 +103,31 @@ describe('the line as it streams in', () => {
     expect(spokenInStream('Done.\n<SPOKEN>All good.</SPOKEN>\n')).toBe('All good.')
     expect(spokenInStream('No tag yet')).toBeNull()
     expect(spokenInStream(null)).toBeNull()
+  })
+})
+
+describe('the line that waits to be heard', () => {
+  const user = { type: 'user', text: 'hi', ts: 1 }
+  const reply = (ts: number, text = 'Done.\n<spoken>All done.</spoken>') => ({ type: 'text', text, ts })
+
+  it('is the spoken line of the latest reply, with that reply’s time', () => {
+    expect(pendingSpoken([user, reply(5), { type: 'turn', ts: 6 }])).toEqual({ text: 'All done.', ts: 5 })
+    // Tool calls and the turn marker after it do not hide it.
+    expect(pendingSpoken([user, reply(5), { type: 'tool', ts: 6 }, { type: 'turn', ts: 7 }, { type: 'notice', ts: 8 }])).toEqual({ text: 'All done.', ts: 5 })
+  })
+
+  it('is gone once the owner has written to the agent again', () => {
+    expect(pendingSpoken([user, reply(5), { type: 'turn', ts: 6 }, { type: 'user', text: 'thanks', ts: 9 }])).toBeNull()
+  })
+
+  it('is only ever the latest reply: an older line does not come back when the newest has none', () => {
+    expect(pendingSpoken([user, reply(5), reply(8, 'No line here.')])).toBeNull()
+    expect(pendingSpoken([user, reply(5), reply(8, 'Newer.\n<spoken>Newer line.</spoken>')])).toEqual({ text: 'Newer line.', ts: 8 })
+  })
+
+  it('skips subagent text, and is nothing for replayed history or an empty thread', () => {
+    expect(pendingSpoken([user, reply(5), { type: 'text', text: 'sub <spoken>sub</spoken>', parentToolUseId: 't1', ts: 7 }])).toEqual({ text: 'All done.', ts: 5 })
+    expect(pendingSpoken([{ ...reply(5), history: true }])).toBeNull()
+    expect(pendingSpoken([])).toBeNull()
   })
 })

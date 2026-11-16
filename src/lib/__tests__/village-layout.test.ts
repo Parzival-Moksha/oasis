@@ -25,6 +25,10 @@ import {
   type Vec3,
   type VillageMemory,
   type VillageRosterAgent,
+  STATION,
+  faceHeightFrom,
+  faceScreenLayout,
+  type FaceScreenLayout,
 } from '../village/village-layout'
 
 const dist = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[2] - b[2])
@@ -320,5 +324,85 @@ describe('desk window and screen mode (F)', () => {
     const wide = computeScreenPose({ center: [0, 3, 0], rotationY: 0, fov: 50, aspect: 16 / 9 })
     const tall = computeScreenPose({ center: [0, 3, 0], rotationY: 0, fov: 50, aspect: 9 / 19 })
     expect(tall.position[2]).toBeGreaterThan(wide.position[2])
+  })
+})
+
+describe('the F view: face on the left, screen in the rest', () => {
+  const tanH = (fov: number, aspect: number) => Math.tan((fov * Math.PI) / 360) * aspect
+  /** Where a station-local point lands in the view: NDC x (-1 left, 1 right) for a camera looking along -Z. */
+  const ndcX = (layout: FaceScreenLayout, point: [number, number, number], fov: number, aspect: number) => (point[0] - layout.camera[0]) / ((layout.camera[2] - point[2]) * tanH(fov, aspect))
+  const ndcY = (layout: FaceScreenLayout, point: [number, number, number], fov: number) => (point[1] - layout.camera[1]) / ((layout.camera[2] - point[2]) * Math.tan((fov * Math.PI) / 360))
+
+  it('puts the camera at the avatar’s eye height, straight in front of it, looking at it', () => {
+    for (const faceHeight of [1.26, 1.5, 1.96]) {
+      const layout = faceScreenLayout({ faceHeight, fov: 50, aspect: 16 / 9 })
+      expect(layout.kind).toBe('face')
+      expect(layout.camera[1]).toBe(faceHeight)
+      expect(layout.target[1]).toBe(faceHeight)
+      // In front of the avatar (which looks along +Z), looking back along -Z.
+      expect(layout.camera[2]).toBeGreaterThan(STATION.avatar[2] + 0.6)
+      expect(layout.target[2]).toBeLessThan(layout.camera[2])
+      expect(layout.target[0]).toBe(layout.camera[0])
+    }
+  })
+
+  it('shows the face in the left quarter, at mid height, close enough to read its mouth', () => {
+    for (const aspect of [16 / 9, 16 / 10, 21 / 9]) {
+      const layout = faceScreenLayout({ faceHeight: 1.6, fov: 50, aspect })
+      const face: [number, number, number] = [STATION.avatar[0], 1.6, STATION.avatar[2]]
+      // 16% across the view: inside the left quarter, with air to the edge for a head that leans.
+      expect(ndcX(layout, face, 50, aspect)).toBeCloseTo(-0.68, 3)
+      expect(ndcY(layout, face, 50)).toBeCloseTo(0, 5)
+      // A head 0.25 m wide takes between 6% and 16% of the view's width: a face, not a dot.
+      const distance = layout.camera[2] - face[2]
+      const share = 0.25 / (2 * distance * tanH(50, aspect))
+      expect(share).toBeGreaterThan(0.05)
+      expect(share).toBeLessThan(0.16)
+    }
+  })
+
+  it('turns the avatar to look into the camera', () => {
+    const layout = faceScreenLayout({ faceHeight: 1.6, fov: 50, aspect: 16 / 9 })
+    // From the avatar, the camera is ahead and to its left-hand side of the picture (+X): it turns that way.
+    const toCamera = Math.atan2(layout.camera[0] - STATION.avatar[0], layout.camera[2] - STATION.avatar[2])
+    expect(layout.faceTurn).toBeCloseTo(toCamera, 6)
+    expect(layout.faceTurn).toBeGreaterThan(0.3)
+    expect(layout.faceTurn).toBeLessThan(0.9)
+    expect(faceScreenLayout({ faceHeight: 1.6, fov: 50, aspect: 0.6 }).faceTurn).toBe(0)
+  })
+
+  it('fits the screen into the rest of the view, never over the face', () => {
+    for (const aspect of [16 / 9, 16 / 10, 21 / 9, 1.4]) {
+      const layout = faceScreenLayout({ faceHeight: 1.5, fov: 50, aspect })
+      const left = ndcX(layout, [layout.window[0] - DESK_WINDOW_WORLD.width / 2, 0, layout.window[2]], 50, aspect)
+      const right = ndcX(layout, [layout.window[0] + DESK_WINDOW_WORLD.width / 2, 0, layout.window[2]], 50, aspect)
+      const top = ndcY(layout, [0, layout.window[1] + DESK_WINDOW_WORLD.height / 2, layout.window[2]], 50)
+      // Right of the face's quarter (NDC -0.5), inside the view.
+      expect(left).toBeGreaterThanOrEqual(-0.5)
+      expect(right).toBeLessThanOrEqual(1)
+      expect(top).toBeLessThanOrEqual(1)
+      // And further back than the avatar, so the face is in front of it.
+      expect(layout.window[2]).toBeLessThan(STATION.avatar[2])
+    }
+  })
+
+  it('on a narrow view (a phone) shows the screen alone, as before', () => {
+    const layout = faceScreenLayout({ faceHeight: 1.5, fov: 50, aspect: 0.6 })
+    expect(layout.kind).toBe('screen')
+    expect(layout.window).toEqual(STATION.window)
+  })
+
+  it('reads the eye height from the head joint and the top of the body, with fallbacks', () => {
+    // Between the base of the skull and the crown.
+    expect(faceHeightFrom(1.4, 1.7)).toBeCloseTo(1.5, 1)
+    expect(faceHeightFrom(1.4, 1.7)).toBeGreaterThan(1.4)
+    expect(faceHeightFrom(1.4, 1.7)).toBeLessThan(1.7)
+    // A small avatar and a tall one get their own heights.
+    expect(faceHeightFrom(0.9, 1.15)).toBeLessThan(1.1)
+    expect(faceHeightFrom(1.8, 2.2)).toBeGreaterThan(1.85)
+    // No head joint: a little under the top. No measure at all: a human's height.
+    expect(faceHeightFrom(null, 1.7)).toBeCloseTo(1.53, 2)
+    expect(faceHeightFrom(1.4, null)).toBeCloseTo(1.48, 2)
+    expect(faceHeightFrom(null, null)).toBe(1.5)
   })
 })

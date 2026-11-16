@@ -107,6 +107,28 @@ export function spokenForLastTurn(log: readonly SpokenLogEntry[]): string | null
   return null
 }
 
+/** A thread entry with its time (AgentLogEntry without importing the store). */
+export interface SpokenLogEntryAt extends SpokenLogEntry {
+  ts: number
+}
+
+/**
+ * The line that waits to be heard: the spoken line of the agent's latest own reply, with that reply's time, as
+ * long as the owner has not written to the agent since. null: the latest reply has no line, the owner already
+ * answered it, or the thread is replayed history (after an engine restart nothing is pending).
+ */
+export function pendingSpoken(log: readonly SpokenLogEntryAt[]): { text: string; ts: number } | null {
+  for (let i = log.length - 1; i >= 0; i -= 1) {
+    const entry = log[i]
+    if (entry.type === 'user') return null
+    if (entry.type !== 'text' || entry.parentToolUseId) continue
+    if (entry.history) return null
+    const spoken = splitSpoken(entry.text).spoken
+    return spoken ? { text: spoken, ts: entry.ts } : null
+  }
+  return null
+}
+
 /**
  * The spoken line as soon as it is complete in the text still streaming in (its closing tag has arrived):
  * the clip can be made while the turn winds down. null until then.

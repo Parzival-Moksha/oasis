@@ -36,8 +36,8 @@ export function isVoiceKey(key) {
   return typeof key === 'string' && listVoices().some((v) => v.key === key);
 }
 
-/** Agents whose name says Anorak speak by default; the owner switches it per agent (session panel). */
-export const VOICE_DEFAULT = /anorak/i;
+/** Every agent makes a spoken line by default (any name matches); the owner switches it per agent (session panel). */
+export const VOICE_DEFAULT = /^/;
 
 /** Said next to the owner's message. Kept out of the thread (normalize.js strips it). No `]` inside. */
 export const VOICE_NOTE = '[Oasis voice: the owner hears your reply. End it with one line <spoken>…</spoken>: at most about 40 words, written to be heard (plain words; no markdown, code, paths or lists), in the language of your reply. Your avatar says that line out loud; the rest of the reply stays text.]';

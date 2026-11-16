@@ -138,7 +138,7 @@ function WalkingSection({ agentKey, name }: { agentKey: string; name: string }) 
   return (
     <div className="mb-3">
       <div className={HEADING}>Walking · {name}</div>
-      <label className="mb-1 flex cursor-pointer items-start gap-2" title="When it needs a decision from you, has finished, or is stuck, it walks from its desk to you and waits in front of you. With its voice on it says its line when it arrives. It goes back once you answered it, or opened its panel and closed it again. While you talk to another agent it waits a few metres back.">
+      <label className="mb-1 flex cursor-pointer items-start gap-2" title="When it needs a decision from you, has finished, or is stuck, it walks from its desk to you and waits in front of you. It waits there in silence: its spoken line plays when you open it (E or F). It goes back once you answered it, or opened its panel and closed it again. While you talk to another agent it waits a few metres back.">
         <input type="checkbox" checked={come} data-agent-come={come ? 'on' : 'off'} onChange={event => setVillageCome(agentKey, event.target.checked)} className="mt-[2px] accent-amber-300" />
         <span>Come to me when you need me</span>
       </label>

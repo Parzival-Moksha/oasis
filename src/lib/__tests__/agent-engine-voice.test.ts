@@ -14,7 +14,7 @@ interface AgentLike {
   proc: unknown
   send: (text: string) => Promise<{ uuid: string }>
   setSpeak: (on: boolean) => { ok: boolean; data: { speak: boolean } }
-  rosterEntry: () => { speak?: boolean }
+  rosterEntry: () => { speak?: boolean; speakSet?: boolean }
   snapshot: () => { speak?: boolean }
 }
 const { Agent, EYES_CAPTION } = agentModule as unknown as {
@@ -37,15 +37,17 @@ function makeAgent(spec: Record<string, unknown>, eyes?: () => Promise<{ data: s
 }
 
 describe('engine: voice', () => {
-  it('is on by default for Anorak only, and the roster keeps the choice', () => {
+  it('is on by default for every agent; only the owner’s own choice switches it off, and the roster keeps that', () => {
     expect(makeAgent({ name: 'Anorak Pro' }).agent.speak).toBe(true)
-    expect(makeAgent({ name: 'Rick' }).agent.speak).toBe(false)
-    expect(makeAgent({ name: 'Anorak', speak: false }).agent.speak).toBe(false)
+    expect(makeAgent({ name: 'Rick' }).agent.speak).toBe(true)
+    // A `speak: false` saved before the default changed was the old default, not a choice.
+    expect(makeAgent({ name: 'Rick', speak: false }).agent.speak).toBe(true)
+    expect(makeAgent({ name: 'Rick', speak: false, speakSet: true }).agent.speak).toBe(false)
     const { agent, events } = makeAgent({ name: 'Rick' })
-    expect(agent.setSpeak(true)).toEqual({ ok: true, data: { speak: true } })
-    expect(agent.rosterEntry().speak).toBe(true)
-    expect(agent.snapshot().speak).toBe(true)
-    expect(events.some(e => e.kind === 'speak' && e.payload.speak === true)).toBe(true)
+    expect(agent.setSpeak(false)).toEqual({ ok: true, data: { speak: false } })
+    expect(agent.rosterEntry()).toMatchObject({ speak: false, speakSet: true })
+    expect(agent.snapshot().speak).toBe(false)
+    expect(events.some(e => e.kind === 'speak' && e.payload.speak === false)).toBe(true)
   })
 
   it('adds the note to each message of a voiced agent, and nothing to the others', async () => {
@@ -57,7 +59,7 @@ describe('engine: voice', () => {
     // A slash command goes out as plain text, or the CLI would not take it as a command.
     await voiced.agent.send('/compact')
     expect(voiced.written[1].message.content).toBe('/compact')
-    const quiet = makeAgent({ name: 'Rick' })
+    const quiet = makeAgent({ name: 'Rick', speak: false, speakSet: true })
     await quiet.agent.send('hello there')
     expect(quiet.written[0].message.content).toBe('hello there')
     // Switched off: the very next message says so once (no restart), and after that messages go out plain.

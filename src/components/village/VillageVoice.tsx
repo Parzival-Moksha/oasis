@@ -1,31 +1,61 @@
 'use client'
 
-// ░▒▓ VILLAGE VOICE — a voiced agent's avatar says the reply's spoken line as soon as the line is written ▓▒░
-// Mounted with the village. Watches the engine state and takes the <spoken> line (village-spoken.ts) at the
-// earliest of three moments: its closing tag arrives in the text still streaming in; the finished reply lands in
-// the thread; the turn ends (the fallback). The clip is asked for right then (village-companion.ts), so the voice
-// starts about as long after the line as ElevenLabs takes to make it, instead of waiting for the turn to close.
-// An agent that comes to the owner when it needs them ("Come to me", on by default) carries the line with it
-// and says it on arrival. Nothing is said, or generated, when: the agent's Voice switch is off, the HUD's speaker is muted, the tab is
-// hidden, or the reply is older than a moment (a reload or a reconnect must not replay old replies).
+// ░▒▓ VILLAGE VOICE — an agent says its reply's spoken line when the owner opens it, once per reply ▓▒░
+// Mounted with the village. Every agent's reply ends with a <spoken> line (village-spoken.ts), but nobody speaks
+// unasked: several agents may walk up at once. The line of an agent's latest reply waits until the owner opens
+// that agent with E or F (its panel or its full screen) and is said then, once (village-companion.ts keeps which
+// replies were heard). A reply that comes in while the agent is open is said right away. So the owner can go
+// from agent to agent and hear each. The clip is made when he walks up to an agent (its T/E/F prompt shows),
+// so it starts the moment he opens it.
+// Nothing is said, or generated, while: the HUD's speaker is muted, or a Council is on (there the moderator
+// says whose turn it is; a member's line is kept for it). T opens an agent with the microphone on: then the
+// line is not played over his dictation, it stays for the next E or F.
 
 import { useEffect } from 'react'
 import { useOasisStore } from '../../store/oasisStore'
-import { splitSpoken, spokenForLastTurn, spokenInStream } from '../../lib/village/village-spoken'
-import { getAgentVoiceSettings, getVillageSpeechDebug, holdVillageArrivalLine, isVillageArrived, isVillageComeOn, isVillageFollowOn, isVillageVoiceOn, speakVillageAgent, stopVillageSpeech } from './village-companion'
-import { getPlayerAvatarPose } from '../../lib/player-avatar-runtime'
+import { pendingSpoken, splitSpoken } from '../../lib/village/village-spoken'
 import { getAgentEngineClient } from '../../lib/agent-engine-client'
+import type { EngineAgentState } from '../../store/slices/agentEngineSlice'
+import { isVillageVoiceRequested } from './village-actions'
+import {
+  getAgentVoiceSettings,
+  getVillageSpeechDebug,
+  isVillageReplyHeard,
+  isVillageVoiceOn,
+  markVillageReplyHeard,
+  speakVillageAgent,
+  stopVillageSpeech,
+  warmVillageSpeech,
+} from './village-companion'
 import { getCouncilStatus, isCouncilMember, isCouncilOn, offerCouncilLine, runCouncilRequest, type CouncilRequest } from './village-council'
 
-/** A reply older than this is the past (backlog after a reload), not something to say now. */
+/** A reply older than this that lands while the agent is open is the past (a backlog after a reconnect). */
 const FRESH_MS = 20_000
-/** The same line from the same agent is not said twice within this (stream, thread and turn end all see it). */
-const SAME_LINE_MS = 60_000
+
+const keyOf = (agent: Pick<EngineAgentState, 'id' | 'sessionId'>) => agent.sessionId || agent.id
+
+/** The line of this agent's latest reply, if the owner has not heard it yet. */
+function unheard(agent: EngineAgentState): { text: string; ts: number } | null {
+  const pending = pendingSpoken(agent.log)
+  return pending && !isVillageReplyHeard(keyOf(agent), pending.ts) ? pending : null
+}
+
+/** The owner opened this agent (or a reply came in while it is open): say its unheard line, once. */
+function sayUnheard(agent: EngineAgentState): boolean {
+  if (!isVillageVoiceOn() || isCouncilOn()) return false
+  const pending = unheard(agent)
+  if (!pending) return false
+  markVillageReplyHeard(keyOf(agent), pending.ts)
+  // Opening an agent is the owner's own key press or click, so it may unlock the page's sound.
+  void speakVillageAgent(agent.id, pending.text, getAgentVoiceSettings(keyOf(agent), agent.name, agent.voiceChoice), true)
+  return true
+}
 
 export function VillageVoice() {
   useEffect(() => {
     if (process.env.NODE_ENV !== 'production') {
-      // Dev: window.__oasisVillageVoice.say('a0', 'Hello') plays a line from that agent; .debug() says what happened.
+      // Dev: window.__oasisVillageVoice.say('a0', 'Hello') plays a line from that agent; .debug() says what happened;
+      // .pending('a0') is the line that waits for the owner to open that agent.
       ;(window as unknown as Record<string, unknown>).__oasisVillageVoice = {
         say: (agentId: string, text: string, voice?: string) => {
           const agent = useOasisStore.getState().agentEngine.agents[agentId]
@@ -34,6 +64,10 @@ export function VillageVoice() {
         },
         stop: () => stopVillageSpeech(),
         debug: () => getVillageSpeechDebug(),
+        pending: (agentId: string) => {
+          const agent = useOasisStore.getState().agentEngine.agents[agentId]
+          return agent ? unheard(agent)?.text ?? null : null
+        },
       }
     }
     // The Council's stage: the engine sends this page the moderator's steps (village-council.ts).
@@ -42,49 +76,45 @@ export function VillageVoice() {
       // Dev: window.__oasisCouncil.run({ action: 'start', agentIds: ['a0', 'a1'] }) without an engine; .status()
       ;(window as unknown as Record<string, unknown>).__oasisCouncil = { run: (request: CouncilRequest) => runCouncilRequest(request), status: () => getCouncilStatus() }
     }
-    const said = new Map<string, { text: string; at: number }>()
     const unsubscribe = useOasisStore.subscribe((state, prev) => {
       const engine = state.agentEngine
       const before = prev.agentEngine
-      if (engine === before || engine.agents === before.agents) return
+      if (engine === before) return
+
+      // The owner opened an agent (E, F, a click that opens it): it says its unheard line.
+      // Not when T opened it with the microphone on: its voice would land in his dictation.
+      if (engine.focusedAgentId && engine.focusedAgentId !== before.focusedAgentId) {
+        const agent = engine.agents[engine.focusedAgentId]
+        if (agent && !isVillageVoiceRequested(agent.id)) sayUnheard(agent)
+      }
+      // He walks up to an agent (its prompt shows): make the clip now, so it starts the moment he opens it.
+      if (engine.nearbyAgentId && engine.nearbyAgentId !== before.nearbyAgentId) {
+        const agent = engine.agents[engine.nearbyAgentId]
+        const pending = agent ? unheard(agent) : null
+        if (agent && pending) warmVillageSpeech(pending.text, getAgentVoiceSettings(keyOf(agent), agent.name, agent.voiceChoice))
+      }
+
+      if (engine.agents === before.agents) return
       for (const id of engine.order) {
         const agent = engine.agents[id]
         const was = before.agents[id]
-        if (!agent || !was || agent === was || agent.speak !== true) continue
-        const now = Date.now()
-        let spoken: string | null = null
-        // 1. The line is complete in the text that is still streaming in.
-        if (agent.live && agent.live.text !== was.live?.text) spoken = spokenInStream(agent.live.text)
-        // 2. The finished reply just landed in the thread.
-        if (!spoken && agent.log !== was.log) {
-          const last = agent.log[agent.log.length - 1]
-          if (last && last !== was.log[was.log.length - 1] && last.type === 'text' && !last.parentToolUseId && !last.history && now - last.ts <= FRESH_MS) {
-            spoken = splitSpoken(last.text).spoken
-          }
-        }
-        // 3. The turn ended.
-        const turn = agent.lastTurn
-        if (!spoken && turn && turn.ts !== was.lastTurn?.ts && now - turn.ts <= FRESH_MS) spoken = spokenForLastTurn(agent.log)
+        if (!agent || !was || agent === was || agent.log === was.log) continue
+        // A finished reply just landed in the thread.
+        const last = agent.log[agent.log.length - 1]
+        if (!last || last === was.log[was.log.length - 1] || last.type !== 'text' || last.parentToolUseId || last.history) continue
+        if (Date.now() - last.ts > FRESH_MS) continue
+        const spoken = splitSpoken(last.text).spoken
         if (!spoken) continue
-        const earlier = said.get(id)
-        if (earlier && earlier.text === spoken && now - earlier.at < SAME_LINE_MS) continue
-        // A Council is on: one voice at a time, and the moderator says whose. A member's line is kept for its
-        // turn (`speak next`); nobody else speaks until it is over.
         if (isCouncilOn()) {
-          said.set(id, { text: spoken, at: now })
-          if (isCouncilMember(id)) offerCouncilLine(id, spoken)
+          // One voice at a time, and the moderator says whose: a member's line is kept for its turn (`speak next`).
+          if (isCouncilMember(id)) {
+            markVillageReplyHeard(keyOf(agent), last.ts)
+            offerCouncilLine(id, spoken)
+          }
           continue
         }
-        if (!isVillageVoiceOn() || document.visibilityState !== 'visible') continue
-        said.set(id, { text: spoken, at: now })
-        const key = agent.sessionId || id
-        const settings = getAgentVoiceSettings(key, agent.name, agent.voiceChoice)
-        // An agent that walks up to the owner when it needs them says its line when it gets there, not from
-        // its desk: the line waits (and its clip is made) while it walks. Said at once when the agent is with
-        // the owner already (it follows them, it stands in front of them, its panel is open).
-        const withOwner = isVillageFollowOn(key, agent.name) || isVillageArrived(id) || engine.focusedAgentId === id
-        if (!withOwner && isVillageComeOn(key) && getPlayerAvatarPose()) holdVillageArrivalLine(id, spoken, settings)
-        else void speakVillageAgent(id, spoken, settings)
+        // The owner is with this agent (its panel or screen is open): he hears the reply as it lands.
+        if (engine.focusedAgentId === id) sayUnheard(agent)
       }
     })
     return () => {

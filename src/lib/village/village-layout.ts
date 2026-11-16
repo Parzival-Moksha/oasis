@@ -442,3 +442,97 @@ export function computeFocusPose(input: FocusFramingInput): FocusPose {
   ]
   return { position, target }
 }
+
+// ─── the F view: the agent's face on the left, its screen in the rest ────────
+
+export interface FaceScreenInput {
+  /** The avatar's eye height above its feet (measured from its head bone; ~1.5 for a human-sized body). */
+  faceHeight: number
+  /** Vertical field of view in degrees. */
+  fov: number
+  aspect: number
+}
+
+export interface FaceScreenLayout {
+  /** 'face': the face in the left part, the screen in the rest. 'screen': a narrow view (a phone): the screen alone, as before. */
+  kind: 'face' | 'screen'
+  /** All station-local (local +Z is where the avatar looks). */
+  camera: Vec3
+  target: Vec3
+  /** Centre of the screen (the DOM window, DESK_WINDOW_WORLD in size, facing +Z). */
+  window: Vec3
+  /**
+   * How far the avatar turns (radians around Y, from looking along +Z) to look into the camera: its face sits
+   * to the left of where the camera looks, so without the turn it is seen from the side.
+   */
+  faceTurn: number
+}
+
+export const FACE_SCREEN = {
+  /** The share of the view's width that is the agent's. */
+  faceShare: 0.25,
+  /** The width the face gets in the world (a head with some air around it). */
+  faceWidth: 0.66,
+  /** Where the face sits across the view: 0 = the left edge, 1 = the right. A little right of the middle of its part,
+   *  so a head that leans or a long snout is not cut off by the edge. */
+  faceAt: 0.16,
+  /** The screen fills this much of its part of the width, and at most this much of the height. */
+  screenFill: 0.94,
+  screenHeightFill: 0.9,
+  /** Narrower than this (width / height) there is no room for both: the screen alone. */
+  minAspect: 1.3,
+} as const
+
+/**
+ * Where the camera and the screen go when the owner presses F on an agent: the camera at the avatar's eye
+ * height straight in front of it, close, so that the face sits in the left quarter of the view (the mouth is
+ * readable while it talks), and the screen with the thread fills the rest, further back so it never covers
+ * the face. Works wherever the agent stands: everything is relative to the avatar.
+ */
+export function faceScreenLayout(input: FaceScreenInput): FaceScreenLayout {
+  const aspect = Math.max(0.2, input.aspect || 1)
+  const tanV = Math.tan(((input.fov || 50) * Math.PI) / 360)
+  const tanH = tanV * aspect
+  const [ax, , az] = STATION.avatar
+  if (aspect < FACE_SCREEN.minAspect) {
+    const pose = computeScreenPose({ center: STATION.window, rotationY: 0, fov: input.fov, aspect })
+    return { kind: 'screen', camera: pose.position, target: pose.target, window: STATION.window, faceTurn: 0 }
+  }
+  const h = Number.isFinite(input.faceHeight) && input.faceHeight > 0.3 ? input.faceHeight : 1.5
+  // The face: close enough that a head's width is the left part of the view.
+  const faceDistance = Math.min(1.8, Math.max(0.7, FACE_SCREEN.faceWidth / (2 * FACE_SCREEN.faceShare * tanH)))
+  // Its centre sits at faceAt across the view: NDC x = 2 * faceAt - 1 (negative: left of the middle).
+  const cameraX = ax + (1 - 2 * FACE_SCREEN.faceAt) * faceDistance * tanH
+  const cameraZ = az + faceDistance
+  // The screen: as far back as it takes to fit the rest of the width (and the height).
+  const share = 1 - FACE_SCREEN.faceShare
+  const screenDistance = Math.max(
+    DESK_WINDOW_WORLD.width / (2 * tanH * share * FACE_SCREEN.screenFill),
+    DESK_WINDOW_WORLD.height / (2 * tanV * FACE_SCREEN.screenHeightFill),
+    faceDistance + 0.6,
+  )
+  // Against the right edge of the view (a small margin), so all the room it does not need is next to the face.
+  const widthShare = DESK_WINDOW_WORLD.width / (2 * screenDistance * tanH)
+  const centreAt = Math.max(FACE_SCREEN.faceShare + widthShare / 2, 1 - 0.015 - widthShare / 2)
+  const windowX = cameraX + (2 * centreAt - 1) * screenDistance * tanH
+  return {
+    kind: 'face',
+    camera: [cameraX, h, cameraZ],
+    target: [cameraX, h, cameraZ - 1],
+    window: [windowX, h, cameraZ - screenDistance],
+    faceTurn: Math.atan2(cameraX - ax, cameraZ - az),
+  }
+}
+
+/**
+ * The eye height of an avatar above its feet, from what its skeleton says: between the head joint (the base of
+ * the skull) and the top of the body. Without a head joint, a little under the top. Without anything, 1.5 m.
+ */
+export function faceHeightFrom(headJoint: number | null, top: number | null): number {
+  const hasTop = typeof top === 'number' && Number.isFinite(top) && top > 0.3
+  const hasJoint = typeof headJoint === 'number' && Number.isFinite(headJoint) && headJoint > 0.2
+  if (hasJoint && hasTop && (top as number) > (headJoint as number)) return (headJoint as number) + ((top as number) - (headJoint as number)) * 0.33
+  if (hasJoint) return (headJoint as number) + 0.08
+  if (hasTop) return (top as number) * 0.9
+  return 1.5
+}

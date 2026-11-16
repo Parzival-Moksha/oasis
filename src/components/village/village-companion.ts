@@ -3,9 +3,10 @@
 //   1. The "Follow me" choice per agent (remembered per session in this browser; Anorak follows by default).
 //      The walking itself is VillageStation's (VillageWorld.tsx) with the rules in lib/village/village-follow.ts.
 //      "Come to me when you need me" (on for every agent): an agent that needs the owner walks up to them,
-//      waits its turn beside the others, says its line when it gets there, and goes home once it was heard.
-//   2. Speech: a voiced agent's reply ends with <spoken>…</spoken> (lib/village/village-spoken.ts). As soon as
-//      that line is complete (VillageVoice.tsx), it is fetched as an ElevenLabs clip (/api/village/speak, cached
+//      waits there in silence beside the others, and goes home once it was answered or looked at.
+//   2. Speech: an agent's reply ends with <spoken>…</spoken> (lib/village/village-spoken.ts). When the owner
+//      opens the agent (VillageVoice.tsx: E or F, once per reply), the line is fetched as an ElevenLabs clip
+//      (/api/village/speak, cached
 //      by text) and played from the avatar's head through three's PositionalAudio: louder when close, with the
 //      mouth moving (the clip's character timings, read as the sounds they spell: lib/village/village-visemes.ts),
 //      in the agent's own voice and at its own speed (lib/village/village-voices.ts: ten voices, 0.5x to 3x,
@@ -20,6 +21,7 @@ import { getAudioListener } from '../CameraController'
 import { registerLipSync, unregisterLipSync, type LipSyncController } from '../../lib/lip-sync'
 import type { ElevenLabsAlignment } from '../../lib/lip-sync-lab'
 import { buildVisemeTimeline, createVisemeLipSync } from '../../lib/village/village-visemes'
+import { faceHeightFrom } from '../../lib/village/village-layout'
 import { parseFollowPrefs, wantsCome, wantsFollow, withComeChoice, withFollowChoice, type FollowPrefs, type VisitSpot } from '../../lib/village/village-follow'
 import { SPOKEN_MAX_CHARS, cleanSpoken } from '../../lib/village/village-spoken'
 import { dealVoice, parseVoicePrefs, playbackRateFor, speechSpeedPlan, speedOf, voiceChosenBy, voiceOf, withVoicePrefs, type VoicePrefs } from '../../lib/village/village-voices'
@@ -118,51 +120,59 @@ export function otherVillageAwaySpots(agentId: string): VisitSpot[] {
   return out
 }
 
-// What an agent says when it gets to the owner: its reply's spoken line waits here while it walks
-// (VillageVoice hands it over), and VillageStation asks for it on arrival.
-const ARRIVAL_LINE_MS = 5 * 60_000
-const arrivalLines = new Map<string, { text: string; settings: AgentVoiceSettings; at: number }>()
+// Which replies the owner has heard. Nobody speaks unasked (five agents walking up at once would all talk at
+// him: his words, 2026-11-16). Each reply's spoken line waits until he opens that agent (E or F) and is said
+// then, once; VillageVoice.tsx watches for that. Kept for this browser tab (a reload does not replay).
+const HEARD_KEY = 'oasis.village.heard'
+const HEARD_KEEP = 300
+let heard: string[] | null = null
 
-/** Keep `text` for when the agent arrives; the clip is made meanwhile so it can start at once. */
-export function holdVillageArrivalLine(agentId: string, text: string, settings: AgentVoiceSettings): void {
-  arrivalLines.set(agentId, { text, settings, at: Date.now() })
-  if (arrivedAgents.has(agentId)) {
-    sayVillageArrivalLine(agentId)
-    return
+function loadHeard(): string[] {
+  if (heard === null) {
+    try {
+      const parsed = JSON.parse((typeof window === 'undefined' ? null : window.sessionStorage.getItem(HEARD_KEY)) || '[]') as unknown
+      heard = Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+    } catch {
+      heard = []
+    }
   }
-  // Only when it could be played right now: a muted, hidden or silent tab makes no clip.
+  return heard
+}
+
+const heardId = (agentKey: string, replyAt: number) => `${agentKey}:${replyAt}`
+
+/** Has the owner heard this reply's line? `agentKey`: the agent's session key; `replyAt`: the reply's time. */
+export function isVillageReplyHeard(agentKey: string, replyAt: number): boolean {
+  return loadHeard().includes(heardId(agentKey, replyAt))
+}
+
+export function markVillageReplyHeard(agentKey: string, replyAt: number): void {
+  const id = heardId(agentKey, replyAt)
+  const list = loadHeard().filter(item => item !== id)
+  list.push(id)
+  heard = list.slice(-HEARD_KEEP)
+  try {
+    window.sessionStorage.setItem(HEARD_KEY, JSON.stringify(heard))
+  } catch {
+    // Storage blocked: remembered for this page only.
+  }
+}
+
+/** The agent stands in front of the owner (true) or left again (false). It waits there in silence. */
+export function setVillageArrived(agentId: string, arrived: boolean): void {
+  if (arrived) arrivedAgents.add(agentId)
+  else arrivedAgents.delete(agentId)
+}
+
+/**
+ * Make a line's clip ahead of time (the owner is walking up to the agent: E or F is likely next), so it starts
+ * the moment he opens it. Only where it could be played right now: a muted, hidden or silent tab makes no clip.
+ */
+export function warmVillageSpeech(text: string, settings: AgentVoiceSettings): void {
   const listener = getAudioListener()
   const clean = cleanSpoken(text, SPOKEN_MAX_CHARS)
-  if (clean && listener?.context.state === 'running' && isVillageVoiceOn() && document.visibilityState === 'visible') {
-    fetchClip(clean, settings.voice, speechSpeedPlan(settings.speed).modelSpeed).catch(() => {})
-  }
-}
-
-/** The agent stands in front of the owner (true) or left again (false). On arrival it says the line it carried. */
-export function setVillageArrived(agentId: string, arrived: boolean): void {
-  if (!arrived) {
-    arrivedAgents.delete(agentId)
-    return
-  }
-  arrivedAgents.add(agentId)
-  sayVillageArrivalLine(agentId)
-}
-
-export function isVillageArrived(agentId: string): boolean {
-  return arrivedAgents.has(agentId)
-}
-
-function sayVillageArrivalLine(agentId: string): void {
-  const line = arrivalLines.get(agentId)
-  if (!line) return
-  arrivalLines.delete(agentId)
-  if (Date.now() - line.at > ARRIVAL_LINE_MS || !isVillageVoiceOn() || document.visibilityState !== 'visible') return
-  void speakVillageAgent(agentId, line.text, line.settings)
-}
-
-/** The agent went home without getting to the owner (answered meanwhile, switched off): nothing left to say. */
-export function dropVillageArrivalLine(agentId: string): void {
-  arrivalLines.delete(agentId)
+  if (!clean || councilOnly || listener?.context.state !== 'running' || !isVillageVoiceOn() || document.visibilityState !== 'visible') return
+  fetchClip(clean, settings.voice, speechSpeedPlan(settings.speed).modelSpeed).catch(() => {})
 }
 
 // ─── the avatar's head (VillageStation registers it; speech plays from there) ─
@@ -186,6 +196,46 @@ function speechSource(agentId: string): THREE.Object3D | null {
     if (!bone && (object as THREE.Bone).isBone && /head$/i.test(object.name)) bone = object
   })
   return bone || spot
+}
+
+// How high each avatar's face is (the F view puts the camera there): measured from its own skeleton when asked.
+const faceHeights = new Map<string, number>()
+const _facePoint = new THREE.Vector3()
+const _faceBox = new THREE.Box3()
+const _meshBox = new THREE.Box3()
+
+/**
+ * Measure the avatar's eye height above its feet now: from its head joint and the top of its body
+ * (village-layout.ts faceHeightFrom). Avatars differ a lot (a child-sized one, a tall unicorn), so the camera
+ * of the F view cannot assume a height. Remembered until it is measured again.
+ */
+export function measureVillageFace(agentId: string): number {
+  const spot = heads.get(agentId)
+  const root = spot?.parent
+  if (!root) return faceHeights.get(agentId) ?? faceHeightFrom(null, null)
+  root.updateWorldMatrix(true, true)
+  const feet = root.getWorldPosition(_facePoint).y
+  let joint: number | null = null
+  _faceBox.makeEmpty()
+  root.traverse(object => {
+    if (joint === null && (object as THREE.Bone).isBone && /head$/i.test(object.name)) joint = object.getWorldPosition(_facePoint).y - feet
+    const mesh = object as THREE.Mesh
+    if (!mesh.isMesh || !mesh.geometry) return
+    // The body itself, not the invisible boxes that take the clicks.
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+    if (!materials.some(material => material && material.visible !== false)) return
+    if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox()
+    if (mesh.geometry.boundingBox) _faceBox.union(_meshBox.copy(mesh.geometry.boundingBox).applyMatrix4(mesh.matrixWorld))
+  })
+  const top = _faceBox.isEmpty() ? null : _faceBox.max.y - feet
+  const height = faceHeightFrom(joint, top)
+  faceHeights.set(agentId, height)
+  return height
+}
+
+/** The avatar's eye height above its feet: as last measured, else measured now. */
+export function getVillageFaceHeight(agentId: string): number {
+  return faceHeights.get(agentId) ?? measureVillageFace(agentId)
 }
 
 /** The lip-sync registry key of a village agent's body (VRMCatalogRenderer `lipSyncId`). */
@@ -373,7 +423,6 @@ export function getVillageSpeechDebug() {
     playing: playing ? { key: playing.key, voice: playing.voice, rate: playing.element.playbackRate, modelSpeed: playing.modelSpeed, time: playing.element.currentTime, duration: playing.element.duration, preservesPitch: (playing.element as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch !== false } : null,
     heads: [...heads.keys()],
     arrived: [...arrivedAgents],
-    waitingToSay: [...arrivalLines.keys()],
   }
 }
 

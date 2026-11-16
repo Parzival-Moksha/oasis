@@ -72,7 +72,7 @@ describe('engine: eyes on a message', () => {
     const events: Array<{ kind: string; payload: Record<string, unknown> }> = []
     const hub = { emit: (_id: string, kind: string, payload: Record<string, unknown>) => events.push({ kind, payload }), persist: () => {}, log: () => {}, eyes }
     // speak: false keeps the voice note (voice.js, on by default for Anorak) out of these messages.
-    const agent = new Agent({ id: 'agent-1', cwd: process.cwd(), speak: false, ...spec }, hub)
+    const agent = new Agent({ id: 'agent-1', cwd: process.cwd(), speak: false, speakSet: true, ...spec }, hub)
     agent.proc = { pid: 1, stdin: { write: (line: string) => written.push(JSON.parse(line)) } }
     return { agent, written, events }
   }

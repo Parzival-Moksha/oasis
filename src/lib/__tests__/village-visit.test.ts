@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
+  AWAY_PROMPT_RADIUS,
   FOLLOW,
+  SPACE,
   VISIT,
+  awayAgentWinsPrompt,
   createFollowState,
   parseFollowPrefs,
   pickVisitSpot,
+  stepApart,
   stepFollow,
   stepVisit,
   wantsCome,
@@ -50,23 +54,26 @@ describe('a free spot in front of the owner', () => {
     expect(east.z).toBeCloseTo(5, 5)
   })
 
-  it('lines several agents up side by side, never on top of each other', () => {
+  it('puts several agents side by side on an arc, each as near to the owner as the first, never on top of each other', () => {
     const taken: VisitSpot[] = []
     for (let i = 0; i < 6; i += 1) taken.push(pickVisitSpot(OWNER, VISIT.distance, taken))
     for (let a = 0; a < taken.length; a += 1) {
-      // All in front of the owner, in one row.
-      expect(taken[a].z).toBeCloseTo(2.5, 5)
+      // Every one 2.5 m from the owner: within reach of the T / E / F prompt (3.4 m), which a straight row was not.
+      expect(Math.hypot(taken[a].x, taken[a].z)).toBeCloseTo(2.5, 5)
       for (let b = a + 1; b < taken.length; b += 1) {
-        expect(Math.hypot(taken[a].x - taken[b].x, taken[a].z - taken[b].z)).toBeGreaterThanOrEqual(VISIT.spacing - 1e-6)
+        expect(Math.hypot(taken[a].x - taken[b].x, taken[a].z - taken[b].z)).toBeGreaterThanOrEqual(VISIT.clearance)
       }
     }
-    // The first three: the middle, then one to each side.
-    expect(taken.slice(0, 3).map(spot => Math.round(spot.x * 10) / 10).sort((a, b) => a - b)).toEqual([-1.3, 0, 1.3])
+    // The first three: straight ahead, then one to each side, all in front of the owner.
+    expect(taken[0].x).toBeCloseTo(0, 5)
+    expect(Math.sign(taken[1].x)).toBe(-Math.sign(taken[2].x))
+    for (const spot of taken.slice(0, 5)) expect(spot.z).toBeGreaterThan(0)
   })
 
-  it('leaves the spot where a follower already stands', () => {
+  it('leaves the spot where a follower, or an agent at its desk, already stands', () => {
     const spot = pickVisitSpot(OWNER, VISIT.distance, [{ x: 0.2, z: 2.4 }])
-    expect(Math.abs(spot.x)).toBeCloseTo(VISIT.spacing, 5)
+    expect(Math.hypot(spot.x - 0.2, spot.z - 2.4)).toBeGreaterThanOrEqual(VISIT.clearance)
+    expect(Math.hypot(spot.x, spot.z)).toBeCloseTo(2.5, 5)
   })
 
   it('works without knowing where the owner faces', () => {
@@ -98,7 +105,12 @@ describe('an agent that comes to the owner', () => {
     const state = visitor()
     run(state, OWNER, 8)
     expect(run(state, { ...OWNER, forwardZ: -1 }, 1).moved).toBe(false)
-    expect(run(state, { ...OWNER, x: 3 }, 1).moved).toBe(false)
+    // A couple of steps to the side: it stays. (Two metres further off than where it waits, and it comes along.)
+    expect(run(state, { ...OWNER, x: 1.5 }, 1).moved).toBe(false)
+    const strolled = { ...OWNER, x: 5 }
+    expect(run(state, strolled, 6).arrived).toBe(1)
+    expect(gap(state, strolled)).toBeCloseTo(2.5, 2)
+    run(state, OWNER, 6)
     const far = { x: 30, z: 0, forwardX: 0, forwardZ: 1 }
     const again = run(state, far, 8)
     expect(again.arrived).toBe(1)
@@ -132,8 +144,8 @@ describe('an agent that comes to the owner', () => {
   it('takes the next free spot when one is taken, and does not move while frozen or without an owner', () => {
     const second = visitor()
     run(second, OWNER, 8, { others: [{ x: 0, z: 2.5 }] })
-    expect(Math.abs(second.x)).toBeCloseTo(VISIT.spacing, 2)
-    expect(second.z).toBeCloseTo(2.5, 2)
+    expect(Math.hypot(second.x, second.z - 2.5)).toBeGreaterThanOrEqual(VISIT.clearance)
+    expect(Math.hypot(second.x, second.z)).toBeCloseTo(2.5, 2)
     const frozen = visitor()
     expect(run(frozen, OWNER, 1, { frozen: true }).moved).toBe(false)
     expect(run(visitor(), null, 1).moved).toBe(false)
@@ -161,5 +173,74 @@ describe('the "Come to me" switch', () => {
     prefs = withComeChoice(prefs, 's1', true)
     expect(prefs).toEqual({})
     expect(wantsCome(parseFollowPrefs('{"s3":false}'), 's3')).toBe(false)
+  })
+})
+
+describe('personal space: no two avatars on one spot', () => {
+  it('says nothing when there is room', () => {
+    expect(stepApart({ x: 0, z: 0 }, [{ x: 1.5, z: 0 }, { x: 0, z: -2 }])).toBeNull()
+    expect(stepApart({ x: 0, z: 0 }, [])).toBeNull()
+  })
+
+  it('steps away from whoever is too close, the owner or another agent', () => {
+    const away = stepApart({ x: 0, z: 0 }, [{ x: 3, z: 0 }, { x: 0.4, z: 0 }])
+    expect(away).toEqual({ x: -1, z: 0 })
+  })
+
+  it('two agents on exactly the same spot go different ways', () => {
+    const a = stepApart({ x: 2, z: 2 }, [{ x: 2, z: 2 }], false, 7)
+    const b = stepApart({ x: 2, z: 2 }, [{ x: 2, z: 2 }], false, 8)
+    expect(a).not.toBeNull()
+    expect(b).not.toBeNull()
+    expect(Math.hypot((a as VisitSpot).x, (a as VisitSpot).z)).toBeCloseTo(1, 5)
+    expect(Math.hypot((a as VisitSpot).x - (b as VisitSpot).x, (a as VisitSpot).z - (b as VisitSpot).z)).toBeGreaterThan(0.1)
+  })
+
+  it('walked out step by step, two agents sent to one spot end up at least a metre apart', () => {
+    const a = { x: 5, z: 5 }
+    const b = { x: 5, z: 5 }
+    let steppingA = false
+    let steppingB = false
+    for (let i = 0; i < 600; i += 1) {
+      const pushA = stepApart(a, [b], steppingA, 3)
+      const pushB = stepApart(b, [a], steppingB, 4)
+      steppingA = pushA !== null
+      steppingB = pushB !== null
+      if (pushA) { a.x += pushA.x * SPACE.speed * DT; a.z += pushA.z * SPACE.speed * DT }
+      if (pushB) { b.x += pushB.x * SPACE.speed * DT; b.z += pushB.z * SPACE.speed * DT }
+    }
+    expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeGreaterThanOrEqual(SPACE.min)
+    expect(steppingA || steppingB).toBe(false)
+    // Not flung apart either.
+    expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeLessThan(SPACE.clear + 0.2)
+  })
+
+  it('a waiting spot on the arc is never inside that distance of another', () => {
+    const taken: VisitSpot[] = []
+    for (let i = 0; i < 7; i += 1) taken.push(pickVisitSpot(OWNER, VISIT.distance, taken))
+    for (let i = 0; i < taken.length; i += 1) {
+      const others = taken.filter((_, j) => j !== i)
+      expect(stepApart(taken[i], [...others, { x: OWNER.x, z: OWNER.z }])).toBeNull()
+    }
+  })
+})
+
+describe('the T / E / F prompt next to an agent that walked away from its desk', () => {
+  it('a close walked-up agent keeps the keys whatever else is near; one at its desk, or further off, shares as before', () => {
+    // Anorak following stands 2.5 m away: the owner steps toward him and the keys are his.
+    expect(awayAgentWinsPrompt(true, 1.5)).toBe(true)
+    expect(awayAgentWinsPrompt(true, AWAY_PROMPT_RADIUS)).toBe(true)
+    // At his stopping distance a mission panel or a skill node that is nearer may still be opened.
+    expect(awayAgentWinsPrompt(true, FOLLOW.stopDistance)).toBe(false)
+    // An agent at its desk never silences the wall behind it.
+    expect(awayAgentWinsPrompt(false, 0.5)).toBe(false)
+    expect(awayAgentWinsPrompt(true, null)).toBe(false)
+  })
+
+  it('every waiting spot is inside the reach of the prompt', () => {
+    const TALK_RADIUS = 3.4
+    const taken: VisitSpot[] = []
+    for (let i = 0; i < 9; i += 1) taken.push(pickVisitSpot(OWNER, VISIT.distance, taken))
+    for (const spot of taken) expect(Math.hypot(spot.x - OWNER.x, spot.z - OWNER.z)).toBeLessThan(TALK_RADIUS)
   })
 })

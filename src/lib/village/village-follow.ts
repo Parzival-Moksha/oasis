@@ -333,6 +333,11 @@ export const VISIT = {
   clearance: 1.1,
   /** Close enough to the spot to count as arrived. */
   arriveDistance: 0.1,
+  /**
+   * It came to be near the owner: when they move this much further off than where it waits, it comes along
+   * (sooner than an agent that merely follows, which waits for 7 m), so its prompt stays within reach.
+   */
+  comeAlong: 2,
 } as const
 
 export interface VisitSpot {
@@ -341,8 +346,10 @@ export interface VisitSpot {
 }
 
 /**
- * A free spot `distance` in front of the owner: straight ahead first, then alternately to their right and
- * left, `VISIT.spacing` apart. `others`: where the other agents near the owner stand or are headed.
+ * A free spot `distance` from the owner: straight ahead of them first, then alternately to their right and
+ * left along an arc at that same distance, `VISIT.spacing` apart. Every spot is as near to the owner as the
+ * first, so each waiting agent is within reach of the T / E / F prompt. `others`: where the other avatars
+ * stand or are headed.
  */
 export function pickVisitSpot(owner: FollowTarget, distance: number, others: readonly VisitSpot[] = []): VisitSpot {
   let fx = owner.forwardX ?? 0
@@ -355,13 +362,15 @@ export function pickVisitSpot(owner: FollowTarget, distance: number, others: rea
     fx /= length
     fz /= length
   }
-  // The owner's right-hand side.
-  const rx = fz
-  const rz = -fx
+  const facing = Math.atan2(fx, fz)
+  // The angle between neighbours on the arc; never past the owner's sides and back.
+  const stepAngle = Math.min(Math.PI / 3, VISIT.spacing / Math.max(0.5, distance))
   let spot: VisitSpot = { x: owner.x + fx * distance, z: owner.z + fz * distance }
   for (let n = 0; n < 9; n += 1) {
-    const offset = (n % 2 === 1 ? (n + 1) / 2 : -n / 2) * VISIT.spacing
-    spot = { x: owner.x + fx * distance + rx * offset, z: owner.z + fz * distance + rz * offset }
+    const turn = (n % 2 === 1 ? (n + 1) / 2 : -n / 2) * stepAngle
+    if (Math.abs(turn) > Math.PI * 0.8) break
+    const angle = facing + turn
+    spot = { x: owner.x + Math.sin(angle) * distance, z: owner.z + Math.cos(angle) * distance }
     const x = spot.x
     const z = spot.z
     if (others.every(other => Math.hypot(other.x - x, other.z - z) >= VISIT.clearance)) return spot
@@ -421,7 +430,7 @@ export function stepVisit(
       state.asideX = aside.x
       state.asideZ = aside.z
       state.act = 'aside'
-    } else if (!state.hasGoal || state.goalHold !== hold || distance > FOLLOW.startDistance) {
+    } else if (!state.hasGoal || state.goalHold !== hold || distance > (hold ? VISIT.holdDistance : VISIT.distance) + VISIT.comeAlong) {
       // First time, the owner became free or busy, or they walked off: (re)take a spot and go there.
       const spot = pick(hold ? VISIT.holdDistance : VISIT.distance)
       state.goalX = spot.x
@@ -435,7 +444,7 @@ export function stepVisit(
 
   if (state.act === 'walk') {
     // The owner moved on while it was walking: the spot is stale.
-    if (Math.hypot(target.x - state.goalX, target.z - state.goalZ) > FOLLOW.startDistance || state.goalHold !== hold) {
+    if (Math.hypot(target.x - state.goalX, target.z - state.goalZ) > (hold ? VISIT.holdDistance : VISIT.distance) + VISIT.comeAlong || state.goalHold !== hold) {
       const spot = pick(hold ? VISIT.holdDistance : VISIT.distance)
       state.goalX = spot.x
       state.goalZ = spot.z
@@ -564,4 +573,53 @@ export function stepStage(state: FollowState, dt: number, frozen: boolean, speed
   }
   result.settled = true
   return result
+}
+
+// ─── personal space: no two avatars on one spot ─────────────────────────────
+
+export const SPACE = {
+  /** Two avatars (agents, the owner) never stand closer than this. */
+  min: 1.0,
+  /** Stepping apart goes on to this distance, so they do not twitch at the limit. */
+  clear: 1.2,
+  /** Walking pace of the step apart. */
+  speed: 1.8,
+} as const
+
+/**
+ * Which way to step so that nobody stands on anybody: away from the nearest other avatar that is closer than
+ * SPACE.min (SPACE.clear once it is already stepping). null: there is room. Standing exactly on someone, the
+ * direction comes from `seed` (the agent's own number), so two agents on one spot go different ways.
+ */
+export function stepApart(self: VisitSpot, others: readonly VisitSpot[], stepping = false, seed = 0): VisitSpot | null {
+  const limit = stepping ? SPACE.clear : SPACE.min
+  let nearest: VisitSpot | null = null
+  let nearestDistance: number = limit
+  for (const other of others) {
+    const distance = Math.hypot(other.x - self.x, other.z - self.z)
+    if (distance < nearestDistance) {
+      nearest = other
+      nearestDistance = distance
+    }
+  }
+  if (!nearest) return null
+  if (nearestDistance < 1e-3) {
+    const angle = (seed % 16) * (Math.PI / 8) + 0.4
+    return { x: Math.sin(angle), z: Math.cos(angle) }
+  }
+  return { x: (self.x - nearest.x) / nearestDistance, z: (self.z - nearest.z) / nearestDistance }
+}
+
+// ─── the T / E / F prompt next to an agent that is away from its desk ───────
+
+/**
+ * An agent that walked away from its desk (it follows the owner, or came to them) and stands this close gets the
+ * T / E / F keys whatever else is around. Without this a mission panel within its 2.3 m beat an agent standing
+ * 2.5 m away, and the skill tree took the keys whenever the camera looked at one of its nodes: next to the
+ * wall or the tree the owner could not open the agent beside him (2026-11-16).
+ */
+export const AWAY_PROMPT_RADIUS = 2.2
+
+export function awayAgentWinsPrompt(away: boolean, distance: number | null): boolean {
+  return away && distance !== null && distance <= AWAY_PROMPT_RADIUS
 }
