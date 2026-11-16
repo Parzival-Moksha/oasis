@@ -217,7 +217,18 @@ export function startDanceMusic(danceId: string): void {
   master.connect(ctx.destination)
   const length = loopSeconds(groove)
   const state = { id: danceId, master, timer: 0, nextLoopAt: ctx.currentTime + 0.06 }
+  let level = Math.min(1, manager.volume) * 0.45
   const pump = () => {
+    // Follow the sound settings while it plays (muting mid-dance silences it).
+    const now = useAudioManager.getState()
+    const want = now.muted ? 0 : Math.min(1, now.volume) * 0.45
+    if (want !== level) {
+      level = want
+      master.gain.cancelScheduledValues(ctx.currentTime)
+      master.gain.setTargetAtTime(Math.max(0.0001, want), ctx.currentTime, 0.05)
+    }
+    // A throttled timer (a hidden tab) fell behind: start the next loop now instead of firing the missed notes at once.
+    if (state.nextLoopAt < ctx.currentTime) state.nextLoopAt = ctx.currentTime + 0.05
     // Keep one loop queued ahead of the clock.
     while (state.nextLoopAt < ctx.currentTime + 0.3) {
       scheduleLoop(ctx, master, groove, state.nextLoopAt)

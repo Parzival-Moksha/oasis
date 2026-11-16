@@ -64,6 +64,12 @@ export class AnimationController {
   private disposed = false
   // Root motion (see consumeRootMotion): the hips' place when a dance was cut short, handed over
   // to the character's position as that dance fades out.
+  /**
+   * Root motion is for dances the owner of this controller started on purpose. Off (the default: remote
+   * players, and custom clips such as a spell cast or the mana recharge), a clip moves the hips but never
+   * the character.
+   */
+  public rootMotionEnabled = false
   private rootAbsorb: { x: number; z: number; givenX: number; givenZ: number; age: number } | null = null
   private transitionGeneration = 0  // increments on each transition, prevents stale async callbacks
 
@@ -227,7 +233,7 @@ export class AnimationController {
       this.rootAbsorb.age = 0
       return
     }
-    if (this.currentState !== 'custom' || !this.currentAction) return
+    if (!this.rootMotionEnabled || this.currentState !== 'custom' || !this.currentAction) return
     const now = this.hipsOffset()
     if (Math.hypot(now.x, now.z) < 0.01) return
     this.rootAbsorb = { x: now.x, z: now.z, givenX: 0, givenZ: 0, age: 0 }
@@ -245,7 +251,7 @@ export class AnimationController {
   consumeRootMotion(delta: number): { x: number; z: number; shiftX: number; shiftZ: number } {
     let x = 0
     let z = 0
-    if (this.currentState === 'custom' && this.currentAction) {
+    if (this.rootMotionEnabled && this.currentState === 'custom' && this.currentAction) {
       const travel = getClipTravel(this.currentAction.getClip())
       if (travel.x !== 0 || travel.z !== 0) {
         const amount = delta * this.currentAction.getEffectiveWeight() * this.currentAction.getEffectiveTimeScale()

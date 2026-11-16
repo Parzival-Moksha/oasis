@@ -76,6 +76,22 @@ export function detrendTravel(times: ArrayLike<number>, deltas: Float32Array): {
 }
 
 /**
+ * Slide the whole clip sideways so it starts over the character's own spot. Some dances begin a
+ * step away from the rig's origin; without this the body would glide there as the clip fades in.
+ */
+export function recenterStart(deltas: Float32Array): Float32Array {
+  const out = Float32Array.from(deltas)
+  if (out.length < 3) return out
+  const x0 = out[0]
+  const z0 = out[2]
+  for (let i = 0; i < out.length; i += 3) {
+    out[i] -= x0
+    out[i + 2] -= z0
+  }
+  return out
+}
+
+/**
  * The position track for one avatar: its own rest position plus the offsets scaled to its size.
  * VRM 0.x avatars face the other way round the vertical, so x and z flip (as for rotations).
  */

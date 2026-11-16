@@ -214,6 +214,8 @@ export function PlayerAvatar({
   // The camera follows a dance's hand-over of position softly instead of in the same instant.
   const cameraLagRef = useRef(new THREE.Vector3())
   const danceKeyDownRef = useRef(false)
+  /** A dance started with X is playing (not the same clip used for the mana recharge or a spell). */
+  const danceByKeyRef = useRef(false)
   const rootFacingRef = useRef<number | null>(null)
   useEffect(() => () => stopDanceMusic(), [])
   const spellAnimationActiveRef = useRef(false)
@@ -556,8 +558,13 @@ export function PlayerAvatar({
         cameraLagRef.current.z -= shift.z
       }
     }
-    if (cameraLagRef.current.lengthSq() > 1e-8) cameraLagRef.current.multiplyScalar(Math.exp(-delta / 0.3))
-    else cameraLagRef.current.set(0, 0, 0)
+    // The camera's aim eases towards where the body is: the character's place plus where a dance holds the hips.
+    const held = danceByKeyRef.current || rootMotion?.shiftX || rootMotion?.shiftZ ? animControllerRef.current?.getRootResidual() : null
+    const aim = held ? localToWorldXZ(held.x, held.z, facingAngle.current) : null
+    const ease = 1 - Math.exp(-delta / 0.45)
+    cameraLagRef.current.x += ((aim ? aim.x : 0) - cameraLagRef.current.x) * ease
+    cameraLagRef.current.z += ((aim ? aim.z : 0) - cameraLagRef.current.z) * ease
+    if (!aim && cameraLagRef.current.lengthSq() < 1e-8) cameraLagRef.current.set(0, 0, 0)
     v.update(delta)
 
     if (isThirdPersonActive && !wasThirdPersonActiveRef.current) {
@@ -859,14 +866,21 @@ export function PlayerAvatar({
           const choices = DANCE_CLIPS.filter(id => id !== current)
           const randomDance = choices[Math.floor(Math.random() * choices.length)]
           animControllerRef.current.preloadClip(randomDance).then(ok => {
-            if (ok) animControllerRef.current?.transitionTo('custom', randomDance)
+            if (!ok || !animControllerRef.current) return
+            // Enabled before the switch, so a dance already playing hands its place over.
+            animControllerRef.current.rootMotionEnabled = true
+            animControllerRef.current.transitionTo('custom', randomDance)
+            danceByKeyRef.current = true
           })
         }
       }
 
       // Music for the dance, for as long as it lasts.
       const dancingNow = animControllerRef.current.state === 'custom' ? animControllerRef.current.customAnimationId : null
-      const musicFor = dancingNow && DANCE_CLIPS.includes(dancingNow) ? dancingNow : null
+      // The mana recharge plays a dance clip too: no music and no travel for that, nor for a spell cast.
+      if (!dancingNow || !DANCE_CLIPS.includes(dancingNow) || manaRechargeAnimationActiveRef.current || playerSpellCasting) danceByKeyRef.current = false
+      animControllerRef.current.rootMotionEnabled = danceByKeyRef.current
+      const musicFor = danceByKeyRef.current ? dancingNow : null
       if (musicFor !== currentDanceMusic()) {
         if (musicFor) startDanceMusic(musicFor)
         else stopDanceMusic()

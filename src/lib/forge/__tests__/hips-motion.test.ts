@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { captureHipsDeltas, detrendTravel, hipsTrackValues, localToWorldXZ, travelVelocity } from '../hips-motion'
+import { captureHipsDeltas, detrendTravel, hipsTrackValues, localToWorldXZ, recenterStart, travelVelocity } from '../hips-motion'
 import { DANCE_GROOVES, grooveFor, loopSeconds, stepTime } from '../../dance-music'
 
 const IDENTITY = [1, 0, 0, 0, 1, 0, 0, 0, 1]
@@ -48,6 +48,25 @@ describe('hips movement', () => {
   it('leaves height alone: a body that ends on the floor ends on the floor', () => {
     const out = detrendTravel([0, 1], new Float32Array([0, 0, 0, 0.3, -0.8, 0.4]))
     expect(out.deltas[4]).toBeCloseTo(-0.8, 6)
+  })
+
+  it('starts a clip over the character\'s own spot, keeping its height and its shape', () => {
+    // A dance that begins 0.69 hips heights to the side (the capoeira clip does).
+    const out = recenterStart(new Float32Array([0.69, -0.1, 0.2, 0.9, -0.3, 0.1, 0.69, -0.1, 0.2]))
+    expect(Array.from(out.slice(0, 3)).map(n => +n.toFixed(4))).toEqual([0, -0.1, 0])
+    expect(out[3]).toBeCloseTo(0.21, 5)
+    expect(out[4]).toBeCloseTo(-0.3, 5)
+    expect(out[5]).toBeCloseTo(-0.1, 5)
+    expect(out[6]).toBeCloseTo(0, 6) // a closed loop stays closed
+  })
+
+  it('a fall that is not detrended keeps its true path (nothing slides)', () => {
+    // Half a hips height backwards, most of it at the end: a linear detrend would push the early keys forward.
+    const fall = new Float32Array([0, 0, 0, 0, -0.1, -0.02, 0, -0.8, -0.5])
+    const kept = recenterStart(fall)
+    expect(kept[5]).toBeCloseTo(-0.02, 6)
+    const slid = detrendTravel([0, 0.5, 1], fall).deltas
+    expect(slid[5]).toBeCloseTo(0.23, 5) // what detrending would have done to the middle key
   })
 
   it('scales the offsets to the avatar and flips x and z for VRM 0', () => {

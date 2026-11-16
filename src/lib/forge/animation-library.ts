@@ -15,7 +15,7 @@
 
 import * as THREE from 'three'
 import type { VRM } from '@pixiv/three-vrm'
-import { captureHipsDeltas, detrendTravel, hipsTrackValues, travelVelocity, type HipsMotion } from './hips-motion'
+import { captureHipsDeltas, detrendTravel, hipsTrackValues, recenterStart, travelVelocity, type HipsMotion } from './hips-motion'
 
 const OASIS_BASE = typeof window !== 'undefined'
   ? (process.env.NEXT_PUBLIC_BASE_PATH || '')
@@ -281,7 +281,7 @@ export function retargetClipForVRM(
   vrm: VRM,
   cacheKey: string,
 ): THREE.AnimationClip {
-  const fullKey = `vrm5__${clip.name}__${cacheKey}__${hipsCacheTag(vrm)}`
+  const fullKey = `vrm6__${clip.name}__${cacheKey}__${hipsCacheTag(vrm)}`
   if (retargetCache.has(fullKey)) {
     return retargetCache.get(fullKey)!
   }
@@ -547,7 +547,11 @@ export function getClipTravel(clip: THREE.AnimationClip): { x: number; z: number
   return clipTravel.get(clip) ?? { x: 0, z: 0 }
 }
 
-function rememberHipsMotion(animId: string, track: THREE.KeyframeTrack, bone: THREE.Object3D | null, duration: number): void {
+/**
+ * `loops`: the clip is played round and round, so its steady travel is taken out (the loop closes) and kept as a
+ * speed. A one-shot (a fall, a roll, sitting down) keeps its true path: detrending it would make the body slide.
+ */
+function rememberHipsMotion(animId: string, track: THREE.KeyframeTrack, bone: THREE.Object3D | null, duration: number, loops = true): void {
   if (!bone || hipsMotionCache.has(animId)) return
   try {
     bone.updateWorldMatrix(true, false)
@@ -555,7 +559,9 @@ function rememberHipsMotion(animId: string, track: THREE.KeyframeTrack, bone: TH
     const restHeight = bone.getWorldPosition(new THREE.Vector3()).y
     const captured = captureHipsDeltas(track.times, track.values, [bone.position.x, bone.position.y, bone.position.z], basis, restHeight)
     if (!captured) return
-    const { deltas, travel } = detrendTravel(captured.times, captured.deltas)
+    const detrended = loops ? detrendTravel(captured.times, captured.deltas) : { deltas: captured.deltas, travel: { x: 0, z: 0 } }
+    const deltas = recenterStart(detrended.deltas)
+    const travel = detrended.travel
     for (let i = 0; i < deltas.length; i++) {
       if (Math.abs(deltas[i]) > HIPS_SANITY_LIMIT) {
         if (ANIMLIB_DEBUG) console.warn(`[AnimLib] ${animId}: hips offsets out of range, hips stay at rest`)
@@ -838,7 +844,8 @@ async function loadUALClip(entry: LocalAnimation): Promise<THREE.AnimationClip |
 
       // Strip pelvis/root position tracks (the movement is kept beside the clip for VRM avatars)
       if (boneName === 'pelvis' && property === '.position') {
-        rememberHipsMotion(entry.id, track, pack.scene.getObjectByName('pelvis') ?? null, rawClip.duration)
+        // In the UAL packs a looping clip says so in its name (Idle_Loop, Dance_Loop); the rest are one-shots.
+        rememberHipsMotion(entry.id, track, pack.scene.getObjectByName('pelvis') ?? null, rawClip.duration, /_Loop$/i.test(entry.glbClipName ?? ''))
         continue
       }
 
@@ -872,7 +879,7 @@ export function retargetUALClipForVRM(
   vrm: VRM,
   cacheKey: string,
 ): THREE.AnimationClip {
-  const fullKey = `vrm5ual__${clip.name}__${cacheKey}__${hipsCacheTag(vrm)}`
+  const fullKey = `vrm6ual__${clip.name}__${cacheKey}__${hipsCacheTag(vrm)}`
   if (retargetCache.has(fullKey)) {
     return retargetCache.get(fullKey)!
   }
