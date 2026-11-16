@@ -43,13 +43,15 @@ export interface VillageAgentLook {
 }
 
 /** What an agent's sign, desk and menu row show: its own status, unless only its helpers are still at it. */
-export function villageAgentLook(agent: Pick<EngineAgentState, 'status' | 'unseen' | 'decisions' | 'subagents' | 'lastEventAt'>, now?: number): VillageAgentLook {
+export function villageAgentLook(agent: Pick<EngineAgentState, 'status' | 'unseen' | 'decisions' | 'subagents' | 'lastEventAt'> & { resumedAt?: number | null }, now?: number): VillageAgentLook {
   const status = effectiveStatus(agent)
   const helpers = runningSubagentCount(agent, now)
   if (helpers > 0 && (status === 'waiting' || status === 'idle')) {
     return { status: 'helpers', color: VILLAGE_HELPERS_COLOR, label: `helpers working (${helpers})`, helpers }
   }
-  return { status, color: statusColor(status), label: statusLabel({ status, unseen: agent.unseen }), helpers }
+  // The engine restarted while it worked and told it to carry on: say so while that turn runs.
+  const resumed = status === 'working' && agent.resumedAt ? ' · resumed' : ''
+  return { status, color: statusColor(status), label: `${statusLabel({ status, unseen: agent.unseen })}${resumed}`, helpers }
 }
 
 /** Agents the Oasis runs, and desktop-app sessions running the Oasis plugin (bridged), get a text box. */

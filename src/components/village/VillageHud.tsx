@@ -53,16 +53,28 @@ function useNow(active: boolean, everyMs = 1000): number {
   return now
 }
 
+/** The engine's restart line stays in the pill this long after it came back; the tooltip keeps it. */
+const RESTART_LINE_MS = 30 * 60_000
+
 function EngineStatus() {
   const connection = useOasisStore(s => s.agentEngine.connection)
   const rate = useOasisStore(s => s.agentEngine.rateLimit)
-  const now = useNow(connection.status === 'offline')
+  const restart = connection.server?.restart || null
+  const recent = Boolean(restart?.line && Date.now() - restart.startedAt < RESTART_LINE_MS)
+  const now = useNow(connection.status === 'offline' || recent, connection.status === 'offline' ? 1000 : 60_000)
   if (connection.status === 'open') {
     const quota = typeof rate?.utilization === 'number' ? ` · 7-day ${Math.round(rate.utilization * 100)}%` : ''
+    const showLine = Boolean(restart?.line && now - restart.startedAt < RESTART_LINE_MS)
+    const unplanned = restart?.stop?.planned === false
+    const names = restart?.resumed?.length ? ` Told to carry on: ${restart.resumed.map(a => a.name).join(', ')}.` : ''
+    const title = `Agent engine connected (ws://127.0.0.1:4530)${restart?.line ? `. It ${restart.line}.${names}` : ''}`
     return (
-      <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-300/25 bg-emerald-400/10 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-100/85" title="Agent engine connected (ws://127.0.0.1:4530)">
+      <span data-engine-restart={restart?.line || undefined} className="flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-300/25 bg-emerald-400/10 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-100/85" title={title}>
         <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />
         <span className="max-[700px]:hidden">engine{quota}</span>
+        {showLine && (
+          <span className={`normal-case tracking-normal max-[900px]:hidden ${unplanned ? 'text-amber-200' : 'text-emerald-100/70'}`}>· {restart?.line}</span>
+        )}
       </span>
     )
   }

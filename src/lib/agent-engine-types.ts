@@ -81,6 +81,8 @@ export interface EngineAgentSnapshot {
   voiceChoice?: string | null
   /** What the last turn came to, kept across engine restarts (engine outcome.js). */
   lastOutcome?: { outcome: string; reason?: string | null; at?: number | null } | null
+  /** Told to carry on after an engine restart cut its turn; set until that turn ends. */
+  resumedAt?: number | null
   status: EngineAgentStatus
   statusReason?: string | null
   alive?: boolean
@@ -321,9 +323,23 @@ export interface EngineSessionMeta {
   observedBy: string | null
 }
 
+/** How the engine's current run began (engine resume.js): the HUD's engine pill shows `line` for a while. */
+export interface EngineRestartInfo {
+  startedAt: number
+  /** How the run before ended; null on a first start. planned: the shutdown command, Ctrl+C or the window closing. */
+  stop: { at: number; planned: boolean; reason?: string | null } | null
+  /** Agents that were mid-turn and were told to carry on. */
+  resumed: Array<{ id: string; name: string }>
+  /** Messages that were on their way to an agent and went out again. */
+  redelivered: number
+  /** "restarted at 18:02, 1 agent resumed"; null on a first start. */
+  line: string | null
+}
+
 export interface EngineServerInfo {
   port?: number
   claude?: string
+  restart?: EngineRestartInfo
 }
 
 export type EngineServerMessage =

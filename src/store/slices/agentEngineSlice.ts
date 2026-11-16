@@ -188,6 +188,8 @@ export interface EngineAgentState {
   voiceChoice: string | null
   /** When its last turn ended (engine snapshot): after a reload, unseen if after your last look (village-seen.ts). */
   lastOutcomeAt: number | null
+  /** The engine restarted mid-turn and told it to carry on: set while that turn runs (its sign says "resumed"). */
+  resumedAt: number | null
   status: EngineAgentStatus
   statusReason: string | null
   statusSince: number
@@ -343,6 +345,7 @@ export function createAgentState(
     speak: null,
     voiceChoice: null,
     lastOutcomeAt: null,
+    resumedAt: null,
     status: 'idle',
     statusReason: null,
     statusSince: at,
@@ -408,6 +411,7 @@ export function applySnapshot(agent: EngineAgentState, snap: EngineAgentSnapshot
     speak: typeof snap.speak === 'boolean' ? snap.speak : agent.speak,
     voiceChoice: snap.voiceChoice !== undefined ? snap.voiceChoice || null : agent.voiceChoice,
     lastOutcomeAt: typeof snap.lastOutcome?.at === 'number' ? snap.lastOutcome.at : agent.lastOutcomeAt,
+    resumedAt: snap.resumedAt !== undefined ? snap.resumedAt ?? null : agent.resumedAt,
     status,
     statusReason: snap.statusReason ?? (status === agent.status ? agent.statusReason : null),
     statusSince: status === agent.status ? agent.statusSince : at,

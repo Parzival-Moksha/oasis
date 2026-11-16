@@ -499,3 +499,109 @@ describe('telegram: the line, against a fake Bot API', () => {
     expect(logs.filter(l => l.includes(TOKEN) || l.includes('FAKE-token'))).toEqual([])
   })
 })
+
+// Across engine restarts (journal.js): nothing the owner wrote is lost between the bot and the agent, and an agent
+// that owed a reply here still answers here after it is carried on.
+describe('telegram: across an engine restart', () => {
+  let current: Line | null = null
+  afterEach(async () => {
+    await (current as unknown as { outbox?: Promise<unknown> } | null)?.outbox
+    current?.stop(); current = null; calls.length = 0; updates = []
+  })
+
+  /** The parts of the engine's Journal the Telegram line uses, in memory. */
+  function fakeJournal(init: { inbox?: Array<Record<string, unknown>>; owed?: string[]; sources?: Record<string, string> } = {}) {
+    const j = {
+      inbox: [...(init.inbox || [])] as Array<Record<string, unknown>>,
+      owedIds: [...(init.owed || [])],
+      sources: { ...(init.sources || {}) } as Record<string, string>, // source -> agentId
+      took: [] as number[],
+      handled: [] as number[],
+      telegramTook(u: { update_id: number }) { j.took.push(u.update_id); j.inbox.push({ ...u, tries: 0 }) },
+      telegramHandled(id: number) { j.handled.push(id); j.inbox = j.inbox.filter(u => u.update_id !== id) },
+      telegramLeft() { return j.inbox.map(u => ({ ...u })) },
+      hasSource(s: string) { return s in j.sources },
+      agentsWithSource(prefix: string) { return Object.entries(j.sources).filter(([s]) => s.startsWith(prefix)).map(([, id]) => id) },
+      setOwed(ids: string[]) { j.owedIds = [...ids] },
+      owed() { return [...j.owedIds] },
+    }
+    return j
+  }
+  const update = (id: number, text: string, extra: Record<string, unknown> = {}) => ({ update_id: id, message: { chat: { id: Number(CHAT) }, date: Math.floor(Date.now() / 1000), text }, ...extra })
+
+  it('keeps an update in the journal until it is handed to its agent, and passes its id along', async () => {
+    const journal = fakeJournal()
+    const agents = village.map(a => ({ ...a }))
+    const sources: Array<string | undefined> = []
+    const { line, delivered } = makeLine(agents, {
+      journal,
+      send: async (_agentId: string, _text: string, opts?: { source?: string }) => { sources.push(opts?.source); delivered.push({ agentId: _agentId, text: _text }); return { uuid: 'u-j1' } },
+    })
+    current = line
+    const id = nextUpdateId
+    push({ text: 'Tyler: keep this safe' })
+    await until(() => journal.handled.includes(id))
+    expect(journal.took).toEqual([id])
+    expect(sources).toEqual([`tg:${id}`])
+    expect(journal.inbox).toEqual([])
+    expect(journal.owedIds).toEqual(['a-tyler']) // its reply is owed here, also after a restart
+    line.onEvent({ agentId: 'a-tyler', kind: 'user.consumed', uuid: 'u-j1' })
+    line.onEvent({ agentId: 'a-tyler', kind: 'text', text: 'Safe.', parentToolUseId: null })
+    line.onEvent({ agentId: 'a-tyler', kind: 'turn.end', outcome: 'done-waiting', reason: 'end_turn', result: 'Safe.' })
+    await until(() => texts().some(t => t.includes('Safe.')))
+    expect(journal.owedIds).toEqual([])
+  })
+
+  it('at the next start: handles what the last run took but never delivered, once', async () => {
+    // 501: taken, never handled. 502: already with its agent (that queue delivers it). 503: two starts failed on it.
+    const journal = fakeJournal({
+      inbox: [update(501, 'Tyler: from before the restart'), update(502, 'Tyler: already queued'), update(503, 'Tyler: poison', { tries: 2 })],
+      sources: { 'tg:502': 'a-tyler' },
+    })
+    const agents = village.map(a => ({ ...a }))
+    const { line, delivered } = makeLine(agents, { journal })
+    current = line
+    await until(() => journal.handled.length === 3)
+    expect(delivered).toEqual([{ agentId: 'a-tyler', text: '[Telegram] from before the restart' }])
+    expect(journal.inbox).toEqual([])
+    expect(logs.some(l => l.includes('update 503 given up on'))).toBe(true)
+  })
+
+  it('an agent that owed a reply answers on Telegram after it is carried on', async () => {
+    const journal = fakeJournal({ owed: ['a-tyler'] })
+    const agents = village.map(a => ({ ...a }))
+    const { line } = makeLine(agents, { journal })
+    current = line
+    // The engine's carry-on note is taken in by the resumed agent (nothing came through deliver() in this run).
+    line.onEvent({ agentId: 'a-tyler', kind: 'user.sent', uuid: 'note', text: 'The engine restarted while you were working. Carry on from where you stopped.', auto: 'resume' })
+    line.onEvent({ agentId: 'a-tyler', kind: 'user.consumed', uuid: 'note', folded: false })
+    line.onEvent({ agentId: 'a-tyler', kind: 'text', text: 'Picked it up again: the intro is fixed.', parentToolUseId: null })
+    line.onEvent({ agentId: 'a-tyler', kind: 'turn.end', outcome: 'done-waiting', reason: 'end_turn', result: 'Picked it up again: the intro is fixed.' })
+    await until(() => texts().some(t => t.includes('the intro is fixed')))
+    expect(journal.owedIds).toEqual([])
+    // Only that one turn: the next message typed in the Oasis is not answered on Telegram.
+    calls.length = 0
+    line.onEvent({ agentId: 'a-tyler', kind: 'user.consumed', uuid: 'typed-in-oasis', folded: false })
+    line.onEvent({ agentId: 'a-tyler', kind: 'text', text: 'An Oasis-only answer.', parentToolUseId: null })
+    line.onEvent({ agentId: 'a-tyler', kind: 'turn.end', outcome: 'done-waiting', reason: 'end_turn', result: 'An Oasis-only answer.' })
+    await sleep(150)
+    expect(texts().join('\n')).not.toContain('Oasis-only')
+  })
+
+  it('says nothing about agents stopping while the engine itself closes', async () => {
+    const journal = fakeJournal()
+    const agents = village.map(a => ({ ...a }))
+    const { line, delivered } = makeLine(agents, { journal })
+    current = line
+    push({ text: 'Tyler: long job' })
+    await until(() => delivered.length === 1)
+    line.onEvent({ agentId: 'a-tyler', kind: 'user.consumed', uuid: 'u1' })
+    await (line as unknown as { outbox: Promise<unknown> }).outbox
+    calls.length = 0
+    line.stop() // the engine's shutdown stops the line first, then the agents exit
+    line.onEvent({ agentId: 'a-tyler', kind: 'exit', code: null })
+    await sleep(100)
+    expect(texts().join('\n')).not.toContain('stopped before answering')
+    expect(journal.owedIds).toEqual(['a-tyler']) // still owed: the next start resumes it and the answer comes here
+  })
+})

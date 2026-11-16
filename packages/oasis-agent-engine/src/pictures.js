@@ -36,6 +36,7 @@ export function takePictures(images, { dir = PICTURE_DIR } = {}) {
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `${new Date().toISOString().slice(0, 10)}-${randomUUID()}${ext}`);
     fs.writeFileSync(file, bytes);
-    return { data: bytes.toString('base64'), mediaType, name, fileId: registerAttachment(file, mediaType, true) };
+    // path: the journal keeps it with a message that has not reached its agent yet (journal.js).
+    return { data: bytes.toString('base64'), mediaType, name, path: file, fileId: registerAttachment(file, mediaType, true) };
   });
 }

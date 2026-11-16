@@ -16,7 +16,9 @@ import { Observer } from './observe.js';
 import { HookObserver } from './hooks.js';
 import { listSessions, isTranscriptPath, readLiveRegistry, readLiveEntries, pidAlive, findSessionFile } from './sessions.js';
 import { execFileSync } from 'node:child_process';
-import { checkIn, isBridged, queueForBridge, aliveBridges } from './bridge.js';
+import { checkIn, isBridged, queueForBridge, aliveBridges, dumpInboxes, restoreInboxes } from './bridge.js';
+import { Journal, journalFileFor } from './journal.js';
+import { restartLine, transcriptTurnOpen, wasMidTurn } from './resume.js';
 import { readOlderHistory } from './history.js';
 import { loadRoster, saveRoster, saveRosterNow } from './roster.js';
 import { takeVoiceMessage } from './scribe.js';
@@ -33,6 +35,12 @@ import fs from 'node:fs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..', '..'); // af_oasis
 const ROSTER_FILE = process.env.OASIS_ROSTER || path.join(ROOT, 'data', 'agent-engine.local.json');
+/** What must survive a restart besides the roster (journal.js): next to the roster file. */
+const journal = new Journal(process.env.OASIS_JOURNAL || journalFileFor(ROSTER_FILE));
+/** OASIS_RESUME=0: mid-turn agents come back as "stopped mid-turn" and wait for a word, as before. */
+const RESUME_ON = process.env.OASIS_RESUME !== '0';
+/** This start, for /health and the HUD's engine pill: when, how the last run ended, who was told to carry on. */
+const restart = { startedAt: Date.now(), stop: null, resumed: [], redelivered: 0, line: null };
 const PORT = Number(process.env.OASIS_PORT || 4530);
 const HOST = process.env.OASIS_HOST || '127.0.0.1';
 const BACKLOG = 400;
@@ -72,6 +80,8 @@ const hub = {
     if (/^(status|init|meta|model|mode|effort|eyes|speak|voice|chrome|context|exit|permission\.)/.test(kind)) scheduleSnapshot();
   },
   eyes: (agentId) => captureEyes(agentId),
+  journal,
+  stopping: () => shuttingDown,
   /** Where this engine listens: agents get it as OASIS_ENGINE_URL. */
   url: `http://${HOST === '0.0.0.0' || HOST === '::' ? '127.0.0.1' : HOST}:${PORT}`,
   persist() {
@@ -208,17 +218,18 @@ const commands = {
   stageResult(msg) { return stage.result(msg); },
 
   /** images: pictures pasted or dropped in the Oasis ([{ data: base64, mediaType, name }], pictures.js). */
-  send({ agentId, text, priority, images }) {
+  send({ agentId, text, priority, images, source }) {
     const a = getAgent(agentId);
     const hasPictures = Array.isArray(images) && images.length > 0;
     if (a.kind !== 'owned' && hasPictures) {
       throw new Error('pictures cannot go to this session yet: it runs in another window and the Oasis mod only carries text there. Send the text alone, or use Move it here to send pictures');
     }
-    if (a.kind === 'owned') return a.send(text, { priority, images: hasPictures ? takePictures(images) : [] });
+    if (a.kind === 'owned') return a.send(text, { priority, images: hasPictures ? takePictures(images) : [], ...(typeof source === 'string' ? { source } : {}) });
     // A watched session: only if it runs the Oasis mod, which submits it there as a prompt of that same session.
     if (!text || !text.trim()) throw new Error('empty message');
     if (!isBridged(a.sessionId)) throw new Error('watching only: this session runs somewhere else without the Oasis plugin; use Move it here to talk to it');
     queueForBridge(a.sessionId, text);
+    journal.setBridge(dumpInboxes());
     return { queued: true, viaBridge: true };
   },
   /**
@@ -255,6 +266,7 @@ const commands = {
       }
     } else a.stop?.();
     if (!keep || a.kind !== 'owned') {
+      journal.forget(agentId);
       agents.delete(agentId);
       hub.emit(agentId, 'status', { status: 'idle', reason: 'removed' });
       hub.emit(agentId, 'removed', {});
@@ -265,9 +277,14 @@ const commands = {
   },
   restart({ agentId }) {
     const a = getAgent(agentId, { owned: true });
+    const wasDown = !a.proc;
     a.start();
+    // What its last process never took in goes out again, in order.
+    if (wasDown && a.proc) a.sendChain = a.sendChain.then(() => a.flushLeftovers()).catch(() => {});
     return a.snapshot();
   },
+  /** This start: when, how the last run ended, who was told to carry on, the line the HUD shows. */
+  restartInfo: () => restartInfo(),
 
   async observe({ sessionPath, name }) {
     if (!sessionPath || !isTranscriptPath(sessionPath)) throw new Error('sessionPath must be a .jsonl under ~/.claude/projects');
@@ -347,13 +364,15 @@ async function stopOtherHolders(sessionId, ours) {
 }
 
 const releasing = new Set();
+/** Agents coming back at start whose last process may still be going away (waitOutOrphan): not "opened elsewhere". */
+const restoring = new Set();
 async function letGoOfSessionsOpenElsewhere() {
   const owned = ownedAgents();
   if (!owned.length) return;
   const ours = new Set(owned.map((a) => a.proc?.pid).filter(Boolean));
   const entries = readLiveEntries();
   for (const a of owned) {
-    if (!a.sessionId || a.forkPending() || releasing.has(a.id)) continue;
+    if (!a.sessionId || a.forkPending() || releasing.has(a.id) || restoring.has(a.id)) continue;
     const other = entries.find((e) => e.sessionId === a.sessionId && !ours.has(e.pid));
     if (!other) continue;
     releasing.add(a.id);
@@ -461,7 +480,7 @@ const server = http.createServer(async (req, res) => {
   if (!requestAllowed(req)) return sendJson(res, 403, { error: 'origin not allowed' });
   try {
     if (req.method === 'GET' && url.pathname.startsWith('/file/')) return serveAttachment(url.pathname.slice('/file/'.length), res, req);
-    if (req.method === 'GET' && url.pathname === '/health') return sendJson(res, 200, { ok: true, agents: agents.size, clients: clients.size, claude: resolveClaude(), ears: earsStatus(), liveScribe: { model: LIVE_SCRIBE_MODEL, ready: hasLiveScribe() } });
+    if (req.method === 'GET' && url.pathname === '/health') return sendJson(res, 200, { ok: true, agents: agents.size, clients: clients.size, restart: restartInfo(), claude: resolveClaude(), ears: earsStatus(), liveScribe: { model: LIVE_SCRIBE_MODEL, ready: hasLiveScribe() } });
     if (req.method === 'GET' && url.pathname === '/api/agents') return sendJson(res, 200, snapshots());
     if (req.method === 'GET' && url.pathname === '/api/sessions') return sendJson(res, 200, await commands.listSessions({}));
     if (req.method === 'POST' && url.pathname === '/hook') {
@@ -472,6 +491,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/bridge/poll') {
       const body = JSON.parse((await readBody(req, 64 * 1024)) || '{}');
       const { messages, cameAlive } = checkIn(body);
+      if (messages.length) journal.setBridge(dumpInboxes()); // collected: no longer ours to keep
       if (cameAlive) { hub.log(`bridge: session ${body.sessionId.slice(0, 8)} connected (${body.surface || 'no surface'}, ${body.cwd || '?'})`); scheduleSnapshot(); }
       return sendJson(res, 200, { messages });
     }
@@ -537,7 +557,7 @@ wss.on('connection', (ws) => {
   for (const [id, list] of backlog) if (agents.has(id)) bl[id] = list;
   const show = pendingShow && Date.now() - pendingShow.at < 90000 && agents.has(pendingShow.agentId) ? pendingShow.agentId : undefined;
   pendingShow = null;
-  ws.send(JSON.stringify({ type: 'hello', agents: snapshots(), backlog: bl, server: { port: PORT, claude: resolveClaude().how }, ...(show ? { show } : {}) }));
+  ws.send(JSON.stringify({ type: 'hello', agents: snapshots(), backlog: bl, server: { port: PORT, claude: resolveClaude().how, restart: restartInfo() }, ...(show ? { show } : {}) }));
   ws.on('message', async (raw) => {
     let msg;
     try { msg = JSON.parse(String(raw)); } catch { return; }
@@ -556,23 +576,98 @@ wss.on('connection', (ws) => {
 });
 
 // ------------------------------------------------------------------ boot + shutdown
-function restoreRoster() {
-  const entries = loadRoster(ROSTER_FILE);
+function restartInfo() {
+  return { startedAt: restart.startedAt, stop: restart.stop, resumed: restart.resumed, redelivered: restart.redelivered, line: restart.line };
+}
+
+/** The last lines of a session's transcript (the last 256 KB), or null without one. */
+function transcriptEnd(sessionId, cwd) {
+  try {
+    const file = sessionId ? findSessionFile(sessionId, cwd) : null;
+    if (!file) return null;
+    const size = fs.statSync(file).size;
+    const n = Math.min(size, 256 * 1024);
+    const buf = Buffer.alloc(n);
+    const fd = fs.openSync(file, 'r');
+    try { fs.readSync(fd, buf, 0, n, size - n); } finally { fs.closeSync(fd); }
+    const lines = buf.toString('utf8').split('\n');
+    return n < size ? lines.slice(1) : lines; // the first piece may be half a line
+  } catch { return null; }
+}
+
+/**
+ * The last run's claude process for this agent, if it outlived its engine (a crash leaves it a few seconds: its
+ * stdin closes and it exits by itself; seen to take under 3 s). Two processes on one session branch its transcript,
+ * so the new one waits for it, and stops it if it does not go.
+ */
+async function waitOutOrphan(e) {
+  const pid = Number(e.pid);
+  if (!pid || pid === process.pid || !pidAlive(pid)) return;
+  const live = readLiveEntries().find((x) => x.pid === pid);
+  if (!live || live.sessionId !== e.sessionId) return; // the pid is someone else's by now
+  const until = Date.now() + 5000;
+  while (pidAlive(pid) && Date.now() < until) await sleep(200);
+  if (!pidAlive(pid)) return;
+  if (!isClaudeProcess(pid)) return;
+  hub.log(`[${e.name}] the last run's process (pid ${pid}) still holds session ${String(e.sessionId).slice(0, 8)}: stopping it`);
+  try { process.kill(pid); } catch { /* gone */ }
+  const gone = Date.now() + 5000;
+  while (pidAlive(pid) && Date.now() < gone) await sleep(150);
+}
+
+/**
+ * Agents come back at their desks with their sessions. One that was mid-turn when the last run stopped (resume.js
+ * wasMidTurn: the roster's turnOpenAt, checked against the transcript) is told once to carry on, and messages that
+ * were on their way to an agent (journal.js) go out again, in order. All of it also after an unplanned stop.
+ */
+async function restoreRoster() {
+  const stop = journal.previousStop();
+  restart.stop = stop;
+  const entries = loadRoster(ROSTER_FILE).filter((e) => e?.id && e.cwd);
+  const jobs = [];
   for (const e of entries) {
-    if (!e?.id || !e.cwd) continue;
-    const agent = new Agent(e, hub);
+    const open = typeof e.turnOpenAt === 'number' || (stop && !stop.planned) ? transcriptEnd(e.sessionId, e.cwd) : null;
+    const midTurn = wasMidTurn(e, open ? transcriptTurnOpen(open) : null, stop);
+    const { pid: _pid, turnOpenAt, ...spec } = e;
+    // Mid-turn shows as "stopped mid-turn" (outcome.js) until the carry-on note is out, and stays so if it cannot go.
+    const agent = new Agent(midTurn ? { ...spec, turnOpenAt: typeof turnOpenAt === 'number' ? turnOpenAt : (stop?.at || Date.now()) } : spec, hub);
     agents.set(agent.id, agent);
-    agent.start(); // resumes e.sessionId (or claims it if no transcript exists yet)
+    const resume = midTurn && RESUME_ON;
+    if (resume) restart.resumed.push({ id: agent.id, name: agent.name });
+    restoring.add(agent.id);
+    jobs.push((async () => {
+      try { await waitOutOrphan(e); } finally { restoring.delete(agent.id); }
+      if (shuttingDown) return;
+      agent.start(); // resumes e.sessionId (or claims it if no transcript exists yet)
+      if (!agent.proc) return;
+      const run = agent.sendChain.then(() => agent.flushLeftovers({ resume }));
+      agent.sendChain = run.catch(() => {});
+      const done = await run.catch((err) => { hub.log(`[${agent.name}] resume failed: ${err.message}`); return null; });
+      if (done?.delivered) { restart.redelivered += done.delivered; restart.line = restartLine(restart); }
+      if (resume && !done?.resumed) hub.log(`[${agent.name}] was mid-turn but could not be told to carry on`);
+      else if (resume) hub.log(`[${agent.name}] was mid-turn: told to carry on${done.delivered ? `, ${done.delivered} queued message(s) delivered` : ''}`);
+    })());
   }
+  const waiting = restoreInboxes(journal.bridgeInboxes());
+  if (waiting) hub.log(`${waiting} message(s) wait again for their desktop sessions (bridge)`);
+  restart.line = restartLine(restart);
   if (entries.length) hub.log(`restored ${entries.length} agent(s) from ${ROSTER_FILE}`);
+  if (restart.line) hub.log(restart.line + (stop?.reason ? ` (last stop: ${stop.reason})` : ''));
+  scheduleSnapshot();
+  await Promise.all(jobs);
 }
 
 let shuttingDown = false;
 function shutdown(sig) {
   if (shuttingDown) return;
   shuttingDown = true;
-  hub.log(`${sig}: stopping ${ownedAgents().length} agent(s)`);
+  const working = ownedAgents().filter((a) => a.turnOpenAt);
+  hub.log(`${sig}: stopping ${ownedAgents().length} agent(s)${working.length ? `; mid-turn, to be resumed at the next start: ${working.map((a) => a.name).join(', ')}` : ''}`);
+  // The goodbye: who is mid-turn (the roster's turnOpenAt), what waits for whom (the journal, already on disk), and
+  // that this stop was meant.
   saveRosterNow(ROSTER_FILE, ownedAgents().map((a) => a.rosterEntry()));
+  journal.setBridge(dumpInboxes());
+  journal.stop({ planned: true, reason: sig });
   stopEars();
   telegram?.stop();
   for (const a of agents.values()) { if (a.kind === 'owned') a.kill(); else a.stop?.(); }
@@ -584,10 +679,25 @@ function shutdown(sig) {
 }
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+// Windows: closing the console window arrives as SIGHUP (about 10 s before the process is ended), Ctrl+Break as SIGBREAK.
+process.on('SIGHUP', () => shutdown('the window closed'));
+process.on('SIGBREAK', () => shutdown('SIGBREAK'));
+// A crash that can still speak says when and why, so the next start does not have to guess.
+process.on('uncaughtException', (err) => {
+  console.error(err);
+  if (!shuttingDown) {
+    try { saveRosterNow(ROSTER_FILE, ownedAgents().map((a) => a.rosterEntry())); } catch { /* the journal still says it */ }
+    journal.stop({ planned: false, reason: `crash: ${String(err?.message || err).slice(0, 200)}` });
+  }
+  process.exit(1);
+});
 process.on('exit', () => { for (const a of ownedAgents()) { try { a.proc?.kill(); } catch { /* ignore */ } } });
 
 server.listen(PORT, HOST, () => {
   hub.log(`Oasis agent engine on http://${HOST}:${PORT}  (ws /ws)  claude: ${resolveClaude().how}`);
-  restoreRoster();
-  telegram = startTelegram({ port: PORT, root: ROOT, log: hub.log, listAgents: snapshots, send: (agentId, text) => commands.send({ agentId, text }), interrupt: (agentId) => commands.interrupt({ agentId }) });
+  journal.load();
+  journal.beat();
+  // Telegram first (it only starts polling on the next tick): a resumed agent that owes a reply there is known to it.
+  telegram = startTelegram({ port: PORT, root: ROOT, log: hub.log, journal, listAgents: snapshots, send: (agentId, text, opts) => commands.send({ agentId, text, ...(opts?.source ? { source: opts.source } : {}) }), interrupt: (agentId) => commands.interrupt({ agentId }) });
+  void restoreRoster();
 });

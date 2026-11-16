@@ -11,6 +11,11 @@
 //        Pings: an agent at needs-decision (amber) or error (red) for PING_MS (2 min) gets one short message per state.
 //        The daily check-in (checkin.js): at 21:00 local, the day's work from the Mindcraft work counter. /checkin.
 //
+// Across engine restarts (journal.js): an update taken from the bot is kept until it is handed to an agent, and handled
+// at the next start if the engine stopped in between; a message handed to an agent rides in that agent's journal queue
+// (source "tg:<update id>") until its CLI has it; and an agent whose turn a Telegram message started still owes its
+// reply here after the restart (the turn it is resumed into answers on Telegram).
+//
 // Runs only in the real engine (port 4530) unless OASIS_TELEGRAM=1; OASIS_TELEGRAM=0 turns it off. Test engines on other
 // ports never touch the bot. The token never reaches a log line, a message or an error text (redact()).
 import fs from 'node:fs';
@@ -27,6 +32,8 @@ const PHOTO_MAX = 10 * 1024 * 1024;
 const DOC_MAX = 50 * 1024 * 1024;
 const VOICE_MAX = 20 * 1024 * 1024; // the Bot API's getFile limit
 const TYPING_MAX_MS = 30 * 60_000;
+/** After a restart, an agent that owed a reply here still owes it for this long (journal.js `owed`). */
+const REARM_MS = 15 * 60_000;
 const SCRIBE_API = 'https://api.elevenlabs.io/v1/speech-to-text';
 const SCRIBE_ENV = 'C:/cb_video/claude/.env'; // where C:/8f_dirk/scribe.py reads ELEVENLABS_API_KEY
 
@@ -244,6 +251,8 @@ export class TelegramLine {
     this.scribeApi = o.scribeApi || process.env.OASIS_SCRIBE_API || SCRIBE_API;
     this.scribeKey = o.scribeKey || (() => readScribeKey());
     this.rawLog = o.log || ((...a) => console.log(...a));
+    this.journal = o.journal || null;
+    this.leftDone = false;
     this.tokens = new Set(); // every token seen, for redact()
     this.cfg = null;
     this.refreshConfig();
@@ -412,6 +421,10 @@ export class TelegramLine {
   start() {
     if (this.running) return this;
     this.running = true;
+    // Agents that owed a reply here when the last run stopped: the next message they take in (the carry-on note,
+    // or the owner's own message going out again) is answered on Telegram.
+    const owing = new Set([...(this.journal?.owed() || []), ...(this.journal?.agentsWithSource('tg:') || [])]);
+    for (const id of owing) this.turn(id).rearm = Date.now();
     this.abort = new AbortController();
     void this.loop();
     if (this.checkinEveryMs > 0) {
@@ -494,6 +507,10 @@ export class TelegramLine {
         await sleep(30_000, this.abort.signal);
         continue;
       }
+      if (!this.leftDone) {
+        this.leftDone = true;
+        await this.handleLeft();
+      }
       try {
         this.stats.lastPollAt = Date.now();
         const params = { timeout: this.pollTimeoutS, allowed_updates: ['message'] };
@@ -504,10 +521,14 @@ export class TelegramLine {
         backoff = 1000;
         said409 = false;
         for (const u of updates || []) {
-          // Confirm first: a message that crashes its handler is not handled again at every restart.
+          // Confirm first (the bot never gives it out again), but keep it in the journal until it is handled: a
+          // restart in between handles it at the next start, twice at most (a message that crashes its handler
+          // is not tried again at every restart).
+          this.journal?.telegramTook(u);
           this.state.offset = u.update_id + 1;
           this.saveState();
           try { await this.onUpdate(u); } catch (e) { this.log(`update ${u.update_id} failed: ${e.message}`); }
+          this.journal?.telegramHandled(u.update_id);
         }
       } catch (e) {
         if (!this.running) break;
@@ -526,6 +547,20 @@ export class TelegramLine {
     }
   }
 
+  /** Updates the last run took from the bot but did not finish handling (the engine stopped in between). */
+  async handleLeft() {
+    for (const u of this.journal?.telegramLeft() || []) {
+      const id = u.update_id;
+      if ((u.tries || 0) >= 2) this.log(`update ${id} given up on: two starts did not get through it`);
+      else if (this.journal.hasSource(`tg:${id}`)) { /* already with its agent: that queue delivers it */ }
+      else {
+        this.log(`update ${id} was taken before the restart and not handled: handling it now`);
+        try { await this.onUpdate(u); } catch (e) { this.log(`update ${id} failed: ${e.message}`); }
+      }
+      this.journal.telegramHandled(id);
+    }
+  }
+
   async onUpdate(u) {
     const m = u.message;
     if (!m) return;
@@ -536,13 +571,13 @@ export class TelegramLine {
     this.stats.received++;
     const sentAt = (m.date || 0) * 1000;
     const late = sentAt && Date.now() - sentAt > 10 * 60_000 ? sentAt : 0;
-    if (m.voice || m.audio || m.video_note) return this.onVoice(m, late);
+    if (m.voice || m.audio || m.video_note) return this.onVoice(m, late, u.update_id);
     const text = m.text ?? m.caption;
     if (!text) { this.say('I can take text and voice notes for now.'); return; }
-    return this.handleText(text, { late });
+    return this.handleText(text, { late, updateId: u.update_id });
   }
 
-  async onVoice(m, late) {
+  async onVoice(m, late, updateId) {
     const v = m.voice || m.audio || m.video_note;
     const key = this.scribeKey();
     if (!key) { this.say("Voice notes aren't wired yet (no ElevenLabs key)."); return; }
@@ -561,7 +596,7 @@ export class TelegramLine {
     }
     if (!text) { this.say("Heard nothing I could make out."); return; }
     this.say(`heard: ${text.length > 300 ? `${text.slice(0, 299)}…` : text}`);
-    return this.handleText(text, { voice: true, late });
+    return this.handleText(text, { voice: true, late, updateId });
   }
 
   /** ElevenLabs Scribe (scribe_v2, as in C:/8f_dirk/scribe.py), with the village's names as key terms. */
@@ -580,7 +615,7 @@ export class TelegramLine {
   }
 
   // ---------------------------------------------------------------- routing
-  async handleText(text, { voice = false, late = 0 } = {}) {
+  async handleText(text, { voice = false, late = 0, updateId = null } = {}) {
     const agents = this.listAgents();
     const r = parseRoute(text, agents);
     switch (r.kind) {
@@ -588,11 +623,11 @@ export class TelegramLine {
       case 'command': return this.onCommand(r.command, r.arg, agents);
       case 'unknown': return this.say(`No agent called "${r.name}". Here's who's around:\n${agentListText(agents)}`);
       case 'ambiguous': return this.say(`"${r.name}" could be ${r.matches.map((a) => a.name).join(' or ')}. Here's who's around:\n${agentListText(agents)}`);
-      case 'agent': return this.deliver(r.agent, r.text, { voice, late });
+      case 'agent': return this.deliver(r.agent, r.text, { voice, late, updateId });
       default: {
         const anorak = defaultAgent(agents);
         if (!anorak) return this.say(`Anorak isn't in the village right now. Name someone ("Tyler: ...").\n${agentListText(agents)}`);
-        return this.deliver(anorak, r.text, { voice, late });
+        return this.deliver(anorak, r.text, { voice, late, updateId });
       }
     }
   }
@@ -640,11 +675,18 @@ export class TelegramLine {
 
   turn(agentId) {
     let t = this.turns.get(agentId);
-    if (!t) this.turns.set(agentId, (t = { name: agentId, expect: new Set(), uuids: new Set(), bridge: [], armed: false, finalText: '', files: [], captions: new Map(), repliedAt: 0, since: 0 }));
+    if (!t) this.turns.set(agentId, (t = { name: agentId, expect: new Set(), uuids: new Set(), bridge: [], armed: false, rearm: 0, finalText: '', files: [], captions: new Map(), repliedAt: 0, since: 0 }));
     return t;
   }
 
-  async deliver(agent, text, { voice = false, late = 0 } = {}) {
+  /** Who owes a reply here right now, kept in the journal so a restart does not forget it. */
+  syncOwed() {
+    if (!this.journal) return;
+    const now = Date.now();
+    this.journal.setOwed([...this.turns].filter(([, t]) => t.armed || t.uuids.size || t.expect.size || t.bridge.length || (t.rearm && now - t.rearm < REARM_MS)).map(([id]) => id));
+  }
+
+  async deliver(agent, text, { voice = false, late = 0, updateId = null } = {}) {
     if (!canTalk(agent)) return this.say(`${agent.name} runs somewhere else without the Oasis plugin; I can only watch it.`);
     const tag = `[Telegram${voice ? ' voice note' : ''}${late ? `, sent ${hhmm(late)}` : ''}]`;
     const tagged = `${tag} ${text}`;
@@ -652,7 +694,7 @@ export class TelegramLine {
     t.name = agent.name;
     t.expect.add(tagged);
     try {
-      const res = await this.sendToAgent(agent.id, tagged);
+      const res = await this.sendToAgent(agent.id, tagged, updateId != null ? { source: `tg:${updateId}` } : undefined);
       if (res?.uuid && t.expect.has(tagged)) { t.expect.delete(tagged); t.uuids.add(res.uuid); }
       if (res?.viaBridge) { t.expect.delete(tagged); t.bridge.push({ text: tagged, at: Date.now() }); }
       t.since = Date.now();
@@ -660,8 +702,10 @@ export class TelegramLine {
       this.typing();
     } catch (e) {
       t.expect.delete(tagged);
-      this.say(`Not delivered to ${agent.name}: ${e.message}`);
+      // While the engine closes, the agent's journal keeps the message and the next start delivers it.
+      if (this.running) this.say(`Not delivered to ${agent.name}: ${e.message}`);
     }
+    this.syncOwed();
   }
 
   /** "typing…" in the chat while an agent works on a Telegram message (Telegram shows it for about 5 s per call). */
@@ -698,6 +742,11 @@ export class TelegramLine {
 
   handleEvent(e) {
     if (!e || e.history || e.kind === 'text.delta') return;
+    this.handleAgentEvent(e);
+    if (this.turns.size || e.kind === 'removed') this.syncOwed();
+  }
+
+  handleAgentEvent(e) {
     const id = e.agentId;
     if (e.kind === 'removed') {
       const gone = this.turns.get(id);
@@ -716,6 +765,20 @@ export class TelegramLine {
         if (t.expect.delete(e.text)) t.uuids.add(e.uuid);
         return;
       case 'user.consumed':
+        // Back from a restart, owing a reply here: the first message it takes in (the carry-on note, or the
+        // owner's message going out again) starts the turn that answers on Telegram.
+        if (t.rearm) {
+          const fresh = Date.now() - t.rearm < REARM_MS;
+          t.rearm = 0;
+          if (fresh && !e.dropped) {
+            t.uuids.delete(e.uuid);
+            t.name = this.nameOf(id);
+            t.since = Date.now();
+            if (!t.armed) { t.armed = true; t.finalText = ''; t.files = []; }
+            this.typing();
+            return;
+          }
+        }
         if (!t.uuids.delete(e.uuid)) return;
         if (e.dropped) this.say(`${t.name} never took your message (${e.dropped}).`);
         else if (!t.armed) { t.armed = true; t.finalText = ''; t.files = []; }
@@ -747,6 +810,8 @@ export class TelegramLine {
         if (t.armed) this.reply(id, e, t);
         return;
       case 'exit':
+        // The engine itself is closing: the agent is resumed at the next start and answers then.
+        if (!this.running) return;
         if (t.armed || t.uuids.size) {
           this.say(`${t.name} stopped before answering${e.code != null ? ` (exit code ${e.code})` : ''}.`);
           t.armed = false; t.uuids.clear(); t.repliedAt = Date.now();
@@ -829,7 +894,7 @@ export class TelegramLine {
  * The engine's Telegram line, or null when it should stay off: test engines (any port but 4530) unless OASIS_TELEGRAM=1,
  * OASIS_TELEGRAM=0, or no usable bot config. Paths and the API base can be overridden for tests.
  */
-export function startTelegram({ port, root, log, listAgents, send, interrupt }) {
+export function startTelegram({ port, root, log, listAgents, send, interrupt, journal = null }) {
   const flag = process.env.OASIS_TELEGRAM;
   if (flag === '0' || (flag !== '1' && Number(port) !== 4530)) return null;
   const line = new TelegramLine({
@@ -838,7 +903,7 @@ export function startTelegram({ port, root, log, listAgents, send, interrupt }) 
     apiBase: process.env.OASIS_TELEGRAM_API,
     pingMs: Number(process.env.OASIS_TELEGRAM_PING_MS) || PING_MS,
     checkinEveryMs: process.env.OASIS_TELEGRAM_CHECKIN_MS != null ? Number(process.env.OASIS_TELEGRAM_CHECKIN_MS) : undefined, // 0: no timer (tests)
-    listAgents, send, interrupt, log,
+    listAgents, send, interrupt, log, journal,
   });
   if (!line.cfg.ok) { line.log(`off: ${line.cfg.error || 'the bot config lacks enabled, botToken or chatId'}`); return null; }
   return line.start();

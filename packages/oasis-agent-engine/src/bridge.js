@@ -34,6 +34,30 @@ export function queueForBridge(sessionId, text) {
   bridges.get(sessionId).inbox.push({ text, at: Date.now() });
 }
 
+/** Every inbox that holds something, for the journal (journal.js): {sessionId: [{text, at}]}. */
+export function dumpInboxes() {
+  const out = {};
+  for (const [id, b] of bridges) if (b.inbox.length) out[id] = b.inbox.map((m) => ({ text: m.text, at: m.at }));
+  return out;
+}
+
+/**
+ * After an engine restart: messages that were still waiting for a session's mod wait again, for KEEP_MS from now.
+ * The session counts as connected again at its next poll, about a second later, and collects them then.
+ */
+export function restoreInboxes(inboxes, now = Date.now()) {
+  let n = 0;
+  for (const [sessionId, list] of Object.entries(inboxes || {})) {
+    if (!/^[0-9a-f-]{36}$/i.test(sessionId) || !Array.isArray(list)) continue;
+    const inbox = list.filter((m) => m && typeof m.text === 'string').map((m) => ({ text: m.text, at: now }));
+    if (!inbox.length) continue;
+    const b = bridges.get(sessionId);
+    if (b) b.inbox.push(...inbox); else bridges.set(sessionId, { lastSeen: 0, cwd: null, surface: null, inbox });
+    n += inbox.length;
+  }
+  return n;
+}
+
 /** Session ids whose bridge is alive right now (to notice one going quiet). */
 export function aliveBridges() {
   const now = Date.now();

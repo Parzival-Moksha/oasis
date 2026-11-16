@@ -27,6 +27,8 @@ import { worldToolsArgs } from './worldtools.js';
 import { chromeArgs } from './chrome.js';
 import { VOICE_DEFAULT, VOICE_NOTE, VOICE_OFF_NOTE, isVoiceKey, voicePickNote } from './voice.js';
 import { outcomeForRoster, restoreOutcome, statusForOutcome } from './outcome.js';
+import { RESUME_TEXT, RESUMED_REASON } from './resume.js';
+import { registerAttachment } from './files.js';
 
 const SANDBOX_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'sandbox');
 /** The helper an agent runs to pick its own voice. */
@@ -87,6 +89,10 @@ export class Agent {
     // It has been told once that it may pick one.
     this.voiceOffered = spec.voiceOffered === true;
     this.sendChain = Promise.resolve(); // messages go out in the order they were sent, also while one waits for its picture
+    /** uuids of messages waiting in sendChain: a leftover pass (flushLeftovers) leaves those to their own turn in the chain. */
+    this.inFlight = new Set();
+    /** When this agent was told to carry on after an engine restart (until that turn ends): its sign says "resumed". */
+    this.resumedAt = null;
     this.hub = hub;
     this.proc = null;
     this.status = STATUS.IDLE;
@@ -132,11 +138,12 @@ export class Agent {
       permissions: [...this.permissions.values()].map((r) => this.describePermission(r)),
       context: this.lastContext, models: this.meta.models || null,
       lastOutcome: this.lastOutcome ? outcomeForRoster(this.lastOutcome) : null,
+      resumedAt: this.resumedAt,
     };
   }
 
   rosterEntry() {
-    return { id: this.id, name: this.name, cwd: this.cwd, sessionId: this.sessionId, model: this.model, permissionMode: this.permissionMode, effort: this.effort, eyes: this.eyes, speak: this.speak, ...(this.voiceChoice ? { voiceChoice: this.voiceChoice } : {}), ...(this.voiceOffered ? { voiceOffered: true } : {}), ...(this.worldTools ? {} : { worldTools: false }), ...(this.chrome ? { chrome: true } : {}), ...(this.lastOutcome ? { lastOutcome: outcomeForRoster(this.lastOutcome) } : {}), ...(this.turnOpenAt ? { turnOpenAt: this.turnOpenAt } : {}) };
+    return { id: this.id, name: this.name, cwd: this.cwd, sessionId: this.sessionId, model: this.model, permissionMode: this.permissionMode, effort: this.effort, eyes: this.eyes, speak: this.speak, ...(this.voiceChoice ? { voiceChoice: this.voiceChoice } : {}), ...(this.voiceOffered ? { voiceOffered: true } : {}), ...(this.worldTools ? {} : { worldTools: false }), ...(this.chrome ? { chrome: true } : {}), ...(this.lastOutcome ? { lastOutcome: outcomeForRoster(this.lastOutcome) } : {}), ...(this.turnOpenAt ? { turnOpenAt: this.turnOpenAt } : {}), ...(this.proc?.pid ? { pid: this.proc.pid } : {}) };
   }
 
   // ------------------------------------------------------------------ process
@@ -360,6 +367,7 @@ export class Agent {
     for (const key of matchReplay(this.pendingUser, { uuid: msg.uuid, text: echoText(msg.message?.content) })) {
       const p = this.pendingUser.get(key);
       this.pendingUser.delete(key);
+      this.hub.journal?.done(this.id, key); // it is in the transcript now
       // folded = taken into the turn that was already running when we sent it (not a new turn).
       const folded = p.turnWasRunning && p.turnIndex === this.turnIndex;
       this.emit('user.consumed', { uuid: key, folded, waitedMs: Date.now() - p.sentAt });
@@ -371,12 +379,14 @@ export class Agent {
     const p = this.pendingUser.get(key);
     if (!p) return;
     this.pendingUser.delete(key);
+    this.hub.journal?.done(this.id, key);
     this.emit('user.consumed', { uuid: key, folded: false, waitedMs: Date.now() - p.sentAt, dropped: reason });
   }
 
   afterResult() {
     this.turnRunning = false;
     this.turnOpenAt = null;
+    this.resumedAt = null;
     if (this.lastOutcome && typeof this.lastOutcome.at !== 'number') this.lastOutcome = { ...this.lastOutcome, at: Date.now() };
     this.persist();
     for (const key of expiredAtResult(this.pendingUser, this.turnIndex || 0)) this.dropPending(key, 'expired');
@@ -432,23 +442,108 @@ export class Agent {
    */
   /** voice: a voice message's recording ({ fileId, mime, durationMs }, scribe.js): its transcript is `text`. */
   /** images: pictures the owner pasted or dropped (pictures.js takePictures): image blocks after the text. */
-  send(text, { priority, voice, images } = {}) {
+  /**
+   * source: where it came from when not the Oasis page ("tg:<update id>"), kept with it in the journal.
+   * From here until the CLI takes it in, the message is in the journal (journal.js): an engine restart, a crash or
+   * this agent's process dying in between delivers it again at the next start, under the same uuid.
+   */
+  send(text, { priority, voice, images, source } = {}) {
     const pictures = Array.isArray(images) ? images : [];
     if ((!text || !text.trim()) && !pictures.length) return Promise.reject(new Error('empty message'));
-    const run = this.sendChain.then(() => this.sendNow(text || '', { priority, voice, images: pictures }));
-    this.sendChain = run.catch(() => {});
+    const uuid = randomUUID();
+    const kept = pictures.filter((p) => p.path).map((p) => ({ path: p.path, mediaType: p.mediaType, name: p.name }));
+    this.hub.journal?.queue(this.id, { uuid, text: text || '', ...(priority ? { priority } : {}), ...(source ? { source } : {}), ...(kept.length ? { images: kept } : {}) });
+    this.inFlight.add(uuid);
+    const run = this.sendChain.then(() => this.sendNow(text || '', { uuid, priority, voice, images: pictures }));
+    this.sendChain = run.then(() => { this.inFlight.delete(uuid); }, () => {
+      this.inFlight.delete(uuid);
+      // The sender was told it failed: it is theirs to send again, not ours. Unless the engine is closing: then
+      // nobody may be left to hear that, and the next start delivers it.
+      if (!this.hub.stopping?.()) this.hub.journal?.done(this.id, uuid);
+    });
     return run;
   }
 
-  async sendNow(text, { priority, voice, images = [] } = {}) {
-    if (!this.proc) this.start();
-    if (!this.proc) throw new Error(this.statusReason);
+  async sendNow(text, opts = {}) {
+    if (!this.proc) {
+      this.start();
+      if (!this.proc) throw new Error(this.statusReason);
+      // The process was down (it crashed, or was stopped): what it never took in goes first.
+      await this.flushLeftovers();
+    }
+    return this.deliver(text, opts);
+  }
+
+  /**
+   * After a start: the journal's messages for this agent that its CLI never took in, oldest first, each under its
+   * old uuid. One whose uuid is already in the transcript was taken in after all and is only crossed off.
+   * resume: the last run was cut off mid-turn; it is told to carry on first, once (the note is a journal entry
+   * like any other, so a second restart before it is taken in sends that same one, not another).
+   * -> { resumed, delivered }
+   */
+  async flushLeftovers({ resume = false } = {}) {
+    const journal = this.hub.journal;
+    if (!journal) return { resumed: false, delivered: 0 };
+    // What the CLI took in after all (its uuid is in the transcript) is crossed off first. That goes for an earlier
+    // carry-on note too: taken in and then cut off again, the agent gets a new one.
+    const waiting = journal.queuedFor(this.id);
+    if (waiting.length) {
+      const tail = this.transcriptTail();
+      for (const e of waiting) if (tail.includes(`"uuid":"${e.uuid}"`)) journal.done(this.id, e.uuid);
+    }
+    if (resume && !journal.queuedFor(this.id).some((e) => e.resume)) {
+      journal.queue(this.id, { uuid: randomUUID(), text: RESUME_TEXT, resume: true }, { first: true });
+    }
+    const left = journal.queuedFor(this.id).filter((e) => !this.inFlight.has(e.uuid) && !this.pendingUser.has(e.uuid));
+    let resumed = false;
+    let delivered = 0;
+    let wrote = 0;
+    for (const e of left) {
+      try {
+        // The second one waits until the first has started its turn: written to an idle CLI together, the later
+        // ones would count as "sent before this turn" and be given up on when that turn ends (pending.js).
+        if (wrote === 1) await this.untilTurnRuns();
+        await this.deliver(e.text, { uuid: e.uuid, priority: e.priority, images: loadPictures(e.images), resume: e.resume === true });
+        wrote += 1;
+        if (e.resume) resumed = true; else delivered += 1;
+      } catch (err) {
+        this.hub.log(`[${this.name}] a queued message could not go out again (${err.message}); it stays for the next start`);
+        break; // keep the order: nothing later overtakes it
+      }
+    }
+    return { resumed, delivered };
+  }
+
+  /** Resolves when a turn runs (the CLI's init), or after `ms` whatever happened. */
+  untilTurnRuns(ms = 20000) {
+    return new Promise((resolve) => {
+      const until = Date.now() + ms;
+      const tick = () => (this.turnRunning || !this.proc || Date.now() > until ? resolve() : setTimeout(tick, 100));
+      tick();
+    });
+  }
+
+  /** The end of the session's transcript as text (to see which message uuids the CLI already has). */
+  transcriptTail(bytes = 1024 * 1024) {
+    try {
+      const file = this.sessionId ? findSessionFile(this.sessionId, this.cwd) : null;
+      if (!file) return '';
+      const size = fs.statSync(file).size;
+      const n = Math.min(size, bytes);
+      const buf = Buffer.alloc(n);
+      const fd = fs.openSync(file, 'r');
+      try { fs.readSync(fd, buf, 0, n, size - n); } finally { fs.closeSync(fd); }
+      return buf.toString('utf8');
+    } catch { return ''; }
+  }
+
+  async deliver(text, { uuid = randomUUID(), priority, voice, images = [], resume = false } = {}) {
+    if (!this.proc) throw new Error(this.statusReason || 'agent process not running');
     let picture = null;
-    if (this.eyes && this.hub.eyes) {
+    if (this.eyes && this.hub.eyes && !resume) {
       try { picture = await this.hub.eyes(this.id); } catch { picture = null; }
       if (!this.proc) throw new Error(this.statusReason || 'agent process not running');
     }
-    const uuid = randomUUID();
     this.sentSinceStart = true;
     const turnWasRunning = this.turnRunning;
     this.pendingUser.set(uuid, { text, sentAt: Date.now(), turnWasRunning, turnIndex: this.turnIndex || 0 });
@@ -465,8 +560,8 @@ export class Agent {
     // Voice on: the note that asks for a <spoken> line rides along (voice.js); the thread never shows it.
     // Not on a slash command (/compact, /clear): the CLI only takes those as plain text.
     const command = /^\s*\/[a-z]/i.test(text);
-    const voiceNote = command ? null : this.speak ? VOICE_NOTE : this.speakWentOff ? VOICE_OFF_NOTE : null;
-    if (!command) this.speakWentOff = false;
+    const voiceNote = command || resume ? null : this.speak ? VOICE_NOTE : this.speakWentOff ? VOICE_OFF_NOTE : null;
+    if (!command && !resume) this.speakWentOff = false;
     if (voiceNote) content = [...(Array.isArray(content) ? content : [{ type: 'text', text }]), { type: 'text', text: voiceNote }];
     // Once: a voiced agent that has no voice of its own yet learns how to pick one.
     if (voiceNote === VOICE_NOTE && !this.voiceChoice && !this.voiceOffered) {
@@ -479,10 +574,14 @@ export class Agent {
     try { this.write(msg); } catch (e) { this.pendingUser.delete(uuid); throw e; }
     this.norm.openTurn();
     const shown = images.map((p) => ({ fileId: p.fileId, name: p.name, mediaType: p.mediaType }));
-    this.emit('user.sent', { uuid, text, midTurn: turnWasRunning, priority: msg.priority || 'next', ...(picture?.data ? { eyes: true } : {}), ...(voice ? { voice } : {}), ...(shown.length ? { images: shown } : {}) });
+    this.emit('user.sent', { uuid, text, midTurn: turnWasRunning, priority: msg.priority || 'next', ...(picture?.data ? { eyes: true } : {}), ...(voice ? { voice } : {}), ...(shown.length ? { images: shown } : {}), ...(resume ? { auto: 'resume' } : {}) });
+    if (resume) {
+      this.resumedAt = Date.now();
+      this.emit('notice', { subtype: 'resumed', text: 'The engine restarted while this agent was working: it was told to carry on.' });
+    }
     // An open permission / question / plan still blocks the CLI: talking to it doesn't resolve that.
     if (this.permissions.size) this.recomputeStatus();
-    else this.setStatus(STATUS.WORKING, turnWasRunning ? 'message queued mid-turn' : 'message sent');
+    else this.setStatus(STATUS.WORKING, resume || this.resumedAt ? RESUMED_REASON : turnWasRunning ? 'message queued mid-turn' : 'message sent');
     return { uuid, midTurn: turnWasRunning };
   }
 
@@ -639,4 +738,16 @@ export class Agent {
   }
 
   persist() { this.hub.persist(); }
+}
+
+/** Pictures of a journal entry, read back from the files the page's upload left (pictures.js). A missing file is skipped. */
+function loadPictures(images) {
+  const out = [];
+  for (const p of Array.isArray(images) ? images : []) {
+    try {
+      const data = fs.readFileSync(p.path).toString('base64');
+      out.push({ data, mediaType: p.mediaType, name: p.name, path: p.path, fileId: registerAttachment(p.path, p.mediaType, true) });
+    } catch { /* gone */ }
+  }
+  return out;
 }
