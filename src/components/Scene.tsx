@@ -107,6 +107,8 @@ import { GAME_HUD_TEXT, GameKeycap } from './forge/GameKeycap'
 import { VoiceTypeMic } from './forge/VoiceTypeMic'
 import { PerfHeartbeat } from './forge/PerfHeartbeat'
 import { SunShadows } from './forge/SunShadows'
+import { GameMenu, OPEN_CONFIG_EVENT, OPEN_HELP_EVENT } from './game-menu/GameMenu'
+import { GameMenuCameraDrift } from './game-menu/GameMenuCameraDrift'
 import { useRailMenuExclusion } from '@/hooks/useRailMenuExclusion'
 import { MobileOasisControls, useIsMobileOasis } from './forge/MobileOasisControls'
 import { CombatBoltLayer } from './forge/CombatBoltLayer'
@@ -1439,6 +1441,22 @@ export default function Scene() {
   const [actionLogOpen, setActionLogOpen] = useState(false)
   const [merlinOpen, setMerlinOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
+  // The main menu's Help tile opens it; Escape closes it (before Escape means the main menu again).
+  useEffect(() => {
+    const open = () => setHelpOpen(true)
+    window.addEventListener(OPEN_HELP_EVENT, open)
+    return () => window.removeEventListener(OPEN_HELP_EVENT, open)
+  }, [])
+  useEffect(() => {
+    if (!helpOpen) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.stopImmediatePropagation()
+      setHelpOpen(false)
+    }
+    window.addEventListener('keydown', onKey, { capture: true })
+    return () => window.removeEventListener('keydown', onKey, { capture: true })
+  }, [helpOpen])
   const [claudeCodeOpen, setClaudeCodeOpen] = useState(false)
   const [codexOpen, setCodexOpen] = useState(false)
   const [anorakProOpen, setAnorakProOpen] = useState(false)
@@ -2086,6 +2104,8 @@ export default function Scene() {
         {!hostedMode && <PerfHeartbeat readFps={readLatestFps} />}
         {/* Soft shadows from the world's sun (Config → Graphics → Shadows) */}
         <SunShadows />
+        {/* The camera's slow drift behind the main menu (Esc). No frame callback while the menu is closed. */}
+        <GameMenuCameraDrift />
     </Canvas>
   )
   const showCenterCrosshair = (
@@ -2464,6 +2484,9 @@ export default function Scene() {
       {/* 📤 Upload Panel — focused mp3/mp4/image upload triggered from spellbook */}
       <UploadPanel />
 
+      {/* Main menu: Esc when nothing else is open. Renders nothing while closed. */}
+      <GameMenu />
+
       {/* OnboardingModal nuked — profile setup lives in ProfileButton */}
 
       {/* ░▒▓ ANONYMOUS CTA — conversion hook ▓▒░ */}
@@ -2592,6 +2615,12 @@ function SettingsMenu({ children, opacity }: { children: React.ReactNode; opacit
   const playClick = () => useAudioManager.getState().play('buttonClick')
   const close = useCallback(() => setIsOpen(false), [])
   useRailMenuExclusion('settings', isOpen, close)
+  // The main menu's Config tile.
+  useEffect(() => {
+    const open = () => setIsOpen(true)
+    window.addEventListener(OPEN_CONFIG_EVENT, open)
+    return () => window.removeEventListener(OPEN_CONFIG_EVENT, open)
+  }, [])
 
   useEffect(() => {
     if (!isOpen) return

@@ -12,15 +12,7 @@ import { useOasisStore } from '@/store/oasisStore'
 import { AvatarGallery } from './AvatarGallery'
 import { useUILayer } from '@/lib/input-manager'
 import { useAudioManager } from '@/lib/audio-manager'
-import { fmtTokens } from '@/lib/anorak-engine'
 import { ClaudeTokenScore } from './ClaudeTokenScore'
-import {
-  type ProfileTokenBurnSummaryData,
-  formatProfileTokenCost,
-  getProfileDisplayInputTokens,
-  hasProfileTokenUsage,
-  normalizeProfileTokenBurnSummary,
-} from '@/lib/profile-token-display'
 import { DEFAULT_PROFILE_AVATAR_3D_URL } from '@/lib/profile-defaults'
 import { QUESTS, QUEST_IDS, getQuestProgress, type QuestId } from '@/lib/quests'
 import { GameMenuButton } from './GameMenuButton'
@@ -77,6 +69,12 @@ export function ProfileButton() {
   const [isOpen, setIsOpen] = useState(false)
   const [showAvatarGallery, setShowAvatarGallery] = useState(false)
   useUILayer('profile', isOpen || showAvatarGallery)
+  // The main menu's Profile tile.
+  useEffect(() => {
+    const open = () => setIsOpen(true)
+    window.addEventListener('oasis:open-profile', open)
+    return () => window.removeEventListener('oasis:open-profile', open)
+  }, [])
   const [profile, setProfile] = useState<ProfileData>({ credits: 0, xp: 0, level: 1, aura: 0, wallet_address: null, levelTitle: 'Apprentice', levelBadge: '░', levelProgress: 0, xpToNext: 100, needsOnboarding: true, displayName: 'Wanderer', bio: null, avatar_url: null, avatar_3d_url: DEFAULT_PROFILE_AVATAR_3D_URL, lastLoginDate: null })
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState('')
@@ -98,26 +96,6 @@ export function ProfileButton() {
   const setAvatar3dUrl = useOasisStore(s => s.setAvatar3dUrl)
   const dailyBonusTriedRef = useRef(false)
   const [savedFlash, setSavedFlash] = useState(false)
-  const [tokenBurn, setTokenBurn] = useState<{
-    daily: ProfileTokenBurnSummaryData
-    weekly: ProfileTokenBurnSummaryData
-    alltime: ProfileTokenBurnSummaryData
-  } | null>(null)
-
-  const fetchTokenBurn = useCallback(() => {
-    Promise.all([
-      fetch('/api/token-burn?range=daily').then(r => r.json()).catch(() => null),
-      fetch('/api/token-burn?range=weekly').then(r => r.json()).catch(() => null),
-      fetch('/api/token-burn?range=alltime').then(r => r.json()).catch(() => null),
-    ]).then(([daily, weekly, alltime]) => {
-      setTokenBurn({
-        daily: normalizeProfileTokenBurnSummary(daily),
-        weekly: normalizeProfileTokenBurnSummary(weekly),
-        alltime: normalizeProfileTokenBurnSummary(alltime),
-      })
-    })
-  }, [])
-
   const fetchProfile = useCallback(() => {
     fetch('/api/profile')
       .then(r => r.json())
@@ -159,12 +137,11 @@ export function ProfileButton() {
     fetchProfile()
   }, [fetchProfile])
 
-  // Refresh profile + token burn data when dropdown opens
+  // Refresh the profile when the dropdown opens (tokens: ClaudeTokenScore reads them itself).
   useEffect(() => {
     if (!isOpen) return
     fetchProfile()
-    fetchTokenBurn()
-  }, [isOpen, fetchProfile, fetchTokenBurn])
+  }, [isOpen, fetchProfile])
 
 
   useEffect(() => {
@@ -441,37 +418,6 @@ export function ProfileButton() {
 
           {/* The real counter: every token Claude Code spent on this machine (local only: hosted, the route 404s and it hides). */}
           <ClaudeTokenScore />
-
-          {/* Token Burn */}
-          {tokenBurn && hasProfileTokenUsage(tokenBurn.alltime.grand) && (
-            <div className="px-4 py-3 border-b border-white/10">
-              <p className="text-[10px] text-teal-400 uppercase tracking-wider mb-2 font-bold">Token Burn</p>
-              <div className="space-y-1.5 font-mono">
-                {[
-                  { label: 'Today', data: tokenBurn.daily },
-                  { label: 'Week', data: tokenBurn.weekly },
-                  { label: 'All Time', data: tokenBurn.alltime },
-                ].map(({ label, data }) => (
-                  <div key={label} className="flex items-center justify-between">
-                    <span className="text-teal-400 text-xs w-14">{label}</span>
-                    <span className="text-lg text-white font-bold">
-                      <span>in {fmtTokens(getProfileDisplayInputTokens(data.grand))}</span>
-                      {' '}
-                      <span>out {fmtTokens(data.grand.outputTokens)}</span>
-                      {/*
-                      <span title="Input tokens">↓{fmtTokens(data.inputTokens)}</span>
-                      {' '}
-                      <span title="Output tokens">↑{fmtTokens(data.outputTokens)}</span>
-                      */}
-                    </span>
-                    <span className="text-white text-sm text-right w-16">
-                      {formatProfileTokenCost(data)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Menu items */}
           <div className="p-2">
