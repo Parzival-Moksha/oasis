@@ -65,6 +65,8 @@ export type AgentLogEntry =
       priority?: string
       /** A voice message: its recording (play widget); `text` is the transcript. */
       voice?: { fileId: string; mime?: string; durationMs?: number }
+      /** Pictures pasted or dropped with the message. */
+      images?: Array<{ fileId: string; name?: string; mediaType?: string }>
     })
   | (LogBase & { type: 'text'; text: string; parentToolUseId: string | null })
   | (LogBase & {
@@ -611,6 +613,7 @@ function foldAgentEventInner(agent: EngineAgentState, event: EngineEvent, ctx: F
         midTurn: Boolean(e.midTurn),
         priority: e.priority,
         ...(e.voice?.fileId ? { voice: e.voice } : {}),
+        ...(e.images?.length ? { images: e.images } : {}),
       })
     }
 

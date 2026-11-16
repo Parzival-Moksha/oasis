@@ -20,6 +20,7 @@ import { checkIn, isBridged, queueForBridge, aliveBridges } from './bridge.js';
 import { readOlderHistory } from './history.js';
 import { loadRoster, saveRoster, saveRosterNow } from './roster.js';
 import { takeVoiceMessage } from './scribe.js';
+import { takePictures } from './pictures.js';
 import { resolveClaude } from './claude.js';
 import { listen as earsListen, warmEars, earsStatus, stopEars } from './ears.js';
 import { listenScribe, hasLiveScribe, LIVE_SCRIBE_MODEL } from './scribe-live.js';
@@ -186,9 +187,14 @@ const commands = {
   /** Voice for an agent (voice.js): its replies end with a <spoken> line the page says out loud. */
   setSpeak({ agentId, on }) { return getAgent(agentId, { owned: true }).setSpeak(on); },
 
-  send({ agentId, text, priority }) {
+  /** images: pictures pasted or dropped in the Oasis ([{ data: base64, mediaType, name }], pictures.js). */
+  send({ agentId, text, priority, images }) {
     const a = getAgent(agentId);
-    if (a.kind === 'owned') return a.send(text, { priority });
+    const hasPictures = Array.isArray(images) && images.length > 0;
+    if (a.kind !== 'owned' && hasPictures) {
+      throw new Error('pictures cannot go to this session yet: it runs in another window and the Oasis mod only carries text there. Send the text alone, or use Move it here to send pictures');
+    }
+    if (a.kind === 'owned') return a.send(text, { priority, images: hasPictures ? takePictures(images) : [] });
     // A watched session: only if it runs the Oasis mod, which submits it there as a prompt of that same session.
     if (!text || !text.trim()) throw new Error('empty message');
     if (!isBridged(a.sessionId)) throw new Error('watching only: this session runs somewhere else without the Oasis plugin; use Move it here to talk to it');

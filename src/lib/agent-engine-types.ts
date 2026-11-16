@@ -145,7 +145,11 @@ export type EngineMetaEvent = EngineEventEnvelope<'meta'> & {
 export type EngineStatusEvent = EngineEventEnvelope<'status'> & { status: EngineAgentStatus; reason?: string | null }
 /** A voice message's recording: the engine serves it at GET /file/<fileId>; the message text is its Scribe transcript. */
 export interface EngineVoiceClip { fileId: string; mime?: string; durationMs?: number }
-export type EngineUserSentEvent = EngineEventEnvelope<'user.sent'> & { uuid: string; text: string; midTurn?: boolean; priority?: string; voice?: EngineVoiceClip }
+/** A picture pasted or dropped into an agent chat, on its way to the engine (base64, no data: prefix). */
+export interface EngineSendPicture { data: string; mediaType: string; name?: string }
+/** A picture the owner sent, as the thread shows it (GET /file/<fileId>). */
+export interface EngineUserPicture { fileId: string; name?: string; mediaType?: string }
+export type EngineUserSentEvent = EngineEventEnvelope<'user.sent'> & { uuid: string; text: string; midTurn?: boolean; priority?: string; voice?: EngineVoiceClip; images?: EngineUserPicture[] }
 export type EngineUserConsumedEvent = EngineEventEnvelope<'user.consumed'> & { uuid: string; folded?: boolean; waitedMs?: number }
 export type EngineUserEvent = EngineEventEnvelope<'user'> & { text: string; uuid?: string | null; replay?: boolean }
 export type EngineTextDeltaEvent = EngineEventEnvelope<'text.delta'> & {
@@ -369,7 +373,7 @@ export interface EngineCommandMap {
   warmEars: { args: { engine?: 'elevenlabs' | 'local' }; result: { warming: boolean; ready?: boolean; model?: string } }
   listLive: { args: Record<string, never>; result: Array<EngineLiveRegistryEntry & { sessionId: string }> }
   spawnAgent: { args: SpawnAgentArgs; result: EngineAgentSnapshot }
-  send: { args: { agentId: string; text: string; priority?: 'now' | 'later' }; result: { uuid: string; midTurn: boolean } }
+  send: { args: { agentId: string; text: string; priority?: 'now' | 'later'; images?: EngineSendPicture[] }; result: { uuid: string; midTurn: boolean } }
   interrupt: { args: { agentId: string; cancelQueued?: boolean }; result: { ok: boolean; data?: unknown; error?: string } }
   setModel: { args: { agentId: string; model: string }; result: { ok: boolean; data?: { model?: string }; error?: string } }
   setPermissionMode: { args: { agentId: string; mode: string }; result: { ok: boolean; error?: string } }

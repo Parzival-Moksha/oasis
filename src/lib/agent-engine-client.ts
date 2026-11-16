@@ -11,6 +11,7 @@ import type {
   EngineCommandMap,
   EngineCommandName,
   EngineEvent,
+  EngineSendPicture,
   EngineServerMessage,
   EngineSessionMeta,
   SpawnAgentArgs,
@@ -234,8 +235,9 @@ export class AgentEngineClient {
     return this.cmd('spawnAgent', args)
   }
 
-  send(agentId: string, text: string, priority?: 'now' | 'later') {
-    return this.cmd('send', priority ? { agentId, text, priority } : { agentId, text })
+  /** images: pictures pasted or dropped into the chat; they go out with the text as image blocks. */
+  send(agentId: string, text: string, priority?: 'now' | 'later', images?: EngineSendPicture[]) {
+    return this.cmd('send', { agentId, text, ...(priority ? { priority } : {}), ...(images?.length ? { images } : {}) }, images?.length ? { timeoutMs: 60_000 } : {})
   }
 
   interrupt(agentId: string, cancelQueued = false) {

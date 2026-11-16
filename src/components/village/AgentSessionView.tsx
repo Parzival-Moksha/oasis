@@ -270,6 +270,27 @@ function MessageTime({ ts }: { ts: number }) {
   return <span className="shrink-0 font-mono text-[9.5px] font-normal normal-case tracking-normal text-white/45" title={fullMessageTime(ts)}>{label}</span>
 }
 
+/** Pictures the owner pasted or dropped with a message: small thumbnails in the bubble, full size on click. */
+function UserPictures({ images, compact }: { images: Array<{ fileId: string; name?: string }>; compact: boolean }) {
+  const openImage = useContext(ThreadImagesContext)
+  return (
+    <div className="mb-1 flex flex-wrap gap-1.5">
+      {images.map(image => (
+        <button
+          key={image.fileId}
+          type="button"
+          onClick={() => openImage(image.fileId, image.name || 'picture')}
+          title={`${image.name || 'picture'} · open full size`}
+          className="block overflow-hidden rounded-md border border-white/20 bg-black/30 transition hover:border-white/60"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- served by the local engine, not optimizable */}
+          <img src={agentEngineFileUrl(image.fileId)} alt={image.name || 'picture'} loading="lazy" className="block object-cover" style={{ height: compact ? 44 : 72, maxWidth: compact ? 80 : 140 }} />
+        </button>
+      ))}
+    </div>
+  )
+}
+
 const LogEntryView = memo(function LogEntryView({ entry, compact }: { entry: AgentLogEntry; compact: boolean }) {
   const dim = entry.history ? 'opacity-90' : ''
   switch (entry.type) {
@@ -286,14 +307,15 @@ const LogEntryView = memo(function LogEntryView({ entry, compact }: { entry: Age
       const text = injected ? injected.text : entry.text
       return (
         <div className={`flex flex-col gap-1.5 ${dim}`}>
-          {text && (
+          {(text || (entry.images && entry.images.length > 0)) && (
             <div className="ml-6 rounded-lg border border-sky-300/20 bg-sky-400/10 px-2.5 py-1.5">
               <div className="mb-0.5 flex items-baseline justify-between gap-2 text-[9px] font-black uppercase tracking-[0.14em] text-sky-200/90">
                 <span>{entry.state === 'seen' ? 'prompt' : 'you'}{state ? ` · ${state}` : ''}{entry.priority === 'now' ? ' · urgent' : ''}</span>
                 {!compact && <MessageTime ts={entry.ts} />}
               </div>
               {entry.voice && !compact && <VoiceClip fileId={entry.voice.fileId} durationMs={entry.voice.durationMs} />}
-              <RichText text={compact && text.length > 280 ? `${text.slice(0, 280)}…` : text} className="text-[12.5px] text-slate-50" />
+              {entry.images && entry.images.length > 0 && <UserPictures images={entry.images} compact={compact} />}
+              {text && <RichText text={compact && text.length > 280 ? `${text.slice(0, 280)}…` : text} className="text-[12.5px] text-slate-50" />}
             </div>
           )}
           {injected && injected.reminders.length > 0 && <div className="ml-6"><ReminderPill reminders={injected.reminders} /></div>}

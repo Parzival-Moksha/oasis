@@ -20,6 +20,7 @@ import { showNotice } from '../forge/GlobalNotice'
 import { canInterrupt } from '../../lib/village/village-interrupt'
 import { VoiceMessageButton } from './VoiceMessage'
 import { getVoiceTypingEngine } from '../../lib/voice/voice-typing-engine'
+import { PictureChips, useComposerPictures } from './ComposerPictures'
 import { subscribeVillageSend, subscribeVillageVoiceStop, subscribeVillageVoiceToggle, takeVillageVoiceRequest } from './village-actions'
 
 function describeError(error: unknown): string {
@@ -69,6 +70,8 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
   const [urgent, setUrgent] = useState(false)
   const [sending, setSending] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  // Pictures pasted (Ctrl+V, box focused or not) or dropped: chips above the box, sent with the next message.
+  const pictures = useComposerPictures(agentId, useCallback(() => textareaRef.current, []))
   /** What was in the box when the mic started; live words go after it. */
   const voiceBaseRef = useRef<string | null>(null)
   /** A send took what was in the box: whatever that dictation still settles is dropped, until the mic starts again. */
@@ -190,7 +193,8 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
 
   const send = () => {
     const message = text.trim()
-    if (!message || sending) return
+    const images = pictures.list.length ? pictures.payload() : undefined
+    if ((!message && !images) || sending) return
     // The message is what the box holds now. The mic stops, and the words it is still settling are
     // dropped: they used to land back in the box after it was cleared (owner, 2026-11-10).
     discardDictationRef.current = true
@@ -198,9 +202,10 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
     voiceBaseRef.current = null
     setSending(true)
     getAgentEngineClient()
-      .send(agentId, message, urgent && owned ? 'now' : undefined)
+      .send(agentId, message, urgent && owned ? 'now' : undefined, images)
       .then(() => {
         setText('')
+        if (images) pictures.clear()
         setUrgent(false)
       })
       .catch(error => showNotice(`Send failed: ${describeError(error)}`, 'error'))
@@ -247,7 +252,7 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
       : voice.transcribing ? 'settling the last words…' : ''
 
   return (
-    <div className={`flex shrink-0 flex-col gap-1.5 border-t border-white/10 pt-1 ${VILLAGE_TYPE_CLASS}`} style={{ fontFamily: VILLAGE_FONT_BODY }}>
+    <div className={`flex shrink-0 flex-col gap-1.5 border-t border-white/10 pt-1 ${VILLAGE_TYPE_CLASS}`} style={{ fontFamily: VILLAGE_FONT_BODY }} {...pictures.dropProps}>
       {!owned && (
         <div className={`pt-1 leading-snug text-cyan-100/90 ${large ? 'text-[13px]' : 'text-[11.5px]'}`}>
           Live in the desktop app too: what you say here goes to the same session.
@@ -261,6 +266,7 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
       >
         <span className="h-1 w-12 rounded-full bg-white/20 transition group-hover:bg-white/55" />
       </div>
+      <PictureChips pictures={pictures.list} onRemove={pictures.remove} large={large} />
       <div className="relative">
         <textarea
           ref={textareaRef}
@@ -322,7 +328,7 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
           )}
           <button
             type="button"
-            disabled={!text.trim() || sending}
+            disabled={(!text.trim() && !pictures.list.length) || sending}
             onClick={send}
             className="rounded-md border border-emerald-300/40 bg-emerald-400/20 px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] text-emerald-50 transition hover:bg-emerald-400/35 disabled:cursor-not-allowed disabled:opacity-35"
           >

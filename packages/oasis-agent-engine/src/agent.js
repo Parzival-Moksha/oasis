@@ -424,14 +424,16 @@ export class Agent {
    * block. The text always goes out, with or without the picture, and in the order it was sent.
    */
   /** voice: a voice message's recording ({ fileId, mime, durationMs }, scribe.js): its transcript is `text`. */
-  send(text, { priority, voice } = {}) {
-    if (!text || !text.trim()) return Promise.reject(new Error('empty message'));
-    const run = this.sendChain.then(() => this.sendNow(text, { priority, voice }));
+  /** images: pictures the owner pasted or dropped (pictures.js takePictures): image blocks after the text. */
+  send(text, { priority, voice, images } = {}) {
+    const pictures = Array.isArray(images) ? images : [];
+    if ((!text || !text.trim()) && !pictures.length) return Promise.reject(new Error('empty message'));
+    const run = this.sendChain.then(() => this.sendNow(text || '', { priority, voice, images: pictures }));
     this.sendChain = run.catch(() => {});
     return run;
   }
 
-  async sendNow(text, { priority, voice } = {}) {
+  async sendNow(text, { priority, voice, images = [] } = {}) {
     if (!this.proc) this.start();
     if (!this.proc) throw new Error(this.statusReason);
     let picture = null;
@@ -443,13 +445,16 @@ export class Agent {
     this.sentSinceStart = true;
     const turnWasRunning = this.turnRunning;
     this.pendingUser.set(uuid, { text, sentAt: Date.now(), turnWasRunning, turnIndex: this.turnIndex || 0 });
-    let content = picture?.data
-      ? [
-        { type: 'text', text },
+    // The text, the owner's pictures, then the eyes picture with its caption. Text alone stays a plain string.
+    const blocks = [
+      ...(text ? [{ type: 'text', text }] : []),
+      ...images.map((p) => ({ type: 'image', source: { type: 'base64', media_type: p.mediaType, data: p.data } })),
+      ...(picture?.data ? [
         { type: 'image', source: { type: 'base64', media_type: picture.mediaType || 'image/jpeg', data: picture.data } },
         { type: 'text', text: EYES_CAPTION },
-      ]
-      : text;
+      ] : []),
+    ];
+    let content = blocks.length === 1 && blocks[0].type === 'text' ? text : blocks;
     // Voice on: the note that asks for a <spoken> line rides along (voice.js); the thread never shows it.
     // Not on a slash command (/compact, /clear): the CLI only takes those as plain text.
     const command = /^\s*\/[a-z]/i.test(text);
@@ -460,7 +465,8 @@ export class Agent {
     if (priority === 'now' || priority === 'later') msg.priority = priority;
     try { this.write(msg); } catch (e) { this.pendingUser.delete(uuid); throw e; }
     this.norm.openTurn();
-    this.emit('user.sent', { uuid, text, midTurn: turnWasRunning, priority: msg.priority || 'next', ...(picture?.data ? { eyes: true } : {}), ...(voice ? { voice } : {}) });
+    const shown = images.map((p) => ({ fileId: p.fileId, name: p.name, mediaType: p.mediaType }));
+    this.emit('user.sent', { uuid, text, midTurn: turnWasRunning, priority: msg.priority || 'next', ...(picture?.data ? { eyes: true } : {}), ...(voice ? { voice } : {}), ...(shown.length ? { images: shown } : {}) });
     // An open permission / question / plan still blocks the CLI: talking to it doesn't resolve that.
     if (this.permissions.size) this.recomputeStatus();
     else this.setStatus(STATUS.WORKING, turnWasRunning ? 'message queued mid-turn' : 'message sent');
