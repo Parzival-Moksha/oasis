@@ -15,17 +15,32 @@ export const WORK_IDLE_MS = 3 * 60 * 1000
 export const WORK_BEAT_MS = 15_000
 /** A tab that hasn't reported for this long has gone: another tab may count. */
 export const WORK_HOLDER_STALE_MS = 50_000
-export const WORK_RULE = 'Every active minute earns valor × (1 + priority) XP: on a mission valor 1 and that mission\'s priority, just being in the Oasis valor 0.7 and no priority.'
+export const WORK_RULE = 'Every active minute earns valor × (1 + priority) XP: on a mission valor 1 and that mission\'s priority, just being in the Oasis valor 0.7 and no priority. A committed day that is hit counts double; a committed day that is missed costs 7 XP for every missing minute.'
 
+/**
+ * A commitment, the first Mindcraft's way (v0.1, 2025): what you commit to counts double, and what
+ * you don't deliver costs ten times the missing minutes. Here: so many seconds a day, from a day to
+ * a day, of any time in the Oasis or of one mission's time.
+ */
 export interface WorkVow {
   /** First and last day, local dates. */
   from: string
   to: string
   dailySeconds: number
+  /** A day that is hit earns its XP times this (the counted time's XP). Default 2. */
+  multiplier?: number
+  /** A day that is missed costs the missing minutes times this, at the free-time rate (0.7 XP a minute). Default 10. */
+  penaltyFactor?: number
+  /** Only this mission's time counts (a commitment to a mission); none: all time in the Oasis. */
+  mission?: string
+  label?: string
 }
 
+export const COMMIT_MULTIPLIER = 2
+export const COMMIT_PENALTY_FACTOR = 10
+
 /** The owner's vow of 2026-11-16: three hours a day until the move to Vienna. */
-export const DEFAULT_VOW: WorkVow = { from: '2026-11-16', to: '2026-11-22', dailySeconds: 3 * 3600 }
+export const DEFAULT_VOW: WorkVow = { from: '2026-11-16', to: '2026-11-22', dailySeconds: 3 * 3600, multiplier: COMMIT_MULTIPLIER, penaltyFactor: COMMIT_PENALTY_FACTOR, label: 'At least three hours a day in the Oasis' }
 
 export interface WorkMissionTime {
   title: string
@@ -53,12 +68,16 @@ export interface WorkActive {
 export interface WorkFile {
   v: 1
   vow: WorkVow
+  /** More commitments, e.g. to one mission (`mission` set). */
+  commitments?: WorkVow[]
   /** By local date, `2026-11-16`. */
   days: Record<string, WorkDay>
   /** The mission being worked on (survives a reload). */
   active: WorkActive | null
   /** The one tab that counts, and the moment up to which its time is in the book. */
   holder: { tab: string; seq: number; at: number } | null
+  /** The tab that last let go (it was closing): a late report from it must not take the place back. */
+  released?: string
 }
 
 export function emptyWorkFile(): WorkFile {
@@ -71,9 +90,23 @@ export function parseWorkFile(value: unknown): WorkFile {
   if (!value || typeof value !== 'object') return file
   const raw = value as Partial<WorkFile>
   const num = (n: unknown) => (typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : 0)
-  if (raw.vow && typeof raw.vow.from === 'string' && typeof raw.vow.to === 'string' && num(raw.vow.dailySeconds)) {
-    file.vow = { from: raw.vow.from, to: raw.vow.to, dailySeconds: raw.vow.dailySeconds }
+  const vow = (v: unknown): WorkVow | null => {
+    const c = v as Partial<WorkVow> | null
+    if (!c || typeof c !== 'object' || typeof c.from !== 'string' || typeof c.to !== 'string' || !num(c.dailySeconds)) return null
+    return {
+      from: c.from,
+      to: c.to,
+      dailySeconds: c.dailySeconds as number,
+      multiplier: typeof c.multiplier === 'number' && c.multiplier >= 1 ? c.multiplier : COMMIT_MULTIPLIER,
+      penaltyFactor: typeof c.penaltyFactor === 'number' && c.penaltyFactor >= 0 ? c.penaltyFactor : COMMIT_PENALTY_FACTOR,
+      ...(typeof c.mission === 'string' && c.mission ? { mission: c.mission } : {}),
+      ...(typeof c.label === 'string' && c.label ? { label: c.label } : {}),
+    }
   }
+  file.vow = vow(raw.vow) || file.vow
+  if (!file.vow.label) file.vow.label = DEFAULT_VOW.label
+  const more = (Array.isArray(raw.commitments) ? raw.commitments : []).map(vow).filter((c): c is WorkVow => c !== null)
+  if (more.length) file.commitments = more
   for (const [date, day] of Object.entries(raw.days || {})) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !day || typeof day !== 'object') continue
     const missions: Record<string, WorkMissionTime> = {}
@@ -85,6 +118,7 @@ export function parseWorkFile(value: unknown): WorkFile {
   if (raw.active && typeof raw.active.file === 'string') {
     file.active = { file: raw.active.file, title: String(raw.active.title || raw.active.file), priority: num(raw.active.priority), startedAt: num(raw.active.startedAt) }
   }
+  if (typeof raw.released === 'string') file.released = raw.released
   if (raw.holder && typeof raw.holder.tab === 'string') file.holder = { tab: raw.holder.tab, seq: num(raw.holder.seq), at: num(raw.holder.at) }
   return file
 }
@@ -146,6 +180,8 @@ export interface WorkBeat {
   seq: number
   /** Active seconds since this tab's last report. */
   seconds: number
+  /** This tab let go while hidden and is in front again: it may take the place back. */
+  back?: boolean
 }
 
 export interface WorkBeatResult {
@@ -183,7 +219,10 @@ export function applyWorkBeat(input: WorkFile, beat: WorkBeat, now: number, offs
   const holder = file.holder
   const mine = holder?.tab === beat.tab
   if (holder && !mine && now - holder.at < WORK_HOLDER_STALE_MS) return { file: input, counting: false, credited: 0 }
+  // A report that was still on its way when its page let go: too late, the page is gone.
+  if (!holder && file.released === beat.tab && !beat.back) return { file: input, counting: false, credited: 0 }
   if (!holder || !mine) {
+    delete file.released
     // Taking over (or the first tab ever): the clock starts now, nothing reported before counts.
     file.holder = { tab: beat.tab, seq: beat.seq, at: now }
     return { file, counting: true, credited: 0 }
@@ -206,7 +245,7 @@ export function applyWorkBeat(input: WorkFile, beat: WorkBeat, now: number, offs
 /** A page that is closing lets go, so the next one (a reload) counts at once. */
 export function releaseWorkHolder(input: WorkFile, tab: string): WorkFile {
   if (input.holder?.tab !== tab) return input
-  return { ...input, holder: null }
+  return { ...input, holder: null, released: tab }
 }
 
 /** Start working on a mission (stops the one before), or stop: `mission` null. */
@@ -214,6 +253,86 @@ export function setWorkMission(input: WorkFile, mission: { file: string; title: 
   const file: WorkFile = JSON.parse(JSON.stringify(input))
   file.active = mission ? { ...mission, startedAt: now } : null
   return file
+}
+
+// ─── commitments ────────────────────────────────────────────────────────────
+
+export interface CommitmentDay {
+  date: string
+  /** The seconds that count for this commitment. */
+  seconds: number
+  status: WorkDayStatus
+  /** Hit: the extra XP the multiplier gave. Open: what it will give if the day is finished at this pace. */
+  bonusXp: number
+  /** Missed: the XP it cost (a positive number). Open: what stopping now would cost. */
+  penaltyXp: number
+}
+
+export interface CommitmentView {
+  label: string
+  from: string
+  to: string
+  dailySeconds: number
+  multiplier: number
+  penaltyFactor: number
+  mission: string | null
+  /** XP a missing minute costs. */
+  penaltyPerMinute: number
+  days: CommitmentDay[]
+  /** Earned and lost so far (days that are over or already hit). */
+  bonusXp: number
+  penaltyXp: number
+  /** Today, while it is still open: what is at stake. Null outside the commitment or once today is hit. */
+  today: { remainingSeconds: number; bonusIfHit: number; penaltyIfStopped: number } | null
+}
+
+const round1 = (value: number) => Math.round(value * 10) / 10
+
+/**
+ * One commitment against the book. A day that reached its seconds is hit: the XP of the counted time
+ * is multiplied (the bonus is the extra). A past day that fell short is missed: every missing minute
+ * costs penaltyFactor × the free-time rate. Today is open until it is hit or over.
+ */
+export function evaluateCommitment(file: WorkFile, commitment: WorkVow, today: string): CommitmentView {
+  const multiplier = commitment.multiplier ?? COMMIT_MULTIPLIER
+  const penaltyFactor = commitment.penaltyFactor ?? COMMIT_PENALTY_FACTOR
+  const perMinute = penaltyFactor * WORK_VALOR.free
+  const days: CommitmentDay[] = []
+  let bonusXp = 0
+  let penaltyXp = 0
+  let stake: CommitmentView['today'] = null
+  for (let d = commitment.from, guard = 0; d <= commitment.to && guard < 400; d = addDays(d, 1), guard += 1) {
+    const day = file.days[d]
+    const counted = commitment.mission ? day?.missions[commitment.mission] : null
+    const seconds = commitment.mission ? counted?.seconds || 0 : daySeconds(day)
+    const xp = commitment.mission ? counted?.xp || 0 : (day ? day.freeXp + Object.values(day.missions).reduce((sum, m) => sum + m.xp, 0) : 0)
+    const status: WorkDayStatus = seconds >= commitment.dailySeconds ? 'hit' : d < today ? 'missed' : d === today ? 'open' : 'ahead'
+    const missing = Math.max(0, commitment.dailySeconds - seconds) / 60
+    const bonus = status === 'hit' ? xp * (multiplier - 1) : 0
+    const penalty = status === 'missed' ? missing * perMinute : 0
+    bonusXp += bonus
+    penaltyXp += penalty
+    if (status === 'open') {
+      // Finishing at the rate of the time so far (free rate when nothing is counted yet).
+      const rate = seconds > 0 ? xp / seconds : xpFor(1, WORK_VALOR.free, 0)
+      stake = { remainingSeconds: commitment.dailySeconds - seconds, bonusIfHit: round1((xp + rate * (commitment.dailySeconds - seconds)) * (multiplier - 1)), penaltyIfStopped: round1(missing * perMinute) }
+    }
+    days.push({ date: d, seconds, status, bonusXp: round1(status === 'open' && stake ? stake.bonusIfHit : bonus), penaltyXp: round1(status === 'open' && stake ? stake.penaltyIfStopped : penalty) })
+  }
+  return {
+    label: commitment.label || (commitment.mission ? `${formatClock(commitment.dailySeconds)} a day on ${commitment.mission}` : `${formatClock(commitment.dailySeconds)} a day in the Oasis`),
+    from: commitment.from,
+    to: commitment.to,
+    dailySeconds: commitment.dailySeconds,
+    multiplier,
+    penaltyFactor,
+    mission: commitment.mission || null,
+    penaltyPerMinute: round1(perMinute),
+    days,
+    bonusXp: round1(bonusXp),
+    penaltyXp: round1(penaltyXp),
+    today: stake,
+  }
 }
 
 // ─── what the HUD and Anorak read ───────────────────────────────────────────
@@ -236,6 +355,10 @@ export interface WorkSnapshot {
   /** Every day of the vow. */
   week: WorkDayView[]
   vow: WorkVow
+  /** The vow first, then any others: multiplier, penalty, each day's bonus or cost, what is at stake today. */
+  commitments: CommitmentView[]
+  /** Over the vow's days: XP from time, plus bonuses, minus penalties. */
+  totals: { xp: number; bonusXp: number; penaltyXp: number; netXp: number }
   /** The mission being worked on; null: just being in the Oasis. */
   active: WorkActive | null
   /** A page reported within the last minute. */
@@ -254,6 +377,10 @@ export function workSnapshot(file: WorkFile, now: number, offsetMinutes = localO
     const status: WorkDayStatus = worked >= target ? 'hit' : d < date ? 'missed' : d === date ? 'open' : 'ahead'
     week.push({ date: d, seconds: worked, xp: dayXp(file.days[d]), status })
   }
+  const commitments = [file.vow, ...(file.commitments || [])].map(c => evaluateCommitment(file, c, date))
+  const baseXp = round1(week.reduce((sum, d) => sum + d.xp, 0))
+  const bonusXp = round1(commitments.reduce((sum, c) => sum + c.bonusXp, 0))
+  const penaltyXp = round1(commitments.reduce((sum, c) => sum + c.penaltyXp, 0))
   return {
     now,
     date,
@@ -269,6 +396,8 @@ export function workSnapshot(file: WorkFile, now: number, offsetMinutes = localO
     },
     week,
     vow: file.vow,
+    commitments,
+    totals: { xp: baseXp, bonusXp, penaltyXp, netXp: round1(baseXp + bonusXp - penaltyXp) },
     active: file.active,
     counting: Boolean(file.holder && now - file.holder.at < 60_000),
     rule: WORK_RULE,

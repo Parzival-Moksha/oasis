@@ -185,7 +185,7 @@ describe('the server book (a temp file)', () => {
     const days = Object.values(disk.days)
     expect(days.reduce((sum, day) => sum + daySeconds(day), 0)).toBe(90)
     expect(days.reduce((sum, day) => sum + (day.missions['vow.md']?.seconds || 0), 0)).toBe(75)
-    expect(readFileSync(path.join(dir, 'vow.md'), 'utf8')).toMatch(/## Log\n- \d{4}-\d\d-\d\d \d\d:\d\d · owner: Worked on this in the Oasis: 0:01:15 today, 2\.5 XP\./)
+    expect(readFileSync(path.join(dir, 'vow.md'), 'utf8')).toMatch(/## Log\n- \d{4}-\d\d-\d\d \d\d:\d\d · owner: Worked on this in the Oasis: 0:01:15 so far today, 2\.5 XP\./)
     expect((await server.switchWorkMission('../x.md', t0)).ok).toBe(false)
     expect((await server.switchWorkMission('nope.md', t0)).ok).toBe(false)
     // A closing page lets go: the next tab counts at once.
@@ -197,5 +197,48 @@ describe('the server book (a temp file)', () => {
     writeFileSync(process.env.OASIS_WORK_VOW_STATE as string, '{ not json', 'utf8')
     await expect(server.reportWorkBeat({ tab: 'a', seq: 1, seconds: 0 })).rejects.toThrow()
     expect(readFileSync(process.env.OASIS_WORK_VOW_STATE as string, 'utf8')).toBe('{ not json')
+  })
+})
+
+describe('commitments (the first Mindcraft: committed counts double, a miss costs ten times the missing minutes)', () => {
+  const book = () => {
+    const file = emptyWorkFile()
+    file.days['2026-11-16'] = { freeSeconds: 10_800, freeXp: 126, missions: {} }
+    file.days['2026-11-17'] = { freeSeconds: 9000, freeXp: 105, missions: {} }
+    file.days['2026-11-18'] = { freeSeconds: 3600, freeXp: 42, missions: { 'a.md': { title: 'A', priority: 0.5, seconds: 3600, xp: 90 } } }
+    return file
+  }
+  it('a hit day doubles its XP, a missed day costs 7 XP a missing minute, today shows what is at stake', async () => {
+    const { evaluateCommitment, DEFAULT_VOW } = await import('../village/work-vow')
+    const view = evaluateCommitment(book(), DEFAULT_VOW, '2026-11-18')
+    expect(view).toMatchObject({ multiplier: 2, penaltyFactor: 10, penaltyPerMinute: 7, bonusXp: 126, penaltyXp: 210 })
+    expect(view.days.slice(0, 4).map(day => [day.status, day.bonusXp, day.penaltyXp])).toEqual([['hit', 126, 0], ['missed', 0, 210], ['open', 198, 420], ['ahead', 0, 0]])
+    // Today: 2 h done at 1.1 XP a minute; the last hour at that pace makes 198, doubled: +198. Stopping: 60 min × 7.
+    expect(view.today).toEqual({ remainingSeconds: 3600, bonusIfHit: 198, penaltyIfStopped: 420 })
+  })
+  it('the snapshot adds it up: XP + bonuses − penalties', () => {
+    const snap = workSnapshot(book(), at('12:00:00', '2026-11-18'), TZ)
+    expect(snap.totals).toEqual({ xp: 363, bonusXp: 126, penaltyXp: 210, netXp: 279 })
+    expect(snap.commitments).toHaveLength(1)
+    expect(snap.commitments[0].label).toBe('At least three hours a day in the Oasis')
+  })
+  it('a commitment to one mission counts only that mission\'s time', async () => {
+    const { evaluateCommitment } = await import('../village/work-vow')
+    const view = evaluateCommitment(book(), { from: '2026-11-18', to: '2026-11-19', dailySeconds: 3600, mission: 'a.md', multiplier: 3, penaltyFactor: 5 }, '2026-11-19')
+    expect(view.days.map(day => [day.seconds, day.status])).toEqual([[3600, 'hit'], [0, 'open']])
+    expect(view).toMatchObject({ bonusXp: 180, penaltyXp: 0, penaltyPerMinute: 3.5, mission: 'a.md' })
+    expect(view.today).toEqual({ remainingSeconds: 3600, bonusIfHit: 84, penaltyIfStopped: 210 })
+  })
+  it('reads the stakes from the file, with the old defaults', () => {
+    const file = parseWorkFile({ vow: { from: '2026-11-16', to: '2026-11-22', dailySeconds: 7200, multiplier: 1.5 }, commitments: [{ from: 'a', to: 'b', dailySeconds: 60, mission: 'x.md' }, { nope: 1 }] })
+    expect(file.vow).toMatchObject({ dailySeconds: 7200, multiplier: 1.5, penaltyFactor: 10 })
+    expect(file.commitments).toHaveLength(1)
+  })
+  it('a late report from a page that let go does not take the place back; coming back from hidden does', () => {
+    let file = run(emptyWorkFile(), 'a', at('09:00:00'), 1)
+    file = releaseWorkHolder(file, 'a')
+    expect(applyWorkBeat(file, { tab: 'a', seq: 9, seconds: 5 }, at('09:00:20'), TZ).counting).toBe(false)
+    expect(applyWorkBeat(file, { tab: 'a', seq: 9, seconds: 5, back: true }, at('09:00:20'), TZ).counting).toBe(true)
+    expect(applyWorkBeat(file, { tab: 'b', seq: 1, seconds: 0 }, at('09:00:20'), TZ).file.released).toBeUndefined()
   })
 })

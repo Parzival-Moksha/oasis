@@ -51,6 +51,13 @@ function DayPip({ day, today, target, liveSeconds }: { day: WorkDayView; today: 
 
 function Detail({ snapshot, liveSeconds, onClose }: { snapshot: WorkSnapshot; liveSeconds: number; onClose: () => void }) {
   const row = 'flex items-baseline justify-between gap-3'
+  // What the commitment did to a day: the bonus of a hit, the cost of a miss.
+  const stake = (date: string, status: string) => {
+    const day = snapshot.commitments?.[0]?.days.find(item => item.date === date)
+    if (status === 'hit') return day && day.status === 'hit' ? ` +${day.bonusXp} · hit` : ' · hit'
+    if (status === 'missed') return ` −${day?.penaltyXp ?? 0} · missed`
+    return ' · open'
+  }
   return (
     <div
       data-ui-panel="village-work-vow"
@@ -77,6 +84,20 @@ function Detail({ snapshot, liveSeconds, onClose }: { snapshot: WorkSnapshot; li
           ■ stop working on “{snapshot.active.title}”
         </button>
       )}
+      {snapshot.commitments?.map((c, index) => (
+        <div key={index} className="mt-3 rounded-lg border border-white/10 bg-white/5 p-2">
+          <div className="text-[9.5px] uppercase tracking-[0.2em] text-amber-200/80">Committed</div>
+          <div className="font-bold">{c.label}</div>
+          <div className="text-white/70">A day you hit: its XP <span style={{ color: GREEN }}>×{c.multiplier}</span>. A day you miss: <span style={{ color: RED }}>−{c.penaltyPerMinute} XP</span> for every missing minute.</div>
+          {c.today && (
+            <div className="mt-1">Today: finish the last {formatClock(c.today.remainingSeconds)} for <span className="font-bold" style={{ color: GREEN }}>+{c.today.bonusIfHit} XP</span>; stop now and it costs <span className="font-bold" style={{ color: RED }}>−{c.today.penaltyIfStopped} XP</span>.</div>
+          )}
+          <div className="mt-1 text-white/70">So far: <span style={{ color: GREEN }}>+{c.bonusXp}</span> earned, <span style={{ color: RED }}>−{c.penaltyXp}</span> lost.</div>
+        </div>
+      ))}
+      {snapshot.totals && (
+        <div className={`${row} mt-2`}><span className="text-white/60">The vow so far</span><span className="font-bold">{snapshot.totals.xp} + {snapshot.totals.bonusXp} − {snapshot.totals.penaltyXp} = {snapshot.totals.netXp} XP</span></div>
+      )}
       <div className="mb-1 mt-3 text-[9.5px] uppercase tracking-[0.2em] text-white/45">The week</div>
       {snapshot.week.map(day => {
         const seconds = day.date === snapshot.date ? liveSeconds : day.seconds
@@ -84,7 +105,7 @@ function Detail({ snapshot, liveSeconds, onClose }: { snapshot: WorkSnapshot; li
         return (
           <div key={day.date} className={row} style={{ color: status === 'hit' ? GREEN : status === 'missed' ? RED : status === 'open' ? '#fff' : 'rgba(255,255,255,0.4)' }}>
             <span>{new Date(`${day.date}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })}</span>
-            <span>{status === 'ahead' ? '–' : `${formatClock(seconds)} · ${day.xp} XP · ${status === 'open' ? 'open' : status}`}</span>
+            <span>{status === 'ahead' ? '–' : `${formatClock(seconds)} · ${day.xp} XP${stake(day.date, status)}`}</span>
           </div>
         )
       })}
@@ -108,7 +129,8 @@ export function WorkVowHud() {
   const kind = snapshot.active
     ? `${snapshot.active.title} ×${(1 + snapshot.active.priority).toFixed(2)}`
     : `in the Oasis ×${WORK_VALOR.free}`
-  const status = state.otherTab ? 'another tab is counting' : state.running ? kind : `paused · ${kind}`
+  const vow = snapshot.commitments?.[0]
+  const status = state.unsaved ? 'not saved: server unreachable' : state.otherTab ? 'another tab is counting' : state.running ? kind : `paused · ${kind}`
 
   return (
     <>
@@ -131,8 +153,15 @@ export function WorkVowHud() {
           </span>
           <span className="max-w-[190px] truncate text-[9.5px]" style={{ ...GAME_HUD_TEXT, color: state.running ? (snapshot.active ? '#7dd3fc' : '#a7f3d0') : 'rgba(255,255,255,0.5)' }}>{status}</span>
         </span>
-        <span className="ml-1 flex items-start gap-1">
-          {snapshot.week.map(day => <DayPip key={day.date} day={day} today={day.date === snapshot.date} target={snapshot.targetSeconds} liveSeconds={liveSeconds} />)}
+        <span className="ml-1 flex flex-col items-center gap-1">
+          <span className="flex items-start gap-1">
+            {snapshot.week.map(day => <DayPip key={day.date} day={day} today={day.date === snapshot.date} target={snapshot.targetSeconds} liveSeconds={liveSeconds} />)}
+          </span>
+          {vow && (
+            <span className="whitespace-nowrap text-[8.5px] leading-none text-white/60" title="Your commitment: a day you hit counts double, a day you miss costs XP for every missing minute">
+              <span style={{ color: GREEN }}>hit ×{vow.multiplier}</span> · <span style={{ color: RED }}>miss −{vow.penaltyPerMinute} XP/min</span>
+            </span>
+          )}
         </span>
       </button>
       {open && <Detail snapshot={snapshot} liveSeconds={liveSeconds} onClose={() => setOpen(false)} />}

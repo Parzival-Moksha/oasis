@@ -104,7 +104,7 @@ export function switchWorkMission(file: string | null, now = Date.now()): Promis
           const at = new Date(now)
           const stamp = `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(at.getDate())} ${two(at.getHours())}:${two(at.getMinutes())}`
           const xp = Math.round(xpFor(today.seconds, WORK_VALOR.mission, today.priority) * 10) / 10
-          await fs.writeFile(target, appendMissionLog(text, { at: stamp, who: 'owner', text: `Worked on this in the Oasis: ${formatClock(today.seconds)} today, ${xp} XP.` }), 'utf8')
+          await fs.writeFile(target, appendMissionLog(text, { at: stamp, who: 'owner', text: `Worked on this in the Oasis: ${formatClock(today.seconds)} so far today, ${xp} XP.` }), 'utf8')
         } catch { /* the mission file is gone: the time is still in the book */ }
       }
     }
