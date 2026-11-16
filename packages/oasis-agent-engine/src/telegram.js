@@ -9,6 +9,7 @@
 //   out  when a turn that a Telegram message started ends: its final text (name first unless it's Anorak, split at 4096)
 //        and the files it sent with SendUserFile (photos or documents).
 //        Pings: an agent at needs-decision (amber) or error (red) for PING_MS (2 min) gets one short message per state.
+//        The daily check-in (checkin.js): at 21:00 local, the day's work from the Mindcraft work counter. /checkin.
 //
 // Runs only in the real engine (port 4530) unless OASIS_TELEGRAM=1; OASIS_TELEGRAM=0 turns it off. Test engines on other
 // ports never touch the bot. The token never reaches a log line, a message or an error text (redact()).
@@ -16,6 +17,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { attachmentFile } from './files.js';
+import { CHECKIN_DEFAULT, checkinDue, checkinText, localDate, parseCheckinTime } from './checkin.js';
 import { stripSpoken } from './voice.js';
 
 export const TG_MAX = 4096;
@@ -114,6 +116,7 @@ export const HELP = [
   '/agents  who is in the village',
   '/stop [name]  interrupt a turn (Anorak without a name)',
   '/pings on|off  messages when an agent waits for you for 2 minutes',
+  '/checkin on|off|21:30|now  the evening sum-up of the day\'s work',
 ].join('\n');
 
 /** Split for Telegram: at a blank line, else a line break, else a space; a ``` block cut in two is closed and reopened. */
@@ -253,6 +256,12 @@ export class TelegramLine {
     this.running = false;
     this.abort = null;
     this.typingTimer = null;
+    this.now = o.now || Date.now;
+    this.webUrl = (o.webUrl || process.env.OASIS_WEB_URL || 'http://127.0.0.1:4516').replace(/\/+$/, '');
+    this.checkinEveryMs = o.checkinEveryMs ?? 30_000;
+    this.checkinTimer = null;
+    this.checkinBusy = false;
+    this.checkinFailedDay = null;
     this.stats = { lastPollAt: null, lastOkAt: null, lastError: null, received: 0, pinged: 0 };
   }
 
@@ -288,15 +297,21 @@ export class TelegramLine {
   loadState() {
     try {
       const s = JSON.parse(stripBom(fs.readFileSync(this.stateFile, 'utf8')));
-      return { offset: Number(s.offset) || 0, pings: s.pings !== false };
-    } catch { return { offset: 0, pings: true }; }
+      const c = s.checkin && typeof s.checkin === 'object' ? s.checkin : {};
+      const checkin = {
+        on: c.on !== false,
+        time: parseCheckinTime(c.time) || CHECKIN_DEFAULT.time,
+        lastSent: typeof c.lastSent === 'string' ? c.lastSent : null,
+      };
+      return { offset: Number(s.offset) || 0, pings: s.pings !== false, checkin };
+    } catch { return { offset: 0, pings: true, checkin: { ...CHECKIN_DEFAULT } }; }
   }
 
   saveState() {
     try {
       fs.mkdirSync(path.dirname(this.stateFile), { recursive: true });
       const tmp = `${this.stateFile}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify({ offset: this.state.offset, pings: this.state.pings, updatedAt: new Date().toISOString() }, null, 2));
+      fs.writeFileSync(tmp, JSON.stringify({ offset: this.state.offset, pings: this.state.pings, checkin: this.state.checkin, updatedAt: new Date().toISOString() }, null, 2));
       fs.renameSync(tmp, this.stateFile);
     } catch (e) { this.log(`saving ${this.stateFile} failed: ${e.message}`); }
   }
@@ -399,6 +414,10 @@ export class TelegramLine {
     this.running = true;
     this.abort = new AbortController();
     void this.loop();
+    if (this.checkinEveryMs > 0) {
+      this.checkinTimer = setInterval(() => void this.checkinTick(), this.checkinEveryMs);
+      this.checkinTimer.unref?.();
+    }
     return this;
   }
 
@@ -407,7 +426,61 @@ export class TelegramLine {
     this.abort?.abort();
     clearInterval(this.typingTimer);
     this.typingTimer = null;
+    clearInterval(this.checkinTimer);
+    this.checkinTimer = null;
     for (const p of this.pings.values()) clearTimeout(p.timer);
+  }
+
+  // ---------------------------------------------------------------- the daily check-in
+  /** The Mindcraft work counter's snapshot from the Next app (local only). Throws when it isn't there. */
+  async fetchWork() {
+    let res;
+    try {
+      res = await fetch(`${this.webUrl}/api/village/work`, { signal: AbortSignal.timeout(10_000) });
+    } catch (e) { throw new Error(`the Oasis page server is not reachable (${e.cause?.code || e.name})`); }
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data || typeof data !== 'object' || !data.today || !data.date) throw new Error(`the work counter answered ${res.status}${data?.error ? `: ${String(data.error).slice(0, 120)}` : ''}`);
+    return data;
+  }
+
+  /** Text and send; resolves once Telegram has it (throws if it never got there). */
+  async sendCheckin(now = this.now()) {
+    const text = checkinText(await this.fetchWork(), now);
+    await Promise.all(chunkText(text, TG_MAX).map((piece) => this.queue(() => this.api('sendMessage', { chat_id: this.cfg.chatId, text: piece, link_preview_options: { is_disabled: true } }))));
+    return text;
+  }
+
+  /**
+   * Every 30 s: past today's time and not sent today -> send it, then remember the day in the state file (so a restart
+   * never sends it twice). The Next app or the counter not answering: skipped quietly (logged once a day) and tried
+   * again on the next tick, until midnight.
+   */
+  async checkinTick(now = this.now()) {
+    const c = this.state.checkin;
+    const date = checkinDue(now, c);
+    if (!date || this.checkinBusy || !this.cfg.ok) return false;
+    this.checkinBusy = true;
+    try {
+      await this.sendCheckin(now);
+      c.lastSent = date;
+      this.saveState();
+      this.log(`check-in sent for ${date}`);
+      return true;
+    } catch (e) {
+      if (this.checkinFailedDay !== date) this.log(`check-in for ${date} waits: ${e.message}`);
+      this.checkinFailedDay = date;
+      return false;
+    } finally {
+      this.checkinBusy = false;
+    }
+  }
+
+  checkinStatus(now = this.now()) {
+    const c = this.state.checkin;
+    if (!c.on) return `Check-in is off. /checkin on brings back the ${c.time} sum-up.`;
+    const sentToday = c.lastSent === localDate(now);
+    const due = checkinDue(now, c);
+    return `Check-in is on, every day at ${c.time}. ${sentToday ? "Today's is sent; next one tomorrow." : due ? "Today's is on its way." : `Next: today at ${c.time}.`}`;
   }
 
   async loop() {
@@ -528,6 +601,22 @@ export class TelegramLine {
     switch (command) {
       case 'agents': return this.say(agentListText(agents));
       case 'start': case 'help': return this.say(HELP);
+      case 'checkin': case 'check_in': {
+        const c = this.state.checkin;
+        if (/^now$/i.test(arg)) {
+          // A preview: today's numbers right now. The evening one still goes out at its time.
+          try { await this.sendCheckin(); } catch (e) { this.say(`No check-in right now: ${e.message}.`); }
+          return undefined;
+        }
+        if (/^(on|off|yes|no)$/i.test(arg)) c.on = /^(on|yes)$/i.test(arg);
+        else if (arg) {
+          const time = parseCheckinTime(arg);
+          if (!time) return this.say('A time like 21:30, please (or /checkin on, off, now).');
+          c.time = time;
+        }
+        if (arg) { this.saveState(); this.log(`check-in ${c.on ? `on at ${c.time}` : 'off'} (from Telegram)`); }
+        return this.say(this.checkinStatus());
+      }
       case 'pings': {
         if (/^(on|off|yes|no|1|0)$/i.test(arg)) {
           this.state.pings = /^(on|yes|1)$/i.test(arg);
@@ -718,12 +807,20 @@ export class TelegramLine {
   }
 
   // ---------------------------------------------------------------- engine command
-  /** `{cmd:"telegram"}`: status; `{cmd:"telegram", pings:true|false}` switches pings. */
-  command({ pings } = {}) {
+  /** `{cmd:"telegram"}`: status. `pings: true|false`, `checkin: true|false`, `checkinTime: "21:30"` change them. */
+  command({ pings, checkin, checkinTime } = {}) {
     if (typeof pings === 'boolean') { this.state.pings = pings; this.saveState(); this.log(`pings ${pings ? 'on' : 'off'}`); }
+    const time = checkinTime != null ? parseCheckinTime(checkinTime) : null;
+    if (checkinTime != null && !time) return { ok: false, error: 'checkinTime: a time like 21:30' };
+    if (typeof checkin === 'boolean' || time) {
+      if (typeof checkin === 'boolean') this.state.checkin.on = checkin;
+      if (time) this.state.checkin.time = time;
+      this.saveState();
+      this.log(`check-in ${this.state.checkin.on ? `on at ${this.state.checkin.time}` : 'off'}`);
+    }
     return {
       enabled: true, polling: this.running, configOk: this.cfg.ok, chatId: this.cfg.chatId || null,
-      nextAppAlsoPolls: !!this.cfg.nextPolls, pings: this.state.pings, offset: this.state.offset, ...this.stats,
+      nextAppAlsoPolls: !!this.cfg.nextPolls, pings: this.state.pings, checkin: { ...this.state.checkin }, offset: this.state.offset, ...this.stats,
     };
   }
 }
@@ -740,6 +837,7 @@ export function startTelegram({ port, root, log, listAgents, send, interrupt }) 
     stateFile: process.env.OASIS_TELEGRAM_STATE || path.join(root, 'data', 'agent-engine-telegram.local.json'),
     apiBase: process.env.OASIS_TELEGRAM_API,
     pingMs: Number(process.env.OASIS_TELEGRAM_PING_MS) || PING_MS,
+    checkinEveryMs: process.env.OASIS_TELEGRAM_CHECKIN_MS != null ? Number(process.env.OASIS_TELEGRAM_CHECKIN_MS) : undefined, // 0: no timer (tests)
     listAgents, send, interrupt, log,
   });
   if (!line.cfg.ok) { line.log(`off: ${line.cfg.error || 'the bot config lacks enabled, botToken or chatId'}`); return null; }

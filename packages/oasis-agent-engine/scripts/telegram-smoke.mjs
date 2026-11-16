@@ -1,7 +1,7 @@
 // Telegram smoke [2 haiku turns]: the engine's Telegram line (src/telegram.js) end to end, against a fake Bot API.
 // Starts its own test engine (port 4541 unless OASIS_PORT) with OASIS_TELEGRAM=1 pointed at a local stub, so the real
 // bot and the real engine on 4530 are never touched. Checks: a stranger is ignored, /agents, a routed message comes
-// back as the agent's reply, a permission card turns into a ping, offset saved.
+// back as the agent's reply, a permission card turns into a ping, /checkin now (0 turns), offset saved.
 //
 //   node scripts/telegram-smoke.mjs
 import http from 'node:http';
@@ -56,7 +56,7 @@ const engine = spawn(process.execPath, [path.join(PKG, 'src', 'index.js')], {
   env: {
     ...process.env, OASIS_PORT: String(PORT), OASIS_ROSTER: path.join(tmp, 'roster.json'), OASIS_TELEGRAM: '1',
     OASIS_TELEGRAM_API: apiBase, OASIS_TELEGRAM_CONFIG: path.join(tmp, 'tg.json'), OASIS_TELEGRAM_STATE: path.join(tmp, 'tg-state.json'),
-    OASIS_TELEGRAM_PING_MS: '4000',
+    OASIS_TELEGRAM_PING_MS: '4000', OASIS_TELEGRAM_CHECKIN_MS: '0',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -91,6 +91,15 @@ try {
   push({ text: '/agents' });
   await waitFor(() => sent.find((t) => t.includes('smoke-tg')), 10000, '/agents');
   check('/agents lists the agent with a colour', sent.some((t) => /^[⚪🔵🟢🟠🔴] smoke-tg · /mu.test(t)), sent.at(-1));
+
+  // [0 turns] the evening check-in, on demand: read from the Oasis page server's work counter (a GET, nothing written)
+  const beforeCheckin = sent.length;
+  push({ text: '/checkin now' });
+  const checkin = await waitFor(() => sent.slice(beforeCheckin)[0], 15000, 'the check-in');
+  const webUp = await fetch('http://127.0.0.1:4516/api/village/work', { signal: AbortSignal.timeout(5000) }).then((r) => r.ok, () => false);
+  check('/checkin now sends the day from the work counter', webUp ? /^🕘 \d\d:\d\d check-in · /.test(checkin) && /(Vow kept|You sucked today|No vow running)/.test(checkin) : /^No check-in right now/.test(checkin), JSON.stringify(checkin.split(/\n/)[0]));
+  const st2 = await cmd('telegram');
+  check('the check-in state is reported', st2.data?.checkin?.time === '21:00' && st2.data.checkin.lastSent === null, JSON.stringify(st2.data?.checkin));
 
   // [turn 1] routed by name; the final text comes back under the agent's name
   push({ text: 'smoke-tg: Reply with only the word PONG.' });
