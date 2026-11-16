@@ -1591,7 +1591,8 @@ export default function Scene() {
   // (deeplinks, future agents) still reaches WizCon.
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const open = () => setWizardOpen(true)
+    // Also what completes the first quest, now that the Wizard button on the rail is gone.
+    const open = () => { setWizardOpen(true); completeQuest('open-wizard') }
     window.addEventListener('oasis:open-wizard', open)
     return () => window.removeEventListener('oasis:open-wizard', open)
   }, [])
@@ -2145,6 +2146,7 @@ export default function Scene() {
         onCastSpell={handleSpellbookCast}
         readOnly={readOnlyForcesRp1}
         lockedSpellIds={!canUseFullWizard ? HOSTED_USER_LOCKED_SPELL_IDS : []}
+        canOpenWizard={canShowWizardConsole}
       />
       {!hideEditTools && <PlaceMenu />}
       <GlobalNotice />

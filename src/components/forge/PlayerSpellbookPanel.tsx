@@ -32,6 +32,8 @@ type PlayerSpellbookPanelProps = {
    *  the rule, not just see a dead tile. */
   readOnly?: boolean
   lockedSpellIds?: readonly SpellId[]
+  /** The Wizard console exists for this visitor: show the button that opens it. */
+  canOpenWizard?: boolean
 }
 
 const COMBAT_SPELL_IDS = new Set<SpellId>(['firebolt', 'lightning-bolt', 'ice-bolt', 'machine-gun'])
@@ -61,6 +63,7 @@ export function PlayerSpellbookPanel({
   onCastSpell,
   readOnly = false,
   lockedSpellIds = [],
+  canOpenWizard = false,
 }: PlayerSpellbookPanelProps) {
   const [activePage, setActivePage] = useState<SpellbookPageId>('recipe-catalog')
   const [highlightSpellId, setHighlightSpellId] = useState<SpellId | null>(null)
@@ -280,7 +283,7 @@ export function PlayerSpellbookPanel({
             Tweak texture/sizing here; rest of the app's pattern is the
             same — `style={{ backgroundImage: ... }}` + size to fit. ─═̷─ */}
         {/* The Wizard console left the rail (2026-11-16): it opens from here. */}
-        <button
+        {canOpenWizard && (<button
           type="button"
           data-spellbook-action="wizard-console"
           title="The Wizard console: conjure, craft and the asset library"
@@ -293,7 +296,7 @@ export function PlayerSpellbookPanel({
           }}
         >
           Wizard
-        </button>
+        </button>)}
         <button
           type="button"
           className="relative h-10 min-w-24 bg-no-repeat px-4 text-[11px] font-black uppercase tracking-[0.16em] text-amber-50 transition hover:brightness-110 active:brightness-95"

@@ -148,6 +148,8 @@ function useMenuTriggers() {
         const base = now.inputState === 'third-person' || now.inputState === 'noclip' || now.inputState === 'orbit'
         if (!base || now.uiLayers > 0 || now.selectedObject || now.agentOpen) return
         if (lastInputChangeAt >= at - 250) return
+        // An agent is selected: this Escape lets go of it, as it does with the mouse free.
+        if (getSelectedVillageAgent()) { selectVillageAgent(null); return }
         menu.openMenu({ fromMouseLook: true })
       }, 60)
     }

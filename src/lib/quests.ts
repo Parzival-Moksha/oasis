@@ -36,7 +36,7 @@ export const QUESTS: QuestDef[] = [
     id: 'open-wizard',
     number: 1,
     title: 'Open the Wizard Console',
-    description: 'Click the ✨ button (top-left) to open your creation engine. Browse the Gallery for ready-made objects, or Conjure 3D models from text.',
+    description: 'Open Spells (B) and press Wizard at the top to open your creation engine. Browse the Gallery for ready-made objects, or Conjure 3D models from text.',
     icon: '✨',
     doneIcon: '✅',
   },

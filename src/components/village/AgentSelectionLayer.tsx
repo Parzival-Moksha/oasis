@@ -17,6 +17,8 @@ import { getLiveObjectTransform } from '@/lib/live-object-transforms'
 import { villageAgentKey } from '@/lib/village/village-layout'
 import { getVillageStation } from './village-actions'
 import {
+  clearAllSentGoals,
+  clearSentGoal,
   getAgentSelectionFx,
   getAgentSelectionVersion,
   getSelectedVillageAgent,
@@ -90,7 +92,7 @@ varying float vHeat;
 void main() {
   vec2 c = gl_PointCoord - 0.5;
   float d = length(c);
-  float soft = smoothstep(0.5, 0.0, d);
+  float soft = 1.0 - smoothstep(0.0, 0.5, d);
   gl_FragColor = vec4(mix(uColorA, uColorB, clamp(vHeat, 0.0, 1.0)), clamp(soft * soft * vAlpha, 0.0, 1.0));
 }
 `
@@ -103,6 +105,7 @@ const PARTICLE_COLORS: Record<'sparkle' | 'fire' | 'vortex', [string, string]> =
 
 function Particles({ mode }: { mode: 'sparkle' | 'fire' | 'vortex' }) {
   const size = useThree(s => s.size)
+  const dpr = useThree(s => s.viewport.dpr)
   const geometry = useMemo(() => {
     const g = new THREE.BufferGeometry()
     const seeds = new Float32Array(PARTICLE_COUNT * 4)
@@ -130,7 +133,8 @@ function Particles({ mode }: { mode: 'sparkle' | 'fire' | 'vortex' }) {
   }), [mode])
   useEffect(() => () => { geometry.dispose() }, [geometry])
   useEffect(() => () => { material.dispose() }, [material])
-  material.uniforms.uScale.value = size.height * 0.9
+  // Point sizes are in device pixels.
+  material.uniforms.uScale.value = size.height * 0.9 * dpr
   return <points geometry={geometry} material={material} raycast={NO_RAYCAST} frustumCulled={false} userData={{ selectionTime: material.uniforms.uTime }} />
 }
 
@@ -270,10 +274,14 @@ export function AgentSelectionLayer() {
   // An agent that is gone cannot stay selected.
   const villageId = getSelectedVillageAgent()
   const exists = useOasisStore(s => (villageId ? Boolean(s.agentEngine.agents[villageId]) : true))
-  useEffect(() => { if (!exists) selectVillageAgent(null) }, [exists])
+  useEffect(() => { if (!exists && villageId) { clearSentGoal(villageId); selectVillageAgent(null) } }, [exists, villageId])
+  // One selection at a time: a selected world object and a selected agent would both answer a right-click.
+  const selectedObjectId = useOasisStore(s => s.selectedObjectId)
+  useEffect(() => { if (selectedObjectId) selectVillageAgent(null) }, [selectedObjectId])
+  useEffect(() => { if (villageId && useOasisStore.getState().selectedObjectId) useOasisStore.getState().selectObject(null) }, [villageId])
   // Leaving the world leaves the selection behind.
   const worldId = useOasisStore(s => s.activeWorldId)
-  useEffect(() => () => selectVillageAgent(null), [worldId])
+  useEffect(() => () => { selectVillageAgent(null); clearAllSentGoals() }, [worldId])
 
   const place = (): boolean => {
     const g = group.current
@@ -332,6 +340,7 @@ export function AgentSelectionLayer() {
       if (!isRightClick(held, moved)) return
       const state = useInputManager.getState().inputState
       if (state !== 'third-person' && state !== 'noclip' && state !== 'orbit') return // placing, painting, in a panel
+      if (useOasisStore.getState().selectedObjectId) return // the old Oasis's own move order answers this one
       const station = getVillageStation(agentId)
       if (!station) return
       // Under mouse-look the pointer is the crosshair in the middle of the view.

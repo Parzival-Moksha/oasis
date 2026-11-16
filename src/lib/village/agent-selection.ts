@@ -162,6 +162,13 @@ export function clearSentGoal(agentId: string): void {
   if (sentGoals.delete(agentId)) emit()
 }
 
+/** Another world: nobody keeps an order that was given for the last one. */
+export function clearAllSentGoals(): void {
+  if (sentGoals.size === 0) return
+  sentGoals.clear()
+  emit()
+}
+
 // ── the ground under a right-click ────────────────────────────────────────────────────────────
 
 export interface Ray { ox: number; oy: number; oz: number; dx: number; dy: number; dz: number }
