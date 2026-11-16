@@ -1,9 +1,12 @@
 // ░▒▓ CLAUDE USAGE INDEX — every token Claude Code spent on this machine, from its own transcripts ▓▒░
 // ~/.claude/projects/**/*.jsonl (terminal, desktop app, the village's agents and their subagents) hold
 // each reply's usage: fresh input, cache write, cache read and output tokens. One reply is written
-// as several lines (one per content block) with the same message id and usage: counted once.
-// Incremental: each file's byte offset and per-day totals are kept in prisma/data, so after the
-// first pass (minutes for gigabytes) a refresh only reads what was appended since. Server-side only.
+// as several lines (one per content block), and a resumed or forked session copies earlier replies
+// into its own file: each reply (message id + request id) is counted once across all files.
+// Incremental: each file's byte offset, per-day totals and the replies it counted are kept in
+// prisma/data, so after the first pass (about a minute for gigabytes) a refresh only reads what was
+// appended since. A transcript Claude Code deletes keeps its counts: all time never shrinks.
+// Server-side only.
 
 import { createReadStream, promises as fs } from 'node:fs'
 import os from 'node:os'
@@ -23,6 +26,15 @@ export function totalTokens(c: TokenCounts): number {
   return c.input + c.cacheWrite + c.cacheRead + c.output
 }
 
+/**
+ * The headline: what the models wrote (output, thinking included) plus fresh input. Cache reads are the
+ * same context read again on every turn and would dwarf everything (tens of billions); cache writes are
+ * input stored for reuse. Both are shown apart.
+ */
+export function headlineTokens(c: TokenCounts): number {
+  return c.output + c.input
+}
+
 export function addCounts(a: TokenCounts, b: TokenCounts): TokenCounts {
   return { input: a.input + b.input, cacheWrite: a.cacheWrite + b.cacheWrite, cacheRead: a.cacheRead + b.cacheRead, output: a.output + b.output }
 }
@@ -36,7 +48,8 @@ export function localDay(at: Date): string {
 }
 
 export interface UsageLine {
-  id: string
+  /** message id + request id: the same reply in another line or another file has the same key. */
+  key: string
   model: string
   day: string
   counts: TokenCounts
@@ -49,7 +62,7 @@ function n(value: unknown): number {
 /** One transcript line → the reply's usage, or null (not an assistant reply, no usage, all zero). */
 export function parseUsageLine(line: string): UsageLine | null {
   if (!line.includes('"usage"') || !line.includes('"assistant"')) return null
-  let entry: { type?: string; timestamp?: string; message?: { id?: string; model?: string; usage?: Record<string, unknown> } }
+  let entry: { type?: string; timestamp?: string; requestId?: string; message?: { id?: string; model?: string; usage?: Record<string, unknown> } }
   try {
     entry = JSON.parse(line)
   } catch {
@@ -66,28 +79,41 @@ export function parseUsageLine(line: string): UsageLine | null {
   if (!totalTokens(counts)) return null
   const at = entry.timestamp ? new Date(entry.timestamp) : null
   if (!at || Number.isNaN(at.getTime())) return null
-  return { id: entry.message.id || `${entry.timestamp}`, model: entry.message.model || 'unknown', day: localDay(at), counts }
+  return { key: `${entry.message.id || entry.timestamp}|${entry.requestId || ''}`, model: entry.message.model || 'unknown', day: localDay(at), counts }
 }
 
 // ─── the index ────────────────────────────────────────────────────────────────
 
-interface FileState {
+export interface FileState {
   size: number
   offset: number
-  /** Message ids of the last replies read: a reply split across two refreshes is still counted once. */
-  lastIds: string[]
+  /** Hashes of the replies this file counted (each reply is counted by the first file it was read from). */
+  keys: string[]
   days: Record<string, TokenCounts>
   models: Record<string, TokenCounts>
+  /** Claude Code deleted the transcript: its counts stay. */
+  gone?: boolean
 }
 
-interface UsageIndex {
-  version: 1
+export interface UsageIndex {
+  version: 2
   files: Record<string, FileState>
   scannedAt: number
 }
 
-const INDEX_VERSION = 1
-const LAST_IDS = 64
+const INDEX_VERSION = 2
+
+/** A reply's key as 16 hex digits (two 32-bit FNV-1a hashes): small enough to keep every reply's. */
+export function hashKey(key: string): string {
+  let a = 0x811c9dc5
+  let b = 0x050c5d1f
+  for (let i = 0; i < key.length; i++) {
+    const c = key.charCodeAt(i)
+    a = Math.imul(a ^ c, 0x01000193)
+    b = Math.imul(b ^ c, 0x01000193) ^ (b >>> 15)
+  }
+  return (a >>> 0).toString(16).padStart(8, '0') + (b >>> 0).toString(16).padStart(8, '0')
+}
 
 export function projectsRoot(): string {
   return path.join(os.homedir(), '.claude', 'projects')
@@ -112,17 +138,20 @@ async function listTranscripts(dir: string, out: string[] = []): Promise<string[
   return out
 }
 
-/** Apply the lines of one file from `state.offset` on; only whole lines (a line still being written waits). */
-export function applyLines(state: FileState, text: string): number {
+/**
+ * Apply the lines of one file from `state.offset` on; only whole lines (a line still being written waits).
+ * `seen` holds every reply already counted, in any file.
+ */
+export function applyLines(state: FileState, text: string, seen: Set<string>): number {
   const end = text.lastIndexOf('\n')
   if (end < 0) return 0
-  const recent = new Set(state.lastIds)
   for (const line of text.slice(0, end).split('\n')) {
     const usage = parseUsageLine(line)
-    if (!usage || recent.has(usage.id)) continue
-    recent.add(usage.id)
-    state.lastIds.push(usage.id)
-    if (state.lastIds.length > LAST_IDS) state.lastIds.splice(0, state.lastIds.length - LAST_IDS)
+    if (!usage) continue
+    const key = hashKey(usage.key)
+    if (seen.has(key)) continue
+    seen.add(key)
+    state.keys.push(key)
     state.days[usage.day] = addCounts(state.days[usage.day] || ZERO_COUNTS, usage.counts)
     state.models[usage.model] = addCounts(state.models[usage.model] || ZERO_COUNTS, usage.counts)
   }
@@ -146,6 +175,8 @@ async function readFrom(file: string, offset: number, onChunk: (text: string) =>
 }
 
 let current: UsageIndex | null = null
+/** Every reply counted, in any file (rebuilt from the files' keys on load). */
+let seenKeys = new Set<string>()
 let scanning: Promise<UsageIndex> | null = null
 let progress = { done: 0, total: 0 }
 
@@ -156,6 +187,7 @@ async function loadIndex(): Promise<UsageIndex> {
     if (parsed.version === INDEX_VERSION && parsed.files) current = parsed
   } catch { /* first run */ }
   current ??= { version: INDEX_VERSION, files: {}, scannedAt: 0 }
+  seenKeys = new Set(Object.values(current.files).flatMap(state => state.keys))
   return current
 }
 
@@ -174,7 +206,8 @@ export function refreshUsageIndex(): Promise<UsageIndex> {
     const files = await listTranscripts(projectsRoot())
     progress = { done: 0, total: files.length }
     const present = new Set(files)
-    for (const known of Object.keys(index.files)) if (!present.has(known)) delete index.files[known]
+    // Claude Code cleans up old transcripts: what they counted still happened.
+    for (const [known, state] of Object.entries(index.files)) if (!present.has(known)) state.gone = true
     let sinceSave = 0
     for (const file of files) {
       progress.done += 1
@@ -185,12 +218,16 @@ export function refreshUsageIndex(): Promise<UsageIndex> {
         continue
       }
       let state = index.files[file]
-      // A file that shrank was rewritten: count it again from the start.
-      if (!state || size < state.offset) state = index.files[file] = { size: 0, offset: 0, lastIds: [], days: {}, models: {} }
+      // A file that shrank was rewritten: count it again from the start (its replies are free to count again).
+      if (!state || size < state.offset) {
+        for (const key of state?.keys || []) seenKeys.delete(key)
+        state = index.files[file] = { size: 0, offset: 0, keys: [], days: {}, models: {} }
+      }
+      state.gone = undefined
       if (size === state.offset) continue
       const target = state
       try {
-        target.offset = await readFrom(file, target.offset, text => applyLines(target, text))
+        target.offset = await readFrom(file, target.offset, text => applyLines(target, text, seenKeys))
         target.size = size
       } catch { /* locked or vanished mid-read: next time */ }
       sinceSave += 1
@@ -238,7 +275,7 @@ export function summarizeUsage(index: UsageIndex, now = new Date()): Omit<UsageS
   const byModel = Object.entries(models)
     .filter(([model]) => model !== '<synthetic>')
     .map(([model, counts]) => ({ model, counts }))
-    .sort((a, b) => totalTokens(b.counts) - totalTokens(a.counts))
+    .sort((a, b) => headlineTokens(b.counts) - headlineTokens(a.counts))
   return { today: t, week: w, allTime: all, byModel, firstDay, scannedAt: index.scannedAt }
 }
 
