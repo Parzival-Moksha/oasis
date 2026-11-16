@@ -5,13 +5,14 @@
 // (work-vow-client ticks once a second), never per frame. A click opens the detail.
 
 import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useMindcraftLook } from './mindcraft-look'
 import { formatClock, WORK_VALOR, type WorkDayView, type WorkSnapshot } from '../../lib/village/work-vow'
 import { GAME_HUD_TEXT } from '../forge/GameKeycap'
 import { useOasisStore } from '../../store/oasisStore'
 import { getMissionState, subscribeMissions } from './village-mission-store'
 import { MindcraftWindow, openMindcraft } from './MindcraftView'
 import { getWorkVowState, setWorkFocus, setWorkMission, startWorkVow, subscribeWorkVow } from './work-vow-client'
-import { VILLAGE_FONT_BODY, VILLAGE_FONT_DISPLAY } from './village-status'
+
 
 /** Between an agent's key and its name in the focus selector's string. */
 const SEP = String.fromCharCode(1)
@@ -62,7 +63,7 @@ function Bar({ label, seconds, total, color, right, onClick, open }: { label: st
         <span className="min-w-0 break-words">{onClick ? (open ? '▾ ' : '▸ ') : ''}{label}</span>
         <span className="shrink-0 tabular-nums">{right ?? formatClock(seconds)} · {Math.round(share * 100)}%</span>
       </div>
-      <div className="mb-1 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full" style={{ width: `${Math.min(100, share * 100)}%`, background: color }} /></div>
+      <div className="mc-track mb-1.5 !h-[7px]"><div className="h-full" style={{ width: `${Math.min(100, share * 100)}%`, background: color }} /></div>
     </div>
   )
 }
@@ -77,7 +78,7 @@ function WhereTimeWent({ snapshot }: { snapshot: WorkSnapshot }) {
   const hours = day.agentHours
   return (
     <div className="mt-2">
-      <div className="mb-1 text-[9.5px] uppercase tracking-[0.2em] text-white/45">Where your time went</div>
+      <div className="mc-label mb-1">Where your time went</div>
       {day.missions.map(mission => (
         <Bar key={mission.file} label={`${mission.title} ×${WORK_VALOR.mission}`} seconds={mission.seconds} total={day.seconds} color="#38bdf8" right={`${formatClock(mission.seconds)} · ${mission.xp} XP`} />
       ))}
@@ -116,30 +117,29 @@ function Detail({ snapshot, liveSeconds, onClose }: { snapshot: WorkSnapshot; li
   return (
     <div
       data-ui-panel="village-work-vow"
-      className="fixed bottom-[92px] left-3 z-[9300] max-h-[calc(100vh-110px)] w-[350px] overflow-y-auto rounded-xl border border-white/15 bg-slate-950/95 p-3 text-[12px] text-white shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-xl max-[700px]:bottom-auto max-[700px]:top-[120px]"
-      style={{ fontFamily: VILLAGE_FONT_BODY }}
+      className="mc-scope mc-popup fixed bottom-[92px] left-3 z-[9300] max-h-[calc(100vh-110px)] w-[350px] overflow-y-auto rounded-xl border border-white/15 bg-slate-950/95 p-3 text-white shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-xl max-[700px]:bottom-auto max-[700px]:top-[120px]"
     >
       <div className="mb-2 flex items-start justify-between">
         <div>
-          <div className="text-[9.5px] uppercase tracking-[0.26em] text-emerald-200/90">Mindcraft · the vow</div>
-          <div className="text-[16px] font-bold" style={{ fontFamily: VILLAGE_FONT_DISPLAY }}>{formatClock(snapshot.targetSeconds).replace(/:00$/, '')} hours a day, {snapshot.vow.from.slice(5)} to {snapshot.vow.to.slice(5)}</div>
+          <div className="mc-eyebrow">Mindcraft · the vow</div>
+          <div className="mc-title text-[17px]">{formatClock(snapshot.targetSeconds).replace(/:00$/, '')} hours a day, {snapshot.vow.from.slice(5)} to {snapshot.vow.to.slice(5)}</div>
         </div>
-        <button type="button" onClick={onClose} className="rounded-md border border-white/15 bg-white/5 px-2 py-0.5 text-[12px] font-bold hover:bg-white/15">✕</button>
+        <button type="button" onClick={onClose} className="mc-close shrink-0">✕</button>
       </div>
       <div className={row}><span className="text-white/60">Today</span><span className="font-bold">{formatClock(liveSeconds)} · {snapshot.today.xp} XP</span></div>
-      <button type="button" onClick={() => { onClose(); openMindcraft() }} className="mt-2 w-full rounded-md border border-emerald-300/40 bg-emerald-400/15 px-2 py-1 text-[11px] font-bold text-emerald-50 hover:bg-emerald-400/30">
+      <button type="button" onClick={() => { onClose(); openMindcraft() }} className="mc-btn mt-2" data-tone="go">
         Open Mindcraft: every day, mine and the agents&rsquo;
       </button>
       <WhereTimeWent snapshot={snapshot} />
       {snapshot.active && (
-        <button type="button" onClick={() => { void setWorkMission(null) }} className="mt-2 w-full rounded-md border border-amber-300/40 bg-amber-400/15 px-2 py-1 text-[11px] font-bold text-amber-50 hover:bg-amber-400/30">
+        <button type="button" onClick={() => { void setWorkMission(null) }} className="mc-btn mt-2" data-tone="stop">
           ■ stop working on “{snapshot.active.title}”
         </button>
       )}
       {snapshot.commitments?.map((c, index) => (
-        <div key={index} className="mt-3 rounded-lg border border-white/10 bg-white/5 p-2">
-          <div className="text-[9.5px] uppercase tracking-[0.2em] text-amber-200/80">Committed</div>
-          <div className="font-bold">{c.label}</div>
+        <div key={index} className="mc-card mt-3 p-2">
+          <div className="mc-label">Committed</div>
+          <div className="mc-strong text-[13px]">{c.label}</div>
           <div className="text-white/70">A day you hit: its XP <span style={{ color: GREEN }}>×{c.multiplier}</span>. A day you miss: <span style={{ color: RED }}>−{c.penaltyPerMinute} XP</span> for every missing minute.</div>
           {c.today && (
             <div className="mt-1">Today: finish the last {formatClock(c.today.remainingSeconds)} for <span className="font-bold" style={{ color: GREEN }}>+{c.today.bonusIfHit} XP</span>; stop now and it costs <span className="font-bold" style={{ color: RED }}>−{c.today.penaltyIfStopped} XP</span>.</div>
@@ -150,8 +150,8 @@ function Detail({ snapshot, liveSeconds, onClose }: { snapshot: WorkSnapshot; li
       {snapshot.totals && (
         <div className={`${row} mt-2`}><span className="text-white/60">The vow so far</span><span className="font-bold">{snapshot.totals.xp} + {snapshot.totals.bonusXp} − {snapshot.totals.penaltyXp} = {snapshot.totals.netXp} XP</span></div>
       )}
-      <div className="mb-1 mt-3 flex items-center justify-between text-[9.5px] uppercase tracking-[0.2em] text-white/45">
-        <span>The week</span>
+      <div className="mb-1 mt-3 flex items-center justify-between">
+        <span className="mc-label">The week</span>
         <span className="flex items-start gap-1 normal-case tracking-normal">
           {snapshot.week.map(day => <DayPip key={day.date} day={day} today={day.date === snapshot.date} target={snapshot.targetSeconds} liveSeconds={liveSeconds} />)}
         </span>
@@ -166,7 +166,7 @@ function Detail({ snapshot, liveSeconds, onClose }: { snapshot: WorkSnapshot; li
           </div>
         )
       })}
-      <div className="mt-3 border-t border-white/10 pt-2 text-[10.5px] leading-snug text-white/50">
+      <div className="mc-foot mt-3 pt-2 leading-snug">
         {snapshot.rule} Time counts while this tab is visible and you did something in the last 3 minutes. To count a mission, open its panel and press “work on this”.
       </div>
     </div>
@@ -176,6 +176,7 @@ function Detail({ snapshot, liveSeconds, onClose }: { snapshot: WorkSnapshot; li
 export function WorkVowHud() {
   const state = useSyncExternalStore(subscribeWorkVow, getWorkVowState, getWorkVowState)
   const [open, setOpen] = useState(false)
+  useMindcraftLook() // textures and typefaces: mindcraft-look.tsx (the look is Hipster's, the content is ours)
   useEffect(() => startWorkVow(), [])
   // What is open decides where the seconds go: an agent, a mission card, or just the Oasis.
   const agentFocus = useOasisStore(s => {
@@ -220,7 +221,8 @@ export function WorkVowHud() {
         data-ui-panel="village-work-vow"
         onClick={() => setOpen(value => !value)}
         title="Your work vow: click for the detail"
-        className="fixed bottom-3 left-3 z-[170] flex items-center gap-2.5 rounded-xl border bg-slate-950/80 py-1.5 pl-2 pr-3 text-left text-white shadow-[0_10px_30px_rgba(0,0,0,0.45)] backdrop-blur-md transition hover:bg-slate-900/90 max-[700px]:bottom-auto max-[700px]:left-2 max-[700px]:top-[64px]"
+        data-done={done ? '1' : '0'}
+        className="mc-hud fixed bottom-3 left-3 z-[170] flex items-center gap-2.5 rounded-xl border bg-slate-950/80 py-1.5 pl-2 pr-3 text-left text-white shadow-[0_10px_30px_rgba(0,0,0,0.45)] backdrop-blur-md transition hover:bg-slate-900/90 max-[700px]:bottom-auto max-[700px]:left-2 max-[700px]:top-[64px]"
         style={{ borderColor: `${color}66`, boxShadow: done ? `0 0 22px ${GREEN}44` : undefined }}
       >
         <span className="relative flex items-center justify-center">
@@ -229,10 +231,10 @@ export function WorkVowHud() {
         </span>
         <span className="flex min-w-0 flex-col gap-0.5">
           <span className="flex items-baseline gap-1.5">
-            <span className="text-[17px] font-bold leading-none tabular-nums" style={{ fontFamily: VILLAGE_FONT_DISPLAY, color: done ? GREEN : '#fff' }}>{formatClock(liveSeconds)}</span>
+            <span className="mc-clock text-[17px] font-bold leading-none tabular-nums" style={{ color: done ? GREEN : '#f1dca8' }}>{formatClock(liveSeconds)}</span>
             <span className="text-[10px] text-white/50">/ {formatClock(snapshot.targetSeconds)}</span>
           </span>
-          <span className="flex max-w-[min(420px,calc(100vw-120px))] items-start gap-1.5 text-[9.5px] leading-snug" style={{ ...GAME_HUD_TEXT, color: statusColor }} title={state.running ? `Every minute like this earns ${rate} XP. With nothing open it is ${free}; with an agent or a mission open it is 1.` : 'Nothing is being counted right now'}>
+          <span className="mc-status flex max-w-[min(420px,calc(100vw-120px))] items-start gap-1.5 text-[9.5px] leading-snug" style={{ ...GAME_HUD_TEXT, color: statusColor }} title={state.running ? `Every minute like this earns ${rate} XP. With nothing open it is ${free}; with an agent or a mission open it is 1.` : 'Nothing is being counted right now'}>
             {state.running && <span className="mt-[3px] h-1.5 w-1.5 shrink-0 animate-pulse rounded-full" style={{ background: statusColor, boxShadow: `0 0 6px ${statusColor}` }} />}
             {/* Never cut off: a long agent or mission name wraps and the counter grows. */}
             <span className="whitespace-normal break-words text-left">{status}</span>
