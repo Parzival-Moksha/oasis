@@ -4,9 +4,11 @@
 
 import { useSyncExternalStore } from 'react'
 
-export type RailLookId = 'obsidian' | 'rune' | 'arcade' | 'neon' | 'classic'
+export type RailLookId = 'forged' | 'parchment' | 'obsidian' | 'rune' | 'arcade' | 'neon' | 'classic'
 
 export const RAIL_LOOKS: Array<{ id: RailLookId; label: string; blurb: string }> = [
+  { id: 'forged', label: 'Forged', blurb: 'Painted stone plates in gem-set iron, one gem colour each. The spell book\'s own material.' },
+  { id: 'parchment', label: 'Parchment', blurb: 'Painted parchment plaques in carved frames, ink lettering.' },
   { id: 'obsidian', label: 'Obsidian', blurb: 'Dark glass plaques, an icon each, condensed capitals.' },
   { id: 'rune', label: 'Rune', blurb: 'Bronze-edged tablets with a serif face. Fantasy RPG.' },
   { id: 'arcade', label: 'Arcade', blurb: 'Pixel letters, hard edges, a block shadow.' },
@@ -14,7 +16,7 @@ export const RAIL_LOOKS: Array<{ id: RailLookId; label: string; blurb: string }>
   { id: 'classic', label: 'Classic', blurb: 'The cut-corner buttons the Oasis had until now.' },
 ]
 
-export const DEFAULT_RAIL_LOOK: RailLookId = 'obsidian'
+export const DEFAULT_RAIL_LOOK: RailLookId = 'forged'
 const KEY = 'oasis-rail-look'
 
 export function isRailLook(value: unknown): value is RailLookId {
@@ -64,4 +66,18 @@ export function railIconFor(label: string): RailIcon {
   if (key === 'help') return 'help'
   if (key === 'profile') return 'profile'
   return 'none'
+}
+
+/** The painted plate (public/ui/rail/plate-*.png) and plaque (parchment-*.png) each rail button wears. */
+export function railPlateFor(icon: RailIcon): { plate: string; plaque: string } {
+  switch (icon) {
+    case 'menu': return { plate: 'silver', plaque: 'slate' }
+    case 'world': return { plate: 'blue', plaque: 'stone' }
+    case 'spells': return { plate: 'gold', plaque: 'gold' }
+    case 'agents': return { plate: 'green', plaque: 'vine' }
+    case 'profile': return { plate: 'violet', plaque: 'wood' }
+    case 'settings': return { plate: 'silver', plaque: 'slate' }
+    case 'help': return { plate: 'blue', plaque: 'stone' }
+    default: return { plate: 'ember', plaque: 'wood' }
+  }
 }

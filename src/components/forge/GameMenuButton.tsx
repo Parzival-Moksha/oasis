@@ -5,7 +5,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 
 import { useAudioManager } from '@/lib/audio-manager'
 import { holdUIFocusForMenuTransition } from '@/lib/input-manager'
-import { railIconFor, useRailLook, type RailIcon, type RailLookId } from '@/lib/rail-look'
+import { railIconFor, railPlateFor, useRailLook, type RailIcon, type RailLookId } from '@/lib/rail-look'
 import { cellsPath, textCells, textWidth } from '@/components/forge/splash/intro-overlay'
 
 export const GAME_MENU_FONT ='"Arial Black", Impact, "Segoe UI Black", "Trebuchet MS", system-ui, sans-serif'
@@ -67,6 +67,27 @@ const RAIL_LOOK_CSS = `
 .orb-caret { flex: none; width: 0; height: 0; border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 6px solid var(--orb-accent); opacity: 0.75; transition: transform 140ms ease-out; }
 .orb:hover .orb-caret { transform: translateX(2px); opacity: 1; }
 @media (max-width: 700px) { .orb { height: 30px; min-width: 82px; gap: 5px; padding: 0 7px 0 5px; } .orb-icon { width: 18px; height: 18px; } .orb-icon svg { width: 13px; height: 13px; } .orb-sub { display: none; } }
+
+/* Forged: the spell book's material. A painted stone plate in gem-set iron (public/ui/rail/plate-*.png), the label carved in gold. */
+.orb[data-look="forged"] { height: 58px; padding: 0 20px; justify-content: center; border: 0; background: var(--orb-plate) center / 100% 100% no-repeat; font-family: 'Palatino Linotype', Palatino, 'Book Antiqua', 'URW Palladio L', 'Iowan Old Style', Georgia, serif; filter: drop-shadow(0 5px 7px rgba(0,0,0,0.55)); }
+.orb[data-look="forged"] .orb-icon, .orb[data-look="forged"] .orb-caret { display: none; }
+.orb[data-look="forged"] .orb-text { align-items: center; text-align: center; gap: 1px; }
+.orb[data-look="forged"] .orb-label { font-size: 15.5px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #f1dca8; background: linear-gradient(180deg, #fff3cf 0%, #e9c877 55%, #b98a3a 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; filter: drop-shadow(0 1px 0 rgba(0,0,0,0.95)) drop-shadow(0 0 5px rgba(0,0,0,0.8)); }
+.orb[data-look="forged"] .orb-sub { font-size: 8.5px; letter-spacing: 0.14em; color: rgba(236,222,190,0.72); text-shadow: 0 1px 2px #000; }
+.orb[data-look="forged"]:hover:not(:disabled) { filter: drop-shadow(0 6px 9px rgba(0,0,0,0.6)) drop-shadow(0 0 9px var(--orb-accent)) brightness(1.22); }
+.orb[data-look="forged"][data-active="1"] { filter: drop-shadow(0 6px 9px rgba(0,0,0,0.6)) drop-shadow(0 0 12px var(--orb-accent)) brightness(1.38) saturate(1.2); }
+@media (max-width: 700px) { .orb[data-look="forged"] { height: 36px; padding: 0 10px; } .orb[data-look="forged"] .orb-label { font-size: 10px; } }
+
+/* Parchment: a painted plaque in a carved frame (public/ui/rail/parchment-*.png, nine-sliced so the corners keep their shape), ink lettering. */
+.orb[data-look="parchment"] { height: 52px; padding: 0 6px; justify-content: center; border: 15px solid transparent; border-image: var(--orb-plaque) 62 fill / 15px / 2px stretch; background: none; font-family: 'Palatino Linotype', Palatino, 'Book Antiqua', 'URW Palladio L', 'Iowan Old Style', Georgia, serif; color: #3b2710; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.5)); }
+.orb[data-look="parchment"] .orb-icon { width: 18px; height: 18px; color: #6a4517; }
+.orb[data-look="parchment"] .orb-icon svg { width: 15px; height: 15px; }
+.orb[data-look="parchment"] .orb-caret { display: none; }
+.orb[data-look="parchment"] .orb-text { gap: 0; }
+.orb[data-look="parchment"] .orb-label { font-size: 14.5px; font-weight: 700; letter-spacing: 0.06em; font-variant: small-caps; color: #3b2710; text-shadow: 0 1px 0 rgba(255,246,220,0.7); }
+.orb[data-look="parchment"] .orb-sub { font-size: 8px; color: rgba(59,39,16,0.75) !important; letter-spacing: 0.06em; }
+.orb[data-look="parchment"]:hover:not(:disabled) { filter: drop-shadow(0 6px 8px rgba(0,0,0,0.55)) drop-shadow(0 0 8px rgba(255,214,130,0.7)) brightness(1.08); }
+.orb[data-look="parchment"][data-active="1"] { filter: drop-shadow(0 6px 8px rgba(0,0,0,0.55)) drop-shadow(0 0 11px rgba(255,214,130,0.95)) brightness(1.14) saturate(1.15); }
 
 /* Obsidian: dark glass plaque, icon chip, condensed capitals */
 .orb[data-look="obsidian"] { border-radius: 10px; border: 1px solid rgba(255,255,255,0.16); background: linear-gradient(180deg, rgba(34,40,58,0.94) 0%, rgba(11,14,23,0.96) 100%); box-shadow: 0 6px 16px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.14); font-family: Bahnschrift, 'DIN Alternate', 'Avenir Next Condensed', 'Roboto Condensed', 'Segoe UI', system-ui, sans-serif; }
@@ -141,6 +162,7 @@ export function GameMenuButton({
 
   if (look !== 'classic') {
     ensureRailCss()
+    const plates = railPlateFor(railIconFor(label))
     return (
       <button
         {...buttonProps}
@@ -163,7 +185,12 @@ export function GameMenuButton({
         data-look={look}
         data-active={active ? '1' : '0'}
         className={`orb ${widthClassName} ${className}`}
-        style={{ ['--orb-accent' as string]: accent, ...(buttonProps.style || {}) }}
+        style={{
+          ['--orb-accent' as string]: accent,
+          ['--orb-plate' as string]: `url(/ui/rail/plate-${plates.plate}.png)`,
+          ['--orb-plaque' as string]: `url(/ui/rail/parchment-${plates.plaque}.png)`,
+          ...(buttonProps.style || {}),
+        }}
       >
         <span className="orb-icon"><RailIconSvg icon={railIconFor(label)} /></span>
         <span className="orb-text">

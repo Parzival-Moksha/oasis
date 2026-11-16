@@ -183,7 +183,17 @@ export function MindcraftWindow() {
       <div className="fixed inset-0 z-[9390] bg-slate-950/70 backdrop-blur-sm" onClick={() => setOpen(false)} />
       <div
         data-ui-panel="mindcraft"
-        className="fixed left-1/2 top-[5%] z-[9395] flex h-[90%] w-[min(900px,calc(100vw-32px))] -translate-x-1/2 flex-col rounded-xl border border-emerald-300/40 bg-slate-950/95 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-xl"
+        className="fixed left-1/2 top-[5%] z-[9395] flex h-[90%] w-[min(900px,calc(100vw-32px))] -translate-x-1/2 flex-col px-3 pb-2 pt-3"
+        style={{
+          // The spell book's materials (Hipster, 2026-11-16): a painted iron frame, nine-sliced so its
+          // jewelled corners keep their shape, around a dark page.
+          border: '46px solid transparent',
+          borderImage: 'url(/ui/rail/frame-large.png) 118 / 46px / 5px stretch',
+          // The page runs under the frame, to its edge: nothing of the world shows between the two.
+          background: 'linear-gradient(180deg, rgba(13,15,22,0.9) 0%, rgba(9,10,15,0.95) 100%) border-box, url(/ui/spellbook/frame/page-bg-agent.jpg) center / cover border-box',
+          borderRadius: 10,
+          boxShadow: '0 24px 70px rgba(0,0,0,0.6)',
+        }}
       >
         <button type="button" onClick={() => setOpen(false)} title="Close (Esc)" className="absolute right-3 top-3 rounded-md border border-white/15 bg-white/5 px-2 py-0.5 text-[12px] font-bold text-white hover:bg-white/15">✕</button>
         <MindcraftView />
