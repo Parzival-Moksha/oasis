@@ -2,6 +2,8 @@
 
 // ░▒▓ AGENT SETTINGS — one menu per agent: its voice and speed, its avatar, its colour, and the look of all chats ▓▒░
 // The gear in the agent window's header, on the side panel (E) and on the agent's full screen (F).
+//   Character its role in a sentence and a short "who you are", the owner's words or the agent's own; with its look
+//             and its place, which the Oasis keeps up to date (engine character.js). The agent is told what is here.
 //   Voice     one of twenty ElevenLabs voices (or the one the agent picked for itself) and how fast it talks (0.5x to 3x), per agent, remembered per session
 //             (village-companion.ts, lib/village/village-voices.ts). "Hear it" says one line in that voice.
 //   Walking   "Come to me when you need me" (on for every agent: it walks up when it needs a decision or has
@@ -12,6 +14,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { AgentSelectionSection } from './AgentSelectionSection'
+import { CharacterSection } from './CharacterSection'
 
 import { AGENT_AVATAR_CATALOG } from '../../lib/agent-avatar-catalog'
 import { villageAgentKey } from '../../lib/village/village-layout'
@@ -192,7 +195,9 @@ export function AgentSettingsButton({ agent, large = false }: { agent: Pick<Engi
         </svg>
       </button>
       {open && (
-        <div data-agent-settings-menu className="absolute right-0 top-9 z-50 w-[280px] rounded-lg border border-white/15 bg-slate-950/95 p-3 text-left text-[11px] font-normal normal-case tracking-normal text-white shadow-[0_18px_50px_rgba(0,0,0,0.6)]">
+        <div data-agent-settings-menu className="absolute right-0 top-9 z-50 max-h-[min(78vh,760px)] w-[280px] overflow-y-auto rounded-lg border border-white/15 bg-slate-950/95 p-3 text-left text-[11px] font-normal normal-case tracking-normal text-white shadow-[0_18px_50px_rgba(0,0,0,0.6)]">
+          {/* Who it is: role and who-you-are, kept by the engine as a card per agent (CharacterSection). */}
+          <CharacterSection agentId={agent.id} name={name} />
           {agent.owned && <VoiceSection agent={agent} agentKey={agentKey} />}
           <WalkingSection agentKey={agentKey} name={agent.name} />
           <AgentSelectionSection agentId={agent.id} agentKey={agentKey} name={agent.name} />

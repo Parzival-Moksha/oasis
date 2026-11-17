@@ -202,6 +202,7 @@ export class Agent {
     this.proc = proc;
     this.killing = false;
     this.sentSinceStart = false;
+    this.youDue = true; // a new process: its first message from the owner carries who it is (character.js)
     this.stderrTail = [];
     this.turnRunning = false;
     this.pendingUser.clear();
@@ -404,6 +405,8 @@ export class Agent {
   }
 
   onEvent(kind, payload) {
+    // After a compaction the who-you-are note may be gone from the context: it rides with the next message again.
+    if (kind === 'notice' && payload?.subtype === 'compact') this.youDue = true;
     // A resumed session whose last turn was cut off makes the CLI close that turn by itself at start
     // (init + turn.end, no API call): that must not hide "stopped mid-turn" before anyone wrote to it.
     if (kind === 'turn.end' && (this.sentSinceStart || !this.lastOutcome)) this.lastOutcome = payload;
@@ -567,6 +570,16 @@ export class Agent {
     const voiceNote = command || resume ? null : this.speak ? VOICE_NOTE : this.speakWentOff ? VOICE_OFF_NOTE : null;
     if (!command && !resume) this.speakWentOff = false;
     if (voiceNote) content = [...(Array.isArray(content) ? content : [{ type: 'text', text }]), { type: 'text', text: voiceNote }];
+    // Who it is (character.js): with the first message after a start, after a compaction, and when its card changed.
+    if (!command && !resume && this.hub.character) {
+      let you = null;
+      try { you = this.hub.character(this); } catch { you = null; }
+      if (you?.note && (this.youDue || you.stamp !== this.youStamp)) {
+        content = [...(Array.isArray(content) ? content : [{ type: 'text', text }]), { type: 'text', text: you.note }];
+        this.youDue = false;
+        this.youStamp = you.stamp;
+      }
+    }
     // Once: a voiced agent that has no voice of its own yet learns how to pick one.
     if (voiceNote === VOICE_NOTE && !this.voiceChoice && !this.voiceOffered) {
       this.voiceOffered = true;

@@ -61,3 +61,42 @@ export function computeEyesPose(station: { anchor: Vec3; rotationY: number }, ow
     ],
   }
 }
+
+// ─── pictures on request (engine `view` command, scripts/me.mjs) ─────────────
+
+/** Its own avatar from the front: upright, the whole body. */
+export const LOOK_PICTURE = { width: 512, height: 640, fov: 40, quality: 0.82 }
+/** What is around it: four of these, one per side. */
+export const AROUND_PICTURE = { width: 640, height: 360, fov: 95, quality: 0.72 }
+
+/**
+ * The camera that looks at the agent's avatar from the front: a little to one side so a desk monitor is not in
+ * the way, far enough for a tall body (2.7 m of height fit), and from above so a desk hides little of it.
+ * `station`: where the avatar stands now (anchor) and which way it faces.
+ */
+export function computeLookPose(station: { anchor: Vec3; rotationY: number }): EyesPose {
+  const forward: Vec3 = [Math.sin(station.rotationY), 0, Math.cos(station.rotationY)]
+  const side: Vec3 = [Math.cos(station.rotationY), 0, -Math.sin(station.rotationY)]
+  return {
+    position: [
+      station.anchor[0] + forward[0] * 3.4 + side[0] * 0.9,
+      station.anchor[1] + 2.2,
+      station.anchor[2] + forward[2] * 3.4 + side[2] * 0.9,
+    ],
+    target: [station.anchor[0], station.anchor[1] + 1.1, station.anchor[2]],
+  }
+}
+
+export const AROUND_LABELS = ['ahead', 'right', 'behind', 'left'] as const
+
+/** Four cameras at the avatar's head, each a step out in its own direction so its body is never in the picture. */
+export function computeAroundPoses(station: { anchor: Vec3; rotationY: number }): Array<EyesPose & { label: (typeof AROUND_LABELS)[number] }> {
+  return AROUND_LABELS.map((label, index) => {
+    // The avatar faces +Z at rotationY 0 and its right hand is -X: each quarter turn to the right subtracts 90°.
+    const yaw = station.rotationY - index * (Math.PI / 2)
+    const dx = Math.sin(yaw)
+    const dz = Math.cos(yaw)
+    const position: Vec3 = [station.anchor[0] + dx * 0.6, station.anchor[1] + EYE_HEIGHT, station.anchor[2] + dz * 0.6]
+    return { label, position, target: [position[0] + dx * 5, position[1] - 0.5, position[2] + dz * 5] }
+  })
+}

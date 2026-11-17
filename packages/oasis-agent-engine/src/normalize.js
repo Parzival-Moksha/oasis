@@ -72,10 +72,13 @@ export function toolResultText(content) {
 
 /** The engine's own notes in a user message (the eyes caption, the voice note: voice.js): for the model, not for the thread. */
 const EYES_NOTE = ENGINE_NOTE;
+/** The who-you-are note inside a text (a message that went to another window through the bridge carries it inline). */
+const YOU_NOTE_INLINE = /\s*\[Oasis you: [^\]]*\]/g;
 function textOfUserContent(content) {
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) return content.filter((b) => b?.type === 'text' && !EYES_NOTE.test(b.text || '')).map((b) => b.text).join('\n');
-  return '';
+  const text = typeof content === 'string' ? content
+    : Array.isArray(content) ? content.filter((b) => b?.type === 'text' && !EYES_NOTE.test(b.text || '')).map((b) => b.text).join('\n')
+      : '';
+  return text.includes('[Oasis you: ') ? text.replace(YOU_NOTE_INLINE, '') : text;
 }
 
 function contextFromUsage(u) {

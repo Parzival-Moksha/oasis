@@ -57,6 +57,17 @@ export function getVillageStation(agentId: string): VillageStationPlacement | nu
   return liveStations.get(agentId) || stations.get(agentId) || null
 }
 
+/** The body each agent wears (VillageWorld writes it; the presence report to the engine reads it). */
+let avatars: Record<string, string> = {}
+
+export function setVillageAvatars(next: Record<string, string>): void {
+  avatars = next
+}
+
+export function getVillageAvatar(agentId: string): string | null {
+  return avatars[agentId] || null
+}
+
 /** The agent's desk, wherever the agent itself is. */
 export function getVillageDesk(agentId: string): VillageStationPlacement | null {
   return stations.get(agentId) || null
@@ -145,6 +156,11 @@ const plazaListeners = new Set<() => void>()
 
 export function setVillagePlaza(center: Vec3 | null): void {
   plaza = center
+}
+
+/** The plaza's centre in this world, when the village is mounted. */
+export function getVillagePlaza(): Vec3 | null {
+  return plaza
 }
 
 export function isInVillagePlaza(): boolean {

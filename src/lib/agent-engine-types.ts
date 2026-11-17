@@ -323,6 +323,38 @@ export interface EngineSessionMeta {
   observedBy: string | null
 }
 
+/** One agent as the page sees it, reported to the engine for its card. */
+export interface EnginePresence {
+  agentId: string
+  /** The avatar file it wears, its gallery name and thumbnail path. */
+  avatar?: string
+  avatarName?: string
+  thumb?: string
+  /** "Brian (brian): deep, calm"; '' when it has no voice. */
+  voice?: string
+  /** The world the page is in. */
+  world?: string
+  /** Where its desk is and what is around it (village-place.ts). */
+  place?: string
+}
+
+/** An agent's card (engine character.js): the engine's facts and the owner's or agent's own words. */
+export interface EngineCharacter {
+  agentId: string
+  file: string | null
+  name?: string
+  role?: string
+  who: string
+  voice?: string
+  look?: string
+  avatar?: string
+  world?: string
+  home?: string
+  place?: string
+  /** The note the agent reads. */
+  note: string
+}
+
 /** How the engine's current run began (engine resume.js): the HUD's engine pill shows `line` for a while. */
 export interface EngineRestartInfo {
   startedAt: number
@@ -350,6 +382,8 @@ export type EngineServerMessage =
   | { type: 'event'; event: EngineEvent }
   /** The engine wants a picture from this agent's avatar for a message being sent (answer with the eyesFrame command). */
   | { type: 'eyes.request'; requestId: string; agentId: string }
+  /** An agent asked for pictures (scripts/me.mjs): its own avatar from the front, or what is around it (answer with viewFrames). */
+  | { type: 'view.request'; requestId: string; agentId: string; view: 'look' | 'around' }
   /** A step of the Council's scene for this page to do (engine stage.js); answer with the stageResult command. */
   | { type: 'stage.request'; requestId: string; request: { action: string } & Record<string, unknown> }
   | { type: 'reply'; id: number | string | null; cmd?: string; ok: boolean; data?: unknown; error?: string }
@@ -413,6 +447,14 @@ export interface EngineCommandMap {
   voiceMessage: { args: { agentId: string; audio: string; mime: string; durationMs?: number; priority?: 'now' | 'later' }; result: { ok: boolean; data?: { transcript: string; fileId: string; uuid?: string }; error?: string } }
   /** This page can take eyes pictures (once per connection). */
   canSee: { args: { on: boolean }; result: { ok: boolean } }
+  /** The answer to a view.request: the pictures, or none when this page has no view of that agent. */
+  viewFrames: { args: { requestId: string; pictures?: Array<{ data: string; mediaType: string; label?: string }> }; result: { ok: boolean } }
+  /** What this page knows about agents (their body, voice, world and place), for their cards (engine character.js). */
+  presence: { args: { agents: EnginePresence[] }; result: { ok: boolean; data?: { agents: number } } }
+  /** An agent's card: who it is. */
+  getCharacter: { args: { agentId: string }; result: { ok: boolean; data: EngineCharacter } }
+  /** The owner's (or the agent's) own words on the card. */
+  setCharacter: { args: { agentId: string; role?: string; who?: string }; result: { ok: boolean; data: EngineCharacter } }
   /** The answer to an eyes.request: the picture, or no data when this page has no view of that agent. */
   eyesFrame: { args: { requestId: string; data?: string; mediaType?: string }; result: { ok: boolean } }
   respond: { args: RespondArgs; result: { ok: boolean } }

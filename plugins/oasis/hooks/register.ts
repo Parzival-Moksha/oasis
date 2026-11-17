@@ -16,6 +16,13 @@
 //
 // The session also learns where it is: when the engine answers, one short section is added to the system
 // prompt (prompt.compose). The world tools themselves come from this plugin's .mcp.json (the Oasis MCP server).
+//
+// And who it is there: the engine keeps a card per agent (name, role, voice, look, place, a short who-you-are;
+// packages/oasis-agent-engine/src/character.js). For a session the engine does not run itself (the desktop app, a
+// terminal), this mod asks for the card's note (POST <engine>/bridge/character) and hands it to the model beside
+// the next prompt typed here (prompt.submit `context`: the model reads it, the person never sees it): once per
+// load of the mod, and again when the card changed. Sessions the engine runs get the same note with the owner's
+// messages, so the mod leaves those alone (OASIS_AGENT_ID is set in their environment).
 import type { Register, EngineInterface } from 'claude-code'
 
 /** Where the owner keeps the mission board; OASIS_MISSIONS_DIR overrides it. */
@@ -95,6 +102,20 @@ async function openOasis($: EngineInterface, engine: string, sessionId: string, 
 
 const POLL_MS = 1000
 const FLUSH_MS = 120
+/** The card is asked for again this often at most (it changes when the owner or the agent edits it, or the world does). */
+const CHARACTER_EVERY_MS = 60_000
+
+/** This session's who-you-are note and what it was made from; null when it has no place in the village (or no engine). */
+async function characterNote($: EngineInterface, engine: string, sessionId: string): Promise<{ note: string; stamp: string } | null> {
+  try {
+    const res = await post($, engine, '/bridge/character', { sessionId })
+    if (!res.ok) return null
+    const { note, stamp } = JSON.parse(res.text) as { note?: string | null; stamp?: string }
+    return note ? { note, stamp: stamp || note } : null
+  } catch {
+    return null // an older engine, or none running
+  }
+}
 
 function post($: EngineInterface, engine: string, path: string, body: object) {
   return $.http.fetch(`${engine}${path}`, {
@@ -117,6 +138,33 @@ export const register: Register = on => {
     const text = await (note ??= oasisSection($, engine))
     if (!text) return composed
     return { sections: [...composed.sections, { id: 'oasis:village', text, scope: 'session' }] }
+  })
+
+  // Who this session is in the village, beside a prompt typed here (see the header).
+  let toldStamp: string | null = null
+  let askedAt = 0
+  let known: { note: string; stamp: string } | null = null
+  on('prompt.submit', async ($, e, next) => {
+    if (e.command || e.isMeta) return next(e)
+    let note: string | null = null
+    try {
+      // The engine runs sessions that have OASIS_AGENT_ID and tells those itself.
+      if (!(await $.env.get('OASIS_AGENT_ID'))) {
+        const now = Date.now()
+        // Not in the village yet (nobody watches this session): ask again soon, it may be summoned any moment.
+        if (now - askedAt > (known ? CHARACTER_EVERY_MS : 5000)) {
+          askedAt = now
+          known = await characterNote($, engine, await $.session.id())
+        }
+        if (known && known.stamp !== toldStamp) {
+          toldStamp = known.stamp
+          note = known.note
+        }
+      }
+    } catch {
+      note = null // never in the way of a prompt
+    }
+    return next(note ? { ...e, context: [...(e.context ?? []), note] } : e)
   })
 
   on('session.start', async ($, e, next) => {

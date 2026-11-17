@@ -7,6 +7,7 @@
 // Oasis depends on it.
 
 import type {
+  EnginePresence,
   EngineAgentSnapshot,
   EngineCommandMap,
   EngineCommandName,
@@ -103,6 +104,13 @@ export interface EyesPicture {
   data: string
   mediaType: 'image/jpeg' | 'image/png' | 'image/webp'
 }
+/** A picture taken on request, with what it shows ("ahead", "front"). */
+export interface ViewPicture extends EyesPicture {
+  label: string
+}
+/** Takes the pictures for one agent (its own avatar, or its surroundings); none when this page has no view of it. */
+export type ViewCapturer = (agentId: string, view: 'look' | 'around') => ViewPicture[]
+
 /** Takes the picture for one agent, or null when this page has no view of it. Must not throw for long: it is synchronous work. */
 export type EyesCapturer = (agentId: string) => EyesPicture | null
 /** Does one step of the Council's scene and resolves with what to tell the moderator (rejects with why not). */
@@ -131,6 +139,7 @@ export class AgentEngineClient {
   private readonly deltas = new Map<string, TextDeltaEvent>()
   private deltaTimer: unknown = null
   private eyesCapturer: EyesCapturer | null = null
+  private viewCapturer: ViewCapturer | null = null
   private stageHandler: StageHandler | null = null
   private showListeners = new Set<(agentId: string) => void>()
 
@@ -341,6 +350,39 @@ export class AgentEngineClient {
     this.cmd('canSee', { on: Boolean(this.eyesCapturer) }).catch(() => {})
   }
 
+  /**
+   * The village scene registers how to take pictures on request (VillageEyes.tsx): an agent's own avatar from the
+   * front, or what is around it. Returns the unregister function.
+   */
+  setViewCapturer(capturer: ViewCapturer): () => void {
+    this.viewCapturer = capturer
+    return () => { if (this.viewCapturer === capturer) this.viewCapturer = null }
+  }
+
+  private answerView(requestId: string, agentId: string, view: 'look' | 'around'): void {
+    let pictures: ViewPicture[] = []
+    try {
+      pictures = this.viewCapturer ? this.viewCapturer(agentId, view) : []
+    } catch {
+      pictures = []
+    }
+    // Always answer, also with nothing: the engine then stops waiting.
+    this.cmd('viewFrames', pictures.length ? { requestId, pictures } : { requestId }).catch(() => {})
+  }
+
+  /** What this page knows about agents, for their cards. */
+  reportPresence(agents: EnginePresence[]) {
+    return this.cmd('presence', { agents })
+  }
+
+  getCharacter(agentId: string) {
+    return this.cmd('getCharacter', { agentId })
+  }
+
+  setCharacter(agentId: string, own: { role?: string; who?: string }) {
+    return this.cmd('setCharacter', { agentId, ...own })
+  }
+
   private answerEyes(requestId: string, agentId: string): void {
     let picture: EyesPicture | null = null
     try {
@@ -494,6 +536,9 @@ export class AgentEngineClient {
         return
       case 'stage.request':
         if (typeof message.requestId === 'string' && message.request && typeof message.request.action === 'string') this.answerStage(message.requestId, message.request)
+        return
+      case 'view.request':
+        if (typeof message.requestId === 'string' && typeof message.agentId === 'string') this.answerView(message.requestId, message.agentId, message.view === 'around' ? 'around' : 'look')
         return
       case 'eyes.request':
         if (typeof message.requestId === 'string' && typeof message.agentId === 'string') this.answerEyes(message.requestId, message.agentId)

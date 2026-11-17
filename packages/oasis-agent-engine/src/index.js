@@ -19,6 +19,9 @@ import { execFileSync } from 'node:child_process';
 import { checkIn, isBridged, queueForBridge, aliveBridges, dumpInboxes, restoreInboxes } from './bridge.js';
 import { Journal, journalFileFor } from './journal.js';
 import { restartLine, transcriptTurnOpen, wasMidTurn } from './resume.js';
+import { Characters, characterNote, cardStamp, charactersDirFor } from './character.js';
+import { Looks } from './looks.js';
+import os from 'node:os';
 import { readOlderHistory } from './history.js';
 import { loadRoster, saveRoster, saveRosterNow } from './roster.js';
 import { takeVoiceMessage } from './scribe.js';
@@ -38,6 +41,19 @@ const ROOT = path.resolve(HERE, '..', '..', '..'); // af_oasis
 const ROSTER_FILE = process.env.OASIS_ROSTER || path.join(ROOT, 'data', 'agent-engine.local.json');
 /** What must survive a restart besides the roster (journal.js): next to the roster file. */
 const journal = new Journal(process.env.OASIS_JOURNAL || journalFileFor(ROSTER_FILE));
+/** Who each agent is: one md file per session (character.js), and what each avatar looks like (looks.js). */
+const CHARACTERS_DIR = process.env.OASIS_CHARACTERS || charactersDirFor(ROSTER_FILE);
+const characters = new Characters(CHARACTERS_DIR);
+/** The command an agent runs to see itself, look around and edit its card. */
+const ME_SCRIPT = path.resolve(HERE, '..', 'scripts', 'me.mjs').replace(/\\/g, '/');
+const looks = new Looks({
+  file: path.join(CHARACTERS_DIR, '_looks.json'),
+  publicDir: path.join(ROOT, 'public'),
+  enabled: process.env.OASIS_LOOKS !== '0',
+  log: (...a) => hub.log(...a),
+  // A new description goes into the card of everyone who wears that avatar.
+  onDescribed: (avatar) => { for (const a of agents.values()) if (a.sessionId && characters.read(a.sessionId).fields.avatar === avatar) refreshLook(a.sessionId); },
+});
 /** OASIS_RESUME=0: mid-turn agents come back as "stopped mid-turn" and wait for a word, as before. */
 const RESUME_ON = process.env.OASIS_RESUME !== '0';
 /** This start, for /health and the HUD's engine pill: when, how the last run ended, who was told to carry on. */
@@ -83,6 +99,8 @@ const hub = {
   eyes: (agentId) => captureEyes(agentId),
   journal,
   stopping: () => shuttingDown,
+  /** The who-you-are note for an agent and what it was made from (agent.js sends it when due). */
+  character: (agent) => characterFor(agent),
   /** Where this engine listens: agents get it as OASIS_ENGINE_URL. */
   url: `http://${HOST === '0.0.0.0' || HOST === '::' ? '127.0.0.1' : HOST}:${PORT}`,
   persist() {
@@ -136,6 +154,67 @@ function captureEyes(agentId) {
 }
 
 const stage = createStage({ pages: () => [...clients], agents: () => agents.values(), log: (...a) => hub.log(...a) });
+
+// ------------------------------------------------------------------ characters
+/** "Orion. You are a tall …" from the card's avatar and the description of that avatar, when there is one. */
+function lookLine(avatar, avatarName) {
+  if (!avatar && !avatarName) return '';
+  const name = avatarName || String(avatar).split('/').pop().replace(/\.vrm$/i, '');
+  const description = looks.get(avatar);
+  return description ? `the avatar "${name}". ${description}` : `the avatar "${name}"`;
+}
+
+function refreshLook(sessionId) {
+  const card = characters.read(sessionId);
+  if (card.fields.avatar) characters.setFacts(sessionId, { look: lookLine(card.fields.avatar, null) });
+}
+
+/** The card of an agent (made on first use, with its name) -> { note, stamp, card }; null without a session. */
+function characterFor(agent) {
+  if (!agent?.sessionId || !characters.fileFor(agent.sessionId)) return null;
+  const card = characters.setFacts(agent.sessionId, { name: agent.name || undefined });
+  return { note: characterNote(card, { file: card.file, tools: ME_SCRIPT }), stamp: cardStamp(card), card };
+}
+
+/** An agent by id, session id or name (exact, else the one name that starts with it). */
+function findAgent(ref) {
+  if (typeof ref !== 'string' || !ref.trim()) return null;
+  const list = [...agents.values()];
+  return list.find((a) => a.id === ref) || list.find((a) => a.sessionId && a.sessionId === ref) || resolveStageAgent(ref, list);
+}
+
+/** Watched sessions that were told who they are in this run: session id -> the card's stamp then. */
+const bridgeTold = new Map();
+
+// Pictures on request (scripts/me.mjs look | around): an Oasis page renders them (VillageEyes.tsx) and answers over
+// the socket, like eyes. Kept as files, because an agent reads a picture from a path.
+const VIEW_MS = Number(process.env.OASIS_VIEW_MS || 5000);
+const VIEW_DIR = path.join(os.tmpdir(), 'oasis-agent-engine-views');
+const viewsWaiting = new Map(); // requestId -> {done, left}
+function captureViews(agentId, view) {
+  const pages = [...clients].filter((ws) => ws.readyState === 1 && ws.canSee);
+  if (!pages.length) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const requestId = randomUUID();
+    const done = (pictures) => { clearTimeout(timer); viewsWaiting.delete(requestId); resolve(pictures); };
+    const timer = setTimeout(() => done(null), VIEW_MS);
+    viewsWaiting.set(requestId, { done, left: pages.length });
+    const ask = JSON.stringify({ type: 'view.request', requestId, agentId, view });
+    for (const ws of pages) ws.send(ask);
+  });
+}
+
+function saveViews(agent, view, pictures) {
+  fs.mkdirSync(VIEW_DIR, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+  return pictures.map((p, i) => {
+    const ext = p.mediaType === 'image/png' ? '.png' : p.mediaType === 'image/webp' ? '.webp' : '.jpg';
+    const label = String(p.label || `${i + 1}`).replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+    const file = path.join(VIEW_DIR, `${agent.id}-${view}-${label}-${stamp}${ext}`);
+    fs.writeFileSync(file, Buffer.from(p.data, 'base64'));
+    return { path: file.replace(/\\/g, '/'), label: p.label || null, note: p.note || null };
+  });
+}
 
 function newId(prefix) { return `${prefix}-${randomUUID().slice(0, 8)}`; }
 
@@ -229,7 +308,14 @@ const commands = {
     // A watched session: only if it runs the Oasis mod, which submits it there as a prompt of that same session.
     if (!text || !text.trim()) throw new Error('empty message');
     if (!isBridged(a.sessionId)) throw new Error('watching only: this session runs somewhere else without the Oasis plugin; use Move it here to talk to it');
-    queueForBridge(a.sessionId, text);
+    // A session in another window gets its who-you-are note in the text itself (the mod only carries text): with
+    // the first message of this engine run and when its card changed. The thread hides it (normalize.js).
+    const you = characterFor(a);
+    const tell = you?.note && bridgeTold.get(a.sessionId) !== you.stamp;
+    queueForBridge(a.sessionId, tell ? `${text}
+
+${you.note}` : text);
+    if (tell) bridgeTold.set(a.sessionId, you.stamp);
     journal.setBridge(dumpInboxes());
     return { queued: true, viaBridge: true };
   },
@@ -283,6 +369,71 @@ const commands = {
     // What its last process never took in goes out again, in order.
     if (wasDown && a.proc) a.sendChain = a.sendChain.then(() => a.flushLeftovers()).catch(() => {});
     return a.snapshot();
+  },
+  /**
+   * The Oasis page says what it knows about agents (VillagePresence.tsx), whenever it changes:
+   * [{ agentId, avatar, avatarName, thumb, voice, world, place }]. It goes into each agent's card (character.js),
+   * and an avatar nobody has described yet gets its description (looks.js).
+   */
+  presence({ agents: list } = {}) {
+    let n = 0;
+    for (const p of Array.isArray(list) ? list.slice(0, 200) : []) {
+      const a = p && agents.get(p.agentId);
+      if (!a?.sessionId || !characters.fileFor(a.sessionId)) continue;
+      const avatar = typeof p.avatar === 'string' ? p.avatar.replace(/[?#].*$/, '') : undefined;
+      if (avatar) looks.want(avatar, p.thumb);
+      characters.setFacts(a.sessionId, {
+        name: a.name || undefined,
+        ...(avatar ? { avatar, look: lookLine(avatar, typeof p.avatarName === 'string' ? p.avatarName : null) } : {}),
+        ...(typeof p.voice === 'string' ? { voice: p.voice } : {}),
+        ...(typeof p.world === 'string' ? { world: p.world } : {}),
+        ...(typeof p.place === 'string' ? { place: p.place } : {}),
+      });
+      n += 1;
+    }
+    return { ok: true, data: { agents: n } };
+  },
+  /** An agent's card: { file, name, role, who, voice, look, avatar, world, home, place, note }. `agent`: id, session or name. */
+  getCharacter({ agentId, agent }) {
+    const a = findAgent(agentId ?? agent);
+    const c = a && characterFor(a);
+    if (!c) throw new Error(a ? `${a.name} has no session yet` : `unknown agent ${agentId ?? agent ?? ''}`);
+    return { ok: true, data: { agentId: a.id, file: c.card.file, ...c.card.fields, who: c.card.who, note: c.note } };
+  },
+  /** The owner's or the agent's own words on the card: `role` (one sentence), `who` (a few). It is told again with its next message. */
+  setCharacter({ agentId, agent, role, who }) {
+    const a = findAgent(agentId ?? agent);
+    if (!a?.sessionId) throw new Error(a ? `${a.name} has no session yet` : `unknown agent ${agentId ?? agent ?? ''}`);
+    characterFor(a);
+    characters.setOwn(a.sessionId, { ...(typeof role === 'string' ? { role } : {}), ...(typeof who === 'string' ? { who } : {}) });
+    return commands.getCharacter({ agentId: a.id });
+  },
+  /**
+   * Pictures for an agent, on request: view "look" (its own avatar from the front) or "around" (four pictures of what
+   * is around it). Rendered by an open Oasis page, saved as files -> { pictures: [{ path, label, note }] }. Without a
+   * page: "look" falls back to the avatar's gallery thumbnail.
+   */
+  async view({ agentId, agent, view = 'look' }) {
+    const a = findAgent(agentId ?? agent);
+    if (!a) throw new Error(`unknown agent ${agentId ?? agent ?? ''}`);
+    if (view !== 'look' && view !== 'around') throw new Error('view: look or around');
+    const pictures = (await captureViews(a.id, view) || []).filter((p) => p && typeof p.data === 'string' && p.data.length <= EYES_MAX && /^image\/(jpeg|png|webp)$/.test(p.mediaType || '')).slice(0, 6);
+    if (pictures.length) return { ok: true, data: { pictures: saveViews(a, view, pictures), live: true } };
+    if (view === 'look') {
+      const card = a.sessionId ? characters.read(a.sessionId) : null;
+      const avatar = card?.fields.avatar;
+      const thumb = avatar ? looks.thumbFor(avatar) : null;
+      if (thumb) return { ok: true, data: { pictures: [{ path: thumb.replace(/\\/g, '/'), label: 'thumbnail', note: 'The Oasis is not open in a browser right now: this is your avatar\'s gallery picture, not a live view.' }], live: false } };
+    }
+    return { ok: false, error: 'no picture: the Oasis is not open in a browser tab right now (it renders them), or this agent has no place in it yet' };
+  },
+  /** A page's answer to view.request: {requestId, pictures: [{data, mediaType, label, note}]}; none when it cannot. */
+  viewFrames({ requestId, pictures }) {
+    const w = viewsWaiting.get(requestId);
+    if (!w) return { ok: true, late: true };
+    if (Array.isArray(pictures) && pictures.length) w.done(pictures);
+    else if (--w.left <= 0) w.done(null);
+    return { ok: true };
   },
   /** This start: when, how the last run ended, who was told to carry on, the line the HUD shows. */
   restartInfo: () => restartInfo(),
@@ -499,6 +650,13 @@ const server = http.createServer(async (req, res) => {
     // /oasis in a Claude Code session (plugins/oasis): make sure that session stands in the village (watch its
     // transcript if nothing has it yet) and ask the open Oasis pages to walk the camera to it. A page that connects
     // in the next 90 s (the browser /oasis just opened) is told in its hello.
+    // The Oasis mod asks who its session is in the village (plugins/oasis): the same note an engine agent gets.
+    if (req.method === 'POST' && url.pathname === '/bridge/character') {
+      const body = JSON.parse((await readBody(req, 64 * 1024)) || '{}');
+      const agent = typeof body.sessionId === 'string' ? [...agents.values()].find((a) => a.sessionId === body.sessionId) : null;
+      const c = agent ? characterFor(agent) : null;
+      return sendJson(res, 200, c ? { ok: true, note: c.note, stamp: c.stamp, agentId: agent.id, owned: agent.kind === 'owned' } : { ok: true, note: null });
+    }
     if (req.method === 'POST' && url.pathname === '/bridge/open') {
       const body = JSON.parse((await readBody(req, 64 * 1024)) || '{}');
       if (typeof body.sessionId !== 'string' || !/^[0-9a-f-]{36}$/i.test(body.sessionId)) return sendJson(res, 400, { ok: false, error: 'sessionId must be a session uuid' });

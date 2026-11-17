@@ -26,6 +26,8 @@ logs/
 # Local-only data (worlds, configs)
 data/*.local.json
 data/*.local.jsonl
+# Agent characters: one card per session, kept by the agent engine
+data/characters/
 
 # Tooling caches and IDE configs
 .cache/

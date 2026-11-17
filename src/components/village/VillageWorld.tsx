@@ -54,12 +54,14 @@ import {
   setVillagePlaza,
   getVillageAnchors,
   setVillageStations,
+  setVillageAvatars,
   type VillageStationPlacement,
 } from './village-actions'
 import { VILLAGE_OBSERVED_COLOR, agentDisplayName, statusColor, villageAgentLook } from './village-status'
 import { VillageSubagentMinis } from './VillageSubagentMinis'
 import { VillageShow } from './VillageShow'
 import { VillageEyes } from './VillageEyes'
+import { VillagePresence } from './VillagePresence'
 import { VillageMissionWall } from './VillageMissionWall'
 import { VillageAcademyTree } from './VillageAcademyTree'
 import { AcademyLevelTag, AcademyVillageBody, useAcademyStone } from './VillageAcademyTrainee'
@@ -973,6 +975,10 @@ export function VillageWorld() {
   useLayoutEffect(() => {
     setVillageStations(placements)
   }, [placements])
+  // Who wears which body, for the report to the engine (VillagePresence).
+  useLayoutEffect(() => {
+    setVillageAvatars(avatars)
+  }, [avatars])
 
   useEffect(() => () => setVillageStations(new Map()), [])
 
@@ -1006,6 +1012,7 @@ export function VillageWorld() {
       <VillageAcademyTree origin={origin} />
       <VillageCameraRig />
       <VillageEyes />
+      <VillagePresence />
       <VillageVoice />
       <VillageShow />
     </group>
