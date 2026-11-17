@@ -82,6 +82,7 @@ import { VillageController } from './village/VillageController'
 import { VillageHud } from './village/VillageHud'
 import { AgentSessionPanel } from './village/AgentSessionPanel'
 import { SessionPicker } from './village/SessionPicker'
+import { VillageVoiceWidget } from './village/VillageVoiceWidget'
 import { openVillagePicker } from './village/village-actions'
 import { installTestHarness } from '@/lib/test-harness'
 import { HOSTED_USER_LOCKED_SPELL_IDS, isHostedUserLockedSpell, type SpellId } from '@/lib/spellbook'
@@ -2136,6 +2137,8 @@ export default function Scene() {
         <>
           <VillageController />
           <VillageHud />
+          {/* Dictation / a voice message that goes on after Esc: who for, a timer, the last words, Send, Stop. */}
+          <VillageVoiceWidget />
           <AgentSessionPanel />
           <SessionPicker />
         </>

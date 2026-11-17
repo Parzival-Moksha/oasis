@@ -5,7 +5,8 @@
 // the recording, ElevenLabs Scribe transcribes it (better quality), and the agent gets the transcript.
 // The thread shows a small player with the transcript under it.
 //   Click: start, click again: stop and send. Hold (over half a second): records until you let go.
-//   Esc while recording: throw it away. No real limit (a forgotten recording stops after three hours).
+//   No real limit (a forgotten recording stops after three hours). Esc doesn't touch it (it used to throw the
+//   recording away): the voice widget at the bottom left has Send, Stop (keeps it as an unsent draft) and x.
 // The recording belongs to the agent, not to the button: F (panel <-> screen) and a hot reload don't stop it,
 // and one that fails to send stays as an unsent draft (click: send again).
 
@@ -61,11 +62,15 @@ interface Recording {
   priority?: 'now' | 'later'
   blob: Blob | null
   timer: number
+  /** Stopped to keep, not to send (the widget's Stop): it becomes an unsent draft. */
+  keep: boolean
 }
 
-interface VoiceStore { recordings: Map<string, Recording>; listeners: Set<() => void>; version: number; escape: ((event: KeyboardEvent) => void) | null }
+interface VoiceStore { recordings: Map<string, Recording>; listeners: Set<() => void>; version: number; escape?: ((event: KeyboardEvent) => void) | null }
 const gv = globalThis as unknown as { __oasisVoiceMessages?: VoiceStore }
-const voiceStore: VoiceStore = gv.__oasisVoiceMessages ??= { recordings: new Map(), listeners: new Set(), version: 0, escape: null }
+const voiceStore: VoiceStore = gv.__oasisVoiceMessages ??= { recordings: new Map(), listeners: new Set(), version: 0 }
+// An Escape listener from the code before this one (it threw the recording away) goes.
+if (voiceStore.escape && typeof window !== 'undefined') { window.removeEventListener('keydown', voiceStore.escape, { capture: true }); voiceStore.escape = null }
 
 function changed() {
   voiceStore.version += 1
@@ -78,26 +83,7 @@ function freeMic(r: Recording) {
   r.stream = null
 }
 
-/** Esc throws away the recording in progress (any agent's), while one is recording. */
-function watchEscape() {
-  const recording = [...voiceStore.recordings.values()].some(r => r.phase === 'recording')
-  if (recording && !voiceStore.escape) {
-    voiceStore.escape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      const entry = [...voiceStore.recordings.entries()].find(([, r]) => r.phase === 'recording')
-      if (!entry) return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      stopRecording(entry[0], true)
-    }
-    window.addEventListener('keydown', voiceStore.escape, { capture: true })
-  } else if (!recording && voiceStore.escape) {
-    window.removeEventListener('keydown', voiceStore.escape, { capture: true })
-    voiceStore.escape = null
-  }
-}
-
-async function sendRecording(agentId: string, r: Recording) {
+export async function sendRecording(agentId: string, r: Recording) {
   if (!r.blob) return
   r.phase = 'sending'
   changed()
@@ -121,7 +107,7 @@ export async function startRecording(agentId: string, priority?: 'now' | 'later'
     showNotice('This browser cannot record audio.', 'error')
     return
   }
-  const r: Recording = { phase: 'recording', recorder: null, stream: null, chunks: [], mime: pickMime(), startedAt: Date.now(), durationMs: 0, cancelled: false, priority, blob: null, timer: 0 }
+  const r: Recording = { phase: 'recording', recorder: null, stream: null, chunks: [], mime: pickMime(), startedAt: Date.now(), durationMs: 0, cancelled: false, priority, blob: null, timer: 0, keep: false }
   voiceStore.recordings.set(agentId, r)
   changed()
   try {
@@ -142,34 +128,57 @@ export async function startRecording(agentId: string, priority?: 'now' | 'later'
     if (r.cancelled || !r.chunks.length || r.durationMs < 400) {
       if (voiceStore.recordings.get(agentId) === r) voiceStore.recordings.delete(agentId)
       changed()
-      watchEscape()
       return
     }
     r.blob = new Blob(r.chunks, { type: recorder.mimeType || r.mime || 'audio/webm' })
-    watchEscape()
+    if (r.keep) {
+      r.phase = 'unsent'
+      changed()
+      return
+    }
     void sendRecording(agentId, r)
   }
   recorder.start(1000)
-  // The clock on the buttons, and the runaway guard.
+  // The clock on the buttons, and the runaway guard (kept, not sent, when it runs out).
   r.timer = window.setInterval(() => {
-    if (Date.now() - r.startedAt >= MAX_MS) stopRecording(agentId)
+    if (Date.now() - r.startedAt >= MAX_MS) stopRecording(agentId, { keep: true })
     changed()
   }, 250)
-  watchEscape()
 }
 
-/** Stop and send (cancel: throw it away). */
-export function stopRecording(agentId: string, cancel = false): void {
+/** Stop and send; keep: stop and keep it as an unsent draft; cancel: throw it away. */
+export function stopRecording(agentId: string, { cancel = false, keep = false }: { cancel?: boolean; keep?: boolean } = {}): void {
   const r = voiceStore.recordings.get(agentId)
   if (!r || r.phase !== 'recording') return
   r.cancelled = cancel
+  r.keep = keep
   if (r.recorder && r.recorder.state !== 'inactive') r.recorder.stop()
-  else if (!r.recorder) { voiceStore.recordings.delete(agentId); changed(); watchEscape() } // still asking for the mic
+  else if (!r.recorder) { voiceStore.recordings.delete(agentId); changed() } // still asking for the mic
 }
 
-function discardUnsent(agentId: string) {
+export function discardUnsent(agentId: string) {
   const r = voiceStore.recordings.get(agentId)
   if (r?.phase === 'unsent') { voiceStore.recordings.delete(agentId); changed() }
+}
+
+/** Every voice message being recorded, sent or waiting to be sent again (for the voice widget). */
+export function voiceMessageList(): Array<{ agentId: string; phase: Phase; startedAt: number; durationMs: number }> {
+  return [...voiceStore.recordings.entries()].map(([agentId, r]) => ({ agentId, phase: r.phase, startedAt: r.startedAt, durationMs: r.durationMs }))
+}
+
+export function subscribeVoiceMessages(listener: () => void): () => void {
+  voiceStore.listeners.add(listener)
+  return () => { voiceStore.listeners.delete(listener) }
+}
+
+export function voiceMessagesVersion(): number {
+  return voiceStore.version
+}
+
+/** Send an unsent draft again (the widget, or a click on the button). */
+export function resendRecording(agentId: string): void {
+  const r = voiceStore.recordings.get(agentId)
+  if (r?.phase === 'unsent') void sendRecording(agentId, r)
 }
 
 function useRecording(agentId: string): Recording | null {
@@ -191,7 +200,7 @@ export function VoiceMessageButton({ agentId, priority, large = false }: { agent
   const unsent = phase === 'unsent'
   const elapsed = r ? (recording ? Date.now() - r.startedAt : r.durationMs) : 0
   const title = recording
-    ? 'Recording a voice message: click (or let go) to send, Esc to throw it away'
+    ? 'Recording a voice message: click (or let go) to send'
     : phase === 'sending' ? 'Transcribing with ElevenLabs Scribe…'
       : unsent ? 'This voice message was not sent: click to send it again (x throws it away)'
         : 'Voice message: click to record (or hold), sent as a recording with its Scribe transcript'
@@ -216,7 +225,7 @@ export function VoiceMessageButton({ agentId, priority, large = false }: { agent
           press.current = null
           if (at !== null && Date.now() - at > HOLD_MS && voiceStore.recordings.get(agentId)?.phase === 'recording') stopRecording(agentId)
         }}
-        onKeyDown={event => event.stopPropagation()}
+        onKeyDown={event => { if (event.key !== 'Escape') event.stopPropagation() }}
         className={`flex items-center gap-1 rounded-md border px-2 py-1 font-bold transition disabled:opacity-60 ${large ? 'text-[12px]' : 'text-[11px]'} ${recording
           ? 'border-rose-300/70 bg-rose-500/25 text-rose-50'
           : unsent ? 'border-amber-300/70 bg-amber-500/20 text-amber-50'

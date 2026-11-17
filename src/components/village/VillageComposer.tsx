@@ -217,11 +217,7 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
     }
     if (event.key === 'Escape') {
       event.preventDefault()
-      if (voice.listening) {
-        voiceStopRef.current()
-        return
-      }
-      // First Esc leaves the text box (T, F, N work again), the next one leaves the agent.
+      // First Esc leaves the text box (T, F, N work again), the next one leaves the agent. The mic stays on.
       event.currentTarget.blur()
       return
     }
@@ -235,7 +231,7 @@ export function VillageComposer({ agentId, large = false, containerHeight }: {
   const voiceNote = voice.error
     ? voice.error
     : voice.listening
-      ? (voice.backendMessage || 'listening… pause and your words settle · T stops · Enter sends')
+      ? (voice.backendMessage || 'listening… T stops · Enter sends · Esc leaves, the mic stays on')
       : voice.transcribing ? 'settling the last words…' : ''
 
   return (

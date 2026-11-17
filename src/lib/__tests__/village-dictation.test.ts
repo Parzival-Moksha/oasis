@@ -9,7 +9,7 @@ const saved = new Map<string, string>()
 Object.assign(globalThis, { localStorage: { getItem: (k: string) => saved.get(k) ?? null, setItem: (k: string, v: string) => { saved.set(k, v) } } })
 
 const {
-  __setDictationStarterForTest, dictationView, draftText, setDraftText, startDictation, stopDictation, takeDraftForSend, toggleDictation,
+  __setDictationStarterForTest, dictationView, draftText, lastWords, runningDictations, setDraftText, startDictation, stopDictation, takeDraftForSend, toggleDictation,
 } = await import('../voice/village-dictation')
 import type { LiveDictationHandlers } from '../voice/live-dictation'
 
@@ -112,5 +112,19 @@ describe('dictation never loses the owner\'s words', () => {
     setDraftText('a', 'saved for later')
     await new Promise(resolve => setTimeout(resolve, 400))
     expect(JSON.parse(saved.get('oasis.village.drafts.v1') || '{}')).toMatchObject({ a: 'saved for later' })
+  })
+
+  it('the voice widget: the running dictation, who it is for, and the last few words', async () => {
+    setDraftText('a', 'one two three four five six seven')
+    await startDictation('a')
+    engine.say(0, 'eight nine ten')
+    const [running] = runningDictations()
+    expect(running).toMatchObject({ agentId: 'a', phase: 'listening' })
+    expect(typeof running.startedAt).toBe('number')
+    expect(lastWords('a', 4)).toBe('…seven eight nine ten')
+    expect(lastWords('a', 20)).toBe('one two three four five six seven eight nine ten')
+    stopDictation('a')
+    engine.end()
+    expect(runningDictations()).toEqual([])
   })
 })

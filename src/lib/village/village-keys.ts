@@ -3,9 +3,10 @@
 // Next to an agent: T opens its talk window with the mic on, E opens it quietly (to write), F opens it
 // straight on its full screen.
 // With an agent open (side panel or its screen, the text box not focused): T starts / stops the mic,
-// Enter sends what is in the box, F zooms onto its screen and back, Esc stops the mic first, then
-// leaves the screen (one more Esc leaves the agent, through the input manager; a screen opened with F
-// straight from the world leaves in one). Mouse-look comes back with a click on the scene.
+// Enter sends what is in the box, F zooms onto its screen and back, Esc leaves the screen (one more Esc
+// leaves the agent, through the input manager; a screen opened with F straight from the world leaves in one).
+// Esc never stops the mic: dictation goes on after leaving (the voice widget, bottom left). Mouse-look comes
+// back with a click on the scene.
 // N jumps to the next agent that needs you. In the summoning circle E opens the picker.
 
 export type VillageKeyAction =

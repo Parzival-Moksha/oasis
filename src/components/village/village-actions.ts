@@ -612,7 +612,8 @@ export function handleVillageKeyDown(event: KeyboardEvent): boolean {
     // The box doesn't hold the keyboard until you click it: Enter sends what you dictated.
     case 'send': return triggerVillageSend()
     case 'escape':
-      if (stopVillageVoice()) return true
+      // Esc closes, it never stops the mic: voice typing goes on with the owner (the widget at the bottom left
+      // shows it, with Send and Stop). T, the mic button or the widget stop it.
       if (!screenAgentId) return false // the input manager's Esc leaves the agent
       // Opened with F straight from the world: this Esc leaves the agent too (the input manager's, below).
       if (screenFromWorld) {

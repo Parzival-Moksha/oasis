@@ -31,6 +31,7 @@ interface Session {
   status: string
   level: number
   lipSync: LipSyncController | null
+  startedAt: number
 }
 
 interface Store {
@@ -190,7 +191,7 @@ export async function startDictation(agentId: string, lang = 'en'): Promise<void
   // One mic at a time: another agent's dictation stops first, keeping its words.
   for (const other of [...store.sessions.keys()]) if (other !== agentId) stopDictation(other)
   store.errors.delete(agentId)
-  const session: Session = { phase: 'starting', dictation: null, lines: new Map(), frozenThrough: -1, stopRequested: false, status: 'Connecting to the voice helper…', level: 0, lipSync: null }
+  const session: Session = { phase: 'starting', dictation: null, lines: new Map(), frozenThrough: -1, stopRequested: false, status: 'Connecting to the voice helper…', level: 0, lipSync: null, startedAt: Date.now() }
   store.sessions.set(agentId, session)
   notify(false)
   const mine = () => store.sessions.get(agentId) === session
@@ -275,6 +276,17 @@ export function dictationView(agentId: string): DictationView {
     error: store.errors.get(agentId) || '',
     supported: isLiveDictationSupported(),
   }
+}
+
+/** The last few words of what the box holds (for the voice widget): the words being said now come last. */
+export function lastWords(agentId: string, count = 8): string {
+  const words = draftText(agentId).trim().split(/\s+/).filter(Boolean)
+  return words.length > count ? `…${words.slice(-count).join(' ')}` : words.join(' ')
+}
+
+/** Every running dictation (normally one), for the voice widget. */
+export function runningDictations(): Array<{ agentId: string; phase: DictationPhase; startedAt: number; level: number; status: string }> {
+  return [...store.sessions.entries()].map(([agentId, session]) => ({ agentId, phase: session.phase, startedAt: session.startedAt, level: session.level, status: session.status }))
 }
 
 export function clearDictationError(agentId: string): void {
