@@ -30,6 +30,8 @@ import { hideSpokenLive, splitSpoken } from '../../lib/village/village-spoken'
 import { SpokenAgentContext, SpokenReply } from './CompanionToggles'
 import { AgentSettingsButton } from './AgentSettingsMenu'
 import { VoiceClip } from './VoiceMessage'
+import { attachmentKind, downloadInPlace } from '../../lib/village/attachment-kind'
+import { showNotice as noticeForFiles } from '../forge/GlobalNotice'
 
 /** 2d: the side panel · 3d: the desk window (recent lines) · screen: the desk window zoomed in with F */
 
@@ -198,13 +200,20 @@ function formatBytes(n: number | null): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
 
-/** SendUserFile: a little postcard. Pictures as tilted polaroids (click for full size), other files as chips. */
+/**
+ * SendUserFile: a little postcard. Pictures as tilted polaroids (click for full size), sound as a player in the
+ * thread (play, pause, scrub, speed), video as a tile that plays in the full-screen viewer, other files as chips
+ * that download in place. Nothing navigates the Oasis tab to the file (a cross-origin link did: it replaced the
+ * Oasis with the browser's bare player, owner 2026-11-17).
+ */
 function SentFilesCard({ entry, compact }: { entry: Extract<AgentLogEntry, { type: 'tool' }>; compact: boolean }) {
   const openImage = useContext(ThreadImagesContext)
   const files = entry.attachments || []
   const caption = typeof entry.input?.caption === 'string' ? entry.input.caption.trim() : ''
   const images = files.filter(file => file.isImage)
-  const others = files.filter(file => !file.isImage)
+  const sounds = files.filter(file => attachmentKind(file) === 'audio')
+  const videos = files.filter(file => attachmentKind(file) === 'video')
+  const others = files.filter(file => attachmentKind(file) === 'file')
   const what = images.length && !others.length
     ? `${images.length === 1 ? 'a picture' : `${images.length} pictures`}`
     : `${files.length === 1 ? 'a file' : `${files.length} files`}`
@@ -236,17 +245,42 @@ function SentFilesCard({ entry, compact }: { entry: Extract<AgentLogEntry, { typ
             })}
           </div>
         )}
+        {sounds.length > 0 && (
+          <div className="mt-2 flex flex-col gap-1.5">
+            {sounds.map(file => <VoiceClip key={file.id} fileId={file.id} name={file.name} sizeLabel={file.size !== null ? formatBytes(file.size) : undefined} />)}
+          </div>
+        )}
+        {videos.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {videos.map(file => (
+              <button
+                key={file.id}
+                type="button"
+                data-video-attachment
+                onClick={() => openVillageImages([{ url: agentEngineFileUrl(file.id), name: file.name, kind: 'video' }], 0)}
+                title={`${file.name} · play`}
+                className="group relative block overflow-hidden rounded-md border border-cyan-300/30 bg-black"
+                style={{ width: compact ? 128 : 200 }}
+              >
+                <video src={`${agentEngineFileUrl(file.id)}#t=0.5`} muted preload="metadata" playsInline className="block w-full object-cover opacity-80" style={{ maxHeight: compact ? 80 : 120 }} />
+                <span className="absolute inset-0 flex items-center justify-center text-[28px] text-white/90 drop-shadow transition group-hover:scale-110">▶</span>
+                <span className="absolute inset-x-0 bottom-0 truncate bg-black/60 px-1.5 py-0.5 text-[10px] text-white/85">{file.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {others.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {others.map(file => (
-              <a
+              <button
                 key={file.id}
-                href={agentEngineFileUrl(file.id)}
-                download={file.name}
+                type="button"
+                onClick={() => { void downloadInPlace(agentEngineFileUrl(file.id), file.name).catch(error => noticeForFiles(`${file.name}: ${error instanceof Error ? error.message : String(error)}`, 'warn')) }}
+                title={`Download ${file.name}`}
                 className="rounded-full border border-cyan-300/30 bg-cyan-400/10 px-2.5 py-1 text-[11px] text-cyan-100 hover:bg-cyan-400/20"
               >
                 📄 {file.name}{file.size !== null ? ` · ${formatBytes(file.size)}` : ''}
-              </a>
+              </button>
             ))}
           </div>
         )}

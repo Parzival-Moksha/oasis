@@ -246,8 +246,16 @@ export function VoiceMessageButton({ agentId, priority, large = false }: { agent
 }
 
 /** A voice message in the thread: play / pause, a bar that fills as it plays (click it to jump), elapsed / length. */
-export function VoiceClip({ fileId, durationMs }: { fileId: string; durationMs?: number }) {
+const SPEEDS = [1, 1.25, 1.5, 2, 0.75]
+
+/**
+ * A voice message, or a sound file an agent sent (name: shown above, its length read up front, a speed button):
+ * play / pause, a bar that fills (click to jump), elapsed / length. It plays in the thread: the page never goes
+ * to the file.
+ */
+export function VoiceClip({ fileId, durationMs, name, sizeLabel }: { fileId: string; durationMs?: number; name?: string; sizeLabel?: string }) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [rate, setRate] = useState(1)
   const [playing, setPlaying] = useState(false)
   const [elapsedMs, setElapsedMs] = useState(0)
   const [length, setLength] = useState(durationMs || 0)
@@ -267,8 +275,23 @@ export function VoiceClip({ fileId, durationMs }: { fileId: string; durationMs?:
     audio.onended = () => { setPlaying(false); setElapsedMs(0) }
     audio.onpause = () => setPlaying(false)
     audio.onplay = () => setPlaying(true)
-    audio.onerror = () => { setPlaying(false); showNotice('That recording is gone (the agent engine keeps them until it restarts).', 'warn') }
+    audio.onerror = () => { setPlaying(false); showNotice(`${name ? `${name} is` : 'That recording is'} gone (the agent engine keeps files until it restarts).`, 'warn') }
     return audio
+  }
+
+  // A sent sound file: read its length up front (no durationMs from a recording).
+  useEffect(() => {
+    if (!name || durationMs) return
+    const audio = ensure()
+    audio.preload = 'metadata'
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileId])
+
+  const nextSpeed = () => {
+    const next = SPEEDS[(SPEEDS.indexOf(rate) + 1) % SPEEDS.length]
+    setRate(next)
+    const audio = ensure()
+    audio.playbackRate = next
   }
 
   const toggle = () => {
@@ -303,16 +326,17 @@ export function VoiceClip({ fileId, durationMs }: { fileId: string; durationMs?:
   useEffect(() => () => { audioRef.current?.pause(); audioRef.current = null }, [])
 
   const started = playing || elapsedMs > 0
-  return (
-    <div className="mb-1 flex items-center gap-2" onClick={event => event.stopPropagation()}>
-      <button type="button" onClick={toggle} aria-label={playing ? 'Pause voice message' : 'Play voice message'} className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-300/25 text-sky-50 hover:bg-sky-300/40">
+  const what = name ? name : 'voice message'
+  const player = (
+    <div className="mb-1 flex items-center gap-2" onClick={event => event.stopPropagation()} data-audio-player={name ? 'file' : 'voice'}>
+      <button type="button" onClick={toggle} aria-label={`${playing ? 'Pause' : 'Play'} ${what}`} className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-300/25 text-sky-50 hover:bg-sky-300/40">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           {playing ? <path d="M6 5h4v14H6zM14 5h4v14h-4z" /> : <path d="M7 4.5v15l13-7.5z" />}
         </svg>
       </button>
       <div
         role="slider"
-        aria-label="Voice message position"
+        aria-label={`${what} position`}
         aria-valuemin={0}
         aria-valuemax={Math.round(lengthMs / 1000)}
         aria-valuenow={Math.round(elapsedMs / 1000)}
@@ -325,8 +349,20 @@ export function VoiceClip({ fileId, durationMs }: { fileId: string; durationMs?:
         {started && <div className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-sky-100 shadow" style={{ left: `${(progress * 100).toFixed(2)}%` }} />}
       </div>
       <span data-voice-time className="shrink-0 font-mono text-[10px] tabular-nums text-sky-100/75">
-        {lengthMs ? (started ? `${formatClip(elapsedMs)} / ${formatClip(lengthMs)}` : formatClip(lengthMs)) : started ? formatClip(elapsedMs) : 'voice'}
+        {lengthMs ? (started ? `${formatClip(elapsedMs)} / ${formatClip(lengthMs)}` : formatClip(lengthMs)) : started ? formatClip(elapsedMs) : name ? '…' : 'voice'}
       </span>
+      {name && (
+        <button type="button" onClick={nextSpeed} title="Playback speed" aria-label={`Playback speed ${rate} times`} className="shrink-0 rounded border border-sky-300/30 px-1 font-mono text-[10px] text-sky-100/85 hover:bg-sky-300/15">
+          {rate}×
+        </button>
+      )}
+    </div>
+  )
+  if (!name) return player
+  return (
+    <div className="rounded-lg border border-sky-300/25 bg-sky-400/[0.06] px-2 pb-0.5 pt-1.5" data-audio-file>
+      <div className="mb-1 truncate text-[11px] text-sky-100/85" title={name}>🎵 {name}{sizeLabel ? <span className="text-sky-100/50"> · {sizeLabel}</span> : null}</div>
+      {player}
     </div>
   )
 }

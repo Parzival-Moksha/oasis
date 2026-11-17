@@ -338,6 +338,8 @@ export function talkToVillageAgent(agentId: string): boolean {
 export interface VillageViewerImage {
   url: string
   name: string
+  /** A video plays in the same viewer (an agent sent it). */
+  kind?: 'image' | 'video'
 }
 
 let viewer: { images: VillageViewerImage[]; index: number } | null = null

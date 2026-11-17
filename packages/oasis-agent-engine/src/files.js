@@ -17,7 +17,19 @@ const byPath = new Map(); // path -> id (replayed history reuses ids)
 /** Voice messages recorded in the Oasis (scribe.js): played inline by the page's <audio>. */
 const AUDIO_TYPES = {
   '.webm': 'audio/webm', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.mp3': 'audio/mpeg', '.wav': 'audio/wav',
+  '.flac': 'audio/flac', '.opus': 'audio/ogg', '.aac': 'audio/aac',
 };
+const VIDEO_TYPES = { '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm' };
+
+/**
+ * Sound and video an agent sends (or the owner records) play inside the Oasis: served inline, with byte ranges.
+ * By the file's extension; a .webm is sound when it was registered as sound (voice messages), else video.
+ */
+export function playableType(ext, declared) {
+  const d = String(declared || '').toLowerCase();
+  if (ext === '.webm') return d.startsWith('audio/') ? AUDIO_TYPES['.webm'] : VIDEO_TYPES['.webm'];
+  return AUDIO_TYPES[ext] || VIDEO_TYPES[ext] || null;
+}
 
 const IMAGE_TYPES = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
@@ -104,8 +116,9 @@ export function serveAttachment(id, res, req = null) {
     }
     const ext = path.extname(f.path).toLowerCase();
     const name = path.basename(f.path).replace(/["\r\n]/g, '_');
-    // Audio registered as audio (voice messages) plays inline; anything else that isn't an image downloads.
-    const audio = (f.mediaType || '').startsWith('audio/') && AUDIO_TYPES[ext] ? AUDIO_TYPES[ext] : null;
+    // Pictures, sound and video show inline (the thread plays them; the page never navigates to them);
+    // anything else downloads.
+    const audio = f.isImage ? null : playableType(ext, f.mediaType);
     const headers = {
       'content-type': f.isImage ? IMAGE_TYPES[ext] : audio || 'application/octet-stream',
       'content-disposition': `${f.isImage || audio ? 'inline' : 'attachment'}; filename="${name}"`,
@@ -113,7 +126,7 @@ export function serveAttachment(id, res, req = null) {
       'x-content-type-options': 'nosniff',
       'cache-control': 'private, max-age=3600',
     };
-    // Audio answers byte ranges, so the player in the thread can jump around a voice message.
+    // Sound and video answer byte ranges, so the players can jump around.
     const range = audio ? parseRange(req?.headers?.range, st.size) : null;
     if (range === 'bad') {
       res.writeHead(416, { 'content-range': `bytes */${st.size}` });

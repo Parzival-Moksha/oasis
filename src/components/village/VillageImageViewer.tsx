@@ -46,15 +46,28 @@ export function VillageImageViewer() {
       onPointerDown={stop}
       onClick={() => closeVillageImages()}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element -- served by the local engine, not optimizable */}
-      <img
-        key={image.url}
-        src={image.url}
-        alt={image.name}
-        onClick={stop}
-        className="block rounded-md object-contain shadow-[0_30px_90px_rgba(0,0,0,0.7)]"
-        style={{ maxWidth: '90vw', maxHeight: '90vh' }}
-      />
+      {image.kind === 'video' ? (
+        <video
+          key={image.url}
+          src={image.url}
+          controls
+          autoPlay
+          playsInline
+          onClick={stop}
+          className="block rounded-md bg-black shadow-[0_30px_90px_rgba(0,0,0,0.7)]"
+          style={{ maxWidth: '90vw', maxHeight: '90vh' }}
+        />
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element -- served by the local engine, not optimizable
+        <img
+          key={image.url}
+          src={image.url}
+          alt={image.name}
+          onClick={stop}
+          className="block rounded-md object-contain shadow-[0_30px_90px_rgba(0,0,0,0.7)]"
+          style={{ maxWidth: '90vw', maxHeight: '90vh' }}
+        />
+      )}
       {many && (
         <>
           <button type="button" aria-label="Previous picture" className={`${arrow} left-5`} onClick={event => { stop(event); stepVillageImages(-1) }}>←</button>
