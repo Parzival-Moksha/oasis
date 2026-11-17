@@ -5,7 +5,7 @@
 // Body: a still clone of the parent's own loaded VRM (SkeletonUtils.clone). Geometry, textures and
 // materials are shared with the parent, so there is no second download and almost no extra memory; there
 // is no animation mixer, spring bones or expressions either. Each mini keeps the pose the parent had when
-// it appeared. A working helper bobs a little; a finished one stands still for a minute, then goes.
+// it appeared and stands still; a finished one stays for a minute, then goes.
 // Click one (or press E next to it) for its work in the parent's panel.
 
 import { Component, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
@@ -165,20 +165,11 @@ function Mini({ agentId, info, position, avatarUrl, labelVisible, near, overlayZ
   near: boolean
   overlayZ: [number, number]
 }) {
-  const bob = useRef<THREE.Group>(null)
-  const phase = useMemo(() => hashPhase(info.key), [info.key])
   const running = info.look === 'running'
   const blocked = useInputManager(s => isVillageFocusBlocked(s.inputState))
   const color = SUBAGENT_LOOK_COLOR[info.look]
-  // Only a working helper bobs; a finished one rests on the ground and leaves the frame loop.
-  useFrameWhen(running, ({ clock }) => {
-    const group = bob.current
-    if (!group) return
-    group.position.y = Math.abs(Math.sin(clock.getElapsedTime() * 2.6 + phase)) * 0.05
-  })
-  useEffect(() => {
-    if (!running && bob.current) bob.current.position.y = 0
-  }, [running])
+  // A helper stands still in the pose its parent had (the owner, 2026-11-17: "they should just idle"); it used to
+  // bob up and down while it worked. Its ring on the ground says whether it works. No frame callback at all.
   const onClick = (event: ThreeEvent<MouseEvent>) => {
     event.stopPropagation()
     // After the canvas click has finished dismissing other panels (as with the desks).
@@ -186,7 +177,7 @@ function Mini({ agentId, info, position, avatarUrl, labelVisible, near, overlayZ
   }
   return (
     <group position={position}>
-      <group ref={bob}>
+      <group>
         <group scale={MINI_SCALE}>
           <MiniBoundary key={avatarUrl} color={color}>
             <Suspense fallback={<MiniPlaceholder color={color} />}>

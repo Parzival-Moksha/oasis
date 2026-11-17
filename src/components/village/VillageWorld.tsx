@@ -64,8 +64,12 @@ import { VillageEyes } from './VillageEyes'
 import { VillagePresence } from './VillagePresence'
 import { VillageMissionWall } from './VillageMissionWall'
 import { VillageAcademyTree } from './VillageAcademyTree'
-import { AcademyLevelTag, AcademyVillageBody, useAcademyStone } from './VillageAcademyTrainee'
+import { AcademyLevelTag, AcademyVillageBody, useAcademyStone, useAcademyTrainee } from './VillageAcademyTrainee'
 import { VillageVoice } from './VillageVoice'
+import { VillageTag, VillageTagDriver } from './VillageTags'
+import { agentTagColor, tagMarker } from '../../lib/village/village-tags'
+import { getAgentPanelColor, getPanelLookVersion, subscribePanelLook } from '../../lib/village/panel-look'
+import { getVillageCombatVersion, getVillageVitals, subscribeVillageCombat } from '../../lib/village/village-combat'
 import { useFrameWhen } from '../../lib/use-frame-when'
 import { getPlayerAvatarPose } from '../../lib/player-avatar-runtime'
 import { SPACE, createFollowState, pickVisitSpot, stepApart, stepFollow, stepStage, stepVisit, type FollowState, type FollowTarget, type VisitSpot } from '../../lib/village/village-follow'
@@ -218,40 +222,43 @@ function useLabelInfo(agentId: string): { name: string; status: string; label: s
   }, [key])
 }
 
-/** The sign over an agent that wants you: amber needs a decision, blue finished work, red stuck. */
-const ATTENTION_SIGN: Record<string, string> = { 'needs-decision': '!', waiting: '✓', error: '!' }
-
-function StationLabel({ agentId, nearby }: { agentId: string; nearby: boolean }) {
-  const info = useLabelInfo(agentId)
-  if (!info) return null
-  const color = statusColor(info.status)
-  const sign = info.status === 'waiting' && !info.unseen ? null : ATTENTION_SIGN[info.status]
+/**
+ * What is left of the HTML label: the HP bar (once the agent was shot) and a trainee's level. The name, the
+ * status word and the marker are 3D now (VillageTags.tsx), and the T / E / F keys are in the banner below.
+ */
+function StationExtras({ agentId }: { agentId: string }) {
   return (
     <div className="pointer-events-none flex select-none flex-col items-center gap-1" style={{ transform: 'translateY(-50%)' }}>
       <VillageHpBar agentId={agentId} />
-      {sign && (
-        <div
-          className="flex h-6 w-6 items-center justify-center rounded-full text-[15px] font-black"
-          style={{ background: color, color: info.status === 'needs-decision' ? '#000' : '#fff', boxShadow: `0 0 18px ${color}cc`, animation: 'villageBob 1.1s ease-in-out infinite' }}
-        >
-          {sign}
-        </div>
-      )}
-      <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full border bg-slate-950/80 px-2.5 py-1 text-[11px] font-bold text-white shadow-[0_6px_18px_rgba(0,0,0,0.45)] backdrop-blur" style={{ borderColor: `${color}aa` }}>
-        <span className="h-2 w-2 rounded-full" style={{ background: color, boxShadow: `0 0 8px ${color}` }} />
-        <span className="max-w-[160px] truncate">{info.name}</span>
-        <span className="font-normal text-white/55">{info.label}</span>
-      </div>
       <AcademyLevelTag agentId={agentId} />
-      {nearby && (
-        <div className="flex items-center gap-2 whitespace-nowrap rounded-md bg-black/55 px-2 py-1 text-[10px]" style={GAME_HUD_TEXT}>
-          <span className="flex items-center gap-1"><GameKeycap accent="#34d399">T</GameKeycap>talk</span>
-          <span className="flex items-center gap-1"><GameKeycap accent="#38bdf8">E</GameKeycap>write</span>
-          <span className="flex items-center gap-1"><GameKeycap accent="#c084fc">F</GameKeycap>full</span>
-        </div>
-      )}
-      <style>{'@keyframes villageBob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-4px) } }'}</style>
     </div>
+  )
+}
+
+/** True while the HTML extras have something to show: the agent was shot, or it trains at the Academy. */
+function useStationExtras(agentId: string): boolean {
+  useSyncExternalStore(subscribeVillageCombat, getVillageCombatVersion, () => 0)
+  const trainee = useAcademyTrainee(agentId)
+  return getVillageVitals(agentId).lastHitAt !== null || Boolean(trainee?.training)
+}
+
+/** Over the head, in the picture itself: the name in the agent's own colour, its status word, "!" or "?". */
+function StationTag({ agentId, colorKey, avatarKey }: { agentId: string; colorKey: string; avatarKey: string }) {
+  const info = useLabelInfo(agentId)
+  useSyncExternalStore(subscribePanelLook, getPanelLookVersion, () => 0)
+  if (!info) return null
+  return (
+    <VillageTag
+      agentId={agentId}
+      name={info.name}
+      color={agentTagColor(info.name, getAgentPanelColor(colorKey))}
+      status={info.label}
+      statusColor={info.readOnly ? VILLAGE_OBSERVED_COLOR : statusColor(info.status)}
+      marker={tagMarker(info.status, info.unseen)}
+      avatarKey={avatarKey}
+      x={STATION.avatar[0]}
+      z={STATION.avatar[2]}
+    />
   )
 }
 
@@ -368,6 +375,8 @@ function agentSeed(agentId: string): number {
 
 /** Where the avatar's voice comes from, above the ground it stands on. */
 const HEAD_HEIGHT = 1.5
+/** The HP bar and the trainee's level (HTML, shown only when there is one): over the 3D tag and its marker. */
+const EXTRAS_AT: [number, number, number] = [STATION.label[0], 2.95, STATION.label[2]]
 
 /**
  * The part of a station that can leave its desk: the body, its label, its helpers. `mover` is that group.
@@ -608,6 +617,7 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
   // While placing or painting, the desk must not swallow the clicks meant for the ground plane.
   const blocked = useInputManager(s => isVillageFocusBlocked(s.inputState))
   const color = statusColor(status)
+  const extras = useStationExtras(agentId)
   const observed = kind !== 'owned'
   // "Follow me" (the agent panel's switch, remembered per session; on by default for Anorak).
   const followKey = useOasisStore(s => s.agentEngine.agents[agentId]?.sessionId || agentId)
@@ -728,9 +738,10 @@ function VillageStation({ agentId, placement, avatarUrl, windowVisible, helperLa
           </mesh>
         )}
         {/* Not in the F view: there its face fills the left of the picture, and the sign would sit on it. */}
-        {!(focused && onScreen) && (
-          <Html position={STATION.label} center distanceFactor={9} zIndexRange={overlayZ} style={{ pointerEvents: 'none' }}>
-            <StationLabel agentId={agentId} nearby={nearby && !focused} />
+        {!(focused && onScreen) && <StationTag agentId={agentId} colorKey={followKey} avatarKey={avatarUrl} />}
+        {!(focused && onScreen) && extras && (
+          <Html position={EXTRAS_AT} center distanceFactor={9} zIndexRange={overlayZ} style={{ pointerEvents: 'none' }}>
+            <StationExtras agentId={agentId} />
           </Html>
         )}
         {/* F: its face on the left, its screen with the thread in the rest, where the agent is. (E: the side panel.) */}
@@ -1011,6 +1022,7 @@ export function VillageWorld() {
       {/* The Academy's skill tree, across the plaza from the desks (VillageAcademyTree). */}
       <VillageAcademyTree origin={origin} />
       <VillageCameraRig />
+      <VillageTagDriver />
       <VillageEyes />
       <VillagePresence />
       <VillageVoice />

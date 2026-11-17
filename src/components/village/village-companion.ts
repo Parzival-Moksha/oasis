@@ -210,9 +210,21 @@ const _meshBox = new THREE.Box3()
  * of the F view cannot assume a height. Remembered until it is measured again.
  */
 export function measureVillageFace(agentId: string): number {
+  const body = measureVillageBody(agentId)
+  if (!body) return faceHeights.get(agentId) ?? faceHeightFrom(null, null)
+  faceHeights.set(agentId, body.face)
+  return body.face
+}
+
+/**
+ * The avatar's measures above its feet, from its own skeleton and meshes as they stand now: `top` of the body
+ * (the name tag goes just above it), `face` (eye height, for the F view and its portrait), `rigged`: a skeleton
+ * was found, so this is the body itself and not the stand-in shown while it loads. null: nothing is there yet.
+ */
+export function measureVillageBody(agentId: string): { top: number; face: number; rigged: boolean } | null {
   const spot = heads.get(agentId)
   const root = spot?.parent
-  if (!root) return faceHeights.get(agentId) ?? faceHeightFrom(null, null)
+  if (!root) return null
   root.updateWorldMatrix(true, true)
   const feet = root.getWorldPosition(_facePoint).y
   let joint: number | null = null
@@ -227,10 +239,9 @@ export function measureVillageFace(agentId: string): number {
     if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox()
     if (mesh.geometry.boundingBox) _faceBox.union(_meshBox.copy(mesh.geometry.boundingBox).applyMatrix4(mesh.matrixWorld))
   })
-  const top = _faceBox.isEmpty() ? null : _faceBox.max.y - feet
-  const height = faceHeightFrom(joint, top)
-  faceHeights.set(agentId, height)
-  return height
+  if (_faceBox.isEmpty()) return null
+  const top = _faceBox.max.y - feet
+  return { top, face: faceHeightFrom(joint, top), rigged: joint !== null }
 }
 
 /** The avatar's eye height above its feet: as last measured, else measured now. */
