@@ -3,7 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 // The page objects pointer-release.ts touches, enough for node: EventTargets standing in for document, window, elements.
 class FakeElement extends EventTarget { releasePointerCapture = vi.fn() }
-const doc = Object.assign(new EventTarget(), { pointerLockElement: null as unknown, exitPointerLock: vi.fn() })
+const doc = Object.assign(new EventTarget(), { pointerLockElement: null as unknown, exitPointerLock: vi.fn(), visibilityState: 'visible' })
 beforeAll(() => {
   Object.assign(globalThis, { document: doc, window: new EventTarget(), Element: FakeElement })
 })
@@ -47,5 +47,17 @@ describe('Escape always gives the mouse back', () => {
     expect(doc.exitPointerLock).toHaveBeenCalledTimes(1)
     expect(freeMouse()).toEqual(['pointer lock'])
     expect(doc.exitPointerLock).toHaveBeenCalledTimes(2)
+  })
+
+  it('gives the lock back when the window loses focus or the tab is hidden', () => {
+    uninstall = installPointerRelease()
+    const win = (globalThis as unknown as { window: EventTarget }).window
+    doc.pointerLockElement = {}
+    win.dispatchEvent(new Event('blur'))
+    expect(doc.exitPointerLock).toHaveBeenCalledTimes(1)
+    doc.visibilityState = 'hidden'
+    doc.dispatchEvent(new Event('visibilitychange'))
+    expect(doc.exitPointerLock).toHaveBeenCalledTimes(2)
+    doc.visibilityState = 'visible'
   })
 })

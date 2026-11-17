@@ -27,6 +27,7 @@ import { resolveClaude } from './claude.js';
 import { listen as earsListen, warmEars, earsStatus, stopEars } from './ears.js';
 import { listenScribe, hasLiveScribe, LIVE_SCRIBE_MODEL } from './scribe-live.js';
 import { serveAttachment } from './files.js';
+import { startClipWatchdog, stopClipWatchdog, clipWatchdogState } from './clip-watchdog.js';
 import { startTelegram } from './telegram.js';
 import { listVoices } from './voice.js';
 import { createStage, resolveStageAgent } from './stage.js';
@@ -480,7 +481,7 @@ const server = http.createServer(async (req, res) => {
   if (!requestAllowed(req)) return sendJson(res, 403, { error: 'origin not allowed' });
   try {
     if (req.method === 'GET' && url.pathname.startsWith('/file/')) return serveAttachment(url.pathname.slice('/file/'.length), res, req);
-    if (req.method === 'GET' && url.pathname === '/health') return sendJson(res, 200, { ok: true, agents: agents.size, clients: clients.size, restart: restartInfo(), claude: resolveClaude(), ears: earsStatus(), liveScribe: { model: LIVE_SCRIBE_MODEL, ready: hasLiveScribe() } });
+    if (req.method === 'GET' && url.pathname === '/health') return sendJson(res, 200, { ok: true, agents: agents.size, clients: clients.size, restart: restartInfo(), claude: resolveClaude(), ears: earsStatus(), clipWatchdog: clipWatchdogState(), liveScribe: { model: LIVE_SCRIBE_MODEL, ready: hasLiveScribe() } });
     if (req.method === 'GET' && url.pathname === '/api/agents') return sendJson(res, 200, snapshots());
     if (req.method === 'GET' && url.pathname === '/api/sessions') return sendJson(res, 200, await commands.listSessions({}));
     if (req.method === 'POST' && url.pathname === '/hook') {
@@ -669,6 +670,7 @@ function shutdown(sig) {
   journal.setBridge(dumpInboxes());
   journal.stop({ planned: true, reason: sig });
   stopEars();
+  stopClipWatchdog();
   telegram?.stop();
   for (const a of agents.values()) { if (a.kind === 'owned') a.kill(); else a.stop?.(); }
   setTimeout(() => {
@@ -692,6 +694,9 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 process.on('exit', () => { for (const a of ownedAgents()) { try { a.proc?.kill(); } catch { /* ignore */ } } });
+
+// A mouse a browser left confined is given back (Windows; clip-watchdog.js).
+startClipWatchdog((m) => hub.log(m));
 
 server.listen(PORT, HOST, () => {
   hub.log(`Oasis agent engine on http://${HOST}:${PORT}  (ws /ws)  claude: ${resolveClaude().how}`);

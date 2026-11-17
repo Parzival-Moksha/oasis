@@ -5,7 +5,10 @@
 // - one pointer-lock request at a time (a click used to ask twice, on pointerdown and on click);
 // - Escape (on key up, so no menu swallows it) releases a lock, cancels a lock still on its way, releases every
 //   pointer capture an element holds and ends that drag (pointercancel), whatever else Escape does;
-// - leaving the window releases captures too (a drag interrupted by Alt+Tab never sees its pointerup).
+// - leaving the window releases captures too (a drag interrupted by Alt+Tab never sees its pointerup), and the
+//   page gives its pointer lock back itself when the window loses focus, the tab is hidden or the page unloads
+//   (reload, navigation): the browser should, but a confinement it left behind followed the owner into other
+//   apps (2026-11-17). The engine's clip watchdog (Windows) releases any that still slips through.
 // Pure bookkeeping plus the listeners; input-manager.ts installs it.
 
 const PENDING_MS = 1500
@@ -81,7 +84,13 @@ export function installPointerRelease(): () => void {
     const unusual = freed.filter(what => what !== 'pointer lock')
     if (unusual.length) notify?.(`Mouse released (${unusual.join(', ')})`)
   }
+  const giveBackLock = () => {
+    if (document.pointerLockElement) document.exitPointerLock()
+    noteLockSettled()
+  }
+  const onHidden = () => { if (document.visibilityState === 'hidden') giveBackLock() }
   const onBlur = () => {
+    giveBackLock()
     for (const [pointerId, element] of [...captures]) {
       captures.delete(pointerId)
       try { (element as Element & { releasePointerCapture(id: number): void }).releasePointerCapture(pointerId) } catch { /* already gone */ }
@@ -93,7 +102,13 @@ export function installPointerRelease(): () => void {
   document.addEventListener('pointerlockerror', noteLockSettled)
   window.addEventListener('keyup', onKeyUp, true)
   window.addEventListener('blur', onBlur)
+  window.addEventListener('pagehide', giveBackLock)
+  window.addEventListener('beforeunload', giveBackLock)
+  document.addEventListener('visibilitychange', onHidden)
   return () => {
+    window.removeEventListener('pagehide', giveBackLock)
+    window.removeEventListener('beforeunload', giveBackLock)
+    document.removeEventListener('visibilitychange', onHidden)
     document.removeEventListener('gotpointercapture', onGot, true)
     document.removeEventListener('lostpointercapture', onLost, true)
     document.removeEventListener('pointerlockchange', onLockChange)
