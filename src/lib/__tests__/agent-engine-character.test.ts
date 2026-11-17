@@ -109,8 +109,11 @@ describe('character cards', () => {
     expect(note).not.toContain('nobody has yet')
     // Results the owner should see or hear go as files, not as paths.
     expect(note).toContain('send the file with SendUserFile')
-    expect(note.length).toBeLessThan(1300)
+    expect(note.length).toBeLessThan(1500)
     expect(characterNote(card, { showFiles: false })).not.toContain('SendUserFile')
+    // Questions that can wait go to the owner's open list, with the agent's own recommendation.
+    expect(note).toContain('grill/open.md, under "Added by agents": one line with your name, the question and your recommendation')
+    expect(ENGINE_NOTE.test(characterNote(card, { showFiles: false }))).toBe(true)
     // No words of its own yet: it is told it can write them.
     expect(characterNote({ fields: { name: 'New' }, who: '' }, { tools: 'me.mjs' })).toContain('who "<a few sentences>" writes your own who-you-are')
   })

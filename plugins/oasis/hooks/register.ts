@@ -27,9 +27,11 @@ import type { Register, EngineInterface } from 'claude-code'
 
 /** Where the owner keeps the mission board; OASIS_MISSIONS_DIR overrides it. */
 const MISSIONS_DIR = 'C:\\7c_oasis\\docs\\missions'
+/** Where questions for the owner that can wait are collected; OASIS_GRILL_FILE overrides it. */
+const GRILL_FILE = 'C:/7c_oasis/docs/grill/open.md'
 
-/** Facts only, about 150 tokens: it changes nothing about how the session does its work. */
-function oasisNote(missions: string, canSendFiles: boolean): string {
+/** Short, about 200 tokens: where the session is, its tools, and where things for the owner go. */
+function oasisNote(missions: string, grill: string, canSendFiles: boolean): string {
   return [
     '# The Oasis',
     "This session is also an agent in the owner's Oasis, a 3D village on this machine where each Claude Code session has an avatar at a desk.",
@@ -37,6 +39,7 @@ function oasisNote(missions: string, canSendFiles: boolean): string {
     'The Oasis MCP server (tools named oasis) can look at that world, place and change things in it, and take screenshots.',
     ...(canSendFiles ? ['To show the owner a picture, an audio file, a video or a document, send the file with SendUserFile (it plays or opens in the thread); a file path alone is not enough.'] : []),
     `The mission board is the folder ${missions}.`,
+    `Questions for the owner that are not urgent go at the bottom of ${grill}, under "Added by agents": one line with your name, the question and your recommendation, instead of waiting in this thread.`,
   ].join('\n')
 }
 
@@ -46,7 +49,7 @@ async function oasisSection($: EngineInterface, fallback: string, canSendFiles: 
     const at = ((await $.env.get('OASIS_ENGINE_URL')) || fallback).replace(/\/+$/, '')
     const health = await $.http.fetch(`${at}/health`)
     if (!health.ok) return null
-    return oasisNote((await $.env.get('OASIS_MISSIONS_DIR')) || MISSIONS_DIR, canSendFiles)
+    return oasisNote((await $.env.get('OASIS_MISSIONS_DIR')) || MISSIONS_DIR, (await $.env.get('OASIS_GRILL_FILE')) || GRILL_FILE, canSendFiles)
   } catch {
     return null
   }

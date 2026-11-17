@@ -32,6 +32,13 @@ const ENGINE_KEYS = ['name', 'session', 'voice', 'look', 'avatar', 'world', 'hom
 const KEYS = [...ENGINE_KEYS, 'role', 'updated'];
 /** How results reach the owner (his words, 2026-11-17: a player in the thread, not a path to the mp4). */
 export const SHOW_FILES = 'To show the owner a picture, an audio file, a video or a document, send the file with SendUserFile: it plays or opens in the thread. A file path alone is not enough.';
+/**
+ * Where questions for the owner that can wait go (his rule, 2026-11-17), instead of waiting in a thread he may not
+ * open for days. Also in the plugin's note; here too, because a session that already exists keeps the system prompt
+ * it started with, and this note reaches it with the next message. OASIS_GRILL_FILE moves the file.
+ */
+export const GRILL_FILE = process.env.OASIS_GRILL_FILE || 'C:/7c_oasis/docs/grill/open.md';
+export const ASK_LATER = `Questions for the owner that are not urgent go at the bottom of ${GRILL_FILE}, under "Added by agents": one line with your name, the question and your recommendation, instead of waiting in your thread.`;
 export const ROLE_MAX = 240;
 export const WHO_MAX = 1200;
 
@@ -74,6 +81,7 @@ export function characterNote(card, { file = '', tools = '', showFiles = true } 
   }
   // Not for a session in another window: it may not have the tool, so the mod says it there only when it does.
   if (showFiles) parts.push(SHOW_FILES);
+  parts.push(ASK_LATER);
   if (file) parts.push(`Your card is the file ${file}.`);
   return `[Oasis you: ${parts.map((p) => (/[.!?]$/.test(p) ? p : `${p}.`)).join(' ').replace(/\]/g, ')')}]`;
 }
