@@ -86,6 +86,17 @@ export interface WorkDay {
   hours?: Record<string, AgentHours>
   /** Time added by hand (the counter was broken, work away from the Oasis), each with its reason. */
   manual?: WorkManualEntry[]
+  /** Which page the counted seconds came from: the tab id, its seconds, first and last report, the browser. */
+  tabs?: Record<string, WorkTabRecord>
+}
+
+export interface WorkTabRecord {
+  seconds: number
+  /** First and last report that put seconds in (ms). */
+  from: number
+  to: number
+  /** The browser, from its user agent: "Edge 131", "Chrome 131 headless". */
+  client?: string
 }
 
 export interface WorkManualEntry {
@@ -114,7 +125,7 @@ export interface WorkFile {
   /** The mission being worked on (survives a reload). */
   active: WorkActive | null
   /** The one tab that counts, and the moment up to which its time is in the book. */
-  holder: { tab: string; seq: number; at: number } | null
+  holder: { tab: string; seq: number; at: number; client?: string } | null
   /** The tab that last let go (it was closing): a late report from it must not take the place back. */
   released?: string
   /** The last report number that tab had sent when it let go: anything newer proves the page is still there. */
@@ -174,6 +185,9 @@ export function parseWorkFile(value: unknown): WorkFile {
     for (const m of Array.isArray(day.manual) ? day.manual : []) {
       if (m && typeof m === 'object' && num(m.seconds)) (parsed.manual ||= []).push({ seconds: num(m.seconds), xp: num(m.xp), reason: String(m.reason || ''), at: num(m.at) })
     }
+    for (const [tab, t] of Object.entries(day.tabs || {})) {
+      if (t && typeof t === 'object' && num(t.seconds)) (parsed.tabs ||= {})[tab] = { seconds: num(t.seconds), from: num(t.from), to: num(t.to), ...(typeof t.client === 'string' && t.client ? { client: t.client } : {}) }
+    }
     file.days[date] = parsed
   }
   if (raw.active && typeof raw.active.file === 'string') {
@@ -188,7 +202,7 @@ export function parseWorkFile(value: unknown): WorkFile {
   if (raw.marks && typeof raw.marks === 'object') {
     for (const [key, ts] of Object.entries(raw.marks)) if (num(ts)) (file.marks ||= {})[key] = ts as number
   }
-  if (raw.holder && typeof raw.holder.tab === 'string') file.holder = { tab: raw.holder.tab, seq: num(raw.holder.seq), at: num(raw.holder.at) }
+  if (raw.holder && typeof raw.holder.tab === 'string') file.holder = { tab: raw.holder.tab, seq: num(raw.holder.seq), at: num(raw.holder.at), ...(typeof raw.holder.client === 'string' ? { client: raw.holder.client } : {}) }
   return file
 }
 
@@ -292,6 +306,8 @@ export interface WorkBeat {
   seconds: number
   /** This tab let go while hidden and is in front again: it may take the place back. */
   back?: boolean
+  /** The browser it runs in (the server sets it from the user agent). */
+  client?: string
   /** What the owner had open while these seconds ran: an agent, a mission card, or neither. */
   focus?: WorkFocus
 }
@@ -309,6 +325,8 @@ export interface WorkBeatResult {
   credited: number
   /** Turned away because a different tab reported within the last 50 s (the only case to call "another tab"). */
   otherTab?: boolean
+  /** That other tab: its browser, and when it started counting today. */
+  other?: { client?: string; since: number }
 }
 
 /**
@@ -357,7 +375,10 @@ export function applyWorkBeat(input: WorkFile, beat: WorkBeat, now: number, offs
   const file: WorkFile = JSON.parse(JSON.stringify(input))
   const holder = file.holder
   const mine = holder?.tab === beat.tab
-  if (holder && !mine && now - holder.at < WORK_HOLDER_STALE_MS) return { file: input, counting: false, credited: 0, otherTab: true }
+  if (holder && !mine && now - holder.at < WORK_HOLDER_STALE_MS) {
+    const seen = input.days[localDay(now, offsetMinutes)]?.tabs?.[holder.tab]
+    return { file: input, counting: false, credited: 0, otherTab: true, other: { ...(holder.client ? { client: holder.client } : {}), since: seen?.from || holder.at } }
+  }
   // A report that was still on its way when its page let go: too late, the page is gone. A report numbered after
   // the letting-go comes from a page that is still there (it was only hidden, or its HUD remounted): it counts again.
   // Without this, a tab that let go and stayed was turned away for good ("another tab is counting", with no other tab).
@@ -366,7 +387,7 @@ export function applyWorkBeat(input: WorkFile, beat: WorkBeat, now: number, offs
     delete file.released
     delete file.releasedSeq
     // Taking over (or the first tab ever): the clock starts now, nothing reported before counts.
-    file.holder = { tab: beat.tab, seq: beat.seq, at: now }
+    file.holder = { tab: beat.tab, seq: beat.seq, at: now, ...(beat.client ? { client: beat.client } : {}) }
     return { file, counting: true, credited: 0 }
   }
   if (beat.seq <= holder.seq) return { file: input, counting: true, credited: 0 }
@@ -379,9 +400,58 @@ export function applyWorkBeat(input: WorkFile, beat: WorkBeat, now: number, offs
     const today = Math.min(credited, Math.floor((now - midnight) / 1000))
     addSeconds(file, localDay(now, offsetMinutes), today, beat.focus)
     addSeconds(file, localDay(midnight - 1, offsetMinutes), credited - today, beat.focus)
+    noteTab(file, localDay(now, offsetMinutes), beat, today, now)
+    noteTab(file, localDay(midnight - 1, offsetMinutes), beat, credited - today, now)
   }
-  file.holder = { tab: beat.tab, seq: beat.seq, at: now }
+  file.holder = { tab: beat.tab, seq: beat.seq, at: now, ...(beat.client ? { client: beat.client } : {}) }
   return { file, counting: true, credited }
+}
+
+/** The day keeps, per tab, how many of its seconds that tab put in (so "whose time was this?" has an answer). */
+function noteTab(file: WorkFile, date: string, beat: WorkBeat, seconds: number, now: number): void {
+  if (seconds <= 0 || !file.days[date]) return
+  const tabs = (file.days[date].tabs ||= {})
+  const tab = tabs[beat.tab] || (tabs[beat.tab] = { seconds: 0, from: now - seconds * 1000, to: now })
+  tab.seconds += seconds
+  tab.to = now
+  if (beat.client) tab.client = beat.client
+  const keys = Object.keys(tabs)
+  if (keys.length > 40) keys.sort((a, b) => tabs[a].to - tabs[b].to).slice(0, keys.length - 40).forEach(key => { delete tabs[key] })
+}
+
+// ─── automation never counts ────────────────────────────────────────────────
+// Agents' test browsers load the Oasis too, and press keys and move the mouse. Their time is not the
+// owner's work: a page driven by automation never reports, and the server ignores what such a page sends.
+
+const AUTOMATION_UA = /HeadlessChrome|\bPlaywright\b|puppeteer|PhantomJS/i
+const AUTOMATION_URL = /[?&#](playtest|oasis-test|automation|webdriver)(=[^&#]*)?(?=[&#]|$)/i
+
+/** In the page: a webdriver (Playwright, Selenium), a headless browser, or a test flag in the URL. */
+export function isAutomationClient(page: { webdriver?: boolean; userAgent?: string; href?: string }): boolean {
+  return page.webdriver === true || AUTOMATION_UA.test(page.userAgent || '') || AUTOMATION_URL.test(page.href || '')
+}
+
+/** On the server: a headless browser's user agent, or a report the page itself marked as automation. */
+export function isAutomationRequest(userAgent: string | null | undefined, body: unknown): boolean {
+  if (AUTOMATION_UA.test(userAgent || '')) return true
+  return Boolean(body && typeof body === 'object' && (body as { automation?: unknown }).automation === true)
+}
+
+/** A short name for the browser a report came from: "Edge 131", "Chrome 131 headless", "Firefox 132". */
+export function clientLabel(userAgent: string | null | undefined): string {
+  const ua = userAgent || ''
+  if (!ua) return 'unknown'
+  const version = (re: RegExp) => re.exec(ua)?.[1] || ''
+  let name = /node|undici/i.test(ua) && !/Mozilla/.test(ua) ? 'node' : 'browser'
+  if (/Edg\//.test(ua)) name = `Edge ${version(/Edg\/(\d+)/)}`
+  else if (/OPR\//.test(ua)) name = `Opera ${version(/OPR\/(\d+)/)}`
+  else if (/Firefox\//.test(ua)) name = `Firefox ${version(/Firefox\/(\d+)/)}`
+  else if (/Electron\//.test(ua)) name = `Electron ${version(/Electron\/(\d+)/)}`
+  else if (/HeadlessChrome\//.test(ua)) name = `Chrome ${version(/HeadlessChrome\/(\d+)/)} headless`
+  else if (/Chrome\//.test(ua)) name = `Chrome ${version(/Chrome\/(\d+)/)}`
+  else if (/Safari\//.test(ua)) name = 'Safari'
+  if (/Android|iPhone|iPad|Mobile/.test(ua)) name += ' (phone)'
+  return name.trim()
 }
 
 /** A page that is closing lets go, so the next one (a reload) counts at once. */
@@ -686,6 +756,8 @@ export interface WorkDaySummary {
   /** Time added by hand this day (already inside `seconds` and `xp`), with each reason. */
   manualSeconds: number
   manual: WorkManualEntry[]
+  /** Which pages the counted seconds came from (recorded from 2026-11-17 evening on). */
+  tabs: Array<WorkTabRecord & { tab: string }>
   /** The agents' own working hours this day, and the whole Oasis. */
   agentHours: { totalSeconds: number; xp: number; agents: Array<AgentHours & { key: string; totalSeconds: number }> }
 }
@@ -734,6 +806,7 @@ export function daySummary(file: WorkFile, date: string, today: string): WorkDay
     agents,
     topXp,
     manualSeconds: manualSeconds(day),
+    tabs: Object.entries(day?.tabs || {}).map(([tab, t]) => ({ tab, ...t })).sort((a, b) => b.seconds - a.seconds),
     manual: (day?.manual || []).map(m => ({ ...m, xp: round1(m.xp) })),
     agentHours: { totalSeconds: hours.reduce((sum, h) => sum + h.totalSeconds, 0), xp: round1(hours.reduce((sum, h) => sum + h.xp, 0)), agents: hours },
   }

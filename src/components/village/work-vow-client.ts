@@ -5,7 +5,7 @@
 // tick a second drives it all: no per-frame work.
 
 import { onEngineEvent } from '../../lib/agent-engine-client'
-import { activeMsBetween, ownTurnMs, WORK_BEAT_MS, type AgentWorkReport, type WorkSnapshot } from '../../lib/village/work-vow'
+import { activeMsBetween, isAutomationClient, ownTurnMs, WORK_BEAT_MS, type AgentWorkReport, type WorkSnapshot } from '../../lib/village/work-vow'
 import { useOasisStore } from '../../store/oasisStore'
 
 export interface WorkVowState {
@@ -19,6 +19,10 @@ export interface WorkVowState {
   otherTab: boolean
   /** The server cannot be reached: the pending seconds are not in the book. */
   unsaved: boolean
+  /** This page is driven by automation (a test browser): it shows the book and never reports. */
+  automated: boolean
+  /** When another tab counts: its browser and since when (for the HUD). */
+  other?: { client?: string; since: number }
 }
 
 /**
@@ -40,7 +44,7 @@ interface WorkVowGlobal {
 }
 const holder = globalThis as unknown as { __oasisWorkVow?: WorkVowGlobal }
 const G: WorkVowGlobal = holder.__oasisWorkVow ||= {
-  state: { snapshot: null, pendingSeconds: 0, running: false, otherTab: false, unsaved: false },
+  state: { snapshot: null, pendingSeconds: 0, running: false, otherTab: false, unsaved: false, automated: false },
   listeners: new Set(),
   tab: `tab-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`,
   seq: 0,
@@ -56,7 +60,7 @@ const listeners = G.listeners
 function set(patch: Partial<WorkVowState>): void {
   state = G.state
   const next = { ...state, ...patch }
-  if (next.snapshot === state.snapshot && next.pendingSeconds === state.pendingSeconds && next.running === state.running && next.otherTab === state.otherTab && next.unsaved === state.unsaved) return
+  if (next.snapshot === state.snapshot && next.pendingSeconds === state.pendingSeconds && next.running === state.running && next.otherTab === state.otherTab && next.unsaved === state.unsaved && next.automated === state.automated && next.other === state.other) return
   state = next
   G.state = next
   listeners.forEach(listener => listener())
@@ -106,6 +110,7 @@ let workQueue: AgentWorkReport[] = []
 let workTimer: number | null = null
 
 function queueAgentWork(report: AgentWorkReport): void {
+  if (!maySend()) return
   workQueue.push(report)
   if (workTimer !== null) return
   workTimer = window.setTimeout(() => {
@@ -161,7 +166,28 @@ function isQuiet(): boolean {
   return Date.now() < quietUntil
 }
 
-async function post(body: unknown): Promise<{ counting?: boolean; credited?: number; otherTab?: boolean; snapshot?: WorkSnapshot } | null> {
+/**
+ * A test browser never counts the owner's work. Playwright and other webdrivers set navigator.webdriver;
+ * headless browsers say so in their user agent; a page can also carry ?playtest in its URL. Such a page
+ * reads the book (the HUD still shows) but sends nothing. Playtests of the counter itself set
+ * window.__oasisWorkTestMode = true first: then it counts and reports, marked as automation, and the
+ * server ignores it (the playtests answer the reports themselves).
+ */
+function automation(): { automated: boolean; testMode: boolean } {
+  if (typeof window === 'undefined') return { automated: false, testMode: false }
+  const automated = isAutomationClient({ webdriver: navigator.webdriver, userAgent: navigator.userAgent, href: location.href })
+  return { automated, testMode: automated && (window as unknown as { __oasisWorkTestMode?: boolean }).__oasisWorkTestMode === true }
+}
+
+/** May this page send anything to the work book? */
+function maySend(): boolean {
+  const { automated, testMode } = automation()
+  return !automated || testMode
+}
+
+async function post(body: unknown): Promise<{ counting?: boolean; credited?: number; otherTab?: boolean; other?: { client?: string; since: number }; snapshot?: WorkSnapshot } | null> {
+  if (!maySend()) return null
+  if (automation().automated) body = { ...(body as object), automation: true }
   try {
     const response = await fetch('/api/village/work', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), keepalive: true, signal: AbortSignal.timeout(10_000) })
     if (!response.ok) quietUntil = Date.now() + 60_000
@@ -190,7 +216,7 @@ async function sendBeat(): Promise<void> {
     if (answer.otherTab) {
       // A different tab reported within the last minute: it counts, what was counted here is its to count.
       pendingMs = 0
-      set({ snapshot: answer.snapshot || state.snapshot, pendingSeconds: 0, otherTab: true, running: false })
+      set({ snapshot: answer.snapshot || state.snapshot, pendingSeconds: 0, otherTab: true, running: false, other: answer.other })
       return
     }
     // Turned away for another reason (a report that crossed this tab's own letting-go): nobody else
@@ -202,13 +228,14 @@ async function sendBeat(): Promise<void> {
   }
   // The server took what the clock allows; anything it did not take is dropped, never sent twice.
   pendingMs = Math.max(0, pendingMs - seconds * 1000)
-  set({ snapshot: answer.snapshot || state.snapshot, pendingSeconds: Math.floor(pendingMs / 1000), otherTab: false })
+  set({ snapshot: answer.snapshot || state.snapshot, pendingSeconds: Math.floor(pendingMs / 1000), otherTab: false, other: undefined })
 }
 
 function tick(): void {
   const now = Date.now()
   const visible = document.visibilityState === 'visible'
-  const gained = state.otherTab ? 0 : activeMsBetween(lastTickAt, now, lastInputAt, visible)
+  // A test browser's input is not the owner's work: it gains nothing (unless a counter playtest asks).
+  const gained = state.otherTab || !maySend() ? 0 : activeMsBetween(lastTickAt, now, lastInputAt, visible)
   // A tick that arrives late (a sleeping laptop, a throttled tab) is not three hours of work.
   pendingMs += Math.min(gained, 5000)
   lastTickAt = now
@@ -225,13 +252,13 @@ function tick(): void {
 
 /** The page is going away (reload, close): send what is left and let the next page count at once. */
 function letGo(): void {
-  if (state.otherTab) return
+  if (state.otherTab || !maySend()) return
   // Whoever lets go must say "back" with its next report, or the server keeps turning this same tab away
   // ("another tab is counting" with no other tab). That covers every way of letting go that the page survives:
   // hidden and shown again, the HUD remounting (a hot reload, React's dev double-mount), a page restored from cache.
   letGoHidden = true
   seq += 1
-  const body = JSON.stringify({ tab, seq, seconds: Math.floor(pendingMs / 1000), focus, release: true })
+  const body = JSON.stringify({ tab, seq, seconds: Math.floor(pendingMs / 1000), focus, release: true, ...(automation().automated ? { automation: true } : {}) })
   pendingMs = 0
   try {
     navigator.sendBeacon('/api/village/work', new Blob([body], { type: 'application/json' }))
@@ -270,6 +297,7 @@ const INPUTS = ['keydown', 'pointerdown', 'pointermove', 'wheel', 'touchstart'] 
 /** This copy of the module takes the clock: timer, input listeners, engine events. */
 function run(): void {
   G.halt?.() // a copy from before a hot reload stops; this one carries on with the same tab, numbers and book
+  set({ automated: automation().automated && !automation().testMode })
   lastTickAt = Date.now()
   lastBeatAt = 0
   for (const type of INPUTS) window.addEventListener(type, markWorkActivity, { capture: true, passive: true })

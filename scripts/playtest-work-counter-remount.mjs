@@ -8,7 +8,8 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 const { openViewer, installModuleAccess } = await import(pathToFileURL(process.env.OASIS_VIEWER || path.join(os.tmpdir(), 'fps-hunt', 'viewer.mjs')).href)
 const agents = ['Anorak', 'Mission Wall'].map((name, i) => ({ id: `a${i}`, kind: 'owned', name, status: 'idle', alive: true, cwd: 'C:/af_oasis', sessionId: `s${i}` }))
-const { browser, page, log } = await openViewer({ agents, settleMs: 20000, onConsole: m => { if (m.type() === 'error' && !/ERR_FAILED|404|GLTF/.test(m.text())) console.log('console.error:', m.text().slice(0, 200)) } })
+// The counter refuses test browsers; this playtest of the counter itself opts in (its reports go to the stand-in below).
+const { browser, page, log } = await openViewer({ agents, settleMs: 20000, initScript: () => { window.__oasisWorkTestMode = true }, onConsole: m => { if (m.type() === 'error' && !/ERR_FAILED|404|GLTF/.test(m.text())) console.log('console.error:', m.text().slice(0, 200)) } })
 let fail = 0
 const check = (label, ok, detail = '') => { console.log(ok ? 'PASS' : 'FAIL', label, detail); if (!ok) fail++ }
 try {

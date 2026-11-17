@@ -212,10 +212,13 @@ export function WorkVowHud() {
         ? [`with ${agentFocus.split(SEP)[1]}`, WORK_VALOR.agent]
         : ['in the Oasis', free]
   const hidden = typeof document !== 'undefined' && document.visibilityState !== 'visible'
-  const status = state.unsaved
+  const otherSince = state.other?.since ? new Date(state.other.since).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''
+  const status = state.automated
+    ? 'not counting: this is a test browser'
+    : state.unsaved
     ? 'not saved: server unreachable'
     : state.otherTab
-      ? 'another Oasis tab is counting'
+      ? `another Oasis tab is counting${state.other?.client ? ` (${state.other.client}${otherSince ? `, since ${otherSince}` : ''})` : ''}`
       : state.running
         ? `counting: ${what} · ${rate} XP/min`
         : hidden ? 'paused: tab hidden' : 'paused: move, type or talk to count'

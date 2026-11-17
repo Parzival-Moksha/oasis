@@ -474,3 +474,46 @@ describe('one XP number per day; where an agent\'s XP comes from; time per missi
     expect(parseWorkFile(JSON.parse(JSON.stringify(book))).days['2026-11-16'].hours?.s1.missions).toEqual({ 'a.md': 900 })
   })
 })
+
+describe('test browsers never count; each second keeps the page it came from', () => {
+  it('knows an automated page and an automated request', async () => {
+    const { isAutomationClient, isAutomationRequest } = await import('../village/work-vow')
+    const edge = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0'
+    const headless = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0.0.0 Safari/537.36'
+    expect(isAutomationClient({ webdriver: false, userAgent: edge, href: 'http://127.0.0.1:4516/w/x?profile=village' })).toBe(false)
+    expect(isAutomationClient({ webdriver: true, userAgent: edge })).toBe(true)
+    expect(isAutomationClient({ userAgent: headless })).toBe(true)
+    expect(isAutomationClient({ userAgent: edge, href: 'http://127.0.0.1:4516/w/x?profile=village&playtest=1' })).toBe(true)
+    expect(isAutomationClient({ userAgent: edge, href: 'http://127.0.0.1:4516/w/x?oasis-test' })).toBe(true)
+    expect(isAutomationClient({ userAgent: edge, href: 'http://127.0.0.1:4516/w/playtesters-world' })).toBe(false)
+    expect(isAutomationRequest(headless, {})).toBe(true)
+    expect(isAutomationRequest(edge, { automation: true })).toBe(true)
+    expect(isAutomationRequest(edge, { tab: 'x' })).toBe(false)
+    expect(isAutomationRequest('node', { agentMission: {} })).toBe(false)
+    expect(isAutomationRequest(null, null)).toBe(false)
+  })
+  it('names the browser', async () => {
+    const { clientLabel } = await import('../village/work-vow')
+    expect(clientLabel('Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0')).toBe('Edge 131')
+    expect(clientLabel('Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36')).toBe('Chrome 131')
+    expect(clientLabel('Mozilla/5.0 (X11) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0.0.0 Safari/537.36')).toBe('Chrome 140 headless')
+    expect(clientLabel('Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Claude/1.2 Chrome/130.0 Electron/33.2.0 Safari/537.36')).toBe('Electron 33')
+    expect(clientLabel('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1')).toBe('Safari (phone)')
+    expect(clientLabel('node')).toBe('node')
+    expect(clientLabel('')).toBe('unknown')
+  })
+  it('the day records which tab put its seconds in, and "another tab" says which browser', async () => {
+    const { daySummary } = await import('../village/work-vow')
+    let book = applyWorkBeat(emptyWorkFile(), { tab: 'mine', seq: 1, seconds: 0, client: 'Edge 131' }, at('09:00:00'), TZ).file
+    book = applyWorkBeat(book, { tab: 'mine', seq: 2, seconds: 15, client: 'Edge 131' }, at('09:00:15'), TZ).file
+    book = applyWorkBeat(book, { tab: 'mine', seq: 3, seconds: 15, client: 'Edge 131' }, at('09:00:30'), TZ).file
+    const turned = applyWorkBeat(book, { tab: 'other', seq: 1, seconds: 15, client: 'Chrome 140 headless' }, at('09:00:40'), TZ)
+    expect(turned).toMatchObject({ counting: false, otherTab: true, other: { client: 'Edge 131', since: at('09:00:00') } })
+    expect(daySummary(book, '2026-11-16', '2026-11-16').tabs).toEqual([{ tab: 'mine', seconds: 30, from: at('09:00:00'), to: at('09:00:30'), client: 'Edge 131' }])
+    // Across 04:20 the record splits with the seconds.
+    let late = applyWorkBeat(emptyWorkFile(), { tab: 't', seq: 1, seconds: 0 }, at('04:19:50', '2026-11-17'), TZ).file
+    late = applyWorkBeat(late, { tab: 't', seq: 2, seconds: 15 }, at('04:20:05', '2026-11-17'), TZ).file
+    expect([late.days['2026-11-16'].tabs?.t.seconds, late.days['2026-11-17'].tabs?.t.seconds]).toEqual([10, 5])
+    expect(parseWorkFile(JSON.parse(JSON.stringify(book))).days['2026-11-16'].tabs?.mine.client).toBe('Edge 131')
+  })
+})

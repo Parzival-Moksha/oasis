@@ -6,7 +6,8 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 const { openViewer, installModuleAccess } = await import(pathToFileURL(process.env.OASIS_VIEWER || path.join(os.tmpdir(), 'fps-hunt', 'viewer.mjs')).href)
 const agents = ['Anorak', 'Mission Wall'].map((name, i) => ({ id: `a${i}`, kind: 'owned', name, status: 'idle', alive: true, cwd: 'C:/af_oasis', sessionId: `s${i}` }))
-const { browser, page, log } = await openViewer({ agents, settleMs: 18000 })
+// The counter refuses test browsers; this playtest of the counter itself opts in (the viewer blocks every write anyway).
+const { browser, page, log } = await openViewer({ agents, settleMs: 18000, initScript: () => { window.__oasisWorkTestMode = true } })
 let fail = 0
 const check = (label, ok, detail = '') => { console.log(ok ? 'PASS' : 'FAIL', label, detail); if (!ok) fail++ }
 try {
@@ -21,8 +22,9 @@ try {
   await active(10)
   const after = await read(); console.log('after', JSON.stringify(after))
   check('the HUD is still there', after.hud !== 'MISSING', after.hud)
-  check('it kept its number and went on', after.shown >= before.shown + 8 && after.shown <= before.shown + 13, `${before.shown}s -> ${after.shown}s in about 10 s`)
-  check('one clock, not two (the old copy stopped)', after.pending - before.pending <= 12, `pending ${before.pending} -> ${after.pending}`)
+  // The shown number may also grow from the owner's own tab (the book is shared), so the test page's own seconds are judged.
+  check('it kept its number and went on', after.shown >= before.shown + 8, `${before.shown}s -> ${after.shown}s in about 10 s`)
+  check('one clock, not two (the old copy stopped)', after.pending - before.pending >= 8 && after.pending - before.pending <= 12, `own seconds ${before.pending} -> ${after.pending}`)
   check('the same tab id, one user, running', after.tab === before.tab && after.users === 1 && after.running)
   // The 3D clock reads the same store: its face was reprinted with the same number.
   const same = await page.evaluate(() => { const g = globalThis.__oasisWorkVow; const hud = document.querySelector('button[data-ui-panel="village-work-vow"]').innerText; const s = (g.state.snapshot?.today.seconds || 0) + g.state.pendingSeconds; const two = n => String(n).padStart(2, '0'); return hud.includes(`${Math.floor(s / 3600)}:${two(Math.floor(s % 3600 / 60))}:${two(s % 60)}`) })

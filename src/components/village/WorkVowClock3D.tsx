@@ -24,7 +24,7 @@ function draw(ctx: CanvasRenderingContext2D): string {
   const target = snapshot?.targetSeconds || 3 * 3600
   const done = seconds >= target
   const color = done ? '#34d399' : '#fbbf24'
-  const status = !snapshot ? 'reading the book' : state.otherTab ? 'another tab is counting' : done ? 'the day is done' : state.running ? 'counting' : 'paused'
+  const status = !snapshot ? 'reading the book' : state.automated ? 'test browser: not counting' : state.otherTab ? `another tab is counting${state.other?.client ? ` (${state.other.client})` : ''}` : done ? 'the day is done' : state.running ? 'counting' : 'paused'
   const key = `${seconds}|${target}|${status}`
   const { width, height } = PX
   ctx.fillStyle = '#070b14'
@@ -79,7 +79,7 @@ export function WorkVowClock3D({ position, rotationY, height = 5.6 }: { position
     let shown = ''
     const print = () => {
       const state = getWorkVowState()
-      const next = `${(state.snapshot?.today.seconds || 0) + state.pendingSeconds}|${state.snapshot?.targetSeconds}|${state.running}|${state.otherTab}|${Boolean(state.snapshot)}`
+      const next = `${(state.snapshot?.today.seconds || 0) + state.pendingSeconds}|${state.snapshot?.targetSeconds}|${state.running}|${state.otherTab}|${state.other?.client}|${state.automated}|${Boolean(state.snapshot)}`
       if (next === shown) return
       shown = next
       draw(ctx)

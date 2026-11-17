@@ -184,7 +184,7 @@ export function reportAgentWork(reports: AgentWorkReport[]): Promise<{ booked: n
   })
 }
 
-export function reportWorkBeat(input: Omit<WorkBeat, 'focus'> & { release?: boolean; focus?: { agent?: { key: string; name: string } | null; mission?: string | null } }, now = Date.now()): Promise<{ counting: boolean; credited: number; otherTab: boolean; snapshot: WorkSnapshot }> {
+export function reportWorkBeat(input: Omit<WorkBeat, 'focus'> & { release?: boolean; focus?: { agent?: { key: string; name: string } | null; mission?: string | null } }, now = Date.now()): Promise<{ counting: boolean; credited: number; otherTab: boolean; other?: { client?: string; since: number }; snapshot: WorkSnapshot }> {
   return serial(async () => {
     const mission = input.focus?.mission ? await missionMeta(input.focus.mission) : null
     const beat: WorkBeat & { release?: boolean } = { ...input, focus: { agent: input.focus?.agent || null, mission } }
@@ -193,7 +193,7 @@ export function reportWorkBeat(input: Omit<WorkBeat, 'focus'> & { release?: bool
     // A closing page reports its last seconds and lets go.
     if (beat.release) result.file = releaseWorkHolder(result.file, beat.tab)
     if (result.file !== before) await writeBook(result.file)
-    return { counting: result.counting, credited: result.credited, otherTab: result.otherTab === true, snapshot: workSnapshot(result.file, now) }
+    return { counting: result.counting, credited: result.credited, otherTab: result.otherTab === true, ...(result.other ? { other: result.other } : {}), snapshot: workSnapshot(result.file, now) }
   })
 }
 

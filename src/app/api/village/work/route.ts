@@ -6,7 +6,8 @@
 //         (its minutes and XP are booked there; null: back to the mission whose `who` names it)
 //   POST  { manual: { date, minutes, reason, valor? } }  add time to a day by hand (shown as manual) · { manual: { date, remove: 0 } }
 //   POST  { settings: { freeValor: 0.7 } }  valor for time with nothing in focus.
-//   A day runs from 04:20 to 04:20 local.
+//   A day runs from 04:20 to 04:20 local. Automated pages (headless, webdriver, body.automation) never write.
+//   The day summary's `tabs[]` says which page each counted second came from.
 //   GET   today and the week of the vow: seconds, XP, each day hit / missed / open / ahead, the mission
 //         being worked on. For the HUD, for Anorak, for the Telegram pings.
 //   POST  { tab, seq, seconds, release? }  a page reports active seconds since its last report (one tab counts
@@ -20,7 +21,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { guardAgentRoute } from '@/lib/local-request-guard'
 import { declareAgentMission, editManualTime, reportAgentWork, reportWorkBeat, setWorkSettings, switchWorkMission, workDaySummary, workMindcraft, workMissionTimers, workVowSnapshot } from '@/lib/work-vow-server'
-import type { AgentWorkReport } from '@/lib/village/work-vow'
+import { clientLabel, isAutomationRequest, type AgentWorkReport } from '@/lib/village/work-vow'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -50,6 +51,14 @@ export async function POST(request: NextRequest) {
   if (denied) return denied
   const body = await request.json().catch(() => null) as { tab?: unknown; seq?: unknown; seconds?: unknown; mission?: unknown; release?: unknown; back?: unknown; focus?: { agent?: { key?: unknown; name?: unknown } | null; mission?: unknown } | null; agentWork?: unknown; settings?: { freeValor?: unknown }; agentMission?: { agent?: unknown; mission?: unknown }; manual?: { date?: unknown; seconds?: unknown; minutes?: unknown; reason?: unknown; valor?: unknown; remove?: unknown } } | null
   if (!body || typeof body !== 'object') return NextResponse.json({ error: 'body must be a JSON object' }, { status: 400 })
+  // A test browser (headless, webdriver, a page that says so) never writes to the owner's work book.
+  const userAgent = request.headers.get('user-agent')
+  if (isAutomationRequest(userAgent, body)) {
+    const report = typeof body.tab === 'string' || Array.isArray(body.agentWork)
+    return report
+      ? NextResponse.json({ ok: true, ignored: 'automation', counting: false, credited: 0 })
+      : NextResponse.json({ error: 'automated pages cannot change the work book' }, { status: 403 })
+  }
   try {
     if (body.agentMission && typeof body.agentMission === 'object') {
       const { agent, mission } = body.agentMission
@@ -93,7 +102,7 @@ export async function POST(request: NextRequest) {
       ? { key: body.focus.agent.key.slice(0, 120), name: String(body.focus.agent.name || body.focus.agent.key).slice(0, 80) }
       : null
     const focus = { agent, mission: typeof body.focus?.mission === 'string' ? body.focus.mission : null }
-    return NextResponse.json({ ok: true, ...(await reportWorkBeat({ tab: body.tab, seq: body.seq, seconds: body.seconds, release: body.release === true, back: body.back === true, focus })) })
+    return NextResponse.json({ ok: true, ...(await reportWorkBeat({ tab: body.tab, seq: body.seq, seconds: body.seconds, release: body.release === true, back: body.back === true, focus, client: clientLabel(userAgent) })) })
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })
   }
